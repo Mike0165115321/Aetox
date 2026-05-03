@@ -6,6 +6,7 @@ from aetox.core.ollama_client import OllamaClient
 from aetox.core.prompt_engine import PromptEngine
 from aetox.safety.permission import PermissionManager
 from aetox.safety.sandbox import SafetyViolation
+from aetox.memory.manager import MemoryManager
 
 class ExecutorAgent:
     """
@@ -32,6 +33,7 @@ class ExecutorAgent:
         self.logger = logging.getLogger("aetox.agents.executor")
         self.file_manager = FileManagerTool(allowed_paths=allowed_paths)
         self.permission_manager = PermissionManager()
+        self.memory_manager = MemoryManager()
         self.client = client or OllamaClient()
         self.engine = engine or PromptEngine()
         self.model = "qwen2.5:7b"
@@ -60,6 +62,8 @@ class ExecutorAgent:
         if risk == "high":
             details = f"{action} -> {params}"
             if not self.permission_manager.request_permission(action, details):
+                # LEARN FROM DENIAL
+                self.memory_manager.learn_from_denial(action, details)
                 return {
                     "status": "failure", 
                     "error": "User DENIED high-risk operation.",

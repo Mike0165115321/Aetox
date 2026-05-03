@@ -40,6 +40,22 @@ class PromptEngine:
         )
     }
 
+    PLANNER_SCHEMA = {
+        "plan_id": "string",
+        "goal": "string",
+        "steps": [
+            {
+                "step_id": "integer",
+                "description": "string",
+                "agent": "executor | researcher | coder",
+                "tool": "string",
+                "memory_needed": ["list of strings"],
+                "success_criteria": "string"
+            }
+        ],
+        "estimated_steps": "integer"
+    }
+
     def build_chat_messages(
         self, 
         role: str, 

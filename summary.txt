@@ -1,1 +1,1 @@
-$file_count
+The file count is 8.
