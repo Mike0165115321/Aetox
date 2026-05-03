@@ -18,13 +18,18 @@ class FileManagerTool:
     def _validate_path(self, path: Union[str, Path]) -> Path:
         return self.sandbox.validate_path(path)
 
-    def list_files(self, directory: str = ".") -> List[str]:
-        """Lists all files in the given directory."""
+    def list_dir(self, directory: str = ".") -> List[str]:
+        """Lists all files and directories in the given directory."""
         safe_path = self._validate_path(directory)
         if not safe_path.is_dir():
             raise NotADirectoryError(f"'{directory}' is not a directory.")
         
-        return [f.name for f in safe_path.iterdir() if f.is_file()]
+        items = []
+        for f in safe_path.iterdir():
+            prefix = "📁 [DIR] " if f.is_dir() else "📄 [FILE] "
+            items.append(f"{prefix}{f.name}")
+        
+        return sorted(items)
 
     def read_file(self, file_path: str) -> str:
         """Reads and returns the content of a file."""

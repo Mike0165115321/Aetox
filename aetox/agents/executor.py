@@ -152,7 +152,7 @@ class ExecutorAgent:
         elif any(k in tool_name or k in description for k in ["count", "number"]):
             return {"tool": "internal", "action": "count_files", "params": {}}
         elif any(k in tool_name or k in description for k in ["list", "ls", "directory"]):
-            return {"tool": "file_manager", "action": "list_files", "params": {"path": "."}}
+            return {"tool": "file_manager", "action": "list_dir", "params": {"path": "."}}
             
         return {"tool": "unknown", "action": "unknown", "params": {}}
 
@@ -167,12 +167,12 @@ class ExecutorAgent:
 
         try:
             # Flexible mapping: check action first, then tool/action combination
-            if action == "list_files" or (tool == "file_manager" and "list" in action):
-                files = self.file_manager.list_files(params.get("path", "."))
+            if action == "list_dir" or action == "list_files" or (tool == "file_manager" and "list" in action):
+                items = self.file_manager.list_dir(params.get("path", "."))
                 return {
                     "status": "success",
-                    "output": f"Found {len(files)} files: {', '.join(files)}",
-                    "memory_updates": {"file_list": files, "file_count": len(files)}
+                    "output": f"Found {len(items)} items:\n" + "\n".join(items),
+                    "memory_updates": {"file_list": items, "file_count": len(items)}
                 }
             elif action == "write_file" or (tool == "file_manager" and "write" in action) or tool == "write_file":
                 path = params.get("path")
