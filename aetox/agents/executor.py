@@ -1,5 +1,6 @@
 import logging
 import json
+import asyncio
 from typing import Dict, Any, Optional
 from aetox.tools.file_manager import FileManagerTool
 from aetox.core.ollama_client import OllamaClient
@@ -15,11 +16,14 @@ class ExecutorAgent:
     Includes safety and permission checks.
     """
     EXTRACTION_SCHEMA = {
-        "tool": "file_manager | other",
-        "action": "list_files | read_file | write_file | create_directory",
+        "tool": "file_manager | discord_manager | other",
+        "action": "list_files | read_file | write_file | create_category | create_channel",
         "params": {
-            "path": "string",
-            "content": "string (optional)"
+            "path": "string (for file_manager)",
+            "name": "string (for discord_manager)",
+            "category_id": "integer (optional for discord_manager)",
+            "guild_id": "integer (required for discord_manager)",
+            "content": "string (for write_file)"
         },
         "confidence": "float (0.0 to 1.0)"
     }
@@ -28,10 +32,12 @@ class ExecutorAgent:
         self, 
         client: Optional[OllamaClient] = None, 
         engine: Optional[PromptEngine] = None,
-        allowed_paths: Optional[list] = None
+        allowed_paths: Optional[list] = None,
+        discord_tool: Any = None
     ):
         self.logger = logging.getLogger("aetox.agents.executor")
         self.file_manager = FileManagerTool(allowed_paths=allowed_paths)
+        self.discord_tool = discord_tool
         self.permission_manager = PermissionManager()
         self.memory_manager = MemoryManager()
         self.client = client or OllamaClient()
@@ -151,15 +157,29 @@ class ExecutorAgent:
                 result = self.file_manager.create_directory(params.get("path"))
                 return {"status": "success", "output": result}
 
-            elif action and "count" in action:
-                count = memory_context.get("context", {}).get("file_count", 0)
-                if count == 0 and "file_list" in memory_context.get("context", {}):
-                    count = len(memory_context["context"]["file_list"])
-                return {
-                    "status": "success", 
-                    "output": f"Counted {count} items.",
-                    "memory_updates": {"file_count": count}
-                }
+            elif tool == "discord_manager" or action in ["create_category", "create_channel"]:
+                if not self.discord_tool:
+                    return {"status": "failure", "error": "Discord tool not initialized.", "output": None}
+                
+                name = params.get("name")
+                guild_id = params.get("guild_id")
+                
+                if action == "create_category":
+                    future = asyncio.run_coroutine_threadsafe(
+                        self.discord_tool.create_category(int(guild_id), name), 
+                        self.discord_tool.bot.loop
+                    )
+                    output = future.result()
+                    return {"status": "success", "output": output}
+                
+                elif action == "create_channel":
+                    cat_id = params.get("category_id")
+                    future = asyncio.run_coroutine_threadsafe(
+                        self.discord_tool.create_channel(int(guild_id), name, int(cat_id) if cat_id else None), 
+                        self.discord_tool.bot.loop
+                    )
+                    output = future.result()
+                    return {"status": "success", "output": output}
 
             return {
                 "status": "failure", 

@@ -56,6 +56,13 @@ class PromptEngine:
         "estimated_steps": "integer"
     }
 
+    CRITIC_SCHEMA = {
+        "verdict": "pass | retry | escalate",
+        "score": "float (0.0 to 1.0)",
+        "issues": ["list of strings"],
+        "suggestion": "string"
+    }
+
     def build_chat_messages(
         self, 
         role: str, 

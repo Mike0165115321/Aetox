@@ -9,6 +9,7 @@ class PermissionManager:
     def __init__(self, config_path: str = "config/permissions.yaml"):
         self.logger = logging.getLogger("aetox.safety.permission")
         self.risk_rules = {}
+        self.approval_callback = None # Set by interfaces (e.g. Discord)
         self._load_config(config_path)
 
     def _load_config(self, config_path: str):
@@ -43,8 +44,11 @@ class PermissionManager:
 
     def request_permission(self, action: str, details: str) -> bool:
         """
-        Requests permission from the user via CLI.
+        Requests permission from the user via CLI or External Callback (Discord).
         """
+        if self.approval_callback:
+            return self.approval_callback(action, details)
+            
         print(f"\n[SECURITY ACTION REQUIRED]")
         print(f"Action: {action}")
         print(f"Details: {details}")

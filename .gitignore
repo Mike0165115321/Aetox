@@ -1,0 +1,27 @@
+# AetoxOS Git Ignore
+
+# Environment Variables & Secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+env/
+venv/
+.pytest_cache/
+
+# AetoxOS Memory & Data
+aetox_memory.db
+config/preferences.json
+
+# Temporary / Output Files
+summary.txt
+logs/
+*.log
+
+# OS specific files
+.DS_Store
+Thumbs.db
