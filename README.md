@@ -1,74 +1,52 @@
 # 🌌 AetoxOS
-**The Agentic Local OS Orchestrator**
+**The Agentic Local OS Orchestrator (Master Edition)**
 
-AetoxOS คือระบบปฏิบัติการ AI แบบ Agentic ที่ทำงานบนเครื่องของคุณโดยสมบูรณ์ (Local-first) ออกแบบมาเพื่อเป็นสมองกลางในการจัดการไฟล์ วางแผนงาน และเรียนรู้พฤติกรรมของผู้ใช้ผ่านโมเดลภาษาขนาดใหญ่ (LLM) อย่าง Ollama
+AetoxOS คือระบบปฏิบัติการ AI แบบ Agentic ที่ทำงานบนเครื่องของคุณโดยสมบูรณ์ (Local-first) ออกแบบมาเพื่อเป็นสมองกลางในการจัดการไฟล์ วางแผนงาน และควบคุมระบบปฏิบัติการผ่านคำสั่งภาษาไทยที่ยืดหยุ่น
 
 ---
 
 ## 🚀 ความสามารถในปัจจุบัน (Current Capabilities)
 
-### 🧠 Core Brain
-*   **Strategic Planning**: วางแผนงานซับซ้อนอัตโนมัติด้วย `qwen2.5:14b`
-*   **Smart Execution**: สกัดพารามิเตอร์และเลือกเครื่องมือด้วย `qwen2.5:7b` (พร้อมระบบ Fallback)
-*   **Smart Memory**: 
-    *   **Episodic Memory**: จดจำประวัติการทำงานและผลลัพธ์ผ่าน SQLite
-    *   **Preferences**: เรียนรู้ความชอบและกฎส่วนตัวจากพฤติกรรมผู้ใช้ (JSON)
+### 🧠 Core Brain (Multi-Agent Ready)
+*   **Dynamic Intent Extraction**: สกัดพารามิเตอร์และเลือกเครื่องมืออัตโนมัติด้วยระบบ **Dynamic Tool Discovery** (ไม่ต้องแก้พรอมต์เมื่อเพิ่มเครื่องมือ)
+*   **Neutral Prompting**: ระบบพรอมต์ที่เป็นกลาง ลดหนี้ทางเทคนิค (No Technical Debt) โดยแยกการตั้งค่าไว้ใน YAML
+*   **Short-term Memory**: จดจำบริบทการสนทนาและพาธล่าสุด 3 ขั้นตอน (Rolling Buffer)
+*   **Ghost Protection**: ระบบ Single-Instance ป้องกันบอทรันซ้ำซ้อนอัตโนมัติ
 
-### 📂 File Operations (Verified Windows Support)
-*   **File Management**: `list_files`, `read_file`, `write_file`, `create_directory`
-*   **Safety Layer**: 
-    *   **Sandbox**: บล็อกการเข้าถึงไฟล์ระบบและพื้นที่นอกเขตที่อนุญาตอัตโนมัติ
-    *   **Permissions**: ระบบประเมินความเสี่ยงและขอคำยืนยัน (CLI Prompt) สำหรับงาน High-risk
+### 👁️ AetoxVision (Intelligence)
+*   **Deep Document Analysis**: อ่านและสรุปเนื้อหาจากไฟล์ **PDF (สูงสุด 20 หน้า)**, **Word (.docx)**, **Markdown (.md)** และไฟล์โค้ดต่างๆ
+*   **Super Summary**: สรุปเนื้อหาใจความสำคัญแบบ "สรุปขั้นสุด" ไม่พ่นข้อความรกหน้าจอ
+*   **ASCII Tree View**: แสดงโครงสร้างโฟลเดอร์ในรูปแบบแผนผังที่สวยงามและชัดเจน
+
+### 🕹️ AetoxControl (Execution)
+*   **Application Control**: สั่งเปิดโปรแกรมในเครื่องได้โดยตรง (เช่น Notepad, Calculator, Chrome)
+*   **Multi-Launch**: รองรับการสั่งเปิดหลายแอปพลิเคชันพร้อมกันในคำสั่งเดียว
+*   **Master File Manager**: จัดระเบียบไฟล์จำนวนมากแยกตามหมวดหมู่ (Images, Documents, Code, etc.) อัตโนมัติ
 
 ---
 
 ## 🛠 เทคโนโลยีเบื้องหลัง (Architecture)
-*   **Language Models**: Ollama (Qwen 2.5 Family)
-*   **Backend**: Python 3.12+
-*   **Storage**: SQLite (Event Log) & JSON (User Prefs)
-*   **Security**: Path-based Sandbox & Risk Assessment Engine
+*   **Language Models**: Ollama (Qwen 2.5:14b สำหรับงานวิเคราะห์ / 7b สำหรับงานสกัดคำสั่ง)
+*   **Interface**: **Discord Bot** (Command Center หลัก)
+*   **Backend**: Python 3.11+ (Windows Optimized)
+*   **Documentation**: มีมาตรฐานการสร้าง Tool ([tool_standard.md](aetox/tools/doc/tool_standard.md))
 
 ---
 
 ## 📋 แผนการพัฒนา (Roadmap)
-*   [ ] **Phase 3**: Researcher Agent (Web Search Integration)
-*   [ ] **Phase 4**: Coder Agent (Automated Code Execution)
-*   [ ] **Phase 5**: Critic Agent & Self-Correction
-*   [ ] **Interface**: Discord Bot & Desktop GUI
+*   [x] **Interface**: Discord Bot Integration
+*   [x] **File Intelligence**: PDF/Word/MD Summarization
+*   [ ] **Phase 3 (Trinity)**: WebPulse (Web Search & Navigation)
+*   [ ] **Phase 4**: Multi-Agent Orchestration (Planner, Researcher, Critic)
+*   [ ] **Phase 5**: Desktop GUI (Aetox Dashboard)
 
 ---
 
-สิ่งที่ทำได้ตอนนี้
-✅ รับคำสั่งผ่าน CLI (Terminal)
-✅ วางแผนงานอัตโนมัติด้วย Planner 14B
-✅ จัดการไฟล์ Windows ได้จริง:
-   - list_files   → ดูรายชื่อไฟล์ในโฟลเดอร์
-   - read_file    → อ่านเนื้อหาไฟล์
-   - write_file   → สร้าง/เขียนไฟล์
-   - create_dir   → สร้างโฟลเดอร์
-✅ จำประวัติงานที่ผ่านมา (SQLite)
-✅ จำนิสัยของคุณ (JSON Preferences)
-✅ บล็อกการเข้าถึงไฟล์นอกพื้นที่อนุญาต
-✅ ถามก่อนทำงานความเสี่ยงสูง
-
-สิ่งที่ยังทำไม่ได้
-❌ รับคำสั่งผ่าน Discord
-❌ ตรวจสอบคุณภาพงานตัวเอง (Critic)
-❌ ค้นหาเว็บ
-❌ รัน Code อัตโนมัติ
-❌ คุยกับ AI ภายนอก
-
-ตัวอย่างงานที่สั่งได้ตอนนี้
-"จัดไฟล์ใน D:/Downloads แยกตามนามสกุล"
-"อ่านไฟล์ report.txt แล้วสรุปให้หน่อย"
-"สร้างโฟลเดอร์ Projects แล้วย้ายไฟล์ .py ทั้งหมดไปไว้"
-"นับไฟล์ใน Desktop แล้วบันทึกสรุปลง summary.txt"
-
-
 ## 💡 ตัวอย่างคำสั่งที่ใช้งานได้
-*   *"List the files in the current directory and create a new file named 'summary.txt' with the count."*
-*   *"จัดระเบียบไฟล์ในโฟลเดอร์ Projects แยกตามประเภทไฟล์"*
-*   *"อ่านไฟล์ logs.txt แล้วสรุปประเด็นสำคัญบันทึกลงใน analysis.md"*
+*   *"เข้าไปดูใน Documents หน่อย มีอะไรอยู่ข้างในบ้าง"*
+*   *"สรุปไฟล์ Aetox_ข้อเสนอโครงการ.docx ให้ผมเข้าใจที แบบสั้นที่สุดนะ"*
+*   *"เปิด Notepad กับเครื่องคิดเลขขึ้นมาหน่อย"*
+*   *"จัดระเบียบไฟล์ในหน้า Desktop ให้เข้าที่ให้หมด"*
 
 ---
 *Created with ❤️ by Antigravity for the Aetox Ecosystem*
