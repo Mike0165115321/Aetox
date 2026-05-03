@@ -1,0 +1,20 @@
+allowed_paths:
+  - "."  # Current project directory
+  - "C:/Users/{username}/Documents/AetoxOS_Data" # Example data folder
+
+forbidden_paths:
+  - "C:/Windows"
+  - "C:/Program Files"
+  - "C:/Users/{username}/AppData"
+
+risk_rules:
+  high:
+    - delete_file
+    - run_code
+    - move_file
+  medium:
+    - write_file
+    - create_directory
+  low:
+    - list_files
+    - read_file
