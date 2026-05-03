@@ -87,8 +87,17 @@ async def start_task(ctx: commands.Context, *, goal: str):
     if str(ctx.author.id) not in ALLOWED_USERS and "*" not in ALLOWED_USERS:
         return
 
-    await ctx.send(f"⚡ **Direct Action:** {goal}\nExecuting...")
+    # 0. Greeting Classifier
+    GREETING_PATTERNS = ["สวัสดี", "hello", "hi", "หวัดดี", "ดีครับ"]
+    if any(p in goal.lower() for p in GREETING_PATTERNS):
+        await ctx.send(
+            "👋 สวัสดีครับ! ผม AetoxOS ยินดีรับใช้ครับ\n"
+            "• ใช้ `!task [งาน]` สำหรับงานด่วนขั้นตอนเดียว\n"
+            "• ใช้ `!plan [งาน]` สำหรับงานที่ซับซ้อนหลายขั้นตอนครับ"
+        )
+        return
 
+    # 1. Setup (Quiet for Direct Tasks)
     client = OllamaClient()
     engine = PromptEngine()
     memory = WorkingMemory(goal)
@@ -96,40 +105,30 @@ async def start_task(ctx: commands.Context, *, goal: str):
     interface = DiscordInterface(ctx)
     discord_tool = DiscordTool(bot)
 
-    dispatcher.progress_callback = interface.send_progress
+    dispatcher.progress_callback = None # Quiet mode
     dispatcher.executor.permission_manager.approval_callback = interface.request_approval
     dispatcher.executor.discord_tool = discord_tool
     memory.update_context({"guild_id": ctx.guild.id if ctx.guild else None})
 
-    def run_direct():
+    # 2. Execute with Typing Status
+    async with ctx.typing():
         try:
-            # 1. Execute via Dispatcher (New centralized logic)
-            result = dispatcher.run_direct_step(goal)
+            result = await asyncio.to_thread(dispatcher.run_direct_step, goal)
             
-            # 2. Smart Error Suggestion
             if result.get("status") == "failure":
                 error_msg = result.get("error", "Unknown error")
                 if result.get("needs_planning") or "too complex" in error_msg.lower():
-                    asyncio.run_coroutine_threadsafe(
-                        ctx.send(f"❌ **Direct Task Failed:** {error_msg}\n💡 *งานนี้ดูซับซ้อนเกินไป ลองใช้ `!plan` ดูไหมครับ?*"), 
-                        interface.loop
-                    )
+                    await ctx.send(f"❌ **Direct Task Failed:** {error_msg}\n💡 *งานนี้ดูซับซ้อนเกินไป ลองใช้ `!plan` ดูไหมครับ?*")
                 else:
-                    asyncio.run_coroutine_threadsafe(
-                        ctx.send(f"❌ **Direct Task Failed:** {error_msg}"), 
-                        interface.loop
-                    )
+                    await ctx.send(f"❌ **Direct Task Failed:** {error_msg}")
                 return
 
-            # 3. Final Summary
             output = result.get("output", "Done")
             if isinstance(output, str) and len(output) > 1500: output = output[:1500] + "..."
             summary = f"🏁 **Direct Task Completed!**\n**Result:**\n```\n{output}\n```"
-            asyncio.run_coroutine_threadsafe(ctx.send(summary), interface.loop)
+            await ctx.send(summary)
         except Exception as e:
-            asyncio.run_coroutine_threadsafe(ctx.send(f"❌ **Direct Task System Error:** {str(e)}"), interface.loop)
-
-    threading.Thread(target=run_direct).start()
+            await ctx.send(f"❌ **Direct Task System Error:** {str(e)}")
 
 @start_task.error
 async def task_error(ctx, error):
@@ -143,8 +142,7 @@ async def start_plan_task(ctx: commands.Context, *, goal: str):
     if str(ctx.author.id) not in ALLOWED_USERS and "*" not in ALLOWED_USERS:
         return
 
-    await ctx.send(f"🧠 **Planning Mode:** {goal}\nAnalyzing steps...")
-
+    # 1. Setup
     client = OllamaClient()
     engine = PromptEngine()
     planner = Planner(client, engine)
@@ -153,19 +151,20 @@ async def start_plan_task(ctx: commands.Context, *, goal: str):
     interface = DiscordInterface(ctx)
     discord_tool = DiscordTool(bot)
 
-    dispatcher.progress_callback = interface.send_progress
+    dispatcher.progress_callback = interface.send_progress 
     dispatcher.executor.permission_manager.approval_callback = interface.request_approval
     dispatcher.executor.discord_tool = discord_tool
     memory.update_context({"guild_id": ctx.guild.id if ctx.guild else None})
 
-    def run_planned():
+    # 2. Execute
+    async with ctx.typing():
         try:
-            plan = planner.create_plan(goal)
-            asyncio.run_coroutine_threadsafe(
-                ctx.send(f"✅ **Plan Created:** {len(plan.get('steps', []))} steps. Executing..."), 
-                interface.loop
-            )
-            dispatcher.run_plan(plan)
+            # Plan in background
+            plan = await asyncio.to_thread(planner.create_plan, goal)
+            await ctx.send(f"✅ **Plan Created:** {len(plan.get('steps', []))} steps. Executing...")
+            
+            # Execute plan
+            await asyncio.to_thread(dispatcher.run_plan, plan)
             
             final_context = memory.get_full_context()
             step_results = final_context.get("step_results", [])
@@ -176,11 +175,9 @@ async def start_plan_task(ctx: commands.Context, *, goal: str):
                 if isinstance(output, str) and len(output) > 500: output = output[:500] + "..."
                 results_text += f"\n**Step {i+1}:** ```\n{output}\n```"
             
-            asyncio.run_coroutine_threadsafe(ctx.send(summary + results_text), interface.loop)
+            await ctx.send(summary + results_text)
         except Exception as e:
-            asyncio.run_coroutine_threadsafe(ctx.send(f"❌ **Planning Failed:** {str(e)}"), interface.loop)
-
-    threading.Thread(target=run_planned).start()
+            await ctx.send(f"❌ **Planning Failed:** {str(e)}")
 
 @start_plan_task.error
 async def plan_error(ctx, error):

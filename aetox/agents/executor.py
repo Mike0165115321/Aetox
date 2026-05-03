@@ -70,12 +70,12 @@ class ExecutorAgent:
             self.logger.info(f"Analyzing Step {step_id}: {description}")
             
             # 1. Try LLM Extraction
-            extraction = self._extract_with_llm(step, memory_context)
+            extraction = self.extract_action(step, memory_context)
             
             source = "LLM"
             if not extraction or extraction.get("confidence", 0) < 0.7:
                 self.logger.warning(f"LLM extraction failed or low confidence. Falling back to Heuristics.")
-                extraction = self._extract_with_heuristics(step, memory_context)
+                extraction = self.extract_with_heuristics(step, memory_context)
                 source = "Heuristic"
             
             action = extraction.get("action", "unknown")
@@ -115,7 +115,7 @@ class ExecutorAgent:
                 "output": None
             }
 
-    def _extract_with_llm(self, step: Dict[str, Any], memory_context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def extract_action(self, step: Dict[str, Any], memory_context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         try:
             prompt_input = f"Task Step: {json.dumps(step)}\n\nAvailable Context: {json.dumps(memory_context.get('context', {}))}"
             messages = self.engine.build_chat_messages(
@@ -137,7 +137,7 @@ class ExecutorAgent:
             self.logger.error(f"LLM Extraction Error: {e}")
             return None
 
-    def _extract_with_heuristics(self, step: Dict[str, Any], memory_context: Dict[str, Any]) -> Dict[str, Any]:
+    def extract_with_heuristics(self, step: Dict[str, Any], memory_context: Dict[str, Any]) -> Dict[str, Any]:
         tool_name = step.get("tool", "").lower()
         description = step.get("description", "No description").lower()
         

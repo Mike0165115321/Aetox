@@ -30,9 +30,9 @@ class Dispatcher:
         # 1. Extract parameters using Executor's LLM
         # Optimization: Pass minimal context for speed
         minimal_context = {"context": {}} 
-        extraction = self.executor._extract_with_llm({"description": goal}, minimal_context)
+        extraction = self.executor.extract_action({"description": goal}, minimal_context)
 
-        if not extraction or extraction.get("confidence", 0) < 0.6:
+        if not extraction or extraction.get("confidence", 0) < 0.6 or extraction.get("tool") == "other" or extraction.get("action") == "unknown":
             # Smart Suggestion logic will be handled by the interface, 
             # but we return a clear error here.
             return {
