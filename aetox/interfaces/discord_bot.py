@@ -4,9 +4,28 @@ import logging
 import asyncio
 import threading
 import json
+import psutil
 from discord.ext import commands
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor
+
+# --- SINGLE INSTANCE LOCK ---
+def kill_other_instances():
+    current_pid = os.getpid()
+    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+        try:
+            # Check if it's a python process running the same bot script
+            cmdline = proc.info.get('cmdline')
+            if proc.info['pid'] != current_pid and cmdline:
+                cmd_str = ' '.join(cmdline).lower()
+                if 'aetox.interfaces.discord_bot' in cmd_str:
+                    print(f"--- Killing ghost bot (PID: {proc.info['pid']}) ---")
+                    proc.kill()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+
+kill_other_instances()
+# ----------------------------
 
 from aetox.core.ollama_client import OllamaClient
 from aetox.core.prompt_engine import PromptEngine

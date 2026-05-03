@@ -1,5 +1,6 @@
 import logging
 import fitz  # PyMuPDF
+import docx  # python-docx
 from typing import Dict, Any
 from pathlib import Path
 from aetox.tools.base import BaseTool
@@ -72,6 +73,13 @@ class AetoxVision(BaseTool):
                 with open(p, "r", encoding="utf-8", errors="replace") as f:
                     text_content = f.read(5000) # Read first 5k characters
                 source_type = "Text"
+
+            # 3. Handle Word documents
+            elif ext == ".docx":
+                doc = docx.Document(str(p))
+                full_text = [para.text for para in doc.paragraphs]
+                text_content = "\n".join(full_text)
+                source_type = "Word"
 
             else:
                 return {"status": "failure", "error": f"ขออภัยครับ ตอนนี้ผมยังไม่อ่านไฟล์นามสกุล {ext} ไม่ได้"}

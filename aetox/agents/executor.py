@@ -42,16 +42,28 @@ class ExecutorAgent:
         for i, h in enumerate(self.history):
             history_str += f"{i+1}. ถาม: {h['q']} -> ตอบ: {h['a']}\n"
 
-        # System prompt with 3-step history and memory context
+        # High-Precision Extraction Prompt
         extraction_prompt = (
             "คุณคือผู้ช่วยสกัดคำสั่ง (Intent Extractor) สำหรับ AetoxOS\n"
-            "เครื่องมือที่มี: master_file_manager (organize), aetox_vision (read), chat (reply)\n\n"
+            "กฎการเลือกเครื่องมือ:\n"
+            "1. aetox_vision: ใช้เมื่อต้องการ 'ดู' (view/list), 'อ่าน' (read), 'สรุป' (summarize), 'แสดงไฟล์'\n"
+            "   - คำสำคัญ: ดู, มีอะไรบ้าง, สรุปที, อ่านไฟล์, ลิสต์ไฟล์\n"
+            "2. master_file_manager: ใช้เมื่อต้องการ 'จัดระเบียบ' (organize), 'แยกหมวดหมู่', 'ย้ายไฟล์เข้าโฟลเดอร์'\n"
+            "   - คำสำคัญ: จัดระเบียบ, จัดตำแหน่ง, แยกไฟล์, จัดเข้าที่\n"
+            "3. chat: ใช้สำหรับการพูดคุยทั่วไป\n\n"
             f"ประวัติ 3 ครั้งล่าสุด:\n{history_str or 'ไม่มี'}\n"
             f"ความจำล่าสุด (Path): '{self.last_path or 'ยังไม่มี'}'\n\n"
             "กฎเหล็ก:\n"
             "- รวมพาธจากความจำล่าสุดถ้าผู้ใช้ระบุแค่ชื่อไฟล์\n"
-            "- ห้ามซ้ำคำเวลาต่อพาธ\n"
-            "โปรดตอบกลับเป็น JSON เท่านั้น: {tool, action, params, confidence}\n\n"
+            "- ห้ามซ้ำคำเวลาต่อพาธ (เช่น memory + '\\' + filename)\n"
+            "- แยกพาธไฟล์ (Path) ออกจากคำสั่งภาษาไทยให้ชัดเจน\n\n"
+            "โปรดตอบกลับเป็น JSON เท่านั้น:\n"
+            "{\n"
+            "  \"tool\": \"ชื่อเครื่องมือ\",\n"
+            "  \"action\": \"ชื่อคำสั่ง\",\n"
+            "  \"params\": {\"path\": \"ที่อยู่ไฟล์/โฟลเดอร์\", \"message\": \"ข้อความแชท\"},\n"
+            "  \"confidence\": 0.0-1.0\n"
+            "}\n\n"
             f"คำสั่งผู้ใช้: \"{description}\""
         )
         
