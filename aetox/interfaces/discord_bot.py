@@ -81,6 +81,7 @@ async def on_ready():
     logger.info(f"AetoxOS Discord Bot connected as {bot.user}")
 
 @bot.command(name="task")
+@commands.cooldown(1, 5, commands.BucketType.user)
 async def start_task(ctx: commands.Context, *, goal: str):
     """Direct execution lane - No planning, just do it."""
     if str(ctx.author.id) not in ALLOWED_USERS and "*" not in ALLOWED_USERS:
@@ -130,7 +131,13 @@ async def start_task(ctx: commands.Context, *, goal: str):
 
     threading.Thread(target=run_direct).start()
 
+@start_task.error
+async def task_error(ctx, error):
+    if isinstance(error, commands.CommandOnCooldown):
+        return  # Silently ignore cooldown errors
+
 @bot.command(name="plan")
+@commands.cooldown(1, 5, commands.BucketType.user)
 async def start_plan_task(ctx: commands.Context, *, goal: str):
     """Planned execution lane - Complex tasks with multi-step plans."""
     if str(ctx.author.id) not in ALLOWED_USERS and "*" not in ALLOWED_USERS:
@@ -174,6 +181,11 @@ async def start_plan_task(ctx: commands.Context, *, goal: str):
             asyncio.run_coroutine_threadsafe(ctx.send(f"❌ **Planning Failed:** {str(e)}"), interface.loop)
 
     threading.Thread(target=run_planned).start()
+
+@start_plan_task.error
+async def plan_error(ctx, error):
+    if isinstance(error, commands.CommandOnCooldown):
+        return  # Silently ignore cooldown errors
 
 @bot.command(name="setup")
 async def setup_server(ctx: commands.Context):
