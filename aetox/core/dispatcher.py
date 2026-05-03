@@ -17,6 +17,47 @@ class Dispatcher:
         self.memory_manager = MemoryManager()
         self.progress_callback: Optional[Callable[[str], None]] = None
 
+    def run_direct_step(self, goal: str) -> Dict[str, Any]:
+        """
+        Executes a single step directly based on a user goal.
+        Skips planning and uses optimized context.
+        """
+        self.logger.info(f"Running direct step for goal: {goal}")
+        self.logger.info(f"Executor methods: {[m for m in dir(self.executor) if not m.startswith('__')]}")
+        
+        if self.progress_callback:
+            self.progress_callback(f"[TASK] Analyzing direct action: {goal}")
+
+        # 1. Extract parameters using Executor's LLM
+        # Optimization: Pass minimal context for speed
+        minimal_context = {"context": {}} 
+        extraction = self.executor._extract_with_llm({"description": goal}, minimal_context)
+
+        if not extraction or extraction.get("confidence", 0) < 0.6:
+            # Smart Suggestion logic will be handled by the interface, 
+            # but we return a clear error here.
+            return {
+                "status": "failure",
+                "error": "Task too complex for direct execution or extraction failed.",
+                "needs_planning": True
+            }
+
+        # 2. Execute the action
+        if self.progress_callback:
+            self.progress_callback(f"🛠️ Executing: {extraction.get('action')} using {extraction.get('tool')}")
+            
+        result = self.executor.run_action(extraction, minimal_context)
+        
+        # 3. Update memory
+        self.memory.add_step_result(
+            step_id=1,
+            result=result.get("output"),
+            status=result.get("status", "success"),
+            error=result.get("error")
+        )
+        
+        return result
+
     def run_plan(self, plan: Dict[str, Any]) -> Dict[str, Any]:
         plan_id = plan.get("plan_id", "unknown")
         steps = plan.get("steps", [])

@@ -15,6 +15,8 @@ class PromptEngine:
             "- discord_manager: For managing Discord server structure.\n"
             "- code_runner: For executing Python or PowerShell scripts (calculations, data processing).\n"
             "- data_analyzer: For reading PDFs and analyzing structured data (CSV, Excel). Use for summarizing documents or getting table stats.\n"
+            "- system_monitor: For checking CPU, RAM, Disk usage, and active processes.\n"
+            "- network_connector: For fetching data from APIs or URLs (restricted to whitelisted domains).\n"
             "You must respond ONLY in valid JSON format."
         ),
         "executor": (

@@ -5,6 +5,8 @@ from typing import Dict, Any, Optional
 from aetox.tools.file_manager import FileManagerTool
 from aetox.tools.code_runner import CodeRunnerTool
 from aetox.tools.data_analyzer import DataAnalyzerTool
+from aetox.tools.system_monitor import SystemMonitorTool
+from aetox.tools.network_connector import NetworkConnectorTool
 from aetox.core.ollama_client import OllamaClient
 from aetox.core.prompt_engine import PromptEngine
 from aetox.safety.permission import PermissionManager
@@ -18,13 +20,14 @@ class ExecutorAgent:
     Includes safety and permission checks.
     """
     EXTRACTION_SCHEMA = {
-        "tool": "file_manager | discord_manager | code_runner | data_analyzer | other",
-        "action": "list_files | read_file | write_file | create_category | create_channel | run_python | run_powershell | read_pdf | analyze_table | get_column_stats",
+        "tool": "file_manager | discord_manager | code_runner | data_analyzer | system_monitor | network_connector | other",
+        "action": "list_files | read_file | write_file | create_category | create_channel | run_python | run_powershell | read_pdf | analyze_table | get_stats | get_os_info | get_top_processes | get_data",
         "params": {
             "path": "string (for files)",
-            "code": "string (for code_runner)",
-            "column_name": "string (for data_analyzer)",
-            "name": "string (for discord)",
+            "code": "string (for code)",
+            "url": "string (for network)",
+            "column_name": "string",
+            "name": "string",
             "guild_id": "integer",
             "content": "string"
         },
@@ -43,6 +46,8 @@ class ExecutorAgent:
         self.discord_tool = discord_tool
         self.code_runner = CodeRunnerTool()
         self.data_analyzer = DataAnalyzerTool()
+        self.system_monitor = SystemMonitorTool()
+        self.network_connector = NetworkConnectorTool()
         self.permission_manager = PermissionManager()
         self.memory_manager = MemoryManager()
         self.client = client or OllamaClient()
@@ -84,7 +89,7 @@ class ExecutorAgent:
             self.logger.info(f"MEDIUM risk action '{action}' logged.")
 
         # 3. Execute based on extraction
-        return self._run_extraction(extraction, step_id, memory_context)
+        return self.run_action(extraction, memory_context)
 
     def _extract_with_llm(self, step: Dict[str, Any], memory_context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         try:
@@ -127,10 +132,14 @@ class ExecutorAgent:
             
         return {"tool": "unknown", "action": "unknown", "params": {}}
 
-    def _run_extraction(self, extraction: Dict[str, Any], step_id: int, memory_context: Dict[str, Any]) -> Dict[str, Any]:
+    def run_action(self, extraction: Dict[str, Any], memory_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Executes a specific action based on the provided extraction parameters.
+        """
         tool = extraction.get("tool", "").lower()
         action = extraction.get("action", "").lower()
         params = extraction.get("params", {})
+        memory_context = memory_context or {"context": {}}
 
         try:
             # Flexible mapping: check action first, then tool/action combination
@@ -229,6 +238,39 @@ class ExecutorAgent:
                     col = params.get("column_name")
                     output = self.data_analyzer.get_column_stats(path, col)
                 
+                return {"status": "success", "output": output}
+
+            elif tool == "system_monitor" or action in ["get_stats", "get_os_info", "get_top_processes"]:
+                if action == "get_stats":
+                    output = self.system_monitor.get_stats()
+                elif action == "get_os_info":
+                    output = self.system_monitor.get_os_info()
+                elif action == "get_top_processes":
+                    limit = params.get("limit", 5)
+                    output = self.system_monitor.get_top_processes(int(limit))
+                return {"status": "success", "output": output}
+
+            elif tool == "network_connector" or action == "get_data":
+                url = params.get("url")
+                if not url:
+                    return {"status": "failure", "error": "No URL provided.", "output": None}
+                
+                # Check for async loop (similar to Discord tool)
+                loop = None
+                try:
+                    loop = asyncio.get_event_loop()
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+
+                if self.discord_tool and self.discord_tool.bot.loop:
+                    loop = self.discord_tool.bot.loop
+
+                future = asyncio.run_coroutine_threadsafe(
+                    self.network_connector.get_data(url, params.get("params")), 
+                    loop
+                )
+                output = future.result()
                 return {"status": "success", "output": output}
 
             return {
