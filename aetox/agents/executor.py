@@ -3,42 +3,73 @@ from typing import Dict, List, Any, Optional
 from aetox.core.ollama_client import OllamaClient
 from aetox.core.prompt_engine import PromptEngine
 from aetox.safety.permission import PermissionManager
+from aetox.tools.file_manager import MasterFileManager
 
 logger = logging.getLogger("aetox.agents.executor")
 
 class ExecutorAgent:
     """
-    Executor Agent - Clean Slate Edition.
-    All legacy tools have been removed. Waiting for new tool designs.
+    Executor Agent - Master Edition.
+    Equipped with the MasterFileManager.
     """
     def __init__(self):
         self.client = OllamaClient()
         self.engine = PromptEngine()
         self.permission_manager = PermissionManager()
-        # All tools have been disconnected.
+        self.file_manager = MasterFileManager()
 
     def extract_action(self, task_step: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        Extracts intent. If it's just a conversation, returns 'chat'.
+        Extracts intent. Detects if it's an organization task or just chat.
         """
         description = task_step.get("description", "").lower()
-        # Heuristic for simple chat
-        if any(k in description for k in ["สวัสดี", "hello", "hi", "หวัดดี", "เป็นไงบ้าง"]):
-            return {"tool": "chat", "action": "reply", "params": {"message": description}, "confidence": 1.0}
+        
+        # 1. Organization Heuristic (Master Tool)
+        if any(k in description for k in ["จัดระเบียบ", "จัดโครงสร้าง", "organize"]):
+            # Find a path in the description (naive check)
+            path = "."
+            if ":" in description: # Likely contains a path like E:\Mike
+                import re
+                path_match = re.search(r'[a-zA-Z]:\\[^ ]*', description)
+                if path_match:
+                    path = path_match.group(0)
             
-        return {"tool": "none", "action": "none", "params": {}, "confidence": 0.0}
+            return {
+                "tool": "master_file_manager", 
+                "action": "organize", 
+                "params": {"path": path}, 
+                "confidence": 1.0
+            }
+        
+        # 2. Default to chat
+        return {
+            "tool": "chat", 
+            "action": "reply", 
+            "params": {"message": description}, 
+            "confidence": 1.0
+        }
 
     def run_action(self, extraction: Dict[str, Any], memory_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        Handles 'chat' or reports 'no tools'.
+        Executes tools based on extraction.
         """
         tool = extraction.get("tool")
+        action = extraction.get("action")
+        params = extraction.get("params", {})
+
+        if tool == "master_file_manager":
+            # High-risk: Ask for approval
+            if not self.permission_manager.request_permission("organize", f"จัดระเบียบไฟล์ในตำแหน่ง: {params.get('path')}"):
+                return {"status": "failure", "error": "การอนุมัติถูกปฏิเสธโดยผู้ใช้ครับ"}
+            
+            return self.file_manager.execute(params)
+
         if tool == "chat":
             # Real AI Chat response with strong persona
             system_prompt = (
                 "คุณคือ AetoxOS ระบบปฏิบัติการอัจฉริยะที่พัฒนาโดยทีม Aetox "
                 "คุณมีบุคลิกที่เป็นมิตร มืออาชีพ และพร้อมช่วยเหลือผู้ใช้เสมอ "
-                "คุณคือ AetoxOS เท่านั้น! ตอบกลับเป็นภาษาที่ผู้ใช้ถามที่สุภาพและเป็นธรรมชาติ"
+                "คุณคือ AetoxOS เท่านั้น! ตอบกลับเป็นภาษาไทยเท่านั้นที่สุภาพและเป็นธรรมชาติ"
             )
             messages = [
                 {"role": "system", "content": system_prompt},
@@ -67,7 +98,7 @@ class ExecutorAgent:
         system_prompt = (
             "คุณคือ AetoxOS ระบบปฏิบัติการอัจฉริยะที่พัฒนาโดยทีม Aetox "
             "คุณมีบุคลิกที่เป็นมิตร มืออาชีพ และพร้อมช่วยเหลือผู้ใช้เสมอ "
-            "คุณคือ AetoxOS เท่านั้น! ตอบกลับเป็นภาษาที่ผู้ใช้ถามที่สุภาพและเป็นธรรมชาติ"
+            "คุณคือ AetoxOS เท่านั้น! ตอบกลับเป็นภาษาไทยเท่านั้นที่สุภาพและเป็นธรรมชาติ"
         )
         messages = [
             {"role": "system", "content": system_prompt},
