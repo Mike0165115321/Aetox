@@ -80,23 +80,33 @@ class DiscordInterface:
 async def on_ready():
     logger.info(f"AetoxOS Discord Bot connected as {bot.user}")
 
-@bot.command(name="task")
-@commands.cooldown(1, 5, commands.BucketType.user)
-async def start_task(ctx: commands.Context, *, goal: str):
-    """Direct execution lane - No planning, just do it."""
-    if str(ctx.author.id) not in ALLOWED_USERS and "*" not in ALLOWED_USERS:
+@bot.event
+async def on_message(message):
+    if message.author == bot.user:
         return
 
-    # 0. Greeting Classifier
-    GREETING_PATTERNS = ["สวัสดี", "hello", "hi", "หวัดดี", "ดีครับ"]
-    if any(p in goal.lower() for p in GREETING_PATTERNS):
-        await ctx.send(
-            "👋 สวัสดีครับ! ผม AetoxOS ยินดีรับใช้ครับ\n"
-            "• ใช้ `!task [งาน]` สำหรับงานด่วนขั้นตอนเดียว\n"
-            "• ใช้ `!plan [งาน]` สำหรับงานที่ซับซ้อนหลายขั้นตอนครับ"
-        )
+    # If it's a command (starts with !), process it normally
+    if message.content.startswith('!'):
+        await bot.process_commands(message)
         return
 
+    # Natural Chat Mode: Treat any message as a Direct Task goal
+    # Only allow from authorized users
+    if str(message.author.id) not in ALLOWED_USERS and "*" not in ALLOWED_USERS:
+        return
+
+    # Create a context-like object for the handler
+    ctx = await bot.get_context(message)
+    goal = message.content.strip()
+    
+    if not goal:
+        return
+
+    # Use the same logic as !task
+    await handle_direct_task(ctx, goal)
+
+async def handle_direct_task(ctx, goal):
+    """Refactored logic to handle both !task and natural chat."""
     # 1. Setup (Quiet for Direct Tasks)
     client = OllamaClient()
     engine = PromptEngine()
@@ -129,6 +139,14 @@ async def start_task(ctx: commands.Context, *, goal: str):
             await ctx.send(summary)
         except Exception as e:
             await ctx.send(f"❌ **Direct Task System Error:** {str(e)}")
+
+@bot.command(name="task")
+@commands.cooldown(1, 5, commands.BucketType.user)
+async def start_task(ctx: commands.Context, *, goal: str):
+    """Direct execution lane - No planning, just do it."""
+    if str(ctx.author.id) not in ALLOWED_USERS and "*" not in ALLOWED_USERS:
+        return
+    await handle_direct_task(ctx, goal)
 
 @start_task.error
 async def task_error(ctx, error):
