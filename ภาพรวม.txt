@@ -1,6 +1,6 @@
 ┌─────────────────────────────────────┐
 │         Interface Layer             │
-│     Python: Telegram / CLI / API    │
+│     Python: Discord / CLI / API    │
 └──────────────┬──────────────────────┘
                ↓
 ┌─────────────────────────────────────┐
@@ -20,3 +20,4 @@
 │   Rust: Sandbox, Permission Check   │
 │   Python: Rollback Logic            │
 └─────────────────────────────────────┘
+

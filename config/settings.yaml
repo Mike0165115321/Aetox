@@ -1,0 +1,7 @@
+workspace:
+  root: "C:/AetoxOS_Workspace"
+  inbox: "C:/AetoxOS_Workspace/inbox"
+  outbox: "C:/AetoxOS_Workspace/outbox"
+  projects: "C:/AetoxOS_Workspace/projects"
+  temp: "C:/AetoxOS_Workspace/temp"
+  archive: "C:/AetoxOS_Workspace/archive"

@@ -1,6 +1,7 @@
 allowed_paths:
   - "."  # Current project directory
-  - "C:/Users/{username}/Documents/AetoxOS_Data" # Example data folder
+  - "C:/AetoxOS_Workspace"
+  - "C:/Users/{username}/Documents/AetoxOS_Data"
 
 forbidden_paths:
   - "C:/Windows"

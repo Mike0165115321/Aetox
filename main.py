@@ -1,5 +1,7 @@
 import logging
 import json
+import os
+import yaml
 from aetox.core.ollama_client import OllamaClient
 from aetox.core.prompt_engine import PromptEngine
 from aetox.core.planner import Planner
@@ -11,18 +13,40 @@ from aetox.memory.working import WorkingMemory
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("aetox.main")
 
+def init_workspace():
+    """Initializes the workspace folders based on settings.yaml."""
+    settings_path = "config/settings.yaml"
+    if not os.path.exists(settings_path):
+        logger.warning(f"Settings file {settings_path} not found. Skipping workspace init.")
+        return
+
+    try:
+        with open(settings_path, 'r', encoding='utf-8') as f:
+            settings = yaml.safe_load(f)
+            workspace = settings.get('workspace', {})
+            
+            for key, path in workspace.items():
+                if not os.path.exists(path):
+                    os.makedirs(path, exist_ok=True)
+                    logger.info(f"Created workspace folder: {path} ({key})")
+    except Exception as e:
+        logger.error(f"Failed to initialize workspace: {e}")
+
 def run_aetox_mvp():
-    logger.info("--- AetoxOS Smart Executor Test (Phase 1, Step 4) ---")
+    logger.info("--- AetoxOS System Startup ---")
+    
+    # 0. Initialize Workspace
+    init_workspace()
     
     # 1. Initialize Foundation
     client = OllamaClient()
     engine = PromptEngine()
     
     if not client.check_health():
-        logger.error("Ollama not found. Test aborted.")
+        logger.error("Ollama not found. Please ensure Ollama is running at localhost:11434")
         return
 
-    # 2. Receive User Goal
+    # 2. Receive User Goal (CLI Demo)
     user_goal = "List the files in the current directory and create a new file named 'summary.txt' with the count."
     
     # 3. Plan
@@ -35,10 +59,9 @@ def run_aetox_mvp():
         logger.error(f"Planning failed: {e}")
         return
 
-    # 4. Initialize Memory & Dispatcher (Passing engine/client for Smart Executor)
+    # 4. Initialize Memory & Dispatcher
     memory = WorkingMemory(user_goal)
     dispatcher = Dispatcher(memory)
-    # Inject client/engine into executor if needed (currently Dispatcher creates its own, let's fix that)
     dispatcher.executor = ExecutorAgent(client=client, engine=engine)
     
     # 5. Run Execution Loop
@@ -47,7 +70,6 @@ def run_aetox_mvp():
     
     # 6. Show Final Result
     print("\n[FINAL MEMORY STATE]")
-    # Remove large fields for cleaner output if necessary, but here we'll show all
     print(json.dumps(final_result, indent=2, ensure_ascii=False))
 
 if __name__ == "__main__":

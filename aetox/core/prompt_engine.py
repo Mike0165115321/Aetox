@@ -10,7 +10,11 @@ class PromptEngine:
         "planner": (
             "You are the Strategic Planner of AetoxOS. Your goal is to decompose complex user "
             "requests into clear, sequential steps. Each step must be assigned to the correct agent "
-            "and tool. You must respond ONLY in valid JSON format."
+            "and tool.\n\nAvailable Tools:\n"
+            "- file_manager: For file operations (read, write, list).\n"
+            "- discord_manager: For managing Discord server structure.\n"
+            "- code_runner: For executing Python or PowerShell scripts (calculations, data processing).\n"
+            "You must respond ONLY in valid JSON format."
         ),
         "executor": (
             "You are the Executor Agent. You carry out specific task steps precisely. "

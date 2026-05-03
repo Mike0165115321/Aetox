@@ -40,17 +40,22 @@ class Dispatcher:
                 result = self.executor.execute_step(step, self.memory.__dict__)
                 
                 # 2. Evaluate with Critic
+                if self.progress_callback:
+                    self.progress_callback(f"🔍 **Critic (QC)** is evaluating Step {step_id}...")
+                
                 eval_result = self.critic.evaluate(step, result, self.memory.context)
                 verdict = eval_result.get("verdict", "pass")
                 score = eval_result.get("score", 1.0)
                 
                 if verdict == "pass" or score >= 0.7:
+                    if self.progress_callback:
+                        self.progress_callback(f"✨ Step {step_id} passed quality check! (Score: {score})")
                     step_passed = True
                 elif verdict == "retry" and retry_count < max_retries:
                     retry_count += 1
                     self.logger.warning(f"Critic requested RETRY for Step {step_id} (Attempt {retry_count}). Issues: {eval_result.get('issues')}")
                     if self.progress_callback:
-                        self.progress_callback(f"⚠️ Critic flagged issues, retrying... ({retry_count}/{max_retries})")
+                        self.progress_callback(f"🔄 **Retry needed!** Attempt {retry_count}/{max_retries}. Issues: {', '.join(eval_result.get('issues', []))}")
                 else:
                     # Escalate or too many retries
                     self.logger.error(f"Step {step_id} FAILED quality check. Verdict: {verdict}")

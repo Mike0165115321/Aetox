@@ -3,6 +3,7 @@ import json
 import asyncio
 from typing import Dict, Any, Optional
 from aetox.tools.file_manager import FileManagerTool
+from aetox.tools.code_runner import CodeRunnerTool
 from aetox.core.ollama_client import OllamaClient
 from aetox.core.prompt_engine import PromptEngine
 from aetox.safety.permission import PermissionManager
@@ -16,14 +17,14 @@ class ExecutorAgent:
     Includes safety and permission checks.
     """
     EXTRACTION_SCHEMA = {
-        "tool": "file_manager | discord_manager | other",
-        "action": "list_files | read_file | write_file | create_category | create_channel",
+        "tool": "file_manager | discord_manager | code_runner | other",
+        "action": "list_files | read_file | write_file | create_category | create_channel | run_python | run_powershell",
         "params": {
-            "path": "string (for file_manager)",
-            "name": "string (for discord_manager)",
-            "category_id": "integer (optional for discord_manager)",
-            "guild_id": "integer (required for discord_manager)",
-            "content": "string (for write_file)"
+            "path": "string (for files)",
+            "code": "string (for code_runner)",
+            "name": "string (for discord)",
+            "guild_id": "integer",
+            "content": "string"
         },
         "confidence": "float (0.0 to 1.0)"
     }
@@ -38,6 +39,7 @@ class ExecutorAgent:
         self.logger = logging.getLogger("aetox.agents.executor")
         self.file_manager = FileManagerTool(allowed_paths=allowed_paths)
         self.discord_tool = discord_tool
+        self.code_runner = CodeRunnerTool()
         self.permission_manager = PermissionManager()
         self.memory_manager = MemoryManager()
         self.client = client or OllamaClient()
@@ -180,6 +182,36 @@ class ExecutorAgent:
                     )
                     output = future.result()
                     return {"status": "success", "output": output}
+
+            elif tool == "code_runner" or action in ["run_python", "run_powershell"]:
+                code = params.get("code")
+                if not code:
+                    return {"status": "failure", "error": "No code provided.", "output": None}
+
+                # High risk action check
+                if not self.permission_manager.request_permission("run_code", f"Executing {action} script."):
+                    return {"status": "failure", "error": "Permission denied by user.", "output": None}
+
+                if action == "run_python":
+                    result = self.code_runner.run_python(code)
+                else:
+                    result = self.code_runner.run_powershell(code)
+                
+                if result["status"] == "success":
+                    stdout = result.get("stdout", "")
+                    stderr = result.get("stderr", "")
+                    execution_time = result.get("execution_time", 0)
+                    
+                    combined_output = f"Stdout:\n{stdout}\n\nStderr:\n{stderr}\n\nExecution Time: {execution_time}s"
+                    final_output = self.code_runner.handle_long_output(combined_output, action)
+                    
+                    return {
+                        "status": "success",
+                        "output": final_output,
+                        "memory_updates": {"last_execution_time": execution_time}
+                    }
+                else:
+                    return {"status": "failure", "error": result.get("error", "Unknown error"), "output": None}
 
             return {
                 "status": "failure", 
