@@ -14,7 +14,8 @@ from aetox.core.planner import Planner
 from aetox.core.dispatcher import Dispatcher
 from aetox.memory.working import WorkingMemory
 from aetox.memory.manager import MemoryManager
-from aetox.tools.discord_manager import DiscordTool
+from aetox.memory.working import WorkingMemory
+from aetox.memory.manager import MemoryManager
 
 # Load environment variables
 load_dotenv()
@@ -44,7 +45,7 @@ class DiscordInterface:
     def send_progress(self, message: str):
         """Callback for Dispatcher progress updates."""
         asyncio.run_coroutine_threadsafe(
-            self.context.send(f"**Progress:** {message}"), 
+            self.context.send(f"⏳ **[ความคืบหน้า]:** {message}"), 
             self.loop
         )
 
@@ -58,10 +59,10 @@ class DiscordInterface:
 
     async def _ask_discord(self, action: str, details: str) -> bool:
         msg = await self.context.send(
-            f"⚠️ **SECURITY APPROVAL REQUIRED**\n"
-            f"**Action:** `{action}`\n"
-            f"**Details:** `{details}`\n"
-            f"Please react with ✅ to Approve or ❌ to Deny."
+            f"⚠️ **การอนุมัติความปลอดภัย**\n"
+            f"**การดำเนินการ:** `{action}`\n"
+            f"**รายละเอียด:** `{details}`\n"
+            f"โปรดตอบสนองด้วย ✅ เพื่อ **'อนุมัติ'** หรือ ❌ เพื่อ **'ปฏิเสธ'**"
         )
         await msg.add_reaction("✅")
         await msg.add_reaction("❌")
@@ -70,10 +71,10 @@ class DiscordInterface:
             return user == self.context.author and str(reaction.emoji) in ["✅", "❌"] and reaction.message.id == msg.id
 
         try:
-            reaction, user = await bot.wait_for("reaction_add", timeout=60.0, check=check)
+            reaction, user = await bot.wait_for("reaction_add", timeout=120.0, check=check)
             return str(reaction.emoji) == "✅"
         except asyncio.TimeoutError:
-            await self.context.send("⌛ Permission request timed out. Denying for safety.")
+            await self.context.send("⏳ **หมดเวลาการรอคอย:** ระบบปฏิเสธการดำเนินการเพื่อความปลอดภัยครับ")
             return False
 
 @bot.event
@@ -113,11 +114,9 @@ async def handle_direct_task(ctx, goal):
     memory = WorkingMemory(goal)
     dispatcher = Dispatcher(memory)
     interface = DiscordInterface(ctx)
-    discord_tool = DiscordTool(bot)
 
-    dispatcher.progress_callback = None # Quiet mode
+    dispatcher.progress_callback = None # Quiet
     dispatcher.executor.permission_manager.approval_callback = interface.request_approval
-    dispatcher.executor.discord_tool = discord_tool
     memory.update_context({"guild_id": ctx.guild.id if ctx.guild else None})
 
     # 2. Execute with Typing Status
@@ -126,19 +125,19 @@ async def handle_direct_task(ctx, goal):
             result = await asyncio.to_thread(dispatcher.run_direct_step, goal)
             
             if result.get("status") == "failure":
-                error_msg = result.get("error", "Unknown error")
+                error_msg = result.get("error", "เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ")
                 if result.get("needs_planning") or "too complex" in error_msg.lower():
-                    await ctx.send(f"❌ **Direct Task Failed:** {error_msg}\n💡 *งานนี้ดูซับซ้อนเกินไป ลองใช้ `!plan` ดูไหมครับ?*")
+                    await ctx.send(f"❌ **ดำเนินการไม่สำเร็จ:** {error_msg}\n💡 *งานนี้ดูซับซ้อนเกินไป ลองใช้ `!plan` ดูไหมครับ?*")
                 else:
-                    await ctx.send(f"❌ **Direct Task Failed:** {error_msg}")
+                    await ctx.send(f"❌ **ดำเนินการไม่สำเร็จ:** {error_msg}")
                 return
 
-            output = result.get("output", "Done")
+            output = result.get("output", "เสร็จสิ้น")
             if isinstance(output, str) and len(output) > 1500: output = output[:1500] + "..."
-            summary = f"🏁 **Direct Task Completed!**\n**Result:**\n```\n{output}\n```"
+            summary = f"🏁 **การดำเนินการเสร็จสมบูรณ์!**\n**ผลลัพธ์:**\n```\n{output}\n```"
             await ctx.send(summary)
         except Exception as e:
-            await ctx.send(f"❌ **Direct Task System Error:** {str(e)}")
+            await ctx.send(f"❌ **ระบบขัดข้อง:** {str(e)}")
 
 @bot.command(name="task")
 @commands.cooldown(1, 5, commands.BucketType.user)
@@ -179,23 +178,23 @@ async def start_plan_task(ctx: commands.Context, *, goal: str):
         try:
             # Plan in background
             plan = await asyncio.to_thread(planner.create_plan, goal)
-            await ctx.send(f"✅ **Plan Created:** {len(plan.get('steps', []))} steps. Executing...")
+            await ctx.send(f"✅ **สร้างแผนงานแล้ว:** ตรวจพบ {len(plan.get('steps', []))} ขั้นตอนที่ต้องดำเนินการ...")
             
             # Execute plan
             await asyncio.to_thread(dispatcher.run_plan, plan)
             
             final_context = memory.get_full_context()
             step_results = final_context.get("step_results", [])
-            summary = f"🏁 **Planned Task Completed!**\n**Goal:** {goal}\n"
+            summary = f"🏁 **ปิดโปรเจกต์เสร็จสมบูรณ์!**\n**เป้าหมาย:** {goal}\n"
             results_text = ""
             for i, res in enumerate(step_results):
-                output = res.get("output", "Done")
+                output = res.get("output", "เรียบร้อย")
                 if isinstance(output, str) and len(output) > 500: output = output[:500] + "..."
-                results_text += f"\n**Step {i+1}:** ```\n{output}\n```"
+                results_text += f"\n**ขั้นตอนที่ {i+1}:** ```\n{output}\n```"
             
             await ctx.send(summary + results_text)
         except Exception as e:
-            await ctx.send(f"❌ **Planning Failed:** {str(e)}")
+            await ctx.send(f"❌ **การวางแผนผิดพลาด:** {str(e)}")
 
 @start_plan_task.error
 async def plan_error(ctx, error):
