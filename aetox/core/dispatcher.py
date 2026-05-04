@@ -22,9 +22,9 @@ class Dispatcher:
         self.logger.info(f"Running direct step (Async) for goal: {goal}")
         
         if self.progress_callback:
-            self.progress_callback(f"[TASK] Analyzing: {goal}")
+            await self.progress_callback(f"[TASK] Analyzing: {goal}")
 
-        # 1. Extract intent (Async)
+        # 1. Extract intent
         minimal_context = {"context": {}} 
         extraction = await self.executor.extract_action({"description": goal}, minimal_context)
 
@@ -35,9 +35,9 @@ class Dispatcher:
                 "needs_planning": True
             }
 
-        # 2. Execute (Async wrapper)
+        # 2. Execute
         if self.progress_callback:
-            self.progress_callback(f"[EXEC] Using {extraction.get('tool')}")
+            await self.progress_callback(f"[EXEC] Using {extraction.get('tool')} ({extraction.get('action')})")
             
         result = await self.executor.run_action(extraction, minimal_context)
         
@@ -53,7 +53,6 @@ class Dispatcher:
 
     async def run_direct_chat_stream(self, goal: str):
         """Asynchronous stream generator for pure chat."""
-        # Check intent (Async)
         minimal_context = {"context": {}} 
         extraction = await self.executor.extract_action({"description": goal}, minimal_context)
         
@@ -64,7 +63,7 @@ class Dispatcher:
             yield "__NOT_CHAT__"
 
     async def run_plan(self, plan: Dict[str, Any]) -> Dict[str, Any]:
-        """Executes a multi-step plan asynchronously."""
+        """Executes a multi-step plan asynchronously with full intent extraction for each step."""
         plan_id = plan.get("plan_id", "unknown")
         steps = plan.get("steps", [])
         
@@ -76,21 +75,37 @@ class Dispatcher:
             description = step.get("description")
             
             if self.progress_callback:
-                self.progress_callback(f"[PLAN] Step {step_id}: {description}")
+                await self.progress_callback(f"🛠️ **ขั้นตอนที่ {step_id}:** {description}")
 
-            # Note: execute_step and critic evaluate should ideally be async too.
-            # For now, we wrap them or ensure they don't block heavily.
-            result = await self.executor.run_action({"tool": "other", "action": "execute", "params": step}, self.memory.__dict__)
+            # 1. Extract specific intent for THIS step (Dynamic Step Execution)
+            extraction = await self.executor.extract_action({"description": description}, self.memory.__dict__)
             
-            # Simple pass for now to keep it thin, but should use CriticAgent asynchronously
-            step_passed = result.get("status") == "success"
+            # 2. Run action
+            result = await self.executor.run_action(extraction, self.memory.__dict__)
+            
+            # 3. Quality Check (Async Critic)
+            if self.progress_callback:
+                await self.progress_callback(f"⚖️ ตรวจสอบคุณภาพงานขั้นตอนที่ {step_id}...")
+                
+            eval_result = await self.critic.evaluate(step, result, self.memory.context)
+            
+            if eval_result.get("verdict") == "pass":
+                status = "success"
+            else:
+                status = "failure"
+                all_success = False
+                if self.progress_callback:
+                    await self.progress_callback(f"⚠️ **แจ้งเตือน:** ตรวจพบประเด็นในขั้นตอนที่ {step_id}: {eval_result.get('suggestion')}")
 
+            # 4. Update memory
             self.memory.add_step_result(
                 step_id=step_id,
                 result=result.get("output"),
-                status="success" if step_passed else "failure",
-                error=result.get("error") if not step_passed else None
+                status=status,
+                error=result.get("error")
             )
-            if not step_passed: all_success = False
+            
+            if "memory_updates" in result:
+                self.memory.update_context(result["memory_updates"])
 
         return self.memory.get_full_context()

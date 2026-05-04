@@ -1,38 +1,42 @@
 import logging
 import json
+import yaml
 from typing import Dict, Any, Optional
 from aetox.core.ollama_client import OllamaClient
 from aetox.core.prompt_engine import PromptEngine
 
+logger = logging.getLogger("aetox.agents.critic")
+
 class CriticAgent:
     """
-    Evaluates the quality and correctness of agent outputs.
-    Uses DeepSeek-R1 (7B) for reasoning.
+    Evaluates the quality and correctness of agent outputs asynchronously.
+    Uses the unified qwen2.5:14b model for consistent reasoning.
     """
     def __init__(self, client: Optional[OllamaClient] = None, engine: Optional[PromptEngine] = None):
-        self.logger = logging.getLogger("aetox.agents.critic")
         self.client = client or OllamaClient()
         self.engine = engine or PromptEngine()
         
         # Load Model Config
         try:
             with open("config/models.yaml", 'r') as f:
-                import yaml
                 config = yaml.safe_load(f)
-                self.model = config.get("critic", "deepseek-r1:7b")
+                self.model = config.get("critic", "qwen2.5:14b")
         except Exception:
-            self.model = "deepseek-r1:7b"
+            self.model = "qwen2.5:14b"
+            
+        logger.info(f"CriticAgent (Async) initialized using model: {self.model}")
 
-    def evaluate(self, step: Dict[str, Any], result: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+    async def evaluate(self, step: Dict[str, Any], result: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Evaluates the step result and provides a verdict.
+        Asynchronously evaluates the step result and provides a verdict.
         """
-        self.logger.info(f"Evaluating Step {step.get('step_id')} output...")
+        logger.info(f"Critiquing Step {step.get('step_id')} output...")
         
         prompt_input = (
-            f"Task Step: {json.dumps(step)}\n"
-            f"Step Output: {json.dumps(result)}\n"
-            f"Memory Context: {json.dumps(context)}"
+            f"Goal Step: {step.get('description')}\n"
+            f"Execution Result: {result.get('output')}\n"
+            f"Status: {result.get('status')}\n"
+            f"Error (if any): {result.get('error')}"
         )
         
         messages = self.engine.build_chat_messages(
@@ -42,20 +46,19 @@ class CriticAgent:
         )
         
         try:
-            response = self.client.chat(
+            response = await self.client.chat(
                 model=self.model,
                 messages=messages,
                 format="json",
                 options={"temperature": 0.1}
             )
             
-            content = response.get("message", {}).get("content", "")
+            content = response.get("message", {}).get("content", "{}")
             evaluation = json.loads(content)
             
-            self.logger.info(f"Critic Verdict: {evaluation.get('verdict')} (Score: {evaluation.get('score')})")
+            logger.info(f"Critic Verdict: {evaluation.get('verdict')} (Score: {evaluation.get('score')})")
             return evaluation
             
         except Exception as e:
-            self.logger.error(f"Critic Evaluation Error: {e}")
-            # Safe fallback: Pass if evaluation fails
-            return {"verdict": "pass", "score": 1.0, "issues": [], "suggestion": "Evaluation failed, proceeding anyway."}
+            logger.error(f"Critic Evaluation Error: {e}")
+            return {"verdict": "pass", "score": 1.0, "issues": [], "suggestion": "Proceeding despite evaluation failure."}
