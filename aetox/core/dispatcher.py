@@ -65,6 +65,7 @@ class Dispatcher:
     async def run_plan(self, plan: Dict[str, Any]) -> Dict[str, Any]:
         """Executes a multi-step plan asynchronously with full intent extraction for each step."""
         plan_id = plan.get("plan_id", "unknown")
+        goal = plan.get("goal", "งานหลายขั้นตอน")
         steps = plan.get("steps", [])
         
         self.logger.info(f"Executing Plan {plan_id} (Async)")
@@ -74,14 +75,18 @@ class Dispatcher:
             step_id = step.get("step_id")
             description = step.get("description")
             
+            # 🔥 INJECT GLOBAL GOAL: ตอกย้ำเป้าหมายใหญ่ในทุกขั้นตอนย่อย
+            current_context = self.memory.get_full_context()
+            current_context["global_goal"] = goal 
+            
             if self.progress_callback:
                 await self.progress_callback(f"🛠️ **ขั้นตอนที่ {step_id}:** {description}")
 
-            # 1. Extract specific intent for THIS step (Dynamic Step Execution)
-            extraction = await self.executor.extract_action({"description": description}, self.memory.__dict__)
+            # 1. Extract action (now with global goal awareness)
+            extraction = await self.executor.extract_action(step, current_context)
             
             # 2. Run action
-            result = await self.executor.run_action(extraction, self.memory.__dict__)
+            result = await self.executor.run_action(extraction, current_context)
             
             # ✅ บันทึกประวัติขั้นตอนย่อย (Sub-step History)
             self.executor.add_to_history(description, result.get("output", ""))

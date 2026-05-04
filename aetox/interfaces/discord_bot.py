@@ -139,25 +139,29 @@ async def handle_task_pipe(ctx, goal):
 
         # 2. Execution Lane Decision
         if est_steps > 1:
-            # --- INTERACTIVE PLANNING LANE ---
+            # --- HIGH-SPEED PLANNING LANE ---
             try:
-                # 1. Stream the "Narrative" first to make it feel fast
-                narrative_prompt = f"อธิบายเป็นภาษาไทยสั้นๆ ว่าคุณจะจัดการงานนี้ยังไง (งานคือ: {goal})"
-                stream_gen = shared_dispatcher.executor.run_chat_stream(narrative_prompt)
-                await interface.stream_chat(stream_gen)
+                # 1. Show the Analysis immediately as a short summary
+                await ctx.send(f"🤖 **AetoxOS:** {analysis}")
+                
+                # Show "Preparing" status while planner works
+                status_msg = await ctx.send("⏳ **กำลังคำนวณขั้นตอนและเตรียมปุ่มอนุมัติ...**")
                 
                 # 2. Generate the structured plan in the background
                 print(f"[*] Generating structured plan for: {goal}")
                 planner = AetoxPlanner()
                 plan = await planner.create_plan(goal)
                 
+                # Remove status message
+                await status_msg.delete()
+                
                 # Show steps and ask for approval
                 plan_id = plan.get('plan_id', 'unknown')
                 steps = plan.get('steps', [])
                 
-                plan_msg = "📝 **แผนการทำงานย่อย:**\n"
+                plan_msg = "📝 **ขั้นตอนการทำงาน:**\n"
                 for s in steps:
-                    plan_msg += f"- ขั้นตอนที่ {s.get('step_id')}: {s.get('description')}\n"
+                    plan_msg += f"- {s.get('description')}\n"
                 await ctx.send(plan_msg)
 
                 # 3. ASK FOR APPROVAL

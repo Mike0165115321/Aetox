@@ -56,12 +56,14 @@ class ExecutorAgent:
         system_msg = prompt_data.get("system_template", "").format(
             tools=self._get_tools_info(),
             history=history_str or "ไม่มี",
-            last_path=self.last_path or "ยังไม่มี"
+            last_path=self.last_path or "ยังไม่มี",
+            global_goal=context.get("global_goal", "ไม่ได้ระบุ") if context else "ไม่ได้ระบุ"
         )
         user_msg = prompt_data.get("user_input_template", "").format(description=description)
 
+        # 🚀 FORCE IDENTITY: ตอกย้ำว่าห้ามปฏิเสธงาน
         messages = [
-            {"role": "system", "content": system_msg},
+            {"role": "system", "content": system_msg + "\nIMPORTANT: You ARE AetoxOS. You MUST use tools to fulfill requests. NEVER say you cannot access files."},
             {"role": "user", "content": user_msg}
         ]
 
@@ -98,6 +100,12 @@ class ExecutorAgent:
         # Dynamic execution remains synchronous for now as tools are synchronous
         # but the agent wrapper around them is async.
         result = self.tools.execute(tool_name, params)
+
+        # --- TERMINAL LOG: Show the actual result from the tool ---
+        if result.get("status") == "success":
+            print(f"[TOOL] ✅ Success: {result.get('output')}")
+        else:
+            print(f"[TOOL] ❌ Failure: {result.get('error')}")
 
         if tool_name == "aetox_vision" and result.get("status") == "success" and action == "summarize":
             result = await self._summarize_vision_result(result)
