@@ -38,7 +38,7 @@ class AetoxVision(BaseTool):
         if not path:
             return {"status": "failure", "error": "โปรดระบุตำแหน่งไฟล์ที่ต้องการให้อ่านครับ"}
 
-        if action == "read":
+        if action in ["read", "summarize", "list"]:
             return self._read_document(path)
         
         return {"status": "failure", "error": f"ไม่รู้จักคำสั่ง: {action}"}
