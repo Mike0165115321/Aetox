@@ -160,10 +160,10 @@ class MasterFileManager(BaseTool):
             if not os.path.isdir(path):
                 return {"status": "failure", "error": f"'{path}' ไม่ใช่โฟลเดอร์หรือไม่มีอยู่จริง"}
             
-            # --- TREE GENERATOR ---
+            # --- TREE GENERATOR (Simplified) ---
             def build_tree(current_path: str, prefix: str = "", depth: int = 0) -> List[str]:
-                if depth > 2: # Limit depth to prevent context overflow
-                    return ["  " + prefix + " (หดข้อมูลเพื่อความประหยัด...)"]
+                if depth > 0: # 🛑 Limit to only first level as requested
+                    return []
                 
                 lines = []
                 try:
@@ -171,18 +171,38 @@ class MasterFileManager(BaseTool):
                 except Exception:
                     return []
 
-                for i, item in enumerate(items):
+                # Limit items to avoid blowing up the chat
+                max_items = 20
+                display_items = items[:max_items]
+                
+                for i, item in enumerate(display_items):
                     full_path = os.path.join(current_path, item)
-                    is_last = (i == len(items) - 1)
+                    is_last = (i == len(display_items) - 1 and len(items) <= max_items)
                     connector = "└── " if is_last else "├── "
                     
                     type_icon = "📁" if os.path.isdir(full_path) else "📄"
                     lines.append(f"{prefix}{connector}{type_icon} {item}")
                     
+                    # Optional: Peek into subfolder (limit to 1-2 files)
                     if os.path.isdir(full_path):
-                        new_prefix = prefix + ("    " if is_last else "│   ")
-                        lines.extend(build_tree(full_path, new_prefix, depth + 1))
+                        try:
+                            sub_items = sorted(os.listdir(full_path))[:2] # Show only first 2 items
+                            sub_prefix = prefix + ("    " if is_last else "│   ")
+                            for j, sub in enumerate(sub_items):
+                                s_last = (j == len(sub_items) - 1)
+                                s_conn = "└── " if s_last else "├── "
+                                s_type = "📁" if os.path.isdir(os.path.join(full_path, sub)) else "📄"
+                                lines.append(f"{sub_prefix}{s_conn}{s_type} {sub}")
+                            if len(os.listdir(full_path)) > 2:
+                                lines.append(f"{sub_prefix}└── ...")
+                        except Exception:
+                            pass
+
+                if len(items) > max_items:
+                    lines.append(f"{prefix}└── ... และอีก {len(items) - max_items} รายการ")
+                
                 return lines
+
 
             tree_lines = build_tree(path)
             output = "\n".join(tree_lines) if tree_lines else "โฟลเดอร์ว่างเปล่า"

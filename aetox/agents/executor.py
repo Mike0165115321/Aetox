@@ -73,8 +73,12 @@ class ExecutorAgent:
             {"role": "user", "content": user_msg}
         ]
 
+        # 🧠 INCREASE BRAIN CAPACITY: ตั้งค่า num_ctx เป็น 8192 เพื่อให้จำประวัติงานได้ครบถ้วน
+        options = {"num_ctx": 8192, "temperature": 0}
+
         try:
-            result = await self.client.chat(model=self.model, messages=messages, format="json")
+            result = await self.client.chat(model=self.model, messages=messages, format="json", options=options)
+
             content = result.get("message", {}).get("content", "{}")
             extraction = json.loads(content)
 

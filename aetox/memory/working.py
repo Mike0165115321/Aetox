@@ -58,10 +58,11 @@ class WorkingMemory:
             if res.get("error"):
                 line += f" (Error: {res['error']})"
             
-            # Truncate output if it's too long to avoid context bloat
+            # Truncate output if it's too long, but keep enough for paths and lists
             output_str = str(res['output'])
-            if len(output_str) > 200:
-                output_str = output_str[:197] + "..."
+            if len(output_str) > 1000:
+                output_str = output_str[:997] + "..."
+
             
             line += f" | ผลลัพธ์: {output_str}"
             history_lines.append(line)

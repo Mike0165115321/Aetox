@@ -73,9 +73,10 @@ class AetoxVision(BaseTool):
             # 1. Handle PDF
             if ext == ".pdf":
                 doc = fitz.open(str(p))
-                # Read up to first 20 pages for deeper context
+                # Read up to first 20 pages
                 for i in range(min(20, len(doc))):
-                    text_content += doc[i].get_text()
+                    page_text = doc[i].get_text("text", sort=True)
+                    text_content += page_text + "\n"
                 doc.close()
                 source_type = "PDF"
 
@@ -83,7 +84,7 @@ class AetoxVision(BaseTool):
             elif ext in [".txt", ".log", ".py", ".js", ".ts", ".json", ".yaml", ".yml", ".csv", ".md", ".html", ".css", ".env", ".gitignore"]:
                 # Force UTF-8 for Thai support
                 with open(p, "r", encoding="utf-8", errors="replace") as f:
-                    text_content = f.read(10000) # Increased to 10k characters
+                    text_content = f.read(20000) # Increased to 20k characters
                 source_type = "Text/Code"
 
             # 3. Handle Word documents
@@ -99,14 +100,22 @@ class AetoxVision(BaseTool):
             if not text_content.strip():
                 return {"status": "success", "output": f"📄 อ่านไฟล์ {source_type} สำเร็จ แต่ไม่พบข้อความข้างในครับ"}
 
-            # Clean up text a bit
-            clean_text = text_content.strip()
+            # --- CLEANING LAYER ---
+            # Remove non-printable characters that cause "garbage" output
+            import re
+            clean_text = "".join(c for c in text_content if c.isprintable() or c in "\n\r\t")
+            clean_text = re.sub(r'\n{3,}', '\n\n', clean_text) # Remove excessive newlines
+            clean_text = clean_text.strip()
             
+            if not clean_text:
+                return {"status": "failure", "error": "ไฟล์นี้อาจเป็นสแกน (Image-only PDF) หรือเข้ารหัสลับ ทำให้ไม่สามารถดึงข้อความออกมาได้ครับ"}
+
             return {
                 "status": "success",
                 "output": f"👁️ **[AetoxVision]** อ่านข้อมูลจากไฟล์ {source_type} เรียบร้อยครับ:\n\n{clean_text[:1500]}..." if len(clean_text) > 1500 else f"👁️ **[AetoxVision]** อ่านข้อมูลเสร็จแล้วครับ:\n\n{clean_text}",
                 "raw_text": clean_text
             }
+
 
         except Exception as e:
             logger.error(f"Error in AetoxVision: {e}")
