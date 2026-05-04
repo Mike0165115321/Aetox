@@ -160,17 +160,36 @@ class MasterFileManager(BaseTool):
             if not os.path.isdir(path):
                 return {"status": "failure", "error": f"'{path}' ไม่ใช่โฟลเดอร์หรือไม่มีอยู่จริง"}
             
-            items = os.listdir(path)
-            summary = []
-            for item in items:
-                full_path = os.path.join(path, item)
-                type_icon = "📁" if os.path.isdir(full_path) else "📄"
-                summary.append(f"{type_icon} {item}")
-            
-            output = "\n".join(summary) if summary else "โฟลเดอร์ว่างเปล่า"
-            return {"status": "success", "output": f"รายการใน {path}:\n{output}"}
+            # --- TREE GENERATOR ---
+            def build_tree(current_path: str, prefix: str = "", depth: int = 0) -> List[str]:
+                if depth > 2: # Limit depth to prevent context overflow
+                    return ["  " + prefix + " (หดข้อมูลเพื่อความประหยัด...)"]
+                
+                lines = []
+                try:
+                    items = sorted(os.listdir(current_path))
+                except Exception:
+                    return []
+
+                for i, item in enumerate(items):
+                    full_path = os.path.join(current_path, item)
+                    is_last = (i == len(items) - 1)
+                    connector = "└── " if is_last else "├── "
+                    
+                    type_icon = "📁" if os.path.isdir(full_path) else "📄"
+                    lines.append(f"{prefix}{connector}{type_icon} {item}")
+                    
+                    if os.path.isdir(full_path):
+                        new_prefix = prefix + ("    " if is_last else "│   ")
+                        lines.extend(build_tree(full_path, new_prefix, depth + 1))
+                return lines
+
+            tree_lines = build_tree(path)
+            output = "\n".join(tree_lines) if tree_lines else "โฟลเดอร์ว่างเปล่า"
+            return {"status": "success", "output": f"### โครงสร้างไฟล์ใน {path}:\n```\n{output}\n```"}
         except Exception as e:
             return {"status": "failure", "error": f"ไม่สามารถดูรายการได้: {str(e)}"}
+
 
     # =========================================================================
     # LAYER 3: INTELLIGENT ENGINE (Complex Logic)
