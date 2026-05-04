@@ -2,37 +2,15 @@ import os
 import discord
 import logging
 import asyncio
-import threading
-import json
-import psutil
+import time
 from discord.ext import commands
 from dotenv import load_dotenv
-from concurrent.futures import ThreadPoolExecutor
-
-# --- SINGLE INSTANCE LOCK ---
-def kill_other_instances():
-    current_pid = os.getpid()
-    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
-        try:
-            # Check if it's a python process running the same bot script
-            cmdline = proc.info.get('cmdline')
-            if proc.info['pid'] != current_pid and cmdline:
-                cmd_str = ' '.join(cmdline).lower()
-                if 'aetox.interfaces.discord_bot' in cmd_str:
-                    print(f"--- Killing ghost bot (PID: {proc.info['pid']}) ---")
-                    proc.kill()
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            continue
-
-kill_other_instances()
-# ----------------------------
 
 from aetox.core.ollama_client import OllamaClient
 from aetox.core.prompt_engine import PromptEngine
 from aetox.planner import AetoxPlanner
 from aetox.core.dispatcher import Dispatcher
 from aetox.memory.working import WorkingMemory
-
 
 # Load environment variables
 load_dotenv()
@@ -48,21 +26,61 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Global state for task tracking
-active_tasks = {} # user_id -> task_info
+# Persistent Instance for Shared State
+persistent_memory = WorkingMemory("")
+shared_dispatcher = Dispatcher(persistent_memory)
 
 class DiscordInterface:
     """
-    Handles communication between AetoxOS and Discord.
+    Pure Interface Layer - The 'Pipe' for AetoxOS.
+    Handles streaming and message rendering.
     """
     def __init__(self, context: commands.Context):
         self.context = context
         self.loop = asyncio.get_event_loop()
 
+    async def stream_chat(self, stream_generator):
+        """Streams AI response tokens to Discord with buffering."""
+        message = None
+        full_content = ""
+        buffer = ""
+        last_update = 0
+        update_interval = 0.8  # Seconds between Discord message edits
+
+        try:
+            for token in stream_generator:
+                if token == "__NOT_CHAT__":
+                    return False # Signal to fallback to direct step
+                
+                full_content += token
+                buffer += token
+                
+                # Update Discord if buffer is meaningful or time interval passed
+                current_time = time.time()
+                if (current_time - last_update) > update_interval:
+                    if not message:
+                        message = await self.context.send(full_content + " ▌")
+                    else:
+                        await message.edit(content=full_content + " ▌")
+                    last_update = current_time
+                    buffer = ""
+            
+            # Final update
+            if message:
+                await message.edit(content=full_content)
+            elif full_content:
+                await self.context.send(full_content)
+            
+            return True
+        except Exception as e:
+            logger.error(f"Streaming error: {e}")
+            await self.context.send(f"❌ **ขออภัย ระบบสตรีมขัดข้อง:** {str(e)}")
+            return True
+
     def send_progress(self, message: str):
         """Callback for Dispatcher progress updates."""
         asyncio.run_coroutine_threadsafe(
-            self.context.send(f"⏳ **[ความคืบหน้า]:** {message}"), 
+            self.context.send(f"⏳ {message}"), 
             self.loop
         )
 
@@ -76,10 +94,9 @@ class DiscordInterface:
 
     async def _ask_discord(self, action: str, details: str) -> bool:
         msg = await self.context.send(
-            f"⚠️ **การอนุมัติความปลอดภัย**\n"
-            f"**การดำเนินการ:** `{action}`\n"
+            f"⚠️ **ความปลอดภัย:** ต้องการ `{action}`\n"
             f"**รายละเอียด:** `{details}`\n"
-            f"โปรดตอบสนองด้วย ✅ เพื่อ **'อนุมัติ'** หรือ ❌ เพื่อ **'ปฏิเสธ'**"
+            f"กด ✅ เพื่ออนุมัติ หรือ ❌ เพื่อปฏิเสธ"
         )
         await msg.add_reaction("✅")
         await msg.add_reaction("❌")
@@ -88,189 +105,94 @@ class DiscordInterface:
             return user == self.context.author and str(reaction.emoji) in ["✅", "❌"] and reaction.message.id == msg.id
 
         try:
-            reaction, user = await bot.wait_for("reaction_add", timeout=120.0, check=check)
+            reaction, _ = await bot.wait_for("reaction_add", timeout=120.0, check=check)
             return str(reaction.emoji) == "✅"
         except asyncio.TimeoutError:
-            await self.context.send("⏳ **หมดเวลาการรอคอย:** ระบบปฏิเสธการดำเนินการเพื่อความปลอดภัยครับ")
+            await self.context.send("⏳ **หมดเวลา:** ปฏิเสธการดำเนินการ")
             return False
 
 @bot.event
 async def on_ready():
-    logger.info(f"AetoxOS Discord Bot connected as {bot.user}")
+    logger.info(f"AetoxOS Interface ready: {bot.user}")
 
 @bot.event
 async def on_message(message):
-    if message.author == bot.user:
-        return
-
-    # If it's a command (starts with !), process it normally
+    if message.author == bot.user: return
     if message.content.startswith('!'):
         await bot.process_commands(message)
         return
 
-    # Natural Chat Mode: Treat any message as a Direct Task goal
-    # Only allow from authorized users
-    if str(message.author.id) not in ALLOWED_USERS and "*" not in ALLOWED_USERS:
-        return
-
-    # Create a context-like object for the handler
+    if str(message.author.id) not in ALLOWED_USERS and "*" not in ALLOWED_USERS: return
+    
     ctx = await bot.get_context(message)
-    goal = message.content.strip()
+    await handle_task_pipe(ctx, message.content.strip())
+
+async def handle_task_pipe(ctx, goal):
+    """The main entry point for all goals - Handled as a thin pipe."""
+    if not goal: return
     
-    if not goal:
-        return
-
-    # Use the same logic as !task
-    await handle_direct_task(ctx, goal)
-
-# Persistent Memory and Dispatcher
-persistent_memory = WorkingMemory("")
-dispatcher = Dispatcher(persistent_memory)
-
-async def handle_direct_task(ctx, goal):
-    """Refactored logic to handle both !task and natural chat."""
-    # Use persistent dispatcher and memory
     interface = DiscordInterface(ctx)
-    
-    dispatcher.progress_callback = None # Quiet
-    dispatcher.executor.permission_manager.approval_callback = interface.request_approval
+    shared_dispatcher.progress_callback = None
+    shared_dispatcher.executor.permission_manager.approval_callback = interface.request_approval
     persistent_memory.update_context({"guild_id": ctx.guild.id if ctx.guild else None})
 
-    # 2. Execute with Typing Status
+    # Start showing typing status immediately
     async with ctx.typing():
-        try:
-            result = await asyncio.to_thread(dispatcher.run_direct_step, goal)
-            
-            if result.get("status") == "failure":
-                error_msg = result.get("error", "เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ")
-                await ctx.send(f"❌ **ขออภัยครับ:** {error_msg}")
-                return
-
-            # Pure Chat Experience: Send only the output text
-            output = result.get("output", "")
-            if output:
-                # If the output is longer than Discord limit, truncate it
-                if len(output) > 1900: output = output[:1900] + "..."
-                await ctx.send(output)
-        except Exception as e:
-            await ctx.send(f"❌ **ขออภัย ระบบขัดข้อง:** {str(e)}")
+        # Lane 1: Try Streaming Chat
+        stream_gen = shared_dispatcher.run_direct_chat_stream(goal)
+        is_chat = await interface.stream_chat(stream_gen)
+        
+        if not is_chat:
+            # Lane 2: Fallback to Direct Tool Execution
+            try:
+                result = await asyncio.to_thread(shared_dispatcher.run_direct_step, goal)
+                if result.get("status") == "success":
+                    output = result.get("output", "ดำเนินการเรียบร้อยครับ")
+                    if output:
+                        if len(output) > 1900: output = output[:1900] + "..."
+                        await ctx.send(output)
+                else:
+                    await ctx.send(f"❌ **ล้มเหลว:** {result.get('error')}")
+            except Exception as e:
+                await ctx.send(f"❌ **ผิดพลาด:** {str(e)}")
 
 @bot.command(name="task")
-@commands.cooldown(1, 5, commands.BucketType.user)
-async def start_task(ctx: commands.Context, *, goal: str):
-    """Direct execution lane - No planning, just do it."""
-    if str(ctx.author.id) not in ALLOWED_USERS and "*" not in ALLOWED_USERS:
-        return
-    await handle_direct_task(ctx, goal)
-
-@start_task.error
-async def task_error(ctx, error):
-    if isinstance(error, commands.CommandOnCooldown):
-        return  # Silently ignore cooldown errors
+async def start_task(ctx, *, goal: str):
+    """Alias for direct execution pipe."""
+    await handle_task_pipe(ctx, goal)
 
 @bot.command(name="plan")
-@commands.cooldown(1, 5, commands.BucketType.user)
-async def start_plan_task(ctx: commands.Context, *, goal: str):
-    """Planned execution lane - Complex tasks with multi-step plans."""
-    if str(ctx.author.id) not in ALLOWED_USERS and "*" not in ALLOWED_USERS:
-        return
-
-    # 1. Setup
+async def start_plan_task(ctx, *, goal: str):
+    """Planned execution through the pipe."""
+    interface = DiscordInterface(ctx)
     client = OllamaClient()
     engine = PromptEngine()
     planner = AetoxPlanner(client, engine)
-    memory = WorkingMemory(goal)
-    dispatcher = Dispatcher(memory)
-    interface = DiscordInterface(ctx)
-    discord_tool = DiscordTool(bot)
+    
+    shared_dispatcher.progress_callback = interface.send_progress
+    shared_dispatcher.executor.permission_manager.approval_callback = interface.request_approval
 
-    dispatcher.progress_callback = interface.send_progress 
-    dispatcher.executor.permission_manager.approval_callback = interface.request_approval
-    dispatcher.executor.discord_tool = discord_tool
-    memory.update_context({"guild_id": ctx.guild.id if ctx.guild else None})
-
-    # 2. Execute
     async with ctx.typing():
         try:
-            # Plan in background
             plan = await asyncio.to_thread(planner.create_plan, goal)
-            await ctx.send(f"✅ **สร้างแผนงานแล้ว:** ตรวจพบ {len(plan.get('steps', []))} ขั้นตอนที่ต้องดำเนินการ...")
+            await ctx.send(f"📝 **แผนงาน:** {len(plan.get('steps', []))} ขั้นตอน กำลังเริ่มดำเนินการ...")
             
-            # Execute plan
-            await asyncio.to_thread(dispatcher.run_plan, plan)
-            
-            final_context = memory.get_full_context()
-            step_results = final_context.get("step_results", [])
-            summary = f"🏁 **ปิดโปรเจกต์เสร็จสมบูรณ์!**\n**เป้าหมาย:** {goal}\n"
-            results_text = ""
-            for i, res in enumerate(step_results):
-                output = res.get("output", "เรียบร้อย")
-                if isinstance(output, str) and len(output) > 500: output = output[:500] + "..."
-                results_text += f"\n**ขั้นตอนที่ {i+1}:** ```\n{output}\n```"
-            
-            await ctx.send(summary + results_text)
+            await asyncio.to_thread(shared_dispatcher.run_plan, plan)
+            await ctx.send("🏁 **เสร็จสิ้นภารกิจ!**")
         except Exception as e:
-            await ctx.send(f"❌ **การวางแผนผิดพลาด:** {str(e)}")
-
-@start_plan_task.error
-async def plan_error(ctx, error):
-    if isinstance(error, commands.CommandOnCooldown):
-        return  # Silently ignore cooldown errors
-
-@bot.command(name="setup")
-async def setup_server(ctx: commands.Context):
-    """One-click setup for a professional Aetox workspace."""
-    if str(ctx.author.id) not in ALLOWED_USERS and "*" not in ALLOWED_USERS:
-        return
-
-    await ctx.send("🏗️ **Starting Professional Workspace Setup...**")
-    guild_id = ctx.guild.id
-    discord_tool = DiscordTool(bot)
-
-    try:
-        # 1. Control Center
-        cat_control = await guild_id_to_cat_id(guild_id, "🌌 ศูนย์ควบคุม AETOX", discord_tool)
-        await discord_tool.create_channel(guild_id, "🎮-ห้องสั่งการ", cat_control)
-        await discord_tool.create_channel(guild_id, "📜-บันทึกระบบ", cat_control)
-
-        # 2. Projects
-        cat_projects = await guild_id_to_cat_id(guild_id, "📂 จัดการโปรเจกต์", discord_tool)
-        await discord_tool.create_channel(guild_id, "🛠️-งานปัจจุบัน", cat_projects)
-        await discord_tool.create_channel(guild_id, "🗄️-คลังไฟล์เก่า", cat_projects)
-
-        # 3. Brain
-        cat_brain = await guild_id_to_cat_id(guild_id, "🧠 คลังความรู้ AETOX", discord_tool)
-        await discord_tool.create_channel(guild_id, "💡-ระดมสมอง", cat_brain)
-
-        await ctx.send("✅ **ตั้งค่า Workspace เสร็จเรียบร้อย!** ยินดีต้อนรับสู่ห้องสั่งการ AetoxOS ครับ")
-    except Exception as e:
-        await ctx.send(f"❌ Setup failed: {str(e)}")
-
-async def guild_id_to_cat_id(guild_id, name, tool):
-    """Helper to create category and return ID."""
-    res = await tool.create_category(guild_id, name)
-    # Extract ID from string result "Successfully created category: Name (ID: 123)"
-    import re
-    match = re.search(r"ID: (\d+)", res)
-    return int(match.group(1)) if match else None
-
-
+            await ctx.send(f"❌ **ผิดพลาด:** {str(e)}")
 
 @bot.command(name="help_aetox")
-async def custom_help(ctx: commands.Context):
-    """Custom help message."""
-    help_text = (
-        "**🌌 AetoxOS Discord Interface**\n"
-        "`!task`   - Direct Execution (Fast Lane ⚡)\n"
-        "`!plan`   - Planned Execution (Deep Lane 🧠)\n"
-        "`!setup`  - Initialize Professional Workspace 🏗️\n"
-        "`!status` - Check progress\n"
-        "`!cancel` - Stop task\n"
+async def custom_help(ctx):
+    await ctx.send(
+        "**🌌 AetoxOS Interface**\n"
+        "พิมพ์ข้อความหาบอทได้โดยตรง หรือใช้:\n"
+        "`!task` - สั่งงานทันที\n"
+        "`!plan` - วางแผนและทำงาน\n"
     )
-    await ctx.send(help_text)
 
 if __name__ == "__main__":
-    if not TOKEN:
-        logger.error("No DISCORD_TOKEN found in environment.")
-    else:
+    if TOKEN:
         bot.run(TOKEN)
+    else:
+        logger.error("No TOKEN found.")

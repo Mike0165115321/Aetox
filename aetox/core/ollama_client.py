@@ -20,7 +20,7 @@ class OllamaClient:
         messages: List[Dict[str, str]], 
         format: Optional[str] = None,
         options: Optional[Dict[str, Any]] = None,
-        keep_alive: str = "-1"
+        keep_alive: int = -1
     ) -> Dict[str, Any]:
         """Sends a chat request to Ollama (Synchronous)."""
         payload = {
@@ -46,7 +46,7 @@ class OllamaClient:
         model: str, 
         messages: List[Dict[str, str]], 
         options: Optional[Dict[str, Any]] = None,
-        keep_alive: str = "-1"
+        keep_alive: int = -1
     ):
         """Sends a chat request to Ollama and yields response tokens (Streaming)."""
         payload = {
