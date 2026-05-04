@@ -50,7 +50,12 @@ class ExecutorAgent:
     ) -> Dict[str, Any]:
         """Asynchronously extract intent using LLM."""
         description = task_step.get("description", "")
-        history_str = "".join([f"{i+1}. ถาม: {h['q']} -> ตอบ: {h['a']}\n" for i, h in enumerate(self.history)])
+        
+        # 🧠 SMART HISTORY: Use WorkingMemory history if available, otherwise fallback to local history
+        if context and context.get("history"):
+            history_str = context.get("history")
+        else:
+            history_str = "".join([f"{i+1}. ถาม: {h['q']} -> ตอบ: {h['a']}\n" for i, h in enumerate(self.history)])
 
         prompt_data = self.engine.get_external_template("config/prompts/executor.yaml", "intent_extraction")
         system_msg = prompt_data.get("system_template", "").format(
@@ -59,6 +64,7 @@ class ExecutorAgent:
             last_path=self.last_path or "ยังไม่มี",
             global_goal=context.get("global_goal", "ไม่ได้ระบุ") if context else "ไม่ได้ระบุ"
         )
+
         user_msg = prompt_data.get("user_input_template", "").format(description=description)
 
         # 🚀 FORCE IDENTITY: ตอกย้ำว่าห้ามปฏิเสธงาน
@@ -84,6 +90,11 @@ class ExecutorAgent:
         tool_name = extraction.get("tool")
         action = extraction.get("action")
         params = extraction.get("params", {})
+        
+        # 🛠️ FIX: Inject action into params for the Tool's internal Router layer
+        if action:
+            params["action"] = action
+
         
         # --- TERMINAL LOG: Show what's actually happening ---
         print(f"[TOOL] ⚙️ Calling: {tool_name} -> {action} with {params}")

@@ -93,6 +93,30 @@ class WorkingMemory:
         instance.metadata = data.get("metadata", instance.metadata)
         return instance
 
+    def save_to_disk(self, directory: str = "data/tasks"):
+        """Saves the memory state to a JSON file on disk."""
+        import os
+        import json
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+        
+        filepath = os.path.join(directory, f"{self.task_id}.json")
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(self.to_dict(), f, ensure_ascii=False, indent=2)
+
+    @classmethod
+    def load_from_disk(cls, task_id: str, directory: str = "data/tasks") -> Optional['WorkingMemory']:
+        """Loads a memory state from disk by task ID."""
+        import os
+        import json
+        filepath = os.path.join(directory, f"{task_id}.json")
+        if not os.path.exists(filepath):
+            return None
+            
+        with open(filepath, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            return cls.from_dict(data)
+
     def get_full_context(self) -> Dict[str, Any]:
         """Returns all relevant information for the next agent."""
         return {

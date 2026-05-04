@@ -49,6 +49,7 @@ class Dispatcher:
             status=result.get("status", "success"),
             error=result.get("error")
         )
+        self.memory.save_to_disk() # 💾 AUTO-SAVE
         return result
 
     async def run_direct_chat_stream(self, goal: str):
@@ -109,6 +110,8 @@ class Dispatcher:
             
             if "memory_updates" in result:
                 self.memory.update_context(result["memory_updates"])
+
+            self.memory.save_to_disk() # 💾 AUTO-SAVE AFTER EACH STEP
 
             # 🛑 STOP IF FAILED: ถ้าขั้นตอนไม่ผ่าน ให้หยุดทำขั้นตอนถัดไปทันที
             if not is_success:
