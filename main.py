@@ -4,7 +4,7 @@ import os
 import yaml
 from aetox.core.ollama_client import OllamaClient
 from aetox.core.prompt_engine import PromptEngine
-from aetox.core.planner import Planner
+from aetox.planner import AetoxPlanner
 from aetox.core.dispatcher import Dispatcher
 from aetox.agents.executor import ExecutorAgent
 from aetox.memory.working import WorkingMemory
@@ -50,7 +50,7 @@ def run_aetox_mvp():
     user_goal = "List the files in the current directory and create a new file named 'summary.txt' with the count."
     
     # 3. Plan
-    planner = Planner(client, engine)
+    planner = AetoxPlanner(client, engine)
     try:
         plan = planner.create_plan(user_goal)
         print("\n[PLAN GENERATED]")

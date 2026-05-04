@@ -19,10 +19,16 @@ class OllamaClient:
         model: str, 
         messages: List[Dict[str, str]], 
         format: Optional[str] = None,
-        options: Optional[Dict[str, Any]] = None
+        options: Optional[Dict[str, Any]] = None,
+        keep_alive: str = "-1"
     ) -> Dict[str, Any]:
         """Sends a chat request to Ollama (Synchronous)."""
-        payload = {"model": model, "messages": messages, "stream": False}
+        payload = {
+            "model": model, 
+            "messages": messages, 
+            "stream": False,
+            "keep_alive": keep_alive
+        }
         if format: payload["format"] = format
         if options: payload["options"] = options
 
@@ -39,10 +45,16 @@ class OllamaClient:
         self, 
         model: str, 
         messages: List[Dict[str, str]], 
-        options: Optional[Dict[str, Any]] = None
+        options: Optional[Dict[str, Any]] = None,
+        keep_alive: str = "-1"
     ):
         """Sends a chat request to Ollama and yields response tokens (Streaming)."""
-        payload = {"model": model, "messages": messages, "stream": True}
+        payload = {
+            "model": model, 
+            "messages": messages, 
+            "stream": True,
+            "keep_alive": keep_alive
+        }
         if options: payload["options"] = options
 
         try:

@@ -18,6 +18,15 @@ class ExecutorAgent:
         self.engine = PromptEngine()
         self.permission_manager = PermissionManager()
 
+        # Load Model Config
+        try:
+            import yaml
+            with open("config/models.yaml", 'r') as f:
+                config = yaml.safe_load(f)
+                self.model = config.get("executor", "qwen2.5:14b")
+        except Exception:
+            self.model = "qwen2.5:14b"
+
         # ✅ Dynamic Registry แทน hardcode list
         self.tools = create_default_registry()
 
@@ -25,7 +34,7 @@ class ExecutorAgent:
         self.history = []
 
         logger.info(
-            f"ExecutorAgent ready. "
+            f"ExecutorAgent ready using model {self.model}. "
             f"Tools loaded: {self.tools.list_names()}"
         )
 
@@ -76,7 +85,7 @@ class ExecutorAgent:
 
         try:
             result = self.client.chat(
-                model="qwen2.5:14b",
+                model=self.model,
                 messages=messages,
                 format="json"
             )
@@ -156,7 +165,7 @@ class ExecutorAgent:
             {"role": "user", "content": extraction.get("params", {}).get("message", "")}
         ]
 
-        result = self.client.chat(model="qwen2.5:14b", messages=messages)
+        result = self.client.chat(model=self.model, messages=messages)
         response = result.get("message", {}).get("content", "ขออภัยครับ ผมนึกไม่ออก")
 
         return {"status": "success", "output": response, "memory_updates": {}}
@@ -169,7 +178,7 @@ class ExecutorAgent:
             f"{result['raw_text'][:8000]}\n\nสรุป:"
         )
         res = self.client.chat(
-            model="qwen2.5:14b",
+            model=self.model,
             messages=[{"role": "user", "content": summary_prompt}]
         )
         summary_text = res.get("message", {}).get("content", "สรุปไม่ได้ครับ")
@@ -186,5 +195,5 @@ class ExecutorAgent:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": message}
         ]
-        for token in self.client.chat_stream(model="qwen2.5:14b", messages=messages):
+        for token in self.client.chat_stream(model=self.model, messages=messages):
             yield token

@@ -1,6 +1,6 @@
 planner: "qwen2.5:14b"
 executor: "qwen2.5:14b"
-critic: "deepseek-r1:7b"
+critic: "qwen2.5:14b"
 researcher: "qwen2.5:14b"
 coder: "qwen2.5:14b"
 extraction: "qwen2.5:14b"

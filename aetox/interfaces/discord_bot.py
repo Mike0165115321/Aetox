@@ -29,7 +29,7 @@ kill_other_instances()
 
 from aetox.core.ollama_client import OllamaClient
 from aetox.core.prompt_engine import PromptEngine
-from aetox.core.planner import Planner
+from aetox.planner import AetoxPlanner
 from aetox.core.dispatcher import Dispatcher
 from aetox.memory.working import WorkingMemory
 
@@ -178,7 +178,7 @@ async def start_plan_task(ctx: commands.Context, *, goal: str):
     # 1. Setup
     client = OllamaClient()
     engine = PromptEngine()
-    planner = Planner(client, engine)
+    planner = AetoxPlanner(client, engine)
     memory = WorkingMemory(goal)
     dispatcher = Dispatcher(memory)
     interface = DiscordInterface(ctx)
