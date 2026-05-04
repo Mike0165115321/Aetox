@@ -71,11 +71,15 @@ class DiscordInterface:
             return ""
 
     async def send_progress(self, message: str):
-        """Log progress to Terminal instead of Discord (unless it's a major milestone)."""
+        """Log progress to Terminal and Discord for visibility."""
         print(f"[PROGRESS] {message}")
+        try:
+            await self.context.send(f"⏳ {message}")
+        except:
+            pass
 
     async def request_approval(self, action: str, details: str) -> bool:
-        """Asynchronous permission request - Still needed on Discord for safety."""
+        """Asynchronous permission request."""
         msg = await self.context.send(
             f"⚠️ **ความปลอดภัย:** ต้องการ `{action}`\n"
             f"**รายละเอียด:** `{details}`\n"
@@ -110,7 +114,7 @@ async def on_message(message):
     await handle_task_pipe(ctx, message.content.strip())
 
 async def handle_task_pipe(ctx, goal):
-    """Main entry point - Optimized: Terminal for Thinking, Discord for Results."""
+    """Main entry point - Balanced: Terminal for Debug, Discord for Interaction."""
     if not goal: return
     
     interface = DiscordInterface(ctx)
@@ -131,7 +135,6 @@ async def handle_task_pipe(ctx, goal):
         print(f"[USER GOAL] {goal}")
         print(f"[ANALYSIS] {analysis}")
         print(f"[ESTIMATED STEPS] {est_steps}")
-        print(f"[SELECTED TOOL] {extraction.get('tool')} ({extraction.get('action')})")
         print("="*50 + "\n")
 
         # 2. Execution Lane Decision
@@ -142,7 +145,14 @@ async def handle_task_pipe(ctx, goal):
                 planner = AetoxPlanner()
                 plan = await planner.create_plan(goal)
                 
-                print(f"[PLAN GENERATED] Found {len(plan.get('steps', []))} steps.")
+                # Show Plan on Discord
+                steps = plan.get('steps', [])
+                plan_msg = "📝 **แผนการทำงานย่อย:**\n"
+                for s in steps:
+                    plan_msg += f"- ขั้นตอนที่ {s.get('step_id')}: {s.get('description')}\n"
+                await ctx.send(plan_msg)
+
+                print(f"[PLAN GENERATED] Found {len(steps)} steps.")
                 await shared_dispatcher.run_plan(plan)
                 await ctx.send("🏁 **ภารกิจเสร็จสมบูรณ์เรียบร้อยครับ!**")
             except Exception as e:

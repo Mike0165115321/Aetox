@@ -83,6 +83,9 @@ class Dispatcher:
             # 2. Run action
             result = await self.executor.run_action(extraction, self.memory.__dict__)
             
+            # ✅ บันทึกประวัติขั้นตอนย่อย (Sub-step History)
+            self.executor.add_to_history(description, result.get("output", ""))
+
             # 3. Quality Check (Async Critic)
             if self.progress_callback:
                 await self.progress_callback(f"⚖️ ตรวจสอบคุณภาพงานขั้นตอนที่ {step_id}...")
