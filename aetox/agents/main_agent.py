@@ -5,6 +5,7 @@ import asyncio
 from typing import Dict, Any, List, Optional
 from aetox.memory.working import WorkingMemory, MemoryContextBuilder
 from aetox.core.ollama_client import OllamaClient
+from aetox.core.config_loader import config_loader
 from aetox.tools.file_manager import MasterFileManager
 from aetox.tools.web_scraper import WebPulseScraper
 
@@ -12,22 +13,27 @@ logger = logging.getLogger("aetox.agents.main")
 
 class MainAgent:
     """
-    Main Orchestrator Agent for AetoxOS.
+    Main Orchestrator Agent for AetoxClaw.
     Implements a robust reasoning loop with 3-layer memory integration.
     """
-    def __init__(self, config: Dict):
-        self.config = config
-        self.memory = WorkingMemory(config.get("memory", {}))
-        self.model = config.get("main_model", "qwen3:8b")
-        self.ollama = OllamaClient(config.get("ollama_host", "http://localhost:11434"))
+    def __init__(self):
+        # 1. Load Config & Memory
+        self.memory_config = config_loader.get_memory_config()
+        self.memory = WorkingMemory(self.memory_config)
         
-        # Initialize Tools with memory reference
+        # 2. Setup Ollama Client & Model
+        self.model = config_loader.get_model("main")
+        self.options = config_loader.get_options("main")
+        self.ollama = OllamaClient(host=config_loader.get_ollama_url())
+        
+        # 3. Initialize Tools with memory reference
         self.tools = {
             "master_file_manager": MasterFileManager(),
             "web_pulse_scraper": WebPulseScraper(memory_ref=self.memory)
+            # สามารถเพิ่ม http_client หรืออื่นๆ ได้ที่นี่
         }
         
-        logger.info(f"MainAgent initialized with model: {self.model}")
+        logger.info(f"AetoxClaw MainAgent initialized using model: {self.model}")
 
     async def execute_task(self, task_id: str, instruction: str) -> Dict:
         """
@@ -44,7 +50,7 @@ class MainAgent:
         logger.info(f"[PLANNING] Generating plan for task: {task_id}")
         context = MemoryContextBuilder.build_for_task(self.memory, "planning", instruction)
         
-        plan_prompt = f"""คุณคือผู้ช่วยอัจฉริยะ (MainAgent) ประจำระบบ AetoxOS
+        plan_prompt = f"""คุณคือผู้ช่วยอัจฉริยะ (MainAgent) ประจำระบบ AetoxClaw
 งานที่ได้รับ: {instruction}
 
 {context if context else "[ยังไม่มีประวัติงานก่อนหน้า]"}
@@ -65,7 +71,7 @@ class MainAgent:
             model=self.model,
             prompt=plan_prompt,
             format="json",
-            options={"temperature": 0.1}
+            options=self.options
         )
         
         try:
@@ -104,7 +110,6 @@ class MainAgent:
             result = await self._execute_single_step(step_desc, step_context)
             
             # Record Result to Working Memory (Layer 1)
-            # This allows subsequent steps to see what happened
             self.memory.add_to_working(
                 content=str(result.get("output", "No output")),
                 source=f"step_{i+1}",
@@ -112,21 +117,19 @@ class MainAgent:
                 metadata={"step_id": i + 1, "status": result.get("status")}
             )
             
-            # Record to Episodic Memory (Layer 2) if important
-            if result.get("important") or result.get("status") == "failure":
-                 # Use episodic memory to save lessons
+            # Record to Episodic Memory (Layer 2) if important/failure
+            if result.get("status") == "failure" or i == len(steps) - 1:
                  from aetox.memory.episodic import EpisodicMemory
-                 epi = EpisodicMemory() # Singleton or shared instance would be better
+                 epi = EpisodicMemory()
                  epi.save_lesson(
                      task_goal=step_desc,
                      outcome=result.get("output", ""),
-                     key_learnings=result.get("learnings", []),
+                     key_learnings=[result.get("error")] if result.get("error") else ["Success"],
                      success=(result.get("status") == "success")
                  )
 
             if result.get("status") == "failure":
                 logger.error(f"Step {i+1} failed: {result.get('error')}")
-                # Optional: Add retry logic or critic intervention here
                 return {"status": "failure", "failed_step": i+1, "error": result.get("error")}
 
         # 4. Final Summarization
@@ -148,7 +151,8 @@ class MainAgent:
         summary_response = await self.ollama.generate(
             model=self.model,
             prompt=summary_prompt,
-            format="json"
+            format="json",
+            options=self.options
         )
         
         try:
@@ -160,10 +164,9 @@ class MainAgent:
         """
         Reasoning to select tool, parameters, and execute.
         """
-        # Determine Tool and Params
         tools_doc = "\n".join([t.get_prompt_doc() for t in self.tools.values()])
         
-        selection_prompt = f"""คุณกำลังอยู่ในขั้นตอน: {step_description}
+        selection_prompt = f"""คุณคือสมองของ AetoxClaw กำลังอยู่ในขั้นตอน: {step_description}
 บริบทปัจจุบัน:
 {context}
 
@@ -183,7 +186,8 @@ class MainAgent:
         selection_response = await self.ollama.generate(
             model=self.model,
             prompt=selection_prompt,
-            format="json"
+            format="json",
+            options=self.options
         )
         
         try:
@@ -195,17 +199,14 @@ class MainAgent:
             return {"status": "failure", "error": "Failed to decide tool call."}
 
         if tool_name == "chat" or tool_name not in self.tools:
-            # Just do a text completion for this step if no tool needed
-            return {"status": "success", "output": f"ดำเนินการเสร็จสิ้น (Chat Mode): {step_description}"}
+            return {"status": "success", "output": f"ดำเนินการ (Chat Mode): {step_description}"}
 
         # Execute Tool
         tool = self.tools[tool_name]
         logger.info(f"[TOOL CALL] {tool_name} -> {action}")
         
-        # Tool execution (tools are synchronous in BaseTool, but we can make them async if needed)
-        # For now, WebPulseScraper uses asyncio.run internally, which is not ideal for async agents
-        # but matches the provided code.
         try:
+            # Note: WebPulseScraper อาจมีการเรียก asyncio.run ภายใน ต้องระวังถ้าเรียกใน Event Loop เดียวกัน
             result = tool.execute({**params, "action": action})
             return result
         except Exception as e:
