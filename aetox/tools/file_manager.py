@@ -9,7 +9,7 @@ logger = logging.getLogger("aetox.tools.file_manager")
 
 class MasterFileManager(BaseTool):
     """
-    The core file management tool for AetoxOS.
+    The core file management tool for AetoxClaw.
     Organized into 3 Layers: Router, Atomic Actions, and Intelligent Engine.
     Follows the Aetox Tool Standard v2.0.
     """

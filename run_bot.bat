@@ -1,9 +1,9 @@
 @echo off
-title AetoxOS - Discord Bot Runner
+title AetoxClaw - Discord Bot Runner
 cls
 
 echo ==========================================
-echo       AetoxOS - Discord Bot System
+echo       AetoxClaw - Discord Bot System
 echo ==========================================
 echo.
 
@@ -19,7 +19,7 @@ echo [*] Pre-loading model (%MODEL_NAME%) into VRAM...
 curl -s -X POST http://localhost:11434/api/generate -d "{\"model\": \"%MODEL_NAME%\", \"keep_alive\": \"1h\"}" > nul
 
 :: 2. Start the Bot
-echo [*] Starting AetoxOS Interface (Pipe Mode)...
+echo [*] Starting AetoxClaw Interface (Pipe Mode)...
 echo.
 python -m aetox.interfaces.discord_bot
 

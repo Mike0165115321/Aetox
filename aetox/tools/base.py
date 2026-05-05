@@ -3,7 +3,7 @@ from typing import Dict, Any, List
 
 class BaseTool(ABC):
     """
-    Abstract base class สำหรับทุก Tool ใน AetoxOS
+    Abstract base class สำหรับทุก Tool ใน AetoxClaw
     ทุก Tool ต้อง implement get_prompt_doc() เพื่อบอก LLM ว่าใช้ตัวเองยังไง
     """
     def __init__(self, name: str, description: str, actions: List[str] = None):

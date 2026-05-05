@@ -33,6 +33,8 @@ class OllamaClient:
         if format: payload["format"] = format
         if options: payload["options"] = options
 
+        logger.debug(f"[OLLAMA] Calling {model} | options: {options}")
+
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.post(self.chat_url, json=payload)
@@ -57,6 +59,8 @@ class OllamaClient:
             "keep_alive": keep_alive
         }
         if options: payload["options"] = options
+
+        logger.debug(f"[OLLAMA-STREAM] Calling {model} | options: {options}")
 
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:

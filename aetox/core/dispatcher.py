@@ -7,7 +7,7 @@ from aetox.agents.critic import CriticAgent
 
 class Dispatcher:
     """
-    Asynchronous Orchestrator for AetoxOS.
+    Asynchronous Orchestrator for AetoxClaw.
     Manages task execution and quality control without blocking the event loop.
     """
     def __init__(self, memory: WorkingMemory):

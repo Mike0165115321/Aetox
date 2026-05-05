@@ -3,6 +3,7 @@ import json
 from typing import Dict, Any, Optional
 from aetox.core.ollama_client import OllamaClient
 from aetox.core.prompt_engine import PromptEngine
+from aetox.core.config_loader import config_loader
 from aetox.safety.permission import PermissionManager
 from aetox.tools.loader import create_default_registry
 
@@ -19,13 +20,10 @@ class ExecutorAgent:
         self.permission_manager = PermissionManager()
 
         # Load Model Config
-        try:
-            import yaml
-            with open("config/models.yaml", 'r') as f:
-                config = yaml.safe_load(f)
-                self.model = config.get("executor", "qwen2.5:14b")
-        except Exception:
-            self.model = "qwen2.5:14b"
+        self.model = config_loader.get_model("executor")
+        self.options = config_loader.get_options("executor")
+        self.extraction_model = config_loader.get_model("extraction")
+        self.extraction_options = config_loader.get_options("extraction")
 
         self.tools = create_default_registry()
         self.last_path = None
@@ -69,15 +67,15 @@ class ExecutorAgent:
 
         # 🚀 FORCE IDENTITY: ตอกย้ำว่าห้ามปฏิเสธงาน
         messages = [
-            {"role": "system", "content": system_msg + "\nIMPORTANT: You ARE AetoxOS. You MUST use tools to fulfill requests. NEVER say you cannot access files."},
+            {"role": "system", "content": system_msg + "\nIMPORTANT: You ARE AetoxClaw. You MUST use tools to fulfill requests. NEVER say you cannot access files."},
             {"role": "user", "content": user_msg}
         ]
 
-        # 🧠 INCREASE BRAIN CAPACITY: ตั้งค่า num_ctx เป็น 8192 เพื่อให้จำประวัติงานได้ครบถ้วน
-        options = {"num_ctx": 8192, "temperature": 0}
+        # 🧠 INCREASE BRAIN CAPACITY: ใช้ค่าจาก Config (รองรับ Global + Override)
+        options = self.extraction_options
 
         try:
-            result = await self.client.chat(model=self.model, messages=messages, format="json", options=options)
+            result = await self.client.chat(model=self.extraction_model, messages=messages, format="json", options=options)
 
             content = result.get("message", {}).get("content", "{}")
             extraction = json.loads(content)
@@ -128,7 +126,7 @@ class ExecutorAgent:
 
     async def _handle_chat(self, extraction: Dict[str, Any]) -> Dict[str, Any]:
         system_prompt = (
-            "คุณคือ AetoxOS ระบบปฏิบัติการอัจฉริยะที่พัฒนาโดยทีม Aetox "
+            "คุณคือ AetoxClaw ระบบปฏิบัติการอัจฉริยะที่พัฒนาโดยทีม Aetox "
             "ตอบกลับเป็นภาษาไทยที่สุภาพและเป็นธรรมชาติ"
         )
         history_messages = []
@@ -141,23 +139,23 @@ class ExecutorAgent:
             *history_messages,
             {"role": "user", "content": extraction.get("params", {}).get("message", "")}
         ]
-        result = await self.client.chat(model=self.model, messages=messages)
+        result = await self.client.chat(model=self.model, messages=messages, options=self.options)
         response = result.get("message", {}).get("content", "ขออภัยครับ ผมนึกไม่ออก")
         return {"status": "success", "output": response, "memory_updates": {}}
 
     async def _summarize_vision_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
         summary_prompt = f"สรุปเนื้อหาต่อไปนี้แบบสั้น กระชับ ตรงประเด็น ภาษาไทย:\n\n{result['raw_text'][:8000]}\n\nสรุป:"
-        res = await self.client.chat(model=self.model, messages=[{"role": "user", "content": summary_prompt}])
+        res = await self.client.chat(model=self.model, messages=[{"role": "user", "content": summary_prompt}], options=self.options)
         summary_text = res.get("message", {}).get("content", "สรุปไม่ได้ครับ")
         result["output"] = f"👁️ **[AetoxVision - Summary]**\n\n{summary_text}"
         return result
 
     async def run_chat_stream(self, message: str):
         """Asynchronous stream generator for chat tokens."""
-        system_prompt = "คุณคือ AetoxOS ตอบกลับเป็นภาษาไทยที่สุภาพและเป็นธรรมชาติ"
+        system_prompt = "คุณคือ AetoxClaw ตอบกลับเป็นภาษาไทยที่สุภาพและเป็นธรรมชาติ"
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": message}
         ]
-        async for token in self.client.chat_stream(model=self.model, messages=messages):
+        async for token in self.client.chat_stream(model=self.model, messages=messages, options=self.options):
             yield token

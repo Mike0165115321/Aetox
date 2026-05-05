@@ -8,7 +8,7 @@ logger = logging.getLogger("aetox.tools.system_control")
 
 class SystemControl(BaseTool):
     """
-    SystemControl - The 'Hands' of AetoxOS.
+    SystemControl - The 'Hands' of AetoxClaw.
     Allows the agent to interact with the local operating system, 
     open applications, and run files.
     """

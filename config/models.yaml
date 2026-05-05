@@ -1,6 +1,17 @@
-planner: "qwen3:8b"
-executor: "qwen3:8b"
-critic: "qwen3:8b"
-researcher: "qwen3:8b"
-coder: "qwen3:8b"
-extraction: "qwen3:8b"
+global_options:
+  temperature: 0.1
+  top_p: 0.9
+  num_ctx: 16384
+  # stop: ["<|im_end|>", "<|tool_response|>"]
+
+models:
+  planner: "qwen3:8b"
+  executor: "qwen3:8b"
+  critic: "qwen3:8b"
+  researcher: "qwen3:8b"
+  coder:
+    model: "qwen3:8b"
+    options:
+      temperature: 0.0
+      num_ctx: 32768
+  extraction: "qwen3:8b"

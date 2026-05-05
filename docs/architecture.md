@@ -1,6 +1,6 @@
-# 🌌 AetoxOS: Architecture & Dynamic Intelligence
+# 🌌 AetoxClaw: Architecture & Dynamic Intelligence
 
-เอกสารฉบับนี้อธิบายโครงสร้างและกระบวนการทำงานของ AetoxOS เวอร์ชันปัจจุบัน (Gold Standard)
+เอกสารฉบับนี้อธิบายโครงสร้างและกระบวนการทำงานของ AetoxClaw เวอร์ชันปัจจุบัน (Gold Standard)
 
 ---
 
@@ -15,7 +15,7 @@
                    (Kill Ghosts)        (Message Recv)         (Load History/Memory)
                                                                        │
 [ OUTPUT ] ◄── [ FORMATTER ] ◄── [ TOOL EXECUTION ] ◄── [ INTENT EXTRACTION ]
-   (Discord Msg)  (Markdown/Tree)    (Dynamic Result)       (Discovery + 14B)
+   (Discord Msg)  (Markdown/Tree)    (Dynamic Result)       (Discovery + 8B)
 ```
 
 ### 🏛️ Detailed Architecture (The Master Blueprint)
@@ -29,7 +29,7 @@ graph TD
     %% Input Layer
     Discord -- "on_message" --> Manager[Dispatcher: Manager]
     Manager -- "Context Load" --> Memory[(SQLite: History & Last Path)]
-    Memory --> Agent[Executor Agent: Qwen 2.5 14B]
+    Memory --> Agent[Executor Agent: Qwen 2.5 8B]
 
     %% Intelligence & Discovery Layer
     subgraph "The Dynamic Brain"
@@ -41,7 +41,7 @@ graph TD
     end
 
     %% Decision & Extraction
-    Agent -- "3. Execute Chat" --> Ollama[Local Ollama: 14B]
+    Agent -- "3. Execute Chat" --> Ollama[Local Ollama: 8B]
     Ollama -- "JSON Intent" --> Extractor{Intent Extractor}
 
     %% Action & Execution Layer
@@ -69,7 +69,7 @@ graph TD
 
 ## 2. หัวใจของระบบ: Dynamic Tool Discovery
 
-AetoxOS ใช้สถาปัตยกรรมแบบ **Class-Driven Prompting** ซึ่งแตกต่างจากระบบทั่วไป:
+AetoxClaw ใช้สถาปัตยกรรมแบบ **Class-Driven Prompting** ซึ่งแตกต่างจากระบบทั่วไป:
 
 1.  **Discovery Phase**: เมื่อ Executor เริ่มทำงาน มันจะเข้าไปอ่านค่า `description` และ `actions` จาก Class เครื่องมือทั้งหมดโดยตรง
 2.  **Prompt Injection**: ข้อมูลเหล่านั้นจะถูกฉีดเข้าไปใน `executor.yaml` แบบไดนามิก ทำให้ AI เห็นคู่มือการใช้เครื่องมือที่อัปเดตที่สุดเสมอ
@@ -80,7 +80,7 @@ AetoxOS ใช้สถาปัตยกรรมแบบ **Class-Driven Promp
 ## 3. ขั้นตอนการทำงาน (The Execution Algorithm)
 
 ### ขั้นตอนที่ 1: การสกัดเจตนา (Intent Extraction)
-- ใช้โมเดล **Qwen 2.5:14b** เพื่อความแม่นยำสูงสุด
+- ใช้โมเดล **Qwen 2.5:8b** เพื่อความแม่นยำสูงสุด
 - AI จะได้รับรายชื่อเครื่องมือที่มีอยู่พร้อมตัวอย่าง (Few-Shot)
 - ผลลัพธ์ต้องเป็น JSON ที่ระบุ `tool`, `action`, และ `params` (รองรับพารามิเตอร์แบบลิสต์ `targets` สำหรับการเปิดหลายแอปพร้อมกัน)
 
@@ -92,7 +92,7 @@ AetoxOS ใช้สถาปัตยกรรมแบบ **Class-Driven Promp
 ---
 
 ## 4. มาตรฐานเครื่องมือ (Gold Standard Tools)
-เครื่องมือทุกตัวใน AetoxOS ต้องสืบทอดจาก `BaseTool` และมีองค์ประกอบดังนี้:
+เครื่องมือทุกตัวใน AetoxClaw ต้องสืบทอดจาก `BaseTool` และมีองค์ประกอบดังนี้:
 - **name**: ชื่อเครื่องมือ (สำหรับระบบ)
 - **description**: คำอธิบายหน้าที่ (สำหรับ AI)
 - **actions**: รายการคำสั่งที่รองรับ (เช่น `open`, `read`, `summarize`)
@@ -109,7 +109,7 @@ AetoxOS ใช้สถาปัตยกรรมแบบ **Class-Driven Promp
 
 ## 6. เจาะลึก: ทำไมสถาปัตยกรรมถึงเป็นแบบนี้? (The Philosophy)
 
-เพื่อให้คุณกิตเข้าใจเหตุผลเบื้องหลังการออกแบบ เรามาเจาะลึก 4 เสาหลักที่ทำให้ AetoxOS แตกต่างจากบอททั่วไปครับ:
+เพื่อให้คุณกิตเข้าใจเหตุผลเบื้องหลังการออกแบบ เรามาเจาะลึก 4 เสาหลักที่ทำให้ AetoxClaw แตกต่างจากบอททั่วไปครับ:
 
 ### A. การแยกสมองออกจากร่างกาย (Separation of Brain & Body)
 *   **อดีต:** พรอมต์คำสั่ง (Brain) ถูกเขียนฝังไว้ในโค้ด Python (Body) ทำให้เวลาอยากจูนบอท ต้องมานั่งแก้โค้ด เสี่ยงทำโปรแกรมพัง

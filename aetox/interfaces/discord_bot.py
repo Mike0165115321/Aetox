@@ -32,7 +32,7 @@ shared_dispatcher = Dispatcher(persistent_memory)
 
 class DiscordInterface:
     """
-    Asynchronous Interface Layer for AetoxOS.
+    Asynchronous Interface Layer for AetoxClaw.
     Pipe mode: Discord for output, Terminal for debug/analysis.
     """
     def __init__(self, context: commands.Context):
@@ -100,7 +100,7 @@ class DiscordInterface:
 
 @bot.event
 async def on_ready():
-    logger.info(f"AetoxOS Interface ready: {bot.user}")
+    logger.info(f"AetoxClaw Interface ready: {bot.user}")
 
 @bot.event
 async def on_message(message):
@@ -142,7 +142,7 @@ async def handle_task_pipe(ctx, goal):
             # --- HIGH-SPEED PLANNING LANE ---
             try:
                 # 1. Show the Analysis immediately as a short summary
-                await ctx.send(f"🤖 **AetoxOS:** {analysis}")
+                await ctx.send(f"🤖 **AetoxClaw:** {analysis}")
                 
                 # Show "Preparing" status while planner works
                 status_msg = await ctx.send("⏳ **กำลังคำนวณขั้นตอนและเตรียมปุ่มอนุมัติ...**")

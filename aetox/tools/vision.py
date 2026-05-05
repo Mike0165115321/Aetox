@@ -9,7 +9,7 @@ logger = logging.getLogger("aetox.tools.vision")
 
 class AetoxVision(BaseTool):
     """
-    AetoxVision - The 'Eyes' of AetoxOS.
+    AetoxVision - The 'Eyes' of AetoxClaw.
     Specialized in reading and understanding document contents (PDF, TXT, etc.).
     Supports proper Thai encoding to prevent gibberish text.
     """

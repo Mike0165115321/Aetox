@@ -33,7 +33,7 @@ def init_workspace():
         logger.error(f"Failed to initialize workspace: {e}")
 
 def run_aetox_mvp():
-    logger.info("--- AetoxOS System Startup ---")
+    logger.info("--- AetoxClaw System Startup ---")
     
     # 0. Initialize Workspace
     init_workspace()

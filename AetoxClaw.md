@@ -1,4 +1,4 @@
-# AetoxOS — Full Technical Specification
+# AetoxClaw — Full Technical Specification
 > **Document Version:** 1.0.0  
 > **Target Model:** Gemini (Antigraviity AI)  
 > **Purpose:** Hand-off document for code implementation  
@@ -28,11 +28,11 @@
 
 ## 1. Project Overview
 
-**AetoxOS** is a Windows-native, multi-agent AI operating system built on top of local LLMs via Ollama. It is **not a chatbot**. It is an intelligent task orchestration system where multiple smaller AI agents collaborate, pass tasks between each other, and manage memory intelligently — behaving like a real human assistant team.
+**AetoxClaw** is a Windows-native, multi-agent AI operating system built on top of local LLMs via Ollama. It is **not a chatbot**. It is an intelligent task orchestration system where multiple smaller AI agents collaborate, pass tasks between each other, and manage memory intelligently — behaving like a real human assistant team.
 
 ### Core Philosophy
 
-- **System intelligence > Model size** — A smart architecture with 7B–14B models outperforms a dumb wrapper around a 70B model
+- **System intelligence > Model size** — A smart architecture with 7B–8B models outperforms a dumb wrapper around a 70B model
 - **Memory is transient** — Focus on current task state to keep context window clean.
 - **Safety first** — Always ask permission before irreversible actions on Windows
 - **Open Source** — Designed to be distributed and community-extendable
@@ -41,7 +41,7 @@
 
 | Role | Model | Why |
 |------|-------|-----|
-| Planner | `qwen2.5:14b` | Best reasoning, called only when planning |
+| Planner | `qwen2.5:8b` | Best reasoning, called only when planning |
 | Executor | `qwen2.5:7b` | Fast, handles individual tasks |
 | Researcher | `qwen3.5:9b` | Search and Analyze Information |
 | Critic | `deepseek-r1:7b` | Evaluates and scores output quality (Thinking mode) |
@@ -65,7 +65,7 @@ User Input (Telegram / CLI)
 ┌─────────────────────────┐
 │    🧠 Brain Layer        │  ← Python: Planner, Dispatcher, Prompt Engine
 │  ┌─────────────────┐    │
-│  │ Planner (14B)   │    │  Plans and decomposes tasks into steps
+│  │ Planner (8B)   │    │  Plans and decomposes tasks into steps
 │  │ Dispatcher      │    │  Routes tasks to correct agent
 │  │ Prompt Engine   │    │  Formats prompts per model size
 │  │ Validator       │    │  Checks output quality before passing on
@@ -104,7 +104,7 @@ User Input (Telegram / CLI)
 ## 3. Project Structure
 
 ```
-AetoxOS/
+AetoxClaw/
 ├── aetox/
 │   ├── __init__.py
 │   │
@@ -159,7 +159,7 @@ AetoxOS/
 │
 ├── config/
 │   ├── models.yaml                  # Which model handles which task type
-│   ├── permissions.yaml             # What AetoxOS is allowed to touch
+│   ├── permissions.yaml             # What AetoxClaw is allowed to touch
 │   └── settings.yaml                # General configuration
 │
 ├── tests/
@@ -177,7 +177,7 @@ AetoxOS/
 
 ## 4. Memory Schema (Core System)
 
-This is the most critical part of AetoxOS. The memory system must be smart enough to know **what to remember, what to compress, and what to discard** before passing context to the next step.
+This is the most critical part of AetoxClaw. The memory system must be smart enough to know **what to remember, what to compress, and what to discard** before passing context to the next step.
 
 ### 4.1 Memory Types
 
@@ -202,11 +202,11 @@ class WorkingMemory:
 
 ## 5. Agent Roles & Responsibilities
 
-### 5.1 Planner Agent (Qwen 14B)
+### 5.1 Planner Agent (Qwen 8B)
 
 ```python
 # aetox/agents/ (called from core/planner.py)
-# Model: qwen2.5:14b
+# Model: qwen2.5:8b
 # Called: ONCE per user request (not per step)
 
 class Planner:
@@ -374,12 +374,12 @@ class Dispatcher:
 class PromptEngine:
     """
     Critical component: formats prompts specifically for each model size.
-    7B and 14B models need different prompt structures to avoid hallucination.
+    7B and 8B models need different prompt structures to avoid hallucination.
     """
 
     def build_planner_prompt(self, goal: str, context: dict) -> str:
         """
-        For 14B model: Can handle complex, multi-part prompts.
+        For 8B model: Can handle complex, multi-part prompts.
         Includes full context, examples, and detailed output schema.
         """
 
@@ -443,14 +443,14 @@ class Observer:
 # Token budgets per model
 TOKEN_BUDGETS = {
     "qwen2.5:7b":  8192,    # Max safe context
-    "qwen2.5:14b": 16384,
+    "qwen2.5:8b": 16384,
     "qwen3:9b":    12288,
 }
 
 # Reserve for output generation
 OUTPUT_RESERVE = {
     "qwen2.5:7b":  1024,
-    "qwen2.5:14b": 2048,
+    "qwen2.5:8b": 2048,
     "qwen3:9b":    2048,
 }
 
@@ -603,11 +603,11 @@ class TelegramInterface:
     """
 
     # Commands:
-    # /start     — Initialize AetoxOS
+    # /start     — Initialize AetoxClaw
     # /task      — Start a new task
     # /status    — Check current task status
     # /cancel    — Cancel current task
-    # /memory    — Show what AetoxOS remembers about user
+    # /memory    — Show what AetoxClaw remembers about user
     # /forget    — Clear specific memories
     # /approve   — Approve a pending permission request
     # /deny      — Deny a pending permission request
@@ -681,7 +681,7 @@ class PermissionManager:
 class Sandbox:
     """
     Enforces file system access boundaries.
-    AetoxOS can ONLY access paths listed in config/permissions.yaml
+    AetoxClaw can ONLY access paths listed in config/permissions.yaml
     """
 
     def validate_path(self, path: str) -> bool:
@@ -718,7 +718,7 @@ class RollbackManager:
 ```yaml
 models:
   planner:
-    name: "qwen2.5:14b"
+    name: "qwen2.5:8b"
     max_tokens: 16384
     temperature: 0.3
     timeout: 120
@@ -836,7 +836,7 @@ User: "Organize all PDF files in D:/Documents into folders by year"
   Telegram receives message → creates Task object
   │
   ▼
-[Planner — qwen2.5:14b]
+[Planner — qwen2.5:8b]
   Creates TaskPlan:
   Step 1: list all PDF files in D:/Documents  (executor + file_manager)
   Step 2: extract year from each filename      (executor)
@@ -885,9 +885,9 @@ User: "Organize all PDF files in D:/Documents into folders by year"
 
 ### Phase 1 — Core MVP (Python only, ~2 weeks)
 - [ ] `main.py` entry point with Ollama connection test
-- [ ] `core/planner.py` — Basic task planning with qwen2.5:14b
+- [ ] `core/planner.py` — Basic task planning with qwen2.5:8b
 - [ ] `core/dispatcher.py` — Sequential step execution
-- [ ] `core/prompt_engine.py` — Prompts for 7B and 14B
+- [ ] `core/prompt_engine.py` — Prompts for 7B and 8B
 - [ ] `agents/executor.py` — Basic execution with qwen2.5:7b
 - [ ] `memory/working.py` — In-RAM working memory
 - [ ] `memory/filter.py` — Basic memory filtering
@@ -895,7 +895,7 @@ User: "Organize all PDF files in D:/Documents into folders by year"
 - [ ] `interfaces/cli.py` — Basic CLI with rich
 - [ ] `safety/permission.py` — Simple Yes/No approval
 
-**Goal:** Ask AetoxOS to organize files → it works end-to-end
+**Goal:** Ask AetoxClaw to organize files → it works end-to-end
 
 ---
 
@@ -907,7 +907,7 @@ User: "Organize all PDF files in D:/Documents into folders by year"
 - [ ] `core/context_window.py` — Token budget management
 - [ ] `core/observer.py` — Loop detection
 
-**Goal:** AetoxOS remembers user preferences across sessions
+**Goal:** AetoxClaw remembers user preferences across sessions
 
 ---
 
@@ -1047,4 +1047,4 @@ AETOX_ENV=development  # or production
 
 ---
 
-*End of AetoxOS Technical Specification v1.0.0*
+*End of AetoxClaw Technical Specification v1.0.0*

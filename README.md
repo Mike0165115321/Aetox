@@ -1,7 +1,7 @@
-# 🌌 AetoxOS
+# 🌌 AetoxClaw
 **The Agentic Local OS Orchestrator (Master Edition)**
 
-AetoxOS คือระบบปฏิบัติการ AI แบบ Agentic ที่ทำงานบนเครื่องของคุณโดยสมบูรณ์ (Local-first) ออกแบบมาเพื่อเป็นสมองกลางในการจัดการไฟล์ วางแผนงาน และควบคุมระบบปฏิบัติการผ่านคำสั่งภาษาไทยที่ยืดหยุ่น
+AetoxClaw คือระบบปฏิบัติการ AI แบบ Agentic ที่ทำงานบนเครื่องของคุณโดยสมบูรณ์ (Local-first) ออกแบบมาเพื่อเป็นสมองกลางในการจัดการไฟล์ วางแผนงาน และควบคุมระบบปฏิบัติการผ่านคำสั่งภาษาไทยที่ยืดหยุ่น
 
 ---
 
@@ -26,7 +26,7 @@ AetoxOS คือระบบปฏิบัติการ AI แบบ Agentic
 ---
 
 ## 🛠 เทคโนโลยีเบื้องหลัง (Architecture)
-*   **Language Models**: Ollama (Qwen 2.5:14b สำหรับงานวิเคราะห์ / 7b สำหรับงานสกัดคำสั่ง)
+*   **Language Models**: Ollama (Qwen 2.5:8b สำหรับงานวิเคราะห์ / 7b สำหรับงานสกัดคำสั่ง)
 *   **Interface**: **Discord Bot** (Command Center หลัก)
 *   **Backend**: Python 3.11+ (Windows Optimized)
 *   **Documentation**: มีมาตรฐานการสร้าง Tool ([tool_standard.md](aetox/tools/doc/tool_standard.md))

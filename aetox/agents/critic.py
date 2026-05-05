@@ -1,28 +1,18 @@
 import logging
 import json
-import yaml
-from typing import Dict, Any, Optional
 from aetox.core.ollama_client import OllamaClient
 from aetox.core.prompt_engine import PromptEngine
+from aetox.core.config_loader import config_loader
 
 logger = logging.getLogger("aetox.agents.critic")
 
 class CriticAgent:
-    """
-    Evaluates the quality and correctness of agent outputs asynchronously.
-    Uses the unified qwen2.5:14b model for consistent reasoning.
-    """
     def __init__(self, client: Optional[OllamaClient] = None, engine: Optional[PromptEngine] = None):
         self.client = client or OllamaClient()
         self.engine = engine or PromptEngine()
         
-        # Load Model Config
-        try:
-            with open("config/models.yaml", 'r') as f:
-                config = yaml.safe_load(f)
-                self.model = config.get("critic", "qwen2.5:14b")
-        except Exception:
-            self.model = "qwen2.5:14b"
+        self.model = config_loader.get_model("critic")
+        self.options = config_loader.get_options("critic")
             
         logger.info(f"CriticAgent (Async) initialized using model: {self.model}")
 
@@ -50,7 +40,7 @@ class CriticAgent:
                 model=self.model,
                 messages=messages,
                 format="json",
-                options={"temperature": 0.1}
+                options=self.options
             )
             
             content = response.get("message", {}).get("content", "{}")

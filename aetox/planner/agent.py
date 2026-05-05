@@ -4,13 +4,14 @@ import yaml
 from typing import Dict, Any, Optional
 from aetox.core.ollama_client import OllamaClient
 from aetox.core.prompt_engine import PromptEngine
+from aetox.core.config_loader import config_loader
 from aetox.tools.loader import create_default_registry
 
 logger = logging.getLogger("aetox.planner.agent")
 
 class AetoxPlanner:
     """
-    Asynchronous Strategic Planner for AetoxOS.
+    Asynchronous Strategic Planner for AetoxClaw.
     Now with Tool-Awareness for realistic task decomposition.
     """
     def __init__(self, client: Optional[OllamaClient] = None, engine: Optional[PromptEngine] = None):
@@ -18,12 +19,8 @@ class AetoxPlanner:
         self.engine = engine or PromptEngine()
         self.tools = create_default_registry()
         
-        try:
-            with open("config/models.yaml", 'r') as f:
-                config = yaml.safe_load(f)
-                self.model = config.get("planner", "qwen2.5:14b")
-        except Exception:
-            self.model = "qwen2.5:14b"
+        self.model = config_loader.get_model("planner")
+        self.options = config_loader.get_options("planner")
             
         logger.info(f"AetoxPlanner ready using model: {self.model}")
 
@@ -50,7 +47,7 @@ class AetoxPlanner:
                 model=self.model,
                 messages=messages,
                 format="json",
-                options={"temperature": 0.2}
+                options=self.options
             )
             
             content = response.get("message", {}).get("content", "{}")

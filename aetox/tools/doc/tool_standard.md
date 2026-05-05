@@ -1,6 +1,6 @@
-# AetoxOS: มาตรฐานการสร้างเครื่องมือ (Tool Standard) - Dynamic Edition
+# AetoxClaw: มาตรฐานการสร้างเครื่องมือ (Tool Standard) - Dynamic Edition
 
-เอกสารฉบับนี้กำหนดโครงสร้างมาตรฐานสำหรับการสร้างเครื่องมือ (Tools) ใหม่ใน AetoxOS เพื่อให้ระบบคงความยืดหยุ่น (Flexibility) และรองรับการขยายตัว (Scalability) ได้อย่างไร้รอยต่อผ่านระบบ **Dynamic Tool Discovery**
+เอกสารฉบับนี้กำหนดโครงสร้างมาตรฐานสำหรับการสร้างเครื่องมือ (Tools) ใหม่ใน AetoxClaw เพื่อให้ระบบคงความยืดหยุ่น (Flexibility) และรองรับการขยายตัว (Scalability) ได้อย่างไร้รอยต่อผ่านระบบ **Dynamic Tool Discovery**
 
 ---
 
@@ -78,7 +78,7 @@ class YourNewTool(BaseTool):
 ---
 
 ## 4. ขั้นตอนการลงทะเบียน (Dynamic Discovery)
-ระบบ AetoxOS ใช้การสแกนไฟล์อัตโนมัติ (**Auto-scan**) คุณไม่จำเป็นต้องแก้ไข `ExecutorAgent` อีกต่อไป:
+ระบบ AetoxClaw ใช้การสแกนไฟล์อัตโนมัติ (**Auto-scan**) คุณไม่จำเป็นต้องแก้ไข `ExecutorAgent` อีกต่อไป:
 1. สร้างไฟล์เครื่องมือใหม่ในโฟลเดอร์ `aetox/tools/` (เช่น `my_new_tool.py`)
 2. ตรวจสอบว่าคลาสของคุณสืบทอดจาก `BaseTool`
 3. ระบบ `ToolLoader` จะตรวจพบไฟล์ใหม่และลงทะเบียนเข้าสู่ `ToolRegistry` โดยอัตโนมัติเมื่อ Start ระบบ
