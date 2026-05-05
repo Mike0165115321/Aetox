@@ -17,7 +17,9 @@ class VectorMemory:
   self.embedder = embedder or BGE3Embedder(device="cpu")
   
   # สร้าง embedding function สำหรับ ChromaDB
-  class BGE3ChromaEF:
+  from chromadb import EmbeddingFunction
+  
+  class BGE3ChromaEF(EmbeddingFunction):
    def __init__(self, embedder: BGE3Embedder):
     self.embedder = embedder
    def __call__(self, input: list[str]) -> list[list[float]]:

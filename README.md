@@ -3,6 +3,12 @@
 
 AetoxClaw คือระบบปฏิบัติการ AI แบบ Agentic ที่ทำงานบนเครื่องของคุณโดยสมบูรณ์ (Local-first) ออกแบบมาเพื่อเป็นสมองกลางในการจัดการไฟล์ วางแผนงาน และควบคุมระบบปฏิบัติการผ่านคำสั่งภาษาไทยที่ยืดหยุ่น
 
+
+ผู้เขียน: Aetox.dev AI Assistant
+วันที่: พฤษภาคม 2026
+สถานะ: ✅ รีวิวโค้ดฉบับสมบูรณ์ + วิเคราะห์อัลกอริทึม + แผนผังการทำงาน
+
+
 ---
 
 ## 🚀 ความสามารถในปัจจุบัน (Current Capabilities)
@@ -50,3 +56,62 @@ AetoxClaw คือระบบปฏิบัติการ AI แบบ Agent
 
 ---
 *Created with ❤️ by Antigravity for the Aetox Ecosystem*
+
+# 🗄️ โครงสร้างโปรเจกต์ (Project Structure)
+AetoxClaw/
+├── 📁 aetox/                    # Core Source Code
+│   ├── 📁 agents/              # Agent Components
+│   │   ├── intent_extractor.py # 🧠 สกัดความตั้งใจจากผู้ใช้
+│   │   ├── executor.py         # ⚡ รันแอ็กชัน/เรียกเครื่องมือ
+│   │   ├── critic.py           # 🔍 ตรวจสอบคุณภาพผลลัพธ์
+│   │   └── base.py             # 🧱 Base class สำหรับ Agent
+│   ├── 📁 core/                # ระบบหลัก
+│   │   ├── dispatcher.py       # 🎯 Orchestrator หลัก (Async)
+│   │   ├── ollama_client.py    # 🔌 เชื่อมต่อ Ollama API
+│   │   └── prompt_engine.py    # 📝 จัดการพรอมต์แบบไดนามิก
+│   ├── 📁 memory/              # ระบบความจำ
+│   │   ├── working.py          # 💾 WorkingMemory (RAM + Disk)
+│   │   ├── vector_store.py     # 🗂️ Vector DB (BGE-M3 + Chroma)
+│   │   └── embedder.py         # 🧮 Embedding Engine
+│   ├── 📁 tools/               # เครื่องมือภายนอก
+│   │   ├── base.py             # 🧱 BaseTool Interface
+│   │   ├── loader.py           # 🔍 Dynamic Tool Discovery
+│   │   ├── web_scraper.py      # 🌐 WebPulse Scraper
+│   │   ├── file_manager.py     # 🗂️ Master File Manager + PathNavigator
+│   │   └── safety.py           # 🛡️ Safety Checker
+│   └── 📁 utils/               # Utility Functions
+├── 📁 config/                  # Configuration
+│   ├── models.yaml             # 🤖 Model assignments + parameters
+│   └── tools.yaml              # 🔧 Tool registration + prompts
+├── 📁 data/                    # Persistent Storage (gitignored)
+│   ├── tasks/                  # 💾 WorkingMemory snapshots
+│   ├── vector_db/              # 🗂️ ChromaDB index
+│   └── episodes.jsonl          # 📜 Episodic memory logs
+├── 📁 docs/                    # Documentation
+│   └── tool_standard.md        # 📋 มาตรฐานการสร้าง Tool
+├── main.py                     # 🚀 Entry Point
+├── requirements.txt            # 📦 Dependencies
+└── README.md                   # 📘 Project Overview
+
+
+📈 Roadmap การพัฒนาต่อ
+ระยะ
+ฟีเจอร์
+ความซับซ้อนเพิ่ม
+ประโยชน์
+🔹 Phase 3
+WebPulse + Memory Integration
+O(1) (เพิ่ม tool)
+ดึงข้อมูลเว็บ → เก็บ → ใช้ต่อได้
+🔹 Phase 4
+Multi-Agent (Planner/Researcher/Critic)
+O(A) (A = จำนวน agent)
+แบ่งงานซับซ้อนได้ดีขึ้น
+🔹 Phase 5
+Desktop GUI + Real-time Progress
+O(UI)
+ใช้งานง่ายสำหรับ non-technical user
+🔹 Phase 6
+Auto-Learning from Episodes
+O(L × E) (L = งาน, E = embedding)
+ระบบฉลาดขึ้นเองจากประสบการณ์

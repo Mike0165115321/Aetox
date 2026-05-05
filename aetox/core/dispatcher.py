@@ -98,7 +98,7 @@ class Dispatcher:
                     result = await asyncio.wait_for(execute_logic(), timeout=timeout_per_step)
                     
                     # 3. Quality Check (Critic)
-                    eval_result = await self.critic.evaluate(step, result, self.memory.context)
+                    eval_result = await self.critic.evaluate(step, result, self.memory.get_active_context(plan_id) or {})
                     is_success = (eval_result.get("verdict") == "pass")
                     
                     if is_success:
