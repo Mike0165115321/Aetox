@@ -43,7 +43,7 @@ async def test_memory_logic():
     assert ctx_real["meta"]["ver"] == 1 # ข้อมูลจริงต้องไม่เปลี่ยน
     print("   Async Safety passed")
     
-    print("--- [TEST] ✅ MEMORY LOGIC NOMINAL ---")
+    print("--- [TEST] MEMORY LOGIC NOMINAL ---")
 
 if __name__ == "__main__":
     asyncio.run(test_memory_logic())

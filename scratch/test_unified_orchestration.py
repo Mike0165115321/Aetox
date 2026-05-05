@@ -51,7 +51,7 @@ async def test_unified_flow():
     assert result["status"] == "success"
     assert "Integration Passed" in str(result)
     print("[2/2] Verification complete.")
-    print("--- [TEST] ✅ ALL SYSTEMS NOMINAL ---")
+    print("--- [TEST] ALL SYSTEMS NOMINAL ---")
 
 if __name__ == "__main__":
     asyncio.run(test_unified_flow())
