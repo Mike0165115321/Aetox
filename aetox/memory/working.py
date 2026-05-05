@@ -1,13 +1,14 @@
 # aetox/memory/working.py
 import json
 import hashlib
+import asyncio
 from datetime import datetime
 from typing import List, Dict, Optional, Any, Union
 from dataclasses import dataclass, field, asdict
 import logging
 
-from .vector_store import VectorMemory
-from .embedder import BGE3Embedder
+# from .vector_store import VectorMemory
+# from .embedder import BGE3Embedder
 
 logger = logging.getLogger("aetox.memory.working")
 
@@ -40,6 +41,7 @@ class WorkingMemory:
         self.active_chunks: List[MemoryChunk] = []
         self.task_context: Dict = {}
         self.artifacts: Dict[str, Any] = {}
+        self.lock = asyncio.Lock() # 🔒 Async-safe lock
         
         # Layer 2: Episodic Path
         self.episodic_path = config.get("episodic_path", "data/episodes.jsonl")
@@ -48,8 +50,15 @@ class WorkingMemory:
         try:
             import os
             embedder_cfg = config.get("embedder", {})
-            # ลำดับความสำคัญ: 1. .env (Local) -> 2. config (YAML) -> 3. Default (BAAI/bge-m3)
             model_path = os.getenv("EMBEDDER_MODEL_PATH") or embedder_cfg.get("model", "BAAI/bge-m3")
+            
+            if model_path == "none":
+                self.embedder = None
+                self.vector_store = None
+                return
+
+            from .embedder import BGE3Embedder
+            from .vector_store import VectorMemory
             
             self.embedder = BGE3Embedder(
                 model_path=model_path,
@@ -63,21 +72,53 @@ class WorkingMemory:
             logger.error(f"Failed to initialize BGE-M3 RAG: {e}")
             self.vector_store = None
 
-    # ========== Layer 1 Actions ==========
-    def set_active_context(self, task_id: str, context: Dict):
-        self.task_context[task_id] = {
-            "state": context,
-            "updated_at": datetime.now().timestamp()
-        }
-        if "instruction" in context:
-            self.goal = context["instruction"]
+    # ========== Layer 1 Actions (Async-Safe) ==========
+    async def set_active_context(self, task_id: str, context: Dict):
+        async with self.lock:
+            self.task_context[task_id] = {
+                "state": context,
+                "updated_at": datetime.now().timestamp()
+            }
+            if "instruction" in context:
+                self.goal = context["instruction"]
+            self.save_to_disk()
 
-    def get_active_context(self, task_id: str) -> Optional[Dict]:
-        ctx = self.task_context.get(task_id)
-        return ctx["state"] if ctx else None
+    async def update_context(self, task_id: str, updates: Dict):
+        """
+        Perform partial update to the active task context. (Stateless-Safe)
+        """
+        if not isinstance(updates, dict):
+            logger.warning(f"Invalid update type for {task_id}: {type(updates)}")
+            return
 
-    def add_artifact(self, name: str, value: Any):
-        self.artifacts[name] = value
+        async with self.lock:
+            if task_id not in self.task_context:
+                self.task_context[task_id] = {"state": {}, "updated_at": 0}
+            
+            # 🛡️ PROTECT: Basic key injection check (prevent overwriting system keys if any)
+            # For now, we allow all keys but ensure it's a flat merge at 'state' level
+            self.task_context[task_id]["state"].update(updates)
+            self.task_context[task_id]["updated_at"] = datetime.now().timestamp()
+            
+            if "instruction" in updates:
+                self.goal = updates["instruction"]
+            
+            self.save_to_disk() # 💾 AUTO-SAVE
+            logger.debug(f"[MEMORY] Context updated for {task_id}: {list(updates.keys())}")
+
+    async def get_active_context(self, task_id: str) -> Dict:
+        """Returns a deep copy of the context to prevent Race Conditions."""
+        async with self.lock:
+            ctx = self.task_context.get(task_id)
+            if not ctx or "state" not in ctx:
+                return {}
+            # return deepcopy if needed, but dict.copy() is usually enough for flat task state
+            import copy
+            return copy.deepcopy(ctx["state"])
+
+    async def add_artifact(self, name: str, value: Any):
+        async with self.lock:
+            self.artifacts[name] = value
 
     def add_to_working(self, content: str, source: str, keywords: List[str] = None, metadata: Dict = None) -> MemoryChunk:
         chunk_id = hashlib.md5(f"{content[:100]}_{datetime.now().timestamp()}".encode()).hexdigest()[:12]
@@ -146,13 +187,39 @@ class WorkingMemory:
             "task_context": self.task_context
         }
 
-    def add_step_result(self, step_id: Union[int, str], result: Any, status: str = "success", error: str = None):
-        """Bridge method สำหรับความเข้ากันได้กับ Dispatcher เวอร์ชั่นเก่า"""
+    async def get_full_context_async(self) -> Dict[str, Any]:
+        """คืนค่าบริบททั้งหมดในรูปแบบ Dictionary (Async version)"""
+        async with self.lock:
+            return {
+                "goal": self.goal,
+                "active_chunks": [c.to_dict() for c in self.active_chunks],
+                "artifacts": self.artifacts,
+                "task_context": self.task_context
+            }
+
+    def add_step_result(self, step_id: Union[int, str], output: Any, status: str = "success", error: str = None, metadata: Dict = None):
+        """
+        Standardized step recording for Dispatcher and Critic.
+        """
+        # ✂️ TRUNCATE: Prevent context bloat (approx 1000 chars)
+        clean_output = str(output) if output else ""
+        if len(clean_output) > 1050:
+            clean_output = clean_output[:1000] + "... [Output Truncated]"
+
+        meta = {
+            "status": status,
+            "error": error,
+            "step_id": step_id,
+            "timestamp": datetime.now().timestamp(),
+            **(metadata or {})
+        }
+        
         self.add_to_working(
-            content=str(result) if result else "",
+            content=clean_output,
             source=f"step_{step_id}",
-            metadata={"status": status, "error": error, "step_id": step_id}
+            metadata=meta
         )
+        self.save_to_disk()
 
     def save_to_disk(self):
         """บันทึกสถานะความจำปัจจุบันลงไฟล์ JSON"""

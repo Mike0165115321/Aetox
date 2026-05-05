@@ -1,6 +1,6 @@
 # core/memory/vector_store.py (อัปเดต)
-import chromadb
-from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
+# import chromadb
+# from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
 from .embedder import BGE3Embedder
 
 class VectorMemory:
@@ -28,6 +28,7 @@ class VectorMemory:
   chroma_ef = BGE3ChromaEF(self.embedder)
   
   # init ChromaDB client
+  import chromadb
   self.client = chromadb.PersistentClient(path=path)
   self.collection = self.client.get_or_create_collection(
    name=collection_name,
