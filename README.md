@@ -1,117 +1,71 @@
-# 🌌 AetoxClaw
-**The Agentic Local OS Orchestrator (Master Edition)**
+# 🌌 AetoxClaw: The Agentic Local OS Orchestrator
+**Next-Generation AI System for Local Task Orchestration**
 
-AetoxClaw คือระบบปฏิบัติการ AI แบบ Agentic ที่ทำงานบนเครื่องของคุณโดยสมบูรณ์ (Local-first) ออกแบบมาเพื่อเป็นสมองกลางในการจัดการไฟล์ วางแผนงาน และควบคุมระบบปฏิบัติการผ่านคำสั่งภาษาไทยที่ยืดหยุ่น
-
-
-ผู้เขียน: Aetox.dev AI Assistant
-วันที่: พฤษภาคม 2026
-สถานะ: ✅ รีวิวโค้ดฉบับสมบูรณ์ + วิเคราะห์อัลกอริทึม + แผนผังการทำงาน
-
+AetoxClaw คือระบบปฏิบัติการ AI แบบ **Agentic** ที่ทำงานบนเครื่องของคุณโดยสมบูรณ์ (Local-first) ออกแบบมาเพื่อเป็น "สมองกลาง" ในการจัดการไฟล์ วางแผนงานซับซ้อน และควบคุมระบบปฏิบัติการผ่านคำสั่งภาษาไทยที่ยืดหยุ่น โดยใช้สถาปัตยกรรมที่เน้นความปลอดภัย ความเสถียร และความเป็นส่วนตัว
 
 ---
 
-## 🚀 ความสามารถในปัจจุบัน (Current Capabilities)
+## 🚀 ความสามารถหลัก (Core Capabilities)
 
-### 🧠 Core Brain (Multi-Agent Ready)
-*   **Dynamic Intent Extraction**: สกัดพารามิเตอร์และเลือกเครื่องมืออัตโนมัติด้วยระบบ **Dynamic Tool Discovery** (ไม่ต้องแก้พรอมต์เมื่อเพิ่มเครื่องมือ)
-*   **Neutral Prompting**: ระบบพรอมต์ที่เป็นกลาง ลดหนี้ทางเทคนิค (No Technical Debt) โดยแยกการตั้งค่าไว้ใน YAML
-*   **Short-term Memory**: จดจำบริบทการสนทนาและพาธล่าสุด 3 ขั้นตอน (Rolling Buffer)
-*   **Ghost Protection**: ระบบ Single-Instance ป้องกันบอทรันซ้ำซ้อนอัตโนมัติ
+### 🧠 Hybrid Memory System (3-Layer)
+ระบบความจำที่จำลองการทำงานของมนุษย์ เพื่อให้เอเจนต์จดจำบริบทได้แม่นยำแม้รันบนโมเดลขนาดเล็ก:
+1.  **Working Memory (RAM):** เก็บ Context ปัจจุบันที่กำลังทำอยู่ (Async-Safe & Stateless).
+2.  **Episodic Memory (Disk):** บันทึก "บทเรียน" และประวัติการทำงานย่อยๆ ในรูปแบบ JSONL เพื่อการเรียกใช้ซ้ำ.
+3.  **Long-term Memory (Vector DB):** เก็บข้อมูลดิบจากไฟล์และเว็บไซต์ผ่านระบบ RAG (BGE-M3 Embedder) เพื่อการค้นหาเชิงความหมาย.
 
-### 👁️ AetoxVision (Intelligence)
-*   **Deep Document Analysis**: อ่านและสรุปเนื้อหาจากไฟล์ **PDF (สูงสุด 20 หน้า)**, **Word (.docx)**, **Markdown (.md)** และไฟล์โค้ดต่างๆ
-*   **Super Summary**: สรุปเนื้อหาใจความสำคัญแบบ "สรุปขั้นสุด" ไม่พ่นข้อความรกหน้าจอ
-*   **ASCII Tree View**: แสดงโครงสร้างโฟลเดอร์ในรูปแบบแผนผังที่สวยงามและชัดเจน
+### 🎯 Async Orchestration (Dispatcher-based)
+สถาปัตยกรรมแบบกระจายศูนย์ที่ลดความซับซ้อนของโค้ดหลัก:
+*   **MainAgent (Planner):** รับคำสั่งและวางแผนงาน (Planning) แล้วส่งต่อให้ Dispatcher.
+*   **Dispatcher (Orchestrator):** ควบคุมการรันงานแบบ Async รองรับ Timeout, Retry และการจัดการ Error อย่างเป็นระบบ.
+*   **ExecutorAgent (Doer):** ศูนย์กลางการเรียกใช้เครื่องมือ (Tool Registry) ที่มีความปลอดภัยสูง.
+*   **CriticAgent (Auditor):** ตรวจสอบผลลัพธ์ของแต่ละขั้นตอนและให้ Feedback เพื่อแก้ไขงานอัตโนมัติ.
 
-### 🕹️ AetoxControl (Execution)
-*   **Application Control**: สั่งเปิดโปรแกรมในเครื่องได้โดยตรง (เช่น Notepad, Calculator, Chrome)
-*   **Multi-Launch**: รองรับการสั่งเปิดหลายแอปพลิเคชันพร้อมกันในคำสั่งเดียว
-*   **Master File Manager**: จัดระเบียบไฟล์จำนวนมากแยกตามหมวดหมู่ (Images, Documents, Code, etc.) อัตโนมัติ
-
----
-
-## 🛠 เทคโนโลยีเบื้องหลัง (Architecture)
-*   **Language Models**: Ollama (Qwen 2.5:8b สำหรับงานวิเคราะห์ / 7b สำหรับงานสกัดคำสั่ง)
-*   **Interface**: **Discord Bot** (Command Center หลัก)
-*   **Backend**: Python 3.11+ (Windows Optimized)
-*   **Documentation**: มีมาตรฐานการสร้าง Tool ([tool_standard.md](aetox/tools/doc/tool_standard.md))
+### 👁️ AetoxVision & Control
+*   **Deep Analysis:** อ่านและสรุปไฟล์ PDF, Word, Markdown และ Code ได้อย่างแม่นยำ.
+*   **Master File Manager:** จัดระเบียบไฟล์และจัดการเส้นทาง (Path Navigation) อัตโนมัติ.
+*   **Dynamic Tool Discovery:** รองรับการเพิ่มเครื่องมือใหม่โดยไม่ต้องแก้ไขระบบหลัก.
 
 ---
 
-## 📋 แผนการพัฒนา (Roadmap)
-*   [x] **Interface**: Discord Bot Integration
-*   [x] **File Intelligence**: PDF/Word/MD Summarization
-*   [ ] **Phase 3 (Trinity)**: WebPulse (Web Search & Navigation)
-*   [ ] **Phase 4**: Multi-Agent Orchestration (Planner, Researcher, Critic)
-*   [ ] **Phase 5**: Desktop GUI (Aetox Dashboard)
+## 🛠 เทคโนโลยี (Tech Stack)
+*   **LLM Engine:** [Ollama](https://ollama.com/) (Qwen 2.5 / Llama 3)
+*   **Embedder:** BAAI/bge-m3 (State-of-the-art Multi-lingual Embedder)
+*   **Vector DB:** ChromaDB (Local-first)
+*   **Language:** Python 3.11+ (Asynchronous / Task-oriented)
+*   **Safety:** Built-in Permission Manager & Path Sandbox
 
 ---
 
-## 💡 ตัวอย่างคำสั่งที่ใช้งานได้
-*   *"เข้าไปดูใน Documents หน่อย มีอะไรอยู่ข้างในบ้าง"*
-*   *"สรุปไฟล์ Aetox_ข้อเสนอโครงการ.docx ให้ผมเข้าใจที แบบสั้นที่สุดนะ"*
-*   *"เปิด Notepad กับเครื่องคิดเลขขึ้นมาหน่อย"*
-*   *"จัดระเบียบไฟล์ในหน้า Desktop ให้เข้าที่ให้หมด"*
-
----
-*Created with ❤️ by Antigravity for the Aetox Ecosystem*
-
-# 🗄️ โครงสร้างโปรเจกต์ (Project Structure)
+## 🗄️ โครงสร้างโปรเจกต์ (Project Structure)
+```text
 AetoxClaw/
-├── 📁 aetox/                    # Core Source Code
-│   ├── 📁 agents/              # Agent Components
-│   │   ├── intent_extractor.py # 🧠 สกัดความตั้งใจจากผู้ใช้
-│   │   ├── executor.py         # ⚡ รันแอ็กชัน/เรียกเครื่องมือ
-│   │   ├── critic.py           # 🔍 ตรวจสอบคุณภาพผลลัพธ์
-│   │   └── base.py             # 🧱 Base class สำหรับ Agent
-│   ├── 📁 core/                # ระบบหลัก
-│   │   ├── dispatcher.py       # 🎯 Orchestrator หลัก (Async)
-│   │   ├── ollama_client.py    # 🔌 เชื่อมต่อ Ollama API
-│   │   └── prompt_engine.py    # 📝 จัดการพรอมต์แบบไดนามิก
-│   ├── 📁 memory/              # ระบบความจำ
-│   │   ├── working.py          # 💾 WorkingMemory (RAM + Disk)
-│   │   ├── vector_store.py     # 🗂️ Vector DB (BGE-M3 + Chroma)
-│   │   └── embedder.py         # 🧮 Embedding Engine
-│   ├── 📁 tools/               # เครื่องมือภายนอก
-│   │   ├── base.py             # 🧱 BaseTool Interface
-│   │   ├── loader.py           # 🔍 Dynamic Tool Discovery
-│   │   ├── web_scraper.py      # 🌐 WebPulse Scraper
-│   │   ├── file_manager.py     # 🗂️ Master File Manager + PathNavigator
-│   │   └── safety.py           # 🛡️ Safety Checker
-│   └── 📁 utils/               # Utility Functions
-├── 📁 config/                  # Configuration
-│   ├── models.yaml             # 🤖 Model assignments + parameters
-│   └── tools.yaml              # 🔧 Tool registration + prompts
-├── 📁 data/                    # Persistent Storage (gitignored)
-│   ├── tasks/                  # 💾 WorkingMemory snapshots
-│   ├── vector_db/              # 🗂️ ChromaDB index
-│   └── episodes.jsonl          # 📜 Episodic memory logs
-├── 📁 docs/                    # Documentation
-│   └── tool_standard.md        # 📋 มาตรฐานการสร้าง Tool
-├── main.py                     # 🚀 Entry Point
-├── requirements.txt            # 📦 Dependencies
-└── README.md                   # 📘 Project Overview
+├── 📁 aetox/                    # แกนหลักของระบบ
+│   ├── 📁 agents/              # เอเจนต์ (Main, Executor, Critic)
+│   ├── 📁 core/                # ระบบควบคุม (Dispatcher, PromptEngine, Client)
+│   ├── 📁 memory/              # ระบบความจำ 3 ชั้น (Working, Episodic, Vector)
+│   ├── 📁 tools/               # เครื่องมือ (FileManager, WebScraper, Vision)
+│   └── 📁 safety/              # ระบบความปลอดภัยและการจัดการสิทธิ์
+├── 📁 config/                  # การตั้งค่าเอเจนต์และเครื่องมือ (YAML)
+├── 📁 data/                    # ฐานข้อมูลและไฟล์ Snapshot (Git Ignored)
+├── 📁 docs/                    # เอกสารทางเทคนิคและคู่มือ
+└── README.md                   # 📘 เอกสารสรุปโครงการ
+```
 
+---
 
-📈 Roadmap การพัฒนาต่อ
-ระยะ
-ฟีเจอร์
-ความซับซ้อนเพิ่ม
-ประโยชน์
-🔹 Phase 3
-WebPulse + Memory Integration
-O(1) (เพิ่ม tool)
-ดึงข้อมูลเว็บ → เก็บ → ใช้ต่อได้
-🔹 Phase 4
-Multi-Agent (Planner/Researcher/Critic)
-O(A) (A = จำนวน agent)
-แบ่งงานซับซ้อนได้ดีขึ้น
-🔹 Phase 5
-Desktop GUI + Real-time Progress
-O(UI)
-ใช้งานง่ายสำหรับ non-technical user
-🔹 Phase 6
-Auto-Learning from Episodes
-O(L × E) (L = งาน, E = embedding)
-ระบบฉลาดขึ้นเองจากประสบการณ์
+## 📋 Roadmap การพัฒนา
+- [x] **Phase 1-2**: ระบบฐานรากและการเชื่อมต่อ Discord/CLI
+- [x] **Phase 3**: WebPulse Integration (ดึงข้อมูลเว็บเข้าสู่ Memory)
+- [x] **Phase 4**: **Trinity Update** (Unified Async Architecture + 3-Layer Memory) ⬅️ *Current Status*
+- [ ] **Phase 5**: Aetox Dashboard (Desktop GUI สำหรับควบคุมและดู Progress)
+- [ ] **Phase 6**: Auto-Optimization (ระบบเรียนรู้วิธีแก้ปัญหาจากความผิดพลาดในอดีตอัตโนมัติ)
+
+---
+
+## 💡 ตัวอย่างคำสั่ง
+*   *"สรุปเนื้อหาจากไฟล์ PDF ในโฟลเดอร์ดาวน์โหลด แล้วส่งเข้ากลุ่ม Discord"*
+*   *"ช่วยหาข้อมูลเกี่ยวกับโปรเจกต์ใหม่จากเว็บ แล้ววางแผนขั้นตอนการทำงานให้ผมที"*
+*   *"จัดระเบียบหน้า Desktop ให้หน่อย แยกไฟล์รูปกับไฟล์เอกสารออกจากกัน"*
+
+---
+*Created with ❤️ by Antigravity for the Aetox Ecosystem. Build for Local, Scale for Life.*

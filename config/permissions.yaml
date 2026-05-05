@@ -1,17 +1,19 @@
 # AetoxClaw Permissions Configuration
 # Fully Unlocked Mode
 
-# Allowed base drives
+# Allowed base drives (Restricted to workspace and specific data drives)
 allowed_roots:
-  - "C:\\"
-  - "E:\\"
+  - "E:\\Aetox\\"
+  - "E:\\AetoxData\\"
 
-# Forbidden paths (Cleared for full freedom)
-sensitive_zones: []
+# Forbidden paths (Sensitive system areas)
+sensitive_zones:
+  - "C:\\Windows"
+  - "C:\\Program Files"
 
-# Risk levels for operations (Default: low for all because user trusts the tools)
+# Risk levels for operations (Hardened for real-world stability)
 risk_rules:
-  organize: "low"
+  organize: "medium"
   read: "low"
-  write: "low"
-  delete: "medium"
+  write: "medium"
+  delete: "high"

@@ -1,133 +1,56 @@
-# 🌌 AetoxClaw: Architecture & Dynamic Intelligence
+# 🌌 AetoxClaw: Architecture & Trinity Intelligence
+**The Modern Agentic Orchestration Blueprint**
 
-เอกสารฉบับนี้อธิบายโครงสร้างและกระบวนการทำงานของ AetoxClaw เวอร์ชันปัจจุบัน (Gold Standard)
+เอกสารฉบับนี้อธิบายโครงสร้างและกระบวนการทำงานของ AetoxClaw เวอร์ชัน **Trinity Update** ซึ่งเน้นความเร็ว (Async), ความแม่นยำ (Critic), และความจำที่ชาญฉลาด (3-Layer Memory)
 
 ---
 
-## 1. High-Level Workflow (The Orchestration)
+## 1. High-Level Orchestration (The Trinity Flow)
 
-กระบวนการทำงานหลักถูกขับเคลื่อนด้วยระบบ **Dynamic Agentic Flow** ซึ่งมีความยืดหยุ่นสูงกว่าระบบเดิม
+กระบวนการทำงานหลักถูกขับเคลื่อนด้วยระบบ **Unified Async Orchestration** ซึ่งแยกส่วนการวางแผน (Planning) และการลงมือทำ (Execution) ออกจากกันอย่างชัดเจน
 
-### 🗺️ Overview Flow (The Data Journey)
+### 🗺️ Data Journey (The Chain of Thought)
 
 ```text
-[ START ] ──► [ PROCESS GUARD ] ──► [ DISCORD GATEWAY ] ──► [ CONTEXT INJECTION ]
-                   (Kill Ghosts)        (Message Recv)         (Load History/Memory)
-                                                                       │
-[ OUTPUT ] ◄── [ FORMATTER ] ◄── [ TOOL EXECUTION ] ◄── [ INTENT EXTRACTION ]
-   (Discord Msg)  (Markdown/Tree)    (Dynamic Result)       (Discovery + 8B)
+[ USER ] ──► [ MAIN AGENT ] ──► [ DISPATCHER ] ──► [ EXECUTOR ] ──► [ CRITIC ]
+  (Request)    (Strategic Plan)  (Task Queue)      (Tool Call)      (Audit Result)
+                                      ▲                                 │
+                                      └─────────────────────────────────┘
+                                           (Feedback / Retry Loop)
 ```
 
-### 🏛️ Detailed Architecture (The Master Blueprint)
+### 🏛️ Component Architecture
 
-```mermaid
-graph TD
-    %% Entry Point & Guards
-    Start((System Start)) --> Guard[Ghost Protector: psutil]
-    Guard -- "Clean Workspace" --> Discord[Discord Client: static token]
-    
-    %% Input Layer
-    Discord -- "on_message" --> Manager[Dispatcher: Manager]
-    Manager -- "Context Load" --> Memory[(SQLite: History & Last Path)]
-    Memory --> Agent[Executor Agent: Qwen 2.5 8B]
-
-    %% Intelligence & Discovery Layer
-    subgraph "The Dynamic Brain"
-        Agent -- "1. Discover" --> Discovery[Tool Registry]
-        Discovery -- "Actions & Descriptions" --> Agent
-        Agent -- "2. Format" --> Engine[PromptEngine]
-        Engine -- "Load Template" --> YAML[executor.yaml]
-        YAML -- "System Prompt" --> Agent
-    end
-
-    %% Decision & Extraction
-    Agent -- "3. Execute Chat" --> Ollama[Local Ollama: 8B]
-    Ollama -- "JSON Intent" --> Extractor{Intent Extractor}
-
-    %% Action & Execution Layer
-    subgraph "Execution Layer (The Hands)"
-        Extractor -- "tool: aetox_vision" --> Vision[AetoxVision: Intel]
-        Extractor -- "tool: system_control" --> Control[AetoxControl: OS]
-        Extractor -- "tool: master_file_manager" --> FM[FileManager: Organize]
-        
-        Vision -- "Logic" --> PDF[PDF/Word/MD Reader]
-        Control -- "Logic" --> System[os.startfile/taskkill]
-        FM -- "Logic" --> Shutil[File Shifting]
-    end
-
-    %% Result & Feedback Loop
-    Vision --> Result[Result Collector]
-    Control --> Result
-    FM --> Result
-    
-    Result -- "Status & Output" --> Formatter[Output Formatter]
-    Formatter -- "Markdown Response" --> Discord
-    Result -- "Success" --> MemoryUpdate[(Update Memory: Last Path)]
-```
+1.  **Main Agent (The Planner):** รับคำสั่งภาษาไทยจากผู้ใช้ วิเคราะห์บริบทจาก Memory และวางแผนงานเป็นขั้นตอน (Steps) ในรูปแบบ JSON.
+2.  **Dispatcher (The Orchestrator):** หัวใจหลักของการรันงานแบบ Asynchronous ทำหน้าที่จัดการคิวงาน, ควบคุม Timeout, และบริหารจัดการ Retry Loop เมื่อได้รับ Feedback จาก Critic.
+3.  **Executor Agent (The Hands):** ทำหน้าที่สกัดพารามิเตอร์ (Intent Extraction) และเรียกใช้เครื่องมือจาก **Unified Tool Registry**.
+4.  **Critic Agent (The Auditor):** ตรวจสอบผลลัพธ์ของแต่ละขั้นตอนเทียบกับความตั้งใจของผู้ใช้ หากไม่ผ่านเกณฑ์จะส่ง Feedback (Hints) กลับไปให้ Dispatcher เพื่อสั่ง Retry.
 
 ---
 
-## 2. หัวใจของระบบ: Dynamic Tool Discovery
+## 2. ระบบความจำ 3 ชั้น (3-Layer Hybrid Memory)
 
-AetoxClaw ใช้สถาปัตยกรรมแบบ **Class-Driven Prompting** ซึ่งแตกต่างจากระบบทั่วไป:
+AetoxClaw ใช้สถาปัตยกรรมความจำที่จำลองสมองมนุษย์เพื่อแก้ปัญหา Context Window ของโมเดลขนาดเล็ก:
 
-1.  **Discovery Phase**: เมื่อ Executor เริ่มทำงาน มันจะเข้าไปอ่านค่า `description` และ `actions` จาก Class เครื่องมือทั้งหมดโดยตรง
-2.  **Prompt Injection**: ข้อมูลเหล่านั้นจะถูกฉีดเข้าไปใน `executor.yaml` แบบไดนามิก ทำให้ AI เห็นคู่มือการใช้เครื่องมือที่อัปเดตที่สุดเสมอ
-3.  **Zero-Debt Extension**: นักพัฒนาสามารถเพิ่ม Tool ใหม่ได้เพียงแค่สร้าง Class ใหม่และลงทะเบียน ระบบจะรู้จักและใช้งานได้ทันทีโดยไม่ต้องแก้ไขพรอมต์คำสั่งหลัก
-
----
-
-## 3. ขั้นตอนการทำงาน (The Execution Algorithm)
-
-### ขั้นตอนที่ 1: การสกัดเจตนา (Intent Extraction)
-- ใช้โมเดล **Qwen 2.5:8b** เพื่อความแม่นยำสูงสุด
-- AI จะได้รับรายชื่อเครื่องมือที่มีอยู่พร้อมตัวอย่าง (Few-Shot)
-- ผลลัพธ์ต้องเป็น JSON ที่ระบุ `tool`, `action`, และ `params` (รองรับพารามิเตอร์แบบลิสต์ `targets` สำหรับการเปิดหลายแอปพร้อมกัน)
-
-### ขั้นตอนที่ 2: การทำงานของเครื่องมือ (Tool Execution)
-- ระบบจะตรวจสอบ `status` ของการทำงาน
-- หากสำเร็จ จะส่งสรุปงานกลับไปที่ Discord
-- หากล้มเหลว จะส่งข้อความแจ้งเตือนพร้อมสาเหตุ (Error Handling)
+*   **Layer 1: Working Memory (RAM - Fast):** เก็บสถานะปัจจุบัน, ประวัติการทำงานล่าสุด (Async-Safe) และ Context ของงานที่กำลังทำอยู่.
+*   **Layer 2: Episodic Memory (Disk - Structured):** บันทึกสรุปงานที่สำเร็จ (Episodes) พร้อม Metadata และ Keywords เพื่อใช้ในการวางแผนงานที่คล้ายคลึงกันในอนาคต.
+*   **Layer 3: Long-term Memory (Vector DB - Semantic):** ใช้ BGE-M3 Embedder แปลงข้อมูลจากไฟล์และเว็บเป็นเวกเตอร์ เก็บลง ChromaDB เพื่อทำ RAG (Retrieval-Augmented Generation).
 
 ---
 
-## 4. มาตรฐานเครื่องมือ (Gold Standard Tools)
-เครื่องมือทุกตัวใน AetoxClaw ต้องสืบทอดจาก `BaseTool` และมีองค์ประกอบดังนี้:
-- **name**: ชื่อเครื่องมือ (สำหรับระบบ)
-- **description**: คำอธิบายหน้าที่ (สำหรับ AI)
-- **actions**: รายการคำสั่งที่รองรับ (เช่น `open`, `read`, `summarize`)
-- **execute()**: ตรรกะการทำงานที่คืนค่า `status`, `output`, และ `error`
+## 3. หัวใจของระบบ: Dynamic Tool Discovery
+
+เรายังคงยึดถือมาตรฐาน **Class-Driven Prompting**:
+*   เครื่องมือ (Tools) จะต้องรายงานความสามารถของตัวเอง (Self-Reporting) ผ่าน `description` และ `actions`.
+*   **Executor** จะกวาดข้อมูลเหล่านี้ไปบอก AI อัตโนมัติ ทำให้ระบบสามารถขยายตัวได้แบบ Zero-Debt.
 
 ---
 
-## 5. ความปลอดภัยและเสถียรภาพ (Safety & Stability)
-1.  **Single Instance Lock**: ใช้ `psutil` ตรวจสอบและปิดกั้นบอทตัวซ้ำซ้อนเพื่อป้องกันการทำงานผิดพลาด
-2.  **Path Sanitization**: ตรวจสอบพาธไฟล์ทุกครั้งก่อนดำเนินการ เพื่อความปลอดภัยของข้อมูลในเครื่อง
-3.  **Human-in-the-loop**: งานที่มีความเสี่ยงสูงจะยังคงมีการขอคำยืนยันก่อนดำเนินการ
+## 4. มาตรฐานความปลอดภัย (Safety Standards)
+
+1.  **Permission Manager:** ตรวจสอบสิทธิ์การเข้าถึงไฟล์และคำสั่งระบบก่อนดำเนินการจริง.
+2.  **Path Sandboxing:** จำกัดการทำงานของ File Manager ให้อยู่ในขอบเขตที่ปลอดภัย.
+3.  **Ghost Protector:** ป้องกันการรัน Process ซ้อนกันเพื่อความเสถียรของระบบ.
 
 ---
-
-## 6. เจาะลึก: ทำไมสถาปัตยกรรมถึงเป็นแบบนี้? (The Philosophy)
-
-เพื่อให้คุณกิตเข้าใจเหตุผลเบื้องหลังการออกแบบ เรามาเจาะลึก 4 เสาหลักที่ทำให้ AetoxClaw แตกต่างจากบอททั่วไปครับ:
-
-### A. การแยกสมองออกจากร่างกาย (Separation of Brain & Body)
-*   **อดีต:** พรอมต์คำสั่ง (Brain) ถูกเขียนฝังไว้ในโค้ด Python (Body) ทำให้เวลาอยากจูนบอท ต้องมานั่งแก้โค้ด เสี่ยงทำโปรแกรมพัง
-*   **ปัจจุบัน:** เราแยกพรอมต์ไปไว้ใน **YAML Config** ทั้งหมด โค้ด Python มีหน้าที่แค่รัน Logic ส่วนการตัดสินใจอยู่ที่ไฟล์ตั้งค่า ผลที่ได้คือเราสามารถ "ผ่าตัดสมอง" บอทได้โดยไม่ต้องกลัวเครื่องพังครับ
-
-### B. ระบบ Plug-and-Play (Dynamic Tool Discovery)
-*   **อดีต:** เวลาเพิ่ม Tool ใหม่ ต้องไปนั่งพิมพ์บอก AI ในพรอมต์ว่า "มีเครื่องมือใหม่ชื่อนี้นะ ใช้แบบนี้นะ" ซึ่งเป็นภาระและเกิด Technical Debt
-*   **ปัจจุบัน:** เราใช้ระบบ **Self-Reporting** คือเครื่องมือแต่ละตัวต้อง "รายงานตัว" เองได้ว่าชื่ออะไร ทำหน้าที่อะไร (ผ่าน `description`) และใช้คำสั่งอะไรได้บ้าง (ผ่าน `actions`) Executor จะกวาดข้อมูลเหล่านี้ไปบอก AI เองอัตโนมัติ 
-*   **เหตุผล:** เพื่อให้คุณกิตสามารถ "ขว้าง" Tool ใหม่เข้าใส่โฟลเดอร์ แล้วบอทจะรู้จักและเริ่มงานได้ทันที 100%
-
-### C. สัญญาใจแบบ JSON (The JSON Contract)
-*   **ทำไมต้อง JSON?**: เพราะบอทต้องทำงานในระดับ "นิ้วมือ" (Tools) การส่งข้อความภาษาไทยธรรมดาอาจเกิดความผิดพลาดได้สูง เราจึงบังคับให้ AI คุยกับเครื่องมือผ่าน JSON เสมอ 
-*   **ผลลัพธ์:** ทำให้ระบบมีความแม่นยำสูง (Precision) และสามารถส่งพารามิเตอร์ซับซ้อนอย่าง `targets: ["app1", "app2"]` ได้โดยไม่สับสน
-
-### D. ระบบ Single Instance (ป้องกันการเกิด Ghost)
-*   **ปัญหา:** บอทแบบ Agentic มักจะมี Process ค้างอยู่เบื้องหลังถ้าเราปิดไม่สนิท ทำให้เกิดอาการ "บอทตอบซ้ำ" หรือ "แย่งกันรันคำสั่ง"
-*   **การแก้ปัญหา:** เราใช้ `psutil` สแกนหาตัวเองก่อนรันเสมอ ถ้าเจอ "ร่างเงา" (Ghost) มันจะกำจัดทิ้งทันที 
-*   **เหตุผล:** เพื่อให้แน่ใจว่าจะมี "สมองเดียว" เท่านั้นที่คุมเครื่องคอมพิวเตอร์ของคุณกิตในเวลาเดียวครับ
-
----
-*Created with ❤️ by Antigravity for the Aetox Ecosystem*
+*Updated: May 2026 | Created with ❤️ by Antigravity*

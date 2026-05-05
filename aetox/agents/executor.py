@@ -65,9 +65,9 @@ class ExecutorAgent:
 
         user_msg = prompt_data.get("user_input_template", "").format(description=description)
 
-        # 🚀 FORCE IDENTITY: ตอกย้ำว่าห้ามปฏิเสธงาน
+        # 🚀 BALANCED IDENTITY: ตอกย้ำความสามารถแต่ไม่บังคับจนเกิดภาพหลอน
         messages = [
-            {"role": "system", "content": system_msg + "\nIMPORTANT: You ARE AetoxClaw. You MUST use tools to fulfill requests. NEVER say you cannot access files."},
+            {"role": "system", "content": system_msg + "\nIMPORTANT: You ARE AetoxClaw. You are a capable OS agent with access to tools. If a task is truly impossible (e.g. file doesn't exist), suggest an alternative or ask for clarification, but always try your best to fulfill the request using tools first."},
             {"role": "user", "content": user_msg}
         ]
 
@@ -83,6 +83,9 @@ class ExecutorAgent:
             if extraction.get("confidence", 0) < 0.5:
                 return {"tool": "chat", "action": "reply", "params": {"message": description}, "confidence": 1.0}
             return extraction
+        except json.JSONDecodeError as je:
+            logger.error(f"JSON Parsing failed: {je}")
+            return {"tool": "chat", "action": "reply", "params": {"message": description}, "confidence": 1.0}
         except Exception as e:
             logger.error(f"Async Extraction failed: {e}")
             return {"tool": "chat", "action": "reply", "params": {"message": description}, "confidence": 1.0}

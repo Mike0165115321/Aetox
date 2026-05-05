@@ -1,52 +1,44 @@
+# สถาปัตยกรรมระบบ AetoxClaw (Trinity Edition)
+
+แผนผังการทำงานเบื้องหลังการประมวลผลคำสั่งของ AetoxClaw
+
+```text
 ┌─────────────────┐
-│  👤 ผู้ใช้      │
-│  (Discord/CLI)  │
+│     👤 ผู้ใช้    │ (Discord / CLI)
 └────────┬────────┘
-         │ Command (ภาษาไทย)
+         │ คำสั่ง (ภาษาไทย)
          ▼
 ┌─────────────────┐
-│  🧠 Intent      │
-│  Extractor      │
-│  • LLM: Qwen3-8B│
-│  • Output: JSON │
+│  🧠 MainAgent   │ (Strategic Planner)
+│  • วางแผนงาน     │
+│  • ดึงบริบทจาก Mem │
 └────────┬────────┘
-         │ {tool, action, params, confidence}
+         │ JSON Plan (Steps)
          ▼
-┌─────────────────┐
-│  🎯 Dispatcher  │◄───────────────┐
-│  • Async Orchestrator           │
-│  • Retry Logic + Timeout        │
-│  • Critic Feedback Loop         │
-└────────┬────────┘               │
-         │                         │
-    ┌────┴─────┐                   │
-    ▼          ▼                   │
-┌────────┐ ┌────────┐             │
-│🔧 Tool │ │💬 Chat │             │
-│Registry│ │Stream  │             │
-└────┬───┘ └────────┘             │
-     │                             │
-     ▼                             │
-┌─────────────────┐               │
-│  💾 Working    │               │
-│  Memory         │               │
-│  • RAM Cache   │               │
-│  • Disk Backup │               │
-│  • Context Mgr │               │
-└────────┬────────┘               │
-         │                        │
-         ▼                        │
-┌─────────────────┐               │
-│  🔍 Critic     │───────────────┘
-│  • Quality Check              │
-│  • Auto-Retry Trigger         │
-└────────┬────────┘
+┌─────────────────┐      Retry Loop (Feedback)
+│  🎯 Dispatcher  │◄──────────────────┐
+│  • Async Queue  │                   │
+│  • Timeout Mgr  │                   │
+└────────┬────────┘                   │
+         │                            │
+         ▼                            │
+┌─────────────────┐          ┌────────┴────────┐
+│  ⚡ Executor    │─────────►│  🔍 Critic      │
+│  • เรียกใช้ Tool  │  ผลลัพธ์   │  • ตรวจสอบคุณภาพ │
+│  • สกัด Params  │          │  • ให้คำแนะนำ (Hint)│
+└────────┬────────┘          └─────────────────┘
          │
          ▼
 ┌─────────────────┐
-│  📤 Response   │
-│  • Formatted  │
-│  • Saved      │
-└────────────────┘
+│  💾 3-Layer Mem │
+│  • Working (RAM)│
+│  • Episodic     │
+│  • Vector (DB)  │
+└─────────────────┘
+```
 
-
+## 🔑 จุดเด่นของสถาปัตยกรรมนี้
+1.  **Async-First:** ทุกขั้นตอนทำงานแบบไม่บล็อกโปรเซสหลัก ทำให้ระบบตอบสนองได้รวดเร็ว
+2.  **Self-Correction:** หากงานไม่ผ่านเกณฑ์ของ Critic ระบบจะพยายามแก้ไขตัวเอง (Retry) พร้อมคำแนะนำใหม่
+3.  **Hybrid Memory:** ผสมผสานความเร็วของ RAM และความลึกของ Vector DB เพื่อให้ AI "ฉลาด" และ "จำแม่น"
+4.  **Modular Design:** แยกส่วนความคิด (MainAgent) การลงมือทำ (Executor) และการตรวจสอบ (Critic) ออกจากกันชัดเจน

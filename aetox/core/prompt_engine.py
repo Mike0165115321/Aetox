@@ -102,8 +102,16 @@ class PromptEngine:
     def get_external_template(self, file_path: str, template_name: str) -> Dict[str, Any]:
         """Loads a specific template from an external YAML file."""
         if not os.path.exists(file_path):
+            logger.warning(f"Template file not found: {file_path}")
             return {}
         
-        with open(file_path, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-            return data.get(template_name, {})
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f)
+                return data.get(template_name, {}) if data else {}
+        except yaml.YAMLError as ye:
+            logger.error(f"Failed to parse YAML template {file_path}: {ye}")
+            return {}
+        except Exception as e:
+            logger.error(f"Unexpected error loading template {file_path}: {e}")
+            return {}
