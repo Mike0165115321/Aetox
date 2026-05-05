@@ -115,115 +115,64 @@ async def on_message(message):
     await handle_task_pipe(ctx, message.content.strip())
 
 async def handle_task_pipe(ctx, goal):
-    """Main entry point - Balanced: Terminal for Debug, Discord for Interaction."""
+    """Main entry point - Unified Streaming Pipeline."""
     if not goal: return
     
     interface = DiscordInterface(ctx)
     shared_dispatcher.progress_callback = interface.send_progress
     shared_dispatcher.executor.permission_manager.approval_callback = interface.request_approval
     
-    # Generate unique task_id for this session
     task_id = f"discord_{ctx.author.id}_{int(time.time())}"
     await persistent_memory.update_context(task_id, {"guild_id": ctx.guild.id if ctx.guild else None})
 
     async with ctx.typing():
-        # 1. Internal Extraction & Analysis
-        minimal_context = {"context": {}} 
+        # ดึงประวัติแบบดิบมาแปลงเป็น String
+        history_list = shared_dispatcher.executor.history
+        history_str = "\n".join([f"Q: {h['q']}\nA: {h['a']}" for h in history_list])
+        
+        minimal_context = {"history": history_str} 
         extraction = await shared_dispatcher.executor.extract_action({"description": goal}, minimal_context)
         
-        est_steps = extraction.get("estimated_steps", 1)
-        analysis = extraction.get("analysis", "ไม่มีบทวิเคราะห์")
-        
-        # --- TERMINAL LOGGING (Debug Console) ---
-        print("\n" + "="*50)
-        print(f"[USER GOAL] {goal}")
-        print(f"[ANALYSIS] {analysis}")
-        print(f"[ESTIMATED STEPS] {est_steps}")
-        print("="*50 + "\n")
+        analysis = extraction.get("analysis", "วิเคราะห์งาน...")
+        print(f"\n[GOAL] {goal}\n[ANALYSIS] {analysis}\n")
 
-        # 2. Execution Lane Decision
-        if est_steps > 1:
-            # --- HIGH-SPEED PLANNING LANE ---
-            try:
-                # 1. Show the Analysis immediately as a short summary
-                await ctx.send(f"🤖 **AetoxClaw:** {analysis}")
-                
-                # Show "Preparing" status while planner works
-                status_msg = await ctx.send("⏳ **กำลังคำนวณขั้นตอนและเตรียมปุ่มอนุมัติ...**")
-                
-                # 2. Generate the structured plan in the background
-                print(f"[*] Generating structured plan for: {goal}")
-                planner = AetoxPlanner()
-                plan = await planner.create_plan(goal)
-                
-                # Remove status message
-                await status_msg.delete()
-                
-                # Show steps and ask for approval
-                plan_id = plan.get('plan_id', 'unknown')
-                steps = plan.get('steps', [])
-                
-                plan_msg = "📝 **ขั้นตอนการทำงาน:**\n"
-                for s in steps:
-                    plan_msg += f"- {s.get('description')}\n"
-                await ctx.send(plan_msg)
-
-                # 3. ASK FOR APPROVAL
-                is_approved = await interface.request_approval(
-                    action="ดำเนินการตามแผนงาน",
-                    details=f"งานที่มี {len(steps)} ขั้นตอน เพื่อบรรลุเป้าหมาย: {goal}"
-                )
-
-                if is_approved:
-                    await shared_dispatcher.run_plan(plan)
-                    await ctx.send("🏁 **ภารกิจเสร็จสมบูรณ์เรียบร้อยครับ!**")
-                else:
-                    await ctx.send("❌ **ยกเลิกแผนการทำงานแล้วครับ**")
-
-            except Exception as e:
-                print(f"[ERROR] Planning failed: {e}")
-                await ctx.send(f"❌ **เกิดข้อผิดพลาดในการวางแผน:** {str(e)}")
-        
-        elif extraction.get("tool") in ["chat", "system_control"]:
-            # --- CHAT & SYSTEM CONTROL LANE (Streaming Supported) ---
-            print(f"[*] Switching to streaming mode for: {extraction.get('tool')}")
+        if extraction.get("estimated_steps", 1) > 2:
+            # --- PLANNING LANE ---
+            await ctx.send(f"🤖 **วิเคราะห์:** {analysis}")
+            status_msg = await ctx.send("⏳ **กำลังเตรียมแผนงาน...**")
+            planner = AetoxPlanner()
+            plan = await planner.create_plan(goal)
+            await status_msg.delete()
             
-            # 1. Run action to get tool output (like identity/status)
+            steps_msg = "📝 **แผนการทำงาน:**\n" + "\n".join([f"- {s.get('description')}" for s in plan.get('steps', [])])
+            await ctx.send(steps_msg)
+            
+            if await interface.request_approval("ดำเนินการตามแผน", goal):
+                await shared_dispatcher.run_plan(plan)
+                await ctx.send("🏁 **ภารกิจเสร็จสิ้น!**")
+        else:
+            # --- UNIFIED STREAMING PIPE ---
             result = await shared_dispatcher.executor.run_action(extraction, minimal_context)
             
-            # 2. Check if it's a direct success or a chat handoff
-            if result.get("status") == "success":
-                # If tool returned success (like list_capabilities), just send it
-                await ctx.send(result.get("output", ""))
-            else:
-                # If tool returned 'chat' status, stream it
-                stream_gen = shared_dispatcher.executor.run_chat_stream(
-                    goal, 
-                    context=result.get("output") if result.get("status") == "chat" else None
-                )
-                chat_response = await interface.stream_chat(stream_gen)
-                
-                # ✅ บันทึกความจำ (Chat History)
-                if chat_response:
-                    shared_dispatcher.executor.add_to_history(goal, chat_response)
-        else:
-            # --- SINGLE ACTION LANE ---
-            try:
-                result = await shared_dispatcher.executor.run_action(extraction, minimal_context)
-                
-                # ✅ บันทึกความจำทันที (Short-term Memory)
-                shared_dispatcher.executor.add_to_history(goal, result.get("output", ""))
-
+            async def unified_generator():
                 if result.get("status") == "success":
                     output = result.get("output", "")
-                    if output:
-                        if len(output) > 1900: output = output[:1900] + "..."
-                        await ctx.send(output)
+                    if len(output) > 600:
+                        yield "📝 **[สรุปเนื้อหาสำคัญ]:**\n\n"
+                        sum_prompt = f"สรุปเนื้อหาต่อไปนี้ให้สั้นและเป็นประเด็นสำคัญในภาษาไทย:\n\n{output[:8000]}"
+                        async for token in shared_dispatcher.executor.run_chat_stream(sum_prompt):
+                            yield token
+                    else:
+                        yield output or "สำเร็จเรียบร้อยครับ"
+                elif result.get("status") == "chat":
+                    async for token in shared_dispatcher.executor.run_chat_stream(goal, context=result.get("output")):
+                        yield token
                 else:
-                    await ctx.send(f"❌ **ล้มเหลว:** {result.get('error')}")
-            except Exception as e:
-                print(f"[ERROR] Execution failed: {e}")
-                await ctx.send(f"❌ **ผิดพลาด:** {str(e)}")
+                    yield f"❌ **ผิดพลาด:** {result.get('error', 'Unknown Error')}"
+
+            final_response = await interface.stream_chat(unified_generator())
+            if final_response:
+                shared_dispatcher.executor.add_to_history(goal, final_response)
 
 if __name__ == "__main__":
     if TOKEN: bot.run(TOKEN)

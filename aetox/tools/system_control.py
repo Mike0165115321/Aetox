@@ -13,7 +13,7 @@ class SystemControl(BaseTool):
         )
         self.registry = registry # อ้างอิงไปยัง registry เพื่อดู tools ทั้งหมด
         self.identity = (
-            "ฉันคือ AetoxClaw (Trinity Edition) ระบบปฏิบัติการอัจฉริยะ "
+            "ฉันคือ AetoxClaw ระบบปฏิบัติการอัจฉริยะ "
             "ที่ถูกออกแบบมาเพื่อช่วยคุณจัดการไฟล์, ค้นหาข้อมูลเว็บ, วิเคราะห์รูปภาพ "
             "และควบคุมระบบคอมพิวเตอร์ของคุณแบบอัตโนมัติผ่านพลังของ AI"
         )
