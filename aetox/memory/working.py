@@ -1,133 +1,203 @@
-import uuid
-import time
-from typing import Dict, List, Any, Optional
+# aetox/memory/working.py
+import json
+import hashlib
+from datetime import datetime
+from typing import List, Dict, Optional, Any, Union
+from dataclasses import dataclass, field, asdict
+import logging
+
+from .vector_store import VectorMemory
+from .embedder import BGE3Embedder
+
+logger = logging.getLogger("aetox.memory.working")
+
+@dataclass
+class MemoryChunk:
+    """ชิ้นข้อมูลหนึ่งหน่วยในระบบความจำ"""
+    id: str
+    content: str
+    summary: str
+    keywords: List[str]
+    source: str
+    timestamp: float
+    relevance_score: float = 1.0
+    metadata: Dict = field(default_factory=dict)
+    
+    def to_dict(self) -> Dict:
+        return asdict(self)
 
 class WorkingMemory:
-    """
-    Enhanced In-RAM and Persistable storage for the current task's state.
-    Designed to provide clean context for LLM agents.
-    """
-    def __init__(self, goal: str, task_id: Optional[str] = None):
-        self.task_id = task_id or str(uuid.uuid4())
-        self.goal = goal
-        self.summary: str = "" # High-level summary of progress
-        self.current_step_index = 0
-        self.step_results: List[Dict[str, Any]] = []
+    """ระบบความจำแบบไฮบริด 3 ชั้น สำหรับ AetoxOS (Updated with BGE-M3 RAG)"""
+    
+    def __init__(self, config: Dict):
+        self.config = config
+        self.goal = config.get("goal", "No goal set")
+        self.max_context_tokens = config.get("max_context_tokens", 4096)
+        self.chunk_size = config.get("chunk_size", 512)
+        self.summary_ratio = config.get("summary_ratio", 0.1)
+        
+        # Layer 1: RAM
+        self.active_chunks: List[MemoryChunk] = []
+        self.task_context: Dict = {}
         self.artifacts: Dict[str, Any] = {}
-        self.context: Dict[str, Any] = {} # Key facts to pass between steps
-        self.metadata: Dict[str, Any] = {
-            "created_at": time.time(),
-            "updated_at": time.time(),
-            "version": "2.0"
+        
+        # Layer 2: Episodic Path
+        self.episodic_path = config.get("episodic_path", "data/episodes.jsonl")
+        
+        # Layer 3: Advanced RAG (BGE-M3 + VectorStore)
+        try:
+            embedder_cfg = config.get("embedder", {})
+            self.embedder = BGE3Embedder(
+                model_path=embedder_cfg.get("model", "BAAI/bge-m3"),
+                device=embedder_cfg.get("device", "cpu")
+            )
+            self.vector_store = VectorMemory(
+                path=config.get("vector_db_path", "data/vector_db"),
+                embedder=self.embedder
+            )
+        except Exception as e:
+            logger.error(f"Failed to initialize BGE-M3 RAG: {e}")
+            self.vector_store = None
+
+    # ========== Layer 1 Actions ==========
+    def set_active_context(self, task_id: str, context: Dict):
+        self.task_context[task_id] = {
+            "state": context,
+            "updated_at": datetime.now().timestamp()
         }
+        if "instruction" in context:
+            self.goal = context["instruction"]
 
-    def add_step_result(self, step_id: int, result: Any, status: str = "success", error: Optional[str] = None):
-        """Adds a result and updates metadata."""
-        self.step_results.append({
-            "step_id": step_id,
-            "status": status,
-            "output": result,
-            "error": error,
-            "timestamp": time.time()
-        })
-        self.metadata["updated_at"] = time.time()
-        self.current_step_index = step_id
-
-    def update_context(self, updates: Dict[str, Any]):
-        """Safely updates the shared context."""
-        self.context.update(updates)
-        self.metadata["updated_at"] = time.time()
+    def get_active_context(self, task_id: str) -> Optional[Dict]:
+        ctx = self.task_context.get(task_id)
+        return ctx["state"] if ctx else None
 
     def add_artifact(self, name: str, value: Any):
-        """Registers an artifact (e.g., a file path or a generated code snippet)."""
         self.artifacts[name] = value
-        self.metadata["updated_at"] = time.time()
+
+    def add_to_working(self, content: str, source: str, keywords: List[str] = None, metadata: Dict = None) -> MemoryChunk:
+        chunk_id = hashlib.md5(f"{content[:100]}_{datetime.now().timestamp()}".encode()).hexdigest()[:12]
+        summary = self._auto_summarize(content, int(self.chunk_size * self.summary_ratio))
+        
+        chunk = MemoryChunk(
+            id=chunk_id,
+            content=content,
+            summary=summary,
+            keywords=keywords or self._extract_keywords(summary),
+            source=source,
+            timestamp=datetime.now().timestamp(),
+            metadata=metadata or {}
+        )
+        self.active_chunks.append(chunk)
+        self._trim_working_memory()
+        return chunk
+
+    def _trim_working_memory(self):
+        self.active_chunks.sort(key=lambda c: (c.relevance_score, c.timestamp), reverse=True)
+        self.active_chunks = self.active_chunks[:15]
+
+    # ========== Layer 3 Actions (BGE-M3 Updated) ==========
+    def store_long_term(self, content: str, metadata: Dict = None):
+        """เก็บข้อมูลลง long-term memory ด้วย BGE-M3"""
+        if not self.vector_store: return
+        
+        chunks = self._split_content(content)
+        for i, chunk in enumerate(chunks):
+            doc_id = f"{metadata.get('source', 'unknown') if metadata else 'unknown'}_{datetime.now().timestamp()}_{i}"
+            
+            # เก็บลง vector store (BGE3Embedder จะถูกเรียกใช้ภายใน)
+            self.vector_store.add(
+                docs=[chunk],
+                ids=[doc_id],
+                metadata=[{**(metadata or {}), "chunk_index": i, "content_preview": chunk[:100]}]
+            )
+
+    def retrieve_relevant(self, query: str, limit: int = 5) -> List[Dict]:
+        """ค้นหาข้อมูลที่เกี่ยวข้องจาก BGE-M3 Vector Store"""
+        if not self.vector_store: return []
+        
+        results = self.vector_store.query(query, n_results=limit)
+        
+        return [
+            {
+                "content": doc,
+                "metadata": meta,
+                "distance": dist,
+                "id": id_
+            }
+            for doc, meta, dist, id_ in zip(
+                results["documents"][0],
+                results["metadatas"][0],
+                results["distances"][0],
+                results["ids"][0]
+            )
+        ]
+
+    # ========== Helpers ==========
+    def _auto_summarize(self, content: str, max_length: int) -> str:
+        if len(content) <= max_length: return content
+        sentences = content.split(". ")
+        if len(sentences) <= 3: return ". ".join(sentences[:2]) + "."
+        return ". ".join([sentences[0], sentences[len(sentences)//2], sentences[-1]]) + "."
+
+    def _extract_keywords(self, text: str) -> List[str]:
+        import re
+        words = re.findall(r'\b[a-zA-Zก-๋]{3,}\b', text.lower())
+        from collections import Counter
+        return [w for w, _ in Counter(words).most_common(5)]
+
+    def _split_content(self, content: str) -> List[str]:
+        paragraphs = content.split("\n\n")
+        chunks = []
+        current = ""
+        for para in paragraphs:
+            if len(current) + len(para) > self.chunk_size * 4:
+                chunks.append(current.strip())
+                current = para
+            else:
+                current += "\n\n" + para
+        if current.strip(): chunks.append(current.strip())
+        return chunks
 
     def format_history(self) -> str:
-        """
-        Returns a clean Markdown representation of the task history for the LLM.
-        This prevents the LLM from getting 'confused' by raw JSON.
-        """
-        if not self.step_results:
-            return "ยังไม่มีประวัติการทำงาน"
+        if not self.active_chunks: return "ยังไม่มีประวัติการทำงานในเซสชันนี้"
+        lines = ["### ประวัติการทำงานล่าสุด:"]
+        for chunk in reversed(self.active_chunks):
+            lines.append(f"- [{chunk.source}] {chunk.summary}")
+        return "\n".join(lines)
 
-        history_lines = ["### ประวัติการทำงานที่ผ่านมา:"]
-        for res in self.step_results:
-            status_icon = "✅" if res["status"] == "success" else "❌"
-            line = f"- Step {res['step_id']}: {status_icon} {res['status']}"
-            if res.get("error"):
-                line += f" (Error: {res['error']})"
-            
-            # Truncate output if it's too long, but keep enough for paths and lists
-            output_str = str(res['output'])
-            if len(output_str) > 1000:
-                output_str = output_str[:997] + "..."
-
-            
-            line += f" | ผลลัพธ์: {output_str}"
-            history_lines.append(line)
+class MemoryContextBuilder:
+    """ช่วยสร้าง prompt context ที่ 'พอดี' สำหรับโมเดลเล็ก"""
+    
+    @staticmethod
+    def build_for_task(memory: WorkingMemory, task_type: str, query: str, max_tokens: int = 4000) -> str:
+        parts = [f"🎯 เป้าหมายหลัก: {memory.goal}"]
         
-        return "\n".join(history_lines)
+        # 1. ข้อมูลจาก Advanced RAG (BGE-M3)
+        relevant = memory.retrieve_relevant(query)
+        if relevant:
+            parts.append("\n📚 ข้อมูลที่เกี่ยวข้องจากความจำระยะยาว (RAG):")
+            for i, item in enumerate(relevant, 1):
+                parts.append(f"{i}. {item['content'][:300]}...")
 
-    def to_dict(self) -> Dict[str, Any]:
-        """Serializes the memory state to a dictionary."""
-        return {
-            "task_id": self.task_id,
-            "goal": self.goal,
-            "summary": self.summary,
-            "current_step_index": self.current_step_index,
-            "step_results": self.step_results,
-            "artifacts": self.artifacts,
-            "context": self.context,
-            "metadata": self.metadata
-        }
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'WorkingMemory':
-        """Restores a memory state from a dictionary."""
-        instance = cls(goal=data["goal"], task_id=data["task_id"])
-        instance.summary = data.get("summary", "")
-        instance.current_step_index = data.get("current_step_index", 0)
-        instance.step_results = data.get("step_results", [])
-        instance.artifacts = data.get("artifacts", {})
-        instance.context = data.get("context", {})
-        instance.metadata = data.get("metadata", instance.metadata)
-        return instance
-
-    def save_to_disk(self, directory: str = "data/tasks"):
-        """Saves the memory state to a JSON file on disk."""
-        import os
-        import json
-        if not os.path.exists(directory):
-            os.makedirs(directory)
+        # 2. ข้อมูลตามประเภทงาน
+        if task_type == "planning":
+            if memory.active_chunks:
+                parts.append(f"\n💡 สถานะล่าสุด: {memory.active_chunks[-1].summary}")
         
-        filepath = os.path.join(directory, f"{self.task_id}.json")
-        with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(self.to_dict(), f, ensure_ascii=False, indent=2)
+        elif task_type == "execution":
+            if memory.artifacts:
+                parts.append(f"\n📦 Artifacts ที่มี: {', '.join(memory.artifacts.keys())}")
+            if memory.active_chunks:
+                parts.append(f"\n✅ ผลการทำงานล่าสุด: {memory.active_chunks[-1].content[:500]}")
 
-    @classmethod
-    def load_from_disk(cls, task_id: str, directory: str = "data/tasks") -> Optional['WorkingMemory']:
-        """Loads a memory state from disk by task ID."""
-        import os
-        import json
-        filepath = os.path.join(directory, f"{task_id}.json")
-        if not os.path.exists(filepath):
-            return None
-            
-        with open(filepath, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            return cls.from_dict(data)
+        # 3. ประวัติย่อ
+        parts.append("\n📜 " + memory.format_history())
 
-    def get_full_context(self) -> Dict[str, Any]:
-        """Returns all relevant information for the next agent."""
-        return {
-            "task_id": self.task_id,
-            "goal": self.goal,
-            "summary": self.summary,
-            "history": self.format_history(),
-            "step_results": self.step_results,
-            "context": self.context,
-            "artifacts": self.artifacts,
-            "metadata": self.metadata
-        }
+        if query:
+            parts.append(f"\n❓ คำถาม/คำสั่งปัจจุบัน: {query}")
 
+        full = "\n".join(parts)
+        if len(full) > max_tokens * 4:
+            full = full[:max_tokens * 4] + "\n...[บริบทถูกตัด]"
+        return full

@@ -1,17 +1,30 @@
+# config/models.yaml
 global_options:
   temperature: 0.1
   top_p: 0.9
-  num_ctx: 16384
-  # stop: ["<|im_end|>", "<|tool_response|>"]
+  num_ctx: 8192
+
+memory:
+  max_context_tokens: 6000
+  chunk_size: 512
+  summary_ratio: 0.15
+  episodic_path: "data/episodes.jsonl"
+  vector_db_path: "data/vector_db"
+  
+  # 🔹 Embedder Settings
+  embedder:
+    model: "BAAI/bge-m3"
+    device: "cpu"          # 🔑 แนะนำ: "cpu" เพื่อประหยัด VRAM
+    batch_size: 8
+    normalize: true
 
 models:
-  planner: "qwen3:8b"
-  executor: "qwen3:8b"
-  critic: "qwen3:8b"
-  researcher: "qwen3:8b"
-  coder:
-    model: "qwen3:8b"
-    options:
-      temperature: 0.0
-      num_ctx: 32768
-  extraction: "qwen3:8b"
+  main: "qwen3:8b"
+  researcher: "qwen3:4b"   # ตัวเสริมสำหรับงานดึงข้อมูล
+
+tools:
+  enabled:
+    - web_pulse_scraper
+    - master_file_manager
+    - http_client
+    - code_executor

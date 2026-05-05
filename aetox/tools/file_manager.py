@@ -2,10 +2,89 @@ import os
 import shutil
 import logging
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from aetox.tools.base import BaseTool
 
 logger = logging.getLogger("aetox.tools.file_manager")
+
+class PathNavigator:
+    """จัดการ 'ตำแหน่งปัจจุบัน' ของระบบไฟล์ เหมือน terminal มี cd"""
+    
+    def __init__(self, root: str = None):
+        # ตั้ง root ที่ปลอดภัย (เช่น home directory)
+        self.root = Path(root) if root else Path.home()
+        self.cwd = self.root  # ตำแหน่งปัจจุบัน
+        
+        # โฟลเดอร์ที่อนุญาตให้เข้าถึง (ป้องกันเข้าถึงระบบ)
+        self.allowed_roots = [
+            Path.home(),  # Home user
+            Path.cwd(),   # โฟลเดอร์ที่รันสคริปต์
+        ]
+        
+        # โฟลเดอร์ต้องห้าม (ห้ามเข้าเด็ดขาด)
+        self.denied_paths = {
+            "C:\\Windows", "C:\\Program Files", "/etc", "/root", "/sys"
+        }
+    
+    def is_safe_path(self, path: Path) -> bool:
+        """ตรวจสอบว่า path ปลอดภัยที่จะเข้าถึง"""
+        try:
+            resolved = path.resolve()
+            # ตรวจสอบว่าอยู่ใน allowed_roots ไหม
+            for allowed in self.allowed_roots:
+                try:
+                    resolved.relative_to(allowed.resolve())
+                    break
+                except ValueError:
+                    continue
+            else:
+                return False  # ไม่อยู่ใน allowed_roots ไหนเลย
+            
+            # ตรวจสอบ denied_paths
+            for denied in self.denied_paths:
+                if str(resolved).startswith(denied):
+                    return False
+            
+            return True
+        except Exception:
+            return False
+    
+    def resolve(self, path: str) -> Path:
+        """แปลง path (relative/absolute) → absolute path ที่ปลอดภัย"""
+        if os.path.isabs(path):
+            candidate = Path(path)
+        else:
+            candidate = self.cwd / path
+        
+        resolved = candidate.resolve()
+        
+        if not self.is_safe_path(resolved):
+            raise PermissionError(f"Access denied: {resolved}")
+        
+        return resolved
+    
+    def cd(self, path: str) -> Dict[str, Any]:
+        """เปลี่ยน directory ปัจจุบัน (เหมือนคำสั่ง cd)"""
+        try:
+            new_cwd = self.resolve(path)
+            if not new_cwd.is_dir():
+                return {"status": "failure", "error": f"Not a directory: {path}"}
+            
+            old_cwd = self.cwd
+            self.cwd = new_cwd
+            return {
+                "status": "success",
+                "output": f"📁 เปลี่ยนไปยัง: {self.cwd}",
+                "meta": {"previous": str(old_cwd), "current": str(self.cwd)}
+            }
+        except PermissionError as e:
+            return {"status": "failure", "error": str(e)}
+        except Exception as e:
+            return {"status": "failure", "error": f"cd failed: {str(e)}"}
+    
+    def pwd(self) -> str:
+        """คืนตำแหน่งปัจจุบัน"""
+        return str(self.cwd)
 
 class MasterFileManager(BaseTool):
     """
@@ -16,8 +95,12 @@ class MasterFileManager(BaseTool):
     def __init__(self):
         super().__init__(
             name="master_file_manager",
-            description="จัดการระบบไฟล์แบบครบวงจร (อ่าน, เขียน, ย้าย, ลบ, จัดระเบียบ)",
-            actions=["create_folder", "create_file", "read_file", "delete", "rename", "move", "copy", "list_dir", "organize"]
+            description="จัดการระบบไฟล์แบบครบวงจร (อ่าน, เขียน, ย้าย, ลบ, จัดระเบียบ, นำทาง)",
+            actions=[
+                "create_folder", "create_file", "read_file", "delete", 
+                "rename", "move", "copy", "list_dir", "organize",
+                "navigate", "get_cwd"
+            ]
         )
         # Category Definitions for Intelligent Layer (Organize)
         self.categories = {
@@ -28,6 +111,7 @@ class MasterFileManager(BaseTool):
             "Code": [".py", ".js", ".ts", ".html", ".css", ".json", ".yaml", ".yml"],
             "Audio": [".mp3", ".wav", ".flac"]
         }
+        self.navigator = PathNavigator()
 
     def get_prompt_doc(self) -> str:
         """Detailed documentation for LLM to ensure accurate tool calls."""
@@ -42,10 +126,12 @@ class MasterFileManager(BaseTool):
             f"5. move/rename: ย้ายหรือเปลี่ยนชื่อ (params: path, destination)\n"
             f"6. copy: คัดลอกไฟล์/โฟลเดอร์ (params: path, destination)\n"
             f"7. list_dir: ดูรายชื่อไฟล์ในโฟลเดอร์ (params: path)\n"
-            f"8. organize: จัดระเบียบไฟล์ลงโฟลเดอร์หมวดหมู่ (params: path)\n\n"
+            f"8. organize: จัดระเบียบไฟล์ลงโฟลเดอร์หมวดหมู่ (params: path)\n"
+            f"9. navigate: เปลี่ยนโฟลเดอร์ปัจจุบัน (เหมือน cd) (params: path)\n"
+            f"10. get_cwd: ดูตำแหน่งปัจจุบัน (ไม่ต้องมี params)\n\n"
             f"ตัวอย่าง JSON:\n"
-            f'  {{"tool": "{self.name}", "action": "create_file", "params": {{"path": "test.txt", "content": "Hello"}}, "confidence": 1.0}}\n'
-            f'  {{"tool": "{self.name}", "action": "organize", "params": {{"path": "./downloads"}}, "confidence": 0.9}}\n'
+            f'  {{"tool": "{self.name}", "action": "navigate", "params": {{"path": "Downloads"}}, "confidence": 1.0}}\n'
+            f'  {{"tool": "{self.name}", "action": "read_file", "params": {{"path": "test.txt"}}, "confidence": 1.0}}\n'
         )
 
     # =========================================================================
@@ -54,14 +140,18 @@ class MasterFileManager(BaseTool):
     def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Main entry point that routes requests to specific handlers."""
         action = params.get("action")
-        path = params.get("path") or params.get("target")
+        path = params.get("path") or params.get("target") or "."
         
         if not action:
             return {"status": "failure", "error": "Missing 'action' parameter."}
-        if not path:
-            return {"status": "failure", "error": "Missing 'path' or 'target' parameter."}
 
         try:
+            # Navigation Actions
+            if action == "navigate":
+                return self.navigator.cd(path)
+            elif action == "get_cwd":
+                return {"status": "success", "output": self.navigator.pwd()}
+
             # Atomic Routing
             if action == "create_folder":
                 return self._handle_create_folder(path)
@@ -93,26 +183,28 @@ class MasterFileManager(BaseTool):
     
     def _handle_create_folder(self, path: str) -> Dict[str, Any]:
         try:
-            os.makedirs(path, exist_ok=True)
-            return {"status": "success", "output": f"📁 สร้างโฟลเดอร์สำเร็จ: {path}"}
+            safe_path = self.navigator.resolve(path)
+            safe_path.mkdir(parents=True, exist_ok=True)
+            return {"status": "success", "output": f"📁 สร้างโฟลเดอร์สำเร็จ: {safe_path}"}
         except Exception as e:
             return {"status": "failure", "error": f"สร้างโฟลเดอร์ไม่สำเร็จ: {str(e)}"}
 
     def _handle_create_file(self, path: str, content: str) -> Dict[str, Any]:
         try:
-            p = Path(path)
-            p.parent.mkdir(parents=True, exist_ok=True) # Auto-create parent dirs
-            with open(path, "w", encoding="utf-8") as f:
+            safe_path = self.navigator.resolve(path)
+            safe_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(safe_path, "w", encoding="utf-8") as f:
                 f.write(content)
-            return {"status": "success", "output": f"📄 สร้าง/เขียนไฟล์สำเร็จ: {path}"}
+            return {"status": "success", "output": f"📄 สร้าง/เขียนไฟล์สำเร็จ: {safe_path}"}
         except Exception as e:
             return {"status": "failure", "error": f"สร้างไฟล์ไม่สำเร็จ: {str(e)}"}
 
     def _handle_read_file(self, path: str) -> Dict[str, Any]:
         try:
-            if not os.path.exists(path):
+            safe_path = self.navigator.resolve(path)
+            if not safe_path.exists():
                 return {"status": "failure", "error": f"ไม่พบไฟล์: {path}"}
-            with open(path, "r", encoding="utf-8") as f:
+            with open(safe_path, "r", encoding="utf-8") as f:
                 content = f.read()
             return {"status": "success", "output": content}
         except Exception as e:
@@ -120,15 +212,16 @@ class MasterFileManager(BaseTool):
 
     def _handle_delete(self, path: str) -> Dict[str, Any]:
         try:
-            if not os.path.exists(path):
+            safe_path = self.navigator.resolve(path)
+            if not safe_path.exists():
                 return {"status": "failure", "error": f"ไม่พบไฟล์/โฟลเดอร์: {path}"}
             
-            if os.path.isdir(path):
-                shutil.rmtree(path)
-                return {"status": "success", "output": f"🗑️ ลบโฟลเดอร์สำเร็จ: {path}"}
+            if safe_path.is_dir():
+                shutil.rmtree(safe_path)
+                return {"status": "success", "output": f"🗑️ ลบโฟลเดอร์สำเร็จ: {safe_path}"}
             else:
-                os.remove(path)
-                return {"status": "success", "output": f"🗑️ ลบไฟล์สำเร็จ: {path}"}
+                os.remove(safe_path)
+                return {"status": "success", "output": f"🗑️ ลบไฟล์สำเร็จ: {safe_path}"}
         except Exception as e:
             return {"status": "failure", "error": f"ลบไม่สำเร็จ: {str(e)}"}
 
@@ -136,8 +229,10 @@ class MasterFileManager(BaseTool):
         try:
             if not dest:
                 return {"status": "failure", "error": "ต้องการ 'destination' สำหรับการย้ายหรือเปลี่ยนชื่อ"}
-            shutil.move(src, dest)
-            return {"status": "success", "output": f"🔄 ย้าย/เปลี่ยนชื่อสำเร็จ: {src} -> {dest}"}
+            safe_src = self.navigator.resolve(src)
+            safe_dest = self.navigator.resolve(dest)
+            shutil.move(str(safe_src), str(safe_dest))
+            return {"status": "success", "output": f"🔄 ย้าย/เปลี่ยนชื่อสำเร็จ: {safe_src} -> {safe_dest}"}
         except Exception as e:
             return {"status": "failure", "error": f"ดำเนินการไม่สำเร็จ: {str(e)}"}
 
@@ -145,24 +240,27 @@ class MasterFileManager(BaseTool):
         try:
             if not dest:
                 return {"status": "failure", "error": "ต้องการ 'destination' สำหรับการคัดลอก"}
+            safe_src = self.navigator.resolve(src)
+            safe_dest = self.navigator.resolve(dest)
             
-            if os.path.isdir(src):
-                shutil.copytree(src, dest)
-                return {"status": "success", "output": f"📋 คัดลอกโฟลเดอร์สำเร็จ: {src} -> {dest}"}
+            if safe_src.is_dir():
+                shutil.copytree(safe_src, safe_dest)
+                return {"status": "success", "output": f"📋 คัดลอกโฟลเดอร์สำเร็จ: {safe_src} -> {safe_dest}"}
             else:
-                shutil.copy2(src, dest)
-                return {"status": "success", "output": f"📋 คัดลอกไฟล์สำเร็จ: {src} -> {dest}"}
+                shutil.copy2(safe_src, safe_dest)
+                return {"status": "success", "output": f"📋 คัดลอกไฟล์สำเร็จ: {safe_src} -> {safe_dest}"}
         except Exception as e:
             return {"status": "failure", "error": f"คัดลอกไม่สำเร็จ: {str(e)}"}
 
     def _handle_list_dir(self, path: str) -> Dict[str, Any]:
         try:
-            if not os.path.isdir(path):
+            safe_path = self.navigator.resolve(path)
+            if not safe_path.is_dir():
                 return {"status": "failure", "error": f"'{path}' ไม่ใช่โฟลเดอร์หรือไม่มีอยู่จริง"}
             
             # --- TREE GENERATOR (Simplified) ---
-            def build_tree(current_path: str, prefix: str = "", depth: int = 0) -> List[str]:
-                if depth > 0: # 🛑 Limit to only first level as requested
+            def build_tree(current_path: Path, prefix: str = "", depth: int = 0) -> List[str]:
+                if depth > 0: # 🛑 Limit to only first level
                     return []
                 
                 lines = []
@@ -171,27 +269,25 @@ class MasterFileManager(BaseTool):
                 except Exception:
                     return []
 
-                # Limit items to avoid blowing up the chat
                 max_items = 20
                 display_items = items[:max_items]
                 
                 for i, item in enumerate(display_items):
-                    full_path = os.path.join(current_path, item)
+                    full_path = current_path / item
                     is_last = (i == len(display_items) - 1 and len(items) <= max_items)
                     connector = "└── " if is_last else "├── "
                     
-                    type_icon = "📁" if os.path.isdir(full_path) else "📄"
+                    type_icon = "📁" if full_path.is_dir() else "📄"
                     lines.append(f"{prefix}{connector}{type_icon} {item}")
                     
-                    # Optional: Peek into subfolder (limit to 1-2 files)
-                    if os.path.isdir(full_path):
+                    if full_path.is_dir():
                         try:
-                            sub_items = sorted(os.listdir(full_path))[:2] # Show only first 2 items
+                            sub_items = sorted(os.listdir(full_path))[:2]
                             sub_prefix = prefix + ("    " if is_last else "│   ")
                             for j, sub in enumerate(sub_items):
                                 s_last = (j == len(sub_items) - 1)
                                 s_conn = "└── " if s_last else "├── "
-                                s_type = "📁" if os.path.isdir(os.path.join(full_path, sub)) else "📄"
+                                s_type = "📁" if (full_path / sub).is_dir() else "📄"
                                 lines.append(f"{sub_prefix}{s_conn}{s_type} {sub}")
                             if len(os.listdir(full_path)) > 2:
                                 lines.append(f"{sub_prefix}└── ...")
@@ -204,12 +300,11 @@ class MasterFileManager(BaseTool):
                 return lines
 
 
-            tree_lines = build_tree(path)
+            tree_lines = build_tree(safe_path)
             output = "\n".join(tree_lines) if tree_lines else "โฟลเดอร์ว่างเปล่า"
-            return {"status": "success", "output": f"### โครงสร้างไฟล์ใน {path}:\n```\n{output}\n```"}
+            return {"status": "success", "output": f"### โครงสร้างไฟล์ใน {safe_path}:\n```\n{output}\n```"}
         except Exception as e:
             return {"status": "failure", "error": f"ไม่สามารถดูรายการได้: {str(e)}"}
-
 
     # =========================================================================
     # LAYER 3: INTELLIGENT ENGINE (Complex Logic)
@@ -218,32 +313,29 @@ class MasterFileManager(BaseTool):
     def _organize_directory(self, target_path: str) -> Dict[str, Any]:
         """Automatically categorizes files into folders based on extensions."""
         try:
-            p = Path(target_path)
-            if not p.exists() or not p.is_dir():
+            safe_path = self.navigator.resolve(target_path)
+            if not safe_path.exists() or not safe_path.is_dir():
                 return {"status": "failure", "error": f"ไม่พบโฟลเดอร์: {target_path}"}
 
             moved_count = 0
             skipped_count = 0
             
-            for item in p.iterdir():
-                # Skip directories and hidden files
+            for item in safe_path.iterdir():
                 if item.is_dir() or item.name.startswith('.'):
                     continue
                 
                 ext = item.suffix.lower()
                 target_category = "Others"
                 
-                # Find matching category
                 for category, extensions in self.categories.items():
                     if ext in extensions:
                         target_category = category
                         break
                 
-                dest_dir = p / target_category
+                dest_dir = safe_path / target_category
                 dest_dir.mkdir(parents=True, exist_ok=True)
                 dest_path = dest_dir / item.name
                 
-                # Handle filename collisions
                 if dest_path.exists():
                     skipped_count += 1
                     continue
@@ -253,7 +345,7 @@ class MasterFileManager(BaseTool):
 
             return {
                 "status": "success", 
-                "output": f"✅ จัดระเบียบใน {target_path} สำเร็จ!\n- ย้ายแล้ว: {moved_count} รายการ\n- ข้าม (มีอยู่แล้ว): {skipped_count} รายการ"
+                "output": f"✅ จัดระเบียบใน {safe_path} สำเร็จ!\n- ย้ายแล้ว: {moved_count} รายการ\n- ข้าม (มีอยู่แล้ว): {skipped_count} รายการ"
             }
         except Exception as e:
             logger.error(f"Organization Error: {e}")

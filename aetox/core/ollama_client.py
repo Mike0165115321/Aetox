@@ -44,6 +44,38 @@ class OllamaClient:
             logger.error(f"Async Ollama Error: {str(e)}")
             raise
 
+    async def generate(
+        self, 
+        model: str, 
+        prompt: str, 
+        format: Optional[str] = None,
+        options: Optional[Dict[str, Any]] = None,
+        system: Optional[str] = None,
+        keep_alive: int = -1
+    ) -> Dict[str, Any]:
+        """Sends a generation request (non-chat) to Ollama."""
+        payload = {
+            "model": model,
+            "prompt": prompt,
+            "stream": False,
+            "keep_alive": keep_alive
+        }
+        if format: payload["format"] = format
+        if options: payload["options"] = options
+        if system: payload["system"] = system
+
+        logger.debug(f"[OLLAMA-GENERATE] Calling {model}")
+
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(f"{self.host}/api/generate", json=payload)
+                response.raise_for_status()
+                return response.json()
+        except Exception as e:
+            logger.error(f"Async Ollama Generate Error: {str(e)}")
+            raise
+
+
     async def chat_stream(
         self, 
         model: str, 

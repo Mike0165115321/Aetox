@@ -63,61 +63,66 @@ class Dispatcher:
         else:
             yield "__NOT_CHAT__"
 
-    async def run_plan(self, plan: Dict[str, Any]) -> Dict[str, Any]:
-        """Executes a multi-step plan asynchronously with full intent extraction for each step."""
+    async def run_plan(self, plan: Dict[str, Any], max_retries: int = 3, timeout_per_step: int = 300) -> Dict[str, Any]:
+        """
+        Executes a multi-step plan asynchronously with retry logic and critic feedback.
+        """
         plan_id = plan.get("plan_id", "unknown")
         goal = plan.get("goal", "งานหลายขั้นตอน")
         steps = plan.get("steps", [])
         
-        self.logger.info(f"Executing Plan {plan_id} (Async)")
+        self.logger.info(f"Executing Plan {plan_id} (Async) with {max_retries} max retries")
         
-        all_success = True
         for step in steps:
             step_id = step.get("step_id")
             description = step.get("description")
+            retries = 0
             
-            # 🔥 INJECT GLOBAL GOAL: ตอกย้ำเป้าหมายใหญ่ในทุกขั้นตอนย่อย
-            current_context = self.memory.get_full_context()
-            current_context["global_goal"] = goal 
-            
-            if self.progress_callback:
-                await self.progress_callback(f"🛠️ **ขั้นตอนที่ {step_id}:** {description}")
-
-            # 1. Extract action (now with global goal awareness)
-            extraction = await self.executor.extract_action(step, current_context)
-            
-            # 2. Run action
-            result = await self.executor.run_action(extraction, current_context)
-            
-            # ✅ บันทึกประวัติขั้นตอนย่อย (Sub-step History)
-            self.executor.add_to_history(description, result.get("output", ""))
-
-            # 3. Quality Check (Async Critic)
-            if self.progress_callback:
-                await self.progress_callback(f"⚖️ ตรวจสอบคุณภาพงานขั้นตอนที่ {step_id}...")
-                
-            eval_result = await self.critic.evaluate(step, result, self.memory.context)
-            # 4. Update memory and check for failure
-            is_success = (eval_result.get("verdict") == "pass")
-            status = "success" if is_success else "failure"
-            
-            self.memory.add_step_result(
-                step_id=step_id,
-                result=result.get("output"),
-                status=status,
-                error=result.get("error") or eval_result.get("suggestion")
-            )
-            
-            if "memory_updates" in result:
-                self.memory.update_context(result["memory_updates"])
-
-            self.memory.save_to_disk() # 💾 AUTO-SAVE AFTER EACH STEP
-
-            # 🛑 STOP IF FAILED: ถ้าขั้นตอนไม่ผ่าน ให้หยุดทำขั้นตอนถัดไปทันที
-            if not is_success:
-                error_msg = eval_result.get("suggestion") or "ไม่ทราบสาเหตุ"
+            while retries < max_retries:
                 if self.progress_callback:
-                    await self.progress_callback(f"🛑 **หยุดการทำงาน:** ขั้นตอนที่ {step_id} ไม่ผ่านการตรวจสอบคุณภาพ\n**เหตุผล:** {error_msg}")
-                return {"status": "failure", "plan_id": plan_id, "failed_step": step_id, "reason": error_msg}
+                    retry_text = f" (พยายามครั้งที่ {retries+1})" if retries > 0 else ""
+                    await self.progress_callback(f"🛠️ **ขั้นตอนที่ {step_id}:** {description}{retry_text}")
+
+                # 1. Prepare Context
+                current_context = self.memory.get_full_context()
+                current_context["global_goal"] = goal
+                if "hint" in step:
+                    current_context["hint"] = step["hint"]
+                
+                try:
+                    # 2. Extract and Run (with timeout)
+                    async def execute_logic():
+                        extraction = await self.executor.extract_action(step, current_context)
+                        return await self.executor.run_action(extraction, current_context)
+
+                    result = await asyncio.wait_for(execute_logic(), timeout=timeout_per_step)
+                    
+                    # 3. Quality Check (Critic)
+                    eval_result = await self.critic.evaluate(step, result, self.memory.context)
+                    is_success = (eval_result.get("verdict") == "pass")
+                    
+                    if is_success:
+                        self.memory.add_step_result(step_id, result.get("output"), "success")
+                        if "memory_updates" in result:
+                            self.memory.update_context(result["memory_updates"])
+                        break # Success! Go to next step
+                    else:
+                        retries += 1
+                        feedback = await self.critic.analyze_failure(step, result)
+                        step["hint"] = feedback # Inject feedback for next retry
+                        if self.progress_callback:
+                            await self.progress_callback(f"⚠️ **ล้มเหลว:** {eval_result.get('suggestion')}\n🔍 **คำแนะนำ:** {feedback}")
+                
+                except asyncio.TimeoutError:
+                    retries += 1
+                    step["hint"] = "การทำงานใช้เวลานานเกินไป โปรดทำให้ขั้นตอนสั้นลงหรือเพิ่ม timeout"
+                    if self.progress_callback:
+                        await self.progress_callback(f"⏱️ **Timeout:** ขั้นตอนที่ {step_id} หมดเวลา")
+                
+                if retries == max_retries:
+                    self.memory.add_step_result(step_id, None, "failed", "Max retries exceeded")
+                    return {"status": "failure", "plan_id": plan_id, "failed_step": step_id, "reason": "Max retries exceeded"}
+
+            self.memory.save_to_disk()
 
         return {"status": "success", "data": self.memory.get_full_context()}
