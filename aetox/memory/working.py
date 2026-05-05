@@ -46,9 +46,13 @@ class WorkingMemory:
         
         # Layer 3: Advanced RAG (BGE-M3 + VectorStore)
         try:
+            import os
             embedder_cfg = config.get("embedder", {})
+            # ลำดับความสำคัญ: 1. .env (Local) -> 2. config (YAML) -> 3. Default (BAAI/bge-m3)
+            model_path = os.getenv("EMBEDDER_MODEL_PATH") or embedder_cfg.get("model", "BAAI/bge-m3")
+            
             self.embedder = BGE3Embedder(
-                model_path=embedder_cfg.get("model", "BAAI/bge-m3"),
+                model_path=model_path,
                 device=embedder_cfg.get("device", "cpu")
             )
             self.vector_store = VectorMemory(
