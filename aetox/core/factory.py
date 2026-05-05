@@ -2,7 +2,6 @@ import logging
 from typing import Optional
 from aetox.core.ollama_client import OllamaClient
 from aetox.core.prompt_engine import PromptEngine
-from aetox.agents.intent_extractor import IntentExtractor
 from aetox.agents.executor import ExecutorAgent
 from aetox.agents.critic import CriticAgent
 from aetox.planner.agent import AetoxPlanner
@@ -19,19 +18,9 @@ class AgentFactory:
         self.shared_engine = engine or PromptEngine()
         logger.info("AgentFactory initialized with shared resources.")
 
-    def create_extractor(self) -> IntentExtractor:
-        """Creates an IntentExtractor with shared resources."""
-        # Note: We'll need to update IntentExtractor to accept client/engine in its __init__
-        return IntentExtractor()
-
     def create_executor(self) -> ExecutorAgent:
         """Creates an ExecutorAgent with shared resources."""
-        # Note: We'll need to update ExecutorAgent to accept client/engine
-        agent = ExecutorAgent()
-        # For now, we inject them if the agent supports it
-        if hasattr(agent, 'client'): agent.client = self.shared_client
-        if hasattr(agent, 'engine'): agent.engine = self.shared_engine
-        return agent
+        return ExecutorAgent(client=self.shared_client, engine=self.shared_engine)
 
     def create_critic(self) -> CriticAgent:
         """Creates a CriticAgent with shared resources."""

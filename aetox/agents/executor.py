@@ -14,9 +14,9 @@ class ExecutorAgent:
     Executor Agent - Asynchronous Edition
     Handles intent extraction and action execution without blocking.
     """
-    def __init__(self):
-        self.client = OllamaClient()
-        self.engine = PromptEngine()
+    def __init__(self, client: Optional[OllamaClient] = None, engine: Optional[PromptEngine] = None):
+        self.client = client or OllamaClient()
+        self.engine = engine or PromptEngine()
         self.permission_manager = PermissionManager()
 
         # Load Model Config
@@ -24,6 +24,10 @@ class ExecutorAgent:
         self.options = config_loader.get_options("executor")
         self.extraction_model = config_loader.get_model("extraction")
         self.extraction_options = config_loader.get_options("extraction")
+        
+        # Load Memory/History Config
+        memory_cfg = config_loader.get_memory_config()
+        self.history_limit = memory_cfg.get("history_truncate_chars", 200)
 
         self.tools = create_default_registry()
         self.last_path = None
@@ -32,8 +36,8 @@ class ExecutorAgent:
         logger.info(f"ExecutorAgent initialized with async support using model: {self.model}")
 
     def add_to_history(self, question: str, answer: str):
-        q_trunc = question[:200]
-        a_trunc = answer[:200] if isinstance(answer, str) else str(answer)[:200]
+        q_trunc = question[:self.history_limit]
+        a_trunc = answer[:self.history_limit] if isinstance(answer, str) else str(answer)[:self.history_limit]
         self.history.append({"q": q_trunc, "a": a_trunc})
         if len(self.history) > 3:
             self.history.pop(0)

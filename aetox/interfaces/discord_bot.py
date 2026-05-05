@@ -3,6 +3,7 @@ import discord
 import logging
 import asyncio
 import time
+from typing import Dict, Any, Tuple, Optional
 from discord.ext import commands
 from dotenv import load_dotenv
 
@@ -27,9 +28,56 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Persistent Instance
-persistent_memory = WorkingMemory(config_loader.get_memory_config())
-shared_dispatcher = Dispatcher(persistent_memory)
+# Multi-User Memory Manager
+class MemoryManager:
+    """
+    Manages isolated memory and dispatcher instances for multiple users.
+    Includes cleanup logic to prevent memory leaks.
+    """
+    def __init__(self, max_users: int = 50, ttl: int = 3600):
+        self.memories: Dict[int, Dict[str, Any]] = {}
+        self.max_users = max_users
+        self.ttl = ttl
+        self.lock = asyncio.Lock()
+
+    async def get_resources(self, user_id: int) -> Tuple[WorkingMemory, Dispatcher]:
+        async with self.lock:
+            current_time = time.time()
+            
+            # 1. Cleanup expired sessions
+            await self._cleanup(current_time)
+
+            # 2. Return existing or create new
+            if user_id in self.memories:
+                self.memories[user_id]["last_active"] = current_time
+                return self.memories[user_id]["memory"], self.memories[user_id]["dispatcher"]
+
+            # 3. Handle capacity
+            if len(self.memories) >= self.max_users:
+                # Remove oldest session if full
+                oldest_user = min(self.memories, key=lambda u: self.memories[u]["last_active"])
+                del self.memories[oldest_user]
+                logger.info(f"Memory Manager: Evicted oldest session (User: {oldest_user})")
+
+            # 4. Create new instance
+            memory = WorkingMemory(config_loader.get_memory_config())
+            dispatcher = Dispatcher(memory)
+            
+            self.memories[user_id] = {
+                "memory": memory,
+                "dispatcher": dispatcher,
+                "last_active": current_time
+            }
+            logger.info(f"Memory Manager: Created new session for User: {user_id}")
+            return memory, dispatcher
+
+    async def _cleanup(self, current_time: float):
+        expired = [u for u, data in self.memories.items() if (current_time - data["last_active"]) > self.ttl]
+        for u in expired:
+            del self.memories[u]
+            logger.info(f"Memory Manager: Cleaned up expired session for User: {u}")
+
+memory_manager = MemoryManager(max_users=50, ttl=3600)
 
 class DiscordInterface:
     """
@@ -118,20 +166,23 @@ async def handle_task_pipe(ctx, goal):
     """Main entry point - Unified Streaming Pipeline."""
     if not goal: return
     
+    # 🧠 Dynamic Resource Allocation
+    memory, dispatcher = await memory_manager.get_resources(ctx.author.id)
+    
     interface = DiscordInterface(ctx)
-    shared_dispatcher.progress_callback = interface.send_progress
-    shared_dispatcher.executor.permission_manager.approval_callback = interface.request_approval
+    dispatcher.progress_callback = interface.send_progress
+    dispatcher.executor.permission_manager.approval_callback = interface.request_approval
     
     task_id = f"discord_{ctx.author.id}_{int(time.time())}"
-    await persistent_memory.update_context(task_id, {"guild_id": ctx.guild.id if ctx.guild else None})
+    await memory.update_context(task_id, {"guild_id": ctx.guild.id if ctx.guild else None})
 
     async with ctx.typing():
         # ดึงประวัติแบบดิบมาแปลงเป็น String
-        history_list = shared_dispatcher.executor.history
+        history_list = dispatcher.executor.history
         history_str = "\n".join([f"Q: {h['q']}\nA: {h['a']}" for h in history_list])
         
         minimal_context = {"history": history_str} 
-        extraction = await shared_dispatcher.executor.extract_action({"description": goal}, minimal_context)
+        extraction = await dispatcher.executor.extract_action({"description": goal}, minimal_context)
         
         analysis = extraction.get("analysis", "วิเคราะห์งาน...")
         print(f"\n[GOAL] {goal}\n[ANALYSIS] {analysis}\n")
@@ -148,11 +199,11 @@ async def handle_task_pipe(ctx, goal):
             await ctx.send(steps_msg)
             
             if await interface.request_approval("ดำเนินการตามแผน", goal):
-                await shared_dispatcher.run_plan(plan)
+                await dispatcher.run_plan(plan)
                 await ctx.send("🏁 **ภารกิจเสร็จสิ้น!**")
         else:
             # --- UNIFIED STREAMING PIPE ---
-            result = await shared_dispatcher.executor.run_action(extraction, minimal_context)
+            result = await dispatcher.executor.run_action(extraction, minimal_context)
             
             async def unified_generator():
                 if result.get("status") == "success":
@@ -160,19 +211,19 @@ async def handle_task_pipe(ctx, goal):
                     if len(output) > 600:
                         yield "📝 **[สรุปเนื้อหาสำคัญ]:**\n\n"
                         sum_prompt = f"สรุปเนื้อหาต่อไปนี้ให้สั้นและเป็นประเด็นสำคัญในภาษาไทย:\n\n{output[:8000]}"
-                        async for token in shared_dispatcher.executor.run_chat_stream(sum_prompt):
+                        async for token in dispatcher.executor.run_chat_stream(sum_prompt):
                             yield token
                     else:
                         yield output or "สำเร็จเรียบร้อยครับ"
                 elif result.get("status") == "chat":
-                    async for token in shared_dispatcher.executor.run_chat_stream(goal, context=result.get("output")):
+                    async for token in dispatcher.executor.run_chat_stream(goal, context=result.get("output")):
                         yield token
                 else:
                     yield f"❌ **ผิดพลาด:** {result.get('error', 'Unknown Error')}"
 
             final_response = await interface.stream_chat(unified_generator())
             if final_response:
-                shared_dispatcher.executor.add_to_history(goal, final_response)
+                dispatcher.executor.add_to_history(goal, final_response)
 
 if __name__ == "__main__":
     if TOKEN: bot.run(TOKEN)

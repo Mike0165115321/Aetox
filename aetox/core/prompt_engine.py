@@ -1,6 +1,9 @@
 import yaml
 import os
+import logging
 from typing import Dict, List, Any, Optional
+
+logger = logging.getLogger("aetox.core.prompt_engine")
 
 class PromptEngine:
     """

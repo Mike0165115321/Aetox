@@ -89,7 +89,7 @@ class WorkingMemory:
             }
             if "instruction" in context:
                 self.goal = context["instruction"]
-            self.save_to_disk()
+            await asyncio.to_thread(self.save_to_disk)
 
     async def update_context(self, task_id: str, updates: Dict):
         """
@@ -111,7 +111,7 @@ class WorkingMemory:
             if "instruction" in updates:
                 self.goal = updates["instruction"]
             
-            self.save_to_disk() # 💾 AUTO-SAVE
+            await asyncio.to_thread(self.save_to_disk) # 💾 AUTO-SAVE (Non-blocking)
             logger.debug(f"[MEMORY] Context updated for {task_id}: {list(updates.keys())}")
 
     async def get_active_context(self, task_id: str) -> Dict:
@@ -207,7 +207,7 @@ class WorkingMemory:
                 "task_context": self.task_context
             }
 
-    def add_step_result(self, step_id: Union[int, str], output: Any, status: str = "success", error: str = None, metadata: Dict = None):
+    async def add_step_result(self, step_id: Union[int, str], output: Any, status: str = "success", error: str = None, metadata: Dict = None):
         """
         Standardized step recording for Dispatcher and Critic.
         """
@@ -229,7 +229,7 @@ class WorkingMemory:
             source=f"step_{step_id}",
             metadata=meta
         )
-        self.save_to_disk()
+        await asyncio.to_thread(self.save_to_disk)
 
     def save_to_disk(self):
         """บันทึกสถานะความจำปัจจุบันลงไฟล์ JSON"""

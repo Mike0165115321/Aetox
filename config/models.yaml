@@ -10,6 +10,7 @@ memory:
   summary_ratio: 0.15
   episodic_path: "data/episodes.jsonl"
   vector_db_path: "data/vector_db"
+  history_truncate_chars: 200
   
   # 🔹 Embedder Settings
   embedder:

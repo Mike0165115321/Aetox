@@ -2,6 +2,7 @@ import logging
 import json
 import os
 import yaml
+import asyncio
 from aetox.core.ollama_client import OllamaClient
 from aetox.core.prompt_engine import PromptEngine
 from aetox.planner import AetoxPlanner
@@ -32,7 +33,7 @@ def init_workspace():
     except Exception as e:
         logger.error(f"Failed to initialize workspace: {e}")
 
-def run_aetox_mvp():
+async def run_aetox_mvp():
     logger.info("--- AetoxClaw System Startup ---")
     
     # 0. Initialize Workspace
@@ -42,7 +43,7 @@ def run_aetox_mvp():
     client = OllamaClient()
     engine = PromptEngine()
     
-    if not client.check_health():
+    if not await client.check_health():
         logger.error("Ollama not found. Please ensure Ollama is running at localhost:11434")
         return
 
@@ -52,7 +53,7 @@ def run_aetox_mvp():
     # 3. Plan
     planner = AetoxPlanner(client, engine)
     try:
-        plan = planner.create_plan(user_goal)
+        plan = await planner.create_plan(user_goal)
         print("\n[PLAN GENERATED]")
         print(json.dumps(plan, indent=2, ensure_ascii=False))
     except Exception as e:
@@ -60,17 +61,18 @@ def run_aetox_mvp():
         return
 
     # 4. Initialize Memory & Dispatcher
-    memory = WorkingMemory(user_goal)
+    # Note: Using Dummy goal for memory init as it's just a demo
+    memory = WorkingMemory({"goal": user_goal}) 
     dispatcher = Dispatcher(memory)
-    dispatcher.executor = ExecutorAgent(client=client, engine=engine)
+    dispatcher.executor = ExecutorAgent() # ExecutorAgent init is still sync for now
     
     # 5. Run Execution Loop
     print("\n[STARTING EXECUTION]")
-    final_result = dispatcher.run_plan(plan)
+    final_result = await dispatcher.run_plan(plan)
     
     # 6. Show Final Result
     print("\n[FINAL MEMORY STATE]")
     print(json.dumps(final_result, indent=2, ensure_ascii=False))
 
 if __name__ == "__main__":
-    run_aetox_mvp()
+    asyncio.run(run_aetox_mvp())

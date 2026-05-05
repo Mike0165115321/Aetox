@@ -1,5 +1,6 @@
 import logging
 import asyncio
+import inspect
 from typing import Dict, List, Any, Optional, Callable
 from aetox.memory.working import WorkingMemory
 from aetox.agents.executor import ExecutorAgent
@@ -18,12 +19,24 @@ class Dispatcher:
         self.critic = CriticAgent()
         self.progress_callback: Optional[Callable[[str], None]] = None
 
+    async def _safe_callback(self, message: str):
+        """Internal helper to handle sync or async callbacks safely."""
+        if not self.progress_callback:
+            return
+            
+        try:
+            if inspect.iscoroutinefunction(self.progress_callback):
+                await self.progress_callback(message)
+            else:
+                self.progress_callback(message)
+        except Exception as e:
+            self.logger.error(f"[DISPATCHER] Callback execution failed: {e}")
+
     async def run_direct_step(self, goal: str, task_id: str = "direct_task") -> Dict[str, Any]:
         """Executes a single step asynchronously."""
         self.logger.debug(f"[DISPATCHER] Starting direct step | task_id: {task_id} | goal: {goal}")
         
-        if self.progress_callback:
-            await self.progress_callback(f"🔍 **กำลังวิเคราะห์:** {goal}")
+        await self._safe_callback(f"🔍 **กำลังวิเคราะห์:** {goal}")
 
         # 1. Prepare Context (Stateless-Safe)
         current_context = await self.memory.get_active_context(task_id)
@@ -40,8 +53,7 @@ class Dispatcher:
                 "needs_planning": True
             }
 
-        if self.progress_callback:
-            await self.progress_callback(f"⚙️ **เรียกใช้:** {extraction.get('tool')} ({extraction.get('action')})")
+        await self._safe_callback(f"⚙️ **เรียกใช้:** {extraction.get('tool')} ({extraction.get('action')})")
             
         result = await self.executor.run_action(extraction, current_context)
         
@@ -84,9 +96,8 @@ class Dispatcher:
             retries = 0
             
             while retries < max_retries:
-                if self.progress_callback:
-                    retry_text = f" (รอบที่ {retries+1})" if retries > 0 else ""
-                    await self.progress_callback(f"🛠️ **ขั้นตอนที่ {step_id}:** {description}{retry_text}")
+                retry_text = f" (รอบที่ {retries+1})" if retries > 0 else ""
+                await self._safe_callback(f"🛠️ **ขั้นตอนที่ {step_id}:** {description}{retry_text}")
 
                 # 1. Prepare Context (Standardized)
                 current_context = await self.memory.get_full_context_async() # We'll need this async helper
@@ -123,8 +134,7 @@ class Dispatcher:
                         # บันทึกสถานะ Retry
                         self.memory.add_step_result(step_id, result.get("output"), "retry", feedback, metadata={"eval": eval_result})
                         
-                        if self.progress_callback:
-                            await self.progress_callback(f"⚠️ **ไม่ผ่านเกณฑ์:** {eval_result.get('suggestion')}\n🔍 **คำแนะนำ:** {feedback}")
+                        await self._safe_callback(f"⚠️ **ไม่ผ่านเกณฑ์:** {eval_result.get('suggestion')}\n🔍 **คำแนะนำ:** {feedback}")
                         self.logger.warning(f"[DISPATCHER] Step {step_id} FAILED critic | retry: {retries}")
                 
                 except asyncio.TimeoutError:
@@ -134,8 +144,7 @@ class Dispatcher:
                     
                     self.memory.add_step_result(step_id, None, "failure", error_msg)
                     
-                    if self.progress_callback:
-                        await self.progress_callback(f"⏱️ **หมดเวลา:** {error_msg}")
+                    await self._safe_callback(f"⏱️ **หมดเวลา:** {error_msg}")
                     self.logger.error(f"[DISPATCHER] Step {step_id} TIMEOUT")
                 
                 if retries == max_retries:

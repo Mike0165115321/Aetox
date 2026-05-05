@@ -12,6 +12,7 @@ class Sandbox:
     Enforces file system access boundaries.
     """
     def __init__(self, config_path: str = "config/permissions.yaml"):
+        self.logger = logging.getLogger("aetox.safety.sandbox")
         self.allowed_paths = []
         self.forbidden_paths = []
         self._load_config(config_path)
