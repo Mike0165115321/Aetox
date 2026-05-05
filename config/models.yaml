@@ -20,7 +20,10 @@ memory:
 
 models:
   main: "qwen3:8b"
-  researcher: "qwen3:4b"   # ตัวเสริมสำหรับงานดึงข้อมูล
+  planner: "qwen3:8b"
+  executor: "qwen3:8b"
+  critic: "qwen3:8b"
+  researcher: "qwen3:8b"
 
 tools:
   enabled:

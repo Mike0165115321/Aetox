@@ -20,6 +20,7 @@ from aetox.core.prompt_engine import PromptEngine
 from aetox.planner import AetoxPlanner
 from aetox.core.dispatcher import Dispatcher
 from aetox.memory.working import WorkingMemory
+from aetox.core.config_loader import config_loader
 
 # Initialize Discord Bot
 intents = discord.Intents.default()
@@ -27,7 +28,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # Persistent Instance
-persistent_memory = WorkingMemory("")
+persistent_memory = WorkingMemory(config_loader.get_memory_config())
 shared_dispatcher = Dispatcher(persistent_memory)
 
 class DiscordInterface:
@@ -120,7 +121,10 @@ async def handle_task_pipe(ctx, goal):
     interface = DiscordInterface(ctx)
     shared_dispatcher.progress_callback = interface.send_progress
     shared_dispatcher.executor.permission_manager.approval_callback = interface.request_approval
-    persistent_memory.update_context({"guild_id": ctx.guild.id if ctx.guild else None})
+    
+    # Generate unique task_id for this session
+    task_id = f"discord_{ctx.author.id}_{int(time.time())}"
+    await persistent_memory.update_context(task_id, {"guild_id": ctx.guild.id if ctx.guild else None})
 
     async with ctx.typing():
         # 1. Internal Extraction & Analysis
