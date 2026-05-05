@@ -137,6 +137,43 @@ class WorkingMemory:
             )
         ]
 
+    def get_full_context(self) -> Dict[str, Any]:
+        """คืนค่าบริบททั้งหมดในรูปแบบ Dictionary สำหรับ Dispatcher"""
+        return {
+            "goal": self.goal,
+            "active_chunks": [c.to_dict() for c in self.active_chunks],
+            "artifacts": self.artifacts,
+            "task_context": self.task_context
+        }
+
+    def add_step_result(self, step_id: Union[int, str], result: Any, status: str = "success", error: str = None):
+        """Bridge method สำหรับความเข้ากันได้กับ Dispatcher เวอร์ชั่นเก่า"""
+        self.add_to_working(
+            content=str(result) if result else "",
+            source=f"step_{step_id}",
+            metadata={"status": status, "error": error, "step_id": step_id}
+        )
+
+    def save_to_disk(self):
+        """บันทึกสถานะความจำปัจจุบันลงไฟล์ JSON"""
+        import os
+        os.makedirs(os.path.dirname(self.episodic_path), exist_ok=True)
+        snapshot_path = os.path.join(os.path.dirname(self.episodic_path), "working_snapshot.json")
+        
+        data = {
+            "goal": self.goal,
+            "active_chunks": [c.to_dict() for c in self.active_chunks],
+            "artifacts": self.artifacts,
+            "timestamp": datetime.now().timestamp()
+        }
+        
+        try:
+            with open(snapshot_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            # logger.debug(f"Memory snapshot saved to {snapshot_path}")
+        except Exception as e:
+            logger.error(f"Failed to save memory snapshot: {e}")
+
     # ========== Helpers ==========
     def _auto_summarize(self, content: str, max_length: int) -> str:
         if len(content) <= max_length: return content
