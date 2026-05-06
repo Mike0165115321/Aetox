@@ -54,8 +54,8 @@ class TestWorkingMemory:
         from unittest.mock import MagicMock, patch
         mock_vector_store = MagicMock()
         
-        with patch("aetox.memory.working.VectorMemory", return_value=mock_vector_store), \
-             patch("aetox.memory.working.BGE3Embedder", return_value=MagicMock()):
+        with patch("aetox.memory.vector_store.VectorMemory", return_value=mock_vector_store), \
+             patch("aetox.memory.embedder.BGE3Embedder", return_value=MagicMock()):
             
             memory.store_long_term("Test content for RAG", metadata={"source": "test"})
             
@@ -75,8 +75,8 @@ class TestWorkingMemory:
             "ids": [["id1"]]
         }
         
-        with patch("aetox.memory.working.VectorMemory", return_value=mock_vector_store), \
-             patch("aetox.memory.working.BGE3Embedder", return_value=MagicMock()):
+        with patch("aetox.memory.vector_store.VectorMemory", return_value=mock_vector_store), \
+             patch("aetox.memory.embedder.BGE3Embedder", return_value=MagicMock()):
             
             results = memory.retrieve_relevant("Search query", limit=1)
             

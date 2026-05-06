@@ -23,7 +23,7 @@ def test_vision_list_dir(vision_tool, tmp_path):
 
 def test_vision_read_txt(vision_tool, tmp_path):
     f = tmp_path / "test.txt"
-    f.write_text("Hello Thai: สวัสดี")
+    f.write_text("Hello Thai: สวัสดี", encoding="utf-8")
     
     result = vision_tool.execute({"action": "read", "path": str(f)})
     

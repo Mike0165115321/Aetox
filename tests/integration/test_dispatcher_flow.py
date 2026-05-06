@@ -33,11 +33,14 @@ class TestDispatcherFlow:
         dispatcher.critic = MagicMock()
         dispatcher.critic.evaluate = AsyncMock(return_value={"verdict": "pass", "score": 1.0})
         
+        # Mock memory.add_step_result to verify calls
+        dispatcher.memory.add_step_result = AsyncMock()
+        
         await dispatcher.run_plan(mock_plan_response)
         
         # 2 steps in mock_plan_response
         assert dispatcher.executor.run_action.call_count == 2
-        assert len(dispatcher.memory.active_chunks) == 2
+        assert dispatcher.memory.add_step_result.call_count == 2
 
     async def test_run_plan_retry_logic(self, dispatcher, mock_plan_response):
         dispatcher.executor = MagicMock()

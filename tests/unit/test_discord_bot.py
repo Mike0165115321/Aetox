@@ -55,7 +55,8 @@ async def test_discord_interface_request_approval():
     mock_reaction = MagicMock()
     mock_reaction.emoji = "✅"
     
-    with patch("aetox.interfaces.discord_bot.bot.wait_for", return_value=(mock_reaction, MagicMock())):
+    with patch("aetox.interfaces.discord_bot.bot.wait_for", new_callable=AsyncMock) as mock_wait:
+        mock_wait.return_value = (mock_reaction, MagicMock())
         result = await interface.request_approval("test_action", "details")
         assert result is True
         assert mock_msg.add_reaction.call_count == 2

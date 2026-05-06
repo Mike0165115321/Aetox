@@ -45,11 +45,11 @@ class TestExecutorFlow:
 
     async def test_handle_chat_fallback(self, executor, mock_ollama_client):
         # Test when no tool is suitable
-        async def mock_stream(*args, **kwargs):
+        async def fake_stream(*args, **kwargs):
             for i in range(3):
                 yield f"Token {i} "
         
-        mock_ollama_client.chat_stream = mock_stream
+        mock_ollama_client.chat_stream = fake_stream
         
         tokens = []
         async for token in executor.run_chat_stream("Hello, how are you?"):

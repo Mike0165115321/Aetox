@@ -61,8 +61,9 @@ async def run_aetox_mvp():
         return
 
     # 4. Initialize Memory & Dispatcher
-    # Note: Using Dummy goal for memory init as it's just a demo
-    memory = WorkingMemory({"goal": user_goal}) 
+    memory_config = config_loader.get_memory_config()
+    memory_config["goal"] = user_goal
+    memory = WorkingMemory(memory_config) 
     dispatcher = Dispatcher(memory)
     dispatcher.executor = ExecutorAgent() # ExecutorAgent init is still sync for now
     
