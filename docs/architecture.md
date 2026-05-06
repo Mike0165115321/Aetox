@@ -1,56 +1,64 @@
-# 🌌 AetoxClaw: Architecture & Trinity Intelligence
-**The Modern Agentic Orchestration Blueprint**
+# 🌌 AetoxClaw Architecture: Stateless Core & History Injection
+**The Lightweight Orchestration Blueprint**
 
-เอกสารฉบับนี้อธิบายโครงสร้างและกระบวนการทำงานของ AetoxClaw เวอร์ชัน **Trinity Update** ซึ่งเน้นความเร็ว (Async), ความแม่นยำ (Critic), และความจำที่ชาญฉลาด (3-Layer Memory)
+เอกสารฉบับนี้อธิบายโครงสร้างเวอร์ชัน **Lightweight Refactor** ซึ่งเน้นความเร็วสูงสุด ประหยัดทรัพยากร และการส่งต่อบริบทที่แม่นยำ
 
 ---
 
-## 1. High-Level Orchestration (The Trinity Flow)
+## 1. High-Level Orchestration (The Stateless Flow)
 
-กระบวนการทำงานหลักถูกขับเคลื่อนด้วยระบบ **Unified Async Orchestration** ซึ่งแยกส่วนการวางแผน (Planning) และการลงมือทำ (Execution) ออกจากกันอย่างชัดเจน
+AetoxClaw ใช้สถาปัตยกรรมแบบ **Stateless Core** โดยที่เอเจนต์แต่ละตัวจะไม่เก็บสถานะ (State) ไว้ถาวร แต่จะได้รับบริบท (Context) ผ่านการฉีดข้อมูล (Injection) จากตัวกลาง (Dispatcher)
 
 ### 🗺️ Data Journey (The Chain of Thought)
 
 ```text
 [ USER ] ──► [ MAIN AGENT ] ──► [ DISPATCHER ] ──► [ EXECUTOR ] ──► [ CRITIC ]
-  (Request)    (Strategic Plan)  (Task Queue)      (Tool Call)      (Audit Result)
-                                      ▲                                 │
-                                      └─────────────────────────────────┘
-                                           (Feedback / Retry Loop)
+  (Request)    (Plan Steps)      (Inject History)  (Tool Call)      (Result Audit)
+                                       ▲                                 │
+                                       └─────────────────────────────────┘
+                                            (Feedback / Retry Loop)
 ```
 
-### 🏛️ Component Architecture
+### 🏛️ Core Components
 
-1.  **Main Agent (The Planner):** รับคำสั่งภาษาไทยจากผู้ใช้ วิเคราะห์บริบทจาก Memory และวางแผนงานเป็นขั้นตอน (Steps) ในรูปแบบ JSON.
-2.  **Dispatcher (The Orchestrator):** หัวใจหลักของการรันงานแบบ Asynchronous ทำหน้าที่จัดการคิวงาน, ควบคุม Timeout, และบริหารจัดการ Retry Loop เมื่อได้รับ Feedback จาก Critic.
-3.  **Executor Agent (The Hands):** ทำหน้าที่สกัดพารามิเตอร์ (Intent Extraction) และเรียกใช้เครื่องมือจาก **Unified Tool Registry**.
-4.  **Critic Agent (The Auditor):** ตรวจสอบผลลัพธ์ของแต่ละขั้นตอนเทียบกับความตั้งใจของผู้ใช้ หากไม่ผ่านเกณฑ์จะส่ง Feedback (Hints) กลับไปให้ Dispatcher เพื่อสั่ง Retry.
-
----
-
-## 2. ระบบความจำ 3 ชั้น (3-Layer Hybrid Memory)
-
-AetoxClaw ใช้สถาปัตยกรรมความจำที่จำลองสมองมนุษย์เพื่อแก้ปัญหา Context Window ของโมเดลขนาดเล็ก:
-
-*   **Layer 1: Working Memory (RAM - Fast):** เก็บสถานะปัจจุบัน, ประวัติการทำงานล่าสุด (Async-Safe) และ Context ของงานที่กำลังทำอยู่.
-*   **Layer 2: Episodic Memory (Disk - Structured):** บันทึกสรุปงานที่สำเร็จ (Episodes) พร้อม Metadata และ Keywords เพื่อใช้ในการวางแผนงานที่คล้ายคลึงกันในอนาคต.
-*   **Layer 3: Long-term Memory (Vector DB - Semantic):** ใช้ BGE-M3 Embedder แปลงข้อมูลจากไฟล์และเว็บเป็นเวกเตอร์ เก็บลง ChromaDB เพื่อทำ RAG (Retrieval-Augmented Generation).
+1.  **Main Agent (The Planner):** ทำหน้าที่วางแผนงาน (Planning) เป็นขั้นตอน โดยไม่ต้องสนใจประวัติที่ซับซ้อน เน้นที่เป้าหมายปัจจุบันของผู้ใช้
+2.  **Dispatcher (The Orchestrator):** เป็น "หัวใจ" ของระบบ ทำหน้าที่บริหารจัดการบริบท (Context Management) โดยจะตัดสินใจว่าควรส่งประวัติอะไรให้ Executor ในแต่ละจังหวะ
+3.  **Executor Agent (The Hands):** รับบริบทที่ถูกฉีดเข้ามา (Injected History) และเรียกใช้เครื่องมือตามคำสั่ง
+4.  **Critic Agent (The Auditor):** ตรวจสอบผลลัพธ์เทียบกับเป้าหมายในก้าวนั้นๆ
 
 ---
 
-## 3. หัวใจของระบบ: Dynamic Tool Discovery
+## 2. ระบบจัดการบริบท (Smart History Injection)
 
-เรายังคงยึดถือมาตรฐาน **Class-Driven Prompting**:
-*   เครื่องมือ (Tools) จะต้องรายงานความสามารถของตัวเอง (Self-Reporting) ผ่าน `description` และ `actions`.
-*   **Executor** จะกวาดข้อมูลเหล่านี้ไปบอก AI อัตโนมัติ ทำให้ระบบสามารถขยายตัวได้แบบ Zero-Debt.
+เพื่อแก้ปัญหาเรื่อง Context Bloat และการกินทรัพยากร เรายกเลิกระบบ RAG/Summarize อัตโนมัติ และเปลี่ยนมาใช้ระบบฉีดบริบทตามความจำเป็น:
+
+### 📱 Chat Mode (การสนทนาทั่วไป)
+*   **Strategy:** Sliding Window History.
+*   **Logic:** ส่งประวัติการคุยล่าสุด **3-5 ชุด** (ถาม-ตอบ) เพื่อให้ระบบยังคงจำเรื่องที่คุยกันล่าสุดได้ โดยไม่ทำให้ Prompt ยาวเกินไปจนโมเดลสับสน
+
+### 📝 Plan Mode (การทำงานหลายขั้นตอน)
+*   **Strategy:** Dynamic Task History.
+*   **Logic:** 
+    *   ส่ง **ผลลัพธ์ของขั้นตอนก่อนหน้า (Immediate Context)** เพื่อความต่อเนื่อง
+    *   ส่ง **สรุปสถานะของแผนงาน (Plan Summary)** ว่าขั้นตอนไหนสำเร็จหรือล้มเหลวไปแล้วบ้าง
+    *   *ไม่ส่ง* ผลลัพธ์ดิบ (Full Output) ของทุกขั้นตอน เพื่อประหยัด Token
 
 ---
 
-## 4. มาตรฐานความปลอดภัย (Safety Standards)
+## 3. Lightweight Session Context
 
-1.  **Permission Manager:** ตรวจสอบสิทธิ์การเข้าถึงไฟล์และคำสั่งระบบก่อนดำเนินการจริง.
-2.  **Path Sandboxing:** จำกัดการทำงานของ File Manager ให้อยู่ในขอบเขตที่ปลอดภัย.
-3.  **Ghost Protector:** ป้องกันการรัน Process ซ้อนกันเพื่อความเสถียรของระบบ.
+`SessionContext` ถูกนำมาแทนที่ `WorkingMemory` เพื่อลด Overhead:
+*   **No Background Tasks:** ไม่มีระบบ Summarization หรือ Embedding ที่รันใน Background
+*   **Memory Efficiency:** เก็บข้อมูลเป็น Plain List ใน RAM ทำให้เข้าถึงได้เร็วและกินทรัพยากรต่ำสุด
+*   **Task Isolation:** ประวัติของแต่ละงานจะถูกจัดการแยกกันอย่างชัดเจน
 
 ---
-*Updated: May 2026 | Created with ❤️ by Antigravity*
+
+## 4. มาตรฐานความปลอดภัย (Safety)
+
+1.  **Permission Manager:** ตรวจสอบสิทธิ์การเข้าถึงก่อนรันเครื่องมือ
+2.  **Path Sandboxing:** จำกัดขอบเขตการทำงานของ File Tool
+3.  **Timeout Protection:** ป้องกันการรันงานค้างในระบบด้วยการกำหนดเวลาตายตัว
+
+---
+*Updated: May 2026 | Refactored for Speed*

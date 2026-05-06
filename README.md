@@ -1,37 +1,38 @@
-# 🌌 AetoxClaw: The Agentic Local OS Orchestrator
-**Next-Generation AI System for Local Task Orchestration**
+# 🌌 AetoxClaw: The Lightweight Agentic Orchestrator
+**High-Performance AI System for Local Task Orchestration**
 
-AetoxClaw คือระบบปฏิบัติการ AI แบบ **Agentic** ที่ทำงานบนเครื่องของคุณโดยสมบูรณ์ (Local-first) ออกแบบมาเพื่อเป็น "สมองกลาง" ในการจัดการไฟล์ วางแผนงานซับซ้อน และควบคุมระบบปฏิบัติการผ่านคำสั่งภาษาไทยที่ยืดหยุ่น โดยใช้สถาปัตยกรรมที่เน้นความปลอดภัย ความเสถียร และความเป็นส่วนตัว
+AetoxClaw คือระบบปฏิบัติการ AI แบบ **Agentic** ที่ทำงานบนเครื่องของคุณโดยสมบูรณ์ (Local-first) ออกแบบมาให้มีความเร็วสูงและประหยัดทรัพยากร (Lightweight) โดยใช้สถาปัตยกรรม **Stateless Core** พร้อมระบบการฉีดบริบท (History Injection) ที่แม่นยำตามประเภทงาน
 
 ---
 
 ## 🚀 ความสามารถหลัก (Core Capabilities)
 
-### 🧠 Hybrid Memory System (3-Layer)
-ระบบความจำที่จำลองการทำงานของมนุษย์ เพื่อให้เอเจนต์จดจำบริบทได้แม่นยำแม้รันบนโมเดลขนาดเล็ก:
-1.  **Working Memory (RAM):** เก็บ Context ปัจจุบันที่กำลังทำอยู่ (Async-Safe & Stateless).
-2.  **Episodic Memory (Disk):** บันทึก "บทเรียน" และประวัติการทำงานย่อยๆ ในรูปแบบ JSONL เพื่อการเรียกใช้ซ้ำ.
-3.  **Long-term Memory (Vector DB):** เก็บข้อมูลดิบจากไฟล์และเว็บไซต์ผ่านระบบ RAG (BGE-M3 Embedder) เพื่อการค้นหาเชิงความหมาย.
+### 🧠 Lightweight Session Context (New!)
+ระบบจัดการความจำที่ถูกปรับแต่งมาเพื่อความเร็วและประหยัด RAM/CPU:
+1.  **Stateless Execution:** ตัวเอเจนต์ไม่ต้องแบกรับความจำหนักๆ ไว้ในตัว แต่จะได้รับบริบทที่จำเป็น (Injected Context) เฉพาะตอนที่ทำงาน
+2.  **Smart History Injection:** 
+    *   **Chat Mode:** ส่งประวัติการคุยแบบ Sliding Window (3-5 ข้อความล่าสุด) เพื่อความต่อเนื่อง
+    *   **Plan Mode:** ส่งผลลัพธ์ขั้นตอนก่อนหน้า + สรุปสถานะแผนงาน เพื่อความแม่นยำในงานซับซ้อน
+3.  **Zero Background Overhead:** ยกเลิกการทำ RAG, Summarize และ Keyword Extraction อัตโนมัติ เพื่อให้รันบนโมเดลขนาดเล็กได้ลื่นไหล
 
 ### 🎯 Async Orchestration (Dispatcher-based)
-สถาปัตยกรรมแบบกระจายศูนย์ที่ลดความซับซ้อนของโค้ดหลัก:
-*   **MainAgent (Planner):** รับคำสั่งและวางแผนงาน (Planning) แล้วส่งต่อให้ Dispatcher.
-*   **Dispatcher (Orchestrator):** ควบคุมการรันงานแบบ Async รองรับ Timeout, Retry และการจัดการ Error อย่างเป็นระบบ.
-*   **ExecutorAgent (Doer):** ศูนย์กลางการเรียกใช้เครื่องมือ (Tool Registry) ที่มีความปลอดภัยสูง.
-*   **CriticAgent (Auditor):** ตรวจสอบผลลัพธ์ของแต่ละขั้นตอนและให้ Feedback เพื่อแก้ไขงานอัตโนมัติ.
+สถาปัตยกรรมที่แยกส่วนการวางแผนและการลงมือทำออกจากกัน:
+*   **MainAgent (Planner):** วิเคราะห์เป้าหมายและวางแผนงาน (Planning) เป็นลำดับขั้นตอน
+*   **Dispatcher (Orchestrator):** ควบคุมการรันงานแบบ Async รองรับ Timeout, Retry และการจัดการ Error
+*   **ExecutorAgent (Doer):** ศูนย์กลางการเรียกใช้เครื่องมือ (Tool Registry) ที่มีความปลอดภัยสูง
+*   **CriticAgent (Auditor):** ตรวจสอบผลลัพธ์ของแต่ละขั้นตอนเทียบกับเป้าหมาย
 
 ### 👁️ AetoxVision & Control
-*   **Deep Analysis:** อ่านและสรุปไฟล์ PDF, Word, Markdown และ Code ได้อย่างแม่นยำ.
-*   **Master File Manager:** จัดระเบียบไฟล์และจัดการเส้นทาง (Path Navigation) อัตโนมัติ.
-*   **Dynamic Tool Discovery:** รองรับการเพิ่มเครื่องมือใหม่โดยไม่ต้องแก้ไขระบบหลัก.
+*   **Deep Analysis:** อ่านและสรุปไฟล์ PDF, Word, Markdown และ Code ได้โดยตรง
+*   **Master File Manager:** จัดระเบียบไฟล์และจัดการเส้นทาง (Path Navigation) อัตโนมัติ
+*   **Dynamic Tool Discovery:** รองรับการเพิ่มเครื่องมือใหม่โดยไม่ต้องแก้ไขระบบหลัก
 
 ---
 
 ## 🛠 เทคโนโลยี (Tech Stack)
 *   **LLM Engine:** [Ollama](https://ollama.com/) (Qwen 2.5 / Llama 3)
-*   **Embedder:** BAAI/bge-m3 (State-of-the-art Multi-lingual Embedder)
-*   **Vector DB:** ChromaDB (Local-first)
 *   **Language:** Python 3.11+ (Asynchronous / Task-oriented)
+*   **Design Philosophy:** Stateless Core, Explicit Context, Local-first
 *   **Safety:** Built-in Permission Manager & Path Sandbox
 
 ---
@@ -41,31 +42,22 @@ AetoxClaw คือระบบปฏิบัติการ AI แบบ **Age
 AetoxClaw/
 ├── 📁 aetox/                    # แกนหลักของระบบ
 │   ├── 📁 agents/              # เอเจนต์ (Main, Executor, Critic)
-│   ├── 📁 core/                # ระบบควบคุม (Dispatcher, PromptEngine, Client)
-│   ├── 📁 memory/              # ระบบความจำ 3 ชั้น (Working, Episodic, Vector)
+│   ├── 📁 core/                # ระบบควบคุม (Dispatcher, PromptEngine, ConfigLoader)
+│   ├── 📁 memory/              # ระบบจัดการบริบท (SessionContext)
 │   ├── 📁 tools/               # เครื่องมือ (FileManager, WebScraper, Vision)
 │   └── 📁 safety/              # ระบบความปลอดภัยและการจัดการสิทธิ์
 ├── 📁 config/                  # การตั้งค่าเอเจนต์และเครื่องมือ (YAML)
-├── 📁 data/                    # ฐานข้อมูลและไฟล์ Snapshot (Git Ignored)
+├── 📁 data/                    # ไฟล์ Snapshot และ Temporary (Git Ignored)
 ├── 📁 docs/                    # เอกสารทางเทคนิคและคู่มือ
 └── README.md                   # 📘 เอกสารสรุปโครงการ
 ```
 
 ---
 
-## 📋 Roadmap การพัฒนา
-- [x] **Phase 1-2**: ระบบฐานรากและการเชื่อมต่อ Discord/CLI
-- [x] **Phase 3**: WebPulse Integration (ดึงข้อมูลเว็บเข้าสู่ Memory)
-- [x] **Phase 4**: **Trinity Update** (Unified Async Architecture + 3-Layer Memory) ⬅️ *Current Status*
-- [ ] **Phase 5**: Aetox Dashboard (Desktop GUI สำหรับควบคุมและดู Progress)
-- [ ] **Phase 6**: Auto-Optimization (ระบบเรียนรู้วิธีแก้ปัญหาจากความผิดพลาดในอดีตอัตโนมัติ)
-
----
-
 ## 💡 ตัวอย่างคำสั่ง
-*   *"สรุปเนื้อหาจากไฟล์ PDF ในโฟลเดอร์ดาวน์โหลด แล้วส่งเข้ากลุ่ม Discord"*
-*   *"ช่วยหาข้อมูลเกี่ยวกับโปรเจกต์ใหม่จากเว็บ แล้ววางแผนขั้นตอนการทำงานให้ผมที"*
-*   *"จัดระเบียบหน้า Desktop ให้หน่อย แยกไฟล์รูปกับไฟล์เอกสารออกจากกัน"*
+*   *"สรุปเนื้อหาจากไฟล์ PDF ในโฟลเดอร์ดาวน์โหลด"*
+*   *"จัดระเบียบหน้า Desktop แยกไฟล์รูปกับไฟล์เอกสารออกจากกัน"*
+*   *"หาไฟล์ที่ชื่อว่า report.docx แล้วเปลี่ยนชื่อเป็น final_report.docx"*
 
 ---
-*Created with ❤️ by Antigravity for the Aetox Ecosystem. Build for Local, Scale for Life.*
+*Created with ❤️ by Antigravity for the Aetox Ecosystem. Build for Speed, Scale for Intelligence.*
