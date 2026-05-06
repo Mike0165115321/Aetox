@@ -12,8 +12,10 @@ __pycache__/
 env/
 venv/
 .pytest_cache/
+.coverage
 
-# AetoxOS Memory & Data
+# AetoxOS Data & Memory
+data/
 aetox_memory.db
 config/preferences.json
 
@@ -21,6 +23,7 @@ config/preferences.json
 summary.txt
 logs/
 *.log
+scratch/
 
 # OS specific files
 .DS_Store

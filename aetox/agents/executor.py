@@ -1,6 +1,6 @@
 import logging
 import json
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from aetox.core.ollama_client import OllamaClient
 from aetox.core.prompt_engine import PromptEngine
 from aetox.core.config_loader import config_loader
@@ -11,8 +11,8 @@ logger = logging.getLogger("aetox.agents.executor")
 
 class ExecutorAgent:
     """
-    Executor Agent - Asynchronous Edition
-    Handles intent extraction and action execution without blocking.
+    Executor Agent — Stateless Edition
+    ไม่มี internal history — รับ history จาก context ภายนอก
     """
     def __init__(self, client: Optional[OllamaClient] = None, engine: Optional[PromptEngine] = None):
         self.client = client or OllamaClient()
@@ -24,23 +24,11 @@ class ExecutorAgent:
         self.options = config_loader.get_options("executor")
         self.extraction_model = config_loader.get_model("extraction")
         self.extraction_options = config_loader.get_options("extraction")
-        
-        # Load Memory/History Config
-        memory_cfg = config_loader.get_memory_config()
-        self.history_limit = memory_cfg.get("history_truncate_chars", 200)
 
         self.tools = create_default_registry()
         self.last_path = None
-        self.history = []
 
-        logger.info(f"ExecutorAgent initialized with async support using model: {self.model}")
-
-    def add_to_history(self, question: str, answer: str):
-        q_trunc = question[:self.history_limit]
-        a_trunc = answer[:self.history_limit] if isinstance(answer, str) else str(answer)[:self.history_limit]
-        self.history.append({"q": q_trunc, "a": a_trunc})
-        if len(self.history) > 3:
-            self.history.pop(0)
+        logger.info(f"ExecutorAgent initialized (stateless) using model: {self.model}")
 
     def _get_tools_info(self) -> str:
         return self.tools.build_prompt_doc()
@@ -53,29 +41,24 @@ class ExecutorAgent:
         """Asynchronously extract intent using LLM."""
         description = task_step.get("description", "")
         
-        # 🧠 SMART HISTORY: Use WorkingMemory history if available, otherwise fallback to local history
-        if context and context.get("history"):
-            history_str = context.get("history")
-        else:
-            history_str = "".join([f"{i+1}. ถาม: {h['q']} -> ตอบ: {h['a']}\n" for i, h in enumerate(self.history)])
+        # 🧠 History จากภายนอก (Dispatcher หรือ SessionContext ส่งมา)
+        history_str = context.get("history", "ไม่มี") if context else "ไม่มี"
 
         prompt_data = self.engine.get_external_template("config/prompts/executor.yaml", "intent_extraction")
         system_msg = prompt_data.get("system_template", "").format(
             tools=self._get_tools_info(),
-            history=history_str or "ไม่มี",
+            history=history_str,
             last_path=self.last_path or "ยังไม่มี",
             global_goal=context.get("global_goal", "ไม่ได้ระบุ") if context else "ไม่ได้ระบุ"
         )
 
         user_msg = prompt_data.get("user_input_template", "").format(description=description)
 
-        # 🚀 BALANCED IDENTITY: ตอกย้ำความสามารถแต่ไม่บังคับจนเกิดภาพหลอน
         messages = [
             {"role": "system", "content": system_msg + "\nIMPORTANT: You ARE AetoxClaw. You are a capable OS agent with access to tools. If a task is truly impossible (e.g. file doesn't exist), suggest an alternative or ask for clarification, but always try your best to fulfill the request using tools first."},
             {"role": "user", "content": user_msg}
         ]
 
-        # 🧠 INCREASE BRAIN CAPACITY: ใช้ค่าจาก Config (รองรับ Global + Override)
         options = self.extraction_options
 
         try:
@@ -100,12 +83,11 @@ class ExecutorAgent:
         action = extraction.get("action")
         params = extraction.get("params", {})
         
-        # 🛠️ FIX: Inject action into params for the Tool's internal Router layer
+        # Inject action into params for the Tool's internal Router layer
         if action:
             params["action"] = action
 
-        
-        # --- TERMINAL LOG: Show what's actually happening ---
+        # --- TERMINAL LOG ---
         print(f"[TOOL] ⚙️ Calling: {tool_name} -> {action} with {params}")
 
         if tool_name == "none" or tool_name == "other":
@@ -115,13 +97,12 @@ class ExecutorAgent:
             self.last_path = params.get("path")
 
         if tool_name == "chat":
-            return await self._handle_chat(extraction)
+            return await self._handle_chat(extraction, context)
 
-        # Dynamic execution remains synchronous for now as tools are synchronous
-        # but the agent wrapper around them is async.
+        # Dynamic execution (tools are synchronous)
         result = self.tools.execute(tool_name, params)
 
-        # --- TERMINAL LOG: Show the actual result from the tool ---
+        # --- TERMINAL LOG ---
         status = result.get("status")
         if status == "success":
             print(f"[TOOL] ✅ Success: {result.get('output')}")
@@ -131,24 +112,25 @@ class ExecutorAgent:
             print(f"[TOOL] ❌ Failure: {result.get('error')}")
 
         if result.get("status") == "chat":
-            # If a tool returns 'chat' status, it means it wants to hand off to LLM
-            # We use the output as the message to respond to
             extraction["params"]["message"] = result.get("output", "")
-            return await self._handle_chat(extraction)
+            return await self._handle_chat(extraction, context)
 
         if tool_name == "aetox_vision" and result.get("status") == "success" and action == "summarize":
             result = await self._summarize_vision_result(result)
         return result
 
-    async def _handle_chat(self, extraction: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_chat(self, extraction: Dict[str, Any], context: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Handle chat mode with history from context."""
         system_prompt = (
             "คุณคือ AetoxClaw ระบบปฏิบัติการอัจฉริยะที่พัฒนาโดยทีม Aetox "
             "ตอบกลับเป็นภาษาไทยที่สุภาพและเป็นธรรมชาติ"
         )
+        
+        # สร้าง history messages จาก context
         history_messages = []
-        for h in self.history:
-            history_messages.append({"role": "user", "content": h["q"]})
-            history_messages.append({"role": "assistant", "content": h["a"]})
+        if context and context.get("history"):
+            # history เป็น string format — ไม่ต้องแปลง
+            system_prompt += f"\n\nประวัติการคุย:\n{context['history']}"
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -157,7 +139,7 @@ class ExecutorAgent:
         ]
         result = await self.client.chat(model=self.model, messages=messages, options=self.options)
         response = result.get("message", {}).get("content", "ขออภัยครับ ผมนึกไม่ออก")
-        return {"status": "success", "output": response, "memory_updates": {}}
+        return {"status": "success", "output": response}
 
     async def _summarize_vision_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
         summary_prompt = f"สรุปเนื้อหาต่อไปนี้แบบสั้น กระชับ ตรงประเด็น ภาษาไทย:\n\n{result['raw_text'][:8000]}\n\nสรุป:"

@@ -61,19 +61,6 @@ async def test_run_action_chat(executor, mock_ollama_client):
     assert result["status"] == "success"
     assert result["output"] == "Hi there"
 
-def test_history_limit(executor):
-    executor.history_limit = 10
-    executor.add_to_history("Long question text", "Long answer text")
-    
-    assert len(executor.history) == 1
-    assert len(executor.history[0]["q"]) == 10
-    assert len(executor.history[0]["a"]) == 10
-    
-    # Test pop
-    for i in range(5):
-        executor.add_to_history(f"q{i}", f"a{i}")
-    assert len(executor.history) == 3
-
 @pytest.mark.asyncio
 async def test_run_chat_stream(executor, mock_ollama_client):
     async def mock_stream(*args, **kwargs):

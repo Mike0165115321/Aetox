@@ -29,23 +29,18 @@ class AgentModelConfig(BaseModel):
     model: str
     options: Optional[ModelOptions] = None
 
-class MemoryConfig(BaseModel):
-    max_context_tokens: int = 4096
-    chunk_size: int = 512
-    summary_ratio: float = 0.1
-    episodic_path: str = "data/episodes.jsonl"
-    vector_db_path: str = "data/vector_db"
+class SessionConfig(BaseModel):
+    """Lightweight session config — no RAG, no vector DB"""
+    chat_history_limit: int = 5
     history_truncate_chars: int = 200
-    embedder: Dict[str, Any] = Field(default_factory=dict)
 
 class AgentConfig(BaseModel):
     global_options: ModelOptions = Field(default_factory=ModelOptions)
-    memory: MemoryConfig = Field(default_factory=MemoryConfig)
+    session: SessionConfig = Field(default_factory=SessionConfig)
     models: Dict[str, Union[str, AgentModelConfig]]
 
     @model_validator(mode='after')
     def validate_models(self) -> 'AgentConfig':
-        # New minimal roles for AetoxClaw
         required = {"main"}
         missing = required - set(self.models.keys())
         if missing:
@@ -85,7 +80,6 @@ class ConfigLoader:
         )
 
     def get_model(self, role: str) -> str:
-        # If role not found, fallback to 'main' model, then to global fallback
         entry = self._config.models.get(role) or self._config.models.get("main") or FALLBACK_MODEL
         if isinstance(entry, AgentModelConfig):
             return entry.model
@@ -98,8 +92,9 @@ class ConfigLoader:
             effective_options = effective_options.merge_with(entry.options)
         return effective_options.model_dump(exclude_none=True)
 
-    def get_memory_config(self) -> Dict[str, Any]:
-        return self._config.memory.model_dump()
+    def get_session_config(self) -> Dict[str, Any]:
+        """Returns session configuration (history limits etc.)"""
+        return self._config.session.model_dump()
 
     def get_ollama_url(self) -> str:
         return os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")

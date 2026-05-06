@@ -5,10 +5,10 @@ import yaml
 import asyncio
 from aetox.core.ollama_client import OllamaClient
 from aetox.core.prompt_engine import PromptEngine
+from aetox.core.config_loader import config_loader
 from aetox.planner import AetoxPlanner
 from aetox.core.dispatcher import Dispatcher
 from aetox.agents.executor import ExecutorAgent
-from aetox.memory.working import WorkingMemory
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -60,19 +60,15 @@ async def run_aetox_mvp():
         logger.error(f"Planning failed: {e}")
         return
 
-    # 4. Initialize Memory & Dispatcher
-    memory_config = config_loader.get_memory_config()
-    memory_config["goal"] = user_goal
-    memory = WorkingMemory(memory_config) 
-    dispatcher = Dispatcher(memory)
-    dispatcher.executor = ExecutorAgent() # ExecutorAgent init is still sync for now
+    # 4. Initialize Dispatcher (Stateless — no WorkingMemory needed)
+    dispatcher = Dispatcher()
     
     # 5. Run Execution Loop
     print("\n[STARTING EXECUTION]")
     final_result = await dispatcher.run_plan(plan)
     
     # 6. Show Final Result
-    print("\n[FINAL MEMORY STATE]")
+    print("\n[FINAL RESULT]")
     print(json.dumps(final_result, indent=2, ensure_ascii=False))
 
 if __name__ == "__main__":

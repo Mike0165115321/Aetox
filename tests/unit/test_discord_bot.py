@@ -2,34 +2,32 @@ import pytest
 import asyncio
 import time
 from unittest.mock import MagicMock, AsyncMock, patch
-from aetox.interfaces.discord_bot import MemoryManager, DiscordInterface
+from aetox.interfaces.discord_bot import SessionManager, DiscordInterface
 
 @pytest.mark.asyncio
-async def test_memory_manager_lifecycle():
-    with patch("aetox.interfaces.discord_bot.WorkingMemory"), \
-         patch("aetox.interfaces.discord_bot.Dispatcher"):
-        manager = MemoryManager(max_users=2, ttl=1)
+async def test_session_manager_lifecycle():
+    with patch("aetox.interfaces.discord_bot.Dispatcher"):
+        manager = SessionManager(max_users=2, ttl=1)
         
         # Test creation
-        mem1, disp1 = await manager.get_resources(1)
-        assert 1 in manager.memories
+        session1, disp1 = await manager.get_resources(1)
+        assert 1 in manager.sessions
         
         # Test capacity / eviction
         await manager.get_resources(2)
-        await manager.get_resources(3) # Should evict 1 if we force age or just FIFO
-        assert len(manager.memories) == 2
-        assert 1 not in manager.memories
+        await manager.get_resources(3)  # Should evict 1
+        assert len(manager.sessions) == 2
+        assert 1 not in manager.sessions
 
 @pytest.mark.asyncio
-async def test_memory_manager_cleanup():
-    with patch("aetox.interfaces.discord_bot.WorkingMemory"), \
-         patch("aetox.interfaces.discord_bot.Dispatcher"):
-        manager = MemoryManager(ttl=0.1)
+async def test_session_manager_cleanup():
+    with patch("aetox.interfaces.discord_bot.Dispatcher"):
+        manager = SessionManager(ttl=0.1)
         await manager.get_resources(1)
         
         await asyncio.sleep(0.2)
-        await manager.get_resources(2) # Triggers cleanup
-        assert 1 not in manager.memories
+        await manager.get_resources(2)  # Triggers cleanup
+        assert 1 not in manager.sessions
 
 @pytest.mark.asyncio
 async def test_discord_interface_send_progress():

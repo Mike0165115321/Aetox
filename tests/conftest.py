@@ -46,27 +46,10 @@ def temp_workspace(tmp_path):
     (workspace / "data").mkdir()
     (workspace / "logs").mkdir()
     
-    # Create a dummy config for testing
     config_dir = tmp_path / "config"
     config_dir.mkdir()
     
     return workspace
-
-@pytest.fixture
-def mock_memory_config():
-    """Returns a memory configuration that disables heavy RAG components."""
-    return {
-        "max_context_tokens": 2000,
-        "chunk_size": 256,
-        "summary_ratio": 0.1,
-        "episodic_path": "data/test_episodes.jsonl",
-        "vector_db_path": "data/test_vector_db",
-        "history_truncate_chars": 100,
-        "embedder": {
-            "model": "none", # Disable BGE-M3
-            "device": "cpu"
-        }
-    }
 
 @pytest.fixture(autouse=True)
 def mock_env_vars(monkeypatch):

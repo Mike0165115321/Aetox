@@ -4,20 +4,10 @@ global_options:
   top_p: 0.9
   num_ctx: 8192
 
-memory:
-  max_context_tokens: 6000
-  chunk_size: 512
-  summary_ratio: 0.15
-  episodic_path: "data/episodes.jsonl"
-  vector_db_path: "data/vector_db"
+# Session settings (lightweight — no RAG)
+session:
+  chat_history_limit: 5
   history_truncate_chars: 200
-  
-  # 🔹 Embedder Settings
-  embedder:
-    model: "BAAI/bge-m3"  # 🧠 ใช้ BGE-M3 (Lazy Loaded)
-    device: "cpu"          # 🔑 แนะนำ: "cpu" เพื่อประหยัด VRAM
-    batch_size: 8
-    normalize: true
 
 models:
   main: "qwen3:8b"

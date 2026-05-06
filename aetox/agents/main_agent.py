@@ -3,7 +3,6 @@ import json
 import logging
 import asyncio
 from typing import Dict, Any, List, Optional
-from aetox.memory.working import WorkingMemory, MemoryContextBuilder
 from aetox.core.dispatcher import Dispatcher
 from aetox.core.ollama_client import OllamaClient
 from aetox.core.config_loader import config_loader
@@ -13,21 +12,17 @@ logger = logging.getLogger("aetox.agents.main")
 class MainAgent:
     """
     Main Orchestrator Agent for AetoxClaw.
-    Implements a robust reasoning loop with 3-layer memory integration.
+    Lightweight version — no WorkingMemory, uses Dispatcher directly.
     """
     def __init__(self):
         try:
-            # 1. Load Config & Memory
-            self.memory_config = config_loader.get_memory_config()
-            self.memory = WorkingMemory(self.memory_config)
-            
-            # 2. Setup Ollama Client & Model
+            # 1. Setup Ollama Client & Model
             self.model = config_loader.get_model("main")
             self.options = config_loader.get_options("main")
             self.ollama = OllamaClient(host=config_loader.get_ollama_url())
             
-            # 3. Initialize Dispatcher (Delegate)
-            self.dispatcher = Dispatcher(self.memory)
+            # 2. Initialize Dispatcher (Stateless)
+            self.dispatcher = Dispatcher()
             
             logger.info(f"[MAIN] AetoxClaw MainAgent initialized using model: {self.model}")
         except Exception as e:
@@ -39,21 +34,11 @@ class MainAgent:
         Executes a complex task by generating a plan and delegating to Dispatcher.
         """
         try:
-            # 1. Setup Initial Context
-            await self.memory.set_active_context(task_id, {
-                "instruction": instruction,
-                "step": 0,
-                "status": "planning"
-            })
-            
-            # 2. Planning Phase
+            # 1. Planning Phase
             logger.info(f"[PLANNING] Generating plan for task: {task_id}")
-            context = MemoryContextBuilder.build_for_task(self.memory, "planning", instruction)
             
             plan_prompt = f"""คุณคือผู้ช่วยอัจฉริยะ (MainAgent) ประจำระบบ AetoxClaw
 งานที่ได้รับ: {instruction}
-
-{context if context else "[ยังไม่มีประวัติงานก่อนหน้า]"}
 
 กรุณาวางแผนขั้นตอนการทำงานอย่างเป็นระบบ (Step-by-Step) 
 ตอบกลับเป็น JSON เท่านั้น:
@@ -78,9 +63,9 @@ class MainAgent:
             if not plan_data.get("steps"):
                 # Fallback to direct execution if planning returns no steps
                 logger.info(f"[MAIN] No steps generated, attempting direct execution.")
-                return await self.dispatcher.run_direct_step(instruction, task_id)
+                return await self.dispatcher.run_direct_step(instruction)
 
-            # 3. Delegate to Dispatcher (The New System)
+            # 2. Delegate to Dispatcher
             logger.info(f"[MAIN] Delegating plan execution to Dispatcher.")
             result = await self.dispatcher.run_plan(plan_data)
             
@@ -91,11 +76,11 @@ class MainAgent:
                     "suggestion": "โปรดลองสั่งใหม่อีกครั้งด้วยรายละเอียดที่ชัดเจนขึ้น"
                 }
 
-            # 4. Final Summarization (Optional)
+            # 3. Return result
             return {
                 "status": "success",
                 "summary": f"ดำเนินการสำเร็จตามเป้าหมาย: {instruction}",
-                "data": result.get("data")
+                "data": result.get("plan_history")
             }
 
         except Exception as e:

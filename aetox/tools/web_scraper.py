@@ -16,13 +16,12 @@ class WebPulseScraper(BaseTool):
     รองรับ: ดึงเนื้อหา, ค้นหาลิงก์, สรุปหน้าเว็บ, ดึงข้อมูลเฉพาะส่วน
     """
     
-    def __init__(self, memory_ref=None):
+    def __init__(self):
         super().__init__(
             name="web_pulse_scraper",
             description="ดึงข้อมูลจากเว็บไซต์: อ่านเนื้อหา, ค้นหาลิงก์, สรุปหน้า, ดึงข้อมูลเฉพาะส่วน (CSS Selector/XPath)",
             actions=["fetch_content", "extract_links", "summarize_page", "extract_by_selector", "crawl_sitemap"]
         )
-        self.memory = memory_ref
         self.timeout = 30
         self.headers = {
             "User-Agent": "Mozilla/5.0 (AetoxClaw/1.0; +https://aetox.dev) AppleWebKit/537.36"
@@ -122,15 +121,6 @@ class WebPulseScraper(BaseTool):
             return {"status": "failure", "error": f"Failed to fetch {url}"}
         
         text = self._clean_text(html, max_length)
-        
-        if self.memory and len(text) > 500:
-            # Note: memory.add_to_working is sync, so this is safe
-            self.memory.add_to_working(
-                content=text[:1000],
-                source=f"web:{urlparse(url).netloc}",
-                keywords=[urlparse(url).netloc],
-                metadata={"full_url": url, "type": "web_content"}
-            )
         
         return {
             "status": "success",

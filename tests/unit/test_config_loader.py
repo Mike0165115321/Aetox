@@ -15,12 +15,11 @@ class TestConfigLoader:
         assert isinstance(model, str)
         assert len(model) > 0
 
-    def test_memory_config(self, loader):
-        mem_cfg = loader.get_memory_config()
-        assert isinstance(mem_cfg, dict)
-        assert "max_context_tokens" in mem_cfg
-        assert "chunk_size" in mem_cfg
-        assert "history_truncate_chars" in mem_cfg
+    def test_session_config(self, loader):
+        session_cfg = loader.get_session_config()
+        assert isinstance(session_cfg, dict)
+        assert "chat_history_limit" in session_cfg
+        assert "history_truncate_chars" in session_cfg
 
     def test_get_options(self, loader):
         options = loader.get_options("main")

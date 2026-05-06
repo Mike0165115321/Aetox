@@ -7,3 +7,8 @@ pandas
 openpyxl
 psutil
 ollama
+beautifulsoup4
+PyMuPDF
+python-docx
+lxml
+pydantic

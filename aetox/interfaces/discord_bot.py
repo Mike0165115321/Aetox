@@ -20,27 +20,26 @@ from aetox.core.ollama_client import OllamaClient
 from aetox.core.prompt_engine import PromptEngine
 from aetox.planner import AetoxPlanner
 from aetox.core.dispatcher import Dispatcher
-from aetox.memory.working import WorkingMemory
-from aetox.core.config_loader import config_loader
+from aetox.memory.working import SessionContext
 
 # Initialize Discord Bot
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Multi-User Memory Manager
-class MemoryManager:
+# Multi-User Session Manager
+class SessionManager:
     """
-    Manages isolated memory and dispatcher instances for multiple users.
+    Manages isolated SessionContext and Dispatcher instances for multiple users.
     Includes cleanup logic to prevent memory leaks.
     """
     def __init__(self, max_users: int = 50, ttl: int = 3600):
-        self.memories: Dict[int, Dict[str, Any]] = {}
+        self.sessions: Dict[int, Dict[str, Any]] = {}
         self.max_users = max_users
         self.ttl = ttl
         self.lock = asyncio.Lock()
 
-    async def get_resources(self, user_id: int) -> Tuple[WorkingMemory, Dispatcher]:
+    async def get_resources(self, user_id: int) -> Tuple[SessionContext, Dispatcher]:
         async with self.lock:
             current_time = time.time()
             
@@ -48,36 +47,35 @@ class MemoryManager:
             await self._cleanup(current_time)
 
             # 2. Return existing or create new
-            if user_id in self.memories:
-                self.memories[user_id]["last_active"] = current_time
-                return self.memories[user_id]["memory"], self.memories[user_id]["dispatcher"]
+            if user_id in self.sessions:
+                self.sessions[user_id]["last_active"] = current_time
+                return self.sessions[user_id]["session"], self.sessions[user_id]["dispatcher"]
 
             # 3. Handle capacity
-            if len(self.memories) >= self.max_users:
-                # Remove oldest session if full
-                oldest_user = min(self.memories, key=lambda u: self.memories[u]["last_active"])
-                del self.memories[oldest_user]
-                logger.info(f"Memory Manager: Evicted oldest session (User: {oldest_user})")
+            if len(self.sessions) >= self.max_users:
+                oldest_user = min(self.sessions, key=lambda u: self.sessions[u]["last_active"])
+                del self.sessions[oldest_user]
+                logger.info(f"Session Manager: Evicted oldest session (User: {oldest_user})")
 
             # 4. Create new instance
-            memory = WorkingMemory(config_loader.get_memory_config())
-            dispatcher = Dispatcher(memory)
+            session = SessionContext(chat_history_limit=5)
+            dispatcher = Dispatcher()
             
-            self.memories[user_id] = {
-                "memory": memory,
+            self.sessions[user_id] = {
+                "session": session,
                 "dispatcher": dispatcher,
                 "last_active": current_time
             }
-            logger.info(f"Memory Manager: Created new session for User: {user_id}")
-            return memory, dispatcher
+            logger.info(f"Session Manager: Created new session for User: {user_id}")
+            return session, dispatcher
 
     async def _cleanup(self, current_time: float):
-        expired = [u for u, data in self.memories.items() if (current_time - data["last_active"]) > self.ttl]
+        expired = [u for u, data in self.sessions.items() if (current_time - data["last_active"]) > self.ttl]
         for u in expired:
-            del self.memories[u]
-            logger.info(f"Memory Manager: Cleaned up expired session for User: {u}")
+            del self.sessions[u]
+            logger.info(f"Session Manager: Cleaned up expired session for User: {u}")
 
-memory_manager = MemoryManager(max_users=50, ttl=3600)
+session_manager = SessionManager(max_users=50, ttl=3600)
 
 class DiscordInterface:
     """
@@ -163,25 +161,22 @@ async def on_message(message):
     await handle_task_pipe(ctx, message.content.strip())
 
 async def handle_task_pipe(ctx, goal):
-    """Main entry point - Unified Streaming Pipeline."""
+    """Main entry point — Unified Streaming Pipeline."""
     if not goal: return
     
-    # 🧠 Dynamic Resource Allocation
-    memory, dispatcher = await memory_manager.get_resources(ctx.author.id)
+    # 🧠 Dynamic Resource Allocation (SessionContext instead of WorkingMemory)
+    session, dispatcher = await session_manager.get_resources(ctx.author.id)
     
     interface = DiscordInterface(ctx)
     dispatcher.progress_callback = interface.send_progress
     dispatcher.executor.permission_manager.approval_callback = interface.request_approval
-    
-    task_id = f"discord_{ctx.author.id}_{int(time.time())}"
-    await memory.update_context(task_id, {"guild_id": ctx.guild.id if ctx.guild else None})
 
     async with ctx.typing():
-        # ดึงประวัติแบบดิบมาแปลงเป็น String
-        history_list = dispatcher.executor.history
-        history_str = "\n".join([f"Q: {h['q']}\nA: {h['a']}" for h in history_list])
+        # ดึงประวัติจาก SessionContext
+        history = session.get_chat_history()
+        history_str = session.get_history_as_string()
         
-        minimal_context = {"history": history_str} 
+        minimal_context = {"history": history_str}
         extraction = await dispatcher.executor.extract_action({"description": goal}, minimal_context)
         
         analysis = extraction.get("analysis", "วิเคราะห์งาน...")
@@ -199,8 +194,10 @@ async def handle_task_pipe(ctx, goal):
             await ctx.send(steps_msg)
             
             if await interface.request_approval("ดำเนินการตามแผน", goal):
-                await dispatcher.run_plan(plan)
+                result = await dispatcher.run_plan(plan)
                 await ctx.send("🏁 **ภารกิจเสร็จสิ้น!**")
+                # บันทึกผลลัพธ์ของ Plan ลง session history
+                session.add_exchange(goal, f"Plan completed: {result.get('status')}")
         else:
             # --- UNIFIED STREAMING PIPE ---
             result = await dispatcher.executor.run_action(extraction, minimal_context)
@@ -223,7 +220,8 @@ async def handle_task_pipe(ctx, goal):
 
             final_response = await interface.stream_chat(unified_generator())
             if final_response:
-                dispatcher.executor.add_to_history(goal, final_response)
+                # บันทึกลง SessionContext
+                session.add_exchange(goal, final_response if isinstance(final_response, str) else str(final_response))
 
 if __name__ == "__main__":
     if TOKEN: bot.run(TOKEN)
