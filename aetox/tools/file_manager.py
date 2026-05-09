@@ -10,22 +10,48 @@ logger = logging.getLogger("aetox.tools.file_manager")
 class PathNavigator:
     """จัดการ 'ตำแหน่งปัจจุบัน' ของระบบไฟล์ เหมือน terminal มี cd"""
     
-    def __init__(self, root: str = None):
-        # ตั้ง root ที่ปลอดภัย (เช่น workspace directory)
+    def __init__(self, root: str = None, config_path: str = "config/permissions.yaml"):
+        # ตั้ง root ที่ปัจจุบัน
         self.root = Path(root) if root else Path.cwd()
-        self.cwd = self.root  # ตำแหน่งปัจจุบัน
+        self.cwd = self.root
         
-        # โฟลเดอร์ที่อนุญาตให้เข้าถึง (ป้องกันเข้าถึงระบบ)
-        self.allowed_roots = [
-            Path.home(),  # Home user
-            Path.cwd(),   # โฟลเดอร์ที่รันสคริปต์
-        ]
+        # โหลดค่าจาก config/permissions.yaml
+        self.allowed_roots = [Path.home(), Path.cwd()]
+        self.denied_paths = {"C:\\Windows", "C:\\Program Files", "/etc", "/root", "/sys"}
         
-        # โฟลเดอร์ต้องห้าม (ห้ามเข้าเด็ดขาด)
-        self.denied_paths = {
-            "C:\\Windows", "C:\\Program Files", "/etc", "/root", "/sys"
+        try:
+            import yaml
+            if os.path.exists(config_path):
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config = yaml.safe_load(f)
+                    # โหลด Allowed Roots
+                    extra_roots = config.get('allowed_roots', [])
+                    for r in extra_roots:
+                        # ขยายค่า %USERPROFILE%, %APPDATA% หรือ ~ อัตโนมัติ
+                        expanded_path = os.path.expandvars(os.path.expanduser(r))
+                        p = Path(expanded_path)
+                        if p not in self.allowed_roots:
+                            self.allowed_roots.append(p)
+                    
+                    # โหลด Sensitive Zones (Denied Paths)
+                    extra_denied = config.get('sensitive_zones', [])
+                    for d in extra_denied:
+                        expanded_denied = os.path.expandvars(os.path.expanduser(d))
+                        self.denied_paths.add(expanded_denied)
+                logger.info(f"PathNavigator: Loaded {len(self.allowed_roots)} allowed roots from {config_path}")
+        except Exception as e:
+            logger.error(f"PathNavigator: Failed to load config: {e}")
+
+        # เพิ่มระบบทางลัด (Shortcuts) สำหรับโฟลเดอร์มาตรฐาน
+        self.shortcuts = {
+            "dropbox": os.path.expandvars(os.path.expanduser("~/Dropbox")),
+            "desktop": os.path.expandvars(os.path.expanduser("~/Desktop")),
+            "downloads": os.path.expandvars(os.path.expanduser("~/Downloads")),
+            "documents": os.path.expandvars(os.path.expanduser("~/Documents")),
+            "pictures": os.path.expandvars(os.path.expanduser("~/Pictures")),
+            "videos": os.path.expandvars(os.path.expanduser("~/Videos")),
         }
-    
+
     def is_safe_path(self, path: Path) -> bool:
         """ตรวจสอบว่า path ปลอดภัยที่จะเข้าถึง"""
         try:
@@ -50,8 +76,12 @@ class PathNavigator:
             return False
     
     def resolve(self, path: str) -> Path:
-        """แปลง path (relative/absolute) → absolute path ที่ปลอดภัย"""
-        if os.path.isabs(path):
+        """แปลง path (relative/absolute/shortcut) → absolute path ที่ปลอดภัย"""
+        # 1. เช็คระบบทางลัด (Shortcuts)
+        clean_path = path.strip().lower().replace("/", "\\").rstrip("\\")
+        if clean_path in self.shortcuts:
+            candidate = Path(self.shortcuts[clean_path])
+        elif os.path.isabs(path):
             candidate = Path(path)
         else:
             candidate = self.cwd / path
