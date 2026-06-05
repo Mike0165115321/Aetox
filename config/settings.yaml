@@ -1,7 +1,0 @@
-workspace:
-  root: "E:/AetoxClaw_Workspace"
-  inbox: "E:/AetoxClaw_Workspace/inbox"
-  outbox: "E:/AetoxClaw_Workspace/outbox"
-  projects: "E:/AetoxClaw_Workspace/projects"
-  temp: "E:/AetoxClaw_Workspace/temp"
-  archive: "E:/AetoxClaw_Workspace/archive"
