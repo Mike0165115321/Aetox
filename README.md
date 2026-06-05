@@ -9,7 +9,7 @@ tool registry.
 
 - Python implementation: removed.
 - Old tests, configs, caches, scratch files, and runtime data: removed.
-- Architecture docs and legacy notes preserved in `docs/`.
+- Current architecture docs live in `docs/`.
 - Target implementation language: Go.
 - Product shape: local-first command-line agent orchestration.
 
@@ -70,10 +70,10 @@ go build -o aetox ./cmd/aetox
 
 ## Documentation Map
 
-- [Aetox CLI architecture handoff](docs/aetox-cli-architecture-handoff.md)
+- [Current system overview](docs/aetox-cli-system-overview.md)
+- [Phase 3 planner/critic loop](docs/phase-3-planner-critic-loop.md)
 - [Go rebuild roadmap](docs/go-rebuild-roadmap.md)
 - [Future agent notes](docs/future-agent-notes.md)
-- [Legacy documentation index](docs/legacy-index.md)
 
 ## Rebuild Direction
 
