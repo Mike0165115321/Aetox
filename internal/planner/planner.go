@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"regexp"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"aetox-cli/internal/config"
@@ -19,9 +19,73 @@ func New() *Planner {
 }
 
 func (p *Planner) BuildPlan(_ context.Context, goal string, cfg config.Config) (contracts.TaskPlan, error) {
+	goal = strings.TrimSpace(goal)
+	if goal == "" {
+		return contracts.TaskPlan{}, errors.New("empty goal")
+	}
+
+	clauses := splitGoalClauses(goal)
+	if len(clauses) == 0 {
+		return contracts.TaskPlan{}, fmt.Errorf("no supported planner path for goal: %s", goal)
+	}
+
+	steps := make([]contracts.TaskStep, 0, len(clauses))
+	requiresPermission := false
+	planRisk := contracts.RiskLow
+
+	for i, clause := range clauses {
+		step, err := inferTaskStep(clause, cfg.SandboxRoot)
+		if err != nil {
+			return contracts.TaskPlan{}, fmt.Errorf("cannot infer step %d: %w", i+1, err)
+		}
+		step.ID = i + 1
+		steps = append(steps, step)
+		if step.RiskLevel != contracts.RiskLow {
+			requiresPermission = true
+		}
+		planRisk = maxRisk(planRisk, step.RiskLevel)
+	}
+
+	return contracts.TaskPlan{
+		ID:                 contracts.NewTaskPlanID(),
+		Goal:               goal,
+		Steps:              steps,
+		RequiresPermission: requiresPermission,
+		RiskLevel:          planRisk,
+	}, nil
+}
+
+func (p *Planner) BuildPlanFromHint(
+	ctx context.Context,
+	goal string,
+	cfg config.Config,
+	hint string,
+	verdict contracts.CriticVerdict,
+	lastResult contracts.StepResult,
+) (contracts.TaskPlan, error) {
+	composed := strings.TrimSpace(goal)
+	if strings.TrimSpace(hint) != "" {
+		composed += ". Hint: " + strings.TrimSpace(hint)
+	}
+	if strings.TrimSpace(verdict.Suggestion) != "" && verdict.Suggestion != hint {
+		composed += ". Critic suggestion: " + strings.TrimSpace(verdict.Suggestion)
+	}
+	if out := strings.TrimSpace(lastResult.Output); out != "" {
+		if len(out) > 260 {
+			out = out[:260] + "..."
+		}
+		composed += ". Last output: " + out
+	}
+	if lastResult.Error != "" {
+		composed += ". Last error: " + strings.TrimSpace(lastResult.Error)
+	}
+	return p.BuildPlan(ctx, composed, cfg)
+}
+
+func inferTaskStep(goal string, fallback string) (contracts.TaskStep, error) {
 	normalized := strings.ToLower(strings.TrimSpace(goal))
 	if normalized == "" {
-		return contracts.TaskPlan{}, errors.New("empty goal")
+		return contracts.TaskStep{}, errors.New("empty clause")
 	}
 
 	isMarkdown := strings.Contains(normalized, "markdown") || strings.Contains(normalized, ".md")
@@ -32,9 +96,8 @@ func (p *Planner) BuildPlan(_ context.Context, goal string, cfg config.Config) (
 	isDelete := strings.Contains(normalized, "delete file") || strings.Contains(normalized, "delete ")
 
 	if isList && isMarkdown {
-		targetPath := inferPathFromGoal(normalized, cfg.SandboxRoot)
-		step := contracts.TaskStep{
-			ID:              1,
+		targetPath := inferPathFromGoal(goal, fallback)
+		return contracts.TaskStep{
 			Description:     "List markdown files in target directory",
 			Tool:            "files",
 			Action:          "list",
@@ -42,20 +105,12 @@ func (p *Planner) BuildPlan(_ context.Context, goal string, cfg config.Config) (
 			DependsOn:       nil,
 			SuccessCriteria: "Return matched file list",
 			RiskLevel:       contracts.RiskLow,
-		}
-		return contracts.TaskPlan{
-			ID:                 contracts.NewTaskPlanID(),
-			Goal:               goal,
-			Steps:              []contracts.TaskStep{step},
-			RequiresPermission: false,
-			RiskLevel:          contracts.RiskLow,
 		}, nil
 	}
 
 	if strings.Contains(normalized, "list") || strings.Contains(normalized, "show") {
-		targetPath := inferPathFromGoal(normalized, cfg.SandboxRoot)
-		step := contracts.TaskStep{
-			ID:              1,
+		targetPath := inferPathFromGoal(goal, fallback)
+		return contracts.TaskStep{
 			Description:     "List files in target directory",
 			Tool:            "files",
 			Action:          "list",
@@ -63,13 +118,6 @@ func (p *Planner) BuildPlan(_ context.Context, goal string, cfg config.Config) (
 			DependsOn:       nil,
 			SuccessCriteria: "Return directory entries",
 			RiskLevel:       contracts.RiskLow,
-		}
-		return contracts.TaskPlan{
-			ID:                 contracts.NewTaskPlanID(),
-			Goal:               goal,
-			Steps:              []contracts.TaskStep{step},
-			RequiresPermission: false,
-			RiskLevel:          contracts.RiskLow,
 		}, nil
 	}
 
@@ -80,10 +128,9 @@ func (p *Planner) BuildPlan(_ context.Context, goal string, cfg config.Config) (
 	if isWeb {
 		url := inferWebParams(goal)
 		if url == "" {
-			return contracts.TaskPlan{}, fmt.Errorf("unable to infer URL from goal")
+			return contracts.TaskStep{}, errors.New("unable to infer URL")
 		}
-		step := contracts.TaskStep{
-			ID:              1,
+		return contracts.TaskStep{
 			Description:     "Fetch URL content",
 			Tool:            "web",
 			Action:          "fetch",
@@ -91,13 +138,6 @@ func (p *Planner) BuildPlan(_ context.Context, goal string, cfg config.Config) (
 			DependsOn:       nil,
 			SuccessCriteria: "Return response body",
 			RiskLevel:       contracts.RiskHigh,
-		}
-		return contracts.TaskPlan{
-			ID:                 contracts.NewTaskPlanID(),
-			Goal:               goal,
-			Steps:              []contracts.TaskStep{step},
-			RequiresPermission: true,
-			RiskLevel:          contracts.RiskHigh,
 		}, nil
 	}
 
@@ -109,31 +149,22 @@ func (p *Planner) BuildPlan(_ context.Context, goal string, cfg config.Config) (
 	if isShell {
 		command := inferShellParams(goal)
 		if command == "" {
-			return contracts.TaskPlan{}, fmt.Errorf("unable to infer shell command from goal")
+			return contracts.TaskStep{}, errors.New("unable to infer shell command")
 		}
-		step := contracts.TaskStep{
-			ID:              1,
+		return contracts.TaskStep{
 			Description:     "Run shell command",
 			Tool:            "shell",
 			Action:          "run",
-			Params:          map[string]any{"command": command, "cwd": cfg.SandboxRoot},
+			Params:          map[string]any{"command": command, "cwd": fallback},
 			DependsOn:       nil,
 			SuccessCriteria: "Execute command and return output",
 			RiskLevel:       contracts.RiskHigh,
-		}
-		return contracts.TaskPlan{
-			ID:                 contracts.NewTaskPlanID(),
-			Goal:               goal,
-			Steps:              []contracts.TaskStep{step},
-			RequiresPermission: true,
-			RiskLevel:          contracts.RiskHigh,
 		}, nil
 	}
 
 	if isRead {
-		path := inferReadParams(goal, cfg.SandboxRoot)
-		step := contracts.TaskStep{
-			ID:              1,
+		path := inferReadParams(goal, fallback)
+		return contracts.TaskStep{
 			Description:     "Read file",
 			Tool:            "files",
 			Action:          "read",
@@ -141,23 +172,15 @@ func (p *Planner) BuildPlan(_ context.Context, goal string, cfg config.Config) (
 			DependsOn:       nil,
 			SuccessCriteria: "Return file content",
 			RiskLevel:       contracts.RiskLow,
-		}
-		return contracts.TaskPlan{
-			ID:                 contracts.NewTaskPlanID(),
-			Goal:               goal,
-			Steps:              []contracts.TaskStep{step},
-			RequiresPermission: false,
-			RiskLevel:          contracts.RiskLow,
 		}, nil
 	}
 
 	if isWrite {
-		path, content := inferWriteParams(normalized, cfg.SandboxRoot)
+		path, content := inferWriteParams(goal, fallback)
 		if content == "" {
-			return contracts.TaskPlan{}, fmt.Errorf("unable to infer write content from goal")
+			return contracts.TaskStep{}, errors.New("unable to infer write content")
 		}
-		step := contracts.TaskStep{
-			ID:              1,
+		return contracts.TaskStep{
 			Description:     "Write file",
 			Tool:            "files",
 			Action:          "write",
@@ -165,23 +188,15 @@ func (p *Planner) BuildPlan(_ context.Context, goal string, cfg config.Config) (
 			DependsOn:       nil,
 			SuccessCriteria: "Write content to file",
 			RiskLevel:       contracts.RiskMedium,
-		}
-		return contracts.TaskPlan{
-			ID:                 contracts.NewTaskPlanID(),
-			Goal:               goal,
-			Steps:              []contracts.TaskStep{step},
-			RequiresPermission: true,
-			RiskLevel:          contracts.RiskMedium,
 		}, nil
 	}
 
 	if isMove {
-		src, dst := inferMoveParams(normalized, cfg.SandboxRoot)
+		src, dst := inferMoveParams(goal, fallback)
 		if src == "" || dst == "" {
-			return contracts.TaskPlan{}, fmt.Errorf("unable to infer move source or destination from goal")
+			return contracts.TaskStep{}, errors.New("unable to infer move source or destination")
 		}
-		step := contracts.TaskStep{
-			ID:              1,
+		return contracts.TaskStep{
 			Description:     "Move file",
 			Tool:            "files",
 			Action:          "move",
@@ -189,23 +204,15 @@ func (p *Planner) BuildPlan(_ context.Context, goal string, cfg config.Config) (
 			DependsOn:       nil,
 			SuccessCriteria: "Move source file to target path",
 			RiskLevel:       contracts.RiskHigh,
-		}
-		return contracts.TaskPlan{
-			ID:                 contracts.NewTaskPlanID(),
-			Goal:               goal,
-			Steps:              []contracts.TaskStep{step},
-			RequiresPermission: true,
-			RiskLevel:          contracts.RiskHigh,
 		}, nil
 	}
 
 	if isDelete {
-		path := inferDeleteParams(normalized, cfg.SandboxRoot)
+		path := inferDeleteParams(goal, fallback)
 		if path == "" {
-			return contracts.TaskPlan{}, fmt.Errorf("unable to infer delete path from goal")
+			return contracts.TaskStep{}, errors.New("unable to infer delete path")
 		}
-		step := contracts.TaskStep{
-			ID:              1,
+		return contracts.TaskStep{
 			Description:     "Delete file",
 			Tool:            "files",
 			Action:          "delete",
@@ -213,17 +220,46 @@ func (p *Planner) BuildPlan(_ context.Context, goal string, cfg config.Config) (
 			DependsOn:       nil,
 			SuccessCriteria: "Delete target file",
 			RiskLevel:       contracts.RiskHigh,
-		}
-		return contracts.TaskPlan{
-			ID:                 contracts.NewTaskPlanID(),
-			Goal:               goal,
-			Steps:              []contracts.TaskStep{step},
-			RequiresPermission: true,
-			RiskLevel:          contracts.RiskHigh,
 		}, nil
 	}
 
-	return contracts.TaskPlan{}, fmt.Errorf("no supported planner path for goal: %s", goal)
+	return contracts.TaskStep{}, fmt.Errorf("no supported action in clause: %s", goal)
+}
+
+func splitGoalClauses(goal string) []string {
+	segments := []string{goal}
+	for _, sep := range []string{"&&", ";"} {
+		var next []string
+		for _, seg := range segments {
+			next = append(next, strings.Split(seg, sep)...)
+		}
+		segments = next
+	}
+
+	thenRe := regexp.MustCompile(`(?i)\s+then\s+`)
+	var clauses []string
+	for _, seg := range segments {
+		for _, clause := range thenRe.Split(seg, -1) {
+			clause = strings.TrimSpace(clause)
+			if clause == "" {
+				continue
+			}
+			clauses = append(clauses, clause)
+		}
+	}
+	return clauses
+}
+
+func maxRisk(lhs, rhs contracts.RiskLevel) contracts.RiskLevel {
+	weight := map[contracts.RiskLevel]int{
+		contracts.RiskLow:    1,
+		contracts.RiskMedium: 2,
+		contracts.RiskHigh:   3,
+	}
+	if weight[rhs] > weight[lhs] {
+		return rhs
+	}
+	return lhs
 }
 
 func inferWriteParams(goal string, fallback string) (string, string) {
@@ -233,7 +269,7 @@ func inferWriteParams(goal string, fallback string) (string, string) {
 	}
 
 	raw := strings.TrimSpace(goal)
-	if strings.HasPrefix(raw, "write") {
+	if strings.HasPrefix(strings.ToLower(raw), "write") {
 		raw = strings.TrimSpace(strings.TrimPrefix(raw, "write"))
 	}
 	if len(quoted) == 1 {
@@ -247,12 +283,11 @@ func inferWriteParams(goal string, fallback string) (string, string) {
 	}
 
 	if colon := strings.Index(raw, ":"); colon >= 0 {
-		head := strings.TrimSpace(raw[:colon])
 		tail := strings.TrimSpace(raw[colon+1:])
 		if quote := extractQuotedValues(tail); len(quote) >= 1 {
-			return head, trimQuotes(quote[0])
+			return strings.TrimSpace(raw[:colon]), trimQuotes(quote[0])
 		}
-		return head, trimQuotes(tail)
+		return strings.TrimSpace(raw[:colon]), trimQuotes(tail)
 	}
 	return fallback, ""
 }
@@ -298,7 +333,6 @@ func inferWebParams(goal string) string {
 			return trimQuotes(token)
 		}
 	}
-
 	return trimLeadingCommand(trimLeadingCommand(trimLeadingCommand(goal, "fetch"), "web"), "get")
 }
 
@@ -348,30 +382,26 @@ func inferReadParams(goal string, fallback string) string {
 	return inferPathFromGoal(goal, fallback)
 }
 
-func inferPathFromGoal(normalized string, fallback string) string {
+func inferPathFromGoal(goal string, fallback string) string {
 	key := " in "
-	idx := strings.Index(normalized, key)
+	idx := strings.Index(strings.ToLower(goal), key)
 	if idx < 0 {
 		return fallback
 	}
 
-	raw := strings.TrimSpace(normalized[idx+len(key):])
-	if raw == "" || strings.Contains(raw, "this folder") || strings.Contains(raw, "here") {
+	raw := strings.TrimSpace(goal[idx+len(key):])
+	if raw == "" || strings.Contains(strings.ToLower(raw), "this folder") || strings.Contains(strings.ToLower(raw), "here") {
 		return fallback
 	}
 
-	if strings.HasPrefix(raw, "\"") || strings.HasPrefix(raw, "'") {
-		raw = strings.Trim(raw, "\"'")
-	}
-
+	raw = strings.Trim(raw, "\"'")
 	return filepath.Clean(raw)
 }
 
 func trimLeadingCommand(text, command string) string {
 	text = strings.TrimSpace(text)
-	cmd := strings.TrimSpace(strings.ToLower(command))
+	prefix := strings.TrimSpace(strings.ToLower(command))
 	lower := strings.ToLower(text)
-	prefix := strings.TrimSpace(cmd)
 	if lower == prefix {
 		return ""
 	}
@@ -405,3 +435,4 @@ func extractQuotedValues(goal string) []string {
 	}
 	return values
 }
+

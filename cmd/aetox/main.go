@@ -22,11 +22,13 @@ func main() {
 	var autoApprove bool
 	var rootPath string
 	var maxRetries int
+	var maxPlanRetries int
 	var approvalTimeout int
 
 	flag.BoolVar(&autoApprove, "yes", false, "auto approve all risky actions")
 	flag.StringVar(&rootPath, "root", "", "optional sandbox root directory (default: current directory)")
 	flag.IntVar(&maxRetries, "retries", 2, "max retry count for a failed step")
+	flag.IntVar(&maxPlanRetries, "plan-retries", 1, "max plan retries after critic escalation")
 	flag.IntVar(&approvalTimeout, "approval-timeout", 60, "approval timeout in seconds")
 	flag.Parse()
 
@@ -41,7 +43,7 @@ func main() {
 	}
 	goal = strings.TrimSpace(goal)
 	if goal == "" {
-		fmt.Println("Usage: aetox [--yes] \"your goal\"")
+		fmt.Println("Usage: aetox [--yes] [--retries N] [--plan-retries N] \"your goal\"")
 		os.Exit(2)
 	}
 
@@ -49,12 +51,14 @@ func main() {
 		RootPath:        rootPath,
 		AutoApprove:     autoApprove,
 		MaxRetries:      maxRetries,
+		MaxPlanRetries:  maxPlanRetries,
 		ApprovalTimeout: approvalTimeout,
 	})
 
 	ctx := context.Background()
+	plannerSvc := planner.New()
 
-	plan, err := planner.New().BuildPlan(ctx, goal, cfg)
+	plan, err := plannerSvc.BuildPlan(ctx, goal, cfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Planning failed: %v\n", err)
 		os.Exit(1)
@@ -71,7 +75,10 @@ func main() {
 		critic.NewCritic(),
 		safety.NewManager(cfg),
 		runCtx,
+		plannerSvc,
+		cfg,
 		cfg.MaxRetries,
+		cfg.MaxPlanRetries,
 	)
 
 	report, err := dispatch.Run(ctx, plan)
@@ -91,10 +98,13 @@ func main() {
 
 func printReport(plan contracts.TaskPlan, report *dispatcher.Report) {
 	fmt.Printf("Goal: %s\n", plan.Goal)
-	fmt.Printf("Plan ID: %s\n", plan.ID)
+	fmt.Printf("Plan ID: %s\n", report.PlanID)
 	fmt.Printf("Steps: %d\n", len(plan.Steps))
 	fmt.Printf("Risk: %s\n", plan.RiskLevel)
 	fmt.Printf("Requires approval: %t\n", plan.RequiresPermission)
+	if report.LastHint != "" {
+		fmt.Printf("Last critic hint: %s\n", report.LastHint)
+	}
 	fmt.Println("Execution:")
 	for _, stepResult := range report.StepResults {
 		status := "FAIL"
@@ -111,3 +121,4 @@ func printReport(plan contracts.TaskPlan, report *dispatcher.Report) {
 	}
 	fmt.Printf("Success: %t\n", report.Success)
 }
+

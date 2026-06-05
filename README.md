@@ -1,7 +1,7 @@
 # Aetox CLI
 
 Aetox CLI is the Go rebuild target for the Aetox agentic operating-system idea.
-This repository now contains an executable vertical slice (Phase 1 + partial Phase 2)
+This repository now contains an executable vertical slice (Phase 1 + 2 + Phase 3)
 with planner, dispatcher, executor, critic, memory, safety gates, and a small
 tool registry.
 
@@ -40,11 +40,18 @@ aetox "write file \"notes.txt\" \"hello from cli\""
 aetox --yes "move file old.txt new.txt"
 aetox --yes "delete file temp.txt"
 aetox --yes "fetch https://example.com"
+aetox "list . then read file README.md then read file cmd/aetox/main.go"
+aetox --yes "run dir then write file \"phase3.txt\" \"done\""
 aetox --yes "run dir"
 ```
 
 `--yes` bypasses interactive prompts for risky steps during local development, but
 you can also answer `y`/`yes` when prompted.
+
+Phase 3 controls:
+
+- `--retries` controls step-level retry attempts before giving up on one action.
+- `--plan-retries` controls how many times dispatcher replans after critic escalation.
 
 ## How to Run
 
@@ -81,4 +88,3 @@ The Go rewrite follows the architecture archive:
 
 Only after this slice is stable should persistent memory, richer plugins, and broader
 tooling be added.
-
