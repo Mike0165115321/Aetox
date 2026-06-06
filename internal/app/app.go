@@ -50,6 +50,10 @@ type skillDispatcher interface {
 	Execute(ctx context.Context, input string) (skill.Output, bool, error)
 }
 
+type describeSkills interface {
+	Snapshot() map[string]skill.Skill
+}
+
 type namedDispatcher interface {
 	Names() []string
 }
@@ -204,13 +208,12 @@ func (a *App) showSlashHelp() {
 	a.console.Println("Quick commands:")
 	a.console.Println("  /model   - switch model/provider")
 	a.console.Println("  /help    - show this menu")
+	a.console.Println("  /exit    - leave chat")
 	a.console.Println("  :help    - quick tips")
-	a.console.Println("  exit     - leave chat")
 	a.console.Println("  :clear   - clear context")
-	a.console.Println("  /list    - list files")
-	a.console.Println("  /time    - show current time")
-	a.console.Println("  /echo    - echo text")
-	a.console.Println("  /shell   - run shell command")
+	a.console.Println("")
+	a.console.Println("Available skills:")
+	a.printAvailableSkills()
 }
 
 func (a *App) runCommand(ctx context.Context, line string) (string, error) {
@@ -415,25 +418,55 @@ func (a *App) printStatusBar() {
 
 func (a *App) showSkillPalette(ctx context.Context) error {
 	a.showSlashHelp()
-	output, handled, err := a.dispatchBySkill(ctx, "help")
+	_, handled, err := a.dispatchBySkill(ctx, "help")
 	if err != nil {
 		a.console.Println("command failed: " + err.Error())
 		return nil
 	}
-	if handled && strings.TrimSpace(output) != "" {
-		a.console.Println("")
-		a.console.Println(output)
+	if handled {
 		a.console.Println("")
 	}
 
 	if len(a.skillNames) == 0 {
 		a.console.Println("No extra skills registered.")
-		return nil
 	}
 
-	a.console.Println("Skills:")
-	for _, name := range a.skillNames {
-		a.console.Println("  /" + name)
-	}
 	return nil
+}
+
+func (a *App) printAvailableSkills() {
+	describe := map[string]skill.Skill{}
+	if source, ok := a.skillDispatcher.(describeSkills); ok {
+		describe = source.Snapshot()
+	} else {
+		for _, name := range a.skillNames {
+			// keep compatibility if dispatcher only exposes names
+			describe[name] = nil
+		}
+	}
+
+	names := make([]string, 0, len(describe))
+	for name := range describe {
+		if name == "" {
+			continue
+		}
+		names = append(names, strings.ToLower(name))
+	}
+	sort.Strings(names)
+
+	if len(names) == 0 {
+		a.console.Println("  (none)")
+		return
+	}
+
+	for _, name := range names {
+		desc := "no description"
+		if describe[name] != nil {
+			desc = strings.TrimSpace(describe[name].Description())
+			if desc == "" {
+				desc = "no description"
+			}
+		}
+		a.console.Println(fmt.Sprintf("  %-8s %s", "/"+name, desc))
+	}
 }
