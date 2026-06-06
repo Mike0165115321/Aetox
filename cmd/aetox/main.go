@@ -16,6 +16,8 @@ import (
 	"aetox-cli/internal/config"
 	"aetox-cli/internal/model"
 	"aetox-cli/internal/skill"
+
+	"golang.org/x/term"
 )
 
 const appVersion = "0.3.0-dev"
@@ -91,6 +93,16 @@ func main() {
 			cfg.ModelAPIKey = selectedAPIKey
 			cfg.ModelBaseURL = selectedBaseURL
 		}
+	}
+
+	displayModel := strings.TrimSpace(modelName)
+	if strings.TrimSpace(modelProvider) == "" || strings.EqualFold(strings.TrimSpace(modelProvider), "noop") {
+		fmt.Println("Initializing local AI mode (noop)...")
+	} else {
+		if displayModel == "" {
+			displayModel = defaultModelForProvider(modelProvider)
+		}
+		fmt.Printf("Initializing model provider: %s/%s...\n", strings.TrimSpace(modelProvider), displayModel)
 	}
 
 	bootstrapResult := model.BootstrapProvider(model.BootstrapOptions{
@@ -213,69 +225,243 @@ func resolveModelStatus(cfg config.Config, bootstrapResult model.BootstrapResult
 
 func promptModelSelection(cfg config.Config) (string, string, string, string, bool) {
 	reader := bufio.NewReader(os.Stdin)
+
+	providers := []string{"noop", "openrouter", "openai", "deepseek", "groq", "mistral", "together", "perplexity", "cohere", "lmstudio", "localai", "ollama"}
+	providerOptions := make([]string, 0, len(providers))
+	for _, p := range providers {
+		label := p
+		if shouldRequireAPIKey(p) {
+			if key := strings.TrimSpace(config.ResolveModelAPIKey(p)); key != "" {
+				label += " (env key found)"
+			} else {
+				label += " (needs key)"
+			}
+		}
+		providerOptions = append(providerOptions, label)
+	}
+
 	for {
-		fmt.Println("No model provider configured. Select now, or press Enter to keep local AI mode.")
-		providers := []string{
-			"noop",
-			"openrouter",
-			"openai",
-			"deepseek",
-			"groq",
-			"mistral",
-			"together",
-			"perplexity",
-			"cohere",
-			"lmstudio",
-			"localai",
-			"ollama",
+		idx, ok := pickFromMenu(reader, "No model provider configured. Select now, or press Enter to keep local AI mode.", providerOptions, 0, "Use ↑/↓ then Enter. No key entry.")
+		if !ok {
+			return "noop", "", "", cfg.ModelBaseURL, false
 		}
-		for i, p := range providers {
-			keyLabel := ""
-			if shouldRequireAPIKey(p) {
-				if key := strings.TrimSpace(config.ResolveModelAPIKey(p)); key != "" {
-					keyLabel = " (env key found)"
-				} else {
-					keyLabel = " (needs key)"
-				}
-			}
-			fmt.Printf("  %d) %s%s\n", i+1, p, keyLabel)
+		provider := providers[idx]
+		if provider == "noop" {
+			return provider, "", "", cfg.ModelBaseURL, true
 		}
-		fmt.Printf("Select model provider [1-%d, Enter=noop]: ", len(providers))
 
-		selection := strings.TrimSpace(readLine(reader))
-		if selection == "" {
-			return "noop", "", "", cfg.ModelBaseURL, true
-		}
-		idx, err := strconv.Atoi(selection)
-		if err == nil && idx >= 1 && idx <= len(providers) {
-			provider := providers[idx-1]
-			model := strings.TrimSpace(cfg.ModelName)
-			if provider == "noop" {
-				return provider, model, "", cfg.ModelBaseURL, true
-			}
+		model := pickModelForProvider(reader, provider, cfg.ModelName)
 
-			defaultModel := defaultModelForProvider(provider)
-			prompt := fmt.Sprintf("Model name for %s [%s]: ", provider, defaultModel)
-			fmt.Print(prompt)
-			if model = strings.TrimSpace(readLine(reader)); model == "" {
-				model = defaultModel
-			}
-
-			key := strings.TrimSpace(config.ResolveModelAPIKey(provider))
-			if shouldRequireAPIKey(provider) {
+		key := strings.TrimSpace(config.ResolveModelAPIKey(provider))
+		if shouldRequireAPIKey(provider) {
+			if key == "" {
+				fmt.Printf("API key for %s (press Enter to keep local environment): ", provider)
+				key = strings.TrimSpace(readLine(reader))
 				if key == "" {
-					fmt.Printf("API key for %s (press Enter to keep local environment): ", provider)
-					key = strings.TrimSpace(readLine(reader))
-					if key == "" {
-						fmt.Println("Missing API key. Try again.")
-						continue
-					}
+					fmt.Println("Missing API key. Try again.")
+					continue
 				}
 			}
-			return provider, model, key, cfg.ModelBaseURL, true
 		}
+		return provider, model, key, cfg.ModelBaseURL, true
+	}
+}
 
-		fmt.Println("Invalid selection. Please try again.")
+func pickModelForProvider(reader *bufio.Reader, provider, existing string) string {
+	modelChoices := modelChoicesForProvider(provider)
+	defaultModel := defaultModelForProvider(provider)
+	if existing != "" {
+		defaultModel = existing
+	}
+
+	if len(modelChoices) == 0 {
+		fmt.Printf("Model name for %s [%s] (or type custom): ", provider, defaultModel)
+		if model := strings.TrimSpace(readLine(reader)); model != "" {
+			return model
+		}
+		return defaultModel
+	}
+
+	options := append([]string{}, modelChoices...)
+	options = append(options, "custom model ...")
+	defaultIndex := 0
+	for i, m := range modelChoices {
+		if m == defaultModel {
+			defaultIndex = i
+			break
+		}
+	}
+
+	idx, ok := pickFromMenu(reader, fmt.Sprintf("Choose model for %s", provider), options, defaultIndex, "Use ↑/↓ then Enter.")
+	if !ok {
+		return defaultModel
+	}
+
+	if idx == len(modelChoices) {
+		fmt.Printf("Model name for %s [%s]: ", provider, defaultModel)
+		if model := strings.TrimSpace(readLine(reader)); model != "" {
+			return model
+		}
+		return defaultModel
+	}
+
+	return modelChoices[idx]
+}
+
+func pickFromMenu(reader *bufio.Reader, title string, options []string, defaultIndex int, hint string) (int, bool) {
+	if len(options) == 0 {
+		return 0, true
+	}
+	selected := defaultIndex
+	if selected < 0 || selected >= len(options) {
+		selected = 0
+	}
+
+	if !isInteractive() {
+		fmt.Println(title)
+		for i, option := range options {
+			fmt.Printf("  %d) %s\n", i+1, option)
+		}
+		for {
+			fmt.Printf("Select [1-%d]: ", len(options))
+			input := strings.TrimSpace(readLine(reader))
+			if input == "" {
+				return selected, true
+			}
+			if input == "0" {
+				return selected, true
+			}
+			for i := range options {
+				if input == fmt.Sprint(i+1) {
+					return i, true
+				}
+			}
+			fmt.Println("Invalid selection.")
+		}
+	}
+
+	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
+	if err != nil {
+		// fallback: keep old behavior.
+		return selectMenuUsingNumbers(reader, title, options, selected)
+	}
+	defer func() {
+		_ = term.Restore(int(os.Stdin.Fd()), oldState)
+	}()
+
+	for {
+		fmt.Println()
+		fmt.Println(title)
+		for i, option := range options {
+			prefix := "  "
+			if i == selected {
+				prefix = " >"
+			}
+			fmt.Printf("%s %s\n", prefix, option)
+		}
+		fmt.Printf("%s\n", hint)
+
+		input, err := readSingleKey(reader)
+		if err != nil {
+			return selected, false
+		}
+		switch input {
+		case keyMenuUp:
+			selected--
+			if selected < 0 {
+				selected = len(options) - 1
+			}
+		case keyMenuDown:
+			selected++
+			if selected >= len(options) {
+				selected = 0
+			}
+		case keyMenuEnter:
+			return selected, true
+		case keyMenuCancel:
+			return selected, false
+		}
+	}
+}
+
+const (
+	keyMenuUp = iota + 1
+	keyMenuDown
+	keyMenuEnter
+	keyMenuCancel
+)
+
+func readSingleKey(reader *bufio.Reader) (int, error) {
+	b, err := reader.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	switch b {
+	case 0x00:
+		next, err := reader.ReadByte()
+		if err != nil {
+			return 0, err
+		}
+		switch next {
+		case 'H':
+			return keyMenuUp, nil
+		case 'P':
+			return keyMenuDown, nil
+		default:
+			return 0, nil
+		}
+	case 0x1b:
+		next, err := reader.ReadByte()
+		if err != nil {
+			return 0, err
+		}
+		if next != '[' {
+			return 0, nil
+		}
+		next, err = reader.ReadByte()
+		if err != nil {
+			return 0, err
+		}
+		switch next {
+		case 'A':
+			return keyMenuUp, nil
+		case 'B':
+			return keyMenuDown, nil
+		default:
+			return 0, nil
+		}
+	case 0x0d, 0x0a:
+		return keyMenuEnter, nil
+	case 0x03:
+		return keyMenuCancel, nil
+	default:
+		return int(b), nil
+	}
+}
+
+func selectMenuUsingNumbers(reader *bufio.Reader, title string, options []string, selected int) (int, bool) {
+	for {
+		fmt.Println(title)
+		for i, option := range options {
+			prefix := "  "
+			if i == selected {
+				prefix = " >"
+			}
+			fmt.Printf("%s %s\n", prefix, option)
+		}
+		fmt.Printf("Select [1-%d, Enter=default]: ", len(options))
+		input := strings.TrimSpace(readLine(reader))
+		if input == "" {
+			return selected, true
+		}
+		if n, err := parseIndexSelection(input); err == nil {
+			if n < 0 || n >= len(options) {
+				fmt.Println("Invalid selection.")
+				continue
+			}
+			return n, true
+		}
+		fmt.Println("Invalid selection.")
 	}
 }
 
@@ -317,9 +503,92 @@ func defaultModelForProvider(provider string) string {
 	}
 }
 
+func modelChoicesForProvider(provider string) []string {
+	switch config.NormalizeModelProvider(provider) {
+	case "openrouter":
+		return []string{
+			"deepseek/deepseek-r1",
+			"deepseek/deepseek-chat",
+			"deepseek/deepseek-coder",
+			"google/gemini-2.0-flash-001",
+			"openai/gpt-4o-mini",
+			"openai/gpt-4o",
+			"meta-llama/llama-4-maverick-17b-128e-instruct",
+			"mistralai/mixtral-8x22b-instruct",
+		}
+	case "openai":
+		return []string{
+			"gpt-4o-mini",
+			"gpt-4o",
+			"gpt-4.1",
+			"gpt-4.1-mini",
+			"o4-mini",
+		}
+	case "deepseek":
+		return []string{
+			"deepseek-chat",
+			"deepseek-coder",
+			"deepseek-reasoner",
+		}
+	case "groq":
+		return []string{
+			"llama-3.3-70b-versatile",
+			"llama-3.1-70b-versatile",
+			"llama-3.1-8b-instant",
+			"mixtral-8x7b-32768",
+		}
+	case "mistral":
+		return []string{
+			"mistral-small",
+			"mistral-small-3.2",
+			"ministral-8b",
+			"pixtral-large",
+		}
+	case "together":
+		return []string{
+			"google/gemma-2-27b-it",
+			"meta-llama/Llama-3-70b-chat-hf",
+			"meta-llama/Llama-3-8b-chat-hf",
+		}
+	case "perplexity":
+		return []string{
+			"llama-3.1-sonar-small-128k-online",
+			"llama-3.1-sonar-large-128k-online",
+			"llama-3.1-sonar-huge-128k-online",
+		}
+	case "cohere":
+		return []string{
+			"command-r-plus",
+			"command-r",
+			"command-r7b-12-2024",
+		}
+	case "ollama":
+		return []string{
+			"gemma3:4b",
+			"qwen2.5:7b",
+			"llama3.1:8b",
+			"llama3.1:70b",
+		}
+	case "lmstudio":
+		return []string{"local-model"}
+	case "localai":
+		return []string{"local-model"}
+	default:
+		return nil
+	}
+}
+
 func readLine(reader *bufio.Reader) string {
 	line, _ := reader.ReadString('\n')
 	return strings.TrimSpace(strings.TrimSuffix(line, "\r\n"))
+}
+
+func parseIndexSelection(input string) (int, error) {
+	value, err := strconv.Atoi(input)
+	if err != nil {
+		return 0, err
+	}
+	return value - 1, nil
 }
 
 func printUsage() {
