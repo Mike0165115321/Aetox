@@ -1,0 +1,79 @@
+package skill
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+)
+
+type listSkill struct {
+	root string
+}
+
+func (*listSkill) Name() string { return "list" }
+
+func (*listSkill) Description() string {
+	return "list files in the sandbox root or subpath"
+}
+
+func (s *listSkill) Execute(_ context.Context, input Input) (Output, error) {
+	if s == nil {
+		return Output{Name: "list"}, fmt.Errorf("list skill unavailable")
+	}
+
+	args := stringSlice(input["args"])
+	requestPath := "."
+	if len(args) > 0 {
+		requestPath = strings.Join(args, " ")
+	}
+
+	targetPath, err := resolveSandboxPath(s.root, requestPath)
+	if err != nil {
+		return Output{Name: "list"}, err
+	}
+
+	entries, err := os.ReadDir(targetPath)
+	if err != nil {
+		return Output{Name: "list"}, err
+	}
+
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	sort.Strings(names)
+	return Output{
+		Name:    "list",
+		Content: strings.Join(names, "\n"),
+	}, nil
+}
+
+func resolveSandboxPath(root string, requestPath string) (string, error) {
+	safeRoot, err := filepath.Abs(strings.TrimSpace(root))
+	if err != nil {
+		return "", err
+	}
+	requestPath = strings.TrimSpace(requestPath)
+	if requestPath == "" {
+		requestPath = "."
+	}
+	if filepath.IsAbs(requestPath) {
+		return "", fmt.Errorf("absolute path is not allowed")
+	}
+
+	candidate := filepath.Join(safeRoot, requestPath)
+	normalized := filepath.Clean(candidate)
+	safeTarget, err := filepath.Abs(normalized)
+	if err != nil {
+		return "", err
+	}
+
+	if safeTarget != safeRoot && !strings.HasPrefix(safeTarget+string(filepath.Separator), safeRoot+string(filepath.Separator)) {
+		return "", fmt.Errorf("path is outside sandbox root")
+	}
+	return safeTarget, nil
+}
+

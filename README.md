@@ -1,90 +1,85 @@
-# Aetox CLI
+﻿# Aetox CLI (Terminal Chat)
 
-Aetox CLI is the Go rebuild target for the Aetox agentic operating-system idea.
-This repository now contains an executable vertical slice (Phase 1 + 2 + Phase 3)
-with planner, dispatcher, executor, critic, memory, safety gates, and a small
-tool registry.
+Aetox CLI ตอนนี้เป็นโหมดแชตผ่านเทอมินัล:
+- รับข้อความจากผู้ใช้
+- ส่งให้ model (default: `noop`)
+- ตอบกลับโดยตรง
 
-## Current State
+## โครงสร้างใหม่
 
-- Python implementation: removed.
-- Old tests, configs, caches, scratch files, and runtime data: removed.
-- Current architecture docs live in `docs/`.
-- Target implementation language: Go.
-- Product shape: local-first command-line agent orchestration.
+- `cmd/aetox/main.go`: CLI bootstrap + flag parsing + mode dispatch
+- `internal/app`: app shell layer (`RunInteractive`, `RunOnce`, banner, terminal I/O interface)
+- `internal/command`: command intent parsing seam (`help/version/interactive/once`)
+- `internal/skill`: skill abstraction + registry + dispatcher seam
+- `internal/cognitive`: agent orchestration (`Agent`, context, provider call)
+- `internal/model`: provider abstraction (`noop`, `openrouter`, `openai-compatible`, `ollama`) + bootstrap seam
+- `internal/config`: runtime config defaults
+- `internal/memory`: bounded context store for `cognitive.Agent`
 
-## Core Idea
+ดูเอกสารสถาปัตยกรรมฉบับปฏิบัติแบบละเอียดได้ที่:
+- [docs/architecture-aetox.md](/E:/Aetox/Aetox-cli/docs/architecture-aetox.md)
 
-Aetox CLI is not a chatbot wrapper. It is a local-first command orchestrator where
-small roles cooperate:
+## เอกสารสถาปัตยกรรม
 
-- Planner: turns a user goal into a bounded task plan.
-- Dispatcher: executes the plan step by step with timeout and retry control.
-- Executor: calls tools through a registry.
-- Critic: checks step output before marking it as trusted context.
-- Memory: keeps only the context needed for the current mode.
-- Safety: gates risky actions with explicit approval.
+- [architecture review (scan mode)](/E:/Aetox/Aetox-cli/docs/architecture-review-aetox-cli.md)
 
-## Current Tooling
+## รันทันที
 
-- `files` - list/read/write/move/delete in sandbox.
-- `web` - fetch URL content.
-- `shell` - run shell commands in sandbox directory.
-
-## Current Supported Goals
-
-```bash
-aetox "list markdown files in this folder"
-aetox "read file README.md"
-aetox "write file \"notes.txt\" \"hello from cli\""
-aetox --yes "move file old.txt new.txt"
-aetox --yes "delete file temp.txt"
-aetox --yes "fetch https://example.com"
-aetox "list . then read file README.md then read file cmd/aetox/main.go"
-aetox --yes "run dir then write file \"phase3.txt\" \"done\""
-aetox --yes "run dir"
+```powershell
+cd E:\Aetox\Aetox-cli
+go build -o C:\Users\Gigabyte\bin\aetox.exe .\cmd\aetox
+aetox.exe --help
 ```
 
-`--yes` bypasses interactive prompts for risky steps during local development, but
-you can also answer `y`/`yes` when prompted.
+### แชตผ่านเทอมินัล (พร้อมสกิล)
 
-Phase 3 controls:
-
-- `--retries` controls step-level retry attempts before giving up on one action.
-- `--plan-retries` controls how many times dispatcher replans after critic escalation.
-
-## How to Run
-
-From the repository root:
-
-```bash
-go run ./cmd/aetox "list markdown files in this folder"
+```powershell
+aetox
+aetox chat "ช่วยสรุปโปรเจกต์นี้"
 ```
 
-Or build once:
+สกิลที่ใช้งานได้ทันทีในโหมดแชต:
+- `help` แสดงสกิลที่พร้อมใช้
+- `time` ดูเวลา
+- `echo <ข้อความ>` ส่งข้อความกลับ
+- `list [path]` รายการไฟล์ใน `--root` (ป้องกันออกนอกโฟลเดอร์)
+- `shell <command>` รันคำสั่งระบบในระบบปฏิบัติการ
 
-```bash
-go build -o aetox ./cmd/aetox
-./aetox "read file README.md"
+### ส่งข้อความเดียว (ไม่ต้องรันโหมด interactive)
+
+```powershell
+echo "ช่วยอธิบาย Aetox คืออะไร" | aetox
 ```
 
-## Documentation Map
+### โหมดมาตรฐานแบบ CLI
 
-- [Current system overview](docs/aetox-cli-system-overview.md)
-- [Phase 3 planner/critic loop](docs/phase-3-planner-critic-loop.md)
-- [Go rebuild roadmap](docs/go-rebuild-roadmap.md)
-- [Future agent notes](docs/future-agent-notes.md)
+```powershell
+aetox help
+aetox version
+aetox --no-banner
+aetox --version
+```
 
-## Rebuild Direction
+### ตัวอย่าง provider
 
-The Go rewrite follows the architecture archive:
+```powershell
+$env:OPENROUTER_API_KEY = "YOUR_OPENROUTER_KEY"
+aetox --model-provider=openrouter --model-name="google/gemma-3n-E2B" "ช่วยสรุปโปรเจกต์นี้"
+```
 
-1. Parse CLI goal.
-2. Build a typed task plan.
-3. Execute a safe tool through the registry.
-4. Safety gate blocks high-risk actions.
-5. Critic validates step results.
-6. CLI prints a compact final report.
+```powershell
+$env:OPENAI_API_KEY = "YOUR_OPENAI_KEY"
+aetox --model-provider=openai --model-name="gpt-4o-mini" "ช่วยสรุปโปรเจกต์นี้"
+```
 
-Only after this slice is stable should persistent memory, richer plugins, and broader
-tooling be added.
+```powershell
+$env:GROQ_API_KEY = "YOUR_GROQ_KEY"
+aetox --model-provider=groq --model-name="llama-3.3-70b-versatile" "ช่วยสรุปโปรเจกต์นี้"
+```
+
+```powershell
+# Local Ollama (ต้องรัน ollama serve อยู่แล้ว)
+aetox --model-provider=ollama --model-name="llama3.1:8b" "ช่วยสรุปโปรเจกต์นี้"
+```
+
+ถ้าการกำหนด provider ล้มเหลว ระบบจะ fallback ไป `noop` เพื่อให้แชตได้ทันที
