@@ -73,6 +73,12 @@ func (a *App) readLineInteractive(ctx context.Context) (string, error) {
 
 		switch key.kind {
 		case rawKeyEnter:
+			if selected >= 0 && a.isSlashToken(string(line)) {
+				suggestions := a.slashSuggestions(string(line))
+				if selected < len(suggestions) {
+					line = []rune(suggestions[selected])
+				}
+			}
 			a.console.Print("\n")
 			return string(line), nil
 		case rawKeyCtrlC, rawKeyEscape:
@@ -106,9 +112,6 @@ func (a *App) readLineInteractive(ctx context.Context) (string, error) {
 					selected = 0
 				}
 			}
-
-			chosen := strings.TrimPrefix(suggestions[selected], "/")
-			line = []rune("/" + chosen)
 			render()
 		case rawKeyRune:
 			line = append(line, key.r)
@@ -148,6 +151,19 @@ func readRawKey(reader *bufio.Reader) (rawKey, error) {
 	}
 
 	switch ch {
+	case 0xE0:
+		next, _, err := reader.ReadRune()
+		if err != nil {
+			return rawKey{}, err
+		}
+		switch next {
+		case 'H':
+			return rawKey{kind: rawKeyArrowUp}, nil
+		case 'P':
+			return rawKey{kind: rawKeyArrowDown}, nil
+		default:
+			return rawKey{kind: rawKeyUnknown}, nil
+		}
 	case 0x00:
 		next, _, err := reader.ReadRune()
 		if err != nil {
@@ -239,7 +255,7 @@ func (a *App) drawLineWithSlashPalette(line string, suggestions []string, select
 	}
 
 	for i, suggestion := range suggestions {
-		a.console.Print("\n")
+		a.console.Print("\r\n")
 		a.console.Print("\x1b[2K")
 		if i == selected {
 			a.console.Print(" > ")

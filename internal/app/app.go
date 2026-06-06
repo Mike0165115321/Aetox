@@ -156,7 +156,7 @@ func (a *App) RunInteractive(ctx context.Context) error {
 				switch slashCommand {
 				case "exit", "quit", "bye", "logout", ":help", ":clear", ":exit", ":quit":
 				default:
-					a.console.Println("Unknown slash command. Press / to list available skills.")
+					a.console.Println("Unknown slash command. Use / then Tab / ↑/↓ เพื่อเลือกสกิล")
 					a.showSlashHelp()
 					a.printSeparator()
 					a.printStatusBar()
