@@ -19,11 +19,13 @@ import (
 )
 
 const (
-	ansiReset      = "\x1b[0m"
-	ansiBlueDark   = "\x1b[38;5;18m"
-	ansiBlueMid    = "\x1b[38;5;33m"
-	ansiBlueLight  = "\x1b[38;5;39m"
-	ansiBlueBright = "\x1b[38;5;75m"
+	ansiReset       = "\x1b[0m"
+	ansiBrandDark   = "\x1b[38;5;31m"
+	ansiBrandMid    = "\x1b[38;5;45m"
+	ansiBrandLight  = "\x1b[38;5;87m"
+	ansiBrandBright = "\x1b[38;5;117m"
+	ansiText        = "\x1b[97m"
+	ansiSubtle      = "\x1b[38;5;249m"
 )
 
 type App struct {
@@ -170,7 +172,7 @@ func (a *App) RunInteractive(ctx context.Context) error {
 		streamed := false
 		reply, isStream, err := a.runCommandWithStream(sigCtx, line, func(chunk string) {
 			if !streamed {
-				a.console.Print(ansiBlueBright + "Aetox:" + ansiReset + " ")
+				a.console.Print(ansiBrandBright + "Aetox:" + ansiReset + " ")
 				streamed = true
 			}
 			a.console.Print(chunk)
@@ -185,7 +187,7 @@ func (a *App) RunInteractive(ctx context.Context) error {
 		if isStream {
 			a.console.Println()
 		} else {
-			a.console.Println(ansiBlueBright + "Aetox:" + ansiReset + " " + reply)
+			a.console.Println(ansiBrandBright + "Aetox:" + ansiReset + " " + reply)
 		}
 		a.printSeparator()
 		a.printStatusBar()
@@ -214,7 +216,7 @@ func (a *App) switchModel(ctx context.Context) error {
 	a.agent = newAgent
 	a.agent.ClearContext()
 	a.modelStatus = status
-	a.console.Println(ansiBlueBright + "Aetox:" + ansiReset + " switched model profile.")
+	a.console.Println(ansiBrandBright + "Aetox:" + ansiReset + " switched model profile.")
 	return nil
 }
 
@@ -349,17 +351,17 @@ func (a *App) showHelp() {
 func (a *App) PrintBanner() {
 	a.console.Println("")
 	a.console.Println("")
-	a.console.Println(ansiBlueDark + "      █████╗ ███████╗████████╗ ██████╗ ██╗  ██╗" + ansiReset)
-	a.console.Println(ansiBlueMid + "     ██╔══██╗██╔════╝╚══██╔══╝██╔═══██╗██║  ██║" + ansiReset)
-	a.console.Println(ansiBlueLight + "     ███████║█████╗     ██║   ██║   ██║╚██╗██╔╝" + ansiReset)
-	a.console.Println(ansiBlueBright + "     ██╔══██║██╔══╝     ██║   ██║   ██║ ╚███╔╝ " + ansiReset)
-	a.console.Println(ansiBlueMid + "     ██║  ██║███████╗   ██║   ╚██████╔╝  ╚███╔╝ " + ansiReset)
-	a.console.Println(ansiBlueDark + "     ╚═╝  ╚═╝╚══════╝   ╚═╝    ╚═════╝    ╚═╝  " + ansiReset)
+	a.console.Println(ansiBrandDark + "      █████╗ ███████╗████████╗ ██████╗ ██╗  ██╗" + ansiReset)
+	a.console.Println(ansiBrandMid + "     ██╔══██╗██╔════╝╚══██╔══╝██╔═══██╗██║  ██║" + ansiReset)
+	a.console.Println(ansiBrandLight + "     ███████║█████╗     ██║   ██║   ██║╚██╗██╔╝" + ansiReset)
+	a.console.Println(ansiBrandBright + "     ██╔══██║██╔══╝     ██║   ██║   ██║ ╚███╔╝ " + ansiReset)
+	a.console.Println(ansiBrandMid + "     ██║  ██║███████╗   ██║   ╚██████╔╝  ╚███╔╝ " + ansiReset)
+	a.console.Println(ansiBrandDark + "     ╚═╝  ╚═╝╚══════╝   ╚═╝    ╚═════╝    ╚═╝  " + ansiReset)
 	a.console.Println("")
 	a.console.Println("")
-	a.console.Println(ansiBlueBright + "         Aetox " + ansiBlueLight + "CLI" + ansiReset)
+	a.console.Println(ansiBrandBright + "         Aetox " + ansiText + "CLI" + ansiReset)
 	a.console.Println("")
-	a.console.Println(ansiBlueDark + "  User: " + ansiBlueLight + a.userInfoLine() + ansiReset)
+	a.console.Println(ansiSubtle + "  User: " + ansiText + a.userInfoLine() + ansiReset)
 	a.console.Println("")
 	a.console.Println(ansiReset)
 }
@@ -388,7 +390,7 @@ func (a *App) printStatusBar() {
 	if padding < 1 {
 		padding = 1
 	}
-	a.console.Println(ansiBlueDark + left + ansiReset + strings.Repeat(" ", padding) + ansiBlueBright + right + ansiReset)
+	a.console.Println(ansiSubtle + left + ansiReset + strings.Repeat(" ", padding) + ansiText + right + ansiReset)
 }
 
 func (a *App) showSkillPalette(ctx context.Context) error {
@@ -398,15 +400,21 @@ func (a *App) showSkillPalette(ctx context.Context) error {
 	}
 	if handled && output != "" {
 		a.console.Println(output)
-		return nil
+		a.console.Println("")
 	}
 
+	a.console.Println("Available commands:")
+	a.console.Println("  /model   switch model/provider")
+	a.console.Println("  /help    show command hints")
+	a.console.Println("  :help    show quick tips")
+	a.console.Println("  exit     leave chat")
+
 	if len(a.skillNames) == 0 {
-		a.console.Println("No skills available.")
+		a.console.Println("  (no extra skills available)")
 		return nil
 	}
+	a.console.Println("")
 	a.console.Println("Available skills:")
-	a.console.Println("  /model  (change model provider)")
 	for _, name := range a.skillNames {
 		a.console.Println("  /" + name)
 	}
