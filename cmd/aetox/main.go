@@ -140,11 +140,6 @@ func main() {
 	}
 
 	currentConfig = cfg
-	displayModel := strings.TrimSpace(currentConfig.ModelName)
-	if displayModel == "" {
-		displayModel = "default"
-	}
-	fmt.Printf("Initializing model provider: %s/%s...\n", currentConfig.ModelProvider, displayModel)
 	bootstrapResult, _ := bootstrapModelWithStatus(cfg)
 	if bootstrapResult.Provider == nil {
 		fmt.Fprintf(os.Stderr, "runtime init failed: %v\n", bootstrapResult.Error)

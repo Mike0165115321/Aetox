@@ -146,6 +146,12 @@ func (a *App) RunInteractive(ctx context.Context) error {
 				a.printStatusBar()
 				continue
 			}
+			if line == "help" || line == "h" {
+				a.showSlashHelp()
+				a.printSeparator()
+				a.printStatusBar()
+				continue
+			}
 		}
 
 		switch line {
@@ -192,6 +198,19 @@ func (a *App) RunInteractive(ctx context.Context) error {
 		a.printSeparator()
 		a.printStatusBar()
 	}
+}
+
+func (a *App) showSlashHelp() {
+	a.console.Println("Quick commands:")
+	a.console.Println("  /model   - switch model/provider")
+	a.console.Println("  /help    - show this menu")
+	a.console.Println("  :help    - quick tips")
+	a.console.Println("  exit     - leave chat")
+	a.console.Println("  :clear   - clear context")
+	a.console.Println("  /list    - list files")
+	a.console.Println("  /time    - show current time")
+	a.console.Println("  /echo    - echo text")
+	a.console.Println("  /shell   - run shell command")
 }
 
 func (a *App) runCommand(ctx context.Context, line string) (string, error) {
@@ -362,6 +381,7 @@ func (a *App) PrintBanner() {
 	a.console.Println(ansiBrandBright + "         Aetox " + ansiText + "CLI" + ansiReset)
 	a.console.Println("")
 	a.console.Println(ansiSubtle + "  User: " + ansiText + a.userInfoLine() + ansiReset)
+	a.console.Println(ansiSubtle + "  Model: " + ansiText + a.modelStatus + ansiReset)
 	a.console.Println("")
 	a.console.Println(ansiReset)
 }
@@ -394,27 +414,24 @@ func (a *App) printStatusBar() {
 }
 
 func (a *App) showSkillPalette(ctx context.Context) error {
+	a.showSlashHelp()
 	output, handled, err := a.dispatchBySkill(ctx, "help")
 	if err != nil {
-		return err
+		a.console.Println("command failed: " + err.Error())
+		return nil
 	}
-	if handled && output != "" {
+	if handled && strings.TrimSpace(output) != "" {
+		a.console.Println("")
 		a.console.Println(output)
 		a.console.Println("")
 	}
 
-	a.console.Println("Available commands:")
-	a.console.Println("  /model   switch model/provider")
-	a.console.Println("  /help    show command hints")
-	a.console.Println("  :help    show quick tips")
-	a.console.Println("  exit     leave chat")
-
 	if len(a.skillNames) == 0 {
-		a.console.Println("  (no extra skills available)")
+		a.console.Println("No extra skills registered.")
 		return nil
 	}
-	a.console.Println("")
-	a.console.Println("Available skills:")
+
+	a.console.Println("Skills:")
 	for _, name := range a.skillNames {
 		a.console.Println("  /" + name)
 	}
