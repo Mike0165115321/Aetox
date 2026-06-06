@@ -119,7 +119,7 @@ func (a *App) RunInteractive(ctx context.Context) error {
 	for {
 		a.console.Print("> ")
 
-		line, err := a.console.ReadLine()
+		line, err := a.readLineInteractive(sigCtx)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				a.console.Println()
@@ -134,12 +134,8 @@ func (a *App) RunInteractive(ctx context.Context) error {
 		}
 		if strings.HasPrefix(line, "/") {
 			line = strings.TrimSpace(strings.TrimPrefix(line, "/"))
-			if line == "" {
-				if err := a.showSkillPalette(sigCtx); err != nil {
-					a.console.Errorf("command failed: %v\n", err)
-				}
-				a.printSeparator()
-				a.printStatusBar()
+			slashCommand, _ := skill.ParseCommand(line)
+			if slashCommand == "" {
 				continue
 			}
 			if line == "model" {
@@ -155,6 +151,17 @@ func (a *App) RunInteractive(ctx context.Context) error {
 				a.printSeparator()
 				a.printStatusBar()
 				continue
+			}
+			if _, ok := a.commandSet[slashCommand]; !ok {
+				switch slashCommand {
+				case "exit", "quit", "bye", "logout", ":help", ":clear", ":exit", ":quit":
+				default:
+					a.console.Println("Unknown slash command. Press / to list available skills.")
+					a.showSlashHelp()
+					a.printSeparator()
+					a.printStatusBar()
+					continue
+				}
 			}
 		}
 
