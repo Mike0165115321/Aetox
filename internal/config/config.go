@@ -1,7 +1,9 @@
-package config
+﻿package config
 
 import (
+	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -30,6 +32,12 @@ type ConfigOptions struct {
 	ModelAPIKey     string
 	ModelBaseURL    string
 	ModelTimeout    int
+}
+
+type ModelPreference struct {
+	ModelProvider string `json:"provider"`
+	ModelName     string `json:"model"`
+	ModelBaseURL  string `json:"base_url"`
 }
 
 func Load(opt ConfigOptions) Config {
@@ -146,3 +154,54 @@ func resolveModelAPIKey(provider string) string {
 		return ""
 	}
 }
+
+func PreferencePath() (string, error) {
+	configDir, err := os.UserConfigDir()
+	if err != nil || configDir == "" {
+		configDir = filepath.Join(os.Getenv("LOCALAPPDATA"), "aetox")
+		if configDir == "" {
+			configDir = filepath.Join(os.TempDir(), "aetox")
+		}
+	}
+	return filepath.Join(configDir, "aetox-cli", "model-preference.json"), nil
+}
+
+func LoadModelPreference() (ModelPreference, bool, error) {
+	var pref ModelPreference
+	path, err := PreferencePath()
+	if err != nil {
+		return pref, false, err
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return pref, false, nil
+		}
+		return pref, false, err
+	}
+
+	if err := json.Unmarshal(raw, &pref); err != nil {
+		return pref, false, err
+	}
+	return pref, true, nil
+}
+
+func SaveModelPreference(pref ModelPreference) error {
+	path, err := PreferencePath()
+	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+
+	payload, err := json.Marshal(pref)
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(path, payload, 0o600)
+}
+

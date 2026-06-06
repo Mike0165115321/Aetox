@@ -3,8 +3,11 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -52,6 +55,9 @@ func main() {
 	flag.Parse()
 
 	providerExplicit := strings.TrimSpace(modelProvider) != ""
+	modelNameExplicit := strings.TrimSpace(modelName) != ""
+	baseURLExplicit := strings.TrimSpace(modelBaseURL) != ""
+	explicitModelConfig := providerExplicit || modelNameExplicit || baseURLExplicit
 
 	if showVersion {
 		fmt.Printf("aetox version %s\n", appVersion)
@@ -81,7 +87,30 @@ func main() {
 	modelAPIKey = cfg.ModelAPIKey
 	modelBaseURL = cfg.ModelBaseURL
 
-	if intent.Mode == command.ModeInteractive && isInteractive() && !providerExplicit {
+	storedPreference, hasStoredPreference, prefErr := config.LoadModelPreference()
+	if prefErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: cannot read model preference: %v\n", prefErr)
+	}
+	if !explicitModelConfig && !providerExplicit {
+		if hasStoredPreference {
+			if strings.TrimSpace(storedPreference.ModelProvider) != "" {
+				modelProvider = strings.TrimSpace(storedPreference.ModelProvider)
+				cfg.ModelProvider = modelProvider
+			}
+			if strings.TrimSpace(storedPreference.ModelName) != "" {
+				modelName = strings.TrimSpace(storedPreference.ModelName)
+				cfg.ModelName = modelName
+			}
+			if strings.TrimSpace(storedPreference.ModelBaseURL) != "" {
+				modelBaseURL = strings.TrimSpace(storedPreference.ModelBaseURL)
+				cfg.ModelBaseURL = modelBaseURL
+			}
+		}
+	}
+
+	currentConfig := cfg
+
+	if intent.Mode == command.ModeInteractive && isInteractive() && !explicitModelConfig && !hasStoredPreference {
 		selectedProvider, selectedModel, selectedAPIKey, selectedBaseURL, ok := promptModelSelection(cfg)
 		if ok {
 			modelProvider = selectedProvider
@@ -92,36 +121,49 @@ func main() {
 			cfg.ModelName = selectedModel
 			cfg.ModelAPIKey = selectedAPIKey
 			cfg.ModelBaseURL = selectedBaseURL
+			currentConfig = cfg
+			if saveErr := persistModelPreference(currentConfig); saveErr != nil {
+				fmt.Fprintf(os.Stderr, "warning: cannot save model preference: %v\n", saveErr)
+			}
 		}
 	}
 
-	displayModel := strings.TrimSpace(modelName)
-	if strings.TrimSpace(modelProvider) == "" || strings.EqualFold(strings.TrimSpace(modelProvider), "noop") {
-		fmt.Println("Initializing local AI mode (noop)...")
-	} else {
-		if displayModel == "" {
-			displayModel = defaultModelForProvider(modelProvider)
-		}
-		fmt.Printf("Initializing model provider: %s/%s...\n", strings.TrimSpace(modelProvider), displayModel)
+	cfg.ModelProvider = strings.TrimSpace(modelProvider)
+	cfg.ModelName = strings.TrimSpace(modelName)
+	cfg.ModelAPIKey = strings.TrimSpace(modelAPIKey)
+	cfg.ModelBaseURL = strings.TrimSpace(modelBaseURL)
+
+	if strings.TrimSpace(cfg.ModelName) == "" &&
+		!strings.EqualFold(strings.TrimSpace(cfg.ModelProvider), "noop") {
+		cfg.ModelName = defaultModelForProvider(cfg.ModelProvider)
+		modelName = cfg.ModelName
 	}
 
-	bootstrapResult := model.BootstrapProvider(model.BootstrapOptions{
-		Provider: modelProvider,
-		Model:    modelName,
-		APIKey:   modelAPIKey,
-		BaseURL:  modelBaseURL,
-		Timeout:  time.Duration(cfg.ModelTimeoutSec) * time.Second,
-	})
+	currentConfig = cfg
+	displayModel := strings.TrimSpace(currentConfig.ModelName)
+	if displayModel == "" {
+		displayModel = "default"
+	}
+	fmt.Printf("Initializing model provider: %s/%s...\n", currentConfig.ModelProvider, displayModel)
+	bootstrapResult, _ := bootstrapModelWithStatus(cfg)
+	if bootstrapResult.Provider == nil {
+		fmt.Fprintf(os.Stderr, "runtime init failed: %v\n", bootstrapResult.Error)
+		os.Exit(1)
+	}
 	if bootstrapResult.Warning != "" {
-		fmt.Printf("warning: %s\n", bootstrapResult.Warning)
+		fmt.Fprintf(os.Stderr, "warning: %s\n", bootstrapResult.Warning)
+		if bootstrapResult.Error != nil {
+			fmt.Fprintf(os.Stderr, "detail: %v\n", bootstrapResult.Error)
+		}
 	}
-	if bootstrapResult.Error != nil {
-		fmt.Fprintf(os.Stderr, "Model fallback activated: %v\n", bootstrapResult.Error)
+
+	if err := persistModelPreference(currentConfig); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: cannot save model preference: %v\n", err)
 	}
 
 	agent := cognitive.NewAgent(cognitive.AgentConfig{
 		Provider: bootstrapResult.Provider,
-		Model:    modelName,
+		Model:    currentConfig.ModelName,
 		SystemPrompt: "You are Aetox, a concise assistant in Thai and English " +
 			"that helps users through a terminal conversation.",
 	})
@@ -142,8 +184,11 @@ func main() {
 		UserInfo:    resolveDisplayUser(),
 		ModelStatus: resolveModelStatus(config.Config{
 			ModelProvider: modelProvider,
-			ModelName:     modelName,
+			ModelName:     currentConfig.ModelName,
 		}, bootstrapResult),
+		ModelSwitch: func(ctx context.Context) (*cognitive.Agent, string, bool, error) {
+			return switchProvider(ctx, &currentConfig)
+		},
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "runtime init failed: %v\n", err)
@@ -176,6 +221,55 @@ func main() {
 		printUsage()
 		os.Exit(2)
 	}
+}
+
+func switchProvider(ctx context.Context, cfg *config.Config) (*cognitive.Agent, string, bool, error) {
+	if ctx == nil {
+		return nil, "", false, nil
+	}
+
+	select {
+	case <-ctx.Done():
+		return nil, "", false, ctx.Err()
+	default:
+	}
+
+	selectedProvider, selectedModel, selectedAPIKey, selectedBaseURL, ok := promptModelSelection(*cfg)
+	if !ok {
+		return nil, "", false, nil
+	}
+
+	cfg.ModelProvider = strings.TrimSpace(selectedProvider)
+	cfg.ModelName = strings.TrimSpace(selectedModel)
+	cfg.ModelAPIKey = strings.TrimSpace(selectedAPIKey)
+	cfg.ModelBaseURL = strings.TrimSpace(selectedBaseURL)
+
+	if cfg.ModelName == "" && !strings.EqualFold(cfg.ModelProvider, "noop") {
+		cfg.ModelName = defaultModelForProvider(cfg.ModelProvider)
+	}
+
+	fmt.Printf("Initializing model provider: %s/%s...\n", cfg.ModelProvider, cfg.ModelName)
+	bootstrapResult, modelStatus := bootstrapModelWithStatus(*cfg)
+	if bootstrapResult.Provider == nil {
+		return nil, "", false, bootstrapResult.Error
+	}
+	if bootstrapResult.Warning != "" {
+		fmt.Printf("warning: %s\n", bootstrapResult.Warning)
+		if bootstrapResult.Error != nil {
+			fmt.Printf("detail: %v\n", bootstrapResult.Error)
+		}
+	}
+
+	if err := persistModelPreference(*cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: cannot save model preference: %v\n", err)
+	}
+
+	return cognitive.NewAgent(cognitive.AgentConfig{
+		Provider: bootstrapResult.Provider,
+		Model:    cfg.ModelName,
+		SystemPrompt: "You are Aetox, a concise assistant in Thai and English " +
+			"that helps users through a terminal conversation.",
+	}), modelStatus, true, nil
 }
 
 func resolveDisplayUser() string {
@@ -223,6 +317,34 @@ func resolveModelStatus(cfg config.Config, bootstrapResult model.BootstrapResult
 	return provider + "/" + modelLabel
 }
 
+func bootstrapModelWithStatus(cfg config.Config) (model.BootstrapResult, string) {
+	timeout := time.Duration(cfg.ModelTimeoutSec) * time.Second
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	result := model.BootstrapProvider(model.BootstrapOptions{
+		Provider: cfg.ModelProvider,
+		Model:    cfg.ModelName,
+		APIKey:   cfg.ModelAPIKey,
+		BaseURL:  cfg.ModelBaseURL,
+		Timeout:  timeout,
+	})
+	return result, resolveModelStatus(cfg, result)
+}
+
+func persistModelPreference(cfg config.Config) error {
+	provider := strings.TrimSpace(cfg.ModelProvider)
+	if provider == "" {
+		return nil
+	}
+	pref := config.ModelPreference{
+		ModelProvider: provider,
+		ModelName:     strings.TrimSpace(cfg.ModelName),
+		ModelBaseURL:  strings.TrimSpace(cfg.ModelBaseURL),
+	}
+	return config.SaveModelPreference(pref)
+}
+
 func promptModelSelection(cfg config.Config) (string, string, string, string, bool) {
 	reader := bufio.NewReader(os.Stdin)
 
@@ -250,7 +372,8 @@ func promptModelSelection(cfg config.Config) (string, string, string, string, bo
 			return provider, "", "", cfg.ModelBaseURL, true
 		}
 
-		model := pickModelForProvider(reader, provider, cfg.ModelName)
+		model := pickModelForProvider(reader, provider, cfg.ModelName, cfg.ModelBaseURL)
+		fmt.Printf("Selected: %s / %s\n\n", provider, model)
 
 		key := strings.TrimSpace(config.ResolveModelAPIKey(provider))
 		if shouldRequireAPIKey(provider) {
@@ -267,8 +390,8 @@ func promptModelSelection(cfg config.Config) (string, string, string, string, bo
 	}
 }
 
-func pickModelForProvider(reader *bufio.Reader, provider, existing string) string {
-	modelChoices := modelChoicesForProvider(provider)
+func pickModelForProvider(reader *bufio.Reader, provider, existing, baseURL string) string {
+	modelChoices := modelChoicesForProviderWithEndpoint(provider, baseURL)
 	defaultModel := defaultModelForProvider(provider)
 	if existing != "" {
 		defaultModel = existing
@@ -316,6 +439,36 @@ func pickFromMenu(reader *bufio.Reader, title string, options []string, defaultI
 	if selected < 0 || selected >= len(options) {
 		selected = 0
 	}
+	renderedLines := len(options) + 3
+	interactiveMode := isInteractive()
+	render := func() {
+		fmt.Println()
+		fmt.Println(title)
+		for i, option := range options {
+			prefix := "  "
+			if i == selected {
+				prefix = " >"
+			}
+			fmt.Printf("%s %s\n", prefix, option)
+		}
+		fmt.Println(hint)
+	}
+	redrawMenu := func() {
+		if !interactiveMode {
+			return
+		}
+		for i := 0; i < renderedLines; i++ {
+			fmt.Print("\033[2K\r\033[F")
+		}
+	}
+	clearMenu := func() {
+		if !interactiveMode {
+			return
+		}
+		for i := 0; i < renderedLines+1; i++ {
+			fmt.Print("\033[2K\r\033[F")
+		}
+	}
 
 	if !isInteractive() {
 		fmt.Println(title)
@@ -349,18 +502,8 @@ func pickFromMenu(reader *bufio.Reader, title string, options []string, defaultI
 		_ = term.Restore(int(os.Stdin.Fd()), oldState)
 	}()
 
+	render()
 	for {
-		fmt.Println()
-		fmt.Println(title)
-		for i, option := range options {
-			prefix := "  "
-			if i == selected {
-				prefix = " >"
-			}
-			fmt.Printf("%s %s\n", prefix, option)
-		}
-		fmt.Printf("%s\n", hint)
-
 		input, err := readSingleKey(reader)
 		if err != nil {
 			return selected, false
@@ -377,10 +520,14 @@ func pickFromMenu(reader *bufio.Reader, title string, options []string, defaultI
 				selected = 0
 			}
 		case keyMenuEnter:
+			clearMenu()
 			return selected, true
 		case keyMenuCancel:
+			clearMenu()
 			return selected, false
 		}
+		redrawMenu()
+		render()
 	}
 }
 
@@ -576,6 +723,76 @@ func modelChoicesForProvider(provider string) []string {
 	default:
 		return nil
 	}
+}
+
+func modelChoicesForProviderWithEndpoint(provider, baseURL string) []string {
+	switch config.NormalizeModelProvider(provider) {
+	case "ollama":
+		if models, err := discoverOllamaModels(baseURL); err == nil && len(models) > 0 {
+			return models
+		}
+	}
+	return modelChoicesForProvider(provider)
+}
+
+type ollamaTagResponse struct {
+	Models []struct {
+		Name string `json:"name"`
+	} `json:"models"`
+}
+
+func discoverOllamaModels(baseURL string) ([]string, error) {
+	endpoint := strings.TrimSpace(baseURL)
+	if endpoint == "" {
+		endpoint = "http://localhost:11434"
+	}
+	if !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
+		endpoint = "http://" + endpoint
+	}
+	endpoint = strings.TrimRight(endpoint, "/") + "/api/tags"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var payload ollamaTagResponse
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, err
+	}
+
+	seen := map[string]struct{}{}
+	models := make([]string, 0, len(payload.Models))
+	for _, item := range payload.Models {
+		name := strings.TrimSpace(item.Name)
+		if name == "" {
+			continue
+		}
+		if _, exists := seen[name]; exists {
+			continue
+		}
+		seen[name] = struct{}{}
+		models = append(models, name)
+	}
+
+	return models, nil
 }
 
 func readLine(reader *bufio.Reader) string {

@@ -1,6 +1,7 @@
 package model
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -125,6 +126,104 @@ func (p *OllamaProvider) Complete(ctx context.Context, req Request) (Response, e
 	return Response{
 		Provider: p.Name(),
 		Model:    modelOr(parsed.Model, model),
+		Text:     reply,
+	}, nil
+}
+
+func (p *OllamaProvider) StreamComplete(ctx context.Context, req Request, onChunk StreamChunkHandler) (Response, error) {
+	if len(req.Messages) == 0 {
+		return Response{}, ErrNoMessages
+	}
+
+	model := req.Model
+	if model == "" {
+		model = p.model
+	}
+
+	payload := struct {
+		Model    string    `json:"model"`
+		Messages []Message `json:"messages"`
+		Stream   bool      `json:"stream"`
+	}{
+		Model:    model,
+		Messages: req.Messages,
+		Stream:   true,
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return Response{}, err
+	}
+
+	requestURL := p.baseURL + "/api/chat"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, bytes.NewReader(body))
+	if err != nil {
+		return Response{}, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	httpResp, err := p.httpClient.Do(httpReq)
+	if err != nil {
+		return Response{}, err
+	}
+	defer httpResp.Body.Close()
+
+	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
+		responseBody, readErr := io.ReadAll(httpResp.Body)
+		if readErr != nil {
+			return Response{}, fmt.Errorf("ollama request failed with status %d", httpResp.StatusCode)
+		}
+		return Response{}, fmt.Errorf("ollama request failed with status %d: %s", httpResp.StatusCode, strings.TrimSpace(string(responseBody)))
+	}
+
+	scanner := bufio.NewScanner(httpResp.Body)
+	var builder strings.Builder
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		var parsed struct {
+			Model    string  `json:"model"`
+			Message  Message `json:"message"`
+			Response string  `json:"response"`
+			Done     bool    `json:"done"`
+			Error    string  `json:"error"`
+		}
+		if err := json.Unmarshal([]byte(line), &parsed); err != nil {
+			return Response{}, fmt.Errorf("ollama stream parse failed: %w", err)
+		}
+		if parsed.Error != "" {
+			return Response{}, fmt.Errorf("ollama error: %s", parsed.Error)
+		}
+		chunk := strings.TrimSpace(parsed.Message.Content)
+		if chunk == "" {
+			chunk = strings.TrimSpace(parsed.Response)
+		}
+		if chunk != "" {
+			builder.WriteString(chunk)
+			if onChunk != nil {
+				if err := onChunk(chunk); err != nil {
+					return Response{}, err
+				}
+			}
+		}
+		if parsed.Done {
+			break
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return Response{}, err
+	}
+
+	reply := strings.TrimSpace(builder.String())
+	if reply == "" {
+		return Response{}, fmt.Errorf("ollama stream response has empty text")
+	}
+
+	return Response{
+		Provider: p.Name(),
+		Model:    model,
 		Text:     reply,
 	}, nil
 }

@@ -1,6 +1,7 @@
 package model
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -171,5 +172,117 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 		Provider: p.Name(),
 		Model:    modelOr(parsed.Model, model),
 		Text:     text,
+	}, nil
+}
+
+func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Request, onChunk StreamChunkHandler) (Response, error) {
+	if len(req.Messages) == 0 {
+		return Response{}, ErrNoMessages
+	}
+
+	model := req.Model
+	if model == "" {
+		model = p.model
+	}
+	payload := struct {
+		Model       string    `json:"model"`
+		Messages    []Message `json:"messages"`
+		Temperature float64   `json:"temperature,omitempty"`
+		MaxTokens   int       `json:"max_tokens,omitempty"`
+		Stream      bool      `json:"stream"`
+	}{
+		Model:       model,
+		Messages:    req.Messages,
+		Temperature: req.Temperature,
+		MaxTokens:   req.MaxTokens,
+		Stream:      true,
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return Response{}, err
+	}
+
+	requestURL := p.baseURL + "/chat/completions"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, bytes.NewReader(body))
+	if err != nil {
+		return Response{}, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if p.apiKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
+	}
+
+	httpResp, err := p.httpClient.Do(httpReq)
+	if err != nil {
+		return Response{}, err
+	}
+	defer httpResp.Body.Close()
+
+	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
+		responseBody, readErr := io.ReadAll(httpResp.Body)
+		if readErr != nil {
+			return Response{}, fmt.Errorf("%s request failed with status %d", p.provider, httpResp.StatusCode)
+		}
+		return Response{}, fmt.Errorf(
+			"%s request failed with status %d: %s",
+			p.provider,
+			httpResp.StatusCode,
+			strings.TrimSpace(string(responseBody)),
+		)
+	}
+
+	scanner := bufio.NewScanner(httpResp.Body)
+	var builder strings.Builder
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if data == "[DONE]" {
+			break
+		}
+		var parsed struct {
+			Choices []struct {
+				Delta struct {
+					Content string `json:"content"`
+				} `json:"delta"`
+			} `json:"choices"`
+			Model string `json:"model"`
+		}
+		if err := json.Unmarshal([]byte(data), &parsed); err != nil {
+			return Response{}, fmt.Errorf("%s stream parse failed: %w", p.provider, err)
+		}
+		if len(parsed.Choices) == 0 {
+			continue
+		}
+		chunk := parsed.Choices[0].Delta.Content
+		if chunk == "" {
+			continue
+		}
+		builder.WriteString(chunk)
+		if onChunk != nil {
+			if err := onChunk(chunk); err != nil {
+				return Response{}, err
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return Response{}, err
+	}
+
+	reply := builder.String()
+	reply = strings.TrimSpace(reply)
+	if reply == "" {
+		return Response{}, fmt.Errorf("%s stream response has empty text", p.provider)
+	}
+	return Response{
+		Provider: p.Name(),
+		Model:    model,
+		Text:     reply,
 	}, nil
 }

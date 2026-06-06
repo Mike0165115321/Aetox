@@ -33,6 +33,7 @@ type App struct {
 	skillDispatcher skillDispatcher
 	commandSet      map[string]struct{}
 	autoApprove     bool
+	modelSwitcher   modelSwitcher
 
 	title       string
 	version     string
@@ -40,6 +41,8 @@ type App struct {
 	modelStatus string
 	skillNames  []string
 }
+
+type modelSwitcher func(context.Context) (*cognitive.Agent, string, bool, error)
 
 type skillDispatcher interface {
 	Execute(ctx context.Context, input string) (skill.Output, bool, error)
@@ -60,6 +63,7 @@ type Options struct {
 	Version     string
 	UserInfo    string
 	ModelStatus string
+	ModelSwitch func(context.Context) (*cognitive.Agent, string, bool, error)
 }
 
 func NewApp(opts Options) (*App, error) {
@@ -83,6 +87,7 @@ func NewApp(opts Options) (*App, error) {
 		commandSet:      buildCommandSetFromDispatcher(opts.Dispatcher),
 		showBanner:      opts.ShowBanner,
 		autoApprove:     opts.AutoApprove,
+		modelSwitcher:   opts.ModelSwitch,
 		title:           strings.TrimSpace(opts.Title),
 		version:         strings.TrimSpace(opts.Version),
 		userInfo:        strings.TrimSpace(opts.UserInfo),
@@ -128,7 +133,15 @@ func (a *App) RunInteractive(ctx context.Context) error {
 					a.console.Errorf("command failed: %v\n", err)
 				}
 				a.printSeparator()
-				a.printShortcutBar()
+				a.printStatusBar()
+				continue
+			}
+			if line == "model" {
+				if err := a.switchModel(sigCtx); err != nil {
+					a.console.Errorf("Model switch failed: %v\n", err)
+				}
+				a.printSeparator()
+				a.printStatusBar()
 				continue
 			}
 		}
@@ -154,49 +167,96 @@ func (a *App) RunInteractive(ctx context.Context) error {
 		default:
 		}
 
-		reply, err := a.runCommand(sigCtx, line)
+		streamed := false
+		reply, isStream, err := a.runCommandWithStream(sigCtx, line, func(chunk string) {
+			if !streamed {
+				a.console.Print(ansiBlueBright + "Aetox:" + ansiReset + " ")
+				streamed = true
+			}
+			a.console.Print(chunk)
+		})
 		if err != nil {
 			a.console.Errorf("Chat failed: %v\n", err)
 			a.printSeparator()
-			a.printShortcutBar()
+			a.printStatusBar()
 			continue
 		}
 
-		a.console.Println(reply)
+		if isStream {
+			a.console.Println()
+		} else {
+			a.console.Println(ansiBlueBright + "Aetox:" + ansiReset + " " + reply)
+		}
 		a.printSeparator()
-		a.printShortcutBar()
+		a.printStatusBar()
 	}
 }
 
 func (a *App) runCommand(ctx context.Context, line string) (string, error) {
+	reply, _, err := a.runCommandWithStream(ctx, line, nil)
+	return reply, err
+}
+
+func (a *App) switchModel(ctx context.Context) error {
+	if a.modelSwitcher == nil {
+		a.console.Println("Model switching is not available in this session.")
+		return nil
+	}
+
+	newAgent, status, ok, err := a.modelSwitcher(ctx)
+	if err != nil {
+		return err
+	}
+	if !ok || newAgent == nil {
+		return nil
+	}
+
+	a.agent = newAgent
+	a.agent.ClearContext()
+	a.modelStatus = status
+	a.console.Println(ansiBlueBright + "Aetox:" + ansiReset + " switched model profile.")
+	return nil
+}
+
+func (a *App) runCommandWithStream(ctx context.Context, line string, onChunk func(string)) (string, bool, error) {
 	line = strings.TrimSpace(line)
 	if line == "" {
-		return "", errors.New("empty input")
+		return "", false, errors.New("empty input")
 	}
 
 	intent := plan.Build(line, skill.ParseCommand, a.commandSet)
 	if intent.Kind == plan.KindConversation {
-		return a.agent.Respond(ctx, intent.Raw)
+		return a.agent.RespondStream(ctx, intent.Raw, asStreamHandler(onChunk))
 	}
 
 	if a.requiresSkillApproval(ctx, intent.Command, intent.Args) {
 		approved, confirmErr := a.confirmApproval(ctx, intent.Command)
 		if confirmErr != nil {
-			return "", confirmErr
+			return "", false, confirmErr
 		}
 		if !approved {
-			return "command blocked: approval required", nil
+			return "command blocked: approval required", false, nil
 		}
 	}
 
 	reply, handled, err := a.dispatchBySkill(ctx, intent.Raw)
 	if handled {
-		return reply, nil
+		return reply, false, nil
 	}
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
-	return a.agent.Respond(ctx, intent.Raw)
+	return a.agent.RespondStream(ctx, intent.Raw, asStreamHandler(onChunk))
+}
+
+func asStreamHandler(callback func(string)) func(string) error {
+	if callback == nil {
+		return nil
+	}
+	return func(chunk string) error {
+		callback(chunk)
+		return nil
+	}
 }
 
 func buildCommandSetFromDispatcher(dispatcher skillDispatcher) map[string]struct{} {
@@ -277,6 +337,7 @@ func (a *App) awaitDecision(ctx context.Context) (string, error) {
 func (a *App) showHelp() {
 	a.console.Println("Tips:")
 	a.console.Println("  - ask in natural language")
+	a.console.Println("  - /model    switch model/provider")
 	a.console.Println("  - :clear    reset conversation context")
 	a.console.Println("  - exit      leave terminal chat")
 	a.console.Println("  - :help     quick command tips")
@@ -286,17 +347,22 @@ func (a *App) showHelp() {
 }
 
 func (a *App) PrintBanner() {
-	a.console.Println(ansiBlueDark + "      " + "████╗ ███████╗████████╗ ██████╗ ██╗  ██╗     ██████╗██╗     ██╗" + ansiReset)
-	a.console.Println(ansiBlueMid + "     " + "██╔══██╗██╔════╝╚══██╔══╝██╔═══██╗╚██╗██╔╝     ██╔════╝██║     ██║" + ansiReset)
-	a.console.Println(ansiBlueLight + "     " + "███████║█████╗     ██║   ██║   ██║ ╚███╔╝      ██║     ██║     ██║" + ansiReset)
-	a.console.Println(ansiBlueMid + "     " + "██╔══██║██╔══╝     ██║   ██║   ██║ ██╔██╗      ██║     ██║     ██║" + ansiReset)
-	a.console.Println(ansiBlueBright + "     " + "██║  ██║███████╗   ██║   ╚██████╔╝██╔╝ ██╗     ╚██████╗███████╗██║" + ansiReset)
-	a.console.Println(ansiBlueDark + "     " + "╚═╝  ╚═╝╚══════╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝      ╚═════╝╚══════╝╚═╝" + ansiReset)
 	a.console.Println("")
-	a.console.Println(ansiBlueBright + "             Aetox  " + ansiBlueLight + "CLI" + ansiReset)
+	a.console.Println("")
+	a.console.Println(ansiBlueDark + "      █████╗ ███████╗████████╗ ██████╗ ██╗  ██╗" + ansiReset)
+	a.console.Println(ansiBlueMid + "     ██╔══██╗██╔════╝╚══██╔══╝██╔═══██╗██║  ██║" + ansiReset)
+	a.console.Println(ansiBlueLight + "     ███████║█████╗     ██║   ██║   ██║╚██╗██╔╝" + ansiReset)
+	a.console.Println(ansiBlueBright + "     ██╔══██║██╔══╝     ██║   ██║   ██║ ╚███╔╝ " + ansiReset)
+	a.console.Println(ansiBlueMid + "     ██║  ██║███████╗   ██║   ╚██████╔╝  ╚███╔╝ " + ansiReset)
+	a.console.Println(ansiBlueDark + "     ╚═╝  ╚═╝╚══════╝   ╚═╝    ╚═════╝    ╚═╝  " + ansiReset)
+	a.console.Println("")
+	a.console.Println("")
+	a.console.Println(ansiBlueBright + "         Aetox " + ansiBlueLight + "CLI" + ansiReset)
+	a.console.Println("")
+	a.console.Println(ansiBlueDark + "  User: " + ansiBlueLight + a.userInfoLine() + ansiReset)
+	a.console.Println("")
 	a.console.Println(ansiReset)
 }
-
 func (a *App) userInfoLine() string {
 	if a.userInfo == "" {
 		return "local user"
@@ -312,17 +378,17 @@ func (a *App) getModelStatusLine() string {
 }
 
 func (a *App) printSeparator() {
-	a.console.Println(strings.Repeat("─", 100))
+	a.console.Println(strings.Repeat("═", 92))
 }
 
-func (a *App) printShortcutBar() {
-	left := "? for shortcuts"
+func (a *App) printStatusBar() {
+	left := "Aetox CLI"
 	right := a.getModelStatusLine()
 	padding := 100 - utf8.RuneCountInString(left) - utf8.RuneCountInString(right)
 	if padding < 1 {
 		padding = 1
 	}
-	a.console.Println(left + strings.Repeat(" ", padding) + right)
+	a.console.Println(ansiBlueDark + left + ansiReset + strings.Repeat(" ", padding) + ansiBlueBright + right + ansiReset)
 }
 
 func (a *App) showSkillPalette(ctx context.Context) error {
@@ -340,6 +406,7 @@ func (a *App) showSkillPalette(ctx context.Context) error {
 		return nil
 	}
 	a.console.Println("Available skills:")
+	a.console.Println("  /model  (change model provider)")
 	for _, name := range a.skillNames {
 		a.console.Println("  /" + name)
 	}

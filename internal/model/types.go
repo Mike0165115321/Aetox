@@ -6,16 +6,16 @@ import (
 )
 
 var (
-	ErrNoMessages   = errors.New("model request missing messages")
-	ErrMissingModel = errors.New("model name is required")
+	ErrNoMessages    = errors.New("model request missing messages")
+	ErrMissingModel  = errors.New("model name is required")
 	ErrMissingAPIKey = errors.New("missing model API key")
 )
 
 type MessageRole string
 
 const (
-	RoleSystem MessageRole = "system"
-	RoleUser   MessageRole = "user"
+	RoleSystem    MessageRole = "system"
+	RoleUser      MessageRole = "user"
 	RoleAssistant MessageRole = "assistant"
 )
 
@@ -42,3 +42,8 @@ type Provider interface {
 	Complete(ctx context.Context, req Request) (Response, error)
 }
 
+type StreamChunkHandler func(chunk string) error
+
+type StreamingProvider interface {
+	StreamComplete(ctx context.Context, req Request, onChunk StreamChunkHandler) (Response, error)
+}
