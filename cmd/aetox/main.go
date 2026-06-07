@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -54,7 +55,29 @@ func main() {
 	flag.BoolVar(&showVersion, "version", false, "print version")
 	flag.BoolVar(&showHelp, "help", false, "print usage")
 	flag.BoolVar(&legacyYes, "yes", false, "reserved compatibility flag")
-	flag.Parse()
+	argsWithoutGlobal, argsForIntent, preParseErr := preparseGlobalFlags(os.Args[1:])
+	if preParseErr != nil {
+		fmt.Fprintf(os.Stderr, "invalid flags: %v\n", preParseErr)
+		os.Exit(2)
+	}
+
+	preParser := flag.NewFlagSet("aetox", flag.ContinueOnError)
+	preParser.SetOutput(io.Discard)
+	preParser.StringVar(&rootPath, "root", "", "optional sandbox root directory (default: current directory)")
+	preParser.IntVar(&approvalTimeout, "approval-timeout", 60, "reserved for future approval controls")
+	preParser.StringVar(&modelProvider, "model-provider", "", "model provider (openrouter|ollama)")
+	preParser.StringVar(&modelName, "model-name", "", "model name (required for selected provider)")
+	preParser.StringVar(&modelAPIKey, "model-api-key", "", "model API key; fallback to provider env when empty")
+	preParser.StringVar(&modelBaseURL, "model-base-url", "", "override base URL for model provider")
+	preParser.IntVar(&modelTimeout, "model-timeout", 30, "model request timeout in seconds")
+	preParser.IntVar(&modelContextTokens, "model-context-tokens", 0, "model context window token cap (0=auto/unknown)")
+	preParser.BoolVar(&noBanner, "no-banner", false, "disable startup banner in interactive mode")
+	preParser.BoolVar(&showVersion, "version", false, "print version")
+	preParser.BoolVar(&showHelp, "help", false, "print usage")
+	preParser.BoolVar(&legacyYes, "yes", false, "reserved compatibility flag")
+	_ = preParser.Bool("h", false, "help alias")
+	_ = preParser.Bool("v", false, "version alias")
+	_ = preParser.Parse(argsWithoutGlobal)
 
 	providerExplicit := strings.TrimSpace(modelProvider) != ""
 	modelNameExplicit := strings.TrimSpace(modelName) != ""
@@ -70,7 +93,7 @@ func main() {
 		return
 	}
 
-	intent := command.ParseArgs(flag.Args())
+	intent := command.ParseArgs(argsForIntent)
 	cfg := config.Load(config.ConfigOptions{
 		RootPath:           rootPath,
 		AutoApprove:        legacyYes,
@@ -630,4 +653,78 @@ func isInteractive() bool {
 		return false
 	}
 	return (stat.Mode() & os.ModeCharDevice) != 0
+}
+
+func preparseGlobalFlags(rawArgs []string) ([]string, []string, error) {
+	global := make([]string, 0, len(rawArgs))
+	remaining := make([]string, 0, len(rawArgs))
+
+	isValueFlag := func(arg string) bool {
+		switch arg {
+		case "--root", "--approval-timeout", "--model-provider", "--model-name", "--model-api-key", "--model-base-url", "--model-timeout", "--model-context-tokens":
+			return true
+		}
+		return false
+	}
+
+	isBoolFlag := func(arg string) bool {
+		switch arg {
+		case "--yes", "--no-banner", "--version", "--help", "-v", "-h":
+			return true
+		}
+		return false
+	}
+
+	for idx := 0; idx < len(rawArgs); idx++ {
+		raw := strings.TrimSpace(rawArgs[idx])
+		if raw == "--" {
+			remaining = append(remaining, raw)
+			if idx+1 < len(rawArgs) {
+				remaining = append(remaining, rawArgs[idx+1:]...)
+			}
+			break
+		}
+
+		if !strings.HasPrefix(raw, "--") && !(raw == "-h" || raw == "-v") {
+			remaining = append(remaining, raw)
+			continue
+		}
+
+		if strings.Contains(raw, "=") {
+			nameValue := strings.SplitN(raw, "=", 2)
+			name := strings.ToLower(strings.TrimSpace(nameValue[0]))
+			value := ""
+			if len(nameValue) > 1 {
+				value = nameValue[1]
+			}
+			if isValueFlag(name) {
+				global = append(global, name, value)
+				continue
+			}
+			if isBoolFlag(name) {
+				global = append(global, name)
+				continue
+			}
+			remaining = append(remaining, raw)
+			continue
+		}
+
+		if isBoolFlag(raw) {
+			global = append(global, raw)
+			continue
+		}
+
+		if isValueFlag(raw) {
+			if idx+1 >= len(rawArgs) {
+				return nil, nil, fmt.Errorf("flag %s requires a value", raw)
+			}
+			global = append(global, raw, rawArgs[idx+1])
+			idx++
+			continue
+		}
+
+		remaining = append(remaining, raw)
+	}
+
+	return global, remaining, nil
 }

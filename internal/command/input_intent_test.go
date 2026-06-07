@@ -130,3 +130,47 @@ func TestSlashSuggestions_UsesCatalog(t *testing.T) {
 		}
 	}
 }
+
+func TestParseArgs_ChatAndMessage(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    []string
+		mode    Mode
+		message string
+		rawArgs []string
+	}{
+		{
+			name:    "chat normal",
+			args:    []string{"chat", "time and list internal"},
+			mode:    ModeOnce,
+			message: "time and list internal",
+			rawArgs: []string{"chat", "time and list internal"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ParseArgs(tc.args)
+			if got.Mode != tc.mode {
+				t.Fatalf("mode: want %q got %q", tc.mode, got.Mode)
+			}
+			if got.Message != tc.message {
+				t.Fatalf("message: want %q got %q", tc.message, got.Message)
+			}
+			if len(got.RawArgs) != len(tc.rawArgs) {
+				t.Fatalf("raw args length: want %d got %d", len(tc.rawArgs), len(got.RawArgs))
+			}
+		})
+	}
+}
+
+func TestParseArgs_HelpAndVersion(t *testing.T) {
+	help := ParseArgs([]string{"help"})
+	if help.Mode != ModeHelp {
+		t.Fatalf("help mode: want %q got %q", ModeHelp, help.Mode)
+	}
+	version := ParseArgs([]string{"--version"})
+	if version.Mode != ModeVersion {
+		t.Fatalf("version mode: want %q got %q", ModeVersion, version.Mode)
+	}
+}

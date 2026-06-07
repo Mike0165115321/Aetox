@@ -49,17 +49,18 @@ func (a *Agent) RespondWithTools(
 	modelTools []model.ToolDefinition,
 	userMessage string,
 	execTool func(context.Context, model.ToolCall) (string, error),
-) (string, error) {
+) (string, bool, error) {
 	if len(modelTools) == 0 || execTool == nil || !a.supportsToolCalling() {
-		return a.Respond(ctx, userMessage)
+		reply, err := a.Respond(ctx, userMessage)
+		return reply, false, err
 	}
 	if a.provider == nil {
-		return "", errors.New("agent provider is not initialized")
+		return "", false, errors.New("agent provider is not initialized")
 	}
 	a.lastUsage = model.Usage{}
 	msg := strings.TrimSpace(userMessage)
 	if msg == "" {
-		return "", errors.New("input is empty")
+		return "", false, errors.New("input is empty")
 	}
 	a.context.Add(model.RoleUser, msg)
 
@@ -67,6 +68,7 @@ func (a *Agent) RespondWithTools(
 	if maxToolCalls <= 0 {
 		maxToolCalls = defaultMaxToolCalls
 	}
+	anyToolUsed := false
 	for i := 0; i < maxToolCalls; i++ {
 		response, err := a.provider.Complete(ctx, model.Request{
 			Model:       a.model,
@@ -78,9 +80,10 @@ func (a *Agent) RespondWithTools(
 		})
 		if err != nil {
 			if i == 0 {
-				return a.Respond(ctx, msg)
+				reply, err := a.Respond(ctx, msg)
+				return reply, false, err
 			}
-			return "", err
+			return "", false, err
 		}
 		if response.Usage != nil {
 			a.lastUsage = *response.Usage
@@ -92,8 +95,9 @@ func (a *Agent) RespondWithTools(
 				content = "(empty response)"
 			}
 			a.context.Add(model.RoleAssistant, content)
-			return content, nil
+			return content, anyToolUsed, nil
 		}
+		anyToolUsed = true
 
 		for _, toolCall := range response.ToolCalls {
 			callOutput, toolErr := a.executeToolCall(ctx, toolCall, execTool)
@@ -110,10 +114,12 @@ func (a *Agent) RespondWithTools(
 		}
 		if content != "" {
 			a.context.Add(model.RoleAssistant, content)
+			return content, true, nil
 		}
+		return "(tool call handled)", true, nil
 	}
 
-	return "agent tool loop reached maximum iterations", nil
+	return "agent tool loop reached maximum iterations", anyToolUsed, nil
 }
 
 func (a *Agent) executeToolCall(ctx context.Context, toolCall model.ToolCall, execTool func(context.Context, model.ToolCall) (string, error)) (string, error) {
@@ -219,6 +225,10 @@ func (a *Agent) RespondStream(ctx context.Context, userMessage string, onChunk f
 func (a *Agent) supportsToolCalling() bool {
 	provider, ok := a.provider.(interface{ SupportsToolCalling() bool })
 	return ok && provider.SupportsToolCalling()
+}
+
+func (a *Agent) SupportsToolCalling() bool {
+	return a.supportsToolCalling()
 }
 
 func (a *Agent) ReplaceModel(provider model.Provider, modelName string) {

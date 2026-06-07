@@ -1,0 +1,703 @@
+package turn
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"testing"
+
+	"aetox-cli/internal/command"
+	"aetox-cli/internal/model"
+	"aetox-cli/internal/skill"
+)
+
+func TestExecute_InferredWriteForNonToolAgent(t *testing.T) {
+	root := t.TempDir()
+	dispatcher := &toolDispatcher{
+		root: root,
+		t:    t,
+	}
+	agent := &toolAwareAgent{
+		supportsTools: false,
+		summaryReply:  "executed (done). file written",
+	}
+	executor := NewExecutor(ExecutorOptions{
+		Agent:      agent,
+		Dispatcher: dispatcher,
+	})
+
+	intent := command.Parse("create file example.md with content test content", command.ParseTokens, nil)
+	result, err := executor.Execute(context.Background(), "create file example.md with content test content", intent, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Status != TurnStatusDone {
+		t.Fatalf("expected status done, got %s", result.Status)
+	}
+
+	target := filepath.Join(root, "example.md")
+	raw, readErr := os.ReadFile(target)
+	if readErr != nil {
+		t.Fatalf("expected file to be created at %s: %v", target, readErr)
+	}
+	if strings.TrimSpace(string(raw)) != "test content" {
+		t.Fatalf("unexpected file content: %q", string(raw))
+	}
+}
+
+func TestExecute_FallsBackToInferredToolWhenToolCapableAgentSkipsTools(t *testing.T) {
+	root := t.TempDir()
+	dispatcher := &toolDispatcher{
+		root: root,
+		t:    t,
+	}
+	agent := &toolAwareAgent{
+		supportsTools: true,
+		summaryReply:  "executed (done). file written by fallback",
+		// Simulate a chat-style response with no tool calls.
+		withToolsReply: "ok done",
+		withToolsUsed:  false,
+	}
+	executor := NewExecutor(ExecutorOptions{
+		Agent:      agent,
+		Dispatcher: dispatcher,
+	})
+
+	intent := command.Parse("create file fallback.md with content from model", command.ParseTokens, nil)
+	result, err := executor.Execute(context.Background(), "create file fallback.md with content from model", intent, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Status != TurnStatusDone {
+		t.Fatalf("expected status done, got %s", result.Status)
+	}
+
+	target := filepath.Join(root, "fallback.md")
+	raw, readErr := os.ReadFile(target)
+	if readErr != nil {
+		t.Fatalf("expected fallback tool execution to create file, got %v", readErr)
+	}
+	if !strings.Contains(string(raw), "from model") {
+		t.Fatalf("unexpected file content: %q", string(raw))
+	}
+}
+
+func TestExecute_DoesNotFallbackToInferredToolWhenAgentUsedTool(t *testing.T) {
+	root := t.TempDir()
+	dispatcher := &toolDispatcher{
+		root: root,
+		t:    t,
+	}
+	agent := &toolAwareAgent{
+		supportsTools:  true,
+		withToolsReply: "ok done via model tool",
+		withToolsUsed:  true,
+	}
+	executor := NewExecutor(ExecutorOptions{
+		Agent:      agent,
+		Dispatcher: dispatcher,
+	})
+
+	intent := command.Parse("create file should-not-run.md with content no-op", command.ParseTokens, nil)
+	result, err := executor.Execute(context.Background(), "create file should-not-run.md with content no-op", intent, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Status != TurnStatusDone {
+		t.Fatalf("expected status done, got %s", result.Status)
+	}
+
+	target := filepath.Join(root, "should-not-run.md")
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Fatalf("inferred tool should not have run when model handled tool usage")
+	}
+	if dispatcher.toolExecutions != 0 {
+		t.Fatalf("expected tool not executed by inferred path, got %d", dispatcher.toolExecutions)
+	}
+}
+
+func TestInferToolCandidates_TimeAndList(t *testing.T) {
+	dispatcher := &toolDispatcher{
+		root: t.TempDir(),
+		t:    t,
+	}
+	executor := NewExecutor(ExecutorOptions{
+		Dispatcher: dispatcher,
+	})
+
+	candidates := executor.inferToolCandidates("time and list directory internal")
+	if len(candidates) != 2 {
+		t.Fatalf("expected 2 candidates, got %d", len(candidates))
+	}
+	if candidates[0].Name != "time" || candidates[1].Name != "list" {
+		t.Fatalf("unexpected candidate order: %#v", candidates)
+	}
+	if got := candidates[1].Args["path"]; got != "internal" {
+		t.Fatalf("expected list path internal, got %v", got)
+	}
+}
+
+func TestExecute_MixedIntents_TimeAndList(t *testing.T) {
+	root := t.TempDir()
+	_ = os.WriteFile(filepath.Join(root, "alpha.txt"), []byte("alpha"), 0o644)
+	_ = os.MkdirAll(filepath.Join(root, "internal"), 0o755)
+	dispatcher := &toolDispatcher{
+		root: root,
+		t:    t,
+	}
+	agent := &toolAwareAgent{
+		supportsTools: false,
+		summaryReply:  "done",
+	}
+	executor := NewExecutor(ExecutorOptions{
+		Agent:      agent,
+		Dispatcher: dispatcher,
+	})
+
+	intent := command.Parse("time and list internal", command.ParseTokens, nil)
+	result, err := executor.Execute(context.Background(), "time and list internal", intent, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Status != TurnStatusDone {
+		t.Fatalf("expected status done, got %s", result.Status)
+	}
+	if len(dispatcher.executionHistory) != 2 {
+		t.Fatalf("expected 2 tools, got %d", len(dispatcher.executionHistory))
+	}
+	if dispatcher.executionHistory[0] != "time" || dispatcher.executionHistory[1] != "list" {
+		t.Fatalf("expected execution order time->list, got %v", dispatcher.executionHistory)
+	}
+	if path, ok := dispatcher.lastArgs["path"]; !ok || strings.TrimSpace(strings.TrimSuffix(path, "/")) != "internal" {
+		t.Fatalf("expected list path internal, got %v", dispatcher.lastArgs)
+	}
+}
+
+func TestExecute_InferredListSentences(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "internal"), 0o755); err != nil {
+		t.Fatalf("create fixture failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "internal", "note.md"), []byte("fixture"), 0o644); err != nil {
+		t.Fatalf("write fixture failed: %v", err)
+	}
+
+	dispatcher := &toolDispatcher{
+		root: root,
+		t:    t,
+	}
+	agent := &toolAwareAgent{
+		supportsTools: false,
+		summaryReply:  "done",
+	}
+	executor := NewExecutor(ExecutorOptions{
+		Agent:      agent,
+		Dispatcher: dispatcher,
+	})
+
+	cases := []struct {
+		name  string
+		input string
+	}{
+		{name: "directory", input: "list directory internal"},
+		{name: "path", input: "list path internal"},
+		{name: "folder", input: "list folder internal"},
+		{name: "mixed", input: "show me list internal files"},
+		{name: "composite", input: "list internal and show logs"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dispatcher.Reset()
+			intent := command.Parse(tc.input, command.ParseTokens, nil)
+			result, err := executor.Execute(context.Background(), tc.input, intent, nil, nil)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if result.Status != TurnStatusDone {
+				t.Fatalf("expected done, got %s", result.Status)
+			}
+			if dispatcher.lastTool != "list" {
+				t.Fatalf("expected list tool call, got %q", dispatcher.lastTool)
+			}
+			if path, ok := dispatcher.lastArgs["path"]; !ok || path != "internal" {
+				t.Fatalf("expected list path internal, got %#v", dispatcher.lastArgs)
+			}
+		})
+	}
+}
+
+func TestExecute_InferredWrite_RejectsUnsafePaths(t *testing.T) {
+	root := t.TempDir()
+	dispatcher := &toolDispatcher{
+		root: root,
+		t:    t,
+	}
+	agent := &toolAwareAgent{
+		supportsTools: false,
+		summaryReply:  "should not run",
+	}
+	executor := NewExecutor(ExecutorOptions{
+		Agent:      agent,
+		Dispatcher: dispatcher,
+	})
+
+	tests := []string{
+		`create file /tmp/x with content nope`,
+		`create file ../x with content nope`,
+		`create file C:\\temp\\x with content nope`,
+	}
+	for _, input := range tests {
+		t.Run(input, func(t *testing.T) {
+			dispatcher.Reset()
+			intent := command.Parse(input, command.ParseTokens, nil)
+			result, err := executor.Execute(context.Background(), input, intent, nil, nil)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if result.Status != TurnStatusBlocked && result.Status != TurnStatusError {
+				t.Fatalf("expected blocked/error status, got %s", result.Status)
+			}
+			if !strings.Contains(strings.ToLower(result.Reply), "unsafe path") {
+				t.Fatalf("expected unsafe path error, got %q", result.Reply)
+			}
+			if dispatcher.toolExecutions != 0 {
+				t.Fatalf("unsafe path should not execute tools")
+			}
+		})
+	}
+}
+
+func TestExecute_InferredWrite_QuotedPaths(t *testing.T) {
+	root := t.TempDir()
+	dispatcher := &toolDispatcher{
+		root: root,
+		t:    t,
+	}
+	agent := &toolAwareAgent{
+		supportsTools: false,
+		summaryReply:  "done",
+	}
+	executor := NewExecutor(ExecutorOptions{
+		Agent:      agent,
+		Dispatcher: dispatcher,
+	})
+
+	cases := []string{
+		`create file "quote one.md" with content first line`,
+		`create file 'quote two.md' content: second line`,
+		"create file `quote three.md` content=third line",
+		"create file quoted.txt: plain split format",
+	}
+	for _, input := range cases {
+		t.Run(input, func(t *testing.T) {
+			dispatcher.Reset()
+			intent := command.Parse(input, command.ParseTokens, nil)
+			_, err := executor.Execute(context.Background(), input, intent, nil, nil)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if dispatcher.lastTool != "write" {
+				t.Fatalf("expected write tool call, got %q", dispatcher.lastTool)
+			}
+		})
+	}
+
+	if _, err := os.Stat(filepath.Join(root, "quote one.md")); err != nil {
+		t.Fatalf("expected quote one.md created: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "quote two.md")); err != nil {
+		t.Fatalf("expected quote two.md created: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "quote three.md")); err != nil {
+		t.Fatalf("expected quote three.md created: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "quoted.txt")); err != nil {
+		t.Fatalf("expected quoted.txt created: %v", err)
+	}
+}
+
+func TestParseListCandidatePath_SupportedSentences(t *testing.T) {
+	dispatcher := &toolDispatcher{
+		root: t.TempDir(),
+		t:    t,
+	}
+	executor := NewExecutor(ExecutorOptions{
+		Dispatcher: dispatcher,
+	})
+
+	cases := map[string]string{
+		"list directory internal":     "internal",
+		"list path internal":          "internal",
+		"list folder internal":        "internal",
+		"show me list internal files": "internal",
+	}
+	for input, want := range cases {
+		t.Run(input, func(t *testing.T) {
+			path, err := executor.parseListCandidatePath(input)
+			if err != nil {
+				t.Fatalf("unexpected parse error: %v", err)
+			}
+			if path != want {
+				t.Fatalf("expected %q, got %q", want, path)
+			}
+		})
+	}
+}
+
+func TestInferToolCandidates_MixedIntentOrder(t *testing.T) {
+	dispatcher := &toolDispatcher{
+		root: t.TempDir(),
+		t:    t,
+	}
+	executor := NewExecutor(ExecutorOptions{
+		Dispatcher: dispatcher,
+	})
+
+	cases := []struct {
+		name     string
+		input    string
+		expected []string
+	}{
+		{
+			name:     "semicolon separator",
+			input:    "time;list internal",
+			expected: []string{"time", "list"},
+		},
+		{
+			name:     "then separator",
+			input:    "time then list folder internal",
+			expected: []string{"time", "list"},
+		},
+		{
+			name:     "multiple separators",
+			input:    "list directory internal and show logs and time",
+			expected: []string{"list", "time"},
+		},
+		{
+			name:     "inline mixed",
+			input:    "time and list directory internal",
+			expected: []string{"time", "list"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := executor.inferToolCandidates(tc.input)
+			if len(got) != len(tc.expected) {
+				t.Fatalf("expected %d candidates, got %d", len(tc.expected), len(got))
+			}
+			for i, expected := range tc.expected {
+				if got[i].Name != expected {
+					t.Fatalf("candidate[%d]: expected %q got %q", i, expected, got[i].Name)
+				}
+			}
+		})
+	}
+}
+
+func TestValidateInferredPath_SafetyMatrix(t *testing.T) {
+	executor := NewExecutor(ExecutorOptions{})
+
+	accept := []string{
+		"file.txt",
+		"a/b/c.txt",
+		"nested/dir/file.md",
+		"docs/readme",
+	}
+	for _, path := range accept {
+		t.Run("accept_"+path, func(t *testing.T) {
+			if err := executor.validateInferredPath(path); err != nil {
+				t.Fatalf("expected accept for %q: got error %v", path, err)
+			}
+		})
+	}
+
+	reject := map[string]string{
+		"/tmp/x":       "unsafe path",
+		"../x":         "unsafe path",
+		"..\\x":        "unsafe path",
+		"C:\\tmp\\x":   "unsafe path",
+		"tmp/../x":     "unsafe path",
+		"tmp/..":       "unsafe path",
+		"~/note.md":    "unsafe path",
+		"note<>.md":    "unsafe path",
+		"   ":          "unsafe path",
+		"\x00evil.txt": "unsafe path",
+		"file.txt/":    "unsafe path",
+	}
+	for path, want := range reject {
+		t.Run("reject_"+strings.ReplaceAll(path, "\\", "/"), func(t *testing.T) {
+			err := executor.validateInferredPath(path)
+			if err == nil {
+				t.Fatalf("expected reject for %q", path)
+			}
+			if !strings.Contains(strings.ToLower(err.Error()), want) {
+				t.Fatalf("expected %q in error for %q, got %q", want, path, err.Error())
+			}
+		})
+	}
+}
+
+func TestExecute_InferredIntent_SmokeMatrix(t *testing.T) {
+	root := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(root, "internal"), 0o755)
+	_ = os.WriteFile(filepath.Join(root, "internal", "seed.txt"), []byte("seed"), 0o644)
+	agent := &toolAwareAgent{
+		supportsTools: false,
+	}
+	dispatcher := &toolDispatcher{
+		root: root,
+		t:    t,
+	}
+	executor := NewExecutor(ExecutorOptions{
+		Agent:      agent,
+		Dispatcher: dispatcher,
+	})
+
+	cases := []struct {
+		name             string
+		input            string
+		wantStatus       TurnStatus
+		expectedSequence []string
+		expectPath       string
+		expectReply      string
+	}{
+		{name: "time only", input: "what is the time", wantStatus: TurnStatusDone, expectedSequence: []string{"time"}},
+		{name: "time short", input: "time", wantStatus: TurnStatusDone, expectedSequence: []string{"time"}},
+		{name: "time sentence", input: "please tell me time now", wantStatus: TurnStatusDone, expectedSequence: []string{"time"}},
+		{name: "list root", input: "list", wantStatus: TurnStatusDone, expectedSequence: []string{"list"}},
+		{name: "list internal", input: "list internal", wantStatus: TurnStatusDone, expectedSequence: []string{"list"}},
+		{name: "list dir plain", input: "list directory internal", wantStatus: TurnStatusDone, expectedSequence: []string{"list"}},
+		{name: "list folder plain", input: "list folder internal", wantStatus: TurnStatusDone, expectedSequence: []string{"list"}},
+		{name: "list path phrase", input: "list path internal", wantStatus: TurnStatusDone, expectedSequence: []string{"list"}},
+		{name: "list nested path", input: "list directory internal/a", wantStatus: TurnStatusError, expectedSequence: []string{"list"}},
+		{name: "list files phrasing", input: "show me list internal files", wantStatus: TurnStatusDone, expectedSequence: []string{"list"}},
+		{name: "list and logs phrase", input: "list internal and show logs", wantStatus: TurnStatusDone, expectedSequence: []string{"list"}},
+		{name: "list semicolon phrase", input: "list internal; list folder internal", wantStatus: TurnStatusDone, expectedSequence: []string{"list", "list"}},
+		{name: "list then phrase", input: "list folder internal then time", wantStatus: TurnStatusDone, expectedSequence: []string{"list", "time"}},
+		{name: "time and list phrase", input: "time and list internal", wantStatus: TurnStatusDone, expectedSequence: []string{"time", "list"}},
+		{name: "time then list phrase", input: "time then list directory internal", wantStatus: TurnStatusDone, expectedSequence: []string{"time", "list"}},
+		{name: "time and list and write", input: "time and list directory internal and create file internal/t1.md with content hello", wantStatus: TurnStatusDone, expectedSequence: []string{"time", "list", "write"}, expectPath: "internal/t1.md"},
+		{name: "write simple", input: "create file report.md with content one", wantStatus: TurnStatusDone, expectedSequence: []string{"write"}, expectPath: "report.md"},
+		{name: "write quote", input: "create file \"report two.md\" with content one", wantStatus: TurnStatusDone, expectedSequence: []string{"write"}, expectPath: "report two.md"},
+		{name: "write single-quote", input: "create file 'report three.md' content: one", wantStatus: TurnStatusDone, expectedSequence: []string{"write"}, expectPath: "report three.md"},
+		{name: "write backtick", input: "create file `report four.md` content=one", wantStatus: TurnStatusDone, expectedSequence: []string{"write"}, expectPath: "report four.md"},
+		{name: "write split", input: "create file report-five.md: one", wantStatus: TurnStatusDone, expectedSequence: []string{"write"}, expectPath: "report-five.md"},
+		{name: "write nested", input: "create file internal/report-six.md with content one", wantStatus: TurnStatusDone, expectedSequence: []string{"write"}, expectPath: "internal/report-six.md"},
+		{name: "write nested", input: "create file internal/report-seven.md with content line1 line2", wantStatus: TurnStatusDone, expectedSequence: []string{"write"}, expectPath: "internal/report-seven.md"},
+		{name: "write with list keyword", input: "create file list-note.md with content list", wantStatus: TurnStatusDone, expectedSequence: []string{"write"}, expectPath: "list-note.md"},
+		{name: "mixed explicit phrase", input: "time and create file quote.md with content one", wantStatus: TurnStatusDone, expectedSequence: []string{"time", "write"}, expectPath: "quote.md"},
+		{name: "mixed list then create", input: "list internal then create file internal/combined.md with content two", wantStatus: TurnStatusDone, expectedSequence: []string{"list", "write"}, expectPath: "internal/combined.md"},
+		{name: "mixed create then time", input: "create file internal/combined2.md with content two then time", wantStatus: TurnStatusDone, expectedSequence: []string{"write", "time"}, expectPath: "internal/combined2.md"},
+		{name: "blocked absolute", input: "create file /tmp/x with content no", wantStatus: TurnStatusBlocked, expectReply: "unsafe path"},
+		{name: "blocked traversal", input: "create file ../x with content no", wantStatus: TurnStatusBlocked, expectReply: "unsafe path"},
+		{name: "blocked windows", input: "create file C:\\tmp\\x with content no", wantStatus: TurnStatusBlocked, expectReply: "unsafe path"},
+		{name: "blocked relative backtrack", input: "create file internal/../x with content no", wantStatus: TurnStatusBlocked, expectReply: "unsafe path"},
+		{name: "blocked root segment", input: "create file tmp/.. with content no", wantStatus: TurnStatusBlocked, expectReply: "unsafe path"},
+		{name: "blocked home", input: "create file ~/x with content no", wantStatus: TurnStatusBlocked, expectReply: "unsafe path"},
+		{name: "blocked bad char", input: "create file note<>.md with content no", wantStatus: TurnStatusBlocked, expectReply: "unsafe path"},
+		{name: "blocked empty path", input: "create file   with content no", wantStatus: TurnStatusBlocked, expectReply: "ไม่พบชื่อไฟล์"},
+		{name: "blocked missing content", input: "create file missing.md", wantStatus: TurnStatusBlocked, expectReply: "ต้องการเนื้อหาไฟล์ด้วย"},
+		{name: "blocked missing name", input: "create file", wantStatus: TurnStatusBlocked},
+		{name: "conversation no intent", input: "hello this is just chat", wantStatus: TurnStatusDone},
+		{name: "list then time plus logs", input: "list internal and time and show logs", wantStatus: TurnStatusDone, expectedSequence: []string{"list", "time"}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dispatcher.Reset()
+			intent := command.Parse(tc.input, command.ParseTokens, nil)
+			result, err := executor.Execute(context.Background(), tc.input, intent, nil, nil)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if result.Status != tc.wantStatus {
+				t.Fatalf("status: want %s got %s", tc.wantStatus, result.Status)
+			}
+			if tc.expectedSequence != nil {
+				if strings.Join(dispatcher.executionHistory, ",") != strings.Join(tc.expectedSequence, ",") {
+					t.Fatalf("execution sequence: want %v got %v", tc.expectedSequence, dispatcher.executionHistory)
+				}
+			}
+			if tc.expectReply != "" && !strings.Contains(result.Reply, tc.expectReply) {
+				t.Fatalf("reply: expected %q in %q", tc.expectReply, result.Reply)
+			}
+			if tc.expectPath != "" {
+				if _, err := os.Stat(filepath.Join(root, tc.expectPath)); err != nil {
+					t.Fatalf("expected file %q to exist: %v", tc.expectPath, err)
+				}
+			}
+		})
+	}
+}
+
+type toolAwareAgent struct {
+	supportsTools  bool
+	summaryReply   string
+	withToolsReply string
+	withToolsUsed  bool
+}
+
+func (a *toolAwareAgent) Respond(_ context.Context, _ string) (string, error) {
+	return a.summaryReply, nil
+}
+
+func (a *toolAwareAgent) RespondStream(_ context.Context, _ string, _ func(string) error) (string, bool, error) {
+	return a.summaryReply, false, nil
+}
+
+func (a *toolAwareAgent) RespondWithTools(
+	_ context.Context,
+	_ []model.ToolDefinition,
+	_ string,
+	_ func(context.Context, model.ToolCall) (string, error),
+) (string, bool, error) {
+	if a.withToolsReply == "" {
+		a.withToolsReply = "ok"
+	}
+	return a.withToolsReply, a.withToolsUsed, nil
+}
+
+func (a *toolAwareAgent) SupportsToolCalling() bool {
+	return a.supportsTools
+}
+
+type toolDispatcher struct {
+	root string
+	t    *testing.T
+	// toolExecutions counts ExecuteTool invocations; used by tests that verify fallback behavior.
+	toolExecutions int
+	// lastTool tracks the most recent tool invocation.
+	lastTool string
+	// lastArgs tracks the most recent tool arguments.
+	lastArgs map[string]string
+	// executionHistory tracks tool invocation order.
+	executionHistory []string
+}
+
+func (d *toolDispatcher) Reset() {
+	d.toolExecutions = 0
+	d.lastTool = ""
+	d.lastArgs = nil
+	d.executionHistory = nil
+}
+
+func (d *toolDispatcher) Execute(_ context.Context, _ string) (skill.Output, bool, error) {
+	return skill.Output{}, false, nil
+}
+
+func (d *toolDispatcher) ToolDefinitions() []model.ToolDefinition {
+	return []model.ToolDefinition{
+		{
+			Type: "function",
+			Function: model.ToolFunction{
+				Name:       "time",
+				Parameters: []byte(`{"type":"object"}`),
+			},
+		},
+		{
+			Type: "function",
+			Function: model.ToolFunction{
+				Name:       "write",
+				Parameters: []byte(`{"type":"object"}`),
+			},
+		},
+		{
+			Type: "function",
+			Function: model.ToolFunction{
+				Name:       "list",
+				Parameters: []byte(`{"type":"object"}`),
+			},
+		},
+	}
+}
+
+func (d *toolDispatcher) ExecuteTool(_ context.Context, name string, args map[string]any) (skill.Output, bool, error) {
+	d.executionHistory = append(d.executionHistory, name)
+	d.toolExecutions++
+	tool := strings.ToLower(strings.TrimSpace(name))
+	d.lastTool = tool
+	d.lastArgs = map[string]string{}
+	for key, value := range args {
+		if value == nil {
+			continue
+		}
+		d.lastArgs[key] = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(key, ""), " "))
+		if valueStr, ok := value.(string); ok {
+			d.lastArgs[key] = strings.TrimSpace(valueStr)
+		}
+	}
+
+	switch tool {
+	case "write":
+		path := ""
+		content := ""
+		if rawPath, ok := args["path"].(string); ok {
+			path = strings.TrimSpace(rawPath)
+		}
+		if contentValue, ok := args["content"].(string); ok {
+			content = contentValue
+		}
+		if path == "" {
+			if d.t != nil {
+				d.t.Fatalf("expected path argument")
+			}
+			return skill.Output{}, true, nil
+		}
+		target := filepath.Join(d.root, path)
+		if err := os.WriteFile(target, []byte(content), 0o644); err != nil {
+			return skill.Output{}, true, err
+		}
+		return skill.Output{
+			Name:      "write",
+			Command:   "write " + path,
+			Content:   "written",
+			Success:   true,
+			RawOutput: "written",
+		}, true, nil
+	case "list":
+		path := "."
+		if rawPath, ok := args["path"].(string); ok {
+			path = strings.TrimSpace(rawPath)
+			if path == "" {
+				path = "."
+			}
+		}
+		target := filepath.Join(d.root, path)
+		entries, err := os.ReadDir(target)
+		if err != nil {
+			return skill.Output{
+				Name:      "list",
+				Command:   "list " + path,
+				Success:   false,
+				Stderr:    err.Error(),
+				RawOutput: "",
+			}, true, err
+		}
+		names := make([]string, 0, len(entries))
+		for _, entry := range entries {
+			names = append(names, entry.Name())
+		}
+		sort.Strings(names)
+		return skill.Output{
+			Name:       "list",
+			Command:    "list " + path,
+			Content:    strings.Join(names, "\n"),
+			RawOutput:  strings.Join(names, "\n"),
+			Success:    true,
+			DurationMs: 0,
+		}, true, nil
+	case "time":
+		return skill.Output{
+			Name:      "time",
+			Command:   "time",
+			Content:   "12:34:56",
+			RawOutput: "12:34:56",
+			Success:   true,
+		}, true, nil
+	default:
+		return skill.Output{}, false, nil
+	}
+}
