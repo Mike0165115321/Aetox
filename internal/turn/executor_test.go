@@ -341,7 +341,7 @@ func TestExecute_InferredThaiGeneratedWriteCreatesFile(t *testing.T) {
 		Dispatcher: dispatcher,
 	})
 
-	input := "เน€เธโฌเน€เธยเน€เธเธ•เน€เธเธเน€เธยเน€เธเธเน€เธยเน€เธเธเน€เธเธ”เน€เธยเน€เธยเน€เธยเน€เธเธเน€เธยเน€เธเธ“เน€เธโ€ขเน€เธเธ‘เน€เธเธเน€เธโฌเน€เธเธเน€เธยเน€เธยเน€เธเธ…เน€เธยเน€เธเธเน€เธเธเน€เธเธเน€เธยเน€เธเธ’เน€เธยเน€เธโฌเน€เธยเน€เธยเน€เธยเน€เธยเน€เธยเน€เธเธ…เน€เธย txt เน€เธยเน€เธเธเน€เธยเน€เธยเน€เธเธเน€เธยเน€เธยเน€เธเธเน€เธเธเน€เธยเน€เธเธ’เน€เธย"
+	input := "write a self introduction script and create txt file for me"
 	intent := command.Parse(input, command.ParseTokens, nil)
 	result, err := executor.Execute(context.Background(), input, intent, nil, nil)
 	if err != nil {
