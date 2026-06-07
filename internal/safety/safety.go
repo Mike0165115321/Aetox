@@ -39,6 +39,13 @@ func AssessCommand(skillName string, args []string) Assessment {
 				Reason:    "write can create or overwrite repository files",
 			}
 		}
+		if skillName == "delete" {
+			return Assessment{
+				SkillName: "delete",
+				Risk:      RiskHigh,
+				Reason:    "delete can remove repository files",
+			}
+		}
 		return Assessment{
 			SkillName: skillName,
 			Risk:      RiskLow,

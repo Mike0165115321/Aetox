@@ -2,6 +2,7 @@ package turn
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -27,20 +28,24 @@ const (
 )
 
 var (
-	reTimeIntent   = regexp.MustCompile(`(?i)(?:เวลา|time|current time|what time|เวลาปัจจุบัน)`)
+	reTimeIntent   = regexp.MustCompile(`(?i)(?:^|[^A-Za-z0-9_])(?:time|current time|what time)(?:$|[^A-Za-z0-9_.])|เวลา|เวลาปัจจุบัน`)
 	reListIntent   = regexp.MustCompile(`(?i)(?:\blist\b|\bls\b|ดูไฟล์|ดูโฟลเดอร์|list files|list file|แสดงไฟล์|แสดงโฟลเดอร์)`)
-	reWriteIntent  = regexp.MustCompile(`(?i)(?:สร้าง|เขียน|create|make|generate|generate a|make a|create a)\s*(?:ไฟล์|file)`)
+	reWriteIntent  = regexp.MustCompile(`(?i)(?:(?:สร้าง|เขียน|ทำ)\s*(?:เป็น\s*)?(?:ไฟล์)|(?:create|make|generate|write)\s*(?:a\s+)?(?:new\s+)?(?:file|document|doc)\b)`)
+	reReadIntent   = regexp.MustCompile(`(?i)(?:(?:read|cat|show|type)\s+(?:a\s+)?(?:file|document|doc)\b|(?:อ่าน|แสดง)\s*(?:ไฟล์))`)
+	reDeleteIntent = regexp.MustCompile(`(?i)(?:(?:delete|remove)\s+(?:a\s+)?(?:file|document|doc)\b|(?:ลบ)\s*(?:ไฟล์)?)`)
 	reQuotedName   = regexp.MustCompile(`(?:"([^"]+)"|'([^']+)'|` + "`" + `([^` + "`" + `]+)` + "`" + `)`)
 	reNamedPath    = regexp.MustCompile(`(?i)(?:ชื่อ(?:ไฟล์)?|file name|ชื่อไฟล์ของฉัน)\s+([^\s,.!?;:]+)`)
 	reFilename     = regexp.MustCompile(`(?i)\b([A-Za-z0-9._/-]+\.[A-Za-z0-9]{1,10})\b`)
-	reWriteContent = regexp.MustCompile(`(?is)(?:เนื้อหา|content|ข้อความ)\s*(?::|：|-)?\s*(.+)$`)
+	reWriteContent = regexp.MustCompile(`(?is)(?:^|[^A-Za-z0-9_])(?:เนื้อหา|content|ข้อความ)\s*(?::|=|-|\s+)\s*(.+)$`)
 	reNeedContent  = regexp.MustCompile(`(?i)(?:อย่างไรก็ได้|ยังไงก็ได้|sample|ตัวอย่าง|สุ่ม|ไม่เป็นไร|โอเค|ok|เอาเลย|ให้ตัวอย่าง|ยกตัวอย่าง)`)
 )
 
 var (
 	reInferredIntentSplit = regexp.MustCompile(`(?i)\s+(?:and|then)\s+|[;,]|\n`)
-	reWriteActionStart    = regexp.MustCompile(`(?i)(?:create|make|generate|write)\s+(?:a\s+)?(?:new\s+)?(?:file|document|doc)\b`)
-	reWriteContentHintRe  = regexp.MustCompile(`(?is)\b(?:with\s+content|content)\s*(?:[:=-]\s*|\s+)([\s\S]*)$`)
+	reWriteActionStart    = regexp.MustCompile(`(?i)(?:(?:create|make|generate|write)\s+(?:a\s+)?(?:new\s+)?(?:file|document|doc)\b|(?:สร้าง|เขียน|ทำ)\s*(?:เป็น\s*)?(?:ไฟล์))`)
+	reReadActionStart     = regexp.MustCompile(`(?i)(?:(?:read|cat|show|type)\s+(?:a\s+)?(?:file|document|doc)\b|(?:อ่าน|แสดง)\s*(?:ไฟล์))`)
+	reDeleteActionStart   = regexp.MustCompile(`(?i)(?:(?:delete|remove)\s+(?:a\s+)?(?:file|document|doc)\b|(?:ลบ)\s*(?:ไฟล์)?)`)
+	reWriteContentHintRe  = regexp.MustCompile(`(?is)(?:^|[^A-Za-z0-9_])(?:with\s+content|content|เนื้อหา|ข้อความ)\s*(?:[:=-]\s*|\s+)([\s\S]+)$`)
 	reWriteQuotedPathRe   = regexp.MustCompile(`(?is)^\s*(?:"([^"]+)"|'([^']+)'|` + "`" + `([^` + "`" + `]+)` + "`" + `)\s*(?::|,|-)?\s*([\s\S]*)?$`)
 	reWritePathPrefixRe   = regexp.MustCompile(`(?i)^\s*(?:named|name|filename|file\s+name|path)\s+(.+)$`)
 	reListPathPrefixRe    = regexp.MustCompile(`(?i)^\s*(?:directory|dir|folder|path|folderpath)\s+(.+)$`)
@@ -124,6 +129,11 @@ func (e *Executor) Execute(
 	}
 	parsed := e.normalizeIntent(line, intent)
 	candidates := e.inferToolCandidates(parsed.Raw)
+	if e.shouldExecuteInferredBeforeAgent(parsed, candidates) {
+		if result, handled, err := e.executeInferredToolCandidatesLoop(ctx, parsed.Raw, candidates); handled {
+			return result, err
+		}
+	}
 
 	if e.shouldUseInferredToolPath(parsed, candidates) {
 		if e.agent == nil || !e.agent.SupportsToolCalling() {
@@ -131,9 +141,9 @@ func (e *Executor) Execute(
 				return result, err
 			}
 		} else {
-			toolResult, handled, toolUsed, err := e.executeAgentToolLoop(ctx, parsed, onChunk)
+			toolResult, handled, toolUsed, toolSucceeded, err := e.executeAgentToolLoop(ctx, parsed, onChunk)
 			if handled {
-				if !toolUsed && len(candidates) > 0 {
+				if (!toolUsed || !toolSucceeded) && len(candidates) > 0 {
 					if fallback, fallbackHandled, fallbackErr := e.executeInferredToolCandidatesLoop(ctx, parsed.Raw, candidates); fallbackHandled {
 						return fallback, fallbackErr
 					}
@@ -159,6 +169,19 @@ func (e *Executor) Execute(
 	}
 
 	return e.executeSkillTurn(ctx, line, parsed, onToolComplete)
+}
+
+func (e *Executor) shouldExecuteInferredBeforeAgent(parsed command.Intent, candidates []inferredToolCandidate) bool {
+	if len(candidates) == 0 || parsed.IsSlash {
+		return false
+	}
+	for _, candidate := range candidates {
+		switch candidate.Name {
+		case "write", "read", "delete":
+			return true
+		}
+	}
+	return false
 }
 
 func (e *Executor) shouldUseInferredToolPath(parsed command.Intent, candidates []inferredToolCandidate) bool {
@@ -281,6 +304,14 @@ func (e *Executor) executeSkillTurn(
 		executionStatus = TurnStatusError
 	}
 
+	if shouldUseDeterministicToolSummary(intent.Command) {
+		return Result{
+			Reply:    e.fallbackToolSummary(reply, executionStatus, err),
+			Streamed: false,
+			Status:   executionStatus,
+		}, nil
+	}
+
 	summary, summarizeErr := e.summarizeToolExecution(ctx, line, reply, executionStatus, err)
 	if summarizeErr != nil {
 		return Result{
@@ -301,22 +332,29 @@ func (e *Executor) executeAgentToolLoop(
 	ctx context.Context,
 	intent command.Intent,
 	onChunk func(string),
-) (Result, bool, bool, error) {
+) (Result, bool, bool, bool, error) {
 	if e.agent == nil || !e.agent.SupportsToolCalling() {
-		return Result{}, false, false, nil
+		return Result{}, false, false, false, nil
 	}
 	if e.dispatcher == nil {
-		return Result{}, false, false, nil
+		return Result{}, false, false, false, nil
 	}
 
 	toolDefs := e.dispatcher.ToolDefinitions()
 	if len(toolDefs) == 0 {
-		return Result{}, false, false, nil
+		return Result{}, false, false, false, nil
 	}
 
-	reply, usedTools, err := e.agent.RespondWithTools(ctx, toolDefs, intent.Raw, e.executeToolCall)
+	toolSucceeded := false
+	reply, usedTools, err := e.agent.RespondWithTools(ctx, toolDefs, intent.Raw, func(ctx context.Context, call model.ToolCall) (string, error) {
+		receipt, success, execErr := e.executeToolCallWithOutcome(ctx, call)
+		if success {
+			toolSucceeded = true
+		}
+		return receipt, execErr
+	})
 	if err != nil {
-		return Result{}, false, false, err
+		return Result{}, false, false, toolSucceeded, err
 	}
 	if onChunk != nil {
 		if strings.TrimSpace(reply) != "" {
@@ -327,7 +365,7 @@ func (e *Executor) executeAgentToolLoop(
 		Reply:    reply,
 		Streamed: false,
 		Status:   TurnStatusDone,
-	}, true, usedTools, nil
+	}, true, usedTools, toolSucceeded, nil
 }
 
 func (e *Executor) executeInferredToolCandidatesLoop(
@@ -449,6 +487,13 @@ func (e *Executor) executeInferredTool(
 	}
 	if err != nil || !output.Success || errors.Is(ctx.Err(), context.Canceled) {
 		executionStatus := TurnStatusError
+		if shouldUseDeterministicToolSummary(name) {
+			return Result{
+				Reply:    e.fallbackToolSummary(output, executionStatus, err),
+				Streamed: false,
+				Status:   executionStatus,
+			}, true, nil
+		}
 		summary, summarizeErr := e.summarizeToolExecution(ctx, rawInput, output, executionStatus, err)
 		if summarizeErr != nil {
 			return Result{
@@ -464,6 +509,13 @@ func (e *Executor) executeInferredTool(
 		}, true, nil
 	}
 
+	if shouldUseDeterministicToolSummary(name) {
+		return Result{
+			Reply:    e.fallbackToolSummary(output, TurnStatusDone, nil),
+			Streamed: false,
+			Status:   TurnStatusDone,
+		}, true, nil
+	}
 	summary, summarizeErr := e.summarizeToolExecution(ctx, rawInput, output, TurnStatusDone, nil)
 	if summarizeErr != nil {
 		return Result{
@@ -480,23 +532,75 @@ func (e *Executor) executeInferredTool(
 }
 
 func (e *Executor) executeToolCall(ctx context.Context, call model.ToolCall) (string, error) {
+	receipt, _, err := e.executeToolCallWithOutcome(ctx, call)
+	return receipt, err
+}
+
+func (e *Executor) executeToolCallWithOutcome(ctx context.Context, call model.ToolCall) (string, bool, error) {
 	args, parseErr := model.ParseToolArguments(call.Function.Arguments)
 	if parseErr != nil {
-		return "", parseErr
+		return "", false, parseErr
 	}
 
 	name := strings.TrimSpace(call.Function.Name)
 	if name == "" {
-		return "", errors.New("tool call has empty function name")
+		return "", false, errors.New("tool call has empty function name")
 	}
 	output, handled, execErr := e.executeTool(ctx, name, args)
 	if !handled {
-		return "", execErr
+		return e.modelToolReceipt(name, args, output, execErr), false, execErr
 	}
 	if execErr != nil {
-		return output.Content, execErr
+		return e.modelToolReceipt(name, args, output, execErr), false, execErr
 	}
-	return output.Content, nil
+	success := output.Success
+	return e.modelToolReceipt(name, args, output, nil), success, nil
+}
+
+func (e *Executor) modelToolReceipt(name string, args map[string]any, output skill.Output, execErr error) string {
+	status := string(TurnStatusDone)
+	success := output.Success && execErr == nil
+	if !success {
+		status = string(TurnStatusError)
+	}
+
+	result := strings.TrimSpace(output.RawOutput)
+	if result == "" {
+		result = strings.TrimSpace(output.Content)
+	}
+	result = e.sanitizeAndTrimOutput(result)
+
+	stderr := strings.TrimSpace(output.Stderr)
+	if stderr == "" && execErr != nil {
+		stderr = execErr.Error()
+	}
+
+	receipt := map[string]any{
+		"tool":        strings.TrimSpace(name),
+		"status":      status,
+		"success":     success,
+		"command":     strings.TrimSpace(output.Command),
+		"output":      result,
+		"stderr":      strings.TrimSpace(stderr),
+		"duration_ms": output.DurationMs,
+	}
+	if path, ok := args["path"].(string); ok && strings.TrimSpace(path) != "" {
+		receipt["path"] = strings.TrimSpace(path)
+	}
+	payload, err := json.Marshal(receipt)
+	if err != nil {
+		return result
+	}
+	return string(payload)
+}
+
+func shouldUseDeterministicToolSummary(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "write", "read", "delete":
+		return true
+	default:
+		return false
+	}
 }
 
 func (e *Executor) inferToolCandidates(raw string) []inferredToolCandidate {
@@ -505,17 +609,53 @@ func (e *Executor) inferToolCandidates(raw string) []inferredToolCandidate {
 		return nil
 	}
 
-	parts := e.splitIntentParts(raw)
+	parts, separators := e.splitIntentPartsWithSeparators(raw)
 	candidates := make([]inferredToolCandidate, 0, len(parts))
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
+	previousWriteWithContent := false
+	for i := 0; i < len(parts); i++ {
+		separator := ""
+		if i > 0 && i-1 < len(separators) {
+			separator = strings.TrimSpace(strings.ToLower(separators[i-1]))
+		}
+		part := strings.TrimSpace(parts[i])
 		if part == "" {
 			continue
 		}
 		lower := strings.ToLower(part)
 		hasWrite := reWriteIntent.MatchString(lower)
+		hasRead := reReadIntent.MatchString(lower)
+		hasDelete := reDeleteIntent.MatchString(lower)
+		var writePath, writeContent, writeErrMsg string
+		if hasWrite {
+			writePath, writeContent, writeErrMsg = e.parseWriteCandidate(part)
+		}
 
-		if reTimeIntent.MatchString(lower) {
+		timeProbe := part
+		if hasWrite {
+			timeProbe = e.stripWriteContentForIntent(part)
+		}
+
+		skipAndTimePart := !hasWrite && previousWriteWithContent && separator == "and" && strings.TrimSpace(strings.ToLower(part)) == "time"
+		if skipAndTimePart {
+			lastIdx := len(candidates) - 1
+			if lastIdx >= 0 && candidates[lastIdx].Name == "write" {
+				if candidates[lastIdx].Args == nil {
+					candidates[lastIdx].Args = map[string]any{}
+				}
+				content, ok := candidates[lastIdx].Args["content"].(string)
+				if ok {
+					joined := strings.TrimSpace(content + " and " + strings.TrimSpace(part))
+					candidates[lastIdx].Args["content"] = joined
+				}
+			}
+		}
+
+		timeProbeLower := strings.ToLower(timeProbe)
+		timeProbeLower = strings.TrimSpace(timeProbeLower)
+		if strings.HasPrefix(timeProbeLower, "then ") {
+			timeProbeLower = strings.TrimSpace(strings.TrimPrefix(timeProbeLower, "then "))
+		}
+		if !skipAndTimePart && reTimeIntent.MatchString(timeProbeLower) {
 			candidates = append(candidates, inferredToolCandidate{
 				Name: "time",
 				Args: map[string]any{},
@@ -523,7 +663,7 @@ func (e *Executor) inferToolCandidates(raw string) []inferredToolCandidate {
 		}
 
 		if hasWrite {
-			path, content, errMsg := e.parseWriteCandidate(part)
+			path, content, errMsg := writePath, writeContent, writeErrMsg
 			if strings.TrimSpace(path) == "" {
 				missing := errMsg
 				if missing == "" {
@@ -563,17 +703,90 @@ func (e *Executor) inferToolCandidates(raw string) []inferredToolCandidate {
 				Args: args,
 			})
 		}
+
+		if hasRead && !hasWrite {
+			path, readErr := e.parseReadCandidatePath(part)
+			if readErr != nil {
+				candidates = append(candidates, inferredToolCandidate{
+					Name:           "read",
+					MissingMessage: readErr.Error(),
+				})
+			} else {
+				candidates = append(candidates, inferredToolCandidate{
+					Name: "read",
+					Args: map[string]any{
+						"path": path,
+					},
+				})
+			}
+		}
+
+		if hasDelete && !hasWrite {
+			path, deleteErr := e.parseDeleteCandidatePath(part)
+			if deleteErr != nil {
+				candidates = append(candidates, inferredToolCandidate{
+					Name:           "delete",
+					MissingMessage: deleteErr.Error(),
+				})
+			} else {
+				candidates = append(candidates, inferredToolCandidate{
+					Name: "delete",
+					Args: map[string]any{
+						"path": path,
+					},
+				})
+			}
+		}
+
+		previousWriteWithContent = hasWrite && strings.TrimSpace(writeContent) != ""
 	}
 
 	return candidates
 }
 
 func (e *Executor) splitIntentParts(raw string) []string {
-	parts := reInferredIntentSplit.Split(raw, -1)
+	parts, _ := e.splitIntentPartsWithSeparators(raw)
 	if len(parts) > 0 {
 		return parts
 	}
 	return []string{raw}
+}
+
+func (e *Executor) splitIntentPartsWithSeparators(raw string) ([]string, []string) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return []string{}, []string{}
+	}
+
+	matches := reInferredIntentSplit.FindAllStringIndex(raw, -1)
+	if len(matches) == 0 {
+		return []string{raw}, []string{}
+	}
+
+	parts := make([]string, 0, len(matches)+1)
+	separators := make([]string, 0, len(matches))
+	start := 0
+	for _, match := range matches {
+		parts = append(parts, strings.TrimSpace(raw[start:match[0]]))
+		separators = append(separators, strings.TrimSpace(strings.ToLower(raw[match[0]:match[1]])))
+		start = match[1]
+	}
+	parts = append(parts, strings.TrimSpace(raw[start:]))
+	return parts, separators
+}
+
+func (e *Executor) stripWriteContentForIntent(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+
+	idx := reWriteContentHintRe.FindStringIndex(trimmed)
+	if len(idx) < 2 {
+		return trimmed
+	}
+
+	return strings.TrimSpace(trimmed[:idx[0]])
 }
 
 func (e *Executor) parseWriteCandidate(raw string) (string, string, string) {
@@ -583,6 +796,9 @@ func (e *Executor) parseWriteCandidate(raw string) (string, string, string) {
 		return "", "", ""
 	}
 	rest = strings.TrimSpace(rest[actionRange[1]:])
+	if path, content, ok := e.parseGeneratedWriteCandidate(raw, rest); ok {
+		return path, content, ""
+	}
 	pathPart, contentPart := e.splitWritePathAndContent(rest)
 	path := strings.TrimSpace(pathPart)
 
@@ -782,6 +998,139 @@ leadingDone:
 	return path, nil
 }
 
+func (e *Executor) parseReadCandidatePath(raw string) (string, error) {
+	return e.parsePathActionCandidate(raw, reReadActionStart, "read")
+}
+
+func (e *Executor) parseDeleteCandidatePath(raw string) (string, error) {
+	return e.parsePathActionCandidate(raw, reDeleteActionStart, "delete")
+}
+
+func (e *Executor) parsePathActionCandidate(raw string, actionRe *regexp.Regexp, actionName string) (string, error) {
+	text := strings.TrimSpace(raw)
+	if text == "" {
+		return "", fmt.Errorf("missing file path for %s", actionName)
+	}
+
+	if q := reQuotedName.FindStringSubmatch(text); len(q) > 0 {
+		for i := 1; i < len(q); i++ {
+			path := strings.TrimSpace(q[i])
+			if path == "" {
+				continue
+			}
+			return e.normalizeInferredPath(path)
+		}
+	}
+
+	actionRange := actionRe.FindStringIndex(text)
+	rest := text
+	if actionRange != nil {
+		rest = strings.TrimSpace(text[actionRange[1]:])
+	}
+	if filename := firstRegexGroup(reFilename, rest); filename != "" {
+		return e.normalizeInferredPath(filename)
+	}
+	if filename := firstRegexGroup(reFilename, text); filename != "" {
+		return e.normalizeInferredPath(filename)
+	}
+
+	if prefix := reWritePathPrefixRe.FindStringSubmatch(rest); len(prefix) > 1 {
+		rest = strings.TrimSpace(prefix[1])
+	}
+	rest = strings.TrimSpace(strings.Trim(rest, " ,.!?;:\"'"))
+	if rest == "" {
+		return "", fmt.Errorf("missing file path for %s", actionName)
+	}
+
+	fields := strings.Fields(rest)
+	if len(fields) == 0 {
+		return "", fmt.Errorf("missing file path for %s", actionName)
+	}
+	return e.normalizeInferredPath(fields[0])
+}
+
+func (e *Executor) parseGeneratedWriteCandidate(raw string, rest string) (string, string, bool) {
+	if e.hasExplicitWritePath(raw) || !e.isGeneratedFileRequest(raw) {
+		return "", "", false
+	}
+	extension := e.inferExtensionHint(raw)
+	if extension == "" {
+		return "", "", false
+	}
+
+	base := "aetox_output"
+	lower := strings.ToLower(raw)
+	if strings.Contains(raw, "แนะนำตัวเอง") ||
+		strings.Contains(lower, "self introduction") ||
+		strings.Contains(lower, "introduce yourself") ||
+		strings.Contains(lower, "about yourself") {
+		base = "self_introduction"
+	}
+
+	path, err := e.normalizeInferredPath(base + "." + extension)
+	if err != nil {
+		return "", "", false
+	}
+	return path, e.buildGeneratedFileContent(path, raw, rest), true
+}
+
+func (e *Executor) hasExplicitWritePath(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return false
+	}
+	if reQuotedName.MatchString(raw) || reNamedPath.MatchString(raw) || reFilename.MatchString(raw) {
+		return true
+	}
+	return false
+}
+
+func (e *Executor) isGeneratedFileRequest(raw string) bool {
+	lower := strings.ToLower(raw)
+	return strings.Contains(raw, "แนะนำตัวเอง") ||
+		strings.Contains(raw, "สคริป") ||
+		strings.Contains(lower, "self introduction") ||
+		strings.Contains(lower, "introduce yourself") ||
+		strings.Contains(lower, "about yourself") ||
+		strings.Contains(lower, "draft") ||
+		strings.Contains(lower, "generate")
+}
+
+func (e *Executor) inferExtensionHint(raw string) string {
+	lower := strings.ToLower(raw)
+	for _, hint := range []string{"md", "markdown", "go", "txt", "json", "yaml", "yml", "html", "css", "js", "ts", "py", "rs", "toml"} {
+		if strings.Contains(lower, "."+hint) ||
+			strings.Contains(lower, "ไฟล์ "+hint) ||
+			strings.Contains(lower, "file "+hint) ||
+			strings.Contains(lower, hint+" file") {
+			if hint == "markdown" {
+				return "md"
+			}
+			return hint
+		}
+	}
+	return ""
+}
+
+func (e *Executor) buildGeneratedFileContent(name string, raw string, rest string) string {
+	lower := strings.ToLower(raw)
+	if strings.Contains(raw, "แนะนำตัวเอง") ||
+		strings.Contains(lower, "self introduction") ||
+		strings.Contains(lower, "introduce yourself") ||
+		strings.Contains(lower, "about yourself") {
+		return "สวัสดีครับ ผมคือ Aetox ผู้ช่วยบนเทอร์มินัลที่ช่วยตอบคำถาม อ่านไฟล์ เขียนไฟล์ และเรียกใช้เครื่องมือในโปรเจ็กต์อย่างมีขั้นตอน"
+	}
+	return e.buildDefaultFileContent(name)
+}
+
+func firstRegexGroup(re *regexp.Regexp, raw string) string {
+	match := re.FindStringSubmatch(raw)
+	if len(match) < 2 {
+		return ""
+	}
+	return strings.TrimSpace(match[1])
+}
+
 func (e *Executor) normalizeInferredPath(raw string) (string, error) {
 	path := strings.TrimSpace(strings.Trim(raw, " ,.!?;:\"'"))
 	if path == "" {
@@ -852,18 +1201,20 @@ func (e *Executor) inferToolFromConversation(raw string) (string, map[string]any
 		return "", nil, "", false
 	}
 
-	if reTimeIntent.MatchString(strings.ToLower(raw)) {
+	normalized := strings.ToLower(raw)
+	timeProbe := strings.ToLower(e.stripWriteContentForIntent(normalized))
+	if reTimeIntent.MatchString(timeProbe) {
 		return "time", map[string]any{}, "", true
 	}
 
-	if reWriteIntent.MatchString(strings.ToLower(raw)) {
+	if reWriteIntent.MatchString(normalized) {
 		name, content := e.parseWriteIntent(raw)
 		if strings.TrimSpace(name) == "" {
 			return "write", nil, "ขอชื่อไฟล์ก่อนครับ เช่น  /write example.md เนื้อหา...", true
 		}
 
 		if strings.TrimSpace(content) == "" {
-			if reNeedContent.MatchString(strings.ToLower(raw)) {
+			if reNeedContent.MatchString(normalized) {
 				content = e.buildDefaultFileContent(name)
 			} else {
 				return "write", nil, "ขอเนื้อหาไฟล์ก่อนครับ (ตัวอย่าง: " + name + " และเนื้อหาที่ต้องการใส่ในไฟล์)", true
@@ -876,7 +1227,7 @@ func (e *Executor) inferToolFromConversation(raw string) (string, map[string]any
 		}, "", true
 	}
 
-	if reListIntent.MatchString(strings.ToLower(raw)) {
+	if reListIntent.MatchString(normalized) {
 		path := "."
 		if override := e.parseListPath(raw); override != "" {
 			path = override
@@ -1071,6 +1422,10 @@ func toolCallToArgs(name string, args map[string]any) []string {
 		if raw, ok := args["path"].(string); ok {
 			return []string{strings.TrimSpace(raw)}
 		}
+	case "read", "delete":
+		if raw, ok := args["path"].(string); ok {
+			return []string{strings.TrimSpace(raw)}
+		}
 	}
 	return nil
 }
@@ -1166,7 +1521,10 @@ func (e *Executor) fallbackToolSummary(result skill.Output, status TurnStatus, e
 		output = e.inferredToolFallbackOutput(result.Name, result.Command, status, execErr, result.Stderr)
 	}
 	output = e.sanitizeAndTrimOutput(output)
-	if execErr != nil && result.Stderr == "" {
+	stderr := strings.TrimSpace(result.Stderr)
+	if status == TurnStatusError && stderr != "" && !strings.Contains(output, stderr) {
+		output = fmt.Sprintf("%s\nError: %s", output, stderr)
+	} else if execErr != nil && stderr == "" {
 		output = fmt.Sprintf("%s\nError: %s", output, execErr.Error())
 	}
 
@@ -1181,7 +1539,7 @@ func (e *Executor) fallbackToolSummary(result skill.Output, status TurnStatus, e
 	if commandText != "" {
 		commandText = fmt.Sprintf("command: %s. ", commandText)
 	}
-	return fmt.Sprintf("%s (summary fallback). %s%s", prefix, commandText, output)
+	return fmt.Sprintf("%s. %s%s", prefix, commandText, output)
 }
 
 func (e *Executor) inferredToolFallbackOutput(

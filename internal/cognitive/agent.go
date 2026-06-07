@@ -99,24 +99,31 @@ func (a *Agent) RespondWithTools(
 		}
 		anyToolUsed = true
 
+		a.context.AddMessage(model.Message{
+			Role:      model.RoleAssistant,
+			Content:   content,
+			ToolCalls: response.ToolCalls,
+		})
 		for _, toolCall := range response.ToolCalls {
 			callOutput, toolErr := a.executeToolCall(ctx, toolCall, execTool)
+			callOutput = strings.TrimSpace(callOutput)
+			if callOutput == "" {
+				if toolErr != nil {
+					callOutput = toolErr.Error()
+				} else {
+					callOutput = "(no output)"
+				}
+			}
 			a.context.AddMessage(model.Message{
 				Role:       model.RoleTool,
 				Name:       toolCall.Function.Name,
 				ToolCallID: toolCall.ID,
 				Content:    callOutput,
 			})
-			if toolErr != nil && content == "" {
-				// keep moving; model can decide whether to recover from this tool failure.
-				content = callOutput
+			if toolErr != nil && ctx.Err() != nil {
+				return callOutput, true, ctx.Err()
 			}
 		}
-		if content != "" {
-			a.context.Add(model.RoleAssistant, content)
-			return content, true, nil
-		}
-		return "(tool call handled)", true, nil
 	}
 
 	return "agent tool loop reached maximum iterations", anyToolUsed, nil

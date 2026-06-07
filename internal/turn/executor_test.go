@@ -84,24 +84,26 @@ func TestExecute_FallsBackToInferredToolWhenToolCapableAgentSkipsTools(t *testin
 	}
 }
 
-func TestExecute_DoesNotFallbackToInferredToolWhenAgentUsedTool(t *testing.T) {
+func TestExecute_DoesNotFallbackToInferredToolWhenAgentToolSucceeds(t *testing.T) {
 	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "internal"), 0o755); err != nil {
+		t.Fatalf("fixture failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "internal", "note.md"), []byte("from model tool"), 0o644); err != nil {
+		t.Fatalf("fixture failed: %v", err)
+	}
 	dispatcher := &toolDispatcher{
 		root: root,
 		t:    t,
 	}
-	agent := &toolAwareAgent{
-		supportsTools:  true,
-		withToolsReply: "ok done via model tool",
-		withToolsUsed:  true,
-	}
+	agent := &successfulToolCallAgent{}
 	executor := NewExecutor(ExecutorOptions{
 		Agent:      agent,
 		Dispatcher: dispatcher,
 	})
 
-	intent := command.Parse("create file should-not-run.md with content no-op", command.ParseTokens, nil)
-	result, err := executor.Execute(context.Background(), "create file should-not-run.md with content no-op", intent, nil, nil)
+	intent := command.Parse("list directory internal", command.ParseTokens, nil)
+	result, err := executor.Execute(context.Background(), "list directory internal", intent, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -109,12 +111,45 @@ func TestExecute_DoesNotFallbackToInferredToolWhenAgentUsedTool(t *testing.T) {
 		t.Fatalf("expected status done, got %s", result.Status)
 	}
 
-	target := filepath.Join(root, "should-not-run.md")
-	if _, err := os.Stat(target); !os.IsNotExist(err) {
-		t.Fatalf("inferred tool should not have run when model handled tool usage")
+	if dispatcher.toolExecutions != 1 {
+		t.Fatalf("expected only model tool execution, got %d", dispatcher.toolExecutions)
 	}
-	if dispatcher.toolExecutions != 0 {
-		t.Fatalf("expected tool not executed by inferred path, got %d", dispatcher.toolExecutions)
+	if dispatcher.lastTool != "list" {
+		t.Fatalf("expected list tool, got %q", dispatcher.lastTool)
+	}
+}
+
+func TestExecute_FallsBackWhenAgentToolCallFails(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "internal"), 0o755); err != nil {
+		t.Fatalf("fixture failed: %v", err)
+	}
+	dispatcher := &toolDispatcher{
+		root: root,
+		t:    t,
+	}
+	agent := &failedToolCallAgent{
+		summaryReply: "executed (done). file written by fallback",
+	}
+	executor := NewExecutor(ExecutorOptions{
+		Agent:      agent,
+		Dispatcher: dispatcher,
+	})
+
+	input := "list directory internal"
+	intent := command.Parse(input, command.ParseTokens, nil)
+	result, err := executor.Execute(context.Background(), input, intent, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Status != TurnStatusDone {
+		t.Fatalf("expected status done, got %s", result.Status)
+	}
+	if dispatcher.toolExecutions != 2 {
+		t.Fatalf("expected failed model tool plus fallback read, got %d", dispatcher.toolExecutions)
+	}
+	if dispatcher.lastTool != "list" {
+		t.Fatalf("expected fallback list tool, got %q", dispatcher.lastTool)
 	}
 }
 
@@ -136,6 +171,181 @@ func TestInferToolCandidates_TimeAndList(t *testing.T) {
 	}
 	if got := candidates[1].Args["path"]; got != "internal" {
 		t.Fatalf("expected list path internal, got %v", got)
+	}
+}
+
+func TestInferToolCandidates_WriteWithTimeInFilename(t *testing.T) {
+	dispatcher := &toolDispatcher{
+		root: t.TempDir(),
+		t:    t,
+	}
+	executor := NewExecutor(ExecutorOptions{
+		Dispatcher: dispatcher,
+	})
+
+	candidates := executor.inferToolCandidates("create file safe_after_time.txt with content alpha")
+	if len(candidates) != 1 {
+		t.Fatalf("expected 1 candidate, got %d", len(candidates))
+	}
+	if candidates[0].Name != "write" {
+		t.Fatalf("expected write candidate, got %s", candidates[0].Name)
+	}
+	if candidates[0].MissingMessage != "" {
+		t.Fatalf("unexpected missing message: %s", candidates[0].MissingMessage)
+	}
+	if path, ok := candidates[0].Args["content"]; !ok || path != "alpha" {
+		t.Fatalf("unexpected content: %#v", path)
+	}
+}
+
+func TestInferToolCandidates_WriteWithContentWordInFilename(t *testing.T) {
+	dispatcher := &toolDispatcher{
+		root: t.TempDir(),
+		t:    t,
+	}
+	executor := NewExecutor(ExecutorOptions{
+		Dispatcher: dispatcher,
+	})
+
+	candidates := executor.inferToolCandidates("create file safe_missingcontent.txt with content hello")
+	if len(candidates) != 1 {
+		t.Fatalf("expected 1 candidate, got %d", len(candidates))
+	}
+	if candidates[0].Name != "write" {
+		t.Fatalf("expected write candidate, got %s", candidates[0].Name)
+	}
+	content, ok := candidates[0].Args["content"].(string)
+	if !ok || content != "hello" {
+		t.Fatalf("unexpected content: %#v", candidates[0].Args["content"])
+	}
+}
+
+func TestInferToolCandidates_WriteWithContentWordInFilenameWithoutContentBlocks(t *testing.T) {
+	dispatcher := &toolDispatcher{
+		root: t.TempDir(),
+		t:    t,
+	}
+	executor := NewExecutor(ExecutorOptions{
+		Dispatcher: dispatcher,
+	})
+
+	candidates := executor.inferToolCandidates("create file content_in_filename_no_content.txt")
+	if len(candidates) != 1 {
+		t.Fatalf("expected 1 candidate, got %d", len(candidates))
+	}
+	if candidates[0].Name != "write" {
+		t.Fatalf("expected write candidate, got %s", candidates[0].Name)
+	}
+	if strings.TrimSpace(candidates[0].MissingMessage) == "" {
+		t.Fatalf("expected missing content message, got %#v", candidates[0])
+	}
+	if _, ok := candidates[0].Args["content"]; ok {
+		t.Fatalf("filename content substring should not become content: %#v", candidates[0].Args)
+	}
+}
+
+func TestInferToolCandidates_WriteWithTimeInContent(t *testing.T) {
+	dispatcher := &toolDispatcher{
+		root: t.TempDir(),
+		t:    t,
+	}
+	executor := NewExecutor(ExecutorOptions{
+		Dispatcher: dispatcher,
+	})
+
+	candidates := executor.inferToolCandidates("create file safe_after_time.txt with content alpha and time")
+	if len(candidates) != 1 {
+		t.Fatalf("expected 1 candidate, got %d", len(candidates))
+	}
+	if candidates[0].Name != "write" {
+		t.Fatalf("expected write candidate, got %s", candidates[0].Name)
+	}
+	content, ok := candidates[0].Args["content"].(string)
+	if !ok || content != "alpha and time" {
+		t.Fatalf("unexpected content: %#v", candidates[0].Args["content"])
+	}
+}
+
+func TestExecute_InferredThaiGeneratedWriteCreatesFile(t *testing.T) {
+	root := t.TempDir()
+	dispatcher := &toolDispatcher{
+		root: root,
+		t:    t,
+	}
+	agent := &toolAwareAgent{
+		supportsTools: false,
+		summaryReply:  "done",
+	}
+	executor := NewExecutor(ExecutorOptions{
+		Agent:      agent,
+		Dispatcher: dispatcher,
+	})
+
+	input := "เขียนสคริปแนะนำตัวเองแล้วสร้างเป็นไฟล์ txt ไว้ให้ผมอ่าน"
+	intent := command.Parse(input, command.ParseTokens, nil)
+	result, err := executor.Execute(context.Background(), input, intent, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Status != TurnStatusDone {
+		t.Fatalf("expected done, got %s", result.Status)
+	}
+	target := filepath.Join(root, "self_introduction.txt")
+	raw, readErr := os.ReadFile(target)
+	if readErr != nil {
+		t.Fatalf("expected generated file to be created: %v", readErr)
+	}
+	if !strings.Contains(string(raw), "Aetox") {
+		t.Fatalf("expected generated content to mention Aetox, got %q", string(raw))
+	}
+}
+
+func TestExecute_InferredReadAndDelete(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "delete-me.txt")
+	if err := os.WriteFile(target, []byte("alpha"), 0o644); err != nil {
+		t.Fatalf("fixture failed: %v", err)
+	}
+	dispatcher := &toolDispatcher{
+		root: root,
+		t:    t,
+	}
+	agent := &toolAwareAgent{
+		supportsTools: false,
+		summaryReply:  "done",
+	}
+	executor := NewExecutor(ExecutorOptions{
+		Agent:      agent,
+		Dispatcher: dispatcher,
+	})
+
+	readInput := "read file delete-me.txt"
+	readIntent := command.Parse(readInput, command.ParseTokens, nil)
+	readResult, err := executor.Execute(context.Background(), readInput, readIntent, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected read error: %v", err)
+	}
+	if readResult.Status != TurnStatusDone {
+		t.Fatalf("expected read done, got %s", readResult.Status)
+	}
+	if dispatcher.lastTool != "read" {
+		t.Fatalf("expected read tool, got %q", dispatcher.lastTool)
+	}
+
+	deleteInput := "delete file delete-me.txt"
+	deleteIntent := command.Parse(deleteInput, command.ParseTokens, nil)
+	deleteResult, err := executor.Execute(context.Background(), deleteInput, deleteIntent, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected delete error: %v", err)
+	}
+	if deleteResult.Status != TurnStatusDone {
+		t.Fatalf("expected delete done, got %s", deleteResult.Status)
+	}
+	if dispatcher.lastTool != "delete" {
+		t.Fatalf("expected delete tool, got %q", dispatcher.lastTool)
+	}
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Fatalf("expected file to be deleted, stat err=%v", err)
 	}
 }
 
@@ -488,6 +698,8 @@ func TestExecute_InferredIntent_SmokeMatrix(t *testing.T) {
 		{name: "write nested", input: "create file internal/report-six.md with content one", wantStatus: TurnStatusDone, expectedSequence: []string{"write"}, expectPath: "internal/report-six.md"},
 		{name: "write nested", input: "create file internal/report-seven.md with content line1 line2", wantStatus: TurnStatusDone, expectedSequence: []string{"write"}, expectPath: "internal/report-seven.md"},
 		{name: "write with list keyword", input: "create file list-note.md with content list", wantStatus: TurnStatusDone, expectedSequence: []string{"write"}, expectPath: "list-note.md"},
+		{name: "write with time in filename", input: "create file safe_after_time.txt with content alpha", wantStatus: TurnStatusDone, expectedSequence: []string{"write"}, expectPath: "safe_after_time.txt"},
+		{name: "write with time in content", input: "create file safe_after_time.txt with content alpha and time", wantStatus: TurnStatusDone, expectedSequence: []string{"write"}, expectPath: "safe_after_time.txt"},
 		{name: "mixed explicit phrase", input: "time and create file quote.md with content one", wantStatus: TurnStatusDone, expectedSequence: []string{"time", "write"}, expectPath: "quote.md"},
 		{name: "mixed list then create", input: "list internal then create file internal/combined.md with content two", wantStatus: TurnStatusDone, expectedSequence: []string{"list", "write"}, expectPath: "internal/combined.md"},
 		{name: "mixed create then time", input: "create file internal/combined2.md with content two then time", wantStatus: TurnStatusDone, expectedSequence: []string{"write", "time"}, expectPath: "internal/combined2.md"},
@@ -564,6 +776,73 @@ func (a *toolAwareAgent) SupportsToolCalling() bool {
 	return a.supportsTools
 }
 
+type successfulToolCallAgent struct{}
+
+func (a *successfulToolCallAgent) Respond(_ context.Context, _ string) (string, error) {
+	return "done", nil
+}
+
+func (a *successfulToolCallAgent) RespondStream(_ context.Context, _ string, _ func(string) error) (string, bool, error) {
+	return "done", false, nil
+}
+
+func (a *successfulToolCallAgent) RespondWithTools(
+	ctx context.Context,
+	_ []model.ToolDefinition,
+	_ string,
+	exec func(context.Context, model.ToolCall) (string, error),
+) (string, bool, error) {
+	_, err := exec(ctx, model.ToolCall{
+		ID:   "good_call_1",
+		Type: "function",
+		Function: model.FunctionCall{
+			Name:      "list",
+			Arguments: `{"path":"internal"}`,
+		},
+	})
+	if err != nil {
+		return "", true, err
+	}
+	return "ok done via model tool", true, nil
+}
+
+func (a *successfulToolCallAgent) SupportsToolCalling() bool {
+	return true
+}
+
+type failedToolCallAgent struct {
+	summaryReply string
+}
+
+func (a *failedToolCallAgent) Respond(_ context.Context, _ string) (string, error) {
+	return a.summaryReply, nil
+}
+
+func (a *failedToolCallAgent) RespondStream(_ context.Context, _ string, _ func(string) error) (string, bool, error) {
+	return a.summaryReply, false, nil
+}
+
+func (a *failedToolCallAgent) RespondWithTools(
+	ctx context.Context,
+	_ []model.ToolDefinition,
+	_ string,
+	exec func(context.Context, model.ToolCall) (string, error),
+) (string, bool, error) {
+	_, _ = exec(ctx, model.ToolCall{
+		ID:   "bad_call_1",
+		Type: "function",
+		Function: model.FunctionCall{
+			Name:      "write_file",
+			Arguments: `{"path":"model-claimed.txt","content":"bad"}`,
+		},
+	})
+	return "model claims the file was created", true, nil
+}
+
+func (a *failedToolCallAgent) SupportsToolCalling() bool {
+	return true
+}
+
 type toolDispatcher struct {
 	root string
 	t    *testing.T
@@ -608,6 +887,20 @@ func (d *toolDispatcher) ToolDefinitions() []model.ToolDefinition {
 			Type: "function",
 			Function: model.ToolFunction{
 				Name:       "list",
+				Parameters: []byte(`{"type":"object"}`),
+			},
+		},
+		{
+			Type: "function",
+			Function: model.ToolFunction{
+				Name:       "read",
+				Parameters: []byte(`{"type":"object"}`),
+			},
+		},
+		{
+			Type: "function",
+			Function: model.ToolFunction{
+				Name:       "delete",
 				Parameters: []byte(`{"type":"object"}`),
 			},
 		},
@@ -688,6 +981,59 @@ func (d *toolDispatcher) ExecuteTool(_ context.Context, name string, args map[st
 			RawOutput:  strings.Join(names, "\n"),
 			Success:    true,
 			DurationMs: 0,
+		}, true, nil
+	case "read":
+		path := ""
+		if rawPath, ok := args["path"].(string); ok {
+			path = strings.TrimSpace(rawPath)
+		}
+		if path == "" {
+			if d.t != nil {
+				d.t.Fatalf("expected path argument")
+			}
+			return skill.Output{}, true, nil
+		}
+		raw, err := os.ReadFile(filepath.Join(d.root, path))
+		if err != nil {
+			return skill.Output{
+				Name:    "read",
+				Command: "read " + path,
+				Success: false,
+				Stderr:  err.Error(),
+			}, true, err
+		}
+		return skill.Output{
+			Name:      "read",
+			Command:   "read " + path,
+			Content:   string(raw),
+			RawOutput: string(raw),
+			Success:   true,
+		}, true, nil
+	case "delete":
+		path := ""
+		if rawPath, ok := args["path"].(string); ok {
+			path = strings.TrimSpace(rawPath)
+		}
+		if path == "" {
+			if d.t != nil {
+				d.t.Fatalf("expected path argument")
+			}
+			return skill.Output{}, true, nil
+		}
+		if err := os.Remove(filepath.Join(d.root, path)); err != nil {
+			return skill.Output{
+				Name:    "delete",
+				Command: "delete " + path,
+				Success: false,
+				Stderr:  err.Error(),
+			}, true, err
+		}
+		return skill.Output{
+			Name:      "delete",
+			Command:   "delete " + path,
+			Content:   "deleted",
+			RawOutput: "deleted",
+			Success:   true,
 		}, true, nil
 	case "time":
 		return skill.Output{

@@ -18,8 +18,10 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 	registry.Register(&echoSkill{})
 	registry.Register(&timeSkill{})
 	registry.Register(&listSkill{root: opts.SandboxRoot})
+	registry.Register(&readSkill{root: opts.SandboxRoot})
 	registry.Register(&gitSkill{root: opts.SandboxRoot})
 	registry.Register(&fsSkill{root: opts.SandboxRoot})
 	registry.Register(&shellSkill{root: opts.SandboxRoot})
 	registry.Register(&writeSkill{root: opts.SandboxRoot})
+	registry.Register(&deleteSkill{root: opts.SandboxRoot})
 }
