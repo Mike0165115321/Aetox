@@ -7,9 +7,15 @@ import (
 type Input map[string]any
 
 type Output struct {
-	Name    string
-	Content string
-	Data    any
+	Name       string
+	Content    string
+	Data       any
+	Command    string
+	RawOutput  string
+	Stderr     string
+	Success    bool
+	Truncated  bool
+	DurationMs int64
 }
 
 type Skill interface {

@@ -35,7 +35,7 @@ func (d *Dispatcher) Execute(ctx context.Context, input string) (Output, bool, e
 	}
 	output, err := skill.Execute(ctx, execInput)
 	if err != nil {
-		return Output{}, true, fmt.Errorf("skill %q failed: %w", name, err)
+		return output, true, fmt.Errorf("skill %q failed: %w", name, err)
 	}
 	return output, true, nil
 }

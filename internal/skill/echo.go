@@ -3,6 +3,7 @@ package skill
 import (
 	"context"
 	"strings"
+	"time"
 )
 
 type echoSkill struct{}
@@ -14,10 +15,9 @@ func (*echoSkill) Description() string {
 }
 
 func (*echoSkill) Execute(_ context.Context, input Input) (Output, error) {
+	start := time.Now()
 	args := stringSlice(input["args"])
-	return Output{
-		Name:    "echo",
-		Content: strings.Join(args, " "),
-	}, nil
-}
+	content := strings.Join(args, " ")
 
+	return newToolOutput("echo", "echo "+content, content, start, false, nil), nil
+}

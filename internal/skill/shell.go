@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"os/exec"
 	"runtime"
 	"strings"
+	"time"
 )
 
 type shellSkill struct{}
@@ -19,9 +19,10 @@ func (*shellSkill) Description() string {
 }
 
 func (*shellSkill) Execute(ctx context.Context, input Input) (Output, error) {
+	start := time.Now()
 	args := stringSlice(input["args"])
 	if len(args) == 0 {
-		return Output{Name: "shell"}, errors.New("usage: shell <command>")
+		return newToolOutput("shell", "shell", "", start, false, errors.New("usage: shell <command>")), errors.New("usage: shell <command>")
 	}
 	commandLine := strings.Join(args, " ")
 
@@ -37,22 +38,19 @@ func (*shellSkill) Execute(ctx context.Context, input Input) (Output, error) {
 
 	err := cmd.Run()
 	out := strings.TrimSpace(buffer.String())
-	if out == "" && err == nil {
-		out = "(no output)"
-	}
+	truncatedOutput, truncated := limitLines(out, defaultToolOutputLineLimit)
+	command := "shell " + commandLine
+	result := newToolOutput("shell", command, truncatedOutput, start, truncated, err)
 	if err != nil {
 		if errors.Is(ctx.Err(), context.Canceled) {
-			return Output{Name: "shell"}, ctx.Err()
+			return result, ctx.Err()
 		}
 		if out == "" {
-			out = "(command failed)"
+			result.RawOutput = "(command failed)"
+			result.Content = result.RawOutput
 		}
-		out = fmt.Sprintf("%s\nerror: %v", out, err)
+		result.Stderr = err.Error()
+		return result, err
 	}
-
-	return Output{
-		Name:    "shell",
-		Content: out,
-	}, nil
+	return result, nil
 }
-

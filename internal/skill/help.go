@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 )
 
 type helpSkill struct {
@@ -18,12 +19,11 @@ func (*helpSkill) Description() string {
 }
 
 func (s *helpSkill) Execute(_ context.Context, input Input) (Output, error) {
+	start := time.Now()
 	_ = input
+	command := "help"
 	if s == nil || s.registry == nil {
-		return Output{
-			Name:    "help",
-			Content: "No commands are available.",
-		}, nil
+		return newToolOutput("help", command, "No commands are available.", start, false, nil), nil
 	}
 
 	snapshot := s.registry.Snapshot()
@@ -40,11 +40,8 @@ func (s *helpSkill) Execute(_ context.Context, input Input) (Output, error) {
 	}
 
 	if len(lines) == 0 {
-		return Output{Name: "help", Content: "No commands are available."}, nil
+		return newToolOutput("help", command, "No commands are available.", start, false, nil), nil
 	}
 
-	return Output{
-		Name:    "help",
-		Content: "Available commands:\n" + strings.Join(lines, "\n"),
-	}, nil
+	return newToolOutput("help", command, "Available commands:\n"+strings.Join(lines, "\n"), start, false, nil), nil
 }

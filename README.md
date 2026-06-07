@@ -1,85 +1,82 @@
-﻿# Aetox CLI (Terminal Chat)
+# Aetox CLI (Terminal AI Chat)
 
-Aetox CLI ตอนนี้เป็นโหมดแชตผ่านเทอมินัล:
-- รับข้อความจากผู้ใช้
-- ส่งให้ model (default: `noop`)
-- ตอบกลับโดยตรง
+Aetox CLI runs two modes in the same session:
 
-## โครงสร้างใหม่
+- **Conversation mode** (chat): respond as normal conversation in streaming.
+- **Skill mode**: execute command first, then return one final summary message.
 
-- `cmd/aetox/main.go`: CLI bootstrap + flag parsing + mode dispatch
-- `internal/app`: app shell layer (`RunInteractive`, `RunOnce`, banner, terminal I/O interface)
-- `internal/command`: command intent parsing seam (`help/version/interactive/once`)
-- `internal/skill`: skill abstraction + registry + dispatcher seam
-- `internal/cognitive`: agent orchestration (`Agent`, context, provider call)
-- `internal/model`: provider abstraction (`noop`, `openrouter`, `openai-compatible`, `ollama`) + bootstrap seam
-- `internal/config`: runtime config defaults
-- `internal/memory`: bounded context store for `cognitive.Agent`
+## Flow summary
 
-ดูเอกสารสถาปัตยกรรมฉบับปฏิบัติแบบละเอียดได้ที่:
-- [docs/architecture-aetox.md](/E:/Aetox/Aetox-cli/docs/architecture-aetox.md)
+- `/<command>` or known skill keyword runs skill mode.
+- Free text runs conversation mode.
+- Skill execution is treated as:
+  - `intent := command`
+  - execute tool
+  - normalize output metadata
+  - summarize result
+  - print final summary
 
-## เอกสารสถาปัตยกรรม
+Status reported to user:
 
-- [architecture review (scan mode)](/E:/Aetox/Aetox-cli/docs/architecture-review-aetox-cli.md)
+- `executed (done)`
+- `executed (error)`
+- `executed (blocked)`
 
-## รันทันที
+## Current supported skills
 
-```powershell
-cd E:\Aetox\Aetox-cli
-go build -o C:\Users\Gigabyte\bin\aetox.exe .\cmd\aetox
-aetox.exe --help
-```
+- `help`
+- `time`
+- `echo <ข้อความ>`
+- `list [path]` (sandboxed path listing)
+- `shell <command>` (high-risk commands require confirmation)
+- `git status|log|branch|diff|show`
+- `fs pwd|ls|find|cat`
 
-### แชตผ่านเทอมินัล (พร้อมสกิล)
+## Approval policy (v1)
+
+- **Read-only allowed by default**
+  - `git status`, `git log`, `git branch`, `git diff`, `git show`
+  - `fs pwd`, `fs ls`, `fs find`, `fs cat`
+  - shell commands that do not match known risk patterns
+- **High-risk requires confirmation**
+  - `shell` commands that may modify/delete
+  - unsupported `git` commands
+  - `fs` commands outside read-only list
+- If confirmation is denied: `executed (blocked)`
+- Detailed contract:
+  - [docs/response-contract-and-approvals.md](docs/response-contract-and-approvals.md)
+
+## UX
+
+- Thinking indicator now shows for conversation and skill:
+  - Conversation: `กำลังคิด...`
+  - Skill: `กำลังรัน...`
+- Indicator is removed once command execution ends and before final response.
+
+## Usage
 
 ```powershell
 aetox
-aetox chat "ช่วยสรุปโปรเจกต์นี้"
-```
-
-สกิลที่ใช้งานได้ทันทีในโหมดแชต:
-- `help` แสดงสกิลที่พร้อมใช้
-- `time` ดูเวลา
-- `echo <ข้อความ>` ส่งข้อความกลับ
-- `list [path]` รายการไฟล์ใน `--root` (ป้องกันออกนอกโฟลเดอร์)
-- `shell <command>` รันคำสั่งระบบในระบบปฏิบัติการ
-
-### ส่งข้อความเดียว (ไม่ต้องรันโหมด interactive)
-
-```powershell
-echo "ช่วยอธิบาย Aetox คืออะไร" | aetox
-```
-
-### โหมดมาตรฐานแบบ CLI
-
-```powershell
+aetox chat "สรุปโปรเจกต์นี้"
 aetox help
 aetox version
 aetox --no-banner
-aetox --version
 ```
 
-### ตัวอย่าง provider
+Run one-shot:
 
 ```powershell
-$env:OPENROUTER_API_KEY = "YOUR_OPENROUTER_KEY"
-aetox --model-provider=openrouter --model-name="google/gemma-3n-E2B" "ช่วยสรุปโปรเจกต์นี้"
+echo "ช่วยสรุปสั้นๆ หน่อย" | aetox
 ```
+
+Switch model:
 
 ```powershell
-$env:OPENAI_API_KEY = "YOUR_OPENAI_KEY"
-aetox --model-provider=openai --model-name="gpt-4o-mini" "ช่วยสรุปโปรเจกต์นี้"
+aetox /model
 ```
 
-```powershell
-$env:GROQ_API_KEY = "YOUR_GROQ_KEY"
-aetox --model-provider=groq --model-name="llama-3.3-70b-versatile" "ช่วยสรุปโปรเจกต์นี้"
-```
+## Behavior notes
 
-```powershell
-# Local Ollama (ต้องรัน ollama serve อยู่แล้ว)
-aetox --model-provider=ollama --model-name="llama3.1:8b" "ช่วยสรุปโปรเจกต์นี้"
-```
-
-ถ้าการกำหนด provider ล้มเหลว ระบบจะ fallback ไป `noop` เพื่อให้แชตได้ทันที
+- `RunOnce` and skill commands return final summary when tool path is used.
+- Fallback summary is used when tool summarization fails (still shows output and status).
+- Output is sanitized/restricted in tool summarization to avoid leaking obvious secrets (`token`, `api key`, `password` patterns).

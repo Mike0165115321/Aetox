@@ -15,9 +15,7 @@ func (*timeSkill) Description() string {
 
 func (*timeSkill) Execute(_ context.Context, input Input) (Output, error) {
 	_ = input
-	return Output{
-		Name:    "time",
-		Content: time.Now().Format("2006-01-02 15:04:05 MST"),
-	}, nil
+	start := time.Now()
+	content := time.Now().Format("2006-01-02 15:04:05 MST")
+	return newToolOutput("time", "time", content, start, false, nil), nil
 }
-

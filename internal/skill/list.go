@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 type listSkill struct {
@@ -20,8 +21,9 @@ func (*listSkill) Description() string {
 }
 
 func (s *listSkill) Execute(_ context.Context, input Input) (Output, error) {
+	start := time.Now()
 	if s == nil {
-		return Output{Name: "list"}, fmt.Errorf("list skill unavailable")
+		return newToolOutput("list", "list", "", start, false, fmt.Errorf("list skill unavailable")), fmt.Errorf("list skill unavailable")
 	}
 
 	args := stringSlice(input["args"])
@@ -32,12 +34,12 @@ func (s *listSkill) Execute(_ context.Context, input Input) (Output, error) {
 
 	targetPath, err := resolveSandboxPath(s.root, requestPath)
 	if err != nil {
-		return Output{Name: "list"}, err
+		return newToolOutput("list", "list "+requestPath, "", start, false, err), err
 	}
 
 	entries, err := os.ReadDir(targetPath)
 	if err != nil {
-		return Output{Name: "list"}, err
+		return newToolOutput("list", "list "+requestPath, "", start, false, err), err
 	}
 
 	names := make([]string, 0, len(entries))
@@ -45,10 +47,12 @@ func (s *listSkill) Execute(_ context.Context, input Input) (Output, error) {
 		names = append(names, entry.Name())
 	}
 	sort.Strings(names)
-	return Output{
-		Name:    "list",
-		Content: strings.Join(names, "\n"),
-	}, nil
+	output, truncated := limitLines(strings.Join(names, "\n"), defaultToolOutputLineLimit)
+	command := "list"
+	if requestPath != "" && requestPath != "." {
+		command = "list " + requestPath
+	}
+	return newToolOutput("list", command, output, start, truncated, nil), nil
 }
 
 func resolveSandboxPath(root string, requestPath string) (string, error) {
@@ -76,4 +80,3 @@ func resolveSandboxPath(root string, requestPath string) (string, error) {
 	}
 	return safeTarget, nil
 }
-

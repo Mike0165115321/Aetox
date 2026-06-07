@@ -26,6 +26,12 @@ func AssessCommand(skillName string, args []string) Assessment {
 	}
 
 	if skillName != "shell" {
+		if skillName == "git" {
+			return assessGitCommand(args)
+		}
+		if skillName == "fs" {
+			return assessFsCommand(args)
+		}
 		return Assessment{
 			SkillName: skillName,
 			Risk:      RiskLow,
@@ -83,4 +89,66 @@ func isShellHighRisk(cmd string, rest []string) bool {
 	}
 
 	return false
+}
+
+func assessGitCommand(args []string) Assessment {
+	if len(args) == 0 {
+		return Assessment{
+			SkillName: "git",
+			Risk:      RiskHigh,
+			Reason:    "missing git action",
+		}
+	}
+
+	action := strings.ToLower(strings.TrimSpace(args[0]))
+	switch action {
+	case "status", "log", "branch", "diff", "show":
+		return Assessment{
+			SkillName: "git",
+			Risk:      RiskLow,
+		}
+	case "fetch":
+		return Assessment{
+			SkillName: "git",
+			Risk:      RiskHigh,
+			Reason:    "fetch may change local git state and should be confirmed",
+		}
+	case "add", "commit", "restore", "reset", "rebase", "clean", "switch", "checkout", "merge", "push", "pull", "mv", "move", "rm", "stash", "tag":
+		return Assessment{
+			SkillName: "git",
+			Risk:      RiskHigh,
+			Reason:    "git action may change repository state",
+		}
+	default:
+		return Assessment{
+			SkillName: "git",
+			Risk:      RiskHigh,
+			Reason:    "unsupported or potentially destructive git action",
+		}
+	}
+}
+
+func assessFsCommand(args []string) Assessment {
+	if len(args) == 0 {
+		return Assessment{
+			SkillName: "fs",
+			Risk:      RiskHigh,
+			Reason:    "missing fs action",
+		}
+	}
+
+	action := strings.ToLower(strings.TrimSpace(args[0]))
+	switch action {
+	case "pwd", "ls", "find", "cat":
+		return Assessment{
+			SkillName: "fs",
+			Risk:      RiskLow,
+		}
+	default:
+		return Assessment{
+			SkillName: "fs",
+			Risk:      RiskHigh,
+			Reason:    "unsupported fs action",
+		}
+	}
 }
