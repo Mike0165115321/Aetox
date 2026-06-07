@@ -42,9 +42,22 @@ func (c *Context) Add(role model.MessageRole, content string) {
 	if c == nil {
 		return
 	}
-	c.messages = append(c.messages, model.Message{
+	c.AddMessage(model.Message{
 		Role:    role,
 		Content: strings.TrimSpace(content),
+	})
+}
+
+func (c *Context) AddMessage(message model.Message) {
+	if c == nil {
+		return
+	}
+	c.messages = append(c.messages, model.Message{
+		Role:       message.Role,
+		Name:       strings.TrimSpace(message.Name),
+		ToolCallID: strings.TrimSpace(message.ToolCallID),
+		Content:    strings.TrimSpace(message.Content),
+		ToolCalls:  message.ToolCalls,
 	})
 
 	c.enforceLimits()

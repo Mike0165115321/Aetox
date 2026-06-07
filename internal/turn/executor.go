@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"aetox-cli/internal/command"
+	"aetox-cli/internal/model"
 	"aetox-cli/internal/safety"
 	"aetox-cli/internal/skill"
 )
@@ -27,10 +28,13 @@ const (
 type Agent interface {
 	Respond(context.Context, string) (string, error)
 	RespondStream(context.Context, string, func(string) error) (string, bool, error)
+	RespondWithTools(context.Context, []model.ToolDefinition, string, func(context.Context, model.ToolCall) (string, error)) (string, error)
 }
 
 type Dispatcher interface {
 	Execute(context.Context, string) (skill.Output, bool, error)
+	ToolDefinitions() []model.ToolDefinition
+	ExecuteTool(context.Context, string, map[string]any) (skill.Output, bool, error)
 }
 
 type ApprovalPromptFunc func(context.Context, string, string) (bool, error)
@@ -92,6 +96,11 @@ func (e *Executor) Execute(
 	parsed := e.normalizeIntent(line, intent)
 
 	if parsed.Kind == command.KindConversation {
+		if !parsed.IsSlash {
+			if toolResult, handled, err := e.executeAgentToolLoop(ctx, parsed, onChunk); handled {
+				return toolResult, err
+			}
+		}
 		reply, streamed, err := e.agent.RespondStream(ctx, parsed.Raw, asStreamHandler(onChunk))
 		return Result{
 			Reply:    reply,
@@ -204,6 +213,104 @@ func (e *Executor) executeSkillTurn(
 		Streamed: false,
 		Status:   executionStatus,
 	}, nil
+}
+
+func (e *Executor) executeAgentToolLoop(
+	ctx context.Context,
+	intent command.Intent,
+	onChunk func(string),
+) (Result, bool, error) {
+	if e.dispatcher == nil {
+		return Result{}, false, nil
+	}
+
+	toolDefs := e.dispatcher.ToolDefinitions()
+	if len(toolDefs) == 0 {
+		return Result{}, false, nil
+	}
+
+	reply, err := e.agent.RespondWithTools(ctx, toolDefs, intent.Raw, e.executeToolCall)
+	if err != nil {
+		return Result{}, false, err
+	}
+	if onChunk != nil {
+		if strings.TrimSpace(reply) != "" {
+			onChunk(reply)
+		}
+	}
+	return Result{
+		Reply:    reply,
+		Streamed: false,
+		Status:   TurnStatusDone,
+	}, true, nil
+}
+
+func (e *Executor) executeToolCall(ctx context.Context, call model.ToolCall) (string, error) {
+	args, parseErr := model.ParseToolArguments(call.Function.Arguments)
+	if parseErr != nil {
+		return "", parseErr
+	}
+
+	name := strings.TrimSpace(call.Function.Name)
+	if name == "" {
+		return "", errors.New("tool call has empty function name")
+	}
+
+	assessment := safety.AssessCommand(name, toolCallToArgs(name, args))
+	if assessment.Risk == safety.RiskHigh {
+		ok, confirmErr := e.approveOrDeny(ctx, name, assessment.Reason)
+		if confirmErr != nil {
+			return "", confirmErr
+		}
+		if !ok {
+			output := skill.Output{
+				Name:       name,
+				Content:    "tool execution blocked by user",
+				RawOutput:  "tool execution blocked by user",
+				Success:    false,
+				Stderr:     "tool execution blocked by user",
+				DurationMs: 0,
+			}
+			return output.Content, nil
+		}
+	}
+
+	output, handled, err := e.dispatcher.ExecuteTool(ctx, name, args)
+	if !handled {
+		return "", fmt.Errorf("tool %q is not exposed to agent", name)
+	}
+	if err != nil {
+		return output.Content, err
+	}
+	return output.Content, nil
+}
+
+func toolCallToArgs(name string, args map[string]any) []string {
+	name = strings.ToLower(strings.TrimSpace(name))
+	switch name {
+	case "write":
+		path := ""
+		content := ""
+		if raw, ok := args["path"].(string); ok {
+			path = strings.TrimSpace(raw)
+		}
+		if raw, ok := args["content"].(string); ok {
+			content = strings.TrimSpace(raw)
+		}
+		result := make([]string, 0, 2)
+		if path != "" {
+			result = append(result, path)
+		}
+		if content != "" {
+			result = append(result, content)
+		}
+		return result
+	case "list":
+		if raw, ok := args["path"].(string); ok {
+			return []string{strings.TrimSpace(raw)}
+		}
+	}
+	return nil
 }
 
 func (e *Executor) approveOrDeny(ctx context.Context, name, reason string) (bool, error) {

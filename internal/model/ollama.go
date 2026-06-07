@@ -51,6 +51,10 @@ func (p *OllamaProvider) Name() string {
 	return "ollama"
 }
 
+func (p *OllamaProvider) SupportsToolCalling() bool {
+	return false
+}
+
 func (p *OllamaProvider) Complete(ctx context.Context, req Request) (Response, error) {
 	if len(req.Messages) == 0 {
 		return Response{}, ErrNoMessages

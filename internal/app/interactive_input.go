@@ -353,26 +353,30 @@ func (a *App) drawLineWithSlashPalette(line string, suggestions []slashSuggestio
 	for i, suggestion := range suggestions {
 		a.console.Print("\r\n")
 		a.console.Print("\x1b[2K")
-		if i == selected {
-			a.console.Print(" > ")
-		} else {
-			a.console.Print("   ")
-		}
 		categorySwatch := toolSwatch
 		tokenColor := ""
 		resetColor := ""
-		if suggestion.Category == "setting" {
-			categorySwatch = settingSwatch
+		if i == selected {
+			a.console.Print(" > ")
 			if ansiOk {
-				tokenColor = slashMetaSuggestionColor
+				tokenColor = "\x1b[1;97;104m" // Bold white text on light blue background
 				resetColor = ansiReset
 			}
-		} else if ansiOk {
-			tokenColor = slashToolSuggestionColor
-			resetColor = ansiReset
+		} else {
+			a.console.Print("   ")
+			if suggestion.Category == "setting" {
+				categorySwatch = settingSwatch
+				if ansiOk {
+					tokenColor = slashMetaSuggestionColor
+					resetColor = ansiReset
+				}
+			} else if ansiOk {
+				tokenColor = slashToolSuggestionColor
+				resetColor = ansiReset
+			}
 		}
 
-		a.console.Print(fmt.Sprintf("%s %s%-8s [%-7s] %s%s",
+		a.console.Print(fmt.Sprintf("%s %s%-12s [%-7s] %s%s",
 			categorySwatch,
 			tokenColor,
 			suggestion.Token,

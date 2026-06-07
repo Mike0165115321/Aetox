@@ -2,8 +2,10 @@ package skill
 
 import (
 	"aetox-cli/internal/command"
+	"aetox-cli/internal/model"
 	"context"
 	"fmt"
+	"strings"
 )
 
 type Dispatcher struct {
@@ -52,6 +54,49 @@ func (d *Dispatcher) Names() []string {
 		return nil
 	}
 	return d.registry.Names()
+}
+
+func (d *Dispatcher) ToolDefinitions() []model.ToolDefinition {
+	if d == nil || d.registry == nil {
+		return nil
+	}
+	names := d.registry.Names()
+	definitions := make([]model.ToolDefinition, 0, len(names))
+	for _, name := range names {
+		s, ok := d.registry.Get(name)
+		if !ok || s == nil {
+			continue
+		}
+		tool, ok := s.(Tool)
+		if !ok {
+			continue
+		}
+		definitions = append(definitions, tool.ToolDefinition())
+	}
+	return definitions
+}
+
+func (d *Dispatcher) ExecuteTool(ctx context.Context, name string, args map[string]any) (Output, bool, error) {
+	if d == nil || d.registry == nil {
+		return Output{}, false, nil
+	}
+	skillName := strings.ToLower(strings.TrimSpace(name))
+	if skillName == "" {
+		return Output{}, false, nil
+	}
+	skill, ok := d.registry.Get(skillName)
+	if !ok || skill == nil {
+		return Output{}, false, nil
+	}
+	tool, ok := skill.(Tool)
+	if !ok {
+		return Output{}, false, nil
+	}
+	result, err := tool.ExecuteTool(ctx, args)
+	if err != nil {
+		return result, true, err
+	}
+	return result, true, nil
 }
 
 func (d *Dispatcher) Snapshot() map[string]Skill {

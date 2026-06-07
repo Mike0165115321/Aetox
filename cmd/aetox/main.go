@@ -21,6 +21,7 @@ import (
 )
 
 const appVersion = "0.3.0-dev"
+const defaultAgentMaxToolCalls = 4
 
 var (
 	noBanner    bool
@@ -39,6 +40,7 @@ func main() {
 	var modelAPIKey string
 	var modelBaseURL string
 	var modelTimeout int
+	var modelContextTokens int
 
 	flag.StringVar(&rootPath, "root", "", "optional sandbox root directory (default: current directory)")
 	flag.IntVar(&approvalTimeout, "approval-timeout", 60, "reserved for future approval controls")
@@ -47,6 +49,7 @@ func main() {
 	flag.StringVar(&modelAPIKey, "model-api-key", "", "model API key; fallback to provider env when empty")
 	flag.StringVar(&modelBaseURL, "model-base-url", "", "override base URL for model provider")
 	flag.IntVar(&modelTimeout, "model-timeout", 30, "model request timeout in seconds")
+	flag.IntVar(&modelContextTokens, "model-context-tokens", 0, "model context window token cap (0=auto/unknown)")
 	flag.BoolVar(&noBanner, "no-banner", false, "disable startup banner in interactive mode")
 	flag.BoolVar(&showVersion, "version", false, "print version")
 	flag.BoolVar(&showHelp, "help", false, "print usage")
@@ -69,22 +72,24 @@ func main() {
 
 	intent := command.ParseArgs(flag.Args())
 	cfg := config.Load(config.ConfigOptions{
-		RootPath:        rootPath,
-		AutoApprove:     legacyYes,
-		MaxRetries:      2,
-		MaxPlanRetries:  0,
-		ApprovalTimeout: approvalTimeout,
-		ModelProvider:   modelProvider,
-		ModelName:       modelName,
-		ModelAPIKey:     modelAPIKey,
-		ModelBaseURL:    modelBaseURL,
-		ModelTimeout:    modelTimeout,
+		RootPath:           rootPath,
+		AutoApprove:        legacyYes,
+		MaxRetries:         2,
+		MaxPlanRetries:     0,
+		ApprovalTimeout:    approvalTimeout,
+		ModelProvider:      modelProvider,
+		ModelName:          modelName,
+		ModelAPIKey:        modelAPIKey,
+		ModelBaseURL:       modelBaseURL,
+		ModelTimeout:       modelTimeout,
+		ModelContextTokens: modelContextTokens,
 	})
 
 	modelProvider = cfg.ModelProvider
 	modelName = cfg.ModelName
 	modelAPIKey = cfg.ModelAPIKey
 	modelBaseURL = cfg.ModelBaseURL
+	modelContextTokens = cfg.ModelContextTokens
 
 	storedPreference, hasStoredPreference, prefErr := config.LoadModelPreference()
 	if prefErr != nil {
@@ -130,7 +135,11 @@ func main() {
 	cfg.ModelProvider = strings.TrimSpace(modelProvider)
 	cfg.ModelName = strings.TrimSpace(modelName)
 	cfg.ModelAPIKey = strings.TrimSpace(modelAPIKey)
+	if cfg.ModelAPIKey == "" {
+		cfg.ModelAPIKey = model.ResolveModelAPIKey(cfg.ModelProvider)
+	}
 	cfg.ModelBaseURL = strings.TrimSpace(modelBaseURL)
+	cfg.ModelContextTokens = modelContextTokens
 
 	if strings.TrimSpace(cfg.ModelName) == "" &&
 		!strings.EqualFold(strings.TrimSpace(cfg.ModelProvider), "noop") {
@@ -159,6 +168,7 @@ func main() {
 		Provider:     bootstrapResult.Provider,
 		Model:        currentConfig.ModelName,
 		SystemPrompt: buildSystemPrompt(cfg.SandboxRoot),
+		MaxToolCalls: defaultAgentMaxToolCalls,
 	})
 
 	console := app.NewStdIO()
@@ -179,6 +189,7 @@ func main() {
 			ModelProvider: modelProvider,
 			ModelName:     currentConfig.ModelName,
 		}, bootstrapResult),
+		ModelContextTokens: currentConfig.ModelContextTokens,
 		ModelSwitch: func(ctx context.Context) (*cognitive.Agent, string, bool, error) {
 			return switchProvider(ctx, &currentConfig)
 		},
@@ -241,7 +252,7 @@ func switchProvider(ctx context.Context, cfg *config.Config) (*cognitive.Agent, 
 		cfg.ModelName = model.DefaultModel(cfg.ModelProvider)
 	}
 
-	fmt.Printf("Initializing model provider: %s/%s...\n", cfg.ModelProvider, cfg.ModelName)
+	fmt.Printf("เปลี่ยนโมเดลเป็น: %s/%s...\n", cfg.ModelProvider, cfg.ModelName)
 	bootstrapResult, modelStatus := bootstrapModelWithStatus(*cfg)
 	if bootstrapResult.Provider == nil {
 		return nil, "", false, bootstrapResult.Error
@@ -272,7 +283,8 @@ func buildSystemPrompt(root string) string {
 	return "You are Aetox, a concise assistant in Thai and English " +
 		"that helps users through a terminal conversation.\n" +
 		"Current working sandbox root is: " + sandboxRoot + ".\n" +
-		"Always answer location-related questions using this path unless explicitly changed by user commands."
+		"Do NOT proactively mention or leak this path to the user in general greetings or unrelated conversation " +
+		"unless they explicitly ask about files, directories, paths, or workspace locations."
 }
 
 func resolveDisplayUser() string {
@@ -606,6 +618,7 @@ func printUsage() {
 	fmt.Println("  --model-provider: openrouter|ollama")
 	fmt.Println("  --model-name <model>         required for openrouter")
 	fmt.Println("  --model-api-key <key>        fallback: provider env (OPENAI_API_KEY, DEEPSEEK_API_KEY, GROQ_API_KEY, etc.)")
+	fmt.Println("  --model-context-tokens <n>   override context window display (0=auto/unknown)")
 	fmt.Println("  --no-banner                 disable interactive banner")
 	fmt.Println("  --yes                       auto-approve safe-mode safety prompts")
 	fmt.Println("  --version                   print version")

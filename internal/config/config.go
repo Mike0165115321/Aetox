@@ -21,19 +21,21 @@ type Config struct {
 	ModelAPIKey        string
 	ModelBaseURL       string
 	ModelTimeoutSec    int
+	ModelContextTokens int
 }
 
 type ConfigOptions struct {
-	RootPath        string
-	AutoApprove     bool
-	MaxRetries      int
-	MaxPlanRetries  int
-	ApprovalTimeout int
-	ModelProvider   string
-	ModelName       string
-	ModelAPIKey     string
-	ModelBaseURL    string
-	ModelTimeout    int
+	RootPath           string
+	AutoApprove        bool
+	MaxRetries         int
+	MaxPlanRetries     int
+	ApprovalTimeout    int
+	ModelProvider      string
+	ModelName          string
+	ModelAPIKey        string
+	ModelBaseURL       string
+	ModelTimeout       int
+	ModelContextTokens int
 }
 
 type ModelPreference struct {
@@ -78,6 +80,10 @@ func Load(opt ConfigOptions) Config {
 	if modelTimeout <= 0 {
 		modelTimeout = 30
 	}
+	modelContextTokens := opt.ModelContextTokens
+	if modelContextTokens < 0 {
+		modelContextTokens = 0
+	}
 
 	return Config{
 		SandboxRoot:        root,
@@ -91,6 +97,7 @@ func Load(opt ConfigOptions) Config {
 		ModelAPIKey:        modelAPIKey,
 		ModelBaseURL:       baseURL,
 		ModelTimeoutSec:    modelTimeout,
+		ModelContextTokens: modelContextTokens,
 	}
 }
 

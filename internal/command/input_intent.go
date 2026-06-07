@@ -61,11 +61,7 @@ var colonMetaCommands = map[string]struct{}{
 var slashSuggestionCandidates = []string{
 	"model",
 	"help",
-	"h",
 	"exit",
-	"quit",
-	"bye",
-	"logout",
 }
 
 func SlashSuggestionCandidates() []string {

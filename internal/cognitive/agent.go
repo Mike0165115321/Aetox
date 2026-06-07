@@ -9,11 +9,16 @@ import (
 	"aetox-cli/internal/model"
 )
 
+const (
+	defaultMaxToolCalls = 4
+)
+
 type Agent struct {
-	provider  model.Provider
-	model     string
-	context   *memory.Context
-	lastUsage model.Usage
+	provider     model.Provider
+	model        string
+	context      *memory.Context
+	lastUsage    model.Usage
+	maxToolCalls int
 }
 
 type AgentConfig struct {
@@ -22,6 +27,7 @@ type AgentConfig struct {
 	SystemPrompt string
 	MaxTurns     int
 	MaxChars     int
+	MaxToolCalls int
 }
 
 func NewAgent(cfg AgentConfig) *Agent {
@@ -30,10 +36,96 @@ func NewAgent(cfg AgentConfig) *Agent {
 		systemPrompt = "You are Aetox, a concise and helpful terminal assistant."
 	}
 	return &Agent{
-		provider: cfg.Provider,
-		model:    cfg.Model,
-		context:  memory.NewContext(systemPrompt, cfg.MaxTurns, cfg.MaxChars),
+		provider:     cfg.Provider,
+		model:        cfg.Model,
+		lastUsage:    model.Usage{},
+		maxToolCalls: cfg.MaxToolCalls,
+		context:      memory.NewContext(systemPrompt, cfg.MaxTurns, cfg.MaxChars),
 	}
+}
+
+func (a *Agent) RespondWithTools(
+	ctx context.Context,
+	modelTools []model.ToolDefinition,
+	userMessage string,
+	execTool func(context.Context, model.ToolCall) (string, error),
+) (string, error) {
+	if len(modelTools) == 0 || execTool == nil || !a.supportsToolCalling() {
+		return a.Respond(ctx, userMessage)
+	}
+	if a.provider == nil {
+		return "", errors.New("agent provider is not initialized")
+	}
+	a.lastUsage = model.Usage{}
+	msg := strings.TrimSpace(userMessage)
+	if msg == "" {
+		return "", errors.New("input is empty")
+	}
+	a.context.Add(model.RoleUser, msg)
+
+	maxToolCalls := a.maxToolCalls
+	if maxToolCalls <= 0 {
+		maxToolCalls = defaultMaxToolCalls
+	}
+	for i := 0; i < maxToolCalls; i++ {
+		response, err := a.provider.Complete(ctx, model.Request{
+			Model:       a.model,
+			Messages:    a.context.Messages(),
+			MaxTokens:   768,
+			Temperature: 0.2,
+			Tools:       modelTools,
+			ToolChoice:  "auto",
+		})
+		if err != nil {
+			if i == 0 {
+				return a.Respond(ctx, msg)
+			}
+			return "", err
+		}
+		if response.Usage != nil {
+			a.lastUsage = *response.Usage
+		}
+
+		content := strings.TrimSpace(response.Text)
+		if len(response.ToolCalls) == 0 {
+			if content == "" {
+				content = "(empty response)"
+			}
+			a.context.Add(model.RoleAssistant, content)
+			return content, nil
+		}
+
+		for _, toolCall := range response.ToolCalls {
+			callOutput, toolErr := a.executeToolCall(ctx, toolCall, execTool)
+			a.context.AddMessage(model.Message{
+				Role:       model.RoleTool,
+				Name:       toolCall.Function.Name,
+				ToolCallID: toolCall.ID,
+				Content:    callOutput,
+			})
+			if toolErr != nil && content == "" {
+				// keep moving; model can decide whether to recover from this tool failure.
+				content = callOutput
+			}
+		}
+		if content != "" {
+			a.context.Add(model.RoleAssistant, content)
+		}
+	}
+
+	return "agent tool loop reached maximum iterations", nil
+}
+
+func (a *Agent) executeToolCall(ctx context.Context, toolCall model.ToolCall, execTool func(context.Context, model.ToolCall) (string, error)) (string, error) {
+	if strings.TrimSpace(toolCall.Function.Name) == "" {
+		return "tool-call-missing-name", errors.New("tool call missing function name")
+	}
+
+	output, err := execTool(ctx, toolCall)
+	if err != nil {
+		return output, err
+	}
+	return output, nil
 }
 
 func (a *Agent) Respond(ctx context.Context, userMessage string) (string, error) {
@@ -122,6 +214,11 @@ func (a *Agent) RespondStream(ctx context.Context, userMessage string, onChunk f
 	}
 	a.context.Add(model.RoleAssistant, reply)
 	return reply, false, nil
+}
+
+func (a *Agent) supportsToolCalling() bool {
+	provider, ok := a.provider.(interface{ SupportsToolCalling() bool })
+	return ok && provider.SupportsToolCalling()
 }
 
 func (a *Agent) ReplaceModel(provider model.Provider, modelName string) {

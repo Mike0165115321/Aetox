@@ -2,12 +2,15 @@ package skill
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
+
+	"aetox-cli/internal/model"
 )
 
 type listSkill struct {
@@ -17,7 +20,29 @@ type listSkill struct {
 func (*listSkill) Name() string { return "list" }
 
 func (*listSkill) Description() string {
-	return "แสดงรายชื่อไฟล์ใน sandbox root หรือ subpath"
+	return "List files in a sandbox subpath"
+}
+
+func (*listSkill) ToolDefinition() model.ToolDefinition {
+	schema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"path": map[string]any{
+				"type":        "string",
+				"description": "Relative path to list, defaults to root.",
+			},
+		},
+		"additionalProperties": false,
+	}
+	payload, _ := json.Marshal(schema)
+	return model.ToolDefinition{
+		Type: "function",
+		Function: model.ToolFunction{
+			Name:        "list",
+			Description: "List filenames in a sandbox folder.",
+			Parameters:  payload,
+		},
+	}
 }
 
 func (s *listSkill) Execute(_ context.Context, input Input) (Output, error) {
@@ -53,6 +78,21 @@ func (s *listSkill) Execute(_ context.Context, input Input) (Output, error) {
 		command = "list " + requestPath
 	}
 	return newToolOutput("list", command, output, start, truncated, nil), nil
+}
+
+func (s *listSkill) ExecuteTool(ctx context.Context, args map[string]any) (Output, error) {
+	requestPath := "."
+	if rawPath, ok := args["path"].(string); ok {
+		requestPath = strings.TrimSpace(rawPath)
+		if requestPath == "" {
+			requestPath = "."
+		}
+	}
+	params := []string{}
+	if requestPath != "." {
+		params = []string{requestPath}
+	}
+	return s.Execute(ctx, Input{"args": params})
 }
 
 func resolveSandboxPath(root string, requestPath string) (string, error) {

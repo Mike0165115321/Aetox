@@ -56,6 +56,10 @@ func (p *OpenRouterProvider) Name() string {
 	return "openrouter"
 }
 
+func (p *OpenRouterProvider) SupportsToolCalling() bool {
+	return true
+}
+
 func (p *OpenRouterProvider) Complete(ctx context.Context, req Request) (Response, error) {
 	if len(req.Messages) == 0 {
 		return Response{}, ErrNoMessages
@@ -67,15 +71,19 @@ func (p *OpenRouterProvider) Complete(ctx context.Context, req Request) (Respons
 	}
 
 	payload := struct {
-		Model       string    `json:"model"`
-		Messages    []Message `json:"messages"`
-		Temperature float64   `json:"temperature,omitempty"`
-		MaxTokens   int       `json:"max_tokens,omitempty"`
+		Model       string           `json:"model"`
+		Messages    []Message        `json:"messages"`
+		Temperature float64          `json:"temperature,omitempty"`
+		MaxTokens   int              `json:"max_tokens,omitempty"`
+		Tools       []ToolDefinition `json:"tools,omitempty"`
+		ToolChoice  string           `json:"tool_choice,omitempty"`
 	}{
 		Model:       model,
 		Messages:    req.Messages,
 		Temperature: req.Temperature,
 		MaxTokens:   req.MaxTokens,
+		Tools:       req.Tools,
+		ToolChoice:  req.ToolChoice,
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -111,7 +119,10 @@ func (p *OpenRouterProvider) Complete(ctx context.Context, req Request) (Respons
 
 	var parsed struct {
 		Choices []struct {
-			Message Message `json:"message"`
+			Message struct {
+				Message
+				ToolCalls []ToolCall `json:"tool_calls"`
+			} `json:"message"`
 		} `json:"choices"`
 		Model string `json:"model"`
 		Usage Usage  `json:"usage"`
@@ -122,16 +133,19 @@ func (p *OpenRouterProvider) Complete(ctx context.Context, req Request) (Respons
 	if len(parsed.Choices) == 0 {
 		return Response{}, fmt.Errorf("openrouter response has no choices")
 	}
-	text := strings.TrimSpace(parsed.Choices[0].Message.Content)
-	if text == "" {
+	rawMessage := parsed.Choices[0].Message.Message
+	rawMessage.ToolCalls = append(rawMessage.ToolCalls, parsed.Choices[0].Message.ToolCalls...)
+	text := strings.TrimSpace(rawMessage.Content)
+	if text == "" && len(rawMessage.ToolCalls) == 0 {
 		return Response{}, fmt.Errorf("openrouter response has empty text")
 	}
 
 	return Response{
-		Provider: p.Name(),
-		Model:    modelOr(parsed.Model, model),
-		Text:     text,
-		Usage:    normalizeUsage(parsed.Usage),
+		Provider:  p.Name(),
+		Model:     modelOr(parsed.Model, model),
+		Text:      text,
+		ToolCalls: rawMessage.ToolCalls,
+		Usage:     normalizeUsage(parsed.Usage),
 	}, nil
 }
 

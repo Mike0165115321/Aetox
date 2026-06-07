@@ -15,6 +15,7 @@ import (
 
 	"aetox-cli/internal/cognitive"
 	"aetox-cli/internal/command"
+	"aetox-cli/internal/model"
 	"aetox-cli/internal/skill"
 	"aetox-cli/internal/turn"
 )
@@ -40,17 +41,20 @@ type App struct {
 	turnExecutor    *turn.Executor
 	modelSwitcher   modelSwitcher
 
-	title       string
-	version     string
-	userInfo    string
-	modelStatus string
-	skillNames  []string
+	title              string
+	version            string
+	userInfo           string
+	modelStatus        string
+	modelContextTokens int
+	skillNames         []string
 }
 
 type modelSwitcher func(context.Context) (*cognitive.Agent, string, bool, error)
 
 type skillDispatcher interface {
 	Execute(ctx context.Context, input string) (skill.Output, bool, error)
+	ToolDefinitions() []model.ToolDefinition
+	ExecuteTool(ctx context.Context, name string, args map[string]any) (skill.Output, bool, error)
 }
 
 type describeSkills interface {
@@ -68,11 +72,12 @@ type Options struct {
 	ShowBanner  bool
 	AutoApprove bool
 
-	Title       string
-	Version     string
-	UserInfo    string
-	ModelStatus string
-	ModelSwitch func(context.Context) (*cognitive.Agent, string, bool, error)
+	Title              string
+	Version            string
+	UserInfo           string
+	ModelStatus        string
+	ModelContextTokens int
+	ModelSwitch        func(context.Context) (*cognitive.Agent, string, bool, error)
 }
 
 func NewApp(opts Options) (*App, error) {
@@ -91,18 +96,19 @@ func NewApp(opts Options) (*App, error) {
 
 	commandSet := buildCommandSetFromDispatcher(opts.Dispatcher)
 	a := &App{
-		agent:           opts.Agent,
-		console:         opts.Console,
-		skillDispatcher: opts.Dispatcher,
-		commandSet:      commandSet,
-		showBanner:      opts.ShowBanner,
-		autoApprove:     opts.AutoApprove,
-		modelSwitcher:   opts.ModelSwitch,
-		title:           strings.TrimSpace(opts.Title),
-		version:         strings.TrimSpace(opts.Version),
-		userInfo:        strings.TrimSpace(opts.UserInfo),
-		modelStatus:     strings.TrimSpace(opts.ModelStatus),
-		skillNames:      skillNames,
+		agent:              opts.Agent,
+		console:            opts.Console,
+		skillDispatcher:    opts.Dispatcher,
+		commandSet:         commandSet,
+		showBanner:         opts.ShowBanner,
+		autoApprove:        opts.AutoApprove,
+		modelSwitcher:      opts.ModelSwitch,
+		title:              strings.TrimSpace(opts.Title),
+		version:            strings.TrimSpace(opts.Version),
+		userInfo:           strings.TrimSpace(opts.UserInfo),
+		modelStatus:        strings.TrimSpace(opts.ModelStatus),
+		modelContextTokens: opts.ModelContextTokens,
+		skillNames:         skillNames,
 	}
 	a.turnExecutor = turn.NewExecutor(turn.ExecutorOptions{
 		Agent:      a.agent,
@@ -303,6 +309,12 @@ func (a *App) switchModel(ctx context.Context) error {
 	if strings.TrimSpace(status) != "" {
 		a.modelStatus = strings.TrimSpace(status)
 	}
+	a.turnExecutor = turn.NewExecutor(turn.ExecutorOptions{
+		Agent:      a.agent,
+		Dispatcher: a.skillDispatcher,
+		CommandSet: a.commandSet,
+		Approve:    a.confirmApproval,
+	})
 	return nil
 }
 
@@ -489,25 +501,20 @@ func (a *App) getContextStatusLine() string {
 	if a.agent == nil {
 		return ""
 	}
-
-	usage := a.agent.LastUsage()
-	if usage.TotalTokenCount() > 0 {
-		_, _, maxChars := a.agent.ContextUsage()
-		maxTokens := 0
-		if maxChars > 0 {
-			maxTokens = (maxChars + 3) / 4
-		}
-		if maxTokens > 0 {
-			return fmt.Sprintf("context %d/%d tokens", usage.TotalTokenCount(), maxTokens)
-		}
-		return fmt.Sprintf("context %d tokens", usage.TotalTokenCount())
-	}
+	contextLimit := a.modelContextTokens
 
 	_, usedChars, maxChars := a.agent.ContextUsage()
-	if maxChars <= 0 {
-		return ""
+	usedTokens := (usedChars + 3) / 4
+	if maxChars <= 0 && contextLimit <= 0 {
+		return fmt.Sprintf("context %d tokens", usedTokens)
 	}
-	return fmt.Sprintf("context %d/%d tokens", (usedChars+3)/4, (maxChars+3)/4)
+	if contextLimit > 0 {
+		return fmt.Sprintf("context %d/%d tokens", usedTokens, contextLimit)
+	}
+	if maxChars > 0 {
+		return fmt.Sprintf("context %d tokens", usedTokens)
+	}
+	return fmt.Sprintf("context %d tokens", usedTokens)
 }
 
 func (a *App) printSeparator() {

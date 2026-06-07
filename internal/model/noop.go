@@ -18,6 +18,10 @@ func (p *NoopProvider) Name() string {
 	return "noop"
 }
 
+func (p *NoopProvider) SupportsToolCalling() bool {
+	return false
+}
+
 func (p *NoopProvider) Complete(_ context.Context, req Request) (Response, error) {
 	if len(req.Messages) == 0 {
 		return Response{}, ErrNoMessages
@@ -43,4 +47,3 @@ func (p *NoopProvider) Complete(_ context.Context, req Request) (Response, error
 		Text:     fmt.Sprintf("[noop:%s] %s", model, text),
 	}, nil
 }
-

@@ -114,3 +114,66 @@ func TestOpenRouterProviderCompleteHTTPError(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestOpenRouterProviderCompleteToolCallWithoutText(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("expected POST request, got %s", r.Method)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"model": "remote/model",
+			"choices": [
+				{
+					"message": {
+						"role": "assistant",
+						"content": "",
+						"tool_calls": [
+							{
+								"id": "call_time_1",
+								"type": "function",
+								"function": {
+									"name": "time",
+									"arguments": "{}"
+								}
+							}
+						]
+					}
+				}
+			],
+			"usage": {
+				"prompt_tokens": 12,
+				"completion_tokens": 16,
+				"total_tokens": 28
+			}
+		}`))
+	}))
+	defer server.Close()
+
+	provider, err := NewOpenRouterProvider(OpenRouterConfig{
+		Model:   "my-model",
+		APIKey:  "k",
+		BaseURL: server.URL,
+	})
+	if err != nil {
+		t.Fatalf("new provider failed: %v", err)
+	}
+
+	response, err := provider.Complete(context.Background(), Request{
+		Messages: []Message{
+			{Role: RoleUser, Content: "what time"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("complete failed: %v", err)
+	}
+	if len(response.ToolCalls) != 1 {
+		t.Fatalf("expected one tool call, got %d", len(response.ToolCalls))
+	}
+	if response.ToolCalls[0].Function.Name != "time" {
+		t.Fatalf("unexpected tool name: %s", response.ToolCalls[0].Function.Name)
+	}
+	if response.Text != "" {
+		t.Fatalf("expected empty text for pure tool call, got %q", response.Text)
+	}
+}

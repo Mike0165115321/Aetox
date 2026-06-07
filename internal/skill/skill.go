@@ -1,6 +1,7 @@
 package skill
 
 import (
+	"aetox-cli/internal/model"
 	"context"
 )
 
@@ -22,6 +23,12 @@ type Skill interface {
 	Name() string
 	Description() string
 	Execute(ctx context.Context, input Input) (Output, error)
+}
+
+type Tool interface {
+	Skill
+	ToolDefinition() model.ToolDefinition
+	ExecuteTool(ctx context.Context, args map[string]any) (Output, error)
 }
 
 type Registry struct {

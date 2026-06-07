@@ -94,6 +94,10 @@ func (p *OpenAICompatibleProvider) Name() string {
 	return p.provider
 }
 
+func (p *OpenAICompatibleProvider) SupportsToolCalling() bool {
+	return true
+}
+
 func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (Response, error) {
 	if len(req.Messages) == 0 {
 		return Response{}, ErrNoMessages
@@ -105,15 +109,19 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 	}
 
 	payload := struct {
-		Model       string    `json:"model"`
-		Messages    []Message `json:"messages"`
-		Temperature float64   `json:"temperature,omitempty"`
-		MaxTokens   int       `json:"max_tokens,omitempty"`
+		Model       string           `json:"model"`
+		Messages    []Message        `json:"messages"`
+		Temperature float64          `json:"temperature,omitempty"`
+		MaxTokens   int              `json:"max_tokens,omitempty"`
+		Tools       []ToolDefinition `json:"tools,omitempty"`
+		ToolChoice  string           `json:"tool_choice,omitempty"`
 	}{
 		Model:       model,
 		Messages:    req.Messages,
 		Temperature: req.Temperature,
 		MaxTokens:   req.MaxTokens,
+		Tools:       req.Tools,
+		ToolChoice:  req.ToolChoice,
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -152,7 +160,10 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 
 	var parsed struct {
 		Choices []struct {
-			Message Message `json:"message"`
+			Message struct {
+				Message
+				ToolCalls []ToolCall `json:"tool_calls"`
+			} `json:"message"`
 		} `json:"choices"`
 		Model string `json:"model"`
 		Usage Usage  `json:"usage"`
@@ -164,16 +175,19 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 		return Response{}, fmt.Errorf("%s response has no choices", p.provider)
 	}
 
-	text := strings.TrimSpace(parsed.Choices[0].Message.Content)
-	if text == "" {
+	rawMessage := parsed.Choices[0].Message.Message
+	rawMessage.ToolCalls = append(rawMessage.ToolCalls, parsed.Choices[0].Message.ToolCalls...)
+	text := strings.TrimSpace(rawMessage.Content)
+	if text == "" && len(rawMessage.ToolCalls) == 0 {
 		return Response{}, fmt.Errorf("%s response has empty text", p.provider)
 	}
 
 	return Response{
-		Provider: p.Name(),
-		Model:    modelOr(parsed.Model, model),
-		Text:     text,
-		Usage:    normalizeUsage(parsed.Usage),
+		Provider:  p.Name(),
+		Model:     modelOr(parsed.Model, model),
+		Text:      text,
+		ToolCalls: rawMessage.ToolCalls,
+		Usage:     normalizeUsage(parsed.Usage),
 	}, nil
 }
 
@@ -187,16 +201,20 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 		model = p.model
 	}
 	payload := struct {
-		Model       string    `json:"model"`
-		Messages    []Message `json:"messages"`
-		Temperature float64   `json:"temperature,omitempty"`
-		MaxTokens   int       `json:"max_tokens,omitempty"`
-		Stream      bool      `json:"stream"`
+		Model       string           `json:"model"`
+		Messages    []Message        `json:"messages"`
+		Temperature float64          `json:"temperature,omitempty"`
+		MaxTokens   int              `json:"max_tokens,omitempty"`
+		Tools       []ToolDefinition `json:"tools,omitempty"`
+		ToolChoice  string           `json:"tool_choice,omitempty"`
+		Stream      bool             `json:"stream"`
 	}{
 		Model:       model,
 		Messages:    req.Messages,
 		Temperature: req.Temperature,
 		MaxTokens:   req.MaxTokens,
+		Tools:       req.Tools,
+		ToolChoice:  req.ToolChoice,
 		Stream:      true,
 	}
 
@@ -252,7 +270,8 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 		var parsed struct {
 			Choices []struct {
 				Delta struct {
-					Content string `json:"content"`
+					Content   string     `json:"content"`
+					ToolCalls []ToolCall `json:"tool_calls"`
 				} `json:"delta"`
 			} `json:"choices"`
 			Model string `json:"model"`

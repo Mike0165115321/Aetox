@@ -2,7 +2,9 @@ package model
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 )
 
 var (
@@ -17,25 +19,57 @@ const (
 	RoleSystem    MessageRole = "system"
 	RoleUser      MessageRole = "user"
 	RoleAssistant MessageRole = "assistant"
+	RoleTool      MessageRole = "tool"
 )
 
 type Message struct {
 	Role    MessageRole `json:"role"`
 	Content string      `json:"content"`
+	Name    string      `json:"name,omitempty"`
+	// ToolCallID is used when returning tool outputs to providers that implement
+	// function/tool calling APIs.
+	ToolCallID string `json:"tool_call_id,omitempty"`
+	// ToolCalls follows the OpenAI-compatible function-call field.
+	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
+}
+
+type ToolFunction struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Parameters  json.RawMessage `json:"parameters"`
+}
+
+type ToolDefinition struct {
+	Type     string       `json:"type"`
+	Function ToolFunction `json:"function"`
+}
+
+type FunctionCall struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+type ToolCall struct {
+	ID       string       `json:"id"`
+	Type     string       `json:"type"`
+	Function FunctionCall `json:"function"`
 }
 
 type Request struct {
-	Model       string    `json:"-"`
-	Messages    []Message `json:"messages"`
-	Temperature float64   `json:"temperature,omitempty"`
-	MaxTokens   int       `json:"max_tokens,omitempty"`
+	Model       string           `json:"-"`
+	Messages    []Message        `json:"messages"`
+	Temperature float64          `json:"temperature,omitempty"`
+	MaxTokens   int              `json:"max_tokens,omitempty"`
+	Tools       []ToolDefinition `json:"tools,omitempty"`
+	ToolChoice  string           `json:"tool_choice,omitempty"`
 }
 
 type Response struct {
-	Provider string
-	Model    string
-	Text     string
-	Usage    *Usage
+	Provider  string
+	Model     string
+	Text      string
+	Usage     *Usage
+	ToolCalls []ToolCall
 }
 
 type Usage struct {
@@ -69,6 +103,19 @@ func normalizeUsage(usage Usage) *Usage {
 		TotalTokens:      usage.TotalTokenCount(),
 	}
 	return &normalized
+}
+
+func ParseToolArguments(raw string) (map[string]any, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return map[string]any{}, nil
+	}
+
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		return nil, err
+	}
+	return parsed, nil
 }
 
 func maxInt(a, b int) int {
