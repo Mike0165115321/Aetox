@@ -30,6 +30,8 @@ var (
 )
 
 func main() {
+	setUTF8Console()
+
 	var rootPath string
 	var approvalTimeout int
 	var modelProvider string
@@ -40,7 +42,7 @@ func main() {
 
 	flag.StringVar(&rootPath, "root", "", "optional sandbox root directory (default: current directory)")
 	flag.IntVar(&approvalTimeout, "approval-timeout", 60, "reserved for future approval controls")
-	flag.StringVar(&modelProvider, "model-provider", "", "model provider (noop|openrouter|openai|deepseek|groq|mistral|together|perplexity|cohere|lmstudio|localai|ollama)")
+	flag.StringVar(&modelProvider, "model-provider", "", "model provider (openrouter|ollama)")
 	flag.StringVar(&modelName, "model-name", "", "model name (required for selected provider)")
 	flag.StringVar(&modelAPIKey, "model-api-key", "", "model API key; fallback to provider env when empty")
 	flag.StringVar(&modelBaseURL, "model-base-url", "", "override base URL for model provider")
@@ -154,8 +156,8 @@ func main() {
 	}
 
 	agent := cognitive.NewAgent(cognitive.AgentConfig{
-		Provider: bootstrapResult.Provider,
-		Model:    currentConfig.ModelName,
+		Provider:     bootstrapResult.Provider,
+		Model:        currentConfig.ModelName,
 		SystemPrompt: buildSystemPrompt(cfg.SandboxRoot),
 	})
 
@@ -177,9 +179,9 @@ func main() {
 			ModelProvider: modelProvider,
 			ModelName:     currentConfig.ModelName,
 		}, bootstrapResult),
-	ModelSwitch: func(ctx context.Context) (*cognitive.Agent, string, bool, error) {
-		return switchProvider(ctx, &currentConfig)
-	},
+		ModelSwitch: func(ctx context.Context) (*cognitive.Agent, string, bool, error) {
+			return switchProvider(ctx, &currentConfig)
+		},
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "runtime init failed: %v\n", err)
@@ -256,8 +258,8 @@ func switchProvider(ctx context.Context, cfg *config.Config) (*cognitive.Agent, 
 	}
 
 	return cognitive.NewAgent(cognitive.AgentConfig{
-		Provider: bootstrapResult.Provider,
-		Model:    cfg.ModelName,
+		Provider:     bootstrapResult.Provider,
+		Model:        cfg.ModelName,
 		SystemPrompt: buildSystemPrompt(cfg.SandboxRoot),
 	}), modelStatus, true, nil
 }
@@ -332,14 +334,11 @@ func promptModelSelection(cfg config.Config) (string, string, string, string, bo
 	}
 
 	for {
-		idx, ok := pickFromMenu(reader, "No model provider configured. Select now, or press Enter to keep local AI mode.", providerOptions, 0, "Use ↑/↓ then Enter. No key entry.")
+		idx, ok := pickFromMenu(reader, "No model provider configured. Select one.", providerOptions, 0, "Use ↑/↓ then Enter.")
 		if !ok {
-			return "noop", "", "", cfg.ModelBaseURL, false
+			return providers[0], model.DefaultModel(providers[0]), "", cfg.ModelBaseURL, false
 		}
 		provider := providers[idx]
-		if provider == "noop" {
-			return provider, "", "", cfg.ModelBaseURL, true
-		}
 
 		selectedModel := pickModelForProvider(reader, provider, cfg.ModelName, cfg.ModelBaseURL)
 		fmt.Printf("Selected: %s / %s\n\n", provider, selectedModel)
@@ -604,7 +603,7 @@ func printUsage() {
 	fmt.Println("  aetox                    interactive mode")
 	fmt.Println("  aetox help               show this help")
 	fmt.Println("Flags:")
-	fmt.Println("  --model-provider: noop|openrouter|openai|deepseek|groq|mistral|together|perplexity|cohere|lmstudio|localai|ollama")
+	fmt.Println("  --model-provider: openrouter|ollama")
 	fmt.Println("  --model-name <model>         required for openrouter")
 	fmt.Println("  --model-api-key <key>        fallback: provider env (OPENAI_API_KEY, DEEPSEEK_API_KEY, GROQ_API_KEY, etc.)")
 	fmt.Println("  --no-banner                 disable interactive banner")

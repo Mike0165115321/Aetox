@@ -114,6 +114,7 @@ func (p *OpenRouterProvider) Complete(ctx context.Context, req Request) (Respons
 			Message Message `json:"message"`
 		} `json:"choices"`
 		Model string `json:"model"`
+		Usage Usage  `json:"usage"`
 	}
 	if err := json.Unmarshal(responseBody, &parsed); err != nil {
 		return Response{}, fmt.Errorf("failed to parse openrouter response: %w", err)
@@ -130,6 +131,7 @@ func (p *OpenRouterProvider) Complete(ctx context.Context, req Request) (Respons
 		Provider: p.Name(),
 		Model:    modelOr(parsed.Model, model),
 		Text:     text,
+		Usage:    normalizeUsage(parsed.Usage),
 	}, nil
 }
 

@@ -181,7 +181,8 @@ func (a *App) RunInteractive(ctx context.Context) error {
 		}
 
 		if intent.IsSlash && intent.Kind == command.KindConversation && intent.Command != "" && !intent.IsMeta {
-			a.console.Println("ไม่รู้จัก slash command นี้ ใช้ / เพื่อดูคำสั่ง หรือพิมพ์ชื่อ skill โดยตรง")
+			a.console.Println("ไม่รู้จักคำสั่ง /" + intent.Command)
+			a.console.Println("พิมพ์ / เพื่อดูคำสั่งทั้งหมด")
 			a.showSlashHelp()
 			a.printSeparator()
 			a.printStatusBar()
@@ -200,6 +201,7 @@ func (a *App) RunInteractive(ctx context.Context) error {
 		if intent.Kind == command.KindConversation {
 			stopThinking = a.startThinkingIndicator("กำลังคิด...", ansiBrandBright, ansiSubtle)
 		} else if intent.Kind == command.KindSkill {
+			a.console.Println(ansiBrandBright + "Aetox: " + ansiReset + "กำลังทำงานเครื่องมือ...")
 			stopThinking = a.startThinkingIndicator("กำลังรัน...", ansiBrandBright, ansiSubtle)
 		}
 
@@ -260,20 +262,10 @@ func (a *App) RunInteractive(ctx context.Context) error {
 }
 
 func (a *App) showSlashHelp() {
-	a.console.Println("คำสั่งที่ใช้กับ / :")
-	a.console.Println("  /model    เลือกโมเดล/provider ที่ใช้ทำงาน")
-	a.console.Println("  /help (/h) แสดงคำสั่ง slash และ skill ทั้งหมด")
-	a.console.Println("  /exit, /quit, /bye, /logout  ออกจากเซสชัน")
-	a.console.Println("  :help     แสดงเคล็ดลับการใช้งานแบบย่อ")
-	a.console.Println("  :clear    ล้าง context ของการสนทนา")
-	a.console.Println("")
-	a.console.Println("สกิล:")
-	a.printAvailableSkills()
-	a.console.Println("")
-	a.console.Println("สัญญาการทำงาน:")
-	a.console.Println("  - พิมพ์ข้อความสนทนา: ตอบแบบสตรีมทันที")
-	a.console.Println("  - พิมพ์ skill: รันให้เสร็จก่อน แล้วค่อยสรุปผล")
-	a.console.Println("  - สถานะ: executed (done) | executed (error) | executed (blocked)")
+	a.console.Println("Slash commands:")
+	a.console.Println("  /model        เปลี่ยนโมเดล/provider")
+	a.console.Println("  /help (/h)    แสดงความช่วยเหลือโดยย่อ")
+	a.console.Println("  /exit         ออกจากโปรแกรม")
 }
 
 func (a *App) runCommand(ctx context.Context, line string) (string, error) {
@@ -393,7 +385,7 @@ func (a *App) startThinkingIndicator(message, color, fallbackColor string) func(
 
 	stopped := make(chan struct{})
 	finished := make(chan struct{})
-	
+
 	baseMsg := strings.TrimRight(strings.TrimSpace(message), ".")
 	if baseMsg == "" {
 		baseMsg = "กำลังคิด"
@@ -411,13 +403,13 @@ func (a *App) startThinkingIndicator(message, color, fallbackColor string) func(
 				return
 			default:
 			}
-			
+
 			dots := strings.Repeat(".", (i/3)%4)
 			padding := strings.Repeat(" ", 3-(i/3)%4)
-			
+
 			a.console.Print(ansiEraseLine + color + frames[i%len(frames)] + " " + fallbackColor + baseMsg + dots + padding + ansiReset)
 			i++
-			
+
 			select {
 			case <-ticker.C:
 			case <-stopped:
@@ -464,17 +456,17 @@ func (a *App) PrintBanner() {
 	a.console.Println("")
 	a.console.Println("")
 	a.console.Println(ansiBrandDark + "      █████╗ ███████╗████████╗ ██████╗ ██╗  ██╗" + ansiReset)
-	a.console.Println(ansiBrandMid + "     ██╔══██╗██╔════╝╚══██╔══╝██╔═══██╗██║  ██║" + ansiReset)
-	a.console.Println(ansiBrandLight + "     ███████║█████╗     ██║   ██║   ██║╚██╗██╔╝" + ansiReset)
-	a.console.Println(ansiBrandBright + "     ██╔══██║██╔══╝     ██║   ██║   ██║ ╚███╔╝ " + ansiReset)
-	a.console.Println(ansiBrandMid + "     ██║  ██║███████╗   ██║   ╚██████╔╝  ╚███╔╝ " + ansiReset)
-	a.console.Println(ansiBrandDark + "     ╚═╝  ╚═╝╚══════╝   ╚═╝    ╚═════╝    ╚═╝  " + ansiReset)
+	a.console.Println(ansiBrandMid + "     ██╔══██╗██╔════╝╚══██╔══╝██╔═══██╗╚██╗██╔╝" + ansiReset)
+	a.console.Println(ansiBrandLight + "     ███████║█████╗     ██║   ██║   ██║ ╚███╔╝ " + ansiReset)
+	a.console.Println(ansiBrandBright + "     ██╔══██║██╔══╝     ██║   ██║   ██║ ██╔██╗ " + ansiReset)
+	a.console.Println(ansiBrandMid + "     ██║  ██║███████╗   ██║   ╚██████╔╝██╔╝╚██╗" + ansiReset)
+	a.console.Println(ansiBrandDark + "     ╚═╝  ╚═╝╚══════╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝" + ansiReset)
 	a.console.Println("")
 	a.console.Println("")
 	a.console.Println(ansiBrandBright + "         Aetox " + ansiText + "CLI" + ansiReset)
 	a.console.Println("")
 	a.console.Println(ansiSubtle + "  User: " + ansiText + a.userInfoLine() + ansiReset)
-	a.console.Println(ansiSubtle + "  Model: " + ansiText + a.modelStatus + ansiReset)
+	a.console.Println(ansiSubtle + "  Model: " + ansiText + a.getModelStatusLine() + ansiReset)
 	a.console.Println("")
 	a.console.Println(ansiReset)
 }
@@ -486,10 +478,36 @@ func (a *App) userInfoLine() string {
 }
 
 func (a *App) getModelStatusLine() string {
-	if a.modelStatus == "" {
-		return "noop (local)"
+	status := strings.TrimSpace(a.modelStatus)
+	if status == "" {
+		status = "noop (local)"
 	}
-	return a.modelStatus
+	return status
+}
+
+func (a *App) getContextStatusLine() string {
+	if a.agent == nil {
+		return ""
+	}
+
+	usage := a.agent.LastUsage()
+	if usage.TotalTokenCount() > 0 {
+		_, _, maxChars := a.agent.ContextUsage()
+		maxTokens := 0
+		if maxChars > 0 {
+			maxTokens = (maxChars + 3) / 4
+		}
+		if maxTokens > 0 {
+			return fmt.Sprintf("context %d/%d tokens", usage.TotalTokenCount(), maxTokens)
+		}
+		return fmt.Sprintf("context %d tokens", usage.TotalTokenCount())
+	}
+
+	_, usedChars, maxChars := a.agent.ContextUsage()
+	if maxChars <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("context %d/%d tokens", (usedChars+3)/4, (maxChars+3)/4)
 }
 
 func (a *App) printSeparator() {
@@ -498,17 +516,21 @@ func (a *App) printSeparator() {
 
 func (a *App) printStatusBar() {
 	left := "Aetox CLI"
-	right := a.getModelStatusLine()
+	right := a.getContextStatusLine()
 	padding := 100 - utf8.RuneCountInString(left) - utf8.RuneCountInString(right)
 	if padding < 1 {
 		padding = 1
 	}
-	a.console.Println(ansiSubtle + left + ansiReset + strings.Repeat(" ", padding) + ansiText + right + ansiReset)
+	line := ansiSubtle + left + ansiReset
+	if right != "" {
+		line += strings.Repeat(" ", padding) + ansiText + right + ansiReset
+	}
+	a.console.Println(line)
 }
 
 func (a *App) showSkillPalette(ctx context.Context) error {
 	a.showSlashHelp()
-		_, handled, err := a.dispatchBySkill(ctx, "help")
+	_, handled, err := a.dispatchBySkill(ctx, "help")
 	if err != nil {
 		a.console.Println("คำสั่งล้มเหลว: " + err.Error())
 		return nil

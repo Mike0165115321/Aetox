@@ -191,16 +191,7 @@ var providerCatalog = map[string]providerCatalogEntry{
 }
 
 var canonicalProviderOrder = []string{
-	"noop",
 	"openrouter",
-	"openai",
-	"deepseek",
-	"groq",
-	"mistral",
-	"together",
-	"perplexity",
-	"cohere",
-	"lmstudio",
 	"ollama",
 }
 
@@ -303,16 +294,13 @@ func ModelChoicesWithEndpoint(provider string, baseURL string) ([]string, error)
 	}
 }
 
-func ResolveStatus(provider, model string, bootstrapErr error) string {
+func ResolveStatus(provider, model string, _ error) string {
 	canonical := NormalizeProvider(provider)
 	if canonical == "" {
 		canonical = "noop"
 	}
 	label := resolveStatusModelLabel(canonical, strings.TrimSpace(model))
 	status := canonical + "/" + label
-	if bootstrapErr != nil {
-		return status + " (fallback: noop)"
-	}
 	return status
 }
 

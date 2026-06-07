@@ -1,8 +1,8 @@
 package memory
 
 import (
-	"strings"
 	"strconv"
+	"strings"
 
 	"aetox-cli/internal/model"
 )
@@ -126,6 +126,13 @@ func totalChars(messages []model.Message) int {
 		total += len(message.Content)
 	}
 	return total
+}
+
+func (c *Context) UsageStats() (messageCount int, usedChars int, maxChars int) {
+	if c == nil {
+		return 0, 0, 0
+	}
+	return len(c.messages), totalChars(c.messages), c.maxChars
 }
 
 func formatTurnCount(messages int) string {

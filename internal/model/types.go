@@ -35,6 +35,47 @@ type Response struct {
 	Provider string
 	Model    string
 	Text     string
+	Usage    *Usage
+}
+
+type Usage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+}
+
+func (u Usage) TotalTokenCount() int {
+	if u.TotalTokens > 0 {
+		return u.TotalTokens
+	}
+	prompt := u.PromptTokens
+	completion := u.CompletionTokens
+	if prompt < 0 {
+		prompt = 0
+	}
+	if completion < 0 {
+		completion = 0
+	}
+	return prompt + completion
+}
+
+func normalizeUsage(usage Usage) *Usage {
+	if usage.TotalTokenCount() <= 0 && usage.PromptTokens <= 0 && usage.CompletionTokens <= 0 {
+		return nil
+	}
+	normalized := Usage{
+		PromptTokens:     maxInt(0, usage.PromptTokens),
+		CompletionTokens: maxInt(0, usage.CompletionTokens),
+		TotalTokens:      usage.TotalTokenCount(),
+	}
+	return &normalized
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 type Provider interface {

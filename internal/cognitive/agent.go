@@ -10,9 +10,10 @@ import (
 )
 
 type Agent struct {
-	provider model.Provider
-	model    string
-	context  *memory.Context
+	provider  model.Provider
+	model     string
+	context   *memory.Context
+	lastUsage model.Usage
 }
 
 type AgentConfig struct {
@@ -39,6 +40,7 @@ func (a *Agent) Respond(ctx context.Context, userMessage string) (string, error)
 	if a.provider == nil {
 		return "", errors.New("agent provider is not initialized")
 	}
+	a.lastUsage = model.Usage{}
 	msg := strings.TrimSpace(userMessage)
 	if msg == "" {
 		return "", errors.New("input is empty")
@@ -60,6 +62,10 @@ func (a *Agent) Respond(ctx context.Context, userMessage string) (string, error)
 	if reply == "" {
 		return "(empty response)", nil
 	}
+	a.lastUsage = model.Usage{}
+	if response.Usage != nil {
+		a.lastUsage = *response.Usage
+	}
 
 	a.context.Add(model.RoleAssistant, reply)
 	return reply, nil
@@ -69,6 +75,7 @@ func (a *Agent) RespondStream(ctx context.Context, userMessage string, onChunk f
 	if a.provider == nil {
 		return "", false, errors.New("agent provider is not initialized")
 	}
+	a.lastUsage = model.Usage{}
 	msg := strings.TrimSpace(userMessage)
 	if msg == "" {
 		return "", false, errors.New("input is empty")
@@ -90,6 +97,10 @@ func (a *Agent) RespondStream(ctx context.Context, userMessage string, onChunk f
 			if reply == "" {
 				reply = "(empty response)"
 			}
+			a.lastUsage = model.Usage{}
+			if response.Usage != nil {
+				a.lastUsage = *response.Usage
+			}
 			a.context.Add(model.RoleAssistant, reply)
 			return reply, true, nil
 		}
@@ -104,6 +115,10 @@ func (a *Agent) RespondStream(ctx context.Context, userMessage string, onChunk f
 	reply := strings.TrimSpace(response.Text)
 	if reply == "" {
 		return "(empty response)", false, nil
+	}
+	a.lastUsage = model.Usage{}
+	if response.Usage != nil {
+		a.lastUsage = *response.Usage
 	}
 	a.context.Add(model.RoleAssistant, reply)
 	return reply, false, nil
@@ -126,4 +141,16 @@ func (a *Agent) ClearContext() {
 		systemPrompt = messages[0].Content
 	}
 	a.context.Reset(systemPrompt)
+	a.lastUsage = model.Usage{}
+}
+
+func (a *Agent) ContextUsage() (messageCount int, usedChars int, maxChars int) {
+	if a == nil || a.context == nil {
+		return 0, 0, 0
+	}
+	return a.context.UsageStats()
+}
+
+func (a *Agent) LastUsage() model.Usage {
+	return a.lastUsage
 }

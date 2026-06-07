@@ -45,7 +45,12 @@ func TestOpenRouterProviderComplete(t *testing.T) {
 			"model": "remote/model",
 			"choices": [
 				{"message": {"role":"assistant", "content":"hello from model"}}
-			]
+			],
+			"usage": {
+				"prompt_tokens": 22,
+				"completion_tokens": 8,
+				"total_tokens": 30
+			}
 		}`))
 	}))
 	defer server.Close()
@@ -75,6 +80,9 @@ func TestOpenRouterProviderComplete(t *testing.T) {
 	}
 	if response.Text != "hello from model" {
 		t.Fatalf("unexpected text: %s", response.Text)
+	}
+	if response.Usage == nil || response.Usage.TotalTokens != 30 {
+		t.Fatalf("expected usage, got %+v", response.Usage)
 	}
 }
 
@@ -106,4 +114,3 @@ func TestOpenRouterProviderCompleteHTTPError(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
-

@@ -99,11 +99,13 @@ func (p *OllamaProvider) Complete(ctx context.Context, req Request) (Response, e
 	}
 
 	var parsed struct {
-		Model    string  `json:"model"`
-		Message  Message `json:"message"`
-		Response string  `json:"response"`
-		Done     bool    `json:"done"`
-		Error    string  `json:"error"`
+		Model            string  `json:"model"`
+		Message          Message `json:"message"`
+		Response         string  `json:"response"`
+		Done             bool    `json:"done"`
+		Error            string  `json:"error"`
+		PromptTokens     int     `json:"prompt_eval_count"`
+		CompletionTokens int     `json:"eval_count"`
 	}
 	if err := json.Unmarshal(responseBody, &parsed); err != nil {
 		return Response{}, fmt.Errorf("ollama response parse failed: %w", err)
@@ -127,6 +129,7 @@ func (p *OllamaProvider) Complete(ctx context.Context, req Request) (Response, e
 		Provider: p.Name(),
 		Model:    modelOr(parsed.Model, model),
 		Text:     reply,
+		Usage:    normalizeUsage(Usage{PromptTokens: parsed.PromptTokens, CompletionTokens: parsed.CompletionTokens}),
 	}, nil
 }
 
@@ -178,17 +181,20 @@ func (p *OllamaProvider) StreamComplete(ctx context.Context, req Request, onChun
 
 	scanner := bufio.NewScanner(httpResp.Body)
 	var builder strings.Builder
+	var lastUsage *Usage
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
 			continue
 		}
 		var parsed struct {
-			Model    string  `json:"model"`
-			Message  Message `json:"message"`
-			Response string  `json:"response"`
-			Done     bool    `json:"done"`
-			Error    string  `json:"error"`
+			Model            string  `json:"model"`
+			Message          Message `json:"message"`
+			Response         string  `json:"response"`
+			Done             bool    `json:"done"`
+			Error            string  `json:"error"`
+			PromptTokens     int     `json:"prompt_eval_count"`
+			CompletionTokens int     `json:"eval_count"`
 		}
 		if err := json.Unmarshal([]byte(line), &parsed); err != nil {
 			return Response{}, fmt.Errorf("ollama stream parse failed: %w", err)
@@ -208,6 +214,15 @@ func (p *OllamaProvider) StreamComplete(ctx context.Context, req Request, onChun
 				}
 			}
 		}
+		lastPromptTokens := maxInt(0, parsed.PromptTokens)
+		lastCompletionTokens := maxInt(0, parsed.CompletionTokens)
+		if parsed.PromptTokens > 0 || parsed.CompletionTokens > 0 {
+			lastUsage = &Usage{
+				PromptTokens:     lastPromptTokens,
+				CompletionTokens: lastCompletionTokens,
+				TotalTokens:      lastPromptTokens + lastCompletionTokens,
+			}
+		}
 		if parsed.Done {
 			break
 		}
@@ -225,5 +240,6 @@ func (p *OllamaProvider) StreamComplete(ctx context.Context, req Request, onChun
 		Provider: p.Name(),
 		Model:    model,
 		Text:     reply,
+		Usage:    lastUsage,
 	}, nil
 }

@@ -155,6 +155,7 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 			Message Message `json:"message"`
 		} `json:"choices"`
 		Model string `json:"model"`
+		Usage Usage  `json:"usage"`
 	}
 	if err := json.Unmarshal(responseBody, &parsed); err != nil {
 		return Response{}, fmt.Errorf("%s response parse failed: %w", p.provider, err)
@@ -172,6 +173,7 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 		Provider: p.Name(),
 		Model:    modelOr(parsed.Model, model),
 		Text:     text,
+		Usage:    normalizeUsage(parsed.Usage),
 	}, nil
 }
 
@@ -234,6 +236,7 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 
 	scanner := bufio.NewScanner(httpResp.Body)
 	var builder strings.Builder
+	var lastUsage *Usage
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
@@ -253,6 +256,7 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 				} `json:"delta"`
 			} `json:"choices"`
 			Model string `json:"model"`
+			Usage Usage  `json:"usage"`
 		}
 		if err := json.Unmarshal([]byte(data), &parsed); err != nil {
 			return Response{}, fmt.Errorf("%s stream parse failed: %w", p.provider, err)
@@ -270,6 +274,9 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 				return Response{}, err
 			}
 		}
+		if parsed.Usage.TotalTokenCount() > 0 {
+			lastUsage = normalizeUsage(parsed.Usage)
+		}
 	}
 	if err := scanner.Err(); err != nil {
 		return Response{}, err
@@ -284,5 +291,6 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 		Provider: p.Name(),
 		Model:    model,
 		Text:     reply,
+		Usage:    lastUsage,
 	}, nil
 }

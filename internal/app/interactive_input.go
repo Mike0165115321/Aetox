@@ -36,7 +36,9 @@ type rawKey struct {
 
 const (
 	slashMetaSuggestionColor = "\x1b[38;5;214m"
-	slashToolSuggestionColor = "\x1b[38;5;39m"
+	slashToolSuggestionColor = "\x1b[38;5;33m"
+	slashMetaSwatch          = "\x1b[48;5;214m  \x1b[0m"
+	slashToolSwatch          = "\x1b[48;5;33m  \x1b[0m"
 )
 
 type slashSuggestion struct {
@@ -87,8 +89,13 @@ func (a *App) readLineInteractive(ctx context.Context) (string, error) {
 
 		switch key.kind {
 		case rawKeyEnter:
+			input := string(line)
+			if a.shouldClearPaletteOnSubmit(input) {
+				suggestionCount := len(a.slashSuggestions(input))
+				a.clearSlashPaletteBlock(suggestionCount + 1)
+			}
 			a.console.Print("\n")
-			return string(line), nil
+			return input, nil
 		case rawKeyCtrlC, rawKeyEscape:
 			return "", io.EOF
 		case rawKeyBackspace:
@@ -149,6 +156,21 @@ func (a *App) readLineInteractive(ctx context.Context) (string, error) {
 			render()
 		}
 	}
+}
+
+func (a *App) shouldClearPaletteOnSubmit(input string) bool {
+	if !a.isSlashToken(input) {
+		return false
+	}
+	command := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(input), "/")))
+	return command == "model"
+}
+
+func (a *App) clearSlashPaletteBlock(lines int) {
+	if lines <= 0 || !supportsANSI() {
+		return
+	}
+	a.console.Printf("\r\x1b[%dA\x1b[J", lines)
 }
 
 func awaitRawKey(ctx context.Context, reader *bufio.Reader) (rawKey, error) {
@@ -313,7 +335,20 @@ func (a *App) drawLineWithSlashPalette(line string, suggestions []slashSuggestio
 
 	a.console.Print("\r\n")
 	a.console.Print("\x1b[2K")
-	a.console.Print(command.SlashMetaLegend())
+	a.console.Print("Legend: ")
+
+	ansiOk := supportsANSI()
+	settingSwatch := "🟧"
+	toolSwatch := "🔵"
+	if ansiOk {
+		settingSwatch = slashMetaSwatch + " " + ansiReset
+		toolSwatch = slashToolSwatch + " " + ansiReset
+	}
+
+	a.console.Print(settingSwatch)
+	a.console.Print(" " + slashMetaSuggestionColor + "[setting]" + ansiReset + " = คำสั่งตั้งค่า (ส้ม), ")
+	a.console.Print(toolSwatch)
+	a.console.Print(" " + slashToolSuggestionColor + "[tool]" + ansiReset + " = คำสั่งเครื่องมือ (น้ำเงิน)")
 
 	for i, suggestion := range suggestions {
 		a.console.Print("\r\n")
@@ -323,22 +358,51 @@ func (a *App) drawLineWithSlashPalette(line string, suggestions []slashSuggestio
 		} else {
 			a.console.Print("   ")
 		}
-		categoryColor := slashToolSuggestionColor
+		categorySwatch := toolSwatch
+		tokenColor := ""
+		resetColor := ""
 		if suggestion.Category == "setting" {
-			categoryColor = slashMetaSuggestionColor
+			categorySwatch = settingSwatch
+			if ansiOk {
+				tokenColor = slashMetaSuggestionColor
+				resetColor = ansiReset
+			}
+		} else if ansiOk {
+			tokenColor = slashToolSuggestionColor
+			resetColor = ansiReset
 		}
-		a.console.Print(fmt.Sprintf("%s%-8s [%-7s] %s%s",
-			categoryColor,
+
+		a.console.Print(fmt.Sprintf("%s %s%-8s [%-7s] %s%s",
+			categorySwatch,
+			tokenColor,
 			suggestion.Token,
 			suggestion.Category,
 			suggestion.Description,
-			ansiReset,
+			resetColor,
 		))
 	}
 
 	a.console.Printf("\r\x1b[%dA", len(suggestions)+1)
 	a.console.Print("\r\x1b[2K> ")
 	a.console.Print(line)
+}
+
+func supportsANSI() bool {
+	if os.Getenv("NO_COLOR") != "" {
+		return false
+	}
+	if os.Getenv("TERM") == "dumb" {
+		return false
+	}
+	stdout := os.Stdout
+	if stdout == nil {
+		return false
+	}
+	stat, err := stdout.Stat()
+	if err != nil {
+		return false
+	}
+	return (stat.Mode() & os.ModeCharDevice) != 0
 }
 
 func (a *App) skillDescriptions() map[string]string {
