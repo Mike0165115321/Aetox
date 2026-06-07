@@ -68,7 +68,7 @@ func isShellHighRisk(cmd string, rest []string) bool {
 
 	switch token {
 	case "rm", "del", "erase", "rmdir", "rd", "mv", "move", "rename", "format", "mkfs",
-		"shred", "sdelete", "takeown", "icacls", "attrib", "cacls", "chown", "chmod",
+		"shred", "sdelete", "takeown", "icacls", "attrib", "cacls", "chown", "chmod", "cd",
 		"shutdown", "reboot", "halt", "poweroff", "kill", "taskkill":
 		return true
 	}

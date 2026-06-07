@@ -173,6 +173,10 @@ func (a *App) RunInteractive(ctx context.Context) error {
 		}
 
 		if intent.IsSlash && intent.Command == "" {
+			a.printSeparator()
+			a.showSlashHelp()
+			a.printSeparator()
+			a.printStatusBar()
 			continue
 		}
 
@@ -256,20 +260,20 @@ func (a *App) RunInteractive(ctx context.Context) error {
 }
 
 func (a *App) showSlashHelp() {
-	a.console.Println("Slash commands:")
-	a.console.Println("  /model    switch model/provider")
-	a.console.Println("  /help (/h) show available slash/skill commands")
-	a.console.Println("  /exit, /quit, /bye, /logout  leave session")
-	a.console.Println("  :help     show quick conversation help")
-	a.console.Println("  :clear    reset conversation context")
+	a.console.Println("คำสั่งที่ใช้กับ / :")
+	a.console.Println("  /model    เลือกโมเดล/provider ที่ใช้ทำงาน")
+	a.console.Println("  /help (/h) แสดงคำสั่ง slash และ skill ทั้งหมด")
+	a.console.Println("  /exit, /quit, /bye, /logout  ออกจากเซสชัน")
+	a.console.Println("  :help     แสดงเคล็ดลับการใช้งานแบบย่อ")
+	a.console.Println("  :clear    ล้าง context ของการสนทนา")
 	a.console.Println("")
 	a.console.Println("Skills:")
 	a.printAvailableSkills()
 	a.console.Println("")
 	a.console.Println("Flow contract:")
-	a.console.Println("  - conversation: stream immediately")
-	a.console.Println("  - skill: execute first, then return one final summary")
-	a.console.Println("  - status: executed (done) | executed (error) | executed (blocked)")
+	a.console.Println("  - พิมพ์ข้อความสนทนา: ตอบแบบสตรีมทันที")
+	a.console.Println("  - พิมพ์ skill: รันให้เสร็จก่อน แล้วค่อยสรุปผล")
+	a.console.Println("  - สถานะ: executed (done) | executed (error) | executed (blocked)")
 }
 
 func (a *App) runCommand(ctx context.Context, line string) (string, error) {
@@ -385,20 +389,19 @@ func (a *App) awaitDecision(ctx context.Context) (string, error) {
 }
 
 func (a *App) startThinkingIndicator(message, color, fallbackColor string) func() {
-	frames := []string{"|", "/", "-", "\\"}
-	_ = color
-	_ = fallbackColor
+	frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
 	stopped := make(chan struct{})
 	finished := make(chan struct{})
-	msg := strings.TrimSpace(message)
-	if msg == "" {
-		msg = "working"
+	
+	baseMsg := strings.TrimRight(strings.TrimSpace(message), ".")
+	if baseMsg == "" {
+		baseMsg = "กำลังคิด"
 	}
 
 	go func() {
 		defer close(finished)
-		ticker := time.NewTicker(140 * time.Millisecond)
+		ticker := time.NewTicker(80 * time.Millisecond)
 		defer ticker.Stop()
 
 		i := 0
@@ -408,8 +411,13 @@ func (a *App) startThinkingIndicator(message, color, fallbackColor string) func(
 				return
 			default:
 			}
-			a.console.Print(ansiEraseLine + ansiSubtle + msg + " " + frames[i%len(frames)] + ansiReset)
+			
+			dots := strings.Repeat(".", (i/3)%4)
+			padding := strings.Repeat(" ", 3-(i/3)%4)
+			
+			a.console.Print(ansiEraseLine + color + frames[i%len(frames)] + " " + fallbackColor + baseMsg + dots + padding + ansiReset)
 			i++
+			
 			select {
 			case <-ticker.C:
 			case <-stopped:
