@@ -46,6 +46,13 @@ func AssessCommand(skillName string, args []string) Assessment {
 				Reason:    "delete can remove repository files",
 			}
 		}
+		if skillName == "plugin_install" {
+			return Assessment{
+				SkillName: "plugin_install",
+				Risk:      RiskHigh,
+				Reason:    "plugin install can write files outside the repository",
+			}
+		}
 		return Assessment{
 			SkillName: skillName,
 			Risk:      RiskLow,

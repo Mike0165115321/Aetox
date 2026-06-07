@@ -266,6 +266,66 @@ func TestInferToolCandidates_WriteWithTimeInContent(t *testing.T) {
 	}
 }
 
+func TestInferToolCandidates_GitHubURLDefaultsToSummary(t *testing.T) {
+	dispatcher := &toolDispatcher{
+		root: t.TempDir(),
+		t:    t,
+	}
+	executor := NewExecutor(ExecutorOptions{
+		Dispatcher: dispatcher,
+	})
+
+	candidates := executor.inferToolCandidates("https://github.com/openai/codex")
+	if len(candidates) != 1 {
+		t.Fatalf("expected 1 candidate, got %d", len(candidates))
+	}
+	if candidates[0].Name != "github_repo_summary" {
+		t.Fatalf("expected github_repo_summary candidate, got %s", candidates[0].Name)
+	}
+	if got := candidates[0].Args["repo_url"]; got != "https://github.com/openai/codex" {
+		t.Fatalf("unexpected repo_url: %#v", got)
+	}
+}
+
+func TestInferToolCandidates_GitHubInstallAndSummary(t *testing.T) {
+	dispatcher := &toolDispatcher{
+		root: t.TempDir(),
+		t:    t,
+	}
+	executor := NewExecutor(ExecutorOptions{
+		Dispatcher: dispatcher,
+	})
+
+	candidates := executor.inferToolCandidates("install plugin from https://github.com/openai/codex and summarize it")
+	if len(candidates) != 2 {
+		t.Fatalf("expected 2 candidates, got %d", len(candidates))
+	}
+	if candidates[0].Name != "plugin_install" || candidates[1].Name != "github_repo_summary" {
+		t.Fatalf("unexpected candidate order: %#v", candidates)
+	}
+}
+
+func TestInferToolCandidates_PluginInstallRequiresRepoURL(t *testing.T) {
+	dispatcher := &toolDispatcher{
+		root: t.TempDir(),
+		t:    t,
+	}
+	executor := NewExecutor(ExecutorOptions{
+		Dispatcher: dispatcher,
+	})
+
+	candidates := executor.inferToolCandidates("install plugin for me")
+	if len(candidates) != 1 {
+		t.Fatalf("expected 1 candidate, got %d", len(candidates))
+	}
+	if candidates[0].Name != "plugin_install" {
+		t.Fatalf("expected plugin_install candidate, got %s", candidates[0].Name)
+	}
+	if strings.TrimSpace(candidates[0].MissingMessage) == "" {
+		t.Fatalf("expected missing message, got %#v", candidates[0])
+	}
+}
+
 func TestExecute_InferredThaiGeneratedWriteCreatesFile(t *testing.T) {
 	root := t.TempDir()
 	dispatcher := &toolDispatcher{
@@ -281,7 +341,7 @@ func TestExecute_InferredThaiGeneratedWriteCreatesFile(t *testing.T) {
 		Dispatcher: dispatcher,
 	})
 
-	input := "เขียนสคริปแนะนำตัวเองแล้วสร้างเป็นไฟล์ txt ไว้ให้ผมอ่าน"
+	input := "เน€เธโฌเน€เธยเน€เธเธ•เน€เธเธเน€เธยเน€เธเธเน€เธยเน€เธเธเน€เธเธ”เน€เธยเน€เธยเน€เธยเน€เธเธเน€เธยเน€เธเธ“เน€เธโ€ขเน€เธเธ‘เน€เธเธเน€เธโฌเน€เธเธเน€เธยเน€เธยเน€เธเธ…เน€เธยเน€เธเธเน€เธเธเน€เธเธเน€เธยเน€เธเธ’เน€เธยเน€เธโฌเน€เธยเน€เธยเน€เธยเน€เธยเน€เธยเน€เธเธ…เน€เธย txt เน€เธยเน€เธเธเน€เธยเน€เธยเน€เธเธเน€เธยเน€เธยเน€เธเธเน€เธเธเน€เธยเน€เธเธ’เน€เธย"
 	intent := command.Parse(input, command.ParseTokens, nil)
 	result, err := executor.Execute(context.Background(), input, intent, nil, nil)
 	if err != nil {
@@ -710,9 +770,12 @@ func TestExecute_InferredIntent_SmokeMatrix(t *testing.T) {
 		{name: "blocked root segment", input: "create file tmp/.. with content no", wantStatus: TurnStatusBlocked, expectReply: "unsafe path"},
 		{name: "blocked home", input: "create file ~/x with content no", wantStatus: TurnStatusBlocked, expectReply: "unsafe path"},
 		{name: "blocked bad char", input: "create file note<>.md with content no", wantStatus: TurnStatusBlocked, expectReply: "unsafe path"},
-		{name: "blocked empty path", input: "create file   with content no", wantStatus: TurnStatusBlocked, expectReply: "ไม่พบชื่อไฟล์"},
-		{name: "blocked missing content", input: "create file missing.md", wantStatus: TurnStatusBlocked, expectReply: "ต้องการเนื้อหาไฟล์ด้วย"},
+		{name: "blocked empty path", input: "create file   with content no", wantStatus: TurnStatusBlocked, expectReply: "missing file path for write"},
+		{name: "blocked missing content", input: "create file missing.md", wantStatus: TurnStatusBlocked, expectReply: "content required for write"},
 		{name: "blocked missing name", input: "create file", wantStatus: TurnStatusBlocked},
+		{name: "github summary", input: "https://github.com/openai/codex", wantStatus: TurnStatusDone, expectedSequence: []string{"github_repo_summary"}, expectReply: "GitHub repo"},
+		{name: "github install and summary", input: "install plugin from https://github.com/openai/codex and summarize it", wantStatus: TurnStatusDone, expectedSequence: []string{"plugin_install", "github_repo_summary"}, expectReply: "plugin install unsupported"},
+		{name: "plugin install missing repo", input: "install plugin for me", wantStatus: TurnStatusBlocked, expectReply: "GitHub repository URL"},
 		{name: "conversation no intent", input: "hello this is just chat", wantStatus: TurnStatusDone},
 		{name: "list then time plus logs", input: "list internal and time and show logs", wantStatus: TurnStatusDone, expectedSequence: []string{"list", "time"}},
 	}
@@ -904,6 +967,20 @@ func (d *toolDispatcher) ToolDefinitions() []model.ToolDefinition {
 				Parameters: []byte(`{"type":"object"}`),
 			},
 		},
+		{
+			Type: "function",
+			Function: model.ToolFunction{
+				Name:       "github_repo_summary",
+				Parameters: []byte(`{"type":"object"}`),
+			},
+		},
+		{
+			Type: "function",
+			Function: model.ToolFunction{
+				Name:       "plugin_install",
+				Parameters: []byte(`{"type":"object"}`),
+			},
+		},
 	}
 }
 
@@ -1041,6 +1118,30 @@ func (d *toolDispatcher) ExecuteTool(_ context.Context, name string, args map[st
 			Command:   "time",
 			Content:   "12:34:56",
 			RawOutput: "12:34:56",
+			Success:   true,
+		}, true, nil
+	case "github_repo_summary":
+		repoURL := ""
+		if rawURL, ok := args["repo_url"].(string); ok {
+			repoURL = strings.TrimSpace(rawURL)
+		}
+		return skill.Output{
+			Name:      "github_repo_summary",
+			Command:   "github_repo_summary " + repoURL,
+			Content:   "GitHub repo: " + repoURL,
+			RawOutput: "GitHub repo: " + repoURL,
+			Success:   true,
+		}, true, nil
+	case "plugin_install":
+		repoURL := ""
+		if rawURL, ok := args["repo_url"].(string); ok {
+			repoURL = strings.TrimSpace(rawURL)
+		}
+		return skill.Output{
+			Name:      "plugin_install",
+			Command:   "plugin_install " + repoURL,
+			Content:   "plugin install unsupported: " + repoURL,
+			RawOutput: "plugin install unsupported: " + repoURL,
 			Success:   true,
 		}, true, nil
 	default:
