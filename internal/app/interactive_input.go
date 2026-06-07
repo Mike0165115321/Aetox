@@ -4,8 +4,11 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
+	"sort"
+	"strings"
 
 	"aetox-cli/internal/command"
 
@@ -29,6 +32,17 @@ const (
 type rawKey struct {
 	kind rawKeyEvent
 	r    rune
+}
+
+const (
+	slashMetaSuggestionColor = "\x1b[38;5;214m"
+	slashToolSuggestionColor = "\x1b[38;5;39m"
+)
+
+type slashSuggestion struct {
+	Token       string
+	Category    string
+	Description string
 }
 
 func (a *App) readLineInteractive(ctx context.Context) (string, error) {
@@ -73,12 +87,6 @@ func (a *App) readLineInteractive(ctx context.Context) (string, error) {
 
 		switch key.kind {
 		case rawKeyEnter:
-			if selected >= 0 && a.isSlashToken(string(line)) {
-				suggestions := a.slashSuggestions(string(line))
-				if selected < len(suggestions) {
-					line = []rune(suggestions[selected])
-				}
-			}
 			a.console.Print("\n")
 			return string(line), nil
 		case rawKeyCtrlC, rawKeyEscape:
@@ -89,7 +97,7 @@ func (a *App) readLineInteractive(ctx context.Context) (string, error) {
 			}
 			selected = -1
 			render()
-		case rawKeyArrowUp, rawKeyArrowDown, rawKeyTab:
+		case rawKeyArrowUp, rawKeyArrowDown:
 			input := string(line)
 			if !a.isSlashToken(input) {
 				continue
@@ -112,6 +120,28 @@ func (a *App) readLineInteractive(ctx context.Context) (string, error) {
 					selected = 0
 				}
 			}
+			render()
+		case rawKeyTab:
+			input := string(line)
+			if !a.isSlashToken(input) {
+				continue
+			}
+
+			suggestions := a.slashSuggestions(input)
+			if len(suggestions) == 0 {
+				continue
+			}
+
+			if selected == -1 {
+				selected = 0
+			}
+
+			selectedSuggestion := suggestions[selected]
+			line = []rune(selectedSuggestion.Token)
+			if !command.IsMetaSlashCommand(slashCommandNameFromToken(selectedSuggestion.Token)) {
+				line = append(line, ' ')
+			}
+			selected = -1
 			render()
 		case rawKeyRune:
 			line = append(line, key.r)
@@ -210,18 +240,69 @@ func readRawKey(reader *bufio.Reader) (rawKey, error) {
 	}
 }
 
-func (a *App) slashSuggestions(input string) []string {
+func (a *App) slashSuggestions(input string) []slashSuggestion {
 	if !command.IsSlashToken(input) {
 		return nil
 	}
-	return command.SlashSuggestions(input, a.commandSet)
+	rest := strings.TrimPrefix(strings.TrimSpace(input), "/")
+	rest = strings.ToLower(strings.TrimSpace(rest))
+
+	descriptions := a.skillDescriptions()
+
+	candidates := map[string]struct{}{}
+	for name := range a.commandSet {
+		name = strings.ToLower(strings.TrimSpace(name))
+		if name == "" {
+			continue
+		}
+		candidates[name] = struct{}{}
+	}
+	for _, name := range command.SlashSuggestionCandidates() {
+		name = strings.ToLower(strings.TrimSpace(name))
+		if name == "" {
+			continue
+		}
+		candidates[name] = struct{}{}
+	}
+
+	names := make([]string, 0, len(candidates))
+	for name := range candidates {
+		if strings.HasPrefix(name, rest) {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+
+	result := make([]slashSuggestion, 0, len(names))
+	for _, name := range names {
+		if command.IsMetaSlashCommand(name) {
+			result = append(result, slashSuggestion{
+				Token:       "/" + name,
+				Category:    "setting",
+				Description: command.SlashMetaDescription(name),
+			})
+			continue
+		}
+
+		desc, ok := descriptions[name]
+		if !ok || desc == "" {
+			desc = "คำสั่งเครื่องมือ"
+		}
+		result = append(result, slashSuggestion{
+			Token:       "/" + name,
+			Category:    "tool",
+			Description: desc,
+		})
+	}
+
+	return result
 }
 
 func (a *App) isSlashToken(input string) bool {
 	return command.IsSlashToken(input)
 }
 
-func (a *App) drawLineWithSlashPalette(line string, suggestions []string, selected int) {
+func (a *App) drawLineWithSlashPalette(line string, suggestions []slashSuggestion, selected int) {
 	a.console.Print("\r\x1b[2K> ")
 	a.console.Print(line)
 	a.console.Print("\x1b[J")
@@ -229,6 +310,10 @@ func (a *App) drawLineWithSlashPalette(line string, suggestions []string, select
 	if len(suggestions) == 0 {
 		return
 	}
+
+	a.console.Print("\r\n")
+	a.console.Print("\x1b[2K")
+	a.console.Print(command.SlashMetaLegend())
 
 	for i, suggestion := range suggestions {
 		a.console.Print("\r\n")
@@ -238,12 +323,51 @@ func (a *App) drawLineWithSlashPalette(line string, suggestions []string, select
 		} else {
 			a.console.Print("   ")
 		}
-		a.console.Print(suggestion)
+		categoryColor := slashToolSuggestionColor
+		if suggestion.Category == "setting" {
+			categoryColor = slashMetaSuggestionColor
+		}
+		a.console.Print(fmt.Sprintf("%s%-8s [%-7s] %s%s",
+			categoryColor,
+			suggestion.Token,
+			suggestion.Category,
+			suggestion.Description,
+			ansiReset,
+		))
 	}
 
-	a.console.Printf("\r\x1b[%dA", len(suggestions))
+	a.console.Printf("\r\x1b[%dA", len(suggestions)+1)
 	a.console.Print("\r\x1b[2K> ")
 	a.console.Print(line)
+}
+
+func (a *App) skillDescriptions() map[string]string {
+	result := map[string]string{}
+	snapshotSource, ok := a.skillDispatcher.(describeSkills)
+	if !ok {
+		return result
+	}
+
+	snapshot := snapshotSource.Snapshot()
+	for name, s := range snapshot {
+		name = strings.ToLower(strings.TrimSpace(name))
+		if name == "" {
+			continue
+		}
+		description := "tool"
+		if s != nil {
+			description = strings.TrimSpace(s.Description())
+			if description == "" {
+				description = "tool"
+			}
+		}
+		result[name] = description
+	}
+	return result
+}
+
+func slashCommandNameFromToken(token string) string {
+	return strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(token), "/"))
 }
 
 func isTTYForInput() bool {

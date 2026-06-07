@@ -10,7 +10,7 @@ type timeSkill struct{}
 func (*timeSkill) Name() string { return "time" }
 
 func (*timeSkill) Description() string {
-	return "show current local time"
+	return "แสดงเวลาท้องถิ่นปัจจุบัน"
 }
 
 func (*timeSkill) Execute(_ context.Context, input Input) (Output, error) {

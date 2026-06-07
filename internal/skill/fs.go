@@ -21,7 +21,7 @@ type fsSkill struct {
 func (*fsSkill) Name() string { return "fs" }
 
 func (*fsSkill) Description() string {
-	return "read-only workspace file helpers: pwd, ls, find, cat"
+	return "เครื่องมือจัดการไฟล์แบบอ่านอย่างเดียว: pwd, ls, find, cat"
 }
 
 func (s *fsSkill) Execute(_ context.Context, input Input) (Output, error) {

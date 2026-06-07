@@ -19,7 +19,7 @@ type gitSkill struct {
 func (*gitSkill) Name() string { return "git" }
 
 func (*gitSkill) Description() string {
-	return "run safe git read-only commands (status, log, branch, diff, show)"
+	return "รันคำสั่ง git แบบอ่านอย่างเดียวที่ปลอดภัย (status, log, branch, diff, show)"
 }
 
 func (s *gitSkill) Execute(ctx context.Context, input Input) (Output, error) {

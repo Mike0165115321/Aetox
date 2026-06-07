@@ -11,7 +11,7 @@ type echoSkill struct{}
 func (*echoSkill) Name() string { return "echo" }
 
 func (*echoSkill) Description() string {
-	return "echo arguments back as plain text"
+	return "ส่งข้อความที่รับกลับมาเป็นตัวอักษรธรรมดา"
 }
 
 func (*echoSkill) Execute(_ context.Context, input Input) (Output, error) {

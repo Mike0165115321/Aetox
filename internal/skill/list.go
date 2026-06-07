@@ -17,7 +17,7 @@ type listSkill struct {
 func (*listSkill) Name() string { return "list" }
 
 func (*listSkill) Description() string {
-	return "list files in the sandbox root or subpath"
+	return "แสดงรายชื่อไฟล์ใน sandbox root หรือ subpath"
 }
 
 func (s *listSkill) Execute(_ context.Context, input Input) (Output, error) {

@@ -15,7 +15,7 @@ type helpSkill struct {
 func (*helpSkill) Name() string { return "help" }
 
 func (*helpSkill) Description() string {
-	return "show available commands"
+	return "แสดงคำสั่งที่มีอยู่"
 }
 
 func (s *helpSkill) Execute(_ context.Context, input Input) (Output, error) {
@@ -23,7 +23,7 @@ func (s *helpSkill) Execute(_ context.Context, input Input) (Output, error) {
 	_ = input
 	command := "help"
 	if s == nil || s.registry == nil {
-		return newToolOutput("help", command, "No commands are available.", start, false, nil), nil
+		return newToolOutput("help", command, "ไม่มีคำสั่งให้แสดง", start, false, nil), nil
 	}
 
 	snapshot := s.registry.Snapshot()
@@ -40,8 +40,8 @@ func (s *helpSkill) Execute(_ context.Context, input Input) (Output, error) {
 	}
 
 	if len(lines) == 0 {
-		return newToolOutput("help", command, "No commands are available.", start, false, nil), nil
+		return newToolOutput("help", command, "ไม่มีคำสั่งให้แสดง", start, false, nil), nil
 	}
 
-	return newToolOutput("help", command, "Available commands:\n"+strings.Join(lines, "\n"), start, false, nil), nil
+	return newToolOutput("help", command, "คำสั่งที่ใช้ได้:\n"+strings.Join(lines, "\n"), start, false, nil), nil
 }

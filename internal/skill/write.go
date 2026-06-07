@@ -16,7 +16,7 @@ type writeSkill struct {
 func (*writeSkill) Name() string { return "write" }
 
 func (*writeSkill) Description() string {
-	return "create/overwrite a file in sandbox root"
+	return "สร้างหรือเขียนทับไฟล์ใน sandbox root"
 }
 
 func (s *writeSkill) Execute(_ context.Context, input Input) (Output, error) {

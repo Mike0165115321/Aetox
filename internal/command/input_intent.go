@@ -34,6 +34,16 @@ var slashMetaCommands = map[string]struct{}{
 	"logout": {},
 }
 
+var slashMetaCommandDescriptions = map[string]string{
+	"model":  "เลือกหรือเปลี่ยนโมเดล/provider",
+	"help":   "แสดงรายชื่อ slash command",
+	"h":      "คำย่อของ /help",
+	"exit":   "ออกจากเซสชันปัจจุบัน",
+	"quit":   "ออกจากเซสชันปัจจุบัน",
+	"bye":    "ออกจากเซสชันปัจจุบัน",
+	"logout": "ออกจากเซสชันปัจจุบัน",
+}
+
 var metaCommands = map[string]struct{}{
 	"exit":   {},
 	"quit":   {},
@@ -56,6 +66,29 @@ var slashSuggestionCandidates = []string{
 	"quit",
 	"bye",
 	"logout",
+}
+
+func SlashSuggestionCandidates() []string {
+	result := make([]string, len(slashSuggestionCandidates))
+	copy(result, slashSuggestionCandidates)
+	return result
+}
+
+func IsMetaSlashCommand(name string) bool {
+	name = strings.ToLower(strings.TrimSpace(name))
+	return isMetaSlashCommand(name)
+}
+
+func SlashMetaDescription(name string) string {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if desc, ok := slashMetaCommandDescriptions[name]; ok {
+		return desc
+	}
+	return "คำสั่งตั้งค่า"
+}
+
+func SlashMetaLegend() string {
+	return "คีย์เดอร์คำสั่ง: [setting] คำสั่งตั้งค่า (ส้ม), [tool] คำสั่งเครื่องมือ (น้ำเงิน)"
 }
 
 func Parse(input string, split SplitFunc, knownCommands map[string]struct{}) Intent {

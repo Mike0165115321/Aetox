@@ -53,3 +53,10 @@ func (d *Dispatcher) Names() []string {
 	}
 	return d.registry.Names()
 }
+
+func (d *Dispatcher) Snapshot() map[string]Skill {
+	if d == nil || d.registry == nil {
+		return nil
+	}
+	return d.registry.Snapshot()
+}

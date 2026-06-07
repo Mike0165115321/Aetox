@@ -17,7 +17,7 @@ type shellSkill struct {
 func (*shellSkill) Name() string { return "shell" }
 
 func (*shellSkill) Description() string {
-	return "run a local shell command in sandbox root"
+	return "รันคำสั่ง shell ในโฟลเดอร์ sandbox root"
 }
 
 func (s *shellSkill) Execute(ctx context.Context, input Input) (Output, error) {

@@ -164,7 +164,7 @@ func (a *App) RunInteractive(ctx context.Context) error {
 				continue
 			case ":clear":
 				a.agent.ClearContext()
-				a.console.Println("context cleared")
+				a.console.Println("เคลียร์บริบทแล้ว")
 				continue
 			case "exit", "quit", "bye", "logout", ":exit", ":quit":
 				a.console.Println("bye")
@@ -181,7 +181,7 @@ func (a *App) RunInteractive(ctx context.Context) error {
 		}
 
 		if intent.IsSlash && intent.Kind == command.KindConversation && intent.Command != "" && !intent.IsMeta {
-			a.console.Println("Unknown slash command. Use / for commands or type skill names directly.")
+			a.console.Println("ไม่รู้จัก slash command นี้ ใช้ / เพื่อดูคำสั่ง หรือพิมพ์ชื่อ skill โดยตรง")
 			a.showSlashHelp()
 			a.printSeparator()
 			a.printStatusBar()
@@ -237,10 +237,10 @@ func (a *App) RunInteractive(ctx context.Context) error {
 				if strings.TrimSpace(reply) != "" {
 					a.console.Println(reply)
 				} else {
-					a.console.Println("execution canceled")
+					a.console.Println("ยกเลิกการทำงาน")
 				}
 			} else {
-				a.console.Errorf("command failed: %v\n", err)
+				a.console.Errorf("คำสั่งล้มเหลว: %v\n", err)
 			}
 			if errors.Is(sigCtx.Err(), context.Canceled) {
 				a.console.Println("bye")
@@ -267,10 +267,10 @@ func (a *App) showSlashHelp() {
 	a.console.Println("  :help     แสดงเคล็ดลับการใช้งานแบบย่อ")
 	a.console.Println("  :clear    ล้าง context ของการสนทนา")
 	a.console.Println("")
-	a.console.Println("Skills:")
+	a.console.Println("สกิล:")
 	a.printAvailableSkills()
 	a.console.Println("")
-	a.console.Println("Flow contract:")
+	a.console.Println("สัญญาการทำงาน:")
 	a.console.Println("  - พิมพ์ข้อความสนทนา: ตอบแบบสตรีมทันที")
 	a.console.Println("  - พิมพ์ skill: รันให้เสร็จก่อน แล้วค่อยสรุปผล")
 	a.console.Println("  - สถานะ: executed (done) | executed (error) | executed (blocked)")
@@ -343,9 +343,9 @@ func (a *App) confirmApproval(ctx context.Context, name, reason string) (bool, e
 
 	reason = strings.TrimSpace(reason)
 	if reason == "" {
-		reason = "may modify or read state"
+		reason = "อาจมีการเปลี่ยนแปลงหรืออ่านสถานะระบบ"
 	}
-	prompt := fmt.Sprintf("Aetox: command `%s` is high-risk (%s), confirm? [y/N]: ", name, reason)
+	prompt := fmt.Sprintf("Aetox: คำสั่ง `%s` มีความเสี่ยงสูง (%s) ยืนยันหรือไม่? [y/N]: ", name, reason)
 	a.console.Print(prompt)
 
 	for {
@@ -441,22 +441,23 @@ func (a *App) startThinkingIndicator(message, color, fallbackColor string) func(
 func (a *App) showHelp() {
 	a.console.Println("Tips:")
 	a.console.Println("  - ask in natural language")
-	a.console.Println("  - /model    switch model/provider")
-	a.console.Println("  - :clear    reset conversation context")
-	a.console.Println("  - exit      leave terminal chat")
-	a.console.Println("  - :help     quick command tips")
-	a.console.Println("  - example: list")
+	a.console.Println("  - พิมพ์เป็นภาษาปกติ")
+	a.console.Println("  - /model    เปลี่ยนโมเดล/โปรไฟเดอร์")
+	a.console.Println("  - :clear    เคลียร์บริบทการสนทนา")
+	a.console.Println("  - exit      ออกจากโหมดเทอร์มินัลแชต")
+	a.console.Println("  - :help     แสดงเคล็ดลับการใช้คำสั่งสั้น")
+	a.console.Println("  - ตัวอย่าง: list")
 	a.console.Println("")
-	a.console.Println("Flow contract:")
-	a.console.Println("  - conversation input: stream immediately")
-	a.console.Println("  - skill command: execute fully, then return summary")
-	a.console.Println("  - tool status: executed (done) | executed (error) | executed (blocked)")
+	a.console.Println("สัญญาการทำงาน:")
+	a.console.Println("  - การสนทนาทั่วไป: แสดงผลตอบทันที")
+	a.console.Println("  - คำสั่ง skill: รันเสร็จแล้วสรุปผล")
+	a.console.Println("  - สถานะเครื่องมือ: executed (done) | executed (error) | executed (blocked)")
 	a.console.Println("")
 	a.console.Println("Approval policy:")
-	a.console.Println("  - high-risk commands require confirmation")
-	a.console.Println("  - safe-only actions for v1: git status|log|branch|diff|show, fs pwd|ls|find|cat, shell safe subset")
-	a.console.Println("  - safe shell commands are executed immediately; high-risk commands require confirmation")
-	a.console.Println("  - use --yes to auto-approve command safety prompts")
+	a.console.Println("  - คำสั่งเสี่ยงสูง: ต้องยืนยันก่อนทำ")
+	a.console.Println("  - v1 ปัจจุบันอนุมัติแต่คำสั่งปลอดภัย: git status|log|branch|diff|show, fs pwd|ls|find|cat, shell safe subset")
+	a.console.Println("  - shell แบบปลอดภัยรันได้ทันที, คำสั่งเสี่ยงสูงต้องยืนยัน")
+	a.console.Println("  - ใช้ --yes เพื่ออนุมัติ prompt ความปลอดภัยอัตโนมัติ")
 }
 
 func (a *App) PrintBanner() {
@@ -507,9 +508,9 @@ func (a *App) printStatusBar() {
 
 func (a *App) showSkillPalette(ctx context.Context) error {
 	a.showSlashHelp()
-	_, handled, err := a.dispatchBySkill(ctx, "help")
+		_, handled, err := a.dispatchBySkill(ctx, "help")
 	if err != nil {
-		a.console.Println("command failed: " + err.Error())
+		a.console.Println("คำสั่งล้มเหลว: " + err.Error())
 		return nil
 	}
 	if handled {
@@ -517,7 +518,7 @@ func (a *App) showSkillPalette(ctx context.Context) error {
 	}
 
 	if len(a.skillNames) == 0 {
-		a.console.Println("No extra skills registered.")
+		a.console.Println("ยังไม่มี skill เพิ่มเติมในระบบ.")
 	}
 
 	return nil
@@ -544,16 +545,16 @@ func (a *App) printAvailableSkills() {
 	sort.Strings(names)
 
 	if len(names) == 0 {
-		a.console.Println("  (none)")
+		a.console.Println("  (ไม่มี)")
 		return
 	}
 
 	for _, name := range names {
-		desc := "no description"
+		desc := "ไม่มีคำอธิบาย"
 		if describe[name] != nil {
 			desc = strings.TrimSpace(describe[name].Description())
 			if desc == "" {
-				desc = "no description"
+				desc = "ไม่มีคำอธิบาย"
 			}
 		}
 		a.console.Println(fmt.Sprintf("  %-8s %s", "/"+name, desc))
