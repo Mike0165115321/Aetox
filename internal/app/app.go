@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"regexp"
 	"sort"
 	"strings"
 	"syscall"
@@ -15,9 +14,9 @@ import (
 	"unicode/utf8"
 
 	"aetox-cli/internal/cognitive"
-	"aetox-cli/internal/plan"
-	"aetox-cli/internal/safety"
+	"aetox-cli/internal/command"
 	"aetox-cli/internal/skill"
+	"aetox-cli/internal/turn"
 )
 
 const (
@@ -29,13 +28,6 @@ const (
 	ansiBrandBright = "\x1b[38;5;117m"
 	ansiText        = "\x1b[97m"
 	ansiSubtle      = "\x1b[38;5;249m"
-
-	toolSummaryTimeout      = 30 * time.Second
-	toolSummaryPromptMaxLen = 4096
-
-	toolStatusDone    = "done"
-	toolStatusError   = "error"
-	toolStatusBlocked = "blocked"
 )
 
 type App struct {
@@ -45,6 +37,7 @@ type App struct {
 	skillDispatcher skillDispatcher
 	commandSet      map[string]struct{}
 	autoApprove     bool
+	turnExecutor    *turn.Executor
 	modelSwitcher   modelSwitcher
 
 	title       string
@@ -96,11 +89,12 @@ func NewApp(opts Options) (*App, error) {
 		sort.Strings(skillNames)
 	}
 
-	return &App{
+	commandSet := buildCommandSetFromDispatcher(opts.Dispatcher)
+	a := &App{
 		agent:           opts.Agent,
 		console:         opts.Console,
 		skillDispatcher: opts.Dispatcher,
-		commandSet:      buildCommandSetFromDispatcher(opts.Dispatcher),
+		commandSet:      commandSet,
 		showBanner:      opts.ShowBanner,
 		autoApprove:     opts.AutoApprove,
 		modelSwitcher:   opts.ModelSwitch,
@@ -109,7 +103,14 @@ func NewApp(opts Options) (*App, error) {
 		userInfo:        strings.TrimSpace(opts.UserInfo),
 		modelStatus:     strings.TrimSpace(opts.ModelStatus),
 		skillNames:      skillNames,
-	}, nil
+	}
+	a.turnExecutor = turn.NewExecutor(turn.ExecutorOptions{
+		Agent:      a.agent,
+		Dispatcher: a.skillDispatcher,
+		CommandSet: a.commandSet,
+		Approve:    a.confirmApproval,
+	})
+	return a, nil
 }
 
 func (a *App) RunOnce(ctx context.Context, message string) (string, error) {
@@ -142,49 +143,44 @@ func (a *App) RunInteractive(ctx context.Context) error {
 		if line == "" {
 			continue
 		}
-		if strings.HasPrefix(line, "/") {
-			line = strings.TrimSpace(strings.TrimPrefix(line, "/"))
-			slashCommand, _ := skill.ParseCommand(line)
-			if slashCommand == "" {
-				continue
-			}
-			if line == "model" {
+
+		intent := a.parseInputIntent(line)
+		if intent.IsMeta {
+			switch intent.Command {
+			case "model":
 				if err := a.switchModel(sigCtx); err != nil {
 					a.console.Errorf("Model switch failed: %v\n", err)
 				}
 				a.printSeparator()
 				a.printStatusBar()
 				continue
-			}
-			if line == "help" || line == "h" {
+			case "help", "h":
 				a.showSlashHelp()
 				a.printSeparator()
 				a.printStatusBar()
 				continue
-			}
-			if _, ok := a.commandSet[slashCommand]; !ok {
-				switch slashCommand {
-				case "exit", "quit", "bye", "logout", ":help", ":clear", ":exit", ":quit":
-				default:
-					a.console.Println("Unknown slash command. Use / for commands or type skill names directly.")
-					a.showSlashHelp()
-					a.printSeparator()
-					a.printStatusBar()
-					continue
-				}
+			case ":help":
+				a.showHelp()
+				continue
+			case ":clear":
+				a.agent.ClearContext()
+				a.console.Println("context cleared")
+				continue
+			case "exit", "quit", "bye", "logout", ":exit", ":quit":
+				a.console.Println("bye")
+				return nil
 			}
 		}
 
-		switch line {
-		case "exit", "quit", ":exit", ":quit", "bye", "logout":
-			a.console.Println("bye")
-			return nil
-		case ":help":
-			a.showHelp()
+		if intent.IsSlash && intent.Command == "" {
 			continue
-		case ":clear":
-			a.agent.ClearContext()
-			a.console.Println("context cleared")
+		}
+
+		if intent.IsSlash && intent.Kind == command.KindConversation && intent.Command != "" && !intent.IsMeta {
+			a.console.Println("Unknown slash command. Use / for commands or type skill names directly.")
+			a.showSlashHelp()
+			a.printSeparator()
+			a.printStatusBar()
 			continue
 		}
 
@@ -196,18 +192,17 @@ func (a *App) RunInteractive(ctx context.Context) error {
 		default:
 		}
 
-		intent := plan.Build(line, skill.ParseCommand, a.commandSet)
 		var stopThinking func()
-		if intent.Kind == plan.KindConversation {
+		if intent.Kind == command.KindConversation {
 			stopThinking = a.startThinkingIndicator("กำลังคิด...", ansiBrandBright, ansiSubtle)
-		} else if intent.Kind == plan.KindSkill {
+		} else if intent.Kind == command.KindSkill {
 			stopThinking = a.startThinkingIndicator("กำลังรัน...", ansiBrandBright, ansiSubtle)
 		}
 
 		streamed := false
 		spinnerStopped := false
 		var onChunk func(string)
-		if intent.Kind == plan.KindConversation {
+		if intent.Kind == command.KindConversation {
 			onChunk = func(chunk string) {
 				streamed = true
 				if !spinnerStopped {
@@ -222,8 +217,9 @@ func (a *App) RunInteractive(ctx context.Context) error {
 			}
 		}
 
-		reply, wasStreamed, err := a.runCommandWithStream(sigCtx, line, onChunk, stopThinking)
-		streamed = streamed || wasStreamed
+		turnResult, err := a.turnExecutor.Execute(sigCtx, line, intent, onChunk, stopThinking)
+		reply := strings.TrimSpace(turnResult.Reply)
+		streamed = streamed || turnResult.Streamed
 		if streamed {
 			a.console.Println()
 		}
@@ -237,7 +233,7 @@ func (a *App) RunInteractive(ctx context.Context) error {
 				if strings.TrimSpace(reply) != "" {
 					a.console.Println(reply)
 				} else {
-					a.console.Println(a.fallbackToolSummary(a.newToolResultForApp("tool", line, "execution canceled"), toolStatusError, err))
+					a.console.Println("execution canceled")
 				}
 			} else {
 				a.console.Errorf("command failed: %v\n", err)
@@ -277,128 +273,12 @@ func (a *App) showSlashHelp() {
 }
 
 func (a *App) runCommand(ctx context.Context, line string) (string, error) {
-	reply, _, err := a.runCommandWithStream(ctx, line, nil, nil)
-	return reply, err
+	result, err := a.turnExecutor.Execute(ctx, line, a.parseInputIntent(line), nil, nil)
+	return result.Reply, err
 }
 
-func (a *App) summarizeToolExecution(ctx context.Context, originalInput string, result skill.Output, status string, execErr error) (string, error) {
-	output := strings.TrimSpace(result.RawOutput)
-	if output == "" {
-		output = strings.TrimSpace(result.Content)
-	}
-	output = a.sanitizeAndTrimOutput(output)
-	if output == "" {
-		output = "(no output)"
-	}
-
-	commandLine := strings.TrimSpace(result.Command)
-	if commandLine == "" {
-		commandLine = result.Name
-	}
-
-	errorLine := ""
-	if strings.TrimSpace(result.Stderr) != "" {
-		errorLine = fmt.Sprintf("\nTool error: %s", result.Stderr)
-	} else if execErr != nil {
-		errorLine = fmt.Sprintf("\nTool error: %s", execErr.Error())
-	}
-
-	summaryPrompt := fmt.Sprintf(
-		"Original user request: %q\n"+
-			"Tool: %s\n"+
-			"Command: %s\n"+
-			"Execution status: %s\n"+
-			"DurationMs: %d\n"+
-			"Output:\n%s\n%s\n\n"+
-			"Respond in the same language as the user and be concise.\n"+
-			"Start with an explicit status phrase for executed (%s), then summarize key result and mention completion.",
-		originalInput,
-		result.Name,
-		commandLine,
-		status,
-		result.DurationMs,
-		output,
-		errorLine,
-		status,
-	)
-
-	summaryCtx, cancel := context.WithTimeout(ctx, toolSummaryTimeout)
-	defer cancel()
-	summary, err := a.agent.Respond(summaryCtx, summaryPrompt)
-	if err != nil {
-		return "", err
-	}
-
-	summary = strings.TrimSpace(summary)
-	if summary == "" {
-		return "", errors.New("empty summary response")
-	}
-	if len(summary) > toolSummaryPromptMaxLen {
-		summary = summary[:toolSummaryPromptMaxLen] + "\n...(output truncated)"
-	}
-	return summary, nil
-}
-
-func (a *App) fallbackToolSummary(result skill.Output, status string, execErr error) string {
-	output := strings.TrimSpace(result.RawOutput)
-	if output == "" {
-		output = strings.TrimSpace(result.Content)
-	}
-	if output == "" {
-		output = "(no output)"
-	}
-	output = a.sanitizeAndTrimOutput(output)
-	if output == "" {
-		output = "(no output)"
-	}
-	if execErr != nil && result.Stderr == "" {
-		output = fmt.Sprintf("%s\nError: %s", output, execErr.Error())
-	}
-
-	prefix := "executed (done)"
-	switch status {
-	case toolStatusError:
-		prefix = "executed (error)"
-	case toolStatusBlocked:
-		prefix = "executed (blocked)"
-	}
-	command := strings.TrimSpace(result.Command)
-	if command != "" {
-		command = fmt.Sprintf("command: %s. ", command)
-	}
-	return fmt.Sprintf("%s (summary fallback). %s%s", prefix, command, output)
-}
-
-func (a *App) sanitizeAndTrimOutput(output string) string {
-	output = strings.TrimSpace(output)
-	if output == "" {
-		return "(no output)"
-	}
-
-	redactionRules := map[string]*regexp.Regexp{
-		"api key":  regexp.MustCompile(`(?i)(api key\s*[:=]\s*)[^\s]+`),
-		"token":    regexp.MustCompile(`(?i)(token\s*[:=]\s*)[^\s]+`),
-		"password": regexp.MustCompile(`(?i)(password\s*[:=]\s*)[^\s]+`),
-	}
-	for _, re := range redactionRules {
-		output = re.ReplaceAllString(output, "$1[REDACTED]")
-	}
-
-	if len(output) > toolSummaryPromptMaxLen {
-		output = output[:toolSummaryPromptMaxLen] + "\n...(output truncated)"
-	}
-	return output
-}
-
-func (a *App) normalizeToolResult(result skill.Output) skill.Output {
-	output := strings.TrimSpace(result.RawOutput)
-	if output == "" {
-		output = strings.TrimSpace(result.Content)
-	}
-	output = a.sanitizeAndTrimOutput(output)
-	result.Content = output
-	result.RawOutput = output
-	return result
+func (a *App) parseInputIntent(line string) command.Intent {
+	return command.Parse(line, command.ParseTokens, a.commandSet)
 }
 
 func (a *App) switchModel(ctx context.Context) error {
@@ -430,95 +310,6 @@ func (a *App) switchModel(ctx context.Context) error {
 	return nil
 }
 
-func (a *App) runCommandWithStream(ctx context.Context, line string, onChunk func(string), onToolComplete func()) (string, bool, error) {
-	line = strings.TrimSpace(line)
-	if line == "" {
-		return "", false, errors.New("empty input")
-	}
-
-	intent := plan.Build(line, skill.ParseCommand, a.commandSet)
-	if intent.Kind == plan.KindConversation {
-		return a.agent.RespondStream(ctx, intent.Raw, asStreamHandler(onChunk))
-	}
-
-	notifyToolComplete := func() {
-		if onToolComplete == nil {
-			return
-		}
-		onToolComplete()
-		onToolComplete = nil
-	}
-
-	toolCommand := strings.TrimSpace(strings.Join(append([]string{intent.Command}, intent.Args...), " "))
-	if toolCommand == "" {
-		toolCommand = intent.Raw
-	}
-
-	assessment := a.assessCommand(intent.Command, intent.Args)
-	if assessment.Risk == safety.RiskHigh {
-		approved, confirmErr := a.confirmApproval(ctx, toolCommand, assessment.Reason)
-		if confirmErr != nil {
-			notifyToolComplete()
-			if errors.Is(confirmErr, context.Canceled) {
-				cancelled := a.newToolResultForApp("tool", toolCommand, "execution canceled during confirmation")
-				summary, summarizeErr := a.summarizeToolExecution(ctx, line, cancelled, toolStatusError, confirmErr)
-				if summarizeErr != nil {
-					return a.fallbackToolSummary(cancelled, toolStatusError, confirmErr), false, nil
-				}
-				return summary, false, nil
-			}
-			return "", false, confirmErr
-		}
-		if !approved {
-			notifyToolComplete()
-			blocked := a.newToolResultForApp("tool", toolCommand, "execution blocked by user approval")
-			summary, summarizeErr := a.summarizeToolExecution(ctx, line, blocked, toolStatusBlocked, nil)
-			if summarizeErr != nil {
-				return a.fallbackToolSummary(blocked, toolStatusBlocked, nil), false, nil
-			}
-			return summary, false, nil
-		}
-	}
-
-	reply, handled, err := a.dispatchBySkill(ctx, intent.Raw)
-	if !handled {
-		notifyToolComplete()
-		replyText, respondErr := a.agent.Respond(ctx, line)
-		if respondErr != nil {
-			return "", false, respondErr
-		}
-		return replyText, false, nil
-	}
-
-	if err != nil && errors.Is(err, context.Canceled) {
-		reply = a.newToolResultForApp("tool", toolCommand, "execution canceled")
-	}
-
-	notifyToolComplete()
-	reply = a.normalizeToolResult(reply)
-	executionStatus := toolStatusDone
-	if err != nil || !reply.Success || errors.Is(ctx.Err(), context.Canceled) {
-		executionStatus = toolStatusError
-	}
-
-	summary, summarizeErr := a.summarizeToolExecution(ctx, line, reply, executionStatus, err)
-	if summarizeErr != nil {
-		return a.fallbackToolSummary(reply, executionStatus, err), false, nil
-	}
-
-	return summary, false, nil
-}
-
-func asStreamHandler(callback func(string)) func(string) error {
-	if callback == nil {
-		return nil
-	}
-	return func(chunk string) error {
-		callback(chunk)
-		return nil
-	}
-}
-
 func buildCommandSetFromDispatcher(dispatcher skillDispatcher) map[string]struct{} {
 	if dispatcher == nil {
 		return nil
@@ -527,7 +318,7 @@ func buildCommandSetFromDispatcher(dispatcher skillDispatcher) map[string]struct
 	if !ok {
 		return nil
 	}
-	return plan.BuildCommandSet(named.Names())
+	return command.BuildCommandSet(named.Names())
 }
 
 func (a *App) dispatchBySkill(ctx context.Context, line string) (skill.Output, bool, error) {
@@ -539,15 +330,6 @@ func (a *App) dispatchBySkill(ctx context.Context, line string) (skill.Output, b
 		return output, handled, err
 	}
 	return output, true, nil
-}
-
-func (a *App) requiresSkillApproval(_ context.Context, name string, args []string) bool {
-	assessment := safety.AssessCommand(name, args)
-	return assessment.Risk == safety.RiskHigh
-}
-
-func (a *App) assessCommand(name string, args []string) safety.Assessment {
-	return safety.AssessCommand(name, args)
 }
 
 func (a *App) confirmApproval(ctx context.Context, name, reason string) (bool, error) {
@@ -645,25 +427,6 @@ func (a *App) startThinkingIndicator(message, color, fallbackColor string) func(
 			<-finished
 			a.console.Print(ansiEraseLine)
 		}
-	}
-}
-
-func (a *App) newToolResultForApp(name, command, detail string) skill.Output {
-	if strings.TrimSpace(name) == "" {
-		name = "tool"
-	}
-	detail = strings.TrimSpace(detail)
-	if detail == "" {
-		detail = "(no output)"
-	}
-	return skill.Output{
-		Name:       name,
-		Command:    command,
-		Content:    detail,
-		RawOutput:  detail,
-		Success:    false,
-		Stderr:     detail,
-		DurationMs: 0,
 	}
 }
 
@@ -788,4 +551,3 @@ func (a *App) printAvailableSkills() {
 		a.console.Println(fmt.Sprintf("  %-8s %s", "/"+name, desc))
 	}
 }
-

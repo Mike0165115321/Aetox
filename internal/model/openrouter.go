@@ -11,8 +11,6 @@ import (
 	"time"
 )
 
-const defaultOpenRouterBaseURL = "https://openrouter.ai/api/v1"
-
 type OpenRouterConfig struct {
 	Model   string
 	APIKey  string
@@ -21,9 +19,9 @@ type OpenRouterConfig struct {
 }
 
 type OpenRouterProvider struct {
-	model     string
-	apiKey    string
-	baseURL   string
+	model      string
+	apiKey     string
+	baseURL    string
 	httpClient *http.Client
 }
 
@@ -39,7 +37,7 @@ func NewOpenRouterProvider(cfg OpenRouterConfig) (*OpenRouterProvider, error) {
 		return nil, ErrMissingModel
 	}
 	if baseURL == "" {
-		baseURL = defaultOpenRouterBaseURL
+		baseURL = DefaultBaseURL("openrouter")
 	}
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	if cfg.Timeout <= 0 {
@@ -47,9 +45,9 @@ func NewOpenRouterProvider(cfg OpenRouterConfig) (*OpenRouterProvider, error) {
 	}
 
 	return &OpenRouterProvider{
-		model:     model,
-		apiKey:    apiKey,
-		baseURL:   baseURL,
+		model:      model,
+		apiKey:     apiKey,
+		baseURL:    baseURL,
 		httpClient: &http.Client{Timeout: cfg.Timeout},
 	}, nil
 }
@@ -141,4 +139,3 @@ func modelOr(value string, fallback string) string {
 	}
 	return value
 }
-

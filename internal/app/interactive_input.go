@@ -6,8 +6,8 @@ import (
 	"errors"
 	"io"
 	"os"
-	"sort"
-	"strings"
+
+	"aetox-cli/internal/command"
 
 	"golang.org/x/term"
 )
@@ -211,38 +211,14 @@ func readRawKey(reader *bufio.Reader) (rawKey, error) {
 }
 
 func (a *App) slashSuggestions(input string) []string {
-	if !a.isSlashToken(input) {
+	if !command.IsSlashToken(input) {
 		return nil
 	}
-
-	rawToken := strings.TrimPrefix(input, "/")
-	candidates := map[string]struct{}{}
-
-	for name := range a.commandSet {
-		candidates[strings.ToLower(strings.TrimSpace(name))] = struct{}{}
-	}
-	for _, name := range []string{"model", "help", "exit", "quit", "bye", "logout"} {
-		candidates[name] = struct{}{}
-	}
-
-	// Keep suggestions consistent with run path used by "/" plus command-set skills.
-	match := strings.ToLower(rawToken)
-	suggestions := make([]string, 0, len(candidates))
-	for name := range candidates {
-		if strings.HasPrefix(name, match) {
-			suggestions = append(suggestions, "/"+name)
-		}
-	}
-	sort.Strings(suggestions)
-	return suggestions
+	return command.SlashSuggestions(input, a.commandSet)
 }
 
 func (a *App) isSlashToken(input string) bool {
-	if !strings.HasPrefix(input, "/") {
-		return false
-	}
-	rest := strings.TrimPrefix(input, "/")
-	return strings.IndexAny(rest, " \t") == -1
+	return command.IsSlashToken(input)
 }
 
 func (a *App) drawLineWithSlashPalette(line string, suggestions []string, selected int) {

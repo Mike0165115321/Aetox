@@ -2,7 +2,6 @@ package model
 
 import (
 	"fmt"
-	"strings"
 	"time"
 )
 
@@ -15,7 +14,7 @@ type ProviderOptions struct {
 }
 
 func NewProvider(opts ProviderOptions) (Provider, error) {
-	provider := strings.ToLower(strings.TrimSpace(opts.Provider))
+	provider := NormalizeProvider(opts.Provider)
 	if provider == "" {
 		provider = "noop"
 	}
@@ -29,16 +28,16 @@ func NewProvider(opts ProviderOptions) (Provider, error) {
 	}
 
 	switch provider {
-	case "noop", "none", "stub":
+	case "noop":
 		return NewNoopProvider(opts.Model), nil
-	case "openrouter", "open-router", "openrouterai", "or":
+	case "openrouter":
 		return NewOpenRouterProvider(OpenRouterConfig{
 			Model:   opts.Model,
 			APIKey:  opts.APIKey,
 			BaseURL: opts.BaseURL,
 			Timeout: timeout,
 		})
-	case "openai", "gpt", "chatgpt", "openai-compatible", "compatible":
+	case "openai":
 		return NewOpenAICompatibleProvider(OpenAICompatibleConfig{
 			Provider:      "openai",
 			Model:         opts.Model,
@@ -47,7 +46,7 @@ func NewProvider(opts ProviderOptions) (Provider, error) {
 			Timeout:       timeout,
 			RequireAPIKey: requireAPIKey(true),
 		})
-	case "deepseek", "deepseek-api", "deepseek-ai":
+	case "deepseek":
 		return NewOpenAICompatibleProvider(OpenAICompatibleConfig{
 			Provider:      "deepseek",
 			Model:         opts.Model,
@@ -56,7 +55,7 @@ func NewProvider(opts ProviderOptions) (Provider, error) {
 			Timeout:       timeout,
 			RequireAPIKey: requireAPIKey(true),
 		})
-	case "groq", "groqcloud":
+	case "groq":
 		return NewOpenAICompatibleProvider(OpenAICompatibleConfig{
 			Provider:      "groq",
 			Model:         opts.Model,
@@ -65,7 +64,7 @@ func NewProvider(opts ProviderOptions) (Provider, error) {
 			Timeout:       timeout,
 			RequireAPIKey: requireAPIKey(true),
 		})
-	case "mistral", "mistralai":
+	case "mistral":
 		return NewOpenAICompatibleProvider(OpenAICompatibleConfig{
 			Provider:      "mistral",
 			Model:         opts.Model,
@@ -74,7 +73,7 @@ func NewProvider(opts ProviderOptions) (Provider, error) {
 			Timeout:       timeout,
 			RequireAPIKey: requireAPIKey(true),
 		})
-	case "together", "togetherai", "together-ai":
+	case "together":
 		return NewOpenAICompatibleProvider(OpenAICompatibleConfig{
 			Provider:      "together",
 			Model:         opts.Model,
@@ -83,7 +82,7 @@ func NewProvider(opts ProviderOptions) (Provider, error) {
 			Timeout:       timeout,
 			RequireAPIKey: requireAPIKey(true),
 		})
-	case "perplexity", "perplexityai", "pplx":
+	case "perplexity":
 		return NewOpenAICompatibleProvider(OpenAICompatibleConfig{
 			Provider:      "perplexity",
 			Model:         opts.Model,
@@ -92,7 +91,7 @@ func NewProvider(opts ProviderOptions) (Provider, error) {
 			Timeout:       timeout,
 			RequireAPIKey: requireAPIKey(true),
 		})
-	case "cohere", "command-r":
+	case "cohere":
 		return NewOpenAICompatibleProvider(OpenAICompatibleConfig{
 			Provider:      "cohere",
 			Model:         opts.Model,
@@ -101,7 +100,7 @@ func NewProvider(opts ProviderOptions) (Provider, error) {
 			Timeout:       timeout,
 			RequireAPIKey: requireAPIKey(true),
 		})
-	case "lmstudio", "localai", "local-ai":
+	case "lmstudio":
 		return NewOpenAICompatibleProvider(OpenAICompatibleConfig{
 			Provider: provider,
 			Model:    opts.Model,
@@ -111,7 +110,7 @@ func NewProvider(opts ProviderOptions) (Provider, error) {
 			// LocalAI/LMStudio usually don't require cloud keys
 			RequireAPIKey: requireAPIKey(false),
 		})
-	case "ollama", "ollamaai":
+	case "ollama":
 		return NewOllamaProvider(OllamaConfig{
 			Model:   opts.Model,
 			BaseURL: opts.BaseURL,

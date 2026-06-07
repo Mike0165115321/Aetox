@@ -28,16 +28,20 @@ func TestBuild_ClassifiesSkillAndConversation(t *testing.T) {
 			name:     "meta command treated as conversation",
 			input:    "exit",
 			wantKind: KindConversation,
+			wantCmd:  "exit",
+			wantArgs: []string{},
 		},
 		{
 			name:     "chat sentence treated as conversation",
-			input:    "สวัสดีครับ ช่วยดูให้หน่อย",
+			input:    "สวัสดีครับ มีอะไรให้ช่วยไหม",
 			wantKind: KindConversation,
+			wantCmd:  "",
 		},
 		{
 			name:     "unknown command treated as conversation",
 			input:    "deploy all",
 			wantKind: KindConversation,
+			wantCmd:  "",
 		},
 	}
 

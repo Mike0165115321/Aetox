@@ -19,7 +19,7 @@ type ParsedIntent struct {
 	RawArgs []string
 }
 
-func Parse(args []string) ParsedIntent {
+func ParseArgs(args []string) ParsedIntent {
 	if len(args) == 0 {
 		return ParsedIntent{
 			Mode:    ModeInteractive,
@@ -58,4 +58,3 @@ func Parse(args []string) ParsedIntent {
 		}
 	}
 }
-

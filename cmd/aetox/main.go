@@ -3,11 +3,8 @@ package main
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -68,7 +65,7 @@ func main() {
 		return
 	}
 
-	intent := command.Parse(flag.Args())
+	intent := command.ParseArgs(flag.Args())
 	cfg := config.Load(config.ConfigOptions{
 		RootPath:        rootPath,
 		AutoApprove:     legacyYes,
@@ -135,7 +132,7 @@ func main() {
 
 	if strings.TrimSpace(cfg.ModelName) == "" &&
 		!strings.EqualFold(strings.TrimSpace(cfg.ModelProvider), "noop") {
-		cfg.ModelName = defaultModelForProvider(cfg.ModelProvider)
+		cfg.ModelName = model.DefaultModel(cfg.ModelProvider)
 		modelName = cfg.ModelName
 	}
 
@@ -240,7 +237,7 @@ func switchProvider(ctx context.Context, cfg *config.Config) (*cognitive.Agent, 
 	cfg.ModelBaseURL = strings.TrimSpace(selectedBaseURL)
 
 	if cfg.ModelName == "" && !strings.EqualFold(cfg.ModelProvider, "noop") {
-		cfg.ModelName = defaultModelForProvider(cfg.ModelProvider)
+		cfg.ModelName = model.DefaultModel(cfg.ModelProvider)
 	}
 
 	fmt.Printf("Initializing model provider: %s/%s...\n", cfg.ModelProvider, cfg.ModelName)
@@ -281,35 +278,7 @@ func resolveDisplayUser() string {
 }
 
 func resolveModelStatus(cfg config.Config, bootstrapResult model.BootstrapResult) string {
-	provider := strings.TrimSpace(cfg.ModelProvider)
-	if provider == "" {
-		provider = "noop"
-	}
-	modelName := strings.TrimSpace(cfg.ModelName)
-	if modelName == "" {
-		modelName = "default"
-	}
-
-	modelLabel := modelName
-	switch provider {
-	case "openrouter", "open-router", "or", "openrouterai":
-		if modelLabel == "default" {
-			modelLabel = "openrouter default"
-		}
-	case "openai", "gpt", "chatgpt", "openai-compatible", "compatible":
-		if modelLabel == "default" {
-			modelLabel = "gpt-4o-mini"
-		}
-	case "deepseek", "deepseek-api", "deepseek-ai":
-		if modelLabel == "default" {
-			modelLabel = "deepseek-chat"
-		}
-	}
-
-	if bootstrapResult.Error != nil {
-		return fmt.Sprintf("%s/%s (fallback: noop)", provider, modelLabel)
-	}
-	return provider + "/" + modelLabel
+	return model.ResolveStatus(cfg.ModelProvider, cfg.ModelName, bootstrapResult.Error)
 }
 
 func bootstrapModelWithStatus(cfg config.Config) (model.BootstrapResult, string) {
@@ -343,16 +312,12 @@ func persistModelPreference(cfg config.Config) error {
 func promptModelSelection(cfg config.Config) (string, string, string, string, bool) {
 	reader := bufio.NewReader(os.Stdin)
 
-	providers := []string{"noop", "openrouter", "openai", "deepseek", "groq", "mistral", "together", "perplexity", "cohere", "lmstudio", "localai", "ollama"}
+	providers := model.SupportedProviders()
 	providerOptions := make([]string, 0, len(providers))
 	for _, p := range providers {
 		label := p
-		if shouldRequireAPIKey(p) {
-			if key := strings.TrimSpace(config.ResolveModelAPIKey(p)); key != "" {
-				label += " (env key found)"
-			} else {
-				label += " (needs key)"
-			}
+		if model.RequiresAPIKey(p) {
+			label = model.FormatProviderMenuLabel(p, model.ResolveModelAPIKey(p) != "")
 		}
 		providerOptions = append(providerOptions, label)
 	}
@@ -367,11 +332,11 @@ func promptModelSelection(cfg config.Config) (string, string, string, string, bo
 			return provider, "", "", cfg.ModelBaseURL, true
 		}
 
-		model := pickModelForProvider(reader, provider, cfg.ModelName, cfg.ModelBaseURL)
-		fmt.Printf("Selected: %s / %s\n\n", provider, model)
+		selectedModel := pickModelForProvider(reader, provider, cfg.ModelName, cfg.ModelBaseURL)
+		fmt.Printf("Selected: %s / %s\n\n", provider, selectedModel)
 
-		key := strings.TrimSpace(config.ResolveModelAPIKey(provider))
-		if shouldRequireAPIKey(provider) {
+		key := strings.TrimSpace(model.ResolveModelAPIKey(provider))
+		if model.RequiresAPIKey(provider) {
 			if key == "" {
 				fmt.Printf("API key for %s (press Enter to keep local environment): ", provider)
 				key = strings.TrimSpace(readLine(reader))
@@ -381,13 +346,16 @@ func promptModelSelection(cfg config.Config) (string, string, string, string, bo
 				}
 			}
 		}
-		return provider, model, key, cfg.ModelBaseURL, true
+		return provider, selectedModel, key, cfg.ModelBaseURL, true
 	}
 }
 
 func pickModelForProvider(reader *bufio.Reader, provider, existing, baseURL string) string {
-	modelChoices := modelChoicesForProviderWithEndpoint(provider, baseURL)
-	defaultModel := defaultModelForProvider(provider)
+	modelChoices, err := model.ModelChoicesWithEndpoint(provider, baseURL)
+	if err != nil || len(modelChoices) == 0 {
+		modelChoices = model.ModelChoices(provider)
+	}
+	defaultModel := model.DefaultModel(provider)
 	if existing != "" {
 		defaultModel = existing
 	}
@@ -605,189 +573,6 @@ func selectMenuUsingNumbers(reader *bufio.Reader, title string, options []string
 		}
 		fmt.Println("Invalid selection.")
 	}
-}
-
-func shouldRequireAPIKey(provider string) bool {
-	switch config.NormalizeModelProvider(provider) {
-	case "openrouter", "openai", "deepseek", "groq", "mistral", "together", "perplexity", "cohere":
-		return true
-	default:
-		return false
-	}
-}
-
-func defaultModelForProvider(provider string) string {
-	switch config.NormalizeModelProvider(provider) {
-	case "openrouter":
-		return "deepseek/deepseek-r1"
-	case "openai":
-		return "gpt-4o-mini"
-	case "deepseek":
-		return "deepseek-chat"
-	case "groq":
-		return "llama-3.3-70b-versatile"
-	case "mistral":
-		return "mistral-small"
-	case "together":
-		return "google/gemma-2-9b-it"
-	case "perplexity":
-		return "llama-3.1-sonar-small-128k-online"
-	case "cohere":
-		return "command-r-plus"
-	case "ollama":
-		return "gemma3:4b"
-	case "lmstudio":
-		return "local-model"
-	case "localai":
-		return "local-model"
-	default:
-		return "default"
-	}
-}
-
-func modelChoicesForProvider(provider string) []string {
-	switch config.NormalizeModelProvider(provider) {
-	case "openrouter":
-		return []string{
-			"deepseek/deepseek-r1",
-			"deepseek/deepseek-chat",
-			"deepseek/deepseek-coder",
-			"google/gemini-2.0-flash-001",
-			"openai/gpt-4o-mini",
-			"openai/gpt-4o",
-			"meta-llama/llama-4-maverick-17b-128e-instruct",
-			"mistralai/mixtral-8x22b-instruct",
-		}
-	case "openai":
-		return []string{
-			"gpt-4o-mini",
-			"gpt-4o",
-			"gpt-4.1",
-			"gpt-4.1-mini",
-			"o4-mini",
-		}
-	case "deepseek":
-		return []string{
-			"deepseek-chat",
-			"deepseek-coder",
-			"deepseek-reasoner",
-		}
-	case "groq":
-		return []string{
-			"llama-3.3-70b-versatile",
-			"llama-3.1-70b-versatile",
-			"llama-3.1-8b-instant",
-			"mixtral-8x7b-32768",
-		}
-	case "mistral":
-		return []string{
-			"mistral-small",
-			"mistral-small-3.2",
-			"ministral-8b",
-			"pixtral-large",
-		}
-	case "together":
-		return []string{
-			"google/gemma-2-27b-it",
-			"meta-llama/Llama-3-70b-chat-hf",
-			"meta-llama/Llama-3-8b-chat-hf",
-		}
-	case "perplexity":
-		return []string{
-			"llama-3.1-sonar-small-128k-online",
-			"llama-3.1-sonar-large-128k-online",
-			"llama-3.1-sonar-huge-128k-online",
-		}
-	case "cohere":
-		return []string{
-			"command-r-plus",
-			"command-r",
-			"command-r7b-12-2024",
-		}
-	case "ollama":
-		return []string{
-			"gemma3:4b",
-			"qwen2.5:7b",
-			"llama3.1:8b",
-			"llama3.1:70b",
-		}
-	case "lmstudio":
-		return []string{"local-model"}
-	case "localai":
-		return []string{"local-model"}
-	default:
-		return nil
-	}
-}
-
-func modelChoicesForProviderWithEndpoint(provider, baseURL string) []string {
-	switch config.NormalizeModelProvider(provider) {
-	case "ollama":
-		if models, err := discoverOllamaModels(baseURL); err == nil && len(models) > 0 {
-			return models
-		}
-	}
-	return modelChoicesForProvider(provider)
-}
-
-type ollamaTagResponse struct {
-	Models []struct {
-		Name string `json:"name"`
-	} `json:"models"`
-}
-
-func discoverOllamaModels(baseURL string) ([]string, error) {
-	endpoint := strings.TrimSpace(baseURL)
-	if endpoint == "" {
-		endpoint = "http://localhost:11434"
-	}
-	if !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
-		endpoint = "http://" + endpoint
-	}
-	endpoint = strings.TrimRight(endpoint, "/") + "/api/tags"
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("status %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	var payload ollamaTagResponse
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return nil, err
-	}
-
-	seen := map[string]struct{}{}
-	models := make([]string, 0, len(payload.Models))
-	for _, item := range payload.Models {
-		name := strings.TrimSpace(item.Name)
-		if name == "" {
-			continue
-		}
-		if _, exists := seen[name]; exists {
-			continue
-		}
-		seen[name] = struct{}{}
-		models = append(models, name)
-	}
-
-	return models, nil
 }
 
 func readLine(reader *bufio.Reader) string {

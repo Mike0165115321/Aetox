@@ -70,23 +70,23 @@ func NewOpenAICompatibleProvider(cfg OpenAICompatibleConfig) (*OpenAICompatibleP
 func defaultOpenAICompatibleBaseURL(provider string) string {
 	switch provider {
 	case "groq":
-		return "https://api.groq.com/openai/v1"
+		return DefaultBaseURL("groq")
 	case "deepseek":
-		return "https://api.deepseek.com/v1"
-	case "mistral", "mistralai":
-		return "https://api.mistral.ai/v1"
-	case "together", "togetherai", "together-ai":
-		return "https://api.together.xyz/v1"
-	case "perplexity", "perplexityai", "pplx":
-		return "https://api.perplexity.ai"
-	case "cohere", "command-r":
-		return "https://api.cohere.com/v1"
-	case "lmstudio", "localai", "local-ai":
-		return "http://localhost:1234/v1"
-	case "openai", "gpt", "chatgpt", "openai-compatible":
+		return DefaultBaseURL("deepseek")
+	case "mistral":
+		return DefaultBaseURL("mistral")
+	case "together":
+		return DefaultBaseURL("together")
+	case "perplexity":
+		return DefaultBaseURL("perplexity")
+	case "cohere":
+		return DefaultBaseURL("cohere")
+	case "lmstudio":
+		return DefaultBaseURL("lmstudio")
+	case "openai":
 		fallthrough
 	default:
-		return "https://api.openai.com/v1"
+		return DefaultBaseURL("openai")
 	}
 }
 

@@ -1,17 +1,22 @@
 package skill
 
 import (
+	"aetox-cli/internal/command"
 	"context"
 	"fmt"
-	"strings"
 )
 
 type Dispatcher struct {
-	registry *Registry
+	registry   *Registry
+	commandSet map[string]struct{}
 }
 
 func NewDispatcher(registry *Registry) *Dispatcher {
-	return &Dispatcher{registry: registry}
+	var commandSet map[string]struct{}
+	if registry != nil {
+		commandSet = command.BuildCommandSet(registry.Names())
+	}
+	return &Dispatcher{registry: registry, commandSet: commandSet}
 }
 
 func (d *Dispatcher) Execute(ctx context.Context, input string) (Output, bool, error) {
@@ -19,10 +24,12 @@ func (d *Dispatcher) Execute(ctx context.Context, input string) (Output, bool, e
 		return Output{}, false, nil
 	}
 
-	name, args := ParseCommand(input)
-	if name == "" {
+	intent := command.Parse(input, command.ParseTokens, d.commandSet)
+	if intent.Kind != command.KindSkill {
 		return Output{}, false, nil
 	}
+	name := intent.Command
+	args := intent.Args
 
 	skill, ok := d.registry.Get(name)
 	if !ok {
@@ -45,16 +52,4 @@ func (d *Dispatcher) Names() []string {
 		return nil
 	}
 	return d.registry.Names()
-}
-
-func splitCommand(input string) (string, []string) {
-	fields := strings.Fields(strings.TrimSpace(input))
-	if len(fields) == 0 {
-		return "", nil
-	}
-	return strings.ToLower(fields[0]), fields[1:]
-}
-
-func ParseCommand(input string) (string, []string) {
-	return splitCommand(input)
 }
