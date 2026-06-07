@@ -21,4 +21,5 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 	registry.Register(&gitSkill{root: opts.SandboxRoot})
 	registry.Register(&fsSkill{root: opts.SandboxRoot})
 	registry.Register(&shellSkill{root: opts.SandboxRoot})
+	registry.Register(&writeSkill{root: opts.SandboxRoot})
 }

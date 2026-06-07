@@ -156,8 +156,7 @@ func main() {
 	agent := cognitive.NewAgent(cognitive.AgentConfig{
 		Provider: bootstrapResult.Provider,
 		Model:    currentConfig.ModelName,
-		SystemPrompt: "You are Aetox, a concise assistant in Thai and English " +
-			"that helps users through a terminal conversation.",
+		SystemPrompt: buildSystemPrompt(cfg.SandboxRoot),
 	})
 
 	console := app.NewStdIO()
@@ -178,9 +177,9 @@ func main() {
 			ModelProvider: modelProvider,
 			ModelName:     currentConfig.ModelName,
 		}, bootstrapResult),
-		ModelSwitch: func(ctx context.Context) (*cognitive.Agent, string, bool, error) {
-			return switchProvider(ctx, &currentConfig)
-		},
+	ModelSwitch: func(ctx context.Context) (*cognitive.Agent, string, bool, error) {
+		return switchProvider(ctx, &currentConfig)
+	},
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "runtime init failed: %v\n", err)
@@ -259,9 +258,19 @@ func switchProvider(ctx context.Context, cfg *config.Config) (*cognitive.Agent, 
 	return cognitive.NewAgent(cognitive.AgentConfig{
 		Provider: bootstrapResult.Provider,
 		Model:    cfg.ModelName,
-		SystemPrompt: "You are Aetox, a concise assistant in Thai and English " +
-			"that helps users through a terminal conversation.",
+		SystemPrompt: buildSystemPrompt(cfg.SandboxRoot),
 	}), modelStatus, true, nil
+}
+
+func buildSystemPrompt(root string) string {
+	sandboxRoot := strings.TrimSpace(root)
+	if sandboxRoot == "" {
+		sandboxRoot = "(unknown)"
+	}
+	return "You are Aetox, a concise assistant in Thai and English " +
+		"that helps users through a terminal conversation.\n" +
+		"Current working sandbox root is: " + sandboxRoot + ".\n" +
+		"Always answer location-related questions using this path unless explicitly changed by user commands."
 }
 
 func resolveDisplayUser() string {

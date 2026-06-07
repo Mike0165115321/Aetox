@@ -29,6 +29,7 @@ Status reported to user:
 - `echo <ข้อความ>`
 - `list [path]` (sandboxed path listing)
 - `shell <command>` (high-risk commands require confirmation)
+- `write <path> <content>` (high-risk; create/overwrite files under sandbox root)
 - `git status|log|branch|diff|show`
 - `fs pwd|ls|find|cat`
 
@@ -40,6 +41,7 @@ Status reported to user:
   - shell commands that do not match known risk patterns
 - **High-risk requires confirmation**
   - `shell` commands that may modify/delete
+  - `write` (create/overwrite files)
   - unsupported `git` commands
   - `fs` commands outside read-only list
 - If confirmation is denied: `executed (blocked)`

@@ -32,6 +32,13 @@ func AssessCommand(skillName string, args []string) Assessment {
 		if skillName == "fs" {
 			return assessFsCommand(args)
 		}
+		if skillName == "write" {
+			return Assessment{
+				SkillName: "write",
+				Risk:      RiskHigh,
+				Reason:    "write can create or overwrite repository files",
+			}
+		}
 		return Assessment{
 			SkillName: skillName,
 			Risk:      RiskLow,

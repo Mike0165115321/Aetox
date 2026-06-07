@@ -30,6 +30,7 @@
   - shell command that matches safe patterns
 - High-risk requires confirmation
   - shell write/delete actions
+  - `write` create/overwrite files
   - unsupported/high-risk git actions
   - non read-only fs actions
 - Policy text is shown on confirmation prompt:
