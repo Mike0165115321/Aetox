@@ -109,6 +109,7 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 		Reasoning       *ReasoningConfig `json:"reasoning,omitempty"`
 		Thinking        *ThinkingConfig  `json:"thinking,omitempty"`
 		ReasoningEffort string           `json:"reasoning_effort,omitempty"`
+		IncludeReasoning *bool           `json:"include_reasoning,omitempty"`
 	}{
 		Model:       model,
 		Messages:    req.Messages,
@@ -120,6 +121,11 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 	if p.usesDeepSeekThinking() {
 		payload.Thinking = normalizeDeepSeekThinking(req.Thinking, req.Reasoning)
 		payload.ReasoningEffort = normalizeDeepSeekReasoningEffort(req.Reasoning)
+	} else if p.usesGroqReasoning() {
+		payload.ReasoningEffort = normalizeStandardReasoningEffort(req.Reasoning)
+		payload.IncludeReasoning = boolPtr(false)
+	} else if p.usesOpenAIReasoningEffort() {
+		payload.ReasoningEffort = normalizeStandardReasoningEffort(req.Reasoning)
 	} else if p.SupportsReasoning() {
 		payload.Reasoning = req.Reasoning
 	}
@@ -212,6 +218,7 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 		Reasoning       *ReasoningConfig `json:"reasoning,omitempty"`
 		Thinking        *ThinkingConfig  `json:"thinking,omitempty"`
 		ReasoningEffort string           `json:"reasoning_effort,omitempty"`
+		IncludeReasoning *bool           `json:"include_reasoning,omitempty"`
 		Stream          bool             `json:"stream"`
 	}{
 		Model:       model,
@@ -225,6 +232,11 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 	if p.usesDeepSeekThinking() {
 		payload.Thinking = normalizeDeepSeekThinking(req.Thinking, req.Reasoning)
 		payload.ReasoningEffort = normalizeDeepSeekReasoningEffort(req.Reasoning)
+	} else if p.usesGroqReasoning() {
+		payload.ReasoningEffort = normalizeStandardReasoningEffort(req.Reasoning)
+		payload.IncludeReasoning = boolPtr(false)
+	} else if p.usesOpenAIReasoningEffort() {
+		payload.ReasoningEffort = normalizeStandardReasoningEffort(req.Reasoning)
 	} else if p.SupportsReasoning() {
 		payload.Reasoning = req.Reasoning
 	}
@@ -335,7 +347,7 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 
 func supportsNativeReasoning(provider string) bool {
 	switch NormalizeProvider(provider) {
-	case "openrouter", "deepseek":
+	case "openrouter", "deepseek", "openai", "groq":
 		return true
 	default:
 		return false
@@ -344,6 +356,14 @@ func supportsNativeReasoning(provider string) bool {
 
 func (p *OpenAICompatibleProvider) usesDeepSeekThinking() bool {
 	return NormalizeProvider(p.provider) == "deepseek"
+}
+
+func (p *OpenAICompatibleProvider) usesOpenAIReasoningEffort() bool {
+	return NormalizeProvider(p.provider) == "openai"
+}
+
+func (p *OpenAICompatibleProvider) usesGroqReasoning() bool {
+	return NormalizeProvider(p.provider) == "groq"
 }
 
 func normalizeDeepSeekThinking(thinking *ThinkingConfig, reasoning *ReasoningConfig) *ThinkingConfig {
@@ -373,4 +393,20 @@ func normalizeDeepSeekReasoningEffort(reasoning *ReasoningConfig) string {
 	default:
 		return ""
 	}
+}
+
+func normalizeStandardReasoningEffort(reasoning *ReasoningConfig) string {
+	if reasoning == nil {
+		return ""
+	}
+	switch strings.ToLower(strings.TrimSpace(reasoning.Effort)) {
+	case "none", "default", "minimal", "low", "medium", "high", "xhigh":
+		return strings.ToLower(strings.TrimSpace(reasoning.Effort))
+	default:
+		return ""
+	}
+}
+
+func boolPtr(value bool) *bool {
+	return &value
 }

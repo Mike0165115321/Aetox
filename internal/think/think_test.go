@@ -8,11 +8,17 @@ func TestParseLevel(t *testing.T) {
 		want    Level
 		wantErr bool
 	}{
+		{raw: "none", want: LevelNone},
+		{raw: "minimal", want: LevelMinimal},
 		{raw: "low", want: LevelLow},
 		{raw: "medium", want: LevelMedium},
 		{raw: "HIGH", want: LevelHigh},
+		{raw: "xhigh", want: LevelXHigh},
+		{raw: "max", want: LevelMax},
+		{raw: "default", want: LevelDefault},
 		{raw: "off-think", want: LevelNoThinking},
-		{raw: " auto ", wantErr: true},
+		{raw: " auto ", want: Level("auto")},
+		{raw: "hello_world", wantErr: true},
 	}
 
 	for _, tt := range tests {

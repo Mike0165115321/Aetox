@@ -75,12 +75,12 @@ func main() {
 	flag.StringVar(&rootPath, "root", "", "optional sandbox root directory (default: current directory)")
 	flag.IntVar(&approvalTimeout, "approval-timeout", 60, "reserved for future approval controls")
 	flag.StringVar(&modelProvider, "model-provider", "", providerUsageHint)
-	flag.StringVar(&modelName, "model-name", "", "model name or model(low|medium|high|off-think)")
+	flag.StringVar(&modelName, "model-name", "", "model name or model(think-level)")
 	flag.StringVar(&modelAPIKey, "model-api-key", "", "model API key; fallback to provider env when empty")
 	flag.StringVar(&modelBaseURL, "model-base-url", "", "override base URL for model provider")
 	flag.IntVar(&modelTimeout, "model-timeout", 30, "model request timeout in seconds")
 	flag.IntVar(&modelContextTokens, "model-context-tokens", 0, "model context window token cap (0=auto/unknown)")
-	flag.StringVar(&thinkLevel, "think", "", "thinking level (low|medium|high|off-think)")
+	flag.StringVar(&thinkLevel, "think", "", "thinking level (model/provider specific; deepseek: off-think|high|max)")
 	flag.BoolVar(&noBanner, "no-banner", false, "disable startup banner in interactive mode")
 	flag.BoolVar(&showVersion, "version", false, "print version")
 	flag.BoolVar(&showHelp, "help", false, "print usage")
@@ -96,12 +96,12 @@ func main() {
 	preParser.StringVar(&rootPath, "root", "", "optional sandbox root directory (default: current directory)")
 	preParser.IntVar(&approvalTimeout, "approval-timeout", 60, "reserved for future approval controls")
 	preParser.StringVar(&modelProvider, "model-provider", "", providerUsageHint)
-	preParser.StringVar(&modelName, "model-name", "", "model name or model(low|medium|high|off-think)")
+	preParser.StringVar(&modelName, "model-name", "", "model name or model(think-level)")
 	preParser.StringVar(&modelAPIKey, "model-api-key", "", "model API key; fallback to provider env when empty")
 	preParser.StringVar(&modelBaseURL, "model-base-url", "", "override base URL for model provider")
 	preParser.IntVar(&modelTimeout, "model-timeout", 30, "model request timeout in seconds")
 	preParser.IntVar(&modelContextTokens, "model-context-tokens", 0, "model context window token cap (0=auto/unknown)")
-	preParser.StringVar(&thinkLevel, "think", "", "thinking level (low|medium|high|off-think)")
+	preParser.StringVar(&thinkLevel, "think", "", "thinking level (model/provider specific; deepseek: off-think|high|max)")
 	preParser.BoolVar(&noBanner, "no-banner", false, "disable startup banner in interactive mode")
 	preParser.BoolVar(&showVersion, "version", false, "print version")
 	preParser.BoolVar(&showHelp, "help", false, "print usage")
@@ -223,13 +223,13 @@ func main() {
 	}
 	cfg.ModelBaseURL = strings.TrimSpace(modelBaseURL)
 	cfg.ModelContextTokens = modelContextTokens
-	cfg.ThinkLevel = string(think.NormalizeLevel(thinkLevel))
 
 	if strings.TrimSpace(cfg.ModelName) == "" &&
 		!strings.EqualFold(strings.TrimSpace(cfg.ModelProvider), "noop") {
 		cfg.ModelName = model.DefaultModel(cfg.ModelProvider)
 		modelName = cfg.ModelName
 	}
+	cfg.ThinkLevel = model.NormalizeThinkingLevel(cfg.ModelProvider, cfg.ModelName, thinkLevel)
 
 	currentConfig = cfg
 	bootstrapResult, _ := bootstrapModelWithStatus(cfg)
@@ -333,11 +333,12 @@ func switchProvider(ctx context.Context, cfg *config.Config) (app.ModelSwitchRes
 	cfg.ModelName = strings.TrimSpace(selectedModel)
 	cfg.ModelAPIKey = strings.TrimSpace(selectedAPIKey)
 	cfg.ModelBaseURL = strings.TrimSpace(selectedBaseURL)
-	cfg.ThinkLevel = string(think.NormalizeLevel(selectedThinkLevel))
+	cfg.ThinkLevel = selectedThinkLevel
 
 	if cfg.ModelName == "" && !strings.EqualFold(cfg.ModelProvider, "noop") {
 		cfg.ModelName = model.DefaultModel(cfg.ModelProvider)
 	}
+	cfg.ThinkLevel = model.NormalizeThinkingLevel(cfg.ModelProvider, cfg.ModelName, cfg.ThinkLevel)
 
 	fmt.Printf("เปลี่ยนโมเดลเป็น: %s...\n", formatModelModeLabel(cfg.ModelProvider, cfg.ModelName, cfg.ThinkLevel))
 	bootstrapResult, modelStatus := bootstrapModelWithStatus(*cfg)
@@ -395,7 +396,7 @@ func resolveDisplayUser() string {
 
 func formatModelModeLabel(providerName, modelName, thinkLevel string) string {
 	status := model.ResolveStatus(providerName, modelName, nil)
-	return fmt.Sprintf("%s(%s)", status, defaultThinkLevel(thinkLevel))
+	return fmt.Sprintf("%s(%s)", status, defaultThinkLevel(providerName, modelName, thinkLevel))
 }
 
 func resolveModelStatus(cfg config.Config, bootstrapResult model.BootstrapResult) string {
@@ -437,7 +438,7 @@ func persistModelPreference(cfg config.Config) error {
 		ModelProvider: canonicalProvider,
 		ModelName:     strings.TrimSpace(cfg.ModelName),
 		ModelBaseURL:  strings.TrimSpace(cfg.ModelBaseURL),
-		ThinkLevel:    string(think.NormalizeLevel(cfg.ThinkLevel)),
+		ThinkLevel:    model.NormalizeThinkingLevel(canonicalProvider, strings.TrimSpace(cfg.ModelName), cfg.ThinkLevel),
 		ModelAPIKeys:  storedPreference.ModelAPIKeys,
 	}
 	if len(pref.ModelAPIKeys) == 0 {
@@ -483,7 +484,9 @@ func promptModelSelection(cfg config.Config, askThinkLevel bool) (string, string
 	for {
 		idx, ok := pickFromMenu(reader, "No model provider configured. Select one.", providerOptions, 0, "Use ↑/↓ then Enter.")
 		if !ok {
-			return providers[0], model.DefaultModel(providers[0]), "", cfg.ModelBaseURL, defaultThinkLevel(cfg.ThinkLevel), false
+			defaultProvider := providers[0]
+			defaultModel := model.DefaultModel(defaultProvider)
+			return defaultProvider, defaultModel, "", cfg.ModelBaseURL, defaultThinkLevel(defaultProvider, defaultModel, cfg.ThinkLevel), false
 		}
 		provider := providers[idx]
 		providerBaseURL := strings.TrimSpace(cfg.ModelBaseURL)
@@ -520,9 +523,9 @@ func promptModelSelection(cfg config.Config, askThinkLevel bool) (string, string
 		selectedModel := pickModelForProvider(reader, provider, cfg.ModelName, providerBaseURL, key)
 		selectedModel, selectedThinkLevel, parsedModelThink := parseModelWithThink(selectedModel)
 		if !parsedModelThink {
-			selectedThinkLevel = defaultThinkLevel(cfg.ThinkLevel)
+			selectedThinkLevel = defaultThinkLevel(provider, selectedModel, cfg.ThinkLevel)
 			if askThinkLevel {
-				selectedThinkLevel = promptThinkLevelSelection(reader, cfg.ThinkLevel)
+				selectedThinkLevel = promptThinkLevelSelection(reader, provider, selectedModel, cfg.ThinkLevel)
 			}
 		}
 
@@ -532,31 +535,21 @@ func promptModelSelection(cfg config.Config, askThinkLevel bool) (string, string
 	}
 }
 
-func defaultThinkLevel(existing string) string {
-	value := strings.TrimSpace(existing)
-	if value == "" {
-		return string(think.LevelLow)
-	}
-	level, err := think.ParseLevel(value)
-	if err != nil {
-		return string(think.LevelLow)
-	}
-	return string(level)
+func defaultThinkLevel(provider, modelName, existing string) string {
+	return model.NormalizeThinkingLevel(provider, modelName, existing)
 }
 
-func promptThinkLevelSelection(reader *bufio.Reader, existing string) string {
-	defaultLevel := defaultThinkLevel(existing)
+func promptThinkLevelSelection(reader *bufio.Reader, provider, modelName, existing string) string {
+	defaultLevel := defaultThinkLevel(provider, modelName, existing)
 	if reader == nil {
 		return defaultLevel
 	}
 
-	options := []string{
-		string(think.LevelLow),
-		string(think.LevelMedium),
-		string(think.LevelHigh),
-		string(think.LevelNoThinking),
+	options := model.SupportedThinkingLevels(provider, modelName)
+	if len(options) == 0 {
+		return defaultLevel
 	}
-	defaultIndex := 1
+	defaultIndex := 0
 	for i, option := range options {
 		if option == defaultLevel {
 			defaultIndex = i
@@ -564,7 +557,7 @@ func promptThinkLevelSelection(reader *bufio.Reader, existing string) string {
 		}
 	}
 
-	idx, ok := pickFromMenu(reader, "Choose thinking level", options, defaultIndex, "Use โ‘/โ“ then Enter.")
+	idx, ok := pickFromMenu(reader, "Choose thinking level", options, defaultIndex, "Use ↑/↓ then Enter.")
 	if !ok {
 		return defaultLevel
 	}
@@ -837,10 +830,10 @@ func printUsage() {
 	fmt.Println("  aetox help               show this help")
 	fmt.Println("Flags:")
 	fmt.Printf("  --model-provider: %s\n", strings.Join(model.SupportedProviders(), "|"))
-	fmt.Println("  --model-name <model[(low|medium|high|off-think)]> optional; provider defaults are auto-selected when omitted")
+	fmt.Println("  --model-name <model[(think-level)]> optional; provider defaults are auto-selected when omitted")
 	fmt.Println("  --model-api-key <key>        fallback: provider env (OPENAI_API_KEY, DEEPSEEK_API_KEY, GROQ_API_KEY, etc.)")
 	fmt.Println("  --model-context-tokens <n>   override context window display (0=auto/unknown)")
-	fmt.Println("  --think <level>              thinking level: low|medium|high|off-think")
+	fmt.Println("  --think <level>              model/provider specific thinking level (DeepSeek: off-think|high|max)")
 	fmt.Println("  --no-banner                 disable interactive banner")
 	fmt.Println("  --yes                       auto-approve safe-mode safety prompts")
 	fmt.Println("  --version                   print version")

@@ -119,7 +119,7 @@ var catalog = map[string]*entry{
 		baseURL:        "https://api.openai.com/v1",
 		envKeys:        []string{"OPENAI_API_KEY", "OPENAI_TOKEN"},
 		modelDefaults:  ModelDefaults{FallbackModel: "gpt-4o-mini"},
-		capabilities:   Capabilities{ToolCalling: true},
+		capabilities:   Capabilities{ToolCalling: true, Reasoning: true},
 	},
 	"deepseek": {
 		canonical:      "deepseek",
@@ -139,7 +139,7 @@ var catalog = map[string]*entry{
 		baseURL:        "https://api.groq.com/openai/v1",
 		envKeys:        []string{"GROQ_API_KEY"},
 		modelDefaults:  ModelDefaults{FallbackModel: "llama-3.3-70b-versatile"},
-		capabilities:   Capabilities{ToolCalling: true},
+		capabilities:   Capabilities{ToolCalling: true, Reasoning: true},
 	},
 	"mistral": {
 		canonical:      "mistral",

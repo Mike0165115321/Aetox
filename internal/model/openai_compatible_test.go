@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestOpenAICompatibleProviderOmitsReasoningWhenUnsupported(t *testing.T) {
+func TestOpenAICompatibleProviderUsesOpenAIReasoningEffortPayload(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -21,10 +21,13 @@ func TestOpenAICompatibleProviderOmitsReasoningWhenUnsupported(t *testing.T) {
 			t.Fatalf("unmarshal failed: %v", err)
 		}
 		if _, ok := payload["reasoning"]; ok {
-			t.Fatalf("expected reasoning to be omitted, got %#v", payload["reasoning"])
+			t.Fatalf("expected reasoning object to be omitted, got %#v", payload["reasoning"])
 		}
 		if _, ok := payload["thinking"]; ok {
 			t.Fatalf("expected thinking to be omitted, got %#v", payload["thinking"])
+		}
+		if got := payload["reasoning_effort"]; got != "high" {
+			t.Fatalf("expected reasoning_effort=high, got %#v", got)
 		}
 
 		w.WriteHeader(http.StatusOK)
@@ -46,8 +49,56 @@ func TestOpenAICompatibleProviderOmitsReasoningWhenUnsupported(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new provider failed: %v", err)
 	}
-	if provider.SupportsReasoning() {
-		t.Fatal("expected provider reasoning support to be disabled in phase 1")
+	if !provider.SupportsReasoning() {
+		t.Fatal("expected provider reasoning support to be enabled")
+	}
+
+	_, err = provider.Complete(context.Background(), Request{
+		Messages: []Message{
+			{Role: RoleUser, Content: "ping"},
+		},
+		Reasoning: &ReasoningConfig{Effort: "high"},
+	})
+	if err != nil {
+		t.Fatalf("complete failed: %v", err)
+	}
+}
+
+func TestOpenAICompatibleProviderUsesGroqReasoningPayload(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body failed: %v", err)
+		}
+		var payload map[string]any
+		if err := json.Unmarshal(body, &payload); err != nil {
+			t.Fatalf("unmarshal failed: %v", err)
+		}
+		if got := payload["reasoning_effort"]; got != "high" {
+			t.Fatalf("expected reasoning_effort=high, got %#v", got)
+		}
+		if got, ok := payload["include_reasoning"].(bool); !ok || got {
+			t.Fatalf("expected include_reasoning=false, got %#v", payload["include_reasoning"])
+		}
+
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"model": "openai/gpt-oss-20b",
+			"choices": [
+				{"message": {"role":"assistant", "content":"ok"}}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	provider, err := NewOpenAICompatibleProvider(OpenAICompatibleConfig{
+		Provider: "groq",
+		Model:    "openai/gpt-oss-20b",
+		APIKey:   "k",
+		BaseURL:  server.URL,
+	})
+	if err != nil {
+		t.Fatalf("new provider failed: %v", err)
 	}
 
 	_, err = provider.Complete(context.Background(), Request{

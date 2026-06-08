@@ -220,12 +220,16 @@ func TestCapabilitiesFor(t *testing.T) {
 		t.Fatal("openrouter should have both capabilities")
 	}
 	caps = CapabilitiesFor("openai")
-	if !caps.ToolCalling || caps.Reasoning {
-		t.Fatal("openai should have tool calling only")
+	if !caps.ToolCalling || !caps.Reasoning {
+		t.Fatal("openai should have both capabilities")
 	}
 	caps = CapabilitiesFor("deepseek")
 	if !caps.ToolCalling || !caps.Reasoning {
 		t.Fatal("deepseek should have both capabilities")
+	}
+	caps = CapabilitiesFor("groq")
+	if !caps.ToolCalling || !caps.Reasoning {
+		t.Fatal("groq should have both capabilities")
 	}
 	caps = CapabilitiesFor("ollama")
 	if caps.ToolCalling || caps.Reasoning {

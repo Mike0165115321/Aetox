@@ -2,17 +2,25 @@ package think
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
 type Level string
 
 const (
-	LevelLow       Level = "low"
-	LevelMedium    Level = "medium"
-	LevelHigh      Level = "high"
+	LevelNone       Level = "none"
+	LevelMinimal    Level = "minimal"
+	LevelLow        Level = "low"
+	LevelMedium     Level = "medium"
+	LevelHigh       Level = "high"
+	LevelXHigh      Level = "xhigh"
+	LevelMax        Level = "max"
+	LevelDefault    Level = "default"
 	LevelNoThinking Level = "off-think"
 )
+
+var levelPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 
 type Profile struct {
 	Requested  Level
@@ -22,18 +30,14 @@ type Profile struct {
 }
 
 func ParseLevel(raw string) (Level, error) {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case string(LevelLow):
-		return LevelLow, nil
-	case string(LevelMedium):
-		return LevelMedium, nil
-	case string(LevelHigh):
-		return LevelHigh, nil
-	case string(LevelNoThinking):
-		return LevelNoThinking, nil
-	default:
-		return "", fmt.Errorf("invalid think level %q (expected low|medium|high|off-think)", raw)
+	normalized := strings.ToLower(strings.TrimSpace(raw))
+	if normalized == "" {
+		return "", fmt.Errorf("invalid think level %q", raw)
 	}
+	if !levelPattern.MatchString(normalized) {
+		return "", fmt.Errorf("invalid think level %q", raw)
+	}
+	return Level(normalized), nil
 }
 
 func NormalizeLevel(raw string) Level {
