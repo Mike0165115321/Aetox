@@ -19,6 +19,8 @@ import (
 	"aetox-cli/internal/skill"
 	"aetox-cli/internal/think"
 	"aetox-cli/internal/turn"
+
+	"sync"
 )
 
 const (
@@ -49,6 +51,8 @@ type App struct {
 	modelContextTokens int
 	thinkLevel         think.Level
 	skillNames         []string
+
+	statusReporter func(string)
 }
 
 type modelSwitcher func(context.Context) (*cognitive.Agent, string, bool, error)
@@ -124,6 +128,22 @@ func NewApp(opts Options) (*App, error) {
 		},
 	})
 	return a, nil
+}
+
+func (a *App) wireStatusReporter() {
+	if a.statusReporter == nil {
+		return
+	}
+	a.turnExecutor = turn.NewExecutor(turn.ExecutorOptions{
+		Agent:      a.agent,
+		Dispatcher: a.skillDispatcher,
+		CommandSet: a.commandSet,
+		Approve:    a.confirmApproval,
+		StatusReporter: a.statusReporter,
+		TurnOptions: turn.TurnOptions{
+			ThinkLevel: a.thinkLevel,
+		},
+	})
 }
 
 func (a *App) RunOnce(ctx context.Context, message string) (string, error) {
@@ -210,12 +230,15 @@ func (a *App) RunInteractive(ctx context.Context) error {
 		default:
 		}
 
-		var stopThinking func()
+		a.statusReporter = nil
+		var stopThinking func(string)
 		if intent.Kind == command.KindConversation {
 			stopThinking = a.startThinkingIndicator("กำลังคิด...", ansiBrandBright, ansiSubtle)
+		a.statusReporter = stopThinking
 		} else if intent.Kind == command.KindSkill {
-			a.console.Println(ansiBrandBright + "Aetox: " + ansiReset + "กำลังทำงานเครื่องมือ...")
-			stopThinking = a.startThinkingIndicator("กำลังรัน...", ansiBrandBright, ansiSubtle)
+		a.console.Println(ansiBrandBright + "Aetox: " + ansiReset + "กำลังทำงานเครื่องมือ...")
+		stopThinking = a.startThinkingIndicator("กำลังรัน...", ansiBrandBright, ansiSubtle)
+		a.statusReporter = stopThinking
 		}
 
 		streamed := false
@@ -227,7 +250,7 @@ func (a *App) RunInteractive(ctx context.Context) error {
 				if !spinnerStopped {
 					spinnerStopped = true
 					if stopThinking != nil {
-						stopThinking()
+						stopThinking("")
 						stopThinking = nil
 					}
 					a.console.Print(ansiBrandBright + "Aetox: " + ansiReset)
@@ -236,14 +259,21 @@ func (a *App) RunInteractive(ctx context.Context) error {
 			}
 		}
 
-		turnResult, err := a.turnExecutor.Execute(sigCtx, line, intent, onChunk, stopThinking)
+		onToolComplete := func() {
+			if stopThinking != nil {
+				stopThinking("")
+				stopThinking = nil
+			}
+		}
+		a.wireStatusReporter()
+		turnResult, err := a.turnExecutor.Execute(sigCtx, line, intent, onChunk, onToolComplete)
 		reply := strings.TrimSpace(turnResult.Reply)
 		streamed = streamed || turnResult.Streamed
 		if streamed {
 			a.console.Println()
 		}
 		if stopThinking != nil {
-			stopThinking()
+			stopThinking("")
 			stopThinking = nil
 		}
 
@@ -402,12 +432,13 @@ func (a *App) awaitDecision(ctx context.Context) (string, error) {
 	}
 }
 
-func (a *App) startThinkingIndicator(message, color, fallbackColor string) func() {
+func (a *App) startThinkingIndicator(message, color, fallbackColor string) func(string) {
 	frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
 	stopped := make(chan struct{})
 	finished := make(chan struct{})
 
+	var mu sync.Mutex
 	baseMsg := strings.TrimRight(strings.TrimSpace(message), ".")
 	if baseMsg == "" {
 		baseMsg = "กำลังคิด"
@@ -426,10 +457,14 @@ func (a *App) startThinkingIndicator(message, color, fallbackColor string) func(
 			default:
 			}
 
+			mu.Lock()
+			msg := baseMsg
+			mu.Unlock()
+
 			dots := strings.Repeat(".", (i/3)%4)
 			padding := strings.Repeat(" ", 3-(i/3)%4)
 
-			a.console.Print(ansiEraseLine + color + frames[i%len(frames)] + " " + fallbackColor + baseMsg + dots + padding + ansiReset)
+			a.console.Print(ansiEraseLine + color + frames[i%len(frames)] + " " + fallbackColor + msg + dots + padding + ansiReset)
 			i++
 
 			select {
@@ -440,7 +475,13 @@ func (a *App) startThinkingIndicator(message, color, fallbackColor string) func(
 		}
 	}()
 
-	return func() {
+	return func(newMsg string) {
+		if newMsg != "" {
+			mu.Lock()
+			baseMsg = strings.TrimRight(strings.TrimSpace(newMsg), ".")
+			mu.Unlock()
+			return
+		}
 		select {
 		case <-stopped:
 			return

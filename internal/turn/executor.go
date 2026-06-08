@@ -89,6 +89,7 @@ type Executor struct {
 	summaryTimeout time.Duration
 	summaryLimit   int
 	turnOptions    TurnOptions
+	statusReporter func(string)
 }
 
 type ExecutorOptions struct {
@@ -99,6 +100,7 @@ type ExecutorOptions struct {
 	SummaryTimeout time.Duration
 	SummaryLimit   int
 	TurnOptions    TurnOptions
+	StatusReporter func(string)
 }
 
 type Result struct {
@@ -124,6 +126,13 @@ func NewExecutor(opts ExecutorOptions) *Executor {
 		summaryTimeout: timeout,
 		summaryLimit:   limit,
 		turnOptions:    opts.TurnOptions,
+		statusReporter: opts.StatusReporter,
+	}
+}
+
+func (e *Executor) reportStatus(msg string) {
+	if e.statusReporter != nil {
+		e.statusReporter(msg)
 	}
 }
 
@@ -138,7 +147,9 @@ func (e *Executor) Execute(
 	if line == "" {
 		return Result{}, errors.New("empty input")
 	}
+	e.reportStatus("กำลังวิเคราะห์คำขอ...")
 	parsed := e.normalizeIntent(line, intent)
+	e.reportStatus("กำลังค้นหาเครื่องมือ...")
 	candidates := e.inferToolCandidates(parsed.Raw)
 	if e.shouldExecuteInferredBeforeAgent(parsed, candidates) {
 		if result, handled, err := e.executeInferredToolCandidatesLoop(ctx, parsed.Raw, candidates); handled {
@@ -147,6 +158,7 @@ func (e *Executor) Execute(
 	}
 
 	if e.shouldUseInferredToolPath(parsed, candidates) {
+		e.reportStatus("กำลังเตรียมเครื่องมือ...")
 		if e.agent == nil || !e.agent.SupportsToolCalling() {
 			if result, handled, err := e.executeInferredToolCandidatesLoop(ctx, parsed.Raw, candidates); handled {
 				return result, err
@@ -171,6 +183,7 @@ func (e *Executor) Execute(
 	}
 
 	if parsed.Kind == command.KindConversation {
+		e.reportStatus("กำลังคิดคำตอบ...")
 		reply, streamed, err := e.agent.RespondStream(ctx, parsed.Raw, asStreamHandler(onChunk), e.turnOptions)
 		return Result{
 			Reply:    reply,
@@ -179,6 +192,7 @@ func (e *Executor) Execute(
 		}, err
 	}
 
+	e.reportStatus("กำลังรันเครื่องมือ...")
 	return e.executeSkillTurn(ctx, line, parsed, onToolComplete)
 }
 
