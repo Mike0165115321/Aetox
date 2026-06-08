@@ -136,6 +136,13 @@ func (e *Executor) reportStatus(msg string) {
 	}
 }
 
+func (e *Executor) conversationThinkingStatus() string {
+	if e.turnOptions.ThinkLevel == think.LevelNoThinking {
+		return "กำลังประมวลผลคำตอบ..."
+	}
+	return "กำลังคิดคำตอบ..."
+}
+
 func (e *Executor) Execute(
 	ctx context.Context,
 	line string,
@@ -183,7 +190,7 @@ func (e *Executor) Execute(
 	}
 
 	if parsed.Kind == command.KindConversation {
-		e.reportStatus("กำลังคิดคำตอบ...")
+		e.reportStatus(e.conversationThinkingStatus())
 		reply, streamed, err := e.agent.RespondStream(ctx, parsed.Raw, asStreamHandler(onChunk), e.turnOptions)
 		return Result{
 			Reply:    reply,

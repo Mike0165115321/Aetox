@@ -48,8 +48,8 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.ModelAPIKey != "env-key" {
 		t.Fatalf("expected API key from env, got %q", cfg.ModelAPIKey)
 	}
-	if cfg.ThinkLevel != "medium" {
-		t.Fatalf("expected default think level medium, got %q", cfg.ThinkLevel)
+	if cfg.ThinkLevel != "low" {
+		t.Fatalf("expected default think level low, got %q", cfg.ThinkLevel)
 	}
 }
 
@@ -83,8 +83,8 @@ func TestLoadInvalidValues(t *testing.T) {
 	if cfg.ModelProvider != "noop" {
 		t.Fatalf("expected model provider fallback noop, got %q", cfg.ModelProvider)
 	}
-	if cfg.ThinkLevel != "medium" {
-		t.Fatalf("expected fallback think level medium, got %q", cfg.ThinkLevel)
+	if cfg.ThinkLevel != "low" {
+		t.Fatalf("expected fallback think level low, got %q", cfg.ThinkLevel)
 	}
 }
 

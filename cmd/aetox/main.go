@@ -32,6 +32,32 @@ var (
 	legacyYes   bool
 )
 
+func parseModelWithThink(raw string) (string, string, bool) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return "", "", false
+	}
+
+	openIdx := strings.LastIndex(value, "(")
+	closeIdx := strings.LastIndex(value, ")")
+	if openIdx < 0 || closeIdx < 0 || closeIdx != len(value)-1 || closeIdx <= openIdx+1 {
+		return value, "", false
+	}
+
+	inner := strings.TrimSpace(value[openIdx+1 : closeIdx])
+	modelName := strings.TrimSpace(value[:openIdx])
+	if modelName == "" || inner == "" {
+		return value, "", false
+	}
+
+	normalized, err := think.ParseLevel(inner)
+	if err != nil {
+		return value, "", false
+	}
+
+	return modelName, string(normalized), true
+}
+
 func main() {
 	setUTF8Console()
 	providerUsageHint := "model provider (" + strings.Join(model.SupportedProviders(), "|") + ")"
@@ -49,12 +75,12 @@ func main() {
 	flag.StringVar(&rootPath, "root", "", "optional sandbox root directory (default: current directory)")
 	flag.IntVar(&approvalTimeout, "approval-timeout", 60, "reserved for future approval controls")
 	flag.StringVar(&modelProvider, "model-provider", "", providerUsageHint)
-	flag.StringVar(&modelName, "model-name", "", "model name (required for selected provider)")
+	flag.StringVar(&modelName, "model-name", "", "model name or model(low|medium|high|off-think)")
 	flag.StringVar(&modelAPIKey, "model-api-key", "", "model API key; fallback to provider env when empty")
 	flag.StringVar(&modelBaseURL, "model-base-url", "", "override base URL for model provider")
 	flag.IntVar(&modelTimeout, "model-timeout", 30, "model request timeout in seconds")
 	flag.IntVar(&modelContextTokens, "model-context-tokens", 0, "model context window token cap (0=auto/unknown)")
-	flag.StringVar(&thinkLevel, "think", "", "thinking level (low|medium|high)")
+	flag.StringVar(&thinkLevel, "think", "", "thinking level (low|medium|high|off-think)")
 	flag.BoolVar(&noBanner, "no-banner", false, "disable startup banner in interactive mode")
 	flag.BoolVar(&showVersion, "version", false, "print version")
 	flag.BoolVar(&showHelp, "help", false, "print usage")
@@ -70,12 +96,12 @@ func main() {
 	preParser.StringVar(&rootPath, "root", "", "optional sandbox root directory (default: current directory)")
 	preParser.IntVar(&approvalTimeout, "approval-timeout", 60, "reserved for future approval controls")
 	preParser.StringVar(&modelProvider, "model-provider", "", providerUsageHint)
-	preParser.StringVar(&modelName, "model-name", "", "model name (required for selected provider)")
+	preParser.StringVar(&modelName, "model-name", "", "model name or model(low|medium|high|off-think)")
 	preParser.StringVar(&modelAPIKey, "model-api-key", "", "model API key; fallback to provider env when empty")
 	preParser.StringVar(&modelBaseURL, "model-base-url", "", "override base URL for model provider")
 	preParser.IntVar(&modelTimeout, "model-timeout", 30, "model request timeout in seconds")
 	preParser.IntVar(&modelContextTokens, "model-context-tokens", 0, "model context window token cap (0=auto/unknown)")
-	preParser.StringVar(&thinkLevel, "think", "", "thinking level (low|medium|high)")
+	preParser.StringVar(&thinkLevel, "think", "", "thinking level (low|medium|high|off-think)")
 	preParser.BoolVar(&noBanner, "no-banner", false, "disable startup banner in interactive mode")
 	preParser.BoolVar(&showVersion, "version", false, "print version")
 	preParser.BoolVar(&showHelp, "help", false, "print usage")
@@ -96,6 +122,11 @@ func main() {
 			os.Exit(2)
 		}
 		thinkLevel = string(parsedThinkLevel)
+	}
+	modelNameFromFlag, parsedThinkLevel, modelNameHasThink := parseModelWithThink(modelName)
+	if modelNameHasThink && !thinkLevelExplicit {
+		modelName = modelNameFromFlag
+		thinkLevel = parsedThinkLevel
 	}
 
 	if showVersion {
@@ -153,7 +184,7 @@ func main() {
 			}
 		}
 	}
-	if !thinkLevelExplicit && hasStoredPreference && strings.TrimSpace(storedPreference.ThinkLevel) != "" {
+	if !thinkLevelExplicit && !modelNameHasThink && hasStoredPreference && strings.TrimSpace(storedPreference.ThinkLevel) != "" {
 		thinkLevel = string(think.NormalizeLevel(storedPreference.ThinkLevel))
 		cfg.ThinkLevel = thinkLevel
 	}
@@ -477,12 +508,16 @@ func promptModelSelection(cfg config.Config, askThinkLevel bool) (string, string
 		}
 
 		selectedModel := pickModelForProvider(reader, provider, cfg.ModelName, providerBaseURL, key)
-		selectedThinkLevel := defaultThinkLevel(cfg.ThinkLevel)
-		if askThinkLevel {
-			selectedThinkLevel = promptThinkLevelSelection(reader, cfg.ThinkLevel)
+		selectedModel, selectedThinkLevel, parsedModelThink := parseModelWithThink(selectedModel)
+		if !parsedModelThink {
+			selectedThinkLevel = defaultThinkLevel(cfg.ThinkLevel)
+			if askThinkLevel {
+				selectedThinkLevel = promptThinkLevelSelection(reader, cfg.ThinkLevel)
+			}
 		}
+
 		fmt.Printf("Selected: %s / %s", provider, selectedModel)
-		if askThinkLevel {
+		if askThinkLevel || parsedModelThink {
 			fmt.Printf(" | think %s", selectedThinkLevel)
 		}
 		fmt.Printf("\n\n")
@@ -505,6 +540,7 @@ func promptThinkLevelSelection(reader *bufio.Reader, existing string) string {
 		string(think.LevelLow),
 		string(think.LevelMedium),
 		string(think.LevelHigh),
+		string(think.LevelNoThinking),
 	}
 	defaultIndex := 1
 	for i, option := range options {
@@ -787,10 +823,10 @@ func printUsage() {
 	fmt.Println("  aetox help               show this help")
 	fmt.Println("Flags:")
 	fmt.Printf("  --model-provider: %s\n", strings.Join(model.SupportedProviders(), "|"))
-	fmt.Println("  --model-name <model>         optional; provider defaults are auto-selected when omitted")
+	fmt.Println("  --model-name <model[(low|medium|high|off-think)]> optional; provider defaults are auto-selected when omitted")
 	fmt.Println("  --model-api-key <key>        fallback: provider env (OPENAI_API_KEY, DEEPSEEK_API_KEY, GROQ_API_KEY, etc.)")
 	fmt.Println("  --model-context-tokens <n>   override context window display (0=auto/unknown)")
-	fmt.Println("  --think <level>              thinking level: low|medium|high")
+	fmt.Println("  --think <level>              thinking level: low|medium|high|off-think")
 	fmt.Println("  --no-banner                 disable interactive banner")
 	fmt.Println("  --yes                       auto-approve safe-mode safety prompts")
 	fmt.Println("  --version                   print version")

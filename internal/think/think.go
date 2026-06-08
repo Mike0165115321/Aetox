@@ -8,9 +8,10 @@ import (
 type Level string
 
 const (
-	LevelLow    Level = "low"
-	LevelMedium Level = "medium"
-	LevelHigh   Level = "high"
+	LevelLow       Level = "low"
+	LevelMedium    Level = "medium"
+	LevelHigh      Level = "high"
+	LevelNoThinking Level = "off-think"
 )
 
 type Profile struct {
@@ -28,8 +29,10 @@ func ParseLevel(raw string) (Level, error) {
 		return LevelMedium, nil
 	case string(LevelHigh):
 		return LevelHigh, nil
+	case string(LevelNoThinking):
+		return LevelNoThinking, nil
 	default:
-		return "", fmt.Errorf("invalid think level %q (expected low|medium|high)", raw)
+		return "", fmt.Errorf("invalid think level %q (expected low|medium|high|off-think)", raw)
 	}
 }
 
@@ -43,6 +46,14 @@ func NormalizeLevel(raw string) Level {
 
 func Resolve(level Level, nativeSupported bool) Profile {
 	resolved := NormalizeLevel(string(level))
+	if resolved == LevelNoThinking {
+		return Profile{
+			Requested:  resolved,
+			Resolved:   resolved,
+			Native:     false,
+			Downgraded: false,
+		}
+	}
 	return Profile{
 		Requested:  resolved,
 		Resolved:   resolved,
@@ -59,6 +70,9 @@ func (p Profile) ReasoningEffort() string {
 }
 
 func (p Profile) StatusLabel() string {
+	if p.Requested == LevelNoThinking {
+		return fmt.Sprintf("%s (disabled)", p.Resolved)
+	}
 	if p.Native {
 		return fmt.Sprintf("%s (native)", p.Resolved)
 	}

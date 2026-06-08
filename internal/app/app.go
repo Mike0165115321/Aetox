@@ -231,14 +231,15 @@ func (a *App) RunInteractive(ctx context.Context) error {
 		}
 
 		a.statusReporter = nil
+		thinkingMessage := a.thinkingStatusMessage(intent.Kind)
 		var stopThinking func(string)
 		if intent.Kind == command.KindConversation {
-			stopThinking = a.startThinkingIndicator("กำลังคิด...", ansiBrandBright, ansiSubtle)
-		a.statusReporter = stopThinking
+			stopThinking = a.startThinkingIndicator(thinkingMessage, ansiBrandBright, ansiSubtle)
+			a.statusReporter = stopThinking
 		} else if intent.Kind == command.KindSkill {
-		a.console.Println(ansiBrandBright + "Aetox: " + ansiReset + "กำลังทำงานเครื่องมือ...")
-		stopThinking = a.startThinkingIndicator("กำลังรัน...", ansiBrandBright, ansiSubtle)
-		a.statusReporter = stopThinking
+			a.console.Println(ansiBrandBright + "Aetox: " + ansiReset + thinkingMessage)
+			stopThinking = a.startThinkingIndicator(thinkingMessage, ansiBrandBright, ansiSubtle)
+			a.statusReporter = stopThinking
 		}
 
 		streamed := false
@@ -302,6 +303,20 @@ func (a *App) RunInteractive(ctx context.Context) error {
 		a.printSeparator()
 		a.printStatusBar()
 	}
+}
+
+func (a *App) thinkingStatusMessage(kind command.Kind) string {
+	if kind == command.KindConversation {
+		if a.thinkLevel == think.LevelNoThinking {
+			return "กำลังตอบกลับ..."
+		}
+		return "กำลังคิด..."
+	}
+
+	if a.thinkLevel == think.LevelNoThinking {
+		return "กำลังประมวลผลคำสั่ง..."
+	}
+	return "กำลังรัน..."
 }
 
 func (a *App) showSlashHelp() {

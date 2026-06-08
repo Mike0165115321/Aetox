@@ -127,7 +127,7 @@ func Load(opt ConfigOptions) Config {
 	}
 	thinkLevel := strings.ToLower(strings.TrimSpace(opt.ThinkLevel))
 	if thinkLevel == "" {
-		thinkLevel = "medium"
+		thinkLevel = "low"
 	}
 
 	return Config{
