@@ -131,6 +131,25 @@ var catalog = map[string]*entry{
 		modelDefaults:  ModelDefaults{FallbackModel: "deepseek-v4-flash"},
 		capabilities:   Capabilities{ToolCalling: true, Reasoning: true},
 	},
+	"gemini": {
+		canonical:      "gemini",
+		aliases:        []string{"gemini", "google", "google-ai", "googleai", "google-gemini"},
+		requiresAPIKey: true,
+		runtime:        RuntimeOpenAICompatible,
+		baseURL:        "https://generativelanguage.googleapis.com/v1beta/openai",
+		envKeys:        []string{"GEMINI_API_KEY", "GOOGLE_API_KEY"},
+		modelDefaults: ModelDefaults{
+			FallbackModel: "gemini-2.5-flash-lite",
+			RecommendedModels: []string{
+				"gemini-2.5-flash-lite",
+				"gemini-2.5-flash",
+				"gemini-3.5-flash",
+				"gemini-2.0-flash-lite",
+				"gemini-2.5-pro",
+			},
+		},
+		capabilities: Capabilities{ToolCalling: true, Reasoning: true},
+	},
 	"groq": {
 		canonical:      "groq",
 		aliases:        []string{"groq", "groqcloud"},

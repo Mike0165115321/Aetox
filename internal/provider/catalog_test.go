@@ -20,6 +20,8 @@ func TestNormalize_KnownAlias(t *testing.T) {
 		{"chatgpt", "openai"},
 		{"deepseek", "deepseek"},
 		{"deepseek-api", "deepseek"},
+		{"gemini", "gemini"},
+		{"google", "gemini"},
 		{"groq", "groq"},
 		{"groqcloud", "groq"},
 		{"mistral", "mistral"},
@@ -133,6 +135,7 @@ func TestDefaultModel_FallbackOnly(t *testing.T) {
 		{"openrouter", "deepseek/deepseek-r1"},
 		{"openai", "gpt-4o-mini"},
 		{"deepseek", "deepseek-v4-flash"},
+		{"gemini", "gemini-2.5-flash-lite"},
 		{"groq", "llama-3.3-70b-versatile"},
 		{"mistral", "mistral-small"},
 		{"together", "google/gemma-2-9b-it"},
@@ -160,6 +163,7 @@ func TestDefaultBaseURL(t *testing.T) {
 		{"openrouter", "https://openrouter.ai/api/v1"},
 		{"openai", "https://api.openai.com/v1"},
 		{"deepseek", "https://api.deepseek.com"},
+		{"gemini", "https://generativelanguage.googleapis.com/v1beta/openai"},
 		{"groq", "https://api.groq.com/openai/v1"},
 		{"mistral", "https://api.mistral.ai/v1"},
 		{"together", "https://api.together.xyz/v1"},
@@ -181,7 +185,7 @@ func TestDefaultBaseURL(t *testing.T) {
 }
 
 func TestRequiresAPIKey(t *testing.T) {
-	needsKey := []string{"openrouter", "openai", "deepseek", "groq", "mistral", "together", "perplexity", "cohere"}
+	needsKey := []string{"openrouter", "openai", "deepseek", "gemini", "groq", "mistral", "together", "perplexity", "cohere"}
 	for _, p := range needsKey {
 		if !RequiresAPIKey(p) {
 			t.Fatalf("expected %q to require API key", p)
@@ -226,6 +230,10 @@ func TestCapabilitiesFor(t *testing.T) {
 	caps = CapabilitiesFor("deepseek")
 	if !caps.ToolCalling || !caps.Reasoning {
 		t.Fatal("deepseek should have both capabilities")
+	}
+	caps = CapabilitiesFor("gemini")
+	if !caps.ToolCalling || !caps.Reasoning {
+		t.Fatal("gemini should have both capabilities")
 	}
 	caps = CapabilitiesFor("groq")
 	if !caps.ToolCalling || !caps.Reasoning {

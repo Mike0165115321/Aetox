@@ -124,7 +124,7 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 	} else if p.usesGroqReasoning() {
 		payload.ReasoningEffort = normalizeStandardReasoningEffort(req.Reasoning)
 		payload.IncludeReasoning = boolPtr(false)
-	} else if p.usesOpenAIReasoningEffort() {
+	} else if p.usesOpenAIReasoningEffort() || p.usesGeminiReasoningEffort() {
 		payload.ReasoningEffort = normalizeStandardReasoningEffort(req.Reasoning)
 	} else if p.SupportsReasoning() {
 		payload.Reasoning = req.Reasoning
@@ -235,7 +235,7 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 	} else if p.usesGroqReasoning() {
 		payload.ReasoningEffort = normalizeStandardReasoningEffort(req.Reasoning)
 		payload.IncludeReasoning = boolPtr(false)
-	} else if p.usesOpenAIReasoningEffort() {
+	} else if p.usesOpenAIReasoningEffort() || p.usesGeminiReasoningEffort() {
 		payload.ReasoningEffort = normalizeStandardReasoningEffort(req.Reasoning)
 	} else if p.SupportsReasoning() {
 		payload.Reasoning = req.Reasoning
@@ -347,7 +347,7 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 
 func supportsNativeReasoning(provider string) bool {
 	switch NormalizeProvider(provider) {
-	case "openrouter", "deepseek", "openai", "groq":
+	case "openrouter", "deepseek", "openai", "groq", "gemini":
 		return true
 	default:
 		return false
@@ -364,6 +364,10 @@ func (p *OpenAICompatibleProvider) usesOpenAIReasoningEffort() bool {
 
 func (p *OpenAICompatibleProvider) usesGroqReasoning() bool {
 	return NormalizeProvider(p.provider) == "groq"
+}
+
+func (p *OpenAICompatibleProvider) usesGeminiReasoningEffort() bool {
+	return NormalizeProvider(p.provider) == "gemini"
 }
 
 func normalizeDeepSeekThinking(thinking *ThinkingConfig, reasoning *ReasoningConfig) *ThinkingConfig {

@@ -155,6 +155,13 @@ func ModelChoicesWithEndpointAndAPIKey(p, baseURL, apiKey string) ([]string, err
 		}
 		return nil, err
 	case provider.RuntimeOpenAICompatible:
+		if canonical == "gemini" {
+			models, err := DiscoverGeminiModels(baseURL, apiKey)
+			if err == nil && len(models) > 0 {
+				return models, nil
+			}
+			return nil, err
+		}
 		models, err := DiscoverOpenAICompatibleModels(canonical, baseURL, apiKey)
 		if err == nil && len(models) > 0 {
 			return models, nil
@@ -312,4 +319,87 @@ func DiscoverOpenAICompatibleModels(p, baseURL, apiKey string) ([]string, error)
 		return nil, fmt.Errorf("%s models endpoint returned no valid IDs", p)
 	}
 	return result, nil
+}
+
+type geminiModel struct {
+	BaseModelID                string   `json:"baseModelId"`
+	SupportedGenerationMethods []string `json:"supportedGenerationMethods"`
+}
+
+type geminiModelsResponse struct {
+	Models []geminiModel `json:"models"`
+}
+
+func DiscoverGeminiModels(baseURL, apiKey string) ([]string, error) {
+	endpoint := strings.TrimSpace(baseURL)
+	if endpoint == "" {
+		endpoint = provider.DefaultBaseURL("gemini")
+	}
+	if !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
+		endpoint = "https://" + endpoint
+	}
+	endpoint = strings.TrimRight(endpoint, "/")
+	if strings.HasSuffix(endpoint, "/openai") {
+		endpoint = strings.TrimSuffix(endpoint, "/openai")
+	}
+	endpoint = strings.TrimRight(endpoint, "/") + "/models"
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	query := req.URL.Query()
+	if strings.TrimSpace(apiKey) != "" {
+		query.Set("key", strings.TrimSpace(apiKey))
+	}
+	req.URL.RawQuery = query.Encode()
+
+	resp, err := (&http.Client{Timeout: 3 * time.Second}).Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("gemini models endpoint failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var payload geminiModelsResponse
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, fmt.Errorf("gemini models response parse failed: %w", err)
+	}
+	seen := make(map[string]struct{}, len(payload.Models))
+	result := make([]string, 0, len(payload.Models))
+	for _, item := range payload.Models {
+		if !supportsGeminiGenerateContent(item.SupportedGenerationMethods) {
+			continue
+		}
+		id := strings.TrimSpace(item.BaseModelID)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		result = append(result, id)
+	}
+	sort.Strings(result)
+	if len(result) == 0 {
+		return nil, fmt.Errorf("gemini models endpoint returned no valid IDs")
+	}
+	return result, nil
+}
+
+func supportsGeminiGenerateContent(methods []string) bool {
+	for _, method := range methods {
+		if strings.EqualFold(strings.TrimSpace(method), "generateContent") {
+			return true
+		}
+	}
+	return false
 }

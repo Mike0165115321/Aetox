@@ -112,6 +112,54 @@ func TestOpenAICompatibleProviderUsesGroqReasoningPayload(t *testing.T) {
 	}
 }
 
+func TestOpenAICompatibleProviderUsesGeminiReasoningPayload(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body failed: %v", err)
+		}
+		var payload map[string]any
+		if err := json.Unmarshal(body, &payload); err != nil {
+			t.Fatalf("unmarshal failed: %v", err)
+		}
+		if got := payload["reasoning_effort"]; got != "low" {
+			t.Fatalf("expected reasoning_effort=low, got %#v", got)
+		}
+		if _, ok := payload["reasoning"]; ok {
+			t.Fatalf("expected reasoning object to be omitted, got %#v", payload["reasoning"])
+		}
+
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"model": "gemini-2.5-flash-lite",
+			"choices": [
+				{"message": {"role":"assistant", "content":"ok"}}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	provider, err := NewOpenAICompatibleProvider(OpenAICompatibleConfig{
+		Provider: "gemini",
+		Model:    "gemini-2.5-flash-lite",
+		APIKey:   "k",
+		BaseURL:  server.URL,
+	})
+	if err != nil {
+		t.Fatalf("new provider failed: %v", err)
+	}
+
+	_, err = provider.Complete(context.Background(), Request{
+		Messages: []Message{
+			{Role: RoleUser, Content: "ping"},
+		},
+		Reasoning: &ReasoningConfig{Effort: "low"},
+	})
+	if err != nil {
+		t.Fatalf("complete failed: %v", err)
+	}
+}
+
 func TestOpenAICompatibleProviderUsesDeepSeekThinkingPayload(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)

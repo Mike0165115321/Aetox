@@ -40,6 +40,8 @@ func ResolveThinkingCapabilities(provider, modelName string) ThinkingCapabilitie
 	switch canonicalProvider {
 	case "deepseek":
 		return cloneThinkingCapabilities(resolveDeepSeekThinkingCapabilities(modelID))
+	case "gemini":
+		return cloneThinkingCapabilities(resolveGeminiThinkingCapabilities(modelID))
 	case "openai":
 		return cloneThinkingCapabilities(resolveOpenAIThinkingCapabilities(modelID))
 	case "openrouter":
@@ -98,6 +100,17 @@ func NormalizeThinkingLevel(provider, modelName, requested string) string {
 			return "high"
 		case "xhigh":
 			return "max"
+		}
+	case "gemini":
+		switch normalized {
+		case "off-think", "off", "disabled":
+			if SupportsThinkingLevel(provider, modelName, "none") {
+				return "none"
+			}
+		case "max":
+			if SupportsThinkingLevel(provider, modelName, "high") {
+				return "high"
+			}
 		}
 	case "openai", "openrouter":
 		switch normalized {
@@ -189,6 +202,65 @@ func resolveOpenAIThinkingCapabilities(modelID string) ThinkingCapabilities {
 	}
 }
 
+func resolveGeminiThinkingCapabilities(modelID string) ThinkingCapabilities {
+	switch {
+	case modelID == "":
+		return ThinkingCapabilities{
+			Supported: true,
+			Native:    true,
+			Levels:    []string{"none", "minimal", "low", "medium", "high"},
+			Default:   "medium",
+			Runtime:   ThinkingRuntimeReasoningEffort,
+			Source:    "gemini-openai-compat-docs",
+		}
+	case strings.HasPrefix(modelID, "gemini-2.0-flash-lite"):
+		return ThinkingCapabilities{
+			Supported: false,
+			Native:    false,
+			Levels:    nil,
+			Default:   "",
+			Runtime:   ThinkingRuntimeUnknown,
+			Source:    "gemini-model-docs",
+		}
+	case strings.HasPrefix(modelID, "gemini-2.5-pro"):
+		return ThinkingCapabilities{
+			Supported: true,
+			Native:    true,
+			Levels:    []string{"minimal", "low", "medium", "high"},
+			Default:   "medium",
+			Runtime:   ThinkingRuntimeReasoningEffort,
+			Source:    "gemini-openai-compat-docs",
+		}
+	case strings.HasPrefix(modelID, "gemini-2.5"):
+		return ThinkingCapabilities{
+			Supported: true,
+			Native:    true,
+			Levels:    []string{"none", "minimal", "low", "medium", "high"},
+			Default:   "medium",
+			Runtime:   ThinkingRuntimeReasoningEffort,
+			Source:    "gemini-openai-compat-docs",
+		}
+	case strings.HasPrefix(modelID, "gemini-3"):
+		return ThinkingCapabilities{
+			Supported: true,
+			Native:    true,
+			Levels:    []string{"minimal", "low", "medium", "high"},
+			Default:   "medium",
+			Runtime:   ThinkingRuntimeReasoningEffort,
+			Source:    "gemini-openai-compat-docs",
+		}
+	default:
+		return ThinkingCapabilities{
+			Supported: false,
+			Native:    false,
+			Levels:    nil,
+			Default:   "",
+			Runtime:   ThinkingRuntimeUnknown,
+			Source:    "gemini-model-family-heuristic",
+		}
+	}
+}
+
 func resolveOpenRouterThinkingCapabilities(modelID string) ThinkingCapabilities {
 	if isKnownOpenRouterReasoningModel(modelID) {
 		return ThinkingCapabilities{
@@ -247,6 +319,8 @@ func isKnownOpenRouterReasoningModel(modelID string) bool {
 	case strings.HasPrefix(modelID, "openai/"):
 		return true
 	case strings.HasPrefix(modelID, "deepseek/"):
+		return true
+	case strings.HasPrefix(modelID, "google/gemini-"):
 		return true
 	case strings.HasPrefix(modelID, "qwen/"):
 		return true

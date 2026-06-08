@@ -54,6 +54,35 @@ func TestResolveThinkingCapabilitiesOpenAIReasoningFamilies(t *testing.T) {
 	}
 }
 
+func TestResolveThinkingCapabilitiesGeminiFamilies(t *testing.T) {
+	flashLite := ResolveThinkingCapabilities("gemini", "gemini-2.5-flash-lite")
+	if !flashLite.Supported || flashLite.Default != "medium" {
+		t.Fatalf("expected gemini flash-lite thinking support, got %+v", flashLite)
+	}
+	wantFlashLite := []string{"none", "minimal", "low", "medium", "high"}
+	for i := range wantFlashLite {
+		if flashLite.Levels[i] != wantFlashLite[i] {
+			t.Fatalf("unexpected gemini flash-lite levels: %#v", flashLite.Levels)
+		}
+	}
+
+	pro := ResolveThinkingCapabilities("gemini", "gemini-2.5-pro")
+	wantPro := []string{"minimal", "low", "medium", "high"}
+	for i := range wantPro {
+		if pro.Levels[i] != wantPro[i] {
+			t.Fatalf("unexpected gemini pro levels: %#v", pro.Levels)
+		}
+	}
+	if SupportsThinkingLevel("gemini", "gemini-2.5-pro", "none") {
+		t.Fatal("gemini-2.5-pro should not support none")
+	}
+
+	legacyLite := ResolveThinkingCapabilities("gemini", "gemini-2.0-flash-lite")
+	if legacyLite.Supported {
+		t.Fatalf("expected gemini-2.0-flash-lite to not support thinking, got %+v", legacyLite)
+	}
+}
+
 func TestResolveThinkingCapabilitiesGroqFamilies(t *testing.T) {
 	gptOSS := ResolveThinkingCapabilities("groq", "openai/gpt-oss-20b")
 	if !gptOSS.Supported || gptOSS.Runtime != ThinkingRuntimeGroq {
@@ -110,6 +139,13 @@ func TestNormalizeThinkingLevelDeepSeekMigratesLegacyValues(t *testing.T) {
 
 func TestNormalizeThinkingLevelOpenAIMigratesOffThinkToNone(t *testing.T) {
 	got := NormalizeThinkingLevel("openai", "gpt-5.1", "off-think")
+	if got != "none" {
+		t.Fatalf("expected none got %q", got)
+	}
+}
+
+func TestNormalizeThinkingLevelGeminiMapsOffThinkToNoneWhenAllowed(t *testing.T) {
+	got := NormalizeThinkingLevel("gemini", "gemini-2.5-flash-lite", "off-think")
 	if got != "none" {
 		t.Fatalf("expected none got %q", got)
 	}
