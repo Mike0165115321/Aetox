@@ -90,15 +90,20 @@ func (a *Agent) RespondWithTools(
 			if content == "" {
 				content = "(empty response)"
 			}
-			a.context.Add(model.RoleAssistant, content)
+			a.context.AddMessage(model.Message{
+				Role:             model.RoleAssistant,
+				Content:          content,
+				ReasoningContent: strings.TrimSpace(response.ReasoningContent),
+			})
 			return content, anyToolUsed, nil
 		}
 		anyToolUsed = true
 
 		a.context.AddMessage(model.Message{
-			Role:      model.RoleAssistant,
-			Content:   content,
-			ToolCalls: response.ToolCalls,
+			Role:             model.RoleAssistant,
+			Content:          content,
+			ReasoningContent: strings.TrimSpace(response.ReasoningContent),
+			ToolCalls:        response.ToolCalls,
 		})
 		for _, toolCall := range response.ToolCalls {
 			callOutput, toolErr := a.executeToolCall(ctx, toolCall, execTool)
@@ -163,7 +168,11 @@ func (a *Agent) Respond(ctx context.Context, userMessage string, opts turn.TurnO
 		a.lastUsage = *response.Usage
 	}
 
-	a.context.Add(model.RoleAssistant, reply)
+	a.context.AddMessage(model.Message{
+		Role:             model.RoleAssistant,
+		Content:          reply,
+		ReasoningContent: strings.TrimSpace(response.ReasoningContent),
+	})
 	return reply, nil
 }
 
@@ -192,7 +201,11 @@ func (a *Agent) RespondStream(ctx context.Context, userMessage string, onChunk f
 			if response.Usage != nil {
 				a.lastUsage = *response.Usage
 			}
-			a.context.Add(model.RoleAssistant, reply)
+			a.context.AddMessage(model.Message{
+				Role:             model.RoleAssistant,
+				Content:          reply,
+				ReasoningContent: strings.TrimSpace(response.ReasoningContent),
+			})
 			return reply, true, nil
 		}
 		// fallback to non-streaming when streaming path fails
@@ -211,7 +224,11 @@ func (a *Agent) RespondStream(ctx context.Context, userMessage string, onChunk f
 	if response.Usage != nil {
 		a.lastUsage = *response.Usage
 	}
-	a.context.Add(model.RoleAssistant, reply)
+	a.context.AddMessage(model.Message{
+		Role:             model.RoleAssistant,
+		Content:          reply,
+		ReasoningContent: strings.TrimSpace(response.ReasoningContent),
+	})
 	return reply, false, nil
 }
 
@@ -271,6 +288,14 @@ func (a *Agent) buildRequest(messages []model.Message, maxTokens int, temperatur
 	profile := a.ResolveThinkProfile(opts.ThinkLevel)
 	if effort := profile.ReasoningEffort(); effort != "" {
 		req.Reasoning = &model.ReasoningConfig{Effort: effort}
+	}
+	if a.provider != nil && model.NormalizeProvider(a.provider.Name()) == "deepseek" {
+		switch think.NormalizeLevel(string(opts.ThinkLevel)) {
+		case think.LevelNoThinking:
+			req.Thinking = &model.ThinkingConfig{Type: "disabled"}
+		default:
+			req.Thinking = &model.ThinkingConfig{Type: "enabled"}
+		}
 	}
 	return req
 }

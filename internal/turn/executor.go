@@ -1135,7 +1135,11 @@ func (e *Executor) parseGeneratedWriteCandidate(raw string, rest string) (string
 	}
 	base := "aetox_output"
 	if e.isSelfIntroductionRequest(raw) {
-		base = "self_introduction"
+		if extension == "md" {
+			base = "intro"
+		} else {
+			base = "self_introduction"
+		}
 	}
 	path, err := e.normalizeInferredPath(base + "." + extension)
 	if err != nil {
@@ -1207,11 +1211,17 @@ func (e *Executor) inferExtensionHint(raw string) string {
 			return hint
 		}
 	}
+	if e.isSelfIntroductionRequest(raw) {
+		return "md"
+	}
 	return ""
 }
 
 func (e *Executor) buildGeneratedFileContent(name string, raw string, rest string) string {
 	if e.isSelfIntroductionRequest(raw) {
+		if strings.HasSuffix(strings.ToLower(strings.TrimSpace(name)), ".md") {
+			return "# สวัสดีครับ ผม Aetox\n\nผมเป็นผู้ช่วยที่ตอบได้ทั้งภาษาไทยและอังกฤษผ่าน terminal\nช่วยจัดการไฟล์ รันคำสั่ง และทำงานพัฒนาแบบหลายขั้นตอนได้\n"
+		}
 		return "Hello, I'm Aetox. I help with terminal tasks, coding, questions, and multi-step workflows."
 	}
 	return e.buildDefaultFileContent(name)

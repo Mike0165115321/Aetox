@@ -32,6 +32,7 @@ const (
 	ansiBrandBright = "\x1b[38;5;117m"
 	ansiText        = "\x1b[97m"
 	ansiSubtle      = "\x1b[38;5;249m"
+	statusLineWidth = 140
 )
 
 type App struct {
@@ -55,7 +56,15 @@ type App struct {
 	statusReporter func(string)
 }
 
-type modelSwitcher func(context.Context) (*cognitive.Agent, string, bool, error)
+type ModelSwitchResult struct {
+	Agent              *cognitive.Agent
+	ModelStatus        string
+	ModelContextTokens int
+	ThinkLevel         think.Level
+	Changed            bool
+}
+
+type modelSwitcher func(context.Context) (ModelSwitchResult, error)
 
 type skillDispatcher interface {
 	Execute(ctx context.Context, input string) (skill.Output, bool, error)
@@ -84,7 +93,7 @@ type Options struct {
 	ModelStatus        string
 	ModelContextTokens int
 	ThinkLevel         think.Level
-	ModelSwitch        func(context.Context) (*cognitive.Agent, string, bool, error)
+	ModelSwitch        func(context.Context) (ModelSwitchResult, error)
 }
 
 func NewApp(opts Options) (*App, error) {
@@ -161,7 +170,7 @@ func (a *App) RunInteractive(ctx context.Context) error {
 	defer stop()
 
 	for {
-		a.console.Print("> ")
+		a.printPromptLine()
 
 		line, err := a.readLineInteractive(sigCtx)
 		if err != nil {
@@ -346,21 +355,23 @@ func (a *App) switchModel(ctx context.Context) error {
 		return ctx.Err()
 	}
 
-	newAgent, status, ok, err := a.modelSwitcher(ctx)
+	result, err := a.modelSwitcher(ctx)
 	if err != nil {
 		return err
 	}
-	if !ok {
+	if !result.Changed {
 		return nil
 	}
-	if newAgent == nil {
+	if result.Agent == nil {
 		return errors.New("model switch returned empty agent")
 	}
 
-	a.agent = newAgent
-	if strings.TrimSpace(status) != "" {
-		a.modelStatus = strings.TrimSpace(status)
+	a.agent = result.Agent
+	if strings.TrimSpace(result.ModelStatus) != "" {
+		a.modelStatus = strings.TrimSpace(result.ModelStatus)
 	}
+	a.modelContextTokens = result.ModelContextTokens
+	a.thinkLevel = think.NormalizeLevel(string(result.ThinkLevel))
 	a.turnExecutor = turn.NewExecutor(turn.ExecutorOptions{
 		Agent:      a.agent,
 		Dispatcher: a.skillDispatcher,
@@ -564,10 +575,13 @@ func (a *App) getModelStatusLine() string {
 }
 
 func (a *App) getContextStatusLine() string {
+	contextLimit := a.modelContextTokens
 	if a.agent == nil {
+		if contextLimit > 0 {
+			return fmt.Sprintf("context 0/%d tokens", contextLimit)
+		}
 		return ""
 	}
-	contextLimit := a.modelContextTokens
 
 	_, usedChars, maxChars := a.agent.ContextUsage()
 	usedTokens := (usedChars + 3) / 4
@@ -587,18 +601,59 @@ func (a *App) printSeparator() {
 	a.console.Println(strings.Repeat("═", 92))
 }
 
-func (a *App) printStatusBar() {
-	left := "Aetox CLI"
-	right := a.getContextStatusLine()
-	padding := 100 - utf8.RuneCountInString(left) - utf8.RuneCountInString(right)
+func renderAlignedStatusLine(left, right string) string {
+	left = strings.TrimSpace(left)
+	right = strings.TrimSpace(right)
+	if right == "" {
+		return left
+	}
+	padding := statusLineWidth - utf8.RuneCountInString(left) - utf8.RuneCountInString(right)
 	if padding < 1 {
 		padding = 1
 	}
-	line := ansiSubtle + left + ansiReset
+	return left + strings.Repeat(" ", padding) + right
+}
+
+func (a *App) renderHeaderStatusLine() string {
+	left := strings.TrimSpace(a.title)
+	if left == "" {
+		left = "Aetox CLI"
+	}
+	return renderAlignedStatusLine(left, a.getModelStatusLine())
+}
+
+func (a *App) renderPromptStatusLine() string {
+	return renderAlignedStatusLine(">", a.getContextStatusLine())
+}
+
+func (a *App) printStatusBar() {
+	line := ansiSubtle + strings.TrimSpace(a.title) + ansiReset
+	if strings.TrimSpace(a.title) == "" {
+		line = ansiSubtle + "Aetox CLI" + ansiReset
+	}
+	right := strings.TrimSpace(a.getModelStatusLine())
 	if right != "" {
-		line += strings.Repeat(" ", padding) + ansiText + right + ansiReset
+		plain := a.renderHeaderStatusLine()
+		leftText := strings.TrimSpace(a.title)
+		if leftText == "" {
+			leftText = "Aetox CLI"
+		}
+		padding := strings.TrimPrefix(plain, leftText)
+		line = ansiSubtle + leftText + ansiReset + padding[:len(padding)-len(right)] + ansiText + right + ansiReset
 	}
 	a.console.Println(line)
+}
+
+func (a *App) printPromptLine() {
+	right := strings.TrimSpace(a.getContextStatusLine())
+	if right == "" {
+		a.console.Print("> ")
+		return
+	}
+	plain := a.renderPromptStatusLine()
+	padding := strings.TrimPrefix(plain, ">")
+	spacePad := padding[:len(padding)-len(right)]
+	a.console.Print(ansiBrandBright + ">" + ansiReset + spacePad + ansiSubtle + right + ansiReset + "\r" + ansiBrandBright + "> " + ansiReset)
 }
 
 func (a *App) showSkillPalette(ctx context.Context) error {

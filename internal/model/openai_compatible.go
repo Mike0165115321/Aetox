@@ -100,13 +100,15 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 	}
 
 	payload := struct {
-		Model       string           `json:"model"`
-		Messages    []Message        `json:"messages"`
-		Temperature float64          `json:"temperature,omitempty"`
-		MaxTokens   int              `json:"max_tokens,omitempty"`
-		Tools       []ToolDefinition `json:"tools,omitempty"`
-		ToolChoice  string           `json:"tool_choice,omitempty"`
-		Reasoning   *ReasoningConfig `json:"reasoning,omitempty"`
+		Model           string           `json:"model"`
+		Messages        []Message        `json:"messages"`
+		Temperature     float64          `json:"temperature,omitempty"`
+		MaxTokens       int              `json:"max_tokens,omitempty"`
+		Tools           []ToolDefinition `json:"tools,omitempty"`
+		ToolChoice      string           `json:"tool_choice,omitempty"`
+		Reasoning       *ReasoningConfig `json:"reasoning,omitempty"`
+		Thinking        *ThinkingConfig  `json:"thinking,omitempty"`
+		ReasoningEffort string           `json:"reasoning_effort,omitempty"`
 	}{
 		Model:       model,
 		Messages:    req.Messages,
@@ -115,7 +117,10 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 		Tools:       req.Tools,
 		ToolChoice:  req.ToolChoice,
 	}
-	if p.SupportsReasoning() {
+	if p.usesDeepSeekThinking() {
+		payload.Thinking = normalizeDeepSeekThinking(req.Thinking, req.Reasoning)
+		payload.ReasoningEffort = normalizeDeepSeekReasoningEffort(req.Reasoning)
+	} else if p.SupportsReasoning() {
 		payload.Reasoning = req.Reasoning
 	}
 	body, err := json.Marshal(payload)
@@ -173,16 +178,18 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 	rawMessage := parsed.Choices[0].Message.Message
 	rawMessage.ToolCalls = append(rawMessage.ToolCalls, parsed.Choices[0].Message.ToolCalls...)
 	text := strings.TrimSpace(rawMessage.Content)
-	if text == "" && len(rawMessage.ToolCalls) == 0 {
+	reasoning := strings.TrimSpace(rawMessage.ReasoningContent)
+	if text == "" && reasoning == "" && len(rawMessage.ToolCalls) == 0 {
 		return Response{}, fmt.Errorf("%s response has empty text", p.provider)
 	}
 
 	return Response{
-		Provider:  p.Name(),
-		Model:     modelOr(parsed.Model, model),
-		Text:      text,
-		ToolCalls: rawMessage.ToolCalls,
-		Usage:     normalizeUsage(parsed.Usage),
+		Provider:         p.Name(),
+		Model:            modelOr(parsed.Model, model),
+		Text:             text,
+		ReasoningContent: reasoning,
+		ToolCalls:        rawMessage.ToolCalls,
+		Usage:            normalizeUsage(parsed.Usage),
 	}, nil
 }
 
@@ -196,14 +203,16 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 		model = p.model
 	}
 	payload := struct {
-		Model       string           `json:"model"`
-		Messages    []Message        `json:"messages"`
-		Temperature float64          `json:"temperature,omitempty"`
-		MaxTokens   int              `json:"max_tokens,omitempty"`
-		Tools       []ToolDefinition `json:"tools,omitempty"`
-		ToolChoice  string           `json:"tool_choice,omitempty"`
-		Reasoning   *ReasoningConfig `json:"reasoning,omitempty"`
-		Stream      bool             `json:"stream"`
+		Model           string           `json:"model"`
+		Messages        []Message        `json:"messages"`
+		Temperature     float64          `json:"temperature,omitempty"`
+		MaxTokens       int              `json:"max_tokens,omitempty"`
+		Tools           []ToolDefinition `json:"tools,omitempty"`
+		ToolChoice      string           `json:"tool_choice,omitempty"`
+		Reasoning       *ReasoningConfig `json:"reasoning,omitempty"`
+		Thinking        *ThinkingConfig  `json:"thinking,omitempty"`
+		ReasoningEffort string           `json:"reasoning_effort,omitempty"`
+		Stream          bool             `json:"stream"`
 	}{
 		Model:       model,
 		Messages:    req.Messages,
@@ -213,7 +222,10 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 		ToolChoice:  req.ToolChoice,
 		Stream:      true,
 	}
-	if p.SupportsReasoning() {
+	if p.usesDeepSeekThinking() {
+		payload.Thinking = normalizeDeepSeekThinking(req.Thinking, req.Reasoning)
+		payload.ReasoningEffort = normalizeDeepSeekReasoningEffort(req.Reasoning)
+	} else if p.SupportsReasoning() {
 		payload.Reasoning = req.Reasoning
 	}
 
@@ -253,6 +265,7 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 
 	scanner := bufio.NewScanner(httpResp.Body)
 	var builder strings.Builder
+	var reasoningBuilder strings.Builder
 	var lastUsage *Usage
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -269,7 +282,7 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 		var parsed struct {
 			Choices []struct {
 				Delta struct {
-					Content   string     `json:"content"`
+					Message
 					ToolCalls []ToolCall `json:"tool_calls"`
 				} `json:"delta"`
 			} `json:"choices"`
@@ -280,17 +293,22 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 			return Response{}, fmt.Errorf("%s stream parse failed: %w", p.provider, err)
 		}
 		if len(parsed.Choices) == 0 {
-			continue
-		}
-		chunk := parsed.Choices[0].Delta.Content
-		if chunk == "" {
-			continue
-		}
-		builder.WriteString(chunk)
-		if onChunk != nil {
-			if err := onChunk(chunk); err != nil {
-				return Response{}, err
+			if parsed.Usage.TotalTokenCount() > 0 {
+				lastUsage = normalizeUsage(parsed.Usage)
 			}
+			continue
+		}
+		delta := parsed.Choices[0].Delta
+		if chunk := delta.Content; chunk != "" {
+			builder.WriteString(chunk)
+			if onChunk != nil {
+				if err := onChunk(chunk); err != nil {
+					return Response{}, err
+				}
+			}
+		}
+		if reasoningChunk := delta.ReasoningContent; reasoningChunk != "" {
+			reasoningBuilder.WriteString(reasoningChunk)
 		}
 		if parsed.Usage.TotalTokenCount() > 0 {
 			lastUsage = normalizeUsage(parsed.Usage)
@@ -302,22 +320,57 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 
 	reply := builder.String()
 	reply = strings.TrimSpace(reply)
-	if reply == "" {
+	reasoning := strings.TrimSpace(reasoningBuilder.String())
+	if reply == "" && reasoning == "" {
 		return Response{}, fmt.Errorf("%s stream response has empty text", p.provider)
 	}
 	return Response{
-		Provider: p.Name(),
-		Model:    model,
-		Text:     reply,
-		Usage:    lastUsage,
+		Provider:         p.Name(),
+		Model:            model,
+		Text:             reply,
+		ReasoningContent: reasoning,
+		Usage:            lastUsage,
 	}, nil
 }
 
 func supportsNativeReasoning(provider string) bool {
 	switch NormalizeProvider(provider) {
-	case "openrouter":
+	case "openrouter", "deepseek":
 		return true
 	default:
 		return false
+	}
+}
+
+func (p *OpenAICompatibleProvider) usesDeepSeekThinking() bool {
+	return NormalizeProvider(p.provider) == "deepseek"
+}
+
+func normalizeDeepSeekThinking(thinking *ThinkingConfig, reasoning *ReasoningConfig) *ThinkingConfig {
+	if thinking != nil {
+		switch strings.ToLower(strings.TrimSpace(thinking.Type)) {
+		case "disabled":
+			return &ThinkingConfig{Type: "disabled"}
+		case "enabled":
+			return &ThinkingConfig{Type: "enabled"}
+		}
+	}
+	if reasoning != nil {
+		return &ThinkingConfig{Type: "enabled"}
+	}
+	return nil
+}
+
+func normalizeDeepSeekReasoningEffort(reasoning *ReasoningConfig) string {
+	if reasoning == nil {
+		return ""
+	}
+	switch strings.ToLower(strings.TrimSpace(reasoning.Effort)) {
+	case "xhigh", "max":
+		return "max"
+	case "low", "medium", "high":
+		return "high"
+	default:
+		return ""
 	}
 }

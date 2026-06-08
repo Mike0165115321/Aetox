@@ -117,6 +117,27 @@ func TestRespondAttachesReasoningOnlyWhenProviderSupportsIt(t *testing.T) {
 	}
 }
 
+func TestRespondSetsDeepSeekThinkingToggle(t *testing.T) {
+	provider := &deepSeekLikeProvider{}
+	agent := NewAgent(AgentConfig{
+		Provider: provider,
+		Model:    "deepseek-v4-flash",
+	})
+
+	if _, err := agent.Respond(context.Background(), "hello", turn.TurnOptions{ThinkLevel: think.LevelNoThinking}); err != nil {
+		t.Fatalf("respond failed: %v", err)
+	}
+	if len(provider.requests) != 1 {
+		t.Fatalf("expected one request, got %d", len(provider.requests))
+	}
+	if provider.requests[0].Thinking == nil || provider.requests[0].Thinking.Type != "disabled" {
+		t.Fatalf("expected disabled thinking config, got %+v", provider.requests[0].Thinking)
+	}
+	if provider.requests[0].Reasoning != nil {
+		t.Fatalf("expected no reasoning config in off-think mode, got %+v", provider.requests[0].Reasoning)
+	}
+}
+
 type toolLoopProvider struct {
 	responses []model.Response
 	requests  []model.Request
@@ -147,6 +168,19 @@ type plainProvider struct {
 func (p *plainProvider) Name() string { return "plain" }
 
 func (p *plainProvider) Complete(_ context.Context, req model.Request) (model.Response, error) {
+	p.requests = append(p.requests, req)
+	return model.Response{Text: "ok"}, nil
+}
+
+type deepSeekLikeProvider struct {
+	requests []model.Request
+}
+
+func (p *deepSeekLikeProvider) Name() string { return "deepseek" }
+
+func (p *deepSeekLikeProvider) SupportsReasoning() bool { return true }
+
+func (p *deepSeekLikeProvider) Complete(_ context.Context, req model.Request) (model.Response, error) {
 	p.requests = append(p.requests, req)
 	return model.Response{Text: "ok"}, nil
 }

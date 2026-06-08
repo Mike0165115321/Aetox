@@ -360,6 +360,43 @@ func TestExecute_InferredThaiGeneratedWriteCreatesFile(t *testing.T) {
 	}
 }
 
+func TestExecute_InferredThaiSelfIntroductionDefaultsToIntroMarkdown(t *testing.T) {
+	root := t.TempDir()
+	dispatcher := &toolDispatcher{
+		root: root,
+		t:    t,
+	}
+	agent := &toolAwareAgent{
+		supportsTools: false,
+		summaryReply:  "done",
+	}
+	executor := NewExecutor(ExecutorOptions{
+		Agent:      agent,
+		Dispatcher: dispatcher,
+	})
+
+	input := "สร้างไฟล์แนะนำตัวเองหน่อย"
+	intent := command.Parse(input, command.ParseTokens, nil)
+	result, err := executor.Execute(context.Background(), input, intent, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Status != TurnStatusDone {
+		t.Fatalf("expected done, got %s", result.Status)
+	}
+	target := filepath.Join(root, "intro.md")
+	raw, readErr := os.ReadFile(target)
+	if readErr != nil {
+		t.Fatalf("expected generated file to be created: %v", readErr)
+	}
+	if !strings.Contains(string(raw), "# สวัสดีครับ ผม Aetox") {
+		t.Fatalf("expected markdown intro content, got %q", string(raw))
+	}
+	if dispatcher.lastTool != "write" {
+		t.Fatalf("expected write tool call, got %q", dispatcher.lastTool)
+	}
+}
+
 func TestExecute_InferredReadAndDelete(t *testing.T) {
 	root := t.TempDir()
 	target := filepath.Join(root, "delete-me.txt")

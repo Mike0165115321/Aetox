@@ -132,7 +132,7 @@ func TestDefaultModel_FallbackOnly(t *testing.T) {
 		{"noop", "noop"},
 		{"openrouter", "deepseek/deepseek-r1"},
 		{"openai", "gpt-4o-mini"},
-		{"deepseek", "deepseek-chat"},
+		{"deepseek", "deepseek-v4-flash"},
 		{"groq", "llama-3.3-70b-versatile"},
 		{"mistral", "mistral-small"},
 		{"together", "google/gemma-2-9b-it"},
@@ -159,7 +159,7 @@ func TestDefaultBaseURL(t *testing.T) {
 	}{
 		{"openrouter", "https://openrouter.ai/api/v1"},
 		{"openai", "https://api.openai.com/v1"},
-		{"deepseek", "https://api.deepseek.com/v1"},
+		{"deepseek", "https://api.deepseek.com"},
 		{"groq", "https://api.groq.com/openai/v1"},
 		{"mistral", "https://api.mistral.ai/v1"},
 		{"together", "https://api.together.xyz/v1"},
@@ -222,6 +222,10 @@ func TestCapabilitiesFor(t *testing.T) {
 	caps = CapabilitiesFor("openai")
 	if !caps.ToolCalling || caps.Reasoning {
 		t.Fatal("openai should have tool calling only")
+	}
+	caps = CapabilitiesFor("deepseek")
+	if !caps.ToolCalling || !caps.Reasoning {
+		t.Fatal("deepseek should have both capabilities")
 	}
 	caps = CapabilitiesFor("ollama")
 	if caps.ToolCalling || caps.Reasoning {

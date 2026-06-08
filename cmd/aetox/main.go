@@ -276,7 +276,7 @@ func main() {
 		}, bootstrapResult),
 		ModelContextTokens: currentConfig.ModelContextTokens,
 		ThinkLevel:         think.Level(currentConfig.ThinkLevel),
-		ModelSwitch: func(ctx context.Context) (*cognitive.Agent, string, bool, error) {
+		ModelSwitch: func(ctx context.Context) (app.ModelSwitchResult, error) {
 			return switchProvider(ctx, &currentConfig)
 		},
 	})
@@ -313,20 +313,20 @@ func main() {
 	}
 }
 
-func switchProvider(ctx context.Context, cfg *config.Config) (*cognitive.Agent, string, bool, error) {
+func switchProvider(ctx context.Context, cfg *config.Config) (app.ModelSwitchResult, error) {
 	if ctx == nil {
-		return nil, "", false, nil
+		return app.ModelSwitchResult{}, nil
 	}
 
 	select {
 	case <-ctx.Done():
-		return nil, "", false, ctx.Err()
+		return app.ModelSwitchResult{}, ctx.Err()
 	default:
 	}
 
 	selectedProvider, selectedModel, selectedAPIKey, selectedBaseURL, selectedThinkLevel, ok := promptModelSelection(*cfg, true)
 	if !ok {
-		return nil, "", false, nil
+		return app.ModelSwitchResult{}, nil
 	}
 
 	cfg.ModelProvider = strings.TrimSpace(selectedProvider)
@@ -339,10 +339,10 @@ func switchProvider(ctx context.Context, cfg *config.Config) (*cognitive.Agent, 
 		cfg.ModelName = model.DefaultModel(cfg.ModelProvider)
 	}
 
-	fmt.Printf("เปลี่ยนโมเดลเป็น: %s/%s...\n", cfg.ModelProvider, cfg.ModelName)
+	fmt.Printf("เปลี่ยนโมเดลเป็น: %s...\n", formatModelModeLabel(cfg.ModelProvider, cfg.ModelName, cfg.ThinkLevel))
 	bootstrapResult, modelStatus := bootstrapModelWithStatus(*cfg)
 	if bootstrapResult.Provider == nil {
-		return nil, "", false, bootstrapResult.Error
+		return app.ModelSwitchResult{}, bootstrapResult.Error
 	}
 	if bootstrapResult.Warning != "" {
 		fmt.Printf("warning: %s\n", bootstrapResult.Warning)
@@ -355,11 +355,17 @@ func switchProvider(ctx context.Context, cfg *config.Config) (*cognitive.Agent, 
 		fmt.Fprintf(os.Stderr, "warning: cannot save model preference: %v\n", err)
 	}
 
-	return cognitive.NewAgent(cognitive.AgentConfig{
-		Provider:     bootstrapResult.Provider,
-		Model:        cfg.ModelName,
-		SystemPrompt: buildSystemPrompt(cfg.SandboxRoot),
-	}), modelStatus, true, nil
+	return app.ModelSwitchResult{
+		Agent: cognitive.NewAgent(cognitive.AgentConfig{
+			Provider:     bootstrapResult.Provider,
+			Model:        cfg.ModelName,
+			SystemPrompt: buildSystemPrompt(cfg.SandboxRoot),
+		}),
+		ModelStatus:        modelStatus,
+		ModelContextTokens: cfg.ModelContextTokens,
+		ThinkLevel:         think.Level(cfg.ThinkLevel),
+		Changed:            true,
+	}, nil
 }
 
 func buildSystemPrompt(root string) string {
@@ -387,10 +393,14 @@ func resolveDisplayUser() string {
 	return "local user"
 }
 
+func formatModelModeLabel(providerName, modelName, thinkLevel string) string {
+	status := model.ResolveStatus(providerName, modelName, nil)
+	return fmt.Sprintf("%s(%s)", status, defaultThinkLevel(thinkLevel))
+}
+
 func resolveModelStatus(cfg config.Config, bootstrapResult model.BootstrapResult) string {
-	status := model.ResolveStatus(cfg.ModelProvider, cfg.ModelName, bootstrapResult.Error)
-	profile := think.Resolve(think.Level(cfg.ThinkLevel), model.ProviderSupportsReasoning(bootstrapResult.Provider))
-	return status + " | think " + profile.StatusLabel()
+	_ = bootstrapResult
+	return formatModelModeLabel(cfg.ModelProvider, cfg.ModelName, cfg.ThinkLevel)
 }
 
 func bootstrapModelWithStatus(cfg config.Config) (model.BootstrapResult, string) {
@@ -516,18 +526,22 @@ func promptModelSelection(cfg config.Config, askThinkLevel bool) (string, string
 			}
 		}
 
-		fmt.Printf("Selected: %s / %s", provider, selectedModel)
-		if askThinkLevel || parsedModelThink {
-			fmt.Printf(" | think %s", selectedThinkLevel)
-		}
-		fmt.Printf("\n\n")
+		fmt.Printf("Selected: %s\n\n", formatModelModeLabel(provider, selectedModel, selectedThinkLevel))
 
 		return provider, selectedModel, key, providerBaseURL, selectedThinkLevel, true
 	}
 }
 
 func defaultThinkLevel(existing string) string {
-	return string(think.NormalizeLevel(existing))
+	value := strings.TrimSpace(existing)
+	if value == "" {
+		return string(think.LevelLow)
+	}
+	level, err := think.ParseLevel(value)
+	if err != nil {
+		return string(think.LevelLow)
+	}
+	return string(level)
 }
 
 func promptThinkLevelSelection(reader *bufio.Reader, existing string) string {

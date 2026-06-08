@@ -126,10 +126,10 @@ var catalog = map[string]*entry{
 		aliases:        []string{"deepseek", "deepseek-api", "deepseek-ai"},
 		requiresAPIKey: true,
 		runtime:        RuntimeOpenAICompatible,
-		baseURL:        "https://api.deepseek.com/v1",
+		baseURL:        "https://api.deepseek.com",
 		envKeys:        []string{"DEEPSEEK_API_KEY"},
-		modelDefaults:  ModelDefaults{FallbackModel: "deepseek-chat"},
-		capabilities:   Capabilities{ToolCalling: true},
+		modelDefaults:  ModelDefaults{FallbackModel: "deepseek-v4-flash"},
+		capabilities:   Capabilities{ToolCalling: true, Reasoning: true},
 	},
 	"groq": {
 		canonical:      "groq",

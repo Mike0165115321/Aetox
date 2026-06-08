@@ -23,9 +23,10 @@ const (
 )
 
 type Message struct {
-	Role    MessageRole `json:"role"`
-	Content string      `json:"content"`
-	Name    string      `json:"name,omitempty"`
+	Role             MessageRole `json:"role"`
+	Content          string      `json:"content"`
+	ReasoningContent string      `json:"reasoning_content,omitempty"`
+	Name             string      `json:"name,omitempty"`
 	// ToolCallID is used when returning tool outputs to providers that implement
 	// function/tool calling APIs.
 	ToolCallID string `json:"tool_call_id,omitempty"`
@@ -63,14 +64,16 @@ type Request struct {
 	Tools       []ToolDefinition `json:"tools,omitempty"`
 	ToolChoice  string           `json:"tool_choice,omitempty"`
 	Reasoning   *ReasoningConfig `json:"reasoning,omitempty"`
+	Thinking    *ThinkingConfig  `json:"thinking,omitempty"`
 }
 
 type Response struct {
-	Provider  string
-	Model     string
-	Text      string
-	Usage     *Usage
-	ToolCalls []ToolCall
+	Provider         string
+	Model            string
+	Text             string
+	ReasoningContent string
+	Usage            *Usage
+	ToolCalls        []ToolCall
 }
 
 type Usage struct {
@@ -81,6 +84,10 @@ type Usage struct {
 
 type ReasoningConfig struct {
 	Effort string `json:"effort,omitempty"`
+}
+
+type ThinkingConfig struct {
+	Type string `json:"type,omitempty"`
 }
 
 func (u Usage) TotalTokenCount() int {
