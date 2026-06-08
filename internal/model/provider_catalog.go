@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"sort"
 	"strings"
 	"time"
+
+	"aetox-cli/internal/provider"
 )
 
+// ProviderMetadata is the public metadata shape exposed by the model
+// package for backward compatibility. It delegates to provider.Spec.
 type ProviderMetadata struct {
 	Canonical      string
 	Aliases        []string
@@ -23,342 +26,103 @@ type ProviderMetadata struct {
 	EnvKeys        []string
 }
 
-type providerCatalogEntry struct {
-	aliases        []string
-	requiresAPIKey bool
-	runtime        providerRuntime
-	defaultModel   string
-	baseURL        string
-	modelChoices   []string
-	envKeys        []string
+// NormalizeProvider delegates to provider.Normalize.
+func NormalizeProvider(name string) string {
+	return provider.Normalize(name)
 }
 
-type providerRuntime string
-
-const (
-	providerRuntimeNoop              providerRuntime = "noop"
-	providerRuntimeOpenAICompatible  providerRuntime = "openai-compatible"
-	providerRuntimeOllama           providerRuntime = "ollama"
-)
-
-var providerCatalog = map[string]providerCatalogEntry{
-	"noop": {
-		aliases:        []string{"noop", "none", "stub"},
-		requiresAPIKey: false,
-		runtime:        providerRuntimeNoop,
-		defaultModel:   "noop",
-		baseURL:        "",
-		modelChoices:   nil,
-		envKeys:        nil,
-	},
-	"openrouter": {
-		aliases:        []string{"openrouter", "open-router", "openrouterai", "or"},
-		requiresAPIKey: true,
-		runtime:        providerRuntimeOpenAICompatible,
-		defaultModel:   "deepseek/deepseek-r1",
-		baseURL:        "https://openrouter.ai/api/v1",
-		modelChoices: []string{
-			"deepseek/deepseek-r1",
-			"deepseek/deepseek-chat",
-			"deepseek/deepseek-coder",
-			"google/gemini-2.0-flash-001",
-			"openai/gpt-4o-mini",
-			"openai/gpt-4o",
-			"meta-llama/llama-4-maverick-17b-128e-instruct",
-			"mistralai/mixtral-8x22b-instruct",
-		},
-		envKeys: []string{
-			"OPENROUTER_API_KEY",
-		},
-	},
-	"openai": {
-		aliases:        []string{"openai", "chatgpt", "gpt", "openai-compatible", "compatible"},
-		requiresAPIKey: true,
-		runtime:        providerRuntimeOpenAICompatible,
-		defaultModel:   "gpt-4o-mini",
-		baseURL:        "https://api.openai.com/v1",
-		modelChoices: []string{
-			"gpt-4o-mini",
-			"gpt-4o",
-			"gpt-4.1",
-			"gpt-4.1-mini",
-			"o4-mini",
-		},
-		envKeys: []string{
-			"OPENAI_API_KEY",
-			"OPENAI_TOKEN",
-		},
-	},
-	"deepseek": {
-		aliases:        []string{"deepseek", "deepseek-api", "deepseek-ai"},
-		requiresAPIKey: true,
-		runtime:        providerRuntimeOpenAICompatible,
-		defaultModel:   "deepseek-chat",
-		baseURL:        "https://api.deepseek.com/v1",
-		modelChoices: []string{
-			"deepseek-chat",
-			"deepseek-coder",
-			"deepseek-reasoner",
-		},
-		envKeys: []string{
-			"DEEPSEEK_API_KEY",
-		},
-	},
-	"groq": {
-		aliases:        []string{"groq", "groqcloud"},
-		requiresAPIKey: true,
-		runtime:        providerRuntimeOpenAICompatible,
-		defaultModel:   "llama-3.3-70b-versatile",
-		baseURL:        "https://api.groq.com/openai/v1",
-		modelChoices: []string{
-			"llama-3.3-70b-versatile",
-			"llama-3.1-70b-versatile",
-			"llama-3.1-8b-instant",
-			"mixtral-8x7b-32768",
-		},
-		envKeys: []string{
-			"GROQ_API_KEY",
-		},
-	},
-	"mistral": {
-		aliases:        []string{"mistral", "mistralai"},
-		requiresAPIKey: true,
-		runtime:        providerRuntimeOpenAICompatible,
-		defaultModel:   "mistral-small",
-		baseURL:        "https://api.mistral.ai/v1",
-		modelChoices: []string{
-			"mistral-small",
-			"mistral-small-3.2",
-			"ministral-8b",
-			"pixtral-large",
-		},
-		envKeys: []string{
-			"MISTRAL_API_KEY",
-		},
-	},
-	"together": {
-		aliases:        []string{"together", "togetherai", "together-ai"},
-		requiresAPIKey: true,
-		runtime:        providerRuntimeOpenAICompatible,
-		defaultModel:   "google/gemma-2-9b-it",
-		baseURL:        "https://api.together.xyz/v1",
-		modelChoices: []string{
-			"google/gemma-2-27b-it",
-			"meta-llama/Llama-3-70b-chat-hf",
-			"meta-llama/Llama-3-8b-chat-hf",
-		},
-		envKeys: []string{
-			"TOGETHER_API_KEY",
-		},
-	},
-	"perplexity": {
-		aliases:        []string{"perplexity", "perplexityai", "pplx"},
-		requiresAPIKey: true,
-		runtime:        providerRuntimeOpenAICompatible,
-		defaultModel:   "llama-3.1-sonar-small-128k-online",
-		baseURL:        "https://api.perplexity.ai",
-		modelChoices: []string{
-			"llama-3.1-sonar-small-128k-online",
-			"llama-3.1-sonar-large-128k-online",
-			"llama-3.1-sonar-huge-128k-online",
-		},
-		envKeys: []string{
-			"PERPLEXITY_API_KEY",
-		},
-	},
-	"cohere": {
-		aliases:        []string{"cohere", "command-r"},
-		requiresAPIKey: true,
-		runtime:        providerRuntimeOpenAICompatible,
-		defaultModel:   "command-r-plus",
-		baseURL:        "https://api.cohere.com/v1",
-		modelChoices: []string{
-			"command-r-plus",
-			"command-r",
-			"command-r7b-12-2024",
-		},
-		envKeys: []string{
-			"COHERE_API_KEY",
-		},
-	},
-	"lmstudio": {
-		aliases:        []string{"lmstudio", "localai", "local-ai"},
-		requiresAPIKey: false,
-		runtime:        providerRuntimeOpenAICompatible,
-		defaultModel:   "local-model",
-		baseURL:        "http://localhost:1234/v1",
-		modelChoices: []string{
-			"local-model",
-		},
-		envKeys: []string{
-			"LLM_API_KEY",
-			"OPENAI_API_KEY",
-		},
-	},
-	"ollama": {
-		aliases:        []string{"ollama", "ollamaai"},
-		requiresAPIKey: false,
-		runtime:        providerRuntimeOllama,
-		defaultModel:   "gemma3:4b",
-		baseURL:        "http://localhost:11434",
-		modelChoices: []string{
-			"gemma3:4b",
-			"qwen2.5:7b",
-			"llama3.1:8b",
-			"llama3.1:70b",
-		},
-		envKeys: nil,
-	},
-}
-
-var canonicalProviderOrder = catalogProviderOrder()
-
-func catalogProviderOrder() []string {
-	providers := make([]string, 0, len(providerCatalog))
-	for canonical := range providerCatalog {
-		providers = append(providers, canonical)
-	}
-	sort.Strings(providers)
-	return providers
-}
-
-func NormalizeProvider(provider string) string {
-	key := strings.ToLower(strings.TrimSpace(provider))
-	if key == "" {
-		return "noop"
-	}
-
-	for canonical, info := range providerCatalog {
-		for _, alias := range info.aliases {
-			if key == alias {
-				return canonical
-			}
-		}
-	}
-
-	return key
-}
-
-func ProviderInfo(provider string) (ProviderMetadata, bool) {
-	canonical := NormalizeProvider(provider)
-	info, ok := providerCatalog[canonical]
+// ProviderInfo delegates to provider.Lookup and converts the
+// result to ProviderMetadata for backward compatibility.
+func ProviderInfo(name string) (ProviderMetadata, bool) {
+	spec, ok := provider.Lookup(name)
 	if !ok {
 		return ProviderMetadata{}, false
 	}
-
 	return ProviderMetadata{
-		Canonical:      canonical,
-		Aliases:        append([]string{}, info.aliases...),
-		RequiresAPIKey: info.requiresAPIKey,
-		Runtime:        string(info.runtime),
-		DefaultModel:   info.defaultModel,
-		BaseURL:        info.baseURL,
-		ModelChoices:   append([]string{}, info.modelChoices...),
-		EnvKeys:        append([]string{}, info.envKeys...),
+		Canonical:      spec.Canonical,
+		Aliases:        spec.Aliases,
+		RequiresAPIKey: spec.RequiresAPIKey,
+		Runtime:        string(spec.Runtime),
+		DefaultModel:   spec.ModelDefaults.FallbackModel,
+		BaseURL:        spec.BaseURL,
+		ModelChoices:   spec.ModelDefaults.RecommendedModels,
+		EnvKeys:        spec.EnvKeys,
 	}, true
 }
 
-func LookupProviderInfo(provider string) (ProviderMetadata, bool) {
-	return ProviderInfo(provider)
+// LookupProviderInfo delegates to ProviderInfo.
+func LookupProviderInfo(name string) (ProviderMetadata, bool) {
+	return ProviderInfo(name)
 }
 
+// SupportedProviders delegates to provider.SupportedProviders.
 func SupportedProviders() []string {
-	return append([]string{}, canonicalProviderOrder...)
+	return provider.SupportedProviders()
 }
 
-func RequiresAPIKey(provider string) bool {
-	info, ok := LookupProviderInfo(provider)
-	return ok && info.RequiresAPIKey
+// RequiresAPIKey delegates to provider.RequiresAPIKey.
+func RequiresAPIKey(name string) bool {
+	return provider.RequiresAPIKey(name)
 }
 
-func DefaultModel(provider string) string {
-	info, ok := LookupProviderInfo(provider)
-	if !ok {
-		return ""
-	}
-	return info.DefaultModel
+// DefaultModel delegates to provider.DefaultModel.
+func DefaultModel(name string) string {
+	return provider.DefaultModel(name)
 }
 
-func RuntimeForProvider(provider string) providerRuntime {
-	info, ok := LookupProviderInfo(provider)
-	if !ok {
-		return ""
-	}
-	switch providerRuntime(info.Runtime) {
-	case providerRuntimeNoop, providerRuntimeOpenAICompatible, providerRuntimeOllama:
-		return providerRuntime(info.Runtime)
-	default:
-		return ""
-	}
+// DefaultBaseURL delegates to provider.DefaultBaseURL.
+func DefaultBaseURL(name string) string {
+	return provider.DefaultBaseURL(name)
 }
 
-func DefaultBaseURL(provider string) string {
-	info, ok := LookupProviderInfo(provider)
-	if !ok {
-		return ""
-	}
-	return info.BaseURL
+// RuntimeForProvider returns the runtime class as a string by delegating
+// to provider.RuntimeFor.
+func RuntimeForProvider(name string) string {
+	return string(provider.RuntimeFor(name))
 }
 
-func ModelChoices(provider string) []string {
-	info, ok := LookupProviderInfo(provider)
-	if !ok {
-		return nil
-	}
-	return append([]string{}, info.ModelChoices...)
+// ModelChoices returns the static recommended-model list for a provider.
+// This is a fallback hint only; live model lists should be fetched via
+// ModelChoicesWithEndpointAndAPIKey when possible.
+func ModelChoices(name string) []string {
+	return provider.RecommendedModels(name)
 }
 
-func ModelChoicesWithEndpointAndAPIKey(provider, baseURL, apiKey string) ([]string, error) {
-	canonical := NormalizeProvider(provider)
-	switch RuntimeForProvider(canonical) {
-	case providerRuntimeOllama:
-		models, err := DiscoverOllamaModels(baseURL)
-		if err == nil && len(models) > 0 {
-			return models, nil
-		}
-		return nil, err
-	case providerRuntimeOpenAICompatible:
-		models, err := DiscoverOpenAICompatibleModels(canonical, baseURL, apiKey)
-		if err == nil && len(models) > 0 {
-			return models, nil
-		}
-		return nil, err
-	default:
-		return nil, fmt.Errorf("provider %q does not support remote model discovery", canonical)
-	}
+// ResolveModelAPIKey delegates to provider.ResolveAPIKey.
+func ResolveModelAPIKey(name string) string {
+	return provider.ResolveAPIKey(name)
 }
 
-func ResolveModelAPIKey(provider string) string {
-	info, ok := LookupProviderInfo(provider)
-	if !ok || len(info.EnvKeys) == 0 {
-		return ""
-	}
-	for _, key := range info.EnvKeys {
-		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
-			return value
-		}
-	}
-	return ""
+// FormatProviderMenuLabel delegates to provider.MenuLabel.
+func FormatProviderMenuLabel(name string, keyFound bool) string {
+	return provider.MenuLabel(name, keyFound)
 }
 
-func ModelChoicesWithEndpoint(provider string, baseURL string) ([]string, error) {
-	return ModelChoicesWithEndpointAndAPIKey(provider, baseURL, ResolveModelAPIKey(provider))
+// FormatSupportedProviderMenu delegates to FormatProviderMenuLabel.
+func FormatSupportedProviderMenu(name string, keyFound bool) string {
+	return FormatProviderMenuLabel(name, keyFound)
 }
 
-func ResolveStatus(provider, model string, _ error) string {
-	canonical := NormalizeProvider(provider)
+// ProviderEnvKeys delegates to provider.EnvKeys.
+func ProviderEnvKeys() []string {
+	return provider.EnvKeys()
+}
+
+// ResolveStatus builds a human-readable status line for a provider/model
+// combination.
+func ResolveStatus(p, model string, _ error) string {
+	canonical := provider.Normalize(p)
 	if canonical == "" {
 		canonical = "noop"
 	}
 	label := resolveStatusModelLabel(canonical, strings.TrimSpace(model))
-	status := canonical + "/" + label
-	return status
+	return canonical + "/" + label
 }
 
-func resolveStatusModelLabel(provider, model string) string {
+func resolveStatusModelLabel(prov, model string) string {
 	if model == "" || strings.EqualFold(model, "default") {
-		if value := DefaultModel(provider); value != "" {
-			switch provider {
+		if value := provider.DefaultModel(prov); value != "" {
+			switch prov {
 			case "openrouter":
 				return "openrouter default"
 			default:
@@ -370,37 +134,46 @@ func resolveStatusModelLabel(provider, model string) string {
 	return model
 }
 
-func FormatProviderMenuLabel(provider string, keyFound bool) string {
-	label := provider
-	if keyFound {
-		return label + " (env key found)"
-	}
-	return label + " (needs key)"
+// ---------------------------------------------------------------------------
+// Live model discovery (HTTP) — stays in internal/model
+// ---------------------------------------------------------------------------
+
+func ModelChoicesWithEndpointAndAPIKEY(p, baseURL, apiKey string) ([]string, error) {
+	return ModelChoicesWithEndpointAndAPIKey(p, baseURL, apiKey)
 }
 
-func FormatSupportedProviderMenu(provider string, keyFound bool) string {
-	return FormatProviderMenuLabel(provider, keyFound)
-}
-
-func ProviderEnvKeys() []string {
-	seen := make(map[string]struct{})
-	keys := make([]string, 0, 32)
-	for _, provider := range canonicalProviderOrder {
-		info := providerCatalog[provider]
-		for _, key := range info.envKeys {
-			key = strings.TrimSpace(key)
-			if key == "" {
-				continue
-			}
-			if _, ok := seen[key]; ok {
-				continue
-			}
-			seen[key] = struct{}{}
-			keys = append(keys, key)
+// ModelChoicesWithEndpointAndAPIKey fetches model names from the
+// provider's API. This is the live discovery path; static fallbacks
+// live in provider.RecommendedModels.
+func ModelChoicesWithEndpointAndAPIKey(p, baseURL, apiKey string) ([]string, error) {
+	canonical := provider.Normalize(p)
+	switch provider.RuntimeFor(canonical) {
+	case provider.RuntimeOllama:
+		models, err := DiscoverOllamaModels(baseURL)
+		if err == nil && len(models) > 0 {
+			return models, nil
 		}
+		return nil, err
+	case provider.RuntimeOpenAICompatible:
+		models, err := DiscoverOpenAICompatibleModels(canonical, baseURL, apiKey)
+		if err == nil && len(models) > 0 {
+			return models, nil
+		}
+		return nil, err
+	default:
+		return nil, fmt.Errorf("provider %q does not support remote model discovery", canonical)
 	}
-	return keys
 }
+
+// ModelChoicesWithEndpoint delegates to ModelChoicesWithEndpointAndAPIKey
+// using the resolved API key.
+func ModelChoicesWithEndpoint(p, baseURL string) ([]string, error) {
+	return ModelChoicesWithEndpointAndAPIKey(p, baseURL, provider.ResolveAPIKey(p))
+}
+
+// ---------------------------------------------------------------------------
+// HTTP discovery helpers
+// ---------------------------------------------------------------------------
 
 type ollamaTagResponse struct {
 	Models []struct {
@@ -411,7 +184,7 @@ type ollamaTagResponse struct {
 func DiscoverOllamaModels(baseURL string) ([]string, error) {
 	endpoint := strings.TrimSpace(baseURL)
 	if endpoint == "" {
-		endpoint = DefaultBaseURL("ollama")
+		endpoint = provider.DefaultBaseURL("ollama")
 	}
 	if !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
 		endpoint = "http://" + endpoint
@@ -472,17 +245,17 @@ type openAIModelsResponse struct {
 	Data []openAIModel `json:"data"`
 }
 
-func DiscoverOpenAICompatibleModels(provider, baseURL, apiKey string) ([]string, error) {
-	if provider == "" {
-		provider = "openai"
+func DiscoverOpenAICompatibleModels(p, baseURL, apiKey string) ([]string, error) {
+	if p == "" {
+		p = "openai"
 	}
 
 	endpoint := strings.TrimSpace(baseURL)
 	if endpoint == "" {
-		endpoint = DefaultBaseURL(provider)
+		endpoint = provider.DefaultBaseURL(p)
 	}
 	if endpoint == "" {
-		return nil, fmt.Errorf("provider %q missing base URL", provider)
+		return nil, fmt.Errorf("provider %q missing base URL", p)
 	}
 	if !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
 		endpoint = "https://" + endpoint
@@ -510,15 +283,15 @@ func DiscoverOpenAICompatibleModels(provider, baseURL, apiKey string) ([]string,
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("%s models endpoint failed with status %d: %s", provider, resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, fmt.Errorf("%s models endpoint failed with status %d: %s", p, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
 	var payload openAIModelsResponse
 	if err := json.Unmarshal(body, &payload); err != nil {
-		return nil, fmt.Errorf("%s models response parse failed: %w", provider, err)
+		return nil, fmt.Errorf("%s models response parse failed: %w", p, err)
 	}
 	if len(payload.Data) == 0 {
-		return nil, fmt.Errorf("%s models endpoint returned no models", provider)
+		return nil, fmt.Errorf("%s models endpoint returned no models", p)
 	}
 
 	seen := make(map[string]struct{}, len(payload.Data))
@@ -536,7 +309,7 @@ func DiscoverOpenAICompatibleModels(provider, baseURL, apiKey string) ([]string,
 	}
 	sort.Strings(result)
 	if len(result) == 0 {
-		return nil, fmt.Errorf("%s models endpoint returned no valid IDs", provider)
+		return nil, fmt.Errorf("%s models endpoint returned no valid IDs", p)
 	}
 	return result, nil
 }

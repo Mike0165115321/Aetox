@@ -3,6 +3,8 @@ package model
 import (
 	"fmt"
 	"time"
+
+	pvdr "aetox-cli/internal/provider"
 )
 
 type ProviderOptions struct {
@@ -30,15 +32,15 @@ func NewProvider(opts ProviderOptions) (Provider, error) {
 	}
 	requireAPIKey := info.RequiresAPIKey
 	switch info.Runtime {
-	case string(providerRuntimeNoop):
+	case string(pvdr.RuntimeNoop):
 		return NewNoopProvider(opts.Model), nil
-	case string(providerRuntimeOllama):
+	case string(pvdr.RuntimeOllama):
 		return NewOllamaProvider(OllamaConfig{
 			Model:   opts.Model,
 			BaseURL: opts.BaseURL,
 			Timeout: timeout,
 		})
-	case string(providerRuntimeOpenAICompatible):
+	case string(pvdr.RuntimeOpenAICompatible):
 		return NewOpenAICompatibleProvider(OpenAICompatibleConfig{
 			Provider:      provider,
 			Model:         opts.Model,

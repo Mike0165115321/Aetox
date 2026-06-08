@@ -1,234 +1,62 @@
 package command
 
-import (
-	"sort"
-	"strings"
-)
+import "aetox-cli/internal/grammar"
 
-type Kind int
+// Kind = grammar.Kind
+type Kind = grammar.Kind
 
 const (
-	KindConversation Kind = iota
-	KindSkill
+	KindConversation = grammar.KindConversation
+	KindSkill        = grammar.KindSkill
 )
 
-type Intent struct {
-	Kind      Kind
-	Raw       string
-	Command   string
-	Args      []string
-	Commanded bool
-	IsSlash   bool
-	IsMeta    bool
-}
+// Intent = grammar.Intent
+type Intent = grammar.Intent
 
-type SplitFunc func(input string) (string, []string)
+// SplitFunc = grammar.SplitFunc
+type SplitFunc = grammar.SplitFunc
 
-var slashMetaCommands = map[string]struct{}{
-	"model":  {},
-	"help":   {},
-	"h":      {},
-	"exit":   {},
-	"quit":   {},
-	"bye":    {},
-	"logout": {},
-}
-
-var slashMetaCommandDescriptions = map[string]string{
-	"model":  "เลือกหรือเปลี่ยนโมเดล/provider",
-	"help":   "แสดงรายชื่อ slash command",
-	"h":      "คำย่อของ /help",
-	"exit":   "ออกจากเซสชันปัจจุบัน",
-	"quit":   "ออกจากเซสชันปัจจุบัน",
-	"bye":    "ออกจากเซสชันปัจจุบัน",
-	"logout": "ออกจากเซสชันปัจจุบัน",
-}
-
-var metaCommands = map[string]struct{}{
-	"exit":   {},
-	"quit":   {},
-	"bye":    {},
-	"logout": {},
-}
-
-var colonMetaCommands = map[string]struct{}{
-	":help":  {},
-	":clear": {},
-	":exit":  {},
-	":quit":  {},
-}
-
-var slashSuggestionCandidates = []string{
-	"model",
-	"help",
-	"exit",
-}
-
+// SlashSuggestionCandidates delegates to grammar.
 func SlashSuggestionCandidates() []string {
-	result := make([]string, len(slashSuggestionCandidates))
-	copy(result, slashSuggestionCandidates)
-	return result
+	return grammar.SlashSuggestionCandidates()
 }
 
+// IsMetaSlashCommand delegates to grammar.
 func IsMetaSlashCommand(name string) bool {
-	name = strings.ToLower(strings.TrimSpace(name))
-	return isMetaSlashCommand(name)
+	return grammar.IsMetaSlashCommand(name)
 }
 
+// SlashMetaDescription delegates to grammar.
 func SlashMetaDescription(name string) string {
-	name = strings.ToLower(strings.TrimSpace(name))
-	if desc, ok := slashMetaCommandDescriptions[name]; ok {
-		return desc
-	}
-	return "คำสั่งตั้งค่า"
+	return grammar.SlashMetaDescription(name)
 }
 
+// SlashMetaLegend delegates to grammar.
 func SlashMetaLegend() string {
-	return "คีย์เดอร์คำสั่ง: [setting] คำสั่งตั้งค่า (ส้ม), [tool] คำสั่งเครื่องมือ (น้ำเงิน)"
+	return grammar.SlashMetaLegend()
 }
 
+// Parse delegates to grammar.Parse.
 func Parse(input string, split SplitFunc, knownCommands map[string]struct{}) Intent {
-	raw := strings.TrimSpace(input)
-	if raw == "" {
-		return Intent{Kind: KindConversation, Raw: raw}
-	}
-
-	parsed := raw
-	isSlash := strings.HasPrefix(parsed, "/")
-	if isSlash {
-		parsed = strings.TrimSpace(strings.TrimPrefix(parsed, "/"))
-	}
-
-	commandName, args := split(parsed)
-	if commandName == "" {
-		return Intent{
-			Kind:    KindConversation,
-			Raw:     raw,
-			IsSlash: isSlash,
-		}
-	}
-
-	commandName = strings.ToLower(strings.TrimSpace(commandName))
-	if isSlash && isMetaSlashCommand(commandName) {
-		return Intent{
-			Kind:      KindConversation,
-			Raw:       raw,
-			Command:   commandName,
-			Commanded: true,
-			IsSlash:   true,
-			IsMeta:    true,
-		}
-	}
-	if (isMetaCommand(commandName) && len(args) == 0) || (isColonMetaCommand(commandName) && len(args) == 0) {
-		return Intent{
-			Kind:      KindConversation,
-			Raw:       raw,
-			Command:   commandName,
-			Args:      args,
-			Commanded: true,
-			IsSlash:   isSlash,
-			IsMeta:    true,
-		}
-	}
-
-	if _, ok := knownCommands[commandName]; ok {
-		return Intent{
-			Kind:      KindSkill,
-			Raw:       raw,
-			Command:   commandName,
-			Args:      args,
-			Commanded: true,
-			IsSlash:   isSlash,
-		}
-	}
-
-	if isSlash {
-		return Intent{
-			Kind:      KindConversation,
-			Raw:       raw,
-			Command:   commandName,
-			Args:      args,
-			Commanded: true,
-			IsSlash:   true,
-		}
-	}
-
-	return Intent{
-		Kind:      KindConversation,
-		Raw:       raw,
-		Commanded: true,
-		IsSlash:   isSlash,
-	}
+	return grammar.Parse(input, split, knownCommands)
 }
 
+// ParseTokens delegates to grammar.ParseTokens.
 func ParseTokens(input string) (string, []string) {
-	fields := strings.Fields(strings.TrimSpace(input))
-	if len(fields) == 0 {
-		return "", nil
-	}
-	return fields[0], fields[1:]
+	return grammar.ParseTokens(input)
 }
 
+// BuildCommandSet delegates to grammar.BuildCommandSet.
 func BuildCommandSet(names []string) map[string]struct{} {
-	result := make(map[string]struct{}, len(names))
-	for _, name := range names {
-		name = strings.ToLower(strings.TrimSpace(name))
-		if name == "" {
-			continue
-		}
-		result[name] = struct{}{}
-	}
-	return result
+	return grammar.BuildCommandSet(names)
 }
 
+// IsSlashToken delegates to grammar.IsSlashToken.
 func IsSlashToken(input string) bool {
-	if !strings.HasPrefix(input, "/") {
-		return false
-	}
-	rest := strings.TrimPrefix(input, "/")
-	return strings.IndexAny(rest, " \t") == -1
+	return grammar.IsSlashToken(input)
 }
 
+// SlashSuggestions delegates to grammar.SlashSuggestions.
 func SlashSuggestions(input string, commandSet map[string]struct{}) []string {
-	if !IsSlashToken(input) {
-		return nil
-	}
-
-	candidates := map[string]struct{}{}
-	for name := range commandSet {
-		name = strings.ToLower(strings.TrimSpace(name))
-		if name == "" {
-			continue
-		}
-		candidates[name] = struct{}{}
-	}
-	for _, name := range slashSuggestionCandidates {
-		candidates[name] = struct{}{}
-	}
-
-	rawToken := strings.TrimPrefix(input, "/")
-	match := strings.ToLower(strings.TrimSpace(rawToken))
-	suggestions := make([]string, 0, len(candidates))
-	for name := range candidates {
-		if strings.HasPrefix(name, match) {
-			suggestions = append(suggestions, "/"+name)
-		}
-	}
-	sort.Strings(suggestions)
-	return suggestions
-}
-
-func isMetaCommand(name string) bool {
-	_, isMeta := metaCommands[name]
-	return isMeta
-}
-
-func isMetaSlashCommand(name string) bool {
-	_, isMeta := slashMetaCommands[name]
-	return isMeta
-}
-
-func isColonMetaCommand(name string) bool {
-	_, isMeta := colonMetaCommands[name]
-	return isMeta
+	return grammar.SlashSuggestions(input, commandSet)
 }
