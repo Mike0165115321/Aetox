@@ -60,6 +60,10 @@ func (p *OpenRouterProvider) SupportsToolCalling() bool {
 	return true
 }
 
+func (p *OpenRouterProvider) SupportsReasoning() bool {
+	return true
+}
+
 func (p *OpenRouterProvider) Complete(ctx context.Context, req Request) (Response, error) {
 	if len(req.Messages) == 0 {
 		return Response{}, ErrNoMessages
@@ -77,6 +81,7 @@ func (p *OpenRouterProvider) Complete(ctx context.Context, req Request) (Respons
 		MaxTokens   int              `json:"max_tokens,omitempty"`
 		Tools       []ToolDefinition `json:"tools,omitempty"`
 		ToolChoice  string           `json:"tool_choice,omitempty"`
+		Reasoning   *ReasoningConfig `json:"reasoning,omitempty"`
 	}{
 		Model:       model,
 		Messages:    req.Messages,
@@ -84,6 +89,7 @@ func (p *OpenRouterProvider) Complete(ctx context.Context, req Request) (Respons
 		MaxTokens:   req.MaxTokens,
 		Tools:       req.Tools,
 		ToolChoice:  req.ToolChoice,
+		Reasoning:   req.Reasoning,
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {

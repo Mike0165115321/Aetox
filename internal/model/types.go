@@ -62,6 +62,7 @@ type Request struct {
 	MaxTokens   int              `json:"max_tokens,omitempty"`
 	Tools       []ToolDefinition `json:"tools,omitempty"`
 	ToolChoice  string           `json:"tool_choice,omitempty"`
+	Reasoning   *ReasoningConfig `json:"reasoning,omitempty"`
 }
 
 type Response struct {
@@ -76,6 +77,10 @@ type Usage struct {
 	PromptTokens     int `json:"prompt_tokens"`
 	CompletionTokens int `json:"completion_tokens"`
 	TotalTokens      int `json:"total_tokens"`
+}
+
+type ReasoningConfig struct {
+	Effort string `json:"effort,omitempty"`
 }
 
 func (u Usage) TotalTokenCount() int {
@@ -134,4 +139,16 @@ type StreamChunkHandler func(chunk string) error
 
 type StreamingProvider interface {
 	StreamComplete(ctx context.Context, req Request, onChunk StreamChunkHandler) (Response, error)
+}
+
+type ReasoningProvider interface {
+	SupportsReasoning() bool
+}
+
+func ProviderSupportsReasoning(provider Provider) bool {
+	if provider == nil {
+		return false
+	}
+	reasoningProvider, ok := provider.(ReasoningProvider)
+	return ok && reasoningProvider.SupportsReasoning()
 }

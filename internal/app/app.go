@@ -17,6 +17,7 @@ import (
 	"aetox-cli/internal/command"
 	"aetox-cli/internal/model"
 	"aetox-cli/internal/skill"
+	"aetox-cli/internal/think"
 	"aetox-cli/internal/turn"
 )
 
@@ -46,6 +47,7 @@ type App struct {
 	userInfo           string
 	modelStatus        string
 	modelContextTokens int
+	thinkLevel         think.Level
 	skillNames         []string
 }
 
@@ -77,6 +79,7 @@ type Options struct {
 	UserInfo           string
 	ModelStatus        string
 	ModelContextTokens int
+	ThinkLevel         think.Level
 	ModelSwitch        func(context.Context) (*cognitive.Agent, string, bool, error)
 }
 
@@ -108,6 +111,7 @@ func NewApp(opts Options) (*App, error) {
 		userInfo:           strings.TrimSpace(opts.UserInfo),
 		modelStatus:        strings.TrimSpace(opts.ModelStatus),
 		modelContextTokens: opts.ModelContextTokens,
+		thinkLevel:         think.NormalizeLevel(string(opts.ThinkLevel)),
 		skillNames:         skillNames,
 	}
 	a.turnExecutor = turn.NewExecutor(turn.ExecutorOptions{
@@ -115,6 +119,9 @@ func NewApp(opts Options) (*App, error) {
 		Dispatcher: a.skillDispatcher,
 		CommandSet: a.commandSet,
 		Approve:    a.confirmApproval,
+		TurnOptions: turn.TurnOptions{
+			ThinkLevel: a.thinkLevel,
+		},
 	})
 	return a, nil
 }
@@ -314,6 +321,9 @@ func (a *App) switchModel(ctx context.Context) error {
 		Dispatcher: a.skillDispatcher,
 		CommandSet: a.commandSet,
 		Approve:    a.confirmApproval,
+		TurnOptions: turn.TurnOptions{
+			ThinkLevel: a.thinkLevel,
+		},
 	})
 	return nil
 }

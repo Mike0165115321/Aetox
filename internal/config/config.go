@@ -16,6 +16,7 @@ type Config struct {
 	MaxPlanRetries     int
 	ApprovalTimeoutSec int
 	MaxOutputFiles     int
+	ThinkLevel         string
 	ModelProvider      string
 	ModelName          string
 	ModelAPIKey        string
@@ -30,6 +31,7 @@ type ConfigOptions struct {
 	MaxRetries         int
 	MaxPlanRetries     int
 	ApprovalTimeout    int
+	ThinkLevel         string
 	ModelProvider      string
 	ModelName          string
 	ModelAPIKey        string
@@ -39,9 +41,48 @@ type ConfigOptions struct {
 }
 
 type ModelPreference struct {
-	ModelProvider string `json:"provider"`
-	ModelName     string `json:"model"`
-	ModelBaseURL  string `json:"base_url"`
+	ModelProvider string            `json:"provider"`
+	ModelName     string            `json:"model"`
+	ModelBaseURL  string            `json:"base_url"`
+	ThinkLevel    string            `json:"think_level,omitempty"`
+	ModelAPIKeys  map[string]string `json:"provider_api_keys,omitempty"`
+}
+
+func (p *ModelPreference) normalizeProviderKey(provider string) string {
+	return strings.ToLower(strings.TrimSpace(model.NormalizeProvider(provider)))
+}
+
+func (p *ModelPreference) EnsureProviderMap() map[string]string {
+	if p.ModelAPIKeys == nil {
+		p.ModelAPIKeys = make(map[string]string)
+	}
+	return p.ModelAPIKeys
+}
+
+func (p ModelPreference) APIKeyForProvider(provider string) string {
+	key := p.normalizeProviderKey(provider)
+	if key == "" {
+		return ""
+	}
+	for providerKey, value := range p.ModelAPIKeys {
+		if strings.EqualFold(strings.TrimSpace(providerKey), key) {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func (p *ModelPreference) SetAPIKeyForProvider(provider, apiKey string) {
+	key := p.normalizeProviderKey(provider)
+	if key == "" {
+		return
+	}
+	trimmed := strings.TrimSpace(apiKey)
+	if trimmed == "" {
+		return
+	}
+	p.EnsureProviderMap()
+	p.ModelAPIKeys[key] = trimmed
 }
 
 func Load(opt ConfigOptions) Config {
@@ -84,6 +125,10 @@ func Load(opt ConfigOptions) Config {
 	if modelContextTokens < 0 {
 		modelContextTokens = 0
 	}
+	thinkLevel := strings.ToLower(strings.TrimSpace(opt.ThinkLevel))
+	if thinkLevel == "" {
+		thinkLevel = "medium"
+	}
 
 	return Config{
 		SandboxRoot:        root,
@@ -92,6 +137,7 @@ func Load(opt ConfigOptions) Config {
 		MaxPlanRetries:     maxPlanRetries,
 		ApprovalTimeoutSec: timeout,
 		MaxOutputFiles:     2000,
+		ThinkLevel:         thinkLevel,
 		ModelProvider:      provider,
 		ModelName:          modelName,
 		ModelAPIKey:        modelAPIKey,

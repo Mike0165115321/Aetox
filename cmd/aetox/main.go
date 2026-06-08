@@ -17,6 +17,7 @@ import (
 	"aetox-cli/internal/config"
 	"aetox-cli/internal/model"
 	"aetox-cli/internal/skill"
+	"aetox-cli/internal/think"
 
 	"golang.org/x/term"
 )
@@ -33,6 +34,7 @@ var (
 
 func main() {
 	setUTF8Console()
+	providerUsageHint := "model provider (" + strings.Join(model.SupportedProviders(), "|") + ")"
 
 	var rootPath string
 	var approvalTimeout int
@@ -42,15 +44,17 @@ func main() {
 	var modelBaseURL string
 	var modelTimeout int
 	var modelContextTokens int
+	var thinkLevel string
 
 	flag.StringVar(&rootPath, "root", "", "optional sandbox root directory (default: current directory)")
 	flag.IntVar(&approvalTimeout, "approval-timeout", 60, "reserved for future approval controls")
-	flag.StringVar(&modelProvider, "model-provider", "", "model provider (openrouter|ollama)")
+	flag.StringVar(&modelProvider, "model-provider", "", providerUsageHint)
 	flag.StringVar(&modelName, "model-name", "", "model name (required for selected provider)")
 	flag.StringVar(&modelAPIKey, "model-api-key", "", "model API key; fallback to provider env when empty")
 	flag.StringVar(&modelBaseURL, "model-base-url", "", "override base URL for model provider")
 	flag.IntVar(&modelTimeout, "model-timeout", 30, "model request timeout in seconds")
 	flag.IntVar(&modelContextTokens, "model-context-tokens", 0, "model context window token cap (0=auto/unknown)")
+	flag.StringVar(&thinkLevel, "think", "", "thinking level (low|medium|high)")
 	flag.BoolVar(&noBanner, "no-banner", false, "disable startup banner in interactive mode")
 	flag.BoolVar(&showVersion, "version", false, "print version")
 	flag.BoolVar(&showHelp, "help", false, "print usage")
@@ -65,12 +69,13 @@ func main() {
 	preParser.SetOutput(io.Discard)
 	preParser.StringVar(&rootPath, "root", "", "optional sandbox root directory (default: current directory)")
 	preParser.IntVar(&approvalTimeout, "approval-timeout", 60, "reserved for future approval controls")
-	preParser.StringVar(&modelProvider, "model-provider", "", "model provider (openrouter|ollama)")
+	preParser.StringVar(&modelProvider, "model-provider", "", providerUsageHint)
 	preParser.StringVar(&modelName, "model-name", "", "model name (required for selected provider)")
 	preParser.StringVar(&modelAPIKey, "model-api-key", "", "model API key; fallback to provider env when empty")
 	preParser.StringVar(&modelBaseURL, "model-base-url", "", "override base URL for model provider")
 	preParser.IntVar(&modelTimeout, "model-timeout", 30, "model request timeout in seconds")
 	preParser.IntVar(&modelContextTokens, "model-context-tokens", 0, "model context window token cap (0=auto/unknown)")
+	preParser.StringVar(&thinkLevel, "think", "", "thinking level (low|medium|high)")
 	preParser.BoolVar(&noBanner, "no-banner", false, "disable startup banner in interactive mode")
 	preParser.BoolVar(&showVersion, "version", false, "print version")
 	preParser.BoolVar(&showHelp, "help", false, "print usage")
@@ -82,7 +87,16 @@ func main() {
 	providerExplicit := strings.TrimSpace(modelProvider) != ""
 	modelNameExplicit := strings.TrimSpace(modelName) != ""
 	baseURLExplicit := strings.TrimSpace(modelBaseURL) != ""
+	thinkLevelExplicit := strings.TrimSpace(thinkLevel) != ""
 	explicitModelConfig := providerExplicit || modelNameExplicit || baseURLExplicit
+	if thinkLevelExplicit {
+		parsedThinkLevel, err := think.ParseLevel(thinkLevel)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "invalid flags: %v\n", err)
+			os.Exit(2)
+		}
+		thinkLevel = string(parsedThinkLevel)
+	}
 
 	if showVersion {
 		fmt.Printf("aetox version %s\n", appVersion)
@@ -106,6 +120,7 @@ func main() {
 		ModelBaseURL:       modelBaseURL,
 		ModelTimeout:       modelTimeout,
 		ModelContextTokens: modelContextTokens,
+		ThinkLevel:         thinkLevel,
 	})
 
 	modelProvider = cfg.ModelProvider
@@ -113,6 +128,7 @@ func main() {
 	modelAPIKey = cfg.ModelAPIKey
 	modelBaseURL = cfg.ModelBaseURL
 	modelContextTokens = cfg.ModelContextTokens
+	thinkLevel = cfg.ThinkLevel
 
 	storedPreference, hasStoredPreference, prefErr := config.LoadModelPreference()
 	if prefErr != nil {
@@ -132,22 +148,35 @@ func main() {
 				modelBaseURL = strings.TrimSpace(storedPreference.ModelBaseURL)
 				cfg.ModelBaseURL = modelBaseURL
 			}
+			if key := storedPreference.APIKeyForProvider(modelProvider); key != "" {
+				modelAPIKey = key
+			}
 		}
+	}
+	if !thinkLevelExplicit && hasStoredPreference && strings.TrimSpace(storedPreference.ThinkLevel) != "" {
+		thinkLevel = string(think.NormalizeLevel(storedPreference.ThinkLevel))
+		cfg.ThinkLevel = thinkLevel
 	}
 
 	currentConfig := cfg
 
 	if intent.Mode == command.ModeInteractive && isInteractive() && !explicitModelConfig && !hasStoredPreference {
-		selectedProvider, selectedModel, selectedAPIKey, selectedBaseURL, ok := promptModelSelection(cfg)
+		selectedProvider, selectedModel, selectedAPIKey, selectedBaseURL, selectedThinkLevel, ok := promptModelSelection(cfg, !thinkLevelExplicit)
 		if ok {
 			modelProvider = selectedProvider
 			modelName = selectedModel
 			modelAPIKey = selectedAPIKey
 			modelBaseURL = selectedBaseURL
+			if !thinkLevelExplicit {
+				thinkLevel = selectedThinkLevel
+			}
 			cfg.ModelProvider = selectedProvider
 			cfg.ModelName = selectedModel
 			cfg.ModelAPIKey = selectedAPIKey
 			cfg.ModelBaseURL = selectedBaseURL
+			if !thinkLevelExplicit {
+				cfg.ThinkLevel = selectedThinkLevel
+			}
 			currentConfig = cfg
 			if saveErr := persistModelPreference(currentConfig); saveErr != nil {
 				fmt.Fprintf(os.Stderr, "warning: cannot save model preference: %v\n", saveErr)
@@ -163,6 +192,7 @@ func main() {
 	}
 	cfg.ModelBaseURL = strings.TrimSpace(modelBaseURL)
 	cfg.ModelContextTokens = modelContextTokens
+	cfg.ThinkLevel = string(think.NormalizeLevel(thinkLevel))
 
 	if strings.TrimSpace(cfg.ModelName) == "" &&
 		!strings.EqualFold(strings.TrimSpace(cfg.ModelProvider), "noop") {
@@ -204,15 +234,17 @@ func main() {
 		Console:     console,
 		Dispatcher:  skillDispatcher,
 		ShowBanner:  !noBanner,
-		AutoApprove: cfg.AutoApprove,
+		AutoApprove: cfg.AutoApprove || intent.Mode == command.ModeOnce,
 		Title:       "Aetox CLI",
 		Version:     appVersion,
 		UserInfo:    resolveDisplayUser(),
 		ModelStatus: resolveModelStatus(config.Config{
 			ModelProvider: modelProvider,
 			ModelName:     currentConfig.ModelName,
+			ThinkLevel:    currentConfig.ThinkLevel,
 		}, bootstrapResult),
 		ModelContextTokens: currentConfig.ModelContextTokens,
+		ThinkLevel:         think.Level(currentConfig.ThinkLevel),
 		ModelSwitch: func(ctx context.Context) (*cognitive.Agent, string, bool, error) {
 			return switchProvider(ctx, &currentConfig)
 		},
@@ -261,7 +293,7 @@ func switchProvider(ctx context.Context, cfg *config.Config) (*cognitive.Agent, 
 	default:
 	}
 
-	selectedProvider, selectedModel, selectedAPIKey, selectedBaseURL, ok := promptModelSelection(*cfg)
+	selectedProvider, selectedModel, selectedAPIKey, selectedBaseURL, selectedThinkLevel, ok := promptModelSelection(*cfg, true)
 	if !ok {
 		return nil, "", false, nil
 	}
@@ -270,6 +302,7 @@ func switchProvider(ctx context.Context, cfg *config.Config) (*cognitive.Agent, 
 	cfg.ModelName = strings.TrimSpace(selectedModel)
 	cfg.ModelAPIKey = strings.TrimSpace(selectedAPIKey)
 	cfg.ModelBaseURL = strings.TrimSpace(selectedBaseURL)
+	cfg.ThinkLevel = string(think.NormalizeLevel(selectedThinkLevel))
 
 	if cfg.ModelName == "" && !strings.EqualFold(cfg.ModelProvider, "noop") {
 		cfg.ModelName = model.DefaultModel(cfg.ModelProvider)
@@ -324,7 +357,9 @@ func resolveDisplayUser() string {
 }
 
 func resolveModelStatus(cfg config.Config, bootstrapResult model.BootstrapResult) string {
-	return model.ResolveStatus(cfg.ModelProvider, cfg.ModelName, bootstrapResult.Error)
+	status := model.ResolveStatus(cfg.ModelProvider, cfg.ModelName, bootstrapResult.Error)
+	profile := think.Resolve(think.Level(cfg.ThinkLevel), model.ProviderSupportsReasoning(bootstrapResult.Provider))
+	return status + " | think " + profile.StatusLabel()
 }
 
 func bootstrapModelWithStatus(cfg config.Config) (model.BootstrapResult, string) {
@@ -347,23 +382,59 @@ func persistModelPreference(cfg config.Config) error {
 	if provider == "" {
 		return nil
 	}
+	canonicalProvider := model.NormalizeProvider(provider)
+	storedPreference, hasStoredPreference, _ := config.LoadModelPreference()
+	if hasStoredPreference {
+		storedPreference = normalizeProviderPreference(storedPreference)
+	} else {
+		storedPreference = config.ModelPreference{}
+	}
+	if strings.TrimSpace(cfg.ModelAPIKey) != "" {
+		storedPreference.SetAPIKeyForProvider(canonicalProvider, cfg.ModelAPIKey)
+	}
 	pref := config.ModelPreference{
-		ModelProvider: provider,
+		ModelProvider: canonicalProvider,
 		ModelName:     strings.TrimSpace(cfg.ModelName),
 		ModelBaseURL:  strings.TrimSpace(cfg.ModelBaseURL),
+		ThinkLevel:    string(think.NormalizeLevel(cfg.ThinkLevel)),
+		ModelAPIKeys:  storedPreference.ModelAPIKeys,
+	}
+	if len(pref.ModelAPIKeys) == 0 {
+		pref.ModelAPIKeys = nil
 	}
 	return config.SaveModelPreference(pref)
 }
 
-func promptModelSelection(cfg config.Config) (string, string, string, string, bool) {
+func normalizeProviderPreference(pref config.ModelPreference) config.ModelPreference {
+	normalized := config.ModelPreference{
+		ModelProvider: strings.TrimSpace(pref.ModelProvider),
+		ModelName:     strings.TrimSpace(pref.ModelName),
+		ModelBaseURL:  strings.TrimSpace(pref.ModelBaseURL),
+		ThinkLevel:    string(think.NormalizeLevel(pref.ThinkLevel)),
+	}
+	for _, key := range model.SupportedProviders() {
+		modelName := key
+		if value := pref.APIKeyForProvider(key); value != "" {
+			normalized.SetAPIKeyForProvider(modelName, value)
+		}
+	}
+	return normalized
+}
+
+func promptModelSelection(cfg config.Config, askThinkLevel bool) (string, string, string, string, string, bool) {
 	reader := bufio.NewReader(os.Stdin)
+	storedPreference, hasStoredPreference, prefErr := config.LoadModelPreference()
+	if prefErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: cannot read model preference: %v\n", prefErr)
+	}
 
 	providers := model.SupportedProviders()
 	providerOptions := make([]string, 0, len(providers))
 	for _, p := range providers {
 		label := p
 		if model.RequiresAPIKey(p) {
-			label = model.FormatProviderMenuLabel(p, model.ResolveModelAPIKey(p) != "")
+			keyFound := model.ResolveModelAPIKey(p) != "" || (hasStoredPreference && storedPreference.APIKeyForProvider(p) != "")
+			label = model.FormatProviderMenuLabel(p, keyFound)
 		}
 		providerOptions = append(providerOptions, label)
 	}
@@ -371,31 +442,92 @@ func promptModelSelection(cfg config.Config) (string, string, string, string, bo
 	for {
 		idx, ok := pickFromMenu(reader, "No model provider configured. Select one.", providerOptions, 0, "Use ↑/↓ then Enter.")
 		if !ok {
-			return providers[0], model.DefaultModel(providers[0]), "", cfg.ModelBaseURL, false
+			return providers[0], model.DefaultModel(providers[0]), "", cfg.ModelBaseURL, defaultThinkLevel(cfg.ThinkLevel), false
 		}
 		provider := providers[idx]
+		providerBaseURL := strings.TrimSpace(cfg.ModelBaseURL)
+		if providerBaseURL == "" {
+			providerBaseURL = model.DefaultBaseURL(provider)
+		}
 
-		selectedModel := pickModelForProvider(reader, provider, cfg.ModelName, cfg.ModelBaseURL)
-		fmt.Printf("Selected: %s / %s\n\n", provider, selectedModel)
+		key := strings.TrimSpace(storedPreference.APIKeyForProvider(provider))
+		if key == "" && strings.EqualFold(cfg.ModelProvider, provider) {
+			key = strings.TrimSpace(cfg.ModelAPIKey)
+		}
+		if key == "" {
+			key = strings.TrimSpace(model.ResolveModelAPIKey(provider))
+		}
 
-		key := strings.TrimSpace(model.ResolveModelAPIKey(provider))
 		if model.RequiresAPIKey(provider) {
 			if key == "" {
-				fmt.Printf("API key for %s (press Enter to keep local environment): ", provider)
-				key = strings.TrimSpace(readLine(reader))
-				if key == "" {
-					fmt.Println("Missing API key. Try again.")
-					continue
+				if hasStoredPreference {
+					fmt.Printf("No cached API key for %s.\n", provider)
 				}
+				for {
+					fmt.Printf("API key for %s: ", provider)
+					key = strings.TrimSpace(readLine(reader))
+					if key != "" {
+						break
+					}
+					fmt.Println("Missing API key. Try again.")
+				}
+			} else {
+				fmt.Printf("Use existing API key for %s.\n", provider)
 			}
 		}
-		return provider, selectedModel, key, cfg.ModelBaseURL, true
+
+		selectedModel := pickModelForProvider(reader, provider, cfg.ModelName, providerBaseURL, key)
+		selectedThinkLevel := defaultThinkLevel(cfg.ThinkLevel)
+		if askThinkLevel {
+			selectedThinkLevel = promptThinkLevelSelection(reader, cfg.ThinkLevel)
+		}
+		fmt.Printf("Selected: %s / %s", provider, selectedModel)
+		if askThinkLevel {
+			fmt.Printf(" | think %s", selectedThinkLevel)
+		}
+		fmt.Printf("\n\n")
+
+		return provider, selectedModel, key, providerBaseURL, selectedThinkLevel, true
 	}
 }
 
-func pickModelForProvider(reader *bufio.Reader, provider, existing, baseURL string) string {
-	modelChoices, err := model.ModelChoicesWithEndpoint(provider, baseURL)
+func defaultThinkLevel(existing string) string {
+	return string(think.NormalizeLevel(existing))
+}
+
+func promptThinkLevelSelection(reader *bufio.Reader, existing string) string {
+	defaultLevel := defaultThinkLevel(existing)
+	if reader == nil {
+		return defaultLevel
+	}
+
+	options := []string{
+		string(think.LevelLow),
+		string(think.LevelMedium),
+		string(think.LevelHigh),
+	}
+	defaultIndex := 1
+	for i, option := range options {
+		if option == defaultLevel {
+			defaultIndex = i
+			break
+		}
+	}
+
+	idx, ok := pickFromMenu(reader, "Choose thinking level", options, defaultIndex, "Use โ‘/โ“ then Enter.")
+	if !ok {
+		return defaultLevel
+	}
+	return options[idx]
+}
+
+func pickModelForProvider(reader *bufio.Reader, provider, existing, baseURL, apiKey string) string {
+	modelChoices, err := model.ModelChoicesWithEndpointAndAPIKey(provider, baseURL, apiKey)
 	if err != nil || len(modelChoices) == 0 {
+		if err != nil && strings.TrimSpace(apiKey) != "" {
+			fmt.Printf("โหลดรายชื่อโมเดลจาก API ของ %s ไม่ได้ (%v)\n", provider, err)
+			fmt.Println("กำลังใช้รายชื่อสำรองจากค่าสำรอง")
+		}
 		modelChoices = model.ModelChoices(provider)
 	}
 	defaultModel := model.DefaultModel(provider)
@@ -412,9 +544,25 @@ func pickModelForProvider(reader *bufio.Reader, provider, existing, baseURL stri
 	}
 
 	options := append([]string{}, modelChoices...)
+	// If current model is not in advertised list, keep it as a selectable default.
+	if defaultModel != "" {
+		foundDefault := false
+		for _, m := range options {
+			if m == defaultModel {
+				foundDefault = true
+				break
+			}
+		}
+		if !foundDefault {
+			options = append([]string{defaultModel}, options...)
+		}
+	}
 	options = append(options, "custom model ...")
 	defaultIndex := 0
-	for i, m := range modelChoices {
+	for i, m := range options {
+		if i >= len(options)-1 {
+			break
+		}
 		if m == defaultModel {
 			defaultIndex = i
 			break
@@ -426,7 +574,7 @@ func pickModelForProvider(reader *bufio.Reader, provider, existing, baseURL stri
 		return defaultModel
 	}
 
-	if idx == len(modelChoices) {
+	if idx == len(options)-1 {
 		fmt.Printf("Model name for %s [%s]: ", provider, defaultModel)
 		if model := strings.TrimSpace(readLine(reader)); model != "" {
 			return model
@@ -434,7 +582,7 @@ func pickModelForProvider(reader *bufio.Reader, provider, existing, baseURL stri
 		return defaultModel
 	}
 
-	return modelChoices[idx]
+	return options[idx]
 }
 
 func pickFromMenu(reader *bufio.Reader, title string, options []string, defaultIndex int, hint string) (int, bool) {
@@ -638,10 +786,11 @@ func printUsage() {
 	fmt.Println("  aetox                    interactive mode")
 	fmt.Println("  aetox help               show this help")
 	fmt.Println("Flags:")
-	fmt.Println("  --model-provider: openrouter|ollama")
-	fmt.Println("  --model-name <model>         required for openrouter")
+	fmt.Printf("  --model-provider: %s\n", strings.Join(model.SupportedProviders(), "|"))
+	fmt.Println("  --model-name <model>         optional; provider defaults are auto-selected when omitted")
 	fmt.Println("  --model-api-key <key>        fallback: provider env (OPENAI_API_KEY, DEEPSEEK_API_KEY, GROQ_API_KEY, etc.)")
 	fmt.Println("  --model-context-tokens <n>   override context window display (0=auto/unknown)")
+	fmt.Println("  --think <level>              thinking level: low|medium|high")
 	fmt.Println("  --no-banner                 disable interactive banner")
 	fmt.Println("  --yes                       auto-approve safe-mode safety prompts")
 	fmt.Println("  --version                   print version")
@@ -661,7 +810,7 @@ func preparseGlobalFlags(rawArgs []string) ([]string, []string, error) {
 
 	isValueFlag := func(arg string) bool {
 		switch arg {
-		case "--root", "--approval-timeout", "--model-provider", "--model-name", "--model-api-key", "--model-base-url", "--model-timeout", "--model-context-tokens":
+		case "--root", "--approval-timeout", "--model-provider", "--model-name", "--model-api-key", "--model-base-url", "--model-timeout", "--model-context-tokens", "--think":
 			return true
 		}
 		return false

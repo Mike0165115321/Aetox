@@ -14,6 +14,7 @@ import (
 	"aetox-cli/internal/model"
 	"aetox-cli/internal/safety"
 	"aetox-cli/internal/skill"
+	"aetox-cli/internal/think"
 )
 
 type TurnStatus string
@@ -56,10 +57,14 @@ var (
 )
 
 type Agent interface {
-	Respond(context.Context, string) (string, error)
-	RespondStream(context.Context, string, func(string) error) (string, bool, error)
-	RespondWithTools(context.Context, []model.ToolDefinition, string, func(context.Context, model.ToolCall) (string, error)) (string, bool, error)
+	Respond(context.Context, string, TurnOptions) (string, error)
+	RespondStream(context.Context, string, func(string) error, TurnOptions) (string, bool, error)
+	RespondWithTools(context.Context, []model.ToolDefinition, string, func(context.Context, model.ToolCall) (string, error), TurnOptions) (string, bool, error)
 	SupportsToolCalling() bool
+}
+
+type TurnOptions struct {
+	ThinkLevel think.Level
 }
 
 type Dispatcher interface {
@@ -83,6 +88,7 @@ type Executor struct {
 	approve        ApprovalPromptFunc
 	summaryTimeout time.Duration
 	summaryLimit   int
+	turnOptions    TurnOptions
 }
 
 type ExecutorOptions struct {
@@ -92,6 +98,7 @@ type ExecutorOptions struct {
 	Approve        ApprovalPromptFunc
 	SummaryTimeout time.Duration
 	SummaryLimit   int
+	TurnOptions    TurnOptions
 }
 
 type Result struct {
@@ -116,6 +123,7 @@ func NewExecutor(opts ExecutorOptions) *Executor {
 		approve:        opts.Approve,
 		summaryTimeout: timeout,
 		summaryLimit:   limit,
+		turnOptions:    opts.TurnOptions,
 	}
 }
 
@@ -163,7 +171,7 @@ func (e *Executor) Execute(
 	}
 
 	if parsed.Kind == command.KindConversation {
-		reply, streamed, err := e.agent.RespondStream(ctx, parsed.Raw, asStreamHandler(onChunk))
+		reply, streamed, err := e.agent.RespondStream(ctx, parsed.Raw, asStreamHandler(onChunk), e.turnOptions)
 		return Result{
 			Reply:    reply,
 			Streamed: streamed,
@@ -284,7 +292,7 @@ func (e *Executor) executeSkillTurn(
 	reply, handled, err := e.dispatchBySkill(ctx, intent.Raw)
 	if !handled {
 		notifyToolComplete()
-		replyText, respondErr := e.agent.Respond(ctx, line)
+		replyText, respondErr := e.agent.Respond(ctx, line, e.turnOptions)
 		if respondErr != nil {
 			return Result{}, respondErr
 		}
@@ -355,7 +363,7 @@ func (e *Executor) executeAgentToolLoop(
 			toolSucceeded = true
 		}
 		return receipt, execErr
-	})
+	}, e.turnOptions)
 	if err != nil {
 		return Result{}, false, false, toolSucceeded, err
 	}
@@ -610,6 +618,23 @@ func (e *Executor) inferToolCandidates(raw string) []inferredToolCandidate {
 	raw = strings.TrimSpace(raw)
 	if raw == "" || e.dispatcher == nil {
 		return nil
+	}
+	if e.isSelfIntroductionRequest(raw) && e.inferExtensionHint(raw) != "" && !e.hasExplicitWritePath(raw) {
+		path, content, errMsg := e.parseWriteCandidate(raw)
+		if strings.TrimSpace(path) == "" {
+			return []inferredToolCandidate{{
+				Name:           "write",
+				MissingMessage: errMsg,
+			}}
+		}
+		return []inferredToolCandidate{{
+			Name: "write",
+			Args: map[string]any{
+				"path":    path,
+				"content": content,
+			},
+			MissingMessage: errMsg,
+		}}
 	}
 
 	parts, separators := e.splitIntentPartsWithSeparators(raw)
@@ -1103,8 +1128,27 @@ func (e *Executor) hasExplicitWritePath(raw string) bool {
 	if raw == "" {
 		return false
 	}
-	if reQuotedName.MatchString(raw) || reNamedPath.MatchString(raw) || reFilename.MatchString(raw) {
+	if reQuotedName.MatchString(raw) || reNamedPath.MatchString(raw) || reFilename.MatchString(raw) || e.hasExplicitPathAfterFileMarker(raw) {
 		return true
+	}
+	return false
+}
+
+func (e *Executor) hasExplicitPathAfterFileMarker(raw string) bool {
+	lower := strings.ToLower(raw)
+	tokens := strings.Fields(raw)
+	lowerTokens := strings.Fields(lower)
+	for i := 0; i < len(lowerTokens)-1; i++ {
+		if lowerTokens[i] != "file" && lowerTokens[i] != "path" && lowerTokens[i] != "filename" {
+			continue
+		}
+		next := strings.TrimSpace(tokens[i+1])
+		if next == "" {
+			continue
+		}
+		if strings.Contains(next, ".") || strings.ContainsAny(next, `/\:*?|"<>'`) || strings.HasPrefix(next, "~") {
+			return true
+		}
 	}
 	return false
 }
@@ -1546,7 +1590,7 @@ func (e *Executor) summarizeToolExecution(
 
 	summaryCtx, cancel := context.WithTimeout(ctx, e.summaryTimeout)
 	defer cancel()
-	summary, err := e.agent.Respond(summaryCtx, summaryPrompt)
+	summary, err := e.agent.Respond(summaryCtx, summaryPrompt, e.turnOptions)
 	if err != nil {
 		return "", err
 	}
@@ -1705,6 +1749,3 @@ func asStreamHandler(callback func(string)) func(string) error {
 		return nil
 	}
 }
-
-
-

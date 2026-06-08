@@ -7,6 +7,8 @@ import (
 
 	"aetox-cli/internal/memory"
 	"aetox-cli/internal/model"
+	"aetox-cli/internal/think"
+	"aetox-cli/internal/turn"
 )
 
 const (
@@ -49,9 +51,10 @@ func (a *Agent) RespondWithTools(
 	modelTools []model.ToolDefinition,
 	userMessage string,
 	execTool func(context.Context, model.ToolCall) (string, error),
+	opts turn.TurnOptions,
 ) (string, bool, error) {
 	if len(modelTools) == 0 || execTool == nil || !a.supportsToolCalling() {
-		reply, err := a.Respond(ctx, userMessage)
+		reply, err := a.Respond(ctx, userMessage, opts)
 		return reply, false, err
 	}
 	if a.provider == nil {
@@ -70,17 +73,10 @@ func (a *Agent) RespondWithTools(
 	}
 	anyToolUsed := false
 	for i := 0; i < maxToolCalls; i++ {
-		response, err := a.provider.Complete(ctx, model.Request{
-			Model:       a.model,
-			Messages:    a.context.Messages(),
-			MaxTokens:   768,
-			Temperature: 0.2,
-			Tools:       modelTools,
-			ToolChoice:  "auto",
-		})
+		response, err := a.provider.Complete(ctx, a.buildRequest(a.context.Messages(), 768, 0.2, modelTools, "auto", opts))
 		if err != nil {
 			if i == 0 {
-				reply, err := a.Respond(ctx, msg)
+				reply, err := a.Respond(ctx, msg, opts)
 				return reply, false, err
 			}
 			return "", false, err
@@ -141,7 +137,7 @@ func (a *Agent) executeToolCall(ctx context.Context, toolCall model.ToolCall, ex
 	return output, nil
 }
 
-func (a *Agent) Respond(ctx context.Context, userMessage string) (string, error) {
+func (a *Agent) Respond(ctx context.Context, userMessage string, opts turn.TurnOptions) (string, error) {
 	if a.provider == nil {
 		return "", errors.New("agent provider is not initialized")
 	}
@@ -153,12 +149,7 @@ func (a *Agent) Respond(ctx context.Context, userMessage string) (string, error)
 
 	a.context.Add(model.RoleUser, msg)
 
-	response, err := a.provider.Complete(ctx, model.Request{
-		Model:       a.model,
-		Messages:    a.context.Messages(),
-		MaxTokens:   768,
-		Temperature: 0.2,
-	})
+	response, err := a.provider.Complete(ctx, a.buildRequest(a.context.Messages(), 768, 0.2, nil, "", opts))
 	if err != nil {
 		return "", err
 	}
@@ -176,7 +167,7 @@ func (a *Agent) Respond(ctx context.Context, userMessage string) (string, error)
 	return reply, nil
 }
 
-func (a *Agent) RespondStream(ctx context.Context, userMessage string, onChunk func(string) error) (string, bool, error) {
+func (a *Agent) RespondStream(ctx context.Context, userMessage string, onChunk func(string) error, opts turn.TurnOptions) (string, bool, error) {
 	if a.provider == nil {
 		return "", false, errors.New("agent provider is not initialized")
 	}
@@ -188,12 +179,7 @@ func (a *Agent) RespondStream(ctx context.Context, userMessage string, onChunk f
 
 	a.context.Add(model.RoleUser, msg)
 
-	req := model.Request{
-		Model:       a.model,
-		Messages:    a.context.Messages(),
-		MaxTokens:   768,
-		Temperature: 0.2,
-	}
+	req := a.buildRequest(a.context.Messages(), 768, 0.2, nil, "", opts)
 
 	if streamer, ok := a.provider.(model.StreamingProvider); ok {
 		response, err := streamer.StreamComplete(ctx, req, onChunk)
@@ -238,6 +224,10 @@ func (a *Agent) SupportsToolCalling() bool {
 	return a.supportsToolCalling()
 }
 
+func (a *Agent) ResolveThinkProfile(level think.Level) think.Profile {
+	return think.Resolve(level, model.ProviderSupportsReasoning(a.provider))
+}
+
 func (a *Agent) ReplaceModel(provider model.Provider, modelName string) {
 	a.provider = provider
 	if modelName != "" {
@@ -267,4 +257,20 @@ func (a *Agent) ContextUsage() (messageCount int, usedChars int, maxChars int) {
 
 func (a *Agent) LastUsage() model.Usage {
 	return a.lastUsage
+}
+
+func (a *Agent) buildRequest(messages []model.Message, maxTokens int, temperature float64, tools []model.ToolDefinition, toolChoice string, opts turn.TurnOptions) model.Request {
+	req := model.Request{
+		Model:       a.model,
+		Messages:    messages,
+		MaxTokens:   maxTokens,
+		Temperature: temperature,
+		Tools:       tools,
+		ToolChoice:  toolChoice,
+	}
+	profile := a.ResolveThinkProfile(opts.ThinkLevel)
+	if effort := profile.ReasoningEffort(); effort != "" {
+		req.Reasoning = &model.ReasoningConfig{Effort: effort}
+	}
+	return req
 }

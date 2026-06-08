@@ -815,11 +815,11 @@ type toolAwareAgent struct {
 	withToolsUsed  bool
 }
 
-func (a *toolAwareAgent) Respond(_ context.Context, _ string) (string, error) {
+func (a *toolAwareAgent) Respond(_ context.Context, _ string, _ TurnOptions) (string, error) {
 	return a.summaryReply, nil
 }
 
-func (a *toolAwareAgent) RespondStream(_ context.Context, _ string, _ func(string) error) (string, bool, error) {
+func (a *toolAwareAgent) RespondStream(_ context.Context, _ string, _ func(string) error, _ TurnOptions) (string, bool, error) {
 	return a.summaryReply, false, nil
 }
 
@@ -828,6 +828,7 @@ func (a *toolAwareAgent) RespondWithTools(
 	_ []model.ToolDefinition,
 	_ string,
 	_ func(context.Context, model.ToolCall) (string, error),
+	_ TurnOptions,
 ) (string, bool, error) {
 	if a.withToolsReply == "" {
 		a.withToolsReply = "ok"
@@ -841,11 +842,11 @@ func (a *toolAwareAgent) SupportsToolCalling() bool {
 
 type successfulToolCallAgent struct{}
 
-func (a *successfulToolCallAgent) Respond(_ context.Context, _ string) (string, error) {
+func (a *successfulToolCallAgent) Respond(_ context.Context, _ string, _ TurnOptions) (string, error) {
 	return "done", nil
 }
 
-func (a *successfulToolCallAgent) RespondStream(_ context.Context, _ string, _ func(string) error) (string, bool, error) {
+func (a *successfulToolCallAgent) RespondStream(_ context.Context, _ string, _ func(string) error, _ TurnOptions) (string, bool, error) {
 	return "done", false, nil
 }
 
@@ -854,6 +855,7 @@ func (a *successfulToolCallAgent) RespondWithTools(
 	_ []model.ToolDefinition,
 	_ string,
 	exec func(context.Context, model.ToolCall) (string, error),
+	_ TurnOptions,
 ) (string, bool, error) {
 	_, err := exec(ctx, model.ToolCall{
 		ID:   "good_call_1",
@@ -877,11 +879,11 @@ type failedToolCallAgent struct {
 	summaryReply string
 }
 
-func (a *failedToolCallAgent) Respond(_ context.Context, _ string) (string, error) {
+func (a *failedToolCallAgent) Respond(_ context.Context, _ string, _ TurnOptions) (string, error) {
 	return a.summaryReply, nil
 }
 
-func (a *failedToolCallAgent) RespondStream(_ context.Context, _ string, _ func(string) error) (string, bool, error) {
+func (a *failedToolCallAgent) RespondStream(_ context.Context, _ string, _ func(string) error, _ TurnOptions) (string, bool, error) {
 	return a.summaryReply, false, nil
 }
 
@@ -890,6 +892,7 @@ func (a *failedToolCallAgent) RespondWithTools(
 	_ []model.ToolDefinition,
 	_ string,
 	exec func(context.Context, model.ToolCall) (string, error),
+	_ TurnOptions,
 ) (string, bool, error) {
 	_, _ = exec(ctx, model.ToolCall{
 		ID:   "bad_call_1",

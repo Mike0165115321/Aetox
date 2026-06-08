@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"aetox-cli/internal/model"
+	"aetox-cli/internal/think"
+	"aetox-cli/internal/turn"
 )
 
 func TestRespondWithToolsContinuesAfterToolCall(t *testing.T) {
@@ -44,6 +46,7 @@ func TestRespondWithToolsContinuesAfterToolCall(t *testing.T) {
 			}
 			return `{"tool":"read","status":"done","output":"alpha"}`, nil
 		},
+		turn.TurnOptions{ThinkLevel: think.LevelMedium},
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -78,6 +81,42 @@ func TestRespondWithToolsContinuesAfterToolCall(t *testing.T) {
 	}
 }
 
+func TestRespondAttachesReasoningOnlyWhenProviderSupportsIt(t *testing.T) {
+	supported := &toolLoopProvider{}
+	agent := NewAgent(AgentConfig{
+		Provider: supported,
+		Model:    "test-model",
+	})
+	if _, err := agent.Respond(context.Background(), "hello", turn.TurnOptions{ThinkLevel: think.LevelHigh}); err != nil {
+		t.Fatalf("respond failed: %v", err)
+	}
+	if len(supported.requests) != 1 {
+		t.Fatalf("expected one request, got %d", len(supported.requests))
+	}
+	if supported.requests[0].Reasoning == nil || supported.requests[0].Reasoning.Effort != "high" {
+		t.Fatalf("expected high reasoning config, got %+v", supported.requests[0].Reasoning)
+	}
+
+	unsupported := &plainProvider{}
+	agent = NewAgent(AgentConfig{
+		Provider: unsupported,
+		Model:    "test-model",
+	})
+	if _, err := agent.Respond(context.Background(), "hello", turn.TurnOptions{ThinkLevel: think.LevelLow}); err != nil {
+		t.Fatalf("respond failed: %v", err)
+	}
+	if len(unsupported.requests) != 1 {
+		t.Fatalf("expected one request, got %d", len(unsupported.requests))
+	}
+	if unsupported.requests[0].Reasoning != nil {
+		t.Fatalf("expected no reasoning config, got %+v", unsupported.requests[0].Reasoning)
+	}
+	profile := agent.ResolveThinkProfile(think.LevelLow)
+	if !profile.Downgraded {
+		t.Fatalf("expected downgraded profile, got %+v", profile)
+	}
+}
+
 type toolLoopProvider struct {
 	responses []model.Response
 	requests  []model.Request
@@ -88,6 +127,8 @@ func (p *toolLoopProvider) Name() string { return "tool-loop-test" }
 
 func (p *toolLoopProvider) SupportsToolCalling() bool { return true }
 
+func (p *toolLoopProvider) SupportsReasoning() bool { return true }
+
 func (p *toolLoopProvider) Complete(_ context.Context, req model.Request) (model.Response, error) {
 	p.requests = append(p.requests, req)
 	p.calls++
@@ -97,4 +138,15 @@ func (p *toolLoopProvider) Complete(_ context.Context, req model.Request) (model
 	resp := p.responses[0]
 	p.responses = p.responses[1:]
 	return resp, nil
+}
+
+type plainProvider struct {
+	requests []model.Request
+}
+
+func (p *plainProvider) Name() string { return "plain" }
+
+func (p *plainProvider) Complete(_ context.Context, req model.Request) (model.Response, error) {
+	p.requests = append(p.requests, req)
+	return model.Response{Text: "ok"}, nil
 }

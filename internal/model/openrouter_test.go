@@ -27,8 +27,9 @@ func TestOpenRouterProviderComplete(t *testing.T) {
 			t.Fatalf("read body failed: %v", err)
 		}
 		var payload struct {
-			Model    string    `json:"model"`
-			Messages []Message `json:"messages"`
+			Model     string           `json:"model"`
+			Messages  []Message        `json:"messages"`
+			Reasoning *ReasoningConfig `json:"reasoning"`
 		}
 		if err := json.Unmarshal(body, &payload); err != nil {
 			t.Fatalf("bad json payload: %v", err)
@@ -38,6 +39,9 @@ func TestOpenRouterProviderComplete(t *testing.T) {
 		}
 		if len(payload.Messages) != 1 {
 			t.Fatal("expected one message")
+		}
+		if payload.Reasoning == nil || payload.Reasoning.Effort != "high" {
+			t.Fatalf("expected reasoning payload, got %+v", payload.Reasoning)
 		}
 
 		w.WriteHeader(http.StatusOK)
@@ -68,6 +72,7 @@ func TestOpenRouterProviderComplete(t *testing.T) {
 		Messages: []Message{
 			{Role: RoleUser, Content: "ping"},
 		},
+		Reasoning: &ReasoningConfig{Effort: "high"},
 	})
 	if err != nil {
 		t.Fatalf("complete failed: %v", err)

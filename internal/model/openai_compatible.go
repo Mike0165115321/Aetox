@@ -26,6 +26,7 @@ type OpenAICompatibleProvider struct {
 	model      string
 	apiKey     string
 	baseURL    string
+	reasoning  bool
 	httpClient *http.Client
 }
 
@@ -63,31 +64,17 @@ func NewOpenAICompatibleProvider(cfg OpenAICompatibleConfig) (*OpenAICompatibleP
 		model:      model,
 		apiKey:     apiKey,
 		baseURL:    baseURL,
+		reasoning:  supportsNativeReasoning(provider),
 		httpClient: &http.Client{Timeout: timeout},
 	}, nil
 }
 
 func defaultOpenAICompatibleBaseURL(provider string) string {
-	switch provider {
-	case "groq":
-		return DefaultBaseURL("groq")
-	case "deepseek":
-		return DefaultBaseURL("deepseek")
-	case "mistral":
-		return DefaultBaseURL("mistral")
-	case "together":
-		return DefaultBaseURL("together")
-	case "perplexity":
-		return DefaultBaseURL("perplexity")
-	case "cohere":
-		return DefaultBaseURL("cohere")
-	case "lmstudio":
-		return DefaultBaseURL("lmstudio")
-	case "openai":
-		fallthrough
-	default:
-		return DefaultBaseURL("openai")
+	baseURL := DefaultBaseURL(provider)
+	if baseURL != "" {
+		return baseURL
 	}
+	return DefaultBaseURL("openai")
 }
 
 func (p *OpenAICompatibleProvider) Name() string {
@@ -96,6 +83,10 @@ func (p *OpenAICompatibleProvider) Name() string {
 
 func (p *OpenAICompatibleProvider) SupportsToolCalling() bool {
 	return true
+}
+
+func (p *OpenAICompatibleProvider) SupportsReasoning() bool {
+	return p.reasoning
 }
 
 func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (Response, error) {
@@ -115,6 +106,7 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 		MaxTokens   int              `json:"max_tokens,omitempty"`
 		Tools       []ToolDefinition `json:"tools,omitempty"`
 		ToolChoice  string           `json:"tool_choice,omitempty"`
+		Reasoning   *ReasoningConfig `json:"reasoning,omitempty"`
 	}{
 		Model:       model,
 		Messages:    req.Messages,
@@ -122,6 +114,9 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 		MaxTokens:   req.MaxTokens,
 		Tools:       req.Tools,
 		ToolChoice:  req.ToolChoice,
+	}
+	if p.SupportsReasoning() {
+		payload.Reasoning = req.Reasoning
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -207,6 +202,7 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 		MaxTokens   int              `json:"max_tokens,omitempty"`
 		Tools       []ToolDefinition `json:"tools,omitempty"`
 		ToolChoice  string           `json:"tool_choice,omitempty"`
+		Reasoning   *ReasoningConfig `json:"reasoning,omitempty"`
 		Stream      bool             `json:"stream"`
 	}{
 		Model:       model,
@@ -216,6 +212,9 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 		Tools:       req.Tools,
 		ToolChoice:  req.ToolChoice,
 		Stream:      true,
+	}
+	if p.SupportsReasoning() {
+		payload.Reasoning = req.Reasoning
 	}
 
 	body, err := json.Marshal(payload)
@@ -312,4 +311,13 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 		Text:     reply,
 		Usage:    lastUsage,
 	}, nil
+}
+
+func supportsNativeReasoning(provider string) bool {
+	switch NormalizeProvider(provider) {
+	case "openrouter":
+		return true
+	default:
+		return false
+	}
 }

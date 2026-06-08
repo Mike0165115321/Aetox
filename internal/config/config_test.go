@@ -48,6 +48,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.ModelAPIKey != "env-key" {
 		t.Fatalf("expected API key from env, got %q", cfg.ModelAPIKey)
 	}
+	if cfg.ThinkLevel != "medium" {
+		t.Fatalf("expected default think level medium, got %q", cfg.ThinkLevel)
+	}
 }
 
 func TestLoadInvalidValues(t *testing.T) {
@@ -79,5 +82,34 @@ func TestLoadInvalidValues(t *testing.T) {
 	}
 	if cfg.ModelProvider != "noop" {
 		t.Fatalf("expected model provider fallback noop, got %q", cfg.ModelProvider)
+	}
+	if cfg.ThinkLevel != "medium" {
+		t.Fatalf("expected fallback think level medium, got %q", cfg.ThinkLevel)
+	}
+}
+
+func TestSaveAndLoadModelPreferenceThinkLevel(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("APPDATA", base)
+	t.Setenv("LOCALAPPDATA", base)
+
+	want := ModelPreference{
+		ModelProvider: "openrouter",
+		ModelName:     "deepseek/deepseek-r1",
+		ThinkLevel:    "high",
+	}
+	if err := SaveModelPreference(want); err != nil {
+		t.Fatalf("save preference failed: %v", err)
+	}
+
+	got, ok, err := LoadModelPreference()
+	if err != nil {
+		t.Fatalf("load preference failed: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected saved preference to exist")
+	}
+	if got.ThinkLevel != want.ThinkLevel {
+		t.Fatalf("expected think level %q, got %q", want.ThinkLevel, got.ThinkLevel)
 	}
 }
