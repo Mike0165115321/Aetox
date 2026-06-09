@@ -16,6 +16,7 @@ import (
 	"aetox-cli/internal/command"
 	"aetox-cli/internal/config"
 	"aetox-cli/internal/model"
+	"aetox-cli/internal/safety"
 	"aetox-cli/internal/skill"
 	"aetox-cli/internal/think"
 
@@ -26,10 +27,11 @@ const appVersion = "0.3.0-dev"
 const defaultAgentMaxToolCalls = 4
 
 var (
-	noBanner    bool
-	showVersion bool
-	showHelp    bool
-	legacyYes   bool
+	noBanner        bool
+	showVersion     bool
+	showHelp        bool
+	legacyYes       bool
+	approvalMode    string
 )
 
 func parseModelWithThink(raw string) (string, string, bool) {
@@ -85,6 +87,7 @@ func main() {
 	flag.BoolVar(&showVersion, "version", false, "print version")
 	flag.BoolVar(&showHelp, "help", false, "print usage")
 	flag.BoolVar(&legacyYes, "yes", false, "reserved compatibility flag")
+	flag.StringVar(&approvalMode, "approval", "", "approval mode: ask, unsafe-only, or full-access (default: ask)")
 	argsWithoutGlobal, argsForIntent, preParseErr := preparseGlobalFlags(os.Args[1:])
 	if preParseErr != nil {
 		fmt.Fprintf(os.Stderr, "invalid flags: %v\n", preParseErr)
@@ -106,6 +109,7 @@ func main() {
 	preParser.BoolVar(&showVersion, "version", false, "print version")
 	preParser.BoolVar(&showHelp, "help", false, "print usage")
 	preParser.BoolVar(&legacyYes, "yes", false, "reserved compatibility flag")
+	preParser.StringVar(&approvalMode, "approval", "", "approval mode: ask, unsafe-only, or full-access (default: ask)")
 	_ = preParser.Bool("h", false, "help alias")
 	_ = preParser.Bool("v", false, "version alias")
 	_ = preParser.Parse(argsWithoutGlobal)
@@ -142,6 +146,7 @@ func main() {
 	cfg := config.Load(config.ConfigOptions{
 		RootPath:           rootPath,
 		AutoApprove:        legacyYes,
+		ApprovalMode:       resolveInitialApprovalMode(approvalMode, legacyYes),
 		MaxRetries:         2,
 		MaxPlanRetries:     0,
 		ApprovalTimeout:    approvalTimeout,
@@ -189,6 +194,11 @@ func main() {
 		cfg.ThinkLevel = thinkLevel
 	}
 
+	approvalExplicit := strings.TrimSpace(approvalMode) != ""
+	if !approvalExplicit && !legacyYes && hasStoredPreference && strings.TrimSpace(storedPreference.ApprovalMode) != "" {
+		cfg.ApprovalMode = string(safety.NormalizeApprovalMode(storedPreference.ApprovalMode))
+	}
+
 	currentConfig := cfg
 
 	if intent.Mode == command.ModeInteractive && isInteractive() && !explicitModelConfig && !hasStoredPreference {
@@ -233,6 +243,11 @@ func main() {
 
 	currentConfig = cfg
 	bootstrapResult, _ := bootstrapModelWithStatus(cfg)
+
+	effectiveApprovalMode := safety.ApprovalMode(cfg.ApprovalMode)
+	if intent.Mode == command.ModeOnce {
+		effectiveApprovalMode = safety.ApprovalFullAccess
+	}
 	if bootstrapResult.Provider == nil {
 		fmt.Fprintf(os.Stderr, "runtime init failed: %v\n", bootstrapResult.Error)
 		os.Exit(1)
@@ -265,7 +280,13 @@ func main() {
 		Console:     console,
 		Dispatcher:  skillDispatcher,
 		ShowBanner:  !noBanner,
-		AutoApprove: cfg.AutoApprove || intent.Mode == command.ModeOnce,
+		ApprovalMode: effectiveApprovalMode,
+		OnApprovalChange: func(mode safety.ApprovalMode) {
+			currentConfig.ApprovalMode = string(mode)
+			if saveErr := persistModelPreference(currentConfig); saveErr != nil {
+				fmt.Fprintf(os.Stderr, "warning: cannot save approval mode: %v\n", saveErr)
+			}
+		},
 		Title:       "Aetox CLI",
 		Version:     appVersion,
 		UserInfo:    resolveDisplayUser(),
@@ -311,6 +332,16 @@ func main() {
 		printUsage()
 		os.Exit(2)
 	}
+}
+
+func resolveInitialApprovalMode(flagValue string, legacyYes bool) string {
+	if strings.TrimSpace(flagValue) != "" {
+		return string(safety.NormalizeApprovalMode(flagValue))
+	}
+	if legacyYes {
+		return string(safety.ApprovalFullAccess)
+	}
+	return string(safety.ApprovalAsk)
 }
 
 func switchProvider(ctx context.Context, cfg *config.Config) (app.ModelSwitchResult, error) {
@@ -439,6 +470,7 @@ func persistModelPreference(cfg config.Config) error {
 		ModelName:     strings.TrimSpace(cfg.ModelName),
 		ModelBaseURL:  strings.TrimSpace(cfg.ModelBaseURL),
 		ThinkLevel:    model.NormalizeThinkingLevel(canonicalProvider, strings.TrimSpace(cfg.ModelName), cfg.ThinkLevel),
+		ApprovalMode:  string(safety.NormalizeApprovalMode(cfg.ApprovalMode)),
 		ModelAPIKeys:  storedPreference.ModelAPIKeys,
 	}
 	if len(pref.ModelAPIKeys) == 0 {
@@ -835,7 +867,8 @@ func printUsage() {
 	fmt.Println("  --model-context-tokens <n>   override context window display (0=auto/unknown)")
 	fmt.Println("  --think <level>              model/provider specific thinking level (DeepSeek: off-think|high|max)")
 	fmt.Println("  --no-banner                 disable interactive banner")
-	fmt.Println("  --yes                       auto-approve safe-mode safety prompts")
+	fmt.Println("  --approval <mode>           approval mode: ask, unsafe-only, full-access (default: ask)")
+	fmt.Println("  --yes                       auto-approve safety prompts (legacy, prefer --approval full-access)")
 	fmt.Println("  --version                   print version")
 }
 
@@ -853,7 +886,7 @@ func preparseGlobalFlags(rawArgs []string) ([]string, []string, error) {
 
 	isValueFlag := func(arg string) bool {
 		switch arg {
-		case "--root", "--approval-timeout", "--model-provider", "--model-name", "--model-api-key", "--model-base-url", "--model-timeout", "--model-context-tokens", "--think":
+		case "--root", "--approval-timeout", "--model-provider", "--model-name", "--model-api-key", "--model-base-url", "--model-timeout", "--model-context-tokens", "--think", "--approval":
 			return true
 		}
 		return false

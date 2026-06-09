@@ -1,9 +1,9 @@
 # Architecture Review: Aetox CLI (Current State)
 
-อัปเดตล่าสุด: 2026-06-09  
+อัปเดตล่าสุด: 2026-06-09 (patch: Risk 3 — Shell Audit Log v1)  
 โหมดการวิเคราะห์: Existing System Mapping  
 Pass level: Full Mode  
-วัตถุประสงค์: อัปเดตภาพ current-state architecture ของ Aetox CLI หลังการยกสถาปัตยกรรมฝั่ง provider/model/thinking/runtime execution ให้รองรับการขยายได้ดีขึ้น โดยยังยึดพฤติกรรม CLI ที่ใช้งานอยู่จริง
+วัตถุประสงค์: อัปเดตภาพ current-state architecture ของ Aetox CLI หลังการยกสถาปัตยกรรมฝั่ง provider/model/thinking/runtime execution และเพิ่ม shell audit trail โดยยังยึดพฤติกรรม CLI ที่ใช้งานอยู่จริง
 
 ## 1. ขอบเขตและหลักฐานที่ตรวจ
 
@@ -19,6 +19,7 @@ Pass level: Full Mode
 - `internal/model/thinking_capabilities.go`
 - `internal/model/types.go`
 - `internal/provider/catalog.go`
+- `internal/audit/audit.go`
 - `internal/safety/safety.go`
 - `internal/skill/defaults.go`
 - `internal/skill/dispatcher.go`
@@ -52,6 +53,7 @@ Inspection limitations:
   - `cognitive.Agent` มี bounded tool loop
   - `turn.Executor` ยังบังคับ safety check ก่อน execute tool
 - Gemini ถูกเพิ่มเป็น first-class provider ในโครงเดียวกับค่ายหลักอื่น โดยใช้ OpenAI-compatible runtime แต่มี live model discovery path ของตัวเอง
+- **shell มี audit log แล้ว**: `internal/audit` บันทึกทุก shell execution แบบ JSONL append-only ที่ `~/.aetox/shell-audit.log` (non-fatal write); shell ยังไม่อยู่ใน model tool surface
 
 Reasonable inferences:
 
@@ -133,6 +135,7 @@ flowchart TD
 | `internal/cognitive` | conversation agent, streaming fallback, bounded model tool loop, context updates, request assembly | Direct |
 | `internal/skill` | skill registry/dispatcher plus opt-in tool surface via `ToolDefinition()` and `ExecuteTool(...)` | Direct |
 | `internal/safety` | risk assessment before executing commands/tools | Direct |
+| `internal/audit` | append-only JSONL audit log for shell execution (`~/.aetox/shell-audit.log`), non-fatal write | Direct |
 | `internal/memory` | bounded in-memory conversation context | Direct |
 
 Observed default registered skills:
@@ -265,6 +268,24 @@ flowchart LR
 - persistence layer ยังเล็กและเฉพาะเรื่อง model/session preferences
 - preference schema รองรับ multi-provider environment มากขึ้น โดยไม่ต้องมี database
 
+### 7.3 Shell Audit Log
+
+ข้อเท็จจริงที่ยืนยันได้:
+
+- `internal/audit.WriteShell(...)` ถูกเรียกจาก `shellSkill.Execute()` ทุกครั้งที่ shell ทำงานจริง
+- audit log เก็บเป็น JSONL append-only ที่ `~/.aetox/shell-audit.log`
+- directory `~/.aetox` ถูกสร้างอัตโนมัติถ้ายังไม่มี
+- audit write failure ไม่ทำให้ shell execution ล้มเหลว (`_ = audit.WriteShell(...)`)
+- แต่ละ entry เก็บ: `time`, `command`, `workdir`, `success`, `duration_ms`, `error` (ถ้ามี)
+- `sanitizeCommand()` seam เตรียมไว้สำหรับ sanitize command ในอนาคต (v1 return ค่าเดิม)
+- shell ไม่อยู่ใน `ToolDefinitions()` — model ไม่สามารถเลือก shell เองได้; ต้องผ่าน explicit `/shell` path หรือ inferred path ที่มี safety gate เท่านั้น
+
+ผลเชิงสถาปัตยกรรม:
+
+- shell execution มี trace ย้อนหลังได้โดยไม่เพิ่ม coupling กับ safety หรือ turn layer
+- audit เป็น package แยก (`internal/audit`) — สามารถ reuse ได้ในอนาคตโดยไม่กระทบ skill/safety/turn
+- ยังไม่มี stdout/stderr ใน audit log (v1 intentionally minimal)
+
 ## 8. Model Integration Architecture
 
 ### 8.1 Two-Layer Provider Architecture
@@ -393,8 +414,9 @@ Observed capability examples:
 
 ยังเป็นความจริงอยู่:
 
-- `shell` ยังเป็น boundary ที่เสี่ยงสูง
-- local persistence ไม่ได้ทำ audit log หรือ rollback
+- `shell` ยังเป็น boundary ที่เสี่ยงสูง — แม้ตอนนี้มี audit log (`~/.aetox/shell-audit.log`) ให้ trace ย้อนหลังได้แล้ว แต่ยังไม่มี rollback หรือ sandbox
+- shell ไม่อยู่ใน model tool surface (`ToolDefinitions()`) — model เลือก shell เองไม่ได้; ต้องผ่าน explicit `/shell` path เท่านั้น
+- audit write เป็น non-fatal: ถ้าเขียน log ไม่ได้ shell ยังทำงานต่อ
 
 ## 10. Quality Gates
 
@@ -417,6 +439,7 @@ Risks:
 3. `internal/turn.Executor` กลายเป็น seam สำคัญมาก หากปล่อยให้โตโดยไม่แตก contract เพิ่ม อาจกลายเป็น complexity hotspot
 4. tool surface มีทิศทางขยายเร็วขึ้น จึงต้องคุม allowlist และ safety policy ให้ชัดกว่าฝั่ง command-only เดิม
 5. UI status ตอนนี้ผูกกับ normalized think label แล้ว แต่ถ้า provider เปลี่ยน native semantics โดยไม่อัปเดต resolver จะทำให้ label ถูกแต่ behavior ผิดได้
+6. **shell audit log (mitigated v1)**: shell มี audit trail แล้ว (`~/.aetox/shell-audit.log` แบบ JSONL) และถูกกั้นไม่ให้ model เลือกเองผ่าน `ToolDefinitions()` — แต่ยังไม่มี rollback, sandbox, หรือ command allowlist
 
 Open questions:
 

@@ -16,6 +16,7 @@ import (
 	"aetox-cli/internal/cognitive"
 	"aetox-cli/internal/command"
 	"aetox-cli/internal/model"
+	"aetox-cli/internal/safety"
 	"aetox-cli/internal/skill"
 	"aetox-cli/internal/think"
 	"aetox-cli/internal/turn"
@@ -41,7 +42,8 @@ type App struct {
 	showBanner      bool
 	skillDispatcher skillDispatcher
 	commandSet      map[string]struct{}
-	autoApprove     bool
+	approvalMode    safety.ApprovalMode
+	onApprovalChange func(safety.ApprovalMode)
 	turnExecutor    *turn.Executor
 	modelSwitcher   modelSwitcher
 
@@ -85,7 +87,8 @@ type Options struct {
 	Console     Console
 	Dispatcher  skillDispatcher
 	ShowBanner  bool
-	AutoApprove bool
+	ApprovalMode      safety.ApprovalMode
+	OnApprovalChange  func(safety.ApprovalMode)
 
 	Title              string
 	Version            string
@@ -117,7 +120,8 @@ func NewApp(opts Options) (*App, error) {
 		skillDispatcher:    opts.Dispatcher,
 		commandSet:         commandSet,
 		showBanner:         opts.ShowBanner,
-		autoApprove:        opts.AutoApprove,
+		approvalMode:       normalizeApprovalMode(opts.ApprovalMode),
+		onApprovalChange:   opts.OnApprovalChange,
 		modelSwitcher:      opts.ModelSwitch,
 		title:              strings.TrimSpace(opts.Title),
 		version:            strings.TrimSpace(opts.Version),
@@ -128,10 +132,11 @@ func NewApp(opts Options) (*App, error) {
 		skillNames:         skillNames,
 	}
 	a.turnExecutor = turn.NewExecutor(turn.ExecutorOptions{
-		Agent:      a.agent,
-		Dispatcher: a.skillDispatcher,
-		CommandSet: a.commandSet,
-		Approve:    a.confirmApproval,
+		Agent:        a.agent,
+		Dispatcher:   a.skillDispatcher,
+		CommandSet:   a.commandSet,
+		Approve:      a.confirmApproval,
+		ApprovalMode: a.approvalMode,
 		TurnOptions: turn.TurnOptions{
 			ThinkLevel: a.thinkLevel,
 		},
@@ -149,6 +154,7 @@ func (a *App) wireStatusReporter() {
 		CommandSet: a.commandSet,
 		Approve:    a.confirmApproval,
 		StatusReporter: a.statusReporter,
+		ApprovalMode: a.approvalMode,
 		TurnOptions: turn.TurnOptions{
 			ThinkLevel: a.thinkLevel,
 		},
@@ -193,6 +199,11 @@ func (a *App) RunInteractive(ctx context.Context) error {
 				if err := a.switchModel(sigCtx); err != nil {
 					a.console.Errorf("Model switch failed: %v\n", err)
 				}
+				a.printSeparator()
+				a.printStatusBar()
+				continue
+			case "approval":
+				a.handleApprovalCommand(line)
 				a.printSeparator()
 				a.printStatusBar()
 				continue
@@ -331,6 +342,7 @@ func (a *App) thinkingStatusMessage(kind command.Kind) string {
 func (a *App) showSlashHelp() {
 	a.console.Println("Slash commands:")
 	a.console.Println("  /model        เปลี่ยนโมเดล/provider")
+	a.console.Println("  /approval     แสดงหรือเปลี่ยนโหมดอนุมัติ (ask|unsafe-only|full-access)")
 	a.console.Println("  /help (/h)    แสดงความช่วยเหลือโดยย่อ")
 	a.console.Println("  /exit         ออกจากโปรแกรม")
 }
@@ -377,6 +389,7 @@ func (a *App) switchModel(ctx context.Context) error {
 		Dispatcher: a.skillDispatcher,
 		CommandSet: a.commandSet,
 		Approve:    a.confirmApproval,
+		ApprovalMode: a.approvalMode,
 		TurnOptions: turn.TurnOptions{
 			ThinkLevel: a.thinkLevel,
 		},
@@ -406,11 +419,14 @@ func (a *App) dispatchBySkill(ctx context.Context, line string) (skill.Output, b
 	return output, true, nil
 }
 
-func (a *App) confirmApproval(ctx context.Context, name, reason string) (bool, error) {
-	if a.autoApprove {
-		return true, nil
+func normalizeApprovalMode(mode safety.ApprovalMode) safety.ApprovalMode {
+	if mode == "" {
+		return safety.ApprovalAsk
 	}
+	return mode
+}
 
+func (a *App) confirmApproval(ctx context.Context, name, reason string) (bool, error) {
 	reason = strings.TrimSpace(reason)
 	if reason == "" {
 		reason = "อาจมีการเปลี่ยนแปลงหรืออ่านสถานะระบบ"
@@ -433,6 +449,41 @@ func (a *App) confirmApproval(ctx context.Context, name, reason string) (bool, e
 			continue
 		}
 	}
+}
+
+func (a *App) handleApprovalCommand(line string) {
+	parts := strings.Fields(strings.TrimSpace(line))
+	if len(parts) < 2 || strings.ToLower(parts[0]) != "/approval" {
+		a.showApprovalStatus()
+		return
+	}
+	modeArg := strings.ToLower(strings.TrimSpace(parts[1]))
+	switch modeArg {
+	case "ask", "unsafe-only", "full-access":
+		a.approvalMode = safety.ApprovalMode(modeArg)
+		a.turnExecutor = turn.NewExecutor(turn.ExecutorOptions{
+			Agent:        a.agent,
+			Dispatcher:   a.skillDispatcher,
+			CommandSet:   a.commandSet,
+			Approve:      a.confirmApproval,
+			ApprovalMode: a.approvalMode,
+			TurnOptions: turn.TurnOptions{
+				ThinkLevel: a.thinkLevel,
+			},
+		})
+		if a.onApprovalChange != nil {
+			a.onApprovalChange(a.approvalMode)
+		}
+		a.console.Println("เปลี่ยนโหมดอนุมัติเป็น: " + modeArg)
+	default:
+		a.console.Println("โหมดไม่ถูกต้อง ใช้: /approval ask, /approval unsafe-only, /approval full-access")
+		a.showApprovalStatus()
+	}
+}
+
+func (a *App) showApprovalStatus() {
+	a.console.Println("approval: " + string(a.approvalMode))
+	a.console.Println("ใช้ /approval ask | /approval unsafe-only | /approval full-access เพื่อเปลี่ยน")
 }
 
 func (a *App) awaitDecision(ctx context.Context) (string, error) {
@@ -524,6 +575,7 @@ func (a *App) showHelp() {
 	a.console.Println("  - ask in natural language")
 	a.console.Println("  - พิมพ์เป็นภาษาปกติ")
 	a.console.Println("  - /model    เปลี่ยนโมเดล/โปรไฟเดอร์")
+	a.console.Println("  - /approval เปลี่ยนโหมดอนุมัติ (ask|unsafe-only|full-access)")
 	a.console.Println("  - :clear    เคลียร์บริบทการสนทนา")
 	a.console.Println("  - exit      ออกจากโหมดเทอร์มินัลแชต")
 	a.console.Println("  - :help     แสดงเคล็ดลับการใช้คำสั่งสั้น")
@@ -535,10 +587,11 @@ func (a *App) showHelp() {
 	a.console.Println("  - สถานะเครื่องมือ: executed (done) | executed (error) | executed (blocked)")
 	a.console.Println("")
 	a.console.Println("Approval policy:")
-	a.console.Println("  - คำสั่งเสี่ยงสูง: ต้องยืนยันก่อนทำ")
-	a.console.Println("  - v1 ปัจจุบันอนุมัติแต่คำสั่งปลอดภัย: git status|log|branch|diff|show, fs pwd|ls|find|cat, shell safe subset")
-	a.console.Println("  - shell แบบปลอดภัยรันได้ทันที, คำสั่งเสี่ยงสูงต้องยืนยัน")
-	a.console.Println("  - ใช้ --yes เพื่ออนุมัติ prompt ความปลอดภัยอัตโนมัติ")
+	a.console.Println("  - โหมดอนุมัติมี 3 ระดับ: ask, unsafe-only, full-access")
+	a.console.Println("  - ask: ยืนยันทุกคำสั่งเสี่ยง (ค่าเริ่มต้น)")
+	a.console.Println("  - unsafe-only: ถามเฉพาะคำสั่ง destructive, เปลี่ยน git, shell, หรือนอก workspace")
+	a.console.Println("  - full-access: ไม่อนุมัติใด ๆ ทั้งสิ้น")
+	a.console.Println("  - เปลี่ยนด้วย /approval <mode>")
 }
 
 func (a *App) PrintBanner() {
@@ -632,6 +685,10 @@ func (a *App) printStatusBar() {
 		line = ansiSubtle + "Aetox CLI" + ansiReset
 	}
 	right := strings.TrimSpace(a.getModelStatusLine())
+	approvalLabel := "approval: " + string(a.approvalMode)
+	if right != "" {
+		right = right + "  " + ansiSubtle + approvalLabel + ansiReset
+	}
 	if right != "" {
 		plain := a.renderHeaderStatusLine()
 		leftText := strings.TrimSpace(a.title)
@@ -639,7 +696,7 @@ func (a *App) printStatusBar() {
 			leftText = "Aetox CLI"
 		}
 		padding := strings.TrimPrefix(plain, leftText)
-		line = ansiSubtle + leftText + ansiReset + padding[:len(padding)-len(right)] + ansiText + right + ansiReset
+		line = ansiSubtle + leftText + ansiReset + padding[:len(padding)-len(right)] + right
 	}
 	a.console.Println(line)
 }

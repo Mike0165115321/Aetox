@@ -7,11 +7,13 @@ import (
 	"strings"
 
 	"aetox-cli/internal/model"
+	"aetox-cli/internal/safety"
 )
 
 type Config struct {
 	SandboxRoot        string
 	AutoApprove        bool
+	ApprovalMode       string
 	MaxRetries         int
 	MaxPlanRetries     int
 	ApprovalTimeoutSec int
@@ -28,6 +30,7 @@ type Config struct {
 type ConfigOptions struct {
 	RootPath           string
 	AutoApprove        bool
+	ApprovalMode       string
 	MaxRetries         int
 	MaxPlanRetries     int
 	ApprovalTimeout    int
@@ -45,6 +48,7 @@ type ModelPreference struct {
 	ModelName     string            `json:"model"`
 	ModelBaseURL  string            `json:"base_url"`
 	ThinkLevel    string            `json:"think_level,omitempty"`
+	ApprovalMode  string            `json:"approval_mode,omitempty"`
 	ModelAPIKeys  map[string]string `json:"provider_api_keys,omitempty"`
 }
 
@@ -130,9 +134,15 @@ func Load(opt ConfigOptions) Config {
 		thinkLevel = "low"
 	}
 
+	approvalMode := strings.ToLower(strings.TrimSpace(opt.ApprovalMode))
+	if approvalMode == "" {
+		approvalMode = string(safety.NormalizeApprovalMode(""))
+	}
+
 	return Config{
 		SandboxRoot:        root,
 		AutoApprove:        opt.AutoApprove,
+		ApprovalMode:       approvalMode,
 		MaxRetries:         maxRetries,
 		MaxPlanRetries:     maxPlanRetries,
 		ApprovalTimeoutSec: timeout,

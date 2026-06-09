@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"aetox-cli/internal/audit"
 )
 
 type shellSkill struct {
@@ -53,6 +55,18 @@ func (s *shellSkill) Execute(ctx context.Context, input Input) (Output, error) {
 	truncatedOutput, truncated := limitLines(out, defaultToolOutputLineLimit)
 	command := "shell " + commandLine
 	result := newToolOutput("shell", command, truncatedOutput, start, truncated, err)
+
+	auditEntry := audit.ShellEntry{
+		Command:    commandLine,
+		WorkDir:    workDir,
+		Success:    err == nil && !errors.Is(ctx.Err(), context.Canceled),
+		DurationMs: time.Since(start).Milliseconds(),
+	}
+	if err != nil {
+		auditEntry.Error = err.Error()
+	}
+	_ = audit.WriteShell(auditEntry)
+
 	if err != nil {
 		if errors.Is(ctx.Err(), context.Canceled) {
 			return result, ctx.Err()
