@@ -57,7 +57,7 @@ func TestRenderHeaderStatusLineIncludesModelModeLabel(t *testing.T) {
 func TestRenderPromptStatusLineIncludesContextOnPromptRow(t *testing.T) {
 	app := &App{
 		title:              "Aetox CLI",
-		modelStatus:        "deepseek/deepseek-v4-flash(off-think)",
+		modelStatus:        "deepseek/deepseek-v4-flash(off)",
 		modelContextTokens: 320,
 	}
 

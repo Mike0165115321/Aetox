@@ -134,7 +134,7 @@ func TestRespondSetsDeepSeekThinkingToggle(t *testing.T) {
 		t.Fatalf("expected disabled thinking config, got %+v", provider.requests[0].Thinking)
 	}
 	if provider.requests[0].Reasoning != nil {
-		t.Fatalf("expected no reasoning config in off-think mode, got %+v", provider.requests[0].Reasoning)
+		t.Fatalf("expected no reasoning config in off mode, got %+v", provider.requests[0].Reasoning)
 	}
 }
 

@@ -28,32 +28,44 @@ Status reported to user:
 - `time`
 - `echo <ข้อความ>`
 - `list [path]` (sandboxed path listing)
-- `shell <command>` (high-risk commands require confirmation)
+- `read <path>` (read file content)
 - `write <path> <content>` (high-risk; create/overwrite files under sandbox root)
-- `git status|log|branch|diff|show`
-- `fs pwd|ls|find|cat`
+- `delete <path>` (high-risk; remove files under sandbox root)
+- `git status|log|branch|diff|show|fetch|add|commit|...` (mutating git requires confirmation)
+- `fs pwd|ls|find|cat` (read-only fs)
+- `shell <command>` (high-risk; audited)
+- `github_repo_summary <url>` (read-only network)
+- `plugin_install <url>` (high-risk; external write)
 
-## Approval policy (v1)
+## Approval policy (v3)
 
-- **Read-only allowed by default**
-  - `git status`, `git log`, `git branch`, `git diff`, `git show`
-  - `fs pwd`, `fs ls`, `fs find`, `fs cat`
-  - shell commands that do not match known risk patterns
-- **High-risk requires confirmation**
-  - `shell` commands that may modify/delete
-  - `write` (create/overwrite files)
-  - unsupported `git` commands
-  - `fs` commands outside read-only list
-- If confirmation is denied: `executed (blocked)`
-- Detailed contract:
-  - [docs/response-contract-and-approvals.md](docs/response-contract-and-approvals.md)
+Three approval modes control risk before execution:
+
+| Mode | Behavior |
+|---|---|
+| `ask` | Prompt before every command with side-effects (default) |
+| `unsafe-only` | Prompt only for delete, mutate-git, execute-shell, touch-outside-workspace |
+| `full-access` | Run everything without confirmation |
+
+All execution paths — explicit skill, inferred tool, and model-selected tool — pass through `internal/safety.AssessCommand` before running.
+
+## Shell Audit Log
+
+Every shell execution via `/shell <command>` is audited:
+
+- **Location:** `~/.aetox/shell-audit.log` (JSONL, append-only)
+- **Fields:** `time`, `command`, `workdir`, `success`, `duration_ms`, `error`
+- Audit failure does not block shell execution
+- Shell is not exposed to the model's tool selection — only explicit `/shell` path triggers it
 
 ## UX
 
-- Thinking indicator now shows for conversation and skill:
+- Thinking indicator shows for conversation and skill:
   - Conversation: `กำลังคิด...`
   - Skill: `กำลังรัน...`
 - Indicator is removed once command execution ends and before final response.
+- Thinking level displayed as `provider/model(level)` in header — canonical `off` level disables thinking.
+- Model status line reflects normalized thinking level used at runtime.
 
 ## Usage
 
@@ -65,20 +77,18 @@ aetox version
 aetox --no-banner
 ```
 
-Run one-shot:
-
-```powershell
-echo "ช่วยสรุปสั้นๆ หน่อย" | aetox
-```
-
-Switch model:
+Switch model or approval mode:
 
 ```powershell
 aetox /model
+aetox --approval unsafe-only
 ```
 
 ## Behavior notes
 
 - `RunOnce` and skill commands return final summary when tool path is used.
 - Fallback summary is used when tool summarization fails (still shows output and status).
-- Output is sanitized/restricted in tool summarization to avoid leaking obvious secrets (`token`, `api key`, `password` patterns).
+- Output is sanitized in tool summarization to avoid leaking secrets (`token`, `api key`, `password` patterns).
+- Shell execution is audited to `~/.aetox/shell-audit.log` (non-blocking on failure).
+- Model can select tools via native tool calling (`time`, `list`, `read`, `write`, `delete`, `github_repo_summary`, `plugin_install`).
+- Inferred tool path detects natural-language intent (e.g. "create file" → write, "list directory" → list).

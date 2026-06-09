@@ -16,7 +16,7 @@ func TestParseLevel(t *testing.T) {
 		{raw: "xhigh", want: LevelXHigh},
 		{raw: "max", want: LevelMax},
 		{raw: "default", want: LevelDefault},
-		{raw: "off-think", want: LevelNoThinking},
+		{raw: "off", want: LevelNoThinking},
 		{raw: " auto ", want: Level("auto")},
 		{raw: "hello_world", wantErr: true},
 	}
@@ -68,15 +68,15 @@ func TestResolve(t *testing.T) {
 
 	noThink := Resolve(LevelNoThinking, true)
 	if noThink.Requested != LevelNoThinking {
-		t.Fatalf("expected requested off-think, got %q", noThink.Requested)
+		t.Fatalf("expected requested off, got %q", noThink.Requested)
 	}
 	if noThink.Native || noThink.Downgraded {
-		t.Fatalf("expected non-native off-think profile, got %+v", noThink)
+		t.Fatalf("expected non-native off profile, got %+v", noThink)
 	}
 	if noThink.ReasoningEffort() != "" {
 		t.Fatalf("expected no reasoning effort, got %q", noThink.ReasoningEffort())
 	}
-	if noThink.StatusLabel() != "off-think (disabled)" {
-		t.Fatalf("unexpected off-think status label: %q", noThink.StatusLabel())
+	if noThink.StatusLabel() != "off (disabled)" {
+		t.Fatalf("unexpected off status label: %q", noThink.StatusLabel())
 	}
 }

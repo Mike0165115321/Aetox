@@ -1,6 +1,10 @@
 package model
 
-import "strings"
+import (
+	"strings"
+
+	"aetox-cli/internal/provider"
+)
 
 type ThinkingRuntime string
 
@@ -24,10 +28,28 @@ type ThinkingCapabilities struct {
 var fallbackThinkingCapabilities = ThinkingCapabilities{
 	Supported: true,
 	Native:    false,
-	Levels:    []string{"low", "medium", "high", "off-think"},
+	Levels:    []string{"low", "medium", "high", "off"},
 	Default:   "low",
 	Runtime:   ThinkingRuntimeUnknown,
 	Source:    "fallback",
+}
+
+var conservativeFallback = ThinkingCapabilities{
+	Supported: true,
+	Native:    false,
+	Levels:    []string{"low", "medium", "high", "off"},
+	Default:   "low",
+	Runtime:   ThinkingRuntimeUnknown,
+	Source:    "conservative-fallback",
+}
+
+var unknownProviderCapabilities = ThinkingCapabilities{
+	Supported: false,
+	Native:    false,
+	Levels:    nil,
+	Default:   "",
+	Runtime:   ThinkingRuntimeUnknown,
+	Source:    "unknown-provider",
 }
 
 func ResolveThinkingCapabilities(provider, modelName string) ThinkingCapabilities {
@@ -95,7 +117,7 @@ func NormalizeThinkingLevel(provider, modelName, requested string) string {
 	case "deepseek":
 		switch normalized {
 		case "none", "off", "disabled":
-			return "off-think"
+			return "off"
 		case "low", "medium":
 			return "high"
 		case "xhigh":
@@ -103,7 +125,7 @@ func NormalizeThinkingLevel(provider, modelName, requested string) string {
 		}
 	case "gemini":
 		switch normalized {
-		case "off-think", "off", "disabled":
+		case "off", "disabled":
 			if SupportsThinkingLevel(provider, modelName, "none") {
 				return "none"
 			}
@@ -114,7 +136,7 @@ func NormalizeThinkingLevel(provider, modelName, requested string) string {
 		}
 	case "openai", "openrouter":
 		switch normalized {
-		case "off-think", "off", "disabled":
+		case "off", "disabled":
 			if SupportsThinkingLevel(provider, modelName, "none") {
 				return "none"
 			}
@@ -125,7 +147,7 @@ func NormalizeThinkingLevel(provider, modelName, requested string) string {
 		}
 	case "groq":
 		switch normalized {
-		case "off-think", "off", "disabled":
+		case "off", "disabled":
 			if SupportsThinkingLevel(provider, modelName, "none") {
 				return "none"
 			}
@@ -140,7 +162,7 @@ func resolveDeepSeekThinkingCapabilities(modelID string) ThinkingCapabilities {
 		return ThinkingCapabilities{
 			Supported: true,
 			Native:    true,
-			Levels:    []string{"off-think", "high", "max"},
+			Levels:    []string{"off", "high", "max"},
 			Default:   "high",
 			Runtime:   ThinkingRuntimeDeepSeek,
 			Source:    "deepseek-docs",
@@ -191,14 +213,7 @@ func resolveOpenAIThinkingCapabilities(modelID string) ThinkingCapabilities {
 			Source:    "openai-chat-docs",
 		}
 	default:
-		return ThinkingCapabilities{
-			Supported: false,
-			Native:    false,
-			Levels:    nil,
-			Default:   "",
-			Runtime:   ThinkingRuntimeUnknown,
-			Source:    "openai-chat-docs",
-		}
+		return cloneThinkingCapabilities(conservativeFallback)
 	}
 }
 
@@ -250,14 +265,7 @@ func resolveGeminiThinkingCapabilities(modelID string) ThinkingCapabilities {
 			Source:    "gemini-openai-compat-docs",
 		}
 	default:
-		return ThinkingCapabilities{
-			Supported: false,
-			Native:    false,
-			Levels:    nil,
-			Default:   "",
-			Runtime:   ThinkingRuntimeUnknown,
-			Source:    "gemini-model-family-heuristic",
-		}
+		return cloneThinkingCapabilities(conservativeFallback)
 	}
 }
 
@@ -272,14 +280,7 @@ func resolveOpenRouterThinkingCapabilities(modelID string) ThinkingCapabilities 
 			Source:    "openrouter-reasoning-docs",
 		}
 	}
-	return ThinkingCapabilities{
-		Supported: false,
-		Native:    false,
-		Levels:    nil,
-		Default:   "",
-		Runtime:   ThinkingRuntimeUnknown,
-		Source:    "openrouter-model-family-heuristic",
-	}
+	return cloneThinkingCapabilities(conservativeFallback)
 }
 
 func resolveGroqThinkingCapabilities(modelID string) ThinkingCapabilities {
@@ -303,14 +304,7 @@ func resolveGroqThinkingCapabilities(modelID string) ThinkingCapabilities {
 			Source:    "groq-reasoning-docs",
 		}
 	default:
-		return ThinkingCapabilities{
-			Supported: false,
-			Native:    false,
-			Levels:    nil,
-			Default:   "",
-			Runtime:   ThinkingRuntimeUnknown,
-			Source:    "groq-model-family-heuristic",
-		}
+		return cloneThinkingCapabilities(conservativeFallback)
 	}
 }
 
@@ -339,4 +333,64 @@ func cloneThinkingCapabilities(caps ThinkingCapabilities) ThinkingCapabilities {
 	cloned := caps
 	cloned.Levels = append([]string{}, caps.Levels...)
 	return cloned
+}
+
+type ModelCapability struct {
+	Provider   string               `json:"provider"`
+	Model      string               `json:"model"`
+	Discovered bool                 `json:"discovered"`
+	Thinking   ThinkingCapabilities `json:"thinking"`
+}
+
+func BuildCapabilityCatalog(providerName string, discoveredModels []string) []ModelCapability {
+	canonical := NormalizeProvider(providerName)
+	if canonical == "" || canonical == "noop" {
+		return nil
+	}
+	_, known := ProviderInfo(canonical)
+
+	var models []string
+	var discovered bool
+	if discoveredModels == nil {
+		if !known {
+			return nil
+		}
+		models = provider.RecommendedModels(canonical)
+		discovered = false
+	} else {
+		models = discoveredModels
+		discovered = true
+	}
+
+	if len(models) == 0 {
+		return nil
+	}
+
+	seen := make(map[string]struct{}, len(models))
+	result := make([]ModelCapability, 0, len(models))
+	for _, model := range models {
+		model = strings.TrimSpace(model)
+		if model == "" {
+			continue
+		}
+		lower := strings.ToLower(model)
+		if _, ok := seen[lower]; ok {
+			continue
+		}
+		seen[lower] = struct{}{}
+
+		var thinking ThinkingCapabilities
+		if known {
+			thinking = ResolveThinkingCapabilities(canonical, model)
+		} else {
+			thinking = unknownProviderCapabilities
+		}
+		result = append(result, ModelCapability{
+			Provider:   canonical,
+			Model:      model,
+			Discovered: discovered,
+			Thinking:   thinking,
+		})
+	}
+	return result
 }

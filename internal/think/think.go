@@ -17,7 +17,7 @@ const (
 	LevelXHigh      Level = "xhigh"
 	LevelMax        Level = "max"
 	LevelDefault    Level = "default"
-	LevelNoThinking Level = "off-think"
+	LevelNoThinking Level = "off"
 )
 
 var levelPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)

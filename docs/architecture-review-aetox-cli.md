@@ -1,9 +1,9 @@
 # Architecture Review: Aetox CLI (Current State)
 
-อัปเดตล่าสุด: 2026-06-09 (patch: Risk 3 — Shell Audit Log v1)  
+อัปเดตล่าสุด: 2026-06-09 (patch: Risk 1 Executor Split, Risk 2 Model Capability Catalog, Risk 3 Shell Audit Log, off-think→off rename)  
 โหมดการวิเคราะห์: Existing System Mapping  
 Pass level: Full Mode  
-วัตถุประสงค์: อัปเดตภาพ current-state architecture ของ Aetox CLI หลังการยกสถาปัตยกรรมฝั่ง provider/model/thinking/runtime execution และเพิ่ม shell audit trail โดยยังยึดพฤติกรรม CLI ที่ใช้งานอยู่จริง
+วัตถุประสงค์: อัปเดตภาพ current-state architecture ของ Aetox CLI หลัง refactor รอบ risk-mitigation ทั้ง 3 ด้าน — turn executor split, model capability catalog + conservative fallback, shell audit trail, และ off-think→off rename ทั่ว codebase
 
 ## 1. ขอบเขตและหลักฐานที่ตรวจ
 
@@ -24,8 +24,11 @@ Pass level: Full Mode
 - `internal/skill/defaults.go`
 - `internal/skill/dispatcher.go`
 - `internal/skill/skill.go`
+- `internal/skill/shell.go`
 - `internal/think/think.go`
 - `internal/turn/executor.go`
+- `internal/turn/infer.go`
+- `internal/turn/result.go`
 - `docs/architecture-aetox.md`
 - `docs/adr/0001-native-tool-calling-foundation.md`
 
@@ -54,12 +57,18 @@ Inspection limitations:
   - `turn.Executor` ยังบังคับ safety check ก่อน execute tool
 - Gemini ถูกเพิ่มเป็น first-class provider ในโครงเดียวกับค่ายหลักอื่น โดยใช้ OpenAI-compatible runtime แต่มี live model discovery path ของตัวเอง
 - **shell มี audit log แล้ว**: `internal/audit` บันทึกทุก shell execution แบบ JSONL append-only ที่ `~/.aetox/shell-audit.log` (non-fatal write); shell ยังไม่อยู่ใน model tool surface
+- **`internal/turn` ถูกแยกเป็น 3 ไฟล์**: `executor.go` (orchestration), `infer.go` (intent inference/regex), `result.go` (summarize/fallback/sanitize) — ลด monofile 1,789→718 บรรทัด โดยไม่เปลี่ยน behavior
+- **Model Capability Catalog**: `BuildCapabilityCatalog(provider, discoveredModels)` เป็น pure function ที่ enrich live/static model list ด้วย `ResolveThinkingCapabilities`; unknown provider ได้ audit entry `Supported: false`
+- **Conservative fallback**: resolver defaults ที่เคยคืน `Supported: false` ตอนนี้คืน capability พื้นฐาน `[low,medium,high,off]` แทน — model ใหม่ที่ไม่รู้จักยังใช้ think ได้
+- **off-think → off**: canonical thinking level เปลี่ยนจาก `"off-think"` เป็น `"off"` ทั่ว codebase; DeepSeek, fallback, conservative fallback ล้วนใช้ `"off"`; `think.LevelNoThinking = "off"`
 
 Reasonable inferences:
 
 - seam ระหว่าง "provider metadata" กับ "provider runtime behavior" ดีขึ้นอย่างมีนัยสำคัญ ทำให้เพิ่ม provider ใหม่โดยแตะจุดที่ชัดขึ้น
 - thinking architecture ตอนนี้ถูกย้ายออกจาก UI-specific logic ไปอยู่ใน model capability layer มากขึ้น จึงลดความเสี่ยงของ label/behavior drift
-- `internal/turn` กำลังกลายเป็น execution boundary หลักของระบบ และมีแนวโน้มเป็นฐานสำหรับงาน agentic/tool-driven ต่อจาก ADR 0001
+- `internal/turn` ถูกแยก concern เป็น 3 ไฟล์ (executor/infer/result) — ลด blast radius ของ monofile และทำให้ infer logic test ได้อิสระจาก orchestration
+- `BuildCapabilityCatalog` เป็น pure function ที่ bridge ระหว่าง live discovery (model names) กับ thinking resolution (capabilities) โดยไม่ต้องเพิ่ม HTTP call
+- conservative fallback ทำให้ unknown/future model ยังมี thinking พื้นฐาน — model ใหม่ไม่พังเงียบอีกต่อไป
 
 ## 3. System Boundary
 
@@ -68,7 +77,7 @@ Reasonable inferences:
 | Frontend | Terminal UI ใน `internal/app`, มี header status + prompt status แยกบรรทัด |
 | Backend service | ไม่พบ service แยก; logic ทั้งหมดรันใน process เดียว |
 | Database | ไม่พบ database |
-| Local persistence | `model-preference.json` ผ่าน `internal/config`, เก็บ provider/model/base URL/think level/provider API keys |
+| Local persistence | `model-preference.json` ผ่าน `internal/config`, เก็บ provider/model/base URL/think level/provider API keys; `~/.aetox/shell-audit.log` ผ่าน `internal/audit` |
 | AI runtime | `internal/cognitive` + `internal/model` + `internal/provider` + `internal/think` + `internal/turn` |
 | External model services | OpenRouter, OpenAI-compatible providers (เช่น OpenAI, DeepSeek, Gemini, Groq, Mistral, Together, Perplexity, Cohere, LM Studio/LocalAI), Ollama |
 | Background jobs/workers | ไม่พบ |
@@ -92,11 +101,15 @@ flowchart TD
     ProviderCatalog["internal/provider"]
     App["internal/app"]
     Turn["internal/turn.Executor"]
+    TurnInfer["internal/turn/infer.go"]
+    TurnResult["internal/turn/result.go"]
     Safety["internal/safety"]
     Skill["internal/skill.Dispatcher"]
+    Audit["internal/audit"]
     Agent["internal/cognitive.Agent"]
     Memory["internal/memory"]
     Model["internal/model"]
+    ModelCap["ModelCapability Catalog"]
     Think["internal/think + thinking capability resolver"]
     External["Remote / Local model providers"]
 
@@ -105,21 +118,27 @@ flowchart TD
     CLI --> Model
     CLI --> App
     App --> Turn
+    Turn --> TurnInfer
+    Turn --> TurnResult
     Turn --> Safety
     Turn --> Skill
     Turn --> Agent
     Agent --> Memory
     Agent --> Model
     Model --> ProviderCatalog
+    Model --> ModelCap
     Model --> Think
     Model --> External
+    Skill --> Audit
 ```
 
 สถาปัตยกรรมที่เปลี่ยนชัดจากเอกสารรุ่นก่อน:
 
 - `internal/provider` ถูกแยกออกมาเป็นบ้านของ provider metadata อย่างชัดเจน
-- `internal/turn.Executor` กลายเป็น execution orchestration layer แทนการแบก flow ไว้ใน `internal/app` เป็นหลัก
-- `internal/model` ไม่ได้เป็นแค่ adapter HTTP อีกต่อไป แต่เป็นชั้น runtime intelligence สำหรับ live model discovery และ thinking normalization
+- `internal/turn.Executor` กลายเป็น execution orchestration layer แทนการแบก flow ไว้ใน `internal/app` เป็นหลัก; ถูกแยกเป็น 3 ไฟล์: `executor.go` (route/approve), `infer.go` (NLP intent inference), `result.go` (summarize/fallback)
+- `internal/model` ไม่ได้เป็นแค่ adapter HTTP อีกต่อไป แต่เป็นชั้น runtime intelligence สำหรับ live model discovery, thinking normalization, และ `ModelCapability` catalog
+- `internal/audit` ถูกเพิ่มเป็น package ใหม่สำหรับ shell audit trail (non-fatal, append-only JSONL)
+- `BuildCapabilityCatalog` เป็น bridge ระหว่าง live discovery กับ thinking resolution โดยไม่ต้องเพิ่ม HTTP call
 
 ## 5. Module Map
 
@@ -128,10 +147,10 @@ flowchart TD
 | `cmd/aetox` | parse flags, load config/preference, prompt model selection, normalize think level, bootstrap provider, persist preference, compose app runtime | Direct |
 | `internal/config` | load runtime config defaults, save/load `ModelPreference`, canonicalize per-provider API key storage | Direct |
 | `internal/provider` | static provider catalog: aliases, env keys, runtime class, fallback model, provider-level capabilities | Direct |
-| `internal/model` | provider abstraction, bootstrap, request/response contract, live model discovery, provider-specific reasoning payload shaping, per-model thinking capability resolution | Direct |
-| `internal/think` | generic think-level parsing/normalization contract used by CLI/runtime | Direct |
+| `internal/model` | provider abstraction, bootstrap, request/response contract, live model discovery, provider-specific reasoning payload shaping, per-model thinking capability resolution, `ModelCapability` catalog (`BuildCapabilityCatalog`) | Direct |
+| `internal/think` | generic think-level parsing/normalization contract used by CLI/runtime; `LevelNoThinking = "off"` | Direct |
 | `internal/app` | terminal UX, header/prompt rendering, interactive loop, model switching entrypoint, thinking spinner/status | Direct |
-| `internal/turn` | one-turn orchestration: intent normalization, inferred tool path, explicit skill path, agent tool loop, approval handoff, result shaping | Direct |
+| `internal/turn` | one-turn orchestration (3 files): `executor.go` — route/approve/orchestrate; `infer.go` — intent inference/regex/NLP parsing; `result.go` — summarize/fallback/sanitize | Direct |
 | `internal/cognitive` | conversation agent, streaming fallback, bounded model tool loop, context updates, request assembly | Direct |
 | `internal/skill` | skill registry/dispatcher plus opt-in tool surface via `ToolDefinition()` and `ExecuteTool(...)` | Direct |
 | `internal/safety` | risk assessment before executing commands/tools | Direct |
@@ -210,10 +229,12 @@ flowchart LR
   - prompt line: `>` ซ้าย, context usage ขวา
 - `turn.Executor.Execute(...)` ทำมากกว่าการ route ธรรมดา:
   - normalize intent
-  - infer tool candidates จากข้อความธรรมชาติบางกรณี
+  - infer tool candidates จากข้อความธรรมชาติบางกรณี (logic อยู่ใน `turn/infer.go`)
   - เลือกว่าจะรัน inferred tool path ก่อน agent หรือไม่
   - ใช้ model tool loop ถ้า agent และ dispatcher รองรับ
+  - result shaping และ sanitization (logic อยู่ใน `turn/result.go`)
 - explicit skill path, inferred tool path, และ model-selected tool path ล้วนผ่าน safety gate
+- shell execution ทุกครั้งบันทึก audit log (`internal/audit`) แบบ non-fatal
 
 ### 6.3 Agent Tool Loop
 
@@ -343,15 +364,15 @@ flowchart LR
 
 ข้อเท็จจริงที่ยืนยันได้:
 
-- generic think levels ถูก parse ใน `internal/think`
+- generic think levels ถูก parse ใน `internal/think`; canonical level สำหรับปิด thinking คือ `"off"` (เดิม `"off-think"` — ถูก rename ทั่ว codebase)
 - model/provider-specific support ถูก resolve ใน `internal/model/thinking_capabilities.go`
 - current config default คือ `low`
-- ก่อน runtime ใช้งานจริง ระดับที่ผู้ใช้เลือกจะถูก normalize ตาม provider/model family
+- ก่อน runtime ใช้งานจริง ระดับที่ผู้ใช้เลือกจะถูก normalize ผ่าน `model.NormalizeThinkingLevel(provider, model, requestedLevel)`
 
 Observed capability examples:
 
 - DeepSeek:
-  - native levels: `off-think`, `high`, `max`
+  - native levels: `off`, `high`, `max`
   - default: `high`
 - Gemini:
   - `gemini-2.5*`: `none`, `minimal`, `low`, `medium`, `high`
@@ -366,6 +387,25 @@ Observed capability examples:
 - UI และ config ใช้ generic think levels
 - provider runtime รับค่า native ที่ถูก normalize แล้ว
 - label ที่ผู้ใช้เห็นกับ behavior ที่ provider ได้รับเริ่มผูกกันดีขึ้นกว่าก่อน
+
+### 8.4a Model Capability Catalog
+
+ข้อเท็จจริงที่ยืนยันได้:
+
+- `ModelCapability` struct:
+  - `Provider`, `Model`, `Discovered` (true=จาก live API), `Thinking` (ThinkingCapabilities)
+- `BuildCapabilityCatalog(providerName, discoveredModels)`:
+  - pure function — ไม่ทำ HTTP; รับ `[]string` จาก discovery layer เป็น input
+  - `discoveredModels == nil` → ใช้ static `provider.RecommendedModels`, `Discovered: false`
+  - `discoveredModels != nil` → ใช้ list ที่ส่งมา, `Discovered: true`
+  - `discoveredModels == []` → คืน empty catalog
+  - unknown provider → คืน audit entry ต่อ model โดย `Supported: false, Source: "unknown-provider"`
+  - deduplicate ด้วย model name (case-insensitive, preserve first occurrence)
+- conservative fallback:
+  - 4 resolver defaults (OpenAI, Gemini, OpenRouter, Groq) เปลี่ยนจาก `Supported: false, Levels: nil` → `Supported: true, Levels: [low,medium,high,off], Source: "conservative-fallback"`
+  - model ใหม่ที่ไม่รู้จักยังใช้ thinking พื้นฐานได้ — ไม่พังเงียบ
+  - DeepSeek resolver default คืน `fallbackThinkingCapabilities` อยู่แล้ว → ไม่ต้องแก้
+- `gemini-2.0-flash-lite` ยังคง `Supported: false` (documented fact — model นี้ไม่รองรับ thinking จริง)
 
 ### 8.5 Provider-Specific Reasoning Payload Shaping
 
@@ -389,7 +429,7 @@ Observed capability examples:
 - model status ถูก compose จาก `formatModelModeLabel(provider, model, thinkLevel)`
 - header line แสดง `provider/model(level)` ด้านขวา
 - prompt line แสดง `context used/limit tokens` แยกต่างหาก
-- thinking indicator เปลี่ยนข้อความตามว่าเป็น conversation หรือ skill และตามว่าอยู่ใน `off-think` หรือไม่
+- thinking indicator เปลี่ยนข้อความตามว่าเป็น conversation หรือ skill และตามว่าอยู่ใน `off` หรือไม่
 
 ผลเชิงสถาปัตยกรรม:
 
@@ -422,24 +462,29 @@ Observed capability examples:
 
 ข้อสังเกตจากโครงสร้างและการเปลี่ยนล่าสุด:
 
-- regression protection ฝั่ง model/provider/thinking ดีขึ้น เพราะ logic ถูกแยก seam ชัดขึ้น
-- `internal/model`, `internal/provider`, `internal/think`, และ `cmd/aetox` เป็นพื้นที่ที่มีสัญญาเชิงพฤติกรรมชัดกว่าก่อน
-- app/turn/interactive UX path ยังเป็นพื้นที่ที่ควรมี test depth เพิ่มในอนาคต
+- regression protection ฝั่ง model/provider/thinking ดีขึ้น — logic ถูกแยก seam ชัดขึ้น; เพิ่ม snapshot tests (`TestBuildCapabilityCatalog_KnownPrefixesResolveToSupported`) ป้องกัน drift
+- `internal/turn` ถูกแยกเป็น 3 ไฟล์ (executor/infer/result) โดยไม่เปลี่ยน behavior — test coverage ยัง 100% โดยไม่ต้องแก้ test เดิม
+- `internal/audit` มี test 7 ตัว (JSONL write, directory creation, failed command, append, auto-time)
+- `BuildCapabilityCatalog` มี test 8 ตัว (discovered, fallback, unknown provider, source audit, dedup, static mode)
+- `internal/model`, `internal/provider`, `internal/think`, และ `cmd/aetox` เป็นพื้นที่ที่มีสัญญาเชิงพฤติกรรมชัด
+- `internal/turn` test suite (28 tests) ยืนยันว่า file split ไม่ได้เปลี่ยน behavior
 
 Reasonable inference:
 
-- การย้าย logic จาก ad hoc UI handling ไปสู่ `provider catalog`, `thinking capability resolver`, และ `turn.Executor` ทำให้ testability ดีขึ้น แม้ execution path หลักยังมีความซับซ้อนสูง
+- การย้าย logic จาก ad hoc UI handling ไปสู่แยก concern + catalog + audit ทำให้ระบบมี seam สำหรับ test และ extension ชัดเจนขึ้นอย่างมีนัยสำคัญ
 
 ## 11. Risks and Open Questions
 
 Risks:
 
-1. provider catalog ยังมี static fallback models/capabilities อยู่บางส่วน จึงยังมีโอกาส drift จาก provider reality เมื่อ upstream เปลี่ยน
-2. per-model thinking support ของหลายค่ายยังใช้ family heuristics มากกว่าการ discover จาก live metadata ทุกกรณี
-3. `internal/turn.Executor` กลายเป็น seam สำคัญมาก หากปล่อยให้โตโดยไม่แตก contract เพิ่ม อาจกลายเป็น complexity hotspot
-4. tool surface มีทิศทางขยายเร็วขึ้น จึงต้องคุม allowlist และ safety policy ให้ชัดกว่าฝั่ง command-only เดิม
-5. UI status ตอนนี้ผูกกับ normalized think label แล้ว แต่ถ้า provider เปลี่ยน native semantics โดยไม่อัปเดต resolver จะทำให้ label ถูกแต่ behavior ผิดได้
-6. **shell audit log (mitigated v1)**: shell มี audit trail แล้ว (`~/.aetox/shell-audit.log` แบบ JSONL) และถูกกั้นไม่ให้ model เลือกเองผ่าน `ToolDefinitions()` — แต่ยังไม่มี rollback, sandbox, หรือ command allowlist
+1. **provider catalog ยังมี static fallback models/capabilities** — ยังมีโอกาส drift จาก provider reality เมื่อ upstream เปลี่ยน; conservative fallback ช่วยลดผลกระทบแล้ว แต่ยังไม่ใช่ live detection
+2. **per-model thinking support** — หลายค่ายยังใช้ family heuristics มากกว่าการ discover จาก live metadata ทุกกรณี; conservative fallback + snapshot test ช่วยลด blast radius แล้ว; `isKnownOpenRouterReasoningModel` ยัง hardcoded
+3. **`internal/turn.Executor`** — ถูกแยกเป็น 3 ไฟล์แล้ว (executor/infer/result) ลด monofile 1,789→718 บรรทัด; แต่ `executeSkillTurn` กับ `executeInferredTool` ยังมี approval logic ซ้ำ — ควร extract `ensureApproval()` ในรอบถัดไป
+4. **tool surface มีทิศทางขยายเร็วขึ้น** — ต้องคุม allowlist และ safety policy ให้ชัด; shell ถูกกั้นจาก model tool surface แล้ว
+5. **UI status label drift** — provider เปลี่ยน native semantics โดยไม่อัปเดต resolver จะทำให้ label ถูกแต่ behavior ผิด; conservative fallback + snapshot test ลดความเสี่ยง
+6. **shell audit log (mitigated v1)** ✅ — มี audit trail (`~/.aetox/shell-audit.log` แบบ JSONL), shell ไม่อยู่ใน tool surface; ยังไม่มี rollback/sandbox/command allowlist
+7. **`infer.go` ยัง 883 บรรทัด** — regex-based NLP รวมกันในไฟล์เดียว; ควรแยก parse per-tool (write parser, list parser) ในรอบถัดไป
+8. **ไม่มี caller ใช้ `BuildCapabilityCatalog` จริง** — catalog ถูกสร้างแล้วแต่ยังไม่มีใครเรียกใช้; ต้อง integrate เข้า startup/model-selection flow
 
 Open questions:
 
@@ -465,6 +510,12 @@ Open questions:
 เอกสารนี้เหมาะสำหรับใช้:
 
 - onboarding ผู้พัฒนาใหม่ให้เข้าใจว่า Aetox ตอนนี้ไม่ได้เป็นแค่ CLI chat + skill router แบบเดิมแล้ว
-- ใช้คุย refactor รอบถัดไปของ `internal/turn`, `internal/model`, และ `internal/provider`
-- ใช้เป็นฐานก่อนแตก ADR เพิ่มเรื่อง provider capability discovery หรือ thinking policy
+- ใช้คุย refactor รอบถัดไปของ `internal/turn`:
+  - extract `ensureApproval()` แก้ approval logic ซ้ำใน `executeSkillTurn`/`executeInferredTool`
+  - แยก `infer.go` เป็น per-tool parser (write parser, list parser)
+- integrate `BuildCapabilityCatalog` เข้า startup/model-selection flow
+- ใช้เป็นฐานก่อนแตก ADR เพิ่มเรื่อง:
+  - live capability discovery แทน family heuristics
+  - tool allowlist per provider/model capability matrix
+  - session persistence (Risk 4)
 - ใช้แยก current state ออกจาก target architecture ใน [architecture-aetox.md](E:\Aetox\Aetox-cli\docs\architecture-aetox.md)
