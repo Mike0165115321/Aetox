@@ -90,6 +90,8 @@ func (p *ModelPreference) SetAPIKeyForProvider(provider, apiKey string) {
 }
 
 func Load(opt ConfigOptions) Config {
+	loadDotEnv()
+
 	root := opt.RootPath
 	if root == "" {
 		root, _ = os.Getwd()
@@ -160,12 +162,35 @@ func Load(opt ConfigOptions) Config {
 func PreferencePath() (string, error) {
 	configDir, err := os.UserConfigDir()
 	if err != nil || configDir == "" {
-		configDir = filepath.Join(os.Getenv("LOCALAPPDATA"), "aetox")
-		if configDir == "" {
-			configDir = filepath.Join(os.TempDir(), "aetox")
+		home, _ := os.UserHomeDir()
+		if home != "" {
+			configDir = filepath.Join(home, ".config")
+		} else {
+			configDir = os.TempDir()
 		}
 	}
-	return filepath.Join(configDir, "aetox-cli", "model-preference.json"), nil
+	return filepath.Join(configDir, "aetox", "model-preference.json"), nil
+}
+
+func LegacyPreferencePath() string {
+	configDir, err := os.UserConfigDir()
+	if err != nil || configDir == "" {
+		configDir = filepath.Join(os.Getenv("LOCALAPPDATA"), "aetox")
+	}
+	return filepath.Join(configDir, "aetox-cli", "model-preference.json")
+}
+
+func EnvFilePath() (string, error) {
+	configDir, err := os.UserConfigDir()
+	if err != nil || configDir == "" {
+		home, _ := os.UserHomeDir()
+		if home != "" {
+			configDir = filepath.Join(home, ".config")
+		} else {
+			configDir = os.TempDir()
+		}
+	}
+	return filepath.Join(configDir, "aetox", ".env"), nil
 }
 
 func LoadModelPreference() (ModelPreference, bool, error) {
@@ -177,16 +202,54 @@ func LoadModelPreference() (ModelPreference, bool, error) {
 
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return pref, false, nil
+		if !os.IsNotExist(err) {
+			return pref, false, err
 		}
-		return pref, false, err
+		// try migrating from old path
+		legacy := LegacyPreferencePath()
+		if legacyRaw, legacyErr := os.ReadFile(legacy); legacyErr == nil {
+			if unmarshalErr := json.Unmarshal(legacyRaw, &pref); unmarshalErr == nil {
+				pref = sanitizePreference(pref)
+				_ = SaveModelPreference(pref)
+				_ = os.Remove(legacy)
+				return pref, true, nil
+			}
+		}
+		return pref, false, nil
 	}
 
 	if err := json.Unmarshal(raw, &pref); err != nil {
 		return pref, false, err
 	}
+	pref = sanitizePreference(pref)
 	return pref, true, nil
+}
+
+func sanitizePreference(pref ModelPreference) ModelPreference {
+	pref.ModelName = strings.TrimSpace(pref.ModelName)
+	if looksLikeAPIKey(pref.ModelName) {
+		pref.ModelName = ""
+	}
+	pref.ModelBaseURL = strings.TrimSpace(pref.ModelBaseURL)
+	if looksLikeAPIKey(pref.ModelBaseURL) {
+		pref.ModelBaseURL = ""
+	}
+	return pref
+}
+
+func looksLikeAPIKey(s string) bool {
+	s = strings.TrimSpace(s)
+	if len(s) < 20 {
+		return false
+	}
+	lower := strings.ToLower(s)
+	if strings.HasPrefix(lower, "sk-") {
+		return true
+	}
+	if strings.HasPrefix(lower, "sk-") && len(s) > 30 {
+		return true
+	}
+	return false
 }
 
 func SaveModelPreference(pref ModelPreference) error {
@@ -205,4 +268,29 @@ func SaveModelPreference(pref ModelPreference) error {
 	}
 
 	return os.WriteFile(path, payload, 0o600)
+}
+
+func loadDotEnv() {
+	envPath, err := EnvFilePath()
+	if err != nil {
+		return
+	}
+	raw, err := os.ReadFile(envPath)
+	if err != nil {
+		return
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if idx := strings.Index(line, "="); idx > 0 {
+			key := strings.TrimSpace(line[:idx])
+			value := strings.TrimSpace(line[idx+1:])
+			value = strings.Trim(value, `"'`)
+			if key != "" && value != "" {
+				os.Setenv(key, value)
+			}
+		}
+	}
 }

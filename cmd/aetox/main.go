@@ -25,7 +25,7 @@ import (
 )
 
 const appVersion = "0.3.0-dev"
-const defaultAgentMaxToolCalls = 4
+const defaultAgentMaxToolCalls = 16
 
 var (
 	noBanner        bool
@@ -484,10 +484,14 @@ func persistModelPreference(cfg config.Config) error {
 	if strings.TrimSpace(cfg.ModelAPIKey) != "" {
 		storedPreference.SetAPIKeyForProvider(canonicalProvider, cfg.ModelAPIKey)
 	}
+	modelBaseURL := strings.TrimSpace(cfg.ModelBaseURL)
+	if modelBaseURL == model.DefaultBaseURL(canonicalProvider) {
+		modelBaseURL = ""
+	}
 	pref := config.ModelPreference{
 		ModelProvider: canonicalProvider,
 		ModelName:     strings.TrimSpace(cfg.ModelName),
-		ModelBaseURL:  strings.TrimSpace(cfg.ModelBaseURL),
+		ModelBaseURL:  modelBaseURL,
 		ThinkLevel:    model.NormalizeThinkingLevel(canonicalProvider, strings.TrimSpace(cfg.ModelName), cfg.ThinkLevel),
 		ApprovalMode:  string(safety.NormalizeApprovalMode(cfg.ApprovalMode)),
 		ModelAPIKeys:  storedPreference.ModelAPIKeys,
@@ -540,9 +544,9 @@ func promptModelSelection(cfg config.Config, askThinkLevel bool) (string, string
 			return defaultProvider, defaultModel, "", cfg.ModelBaseURL, defaultThinkLevel(defaultProvider, defaultModel, cfg.ThinkLevel), false
 		}
 		provider := providers[idx]
-		providerBaseURL := strings.TrimSpace(cfg.ModelBaseURL)
-		if providerBaseURL == "" {
-			providerBaseURL = model.DefaultBaseURL(provider)
+		providerBaseURL := model.DefaultBaseURL(provider)
+		if strings.TrimSpace(cfg.ModelBaseURL) != "" {
+			providerBaseURL = strings.TrimSpace(cfg.ModelBaseURL)
 		}
 
 		key := strings.TrimSpace(storedPreference.APIKeyForProvider(provider))
@@ -618,10 +622,6 @@ func promptThinkLevelSelection(reader *bufio.Reader, provider, modelName, existi
 func pickModelForProvider(reader *bufio.Reader, provider, existing, baseURL, apiKey string) string {
 	modelChoices, err := model.ModelChoicesWithEndpointAndAPIKey(provider, baseURL, apiKey)
 	if err != nil || len(modelChoices) == 0 {
-		if err != nil && strings.TrimSpace(apiKey) != "" {
-			fmt.Printf("โหลดรายชื่อโมเดลจาก API ของ %s ไม่ได้ (%v)\n", provider, err)
-			fmt.Println("กำลังใช้รายชื่อสำรองจากค่าสำรอง")
-		}
 		modelChoices = model.ModelChoices(provider)
 	}
 	defaultModel := model.DefaultModel(provider)

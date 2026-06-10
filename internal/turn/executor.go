@@ -63,6 +63,7 @@ type Executor struct {
 	summaryLimit   int
 	turnOptions    TurnOptions
 	statusReporter func(string)
+	onToolAction   func(action, detail string)
 }
 
 type ExecutorOptions struct {
@@ -75,6 +76,7 @@ type ExecutorOptions struct {
 	SummaryLimit   int
 	TurnOptions    TurnOptions
 	StatusReporter func(string)
+	OnToolAction   func(action, detail string)
 }
 
 type Result struct {
@@ -106,12 +108,31 @@ func NewExecutor(opts ExecutorOptions) *Executor {
 		summaryLimit:   limit,
 		turnOptions:    opts.TurnOptions,
 		statusReporter: opts.StatusReporter,
+		onToolAction:   opts.OnToolAction,
 	}
 }
 
 func (e *Executor) reportStatus(msg string) {
 	if e.statusReporter != nil {
 		e.statusReporter(msg)
+	}
+}
+
+func (e *Executor) stopSpinner() {
+	if e.statusReporter != nil {
+		e.statusReporter("")
+	}
+}
+
+func (e *Executor) reportToolCall(name, args string) {
+	if e.onToolAction != nil {
+		e.onToolAction("call", name+" "+truncate(args, 40))
+	}
+}
+
+func (e *Executor) reportToolResult(name, status string) {
+	if e.onToolAction != nil {
+		e.onToolAction("result", name+": "+status)
 	}
 }
 
@@ -409,9 +430,15 @@ func (e *Executor) executeAgentToolLoop(
 
 	toolSucceeded := false
 	reply, usedTools, err := e.agent.RespondWithTools(ctx, toolDefs, intent.Raw, func(ctx context.Context, call model.ToolCall) (string, error) {
+		e.reportToolCall(call.Function.Name, call.Function.Arguments)
 		receipt, success, execErr := e.executeToolCallWithOutcome(ctx, call)
 		if success {
 			toolSucceeded = true
+			e.reportToolResult(call.Function.Name, "สำเร็จ")
+		} else if execErr != nil {
+			e.reportToolResult(call.Function.Name, execErr.Error())
+		} else {
+			e.reportToolResult(call.Function.Name, "ไม่สำเร็จ")
 		}
 		return receipt, execErr
 	}, e.turnOptions)
@@ -494,7 +521,10 @@ func (e *Executor) executeInferredTool(
 	rawInput string,
 	candidate InferredToolCandidate,
 ) (Result, bool, error) {
+	defer debuglog.Block("inferredTool: " + candidate.Name)()
+
 	if strings.TrimSpace(candidate.MissingMessage) != "" {
+		debuglog.Msg("missing args: %s", candidate.MissingMessage)
 		return Result{
 			Reply:    candidate.MissingMessage,
 			Streamed: false,
@@ -509,7 +539,9 @@ func (e *Executor) executeInferredTool(
 	}
 
 	assessment := safety.AssessCommand(name, toolCallToArgs(name, args))
+	debuglog.Info("safety", fmt.Sprintf("risk=%v reason=%s", assessment.Risk, assessment.Reason))
 	if assessment.Risk == safety.RiskHigh {
+		e.stopSpinner()
 		commandLine := name
 		if path, ok := args["path"].(string); ok {
 			path = strings.TrimSpace(path)
@@ -601,7 +633,17 @@ func (e *Executor) executeToolCall(ctx context.Context, call model.ToolCall) (st
 func (e *Executor) executeToolCallWithOutcome(ctx context.Context, call model.ToolCall) (string, bool, error) {
 	args, parseErr := model.ParseToolArguments(call.Function.Arguments)
 	if parseErr != nil {
-		return "", false, parseErr
+		// if JSON is truncated (common with large write content), try to salvage
+		if strings.TrimSpace(call.Function.Name) == "write" {
+			salvaged := salvageWriteArgs(call.Function.Arguments)
+			if salvaged != nil {
+				args = salvaged
+			} else {
+				return "", false, parseErr
+			}
+		} else {
+			return "", false, parseErr
+		}
 	}
 
 	name := strings.TrimSpace(call.Function.Name)
@@ -668,6 +710,7 @@ func (e *Executor) executeTool(ctx context.Context, name string, args map[string
 
 	assessment := safety.AssessCommand(name, toolCallToArgs(name, args))
 	if assessment.Risk == safety.RiskHigh {
+		e.stopSpinner()
 		commandLine := name
 		for _, rawArg := range toolCallToArgs(name, args) {
 			if rawArg == "" {
@@ -766,5 +809,40 @@ func asStreamHandler(callback func(string)) func(string) error {
 	return func(chunk string) error {
 		callback(chunk)
 		return nil
+	}
+}
+
+func salvageWriteArgs(raw string) map[string]any {
+	raw = strings.TrimSpace(raw)
+	// try to extract {"path": "...", "content": "..."} from truncated JSON
+	pathStart := strings.Index(raw, `"path"`)
+	contentStart := strings.Index(raw, `"content"`)
+	if pathStart < 0 || contentStart < 0 {
+		return nil
+	}
+	// find path value
+	pathValStart := strings.Index(raw[pathStart:], `"`) + pathStart
+	pathValStart = strings.Index(raw[pathValStart+1:], `"`) + pathValStart + 2
+	pathValEnd := strings.Index(raw[pathValStart:], `"`) + pathValStart
+	if pathValEnd <= pathValStart {
+		return nil
+	}
+	path := raw[pathValStart:pathValEnd]
+
+	// find content value
+	contValStart := strings.Index(raw[contentStart:], `"`) + contentStart
+	contValStart = strings.Index(raw[contValStart+1:], `"`) + contValStart + 2
+	content := raw[contValStart:]
+	// remove trailing garbage
+	if idx := strings.LastIndex(content, `"`); idx > 0 {
+		content = content[:idx]
+	}
+	content = strings.ReplaceAll(content, `\n`, "\n")
+	content = strings.ReplaceAll(content, `\"`, `"`)
+	content = strings.ReplaceAll(content, `\\`, `\`)
+
+	return map[string]any{
+		"path":    path,
+		"content": content,
 	}
 }

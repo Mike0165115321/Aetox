@@ -80,7 +80,7 @@ func (a *Agent) RespondWithTools(
 	anyToolUsed := false
 	for i := 0; i < maxToolCalls; i++ {
 		debuglog.Msg("tool loop iteration %d/%d", i+1, maxToolCalls)
-		response, err := a.provider.Complete(ctx, a.buildRequest(a.context.Messages(), 768, 0.2, modelTools, "auto", opts))
+		response, err := a.provider.Complete(ctx, a.buildRequest(a.context.Messages(), 4096, 0.2, modelTools, "auto", opts))
 		if err != nil {
 			debuglog.Msg("Complete() error: %v", err)
 			if i == 0 {

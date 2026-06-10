@@ -163,7 +163,7 @@ func (a *App) shouldClearPaletteOnSubmit(input string) bool {
 		return false
 	}
 	command := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(input), "/")))
-	return command == "model"
+	return command == "model" || command == "approval"
 }
 
 func (a *App) clearSlashPaletteBlock(lines int) {

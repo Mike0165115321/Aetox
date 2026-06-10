@@ -56,6 +56,7 @@ type App struct {
 	skillNames         []string
 
 	statusReporter func(string)
+	lastPrintedTool string
 }
 
 type ModelSwitchResult struct {
@@ -137,6 +138,7 @@ func NewApp(opts Options) (*App, error) {
 		CommandSet:   a.commandSet,
 		Approve:      a.confirmApproval,
 		ApprovalMode: a.approvalMode,
+		OnToolAction: a.onToolAction,
 		TurnOptions: turn.TurnOptions{
 			ThinkLevel: a.thinkLevel,
 		},
@@ -149,12 +151,13 @@ func (a *App) wireStatusReporter() {
 		return
 	}
 	a.turnExecutor = turn.NewExecutor(turn.ExecutorOptions{
-		Agent:      a.agent,
-		Dispatcher: a.skillDispatcher,
-		CommandSet: a.commandSet,
-		Approve:    a.confirmApproval,
+		Agent:          a.agent,
+		Dispatcher:     a.skillDispatcher,
+		CommandSet:     a.commandSet,
+		Approve:        a.confirmApproval,
 		StatusReporter: a.statusReporter,
-		ApprovalMode: a.approvalMode,
+		ApprovalMode:   a.approvalMode,
+		OnToolAction:   a.onToolAction,
 		TurnOptions: turn.TurnOptions{
 			ThinkLevel: a.thinkLevel,
 		},
@@ -163,6 +166,10 @@ func (a *App) wireStatusReporter() {
 
 func (a *App) RunOnce(ctx context.Context, message string) (string, error) {
 	return a.runCommand(ctx, message)
+}
+
+func (a *App) onToolAction(action, detail string) {
+	// silent — only show final model output
 }
 
 func (a *App) RunInteractive(ctx context.Context) error {
@@ -342,7 +349,7 @@ func (a *App) thinkingStatusMessage(kind command.Kind) string {
 func (a *App) showSlashHelp() {
 	a.console.Println("Slash commands:")
 	a.console.Println("  /model        เปลี่ยนโมเดล/provider")
-	a.console.Println("  /approval     แสดงหรือเปลี่ยนโหมดอนุมัติ (ask|unsafe-only|full-access)")
+	a.console.Println("  /approval     แสดงหรือเปลี่ยนโหมดอนุมัติ (ถามก่อน/คำสั่งเสี่ยง/รันเต็มที่)")
 	a.console.Println("  /help (/h)    แสดงความช่วยเหลือโดยย่อ")
 	a.console.Println("  /exit         ออกจากโปรแกรม")
 }
@@ -454,13 +461,60 @@ func (a *App) confirmApproval(ctx context.Context, name, reason string) (bool, e
 func (a *App) handleApprovalCommand(line string) {
 	parts := strings.Fields(strings.TrimSpace(line))
 	if len(parts) < 2 || strings.ToLower(parts[0]) != "/approval" {
-		a.showApprovalStatus()
+		a.pickApprovalMode()
 		return
 	}
-	modeArg := strings.ToLower(strings.TrimSpace(parts[1]))
+	a.applyApprovalMode(parts[1])
+}
+
+func (a *App) pickApprovalMode() {
+	modes := []struct {
+		label string
+		mode  safety.ApprovalMode
+	}{
+		{"ถามก่อน — ยืนยันทุกคำสั่งเสี่ยง", safety.ApprovalAsk},
+		{"คำสั่งเสี่ยง — ถามเฉพาะ destructive", safety.ApprovalUnsafeOnly},
+		{"รันเต็มที่ — ไม่อนุมัติใด ๆ", safety.ApprovalFullAccess},
+	}
+
+	currentLabel := approvalLabelThai(a.approvalMode)
+	a.console.Println("เลือกโหมดอนุมัติ (ปัจจุบัน: " + currentLabel + "):")
+	for i, m := range modes {
+		a.console.Printf("  %d) %s\n", i+1, m.label)
+	}
+	a.console.Print("เลือก [1-3]: ")
+
+	line, err := a.console.ReadLine()
+	if err != nil {
+		return
+	}
+	line = strings.TrimSpace(line)
+	switch line {
+	case "1":
+		a.applyApprovalMode("ask")
+	case "2":
+		a.applyApprovalMode("unsafe-only")
+	case "3":
+		a.applyApprovalMode("full-access")
+	default:
+		a.console.Println("ยกเลิก")
+	}
+}
+
+func (a *App) applyApprovalMode(modeArg string) {
+	modeArg = strings.ToLower(strings.TrimSpace(modeArg))
 	switch modeArg {
-	case "ask", "unsafe-only", "full-access":
-		a.approvalMode = safety.ApprovalMode(modeArg)
+	case "ask", "unsafe-only", "full-access", "ถามก่อน", "ถาม", "คำสั่งเสี่ยง", "เสี่ยง", "รันเต็มที่", "เต็มที่", "ไม่ถาม":
+		normalized := modeArg
+		switch modeArg {
+		case "ถามก่อน", "ถาม":
+			normalized = "ask"
+		case "คำสั่งเสี่ยง", "เสี่ยง":
+			normalized = "unsafe-only"
+		case "รันเต็มที่", "เต็มที่", "ไม่ถาม":
+			normalized = "full-access"
+		}
+		a.approvalMode = safety.ApprovalMode(normalized)
 		a.turnExecutor = turn.NewExecutor(turn.ExecutorOptions{
 			Agent:        a.agent,
 			Dispatcher:   a.skillDispatcher,
@@ -474,16 +528,29 @@ func (a *App) handleApprovalCommand(line string) {
 		if a.onApprovalChange != nil {
 			a.onApprovalChange(a.approvalMode)
 		}
-		a.console.Println("เปลี่ยนโหมดอนุมัติเป็น: " + modeArg)
+		a.console.Println("เปลี่ยนโหมดอนุมัติเป็น: " + approvalLabelThai(a.approvalMode))
 	default:
-		a.console.Println("โหมดไม่ถูกต้อง ใช้: /approval ask, /approval unsafe-only, /approval full-access")
+		a.console.Println("โหมดไม่ถูกต้อง ใช้: /approval ถามก่อน, /approval คำสั่งเสี่ยง, /approval รันเต็มที่")
 		a.showApprovalStatus()
 	}
 }
 
+func approvalLabelThai(mode safety.ApprovalMode) string {
+	switch mode {
+	case safety.ApprovalAsk:
+		return "ถามก่อน"
+	case safety.ApprovalUnsafeOnly:
+		return "คำสั่งเสี่ยง"
+	case safety.ApprovalFullAccess:
+		return "รันเต็มที่"
+	default:
+		return string(mode)
+	}
+}
+
 func (a *App) showApprovalStatus() {
-	a.console.Println("approval: " + string(a.approvalMode))
-	a.console.Println("ใช้ /approval ask | /approval unsafe-only | /approval full-access เพื่อเปลี่ยน")
+	a.console.Println("อนุมัติ: " + approvalLabelThai(a.approvalMode))
+	a.console.Println("ใช้ /approval ถามก่อน | /approval คำสั่งเสี่ยง | /approval รันเต็มที่ เพื่อเปลี่ยน")
 }
 
 func (a *App) awaitDecision(ctx context.Context) (string, error) {
@@ -575,7 +642,7 @@ func (a *App) showHelp() {
 	a.console.Println("  - ask in natural language")
 	a.console.Println("  - พิมพ์เป็นภาษาปกติ")
 	a.console.Println("  - /model    เปลี่ยนโมเดล/โปรไฟเดอร์")
-	a.console.Println("  - /approval เปลี่ยนโหมดอนุมัติ (ask|unsafe-only|full-access)")
+	a.console.Println("  - /approval เปลี่ยนโหมดอนุมัติ (ถามก่อน/คำสั่งเสี่ยง/รันเต็มที่)")
 	a.console.Println("  - :clear    เคลียร์บริบทการสนทนา")
 	a.console.Println("  - exit      ออกจากโหมดเทอร์มินัลแชต")
 	a.console.Println("  - :help     แสดงเคล็ดลับการใช้คำสั่งสั้น")
@@ -587,10 +654,10 @@ func (a *App) showHelp() {
 	a.console.Println("  - สถานะเครื่องมือ: executed (done) | executed (error) | executed (blocked)")
 	a.console.Println("")
 	a.console.Println("Approval policy:")
-	a.console.Println("  - โหมดอนุมัติมี 3 ระดับ: ask, unsafe-only, full-access")
-	a.console.Println("  - ask: ยืนยันทุกคำสั่งเสี่ยง (ค่าเริ่มต้น)")
-	a.console.Println("  - unsafe-only: ถามเฉพาะคำสั่ง destructive, เปลี่ยน git, shell, หรือนอก workspace")
-	a.console.Println("  - full-access: ไม่อนุมัติใด ๆ ทั้งสิ้น")
+	a.console.Println("  - โหมดอนุมัติมี 3 ระดับ: ถามก่อน, คำสั่งเสี่ยง, รันเต็มที่")
+	a.console.Println("  - ถามก่อน: ยืนยันทุกคำสั่งเสี่ยง (ค่าเริ่มต้น)")
+	a.console.Println("  - คำสั่งเสี่ยง: ถามเฉพาะคำสั่ง destructive, เปลี่ยน git, shell, หรือนอก workspace")
+	a.console.Println("  - รันเต็มที่: ไม่อนุมัติใด ๆ ทั้งสิ้น")
 	a.console.Println("  - เปลี่ยนด้วย /approval <mode>")
 }
 
@@ -607,8 +674,9 @@ func (a *App) PrintBanner() {
 	a.console.Println("")
 	a.console.Println(ansiBrandBright + "         Aetox " + ansiText + "CLI" + ansiReset)
 	a.console.Println("")
-	a.console.Println(ansiSubtle + "  User: " + ansiText + a.userInfoLine() + ansiReset)
-	a.console.Println(ansiSubtle + "  Model: " + ansiText + a.getModelStatusLine() + ansiReset)
+	a.console.Println(ansiSubtle + "  User:   " + ansiText + a.userInfoLine() + ansiReset)
+	a.console.Println(ansiSubtle + "  Model:  " + ansiText + a.getModelStatusLine() + ansiReset)
+	a.console.Println(ansiSubtle + "  อนุมัติ: " + ansiText + approvalLabelThai(a.approvalMode) + ansiSubtle + " (เปลี่ยนด้วย /approval)" + ansiReset)
 	a.console.Println("")
 	a.console.Println(ansiReset)
 }
@@ -685,7 +753,7 @@ func (a *App) printStatusBar() {
 		line = ansiSubtle + "Aetox CLI" + ansiReset
 	}
 	right := strings.TrimSpace(a.getModelStatusLine())
-	approvalLabel := "approval: " + string(a.approvalMode)
+	approvalLabel := "อนุมัติ: " + approvalLabelThai(a.approvalMode)
 	if right != "" {
 		right = right + "  " + ansiSubtle + approvalLabel + ansiReset
 	}

@@ -41,23 +41,25 @@ func New() *Grammar { return &Grammar{} }
 // slashMetaCommands are commands that are recognised only (or primarily)
 // when the user types a leading "/".
 var slashMetaCommands = map[string]struct{}{
-	"model":  {},
-	"help":   {},
-	"h":      {},
-	"exit":   {},
-	"quit":   {},
-	"bye":    {},
-	"logout": {},
+	"model":    {},
+	"approval": {},
+	"help":     {},
+	"h":        {},
+	"exit":     {},
+	"quit":     {},
+	"bye":      {},
+	"logout":   {},
 }
 
 var slashMetaCommandDescriptions = map[string]string{
-	"model":  "เลือกหรือเปลี่ยนโมเดล/provider",
-	"help":   "แสดงรายชื่อ slash command",
-	"h":      "คำย่อของ /help",
-	"exit":   "ออกจากเซสชันปัจจุบัน",
-	"quit":   "ออกจากเซสชันปัจจุบัน",
-	"bye":    "ออกจากเซสชันปัจจุบัน",
-	"logout": "ออกจากเซสชันปัจจุบัน",
+	"model":    "เลือกหรือเปลี่ยนโมเดล/provider",
+	"approval": "แสดงหรือเปลี่ยนโหมดอนุมัติ (ถามก่อน/คำสั่งเสี่ยง/รันเต็มที่)",
+	"help":     "แสดงรายชื่อ slash command",
+	"h":        "คำย่อของ /help",
+	"exit":     "ออกจากเซสชันปัจจุบัน",
+	"quit":     "ออกจากเซสชันปัจจุบัน",
+	"bye":      "ออกจากเซสชันปัจจุบัน",
+	"logout":   "ออกจากเซสชันปัจจุบัน",
 }
 
 // metaCommands are commands that are recognised without a leading "/".
@@ -78,6 +80,7 @@ var colonMetaCommands = map[string]struct{}{
 
 var slashSuggestionCandidates = []string{
 	"model",
+	"approval",
 	"help",
 	"exit",
 }

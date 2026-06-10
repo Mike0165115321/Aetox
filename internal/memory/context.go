@@ -8,8 +8,8 @@ import (
 )
 
 const (
-	defaultMaxTurns = 40
-	defaultMaxChars = 12000
+	defaultMaxTurns = 80
+	defaultMaxChars = 128000
 )
 
 type Context struct {
@@ -110,27 +110,58 @@ func (c *Context) enforceLimits() {
 	}
 
 	for c.maxChars > 0 && totalChars(c.messages) > c.maxChars && len(c.messages) > 2 {
-		// Keep system prompt and remove oldest user/assistant turn
-		c.messages = append([]model.Message{c.messages[0]}, c.messages[2:]...)
+		c.dropOldestTurn()
 	}
 
-	if totalChars(c.messages) > c.maxChars && len(c.messages) > 1 {
-		last := c.messages[len(c.messages)-1]
-		excess := totalChars(c.messages) - c.maxChars
-		if excess < 0 {
-			excess = 0
-		}
-		if excess >= len(last.Content) {
-			last.Content = ""
-		} else {
-			trimAt := len(last.Content) - excess
-			if trimAt < 0 {
-				trimAt = 0
-			}
-			last.Content = last.Content[:trimAt]
-		}
-		c.messages[len(c.messages)-1] = last
+	if len(c.messages) > 1 {
+		c.truncateLastIfNeeded()
 	}
+}
+
+func (c *Context) dropOldestTurn() {
+	if len(c.messages) < 3 {
+		return
+	}
+	// keep system + first user message; drop the oldest assistant+tool block
+	// an assistant+tool block = assistant message + all following tool messages
+	start := 2 // skip system (0) + user (1)
+	if start >= len(c.messages) {
+		return
+	}
+	// find the end of this assistant+tool group:
+	// after the assistant, consume all tool messages
+	end := start
+	// first message in group must be assistant
+	if c.messages[end].Role != model.RoleAssistant {
+		// unexpected state, just drop one message
+		c.messages = append([]model.Message{c.messages[0], c.messages[1]}, c.messages[end+1:]...)
+		return
+	}
+	end++ // skip assistant
+	for end < len(c.messages) && c.messages[end].Role == model.RoleTool {
+		end++
+	}
+	system := c.messages[0]
+	user := c.messages[1]
+	rest := c.messages[end:]
+	c.messages = append([]model.Message{system, user}, rest...)
+}
+
+func (c *Context) truncateLastIfNeeded() {
+	if len(c.messages) <= 1 {
+		return
+	}
+	excess := totalChars(c.messages) - c.maxChars
+	if excess <= 0 {
+		return
+	}
+	last := c.messages[len(c.messages)-1]
+	if excess >= len(last.Content) {
+		last.Content = ""
+	} else {
+		last.Content = last.Content[:len(last.Content)-excess]
+	}
+	c.messages[len(c.messages)-1] = last
 }
 
 func totalChars(messages []model.Message) int {
