@@ -3,8 +3,10 @@ package cognitive
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
+	"aetox-cli/internal/debuglog"
 	"aetox-cli/internal/memory"
 	"aetox-cli/internal/model"
 	"aetox-cli/internal/think"
@@ -53,7 +55,10 @@ func (a *Agent) RespondWithTools(
 	execTool func(context.Context, model.ToolCall) (string, error),
 	opts turn.TurnOptions,
 ) (string, bool, error) {
+	defer debuglog.Block(fmt.Sprintf("Agent.RespondWithTools (tools=%d)", len(modelTools)))()
+
 	if len(modelTools) == 0 || execTool == nil || !a.supportsToolCalling() {
+		debuglog.Msg("fallback to Respond (tools=%d supportsToolCalling=%v)", len(modelTools), a.supportsToolCalling())
 		reply, err := a.Respond(ctx, userMessage, opts)
 		return reply, false, err
 	}
@@ -71,10 +76,13 @@ func (a *Agent) RespondWithTools(
 	if maxToolCalls <= 0 {
 		maxToolCalls = defaultMaxToolCalls
 	}
+	debuglog.Info("maxToolCalls", fmt.Sprintf("%d", maxToolCalls))
 	anyToolUsed := false
 	for i := 0; i < maxToolCalls; i++ {
+		debuglog.Msg("tool loop iteration %d/%d", i+1, maxToolCalls)
 		response, err := a.provider.Complete(ctx, a.buildRequest(a.context.Messages(), 768, 0.2, modelTools, "auto", opts))
 		if err != nil {
+			debuglog.Msg("Complete() error: %v", err)
 			if i == 0 {
 				reply, err := a.Respond(ctx, msg, opts)
 				return reply, false, err
@@ -86,6 +94,8 @@ func (a *Agent) RespondWithTools(
 		}
 
 		content := strings.TrimSpace(response.Text)
+		debuglog.Info("response.text", truncateStr(content, 100))
+		debuglog.Info("response.toolCalls", fmt.Sprintf("%d", len(response.ToolCalls)))
 		if len(response.ToolCalls) == 0 {
 			if content == "" {
 				content = "(empty response)"
@@ -106,6 +116,7 @@ func (a *Agent) RespondWithTools(
 			ToolCalls:        response.ToolCalls,
 		})
 		for _, toolCall := range response.ToolCalls {
+			debuglog.Msg("tool call: %s(%s)", toolCall.Function.Name, truncateStr(toolCall.Function.Arguments, 80))
 			callOutput, toolErr := a.executeToolCall(ctx, toolCall, execTool)
 			callOutput = strings.TrimSpace(callOutput)
 			if callOutput == "" {
@@ -115,6 +126,7 @@ func (a *Agent) RespondWithTools(
 					callOutput = "(no output)"
 				}
 			}
+			debuglog.Msg("tool result: %s (err=%v)", truncateStr(callOutput, 120), toolErr)
 			a.context.AddMessage(model.Message{
 				Role:       model.RoleTool,
 				Name:       toolCall.Function.Name,
@@ -128,6 +140,13 @@ func (a *Agent) RespondWithTools(
 	}
 
 	return "agent tool loop reached maximum iterations", anyToolUsed, nil
+}
+
+func truncateStr(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max-3] + "..."
 }
 
 func (a *Agent) executeToolCall(ctx context.Context, toolCall model.ToolCall, execTool func(context.Context, model.ToolCall) (string, error)) (string, error) {

@@ -240,8 +240,8 @@ func TestCapabilitiesFor(t *testing.T) {
 		t.Fatal("groq should have both capabilities")
 	}
 	caps = CapabilitiesFor("ollama")
-	if caps.ToolCalling || caps.Reasoning {
-		t.Fatal("ollama should have no capabilities")
+	if !caps.ToolCalling || caps.Reasoning {
+		t.Fatal("ollama should have tool calling but no reasoning (no native thinking knob)")
 	}
 	caps = CapabilitiesFor("unknown")
 	if caps.ToolCalling || caps.Reasoning {

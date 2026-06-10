@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"aetox-cli/internal/command"
+	"aetox-cli/internal/debuglog"
 	"aetox-cli/internal/model"
 	"aetox-cli/internal/safety"
 	"aetox-cli/internal/skill"
@@ -132,42 +133,69 @@ func (e *Executor) Execute(
 	if line == "" {
 		return Result{}, errors.New("empty input")
 	}
+
+	defer debuglog.Block("Turn: " + truncate(line, 120))()
+
 	e.reportStatus("กำลังวิเคราะห์คำขอ...")
 	parsed := e.normalizeIntent(line, intent)
+	debuglog.Info("parsed.Kind", kindName(parsed.Kind))
+	debuglog.Info("parsed.Command", parsed.Command)
+	debuglog.Info("parsed.IsSlash", fmt.Sprintf("%v", parsed.IsSlash))
+	debuglog.Info("parsed.IsMeta", fmt.Sprintf("%v", parsed.IsMeta))
+
 	e.reportStatus("กำลังค้นหาเครื่องมือ...")
 	candidates := e.inferToolCandidates(parsed.Raw)
+	debuglog.Info("tool candidates", fmt.Sprintf("%d found", len(candidates)))
+	for i, c := range candidates {
+		debuglog.Msg("candidate[%d] name=%s missing=%s", i, c.Name, truncate(c.MissingMessage, 60))
+	}
+
+	// Phase 1: high-priority inferred tools → execute directly (no model needed)
 	if e.shouldExecuteInferredBeforeAgent(parsed, candidates) {
+		debuglog.Msg("path: executeInferredBeforeAgent (high-priority tool)")
 		if result, handled, err := e.executeInferredToolCandidatesLoop(ctx, parsed.Raw, candidates); handled {
 			return result, err
 		}
 	}
 
-	if e.shouldUseInferredToolPath(parsed, candidates) {
-		e.reportStatus("กำลังเตรียมเครื่องมือ...")
-		if e.agent == nil || !e.agent.SupportsToolCalling() {
-			if result, handled, err := e.executeInferredToolCandidatesLoop(ctx, parsed.Raw, candidates); handled {
-				return result, err
-			}
-		} else {
-			toolResult, handled, toolUsed, toolSucceeded, err := e.executeAgentToolLoop(ctx, parsed, onChunk)
-			if handled {
-				if (!toolUsed || !toolSucceeded) && len(candidates) > 0 {
-					if fallback, fallbackHandled, fallbackErr := e.executeInferredToolCandidatesLoop(ctx, parsed.Raw, candidates); fallbackHandled {
-						return fallback, fallbackErr
-					}
-				}
-				return toolResult, err
-			}
+	// Phase 2: if agent supports tool calling, try model-driven tool loop
+	// The model decides what tools to use, regex candidates act as fallback
+	agentCanUseTools := e.agent != nil && e.agent.SupportsToolCalling() &&
+		e.dispatcher != nil && len(e.dispatcher.ToolDefinitions()) > 0
 
-			if len(candidates) > 0 {
-				if fallback, handled, fallbackErr := e.executeInferredToolCandidatesLoop(ctx, parsed.Raw, candidates); handled {
+	if agentCanUseTools && (parsed.Kind == command.KindConversation || e.shouldUseInferredToolPath(parsed, candidates)) {
+		debuglog.Msg("path: executeAgentToolLoop (model-driven tool calling)")
+		e.reportStatus(e.conversationThinkingStatus())
+		toolResult, handled, toolUsed, toolSucceeded, err := e.executeAgentToolLoop(ctx, parsed, onChunk)
+		if handled {
+			debuglog.Info("agent tool loop", fmt.Sprintf("used=%v succeeded=%v", toolUsed, toolSucceeded))
+			if (!toolUsed || !toolSucceeded) && len(candidates) > 0 {
+				debuglog.Msg("fallback: executeInferredToolCandidatesLoop (model didn't use tools)")
+				if fallback, fallbackHandled, fallbackErr := e.executeInferredToolCandidatesLoop(ctx, parsed.Raw, candidates); fallbackHandled {
 					return fallback, fallbackErr
 				}
+			}
+			return toolResult, err
+		}
+		if len(candidates) > 0 {
+			debuglog.Msg("fallback: executeInferredToolCandidatesLoop (agent loop not handled)")
+			if fallback, handled, fallbackErr := e.executeInferredToolCandidatesLoop(ctx, parsed.Raw, candidates); handled {
+				return fallback, fallbackErr
 			}
 		}
 	}
 
+	// Phase 3: inferred tools for non-tool-capable agents
+	if e.shouldUseInferredToolPath(parsed, candidates) {
+		debuglog.Msg("path: executeInferredToolCandidatesLoop (regex-inferred tools)")
+		if result, handled, err := e.executeInferredToolCandidatesLoop(ctx, parsed.Raw, candidates); handled {
+			return result, err
+		}
+	}
+
+	// Phase 4: pure conversation (no tools, streaming chat)
 	if parsed.Kind == command.KindConversation {
+		debuglog.Msg("path: conversation (streaming chat)")
 		e.reportStatus(e.conversationThinkingStatus())
 		reply, streamed, err := e.agent.RespondStream(ctx, parsed.Raw, asStreamHandler(onChunk), e.turnOptions)
 		return Result{
@@ -177,8 +205,27 @@ func (e *Executor) Execute(
 		}, err
 	}
 
+	debuglog.Msg("path: executeSkillTurn (direct skill dispatch)")
 	e.reportStatus("กำลังรันเครื่องมือ...")
 	return e.executeSkillTurn(ctx, line, parsed, onToolComplete)
+}
+
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max-3] + "..."
+}
+
+func kindName(k command.Kind) string {
+	switch k {
+	case command.KindConversation:
+		return "conversation"
+	case command.KindSkill:
+		return "skill"
+	default:
+		return fmt.Sprintf("unknown(%d)", k)
+	}
 }
 
 func (e *Executor) shouldExecuteInferredBeforeAgent(parsed command.Intent, candidates []InferredToolCandidate) bool {
@@ -353,6 +400,11 @@ func (e *Executor) executeAgentToolLoop(
 	toolDefs := e.dispatcher.ToolDefinitions()
 	if len(toolDefs) == 0 {
 		return Result{}, false, false, false, nil
+	}
+
+	debuglog.Info("sending tools", fmt.Sprintf("%d definitions", len(toolDefs)))
+	for _, td := range toolDefs {
+		debuglog.Msg("tool: %s", td.Function.Name)
 	}
 
 	toolSucceeded := false

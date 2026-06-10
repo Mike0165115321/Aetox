@@ -15,6 +15,7 @@ import (
 	"aetox-cli/internal/cognitive"
 	"aetox-cli/internal/command"
 	"aetox-cli/internal/config"
+	"aetox-cli/internal/debuglog"
 	"aetox-cli/internal/model"
 	"aetox-cli/internal/safety"
 	"aetox-cli/internal/skill"
@@ -32,6 +33,8 @@ var (
 	showHelp        bool
 	legacyYes       bool
 	approvalMode    string
+	debugMode       bool
+	debugLogPath    string
 )
 
 func parseModelWithThink(raw string) (string, string, bool) {
@@ -88,6 +91,8 @@ func main() {
 	flag.BoolVar(&showHelp, "help", false, "print usage")
 	flag.BoolVar(&legacyYes, "yes", false, "reserved compatibility flag")
 	flag.StringVar(&approvalMode, "approval", "", "approval mode: ask, unsafe-only, or full-access (default: ask)")
+	flag.BoolVar(&debugMode, "debug", false, "write detailed debug log (always on by default)")
+	flag.StringVar(&debugLogPath, "debug-log", "", "custom path for debug log file (default: logs/aetox-<timestamp>.log)")
 	argsWithoutGlobal, argsForIntent, preParseErr := preparseGlobalFlags(os.Args[1:])
 	if preParseErr != nil {
 		fmt.Fprintf(os.Stderr, "invalid flags: %v\n", preParseErr)
@@ -110,6 +115,8 @@ func main() {
 	preParser.BoolVar(&showHelp, "help", false, "print usage")
 	preParser.BoolVar(&legacyYes, "yes", false, "reserved compatibility flag")
 	preParser.StringVar(&approvalMode, "approval", "", "approval mode: ask, unsafe-only, or full-access (default: ask)")
+	preParser.BoolVar(&debugMode, "debug", false, "write detailed debug log")
+	preParser.StringVar(&debugLogPath, "debug-log", "", "debug log file path")
 	_ = preParser.Bool("h", false, "help alias")
 	_ = preParser.Bool("v", false, "version alias")
 	_ = preParser.Parse(argsWithoutGlobal)
@@ -141,6 +148,14 @@ func main() {
 		printUsage()
 		return
 	}
+
+	// always enable debug log; use --debug-log to override path
+	if strings.TrimSpace(debugLogPath) != "" {
+		_ = debuglog.Enable(debugLogPath)
+	} else {
+		debuglog.Init(".")
+	}
+	defer func() { _ = debuglog.Disable() }()
 
 	intent := command.ParseArgs(argsForIntent)
 	cfg := config.Load(config.ConfigOptions{
@@ -427,7 +442,11 @@ func resolveDisplayUser() string {
 
 func formatModelModeLabel(providerName, modelName, thinkLevel string) string {
 	status := model.ResolveStatus(providerName, modelName, nil)
-	return fmt.Sprintf("%s(%s)", status, defaultThinkLevel(providerName, modelName, thinkLevel))
+	level := defaultThinkLevel(providerName, modelName, thinkLevel)
+	if level == "" {
+		return status
+	}
+	return fmt.Sprintf("%s(%s)", status, level)
 }
 
 func resolveModelStatus(cfg config.Config, bootstrapResult model.BootstrapResult) string {
@@ -869,6 +888,8 @@ func printUsage() {
 	fmt.Println("  --no-banner                 disable interactive banner")
 	fmt.Println("  --approval <mode>           approval mode: ask, unsafe-only, full-access (default: ask)")
 	fmt.Println("  --yes                       auto-approve safety prompts (legacy, prefer --approval full-access)")
+	fmt.Println("  --debug                     write detailed debug log to aetox-debug.log")
+	fmt.Println("  --debug-log <path>          custom debug log path (default: logs/aetox-<ts>.log)")
 	fmt.Println("  --version                   print version")
 }
 
@@ -886,7 +907,7 @@ func preparseGlobalFlags(rawArgs []string) ([]string, []string, error) {
 
 	isValueFlag := func(arg string) bool {
 		switch arg {
-		case "--root", "--approval-timeout", "--model-provider", "--model-name", "--model-api-key", "--model-base-url", "--model-timeout", "--model-context-tokens", "--think", "--approval":
+		case "--root", "--approval-timeout", "--model-provider", "--model-name", "--model-api-key", "--model-base-url", "--model-timeout", "--model-context-tokens", "--think", "--approval", "--debug-log":
 			return true
 		}
 		return false
@@ -894,7 +915,7 @@ func preparseGlobalFlags(rawArgs []string) ([]string, []string, error) {
 
 	isBoolFlag := func(arg string) bool {
 		switch arg {
-		case "--yes", "--no-banner", "--version", "--help", "-v", "-h":
+		case "--yes", "--no-banner", "--version", "--help", "--debug", "-v", "-h":
 			return true
 		}
 		return false

@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"aetox-cli/internal/debuglog"
 )
 
 type OllamaConfig struct {
@@ -52,14 +54,92 @@ func (p *OllamaProvider) Name() string {
 }
 
 func (p *OllamaProvider) SupportsToolCalling() bool {
-	return false
+	return true
 }
 
 func (p *OllamaProvider) SupportsReasoning() bool {
 	return false
 }
 
+type ollamaChatRequest struct {
+	Model    string              `json:"model"`
+	Messages []ollamaChatMessage `json:"messages"`
+	Stream   bool                `json:"stream"`
+	Tools    json.RawMessage     `json:"tools,omitempty"`
+}
+
+type ollamaChatMessage struct {
+	Role       string           `json:"role"`
+	Content    string           `json:"content,omitempty"`
+	Name       string           `json:"name,omitempty"`
+	ToolCallID string           `json:"tool_call_id,omitempty"`
+	ToolCalls  []ollamaToolCall `json:"tool_calls,omitempty"`
+}
+
+type ollamaToolCall struct {
+	Function ollamaFunctionCall `json:"function"`
+}
+
+func convertMessagesToOllama(msgs []Message) []ollamaChatMessage {
+	out := make([]ollamaChatMessage, 0, len(msgs))
+	for _, m := range msgs {
+		ocm := ollamaChatMessage{
+			Role:       string(m.Role),
+			Content:    m.Content,
+			Name:       m.Name,
+			ToolCallID: m.ToolCallID,
+		}
+		if len(m.ToolCalls) > 0 {
+			ocm.ToolCalls = make([]ollamaToolCall, 0, len(m.ToolCalls))
+			for _, tc := range m.ToolCalls {
+				args := strings.TrimSpace(tc.Function.Arguments)
+				var rawArgs json.RawMessage
+				if args != "" && args != "{}" {
+					if json.Valid([]byte(args)) {
+						rawArgs = json.RawMessage(args)
+					}
+				}
+				if rawArgs == nil {
+					rawArgs = json.RawMessage("{}")
+				}
+				ocm.ToolCalls = append(ocm.ToolCalls, ollamaToolCall{
+					Function: ollamaFunctionCall{
+						Name:      tc.Function.Name,
+						Arguments: rawArgs,
+					},
+				})
+			}
+		}
+		out = append(out, ocm)
+	}
+	return out
+}
+
+type ollamaFunctionCall struct {
+	Name      string          `json:"name"`
+	Arguments json.RawMessage `json:"arguments"`
+}
+
+type ollamaResponse struct {
+	Model            string           `json:"model"`
+	Message          ollamaMessage    `json:"message"`
+	Response         string           `json:"response"`
+	Done             bool             `json:"done"`
+	Error            string           `json:"error"`
+	PromptTokens     int              `json:"prompt_eval_count"`
+	CompletionTokens int              `json:"eval_count"`
+}
+
+type ollamaMessage struct {
+	Role             string            `json:"role"`
+	Content          string            `json:"content"`
+	ReasoningContent string            `json:"reasoning_content"`
+	ToolCalls        []ollamaToolCall  `json:"tool_calls"`
+}
+
 func (p *OllamaProvider) Complete(ctx context.Context, req Request) (Response, error) {
+	defer debuglog.Block(fmt.Sprintf("Ollama.Complete model=%s msgs=%d tools=%d", req.Model, len(req.Messages), len(req.Tools)))()
+
 	if len(req.Messages) == 0 {
 		return Response{}, ErrNoMessages
 	}
@@ -69,14 +149,23 @@ func (p *OllamaProvider) Complete(ctx context.Context, req Request) (Response, e
 		model = p.model
 	}
 
-	payload := struct {
-		Model    string    `json:"model"`
-		Messages []Message `json:"messages"`
-		Stream   bool      `json:"stream"`
-	}{
+	var toolsJSON json.RawMessage
+	if len(req.Tools) > 0 {
+		encoded, err := json.Marshal(req.Tools)
+		if err != nil {
+			return Response{}, err
+		}
+		toolsJSON = encoded
+		debuglog.Info("tools sent", fmt.Sprintf("%d definitions", len(req.Tools)))
+	} else {
+		debuglog.Msg("no tools in request (chat-only mode)")
+	}
+
+	payload := ollamaChatRequest{
 		Model:    model,
-		Messages: req.Messages,
+		Messages: convertMessagesToOllama(req.Messages),
 		Stream:   false,
+		Tools:    toolsJSON,
 	}
 
 	body, err := json.Marshal(payload)
@@ -85,6 +174,8 @@ func (p *OllamaProvider) Complete(ctx context.Context, req Request) (Response, e
 	}
 
 	requestURL := p.baseURL + "/api/chat"
+	debuglog.Msg("HTTP %s body(%d): %s", requestURL, len(body), truncOllama(string(body), 500))
+
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, bytes.NewReader(body))
 	if err != nil {
 		return Response{}, err
@@ -103,22 +194,16 @@ func (p *OllamaProvider) Complete(ctx context.Context, req Request) (Response, e
 	}
 
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
+		debuglog.Msg("HTTP %d: %s", httpResp.StatusCode, truncOllama(string(responseBody), 200))
 		return Response{}, fmt.Errorf("ollama request failed with status %d: %s", httpResp.StatusCode, strings.TrimSpace(string(responseBody)))
 	}
 
-	var parsed struct {
-		Model            string  `json:"model"`
-		Message          Message `json:"message"`
-		Response         string  `json:"response"`
-		Done             bool    `json:"done"`
-		Error            string  `json:"error"`
-		PromptTokens     int     `json:"prompt_eval_count"`
-		CompletionTokens int     `json:"eval_count"`
-	}
+	var parsed ollamaResponse
 	if err := json.Unmarshal(responseBody, &parsed); err != nil {
 		return Response{}, fmt.Errorf("ollama response parse failed: %w", err)
 	}
 	if parsed.Error != "" {
+		debuglog.Msg("ollama error: %s", parsed.Error)
 		return Response{}, fmt.Errorf("ollama error: %s", parsed.Error)
 	}
 
@@ -126,18 +211,27 @@ func (p *OllamaProvider) Complete(ctx context.Context, req Request) (Response, e
 	if reply == "" {
 		reply = strings.TrimSpace(parsed.Response)
 	}
-	if !parsed.Done && reply == "" {
+	if !parsed.Done && reply == "" && len(parsed.Message.ToolCalls) == 0 {
 		return Response{}, fmt.Errorf("ollama streaming mode is unsupported in this adapter")
 	}
-	if reply == "" {
+	if reply == "" && len(parsed.Message.ToolCalls) == 0 {
 		return Response{}, fmt.Errorf("ollama response has empty text")
 	}
 
+	toolCalls := convertOllamaToolCalls(parsed.Message.ToolCalls)
+	debuglog.Info("content", truncOllama(reply, 150))
+	debuglog.Info("toolCalls", fmt.Sprintf("%d parsed", len(toolCalls)))
+	for i, tc := range toolCalls {
+		debuglog.Msg("toolCall[%d] %s(%s)", i, tc.Function.Name, truncOllama(tc.Function.Arguments, 80))
+	}
+
 	return Response{
-		Provider: p.Name(),
-		Model:    modelOr(parsed.Model, model),
-		Text:     reply,
-		Usage:    normalizeUsage(Usage{PromptTokens: parsed.PromptTokens, CompletionTokens: parsed.CompletionTokens}),
+		Provider:         p.Name(),
+		Model:            modelOr(parsed.Model, model),
+		Text:             reply,
+		ReasoningContent: strings.TrimSpace(parsed.Message.ReasoningContent),
+		ToolCalls:        toolCalls,
+		Usage:            normalizeUsage(Usage{PromptTokens: parsed.PromptTokens, CompletionTokens: parsed.CompletionTokens}),
 	}, nil
 }
 
@@ -151,14 +245,20 @@ func (p *OllamaProvider) StreamComplete(ctx context.Context, req Request, onChun
 		model = p.model
 	}
 
-	payload := struct {
-		Model    string    `json:"model"`
-		Messages []Message `json:"messages"`
-		Stream   bool      `json:"stream"`
-	}{
+	var toolsJSON json.RawMessage
+	if len(req.Tools) > 0 {
+		encoded, err := json.Marshal(req.Tools)
+		if err != nil {
+			return Response{}, err
+		}
+		toolsJSON = encoded
+	}
+
+	payload := ollamaChatRequest{
 		Model:    model,
-		Messages: req.Messages,
+		Messages: convertMessagesToOllama(req.Messages),
 		Stream:   true,
+		Tools:    toolsJSON,
 	}
 
 	body, err := json.Marshal(payload)
@@ -189,21 +289,15 @@ func (p *OllamaProvider) StreamComplete(ctx context.Context, req Request, onChun
 
 	scanner := bufio.NewScanner(httpResp.Body)
 	var builder strings.Builder
+	var reasonBuilder strings.Builder
+	var toolCallBuilders []*streamToolCallBuilder
 	var lastUsage *Usage
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
 			continue
 		}
-		var parsed struct {
-			Model            string  `json:"model"`
-			Message          Message `json:"message"`
-			Response         string  `json:"response"`
-			Done             bool    `json:"done"`
-			Error            string  `json:"error"`
-			PromptTokens     int     `json:"prompt_eval_count"`
-			CompletionTokens int     `json:"eval_count"`
-		}
+		var parsed ollamaResponse
 		if err := json.Unmarshal([]byte(line), &parsed); err != nil {
 			return Response{}, fmt.Errorf("ollama stream parse failed: %w", err)
 		}
@@ -222,6 +316,12 @@ func (p *OllamaProvider) StreamComplete(ctx context.Context, req Request, onChun
 				}
 			}
 		}
+		if reasonChunk := strings.TrimSpace(parsed.Message.ReasoningContent); reasonChunk != "" {
+			reasonBuilder.WriteString(reasonChunk)
+		}
+
+		toolCallBuilders = mergeStreamToolCalls(toolCallBuilders, parsed.Message.ToolCalls)
+
 		lastPromptTokens := maxInt(0, parsed.PromptTokens)
 		lastCompletionTokens := maxInt(0, parsed.CompletionTokens)
 		if parsed.PromptTokens > 0 || parsed.CompletionTokens > 0 {
@@ -240,14 +340,88 @@ func (p *OllamaProvider) StreamComplete(ctx context.Context, req Request, onChun
 	}
 
 	reply := strings.TrimSpace(builder.String())
-	if reply == "" {
+	toolCalls := finalizeStreamToolCalls(toolCallBuilders)
+	if reply == "" && len(toolCalls) == 0 {
 		return Response{}, fmt.Errorf("ollama stream response has empty text")
 	}
 
 	return Response{
-		Provider: p.Name(),
-		Model:    model,
-		Text:     reply,
-		Usage:    lastUsage,
+		Provider:         p.Name(),
+		Model:            model,
+		Text:             reply,
+		ReasoningContent: strings.TrimSpace(reasonBuilder.String()),
+		ToolCalls:        toolCalls,
+		Usage:            lastUsage,
 	}, nil
+}
+
+func convertOllamaToolCalls(raw []ollamaToolCall) []ToolCall {
+	if len(raw) == 0 {
+		return nil
+	}
+	out := make([]ToolCall, 0, len(raw))
+	for i, tc := range raw {
+		args := strings.TrimSpace(string(tc.Function.Arguments))
+		if args == "" {
+			args = "{}"
+		}
+		id := fmt.Sprintf("call_%d", i)
+		out = append(out, ToolCall{
+			ID:   id,
+			Type: "function",
+			Function: FunctionCall{
+				Name:      strings.TrimSpace(tc.Function.Name),
+				Arguments: args,
+			},
+		})
+	}
+	return out
+}
+
+type streamToolCallBuilder struct {
+	index    int
+	name     string
+	argsBuf  strings.Builder
+}
+
+func mergeStreamToolCalls(existing []*streamToolCallBuilder, incoming []ollamaToolCall) []*streamToolCallBuilder {
+	for _, tc := range incoming {
+		idx := len(existing)
+		existing = append(existing, &streamToolCallBuilder{
+			index:   idx,
+			name:    tc.Function.Name,
+			argsBuf: strings.Builder{},
+		})
+		existing[idx].argsBuf.WriteString(strings.TrimSpace(string(tc.Function.Arguments)))
+	}
+	return existing
+}
+
+func finalizeStreamToolCalls(builders []*streamToolCallBuilder) []ToolCall {
+	if len(builders) == 0 {
+		return nil
+	}
+	out := make([]ToolCall, 0, len(builders))
+	for _, b := range builders {
+		args := strings.TrimSpace(b.argsBuf.String())
+		if args == "" {
+			args = "{}"
+		}
+		out = append(out, ToolCall{
+			ID:   fmt.Sprintf("call_%d", b.index),
+			Type: "function",
+			Function: FunctionCall{
+				Name:      strings.TrimSpace(b.name),
+				Arguments: args,
+			},
+		})
+	}
+	return out
+}
+
+func truncOllama(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max-3] + "..."
 }

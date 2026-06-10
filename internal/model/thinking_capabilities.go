@@ -43,6 +43,15 @@ var conservativeFallback = ThinkingCapabilities{
 	Source:    "conservative-fallback",
 }
 
+var noThinkingCapabilities = ThinkingCapabilities{
+	Supported: false,
+	Native:    false,
+	Levels:    nil,
+	Default:   "",
+	Runtime:   ThinkingRuntimeUnknown,
+	Source:    "no-thinking-knob",
+}
+
 var unknownProviderCapabilities = ThinkingCapabilities{
 	Supported: false,
 	Native:    false,
@@ -59,7 +68,7 @@ func ResolveThinkingCapabilities(provider, modelName string) ThinkingCapabilitie
 		modelID = strings.ToLower(strings.TrimSpace(DefaultModel(canonicalProvider)))
 	}
 
-	switch canonicalProvider {
+		switch canonicalProvider {
 	case "deepseek":
 		return cloneThinkingCapabilities(resolveDeepSeekThinkingCapabilities(modelID))
 	case "gemini":
@@ -70,6 +79,8 @@ func ResolveThinkingCapabilities(provider, modelName string) ThinkingCapabilitie
 		return cloneThinkingCapabilities(resolveOpenRouterThinkingCapabilities(modelID))
 	case "groq":
 		return cloneThinkingCapabilities(resolveGroqThinkingCapabilities(modelID))
+	case "ollama", "lmstudio":
+		return cloneThinkingCapabilities(noThinkingCapabilities)
 	default:
 		return cloneThinkingCapabilities(fallbackThinkingCapabilities)
 	}
@@ -100,6 +111,10 @@ func SupportsThinkingLevel(provider, modelName, level string) bool {
 
 func NormalizeThinkingLevel(provider, modelName, requested string) string {
 	caps := ResolveThinkingCapabilities(provider, modelName)
+	if !caps.Supported {
+		return ""
+	}
+
 	defaultLevel := strings.TrimSpace(caps.Default)
 	if defaultLevel == "" {
 		defaultLevel = strings.ToLower(strings.TrimSpace(requested))

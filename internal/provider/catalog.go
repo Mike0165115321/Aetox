@@ -220,7 +220,7 @@ var catalog = map[string]*entry{
 		modelDefaults: ModelDefaults{
 			FallbackModel: "gemma3:4b",
 		},
-		capabilities: Capabilities{},
+		capabilities: Capabilities{ToolCalling: true},
 	},
 }
 
