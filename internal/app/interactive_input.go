@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"aetox-cli/internal/command"
+	"github.com/Mike0165115321/Aetox/internal/command"
 
 	"golang.org/x/term"
 )

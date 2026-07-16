@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"aetox-cli/internal/debuglog"
+	"github.com/Mike0165115321/Aetox/internal/debuglog"
 )
 
 type OllamaConfig struct {
@@ -121,20 +121,20 @@ type ollamaFunctionCall struct {
 }
 
 type ollamaResponse struct {
-	Model            string           `json:"model"`
-	Message          ollamaMessage    `json:"message"`
-	Response         string           `json:"response"`
-	Done             bool             `json:"done"`
-	Error            string           `json:"error"`
-	PromptTokens     int              `json:"prompt_eval_count"`
-	CompletionTokens int              `json:"eval_count"`
+	Model            string        `json:"model"`
+	Message          ollamaMessage `json:"message"`
+	Response         string        `json:"response"`
+	Done             bool          `json:"done"`
+	Error            string        `json:"error"`
+	PromptTokens     int           `json:"prompt_eval_count"`
+	CompletionTokens int           `json:"eval_count"`
 }
 
 type ollamaMessage struct {
-	Role             string            `json:"role"`
-	Content          string            `json:"content"`
-	ReasoningContent string            `json:"reasoning_content"`
-	ToolCalls        []ollamaToolCall  `json:"tool_calls"`
+	Role             string           `json:"role"`
+	Content          string           `json:"content"`
+	ReasoningContent string           `json:"reasoning_content"`
+	ToolCalls        []ollamaToolCall `json:"tool_calls"`
 }
 
 func (p *OllamaProvider) Complete(ctx context.Context, req Request) (Response, error) {
@@ -379,9 +379,9 @@ func convertOllamaToolCalls(raw []ollamaToolCall) []ToolCall {
 }
 
 type streamToolCallBuilder struct {
-	index    int
-	name     string
-	argsBuf  strings.Builder
+	index   int
+	name    string
+	argsBuf strings.Builder
 }
 
 func mergeStreamToolCalls(existing []*streamToolCallBuilder, incoming []ollamaToolCall) []*streamToolCallBuilder {

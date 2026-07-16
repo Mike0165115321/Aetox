@@ -1,4 +1,4 @@
-# Aetox CLI (Terminal AI Chat)
+# Aetox
 
 Aetox CLI runs two modes in the same session:
 

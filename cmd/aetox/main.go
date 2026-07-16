@@ -11,30 +11,30 @@ import (
 	"strings"
 	"time"
 
-	"aetox-cli/internal/app"
-	"aetox-cli/internal/cognitive"
-	"aetox-cli/internal/command"
-	"aetox-cli/internal/config"
-	"aetox-cli/internal/debuglog"
-	"aetox-cli/internal/model"
-	"aetox-cli/internal/safety"
-	"aetox-cli/internal/skill"
-	"aetox-cli/internal/think"
+	"github.com/Mike0165115321/Aetox/internal/app"
+	"github.com/Mike0165115321/Aetox/internal/cognitive"
+	"github.com/Mike0165115321/Aetox/internal/command"
+	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mike0165115321/Aetox/internal/debuglog"
+	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mike0165115321/Aetox/internal/safety"
+	"github.com/Mike0165115321/Aetox/internal/skill"
+	"github.com/Mike0165115321/Aetox/internal/think"
 
 	"golang.org/x/term"
 )
 
-const appVersion = "0.3.0-dev"
+const appVersion = "0.4.0-dev"
 const defaultAgentMaxToolCalls = 16
 
 var (
-	noBanner        bool
-	showVersion     bool
-	showHelp        bool
-	legacyYes       bool
-	approvalMode    string
-	debugMode       bool
-	debugLogPath    string
+	noBanner     bool
+	showVersion  bool
+	showHelp     bool
+	legacyYes    bool
+	approvalMode string
+	debugMode    bool
+	debugLogPath string
 )
 
 func parseModelWithThink(raw string) (string, string, bool) {
@@ -291,10 +291,10 @@ func main() {
 	})
 	skillDispatcher := skill.NewDispatcher(skillRegistry)
 	aetoxApp, err := app.NewApp(app.Options{
-		Agent:       agent,
-		Console:     console,
-		Dispatcher:  skillDispatcher,
-		ShowBanner:  !noBanner,
+		Agent:        agent,
+		Console:      console,
+		Dispatcher:   skillDispatcher,
+		ShowBanner:   !noBanner,
 		ApprovalMode: effectiveApprovalMode,
 		OnApprovalChange: func(mode safety.ApprovalMode) {
 			currentConfig.ApprovalMode = string(mode)
@@ -302,9 +302,9 @@ func main() {
 				fmt.Fprintf(os.Stderr, "warning: cannot save approval mode: %v\n", saveErr)
 			}
 		},
-		Title:       "Aetox CLI",
-		Version:     appVersion,
-		UserInfo:    resolveDisplayUser(),
+		Title:    "Aetox CLI",
+		Version:  appVersion,
+		UserInfo: resolveDisplayUser(),
 		ModelStatus: resolveModelStatus(config.Config{
 			ModelProvider: modelProvider,
 			ModelName:     currentConfig.ModelName,

@@ -1,6 +1,6 @@
 package command
 
-import "aetox-cli/internal/grammar"
+import "github.com/Mike0165115321/Aetox/internal/grammar"
 
 // Kind = grammar.Kind
 type Kind = grammar.Kind

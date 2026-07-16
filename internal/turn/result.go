@@ -1,4 +1,4 @@
-﻿package turn
+package turn
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"aetox-cli/internal/skill"
+	"github.com/Mike0165115321/Aetox/internal/skill"
 )
 
 func shouldUseDeterministicToolSummary(name string) bool {
@@ -205,4 +205,3 @@ func (e *Executor) newToolResultForTurn(name, command, detail string) skill.Outp
 		DurationMs: 0,
 	}
 }
-

@@ -3,7 +3,7 @@ package model
 import (
 	"strings"
 
-	"aetox-cli/internal/provider"
+	"github.com/Mike0165115321/Aetox/internal/provider"
 )
 
 type ThinkingRuntime string
@@ -68,7 +68,7 @@ func ResolveThinkingCapabilities(provider, modelName string) ThinkingCapabilitie
 		modelID = strings.ToLower(strings.TrimSpace(DefaultModel(canonicalProvider)))
 	}
 
-		switch canonicalProvider {
+	switch canonicalProvider {
 	case "deepseek":
 		return cloneThinkingCapabilities(resolveDeepSeekThinkingCapabilities(modelID))
 	case "gemini":

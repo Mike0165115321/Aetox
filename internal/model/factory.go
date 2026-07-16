@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	pvdr "aetox-cli/internal/provider"
+	pvdr "github.com/Mike0165115321/Aetox/internal/provider"
 )
 
 type ProviderOptions struct {

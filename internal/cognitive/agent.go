@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"strings"
 
-	"aetox-cli/internal/debuglog"
-	"aetox-cli/internal/memory"
-	"aetox-cli/internal/model"
-	"aetox-cli/internal/think"
-	"aetox-cli/internal/turn"
+	"github.com/Mike0165115321/Aetox/internal/debuglog"
+	"github.com/Mike0165115321/Aetox/internal/memory"
+	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mike0165115321/Aetox/internal/think"
+	"github.com/Mike0165115321/Aetox/internal/turn"
 )
 
 const (

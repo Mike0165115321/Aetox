@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"aetox-cli/internal/command"
-	"aetox-cli/internal/model"
-	"aetox-cli/internal/skill"
+	"github.com/Mike0165115321/Aetox/internal/command"
+	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mike0165115321/Aetox/internal/skill"
 )
 
 func TestExecute_InferredWriteForNonToolAgent(t *testing.T) {

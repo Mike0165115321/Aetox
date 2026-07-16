@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"aetox-cli/internal/audit"
+	"github.com/Mike0165115321/Aetox/internal/audit"
 )
 
 type shellSkill struct {

@@ -48,4 +48,3 @@ func TestNoopProviderNoMessages(t *testing.T) {
 		t.Fatal("expected ErrNoMessages")
 	}
 }
-

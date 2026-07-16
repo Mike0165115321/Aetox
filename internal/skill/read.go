@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"aetox-cli/internal/model"
+	"github.com/Mike0165115321/Aetox/internal/model"
 )
 
 type readSkill struct {

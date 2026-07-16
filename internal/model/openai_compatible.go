@@ -100,16 +100,16 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 	}
 
 	payload := struct {
-		Model           string           `json:"model"`
-		Messages        []Message        `json:"messages"`
-		Temperature     float64          `json:"temperature,omitempty"`
-		MaxTokens       int              `json:"max_tokens,omitempty"`
-		Tools           []ToolDefinition `json:"tools,omitempty"`
-		ToolChoice      string           `json:"tool_choice,omitempty"`
-		Reasoning       *ReasoningConfig `json:"reasoning,omitempty"`
-		Thinking        *ThinkingConfig  `json:"thinking,omitempty"`
-		ReasoningEffort string           `json:"reasoning_effort,omitempty"`
-		IncludeReasoning *bool           `json:"include_reasoning,omitempty"`
+		Model            string           `json:"model"`
+		Messages         []Message        `json:"messages"`
+		Temperature      float64          `json:"temperature,omitempty"`
+		MaxTokens        int              `json:"max_tokens,omitempty"`
+		Tools            []ToolDefinition `json:"tools,omitempty"`
+		ToolChoice       string           `json:"tool_choice,omitempty"`
+		Reasoning        *ReasoningConfig `json:"reasoning,omitempty"`
+		Thinking         *ThinkingConfig  `json:"thinking,omitempty"`
+		ReasoningEffort  string           `json:"reasoning_effort,omitempty"`
+		IncludeReasoning *bool            `json:"include_reasoning,omitempty"`
 	}{
 		Model:       model,
 		Messages:    req.Messages,
@@ -209,17 +209,17 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 		model = p.model
 	}
 	payload := struct {
-		Model           string           `json:"model"`
-		Messages        []Message        `json:"messages"`
-		Temperature     float64          `json:"temperature,omitempty"`
-		MaxTokens       int              `json:"max_tokens,omitempty"`
-		Tools           []ToolDefinition `json:"tools,omitempty"`
-		ToolChoice      string           `json:"tool_choice,omitempty"`
-		Reasoning       *ReasoningConfig `json:"reasoning,omitempty"`
-		Thinking        *ThinkingConfig  `json:"thinking,omitempty"`
-		ReasoningEffort string           `json:"reasoning_effort,omitempty"`
-		IncludeReasoning *bool           `json:"include_reasoning,omitempty"`
-		Stream          bool             `json:"stream"`
+		Model            string           `json:"model"`
+		Messages         []Message        `json:"messages"`
+		Temperature      float64          `json:"temperature,omitempty"`
+		MaxTokens        int              `json:"max_tokens,omitempty"`
+		Tools            []ToolDefinition `json:"tools,omitempty"`
+		ToolChoice       string           `json:"tool_choice,omitempty"`
+		Reasoning        *ReasoningConfig `json:"reasoning,omitempty"`
+		Thinking         *ThinkingConfig  `json:"thinking,omitempty"`
+		ReasoningEffort  string           `json:"reasoning_effort,omitempty"`
+		IncludeReasoning *bool            `json:"include_reasoning,omitempty"`
+		Stream           bool             `json:"stream"`
 	}{
 		Model:       model,
 		Messages:    req.Messages,

@@ -1,8 +1,8 @@
 package skill
 
 import (
-	"aetox-cli/internal/command"
-	"aetox-cli/internal/model"
+	"github.com/Mike0165115321/Aetox/internal/command"
+	"github.com/Mike0165115321/Aetox/internal/model"
 	"context"
 	"fmt"
 	"strings"

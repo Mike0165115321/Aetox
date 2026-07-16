@@ -13,13 +13,13 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"aetox-cli/internal/cognitive"
-	"aetox-cli/internal/command"
-	"aetox-cli/internal/model"
-	"aetox-cli/internal/safety"
-	"aetox-cli/internal/skill"
-	"aetox-cli/internal/think"
-	"aetox-cli/internal/turn"
+	"github.com/Mike0165115321/Aetox/internal/cognitive"
+	"github.com/Mike0165115321/Aetox/internal/command"
+	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mike0165115321/Aetox/internal/safety"
+	"github.com/Mike0165115321/Aetox/internal/skill"
+	"github.com/Mike0165115321/Aetox/internal/think"
+	"github.com/Mike0165115321/Aetox/internal/turn"
 
 	"sync"
 )
@@ -37,15 +37,15 @@ const (
 )
 
 type App struct {
-	agent           *cognitive.Agent
-	console         Console
-	showBanner      bool
-	skillDispatcher skillDispatcher
-	commandSet      map[string]struct{}
-	approvalMode    safety.ApprovalMode
+	agent            *cognitive.Agent
+	console          Console
+	showBanner       bool
+	skillDispatcher  skillDispatcher
+	commandSet       map[string]struct{}
+	approvalMode     safety.ApprovalMode
 	onApprovalChange func(safety.ApprovalMode)
-	turnExecutor    *turn.Executor
-	modelSwitcher   modelSwitcher
+	turnExecutor     *turn.Executor
+	modelSwitcher    modelSwitcher
 
 	title              string
 	version            string
@@ -55,7 +55,7 @@ type App struct {
 	thinkLevel         think.Level
 	skillNames         []string
 
-	statusReporter func(string)
+	statusReporter  func(string)
 	lastPrintedTool string
 }
 
@@ -84,12 +84,12 @@ type namedDispatcher interface {
 }
 
 type Options struct {
-	Agent       *cognitive.Agent
-	Console     Console
-	Dispatcher  skillDispatcher
-	ShowBanner  bool
-	ApprovalMode      safety.ApprovalMode
-	OnApprovalChange  func(safety.ApprovalMode)
+	Agent            *cognitive.Agent
+	Console          Console
+	Dispatcher       skillDispatcher
+	ShowBanner       bool
+	ApprovalMode     safety.ApprovalMode
+	OnApprovalChange func(safety.ApprovalMode)
 
 	Title              string
 	Version            string
@@ -392,10 +392,10 @@ func (a *App) switchModel(ctx context.Context) error {
 	a.modelContextTokens = result.ModelContextTokens
 	a.thinkLevel = think.NormalizeLevel(string(result.ThinkLevel))
 	a.turnExecutor = turn.NewExecutor(turn.ExecutorOptions{
-		Agent:      a.agent,
-		Dispatcher: a.skillDispatcher,
-		CommandSet: a.commandSet,
-		Approve:    a.confirmApproval,
+		Agent:        a.agent,
+		Dispatcher:   a.skillDispatcher,
+		CommandSet:   a.commandSet,
+		Approve:      a.confirmApproval,
 		ApprovalMode: a.approvalMode,
 		TurnOptions: turn.TurnOptions{
 			ThinkLevel: a.thinkLevel,

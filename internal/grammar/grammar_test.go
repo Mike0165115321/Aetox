@@ -593,9 +593,9 @@ func TestSlashSuggestions_IncludesBuiltins(t *testing.T) {
 
 func TestParseTokens(t *testing.T) {
 	tests := []struct {
-		input      string
-		wantCmd    string
-		wantArgs   []string
+		input    string
+		wantCmd  string
+		wantArgs []string
 	}{
 		{"", "", nil},
 		{"   ", "", nil},

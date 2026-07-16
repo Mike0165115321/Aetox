@@ -1,4 +1,4 @@
-﻿package turn
+package turn
 
 import (
 	"context"
@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"aetox-cli/internal/command"
-	"aetox-cli/internal/debuglog"
-	"aetox-cli/internal/model"
-	"aetox-cli/internal/safety"
-	"aetox-cli/internal/skill"
-	"aetox-cli/internal/think"
+	"github.com/Mike0165115321/Aetox/internal/command"
+	"github.com/Mike0165115321/Aetox/internal/debuglog"
+	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mike0165115321/Aetox/internal/safety"
+	"github.com/Mike0165115321/Aetox/internal/skill"
+	"github.com/Mike0165115321/Aetox/internal/think"
 )
 
 type TurnStatus string
@@ -26,7 +26,6 @@ const (
 	defaultToolSummaryTimeout      = 30 * time.Second
 	defaultToolSummaryPromptMaxLen = 4096
 )
-
 
 type Agent interface {
 	Respond(context.Context, string, TurnOptions) (string, error)

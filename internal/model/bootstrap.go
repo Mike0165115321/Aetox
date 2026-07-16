@@ -52,4 +52,3 @@ func BootstrapProvider(opts BootstrapOptions) BootstrapResult {
 		Error:    initErr,
 	}
 }
-

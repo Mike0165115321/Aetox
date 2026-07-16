@@ -17,4 +17,3 @@ func stringSlice(value any) []string {
 	}
 	return result
 }
-

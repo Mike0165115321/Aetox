@@ -1,4 +1,4 @@
-module aetox-cli
+module github.com/Mike0165115321/Aetox
 
 go 1.22
 

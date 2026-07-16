@@ -1,6 +1,6 @@
 package plan
 
-import "aetox-cli/internal/command"
+import "github.com/Mike0165115321/Aetox/internal/command"
 
 type Kind = command.Kind
 

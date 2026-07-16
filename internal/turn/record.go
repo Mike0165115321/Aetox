@@ -3,33 +3,33 @@ package turn
 import (
 	"time"
 
-	"aetox-cli/internal/command"
-	"aetox-cli/internal/model"
-	"aetox-cli/internal/safety"
-	"aetox-cli/internal/skill"
+	"github.com/Mike0165115321/Aetox/internal/command"
+	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mike0165115321/Aetox/internal/safety"
+	"github.com/Mike0165115321/Aetox/internal/skill"
 )
 
 // StepKind ระบุว่า turn นี้ใช้เส้นทางไหนในการ execute
 type StepKind string
 
 const (
-	StepKindConversation   StepKind = "conversation"
-	StepKindExplicitSkill  StepKind = "explicit_skill"
-	StepKindInferredSkill  StepKind = "inferred_skill"
-	StepKindAgentTool      StepKind = "agent_tool"
-	StepKindFallback       StepKind = "fallback"
+	StepKindConversation  StepKind = "conversation"
+	StepKindExplicitSkill StepKind = "explicit_skill"
+	StepKindInferredSkill StepKind = "inferred_skill"
+	StepKindAgentTool     StepKind = "agent_tool"
+	StepKindFallback      StepKind = "fallback"
 )
 
 // Record คือ immutable execution record ของหนึ่ง turn
 // ใช้สำหรับ audit, debugging, testing, และต่อยอดไป integration tests
 type Record struct {
 	// Input
-	RawInput  string
-	Intent    command.Intent
+	RawInput string
+	Intent   command.Intent
 
 	// Plan (inferred candidates จาก planner)
-	Step        StepKind
-	Candidates  []InferredToolCandidate
+	Step       StepKind
+	Candidates []InferredToolCandidate
 
 	// Safety
 	SafetyAssessment *safety.Assessment
@@ -37,25 +37,25 @@ type Record struct {
 	ApprovalReason   string
 
 	// Execution — explicit skill path
-	SkillOutput       *skill.Output
-	SkillHandled      bool
-	SkillError        string
+	SkillOutput  *skill.Output
+	SkillHandled bool
+	SkillError   string
 
 	// Execution — agent / tool loop path
-	AgentToolCalled   bool
-	ToolCalls         []ToolCallRecord
-	AgentReply        string
-	AgentError        string
+	AgentToolCalled bool
+	ToolCalls       []ToolCallRecord
+	AgentReply      string
+	AgentError      string
 
 	// Unified outcome
-	Reply          string
-	Status         TurnStatus
-	Error          string
+	Reply  string
+	Status TurnStatus
+	Error  string
 
 	// Timing (wall-clock)
-	StartedAt   time.Time
-	FinishedAt  time.Time
-	DurationMs  int64
+	StartedAt  time.Time
+	FinishedAt time.Time
+	DurationMs int64
 
 	// Metadata
 	TokensUsed *model.Usage // optional
