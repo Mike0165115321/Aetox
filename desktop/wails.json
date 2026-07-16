@@ -1,0 +1,13 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "aetox-desktop",
+  "outputfilename": "aetox-desktop",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "Mike0165115321",
+    "email": "218032854+Mike0165115321@users.noreply.github.com"
+  }
+}

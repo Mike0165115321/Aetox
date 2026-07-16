@@ -1,0 +1,172 @@
+/* Tier 2 — semantic tokens. Every component and style.css rule references ONLY
+   these roles, never a raw color. Swapping the values under a [data-theme] block
+   re-skins the whole app. Dark is the default (:root); light overrides.
+   theme.svelte.ts sets data-theme on <html>. */
+
+:root {
+  /* surfaces */
+  --surface-app:var(--c-ink-950);
+  --surface-sunken:var(--c-ink-925);
+  --surface-panel:var(--c-ink-900);
+  --surface-raised:var(--c-ink-850);
+  --surface-hover:var(--c-ink-820);
+  --surface-row-hover:var(--c-ink-810);
+  --surface-selected:var(--c-blue-950);
+  --surface-code:var(--c-ink-930);
+
+  /* borders */
+  --border-default:var(--c-ink-750);
+  --border-subtle:var(--c-ink-800);
+  --border-strong:var(--c-ink-650);
+  --border-input-focus:#2c3f5e;
+
+  /* text */
+  --text-primary:var(--c-slate-100);
+  --text-secondary:var(--c-slate-300);
+  --text-muted:var(--c-slate-500);
+  --text-dim:var(--c-slate-600);
+  --text-code:var(--c-slate-400);
+  --text-selected:#cfe0ff;
+  --text-on-accent:#08131f;
+  --text-on-interactive:#ffffff;
+
+  /* brand + accent */
+  --accent:var(--c-cyan-400);
+  --accent-bright:var(--c-cyan-300);
+  --brand-from:var(--c-cyan-300);
+  --brand-to:var(--c-cyan-400);
+  --glow-brand:#35d0e055;
+  --focus-ring:var(--c-cyan-400);
+
+  /* interactive */
+  --interactive:var(--c-blue-500);
+  --interactive-bright:var(--c-blue-400);
+  --interactive-hover-border:#20505a;
+  --overlay-focus:#2f6bff1f;
+  --shadow-interactive:#2f6bff88;
+
+  /* status */
+  --status-success:var(--c-green-500);
+  --status-success-bg:rgba(63,185,80,.14);
+  --status-success-border:rgba(63,185,80,.25);
+  --status-danger:var(--c-red-500);
+  --status-danger-bg:rgba(248,81,73,.12);
+  --status-danger-strong:var(--c-red-600);
+  --status-modified:var(--c-amber-500);
+  --status-untracked:var(--c-sky-400);
+
+  /* badges */
+  --badge-cyan-bg:var(--c-cyan-900);
+  --badge-cyan-text:var(--c-cyan-200);
+  --badge-cyan-border:var(--c-cyan-700);
+  --badge-violet-bg:var(--c-violet-900);
+  --badge-violet-text:var(--c-violet-200);
+  --badge-violet-border:var(--c-violet-700);
+  --badge-blue-bg:var(--c-blue-900);
+  --badge-blue-text:var(--c-blue-300);
+  --badge-blue-border:var(--c-blue-700);
+  --badge-think-bg:var(--c-navy-think);
+  --badge-think-text:var(--c-blue-200);
+  --badge-think-border:var(--c-navy-think-border);
+  --chip-count-bg:var(--c-navy-badge);
+  --chip-count-text:var(--c-sky-300);
+  --chip-count-border:var(--c-navy-badge-border);
+
+  /* timeline active node */
+  --node-active-bg:var(--c-blue-900);
+  --node-active-text:var(--c-blue-350);
+  --node-active-ring:var(--c-blue-700);
+
+  /* diff */
+  --diff-add-bg:var(--status-success-bg);
+  --diff-add-text:var(--c-green-200);
+  --diff-add-rail:var(--status-success);
+  --diff-del-bg:var(--status-danger-bg);
+  --diff-del-text:var(--c-red-200);
+  --diff-del-rail:var(--status-danger);
+  --diff-hunk-bg:var(--c-plum-950);
+  --diff-hunk-text:var(--c-violet-400);
+
+  /* chrome */
+  --scrollbar-thumb:#20293580;
+  --scrollbar-thumb-hover:#2a3542;
+  --avatar-from:var(--c-blue-500);
+  --avatar-to:var(--c-cyan-400);
+}
+
+:root[data-theme="light"] {
+  --surface-app:var(--c-paper-50);
+  --surface-sunken:var(--c-paper-100);
+  --surface-panel:var(--c-paper-0);
+  --surface-raised:var(--c-paper-0);
+  --surface-hover:var(--c-paper-150);
+  --surface-row-hover:var(--c-paper-150);
+  --surface-selected:#e2ecff;
+  --surface-code:var(--c-paper-100);
+
+  --border-default:var(--c-paper-300);
+  --border-subtle:var(--c-paper-200);
+  --border-strong:var(--c-paper-400);
+  --border-input-focus:#9fbdf5;
+
+  --text-primary:var(--c-slate-900);
+  --text-secondary:var(--c-slate-700);
+  --text-muted:#5c6773;
+  --text-dim:#8a95a1;
+  --text-code:var(--c-slate-700);
+  --text-selected:#12417a;
+  --text-on-accent:#04121d;
+  --text-on-interactive:#ffffff;
+
+  --accent:var(--c-cyan-600);
+  --accent-bright:var(--c-cyan-600);
+  --brand-from:var(--c-cyan-600);
+  --brand-to:#0b7c8a;
+  --glow-brand:#35d0e033;
+  --focus-ring:var(--c-cyan-600);
+
+  --interactive:var(--c-blue-500);
+  --interactive-bright:var(--c-blue-400);
+  --interactive-hover-border:#8fb4ea;
+  --overlay-focus:#2f6bff26;
+  --shadow-interactive:#2f6bff55;
+
+  --status-success:#1f8f3a;
+  --status-success-bg:rgba(31,143,58,.12);
+  --status-success-border:rgba(31,143,58,.28);
+  --status-danger:#cf332b;
+  --status-danger-bg:rgba(207,51,43,.10);
+  --status-danger-strong:#c0271f;
+  --status-modified:var(--c-amber-600);
+  --status-untracked:#1f6feb;
+
+  --badge-cyan-bg:#d9f3f0;
+  --badge-cyan-text:#0a6d78;
+  --badge-cyan-border:#a9dfe0;
+  --badge-violet-bg:#efe6fb;
+  --badge-violet-text:#6b3fb0;
+  --badge-violet-border:#d6c4f0;
+  --badge-blue-bg:#e2ecff;
+  --badge-blue-text:#1f5fd6;
+  --badge-blue-border:#c3d6f7;
+  --badge-think-bg:#e6eeff;
+  --badge-think-text:#2f5fd0;
+  --badge-think-border:#c9d8f5;
+  --chip-count-bg:#e2ecff;
+  --chip-count-text:#1f5fd6;
+  --chip-count-border:#c3d6f7;
+
+  --node-active-bg:#e2ecff;
+  --node-active-text:#2f5fd0;
+  --node-active-ring:#b6ccf3;
+
+  --diff-add-text:#0f7a2a;
+  --diff-del-text:#b02a22;
+  --diff-hunk-bg:#f0eafb;
+  --diff-hunk-text:#6b3fb0;
+
+  --scrollbar-thumb:#c3ccd699;
+  --scrollbar-thumb-hover:#aab4c1;
+  --avatar-from:var(--c-blue-500);
+  --avatar-to:var(--c-cyan-600);
+}

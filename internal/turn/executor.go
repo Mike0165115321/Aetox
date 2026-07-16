@@ -314,7 +314,7 @@ func (e *Executor) executeSkillTurn(
 	}
 
 	assessment := safety.AssessCommand(intent.Command, intent.Args)
-	if assessment.Risk == safety.RiskHigh {
+	if safety.ShouldPrompt(e.approvalMode, assessment) {
 		approved, confirmErr := e.approveOrDeny(ctx, toolCommand, assessment.Reason)
 		if confirmErr != nil {
 			notifyToolComplete()
@@ -539,7 +539,7 @@ func (e *Executor) executeInferredTool(
 
 	assessment := safety.AssessCommand(name, toolCallToArgs(name, args))
 	debuglog.Info("safety", fmt.Sprintf("risk=%v reason=%s", assessment.Risk, assessment.Reason))
-	if assessment.Risk == safety.RiskHigh {
+	if safety.ShouldPrompt(e.approvalMode, assessment) {
 		e.stopSpinner()
 		commandLine := name
 		if path, ok := args["path"].(string); ok {
@@ -708,7 +708,7 @@ func (e *Executor) executeTool(ctx context.Context, name string, args map[string
 	}
 
 	assessment := safety.AssessCommand(name, toolCallToArgs(name, args))
-	if assessment.Risk == safety.RiskHigh {
+	if safety.ShouldPrompt(e.approvalMode, assessment) {
 		e.stopSpinner()
 		commandLine := name
 		for _, rawArg := range toolCallToArgs(name, args) {

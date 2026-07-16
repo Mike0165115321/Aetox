@@ -73,14 +73,12 @@ func ShouldPrompt(mode ApprovalMode, a Assessment) bool {
 		if a.Risk == RiskHigh {
 			return true
 		}
-		if len(a.Effects) > 0 {
-			for _, e := range a.Effects {
-				if e != EffectReadWorkspace {
-					return true
-				}
+		for _, e := range a.Effects {
+			if e != EffectReadWorkspace {
+				return true
 			}
 		}
-		return a.Risk == RiskHigh
+		return false
 	}
 }
 

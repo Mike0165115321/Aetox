@@ -333,9 +333,14 @@ func validatePluginManifest(manifest *aetoxPluginManifest) error {
 	if manifest == nil {
 		return errors.New("plugin manifest is required")
 	}
-	if strings.TrimSpace(manifest.Name) == "" {
-		return errors.New("plugin manifest missing name")
+	name, err := normalizeManifestRelativePath(manifest.Name)
+	if err != nil {
+		return fmt.Errorf("invalid manifest name %q: %w", manifest.Name, err)
 	}
+	if strings.Contains(name, "/") {
+		return fmt.Errorf("invalid manifest name %q: must be a single path segment", manifest.Name)
+	}
+	manifest.Name = name
 	if len(manifest.Files) == 0 {
 		return errors.New("plugin manifest missing files")
 	}
