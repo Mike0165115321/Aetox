@@ -1,94 +1,82 @@
-# Aetox
+# Aetox — Desktop AI Agent System
 
-Aetox CLI runs two modes in the same session:
+เลือก provider อะไรก็ได้ ใช้知识ของคุณ ตั้งค่า agent profile เอง — Architecture ที่ฉลาด orchestrate ให้ทั้งหมดทำงานร่วมกัน
 
-- **Conversation mode** (chat): respond as normal conversation in streaming.
-- **Skill mode**: execute command first, then return one final summary message.
+No lock-in. No subscription pressure. Your agents, your providers, your rules.
 
-## Flow summary
+---
 
-- `/<command>` or known skill keyword runs skill mode.
-- Free text runs conversation mode.
-- Skill execution is treated as:
-  - `intent := command`
-  - execute tool
-  - normalize output metadata
-  - summarize result
-  - print final summary
+## ปัญหาที่ Aetox แก้
 
-Status reported to user:
+| ตอนนี้ | Aetox |
+|--------|-------|
+| Claude Code = ใช้ได้แค่ Claude | **เลือก provider เอง** — 11 providers รองรับ |
+| Codex = ใช้ได้แค่ OpenAI | **ไม่ lock-in** — สลับได้เมื่อไหร่ก็ได้ |
+| Cursor = IDE lock-in | **Desktop app + CLI** — ไม่ผูกกับ IDE ไหน |
+| CrewAI = ต้องเขียนโค้ด | **Config + UI** — ตั้งค่าได้ ไม่ต้องเขียน code |
+| ความรู้คุณอยู่กระจัดกระจาย | **Knowledge base ในตัว** — Obsidian + codebase + web |
+| แต่ละ tool ใช้ context แยกกัน | **Architecture ควบคุมทุกอย่าง** — Directional Cognition |
 
-- `executed (done)`
-- `executed (error)`
-- `executed (blocked)`
+## Aetox คืออะไร
 
-## Current supported skills
+Desktop AI agent system ที่ให้คุณ **ควบคุม provider, tools, agent profile, knowledge base** ของตัวเองได้ 100% — โดยมีสถาปัตยกรรมที่ฉลาดคอย orchestrate ความสามารถเหล่านี้ให้ทำงานร่วมกัน
 
-- `help`
-- `time`
-- `echo <ข้อความ>`
-- `list [path]` (sandboxed path listing)
-- `read <path>` (read file content)
-- `write <path> <content>` (high-risk; create/overwrite files under sandbox root)
-- `delete <path>` (high-risk; remove files under sandbox root)
-- `git status|log|branch|diff|show|fetch|add|commit|...` (mutating git requires confirmation)
-- `fs pwd|ls|find|cat` (read-only fs)
-- `shell <command>` (high-risk; audited)
-- `github_repo_summary <url>` (read-only network)
-- `plugin_install <url>` (high-risk; external write)
+## จุดเด่น
 
-## Approval policy (v3)
+- **Multi-provider** — ใช้ Claude, DeepSeek, Gemini, OpenAI หรืออื่นๆ ใน session เดียวกัน
+- **Sub-agent orchestration** — MAIN วางแผน, sub-agent ทำงาน, MAIN สังเคราะห์
+- **Knowledge base ในตัว** — Obsidian vault + codebase + web search
+- **Desktop UI** — cockpit แสดง agent, session, cost, logs
+- **Architecture ที่คุณควบคุมได้** — Directional Cognition, agent profile, tool permissions
+- **ไม่มี subscription lock-in** — คุณเลือก provider และจ่ายเฉพาะ token ที่ใช้
 
-Three approval modes control risk before execution:
+## ความสามารถ
 
-| Mode | Behavior |
-|---|---|
-| `ask` | Prompt before every command with side-effects (default) |
-| `unsafe-only` | Prompt only for delete, mutate-git, execute-shell, touch-outside-workspace |
-| `full-access` | Run everything without confirmation |
+- Chat ทั่วไป
+- ค้นเว็บ → สรุปเป็น HTML
+- ค้น codebase + knowledge base
+- รัน shell, git, docker commands
+- Refactor โค้ดด้วย sub-agent
+- ออกแบบ architecture ด้วย Directional Cognition
 
-All execution paths — explicit skill, inferred tool, and model-selected tool — pass through `internal/safety.AssessCommand` before running.
-
-## Shell Audit Log
-
-Every shell execution via `/shell <command>` is audited:
-
-- **Location:** `~/.aetox/shell-audit.log` (JSONL, append-only)
-- **Fields:** `time`, `command`, `workdir`, `success`, `duration_ms`, `error`
-- Audit failure does not block shell execution
-- Shell is not exposed to the model's tool selection — only explicit `/shell` path triggers it
-
-## UX
-
-- Thinking indicator shows for conversation and skill:
-  - Conversation: `กำลังคิด...`
-  - Skill: `กำลังรัน...`
-- Indicator is removed once command execution ends and before final response.
-- Thinking level displayed as `provider/model(level)` in header — canonical `off` level disables thinking.
-- Model status line reflects normalized thinking level used at runtime.
-
-## Usage
+## เริ่มต้นใช้
 
 ```powershell
+# โหมดโต้ตอบ
 aetox
-aetox chat "สรุปโปรเจกต์นี้"
-aetox help
-aetox version
-aetox --no-banner
+
+# one-shot
+aetox chat "refactor module นี้หน่อย"
+
+# เลือก provider
+aetox --model-provider anthropic --model-name claude-sonnet-4
 ```
 
-Switch model or approval mode:
+## Architecture
 
-```powershell
-aetox /model
-aetox --approval unsafe-only
+```
+┌──────────────────────────────────────────┐
+│         Aetox Desktop (UI)               │
+├──────────────────────────────────────────┤
+│    Multi-Agent Layer                     │
+│    MAIN → แยกงาน → spawn sub-agents     │
+├──────────────────────────────────────────┤
+│    Directional Cognition Engine          │
+│    Multi-provider ensemble | vote        │
+├──────────────────────────────────────────┤
+│    Core Runtime                          │
+│    11 Providers | Tools | Turn Loop      │
+│    Safety | Audit | Config               │
+├──────────────────────────────────────────┤
+│    Knowledge Base                        │
+│    Obsidian | Codebase | Web             │
+└──────────────────────────────────────────┘
 ```
 
-## Behavior notes
+## การพัฒนา
 
-- `RunOnce` and skill commands return final summary when tool path is used.
-- Fallback summary is used when tool summarization fails (still shows output and status).
-- Output is sanitized in tool summarization to avoid leaking secrets (`token`, `api key`, `password` patterns).
-- Shell execution is audited to `~/.aetox/shell-audit.log` (non-blocking on failure).
-- Model can select tools via native tool calling (`time`, `list`, `read`, `write`, `delete`, `github_repo_summary`, `plugin_install`).
-- Inferred tool path detects natural-language intent (e.g. "create file" → write, "list directory" → list).
+Aetox ถูกออกแบบโดย Mike (ชยพล พรมสะวะนา) จากปรัชญา:
+
+> "หัวใจไม่ใช่ความรู้ในโมเดล — แต่คือ Architecture ที่ควบคุมวิธีคิด"
+
+Project: [github.com/Mike0165115321/Aetox](https://github.com/Mike0165115321/Aetox)
