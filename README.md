@@ -28,6 +28,7 @@ Desktop AI agent system ที่ให้คุณ **ควบคุม provide
 - **Knowledge base ในตัว** — Obsidian vault + codebase + web search
 - **Desktop UI** — cockpit แสดง agent, session, cost, logs
 - **Architecture ที่คุณควบคุมได้** — Directional Cognition, agent profile, tool permissions
+- **สร้าง automation เองได้** — บอก Aetox เป็นไทย → สร้าง script + schedule ให้อัตโนมัติ
 - **ไม่มี subscription lock-in** — คุณเลือก provider และจ่ายเฉพาะ token ที่ใช้
 
 ## ความสามารถ
@@ -38,6 +39,12 @@ Desktop AI agent system ที่ให้คุณ **ควบคุม provide
 - รัน shell, git, docker commands
 - Refactor โค้ดด้วย sub-agent
 - ออกแบบ architecture ด้วย Directional Cognition
+- 🚀 **สร้าง automation อัตโนมัติ** — บอก Aetox เป็นภาษาไทย:
+  - Monitor: token cost, disk space, Docker, git status
+  - Sync: git auto-commit, backup, dotfiles
+  - Maintenance: cleanup, cache, dependencies
+  - Watch: tech news, model release, GitHub
+  - Pipeline: auto-build → test → deploy
 
 ## เริ่มต้นใช้
 

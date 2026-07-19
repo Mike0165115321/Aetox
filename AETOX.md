@@ -28,6 +28,30 @@ Aetox คือระบบ AI agent บนเครื่องคุณ ที
 | Web | `web_search`, `web_fetch` |
 | Utils | `echo`, `time` |
 
+### Automation Engine 🚀
+
+คุณบอก Aetox เป็นภาษาไทยว่าอยากให้ทำอะไรอัตโนมัติ — Aetox สร้าง script + ลง schedule + ตรวจผลให้เอง
+
+**Aetox สร้าง automation อะไรให้คุณได้บ้าง:**
+
+| หมวด | ตัวอย่าง |
+|:-----|:---------|
+| 🔍 **Monitor** | token cost spike, disk space ใกล้เต็ม, Docker container dead, git repo ahead/behind |
+| 🔄 **Sync** | git auto-commit/push, journal backup, dotfiles sync, WSL2 disk compact |
+| 🧹 **Maintenance** | cleanup temp/logs, npm/pip cache clear, dependency update check |
+| 📡 **Watch** | tech news tracking, model release alert, GitHub release watcher |
+| 📝 **Log** | auto-summarize การทำงานแต่ละวัน, สรุป decision log |
+| ⚙️ **Pipeline** | auto-build → test → report, auto-deploy staging |
+
+**สั่งยังไง:**
+| Command | ทำอะไร |
+|:--------|:-------|
+| `aetox auto "..."` | สร้าง automation จากภาษาธรรมชาติ |
+| `aetox auto list` | ดู automation ทั้งหมด |
+| `aetox auto logs <name>` | ดู history + ผลล่าสุด |
+| `aetox auto run <name>` | รันเดี๋ยวนี้ |
+| `aetox auto remove <name>` | ลบ automation |
+
 ### Directional Cognition Engine (กำลังออกแบบ)
 - Multi-provider parallel reasoning
 - Response comparison, confidence scoring
@@ -91,6 +115,21 @@ aetox chat "refactor module นี้หน่อย"
 
 # เลือก provider
 aetox --model-provider anthropic --model-name claude-sonnet-4
+
+# สร้าง automation (บอกเป็นภาษาธรรมชาติ)
+aetox auto "ตรวจ token cost ทุกเช้า 9 โมง ถ้าเกิน 50 บาทให้แจ้ง"
+
+# ดู automation ทั้งหมด
+aetox auto list
+
+# รัน automation ทันที
+aetox auto run check-token-cost
+
+# ดู logs
+aetox auto logs check-token-cost
+
+# ลบ automation
+aetox auto remove check-token-cost
 ```
 
 สร้างโดย Mike. Architecture > Parameters.

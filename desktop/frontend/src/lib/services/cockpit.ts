@@ -3,20 +3,12 @@
 // the Go core bindings — same interface, no component changes.
 
 import type { CockpitState } from '../types'
-import { mockState } from '../mockData'
 
 export interface CockpitSource {
   load(): CockpitState | Promise<CockpitState>
 }
 
-export class MockSource implements CockpitSource {
-  load(): CockpitState {
-    // structuredClone so the store owns its copy and edits never mutate the sample.
-    return structuredClone(mockState)
-  }
-}
-
-// When the Go core is bound, add:
+// When the Go core exposes real project/git state, add:
 //
 //   import { GetCockpitState } from '../../wailsjs/go/main/App'
 //   export class WailsSource implements CockpitSource {

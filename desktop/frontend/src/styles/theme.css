@@ -59,9 +59,6 @@
   --badge-cyan-bg:var(--c-cyan-900);
   --badge-cyan-text:var(--c-cyan-200);
   --badge-cyan-border:var(--c-cyan-700);
-  --badge-violet-bg:var(--c-violet-900);
-  --badge-violet-text:var(--c-violet-200);
-  --badge-violet-border:var(--c-violet-700);
   --badge-blue-bg:var(--c-blue-900);
   --badge-blue-text:var(--c-blue-300);
   --badge-blue-border:var(--c-blue-700);
@@ -90,8 +87,6 @@
   /* chrome */
   --scrollbar-thumb:#20293580;
   --scrollbar-thumb-hover:#2a3542;
-  --avatar-from:var(--c-blue-500);
-  --avatar-to:var(--c-cyan-400);
 }
 
 :root[data-theme="light"] {
@@ -143,9 +138,6 @@
   --badge-cyan-bg:#d9f3f0;
   --badge-cyan-text:#0a6d78;
   --badge-cyan-border:#a9dfe0;
-  --badge-violet-bg:#efe6fb;
-  --badge-violet-text:#6b3fb0;
-  --badge-violet-border:#d6c4f0;
   --badge-blue-bg:#e2ecff;
   --badge-blue-text:#1f5fd6;
   --badge-blue-border:#c3d6f7;
@@ -167,6 +159,4 @@
 
   --scrollbar-thumb:#c3ccd699;
   --scrollbar-thumb-hover:#aab4c1;
-  --avatar-from:var(--c-blue-500);
-  --avatar-to:var(--c-cyan-600);
 }

@@ -29,15 +29,14 @@ export interface ProjectInfo {
   governanceLoaded: boolean
 }
 
-export type ApprovalMode = 'Auto (Safe)' | 'Ask' | 'Full Access'
+export type ApprovalMode = 'ask' | 'unsafe-only' | 'full-access'
 
 export interface ModelStatus {
   provider: string
+  modelName: string
   thinkLevel: string
-  speed: string
-  contextPct: number
-  contextUsed: string
-  contextMax: string
+  contextUsed: number
+  contextMax: number
   approval: ApprovalMode
 }
 
@@ -120,7 +119,7 @@ export function emptyCockpitState(): CockpitState {
     project: { name: '', path: '', branch: '', extraBranches: 0, governanceFile: '', governanceLoaded: false },
     tree: [],
     sessions: [],
-    model: { provider: '', thinkLevel: '', speed: '', contextPct: 0, contextUsed: '', contextMax: '', approval: 'Ask' },
+    model: { provider: '', modelName: '', thinkLevel: '', contextUsed: 0, contextMax: 0, approval: 'ask' },
     chat: [],
     task: { elapsed: '', steps: [] },
     changedFiles: [],

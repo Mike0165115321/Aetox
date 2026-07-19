@@ -1,14 +1,18 @@
 <script lang="ts">
-  import type { ChangedFile, DiffView, TestRun } from './types'
+  import type { ChangedFile, DiffView, TestRun, TaskState } from './types'
 
   let {
-    changedFiles, diff, test, commandHistory,
+    changedFiles, diff, test, commandHistory, task,
   }: {
     changedFiles: ChangedFile[]
     diff: DiffView
     test: TestRun
     commandHistory: string[]
+    task: TaskState
   } = $props()
+
+  const testGlyph: Record<string, string> = { running: '··', pass: '✓', fail: '✕' }
+  const hasActiveTask = $derived(task.steps.some((s) => s.status === 'active'))
 
   const tabs = ['Inspector', 'Terminal', 'Logs', 'Audit']
   let activeTab = $state('Inspector')
@@ -50,13 +54,19 @@
     </div>
 
     <div class="panel">
-      <div class="p-h"><span class="lbl"><span class="arw">▾</span> <span class="eyebrow">Test Result</span></span><span class="spin">↻</span></div>
+      <div class="p-h">
+        <span class="lbl"><span class="arw">▾</span> <span class="eyebrow">Test Result</span></span>
+        {#if test.cases.some((t) => t.state === 'running')}<span class="spin">↻</span>{/if}
+      </div>
       <div class="p-b">
-        <div class="cmd">{test.command}</div>
-        <div class="running-label">Running…</div>
-        {#each test.cases as t}
-          <div class="trow"><span class="nm">{t.name}</span><span class="rn">··</span></div>
-        {/each}
+        {#if test.cases.length === 0}
+          <div class="empty">ยังไม่มีการรันเทสต์</div>
+        {:else}
+          <div class="cmd">{test.command}</div>
+          {#each test.cases as t}
+            <div class="trow"><span class="nm">{t.name}</span><span class="rn {t.state}">{testGlyph[t.state]}</span></div>
+          {/each}
+        {/if}
       </div>
     </div>
 
@@ -77,6 +87,8 @@
   </div>
 {/if}
 
-<div class="insp-foot">
-  <button class="stopbtn">⏸ Stop Current Task</button>
-</div>
+{#if hasActiveTask}
+  <div class="insp-foot">
+    <button class="stopbtn">⏸ Stop Current Task</button>
+  </div>
+{/if}

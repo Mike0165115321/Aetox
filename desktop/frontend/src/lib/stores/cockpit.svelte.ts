@@ -5,6 +5,12 @@
 
 import { emptyCockpitState, type CockpitState, type TreeNode, type Session } from '../types'
 import type { CockpitSource } from '../services/cockpit'
+import {
+  SendMessage, GetProjectStatus, GetModelInfo, OpenProjectFolder,
+  SwitchProvider, SwitchThinkLevel, SwitchApprovalMode,
+  SwitchModel, SetAPIKey,
+} from '../../../wailsjs/go/main/App'
+import type { main } from '../../../wailsjs/go/models'
 
 export const cockpit = $state<CockpitState>(emptyCockpitState())
 
@@ -12,16 +18,65 @@ export async function hydrate(source: CockpitSource): Promise<void> {
   Object.assign(cockpit, await source.load())
 }
 
+function applyModelInfo(info: main.ModelInfo): void {
+  Object.assign(cockpit.model, {
+    provider: info.provider,
+    modelName: info.modelName,
+    thinkLevel: info.thinkLevel,
+    contextUsed: info.contextUsed,
+    contextMax: info.contextMax,
+    approval: info.approvalMode,
+  })
+}
+
+/** Pull the real project/model state the Go engine is actually running with. */
+export async function loadRealState(): Promise<void> {
+  const [project, modelInfo] = await Promise.all([GetProjectStatus(), GetModelInfo()])
+  Object.assign(cockpit.project, project)
+  applyModelInfo(modelInfo)
+}
+
+/** Let the user pick a real folder via the native dialog; re-points the engine at it. */
+export async function openFolder(): Promise<void> {
+  const project = await OpenProjectFolder()
+  Object.assign(cockpit.project, project)
+}
+
+export async function switchProvider(provider: string): Promise<void> {
+  applyModelInfo(await SwitchProvider(provider))
+}
+
+export async function switchThinkLevel(level: string): Promise<void> {
+  applyModelInfo(await SwitchThinkLevel(level))
+}
+
+export async function switchApprovalMode(mode: string): Promise<void> {
+  applyModelInfo(await SwitchApprovalMode(mode))
+}
+
+export async function switchModel(modelName: string): Promise<void> {
+  applyModelInfo(await SwitchModel(modelName))
+}
+
+export async function submitAPIKey(providerName: string, apiKey: string): Promise<void> {
+  applyModelInfo(await SetAPIKey(providerName, apiKey))
+}
+
 function nowLabel(): string {
   return new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 }
 
-/** Append a user message. The Go core will later respond by pushing an agent
-    message + timeline steps onto the same reactive state. */
-export function sendUserMessage(text: string): void {
+/** Append the user message, then call the Go core and append its reply. */
+export async function sendUserMessage(text: string): Promise<void> {
   const trimmed = text.trim()
   if (!trimmed) return
   cockpit.chat.push({ role: 'user', text: trimmed, time: nowLabel() })
+  try {
+    const reply = await SendMessage(trimmed)
+    cockpit.chat.push({ role: 'agent', text: reply, time: nowLabel() })
+  } catch (err) {
+    cockpit.chat.push({ role: 'agent', text: `เกิดข้อผิดพลาด: ${err}`, time: nowLabel() })
+  }
 }
 
 /** View state: expand/collapse a folder. */

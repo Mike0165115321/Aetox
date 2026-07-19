@@ -4,13 +4,6 @@
 
   let { tree, sessions }: { tree: TreeNode[]; sessions: Session[] } = $props()
 
-  const tools = [
-    { icon: '▚', label: 'Terminal' },
-    { icon: '⑂', label: 'Git' },
-    { icon: '🔍', label: 'Search' },
-    { icon: '🐞', label: 'Debug' },
-  ]
-
   // Flat tree + depth → hide rows under a collapsed folder.
   const visible = $derived.by(() => {
     const out: TreeNode[] = []
@@ -48,15 +41,10 @@
     </div>
 
     <div class="side-sec">
-      <div class="side-head"><span class="eyebrow">Tools</span></div>
-      {#each tools as t}
-        <button type="button" class="tool-row"><span class="ic">{t.icon}</span> {t.label}</button>
-      {/each}
-    </div>
-
-    <div class="side-sec">
       <div class="side-head"><span class="eyebrow">Sessions</span></div>
-      <div class="muted sess-day">Today</div>
+      {#if sessions.length > 0}
+        <div class="muted sess-day">Today</div>
+      {/if}
       {#each sessions as s}
         <button type="button" class="sess-row" class:active={s.active} onclick={() => selectSession(s)}>
           <span class="t">{s.title}</span>
@@ -66,14 +54,5 @@
       {/each}
       <button class="newbtn">＋ New Session</button>
     </div>
-  </div>
-
-  <div class="side-foot">
-    <div class="avatar">A</div>
-    <div class="who-meta">
-      <div class="who-name">Aetox User</div>
-      <div class="muted who-plan">Pro Plan</div>
-    </div>
-    <span class="icobtn">⚙</span>
   </div>
 </aside>

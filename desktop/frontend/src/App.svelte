@@ -3,23 +3,36 @@
   import Sidebar from './lib/Sidebar.svelte'
   import Chat from './lib/Chat.svelte'
   import Inspector from './lib/Inspector.svelte'
-  import { cockpit, hydrate, sendUserMessage } from './lib/stores/cockpit.svelte'
-  import { MockSource } from './lib/services/cockpit'
+  import { onMount } from 'svelte'
+  import {
+    cockpit, sendUserMessage, loadRealState, openFolder,
+    switchProvider, switchThinkLevel, switchApprovalMode,
+    switchModel, submitAPIKey,
+  } from './lib/stores/cockpit.svelte'
 
-  // The one place a data source is chosen. Swap MockSource → WailsSource to feed
-  // the Go core; nothing below changes.
-  hydrate(new MockSource())
+  // cockpit starts as emptyCockpitState(); loadRealState() fills project/model in
+  // with what the Go engine actually has. tree/sessions/diff/test panels fill in
+  // once a real Go-core data source is wired for them too.
+  onMount(() => {
+    loadRealState()
+  })
 </script>
 
 <div class="app">
-  <TopBar project={cockpit.project} model={cockpit.model} />
+  <TopBar project={cockpit.project} onOpenFolder={openFolder} />
   <Sidebar tree={cockpit.tree} sessions={cockpit.sessions} />
   <main class="main">
     <Chat
       messages={cockpit.chat}
       task={cockpit.task}
       governanceFile={cockpit.project.governanceFile}
+      model={cockpit.model}
       onSend={sendUserMessage}
+      onSwitchProvider={switchProvider}
+      onSwitchThinkLevel={switchThinkLevel}
+      onSwitchApprovalMode={switchApprovalMode}
+      onSwitchModel={switchModel}
+      onSubmitAPIKey={submitAPIKey}
     />
   </main>
   <aside class="inspector">
@@ -28,6 +41,7 @@
       diff={cockpit.diff}
       test={cockpit.test}
       commandHistory={cockpit.commandHistory}
+      task={cockpit.task}
     />
   </aside>
 </div>

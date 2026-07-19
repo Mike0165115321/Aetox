@@ -131,6 +131,16 @@ var catalog = map[string]*entry{
 		modelDefaults:  ModelDefaults{FallbackModel: "deepseek-v4-flash"},
 		capabilities:   Capabilities{ToolCalling: true, Reasoning: true},
 	},
+	"zai": {
+		canonical:      "zai",
+		aliases:        []string{"zai", "z.ai", "zhipu", "zhipuai"},
+		requiresAPIKey: true,
+		runtime:        RuntimeOpenAICompatible,
+		baseURL:        "https://api.z.ai/api/paas/v4",
+		envKeys:        []string{"ZAI_API_KEY"},
+		modelDefaults:  ModelDefaults{FallbackModel: "glm-4.6"},
+		capabilities:   Capabilities{ToolCalling: true},
+	},
 	"gemini": {
 		canonical:      "gemini",
 		aliases:        []string{"gemini", "google", "google-ai", "googleai", "google-gemini"},
