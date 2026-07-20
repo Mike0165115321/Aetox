@@ -131,7 +131,7 @@ func TestDefaultModel_FallbackOnly(t *testing.T) {
 		provider string
 		want     string
 	}{
-		{"noop", "noop"},
+		{"noop", "Aetox0.0.1:0b"},
 		{"openrouter", "deepseek/deepseek-r1"},
 		{"openai", "gpt-4o-mini"},
 		{"deepseek", "deepseek-v4-flash"},

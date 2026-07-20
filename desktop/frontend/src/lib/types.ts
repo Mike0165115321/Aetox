@@ -6,12 +6,18 @@ export type GitStatus = 'M' | 'U' | null
 
 export interface TreeNode {
   label: string
+  path: string
   kind: 'dir' | 'file'
   depth: number
   open?: boolean
   active?: boolean
   status?: GitStatus
   icon?: string
+}
+
+export interface OpenFile {
+  path: string
+  content: string
 }
 
 export interface Session {
@@ -111,6 +117,9 @@ export interface CockpitState {
   diff: DiffView
   test: TestRun
   commandHistory: string[]
+  openFiles: OpenFile[]
+  /** 'chat' or an open file's path — which tab the main panel currently shows. */
+  activeView: string
 }
 
 /** A blank, well-formed state so the UI renders before the source hydrates. */
@@ -126,5 +135,7 @@ export function emptyCockpitState(): CockpitState {
     diff: { file: '', hunk: '', lines: [] },
     test: { command: '', cases: [] },
     commandHistory: [],
+    openFiles: [],
+    activeView: 'chat',
   }
 }

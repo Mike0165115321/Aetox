@@ -96,8 +96,11 @@ var catalog = map[string]*entry{
 		runtime:        RuntimeNoop,
 		baseURL:        "",
 		envKeys:        nil,
-		modelDefaults:  ModelDefaults{FallbackModel: "noop"},
-		capabilities:   Capabilities{},
+		modelDefaults: ModelDefaults{
+			FallbackModel:     "Aetox0.0.1:0b",
+			RecommendedModels: []string{"Aetox0.0.1:0b"},
+		},
+		capabilities: Capabilities{},
 	},
 	"openrouter": {
 		canonical:      "openrouter",

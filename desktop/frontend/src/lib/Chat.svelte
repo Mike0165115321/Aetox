@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ChatMessage, TaskState, ModelStatus } from './types'
+  import type { ChatMessage, TaskState, ModelStatus, ProjectInfo } from './types'
   import TaskTimeline from './TaskTimeline.svelte'
   import { onMount } from 'svelte'
   import {
@@ -8,13 +8,13 @@
   } from '../../wailsjs/go/main/App'
 
   let {
-    messages, task, governanceFile, model,
+    messages, task, model, project,
     onSend, onSwitchProvider, onSwitchThinkLevel, onSwitchApprovalMode, onSwitchModel, onSubmitAPIKey,
   }: {
     messages: ChatMessage[]
     task: TaskState
-    governanceFile: string
     model: ModelStatus
+    project: ProjectInfo
     onSend: (text: string) => void
     onSwitchProvider: (provider: string) => Promise<void>
     onSwitchThinkLevel: (level: string) => Promise<void>
@@ -89,9 +89,18 @@
     await refreshProviderDerived(model.provider)
   }
 
-  const tabs = ['Chat', 'Aetox.md Map']
-  let activeTab = $state('Chat')
   let draft = $state('')
+
+  const starters = [
+    { icon: '🧭', title: 'Explore and understand code', prompt: 'ช่วยพาไล่ดูโครงสร้างโปรเจกต์นี้หน่อย' },
+    { icon: '🛠', title: 'Build a new feature, app, or tool', prompt: 'ช่วยสร้างฟีเจอร์ใหม่: ' },
+    { icon: '🔍', title: 'Review code and suggest changes', prompt: 'ช่วยรีวิวโค้ดที่แก้ล่าสุดหน่อย' },
+    { icon: '🩹', title: 'Fix issues and failures', prompt: 'ช่วยหาสาเหตุที่บั๊กนี้เกิดขึ้น: ' },
+  ]
+
+  function pickStarter(prompt: string) {
+    draft = prompt
+  }
 
   function submit() {
     if (!draft.trim()) return
@@ -106,39 +115,51 @@
   }
 </script>
 
-<div class="tabs">
-  {#each tabs as tab}
-    <button class="tab" class:active={activeTab === tab} onclick={() => (activeTab = tab)}>
-      {tab}
-    </button>
-  {/each}
-</div>
-
-{#if activeTab === 'Chat'}
-  <div class="chat">
-    {#each messages as m}
-      <div class="msg {m.role === 'user' ? 'user' : 'bot'}">
-        <div class="who">{m.role === 'user' ? '🧑' : '🦅'}</div>
-        <div>
-          <div class="bubble">
-            {#if m.role === 'agent'}
-              <div class="name"><b>Aetox Agent</b>
-                {#if m.tag}<span class="tag think">{m.tag}</span>{/if}
-              </div>
-            {/if}
-            <span class="body-text">{m.text}</span>
-            <div class="time">{m.time}</div>
+  {#if messages.length === 0}
+    <div class="empty-state">
+      <span class="empty-glyph">🦅</span>
+      <h2>What should we build?</h2>
+      <div class="starter-grid">
+        {#each starters as s}
+          <button class="starter-card" onclick={() => pickStarter(s.prompt)}>
+            <span class="ic">{s.icon}</span>
+            <span class="title">{s.title}</span>
+          </button>
+        {/each}
+      </div>
+    </div>
+  {:else}
+    <div class="chat">
+      {#each messages as m}
+        <div class="msg {m.role === 'user' ? 'user' : 'bot'}">
+          <div class="who">{m.role === 'user' ? '🧑' : '🦅'}</div>
+          <div>
+            <div class="bubble">
+              {#if m.role === 'agent'}
+                <div class="name"><b>Aetox Agent</b>
+                  {#if m.tag}<span class="tag think">{m.tag}</span>{/if}
+                </div>
+              {/if}
+              <span class="body-text">{m.text}</span>
+              <div class="time">{m.time}</div>
+            </div>
           </div>
         </div>
-      </div>
-    {/each}
+      {/each}
 
-    {#if task.steps.length > 0}
-      <TaskTimeline steps={task.steps} elapsed={task.elapsed} />
-    {/if}
-  </div>
+      {#if task.steps.length > 0}
+        <TaskTimeline steps={task.steps} elapsed={task.elapsed} />
+      {/if}
+    </div>
+  {/if}
 
   <div class="composer">
+    {#if project.name}
+      <div class="project-chips">
+        <span class="chip"><span class="ic">📁</span> {project.name}</span>
+        {#if project.branch}<span class="chip branch"><span class="ic">⑂</span> {project.branch}</span>{/if}
+      </div>
+    {/if}
     {#if needsApiKey}
       <div class="api-key-banner">
         <input
@@ -187,14 +208,4 @@
         <button class="send" aria-label="Send" onclick={submit}>➤</button>
       </div>
     </div>
-    <pre style="color:#0f0;font-size:11px;background:#000;padding:8px;margin-top:6px;white-space:pre-wrap;">DEBUG model={JSON.stringify(model)} thinkLevels={JSON.stringify(thinkLevels)} models={JSON.stringify(models)}</pre>
   </div>
-{:else}
-  <div class="map-view">
-    <div class="map-card">
-      <div class="map-icon">🗺</div>
-      <div class="map-title">{governanceFile} Map</div>
-      <p class="map-sub">มุมมองโครงสร้าง governance ของ {governanceFile} — จะเชื่อมกับ Go core ที่ parse ไฟล์จริงในขั้นต่อไป</p>
-    </div>
-  </div>
-{/if}

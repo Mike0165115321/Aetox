@@ -55,8 +55,9 @@ type App struct {
 	thinkLevel         think.Level
 	skillNames         []string
 
-	statusReporter  func(string)
-	lastPrintedTool string
+	statusReporter     func(string)
+	lastPrintedTool    string
+	toolActionListener func(action, detail string)
 }
 
 type ModelSwitchResult struct {
@@ -90,6 +91,9 @@ type Options struct {
 	ShowBanner       bool
 	ApprovalMode     safety.ApprovalMode
 	OnApprovalChange func(safety.ApprovalMode)
+	// OnToolAction, if set, is notified of every tool call/result this session
+	// runs (e.g. for a UI command-history panel). Nil means silent, as before.
+	OnToolAction func(action, detail string)
 
 	Title              string
 	Version            string
@@ -131,6 +135,7 @@ func NewApp(opts Options) (*App, error) {
 		modelContextTokens: opts.ModelContextTokens,
 		thinkLevel:         think.NormalizeLevel(string(opts.ThinkLevel)),
 		skillNames:         skillNames,
+		toolActionListener: opts.OnToolAction,
 	}
 	a.turnExecutor = turn.NewExecutor(turn.ExecutorOptions{
 		Agent:        a.agent,
@@ -169,7 +174,9 @@ func (a *App) RunOnce(ctx context.Context, message string) (string, error) {
 }
 
 func (a *App) onToolAction(action, detail string) {
-	// silent — only show final model output
+	if a.toolActionListener != nil {
+		a.toolActionListener(action, detail)
+	}
 }
 
 func (a *App) RunInteractive(ctx context.Context) error {

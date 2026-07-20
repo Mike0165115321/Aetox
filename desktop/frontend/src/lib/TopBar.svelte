@@ -3,10 +3,13 @@
   import { theme, toggleTheme } from './theme.svelte'
 
   let {
-    project, onOpenFolder,
+    project, onOpenFolder, onOpenSettings, onToggleTerminal, terminalOpen,
   }: {
     project: ProjectInfo
     onOpenFolder: () => void
+    onOpenSettings: () => void
+    onToggleTerminal: () => void
+    terminalOpen: boolean
   } = $props()
 </script>
 
@@ -34,6 +37,8 @@
   <span class="spacer"></span>
 
   <div class="winbtns">
+    <button class="icobtn" class:active={terminalOpen} aria-label="Toggle terminal" onclick={onToggleTerminal}>⌨</button>
+    <button class="icobtn" aria-label="Settings" onclick={onOpenSettings}>⚙</button>
     <button class="icobtn" aria-label="Toggle theme" onclick={toggleTheme}>
       {theme.name === 'dark' ? '☀' : '🌙'}
     </button>

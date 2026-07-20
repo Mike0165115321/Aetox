@@ -1,11 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	aetoxapp "github.com/Mike0165115321/Aetox/internal/app"
@@ -25,6 +29,186 @@ type App struct {
 	agent       *cognitive.Agent
 	cfg         config.Config
 	modelStatus string
+	toolHistory []string
+
+	terminalsMu sync.Mutex
+	terminals   map[string]*TerminalSession
+}
+
+// ChangedFile is one working-tree change reported by `git status`.
+type ChangedFile struct {
+	Path   string `json:"path"`
+	Status string `json:"status"`
+}
+
+const maxToolHistory = 50
+
+// recordToolAction is the engine's live tool-call feed for this session,
+// kept for the Inspector's Command History panel. Only "call" events are
+// recorded — "result" events are noise for a command-log view.
+func (a *App) recordToolAction(action, detail string) {
+	if action != "call" {
+		return
+	}
+	a.toolHistory = append(a.toolHistory, detail)
+	if len(a.toolHistory) > maxToolHistory {
+		a.toolHistory = a.toolHistory[len(a.toolHistory)-maxToolHistory:]
+	}
+}
+
+// CommandHistory returns this session's real tool-call history, most recent first.
+func (a *App) CommandHistory() []string {
+	out := make([]string, len(a.toolHistory))
+	for i, c := range a.toolHistory {
+		out[len(out)-1-i] = c
+	}
+	return out
+}
+
+// GitChangedFiles reports the working-tree status for the sandbox root via
+// `git status --porcelain`. Returns an empty slice if git isn't on PATH or
+// the root isn't a repo — the panel just shows no changes.
+func (a *App) GitChangedFiles() []ChangedFile {
+	out := []ChangedFile{}
+	raw, err := exec.Command("git", "-C", a.cfg.SandboxRoot, "status", "--porcelain").Output()
+	if err != nil {
+		return out
+	}
+	for _, line := range strings.Split(strings.TrimRight(string(raw), "\n"), "\n") {
+		if len(line) < 4 {
+			continue
+		}
+		code := strings.TrimSpace(line[:2])
+		status := "M"
+		if strings.Contains(code, "?") || strings.Contains(code, "A") {
+			status = "U"
+		}
+		out = append(out, ChangedFile{Path: strings.TrimSpace(line[3:]), Status: status})
+	}
+	return out
+}
+
+// TreeNode is one row of the sidebar's project file tree.
+type TreeNode struct {
+	Label  string `json:"label"`
+	Path   string `json:"path"` // relative to the sandbox root, forward-slashed
+	Kind   string `json:"kind"` // "dir" | "file"
+	Depth  int    `json:"depth"`
+	Status string `json:"status,omitempty"` // "M" | "U" | ""
+	Icon   string `json:"icon,omitempty"`
+}
+
+// treeIgnore skips VCS/build/dependency noise a dev never wants in the sidebar.
+var treeIgnore = map[string]bool{
+	".git": true, "node_modules": true, "dist": true, "build": true,
+	".vs": true, ".idea": true, "bin": true, "obj": true,
+}
+
+// ProjectTree walks the sandbox root and returns a flat, depth-first file
+// tree for the sidebar (dirs collapsed by default, matching Sidebar.svelte's
+// toggle logic). Git status per file reuses GitChangedFiles so the M/U
+// badges match the Inspector's Files Changed panel exactly.
+//
+// ponytail: walks the whole tree eagerly on every call rather than lazily
+// per folder-expand — fine for a normal repo, revisit if it's ever slow on
+// a huge one.
+func (a *App) ProjectTree() []TreeNode {
+	root := strings.TrimSpace(a.cfg.SandboxRoot)
+	if root == "" {
+		return []TreeNode{}
+	}
+
+	statusByPath := make(map[string]string)
+	for _, f := range a.GitChangedFiles() {
+		statusByPath[filepath.ToSlash(f.Path)] = f.Status
+	}
+
+	out := []TreeNode{}
+	var walk func(dir string, depth int)
+	walk = func(dir string, depth int) {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return
+		}
+		sort.Slice(entries, func(i, j int) bool {
+			if entries[i].IsDir() != entries[j].IsDir() {
+				return entries[i].IsDir()
+			}
+			return strings.ToLower(entries[i].Name()) < strings.ToLower(entries[j].Name())
+		})
+		for _, entry := range entries {
+			name := entry.Name()
+			if treeIgnore[name] || strings.HasPrefix(name, ".") {
+				continue
+			}
+			full := filepath.Join(dir, name)
+			rel, _ := filepath.Rel(root, full)
+			relSlash := filepath.ToSlash(rel)
+			if entry.IsDir() {
+				out = append(out, TreeNode{Label: name, Path: relSlash, Kind: "dir", Depth: depth, Icon: "📁"})
+				walk(full, depth+1)
+				continue
+			}
+			out = append(out, TreeNode{
+				Label: name, Path: relSlash, Kind: "file", Depth: depth, Icon: "📄",
+				Status: statusByPath[relSlash],
+			})
+		}
+	}
+	walk(root, 0)
+	return out
+}
+
+// safeSandboxPath resolves relPath against root and rejects anything that
+// would escape it (e.g. "../../etc/passwd"), so the file viewer can't be
+// used to read outside the open project.
+func safeSandboxPath(root, relPath string) (string, error) {
+	safeRoot, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	candidate := filepath.Join(safeRoot, relPath)
+	safeTarget, err := filepath.Abs(filepath.Clean(candidate))
+	if err != nil {
+		return "", err
+	}
+	if safeTarget != safeRoot && !strings.HasPrefix(safeTarget+string(filepath.Separator), safeRoot+string(filepath.Separator)) {
+		return "", fmt.Errorf("path is outside project root")
+	}
+	return safeTarget, nil
+}
+
+// ReadFile returns the text content of a file inside the sandbox root, for
+// the sidebar's file viewer.
+func (a *App) ReadFile(relPath string) (string, error) {
+	root := strings.TrimSpace(a.cfg.SandboxRoot)
+	if root == "" {
+		return "", fmt.Errorf("no project open")
+	}
+	full, err := safeSandboxPath(root, relPath)
+	if err != nil {
+		return "", err
+	}
+	info, err := os.Stat(full)
+	if err != nil {
+		return "", err
+	}
+	if info.IsDir() {
+		return "", fmt.Errorf("%q is a directory", relPath)
+	}
+
+	const maxBytes = 1 << 20 // 1MB — plenty for a source file, keeps huge files out of the UI
+	if info.Size() > maxBytes {
+		return "", fmt.Errorf("file too large to preview (%d bytes)", info.Size())
+	}
+	data, err := os.ReadFile(full)
+	if err != nil {
+		return "", err
+	}
+	if bytes.Contains(data, []byte{0}) {
+		return "", fmt.Errorf("binary file cannot be previewed")
+	}
+	return string(data), nil
 }
 
 // ProjectStatus is the real project/git state for the sandbox root the engine runs in.
@@ -48,7 +232,7 @@ type ModelInfo struct {
 
 // desktopProviders is the curated subset of the full engine catalog
 // (model.SupportedProviders()) exposed in the desktop UI's provider picker.
-var desktopProviders = []string{"ollama", "deepseek", "gemini", "openai", "openrouter", "zai"}
+var desktopProviders = []string{"ollama", "deepseek", "gemini", "openai", "openrouter", "zai", "noop"}
 
 // NewApp creates a new App application struct
 func NewApp() *App {
@@ -270,7 +454,7 @@ func (a *App) reload(opts config.ConfigOptions) {
 // applyConfig re-bootstraps the engine from an already-resolved config, then
 // persists the model/approval choice so the CLI and desktop app share one preference.
 func (a *App) applyConfig(cfg config.Config) {
-	chatApp, agent, status := bootstrapFromConfig(cfg)
+	chatApp, agent, status := bootstrapFromConfig(cfg, a.recordToolAction)
 	a.chat = chatApp
 	a.agent = agent
 	a.cfg = cfg
@@ -308,7 +492,7 @@ func resolveConfig(opts config.ConfigOptions) config.Config {
 	return cfg
 }
 
-func bootstrapFromConfig(cfg config.Config) (*aetoxapp.App, *cognitive.Agent, string) {
+func bootstrapFromConfig(cfg config.Config, onToolAction func(action, detail string)) (*aetoxapp.App, *cognitive.Agent, string) {
 	status := model.ResolveStatus(cfg.ModelProvider, cfg.ModelName, nil)
 
 	bootstrapResult := model.BootstrapProvider(model.BootstrapOptions{
@@ -340,6 +524,7 @@ func bootstrapFromConfig(cfg config.Config) (*aetoxapp.App, *cognitive.Agent, st
 		Console:      aetoxapp.NewStdIO(),
 		Dispatcher:   dispatcher,
 		ApprovalMode: safety.ApprovalFullAccess,
+		OnToolAction: onToolAction,
 	})
 	if err != nil {
 		return nil, nil, status + " (init failed: " + err.Error() + ")"
@@ -421,3 +606,4 @@ func readGitBranch(root string) string {
 	}
 	return head
 }
+

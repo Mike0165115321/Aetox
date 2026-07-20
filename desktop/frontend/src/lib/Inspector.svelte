@@ -14,15 +14,27 @@
   const testGlyph: Record<string, string> = { running: '··', pass: '✓', fail: '✕' }
   const hasActiveTask = $derived(task.steps.some((s) => s.status === 'active'))
 
-  const tabs = ['Inspector', 'Terminal', 'Logs', 'Audit']
+  const tabs = ['Inspector', 'Logs', 'Audit']
+  const tabIcons: Record<string, string> = { Inspector: '🔍', Logs: '📜', Audit: '🛡' }
   let activeTab = $state('Inspector')
+  let menuOpen = $state(false)
 
   const placeholders: Record<string, string> = {
-    Terminal: 'ยังไม่มี output — เทอร์มินัลจะสตรีมจาก Go core',
     Logs: 'ยังไม่มี log ในเซสชันนี้',
     Audit: 'ยังไม่มีรายการ audit',
   }
+
+  function pickTab(tab: string) {
+    activeTab = tab
+    menuOpen = false
+  }
+
+  function closeMenuOnOutsideClick(e: MouseEvent) {
+    if (!(e.target as HTMLElement).closest('.plus-menu-wrap')) menuOpen = false
+  }
 </script>
+
+<svelte:window onclick={menuOpen ? closeMenuOnOutsideClick : undefined} onkeydown={(e) => e.key === 'Escape' && (menuOpen = false)} />
 
 <div class="insp-tabs">
   {#each tabs as tab}
@@ -30,6 +42,18 @@
       {tab}
     </button>
   {/each}
+  <div class="plus-menu-wrap">
+    <button class="icobtn tiny plus-btn" aria-label="Add panel" onclick={() => (menuOpen = !menuOpen)}>+</button>
+    {#if menuOpen}
+      <div class="plus-menu">
+        {#each tabs as tab}
+          <button class="plus-menu-item" onclick={() => pickTab(tab)}>
+            <span class="ic">{tabIcons[tab]}</span> {tab}
+          </button>
+        {/each}
+      </div>
+    {/if}
+  </div>
 </div>
 
 {#if activeTab === 'Inspector'}
