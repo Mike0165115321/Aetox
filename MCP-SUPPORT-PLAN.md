@@ -50,6 +50,32 @@ dispatcher/registry/tool-loop เลย** ถ้าจะเพิ่ม MCP.
 user-added) หรืออย่างน้อยเพิ่ม field `Source string` ("builtin" | "mcp" |
 "plugin") ใน `Skill`/`Tool` metadata ก่อน.
 
+## เทียบกับ opencode — ยังไม่ถึงจริง (2026-07-21)
+
+เอกสารเดิม [docs/architecture-reference-opencode.md](docs/architecture-reference-opencode.md)
+(ตอนนั้น Aetox v0.3.0-dev, ก่อนมี desktop/session/browser) เทียบไว้ว่า Aetox ขาด
+หลัก ๆ 4 อย่างจาก opencode: **MCP, skill auto-discovery, permission per-tool
+(pattern-based), plugin hook system**. เช็คซ้ำวันนี้:
+
+| ช่องว่างเดิม | สถานะตอนนี้ |
+| --- | --- |
+| Session persistence | ✅ ปิดแล้ว — SQLite + FTS5 ([desktop/db.go](desktop/db.go), [desktop/sessions.go](desktop/sessions.go)) ตามทัน opencode's DB layer |
+| Desktop UI | ✅ ปิดแล้ว — Wails + Svelte workbench |
+| MCP | ❌ ยังไม่มี (ดูแผนด้านบน) |
+| Skill auto-discovery (`~/.agents/skills/`, `skills.paths`) | ❌ ยังไม่มี — `plugin_install` ดาวน์โหลดไฟล์ได้แต่ไม่มี loader โหลดกลับ (ดูหัวข้อ half-finished) |
+| Permission per-tool (pattern เช่น `"rm *": "deny"`) | ❌ ยังเป็น 3-mode หยาบ ๆ (ask / unsafe-only / full-access) ใน `internal/safety` |
+| Plugin hook system (`tool.execute.before/after`, `chat.message`, ...) | ❌ ยังไม่มี |
+
+**สรุป:** โครง "พร้อมจะไปถึง" เพราะ `skill.Tool` shape ใกล้เคียง opencode tool
+อยู่แล้ว แต่ยัง "ไม่ถึง" จนกว่าจะมี auto-discovery + permission pattern + MCP
+จริง — ไม่ใช่แค่ interface รองรับเฉย ๆ
+
+**ลำดับที่แนะนำ** (ปรับจาก priority เดิมในเอกสาร opencode): skill
+auto-discovery + permission per-tool ควรมาก่อน MCP เพราะกระทบ safety โดยตรง
+กว่า (MCP tool จาก third-party ที่รันได้โดยไม่มี pattern-based permission คือ
+ความเสี่ยงที่สุด) — ทำ core/user-added separation (หัวข้อบน) พร้อมกันไปเลยเพราะ
+เป็น prerequisite ของทั้งสามอย่าง
+
 ## ช่องว่างที่ต้องปิดก่อน production-ready
 
 - **Safety tier**: 3 ระดับปัจจุบัน (ask / unsafe-only / full-access) ออกแบบมา
