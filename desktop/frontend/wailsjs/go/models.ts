@@ -56,6 +56,40 @@ export namespace main {
 	        this.governanceLoaded = source["governanceLoaded"];
 	    }
 	}
+	export class SessionMessage {
+	    role: string;
+	    text: string;
+	    time: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SessionMessage(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.role = source["role"];
+	        this.text = source["text"];
+	        this.time = source["time"];
+	    }
+	}
+	export class SessionMeta {
+	    id: string;
+	    title: string;
+	    updatedAt: string;
+	    snippet?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SessionMeta(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.title = source["title"];
+	        this.updatedAt = source["updatedAt"];
+	        this.snippet = source["snippet"];
+	    }
+	}
 	export class ShellProfile {
 	    name: string;
 	    path: string;

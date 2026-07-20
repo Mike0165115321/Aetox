@@ -284,6 +284,17 @@ func (a *Agent) ClearContext() {
 	a.lastUsage = model.Usage{}
 }
 
+// RestoreHistory appends prior conversation turns into the agent's context,
+// so a reloaded chat session continues with its memory intact.
+func (a *Agent) RestoreHistory(messages []model.Message) {
+	if a == nil || a.context == nil {
+		return
+	}
+	for _, m := range messages {
+		a.context.AddMessage(m)
+	}
+}
+
 func (a *Agent) ContextUsage() (messageCount int, usedChars int, maxChars int) {
 	if a == nil || a.context == nil {
 		return 0, 0, 0

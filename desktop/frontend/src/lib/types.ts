@@ -21,9 +21,11 @@ export interface OpenFile {
 }
 
 export interface Session {
+  id: string
   title: string
   ago: string
   active?: boolean
+  snippet?: string
 }
 
 export interface ProjectInfo {

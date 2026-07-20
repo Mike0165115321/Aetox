@@ -2,10 +2,9 @@
   import TopBar from './lib/TopBar.svelte'
   import Sidebar from './lib/Sidebar.svelte'
   import Chat from './lib/Chat.svelte'
-  import FileViewer from './lib/FileViewer.svelte'
+  import FileEditor from './lib/FileEditor.svelte'
   import Settings from './lib/Settings.svelte'
-  import Inspector from './lib/Inspector.svelte'
-  import TerminalDock from './lib/TerminalDock.svelte'
+  import Workbench from './lib/workbench/Workbench.svelte'
   import { onMount } from 'svelte'
   import {
     cockpit, sendUserMessage, loadRealState, openFolder,
@@ -27,9 +26,8 @@
   // the narrowest that panel's own content survives without clipping.
   const panels = {
     sidebar: { cssVar: '--sidebar-width', storageKey: 'sidebarWidth', min: 200 },
-    // wide enough for the Inspector's tab row (4 tabs + the "+" picker) — see Inspector.svelte's .insp-tabs.
+    // wide enough for the workbench's tab row — see workbench/Workbench.svelte's .insp-tabs.
     inspector: { cssVar: '--inspector-width', storageKey: 'inspectorWidth', min: 320 },
-    terminal: { cssVar: '--terminal-height', storageKey: 'terminalHeight', min: 120 },
   }
 
   function clampSize(px: number, min: number): number {
@@ -50,12 +48,9 @@
 
   let draggingSidebar = $state(false)
   let draggingInspector = $state(false)
-  let draggingTerminal = $state(false)
-  let terminalOpen = $state(false)
 
   // computeSize turns the pointer position into this panel's size — sidebar
-  // anchored to the window's left edge, inspector to its right, terminal to
-  // the window's bottom edge.
+  // anchored to the window's left edge, inspector to its right.
   function startResize(panel: typeof panels.sidebar, computeSize: (e: PointerEvent) => number, setDragging: (v: boolean) => void) {
     return (e: PointerEvent) => {
       setDragging(true)
@@ -78,41 +73,25 @@
 
   const startSidebarResize = startResize(panels.sidebar, (e) => e.clientX, (v) => (draggingSidebar = v))
   const startInspectorResize = startResize(panels.inspector, (e) => window.innerWidth - e.clientX, (v) => (draggingInspector = v))
-  const startTerminalResize = startResize(panels.terminal, (e) => window.innerHeight - e.clientY, (v) => (draggingTerminal = v))
-
-  function toggleTerminal() {
-    terminalOpen = !terminalOpen
-    if (terminalOpen) {
-      const stored = localStorage.getItem(panels.terminal.storageKey)
-      const size = clampSize(stored ? parseInt(stored, 10) : 220, panels.terminal.min)
-      document.documentElement.style.setProperty(panels.terminal.cssVar, `${size}px`)
-    } else {
-      document.documentElement.style.setProperty(panels.terminal.cssVar, '0px')
-    }
-  }
 </script>
 
 <div class="app">
   <TopBar
     project={cockpit.project} onOpenFolder={openFolder} onOpenSettings={() => setActiveView('settings')}
-    onToggleTerminal={toggleTerminal} {terminalOpen}
   />
-  <Sidebar tree={cockpit.tree} sessions={cockpit.sessions} />
+  <Sidebar />
   <div
     class="resize-handle handle-l" class:dragging={draggingSidebar}
     role="separator" aria-orientation="vertical" aria-label="Resize project panel"
     onpointerdown={startSidebarResize}
   ></div>
   <main class="main">
-    {#if cockpit.openFiles.length > 0 || cockpit.activeView === 'settings'}
+    {#if cockpit.openFiles.length > 0}
       <div class="tabs">
         <button class="tab" class:active={cockpit.activeView === 'chat'} onclick={() => setActiveView('chat')}>Chat</button>
-        {#if cockpit.activeView === 'settings'}
-          <button class="tab active">Settings</button>
-        {/if}
         {#each cockpit.openFiles as f}
-          <button class="tab" class:active={cockpit.activeView === f.path} onclick={() => setActiveView(f.path)}>
-            {fileLabel(f.path)}
+          <button class="tab" class:active={cockpit.activeView === f.path} title={fileLabel(f.path)} onclick={() => setActiveView(f.path)}>
+            <span class="label">{fileLabel(f.path)}</span>
             <span
               class="tab-close" role="button" tabindex="0" aria-label={`Close ${fileLabel(f.path)}`}
               onclick={(e) => { e.stopPropagation(); closeFile(f.path) }}
@@ -135,12 +114,10 @@
         onSwitchModel={switchModel}
         onSubmitAPIKey={submitAPIKey}
       />
-    {:else if cockpit.activeView === 'settings'}
-      <Settings model={cockpit.model} onSubmitAPIKey={submitAPIKey} />
     {:else}
       {#each cockpit.openFiles as f (f.path)}
         {#if cockpit.activeView === f.path}
-          <FileViewer path={f.path} content={f.content} />
+          <FileEditor path={f.path} content={f.content} />
         {/if}
       {/each}
     {/if}
@@ -151,22 +128,12 @@
     onpointerdown={startInspectorResize}
   ></div>
   <aside class="inspector">
-    <Inspector
-      changedFiles={cockpit.changedFiles}
-      diff={cockpit.diff}
-      test={cockpit.test}
-      commandHistory={cockpit.commandHistory}
-      task={cockpit.task}
-    />
+    <Workbench />
   </aside>
-  {#if terminalOpen}
-    <div
-      class="resize-handle handle-b" class:dragging={draggingTerminal}
-      role="separator" aria-orientation="horizontal" aria-label="Resize terminal panel"
-      onpointerdown={startTerminalResize}
-    ></div>
-    <div class="terminal-dock-area">
-      <TerminalDock />
-    </div>
-  {/if}
 </div>
+
+{#if cockpit.activeView === 'settings'}
+  <div class="settings-overlay">
+    <Settings onClose={() => setActiveView('chat')} />
+  </div>
+{/if}

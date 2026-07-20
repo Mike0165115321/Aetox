@@ -90,7 +90,9 @@ Aetox ยังอยู่ในช่วงหล่อหลอม — แก
 | **Model Switching** | เปลี่ยน provider/model ได้ทันที โดยไม่เสีย context |
 | **Streaming** | แสดงผลแบบ real-time สำหรับ conversation |
 | **Auto-save Preference** | ค่า provider, model, API key, approval mode จำอัตโนมัติ |
-| **Desktop App** | Wails + Svelte 5 — 4-panel cockpit (Sidebar, Chat, Inspector) พร้อมใช้งาน |
+| **Desktop App** | Wails + Svelte 5 — Sidebar (file tree + chat history), Chat, Workbench (tabs: Review, Terminal, Files, Browser, File Editor), TopBar |
+| **Persistent Sessions** | ประวัติแชททุกโปรเจกต์เก็บใน SQLite ท้องถิ่น (ไม่มีข้อมูลออกจากเครื่อง) — ค้นหาแบบ full-text ได้ทั้งไทย/อังกฤษ |
+| **Agent-controlled Browser** | Agent เปิดเว็บจริงในแท็บ Workbench ได้เอง (`browser_open`/`browser_read`) — ไม่ติด X-Frame-Options เหมือน iframe |
 
 ### 🚧 กำลังสร้าง
 
@@ -148,8 +150,12 @@ aetox --approval full-access
 
 ```
 ┌──────────────────────────────────────────┐
-│         Aetox Desktop (UI)               │ ← Wails + Svelte 4-panel cockpit
-│   Sidebar · Chat · Inspector · TopBar    │
+│         Aetox Desktop (UI)               │ ← Wails + Svelte cockpit
+│ Sidebar(tree+history) · Chat · Workbench │   Workbench = tabs: Review,
+│ (tabs) · TopBar                          │   Terminal, Files, Browser, Editor
+├──────────────────────────────────────────┤
+│    Local Store (SQLite, FTS5)            │ ← ประวัติแชททุกโปรเจกต์ ค้นหาได้
+│    เก็บในเครื่อง ไม่มีข้อมูลออกไปไหน        │   ทั้งไทย/อังกฤษ, ไม่มี cloud
 ├──────────────────────────────────────────┤
 │                                          │
 │    Directional Cognition Engine          │ ← วิธีคิด — ensemble, routing,
@@ -243,12 +249,18 @@ Aetox/
 │   └── turn/               # 4-phase execution pipeline
 │
 ├── desktop/                # Wails + Svelte 5 desktop app
-│   ├── frontend/           # Svelte 5 UI (4-panel cockpit)
-│   │   ├── src/lib/        # Chat, Sidebar, Inspector, TopBar, TaskTimeline
-│   │   ├── src/lib/stores/ # cockpit state management (Svelte 5 runes)
+│   ├── frontend/           # Svelte 5 UI
+│   │   ├── src/lib/        # Chat, Sidebar, TopBar, Settings, TaskTimeline
+│   │   ├── src/lib/workbench/ # tabbed dock — Review, Files, Browser panes
+│   │   ├── src/lib/stores/ # cockpit + workbench state (Svelte 5 runes)
 │   │   ├── src/lib/services/ # Go core bindings
 │   │   └── src/style.css   # CSS custom properties theme system
 │   ├── app.go              # Wails app binding (providers, model, project)
+│   ├── browser.go          # native WebView2 browser tabs (agent + user)
+│   ├── db.go                # local SQLite store (chat history, FTS5)
+│   ├── sessions.go         # per-project session persistence + search
+│   ├── workbench.go        # agent-facing browser_open/browser_read skills
+│   ├── terminal.go         # embedded shell sessions
 │   ├── main.go             # Desktop entry point
 │   ├── wails.json           # Wails v2 config
 │   └── desktop.exe         # build artifact
@@ -277,7 +289,9 @@ Aetox/
 | **CLI** | ✅ interactive + one-shot + auto-save preference |
 | **Tool Calling** | ✅ model-driven + regex fallback |
 | **17 Built-in Tools** | ✅ read, write, list, shell, git, grep และอื่นๆ |
-| **Desktop App** | ✅ Wails + Svelte 5 — 4-panel cockpit (Sidebar, Chat, Inspector, TopBar) |
+| **Desktop App** | ✅ Wails + Svelte 5 — Sidebar, Chat, Workbench (tabbed dock), TopBar |
+| **Persistent Sessions** | ✅ SQLite ท้องถิ่น + FTS5 search (ไทย/อังกฤษ) ต่อโปรเจกต์ |
+| **Agent-controlled Browser** | ✅ native WebView2 tab — agent เปิด/อ่านหน้าเว็บได้เอง |
 | **Automation Engine** | 🔜 `aetox auto` — บอกเป็นไทย → script + schedule |
 | **Directional Cognition** | 📄 ADR — รอเริ่ม implement |
 | **Multi-Provider Orchestration** | 🔜 ถัดจาก Directional Cognition |

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"os/exec"
@@ -33,6 +34,14 @@ type App struct {
 
 	terminalsMu sync.Mutex
 	terminals   map[string]*TerminalSession
+	browsers    *browserHost
+
+	sessionID  string
+	transcript []SessionMessage
+
+	dbInit sync.Once
+	db     *sql.DB
+	dbErr  error
 }
 
 // ChangedFile is one working-tree change reported by `git status`.
@@ -211,6 +220,20 @@ func (a *App) ReadFile(relPath string) (string, error) {
 	return string(data), nil
 }
 
+// WriteFile saves text content to a file inside the sandbox root, for the
+// dock's file editor. Same path-escape guard as ReadFile.
+func (a *App) WriteFile(relPath, content string) error {
+	root := strings.TrimSpace(a.cfg.SandboxRoot)
+	if root == "" {
+		return fmt.Errorf("no project open")
+	}
+	full, err := safeSandboxPath(root, relPath)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(full, []byte(content), 0o644)
+}
+
 // ProjectStatus is the real project/git state for the sandbox root the engine runs in.
 type ProjectStatus struct {
 	Name             string `json:"name"`
@@ -244,14 +267,25 @@ func NewApp() *App {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.reload(config.ConfigOptions{ApprovalMode: string(safety.ApprovalFullAccess)})
+	a.startNewSession()
 }
 
 // SendMessage runs one chat turn through the Aetox engine and returns the reply.
+// The turn is appended to the current session and persisted.
 func (a *App) SendMessage(text string) (string, error) {
 	if a.chat == nil {
 		return "", fmt.Errorf("aetox core not ready: %s", a.modelStatus)
 	}
-	return a.chat.RunOnce(a.ctx, text)
+	reply, err := a.chat.RunOnce(a.ctx, text)
+	if err != nil {
+		return reply, err
+	}
+	now := time.Now().Format("15:04")
+	userMsg := SessionMessage{Role: "user", Text: text, Time: now}
+	agentMsg := SessionMessage{Role: "agent", Text: reply, Time: now}
+	a.transcript = append(a.transcript, userMsg, agentMsg)
+	a.appendTurn(userMsg, agentMsg)
+	return reply, nil
 }
 
 // ModelStatus reports which provider/model the engine is running, as a display string.
@@ -293,7 +327,10 @@ func (a *App) OpenProjectFolder() (ProjectStatus, error) {
 	if strings.TrimSpace(dir) == "" {
 		return projectStatus(a.cfg.SandboxRoot), nil
 	}
+	// Sessions are per project — turns are already persisted incrementally, so
+	// just re-point the engine and start a fresh session for the new project.
 	a.reload(config.ConfigOptions{RootPath: dir, ApprovalMode: string(safety.ApprovalFullAccess)})
+	a.startNewSession()
 	return projectStatus(a.cfg.SandboxRoot), nil
 }
 
@@ -326,6 +363,12 @@ func (a *App) ListModelsForProvider(providerName string) []string {
 		return choices
 	}
 	return model.ModelChoices(canonical)
+}
+
+// ProviderBaseURL reports the default API endpoint for a provider, for
+// read-only display in the settings UI.
+func (a *App) ProviderBaseURL(providerName string) string {
+	return model.DefaultBaseURL(model.NormalizeProvider(providerName))
 }
 
 // SwitchModel re-bootstraps the engine on a specific model name for the
@@ -454,11 +497,20 @@ func (a *App) reload(opts config.ConfigOptions) {
 // applyConfig re-bootstraps the engine from an already-resolved config, then
 // persists the model/approval choice so the CLI and desktop app share one preference.
 func (a *App) applyConfig(cfg config.Config) {
-	chatApp, agent, status := bootstrapFromConfig(cfg, a.recordToolAction)
+	workbenchTools := []skill.Skill{
+		&browserOpenSkill{app: a},
+		&browserReadSkill{app: a},
+	}
+	chatApp, agent, status := bootstrapFromConfig(cfg, a.recordToolAction, workbenchTools)
 	a.chat = chatApp
 	a.agent = agent
 	a.cfg = cfg
 	a.modelStatus = status
+	// A re-bootstrap (model/provider switch) creates a fresh agent — replay the
+	// current session so the conversation's memory survives the switch.
+	if a.agent != nil && len(a.transcript) > 0 {
+		a.agent.RestoreHistory(transcriptToModelMessages(a.transcript))
+	}
 	persistModelPreference(cfg)
 }
 
@@ -492,7 +544,7 @@ func resolveConfig(opts config.ConfigOptions) config.Config {
 	return cfg
 }
 
-func bootstrapFromConfig(cfg config.Config, onToolAction func(action, detail string)) (*aetoxapp.App, *cognitive.Agent, string) {
+func bootstrapFromConfig(cfg config.Config, onToolAction func(action, detail string), extraSkills []skill.Skill) (*aetoxapp.App, *cognitive.Agent, string) {
 	status := model.ResolveStatus(cfg.ModelProvider, cfg.ModelName, nil)
 
 	bootstrapResult := model.BootstrapProvider(model.BootstrapOptions{
@@ -515,9 +567,13 @@ func bootstrapFromConfig(cfg config.Config, onToolAction func(action, detail str
 		SystemPrompt: buildSystemPrompt(cfg.SandboxRoot),
 	})
 
-	dispatcher := skill.NewDispatcher(skill.NewDefaultRegistry(skill.RegistryOptions{
+	registry := skill.NewDefaultRegistry(skill.RegistryOptions{
 		SandboxRoot: cfg.SandboxRoot,
-	}))
+	})
+	for _, s := range extraSkills {
+		registry.Register(s)
+	}
+	dispatcher := skill.NewDispatcher(registry)
 
 	chatApp, err := aetoxapp.NewApp(aetoxapp.Options{
 		Agent:        agent,

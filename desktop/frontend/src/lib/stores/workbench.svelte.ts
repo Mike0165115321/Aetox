@@ -1,0 +1,86 @@
+// Right-workbench tab state. One place owns which panes are open (review, terminals,
+// browser tabs, files, file editors) so any part of the app — sidebar, chat,
+// future agent surfaces — can open a workbench tab without prop drilling. Components
+// under lib/workbench/ render from this; nothing else mutates it directly.
+
+import { TerminalStart, TerminalClose, ReadFile } from '../../../wailsjs/go/main/App'
+
+export type WorkbenchTabKind = 'review' | 'terminal' | 'browser' | 'files' | 'file'
+
+export type WorkbenchTab = {
+  id: string
+  kind: WorkbenchTabKind
+  name: string
+  url?: string // browser tabs
+  path?: string // file tabs
+  content?: string // file tabs (initial content; editor keeps its own draft)
+}
+
+export const workbench = $state<{ tabs: WorkbenchTab[]; activeId: string }>({
+  tabs: [{ id: 'review', kind: 'review', name: 'Review' }],
+  activeId: 'review',
+})
+
+let browserSeq = 0
+
+export function activateTab(id: string): void {
+  workbench.activeId = id
+}
+
+/** Remove a tab from the strip (does not stop terminal sessions — use closeTab). */
+export function removeTab(id: string): void {
+  const idx = workbench.tabs.findIndex((t) => t.id === id)
+  if (idx === -1) return
+  workbench.tabs.splice(idx, 1)
+  if (workbench.activeId === id) workbench.activeId = workbench.tabs.at(-1)?.id ?? ''
+}
+
+/** Close a tab, stopping its backing terminal session if it has one. */
+export async function closeTab(tab: WorkbenchTab): Promise<void> {
+  if (tab.kind === 'terminal') await TerminalClose(tab.id)
+  removeTab(tab.id)
+}
+
+/** Singleton tab: Review panels (files changed / diff / tests / history). */
+export function openReview(): void {
+  if (!workbench.tabs.some((t) => t.kind === 'review')) {
+    workbench.tabs.unshift({ id: 'review', kind: 'review', name: 'Review' })
+  }
+  workbench.activeId = 'review'
+}
+
+/** Singleton tab: project file tree. */
+export function openFilesTab(): void {
+  if (!workbench.tabs.some((t) => t.kind === 'files')) {
+    workbench.tabs.push({ id: 'files', kind: 'files', name: 'Files' })
+  }
+  workbench.activeId = 'files'
+}
+
+export function openBrowserTab(): string {
+  const id = `web-${++browserSeq}`
+  workbench.tabs.push({ id, kind: 'browser', name: 'New tab', url: '' })
+  workbench.activeId = id
+  return id
+}
+
+export async function openTerminalTab(shell: { name: string; path: string }): Promise<void> {
+  const id = await TerminalStart(shell.path, 80, 24)
+  workbench.tabs.push({ id, kind: 'terminal', name: shell.name })
+  workbench.activeId = id
+}
+
+/** Open (or re-focus) a file editor tab for a project-relative path. */
+export async function openFileTab(path: string): Promise<void> {
+  const id = `file-${path}`
+  if (!workbench.tabs.some((t) => t.id === id)) {
+    let content: string
+    try {
+      content = await ReadFile(path)
+    } catch (err) {
+      content = `เปิดไฟล์ไม่ได้: ${err}`
+    }
+    workbench.tabs.push({ id, kind: 'file', name: path.split('/').pop() ?? path, path, content })
+  }
+  workbench.activeId = id
+}

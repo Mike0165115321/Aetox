@@ -1,58 +1,92 @@
 <script lang="ts">
-  import type { TreeNode, Session } from './types'
-  import { toggleNode, selectNode, selectSession } from './stores/cockpit.svelte'
+  import { cockpit, selectSession, newSession, searchSessions, toggleNode, visibleTree } from './stores/cockpit.svelte'
+  import { openFileTab } from './stores/workbench.svelte'
 
-  let { tree, sessions }: { tree: TreeNode[]; sessions: Session[] } = $props()
+  let query = $state('')
+  let searchTimer: ReturnType<typeof setTimeout> | undefined
 
-  // Flat tree + depth → hide rows under a collapsed folder.
-  const visible = $derived.by(() => {
-    const out: TreeNode[] = []
-    let collapseDepth = Infinity
-    for (const n of tree) {
-      if (n.depth > collapseDepth) continue
-      collapseDepth = Infinity
-      out.push(n)
-      if (n.kind === 'dir' && !n.open) collapseDepth = n.depth
+  const rows = $derived(visibleTree(cockpit.tree))
+
+  let filesOpen = $state(true)
+  let chatOpen = $state(true)
+  let filesHeight = $state(280)
+
+  function onSearchInput() {
+    clearTimeout(searchTimer)
+    searchTimer = setTimeout(() => searchSessions(query), 200)
+  }
+
+  function startResize(e: PointerEvent) {
+    e.preventDefault()
+    const startY = e.clientY
+    const startH = filesHeight
+    function onMove(ev: PointerEvent) {
+      filesHeight = Math.min(Math.max(startH + (ev.clientY - startY), 120), window.innerHeight - 220)
     }
-    return out
-  })
-
-  function onRowClick(node: TreeNode) {
-    if (node.kind === 'dir') toggleNode(node)
-    else selectNode(node)
+    function onUp() {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
   }
 </script>
 
 <aside class="side">
-  <div class="scroll">
-    <div class="side-head"><span class="eyebrow">Project</span></div>
-    <div class="proj">
-      {#each visible as node (node.label + node.depth)}
-        <button type="button" class="row indent-{node.depth}" class:active={node.active} onclick={() => onRowClick(node)}>
-          {#if node.kind === 'dir'}
-            <span class="tw">{node.open ? '▾' : '▸'}</span>
+  <div class="side-panel" style={filesOpen ? `flex:0 0 ${filesHeight}px` : 'flex:0 0 auto'}>
+    <button type="button" class="side-head" onclick={() => (filesOpen = !filesOpen)}>
+      <span class="chev">{filesOpen ? '▾' : '▸'}</span>
+      <span class="eyebrow">ไฟล์ที่ AI กำลังทำงาน</span>
+    </button>
+    {#if filesOpen}
+      <div class="scroll">
+        <div class="proj">
+          {#each rows as node (node.label + node.depth)}
+            <button type="button" class="row" style="padding-left:{6 + node.depth * 14}px" title={node.path} class:active={node.active}
+              onclick={() => (node.kind === 'dir' ? toggleNode(node) : openFileTab(node.path))}>
+              {#if node.kind === 'dir'}
+                <span class="tw">{node.open ? '▾' : '▸'}</span>
+              {/if}
+              <span class="ic">{node.icon ?? '📄'}</span> {node.label}
+              {#if node.status === 'M'}<span class="st m">M</span>{/if}
+              {#if node.status === 'U'}<span class="st u">U</span>{/if}
+            </button>
+          {/each}
+          {#if cockpit.tree.length === 0}
+            <div class="empty">ยังไม่มีไฟล์ — เปิดโฟลเดอร์ก่อน</div>
           {/if}
-          <span class="ic">{node.icon}</span>
-          {node.label}
-          {#if node.status === 'M'}<span class="st m">M</span>{/if}
-          {#if node.status === 'U'}<span class="st u">U</span>{/if}
-        </button>
-      {/each}
-    </div>
+        </div>
+      </div>
+    {/if}
+  </div>
 
-    <div class="side-sec">
-      <div class="side-head"><span class="eyebrow">Sessions</span></div>
-      {#if sessions.length > 0}
-        <div class="muted sess-day">Today</div>
-      {/if}
-      {#each sessions as s}
-        <button type="button" class="sess-row" class:active={s.active} onclick={() => selectSession(s)}>
-          <span class="t">{s.title}</span>
-          <span class="ago">{s.ago}</span>
-          <span class="dot green"></span>
-        </button>
-      {/each}
-      <button class="newbtn">＋ New Session</button>
-    </div>
+  {#if filesOpen && chatOpen}
+    <div class="side-resize" role="separator" aria-orientation="horizontal" onpointerdown={startResize}></div>
+  {/if}
+
+  <div class="side-panel grow">
+    <button type="button" class="side-head" onclick={() => (chatOpen = !chatOpen)}>
+      <span class="chev">{chatOpen ? '▾' : '▸'}</span>
+      <span class="eyebrow">ประวัติแชท{cockpit.project.name ? ` — ${cockpit.project.name}` : ''}</span>
+    </button>
+    {#if chatOpen}
+      <div class="scroll">
+        <input class="sess-search" placeholder="ค้นหาประวัติ…" bind:value={query} oninput={onSearchInput} />
+        {#each cockpit.sessions as s (s.id)}
+          <button type="button" class="sess-row" class:active={s.active} onclick={() => selectSession(s)}>
+            <span class="sess-line">
+              <span class="t">{s.title}</span>
+              <span class="ago">{s.ago}</span>
+              {#if s.active}<span class="dot green"></span>{/if}
+            </span>
+            {#if s.snippet}<span class="snip">{s.snippet}</span>{/if}
+          </button>
+        {/each}
+        {#if cockpit.sessions.length === 0}
+          <div class="empty">{query.trim() ? 'ไม่พบผลลัพธ์' : 'ยังไม่มีประวัติในโปรเจกต์นี้'}</div>
+        {/if}
+        <button class="newbtn" onclick={newSession}>＋ New Session</button>
+      </div>
+    {/if}
   </div>
 </aside>
