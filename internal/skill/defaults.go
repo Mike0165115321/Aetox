@@ -14,16 +14,24 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 	if registry == nil {
 		return
 	}
-	registry.Register(&helpSkill{registry: registry})
-	registry.Register(&echoSkill{})
-	registry.Register(&timeSkill{})
-	registry.Register(&listSkill{root: opts.SandboxRoot})
-	registry.Register(&readSkill{root: opts.SandboxRoot})
-	registry.Register(&githubRepoSummarySkill{})
-	registry.Register(&gitSkill{root: opts.SandboxRoot})
-	registry.Register(&fsSkill{root: opts.SandboxRoot})
-	registry.Register(&shellSkill{root: opts.SandboxRoot})
-	registry.Register(&writeSkill{root: opts.SandboxRoot})
-	registry.Register(&deleteSkill{root: opts.SandboxRoot})
-	registry.Register(&pluginInstallSkill{})
+	defaults := []Skill{
+		&helpSkill{registry: registry},
+		&echoSkill{},
+		&timeSkill{},
+		&listSkill{root: opts.SandboxRoot},
+		&readSkill{root: opts.SandboxRoot},
+		&githubRepoSummarySkill{},
+		&gitSkill{root: opts.SandboxRoot},
+		&fsSkill{root: opts.SandboxRoot},
+		&shellSkill{root: opts.SandboxRoot},
+		&writeSkill{root: opts.SandboxRoot},
+		&deleteSkill{root: opts.SandboxRoot},
+		&pluginInstallSkill{},
+	}
+	for _, s := range defaults {
+		if err := registry.Register(s, SourceBuiltin); err != nil {
+			// Two built-ins sharing a name is a programmer error, not a runtime condition.
+			panic(err)
+		}
+	}
 }

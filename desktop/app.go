@@ -16,6 +16,7 @@ import (
 	aetoxapp "github.com/Mike0165115321/Aetox/internal/app"
 	"github.com/Mike0165115321/Aetox/internal/cognitive"
 	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mike0165115321/Aetox/internal/debuglog"
 	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/safety"
 	"github.com/Mike0165115321/Aetox/internal/skill"
@@ -42,6 +43,7 @@ type App struct {
 	dbInit sync.Once
 	db     *sql.DB
 	dbErr  error
+	dbDir  string // overrides the default <UserConfigDir>/aetox directory; empty means production default. Test seam only.
 }
 
 // ChangedFile is one working-tree change reported by `git status`.
@@ -571,7 +573,9 @@ func bootstrapFromConfig(cfg config.Config, onToolAction func(action, detail str
 		SandboxRoot: cfg.SandboxRoot,
 	})
 	for _, s := range extraSkills {
-		registry.Register(s)
+		if err := registry.Register(s, skill.SourceExternal); err != nil {
+			debuglog.Msg("skill registration skipped: %v", err)
+		}
 	}
 	dispatcher := skill.NewDispatcher(registry)
 

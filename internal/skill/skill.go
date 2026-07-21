@@ -3,6 +3,7 @@ package skill
 import (
 	"github.com/Mike0165115321/Aetox/internal/model"
 	"context"
+	"fmt"
 )
 
 type Input map[string]any
@@ -31,37 +32,68 @@ type Tool interface {
 	ExecuteTool(ctx context.Context, args map[string]any) (Output, error)
 }
 
+// Source identifies where a registered skill came from, so callers can gate
+// trust or group skills in the UI instead of guessing from the name.
+// See ARCHITECTURE.md §6.4.
+type Source string
+
+const (
+	SourceBuiltin  Source = "builtin"
+	SourceExternal Source = "external"
+)
+
+type registryEntry struct {
+	skill  Skill
+	source Source
+}
+
 type Registry struct {
-	skills map[string]Skill
+	entries map[string]registryEntry
 }
 
 func NewRegistry() *Registry {
 	return &Registry{
-		skills: make(map[string]Skill),
+		entries: make(map[string]registryEntry),
 	}
 }
 
-func (r *Registry) Register(skill Skill) {
+// Register adds skill under source. It returns an error instead of silently
+// overwriting when the name is already registered.
+func (r *Registry) Register(skill Skill, source Source) error {
 	if skill == nil || r == nil {
-		return
+		return nil
 	}
-	r.skills[skill.Name()] = skill
+	name := skill.Name()
+	if existing, ok := r.entries[name]; ok {
+		return fmt.Errorf("skill %q already registered (source=%s), refusing to overwrite with source=%s", name, existing.source, source)
+	}
+	r.entries[name] = registryEntry{skill: skill, source: source}
+	return nil
 }
 
 func (r *Registry) Get(name string) (Skill, bool) {
 	if r == nil {
 		return nil, false
 	}
-	skill, ok := r.skills[name]
-	return skill, ok
+	entry, ok := r.entries[name]
+	return entry.skill, ok
+}
+
+// SourceOf reports where the skill named name came from.
+func (r *Registry) SourceOf(name string) (Source, bool) {
+	if r == nil {
+		return "", false
+	}
+	entry, ok := r.entries[name]
+	return entry.source, ok
 }
 
 func (r *Registry) Names() []string {
 	if r == nil {
 		return nil
 	}
-	names := make([]string, 0, len(r.skills))
-	for name := range r.skills {
+	names := make([]string, 0, len(r.entries))
+	for name := range r.entries {
 		names = append(names, name)
 	}
 	return names
@@ -71,9 +103,9 @@ func (r *Registry) Snapshot() map[string]Skill {
 	if r == nil {
 		return nil
 	}
-	snapshot := make(map[string]Skill, len(r.skills))
-	for name, value := range r.skills {
-		snapshot[name] = value
+	snapshot := make(map[string]Skill, len(r.entries))
+	for name, entry := range r.entries {
+		snapshot[name] = entry.skill
 	}
 	return snapshot
 }
