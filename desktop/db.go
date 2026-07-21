@@ -50,11 +50,14 @@ END;
 // database opens (once) the app-wide SQLite store.
 func (a *App) database() (*sql.DB, error) {
 	a.dbInit.Do(func() {
-		configDir, err := os.UserConfigDir()
-		if err != nil || configDir == "" {
-			configDir = os.Getenv("LOCALAPPDATA")
+		dir := a.dbDir
+		if dir == "" {
+			configDir, err := os.UserConfigDir()
+			if err != nil || configDir == "" {
+				configDir = os.Getenv("LOCALAPPDATA")
+			}
+			dir = filepath.Join(configDir, "aetox")
 		}
-		dir := filepath.Join(configDir, "aetox")
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			a.dbErr = err
 			return
