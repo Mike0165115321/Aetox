@@ -49,6 +49,13 @@ func NewProvider(opts ProviderOptions) (Provider, error) {
 			Timeout:       timeout,
 			RequireAPIKey: &requireAPIKey,
 		})
+	case string(pvdr.RuntimeAnthropic):
+		return NewAnthropicProvider(AnthropicConfig{
+			Model:   opts.Model,
+			APIKey:  opts.APIKey,
+			BaseURL: opts.BaseURL,
+			Timeout: timeout,
+		})
 	default:
 		return nil, fmt.Errorf("unsupported model provider: %q", provider)
 	}

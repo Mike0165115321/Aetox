@@ -25,6 +25,7 @@ const (
 	RuntimeNoop             Runtime = "noop"
 	RuntimeOpenAICompatible Runtime = "openai-compatible"
 	RuntimeOllama           Runtime = "ollama"
+	RuntimeAnthropic        Runtime = "anthropic"
 )
 
 // ModelDefaults holds the static fallback model names for a provider.
@@ -234,6 +235,23 @@ var catalog = map[string]*entry{
 			FallbackModel: "gemma3:4b",
 		},
 		capabilities: Capabilities{ToolCalling: true},
+	},
+	"anthropic": {
+		canonical:      "anthropic",
+		aliases:        []string{"anthropic", "claude"},
+		requiresAPIKey: true,
+		runtime:        RuntimeAnthropic,
+		baseURL:        "https://api.anthropic.com/v1",
+		envKeys:        []string{"ANTHROPIC_API_KEY"},
+		modelDefaults: ModelDefaults{
+			FallbackModel: "claude-haiku-4-5",
+			RecommendedModels: []string{
+				"claude-opus-4-8",
+				"claude-sonnet-5",
+				"claude-haiku-4-5",
+			},
+		},
+		capabilities: Capabilities{ToolCalling: true, Reasoning: true},
 	},
 }
 

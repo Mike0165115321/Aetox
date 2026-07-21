@@ -114,7 +114,7 @@ aetox
 aetox chat "refactor module นี้หน่อย"
 
 # เลือก provider
-aetox --model-provider anthropic --model-name claude-sonnet-4
+aetox --model-provider anthropic --model-name claude-sonnet-5
 
 # สร้าง automation (บอกเป็นภาษาธรรมชาติ)
 aetox auto "ตรวจ token cost ทุกเช้า 9 โมง ถ้าเกิน 50 บาทให้แจ้ง"

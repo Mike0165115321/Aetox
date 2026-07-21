@@ -37,6 +37,8 @@ func TestNormalize_KnownAlias(t *testing.T) {
 		{"local-ai", "lmstudio"},
 		{"ollama", "ollama"},
 		{"ollamaai", "ollama"},
+		{"anthropic", "anthropic"},
+		{"claude", "anthropic"},
 		{"noop", "noop"},
 		{"none", "noop"},
 		{"stub", "noop"},
@@ -143,6 +145,7 @@ func TestDefaultModel_FallbackOnly(t *testing.T) {
 		{"cohere", "command-r-plus"},
 		{"lmstudio", "local-model"},
 		{"ollama", "gemma3:4b"},
+		{"anthropic", "claude-haiku-4-5"},
 		{"unknown", ""},
 	}
 	for _, tt := range tests {
@@ -185,7 +188,7 @@ func TestDefaultBaseURL(t *testing.T) {
 }
 
 func TestRequiresAPIKey(t *testing.T) {
-	needsKey := []string{"openrouter", "openai", "deepseek", "gemini", "groq", "mistral", "together", "perplexity", "cohere"}
+	needsKey := []string{"openrouter", "openai", "deepseek", "gemini", "groq", "mistral", "together", "perplexity", "cohere", "anthropic"}
 	for _, p := range needsKey {
 		if !RequiresAPIKey(p) {
 			t.Fatalf("expected %q to require API key", p)
@@ -211,6 +214,9 @@ func TestRuntimeFor(t *testing.T) {
 	}
 	if rt := RuntimeFor("ollama"); rt != RuntimeOllama {
 		t.Fatalf("ollama runtime: want %q got %q", RuntimeOllama, rt)
+	}
+	if rt := RuntimeFor("anthropic"); rt != RuntimeAnthropic {
+		t.Fatalf("anthropic runtime: want %q got %q", RuntimeAnthropic, rt)
 	}
 	if rt := RuntimeFor("unknown"); rt != "" {
 		t.Fatalf("unknown runtime: want empty got %q", rt)
@@ -242,6 +248,10 @@ func TestCapabilitiesFor(t *testing.T) {
 	caps = CapabilitiesFor("ollama")
 	if !caps.ToolCalling || caps.Reasoning {
 		t.Fatal("ollama should have tool calling but no reasoning (no native thinking knob)")
+	}
+	caps = CapabilitiesFor("anthropic")
+	if !caps.ToolCalling || !caps.Reasoning {
+		t.Fatal("anthropic should have both capabilities")
 	}
 	caps = CapabilitiesFor("unknown")
 	if caps.ToolCalling || caps.Reasoning {

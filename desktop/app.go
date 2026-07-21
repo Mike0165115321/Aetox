@@ -257,7 +257,7 @@ type ModelInfo struct {
 
 // desktopProviders is the curated subset of the full engine catalog
 // (model.SupportedProviders()) exposed in the desktop UI's provider picker.
-var desktopProviders = []string{"ollama", "deepseek", "gemini", "openai", "openrouter", "zai", "noop"}
+var desktopProviders = []string{"ollama", "deepseek", "gemini", "openai", "openrouter", "zai", "anthropic", "noop"}
 
 // NewApp creates a new App application struct
 func NewApp() *App {
