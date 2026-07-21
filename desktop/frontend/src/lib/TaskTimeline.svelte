@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { TimelineStep, StepStatus } from './types'
+  import { t } from './i18n.svelte'
 
   let { steps, elapsed }: { steps: TimelineStep[]; elapsed: string } = $props()
 
@@ -8,7 +9,7 @@
 
 <div class="timeline">
   <div class="tl-head">
-    <span class="eyebrow">Task Timeline</span>
+    <span class="eyebrow">{t('taskTimeline.title')}</span>
     <span class="elapsed">⏱ {elapsed}</span>
   </div>
   <div class="tl-body">
@@ -21,7 +22,7 @@
 
           {#if step.change}
             <div class="change-card">
-              <div class="cc-h">Change Summary</div>
+              <div class="cc-h">{t('taskTimeline.changeSummary')}</div>
               <ul>
                 {#each step.change.items as item}<li>{item}</li>{/each}
               </ul>

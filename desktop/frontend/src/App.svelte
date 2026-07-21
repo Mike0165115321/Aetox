@@ -7,10 +7,12 @@
   import Workbench from './lib/workbench/Workbench.svelte'
   import { onMount } from 'svelte'
   import {
-    cockpit, sendUserMessage, loadRealState, openFolder,
+    cockpit, sendUserMessage, loadRealState, openFolder, openFile,
     switchProvider, switchThinkLevel, switchApprovalMode,
     switchModel, submitAPIKey, setActiveView, closeFile,
   } from './lib/stores/cockpit.svelte'
+  import { RelativizePath } from '../wailsjs/go/main/App'
+  import { OnFileDrop, OnFileDropOff } from '../wailsjs/runtime/runtime'
 
   function fileLabel(path: string): string {
     return path.split('/').pop() ?? path
@@ -67,10 +69,31 @@
         document.documentElement.style.setProperty(panel.cssVar, `${size}px`)
       }
     }
+
+    // Drop a file from Explorer anywhere on the window to open it as a tab,
+    // same as clicking it in the sidebar tree — lets the user hand the AI a
+    // file without hunting for it in the project tree first.
+    OnFileDrop(async (_x, _y, paths) => {
+      for (const path of paths) {
+        try {
+          const relPath = await RelativizePath(path)
+          await openFile(relPath)
+        } catch {
+          // Outside the open project, or unreadable — silently skip it.
+        }
+      }
+    }, false)
+    return () => OnFileDropOff()
   })
 
   let draggingSidebar = $state(false)
   let draggingInspector = $state(false)
+  let inspectorCollapsed = $state(localStorage.getItem('inspectorCollapsed') === 'true')
+
+  function toggleInspector() {
+    inspectorCollapsed = !inspectorCollapsed
+    localStorage.setItem('inspectorCollapsed', String(inspectorCollapsed))
+  }
 
   // computeSize turns the pointer position into this panel's size — sidebar
   // anchored to the window's left edge, inspector to its right.
@@ -115,13 +138,26 @@
 
   const startSidebarResize = startResize(panels.sidebar, (e) => e.clientX, (v) => (draggingSidebar = v))
   const startInspectorResize = startResize(panels.inspector, (e) => window.innerWidth - e.clientX, (v) => (draggingInspector = v))
+
+  function onKeydown(e: KeyboardEvent) {
+    if (e.ctrlKey && e.altKey && e.key.toLowerCase() === 'b') {
+      e.preventDefault()
+      toggleInspector()
+    } else if (e.ctrlKey && !e.altKey && e.key === ',') {
+      e.preventDefault()
+      setActiveView('settings')
+    }
+  }
 </script>
 
-<div class="app">
+<svelte:window onkeydown={onKeydown} />
+
+<div class="app" class:inspector-collapsed={inspectorCollapsed}>
   <TopBar
-    project={cockpit.project} onOpenFolder={openFolder} onOpenSettings={() => setActiveView('settings')}
+    project={cockpit.project} onOpenFolder={openFolder}
+    inspectorCollapsed={inspectorCollapsed} onToggleInspector={toggleInspector}
   />
-  <Sidebar />
+  <Sidebar onOpenSettings={() => setActiveView('settings')} />
   <div
     class="resize-handle handle-l" class:dragging={draggingSidebar}
     role="separator" aria-orientation="vertical" aria-label="Resize project panel"
@@ -170,7 +206,7 @@
     onpointerdown={startInspectorResize}
   ></div>
   <aside class="inspector">
-    <Workbench />
+    <Workbench onToggleInspector={toggleInspector} />
   </aside>
 </div>
 

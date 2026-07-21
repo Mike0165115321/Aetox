@@ -10,7 +10,6 @@ export interface TreeNode {
   kind: 'dir' | 'file'
   depth: number
   open?: boolean
-  active?: boolean
   status?: GitStatus
   icon?: string
 }

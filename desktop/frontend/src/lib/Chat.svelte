@@ -6,6 +6,7 @@
     SupportedProviders, SupportedThinkLevels,
     ListModelsForProvider, RequiresAPIKey, HasAPIKey,
   } from '../../wailsjs/go/main/App'
+  import { t } from './i18n.svelte'
 
   let {
     messages, task, model, project,
@@ -23,11 +24,11 @@
     onSubmitAPIKey: (provider: string, apiKey: string) => Promise<void>
   } = $props()
 
-  const approvalOptions = [
-    { value: 'ask', label: 'Ask' },
-    { value: 'unsafe-only', label: 'Unsafe Only' },
-    { value: 'full-access', label: 'Full Access' },
-  ]
+  const approvalOptions = $derived([
+    { value: 'ask', label: t('chat.approvalAsk') },
+    { value: 'unsafe-only', label: t('chat.approvalUnsafeOnly') },
+    { value: 'full-access', label: t('chat.approvalFullAccess') },
+  ])
 
   let providers = $state<string[]>([])
   let thinkLevels = $state<string[]>([])
@@ -91,12 +92,12 @@
 
   let draft = $state('')
 
-  const starters = [
-    { icon: '🧭', title: 'Explore and understand code', prompt: 'ช่วยพาไล่ดูโครงสร้างโปรเจกต์นี้หน่อย' },
-    { icon: '🛠', title: 'Build a new feature, app, or tool', prompt: 'ช่วยสร้างฟีเจอร์ใหม่: ' },
-    { icon: '🔍', title: 'Review code and suggest changes', prompt: 'ช่วยรีวิวโค้ดที่แก้ล่าสุดหน่อย' },
-    { icon: '🩹', title: 'Fix issues and failures', prompt: 'ช่วยหาสาเหตุที่บั๊กนี้เกิดขึ้น: ' },
-  ]
+  const starters = $derived([
+    { icon: '🧭', title: t('chat.starter1Title'), prompt: t('chat.starter1Prompt') },
+    { icon: '🛠', title: t('chat.starter2Title'), prompt: t('chat.starter2Prompt') },
+    { icon: '🔍', title: t('chat.starter3Title'), prompt: t('chat.starter3Prompt') },
+    { icon: '🩹', title: t('chat.starter4Title'), prompt: t('chat.starter4Prompt') },
+  ])
 
   function pickStarter(prompt: string) {
     draft = prompt
@@ -118,7 +119,7 @@
   {#if messages.length === 0}
     <div class="empty-state">
       <span class="empty-glyph">🦅</span>
-      <h2>What should we build?</h2>
+      <h2>{t('chat.whatToBuild')}</h2>
       <div class="starter-grid">
         {#each starters as s}
           <button class="starter-card" onclick={() => pickStarter(s.prompt)}>
@@ -136,7 +137,7 @@
           <div>
             <div class="bubble">
               {#if m.role === 'agent'}
-                <div class="name"><b>Aetox Agent</b>
+                <div class="name"><b>{t('chat.agentName')}</b>
                   {#if m.tag}<span class="tag think">{m.tag}</span>{/if}
                 </div>
               {/if}
@@ -165,18 +166,18 @@
         <input
           class="ctrl"
           type="password"
-          placeholder={`API key for ${model.provider}`}
+          placeholder={t('chat.apiKeyPlaceholder', { provider: model.provider })}
           bind:value={apiKeyDraft}
           onkeydown={(e) => e.key === 'Enter' && submitApiKey()}
         />
-        <button class="ctrl" onclick={submitApiKey}>Save key</button>
+        <button class="ctrl" onclick={submitApiKey}>{t('chat.saveKey')}</button>
       </div>
     {/if}
     <div class="box">
       <textarea
         class="input"
         rows="1"
-        placeholder="Type your command or request… (ใช้ / เพื่อดูคำสั่ง)"
+        placeholder={t('chat.inputPlaceholder')}
         bind:value={draft}
         onkeydown={onKeydown}
       ></textarea>
@@ -195,7 +196,7 @@
           <input
             class="ctrl"
             type="text"
-            placeholder="model id"
+            placeholder={t('chat.modelIdPlaceholder')}
             bind:value={customModel}
             onkeydown={(e) => e.key === 'Enter' && submitCustomModel()}
           />

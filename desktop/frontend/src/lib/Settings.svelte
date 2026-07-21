@@ -1,6 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { theme, toggleTheme } from './theme.svelte'
+  import { editorFont, applyEditorFontSize } from './editorFont.svelte'
+  import { chatFont, applyChatFontSize } from './chatFont.svelte'
+  import { editorTheme, setBuiltinEditorTheme, importThemeFile } from './editorTheme.svelte'
+  import { treeFont, applyTreeFontSize } from './treeFont.svelte'
+  import { systemZoom, applySystemZoom, SYSTEM_BASE_PX } from './systemFont.svelte'
+  import { i18n, t, setLocale, localeNames, type Locale } from './i18n.svelte'
   import {
     SupportedProviders, HasAPIKey, RequiresAPIKey, TerminalShells,
     ListModelsForProvider, ProviderBaseURL,
@@ -16,6 +22,21 @@
 
   function saveDefaultShell() {
     localStorage.setItem('defaultShell', defaultShell)
+  }
+
+  // ---------- Appearance: code theme import ----------
+  let themeImportError = $state('')
+
+  async function onThemeFileChosen(e: Event) {
+    const file = (e.currentTarget as HTMLInputElement).files?.[0]
+    if (!file) return
+    themeImportError = ''
+    try {
+      await importThemeFile(file)
+    } catch (err) {
+      themeImportError = t('settings.importThemeError', { err: String(err) })
+    }
+    ;(e.currentTarget as HTMLInputElement).value = ''
   }
 
   // ---------- Model settings ----------
@@ -147,18 +168,18 @@
   }
 
   // ---------- Nav ----------
-  const sections = [
-    { group: 'ส่วนบุคคล', items: [
-      { id: 'general', label: 'ทั่วไป', icon: '⚙' },
-      { id: 'appearance', label: 'รูปลักษณ์', icon: '🎨' },
+  const sections = $derived([
+    { group: t('settings.groupPersonal'), items: [
+      { id: 'general', label: t('settings.general'), icon: '⚙' },
+      { id: 'appearance', label: t('settings.appearance'), icon: '🎨' },
     ]},
-    { group: 'โมเดล AI', items: [
-      { id: 'models', label: 'Model settings', icon: '🧠' },
+    { group: t('settings.groupModels'), items: [
+      { id: 'models', label: t('settings.modelSettings'), icon: '🧠' },
     ]},
-    { group: 'เครื่องมือ', items: [
-      { id: 'mcp', label: 'MCP servers', icon: '🔌' },
+    { group: t('settings.groupTools'), items: [
+      { id: 'mcp', label: t('settings.mcpServers'), icon: '🔌' },
     ]},
-  ]
+  ])
 
   let active = $state('general')
   let query = $state('')
@@ -172,8 +193,8 @@
 
 <div class="settings-page">
   <aside class="settings-nav">
-    <button class="settings-back" onclick={onClose}>← กลับไปที่แอป</button>
-    <input class="settings-search" placeholder="ค้นหาการตั้งค่า…" bind:value={query} />
+    <button class="settings-back" onclick={onClose}>{t('settings.backToApp')}</button>
+    <input class="settings-search" placeholder={t('settings.searchPlaceholder')} bind:value={query} />
     {#each filteredSections as g}
       <div class="settings-group-label eyebrow">{g.group}</div>
       {#each g.items as it}
@@ -185,16 +206,17 @@
   </aside>
 
   <div class="settings-content">
+    <div class="settings-inner">
     {#if active === 'general'}
-      <h2>ทั่วไป</h2>
+      <h2>{t('settings.general')}</h2>
       <div class="settings-card">
         <div class="set-row">
           <div class="set-txt">
-            <div class="t">เชลล์สำหรับเทอร์มินัลในตัว</div>
-            <div class="d">เลือกเชลล์ที่จะเปิดเมื่อสร้างแท็บเทอร์มินัลใหม่</div>
+            <div class="t">{t('settings.shellTitle')}</div>
+            <div class="d">{t('settings.shellDesc')}</div>
           </div>
           {#if shells.length === 0}
-            <span class="muted">ไม่พบ shell ในเครื่อง</span>
+            <span class="muted">{t('settings.noShells')}</span>
           {:else}
             <select class="ctrl" bind:value={defaultShell} onchange={saveDefaultShell}>
               {#each shells as s}
@@ -205,23 +227,106 @@
         </div>
       </div>
     {:else if active === 'appearance'}
-      <h2>รูปลักษณ์</h2>
+      <h2>{t('settings.appearance')}</h2>
       <div class="settings-card">
         <div class="set-row">
           <div class="set-txt">
-            <div class="t">ธีม</div>
-            <div class="d">สลับโหมดมืด/สว่างของแอป</div>
+            <div class="t">{t('settings.languageTitle')}</div>
+            <div class="d">{t('settings.languageDesc')}</div>
           </div>
-          <button class="ctrl" onclick={toggleTheme}>{theme.name === 'dark' ? '🌙 Dark' : '☀ Light'}</button>
+          <select class="ctrl" value={i18n.locale} onchange={(e) => setLocale(e.currentTarget.value as Locale)}>
+            {#each Object.entries(localeNames) as [code, name]}
+              <option value={code}>{name}</option>
+            {/each}
+          </select>
         </div>
+        <div class="set-row">
+          <div class="set-txt">
+            <div class="t">{t('settings.themeTitle')}</div>
+            <div class="d">{t('settings.themeDesc')}</div>
+          </div>
+          <button class="ctrl" onclick={toggleTheme}>{theme.name === 'dark' ? t('settings.dark') : t('settings.light')}</button>
+        </div>
+        <div class="set-row">
+          <div class="set-txt">
+            <div class="t">{t('settings.systemZoomTitle')}</div>
+            <div class="d">{t('settings.systemZoomDesc')}</div>
+          </div>
+          <input
+            class="ctrl" type="number" min="12" max="20" step="0.5"
+            value={Math.round(systemZoom.value * SYSTEM_BASE_PX * 10) / 10}
+            onchange={(e) => applySystemZoom(parseFloat(e.currentTarget.value) / SYSTEM_BASE_PX)}
+          />
+          <span class="muted" style="margin-left:6px">px</span>
+        </div>
+        <div class="set-row">
+          <div class="set-txt">
+            <div class="t">{t('settings.editorFontTitle')}</div>
+            <div class="d">{t('settings.editorFontDesc')}</div>
+          </div>
+          <input
+            class="ctrl" type="number" min="10" max="24" step="0.5"
+            value={editorFont.size}
+            onchange={(e) => applyEditorFontSize(parseFloat(e.currentTarget.value))}
+          />
+        </div>
+        <div class="set-row">
+          <div class="set-txt">
+            <div class="t">{t('settings.chatFontTitle')}</div>
+            <div class="d">{t('settings.chatFontDesc')}</div>
+          </div>
+          <input
+            class="ctrl" type="number" min="12" max="22" step="0.5"
+            value={chatFont.size}
+            onchange={(e) => applyChatFontSize(parseFloat(e.currentTarget.value))}
+          />
+        </div>
+        <div class="set-row">
+          <div class="set-txt">
+            <div class="t">{t('settings.treeFontTitle')}</div>
+            <div class="d">{t('settings.treeFontDesc')}</div>
+          </div>
+          <input
+            class="ctrl" type="number" min="11" max="18" step="0.5"
+            value={treeFont.size}
+            onchange={(e) => applyTreeFontSize(parseFloat(e.currentTarget.value))}
+          />
+        </div>
+        <div class="set-row">
+          <div class="set-txt">
+            <div class="t">{t('settings.codeThemeTitle')}</div>
+            <div class="d">{t('settings.codeThemeDesc')}</div>
+          </div>
+          <select class="ctrl" value={editorTheme.choice} onchange={(e) => {
+            const v = e.currentTarget.value
+            if (v === 'vs-dark' || v === 'vs') setBuiltinEditorTheme(v)
+          }}>
+            <option value="vs-dark">{t('settings.codeThemeDark')}</option>
+            <option value="vs">{t('settings.codeThemeLight')}</option>
+            {#if editorTheme.importedName}
+              <option value="imported">{editorTheme.importedName}</option>
+            {/if}
+          </select>
+        </div>
+        <div class="set-row">
+          <div class="set-txt">
+            <div class="t">{t('settings.importThemeTitle')}</div>
+            <div class="d">{t('settings.importThemeDesc')}</div>
+          </div>
+          <label class="ctrl">
+            {t('settings.importThemeButton')}
+            <input type="file" accept=".json,application/json" style="display:none" onchange={onThemeFileChosen} />
+          </label>
+        </div>
+        {#if themeImportError}<div class="mset-error">{themeImportError}</div>{/if}
       </div>
     {:else if active === 'models'}
-      <h2>Model settings</h2>
-      <p class="muted set-sub">จัดการผู้ให้บริการโมเดล เลือก provider แล้วตั้งคีย์/เลือกโมเดลที่จะใช้ในแชทได้ทันที</p>
+      <h2>{t('settings.modelSettings')}</h2>
+      <p class="muted set-sub">{t('settings.modelsDesc')}</p>
 
       <div class="settings-card mset">
         <aside class="mset-side">
-          <div class="settings-group-label eyebrow">Providers</div>
+          <div class="settings-group-label eyebrow">{t('settings.providers')}</div>
           {#each providers as p}
             <button class="mset-prov" class:selected={selected === p.name} onclick={() => selectProvider(p.name)}>
               {p.name}
@@ -235,52 +340,52 @@
             <div class="mset-head">
               <span class="mset-name">{selected}</span>
               {#if isActiveProvider}
-                <span class="badge on">Active</span>
+                <span class="badge on">{t('settings.active')}</span>
               {:else}
                 <button class="ctrl" disabled={busy !== ''} onclick={useProvider}>
-                  {busy === 'provider' ? 'กำลังสลับ…' : 'ใช้ provider นี้'}
+                  {busy === 'provider' ? t('settings.switching') : t('settings.useThisProvider')}
                 </button>
               {/if}
             </div>
 
             <div class="mset-field">
-              <div class="eyebrow">Base URL</div>
+              <div class="eyebrow">{t('settings.baseUrl')}</div>
               <div class="mset-ro">{baseURL || '—'}</div>
             </div>
 
             {#if selectedRow.requiresKey}
               <div class="mset-field">
-                <div class="eyebrow">API key</div>
+                <div class="eyebrow">{t('settings.apiKeyLabel')}</div>
                 <div class="mset-keyrow">
                   <input
                     class="ctrl key-input" type={showKey ? 'text' : 'password'}
-                    placeholder={selectedRow.hasKey ? 'ตั้งค่าแล้ว — วางคีย์ใหม่เพื่อแทนที่' : 'วาง API key…'}
+                    placeholder={selectedRow.hasKey ? t('settings.keySetPlaceholder') : t('settings.pasteKeyPlaceholder')}
                     bind:value={keyDraft}
                     onkeydown={(e) => e.key === 'Enter' && saveKey()}
                   />
-                  <button class="icobtn tiny" aria-label="Show key" onclick={() => (showKey = !showKey)}>👁</button>
+                  <button class="icobtn tiny" aria-label={t('settings.showKey')} onclick={() => (showKey = !showKey)}>👁</button>
                   <button class="ctrl" disabled={busy === 'key' || !keyDraft.trim()} onclick={saveKey}>
-                    {busy === 'key' ? 'Saving…' : 'Save'}
+                    {busy === 'key' ? t('settings.saving') : t('settings.save')}
                   </button>
                 </div>
               </div>
             {/if}
 
             <div class="mset-field">
-              <div class="eyebrow">Model list</div>
+              <div class="eyebrow">{t('settings.modelList')}</div>
               {#if loadingModels}
-                <div class="muted">กำลังโหลดรายชื่อโมเดล…</div>
+                <div class="muted">{t('settings.loadingModels')}</div>
               {:else if models.length === 0}
-                <div class="muted">ไม่พบรายชื่อโมเดล — ใส่ model id เองด้านล่างได้</div>
+                <div class="muted">{t('settings.noModels')}</div>
               {:else}
                 {#each models as m}
                   <div class="mrow">
                     <span class="mname">{m}</span>
                     {#if isActiveProvider && cockpit.model.modelName === m}
-                      <span class="badge on">ใช้อยู่</span>
+                      <span class="badge on">{t('settings.inUse')}</span>
                     {:else}
                       <button class="ctrl" disabled={busy !== ''} onclick={() => useModel(m)}>
-                        {busy === m ? 'กำลังสลับ…' : 'ใช้'}
+                        {busy === m ? t('settings.switching') : t('settings.use')}
                       </button>
                     {/if}
                   </div>
@@ -288,11 +393,11 @@
               {/if}
               <div class="mset-keyrow">
                 <input
-                  class="ctrl key-input" placeholder="model id อื่นๆ เช่น gpt-4o…"
+                  class="ctrl key-input" placeholder={t('settings.customModelPlaceholder')}
                   bind:value={customModel}
                   onkeydown={(e) => e.key === 'Enter' && customModel.trim() && useModel(customModel.trim())}
                 />
-                <button class="ctrl" disabled={busy !== '' || !customModel.trim()} onclick={() => useModel(customModel.trim())}>ใช้</button>
+                <button class="ctrl" disabled={busy !== '' || !customModel.trim()} onclick={() => useModel(customModel.trim())}>{t('settings.use')}</button>
               </div>
             </div>
 
@@ -303,12 +408,12 @@
         </div>
       </div>
     {:else if active === 'mcp'}
-      <h2>MCP servers</h2>
-      <p class="muted set-sub">เชื่อมต่อ MCP server ภายนอก (stdio) เพื่อเพิ่มเครื่องมือให้ผู้ช่วย — เครื่องมือจาก MCP จะถามยืนยันก่อนรันเสมอ</p>
+      <h2>{t('settings.mcpServers')}</h2>
+      <p class="muted set-sub">{t('settings.mcpDesc')}</p>
 
       <div class="settings-card">
         {#if mcpServers.length === 0}
-          <div class="muted">ยังไม่มี MCP server — เพิ่มด้านล่าง</div>
+          <div class="muted">{t('settings.noMcpServers')}</div>
         {:else}
           {#each mcpServers as s}
             <div class="set-row">
@@ -318,9 +423,9 @@
               </div>
               <div style="display:flex; gap:8px">
                 <button class="ctrl" disabled={mcpBusy !== ''} onclick={() => testMCP(s.name)}>
-                  {mcpBusy === 'test:' + s.name ? 'กำลังทดสอบ…' : 'ทดสอบ'}
+                  {mcpBusy === 'test:' + s.name ? t('settings.testing') : t('settings.test')}
                 </button>
-                <button class="ctrl" disabled={mcpBusy !== ''} onclick={() => removeMCP(s.name)}>ลบ</button>
+                <button class="ctrl" disabled={mcpBusy !== ''} onclick={() => removeMCP(s.name)}>{t('settings.remove')}</button>
               </div>
             </div>
           {/each}
@@ -328,23 +433,24 @@
       </div>
 
       <div class="settings-card">
-        <div class="eyebrow">เพิ่ม server</div>
+        <div class="eyebrow">{t('settings.addServer')}</div>
         <div class="mset-keyrow">
-          <input class="ctrl" placeholder="ชื่อ เช่น filesystem" bind:value={mcpName} />
+          <input class="ctrl" placeholder={t('settings.mcpNamePlaceholder')} bind:value={mcpName} />
         </div>
         <div class="mset-keyrow">
           <input
             class="ctrl key-input"
-            placeholder="คำสั่ง เช่น npx -y @modelcontextprotocol/server-filesystem /path"
+            placeholder={t('settings.mcpCommandPlaceholder')}
             bind:value={mcpCommand}
             onkeydown={(e) => e.key === 'Enter' && mcpName.trim() && mcpCommand.trim() && addMCP()}
           />
           <button class="ctrl" disabled={mcpBusy !== '' || !mcpName.trim() || !mcpCommand.trim()} onclick={addMCP}>
-            {mcpBusy === 'add' ? 'กำลังเพิ่ม…' : 'เพิ่ม'}
+            {mcpBusy === 'add' ? t('settings.adding') : t('settings.add')}
           </button>
         </div>
         {#if mcpError}<div class="mset-error">{mcpError}</div>{/if}
       </div>
     {/if}
+    </div>
   </div>
 </div>

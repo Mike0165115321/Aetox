@@ -13,6 +13,9 @@
   } from '../stores/workbench.svelte'
   import { TerminalShells, BrowserBack, BrowserForward, BrowserReload } from '../../../wailsjs/go/main/App'
   import { EventsOn } from '../../../wailsjs/runtime/runtime'
+  import { t } from '../i18n.svelte'
+
+  let { onToggleInspector }: { onToggleInspector: () => void } = $props()
 
   const tabIcon: Record<string, string> = { review: '▤', terminal: '⌨', browser: '🌐', files: '⧉', file: '📄', tools: '🛠' }
 
@@ -32,7 +35,7 @@
     // The AI agent opens pages on its workbench through this event (browser_open skill).
     return EventsOn('workbench:open-browser', ({ id, url }: { id: string; url: string }) => {
       if (!workbench.tabs.some((t) => t.id === id)) {
-        workbench.tabs.push({ id, kind: 'browser', name: 'New tab', url })
+        workbench.tabs.push({ id, kind: 'browser', name: t('workbench.newTab'), url })
       }
       workbench.activeId = id
     })
@@ -54,19 +57,19 @@
     let u = urlDraft.trim()
     if (!u) return
     if (!/^https?:\/\//i.test(u)) u = 'https://' + u
-    let t = activeTab
-    if (!t || t.kind !== 'browser') {
+    let tab = activeTab
+    if (!tab || tab.kind !== 'browser') {
       const id = openBrowserTab()
-      t = workbench.tabs.find((x) => x.id === id)
-      if (!t) return
+      tab = workbench.tabs.find((x) => x.id === id)
+      if (!tab) return
     }
-    t.url = u
-    try { t.name = new URL(u).hostname } catch { t.name = u }
+    tab.url = u
+    try { tab.name = new URL(u).hostname } catch { tab.name = u }
   }
 
   function browserCmd(fn: (id: string) => Promise<void>) {
-    const t = activeTab
-    if (t?.kind === 'browser' && t.url) fn(t.id)
+    const tab = activeTab
+    if (tab?.kind === 'browser' && tab.url) fn(tab.id)
   }
 
   function closeMenuOnOutsideClick(e: MouseEvent) {
@@ -86,69 +89,73 @@
 <svelte:window onclick={menuOpen ? closeMenuOnOutsideClick : undefined} onkeydown={onKeydown} />
 
 <div class="insp-tabs">
-  {#each workbench.tabs as t (t.id)}
-    <button class="tab" class:active={workbench.activeId === t.id} title={t.name} onclick={() => activateTab(t.id)}>
-      <span class="ic">{tabIcon[t.kind]}</span>
-      <span class="label">{t.name}</span>
+  {#each workbench.tabs as tab (tab.id)}
+    <button class="tab" class:active={workbench.activeId === tab.id} title={tab.name} onclick={() => activateTab(tab.id)}>
+      <span class="ic">{tabIcon[tab.kind]}</span>
+      <span class="label">{tab.name}</span>
       <span
-        class="tab-close" role="button" tabindex="0" aria-label={`Close ${t.name}`}
-        onclick={(e) => { e.stopPropagation(); closeTab(t) }}
-        onkeydown={(e) => e.key === 'Enter' && closeTab(t)}
+        class="tab-close" role="button" tabindex="0" aria-label={t('workbench.close', { name: tab.name })}
+        onclick={(e) => { e.stopPropagation(); closeTab(tab) }}
+        onkeydown={(e) => e.key === 'Enter' && closeTab(tab)}
       >✕</span>
     </button>
   {/each}
   <div class="plus-menu-wrap">
-    <button class="icobtn tiny plus-btn" aria-label="Add tab" onclick={() => (menuOpen = !menuOpen)}>+</button>
+    <button class="icobtn tiny plus-btn" aria-label={t('workbench.addTab')} data-tip={t('workbench.addTab')} onclick={() => (menuOpen = !menuOpen)}>+</button>
     {#if menuOpen}
       <div class="plus-menu">
-        <button class="plus-menu-item" onclick={() => pick(openReview)}><span class="ic">▤</span> Review <span class="kbd">Ctrl+Shift+G</span></button>
-        <button class="plus-menu-item" disabled={shells.length === 0} onclick={openDefaultTerminal}><span class="ic">⌨</span> Terminal</button>
-        <button class="plus-menu-item" onclick={() => pick(openBrowserTab)}><span class="ic">🌐</span> Browser <span class="kbd">Ctrl+T</span></button>
-        <button class="plus-menu-item" onclick={() => pick(openFilesTab)}><span class="ic">⧉</span> Files <span class="kbd">Ctrl+P</span></button>
-        <button class="plus-menu-item" onclick={() => pick(openToolsTab)}><span class="ic">🛠</span> Tools</button>
+        <button class="plus-menu-item" onclick={() => pick(openReview)}><span class="ic">▤</span> {t('workbench.reviewTab')} <span class="kbd">Ctrl+Shift+G</span></button>
+        <button class="plus-menu-item" disabled={shells.length === 0} onclick={openDefaultTerminal}><span class="ic">⌨</span> {t('workbench.terminalMenu')}</button>
+        <button class="plus-menu-item" onclick={() => pick(openBrowserTab)}><span class="ic">🌐</span> {t('workbench.browserMenu')} <span class="kbd">Ctrl+T</span></button>
+        <button class="plus-menu-item" onclick={() => pick(openFilesTab)}><span class="ic">⧉</span> {t('workbench.filesTab')} <span class="kbd">Ctrl+P</span></button>
+        <button class="plus-menu-item" onclick={() => pick(openToolsTab)}><span class="ic">🛠</span> {t('workbench.toolsTab')}</button>
       </div>
     {/if}
   </div>
   <div class="insp-tabs-icons">
-    <span class="icobtn tiny" aria-label="Fullscreen">⤢</span>
-    <span class="icobtn tiny" aria-label="Restore">▢</span>
-    <span class="icobtn tiny" aria-label="Toggle sidebar">▤</span>
+    <span class="icobtn tiny" aria-label={t('workbench.fullscreen')}>⤢</span>
+    <span class="icobtn tiny" aria-label={t('workbench.restore')}>▢</span>
+    <button class="icobtn tiny" aria-label={t('workbench.collapsePanel')} title={t('workbench.collapsePanel')} onclick={onToggleInspector}>▤</button>
   </div>
 </div>
+{#if activeTab?.kind === 'browser'}
 <div class="insp-addr">
-  <button class="icobtn tiny" aria-label="Back" onclick={() => browserCmd(BrowserBack)}>←</button>
-  <button class="icobtn tiny" aria-label="Forward" onclick={() => browserCmd(BrowserForward)}>→</button>
-  <button class="icobtn tiny" aria-label="Reload" onclick={() => browserCmd(BrowserReload)}>↻</button>
+  <button class="icobtn tiny" aria-label={t('workbench.back')} data-tip={t('workbench.back')} onclick={() => browserCmd(BrowserBack)}>←</button>
+  <button class="icobtn tiny" aria-label={t('workbench.forward')} data-tip={t('workbench.forward')} onclick={() => browserCmd(BrowserForward)}>→</button>
+  <button class="icobtn tiny" aria-label={t('workbench.reload')} data-tip={t('workbench.reload')} onclick={() => browserCmd(BrowserReload)}>↻</button>
   <input
-    class="insp-url" placeholder="Enter a URL" bind:value={urlDraft}
+    class="insp-url" placeholder={t('workbench.urlPlaceholder')} bind:value={urlDraft}
     onkeydown={(e) => e.key === 'Enter' && navigate()}
   />
-  <button class="icobtn tiny" aria-label="Go" title="ไปที่หน้านี้" onclick={navigate}>↗</button>
+  <button class="icobtn tiny" aria-label={t('workbench.go')} data-tip={t('workbench.go')} onclick={navigate}>↗</button>
   <span class="icobtn tiny">⋮</span>
 </div>
+{/if}
 
 <div class="insp-body">
   {#if workbench.tabs.length === 0}
-    <div class="insp-blank">
-      <span class="ic">🌐</span>
-      <div class="insp-blank-title">Start browsing</div>
-      <div class="insp-blank-sub">กด + เพื่อเปิดแท็บใหม่</div>
+    <div class="insp-start">
+      <button class="plus-menu-item" onclick={openReview}><span class="ic">▤</span> {t('workbench.reviewTab')} <span class="kbd">Ctrl+Shift+G</span></button>
+      <button class="plus-menu-item" disabled={shells.length === 0} onclick={openDefaultTerminal}><span class="ic">⌨</span> {t('workbench.terminalMenu')}</button>
+      <button class="plus-menu-item" onclick={() => openBrowserTab()}><span class="ic">🌐</span> {t('workbench.browserMenu')} <span class="kbd">Ctrl+T</span></button>
+      <button class="plus-menu-item" onclick={openFilesTab}><span class="ic">⧉</span> {t('workbench.filesTab')} <span class="kbd">Ctrl+P</span></button>
+      <button class="plus-menu-item" onclick={openToolsTab}><span class="ic">🛠</span> {t('workbench.toolsTab')}</button>
     </div>
   {/if}
-  {#each workbench.tabs as t (t.id)}
-    <div class="insp-slot" style="display:{workbench.activeId === t.id ? 'block' : 'none'}">
-      {#if t.kind === 'review'}
+  {#each workbench.tabs as tab (tab.id)}
+    <div class="insp-slot" style="display:{workbench.activeId === tab.id ? 'block' : 'none'}">
+      {#if tab.kind === 'review'}
         <ReviewPane />
-      {:else if t.kind === 'terminal'}
-        <Terminal sessionId={t.id} onExit={() => removeTab(t.id)} />
-      {:else if t.kind === 'files'}
+      {:else if tab.kind === 'terminal'}
+        <Terminal sessionId={tab.id} onExit={() => removeTab(tab.id)} />
+      {:else if tab.kind === 'files'}
         <FilesPane />
-      {:else if t.kind === 'tools'}
+      {:else if tab.kind === 'tools'}
         <ToolsPane />
-      {:else if t.kind === 'file'}
-        <FileEditor path={t.path ?? ''} content={t.content ?? ''} />
+      {:else if tab.kind === 'file'}
+        <FileEditor path={tab.path ?? ''} content={tab.content ?? ''} />
       {:else}
-        <BrowserPane tab={t} active={workbench.activeId === t.id} />
+        <BrowserPane tab={tab} active={workbench.activeId === tab.id} />
       {/if}
     </div>
   {/each}
@@ -156,6 +163,6 @@
 
 {#if hasActiveTask}
   <div class="insp-foot">
-    <button class="stopbtn">⏸ Stop Current Task</button>
+    <button class="stopbtn">{t('workbench.stopTask')}</button>
   </div>
 {/if}

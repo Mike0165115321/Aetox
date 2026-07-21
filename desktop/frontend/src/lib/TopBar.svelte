@@ -1,13 +1,15 @@
 <script lang="ts">
   import type { ProjectInfo } from './types'
   import { theme, toggleTheme } from './theme.svelte'
+  import { t } from './i18n.svelte'
 
   let {
-    project, onOpenFolder, onOpenSettings,
+    project, onOpenFolder, inspectorCollapsed, onToggleInspector,
   }: {
     project: ProjectInfo
     onOpenFolder: () => void
-    onOpenSettings: () => void
+    inspectorCollapsed: boolean
+    onToggleInspector: () => void
   } = $props()
 </script>
 
@@ -18,7 +20,7 @@
 
 <div class="topbar">
   <button type="button" class="chip" onclick={onOpenFolder}>
-    <span class="ic">📁</span> {project.name || 'Open Folder'} <span class="caret">▾</span>
+    <span class="ic">📁</span> {project.name || t('topbar.openFolder')} <span class="caret">▾</span>
   </button>
   {#if project.branch}
     <span class="chip branch"><span class="ic">⑂</span> {project.branch}</span>
@@ -29,14 +31,19 @@
   {#if project.name}
     <span class="chip">
       <span class="ic">📄</span> {project.governanceFile}
-      {#if project.governanceLoaded}<span class="dot green"></span> Loaded{/if}
+      {#if project.governanceLoaded}<span class="dot green"></span> {t('topbar.loaded')}{/if}
     </span>
   {/if}
   <span class="spacer"></span>
 
   <div class="winbtns">
-    <button class="icobtn" aria-label="Settings" onclick={onOpenSettings}>⚙</button>
-    <button class="icobtn" aria-label="Toggle theme" onclick={toggleTheme}>
+    <button
+      class="icobtn" aria-label={inspectorCollapsed ? t('topbar.showPanel') : t('topbar.hidePanel')}
+      data-tip={t('topbar.toggleInspectorTip')} onclick={onToggleInspector}
+    >
+      {inspectorCollapsed ? '▥' : '▤'}
+    </button>
+    <button class="icobtn tip-r" aria-label={t('topbar.toggleTheme')} data-tip={t('topbar.toggleThemeTip')} onclick={toggleTheme}>
       {theme.name === 'dark' ? '☀' : '🌙'}
     </button>
   </div>

@@ -4,6 +4,7 @@
 // under lib/workbench/ render from this; nothing else mutates it directly.
 
 import { TerminalStart, TerminalClose, ReadFile } from '../../../wailsjs/go/main/App'
+import { t } from '../i18n.svelte'
 
 export type WorkbenchTabKind = 'review' | 'terminal' | 'browser' | 'files' | 'file' | 'tools'
 
@@ -17,8 +18,8 @@ export type WorkbenchTab = {
 }
 
 export const workbench = $state<{ tabs: WorkbenchTab[]; activeId: string }>({
-  tabs: [{ id: 'review', kind: 'review', name: 'Review' }],
-  activeId: 'review',
+  tabs: [],
+  activeId: '',
 })
 
 let browserSeq = 0
@@ -44,7 +45,7 @@ export async function closeTab(tab: WorkbenchTab): Promise<void> {
 /** Singleton tab: Review panels (files changed / diff / tests / history). */
 export function openReview(): void {
   if (!workbench.tabs.some((t) => t.kind === 'review')) {
-    workbench.tabs.unshift({ id: 'review', kind: 'review', name: 'Review' })
+    workbench.tabs.unshift({ id: 'review', kind: 'review', name: t('workbench.reviewTab') })
   }
   workbench.activeId = 'review'
 }
@@ -52,7 +53,7 @@ export function openReview(): void {
 /** Singleton tab: project file tree. */
 export function openFilesTab(): void {
   if (!workbench.tabs.some((t) => t.kind === 'files')) {
-    workbench.tabs.push({ id: 'files', kind: 'files', name: 'Files' })
+    workbench.tabs.push({ id: 'files', kind: 'files', name: t('workbench.filesTab') })
   }
   workbench.activeId = 'files'
 }
@@ -60,14 +61,14 @@ export function openFilesTab(): void {
 /** Singleton tab: skills + MCP tools the AI can currently use. */
 export function openToolsTab(): void {
   if (!workbench.tabs.some((t) => t.kind === 'tools')) {
-    workbench.tabs.push({ id: 'tools', kind: 'tools', name: 'Tools' })
+    workbench.tabs.push({ id: 'tools', kind: 'tools', name: t('workbench.toolsTab') })
   }
   workbench.activeId = 'tools'
 }
 
 export function openBrowserTab(): string {
   const id = `web-${++browserSeq}`
-  workbench.tabs.push({ id, kind: 'browser', name: 'New tab', url: '' })
+  workbench.tabs.push({ id, kind: 'browser', name: t('workbench.newTab'), url: '' })
   workbench.activeId = id
   return id
 }
@@ -86,7 +87,7 @@ export async function openFileTab(path: string): Promise<void> {
     try {
       content = await ReadFile(path)
     } catch (err) {
-      content = `เปิดไฟล์ไม่ได้: ${err}`
+      content = t('workbench.openFileError', { err: String(err) })
     }
     workbench.tabs.push({ id, kind: 'file', name: path.split('/').pop() ?? path, path, content })
   }

@@ -12,6 +12,7 @@ import {
   ListSessions, LoadSession, NewSession, CurrentSessionID, SearchSessions,
 } from '../../../wailsjs/go/main/App'
 import type { main } from '../../../wailsjs/go/models'
+import { t } from '../i18n.svelte'
 
 export const cockpit = $state<CockpitState>(emptyCockpitState())
 
@@ -43,14 +44,14 @@ export async function refreshWorkspace(): Promise<void> {
 }
 
 function agoLabel(iso: string): string {
-  const t = Date.parse(iso)
-  if (Number.isNaN(t)) return ''
-  const mins = Math.max(0, Math.round((Date.now() - t) / 60000))
-  if (mins < 1) return 'เมื่อกี้'
-  if (mins < 60) return `${mins} นาที`
+  const parsed = Date.parse(iso)
+  if (Number.isNaN(parsed)) return ''
+  const mins = Math.max(0, Math.round((Date.now() - parsed) / 60000))
+  if (mins < 1) return t('cockpit.justNow')
+  if (mins < 60) return t('cockpit.minutesAgo', { mins })
   const hrs = Math.round(mins / 60)
-  if (hrs < 24) return `${hrs} ชม.`
-  return `${Math.round(hrs / 24)} วัน`
+  if (hrs < 24) return t('cockpit.hoursAgo', { hrs })
+  return t('cockpit.daysAgo', { days: Math.round(hrs / 24) })
 }
 
 /** Pull this project's chat history (sessions are stored per project in Go). */
@@ -121,7 +122,7 @@ export async function sendUserMessage(text: string): Promise<void> {
     const reply = await SendMessage(trimmed)
     cockpit.chat.push({ role: 'agent', text: reply, time: nowLabel() })
   } catch (err) {
-    cockpit.chat.push({ role: 'agent', text: `เกิดข้อผิดพลาด: ${err}`, time: nowLabel() })
+    cockpit.chat.push({ role: 'agent', text: t('cockpit.sendError', { err: String(err) }), time: nowLabel() })
   }
   await refreshWorkspace()
   await refreshSessions()
@@ -145,14 +146,6 @@ export function visibleTree(tree: TreeNode[]): TreeNode[] {
   return out
 }
 
-/** View state: mark a file as the active/open one, and open it in the viewer. */
-export function selectNode(node: TreeNode): void {
-  if (node.kind !== 'file') return
-  for (const n of cockpit.tree) n.active = false
-  node.active = true
-  openFile(node.path)
-}
-
 /** Open a file tab (fetching its content once), or just switch to it if already open. */
 export async function openFile(path: string): Promise<void> {
   if (!cockpit.openFiles.some((f) => f.path === path)) {
@@ -160,7 +153,7 @@ export async function openFile(path: string): Promise<void> {
       const content = await ReadFile(path)
       cockpit.openFiles.push({ path, content })
     } catch (err) {
-      cockpit.openFiles.push({ path, content: `เปิดไฟล์ไม่ได้: ${err}` })
+      cockpit.openFiles.push({ path, content: t('workbench.openFileError', { err: String(err) }) })
     }
   }
   cockpit.activeView = path
