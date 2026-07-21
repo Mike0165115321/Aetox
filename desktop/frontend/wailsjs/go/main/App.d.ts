@@ -56,6 +56,8 @@ export function ProviderBaseURL(arg1:string):Promise<string>;
 
 export function ReadFile(arg1:string):Promise<string>;
 
+export function RelativizePath(arg1:string):Promise<string>;
+
 export function RemoveMCPServer(arg1:string):Promise<void>;
 
 export function RequiresAPIKey(arg1:string):Promise<boolean>;

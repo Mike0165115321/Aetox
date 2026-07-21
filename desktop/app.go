@@ -193,6 +193,28 @@ func safeSandboxPath(root, relPath string) (string, error) {
 	return safeTarget, nil
 }
 
+// RelativizePath converts an absolute OS path (e.g. from a native file drop)
+// into a path relative to the open project's sandbox root, so it can be
+// passed to ReadFile/WriteFile. Errors if the path is outside the project.
+func (a *App) RelativizePath(absPath string) (string, error) {
+	root := strings.TrimSpace(a.cfg.SandboxRoot)
+	if root == "" {
+		return "", fmt.Errorf("no project open")
+	}
+	safeRoot, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	rel, err := filepath.Rel(safeRoot, absPath)
+	if err != nil {
+		return "", err
+	}
+	if rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
+		return "", fmt.Errorf("path is outside project root")
+	}
+	return filepath.ToSlash(rel), nil
+}
+
 // ReadFile returns the text content of a file inside the sandbox root, for
 // the sidebar's file viewer.
 func (a *App) ReadFile(relPath string) (string, error) {

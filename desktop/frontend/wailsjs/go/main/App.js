@@ -110,6 +110,10 @@ export function ReadFile(arg1) {
   return window['go']['main']['App']['ReadFile'](arg1);
 }
 
+export function RelativizePath(arg1) {
+  return window['go']['main']['App']['RelativizePath'](arg1);
+}
+
 export function RemoveMCPServer(arg1) {
   return window['go']['main']['App']['RemoveMCPServer'](arg1);
 }

@@ -62,6 +62,31 @@ func TestReadFileNoProjectOpen(t *testing.T) {
 	}
 }
 
+func TestRelativizePathInsideProject(t *testing.T) {
+	root := t.TempDir()
+	a := &App{cfg: config.Config{SandboxRoot: root}}
+	abs := filepath.Join(root, "sub", "file.txt")
+	got, err := a.RelativizePath(abs)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if want := "sub/file.txt"; got != want {
+		t.Errorf("RelativizePath = %q, want %q", got, want)
+	}
+}
+
+func TestRelativizePathRejectsOutside(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "sandbox")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	a := &App{cfg: config.Config{SandboxRoot: root}}
+	outside := filepath.Join(filepath.Dir(root), "elsewhere.txt")
+	if _, err := a.RelativizePath(outside); err == nil {
+		t.Error("expected error for path outside project root, got nil")
+	}
+}
+
 func TestReadFileRejectsDirectory(t *testing.T) {
 	root := t.TempDir()
 	if err := os.Mkdir(filepath.Join(root, "sub"), 0o755); err != nil {
