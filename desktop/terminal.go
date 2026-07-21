@@ -154,11 +154,15 @@ func (a *App) TerminalClose(sessionID string) error {
 }
 
 // shutdown is the Wails OnShutdown hook (wired in main.go) — closes the local
-// store, then sweeps every live terminal session so shell processes never
-// orphan when the app quits. (Chat turns are persisted as they happen.)
+// store and MCP servers, then sweeps every live terminal session so shell and
+// server processes never orphan when the app quits. (Chat turns are persisted
+// as they happen.)
 func (a *App) shutdown(_ context.Context) {
 	if a.db != nil {
 		_ = a.db.Close()
+	}
+	if a.mcp != nil {
+		_ = a.mcp.Close()
 	}
 	a.terminalsMu.Lock()
 	ids := make([]string, 0, len(a.terminals))
