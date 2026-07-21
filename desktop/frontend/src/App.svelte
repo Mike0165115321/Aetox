@@ -20,28 +20,51 @@
   // with what the Go engine actually has. tree/sessions/diff/test panels fill in
   // once a real Go-core data source is wired for them too.
 
-  // Panel widths are otherwise unbounded — the .main chat column keeps its own
-  // minmax(360px,1fr) floor and .app scrolls horizontally, so neither side panel
-  // can squeeze it into the overlap bug from before. Each floor below is just
-  // the narrowest that panel's own content survives without clipping.
+  // Each floor below is the narrowest that panel's own content survives
+  // without clipping (inspector's 320px fits the workbench tab row — see
+  // workbench/Workbench.svelte's .insp-tabs).
+  //
+  // The max is computed at drag time (see clampSize) rather than fixed here:
+  // it's whatever's left of window.innerWidth after the OTHER side panel's
+  // current width and .main's own 360px grid floor (2 handles at 6px each).
+  // Dragging a panel wider than that would push the grid's total width past
+  // the viewport, which .app's overflow-x:auto turns into a horizontal
+  // scrollbar instead of an error — technically nothing breaks, but the
+  // composer/chat content scrolls out of view, which reads as "the panel
+  // grows without limit." Capping it here keeps everything on-screen without
+  // reintroducing the old bug this was written to avoid (main getting
+  // squeezed below its 360px floor) — main's grid floor is untouched, this
+  // only stops the OTHER two columns from claiming space main needs.
+  const mainFloor = 360
+  const handleWidths = 12 // two 6px resize handles
   const panels = {
-    sidebar: { cssVar: '--sidebar-width', storageKey: 'sidebarWidth', min: 200 },
-    // wide enough for the workbench's tab row — see workbench/Workbench.svelte's .insp-tabs.
-    inspector: { cssVar: '--inspector-width', storageKey: 'inspectorWidth', min: 320 },
+    sidebar: { cssVar: '--sidebar-width', storageKey: 'sidebarWidth', min: 200, defaultPx: 280 },
+    inspector: { cssVar: '--inspector-width', storageKey: 'inspectorWidth', min: 320, defaultPx: 384 },
   }
 
-  function clampSize(px: number, min: number): number {
-    return Math.max(min, px)
+  function currentPx(panel: typeof panels.sidebar): number {
+    const raw = getComputedStyle(document.documentElement).getPropertyValue(panel.cssVar).trim()
+    const parsed = parseFloat(raw)
+    return Number.isFinite(parsed) ? parsed : panel.defaultPx
+  }
+
+  function clampSize(px: number, panel: typeof panels.sidebar, otherPanel: typeof panels.sidebar): number {
+    const max = Math.max(panel.min, window.innerWidth - currentPx(otherPanel) - mainFloor - handleWidths)
+    return Math.min(Math.max(panel.min, px), max)
+  }
+
+  function otherOf(panel: typeof panels.sidebar): typeof panels.sidebar {
+    return panel === panels.sidebar ? panels.inspector : panels.sidebar
   }
 
   onMount(() => {
     loadRealState()
 
-    for (const { cssVar, storageKey, min } of Object.values(panels)) {
-      const stored = localStorage.getItem(storageKey)
+    for (const panel of Object.values(panels)) {
+      const stored = localStorage.getItem(panel.storageKey)
       if (stored) {
-        const size = clampSize(parseInt(stored, 10), min)
-        document.documentElement.style.setProperty(cssVar, `${size}px`)
+        const size = clampSize(parseInt(stored, 10), panel, otherOf(panel))
+        document.documentElement.style.setProperty(panel.cssVar, `${size}px`)
       }
     }
   })
@@ -51,23 +74,42 @@
 
   // computeSize turns the pointer position into this panel's size — sidebar
   // anchored to the window's left edge, inspector to its right.
+  //
+  // Dragging past the inspector panel's bounds crosses into the native
+  // WebView2 browser tab window (a real, separate OS window overlaid by
+  // desktop/browser.go — see BrowserSetBounds) rather than staying inside
+  // this webview's DOM. Without pointer capture, the OS can deliver the
+  // pointerup that ends the drag to THAT window instead of here, so this
+  // listener never fires: dragging never stops, and any later mouse movement
+  // over the app keeps calling onMove and growing the panel. setPointerCapture
+  // makes Chromium keep routing this pointer's events to the handle element
+  // regardless of what's visually underneath it, which is the actual fix;
+  // pointercancel/blur are just backstops in case capture is lost anyway.
   function startResize(panel: typeof panels.sidebar, computeSize: (e: PointerEvent) => number, setDragging: (v: boolean) => void) {
+    const otherPanel = otherOf(panel)
     return (e: PointerEvent) => {
+      const handle = e.currentTarget as HTMLElement
+      handle.setPointerCapture(e.pointerId)
       setDragging(true)
       e.preventDefault()
       const onMove = (ev: PointerEvent) => {
-        const size = clampSize(computeSize(ev), panel.min)
+        const size = clampSize(computeSize(ev), panel, otherPanel)
         document.documentElement.style.setProperty(panel.cssVar, `${size}px`)
       }
-      const onUp = () => {
+      const onEnd = () => {
         setDragging(false)
+        try { handle.releasePointerCapture(e.pointerId) } catch { /* already released */ }
         window.removeEventListener('pointermove', onMove)
-        window.removeEventListener('pointerup', onUp)
+        window.removeEventListener('pointerup', onEnd)
+        window.removeEventListener('pointercancel', onEnd)
+        window.removeEventListener('blur', onEnd)
         const size = getComputedStyle(document.documentElement).getPropertyValue(panel.cssVar)
         if (size) localStorage.setItem(panel.storageKey, size.trim())
       }
       window.addEventListener('pointermove', onMove)
-      window.addEventListener('pointerup', onUp)
+      window.addEventListener('pointerup', onEnd)
+      window.addEventListener('pointercancel', onEnd)
+      window.addEventListener('blur', onEnd)
     }
   }
 

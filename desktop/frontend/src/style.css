@@ -229,10 +229,10 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .native-host { width:100%; height:100%; position:relative; }
 .insp-body { flex:1; position:relative; overflow:hidden; }
 .insp-slot { position:absolute; inset:0; overflow-y:auto; }
-.insp-blank { height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; }
+.insp-blank { height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; padding:0 16px; }
 .insp-blank .ic { font-size:28px; opacity:.6; }
-.insp-blank-title { color:var(--text-primary); font-weight:600; font-size:14px; }
-.insp-blank-sub { color:var(--text-dim); font-size:12px; }
+.insp-blank-title { color:var(--text-primary); font-weight:600; font-size:14px; max-width:100%; text-align:center; }
+.insp-blank-sub { color:var(--text-dim); font-size:12px; max-width:100%; text-align:center; }
 .insp-scroll { padding:14px; display:flex; flex-direction:column; gap:16px; }
 .panel { border:1px solid var(--border-subtle); border-radius:10px; background:var(--surface-panel); overflow:hidden; }
 .panel > .p-h { display:flex; align-items:center; justify-content:space-between; padding:10px 12px; }

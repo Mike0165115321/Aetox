@@ -11,7 +11,7 @@
     openReview, openFilesTab, openBrowserTab, openTerminalTab,
   } from '../stores/workbench.svelte'
   import { TerminalShells, BrowserBack, BrowserForward, BrowserReload } from '../../../wailsjs/go/main/App'
-  import { BrowserOpenURL, EventsOn } from '../../../wailsjs/runtime/runtime'
+  import { EventsOn } from '../../../wailsjs/runtime/runtime'
 
   const tabIcon: Record<string, string> = { review: '▤', terminal: '⌨', browser: '🌐', files: '⧉', file: '📄' }
 
@@ -61,13 +61,6 @@
     }
     t.url = u
     try { t.name = new URL(u).hostname } catch { t.name = u }
-  }
-
-  function openExternal() {
-    let u = (activeTab?.kind === 'browser' && activeTab.url) || urlDraft.trim()
-    if (!u) return
-    if (!/^https?:\/\//i.test(u)) u = 'https://' + u
-    BrowserOpenURL(u)
   }
 
   function browserCmd(fn: (id: string) => Promise<void>) {
@@ -128,7 +121,7 @@
     class="insp-url" placeholder="Enter a URL" bind:value={urlDraft}
     onkeydown={(e) => e.key === 'Enter' && navigate()}
   />
-  <button class="icobtn tiny" aria-label="Open in system browser" title="เปิดในเบราว์เซอร์ของเครื่อง" onclick={openExternal}>↗</button>
+  <button class="icobtn tiny" aria-label="Go" title="ไปที่หน้านี้" onclick={navigate}>↗</button>
   <span class="icobtn tiny">⋮</span>
 </div>
 

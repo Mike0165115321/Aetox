@@ -11,8 +11,11 @@ package main
 // onto that thread via a command queue + PostThreadMessage(WM_APP) wake-up.
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -31,8 +34,8 @@ var (
 	procRegisterClassExW = user32.NewProc("RegisterClassExW")
 	procCreateWindowExW  = user32.NewProc("CreateWindowExW")
 	procDestroyWindow    = user32.NewProc("DestroyWindow")
-	procMoveWindow       = user32.NewProc("MoveWindow")
 	procShowWindow       = user32.NewProc("ShowWindow")
+	procSetWindowPos     = user32.NewProc("SetWindowPos")
 	procGetMessageW      = user32.NewProc("GetMessageW")
 	procTranslateMessage = user32.NewProc("TranslateMessage")
 	procDispatchMessageW = user32.NewProc("DispatchMessageW")
@@ -51,10 +54,21 @@ const (
 	wsChild     = 0x40000000
 	wsVisible   = 0x10000000
 	wsClipSibl  = 0x04000000
-	swHide      = 0
-	swShowNoAct = 8
+	swHide = 0
 
 	coinitApartmentThreaded = 0x2
+
+	// hwndTop + these SWP flags force the tab's WebView2 child window to the
+	// top of the Z order: two separate WebView2 controllers in the same
+	// top-level window each composite independently, so plain ShowWindow/
+	// MoveWindow (no Z-order change) can leave the tab rendered behind the
+	// app's own webview — invisible, even though it's really navigated and
+	// painting.
+	hwndTop        = 0
+	swpNoMove      = 0x0002
+	swpNoSize      = 0x0001
+	swpNoActivate  = 0x0010
+	swpShowWindow  = 0x0040
 )
 
 type winMsg struct {
@@ -83,15 +97,55 @@ type wndClassExW struct {
 
 // aetoxMsg is the JSON envelope pages post back to Go via
 // window.chrome.webview.postMessage (see metaScript / textScript).
+//
+// SECURITY: any page loaded in the tab can call window.chrome.webview.
+// postMessage itself, at any time, with an arbitrary __aetox envelope — this
+// bridge is not exclusive to our own injected scripts. Two checks guard
+// against that (see onMessage): the "meta" case cross-checks the claimed URL
+// against args.GetSource() (the frame's real origin, reported by the WebView2
+// runtime itself — a page cannot forge this), so a page can't make the
+// address bar show a URL it isn't actually at (phishing-enabling spoof). The
+// "text" case additionally requires a per-request Token minted by
+// BrowserGetText, so a page can't preempt/replay a fake page-content response
+// into the AI agent's read path. Neither check stops a page from lying within
+// its own real DOM/title — that's inherent to any "agent reads a live page"
+// feature and is a prompt-injection risk to be handled by treating fetched
+// page text as untrusted data, not by this transport.
 type aetoxMsg struct {
 	Aetox string `json:"__aetox"`
 	Title string `json:"title,omitempty"`
 	URL   string `json:"url,omitempty"`
 	Text  string `json:"text,omitempty"`
+	Token string `json:"token,omitempty"`
 }
 
 const metaScript = `window.chrome.webview.postMessage(JSON.stringify({__aetox:"meta",title:document.title,url:location.href}))`
-const textScript = `window.chrome.webview.postMessage(JSON.stringify({__aetox:"text",title:document.title,url:location.href,text:(document.body&&document.body.innerText||"").slice(0,200000)}))`
+
+func textScript(token string) string {
+	return fmt.Sprintf(
+		`window.chrome.webview.postMessage(JSON.stringify({__aetox:"text",token:%q,title:document.title,url:location.href,text:(document.body&&document.body.innerText||"").slice(0,200000)}))`,
+		token,
+	)
+}
+
+// sameOrigin reports whether a and b share a scheme+host — used to check a
+// page's claimed URL against its real origin as reported by WebView2.
+func sameOrigin(a, b string) bool {
+	ua, err1 := url.Parse(a)
+	ub, err2 := url.Parse(b)
+	if err1 != nil || err2 != nil || ua.Scheme == "" || ua.Host == "" {
+		return false
+	}
+	return ua.Scheme == ub.Scheme && ua.Host == ub.Host
+}
+
+// newMessageToken mints a per-request nonce for BrowserGetText, so a stray or
+// forged "text" message can't be mistaken for the response to a specific call.
+func newMessageToken() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
 
 type browserTab struct {
 	hwnd     uintptr
@@ -104,8 +158,9 @@ type browserTab struct {
 	title  string
 	url    string
 
-	textMu sync.Mutex
-	textCh chan string
+	textMu    sync.Mutex
+	textCh    chan string
+	textToken string // token BrowserGetText is currently waiting on; empty = none pending
 }
 
 func (t *browserTab) meta() (title, url string) {
@@ -247,8 +302,9 @@ func (h *browserHost) open(id, url string, x, y, w, hgt int) {
 		})
 		tab := &browserTab{hwnd: hwnd, chromium: chromium, navDone: make(chan struct{})}
 
-		chromium.MessageCallback = func(message string, _ *edge.ICoreWebView2, _ *edge.ICoreWebView2WebMessageReceivedEventArgs) {
-			h.onMessage(id, tab, message)
+		chromium.MessageCallback = func(message string, _ *edge.ICoreWebView2, args *edge.ICoreWebView2WebMessageReceivedEventArgs) {
+			source, _ := args.GetSource()
+			h.onMessage(id, tab, message, source)
 		}
 		chromium.NavigationCompletedCallback = func(_ *edge.ICoreWebView2, _ *edge.ICoreWebView2NavigationCompletedEventArgs) {
 			tab.navOnce.Do(func() { close(tab.navDone) })
@@ -260,6 +316,7 @@ func (h *browserHost) open(id, url string, x, y, w, hgt int) {
 			return
 		}
 		chromium.Resize()
+		procSetWindowPos.Call(hwnd, hwndTop, 0, 0, 0, 0, swpNoMove|swpNoSize|swpShowWindow|swpNoActivate)
 
 		h.mu.Lock()
 		h.tabs[id] = tab
@@ -272,13 +329,22 @@ func (h *browserHost) open(id, url string, x, y, w, hgt int) {
 	})
 }
 
-func (h *browserHost) onMessage(id string, tab *browserTab, raw string) {
+// onMessage handles one postMessage envelope from a tab's page. source is the
+// sending frame's real origin per WebView2 (args.GetSource()) — trustworthy,
+// unlike anything else in the message, which any page script can set freely.
+func (h *browserHost) onMessage(id string, tab *browserTab, raw string, source string) {
 	var m aetoxMsg
 	if err := json.Unmarshal([]byte(raw), &m); err != nil || m.Aetox == "" {
 		return
 	}
 	switch m.Aetox {
 	case "meta":
+		// A page can claim any url it likes in the envelope; only trust it if
+		// it matches where WebView2 says the message actually came from —
+		// otherwise a page could make the address bar show a URL it isn't at.
+		if !sameOrigin(source, m.URL) {
+			return
+		}
 		tab.metaMu.Lock()
 		tab.title, tab.url = m.Title, m.URL
 		tab.metaMu.Unlock()
@@ -288,11 +354,17 @@ func (h *browserHost) onMessage(id string, tab *browserTab, raw string) {
 	case "text":
 		tab.textMu.Lock()
 		ch := tab.textCh
+		expectedToken := tab.textToken
 		tab.textCh = nil
+		tab.textToken = ""
 		tab.textMu.Unlock()
-		if ch != nil {
-			ch <- m.Text
+		// Reject if nothing is waiting, the token doesn't match this specific
+		// BrowserGetText call (stops stale/forged messages from a page), or
+		// the claimed url doesn't match the real sending origin.
+		if ch == nil || m.Token == "" || m.Token != expectedToken || !sameOrigin(source, m.URL) {
+			return
 		}
+		ch <- m.Text
 	}
 }
 
@@ -335,7 +407,7 @@ func (a *App) BrowserSetBounds(id string, x, y, w, h int) {
 	if host, err := a.browserHostLazy(); err == nil {
 		if t := host.tab(id); t != nil {
 			host.do(func() {
-				procMoveWindow.Call(t.hwnd, uintptr(x), uintptr(y), uintptr(w), uintptr(h), 1)
+				procSetWindowPos.Call(t.hwnd, hwndTop, uintptr(x), uintptr(y), uintptr(w), uintptr(h), swpShowWindow|swpNoActivate)
 				t.chromium.Resize()
 			})
 		}
@@ -353,11 +425,11 @@ func (a *App) BrowserSetVisible(id string, visible bool) {
 				host.mu.Unlock()
 			}
 			host.do(func() {
-				cmd := uintptr(swHide)
 				if visible {
-					cmd = swShowNoAct
+					procSetWindowPos.Call(t.hwnd, hwndTop, 0, 0, 0, 0, swpNoMove|swpNoSize|swpShowWindow|swpNoActivate)
+				} else {
+					procShowWindow.Call(t.hwnd, uintptr(swHide))
 				}
-				procShowWindow.Call(t.hwnd, cmd)
 			})
 		}
 	}
@@ -404,12 +476,14 @@ func (a *App) BrowserGetText(id string) (string, error) {
 		return "", fmt.Errorf("no browser tab %q", id)
 	}
 
+	token := newMessageToken()
 	ch := make(chan string, 1)
 	t.textMu.Lock()
 	t.textCh = ch
+	t.textToken = token
 	t.textMu.Unlock()
 
-	host.do(func() { t.chromium.Eval(textScript) })
+	host.do(func() { t.chromium.Eval(textScript(token)) })
 
 	select {
 	case text := <-ch:
@@ -417,6 +491,7 @@ func (a *App) BrowserGetText(id string) (string, error) {
 	case <-time.After(5 * time.Second):
 		t.textMu.Lock()
 		t.textCh = nil
+		t.textToken = ""
 		t.textMu.Unlock()
 		return "", fmt.Errorf("page did not respond (still loading?)")
 	}
