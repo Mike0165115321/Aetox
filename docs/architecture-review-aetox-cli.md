@@ -1,5 +1,7 @@
 # Architecture Review: Aetox CLI (Current State)
 
+> **SUPERSEDED 2026-07-22** — this document predates `desktop/` (Wails GUI), session persistence, the native browser tab, `internal/orchestrator`, and the `engine/providers/cli` module-split scaffold. For current-state architecture, use [ARCHITECTURE.md](../ARCHITECTURE.md) at the repo root instead. Kept here for history — CLI-only sections below may still be accurate, but nothing here reflects anything added after 2026-06-09.
+
 อัปเดตล่าสุด: 2026-06-09 (patch: Risk 1 Executor Split, Risk 2 Model Capability Catalog, Risk 3 Shell Audit Log, off-think→off rename)  
 โหมดการวิเคราะห์: Existing System Mapping  
 Pass level: Full Mode  

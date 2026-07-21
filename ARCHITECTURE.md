@@ -1,0 +1,329 @@
+> **Pass level:** Full Mode
+> **Trigger:** whole-project documentation requested at root; 3+ interacting modules (root/`internal`, `engine`, `providers`, `cli`, `desktop`), local persistence (SQLite), 11+ external provider integrations, remote code execution path (`plugin_install`).
+> **Scope:** entire repository (`e:\Aetox\Aetox`), last updated 2026-07-22.
+> **Evidence:** file tree, `go.work`/`go.mod`×4, `README.md`, `AETOX.md`, `docs/adr/0001`, `docs/adr/0002`, `docs/architecture/module-split-2026-07-21.md`, `docs/architecture/browser-security-2026-07-21.md`, `TEST-REPORT.md`, `MCP-SUPPORT-PLAN.md`, and direct reads of `cmd/aetox/main.go`, `internal/app/app.go`, `internal/cognitive/agent.go`, `internal/turn/executor.go`, `internal/skill/{skill,dispatcher,github_tools}.go`, `internal/safety/safety.go`, `internal/config/config.go`, `desktop/{app,browser,terminal,db,sessions,workbench}.go` and their `_test.go` files, `desktop/frontend/src/{App.svelte,style.css,lib/workbench/*}`.
+> **Skipped:** Svelte component internals, provider-by-provider implementation detail (`internal/model/*.go` bodies), test file contents (existence noted, not read line-by-line).
+> **Status labels used below:** `Direct` = confirmed by reading the file. `Inferred` = derived from evidence but not line-verified. `Proposed` = design intent, not yet built — never presented as existing.
+
+This document is an evidence-first architecture map, distinct from [README.md](README.md) and [AETOX.md](AETOX.md), which are product vision/pitch documents and mix shipped state with roadmap in the same tables. Where they conflict with the code, this document follows the code.
+
+---
+
+## Reader's Map — the "5 layers" mental model vs. actual code
+
+A working mental model used for planning this project splits responsibility into 5 layers: **model management**, **model-control (skills/MCP)**, **orchestrator (multi-agent)**, **UI/CLI front ends**, and **desktop app**. This section states plainly how much of that is real, separate code today, so the mental model isn't mistaken for the module boundaries in §4.
+
+| Layer | What exists today | Where |
+|---|---|---|
+| 1. Model management | Real behavior, but **not its own module** — lives inside `internal/model` (interface + all 11 provider clients + factory/bootstrap) and `internal/provider` (catalog), both part of the same flat root module. `providers/` (scaffold, §4) is where this is *meant* to move — zero code there yet. |
+| 2. Model-control (skill dispatch, tool-calling loop) | Real, but **three cooperating packages, not one**: `internal/skill` (Registry/Dispatcher/17 tools), `internal/cognitive` (Agent), `internal/turn` (Executor) — see the flow in §5. MCP itself is not built (`MCP-SUPPORT-PLAN.md`). |
+| 3. Orchestrator (multi-agent) | **Scaffold only.** `internal/orchestrator` exists (§10) but nothing calls it — both front ends still construct exactly one `cognitive.Agent` each. |
+| 4. UI/CLI front ends | Real. Two front ends — `cmd/aetox` (CLI) and `desktop/` (GUI) — both driving the same engine through `internal/app`. |
+| 5. Desktop app (browser/terminal/extension surface) | Real, and the most independently-developed layer as of this session: session persistence (SQLite), native browser tab (WebView2), embedded terminal (ConPTY) — see §4.2, `TEST-REPORT.md` Module 5, and `docs/architecture/browser-security-2026-07-21.md`. |
+
+**Answering "is it 5 clean modules now": no.** Only layer 5 (`desktop/`) is a genuinely separate Go package boundary from the rest. Layers 1–3 are conceptual groupings *within* the same flat `internal/` module (15 packages) — there is no compiler-enforced boundary stopping "layer 1" code from reaching into "layer 2" today. Treat the 5-layer split as a **planning/reading aid**, not as enforced architecture, until the `engine/providers/cli` migration (§4) actually happens.
+
+---
+
+## 1. Synthesis (read this first)
+
+- **Two systems currently share the root Go module without a boundary.** `cmd/aetox` (CLI) and `desktop/` (Wails GUI) both import `internal/app`, but the GUI only uses ~2 of that package's ~35 exported methods (`NewApp`, `RunOnce`) — the rest is CLI terminal presentation (banner, status bar, spinner, Thai-language approval prompts). See [§6.1](#61-internalapp-mixes-orchestration-with-cli-terminal-presentation). `Medium`, `Direct`.
+- **`internal/model` imports `internal/provider`**, so the abstraction (Provider interface, Message types) depends on the implementation catalog — already identified by the project's own [module-split proposal](docs/architecture/module-split-2026-07-21.md). Confirmed still true by direct import scan. `Medium`, `Direct`. This is the stated reason `engine/`, `providers/`, `cli/` exist as scaffolds.
+- **The 3-module split (`engine/`, `providers/`, `cli/`) is an empty scaffold** — `go.mod` files only, zero source. `internal/` and `cmd/` remain the actual running code. `go.work` did not include the root module until this session added it (`e70cba...`, see [§7 open questions](#7-open-questions)), which is why `wails dev` broke.
+- ~~`Registry.Register()` silently overwrites on name collision, and there is no built-in-vs-user-added distinction~~ — **fixed 2026-07-21**, see §6.4 below. `Register` now takes a `Source` and rejects collisions instead of overwriting.
+- **`SearchSessions` (Desktop session search) doesn't work at all — silently returns nothing on every call.** Root cause confirmed (a SQLite FTS5 query shape `modernc.org/sqlite` can't execute), fix verified, **not yet applied**. See §6.7 below. `Medium-High`, `Direct`, awaiting approval.
+- **Browser tab Z-order, `postMessage` origin/replay forgery, and two frontend resize/layout bugs — all fixed 2026-07-21/22.** See §6.6 and §6.8 below.
+- **`README.md`/`AETOX.md` advertise Anthropic support that doesn't exist in the actual provider catalog, and omit `zai` which does exist.** Following the project's own example command silently falls back to the `noop` stub provider. See §6.9 below. `High`, `Direct`, needs a product decision (not fixed here).
+
+**Primary recommendation:** the highest-impact open item is §6.9 (advertised-but-nonexistent provider) since it's user-facing and silent — decide whether to fix the docs or build real Anthropic support. Next, apply the `SearchSessions` fix (§6.7) — verified and waiting. After that, the `Registry` Source gap (§6.4, closed) unblocks deciding what `plugin_install`'s loader (§6.5) or an MCP client should set as `Source` — `SourceExternal` alone doesn't yet distinguish them.
+
+---
+
+## 2. System Overview (confirmed)
+
+Aetox is a single-user, local-first AI coding/personal-assistant agent with two front ends sharing one Go engine:
+
+- **CLI** (`cmd/aetox`) — interactive REPL or one-shot invocation, Thai-language terminal UI.
+- **Desktop** (`desktop/`) — Wails v2 + Svelte 5 GUI with chat, a tabbed workbench (Review/Terminal/Files/Browser), persistent SQLite-backed sessions, and an agent-controlled native browser (WebView2).
+
+Both front ends drive the same tool-calling agent loop: user message → `cognitive.Agent` → provider API (model-driven tool calls) → `turn.Executor` dispatches to one of 17 built-in skills → result folded back into the conversation.
+
+No backend server, no cloud database, no multi-tenant concerns — everything runs on the user's machine against third-party model provider APIs.
+
+---
+
+## 3. System Boundary
+
+```mermaid
+flowchart LR
+    User(("User")) --> CLI["CLI\ncmd/aetox"]
+    User --> Desktop["Desktop GUI\ndesktop/ (Wails)"]
+
+    CLI --> Engine["Engine\ninternal/*"]
+    Desktop --> Engine
+
+    Engine --> Providers[["12 Provider APIs (verified in code)\nOpenRouter, OpenAI, DeepSeek, Z.AI,\nGemini, Groq, Mistral, Together,\nPerplexity, Cohere, LM Studio,\nOllama (local) — NOT Anthropic, see §6.9"]]
+    Engine --> FS[("Local filesystem\nread/write/delete/shell/git")]
+    Engine --> GH[["GitHub API\ngithub_repo_summary, plugin_install"]]
+
+    Desktop --> SQLite[("SQLite + FTS5\ndesktop/db.go, sessions.go")]
+    Desktop --> WebView["Native WebView2 tabs\ndesktop/browser.go"]
+    Desktop --> Shell["Embedded shell sessions\ndesktop/terminal.go"]
+```
+
+- **Confirmed external dependencies:** 12 named provider HTTP APIs, verified against the actual catalog map in `internal/provider/catalog.go` (not README's list — see §6.9, they differ), GitHub REST API (`internal/skill/github_tools.go`), local shell (`internal/skill/shell.go`), local filesystem, SQLite (confirmed `modernc.org/sqlite`, `Direct` — `desktop/db.go:17`), Windows WebView2 (`desktop/browser.go`, Win32 syscalls — Windows-only, `Direct`).
+- **Not observed:** no outbound telemetry/analytics code found in `internal/` or `desktop/` during inspection (`Inferred`, `Verify first: Yes` — not exhaustively grepped for every HTTP client call).
+
+---
+
+## 4. Module Map
+
+```mermaid
+flowchart TB
+    subgraph rootmod["root module: github.com/Mike0165115321/Aetox"]
+        cmd["cmd/aetox\nCLI entry point"]
+        internal["internal/*\n15 packages — actual engine"]
+        orch["internal/orchestrator\nbuilt, no caller yet — §10"]
+        desktop["desktop/\nWails GUI + Svelte 5 frontend"]
+        cmd --> internal
+        desktop --> internal
+        internal -.->|not wired in| orch
+    end
+
+    subgraph scaffold["go.work scaffold — zero code, go.mod only"]
+        engine["engine/\n(future: internal/* minus provider impls)"]
+        providers["providers/\n(future: provider implementations)"]
+        cli["cli/\n(future: cmd/aetox)"]
+        providers -->|depends on| engine
+        cli -->|depends on| engine
+        cli -->|depends on| providers
+    end
+```
+
+`rootmod` is what actually builds and runs today. `scaffold` is [proposed](docs/architecture/module-split-2026-07-21.md) — `go.mod` files exist with correct `replace` directives and the correct dependency direction (`engine` has zero deps on `providers`), but no files have been migrated. Do not treat `engine/providers/cli` as runnable.
+
+### 4.1 `internal/` packages (root module, `Direct`)
+
+| Package | Files | Role |
+|---|---|---|
+| `app` | 4 | CLI interactive loop + orchestration wiring (`NewApp`, `RunOnce`, `RunInteractive`, banner/status bar, approval-mode picker). Shared with desktop only via `NewApp`/`RunOnce` — see [§6.1](#61-internalapp-mixes-orchestration-with-cli-terminal-presentation). |
+| `cognitive` | 2 | `Agent` — builds provider requests, runs the tool-call loop, streams responses. |
+| `turn` | 5 | `Executor` — 4-phase turn pipeline: intent parse → skill/tool dispatch → approval gate → result recording. Largest single file in the repo (`executor.go`, 847 lines; test file 1190 lines). |
+| `skill` | 17 | `Registry`/`Dispatcher` + all 17 built-in tools (read/write/delete/list/shell/git/grep/echo/time/help/input/output/fs/defaults/github_repo_summary/plugin_install/dispatcher). |
+| `model` | 14 | `Provider` interface, `Message`/`Request`/`Response` types, factory, bootstrap, and **all 11 provider client implementations** in the same package. Imports `internal/provider` (see [§6.2](#62-modelprovider-imports-providers-catalog)). |
+| `provider` | 2 | Provider runtime catalog (names, capabilities) — separate from `model`'s own `provider_catalog.go`, which is a second source for similar data (`Inferred`, `Verify first: Yes` — not diffed line-by-line). |
+| `safety` | 2 | 3-tier approval (`ask`/`unsafe-only`/`full-access`), per-command risk assessment (`AssessCommand`, git/fs-specific rules). |
+| `command` | 3 | Input intent parsing (skill command vs. conversation). |
+| `config` | 2 | Config loading, `.env`, model-preference persistence (JSON on disk). |
+| `think` | 2 | Thinking-level normalization per provider. |
+| `plan` | 2 | Execution planning (conversation vs. skill classification, per ADR 0001). |
+| `memory` | 1 | Context/conversation memory. |
+| `audit` | 2 | Execution audit log. |
+| `debuglog` | 1 | Debug logging. |
+| `grammar` | 2 | Input grammar helpers. |
+| `orchestrator` | 2 | Multi-`cognitive.Agent` lifecycle tracker (`Spawn`/`Get`/`Stop`/`List`). Built this session, **not called by `cmd/aetox` or `desktop/app.go` yet** — see [§10](#10-decision--agent-orchestrator-layer-proposed-approved-2026-07-21) for scope and naming rationale. |
+
+### 4.2 `desktop/` (root module, `Direct`)
+
+| File | Role |
+|---|---|
+| `app.go` (665 lines) | Wails-bound `App` struct — the GUI's own type, distinct from `internal/app.App`. Owns `bootstrapFromConfig` (wires `internal/app.App` + `cognitive.Agent` + extra skills), provider/model switching, project tree/file read-write for the Files pane. |
+| `sessions.go` | Per-project session persistence: `ListSessions`, `SearchSessions` (FTS5 — **broken**, see §6.7 below), `LoadSession`, transcript ↔ `model.Message` conversion. |
+| `db.go` (77 lines) | SQLite connection + schema. `App.dbDir` overrides the default `<UserConfigDir>/aetox` directory (empty = production default) — a test seam added this session, not a behavior change. |
+| `browser.go` (~470 lines) | Native WebView2 tab host via raw Win32 syscalls (`wndClassExW`, message loop) — Windows-specific, no build-tag isolation observed (`Inferred`, `Verify first: Yes`). Z-order and `postMessage`-forgery issues fixed this session — see §6.6 below and `docs/architecture/browser-security-2026-07-21.md`. |
+| `workbench.go` | `browser_open`/`browser_read` implemented as `skill.Tool` — the agent drives the browser itself, distinct from the user-facing `BrowserOpen`/`BrowserNavigate` etc. in `browser.go`. This is the pattern [MCP-SUPPORT-PLAN.md](MCP-SUPPORT-PLAN.md) recommends reusing for an MCP adapter. |
+| `terminal.go` | Embedded shell session lifecycle (`TerminalStart`/`Write`/`Resize`/`Close`), independent of `internal/skill/shell.go` (that one is the agent's `shell` tool; this is the user-facing terminal pane). |
+| `main.go` (39 lines) | Wails bootstrap. |
+
+Test files added this session (`Direct`, all passing except the one noted bug): `app_test.go`, `browser_test.go`, `db_test.go`, `sessions_test.go`, `terminal_test.go` — per-file coverage detail in `TEST-REPORT.md` Module 5. `TerminalStart`/`TerminalClose`/`browser.go`'s Win32 window plumbing remain **not** unit-testable (documented there): `wailsruntime.EventsEmit` calls `log.Fatalf`/`os.Exit(1)` when the context isn't a real Wails-bound one, which a test never has.
+
+`desktop/frontend/src/lib/`: `stores/` (Svelte 5 runes: `cockpit.svelte.ts`, `workbench.svelte.ts`), `services/cockpit.ts` (Go binding wrappers), `workbench/*.svelte` (Review/Files/Browser panes). Not read in detail — structure only (`Direct` for existence, `Inferred` for internal behavior), except `App.svelte` (resize-handle logic, read in full — see §6.8) and `workbench/Workbench.svelte`/`style.css` (address-bar + blank-state layout, read in full — see §6.8).
+
+---
+
+## 5. Primary Workflow — one chat turn
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant Front as CLI or Desktop
+    participant App as internal/app.App
+    participant Turn as turn.Executor
+    participant Agent as cognitive.Agent
+    participant Provider as Provider API
+    participant Skill as skill.Registry
+
+    U->>Front: message
+    Front->>App: RunOnce / RunInteractive
+    App->>Turn: Execute(input)
+    Turn->>Turn: command.Parse (skill vs conversation)
+    alt known skill command
+        Turn->>Skill: dispatchBySkill
+        Skill-->>Turn: Output
+    else model-driven tool call
+        Turn->>Agent: RespondWithTools
+        Agent->>Provider: Request (messages + tool defs)
+        Provider-->>Agent: tool_call or final text
+        Agent->>Turn: ToolCall
+        Turn->>Turn: safety.AssessCommand + approval gate
+        Turn->>Skill: ExecuteTool
+        Skill-->>Turn: Output
+        Turn->>Agent: tool result appended, loop continues
+    end
+    Turn-->>App: Result
+    App-->>Front: reply
+    Front-->>U: reply
+    opt Desktop only
+        Front->>Front: sessions.appendTurn (SQLite)
+    end
+```
+
+Desktop-specific additions confirmed in `desktop/app.go`/`sessions.go`: every turn is persisted via `appendTurn` after `SendMessage` returns; sessions are keyed per project root (`projectKey`); full-text search is FTS5-backed.
+
+---
+
+## 6. Debt Register
+
+### 6.1 `internal/app` mixes orchestration with CLI terminal presentation
+
+- **Evidence:** `internal/app/app.go` exports `NewApp`, `RunOnce`, `RunInteractive`, `PrintBanner`, `printStatusBar`, `printPromptLine`, `pickApprovalMode` (Thai-language console prompts), `showHelp`, `showSkillPalette` — all in one package/type. `desktop/app.go:275-289` (`SendMessage`) calls only `a.chat.RunOnce`; no desktop code path reaches `RunInteractive`, `PrintBanner`, or the approval-mode console picker.
+- **Impact:** the GUI binary compiles and links terminal-rendering code it never calls. Any change to CLI presentation (banner, status bar, Thai approval prompts) risks breaking desktop's build even though desktop doesn't use those methods. The project's own [module-split plan](docs/architecture/module-split-2026-07-21.md) intends to move this whole package to `engine/app/` labeled "shared by CLI + desktop" — migrating as-is carries the same mixing forward.
+- **Severity:** `Medium` (taxes the planned migration; doesn't break anything today).
+- **Confidence:** `Direct`.
+- **Direction (proposed, needs approval):** split `internal/app` into an orchestration piece (`NewApp`, `RunOnce`, turn-executor wiring — genuinely shared) and a CLI-presentation piece (banner, status bar, interactive loop, approval picker) before or during the `engine/` migration, so `engine/app/` doesn't inherit terminal-only code.
+
+### 6.2 `model` imports `provider` — abstraction depends on implementation
+
+- **Evidence:** `internal/model/factory.go`, `provider_catalog.go`, `thinking_capabilities.go` import `internal/provider`. Documented and accepted as the reason for the 3-module split in [module-split-2026-07-21.md:8-16](docs/architecture/module-split-2026-07-21.md).
+- **Impact:** any consumer of `model.Provider`/`model.Message` transitively pulls in the full provider catalog; can't depend on the interface alone.
+- **Severity:** `Medium`.
+- **Confidence:** `Direct`.
+- **Direction:** already proposed and scaffolded (`engine/model` interface-only, `providers/` for implementations) — no new recommendation, just confirming the existing plan matches the evidence.
+
+### 6.3 Two provider catalogs
+
+- **Evidence:** `internal/model/provider_catalog.go` and `internal/provider/catalog.go` both exist; not diffed for exact overlap.
+- **Impact:** unclear without deeper read — possibly one is the canonical list and the other is a thin re-export, or they've drifted.
+- **Severity:** `Low`–`Medium` (`Unverified` which).
+- **Confidence:** `Inferred`, `Verify first: Yes`.
+- **Direction:** none proposed — needs verification first, listed as an open question (§7).
+
+### 6.4 Skill registry has no core/user-added boundary — FIXED 2026-07-21
+
+- **Original evidence:** `internal/skill/skill.go:44` `Registry.Register()` overwrote on key collision with no warning. `internal/skill/defaults.go` registered all 17 built-ins and `plugin_install` into the same flat map. Documented in detail in [MCP-SUPPORT-PLAN.md:37-51](MCP-SUPPORT-PLAN.md).
+- **Impact (was):** couldn't gate trust levels differently (built-in vs. third-party MCP/plugin tool), couldn't show "core" vs. "installed" separately in the Settings UI, and a user-installed skill could silently shadow a built-in tool by name.
+- **Severity:** was `High` (blocked safe MCP support).
+- **Fix applied:** [internal/skill/skill.go](internal/skill/skill.go) — added `Source` type (`SourceBuiltin`/`SourceExternal`), `Registry` now stores `{skill, source}` pairs and exposes `SourceOf(name)`. `Register(skill, source)` returns an error instead of silently overwriting on name collision.
+  - [internal/skill/defaults.go](internal/skill/defaults.go) — all 12 built-ins register with `SourceBuiltin`; a collision among built-ins now panics at startup (programmer error, not a runtime condition).
+  - [desktop/app.go](desktop/app.go) `bootstrapFromConfig` — `extraSkills` (the `workbenchTools`: `browser_open`/`browser_read`) register with `SourceExternal`; a collision is logged via `debuglog.Msg` and the skill is skipped rather than silently overwriting a built-in.
+  - Tests: [internal/skill/skill_test.go](internal/skill/skill_test.go) (`TestRegisterTracksSource`, `TestRegisterRefusesCollision`).
+- **Still open:** `SourceExternal` is one bucket for everything non-built-in — MCP and `plugin_install`-loaded skills don't yet have their own distinct source values, and nothing consumes `SourceOf` yet (no per-source permission gating, no Settings UI grouping). Add `SourceMCP`/`SourcePlugin` when those integrations are actually built, not before.
+- **Confidence:** `Direct` — `go build ./...` and `go test ./internal/skill/...` pass.
+
+### 6.5 `plugin_install` downloads files but nothing loads them back
+
+- **Evidence:** `internal/skill/github_tools.go` implements `plugin_install` fully (fetches manifest, path-traversal-checked, writes to `~/.agents/skills/<name>/`) but `internal/skill/defaults.go` only registers compiled-in Go skills — no bootstrap-time scan of the install directory. Confirmed by direct read of `validatePluginManifest`/`normalizeManifestRelativePath` (traversal guards present) and by `MCP-SUPPORT-PLAN.md:17-23`.
+- **Impact:** "installing a plugin" via this tool currently has no observable effect after download completes.
+- **Severity:** `Medium` (feature is inert, not unsafe — path traversal is guarded and manifest type is restricted to `"skill-bundle"`).
+- **Confidence:** `Direct`.
+- **Direction:** proposed in `MCP-SUPPORT-PLAN.md` — write a loader that scans the install directory at `bootstrapFromConfig` time; decide execution model for downloaded (non-compiled) skills first.
+
+### 6.6 Browser tab Z-order + `postMessage` forgery — FIXED 2026-07-21/22
+
+- **Evidence (Z-order):** `desktop/browser.go`'s tab window used only `MoveWindow`/`ShowWindow` — neither changes Z order. Two independent WebView2 controllers in one top-level window each composite via DirectComposition; without an explicit Z-order call the tab's pixels could render behind the app's own webview — confirmed live (page navigated successfully, per-page title updated, but the tab area stayed solid black, the app's own background color).
+- **Evidence (`postMessage` forgery):** `onMessage` trusted a page's `postMessage({__aetox:...})` envelope with no check that the page was the one it claimed to be, or that a `"text"` response corresponded to a specific `BrowserGetText` call. `args.GetSource()` (real origin, page can't forge) was available on `ICoreWebView2WebMessageReceivedEventArgs` but unused.
+- **Impact:** Z-order bug made the entire browser tab feature appear non-functional (page loads, nothing visible). The `postMessage` gap allowed a malicious page to (a) claim an arbitrary `url` in a `"meta"` message — address-bar spoofing, a phishing enabler — and (b) inject fabricated `"text"` content into the agent's `BrowserGetText` read path — a prompt-injection vector distinct from the page's own real (untrusted) DOM content.
+- **Severity:** was `High` for the `postMessage` gap (security), `Medium` for Z-order (functionality, not security).
+- **Fix applied:** `procSetWindowPos` + `HWND_TOP` on tab creation/resize/show ([browser.go](../../desktop/browser.go)). `onMessage` now requires `sameOrigin(source, m.URL)` for `"meta"`, and a matching per-request nonce (`textToken`, minted by `BrowserGetText`, `crypto/rand`) for `"text"`. Full threat model and residual risk in [docs/architecture/browser-security-2026-07-21.md](../../docs/architecture/browser-security-2026-07-21.md).
+- **Confidence:** `Direct` — 12 new tests in `browser_test.go`, `go build`/`go vet` clean.
+
+### 6.7 `SearchSessions` returns nothing, ever — OPEN, not fixed
+
+- **Evidence:** `desktop/sessions.go`'s `SearchSessions` joins `messages_fts` (FTS5) with `messages`/`sessions` in one query and calls `snippet(messages_fts, ...)` in the same statement. Reproduced directly: this exact query shape returns SQL error `"unable to use function snippet in the requested context"` from `modernc.org/sqlite` every time — `SearchSessions` swallows the error (`if err != nil { return out }`), so the function always silently returns zero results instead of surfacing a failure.
+- **Impact:** the Desktop UI's session search feature does not work at all, silently, today. Regressed by test [`TestSearchSessionsFindsMatch`](../../desktop/sessions_test.go), which currently fails and is left failing intentionally (not skipped) so it stays visible until this is fixed.
+- **Severity:** `Medium`–`High` (a shipped, user-facing feature is completely inert — no data loss or security exposure, but it's not a minor cosmetic bug either).
+- **Confidence:** `Direct` — reproduced with a minimal query against the real schema; a two-step query (FTS5 `MATCH`+`snippet()` alone in a first query for matching `rowid`s, then a second query joining `messages`/`sessions` by those `rowid`s) was verified working as a fix, but **not yet applied to source** — pending explicit approval, since it changes a shipped code path rather than adding a test.
+- **Direction (proposed, needs approval):** rewrite `SearchSessions`'s query into the verified two-step shape; un-skip/keep `TestSearchSessionsFindsMatch` as the regression guard.
+
+### 6.8 Frontend layout bugs — FIXED 2026-07-22
+
+Three distinct issues surfaced while verifying the Z-order fix (§6.6) visually, all in `desktop/frontend/src/`:
+
+- **Blank-state text clipped instead of wrapping** — [style.css](../../desktop/frontend/src/style.css) `.insp-blank-title`/`.insp-blank-sub` sat in a `align-items:center` flex column with no `max-width`, so they sized to their own text's natural width instead of the pane's — at a narrow pane width the text overflowed and was hard-clipped by the ancestor's `overflow:hidden` instead of wrapping. **Fixed:** added `max-width:100%` + `text-align:center` + container padding.
+- **Resize drag could get stuck and grow a panel forever** — dragging the sidebar/inspector resize handle across the native WebView2 browser window (§6.6) let the OS deliver the drag-ending `pointerup` to that separate native window instead of the DOM, so the drag state never cleared and any later mouse movement kept growing the panel. **Fixed:** `setPointerCapture` on the handle at drag start ([App.svelte](../../desktop/frontend/src/App.svelte)), with `pointercancel`/`blur` as backstops.
+- **Panel width had no maximum at all** — `clampSize` was `Math.max(min, px)`, deliberately unbounded per a prior code comment ("neither side panel can squeeze [main] into the overlap bug from before"). Confirmed by the user that unbounded dragging itself is undesirable (pushes chat content off-screen, `.app`'s `overflow-x:auto` masking it as a horizontal scrollbar rather than a visible error). **Fixed:** max is now computed at drag time as `window.innerWidth − (other panel's current width) − 360 (main's own grid floor) − 12 (two 6px handles)` — keeps main's floor guarantee intact (the thing the original unbounded design was protecting) while capping runaway growth.
+- **Confidence:** `Direct` — `svelte-check`: 0 errors after each change; visually confirmed against the user's screenshots for the first and third.
+
+### 6.9 README.md/AETOX.md advertise Anthropic support that does not exist; omit a real provider (Z.AI) that does
+
+- **Evidence:** the actual provider catalog, `internal/provider/catalog.go:88-234`, registers exactly these canonical providers: `noop`, `openrouter`, `openai`, `deepseek`, `zai`, `gemini`, `groq`, `mistral`, `together`, `perplexity`, `cohere`, `lmstudio`, `ollama` (12 real providers + the `noop` stub). **There is no `anthropic` entry, and no alias resolves to one anywhere in the catalog.** Yet `README.md`'s provider table lists "Anthropic | `ANTHROPIC_API_KEY`", and `AETOX.md`'s own usage example is `aetox --model-provider anthropic --model-name claude-sonnet-4`. Conversely, `zai` (Z.AI / GLM) is fully registered and implemented but is **not mentioned anywhere** in either doc.
+- **Confirmed failure mode, not just a doc typo:** `internal/model/factory.go:18-27` (`NewProvider`) calls `LookupProviderInfo("anthropic")`, which fails (`ok=false`) since `"anthropic"` isn't in the catalog, returning `fmt.Errorf("unsupported model provider: %q", provider)`. `internal/model/bootstrap.go:21-54` (`BootstrapProvider`) catches that error and **silently falls back to the `noop` stub provider** with only a non-fatal warning string (`"model provider unavailable; using noop fallback"`) — no hard error surfaced to the user. A user following `AETOX.md`'s own example command gets the no-op stub, not Claude, and the failure is easy to miss (a warning appended to a status line, not an error dialog).
+- **Impact:** direct user trust/functionality issue — the project's own advertised example command doesn't work, and fails in the quietest possible way (fallback instead of a clear error). Independently, `zai` support existing but being undocumented means users don't know it's available.
+- **Severity:** `High` (advertised, examples-in-docs functionality is actually broken; silent fallback makes it worse, not better).
+- **Confidence:** `Direct` — traced the exact call chain from `BootstrapProvider` through `NewProvider` through `provider.Lookup` to the catalog map itself.
+- **Direction (proposed, needs approval):** this is product copy (`README.md`/`AETOX.md`), not just a technical doc — fixing it is a product decision (remove the Anthropic claim, or actually implement an Anthropic client) that this pass doesn't make unilaterally. Two options going forward: (a) update `README.md`/`AETOX.md` to list the real 12 providers (drop Anthropic, add Z.AI) if Anthropic support isn't planned soon, or (b) implement a real Anthropic client (`internal/model/anthropic.go`, since Anthropic's Messages API is not OpenAI-compatible and can't reuse `openai_compatible.go` as-is) if it is. Either way, `BootstrapProvider`'s silent-fallback-on-unsupported-provider behavior (independent of the Anthropic question) is arguably too quiet for a case this visible — worth a second look regardless of which option is chosen.
+
+---
+
+## 7. Open Questions
+
+- Are `internal/model/provider_catalog.go` and `internal/provider/catalog.go` duplicates, or does one wrap the other? (§6.3) — affects how cleanly `providers/` can absorb both during migration.
+- Is `desktop/browser.go`'s direct Win32 syscall usage guarded by a build tag for non-Windows, or is desktop Windows-only by design? Not confirmed either way.
+- `go.work.sum` appeared as an untracked file this session (see repo git status) — is it intended to be committed, or should it be gitignored like typical `go.sum` companions in multi-module workspaces? Decision needed before the next commit touching `go.work`.
+
+## 8. Risks
+
+- **Migration drift risk:** `engine/providers/cli` scaffolds exist with zero code; if `internal/`/`cmd/` continue evolving without a migration timeline, the scaffold's dependency graph may stop matching reality by the time migration starts. No timeline found in any doc (`Unverified`).
+- **MCP readiness risk:** per `MCP-SUPPORT-PLAN.md`, adding an MCP client before resolving §6.4 (registry core/user-added split) means third-party tool code would run under the same 3-tier safety model designed for trusted, self-written built-ins.
+
+## 9. AI Agent Notes
+
+- Start reading at `cmd/aetox/main.go` (CLI) or `desktop/app.go:bootstrapFromConfig` (Desktop) — both converge on the same `internal/app.NewApp` + `cognitive.Agent` + `turn.Executor` wiring.
+- `engine/`, `providers/`, `cli/` are **not** where the running code lives yet — don't edit there expecting it to affect the built binaries; edit `internal/` and `cmd/aetox`.
+- `go.work` must list every module whose directory tree you run workspace-aware commands (`go mod tidy`, `wails dev`) from, including the root module — Go activates workspace mode for any subdirectory under a `go.work` ancestor, regardless of intent (this is why `desktop/` needed the root module added — see git history, 2026-07-21).
+- For skill/tool changes, `internal/skill/dispatcher.go` and `skill.go`'s `Tool` interface are the seam — already MCP-shaped per `MCP-SUPPORT-PLAN.md`.
+- Per-module test status (what's covered, what's structurally untestable and why) lives in `TEST-REPORT.md`, organized by the same 5-layer reading grouped above — don't re-derive it from scratch, read it first.
+- `desktop/browser.go`'s `postMessage` security model (threat model, the 3-layer defense, residual risk) is documented separately in `docs/architecture/browser-security-2026-07-21.md` — read it before touching `onMessage`/`metaScript`/`textScript`.
+- Two deep-dive docs expand the layers with the most independent complexity — read them before making non-trivial changes in either: `docs/architecture/model-control-layer-2026-07-22.md` (layer 2: `skill`+`cognitive`+`turn`, the exact 4-phase turn pipeline, the safety-gate chokepoint, where MCP plugs in) and `docs/architecture/desktop-app-2026-07-22.md` (layer 5: `desktop/`, the Svelte↔native-window bridge, known issues).
+
+---
+
+## 10. Decision — Agent Orchestrator Layer (Proposed, approved 2026-07-21)
+
+Discussed with the project owner: CLI, Desktop, and future UI front ends currently each embed the engine as a Go library in their own process (§2, §4) — there is no gateway process and no shared live agent/session state across front ends. The owner asked whether a background layer for multi-agent orchestration should exist, and whether front ends should share one running agent.
+
+**Decision:** keep the embedded-library model (no new standalone gateway process — rejected as premature; no front end today needs to observe another front end's live session). Add a new orchestrator responsible for multi-agent lifecycle, built so it can be wrapped by local RPC later without a rewrite if that need becomes concrete.
+
+```mermaid
+flowchart TB
+    subgraph today["Today — proposed, not built"]
+        CLIp["CLI process"] --> Orch1["orchestrator\n(in-process)"]
+        Deskp["Desktop process"] --> Orch2["orchestrator\n(in-process)"]
+        Orch1 --> A1["cognitive.Agent ×N"]
+        Orch2 --> A2["cognitive.Agent ×N"]
+    end
+```
+
+- **What it is:** a new package, [internal/orchestrator/orchestrator.go](internal/orchestrator/orchestrator.go) (moves to `engine/orchestrator` once the module split migrates), that spawns/tracks/stops multiple `cognitive.Agent` instances per process via `Spawn`/`Get`/`Stop`/`List`, replacing the current one-`Agent`-per-front-end model. Distinct from `internal/app` (§6.1), which wires exactly one agent today. Not yet wired into `cmd/aetox` or `desktop/app.go` — those still construct a single `cognitive.Agent` directly via `bootstrapFromConfig`.
+- **Interface constraint (the point of the decision):** operates on agent **IDs and a serializable `Info` snapshot** (`ID`, `Model`, `CreatedAt`), not Go closures or channels owned by a specific front end — so a future local-RPC wrapper (front end as thin client, Desktop or a dedicated process as host) can sit on top without redesigning the orchestrator itself.
+- **Explicitly deferred, not built:** any IPC/RPC transport, any "Desktop as host for CLI" wiring, any shared-state protocol, and wiring into the existing front ends. Build only when a front end has a concrete requirement to observe or drive another front end's session, or to run more than one agent concurrently.
+- **Status:** `Direct` (package exists, `go test ./internal/orchestrator/...` passes) but **unused** — no caller yet. Not to be confused with existing `internal/cognitive.Agent` (single-agent, already built and wired) or the roadmap "MAIN + sub-agent" description in `AETOX.md`, which this scaffolds toward but does not yet implement (no sub-agent spawning logic, no profile/tool-filtering, no MAIN-vs-sub-agent role distinction).
+
+**Naming — settled, don't rename without checking this first:**
+
+| Rejected name | Why it was rejected |
+|---|---|
+| `gateway` | Implies a network/process boundary (something external connects *into*) — there is none yet (§10 decision explicitly defers IPC/RPC). If a local-RPC layer is ever built in front of this package, `gateway` belongs to *that* layer, not to the in-process tracker. |
+| `router` | Already claimed in `README.md`'s architecture diagram — "Multi-Provider Orchestration: **Router** \| Comparator \| Consensus" means routing a request to which *provider/model*, an unrelated concept. Reusing it for agent lifecycle tracking would collide with that already-planned component. |
+
+`orchestrator` was kept because (a) it doesn't collide with any name already used in `README.md`/`AETOX.md`, and (b) `AETOX.md`'s own "Multi-Agent Layer" description ("MAIN → spawn sub-agent") already implies exactly this responsibility — lifecycle, not routing or transport.
+
+---
+
+## Validation
+
+1. **Claim traceability:** every claim above cites a file or an existing project doc; the two `Unverified`/`Inferred, Verify first: Yes` items are marked as such, not stated as fact.
+2. **Scope alignment:** scope matches intake (whole-repo documentation at root); no expansion.
+3. **Handoff readiness:** open questions (§7) and safe next actions (§6 "Direction" fields, all marked proposed/pending approval) are included.
+
+**Artifact budget note:** this is a single consolidated file rather than the full multi-template package (overview/boundary/module-map/debt-register as separate files), because the request specified one location ("ที่ root") and the repo already has `docs/architecture/module-split-2026-07-21.md` and two ADRs covering deeper detail on the migration and cognition-engine designs — this file indexes and cross-links them instead of duplicating.
