@@ -1,6 +1,9 @@
 package safety
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
 
 type RiskLevel int
 
@@ -36,6 +39,98 @@ func ApprovalModeFromLegacy(autoApprove bool) ApprovalMode {
 		return ApprovalFullAccess
 	}
 	return ApprovalAsk
+}
+
+// PermissionAction is a user-configured override for a specific tool/pattern,
+// taking precedence over the coarse ApprovalMode when it matches. Mirrors
+// opencode's per-tool pattern permission model (see
+// docs/architecture-reference-opencode.md §4.5).
+type PermissionAction string
+
+const (
+	PermissionAllow PermissionAction = "allow"
+	PermissionAsk   PermissionAction = "ask"
+	PermissionDeny  PermissionAction = "deny"
+)
+
+func NormalizePermissionAction(raw string) PermissionAction {
+	switch PermissionAction(strings.ToLower(strings.TrimSpace(raw))) {
+	case PermissionAllow:
+		return PermissionAllow
+	case PermissionAsk:
+		return PermissionAsk
+	case PermissionDeny:
+		return PermissionDeny
+	default:
+		return ""
+	}
+}
+
+// PermissionRule matches a tool call by tool name and an args pattern, both
+// glob-style ("*" any sequence, "?" any single char). Pattern "" behaves like
+// "*" (matches any args).
+type PermissionRule struct {
+	Tool    string           `json:"tool"`
+	Pattern string           `json:"pattern"`
+	Action  PermissionAction `json:"action"`
+}
+
+// PermissionConfig is an ordered list of rules; the last matching rule wins,
+// same semantics as opencode's permission object.
+type PermissionConfig struct {
+	Rules []PermissionRule `json:"rules"`
+}
+
+// Resolve returns the action of the last rule matching toolName+args, and
+// whether any rule matched at all. Callers should fall back to
+// ShouldPrompt/ApprovalMode when matched is false.
+func (c PermissionConfig) Resolve(toolName string, args []string) (action PermissionAction, matched bool) {
+	tool := strings.ToLower(strings.TrimSpace(toolName))
+	joinedArgs := strings.ToLower(strings.TrimSpace(strings.Join(args, " ")))
+	for _, rule := range c.Rules {
+		normalized := NormalizePermissionAction(string(rule.Action))
+		if normalized == "" {
+			continue
+		}
+		if !globMatch(strings.ToLower(strings.TrimSpace(rule.Tool)), tool) {
+			continue
+		}
+		pattern := strings.ToLower(strings.TrimSpace(rule.Pattern))
+		if pattern == "" {
+			pattern = "*"
+		}
+		if !globMatch(pattern, joinedArgs) {
+			continue
+		}
+		action, matched = normalized, true
+	}
+	return action, matched
+}
+
+// globMatch reports whether s matches pattern, where "*" matches any
+// (possibly empty) run of characters and "?" matches exactly one.
+func globMatch(pattern, s string) bool {
+	if pattern == "" || pattern == "*" {
+		return true
+	}
+	var b strings.Builder
+	b.WriteString("^")
+	for _, r := range pattern {
+		switch r {
+		case '*':
+			b.WriteString(".*")
+		case '?':
+			b.WriteString(".")
+		default:
+			b.WriteString(regexp.QuoteMeta(string(r)))
+		}
+	}
+	b.WriteString("$")
+	re, err := regexp.Compile(b.String())
+	if err != nil {
+		return false
+	}
+	return re.MatchString(s)
 }
 
 type Effect string

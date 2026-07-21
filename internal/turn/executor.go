@@ -58,6 +58,7 @@ type Executor struct {
 	commandSet     map[string]struct{}
 	approve        ApprovalPromptFunc
 	approvalMode   safety.ApprovalMode
+	permissions    safety.PermissionConfig
 	summaryTimeout time.Duration
 	summaryLimit   int
 	turnOptions    TurnOptions
@@ -71,6 +72,7 @@ type ExecutorOptions struct {
 	CommandSet     map[string]struct{}
 	Approve        ApprovalPromptFunc
 	ApprovalMode   safety.ApprovalMode
+	Permissions    safety.PermissionConfig
 	SummaryTimeout time.Duration
 	SummaryLimit   int
 	TurnOptions    TurnOptions
@@ -103,6 +105,7 @@ func NewExecutor(opts ExecutorOptions) *Executor {
 		commandSet:     opts.CommandSet,
 		approve:        opts.Approve,
 		approvalMode:   mode,
+		permissions:    opts.Permissions,
 		summaryTimeout: timeout,
 		summaryLimit:   limit,
 		turnOptions:    opts.TurnOptions,
@@ -314,45 +317,43 @@ func (e *Executor) executeSkillTurn(
 	}
 
 	assessment := safety.AssessCommand(intent.Command, intent.Args)
-	if safety.ShouldPrompt(e.approvalMode, assessment) {
-		approved, confirmErr := e.approveOrDeny(ctx, toolCommand, assessment.Reason)
-		if confirmErr != nil {
-			notifyToolComplete()
-			if errors.Is(confirmErr, context.Canceled) {
-				cancelled := e.newToolResultForTurn("tool", toolCommand, "execution canceled during confirmation")
-				summary, summarizeErr := e.summarizeToolExecution(ctx, line, cancelled, TurnStatusError, confirmErr)
-				if summarizeErr != nil {
-					return Result{
-						Reply:    e.fallbackToolSummary(cancelled, TurnStatusError, confirmErr),
-						Streamed: false,
-						Status:   TurnStatusError,
-					}, nil
-				}
-				return Result{
-					Reply:    summary,
-					Streamed: false,
-					Status:   TurnStatusError,
-				}, nil
-			}
-			return Result{}, confirmErr
-		}
-		if !approved {
-			notifyToolComplete()
-			blocked := e.newToolResultForTurn("tool", toolCommand, "execution blocked by user approval")
-			summary, summarizeErr := e.summarizeToolExecution(ctx, line, blocked, TurnStatusBlocked, nil)
+	approved, confirmErr := e.resolveApproval(ctx, intent.Command, intent.Args, toolCommand, assessment)
+	if confirmErr != nil {
+		notifyToolComplete()
+		if errors.Is(confirmErr, context.Canceled) {
+			cancelled := e.newToolResultForTurn("tool", toolCommand, "execution canceled during confirmation")
+			summary, summarizeErr := e.summarizeToolExecution(ctx, line, cancelled, TurnStatusError, confirmErr)
 			if summarizeErr != nil {
 				return Result{
-					Reply:    e.fallbackToolSummary(blocked, TurnStatusBlocked, nil),
+					Reply:    e.fallbackToolSummary(cancelled, TurnStatusError, confirmErr),
 					Streamed: false,
-					Status:   TurnStatusBlocked,
+					Status:   TurnStatusError,
 				}, nil
 			}
 			return Result{
 				Reply:    summary,
 				Streamed: false,
+				Status:   TurnStatusError,
+			}, nil
+		}
+		return Result{}, confirmErr
+	}
+	if !approved {
+		notifyToolComplete()
+		blocked := e.newToolResultForTurn("tool", toolCommand, "execution blocked by user approval")
+		summary, summarizeErr := e.summarizeToolExecution(ctx, line, blocked, TurnStatusBlocked, nil)
+		if summarizeErr != nil {
+			return Result{
+				Reply:    e.fallbackToolSummary(blocked, TurnStatusBlocked, nil),
+				Streamed: false,
 				Status:   TurnStatusBlocked,
 			}, nil
 		}
+		return Result{
+			Reply:    summary,
+			Streamed: false,
+			Status:   TurnStatusBlocked,
+		}, nil
 	}
 
 	reply, handled, err := e.dispatchBySkill(ctx, intent.Raw)
@@ -539,35 +540,32 @@ func (e *Executor) executeInferredTool(
 
 	assessment := safety.AssessCommand(name, toolCallToArgs(name, args))
 	debuglog.Info("safety", fmt.Sprintf("risk=%v reason=%s", assessment.Risk, assessment.Reason))
-	if safety.ShouldPrompt(e.approvalMode, assessment) {
-		e.stopSpinner()
-		commandLine := name
-		if path, ok := args["path"].(string); ok {
-			path = strings.TrimSpace(path)
-			if path != "" {
-				commandLine += " " + path
-			}
+	commandLine := name
+	if path, ok := args["path"].(string); ok {
+		path = strings.TrimSpace(path)
+		if path != "" {
+			commandLine += " " + path
 		}
-		approved, confirmErr := e.approveOrDeny(ctx, commandLine, assessment.Reason)
-		if confirmErr != nil {
-			return Result{}, true, confirmErr
-		}
-		if !approved {
-			blocked := e.newToolResultForTurn(name, commandLine, "execution blocked by user")
-			summary, summarizeErr := e.summarizeToolExecution(ctx, rawInput, blocked, TurnStatusBlocked, nil)
-			if summarizeErr != nil {
-				return Result{
-					Reply:    e.fallbackToolSummary(blocked, TurnStatusBlocked, nil),
-					Streamed: false,
-					Status:   TurnStatusBlocked,
-				}, true, nil
-			}
+	}
+	approved, confirmErr := e.resolveApproval(ctx, name, toolCallToArgs(name, args), commandLine, assessment)
+	if confirmErr != nil {
+		return Result{}, true, confirmErr
+	}
+	if !approved {
+		blocked := e.newToolResultForTurn(name, commandLine, "execution blocked by user")
+		summary, summarizeErr := e.summarizeToolExecution(ctx, rawInput, blocked, TurnStatusBlocked, nil)
+		if summarizeErr != nil {
 			return Result{
-				Reply:    summary,
+				Reply:    e.fallbackToolSummary(blocked, TurnStatusBlocked, nil),
 				Streamed: false,
 				Status:   TurnStatusBlocked,
 			}, true, nil
 		}
+		return Result{
+			Reply:    summary,
+			Streamed: false,
+			Status:   TurnStatusBlocked,
+		}, true, nil
 	}
 
 	output, handled, err := e.dispatcher.ExecuteTool(ctx, name, args)
@@ -708,29 +706,26 @@ func (e *Executor) executeTool(ctx context.Context, name string, args map[string
 	}
 
 	assessment := safety.AssessCommand(name, toolCallToArgs(name, args))
-	if safety.ShouldPrompt(e.approvalMode, assessment) {
-		e.stopSpinner()
-		commandLine := name
-		for _, rawArg := range toolCallToArgs(name, args) {
-			if rawArg == "" {
-				continue
-			}
-			commandLine += " " + rawArg
+	commandLine := name
+	for _, rawArg := range toolCallToArgs(name, args) {
+		if rawArg == "" {
+			continue
 		}
-		ok, confirmErr := e.approveOrDeny(ctx, commandLine, assessment.Reason)
-		if confirmErr != nil {
-			return skill.Output{}, true, confirmErr
-		}
-		if !ok {
-			return skill.Output{
-				Name:       name,
-				Content:    "tool execution blocked by user",
-				RawOutput:  "tool execution blocked by user",
-				Success:    false,
-				Stderr:     "tool execution blocked by user",
-				DurationMs: 0,
-			}, true, nil
-		}
+		commandLine += " " + rawArg
+	}
+	ok, confirmErr := e.resolveApproval(ctx, name, toolCallToArgs(name, args), commandLine, assessment)
+	if confirmErr != nil {
+		return skill.Output{}, true, confirmErr
+	}
+	if !ok {
+		return skill.Output{
+			Name:       name,
+			Content:    "tool execution blocked by user",
+			RawOutput:  "tool execution blocked by user",
+			Success:    false,
+			Stderr:     "tool execution blocked by user",
+			DurationMs: 0,
+		}, true, nil
 	}
 
 	output, handled, err := e.dispatcher.ExecuteTool(ctx, name, args)
@@ -781,6 +776,26 @@ func (e *Executor) approveOrDeny(ctx context.Context, name, reason string) (bool
 		return true, nil
 	}
 	return e.approve(ctx, name, reason)
+}
+
+// resolveApproval decides whether a tool call is allowed to run, checking
+// user-configured PermissionConfig rules before falling back to the coarse
+// ApprovalMode gate. A matching "allow"/"deny" rule short-circuits without
+// prompting; "ask" (or no matching rule under a mode that requires it) goes
+// through the normal approveOrDeny prompt.
+func (e *Executor) resolveApproval(ctx context.Context, toolName string, args []string, commandLine string, assessment safety.Assessment) (bool, error) {
+	if action, matched := e.permissions.Resolve(toolName, args); matched {
+		switch action {
+		case safety.PermissionAllow:
+			return true, nil
+		case safety.PermissionDeny:
+			return false, nil
+		}
+	} else if !safety.ShouldPrompt(e.approvalMode, assessment) {
+		return true, nil
+	}
+	e.stopSpinner()
+	return e.approveOrDeny(ctx, commandLine, assessment.Reason)
 }
 
 func (e *Executor) normalizeIntent(line string, intent command.Intent) command.Intent {

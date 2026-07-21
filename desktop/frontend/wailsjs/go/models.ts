@@ -14,6 +14,24 @@ export namespace main {
 	        this.status = source["status"];
 	    }
 	}
+	export class MCPServerInfo {
+	    name: string;
+	    command: string[];
+	    status: string;
+	    err?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new MCPServerInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.command = source["command"];
+	        this.status = source["status"];
+	        this.err = source["err"];
+	    }
+	}
 	export class ModelInfo {
 	    provider: string;
 	    modelName: string;
@@ -102,6 +120,22 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
 	        this.path = source["path"];
+	    }
+	}
+	export class SkillInfo {
+	    name: string;
+	    description: string;
+	    source: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SkillInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.description = source["description"];
+	        this.source = source["source"];
 	    }
 	}
 	export class TreeNode {

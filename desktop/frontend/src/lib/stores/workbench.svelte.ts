@@ -5,7 +5,7 @@
 
 import { TerminalStart, TerminalClose, ReadFile } from '../../../wailsjs/go/main/App'
 
-export type WorkbenchTabKind = 'review' | 'terminal' | 'browser' | 'files' | 'file'
+export type WorkbenchTabKind = 'review' | 'terminal' | 'browser' | 'files' | 'file' | 'tools'
 
 export type WorkbenchTab = {
   id: string
@@ -55,6 +55,14 @@ export function openFilesTab(): void {
     workbench.tabs.push({ id: 'files', kind: 'files', name: 'Files' })
   }
   workbench.activeId = 'files'
+}
+
+/** Singleton tab: skills + MCP tools the AI can currently use. */
+export function openToolsTab(): void {
+  if (!workbench.tabs.some((t) => t.kind === 'tools')) {
+    workbench.tabs.push({ id: 'tools', kind: 'tools', name: 'Tools' })
+  }
+  workbench.activeId = 'tools'
 }
 
 export function openBrowserTab(): string {

@@ -10,6 +10,7 @@ import (
 
 	"github.com/Mike0165115321/Aetox/internal/command"
 	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mike0165115321/Aetox/internal/safety"
 	"github.com/Mike0165115321/Aetox/internal/skill"
 )
 
@@ -44,6 +45,120 @@ func TestExecute_InferredWriteForNonToolAgent(t *testing.T) {
 	}
 	if strings.TrimSpace(string(raw)) != "test content" {
 		t.Fatalf("unexpected file content: %q", string(raw))
+	}
+}
+
+func TestExecute_PermissionDenyBlocksWithoutPrompting(t *testing.T) {
+	root := t.TempDir()
+	dispatcher := &toolDispatcher{root: root, t: t}
+	agent := &toolAwareAgent{supportsTools: false, summaryReply: "blocked"}
+	executor := NewExecutor(ExecutorOptions{
+		Agent:        agent,
+		Dispatcher:   dispatcher,
+		ApprovalMode: safety.ApprovalFullAccess, // would otherwise never prompt
+		Permissions: safety.PermissionConfig{Rules: []safety.PermissionRule{
+			{Tool: "write", Action: safety.PermissionDeny},
+		}},
+		// No Approve func: if the deny rule failed to short-circuit, the
+		// nil-safe approveOrDeny would auto-approve and the file would be
+		// written, so this test can only pass via the permission gate.
+	})
+
+	intent := command.Parse("create file example.md with content test content", command.ParseTokens, nil)
+	result, err := executor.Execute(context.Background(), "create file example.md with content test content", intent, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Status != TurnStatusBlocked {
+		t.Fatalf("expected status blocked, got %s", result.Status)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, "example.md")); statErr == nil {
+		t.Fatalf("expected file to NOT be created under a deny permission rule")
+	}
+}
+
+func TestExecute_PermissionAskOverridesFullAccess(t *testing.T) {
+	root := t.TempDir()
+	dispatcher := &toolDispatcher{root: root, t: t}
+	agent := &toolAwareAgent{supportsTools: false, summaryReply: "blocked"}
+	promptCalls := 0
+	executor := NewExecutor(ExecutorOptions{
+		Agent:        agent,
+		Dispatcher:   dispatcher,
+		ApprovalMode: safety.ApprovalFullAccess, // would otherwise never prompt
+		Permissions: safety.PermissionConfig{Rules: []safety.PermissionRule{
+			{Tool: "write", Action: safety.PermissionAsk},
+		}},
+		Approve: func(context.Context, string, string) (bool, error) {
+			promptCalls++
+			return false, nil
+		},
+	})
+
+	intent := command.Parse("create file example.md with content test content", command.ParseTokens, nil)
+	result, err := executor.Execute(context.Background(), "create file example.md with content test content", intent, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if promptCalls != 1 {
+		t.Fatalf("expected the ask rule to force exactly one prompt under full-access, got %d", promptCalls)
+	}
+	if result.Status != TurnStatusBlocked {
+		t.Fatalf("expected status blocked, got %s", result.Status)
+	}
+}
+
+func TestExecute_PermissionDenyBlocksExplicitSkillCommandWithoutPrompting(t *testing.T) {
+	root := t.TempDir()
+	dispatcher := &toolDispatcher{root: root, t: t}
+	agent := &toolAwareAgent{supportsTools: false, summaryReply: "n/a"}
+	commandSet := command.BuildCommandSet([]string{"git"})
+	executor := NewExecutor(ExecutorOptions{
+		Agent:        agent,
+		Dispatcher:   dispatcher,
+		CommandSet:   commandSet,
+		ApprovalMode: safety.ApprovalFullAccess, // would otherwise never prompt
+		Permissions: safety.PermissionConfig{Rules: []safety.PermissionRule{
+			{Tool: "git", Action: safety.PermissionDeny},
+		}},
+	})
+
+	intent := command.Parse("git status", command.ParseTokens, commandSet)
+	if intent.Kind != command.KindSkill {
+		t.Fatalf("fixture invalid: expected KindSkill intent, got %v", intent.Kind)
+	}
+	result, err := executor.Execute(context.Background(), "git status", intent, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Status != TurnStatusBlocked {
+		t.Fatalf("expected status blocked, got %s (reply: %q)", result.Status, result.Reply)
+	}
+}
+
+func TestExecute_PermissionDenyBlocksModelDrivenToolCallWithoutExecutingDispatcher(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "internal"), 0o755); err != nil {
+		t.Fatalf("fixture failed: %v", err)
+	}
+	dispatcher := &toolDispatcher{root: root, t: t}
+	agent := &successfulToolCallAgent{}
+	executor := NewExecutor(ExecutorOptions{
+		Agent:        agent,
+		Dispatcher:   dispatcher,
+		ApprovalMode: safety.ApprovalFullAccess, // would otherwise never prompt
+		Permissions: safety.PermissionConfig{Rules: []safety.PermissionRule{
+			{Tool: "list", Action: safety.PermissionDeny},
+		}},
+	})
+
+	intent := command.Parse("list directory internal", command.ParseTokens, nil)
+	_, err := executor.Execute(context.Background(), "list directory internal", intent, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if dispatcher.toolExecutions != 0 {
+		t.Fatalf("expected dispatcher.ExecuteTool to never run under a deny rule, got %d calls", dispatcher.toolExecutions)
 	}
 }
 

@@ -38,8 +38,9 @@ type Tool interface {
 type Source string
 
 const (
-	SourceBuiltin  Source = "builtin"
-	SourceExternal Source = "external"
+	SourceBuiltin  Source = "builtin"  // compiled-in tools, trusted
+	SourceExternal Source = "external" // discovered SKILL.md files
+	SourceMCP      Source = "mcp"      // tools bridged from an MCP server
 )
 
 type registryEntry struct {

@@ -43,6 +43,7 @@ type App struct {
 	skillDispatcher  skillDispatcher
 	commandSet       map[string]struct{}
 	approvalMode     safety.ApprovalMode
+	permissions      safety.PermissionConfig
 	onApprovalChange func(safety.ApprovalMode)
 	turnExecutor     *turn.Executor
 	modelSwitcher    modelSwitcher
@@ -90,6 +91,7 @@ type Options struct {
 	Dispatcher       skillDispatcher
 	ShowBanner       bool
 	ApprovalMode     safety.ApprovalMode
+	Permissions      safety.PermissionConfig
 	OnApprovalChange func(safety.ApprovalMode)
 	// OnToolAction, if set, is notified of every tool call/result this session
 	// runs (e.g. for a UI command-history panel). Nil means silent, as before.
@@ -126,6 +128,7 @@ func NewApp(opts Options) (*App, error) {
 		commandSet:         commandSet,
 		showBanner:         opts.ShowBanner,
 		approvalMode:       normalizeApprovalMode(opts.ApprovalMode),
+		permissions:        opts.Permissions,
 		onApprovalChange:   opts.OnApprovalChange,
 		modelSwitcher:      opts.ModelSwitch,
 		title:              strings.TrimSpace(opts.Title),
@@ -143,6 +146,7 @@ func NewApp(opts Options) (*App, error) {
 		CommandSet:   a.commandSet,
 		Approve:      a.confirmApproval,
 		ApprovalMode: a.approvalMode,
+		Permissions:  a.permissions,
 		OnToolAction: a.onToolAction,
 		TurnOptions: turn.TurnOptions{
 			ThinkLevel: a.thinkLevel,
@@ -162,6 +166,7 @@ func (a *App) wireStatusReporter() {
 		Approve:        a.confirmApproval,
 		StatusReporter: a.statusReporter,
 		ApprovalMode:   a.approvalMode,
+		Permissions:    a.permissions,
 		OnToolAction:   a.onToolAction,
 		TurnOptions: turn.TurnOptions{
 			ThinkLevel: a.thinkLevel,
@@ -404,6 +409,7 @@ func (a *App) switchModel(ctx context.Context) error {
 		CommandSet:   a.commandSet,
 		Approve:      a.confirmApproval,
 		ApprovalMode: a.approvalMode,
+		Permissions:  a.permissions,
 		TurnOptions: turn.TurnOptions{
 			ThinkLevel: a.thinkLevel,
 		},
@@ -528,6 +534,7 @@ func (a *App) applyApprovalMode(modeArg string) {
 			CommandSet:   a.commandSet,
 			Approve:      a.confirmApproval,
 			ApprovalMode: a.approvalMode,
+			Permissions:  a.permissions,
 			TurnOptions: turn.TurnOptions{
 				ThinkLevel: a.thinkLevel,
 			},

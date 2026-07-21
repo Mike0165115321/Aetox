@@ -4,6 +4,7 @@
   import {
     SupportedProviders, HasAPIKey, RequiresAPIKey, TerminalShells,
     ListModelsForProvider, ProviderBaseURL,
+    ListMCPServers, AddMCPServer, RemoveMCPServer, TestMCPServer,
   } from '../../wailsjs/go/main/App'
   import { cockpit, switchProvider, switchModel, submitAPIKey } from './stores/cockpit.svelte'
 
@@ -40,6 +41,8 @@
 
     await refreshProviders()
     selectProvider(cockpit.model.provider || providers[0]?.name || '')
+
+    await loadMCP()
   })
 
   async function refreshProviders() {
@@ -96,6 +99,53 @@
     await selectProvider(selected)
   })
 
+  // ---------- MCP servers ----------
+  type MCPRow = { name: string; command: string[]; status: string; err?: string }
+  let mcpServers = $state<MCPRow[]>([])
+  let mcpName = $state('')
+  let mcpCommand = $state('')
+  let mcpBusy = $state('')
+  let mcpError = $state('')
+
+  async function loadMCP() {
+    mcpServers = await ListMCPServers()
+  }
+
+  async function runMCP(label: string, fn: () => Promise<void>) {
+    mcpBusy = label
+    mcpError = ''
+    try {
+      await fn()
+    } catch (err) {
+      mcpError = String(err)
+    } finally {
+      mcpBusy = ''
+    }
+  }
+
+  const addMCP = () => runMCP('add', async () => {
+    const command = mcpCommand.trim().split(/\s+/).filter(Boolean)
+    await AddMCPServer(mcpName.trim(), command)
+    mcpName = ''
+    mcpCommand = ''
+    await loadMCP()
+  })
+
+  const removeMCP = (name: string) => runMCP('rm:' + name, async () => {
+    await RemoveMCPServer(name)
+    await loadMCP()
+  })
+
+  const testMCP = (name: string) => runMCP('test:' + name, async () => {
+    const info = await TestMCPServer(name)
+    mcpServers = mcpServers.map((s) => (s.name === name ? info : s))
+  })
+
+  function statusColor(status: string): string {
+    const c = status === 'connected' ? '#3fb950' : status === 'failed' ? '#f85149' : '#8b949e'
+    return `background:${c}`
+  }
+
   // ---------- Nav ----------
   const sections = [
     { group: 'ส่วนบุคคล', items: [
@@ -104,6 +154,9 @@
     ]},
     { group: 'โมเดล AI', items: [
       { id: 'models', label: 'Model settings', icon: '🧠' },
+    ]},
+    { group: 'เครื่องมือ', items: [
+      { id: 'mcp', label: 'MCP servers', icon: '🔌' },
     ]},
   ]
 
@@ -248,6 +301,49 @@
             {/if}
           {/if}
         </div>
+      </div>
+    {:else if active === 'mcp'}
+      <h2>MCP servers</h2>
+      <p class="muted set-sub">เชื่อมต่อ MCP server ภายนอก (stdio) เพื่อเพิ่มเครื่องมือให้ผู้ช่วย — เครื่องมือจาก MCP จะถามยืนยันก่อนรันเสมอ</p>
+
+      <div class="settings-card">
+        {#if mcpServers.length === 0}
+          <div class="muted">ยังไม่มี MCP server — เพิ่มด้านล่าง</div>
+        {:else}
+          {#each mcpServers as s}
+            <div class="set-row">
+              <div class="set-txt">
+                <div class="t"><span class="dot" style={statusColor(s.status)}></span> {s.name}</div>
+                <div class="d">{s.command.join(' ')}{s.err ? ' — ' + s.err : ''}</div>
+              </div>
+              <div style="display:flex; gap:8px">
+                <button class="ctrl" disabled={mcpBusy !== ''} onclick={() => testMCP(s.name)}>
+                  {mcpBusy === 'test:' + s.name ? 'กำลังทดสอบ…' : 'ทดสอบ'}
+                </button>
+                <button class="ctrl" disabled={mcpBusy !== ''} onclick={() => removeMCP(s.name)}>ลบ</button>
+              </div>
+            </div>
+          {/each}
+        {/if}
+      </div>
+
+      <div class="settings-card">
+        <div class="eyebrow">เพิ่ม server</div>
+        <div class="mset-keyrow">
+          <input class="ctrl" placeholder="ชื่อ เช่น filesystem" bind:value={mcpName} />
+        </div>
+        <div class="mset-keyrow">
+          <input
+            class="ctrl key-input"
+            placeholder="คำสั่ง เช่น npx -y @modelcontextprotocol/server-filesystem /path"
+            bind:value={mcpCommand}
+            onkeydown={(e) => e.key === 'Enter' && mcpName.trim() && mcpCommand.trim() && addMCP()}
+          />
+          <button class="ctrl" disabled={mcpBusy !== '' || !mcpName.trim() || !mcpCommand.trim()} onclick={addMCP}>
+            {mcpBusy === 'add' ? 'กำลังเพิ่ม…' : 'เพิ่ม'}
+          </button>
+        </div>
+        {#if mcpError}<div class="mset-error">{mcpError}</div>{/if}
       </div>
     {/if}
   </div>

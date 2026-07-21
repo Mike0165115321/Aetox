@@ -16,6 +16,7 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/command"
 	"github.com/Mike0165115321/Aetox/internal/config"
 	"github.com/Mike0165115321/Aetox/internal/debuglog"
+	"github.com/Mike0165115321/Aetox/internal/mcp"
 	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/safety"
 	"github.com/Mike0165115321/Aetox/internal/skill"
@@ -36,6 +37,21 @@ var (
 	debugMode    bool
 	debugLogPath string
 )
+
+// toMCPServers translates persisted MCP config DTOs into mcp.Server values.
+func toMCPServers(cfgs []config.MCPServerConfig) []mcp.Server {
+	out := make([]mcp.Server, 0, len(cfgs))
+	for _, c := range cfgs {
+		out = append(out, mcp.Server{
+			Name:        c.Name,
+			Command:     c.Command,
+			Cwd:         c.Cwd,
+			Environment: c.Environment,
+			Timeout:     time.Duration(c.TimeoutMs) * time.Millisecond,
+		})
+	}
+	return out
+}
 
 func parseModelWithThink(raw string) (string, string, bool) {
 	value := strings.TrimSpace(raw)
@@ -285,10 +301,29 @@ func main() {
 		MaxToolCalls: defaultAgentMaxToolCalls,
 	})
 
+	permissions, permErr := config.LoadPermissions()
+	if permErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: cannot load permissions.json: %v\n", permErr)
+	}
+
 	console := app.NewStdIO()
 	skillRegistry := skill.NewDefaultRegistry(skill.RegistryOptions{
 		SandboxRoot: cfg.SandboxRoot,
 	})
+	for _, discErr := range skill.RegisterDiscovered(skillRegistry, skill.DefaultDiscoveryPaths()) {
+		debuglog.Msg("skill discovery: %v", discErr)
+	}
+	mcpServers, mcpLoadErr := config.LoadMCPServers()
+	if mcpLoadErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: cannot load mcp-servers.json: %v\n", mcpLoadErr)
+	}
+	mcpMgr := mcp.NewManager(toMCPServers(mcpServers))
+	mcpRules, mcpErrs := mcpMgr.Register(context.Background(), skillRegistry)
+	for _, mcpErr := range mcpErrs {
+		debuglog.Msg("mcp: %v", mcpErr)
+	}
+	// Prepend defaults so a user's explicit rule still wins (last-match-wins).
+	permissions.Rules = append(mcpRules, permissions.Rules...)
 	skillDispatcher := skill.NewDispatcher(skillRegistry)
 	aetoxApp, err := app.NewApp(app.Options{
 		Agent:        agent,
@@ -296,6 +331,7 @@ func main() {
 		Dispatcher:   skillDispatcher,
 		ShowBanner:   !noBanner,
 		ApprovalMode: effectiveApprovalMode,
+		Permissions:  permissions,
 		OnApprovalChange: func(mode safety.ApprovalMode) {
 			currentConfig.ApprovalMode = string(mode)
 			if saveErr := persistModelPreference(currentConfig); saveErr != nil {

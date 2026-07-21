@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/Mike0165115321/Aetox/internal/safety"
 )
 
 func TestLoadDefaults(t *testing.T) {
@@ -111,5 +113,88 @@ func TestSaveAndLoadModelPreferenceThinkLevel(t *testing.T) {
 	}
 	if got.ThinkLevel != want.ThinkLevel {
 		t.Fatalf("expected think level %q, got %q", want.ThinkLevel, got.ThinkLevel)
+	}
+}
+
+func TestLoadPermissionsMissingFileReturnsEmpty(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("APPDATA", base)
+	t.Setenv("LOCALAPPDATA", base)
+
+	got, err := LoadPermissions()
+	if err != nil {
+		t.Fatalf("load permissions failed: %v", err)
+	}
+	if len(got.Rules) != 0 {
+		t.Fatalf("expected no rules when file is missing, got %v", got.Rules)
+	}
+}
+
+func TestLoadMCPServersMissingFileReturnsNil(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("APPDATA", base)
+	t.Setenv("LOCALAPPDATA", base)
+
+	got, err := LoadMCPServers()
+	if err != nil {
+		t.Fatalf("load mcp servers failed: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected no servers when file is missing, got %v", got)
+	}
+}
+
+func TestSaveAndLoadMCPServers(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("APPDATA", base)
+	t.Setenv("LOCALAPPDATA", base)
+
+	want := []MCPServerConfig{
+		{Name: "fs", Command: []string{"npx", "-y", "server-filesystem", "/tmp"}, TimeoutMs: 5000},
+		{Name: "git", Command: []string{"uvx", "mcp-git"}, Environment: map[string]string{"TOKEN": "x"}},
+	}
+	if err := SaveMCPServers(want); err != nil {
+		t.Fatalf("save mcp servers failed: %v", err)
+	}
+
+	got, err := LoadMCPServers()
+	if err != nil {
+		t.Fatalf("load mcp servers failed: %v", err)
+	}
+	if len(got) != len(want) {
+		t.Fatalf("expected %d servers, got %d", len(want), len(got))
+	}
+	if got[0].Name != "fs" || len(got[0].Command) != 4 || got[0].TimeoutMs != 5000 {
+		t.Fatalf("server 0 round-trip mismatch: %+v", got[0])
+	}
+	if got[1].Environment["TOKEN"] != "x" {
+		t.Fatalf("server 1 environment not preserved: %+v", got[1])
+	}
+}
+
+func TestSaveAndLoadPermissions(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("APPDATA", base)
+	t.Setenv("LOCALAPPDATA", base)
+
+	want := safety.PermissionConfig{Rules: []safety.PermissionRule{
+		{Tool: "shell", Pattern: "rm *", Action: safety.PermissionDeny},
+		{Tool: "git", Pattern: "status", Action: safety.PermissionAllow},
+	}}
+	if err := SavePermissions(want); err != nil {
+		t.Fatalf("save permissions failed: %v", err)
+	}
+
+	got, err := LoadPermissions()
+	if err != nil {
+		t.Fatalf("load permissions failed: %v", err)
+	}
+	if len(got.Rules) != len(want.Rules) {
+		t.Fatalf("expected %d rules, got %d", len(want.Rules), len(got.Rules))
+	}
+	for i, rule := range want.Rules {
+		if got.Rules[i] != rule {
+			t.Fatalf("rule %d mismatch: want %+v, got %+v", i, rule, got.Rules[i])
+		}
 	}
 }

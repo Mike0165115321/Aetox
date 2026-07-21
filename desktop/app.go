@@ -17,6 +17,7 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/cognitive"
 	"github.com/Mike0165115321/Aetox/internal/config"
 	"github.com/Mike0165115321/Aetox/internal/debuglog"
+	"github.com/Mike0165115321/Aetox/internal/mcp"
 	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/safety"
 	"github.com/Mike0165115321/Aetox/internal/skill"
@@ -39,6 +40,9 @@ type App struct {
 
 	sessionID  string
 	transcript []SessionMessage
+
+	mcp      *mcp.Manager    // configured MCP servers; built once, survives re-bootstraps
+	registry *skill.Registry // current skill/tool registry, for the Tools panel
 
 	dbInit sync.Once
 	db     *sql.DB
@@ -503,11 +507,19 @@ func (a *App) applyConfig(cfg config.Config) {
 		&browserOpenSkill{app: a},
 		&browserReadSkill{app: a},
 	}
-	chatApp, agent, status := bootstrapFromConfig(cfg, a.recordToolAction, workbenchTools)
+	if a.mcp == nil {
+		servers, err := config.LoadMCPServers()
+		if err != nil {
+			debuglog.Msg("mcp: load servers: %v", err)
+		}
+		a.mcp = mcp.NewManager(toMCPServers(servers))
+	}
+	chatApp, agent, status, registry := bootstrapFromConfig(cfg, a.recordToolAction, workbenchTools, a.mcp)
 	a.chat = chatApp
 	a.agent = agent
 	a.cfg = cfg
 	a.modelStatus = status
+	a.registry = registry
 	// A re-bootstrap (model/provider switch) creates a fresh agent — replay the
 	// current session so the conversation's memory survives the switch.
 	if a.agent != nil && len(a.transcript) > 0 {
@@ -546,7 +558,22 @@ func resolveConfig(opts config.ConfigOptions) config.Config {
 	return cfg
 }
 
-func bootstrapFromConfig(cfg config.Config, onToolAction func(action, detail string), extraSkills []skill.Skill) (*aetoxapp.App, *cognitive.Agent, string) {
+// toMCPServers translates the persisted config DTOs into mcp.Server values.
+func toMCPServers(cfgs []config.MCPServerConfig) []mcp.Server {
+	out := make([]mcp.Server, 0, len(cfgs))
+	for _, c := range cfgs {
+		out = append(out, mcp.Server{
+			Name:        c.Name,
+			Command:     c.Command,
+			Cwd:         c.Cwd,
+			Environment: c.Environment,
+			Timeout:     time.Duration(c.TimeoutMs) * time.Millisecond,
+		})
+	}
+	return out
+}
+
+func bootstrapFromConfig(cfg config.Config, onToolAction func(action, detail string), extraSkills []skill.Skill, mcpMgr *mcp.Manager) (*aetoxapp.App, *cognitive.Agent, string, *skill.Registry) {
 	status := model.ResolveStatus(cfg.ModelProvider, cfg.ModelName, nil)
 
 	bootstrapResult := model.BootstrapProvider(model.BootstrapOptions{
@@ -557,7 +584,7 @@ func bootstrapFromConfig(cfg config.Config, onToolAction func(action, detail str
 		Timeout:  30 * time.Second,
 	})
 	if bootstrapResult.Provider == nil {
-		return nil, nil, status + " (init failed: " + bootstrapResult.Error.Error() + ")"
+		return nil, nil, status + " (init failed: " + bootstrapResult.Error.Error() + ")", nil
 	}
 	if bootstrapResult.Warning != "" {
 		status += " (" + bootstrapResult.Warning + ")"
@@ -577,19 +604,36 @@ func bootstrapFromConfig(cfg config.Config, onToolAction func(action, detail str
 			debuglog.Msg("skill registration skipped: %v", err)
 		}
 	}
+	for _, discErr := range skill.RegisterDiscovered(registry, skill.DefaultDiscoveryPaths()) {
+		debuglog.Msg("skill discovery: %v", discErr)
+	}
+	// Register MCP tools before the dispatcher snapshots the registry.
+	mcpRules, mcpErrs := mcpMgr.Register(context.Background(), registry)
+	for _, mcpErr := range mcpErrs {
+		debuglog.Msg("mcp: %v", mcpErr)
+	}
 	dispatcher := skill.NewDispatcher(registry)
+
+	permissions, permErr := config.LoadPermissions()
+	if permErr != nil {
+		debuglog.Msg("permissions load failed: %v", permErr)
+	}
+	// Prepend the default MCP "ask" rules so a user's explicit rule (later in
+	// the list) still wins under last-match-wins.
+	permissions.Rules = append(mcpRules, permissions.Rules...)
 
 	chatApp, err := aetoxapp.NewApp(aetoxapp.Options{
 		Agent:        agent,
 		Console:      aetoxapp.NewStdIO(),
 		Dispatcher:   dispatcher,
 		ApprovalMode: safety.ApprovalFullAccess,
+		Permissions:  permissions,
 		OnToolAction: onToolAction,
 	})
 	if err != nil {
-		return nil, nil, status + " (init failed: " + err.Error() + ")"
+		return nil, nil, status + " (init failed: " + err.Error() + ")", nil
 	}
-	return chatApp, agent, status
+	return chatApp, agent, status, registry
 }
 
 // persistModelPreference saves the current model/approval choice to the same

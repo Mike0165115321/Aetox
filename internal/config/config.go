@@ -180,6 +180,116 @@ func LegacyPreferencePath() string {
 	return filepath.Join(configDir, "aetox-cli", "model-preference.json")
 }
 
+func PermissionsPath() (string, error) {
+	configDir, err := os.UserConfigDir()
+	if err != nil || configDir == "" {
+		home, _ := os.UserHomeDir()
+		if home != "" {
+			configDir = filepath.Join(home, ".config")
+		} else {
+			configDir = os.TempDir()
+		}
+	}
+	return filepath.Join(configDir, "aetox", "permissions.json"), nil
+}
+
+// LoadPermissions reads the user's per-tool permission overrides, if any.
+// Missing file is not an error — it just means no rules are configured yet.
+func LoadPermissions() (safety.PermissionConfig, error) {
+	path, err := PermissionsPath()
+	if err != nil {
+		return safety.PermissionConfig{}, err
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return safety.PermissionConfig{}, nil
+		}
+		return safety.PermissionConfig{}, err
+	}
+	var cfg safety.PermissionConfig
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return safety.PermissionConfig{}, err
+	}
+	return cfg, nil
+}
+
+func SavePermissions(cfg safety.PermissionConfig) error {
+	path, err := PermissionsPath()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	payload, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, payload, 0o600)
+}
+
+// MCPServerConfig is the persisted, provider-agnostic description of one local
+// MCP server (phase 1: stdio only — see MCP-SUPPORT-PLAN.md §4). It is a plain
+// DTO so this package needn't depend on internal/mcp; the wiring layer
+// translates it into an mcp.Server.
+type MCPServerConfig struct {
+	Name        string            `json:"name"`
+	Command     []string          `json:"command"`
+	Cwd         string            `json:"cwd,omitempty"`
+	Environment map[string]string `json:"environment,omitempty"`
+	TimeoutMs   int               `json:"timeout_ms,omitempty"`
+}
+
+func MCPServersPath() (string, error) {
+	configDir, err := os.UserConfigDir()
+	if err != nil || configDir == "" {
+		home, _ := os.UserHomeDir()
+		if home != "" {
+			configDir = filepath.Join(home, ".config")
+		} else {
+			configDir = os.TempDir()
+		}
+	}
+	return filepath.Join(configDir, "aetox", "mcp-servers.json"), nil
+}
+
+// LoadMCPServers reads the configured MCP servers. A missing file is not an
+// error — it just means none are configured yet.
+func LoadMCPServers() ([]MCPServerConfig, error) {
+	path, err := MCPServersPath()
+	if err != nil {
+		return nil, err
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var servers []MCPServerConfig
+	if err := json.Unmarshal(raw, &servers); err != nil {
+		return nil, err
+	}
+	return servers, nil
+}
+
+func SaveMCPServers(servers []MCPServerConfig) error {
+	path, err := MCPServersPath()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	payload, err := json.MarshalIndent(servers, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, payload, 0o600)
+}
+
 func EnvFilePath() (string, error) {
 	configDir, err := os.UserConfigDir()
 	if err != nil || configDir == "" {

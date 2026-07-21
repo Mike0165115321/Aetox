@@ -5,15 +5,16 @@
   import ReviewPane from './ReviewPane.svelte'
   import FilesPane from './FilesPane.svelte'
   import BrowserPane from './BrowserPane.svelte'
+  import ToolsPane from './ToolsPane.svelte'
   import { cockpit } from '../stores/cockpit.svelte'
   import {
     workbench, activateTab, closeTab, removeTab,
-    openReview, openFilesTab, openBrowserTab, openTerminalTab,
+    openReview, openFilesTab, openBrowserTab, openTerminalTab, openToolsTab,
   } from '../stores/workbench.svelte'
   import { TerminalShells, BrowserBack, BrowserForward, BrowserReload } from '../../../wailsjs/go/main/App'
   import { EventsOn } from '../../../wailsjs/runtime/runtime'
 
-  const tabIcon: Record<string, string> = { review: '▤', terminal: '⌨', browser: '🌐', files: '⧉', file: '📄' }
+  const tabIcon: Record<string, string> = { review: '▤', terminal: '⌨', browser: '🌐', files: '⧉', file: '📄', tools: '🛠' }
 
   let shells = $state<{ name: string; path: string }[]>([])
   let menuOpen = $state(false)
@@ -104,6 +105,7 @@
         <button class="plus-menu-item" disabled={shells.length === 0} onclick={openDefaultTerminal}><span class="ic">⌨</span> Terminal</button>
         <button class="plus-menu-item" onclick={() => pick(openBrowserTab)}><span class="ic">🌐</span> Browser <span class="kbd">Ctrl+T</span></button>
         <button class="plus-menu-item" onclick={() => pick(openFilesTab)}><span class="ic">⧉</span> Files <span class="kbd">Ctrl+P</span></button>
+        <button class="plus-menu-item" onclick={() => pick(openToolsTab)}><span class="ic">🛠</span> Tools</button>
       </div>
     {/if}
   </div>
@@ -141,6 +143,8 @@
         <Terminal sessionId={t.id} onExit={() => removeTab(t.id)} />
       {:else if t.kind === 'files'}
         <FilesPane />
+      {:else if t.kind === 'tools'}
+        <ToolsPane />
       {:else if t.kind === 'file'}
         <FileEditor path={t.path ?? ''} content={t.content ?? ''} />
       {:else}

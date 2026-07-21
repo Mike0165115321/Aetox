@@ -71,3 +71,36 @@ func TestNormalizeApprovalMode(t *testing.T) {
 		t.Errorf("invalid mode should fall back to ask: got %q", got)
 	}
 }
+
+func TestPermissionConfigResolve(t *testing.T) {
+	cfg := PermissionConfig{Rules: []PermissionRule{
+		{Tool: "*", Pattern: "*", Action: PermissionAsk},
+		{Tool: "git", Pattern: "status", Action: PermissionAllow},
+		{Tool: "shell", Pattern: "rm *", Action: PermissionDeny},
+		{Tool: "shell", Pattern: "rm -rf /tmp/*", Action: PermissionAllow},
+	}}
+
+	cases := []struct {
+		name        string
+		tool        string
+		args        []string
+		wantAction  PermissionAction
+		wantMatched bool
+	}{
+		{"no rules matches catch-all ask", "read", []string{"a.txt"}, PermissionAsk, true},
+		{"specific allow overrides catch-all", "git", []string{"status"}, PermissionAllow, true},
+		{"git push only matches catch-all", "git", []string{"push"}, PermissionAsk, true},
+		{"shell rm matches deny", "shell", []string{"rm", "file.txt"}, PermissionDeny, true},
+		{"last matching rule wins over earlier deny", "shell", []string{"rm", "-rf", "/tmp/scratch"}, PermissionAllow, true},
+	}
+	for _, tc := range cases {
+		action, matched := cfg.Resolve(tc.tool, tc.args)
+		if matched != tc.wantMatched || action != tc.wantAction {
+			t.Errorf("%s: Resolve(%q, %v) = (%q, %v), want (%q, %v)", tc.name, tc.tool, tc.args, action, matched, tc.wantAction, tc.wantMatched)
+		}
+	}
+
+	if action, matched := (PermissionConfig{}).Resolve("read", nil); matched || action != "" {
+		t.Errorf("empty config should never match, got (%q, %v)", action, matched)
+	}
+}
