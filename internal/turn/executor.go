@@ -45,12 +45,6 @@ type Dispatcher interface {
 	ExecuteTool(context.Context, string, map[string]any) (skill.Output, bool, error)
 }
 
-type InferredToolCandidate struct {
-	Name           string
-	Args           map[string]any
-	MissingMessage string
-}
-
 type ApprovalPromptFunc func(context.Context, string, string) (bool, error)
 
 type Executor struct {
@@ -167,71 +161,33 @@ func (e *Executor) Execute(
 	debuglog.Info("parsed.IsSlash", fmt.Sprintf("%v", parsed.IsSlash))
 	debuglog.Info("parsed.IsMeta", fmt.Sprintf("%v", parsed.IsMeta))
 
-	e.reportStatus("กำลังค้นหาเครื่องมือ...")
-	candidates := e.inferToolCandidates(parsed.Raw)
-	debuglog.Info("tool candidates", fmt.Sprintf("%d found", len(candidates)))
-	for i, c := range candidates {
-		debuglog.Msg("candidate[%d] name=%s missing=%s", i, c.Name, truncate(c.MissingMessage, 60))
+	// Explicit command (grammar-recognized skill token, e.g. "read foo.txt",
+	// "/time") → direct dispatch. Everything else is the model's call — there
+	// is deliberately no keyword/regex guessing between the user and the model
+	// (ARCHITECTURE.md §17).
+	if parsed.Kind == command.KindSkill {
+		debuglog.Msg("path: executeSkillTurn (explicit skill command)")
+		e.reportStatus("กำลังรันเครื่องมือ...")
+		return e.executeSkillTurn(ctx, line, parsed, onToolComplete)
 	}
 
-	// Phase 1: high-priority inferred tools → execute directly (no model needed)
-	if e.shouldExecuteInferredBeforeAgent(parsed, candidates) {
-		debuglog.Msg("path: executeInferredBeforeAgent (high-priority tool)")
-		if result, handled, err := e.executeInferredToolCandidatesLoop(ctx, parsed.Raw, candidates); handled {
-			return result, err
-		}
-	}
-
-	// Phase 2: if agent supports tool calling, try model-driven tool loop
-	// The model decides what tools to use, regex candidates act as fallback
+	e.reportStatus(e.conversationThinkingStatus())
 	agentCanUseTools := e.agent != nil && e.agent.SupportsToolCalling() &&
 		e.dispatcher != nil && len(e.dispatcher.ToolDefinitions()) > 0
-
-	if agentCanUseTools && (parsed.Kind == command.KindConversation || e.shouldUseInferredToolPath(parsed, candidates)) {
+	if agentCanUseTools {
 		debuglog.Msg("path: executeAgentToolLoop (model-driven tool calling)")
-		e.reportStatus(e.conversationThinkingStatus())
-		toolResult, handled, toolUsed, toolSucceeded, err := e.executeAgentToolLoop(ctx, parsed, onChunk)
-		if handled {
-			debuglog.Info("agent tool loop", fmt.Sprintf("used=%v succeeded=%v", toolUsed, toolSucceeded))
-			if (!toolUsed || !toolSucceeded) && len(candidates) > 0 {
-				debuglog.Msg("fallback: executeInferredToolCandidatesLoop (model didn't use tools)")
-				if fallback, fallbackHandled, fallbackErr := e.executeInferredToolCandidatesLoop(ctx, parsed.Raw, candidates); fallbackHandled {
-					return fallback, fallbackErr
-				}
-			}
-			return toolResult, err
-		}
-		if len(candidates) > 0 {
-			debuglog.Msg("fallback: executeInferredToolCandidatesLoop (agent loop not handled)")
-			if fallback, handled, fallbackErr := e.executeInferredToolCandidatesLoop(ctx, parsed.Raw, candidates); handled {
-				return fallback, fallbackErr
-			}
-		}
-	}
-
-	// Phase 3: inferred tools for non-tool-capable agents
-	if e.shouldUseInferredToolPath(parsed, candidates) {
-		debuglog.Msg("path: executeInferredToolCandidatesLoop (regex-inferred tools)")
-		if result, handled, err := e.executeInferredToolCandidatesLoop(ctx, parsed.Raw, candidates); handled {
+		if result, handled, err := e.executeAgentToolLoop(ctx, parsed, onChunk); handled {
 			return result, err
 		}
 	}
 
-	// Phase 4: pure conversation (no tools, streaming chat)
-	if parsed.Kind == command.KindConversation {
-		debuglog.Msg("path: conversation (streaming chat)")
-		e.reportStatus(e.conversationThinkingStatus())
-		reply, streamed, err := e.agent.RespondStream(ctx, parsed.Raw, asStreamHandler(onChunk), e.turnOptions)
-		return Result{
-			Reply:    reply,
-			Streamed: streamed,
-			Status:   TurnStatusDone,
-		}, err
-	}
-
-	debuglog.Msg("path: executeSkillTurn (direct skill dispatch)")
-	e.reportStatus("กำลังรันเครื่องมือ...")
-	return e.executeSkillTurn(ctx, line, parsed, onToolComplete)
+	debuglog.Msg("path: conversation (streaming chat)")
+	reply, streamed, err := e.agent.RespondStream(ctx, parsed.Raw, asStreamHandler(onChunk), e.turnOptions)
+	return Result{
+		Reply:    reply,
+		Streamed: streamed,
+		Status:   TurnStatusDone,
+	}, err
 }
 
 func truncate(s string, max int) string {
@@ -250,52 +206,6 @@ func kindName(k command.Kind) string {
 	default:
 		return fmt.Sprintf("unknown(%d)", k)
 	}
-}
-
-func (e *Executor) shouldExecuteInferredBeforeAgent(parsed command.Intent, candidates []InferredToolCandidate) bool {
-	if len(candidates) == 0 || parsed.IsSlash {
-		return false
-	}
-	for _, candidate := range candidates {
-		switch candidate.Name {
-		case "write", "read", "delete", "github_repo_summary", "plugin_install":
-			return true
-		}
-	}
-	return false
-}
-
-func (e *Executor) shouldUseInferredToolPath(parsed command.Intent, candidates []InferredToolCandidate) bool {
-	if len(candidates) == 0 {
-		return false
-	}
-	if parsed.IsSlash {
-		return false
-	}
-	if parsed.Kind == command.KindConversation {
-		return true
-	}
-	if parsed.Kind != command.KindSkill {
-		return false
-	}
-
-	if strings.Contains(strings.ToLower(parsed.Raw), " and ") || strings.Contains(parsed.Raw, ",") {
-		return true
-	}
-	if strings.Contains(strings.ToLower(parsed.Raw), " then ") {
-		return true
-	}
-
-	for _, candidate := range candidates {
-		if candidate.Name == "list" {
-			lower := strings.ToLower(parsed.Raw)
-			if strings.Contains(lower, " directory ") || strings.Contains(lower, " folder ") || strings.Contains(lower, " path ") {
-				return true
-			}
-		}
-	}
-
-	return false
 }
 
 func (e *Executor) executeSkillTurn(
@@ -411,17 +321,17 @@ func (e *Executor) executeAgentToolLoop(
 	ctx context.Context,
 	intent command.Intent,
 	onChunk func(string),
-) (Result, bool, bool, bool, error) {
+) (Result, bool, error) {
 	if e.agent == nil || !e.agent.SupportsToolCalling() {
-		return Result{}, false, false, false, nil
+		return Result{}, false, nil
 	}
 	if e.dispatcher == nil {
-		return Result{}, false, false, false, nil
+		return Result{}, false, nil
 	}
 
 	toolDefs := e.dispatcher.ToolDefinitions()
 	if len(toolDefs) == 0 {
-		return Result{}, false, false, false, nil
+		return Result{}, false, nil
 	}
 
 	debuglog.Info("sending tools", fmt.Sprintf("%d definitions", len(toolDefs)))
@@ -429,12 +339,10 @@ func (e *Executor) executeAgentToolLoop(
 		debuglog.Msg("tool: %s", td.Function.Name)
 	}
 
-	toolSucceeded := false
 	reply, usedTools, err := e.agent.RespondWithTools(ctx, toolDefs, intent.Raw, func(ctx context.Context, call model.ToolCall) (string, error) {
 		e.reportToolCall(call.Function.Name, call.Function.Arguments)
 		receipt, success, execErr := e.executeToolCallWithOutcome(ctx, call)
 		if success {
-			toolSucceeded = true
 			e.reportToolResult(call.Function.Name, "สำเร็จ")
 		} else if execErr != nil {
 			e.reportToolResult(call.Function.Name, execErr.Error())
@@ -444,8 +352,9 @@ func (e *Executor) executeAgentToolLoop(
 		return receipt, execErr
 	}, e.turnOptions)
 	if err != nil {
-		return Result{}, false, false, toolSucceeded, err
+		return Result{}, false, err
 	}
+	debuglog.Info("agent tool loop", fmt.Sprintf("usedTools=%v", usedTools))
 	if onChunk != nil {
 		if strings.TrimSpace(reply) != "" {
 			onChunk(reply)
@@ -455,177 +364,7 @@ func (e *Executor) executeAgentToolLoop(
 		Reply:    reply,
 		Streamed: false,
 		Status:   TurnStatusDone,
-	}, true, usedTools, toolSucceeded, nil
-}
-
-func (e *Executor) executeInferredToolCandidatesLoop(
-	ctx context.Context,
-	rawInput string,
-	candidates []InferredToolCandidate,
-) (Result, bool, error) {
-	if len(candidates) == 0 {
-		return Result{}, false, nil
-	}
-
-	lines := []string{}
-	status := TurnStatusDone
-	var firstErr error
-	for idx, candidate := range candidates {
-		lineResult, handled, err := e.executeInferredTool(ctx, rawInput, candidate)
-		if err != nil {
-			if firstErr == nil {
-				firstErr = err
-			}
-			if idx == 0 {
-				if lineResult.Status != "" {
-					status = lineResult.Status
-				} else {
-					status = TurnStatusError
-				}
-			} else {
-				status = TurnStatusError
-			}
-			lines = append(lines, lineResult.Reply)
-			return Result{
-				Reply:    strings.Join(lines, "\n"),
-				Streamed: false,
-				Status:   status,
-			}, true, err
-		}
-
-		if !handled {
-			continue
-		}
-		lines = append(lines, lineResult.Reply)
-		if lineResult.Status == TurnStatusBlocked || lineResult.Status == TurnStatusError {
-			return Result{
-				Reply:    strings.Join(lines, "\n"),
-				Streamed: false,
-				Status:   lineResult.Status,
-			}, true, err
-		}
-	}
-
-	if len(lines) == 0 {
-		return Result{}, false, nil
-	}
-
-	return Result{
-		Reply:    strings.Join(lines, "\n"),
-		Streamed: false,
-		Status:   status,
-	}, true, firstErr
-}
-
-func (e *Executor) executeInferredTool(
-	ctx context.Context,
-	rawInput string,
-	candidate InferredToolCandidate,
-) (Result, bool, error) {
-	defer debuglog.Block("inferredTool: " + candidate.Name)()
-
-	if strings.TrimSpace(candidate.MissingMessage) != "" {
-		debuglog.Msg("missing args: %s", candidate.MissingMessage)
-		return Result{
-			Reply:    candidate.MissingMessage,
-			Streamed: false,
-			Status:   TurnStatusBlocked,
-		}, true, nil
-	}
-
-	name := strings.ToLower(strings.TrimSpace(candidate.Name))
-	args := candidate.Args
-	if args == nil {
-		args = map[string]any{}
-	}
-
-	assessment := safety.AssessCommand(name, toolCallToArgs(name, args))
-	debuglog.Info("safety", fmt.Sprintf("risk=%v reason=%s", assessment.Risk, assessment.Reason))
-	commandLine := name
-	if path, ok := args["path"].(string); ok {
-		path = strings.TrimSpace(path)
-		if path != "" {
-			commandLine += " " + path
-		}
-	}
-	approved, confirmErr := e.resolveApproval(ctx, name, toolCallToArgs(name, args), commandLine, assessment)
-	if confirmErr != nil {
-		return Result{}, true, confirmErr
-	}
-	if !approved {
-		blocked := e.newToolResultForTurn(name, commandLine, "execution blocked by user")
-		summary, summarizeErr := e.summarizeToolExecution(ctx, rawInput, blocked, TurnStatusBlocked, nil)
-		if summarizeErr != nil {
-			return Result{
-				Reply:    e.fallbackToolSummary(blocked, TurnStatusBlocked, nil),
-				Streamed: false,
-				Status:   TurnStatusBlocked,
-			}, true, nil
-		}
-		return Result{
-			Reply:    summary,
-			Streamed: false,
-			Status:   TurnStatusBlocked,
-		}, true, nil
-	}
-
-	output, handled, err := e.dispatcher.ExecuteTool(ctx, name, args)
-	if !handled {
-		return Result{
-			Reply:    fmt.Sprintf("tool %q is not exposed", name),
-			Streamed: false,
-			Status:   TurnStatusError,
-		}, true, fmt.Errorf("tool %q is not exposed to agent", name)
-	}
-	if err != nil || !output.Success || errors.Is(ctx.Err(), context.Canceled) {
-		executionStatus := TurnStatusError
-		if shouldUseDeterministicToolSummary(name) {
-			return Result{
-				Reply:    e.fallbackToolSummary(output, executionStatus, err),
-				Streamed: false,
-				Status:   executionStatus,
-			}, true, nil
-		}
-		summary, summarizeErr := e.summarizeToolExecution(ctx, rawInput, output, executionStatus, err)
-		if summarizeErr != nil {
-			return Result{
-				Reply:    e.fallbackToolSummary(output, executionStatus, err),
-				Streamed: false,
-				Status:   executionStatus,
-			}, true, nil
-		}
-		return Result{
-			Reply:    summary,
-			Streamed: false,
-			Status:   executionStatus,
-		}, true, nil
-	}
-
-	if shouldUseDeterministicToolSummary(name) {
-		return Result{
-			Reply:    e.fallbackToolSummary(output, TurnStatusDone, nil),
-			Streamed: false,
-			Status:   TurnStatusDone,
-		}, true, nil
-	}
-	summary, summarizeErr := e.summarizeToolExecution(ctx, rawInput, output, TurnStatusDone, nil)
-	if summarizeErr != nil {
-		return Result{
-			Reply:    e.fallbackToolSummary(output, TurnStatusDone, nil),
-			Streamed: false,
-			Status:   TurnStatusDone,
-		}, true, nil
-	}
-	return Result{
-		Reply:    summary,
-		Streamed: false,
-		Status:   TurnStatusDone,
 	}, true, nil
-}
-
-func (e *Executor) executeToolCall(ctx context.Context, call model.ToolCall) (string, error) {
-	receipt, _, err := e.executeToolCallWithOutcome(ctx, call)
-	return receipt, err
 }
 
 func (e *Executor) executeToolCallWithOutcome(ctx context.Context, call model.ToolCall) (string, bool, error) {
@@ -769,10 +508,19 @@ func toolCallToArgs(name string, args map[string]any) []string {
 		if raw, ok := args["path"].(string); ok {
 			return []string{strings.TrimSpace(raw)}
 		}
-	case "read", "delete":
+	case "read", "delete", "edit":
 		if raw, ok := args["path"].(string); ok {
 			return []string{strings.TrimSpace(raw)}
 		}
+	case "grep":
+		result := make([]string, 0, 2)
+		if raw, ok := args["pattern"].(string); ok && strings.TrimSpace(raw) != "" {
+			result = append(result, strings.TrimSpace(raw))
+		}
+		if raw, ok := args["path"].(string); ok && strings.TrimSpace(raw) != "" {
+			result = append(result, strings.TrimSpace(raw))
+		}
+		return result
 	case "github_repo_summary", "plugin_install":
 		if raw, ok := args["repo_url"].(string); ok {
 			return []string{strings.TrimSpace(raw)}

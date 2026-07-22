@@ -84,7 +84,7 @@ Aetox ยังอยู่ในช่วงหล่อหลอม — แก
 | **CLI โต้ตอบ** | โหมด interactive + one-shot |
 | **11 Providers** | OpenAI, Anthropic, DeepSeek, Google Gemini, Groq, Mistral, Together, Perplexity, Cohere, LM Studio, Ollama |
 | **Tool Calling** | model-driven tool loop — agent เลือกใช้ tools เอง |
-| **17 Tools ในตัว** | read, write, list, shell, git, grep, echo, และอื่นๆ |
+| **15 Tools ในตัว** | read, write, edit, list, shell, git, grep และอื่นๆ |
 | **Safety 3 ระดับ** | ถามก่อน → คำสั่งเสี่ยง → รันเต็มที่ |
 | **Multi-provider** | ใช้ providers ต่างกันใน session เดียวกัน |
 | **Model Switching** | เปลี่ยน provider/model ได้ทันที โดยไม่เสีย context |
@@ -197,27 +197,25 @@ aetox --approval full-access
 
 ---
 
-## Tools ในตัว (17 ตัว)
+## Tools ในตัว (15 ตัว)
 
 | Tool | ใช้ทำอะไร |
 |:-----|:----------|
 | `read` | อ่านไฟล์ |
-| `write` | เขียน/แก้ไขไฟล์ |
+| `write` | เขียนไฟล์ทั้งไฟล์ |
+| `edit` | แก้ไขไฟล์แบบ search & replace เป๊ะๆ |
 | `delete` | ลบไฟล์ |
 | `list` | ดูรายการไฟล์ใน directory |
 | `shell` | รันคำสั่ง shell |
 | `git` | คำสั่ง git |
-| `grep` | ค้นหาข้อความในไฟล์ |
+| `grep` | ค้นหาข้อความในไฟล์ (regex) |
+| `fs` | file system operations |
 | `echo` | ทดสอบ output |
 | `time` | แสดงเวลาปัจจุบัน |
 | `help` | แสดง help |
-| `input` | ขอ input จากผู้ใช้ |
-| `output` | แสดง output |
-| `fs` | file system operations |
-| `defaults` | ค่าเริ่มต้น |
-| `github_repo_summary` | สรุป repo |
-| `plugin_install` | ติดตั้ง plugin |
-| `dispatcher` | skill dispatching |
+| `github_repo_summary` | สรุป repo จาก GitHub |
+| `plugin_install` | ติดตั้ง plugin จาก GitHub |
+| `image_ocr` | อ่านข้อความจากรูป (tesseract) |
 
 ---
 
@@ -244,9 +242,9 @@ Aetox/
 │   ├── plan/               # execution planning
 │   ├── provider/           # provider catalog (11 providers)
 │   ├── safety/             # 3-tier approval
-│   ├── skill/              # 17 built-in tools
+│   ├── skill/              # 15 built-in tools
 │   ├── think/              # thinking level configuration
-│   └── turn/               # 4-phase execution pipeline
+│   └── turn/               # turn pipeline — explicit command → model tool loop → chat (§17)
 │
 ├── desktop/                # Wails + Svelte 5 desktop app
 │   ├── frontend/           # Svelte 5 UI
@@ -287,8 +285,8 @@ Aetox/
 |-------|-------|
 | **Core Runtime** | ✅ v0.4.0 — providers, tools, turn loop, safety |
 | **CLI** | ✅ interactive + one-shot + auto-save preference |
-| **Tool Calling** | ✅ model-driven + regex fallback |
-| **17 Built-in Tools** | ✅ read, write, list, shell, git, grep และอื่นๆ |
+| **Tool Calling** | ✅ model-driven เท่านั้น — โมเดลเลือก tool เองทุกครั้ง (§17) |
+| **15 Built-in Tools** | ✅ read, write, list, shell, git, grep และอื่นๆ |
 | **Desktop App** | ✅ Wails + Svelte 5 — Sidebar, Chat, Workbench (tabbed dock), TopBar |
 | **Persistent Sessions** | ✅ SQLite ท้องถิ่น + FTS5 search (ไทย/อังกฤษ) ต่อโปรเจกต์ |
 | **Agent-controlled Browser** | ✅ native WebView2 tab — agent เปิด/อ่านหน้าเว็บได้เอง |

@@ -1,5 +1,7 @@
 # Model-Control Layer — Deep Dive
 
+> ⚠️ **Partially superseded (2026-07-23):** everything this doc says about `turn.Executor`'s 4-phase pipeline and regex intent inference (`infer.go`) describes code that was **deleted** by [ARCHITECTURE.md §17](../../ARCHITECTURE.md) — the pipeline is now explicit-command → model-driven tool loop → streaming chat, with no NL inference. See [internal/turn/README.md](../../internal/turn/README.md) for the current shape. The `cognitive`/`skill`/`safety` sections remain accurate.
+
 > **Date:** 2026-07-22 · **Status:** Direct (read in full: `internal/turn/executor.go`, `internal/cognitive/agent.go`, `internal/skill/{skill,dispatcher,defaults}.go`, `internal/safety/safety.go`)
 > **Scope:** layer 2 of the 5-layer reading map in [ARCHITECTURE.md](../../ARCHITECTURE.md) — "the thing that controls the model": deciding when to call a tool, running the tool, and gating it for safety. **Three cooperating packages, not one:** `internal/turn` (orchestration), `internal/cognitive` (the model conversation), `internal/skill` (what a tool call actually does).
 

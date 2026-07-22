@@ -195,6 +195,17 @@ func (p *OllamaProvider) Complete(ctx context.Context, req Request) (Response, e
 
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
 		debuglog.Msg("HTTP %d: %s", httpResp.StatusCode, truncOllama(string(responseBody), 200))
+		// Backstop, not a gate: tools are always offered to every model
+		// (ARCHITECTURE.md §17). If Ollama itself rejects them for this model,
+		// retry the same request as plain chat so the turn still succeeds —
+		// the model answers in text instead of the turn erroring out.
+		if len(req.Tools) > 0 && strings.Contains(strings.ToLower(string(responseBody)), "does not support tools") {
+			debuglog.Msg("model rejected tools — retrying without tools (chat-only)")
+			retry := req
+			retry.Tools = nil
+			retry.ToolChoice = ""
+			return p.Complete(ctx, retry)
+		}
 		return Response{}, fmt.Errorf("ollama request failed with status %d: %s", httpResp.StatusCode, strings.TrimSpace(string(responseBody)))
 	}
 
