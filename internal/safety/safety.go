@@ -34,13 +34,6 @@ func NormalizeApprovalMode(raw string) ApprovalMode {
 	return ApprovalAsk
 }
 
-func ApprovalModeFromLegacy(autoApprove bool) ApprovalMode {
-	if autoApprove {
-		return ApprovalFullAccess
-	}
-	return ApprovalAsk
-}
-
 // PermissionAction is a user-configured override for a specific tool/pattern,
 // taking precedence over the coarse ApprovalMode when it matches. Mirrors
 // opencode's per-tool pattern permission model (see
@@ -208,6 +201,14 @@ func AssessCommand(skillName string, args []string) Assessment {
 				Reason:    "write can create or overwrite repository files",
 			}
 		}
+		if skillName == "edit" {
+			return Assessment{
+				SkillName: "edit",
+				Risk:      RiskHigh,
+				Effects:   []Effect{EffectWriteWorkspace},
+				Reason:    "edit can modify repository files",
+			}
+		}
 		if skillName == "delete" {
 			return Assessment{
 				SkillName: "delete",
@@ -232,7 +233,7 @@ func AssessCommand(skillName string, args []string) Assessment {
 				Reason:    "read-only network request for repository summary",
 			}
 		}
-		if skillName == "list" || skillName == "read" || skillName == "time" {
+		if skillName == "list" || skillName == "read" || skillName == "grep" || skillName == "time" {
 			return Assessment{
 				SkillName: skillName,
 				Risk:      RiskLow,

@@ -53,7 +53,9 @@ func TestAssessCommand(t *testing.T) {
 		{"fs read", "fs", []string{"cat", "a.txt"}, RiskLow},
 		{"fs unknown", "fs", []string{"chmod"}, RiskHigh},
 		{"write", "write", []string{"a.txt", "x"}, RiskHigh},
+		{"edit", "edit", []string{"a.txt"}, RiskHigh},
 		{"delete", "delete", []string{"a.txt"}, RiskHigh},
+		{"grep", "grep", []string{"foo"}, RiskLow},
 		{"plugin_install", "plugin_install", []string{"https://github.com/a/b"}, RiskHigh},
 		{"read", "read", []string{"a.txt"}, RiskLow},
 	}

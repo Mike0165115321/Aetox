@@ -25,6 +25,8 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 		&fsSkill{root: opts.SandboxRoot},
 		&shellSkill{root: opts.SandboxRoot},
 		&writeSkill{root: opts.SandboxRoot},
+		&editSkill{root: opts.SandboxRoot},
+		&grepSkill{root: opts.SandboxRoot},
 		&deleteSkill{root: opts.SandboxRoot},
 		&pluginInstallSkill{},
 		&imageOCRSkill{root: opts.SandboxRoot},
