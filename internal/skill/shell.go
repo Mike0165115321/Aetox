@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Mike0165115321/Aetox/internal/audit"
+	"github.com/Mike0165115321/Aetox/internal/rtk"
 )
 
 type shellSkill struct {
@@ -39,11 +40,21 @@ func (s *shellSkill) Execute(ctx context.Context, input Input) (Output, error) {
 		return newToolOutput("shell", "shell "+commandLine, "", start, false, err), err
 	}
 
+	// Optional token-savings pass (ARCHITECTURE.md §13): if rtk has an
+	// equivalent for this exact command, run that instead — same side effects
+	// (rtk actually runs the real command), compacted output. Approval and
+	// the audit log below still see the original commandLine; only what
+	// actually executes changes.
+	execLine := commandLine
+	if rewritten, ok := rtk.Rewrite(commandLine); ok {
+		execLine = rewritten
+	}
+
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
-		cmd = exec.CommandContext(ctx, "cmd", "/C", commandLine)
+		cmd = exec.CommandContext(ctx, "cmd", "/C", execLine)
 	} else {
-		cmd = exec.CommandContext(ctx, "sh", "-c", commandLine)
+		cmd = exec.CommandContext(ctx, "sh", "-c", execLine)
 	}
 	cmd.Dir = workDir
 	buffer := &bytes.Buffer{}

@@ -100,6 +100,35 @@ No change to `turn.Executor`'s control flow is needed to add an MCP tool — the
 
 ---
 
+## 6. The exact call path — what a "call" to the provider actually contains
+
+Added 2026-07-22, closing a gap: this doc previously said Agent "builds provider requests" (§1 table) with no field-level detail — moved here from [ARCHITECTURE.md §13.1](../../ARCHITECTURE.md) once RTK's integration settled, since RTK's hook point *is* this exact seam. Confirmed by reading `internal/cognitive/agent.go:309` (`buildRequest`) and `internal/memory/context.go`.
+
+```mermaid
+flowchart LR
+    U["user message"] --> CtxAdd["memory.Context.Add\n(role=user)"]
+    CtxAdd --> Build["Agent.buildRequest\nModel+Messages+MaxTokens+Temp+Tools+ToolChoice+Reasoning/Thinking"]
+    Build --> Complete["provider.Complete()"]
+    Complete -->|tool_calls| Exec["turn.Executor executes tool\n(internal/skill)"]
+    Exec --> Receipt["skill.Output -> modelToolReceipt JSON\n(RTK hook lives here, see §7)"]
+    Receipt --> CtxTool["memory.Context.AddMessage\n(role=tool)"]
+    CtxTool --> Build
+    Complete -->|plain text| Reply["reply to user"]
+```
+
+- `model.Request` (`internal/model/types.go:59`) carries `Messages []Message` — the **entire** capped conversation history, not just the new turn — plus `Tools`, `ToolChoice`, fixed `MaxTokens`/`Temperature` per call-site (4096/0.2 for the tool loop, 768/0.2 for plain `Respond`), and per-provider `Reasoning`/`Thinking` config.
+- The system prompt ([ARCHITECTURE.md §11](../../ARCHITECTURE.md)) is `messages[0]`, set once at bootstrap and never rebuilt per call — `buildRequest` doesn't touch it, it's just the first element `Context.Messages()` already contains.
+- `memory.Context.enforceLimits` (`internal/memory/context.go:101`) is the **only** existing token-budget mechanism before RTK: drops the oldest assistant+tool message block once `maxChars` (128k) is exceeded, hard-caps message count at `maxTurns` (80). It acts *after* messages already exist — RTK (§7) acts *before* a tool-result message is even created, shrinking at the source instead of discarding whole turns later.
+- Tool output re-enters the conversation as a `RoleTool` message via `modelToolReceipt` (`internal/turn/executor.go:661`) — one `AddMessage` call per tool call, every loop iteration re-sends the *entire* accumulated history back to `buildRequest`, not just the newest message.
+
+## 7. Where RTK plugs in — and why not at `buildRequest`
+
+Full decision record: [ARCHITECTURE.md §13](../../ARCHITECTURE.md). Summary of the one fact worth restating here: **the hook is not, and should not be, inside `buildRequest`.**
+
+By the time `buildRequest` runs, `Context.Messages()` is already a flat `[]Message` — plain `Content` strings with no record of "this came from `git status`" vs "this came from `shell running go test`." Filtering generically at that point would mean re-guessing each message's origin from its text alone, which is strictly worse than filtering at `modelToolReceipt` (§4/§6 diagram), where the tool **name and args are still right there** and the mapping to an `rtk pipe -f <filter>` name is unambiguous. A second hook at `buildRequest` would be redundant at best (re-filtering already-filtered content) and actively harmful at worst (guessing wrong, corrupting already-correct content) — not built, and not a gap; this is the settled, final placement (`internal/rtk.FilterForTool`/`Filter`, called from `modelToolReceipt` before the existing secret-redaction pass).
+
+---
+
 ## Related documents
 
 - [ARCHITECTURE.md](../../ARCHITECTURE.md) — whole-repo map; §4.1 has the file-count table this doc expands on, §6.4 has the Registry/Source fix this doc assumes.

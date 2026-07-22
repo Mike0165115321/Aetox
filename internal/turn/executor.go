@@ -11,6 +11,7 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/command"
 	"github.com/Mike0165115321/Aetox/internal/debuglog"
 	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mike0165115321/Aetox/internal/rtk"
 	"github.com/Mike0165115321/Aetox/internal/safety"
 	"github.com/Mike0165115321/Aetox/internal/skill"
 	"github.com/Mike0165115321/Aetox/internal/think"
@@ -668,6 +669,15 @@ func (e *Executor) modelToolReceipt(name string, args map[string]any, output ski
 	result := strings.TrimSpace(output.RawOutput)
 	if result == "" {
 		result = strings.TrimSpace(output.Content)
+	}
+	// Optional token-savings pass (ARCHITECTURE.md §13): shrinks raw output
+	// before it's wrapped into the receipt sent back to the model. Purely
+	// additive — falls through to the untouched result if rtk isn't
+	// installed or this tool call has no matching filter.
+	if filter := rtk.FilterForTool(name, args); filter != "" {
+		if filtered, ok := rtk.Filter(filter, result); ok {
+			result = filtered
+		}
 	}
 	result = e.sanitizeAndTrimOutput(result)
 
