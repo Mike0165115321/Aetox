@@ -356,7 +356,10 @@ func (h *browserHost) open(id, url string, x, y, w, hgt int) {
 		}
 
 		chromium := edge.NewChromium()
-		chromium.DataPath = filepath.Join(os.Getenv("AppData"), "aetox-browser")
+		chromium.DataPath = webviewUserDataDir("browser")
+		if chromium.DataPath == "" {
+			chromium.DataPath = filepath.Join(os.Getenv("AppData"), "aetox-browser")
+		}
 		chromium.SetErrorCallback(func(err error) {
 			// default handler calls os.Exit(1) — never acceptable for a tab
 			fmt.Fprintln(os.Stderr, "browser tab error:", err)

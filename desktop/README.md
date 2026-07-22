@@ -6,9 +6,10 @@
 
 ## Dev commands
 
-- `wails dev` (or [wails-dev.bat](wails-dev.bat)) — live dev, frontend hot reload; browser dev server at `http://localhost:34115`.
+- `wails dev` (or [wails-dev.bat](wails-dev.bat)) — live dev, frontend hot reload; browser dev server at `http://localhost:34115`. The `.bat` also sets `AETOX_WEBVIEW_DATA_DIR` so repeated dev runs don't grow a WebView2 profile in `%AppData%` without bound (see `main.go:webviewUserDataDir` — production builds don't set this env var, so shipped behavior is unchanged).
 - `wails build` — production `desktop.exe`.
 - `go test ./...` here + `npx svelte-check` in `frontend/` — run both before calling a change done.
+- Go's own `GOCACHE`/`GOMODCACHE` are machine-wide settings, not project config — if they're growing on `C:`, `go env -w GOCACHE=<path>` / `GOMODCACHE=<path>` moves them anywhere, for every Go project on the machine, not just this one.
 
 ## Go side (package main)
 
