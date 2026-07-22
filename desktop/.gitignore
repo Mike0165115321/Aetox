@@ -2,5 +2,5 @@ build/bin
 node_modules
 frontend/dist
 frontend/package.json.md5
-.webview2-data
+.aetox-data
 .aetox-attachments

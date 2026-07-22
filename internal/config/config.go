@@ -159,7 +159,28 @@ func Load(opt ConfigOptions) Config {
 	}
 }
 
-func PreferencePath() (string, error) {
+// DataRoot is the single directory every piece of Aetox's own persisted data
+// lives under — preferences, permissions, sessions (desktop/db.go), the
+// downloaded rtk binary (internal/rtk/install.go), WebView2 profiles
+// (desktop/main.go, browser.go), audit logs. One well-defined location we
+// design and own, rather than each subsystem picking its own OS convention
+// (ARCHITECTURE.md §14).
+//
+// AETOX_DATA_ROOT overrides it — set by desktop/wails-dev.bat during dev so
+// repeated `wails dev` runs don't grow session/webview/preference data
+// unbounded on the system drive. Unset (the production default) resolves to
+// <UserConfigDir>/aetox — normal, expected behavior for an installed app.
+//
+// Deliberately NOT used for things designed to be shared with the wider
+// ecosystem: skill discovery scans ~/.agents/skills and ~/.claude/skills
+// (internal/skill/discovery.go), and plugin_install writes into
+// ~/.agents/skills on purpose (internal/skill/github_tools.go) — those are
+// intentionally external, shared conventions (the same paths OpenCode/Claude
+// Code use), not ours to own or relocate.
+func DataRoot() (string, error) {
+	if override := strings.TrimSpace(os.Getenv("AETOX_DATA_ROOT")); override != "" {
+		return override, nil
+	}
 	configDir, err := os.UserConfigDir()
 	if err != nil || configDir == "" {
 		home, _ := os.UserHomeDir()
@@ -169,7 +190,15 @@ func PreferencePath() (string, error) {
 			configDir = os.TempDir()
 		}
 	}
-	return filepath.Join(configDir, "aetox", "model-preference.json"), nil
+	return filepath.Join(configDir, "aetox"), nil
+}
+
+func PreferencePath() (string, error) {
+	root, err := DataRoot()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(root, "model-preference.json"), nil
 }
 
 func LegacyPreferencePath() string {
@@ -184,29 +213,19 @@ func LegacyPreferencePath() string {
 // live (the prompt layer's "user global" layer — ARCHITECTURE.md §11), same
 // directory as PreferencePath/PermissionsPath.
 func UserGlobalContextPath() (string, error) {
-	configDir, err := os.UserConfigDir()
-	if err != nil || configDir == "" {
-		home, _ := os.UserHomeDir()
-		if home != "" {
-			configDir = filepath.Join(home, ".config")
-		} else {
-			configDir = os.TempDir()
-		}
+	root, err := DataRoot()
+	if err != nil {
+		return "", err
 	}
-	return filepath.Join(configDir, "aetox", "AETOX.md"), nil
+	return filepath.Join(root, "AETOX.md"), nil
 }
 
 func PermissionsPath() (string, error) {
-	configDir, err := os.UserConfigDir()
-	if err != nil || configDir == "" {
-		home, _ := os.UserHomeDir()
-		if home != "" {
-			configDir = filepath.Join(home, ".config")
-		} else {
-			configDir = os.TempDir()
-		}
+	root, err := DataRoot()
+	if err != nil {
+		return "", err
 	}
-	return filepath.Join(configDir, "aetox", "permissions.json"), nil
+	return filepath.Join(root, "permissions.json"), nil
 }
 
 // LoadPermissions reads the user's per-tool permission overrides, if any.
@@ -258,16 +277,11 @@ type MCPServerConfig struct {
 }
 
 func MCPServersPath() (string, error) {
-	configDir, err := os.UserConfigDir()
-	if err != nil || configDir == "" {
-		home, _ := os.UserHomeDir()
-		if home != "" {
-			configDir = filepath.Join(home, ".config")
-		} else {
-			configDir = os.TempDir()
-		}
+	root, err := DataRoot()
+	if err != nil {
+		return "", err
 	}
-	return filepath.Join(configDir, "aetox", "mcp-servers.json"), nil
+	return filepath.Join(root, "mcp-servers.json"), nil
 }
 
 // LoadMCPServers reads the configured MCP servers. A missing file is not an
@@ -307,16 +321,11 @@ func SaveMCPServers(servers []MCPServerConfig) error {
 }
 
 func EnvFilePath() (string, error) {
-	configDir, err := os.UserConfigDir()
-	if err != nil || configDir == "" {
-		home, _ := os.UserHomeDir()
-		if home != "" {
-			configDir = filepath.Join(home, ".config")
-		} else {
-			configDir = os.TempDir()
-		}
+	root, err := DataRoot()
+	if err != nil {
+		return "", err
 	}
-	return filepath.Join(configDir, "aetox", ".env"), nil
+	return filepath.Join(root, ".env"), nil
 }
 
 func LoadModelPreference() (ModelPreference, bool, error) {

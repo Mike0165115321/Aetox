@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/Mike0165115321/Aetox/internal/config"
 )
 
 type ShellEntry struct {
@@ -19,11 +21,10 @@ type ShellEntry struct {
 }
 
 func ShellAuditLogPath() (string, error) {
-	home, err := os.UserHomeDir()
+	dir, err := config.DataRoot()
 	if err != nil {
-		home = filepath.Join(os.TempDir(), "aetox")
+		return "", err
 	}
-	dir := filepath.Join(home, ".aetox")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("audit: cannot create audit directory %s: %w", dir, err)
 	}

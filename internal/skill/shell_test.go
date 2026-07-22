@@ -8,7 +8,16 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/rtk"
 )
 
+// isolateAuditLog keeps shellSkill.Execute's unconditional audit.WriteShell
+// call (internal/audit) from writing into the real, machine-wide audit log
+// every time this test suite runs.
+func isolateAuditLog(t *testing.T) {
+	t.Helper()
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+}
+
 func TestShellSkillRunsCommand(t *testing.T) {
+	isolateAuditLog(t)
 	s := &shellSkill{root: t.TempDir()}
 	out, err := s.Execute(context.Background(), Input{"args": []string{"echo", "hello-shell"}})
 	if err != nil {
@@ -23,6 +32,7 @@ func TestShellSkillRunsCommand(t *testing.T) {
 }
 
 func TestShellSkillRunsInSandboxRoot(t *testing.T) {
+	isolateAuditLog(t)
 	root := t.TempDir()
 	s := &shellSkill{root: root}
 	// "cd" with no output check needed: a failing command in a bad dir would
@@ -34,6 +44,7 @@ func TestShellSkillRunsInSandboxRoot(t *testing.T) {
 }
 
 func TestShellSkillCommandFailureReturnsError(t *testing.T) {
+	isolateAuditLog(t)
 	s := &shellSkill{root: t.TempDir()}
 	out, err := s.Execute(context.Background(), Input{"args": []string{"this-command-does-not-exist-xyz"}})
 	if err == nil {
@@ -45,6 +56,7 @@ func TestShellSkillCommandFailureReturnsError(t *testing.T) {
 }
 
 func TestShellSkillMissingArgs(t *testing.T) {
+	isolateAuditLog(t)
 	s := &shellSkill{root: t.TempDir()}
 	if _, err := s.Execute(context.Background(), Input{"args": nil}); err == nil {
 		t.Fatal("expected usage error for empty command, got nil")
@@ -59,6 +71,7 @@ func TestShellSkillRewritesToRTKWhenAvailable(t *testing.T) {
 	if !rtk.Available() {
 		t.Skip("rtk not installed on PATH")
 	}
+	isolateAuditLog(t)
 	root := initGitRepo(t)
 	s := &shellSkill{root: root}
 	out, err := s.Execute(context.Background(), Input{"args": []string{"git", "status"}})

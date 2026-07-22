@@ -1,8 +1,9 @@
 @echo off
 cd /d "%~dp0"
-rem Keeps WebView2 profile data (cache/cookies/IndexedDB) off the C: drive
-rem during dev — see desktop/main.go:webviewUserDataDir. Production builds
-rem never set this and keep the normal %AppData% behavior.
-set AETOX_WEBVIEW_DATA_DIR=%~dp0.webview2-data
+rem Keeps ALL of Aetox's own data (preferences, sessions, WebView2 profiles,
+rem the downloaded rtk binary, ...) off the C: drive during dev — see
+rem internal/config.DataRoot. Production builds never set this and use the
+rem normal %AppData%\aetox default.
+set AETOX_DATA_ROOT=%~dp0.aetox-data
 wails dev
 pause

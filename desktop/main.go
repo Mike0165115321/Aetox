@@ -2,31 +2,31 @@ package main
 
 import (
 	"embed"
-	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
+
+	"github.com/Mike0165115321/Aetox/internal/config"
 )
 
 //go:embed all:frontend/dist
 var assets embed.FS
 
 // webviewUserDataDir returns where a WebView2 instance should store its
-// profile (cache/cookies/IndexedDB). Empty keeps Wails'/go-webview2's own
-// default (%AppData%\<name>) — the normal, portable behavior for a real
-// install; nothing changes for end users. Set AETOX_WEBVIEW_DATA_DIR (e.g. in
-// wails-dev.bat) to redirect it off the system drive during development,
-// where repeated `wails dev` runs otherwise grow this without bound.
+// profile (cache/cookies/IndexedDB) — always an explicit, Aetox-owned path
+// under config.DataRoot() (ARCHITECTURE.md §14), never Wails'/go-webview2's
+// own silent default (%AppData%\<exe-name>, which used to differ between the
+// dev binary and the real one — two profiles for the same app). Empty return
+// is only a last-resort fallback if DataRoot() itself fails.
 func webviewUserDataDir(name string) string {
-	base := strings.TrimSpace(os.Getenv("AETOX_WEBVIEW_DATA_DIR"))
-	if base == "" {
+	root, err := config.DataRoot()
+	if err != nil || root == "" {
 		return ""
 	}
-	return filepath.Join(base, name)
+	return filepath.Join(root, "webview", name)
 }
 
 func main() {

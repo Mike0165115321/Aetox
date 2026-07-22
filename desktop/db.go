@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/Mike0165115321/Aetox/internal/config"
 	_ "modernc.org/sqlite"
 )
 
@@ -52,11 +53,12 @@ func (a *App) database() (*sql.DB, error) {
 	a.dbInit.Do(func() {
 		dir := a.dbDir
 		if dir == "" {
-			configDir, err := os.UserConfigDir()
-			if err != nil || configDir == "" {
-				configDir = os.Getenv("LOCALAPPDATA")
+			var err error
+			dir, err = config.DataRoot()
+			if err != nil {
+				a.dbErr = err
+				return
 			}
-			dir = filepath.Join(configDir, "aetox")
 		}
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			a.dbErr = err

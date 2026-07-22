@@ -8,10 +8,13 @@ import (
 	"testing"
 )
 
-func setTestHomeDir(t *testing.T, dir string) {
+// setTestDataRoot isolates a test to its own directory via AETOX_DATA_ROOT
+// (internal/config.DataRoot's override) — the same mechanism
+// desktop/wails-dev.bat uses for dev, dogfooded here for test isolation
+// instead of the audit package needing its own separate isolation trick.
+func setTestDataRoot(t *testing.T, dir string) {
 	t.Helper()
-	t.Setenv("USERPROFILE", dir)
-	t.Setenv("HOME", dir)
+	t.Setenv("AETOX_DATA_ROOT", dir)
 }
 
 func readAuditEntries(t *testing.T, path string) []ShellEntry {
@@ -41,7 +44,7 @@ func readAuditEntries(t *testing.T, path string) []ShellEntry {
 }
 
 func TestWriteShell_WritesJSONLEntry(t *testing.T) {
-	setTestHomeDir(t, t.TempDir())
+	setTestDataRoot(t, t.TempDir())
 
 	entry := ShellEntry{
 		Time:       "2026-06-09T14:00:00+07:00",
@@ -76,12 +79,11 @@ func TestWriteShell_WritesJSONLEntry(t *testing.T) {
 }
 
 func TestWriteShell_CreatesDirectoryWhenMissing(t *testing.T) {
-	home := t.TempDir()
-	setTestHomeDir(t, home)
+	dataRoot := filepath.Join(t.TempDir(), "aetox-data")
+	setTestDataRoot(t, dataRoot)
 
-	aetoxDir := filepath.Join(home, ".aetox")
-	if _, err := os.Stat(aetoxDir); !os.IsNotExist(err) {
-		t.Fatalf("expected .aetox to not exist yet")
+	if _, err := os.Stat(dataRoot); !os.IsNotExist(err) {
+		t.Fatalf("expected data root to not exist yet")
 	}
 
 	entry := ShellEntry{
@@ -94,17 +96,17 @@ func TestWriteShell_CreatesDirectoryWhenMissing(t *testing.T) {
 		t.Fatalf("WriteShell() unexpected error: %v", err)
 	}
 
-	info, err := os.Stat(aetoxDir)
+	info, err := os.Stat(dataRoot)
 	if err != nil {
-		t.Fatalf(".aetox directory not created: %v", err)
+		t.Fatalf("data root not created: %v", err)
 	}
 	if !info.IsDir() {
-		t.Fatalf(".aetox is not a directory")
+		t.Fatalf("data root is not a directory")
 	}
 }
 
 func TestWriteShell_RecordsFailedCommand(t *testing.T) {
-	setTestHomeDir(t, t.TempDir())
+	setTestDataRoot(t, t.TempDir())
 
 	entry := ShellEntry{
 		Command:    "rm -rf /nonexistent",
@@ -136,7 +138,7 @@ func TestWriteShell_RecordsFailedCommand(t *testing.T) {
 }
 
 func TestWriteShell_AppendsMultipleEntries(t *testing.T) {
-	setTestHomeDir(t, t.TempDir())
+	setTestDataRoot(t, t.TempDir())
 
 	first := ShellEntry{Command: "echo one", WorkDir: "/tmp", Success: true}
 	second := ShellEntry{Command: "echo two", WorkDir: "/tmp", Success: true}
@@ -165,23 +167,23 @@ func TestWriteShell_AppendsMultipleEntries(t *testing.T) {
 	}
 }
 
-func TestShellAuditLogPath_UsesHomeDirectory(t *testing.T) {
-	home := t.TempDir()
-	setTestHomeDir(t, home)
+func TestShellAuditLogPath_UsesDataRoot(t *testing.T) {
+	dataRoot := t.TempDir()
+	setTestDataRoot(t, dataRoot)
 
 	path, err := ShellAuditLogPath()
 	if err != nil {
 		t.Fatalf("ShellAuditLogPath() error: %v", err)
 	}
 
-	expected := filepath.Join(home, ".aetox", "shell-audit.log")
+	expected := filepath.Join(dataRoot, "shell-audit.log")
 	if path != expected {
 		t.Fatalf("path: want %q got %q", expected, path)
 	}
 }
 
 func TestWriteShell_AutoTimeField(t *testing.T) {
-	setTestHomeDir(t, t.TempDir())
+	setTestDataRoot(t, t.TempDir())
 
 	entry := ShellEntry{
 		Command: "echo auto-time",

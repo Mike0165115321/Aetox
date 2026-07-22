@@ -74,7 +74,7 @@ func resolve() string {
 // the same directory family as everything else in internal/config (kept
 // separate from the config *files* there since this is a binary, not JSON).
 func privateBinaryPath() string {
-	userGlobalContextFile, err := config.UserGlobalContextPath() // reuse its dir resolution
+	root, err := config.DataRoot()
 	if err != nil {
 		return ""
 	}
@@ -82,7 +82,7 @@ func privateBinaryPath() string {
 	if runtime.GOOS == "windows" {
 		name = "rtk.exe"
 	}
-	return filepath.Join(filepath.Dir(userGlobalContextFile), "bin", name)
+	return filepath.Join(root, "bin", name)
 }
 
 func isExecutableFile(path string) bool {
