@@ -127,13 +127,19 @@ func (a *App) SearchSessions(query string) []SessionMeta {
 	}
 	// Quote the query so FTS operators in user input can't break the MATCH.
 	match := `"` + strings.ReplaceAll(q, `"`, `""`) + `"`
+	// snippet() must stay inside a MATERIALIZED CTE: flattened into the outer
+	// GROUP BY join, modernc.org/sqlite rejects it with "unable to use function
+	// snippet in the requested context".
 	rows, err := db.Query(`
-		SELECT s.id, s.title, s.updated_at,
-		       snippet(messages_fts, 0, '', '', '…', 10)
-		FROM messages_fts
-		JOIN messages m ON m.id = messages_fts.rowid
+		WITH f AS MATERIALIZED (
+		  SELECT rowid AS mid, snippet(messages_fts, 0, '', '', '…', 10) AS snip
+		  FROM messages_fts WHERE messages_fts MATCH ?
+		)
+		SELECT s.id, s.title, s.updated_at, MIN(f.snip)
+		FROM f
+		JOIN messages m ON m.id = f.mid
 		JOIN sessions s ON s.id = m.session_id
-		WHERE messages_fts MATCH ? AND s.project_key = ?
+		WHERE s.project_key = ?
 		GROUP BY s.id
 		ORDER BY s.updated_at DESC LIMIT 50`,
 		match, projectKey(a.cfg.SandboxRoot))

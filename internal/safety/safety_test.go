@@ -23,8 +23,10 @@ func TestShouldPrompt(t *testing.T) {
 		{"unsafe-only shell prompts", ApprovalUnsafeOnly, lowShell, true},
 		{"unsafe-only write skips", ApprovalUnsafeOnly, writeFile, false},
 		{"unsafe-only read skips", ApprovalUnsafeOnly, readOnly, false},
-		{"full-access never prompts", ApprovalFullAccess, highShell, false},
+		{"full-access shell still prompts", ApprovalFullAccess, highShell, true},
+		{"full-access low-risk shell still prompts", ApprovalFullAccess, lowShell, true},
 		{"full-access write skips", ApprovalFullAccess, writeFile, false},
+		{"full-access read skips", ApprovalFullAccess, readOnly, false},
 	}
 	for _, tc := range cases {
 		if got := ShouldPrompt(tc.mode, tc.a); got != tc.want {

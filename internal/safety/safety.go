@@ -155,6 +155,11 @@ type Assessment struct {
 func ShouldPrompt(mode ApprovalMode, a Assessment) bool {
 	switch mode {
 	case ApprovalFullAccess:
+		for _, e := range a.Effects {
+			if e == EffectExecuteShell {
+				return true
+			}
+		}
 		return false
 	case ApprovalUnsafeOnly:
 		for _, e := range a.Effects {
