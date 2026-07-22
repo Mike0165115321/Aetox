@@ -10,23 +10,15 @@ import (
 	"context"
 	"os/exec"
 	"strings"
-	"sync"
 	"time"
 )
 
-var (
-	availableOnce sync.Once
-	isAvailable   bool
-)
-
-// Available reports whether the rtk binary is on PATH. Checked once per
-// process — rtk being installed or removed mid-session isn't worth handling.
+// Available reports whether rtk can be used at all — already on PATH,
+// previously downloaded, or successfully downloaded just now (see
+// install.go's resolve(), which this delegates to). Resolved once per
+// process; rtk appearing/disappearing mid-session isn't worth handling.
 func Available() bool {
-	availableOnce.Do(func() {
-		_, err := exec.LookPath("rtk")
-		isAvailable = err == nil
-	})
-	return isAvailable
+	return resolve() != ""
 }
 
 // pipeFilters is exactly what `rtk pipe -f <name>` accepts (confirmed live by
@@ -83,12 +75,13 @@ func FilterForTool(toolName string, args map[string]any) string {
 // reliably follow its own documented convention, while stdout does.
 func Rewrite(command string) (string, bool) {
 	command = strings.TrimSpace(command)
-	if command == "" || !Available() {
+	bin := resolve()
+	if command == "" || bin == "" {
 		return "", false
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "rtk", "rewrite", command)
+	cmd := exec.CommandContext(ctx, bin, "rewrite", command)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	_ = cmd.Run()
@@ -103,12 +96,13 @@ func Rewrite(command string) (string, bool) {
 // content unchanged (ok=false) on any error, timeout, missing binary, or
 // unknown filter — filtering must never be the reason a tool result is lost.
 func Filter(filter, content string) (string, bool) {
-	if filter == "" || !pipeFilters[filter] || strings.TrimSpace(content) == "" || !Available() {
+	bin := resolve()
+	if filter == "" || !pipeFilters[filter] || strings.TrimSpace(content) == "" || bin == "" {
 		return content, false
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "rtk", "pipe", "-f", filter)
+	cmd := exec.CommandContext(ctx, bin, "pipe", "-f", filter)
 	cmd.Stdin = strings.NewReader(content)
 	var out bytes.Buffer
 	cmd.Stdout = &out
