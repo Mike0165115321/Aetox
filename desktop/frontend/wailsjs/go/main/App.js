@@ -50,6 +50,10 @@ export function BrowserTypeRef(arg1, arg2, arg3) {
   return window['go']['main']['App']['BrowserTypeRef'](arg1, arg2, arg3);
 }
 
+export function CancelTurn() {
+  return window['go']['main']['App']['CancelTurn']();
+}
+
 export function CommandHistory() {
   return window['go']['main']['App']['CommandHistory']();
 }

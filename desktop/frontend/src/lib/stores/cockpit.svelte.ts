@@ -3,14 +3,14 @@
 // incremental updates here — append a chat message, advance a timeline step) and
 // the UI reacts. Do not reassign `cockpit` itself; mutate its properties.
 
-import { emptyCockpitState, type CockpitState, type TreeNode, type ChangedFile, type Session } from '../types'
+import { emptyCockpitState, type CockpitState, type TreeNode, type ChangedFile, type Session, type ToolStep } from '../types'
 import type { CockpitSource } from '../services/cockpit'
 import {
   SendMessage, GetProjectStatus, GetModelInfo, OpenProjectFolder,
   SwitchProvider, SwitchThinkLevel, SwitchApprovalMode,
   SwitchModel, SetAPIKey, ProjectTree, CommandHistory, GitChangedFiles, ReadFile,
   ListSessions, LoadSession, NewSession, CurrentSessionID, SearchSessions,
-  SaveChatImage, ReadImageDataURL,
+  SaveChatImage, ReadImageDataURL, CancelTurn,
 } from '../../../wailsjs/go/main/App'
 import type { main } from '../../../wailsjs/go/models'
 import { t } from '../i18n.svelte'
@@ -127,22 +127,46 @@ export async function sendUserMessage(text: string): Promise<void> {
   cockpit.pendingImage = null
   cockpit.awaitingReply = true
   cockpit.agentStatus = ''
+  cockpit.toolSteps = []
   try {
     const reply = await SendMessage(sentText)
-    cockpit.chat.push({ role: 'agent', text: reply, time: nowLabel() })
+    const steps = cockpit.toolSteps.length ? cockpit.toolSteps.map((s) => ({ ...s })) : undefined
+    cockpit.chat.push({ role: 'agent', text: reply, time: nowLabel(), steps })
   } catch (err) {
     cockpit.chat.push({ role: 'agent', text: t('cockpit.sendError', { err: String(err) }), time: nowLabel() })
   } finally {
     cockpit.awaitingReply = false
     cockpit.agentStatus = ''
+    cockpit.toolSteps = []
   }
   await refreshWorkspace()
   await refreshSessions()
 }
 
+/** Abort the turn in flight — the engine's tool loop is unbounded, this is the user's brake. */
+export function cancelTurn(): void {
+  CancelTurn()
+}
+
 /** Live turn-progress text from the Go engine (see desktop/app.go emitAgentStatus). */
 export function applyAgentStatus(status: string): void {
   cockpit.agentStatus = status
+}
+
+/** Live tool call/result feed from the Go engine (see desktop/app.go recordToolAction).
+ * "call" opens a running step; "result" ("name: สำเร็จ" | "name: <error>") closes the
+ * oldest one still running. */
+export function applyToolEvent(ev: { action: string; detail: string }): void {
+  if (ev.action === 'call') {
+    cockpit.toolSteps.push({ label: ev.detail, state: 'run', startedAt: Date.now() })
+    return
+  }
+  if (ev.action !== 'result') return
+  const step = cockpit.toolSteps.find((s) => s.state === 'run')
+  if (!step) return
+  // note: "ไม่สำเร็จ" also ends with "สำเร็จ" — match the full ": สำเร็จ" suffix
+  step.state = ev.detail.endsWith(': สำเร็จ') ? 'done' : 'err'
+  step.secs = Math.round((Date.now() - step.startedAt) / 1000)
 }
 
 /** Copy an image (from a native file-picker or a drop) into the sandbox, and stage it as the composer's pending attachment. */

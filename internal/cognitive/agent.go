@@ -13,10 +13,6 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/turn"
 )
 
-const (
-	defaultMaxToolCalls = 4
-)
-
 type Agent struct {
 	provider     model.Provider
 	model        string
@@ -72,14 +68,18 @@ func (a *Agent) RespondWithTools(
 	}
 	a.context.Add(model.RoleUser, msg)
 
+	// OpenCode-style loop: run until the model stops calling tools. The brakes
+	// are the permission/approval layer and ctx cancellation (Ctrl+C in the CLI,
+	// the Stop button in the desktop app) — not an arbitrary round cap.
+	// MaxToolCalls > 0 opts back into a hard cap.
 	maxToolCalls := a.maxToolCalls
-	if maxToolCalls <= 0 {
-		maxToolCalls = defaultMaxToolCalls
-	}
-	debuglog.Info("maxToolCalls", fmt.Sprintf("%d", maxToolCalls))
+	debuglog.Info("maxToolCalls", fmt.Sprintf("%d (<=0 means unlimited)", maxToolCalls))
 	anyToolUsed := false
-	for i := 0; i < maxToolCalls; i++ {
-		debuglog.Msg("tool loop iteration %d/%d", i+1, maxToolCalls)
+	for i := 0; maxToolCalls <= 0 || i < maxToolCalls; i++ {
+		debuglog.Msg("tool loop iteration %d (max=%d)", i+1, maxToolCalls)
+		if ctx.Err() != nil {
+			return "", anyToolUsed, ctx.Err()
+		}
 		response, err := a.provider.Complete(ctx, a.buildRequest(a.context.Messages(), 4096, 0.2, modelTools, "auto", opts))
 		if err != nil {
 			debuglog.Msg("Complete() error: %v", err)

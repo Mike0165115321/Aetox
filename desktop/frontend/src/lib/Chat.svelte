@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ChatMessage, TaskState, ModelStatus, ProjectInfo } from './types'
+  import type { ChatMessage, TaskState, ModelStatus, ProjectInfo, ToolStep } from './types'
   import TaskTimeline from './TaskTimeline.svelte'
   import { onMount } from 'svelte'
   import {
@@ -9,10 +9,10 @@
   import { t } from './i18n.svelte'
   import { renderMarkdown } from './markdown'
   import { openUrlInWorkbench } from './stores/workbench.svelte'
-  import { cockpit, attachImageFromPath, clearPendingImage } from './stores/cockpit.svelte'
+  import { cockpit, attachImageFromPath, clearPendingImage, cancelTurn } from './stores/cockpit.svelte'
 
   let {
-    messages, task, model, project, awaitingReply, agentStatus,
+    messages, task, model, project, awaitingReply, agentStatus, toolSteps,
     onSend, onSwitchProvider, onSwitchThinkLevel, onSwitchApprovalMode, onSwitchModel, onSubmitAPIKey,
   }: {
     messages: ChatMessage[]
@@ -21,6 +21,7 @@
     project: ProjectInfo
     awaitingReply: boolean
     agentStatus: string
+    toolSteps: ToolStep[]
     onSend: (text: string) => void
     onSwitchProvider: (provider: string) => Promise<void>
     onSwitchThinkLevel: (level: string) => Promise<void>
@@ -97,6 +98,18 @@
 
   let draft = $state('')
 
+  // Ticks once a second while a turn is in flight, so the running tool step's
+  // elapsed counter ("· 12s") advances live.
+  let now = $state(Date.now())
+  $effect(() => {
+    if (!awaitingReply) return
+    const id = setInterval(() => (now = Date.now()), 1000)
+    return () => clearInterval(id)
+  })
+  function liveSecs(s: ToolStep): number {
+    return Math.max(0, Math.round((now - s.startedAt) / 1000))
+  }
+
   const starters = $derived([
     { icon: '🧭', title: t('chat.starter1Title'), prompt: t('chat.starter1Prompt') },
     { icon: '🛠', title: t('chat.starter2Title'), prompt: t('chat.starter2Prompt') },
@@ -136,6 +149,26 @@
   }
 </script>
 
+{#snippet toolTimeline(steps: ToolStep[], live: boolean)}
+  <div class="tool-steps">
+    {#each steps as s}
+      <div class="tool-step {s.state}">
+        {#if s.state === 'run'}
+          <span class="glyph spin"></span>
+        {:else}
+          <span class="glyph">{s.state === 'done' ? '✓' : '✕'}</span>
+        {/if}
+        <span class="lbl">{s.label}</span>
+        {#if s.state === 'run' && live}
+          <span class="secs">· {liveSecs(s)}s</span>
+        {:else if s.secs}
+          <span class="secs">· {s.secs}s</span>
+        {/if}
+      </div>
+    {/each}
+  </div>
+{/snippet}
+
   {#if messages.length === 0}
     <div class="empty-state">
       <span class="empty-glyph word">Aetox</span>
@@ -164,6 +197,9 @@
             {#if m.imageDataUrl}
               <img src={m.imageDataUrl} alt="" class="msg-image" />
             {/if}
+            {#if m.steps?.length}
+              {@render toolTimeline(m.steps, false)}
+            {/if}
             <div class="markdown-body">{@html renderMarkdown(m.text)}</div>
             <div class="time">{m.time}</div>
           </div>
@@ -173,10 +209,16 @@
       {#if awaitingReply}
         <div class="msg bot">
           <div class="bubble typing-bubble">
-            {#if agentStatus}
-              <span class="typing-status">{agentStatus}</span>
+            <div class="typing-row">
+              {#if agentStatus}
+                <span class="typing-status">{agentStatus}</span>
+              {/if}
+              <span class="typing-dots"><span></span><span></span><span></span></span>
+              <button class="stop-btn" onclick={cancelTurn} title={t('chat.stopTurn')}>■ {t('chat.stopTurn')}</button>
+            </div>
+            {#if toolSteps.length > 0}
+              {@render toolTimeline(toolSteps, true)}
             {/if}
-            <span class="typing-dots"><span></span><span></span><span></span></span>
           </div>
         </div>
       {/if}

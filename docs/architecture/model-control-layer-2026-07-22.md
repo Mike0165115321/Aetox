@@ -48,7 +48,7 @@ flowchart TD
 
 Confirmed by reading `internal/cognitive/agent.go:51-143`. Called from `turn.executeAgentToolLoop` (`executor.go:408-457`), which supplies the `execTool` callback (§4).
 
-- Bounded loop: `maxToolCalls` (config, default 4 — `defaultMaxToolCalls`). Not unlimited — a model that keeps calling tools past the cap gets `"agent tool loop reached maximum iterations"` as the reply.
+- Unbounded loop (OpenCode-style, changed 2026-07-22): runs until the model stops calling tools. The brakes are the approval/permission layer and ctx cancellation (Ctrl+C in the CLI, the desktop Stop button → `App.CancelTurn`). Setting `MaxToolCalls > 0` in `AgentConfig` opts back into a hard cap, after which the reply is `"agent tool loop reached maximum iterations"`.
 - Each iteration: one `provider.Complete()` call with `tool_choice:"auto"`. If the response has zero tool calls, that's the model's final answer — loop ends, reply returned.
 - If the response has tool calls, each one is executed **serially** via the `execTool` callback (not concurrently) and the result is appended to conversation memory as a `RoleTool` message before the next iteration's `Complete()` call — so the model sees prior tool results before deciding its next move.
 - First-iteration provider error falls back to plain `Respond()` (no tools) rather than failing the turn outright; a later-iteration error fails the turn.

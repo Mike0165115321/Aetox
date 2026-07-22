@@ -9,11 +9,12 @@
   import {
     cockpit, sendUserMessage, loadRealState, openFolder, openFile,
     switchProvider, switchThinkLevel, switchApprovalMode,
-    switchModel, submitAPIKey, setActiveView, closeFile, applyAgentStatus,
+    switchModel, submitAPIKey, setActiveView, closeFile, applyAgentStatus, applyToolEvent,
     attachImageFromPath,
   } from './lib/stores/cockpit.svelte'
   import { RelativizePath } from '../wailsjs/go/main/App'
   import { OnFileDrop, OnFileDropOff, EventsOn } from '../wailsjs/runtime/runtime'
+  import { workbench } from './lib/stores/workbench.svelte'
 
   function fileLabel(path: string): string {
     return path.split('/').pop() ?? path
@@ -68,6 +69,7 @@
     loadRealState()
 
     const offAgentStatus = EventsOn('agent:status', applyAgentStatus)
+    const offAgentTool = EventsOn('agent:tool', applyToolEvent)
 
     for (const panel of Object.values(panels)) {
       const stored = localStorage.getItem(panel.storageKey)
@@ -102,6 +104,7 @@
     return () => {
       OnFileDropOff()
       offAgentStatus()
+      offAgentTool()
     }
   })
 
@@ -109,6 +112,12 @@
   let draggingInspector = $state(false)
   let inspectorCollapsed = $state(localStorage.getItem('inspectorCollapsed') === 'true')
   let sidebarCollapsed = $state(localStorage.getItem('sidebarCollapsed') === 'true')
+
+  // Closing the last workbench tab should reclaim the inspector panel's
+  // width, not leave it reserved and blank — opening a tab should bring it back.
+  $effect(() => {
+    inspectorCollapsed = workbench.tabs.length === 0
+  })
 
   function toggleSidebar() {
     sidebarCollapsed = !sidebarCollapsed
@@ -216,6 +225,7 @@
         project={cockpit.project}
         awaitingReply={cockpit.awaitingReply}
         agentStatus={cockpit.agentStatus}
+        toolSteps={cockpit.toolSteps}
         onSend={sendUserMessage}
         onSwitchProvider={switchProvider}
         onSwitchThinkLevel={switchThinkLevel}

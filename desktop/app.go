@@ -44,6 +44,9 @@ type App struct {
 	sessionID  string
 	transcript []SessionMessage
 
+	turnMu     sync.Mutex
+	turnCancel context.CancelFunc // cancels the chat turn in flight, nil when idle
+
 	mcp      *mcp.Manager    // configured MCP servers; built once, survives re-bootstraps
 	registry *skill.Registry // current skill/tool registry, for the Tools panel
 
@@ -65,6 +68,10 @@ const maxToolHistory = 50
 // kept for the Inspector's Command History panel. Only "call" events are
 // recorded — "result" events are noise for a command-log view.
 func (a *App) recordToolAction(action, detail string) {
+	// Relay every call/result live to the chat's tool timeline.
+	if a.ctx != nil {
+		wailsruntime.EventsEmit(a.ctx, "agent:tool", map[string]string{"action": action, "detail": detail})
+	}
 	if action != "call" {
 		return
 	}
@@ -401,7 +408,17 @@ func (a *App) SendMessage(text string) (string, error) {
 	if a.chat == nil {
 		return "", fmt.Errorf("aetox core not ready: %s", a.modelStatus)
 	}
-	reply, err := a.chat.RunOnce(a.ctx, text)
+	ctx, cancel := context.WithCancel(a.ctx)
+	a.turnMu.Lock()
+	a.turnCancel = cancel
+	a.turnMu.Unlock()
+	defer func() {
+		cancel()
+		a.turnMu.Lock()
+		a.turnCancel = nil
+		a.turnMu.Unlock()
+	}()
+	reply, err := a.chat.RunOnce(ctx, text)
 	if err != nil {
 		return reply, err
 	}
@@ -411,6 +428,17 @@ func (a *App) SendMessage(text string) (string, error) {
 	a.transcript = append(a.transcript, userMsg, agentMsg)
 	a.appendTurn(userMsg, agentMsg)
 	return reply, nil
+}
+
+// CancelTurn aborts the chat turn in flight (the tool loop is unbounded, so
+// this Stop button is the user's brake, same role as Ctrl+C in the CLI).
+// No-op when idle.
+func (a *App) CancelTurn() {
+	a.turnMu.Lock()
+	defer a.turnMu.Unlock()
+	if a.turnCancel != nil {
+		a.turnCancel()
+	}
 }
 
 // ModelStatus reports which provider/model the engine is running, as a display string.

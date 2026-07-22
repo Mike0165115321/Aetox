@@ -55,6 +55,17 @@ export interface ChatMessage {
   tag?: string
   /** data: URL of an attached image, for inline preview only (not sent to the model). */
   imageDataUrl?: string
+  /** tool calls made during this turn, kept on the reply for a persistent timeline. */
+  steps?: ToolStep[]
+}
+
+/** One tool call in the live per-turn timeline ("Using browser_read… 12s"). */
+export interface ToolStep {
+  label: string
+  state: 'run' | 'done' | 'err'
+  startedAt: number
+  /** seconds it took, filled in when the result arrives */
+  secs?: number
 }
 
 /** An image attached in the composer, staged before send. */
@@ -135,6 +146,8 @@ export interface CockpitState {
   awaitingReply: boolean
   /** Live turn-progress text from the Go engine's status reporter ("กำลังคิดคำตอบ...", etc), '' when idle. */
   agentStatus: string
+  /** Tool calls of the turn in flight, appended live from agent:tool events. */
+  toolSteps: ToolStep[]
   /** Image staged in the composer, not yet sent. */
   pendingImage: PendingImage | null
 }
@@ -156,6 +169,7 @@ export function emptyCockpitState(): CockpitState {
     activeView: 'chat',
     awaitingReply: false,
     agentStatus: '',
+    toolSteps: [],
     pendingImage: null,
   }
 }

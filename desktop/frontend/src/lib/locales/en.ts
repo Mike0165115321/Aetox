@@ -37,6 +37,7 @@ export const en: Record<keyof typeof th, string> = {
   'chat.agentName': 'Aetox',
   'chat.inputPlaceholder': 'Type your command or request… (use / to see commands)',
   'chat.attachImage': 'Attach image',
+  'chat.stopTurn': 'Stop',
   'chat.removeAttachment': 'Remove attachment',
   'chat.saveKey': 'Save key',
   'chat.apiKeyPlaceholder': 'API key for {provider}',

@@ -36,6 +36,7 @@ export const th = {
   'chat.agentName': 'Aetox',
   'chat.inputPlaceholder': 'พิมพ์คำสั่งหรือคำขอของคุณ… (ใช้ / เพื่อดูคำสั่ง)',
   'chat.attachImage': 'แนบรูปภาพ',
+  'chat.stopTurn': 'หยุด',
   'chat.removeAttachment': 'เอาไฟล์แนบออก',
   'chat.saveKey': 'บันทึกคีย์',
   'chat.apiKeyPlaceholder': 'API key สำหรับ {provider}',
