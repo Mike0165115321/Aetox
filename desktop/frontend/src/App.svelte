@@ -7,10 +7,10 @@
   import Workbench from './lib/workbench/Workbench.svelte'
   import { onMount } from 'svelte'
   import {
-    cockpit, sendUserMessage, loadRealState, openFolder, openFile,
-    switchProvider, switchThinkLevel, switchApprovalMode,
+    cockpit, sendUserMessage, loadRealState, openFile,
+    switchProvider, switchThinkLevel,
     switchModel, submitAPIKey, setActiveView, closeFile, applyAgentStatus, applyToolEvent,
-    attachImageFromPath,
+    applyAgentChunk, attachImageFromPath,
   } from './lib/stores/cockpit.svelte'
   import { RelativizePath } from '../wailsjs/go/main/App'
   import { OnFileDrop, OnFileDropOff, EventsOn } from '../wailsjs/runtime/runtime'
@@ -70,6 +70,7 @@
 
     const offAgentStatus = EventsOn('agent:status', applyAgentStatus)
     const offAgentTool = EventsOn('agent:tool', applyToolEvent)
+    const offAgentChunk = EventsOn('agent:chunk', applyAgentChunk)
 
     for (const panel of Object.values(panels)) {
       const stored = localStorage.getItem(panel.storageKey)
@@ -105,6 +106,7 @@
       OnFileDropOff()
       offAgentStatus()
       offAgentTool()
+      offAgentChunk()
     }
   })
 
@@ -191,7 +193,6 @@
 
 <div class="app" class:inspector-collapsed={inspectorCollapsed} class:sidebar-collapsed={sidebarCollapsed}>
   <TopBar
-    project={cockpit.project} onOpenFolder={openFolder}
     inspectorCollapsed={inspectorCollapsed} onToggleInspector={toggleInspector}
     sidebarCollapsed={sidebarCollapsed} onToggleSidebar={toggleSidebar}
   />
@@ -222,14 +223,13 @@
         messages={cockpit.chat}
         task={cockpit.task}
         model={cockpit.model}
-        project={cockpit.project}
         awaitingReply={cockpit.awaitingReply}
         agentStatus={cockpit.agentStatus}
         toolSteps={cockpit.toolSteps}
+        streamingText={cockpit.streamingText}
         onSend={sendUserMessage}
         onSwitchProvider={switchProvider}
         onSwitchThinkLevel={switchThinkLevel}
-        onSwitchApprovalMode={switchApprovalMode}
         onSwitchModel={switchModel}
         onSubmitAPIKey={submitAPIKey}
       />

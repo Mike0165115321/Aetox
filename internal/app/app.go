@@ -186,6 +186,16 @@ func (a *App) RunOnce(ctx context.Context, message string) (string, error) {
 	return a.runCommand(ctx, message)
 }
 
+// RunOnceStream is RunOnce with a live callback for reply text as it's produced —
+// token-by-token for a plain conversational turn (turn.Executor Phase 4), or once
+// with the full reply when the turn went through tool calls (Phase 2), since that
+// path has no partial text to stream. Same callback either way: the desktop UI
+// just appends whatever it's given to a growing bubble.
+func (a *App) RunOnceStream(ctx context.Context, message string, onChunk func(string)) (string, error) {
+	result, err := a.turnExecutor.Execute(ctx, message, a.parseInputIntent(message), onChunk, nil)
+	return result.Reply, err
+}
+
 func (a *App) onToolAction(action, detail string) {
 	if a.toolActionListener != nil {
 		a.toolActionListener(action, detail)
@@ -434,17 +444,6 @@ func buildCommandSetFromDispatcher(dispatcher skillDispatcher) map[string]struct
 		return nil
 	}
 	return command.BuildCommandSet(named.Names())
-}
-
-func (a *App) dispatchBySkill(ctx context.Context, line string) (skill.Output, bool, error) {
-	if a.skillDispatcher == nil {
-		return skill.Output{}, false, nil
-	}
-	output, handled, err := a.skillDispatcher.Execute(ctx, line)
-	if !handled || err != nil {
-		return output, handled, err
-	}
-	return output, true, nil
 }
 
 func normalizeApprovalMode(mode safety.ApprovalMode) safety.ApprovalMode {
@@ -803,57 +802,3 @@ func (a *App) printPromptLine() {
 	a.console.Print(ansiBrandBright + ">" + ansiReset + spacePad + ansiSubtle + right + ansiReset + "\r" + ansiBrandBright + "> " + ansiReset)
 }
 
-func (a *App) showSkillPalette(ctx context.Context) error {
-	a.showSlashHelp()
-	_, handled, err := a.dispatchBySkill(ctx, "help")
-	if err != nil {
-		a.console.Println("คำสั่งล้มเหลว: " + err.Error())
-		return nil
-	}
-	if handled {
-		a.console.Println("")
-	}
-
-	if len(a.skillNames) == 0 {
-		a.console.Println("ยังไม่มี skill เพิ่มเติมในระบบ.")
-	}
-
-	return nil
-}
-
-func (a *App) printAvailableSkills() {
-	describe := map[string]skill.Skill{}
-	if source, ok := a.skillDispatcher.(describeSkills); ok {
-		describe = source.Snapshot()
-	} else {
-		for _, name := range a.skillNames {
-			// keep compatibility if dispatcher only exposes names
-			describe[name] = nil
-		}
-	}
-
-	names := make([]string, 0, len(describe))
-	for name := range describe {
-		if name == "" {
-			continue
-		}
-		names = append(names, strings.ToLower(name))
-	}
-	sort.Strings(names)
-
-	if len(names) == 0 {
-		a.console.Println("  (ไม่มี)")
-		return
-	}
-
-	for _, name := range names {
-		desc := "ไม่มีคำอธิบาย"
-		if describe[name] != nil {
-			desc = strings.TrimSpace(describe[name].Description())
-			if desc == "" {
-				desc = "ไม่มีคำอธิบาย"
-			}
-		}
-		a.console.Println(fmt.Sprintf("  %-8s %s", "/"+name, desc))
-	}
-}

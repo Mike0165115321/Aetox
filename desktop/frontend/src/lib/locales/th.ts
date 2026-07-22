@@ -13,7 +13,8 @@ export const th = {
   'topbar.toggleTheme': 'สลับธีม',
   'topbar.toggleThemeTip': 'สลับธีมสว่าง/มืด',
 
-  'sidebar.filesWorking': 'ไฟล์ที่ AI กำลังทำงาน',
+  'sidebar.explorer': 'ไฟล์โปรเจกต์',
+  'sidebar.refreshTip': 'รีเฟรชรายการไฟล์',
   'sidebar.noFiles': 'ยังไม่มีไฟล์ — เปิดโฟลเดอร์ก่อน',
   'sidebar.chatHistory': 'ประวัติแชท',
   'sidebar.searchHistory': 'ค้นหาประวัติ…',
@@ -107,6 +108,9 @@ export const th = {
   'settings.shellTitle': 'เชลล์สำหรับเทอร์มินัลในตัว',
   'settings.shellDesc': 'เลือกเชลล์ที่จะเปิดเมื่อสร้างแท็บเทอร์มินัลใหม่',
   'settings.noShells': 'ไม่พบ shell ในเครื่อง',
+
+  'settings.approvalTitle': 'สิทธิ์การใช้เครื่องมือ',
+  'settings.approvalDesc': 'เอเจนต์ทำอะไรได้เองแค่ไหนก่อนต้องถามคุณ',
 
   'settings.themeTitle': 'ธีม',
   'settings.themeDesc': 'สลับโหมดมืด/สว่างของแอป',

@@ -148,6 +148,8 @@ export interface CockpitState {
   agentStatus: string
   /** Tool calls of the turn in flight, appended live from agent:tool events. */
   toolSteps: ToolStep[]
+  /** Reply text streamed so far this turn, appended live from agent:chunk events. '' when idle. */
+  streamingText: string
   /** Image staged in the composer, not yet sent. */
   pendingImage: PendingImage | null
 }
@@ -170,6 +172,7 @@ export function emptyCockpitState(): CockpitState {
     awaitingReply: false,
     agentStatus: '',
     toolSteps: [],
+    streamingText: '',
     pendingImage: null,
   }
 }

@@ -128,6 +128,7 @@ export async function sendUserMessage(text: string): Promise<void> {
   cockpit.awaitingReply = true
   cockpit.agentStatus = ''
   cockpit.toolSteps = []
+  cockpit.streamingText = ''
   try {
     const reply = await SendMessage(sentText)
     const steps = cockpit.toolSteps.length ? cockpit.toolSteps.map((s) => ({ ...s })) : undefined
@@ -138,6 +139,7 @@ export async function sendUserMessage(text: string): Promise<void> {
     cockpit.awaitingReply = false
     cockpit.agentStatus = ''
     cockpit.toolSteps = []
+    cockpit.streamingText = ''
   }
   await refreshWorkspace()
   await refreshSessions()
@@ -151,6 +153,13 @@ export function cancelTurn(): void {
 /** Live turn-progress text from the Go engine (see desktop/app.go emitAgentStatus). */
 export function applyAgentStatus(status: string): void {
   cockpit.agentStatus = status
+}
+
+/** Live reply text from the Go engine (see desktop/app.go SendMessage's onChunk).
+ * One call with the whole reply for a tool-using turn, or many small calls for a
+ * plain streamed conversational one — either way, just keep appending. */
+export function applyAgentChunk(chunk: string): void {
+  cockpit.streamingText += chunk
 }
 
 /** Live tool call/result feed from the Go engine (see desktop/app.go recordToolAction).

@@ -14,7 +14,8 @@ export const en: Record<keyof typeof th, string> = {
   'topbar.toggleTheme': 'Toggle theme',
   'topbar.toggleThemeTip': 'Switch light/dark theme',
 
-  'sidebar.filesWorking': 'Files the AI is working on',
+  'sidebar.explorer': 'Explorer',
+  'sidebar.refreshTip': 'Refresh file tree',
   'sidebar.noFiles': 'No files yet — open a folder first',
   'sidebar.chatHistory': 'Chat history',
   'sidebar.searchHistory': 'Search history…',
@@ -108,6 +109,9 @@ export const en: Record<keyof typeof th, string> = {
   'settings.shellTitle': 'Built-in terminal shell',
   'settings.shellDesc': 'Choose the shell to open when creating a new terminal tab',
   'settings.noShells': 'No shell found on this machine',
+
+  'settings.approvalTitle': 'Tool permission',
+  'settings.approvalDesc': 'How much the agent can do without asking first',
 
   'settings.themeTitle': 'Theme',
   'settings.themeDesc': 'Switch the app’s dark/light mode',

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ChatMessage, TaskState, ModelStatus, ProjectInfo, ToolStep } from './types'
+  import type { ChatMessage, TaskState, ModelStatus, ToolStep } from './types'
   import TaskTimeline from './TaskTimeline.svelte'
   import { onMount } from 'svelte'
   import {
@@ -12,29 +12,22 @@
   import { cockpit, attachImageFromPath, clearPendingImage, cancelTurn } from './stores/cockpit.svelte'
 
   let {
-    messages, task, model, project, awaitingReply, agentStatus, toolSteps,
-    onSend, onSwitchProvider, onSwitchThinkLevel, onSwitchApprovalMode, onSwitchModel, onSubmitAPIKey,
+    messages, task, model, awaitingReply, agentStatus, toolSteps, streamingText,
+    onSend, onSwitchProvider, onSwitchThinkLevel, onSwitchModel, onSubmitAPIKey,
   }: {
     messages: ChatMessage[]
     task: TaskState
     model: ModelStatus
-    project: ProjectInfo
     awaitingReply: boolean
     agentStatus: string
     toolSteps: ToolStep[]
+    streamingText: string
     onSend: (text: string) => void
     onSwitchProvider: (provider: string) => Promise<void>
     onSwitchThinkLevel: (level: string) => Promise<void>
-    onSwitchApprovalMode: (mode: string) => Promise<void>
     onSwitchModel: (modelName: string) => Promise<void>
     onSubmitAPIKey: (provider: string, apiKey: string) => Promise<void>
   } = $props()
-
-  const approvalOptions = $derived([
-    { value: 'ask', label: t('chat.approvalAsk') },
-    { value: 'unsafe-only', label: t('chat.approvalUnsafeOnly') },
-    { value: 'full-access', label: t('chat.approvalFullAccess') },
-  ])
 
   let providers = $state<string[]>([])
   let thinkLevels = $state<string[]>([])
@@ -186,6 +179,7 @@
     <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
     <!-- delegated click target is the <a> tags rendered inside .markdown-body, already interactive -->
     <div class="chat" onclick={onChatClick}>
+    <div class="chat-inner">
       {#each messages as m}
         <div class="msg {m.role === 'user' ? 'user' : 'bot'}">
           <div class="bubble">
@@ -210,7 +204,7 @@
         <div class="msg bot">
           <div class="bubble typing-bubble">
             <div class="typing-row">
-              {#if agentStatus}
+              {#if agentStatus && !streamingText}
                 <span class="typing-status">{agentStatus}</span>
               {/if}
               <span class="typing-dots"><span></span><span></span><span></span></span>
@@ -218,6 +212,9 @@
             </div>
             {#if toolSteps.length > 0}
               {@render toolTimeline(toolSteps, true)}
+            {/if}
+            {#if streamingText}
+              <div class="markdown-body">{@html renderMarkdown(streamingText)}</div>
             {/if}
           </div>
         </div>
@@ -227,15 +224,10 @@
         <TaskTimeline steps={task.steps} elapsed={task.elapsed} />
       {/if}
     </div>
+    </div>
   {/if}
 
   <div class="composer">
-    {#if project.name}
-      <div class="project-chips">
-        <span class="chip"><span class="ic">📁</span> {project.name}</span>
-        {#if project.branch}<span class="chip branch"><span class="ic">⑂</span> {project.branch}</span>{/if}
-      </div>
-    {/if}
     {#if needsApiKey}
       <div class="api-key-banner">
         <input
@@ -265,9 +257,6 @@
       ></textarea>
       <div class="tools">
         <button class="icobtn" aria-label={t('chat.attachImage')} data-tip={t('chat.attachImage')} onclick={attachViaDialog}>📎</button>
-        <select class="ctrl" value={model.approval} onchange={(e) => onSwitchApprovalMode((e.target as HTMLSelectElement).value)}>
-          {#each approvalOptions as opt}<option value={opt.value}>{opt.label}</option>{/each}
-        </select>
         <select class="ctrl" value={model.provider} onchange={handleProviderChange}>
           {#each providers as p}<option value={p}>{p}</option>{/each}
         </select>
@@ -280,7 +269,8 @@
             class="ctrl"
             type="text"
             placeholder={t('chat.modelIdPlaceholder')}
-            bind:value={customModel}
+            value={customModel || model.modelName}
+            oninput={(e) => (customModel = (e.target as HTMLInputElement).value)}
             onkeydown={(e) => e.key === 'Enter' && submitCustomModel()}
           />
         {/if}

@@ -419,7 +419,9 @@ func (a *App) SendMessage(text string) (string, error) {
 		a.turnCancel = nil
 		a.turnMu.Unlock()
 	}()
-	reply, err := a.chat.RunOnce(ctx, text)
+	reply, err := a.chat.RunOnceStream(ctx, text, func(chunk string) {
+		wailsruntime.EventsEmit(a.ctx, "agent:chunk", chunk)
+	})
 	if err != nil {
 		return reply, err
 	}

@@ -12,9 +12,15 @@
     ListModelsForProvider, ProviderBaseURL,
     ListMCPServers, AddMCPServer, RemoveMCPServer, TestMCPServer,
   } from '../../wailsjs/go/main/App'
-  import { cockpit, switchProvider, switchModel, submitAPIKey } from './stores/cockpit.svelte'
+  import { cockpit, switchProvider, switchModel, submitAPIKey, switchApprovalMode } from './stores/cockpit.svelte'
 
   let { onClose }: { onClose: () => void } = $props()
+
+  const approvalOptions = [
+    { value: 'ask', label: t('chat.approvalAsk') },
+    { value: 'unsafe-only', label: t('chat.approvalUnsafeOnly') },
+    { value: 'full-access', label: t('chat.approvalFullAccess') },
+  ]
 
   // ---------- General: default shell ----------
   let shells = $state<{ name: string; path: string }[]>([])
@@ -224,6 +230,15 @@
               {/each}
             </select>
           {/if}
+        </div>
+        <div class="set-row">
+          <div class="set-txt">
+            <div class="t">{t('settings.approvalTitle')}</div>
+            <div class="d">{t('settings.approvalDesc')}</div>
+          </div>
+          <select class="ctrl" value={cockpit.model.approval} onchange={(e) => switchApprovalMode(e.currentTarget.value)}>
+            {#each approvalOptions as opt}<option value={opt.value}>{opt.label}</option>{/each}
+          </select>
         </div>
       </div>
     {:else if active === 'appearance'}

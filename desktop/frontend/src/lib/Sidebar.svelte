@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { cockpit, selectSession, newSession, searchSessions, toggleNode, visibleTree } from './stores/cockpit.svelte'
+  import { cockpit, selectSession, newSession, searchSessions, toggleNode, visibleTree, openFolder, refreshWorkspace } from './stores/cockpit.svelte'
   import { workbench, openFileTab } from './stores/workbench.svelte'
   import { t, i18n, setLocale, localeNames, type Locale } from './i18n.svelte'
 
@@ -62,17 +62,26 @@
 
 <aside class="side">
   <div class="side-panel" style={filesOpen ? `flex:0 0 ${filesHeight}px` : 'flex:0 0 auto'}>
-    <button type="button" class="side-head" onclick={() => (filesOpen = !filesOpen)}>
-      <span class="chev">{filesOpen ? '▾' : '▸'}</span>
-      <span class="eyebrow">{t('sidebar.filesWorking')}</span>
-    </button>
+    <div class="explorer-head">
+      <span class="eyebrow">{t('sidebar.explorer')}</span>
+      <button type="button" class="icobtn tiny" aria-label={t('sidebar.refreshTip')} data-tip={t('sidebar.refreshTip')} onclick={refreshWorkspace}>⟳</button>
+    </div>
+    <div class="proj-row">
+      <button type="button" class="side-head proj-toggle" onclick={() => (filesOpen = !filesOpen)}>
+        <span class="chev">{filesOpen ? '▾' : '▸'}</span>
+        <span class="ic">📁</span>
+        <span class="proj-name">{cockpit.project.name || t('topbar.openFolder')}</span>
+        {#if cockpit.project.branch}<span class="proj-branch">⑂ {cockpit.project.branch}</span>{/if}
+      </button>
+      <button type="button" class="icobtn tiny" aria-label={t('topbar.openFolder')} data-tip={t('topbar.openFolder')} onclick={openFolder}>⋯</button>
+    </div>
     {#if filesOpen}
       <div class="scroll">
         <div class="proj">
           {#each rows as node (node.label + node.depth)}
             <button
               type="button" class="row" class:active={workbench.activeId === 'file-' + node.path} title={node.path}
-              style="padding-left:{6 + node.depth * 14}px"
+              style="padding-left:{20 + node.depth * 14}px"
               onclick={() => (node.kind === 'dir' ? toggleNode(node) : openFileTab(node.path))}
             >
               {#if node.kind === 'dir'}
@@ -98,7 +107,8 @@
   <div class="side-panel grow">
     <button type="button" class="side-head" onclick={() => (chatOpen = !chatOpen)}>
       <span class="chev">{chatOpen ? '▾' : '▸'}</span>
-      <span class="eyebrow">{t('sidebar.chatHistory')}{cockpit.project.name ? ` — ${cockpit.project.name}` : ''}</span>
+      <span class="eyebrow">{t('sidebar.chatHistory')}</span>
+      {#if cockpit.project.name}<span class="side-head-ctx">— {cockpit.project.name}</span>{/if}
     </button>
     {#if chatOpen}
       <div class="scroll">
