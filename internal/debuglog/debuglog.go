@@ -12,7 +12,6 @@ import (
 var (
 	writer io.Writer
 	indent int
-	logDir string
 )
 
 func Init(baseDir string) {
@@ -21,7 +20,6 @@ func Init(baseDir string) {
 	}
 	dir := filepath.Join(baseDir, "logs")
 	os.MkdirAll(dir, 0755)
-	logDir = dir
 
 	name := "aetox-" + time.Now().Format("20060102-150405") + ".log"
 	path := filepath.Join(dir, name)
@@ -58,14 +56,6 @@ func Disable() error {
 	}
 	writer = nil
 	return err
-}
-
-func IsEnabled() bool {
-	return writer != nil
-}
-
-func LogDir() string {
-	return logDir
 }
 
 func Msg(format string, args ...any) {

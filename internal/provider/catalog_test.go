@@ -223,42 +223,6 @@ func TestRuntimeFor(t *testing.T) {
 	}
 }
 
-func TestCapabilitiesFor(t *testing.T) {
-	// Provider-level capabilities only — not per-model.
-	caps := CapabilitiesFor("openrouter")
-	if !caps.ToolCalling || !caps.Reasoning {
-		t.Fatal("openrouter should have both capabilities")
-	}
-	caps = CapabilitiesFor("openai")
-	if !caps.ToolCalling || !caps.Reasoning {
-		t.Fatal("openai should have both capabilities")
-	}
-	caps = CapabilitiesFor("deepseek")
-	if !caps.ToolCalling || !caps.Reasoning {
-		t.Fatal("deepseek should have both capabilities")
-	}
-	caps = CapabilitiesFor("gemini")
-	if !caps.ToolCalling || !caps.Reasoning {
-		t.Fatal("gemini should have both capabilities")
-	}
-	caps = CapabilitiesFor("groq")
-	if !caps.ToolCalling || !caps.Reasoning {
-		t.Fatal("groq should have both capabilities")
-	}
-	caps = CapabilitiesFor("ollama")
-	if !caps.ToolCalling || caps.Reasoning {
-		t.Fatal("ollama should have tool calling but no reasoning (no native thinking knob)")
-	}
-	caps = CapabilitiesFor("anthropic")
-	if !caps.ToolCalling || !caps.Reasoning {
-		t.Fatal("anthropic should have both capabilities")
-	}
-	caps = CapabilitiesFor("unknown")
-	if caps.ToolCalling || caps.Reasoning {
-		t.Fatal("unknown should have empty capabilities")
-	}
-}
-
 func TestResolveAPIKey(t *testing.T) {
 	// Set a fake env for testing.
 	os.Setenv("TEST_OPENAI_KEY", "sk-test-123")
@@ -304,23 +268,6 @@ func TestSupportedProviders(t *testing.T) {
 	for i := 1; i < len(providers); i++ {
 		if providers[i-1] >= providers[i] {
 			t.Fatalf("providers not sorted: %q >= %q", providers[i-1], providers[i])
-		}
-	}
-}
-
-func TestEnvKeys(t *testing.T) {
-	keys := EnvKeys()
-	if len(keys) == 0 {
-		t.Fatal("expected non-empty env keys")
-	}
-	// Should include common ones.
-	found := map[string]bool{}
-	for _, k := range keys {
-		found[k] = true
-	}
-	for _, want := range []string{"OPENROUTER_API_KEY", "OPENAI_API_KEY", "DEEPSEEK_API_KEY", "GROQ_API_KEY"} {
-		if !found[want] {
-			t.Fatalf("expected env key %q in list", want)
 		}
 	}
 }

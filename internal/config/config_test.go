@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -172,7 +173,7 @@ func TestSaveAndLoadMCPServers(t *testing.T) {
 	}
 }
 
-func TestSaveAndLoadPermissions(t *testing.T) {
+func TestLoadPermissions(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("APPDATA", base)
 	t.Setenv("LOCALAPPDATA", base)
@@ -181,8 +182,19 @@ func TestSaveAndLoadPermissions(t *testing.T) {
 		{Tool: "shell", Pattern: "rm *", Action: safety.PermissionDeny},
 		{Tool: "git", Pattern: "status", Action: safety.PermissionAllow},
 	}}
-	if err := SavePermissions(want); err != nil {
-		t.Fatalf("save permissions failed: %v", err)
+	path, err := PermissionsPath()
+	if err != nil {
+		t.Fatalf("permissions path: %v", err)
+	}
+	payload, err := json.MarshalIndent(want, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(path, payload, 0o600); err != nil {
+		t.Fatalf("write permissions file: %v", err)
 	}
 
 	got, err := LoadPermissions()

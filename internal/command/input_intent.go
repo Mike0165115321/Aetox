@@ -31,11 +31,6 @@ func SlashMetaDescription(name string) string {
 	return grammar.SlashMetaDescription(name)
 }
 
-// SlashMetaLegend delegates to grammar.
-func SlashMetaLegend() string {
-	return grammar.SlashMetaLegend()
-}
-
 // Parse delegates to grammar.Parse.
 func Parse(input string, split SplitFunc, knownCommands map[string]struct{}) Intent {
 	return grammar.Parse(input, split, knownCommands)
@@ -54,9 +49,4 @@ func BuildCommandSet(names []string) map[string]struct{} {
 // IsSlashToken delegates to grammar.IsSlashToken.
 func IsSlashToken(input string) bool {
 	return grammar.IsSlashToken(input)
-}
-
-// SlashSuggestions delegates to grammar.SlashSuggestions.
-func SlashSuggestions(input string, commandSet map[string]struct{}) []string {
-	return grammar.SlashSuggestions(input, commandSet)
 }

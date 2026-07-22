@@ -1,7 +1,6 @@
 package grammar
 
 import (
-	"sort"
 	"strings"
 )
 
@@ -26,13 +25,6 @@ type Intent struct {
 
 // SplitFunc tokenises raw input into a command name and its arguments.
 type SplitFunc func(input string) (string, []string)
-
-// Grammar holds the complete set of rules for classifying and parsing
-// user input. The zero value is usable.
-type Grammar struct{}
-
-// New returns a ready-to-use Grammar.
-func New() *Grammar { return &Grammar{} }
 
 // ---------------------------------------------------------------------------
 // Meta-command catalog
@@ -112,12 +104,6 @@ func SlashMetaDescription(name string) string {
 		return desc
 	}
 	return "คำสั่งตั้งค่า"
-}
-
-// SlashMetaLegend returns a legend string explaining the command category
-// colour scheme.
-func SlashMetaLegend() string {
-	return "คีย์เดอร์คำสั่ง: [setting] คำสั่งตั้งค่า (ส้ม), [tool] คำสั่งเครื่องมือ (น้ำเงิน)"
 }
 
 // ---------------------------------------------------------------------------
@@ -245,38 +231,6 @@ func IsSlashToken(input string) bool {
 		return false
 	}
 	return strings.IndexAny(rest, " \t") == -1
-}
-
-// SlashSuggestions returns command names that match the prefix typed after
-// "/". It combines skill names from commandSet with built-in slash meta
-// commands.
-func SlashSuggestions(input string, commandSet map[string]struct{}) []string {
-	if !IsSlashToken(input) {
-		return nil
-	}
-
-	candidates := map[string]struct{}{}
-	for name := range commandSet {
-		name = strings.ToLower(strings.TrimSpace(name))
-		if name == "" {
-			continue
-		}
-		candidates[name] = struct{}{}
-	}
-	for _, name := range slashSuggestionCandidates {
-		candidates[name] = struct{}{}
-	}
-
-	rawToken := strings.TrimPrefix(input, "/")
-	match := strings.ToLower(strings.TrimSpace(rawToken))
-	suggestions := make([]string, 0, len(candidates))
-	for name := range candidates {
-		if strings.HasPrefix(name, match) {
-			suggestions = append(suggestions, "/"+name)
-		}
-	}
-	sort.Strings(suggestions)
-	return suggestions
 }
 
 // ---------------------------------------------------------------------------

@@ -75,12 +75,6 @@ func DefaultBaseURL(name string) string {
 	return provider.DefaultBaseURL(name)
 }
 
-// RuntimeForProvider returns the runtime class as a string by delegating
-// to provider.RuntimeFor.
-func RuntimeForProvider(name string) string {
-	return string(provider.RuntimeFor(name))
-}
-
 // ModelChoices returns the static recommended-model list for a provider.
 // This is a fallback hint only; live model lists should be fetched via
 // ModelChoicesWithEndpointAndAPIKey when possible.
@@ -96,16 +90,6 @@ func ResolveModelAPIKey(name string) string {
 // FormatProviderMenuLabel delegates to provider.MenuLabel.
 func FormatProviderMenuLabel(name string, keyFound bool) string {
 	return provider.MenuLabel(name, keyFound)
-}
-
-// FormatSupportedProviderMenu delegates to FormatProviderMenuLabel.
-func FormatSupportedProviderMenu(name string, keyFound bool) string {
-	return FormatProviderMenuLabel(name, keyFound)
-}
-
-// ProviderEnvKeys delegates to provider.EnvKeys.
-func ProviderEnvKeys() []string {
-	return provider.EnvKeys()
 }
 
 // ResolveStatus builds a human-readable status line for a provider/model
@@ -138,10 +122,6 @@ func resolveStatusModelLabel(prov, model string) string {
 // Live model discovery (HTTP) — stays in internal/model
 // ---------------------------------------------------------------------------
 
-func ModelChoicesWithEndpointAndAPIKEY(p, baseURL, apiKey string) ([]string, error) {
-	return ModelChoicesWithEndpointAndAPIKey(p, baseURL, apiKey)
-}
-
 // ModelChoicesWithEndpointAndAPIKey fetches model names from the
 // provider's API. This is the live discovery path; static fallbacks
 // live in provider.RecommendedModels.
@@ -170,12 +150,6 @@ func ModelChoicesWithEndpointAndAPIKey(p, baseURL, apiKey string) ([]string, err
 	default:
 		return nil, fmt.Errorf("provider %q does not support remote model discovery", canonical)
 	}
-}
-
-// ModelChoicesWithEndpoint delegates to ModelChoicesWithEndpointAndAPIKey
-// using the resolved API key.
-func ModelChoicesWithEndpoint(p, baseURL string) ([]string, error) {
-	return ModelChoicesWithEndpointAndAPIKey(p, baseURL, provider.ResolveAPIKey(p))
 }
 
 // ---------------------------------------------------------------------------

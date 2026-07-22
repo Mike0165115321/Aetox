@@ -249,21 +249,6 @@ func LoadPermissions() (safety.PermissionConfig, error) {
 	return cfg, nil
 }
 
-func SavePermissions(cfg safety.PermissionConfig) error {
-	path, err := PermissionsPath()
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	payload, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, payload, 0o600)
-}
-
 // MCPServerConfig is the persisted, provider-agnostic description of one local
 // MCP server (phase 1: stdio only — see MCP-SUPPORT-PLAN.md §4). It is a plain
 // DTO so this package needn't depend on internal/mcp; the wiring layer

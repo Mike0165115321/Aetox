@@ -116,21 +116,6 @@ func TestParse_ConversationAndSlash(t *testing.T) {
 	}
 }
 
-func TestSlashSuggestions_UsesCatalog(t *testing.T) {
-	commandSet := BuildCommandSet([]string{"list", "time", "shell"})
-	got := SlashSuggestions("/s", commandSet)
-	want := []string{"/shell"}
-	// keep deterministic output for prefix match.
-	if len(got) != len(want) {
-		t.Fatalf("count: want %d got %d (%#v)", len(want), len(got), got)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("suggestion[%d]: want %q got %q", i, want[i], got[i])
-		}
-	}
-}
-
 func TestParseArgs_ChatAndMessage(t *testing.T) {
 	tests := []struct {
 		name    string

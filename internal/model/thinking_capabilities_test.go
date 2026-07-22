@@ -164,81 +164,7 @@ func TestFallbackThinkingCapabilitiesRemainAvailable(t *testing.T) {
 	}
 }
 
-func TestBuildCapabilityCatalog_DiscoveredModelsEnriched(t *testing.T) {
-	catalog := BuildCapabilityCatalog("openai", []string{"gpt-5.2", "gpt-4o"})
-	if len(catalog) != 2 {
-		t.Fatalf("expected 2 entries, got %d", len(catalog))
-	}
-	for _, entry := range catalog {
-		if !entry.Discovered {
-			t.Fatalf("expected Discovered=true for %s", entry.Model)
-		}
-		if entry.Thinking.Supported != true {
-			t.Fatalf("expected Supported=true for %s, got %v", entry.Model, entry.Thinking)
-		}
-		if entry.Provider != "openai" {
-			t.Fatalf("expected provider openai, got %s", entry.Provider)
-		}
-	}
-}
-
-func TestBuildCapabilityCatalog_UnknownModelGetsConservativeFallback(t *testing.T) {
-	catalog := BuildCapabilityCatalog("gemini", []string{"gemini-4-ultra-future"})
-	if len(catalog) != 1 {
-		t.Fatalf("expected 1 entry, got %d", len(catalog))
-	}
-	entry := catalog[0]
-	if !entry.Thinking.Supported {
-		t.Fatalf("expected Supported=true for unknown future model, got %v", entry.Thinking)
-	}
-	if entry.Thinking.Source != "conservative-fallback" {
-		t.Fatalf("expected Source=conservative-fallback, got %s", entry.Thinking.Source)
-	}
-	if !entry.Discovered {
-		t.Fatalf("expected Discovered=true for discovered model")
-	}
-	levels := entry.Thinking.Levels
-	if len(levels) == 0 {
-		t.Fatalf("expected non-zero levels for conservative fallback")
-	}
-}
-
-func TestBuildCapabilityCatalog_UnknownProviderNotSupported(t *testing.T) {
-	catalog := BuildCapabilityCatalog("unknown-provider", []string{"some-model"})
-	if len(catalog) != 1 {
-		t.Fatalf("expected 1 audit entry for unknown provider, got %d entries", len(catalog))
-	}
-	entry := catalog[0]
-	if entry.Thinking.Supported {
-		t.Fatalf("expected Supported=false for unknown provider, got %v", entry.Thinking)
-	}
-	if entry.Thinking.Source != "unknown-provider" {
-		t.Fatalf("expected Source=unknown-provider, got %s", entry.Thinking.Source)
-	}
-	if !entry.Discovered {
-		t.Fatalf("expected Discovered=true for discovered model on unknown provider")
-	}
-}
-
-func TestBuildCapabilityCatalog_DocumentedModelKeepsSource(t *testing.T) {
-	catalog := BuildCapabilityCatalog("deepseek", []string{"deepseek-v4-flash"})
-	if len(catalog) != 1 {
-		t.Fatalf("expected 1 entry, got %d", len(catalog))
-	}
-	if catalog[0].Thinking.Source != "deepseek-docs" {
-		t.Fatalf("expected deepseek-docs source, got %s", catalog[0].Thinking.Source)
-	}
-
-	catalog = BuildCapabilityCatalog("openai", []string{"gpt-5.1"})
-	if len(catalog) != 1 {
-		t.Fatalf("expected 1 entry, got %d", len(catalog))
-	}
-	if catalog[0].Thinking.Source != "openai-chat-docs" {
-		t.Fatalf("expected openai-chat-docs source, got %s", catalog[0].Thinking.Source)
-	}
-}
-
-func TestBuildCapabilityCatalog_KnownPrefixesResolveToSupported(t *testing.T) {
+func TestResolveThinkingCapabilities_KnownPrefixesResolveToSupported(t *testing.T) {
 	tests := []struct {
 		provider string
 		models   []string
@@ -256,38 +182,6 @@ func TestBuildCapabilityCatalog_KnownPrefixesResolveToSupported(t *testing.T) {
 				t.Errorf("%s/%s: expected Supported=true, got Source=%q", tt.provider, model, caps.Source)
 			}
 		}
-	}
-}
-
-func TestBuildCapabilityCatalog_StaticModeNoDiscovery(t *testing.T) {
-	catalog := BuildCapabilityCatalog("gemini", nil)
-	if len(catalog) == 0 {
-		t.Fatalf("expected non-empty catalog from static models")
-	}
-	for _, entry := range catalog {
-		if entry.Discovered {
-			t.Fatalf("expected Discovered=false in static mode for %s", entry.Model)
-		}
-	}
-}
-
-func TestBuildCapabilityCatalog_EmptyDiscoveredListReturnsEmpty(t *testing.T) {
-	catalog := BuildCapabilityCatalog("openai", []string{})
-	if len(catalog) != 0 {
-		t.Fatalf("expected empty catalog for empty discovered list, got %d entries", len(catalog))
-	}
-}
-
-func TestBuildCapabilityCatalog_DeduplicatesModelsPreservingFirst(t *testing.T) {
-	catalog := BuildCapabilityCatalog("openai", []string{"gpt-5.2", "gpt-4o", "gpt-5.2", "Gpt-5.2"})
-	if len(catalog) != 2 {
-		t.Fatalf("expected 2 deduplicated entries, got %d", len(catalog))
-	}
-	if catalog[0].Model != "gpt-5.2" {
-		t.Fatalf("expected first entry gpt-5.2, got %s", catalog[0].Model)
-	}
-	if catalog[1].Model != "gpt-4o" {
-		t.Fatalf("expected second entry gpt-4o, got %s", catalog[1].Model)
 	}
 }
 

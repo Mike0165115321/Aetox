@@ -362,21 +362,6 @@ func RuntimeFor(name string) Runtime {
 	return s.Runtime
 }
 
-// CapabilitiesFor returns the Capabilities for a provider. Returns empty
-// capabilities when the provider is unknown.
-//
-// IMPORTANT: These flags reflect what the provider API surface supports.
-// Individual models behind the same provider may differ. A future
-// model-level catalog or runtime discovery layer should perform
-// per-model capability checks.
-func CapabilitiesFor(name string) Capabilities {
-	s, ok := Lookup(name)
-	if !ok {
-		return Capabilities{}
-	}
-	return s.Capabilities
-}
-
 // ---------------------------------------------------------------------------
 // Validation and helpers
 // ---------------------------------------------------------------------------
@@ -406,25 +391,4 @@ func MenuLabel(name string, keyFound bool) string {
 		return label + " (env key found)"
 	}
 	return label + " (needs key)"
-}
-
-// EnvKeys returns a deduplicated, sorted list of all environment variable
-// names referenced by any provider in the catalog.
-func EnvKeys() []string {
-	seen := map[string]struct{}{}
-	out := make([]string, 0, 32)
-	for _, canonical := range canonicalOrder {
-		for _, key := range catalog[canonical].envKeys {
-			key = strings.TrimSpace(key)
-			if key == "" {
-				continue
-			}
-			if _, ok := seen[key]; ok {
-				continue
-			}
-			seen[key] = struct{}{}
-			out = append(out, key)
-		}
-	}
-	return out
 }

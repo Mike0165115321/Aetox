@@ -552,45 +552,6 @@ func TestParse_NilCommandSet(t *testing.T) {
 	}
 }
 
-func TestSlashSuggestions_UsesCatalog(t *testing.T) {
-	commandSet := BuildCommandSet([]string{"list", "time", "shell"})
-	got := SlashSuggestions("/s", commandSet)
-	want := []string{"/shell"}
-	if len(got) != len(want) {
-		t.Fatalf("count: want %d got %d (%#v)", len(want), len(got), got)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("suggestion[%d]: want %q got %q", i, want[i], got[i])
-		}
-	}
-}
-
-func TestSlashSuggestions_NoMatch(t *testing.T) {
-	commandSet := BuildCommandSet([]string{"list", "time", "shell"})
-	got := SlashSuggestions("/z", commandSet)
-	if len(got) != 0 {
-		t.Fatalf("expected no suggestions for /z, got %#v", got)
-	}
-}
-
-func TestSlashSuggestions_NotSlashToken(t *testing.T) {
-	commandSet := BuildCommandSet([]string{"list"})
-	got := SlashSuggestions("list", commandSet)
-	if got != nil {
-		t.Fatalf("expected nil for non-slash input, got %#v", got)
-	}
-}
-
-func TestSlashSuggestions_IncludesBuiltins(t *testing.T) {
-	commandSet := BuildCommandSet([]string{"list"})
-	got := SlashSuggestions("/m", commandSet)
-	// should include /model from built-in candidates
-	if len(got) != 1 || got[0] != "/model" {
-		t.Fatalf("expected [/model], got %#v", got)
-	}
-}
-
 func TestParseTokens(t *testing.T) {
 	tests := []struct {
 		input    string
@@ -715,19 +676,5 @@ func TestSlashSuggestionCandidates(t *testing.T) {
 	candidates := SlashSuggestionCandidates()
 	if len(candidates) == 0 {
 		t.Fatal("expected non-empty slash suggestion candidates")
-	}
-}
-
-func TestSlashMetaLegend(t *testing.T) {
-	legend := SlashMetaLegend()
-	if legend == "" {
-		t.Fatal("expected non-empty legend")
-	}
-}
-
-func TestNew(t *testing.T) {
-	g := New()
-	if g == nil {
-		t.Fatal("expected non-nil Grammar")
 	}
 }

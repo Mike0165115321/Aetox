@@ -2,8 +2,6 @@ package model
 
 import (
 	"strings"
-
-	"github.com/Mike0165115321/Aetox/internal/provider"
 )
 
 type ThinkingRuntime string
@@ -89,11 +87,6 @@ func ResolveThinkingCapabilities(provider, modelName string) ThinkingCapabilitie
 func SupportedThinkingLevels(provider, modelName string) []string {
 	caps := ResolveThinkingCapabilities(provider, modelName)
 	return append([]string{}, caps.Levels...)
-}
-
-func DefaultThinkingLevel(provider, modelName string) string {
-	caps := ResolveThinkingCapabilities(provider, modelName)
-	return strings.TrimSpace(caps.Default)
 }
 
 func SupportsThinkingLevel(provider, modelName, level string) bool {
@@ -350,62 +343,3 @@ func cloneThinkingCapabilities(caps ThinkingCapabilities) ThinkingCapabilities {
 	return cloned
 }
 
-type ModelCapability struct {
-	Provider   string               `json:"provider"`
-	Model      string               `json:"model"`
-	Discovered bool                 `json:"discovered"`
-	Thinking   ThinkingCapabilities `json:"thinking"`
-}
-
-func BuildCapabilityCatalog(providerName string, discoveredModels []string) []ModelCapability {
-	canonical := NormalizeProvider(providerName)
-	if canonical == "" || canonical == "noop" {
-		return nil
-	}
-	_, known := ProviderInfo(canonical)
-
-	var models []string
-	var discovered bool
-	if discoveredModels == nil {
-		if !known {
-			return nil
-		}
-		models = provider.RecommendedModels(canonical)
-		discovered = false
-	} else {
-		models = discoveredModels
-		discovered = true
-	}
-
-	if len(models) == 0 {
-		return nil
-	}
-
-	seen := make(map[string]struct{}, len(models))
-	result := make([]ModelCapability, 0, len(models))
-	for _, model := range models {
-		model = strings.TrimSpace(model)
-		if model == "" {
-			continue
-		}
-		lower := strings.ToLower(model)
-		if _, ok := seen[lower]; ok {
-			continue
-		}
-		seen[lower] = struct{}{}
-
-		var thinking ThinkingCapabilities
-		if known {
-			thinking = ResolveThinkingCapabilities(canonical, model)
-		} else {
-			thinking = unknownProviderCapabilities
-		}
-		result = append(result, ModelCapability{
-			Provider:   canonical,
-			Model:      model,
-			Discovered: discovered,
-			Thinking:   thinking,
-		})
-	}
-	return result
-}
