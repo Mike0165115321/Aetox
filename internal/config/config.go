@@ -180,6 +180,22 @@ func LegacyPreferencePath() string {
 	return filepath.Join(configDir, "aetox-cli", "model-preference.json")
 }
 
+// UserGlobalContextPath is where a user's cross-project AETOX.md instructions
+// live (the prompt layer's "user global" layer — ARCHITECTURE.md §11), same
+// directory as PreferencePath/PermissionsPath.
+func UserGlobalContextPath() (string, error) {
+	configDir, err := os.UserConfigDir()
+	if err != nil || configDir == "" {
+		home, _ := os.UserHomeDir()
+		if home != "" {
+			configDir = filepath.Join(home, ".config")
+		} else {
+			configDir = os.TempDir()
+		}
+	}
+	return filepath.Join(configDir, "aetox", "AETOX.md"), nil
+}
+
 func PermissionsPath() (string, error) {
 	configDir, err := os.UserConfigDir()
 	if err != nil || configDir == "" {

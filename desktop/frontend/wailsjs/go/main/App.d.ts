@@ -28,8 +28,6 @@ export function BrowserTypeRef(arg1:string,arg2:number,arg3:string):Promise<void
 
 export function CancelTurn():Promise<void>;
 
-export function CancelTurn():Promise<void>;
-
 export function CommandHistory():Promise<Array<string>>;
 
 export function CurrentSessionID():Promise<string>;

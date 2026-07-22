@@ -18,6 +18,7 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/debuglog"
 	"github.com/Mike0165115321/Aetox/internal/mcp"
 	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mike0165115321/Aetox/internal/prompt"
 	"github.com/Mike0165115321/Aetox/internal/safety"
 	"github.com/Mike0165115321/Aetox/internal/skill"
 	"github.com/Mike0165115321/Aetox/internal/think"
@@ -296,7 +297,7 @@ func main() {
 	agent := cognitive.NewAgent(cognitive.AgentConfig{
 		Provider:     bootstrapResult.Provider,
 		Model:        currentConfig.ModelName,
-		SystemPrompt: buildSystemPrompt(cfg.SandboxRoot),
+		SystemPrompt: prompt.Build(prompt.SurfaceCLI, cfg.SandboxRoot),
 	})
 
 	permissions, permErr := config.LoadPermissions()
@@ -440,25 +441,13 @@ func switchProvider(ctx context.Context, cfg *config.Config) (app.ModelSwitchRes
 		Agent: cognitive.NewAgent(cognitive.AgentConfig{
 			Provider:     bootstrapResult.Provider,
 			Model:        cfg.ModelName,
-			SystemPrompt: buildSystemPrompt(cfg.SandboxRoot),
+			SystemPrompt: prompt.Build(prompt.SurfaceCLI, cfg.SandboxRoot),
 		}),
 		ModelStatus:        modelStatus,
 		ModelContextTokens: cfg.ModelContextTokens,
 		ThinkLevel:         think.Level(cfg.ThinkLevel),
 		Changed:            true,
 	}, nil
-}
-
-func buildSystemPrompt(root string) string {
-	sandboxRoot := strings.TrimSpace(root)
-	if sandboxRoot == "" {
-		sandboxRoot = "(unknown)"
-	}
-	return "You are Aetox, a concise assistant in Thai and English " +
-		"that helps users through a terminal conversation.\n" +
-		"Current working sandbox root is: " + sandboxRoot + ".\n" +
-		"Do NOT proactively mention or leak this path to the user in general greetings or unrelated conversation " +
-		"unless they explicitly ask about files, directories, paths, or workspace locations."
 }
 
 func resolveDisplayUser() string {

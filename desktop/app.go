@@ -22,6 +22,7 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/debuglog"
 	"github.com/Mike0165115321/Aetox/internal/mcp"
 	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mike0165115321/Aetox/internal/prompt"
 	"github.com/Mike0165115321/Aetox/internal/safety"
 	"github.com/Mike0165115321/Aetox/internal/skill"
 
@@ -745,7 +746,7 @@ func bootstrapFromConfig(cfg config.Config, onToolAction func(action, detail str
 	agent := cognitive.NewAgent(cognitive.AgentConfig{
 		Provider:     bootstrapResult.Provider,
 		Model:        cfg.ModelName,
-		SystemPrompt: buildSystemPrompt(cfg.SandboxRoot),
+		SystemPrompt: prompt.Build(prompt.SurfaceDesktop, cfg.SandboxRoot),
 	})
 
 	registry := skill.NewDefaultRegistry(skill.RegistryOptions{
@@ -816,33 +817,26 @@ func persistModelPreference(cfg config.Config) {
 	_ = config.SaveModelPreference(pref)
 }
 
-func buildSystemPrompt(root string) string {
-	sandboxRoot := strings.TrimSpace(root)
-	if sandboxRoot == "" {
-		sandboxRoot = "(unknown)"
-	}
-	return "You are Aetox, a concise assistant in Thai and English " +
-		"that helps users through a desktop chat UI.\n" +
-		"Current working sandbox root is: " + sandboxRoot + ".\n" +
-		"Do NOT proactively mention or leak this path to the user in general greetings or unrelated conversation " +
-		"unless they explicitly ask about files, directories, paths, or workspace locations."
-}
-
-const governanceFileName = "Aetox.md"
-
+// projectStatus reports the governance file the prompt layer would actually
+// load for this root (internal/prompt.ProjectContextFile), so the UI badge
+// reflects reality instead of just stat-ing a hardcoded name.
 func projectStatus(root string) ProjectStatus {
 	root = strings.TrimSpace(root)
 	name := ""
 	if root != "" && root != "." {
 		name = filepath.Base(root)
 	}
-	_, statErr := os.Stat(filepath.Join(root, governanceFileName))
+	governancePath := prompt.ProjectContextFile(root)
+	governanceFile := prompt.ProjectContextFileNames[0]
+	if governancePath != "" {
+		governanceFile = filepath.Base(governancePath)
+	}
 	return ProjectStatus{
 		Name:             name,
 		Path:             root,
 		Branch:           readGitBranch(root),
-		GovernanceFile:   governanceFileName,
-		GovernanceLoaded: statErr == nil,
+		GovernanceFile:   governanceFile,
+		GovernanceLoaded: governancePath != "",
 	}
 }
 
