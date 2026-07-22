@@ -26,7 +26,6 @@ import (
 )
 
 const appVersion = "0.4.0-dev"
-const defaultAgentMaxToolCalls = 16
 
 var (
 	noBanner     bool
@@ -298,7 +297,6 @@ func main() {
 		Provider:     bootstrapResult.Provider,
 		Model:        currentConfig.ModelName,
 		SystemPrompt: buildSystemPrompt(cfg.SandboxRoot),
-		MaxToolCalls: defaultAgentMaxToolCalls,
 	})
 
 	permissions, permErr := config.LoadPermissions()
