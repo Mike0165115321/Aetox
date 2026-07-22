@@ -12,7 +12,7 @@
   let profileOpen = $state(false)
   // svelte-ignore state_referenced_locally
   let nameDraft = $state(profileName)
-  const avatarInitial = $derived((profileName.trim()[0] ?? '🦅').toUpperCase())
+  const avatarInitial = $derived((profileName.trim()[0] ?? 'A').toUpperCase())
 
   function saveName() {
     profileName = nameDraft.trim()

@@ -10,6 +10,10 @@ export function BrowserBack(arg1) {
   return window['go']['main']['App']['BrowserBack'](arg1);
 }
 
+export function BrowserClickRef(arg1, arg2) {
+  return window['go']['main']['App']['BrowserClickRef'](arg1, arg2);
+}
+
 export function BrowserClose(arg1) {
   return window['go']['main']['App']['BrowserClose'](arg1);
 }
@@ -40,6 +44,10 @@ export function BrowserSetBounds(arg1, arg2, arg3, arg4, arg5) {
 
 export function BrowserSetVisible(arg1, arg2) {
   return window['go']['main']['App']['BrowserSetVisible'](arg1, arg2);
+}
+
+export function BrowserTypeRef(arg1, arg2, arg3) {
+  return window['go']['main']['App']['BrowserTypeRef'](arg1, arg2, arg3);
 }
 
 export function CommandHistory() {
@@ -98,6 +106,10 @@ export function OpenProjectFolder() {
   return window['go']['main']['App']['OpenProjectFolder']();
 }
 
+export function PickAttachmentImage() {
+  return window['go']['main']['App']['PickAttachmentImage']();
+}
+
 export function ProjectTree() {
   return window['go']['main']['App']['ProjectTree']();
 }
@@ -110,6 +122,10 @@ export function ReadFile(arg1) {
   return window['go']['main']['App']['ReadFile'](arg1);
 }
 
+export function ReadImageDataURL(arg1) {
+  return window['go']['main']['App']['ReadImageDataURL'](arg1);
+}
+
 export function RelativizePath(arg1) {
   return window['go']['main']['App']['RelativizePath'](arg1);
 }
@@ -120,6 +136,10 @@ export function RemoveMCPServer(arg1) {
 
 export function RequiresAPIKey(arg1) {
   return window['go']['main']['App']['RequiresAPIKey'](arg1);
+}
+
+export function SaveChatImage(arg1) {
+  return window['go']['main']['App']['SaveChatImage'](arg1);
 }
 
 export function SearchSessions(arg1) {

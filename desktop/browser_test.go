@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
 
 func TestSameOrigin(t *testing.T) {
 	cases := []struct {
@@ -69,7 +73,7 @@ func TestOnMessageRejectsTextWithoutPendingRequest(t *testing.T) {
 
 func TestOnMessageRejectsTextWithWrongToken(t *testing.T) {
 	h := &browserHost{app: &App{}}
-	ch := make(chan string, 1)
+	ch := make(chan browserSnapshot, 1)
 	tab := &browserTab{textCh: ch, textToken: "real-token"}
 
 	h.onMessage("tab1", tab, `{"__aetox":"text","token":"forged-token","url":"https://example.com/","text":"fake"}`, "https://example.com/")
@@ -83,17 +87,52 @@ func TestOnMessageRejectsTextWithWrongToken(t *testing.T) {
 
 func TestOnMessageAcceptsTextWithMatchingToken(t *testing.T) {
 	h := &browserHost{app: &App{}}
-	ch := make(chan string, 1)
+	ch := make(chan browserSnapshot, 1)
 	tab := &browserTab{textCh: ch, textToken: "real-token"}
 
 	h.onMessage("tab1", tab, `{"__aetox":"text","token":"real-token","url":"https://example.com/","text":"real content"}`, "https://example.com/")
 
 	select {
 	case got := <-ch:
-		if got != "real content" {
-			t.Errorf("channel received %q, want %q", got, "real content")
+		if got.Text != "real content" {
+			t.Errorf("channel received %q, want %q", got.Text, "real content")
 		}
 	default:
 		t.Fatal("channel received nothing, want the matching-token message delivered")
+	}
+}
+
+func TestClickScriptEmbedsRef(t *testing.T) {
+	js := clickScript(42)
+	if !strings.Contains(js, `[data-aetox-ref="42"]`) {
+		t.Errorf("clickScript(42) = %q, want it to target [data-aetox-ref=\"42\"]", js)
+	}
+}
+
+// typeScript embeds arbitrary user/page-adjacent text into a JS string via
+// json.Marshal — this is the one thing here worth a real test, since getting
+// that escaping wrong (quotes, backslashes, newlines) would either break the
+// generated script or, worse, let attacker-controlled text break out of the
+// string literal into executable JS.
+func TestTypeScriptEscapesTextSafely(t *testing.T) {
+	cases := []string{
+		`hello`,
+		`it's a "quoted" string`,
+		`backslash \ and newline` + "\n" + `continues`,
+		`</script><script>alert(1)</script>`,
+		``,
+	}
+	for _, text := range cases {
+		js := typeScript(7, text)
+		wantEncoded, err := json.Marshal(text)
+		if err != nil {
+			t.Fatalf("json.Marshal(%q): %v", text, err)
+		}
+		if !strings.Contains(js, string(wantEncoded)) {
+			t.Errorf("typeScript(7, %q) does not contain the expected JSON-escaped literal %s\ngot: %s", text, wantEncoded, js)
+		}
+		if !strings.Contains(js, `[data-aetox-ref="7"]`) {
+			t.Errorf("typeScript(7, %q) = %q, want it to target [data-aetox-ref=\"7\"]", text, js)
+		}
 	}
 }

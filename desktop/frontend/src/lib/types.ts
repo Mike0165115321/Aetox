@@ -53,6 +53,16 @@ export interface ChatMessage {
   time: string
   /** optional badge, e.g. "Thinking (low)" */
   tag?: string
+  /** data: URL of an attached image, for inline preview only (not sent to the model). */
+  imageDataUrl?: string
+}
+
+/** An image attached in the composer, staged before send. */
+export interface PendingImage {
+  /** Sandbox-relative path — what the model/tools (e.g. image_ocr) operate on. */
+  relPath: string
+  /** data: URL for the composer's own thumbnail preview. */
+  dataUrl: string
 }
 
 export type StepStatus = 'done' | 'active' | 'wait'
@@ -121,6 +131,12 @@ export interface CockpitState {
   openFiles: OpenFile[]
   /** 'chat' or an open file's path — which tab the main panel currently shows. */
   activeView: string
+  /** True from the moment a message is sent until the reply (or an error) arrives. */
+  awaitingReply: boolean
+  /** Live turn-progress text from the Go engine's status reporter ("กำลังคิดคำตอบ...", etc), '' when idle. */
+  agentStatus: string
+  /** Image staged in the composer, not yet sent. */
+  pendingImage: PendingImage | null
 }
 
 /** A blank, well-formed state so the UI renders before the source hydrates. */
@@ -138,5 +154,8 @@ export function emptyCockpitState(): CockpitState {
     commandHistory: [],
     openFiles: [],
     activeView: 'chat',
+    awaitingReply: false,
+    agentStatus: '',
+    pendingImage: null,
   }
 }

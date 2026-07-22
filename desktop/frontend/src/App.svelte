@@ -9,13 +9,18 @@
   import {
     cockpit, sendUserMessage, loadRealState, openFolder, openFile,
     switchProvider, switchThinkLevel, switchApprovalMode,
-    switchModel, submitAPIKey, setActiveView, closeFile,
+    switchModel, submitAPIKey, setActiveView, closeFile, applyAgentStatus,
+    attachImageFromPath,
   } from './lib/stores/cockpit.svelte'
   import { RelativizePath } from '../wailsjs/go/main/App'
-  import { OnFileDrop, OnFileDropOff } from '../wailsjs/runtime/runtime'
+  import { OnFileDrop, OnFileDropOff, EventsOn } from '../wailsjs/runtime/runtime'
 
   function fileLabel(path: string): string {
     return path.split('/').pop() ?? path
+  }
+
+  function withinRect(r: DOMRect, x: number, y: number): boolean {
+    return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom
   }
 
   // cockpit starts as emptyCockpitState(); loadRealState() fills project/model in
@@ -62,6 +67,8 @@
   onMount(() => {
     loadRealState()
 
+    const offAgentStatus = EventsOn('agent:status', applyAgentStatus)
+
     for (const panel of Object.values(panels)) {
       const stored = localStorage.getItem(panel.storageKey)
       if (stored) {
@@ -72,9 +79,18 @@
 
     // Drop a file from Explorer anywhere on the window to open it as a tab,
     // same as clicking it in the sidebar tree — lets the user hand the AI a
-    // file without hunting for it in the project tree first.
-    OnFileDrop(async (_x, _y, paths) => {
+    // file without hunting for it in the project tree first. An image
+    // dropped specifically over the chat composer attaches to the message
+    // instead — OnFileDrop gives window coordinates, so we route on those.
+    const imageExtRe = /\.(png|jpe?g|gif|webp|bmp)$/i
+    OnFileDrop(async (x, y, paths) => {
+      const composerEl = document.querySelector('.composer')
+      const overComposer = !!composerEl && withinRect(composerEl.getBoundingClientRect(), x, y)
       for (const path of paths) {
+        if (overComposer && imageExtRe.test(path)) {
+          await attachImageFromPath(path)
+          continue
+        }
         try {
           const relPath = await RelativizePath(path)
           await openFile(relPath)
@@ -83,12 +99,21 @@
         }
       }
     }, false)
-    return () => OnFileDropOff()
+    return () => {
+      OnFileDropOff()
+      offAgentStatus()
+    }
   })
 
   let draggingSidebar = $state(false)
   let draggingInspector = $state(false)
   let inspectorCollapsed = $state(localStorage.getItem('inspectorCollapsed') === 'true')
+  let sidebarCollapsed = $state(localStorage.getItem('sidebarCollapsed') === 'true')
+
+  function toggleSidebar() {
+    sidebarCollapsed = !sidebarCollapsed
+    localStorage.setItem('sidebarCollapsed', String(sidebarCollapsed))
+  }
 
   function toggleInspector() {
     inspectorCollapsed = !inspectorCollapsed
@@ -143,6 +168,9 @@
     if (e.ctrlKey && e.altKey && e.key.toLowerCase() === 'b') {
       e.preventDefault()
       toggleInspector()
+    } else if (e.ctrlKey && e.altKey && e.key.toLowerCase() === 's') {
+      e.preventDefault()
+      toggleSidebar()
     } else if (e.ctrlKey && !e.altKey && e.key === ',') {
       e.preventDefault()
       setActiveView('settings')
@@ -152,10 +180,11 @@
 
 <svelte:window onkeydown={onKeydown} />
 
-<div class="app" class:inspector-collapsed={inspectorCollapsed}>
+<div class="app" class:inspector-collapsed={inspectorCollapsed} class:sidebar-collapsed={sidebarCollapsed}>
   <TopBar
     project={cockpit.project} onOpenFolder={openFolder}
     inspectorCollapsed={inspectorCollapsed} onToggleInspector={toggleInspector}
+    sidebarCollapsed={sidebarCollapsed} onToggleSidebar={toggleSidebar}
   />
   <Sidebar onOpenSettings={() => setActiveView('settings')} />
   <div
@@ -185,6 +214,8 @@
         task={cockpit.task}
         model={cockpit.model}
         project={cockpit.project}
+        awaitingReply={cockpit.awaitingReply}
+        agentStatus={cockpit.agentStatus}
         onSend={sendUserMessage}
         onSwitchProvider={switchProvider}
         onSwitchThinkLevel={switchThinkLevel}

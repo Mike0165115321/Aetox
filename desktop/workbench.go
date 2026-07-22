@@ -79,26 +79,36 @@ func (a *App) workbenchOpenBrowser(ctx context.Context, url string) (title, fina
 	return title, finalURL, nil
 }
 
-// workbenchReadBrowser reads the page currently shown in the workbench browser.
-func (a *App) workbenchReadBrowser() (title, url, text string, err error) {
+// workbenchLastTabID returns the id of the most recently opened/shown
+// workbench browser tab — the target for browser_read/browser_click/browser_type.
+func (a *App) workbenchLastTabID() (string, error) {
 	h := a.browsers
 	if h == nil {
-		return "", "", "", fmt.Errorf("no browser tab open in the workbench")
+		return "", fmt.Errorf("no browser tab open in the workbench")
 	}
 	h.mu.Lock()
 	id := h.lastID
 	h.mu.Unlock()
 	if id == "" {
-		return "", "", "", fmt.Errorf("no browser tab open in the workbench")
+		return "", fmt.Errorf("no browser tab open in the workbench")
 	}
-	text, err = a.BrowserGetText(id)
+	return id, nil
+}
+
+// workbenchReadBrowser reads the page currently shown in the workbench browser.
+func (a *App) workbenchReadBrowser() (title, url, text string, elements []browserElement, err error) {
+	id, err := a.workbenchLastTabID()
 	if err != nil {
-		return "", "", "", err
+		return "", "", "", nil, err
 	}
-	if t := h.tab(id); t != nil {
+	snap, err := a.browserSnapshot(id)
+	if err != nil {
+		return "", "", "", nil, err
+	}
+	if t := a.browsers.tab(id); t != nil {
 		title, url = t.meta()
 	}
-	return title, url, text, nil
+	return title, url, snap.Text, snap.Elements, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -176,7 +186,7 @@ func (*browserReadSkill) Description() string {
 
 func (*browserReadSkill) ToolDefinition() model.ToolDefinition {
 	return toolDef("browser_read",
-		"Read the visible text of the page currently open in the workbench browser. Use after browser_open, or when the user asks about the page they have open.",
+		"Read the visible text of the page currently open in the workbench browser, plus a numbered list of clickable/typeable elements. Use after browser_open, or when the user asks about the page they have open. Use the [ref] numbers with browser_click/browser_type.",
 		map[string]any{"type": "object", "properties": map[string]any{}})
 }
 
@@ -186,7 +196,7 @@ func (s *browserReadSkill) ExecuteTool(ctx context.Context, _ map[string]any) (s
 
 func (s *browserReadSkill) Execute(_ context.Context, _ skill.Input) (skill.Output, error) {
 	start := time.Now()
-	title, url, text, err := s.app.workbenchReadBrowser()
+	title, url, text, elements, err := s.app.workbenchReadBrowser()
 	out := skill.Output{
 		Name:       "browser_read",
 		Command:    "browser_read",
@@ -204,8 +214,121 @@ func (s *browserReadSkill) Execute(_ context.Context, _ skill.Input) (skill.Outp
 		text = text[:maxChars] + "\n... (truncated)"
 		truncated = true
 	}
-	out.Content = fmt.Sprintf("# %s\nURL: %s\n\n%s", title, url, text)
+	var b strings.Builder
+	fmt.Fprintf(&b, "# %s\nURL: %s\n", title, url)
+	if len(elements) > 0 {
+		b.WriteString("\nClickable/typeable elements (use browser_click/browser_type with ref):\n")
+		for _, el := range elements {
+			role := el.Role
+			if role == "" {
+				role = el.Tag
+			}
+			fmt.Fprintf(&b, "[%d] %s: %q\n", el.Ref, role, el.Text)
+		}
+	}
+	fmt.Fprintf(&b, "\n%s", text)
+	out.Content = b.String()
 	out.RawOutput = out.Content
 	out.Truncated = truncated
+	return out, nil
+}
+
+type browserClickSkill struct{ app *App }
+
+func (*browserClickSkill) Name() string { return "browser_click" }
+
+func (*browserClickSkill) Description() string {
+	return "คลิก element ในหน้าเว็บของ workbench ตาม ref จาก browser_read"
+}
+
+func (*browserClickSkill) ToolDefinition() model.ToolDefinition {
+	return toolDef("browser_click",
+		"Click an element on the page currently open in the workbench browser. ref is one of the [n] numbers browser_read returns — call browser_read first to get valid refs, then browser_read again afterwards to see the result.",
+		map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"ref": map[string]any{"type": "integer", "description": "Element ref number from browser_read's output"},
+			},
+			"required": []string{"ref"},
+		})
+}
+
+func (s *browserClickSkill) ExecuteTool(_ context.Context, args map[string]any) (skill.Output, error) {
+	ref, _ := args["ref"].(float64)
+	return s.click(int(ref))
+}
+
+func (s *browserClickSkill) Execute(_ context.Context, input skill.Input) (skill.Output, error) {
+	ref, _ := input["ref"].(float64)
+	return s.click(int(ref))
+}
+
+func (s *browserClickSkill) click(ref int) (skill.Output, error) {
+	start := time.Now()
+	out := skill.Output{Name: "browser_click", Command: fmt.Sprintf("browser_click %d", ref)}
+	id, err := s.app.workbenchLastTabID()
+	if err == nil {
+		err = s.app.BrowserClickRef(id, ref)
+	}
+	out.DurationMs = time.Since(start).Milliseconds()
+	if err != nil {
+		out.Content, out.Stderr = "คลิกไม่สำเร็จ: "+err.Error(), err.Error()
+		return out, err
+	}
+	time.Sleep(300 * time.Millisecond) // let click-driven navigation/DOM update settle before the next browser_read
+	out.Success = true
+	out.Content = fmt.Sprintf("คลิก ref %d แล้ว ใช้ browser_read เพื่อดูผลลัพธ์", ref)
+	out.RawOutput = out.Content
+	return out, nil
+}
+
+type browserTypeSkill struct{ app *App }
+
+func (*browserTypeSkill) Name() string { return "browser_type" }
+
+func (*browserTypeSkill) Description() string {
+	return "พิมพ์ข้อความลงใน input/textarea ในหน้าเว็บของ workbench ตาม ref จาก browser_read"
+}
+
+func (*browserTypeSkill) ToolDefinition() model.ToolDefinition {
+	return toolDef("browser_type",
+		"Type text into an input/textarea/contenteditable element on the page currently open in the workbench browser. ref is one of the [n] numbers browser_read returns. Does not press Enter or submit — click a submit button via browser_click if needed.",
+		map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"ref":  map[string]any{"type": "integer", "description": "Element ref number from browser_read's output"},
+				"text": map[string]any{"type": "string", "description": "Text to type into the element"},
+			},
+			"required": []string{"ref", "text"},
+		})
+}
+
+func (s *browserTypeSkill) ExecuteTool(_ context.Context, args map[string]any) (skill.Output, error) {
+	ref, _ := args["ref"].(float64)
+	text, _ := args["text"].(string)
+	return s.typeText(int(ref), text)
+}
+
+func (s *browserTypeSkill) Execute(_ context.Context, input skill.Input) (skill.Output, error) {
+	ref, _ := input["ref"].(float64)
+	text, _ := input["text"].(string)
+	return s.typeText(int(ref), text)
+}
+
+func (s *browserTypeSkill) typeText(ref int, text string) (skill.Output, error) {
+	start := time.Now()
+	out := skill.Output{Name: "browser_type", Command: fmt.Sprintf("browser_type %d", ref)}
+	id, err := s.app.workbenchLastTabID()
+	if err == nil {
+		err = s.app.BrowserTypeRef(id, ref, text)
+	}
+	out.DurationMs = time.Since(start).Milliseconds()
+	if err != nil {
+		out.Content, out.Stderr = "พิมพ์ไม่สำเร็จ: "+err.Error(), err.Error()
+		return out, err
+	}
+	out.Success = true
+	out.Content = fmt.Sprintf("พิมพ์ลง ref %d แล้ว", ref)
+	out.RawOutput = out.Content
 	return out, nil
 }

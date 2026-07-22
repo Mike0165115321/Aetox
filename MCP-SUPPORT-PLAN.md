@@ -100,7 +100,7 @@ process/connection lifecycle + tool-bridging adapter (ส่วนที่ open
    OAuth flow ที่ยังไม่มีใครขอใช้)
 5. Register adapter เข้า `Registry` ตอน `bootstrapFromConfig`
    ([desktop/app.go](desktop/app.go)) เหมือนที่ `workbenchTools` (browser_open/
-   browser_read) ทำอยู่ตอนนี้ — pattern เดียวกันเป๊ะ ใช้ซ้ำได้เลย **ต่างจาก
+   browser_read/browser_click/browser_type) ทำอยู่ตอนนี้ — pattern เดียวกันเป๊ะ ใช้ซ้ำได้เลย **ต่างจาก
    `workbenchTools` ตรงที่ควร register เป็น `SourceExternal` และตั้ง
    permission rule เริ่มต้นแบบระมัดระวัง** (ดูหัวข้อ "Safety gate สำหรับ MCP
    tool" ด้านล่าง — เรื่องนี้พร้อมทำได้แล้วเพราะ `safety.PermissionConfig`

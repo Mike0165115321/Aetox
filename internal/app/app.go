@@ -96,6 +96,13 @@ type Options struct {
 	// OnToolAction, if set, is notified of every tool call/result this session
 	// runs (e.g. for a UI command-history panel). Nil means silent, as before.
 	OnToolAction func(action, detail string)
+	// StatusReporter, if set, receives human-readable turn-progress messages
+	// ("กำลังคิดคำตอบ...", "กำลังรันเครื่องมือ...") as the turn executor moves
+	// through phases, and a final "" when the turn completes. CLI wires its own
+	// per-turn spinner via wireStatusReporter instead of this field; this is for
+	// callers (e.g. the desktop app) that want one stable callback for the
+	// session's lifetime, e.g. to relay it to a UI as a live status/typing indicator.
+	StatusReporter func(string)
 
 	Title              string
 	Version            string
@@ -141,13 +148,14 @@ func NewApp(opts Options) (*App, error) {
 		toolActionListener: opts.OnToolAction,
 	}
 	a.turnExecutor = turn.NewExecutor(turn.ExecutorOptions{
-		Agent:        a.agent,
-		Dispatcher:   a.skillDispatcher,
-		CommandSet:   a.commandSet,
-		Approve:      a.confirmApproval,
-		ApprovalMode: a.approvalMode,
-		Permissions:  a.permissions,
-		OnToolAction: a.onToolAction,
+		Agent:          a.agent,
+		Dispatcher:     a.skillDispatcher,
+		CommandSet:     a.commandSet,
+		Approve:        a.confirmApproval,
+		ApprovalMode:   a.approvalMode,
+		Permissions:    a.permissions,
+		OnToolAction:   a.onToolAction,
+		StatusReporter: opts.StatusReporter,
 		TurnOptions: turn.TurnOptions{
 			ThinkLevel: a.thinkLevel,
 		},

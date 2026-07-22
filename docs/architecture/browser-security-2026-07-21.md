@@ -65,3 +65,11 @@ Every `BrowserGetText` call mints a random token (`newMessageToken`, `crypto/ran
 - Threat #3 above (agent trusting adversarial page content) — needs an agent-layer mitigation, tracked separately, not a browser-transport fix.
 - `document.title` spoofing within a page's own real origin — this is normal, expected browser behavior (every browser lets a page set its own title), not a vulnerability.
 - WebView2/Chromium's own CVE surface — mitigated by keeping the WebView2 Evergreen runtime updated (OS-managed), outside this codebase's control.
+
+## Update 2026-07-22 — `browser_click` / `browser_type` (agent can now act, not just read)
+
+`textScript` now also tags every visible interactive element with `data-aetox-ref="N"` and returns `{ref, tag, role, text}` alongside the page text (`browserElement` in `desktop/browser.go`). Two new skills, `browser_click(ref)` and `browser_type(ref, text)`, resolve a ref back to a DOM node via `document.querySelector('[data-aetox-ref="N"]')` and call `.click()` / set its value — the same pattern Playwright MCP and browser-use use for vision-free element targeting.
+
+- **Not a new instance of threats #1/#2 above.** `clickScript`/`typeScript` are one-way `Eval()` calls — Go tells the page what to do, the page never posts a reply, so there's no forgeable response for a page to spoof or replay.
+- **New risk category this section didn't previously cover: the agent can now cause real side effects** (submit a form, follow a link, add to cart, log out) instead of only reading. This is a capability/consent question, not a transport-forgery one — `AssessCommand` (`internal/safety/safety.go`) treats `browser_click`/`browser_type` the same as `browser_open`/`browser_read` (low risk, no prompt), on the reasoning that the action is visible in real time in the workbench pane the user is looking at. Worth revisiting if the agent starts driving pages the user isn't actively watching.
+- **Minor residual:** `data-aetox-ref` is written as a real DOM attribute, so a page's own script could read it and detect it's being probed by an automated ref-tagger. Low severity (reveals automation, doesn't leak anything else) and inherent to any DOM-marker-based ref scheme.

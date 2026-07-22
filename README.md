@@ -92,7 +92,7 @@ Aetox ยังอยู่ในช่วงหล่อหลอม — แก
 | **Auto-save Preference** | ค่า provider, model, API key, approval mode จำอัตโนมัติ |
 | **Desktop App** | Wails + Svelte 5 — Sidebar (file tree + chat history), Chat, Workbench (tabs: Review, Terminal, Files, Browser, File Editor), TopBar |
 | **Persistent Sessions** | ประวัติแชททุกโปรเจกต์เก็บใน SQLite ท้องถิ่น (ไม่มีข้อมูลออกจากเครื่อง) — ค้นหาแบบ full-text ได้ทั้งไทย/อังกฤษ |
-| **Agent-controlled Browser** | Agent เปิดเว็บจริงในแท็บ Workbench ได้เอง (`browser_open`/`browser_read`) — ไม่ติด X-Frame-Options เหมือน iframe |
+| **Agent-controlled Browser** | Agent เปิด/อ่าน/คลิก/พิมพ์ในเว็บจริงบนแท็บ Workbench ได้เอง (`browser_open`/`browser_read`/`browser_click`/`browser_type`) — ไม่ติด X-Frame-Options เหมือน iframe, คลิกด้วย ref ที่ `browser_read` แปะให้ (แบบเดียวกับ Playwright MCP/browser-use) |
 
 ### 🚧 กำลังสร้าง
 
@@ -259,7 +259,7 @@ Aetox/
 │   ├── browser.go          # native WebView2 browser tabs (agent + user)
 │   ├── db.go                # local SQLite store (chat history, FTS5)
 │   ├── sessions.go         # per-project session persistence + search
-│   ├── workbench.go        # agent-facing browser_open/browser_read skills
+│   ├── workbench.go        # agent-facing browser_open/browser_read/browser_click/browser_type skills
 │   ├── terminal.go         # embedded shell sessions
 │   ├── main.go             # Desktop entry point
 │   ├── wails.json           # Wails v2 config

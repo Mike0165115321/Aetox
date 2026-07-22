@@ -27,6 +27,7 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 		&writeSkill{root: opts.SandboxRoot},
 		&deleteSkill{root: opts.SandboxRoot},
 		&pluginInstallSkill{},
+		&imageOCRSkill{root: opts.SandboxRoot},
 	}
 	for _, s := range defaults {
 		if err := registry.Register(s, SourceBuiltin); err != nil {

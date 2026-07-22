@@ -34,6 +34,69 @@ Unicode true
 ####
 !include "wails_tools.nsh"
 
+####
+## Tesseract OCR is a runtime prerequisite for the image_ocr skill (agent
+## reads text out of attached images). Installed the same way Wails installs
+## the WebView2 runtime above: download the official installer at install
+## time (kept out of git — it's a ~48MB binary) and run it silently, rather
+## than vendoring the binary in this repo. Pinned to one version + a SHA256
+## check against tampering/corruption, since this fetches and executes a
+## third-party installer during our own install.
+####
+!define TESSERACT_URL      "https://github.com/UB-Mannheim/tesseract/releases/download/v5.4.0.20240606/tesseract-ocr-w64-setup-5.4.0.20240606.exe"
+!define TESSERACT_SHA256   "C885FFF6998E0608BA4BB8AB51436E1C6775C2BAFC2559A19B423E18678B60C9"
+!define TESSDATA_THA_URL     "https://raw.githubusercontent.com/tesseract-ocr/tessdata/main/tha.traineddata"
+!define TESSDATA_THA_SHA256  "88032A9F21ACCFF825EFAED29604EB8A534E265CF8058A95EA5417A6DF91C005"
+
+!macro wails.tesseractocr
+    IfFileExists "$PROGRAMFILES64\Tesseract-OCR\tesseract.exe" tesseract_done tesseract_install
+
+    tesseract_install:
+    SetDetailsPrint both
+    DetailPrint "Installing: Tesseract OCR (used by the agent to read text in attached images)"
+    SetDetailsPrint listonly
+
+    InitPluginsDir
+    ; curl.exe ships in Windows System32 since 10 (1803) / all of 11 — no extra
+    ; NSIS plugin needed, unlike most HTTPS-download recipes for NSIS.
+    nsExec::ExecToLog 'curl.exe -L --max-time 180 -o "$PLUGINSDIR\tesseract-setup.exe" "${TESSERACT_URL}"'
+    Pop $0
+    ${If} $0 != 0
+        DetailPrint "Tesseract download failed (curl exit $0) — skipping. image_ocr will report how to install it manually if used."
+        Goto tesseract_done
+    ${EndIf}
+
+    ; [Console]::Write (not Write-Output) so the captured string has no
+    ; trailing newline for the exact-string ${If} comparison below to match.
+    nsExec::ExecToStack 'powershell -NoProfile -Command "[Console]::Write((Get-FileHash -Algorithm SHA256 $\'$PLUGINSDIR\tesseract-setup.exe$\').Hash)"'
+    Pop $0
+    Pop $1
+    ${If} $1 != "${TESSERACT_SHA256}"
+        DetailPrint "Tesseract installer checksum did not match the pinned release — skipping for safety."
+        Goto tesseract_done
+    ${EndIf}
+
+    ExecWait '"$PLUGINSDIR\tesseract-setup.exe" /S'
+
+    ; Thai isn't bundled by default (only English) — the installer's own docs
+    ; point at dropping a .traineddata straight into tessdata\ as the silent-
+    ; install-friendly way to add a language, so do that instead of trying to
+    ; script its GUI component picker.
+    nsExec::ExecToLog 'curl.exe -L --max-time 60 -o "$PLUGINSDIR\tha.traineddata" "${TESSDATA_THA_URL}"'
+    Pop $0
+    ${If} $0 == 0
+        nsExec::ExecToStack 'powershell -NoProfile -Command "[Console]::Write((Get-FileHash -Algorithm SHA256 $\'$PLUGINSDIR\tha.traineddata$\').Hash)"'
+        Pop $0
+        Pop $1
+        ${If} $1 == "${TESSDATA_THA_SHA256}"
+            CopyFiles "$PLUGINSDIR\tha.traineddata" "$PROGRAMFILES64\Tesseract-OCR\tessdata\tha.traineddata"
+        ${EndIf}
+    ${EndIf}
+
+    SetDetailsPrint both
+    tesseract_done:
+!macroend
+
 # The version information for this two must consist of 4 parts
 VIProductVersion "${INFO_PRODUCTVERSION}.0"
 VIFileVersion    "${INFO_PRODUCTVERSION}.0"
@@ -91,6 +154,7 @@ Section
     !insertmacro wails.setShellContext
 
     !insertmacro wails.webview2runtime
+    !insertmacro wails.tesseractocr
 
     SetOutPath $INSTDIR
 

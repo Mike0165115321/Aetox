@@ -7,7 +7,7 @@ func TestNewDefaultRegistryRegistersAllBuiltins(t *testing.T) {
 
 	want := []string{
 		"help", "echo", "time", "list", "read", "github_repo_summary",
-		"git", "fs", "shell", "write", "delete", "plugin_install",
+		"git", "fs", "shell", "write", "delete", "plugin_install", "image_ocr",
 	}
 	for _, name := range want {
 		if _, ok := registry.Get(name); !ok {

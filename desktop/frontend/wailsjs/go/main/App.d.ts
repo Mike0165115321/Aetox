@@ -6,6 +6,8 @@ export function AddMCPServer(arg1:string,arg2:Array<string>):Promise<void>;
 
 export function BrowserBack(arg1:string):Promise<void>;
 
+export function BrowserClickRef(arg1:string,arg2:number):Promise<void>;
+
 export function BrowserClose(arg1:string):Promise<void>;
 
 export function BrowserForward(arg1:string):Promise<void>;
@@ -21,6 +23,8 @@ export function BrowserReload(arg1:string):Promise<void>;
 export function BrowserSetBounds(arg1:string,arg2:number,arg3:number,arg4:number,arg5:number):Promise<void>;
 
 export function BrowserSetVisible(arg1:string,arg2:boolean):Promise<void>;
+
+export function BrowserTypeRef(arg1:string,arg2:number,arg3:string):Promise<void>;
 
 export function CommandHistory():Promise<Array<string>>;
 
@@ -50,17 +54,23 @@ export function NewSession():Promise<string>;
 
 export function OpenProjectFolder():Promise<main.ProjectStatus>;
 
+export function PickAttachmentImage():Promise<string>;
+
 export function ProjectTree():Promise<Array<main.TreeNode>>;
 
 export function ProviderBaseURL(arg1:string):Promise<string>;
 
 export function ReadFile(arg1:string):Promise<string>;
 
+export function ReadImageDataURL(arg1:string):Promise<string>;
+
 export function RelativizePath(arg1:string):Promise<string>;
 
 export function RemoveMCPServer(arg1:string):Promise<void>;
 
 export function RequiresAPIKey(arg1:string):Promise<boolean>;
+
+export function SaveChatImage(arg1:string):Promise<string>;
 
 export function SearchSessions(arg1:string):Promise<Array<main.SessionMeta>>;
 

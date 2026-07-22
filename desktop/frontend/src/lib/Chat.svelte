@@ -4,19 +4,23 @@
   import { onMount } from 'svelte'
   import {
     SupportedProviders, SupportedThinkLevels,
-    ListModelsForProvider, RequiresAPIKey, HasAPIKey,
+    ListModelsForProvider, RequiresAPIKey, HasAPIKey, PickAttachmentImage,
   } from '../../wailsjs/go/main/App'
   import { t } from './i18n.svelte'
   import { renderMarkdown } from './markdown'
+  import { openUrlInWorkbench } from './stores/workbench.svelte'
+  import { cockpit, attachImageFromPath, clearPendingImage } from './stores/cockpit.svelte'
 
   let {
-    messages, task, model, project,
+    messages, task, model, project, awaitingReply, agentStatus,
     onSend, onSwitchProvider, onSwitchThinkLevel, onSwitchApprovalMode, onSwitchModel, onSubmitAPIKey,
   }: {
     messages: ChatMessage[]
     task: TaskState
     model: ModelStatus
     project: ProjectInfo
+    awaitingReply: boolean
+    agentStatus: string
     onSend: (text: string) => void
     onSwitchProvider: (provider: string) => Promise<void>
     onSwitchThinkLevel: (level: string) => Promise<void>
@@ -105,7 +109,7 @@
   }
 
   function submit() {
-    if (!draft.trim()) return
+    if (!draft.trim() && !cockpit.pendingImage) return
     onSend(draft)
     draft = ''
   }
@@ -115,11 +119,26 @@
       submit()
     }
   }
+
+  async function attachViaDialog() {
+    const path = await PickAttachmentImage()
+    if (path) await attachImageFromPath(path)
+  }
+
+  // Links in rendered markdown must not navigate the app's own webview away —
+  // open them in a workbench browser tab instead.
+  function onChatClick(e: MouseEvent) {
+    const a = (e.target as HTMLElement).closest('a')
+    const href = a?.getAttribute('href')
+    if (!href || !/^https?:\/\//i.test(href)) return
+    e.preventDefault()
+    openUrlInWorkbench(href)
+  }
 </script>
 
   {#if messages.length === 0}
     <div class="empty-state">
-      <span class="empty-glyph">🦅</span>
+      <span class="empty-glyph word">Aetox</span>
       <h2>{t('chat.whatToBuild')}</h2>
       <div class="starter-grid">
         {#each starters as s}
@@ -131,23 +150,36 @@
       </div>
     </div>
   {:else}
-    <div class="chat">
+    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+    <!-- delegated click target is the <a> tags rendered inside .markdown-body, already interactive -->
+    <div class="chat" onclick={onChatClick}>
       {#each messages as m}
         <div class="msg {m.role === 'user' ? 'user' : 'bot'}">
-          <div class="who">{m.role === 'user' ? '🧑' : '🦅'}</div>
-          <div>
-            <div class="bubble">
-              {#if m.role === 'agent'}
-                <div class="name"><b>{t('chat.agentName')}</b>
-                  {#if m.tag}<span class="tag think">{m.tag}</span>{/if}
-                </div>
-              {/if}
-              <div class="markdown-body">{@html renderMarkdown(m.text)}</div>
-              <div class="time">{m.time}</div>
-            </div>
+          <div class="bubble">
+            {#if m.role === 'agent'}
+              <div class="name"><b>{t('chat.agentName')}</b>
+                {#if m.tag}<span class="tag think">{m.tag}</span>{/if}
+              </div>
+            {/if}
+            {#if m.imageDataUrl}
+              <img src={m.imageDataUrl} alt="" class="msg-image" />
+            {/if}
+            <div class="markdown-body">{@html renderMarkdown(m.text)}</div>
+            <div class="time">{m.time}</div>
           </div>
         </div>
       {/each}
+
+      {#if awaitingReply}
+        <div class="msg bot">
+          <div class="bubble typing-bubble">
+            {#if agentStatus}
+              <span class="typing-status">{agentStatus}</span>
+            {/if}
+            <span class="typing-dots"><span></span><span></span><span></span></span>
+          </div>
+        </div>
+      {/if}
 
       {#if task.steps.length > 0}
         <TaskTimeline steps={task.steps} elapsed={task.elapsed} />
@@ -174,6 +206,13 @@
         <button class="ctrl" onclick={submitApiKey}>{t('chat.saveKey')}</button>
       </div>
     {/if}
+    {#if cockpit.pendingImage}
+      <div class="attach-chip">
+        <img src={cockpit.pendingImage.dataUrl} alt="" class="attach-thumb" />
+        <span class="attach-name">{cockpit.pendingImage.relPath.split('/').pop()}</span>
+        <button class="attach-remove" aria-label={t('chat.removeAttachment')} onclick={clearPendingImage}>✕</button>
+      </div>
+    {/if}
     <div class="box">
       <textarea
         class="input"
@@ -183,6 +222,7 @@
         onkeydown={onKeydown}
       ></textarea>
       <div class="tools">
+        <button class="icobtn" aria-label={t('chat.attachImage')} data-tip={t('chat.attachImage')} onclick={attachViaDialog}>📎</button>
         <select class="ctrl" value={model.approval} onchange={(e) => onSwitchApprovalMode((e.target as HTMLSelectElement).value)}>
           {#each approvalOptions as opt}<option value={opt.value}>{opt.label}</option>{/each}
         </select>

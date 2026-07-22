@@ -10,6 +10,7 @@ import {
   SwitchProvider, SwitchThinkLevel, SwitchApprovalMode,
   SwitchModel, SetAPIKey, ProjectTree, CommandHistory, GitChangedFiles, ReadFile,
   ListSessions, LoadSession, NewSession, CurrentSessionID, SearchSessions,
+  SaveChatImage, ReadImageDataURL,
 } from '../../../wailsjs/go/main/App'
 import type { main } from '../../../wailsjs/go/models'
 import { t } from '../i18n.svelte'
@@ -116,16 +117,47 @@ function nowLabel(): string {
 /** Append the user message, then call the Go core and append its reply. */
 export async function sendUserMessage(text: string): Promise<void> {
   const trimmed = text.trim()
-  if (!trimmed) return
-  cockpit.chat.push({ role: 'user', text: trimmed, time: nowLabel() })
+  const image = cockpit.pendingImage
+  if (!trimmed && !image) return
+  // The model only ever sees text, so an attached image is handed to it as a
+  // sandboxed path reference it can pass to image_ocr — the bubble itself
+  // shows just the caption + thumbnail, not that reference line.
+  const sentText = image ? `${trimmed}\n\n📎 แนบรูปภาพ: ${image.relPath}`.trim() : trimmed
+  cockpit.chat.push({ role: 'user', text: trimmed, time: nowLabel(), imageDataUrl: image?.dataUrl })
+  cockpit.pendingImage = null
+  cockpit.awaitingReply = true
+  cockpit.agentStatus = ''
   try {
-    const reply = await SendMessage(trimmed)
+    const reply = await SendMessage(sentText)
     cockpit.chat.push({ role: 'agent', text: reply, time: nowLabel() })
   } catch (err) {
     cockpit.chat.push({ role: 'agent', text: t('cockpit.sendError', { err: String(err) }), time: nowLabel() })
+  } finally {
+    cockpit.awaitingReply = false
+    cockpit.agentStatus = ''
   }
   await refreshWorkspace()
   await refreshSessions()
+}
+
+/** Live turn-progress text from the Go engine (see desktop/app.go emitAgentStatus). */
+export function applyAgentStatus(status: string): void {
+  cockpit.agentStatus = status
+}
+
+/** Copy an image (from a native file-picker or a drop) into the sandbox, and stage it as the composer's pending attachment. */
+export async function attachImageFromPath(absPath: string): Promise<void> {
+  try {
+    const relPath = await SaveChatImage(absPath)
+    const dataUrl = await ReadImageDataURL(relPath)
+    cockpit.pendingImage = { relPath, dataUrl }
+  } catch (err) {
+    cockpit.chat.push({ role: 'agent', text: t('cockpit.attachError', { err: String(err) }), time: nowLabel() })
+  }
+}
+
+export function clearPendingImage(): void {
+  cockpit.pendingImage = null
 }
 
 /** View state: expand/collapse a folder. */

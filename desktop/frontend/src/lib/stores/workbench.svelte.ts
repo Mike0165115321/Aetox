@@ -73,6 +73,13 @@ export function openBrowserTab(): string {
   return id
 }
 
+/** Open a URL from outside the workbench (e.g. a link clicked in chat) in a new browser tab. */
+export function openUrlInWorkbench(url: string): void {
+  const id = openBrowserTab()
+  const tab = workbench.tabs.find((t) => t.id === id)
+  if (tab) tab.url = url
+}
+
 export async function openTerminalTab(shell: { name: string; path: string }): Promise<void> {
   const id = await TerminalStart(shell.path, 80, 24)
   workbench.tabs.push({ id, kind: 'terminal', name: shell.name })

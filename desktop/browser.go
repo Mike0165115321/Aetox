@@ -112,20 +112,81 @@ type wndClassExW struct {
 // feature and is a prompt-injection risk to be handled by treating fetched
 // page text as untrusted data, not by this transport.
 type aetoxMsg struct {
-	Aetox string `json:"__aetox"`
-	Title string `json:"title,omitempty"`
-	URL   string `json:"url,omitempty"`
-	Text  string `json:"text,omitempty"`
-	Token string `json:"token,omitempty"`
+	Aetox    string           `json:"__aetox"`
+	Title    string           `json:"title,omitempty"`
+	URL      string           `json:"url,omitempty"`
+	Text     string           `json:"text,omitempty"`
+	Token    string           `json:"token,omitempty"`
+	Elements []browserElement `json:"elements,omitempty"`
+}
+
+// browserElement is one clickable/typeable element found on the page, tagged
+// with a data-aetox-ref attribute so a later browser_click/browser_type call
+// can find the same node again by ref.
+type browserElement struct {
+	Ref  int    `json:"ref"`
+	Tag  string `json:"tag"`
+	Role string `json:"role,omitempty"`
+	Text string `json:"text"`
+}
+
+// browserSnapshot is the result of one textScript round trip: page text plus
+// the interactive elements found on it.
+type browserSnapshot struct {
+	Text     string
+	Elements []browserElement
 }
 
 const metaScript = `window.chrome.webview.postMessage(JSON.stringify({__aetox:"meta",title:document.title,url:location.href}))`
 
+// textScript reads page text and, in the same pass, tags every visible
+// interactive element with a data-aetox-ref so browser_click/browser_type can
+// target it later. Refs are reassigned fresh each call.
 func textScript(token string) string {
-	return fmt.Sprintf(
-		`window.chrome.webview.postMessage(JSON.stringify({__aetox:"text",token:%q,title:document.title,url:location.href,text:(document.body&&document.body.innerText||"").slice(0,200000)}))`,
-		token,
-	)
+	return fmt.Sprintf(`(function(){
+  var out=[];
+  var sel='a[href],button,input,select,textarea,[role="button"],[role="link"],[contenteditable="true"]';
+  var els=document.querySelectorAll(sel);
+  for(var i=0;i<els.length&&out.length<150;i++){
+    var el=els[i];
+    var r=el.getBoundingClientRect();
+    if(r.width<=0||r.height<=0)continue;
+    var ref=out.length+1;
+    el.setAttribute('data-aetox-ref',String(ref));
+    var txt=(el.innerText||el.value||el.getAttribute('aria-label')||el.getAttribute('placeholder')||'').trim().replace(/\s+/g,' ').slice(0,80);
+    out.push({ref:ref,tag:el.tagName.toLowerCase(),role:el.getAttribute('role')||'',text:txt});
+  }
+  window.chrome.webview.postMessage(JSON.stringify({__aetox:"text",token:%q,title:document.title,url:location.href,text:(document.body&&document.body.innerText||"").slice(0,200000),elements:out}));
+})()`, token)
+}
+
+// clickScript clicks the element tagged with the given ref (see textScript).
+func clickScript(ref int) string {
+	return fmt.Sprintf(`(function(){
+  var el=document.querySelector('[data-aetox-ref="%d"]');
+  if(!el)return;
+  el.scrollIntoView({block:"center"});
+  el.click();
+})()`, ref)
+}
+
+// typeScript sets an input/textarea/contenteditable's value via the native
+// setter (so React/Vue-controlled inputs pick it up) and fires input+change.
+func typeScript(ref int, text string) string {
+	encoded, _ := json.Marshal(text)
+	return fmt.Sprintf(`(function(){
+  var el=document.querySelector('[data-aetox-ref="%d"]');
+  if(!el)return;
+  el.focus();
+  if(el.tagName==="INPUT"||el.tagName==="TEXTAREA"){
+    var proto=el.tagName==="TEXTAREA"?window.HTMLTextAreaElement.prototype:window.HTMLInputElement.prototype;
+    Object.getOwnPropertyDescriptor(proto,"value").set.call(el,%s);
+  } else {
+    el.textContent=%s;
+  }
+  el.dispatchEvent(new Event("input",{bubbles:true}));
+  el.dispatchEvent(new Event("change",{bubbles:true}));
+})()`, ref, encoded, encoded)
 }
 
 // sameOrigin reports whether a and b share a scheme+host — used to check a
@@ -159,7 +220,7 @@ type browserTab struct {
 	url    string
 
 	textMu    sync.Mutex
-	textCh    chan string
+	textCh    chan browserSnapshot
 	textToken string // token BrowserGetText is currently waiting on; empty = none pending
 }
 
@@ -364,7 +425,7 @@ func (h *browserHost) onMessage(id string, tab *browserTab, raw string, source s
 		if ch == nil || m.Token == "" || m.Token != expectedToken || !sameOrigin(source, m.URL) {
 			return
 		}
-		ch <- m.Text
+		ch <- browserSnapshot{Text: m.Text, Elements: m.Elements}
 	}
 }
 
@@ -467,17 +528,27 @@ func (a *App) BrowserClose(id string) {
 // BrowserGetText returns the visible text content of a tab's current page —
 // this is the read-path the AI agent uses to work with the browser.
 func (a *App) BrowserGetText(id string) (string, error) {
-	host, err := a.browserHostLazy()
+	snap, err := a.browserSnapshot(id)
 	if err != nil {
 		return "", err
 	}
+	return snap.Text, nil
+}
+
+// browserSnapshot reads page text plus the interactive elements tagged by
+// textScript, in one round trip. Used by BrowserGetText and browser_read.
+func (a *App) browserSnapshot(id string) (browserSnapshot, error) {
+	host, err := a.browserHostLazy()
+	if err != nil {
+		return browserSnapshot{}, err
+	}
 	t := host.tab(id)
 	if t == nil {
-		return "", fmt.Errorf("no browser tab %q", id)
+		return browserSnapshot{}, fmt.Errorf("no browser tab %q", id)
 	}
 
 	token := newMessageToken()
-	ch := make(chan string, 1)
+	ch := make(chan browserSnapshot, 1)
 	t.textMu.Lock()
 	t.textCh = ch
 	t.textToken = token
@@ -486,13 +557,43 @@ func (a *App) BrowserGetText(id string) (string, error) {
 	host.do(func() { t.chromium.Eval(textScript(token)) })
 
 	select {
-	case text := <-ch:
-		return text, nil
+	case snap := <-ch:
+		return snap, nil
 	case <-time.After(5 * time.Second):
 		t.textMu.Lock()
 		t.textCh = nil
 		t.textToken = ""
 		t.textMu.Unlock()
-		return "", fmt.Errorf("page did not respond (still loading?)")
+		return browserSnapshot{}, fmt.Errorf("page did not respond (still loading?)")
 	}
+}
+
+// BrowserClickRef clicks the element tagged with ref by the most recent
+// browser_read snapshot (see textScript).
+func (a *App) BrowserClickRef(id string, ref int) error {
+	host, err := a.browserHostLazy()
+	if err != nil {
+		return err
+	}
+	t := host.tab(id)
+	if t == nil {
+		return fmt.Errorf("no browser tab %q", id)
+	}
+	host.do(func() { t.chromium.Eval(clickScript(ref)) })
+	return nil
+}
+
+// BrowserTypeRef sets an input/textarea/contenteditable's value, tagged with
+// ref by the most recent browser_read snapshot (see textScript).
+func (a *App) BrowserTypeRef(id string, ref int, text string) error {
+	host, err := a.browserHostLazy()
+	if err != nil {
+		return err
+	}
+	t := host.tab(id)
+	if t == nil {
+		return fmt.Errorf("no browser tab %q", id)
+	}
+	host.do(func() { t.chromium.Eval(typeScript(ref, text)) })
+	return nil
 }

@@ -4,13 +4,16 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"fmt"
+	"mime"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	aetoxapp "github.com/Mike0165115321/Aetox/internal/app"
@@ -68,6 +71,15 @@ func (a *App) recordToolAction(action, detail string) {
 	a.toolHistory = append(a.toolHistory, detail)
 	if len(a.toolHistory) > maxToolHistory {
 		a.toolHistory = a.toolHistory[len(a.toolHistory)-maxToolHistory:]
+	}
+}
+
+// emitAgentStatus relays the turn executor's phase messages ("กำลังคิดคำตอบ...",
+// "กำลังรันเครื่องมือ...", then "" when done) to the frontend as a live typing/
+// thinking indicator, so the chat doesn't look frozen during a turn.
+func (a *App) emitAgentStatus(status string) {
+	if a.ctx != nil {
+		wailsruntime.EventsEmit(a.ctx, "agent:status", status)
 	}
 }
 
@@ -260,6 +272,91 @@ func (a *App) WriteFile(relPath, content string) error {
 		return err
 	}
 	return os.WriteFile(full, []byte(content), 0o644)
+}
+
+const attachmentsDir = ".aetox-attachments"
+
+var attachmentSeq int64
+
+// PickAttachmentImage prompts the user to pick an image file (native dialog)
+// for chat attachment, returning its absolute OS path, or "" if cancelled.
+func (a *App) PickAttachmentImage() (string, error) {
+	return wailsruntime.OpenFileDialog(a.ctx, wailsruntime.OpenDialogOptions{
+		Title: "แนบรูปภาพ",
+		Filters: []wailsruntime.FileFilter{
+			{DisplayName: "Images (*.png, *.jpg, *.jpeg, *.gif, *.webp, *.bmp)", Pattern: "*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp"},
+		},
+	})
+}
+
+// SaveChatImage copies an image (picked via PickAttachmentImage, or dropped —
+// both give a real absolute OS path) into the project's sandbox root, so it
+// becomes a normal relative path any sandboxed skill (image_ocr, read, ...)
+// can already operate on, with no path-escaping special case.
+func (a *App) SaveChatImage(sourcePath string) (string, error) {
+	root := strings.TrimSpace(a.cfg.SandboxRoot)
+	if root == "" {
+		return "", fmt.Errorf("no project open")
+	}
+	sourcePath = strings.TrimSpace(sourcePath)
+	if sourcePath == "" {
+		return "", fmt.Errorf("no source path given")
+	}
+	info, err := os.Stat(sourcePath)
+	if err != nil {
+		return "", err
+	}
+	if info.IsDir() {
+		return "", fmt.Errorf("%q is a directory", sourcePath)
+	}
+	const maxBytes = 20 << 20 // 20MB — generous for a chat-attached photo/screenshot
+	if info.Size() > maxBytes {
+		return "", fmt.Errorf("image too large (%d bytes, max 20MB)", info.Size())
+	}
+
+	data, err := os.ReadFile(sourcePath)
+	if err != nil {
+		return "", err
+	}
+
+	destDir := filepath.Join(root, attachmentsDir)
+	if err := os.MkdirAll(destDir, 0o700); err != nil {
+		return "", err
+	}
+	seq := atomic.AddInt64(&attachmentSeq, 1)
+	destName := fmt.Sprintf("%d-%d%s", time.Now().UnixMilli(), seq, filepath.Ext(sourcePath))
+	destPath := filepath.Join(destDir, destName)
+	if err := os.WriteFile(destPath, data, 0o600); err != nil {
+		return "", err
+	}
+
+	rel, err := filepath.Rel(root, destPath)
+	if err != nil {
+		return "", err
+	}
+	return filepath.ToSlash(rel), nil
+}
+
+// ReadImageDataURL reads a sandboxed image back as a data: URL, for inline
+// preview in the chat UI (the frontend only has an OS path, not the bytes).
+func (a *App) ReadImageDataURL(relPath string) (string, error) {
+	root := strings.TrimSpace(a.cfg.SandboxRoot)
+	if root == "" {
+		return "", fmt.Errorf("no project open")
+	}
+	full, err := safeSandboxPath(root, relPath)
+	if err != nil {
+		return "", err
+	}
+	data, err := os.ReadFile(full)
+	if err != nil {
+		return "", err
+	}
+	mimeType := mime.TypeByExtension(filepath.Ext(full))
+	if mimeType == "" {
+		mimeType = "application/octet-stream"
+	}
+	return "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data), nil
 }
 
 // ProjectStatus is the real project/git state for the sandbox root the engine runs in.
@@ -528,6 +625,8 @@ func (a *App) applyConfig(cfg config.Config) {
 	workbenchTools := []skill.Skill{
 		&browserOpenSkill{app: a},
 		&browserReadSkill{app: a},
+		&browserClickSkill{app: a},
+		&browserTypeSkill{app: a},
 	}
 	if a.mcp == nil {
 		servers, err := config.LoadMCPServers()
@@ -536,7 +635,7 @@ func (a *App) applyConfig(cfg config.Config) {
 		}
 		a.mcp = mcp.NewManager(toMCPServers(servers))
 	}
-	chatApp, agent, status, registry := bootstrapFromConfig(cfg, a.recordToolAction, workbenchTools, a.mcp)
+	chatApp, agent, status, registry := bootstrapFromConfig(cfg, a.recordToolAction, a.emitAgentStatus, workbenchTools, a.mcp)
 	a.chat = chatApp
 	a.agent = agent
 	a.cfg = cfg
@@ -565,6 +664,9 @@ func resolveConfig(opts config.ConfigOptions) config.Config {
 		}
 		if v := strings.TrimSpace(pref.ThinkLevel); v != "" {
 			cfg.ThinkLevel = v
+		}
+		if v := strings.TrimSpace(pref.ApprovalMode); v != "" {
+			cfg.ApprovalMode = v
 		}
 		if key := pref.APIKeyForProvider(cfg.ModelProvider); key != "" {
 			cfg.ModelAPIKey = key
@@ -595,7 +697,7 @@ func toMCPServers(cfgs []config.MCPServerConfig) []mcp.Server {
 	return out
 }
 
-func bootstrapFromConfig(cfg config.Config, onToolAction func(action, detail string), extraSkills []skill.Skill, mcpMgr *mcp.Manager) (*aetoxapp.App, *cognitive.Agent, string, *skill.Registry) {
+func bootstrapFromConfig(cfg config.Config, onToolAction func(action, detail string), onStatus func(string), extraSkills []skill.Skill, mcpMgr *mcp.Manager) (*aetoxapp.App, *cognitive.Agent, string, *skill.Registry) {
 	status := model.ResolveStatus(cfg.ModelProvider, cfg.ModelName, nil)
 
 	bootstrapResult := model.BootstrapProvider(model.BootstrapOptions{
@@ -645,12 +747,13 @@ func bootstrapFromConfig(cfg config.Config, onToolAction func(action, detail str
 	permissions.Rules = append(mcpRules, permissions.Rules...)
 
 	chatApp, err := aetoxapp.NewApp(aetoxapp.Options{
-		Agent:        agent,
-		Console:      aetoxapp.NewStdIO(),
-		Dispatcher:   dispatcher,
-		ApprovalMode: safety.ApprovalFullAccess,
-		Permissions:  permissions,
-		OnToolAction: onToolAction,
+		Agent:          agent,
+		Console:        aetoxapp.NewStdIO(),
+		Dispatcher:     dispatcher,
+		ApprovalMode:   safety.ApprovalFullAccess,
+		Permissions:    permissions,
+		OnToolAction:   onToolAction,
+		StatusReporter: onStatus,
 	})
 	if err != nil {
 		return nil, nil, status + " (init failed: " + err.Error() + ")", nil

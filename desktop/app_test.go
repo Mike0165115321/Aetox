@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mike0165115321/Aetox/internal/safety"
 )
 
 func TestSafeSandboxPathAllowsInside(t *testing.T) {
@@ -194,5 +195,84 @@ func TestProjectTreeEmptyRoot(t *testing.T) {
 	a := &App{}
 	if got := a.ProjectTree(); len(got) != 0 {
 		t.Errorf("ProjectTree() with no sandbox root = %v, want empty", got)
+	}
+}
+
+// Regression test: resolveConfig used to merge every ModelPreference field
+// (provider, model, baseURL, thinkLevel, API key) back onto Config except
+// ApprovalMode, so persistModelPreference's own saved value was silently
+// discarded on the next startup/OpenProjectFolder call — see
+// desktop/app.go's resolveConfig.
+func TestResolveConfigLoadsApprovalModeFromPreference(t *testing.T) {
+	t.Setenv("AppData", t.TempDir())
+	pref := config.ModelPreference{ApprovalMode: string(safety.ApprovalFullAccess)}
+	if err := config.SaveModelPreference(pref); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	// opts explicitly asks for a *different* mode — the saved preference must win.
+	cfg := resolveConfig(config.ConfigOptions{ApprovalMode: string(safety.ApprovalAsk)})
+	if cfg.ApprovalMode != string(safety.ApprovalFullAccess) {
+		t.Errorf("ApprovalMode = %q, want %q (saved preference should override the passed-in default)", cfg.ApprovalMode, safety.ApprovalFullAccess)
+	}
+}
+
+func TestResolveConfigKeepsOptsApprovalModeWithNoSavedPreference(t *testing.T) {
+	t.Setenv("AppData", t.TempDir()) // empty dir — no preference file exists
+
+	cfg := resolveConfig(config.ConfigOptions{ApprovalMode: string(safety.ApprovalUnsafeOnly)})
+	if cfg.ApprovalMode != string(safety.ApprovalUnsafeOnly) {
+		t.Errorf("ApprovalMode = %q, want %q (opts value should stand when nothing is saved)", cfg.ApprovalMode, safety.ApprovalUnsafeOnly)
+	}
+}
+
+func TestSaveChatImageCopiesIntoSandbox(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(t.TempDir(), "photo.png")
+	if err := os.WriteFile(src, []byte("fake png bytes"), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	a := &App{cfg: config.Config{SandboxRoot: root}}
+
+	rel, err := a.SaveChatImage(src)
+	if err != nil {
+		t.Fatalf("SaveChatImage: unexpected error: %v", err)
+	}
+	if filepath.Ext(rel) != ".png" {
+		t.Errorf("SaveChatImage relPath = %q, want a .png extension preserved", rel)
+	}
+
+	full := filepath.Join(root, filepath.FromSlash(rel))
+	got, err := os.ReadFile(full)
+	if err != nil {
+		t.Fatalf("copied file not found at %q: %v", full, err)
+	}
+	if string(got) != "fake png bytes" {
+		t.Errorf("copied content = %q, want %q", got, "fake png bytes")
+	}
+}
+
+func TestSaveChatImageRejectsOversized(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(t.TempDir(), "huge.png")
+	f, err := os.Create(src)
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if err := f.Truncate(21 << 20); err != nil { // 21MB > the 20MB cap
+		t.Fatalf("setup: %v", err)
+	}
+	f.Close()
+
+	a := &App{cfg: config.Config{SandboxRoot: root}}
+	if _, err := a.SaveChatImage(src); err == nil {
+		t.Error("expected an error for an oversized image, got nil")
+	}
+}
+
+func TestSaveChatImageNoProjectOpen(t *testing.T) {
+	a := &App{}
+	if _, err := a.SaveChatImage("whatever.png"); err == nil {
+		t.Error("expected an error with no project open, got nil")
 	}
 }
