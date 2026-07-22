@@ -7,6 +7,7 @@
     ListModelsForProvider, RequiresAPIKey, HasAPIKey,
   } from '../../wailsjs/go/main/App'
   import { t } from './i18n.svelte'
+  import { renderMarkdown } from './markdown'
 
   let {
     messages, task, model, project,
@@ -141,7 +142,7 @@
                   {#if m.tag}<span class="tag think">{m.tag}</span>{/if}
                 </div>
               {/if}
-              <span class="body-text">{m.text}</span>
+              <div class="markdown-body">{@html renderMarkdown(m.text)}</div>
               <div class="time">{m.time}</div>
             </div>
           </div>
