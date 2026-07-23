@@ -166,3 +166,12 @@ func ProviderSupportsReasoning(provider Provider) bool {
 	reasoningProvider, ok := provider.(ReasoningProvider)
 	return ok && reasoningProvider.SupportsReasoning()
 }
+
+// modelOr returns value, falling back to fallback when the provider's
+// response omitted the model name.
+func modelOr(value string, fallback string) string {
+	if value == "" {
+		return fallback
+	}
+	return value
+}
