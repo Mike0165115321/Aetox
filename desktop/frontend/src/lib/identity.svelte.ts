@@ -41,14 +41,38 @@ export async function saveIdentityFile(): Promise<void> {
   }
 }
 
-export async function createIdentityFile(name: string): Promise<void> {
+export async function createIdentityFile(name: string, content = ''): Promise<void> {
   const trimmed = name.trim()
   if (!trimmed) return
   const finalName = trimmed.toLowerCase().endsWith('.md') ? trimmed : trimmed + '.md'
-  await SaveIdentityFile(finalName, '')
+  await SaveIdentityFile(finalName, content)
   await loadIdentityFiles()
   await openIdentityFile(finalName)
 }
+
+// Suggested starting files (ARCHITECTURE.md §11, 2026-07-24) — convention
+// only, the engine treats every *.md in the identity dir identically.
+// thinking.md is deliberately "discipline, not steps": step-by-step
+// instructions can interfere with native-reasoning models, values don't.
+export const identityTemplates: { name: string; content: string }[] = [
+  {
+    name: 'identity.md',
+    content: '# ตัวตน / Identity\n\n- ชื่อที่ใช้เรียกฉัน:\n- บุคลิก/น้ำเสียง:\n- ภาษา: ไทยเป็นหลัก สลับอังกฤษได้\n',
+  },
+  {
+    name: 'thinking.md',
+    content:
+      '# วินัยการคิด / Thinking discipline\n\n- ยึดหลักฐานก่อนสรุป ถ้าไม่แน่ใจให้บอกว่าไม่แน่ใจ\n- ไม่รู้ = ถาม ไม่ใช่เดา\n- ตอบตรงประเด็น ไม่ขยายความเกินถาม\n',
+  },
+  {
+    name: 'context.md',
+    content: '# บริบทผู้ใช้ / About me\n\n- ฉันคือใคร ทำงานอะไร:\n- สิ่งที่ควรรู้เกี่ยวกับฉัน:\n',
+  },
+  {
+    name: 'skills.md',
+    content: '# ความรู้ติดตัว / Always-on notes\n\n- สิ่งที่อยากให้จำไว้เสมอ ข้ามทุกโปรเจกต์:\n',
+  },
+]
 
 export async function deleteIdentityFile(name: string): Promise<void> {
   await DeleteIdentityFile(name)

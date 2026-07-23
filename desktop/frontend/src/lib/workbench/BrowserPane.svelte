@@ -65,6 +65,11 @@
     lastSent = meta.url
     tab.url = meta.url
     if (meta.title) tab.name = meta.title.length > 24 ? meta.title.slice(0, 24) + '…' : meta.title
+    // Re-glue bounds + z-order after every completed navigation: the app's own
+    // WebView2 can composite above the tab's window right after it opens,
+    // leaving the page loaded but invisible until something else forces
+    // HWND_TOP (see browser.go z-order note).
+    if (host && visible) BrowserSetBounds(tab.id, ...physRect(host))
   })
 
   onDestroy(() => {

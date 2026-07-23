@@ -14,7 +14,10 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 
 :root {
   --mono:ui-monospace,"Cascadia Code","JetBrains Mono",Consolas,monospace;
-  --sans:system-ui,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  /* Inter covers Latin; Noto Sans Thai Variable covers Thai — bundled via
+     @fontsource so both render from the same family instead of Thai falling
+     back to Windows' Leelawadee UI (taller, heavier, clashes with Latin). */
+  --sans:"Inter Variable","Noto Sans Thai Variable","Segoe UI","Leelawadee UI",system-ui,sans-serif;
 }
 
 .app {
@@ -96,11 +99,14 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 [data-tip].tip-l:hover::after, [data-tip].tip-l:focus-visible::after { transform:translateY(0); }
 
 /* ---------- sidebar ---------- */
-.side { grid-area:side; background:var(--surface-sunken); display:flex; flex-direction:column; overflow:hidden; }
-.side-panel { display:flex; flex-direction:column; overflow:hidden; min-height:0; }
-.side-panel.grow { flex:1 1 auto; min-height:0; }
-.side-panel .scroll { flex:1; overflow-y:auto; min-height:0; padding:0 12px 14px; }
-.side-panel .scroll.capped { flex:none; max-height:190px; }
+/* Dense navigation surface — steps the whole panel down from the 15.5px body
+   size; children size in relative terms from here. */
+.side { grid-area:side; background:var(--surface-sunken); display:flex; flex-direction:column; overflow:hidden; font-size:13px; line-height:1.45; }
+/* Sections stack top-down at natural height (Claude-style) and the whole
+   column scrolls as one; only the footer stays pinned outside the scroller. */
+.side-sections { flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column; }
+.side-panel { display:flex; flex-direction:column; flex:none; }
+.side-panel .scroll { padding:8px 14px 18px; }
 .side-resize { flex:0 0 8px; cursor:row-resize; position:relative; }
 .side-resize::after { content:''; position:absolute; left:0; right:0; top:3px; height:1px; background:var(--border-strong); }
 .side-resize:hover::after, .side-resize:active::after { height:2px; top:3px; background:var(--interactive); }
@@ -109,8 +115,13 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   margin:0; padding:10px 12px; background:none; border:0; border-bottom:1px solid var(--border-default);
   font:inherit; color:inherit; cursor:pointer; flex:0 0 auto;
 }
-.side-head .eyebrow { flex:none; text-transform:none; letter-spacing:normal; color:var(--text-primary); font-size:14.5px; }
-.side-sub-head { margin:14px 8px 4px; padding-top:10px; border-top:1px solid var(--border-subtle); font-size:12.5px; color:var(--text-secondary); font-weight:600; }
+/* Header row that also hosts action icons: the collapse toggle becomes an
+   inner button so icons aren't nested inside a button. */
+.side-head-toggle { display:flex; align-items:center; gap:6px; flex:1; min-width:0; padding:0; }
+.side-head .icobtn { flex:none; color:var(--text-dim); }
+.side-head .icobtn:hover { color:var(--text-primary); }
+.side-head .eyebrow { flex:none; text-transform:none; letter-spacing:normal; color:var(--text-primary); font-size:13px; }
+.side-sub-head { margin:14px 8px 4px; padding-top:10px; border-top:1px solid var(--border-subtle); font-size:12px; color:var(--text-secondary); font-weight:600; }
 .side-sub-head.first { margin-top:2px; padding-top:0; border-top:0; }
 
 .identity-body { display:flex; flex-direction:column; gap:8px; flex:1; min-height:0; padding:10px 12px 12px; }
@@ -124,6 +135,12 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .identity-file-del { flex:none; opacity:0; color:var(--text-dim); border-radius:4px; padding:1px 4px; margin-right:4px; }
 .identity-file:hover .identity-file-del { opacity:1; }
 .identity-file-del:hover { color:var(--status-danger); background:var(--surface-hover); }
+.identity-templates { display:flex; flex-wrap:wrap; gap:4px; flex:none; }
+.identity-template {
+  font:inherit; font-size:11.5px; padding:2px 7px; border-radius:99px; color:var(--text-dim);
+  background:var(--surface-panel); border:1px dashed var(--border-subtle);
+}
+.identity-template:hover { color:var(--text-primary); background:var(--surface-hover); }
 .identity-newfile { display:flex; align-items:center; gap:4px; flex:none; }
 .identity-newfile-input {
   flex:1; min-width:0; padding:5px 8px; border-radius:7px; font:inherit; font-size:13px;
@@ -162,9 +179,9 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .row .st { margin-left:auto; font-size:12px; font-weight:700; }
 .row .st.m { color:var(--status-modified); }
 .row .st.u { color:var(--status-untracked); }
-.sess-day { margin:2px 4px 6px; font-size:13px; }
+.sess-day { margin:2px 4px 6px; font-size:12px; }
 .sess-search {
-  width:100%; margin:0 0 8px; padding:6px 10px; border-radius:8px; font:inherit; font-size:14.5px;
+  width:100%; margin:0 0 8px; padding:6px 10px; border-radius:8px; font:inherit; font-size:13px;
   background:var(--surface-panel); border:1px solid var(--border-subtle); color:var(--text-primary);
 }
 .sess-search::placeholder { color:var(--text-muted); }
@@ -173,23 +190,38 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .sess-row.active { background:var(--surface-selected); }
 .sess-line { display:flex; align-items:center; gap:8px; min-width:0; }
 .sess-line .ic { width:15px; text-align:center; opacity:.85; flex:none; }
-.sess-row .t { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
-.sess-row .ago { color:var(--text-dim); font-size:12.5px; flex:none; }
-.sess-row .snip { color:var(--text-muted); font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.newbtn { margin-top:8px; width:100%; height:34px; border:1px dashed var(--border-strong); border-radius:8px; color:var(--text-muted); }
-.newbtn:hover { border-color:var(--border-strong); color:var(--text-primary); }
+.sess-row .t { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500; }
+.sess-row .ago { color:var(--text-dim); font-size:11.5px; flex:none; }
+.sess-row .snip { color:var(--text-muted); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
-/* Project rows read as small cards — bold name + subtitle beneath, no inline
-   timestamp — distinct from the denser session-list rows above. */
-.proj-card { display:flex; flex-direction:column; align-items:stretch; gap:4px; width:100%; min-width:0; padding:10px 8px; border-radius:8px; cursor:pointer; }
-.proj-card:hover { background:var(--surface-row-hover); }
-.proj-card.active { background:var(--surface-selected); }
-.proj-card-head { display:flex; align-items:center; gap:8px; min-width:0; }
-.proj-card-head .ic { font-size:16px; flex:none; opacity:.9; }
-.proj-card-head .t { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:700; font-size:15px; }
-.proj-card-sub { color:var(--text-muted); font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding-left:24px; }
+/* Grouped project switcher (Claude-style): folder + bold name, that project's
+   recent chats indented beneath, "show more" to expand past the preview. */
+.proj-group { margin-bottom:18px; }
+.proj-group-row { display:flex; align-items:center; gap:2px; margin-bottom:3px; }
+.proj-group-chev { flex:none; width:18px; padding:7px 0; text-align:center; color:var(--text-dim); font-size:10.5px; cursor:pointer; border-radius:5px; }
+.proj-group-chev:hover { color:var(--text-primary); background:var(--surface-hover); }
+.proj-group-head { display:flex; align-items:center; gap:8px; flex:1; min-width:0; padding:7px 8px; border-radius:7px; cursor:pointer; }
+.proj-group-head:hover { background:var(--surface-row-hover); }
+.proj-group-head.active { background:var(--surface-selected); }
+.proj-group-head .ic { font-size:15px; flex:none; opacity:.9; }
+.proj-group-head .t { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; font-size:13.5px; }
+.proj-group-head .proj-branch { color:var(--text-dim); font-size:11.5px; flex:none; }
+.proj-group-sess { display:flex; align-items:center; min-width:0; border-radius:6px; color:var(--text-secondary); }
+.proj-group-sess:hover { background:var(--surface-row-hover); color:var(--text-primary); }
+.proj-group-sess.active { background:var(--surface-selected); color:var(--text-selected); }
+.proj-group-sess-open {
+  flex:1; min-width:0; padding:6px 4px 6px 33px;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  color:inherit; font-size:12.5px; text-align:left; cursor:pointer;
+}
+.sess-del { flex:none; opacity:0; color:var(--text-dim); border-radius:4px; padding:1px 5px; margin-right:4px; font-size:11.5px; cursor:pointer; }
+.proj-group-sess:hover .sess-del, .sess-row:hover .sess-del, .sess-del.confirm { opacity:1; }
+.sess-del:hover { color:var(--status-danger); background:var(--surface-hover); }
+.sess-del.confirm { color:var(--status-danger); font-weight:600; }
+.proj-group-more { display:block; padding:5px 8px 5px 33px; color:var(--text-dim); font-size:12px; cursor:pointer; }
+.proj-group-more:hover { color:var(--text-primary); }
 
-.side-footer-wrap { position:relative; flex:0 0 auto; }
+.side-footer-wrap { position:relative; flex:0 0 auto; border-top:1px solid var(--border-subtle); }
 .side-footer {
   display:flex; align-items:center; gap:10px; width:100%;
   padding:10px 14px; border-top:1px solid var(--border-default); color:var(--text-primary);
@@ -199,21 +231,26 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   width:26px; height:26px; border-radius:50%; background:var(--surface-panel);
   display:grid; place-items:center; font-size:15.5px; flex:none;
 }
-.side-footer .label { flex:1; font-size:15px; font-weight:600; }
+.side-footer .label { flex:1; font-size:13.5px; font-weight:600; }
 .side-footer .gear { color:var(--text-dim); font-size:16.5px; }
 
 .plus-menu.up { top:auto; bottom:calc(100% + 6px); }
-.profile-menu { min-width:210px; }
-.profile-head { display:flex; align-items:center; gap:10px; padding:6px 6px 10px; }
-.profile-head .avatar.lg { width:36px; height:36px; font-size:18px; }
+/* Span the sidebar instead of a fixed min-width: .side clips overflow, so a
+   250px menu inside a narrower sidebar loses its right edge. */
+.plus-menu.profile-menu { left:6px; right:6px; min-width:0; padding:8px; gap:2px; }
+/* Rows in the profile menu share one 10px left/right rhythm and the sidebar's
+   13.5px scale, so the head, language row, and settings row line up. */
+.profile-menu .plus-menu-item { font-size:13.5px; padding:8px 10px; width:100%; }
+.profile-head { display:flex; align-items:center; gap:10px; padding:8px 10px 12px; }
+.profile-head .avatar.lg { width:32px; height:32px; font-size:16px; }
 .profile-head .name-input {
-  flex:1; padding:5px 8px; border-radius:6px; background:var(--surface-panel);
-  border:1px solid var(--border-subtle); color:var(--text-primary); font:inherit; font-size:15px;
+  flex:1; min-width:0; padding:6px 9px; border-radius:7px; background:var(--surface-panel);
+  border:1px solid var(--border-subtle); color:var(--text-primary); font:inherit; font-size:13.5px;
 }
-.menu-sep { height:1px; background:var(--border-subtle); margin:2px 6px 6px; }
+.menu-sep { height:1px; background:var(--border-subtle); margin:2px 10px 6px; }
 .lang-select {
   margin-left:auto; padding:3px 6px; border-radius:6px; background:var(--surface-panel);
-  border:1px solid var(--border-subtle); color:var(--text-primary); font:inherit; font-size:13px; cursor:pointer;
+  border:1px solid var(--border-subtle); color:var(--text-primary); font:inherit; font-size:12.5px; cursor:pointer;
 }
 
 /* ---------- center / chat ---------- */
@@ -369,7 +406,15 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .badge-edit { font-size:12.5px; padding:2px 9px; border-radius:5px; background:var(--badge-blue-bg); color:var(--badge-blue-text); border:1px solid var(--badge-blue-border); }
 
 .composer { padding:12px 26px 18px; }
-.composer .box, .project-chips, .api-key-banner, .attach-chip { max-width:880px; margin-left:auto; margin-right:auto; }
+.composer .box, .project-chips, .api-key-banner, .attach-chip, .focus-row { max-width:880px; margin-left:auto; margin-right:auto; }
+/* What the AI is focused on right now — project + branch, mirrored above the input. */
+.focus-row { display:flex; align-items:center; gap:6px; margin-bottom:7px; }
+.focus-chip {
+  display:inline-flex; align-items:center; gap:5px; padding:3px 10px; border-radius:99px;
+  border:1px solid var(--border-subtle); background:var(--surface-panel);
+  color:var(--text-secondary); font-size:12px; white-space:nowrap;
+}
+.focus-chip .ic { font-size:12px; opacity:.9; }
 .project-chips { display:flex; gap:6px; margin-bottom:8px; }
 .api-key-banner { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
 .api-key-banner .ctrl:first-child { flex:1; }
@@ -398,7 +443,28 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   padding-right:22px;
 }
 .composer input.ctrl { cursor:text; width:120px; }
-.composer .send { margin-left:auto; width:36px; height:36px; border-radius:9px; background:var(--surface-raised); border:1px solid var(--border-default); display:grid; place-items:center; color:var(--text-muted); }
+.composer .send { width:36px; height:36px; border-radius:9px; background:var(--surface-raised); border:1px solid var(--border-default); display:grid; place-items:center; color:var(--text-muted); }
+
+/* Compact model picker — one chip ("model · think level ⌄") opening an
+   upward popover with the full provider/model/effort controls. */
+.model-pick { position:relative; margin-left:auto; }
+.model-chip {
+  display:inline-flex; align-items:center; gap:7px; padding:6px 10px; border-radius:9px;
+  color:var(--text-secondary); font-size:13px; cursor:pointer; max-width:340px;
+}
+.model-chip:hover { background:var(--surface-hover); color:var(--text-primary); }
+.model-chip .t { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
+.model-chip .lvl { flex:none; color:var(--text-dim); }
+.model-chip .caret { flex:none; color:var(--text-dim); font-size:11px; }
+.model-menu {
+  position:absolute; bottom:calc(100% + 10px); right:0; z-index:50; min-width:280px;
+  display:flex; flex-direction:column; gap:8px; padding:10px;
+  background:var(--surface-panel); border:1px solid var(--border-subtle); border-radius:12px;
+  box-shadow:0 12px 32px rgba(0,0,0,.4);
+}
+.mm-row { display:flex; align-items:center; justify-content:space-between; gap:12px; min-width:0; }
+.mm-row .lbl { flex:none; font-size:12.5px; color:var(--text-muted); }
+.mm-row .ctrl { min-width:0; max-width:180px; }
 .composer .send:hover { color:var(--accent); border-color:var(--interactive-hover-border); }
 
 /* ---------- inspector ---------- */

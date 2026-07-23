@@ -1,3 +1,5 @@
+import '@fontsource-variable/inter'
+import '@fontsource-variable/noto-sans-thai'
 import './styles/palette.css'
 import './styles/theme.css'
 import './style.css'
@@ -10,6 +12,7 @@ import { initSystemZoom } from './lib/systemFont.svelte'
 import { initLocale } from './lib/i18n.svelte'
 import { initEditorTheme } from './lib/editorTheme.svelte'
 import { initTreeFont } from './lib/treeFont.svelte'
+import { initUiFont } from './lib/uiFont.svelte'
 
 initTheme()
 initEditorFont()
@@ -18,6 +21,7 @@ initSystemZoom()
 initLocale()
 initEditorTheme()
 initTreeFont()
+initUiFont()
 
 const app = mount(App, {
   target: document.getElementById('app')!,

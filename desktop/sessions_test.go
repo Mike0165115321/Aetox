@@ -113,6 +113,28 @@ func TestAppendAndListSessions(t *testing.T) {
 	}
 }
 
+func TestDeleteSessionRemovesRowAndResetsCurrent(t *testing.T) {
+	a := newTestApp(t, t.TempDir())
+	a.appendTurn(
+		SessionMessage{Role: "user", Text: "delete me", Time: "10:00"},
+		SessionMessage{Role: "agent", Text: "ok", Time: "10:00"},
+	)
+	deleted := a.sessionID
+
+	if err := a.DeleteSession(deleted); err != nil {
+		t.Fatalf("DeleteSession: %v", err)
+	}
+	if len(a.ListSessions()) != 0 {
+		t.Fatalf("session still listed after delete")
+	}
+	if msgs, _ := a.LoadSessionAnyProject(deleted); len(msgs) != 0 {
+		t.Fatalf("messages still present after delete")
+	}
+	if a.sessionID == deleted {
+		t.Fatalf("current session id not reset after deleting the open session")
+	}
+}
+
 func TestListSessionsIsolatedByProject(t *testing.T) {
 	dbDir := t.TempDir()
 	rootA := t.TempDir()

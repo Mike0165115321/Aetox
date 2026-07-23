@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { theme, toggleTheme, DARK_FAMILY } from './theme.svelte'
   import { t } from './i18n.svelte'
   import Wordmark from './Wordmark.svelte'
 
@@ -32,9 +31,6 @@
       data-tip={t('topbar.toggleInspectorTip')} onclick={onToggleInspector}
     >
       {inspectorCollapsed ? '▥' : '▤'}
-    </button>
-    <button class="icobtn tip-r" aria-label={t('topbar.toggleTheme')} data-tip={t('topbar.toggleThemeTip')} onclick={toggleTheme}>
-      {DARK_FAMILY.has(theme.name) ? '☀' : '🌙'}
     </button>
   </div>
 </div>

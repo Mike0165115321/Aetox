@@ -9,7 +9,7 @@ import {
   SendMessage, GetProjectStatus, GetModelInfo, OpenProjectFolder, OpenProjectPath,
   SwitchProvider, SwitchThinkLevel, SwitchApprovalMode,
   SwitchModel, SetAPIKey, ProjectTree, CommandHistory, GitChangedFiles, ReadFile,
-  ListSessions, LoadSession, NewSession, CurrentSessionID, SearchSessions,
+  ListSessions, LoadSession, NewSession, CurrentSessionID, SearchSessions, DeleteSession,
   SaveChatImage, ReadImageDataURL, CancelTurn, BrowserGetText, RecentProjects,
   ListAllSessions, SearchAllSessions, LoadSessionAnyProject,
 } from '../../../wailsjs/go/main/App'
@@ -148,15 +148,24 @@ export async function refreshProjects(): Promise<void> {
   }))
 }
 
-/** Pull the real project/model state the Go engine is actually running with. */
+/** Pull the real project/model state the Go engine is actually running with.
+ * On a cold start the engine may still be bootstrapping (provider connect,
+ * MCP registration) — an empty provider is treated as "not ready yet": it is
+ * never applied (so it can't clobber the localStorage seed cache) and the
+ * load retries until the engine reports real state. */
+let bootRetries = 0
 export async function loadRealState(): Promise<void> {
   const [project, modelInfo] = await Promise.all([GetProjectStatus(), GetModelInfo()])
   Object.assign(cockpit.project, project)
-  applyModelInfo(modelInfo)
+  if (modelInfo.provider) applyModelInfo(modelInfo)
   await refreshWorkspace()
   await refreshSessions()
   await refreshProjects()
   await refreshGlobalHistory()
+  if (!modelInfo.provider && bootRetries < 8) {
+    bootRetries += 1
+    setTimeout(loadRealState, 1500)
+  }
 }
 
 /** Let the user pick a real folder via the native dialog; re-points the engine at it. */
@@ -373,6 +382,14 @@ export async function selectSession(session: Session): Promise<void> {
     text: m.text,
     time: m.time,
   }))
+  await refreshSessions()
+  await refreshGlobalHistory()
+}
+
+/** Permanently delete a session (any project); clears the chat if it was the open one. */
+export async function deleteSession(session: Session): Promise<void> {
+  await DeleteSession(session.id)
+  if (session.active) cockpit.chat = []
   await refreshSessions()
   await refreshGlobalHistory()
 }

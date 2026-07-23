@@ -70,6 +70,10 @@ export function DeleteIdentityFile(arg1) {
   return window['go']['main']['App']['DeleteIdentityFile'](arg1);
 }
 
+export function DeleteSession(arg1) {
+  return window['go']['main']['App']['DeleteSession'](arg1);
+}
+
 export function GetModelInfo() {
   return window['go']['main']['App']['GetModelInfo']();
 }

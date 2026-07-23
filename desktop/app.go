@@ -337,7 +337,7 @@ func (a *App) ListIdentityFiles() ([]IdentityFile, error) {
 	if err != nil {
 		return nil, err
 	}
-	var files []IdentityFile
+	files := []IdentityFile{} // non-nil so the frontend gets [] not null
 	for _, e := range entries {
 		if e.IsDir() || !strings.EqualFold(filepath.Ext(e.Name()), ".md") {
 			continue
@@ -659,7 +659,10 @@ func (a *App) ListModelsForProvider(providerName string) []string {
 	if choices, err := model.ModelChoicesWithEndpointAndAPIKey(canonical, baseURL, apiKey); err == nil && len(choices) > 0 {
 		return choices
 	}
-	return model.ModelChoices(canonical)
+	if choices := model.ModelChoices(canonical); choices != nil {
+		return choices
+	}
+	return []string{}
 }
 
 // ProviderBaseURL reports the default API endpoint for a provider, for
@@ -743,9 +746,11 @@ func resolveAPIKeyForProvider(canonicalProvider string) string {
 // generic guessed fallback internally (caps.Native == false) — that guess is not
 // shown here, since we can't promise the API actually honors those levels.
 func (a *App) SupportedThinkLevels() []string {
+	// Never nil: a nil slice serializes to JSON null, which the frontend
+	// (thinkLevels.length) crashes on mid-render.
 	caps := model.ResolveThinkingCapabilities(a.cfg.ModelProvider, a.cfg.ModelName)
-	if !caps.Native {
-		return nil
+	if !caps.Native || caps.Levels == nil {
+		return []string{}
 	}
 	return caps.Levels
 }

@@ -47,7 +47,8 @@
   })
 
   async function refreshProviderDerived(provider: string) {
-    models = await ListModelsForProvider(provider)
+    const res = await ListModelsForProvider(provider)
+    models = Array.isArray(res) ? res : []
     needsApiKey = (await RequiresAPIKey(provider)) && !(await HasAPIKey(provider))
   }
 
@@ -95,6 +96,11 @@
   }
 
   let draft = $state('')
+  let modelMenuOpen = $state(false)
+
+  function closeModelMenuOnOutside(e: MouseEvent) {
+    if (!(e.target as HTMLElement).closest('.model-pick')) modelMenuOpen = false
+  }
 
   // Ticks once a second while a turn is in flight, so the running tool step's
   // elapsed counter ("· 12s") advances live.
@@ -163,6 +169,8 @@
     openUrlInWorkbench(href)
   }
 </script>
+
+<svelte:window onclick={modelMenuOpen ? closeModelMenuOnOutside : undefined} />
 
 {#snippet toolTimeline(steps: ToolStep[], live: boolean)}
   <div class="tool-steps">
@@ -286,6 +294,10 @@
         <button class="attach-remove" aria-label={t('chat.removeAttachment')} onclick={clearPendingContext}>✕</button>
       </div>
     {/if}
+    <div class="focus-row">
+      <span class="focus-chip"><span class="ic">📁</span>{cockpit.project.name || t('topbar.openFolder')}</span>
+      {#if cockpit.project.branch}<span class="focus-chip">⑂ {cockpit.project.branch}</span>{/if}
+    </div>
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <!-- drag/drop target for a workbench tab; the textarea/buttons inside remain the real interactive elements -->
     <div class="box" class:drag-over={dragOver} ondragover={onComposerDragOver} ondragleave={() => (dragOver = false)} ondrop={onComposerDrop}>
@@ -299,28 +311,48 @@
       <div class="tools">
         <button class="icobtn" aria-label={t('chat.attachImage')} data-tip={t('chat.attachImage')} onclick={attachViaDialog}>📎</button>
         {#if model.provider}
-          <select class="ctrl" value={model.provider} onchange={handleProviderChange}>
-            {#each providers as p}<option value={p}>{p}</option>{/each}
-          </select>
-          <select class="ctrl" value={model.modelName} onchange={handleModelChange}>
-            {#each models as m}<option value={m}>{m}</option>{/each}
-            <option value="__custom__">Custom…</option>
-          </select>
-          {#if showCustomModel || models.length === 0}
-            <input
-              class="ctrl"
-              type="text"
-              placeholder={t('chat.modelIdPlaceholder')}
-              value={customModel || model.modelName}
-              oninput={(e) => (customModel = (e.target as HTMLInputElement).value)}
-              onkeydown={(e) => e.key === 'Enter' && submitCustomModel()}
-            />
-          {/if}
-          {#if thinkLevels.length > 0}
-            <select class="ctrl" value={model.thinkLevel} onchange={(e) => onSwitchThinkLevel((e.target as HTMLSelectElement).value)}>
-              {#each thinkLevels as lvl}<option value={lvl}>{lvl}</option>{/each}
-            </select>
-          {/if}
+          <div class="model-pick">
+            {#if modelMenuOpen}
+              <div class="model-menu">
+                <div class="mm-row">
+                  <span class="lbl">{t('chat.provider')}</span>
+                  <select class="ctrl" value={model.provider} onchange={handleProviderChange}>
+                    {#each providers as p}<option value={p}>{p}</option>{/each}
+                  </select>
+                </div>
+                <div class="mm-row">
+                  <span class="lbl">{t('chat.model')}</span>
+                  <select class="ctrl" value={showCustomModel ? '__custom__' : model.modelName} onchange={handleModelChange}>
+                    {#each models || [] as m}<option value={m}>{m}</option>{/each}
+                    <option value="__custom__">Custom…</option>
+                  </select>
+                </div>
+                {#if showCustomModel || !models || models.length === 0}
+                  <input
+                    class="ctrl"
+                    type="text"
+                    placeholder={t('chat.modelIdPlaceholder')}
+                    value={customModel || model.modelName}
+                    oninput={(e) => (customModel = (e.target as HTMLInputElement).value)}
+                    onkeydown={(e) => e.key === 'Enter' && submitCustomModel()}
+                  />
+                {/if}
+                {#if thinkLevels.length > 0}
+                  <div class="mm-row">
+                    <span class="lbl">{t('chat.thinkLevel')}</span>
+                    <select class="ctrl" value={model.thinkLevel} onchange={(e) => onSwitchThinkLevel((e.target as HTMLSelectElement).value)}>
+                      {#each thinkLevels as lvl}<option value={lvl}>{lvl}</option>{/each}
+                    </select>
+                  </div>
+                {/if}
+              </div>
+            {/if}
+            <button type="button" class="model-chip" onclick={(e) => { e.stopPropagation(); modelMenuOpen = !modelMenuOpen }}>
+              <span class="t">{model.modelName || model.provider}</span>
+              {#if model.thinkLevel}<span class="lvl">{model.thinkLevel}</span>{/if}
+              <span class="caret">{modelMenuOpen ? '⌃' : '⌄'}</span>
+            </button>
+          </div>
         {/if}
         <button class="send" aria-label="Send" onclick={submit}>➤</button>
       </div>

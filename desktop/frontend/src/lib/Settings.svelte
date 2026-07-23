@@ -3,6 +3,7 @@
   import { theme, applyTheme, THEMES, type ThemeName } from './theme.svelte'
   import { editorFont, applyEditorFontSize } from './editorFont.svelte'
   import { chatFont, applyChatFontSize } from './chatFont.svelte'
+  import { uiFont, applyUiFont, UI_FONTS, type UiFontName } from './uiFont.svelte'
   import { editorTheme, setBuiltinEditorTheme, setAutoEditorTheme, importThemeFile } from './editorTheme.svelte'
   import { treeFont, applyTreeFontSize } from './treeFont.svelte'
   import { systemZoom, applySystemZoom, SYSTEM_BASE_PX } from './systemFont.svelte'
@@ -90,7 +91,8 @@
     loadingModels = true
     models = []
     try {
-      models = await ListModelsForProvider(name)
+      const res = await ListModelsForProvider(name)
+      models = Array.isArray(res) ? res : []
     } finally {
       loadingModels = false
     }
@@ -263,6 +265,17 @@
           <select class="ctrl" value={theme.name} onchange={(e) => applyTheme(e.currentTarget.value as ThemeName)}>
             {#each THEMES as th}
               <option value={th.value}>{th.label}</option>
+            {/each}
+          </select>
+        </div>
+        <div class="set-row">
+          <div class="set-txt">
+            <div class="t">{t('settings.uiFontTitle')}</div>
+            <div class="d">{t('settings.uiFontDesc')}</div>
+          </div>
+          <select class="ctrl" value={uiFont.name} onchange={(e) => applyUiFont(e.currentTarget.value as UiFontName)}>
+            {#each UI_FONTS as f}
+              <option value={f.value}>{t(f.labelKey)}</option>
             {/each}
           </select>
         </div>

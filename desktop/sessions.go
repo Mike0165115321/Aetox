@@ -353,6 +353,34 @@ func (a *App) CurrentSessionID() string {
 	return a.sessionID
 }
 
+// DeleteSession permanently removes one session and its messages (any
+// project; the messages_ad trigger cleans the FTS index). Deleting the
+// session currently open also resets the transcript and agent memory.
+func (a *App) DeleteSession(id string) error {
+	db, err := a.database()
+	if err != nil {
+		return err
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(`DELETE FROM messages WHERE session_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM sessions WHERE id = ?`, id); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if a.sessionID == id {
+		a.startNewSession()
+	}
+	return nil
+}
+
 func transcriptToModelMessages(messages []SessionMessage) []model.Message {
 	out := make([]model.Message, 0, len(messages))
 	for _, m := range messages {

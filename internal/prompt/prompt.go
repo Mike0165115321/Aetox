@@ -30,8 +30,9 @@ const maxLayerBytes = 16 << 10
 // ProjectContextFileNames are checked in order under the sandbox root; the
 // first one found is the project layer. AETOX.md takes priority; AGENTS.md is
 // the ecosystem-convention fallback (OpenCode/Codex/Gemini CLI all use it),
-// so a repo that already has one works with Aetox without a new file.
-var ProjectContextFileNames = []string{"AETOX.md", "AGENTS.md"}
+// then CLAUDE.md (Claude Code) — so a repo already set up for either works
+// with Aetox without a new file.
+var ProjectContextFileNames = []string{"AETOX.md", "AGENTS.md", "CLAUDE.md"}
 
 // Loaded reports which optional layers actually fed the prompt, so a caller
 // (the desktop's project-status badge) can report the truth instead of just

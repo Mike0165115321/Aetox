@@ -35,9 +35,18 @@ func TestProjectContextFilePrefersAetoxOverAgents(t *testing.T) {
 
 func TestProjectContextFileFallsBackToAgents(t *testing.T) {
 	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "CLAUDE.md"), "claude")
 	mustWrite(t, filepath.Join(dir, "AGENTS.md"), "agents")
 	if got := ProjectContextFile(dir); filepath.Base(got) != "AGENTS.md" {
 		t.Fatalf("want AGENTS.md fallback, got %q", got)
+	}
+}
+
+func TestProjectContextFileFallsBackToClaude(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "CLAUDE.md"), "claude")
+	if got := ProjectContextFile(dir); filepath.Base(got) != "CLAUDE.md" {
+		t.Fatalf("want CLAUDE.md fallback, got %q", got)
 	}
 }
 

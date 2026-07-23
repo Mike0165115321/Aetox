@@ -1,16 +1,14 @@
 <script lang="ts">
   import {
-    cockpit, selectSession, newSession, searchSessions, toggleNode, visibleTree, openFolder, openProject,
-    refreshWorkspace, searchGlobalHistory, selectGlobalSession,
+    cockpit, newSession, openFolder, openProject,
+    searchGlobalHistory, selectGlobalSession, deleteSession,
   } from './stores/cockpit.svelte'
-  import { workbench, openFileTab } from './stores/workbench.svelte'
-  import { identity, loadIdentityFiles, openIdentityFile, saveIdentityFile, createIdentityFile, deleteIdentityFile } from './identity.svelte'
+  import type { Session } from './types'
+  import { identity, loadIdentityFiles, openIdentityFile, saveIdentityFile, createIdentityFile, deleteIdentityFile, identityTemplates } from './identity.svelte'
   import { t, i18n, setLocale, localeNames, type Locale } from './i18n.svelte'
 
   let { onOpenSettings }: { onOpenSettings: () => void } = $props()
 
-  let query = $state('')
-  let searchTimer: ReturnType<typeof setTimeout> | undefined
   let historyQuery = $state('')
   let historySearchTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -37,7 +35,28 @@
     if (profileOpen) nameDraft = profileName
   })
 
-  const rows = $derived(visibleTree(cockpit.tree))
+  // Claude-style grouped switcher: every known project with its recent chats
+  // nested beneath (matched by projectName from the global history list).
+  const PROJECT_GROUP_PREVIEW = 3
+  let expandedProjects = $state<Record<string, boolean>>({})
+  let collapsedProjects = $state<Record<string, boolean>>({}) // fold a project's session list
+
+  // Two-step delete: first click arms ("ยืนยัน?"), second click deletes.
+  let confirmDeleteId = $state('')
+  function onDeleteSession(s: Session) {
+    if (confirmDeleteId !== s.id) {
+      confirmDeleteId = s.id
+      return
+    }
+    confirmDeleteId = ''
+    deleteSession(s)
+  }
+  const projectGroups = $derived(
+    (cockpit.projects || []).map((p) => ({
+      project: p,
+      sessions: (cockpit.history || []).filter((s) => s.projectName === p.name),
+    }))
+  )
 
   let identityOpen = $state(true)
   let projectsOpen = $state(true)
@@ -46,6 +65,9 @@
   let identityLoadedOnce = false
   let newIdentityName = $state('')
   const identityDirty = $derived(identity.draft !== identity.saved)
+  const missingTemplates = $derived(
+    identity.loaded && identity.files ? identityTemplates.filter((tpl) => !(identity.files || []).some((f) => f.name === tpl.name)) : []
+  )
 
   $effect(() => {
     if (identityLoadedOnce) return
@@ -59,20 +81,24 @@
     newIdentityName = ''
   }
 
-  function onSearchInput() {
-    clearTimeout(searchTimer)
-    searchTimer = setTimeout(() => searchSessions(query), 200)
-  }
-
   function onHistorySearchInput() {
     clearTimeout(historySearchTimer)
     historySearchTimer = setTimeout(() => searchGlobalHistory(historyQuery), 200)
   }
 </script>
 
-<svelte:window onclick={profileOpen ? closeProfileOnOutsideClick : undefined} />
+<svelte:window
+  onclick={profileOpen ? closeProfileOnOutsideClick : undefined}
+  onkeydown={(e) => {
+    if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'n') {
+      e.preventDefault()
+      newSession()
+    }
+  }}
+/>
 
 <aside class="side">
+  <div class="side-sections">
   <div class="side-panel" style={identityOpen ? 'flex:0 0 260px' : 'flex:0 0 auto'}>
     <button type="button" class="side-head" onclick={() => (identityOpen = !identityOpen)}>
       <span class="chev">{identityOpen ? '▾' : '▸'}</span>
@@ -94,6 +120,15 @@
             <div class="empty">{t('sidebar.noIdentityFiles')}</div>
           {/if}
         </div>
+        {#if missingTemplates.length > 0}
+          <div class="identity-templates">
+            {#each missingTemplates as tpl (tpl.name)}
+              <button type="button" class="identity-template" onclick={() => createIdentityFile(tpl.name, tpl.content)}>
+                ＋ {tpl.name}
+              </button>
+            {/each}
+          </div>
+        {/if}
         <div class="identity-newfile">
           <input
             class="identity-newfile-input" placeholder={t('sidebar.newIdentityFile')}
@@ -119,80 +154,65 @@
     {/if}
   </div>
 
-  <div class="side-panel grow">
-    <button type="button" class="side-head" onclick={() => (projectsOpen = !projectsOpen)}>
-      <span class="chev">{projectsOpen ? '▾' : '▸'}</span>
-      <span class="eyebrow">{t('sidebar.projects')}</span>
-    </button>
+  <div class="side-panel">
+    <div class="side-head">
+      <button type="button" class="side-head-toggle" onclick={() => (projectsOpen = !projectsOpen)}>
+        <span class="chev">{projectsOpen ? '▾' : '▸'}</span>
+        <span class="eyebrow">{t('sidebar.projects')}</span>
+      </button>
+      <button type="button" class="icobtn tiny tip-r" aria-label={t('topbar.openFolder')}
+        data-tip={t('topbar.openFolder')} onclick={openFolder}>＋</button>
+      <button type="button" class="icobtn tiny tip-r" aria-label={t('sidebar.newSession')}
+        data-tip="{t('sidebar.newSession')} · Ctrl+N" onclick={newSession}>✎</button>
+    </div>
     {#if projectsOpen}
       <div class="scroll">
-        <div class="proj-row">
-          <span class="proj-name">{cockpit.project.name || t('topbar.openFolder')}</span>
-          {#if cockpit.project.branch}<span class="proj-branch">⑂ {cockpit.project.branch}</span>{/if}
-          <button type="button" class="icobtn tiny" aria-label={t('sidebar.refreshTip')} data-tip={t('sidebar.refreshTip')} onclick={refreshWorkspace}>⟳</button>
-          <button type="button" class="icobtn tiny" aria-label={t('topbar.openFolder')} data-tip={t('topbar.openFolder')} onclick={openFolder}>⋯</button>
-        </div>
-        <div class="side-sub-head first">{t('sidebar.explorer')}</div>
-        <div class="proj">
-          {#each rows as node (node.label + node.depth)}
-            <button
-              type="button" class="row" class:active={workbench.activeId === 'file-' + node.path} title={node.path}
-              style="padding-left:{20 + node.depth * 14}px"
-              onclick={() => (node.kind === 'dir' ? toggleNode(node) : openFileTab(node.path))}
-            >
-              {#if node.kind === 'dir'}
-                <span class="tw" class:open={node.open}></span>
+        {#each projectGroups as g (g.project.key)}
+          <div class="proj-group">
+            <div class="proj-group-row">
+              <button type="button" class="proj-group-chev" aria-label={g.project.name}
+                onclick={() => (collapsedProjects[g.project.key] = !collapsedProjects[g.project.key])}>
+                {collapsedProjects[g.project.key] ? '▸' : '▾'}
+              </button>
+              <button type="button" class="proj-group-head" class:active={g.project.active} onclick={() => openProject(g.project.path)}>
+                <span class="ic">{g.project.active ? '📂' : '📁'}</span>
+                <span class="t">{g.project.name}</span>
+                {#if g.project.active && cockpit.project.branch}<span class="proj-branch">⑂ {cockpit.project.branch}</span>{/if}
+              </button>
+            </div>
+            {#if !collapsedProjects[g.project.key]}
+              {#each expandedProjects[g.project.key] ? g.sessions : g.sessions.slice(0, PROJECT_GROUP_PREVIEW) as s (s.id)}
+                <div class="proj-group-sess" class:active={s.active}>
+                  <button type="button" class="proj-group-sess-open" onclick={() => selectGlobalSession(s)}>{s.title}</button>
+                  <button type="button" class="sess-del" class:confirm={confirmDeleteId === s.id}
+                    aria-label={t('sidebar.deleteSession')} onclick={() => onDeleteSession(s)}>
+                    {confirmDeleteId === s.id ? t('sidebar.confirmDelete') : '✕'}
+                  </button>
+                </div>
+              {/each}
+              {#if g.sessions.length > PROJECT_GROUP_PREVIEW}
+                <button type="button" class="proj-group-more" onclick={() => (expandedProjects[g.project.key] = !expandedProjects[g.project.key])}>
+                  {expandedProjects[g.project.key] ? t('sidebar.showLess') : t('sidebar.showMore')}
+                </button>
               {/if}
-              <span class="ic">{node.kind === 'dir' ? (node.open ? '📂' : '📁') : '📄'}</span> {node.label}
-              {#if node.status === 'M'}<span class="st m">M</span>{/if}
-              {#if node.status === 'U'}<span class="st u">U</span>{/if}
-            </button>
-          {/each}
-          {#if cockpit.tree.length === 0}
-            <div class="empty">{t('sidebar.noFiles')}</div>
-          {/if}
-        </div>
-
-        <div class="side-sub-head">{t('sidebar.projectChats')}</div>
-        <input class="sess-search" placeholder={t('sidebar.searchHistory')} bind:value={query} oninput={onSearchInput} />
-        {#each cockpit.sessions as s (s.id)}
-          <button type="button" class="sess-row" class:active={s.active} onclick={() => selectSession(s)}>
-            <span class="sess-line">
-              <span class="t">{s.title}</span>
-              <span class="ago">{s.ago}</span>
-              {#if s.active}<span class="dot green"></span>{/if}
-            </span>
-            {#if s.snippet}<span class="snip">{s.snippet}</span>{/if}
-          </button>
+            {/if}
+          </div>
         {/each}
-        {#if cockpit.sessions.length === 0}
-          <div class="empty">{query.trim() ? t('sidebar.noResults') : t('sidebar.noHistory')}</div>
-        {/if}
-        <button class="newbtn" onclick={newSession}>{t('sidebar.newSession')}</button>
-
-        {#if cockpit.projects.length > 0}
-          <div class="side-sub-head">{t('sidebar.switchProject')}</div>
-          {#each cockpit.projects as p (p.key)}
-            <button type="button" class="proj-card" class:active={p.active} onclick={() => openProject(p.path)}>
-              <span class="proj-card-head">
-                <span class="ic">📁</span>
-                <span class="t">{p.name}</span>
-              </span>
-              {#if p.snippet}<span class="proj-card-sub">{p.snippet}</span>{/if}
-            </button>
-          {/each}
-        {/if}
       </div>
     {/if}
   </div>
 
   <div class="side-panel">
-    <button type="button" class="side-head" onclick={() => (historyOpen = !historyOpen)}>
-      <span class="chev">{historyOpen ? '▾' : '▸'}</span>
-      <span class="eyebrow">{t('sidebar.globalHistory')}</span>
-    </button>
+    <div class="side-head">
+      <button type="button" class="side-head-toggle" onclick={() => (historyOpen = !historyOpen)}>
+        <span class="chev">{historyOpen ? '▾' : '▸'}</span>
+        <span class="eyebrow">{t('sidebar.globalHistory')}</span>
+      </button>
+      <button type="button" class="icobtn tiny tip-r" aria-label={t('sidebar.newSession')}
+        data-tip="{t('sidebar.newSession')} · Ctrl+N" onclick={newSession}>✎</button>
+    </div>
     {#if historyOpen}
-      <div class="scroll capped">
+      <div class="scroll">
         <input class="sess-search" placeholder={t('sidebar.searchHistory')} bind:value={historyQuery} oninput={onHistorySearchInput} />
         {#each cockpit.history as s (s.id)}
           <button type="button" class="sess-row" class:active={s.active} onclick={() => selectGlobalSession(s)}>
@@ -200,6 +220,12 @@
               <span class="t">{s.title}</span>
               <span class="ago">{s.ago}</span>
               {#if s.active}<span class="dot green"></span>{/if}
+              <span class="sess-del" class:confirm={confirmDeleteId === s.id} role="button" tabindex="0"
+                aria-label={t('sidebar.deleteSession')}
+                onclick={(e) => { e.stopPropagation(); onDeleteSession(s) }}
+                onkeydown={(e) => e.key === 'Enter' && (e.stopPropagation(), onDeleteSession(s))}>
+                {confirmDeleteId === s.id ? t('sidebar.confirmDelete') : '✕'}
+              </span>
             </span>
             {#if s.projectName}<span class="snip">{s.projectName}{#if s.snippet} — {s.snippet}{/if}</span>{/if}
           </button>
@@ -209,6 +235,7 @@
         {/if}
       </div>
     {/if}
+  </div>
   </div>
 
   <div class="side-footer-wrap">

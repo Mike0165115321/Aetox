@@ -246,6 +246,62 @@ const NAMED_EDITOR_THEMES: Record<ThemeName, MonacoThemeData> = {
       'editorLineNumber.activeForeground': '#a9b1d6',
     },
   },
+  'one-dark': {
+    base: 'vs-dark', inherit: true,
+    rules: rules({
+      comment: '5c6370', string: '98c379', number: 'd19a66', constant: 'd19a66',
+      keyword: 'c678dd', function: '61afef', type: 'e5c07b', tag: 'e06c75',
+      'attribute.name': 'd19a66', variable: 'abb2bf', delimiter: 'abb2bf', regexp: '56b6c2', invalid: 'e06c75',
+    }),
+    colors: {
+      'editor.background': '#282c34', 'editor.foreground': '#abb2bf',
+      'editor.lineHighlightBackground': '#2f343e', 'editorCursor.foreground': '#61afef',
+      'editor.selectionBackground': '#3e4451', 'editorLineNumber.foreground': '#495162',
+      'editorLineNumber.activeForeground': '#abb2bf',
+    },
+  },
+  'everforest-dark': {
+    base: 'vs-dark', inherit: true,
+    rules: rules({
+      comment: '859289', string: 'a7c080', number: 'd699b6', constant: 'd699b6',
+      keyword: 'e67e80', function: '83c092', type: 'dbbc7f', tag: 'e69875',
+      'attribute.name': 'dbbc7f', variable: 'd3c6aa', delimiter: 'd3c6aa', regexp: '7fbbb3', invalid: 'e67e80',
+    }),
+    colors: {
+      'editor.background': '#2d353b', 'editor.foreground': '#d3c6aa',
+      'editor.lineHighlightBackground': '#3d484d', 'editorCursor.foreground': '#a7c080',
+      'editor.selectionBackground': '#475258', 'editorLineNumber.foreground': '#56635f',
+      'editorLineNumber.activeForeground': '#9da9a0',
+    },
+  },
+  'kanagawa-wave': {
+    base: 'vs-dark', inherit: true,
+    rules: rules({
+      comment: '727169', string: '98bb6c', number: 'd27e99', constant: 'ffa066',
+      keyword: '957fb8', function: '7e9cd8', type: '7aa89f', tag: 'ff5d62',
+      'attribute.name': 'e6c384', variable: 'dcd7ba', delimiter: 'c8c093', regexp: 'c0a36e', invalid: 'ff5d62',
+    }),
+    colors: {
+      'editor.background': '#1f1f28', 'editor.foreground': '#dcd7ba',
+      'editor.lineHighlightBackground': '#2a2a37', 'editorCursor.foreground': '#7e9cd8',
+      'editor.selectionBackground': '#2d4f67', 'editorLineNumber.foreground': '#54546d',
+      'editorLineNumber.activeForeground': '#c8c093',
+    },
+  },
+  'solarized-light': {
+    base: 'vs', inherit: true,
+    rules: rules({
+      comment: '93a1a1', string: '2aa198', number: 'd33682', constant: 'cb4b16',
+      keyword: '859900', function: '268bd2', type: 'b58900', tag: 'dc322f',
+      'attribute.name': 'b58900', variable: '657b83', delimiter: '657b83', regexp: 'd33682', invalid: 'dc322f',
+    }),
+    colors: {
+      'editor.background': '#fdf6e3', 'editor.foreground': '#657b83',
+      'editor.lineHighlightBackground': '#eee8d5', 'editorCursor.foreground': '#268bd2',
+      'editor.selectionBackground': '#d9d2c2', 'editorLineNumber.foreground': '#93a1a1',
+      'editorLineNumber.activeForeground': '#586e75',
+    },
+  },
 }
 
 /** Registers every named UI theme as a same-named Monaco theme, once. */
