@@ -54,6 +54,10 @@ export function CancelTurn() {
   return window['go']['main']['App']['CancelTurn']();
 }
 
+export function CloseAllBrowserTabs() {
+  return window['go']['main']['App']['CloseAllBrowserTabs']();
+}
+
 export function CommandHistory() {
   return window['go']['main']['App']['CommandHistory']();
 }

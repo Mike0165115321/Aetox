@@ -10,6 +10,7 @@
   import {
     workbench, activateTab, closeTab, removeTab,
     openReview, openFilesTab, openBrowserTab, openTerminalTab, openToolsTab,
+    type WorkbenchTab,
   } from '../stores/workbench.svelte'
   import { TerminalShells, BrowserBack, BrowserForward, BrowserReload } from '../../../wailsjs/go/main/App'
   import { EventsOn } from '../../../wailsjs/runtime/runtime'
@@ -72,6 +73,15 @@
     if (tab?.kind === 'browser' && tab.url) fn(tab.id)
   }
 
+  // Lets a file/browser tab be dragged into the chat composer to attach its
+  // content — see Chat.svelte's ondrop, which reads this same MIME type.
+  function onTabDragStart(e: DragEvent, tab: WorkbenchTab) {
+    if (tab.kind !== 'file' && tab.kind !== 'browser') return
+    const ref = tab.kind === 'file' ? tab.path ?? '' : tab.id
+    e.dataTransfer?.setData('application/x-aetox-tab', JSON.stringify({ kind: tab.kind, ref, label: tab.name }))
+    e.dataTransfer!.effectAllowed = 'copy'
+  }
+
   function closeMenuOnOutsideClick(e: MouseEvent) {
     if (!(e.target as HTMLElement).closest('.plus-menu-wrap')) menuOpen = false
   }
@@ -90,7 +100,11 @@
 
 <div class="insp-tabs">
   {#each workbench.tabs as tab (tab.id)}
-    <button class="tab" class:active={workbench.activeId === tab.id} title={tab.name} onclick={() => activateTab(tab.id)}>
+    <button
+      class="tab" class:active={workbench.activeId === tab.id} title={tab.name} onclick={() => activateTab(tab.id)}
+      draggable={tab.kind === 'file' || tab.kind === 'browser'}
+      ondragstart={(e) => onTabDragStart(e, tab)}
+    >
       <span class="ic">{tabIcon[tab.kind]}</span>
       <span class="label">{tab.name}</span>
       <span

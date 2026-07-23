@@ -9,10 +9,12 @@
   import { t } from './i18n.svelte'
   import { renderMarkdown } from './markdown'
   import { openUrlInWorkbench } from './stores/workbench.svelte'
-  import { cockpit, attachImageFromPath, clearPendingImage, cancelTurn } from './stores/cockpit.svelte'
+  import {
+    cockpit, attachImageFromPath, clearPendingImage, attachTabContext, clearPendingContext,
+  } from './stores/cockpit.svelte'
 
   let {
-    messages, task, model, awaitingReply, agentStatus, toolSteps, streamingText,
+    messages, task, model, awaitingReply, agentStatus, toolSteps, streamingText, reasoningText,
     onSend, onSwitchProvider, onSwitchThinkLevel, onSwitchModel, onSubmitAPIKey,
   }: {
     messages: ChatMessage[]
@@ -22,6 +24,7 @@
     agentStatus: string
     toolSteps: ToolStep[]
     streamingText: string
+    reasoningText: string
     onSend: (text: string) => void
     onSwitchProvider: (provider: string) => Promise<void>
     onSwitchThinkLevel: (level: string) => Promise<void>
@@ -36,6 +39,7 @@
   let customModel = $state('')
   let needsApiKey = $state(false)
   let apiKeyDraft = $state('')
+  let reasoningCollapsed = $state(false)
 
   onMount(async () => {
     providers = await SupportedProviders()
@@ -115,7 +119,7 @@
   }
 
   function submit() {
-    if (!draft.trim() && !cockpit.pendingImage) return
+    if (!draft.trim() && !cockpit.pendingImage && !cockpit.pendingContext) return
     onSend(draft)
     draft = ''
   }
@@ -129,6 +133,23 @@
   async function attachViaDialog() {
     const path = await PickAttachmentImage()
     if (path) await attachImageFromPath(path)
+  }
+
+  // A file/browser tab dragged from the workbench (Workbench.svelte's
+  // ondragstart) drops here and is staged as pending context.
+  let dragOver = $state(false)
+  function onComposerDragOver(e: DragEvent) {
+    if (!e.dataTransfer?.types.includes('application/x-aetox-tab')) return
+    e.preventDefault()
+    dragOver = true
+  }
+  async function onComposerDrop(e: DragEvent) {
+    const raw = e.dataTransfer?.getData('application/x-aetox-tab')
+    dragOver = false
+    if (!raw) return
+    e.preventDefault()
+    const { kind, ref, label } = JSON.parse(raw) as { kind: 'file' | 'browser'; ref: string; label: string }
+    await attachTabContext(kind, ref, label)
   }
 
   // Links in rendered markdown must not navigate the app's own webview away —
@@ -183,13 +204,14 @@
       {#each messages as m}
         <div class="msg {m.role === 'user' ? 'user' : 'bot'}">
           <div class="bubble">
-            {#if m.role === 'agent'}
-              <div class="name"><b>{t('chat.agentName')}</b>
-                {#if m.tag}<span class="tag think">{m.tag}</span>{/if}
-              </div>
+            {#if m.role === 'agent' && m.tag}
+              <div class="name"><span class="tag think">{m.tag}</span></div>
             {/if}
             {#if m.imageDataUrl}
               <img src={m.imageDataUrl} alt="" class="msg-image" />
+            {/if}
+            {#if m.contextLabel}
+              <div class="attach-chip"><span class="ic">📎</span> <span class="attach-name">{m.contextLabel}</span></div>
             {/if}
             {#if m.steps?.length}
               {@render toolTimeline(m.steps, false)}
@@ -208,8 +230,17 @@
                 <span class="typing-status">{agentStatus}</span>
               {/if}
               <span class="typing-dots"><span></span><span></span><span></span></span>
-              <button class="stop-btn" onclick={cancelTurn} title={t('chat.stopTurn')}>■ {t('chat.stopTurn')}</button>
             </div>
+            {#if reasoningText}
+              <div class="reasoning-panel">
+                <button class="reasoning-toggle" onclick={() => (reasoningCollapsed = !reasoningCollapsed)}>
+                  <span class="chev">{reasoningCollapsed ? '▸' : '▾'}</span> {t('chat.thinking')}
+                </button>
+                {#if !reasoningCollapsed}
+                  <div class="reasoning-body">{reasoningText}</div>
+                {/if}
+              </div>
+            {/if}
             {#if toolSteps.length > 0}
               {@render toolTimeline(toolSteps, true)}
             {/if}
@@ -247,7 +278,16 @@
         <button class="attach-remove" aria-label={t('chat.removeAttachment')} onclick={clearPendingImage}>✕</button>
       </div>
     {/if}
-    <div class="box">
+    {#if cockpit.pendingContext}
+      <div class="attach-chip">
+        <span class="ic">{cockpit.pendingContext.kind === 'file' ? '📄' : '🌐'}</span>
+        <span class="attach-name">{cockpit.pendingContext.label}</span>
+        <button class="attach-remove" aria-label={t('chat.removeAttachment')} onclick={clearPendingContext}>✕</button>
+      </div>
+    {/if}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <!-- drag/drop target for a workbench tab; the textarea/buttons inside remain the real interactive elements -->
+    <div class="box" class:drag-over={dragOver} ondragover={onComposerDragOver} ondragleave={() => (dragOver = false)} ondrop={onComposerDrop}>
       <textarea
         class="input"
         rows="1"
@@ -257,27 +297,29 @@
       ></textarea>
       <div class="tools">
         <button class="icobtn" aria-label={t('chat.attachImage')} data-tip={t('chat.attachImage')} onclick={attachViaDialog}>📎</button>
-        <select class="ctrl" value={model.provider} onchange={handleProviderChange}>
-          {#each providers as p}<option value={p}>{p}</option>{/each}
-        </select>
-        <select class="ctrl" value={model.modelName} onchange={handleModelChange}>
-          {#each models as m}<option value={m}>{m}</option>{/each}
-          <option value="__custom__">Custom…</option>
-        </select>
-        {#if showCustomModel || models.length === 0}
-          <input
-            class="ctrl"
-            type="text"
-            placeholder={t('chat.modelIdPlaceholder')}
-            value={customModel || model.modelName}
-            oninput={(e) => (customModel = (e.target as HTMLInputElement).value)}
-            onkeydown={(e) => e.key === 'Enter' && submitCustomModel()}
-          />
-        {/if}
-        {#if thinkLevels.length > 0}
-          <select class="ctrl" value={model.thinkLevel} onchange={(e) => onSwitchThinkLevel((e.target as HTMLSelectElement).value)}>
-            {#each thinkLevels as lvl}<option value={lvl}>{lvl}</option>{/each}
+        {#if model.provider}
+          <select class="ctrl" value={model.provider} onchange={handleProviderChange}>
+            {#each providers as p}<option value={p}>{p}</option>{/each}
           </select>
+          <select class="ctrl" value={model.modelName} onchange={handleModelChange}>
+            {#each models as m}<option value={m}>{m}</option>{/each}
+            <option value="__custom__">Custom…</option>
+          </select>
+          {#if showCustomModel || models.length === 0}
+            <input
+              class="ctrl"
+              type="text"
+              placeholder={t('chat.modelIdPlaceholder')}
+              value={customModel || model.modelName}
+              oninput={(e) => (customModel = (e.target as HTMLInputElement).value)}
+              onkeydown={(e) => e.key === 'Enter' && submitCustomModel()}
+            />
+          {/if}
+          {#if thinkLevels.length > 0}
+            <select class="ctrl" value={model.thinkLevel} onchange={(e) => onSwitchThinkLevel((e.target as HTMLSelectElement).value)}>
+              {#each thinkLevels as lvl}<option value={lvl}>{lvl}</option>{/each}
+            </select>
+          {/if}
         {/if}
         <button class="send" aria-label="Send" onclick={submit}>➤</button>
       </div>

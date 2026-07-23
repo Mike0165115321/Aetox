@@ -10,12 +10,43 @@ import {
   SwitchProvider, SwitchThinkLevel, SwitchApprovalMode,
   SwitchModel, SetAPIKey, ProjectTree, CommandHistory, GitChangedFiles, ReadFile,
   ListSessions, LoadSession, NewSession, CurrentSessionID, SearchSessions,
-  SaveChatImage, ReadImageDataURL, CancelTurn,
+  SaveChatImage, ReadImageDataURL, CancelTurn, BrowserGetText,
 } from '../../../wailsjs/go/main/App'
 import type { main } from '../../../wailsjs/go/models'
 import { t } from '../i18n.svelte'
 
+// Model info comes from a real Go IPC round-trip (GetModelInfo), which is
+// only as fast as the whole engine bootstrap (provider client, skill
+// discovery, MCP servers, ...) finishing first — so first paint would
+// otherwise sit on a "loading" placeholder for however long that takes,
+// every single app start. Caching the last-known values in localStorage and
+// seeding cockpit.model from them synchronously, before any await, means
+// first paint shows the (almost always still-correct) real dropdowns
+// immediately; loadRealState's actual GetModelInfo call still runs and
+// corrects it silently if anything changed. Empty-state placeholders are
+// still the right behavior for a genuine first-ever launch (nothing cached
+// yet) — this only smooths every launch after that.
+const MODEL_CACHE_KEY = 'lastModelInfo'
+
+function cacheModelInfo(model: CockpitState['model']): void {
+  try {
+    localStorage.setItem(MODEL_CACHE_KEY, JSON.stringify(model))
+  } catch {
+    // localStorage unavailable/full — the loading placeholder is the fallback, not fatal.
+  }
+}
+
+function seedModelFromCache(): Partial<CockpitState['model']> {
+  try {
+    const raw = localStorage.getItem(MODEL_CACHE_KEY)
+    return raw ? JSON.parse(raw) : {}
+  } catch {
+    return {}
+  }
+}
+
 export const cockpit = $state<CockpitState>(emptyCockpitState())
+Object.assign(cockpit.model, seedModelFromCache())
 
 export async function hydrate(source: CockpitSource): Promise<void> {
   Object.assign(cockpit, await source.load())
@@ -30,6 +61,7 @@ function applyModelInfo(info: main.ModelInfo): void {
     contextMax: info.contextMax,
     approval: info.approvalMode,
   })
+  cacheModelInfo(cockpit.model)
 }
 
 /** Pull the real file tree / command history / git status the Go engine currently has. */
@@ -118,17 +150,28 @@ function nowLabel(): string {
 export async function sendUserMessage(text: string): Promise<void> {
   const trimmed = text.trim()
   const image = cockpit.pendingImage
-  if (!trimmed && !image) return
+  const context = cockpit.pendingContext
+  if (!trimmed && !image && !context) return
   // The model only ever sees text, so an attached image is handed to it as a
   // sandboxed path reference it can pass to image_ocr — the bubble itself
-  // shows just the caption + thumbnail, not that reference line.
-  const sentText = image ? `${trimmed}\n\n📎 แนบรูปภาพ: ${image.relPath}`.trim() : trimmed
-  cockpit.chat.push({ role: 'user', text: trimmed, time: nowLabel(), imageDataUrl: image?.dataUrl })
+  // shows just the caption + thumbnail, not that reference line. A dragged-in
+  // file/browser tab instead inlines its actual content directly — no tool
+  // call needed for the model to "see" it.
+  let sentText = trimmed
+  if (image) sentText += `\n\n📎 แนบรูปภาพ: ${image.relPath}`
+  if (context) sentText += `\n\n📎 ${context.label}:\n\`\`\`\n${context.content}\n\`\`\``
+  sentText = sentText.trim()
+  cockpit.chat.push({
+    role: 'user', text: trimmed, time: nowLabel(),
+    imageDataUrl: image?.dataUrl, contextLabel: context?.label,
+  })
   cockpit.pendingImage = null
+  cockpit.pendingContext = null
   cockpit.awaitingReply = true
   cockpit.agentStatus = ''
   cockpit.toolSteps = []
   cockpit.streamingText = ''
+  cockpit.reasoningText = ''
   try {
     const reply = await SendMessage(sentText)
     const steps = cockpit.toolSteps.length ? cockpit.toolSteps.map((s) => ({ ...s })) : undefined
@@ -140,6 +183,7 @@ export async function sendUserMessage(text: string): Promise<void> {
     cockpit.agentStatus = ''
     cockpit.toolSteps = []
     cockpit.streamingText = ''
+    cockpit.reasoningText = ''
   }
   await refreshWorkspace()
   await refreshSessions()
@@ -160,6 +204,14 @@ export function applyAgentStatus(status: string): void {
  * plain streamed conversational one — either way, just keep appending. */
 export function applyAgentChunk(chunk: string): void {
   cockpit.streamingText += chunk
+}
+
+/** Live reasoning/thinking text from the Go engine (see desktop/app.go
+ * SendMessage's onReasoningChunk) — only fires for providers that stream
+ * reasoning tokens (DeepSeek, Anthropic extended thinking, ...); '' means
+ * either idle or this provider/turn had none to show. */
+export function applyReasoningChunk(chunk: string): void {
+  cockpit.reasoningText += chunk
 }
 
 /** Live tool call/result feed from the Go engine (see desktop/app.go recordToolAction).
@@ -191,6 +243,22 @@ export async function attachImageFromPath(absPath: string): Promise<void> {
 
 export function clearPendingImage(): void {
   cockpit.pendingImage = null
+}
+
+/** Stage a dragged-in workbench tab (file or browser) as the composer's pending
+ * context — read fresh from disk/page rather than trusting any stale in-memory
+ * copy, so the model sees what's there now. */
+export async function attachTabContext(kind: 'file' | 'browser', ref: string, label: string): Promise<void> {
+  try {
+    const content = kind === 'file' ? await ReadFile(ref) : await BrowserGetText(ref)
+    cockpit.pendingContext = { kind, label, content }
+  } catch (err) {
+    cockpit.chat.push({ role: 'agent', text: t('cockpit.attachError', { err: String(err) }), time: nowLabel() })
+  }
+}
+
+export function clearPendingContext(): void {
+  cockpit.pendingContext = null
 }
 
 /** View state: expand/collapse a folder. */

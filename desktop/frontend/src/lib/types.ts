@@ -55,6 +55,8 @@ export interface ChatMessage {
   tag?: string
   /** data: URL of an attached image, for inline preview only (not sent to the model). */
   imageDataUrl?: string
+  /** Label of a dragged-in file/browser tab, for a small chip on the bubble (content itself is inlined into text). */
+  contextLabel?: string
   /** tool calls made during this turn, kept on the reply for a persistent timeline. */
   steps?: ToolStep[]
 }
@@ -74,6 +76,16 @@ export interface PendingImage {
   relPath: string
   /** data: URL for the composer's own thumbnail preview. */
   dataUrl: string
+}
+
+/** A workbench tab (file or browser) dragged into the composer, staged before
+ * send — its content is inlined into the message so the model reads it
+ * directly, no tool call needed. */
+export interface PendingContext {
+  kind: 'file' | 'browser'
+  /** Chip label — file name or page title/URL. */
+  label: string
+  content: string
 }
 
 export type StepStatus = 'done' | 'active' | 'wait'
@@ -150,8 +162,12 @@ export interface CockpitState {
   toolSteps: ToolStep[]
   /** Reply text streamed so far this turn, appended live from agent:chunk events. '' when idle. */
   streamingText: string
+  /** Model's reasoning/thinking tokens streamed so far this turn, from agent:reasoning events. '' when idle or the provider doesn't stream reasoning. */
+  reasoningText: string
   /** Image staged in the composer, not yet sent. */
   pendingImage: PendingImage | null
+  /** File/browser tab dragged into the composer, staged before send. */
+  pendingContext: PendingContext | null
 }
 
 /** A blank, well-formed state so the UI renders before the source hydrates. */
@@ -173,6 +189,8 @@ export function emptyCockpitState(): CockpitState {
     agentStatus: '',
     toolSteps: [],
     streamingText: '',
+    reasoningText: '',
     pendingImage: null,
+    pendingContext: null,
   }
 }

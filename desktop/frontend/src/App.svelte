@@ -10,9 +10,9 @@
     cockpit, sendUserMessage, loadRealState, openFile,
     switchProvider, switchThinkLevel,
     switchModel, submitAPIKey, setActiveView, closeFile, applyAgentStatus, applyToolEvent,
-    applyAgentChunk, attachImageFromPath,
+    applyAgentChunk, applyReasoningChunk, attachImageFromPath,
   } from './lib/stores/cockpit.svelte'
-  import { RelativizePath } from '../wailsjs/go/main/App'
+  import { RelativizePath, CloseAllBrowserTabs } from '../wailsjs/go/main/App'
   import { OnFileDrop, OnFileDropOff, EventsOn } from '../wailsjs/runtime/runtime'
   import { workbench } from './lib/stores/workbench.svelte'
 
@@ -67,10 +67,17 @@
 
   onMount(() => {
     loadRealState()
+    // The Go backend outlives a webview reload (a `wails dev` Vite HMR full
+    // reload, in particular) — this frontend just loaded, so it owns zero
+    // workbench tabs by definition. Any native browser window the backend
+    // still has is orphaned from a previous frontend lifetime; nothing would
+    // ever reposition or close it otherwise (see CloseAllBrowserTabs).
+    CloseAllBrowserTabs()
 
     const offAgentStatus = EventsOn('agent:status', applyAgentStatus)
     const offAgentTool = EventsOn('agent:tool', applyToolEvent)
     const offAgentChunk = EventsOn('agent:chunk', applyAgentChunk)
+    const offAgentReasoning = EventsOn('agent:reasoning', applyReasoningChunk)
 
     for (const panel of Object.values(panels)) {
       const stored = localStorage.getItem(panel.storageKey)
@@ -107,6 +114,7 @@
       offAgentStatus()
       offAgentTool()
       offAgentChunk()
+      offAgentReasoning()
     }
   })
 
@@ -227,6 +235,7 @@
         agentStatus={cockpit.agentStatus}
         toolSteps={cockpit.toolSteps}
         streamingText={cockpit.streamingText}
+        reasoningText={cockpit.reasoningText}
         onSend={sendUserMessage}
         onSwitchProvider={switchProvider}
         onSwitchThinkLevel={switchThinkLevel}
