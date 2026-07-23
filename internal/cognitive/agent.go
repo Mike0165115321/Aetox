@@ -37,7 +37,10 @@ func (a *Agent) toolLoopMaxTokens() int {
 	}
 	switch name {
 	case "deepseek":
-		return 8192 // documented API max; larger values are rejected with 400
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(a.model)), "deepseek-v4") {
+			return toolLoopOutputTokenMax // V4 series allows up to 384K output
+		}
+		return 8192 // V3-era API max; larger values are rejected with 400
 	case "openai":
 		return 16384 // gpt-4o floor; newer models allow more
 	case "anthropic", "gemini", "zai":
@@ -59,7 +62,6 @@ type AgentConfig struct {
 	Provider     model.Provider
 	Model        string
 	SystemPrompt string
-	MaxTurns     int
 	MaxChars     int
 	MaxToolCalls int
 }
@@ -74,7 +76,7 @@ func NewAgent(cfg AgentConfig) *Agent {
 		model:        cfg.Model,
 		lastUsage:    model.Usage{},
 		maxToolCalls: cfg.MaxToolCalls,
-		context:      memory.NewContext(systemPrompt, cfg.MaxTurns, cfg.MaxChars),
+		context:      memory.NewContext(systemPrompt, 0, cfg.MaxChars),
 	}
 }
 
@@ -380,6 +382,15 @@ func (a *Agent) ContextUsage() (messageCount int, usedChars int, maxChars int) {
 		return 0, 0, 0
 	}
 	return a.context.UsageStats()
+}
+
+// ContextMessages returns a copy of the conversation as currently held in
+// memory (system prompt first) — for UI features like the context meter.
+func (a *Agent) ContextMessages() []model.Message {
+	if a == nil || a.context == nil {
+		return nil
+	}
+	return a.context.Messages()
 }
 
 func (a *Agent) LastUsage() model.Usage {

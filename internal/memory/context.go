@@ -7,10 +7,7 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/model"
 )
 
-const (
-	defaultMaxTurns = 80
-	defaultMaxChars = 128000
-)
+const defaultMaxChars = 128000
 
 type Context struct {
 	messages []model.Message
@@ -18,10 +15,10 @@ type Context struct {
 	maxChars int
 }
 
+// NewContext builds conversation memory. maxTurns <= 0 means no
+// message-count cap — like OpenCode/Claude Code, the char budget (scaled to
+// the model's context window by callers) is the only real constraint.
 func NewContext(systemPrompt string, maxTurns, maxChars int) *Context {
-	if maxTurns <= 0 {
-		maxTurns = defaultMaxTurns
-	}
 	if maxChars <= 0 {
 		maxChars = defaultMaxChars
 	}

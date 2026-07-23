@@ -244,18 +244,20 @@ func TestRespondWithToolsStopsDoomLoop(t *testing.T) {
 
 func TestRespondWithToolsSendsPerProviderMaxTokens(t *testing.T) {
 	cases := []struct {
-		provider string
-		want     int
+		provider  string
+		modelName string
+		want      int
 	}{
-		{"deepseek", 8192},         // API hard max — larger values 400
-		{"anthropic", 32000},       // OUTPUT_TOKEN_MAX ceiling
-		{"openai", 16384},          // gpt-4o floor
-		{"openrouter", 8192},       // mixed routed models — conservative
-		{"tool-loop-test", 8192},   // unknown provider falls back safe
+		{"deepseek", "deepseek-chat", 8192},          // V3-era API max — larger values 400
+		{"deepseek", "deepseek-v4-flash", 32000},     // V4 allows up to 384K output
+		{"anthropic", "claude-sonnet-4-5", 32000},    // OUTPUT_TOKEN_MAX ceiling
+		{"openai", "gpt-4o", 16384},                  // gpt-4o floor
+		{"openrouter", "vendor/model", 8192},         // mixed routed models — conservative
+		{"tool-loop-test", "m", 8192},                // unknown provider falls back safe
 	}
 	for _, tc := range cases {
 		provider := &toolLoopProvider{name: tc.provider, responses: []model.Response{{Text: "done"}}}
-		agent := NewAgent(AgentConfig{Provider: provider, Model: "m"})
+		agent := NewAgent(AgentConfig{Provider: provider, Model: tc.modelName})
 
 		if _, _, err := agent.RespondWithTools(
 			context.Background(),

@@ -298,6 +298,7 @@ func main() {
 		Provider:     bootstrapResult.Provider,
 		Model:        currentConfig.ModelName,
 		SystemPrompt: prompt.Build(prompt.SurfaceCLI, cfg.SandboxRoot),
+		MaxChars:     resolveContextChars(currentConfig),
 	})
 
 	permissions, permErr := config.LoadPermissions()
@@ -389,6 +390,17 @@ func main() {
 	}
 }
 
+// resolveContextChars converts the model's context window into the agent's
+// retained-history char budget (~4 chars/token). Flag/config override wins;
+// 0 falls through to memory.NewContext's default.
+func resolveContextChars(cfg config.Config) int {
+	tokens := cfg.ModelContextTokens
+	if tokens <= 0 {
+		tokens = model.ContextWindowTokens(cfg.ModelProvider, cfg.ModelName)
+	}
+	return tokens * 4
+}
+
 func resolveInitialApprovalMode(flagValue string, legacyYes bool) string {
 	if strings.TrimSpace(flagValue) != "" {
 		return string(safety.NormalizeApprovalMode(flagValue))
@@ -447,6 +459,7 @@ func switchProvider(ctx context.Context, cfg *config.Config) (app.ModelSwitchRes
 			Provider:     bootstrapResult.Provider,
 			Model:        cfg.ModelName,
 			SystemPrompt: prompt.Build(prompt.SurfaceCLI, cfg.SandboxRoot),
+			MaxChars:     resolveContextChars(*cfg),
 		}),
 		ModelStatus:        modelStatus,
 		ModelContextTokens: cfg.ModelContextTokens,
