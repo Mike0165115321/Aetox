@@ -170,6 +170,7 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 				Message
 				ToolCalls []ToolCall `json:"tool_calls"`
 			} `json:"message"`
+			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
 		Model string `json:"model"`
 		Usage Usage  `json:"usage"`
@@ -196,6 +197,7 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 		ReasoningContent: reasoning,
 		ToolCalls:        rawMessage.ToolCalls,
 		Usage:            normalizeUsage(parsed.Usage),
+		FinishReason:     strings.TrimSpace(parsed.Choices[0].FinishReason),
 	}, nil
 }
 

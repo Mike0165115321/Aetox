@@ -136,6 +136,70 @@ func TestAnthropicProviderCompleteParsesToolUse(t *testing.T) {
 	}
 }
 
+func TestAnthropicProviderMapsMaxTokensStopReasonToLength(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"model": "claude-haiku-4-5",
+			"content": [{"type":"text","text":"partial answ"}],
+			"stop_reason": "max_tokens",
+			"usage": {"input_tokens": 5, "output_tokens": 8192}
+		}`))
+	}))
+	defer server.Close()
+
+	provider, err := NewAnthropicProvider(AnthropicConfig{
+		Model:   "claude-haiku-4-5",
+		APIKey:  "k",
+		BaseURL: server.URL,
+	})
+	if err != nil {
+		t.Fatalf("new provider failed: %v", err)
+	}
+
+	resp, err := provider.Complete(context.Background(), Request{
+		Messages: []Message{{Role: RoleUser, Content: "long answer please"}},
+	})
+	if err != nil {
+		t.Fatalf("complete failed: %v", err)
+	}
+	if resp.FinishReason != FinishReasonLength {
+		t.Fatalf("expected stop_reason max_tokens mapped to %q, got %q", FinishReasonLength, resp.FinishReason)
+	}
+}
+
+func TestAnthropicProviderKeepsEndTurnStopReason(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"model": "claude-haiku-4-5",
+			"content": [{"type":"text","text":"done"}],
+			"stop_reason": "end_turn",
+			"usage": {"input_tokens": 5, "output_tokens": 3}
+		}`))
+	}))
+	defer server.Close()
+
+	provider, err := NewAnthropicProvider(AnthropicConfig{
+		Model:   "claude-haiku-4-5",
+		APIKey:  "k",
+		BaseURL: server.URL,
+	})
+	if err != nil {
+		t.Fatalf("new provider failed: %v", err)
+	}
+
+	resp, err := provider.Complete(context.Background(), Request{
+		Messages: []Message{{Role: RoleUser, Content: "ping"}},
+	})
+	if err != nil {
+		t.Fatalf("complete failed: %v", err)
+	}
+	if resp.FinishReason != "end_turn" {
+		t.Fatalf("expected end_turn passthrough, got %q", resp.FinishReason)
+	}
+}
+
 func TestAnthropicProviderStreamCollectsTextAndUsage(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")

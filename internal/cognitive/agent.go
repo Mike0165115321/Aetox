@@ -13,6 +13,40 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/turn"
 )
 
+const (
+	// toolLoopOutputTokenMax mirrors OpenCode's OUTPUT_TOKEN_MAX: the global
+	// ceiling for tool-loop output, clamped down per provider in
+	// toolLoopMaxTokens where an API rejects values this large.
+	toolLoopOutputTokenMax = 32000
+
+	// Doom-loop guard thresholds, same as OpenCode's (warn at 3 identical
+	// consecutive calls, hard-stop at 5).
+	doomLoopWarn = 3
+	doomLoopStop = 5
+)
+
+// toolLoopMaxTokens returns the max_tokens sent on every tool-loop request —
+// always explicit (Anthropic requires the field; the rest get a value their
+// API accepts instead of a provider default that may be as low as 4096).
+// ponytail: per-provider floors, not per-model — swap for a models.dev-style
+// catalog when one provider's newer models need more than its floor.
+func (a *Agent) toolLoopMaxTokens() int {
+	name := ""
+	if a.provider != nil {
+		name = model.NormalizeProvider(a.provider.Name())
+	}
+	switch name {
+	case "deepseek":
+		return 8192 // documented API max; larger values are rejected with 400
+	case "openai":
+		return 16384 // gpt-4o floor; newer models allow more
+	case "anthropic", "gemini", "zai":
+		return toolLoopOutputTokenMax
+	default:
+		return 8192 // openrouter/groq/unknown route mixed models — stay safe
+	}
+}
+
 type Agent struct {
 	provider     model.Provider
 	model        string
@@ -69,18 +103,21 @@ func (a *Agent) RespondWithTools(
 	a.context.Add(model.RoleUser, msg)
 
 	// OpenCode-style loop: run until the model stops calling tools. The brakes
-	// are the permission/approval layer and ctx cancellation (Ctrl+C in the CLI,
-	// the Stop button in the desktop app) — not an arbitrary round cap.
-	// MaxToolCalls > 0 opts back into a hard cap.
+	// are the permission/approval layer, ctx cancellation (Ctrl+C in the CLI,
+	// the Stop button in the desktop app), and the doom-loop guard below — not
+	// an arbitrary round cap. MaxToolCalls > 0 opts back into a hard cap.
 	maxToolCalls := a.maxToolCalls
 	debuglog.Info("maxToolCalls", fmt.Sprintf("%d (<=0 means unlimited)", maxToolCalls))
 	anyToolUsed := false
+	var lastCallKey string
+	repeatedCalls := 0
+	loopMaxTokens := a.toolLoopMaxTokens()
 	for i := 0; maxToolCalls <= 0 || i < maxToolCalls; i++ {
 		debuglog.Msg("tool loop iteration %d (max=%d)", i+1, maxToolCalls)
 		if ctx.Err() != nil {
 			return "", anyToolUsed, ctx.Err()
 		}
-		response, err := a.provider.Complete(ctx, a.buildRequest(a.context.Messages(), 4096, 0.2, modelTools, "auto", opts))
+		response, err := a.provider.Complete(ctx, a.buildRequest(a.context.Messages(), loopMaxTokens, 0.2, modelTools, "auto", opts))
 		if err != nil {
 			debuglog.Msg("Complete() error: %v", err)
 			if i == 0 {
@@ -115,7 +152,47 @@ func (a *Agent) RespondWithTools(
 			ReasoningContent: strings.TrimSpace(response.ReasoningContent),
 			ToolCalls:        response.ToolCalls,
 		})
+
+		// Truncation guard (same failure OpenCode hit, sst/opencode#18108):
+		// finish_reason "length" means the tool-call JSON was cut off at
+		// MaxTokens. Executing it would fail with a misleading parse/path
+		// error the model then "fixes" forever. Tell it the truth instead.
+		if response.FinishReason == model.FinishReasonLength {
+			debuglog.Msg("tool call truncated at max_tokens, telling the model")
+			for _, toolCall := range response.ToolCalls {
+				a.context.AddMessage(model.Message{
+					Role:       model.RoleTool,
+					Name:       toolCall.Function.Name,
+					ToolCallID: toolCall.ID,
+					Content: fmt.Sprintf(
+						"tool call NOT executed: your %s arguments were truncated at the %d-token output limit. Produce a shorter version, or split the work into several smaller tool calls (e.g. write a skeleton file first, then extend it with edit).",
+						toolCall.Function.Name, loopMaxTokens),
+				})
+			}
+			continue
+		}
+
 		for _, toolCall := range response.ToolCalls {
+			// Doom-loop guard (mirrors OpenCode session/prompt.ts): identical
+			// (name, args) calls back to back — nudge at 3, stop at 5.
+			callKey := toolCall.Function.Name + "\x00" + toolCall.Function.Arguments
+			if callKey == lastCallKey {
+				repeatedCalls++
+			} else {
+				lastCallKey, repeatedCalls = callKey, 1
+			}
+			if repeatedCalls >= doomLoopStop {
+				debuglog.Msg("doom loop: %s repeated %d times, stopping", toolCall.Function.Name, repeatedCalls)
+				stopMsg := fmt.Sprintf("หยุดการทำงาน: เรียกเครื่องมือ %s ด้วยค่าเดิมซ้ำ %d ครั้งติดกันโดยไม่คืบหน้า — ลองสั่งใหม่หรือปรับคำสั่งดูครับ", toolCall.Function.Name, repeatedCalls)
+				a.context.AddMessage(model.Message{
+					Role:       model.RoleTool,
+					Name:       toolCall.Function.Name,
+					ToolCallID: toolCall.ID,
+					Content:    "aborted: identical tool call repeated " + fmt.Sprint(repeatedCalls) + " times",
+				})
+				return stopMsg, true, nil
+			}
+
 			debuglog.Msg("tool call: %s(%s)", toolCall.Function.Name, truncateStr(toolCall.Function.Arguments, 80))
 			callOutput, toolErr := a.executeToolCall(ctx, toolCall, execTool)
 			callOutput = strings.TrimSpace(callOutput)
@@ -125,6 +202,9 @@ func (a *Agent) RespondWithTools(
 				} else {
 					callOutput = "(no output)"
 				}
+			}
+			if repeatedCalls == doomLoopWarn {
+				callOutput += "\n[loop warning] You have now made this exact tool call " + fmt.Sprint(repeatedCalls) + " times in a row with the same result. Try a different approach instead of repeating it."
 			}
 			debuglog.Msg("tool result: %s (err=%v)", truncateStr(callOutput, 120), toolErr)
 			a.context.AddMessage(model.Message{

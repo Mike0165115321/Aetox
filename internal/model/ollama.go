@@ -66,6 +66,17 @@ type ollamaChatRequest struct {
 	Messages []ollamaChatMessage `json:"messages"`
 	Stream   bool                `json:"stream"`
 	Tools    json.RawMessage     `json:"tools,omitempty"`
+	Options  map[string]any      `json:"options,omitempty"`
+}
+
+// ollamaOptions maps Request.MaxTokens to Ollama's num_predict so the output
+// cap is explicit here too — Ollama's own default can be as low as 128,
+// which would truncate tool-call generation without us ever asking for it.
+func ollamaOptions(req Request) map[string]any {
+	if req.MaxTokens <= 0 {
+		return nil
+	}
+	return map[string]any{"num_predict": req.MaxTokens}
 }
 
 type ollamaChatMessage struct {
@@ -125,6 +136,7 @@ type ollamaResponse struct {
 	Message          ollamaMessage `json:"message"`
 	Response         string        `json:"response"`
 	Done             bool          `json:"done"`
+	DoneReason       string        `json:"done_reason"`
 	Error            string        `json:"error"`
 	PromptTokens     int           `json:"prompt_eval_count"`
 	CompletionTokens int           `json:"eval_count"`
@@ -166,6 +178,7 @@ func (p *OllamaProvider) Complete(ctx context.Context, req Request) (Response, e
 		Messages: convertMessagesToOllama(req.Messages),
 		Stream:   false,
 		Tools:    toolsJSON,
+		Options:  ollamaOptions(req),
 	}
 
 	body, err := json.Marshal(payload)
@@ -242,6 +255,7 @@ func (p *OllamaProvider) Complete(ctx context.Context, req Request) (Response, e
 		Text:             reply,
 		ReasoningContent: strings.TrimSpace(parsed.Message.ReasoningContent),
 		ToolCalls:        toolCalls,
+		FinishReason:     strings.TrimSpace(parsed.DoneReason), // Ollama already uses "length" for the num_predict cap
 		Usage:            normalizeUsage(Usage{PromptTokens: parsed.PromptTokens, CompletionTokens: parsed.CompletionTokens}),
 	}, nil
 }
@@ -270,6 +284,7 @@ func (p *OllamaProvider) StreamComplete(ctx context.Context, req Request, onChun
 		Messages: convertMessagesToOllama(req.Messages),
 		Stream:   true,
 		Tools:    toolsJSON,
+		Options:  ollamaOptions(req),
 	}
 
 	body, err := json.Marshal(payload)
@@ -303,6 +318,7 @@ func (p *OllamaProvider) StreamComplete(ctx context.Context, req Request, onChun
 	var reasonBuilder strings.Builder
 	var toolCallBuilders []*streamToolCallBuilder
 	var lastUsage *Usage
+	var doneReason string
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
@@ -348,6 +364,7 @@ func (p *OllamaProvider) StreamComplete(ctx context.Context, req Request, onChun
 			}
 		}
 		if parsed.Done {
+			doneReason = strings.TrimSpace(parsed.DoneReason)
 			break
 		}
 	}
@@ -367,6 +384,7 @@ func (p *OllamaProvider) StreamComplete(ctx context.Context, req Request, onChun
 		Text:             reply,
 		ReasoningContent: strings.TrimSpace(reasonBuilder.String()),
 		ToolCalls:        toolCalls,
+		FinishReason:     doneReason,
 		Usage:            lastUsage,
 	}, nil
 }

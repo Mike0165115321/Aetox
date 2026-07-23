@@ -74,7 +74,16 @@ type Response struct {
 	ReasoningContent string
 	Usage            *Usage
 	ToolCalls        []ToolCall
+	// FinishReason is the provider's normalized stop reason. Only
+	// FinishReasonLength is meaningful to callers: the output hit
+	// MaxTokens and anything in it (tool-call JSON especially) may be
+	// cut off mid-way. Empty when the provider didn't report one.
+	FinishReason string
 }
+
+// FinishReasonLength marks a response truncated by the max-token limit
+// (OpenAI-compatible "length", Anthropic "max_tokens").
+const FinishReasonLength = "length"
 
 type Usage struct {
 	PromptTokens     int `json:"prompt_tokens"`

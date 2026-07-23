@@ -261,6 +261,81 @@ func TestOpenAICompatibleProviderAllowsReasoningOnlyResponse(t *testing.T) {
 	}
 }
 
+func TestOpenAICompatibleProviderReportsLengthFinishReason(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		// truncated tool call: finish_reason "length", arguments cut mid-JSON
+		_, _ = w.Write([]byte(`{
+			"model": "deepseek-v4-flash",
+			"choices": [
+				{
+					"message": {"role":"assistant", "content":"", "tool_calls":[
+						{"id":"call_1","type":"function","function":{"name":"write","arguments":"{\"path\": \"landing.html\", \"content\": \"<!DOCTYPE html>"}}
+					]},
+					"finish_reason": "length"
+				}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	provider, err := NewOpenAICompatibleProvider(OpenAICompatibleConfig{
+		Provider: "deepseek",
+		Model:    "deepseek-v4-flash",
+		APIKey:   "k",
+		BaseURL:  server.URL,
+	})
+	if err != nil {
+		t.Fatalf("new provider failed: %v", err)
+	}
+
+	response, err := provider.Complete(context.Background(), Request{
+		Messages: []Message{{Role: RoleUser, Content: "make a landing page"}},
+	})
+	if err != nil {
+		t.Fatalf("complete failed: %v", err)
+	}
+	if response.FinishReason != FinishReasonLength {
+		t.Fatalf("expected finish reason %q, got %q", FinishReasonLength, response.FinishReason)
+	}
+	if len(response.ToolCalls) != 1 {
+		t.Fatalf("expected the truncated tool call to be preserved, got %d calls", len(response.ToolCalls))
+	}
+}
+
+func TestOpenAICompatibleProviderNormalStopFinishReason(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"model": "deepseek-v4-flash",
+			"choices": [
+				{"message": {"role":"assistant", "content":"done"}, "finish_reason": "stop"}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	provider, err := NewOpenAICompatibleProvider(OpenAICompatibleConfig{
+		Provider: "deepseek",
+		Model:    "deepseek-v4-flash",
+		APIKey:   "k",
+		BaseURL:  server.URL,
+	})
+	if err != nil {
+		t.Fatalf("new provider failed: %v", err)
+	}
+
+	response, err := provider.Complete(context.Background(), Request{
+		Messages: []Message{{Role: RoleUser, Content: "ping"}},
+	})
+	if err != nil {
+		t.Fatalf("complete failed: %v", err)
+	}
+	if response.FinishReason != "stop" {
+		t.Fatalf("expected finish reason stop, got %q", response.FinishReason)
+	}
+}
+
 func TestOpenAICompatibleProviderStreamCollectsReasoningAndContent(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")

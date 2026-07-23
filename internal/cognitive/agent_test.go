@@ -138,13 +138,216 @@ func TestRespondSetsDeepSeekThinkingToggle(t *testing.T) {
 	}
 }
 
+func TestRespondWithToolsSkipsTruncatedToolCall(t *testing.T) {
+	provider := &toolLoopProvider{
+		responses: []model.Response{
+			{
+				FinishReason: model.FinishReasonLength,
+				ToolCalls: []model.ToolCall{
+					{
+						ID:   "call_write_1",
+						Type: "function",
+						Function: model.FunctionCall{
+							Name:      "write",
+							Arguments: `{"path": "landing.html", "content": "<!DOCTYPE html>\n<html`, // cut mid-JSON
+						},
+					},
+				},
+			},
+			{Text: "ok, shorter version written"},
+		},
+	}
+	agent := NewAgent(AgentConfig{Provider: provider, Model: "test-model", MaxToolCalls: 4})
+
+	executed := 0
+	reply, usedTools, err := agent.RespondWithTools(
+		context.Background(),
+		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "write", Parameters: []byte(`{"type":"object"}`)}}},
+		"make me a landing page",
+		func(_ context.Context, _ model.ToolCall) (string, error) {
+			executed++
+			return "should never run", nil
+		},
+		turn.TurnOptions{},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if executed != 0 {
+		t.Fatalf("truncated tool call must not execute, ran %d times", executed)
+	}
+	if !usedTools || reply != "ok, shorter version written" {
+		t.Fatalf("expected final reply after truncation receipt, got %q (usedTools=%v)", reply, usedTools)
+	}
+	second := provider.requests[1]
+	var sawTruncationReceipt bool
+	for _, msg := range second.Messages {
+		if msg.Role == model.RoleTool && msg.ToolCallID == "call_write_1" && strings.Contains(msg.Content, "truncated") {
+			sawTruncationReceipt = true
+		}
+	}
+	if !sawTruncationReceipt {
+		t.Fatal("expected a truncation receipt tool message in the transcript")
+	}
+}
+
+func TestRespondWithToolsStopsDoomLoop(t *testing.T) {
+	same := model.Response{
+		ToolCalls: []model.ToolCall{
+			{
+				ID:       "call_x",
+				Type:     "function",
+				Function: model.FunctionCall{Name: "write", Arguments: `{"path":"a.html","content":"x"}`},
+			},
+		},
+	}
+	provider := &toolLoopProvider{
+		responses: []model.Response{same, same, same, same, same, same, same},
+	}
+	agent := NewAgent(AgentConfig{Provider: provider, Model: "test-model"})
+
+	executed := 0
+	warned := false
+	reply, usedTools, err := agent.RespondWithTools(
+		context.Background(),
+		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "write", Parameters: []byte(`{"type":"object"}`)}}},
+		"loop forever",
+		func(_ context.Context, _ model.ToolCall) (string, error) {
+			executed++
+			return "same failure", nil
+		},
+		turn.TurnOptions{},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !usedTools {
+		t.Fatal("expected tool usage")
+	}
+	if executed != doomLoopStop-1 {
+		t.Fatalf("expected %d executions before the brake, got %d", doomLoopStop-1, executed)
+	}
+	if !strings.Contains(reply, "ซ้ำ") {
+		t.Fatalf("expected doom-loop stop message, got %q", reply)
+	}
+	for _, req := range provider.requests {
+		for _, msg := range req.Messages {
+			if msg.Role == model.RoleTool && strings.Contains(msg.Content, "[loop warning]") {
+				warned = true
+			}
+		}
+	}
+	if !warned {
+		t.Fatalf("expected a [loop warning] nudge at %d repeats", doomLoopWarn)
+	}
+}
+
+func TestRespondWithToolsSendsPerProviderMaxTokens(t *testing.T) {
+	cases := []struct {
+		provider string
+		want     int
+	}{
+		{"deepseek", 8192},         // API hard max — larger values 400
+		{"anthropic", 32000},       // OUTPUT_TOKEN_MAX ceiling
+		{"openai", 16384},          // gpt-4o floor
+		{"openrouter", 8192},       // mixed routed models — conservative
+		{"tool-loop-test", 8192},   // unknown provider falls back safe
+	}
+	for _, tc := range cases {
+		provider := &toolLoopProvider{name: tc.provider, responses: []model.Response{{Text: "done"}}}
+		agent := NewAgent(AgentConfig{Provider: provider, Model: "m"})
+
+		if _, _, err := agent.RespondWithTools(
+			context.Background(),
+			[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
+			"hello",
+			func(_ context.Context, _ model.ToolCall) (string, error) { return "", nil },
+			turn.TurnOptions{},
+		); err != nil {
+			t.Fatalf("%s: unexpected error: %v", tc.provider, err)
+		}
+		if got := provider.requests[0].MaxTokens; got != tc.want {
+			t.Errorf("%s: tool loop MaxTokens = %d, want %d", tc.provider, got, tc.want)
+		}
+	}
+}
+
+func TestRespondWithToolsLengthWithoutToolCallsReturnsText(t *testing.T) {
+	provider := &toolLoopProvider{
+		responses: []model.Response{
+			{Text: "partial but usable answer", FinishReason: model.FinishReasonLength},
+		},
+	}
+	agent := NewAgent(AgentConfig{Provider: provider, Model: "test-model"})
+
+	reply, usedTools, err := agent.RespondWithTools(
+		context.Background(),
+		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
+		"long question",
+		func(_ context.Context, _ model.ToolCall) (string, error) { return "", nil },
+		turn.TurnOptions{},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if usedTools {
+		t.Fatal("no tools were called")
+	}
+	if reply != "partial but usable answer" {
+		t.Fatalf("length without tool calls must return the text as-is, got %q", reply)
+	}
+}
+
+func TestRespondWithToolsDoomLoopResetsOnDifferentCall(t *testing.T) {
+	callA := model.Response{ToolCalls: []model.ToolCall{{
+		ID: "a", Type: "function",
+		Function: model.FunctionCall{Name: "read", Arguments: `{"path":"a.txt"}`},
+	}}}
+	callB := model.Response{ToolCalls: []model.ToolCall{{
+		ID: "b", Type: "function",
+		Function: model.FunctionCall{Name: "read", Arguments: `{"path":"b.txt"}`},
+	}}}
+	provider := &toolLoopProvider{
+		// a,a,b,a,a: never doomLoopStop consecutive repeats — must run through
+		responses: []model.Response{callA, callA, callB, callA, callA, {Text: "all done"}},
+	}
+	agent := NewAgent(AgentConfig{Provider: provider, Model: "test-model"})
+
+	executed := 0
+	reply, _, err := agent.RespondWithTools(
+		context.Background(),
+		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
+		"read some files",
+		func(_ context.Context, _ model.ToolCall) (string, error) {
+			executed++
+			return "content", nil
+		},
+		turn.TurnOptions{},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if executed != 5 {
+		t.Fatalf("interleaved calls must all execute, got %d of 5", executed)
+	}
+	if reply != "all done" {
+		t.Fatalf("expected normal completion, got %q", reply)
+	}
+}
+
 type toolLoopProvider struct {
+	name      string
 	responses []model.Response
 	requests  []model.Request
 	calls     int
 }
 
-func (p *toolLoopProvider) Name() string { return "tool-loop-test" }
+func (p *toolLoopProvider) Name() string {
+	if p.name != "" {
+		return p.name
+	}
+	return "tool-loop-test"
+}
 
 func (p *toolLoopProvider) SupportsToolCalling() bool { return true }
 

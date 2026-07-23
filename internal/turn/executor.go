@@ -371,17 +371,12 @@ func (e *Executor) executeAgentToolLoop(
 func (e *Executor) executeToolCallWithOutcome(ctx context.Context, call model.ToolCall) (string, bool, error) {
 	args, parseErr := model.ParseToolArguments(call.Function.Arguments)
 	if parseErr != nil {
-		// if JSON is truncated (common with large write content), try to salvage
-		if strings.TrimSpace(call.Function.Name) == "write" {
-			salvaged := salvageWriteArgs(call.Function.Arguments)
-			if salvaged != nil {
-				args = salvaged
-			} else {
-				return "", false, parseErr
-			}
-		} else {
-			return "", false, parseErr
-		}
+		// No salvage: writing half a file and reporting success is worse than
+		// failing loudly. Truncated JSON usually means the output token limit
+		// cut the call short — say so, so the model fixes the size, not the path.
+		return "", false, fmt.Errorf(
+			"tool call NOT executed: arguments are not valid JSON (%v) — likely truncated by the output token limit; retry with shorter content or split the work into smaller calls",
+			parseErr)
 	}
 
 	name := strings.TrimSpace(call.Function.Name)
@@ -585,37 +580,3 @@ func asStreamHandler(callback func(string)) func(string) error {
 	}
 }
 
-func salvageWriteArgs(raw string) map[string]any {
-	raw = strings.TrimSpace(raw)
-	// try to extract {"path": "...", "content": "..."} from truncated JSON
-	pathStart := strings.Index(raw, `"path"`)
-	contentStart := strings.Index(raw, `"content"`)
-	if pathStart < 0 || contentStart < 0 {
-		return nil
-	}
-	// find path value
-	pathValStart := strings.Index(raw[pathStart:], `"`) + pathStart
-	pathValStart = strings.Index(raw[pathValStart+1:], `"`) + pathValStart + 2
-	pathValEnd := strings.Index(raw[pathValStart:], `"`) + pathValStart
-	if pathValEnd <= pathValStart {
-		return nil
-	}
-	path := raw[pathValStart:pathValEnd]
-
-	// find content value
-	contValStart := strings.Index(raw[contentStart:], `"`) + contentStart
-	contValStart = strings.Index(raw[contValStart+1:], `"`) + contValStart + 2
-	content := raw[contValStart:]
-	// remove trailing garbage
-	if idx := strings.LastIndex(content, `"`); idx > 0 {
-		content = content[:idx]
-	}
-	content = strings.ReplaceAll(content, `\n`, "\n")
-	content = strings.ReplaceAll(content, `\"`, `"`)
-	content = strings.ReplaceAll(content, `\\`, `\`)
-
-	return map[string]any{
-		"path":    path,
-		"content": content,
-	}
-}

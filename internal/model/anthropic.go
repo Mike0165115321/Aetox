@@ -18,7 +18,9 @@ const anthropicAPIVersion = "2023-06-01"
 
 // defaultAnthropicMaxTokens is used when the caller does not set
 // Request.MaxTokens — Anthropic's API requires max_tokens on every call.
-const defaultAnthropicMaxTokens = 4096
+// 8192 is safe for every model since Claude 3.5; a 4096 default truncated
+// tool-call JSON mid-file (see cognitive.toolLoopMaxTokens).
+const defaultAnthropicMaxTokens = 8192
 
 type AnthropicConfig struct {
 	Model   string
@@ -128,10 +130,11 @@ type anthropicErrorPayload struct {
 }
 
 type anthropicResponse struct {
-	Model   string                  `json:"model"`
-	Content []anthropicContentBlock `json:"content"`
-	Usage   anthropicUsage          `json:"usage"`
-	Error   *anthropicErrorPayload  `json:"error"`
+	Model      string                  `json:"model"`
+	Content    []anthropicContentBlock `json:"content"`
+	StopReason string                  `json:"stop_reason"`
+	Usage      anthropicUsage          `json:"usage"`
+	Error      *anthropicErrorPayload  `json:"error"`
 }
 
 // ---------------------------------------------------------------------------
@@ -359,12 +362,18 @@ func (p *AnthropicProvider) Complete(ctx context.Context, req Request) (Response
 		return Response{}, fmt.Errorf("anthropic response has empty text")
 	}
 
+	finishReason := strings.TrimSpace(parsed.StopReason)
+	if finishReason == "max_tokens" {
+		finishReason = FinishReasonLength
+	}
+
 	return Response{
 		Provider:         p.Name(),
 		Model:            modelOr(parsed.Model, model),
 		Text:             textOut,
 		ReasoningContent: reasoningOut,
 		ToolCalls:        toolCalls,
+		FinishReason:     finishReason,
 		Usage: normalizeUsage(Usage{
 			PromptTokens:     parsed.Usage.InputTokens,
 			CompletionTokens: parsed.Usage.OutputTokens,

@@ -245,6 +245,39 @@ func (a *toolAwareAgent) SupportsToolCalling() bool {
 	return a.supportsTools
 }
 
+// Truncated tool-call JSON (max_tokens cut it mid-content) must fail loudly
+// with a message that names truncation — and must never reach the dispatcher.
+// The old salvage path here mangled the path into ":" and doom-looped the model.
+func TestExecuteToolCallWithOutcome_TruncatedArgsFailLoudly(t *testing.T) {
+	dispatcher := &toolDispatcher{root: t.TempDir(), t: t}
+	executor := NewExecutor(ExecutorOptions{
+		Agent:        &toolAwareAgent{supportsTools: true},
+		Dispatcher:   dispatcher,
+		ApprovalMode: safety.ApprovalFullAccess,
+	})
+
+	_, success, err := executor.executeToolCallWithOutcome(context.Background(), model.ToolCall{
+		ID:   "call_trunc",
+		Type: "function",
+		Function: model.FunctionCall{
+			Name:      "write",
+			Arguments: `{"path": "landing.html", "content": "<!DOCTYPE html>\n<html lang=\"th`,
+		},
+	})
+	if err == nil {
+		t.Fatal("expected an error for truncated JSON arguments")
+	}
+	if success {
+		t.Fatal("truncated call must not be reported as success")
+	}
+	if !strings.Contains(err.Error(), "truncated") {
+		t.Fatalf("error must explain truncation so the model can adapt, got %q", err.Error())
+	}
+	if dispatcher.toolExecutions != 0 {
+		t.Fatalf("dispatcher must not run on unparseable args, ran %d times", dispatcher.toolExecutions)
+	}
+}
+
 // writeToolCallAgent models a tool-capable model that decides on its own to
 // call `write` — the only remaining route from natural language to a tool.
 type writeToolCallAgent struct{}

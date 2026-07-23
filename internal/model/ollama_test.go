@@ -50,6 +50,78 @@ func TestOllamaComplete_RetriesWithoutToolsWhenModelRejectsThem(t *testing.T) {
 	}
 }
 
+// Request.MaxTokens must reach Ollama as options.num_predict — without it,
+// Ollama's own default (as low as 128 on some models) silently truncates
+// tool-call generation.
+func TestOllamaComplete_SendsNumPredictFromMaxTokens(t *testing.T) {
+	var gotBody string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		gotBody = string(body)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"model":   "tiny",
+			"done":    true,
+			"message": map[string]any{"role": "assistant", "content": "ok"},
+		})
+	}))
+	defer server.Close()
+
+	provider, err := NewOllamaProvider(OllamaConfig{Model: "tiny", BaseURL: server.URL})
+	if err != nil {
+		t.Fatalf("provider: %v", err)
+	}
+
+	if _, err := provider.Complete(context.Background(), Request{
+		Messages:  []Message{{Role: "user", Content: "hi"}},
+		MaxTokens: 8192,
+	}); err != nil {
+		t.Fatalf("complete failed: %v", err)
+	}
+	if !strings.Contains(gotBody, `"num_predict":8192`) {
+		t.Fatalf("expected options.num_predict 8192 in request body, got: %s", gotBody)
+	}
+
+	// MaxTokens 0 must omit options entirely, not send num_predict 0.
+	if _, err := provider.Complete(context.Background(), Request{
+		Messages: []Message{{Role: "user", Content: "hi"}},
+	}); err != nil {
+		t.Fatalf("complete failed: %v", err)
+	}
+	if strings.Contains(gotBody, "num_predict") {
+		t.Fatalf("MaxTokens 0 must not send num_predict, got: %s", gotBody)
+	}
+}
+
+// Ollama reports the num_predict cap as done_reason "length" — that must
+// surface as Response.FinishReason so the tool-loop truncation guard fires
+// for local models too.
+func TestOllamaComplete_SurfacesLengthDoneReason(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"model":       "tiny",
+			"done":        true,
+			"done_reason": "length",
+			"message":     map[string]any{"role": "assistant", "content": "<!DOCTYPE html><ht"},
+		})
+	}))
+	defer server.Close()
+
+	provider, err := NewOllamaProvider(OllamaConfig{Model: "tiny", BaseURL: server.URL})
+	if err != nil {
+		t.Fatalf("provider: %v", err)
+	}
+
+	resp, err := provider.Complete(context.Background(), Request{
+		Messages: []Message{{Role: "user", Content: "hi"}},
+	})
+	if err != nil {
+		t.Fatalf("complete failed: %v", err)
+	}
+	if resp.FinishReason != FinishReasonLength {
+		t.Fatalf("expected done_reason length to surface as %q, got %q", FinishReasonLength, resp.FinishReason)
+	}
+}
+
 // Reasoning tokens must arrive via onReasoningChunk as each streamed line
 // comes in, not only bundled into the final Response — that's what lets the
 // desktop UI show live "thinking" text instead of a static spinner.
