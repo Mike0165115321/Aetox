@@ -109,6 +109,28 @@ func TestGetContextBreakdownSumsAndFallsBackToAgentBudget(t *testing.T) {
 	}
 }
 
+// browser_open must not stamp https:// onto URLs that already have a scheme —
+// the old ^https?://-only check turned file:///C:/x.html into
+// https://file:///C:/x.html, a permanently blank tab.
+func TestNormalizeWorkbenchURL(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"file:///C:/Users/x/index.html", "file:///C:/Users/x/index.html"},
+		{"FILE:///C:/a.html", "FILE:///C:/a.html"},
+		{`C:\Users\x\a.html`, "file:///C:/Users/x/a.html"},
+		{"E:/site/index.html", "file:///E:/site/index.html"},
+		{"https://example.com", "https://example.com"},
+		{"http://example.com", "http://example.com"},
+		{"about:blank", "about:blank"},
+		{"example.com", "https://example.com"},
+		{"localhost:5173", "https://localhost:5173"},
+	}
+	for _, c := range cases {
+		if got := normalizeWorkbenchURL(c.in); got != c.want {
+			t.Errorf("normalizeWorkbenchURL(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
 func TestReadFileNoProjectOpen(t *testing.T) {
 	a := &App{}
 	if _, err := a.ReadFile("x.txt"); err == nil {

@@ -23,7 +23,27 @@ import (
 
 var agentBrowserSeq int64
 
-var schemeRe = regexp.MustCompile(`^https?://`)
+var (
+	driveLetterRe = regexp.MustCompile(`^[a-zA-Z]:[\\/]`)
+	urlSchemeRe   = regexp.MustCompile(`(?i)^[a-z][a-z0-9+.-]*://`)
+	bareSchemeRe  = regexp.MustCompile(`(?i)^(about|data|mailto|javascript):`)
+)
+
+// normalizeWorkbenchURL mirrors the frontend's normalizeUrl (Workbench.svelte):
+// bare Windows paths become file:/// URLs, anything already carrying a scheme
+// passes through, and only bare domains get https://. The old ^https?://-only
+// check stamped https:// onto file:/// URLs, navigating to a blank
+// https://file///... page.
+func normalizeWorkbenchURL(url string) string {
+	switch {
+	case driveLetterRe.MatchString(url):
+		return "file:///" + strings.ReplaceAll(url, `\`, "/")
+	case urlSchemeRe.MatchString(url) || bareSchemeRe.MatchString(url):
+		return url
+	default:
+		return "https://" + url
+	}
+}
 
 // workbenchOpenBrowser asks the frontend to open a workbench browser tab, then
 // waits until the native tab exists and its first navigation completes.
@@ -35,9 +55,7 @@ func (a *App) workbenchOpenBrowser(ctx context.Context, url string) (title, fina
 	if url == "" {
 		return "", "", fmt.Errorf("url is required")
 	}
-	if !schemeRe.MatchString(url) {
-		url = "https://" + url
-	}
+	url = normalizeWorkbenchURL(url)
 
 	id := fmt.Sprintf("web-agent-%d", atomic.AddInt64(&agentBrowserSeq, 1))
 	wailsruntime.EventsEmit(a.ctx, "workbench:open-browser", map[string]string{"id": id, "url": url})
