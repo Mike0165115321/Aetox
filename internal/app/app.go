@@ -186,13 +186,14 @@ func (a *App) RunOnce(ctx context.Context, message string) (string, error) {
 	return a.runCommand(ctx, message)
 }
 
-// RunOnceStream is RunOnce with a live callback for reply text as it's produced —
-// token-by-token for a plain conversational turn (turn.Executor Phase 4), or once
-// with the full reply when the turn went through tool calls (Phase 2), since that
-// path has no partial text to stream. Same callback either way: the desktop UI
-// just appends whatever it's given to a growing bubble.
-func (a *App) RunOnceStream(ctx context.Context, message string, onChunk func(string)) (string, error) {
-	result, err := a.turnExecutor.Execute(ctx, message, a.parseInputIntent(message), onChunk, nil)
+// RunOnceStream is RunOnce with live callbacks for the reply text and (when
+// the provider streams it) the model's reasoning/thinking tokens as they're
+// produced — token-by-token for a plain conversational turn, or once with the
+// full text for a turn that went through tool calls, since that path has no
+// partial text to stream. Same callback either way: the desktop UI just
+// appends whatever it's given to a growing bubble.
+func (a *App) RunOnceStream(ctx context.Context, message string, onChunk func(string), onReasoningChunk func(string)) (string, error) {
+	result, err := a.turnExecutor.Execute(ctx, message, a.parseInputIntent(message), onChunk, onReasoningChunk, nil)
 	return result.Reply, err
 }
 
@@ -324,7 +325,9 @@ func (a *App) RunInteractive(ctx context.Context) error {
 			}
 		}
 		a.wireStatusReporter()
-		turnResult, err := a.turnExecutor.Execute(sigCtx, line, intent, onChunk, onToolComplete)
+		// CLI has no reasoning-stream UI yet — nil is safe (StreamComplete
+		// implementations skip the callback entirely when it's nil).
+		turnResult, err := a.turnExecutor.Execute(sigCtx, line, intent, onChunk, nil, onToolComplete)
 		reply := strings.TrimSpace(turnResult.Reply)
 		streamed = streamed || turnResult.Streamed
 		if streamed {
@@ -385,7 +388,7 @@ func (a *App) showSlashHelp() {
 }
 
 func (a *App) runCommand(ctx context.Context, line string) (string, error) {
-	result, err := a.turnExecutor.Execute(ctx, line, a.parseInputIntent(line), nil, nil)
+	result, err := a.turnExecutor.Execute(ctx, line, a.parseInputIntent(line), nil, nil, nil)
 	return result.Reply, err
 }
 

@@ -7,6 +7,8 @@ package main
 import (
 	"context"
 	"os"
+	"strconv"
+	"time"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -26,6 +28,12 @@ func echo(_ context.Context, _ *mcpsdk.CallToolRequest, args echoArgs) (*mcpsdk.
 }
 
 func main() {
+	// AETOX_TEST_DELAY_MS simulates a slow-to-start server (e.g. npx resolving
+	// a package on a cold cache) — used by TestManagerRegisterRunsConcurrently
+	// to prove Register connects clients in parallel, not one after another.
+	if ms, err := strconv.Atoi(os.Getenv("AETOX_TEST_DELAY_MS")); err == nil && ms > 0 {
+		time.Sleep(time.Duration(ms) * time.Millisecond)
+	}
 	s := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "echo", Version: "1"}, nil)
 	mcpsdk.AddTool(s, &mcpsdk.Tool{Name: "echo", Description: "echoes text"}, echo)
 	if err := s.Run(context.Background(), &mcpsdk.StdioTransport{}); err != nil {

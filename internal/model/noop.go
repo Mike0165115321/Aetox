@@ -57,7 +57,7 @@ func (p *NoopProvider) Complete(_ context.Context, req Request) (Response, error
 // response out word by word, so UI code paths that expect a
 // StreamingProvider (typing indicators, incremental render) can be
 // exercised without a live API key.
-func (p *NoopProvider) StreamComplete(ctx context.Context, req Request, onChunk StreamChunkHandler) (Response, error) {
+func (p *NoopProvider) StreamComplete(ctx context.Context, req Request, onChunk StreamChunkHandler, onReasoningChunk StreamChunkHandler) (Response, error) {
 	resp, err := p.Complete(ctx, req)
 	if err != nil {
 		return Response{}, err

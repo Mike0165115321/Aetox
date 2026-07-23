@@ -513,6 +513,32 @@ func (a *App) browserEval(id, js string) {
 	}
 }
 
+// CloseAllBrowserTabs destroys every native browser window this process still
+// holds. Called once by the frontend right after it (re)loads (App.svelte
+// onMount) — a freshly loaded frontend owns zero workbench tabs by
+// definition, so anything still open here is orphaned from a previous
+// frontend lifetime: the Go backend is a long-lived process, but a `wails
+// dev` Vite HMR full-reload (or any webview reload) wipes the JS-side
+// `workbench` store without running BrowserPane's onDestroy, leaving the
+// native WebView2 child window behind with nothing left to reposition or
+// close it — it just floats, stuck at its last bounds. On a genuine fresh
+// app start `a.browsers` is nil and this is a no-op.
+func (a *App) CloseAllBrowserTabs() {
+	if a.browsers == nil {
+		return
+	}
+	h := a.browsers
+	h.mu.Lock()
+	ids := make([]string, 0, len(h.tabs))
+	for id := range h.tabs {
+		ids = append(ids, id)
+	}
+	h.mu.Unlock()
+	for _, id := range ids {
+		a.BrowserClose(id)
+	}
+}
+
 // BrowserClose destroys a tab's native window.
 func (a *App) BrowserClose(id string) {
 	if host, err := a.browserHostLazy(); err == nil {

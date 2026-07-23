@@ -9,7 +9,7 @@
 | Seam | What hangs off it |
 |---|---|
 | `Options` / `NewApp` ([app.go](app.go)) | The single entry point both front ends call. Takes `Agent`, `Dispatcher`, `ApprovalMode`, `Permissions`, `OnToolAction` (live tool-call feed → desktop timeline / inspector), `StatusReporter` (turn-phase strings → typing indicator). |
-| `RunOnce(ctx, message)` / `RunOnceStream(ctx, message, onChunk)` | One chat turn, string in → reply out. **This is the desktop's whole surface** (`RunOnceStream` — same turn, plus live reply chunks for the streaming bubble). Internally builds a `turn.Executor` per call via `wireStatusReporter`. |
+| `RunOnce(ctx, message)` / `RunOnceStream(ctx, message, onChunk, onReasoningChunk)` | One chat turn, string in → reply out. **This is the desktop's whole surface** (`RunOnceStream` — same turn, plus live reply chunks for the streaming bubble and, separately, live reasoning/thinking chunks when the provider streams them). Internally builds a `turn.Executor` per call via `wireStatusReporter`. |
 | `RunInteractive(ctx)` | The CLI REPL: prompt loop, slash-command handling, approval picker, spinner, banner/status bar. Desktop never calls this. |
 
 ## Files

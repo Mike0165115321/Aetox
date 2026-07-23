@@ -41,29 +41,73 @@ func (m *Manager) Clients() []*Client {
 // exposes into registry as SourceExternal. It returns one default "ask"
 // permission rule per server so MCP tools never auto-run — even under
 // full-access — unless the user explicitly allows them. A server that fails to
-// connect is skipped and its error collected; the agent loop is unaffected.
+// connect, or hasn't by the time ctx expires, is skipped and its error
+// collected; the agent loop is unaffected.
+//
+// Connections run concurrently, not one after another: this is called
+// synchronously during app startup (before the dispatcher snapshots the
+// registry — see desktop/app.go, cmd/aetox/main.go), and a server like
+// `npx -y pkg@latest` resolving/downloading on a cold cache can be slow.
+// Sequentially, N slow servers meant N times the wait.
+//
+// ctx is enforced here, not just handed to the SDK: the go-sdk's
+// Client.Connect/initialize handshake does not reliably abort on context
+// cancellation while a subprocess has written nothing yet (confirmed against
+// go-sdk v1.6.1 — CommandTransport.Connect doesn't even look at ctx, and the
+// initialize round-trip's wait isn't guaranteed to select on ctx.Done()
+// either). So a slow client's own goroutine can keep running past the
+// deadline; Register itself still returns on time by racing a buffered
+// channel against ctx.Done() rather than waiting on every goroutine. The
+// buffer means an abandoned goroutine's eventual send never blocks it from
+// exiting once its underlying call does return.
 func (m *Manager) Register(ctx context.Context, registry *skill.Registry) ([]safety.PermissionRule, []error) {
 	if m == nil || registry == nil {
 		return nil, nil
 	}
+	type result struct {
+		tools []skill.Tool
+		rule  safety.PermissionRule
+		err   error
+	}
+	resultsCh := make(chan result, len(m.clients))
+	for _, c := range m.clients {
+		go func(c *Client) {
+			tools, err := c.SkillTools(ctx)
+			if err != nil {
+				resultsCh <- result{err: fmt.Errorf("mcp server %q: %w", c.Name(), err)}
+				return
+			}
+			resultsCh <- result{
+				tools: tools,
+				rule: safety.PermissionRule{
+					Tool:    sanitize(c.Name()) + "_*",
+					Pattern: "*",
+					Action:  safety.PermissionAsk,
+				},
+			}
+		}(c)
+	}
+
 	var rules []safety.PermissionRule
 	var errs []error
-	for _, c := range m.clients {
-		tools, err := c.SkillTools(ctx)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("mcp server %q: %w", c.Name(), err))
-			continue
-		}
-		for _, t := range tools {
-			if regErr := registry.Register(t, skill.SourceMCP); regErr != nil {
-				errs = append(errs, regErr)
+	for remaining := len(m.clients); remaining > 0; {
+		select {
+		case res := <-resultsCh:
+			remaining--
+			if res.err != nil {
+				errs = append(errs, res.err)
+				continue
 			}
+			for _, t := range res.tools {
+				if regErr := registry.Register(t, skill.SourceMCP); regErr != nil {
+					errs = append(errs, regErr)
+				}
+			}
+			rules = append(rules, res.rule)
+		case <-ctx.Done():
+			errs = append(errs, fmt.Errorf("mcp registration: %w (%d server(s) still connecting)", ctx.Err(), remaining))
+			return rules, errs
 		}
-		rules = append(rules, safety.PermissionRule{
-			Tool:    sanitize(c.Name()) + "_*",
-			Pattern: "*",
-			Action:  safety.PermissionAsk,
-		})
 	}
 	return rules, errs
 }

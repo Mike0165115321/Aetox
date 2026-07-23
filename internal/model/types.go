@@ -144,8 +144,15 @@ type Provider interface {
 
 type StreamChunkHandler func(chunk string) error
 
+// StreamingProvider streams the visible reply via onChunk. onReasoningChunk is
+// a separate, optional callback for a provider's own reasoning/thinking
+// tokens (DeepSeek reasoning_content, Anthropic thinking_delta, ...) as they
+// arrive — nil-safe, so callers that don't care about reasoning pass nil and
+// nothing changes for them. Kept as its own callback rather than tagging
+// StreamChunkHandler's single stream, since a reasoning chunk isn't part of
+// the reply text and must never be concatenated into it.
 type StreamingProvider interface {
-	StreamComplete(ctx context.Context, req Request, onChunk StreamChunkHandler) (Response, error)
+	StreamComplete(ctx context.Context, req Request, onChunk StreamChunkHandler, onReasoningChunk StreamChunkHandler) (Response, error)
 }
 
 type ReasoningProvider interface {

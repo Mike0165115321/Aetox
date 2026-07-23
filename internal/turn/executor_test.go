@@ -31,7 +31,7 @@ func TestExecute_ConversationTextNeverTriggersToolsDirectly(t *testing.T) {
 		"คุณทำอะไรได้อีก เอาเนื้อหาในเว็บมา ทำเป็นไฟล์ html ให้ผมได้ไหม",
 	} {
 		intent := command.Parse(input, command.ParseTokens, nil)
-		result, err := executor.Execute(context.Background(), input, intent, nil, nil)
+		result, err := executor.Execute(context.Background(), input, intent, nil, nil, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -53,7 +53,7 @@ func TestExecute_ModelTextAnswerIsFinalForToolCapableAgent(t *testing.T) {
 
 	input := "create file example.md with content test content"
 	intent := command.Parse(input, command.ParseTokens, nil)
-	result, err := executor.Execute(context.Background(), input, intent, nil, nil)
+	result, err := executor.Execute(context.Background(), input, intent, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestExecute_ToolLoopReplyReachesOnChunk(t *testing.T) {
 	intent := command.Parse(input, command.ParseTokens, nil)
 	result, err := executor.Execute(context.Background(), input, intent, func(chunk string) {
 		chunks = append(chunks, chunk)
-	}, nil)
+	}, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestExecute_PermissionDenyBlocksWithoutPrompting(t *testing.T) {
 
 	input := "please write example.md for me"
 	intent := command.Parse(input, command.ParseTokens, nil)
-	if _, err := executor.Execute(context.Background(), input, intent, nil, nil); err != nil {
+	if _, err := executor.Execute(context.Background(), input, intent, nil, nil, nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if dispatcher.toolExecutions != 0 {
@@ -148,7 +148,7 @@ func TestExecute_PermissionAskOverridesFullAccess(t *testing.T) {
 
 	input := "please write example.md for me"
 	intent := command.Parse(input, command.ParseTokens, nil)
-	if _, err := executor.Execute(context.Background(), input, intent, nil, nil); err != nil {
+	if _, err := executor.Execute(context.Background(), input, intent, nil, nil, nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if promptCalls != 1 {
@@ -178,7 +178,7 @@ func TestExecute_PermissionDenyBlocksExplicitSkillCommandWithoutPrompting(t *tes
 	if intent.Kind != command.KindSkill {
 		t.Fatalf("fixture invalid: expected KindSkill intent, got %v", intent.Kind)
 	}
-	result, err := executor.Execute(context.Background(), "git status", intent, nil, nil)
+	result, err := executor.Execute(context.Background(), "git status", intent, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -204,7 +204,7 @@ func TestExecute_PermissionDenyBlocksModelDrivenToolCallWithoutExecutingDispatch
 	})
 
 	intent := command.Parse("list directory internal", command.ParseTokens, nil)
-	_, err := executor.Execute(context.Background(), "list directory internal", intent, nil, nil)
+	_, err := executor.Execute(context.Background(), "list directory internal", intent, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -224,7 +224,7 @@ func (a *toolAwareAgent) Respond(_ context.Context, _ string, _ TurnOptions) (st
 	return a.summaryReply, nil
 }
 
-func (a *toolAwareAgent) RespondStream(_ context.Context, _ string, _ func(string) error, _ TurnOptions) (string, bool, error) {
+func (a *toolAwareAgent) RespondStream(_ context.Context, _ string, _ func(string) error, _ func(string) error, _ TurnOptions) (string, bool, error) {
 	return a.summaryReply, false, nil
 }
 
@@ -253,7 +253,7 @@ func (a *writeToolCallAgent) Respond(_ context.Context, _ string, _ TurnOptions)
 	return "done", nil
 }
 
-func (a *writeToolCallAgent) RespondStream(_ context.Context, _ string, _ func(string) error, _ TurnOptions) (string, bool, error) {
+func (a *writeToolCallAgent) RespondStream(_ context.Context, _ string, _ func(string) error, _ func(string) error, _ TurnOptions) (string, bool, error) {
 	return "done", false, nil
 }
 
@@ -288,7 +288,7 @@ func (a *successfulToolCallAgent) Respond(_ context.Context, _ string, _ TurnOpt
 	return "done", nil
 }
 
-func (a *successfulToolCallAgent) RespondStream(_ context.Context, _ string, _ func(string) error, _ TurnOptions) (string, bool, error) {
+func (a *successfulToolCallAgent) RespondStream(_ context.Context, _ string, _ func(string) error, _ func(string) error, _ TurnOptions) (string, bool, error) {
 	return "done", false, nil
 }
 

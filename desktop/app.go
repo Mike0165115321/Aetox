@@ -399,6 +399,19 @@ func NewApp() *App {
 // so we can call the runtime methods
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	// The desktop build never wired this up before, so every debuglog.Msg/Info/
+	// Block call already sprinkled through the shared engine (turn executor
+	// phases, provider HTTP round-trips, ...) was silently thrown away here —
+	// unlike the CLI, which always enables it (cmd/aetox/main.go). Same
+	// directory as model-preference.json etc. (internal/config.DataRoot).
+	if dataRoot, err := config.DataRoot(); err == nil {
+		debuglog.Init(dataRoot)
+	}
+	// Explicit checkpoint, not just debuglog.Msg's usual error-only calls —
+	// most of those never fire on a clean run, so without this the log stays
+	// empty and gives no evidence either way for "why did first paint feel
+	// stuck." This makes the log itself the answer next time it happens.
+	defer debuglog.Block("App.startup")()
 	a.reload(config.ConfigOptions{ApprovalMode: string(safety.ApprovalFullAccess)})
 	a.startNewSession()
 }
@@ -421,6 +434,8 @@ func (a *App) SendMessage(text string) (string, error) {
 	}()
 	reply, err := a.chat.RunOnceStream(ctx, text, func(chunk string) {
 		wailsruntime.EventsEmit(a.ctx, "agent:chunk", chunk)
+	}, func(chunk string) {
+		wailsruntime.EventsEmit(a.ctx, "agent:reasoning", chunk)
 	})
 	if err != nil {
 		return reply, err
@@ -729,8 +744,10 @@ func toMCPServers(cfgs []config.MCPServerConfig) []mcp.Server {
 }
 
 func bootstrapFromConfig(cfg config.Config, onToolAction func(action, detail string), onStatus func(string), extraSkills []skill.Skill, mcpMgr *mcp.Manager) (*aetoxapp.App, *cognitive.Agent, string, *skill.Registry) {
+	defer debuglog.Block("bootstrapFromConfig")()
 	status := model.ResolveStatus(cfg.ModelProvider, cfg.ModelName, nil)
 
+	providerDone := debuglog.Block("model.BootstrapProvider")
 	bootstrapResult := model.BootstrapProvider(model.BootstrapOptions{
 		Provider: cfg.ModelProvider,
 		Model:    cfg.ModelName,
@@ -738,6 +755,7 @@ func bootstrapFromConfig(cfg config.Config, onToolAction func(action, detail str
 		BaseURL:  cfg.ModelBaseURL,
 		Timeout:  30 * time.Second,
 	})
+	providerDone()
 	if bootstrapResult.Provider == nil {
 		return nil, nil, status + " (init failed: " + bootstrapResult.Error.Error() + ")", nil
 	}
@@ -759,11 +777,27 @@ func bootstrapFromConfig(cfg config.Config, onToolAction func(action, detail str
 			debuglog.Msg("skill registration skipped: %v", err)
 		}
 	}
+	// Scans ~/.agents/skills and ~/.claude/skills — a real filesystem walk,
+	// not a fixed-cost lookup; timed because a large/slow-disk skills
+	// directory is a plausible, easy-to-overlook source of startup latency.
+	discoverDone := debuglog.Block("skill.RegisterDiscovered")
 	for _, discErr := range skill.RegisterDiscovered(registry, skill.DefaultDiscoveryPaths()) {
 		debuglog.Msg("skill discovery: %v", discErr)
 	}
-	// Register MCP tools before the dispatcher snapshots the registry.
-	mcpRules, mcpErrs := mcpMgr.Register(context.Background(), registry)
+	discoverDone()
+	// Register MCP tools before the dispatcher snapshots the registry. Bounded,
+	// not unlimited: this runs synchronously on every app startup/model switch,
+	// and a server like `npx -y pkg@latest` can take up to its own 30s default
+	// timeout to resolve on a cold cache — that used to block the whole UI
+	// (desktop's GetModelInfo etc. wouldn't resolve until this returned). Capped
+	// here regardless of how many servers are configured or how slow any one of
+	// them is; a server that doesn't make it just contributes no tools this
+	// session (already-existing per-server error handling below).
+	mcpDone := debuglog.Block("mcpMgr.Register")
+	mcpCtx, mcpCancel := context.WithTimeout(context.Background(), 8*time.Second)
+	mcpRules, mcpErrs := mcpMgr.Register(mcpCtx, registry)
+	mcpCancel()
+	mcpDone()
 	for _, mcpErr := range mcpErrs {
 		debuglog.Msg("mcp: %v", mcpErr)
 	}

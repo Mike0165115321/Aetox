@@ -49,3 +49,49 @@ func TestOllamaComplete_RetriesWithoutToolsWhenModelRejectsThem(t *testing.T) {
 		t.Fatalf("expected exactly 2 requests (tools, then retry without), got %d", requests)
 	}
 }
+
+// Reasoning tokens must arrive via onReasoningChunk as each streamed line
+// comes in, not only bundled into the final Response — that's what lets the
+// desktop UI show live "thinking" text instead of a static spinner.
+func TestOllamaStreamComplete_EmitsReasoningChunksLive(t *testing.T) {
+	lines := []string{
+		`{"model":"tiny","done":false,"message":{"role":"assistant","reasoning_content":"first "}}`,
+		`{"model":"tiny","done":false,"message":{"role":"assistant","reasoning_content":"second"}}`,
+		`{"model":"tiny","done":false,"message":{"role":"assistant","content":"answer"}}`,
+		`{"model":"tiny","done":true,"message":{"role":"assistant"}}`,
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for _, l := range lines {
+			_, _ = w.Write([]byte(l + "\n"))
+		}
+	}))
+	defer server.Close()
+
+	provider, err := NewOllamaProvider(OllamaConfig{Model: "tiny", BaseURL: server.URL})
+	if err != nil {
+		t.Fatalf("provider: %v", err)
+	}
+
+	var reasoningChunks, contentChunks []string
+	resp, err := provider.StreamComplete(context.Background(), Request{
+		Messages: []Message{{Role: "user", Content: "hi"}},
+	}, func(chunk string) error {
+		contentChunks = append(contentChunks, chunk)
+		return nil
+	}, func(chunk string) error {
+		reasoningChunks = append(reasoningChunks, chunk)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("stream complete: %v", err)
+	}
+	if got := strings.Join(reasoningChunks, "|"); got != "first|second" {
+		t.Fatalf("expected reasoning chunks delivered live, got %q", got)
+	}
+	if got := strings.Join(contentChunks, "|"); got != "answer" {
+		t.Fatalf("expected content chunk delivered live, got %q", got)
+	}
+	if resp.ReasoningContent != "firstsecond" {
+		t.Fatalf("expected accumulated reasoning in final response, got %q", resp.ReasoningContent)
+	}
+}

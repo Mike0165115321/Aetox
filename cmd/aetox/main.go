@@ -317,7 +317,12 @@ func main() {
 		fmt.Fprintf(os.Stderr, "warning: cannot load mcp-servers.json: %v\n", mcpLoadErr)
 	}
 	mcpMgr := mcp.NewManager(toMCPServers(mcpServers))
-	mcpRules, mcpErrs := mcpMgr.Register(context.Background(), skillRegistry)
+	// Bounded, not unlimited — see the matching comment in desktop/app.go's
+	// bootstrapFromConfig. A slow-to-resolve server (e.g. npx on a cold cache)
+	// used to block CLI startup for up to its own 30s timeout.
+	mcpCtx, mcpCancel := context.WithTimeout(context.Background(), 8*time.Second)
+	mcpRules, mcpErrs := mcpMgr.Register(mcpCtx, skillRegistry)
+	mcpCancel()
 	for _, mcpErr := range mcpErrs {
 		debuglog.Msg("mcp: %v", mcpErr)
 	}

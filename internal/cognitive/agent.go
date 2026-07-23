@@ -195,7 +195,7 @@ func (a *Agent) Respond(ctx context.Context, userMessage string, opts turn.TurnO
 	return reply, nil
 }
 
-func (a *Agent) RespondStream(ctx context.Context, userMessage string, onChunk func(string) error, opts turn.TurnOptions) (string, bool, error) {
+func (a *Agent) RespondStream(ctx context.Context, userMessage string, onChunk func(string) error, onReasoningChunk func(string) error, opts turn.TurnOptions) (string, bool, error) {
 	if a.provider == nil {
 		return "", false, errors.New("agent provider is not initialized")
 	}
@@ -210,7 +210,7 @@ func (a *Agent) RespondStream(ctx context.Context, userMessage string, onChunk f
 	req := a.buildRequest(a.context.Messages(), 768, 0.2, nil, "", opts)
 
 	if streamer, ok := a.provider.(model.StreamingProvider); ok {
-		response, err := streamer.StreamComplete(ctx, req, onChunk)
+		response, err := streamer.StreamComplete(ctx, req, onChunk, onReasoningChunk)
 		if err == nil {
 			reply := strings.TrimSpace(response.Text)
 			if reply == "" {

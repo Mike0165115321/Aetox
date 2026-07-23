@@ -30,7 +30,7 @@ const (
 
 type Agent interface {
 	Respond(context.Context, string, TurnOptions) (string, error)
-	RespondStream(context.Context, string, func(string) error, TurnOptions) (string, bool, error)
+	RespondStream(context.Context, string, func(string) error, func(string) error, TurnOptions) (string, bool, error)
 	RespondWithTools(context.Context, []model.ToolDefinition, string, func(context.Context, model.ToolCall) (string, error), TurnOptions) (string, bool, error)
 	SupportsToolCalling() bool
 }
@@ -145,6 +145,7 @@ func (e *Executor) Execute(
 	line string,
 	intent command.Intent,
 	onChunk func(string),
+	onReasoningChunk func(string),
 	onToolComplete func(),
 ) (Result, error) {
 	line = strings.TrimSpace(line)
@@ -182,7 +183,7 @@ func (e *Executor) Execute(
 	}
 
 	debuglog.Msg("path: conversation (streaming chat)")
-	reply, streamed, err := e.agent.RespondStream(ctx, parsed.Raw, asStreamHandler(onChunk), e.turnOptions)
+	reply, streamed, err := e.agent.RespondStream(ctx, parsed.Raw, asStreamHandler(onChunk), asStreamHandler(onReasoningChunk), e.turnOptions)
 	return Result{
 		Reply:    reply,
 		Streamed: streamed,

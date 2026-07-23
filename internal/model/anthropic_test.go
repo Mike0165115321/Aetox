@@ -163,7 +163,7 @@ func TestAnthropicProviderStreamCollectsTextAndUsage(t *testing.T) {
 	}, func(chunk string) error {
 		chunks = append(chunks, chunk)
 		return nil
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("stream complete failed: %v", err)
 	}

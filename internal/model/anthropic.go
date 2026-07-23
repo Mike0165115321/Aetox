@@ -400,7 +400,7 @@ type anthropicStreamToolBuilder struct {
 	argsBuf strings.Builder
 }
 
-func (p *AnthropicProvider) StreamComplete(ctx context.Context, req Request, onChunk StreamChunkHandler) (Response, error) {
+func (p *AnthropicProvider) StreamComplete(ctx context.Context, req Request, onChunk StreamChunkHandler, onReasoningChunk StreamChunkHandler) (Response, error) {
 	if len(req.Messages) == 0 {
 		return Response{}, ErrNoMessages
 	}
@@ -493,6 +493,11 @@ func (p *AnthropicProvider) StreamComplete(ctx context.Context, req Request, onC
 				}
 			case "thinking_delta":
 				reasoning.WriteString(event.Delta.Thinking)
+				if onReasoningChunk != nil && event.Delta.Thinking != "" {
+					if err := onReasoningChunk(event.Delta.Thinking); err != nil {
+						return Response{}, err
+					}
+				}
 			case "input_json_delta":
 				if b, ok := toolBuilders[event.Index]; ok {
 					b.argsBuf.WriteString(event.Delta.PartialJSON)

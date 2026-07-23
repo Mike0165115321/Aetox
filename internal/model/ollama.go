@@ -246,7 +246,7 @@ func (p *OllamaProvider) Complete(ctx context.Context, req Request) (Response, e
 	}, nil
 }
 
-func (p *OllamaProvider) StreamComplete(ctx context.Context, req Request, onChunk StreamChunkHandler) (Response, error) {
+func (p *OllamaProvider) StreamComplete(ctx context.Context, req Request, onChunk StreamChunkHandler, onReasoningChunk StreamChunkHandler) (Response, error) {
 	if len(req.Messages) == 0 {
 		return Response{}, ErrNoMessages
 	}
@@ -329,6 +329,11 @@ func (p *OllamaProvider) StreamComplete(ctx context.Context, req Request, onChun
 		}
 		if reasonChunk := strings.TrimSpace(parsed.Message.ReasoningContent); reasonChunk != "" {
 			reasonBuilder.WriteString(reasonChunk)
+			if onReasoningChunk != nil {
+				if err := onReasoningChunk(reasonChunk); err != nil {
+					return Response{}, err
+				}
+			}
 		}
 
 		toolCallBuilders = mergeStreamToolCalls(toolCallBuilders, parsed.Message.ToolCalls)

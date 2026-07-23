@@ -199,7 +199,7 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 	}, nil
 }
 
-func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Request, onChunk StreamChunkHandler) (Response, error) {
+func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Request, onChunk StreamChunkHandler, onReasoningChunk StreamChunkHandler) (Response, error) {
 	if len(req.Messages) == 0 {
 		return Response{}, ErrNoMessages
 	}
@@ -321,6 +321,11 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 		}
 		if reasoningChunk := delta.ReasoningContent; reasoningChunk != "" {
 			reasoningBuilder.WriteString(reasoningChunk)
+			if onReasoningChunk != nil {
+				if err := onReasoningChunk(reasoningChunk); err != nil {
+					return Response{}, err
+				}
+			}
 		}
 		if parsed.Usage.TotalTokenCount() > 0 {
 			lastUsage = normalizeUsage(parsed.Usage)
