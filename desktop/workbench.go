@@ -114,19 +114,19 @@ func (a *App) workbenchLastTabID() (string, error) {
 }
 
 // workbenchReadBrowser reads the page currently shown in the workbench browser.
-func (a *App) workbenchReadBrowser() (title, url, text string, elements []browserElement, err error) {
+func (a *App) workbenchReadBrowser() (title, url string, snap browserSnapshot, err error) {
 	id, err := a.workbenchLastTabID()
 	if err != nil {
-		return "", "", "", nil, err
+		return "", "", browserSnapshot{}, err
 	}
-	snap, err := a.browserSnapshot(id)
+	snap, err = a.browserSnapshot(id)
 	if err != nil {
-		return "", "", "", nil, err
+		return "", "", browserSnapshot{}, err
 	}
 	if t := a.browsers.tab(id); t != nil {
 		title, url = t.meta()
 	}
-	return title, url, snap.Text, snap.Elements, nil
+	return title, url, snap, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -214,7 +214,7 @@ func (s *browserReadSkill) ExecuteTool(ctx context.Context, _ map[string]any) (s
 
 func (s *browserReadSkill) Execute(_ context.Context, _ skill.Input) (skill.Output, error) {
 	start := time.Now()
-	title, url, text, elements, err := s.app.workbenchReadBrowser()
+	title, url, snap, err := s.app.workbenchReadBrowser()
 	out := skill.Output{
 		Name:       "browser_read",
 		Command:    "browser_read",
@@ -226,6 +226,7 @@ func (s *browserReadSkill) Execute(_ context.Context, _ skill.Input) (skill.Outp
 		out.Stderr = err.Error()
 		return out, err
 	}
+	text := snap.Text
 	const maxChars = 60000 // keep tool output within a sane context budget
 	truncated := false
 	if len(text) > maxChars {
@@ -234,14 +235,24 @@ func (s *browserReadSkill) Execute(_ context.Context, _ skill.Input) (skill.Outp
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "# %s\nURL: %s\n", title, url)
-	if len(elements) > 0 {
+	if len(snap.Elements) > 0 {
 		b.WriteString("\nClickable/typeable elements (use browser_click/browser_type with ref):\n")
-		for _, el := range elements {
+		for _, el := range snap.Elements {
 			role := el.Role
 			if role == "" {
 				role = el.Tag
 			}
 			fmt.Fprintf(&b, "[%d] %s: %q\n", el.Ref, role, el.Text)
+		}
+	}
+	if len(snap.Images) > 0 {
+		b.WriteString("\nImages on the page (show one to the user with markdown: ![alt](url)):\n")
+		for _, im := range snap.Images {
+			alt := im.Alt
+			if alt == "" {
+				alt = "(no alt)"
+			}
+			fmt.Fprintf(&b, "- %s — %s\n", im.Src, alt)
 		}
 	}
 	fmt.Fprintf(&b, "\n%s", text)

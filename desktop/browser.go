@@ -125,6 +125,7 @@ type aetoxMsg struct {
 	Text     string           `json:"text,omitempty"`
 	Token    string           `json:"token,omitempty"`
 	Elements []browserElement `json:"elements,omitempty"`
+	Images   []browserImage   `json:"images,omitempty"`
 }
 
 // browserElement is one clickable/typeable element found on the page, tagged
@@ -137,11 +138,19 @@ type browserElement struct {
 	Text string `json:"text"`
 }
 
+// browserImage is one meaningful image found on the page — its absolute URL
+// and alt text, so the model can show it in chat with markdown ![alt](src).
+type browserImage struct {
+	Src string `json:"src"`
+	Alt string `json:"alt,omitempty"`
+}
+
 // browserSnapshot is the result of one textScript round trip: page text plus
-// the interactive elements found on it.
+// the interactive elements and images found on it.
 type browserSnapshot struct {
 	Text     string
 	Elements []browserElement
+	Images   []browserImage
 }
 
 const metaScript = `window.chrome.webview.postMessage(JSON.stringify({__aetox:"meta",title:document.title,url:location.href}))`
@@ -163,7 +172,19 @@ func textScript(token string) string {
     var txt=(el.innerText||el.value||el.getAttribute('aria-label')||el.getAttribute('placeholder')||'').trim().replace(/\s+/g,' ').slice(0,80);
     out.push({ref:ref,tag:el.tagName.toLowerCase(),role:el.getAttribute('role')||'',text:txt});
   }
-  window.chrome.webview.postMessage(JSON.stringify({__aetox:"text",token:%q,title:document.title,url:location.href,text:(document.body&&document.body.innerText||"").slice(0,200000),elements:out}));
+  var imgs=[];
+  var seen={};
+  var imels=document.querySelectorAll('img[src]');
+  for(var j=0;j<imels.length&&imgs.length<20;j++){
+    var im=imels[j];
+    var ir=im.getBoundingClientRect();
+    if(ir.width<64||ir.height<64)continue; /* skip icons/trackers */
+    var src=im.currentSrc||im.src||'';
+    if(!src||src.indexOf('data:')===0||seen[src])continue;
+    seen[src]=1;
+    imgs.push({src:src.slice(0,600),alt:(im.alt||'').trim().replace(/\s+/g,' ').slice(0,120)});
+  }
+  window.chrome.webview.postMessage(JSON.stringify({__aetox:"text",token:%q,title:document.title,url:location.href,text:(document.body&&document.body.innerText||"").slice(0,200000),elements:out,images:imgs}));
 })()`, token)
 }
 
@@ -503,7 +524,7 @@ func (h *browserHost) onMessage(id string, tab *browserTab, raw string, source s
 		if ch == nil || m.Token == "" || m.Token != expectedToken || !sameOrigin(source, m.URL) {
 			return
 		}
-		ch <- browserSnapshot{Text: m.Text, Elements: m.Elements}
+		ch <- browserSnapshot{Text: m.Text, Elements: m.Elements, Images: m.Images}
 	}
 }
 
