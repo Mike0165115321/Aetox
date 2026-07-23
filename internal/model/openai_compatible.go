@@ -185,6 +185,14 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 	rawMessage := parsed.Choices[0].Message.Message
 	rawMessage.ToolCalls = append(rawMessage.ToolCalls, parsed.Choices[0].Message.ToolCalls...)
 	text := strings.TrimSpace(rawMessage.Content)
+	// Backstop for DeepSeek's DSML leak: tool-call markup arriving as plain
+	// text with no structured calls — lift the calls out, strip the markup.
+	if len(rawMessage.ToolCalls) == 0 {
+		if cleaned, calls := parseDSMLToolCalls(text); len(calls) > 0 {
+			text = cleaned
+			rawMessage.ToolCalls = calls
+		}
+	}
 	reasoning := strings.TrimSpace(rawMessage.ReasoningContent)
 	if text == "" && reasoning == "" && len(rawMessage.ToolCalls) == 0 {
 		return Response{}, fmt.Errorf("%s response has empty text", p.provider)

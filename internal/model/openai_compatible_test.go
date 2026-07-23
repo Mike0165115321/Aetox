@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -300,6 +301,51 @@ func TestOpenAICompatibleProviderReportsLengthFinishReason(t *testing.T) {
 	}
 	if len(response.ToolCalls) != 1 {
 		t.Fatalf("expected the truncated tool call to be preserved, got %d calls", len(response.ToolCalls))
+	}
+}
+
+// DeepSeek sometimes leaks DSML tool-call markup into content as plain text
+// with no structured tool_calls. Complete must lift the calls out and strip
+// the markup so the tool loop executes instead of showing raw DSML to users.
+func TestOpenAICompatibleProviderLiftsDSMLFromContent(t *testing.T) {
+	content := "กำลังสร้าง Landing Page ให้คุณเลยครับ\\n" +
+		"<｜DSML｜tool_calls>\\n" +
+		"<｜DSML｜invoke name=\\\"write\\\">\\n" +
+		"<｜DSML｜parameter name=\\\"path\\\" string=\\\"true\\\">landing.html</｜DSML｜parameter>\\n" +
+		"</｜DSML｜invoke>\\n" +
+		"</｜DSML｜tool_calls>"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"model": "deepseek-v4-flash",
+			"choices": [
+				{"message": {"role":"assistant", "content":"` + content + `"}, "finish_reason": "stop"}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	provider, err := NewOpenAICompatibleProvider(OpenAICompatibleConfig{
+		Provider: "deepseek",
+		Model:    "deepseek-v4-flash",
+		APIKey:   "k",
+		BaseURL:  server.URL,
+	})
+	if err != nil {
+		t.Fatalf("new provider failed: %v", err)
+	}
+
+	response, err := provider.Complete(context.Background(), Request{
+		Messages: []Message{{Role: RoleUser, Content: "landing page please"}},
+	})
+	if err != nil {
+		t.Fatalf("complete failed: %v", err)
+	}
+	if len(response.ToolCalls) != 1 || response.ToolCalls[0].Function.Name != "write" {
+		t.Fatalf("expected lifted write call, got %#v", response.ToolCalls)
+	}
+	if strings.Contains(response.Text, "DSML") {
+		t.Fatalf("markup must be stripped from text, got %q", response.Text)
 	}
 }
 
