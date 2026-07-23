@@ -6,7 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/Mike0165115321/Aetox/internal/cognitive"
 	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/safety"
 )
 
@@ -53,6 +55,57 @@ func TestReadFileRejectsEscape(t *testing.T) {
 	a := &App{cfg: config.Config{SandboxRoot: root}}
 	if _, err := a.ReadFile(filepath.Join("..", "escape.txt")); err == nil {
 		t.Error("expected error escaping sandbox root, got nil")
+	}
+}
+
+// The context meter must add up: slices (minus free) sum to usedTokens, free
+// fills the remainder, and an unconfigured context max falls back to the
+// agent's char budget instead of reporting 0 (which would hide the meter).
+func TestGetContextBreakdownSumsAndFallsBackToAgentBudget(t *testing.T) {
+	agent := cognitive.NewAgent(cognitive.AgentConfig{
+		SystemPrompt: "you are a test system prompt",
+	})
+	agent.RestoreHistory([]model.Message{
+		{Role: model.RoleUser, Content: "hello there"},
+		{Role: model.RoleAssistant, Content: "hi, how can I help?"},
+	})
+	a := &App{agent: agent}
+
+	got := a.GetContextBreakdown()
+	if got.MaxTokens <= 0 {
+		t.Fatalf("MaxTokens = %d, want agent char-budget fallback > 0", got.MaxTokens)
+	}
+	// With a known model the meter must show the model's real window, not the
+	// engine's internal char budget (the "32k for a 1M model" bug).
+	a.cfg.ModelProvider = "deepseek"
+	a.cfg.ModelName = "deepseek-v4-flash"
+	if got := a.GetContextBreakdown(); got.MaxTokens != 1_000_000 {
+		t.Errorf("deepseek-v4-flash MaxTokens = %d, want 1000000", got.MaxTokens)
+	}
+	a.cfg.ModelContextTokens = 42_000 // explicit user override wins over catalog
+	if got := a.GetContextBreakdown(); got.MaxTokens != 42_000 {
+		t.Errorf("override MaxTokens = %d, want 42000", got.MaxTokens)
+	}
+	a.cfg = config.Config{}
+	sum, free := 0, 0
+	for _, s := range got.Slices {
+		if s.Key == "free" {
+			free = s.Tokens
+			continue
+		}
+		sum += s.Tokens
+		if s.Tokens < 0 {
+			t.Errorf("slice %s has negative tokens %d", s.Key, s.Tokens)
+		}
+	}
+	if sum != got.UsedTokens {
+		t.Errorf("slices sum to %d, want UsedTokens %d", sum, got.UsedTokens)
+	}
+	if want := got.MaxTokens - got.UsedTokens; free != want {
+		t.Errorf("free = %d, want %d", free, want)
+	}
+	if got.UsedTokens <= 0 {
+		t.Error("expected non-zero usage from system prompt + history")
 	}
 }
 

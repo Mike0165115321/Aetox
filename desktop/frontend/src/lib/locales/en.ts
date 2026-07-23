@@ -59,6 +59,11 @@ export const en: Record<keyof typeof th, string> = {
   'chat.approvalUnsafeOnly': 'Unsafe Only',
   'chat.approvalFullAccess': 'Full Access',
   'chat.modelIdPlaceholder': 'model id',
+  'chat.contextWindow': 'Context window',
+  'chat.ctx_system': 'System prompt',
+  'chat.ctx_tools': 'Tools',
+  'chat.ctx_messages': 'Messages',
+  'chat.ctx_free': 'Free space',
 
   'taskTimeline.title': 'Task Timeline',
   'taskTimeline.changeSummary': 'Change Summary',

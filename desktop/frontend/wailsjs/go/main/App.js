@@ -78,6 +78,10 @@ export function DeleteSession(arg1) {
   return window['go']['main']['App']['DeleteSession'](arg1);
 }
 
+export function GetContextBreakdown() {
+  return window['go']['main']['App']['GetContextBreakdown']();
+}
+
 export function GetModelInfo() {
   return window['go']['main']['App']['GetModelInfo']();
 }

@@ -40,6 +40,8 @@ export function DeleteIdentityFile(arg1:string):Promise<void>;
 
 export function DeleteSession(arg1:string):Promise<void>;
 
+export function GetContextBreakdown():Promise<main.ContextBreakdown>;
+
 export function GetModelInfo():Promise<main.ModelInfo>;
 
 export function GetProjectStatus():Promise<main.ProjectStatus>;

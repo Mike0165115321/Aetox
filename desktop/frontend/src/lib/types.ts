@@ -60,6 +60,19 @@ export interface ModelStatus {
   approval: ApprovalMode
 }
 
+/** One labeled share of the context window; key: system | tools | messages | free. */
+export interface ContextSlice {
+  key: string
+  tokens: number
+}
+
+/** Composer context meter payload (GetContextBreakdown). */
+export interface ContextBreakdown {
+  usedTokens: number
+  maxTokens: number
+  slices: ContextSlice[]
+}
+
 export interface ChatMessage {
   role: 'user' | 'agent'
   text: string

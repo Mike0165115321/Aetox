@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"mime"
 	"os"
@@ -605,6 +606,23 @@ func (a *App) ModelStatus() string {
 	return a.modelStatus
 }
 
+// contextWindowTokens resolves the model's real context window: an explicit
+// user override wins, then the curated per-model catalog, then the agent's
+// own char budget as the honest floor (what the engine will actually keep).
+func (a *App) contextWindowTokens() int {
+	if a.cfg.ModelContextTokens > 0 {
+		return a.cfg.ModelContextTokens
+	}
+	if tokens := model.ContextWindowTokens(a.cfg.ModelProvider, a.cfg.ModelName); tokens > 0 {
+		return tokens
+	}
+	if a.agent != nil {
+		_, _, maxChars := a.agent.ContextUsage()
+		return (maxChars + 3) / 4
+	}
+	return 0
+}
+
 // GetModelInfo reports the real model/context state for the UI top bar.
 func (a *App) GetModelInfo() ModelInfo {
 	used := 0
@@ -618,7 +636,68 @@ func (a *App) GetModelInfo() ModelInfo {
 		ThinkLevel:   a.cfg.ThinkLevel,
 		ApprovalMode: a.cfg.ApprovalMode,
 		ContextUsed:  used,
-		ContextMax:   a.cfg.ModelContextTokens,
+		ContextMax:   a.contextWindowTokens(),
+	}
+}
+
+// ContextSlice is one labeled share of the context window. Key is stable for
+// the frontend to translate: system | tools | messages | free.
+type ContextSlice struct {
+	Key    string `json:"key"`
+	Tokens int    `json:"tokens"`
+}
+
+// ContextBreakdown backs the composer's context meter (Claude Code-style):
+// how full the window is and what fills it.
+type ContextBreakdown struct {
+	UsedTokens int            `json:"usedTokens"`
+	MaxTokens  int            `json:"maxTokens"`
+	Slices     []ContextSlice `json:"slices"`
+}
+
+// GetContextBreakdown estimates token usage per category. Same chars/4
+// heuristic as GetModelInfo — an estimate for orientation, not billing.
+func (a *App) GetContextBreakdown() ContextBreakdown {
+	est := func(chars int) int { return (chars + 3) / 4 }
+
+	systemChars, msgChars := 0, 0
+	if a.agent != nil {
+		for i, m := range a.agent.ContextMessages() {
+			chars := len(m.Content)
+			for _, tc := range m.ToolCalls {
+				chars += len(tc.Function.Arguments)
+			}
+			if i == 0 && m.Role == model.RoleSystem {
+				systemChars = chars
+			} else {
+				msgChars += chars
+			}
+		}
+	}
+
+	toolChars := 0
+	if a.registry != nil {
+		if defs, err := json.Marshal(skill.NewDispatcher(a.registry).ToolDefinitions()); err == nil {
+			toolChars = len(defs)
+		}
+	}
+
+	maxTokens := a.contextWindowTokens()
+
+	used := est(systemChars) + est(toolChars) + est(msgChars)
+	free := maxTokens - used
+	if free < 0 {
+		free = 0
+	}
+	return ContextBreakdown{
+		UsedTokens: used,
+		MaxTokens:  maxTokens,
+		Slices: []ContextSlice{
+			{Key: "system", Tokens: est(systemChars)},
+			{Key: "tools", Tokens: est(toolChars)},
+			{Key: "messages", Tokens: est(msgChars)},
+			{Key: "free", Tokens: free},
+		},
 	}
 }
 
@@ -946,10 +1025,19 @@ func bootstrapFromConfig(cfg config.Config, onToolAction func(action, detail str
 		status += " (" + bootstrapResult.Warning + ")"
 	}
 
+	ctxTokens := cfg.ModelContextTokens
+	if ctxTokens <= 0 {
+		ctxTokens = model.ContextWindowTokens(cfg.ModelProvider, cfg.ModelName)
+	}
 	agent := cognitive.NewAgent(cognitive.AgentConfig{
 		Provider:     bootstrapResult.Provider,
 		Model:        cfg.ModelName,
 		SystemPrompt: prompt.Build(prompt.SurfaceDesktop, cfg.SandboxRoot),
+		// Scale the retained-history budget to the model's real window
+		// (0 → NewContext's 128k-char default). ponytail: trims oldest turns
+		// when over budget — upgrade to summarizing compaction if losing old
+		// turns verbatim starts to hurt long sessions.
+		MaxChars: ctxTokens * 4,
 	})
 
 	registry := skill.NewDefaultRegistry(skill.RegistryOptions{

@@ -1,11 +1,12 @@
 <script lang="ts">
-  import type { ChatMessage, TaskState, ModelStatus, ToolStep } from './types'
+  import type { ChatMessage, TaskState, ModelStatus, ToolStep, ContextBreakdown } from './types'
   import TaskTimeline from './TaskTimeline.svelte'
   import Logo from './Logo.svelte'
   import { onMount } from 'svelte'
   import {
     SupportedProviders, SupportedThinkLevels,
     ListModelsForProvider, RequiresAPIKey, HasAPIKey, PickAttachmentImage,
+    GetContextBreakdown,
   } from '../../wailsjs/go/main/App'
   import { t } from './i18n.svelte'
   import { renderMarkdown } from './markdown'
@@ -99,12 +100,46 @@
   let draft = $state('')
   let modelMenuOpen = $state(false)
   let focusMenuOpen = $state(false)
+  let ctxMenuOpen = $state(false)
 
   function closeMenusOnOutside(e: MouseEvent) {
     const el = e.target as HTMLElement
     if (modelMenuOpen && !el.closest('.model-pick')) modelMenuOpen = false
     if (focusMenuOpen && !el.closest('.focus-pick')) focusMenuOpen = false
+    if (ctxMenuOpen && !el.closest('.ctx-pick')) ctxMenuOpen = false
   }
+
+  // Context meter: how full the model's context window is and what fills it.
+  let ctx = $state<ContextBreakdown | null>(null)
+  async function refreshContext() {
+    try {
+      ctx = await GetContextBreakdown()
+    } catch {
+      ctx = null // engine not ready yet — button hides itself
+    }
+  }
+  // Refresh on mount and after every completed turn (message count settles).
+  $effect(() => {
+    void messages.length
+    if (awaitingReply) return
+    refreshContext()
+  })
+  const ctxPct = $derived(
+    ctx && ctx.maxTokens > 0 ? Math.min(100, Math.round((ctx.usedTokens / ctx.maxTokens) * 100)) : 0,
+  )
+  function slicePct(tokens: number): string {
+    if (!ctx || ctx.maxTokens <= 0) return '0%'
+    return ((tokens / ctx.maxTokens) * 100).toFixed(1) + '%'
+  }
+  function fmtTokens(n: number): string {
+    return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n)
+  }
+  const ctxLabels = $derived<Record<string, string>>({
+    system: t('chat.ctx_system'),
+    tools: t('chat.ctx_tools'),
+    messages: t('chat.ctx_messages'),
+    free: t('chat.ctx_free'),
+  })
 
   // Ticks once a second while a turn is in flight, so the running tool step's
   // elapsed counter ("· 12s") advances live.
@@ -337,6 +372,45 @@
       ></textarea>
       <div class="tools">
         <button class="icobtn" aria-label={t('chat.attachImage')} data-tip={t('chat.attachImage')} onclick={attachViaDialog}>📎</button>
+        {#if ctx && ctx.maxTokens > 0}
+          <div class="ctx-pick">
+            {#if ctxMenuOpen}
+              <div class="ctx-menu">
+                <div class="ctx-head">
+                  <span class="t">{t('chat.contextWindow')}</span>
+                  <span class="v">{fmtTokens(ctx.usedTokens)} / {fmtTokens(ctx.maxTokens)} ({ctxPct}%)</span>
+                </div>
+                <div class="ctx-track">
+                  {#each ctx.slices.filter((s) => s.key !== 'free' && s.tokens > 0) as s (s.key)}
+                    <div class="ctx-seg {s.key}" style="width:{slicePct(s.tokens)}"></div>
+                  {/each}
+                </div>
+                {#each ctx.slices as s (s.key)}
+                  <div class="ctx-row">
+                    <span class="dot {s.key}"></span>
+                    <span class="lbl">{ctxLabels[s.key] ?? s.key}</span>
+                    <span class="val">{fmtTokens(s.tokens)}</span>
+                    <span class="pct">{slicePct(s.tokens)}</span>
+                  </div>
+                {/each}
+              </div>
+            {/if}
+            <button
+              type="button"
+              class="icobtn ctx-btn"
+              class:active={ctxMenuOpen}
+              aria-label={t('chat.contextWindow')}
+              data-tip={t('chat.contextWindow')}
+              onclick={() => { ctxMenuOpen = !ctxMenuOpen; if (ctxMenuOpen) refreshContext() }}
+            >
+              <svg viewBox="0 0 20 20" class="ring" aria-hidden="true">
+                <circle cx="10" cy="10" r="8" class="bg" />
+                <circle cx="10" cy="10" r="8" class="fg" stroke-dasharray="{(ctxPct / 100) * 50.27} 50.27" transform="rotate(-90 10 10)" />
+              </svg>
+              <span class="ctx-pct">{ctxPct}%</span>
+            </button>
+          </div>
+        {/if}
         {#if model.provider}
           <div class="model-pick">
             {#if modelMenuOpen}
