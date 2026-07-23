@@ -66,6 +66,10 @@ export function CurrentSessionID() {
   return window['go']['main']['App']['CurrentSessionID']();
 }
 
+export function DeleteIdentityFile(arg1) {
+  return window['go']['main']['App']['DeleteIdentityFile'](arg1);
+}
+
 export function GetModelInfo() {
   return window['go']['main']['App']['GetModelInfo']();
 }
@@ -80,6 +84,14 @@ export function GitChangedFiles() {
 
 export function HasAPIKey(arg1) {
   return window['go']['main']['App']['HasAPIKey'](arg1);
+}
+
+export function ListAllSessions() {
+  return window['go']['main']['App']['ListAllSessions']();
+}
+
+export function ListIdentityFiles() {
+  return window['go']['main']['App']['ListIdentityFiles']();
 }
 
 export function ListMCPServers() {
@@ -102,6 +114,10 @@ export function LoadSession(arg1) {
   return window['go']['main']['App']['LoadSession'](arg1);
 }
 
+export function LoadSessionAnyProject(arg1) {
+  return window['go']['main']['App']['LoadSessionAnyProject'](arg1);
+}
+
 export function ModelStatus() {
   return window['go']['main']['App']['ModelStatus']();
 }
@@ -112,6 +128,10 @@ export function NewSession() {
 
 export function OpenProjectFolder() {
   return window['go']['main']['App']['OpenProjectFolder']();
+}
+
+export function OpenProjectPath(arg1) {
+  return window['go']['main']['App']['OpenProjectPath'](arg1);
 }
 
 export function PickAttachmentImage() {
@@ -130,8 +150,16 @@ export function ReadFile(arg1) {
   return window['go']['main']['App']['ReadFile'](arg1);
 }
 
+export function ReadIdentityFile(arg1) {
+  return window['go']['main']['App']['ReadIdentityFile'](arg1);
+}
+
 export function ReadImageDataURL(arg1) {
   return window['go']['main']['App']['ReadImageDataURL'](arg1);
+}
+
+export function RecentProjects() {
+  return window['go']['main']['App']['RecentProjects']();
 }
 
 export function RelativizePath(arg1) {
@@ -148,6 +176,14 @@ export function RequiresAPIKey(arg1) {
 
 export function SaveChatImage(arg1) {
   return window['go']['main']['App']['SaveChatImage'](arg1);
+}
+
+export function SaveIdentityFile(arg1, arg2) {
+  return window['go']['main']['App']['SaveIdentityFile'](arg1, arg2);
+}
+
+export function SearchAllSessions(arg1) {
+  return window['go']['main']['App']['SearchAllSessions'](arg1);
 }
 
 export function SearchSessions(arg1) {

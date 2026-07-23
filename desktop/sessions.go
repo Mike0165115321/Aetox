@@ -14,7 +14,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Mike0165115321/Aetox/internal/config"
 	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mike0165115321/Aetox/internal/safety"
 )
 
 // SessionMessage is one chat bubble, as the UI shows it.
@@ -25,12 +27,15 @@ type SessionMessage struct {
 }
 
 // SessionMeta is one row in the sidebar's history list. Snippet is only set
-// on search results.
+// on search results. ProjectKey/ProjectName are only set by the cross-project
+// (global) queries — the per-project ones would just repeat the active project.
 type SessionMeta struct {
-	ID        string `json:"id"`
-	Title     string `json:"title"`
-	UpdatedAt string `json:"updatedAt"` // RFC3339
-	Snippet   string `json:"snippet,omitempty"`
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	UpdatedAt   string `json:"updatedAt"` // RFC3339
+	Snippet     string `json:"snippet,omitempty"`
+	ProjectKey  string `json:"projectKey,omitempty"`
+	ProjectName string `json:"projectName,omitempty"`
 }
 
 // projectKey isolates each project's history: readable base name + short hash
@@ -154,6 +159,146 @@ func (a *App) SearchSessions(query string) []SessionMeta {
 		}
 	}
 	return out
+}
+
+// ProjectMeta is one row in the sidebar's project switcher.
+type ProjectMeta struct {
+	Key      string `json:"key"`
+	Name     string `json:"name"`
+	RootPath string `json:"rootPath"`
+	OpenedAt string `json:"openedAt"`
+	Snippet  string `json:"snippet,omitempty"` // most recent session title, if any
+}
+
+// touchProject records/refreshes a project's "last opened" time so it shows
+// up in the sidebar's project switcher, even before it has any chat sessions.
+func (a *App) touchProject(root string) {
+	root = strings.TrimSpace(root)
+	if root == "" {
+		return
+	}
+	db, err := a.database()
+	if err != nil {
+		return
+	}
+	_, _ = db.Exec(`
+		INSERT INTO projects(project_key, name, root_path, opened_at)
+		VALUES(?,?,?,?)
+		ON CONFLICT(project_key) DO UPDATE SET root_path = excluded.root_path, opened_at = excluded.opened_at`,
+		projectKey(root), filepath.Base(filepath.Clean(root)), root, time.Now().Format(time.RFC3339))
+}
+
+// RecentProjects lists every project ever opened, newest first, each paired
+// with its most recent session title (if any) for the sidebar subtitle.
+func (a *App) RecentProjects() []ProjectMeta {
+	out := []ProjectMeta{}
+	db, err := a.database()
+	if err != nil {
+		return out
+	}
+	rows, err := db.Query(`
+		SELECT p.project_key, p.name, p.root_path, p.opened_at,
+		       COALESCE((SELECT s.title FROM sessions s
+		                 WHERE s.project_key = p.project_key
+		                 ORDER BY s.updated_at DESC LIMIT 1), '')
+		FROM projects p
+		ORDER BY p.opened_at DESC LIMIT 50`)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var m ProjectMeta
+		if rows.Scan(&m.Key, &m.Name, &m.RootPath, &m.OpenedAt, &m.Snippet) == nil {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// ListAllSessions returns chat history across every project, newest first —
+// the sidebar's global history layer, independent of which project is active.
+func (a *App) ListAllSessions() []SessionMeta {
+	out := []SessionMeta{}
+	db, err := a.database()
+	if err != nil {
+		return out
+	}
+	rows, err := db.Query(`
+		SELECT s.id, s.title, s.updated_at, s.project_key, COALESCE(p.name, s.project_key)
+		FROM sessions s LEFT JOIN projects p ON p.project_key = s.project_key
+		ORDER BY s.updated_at DESC LIMIT 200`)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var m SessionMeta
+		if rows.Scan(&m.ID, &m.Title, &m.UpdatedAt, &m.ProjectKey, &m.ProjectName) == nil {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// SearchAllSessions full-text searches chat history across every project.
+func (a *App) SearchAllSessions(query string) []SessionMeta {
+	out := []SessionMeta{}
+	q := strings.TrimSpace(query)
+	db, err := a.database()
+	if err != nil || q == "" {
+		return out
+	}
+	match := `"` + strings.ReplaceAll(q, `"`, `""`) + `"`
+	rows, err := db.Query(`
+		WITH f AS MATERIALIZED (
+		  SELECT rowid AS mid, snippet(messages_fts, 0, '', '', '…', 10) AS snip
+		  FROM messages_fts WHERE messages_fts MATCH ?
+		)
+		SELECT s.id, s.title, s.updated_at, s.project_key, COALESCE(p.name, s.project_key), MIN(f.snip)
+		FROM f
+		JOIN messages m ON m.id = f.mid
+		JOIN sessions s ON s.id = m.session_id
+		LEFT JOIN projects p ON p.project_key = s.project_key
+		GROUP BY s.id
+		ORDER BY s.updated_at DESC LIMIT 50`, match)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var m SessionMeta
+		if rows.Scan(&m.ID, &m.Title, &m.UpdatedAt, &m.ProjectKey, &m.ProjectName, &m.Snippet) == nil {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// LoadSessionAnyProject loads a session from the global (cross-project) history,
+// switching the active project first if the session belongs to a different one
+// than whatever's currently open.
+func (a *App) LoadSessionAnyProject(id string) ([]SessionMessage, error) {
+	db, err := a.database()
+	if err != nil {
+		return nil, err
+	}
+	var key, rootPath string
+	err = db.QueryRow(`
+		SELECT s.project_key, COALESCE(p.root_path, '')
+		FROM sessions s LEFT JOIN projects p ON p.project_key = s.project_key
+		WHERE s.id = ?`, id).Scan(&key, &rootPath)
+	if err != nil {
+		return nil, fmt.Errorf("ไม่พบเซสชันนี้")
+	}
+	if key != projectKey(a.cfg.SandboxRoot) {
+		if rootPath == "" {
+			return nil, fmt.Errorf("ไม่พบโปรเจกต์ของเซสชันนี้ (โฟลเดอร์อาจถูกย้ายหรือลบไปแล้ว)")
+		}
+		a.reload(config.ConfigOptions{RootPath: rootPath, ApprovalMode: string(safety.ApprovalFullAccess)})
+		a.touchProject(a.cfg.SandboxRoot)
+	}
+	return a.LoadSession(id)
 }
 
 // LoadSession switches to a stored session: the UI gets the transcript back,

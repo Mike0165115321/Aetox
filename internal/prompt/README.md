@@ -8,9 +8,10 @@
 
 | Seam | What it does |
 |---|---|
-| `Build(surface, sandboxRoot)` / `BuildWithReport(...)` ([prompt.go](prompt.go)) | Concatenates 4 layers, most-specific last so it wins on conflict: identity (per `Surface`) → environment (sandbox root + don't-leak-path rule) → user-global (`<UserConfigDir>/aetox/AETOX.md`) → project (`ProjectContextFile`). Missing files are skipped silently; each file layer is capped at `maxLayerBytes` (16KB). |
+| `Build(surface, sandboxRoot)` / `BuildWithReport(...)` ([prompt.go](prompt.go)) | Concatenates layers, most-specific last so it wins on conflict: identity (per `Surface`) → environment (sandbox root + don't-leak-path rule) → user-global (every `*.md` file in `config.IdentityDir()`, one layer block each) → project (`ProjectContextFile`). Missing/empty files are skipped silently; each file layer is capped at `maxLayerBytes` (16KB). |
 | `ProjectContextFile(root)` | Checks `AETOX.md` then falls back to `AGENTS.md` under root. Exposed so `desktop/app.go`'s `projectStatus` badge reports the same file this package would actually load — not a separate `os.Stat` that can drift from reality. |
-| `Loaded` (`BuildWithReport`'s second return) | Which optional layers were actually found — for the same badge-honesty purpose. |
+| `foldIdentityLayers(b)` | Reads `config.IdentityDir()`, folds every `*.md` file in it into `b` (sorted by filename), returns the paths that actually contributed content. |
+| `Loaded` (`BuildWithReport`'s second return) | `UserGlobalPaths []string` (every identity file folded in) + `ProjectPath` — for the same badge-honesty purpose. |
 
 ## Reload timing (settled, don't relitigate without checking ARCHITECTURE.md §11 first)
 

@@ -6,11 +6,12 @@
 import { emptyCockpitState, type CockpitState, type TreeNode, type ChangedFile, type Session, type ToolStep } from '../types'
 import type { CockpitSource } from '../services/cockpit'
 import {
-  SendMessage, GetProjectStatus, GetModelInfo, OpenProjectFolder,
+  SendMessage, GetProjectStatus, GetModelInfo, OpenProjectFolder, OpenProjectPath,
   SwitchProvider, SwitchThinkLevel, SwitchApprovalMode,
   SwitchModel, SetAPIKey, ProjectTree, CommandHistory, GitChangedFiles, ReadFile,
   ListSessions, LoadSession, NewSession, CurrentSessionID, SearchSessions,
-  SaveChatImage, ReadImageDataURL, CancelTurn, BrowserGetText,
+  SaveChatImage, ReadImageDataURL, CancelTurn, BrowserGetText, RecentProjects,
+  ListAllSessions, SearchAllSessions, LoadSessionAnyProject,
 } from '../../../wailsjs/go/main/App'
 import type { main } from '../../../wailsjs/go/models'
 import { t } from '../i18n.svelte'
@@ -104,6 +105,49 @@ export async function searchSessions(query: string): Promise<void> {
   }))
 }
 
+/** Pull chat history across every project, newest first (sidebar's global history layer). */
+export async function refreshGlobalHistory(): Promise<void> {
+  const [metas, current] = await Promise.all([ListAllSessions(), CurrentSessionID()])
+  cockpit.history = metas.map((m) => ({
+    id: m.id, title: m.title, ago: agoLabel(m.updatedAt), active: m.id === current, projectName: m.projectName,
+  }))
+}
+
+/** Full-text search chat history across every project. */
+export async function searchGlobalHistory(query: string): Promise<void> {
+  if (!query.trim()) return refreshGlobalHistory()
+  const [hits, current] = await Promise.all([SearchAllSessions(query), CurrentSessionID()])
+  cockpit.history = hits.map((m) => ({
+    id: m.id, title: m.title, ago: agoLabel(m.updatedAt), active: m.id === current,
+    snippet: m.snippet, projectName: m.projectName,
+  }))
+}
+
+/** Open a session from the global history list — switches project first if it belongs to a different one. */
+export async function selectGlobalSession(session: Session): Promise<void> {
+  const messages = await LoadSessionAnyProject(session.id)
+  cockpit.chat = messages.map((m) => ({
+    role: m.role === 'agent' ? 'agent' as const : 'user' as const,
+    text: m.text,
+    time: m.time,
+  }))
+  const project = await GetProjectStatus()
+  Object.assign(cockpit.project, project)
+  await refreshWorkspace()
+  await refreshSessions()
+  await refreshProjects()
+  await refreshGlobalHistory()
+}
+
+/** Pull the list of every project ever opened (sidebar's project switcher), newest first. */
+export async function refreshProjects(): Promise<void> {
+  const [metas, current] = await Promise.all([RecentProjects(), GetProjectStatus()])
+  cockpit.projects = metas.map((m) => ({
+    key: m.key, name: m.name, path: m.rootPath, ago: agoLabel(m.openedAt),
+    active: m.rootPath === current.path, snippet: m.snippet,
+  }))
+}
+
 /** Pull the real project/model state the Go engine is actually running with. */
 export async function loadRealState(): Promise<void> {
   const [project, modelInfo] = await Promise.all([GetProjectStatus(), GetModelInfo()])
@@ -111,6 +155,8 @@ export async function loadRealState(): Promise<void> {
   applyModelInfo(modelInfo)
   await refreshWorkspace()
   await refreshSessions()
+  await refreshProjects()
+  await refreshGlobalHistory()
 }
 
 /** Let the user pick a real folder via the native dialog; re-points the engine at it. */
@@ -120,6 +166,19 @@ export async function openFolder(): Promise<void> {
   cockpit.chat = []
   await refreshWorkspace()
   await refreshSessions()
+  await refreshProjects()
+  await refreshGlobalHistory()
+}
+
+/** Switch straight to a previously-opened project (sidebar's project list), no dialog. */
+export async function openProject(path: string): Promise<void> {
+  const project = await OpenProjectPath(path)
+  Object.assign(cockpit.project, project)
+  cockpit.chat = []
+  await refreshWorkspace()
+  await refreshSessions()
+  await refreshProjects()
+  await refreshGlobalHistory()
 }
 
 export async function switchProvider(provider: string): Promise<void> {
@@ -187,6 +246,7 @@ export async function sendUserMessage(text: string): Promise<void> {
   }
   await refreshWorkspace()
   await refreshSessions()
+  await refreshGlobalHistory()
 }
 
 /** Abort the turn in flight — the engine's tool loop is unbounded, this is the user's brake. */
@@ -314,6 +374,7 @@ export async function selectSession(session: Session): Promise<void> {
     time: m.time,
   }))
   await refreshSessions()
+  await refreshGlobalHistory()
 }
 
 /** Start a blank session (current one is saved first, engine-side). */
@@ -321,4 +382,5 @@ export async function newSession(): Promise<void> {
   await NewSession()
   cockpit.chat = []
   await refreshSessions()
+  await refreshGlobalHistory()
 }

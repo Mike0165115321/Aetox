@@ -1,12 +1,18 @@
 <script lang="ts">
-  import { cockpit, selectSession, newSession, searchSessions, toggleNode, visibleTree, openFolder, refreshWorkspace } from './stores/cockpit.svelte'
+  import {
+    cockpit, selectSession, newSession, searchSessions, toggleNode, visibleTree, openFolder, openProject,
+    refreshWorkspace, searchGlobalHistory, selectGlobalSession,
+  } from './stores/cockpit.svelte'
   import { workbench, openFileTab } from './stores/workbench.svelte'
+  import { identity, loadIdentityFiles, openIdentityFile, saveIdentityFile, createIdentityFile, deleteIdentityFile } from './identity.svelte'
   import { t, i18n, setLocale, localeNames, type Locale } from './i18n.svelte'
 
   let { onOpenSettings }: { onOpenSettings: () => void } = $props()
 
   let query = $state('')
   let searchTimer: ReturnType<typeof setTimeout> | undefined
+  let historyQuery = $state('')
+  let historySearchTimer: ReturnType<typeof setTimeout> | undefined
 
   let profileName = $state(localStorage.getItem('profileName') ?? '')
   let profileOpen = $state(false)
@@ -33,50 +39,100 @@
 
   const rows = $derived(visibleTree(cockpit.tree))
 
-  let filesOpen = $state(true)
-  let chatOpen = $state(true)
-  let filesHeight = $state(280)
+  let identityOpen = $state(true)
+  let projectsOpen = $state(true)
+  let historyOpen = $state(false)
+
+  let identityLoadedOnce = false
+  let newIdentityName = $state('')
+  const identityDirty = $derived(identity.draft !== identity.saved)
+
+  $effect(() => {
+    if (identityLoadedOnce) return
+    identityLoadedOnce = true
+    loadIdentityFiles()
+  })
+
+  function addIdentityFile() {
+    if (!newIdentityName.trim()) return
+    createIdentityFile(newIdentityName)
+    newIdentityName = ''
+  }
 
   function onSearchInput() {
     clearTimeout(searchTimer)
     searchTimer = setTimeout(() => searchSessions(query), 200)
   }
 
-  function startResize(e: PointerEvent) {
-    e.preventDefault()
-    const startY = e.clientY
-    const startH = filesHeight
-    function onMove(ev: PointerEvent) {
-      filesHeight = Math.min(Math.max(startH + (ev.clientY - startY), 120), window.innerHeight - 220)
-    }
-    function onUp() {
-      window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('pointerup', onUp)
-    }
-    window.addEventListener('pointermove', onMove)
-    window.addEventListener('pointerup', onUp)
+  function onHistorySearchInput() {
+    clearTimeout(historySearchTimer)
+    historySearchTimer = setTimeout(() => searchGlobalHistory(historyQuery), 200)
   }
 </script>
 
 <svelte:window onclick={profileOpen ? closeProfileOnOutsideClick : undefined} />
 
 <aside class="side">
-  <div class="side-panel" style={filesOpen ? `flex:0 0 ${filesHeight}px` : 'flex:0 0 auto'}>
-    <div class="explorer-head">
-      <span class="eyebrow">{t('sidebar.explorer')}</span>
-      <button type="button" class="icobtn tiny" aria-label={t('sidebar.refreshTip')} data-tip={t('sidebar.refreshTip')} onclick={refreshWorkspace}>⟳</button>
-    </div>
-    <div class="proj-row">
-      <button type="button" class="side-head proj-toggle" onclick={() => (filesOpen = !filesOpen)}>
-        <span class="chev">{filesOpen ? '▾' : '▸'}</span>
-        <span class="ic">📁</span>
-        <span class="proj-name">{cockpit.project.name || t('topbar.openFolder')}</span>
-        {#if cockpit.project.branch}<span class="proj-branch">⑂ {cockpit.project.branch}</span>{/if}
-      </button>
-      <button type="button" class="icobtn tiny" aria-label={t('topbar.openFolder')} data-tip={t('topbar.openFolder')} onclick={openFolder}>⋯</button>
-    </div>
-    {#if filesOpen}
+  <div class="side-panel" style={identityOpen ? 'flex:0 0 260px' : 'flex:0 0 auto'}>
+    <button type="button" class="side-head" onclick={() => (identityOpen = !identityOpen)}>
+      <span class="chev">{identityOpen ? '▾' : '▸'}</span>
+      <span class="eyebrow">{t('sidebar.identity')}</span>
+    </button>
+    {#if identityOpen}
+      <div class="identity-body">
+        <div class="identity-files">
+          {#each identity.files as f (f.name)}
+            <div class="identity-file" class:active={identity.activeName === f.name}>
+              <button type="button" class="identity-file-open" onclick={() => openIdentityFile(f.name)}>
+                <span class="ic">📄</span>
+                <span class="t">{f.name}</span>
+              </button>
+              <button type="button" class="identity-file-del" aria-label={t('settings.remove')} onclick={() => deleteIdentityFile(f.name)}>✕</button>
+            </div>
+          {/each}
+          {#if identity.files.length === 0}
+            <div class="empty">{t('sidebar.noIdentityFiles')}</div>
+          {/if}
+        </div>
+        <div class="identity-newfile">
+          <input
+            class="identity-newfile-input" placeholder={t('sidebar.newIdentityFile')}
+            bind:value={newIdentityName}
+            onkeydown={(e) => e.key === 'Enter' && addIdentityFile()}
+          />
+          <button type="button" class="icobtn tiny" aria-label={t('sidebar.newIdentityFile')} onclick={addIdentityFile}>＋</button>
+        </div>
+        {#if identity.activeName}
+          <textarea
+            class="identity-input" placeholder={t('sidebar.identityPlaceholder')}
+            bind:value={identity.draft}
+          ></textarea>
+          <button
+            type="button" class="ctrl identity-save"
+            disabled={!identityDirty || identity.saving}
+            onclick={saveIdentityFile}
+          >
+            {identity.saving ? t('settings.saving') : t('settings.save')}
+          </button>
+        {/if}
+      </div>
+    {/if}
+  </div>
+
+  <div class="side-panel grow">
+    <button type="button" class="side-head" onclick={() => (projectsOpen = !projectsOpen)}>
+      <span class="chev">{projectsOpen ? '▾' : '▸'}</span>
+      <span class="eyebrow">{t('sidebar.projects')}</span>
+    </button>
+    {#if projectsOpen}
       <div class="scroll">
+        <div class="proj-row">
+          <span class="proj-name">{cockpit.project.name || t('topbar.openFolder')}</span>
+          {#if cockpit.project.branch}<span class="proj-branch">⑂ {cockpit.project.branch}</span>{/if}
+          <button type="button" class="icobtn tiny" aria-label={t('sidebar.refreshTip')} data-tip={t('sidebar.refreshTip')} onclick={refreshWorkspace}>⟳</button>
+          <button type="button" class="icobtn tiny" aria-label={t('topbar.openFolder')} data-tip={t('topbar.openFolder')} onclick={openFolder}>⋯</button>
+        </div>
+        <div class="side-sub-head first">{t('sidebar.explorer')}</div>
         <div class="proj">
           {#each rows as node (node.label + node.depth)}
             <button
@@ -96,22 +152,8 @@
             <div class="empty">{t('sidebar.noFiles')}</div>
           {/if}
         </div>
-      </div>
-    {/if}
-  </div>
 
-  {#if filesOpen && chatOpen}
-    <div class="side-resize" role="separator" aria-orientation="horizontal" onpointerdown={startResize}></div>
-  {/if}
-
-  <div class="side-panel grow">
-    <button type="button" class="side-head" onclick={() => (chatOpen = !chatOpen)}>
-      <span class="chev">{chatOpen ? '▾' : '▸'}</span>
-      <span class="eyebrow">{t('sidebar.chatHistory')}</span>
-      {#if cockpit.project.name}<span class="side-head-ctx">— {cockpit.project.name}</span>{/if}
-    </button>
-    {#if chatOpen}
-      <div class="scroll">
+        <div class="side-sub-head">{t('sidebar.projectChats')}</div>
         <input class="sess-search" placeholder={t('sidebar.searchHistory')} bind:value={query} oninput={onSearchInput} />
         {#each cockpit.sessions as s (s.id)}
           <button type="button" class="sess-row" class:active={s.active} onclick={() => selectSession(s)}>
@@ -127,6 +169,44 @@
           <div class="empty">{query.trim() ? t('sidebar.noResults') : t('sidebar.noHistory')}</div>
         {/if}
         <button class="newbtn" onclick={newSession}>{t('sidebar.newSession')}</button>
+
+        {#if cockpit.projects.length > 0}
+          <div class="side-sub-head">{t('sidebar.switchProject')}</div>
+          {#each cockpit.projects as p (p.key)}
+            <button type="button" class="proj-card" class:active={p.active} onclick={() => openProject(p.path)}>
+              <span class="proj-card-head">
+                <span class="ic">📁</span>
+                <span class="t">{p.name}</span>
+              </span>
+              {#if p.snippet}<span class="proj-card-sub">{p.snippet}</span>{/if}
+            </button>
+          {/each}
+        {/if}
+      </div>
+    {/if}
+  </div>
+
+  <div class="side-panel">
+    <button type="button" class="side-head" onclick={() => (historyOpen = !historyOpen)}>
+      <span class="chev">{historyOpen ? '▾' : '▸'}</span>
+      <span class="eyebrow">{t('sidebar.globalHistory')}</span>
+    </button>
+    {#if historyOpen}
+      <div class="scroll capped">
+        <input class="sess-search" placeholder={t('sidebar.searchHistory')} bind:value={historyQuery} oninput={onHistorySearchInput} />
+        {#each cockpit.history as s (s.id)}
+          <button type="button" class="sess-row" class:active={s.active} onclick={() => selectGlobalSession(s)}>
+            <span class="sess-line">
+              <span class="t">{s.title}</span>
+              <span class="ago">{s.ago}</span>
+              {#if s.active}<span class="dot green"></span>{/if}
+            </span>
+            {#if s.projectName}<span class="snip">{s.projectName}{#if s.snippet} — {s.snippet}{/if}</span>{/if}
+          </button>
+        {/each}
+        {#if cockpit.history.length === 0}
+          <div class="empty">{historyQuery.trim() ? t('sidebar.noResults') : t('sidebar.noHistory')}</div>
+        {/if}
       </div>
     {/if}
   </div>

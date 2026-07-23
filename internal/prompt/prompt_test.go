@@ -61,6 +61,25 @@ func TestBuildWithReportFoldsInProjectLayerAndReportsPath(t *testing.T) {
 	}
 }
 
+func TestBuildWithReportFoldsInIdentityFiles(t *testing.T) {
+	dataRoot := t.TempDir()
+	t.Setenv("AETOX_DATA_ROOT", dataRoot)
+	identityDir := filepath.Join(dataRoot, "identity")
+	if err := os.MkdirAll(identityDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(identityDir, "context.md"), "always be terse")
+	mustWrite(t, filepath.Join(identityDir, "skills.md"), "use the grep skill first")
+
+	text, loaded := BuildWithReport(SurfaceCLI, t.TempDir())
+	if !strings.Contains(text, "always be terse") || !strings.Contains(text, "use the grep skill first") {
+		t.Fatalf("identity files not folded in: %s", text)
+	}
+	if len(loaded.UserGlobalPaths) != 2 {
+		t.Fatalf("loaded.UserGlobalPaths = %v, want 2 entries", loaded.UserGlobalPaths)
+	}
+}
+
 func TestReadCappedTruncatesOversizedFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "big.md")
 	mustWrite(t, path, strings.Repeat("a", maxLayerBytes+500))

@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { ChatMessage, TaskState, ModelStatus, ToolStep } from './types'
   import TaskTimeline from './TaskTimeline.svelte'
+  import Logo from './Logo.svelte'
   import { onMount } from 'svelte'
   import {
     SupportedProviders, SupportedThinkLevels,
@@ -185,7 +186,7 @@
 
   {#if messages.length === 0}
     <div class="empty-state">
-      <span class="empty-glyph word">Aetox</span>
+      <Logo size={56} />
       <h2>{t('chat.whatToBuild')}</h2>
       <div class="starter-grid">
         {#each starters as s}

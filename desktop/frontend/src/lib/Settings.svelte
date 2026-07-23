@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { theme, toggleTheme } from './theme.svelte'
+  import { theme, applyTheme, THEMES, type ThemeName } from './theme.svelte'
   import { editorFont, applyEditorFontSize } from './editorFont.svelte'
   import { chatFont, applyChatFontSize } from './chatFont.svelte'
-  import { editorTheme, setBuiltinEditorTheme, importThemeFile } from './editorTheme.svelte'
+  import { editorTheme, setBuiltinEditorTheme, setAutoEditorTheme, importThemeFile } from './editorTheme.svelte'
   import { treeFont, applyTreeFontSize } from './treeFont.svelte'
   import { systemZoom, applySystemZoom, SYSTEM_BASE_PX } from './systemFont.svelte'
   import { i18n, t, setLocale, localeNames, type Locale } from './i18n.svelte'
@@ -260,7 +260,11 @@
             <div class="t">{t('settings.themeTitle')}</div>
             <div class="d">{t('settings.themeDesc')}</div>
           </div>
-          <button class="ctrl" onclick={toggleTheme}>{theme.name === 'dark' ? t('settings.dark') : t('settings.light')}</button>
+          <select class="ctrl" value={theme.name} onchange={(e) => applyTheme(e.currentTarget.value as ThemeName)}>
+            {#each THEMES as th}
+              <option value={th.value}>{th.label}</option>
+            {/each}
+          </select>
         </div>
         <div class="set-row">
           <div class="set-txt">
@@ -314,8 +318,10 @@
           </div>
           <select class="ctrl" value={editorTheme.choice} onchange={(e) => {
             const v = e.currentTarget.value
-            if (v === 'vs-dark' || v === 'vs') setBuiltinEditorTheme(v)
+            if (v === 'auto') setAutoEditorTheme()
+            else if (v === 'vs-dark' || v === 'vs') setBuiltinEditorTheme(v)
           }}>
+            <option value="auto">{t('settings.codeThemeAuto')}</option>
             <option value="vs-dark">{t('settings.codeThemeDark')}</option>
             <option value="vs">{t('settings.codeThemeLight')}</option>
             {#if editorTheme.importedName}

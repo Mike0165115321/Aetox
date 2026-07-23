@@ -37,8 +37,8 @@ var ProjectContextFileNames = []string{"AETOX.md", "AGENTS.md"}
 // (the desktop's project-status badge) can report the truth instead of just
 // checking file existence separately and hoping it matches.
 type Loaded struct {
-	UserGlobalPath string // "" if not found/empty
-	ProjectPath    string // "" if not found/empty
+	UserGlobalPaths []string // every identity file actually folded in, nil if none
+	ProjectPath     string   // "" if not found/empty
 }
 
 // ProjectContextFile returns the path of whichever project context file
@@ -71,12 +71,7 @@ func BuildWithReport(surface Surface, sandboxRoot string) (string, Loaded) {
 	b.WriteString(environment(sandboxRoot))
 
 	var loaded Loaded
-	if path, err := config.UserGlobalContextPath(); err == nil {
-		if content := readCapped(path); content != "" {
-			b.WriteString(layer("Personal instructions", path, content))
-			loaded.UserGlobalPath = path
-		}
-	}
+	loaded.UserGlobalPaths = foldIdentityLayers(&b)
 	if path := ProjectContextFile(sandboxRoot); path != "" {
 		if content := readCapped(path); content != "" {
 			b.WriteString(layer("Project rules", path, content))
@@ -85,6 +80,34 @@ func BuildWithReport(surface Surface, sandboxRoot string) (string, Loaded) {
 	}
 
 	return strings.TrimRight(b.String(), "\n"), loaded
+}
+
+// foldIdentityLayers folds every *.md file in the user's identity directory
+// (config.IdentityDir) into b, sorted by filename (os.ReadDir's own order),
+// and returns the paths that actually contributed content.
+func foldIdentityLayers(b *strings.Builder) []string {
+	dir, err := config.IdentityDir()
+	if err != nil {
+		return nil
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var loaded []string
+	for _, e := range entries {
+		if e.IsDir() || !strings.EqualFold(filepath.Ext(e.Name()), ".md") {
+			continue
+		}
+		path := filepath.Join(dir, e.Name())
+		content := readCapped(path)
+		if content == "" {
+			continue
+		}
+		b.WriteString(layer("Personal instructions — "+e.Name(), path, content))
+		loaded = append(loaded, path)
+	}
+	return loaded
 }
 
 func identity(surface Surface) string {

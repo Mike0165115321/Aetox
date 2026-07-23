@@ -25,6 +25,17 @@ export interface Session {
   ago: string
   active?: boolean
   snippet?: string
+  /** Only set on the cross-project (global) history list. */
+  projectName?: string
+}
+
+export interface RecentProject {
+  key: string
+  name: string
+  path: string
+  ago: string
+  active?: boolean
+  snippet?: string
 }
 
 export interface ProjectInfo {
@@ -142,8 +153,11 @@ export interface ChangedFile {
 
 export interface CockpitState {
   project: ProjectInfo
+  projects: RecentProject[]
   tree: TreeNode[]
   sessions: Session[]
+  /** All chat history across every project, newest first — sidebar's global history layer. */
+  history: Session[]
   model: ModelStatus
   chat: ChatMessage[]
   task: TaskState
@@ -174,8 +188,10 @@ export interface CockpitState {
 export function emptyCockpitState(): CockpitState {
   return {
     project: { name: '', path: '', branch: '', extraBranches: 0, governanceFile: '', governanceLoaded: false },
+    projects: [],
     tree: [],
     sessions: [],
+    history: [],
     model: { provider: '', modelName: '', thinkLevel: '', contextUsed: 0, contextMax: 0, approval: 'ask' },
     chat: [],
     task: { elapsed: '', steps: [] },

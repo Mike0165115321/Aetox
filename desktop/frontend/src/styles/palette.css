@@ -5,11 +5,11 @@
 :root {
   /* cool ink scale (dark grounds) */
   --c-ink-1000:#06101a;
-  --c-ink-950:#0b0f16;
+  --c-ink-950:#121317;
   --c-ink-930:#0e1420;
-  --c-ink-925:#0e131b;
-  --c-ink-900:#10151e;
-  --c-ink-850:#141b26;
+  --c-ink-925:#14161b;
+  --c-ink-900:#191c22;
+  --c-ink-850:#20242c;
   --c-ink-820:#1a2230;
   --c-ink-810:#161e2a;
   --c-ink-800:#171e28;
@@ -18,31 +18,17 @@
   --c-ink-650:#2c3644;
   --c-ink-600:#3a465a;
 
-  /* paper scale (light grounds) */
-  --c-paper-0:#ffffff;
-  --c-paper-50:#f6f8fa;
-  --c-paper-100:#eef1f5;
-  --c-paper-150:#e7ebf1;
-  --c-paper-200:#dde3ea;
-  --c-paper-300:#cbd3dd;
-  --c-paper-400:#aab4c1;
-
   /* neutral text */
-  --c-slate-50:#f2f5f9;
   --c-slate-100:#e6edf3;
   --c-slate-300:#c4ccd6;
   --c-slate-400:#9fb3c8;
   --c-slate-500:#7d8590;
   --c-slate-600:#565f6b;
-  --c-slate-700:#3a4550;
-  --c-slate-800:#26303c;
-  --c-slate-900:#1a2028;
 
   /* accent — cyan */
   --c-cyan-200:#5fd6c9;
   --c-cyan-300:#7fe9f3;
   --c-cyan-400:#35d0e0;
-  --c-cyan-600:#0f9dad;
   --c-cyan-700:#1d3f45;
   --c-cyan-900:#132a2e;
 

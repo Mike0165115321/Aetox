@@ -14,6 +14,18 @@ export namespace main {
 	        this.status = source["status"];
 	    }
 	}
+	export class IdentityFile {
+	    name: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new IdentityFile(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	    }
+	}
 	export class MCPServerInfo {
 	    name: string;
 	    command: string[];
@@ -52,6 +64,26 @@ export namespace main {
 	        this.approvalMode = source["approvalMode"];
 	        this.contextUsed = source["contextUsed"];
 	        this.contextMax = source["contextMax"];
+	    }
+	}
+	export class ProjectMeta {
+	    key: string;
+	    name: string;
+	    rootPath: string;
+	    openedAt: string;
+	    snippet?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ProjectMeta(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.key = source["key"];
+	        this.name = source["name"];
+	        this.rootPath = source["rootPath"];
+	        this.openedAt = source["openedAt"];
+	        this.snippet = source["snippet"];
 	    }
 	}
 	export class ProjectStatus {
@@ -95,6 +127,8 @@ export namespace main {
 	    title: string;
 	    updatedAt: string;
 	    snippet?: string;
+	    projectKey?: string;
+	    projectName?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new SessionMeta(source);
@@ -106,6 +140,8 @@ export namespace main {
 	        this.title = source["title"];
 	        this.updatedAt = source["updatedAt"];
 	        this.snippet = source["snippet"];
+	        this.projectKey = source["projectKey"];
+	        this.projectName = source["projectName"];
 	    }
 	}
 	export class ShellProfile {

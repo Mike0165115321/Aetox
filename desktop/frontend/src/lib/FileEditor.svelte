@@ -4,8 +4,12 @@
   import { WriteFile } from '../../wailsjs/go/main/App'
   import { t } from './i18n.svelte'
   import { editorFont } from './editorFont.svelte'
-  import { editorTheme } from './editorTheme.svelte'
+  import { editorTheme, ensureEditorThemesRegistered } from './editorTheme.svelte'
+  import { theme } from './theme.svelte'
   import { detectLanguage } from './monacoSetup'
+
+  // 'auto' follows the app's named UI theme; any other choice is a manual override.
+  const monacoTheme = $derived(editorTheme.choice === 'auto' ? theme.name : editorTheme.choice)
 
   let { path, content }: { path: string; content: string } = $props()
 
@@ -44,12 +48,13 @@
     // that never touches the editor) doesn't pay for it upfront.
     import('monaco-editor').then(async (monaco) => {
       await import('./monacoSetup') // registers MonacoEnvironment.getWorker before create()
+      await ensureEditorThemesRegistered()
       if (disposed || !container) return
 
       model = monaco.editor.createModel(content, detectLanguage(path))
       editor = monaco.editor.create(container, {
         model,
-        theme: editorTheme.choice,
+        theme: monacoTheme,
         fontSize: editorFont.size,
         minimap: { enabled: true },
         automaticLayout: true,
@@ -75,7 +80,7 @@
   })
 
   $effect(() => {
-    import('monaco-editor').then((monaco) => monaco.editor.setTheme(editorTheme.choice))
+    import('monaco-editor').then((monaco) => monaco.editor.setTheme(monacoTheme))
   })
 </script>
 

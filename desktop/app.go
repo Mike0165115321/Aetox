@@ -282,6 +282,117 @@ func (a *App) WriteFile(relPath, content string) error {
 	return os.WriteFile(full, []byte(content), 0o644)
 }
 
+// IdentityFile is one markdown file in the user's cross-project "AI
+// Identity" directory (config.IdentityDir) — e.g. context.md, skills.md.
+// Every file here rides along with the AI into every system prompt build,
+// regardless of which project is open (internal/prompt's "Personal
+// instructions" layer, ARCHITECTURE.md §11 row 3).
+type IdentityFile struct {
+	Name string `json:"name"`
+}
+
+// ensureIdentityDir returns config.IdentityDir(), creating it on first use
+// and migrating the old single-file AETOX.md (pre-multi-file AI Identity)
+// into identity/context.md if one exists.
+func ensureIdentityDir() (string, error) {
+	dir, err := config.IdentityDir()
+	if err != nil {
+		return "", err
+	}
+	if _, statErr := os.Stat(dir); os.IsNotExist(statErr) {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return "", err
+		}
+		if legacyPath, lerr := config.UserGlobalContextPath(); lerr == nil {
+			if data, rerr := os.ReadFile(legacyPath); rerr == nil && len(data) > 0 {
+				_ = os.WriteFile(filepath.Join(dir, "context.md"), data, 0o644)
+				_ = os.Remove(legacyPath)
+			}
+		}
+	}
+	return dir, nil
+}
+
+// safeIdentityName rejects path traversal and appends .md if the caller left
+// the extension off, so every identity file stays a plain, flat filename.
+func safeIdentityName(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" || filepath.Base(name) != name || strings.Contains(name, "..") {
+		return "", fmt.Errorf("invalid file name: %q", name)
+	}
+	if !strings.EqualFold(filepath.Ext(name), ".md") {
+		name += ".md"
+	}
+	return name, nil
+}
+
+// ListIdentityFiles lists the markdown files in the AI Identity directory,
+// sorted by name. Empty (not error) if none exist yet.
+func (a *App) ListIdentityFiles() ([]IdentityFile, error) {
+	dir, err := ensureIdentityDir()
+	if err != nil {
+		return nil, err
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var files []IdentityFile
+	for _, e := range entries {
+		if e.IsDir() || !strings.EqualFold(filepath.Ext(e.Name()), ".md") {
+			continue
+		}
+		files = append(files, IdentityFile{Name: e.Name()})
+	}
+	return files, nil
+}
+
+// ReadIdentityFile reads one file from the AI Identity directory by name.
+func (a *App) ReadIdentityFile(name string) (string, error) {
+	dir, err := ensureIdentityDir()
+	if err != nil {
+		return "", err
+	}
+	safeName, err := safeIdentityName(name)
+	if err != nil {
+		return "", err
+	}
+	data, err := os.ReadFile(filepath.Join(dir, safeName))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	return string(data), nil
+}
+
+// SaveIdentityFile creates or overwrites one file in the AI Identity directory.
+func (a *App) SaveIdentityFile(name, content string) error {
+	dir, err := ensureIdentityDir()
+	if err != nil {
+		return err
+	}
+	safeName, err := safeIdentityName(name)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, safeName), []byte(content), 0o644)
+}
+
+// DeleteIdentityFile removes one file from the AI Identity directory.
+func (a *App) DeleteIdentityFile(name string) error {
+	dir, err := ensureIdentityDir()
+	if err != nil {
+		return err
+	}
+	safeName, err := safeIdentityName(name)
+	if err != nil {
+		return err
+	}
+	return os.Remove(filepath.Join(dir, safeName))
+}
+
 const attachmentsDir = ".aetox-attachments"
 
 var attachmentSeq int64
@@ -414,6 +525,7 @@ func (a *App) startup(ctx context.Context) {
 	defer debuglog.Block("App.startup")()
 	a.reload(config.ConfigOptions{ApprovalMode: string(safety.ApprovalFullAccess)})
 	a.startNewSession()
+	a.touchProject(a.cfg.SandboxRoot)
 }
 
 // SendMessage runs one chat turn through the Aetox engine and returns the reply.
@@ -502,6 +614,20 @@ func (a *App) OpenProjectFolder() (ProjectStatus, error) {
 	// just re-point the engine and start a fresh session for the new project.
 	a.reload(config.ConfigOptions{RootPath: dir, ApprovalMode: string(safety.ApprovalFullAccess)})
 	a.startNewSession()
+	a.touchProject(a.cfg.SandboxRoot)
+	return projectStatus(a.cfg.SandboxRoot), nil
+}
+
+// OpenProjectPath switches straight to a previously-opened project by path —
+// used by the sidebar's recent-projects list, skipping the OS folder dialog.
+func (a *App) OpenProjectPath(root string) (ProjectStatus, error) {
+	root = strings.TrimSpace(root)
+	if root == "" {
+		return ProjectStatus{}, fmt.Errorf("empty project path")
+	}
+	a.reload(config.ConfigOptions{RootPath: root, ApprovalMode: string(safety.ApprovalFullAccess)})
+	a.startNewSession()
+	a.touchProject(a.cfg.SandboxRoot)
 	return projectStatus(a.cfg.SandboxRoot), nil
 }
 

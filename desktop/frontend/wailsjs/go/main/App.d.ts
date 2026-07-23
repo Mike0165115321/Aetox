@@ -34,6 +34,8 @@ export function CommandHistory():Promise<Array<string>>;
 
 export function CurrentSessionID():Promise<string>;
 
+export function DeleteIdentityFile(arg1:string):Promise<void>;
+
 export function GetModelInfo():Promise<main.ModelInfo>;
 
 export function GetProjectStatus():Promise<main.ProjectStatus>;
@@ -41,6 +43,10 @@ export function GetProjectStatus():Promise<main.ProjectStatus>;
 export function GitChangedFiles():Promise<Array<main.ChangedFile>>;
 
 export function HasAPIKey(arg1:string):Promise<boolean>;
+
+export function ListAllSessions():Promise<Array<main.SessionMeta>>;
+
+export function ListIdentityFiles():Promise<Array<main.IdentityFile>>;
 
 export function ListMCPServers():Promise<Array<main.MCPServerInfo>>;
 
@@ -52,11 +58,15 @@ export function ListSkills():Promise<Array<main.SkillInfo>>;
 
 export function LoadSession(arg1:string):Promise<Array<main.SessionMessage>>;
 
+export function LoadSessionAnyProject(arg1:string):Promise<Array<main.SessionMessage>>;
+
 export function ModelStatus():Promise<string>;
 
 export function NewSession():Promise<string>;
 
 export function OpenProjectFolder():Promise<main.ProjectStatus>;
+
+export function OpenProjectPath(arg1:string):Promise<main.ProjectStatus>;
 
 export function PickAttachmentImage():Promise<string>;
 
@@ -66,7 +76,11 @@ export function ProviderBaseURL(arg1:string):Promise<string>;
 
 export function ReadFile(arg1:string):Promise<string>;
 
+export function ReadIdentityFile(arg1:string):Promise<string>;
+
 export function ReadImageDataURL(arg1:string):Promise<string>;
+
+export function RecentProjects():Promise<Array<main.ProjectMeta>>;
 
 export function RelativizePath(arg1:string):Promise<string>;
 
@@ -75,6 +89,10 @@ export function RemoveMCPServer(arg1:string):Promise<void>;
 export function RequiresAPIKey(arg1:string):Promise<boolean>;
 
 export function SaveChatImage(arg1:string):Promise<string>;
+
+export function SaveIdentityFile(arg1:string,arg2:string):Promise<void>;
+
+export function SearchAllSessions(arg1:string):Promise<Array<main.SessionMeta>>;
 
 export function SearchSessions(arg1:string):Promise<Array<main.SessionMeta>>;
 

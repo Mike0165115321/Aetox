@@ -209,15 +209,30 @@ func LegacyPreferencePath() string {
 	return filepath.Join(configDir, "aetox-cli", "model-preference.json")
 }
 
-// UserGlobalContextPath is where a user's cross-project AETOX.md instructions
-// live (the prompt layer's "user global" layer — ARCHITECTURE.md §11), same
-// directory as PreferencePath/PermissionsPath.
+// UserGlobalContextPath is the old single-file location for cross-project
+// instructions, pre-dating IdentityDir. Kept only so the desktop app can
+// migrate its content into IdentityDir on first run; new code should use
+// IdentityDir instead (ARCHITECTURE.md §11 row 3).
 func UserGlobalContextPath() (string, error) {
 	root, err := DataRoot()
 	if err != nil {
 		return "", err
 	}
 	return filepath.Join(root, "AETOX.md"), nil
+}
+
+// IdentityDir holds every markdown file that always rides along with the AI
+// across every project — the "AI Identity" layer edited from the desktop
+// sidebar (e.g. context.md, skills.md, whatever the user wants always
+// attached). Every *.md file in it is folded into every system prompt build
+// (internal/prompt.BuildWithReport, ARCHITECTURE.md §11 row 3). Replaces the
+// single-file UserGlobalContextPath.
+func IdentityDir() (string, error) {
+	root, err := DataRoot()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(root, "identity"), nil
 }
 
 func PermissionsPath() (string, error) {

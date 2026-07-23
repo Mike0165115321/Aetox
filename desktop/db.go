@@ -28,6 +28,14 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_key, updated_at DESC);
 
+CREATE TABLE IF NOT EXISTS projects (
+  project_key TEXT PRIMARY KEY,
+  name        TEXT NOT NULL,
+  root_path   TEXT NOT NULL,
+  opened_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_projects_opened ON projects(opened_at DESC);
+
 CREATE TABLE IF NOT EXISTS messages (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   session_id TEXT NOT NULL,

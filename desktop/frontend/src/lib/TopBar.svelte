@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { theme, toggleTheme } from './theme.svelte'
+  import { theme, toggleTheme, DARK_FAMILY } from './theme.svelte'
   import { t } from './i18n.svelte'
+  import Wordmark from './Wordmark.svelte'
 
   let {
     inspectorCollapsed, onToggleInspector, sidebarCollapsed, onToggleSidebar,
@@ -13,7 +14,7 @@
 </script>
 
 <div class="brand">
-  <span class="word">AETOX</span>
+  <Wordmark height={20} />
 </div>
 
 <div class="topbar">
@@ -33,7 +34,7 @@
       {inspectorCollapsed ? '▥' : '▤'}
     </button>
     <button class="icobtn tip-r" aria-label={t('topbar.toggleTheme')} data-tip={t('topbar.toggleThemeTip')} onclick={toggleTheme}>
-      {theme.name === 'dark' ? '☀' : '🌙'}
+      {DARK_FAMILY.has(theme.name) ? '☀' : '🌙'}
     </button>
   </div>
 </div>
