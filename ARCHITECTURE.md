@@ -1,11 +1,36 @@
 > **Pass level:** Full Mode
 > **Trigger:** whole-project documentation requested at root; 3+ interacting modules (root/`internal`, `engine`, `providers`, `cli`, `desktop`), local persistence (SQLite), 11+ external provider integrations, remote code execution path (`plugin_install`).
-> **Scope:** entire repository (`e:\Aetox\Aetox`), last updated 2026-07-22.
+> **Scope:** entire repository (`e:\Aetox\Aetox`), last updated 2026-07-24.
 > **Evidence:** file tree, `go.work`/`go.mod`×4, `README.md`, `AETOX.md`, `docs/adr/0001`, `docs/adr/0002`, `docs/architecture/module-split-2026-07-21.md`, `docs/architecture/browser-security-2026-07-21.md`, `TEST-REPORT.md`, `MCP-SUPPORT-PLAN.md`, and direct reads of `cmd/aetox/main.go`, `internal/app/app.go`, `internal/cognitive/agent.go`, `internal/turn/executor.go`, `internal/skill/{skill,dispatcher,github_tools}.go`, `internal/safety/safety.go`, `internal/config/config.go`, `desktop/{app,browser,terminal,db,sessions,workbench}.go` and their `_test.go` files, `desktop/frontend/src/{App.svelte,style.css,lib/workbench/*}`.
 > **Skipped:** Svelte component internals, provider-by-provider implementation detail (`internal/model/*.go` bodies), test file contents (existence noted, not read line-by-line).
 > **Status labels used below:** `Direct` = confirmed by reading the file. `Inferred` = derived from evidence but not line-verified. `Proposed` = design intent, not yet built — never presented as existing.
 
 This document is an evidence-first architecture map, distinct from [README.md](README.md) and [AETOX.md](AETOX.md), which are product vision/pitch documents and mix shipped state with roadmap in the same tables. Where they conflict with the code, this document follows the code.
+
+---
+
+## Document Map — this file is the hub
+
+**Owner's law (2026-07-24): this is the master architecture document. Every separate architecture doc must be referenced here — a new doc gets its row in this table (and, if it records a decision, a numbered Decision section) in the same commit that creates it.**
+
+| Doc | What it is |
+|---|---|
+| **This file** | Evidence-first whole-system map + the numbered Decision log (§10–§19). Start here; everything below is a spoke. |
+| [README.md](README.md) · [AETOX.md](AETOX.md) · [Aetox Desktop.md](Aetox%20Desktop.md) | Product vision/pitch documents — mix shipped state with roadmap; this file wins on conflicts. |
+| [docs/architecture/module-split-2026-07-21.md](docs/architecture/module-split-2026-07-21.md) | Why the `engine/`/`providers/`/`cli/` module scaffold exists and the migration plan (§4). |
+| [docs/architecture/browser-security-2026-07-21.md](docs/architecture/browser-security-2026-07-21.md) | Browser tab `postMessage` bridge — threat model, 3-check defense, residual risk (§6.6). |
+| [docs/architecture/desktop-app-2026-07-22.md](docs/architecture/desktop-app-2026-07-22.md) | Layer-5 deep dive: every `desktop/` Go file + workbench frontend, read in full. |
+| [docs/architecture/model-control-layer-2026-07-22.md](docs/architecture/model-control-layer-2026-07-22.md) | Layer-2 deep dive (`turn`/`cognitive`/`skill`/`safety`). ⚠️ Executor sections superseded by §17 — the doc says so itself. |
+| [docs/architecture/tesseract-ocr-bundling-2026-07-22.md](docs/architecture/tesseract-ocr-bundling-2026-07-22.md) | How `image_ocr`'s Tesseract dependency reaches the user's machine per OS. |
+| [docs/architecture/native-browser-embedding-2026-07-24.md](docs/architecture/native-browser-embedding-2026-07-24.md) | Native browser embedding: architecture, 7-entry failure catalog, macOS/Linux port blueprint (§18). |
+| [docs/adr/0001-native-tool-calling-foundation.md](docs/adr/0001-native-tool-calling-foundation.md) | ADR, Accepted 2026-06-07 — native tool calling as the agentic foundation. |
+| [docs/adr/0002-directional-cognition-engine.md](docs/adr/0002-directional-cognition-engine.md) | ADR, Proposed 2026-07-10 — long-term multi-AI orchestration vision (ensemble/routing/consensus). |
+| [MCP-SUPPORT-PLAN.md](MCP-SUPPORT-PLAN.md) | MCP integration plan (skill.Tool is already MCP-shaped; staged rollout). |
+| [TEST-REPORT.md](TEST-REPORT.md) | Module-by-module test coverage and known untestable seams. |
+| [docs/opencode-study/](docs/opencode-study/README.md) | Source-level reading of opencode at a pinned commit (agents, MCP, permissions, plugin hooks, snapshot). |
+| [docs/architecture-reference-opencode.md](docs/architecture-reference-opencode.md) · [docs/competitor-research.md](docs/competitor-research.md) | Package/feature-level comparisons that motivated the deep study above. |
+| [docs/architecture-review-aetox-cli.md](docs/architecture-review-aetox-cli.md) | **Superseded** (predates `desktop/`); kept for history. |
+| Tier-1 module READMEs | `internal/{app,turn,skill,model,grammar,prompt,rtk}/README.md`, `cmd/aetox/README.md`, `desktop/README.md` — hub-and-spoke rule per §12: meaningful change to a module updates its README in the same commit. |
 
 ---
 
@@ -56,19 +81,67 @@ No backend server, no cloud database, no multi-tenant concerns — everything ru
 
 ```mermaid
 flowchart LR
-    User(("User")) --> CLI["CLI\ncmd/aetox"]
-    User --> Desktop["Desktop GUI\ndesktop/ (Wails)"]
+    User(("User"))
+    CLI["CLI — cmd/aetox\nThai-language REPL / one-shot"]
 
-    CLI --> Engine["Engine\ninternal/*"]
-    Desktop --> Engine
+    subgraph DesktopApp["Desktop GUI — desktop/ (Wails v2 · Windows-only today, §18)"]
+        direction TB
+        FE["Svelte 5 frontend\nchat · composer (project-focus + model pickers, §19)\nworkbench tabs — layout persisted per session (§19.2)"]
+        Bindings["Wails-bound App\ndesktop/app.go\n(bindings return [] never nil — §19.3)"]
+        BrowserHost["Native browser host — desktop/browser.go\nWebView2 child windows on one STA thread\nparent found by PID, never title (§18)"]
+        Term["Embedded terminals\ndesktop/terminal.go (ConPTY)"]
+        Sessions["Session persistence + FTS5 search\ndesktop/sessions.go · db.go\nunfocused chats → home-dir bucket (§19.1)"]
+        FE <--> Bindings
+        Bindings --> BrowserHost
+        Bindings --> Term
+        Bindings --> Sessions
+    end
 
-    Engine --> Providers[["13 Provider APIs (verified in code)\nOpenRouter, OpenAI, Anthropic, DeepSeek, Z.AI,\nGemini, Groq, Mistral, Together,\nPerplexity, Cohere, LM Studio,\nOllama (local)"]]
-    Engine --> FS[("Local filesystem\nread/write/delete/shell/git")]
-    Engine --> GH[["GitHub API\ngithub_repo_summary, plugin_install"]]
+    subgraph Engine["Engine — internal/* (one shared engine, both front ends)"]
+        direction TB
+        Grammar["grammar (+command facade)\nexplicit tokens only — no NL inference (§17)"]
+        Turn["turn.Executor\nexplicit skill → direct dispatch\nelse model tool loop, else streaming chat"]
+        Cog["cognitive.Agent\nunbounded tool loop — brakes are\napproval gate + ctx cancel"]
+        Skills["skill.Registry — 15 built-ins\n+ browser_open/read/click/type (SourceExternal)\n+ MCP tools via mcp.Manager"]
+        Safety["safety — ask / unsafe-only / full-access\nper-command risk rules"]
+        Prompt["prompt — system prompt layers\n(identity · environment · user · project)"]
+        RTK["rtk (optional)\nsqueezes tool receipts"]
+        Model["model — Provider interface\n+ all provider clients + backstops (§17)"]
+        Grammar --> Turn
+        Turn --> Cog
+        Cog --> Model
+        Turn --> Skills
+        Skills --> Safety
+        Turn --> RTK
+        Prompt -->|bootstrap| Cog
+    end
 
-    Desktop --> SQLite[("SQLite + FTS5\ndesktop/db.go, sessions.go")]
-    Desktop --> WebView["Native WebView2 tabs\ndesktop/browser.go"]
-    Desktop --> Shell["Embedded shell sessions\ndesktop/terminal.go"]
+    User --> FE
+    User --> CLI
+    CLI --> Engine
+    Bindings --> Engine
+
+    Providers[["13 Provider APIs (verified in code)\nOpenRouter, OpenAI, Anthropic, DeepSeek, Z.AI,\nGemini, Groq, Mistral, Together,\nPerplexity, Cohere, LM Studio,\nOllama (local)"]]
+    GH[["GitHub API\ngithub_repo_summary · plugin_install · rtk self-install"]]
+    MCPExt[["Configured MCP servers"]]
+    Web[["Live web pages\n(inside native browser tabs)"]]
+    FS[("Local filesystem + shell + git\nrooted at project, or home when unfocused (§19.1)")]
+
+    Model --> Providers
+    Skills --> GH
+    Skills --> FS
+    Skills -.-> MCPExt
+    BrowserHost --> Web
+
+    subgraph Data["DataRoot() — every Aetox-owned file, one directory (§14)"]
+        DB[("SQLite + FTS5\nsessions per project bucket")]
+        Profiles[("WebView2 profiles\nwebview/app · webview/browser")]
+        Misc[("model prefs · permissions\ndebug logs · audit log · rtk binary")]
+    end
+
+    Sessions --> DB
+    BrowserHost --> Profiles
+    Engine --> Misc
 ```
 
 - **Confirmed external dependencies:** 12 named provider HTTP APIs, verified against the actual catalog map in `internal/provider/catalog.go` (not README's list — see §6.9, they differ), GitHub REST API (`internal/skill/github_tools.go`), local shell (`internal/skill/shell.go`), local filesystem, SQLite (confirmed `modernc.org/sqlite`, `Direct` — `desktop/db.go:17`), Windows WebView2 (`desktop/browser.go`, Win32 syscalls — Windows-only, `Direct`).
@@ -81,13 +154,51 @@ flowchart LR
 ```mermaid
 flowchart TB
     subgraph rootmod["root module: github.com/Mike0165115321/Aetox"]
-        cmd["cmd/aetox\nCLI entry point"]
-        internal["internal/*\n15 packages — actual engine"]
+        direction TB
+        subgraph fronts["Front ends"]
+            cmd["cmd/aetox\nCLI entry"]
+            dfe["desktop/frontend — Svelte 5\nstores: cockpit · workbench\n(session-bound layout, §19.2)"]
+            dgo["desktop/ — Wails Go side\napp · browser · terminal\nsessions · db · workbench"]
+            dfe -->|generated wails bindings| dgo
+        end
+        subgraph engcore["Engine core (internal/)"]
+            app["app\nCLI loop + engine wiring"]
+            turn["turn\nExecutor — §17 pipeline"]
+            cognitive["cognitive\nAgent tool loop"]
+            skill["skill\nRegistry + 15 built-ins"]
+            safety["safety\napproval + risk"]
+            grammar["grammar (+command)\nexplicit-token parsing"]
+            prompt["prompt\nsystem prompt layers"]
+            memory["memory\nconversation context"]
+        end
+        subgraph modellayer["Model layer"]
+            model["model\nProvider iface + clients + think normalization"]
+            provider["provider\nruntime catalog"]
+        end
+        subgraph infra["Infra"]
+            config["config\nDataRoot() · prefs · permissions"]
+            mcp["mcp\nMCP server manager"]
+            rtk["rtk\noptional receipt squeeze"]
+            audit["audit"]
+            debuglog["debuglog"]
+        end
         orch["internal/orchestrator\nbuilt, no caller yet — §10"]
-        desktop["desktop/\nWails GUI + Svelte 5 frontend"]
-        cmd --> internal
-        desktop --> internal
-        internal -.->|not wired in| orch
+
+        cmd --> app
+        dgo --> app
+        app --> turn
+        turn --> grammar
+        turn --> cognitive
+        turn --> skill
+        turn --> rtk
+        skill --> safety
+        cognitive --> model
+        cognitive --> memory
+        model --> provider
+        app --> prompt
+        dgo --> mcp
+        mcp -.->|tools registered into| skill
+        app -.->|not wired in| orch
     end
 
     subgraph scaffold["go.work scaffold — zero code, go.mod only"]
@@ -593,6 +704,50 @@ Ran `golang.org/x/tools/cmd/deadcode ./...` (trustworthy here: Wails-bound deskt
 4. **Accepted regression:** non-tool-capable local models lose the "สร้างไฟล์ x.txt" magic and become chat-only — same behavior as OpenCode, and honest. The fix for a weak model is a tool-capable model, not a regex.
 
 **Status:** `Done 2026-07-23.` Owner approved same day, with one amendment to point 3: **no preemptive capability gating** — tools are served to every model normally, no size/capability prejudgment (owner's call: "ระบบเราจะเสิร์ฟให้โมเดลตามปกติ... แต่เผื่อทางไว้ก็ดี"). The `/api/show` probe was dropped; only the runtime backstop shipped — `ollama.Complete` retries a tools request as plain chat when Ollama itself answers "does not support tools" (`internal/model/ollama.go`, pinned by `TestOllamaComplete_RetriesWithoutToolsWhenModelRejectsThem`). Demolition tally: `infer.go` (−746), `record.go` (−36, §16's pending item), `executor.go` 876→620, `executor_test.go` 1387→560 — net ≈ −2,050 lines. New §17 regression pin: `TestExecute_ConversationTextNeverTriggersToolsDirectly` (the exact Thai sentence that triggered this decision). `go build`/`go test ./...` green.
+
+---
+
+## 18. Decision — Browser Embedding: Never Find Your Own Window by Title (2026-07-24)
+
+**Trigger (real failure, 2026-07-24):** every browser tab rendered blank — `file://` pages AND https — surviving app restarts, with zero errors anywhere. §6.6's z-order fix was live and correct, but no tab webview process was even being created.
+
+**Evidence (instrumented `open()`/`start()`, read from `debuglog`):** `CreateWindowExW FAILED: Access is denied.` on every tab, and the one-line diagnosis: `parent hwnd=… parentPid=1464 selfPid=9148` — `browserHost.start()` located the main window via `FindWindowW(nil, "Aetox Desktop")`, i.e. **by title**, and matched a *foreign process's* window carrying the same text (an `explorer.exe` taskbar-thumbnail host; a dev-URL browser tab titled by our own `<title>` can collide the same way). A cross-process parent makes `WS_CHILD` creation fail with `ERROR_ACCESS_DENIED` — silently, because `open()` swallowed every failure path.
+
+**Fix applied ([desktop/browser.go](desktop/browser.go)):**
+1. `findOwnMainWindow()` — enumerate top-level windows, match by `GetWindowThreadProcessId == os.Getpid()` + visible. Title-based lookup is banned in this subsystem.
+2. Every native failure path now logs to `debuglog` with tab id — the silent `return`s are what turned a one-line bug into a half-night hunt.
+3. Visibility hardened while in there: `SetWindowPos(HWND_TOP)` moved into `NavigationCompletedCallback` natively (§6.6's meta-event-driven re-glue depended on page JS surviving the origin check — never true for `file://`, whose URLs have no host; `sameOrigin` now special-cases file↔file, which also restores title/URL sync for local pages).
+4. Address-bar `normalizeUrl` (frontend): drive paths → `file:///`, schemes pass through — blind `https://` prefixing had produced dead `https://file:///…` URLs.
+
+**Full write-up:** [docs/architecture/native-browser-embedding-2026-07-24.md](docs/architecture/native-browser-embedding-2026-07-24.md) — architecture, the complete failure catalog (7 entries), and the macOS (WKWebView subview) / Linux (WebKitGTK widget) port blueprint; both platforms structurally avoid the window-parenting and z-order classes entirely. Also settles §7's open question in passing: `desktop/browser.go` has no build tag — desktop is Windows-only today by construction, and the port blueprint is the plan for changing that.
+
+**Status:** `Done 2026-07-24.` Owner verified tabs load (file:// + web). `go build`/`go test ./desktop` green (file↔file origin cases added to `TestSameOrigin`).
+
+---
+
+## 19. Decision — Desktop: No-Project-Focus Default, Session-Bound Workbench, Non-Nil Binding Contract (2026-07-24)
+
+Three same-day desktop decisions, recorded together; all owner-driven, all shipped.
+
+### 19.1 No-project-focus is the startup default
+
+**Trigger:** the composer chip showed "desktop" — the engine silently adopted whatever cwd it was launched from (`config.go`'s `RootPath == "" → os.Getwd()`; `wails dev` runs from `desktop/`). Owner: never bind to the launch folder; focus must be an explicit choice (Claude Desktop's เลือกโปรเจกต์ picker as the reference), and unfocused chat must keep **full tool access** — "เหมือนเปิด Claude/Codex มาคุยดื้อๆ แต่ยังรันอะไรในเครื่องเราได้."
+
+**Design ([desktop/app.go](desktop/app.go), [desktop/sessions.go](desktop/sessions.go)):** `App.projectFocused` flag; startup calls `focusNone()` — engine re-roots at the user's **home dir** (tools all work, rooted neutrally), no `touchProject`, so launch cwd never pollutes recent projects. `ClearProjectFocus` binding + a focus picker on the composer chip (no-focus / recent projects / open folder). Unfocused sessions live under the home-dir `projectKey` bucket — no schema change — and `LoadSessionAnyProject` special-cases that bucket back into unfocused mode instead of erroring "project not found". `ProjectTree`/`GitChangedFiles` return empty when unfocused (never eagerly walk a home dir). `ProjectStatus.Focused` drives the UI.
+
+### 19.2 Workbench (right pane) state is per-session
+
+**Trigger:** owner: "แต่ละเซสชันต้องผูกกับฝั่งขวาที่เปิดไว้ด้วย" — switching sessions must bring back what was open.
+
+**Design ([workbench.svelte.ts](desktop/frontend/src/lib/stores/workbench.svelte.ts)):** layout snapshots (browser URLs, file paths, singleton panes, active tab) persist to localStorage keyed `aetox-workbench:<sessionId>` — the Go session store never learns about UI layout. Two entry paths: `switchWorkbenchSession` (explicit switch: save old, restore new) and `adoptWorkbenchSession` (passive id change: first sighting restores, a mid-chat re-key migrates the open tabs). **Terminals are excluded** — a dead PTY restored as an empty shell is more confusing than a closed tab.
+
+### 19.3 Bindings never return nil slices
+
+**Trigger (real failure):** the model-picker button "didn't work" — a Go `nil` slice serialized to JSON `null`, and the menu's render crashed on `thinkLevels.length` mid-open. Same class hit `ListModelsForProvider` and `ListIdentityFiles` (sidebar startup error).
+
+**Rule:** any Wails binding returning a slice returns `[]T{}`, never nil. Fixed in `SupportedThinkLevels`/`ListModelsForProvider`/`ListIdentityFiles`; treat this as the standing contract for every future binding (frontend code is allowed to assume arrays).
+
+**Status:** `Done 2026-07-24.` All three verified live (screenshots + `go test ./desktop` + `svelte-check` green). **Open item from the same session:** DeepSeek V4's DSML tool-call markup leaking into chat as raw text — backstop parser written ([internal/model/dsml.go](internal/model/dsml.go), grammar from DeepSeek-V4-Flash's encoding README) but not yet wired into `openai_compatible.go`'s `Complete()`; §17's backstop-not-gate convention applies. A latent sibling bug is noted for the same file: `StreamComplete` silently drops structured tool-call deltas (currently harmless — no streaming path passes tools).
 
 ---
 

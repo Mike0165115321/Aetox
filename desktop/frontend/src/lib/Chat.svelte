@@ -12,6 +12,7 @@
   import { openUrlInWorkbench } from './stores/workbench.svelte'
   import {
     cockpit, attachImageFromPath, clearPendingImage, attachTabContext, clearPendingContext,
+    openProject, openFolder, clearProjectFocus,
   } from './stores/cockpit.svelte'
 
   let {
@@ -97,9 +98,12 @@
 
   let draft = $state('')
   let modelMenuOpen = $state(false)
+  let focusMenuOpen = $state(false)
 
-  function closeModelMenuOnOutside(e: MouseEvent) {
-    if (!(e.target as HTMLElement).closest('.model-pick')) modelMenuOpen = false
+  function closeMenusOnOutside(e: MouseEvent) {
+    const el = e.target as HTMLElement
+    if (modelMenuOpen && !el.closest('.model-pick')) modelMenuOpen = false
+    if (focusMenuOpen && !el.closest('.focus-pick')) focusMenuOpen = false
   }
 
   // Ticks once a second while a turn is in flight, so the running tool step's
@@ -170,7 +174,7 @@
   }
 </script>
 
-<svelte:window onclick={modelMenuOpen ? closeModelMenuOnOutside : undefined} />
+<svelte:window onclick={modelMenuOpen || focusMenuOpen ? closeMenusOnOutside : undefined} />
 
 {#snippet toolTimeline(steps: ToolStep[], live: boolean)}
   <div class="tool-steps">
@@ -295,8 +299,31 @@
       </div>
     {/if}
     <div class="focus-row">
-      <span class="focus-chip"><span class="ic">📁</span>{cockpit.project.name || t('topbar.openFolder')}</span>
-      {#if cockpit.project.branch}<span class="focus-chip">⑂ {cockpit.project.branch}</span>{/if}
+      <div class="focus-pick">
+        {#if focusMenuOpen}
+          <div class="focus-menu">
+            <button type="button" class="focus-item" class:on={!cockpit.project.focused} onclick={() => { focusMenuOpen = false; clearProjectFocus() }}>
+              <span class="ic">💬</span> {t('chat.noProject')}
+            </button>
+            {#if cockpit.projects.length > 0}<div class="menu-sep"></div>{/if}
+            {#each cockpit.projects.slice(0, 8) as p (p.key)}
+              <button type="button" class="focus-item" class:on={cockpit.project.focused && p.active} onclick={() => { focusMenuOpen = false; openProject(p.path) }}>
+                <span class="ic">📁</span><span class="t">{p.name}</span>
+              </button>
+            {/each}
+            <div class="menu-sep"></div>
+            <button type="button" class="focus-item" onclick={() => { focusMenuOpen = false; openFolder() }}>
+              <span class="ic">📂</span> {t('topbar.openFolder')}…
+            </button>
+          </div>
+        {/if}
+        <button type="button" class="focus-chip focus-btn" onclick={() => (focusMenuOpen = !focusMenuOpen)}>
+          <span class="ic">{cockpit.project.focused ? '📁' : '💬'}</span>
+          {cockpit.project.focused ? cockpit.project.name : t('chat.noProject')}
+          <span class="caret">{focusMenuOpen ? '⌃' : '⌄'}</span>
+        </button>
+      </div>
+      {#if cockpit.project.focused && cockpit.project.branch}<span class="focus-chip">⑂ {cockpit.project.branch}</span>{/if}
     </div>
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <!-- drag/drop target for a workbench tab; the textarea/buttons inside remain the real interactive elements -->

@@ -10,6 +10,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -292,10 +293,18 @@ func (a *App) LoadSessionAnyProject(id string) ([]SessionMessage, error) {
 		return nil, fmt.Errorf("ไม่พบเซสชันนี้")
 	}
 	if key != projectKey(a.cfg.SandboxRoot) {
+		// Sessions chatted "ไม่โฟกัสโปรเจกต์" live under the home-dir bucket,
+		// which never gets a projects-table row — switch back to unfocused
+		// mode for those instead of treating them as an orphaned project.
+		if home, herr := os.UserHomeDir(); herr == nil && key == projectKey(home) {
+			a.focusNone()
+			return a.LoadSession(id)
+		}
 		if rootPath == "" {
 			return nil, fmt.Errorf("ไม่พบโปรเจกต์ของเซสชันนี้ (โฟลเดอร์อาจถูกย้ายหรือลบไปแล้ว)")
 		}
 		a.reload(config.ConfigOptions{RootPath: rootPath, ApprovalMode: string(safety.ApprovalFullAccess)})
+		a.projectFocused = true
 		a.touchProject(a.cfg.SandboxRoot)
 	}
 	return a.LoadSession(id)

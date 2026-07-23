@@ -42,6 +42,8 @@ export interface ProjectInfo {
   name: string
   path: string
   branch: string
+  /** false = "ไม่โฟกัสโปรเจกต์" mode — engine rooted at home, tools still fully usable. */
+  focused: boolean
   extraBranches: number
   governanceFile: string
   governanceLoaded: boolean
@@ -187,7 +189,7 @@ export interface CockpitState {
 /** A blank, well-formed state so the UI renders before the source hydrates. */
 export function emptyCockpitState(): CockpitState {
   return {
-    project: { name: '', path: '', branch: '', extraBranches: 0, governanceFile: '', governanceLoaded: false },
+    project: { name: '', path: '', branch: '', focused: false, extraBranches: 0, governanceFile: '', governanceLoaded: false },
     projects: [],
     tree: [],
     sessions: [],

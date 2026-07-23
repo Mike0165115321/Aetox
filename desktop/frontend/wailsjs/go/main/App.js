@@ -54,6 +54,10 @@ export function CancelTurn() {
   return window['go']['main']['App']['CancelTurn']();
 }
 
+export function ClearProjectFocus() {
+  return window['go']['main']['App']['ClearProjectFocus']();
+}
+
 export function CloseAllBrowserTabs() {
   return window['go']['main']['App']['CloseAllBrowserTabs']();
 }

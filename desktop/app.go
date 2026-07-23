@@ -45,6 +45,13 @@ type App struct {
 	sessionID  string
 	transcript []SessionMessage
 
+	// projectFocused=false runs the engine "ไม่โฟกัสโปรเจกต์": rooted at the
+	// user's home dir so every tool (files/git/terminal) still works on the
+	// machine, but nothing is treated as a project (no tree walk, no recent-
+	// projects entry, UI shows an unfocused chip). This is the startup default —
+	// the app must not silently adopt whatever cwd it was launched from.
+	projectFocused bool
+
 	turnMu     sync.Mutex
 	turnCancel context.CancelFunc // cancels the chat turn in flight, nil when idle
 
@@ -105,6 +112,11 @@ func (a *App) CommandHistory() []string {
 // the root isn't a repo — the panel just shows no changes.
 func (a *App) GitChangedFiles() []ChangedFile {
 	out := []ChangedFile{}
+	// Unfocused mode: home is not a project — even if it happens to sit inside
+	// a git repo, its status is noise for the Files Changed panel.
+	if !a.projectFocused {
+		return out
+	}
 	raw, err := exec.Command("git", "-C", a.cfg.SandboxRoot, "status", "--porcelain").Output()
 	if err != nil {
 		return out
@@ -148,6 +160,12 @@ var treeIgnore = map[string]bool{
 // per folder-expand — fine for a normal repo, revisit if it's ever slow on
 // a huge one.
 func (a *App) ProjectTree() []TreeNode {
+	// Unfocused mode is rooted at the user's home dir — eagerly walking that
+	// (Documents, Downloads, ...) would be huge and meaningless as a "project
+	// tree", so the tree is simply empty until a project is focused.
+	if !a.projectFocused {
+		return []TreeNode{}
+	}
 	root := strings.TrimSpace(a.cfg.SandboxRoot)
 	if root == "" {
 		return []TreeNode{}
@@ -483,6 +501,7 @@ type ProjectStatus struct {
 	Name             string `json:"name"`
 	Path             string `json:"path"`
 	Branch           string `json:"branch"`
+	Focused          bool   `json:"focused"` // false = "ไม่โฟกัสโปรเจกต์" mode (engine rooted at home)
 	GovernanceFile   string `json:"governanceFile"`
 	GovernanceLoaded bool   `json:"governanceLoaded"`
 }
@@ -523,9 +542,19 @@ func (a *App) startup(ctx context.Context) {
 	// empty and gives no evidence either way for "why did first paint feel
 	// stuck." This makes the log itself the answer next time it happens.
 	defer debuglog.Block("App.startup")()
-	a.reload(config.ConfigOptions{ApprovalMode: string(safety.ApprovalFullAccess)})
+	a.focusNone()
 	a.startNewSession()
-	a.touchProject(a.cfg.SandboxRoot)
+}
+
+// focusNone re-roots the engine at the user's home dir and marks the app as
+// not focused on any project. Falls back to cwd only if home can't be resolved.
+func (a *App) focusNone() {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = ""
+	}
+	a.reload(config.ConfigOptions{RootPath: home, ApprovalMode: string(safety.ApprovalFullAccess)})
+	a.projectFocused = false
 }
 
 // SendMessage runs one chat turn through the Aetox engine and returns the reply.
@@ -593,9 +622,30 @@ func (a *App) GetModelInfo() ModelInfo {
 	}
 }
 
+// currentProjectStatus stamps the focus flag onto the raw status; unfocused
+// mode hides the home dir's name/branch so the UI never presents it as a project.
+func (a *App) currentProjectStatus() ProjectStatus {
+	ps := projectStatus(a.cfg.SandboxRoot)
+	ps.Focused = a.projectFocused
+	if !a.projectFocused {
+		ps.Name = ""
+		ps.Branch = ""
+	}
+	return ps
+}
+
 // GetProjectStatus reports the real project/git state for the current sandbox root.
 func (a *App) GetProjectStatus() ProjectStatus {
-	return projectStatus(a.cfg.SandboxRoot)
+	return a.currentProjectStatus()
+}
+
+// ClearProjectFocus switches to "no project" mode: tools keep full access to
+// the machine (rooted at home), but the chat is no longer tied to any project.
+// Starts a fresh session, same as switching projects does.
+func (a *App) ClearProjectFocus() ProjectStatus {
+	a.focusNone()
+	a.startNewSession()
+	return a.currentProjectStatus()
 }
 
 // OpenProjectFolder lets the user pick a real folder via the native OS dialog, then
@@ -613,9 +663,10 @@ func (a *App) OpenProjectFolder() (ProjectStatus, error) {
 	// Sessions are per project — turns are already persisted incrementally, so
 	// just re-point the engine and start a fresh session for the new project.
 	a.reload(config.ConfigOptions{RootPath: dir, ApprovalMode: string(safety.ApprovalFullAccess)})
+	a.projectFocused = true
 	a.startNewSession()
 	a.touchProject(a.cfg.SandboxRoot)
-	return projectStatus(a.cfg.SandboxRoot), nil
+	return a.currentProjectStatus(), nil
 }
 
 // OpenProjectPath switches straight to a previously-opened project by path —
@@ -626,9 +677,10 @@ func (a *App) OpenProjectPath(root string) (ProjectStatus, error) {
 		return ProjectStatus{}, fmt.Errorf("empty project path")
 	}
 	a.reload(config.ConfigOptions{RootPath: root, ApprovalMode: string(safety.ApprovalFullAccess)})
+	a.projectFocused = true
 	a.startNewSession()
 	a.touchProject(a.cfg.SandboxRoot)
-	return projectStatus(a.cfg.SandboxRoot), nil
+	return a.currentProjectStatus(), nil
 }
 
 // SupportedProviders lists the model providers exposed in the desktop UI — a

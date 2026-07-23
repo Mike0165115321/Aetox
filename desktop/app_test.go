@@ -152,10 +152,17 @@ func TestGitChangedFilesDetectsUntracked(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	a := &App{cfg: config.Config{SandboxRoot: root}}
+	a := &App{cfg: config.Config{SandboxRoot: root}, projectFocused: true}
 	got := a.GitChangedFiles()
 	if len(got) != 1 || got[0].Path != "new.txt" || got[0].Status != "U" {
 		t.Errorf("GitChangedFiles() = %+v, want one untracked entry for new.txt", got)
+	}
+}
+
+func TestGitChangedFilesEmptyWhenUnfocused(t *testing.T) {
+	a := &App{cfg: config.Config{SandboxRoot: t.TempDir()}} // projectFocused: false
+	if got := a.GitChangedFiles(); len(got) != 0 {
+		t.Errorf("GitChangedFiles() unfocused = %v, want empty", got)
 	}
 }
 
@@ -171,7 +178,7 @@ func TestProjectTreeListsFilesAndSkipsIgnored(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	a := &App{cfg: config.Config{SandboxRoot: root}}
+	a := &App{cfg: config.Config{SandboxRoot: root}, projectFocused: true}
 	tree := a.ProjectTree()
 
 	foundMain, foundIgnored := false, false

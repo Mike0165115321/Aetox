@@ -11,10 +11,11 @@ import {
   SwitchModel, SetAPIKey, ProjectTree, CommandHistory, GitChangedFiles, ReadFile,
   ListSessions, LoadSession, NewSession, CurrentSessionID, SearchSessions, DeleteSession,
   SaveChatImage, ReadImageDataURL, CancelTurn, BrowserGetText, RecentProjects,
-  ListAllSessions, SearchAllSessions, LoadSessionAnyProject,
+  ListAllSessions, SearchAllSessions, LoadSessionAnyProject, ClearProjectFocus,
 } from '../../../wailsjs/go/main/App'
 import type { main } from '../../../wailsjs/go/models'
 import { t } from '../i18n.svelte'
+import { switchWorkbenchSession, adoptWorkbenchSession, removeWorkbenchState } from './workbench.svelte'
 
 // Model info comes from a real Go IPC round-trip (GetModelInfo), which is
 // only as fast as the whole engine bootstrap (provider client, skill
@@ -94,6 +95,9 @@ export async function refreshSessions(): Promise<void> {
   cockpit.sessions = metas.map((m) => ({
     id: m.id, title: m.title, ago: agoLabel(m.updatedAt), active: m.id === current,
   }))
+  // Keeps the workbench layout keyed to whichever session is actually live —
+  // restores it on app start, migrates it when the engine re-keys the chat.
+  await adoptWorkbenchSession(current)
 }
 
 /** Full-text search this project's history (Thai/English substrings, FTS5). */
@@ -131,6 +135,7 @@ export async function selectGlobalSession(session: Session): Promise<void> {
     text: m.text,
     time: m.time,
   }))
+  await switchWorkbenchSession(session.id)
   const project = await GetProjectStatus()
   Object.assign(cockpit.project, project)
   await refreshWorkspace()
@@ -182,6 +187,18 @@ export async function openFolder(): Promise<void> {
 /** Switch straight to a previously-opened project (sidebar's project list), no dialog. */
 export async function openProject(path: string): Promise<void> {
   const project = await OpenProjectPath(path)
+  Object.assign(cockpit.project, project)
+  cockpit.chat = []
+  await refreshWorkspace()
+  await refreshSessions()
+  await refreshProjects()
+  await refreshGlobalHistory()
+}
+
+/** Drop project focus: the AI keeps full machine access (files/git/terminal)
+ * but is no longer tied to any project — like opening Claude/Codex bare. */
+export async function clearProjectFocus(): Promise<void> {
+  const project = await ClearProjectFocus()
   Object.assign(cockpit.project, project)
   cockpit.chat = []
   await refreshWorkspace()
@@ -382,6 +399,7 @@ export async function selectSession(session: Session): Promise<void> {
     text: m.text,
     time: m.time,
   }))
+  await switchWorkbenchSession(session.id)
   await refreshSessions()
   await refreshGlobalHistory()
 }
@@ -389,6 +407,7 @@ export async function selectSession(session: Session): Promise<void> {
 /** Permanently delete a session (any project); clears the chat if it was the open one. */
 export async function deleteSession(session: Session): Promise<void> {
   await DeleteSession(session.id)
+  removeWorkbenchState(session.id)
   if (session.active) cockpit.chat = []
   await refreshSessions()
   await refreshGlobalHistory()
@@ -398,6 +417,9 @@ export async function deleteSession(session: Session): Promise<void> {
 export async function newSession(): Promise<void> {
   await NewSession()
   cockpit.chat = []
+  // Explicit switch (not adopt): a brand-new session starts with an empty
+  // workbench; the old session's layout stays saved for when it's reopened.
+  await switchWorkbenchSession(await CurrentSessionID())
   await refreshSessions()
   await refreshGlobalHistory()
 }

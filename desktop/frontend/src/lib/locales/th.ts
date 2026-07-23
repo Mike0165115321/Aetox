@@ -20,6 +20,7 @@ export const th = {
   'sidebar.switchProject': 'โปรเจกต์ทั้งหมด',
   'sidebar.showMore': 'แสดงเพิ่ม',
   'sidebar.showLess': 'ย่อ',
+  'chat.noProject': 'ไม่โฟกัสโปรเจกต์',
   'chat.provider': 'ผู้ให้บริการ',
   'chat.model': 'โมเดล',
   'chat.thinkLevel': 'ระดับความคิด',

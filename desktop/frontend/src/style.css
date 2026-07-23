@@ -415,6 +415,25 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   color:var(--text-secondary); font-size:12px; white-space:nowrap;
 }
 .focus-chip .ic { font-size:12px; opacity:.9; }
+/* Project-focus picker — the chip is a button opening an upward menu:
+   "no focus" / recent projects / open folder (Claude Desktop-style). */
+.focus-pick { position:relative; }
+.focus-btn { cursor:pointer; }
+.focus-btn:hover { border-color:var(--interactive); color:var(--text-primary); }
+.focus-btn .caret { color:var(--text-dim); font-size:10px; }
+.focus-menu {
+  position:absolute; bottom:calc(100% + 8px); left:0; z-index:50; min-width:240px; max-width:340px;
+  display:flex; flex-direction:column; gap:1px; padding:6px;
+  background:var(--surface-panel); border:1px solid var(--border-subtle); border-radius:12px;
+  box-shadow:0 12px 32px rgba(0,0,0,.4);
+}
+.focus-item {
+  display:flex; align-items:center; gap:8px; padding:7px 9px; border-radius:7px;
+  color:var(--text-secondary); font-size:13px; text-align:left; cursor:pointer; min-width:0;
+}
+.focus-item:hover { background:var(--surface-hover); color:var(--text-primary); }
+.focus-item.on { color:var(--accent); }
+.focus-item .t { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .project-chips { display:flex; gap:6px; margin-bottom:8px; }
 .api-key-banner { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
 .api-key-banner .ctrl:first-child { flex:1; }

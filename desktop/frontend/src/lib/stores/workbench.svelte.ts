@@ -100,3 +100,77 @@ export async function openFileTab(path: string): Promise<void> {
   }
   workbench.activeId = id
 }
+
+// ---------- per-session persistence ----------
+// Each chat session remembers its workbench layout (browser URLs, file paths,
+// singleton panes) so switching back restores what was open. Terminals are
+// live processes and can't be restored — they're closed on switch and skipped
+// in snapshots. Stored in localStorage keyed by session id; the Go session
+// store never learns about UI layout.
+
+type SavedTab = { kind: WorkbenchTabKind; name: string; url?: string; path?: string }
+
+let boundSessionId: string | null = null
+
+const wbKey = (sessionId: string) => `aetox-workbench:${sessionId}`
+
+/** Persist the current layout under the bound session. Reads workbench.tabs /
+ * activeId reactively — run it from a component $effect to autosave. */
+export function saveWorkbenchSnapshot(): void {
+  const restorable = workbench.tabs.filter((t) => t.kind !== 'terminal')
+  const activeIdx = restorable.findIndex((t) => t.id === workbench.activeId)
+  if (!boundSessionId) return
+  const tabs: SavedTab[] = restorable.map(({ kind, name, url, path }) => ({ kind, name, url, path }))
+  localStorage.setItem(wbKey(boundSessionId), JSON.stringify({ tabs, activeIdx }))
+}
+
+async function restoreWorkbench(sessionId: string): Promise<void> {
+  for (const tab of workbench.tabs) {
+    if (tab.kind === 'terminal') TerminalClose(tab.id)
+  }
+  workbench.tabs = [] // unmounts panes; BrowserPane's onDestroy closes its native window
+  workbench.activeId = ''
+  let saved: { tabs: SavedTab[]; activeIdx: number }
+  try {
+    saved = JSON.parse(localStorage.getItem(wbKey(sessionId)) ?? '') as typeof saved
+  } catch {
+    return
+  }
+  for (const s of saved.tabs ?? []) {
+    if (s.kind === 'review') openReview()
+    else if (s.kind === 'files') openFilesTab()
+    else if (s.kind === 'tools') openToolsTab()
+    else if (s.kind === 'file' && s.path) await openFileTab(s.path)
+    else if (s.kind === 'browser') {
+      const id = openBrowserTab()
+      const tab = workbench.tabs.find((t) => t.id === id)
+      if (tab) { tab.url = s.url ?? ''; tab.name = s.name }
+    }
+  }
+  workbench.activeId = workbench.tabs[saved.activeIdx]?.id ?? workbench.tabs.at(-1)?.id ?? ''
+}
+
+/** Explicit session switch (sidebar click, new session): save the old
+ * session's layout, then replace the workbench with the new one's. */
+export async function switchWorkbenchSession(sessionId: string): Promise<void> {
+  if (!sessionId || sessionId === boundSessionId) return
+  saveWorkbenchSnapshot()
+  boundSessionId = sessionId
+  await restoreWorkbench(sessionId)
+}
+
+/** Passive id observation (app start, or the engine minting a real id for the
+ * chat in progress): first sighting restores; a later id change means the
+ * current conversation was re-keyed, so the open tabs migrate to the new id. */
+export async function adoptWorkbenchSession(sessionId: string): Promise<void> {
+  if (!sessionId || sessionId === boundSessionId) return
+  const firstBind = boundSessionId === null
+  boundSessionId = sessionId
+  if (firstBind) await restoreWorkbench(sessionId)
+  else saveWorkbenchSnapshot()
+}
+
+/** Drop a deleted session's stored layout. */
+export function removeWorkbenchState(sessionId: string): void {
+  localStorage.removeItem(wbKey(sessionId))
+}

@@ -10,6 +10,7 @@
   import {
     workbench, activateTab, closeTab, removeTab,
     openReview, openFilesTab, openBrowserTab, openTerminalTab, openToolsTab,
+    saveWorkbenchSnapshot,
     type WorkbenchTab,
   } from '../stores/workbench.svelte'
   import { TerminalShells, BrowserBack, BrowserForward, BrowserReload } from '../../../wailsjs/go/main/App'
@@ -29,6 +30,12 @@
 
   $effect(() => {
     urlDraft = activeTab?.url ?? ''
+  })
+
+  // Autosave the layout for the bound session on every tab change (open/close/
+  // navigate/activate) — snapshot reads workbench state reactively.
+  $effect(() => {
+    saveWorkbenchSnapshot()
   })
 
   onMount(() => {
@@ -54,18 +61,32 @@
     fn()
   }
 
+  // "google.com" -> https://, "E:\site\index.html" -> file:///, and anything
+  // that already carries a scheme (file:, http:, about:) passes through —
+  // blindly prepending https:// turns file:/// URLs into a dead https://file/.
+  function normalizeUrl(u: string): string {
+    if (/^[a-z]:[\\/]/i.test(u)) return 'file:///' + u.replace(/\\/g, '/') // E:\site\index.html (before scheme check: "E:" looks like one)
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(u) || /^(about|data|mailto|javascript):/i.test(u)) return u
+    return 'https://' + u // bare domain or host:port
+  }
+
   function navigate() {
-    let u = urlDraft.trim()
+    const u = urlDraft.trim()
     if (!u) return
-    if (!/^https?:\/\//i.test(u)) u = 'https://' + u
+    const url = normalizeUrl(u)
     let tab = activeTab
     if (!tab || tab.kind !== 'browser') {
       const id = openBrowserTab()
       tab = workbench.tabs.find((x) => x.id === id)
       if (!tab) return
     }
-    tab.url = u
-    try { tab.name = new URL(u).hostname } catch { tab.name = u }
+    tab.url = url
+    try {
+      const p = new URL(url)
+      tab.name = p.hostname || decodeURIComponent(p.pathname.split('/').pop() || url)
+    } catch {
+      tab.name = url
+    }
   }
 
   function browserCmd(fn: (id: string) => Promise<void>) {

@@ -90,6 +90,7 @@ export namespace main {
 	    name: string;
 	    path: string;
 	    branch: string;
+	    focused: boolean;
 	    governanceFile: string;
 	    governanceLoaded: boolean;
 	
@@ -102,6 +103,7 @@ export namespace main {
 	        this.name = source["name"];
 	        this.path = source["path"];
 	        this.branch = source["branch"];
+	        this.focused = source["focused"];
 	        this.governanceFile = source["governanceFile"];
 	        this.governanceLoaded = source["governanceLoaded"];
 	    }

@@ -17,6 +17,11 @@ func TestSameOrigin(t *testing.T) {
 		{"page claims different site (spoof attempt)", "https://evil.com/", "https://accounts.google.com/login", false},
 		{"empty source", "", "https://example.com/", false},
 		{"malformed source", "not a url", "https://example.com/", false},
+		// file pages have no host — scheme match is the whole check there
+		{"file page, same path", "file:///C:/Users/x/page.html", "file:///C:/Users/x/page.html", true},
+		{"file page, different local path", "file:///C:/a.html", "file:///E:/other.html", true},
+		{"file page claims a website", "file:///C:/a.html", "https://accounts.google.com/", false},
+		{"website claims a file path", "https://evil.com/", "file:///C:/a.html", false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

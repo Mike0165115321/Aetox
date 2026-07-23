@@ -21,6 +21,7 @@ export const en: Record<keyof typeof th, string> = {
   'sidebar.switchProject': 'All projects',
   'sidebar.showMore': 'Show more',
   'sidebar.showLess': 'Show less',
+  'chat.noProject': 'No project focus',
   'chat.provider': 'Provider',
   'chat.model': 'Model',
   'chat.thinkLevel': 'Thinking level',

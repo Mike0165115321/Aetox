@@ -24,6 +24,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/Mike0165115321/Aetox/internal/debuglog"
 	"github.com/wailsapp/go-webview2/pkg/edge"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -41,6 +42,12 @@ var (
 	procDispatchMessageW = user32.NewProc("DispatchMessageW")
 	procPostThreadMsgW   = user32.NewProc("PostThreadMessageW")
 	procDefWindowProcW   = user32.NewProc("DefWindowProcW")
+
+	procGetWindowDpiAwarenessCtx  = user32.NewProc("GetWindowDpiAwarenessContext")
+	procSetThreadDpiAwarenessCtx  = user32.NewProc("SetThreadDpiAwarenessContext")
+	procGetWindowThreadProcessID  = user32.NewProc("GetWindowThreadProcessId")
+	procEnumWindows               = user32.NewProc("EnumWindows")
+	procIsWindowVisible           = user32.NewProc("IsWindowVisible")
 
 	kernel32               = syscall.NewLazyDLL("kernel32.dll")
 	procGetCurrentThreadID = kernel32.NewProc("GetCurrentThreadId")
@@ -194,10 +201,17 @@ func typeScript(ref int, text string) string {
 func sameOrigin(a, b string) bool {
 	ua, err1 := url.Parse(a)
 	ub, err2 := url.Parse(b)
-	if err1 != nil || err2 != nil || ua.Scheme == "" || ua.Host == "" {
+	if err1 != nil || err2 != nil || ua.Scheme == "" || ua.Scheme != ub.Scheme {
 		return false
 	}
-	return ua.Scheme == ub.Scheme && ua.Host == ub.Host
+	// file: URLs have no host, so the host check below would reject every
+	// local page. The check's purpose is stopping a page from spoofing the
+	// address bar as a trusted SITE — a file page claiming some other local
+	// path can't do that, so scheme match is enough for file↔file.
+	if ua.Scheme == "file" {
+		return true
+	}
+	return ua.Host != "" && ua.Host == ub.Host
 }
 
 // newMessageToken mints a per-request nonce for BrowserGetText, so a stray or
@@ -218,6 +232,9 @@ type browserTab struct {
 	metaMu sync.Mutex
 	title  string
 	url    string
+
+	visMu  sync.Mutex
+	hidden bool // BrowserSetVisible(false); nav-completed re-glue must not surface hidden tabs
 
 	textMu    sync.Mutex
 	textCh    chan browserSnapshot
@@ -259,21 +276,58 @@ func (h *browserHost) start() error {
 	h.started = true
 	h.mu.Unlock()
 
-	title, _ := syscall.UTF16PtrFromString("Aetox Desktop")
-	parent, _, _ := procFindWindowW.Call(0, uintptr(unsafe.Pointer(title)))
+	parent := findOwnMainWindow()
 	if parent == 0 {
+		debuglog.Msg("browser.start: main window not found")
 		return fmt.Errorf("main window not found")
 	}
+	debuglog.Msg("browser.start: parent hwnd=%#x (pid=%d)", parent, os.Getpid())
 	h.parent = parent
 
 	go h.run()
 	<-h.ready
+	debuglog.Msg("browser.start: host thread ready (tid=%d)", h.threadID)
 	return nil
+}
+
+// findOwnMainWindow returns this process's visible top-level window (the wails
+// main window). Never look it up by TITLE: FindWindowW("Aetox Desktop") matches
+// any window that happens to carry that text — a browser tab showing the dev
+// URL, explorer's taskbar thumbnail host, another instance — and a parent from
+// a foreign process makes every CreateWindowExW child fail with "Access is
+// denied", silently killing all browser tabs.
+func findOwnMainWindow() uintptr {
+	self := uint32(os.Getpid())
+	var found uintptr
+	cb := syscall.NewCallback(func(hwnd, _ uintptr) uintptr {
+		var pid uint32
+		procGetWindowThreadProcessID.Call(hwnd, uintptr(unsafe.Pointer(&pid)))
+		if pid != self {
+			return 1 // keep enumerating
+		}
+		if vis, _, _ := procIsWindowVisible.Call(hwnd); vis == 0 {
+			return 1
+		}
+		found = hwnd
+		return 0 // stop
+	})
+	procEnumWindows.Call(cb, 0)
+	return found
 }
 
 func (h *browserHost) run() {
 	runtime.LockOSThread()
 	procCoInitializeEx.Call(0, coinitApartmentThreaded)
+
+	// Match the main window's DPI awareness context. Windows refuses to
+	// create a child window whose thread runs under a different DPI context
+	// than the parent — CreateWindowExW fails with ERROR_ACCESS_DENIED. A raw
+	// goroutine thread starts on the process default, which does not
+	// necessarily match the wails main window's per-monitor context.
+	if ctx, _, _ := procGetWindowDpiAwarenessCtx.Call(h.parent); ctx != 0 {
+		prev, _, _ := procSetThreadDpiAwarenessCtx.Call(ctx)
+		debuglog.Msg("browser.run: thread DPI ctx set to parent's (prev=%#x)", prev)
+	}
 
 	tid, _, _ := procGetCurrentThreadID.Call()
 	h.threadID = uint32(tid)
@@ -291,7 +345,8 @@ func (h *browserHost) run() {
 		WndProc:   wndProc,
 		ClassName: className,
 	}
-	procRegisterClassExW.Call(uintptr(unsafe.Pointer(&wc)))
+	atom, _, regErr := procRegisterClassExW.Call(uintptr(unsafe.Pointer(&wc)))
+	debuglog.Msg("browser.run: RegisterClassExW atom=%d err=%v", atom, regErr)
 
 	close(h.ready)
 
@@ -339,11 +394,13 @@ func (h *browserHost) tab(id string) *browserTab {
 
 // open creates the child window + webview for a tab (on the browser thread).
 func (h *browserHost) open(id, url string, x, y, w, hgt int) {
+	debuglog.Msg("browser.open(%s): queueing (url=%s)", id, url)
 	h.do(func() {
+		debuglog.Msg("browser.open(%s): running on browser thread", id)
 		if _, exists := h.tabs[id]; exists {
 			return
 		}
-		hwnd, _, _ := procCreateWindowExW.Call(
+		hwnd, _, lastErr := procCreateWindowExW.Call(
 			0,
 			uintptr(unsafe.Pointer(h.class)),
 			0,
@@ -352,6 +409,7 @@ func (h *browserHost) open(id, url string, x, y, w, hgt int) {
 			h.parent, 0, 0, 0,
 		)
 		if hwnd == 0 {
+			debuglog.Msg("browser.open(%s): CreateWindowExW FAILED: %v", id, lastErr)
 			return
 		}
 
@@ -363,6 +421,7 @@ func (h *browserHost) open(id, url string, x, y, w, hgt int) {
 		chromium.SetErrorCallback(func(err error) {
 			// default handler calls os.Exit(1) — never acceptable for a tab
 			fmt.Fprintln(os.Stderr, "browser tab error:", err)
+			debuglog.Msg("browser tab %s error: %v", id, err)
 		})
 		tab := &browserTab{hwnd: hwnd, chromium: chromium, navDone: make(chan struct{})}
 
@@ -372,13 +431,29 @@ func (h *browserHost) open(id, url string, x, y, w, hgt int) {
 		}
 		chromium.NavigationCompletedCallback = func(_ *edge.ICoreWebView2, _ *edge.ICoreWebView2NavigationCompletedEventArgs) {
 			tab.navOnce.Do(func() { close(tab.navDone) })
+			// Force this tab's window to the top of the Z order now that the
+			// page has rendered. The frontend's browser:meta handler used to be
+			// the only thing doing this, which made visibility depend on page
+			// JS delivering a message that passes the origin check — never true
+			// for file:// before the sameOrigin fix, and fragile in general:
+			// the page stayed loaded but composited invisibly behind the app's
+			// own webview. Runs on the browser STA thread (WebView2 callback).
+			tab.visMu.Lock()
+			hidden := tab.hidden
+			tab.visMu.Unlock()
+			if !hidden {
+				procSetWindowPos.Call(hwnd, hwndTop, 0, 0, 0, 0, swpNoMove|swpNoSize|swpShowWindow|swpNoActivate)
+			}
 			chromium.Eval(metaScript)
 		}
 
+		debuglog.Msg("browser.open(%s): embedding webview (dataPath=%s)", id, chromium.DataPath)
 		if !chromium.Embed(hwnd) {
+			debuglog.Msg("browser.open(%s): Embed FAILED", id)
 			procDestroyWindow.Call(hwnd)
 			return
 		}
+		debuglog.Msg("browser.open(%s): embed ok, navigating", id)
 		chromium.Resize()
 		procSetWindowPos.Call(hwnd, hwndTop, 0, 0, 0, 0, swpNoMove|swpNoSize|swpShowWindow|swpNoActivate)
 
@@ -488,6 +563,9 @@ func (a *App) BrowserSetVisible(id string, visible bool) {
 				host.lastID = id
 				host.mu.Unlock()
 			}
+			t.visMu.Lock()
+			t.hidden = !visible
+			t.visMu.Unlock()
 			host.do(func() {
 				if visible {
 					procSetWindowPos.Call(t.hwnd, hwndTop, 0, 0, 0, 0, swpNoMove|swpNoSize|swpShowWindow|swpNoActivate)
