@@ -30,6 +30,7 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 		&deleteSkill{root: opts.SandboxRoot},
 		&pluginInstallSkill{},
 		&imageOCRSkill{root: opts.SandboxRoot},
+		&webFetchSkill{},
 	}
 	for _, s := range defaults {
 		if err := registry.Register(s, SourceBuiltin); err != nil {

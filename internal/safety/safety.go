@@ -233,6 +233,14 @@ func AssessCommand(skillName string, args []string) Assessment {
 				Reason:    "read-only network request for repository summary",
 			}
 		}
+		if skillName == "web_fetch" || skillName == "web_search" {
+			return Assessment{
+				SkillName: skillName,
+				Risk:      RiskLow,
+				Effects:   []Effect{EffectUseNetwork},
+				Reason:    "read-only web request",
+			}
+		}
 		if skillName == "list" || skillName == "read" || skillName == "grep" || skillName == "time" {
 			return Assessment{
 				SkillName: skillName,
