@@ -63,11 +63,21 @@
     showCustomModel = false
     refreshProviderDerived(provider)
   })
+  // One-shot fetch with no catch used to strand thinkLevels as [] forever if
+  // the backend wasn't ready yet (menu row then never appears) — so this is a
+  // named refresh, retried every time the model menu opens.
+  async function refreshThinkLevels() {
+    try {
+      thinkLevels = await SupportedThinkLevels()
+    } catch {
+      /* backend not ready — next menu open retries */
+    }
+  }
   $effect(() => {
     const provider = model.provider
     const modelName = model.modelName
     if (!provider) return
-    SupportedThinkLevels().then((levels) => (thinkLevels = levels))
+    refreshThinkLevels()
   })
 
   async function handleProviderChange(e: Event) {
@@ -448,7 +458,7 @@
                 {/if}
               </div>
             {/if}
-            <button type="button" class="model-chip" onclick={(e) => { e.stopPropagation(); modelMenuOpen = !modelMenuOpen }}>
+            <button type="button" class="model-chip" onclick={(e) => { e.stopPropagation(); modelMenuOpen = !modelMenuOpen; if (modelMenuOpen) refreshThinkLevels() }}>
               <span class="t">{model.modelName || model.provider}</span>
               {#if model.thinkLevel}<span class="lvl">{model.thinkLevel}</span>{/if}
               <span class="caret">{modelMenuOpen ? '⌃' : '⌄'}</span>
