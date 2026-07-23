@@ -242,9 +242,15 @@ export async function sendUserMessage(text: string): Promise<void> {
   // shows just the caption + thumbnail, not that reference line. A dragged-in
   // file/browser tab instead inlines its actual content directly — no tool
   // call needed for the model to "see" it.
+  // Explicit source tags so the model can tell attachment types apart —
+  // a user-attached image vs a dragged-in workbench tab, and for tabs,
+  // a file on disk vs a live web page. Only the model sees these lines.
   let sentText = trimmed
-  if (image) sentText += `\n\n📎 แนบรูปภาพ: ${image.relPath}`
-  if (context) sentText += `\n\n📎 ${context.label}:\n\`\`\`\n${context.content}\n\`\`\``
+  if (image) sentText += `\n\n[attachment: user-attached image — read it with image_ocr] ${image.relPath}`
+  if (context) {
+    const kindLabel = context.kind === 'file' ? 'file from a workbench tab' : 'web page text from a workbench browser tab'
+    sentText += `\n\n[attachment: ${kindLabel}] ${context.label}:\n\`\`\`\n${context.content}\n\`\`\``
+  }
   sentText = sentText.trim()
   cockpit.chat.push({
     role: 'user', text: trimmed, time: nowLabel(),
