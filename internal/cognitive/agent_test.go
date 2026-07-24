@@ -2,6 +2,7 @@ package cognitive
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -334,6 +335,98 @@ func TestRespondWithToolsDoomLoopResetsOnDifferentCall(t *testing.T) {
 	}
 	if reply != "all done" {
 		t.Fatalf("expected normal completion, got %q", reply)
+	}
+}
+
+func TestCompactionSummarizesOldTurnsBeforeTheTurn(t *testing.T) {
+	provider := &toolLoopProvider{
+		responses: []model.Response{
+			{Text: "COMPACT-SUMMARY: user is building a landing page in Go"},
+			{Text: "final answer"},
+		},
+	}
+	// budget 5000 bytes; ~4050 bytes of history crosses the 0.8 threshold
+	// (Thai chars are 3 bytes each) without tripping the hard trim
+	agent := NewAgent(AgentConfig{Provider: provider, Model: "test-model", MaxChars: 5000, SystemPrompt: "sys"})
+	history := make([]model.Message, 0, 10)
+	for i := 0; i < 5; i++ {
+		history = append(history,
+			model.Message{Role: model.RoleUser, Content: fmt.Sprintf("q%d %s", i, strings.Repeat("คำถาม ", 25))},
+			model.Message{Role: model.RoleAssistant, Content: fmt.Sprintf("a%d %s", i, strings.Repeat("คำตอบ ", 25))},
+		)
+	}
+	agent.RestoreHistory(history)
+
+	reply, _, err := agent.RespondWithTools(
+		context.Background(),
+		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
+		"คำถามใหม่ล่าสุด",
+		func(_ context.Context, _ model.ToolCall) (string, error) { return "", nil },
+		turn.TurnOptions{},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if reply != "final answer" {
+		t.Fatalf("expected the turn to complete after compaction, got %q", reply)
+	}
+	if len(provider.requests) != 2 {
+		t.Fatalf("expected compaction call + turn call, got %d requests", len(provider.requests))
+	}
+	compactReq := provider.requests[0]
+	if len(compactReq.Tools) != 0 || !strings.Contains(compactReq.Messages[0].Content, "compacting") {
+		t.Fatalf("first call must be the tool-less compaction request, got %+v", compactReq.Messages[0])
+	}
+	turnReq := provider.requests[1]
+	var sawSummary, sawOldContent bool
+	for _, m := range turnReq.Messages {
+		if strings.Contains(m.Content, "COMPACT-SUMMARY") {
+			sawSummary = true
+		}
+		if strings.Contains(m.Content, "q0 ") {
+			sawOldContent = true
+		}
+	}
+	if !sawSummary {
+		t.Fatal("turn request must carry the summary message")
+	}
+	if sawOldContent {
+		t.Fatal("oldest turns must be gone from the turn request")
+	}
+	if last := turnReq.Messages[len(turnReq.Messages)-1]; last.Content != "คำถามใหม่ล่าสุด" {
+		t.Fatalf("fresh question must be last and untouched, got %q", last.Content)
+	}
+}
+
+func TestCompactionFailureIsNonFatal(t *testing.T) {
+	provider := &toolLoopProvider{
+		responses: []model.Response{
+			{Text: ""},             // summarizer returns nothing usable
+			{Text: "still worked"}, // the actual turn
+		},
+	}
+	agent := NewAgent(AgentConfig{Provider: provider, Model: "test-model", MaxChars: 5000, SystemPrompt: "sys"})
+	history := make([]model.Message, 0, 10)
+	for i := 0; i < 5; i++ {
+		history = append(history,
+			model.Message{Role: model.RoleUser, Content: strings.Repeat("คำถาม ", 26)},
+			model.Message{Role: model.RoleAssistant, Content: strings.Repeat("คำตอบ ", 26)},
+		)
+	}
+	agent.RestoreHistory(history)
+
+	reply, _, err := agent.RespondWithTools(
+		context.Background(),
+		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
+		"ถามต่อ",
+		func(_ context.Context, _ model.ToolCall) (string, error) { return "", nil },
+		turn.TurnOptions{},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if reply != "still worked" {
+		t.Fatalf("turn must proceed when compaction yields nothing, got %q", reply)
 	}
 }
 

@@ -176,6 +176,60 @@ func (c *Context) UsageStats() (messageCount int, usedChars int, maxChars int) {
 	return len(c.messages), totalChars(c.messages), c.maxChars
 }
 
+// NeedsCompaction reports whether usage has crossed the given fraction of
+// the char budget — the trigger for summarizing compaction, which preserves
+// meaning where the enforceLimits trim would drop whole turns.
+func (c *Context) NeedsCompaction(threshold float64) bool {
+	if c == nil || c.maxChars <= 0 || threshold <= 0 {
+		return false
+	}
+	return float64(totalChars(c.messages)) > threshold*float64(c.maxChars)
+}
+
+// SplitForCompaction returns the span to summarize (everything between the
+// system prompt and the kept tail) plus the index where the kept tail
+// starts. The boundary always lands on a RoleUser message — the start of a
+// turn — so an assistant message is never separated from its tool results.
+// Returns nil, 0 when the conversation is too short to be worth compacting.
+func (c *Context) SplitForCompaction(keepRecent int) ([]model.Message, int) {
+	if c == nil || keepRecent < 1 || len(c.messages) < keepRecent+4 {
+		return nil, 0
+	}
+	candidate := len(c.messages) - keepRecent
+	// prefer a clean turn boundary at or after the candidate...
+	for candidate < len(c.messages) && c.messages[candidate].Role != model.RoleUser {
+		candidate++
+	}
+	// ...or walk back toward the system prompt if the tail has no user turn
+	if candidate >= len(c.messages) {
+		candidate = len(c.messages) - keepRecent
+		for candidate > 1 && c.messages[candidate].Role != model.RoleUser {
+			candidate--
+		}
+	}
+	if candidate <= 1 || candidate >= len(c.messages) || c.messages[candidate].Role != model.RoleUser {
+		return nil, 0
+	}
+	old := append([]model.Message(nil), c.messages[1:candidate]...)
+	return old, candidate
+}
+
+// ReplaceWithSummary swaps the summarized span for a single summary message,
+// keeping the system prompt and the tail starting at recentStart.
+func (c *Context) ReplaceWithSummary(summary string, recentStart int) {
+	if c == nil || recentStart <= 1 || recentStart > len(c.messages) {
+		return
+	}
+	summaryMessage := model.Message{
+		Role:    model.RoleUser,
+		Content: "[Compacted summary of the earlier conversation — treat as prior context]\n" + strings.TrimSpace(summary),
+	}
+	rebuilt := make([]model.Message, 0, 2+len(c.messages)-recentStart)
+	rebuilt = append(rebuilt, c.messages[0], summaryMessage)
+	rebuilt = append(rebuilt, c.messages[recentStart:]...)
+	c.messages = rebuilt
+}
+
 func formatTurnCount(messages int) string {
 	if messages <= 0 {
 		return "0"

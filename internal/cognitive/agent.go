@@ -23,7 +23,20 @@ const (
 	// consecutive calls, hard-stop at 5).
 	doomLoopWarn = 3
 	doomLoopStop = 5
+
+	// Compaction (OpenCode/Claude Code-style): when usage crosses the
+	// threshold fraction of the char budget, older turns are summarized by
+	// the model into one message instead of being trimmed away whole.
+	compactThresholdFraction = 0.8
+	compactKeepRecent        = 6
+	compactSummaryMaxTokens  = 2048
 )
+
+const compactionPrompt = "You are compacting a long conversation so it can continue in less context. " +
+	"Write a faithful, information-dense summary of the conversation you are given, covering: " +
+	"the user's goals and every decision made; important facts and constraints; " +
+	"files or paths created/modified and how; key tool results; unresolved tasks and agreed next steps; " +
+	"the user's language and preferences. Output only the summary text, in the user's language."
 
 // toolLoopMaxTokens returns the max_tokens sent on every tool-loop request —
 // always explicit (Anthropic requires the field; the rest get a value their
@@ -102,6 +115,7 @@ func (a *Agent) RespondWithTools(
 	if msg == "" {
 		return "", false, errors.New("input is empty")
 	}
+	a.compactIfNeeded(ctx)
 	a.context.Add(model.RoleUser, msg)
 
 	// OpenCode-style loop: run until the model stops calling tools. The brakes
@@ -231,6 +245,65 @@ func truncateStr(s string, max int) string {
 	return s[:max-3] + "..."
 }
 
+// compactIfNeeded summarizes older history into one message when the context
+// budget is nearly full, so long coding sessions keep their early decisions
+// instead of losing whole turns to the char trim. Failure is non-fatal: on
+// any error the turn proceeds and enforceLimits still guards the budget.
+func (a *Agent) compactIfNeeded(ctx context.Context) {
+	if a == nil || a.context == nil || a.provider == nil {
+		return
+	}
+	if !a.context.NeedsCompaction(compactThresholdFraction) {
+		return
+	}
+	old, recentStart := a.context.SplitForCompaction(compactKeepRecent)
+	if len(old) == 0 {
+		return
+	}
+	defer debuglog.Block(fmt.Sprintf("Agent.compact (%d msgs)", len(old)))()
+	response, err := a.provider.Complete(ctx, model.Request{
+		Model: a.model,
+		Messages: []model.Message{
+			{Role: model.RoleSystem, Content: compactionPrompt},
+			{Role: model.RoleUser, Content: renderCompactionTranscript(old)},
+		},
+		MaxTokens:   compactSummaryMaxTokens,
+		Temperature: 0.2,
+	})
+	summary := ""
+	if response.Text != "" {
+		summary = strings.TrimSpace(response.Text)
+	}
+	if err != nil || summary == "" {
+		debuglog.Msg("compaction skipped (err=%v, empty=%v)", err, summary == "")
+		return
+	}
+	a.context.ReplaceWithSummary(summary, recentStart)
+	debuglog.Info("compacted", fmt.Sprintf("%d old messages -> %d summary chars", len(old), len(summary)))
+}
+
+// renderCompactionTranscript flattens messages into plain text for the
+// summarizer — roles marked, tool calls noted with truncated arguments.
+func renderCompactionTranscript(messages []model.Message) string {
+	var b strings.Builder
+	for _, m := range messages {
+		b.WriteString("--- ")
+		b.WriteString(string(m.Role))
+		if m.Name != "" {
+			b.WriteString(" (" + m.Name + ")")
+		}
+		b.WriteString(" ---\n")
+		if m.Content != "" {
+			b.WriteString(m.Content)
+			b.WriteString("\n")
+		}
+		for _, tc := range m.ToolCalls {
+			b.WriteString("[tool call] " + tc.Function.Name + " " + truncateStr(tc.Function.Arguments, 400) + "\n")
+		}
+	}
+	return b.String()
+}
+
 func (a *Agent) executeToolCall(ctx context.Context, toolCall model.ToolCall, execTool func(context.Context, model.ToolCall) (string, error)) (string, error) {
 	if strings.TrimSpace(toolCall.Function.Name) == "" {
 		return "tool-call-missing-name", errors.New("tool call missing function name")
@@ -253,6 +326,7 @@ func (a *Agent) Respond(ctx context.Context, userMessage string, opts turn.TurnO
 		return "", errors.New("input is empty")
 	}
 
+	a.compactIfNeeded(ctx)
 	a.context.Add(model.RoleUser, msg)
 
 	response, err := a.provider.Complete(ctx, a.buildRequest(a.context.Messages(), 768, 0.2, nil, "", opts))
@@ -287,6 +361,7 @@ func (a *Agent) RespondStream(ctx context.Context, userMessage string, onChunk f
 		return "", false, errors.New("input is empty")
 	}
 
+	a.compactIfNeeded(ctx)
 	a.context.Add(model.RoleUser, msg)
 
 	req := a.buildRequest(a.context.Messages(), 768, 0.2, nil, "", opts)
