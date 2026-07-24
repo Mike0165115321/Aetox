@@ -393,8 +393,29 @@ export function closeFile(path: string): void {
   cockpit.activeView = cockpit.openFiles.at(-1)?.path ?? 'chat'
 }
 
+const activeViewStorageKey = 'aetox.activeView'
+
 export function setActiveView(view: string): void {
   cockpit.activeView = view
+  // Survive an F5: remember chat/settings (file tabs don't persist, so a
+  // stored file path would point at nothing after reload).
+  if (view === 'chat' || view === 'settings') {
+    try {
+      localStorage.setItem(activeViewStorageKey, view)
+    } catch {
+      /* storage unavailable — view just won't persist */
+    }
+  }
+}
+
+/** Restore the last chat/settings view after a frontend reload. */
+export function restoreActiveView(): void {
+  try {
+    const saved = localStorage.getItem(activeViewStorageKey)
+    if (saved === 'settings' || saved === 'chat') cockpit.activeView = saved
+  } catch {
+    /* storage unavailable */
+  }
 }
 
 /** Switch to a stored session — the transcript loads back and the agent's memory is restored. */

@@ -9,7 +9,7 @@
   import {
     cockpit, sendUserMessage, loadRealState, openFile,
     switchProvider, switchThinkLevel,
-    switchModel, submitAPIKey, setActiveView, closeFile, applyAgentStatus, applyToolEvent,
+    switchModel, submitAPIKey, setActiveView, restoreActiveView, closeFile, applyAgentStatus, applyToolEvent,
     applyAgentChunk, applyReasoningChunk, attachImageFromPath,
   } from './lib/stores/cockpit.svelte'
   import { RelativizePath, CloseAllBrowserTabs } from '../wailsjs/go/main/App'
@@ -66,6 +66,7 @@
   }
 
   onMount(() => {
+    restoreActiveView()
     loadRealState()
     // The Go backend outlives a webview reload (a `wails dev` Vite HMR full
     // reload, in particular) — this frontend just loaded, so it owns zero
