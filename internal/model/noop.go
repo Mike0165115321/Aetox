@@ -46,6 +46,34 @@ func (p *NoopProvider) Complete(_ context.Context, req Request) (Response, error
 		text = "(empty prompt)"
 	}
 
+	// Test models: the picked model name decides the response shape, so each
+	// chat-rendering path can be exercised on its own (see provider catalog).
+	modelKey := strings.ToLower(model)
+	switch {
+	case strings.Contains(modelKey, "image"):
+		return Response{
+			Provider: p.Name(),
+			Model:    model,
+			Text:     noopImageReply(text),
+		}, nil
+	case strings.Contains(modelKey, "think"):
+		return Response{
+			Provider: p.Name(),
+			Model:    model,
+			ReasoningContent: "กำลังวิเคราะห์คำถาม: \"" + clipNoop(text, 60) + "\" — " +
+				"ขั้นแรกแยกประเด็นหลักออกมา จากนั้นพิจารณาบริบทที่เกี่ยวข้อง " +
+				"ตรวจสอบสมมติฐานที่เป็นไปได้สองสามทาง แล้วเลือกคำตอบที่ตรงที่สุด " +
+				"ข้อความยาว ๆ ท่อนนี้มีไว้ทดสอบ reasoning panel ว่าไหลลื่นและพับเก็บได้ถูกต้อง",
+			Text: "[think-test] คำตอบสั้น ๆ หลังคิดเสร็จ: " + clipNoop(text, 80),
+		}, nil
+	case strings.Contains(modelKey, "markdown"):
+		return Response{
+			Provider: p.Name(),
+			Model:    model,
+			Text:     noopMarkdownReply(),
+		}, nil
+	}
+
 	if scripted, ok := noopScenario(text); ok {
 		return Response{
 			Provider: p.Name(),
@@ -59,6 +87,31 @@ func (p *NoopProvider) Complete(_ context.Context, req Request) (Response, error
 		Model:    model,
 		Text:     fmt.Sprintf("[noop:%s] %s", model, text),
 	}, nil
+}
+
+// noopImageReply: any prompt gets the full research-style gallery; the img*
+// keywords still pick a specific case (single, wrap, huge, broken).
+func noopImageReply(text string) string {
+	if scripted, ok := noopScenario(text); ok {
+		return scripted
+	}
+	scripted, _ := noopScenario("imgmix")
+	return scripted
+}
+
+func noopMarkdownReply() string {
+	return "## ทดสอบ Markdown ครบชุด\n\n" +
+		"ย่อหน้าปกติ **ตัวหนา** *ตัวเอียง* `inline code` และ[ลิงก์](https://example.com)\n\n" +
+		"```go\nfunc main() {\n\tfmt.Println(\"code block\")\n}\n```\n\n" +
+		"| คอลัมน์ | ค่า |\n|---|---|\n| หนึ่ง | 111 |\n| สอง | 222 |\n\n" +
+		"1. รายการเรียงลำดับ\n2. ข้อสอง\n\n- รายการจุด\n- ข้อสอง\n\n> คำพูดยกมา (blockquote)\n\n---\n\nจบชุดทดสอบครับ"
+}
+
+func clipNoop(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "..."
 }
 
 // noopScenario returns a canned reply for UI test keywords, so rendering
@@ -104,23 +157,36 @@ func (p *NoopProvider) StreamComplete(ctx context.Context, req Request, onChunk 
 		return Response{}, err
 	}
 
-	words := strings.Fields(resp.Text)
-	for i, word := range words {
-		select {
-		case <-ctx.Done():
-			return Response{}, ctx.Err()
-		default:
-		}
-		chunk := word
-		if i > 0 {
-			chunk = " " + word
-		}
-		if onChunk != nil {
-			if err := onChunk(chunk); err != nil {
-				return Response{}, err
+	trickle := func(text string, deliver StreamChunkHandler) error {
+		for i, word := range strings.Fields(text) {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
 			}
+			chunk := word
+			if i > 0 {
+				chunk = " " + word
+			}
+			if deliver != nil {
+				if err := deliver(chunk); err != nil {
+					return err
+				}
+			}
+			time.Sleep(40 * time.Millisecond)
 		}
-		time.Sleep(40 * time.Millisecond)
+		return nil
+	}
+
+	// Reasoning first, then the visible answer — same order as DeepSeek et
+	// al., so the live thinking panel gets exercised by aetox-think:test.
+	if resp.ReasoningContent != "" {
+		if err := trickle(resp.ReasoningContent, onReasoningChunk); err != nil {
+			return Response{}, err
+		}
+	}
+	if err := trickle(resp.Text, onChunk); err != nil {
+		return Response{}, err
 	}
 
 	return resp, nil

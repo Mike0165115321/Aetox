@@ -98,8 +98,16 @@ var catalog = map[string]*entry{
 		baseURL:        "",
 		envKeys:        nil,
 		modelDefaults: ModelDefaults{
-			FallbackModel:     "Aetox0.0.1:0b",
-			RecommendedModels: []string{"Aetox0.0.1:0b"},
+			FallbackModel: "Aetox0.0.1:0b",
+			// Each test model exercises one chat-rendering path without an
+			// API key: plain echo, image galleries, live thinking panel,
+			// rich markdown. Behavior switches on the model name in noop.go.
+			RecommendedModels: []string{
+				"Aetox0.0.1:0b",
+				"aetox-image:test",
+				"aetox-think:test",
+				"aetox-markdown:test",
+			},
 		},
 		capabilities: Capabilities{},
 	},
