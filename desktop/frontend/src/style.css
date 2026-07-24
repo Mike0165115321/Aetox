@@ -362,6 +362,17 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 }
 .markdown-body a { color:var(--accent); }
 .markdown-body strong { font-weight:700; }
+/* Images the model embeds (![alt](url) — e.g. web_fetch/browser_read results).
+   inline-block + max-height keeps several consecutive images flowing as a
+   wrapping gallery row instead of full-width stacked monsters; max-width
+   stops any single huge image from blowing out the chat column. Broken
+   URLs collapse to their alt text at a sane size. */
+.markdown-body img {
+  display:inline-block; vertical-align:top;
+  max-width:100%; max-height:240px; width:auto; height:auto;
+  border-radius:8px; border:1px solid var(--border-subtle);
+  margin:4px 6px 4px 0; background:var(--surface-sunken);
+}
 .markdown-body hr { border:none; border-top:1px solid var(--border-subtle); margin:.8em 0; }
 .markdown-body code {
   font-family:var(--mono); font-size:.9em; background:var(--surface-code);
