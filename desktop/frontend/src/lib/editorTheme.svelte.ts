@@ -120,6 +120,22 @@ function rules(map: Record<string, string>): MonacoThemeRule[] {
 }
 
 const NAMED_EDITOR_THEMES: Record<ThemeName, MonacoThemeData> = {
+  // Aetox brand palette — hex sourced from palette.css swatches the aetox
+  // theme block in theme.css maps to (cyan accent, blue interactive).
+  aetox: {
+    base: 'vs-dark', inherit: true,
+    rules: rules({
+      comment: '565f6b', string: '3fb950', number: 'd29922', constant: 'd29922',
+      keyword: 'a371f7', function: '58a6ff', type: '35d0e0', tag: 'f85149',
+      'attribute.name': 'd29922', variable: 'c4ccd6', delimiter: '9fb3c8', regexp: '7fe9f3', invalid: 'f85149',
+    }),
+    colors: {
+      'editor.background': '#0e1420', 'editor.foreground': '#e6edf3',
+      'editor.lineHighlightBackground': '#20242c', 'editorCursor.foreground': '#35d0e0',
+      'editor.selectionBackground': '#2c3644', 'editorLineNumber.foreground': '#565f6b',
+      'editorLineNumber.activeForeground': '#9fb3c8',
+    },
+  },
   'catppuccin-mocha': {
     base: 'vs-dark', inherit: true,
     rules: rules({

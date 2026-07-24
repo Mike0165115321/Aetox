@@ -4,6 +4,9 @@
 **แก้แผนหลัก 2026-07-22** หลังศึกษาซอร์สจริงของ opencode +verify ว่า Go มี
 official MCP SDK — ดูหัวข้อ "แผนที่แนะนำ — MCP" ที่เปลี่ยนจากเขียน JSON-RPC
 transport เองมาเป็นใช้ `github.com/modelcontextprotocol/go-sdk`
+**อัปเดตสถานะ 2026-07-24:** MCP client + safety gate ที่แผนนี้ระบุ implement
+เสร็จและปิด gap ไปแล้วจริง (ดู "สถานะปัจจุบัน" ที่แก้ด้านล่าง) — ส่วนที่เหลือของ
+เอกสารนี้ (ขั้นตอน/ตาราง) เก็บไว้เป็น record ว่าออกแบบตามนี้จริง
 
 ## สถานะปัจจุบัน
 
@@ -14,9 +17,28 @@ MCP tool อยู่แล้ว. [internal/skill/dispatcher.go](internal/skill
 loop โดยไม่สนใจว่า skill นั้น implement เองหรือห่อ remote tool มา — **ไม่ต้องแก้
 dispatcher/registry/tool-loop เลย** ถ้าจะเพิ่ม MCP.
 
-**ยังไม่มีเลย:** ไม่มี MCP client ในโปรเจกต์ — แต่ (อัปเดต 2026-07-22 หลังศึกษา
-opencode + verify เอง) **ไม่ต้องเขียน stdio/SSE JSON-RPC transport เอง** ดู
-"แผนที่แนะนำ — MCP" ด้านล่าง ที่แก้ตามนี้แล้ว
+**ปิดแล้ว 2026-07-24:** [internal/mcp](internal/mcp) (`Client`/`Manager`) —
+stdio ผ่าน `go-sdk`'s `CommandTransport`, connect lazy + cached ต่อ process,
+bridge tool เข้า `skill.Registry` เป็น `SourceMCP` พร้อม default permission
+rule "ask" ต่อ server ดูรายละเอียด implementation จริงที่แถว MCP ใน
+"เทียบกับ opencode" ด้านล่าง
+
+**เพิ่มรอบสอง 2026-07-24 (settings-ready pass):** สิ่งที่เดิมเลื่อนเป็น
+phase 2 ถูกดึงมาทำแล้วเพราะมีความต้องการจริง (เทียบ UI ของ ZCode):
+- `type: "remote"` — **ทำแล้ว** ผ่าน `go-sdk`'s `StreamableClientTransport`
+  (URL + static `Headers` ต่อ request ผ่าน custom `http.RoundTripper`) —
+  ไม่มี field `type` ใน config จริง: `url` ไม่ว่าง = remote, ไม่งั้น =
+  stdio (single source of truth) OAuth ยังไม่ทำเหมือนเดิม (ยังไม่มีใครขอ)
+- `Enabled` — ทำเป็น `disabled bool` (zero value = เปิด, ไฟล์เก่าไม่ต้อง
+  migrate) `Manager` ข้าม server ที่ปิดไว้; toggle จาก Settings ได้
+  (`ToggleMCPServer` → rebuild ทันที)
+- Settings UI ครบรอบ: toggle เปิด/ปิด, แก้ไข server เดิม (`SaveMCPServer`
+  update-in-place, รักษาสถานะ disabled), badge จำนวน tools (`Client.ToolCount`),
+  ช่อง env vars/headers ในฟอร์ม, ช่องค้นหา, และ preset แนะนำ (ทุกชื่อ
+  package ยืนยันกับ npm registry จริงก่อนใส่: `@upstash/context7-mcp`,
+  `@modelcontextprotocol/server-sequential-thinking`,
+  `@modelcontextprotocol/server-memory`, `mcp-repl`, exa remote URL)
+  preset เป็น opt-in กดเพิ่มเอง — **ไม่มี default server ที่ลงให้เงียบๆ**
 
 **Half-finished (พบระหว่างสำรวจ):** `plugin_install` skill
 ([internal/skill/github_tools.go:224](internal/skill/github_tools.go#L224))
@@ -142,32 +164,23 @@ user-added) หรืออย่างน้อยเพิ่ม field `Source
 | --- | --- |
 | Session persistence | ✅ ปิดแล้ว — SQLite + FTS5 ([desktop/db.go](desktop/db.go), [desktop/sessions.go](desktop/sessions.go)) ตามทัน opencode's DB layer |
 | Desktop UI | ✅ ปิดแล้ว — Wails + Svelte workbench |
-| MCP | ❌ ยังไม่มี — แผนแก้แล้ว 2026-07-22 (ดู "แผนที่แนะนำ — MCP" ด้านบน: ใช้ `github.com/modelcontextprotocol/go-sdk` แทนเขียน transport เอง) |
+| MCP | ✅ ปิดแล้ว 2026-07-24 — `internal/mcp` (`Client`/`Manager`) ใช้ `github.com/modelcontextprotocol/go-sdk` ตามแผน: connect lazy, cached ต่อ process, `Manager.Register` bridge tool ทุกตัวเข้า registry เป็น `skill.SourceMCP` พร้อมคืน default permission rule `{Tool: "<server>_*", Action: "ask"}` ต่อ server ([internal/mcp/manager.go](internal/mcp/manager.go)) — [desktop/app.go](desktop/app.go)'s `bootstrapFromConfig` prepend rule พวกนี้ก่อน user rules เสมอ (last-match-wins ให้ user override ได้ทีหลัง แต่ default คือ "ask" ตลอด แม้ full-access) ปิด gap "Safety gate สำหรับ MCP tool" ด้านล่างไปพร้อมกัน — เหลือแค่ remote/OAuth (`type: "remote"`, phase 2, ยังไม่มีใครขอใช้) กับ UI แก้ permission rule (ยังต้องแก้ `permissions.json` เอง) |
 | Skill auto-discovery (`~/.agents/skills/`, `~/.claude/skills/`) | ✅ ปิดแล้ว 2026-07-22 — [internal/skill/discovery.go](internal/skill/discovery.go): `DiscoverSkills` scan ทั้งสอง path หา `<dir>/*/SKILL.md`, parse frontmatter (`name`/`description`) + body, ห่อเป็น `markdownSkill` (`skill.Tool`, ตอนถูกเรียกคืน body ให้โมเดลทำตามเอง — รูปแบบเดียวกับ opencode/Claude Code) `RegisterDiscovered` ลงทะเบียนเป็น `SourceExternal`, ชนชื่อ built-in แล้ว skip ไม่ fatal (ทดสอบไว้) เรียกจากทั้ง `cmd/aetox/main.go` และ `desktop/app.go`'s `bootstrapFromConfig` ผ่าน `skill.DefaultDiscoveryPaths()` **หมายเหตุ:** `plugin_install` (ด้านล่าง) ยัง half-finished เหมือนเดิม — ไฟล์ที่มันดาวน์โหลดมาจาก `aetox-plugin.json` manifest จะถูก auto-discover กลับเข้า registry ได้ก็ต่อเมื่อ bundle นั้นมีไฟล์ `SKILL.md` อยู่ในนั้นจริง ๆ (ไม่การันตี, แล้วแต่ manifest ของแต่ละ plugin) |
 | Permission per-tool (pattern เช่น `"rm *": "deny"`) | ✅ ปิดแล้ว 2026-07-22 — `safety.PermissionConfig`/`PermissionRule` ([internal/safety/safety.go](internal/safety/safety.go)): rule ระบุ `Tool`+`Pattern` แบบ glob (`*`/`?`) + `Action` (`allow`/`ask`/`deny`), **last-match-wins** เหมือน opencode `Resolve()` ถูกเช็คก่อน `ApprovalMode` เดิมเสมอใน `turn.Executor.resolveApproval` (ทั้ง 3 จุดที่เคยเรียก `safety.ShouldPrompt` ตรง ๆ) — เมื่อ rule match `deny`/`allow` จะข้าม prompt ไปเลย, `ask` บังคับ prompt แม้ approval mode จะเป็น full-access ก็ตาม โหลด/เซฟจาก `~/.config/aetox/permissions.json` (`config.LoadPermissions`/`SavePermissions`, pattern เดียวกับ `model-preference.json`) ยัง**ไม่มี UI** ให้ผู้ใช้แก้ rule ผ่าน Settings — ต้องแก้ json เอง (ยังไม่ scope ของรอบนี้) |
 | Plugin hook system (`tool.execute.before/after`, `chat.message`, ...) | ❌ ยังไม่มี |
 
-**สรุป:** ปิดไปแล้ว 2 ใน 4 ช่องว่างเดิม (auto-discovery, permission pattern) —
-เหลือ MCP client (มีแผนใหม่แล้วด้านบน ใช้ `go-sdk` แทนเขียน transport เอง)
-กับ plugin hook system `skill.Tool` shape ยังใกล้เคียง MCP tool เหมือนเดิม
-ไม่มีอะไรเปลี่ยนในส่วนนั้น
+**สรุป:** ปิดไปแล้ว 3 ใน 4 ช่องว่างเดิม (auto-discovery, permission pattern,
+MCP client) — เหลือแค่ plugin hook system `skill.Tool` shape ยังใกล้เคียง
+MCP tool เหมือนเดิม ไม่มีอะไรเปลี่ยนในส่วนนั้น
 
-**Safety gate สำหรับ MCP tool:** ตั้ง permission rule เริ่มต้นแบบระมัดระวังตอน
-register adapter เช่น `{Tool: "<serverName>_*", Pattern: "*", Action: "ask"}`
-ให้ MCP tool ทุกตัวต้องผ่านการอนุมัติเสมอโดย default (ไม่ auto-run แม้ใน
-full-access) — ใช้ `safety.PermissionConfig` ที่มีอยู่แล้วได้ทันที ไม่ต้องรอ
-`SourceMCP` ใหม่ก่อน (ตั้ง rule ด้วย tool name prefix ตรง ๆ ก็พอ) ปิด gap ที่
-`docs/architecture/model-control-layer-2026-07-22.md` §4 ระบุไว้ได้เลยตอน
-implement — ดูรายละเอียดเพิ่มที่ [docs/opencode-study/mcp.md](docs/opencode-study/mcp.md)
-§5 กับ [docs/opencode-study/permissions.md](docs/opencode-study/permissions.md)
+**Safety gate สำหรับ MCP tool: ปิดแล้ว 2026-07-24** ([internal/mcp/manager.go](internal/mcp/manager.go)
+— ดูแถวตาราง MCP ด้านบน) ตามที่แผนนี้ระบุไว้ทุกจุด — ดูรายละเอียดเพิ่มที่
+[docs/opencode-study/mcp.md](docs/opencode-study/mcp.md) §5 กับ
+[docs/opencode-study/permissions.md](docs/opencode-study/permissions.md)
 
 ## ช่องว่างที่ต้องปิดก่อน production-ready
 
-- **Safety tier**: 3 ระดับปัจจุบัน (ask / unsafe-only / full-access) ออกแบบมา
-  สำหรับ 17 built-in tools ที่เขียนเอง เชื่อใจได้ — MCP server จาก third-party
-  รันโค้ดที่เราไม่ควบคุม ต้องคิดว่าจะ gate ยังไง **อัปเดต 2026-07-22: มีเครื่องมือ
-  พร้อมแก้แล้ว** (`safety.PermissionConfig`, ดูหัวข้อด้านบน) เหลือแค่ต้อง
-  register rule จริงตอน implement MCP adapter ไม่ใช่ gap ที่ยังไม่มีทางแก้
+- **Safety tier สำหรับ MCP tool**: ✅ ปิดแล้ว 2026-07-24 (ดูแถว MCP ในตารางด้านบน)
 - **plugin_install loader**: ถ้าจะให้ทางนี้ใช้งานได้จริงด้วย ต้องเขียน loader
   ที่ scan `~/.agents/skills/` ตอน bootstrap แล้ว register กลับเข้า registry —
   แต่ skill ที่ดาวน์โหลดมาเป็น "ไฟล์" (ไม่ใช่ compiled Go) จะ execute ยังไงต้อง

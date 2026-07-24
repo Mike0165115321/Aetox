@@ -1,3 +1,34 @@
+export namespace config {
+	
+	export class MCPServerConfig {
+	    name: string;
+	    command?: string[];
+	    cwd?: string;
+	    environment?: Record<string, string>;
+	    url?: string;
+	    headers?: Record<string, string>;
+	    timeout_ms?: number;
+	    disabled?: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new MCPServerConfig(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.command = source["command"];
+	        this.cwd = source["cwd"];
+	        this.environment = source["environment"];
+	        this.url = source["url"];
+	        this.headers = source["headers"];
+	        this.timeout_ms = source["timeout_ms"];
+	        this.disabled = source["disabled"];
+	    }
+	}
+
+}
+
 export namespace main {
 	
 	export class ChangedFile {
@@ -77,8 +108,13 @@ export namespace main {
 	}
 	export class MCPServerInfo {
 	    name: string;
-	    command: string[];
+	    command?: string[];
+	    url?: string;
+	    environment?: Record<string, string>;
+	    headers?: Record<string, string>;
+	    disabled: boolean;
 	    status: string;
+	    tools: number;
 	    err?: string;
 	
 	    static createFrom(source: any = {}) {
@@ -89,7 +125,12 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
 	        this.command = source["command"];
+	        this.url = source["url"];
+	        this.environment = source["environment"];
+	        this.headers = source["headers"];
+	        this.disabled = source["disabled"];
 	        this.status = source["status"];
+	        this.tools = source["tools"];
 	        this.err = source["err"];
 	    }
 	}

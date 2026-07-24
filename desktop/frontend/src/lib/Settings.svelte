@@ -11,8 +11,9 @@
   import {
     SupportedProviders, HasAPIKey, RequiresAPIKey, TerminalShells,
     ListModelsForProvider, ProviderBaseURL,
-    ListMCPServers, AddMCPServer, RemoveMCPServer, TestMCPServer,
+    ListMCPServers, SaveMCPServer, RemoveMCPServer, TestMCPServer, ToggleMCPServer,
   } from '../../wailsjs/go/main/App'
+  import { config } from '../../wailsjs/go/models'
   import { cockpit, switchProvider, switchModel, submitAPIKey, switchApprovalMode } from './stores/cockpit.svelte'
 
   let { onClose }: { onClose: () => void } = $props()
@@ -129,12 +130,37 @@
   })
 
   // ---------- MCP servers ----------
-  type MCPRow = { name: string; command: string[]; status: string; err?: string }
+  type MCPRow = {
+    name: string; command?: string[]; url?: string
+    environment?: Record<string, string>; headers?: Record<string, string>
+    disabled: boolean; status: string; tools: number; err?: string
+  }
   let mcpServers = $state<MCPRow[]>([])
-  let mcpName = $state('')
-  let mcpCommand = $state('')
+  let mcpQuery = $state('')
   let mcpBusy = $state('')
   let mcpError = $state('')
+
+  // Add/edit form. mcpOriginal === '' means add mode; otherwise it holds the
+  // name of the server being edited.
+  let mcpOriginal = $state('')
+  let mcpKind = $state<'stdio' | 'http'>('stdio')
+  let mcpName = $state('')
+  let mcpCommand = $state('')
+  let mcpUrl = $state('')
+  let mcpEnvText = $state('')
+  let mcpHeadersText = $state('')
+
+  const mcpFiltered = $derived(mcpServers.filter((s) => {
+    const q = mcpQuery.trim().toLowerCase()
+    if (!q) return true
+    return s.name.toLowerCase().includes(q)
+      || (s.command ?? []).join(' ').toLowerCase().includes(q)
+      || (s.url ?? '').toLowerCase().includes(q)
+  }))
+
+  const mcpFormValid = $derived(
+    mcpName.trim() !== '' && (mcpKind === 'stdio' ? mcpCommand.trim() !== '' : mcpUrl.trim() !== ''),
+  )
 
   async function loadMCP() {
     mcpServers = await ListMCPServers()
@@ -152,22 +178,89 @@
     }
   }
 
-  const addMCP = () => runMCP('add', async () => {
-    const command = mcpCommand.trim().split(/\s+/).filter(Boolean)
-    await AddMCPServer(mcpName.trim(), command)
+  // "KEY=VALUE" / "Header: value" lines → map; blank and separator-less lines
+  // are dropped rather than erroring, the backend trims further.
+  function parseLines(text: string, sep: '=' | ':'): Record<string, string> {
+    const out: Record<string, string> = {}
+    for (const line of text.split('\n')) {
+      const i = line.indexOf(sep)
+      if (i <= 0) continue
+      out[line.slice(0, i).trim()] = line.slice(i + 1).trim()
+    }
+    return out
+  }
+
+  function mapToLines(m: Record<string, string> | undefined, sep: string): string {
+    return Object.entries(m ?? {}).map(([k, v]) => `${k}${sep}${v}`).join('\n')
+  }
+
+  function resetMCPForm() {
+    mcpOriginal = ''
+    mcpKind = 'stdio'
     mcpName = ''
     mcpCommand = ''
+    mcpUrl = ''
+    mcpEnvText = ''
+    mcpHeadersText = ''
+  }
+
+  function editMCP(s: MCPRow) {
+    mcpOriginal = s.name
+    mcpKind = s.url ? 'http' : 'stdio'
+    mcpName = s.name
+    mcpCommand = (s.command ?? []).join(' ')
+    mcpUrl = s.url ?? ''
+    mcpEnvText = mapToLines(s.environment, '=')
+    mcpHeadersText = mapToLines(s.headers, ': ')
+    mcpError = ''
+  }
+
+  const saveMCP = () => runMCP('save', async () => {
+    const server = new config.MCPServerConfig({
+      name: mcpName.trim(),
+      command: mcpKind === 'stdio' ? mcpCommand.trim().split(/\s+/).filter(Boolean) : [],
+      url: mcpKind === 'http' ? mcpUrl.trim() : '',
+      environment: mcpKind === 'stdio' ? parseLines(mcpEnvText, '=') : {},
+      headers: mcpKind === 'http' ? parseLines(mcpHeadersText, ':') : {},
+    })
+    await SaveMCPServer(mcpOriginal, server)
+    resetMCPForm()
     await loadMCP()
   })
 
   const removeMCP = (name: string) => runMCP('rm:' + name, async () => {
     await RemoveMCPServer(name)
+    if (mcpOriginal === name) resetMCPForm()
     await loadMCP()
   })
 
   const testMCP = (name: string) => runMCP('test:' + name, async () => {
-    const info = await TestMCPServer(name)
-    mcpServers = mcpServers.map((s) => (s.name === name ? info : s))
+    await TestMCPServer(name)
+    await loadMCP()
+  })
+
+  const toggleMCP = (s: MCPRow) => runMCP('toggle:' + s.name, async () => {
+    await ToggleMCPServer(s.name, !s.disabled)
+    await loadMCP()
+  })
+
+  // Curated quick-adds; every package name verified against the npm registry
+  // (or, for URLs, the provider's published MCP endpoint) before listing.
+  const mcpPresets: { name: string; desc: string; command?: string[]; url?: string }[] = [
+    { name: 'context7', desc: 'Up-to-date library docs', command: ['npx', '-y', '@upstash/context7-mcp'] },
+    { name: 'sequential-thinking', desc: 'Step-by-step reasoning scratchpad', command: ['npx', '-y', '@modelcontextprotocol/server-sequential-thinking'] },
+    { name: 'memory', desc: 'Knowledge-graph memory', command: ['npx', '-y', '@modelcontextprotocol/server-memory'] },
+    { name: 'js-repl', desc: 'Run JavaScript/Node code', command: ['npx', '-y', 'mcp-repl'] },
+    { name: 'exa', desc: 'Web search (needs API key header)', url: 'https://mcp.exa.ai/mcp' },
+  ]
+
+  const presetTaken = (name: string) => mcpServers.some((s) => s.name.toLowerCase() === name.toLowerCase())
+
+  const addPreset = (p: (typeof mcpPresets)[number]) => runMCP('preset:' + p.name, async () => {
+    await SaveMCPServer('', new config.MCPServerConfig({
+      name: p.name, command: p.command ?? [], url: p.url ?? '',
+    }))
+    await loadMCP()
   })
 
   function statusColor(status: string): string {
@@ -446,19 +539,33 @@
       <p class="muted set-sub">{t('settings.mcpDesc')}</p>
 
       <div class="settings-card">
+        {#if mcpServers.length > 3}
+          <div class="mset-keyrow">
+            <input class="ctrl key-input" placeholder={t('settings.mcpSearchPlaceholder')} bind:value={mcpQuery} />
+          </div>
+        {/if}
         {#if mcpServers.length === 0}
           <div class="muted">{t('settings.noMcpServers')}</div>
         {:else}
-          {#each mcpServers as s}
-            <div class="set-row">
+          {#each mcpFiltered as s (s.name)}
+            <div class="set-row" class:mcp-off={s.disabled}>
               <div class="set-txt">
-                <div class="t"><span class="dot" style={statusColor(s.status)}></span> {s.name}</div>
-                <div class="d">{s.command.join(' ')}{s.err ? ' — ' + s.err : ''}</div>
+                <div class="t">
+                  <span class="dot" style={statusColor(s.status)}></span> {s.name}
+                  <span class="mcp-badge">{s.url ? 'http' : 'stdio'}</span>
+                  {#if s.tools > 0}<span class="mcp-badge">{t('settings.mcpToolCount', { n: String(s.tools) })}</span>{/if}
+                </div>
+                <div class="d">{s.url || (s.command ?? []).join(' ')}{s.err ? ' — ' + s.err : ''}</div>
               </div>
-              <div style="display:flex; gap:8px">
-                <button class="ctrl" disabled={mcpBusy !== ''} onclick={() => testMCP(s.name)}>
+              <div style="display:flex; gap:8px; align-items:center">
+                <label class="mswitch" title={s.disabled ? t('settings.add') : ''}>
+                  <input type="checkbox" checked={!s.disabled} disabled={mcpBusy !== ''} onchange={() => toggleMCP(s)} />
+                  <span></span>
+                </label>
+                <button class="ctrl" disabled={mcpBusy !== '' || s.disabled} onclick={() => testMCP(s.name)}>
                   {mcpBusy === 'test:' + s.name ? t('settings.testing') : t('settings.test')}
                 </button>
+                <button class="ctrl" disabled={mcpBusy !== ''} onclick={() => editMCP(s)}>{t('settings.edit')}</button>
                 <button class="ctrl" disabled={mcpBusy !== ''} onclick={() => removeMCP(s.name)}>{t('settings.remove')}</button>
               </div>
             </div>
@@ -467,22 +574,52 @@
       </div>
 
       <div class="settings-card">
-        <div class="eyebrow">{t('settings.addServer')}</div>
+        <div class="eyebrow">{mcpOriginal ? t('settings.editServer') : t('settings.addServer')}</div>
         <div class="mset-keyrow">
+          <select class="ctrl" bind:value={mcpKind}>
+            <option value="stdio">stdio</option>
+            <option value="http">http</option>
+          </select>
           <input class="ctrl" placeholder={t('settings.mcpNamePlaceholder')} bind:value={mcpName} />
         </div>
         <div class="mset-keyrow">
-          <input
-            class="ctrl key-input"
-            placeholder={t('settings.mcpCommandPlaceholder')}
-            bind:value={mcpCommand}
-            onkeydown={(e) => e.key === 'Enter' && mcpName.trim() && mcpCommand.trim() && addMCP()}
-          />
-          <button class="ctrl" disabled={mcpBusy !== '' || !mcpName.trim() || !mcpCommand.trim()} onclick={addMCP}>
-            {mcpBusy === 'add' ? t('settings.adding') : t('settings.add')}
+          {#if mcpKind === 'stdio'}
+            <input class="ctrl key-input" placeholder={t('settings.mcpCommandPlaceholder')} bind:value={mcpCommand} />
+          {:else}
+            <input class="ctrl key-input" placeholder={t('settings.mcpUrlPlaceholder')} bind:value={mcpUrl} />
+          {/if}
+        </div>
+        <div class="mset-keyrow">
+          {#if mcpKind === 'stdio'}
+            <textarea class="ctrl key-input mcp-lines" rows="2" placeholder={t('settings.mcpEnvPlaceholder')} bind:value={mcpEnvText}></textarea>
+          {:else}
+            <textarea class="ctrl key-input mcp-lines" rows="2" placeholder={t('settings.mcpHeadersPlaceholder')} bind:value={mcpHeadersText}></textarea>
+          {/if}
+        </div>
+        <div class="mset-keyrow">
+          <button class="ctrl" disabled={mcpBusy !== '' || !mcpFormValid} onclick={saveMCP}>
+            {mcpBusy === 'save' ? t('settings.saving') : (mcpOriginal ? t('settings.save') : t('settings.add'))}
           </button>
+          {#if mcpOriginal}
+            <button class="ctrl" disabled={mcpBusy !== ''} onclick={resetMCPForm}>{t('settings.cancel')}</button>
+          {/if}
         </div>
         {#if mcpError}<div class="mset-error">{mcpError}</div>{/if}
+      </div>
+
+      <div class="settings-card">
+        <div class="eyebrow">{t('settings.mcpPresets')}</div>
+        {#each mcpPresets as p (p.name)}
+          <div class="set-row">
+            <div class="set-txt">
+              <div class="t">{p.name} <span class="mcp-badge">{p.url ? 'http' : 'stdio'}</span></div>
+              <div class="d">{p.desc} — {p.url ?? p.command?.join(' ')}</div>
+            </div>
+            <button class="ctrl" disabled={mcpBusy !== '' || presetTaken(p.name)} onclick={() => addPreset(p)}>
+              {mcpBusy === 'preset:' + p.name ? t('settings.adding') : t('settings.add')}
+            </button>
+          </div>
+        {/each}
       </div>
     {/if}
     </div>

@@ -1002,7 +1002,10 @@ func toMCPServers(cfgs []config.MCPServerConfig) []mcp.Server {
 			Command:     c.Command,
 			Cwd:         c.Cwd,
 			Environment: c.Environment,
+			URL:         c.URL,
+			Headers:     c.Headers,
 			Timeout:     time.Duration(c.TimeoutMs) * time.Millisecond,
+			Disabled:    c.Disabled,
 		})
 	}
 	return out

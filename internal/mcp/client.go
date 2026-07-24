@@ -1,8 +1,9 @@
 // Package mcp connects Aetox to external Model Context Protocol servers.
 //
-// Phase 1 supports local/stdio servers only (a subprocess speaking MCP over
-// stdin/stdout, e.g. npx/uvx-based servers). Remote (SSE/HTTP) + OAuth are
-// deferred until a real need appears — see MCP-SUPPORT-PLAN.md.
+// Two transports: local/stdio (a subprocess speaking MCP over stdin/stdout,
+// e.g. npx/uvx-based servers) and remote streamable HTTP (URL + optional
+// static headers). OAuth stays deferred until a real need appears — see
+// MCP-SUPPORT-PLAN.md.
 //
 // The transport, JSON-RPC framing, and initialize handshake come from the
 // official github.com/modelcontextprotocol/go-sdk; this package owns only
@@ -12,6 +13,7 @@ package mcp
 import (
 	"context"
 	"errors"
+	"net/http"
 	"os"
 	"os/exec"
 	"sync"
@@ -35,14 +37,18 @@ const (
 
 const defaultTimeout = 30 * time.Second
 
-// Server is one configured local MCP server. Fields mirror the config schema
-// in MCP-SUPPORT-PLAN.md §4 (local/stdio subset).
+// Server is one configured MCP server. A non-empty URL selects the remote
+// streamable-HTTP transport; otherwise Command is spawned as a local stdio
+// subprocess. Fields mirror the config schema in MCP-SUPPORT-PLAN.md §4.
 type Server struct {
 	Name        string            // stable id; used as the tool-name prefix
-	Command     []string          // argv0 + args (required)
-	Cwd         string            // working dir; caller resolves against sandbox root
-	Environment map[string]string // merged over os.Environ()
+	Command     []string          // local: argv0 + args
+	Cwd         string            // local: working dir; caller resolves against sandbox root
+	Environment map[string]string // local: merged over os.Environ()
+	URL         string            // remote: streamable HTTP endpoint
+	Headers     map[string]string // remote: static headers (e.g. Authorization)
 	Timeout     time.Duration     // connect timeout; default 30s
+	Disabled    bool              // configured but switched off; Manager skips it
 }
 
 // Client wraps a single MCP server connection. Connect is lazy: the subprocess
@@ -51,10 +57,11 @@ type Server struct {
 type Client struct {
 	cfg Server
 
-	mu      sync.Mutex
-	session *mcpsdk.ClientSession
-	status  Status
-	lastErr error
+	mu        sync.Mutex
+	session   *mcpsdk.ClientSession
+	status    Status
+	lastErr   error
+	toolCount int // tools seen on the last successful Tools(); 0 until then
 }
 
 // New builds a Client for cfg without connecting.
@@ -99,30 +106,37 @@ func (c *Client) ensure(ctx context.Context) (*mcpsdk.ClientSession, error) {
 	if c.status == StatusFailed {
 		return nil, c.lastErr
 	}
-	if len(c.cfg.Command) == 0 || c.cfg.Command[0] == "" {
-		c.status = StatusFailed
-		c.lastErr = errors.New("mcp: server " + c.cfg.Name + " has empty command")
-		return nil, c.lastErr
-	}
-
-	cmd := exec.Command(c.cfg.Command[0], c.cfg.Command[1:]...)
-	cmd.Dir = c.cfg.Cwd
-	// The production desktop exe is a GUI app: without this, a console child
-	// (npx→cmd.exe on Windows) pops a visible Windows Terminal window on spawn.
-	proc.HideConsole(cmd)
-	if len(c.cfg.Environment) > 0 {
-		env := os.Environ()
-		for k, v := range c.cfg.Environment {
-			env = append(env, k+"="+v)
+	var transport mcpsdk.Transport
+	switch {
+	case c.cfg.URL != "":
+		transport = &mcpsdk.StreamableClientTransport{
+			Endpoint:   c.cfg.URL,
+			HTTPClient: headerHTTPClient(c.cfg.Headers),
 		}
-		cmd.Env = env
+	case len(c.cfg.Command) == 0 || c.cfg.Command[0] == "":
+		c.status = StatusFailed
+		c.lastErr = errors.New("mcp: server " + c.cfg.Name + " has no command or url")
+		return nil, c.lastErr
+	default:
+		cmd := exec.Command(c.cfg.Command[0], c.cfg.Command[1:]...)
+		cmd.Dir = c.cfg.Cwd
+		// The production desktop exe is a GUI app: without this, a console child
+		// (npx→cmd.exe on Windows) pops a visible Windows Terminal window on spawn.
+		proc.HideConsole(cmd)
+		if len(c.cfg.Environment) > 0 {
+			env := os.Environ()
+			for k, v := range c.cfg.Environment {
+				env = append(env, k+"="+v)
+			}
+			cmd.Env = env
+		}
+		// ponytail: relies on CommandTransport.Close (stdin-close then SIGTERM to the
+		// direct child) for cleanup. A server that forks (npx→node, uvx→python) can
+		// still orphan grandchildren. Upgrade path: set cmd.SysProcAttr for a process
+		// group (Setpgid on unix, CREATE_NEW_PROCESS_GROUP on windows) and kill the
+		// group on Close — do it in the local-server hardening pass, not the skeleton.
+		transport = &mcpsdk.CommandTransport{Command: cmd}
 	}
-	// ponytail: relies on CommandTransport.Close (stdin-close then SIGTERM to the
-	// direct child) for cleanup. A server that forks (npx→node, uvx→python) can
-	// still orphan grandchildren. Upgrade path: set cmd.SysProcAttr for a process
-	// group (Setpgid on unix, CREATE_NEW_PROCESS_GROUP on windows) and kill the
-	// group on Close — do it in the local-server hardening pass, not the skeleton.
-	transport := &mcpsdk.CommandTransport{Command: cmd}
 	client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "aetox", Version: "0"}, nil)
 
 	// Bound the initialize handshake so a process that starts but never speaks
@@ -155,7 +169,18 @@ func (c *Client) Tools(ctx context.Context) ([]*mcpsdk.Tool, error) {
 		}
 		tools = append(tools, tool)
 	}
+	c.mu.Lock()
+	c.toolCount = len(tools)
+	c.mu.Unlock()
 	return tools, nil
+}
+
+// ToolCount reports how many tools the server exposed on the last successful
+// Tools() enumeration (0 before the first one, or after Close).
+func (c *Client) ToolCount() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.toolCount
 }
 
 // CallTool invokes one tool on the server, connecting lazily.
@@ -180,5 +205,29 @@ func (c *Client) Close() error {
 	c.session = nil
 	c.status = StatusIdle
 	c.lastErr = nil
+	c.toolCount = 0
 	return err
+}
+
+// headerHTTPClient returns an http.Client that stamps the given static
+// headers onto every request (Authorization tokens etc.), or the default
+// client when there are none.
+func headerHTTPClient(headers map[string]string) *http.Client {
+	if len(headers) == 0 {
+		return nil // transport falls back to http.DefaultClient
+	}
+	return &http.Client{Transport: headerRoundTripper{headers: headers}}
+}
+
+type headerRoundTripper struct {
+	headers map[string]string
+}
+
+func (h headerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	// Per http.RoundTripper's contract, don't mutate the caller's request.
+	req = req.Clone(req.Context())
+	for k, v := range h.headers {
+		req.Header.Set(k, v)
+	}
+	return http.DefaultTransport.RoundTrip(req)
 }

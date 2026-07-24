@@ -121,14 +121,17 @@ func TestManagerRegisterBoundedByCallerContext(t *testing.T) {
 	}
 }
 
-// NewManager drops entries with no name or command so they can't later panic.
+// NewManager drops disabled entries and ones with neither command nor URL so
+// they can't later panic; a URL-only (remote) entry is kept.
 func TestNewManagerSkipsInvalid(t *testing.T) {
 	m := NewManager([]Server{
 		{Name: "", Command: []string{"x"}},
 		{Name: "y", Command: nil},
+		{Name: "off", Command: []string{"x"}, Disabled: true},
+		{Name: "remote", URL: "http://localhost:1/mcp"},
 		{Name: "ok", Command: []string{"x"}},
 	})
-	if len(m.Clients()) != 1 {
-		t.Fatalf("got %d clients, want 1", len(m.Clients()))
+	if len(m.Clients()) != 2 {
+		t.Fatalf("got %d clients, want 2 (remote + ok)", len(m.Clients()))
 	}
 }

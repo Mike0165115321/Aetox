@@ -264,16 +264,22 @@ func LoadPermissions() (safety.PermissionConfig, error) {
 	return cfg, nil
 }
 
-// MCPServerConfig is the persisted, provider-agnostic description of one local
-// MCP server (phase 1: stdio only — see MCP-SUPPORT-PLAN.md §4). It is a plain
-// DTO so this package needn't depend on internal/mcp; the wiring layer
-// translates it into an mcp.Server.
+// MCPServerConfig is the persisted, provider-agnostic description of one MCP
+// server. It is a plain DTO so this package needn't depend on internal/mcp;
+// the wiring layer translates it into an mcp.Server. A non-empty URL means a
+// remote (streamable HTTP) server, otherwise Command is a local stdio server —
+// deliberately no separate "type" field that could fall out of sync.
 type MCPServerConfig struct {
 	Name        string            `json:"name"`
-	Command     []string          `json:"command"`
+	Command     []string          `json:"command,omitempty"`
 	Cwd         string            `json:"cwd,omitempty"`
 	Environment map[string]string `json:"environment,omitempty"`
+	URL         string            `json:"url,omitempty"`
+	Headers     map[string]string `json:"headers,omitempty"`
 	TimeoutMs   int               `json:"timeout_ms,omitempty"`
+	// Disabled (not Enabled) so the zero value keeps servers in pre-existing
+	// config files switched on without any migration.
+	Disabled bool `json:"disabled,omitempty"`
 }
 
 func MCPServersPath() (string, error) {

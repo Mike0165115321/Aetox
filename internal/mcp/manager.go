@@ -16,12 +16,13 @@ type Manager struct {
 	clients []*Client
 }
 
-// NewManager creates clients for each server config, skipping entries with no
-// name or command. Nothing connects yet — connection is lazy (see Client).
+// NewManager creates clients for each server config, skipping disabled
+// entries and ones with neither a command nor a URL. Nothing connects yet —
+// connection is lazy (see Client).
 func NewManager(servers []Server) *Manager {
 	clients := make([]*Client, 0, len(servers))
 	for _, s := range servers {
-		if s.Name == "" || len(s.Command) == 0 {
+		if s.Name == "" || s.Disabled || (len(s.Command) == 0 && s.URL == "") {
 			continue
 		}
 		clients = append(clients, New(s))

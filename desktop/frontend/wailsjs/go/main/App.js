@@ -194,6 +194,10 @@ export function SaveIdentityFile(arg1, arg2) {
   return window['go']['main']['App']['SaveIdentityFile'](arg1, arg2);
 }
 
+export function SaveMCPServer(arg1, arg2) {
+  return window['go']['main']['App']['SaveMCPServer'](arg1, arg2);
+}
+
 export function SearchAllSessions(arg1) {
   return window['go']['main']['App']['SearchAllSessions'](arg1);
 }
@@ -256,6 +260,10 @@ export function TerminalWrite(arg1, arg2) {
 
 export function TestMCPServer(arg1) {
   return window['go']['main']['App']['TestMCPServer'](arg1);
+}
+
+export function ToggleMCPServer(arg1, arg2) {
+  return window['go']['main']['App']['ToggleMCPServer'](arg1, arg2);
 }
 
 export function WriteFile(arg1, arg2) {

@@ -659,6 +659,18 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .mrow { display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid var(--border-subtle); border-radius:8px; }
 .mrow .mname { flex:1; font-family:var(--mono); font-size:15px; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .mset-error { color:var(--status-danger); font-size:15px; }
+
+/* MCP servers page */
+.mcp-badge { font-size:12px; padding:1px 8px; border-radius:999px; background:var(--surface-sunken); border:1px solid var(--border-subtle); color:var(--text-muted); font-weight:400; margin-left:6px; vertical-align:1px; }
+.mcp-off .set-txt { opacity:.55; }
+.mcp-lines { resize:vertical; font-family:var(--mono); font-size:13.5px; }
+.mswitch { position:relative; display:inline-block; width:34px; height:19px; flex:0 0 auto; }
+.mswitch input { position:absolute; opacity:0; width:100%; height:100%; margin:0; cursor:pointer; }
+.mswitch span { position:absolute; inset:0; border-radius:999px; background:var(--surface-sunken); border:1px solid var(--border-strong); transition:background .15s; pointer-events:none; }
+.mswitch span::after { content:''; position:absolute; top:2px; left:2px; width:13px; height:13px; border-radius:50%; background:var(--text-muted); transition:transform .15s, background .15s; }
+.mswitch input:checked + span { background:var(--interactive); border-color:var(--interactive); }
+.mswitch input:checked + span::after { transform:translateX(15px); background:var(--text-on-interactive); }
+.mswitch input:disabled + span { opacity:.5; }
 .insp-foot { padding:12px 14px; border-top:1px solid var(--border-default); }
 .stopbtn {
   width:100%; height:44px; border-radius:10px; font-weight:600; font-size:15.5px;

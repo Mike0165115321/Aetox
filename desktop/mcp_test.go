@@ -47,6 +47,54 @@ func TestAddListRemoveMCPServer(t *testing.T) {
 	}
 }
 
+func TestSaveToggleMCPServer(t *testing.T) {
+	a := newMCPTestApp(t)
+
+	if err := a.AddMCPServer("fs", []string{"npx", "server-filesystem"}); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+
+	// Toggle off: persisted, reported as disabled, and no client is built.
+	if err := a.ToggleMCPServer("fs", true); err != nil {
+		t.Fatalf("toggle off: %v", err)
+	}
+	servers := a.ListMCPServers()
+	if !servers[0].Disabled || servers[0].Status != "disabled" {
+		t.Fatalf("after toggle off: %+v", servers[0])
+	}
+	if a.findMCPClient("fs") != nil {
+		t.Fatal("disabled server still has a live client")
+	}
+
+	// Update in place (rename + new env) keeps the disabled state.
+	err := a.SaveMCPServer("fs", config.MCPServerConfig{
+		Name:        "files",
+		Command:     []string{"npx", "-y", "server-filesystem"},
+		Environment: map[string]string{"TOKEN": "x", " ": "dropped"},
+	})
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	servers = a.ListMCPServers()
+	if len(servers) != 1 || servers[0].Name != "files" || !servers[0].Disabled {
+		t.Fatalf("after update: %+v", servers)
+	}
+	if len(servers[0].Environment) != 1 || servers[0].Environment["TOKEN"] != "x" {
+		t.Fatalf("environment not cleaned/persisted: %+v", servers[0].Environment)
+	}
+
+	// A remote (URL-only) server is valid; renaming onto an existing name isn't.
+	if err := a.SaveMCPServer("", config.MCPServerConfig{Name: "exa", URL: "https://mcp.exa.ai/mcp"}); err != nil {
+		t.Fatalf("add remote: %v", err)
+	}
+	if err := a.SaveMCPServer("exa", config.MCPServerConfig{Name: "files", URL: "https://x"}); err == nil {
+		t.Fatal("expected duplicate-name error on rename collision")
+	}
+	if err := a.ToggleMCPServer("missing", true); err == nil {
+		t.Fatal("expected not-found error")
+	}
+}
+
 func TestAddMCPServerValidation(t *testing.T) {
 	a := newMCPTestApp(t)
 
