@@ -211,7 +211,18 @@
   // Links in rendered markdown must not navigate the app's own webview away —
   // open them in a workbench browser tab instead.
   function onChatClick(e: MouseEvent) {
-    const a = (e.target as HTMLElement).closest('a')
+    const el = e.target as HTMLElement
+    // copy button on a rendered code block ({@html} markup can't carry handlers)
+    const copyBtn = el.closest('.code-copy')
+    if (copyBtn) {
+      const code = copyBtn.closest('.codeblock')?.querySelector('code')
+      navigator.clipboard.writeText(code?.textContent ?? '').then(() => {
+        copyBtn.textContent = t('chat.copiedCode')
+        setTimeout(() => (copyBtn.textContent = t('chat.copyCode')), 1500)
+      })
+      return
+    }
+    const a = el.closest('a')
     const href = a?.getAttribute('href')
     if (!href || !/^https?:\/\//i.test(href)) return
     e.preventDefault()

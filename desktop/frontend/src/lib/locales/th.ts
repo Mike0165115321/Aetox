@@ -58,6 +58,8 @@ export const th = {
   'chat.approvalUnsafeOnly': 'เฉพาะที่ไม่ปลอดภัย',
   'chat.approvalFullAccess': 'สิทธิ์เต็ม',
   'chat.modelIdPlaceholder': 'model id',
+  'chat.copyCode': 'คัดลอก',
+  'chat.copiedCode': 'คัดลอกแล้ว ✓',
   'chat.contextWindow': 'หน้าต่างคอนเท็กซ์',
   'chat.ctx_system': 'System prompt',
   'chat.ctx_tools': 'เครื่องมือ',

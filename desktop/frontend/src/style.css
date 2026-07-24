@@ -387,6 +387,22 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   border:1px solid var(--border-subtle); border-radius:8px; overflow-x:auto;
 }
 .markdown-body pre code { background:none; border:none; padding:0; }
+
+/* Fenced code blocks — header bar (language + copy) over a highlighted body,
+   like every mainstream AI chat. hljs's own theme colors the tokens; the
+   container chrome stays on app palette. */
+.markdown-body .codeblock { margin:.4em 0 .7em; border:1px solid var(--border-subtle); border-radius:10px; overflow:hidden; }
+.markdown-body .codeblock-head {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:5px 10px; background:var(--surface-raised); border-bottom:1px solid var(--border-subtle);
+}
+.markdown-body .codeblock-head .lang { font-size:11.5px; color:var(--text-muted); font-family:var(--font-mono, monospace); }
+.markdown-body .code-copy {
+  font-size:11.5px; color:var(--text-muted); padding:2px 8px; border-radius:5px; cursor:pointer;
+}
+.markdown-body .code-copy:hover { background:var(--surface-hover); color:var(--text-primary); }
+.markdown-body .codeblock pre { margin:0; border:none; border-radius:0; }
+.markdown-body .codeblock code.hljs { display:block; background:transparent; padding:0; overflow-x:auto; }
 .markdown-body table { border-collapse:collapse; margin:.4em 0 .7em; }
 .markdown-body th, .markdown-body td { border:1px solid var(--border-subtle); padding:.3em .7em; }
 .markdown-body th { background:var(--surface-hover); }
