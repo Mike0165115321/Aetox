@@ -32,6 +32,17 @@ const (
 	compactSummaryMaxTokens  = 2048
 )
 
+// Small local models (Ollama-scale) sometimes reply with nothing at all,
+// typically right after a large tool result. One nudge usually revives them —
+// and lets the model phrase the answer (or the "beyond my limits" admission)
+// in the user's own language. Tools-first wording: a model that lacks a
+// capability natively (e.g. reading images) must reach for a tool that covers
+// it, not refuse. The bilingual line below is the floor for when even the
+// nudge comes back empty.
+const emptyReplyNudge = "[system] Your previous reply was empty. Respond now, in the same language the user writes in. If tools are available that can do what you cannot do natively (reading images, files, searching, etc.), call one now instead of refusing. Only if no tool can help and the task is truly impossible for you, tell the user briefly that it exceeds the current model's capability."
+
+const emptyReplyFallback = "เกินขีดจำกัดของโมเดลปัจจุบัน — โมเดลตอบกลับว่างเปล่า ลองแบ่งงานให้เล็กลงหรือเปลี่ยนโมเดล (Beyond the current model's limits — it returned an empty reply. Try a smaller task or a stronger model.)"
+
 const compactionPrompt = "You are compacting a long conversation so it can continue in less context. " +
 	"Write a faithful, information-dense summary of the conversation you are given, covering: " +
 	"the user's goals and every decision made; important facts and constraints; " +
@@ -125,6 +136,7 @@ func (a *Agent) RespondWithTools(
 	maxToolCalls := a.maxToolCalls
 	debuglog.Info("maxToolCalls", fmt.Sprintf("%d (<=0 means unlimited)", maxToolCalls))
 	anyToolUsed := false
+	nudgedEmpty := false
 	var lastCallKey string
 	repeatedCalls := 0
 	loopMaxTokens := a.toolLoopMaxTokens()
@@ -151,7 +163,16 @@ func (a *Agent) RespondWithTools(
 		debuglog.Info("response.toolCalls", fmt.Sprintf("%d", len(response.ToolCalls)))
 		if len(response.ToolCalls) == 0 {
 			if content == "" {
-				content = "(empty response)"
+				// Nudge inside the loop, not via recoverEmptyReply: here the
+				// model keeps its tools, so it can cover a missing capability
+				// (e.g. reading an image) by calling a skill instead of refusing.
+				if !nudgedEmpty {
+					nudgedEmpty = true
+					debuglog.Msg("empty reply in tool loop, nudging once")
+					a.context.Add(model.RoleUser, emptyReplyNudge)
+					continue
+				}
+				content = emptyReplyFallback
 			}
 			a.context.AddMessage(model.Message{
 				Role:             model.RoleAssistant,
@@ -316,6 +337,21 @@ func (a *Agent) executeToolCall(ctx context.Context, toolCall model.ToolCall, ex
 	return output, nil
 }
 
+// recoverEmptyReply nudges the model once after an empty reply. The nudge is
+// ephemeral — never stored in context — so history stays clean either way.
+func (a *Agent) recoverEmptyReply(ctx context.Context, opts turn.TurnOptions) string {
+	msgs := append(a.context.Messages(), model.Message{Role: model.RoleUser, Content: emptyReplyNudge})
+	response, err := a.provider.Complete(ctx, a.buildRequest(msgs, 768, 0.2, nil, "", opts))
+	if err != nil {
+		debuglog.Msg("empty-reply nudge failed: %v", err)
+		return emptyReplyFallback
+	}
+	if reply := strings.TrimSpace(response.Text); reply != "" {
+		return reply
+	}
+	return emptyReplyFallback
+}
+
 func (a *Agent) Respond(ctx context.Context, userMessage string, opts turn.TurnOptions) (string, error) {
 	if a.provider == nil {
 		return "", errors.New("agent provider is not initialized")
@@ -336,7 +372,7 @@ func (a *Agent) Respond(ctx context.Context, userMessage string, opts turn.TurnO
 
 	reply := strings.TrimSpace(response.Text)
 	if reply == "" {
-		return "(empty response)", nil
+		reply = a.recoverEmptyReply(ctx, opts)
 	}
 	a.lastUsage = model.Usage{}
 	if response.Usage != nil {
@@ -370,8 +406,10 @@ func (a *Agent) RespondStream(ctx context.Context, userMessage string, onChunk f
 		response, err := streamer.StreamComplete(ctx, req, onChunk, onReasoningChunk)
 		if err == nil {
 			reply := strings.TrimSpace(response.Text)
+			streamed := true
 			if reply == "" {
-				reply = "(empty response)"
+				reply = a.recoverEmptyReply(ctx, opts)
+				streamed = false // nothing reached onChunk — caller must render the reply itself
 			}
 			a.lastUsage = model.Usage{}
 			if response.Usage != nil {
@@ -382,7 +420,7 @@ func (a *Agent) RespondStream(ctx context.Context, userMessage string, onChunk f
 				Content:          reply,
 				ReasoningContent: strings.TrimSpace(response.ReasoningContent),
 			})
-			return reply, true, nil
+			return reply, streamed, nil
 		}
 		// fallback to non-streaming when streaming path fails
 	}
@@ -394,7 +432,7 @@ func (a *Agent) RespondStream(ctx context.Context, userMessage string, onChunk f
 
 	reply := strings.TrimSpace(response.Text)
 	if reply == "" {
-		return "(empty response)", false, nil
+		reply = a.recoverEmptyReply(ctx, opts)
 	}
 	a.lastUsage = model.Usage{}
 	if response.Usage != nil {

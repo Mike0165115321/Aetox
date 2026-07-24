@@ -430,6 +430,76 @@ func TestCompactionFailureIsNonFatal(t *testing.T) {
 	}
 }
 
+func TestRespondWithToolsEmptyReplyNudgeKeepsTools(t *testing.T) {
+	toolDefs := []model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read_image", Parameters: []byte(`{"type":"object"}`)}}}
+	execTool := func(_ context.Context, _ model.ToolCall) (string, error) { return "image says hi", nil }
+
+	provider := &toolLoopProvider{responses: []model.Response{{}, {Text: "recovered"}}}
+	agent := NewAgent(AgentConfig{Provider: provider, Model: "test-model", MaxToolCalls: 4})
+	reply, _, err := agent.RespondWithTools(context.Background(), toolDefs, "อ่านภาพนี้", execTool, turn.TurnOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if reply != "recovered" {
+		t.Fatalf("expected nudged reply, got %q", reply)
+	}
+	if provider.calls != 2 {
+		t.Fatalf("expected nudge round-trip, got %d calls", provider.calls)
+	}
+	nudgeReq := provider.requests[1]
+	if len(nudgeReq.Tools) == 0 {
+		t.Fatal("nudge round must keep tools so the model can use a skill instead of refusing")
+	}
+	last := nudgeReq.Messages[len(nudgeReq.Messages)-1]
+	if last.Content != emptyReplyNudge {
+		t.Fatalf("expected nudge as last message, got %q", last.Content)
+	}
+
+	provider = &toolLoopProvider{responses: []model.Response{{}, {}}}
+	agent = NewAgent(AgentConfig{Provider: provider, Model: "test-model", MaxToolCalls: 4})
+	reply, _, err = agent.RespondWithTools(context.Background(), toolDefs, "อ่านภาพนี้", execTool, turn.TurnOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if reply != emptyReplyFallback {
+		t.Fatalf("expected fallback, got %q", reply)
+	}
+}
+
+func TestRespondRecoversFromEmptyReply(t *testing.T) {
+	provider := &toolLoopProvider{responses: []model.Response{{}, {Text: "recovered"}}}
+	agent := NewAgent(AgentConfig{Provider: provider, Model: "test-model"})
+	reply, err := agent.Respond(context.Background(), "hello", turn.TurnOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if reply != "recovered" {
+		t.Fatalf("expected nudged reply, got %q", reply)
+	}
+	if provider.calls != 2 {
+		t.Fatalf("expected nudge round-trip, got %d calls", provider.calls)
+	}
+	second := provider.requests[1].Messages
+	if second[len(second)-1].Content != emptyReplyNudge {
+		t.Fatalf("expected nudge as last message, got %q", second[len(second)-1].Content)
+	}
+	for _, m := range agent.context.Messages() {
+		if m.Content == emptyReplyNudge {
+			t.Fatal("nudge must not persist in context")
+		}
+	}
+
+	provider = &toolLoopProvider{responses: []model.Response{{}, {}}}
+	agent = NewAgent(AgentConfig{Provider: provider, Model: "test-model"})
+	reply, err = agent.Respond(context.Background(), "hello", turn.TurnOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if reply != emptyReplyFallback {
+		t.Fatalf("expected fallback, got %q", reply)
+	}
+}
+
 type toolLoopProvider struct {
 	name      string
 	responses []model.Response
