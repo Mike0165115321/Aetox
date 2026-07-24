@@ -216,8 +216,7 @@ footer{border-top:1px solid var(--line);padding:var(--s3) 0}
           <a class="ghost" href="https://github.com/Mike0165115321/Aetox/releases/latest">ดูไฟล์ดาวน์โหลดทั้งหมด</a>
         </div>
         <div class="cmdrow"><span>&gt;</span><b id="scoopCmd">scoop install https://raw.githubusercontent.com/Mike0165115321/Aetox/main/scoop/aetox.json</b><button class="copy" data-copy="scoopCmd" aria-label="คัดลอกคำสั่ง scoop">copy</button></div>
-        <p class="fine">ตัวติดตั้ง ~12 MB · Windows 10/11 · ลง WebView2 และ Tesseract (ไทย+อังกฤษ) ให้อัตโนมัติ<br>
-        <em>ยังไม่ได้เซ็นโค้ด</em> — SmartScreen อาจเตือนครั้งแรก กด More info → Run anyway</p>
+        <p class="fine">ตัวติดตั้ง ~12 MB · Windows 10/11 · <em>ยังไม่ได้เซ็นโค้ด</em> — SmartScreen อาจเตือน กด More info → Run anyway</p>
       </div>
 
       <div class="term" aria-label="ตัวอย่างการทำงานจริง">
@@ -285,14 +284,8 @@ footer{border-top:1px solid var(--line);padding:var(--s3) 0}
       </div>
       <div>
         <div class="note">
-          <b>ใช้กับโมเดลอะไร?</b> ใส่ API key ของ provider ที่คุณมี — หรือไม่ต้องมีเลยสักตัว:
-          ติดตั้ง <span class="mono">Ollama</span> / <span class="mono">LM Studio</span> แล้วรันโมเดล open-source ฟรีในเครื่อง
-          Aetox ทำหน้าที่ขยายศักยภาพให้โมเดลที่คุณเลือก ไม่ใช่บังคับว่าต้องใช้ค่ายไหน
-        </div>
-        <div class="note">
-          <b>ข้อมูลอยู่ไหน?</b> ในเครื่องคุณ การคุยวิ่งตรงหาผู้ให้บริการโมเดลที่คุณเลือกเท่านั้น
-          ไม่มี server กลางของ Aetox ไม่มี telemetry ไม่มี subscription — จ่ายเฉพาะ token ที่ใช้จริง
-          หรือศูนย์บาทถ้ารัน local
+          <b>ใช้กับโมเดลอะไร?</b> ใส่ API key ของ provider ที่คุณมี หรือรัน <span class="mono">Ollama</span> / <span class="mono">LM Studio</span> ฟรีในเครื่องก็ได้ —
+          การคุยวิ่งตรงหาผู้ให้บริการที่คุณเลือกเท่านั้น ไม่มี server กลางของ Aetox ไม่มี telemetry ไม่มี subscription
         </div>
       </div>
     </div>
@@ -300,15 +293,12 @@ footer{border-top:1px solid var(--line);padding:var(--s3) 0}
 
   <section id="tools">
     <div class="sec-head"><span class="idx">03</span><h2>เครื่องมือในตัว 22 ตัว</h2></div>
-    <p class="sub">โมเดลเรียกใช้เองระหว่างคุย — งานเขียนโค้ด ค้นเว็บ คุมเบราว์เซอร์ คุมเครื่อง อยู่ในชุดเดียว</p>
+    <p class="sub">3 ตัวเด่น (image_ocr, video_ocr, computer) อยู่ด้านบนแล้ว — อีก 19 ตัวที่เหลือ: งานเขียนโค้ด ค้นเว็บ คุมเบราว์เซอร์ อยู่ในชุดเดียว</p>
     <div class="tools">
       <div class="trow"><span class="tn">read / write / edit</span><span class="td">อ่าน เขียน แก้ไฟล์แบบเป๊ะ</span></div>
       <div class="trow"><span class="tn">grep / list / fs</span><span class="td">ค้นหาและจัดการไฟล์</span></div>
       <div class="trow"><span class="tn">shell / git</span><span class="td">รันคำสั่ง ผ่านการอนุมัติทุกครั้ง</span></div>
       <div class="trow"><span class="tn">delete</span><span class="td">ลบไฟล์ (ขออนุมัติเสมอ)</span></div>
-      <div class="trow"><span class="tn">image_ocr</span><span class="td">อ่านข้อความในรูป ไทย+อังกฤษ</span></div>
-      <div class="trow"><span class="tn">video_ocr</span><span class="td">อ่านข้อความในวิดีโอ + timestamp</span></div>
-      <div class="trow"><span class="tn">computer</span><span class="td">เมาส์ คีย์บอร์ด screenshot</span></div>
       <div class="trow"><span class="tn">browser_open / read</span><span class="td">เปิด-อ่านเว็บใน workbench</span></div>
       <div class="trow"><span class="tn">browser_click / type</span><span class="td">คลิก กรอกฟอร์ม เลือก dropdown</span></div>
       <div class="trow"><span class="tn">web_search</span><span class="td">ค้นเว็บ ไม่ต้องมี API key</span></div>
