@@ -112,21 +112,21 @@ Aetox ยังอยู่ในช่วงหล่อหลอม — แก
 | **Desktop App** | Wails + Svelte 5 — Sidebar (file tree + chat history), Chat, Workbench (tabs: Review, Terminal, Files, Browser, File Editor), TopBar |
 | **Persistent Sessions** | ประวัติแชททุกโปรเจกต์เก็บใน SQLite ท้องถิ่น (ไม่มีข้อมูลออกจากเครื่อง) — ค้นหาแบบ full-text ได้ทั้งไทย/อังกฤษ |
 | **Agent-controlled Browser** | Agent เปิด/อ่าน/คลิก/พิมพ์ในเว็บจริงบนแท็บ Workbench ได้เอง (`browser_open`/`browser_read`/`browser_click`/`browser_type`) — ไม่ติด X-Frame-Options เหมือน iframe, คลิกด้วย ref ที่ `browser_read` แปะให้ (แบบเดียวกับ Playwright MCP/browser-use) |
-| **Interactive Agent UI** | agent ถามผู้ใช้กลางงานด้วยตัวเลือก A/B/C/D (`ask_user`), จัดการ checklist งานยาวให้เห็นสด (`todo_write`), ความคิดของโมเดลเก็บถาวรทุก turn ("คิดเป็นเวลา Xs" กดดูย้อนหลังได้), ปุ่ม Stop ตัดงานกลางคัน |
-| **UI Test Models** | provider `aetox` มีโมเดลจำลองครบ: `aetox-tools:test` (เดินสคริปต์ todo→ask→สรุป), `aetox-think:test` (คิดยาว 6 ท่อน), image/markdown — เทสต์ UI ทุกส่วนโดยไม่ต้องมี API key |
+| **Interactive Agent** | เมื่อ agent ติดสินใจไม่ได้ มันหยุดถามคุณเป็นตัวเลือก A/B/C/D ให้กดเลือก · งานใหญ่ agent ทำ checklist ให้เห็นความคืบหน้าสดๆ · ความคิดของโมเดลถูกเก็บไว้ทุกคำตอบ กดย้อนดูได้ว่า "คิดเป็นเวลากี่วินาที คิดอะไร" · ปุ่ม Stop หยุดงานกลางคันได้ตลอด |
+| **ลองก่อนมีคีย์** | provider `aetox` ในตัวมีโมเดลจำลองให้ลองทุกฟีเจอร์โดยไม่ต้องสมัครอะไรเลย — โมเดลที่เรียก tools จริง, โมเดลคิดยาว, แกลเลอรีรูป, markdown ครบชุด |
 
-### 🚧 เส้นทางถัดไป — Agent → Subagent → Multi-Agent → Automation
+### 🚧 เส้นทางถัดไป — จาก Agent เดี่ยว สู่ทีม Agent
 
-บันไดที่กำลังจะปีน เรียงตามลำดับที่ต้องสร้างจริง:
+Aetox วันนี้คือ agent เดี่ยวที่ใช้เครื่องมือเป็น เป้าหมายถัดไปคือให้มันทำงานเป็นทีมได้:
 
 | ขั้น | คืออะไร | สถานะ |
 |:---|:---|:---|
-| **1. Subagent (`task` tool)** | agent หลัก spawn agent ลูกทำงานย่อยใน context แยก แล้วรับเฉพาะผลสรุปกลับ — ประหยัด context หลักมหาศาลกับงานค้นหา/อ่านไฟล์เยอะๆ | ออกแบบแล้ว (ARCHITECTURE.md §25) รอลงมือ |
-| **2. Agent Team ขนาน** | หลาย subagent รันพร้อมกัน (fan-out ค้น 5 มุม / review หลายเลนส์) — แต่ละตัวเลือก provider ต่างกันได้ | ถัดจากขั้น 1 |
-| **3. Multi-Agent Orchestration** | ทีม agent ที่มีบทบาท (planner/coder/reviewer) ส่งงานต่อกัน + ensemble/debate ตาม ADR 0002 | วิสัยทัศน์ — ต้องให้ขั้น 1-2 แข็งก่อน |
-| **4. Automation Engine** | `aetox auto` บอกเป็นไทย → สร้าง script + schedule รันเองตามเวลา | หลัง core agent แข็ง |
+| **1. Subagent** | agent หลักมอบงานย่อยให้ agent ลูกไปทำในพื้นที่ความจำแยก แล้วรับเฉพาะข้อสรุปกลับมา — งานค้นหา/อ่านไฟล์เยอะๆ ไม่กินความจำของบทสนทนาหลักอีกต่อไป | ออกแบบเสร็จ กำลังจะสร้าง |
+| **2. ทีม Agent ขนาน** | agent ลูกหลายตัวทำงานพร้อมกัน เช่น ค้นข้อมูล 5 มุมพร้อมกัน หรือ review โค้ดหลายแง่มุมในคราวเดียว — แต่ละตัวใช้โมเดลคนละค่ายได้ | ถัดจากขั้น 1 |
+| **3. Multi-Agent Orchestration** | ทีมที่มีบทบาทชัดเจน (วางแผน / เขียนโค้ด / ตรวจ) ส่งงานต่อกันเอง รวมถึงให้หลายโมเดลถกเถียงกันเพื่อหาคำตอบที่ดีที่สุด | วิสัยทัศน์ระยะยาว |
+| **4. Automation Engine** | บอกเป็นภาษาไทยว่าอยากให้ทำอะไรซ้ำๆ เมื่อไหร่ → Aetox สร้าง script และตั้งเวลารันให้เอง | หลัง core agent แข็งแรง |
 
-**ประเมินตรงๆ ว่าระบบปัจจุบันโตไปถึงไหนได้ (2026-07-25):** โครงเอื้อมากกว่าที่คิด — `cognitive.Agent` เป็น struct จบในตัว (provider + context ของตัวเอง) การ spawn หลายตัวคือ `NewAgent` หลายครั้ง ไม่ใช่การรื้อ, tools ทั้งหมดวิ่งผ่าน `Dispatcher` interface เดียวที่แชร์ให้ agent ลูกได้ทันที, และ safety chokepoint (`resolveApproval`) มีจุดเดียวชัดเจน สิ่งที่**ต้องเพิ่ม**ก่อนขั้น 2 คือมิติ "agent ID" ที่วันนี้ยังไม่มี: event ที่ยิงเข้า UI (`agent:chunk` ฯลฯ) เป็นสตรีมเดี่ยว, `desktop.App` ถือ agent ตัวเดียว, และยังไม่มี budget/cancellation tree ของงานลูก — ทั้งหมดเป็นการ*เติม* ไม่ใช่การ*รื้อ* เพราะ §17 บังคับให้ทุกอย่างวิ่งผ่าน chokepoint ที่เทสต์ครอบไว้แล้ว
+รากฐานสำหรับเส้นทางนี้ถูกวางไว้แล้วตั้งแต่ต้น: agent แต่ละตัวเป็นหน่วยจบในตัวที่มีโมเดลและความจำของตัวเอง เครื่องมือทั้งหมดแชร์ผ่าน interface กลาง และคำขออนุญาตทุกอย่างวิ่งผ่านด่านความปลอดภัยจุดเดียว — การเพิ่มทีม agent จึงเป็นการต่อยอด ไม่ใช่การรื้อสร้างใหม่
 
 ### 🔮 อนาคตไกลกว่านั้น
 
@@ -323,11 +323,11 @@ Aetox/
 | **Desktop App** | ✅ Wails + Svelte 5 — Sidebar, Chat, Workbench (tabbed dock), TopBar |
 | **Persistent Sessions** | ✅ SQLite ท้องถิ่น + FTS5 search (ไทย/อังกฤษ) ต่อโปรเจกต์ |
 | **Agent-controlled Browser** | ✅ native WebView2 tab — agent เปิด/อ่านหน้าเว็บได้เอง |
-| **Interactive Agent UI** | ✅ ask_user + todo_write + thinking ถาวร + Stop (§27) |
-| **Subagent (`task` tool)** | 🔜 ขั้นแรกของบันได multi-agent — §25 ออกแบบแล้ว |
-| **Agent Team ขนาน** | 🔜 ถัดจาก subagent — ต้องเพิ่มมิติ agent ID ให้ event/UI |
-| **Multi-Agent Orchestration** | 📄 ADR 0002 — หลังขั้น 1-2 แข็ง |
-| **Automation Engine** | 🔜 `aetox auto` — บอกเป็นไทย → script + schedule |
+| **Interactive Agent** | ✅ ถามผู้ใช้กลางงาน, checklist สด, ความคิดย้อนดูได้, ปุ่ม Stop |
+| **Subagent** | 🔜 ขั้นแรกสู่ทีม agent — ออกแบบเสร็จแล้ว |
+| **ทีม Agent ขนาน** | 🔜 ถัดจาก Subagent |
+| **Multi-Agent Orchestration** | 📄 วิสัยทัศน์ระยะยาว — หลังสองขั้นแรกแข็งแรง |
+| **Automation Engine** | 🔜 บอกเป็นไทย → script + ตั้งเวลารันอัตโนมัติ |
 | **Knowledge Base** | 🔜 Obsidian + codebase + web |
 | **Ecosystem (plugin/marketplace)** | 🔜 หลังจาก core แข็ง |
 
