@@ -540,8 +540,8 @@
 
       <div class="settings-card">
         {#if mcpServers.length > 3}
-          <div class="mset-keyrow">
-            <input class="ctrl key-input" placeholder={t('settings.mcpSearchPlaceholder')} bind:value={mcpQuery} />
+          <div class="card-form">
+            <input class="ctrl" placeholder={t('settings.mcpSearchPlaceholder')} bind:value={mcpQuery} />
           </div>
         {/if}
         {#if mcpServers.length === 0}
@@ -574,41 +574,45 @@
       </div>
 
       <div class="settings-card">
-        <div class="eyebrow">{mcpOriginal ? t('settings.editServer') : t('settings.addServer')}</div>
-        <div class="mset-keyrow">
-          <select class="ctrl" bind:value={mcpKind}>
-            <option value="stdio">stdio</option>
-            <option value="http">http</option>
-          </select>
-          <input class="ctrl" placeholder={t('settings.mcpNamePlaceholder')} bind:value={mcpName} />
-        </div>
-        <div class="mset-keyrow">
+        <div class="card-form">
+          <div class="eyebrow">{mcpOriginal ? t('settings.editServer') : t('settings.addServer')}</div>
+
+          <div class="mset-keyrow">
+            <select class="ctrl mcp-kind" bind:value={mcpKind}>
+              <option value="stdio">stdio</option>
+              <option value="http">http</option>
+            </select>
+            <input class="ctrl key-input" placeholder={t('settings.mcpNamePlaceholder')} bind:value={mcpName} />
+          </div>
+
           {#if mcpKind === 'stdio'}
-            <input class="ctrl key-input" placeholder={t('settings.mcpCommandPlaceholder')} bind:value={mcpCommand} />
+            <input class="ctrl" placeholder={t('settings.mcpCommandPlaceholder')} bind:value={mcpCommand} />
           {:else}
-            <input class="ctrl key-input" placeholder={t('settings.mcpUrlPlaceholder')} bind:value={mcpUrl} />
+            <input class="ctrl" placeholder={t('settings.mcpUrlPlaceholder')} bind:value={mcpUrl} />
           {/if}
-        </div>
-        <div class="mset-keyrow">
+
           {#if mcpKind === 'stdio'}
-            <textarea class="ctrl key-input mcp-lines" rows="2" placeholder={t('settings.mcpEnvPlaceholder')} bind:value={mcpEnvText}></textarea>
+            <textarea class="ctrl mcp-lines" rows="2" placeholder={t('settings.mcpEnvPlaceholder')} bind:value={mcpEnvText}></textarea>
           {:else}
-            <textarea class="ctrl key-input mcp-lines" rows="2" placeholder={t('settings.mcpHeadersPlaceholder')} bind:value={mcpHeadersText}></textarea>
+            <textarea class="ctrl mcp-lines" rows="2" placeholder={t('settings.mcpHeadersPlaceholder')} bind:value={mcpHeadersText}></textarea>
           {/if}
+
+          <div class="mset-keyrow">
+            <button class="ctrl" disabled={mcpBusy !== '' || !mcpFormValid} onclick={saveMCP}>
+              {mcpBusy === 'save' ? t('settings.saving') : (mcpOriginal ? t('settings.save') : t('settings.add'))}
+            </button>
+            {#if mcpOriginal}
+              <button class="ctrl" disabled={mcpBusy !== ''} onclick={resetMCPForm}>{t('settings.cancel')}</button>
+            {/if}
+          </div>
+          {#if mcpError}<div class="mset-error">{mcpError}</div>{/if}
         </div>
-        <div class="mset-keyrow">
-          <button class="ctrl" disabled={mcpBusy !== '' || !mcpFormValid} onclick={saveMCP}>
-            {mcpBusy === 'save' ? t('settings.saving') : (mcpOriginal ? t('settings.save') : t('settings.add'))}
-          </button>
-          {#if mcpOriginal}
-            <button class="ctrl" disabled={mcpBusy !== ''} onclick={resetMCPForm}>{t('settings.cancel')}</button>
-          {/if}
-        </div>
-        {#if mcpError}<div class="mset-error">{mcpError}</div>{/if}
       </div>
 
       <div class="settings-card">
-        <div class="eyebrow">{t('settings.mcpPresets')}</div>
+        <div class="card-form">
+          <div class="eyebrow">{t('settings.mcpPresets')}</div>
+        </div>
         {#each mcpPresets as p (p.name)}
           <div class="set-row">
             <div class="set-txt">

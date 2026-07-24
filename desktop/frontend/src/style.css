@@ -640,6 +640,17 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .settings-page .ctrl { appearance:none; -webkit-appearance:none; background:var(--surface-sunken); border:1px solid var(--border-strong); border-radius:6px; color:var(--text-secondary); font:inherit; font-size:14.5px; padding:5px 8px; cursor:pointer; }
 .settings-page input.ctrl { cursor:text; }
 .settings-page .key-input { flex:1; min-width:0; }
+/* selects share .ctrl's button-like look but need their own affordance, or
+   they read as an unlabeled button (appearance:none strips the native arrow) */
+.settings-page select.ctrl { padding-right:26px; background-repeat:no-repeat; background-position:right 8px center;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M1 1l4 4 4-4' fill='none' stroke='%238b949e' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>"); }
+
+/* a settings-card section that's a form (not a list of .set-row) needs its
+   own padding — .settings-card itself has none, by design, so .set-row can
+   span edge-to-edge with hover backgrounds and divider lines */
+.card-form { padding:16px; display:flex; flex-direction:column; gap:12px; }
+.card-form > input, .card-form > textarea, .card-form > select { width:100%; }
+.card-form + .set-row { border-top:1px solid var(--border-subtle); }
 .set-sub { margin:-14px 0 20px; font-size:15px; }
 
 /* model settings: provider list + detail */
@@ -671,6 +682,7 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .mswitch input:checked + span { background:var(--interactive); border-color:var(--interactive); }
 .mswitch input:checked + span::after { transform:translateX(15px); background:var(--text-on-interactive); }
 .mswitch input:disabled + span { opacity:.5; }
+.mcp-kind { flex:0 0 88px; text-align:center; }
 .insp-foot { padding:12px 14px; border-top:1px solid var(--border-default); }
 .stopbtn {
   width:100%; height:44px; border-radius:10px; font-weight:600; font-size:15.5px;
