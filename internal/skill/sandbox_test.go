@@ -59,6 +59,12 @@ func TestResolveSandboxPathRejectsSymlinkEscape(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 	if err := os.Symlink(outside, filepath.Join(root, "link")); err != nil {
+		// Skipping is fine on a dev machine without Developer Mode. On CI it
+		// is not: a containment test that silently skips means nothing ever
+		// checks the sandbox except the owner's laptop.
+		if os.Getenv("CI") != "" {
+			t.Fatalf("CI cannot create symlinks, so this containment test would not run: %v", err)
+		}
 		t.Skipf("symlinks unavailable (Windows needs Developer Mode): %v", err)
 	}
 
