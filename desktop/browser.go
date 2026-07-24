@@ -170,6 +170,11 @@ func textScript(token string) string {
     var ref=out.length+1;
     el.setAttribute('data-aetox-ref',String(ref));
     var txt=(el.innerText||el.value||el.getAttribute('aria-label')||el.getAttribute('placeholder')||'').trim().replace(/\s+/g,' ').slice(0,80);
+    if(el.tagName==='SELECT'){
+      var op=[];
+      for(var k=0;k<el.options.length&&k<8;k++)op.push(el.options[k].text.trim());
+      txt=((txt?txt+' ':'')+'[options: '+op.join(' | ')+']').slice(0,200);
+    }
     out.push({ref:ref,tag:el.tagName.toLowerCase(),role:el.getAttribute('role')||'',text:txt});
   }
   var imgs=[];
@@ -198,23 +203,46 @@ func clickScript(ref int) string {
 })()`, ref)
 }
 
-// typeScript sets an input/textarea/contenteditable's value via the native
-// setter (so React/Vue-controlled inputs pick it up) and fires input+change.
-func typeScript(ref int, text string) string {
+// typeScript sets an input/textarea/select/contenteditable's value via the
+// native setter (so React/Vue-controlled inputs pick it up) and fires
+// input+change. A SELECT matches the text against option value or label
+// instead of overwriting content. enter additionally presses Enter — synthetic
+// keydown first (skipped requestSubmit if the page preventDefault'ed it), then
+// the form's requestSubmit, because untrusted KeyboardEvents never trigger the
+// browser's own implicit submission.
+func typeScript(ref int, text string, enter bool) string {
 	encoded, _ := json.Marshal(text)
+	enterJS := ""
+	if enter {
+		enterJS = `
+  var ke={key:"Enter",code:"Enter",keyCode:13,which:13,bubbles:true,cancelable:true};
+  var notHandled=el.dispatchEvent(new KeyboardEvent("keydown",ke));
+  el.dispatchEvent(new KeyboardEvent("keyup",ke));
+  if(notHandled&&el.form&&typeof el.form.requestSubmit==="function"){el.form.requestSubmit();}`
+	}
 	return fmt.Sprintf(`(function(){
   var el=document.querySelector('[data-aetox-ref="%d"]');
   if(!el)return;
   el.focus();
-  if(el.tagName==="INPUT"||el.tagName==="TEXTAREA"){
+  var val=%s;
+  if(el.tagName==="SELECT"){
+    var want=val.trim().toLowerCase();
+    for(var i=0;i<el.options.length;i++){
+      var o=el.options[i];
+      if(o.value.toLowerCase()===want||o.text.trim().toLowerCase()===want){
+        Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype,"value").set.call(el,o.value);
+        break;
+      }
+    }
+  } else if(el.tagName==="INPUT"||el.tagName==="TEXTAREA"){
     var proto=el.tagName==="TEXTAREA"?window.HTMLTextAreaElement.prototype:window.HTMLInputElement.prototype;
-    Object.getOwnPropertyDescriptor(proto,"value").set.call(el,%s);
+    Object.getOwnPropertyDescriptor(proto,"value").set.call(el,val);
   } else {
-    el.textContent=%s;
+    el.textContent=val;
   }
   el.dispatchEvent(new Event("input",{bubbles:true}));
-  el.dispatchEvent(new Event("change",{bubbles:true}));
-})()`, ref, encoded, encoded)
+  el.dispatchEvent(new Event("change",{bubbles:true}));%s
+})()`, ref, encoded, enterJS)
 }
 
 // sameOrigin reports whether a and b share a scheme+host — used to check a
@@ -711,9 +739,10 @@ func (a *App) BrowserClickRef(id string, ref int) error {
 	return nil
 }
 
-// BrowserTypeRef sets an input/textarea/contenteditable's value, tagged with
-// ref by the most recent browser_read snapshot (see textScript).
-func (a *App) BrowserTypeRef(id string, ref int, text string) error {
+// BrowserTypeRef sets an input/textarea/select/contenteditable's value,
+// tagged with ref by the most recent browser_read snapshot (see textScript).
+// enter presses Enter afterwards (for forms with no submit button).
+func (a *App) BrowserTypeRef(id string, ref int, text string, enter bool) error {
 	host, err := a.browserHostLazy()
 	if err != nil {
 		return err
@@ -722,6 +751,6 @@ func (a *App) BrowserTypeRef(id string, ref int, text string) error {
 	if t == nil {
 		return fmt.Errorf("no browser tab %q", id)
 	}
-	host.do(func() { t.chromium.Eval(typeScript(ref, text)) })
+	host.do(func() { t.chromium.Eval(typeScript(ref, text, enter)) })
 	return nil
 }

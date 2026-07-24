@@ -521,6 +521,22 @@ func toolCallToArgs(name string, args map[string]any) []string {
 		if raw, ok := args["repo_url"].(string); ok {
 			return []string{strings.TrimSpace(raw)}
 		}
+	case "computer":
+		result := make([]string, 0, 4)
+		if raw, ok := args["action"].(string); ok && strings.TrimSpace(raw) != "" {
+			result = append(result, strings.TrimSpace(raw))
+		}
+		if x, ok := args["x"].(float64); ok {
+			if y, ok := args["y"].(float64); ok {
+				result = append(result, fmt.Sprintf("(%d, %d)", int(x), int(y)))
+			}
+		}
+		for _, key := range []string{"button", "combo", "text"} {
+			if raw, ok := args[key].(string); ok && strings.TrimSpace(raw) != "" {
+				result = append(result, strings.TrimSpace(raw))
+			}
+		}
+		return result
 	}
 	return nil
 }

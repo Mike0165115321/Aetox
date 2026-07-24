@@ -796,6 +796,22 @@ One session, three engine layers fixed; OpenCode/Claude Code are the confirmed r
 
 ---
 
+## 22. Decision — Capability Extension: video_ocr + computer, and the empty-reply nudge (2026-07-24)
+
+**Trigger:** owner positioning — "โมเดลที่อ่านภาพ/วิดีโอไม่ได้ มาใช้ผ่านเราแล้วทำได้ เพราะสถาปัตยกรรมขยายศักยภาพให้โมเดล" — plus a live failure: ornith:9b returned an empty reply after a skill payload and the UI showed a bare `(empty response)`.
+
+**Shipped:**
+- Empty-reply recovery ([internal/cognitive/agent.go](internal/cognitive/agent.go)): a blank model reply triggers ONE nudge. In the tool loop the nudge stays **inside the loop with tools intact** — a model missing a capability is told to reach for a tool that covers it, never to refuse; wording is tools-first. Only a second blank reply falls back to the fixed bilingual "เกินขีดจำกัดของโมเดลปัจจุบัน" line. Streaming path returns `streamed=false` on recovery so the UI renders the reply. Language handling is model-mirrored (reply in the user's language), no i18n table.
+- [internal/skill/video_ocr.go](internal/skill/video_ocr.go) — ffmpeg samples a frame every N seconds (default 5, cap 120 frames), each frame through the existing `runTesseract`, output as `[m:ss] text` with consecutive duplicates collapsed. Live test synthesizes a two-scene video and asserts text, order, timestamps, dedupe; Thai OCR verified exact on clean rendered text.
+- [internal/skill/computer.go](internal/skill/computer.go) (+ `_windows`/`_other`) — real mouse/keyboard/screen: `screen_info`, `mouse_move`, `click`, `type` (KEYEVENTF_UNICODE, Thai-safe), `key` combos, `screenshot` into the sandbox with an explicit "read it with image_ocr" handoff. Win32 SendInput per desktop/browser.go's LazyDLL pattern; screenshot shells to PowerShell `CopyFromScreen` instead of GDI syscalls. Non-Windows returns a clear unsupported error.
+- Safety: `computer` is RiskHigh with `EffectTouchOutsideWorkspace` **and** `EffectExecuteShell` on purpose — desktop control is shell-grade, so it prompts even in full-access mode ([internal/safety/safety.go](internal/safety/safety.go)); approval line shows action + coords via `toolCallToArgs`.
+- The closed loop this buys: `computer screenshot` → `image_ocr` → decide → `computer click/type` — a vision-less local model can see and operate the desktop. Sold in [README.md](README.md) ("ขยายศักยภาพให้โมเดล").
+- Browser form-filling completed (owner: "คลิกในเบราว์เซอร์แม่นยำ กรอกแทนได้หมด"): `browser_type` now handles `<select>` (option matched by value/label via the native setter — previously the else-branch would have destroyed the options with textContent) and takes `enter=true` (synthetic keydown, then `requestSubmit` only if the page didn't preventDefault — untrusted key events never trigger implicit submission); `browser_read` lists each select's `[options: ...]`. JS logic proven by executing the generated script against a stub DOM (select match, no-clobber on miss, no double-submit). RTK-for-web idea assessed and rejected: rtk's filters are per-CLI-format ([internal/rtk/rtk.go](internal/rtk/rtk.go) pipeFilters), web compression already lives in web_fetch.
+
+**Status:** `Done 2026-07-24.` Live-verified on the dev box: cursor round-trip, real-screen screenshot → OCR read actual VS Code content. Not built, deliberately: scene-detection sampling and audio transcription for video_ocr (`ponytail:` comments mark the ceilings), per-action risk granularity for `computer`.
+
+---
+
 ## Validation
 
 1. **Claim traceability:** every claim above cites a file or an existing project doc; the two `Unverified`/`Inferred, Verify first: Yes` items are marked as such, not stated as fact.

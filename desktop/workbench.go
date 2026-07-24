@@ -321,12 +321,13 @@ func (*browserTypeSkill) Description() string {
 
 func (*browserTypeSkill) ToolDefinition() model.ToolDefinition {
 	return toolDef("browser_type",
-		"Type text into an input/textarea/contenteditable element on the page currently open in the workbench browser. ref is one of the [n] numbers browser_read returns. Does not press Enter or submit — click a submit button via browser_click if needed.",
+		"Type text into an input/textarea/select/contenteditable element on the page currently open in the workbench browser. ref is one of the [n] numbers browser_read returns. For a select element, text must match one of its [options: ...] shown by browser_read. Set enter=true to press Enter/submit afterwards (for search boxes without a button); otherwise click a submit button via browser_click.",
 		map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"ref":  map[string]any{"type": "integer", "description": "Element ref number from browser_read's output"},
-				"text": map[string]any{"type": "string", "description": "Text to type into the element"},
+				"ref":   map[string]any{"type": "integer", "description": "Element ref number from browser_read's output"},
+				"text":  map[string]any{"type": "string", "description": "Text to type, or the option to choose for a select element"},
+				"enter": map[string]any{"type": "boolean", "description": "Press Enter after typing (submits most search/login forms)"},
 			},
 			"required": []string{"ref", "text"},
 		})
@@ -335,29 +336,37 @@ func (*browserTypeSkill) ToolDefinition() model.ToolDefinition {
 func (s *browserTypeSkill) ExecuteTool(_ context.Context, args map[string]any) (skill.Output, error) {
 	ref, _ := args["ref"].(float64)
 	text, _ := args["text"].(string)
-	return s.typeText(int(ref), text)
+	enter, _ := args["enter"].(bool)
+	return s.typeText(int(ref), text, enter)
 }
 
 func (s *browserTypeSkill) Execute(_ context.Context, input skill.Input) (skill.Output, error) {
 	ref, _ := input["ref"].(float64)
 	text, _ := input["text"].(string)
-	return s.typeText(int(ref), text)
+	enter, _ := input["enter"].(bool)
+	return s.typeText(int(ref), text, enter)
 }
 
-func (s *browserTypeSkill) typeText(ref int, text string) (skill.Output, error) {
+func (s *browserTypeSkill) typeText(ref int, text string, enter bool) (skill.Output, error) {
 	start := time.Now()
 	out := skill.Output{Name: "browser_type", Command: fmt.Sprintf("browser_type %d", ref)}
 	id, err := s.app.workbenchLastTabID()
 	if err == nil {
-		err = s.app.BrowserTypeRef(id, ref, text)
+		err = s.app.BrowserTypeRef(id, ref, text, enter)
 	}
 	out.DurationMs = time.Since(start).Milliseconds()
 	if err != nil {
 		out.Content, out.Stderr = "พิมพ์ไม่สำเร็จ: "+err.Error(), err.Error()
 		return out, err
 	}
+	if enter {
+		time.Sleep(300 * time.Millisecond) // let Enter-driven navigation settle before the next browser_read
+	}
 	out.Success = true
 	out.Content = fmt.Sprintf("พิมพ์ลง ref %d แล้ว", ref)
+	if enter {
+		out.Content = fmt.Sprintf("พิมพ์ลง ref %d และกด Enter แล้ว ใช้ browser_read เพื่อดูผลลัพธ์", ref)
+	}
 	out.RawOutput = out.Content
 	return out, nil
 }

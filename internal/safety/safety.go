@@ -225,6 +225,16 @@ func AssessCommand(skillName string, args []string) Assessment {
 				Reason:    "plugin install can write files outside the repository",
 			}
 		}
+		if skillName == "computer" {
+			// EffectExecuteShell included on purpose: desktop control is
+			// shell-grade danger, so it prompts even in full-access mode.
+			return Assessment{
+				SkillName: "computer",
+				Risk:      RiskHigh,
+				Effects:   []Effect{EffectTouchOutsideWorkspace, EffectExecuteShell},
+				Reason:    "computer controls the real mouse, keyboard, and screen — it can act on anything on the desktop",
+			}
+		}
 		// All github_* skills are read-only API calls (plugin_install, the
 		// one that writes, is handled above this branch).
 		if strings.HasPrefix(skillName, "github_") {

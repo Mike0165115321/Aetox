@@ -128,7 +128,7 @@ func TestTypeScriptEscapesTextSafely(t *testing.T) {
 		``,
 	}
 	for _, text := range cases {
-		js := typeScript(7, text)
+		js := typeScript(7, text, false)
 		wantEncoded, err := json.Marshal(text)
 		if err != nil {
 			t.Fatalf("json.Marshal(%q): %v", text, err)
@@ -139,5 +139,29 @@ func TestTypeScriptEscapesTextSafely(t *testing.T) {
 		if !strings.Contains(js, `[data-aetox-ref="7"]`) {
 			t.Errorf("typeScript(7, %q) = %q, want it to target [data-aetox-ref=\"7\"]", text, js)
 		}
+	}
+}
+
+func TestTypeScriptSelectAndEnterVariants(t *testing.T) {
+	js := typeScript(3, "Thailand", false)
+	if !strings.Contains(js, `el.tagName==="SELECT"`) || !strings.Contains(js, "HTMLSelectElement") {
+		t.Errorf("typeScript must handle select elements via the native value setter, got: %s", js)
+	}
+	if strings.Contains(js, "requestSubmit") {
+		t.Errorf("enter=false must not emit the Enter/submit snippet, got: %s", js)
+	}
+
+	js = typeScript(3, "query", true)
+	for _, want := range []string{`new KeyboardEvent("keydown"`, "requestSubmit", "notHandled"} {
+		if !strings.Contains(js, want) {
+			t.Errorf("typeScript enter=true missing %q, got: %s", want, js)
+		}
+	}
+}
+
+func TestTextScriptListsSelectOptions(t *testing.T) {
+	js := textScript("tok")
+	if !strings.Contains(js, "[options: ") {
+		t.Errorf("textScript should surface select options so the model knows what browser_type can choose, got: %s", js)
 	}
 }

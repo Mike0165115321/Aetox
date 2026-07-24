@@ -30,6 +30,8 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 		&deleteSkill{root: opts.SandboxRoot},
 		&pluginInstallSkill{},
 		&imageOCRSkill{root: opts.SandboxRoot},
+		&videoOCRSkill{root: opts.SandboxRoot},
+		&computerSkill{root: opts.SandboxRoot},
 		&webFetchSkill{},
 		&webSearchSkill{},
 		&githubSearchSkill{},
