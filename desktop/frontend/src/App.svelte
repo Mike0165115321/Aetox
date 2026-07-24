@@ -4,6 +4,7 @@
   import Chat from './lib/Chat.svelte'
   import FileEditor from './lib/FileEditor.svelte'
   import Settings from './lib/Settings.svelte'
+  import Onboarding from './lib/Onboarding.svelte'
   import Workbench from './lib/workbench/Workbench.svelte'
   import { onMount } from 'svelte'
   import {
@@ -266,3 +267,5 @@
     <Settings onClose={() => setActiveView('chat')} />
   </div>
 {/if}
+
+<Onboarding />

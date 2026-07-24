@@ -688,6 +688,24 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .mono-dim { font-family:var(--mono); font-size:12.5px; color:var(--text-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .skill-result { margin:0; padding:10px 12px; border-radius:8px; background:var(--surface-sunken); border:1px solid var(--border-subtle); color:var(--text-muted); font-family:var(--mono); font-size:13px; white-space:pre-wrap; word-break:break-word; }
 .settings-page .ctrl.danger { color:var(--status-danger); border-color:var(--status-danger); }
+
+/* Onboarding wizard */
+.onboard-overlay { position:fixed; inset:0; z-index:60; background:var(--surface-app); display:flex; align-items:center; justify-content:center; }
+.onboard-card { width:min(560px, calc(100vw - 48px)); border:1px solid var(--border-subtle); border-radius:16px; background:var(--surface-panel); padding:32px 36px; display:flex; flex-direction:column; gap:14px; position:relative; }
+.onboard-brand { font-weight:800; font-size:15px; letter-spacing:.14em; text-transform:uppercase; background:linear-gradient(90deg,var(--brand-from),var(--brand-to)); -webkit-background-clip:text; background-clip:text; color:transparent; }
+.onboard-steps { position:absolute; top:34px; right:36px; color:var(--text-dim); font-size:13.5px; }
+.onboard-card h2 { margin:4px 0 0; font-size:24px; }
+.onboard-card .ctrl { appearance:none; -webkit-appearance:none; background:var(--surface-sunken); border:1px solid var(--border-strong); border-radius:6px; color:var(--text-secondary); font:inherit; font-size:14.5px; padding:7px 10px; cursor:pointer; }
+.onboard-card input.ctrl { cursor:text; }
+.onboard-field { display:flex; flex-direction:column; gap:7px; }
+.onboard-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:10px; }
+.onboard-actions .primary { background:linear-gradient(180deg,var(--interactive-bright),var(--interactive)); color:var(--text-on-interactive); border-color:transparent; font-weight:600; padding:7px 18px; }
+.onboard-choice-list { display:flex; flex-direction:column; gap:8px; }
+.onboard-choice { text-align:left; padding:11px 14px; border:1px solid var(--border-subtle); border-radius:10px; background:var(--surface-sunken); cursor:pointer; color:inherit; font:inherit; }
+.onboard-choice:hover { background:var(--surface-row-hover); }
+.onboard-choice.selected { border-color:var(--interactive); background:var(--surface-selected); }
+.onboard-choice .t { font-weight:600; }
+.onboard-choice .d { color:var(--text-muted); font-size:13.5px; margin-top:2px; }
 .insp-foot { padding:12px 14px; border-top:1px solid var(--border-default); }
 .stopbtn {
   width:100%; height:44px; border-radius:10px; font-weight:600; font-size:15.5px;
