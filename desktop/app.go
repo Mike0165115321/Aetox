@@ -19,6 +19,7 @@ import (
 
 	aetoxapp "github.com/Mike0165115321/Aetox/internal/app"
 	"github.com/Mike0165115321/Aetox/internal/cognitive"
+	"github.com/Mike0165115321/Aetox/internal/command"
 	"github.com/Mike0165115321/Aetox/internal/config"
 	"github.com/Mike0165115321/Aetox/internal/debuglog"
 	"github.com/Mike0165115321/Aetox/internal/mcp"
@@ -566,6 +567,12 @@ func (a *App) focusNone() {
 func (a *App) SendMessage(text string) (string, error) {
 	if a.chat == nil {
 		return "", fmt.Errorf("aetox core not ready: %s", a.modelStatus)
+	}
+	// Custom slash commands (<DataRoot>/commands/<name>.md) expand into their
+	// prompt body before the engine sees the text; unknown "/..." passes
+	// through to the model unchanged, so nothing regresses.
+	if expanded, ok := command.ExpandCustom(text); ok {
+		text = expanded
 	}
 	ctx, cancel := context.WithCancel(a.ctx)
 	a.turnMu.Lock()

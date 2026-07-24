@@ -237,4 +237,10 @@ export const en: Record<keyof typeof th, string> = {
   'settings.usagePrompt': 'Prompt',
   'settings.usageCompletion': 'Output',
   'settings.usageCalls': 'Calls',
+
+  'settings.commands': 'Commands',
+  'settings.commandsDesc': 'Custom slash commands — a file commands/<name>.md becomes /<name> in chat; $ARGUMENTS in the file is replaced by whatever follows the command',
+  'settings.commandsList': 'YOUR COMMANDS',
+  'settings.noCommands': 'No custom command yet — open the folder and drop a .md file in',
+  'settings.openFolder': 'Open folder',
 }

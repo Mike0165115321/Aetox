@@ -236,4 +236,10 @@ export const th = {
   'settings.usagePrompt': 'Prompt',
   'settings.usageCompletion': 'Output',
   'settings.usageCalls': 'ครั้ง',
+
+  'settings.commands': 'คำสั่ง',
+  'settings.commandsDesc': 'คำสั่ง slash ของคุณเอง — ไฟล์ commands/<ชื่อ>.md จะกลายเป็น /<ชื่อ> ในแชท; $ARGUMENTS ในไฟล์จะถูกแทนด้วยข้อความหลังคำสั่ง',
+  'settings.commandsList': 'คำสั่งของคุณ',
+  'settings.noCommands': 'ยังไม่มีคำสั่ง — เปิดโฟลเดอร์แล้ววางไฟล์ .md ลงไป',
+  'settings.openFolder': 'เปิดโฟลเดอร์',
 }

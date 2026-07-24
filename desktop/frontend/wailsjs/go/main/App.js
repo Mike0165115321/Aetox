@@ -106,6 +106,10 @@ export function ListAllSessions() {
   return window['go']['main']['App']['ListAllSessions']();
 }
 
+export function ListCustomCommands() {
+  return window['go']['main']['App']['ListCustomCommands']();
+}
+
 export function ListExternalSkills() {
   return window['go']['main']['App']['ListExternalSkills']();
 }
@@ -144,6 +148,10 @@ export function ModelStatus() {
 
 export function NewSession() {
   return window['go']['main']['App']['NewSession']();
+}
+
+export function OpenCommandsFolder() {
+  return window['go']['main']['App']['OpenCommandsFolder']();
 }
 
 export function OpenProjectFolder() {

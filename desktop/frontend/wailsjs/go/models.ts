@@ -1,3 +1,24 @@
+export namespace command {
+	
+	export class CustomCommand {
+	    name: string;
+	    description: string;
+	    path: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new CustomCommand(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.description = source["description"];
+	        this.path = source["path"];
+	    }
+	}
+
+}
+
 export namespace config {
 	
 	export class MCPServerConfig {
