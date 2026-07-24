@@ -1,11 +1,59 @@
 package main
 
 import (
+	"context"
 	"testing"
 
 	"github.com/Mike0165115321/Aetox/internal/config"
 	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mike0165115321/Aetox/internal/think"
+	"github.com/Mike0165115321/Aetox/internal/turn"
 )
+
+// usageProvider is a minimal model.Provider whose responses carry usage.
+type usageProvider struct{}
+
+func (usageProvider) Name() string { return "usage-fake" }
+func (usageProvider) Complete(_ context.Context, _ model.Request) (model.Response, error) {
+	return model.Response{Text: "2", Usage: &model.Usage{PromptTokens: 42, CompletionTokens: 1}}, nil
+}
+
+// End-to-end through the real wiring, no UI: applyConfig registers the usage
+// reporter on the agent; a model response with usage must land in SQLite and
+// come back aggregated from UsageStats. This is the chain the Settings page
+// shows.
+func TestUsagePipelineEndToEnd(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("APPDATA", base)
+	t.Setenv("LOCALAPPDATA", base)
+	a := &App{cfg: config.Config{ModelProvider: "noop", ModelName: "usage-fake-model", SandboxRoot: t.TempDir()}, dbDir: t.TempDir()}
+	t.Cleanup(func() {
+		if a.db != nil {
+			_ = a.db.Close()
+		}
+	})
+
+	a.applyConfig(a.cfg) // wires SetUsageReporter(a.recordTokenUsage)
+	if a.agent == nil {
+		t.Fatal("agent not built")
+	}
+	// Swap in a provider that reports usage (noop reports none), keeping the
+	// reporter wiring applyConfig installed.
+	a.agent.ReplaceModel(usageProvider{}, "usage-fake-model")
+
+	if _, err := a.agent.Respond(context.Background(), "1+1?", turn.TurnOptions{ThinkLevel: think.LevelLow}); err != nil {
+		t.Fatalf("Respond: %v", err)
+	}
+
+	stats, err := a.UsageStats()
+	if err != nil {
+		t.Fatalf("UsageStats: %v", err)
+	}
+	if len(stats.Today) != 1 || stats.Today[0].Model != "usage-fake-model" ||
+		stats.Today[0].PromptTokens != 42 || stats.Today[0].CompletionTokens != 1 || stats.Today[0].Calls != 1 {
+		t.Fatalf("pipeline result = %+v, want one usage-fake-model row 42/1", stats.Today)
+	}
+}
 
 func TestRecordAndAggregateTokenUsage(t *testing.T) {
 	a := &App{
