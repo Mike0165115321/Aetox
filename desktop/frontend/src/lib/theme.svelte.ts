@@ -4,6 +4,7 @@
 // adding a :root[data-theme="x"] block in theme.css and a row here.
 
 export type ThemeName =
+  | 'aetox'
   | 'catppuccin-mocha' | 'catppuccin-latte'
   | 'nord' | 'dracula'
   | 'rose-pine' | 'rose-pine-dawn'
@@ -13,6 +14,7 @@ export type ThemeName =
   | 'solarized-light'
 
 export const THEMES: { value: ThemeName; label: string }[] = [
+  { value: 'aetox', label: 'Aetox' },
   { value: 'catppuccin-mocha', label: 'Catppuccin Mocha' },
   { value: 'catppuccin-latte', label: 'Catppuccin Latte' },
   { value: 'nord', label: 'Nord' },
@@ -28,7 +30,7 @@ export const THEMES: { value: ThemeName; label: string }[] = [
   { value: 'solarized-light', label: 'Solarized Light' },
 ]
 
-const DEFAULT_DARK: ThemeName = 'catppuccin-mocha'
+const DEFAULT_DARK: ThemeName = 'nord'
 
 const STORAGE_KEY = 'aetox-theme'
 const VALID_NAMES = new Set(THEMES.map((t) => t.value))

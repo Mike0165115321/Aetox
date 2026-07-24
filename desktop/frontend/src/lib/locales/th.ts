@@ -133,7 +133,7 @@ export const th = {
   'settings.approvalDesc': 'เอเจนต์ทำอะไรได้เองแค่ไหนก่อนต้องถามคุณ',
 
   'settings.themeTitle': 'ธีม',
-  'settings.themeDesc': 'สลับโหมดมืด/สว่างของแอป',
+  'settings.themeDesc': 'เลือกธีมสีของแอป',
   'settings.uiFontTitle': 'ฟอนต์',
   'settings.uiFontDesc': 'ฟอนต์ตัวอักษรทั้งแอป',
   'settings.uiFont.aetox': 'Aetox (Inter + Noto Sans Thai)',

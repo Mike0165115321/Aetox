@@ -1,9 +1,13 @@
 /* Tier 2 — semantic tokens. Every component and style.css rule references ONLY
    these roles, never a raw color. Swapping the values under a [data-theme] block
-   re-skins the whole app. Dark is the default (:root); light overrides.
-   theme.svelte.ts sets data-theme on <html>. */
+   re-skins the whole app. theme.svelte.ts sets data-theme on <html>.
+   Bare :root doubles as [data-theme="aetox"] — Aetox's own brand palette,
+   selectable in Settings like any other theme (DEFAULT_DARK in theme.svelte.ts
+   picks which theme fresh installs open with). The bare-:root duplication also
+   means these values still apply pre-hydration, before initTheme() stamps the
+   attribute, so there's no unthemed flash. */
 
-:root {
+:root, :root[data-theme="aetox"] {
   /* surfaces */
   --surface-app:var(--c-ink-950);
   --surface-sunken:var(--c-ink-925);

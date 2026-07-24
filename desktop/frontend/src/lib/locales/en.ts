@@ -134,7 +134,7 @@ export const en: Record<keyof typeof th, string> = {
   'settings.approvalDesc': 'How much the agent can do without asking first',
 
   'settings.themeTitle': 'Theme',
-  'settings.themeDesc': 'Switch the app’s dark/light mode',
+  'settings.themeDesc': 'Choose the app’s color theme',
   'settings.uiFontTitle': 'Font',
   'settings.uiFontDesc': 'The UI font used across the whole app',
   'settings.uiFont.aetox': 'Aetox (Inter + Noto Sans Thai)',
