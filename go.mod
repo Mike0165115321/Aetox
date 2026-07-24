@@ -6,6 +6,12 @@ go 1.25.0
 // See third_party/conpty/conpty.go for the one-flag fix and full explanation.
 replace github.com/UserExistsError/conpty => ./third_party/conpty
 
+// Local patch — go-webview2's errorCallback always os.Exit(1)s, so any single
+// embedded browser tab's transient WebView2 failure crashes the whole app.
+// The fork makes a caller-installed SetErrorCallback own the recovery. See
+// third_party/go-webview2 AETOX PATCH markers and ARCHITECTURE.md §26.
+replace github.com/wailsapp/go-webview2 => ./third_party/go-webview2
+
 require golang.org/x/term v0.43.0
 
 require (
