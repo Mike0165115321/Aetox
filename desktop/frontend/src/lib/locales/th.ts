@@ -114,6 +114,8 @@ export const th = {
   'fileEditor.saving': 'กำลังบันทึก…',
   'fileEditor.save': 'บันทึก (Ctrl+S)',
   'fileEditor.saved': 'บันทึกแล้ว',
+  'fileEditor.preview': 'พรีวิว',
+  'fileEditor.source': 'ซอร์ส',
 
   'settings.backToApp': '← กลับไปที่แอป',
   'settings.searchPlaceholder': 'ค้นหาการตั้งค่า…',

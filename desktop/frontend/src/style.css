@@ -276,6 +276,8 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .fe-error { color:var(--status-danger); font-family:var(--sans); font-size:14.5px; }
 .fe-head .ctrl { appearance:none; background:var(--surface-sunken); border:1px solid var(--border-strong); border-radius:6px; color:var(--text-secondary); font-family:var(--sans); font-size:14.5px; padding:4px 10px; cursor:pointer; }
 .fe-head .ctrl:disabled { opacity:.5; cursor:default; }
+.fe-hidden { display:none !important; }
+.fe-preview { flex:1; min-height:0; overflow-y:auto; padding:20px 28px; max-width:860px; }
 .editor-mount { flex:1; min-height:0; position:relative; }
 /* .chat is the scroll container — full main width, so its scrollbar sits flush
    against the window edge. .chat-inner carries the centered reading column;

@@ -115,6 +115,8 @@ export const en: Record<keyof typeof th, string> = {
   'fileEditor.saving': 'Saving…',
   'fileEditor.save': 'Save (Ctrl+S)',
   'fileEditor.saved': 'Saved',
+  'fileEditor.preview': 'Preview',
+  'fileEditor.source': 'Source',
 
   'settings.backToApp': '← Back to app',
   'settings.searchPlaceholder': 'Search settings…',

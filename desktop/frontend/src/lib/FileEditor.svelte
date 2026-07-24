@@ -7,6 +7,8 @@
   import { editorTheme, ensureEditorThemesRegistered } from './editorTheme.svelte'
   import { theme } from './theme.svelte'
   import { detectLanguage } from './monacoSetup'
+  import { renderMarkdown } from './markdown'
+  import { openUrlInWorkbench } from './stores/workbench.svelte'
 
   // 'auto' follows the app's named UI theme; any other choice is a manual override.
   const monacoTheme = $derived(editorTheme.choice === 'auto' ? theme.name : editorTheme.choice)
@@ -23,6 +25,23 @@
   let errorMsg = $state('')
 
   const dirty = $derived(draft !== base)
+
+  // Markdown files open in a rendered view (same renderer as chat); one click
+  // flips to the editor. The Monaco mount stays alive underneath (CSS-hidden)
+  // so toggling never re-runs the editor lifecycle.
+  const isMarkdown = /\.(md|markdown)$/i.test(path)
+  // svelte-ignore state_referenced_locally
+  let preview = $state(isMarkdown)
+
+  // Links in the rendered view must not navigate the app's webview away —
+  // open them in a workbench browser tab instead (same rule as chat).
+  function onPreviewClick(e: MouseEvent) {
+    const a = (e.target as HTMLElement).closest('a')
+    const href = a?.getAttribute('href')
+    if (!href || !/^https?:\/\//i.test(href)) return
+    e.preventDefault()
+    openUrlInWorkbench(href)
+  }
 
   let container = $state<HTMLDivElement>()
   let editor: Monaco.editor.IStandaloneCodeEditor | undefined
@@ -90,9 +109,18 @@
     {#if dirty}<span class="fe-dirty">●</span>{/if}
     <span class="spacer"></span>
     {#if errorMsg}<span class="fe-error">{errorMsg}</span>{/if}
+    {#if isMarkdown}
+      <button class="ctrl" onclick={() => (preview = !preview)}>
+        {preview ? t('fileEditor.source') : t('fileEditor.preview')}
+      </button>
+    {/if}
     <button class="ctrl" disabled={!dirty || saving} onclick={save}>
       {saving ? t('fileEditor.saving') : dirty ? t('fileEditor.save') : t('fileEditor.saved')}
     </button>
   </div>
-  <div class="editor-mount" bind:this={container}></div>
+  <div class="editor-mount" class:fe-hidden={isMarkdown && preview} bind:this={container}></div>
+  {#if isMarkdown && preview}
+    <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+    <div class="fe-preview markdown-body" onclick={onPreviewClick}>{@html renderMarkdown(draft)}</div>
+  {/if}
 </div>
