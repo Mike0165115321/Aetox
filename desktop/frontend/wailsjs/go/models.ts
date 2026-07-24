@@ -288,6 +288,58 @@ export namespace main {
 	        this.icon = source["icon"];
 	    }
 	}
+	export class UsageRow {
+	    model: string;
+	    promptTokens: number;
+	    completionTokens: number;
+	    calls: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new UsageRow(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.model = source["model"];
+	        this.promptTokens = source["promptTokens"];
+	        this.completionTokens = source["completionTokens"];
+	        this.calls = source["calls"];
+	    }
+	}
+	export class UsageStats {
+	    today: UsageRow[];
+	    week: UsageRow[];
+	    all: UsageRow[];
+	
+	    static createFrom(source: any = {}) {
+	        return new UsageStats(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.today = this.convertValues(source["today"], UsageRow);
+	        this.week = this.convertValues(source["week"], UsageRow);
+	        this.all = this.convertValues(source["all"], UsageRow);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 
 }
 

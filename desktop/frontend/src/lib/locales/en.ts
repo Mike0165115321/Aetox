@@ -226,4 +226,15 @@ export const en: Record<keyof typeof th, string> = {
   'onboard.skip': 'Skip',
   'onboard.saving': 'Saving…',
   'onboard.start': 'Start using Aetox',
+
+  'settings.usage': 'Usage stats',
+  'settings.usageDesc': 'Token usage recorded per model response on this machine — nothing is sent anywhere',
+  'settings.usageToday': 'TODAY',
+  'settings.usageWeek': 'LAST 7 DAYS',
+  'settings.usageAll': 'ALL TIME',
+  'settings.usageEmpty': 'No usage recorded yet',
+  'settings.usageModel': 'Model',
+  'settings.usagePrompt': 'Prompt',
+  'settings.usageCompletion': 'Output',
+  'settings.usageCalls': 'Calls',
 }

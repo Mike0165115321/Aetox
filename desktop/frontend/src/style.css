@@ -689,6 +689,11 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .skill-result { margin:0; padding:10px 12px; border-radius:8px; background:var(--surface-sunken); border:1px solid var(--border-subtle); color:var(--text-muted); font-family:var(--mono); font-size:13px; white-space:pre-wrap; word-break:break-word; }
 .settings-page .ctrl.danger { color:var(--status-danger); border-color:var(--status-danger); }
 
+/* Usage stats page */
+.usage-head { color:var(--text-dim); font-size:13px; letter-spacing:.05em; text-transform:uppercase; }
+.u-model { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:var(--mono); font-size:14px; }
+.u-num { flex:0 0 110px; text-align:right; font-family:var(--mono); font-size:14px; }
+
 /* Onboarding wizard */
 .onboard-overlay { position:fixed; inset:0; z-index:60; background:var(--surface-app); display:flex; align-items:center; justify-content:center; }
 .onboard-card { width:min(560px, calc(100vw - 48px)); border:1px solid var(--border-subtle); border-radius:16px; background:var(--surface-panel); padding:32px 36px; display:flex; flex-direction:column; gap:14px; position:relative; }

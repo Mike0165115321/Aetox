@@ -952,6 +952,9 @@ func (a *App) applyConfig(cfg config.Config) {
 	a.cfg = cfg
 	a.modelStatus = status
 	a.registry = registry
+	if a.agent != nil {
+		a.agent.SetUsageReporter(a.recordTokenUsage)
+	}
 	// A re-bootstrap (model/provider switch) creates a fresh agent — replay the
 	// current session so the conversation's memory survives the switch.
 	if a.agent != nil && len(a.transcript) > 0 {

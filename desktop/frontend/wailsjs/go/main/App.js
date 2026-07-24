@@ -282,6 +282,10 @@ export function ToggleMCPServer(arg1, arg2) {
   return window['go']['main']['App']['ToggleMCPServer'](arg1, arg2);
 }
 
+export function UsageStats() {
+  return window['go']['main']['App']['UsageStats']();
+}
+
 export function WriteFile(arg1, arg2) {
   return window['go']['main']['App']['WriteFile'](arg1, arg2);
 }

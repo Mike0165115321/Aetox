@@ -144,4 +144,6 @@ export function TestMCPServer(arg1:string):Promise<main.MCPServerInfo>;
 
 export function ToggleMCPServer(arg1:string,arg2:boolean):Promise<void>;
 
+export function UsageStats():Promise<main.UsageStats>;
+
 export function WriteFile(arg1:string,arg2:string):Promise<void>;

@@ -13,6 +13,7 @@
     ListModelsForProvider, ProviderBaseURL,
     ListMCPServers, SaveMCPServer, RemoveMCPServer, TestMCPServer, ToggleMCPServer,
     ListExternalSkills, InstallSkillFromGitHub, RemoveExternalSkill, RefreshSkills,
+    UsageStats,
   } from '../../wailsjs/go/main/App'
   import { config } from '../../wailsjs/go/models'
   import { cockpit, switchProvider, switchModel, submitAPIKey, switchApprovalMode } from './stores/cockpit.svelte'
@@ -319,6 +320,26 @@
     await loadSkills()
   })
 
+  // ---------- Usage stats ----------
+  type UsageRow = { model: string; promptTokens: number; completionTokens: number; calls: number }
+  let usage = $state<{ today: UsageRow[]; week: UsageRow[]; all: UsageRow[] } | null>(null)
+  let usageError = $state('')
+
+  async function loadUsage() {
+    usageError = ''
+    try {
+      usage = await UsageStats()
+    } catch (err) {
+      usageError = String(err)
+    }
+  }
+
+  const fmtTokens = (n: number) => n.toLocaleString('en-US')
+
+  $effect(() => {
+    if (active === 'usage') void loadUsage()
+  })
+
   // ---------- Nav ----------
   const sections = $derived([
     { group: t('settings.groupPersonal'), items: [
@@ -331,6 +352,7 @@
     { group: t('settings.groupTools'), items: [
       { id: 'skills', label: t('settings.skills'), icon: '🧩' },
       { id: 'mcp', label: t('settings.mcpServers'), icon: '🔌' },
+      { id: 'usage', label: t('settings.usage'), icon: '📊' },
     ]},
   ])
 
@@ -635,6 +657,38 @@
           {#if skillError}<div class="mset-error">{skillError}</div>{/if}
         </div>
       </div>
+    {:else if active === 'usage'}
+      <h2>{t('settings.usage')}</h2>
+      <p class="muted set-sub">{t('settings.usageDesc')}</p>
+
+      {#if usageError}<div class="mset-error">{usageError}</div>{/if}
+      {#each [
+        { title: t('settings.usageToday'), rows: usage?.today ?? [] },
+        { title: t('settings.usageWeek'), rows: usage?.week ?? [] },
+        { title: t('settings.usageAll'), rows: usage?.all ?? [] },
+      ] as period}
+        <div class="settings-card">
+          <div class="card-form"><div class="eyebrow">{period.title}</div></div>
+          {#if period.rows.length === 0}
+            <div class="set-row"><div class="muted">{t('settings.usageEmpty')}</div></div>
+          {:else}
+            <div class="set-row usage-head">
+              <div class="u-model">{t('settings.usageModel')}</div>
+              <div class="u-num">{t('settings.usagePrompt')}</div>
+              <div class="u-num">{t('settings.usageCompletion')}</div>
+              <div class="u-num">{t('settings.usageCalls')}</div>
+            </div>
+            {#each period.rows as r (r.model)}
+              <div class="set-row">
+                <div class="u-model">{r.model}</div>
+                <div class="u-num">{fmtTokens(r.promptTokens)}</div>
+                <div class="u-num">{fmtTokens(r.completionTokens)}</div>
+                <div class="u-num">{fmtTokens(r.calls)}</div>
+              </div>
+            {/each}
+          {/if}
+        </div>
+      {/each}
     {:else if active === 'mcp'}
       <h2>{t('settings.mcpServers')}</h2>
       <p class="muted set-sub">{t('settings.mcpDesc')}</p>

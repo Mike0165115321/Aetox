@@ -79,7 +79,30 @@ type Agent struct {
 	model        string
 	context      *memory.Context
 	lastUsage    model.Usage
+	onUsage      func(model.Usage) // observer for every API response's usage; nil = off
 	maxToolCalls int
+}
+
+// SetUsageReporter registers fn to receive every model response's token
+// usage as it arrives (including each round of a tool loop) — the hook the
+// desktop layer uses to persist usage stats. Pass nil to disable.
+func (a *Agent) SetUsageReporter(fn func(model.Usage)) {
+	if a == nil {
+		return
+	}
+	a.onUsage = fn
+}
+
+// recordUsage is the one place a response's usage is taken in: it keeps
+// LastUsage's per-call semantics and fans out to the reporter.
+func (a *Agent) recordUsage(u *model.Usage) {
+	if u == nil {
+		return
+	}
+	a.lastUsage = *u
+	if a.onUsage != nil && (u.PromptTokens > 0 || u.CompletionTokens > 0) {
+		a.onUsage(*u)
+	}
 }
 
 type AgentConfig struct {
@@ -154,9 +177,7 @@ func (a *Agent) RespondWithTools(
 			}
 			return "", false, err
 		}
-		if response.Usage != nil {
-			a.lastUsage = *response.Usage
-		}
+		a.recordUsage(response.Usage)
 
 		content := strings.TrimSpace(response.Text)
 		debuglog.Info("response.text", truncateStr(content, 100))
@@ -375,9 +396,7 @@ func (a *Agent) Respond(ctx context.Context, userMessage string, opts turn.TurnO
 		reply = a.recoverEmptyReply(ctx, opts)
 	}
 	a.lastUsage = model.Usage{}
-	if response.Usage != nil {
-		a.lastUsage = *response.Usage
-	}
+	a.recordUsage(response.Usage)
 
 	a.context.AddMessage(model.Message{
 		Role:             model.RoleAssistant,
@@ -412,9 +431,7 @@ func (a *Agent) RespondStream(ctx context.Context, userMessage string, onChunk f
 				streamed = false // nothing reached onChunk — caller must render the reply itself
 			}
 			a.lastUsage = model.Usage{}
-			if response.Usage != nil {
-				a.lastUsage = *response.Usage
-			}
+			a.recordUsage(response.Usage)
 			a.context.AddMessage(model.Message{
 				Role:             model.RoleAssistant,
 				Content:          reply,
@@ -435,9 +452,7 @@ func (a *Agent) RespondStream(ctx context.Context, userMessage string, onChunk f
 		reply = a.recoverEmptyReply(ctx, opts)
 	}
 	a.lastUsage = model.Usage{}
-	if response.Usage != nil {
-		a.lastUsage = *response.Usage
-	}
+	a.recordUsage(response.Usage)
 	a.context.AddMessage(model.Message{
 		Role:             model.RoleAssistant,
 		Content:          reply,

@@ -225,4 +225,15 @@ export const th = {
   'onboard.skip': 'ข้าม',
   'onboard.saving': 'กำลังบันทึก…',
   'onboard.start': 'เริ่มใช้ Aetox',
+
+  'settings.usage': 'สถิติการใช้งาน',
+  'settings.usageDesc': 'โทเคนที่ใช้ต่อการตอบของโมเดล บันทึกไว้ในเครื่องนี้เท่านั้น — ไม่ส่งไปไหน',
+  'settings.usageToday': 'วันนี้',
+  'settings.usageWeek': '7 วันล่าสุด',
+  'settings.usageAll': 'ทั้งหมด',
+  'settings.usageEmpty': 'ยังไม่มีข้อมูลการใช้งาน',
+  'settings.usageModel': 'โมเดล',
+  'settings.usagePrompt': 'Prompt',
+  'settings.usageCompletion': 'Output',
+  'settings.usageCalls': 'ครั้ง',
 }

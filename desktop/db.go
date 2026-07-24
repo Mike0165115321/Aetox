@@ -54,6 +54,16 @@ END;
 CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
   INSERT INTO messages_fts(messages_fts, rowid, text) VALUES ('delete', old.id, old.text);
 END;
+
+CREATE TABLE IF NOT EXISTS token_usage (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id        TEXT NOT NULL DEFAULT '',
+  model             TEXT NOT NULL,
+  prompt_tokens     INTEGER NOT NULL,
+  completion_tokens INTEGER NOT NULL,
+  time              TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_token_usage_time ON token_usage(time);
 `
 
 // database opens (once) the app-wide SQLite store.
