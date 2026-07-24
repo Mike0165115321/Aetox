@@ -20,8 +20,8 @@ venv/
 *.dll
 *.so
 *.dylib
-aetox
-aetox.exe
+/aetox
+/aetox.exe
 bin/
 dist/
 *.test
