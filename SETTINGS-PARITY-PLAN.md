@@ -21,15 +21,21 @@ Commands / Indexing / Usage stats / Onboard) กับสิ่งที่ Aeto
 | Subagents | scaffold รออยู่แล้ว (`internal/orchestrator`, §10) | ❌ | Phase 6 — ใหญ่สุด, design ก่อนเขียนโค้ด |
 | Indexing | FTS5 ทำงานใต้น้ำ (`desktop/db.go`) | — | **ตัดทิ้ง** — ไม่มี knob ให้ user ตั้ง; ZCode มีเพราะเขา index ทั้ง repo แบบ RAG ซึ่งเราไม่ได้ทำ |
 
-## Phase 0 — เก็บงานค้าง + hardening (สถานะ: กำลังทำ)
+## สถานะรวม (อัปเดต 2026-07-24 คืนเดียวกัน)
+
+- Phase 0 ✅ (`761e5e0`) · Phase 1 ✅ · Phase 2 ✅ · Phase 3 ✅ · Phase 4 ✅ ·
+  Phase 5 ✅ — ทุก phase ทดสอบ (unit + สดบน exe จริงเป็นส่วนใหญ่) และ commit แยกแล้ว
+- Phase 6: Decision §25 ร่างแล้ว (Proposed) — **รอ owner อนุมัติก่อนเขียนโค้ด**
+- หมายเหตุ: CLI ยังไม่ได้ wire `command.ExpandCustom` (desktop-first);
+  เพิ่มได้ที่จุดรับ input ของ `cmd/aetox` เมื่อต้องการ
+
+## Phase 0 — เก็บงานค้าง + hardening (✅ เสร็จ, `761e5e0`)
 
 - [x] commit UI fix ฟอร์ม MCP (`2643a59`)
-- [ ] แก้ MCP/child process ค้างหลังปิดแอป (เจอ orphan `node.exe`/`cmd.exe`
-      จริง 8 ตัวคืนนี้): Windows **Job Object** ใส่ process ตัวเองตอน boot
-      พร้อม `KILL_ON_JOB_CLOSE` — ลูกหลานทุก process (MCP, shell, git, npx)
-      ตายตามแอปเสมอแม้โดน force-kill, จุดเดียวจบ ไม่ต้องแก้รายทาง
-      (แทน upgrade path เดิมใน `internal/mcp/client.go` ที่มาร์ก `ponytail:` ไว้)
-- [ ] เอกสารแผนนี้ + ลิงก์เข้า Document Map + Decision §24 (commit เดียวกัน)
+- [x] แก้ MCP/child process ค้างหลังปิดแอป: Windows **Job Object**
+      (`internal/proc.KillTreeOnExit`, `KILL_ON_JOB_CLOSE`) — พิสูจน์ด้วย
+      force-kill จริง: ลูก 8 ตัวตายหมดทั้งต้นไม้
+- [x] เอกสารแผนนี้ + ลิงก์เข้า Document Map + Decision §24 (commit เดียวกัน)
 
 ## Phase 1 — Skills & Plugins → หน้า Settings เดียว
 

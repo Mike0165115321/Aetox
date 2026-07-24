@@ -854,6 +854,23 @@ One session, three engine layers fixed; OpenCode/Claude Code are the confirmed r
 
 ---
 
+## 25. Decision — Subagents: the `task` tool (Proposed 2026-07-24, awaiting owner approval)
+
+**Trigger:** [SETTINGS-PARITY-PLAN.md](SETTINGS-PARITY-PLAN.md) Phase 6 — the last parity item, and the first real caller for the `internal/orchestrator` scaffold (§10) that has sat unused since it was built.
+
+**Proposed design (walking skeleton, nothing more):**
+1. **One new built-in tool `task`** — schema `{description: string, prompt: string}`. When the MAIN agent calls it, the executor spawns a sub-agent via `orchestrator.Spawn` with the same provider/model, a **fresh context** (no conversation history — the prompt must carry everything, same rule as every task-tool system), and the same skill registry **minus `task` itself** — depth 1 is enforced structurally, not by a counter.
+2. **Lifecycle:** the sub-agent runs its own bounded tool loop; ctx cancellation propagates (Stop button kills the whole chain); its final text returns as the tool output; the orchestrator entry is removed on completion. Token usage flows through the same `SetUsageReporter` hook (§ Phase 3), so Usage stats absorb subagent spend automatically.
+3. **Safety:** the sub-agent inherits the session's `ApprovalMode` and permission rules unchanged — approval prompts surface to the same UI. No silent privilege widening.
+4. **UI:** `task` shows up as a normal tool step in the chat timeline (label = description). No new panel in v1.
+5. **Settings:** single knob — enable/disable the `task` tool (default off until proven). Lives on the existing General page, not a new section.
+
+**Explicitly out of scope (this decision):** ADR 0002's ensemble/routing/consensus, per-task model override (phase 2 if wanted), parallel fan-out, persistence of sub-agent transcripts, and any cross-process orchestration.
+
+**Status: Proposed.** Implementation starts only after the owner approves this section.
+
+---
+
 ## Validation
 
 1. **Claim traceability:** every claim above cites a file or an existing project doc; the two `Unverified`/`Inferred, Verify first: Yes` items are marked as such, not stated as fact.
