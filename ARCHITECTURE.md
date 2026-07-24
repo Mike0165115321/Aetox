@@ -826,6 +826,7 @@ One session, three engine layers fixed; OpenCode/Claude Code are the confirmed r
 - [.github/workflows/release.yml](.github/workflows/release.yml) — tag `v*` → windows-latest builds `wails build -nsis` (wails pinned to go.mod's version, NSIS via choco), CLI exe, portable zip, `checksums.txt`, attaches all four to a **draft** release (owner publishes manually).
 - [desktop/wails.json](desktop/wails.json) `info` block (product name/version/copyright); CI re-stamps `productVersion` from the tag, local builds use the committed value.
 - Proven locally end-to-end 2026-07-24: NSIS via `scoop install nsis`, `wails build -nsis` → `aetox-desktop-amd64-installer.exe` (12.4 MB) with correct version metadata (ProductVersion 0.4.0).
+- [docs/index.html](docs/index.html) — Thai landing page for GitHub Pages (Settings → Pages → main, `/docs`): download CTA on the stable `releases/latest/download/...` URL, scoop one-liner, capability-extension pitch with a terminal mock of the blind-model loop, honest SmartScreen note. Single self-contained file, no build step, one accent color, gridgeist-reviewed.
 
 **Release checklist (owner):**
 1. Bump `appVersion` in [cmd/aetox/main.go](cmd/aetox/main.go) and `info.productVersion` in [desktop/wails.json](desktop/wails.json).

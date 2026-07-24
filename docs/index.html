@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aetox — สถาปัตยกรรม &gt; พารามิเตอร์ | AI Agent Desktop สำหรับ Windows</title>
+<meta name="description" content="Aetox ขยายศักยภาพให้ทุกโมเดล: โมเดลที่อ่านภาพไม่ได้ ดูวิดีโอไม่ได้ แตะเครื่องไม่ได้ — ทำได้หมดผ่านสถาปัตยกรรม เลือกได้ 13 providers หรือรัน local ไม่มี lock-in">
+<style>
+:root{
+  --bg:#0b0d10; --panel:#10141a; --line:#242a33; --line-strong:#39424e;
+  --text:#e7ebf0; --muted:#98a2b0; --accent:#43d98a; --accent-dim:#2b8f5c;
+  --mono:"Cascadia Code",Consolas,"Courier New",monospace;
+  --sans:"Leelawadee UI","Segoe UI",Tahoma,sans-serif;
+  --s1:.5rem; --s2:1rem; --s3:1.5rem; --s4:2.5rem; --s5:4.5rem;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}*{transition:none!important}}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.65}
+a{color:inherit;text-decoration:none}
+a:hover{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{max-width:1120px;margin:0 auto;padding:0 var(--s3)}
+.mono{font-family:var(--mono)}
+
+/* ── header ─────────────────────────────────────────── */
+header{border-bottom:1px solid var(--line)}
+.bar{display:flex;align-items:baseline;gap:var(--s2);padding:var(--s2) 0}
+.mark{font-family:var(--mono);font-weight:700;font-size:1.05rem;letter-spacing:.35em}
+.ver{font-family:var(--mono);font-size:.75rem;color:var(--accent);border:1px solid var(--line);padding:.1rem .5rem}
+.bar nav{margin-left:auto;display:flex;gap:var(--s3);font-size:.9rem;color:var(--muted)}
+
+/* ── hero ───────────────────────────────────────────── */
+.hero{display:grid;grid-template-columns:7fr 5fr;gap:var(--s4);padding:var(--s5) 0;border-bottom:1px solid var(--line)}
+.kicker{font-family:var(--mono);font-size:.75rem;letter-spacing:.25em;color:var(--accent);margin-bottom:var(--s2)}
+h1{font-size:clamp(2rem,4.5vw,3.1rem);line-height:1.2;font-weight:700;margin-bottom:var(--s2)}
+h1 .gt{color:var(--accent)}
+.lede{color:var(--muted);max-width:34rem;margin-bottom:var(--s3)}
+.cta{display:flex;flex-wrap:wrap;gap:var(--s2);align-items:center;margin-bottom:var(--s2)}
+.btn{display:inline-block;background:var(--accent);color:#06130c;font-weight:700;padding:.7rem 1.4rem;border:1px solid var(--accent);transition:background .12s}
+.btn:hover{background:#5fe8a0;color:#06130c}
+.ghost{border:1px solid var(--line-strong);padding:.7rem 1.2rem;color:var(--muted);transition:border-color .12s}
+.ghost:hover{border-color:var(--accent)}
+.cmdrow{display:flex;align-items:center;gap:var(--s1);border:1px solid var(--line);background:var(--panel);padding:.55rem .8rem;font-family:var(--mono);font-size:.78rem;color:var(--muted);max-width:100%;overflow-x:auto;white-space:nowrap}
+.cmdrow b{color:var(--text);font-weight:400}
+.copy{margin-left:auto;background:none;border:1px solid var(--line-strong);color:var(--muted);font-family:var(--mono);font-size:.7rem;padding:.15rem .5rem;cursor:pointer}
+.copy:hover{color:var(--accent);border-color:var(--accent)}
+.fine{font-size:.78rem;color:var(--muted);margin-top:var(--s2)}
+.fine em{color:var(--text);font-style:normal}
+
+/* terminal evidence */
+.term{border:1px solid var(--line-strong);background:var(--panel);font-family:var(--mono);font-size:.8rem;align-self:start}
+.term-head{display:flex;align-items:center;gap:.45rem;border-bottom:1px solid var(--line);padding:.5rem .8rem;color:var(--muted);font-size:.7rem}
+.dot{width:.55rem;height:.55rem;border-radius:50%;border:1px solid var(--line-strong)}
+.term-body{padding:var(--s2);display:grid;gap:.55rem;line-height:1.5}
+.u{color:var(--text)}
+.t{color:var(--accent)}
+.t small{color:var(--muted)}
+.r{color:var(--muted)}
+.term-body .final{color:var(--text);border-top:1px solid var(--line);padding-top:.55rem}
+
+/* ── capability band ────────────────────────────────── */
+section{padding:var(--s5) 0;border-bottom:1px solid var(--line)}
+h2{font-size:1.55rem;margin-bottom:var(--s1)}
+.sub{color:var(--muted);margin-bottom:var(--s4);max-width:40rem}
+.caps{display:grid;grid-template-columns:1fr 1fr 1fr}
+.cap{padding:0 var(--s3)}
+.cap:first-child{padding-left:0}
+.cap+.cap{border-left:1px solid var(--line)}
+.cap .tool{font-family:var(--mono);color:var(--accent);font-size:.9rem;margin-bottom:var(--s1)}
+.cap p{color:var(--muted);font-size:.92rem;margin-bottom:var(--s2)}
+.cap samp{display:block;font-family:var(--mono);font-size:.72rem;color:var(--muted);border-left:2px solid var(--accent-dim);padding-left:.7rem;white-space:pre-line}
+
+/* ── install ────────────────────────────────────────── */
+.install{display:grid;grid-template-columns:5fr 7fr;gap:var(--s4)}
+.method{margin-bottom:var(--s3)}
+.method h3{font-size:1rem;margin-bottom:var(--s1)}
+.method h3 .n{font-family:var(--mono);color:var(--accent);margin-right:.6rem}
+.method p{color:var(--muted);font-size:.9rem}
+ol.steps{list-style:none;counter-reset:s;border-left:1px solid var(--line);margin:var(--s2) 0 0}
+ol.steps li{counter-increment:s;padding:.35rem 0 .35rem 1.2rem;position:relative;color:var(--muted);font-size:.92rem}
+ol.steps li::before{content:counter(s);font-family:var(--mono);color:var(--accent);position:absolute;left:-.55rem;top:.45rem;background:var(--bg);font-size:.75rem}
+ol.steps li b{color:var(--text);font-weight:600}
+.note{border:1px solid var(--line);border-left:2px solid var(--accent);background:var(--panel);padding:var(--s2);font-size:.85rem;color:var(--muted)}
+.note b{color:var(--text)}
+
+/* ── tools table ────────────────────────────────────── */
+.tools{display:grid;grid-template-columns:repeat(3,1fr);gap:0 var(--s4)}
+.trow{display:flex;gap:var(--s2);padding:.45rem 0;border-bottom:1px solid var(--line);font-size:.85rem}
+.trow .tn{font-family:var(--mono);color:var(--text);min-width:9.5rem;font-size:.78rem}
+.trow .td{color:var(--muted)}
+.providers{margin-top:var(--s4);color:var(--muted);font-size:.9rem}
+.providers .mono{color:var(--text);font-size:.78rem;line-height:2}
+
+/* ── footer ─────────────────────────────────────────── */
+footer{padding:var(--s4) 0;color:var(--muted);font-size:.85rem;display:flex;flex-wrap:wrap;gap:var(--s2) var(--s4);align-items:baseline}
+footer .links{display:flex;gap:var(--s3)}
+footer .own{margin-left:auto}
+
+/* ── responsive ─────────────────────────────────────── */
+@media (max-width:860px){
+  .hero{grid-template-columns:1fr;padding:var(--s4) 0}
+  .caps{grid-template-columns:1fr}
+  .cap{padding:var(--s3) 0}
+  .cap+.cap{border-left:none;border-top:1px solid var(--line)}
+  .cap:first-child{padding-top:0}
+  .install{grid-template-columns:1fr}
+  .tools{grid-template-columns:1fr}
+  .bar nav{gap:var(--s2)}
+  footer .own{margin-left:0}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap bar">
+    <span class="mark">AETOX</span>
+    <span class="ver">v0.4.0 · Windows</span>
+    <nav>
+      <a href="#install">ติดตั้ง</a>
+      <a href="#caps">ความสามารถ</a>
+      <a href="https://github.com/Mike0165115321/Aetox">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+<div class="wrap">
+
+  <div class="hero">
+    <div>
+      <p class="kicker">AI AGENT DESKTOP · NO LOCK-IN</p>
+      <h1>สถาปัตยกรรม <span class="gt">&gt;</span> พารามิเตอร์</h1>
+      <p class="lede">โมเดลที่อ่านภาพไม่ได้ ดูวิดีโอไม่ได้ แตะเครื่องไม่ได้ — ทำได้ทั้งหมดเมื่อวิ่งผ่าน Aetox
+      เพราะความสามารถอยู่ที่สถาปัตยกรรมที่ควบคุมโมเดล ไม่ใช่ตัวโมเดล
+      เลือกได้ 13 providers หรือรันโมเดลฟรีในเครื่องคุณเอง</p>
+      <div class="cta">
+        <a class="btn" href="https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-desktop-amd64-installer.exe">ดาวน์โหลดสำหรับ Windows</a>
+        <a class="ghost" href="https://github.com/Mike0165115321/Aetox/releases/latest">ทุกไฟล์ / portable .zip</a>
+      </div>
+      <div class="cmdrow"><span>&gt;</span><b id="scoopCmd">scoop install https://raw.githubusercontent.com/Mike0165115321/Aetox/main/scoop/aetox.json</b><button class="copy" data-copy="scoopCmd" aria-label="คัดลอกคำสั่ง scoop">copy</button></div>
+      <p class="fine">ตัวติดตั้ง ~12 MB · Windows 10/11 · ลง WebView2 และ Tesseract (ไทย+อังกฤษ) ให้อัตโนมัติ<br>
+      <em>ยังไม่ได้เซ็นโค้ด</em> — SmartScreen อาจเตือนครั้งแรก กด More info → Run anyway</p>
+    </div>
+
+    <div class="term" aria-label="ตัวอย่างการทำงานจริง">
+      <div class="term-head"><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+        <span>ornith:9b — โมเดล 9B ในเครื่อง ไม่มีความสามารถด้านภาพ</span></div>
+      <div class="term-body">
+        <div class="u">› อ่านหน้าจอตอนนี้ แล้วช่วยกรอกฟอร์มสมัครให้หน่อย</div>
+        <div class="t">✓ computer <small>screenshot → screenshots/screen_1731.png</small></div>
+        <div class="t">✓ image_ocr <small>→ "แบบฟอร์มสมาชิก — ชื่อ / อีเมล / จังหวัด"</small></div>
+        <div class="t">✓ browser_read <small>→ [3] input อีเมล · [5] select จังหวัด [options: …]</small></div>
+        <div class="t">✓ browser_type <small>ref 5 "เชียงใหม่"</small></div>
+        <div class="t">✓ browser_type <small>ref 3 "mike@example.com" enter</small></div>
+        <div class="final">กรอกและส่งฟอร์มเรียบร้อยครับ — โมเดลไม่มีตา แต่สถาปัตยกรรมเห็นแทน</div>
+      </div>
+    </div>
+  </div>
+
+  <section id="caps">
+    <h2>โมเดลตาบอดก็เห็นได้ มือด้วนก็ทำงานได้</h2>
+    <p class="sub">ทุกเครื่องมือเสิร์ฟให้ทุกโมเดลเท่ากัน — ไม่ตัดสินล่วงหน้าว่าโมเดลไหน "ไม่ควรได้"
+    ตัวเล็กแค่ไหนก็มีสิทธิ์ใช้ครบ และทุก action อันตรายต้องผ่านการอนุมัติจากคุณ</p>
+    <div class="caps">
+      <div class="cap">
+        <p class="tool">image_ocr</p>
+        <p>อ่านข้อความในรูปภาพด้วย Tesseract ไทย+อังกฤษ — โมเดลไม่ต้องมี vision ก็อ่านสกรีนช็อต เอกสาร ป้ายราคาได้</p>
+        <samp>› image_ocr "slip.png"
+สแกนจ่ายสำเร็จ 1,250.00 บาท</samp>
+      </div>
+      <div class="cap">
+        <p class="tool">video_ocr</p>
+        <p>แตกเฟรมวิดีโอทุก N วินาทีด้วย ffmpeg แล้ว OCR — ได้ข้อความพร้อมเวลากำกับ ไล่ดูซับ สไลด์ ไตเติลได้ทั้งคลิป</p>
+        <samp>[0:00] HELLO AETOX
+[0:06] SECOND SCENE</samp>
+      </div>
+      <div class="cap">
+        <p class="tool">computer</p>
+        <p>มือจริงบนเครื่องจริง — ขยับเมาส์ คลิก พิมพ์ (ไทยได้) กดคีย์ลัด จับภาพหน้าจอ ครบลูป เห็น → คิด → ทำ</p>
+        <samp>✓ mouse_move (960, 540)
+✓ type "สวัสดีครับ"  ✓ key ctrl+s</samp>
+      </div>
+    </div>
+  </section>
+
+  <section id="install">
+    <h2>ติดตั้ง</h2>
+    <p class="sub">สองทาง เลือกที่ถนัด — ทั้งคู่ได้แอปเดียวกัน</p>
+    <div class="install">
+      <div>
+        <div class="method">
+          <h3><span class="n">01</span>ตัวติดตั้ง (แนะนำ)</h3>
+          <ol class="steps">
+            <li><b>ดาวน์โหลด</b> aetox-desktop-amd64-installer.exe</li>
+            <li><b>ดับเบิลคลิก</b> — ถ้า SmartScreen เตือน: More info → Run anyway</li>
+            <li>ตัวติดตั้งจัดการ <b>WebView2 + Tesseract ภาษาไทย</b> ให้เอง</li>
+            <li>เปิดจาก Start Menu → <b>เลือก provider หรือ Ollama</b> → คุยได้เลย</li>
+          </ol>
+        </div>
+        <div class="method">
+          <h3><span class="n">02</span>Scoop (สาย dev)</h3>
+          <p>ได้ portable build พร้อม shortcut อัปเดตผ่าน <span class="mono">scoop update</span> ตามปกติ</p>
+        </div>
+      </div>
+      <div>
+        <div class="note" style="margin-bottom:1rem">
+          <b>ใช้กับโมเดลอะไร?</b> ใส่ API key ของ provider ที่คุณมี — หรือไม่ต้องมีเลยสักตัว:
+          ติดตั้ง <span class="mono">Ollama</span> / <span class="mono">LM Studio</span> แล้วรันโมเดล open-source ฟรีในเครื่อง
+          Aetox ทำหน้าที่ขยายศักยภาพให้โมเดลที่คุณเลือก ไม่ใช่บังคับว่าต้องใช้ค่ายไหน
+        </div>
+        <div class="note">
+          <b>ข้อมูลอยู่ไหน?</b> ในเครื่องคุณ การคุยวิ่งตรงหาผู้ให้บริการโมเดลที่คุณเลือกเท่านั้น
+          ไม่มี server กลางของ Aetox ไม่มี telemetry ไม่มี subscription — จ่ายเฉพาะ token ที่ใช้จริง
+          หรือศูนย์บาทถ้ารัน local
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="tools">
+    <h2>เครื่องมือในตัว 22 ตัว</h2>
+    <p class="sub">โมเดลเรียกใช้เองระหว่างคุย — งานเขียนโค้ด ค้นเว็บ คุมเบราว์เซอร์ คุมเครื่อง อยู่ในชุดเดียว</p>
+    <div class="tools">
+      <div class="trow"><span class="tn">read / write / edit</span><span class="td">อ่าน เขียน แก้ไฟล์แบบเป๊ะ</span></div>
+      <div class="trow"><span class="tn">grep / list / fs</span><span class="td">ค้นหาและจัดการไฟล์</span></div>
+      <div class="trow"><span class="tn">shell / git</span><span class="td">รันคำสั่ง ผ่านการอนุมัติทุกครั้ง</span></div>
+      <div class="trow"><span class="tn">delete</span><span class="td">ลบไฟล์ (ขออนุมัติเสมอ)</span></div>
+      <div class="trow"><span class="tn">image_ocr</span><span class="td">อ่านข้อความในรูป ไทย+อังกฤษ</span></div>
+      <div class="trow"><span class="tn">video_ocr</span><span class="td">อ่านข้อความในวิดีโอ + timestamp</span></div>
+      <div class="trow"><span class="tn">computer</span><span class="td">เมาส์ คีย์บอร์ด screenshot</span></div>
+      <div class="trow"><span class="tn">browser_open / read</span><span class="td">เปิด-อ่านเว็บใน workbench</span></div>
+      <div class="trow"><span class="tn">browser_click / type</span><span class="td">คลิก กรอกฟอร์ม เลือก dropdown</span></div>
+      <div class="trow"><span class="tn">web_search</span><span class="td">ค้นเว็บ ไม่ต้องมี API key</span></div>
+      <div class="trow"><span class="tn">web_fetch</span><span class="td">อ่านเนื้อหาหน้าเว็บ</span></div>
+      <div class="trow"><span class="tn">github_*</span><span class="td">ค้น อ่าน repo จาก GitHub (4 ตัว)</span></div>
+      <div class="trow"><span class="tn">plugin_install</span><span class="td">ติดตั้งสกิลเสริมจาก GitHub</span></div>
+      <div class="trow"><span class="tn">help / echo / time</span><span class="td">ยูทิลิตีพื้นฐาน</span></div>
+    </div>
+    <p class="providers">รองรับ 13 providers:
+      <span class="mono">anthropic · openai · gemini · deepseek · openrouter · groq · mistral · zai · together · perplexity · cohere · ollama · lmstudio</span><br>
+      สลับเมื่อไหร่ก็ได้ ไม่ผูกมัด — และสองตัวท้ายคือโมเดลฟรีในเครื่องคุณเอง</p>
+  </section>
+
+</div>
+</main>
+
+<footer>
+  <div class="wrap" style="display:contents">
+    <span class="mark" style="font-size:.85rem">AETOX</span>
+    <nav class="links">
+      <a href="https://github.com/Mike0165115321/Aetox">GitHub</a>
+      <a href="https://github.com/Mike0165115321/Aetox/blob/main/ARCHITECTURE.md">Architecture</a>
+      <a href="https://github.com/Mike0165115321/Aetox/issues">Issues</a>
+    </nav>
+    <span class="own">© 2026 Mike0165115321 — สร้างโดยคนคนเดียวที่ใช้มันจริงทุกวัน</span>
+  </div>
+</footer>
+
+<script>
+document.querySelectorAll(".copy").forEach(function(btn){
+  btn.addEventListener("click",function(){
+    var el=document.getElementById(btn.dataset.copy);
+    navigator.clipboard.writeText(el.textContent).then(function(){
+      btn.textContent="copied";setTimeout(function(){btn.textContent="copy"},1500);
+    });
+  });
+});
+</script>
+</body>
+</html>
