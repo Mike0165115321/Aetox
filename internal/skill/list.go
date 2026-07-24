@@ -120,6 +120,12 @@ func resolveSandboxPath(root string, requestPath string) (string, error) {
 	// root and pointing at C:\Users or /etc passes it untouched. Compare the
 	// link-resolved forms instead, but still hand back the lexical path so
 	// callers and their output keep showing the path the user asked for.
+	//
+	// ponytail: two EvalSymlinks walks per call — measured 981µs vs 1.8µs for
+	// the old lexical check on Windows (Defender scans every component open).
+	// Called at most twice per tool call and never inside grep/fs-find's
+	// WalkDir, so ~2ms sits under operations that already cost 10ms+. Cache
+	// the root's resolution per skill instance if that stops being true.
 	if !withinRoot(evalExistingSymlinks(safeTarget), evalExistingSymlinks(safeRoot)) {
 		return "", fmt.Errorf("path is outside sandbox root")
 	}

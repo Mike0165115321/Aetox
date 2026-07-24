@@ -33,6 +33,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+	"testing"
 	"time"
 
 	"github.com/Mike0165115321/Aetox/internal/config"
@@ -61,6 +62,14 @@ func resolve() string {
 		}
 		if p := privateBinaryPath(); isExecutableFile(p) {
 			resolvedPath = p
+			return
+		}
+		// Never auto-install during `go test`: a test run must not hit the
+		// GitHub API and pull a multi-megabyte third-party binary. CI caught
+		// this on its first green-field run (2026-07-25) — a clean runner
+		// downloaded rtk mid-suite, which is slow, network-flaky, and not
+		// something a test asked for. Tests that need rtk skip instead.
+		if testing.Testing() {
 			return
 		}
 		if p, ok := tryAutoInstall(); ok {

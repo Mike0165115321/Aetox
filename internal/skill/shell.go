@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"os/exec"
-	"runtime"
 	"strings"
 	"time"
 
@@ -81,12 +79,7 @@ func (s *shellSkill) Execute(ctx context.Context, input Input) (Output, error) {
 		execLine = rewritten
 	}
 
-	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" {
-		cmd = exec.CommandContext(ctx, "cmd", "/C", execLine)
-	} else {
-		cmd = exec.CommandContext(ctx, "sh", "-c", execLine)
-	}
+	cmd := proc.ShellCommand(ctx, execLine)
 	cmd.Dir = workDir
 	proc.HideConsole(cmd)
 	proc.KillOnCancel(cmd)

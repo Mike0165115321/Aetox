@@ -2,8 +2,11 @@ package skill
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Mike0165115321/Aetox/internal/rtk"
 )
@@ -74,6 +77,137 @@ func TestCappedWriterStopsGrowing(t *testing.T) {
 	}
 }
 
+// Quoted arguments are the normal case for a coding agent — `git commit -m
+// "msg"`, `python -c "..."`, `grep "a b"`. On Windows they used to arrive
+// mangled as \"msg\", because os/exec escapes for the C runtime convention
+// that cmd.exe does not follow (proc.ShellCommand). Nothing caught it until
+// a process-tree test tried to run a quoted path.
+func TestShellSkillPreservesQuotedArguments(t *testing.T) {
+	isolateAuditLog(t)
+	s := &shellSkill{root: t.TempDir()}
+
+	for _, tc := range []struct{ command, want string }{
+		{`echo "hello world"`, "hello world"},
+		{`echo "a b" "c d"`, "a b c d"},
+	} {
+		out, err := s.Execute(context.Background(), Input{"args": []string{tc.command}})
+		if err != nil {
+			t.Fatalf("Execute(%s): unexpected error: %v", tc.command, err)
+		}
+		if strings.Contains(out.Content, `\"`) {
+			t.Errorf("Execute(%s) = %q, want no backslash-escaped quotes", tc.command, out.Content)
+		}
+		// cmd's echo keeps the quotes, sh's drops them; either is fine, an
+		// injected backslash is not.
+		if got := strings.ReplaceAll(out.Content, `"`, ""); got != tc.want {
+			t.Errorf("Execute(%s) = %q, want %q ignoring quotes", tc.command, got, tc.want)
+		}
+	}
+}
+
+const heartbeatEnv = "AETOX_TEST_HEARTBEAT"
+
+// TestHeartbeatHelper is not a test. It is the grandchild process that
+// TestShellSkillCancelKillsGrandchild starts through the shell, and it only
+// does anything when that parent points heartbeatEnv at a file.
+func TestHeartbeatHelper(t *testing.T) {
+	path := os.Getenv(heartbeatEnv)
+	if path == "" {
+		t.Skip("helper process, driven by TestShellSkillCancelKillsGrandchild")
+	}
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		_ = os.WriteFile(path, []byte(time.Now().Format(time.RFC3339Nano)), 0o600)
+		time.Sleep(150 * time.Millisecond)
+	}
+}
+
+// The real check behind proc.KillOnCancel: exec.CommandContext kills the
+// shell Aetox spawned and nothing the shell itself started, so pressing Stop
+// during `npm install` used to leave node running. A unit test can't see
+// that — only a grandchild that keeps touching a file after the cancel can.
+func TestShellSkillCancelKillsGrandchild(t *testing.T) {
+	isolateAuditLog(t)
+	root := t.TempDir()
+	beat := filepath.Join(root, "beat.txt")
+	t.Setenv(heartbeatEnv, beat)
+
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatalf("locating the test binary to use as the grandchild: %v", err)
+	}
+
+	s := &shellSkill{root: root}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	var out Output
+	go func() {
+		defer close(done)
+		// Plain shell quoting, not strconv.Quote — that escapes backslashes
+		// Go-literal style and hands cmd.exe a path it cannot resolve.
+		out, _ = s.Execute(ctx, Input{"args": []string{`"` + self + `"`, "-test.run", "TestHeartbeatHelper"}})
+	}()
+
+	// Don't cancel until the grandchild is provably alive, or the test passes
+	// for the wrong reason.
+	if !waitUntil(10*time.Second, func() bool { _, err := os.Stat(beat); return err == nil }) {
+		cancel()
+		<-done
+		t.Fatalf("grandchild never produced a heartbeat — the test never got to the thing it checks. shell said: %q / %q", out.Content, out.Stderr)
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(15 * time.Second):
+		t.Fatal("Execute never returned after cancel — WaitDelay is not releasing the output pipe")
+	}
+
+	// A straggler write can land while the kill is in flight; sample after it.
+	time.Sleep(time.Second)
+	before := beatStamp(t, beat)
+	time.Sleep(1500 * time.Millisecond)
+	if after := beatStamp(t, beat); after != before {
+		t.Errorf("heartbeat still advancing after cancel (%q → %q): the grandchild outlived the shell", before, after)
+	}
+}
+
+func waitUntil(limit time.Duration, cond func() bool) bool {
+	deadline := time.Now().Add(limit)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return true
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return false
+}
+
+func beatStamp(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading heartbeat: %v", err)
+	}
+	return string(data)
+}
+
+// resolveSandboxPath gained two EvalSymlinks walks per call (the symlink
+// containment fix). It runs at most twice per tool call — never inside
+// grep/fs-find's WalkDir — so this exists to keep that assumption honest.
+func BenchmarkResolveSandboxPath(b *testing.B) {
+	root := b.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "a", "b", "c"), 0o755); err != nil {
+		b.Fatalf("setup: %v", err)
+	}
+	b.ResetTimer()
+	for b.Loop() {
+		if _, err := resolveSandboxPath(root, "a/b/c/file.txt"); err != nil {
+			b.Fatalf("resolveSandboxPath: %v", err)
+		}
+	}
+}
+
 func TestShellSkillMissingArgs(t *testing.T) {
 	isolateAuditLog(t)
 	s := &shellSkill{root: t.TempDir()}
@@ -87,8 +221,12 @@ func TestShellSkillMissingArgs(t *testing.T) {
 // rewritten command, not internal/rtk's own Rewrite logic (already covered by
 // internal/rtk/rtk_test.go).
 func TestShellSkillRewritesToRTKWhenAvailable(t *testing.T) {
-	if !rtk.Available() {
-		t.Skip("rtk not installed on PATH")
+	// Guard on the rewrite actually existing, not merely on the binary being
+	// resolvable: Rewrite legitimately returns ok=false when rtk has no
+	// equivalent for a command, and the old `rtk.Available()` guard turned
+	// that normal outcome into a red build (CI, 2026-07-25).
+	if _, ok := rtk.Rewrite("git status"); !ok {
+		t.Skip("rtk has no rewrite for `git status` here (not installed, or no equivalent)")
 	}
 	isolateAuditLog(t)
 	root := initGitRepo(t)
