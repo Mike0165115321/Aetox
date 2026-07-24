@@ -480,7 +480,7 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .composer .box { border:1px solid var(--border-default); border-radius:16px; background:var(--surface-raised); padding:12px 14px; display:flex; flex-direction:column; gap:10px; }
 .composer .box:focus-within { border-color:var(--border-input-focus); box-shadow:0 0 0 3px var(--overlay-focus); }
 .composer .box.drag-over { border-color:var(--interactive); box-shadow:0 0 0 3px var(--overlay-focus); }
-.composer .input { width:100%; resize:none; border:none; outline:none; background:none; color:var(--text-primary); font:inherit; font-size:var(--chat-font-size, 15.5px); line-height:1.5; }
+.composer .input { width:100%; resize:none; border:none; outline:none; background:none; color:var(--text-primary); font:inherit; font-size:var(--chat-font-size, 15.5px); line-height:1.5; max-height:220px; overflow-y:auto; }
 .composer .input::placeholder { color:var(--text-dim); }
 .composer .tools { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
 .composer .ctrl { appearance:none; -webkit-appearance:none; background:var(--surface-sunken); border:1px solid var(--border-strong); border-radius:6px; color:var(--text-secondary); font:inherit; font-size:14.5px; padding:4px 6px; cursor:pointer; }

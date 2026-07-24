@@ -112,6 +112,18 @@
   let focusMenuOpen = $state(false)
   let ctxMenuOpen = $state(false)
 
+  // Auto-grow the composer upward while typing (the composer is anchored at
+  // the bottom, so extra height expands up) — capped, then it scrolls inside.
+  // Reacts to every draft change so starter picks and post-send clears resize too.
+  let inputEl = $state<HTMLTextAreaElement | null>(null)
+  $effect(() => {
+    void draft
+    const el = inputEl
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = Math.min(el.scrollHeight, 220) + 'px'
+  })
+
   function closeMenusOnOutside(e: MouseEvent) {
     const el = e.target as HTMLElement
     if (modelMenuOpen && !el.closest('.model-pick')) modelMenuOpen = false
@@ -388,6 +400,7 @@
         class="input"
         rows="1"
         placeholder={t('chat.inputPlaceholder')}
+        bind:this={inputEl}
         bind:value={draft}
         onkeydown={onKeydown}
       ></textarea>
