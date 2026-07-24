@@ -67,17 +67,23 @@ func Msg(format string, args ...any) {
 	timestamp(line)
 }
 
+// Block times a scoped phase: it logs entry, and on the returned func's call
+// logs exit with the elapsed wall time (e.g. "--- bootstrapFromConfig (812.4ms) ---").
+// Usage: defer debuglog.Block("phase")(). The printed duration turns the log
+// into a profiler you can read top-to-bottom — no subtracting timestamps by hand.
 func Block(title string) func() {
 	if writer == nil {
 		return func() {}
 	}
+	start := time.Now()
 	timestamp(strings.Repeat("  ", indent) + "=== " + title + " ===")
 	indent++
 	return func() {
 		if indent > 0 {
 			indent--
 		}
-		timestamp(strings.Repeat("  ", indent) + "--- " + title + " ---")
+		elapsed := time.Since(start)
+		timestamp(fmt.Sprintf("%s--- %s (%.1fms) ---", strings.Repeat("  ", indent), title, float64(elapsed.Microseconds())/1000))
 	}
 }
 
