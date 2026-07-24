@@ -519,6 +519,10 @@ type ModelInfo struct {
 	ApprovalMode string `json:"approvalMode"`
 	ContextUsed  int    `json:"contextUsed"`
 	ContextMax   int    `json:"contextMax"`
+	// WireFormat is the active runtime format for providers with more than
+	// one (e.g. DeepSeek's "anthropic" vs "openai-compatible"). Empty when
+	// the provider has only one format or uses the catalog default.
+	WireFormat string `json:"wireFormat"`
 }
 
 // desktopProviders is the curated subset of the full engine catalog
@@ -647,7 +651,23 @@ func (a *App) GetModelInfo() ModelInfo {
 		ApprovalMode: a.cfg.ApprovalMode,
 		ContextUsed:  used,
 		ContextMax:   a.contextWindowTokens(),
+		WireFormat:   effectiveWireFormat(a.cfg.ModelProvider, a.cfg.ModelWireFormat),
 	}
+}
+
+// effectiveWireFormat resolves the format actually in effect: the explicit
+// preference if set, otherwise the provider's catalog-default runtime — so
+// the UI can highlight the right toggle option even when nothing was ever
+// saved (a fresh install, or a provider with only one format).
+func effectiveWireFormat(providerName, explicit string) string {
+	if v := strings.TrimSpace(explicit); v != "" {
+		return v
+	}
+	info, ok := model.LookupProviderInfo(model.NormalizeProvider(providerName))
+	if !ok {
+		return ""
+	}
+	return info.Runtime
 }
 
 // ContextSlice is one labeled share of the context window. Key is stable for
@@ -902,8 +922,40 @@ func (a *App) SwitchProvider(provider string) (ModelInfo, error) {
 	next.ModelProvider = model.NormalizeProvider(provider)
 	next.ModelName = model.DefaultModel(next.ModelProvider)
 	next.ModelBaseURL = model.DefaultBaseURL(next.ModelProvider)
+	next.ModelWireFormat = "" // reset to the new provider's default format
 	next.ModelAPIKey = resolveAPIKeyForProvider(next.ModelProvider)
 	next.ThinkLevel = model.NormalizeThinkingLevel(next.ModelProvider, next.ModelName, "")
+	a.applyConfig(next)
+	if a.chat == nil {
+		return ModelInfo{}, fmt.Errorf("switch failed: %s", a.modelStatus)
+	}
+	return a.GetModelInfo(), nil
+}
+
+// ProviderWireFormats lists the wire formats providerName can speak — e.g.
+// DeepSeek offers both an Anthropic-format endpoint and a plain
+// OpenAI-compatible one for the same account. Empty when the provider has
+// only one format (nothing to toggle). The first element is always the
+// catalog default.
+func (a *App) ProviderWireFormats(providerName string) []string {
+	info, ok := model.LookupProviderInfo(model.NormalizeProvider(providerName))
+	if !ok || info.AltRuntime == "" {
+		return []string{}
+	}
+	return []string{info.Runtime, info.AltRuntime}
+}
+
+// SetProviderWireFormat switches the currently active provider between its
+// available wire formats (see ProviderWireFormats) without changing the
+// selected model. A no-op format (provider has no alt, or format is already
+// current) still re-bootstraps — cheap, and keeps behavior predictable.
+func (a *App) SetProviderWireFormat(format string) (ModelInfo, error) {
+	next := a.cfg
+	format = strings.TrimSpace(format)
+	if info, ok := model.LookupProviderInfo(model.NormalizeProvider(next.ModelProvider)); ok && format == info.Runtime {
+		format = "" // matches the catalog default — store nothing
+	}
+	next.ModelWireFormat = format
 	a.applyConfig(next)
 	if a.chat == nil {
 		return ModelInfo{}, fmt.Errorf("switch failed: %s", a.modelStatus)
@@ -1006,6 +1058,9 @@ func resolveConfig(opts config.ConfigOptions) config.Config {
 		if v := strings.TrimSpace(pref.ModelBaseURL); v != "" {
 			cfg.ModelBaseURL = v
 		}
+		if v := strings.TrimSpace(pref.ModelWireFormat); v != "" {
+			cfg.ModelWireFormat = v
+		}
 		if v := strings.TrimSpace(pref.ThinkLevel); v != "" {
 			cfg.ThinkLevel = v
 		}
@@ -1050,11 +1105,12 @@ func bootstrapFromConfig(cfg config.Config, onToolAction func(action, detail str
 
 	providerDone := debuglog.Block("model.BootstrapProvider")
 	bootstrapResult := model.BootstrapProvider(model.BootstrapOptions{
-		Provider: cfg.ModelProvider,
-		Model:    cfg.ModelName,
-		APIKey:   cfg.ModelAPIKey,
-		BaseURL:  cfg.ModelBaseURL,
-		Timeout:  30 * time.Second,
+		Provider:   cfg.ModelProvider,
+		Model:      cfg.ModelName,
+		APIKey:     cfg.ModelAPIKey,
+		BaseURL:    cfg.ModelBaseURL,
+		Timeout:    30 * time.Second,
+		WireFormat: cfg.ModelWireFormat,
 	})
 	providerDone()
 	if bootstrapResult.Provider == nil {
@@ -1087,9 +1143,9 @@ func bootstrapFromConfig(cfg config.Config, onToolAction func(action, detail str
 			debuglog.Msg("skill registration skipped: %v", err)
 		}
 	}
-	// Scans ~/.agents/skills and ~/.claude/skills — a real filesystem walk,
-	// not a fixed-cost lookup; timed because a large/slow-disk skills
-	// directory is a plausible, easy-to-overlook source of startup latency.
+	// Scans ~/.aetox/skills — a real filesystem walk, not a fixed-cost lookup;
+	// timed because a large/slow-disk skills directory is a plausible,
+	// easy-to-overlook source of startup latency.
 	discoverDone := debuglog.Block("skill.RegisterDiscovered")
 	for _, discErr := range skill.RegisterDiscovered(registry, skill.DefaultDiscoveryPaths()) {
 		debuglog.Msg("skill discovery: %v", discErr)
@@ -1147,6 +1203,7 @@ func persistModelPreference(cfg config.Config) {
 		baseURL = ""
 	}
 	pref.ModelBaseURL = baseURL
+	pref.ModelWireFormat = strings.TrimSpace(cfg.ModelWireFormat)
 	pref.ThinkLevel = model.NormalizeThinkingLevel(canonicalProvider, pref.ModelName, cfg.ThinkLevel)
 	pref.ApprovalMode = string(safety.NormalizeApprovalMode(cfg.ApprovalMode))
 	_ = config.SaveModelPreference(pref)

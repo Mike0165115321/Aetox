@@ -322,11 +322,11 @@ func (s *pluginInstallSkill) resolveInstallRoot() (string, error) {
 	if strings.TrimSpace(s.installRoot) != "" {
 		return filepath.Abs(strings.TrimSpace(s.installRoot))
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("resolve plugin install root: %w", err)
+	dir := DefaultSkillsDir()
+	if dir == "" {
+		return "", fmt.Errorf("resolve plugin install root: cannot determine home directory")
 	}
-	return filepath.Join(home, ".agents", "skills"), nil
+	return dir, nil
 }
 
 func validatePluginManifest(manifest *aetoxPluginManifest) error {

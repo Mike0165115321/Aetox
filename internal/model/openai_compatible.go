@@ -65,7 +65,7 @@ func NewOpenAICompatibleProvider(cfg OpenAICompatibleConfig) (*OpenAICompatibleP
 		apiKey:     apiKey,
 		baseURL:    baseURL,
 		reasoning:  supportsNativeReasoning(provider),
-		httpClient: &http.Client{Timeout: timeout},
+		httpClient: newModelHTTPClient(timeout),
 	}, nil
 }
 
@@ -289,6 +289,8 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 	var builder strings.Builder
 	var reasoningBuilder strings.Builder
 	var lastUsage *Usage
+	var finishReason string
+	toolAcc := newStreamToolAccumulator()
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
@@ -301,12 +303,17 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 		if data == "[DONE]" {
 			break
 		}
+		// OpenAI-style streaming delivers tool_calls in fragments keyed by
+		// index (arguments arrive char-by-char across deltas); toolAcc stitches
+		// them back together. DeepSeek instead leaks DSML markup into content —
+		// handled by the backstop after the loop when no structured calls came.
 		var parsed struct {
 			Choices []struct {
 				Delta struct {
 					Message
-					ToolCalls []ToolCall `json:"tool_calls"`
+					ToolCalls []streamToolCallDelta `json:"tool_calls"`
 				} `json:"delta"`
+				FinishReason string `json:"finish_reason"`
 			} `json:"choices"`
 			Model string `json:"model"`
 			Usage Usage  `json:"usage"`
@@ -320,7 +327,11 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 			}
 			continue
 		}
+		if fr := strings.TrimSpace(parsed.Choices[0].FinishReason); fr != "" {
+			finishReason = fr
+		}
 		delta := parsed.Choices[0].Delta
+		toolAcc.add(delta.ToolCalls)
 		if chunk := delta.Content; chunk != "" {
 			builder.WriteString(chunk)
 			if onChunk != nil {
@@ -345,10 +356,18 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 		return Response{}, err
 	}
 
-	reply := builder.String()
-	reply = strings.TrimSpace(reply)
+	reply := strings.TrimSpace(builder.String())
 	reasoning := strings.TrimSpace(reasoningBuilder.String())
-	if reply == "" && reasoning == "" {
+	toolCalls := toolAcc.finalize()
+	// DSML backstop, same as Complete: only when the model sent no structured
+	// calls but leaked the markup into content instead.
+	if len(toolCalls) == 0 {
+		if cleaned, calls := parseDSMLToolCalls(reply); len(calls) > 0 {
+			reply = cleaned
+			toolCalls = calls
+		}
+	}
+	if reply == "" && reasoning == "" && len(toolCalls) == 0 {
 		return Response{}, fmt.Errorf("%s stream response has empty text", p.provider)
 	}
 	return Response{
@@ -356,8 +375,65 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 		Model:            model,
 		Text:             reply,
 		ReasoningContent: reasoning,
+		ToolCalls:        toolCalls,
 		Usage:            lastUsage,
+		FinishReason:     finishReason,
 	}, nil
+}
+
+// streamToolCallDelta is one fragment of an OpenAI-style streamed tool call.
+// arguments arrives in pieces across deltas; index ties the pieces together.
+type streamToolCallDelta struct {
+	Index    int    `json:"index"`
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
+}
+
+// streamToolAccumulator stitches streamed tool-call fragments back into whole
+// ToolCalls, preserving first-seen order.
+type streamToolAccumulator struct {
+	byIndex map[int]*ToolCall
+	order   []int
+}
+
+func newStreamToolAccumulator() *streamToolAccumulator {
+	return &streamToolAccumulator{byIndex: map[int]*ToolCall{}}
+}
+
+func (a *streamToolAccumulator) add(deltas []streamToolCallDelta) {
+	for _, d := range deltas {
+		call := a.byIndex[d.Index]
+		if call == nil {
+			call = &ToolCall{Type: "function"}
+			a.byIndex[d.Index] = call
+			a.order = append(a.order, d.Index)
+		}
+		if d.ID != "" {
+			call.ID = d.ID
+		}
+		if d.Type != "" {
+			call.Type = d.Type
+		}
+		if d.Function.Name != "" {
+			call.Function.Name = d.Function.Name
+		}
+		call.Function.Arguments += d.Function.Arguments
+	}
+}
+
+func (a *streamToolAccumulator) finalize() []ToolCall {
+	if len(a.order) == 0 {
+		return nil
+	}
+	calls := make([]ToolCall, 0, len(a.order))
+	for _, idx := range a.order {
+		calls = append(calls, *a.byIndex[idx])
+	}
+	return calls
 }
 
 func supportsNativeReasoning(provider string) bool {

@@ -32,7 +32,20 @@ var (
 	dsmlInvokeRe = regexp.MustCompile(`(?s)<[|｜]DSML[|｜]invoke name="([^"]+)">(.*?)</[|｜]DSML[|｜]invoke>`)
 	dsmlParamRe  = regexp.MustCompile(`(?s)<[|｜]DSML[|｜]parameter name="([^"]+)"(?:\s+string="(true|false)")?>(.*?)</[|｜]DSML[|｜]parameter>`)
 	dsmlEOSRe    = regexp.MustCompile(`<[|｜]end▁of▁sentence[|｜]>`)
+	// Opening marker only — matches an incomplete block that parseDSMLToolCalls
+	// (which needs the closing tag) can't lift out. Never matches closing tags
+	// ("</｜DSML…") or the word "DSML" in prose.
+	dsmlOpenRe = regexp.MustCompile(`<[|｜]DSML[|｜](?:tool_calls|invoke)`)
 )
+
+// ContainsLeakedDSML reports whether text still carries DeepSeek DSML tool-call
+// markup — used to catch a leak parseDSMLToolCalls could not parse (a block cut
+// off before its closing tag: thinking-mode leak, or a large inline value
+// hitting the output-token limit), so the caller can correct the model instead
+// of surfacing raw markup to the user.
+func ContainsLeakedDSML(text string) bool {
+	return dsmlOpenRe.MatchString(text)
+}
 
 // parseDSMLToolCalls extracts DSML tool calls from text. Returns the text with
 // the DSML blocks (and any trailing EOS token) removed, plus the parsed calls.

@@ -10,13 +10,13 @@
   import { i18n, t, setLocale, localeNames, type Locale } from './i18n.svelte'
   import {
     SupportedProviders, HasAPIKey, RequiresAPIKey, TerminalShells,
-    ListModelsForProvider, ProviderBaseURL,
+    ListModelsForProvider, ProviderBaseURL, ProviderWireFormats,
     ListMCPServers, SaveMCPServer, RemoveMCPServer, TestMCPServer, ToggleMCPServer,
     ListExternalSkills, InstallSkillFromGitHub, RemoveExternalSkill, RefreshSkills,
     UsageStats, ListCustomCommands, OpenCommandsFolder,
   } from '../../wailsjs/go/main/App'
   import { config } from '../../wailsjs/go/models'
-  import { cockpit, switchProvider, switchModel, submitAPIKey, switchApprovalMode } from './stores/cockpit.svelte'
+  import { cockpit, switchProvider, switchModel, submitAPIKey, switchApprovalMode, switchWireFormat } from './stores/cockpit.svelte'
 
   let { onClose }: { onClose: () => void } = $props()
 
@@ -55,6 +55,7 @@
   let providers = $state<ProviderRow[]>([])
   let selected = $state('')
   let baseURL = $state('')
+  let wireFormats = $state<string[]>([])
   let models = $state<string[]>([])
   let loadingModels = $state(false)
   let keyDraft = $state('')
@@ -65,6 +66,9 @@
 
   const selectedRow = $derived(providers.find((p) => p.name === selected))
   const isActiveProvider = $derived(cockpit.model.provider === selected)
+  // Only meaningful while this provider is the active one — otherwise nothing
+  // has been bootstrapped for it yet, so show what would be the default.
+  const currentWireFormat = $derived(isActiveProvider ? cockpit.model.wireFormat : (wireFormats[0] ?? ''))
 
   onMount(async () => {
     shells = await TerminalShells()
@@ -92,6 +96,7 @@
     errorMsg = ''
     keyDraft = ''
     baseURL = await ProviderBaseURL(name)
+    wireFormats = await ProviderWireFormats(name)
     loadingModels = true
     models = []
     try {
@@ -121,6 +126,22 @@
   const useModel = (m: string) => run(m, async () => {
     if (!isActiveProvider) await switchProvider(selected)
     await switchModel(m)
+  })
+
+  // Runtime identifiers ("anthropic", "openai-compatible") aren't meant for
+  // display; map to a short human label. Falls back to the raw value for any
+  // future format this list doesn't know about yet.
+  function wireFormatLabel(format: string): string {
+    switch (format) {
+      case 'anthropic': return 'Anthropic'
+      case 'openai-compatible': return 'OpenAI'
+      default: return format
+    }
+  }
+
+  const useFormat = (fmt: string) => run('format:' + fmt, async () => {
+    if (!isActiveProvider) await switchProvider(selected)
+    await switchWireFormat(fmt)
   })
 
   const saveKey = () => run('key', async () => {
@@ -566,6 +587,24 @@
               <div class="eyebrow">{t('settings.baseUrl')}</div>
               <div class="mset-ro">{baseURL || '—'}</div>
             </div>
+
+            {#if wireFormats.length > 1}
+              <div class="mset-field">
+                <div class="eyebrow">{t('settings.wireFormat')}</div>
+                <div class="muted" style="font-size:12px; margin-bottom:6px">{t('settings.wireFormatDesc')}</div>
+                <div class="mset-keyrow">
+                  {#each wireFormats as fmt}
+                    {#if currentWireFormat === fmt}
+                      <span class="badge on">{wireFormatLabel(fmt)}</span>
+                    {:else}
+                      <button class="ctrl" disabled={busy !== ''} onclick={() => useFormat(fmt)}>
+                        {busy === 'format:' + fmt ? t('settings.switching') : wireFormatLabel(fmt)}
+                      </button>
+                    {/if}
+                  {/each}
+                </div>
+              </div>
+            {/if}
 
             {#if selectedRow.requiresKey}
               <div class="mset-field">

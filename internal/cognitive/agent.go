@@ -19,6 +19,14 @@ const (
 	// toolLoopMaxTokens where an API rejects values this large.
 	toolLoopOutputTokenMax = 32000
 
+	// deepseekV4OutputTokenMax lets DeepSeek V4 write a whole file in one call
+	// instead of truncating and forcing a skeleton-then-edit split (each split
+	// resends the full context = wasted tokens). V4 accepts up to 384K output;
+	// 64K comfortably fits any single hand-written file. max_tokens is only a
+	// ceiling — you pay for tokens generated, not the cap — so raising it costs
+	// nothing until the model actually produces a large file.
+	deepseekV4OutputTokenMax = 65536
+
 	// Doom-loop guard thresholds, same as OpenCode's (warn at 3 identical
 	// consecutive calls, hard-stop at 5).
 	doomLoopWarn = 3
@@ -43,6 +51,15 @@ const emptyReplyNudge = "[system] Your previous reply was empty. Respond now, in
 
 const emptyReplyFallback = "เกินขีดจำกัดของโมเดลปัจจุบัน — โมเดลตอบกลับว่างเปล่า ลองแบ่งงานให้เล็กลงหรือเปลี่ยนโมเดล (Beyond the current model's limits — it returned an empty reply. Try a smaller task or a stronger model.)"
 
+// maxDSMLNudges caps corrective retries when the model leaks tool-call markup
+// as text (see model.ContainsLeakedDSML). Each retry is one extra round-trip,
+// so keep it small; past the cap we stop rather than surface raw markup.
+const maxDSMLNudges = 2
+
+const dsmlLeakNudge = "[system] Your previous reply wrote a tool call as plain-text markup, so nothing ran and no file was created. Do NOT write tool calls as text or invent your own tool-call format. Call the tool through the normal tool interface — e.g. the write tool with a `path` argument (not `file_path`) and a `content` argument. You may issue several tool calls at once. Do it now."
+
+const dsmlLeakFallback = "โมเดลพยายามเรียกเครื่องมือแต่ส่งออกมาเป็นข้อความแทนคำสั่งจริง จึงไม่มีอะไรทำงานและไม่มีไฟล์ถูกสร้าง — ลองสั่งใหม่หรือเปลี่ยนโมเดลครับ (The model wrote a tool call as text instead of a real call, so nothing ran. Try again or switch models.)"
+
 const compactionPrompt = "You are compacting a long conversation so it can continue in less context. " +
 	"Write a faithful, information-dense summary of the conversation you are given, covering: " +
 	"the user's goals and every decision made; important facts and constraints; " +
@@ -62,7 +79,7 @@ func (a *Agent) toolLoopMaxTokens() int {
 	switch name {
 	case "deepseek":
 		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(a.model)), "deepseek-v4") {
-			return toolLoopOutputTokenMax // V4 series allows up to 384K output
+			return deepseekV4OutputTokenMax // V4 series allows up to 384K output
 		}
 		return 8192 // V3-era API max; larger values are rejected with 400
 	case "openai":
@@ -132,6 +149,7 @@ func (a *Agent) RespondWithTools(
 	modelTools []model.ToolDefinition,
 	userMessage string,
 	execTool func(context.Context, model.ToolCall) (string, error),
+	onReasoningChunk func(string) error,
 	opts turn.TurnOptions,
 ) (string, bool, error) {
 	defer debuglog.Block(fmt.Sprintf("Agent.RespondWithTools (tools=%d)", len(modelTools)))()
@@ -160,6 +178,7 @@ func (a *Agent) RespondWithTools(
 	debuglog.Info("maxToolCalls", fmt.Sprintf("%d (<=0 means unlimited)", maxToolCalls))
 	anyToolUsed := false
 	nudgedEmpty := false
+	dsmlNudges := 0
 	var lastCallKey string
 	repeatedCalls := 0
 	loopMaxTokens := a.toolLoopMaxTokens()
@@ -168,7 +187,7 @@ func (a *Agent) RespondWithTools(
 		if ctx.Err() != nil {
 			return "", anyToolUsed, ctx.Err()
 		}
-		response, err := a.provider.Complete(ctx, a.buildRequest(a.context.Messages(), loopMaxTokens, 0.2, modelTools, "auto", opts))
+		response, err := a.completeToolLoop(ctx, a.buildRequest(a.context.Messages(), loopMaxTokens, 0.2, modelTools, "auto", opts), onReasoningChunk)
 		if err != nil {
 			debuglog.Msg("Complete() error: %v", err)
 			if i == 0 {
@@ -183,6 +202,21 @@ func (a *Agent) RespondWithTools(
 		debuglog.Info("response.text", truncateStr(content, 100))
 		debuglog.Info("response.toolCalls", fmt.Sprintf("%d", len(response.ToolCalls)))
 		if len(response.ToolCalls) == 0 {
+			// DeepSeek can leak DSML tool-call markup as plain text, and the
+			// backstop (openai_compatible.go) only lifts out COMPLETE blocks —
+			// a block cut off before its closing tag falls through here as raw
+			// markup with no ToolCalls, bypassing the truncation guard below.
+			// Never accept that as the answer: tell the model to call the tool
+			// for real and retry, capped so a persistent leaker can't spin.
+			if model.ContainsLeakedDSML(content) {
+				if dsmlNudges < maxDSMLNudges {
+					dsmlNudges++
+					debuglog.Msg("leaked DSML tool call, nudging (%d/%d)", dsmlNudges, maxDSMLNudges)
+					a.context.Add(model.RoleUser, dsmlLeakNudge)
+					continue
+				}
+				content = dsmlLeakFallback // gave up — don't surface raw markup
+			}
 			if content == "" {
 				// Nudge inside the loop, not via recoverEmptyReply: here the
 				// model keeps its tools, so it can cover a missing capability
@@ -278,6 +312,23 @@ func (a *Agent) RespondWithTools(
 	}
 
 	return "agent tool loop reached maximum iterations", anyToolUsed, nil
+}
+
+// completeToolLoop runs one tool-loop request. When a reasoning handler is
+// present and the provider can stream, it uses StreamComplete so the model's
+// thinking reaches the UI live (the whole non-streaming call would otherwise
+// show nothing until it finishes). Content is NOT streamed live — a nil content
+// handler keeps any leaked DSML tool-call markup off-screen and lets the
+// executor deliver the final text once at the end; StreamComplete still
+// accumulates and parses that content. Non-streaming providers, or turns with
+// no reasoning handler (e.g. the CLI), keep using Complete unchanged.
+func (a *Agent) completeToolLoop(ctx context.Context, req model.Request, onReasoningChunk func(string) error) (model.Response, error) {
+	if onReasoningChunk != nil {
+		if streamer, ok := a.provider.(model.StreamingProvider); ok {
+			return streamer.StreamComplete(ctx, req, nil, onReasoningChunk)
+		}
+	}
+	return a.provider.Complete(ctx, req)
 }
 
 func truncateStr(s string, max int) string {

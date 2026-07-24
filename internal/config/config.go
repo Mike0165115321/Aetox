@@ -23,6 +23,10 @@ type Config struct {
 	ModelName          string
 	ModelAPIKey        string
 	ModelBaseURL       string
+	// ModelWireFormat picks between a provider's alternate wire formats when
+	// it has one (e.g. DeepSeek's OpenAI-compatible vs Anthropic-format
+	// endpoints) — see provider.Spec.AltRuntime. Empty uses the default.
+	ModelWireFormat    string
 	ModelTimeoutSec    int
 	ModelContextTokens int
 }
@@ -39,17 +43,19 @@ type ConfigOptions struct {
 	ModelName          string
 	ModelAPIKey        string
 	ModelBaseURL       string
+	ModelWireFormat    string
 	ModelTimeout       int
 	ModelContextTokens int
 }
 
 type ModelPreference struct {
-	ModelProvider string            `json:"provider"`
-	ModelName     string            `json:"model"`
-	ModelBaseURL  string            `json:"base_url"`
-	ThinkLevel    string            `json:"think_level,omitempty"`
-	ApprovalMode  string            `json:"approval_mode,omitempty"`
-	ModelAPIKeys  map[string]string `json:"provider_api_keys,omitempty"`
+	ModelProvider   string            `json:"provider"`
+	ModelName       string            `json:"model"`
+	ModelBaseURL    string            `json:"base_url"`
+	ModelWireFormat string            `json:"wire_format,omitempty"`
+	ThinkLevel      string            `json:"think_level,omitempty"`
+	ApprovalMode    string            `json:"approval_mode,omitempty"`
+	ModelAPIKeys    map[string]string `json:"provider_api_keys,omitempty"`
 }
 
 func (p *ModelPreference) normalizeProviderKey(provider string) string {
@@ -123,6 +129,7 @@ func Load(opt ConfigOptions) Config {
 		modelAPIKey = model.ResolveModelAPIKey(provider)
 	}
 	baseURL := strings.TrimSpace(opt.ModelBaseURL)
+	wireFormat := strings.TrimSpace(opt.ModelWireFormat)
 	modelTimeout := opt.ModelTimeout
 	if modelTimeout <= 0 {
 		modelTimeout = 30
@@ -154,6 +161,7 @@ func Load(opt ConfigOptions) Config {
 		ModelName:          modelName,
 		ModelAPIKey:        modelAPIKey,
 		ModelBaseURL:       baseURL,
+		ModelWireFormat:    wireFormat,
 		ModelTimeoutSec:    modelTimeout,
 		ModelContextTokens: modelContextTokens,
 	}
@@ -171,12 +179,10 @@ func Load(opt ConfigOptions) Config {
 // unbounded on the system drive. Unset (the production default) resolves to
 // <UserConfigDir>/aetox — normal, expected behavior for an installed app.
 //
-// Deliberately NOT used for things designed to be shared with the wider
-// ecosystem: skill discovery scans ~/.agents/skills and ~/.claude/skills
-// (internal/skill/discovery.go), and plugin_install writes into
-// ~/.agents/skills on purpose (internal/skill/github_tools.go) — those are
-// intentionally external, shared conventions (the same paths OpenCode/Claude
-// Code use), not ours to own or relocate.
+// Skills are Aetox-owned but live under their own home-level dotdir
+// ~/.aetox/skills (skill.DefaultSkillsDir), not here — the same convention as
+// ~/.agents (opencode) and ~/.claude (Claude Code), so plugin_install and
+// discovery stay in Aetox's own directory instead of sharing another tool's.
 func DataRoot() (string, error) {
 	if override := strings.TrimSpace(os.Getenv("AETOX_DATA_ROOT")); override != "" {
 		return override, nil

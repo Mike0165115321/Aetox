@@ -31,7 +31,7 @@ const (
 type Agent interface {
 	Respond(context.Context, string, TurnOptions) (string, error)
 	RespondStream(context.Context, string, func(string) error, func(string) error, TurnOptions) (string, bool, error)
-	RespondWithTools(context.Context, []model.ToolDefinition, string, func(context.Context, model.ToolCall) (string, error), TurnOptions) (string, bool, error)
+	RespondWithTools(context.Context, []model.ToolDefinition, string, func(context.Context, model.ToolCall) (string, error), func(string) error, TurnOptions) (string, bool, error)
 	SupportsToolCalling() bool
 }
 
@@ -177,7 +177,7 @@ func (e *Executor) Execute(
 		e.dispatcher != nil && len(e.dispatcher.ToolDefinitions()) > 0
 	if agentCanUseTools {
 		debuglog.Msg("path: executeAgentToolLoop (model-driven tool calling)")
-		if result, handled, err := e.executeAgentToolLoop(ctx, parsed, onChunk); handled {
+		if result, handled, err := e.executeAgentToolLoop(ctx, parsed, onChunk, onReasoningChunk); handled {
 			return result, err
 		}
 	}
@@ -322,6 +322,7 @@ func (e *Executor) executeAgentToolLoop(
 	ctx context.Context,
 	intent command.Intent,
 	onChunk func(string),
+	onReasoningChunk func(string),
 ) (Result, bool, error) {
 	if e.agent == nil || !e.agent.SupportsToolCalling() {
 		return Result{}, false, nil
@@ -351,7 +352,7 @@ func (e *Executor) executeAgentToolLoop(
 			e.reportToolResult(call.Function.Name, "ไม่สำเร็จ")
 		}
 		return receipt, execErr
-	}, e.turnOptions)
+	}, asStreamHandler(onReasoningChunk), e.turnOptions)
 	if err != nil {
 		return Result{}, false, err
 	}

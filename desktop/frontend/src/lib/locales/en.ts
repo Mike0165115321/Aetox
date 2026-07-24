@@ -167,6 +167,8 @@ export const en: Record<keyof typeof th, string> = {
   'settings.useThisProvider': 'Use this provider',
   'settings.switching': 'Switching…',
   'settings.baseUrl': 'Base URL',
+  'settings.wireFormat': 'API format',
+  'settings.wireFormatDesc': 'This provider speaks more than one wire format for the same models — pick which one Aetox uses.',
   'settings.apiKeyLabel': 'API key',
   'settings.keySetPlaceholder': 'Already set — paste a new key to replace it',
   'settings.pasteKeyPlaceholder': 'Paste API key…',

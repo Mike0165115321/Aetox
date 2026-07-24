@@ -8,8 +8,8 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/config"
 )
 
-// newSkillsTestApp isolates both the config dir and the skill discovery roots
-// (~/.agents/skills via USERPROFILE/HOME) into temp dirs.
+// newSkillsTestApp isolates both the config dir and the skill discovery root
+// (~/.aetox/skills via USERPROFILE/HOME) into temp dirs.
 func newSkillsTestApp(t *testing.T) *App {
 	t.Helper()
 	base := t.TempDir()
@@ -23,7 +23,7 @@ func newSkillsTestApp(t *testing.T) *App {
 func writeTestSkill(t *testing.T, name string) string {
 	t.Helper()
 	home, _ := os.UserHomeDir()
-	dir := filepath.Join(home, ".agents", "skills", name)
+	dir := filepath.Join(home, ".aetox", "skills", name)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}

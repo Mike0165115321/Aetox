@@ -349,6 +349,84 @@ func TestOpenAICompatibleProviderLiftsDSMLFromContent(t *testing.T) {
 	}
 }
 
+// The streaming path must apply the same DSML backstop as Complete: a leak
+// arriving as content chunks has to be lifted into ToolCalls and stripped from
+// the streamed text, or the tool never runs and users see raw markup.
+func TestOpenAICompatibleProviderStreamLiftsDSMLFromContent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		// Leak split across chunks, exactly as a real stream delivers it.
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"กำลังสร้างให้ครับ\\n<｜DSML｜tool_calls>\\n<｜DSML｜invoke name=\\\"write\\\">\\n\"}}]}\n\n"))
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"<｜DSML｜parameter name=\\\"path\\\" string=\\\"true\\\">a.html</｜DSML｜parameter>\\n</｜DSML｜invoke>\\n</｜DSML｜tool_calls>\"},\"finish_reason\":\"stop\"}]}\n\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	provider, err := NewOpenAICompatibleProvider(OpenAICompatibleConfig{
+		Provider: "deepseek", Model: "deepseek-v4-flash", APIKey: "k", BaseURL: server.URL,
+	})
+	if err != nil {
+		t.Fatalf("new provider failed: %v", err)
+	}
+
+	response, err := provider.StreamComplete(context.Background(), Request{
+		Messages: []Message{{Role: RoleUser, Content: "write a.html"}},
+	}, nil, nil)
+	if err != nil {
+		t.Fatalf("stream complete failed: %v", err)
+	}
+	if len(response.ToolCalls) != 1 || response.ToolCalls[0].Function.Name != "write" {
+		t.Fatalf("expected lifted write call, got %#v", response.ToolCalls)
+	}
+	if strings.Contains(response.Text, "DSML") {
+		t.Fatalf("markup must be stripped from streamed text, got %q", response.Text)
+	}
+}
+
+// OpenAI-style streaming splits a tool call across deltas: name/id first, then
+// arguments in fragments keyed by index. StreamComplete must stitch them back.
+func TestOpenAICompatibleProviderStreamReassemblesStructuredToolCalls(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"write\",\"arguments\":\"{\\\"pa\"}}]}}]}\n\n"))
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"th\\\":\\\"a.html\\\"}\"}}]}}]}\n\n"))
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	provider, err := NewOpenAICompatibleProvider(OpenAICompatibleConfig{
+		Provider: "openai", Model: "gpt-4o", APIKey: "k", BaseURL: server.URL,
+	})
+	if err != nil {
+		t.Fatalf("new provider failed: %v", err)
+	}
+
+	response, err := provider.StreamComplete(context.Background(), Request{
+		Messages: []Message{{Role: RoleUser, Content: "write a.html"}},
+	}, nil, nil)
+	if err != nil {
+		t.Fatalf("stream complete failed: %v", err)
+	}
+	if len(response.ToolCalls) != 1 {
+		t.Fatalf("expected 1 reassembled tool call, got %#v", response.ToolCalls)
+	}
+	call := response.ToolCalls[0]
+	if call.ID != "call_1" || call.Function.Name != "write" {
+		t.Fatalf("unexpected call identity: %#v", call)
+	}
+	args, err := ParseToolArguments(call.Function.Arguments)
+	if err != nil {
+		t.Fatalf("reassembled arguments not valid JSON (%q): %v", call.Function.Arguments, err)
+	}
+	if args["path"] != "a.html" {
+		t.Fatalf("unexpected reassembled args: %#v", args)
+	}
+	if response.FinishReason != "tool_calls" {
+		t.Fatalf("expected finish_reason tool_calls, got %q", response.FinishReason)
+	}
+}
+
 func TestOpenAICompatibleProviderNormalStopFinishReason(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

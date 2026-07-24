@@ -166,6 +166,8 @@ export const th = {
   'settings.useThisProvider': 'ใช้ provider นี้',
   'settings.switching': 'กำลังสลับ…',
   'settings.baseUrl': 'Base URL',
+  'settings.wireFormat': 'รูปแบบ API',
+  'settings.wireFormatDesc': 'โมเดลนี้รองรับหลายรูปแบบการเชื่อมต่อ — เลือกแบบที่ Aetox จะใช้',
   'settings.apiKeyLabel': 'API key',
   'settings.keySetPlaceholder': 'ตั้งค่าแล้ว — วางคีย์ใหม่เพื่อแทนที่',
   'settings.pasteKeyPlaceholder': 'วาง API key…',

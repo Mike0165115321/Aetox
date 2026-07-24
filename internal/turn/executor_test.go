@@ -233,6 +233,7 @@ func (a *toolAwareAgent) RespondWithTools(
 	_ []model.ToolDefinition,
 	_ string,
 	_ func(context.Context, model.ToolCall) (string, error),
+	_ func(string) error,
 	_ TurnOptions,
 ) (string, bool, error) {
 	if a.withToolsReply == "" {
@@ -295,6 +296,7 @@ func (a *writeToolCallAgent) RespondWithTools(
 	_ []model.ToolDefinition,
 	_ string,
 	exec func(context.Context, model.ToolCall) (string, error),
+	_ func(string) error,
 	_ TurnOptions,
 ) (string, bool, error) {
 	_, err := exec(ctx, model.ToolCall{
@@ -330,6 +332,7 @@ func (a *successfulToolCallAgent) RespondWithTools(
 	_ []model.ToolDefinition,
 	_ string,
 	exec func(context.Context, model.ToolCall) (string, error),
+	_ func(string) error,
 	_ TurnOptions,
 ) (string, bool, error) {
 	_, err := exec(ctx, model.ToolCall{

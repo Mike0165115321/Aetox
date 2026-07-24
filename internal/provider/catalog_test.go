@@ -165,7 +165,7 @@ func TestDefaultBaseURL(t *testing.T) {
 	}{
 		{"openrouter", "https://openrouter.ai/api/v1"},
 		{"openai", "https://api.openai.com/v1"},
-		{"deepseek", "https://api.deepseek.com"},
+		{"deepseek", "https://api.deepseek.com/anthropic/v1"}, // routed via Anthropic wire format
 		{"gemini", "https://generativelanguage.googleapis.com/v1beta/openai"},
 		{"groq", "https://api.groq.com/openai/v1"},
 		{"mistral", "https://api.mistral.ai/v1"},

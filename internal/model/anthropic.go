@@ -23,13 +23,19 @@ const anthropicAPIVersion = "2023-06-01"
 const defaultAnthropicMaxTokens = 8192
 
 type AnthropicConfig struct {
-	Model   string
-	APIKey  string
-	BaseURL string
-	Timeout time.Duration
+	// Provider is the logical provider name reported by Name(). Empty means
+	// "anthropic". Set it when another provider speaks the Anthropic Messages
+	// wire format (e.g. DeepSeek's /anthropic endpoint) so name-keyed logic —
+	// toolLoopMaxTokens, status, reasoning normalization — stays correct.
+	Provider string
+	Model    string
+	APIKey   string
+	BaseURL  string
+	Timeout  time.Duration
 }
 
 type AnthropicProvider struct {
+	name       string
 	model      string
 	apiKey     string
 	baseURL    string
@@ -40,6 +46,10 @@ func NewAnthropicProvider(cfg AnthropicConfig) (*AnthropicProvider, error) {
 	model := strings.TrimSpace(cfg.Model)
 	apiKey := strings.TrimSpace(cfg.APIKey)
 	baseURL := strings.TrimSpace(cfg.BaseURL)
+	name := strings.TrimSpace(cfg.Provider)
+	if name == "" {
+		name = "anthropic"
+	}
 	if model == "" {
 		return nil, ErrMissingModel
 	}
@@ -57,14 +67,15 @@ func NewAnthropicProvider(cfg AnthropicConfig) (*AnthropicProvider, error) {
 	}
 
 	return &AnthropicProvider{
+		name:       name,
 		model:      model,
 		apiKey:     apiKey,
 		baseURL:    baseURL,
-		httpClient: &http.Client{Timeout: timeout},
+		httpClient: newModelHTTPClient(timeout),
 	}, nil
 }
 
-func (p *AnthropicProvider) Name() string { return "anthropic" }
+func (p *AnthropicProvider) Name() string { return p.name }
 
 func (p *AnthropicProvider) SupportsToolCalling() bool { return true }
 

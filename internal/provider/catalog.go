@@ -65,9 +65,17 @@ type Spec struct {
 	RequiresAPIKey bool
 	Runtime        Runtime
 	BaseURL        string
-	EnvKeys        []string
-	ModelDefaults  ModelDefaults
-	Capabilities   Capabilities
+	// AltRuntime and AltBaseURL describe a second wire format the same
+	// provider account can speak (e.g. DeepSeek exposes both an
+	// OpenAI-compatible endpoint and an Anthropic Messages-format endpoint
+	// for the same models). Empty when the provider has only one format.
+	// The user picks between them (Settings.ProviderWireFormats /
+	// SetProviderWireFormat) instead of Aetox guessing.
+	AltRuntime    Runtime
+	AltBaseURL    string
+	EnvKeys       []string
+	ModelDefaults ModelDefaults
+	Capabilities  Capabilities
 }
 
 // ---------------------------------------------------------------------------
@@ -80,6 +88,8 @@ type entry struct {
 	requiresAPIKey bool
 	runtime        Runtime
 	baseURL        string
+	altRuntime     Runtime
+	altBaseURL     string
 	envKeys        []string
 	modelDefaults  ModelDefaults
 	capabilities   Capabilities
@@ -137,11 +147,21 @@ var catalog = map[string]*entry{
 		canonical:      "deepseek",
 		aliases:        []string{"deepseek", "deepseek-api", "deepseek-ai"},
 		requiresAPIKey: true,
-		runtime:        RuntimeOpenAICompatible,
-		baseURL:        "https://api.deepseek.com",
-		envKeys:        []string{"DEEPSEEK_API_KEY"},
-		modelDefaults:  ModelDefaults{FallbackModel: "deepseek-v4-flash"},
-		capabilities:   Capabilities{ToolCalling: true, Reasoning: true},
+		// Default to DeepSeek's Anthropic-format endpoint (/anthropic): it
+		// returns structured tool_use + native thinking blocks, which the
+		// Anthropic runtime already streams cleanly — sidestepping the DSML
+		// tool-call leak the OpenAI-compatible path had to parse out of plain
+		// text. The Anthropic SDK appends /v1/messages, so the base URL
+		// includes /anthropic/v1. The plain OpenAI-compatible endpoint is kept
+		// as the alt format (user-selectable in Settings) since it's the
+		// longer-proven path and some routing setups may still prefer it.
+		runtime:       RuntimeAnthropic,
+		baseURL:       "https://api.deepseek.com/anthropic/v1",
+		altRuntime:    RuntimeOpenAICompatible,
+		altBaseURL:    "https://api.deepseek.com",
+		envKeys:       []string{"DEEPSEEK_API_KEY"},
+		modelDefaults: ModelDefaults{FallbackModel: "deepseek-v4-flash"},
+		capabilities:  Capabilities{ToolCalling: true, Reasoning: true},
 	},
 	"zai": {
 		canonical:      "zai",
@@ -310,6 +330,8 @@ func Lookup(name string) (Spec, bool) {
 		RequiresAPIKey: e.requiresAPIKey,
 		Runtime:        e.runtime,
 		BaseURL:        e.baseURL,
+		AltRuntime:     e.altRuntime,
+		AltBaseURL:     e.altBaseURL,
 		EnvKeys:        append([]string{}, e.envKeys...),
 		ModelDefaults:  e.modelDefaults,
 		Capabilities:   e.capabilities,

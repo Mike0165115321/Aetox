@@ -7,7 +7,7 @@ import { emptyCockpitState, type CockpitState, type TreeNode, type ChangedFile, 
 import type { CockpitSource } from '../services/cockpit'
 import {
   SendMessage, GetProjectStatus, GetModelInfo, OpenProjectFolder, OpenProjectPath,
-  SwitchProvider, SwitchThinkLevel, SwitchApprovalMode,
+  SwitchProvider, SwitchThinkLevel, SwitchApprovalMode, SetProviderWireFormat,
   SwitchModel, SetAPIKey, ProjectTree, CommandHistory, GitChangedFiles, ReadFile,
   ListSessions, LoadSession, NewSession, CurrentSessionID, SearchSessions, DeleteSession,
   SaveChatImage, ReadImageDataURL, CancelTurn, BrowserGetText, RecentProjects,
@@ -62,6 +62,7 @@ function applyModelInfo(info: main.ModelInfo): void {
     contextUsed: info.contextUsed,
     contextMax: info.contextMax,
     approval: info.approvalMode,
+    wireFormat: info.wireFormat,
   })
   cacheModelInfo(cockpit.model)
 }
@@ -225,6 +226,10 @@ export async function switchModel(modelName: string): Promise<void> {
 
 export async function submitAPIKey(providerName: string, apiKey: string): Promise<void> {
   applyModelInfo(await SetAPIKey(providerName, apiKey))
+}
+
+export async function switchWireFormat(format: string): Promise<void> {
+  applyModelInfo(await SetProviderWireFormat(format))
 }
 
 function nowLabel(): string {

@@ -308,6 +308,48 @@ func TestResolveConfigKeepsOptsApprovalModeWithNoSavedPreference(t *testing.T) {
 	}
 }
 
+func TestProviderWireFormatsListsAltForDeepSeek(t *testing.T) {
+	a := &App{}
+	got := a.ProviderWireFormats("deepseek")
+	want := []string{"anthropic", "openai-compatible"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("ProviderWireFormats(deepseek) = %v, want %v", got, want)
+	}
+}
+
+func TestProviderWireFormatsEmptyForSingleFormatProvider(t *testing.T) {
+	a := &App{}
+	if got := a.ProviderWireFormats("openai"); len(got) != 0 {
+		t.Fatalf("ProviderWireFormats(openai) = %v, want empty (openai has only one wire format)", got)
+	}
+}
+
+// resolveConfig must round-trip a saved wire-format preference the same way
+// it already does for provider/model/base URL.
+func TestResolveConfigLoadsWireFormatFromPreference(t *testing.T) {
+	t.Setenv("AppData", t.TempDir())
+	pref := config.ModelPreference{ModelProvider: "deepseek", ModelWireFormat: "openai-compatible"}
+	if err := config.SaveModelPreference(pref); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	cfg := resolveConfig(config.ConfigOptions{})
+	if cfg.ModelWireFormat != "openai-compatible" {
+		t.Errorf("ModelWireFormat = %q, want %q (saved preference should load)", cfg.ModelWireFormat, "openai-compatible")
+	}
+}
+
+func TestEffectiveWireFormatFallsBackToProviderDefault(t *testing.T) {
+	// Nothing explicitly chosen yet — the UI must still highlight the
+	// provider's real default (deepseek's is "anthropic"), not blank.
+	if got := effectiveWireFormat("deepseek", ""); got != "anthropic" {
+		t.Errorf("effectiveWireFormat(deepseek, \"\") = %q, want %q", got, "anthropic")
+	}
+	if got := effectiveWireFormat("deepseek", "openai-compatible"); got != "openai-compatible" {
+		t.Errorf("effectiveWireFormat(deepseek, explicit) = %q, want the explicit value unchanged", got)
+	}
+}
+
 func TestSaveChatImageCopiesIntoSandbox(t *testing.T) {
 	root := t.TempDir()
 	src := filepath.Join(t.TempDir(), "photo.png")

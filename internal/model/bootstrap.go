@@ -5,11 +5,12 @@ import (
 )
 
 type BootstrapOptions struct {
-	Provider string
-	Model    string
-	APIKey   string
-	BaseURL  string
-	Timeout  time.Duration
+	Provider   string
+	Model      string
+	APIKey     string
+	BaseURL    string
+	Timeout    time.Duration
+	WireFormat string
 }
 
 type BootstrapResult struct {
@@ -20,11 +21,12 @@ type BootstrapResult struct {
 
 func BootstrapProvider(opts BootstrapOptions) BootstrapResult {
 	provider, initErr := NewProvider(ProviderOptions{
-		Provider: opts.Provider,
-		Model:    opts.Model,
-		APIKey:   opts.APIKey,
-		BaseURL:  opts.BaseURL,
-		Timeout:  opts.Timeout,
+		Provider:   opts.Provider,
+		Model:      opts.Model,
+		APIKey:     opts.APIKey,
+		BaseURL:    opts.BaseURL,
+		Timeout:    opts.Timeout,
+		WireFormat: opts.WireFormat,
 	})
 	if initErr == nil {
 		return BootstrapResult{

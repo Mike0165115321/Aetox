@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	pvdr "github.com/Mike0165115321/Aetox/internal/provider"
@@ -13,6 +14,11 @@ type ProviderOptions struct {
 	APIKey   string
 	BaseURL  string
 	Timeout  time.Duration
+	// WireFormat picks between a provider's two wire formats when it has one
+	// (ProviderMetadata.AltRuntime/AltBaseURL) — e.g. "openai-compatible" or
+	// "anthropic" for DeepSeek. Empty uses the catalog's default runtime.
+	// Unknown values, or a provider with no alt, are ignored (default wins).
+	WireFormat string
 }
 
 func NewProvider(opts ProviderOptions) (Provider, error) {
@@ -31,7 +37,18 @@ func NewProvider(opts ProviderOptions) (Provider, error) {
 		timeout = 20 * time.Second
 	}
 	requireAPIKey := info.RequiresAPIKey
-	switch info.Runtime {
+
+	runtime := info.Runtime
+	baseURL := opts.BaseURL
+	if wf := strings.TrimSpace(opts.WireFormat); wf != "" && info.AltRuntime != "" && wf == info.AltRuntime {
+		runtime = info.AltRuntime
+		if baseURL == "" {
+			baseURL = info.AltBaseURL
+		}
+	}
+	opts.BaseURL = baseURL
+
+	switch runtime {
 	case string(pvdr.RuntimeNoop):
 		return NewNoopProvider(opts.Model), nil
 	case string(pvdr.RuntimeOllama):
@@ -51,10 +68,11 @@ func NewProvider(opts ProviderOptions) (Provider, error) {
 		})
 	case string(pvdr.RuntimeAnthropic):
 		return NewAnthropicProvider(AnthropicConfig{
-			Model:   opts.Model,
-			APIKey:  opts.APIKey,
-			BaseURL: opts.BaseURL,
-			Timeout: timeout,
+			Provider: provider,
+			Model:    opts.Model,
+			APIKey:   opts.APIKey,
+			BaseURL:  opts.BaseURL,
+			Timeout:  timeout,
 		})
 	default:
 		return nil, fmt.Errorf("unsupported model provider: %q", provider)

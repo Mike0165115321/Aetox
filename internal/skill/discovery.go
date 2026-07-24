@@ -55,17 +55,26 @@ func (s *markdownSkill) ExecuteTool(ctx context.Context, _ map[string]any) (Outp
 	return s.Execute(ctx, nil)
 }
 
-// DefaultDiscoveryPaths returns the standard skill scan locations, in the
-// same order opencode scans them: ~/.agents/skills, then ~/.claude/skills.
-func DefaultDiscoveryPaths() []string {
+// DefaultSkillsDir is Aetox's own skill directory: ~/.aetox/skills. Aetox owns
+// its skill storage under its own home-level dotdir — the same convention as
+// ~/.agents (opencode) and ~/.claude (Claude Code), but not shared with them.
+// plugin_install writes here and discovery scans here; nothing reads or writes
+// another tool's directory. Empty if the home directory can't be resolved.
+func DefaultSkillsDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".aetox", "skills")
+}
+
+// DefaultDiscoveryPaths returns the skill scan locations — Aetox's own dir only.
+func DefaultDiscoveryPaths() []string {
+	dir := DefaultSkillsDir()
+	if dir == "" {
 		return nil
 	}
-	return []string{
-		filepath.Join(home, ".agents", "skills"),
-		filepath.Join(home, ".claude", "skills"),
-	}
+	return []string{dir}
 }
 
 // DiscoveredSkill describes one SKILL.md found on disk including where it

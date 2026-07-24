@@ -162,6 +162,7 @@ export namespace main {
 	    approvalMode: string;
 	    contextUsed: number;
 	    contextMax: number;
+	    wireFormat: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ModelInfo(source);
@@ -175,6 +176,7 @@ export namespace main {
 	        this.approvalMode = source["approvalMode"];
 	        this.contextUsed = source["contextUsed"];
 	        this.contextMax = source["contextMax"];
+	        this.wireFormat = source["wireFormat"];
 	    }
 	}
 	export class ProjectMeta {

@@ -47,6 +47,7 @@ func TestRespondWithToolsContinuesAfterToolCall(t *testing.T) {
 			}
 			return `{"tool":"read","status":"done","output":"alpha"}`, nil
 		},
+		nil,
 		turn.TurnOptions{ThinkLevel: think.LevelMedium},
 	)
 	if err != nil {
@@ -169,6 +170,7 @@ func TestRespondWithToolsSkipsTruncatedToolCall(t *testing.T) {
 			executed++
 			return "should never run", nil
 		},
+		nil,
 		turn.TurnOptions{},
 	)
 	if err != nil {
@@ -217,6 +219,7 @@ func TestRespondWithToolsStopsDoomLoop(t *testing.T) {
 			executed++
 			return "same failure", nil
 		},
+		nil,
 		turn.TurnOptions{},
 	)
 	if err != nil {
@@ -250,7 +253,7 @@ func TestRespondWithToolsSendsPerProviderMaxTokens(t *testing.T) {
 		want      int
 	}{
 		{"deepseek", "deepseek-chat", 8192},          // V3-era API max — larger values 400
-		{"deepseek", "deepseek-v4-flash", 32000},     // V4 allows up to 384K output
+		{"deepseek", "deepseek-v4-flash", 65536},     // V4 allows up to 384K output; big enough for a whole file in one call
 		{"anthropic", "claude-sonnet-4-5", 32000},    // OUTPUT_TOKEN_MAX ceiling
 		{"openai", "gpt-4o", 16384},                  // gpt-4o floor
 		{"openrouter", "vendor/model", 8192},         // mixed routed models — conservative
@@ -265,6 +268,7 @@ func TestRespondWithToolsSendsPerProviderMaxTokens(t *testing.T) {
 			[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
 			"hello",
 			func(_ context.Context, _ model.ToolCall) (string, error) { return "", nil },
+			nil,
 			turn.TurnOptions{},
 		); err != nil {
 			t.Fatalf("%s: unexpected error: %v", tc.provider, err)
@@ -288,6 +292,7 @@ func TestRespondWithToolsLengthWithoutToolCallsReturnsText(t *testing.T) {
 		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
 		"long question",
 		func(_ context.Context, _ model.ToolCall) (string, error) { return "", nil },
+		nil,
 		turn.TurnOptions{},
 	)
 	if err != nil {
@@ -298,6 +303,87 @@ func TestRespondWithToolsLengthWithoutToolCallsReturnsText(t *testing.T) {
 	}
 	if reply != "partial but usable answer" {
 		t.Fatalf("length without tool calls must return the text as-is, got %q", reply)
+	}
+}
+
+func TestRespondWithToolsLeakedDSMLNeverSurfacesRawMarkup(t *testing.T) {
+	leak := model.Response{Text: "ขอโทษครับ\n<｜DSML｜invoke name=\"write\">\n" +
+		"<｜DSML｜parameter name=\"file_path\" string=\"true\">phone.html</｜DSML｜parameter>\n" +
+		"<｜DSML｜parameter name=\"content\" string=\"true\">"}
+	// Always leaks: initial + maxDSMLNudges retries, then the fallback fires.
+	provider := &toolLoopProvider{responses: []model.Response{leak, leak, leak}}
+	agent := NewAgent(AgentConfig{Provider: provider, Model: "deepseek-v4-flash"})
+
+	reply, usedTools, err := agent.RespondWithTools(
+		context.Background(),
+		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "write", Parameters: []byte(`{"type":"object"}`)}}},
+		"write phone.html",
+		func(_ context.Context, _ model.ToolCall) (string, error) { return "", nil },
+		nil,
+		turn.TurnOptions{},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if usedTools {
+		t.Fatal("no real tool call was ever produced")
+	}
+	if strings.Contains(reply, "DSML") {
+		t.Fatalf("raw markup must never surface to the user, got %q", reply)
+	}
+	if reply != dsmlLeakFallback {
+		t.Fatalf("expected leak fallback, got %q", reply)
+	}
+	if len(provider.requests) != 1+maxDSMLNudges {
+		t.Fatalf("expected %d requests (initial + %d nudges), got %d", 1+maxDSMLNudges, maxDSMLNudges, len(provider.requests))
+	}
+}
+
+func TestRespondWithToolsStreamsReasoningWhenHandlerPresent(t *testing.T) {
+	provider := &streamingToolLoopProvider{
+		responses: []model.Response{{Text: "คำตอบสุดท้าย", ReasoningContent: "กำลังคิด"}},
+	}
+	agent := NewAgent(AgentConfig{Provider: provider, Model: "deepseek-v4-flash"})
+
+	var reasoning []string
+	reply, _, err := agent.RespondWithTools(
+		context.Background(),
+		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
+		"hi",
+		func(_ context.Context, _ model.ToolCall) (string, error) { return "", nil },
+		func(chunk string) error { reasoning = append(reasoning, chunk); return nil },
+		turn.TurnOptions{},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if provider.streamCalls == 0 || provider.completeCalls != 0 {
+		t.Fatalf("tool loop must stream when a reasoning handler is present (stream=%d complete=%d)", provider.streamCalls, provider.completeCalls)
+	}
+	if len(reasoning) != 1 || reasoning[0] != "กำลังคิด" {
+		t.Fatalf("reasoning must reach the handler live, got %#v", reasoning)
+	}
+	if reply != "คำตอบสุดท้าย" {
+		t.Fatalf("unexpected reply %q", reply)
+	}
+}
+
+func TestRespondWithToolsUsesCompleteWithoutReasoningHandler(t *testing.T) {
+	provider := &streamingToolLoopProvider{responses: []model.Response{{Text: "done"}}}
+	agent := NewAgent(AgentConfig{Provider: provider, Model: "deepseek-v4-flash"})
+
+	if _, _, err := agent.RespondWithTools(
+		context.Background(),
+		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
+		"hi",
+		func(_ context.Context, _ model.ToolCall) (string, error) { return "", nil },
+		nil, // no reasoning UI (e.g. CLI) — must stay on the non-streaming path
+		turn.TurnOptions{},
+	); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if provider.completeCalls == 0 || provider.streamCalls != 0 {
+		t.Fatalf("no reasoning handler must keep Complete (stream=%d complete=%d)", provider.streamCalls, provider.completeCalls)
 	}
 }
 
@@ -325,6 +411,7 @@ func TestRespondWithToolsDoomLoopResetsOnDifferentCall(t *testing.T) {
 			executed++
 			return "content", nil
 		},
+		nil,
 		turn.TurnOptions{},
 	)
 	if err != nil {
@@ -362,6 +449,7 @@ func TestCompactionSummarizesOldTurnsBeforeTheTurn(t *testing.T) {
 		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
 		"คำถามใหม่ล่าสุด",
 		func(_ context.Context, _ model.ToolCall) (string, error) { return "", nil },
+		nil,
 		turn.TurnOptions{},
 	)
 	if err != nil {
@@ -420,6 +508,7 @@ func TestCompactionFailureIsNonFatal(t *testing.T) {
 		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
 		"ถามต่อ",
 		func(_ context.Context, _ model.ToolCall) (string, error) { return "", nil },
+		nil,
 		turn.TurnOptions{},
 	)
 	if err != nil {
@@ -436,7 +525,7 @@ func TestRespondWithToolsEmptyReplyNudgeKeepsTools(t *testing.T) {
 
 	provider := &toolLoopProvider{responses: []model.Response{{}, {Text: "recovered"}}}
 	agent := NewAgent(AgentConfig{Provider: provider, Model: "test-model", MaxToolCalls: 4})
-	reply, _, err := agent.RespondWithTools(context.Background(), toolDefs, "อ่านภาพนี้", execTool, turn.TurnOptions{})
+	reply, _, err := agent.RespondWithTools(context.Background(), toolDefs, "อ่านภาพนี้", execTool, nil, turn.TurnOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -457,7 +546,7 @@ func TestRespondWithToolsEmptyReplyNudgeKeepsTools(t *testing.T) {
 
 	provider = &toolLoopProvider{responses: []model.Response{{}, {}}}
 	agent = NewAgent(AgentConfig{Provider: provider, Model: "test-model", MaxToolCalls: 4})
-	reply, _, err = agent.RespondWithTools(context.Background(), toolDefs, "อ่านภาพนี้", execTool, turn.TurnOptions{})
+	reply, _, err = agent.RespondWithTools(context.Background(), toolDefs, "อ่านภาพนี้", execTool, nil, turn.TurnOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -526,6 +615,43 @@ func (p *toolLoopProvider) Complete(_ context.Context, req model.Request) (model
 	}
 	resp := p.responses[0]
 	p.responses = p.responses[1:]
+	return resp, nil
+}
+
+// streamingToolLoopProvider records whether the loop used StreamComplete vs
+// Complete, and emits reasoning through onReasoningChunk when streamed.
+type streamingToolLoopProvider struct {
+	responses     []model.Response
+	streamCalls   int
+	completeCalls int
+}
+
+func (p *streamingToolLoopProvider) Name() string              { return "deepseek" }
+func (p *streamingToolLoopProvider) SupportsToolCalling() bool { return true }
+func (p *streamingToolLoopProvider) SupportsReasoning() bool   { return true }
+
+func (p *streamingToolLoopProvider) next() model.Response {
+	if len(p.responses) == 0 {
+		return model.Response{Text: "done"}
+	}
+	r := p.responses[0]
+	p.responses = p.responses[1:]
+	return r
+}
+
+func (p *streamingToolLoopProvider) Complete(_ context.Context, _ model.Request) (model.Response, error) {
+	p.completeCalls++
+	return p.next(), nil
+}
+
+func (p *streamingToolLoopProvider) StreamComplete(_ context.Context, _ model.Request, _ model.StreamChunkHandler, onReasoningChunk model.StreamChunkHandler) (model.Response, error) {
+	p.streamCalls++
+	resp := p.next()
+	if onReasoningChunk != nil && resp.ReasoningContent != "" {
+		if err := onReasoningChunk(resp.ReasoningContent); err != nil {
+			return model.Response{}, err
+		}
+	}
 	return resp, nil
 }
 

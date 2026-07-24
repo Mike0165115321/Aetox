@@ -38,6 +38,7 @@ func TestUsageReporterFiresPerToolLoopRound(t *testing.T) {
 		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
 		"read a.txt",
 		func(_ context.Context, _ model.ToolCall) (string, error) { return "ok", nil },
+		nil,
 		turn.TurnOptions{ThinkLevel: think.LevelMedium},
 	)
 	if err != nil {

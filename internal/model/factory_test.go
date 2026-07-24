@@ -1,6 +1,11 @@
 package model
 
-import "testing"
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
 
 func TestNewProviderDefaultsToNoop(t *testing.T) {
 	p, err := NewProvider(ProviderOptions{})
@@ -55,6 +60,78 @@ func TestNewProviderAnthropic(t *testing.T) {
 	}
 	if p.Name() != "anthropic" {
 		t.Fatalf("expected provider anthropic, got %s", p.Name())
+	}
+}
+
+// DeepSeek is routed through the Anthropic wire format but must still report
+// its own name so name-keyed logic (toolLoopMaxTokens, status) stays correct.
+func TestNewProviderDeepSeekUsesAnthropicRuntimeKeepsName(t *testing.T) {
+	p, err := NewProvider(ProviderOptions{
+		Provider: "deepseek",
+		Model:    "deepseek-v4-flash",
+		APIKey:   "api-key",
+	})
+	if err != nil {
+		t.Fatalf("new provider failed: %v", err)
+	}
+	if _, ok := p.(*AnthropicProvider); !ok {
+		t.Fatalf("deepseek must use the Anthropic runtime, got %T", p)
+	}
+	if p.Name() != "deepseek" {
+		t.Fatalf("deepseek provider must report name deepseek, got %s", p.Name())
+	}
+}
+
+// The user picks DeepSeek's wire format explicitly in Settings — this must
+// actually switch runtimes and hit the OpenAI-compatible endpoint, not just
+// change internal bookkeeping.
+func TestNewProviderDeepSeekWireFormatOpenAICompatible(t *testing.T) {
+	hit := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hit = true
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"model":"deepseek-v4-flash","choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`))
+	}))
+	defer server.Close()
+
+	p, err := NewProvider(ProviderOptions{
+		Provider:   "deepseek",
+		Model:      "deepseek-v4-flash",
+		APIKey:     "api-key",
+		BaseURL:    server.URL,
+		WireFormat: "openai-compatible",
+	})
+	if err != nil {
+		t.Fatalf("new provider failed: %v", err)
+	}
+	if _, ok := p.(*OpenAICompatibleProvider); !ok {
+		t.Fatalf("WireFormat=openai-compatible must select the OpenAI-compatible runtime, got %T", p)
+	}
+	if p.Name() != "deepseek" {
+		t.Fatalf("deepseek provider must report name deepseek, got %s", p.Name())
+	}
+	if _, err := p.Complete(context.Background(), Request{Messages: []Message{{Role: RoleUser, Content: "hi"}}}); err != nil {
+		t.Fatalf("complete failed: %v", err)
+	}
+	if !hit {
+		t.Fatal("request never reached the OpenAI-compatible endpoint")
+	}
+}
+
+// An unrecognized WireFormat must not silently break the provider — it falls
+// back to the catalog's default runtime (Anthropic, for DeepSeek).
+func TestNewProviderDeepSeekUnknownWireFormatFallsBackToDefault(t *testing.T) {
+	p, err := NewProvider(ProviderOptions{
+		Provider:   "deepseek",
+		Model:      "deepseek-v4-flash",
+		APIKey:     "api-key",
+		WireFormat: "bogus-format",
+	})
+	if err != nil {
+		t.Fatalf("new provider failed: %v", err)
+	}
+	if _, ok := p.(*AnthropicProvider); !ok {
+		t.Fatalf("unknown WireFormat must fall back to the catalog default (anthropic), got %T", p)
 	}
 }
 

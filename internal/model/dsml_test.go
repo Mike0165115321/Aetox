@@ -59,3 +59,23 @@ func TestParseDSMLToolCallsPassesPlainTextThrough(t *testing.T) {
 		t.Fatalf("plain text must pass through untouched, got %q calls=%v", cleaned, calls)
 	}
 }
+
+func TestContainsLeakedDSML(t *testing.T) {
+	// The reported failure: a block cut off before its closing tag (mid-content).
+	truncated := "ขอโทษครับ\n" +
+		"<｜DSML｜tool_calls>\n" +
+		"<｜DSML｜invoke name=\"write\">\n" +
+		"<｜DSML｜parameter name=\"file_path\" string=\"true\">phone_2025.html</｜DSML｜parameter>\n" +
+		"<｜DSML｜parameter name=\"content\" string=\"true\">"
+	if !ContainsLeakedDSML(truncated) {
+		t.Fatal("truncated DSML block must be detected as a leak")
+	}
+	if ContainsLeakedDSML("just a normal answer mentioning DSML in prose") {
+		t.Fatal("prose mentioning DSML must not be flagged")
+	}
+	// A complete block the backstop already handles is still 'markup present';
+	// the caller only reaches ContainsLeakedDSML when parsing produced no calls.
+	if !ContainsLeakedDSML(`<|DSML|invoke name="read">`) {
+		t.Fatal("ASCII-pipe invoke marker must be detected")
+	}
+}

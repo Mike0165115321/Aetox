@@ -91,6 +91,8 @@ export function ProjectTree():Promise<Array<main.TreeNode>>;
 
 export function ProviderBaseURL(arg1:string):Promise<string>;
 
+export function ProviderWireFormats(arg1:string):Promise<Array<string>>;
+
 export function ReadFile(arg1:string):Promise<string>;
 
 export function ReadIdentityFile(arg1:string):Promise<string>;
@@ -122,6 +124,8 @@ export function SearchSessions(arg1:string):Promise<Array<main.SessionMeta>>;
 export function SendMessage(arg1:string):Promise<string>;
 
 export function SetAPIKey(arg1:string,arg2:string):Promise<main.ModelInfo>;
+
+export function SetProviderWireFormat(arg1:string):Promise<main.ModelInfo>;
 
 export function SupportedProviders():Promise<Array<string>>;
 

@@ -174,6 +174,10 @@ export function ProviderBaseURL(arg1) {
   return window['go']['main']['App']['ProviderBaseURL'](arg1);
 }
 
+export function ProviderWireFormats(arg1) {
+  return window['go']['main']['App']['ProviderWireFormats'](arg1);
+}
+
 export function ReadFile(arg1) {
   return window['go']['main']['App']['ReadFile'](arg1);
 }
@@ -236,6 +240,10 @@ export function SendMessage(arg1) {
 
 export function SetAPIKey(arg1, arg2) {
   return window['go']['main']['App']['SetAPIKey'](arg1, arg2);
+}
+
+export function SetProviderWireFormat(arg1) {
+  return window['go']['main']['App']['SetProviderWireFormat'](arg1);
 }
 
 export function SupportedProviders() {

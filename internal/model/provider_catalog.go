@@ -22,8 +22,12 @@ type ProviderMetadata struct {
 	Runtime        string
 	DefaultModel   string
 	BaseURL        string
-	ModelChoices   []string
-	EnvKeys        []string
+	// AltRuntime/AltBaseURL describe a second wire format this provider's API
+	// also speaks (see provider.Spec.AltRuntime); empty when there is only one.
+	AltRuntime   string
+	AltBaseURL   string
+	ModelChoices []string
+	EnvKeys      []string
 }
 
 // NormalizeProvider delegates to provider.Normalize.
@@ -45,6 +49,8 @@ func ProviderInfo(name string) (ProviderMetadata, bool) {
 		Runtime:        string(spec.Runtime),
 		DefaultModel:   spec.ModelDefaults.FallbackModel,
 		BaseURL:        spec.BaseURL,
+		AltRuntime:     string(spec.AltRuntime),
+		AltBaseURL:     spec.AltBaseURL,
 		ModelChoices:   spec.ModelDefaults.RecommendedModels,
 		EnvKeys:        spec.EnvKeys,
 	}, true
