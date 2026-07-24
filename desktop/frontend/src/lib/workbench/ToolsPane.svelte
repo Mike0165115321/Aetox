@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
+  import { onMount, onDestroy } from 'svelte'
   import { ListSkills } from '../../../wailsjs/go/main/App'
+  import { EventsOn } from '../../../wailsjs/runtime/runtime'
   import { t } from '../i18n.svelte'
 
   type SkillRow = { name: string; description: string; source: string }
@@ -17,6 +18,10 @@
     skills = await ListSkills()
   }
   onMount(load)
+  // MCP servers connect in the background after startup; the backend emits
+  // this once their tools are registered, so the panel fills in on its own.
+  const off = EventsOn('skills:updated', load)
+  onDestroy(() => off())
 </script>
 
 <div class="insp-scroll">

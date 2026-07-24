@@ -1,9 +1,11 @@
 package skill
 
 import (
-	"github.com/Mike0165115321/Aetox/internal/model"
 	"context"
 	"fmt"
+	"sync"
+
+	"github.com/Mike0165115321/Aetox/internal/model"
 )
 
 type Input map[string]any
@@ -48,7 +50,11 @@ type registryEntry struct {
 	source Source
 }
 
+// Registry is safe for concurrent use: MCP tools are registered from a
+// background goroutine (see desktop applyConfig) while turns read the registry
+// live through the dispatcher, so every access is guarded by mu.
 type Registry struct {
+	mu      sync.RWMutex
 	entries map[string]registryEntry
 }
 
@@ -65,6 +71,8 @@ func (r *Registry) Register(skill Skill, source Source) error {
 		return nil
 	}
 	name := skill.Name()
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if existing, ok := r.entries[name]; ok {
 		return fmt.Errorf("skill %q already registered (source=%s), refusing to overwrite with source=%s", name, existing.source, source)
 	}
@@ -76,6 +84,8 @@ func (r *Registry) Get(name string) (Skill, bool) {
 	if r == nil {
 		return nil, false
 	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	entry, ok := r.entries[name]
 	return entry.skill, ok
 }
@@ -85,6 +95,8 @@ func (r *Registry) SourceOf(name string) (Source, bool) {
 	if r == nil {
 		return "", false
 	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	entry, ok := r.entries[name]
 	return entry.source, ok
 }
@@ -93,6 +105,8 @@ func (r *Registry) Names() []string {
 	if r == nil {
 		return nil
 	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	names := make([]string, 0, len(r.entries))
 	for name := range r.entries {
 		names = append(names, name)
@@ -104,6 +118,8 @@ func (r *Registry) Snapshot() map[string]Skill {
 	if r == nil {
 		return nil
 	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	snapshot := make(map[string]Skill, len(r.entries))
 	for name, entry := range r.entries {
 		snapshot[name] = entry.skill

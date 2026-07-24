@@ -38,6 +38,26 @@ func (m *Manager) Clients() []*Client {
 	return m.clients
 }
 
+// PermissionRules returns the default "ask" rule for every configured server —
+// derived from server names alone, with no connection. This lets the safety
+// gate be installed synchronously at bootstrap (MCP tools never auto-run) even
+// though tool registration itself is deferred to a background connect. Keep in
+// sync with the rule Register attaches per server.
+func (m *Manager) PermissionRules() []safety.PermissionRule {
+	if m == nil {
+		return nil
+	}
+	rules := make([]safety.PermissionRule, 0, len(m.clients))
+	for _, c := range m.clients {
+		rules = append(rules, safety.PermissionRule{
+			Tool:    sanitize(c.Name()) + "_*",
+			Pattern: "*",
+			Action:  safety.PermissionAsk,
+		})
+	}
+	return rules
+}
+
 // Register connects each server (lazily, cached) and registers every tool it
 // exposes into registry as SourceExternal. It returns one default "ask"
 // permission rule per server so MCP tools never auto-run — even under

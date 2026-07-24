@@ -968,6 +968,29 @@ func (a *App) applyConfig(cfg config.Config) {
 		a.agent.RestoreHistory(transcriptToModelMessages(a.transcript))
 	}
 	persistModelPreference(cfg)
+
+	// Connect MCP servers and register their tools OFF the startup path: a cold
+	// `npx -y pkg@latest` resolve took ~5s and used to block first paint. The
+	// permission gate is already installed synchronously above (from server
+	// names), and the dispatcher reads the registry live, so tools just appear
+	// mid-session when their server finishes connecting. Captures this specific
+	// registry — a later model switch swaps in a new one and starts its own
+	// registration; tools landing in a superseded registry are simply unused.
+	if a.mcp != nil && registry != nil {
+		mgr, reg := a.mcp, registry
+		go func() {
+			defer debuglog.Block("mcpMgr.Register (background)")()
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			_, errs := mgr.Register(ctx, reg)
+			for _, err := range errs {
+				debuglog.Msg("mcp: %v", err)
+			}
+			if a.ctx != nil {
+				wailsruntime.EventsEmit(a.ctx, "skills:updated", nil)
+			}
+		}()
+	}
 }
 
 func resolveConfig(opts config.ConfigOptions) config.Config {
@@ -1072,31 +1095,20 @@ func bootstrapFromConfig(cfg config.Config, onToolAction func(action, detail str
 		debuglog.Msg("skill discovery: %v", discErr)
 	}
 	discoverDone()
-	// Register MCP tools before the dispatcher snapshots the registry. Bounded,
-	// not unlimited: this runs synchronously on every app startup/model switch,
-	// and a server like `npx -y pkg@latest` can take up to its own 30s default
-	// timeout to resolve on a cold cache — that used to block the whole UI
-	// (desktop's GetModelInfo etc. wouldn't resolve until this returned). Capped
-	// here regardless of how many servers are configured or how slow any one of
-	// them is; a server that doesn't make it just contributes no tools this
-	// session (already-existing per-server error handling below).
-	mcpDone := debuglog.Block("mcpMgr.Register")
-	mcpCtx, mcpCancel := context.WithTimeout(context.Background(), 8*time.Second)
-	mcpRules, mcpErrs := mcpMgr.Register(mcpCtx, registry)
-	mcpCancel()
-	mcpDone()
-	for _, mcpErr := range mcpErrs {
-		debuglog.Msg("mcp: %v", mcpErr)
-	}
 	dispatcher := skill.NewDispatcher(registry)
 
 	permissions, permErr := config.LoadPermissions()
 	if permErr != nil {
 		debuglog.Msg("permissions load failed: %v", permErr)
 	}
-	// Prepend the default MCP "ask" rules so a user's explicit rule (later in
-	// the list) still wins under last-match-wins.
-	permissions.Rules = append(mcpRules, permissions.Rules...)
+	// Prepend the default MCP "ask" rules so MCP tools never auto-run. These are
+	// derived from configured server names WITHOUT connecting — so the safety
+	// gate is in place synchronously here, even though the tools themselves are
+	// registered later by a background connect (applyConfig), which is what used
+	// to block startup ~5s on a cold `npx` resolve. A tool named "<server>_x"
+	// can't be called before its "<server>_*" ask-rule exists, so nothing races.
+	// User rules stay last (last-match-wins) so explicit choices still win.
+	permissions.Rules = append(mcpMgr.PermissionRules(), permissions.Rules...)
 
 	chatApp, err := aetoxapp.NewApp(aetoxapp.Options{
 		Agent:          agent,

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/Mike0165115321/Aetox/internal/config"
 )
@@ -141,16 +142,26 @@ func TestListSkillsSurfacesMCPTool(t *testing.T) {
 		}
 	})
 
+	// MCP tools now register on a background goroutine (see applyConfig) so
+	// startup isn't blocked on a cold connect — poll until the echo server's
+	// tool surfaces instead of reading once.
 	var found *SkillInfo
-	skills := a.ListSkills()
-	for i := range skills {
-		if skills[i].Source == "mcp" {
-			found = &skills[i]
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		for _, s := range a.ListSkills() {
+			if s.Source == "mcp" {
+				sc := s
+				found = &sc
+				break
+			}
+		}
+		if found != nil {
 			break
 		}
+		time.Sleep(50 * time.Millisecond)
 	}
 	if found == nil {
-		t.Fatalf("no mcp-sourced tool in ListSkills; got %+v", skills)
+		t.Fatalf("no mcp-sourced tool in ListSkills after 15s; got %+v", a.ListSkills())
 	}
 	if found.Name != "echo_echo" {
 		t.Fatalf("mcp tool name = %q, want echo_echo", found.Name)
