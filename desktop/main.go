@@ -10,6 +10,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 
 	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mike0165115321/Aetox/internal/proc"
 )
 
 //go:embed all:frontend/dist
@@ -30,6 +31,10 @@ func webviewUserDataDir(name string) string {
 }
 
 func main() {
+	// Every child this app ever spawns (MCP servers, shells, git, npx chains)
+	// must die with it — even on force-kill. See ARCHITECTURE.md §24.5.
+	proc.KillTreeOnExit()
+
 	// Create an instance of the app structure
 	app := NewApp()
 

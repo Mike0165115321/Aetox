@@ -18,6 +18,7 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/debuglog"
 	"github.com/Mike0165115321/Aetox/internal/mcp"
 	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mike0165115321/Aetox/internal/proc"
 	"github.com/Mike0165115321/Aetox/internal/prompt"
 	"github.com/Mike0165115321/Aetox/internal/safety"
 	"github.com/Mike0165115321/Aetox/internal/skill"
@@ -39,6 +40,8 @@ var (
 )
 
 // toMCPServers translates persisted MCP config DTOs into mcp.Server values.
+// Must map every field desktop's twin maps (desktop/app.go) — a server the
+// user disabled or configured as remote in the GUI behaves the same here.
 func toMCPServers(cfgs []config.MCPServerConfig) []mcp.Server {
 	out := make([]mcp.Server, 0, len(cfgs))
 	for _, c := range cfgs {
@@ -47,7 +50,10 @@ func toMCPServers(cfgs []config.MCPServerConfig) []mcp.Server {
 			Command:     c.Command,
 			Cwd:         c.Cwd,
 			Environment: c.Environment,
+			URL:         c.URL,
+			Headers:     c.Headers,
 			Timeout:     time.Duration(c.TimeoutMs) * time.Millisecond,
+			Disabled:    c.Disabled,
 		})
 	}
 	return out
@@ -80,6 +86,9 @@ func parseModelWithThink(raw string) (string, string, bool) {
 }
 
 func main() {
+	// Children (MCP servers, shell tools) die with the process, even on
+	// force-kill. See ARCHITECTURE.md §24.5.
+	proc.KillTreeOnExit()
 	setUTF8Console()
 	providerUsageHint := "model provider (" + strings.Join(model.SupportedProviders(), "|") + ")"
 
