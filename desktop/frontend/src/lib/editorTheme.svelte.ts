@@ -125,15 +125,15 @@ const NAMED_EDITOR_THEMES: Record<ThemeName, MonacoThemeData> = {
   aetox: {
     base: 'vs-dark', inherit: true,
     rules: rules({
-      comment: '565f6b', string: '3fb950', number: 'd29922', constant: 'd29922',
+      comment: '56585f', string: '3fb950', number: 'd29922', constant: 'd29922',
       keyword: 'a371f7', function: '58a6ff', type: '35d0e0', tag: 'f85149',
-      'attribute.name': 'd29922', variable: 'c4ccd6', delimiter: '9fb3c8', regexp: '7fe9f3', invalid: 'f85149',
+      'attribute.name': 'd29922', variable: 'b0b3b8', delimiter: 'a0a3a9', regexp: '7fe9f3', invalid: 'f85149',
     }),
     colors: {
-      'editor.background': '#0e1420', 'editor.foreground': '#e6edf3',
-      'editor.lineHighlightBackground': '#20242c', 'editorCursor.foreground': '#35d0e0',
-      'editor.selectionBackground': '#2c3644', 'editorLineNumber.foreground': '#565f6b',
-      'editorLineNumber.activeForeground': '#9fb3c8',
+      'editor.background': '#121215', 'editor.foreground': '#f2f2f3',
+      'editor.lineHighlightBackground': '#1f1f23', 'editorCursor.foreground': '#35d0e0',
+      'editor.selectionBackground': '#3a3a40', 'editorLineNumber.foreground': '#56585f',
+      'editorLineNumber.activeForeground': '#a0a3a9',
     },
   },
   'catppuccin-mocha': {

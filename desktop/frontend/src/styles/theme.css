@@ -89,8 +89,8 @@
   --diff-hunk-text:var(--c-violet-400);
 
   /* chrome */
-  --scrollbar-thumb:#20293580;
-  --scrollbar-thumb-hover:#2a3542;
+  --scrollbar-thumb:#2a2a2e80;
+  --scrollbar-thumb-hover:#3a3a40;
 }
 
 /* ---------- named themes — each block is a full, independent override of

@@ -30,7 +30,7 @@ export const THEMES: { value: ThemeName; label: string }[] = [
   { value: 'solarized-light', label: 'Solarized Light' },
 ]
 
-const DEFAULT_DARK: ThemeName = 'nord'
+const DEFAULT_DARK: ThemeName = 'aetox'
 
 const STORAGE_KEY = 'aetox-theme'
 const VALID_NAMES = new Set(THEMES.map((t) => t.value))

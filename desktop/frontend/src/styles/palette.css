@@ -3,27 +3,28 @@
    semantic roles per theme. Add a swatch here, name a role there. */
 
 :root {
-  /* cool ink scale (dark grounds) */
-  --c-ink-1000:#06101a;
-  --c-ink-950:#121317;
-  --c-ink-930:#0e1420;
-  --c-ink-925:#14161b;
-  --c-ink-900:#191c22;
-  --c-ink-850:#20242c;
-  --c-ink-820:#1a2230;
-  --c-ink-810:#161e2a;
-  --c-ink-800:#171e28;
-  --c-ink-750:#1e2632;
-  --c-ink-700:#243040;
-  --c-ink-650:#2c3644;
-  --c-ink-600:#3a465a;
+  /* neutral ink scale (dark grounds) — anchors: bg #0f0f11, surface #16161a,
+     elevated #1f1f23, border #2a2a2e; the rest interpolated on the same hue */
+  --c-ink-1000:#0a0a0c;
+  --c-ink-950:#0f0f11;
+  --c-ink-930:#121215;
+  --c-ink-925:#131316;
+  --c-ink-900:#16161a;
+  --c-ink-850:#1f1f23;
+  --c-ink-820:#26262b;
+  --c-ink-810:#1c1c20;
+  --c-ink-800:#222226;
+  --c-ink-750:#2a2a2e;
+  --c-ink-700:#313136;
+  --c-ink-650:#3a3a40;
+  --c-ink-600:#46464e;
 
-  /* neutral text */
-  --c-slate-100:#e6edf3;
-  --c-slate-300:#c4ccd6;
-  --c-slate-400:#9fb3c8;
-  --c-slate-500:#7d8590;
-  --c-slate-600:#565f6b;
+  /* neutral text — anchors: primary #f2f2f3, secondary #b0b3b8 */
+  --c-slate-100:#f2f2f3;
+  --c-slate-300:#b0b3b8;
+  --c-slate-400:#a0a3a9;
+  --c-slate-500:#7d8087;
+  --c-slate-600:#56585f;
 
   /* accent — cyan */
   --c-cyan-200:#5fd6c9;
