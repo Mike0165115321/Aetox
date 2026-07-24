@@ -373,6 +373,10 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   border-radius:8px; border:1px solid var(--border-subtle);
   margin:4px 6px 4px 0; background:var(--surface-sunken);
 }
+/* Several images in one paragraph = a gallery row: cap each to roughly a
+   third of the bubble so 2–3 sit side by side instead of stacking full-size.
+   (:only-child keeps a lone image at the larger single-image size above.) */
+.markdown-body p > img:not(:only-child) { max-width:32%; max-height:180px; }
 .markdown-body hr { border:none; border-top:1px solid var(--border-subtle); margin:.8em 0; }
 .markdown-body code {
   font-family:var(--mono); font-size:.9em; background:var(--surface-code);
