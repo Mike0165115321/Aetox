@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Mike0165115321/Aetox/internal/audit"
+	"github.com/Mike0165115321/Aetox/internal/proc"
 	"github.com/Mike0165115321/Aetox/internal/rtk"
 )
 
@@ -57,6 +58,7 @@ func (s *shellSkill) Execute(ctx context.Context, input Input) (Output, error) {
 		cmd = exec.CommandContext(ctx, "sh", "-c", execLine)
 	}
 	cmd.Dir = workDir
+	proc.HideConsole(cmd)
 	buffer := &bytes.Buffer{}
 	cmd.Stdout = buffer
 	cmd.Stderr = buffer

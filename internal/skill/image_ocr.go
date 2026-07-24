@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mike0165115321/Aetox/internal/proc"
 )
 
 type imageOCRSkill struct {
@@ -120,6 +121,7 @@ func (s *imageOCRSkill) run(ctx context.Context, start time.Time, requestPath st
 
 func runTesseract(ctx context.Context, imagePath string) (string, error) {
 	cmd := exec.CommandContext(ctx, "tesseract", imagePath, "stdout", "-l", "tha+eng")
+	proc.HideConsole(cmd)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

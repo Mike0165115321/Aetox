@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mike0165115321/Aetox/internal/proc"
 )
 
 const (
@@ -170,6 +171,7 @@ func extractFrames(ctx context.Context, videoPath, outDir string, intervalSec in
 		"-frames:v", strconv.Itoa(videoOCRMaxFrames),
 		filepath.Join(outDir, "frame_%04d.png"),
 	)
+	proc.HideConsole(cmd)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {

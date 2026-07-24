@@ -18,6 +18,8 @@ import (
 	"time"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/Mike0165115321/Aetox/internal/proc"
 )
 
 // Status reports where a server's connection stands. Connection failures are
@@ -105,6 +107,9 @@ func (c *Client) ensure(ctx context.Context) (*mcpsdk.ClientSession, error) {
 
 	cmd := exec.Command(c.cfg.Command[0], c.cfg.Command[1:]...)
 	cmd.Dir = c.cfg.Cwd
+	// The production desktop exe is a GUI app: without this, a console child
+	// (npx→cmd.exe on Windows) pops a visible Windows Terminal window on spawn.
+	proc.HideConsole(cmd)
 	if len(c.cfg.Environment) > 0 {
 		env := os.Environ()
 		for k, v := range c.cfg.Environment {

@@ -23,6 +23,7 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/debuglog"
 	"github.com/Mike0165115321/Aetox/internal/mcp"
 	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mike0165115321/Aetox/internal/proc"
 	"github.com/Mike0165115321/Aetox/internal/prompt"
 	"github.com/Mike0165115321/Aetox/internal/safety"
 	"github.com/Mike0165115321/Aetox/internal/skill"
@@ -118,7 +119,9 @@ func (a *App) GitChangedFiles() []ChangedFile {
 	if !a.projectFocused {
 		return out
 	}
-	raw, err := exec.Command("git", "-C", a.cfg.SandboxRoot, "status", "--porcelain").Output()
+	cmd := exec.Command("git", "-C", a.cfg.SandboxRoot, "status", "--porcelain")
+	proc.HideConsole(cmd)
+	raw, err := cmd.Output()
 	if err != nil {
 		return out
 	}

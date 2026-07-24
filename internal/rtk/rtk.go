@@ -11,6 +11,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/Mike0165115321/Aetox/internal/proc"
 )
 
 // Available reports whether rtk can be used at all — already on PATH,
@@ -82,6 +84,7 @@ func Rewrite(command string) (string, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, "rewrite", command)
+	proc.HideConsole(cmd)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	_ = cmd.Run()
@@ -103,6 +106,7 @@ func Filter(filter, content string) (string, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, "pipe", "-f", filter)
+	proc.HideConsole(cmd)
 	cmd.Stdin = strings.NewReader(content)
 	var out bytes.Buffer
 	cmd.Stdout = &out

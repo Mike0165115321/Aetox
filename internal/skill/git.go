@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/Mike0165115321/Aetox/internal/proc"
 )
 
 type gitSkill struct {
@@ -151,6 +153,7 @@ func ensureGitRepo(ctx context.Context, workspace string) error {
 func executeCommand(ctx context.Context, name, dir string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
+	proc.HideConsole(cmd)
 	buffer := &bytes.Buffer{}
 	cmd.Stdout = buffer
 	cmd.Stderr = buffer

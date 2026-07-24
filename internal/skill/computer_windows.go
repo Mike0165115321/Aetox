@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"unicode/utf16"
 	"unsafe"
+
+	"github.com/Mike0165115321/Aetox/internal/proc"
 )
 
 var (
@@ -238,6 +240,7 @@ func computerScreenshot(ctx context.Context, pngPath string) error {
 			"$g.Dispose(); $bmp.Dispose()",
 		strings.ReplaceAll(pngPath, "'", "''"))
 	cmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-NonInteractive", "-Command", script)
+	proc.HideConsole(cmd)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		msg := strings.TrimSpace(string(out))
 		if msg == "" {
