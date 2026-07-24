@@ -9,5 +9,12 @@
   "author": {
     "name": "Mike0165115321",
     "email": "218032854+Mike0165115321@users.noreply.github.com"
+  },
+  "info": {
+    "companyName": "Aetox",
+    "productName": "Aetox",
+    "productVersion": "0.4.0",
+    "copyright": "© 2026 Mike0165115321",
+    "comments": "AI Agent ที่สถาปัตยกรรมขยายศักยภาพให้ทุกโมเดล"
   }
 }

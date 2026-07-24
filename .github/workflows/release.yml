@@ -1,0 +1,69 @@
+# Windows release: push a tag like v0.4.0 and this builds the desktop app
+# (NSIS installer + portable zip) and the CLI, then attaches everything to a
+# GitHub Release. ARCHITECTURE.md §23 has the release checklist.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install wails (pinned to go.mod) and NSIS
+        run: |
+          $v = go list -m -f '{{.Version}}' github.com/wailsapp/wails/v2
+          go install "github.com/wailsapp/wails/v2/cmd/wails@$v"
+          choco install nsis -y --no-progress
+          Add-Content $env:GITHUB_PATH "C:\Program Files (x86)\NSIS"
+
+      - name: Stamp version from tag into wails.json
+        run: |
+          $version = "$env:GITHUB_REF_NAME".TrimStart("v")
+          $cfg = Get-Content desktop/wails.json -Raw | ConvertFrom-Json
+          $cfg.info.productVersion = $version
+          $cfg | ConvertTo-Json -Depth 5 | Set-Content desktop/wails.json -Encoding utf8
+
+      - name: Build desktop app + NSIS installer
+        working-directory: desktop
+        run: wails build -nsis -platform windows/amd64
+
+      - name: Build CLI
+        run: go build -trimpath -ldflags "-s -w" -o aetox-cli-windows-amd64.exe ./cmd/aetox
+
+      - name: Package portable zip + checksums
+        run: |
+          Compress-Archive -Path desktop/build/bin/aetox-desktop.exe -DestinationPath aetox-desktop-windows-amd64-portable.zip
+          $files = @(
+            "desktop/build/bin/aetox-desktop-amd64-installer.exe",
+            "aetox-desktop-windows-amd64-portable.zip",
+            "aetox-cli-windows-amd64.exe"
+          )
+          $files | ForEach-Object {
+            "{0}  {1}" -f (Get-FileHash $_ -Algorithm SHA256).Hash, (Split-Path $_ -Leaf)
+          } | Set-Content checksums.txt
+          Get-Content checksums.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: |
+            desktop/build/bin/aetox-desktop-amd64-installer.exe
+            aetox-desktop-windows-amd64-portable.zip
+            aetox-cli-windows-amd64.exe
+            checksums.txt

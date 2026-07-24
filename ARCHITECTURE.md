@@ -812,6 +812,33 @@ One session, three engine layers fixed; OpenCode/Claude Code are the confirmed r
 
 ---
 
+## 23. Decision — Windows Distribution: GitHub Releases → winget → Scoop; npm rejected (2026-07-24)
+
+**Trigger:** owner — "เตรียมทำให้ติดตั้งได้ ผ่าน npm หรืออะไร เสนอมา อันไหนพร้อมและสะดวก วินโดวส์ก่อน".
+
+**Channel ranking:**
+1. **GitHub Releases + NSIS installer** — the foundation every other channel points at. The installer ([desktop/build/windows/installer/project.nsi](desktop/build/windows/installer/project.nsi)) was already excellent: WebView2 runtime + Tesseract silently installed with pinned SHA256 + Thai traineddata. What was missing was purely the pipeline.
+2. **winget** — widest reach (built into Win 10/11); needs one published release first, then `wingetcreate new <installer-url>` generates the manifest PR. Blocked on the LICENSE decision (winget requires a license field).
+3. **Scoop** — zero-gatekeeper channel; manifest lives in this repo ([scoop/aetox.json](scoop/aetox.json), `checkver: github` + autoupdate), users run `scoop install https://raw.githubusercontent.com/Mike0165115321/Aetox/main/scoop/aetox.json`.
+4. **npm — rejected:** wrong audience and wrong shape for a desktop app (per-platform binary wrapper packages, no Start-Menu integration). Revisit only if the CLI ever targets JS-ecosystem devs specifically.
+
+**Shipped:**
+- [.github/workflows/release.yml](.github/workflows/release.yml) — tag `v*` → windows-latest builds `wails build -nsis` (wails pinned to go.mod's version, NSIS via choco), CLI exe, portable zip, `checksums.txt`, attaches all four to a **draft** release (owner publishes manually).
+- [desktop/wails.json](desktop/wails.json) `info` block (product name/version/copyright); CI re-stamps `productVersion` from the tag, local builds use the committed value.
+- Proven locally end-to-end 2026-07-24: NSIS via `scoop install nsis`, `wails build -nsis` → `aetox-desktop-amd64-installer.exe` (12.4 MB) with correct version metadata (ProductVersion 0.4.0).
+
+**Release checklist (owner):**
+1. Bump `appVersion` in [cmd/aetox/main.go](cmd/aetox/main.go) and `info.productVersion` in [desktop/wails.json](desktop/wails.json).
+2. `git tag v0.4.0 && git push origin v0.4.0` → CI drafts the release → review + publish.
+3. First release only: copy the portable zip's SHA256 from `checksums.txt` into [scoop/aetox.json](scoop/aetox.json) `hash` (autoupdate maintains it afterwards).
+4. When LICENSE lands: `wingetcreate new <installer asset URL>` → PR to microsoft/winget-pkgs.
+
+**Open decision (owner):** LICENSE file — required by winget, expected by scoop; also decides what users may legally do with the code. Options discussed: MIT/Apache-2.0 (open), BUSL/proprietary freeware (protects the "sell it" path).
+
+**Not built, deliberately:** code signing (unsigned exe = SmartScreen "unknown publisher" warning on first run — Azure Trusted Signing ~$10/mo when distribution volume justifies it), macOS/Linux packaging (desktop is Win32-only today, §22).
+
+---
+
 ## Validation
 
 1. **Claim traceability:** every claim above cites a file or an existing project doc; the two `Unverified`/`Inferred, Verify first: Yes` items are marked as such, not stated as fact.

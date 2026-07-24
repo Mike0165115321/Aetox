@@ -1,0 +1,16 @@
+{
+    "version": "0.4.0",
+    "description": "Aetox — AI agent desktop: architecture that expands any model's capability (OCR, video, browser, desktop control)",
+    "homepage": "https://github.com/Mike0165115321/Aetox",
+    "license": "TBD",
+    "url": "https://github.com/Mike0165115321/Aetox/releases/download/v0.4.0/aetox-desktop-windows-amd64-portable.zip",
+    "hash": "REPLACED-BY-FIRST-RELEASE-CHECKSUMS-TXT",
+    "shortcuts": [
+        ["aetox-desktop.exe", "Aetox"]
+    ],
+    "notes": "Portable build: WebView2 runtime is preinstalled on Windows 11; the image_ocr/video_ocr skills will explain how to get Tesseract/ffmpeg on first use (or use the full installer .exe from the GitHub release, which sets Tesseract up automatically).",
+    "checkver": "github",
+    "autoupdate": {
+        "url": "https://github.com/Mike0165115321/Aetox/releases/download/v$version/aetox-desktop-windows-amd64-portable.zip"
+    }
+}
