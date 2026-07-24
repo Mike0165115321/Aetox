@@ -489,6 +489,11 @@ func (c *githubRepoClient) doRequest(ctx context.Context, endpoint string, accep
 	if strings.TrimSpace(accept) != "" {
 		req.Header.Set("Accept", accept)
 	}
+	// Optional token lifts the anonymous rate limit (60/h -> 5000/h) and
+	// opens private repos the user can access. Fine without one.
+	if token := githubToken(); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, 0, err
@@ -507,4 +512,326 @@ func emptyFallback(value string, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func githubToken() string {
+	for _, key := range []string{"GITHUB_TOKEN", "GH_TOKEN"} {
+		if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// ---------------------------------------------------------------------------
+// github_search / github_read_file / github_list_files — read-only GitHub
+// access beyond a single repo summary, all through the same githubRepoClient.
+// ---------------------------------------------------------------------------
+
+type githubSearchSkill struct {
+	client *githubRepoClient
+}
+
+func (*githubSearchSkill) Name() string { return "github_search" }
+
+func (*githubSearchSkill) Description() string {
+	return "ค้นหา repository บน GitHub"
+}
+
+func (s *githubSearchSkill) ToolDefinition() model.ToolDefinition {
+	schema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"query": map[string]any{
+				"type":        "string",
+				"description": "Search query (GitHub repo search syntax, e.g. 'terminal ui language:go')",
+			},
+		},
+		"required":             []string{"query"},
+		"additionalProperties": false,
+	}
+	payload, _ := json.Marshal(schema)
+	return model.ToolDefinition{
+		Type: "function",
+		Function: model.ToolFunction{
+			Name:        "github_search",
+			Description: "Search GitHub repositories. Returns name, stars, description, and URL per result. Follow up with github_list_files / github_read_file.",
+			Parameters:  payload,
+		},
+	}
+}
+
+func (s *githubSearchSkill) Execute(ctx context.Context, input Input) (Output, error) {
+	args := stringSlice(input["args"])
+	if len(args) == 0 {
+		err := errors.New("usage: github_search <query>")
+		return newToolOutput("github_search", "github_search", "", time.Now(), false, err), err
+	}
+	return s.search(ctx, strings.TrimSpace(strings.Join(args, " ")))
+}
+
+func (s *githubSearchSkill) ExecuteTool(ctx context.Context, args map[string]any) (Output, error) {
+	query, _ := args["query"].(string)
+	return s.search(ctx, strings.TrimSpace(query))
+}
+
+func (s *githubSearchSkill) search(ctx context.Context, query string) (Output, error) {
+	start := time.Now()
+	command := "github_search " + query
+	if query == "" {
+		err := errors.New("query is required")
+		return newToolOutput("github_search", "github_search", "", start, false, err), err
+	}
+	client := s.client
+	if client == nil {
+		client = newGitHubRepoClient("", "", nil)
+	}
+	endpoint := fmt.Sprintf("%s/search/repositories?per_page=10&q=%s", client.apiBaseURL, url.QueryEscape(query))
+	body, statusCode, err := client.doJSONRequest(ctx, endpoint)
+	if err != nil {
+		return newToolOutput("github_search", command, "", start, false, err), err
+	}
+	if statusCode < 200 || statusCode >= 300 {
+		err := fmt.Errorf("github search failed with status %d", statusCode)
+		return newToolOutput("github_search", command, "", start, false, err), err
+	}
+	var parsed struct {
+		TotalCount int `json:"total_count"`
+		Items      []struct {
+			FullName    string `json:"full_name"`
+			HTMLURL     string `json:"html_url"`
+			Description string `json:"description"`
+			Stars       int    `json:"stargazers_count"`
+			Language    string `json:"language"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return newToolOutput("github_search", command, "", start, false, err), err
+	}
+	if len(parsed.Items) == 0 {
+		return newToolOutput("github_search", command, "(no results)", start, false, nil), nil
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "GitHub repos for %q (%d total):\n", query, parsed.TotalCount)
+	for i, item := range parsed.Items {
+		fmt.Fprintf(&b, "\n%d. %s ★%d %s\n   %s\n   %s\n",
+			i+1, item.FullName, item.Stars, emptyFallback(item.Language, ""),
+			emptyFallback(item.Description, "(no description)"), item.HTMLURL)
+	}
+	return newToolOutput("github_search", command, strings.TrimSpace(b.String()), start, false, nil), nil
+}
+
+type githubReadFileSkill struct {
+	client *githubRepoClient
+}
+
+func (*githubReadFileSkill) Name() string { return "github_read_file" }
+
+func (*githubReadFileSkill) Description() string {
+	return "อ่านไฟล์จาก GitHub repository"
+}
+
+func (s *githubReadFileSkill) ToolDefinition() model.ToolDefinition {
+	schema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"repo_url": map[string]any{
+				"type":        "string",
+				"description": "GitHub repository URL (https://github.com/owner/repo)",
+			},
+			"path": map[string]any{
+				"type":        "string",
+				"description": "File path inside the repo, e.g. README.md or src/main.go",
+			},
+			"ref": map[string]any{
+				"type":        "string",
+				"description": "Branch, tag, or commit (default: the repo's default branch)",
+			},
+		},
+		"required":             []string{"repo_url", "path"},
+		"additionalProperties": false,
+	}
+	payload, _ := json.Marshal(schema)
+	return model.ToolDefinition{
+		Type: "function",
+		Function: model.ToolFunction{
+			Name:        "github_read_file",
+			Description: "Read one file from a GitHub repository (raw content). Use github_list_files first if you don't know the path.",
+			Parameters:  payload,
+		},
+	}
+}
+
+func (s *githubReadFileSkill) Execute(ctx context.Context, input Input) (Output, error) {
+	args := stringSlice(input["args"])
+	if len(args) < 2 {
+		err := errors.New("usage: github_read_file <repo-url> <path> [ref]")
+		return newToolOutput("github_read_file", "github_read_file", "", time.Now(), false, err), err
+	}
+	ref := ""
+	if len(args) > 2 {
+		ref = args[2]
+	}
+	return s.read(ctx, args[0], args[1], ref)
+}
+
+func (s *githubReadFileSkill) ExecuteTool(ctx context.Context, args map[string]any) (Output, error) {
+	repoURL, _ := args["repo_url"].(string)
+	path, _ := args["path"].(string)
+	ref, _ := args["ref"].(string)
+	return s.read(ctx, strings.TrimSpace(repoURL), strings.TrimSpace(path), strings.TrimSpace(ref))
+}
+
+func (s *githubReadFileSkill) read(ctx context.Context, repoURL, path, ref string) (Output, error) {
+	start := time.Now()
+	command := strings.TrimSpace("github_read_file " + repoURL + " " + path + " " + ref)
+	if repoURL == "" || path == "" {
+		err := errors.New("repo_url and path are required")
+		return newToolOutput("github_read_file", command, "", start, false, err), err
+	}
+	cleanPath, err := normalizeManifestRelativePath(path)
+	if err != nil {
+		return newToolOutput("github_read_file", command, "", start, false, err), err
+	}
+	client := s.client
+	if client == nil {
+		client = newGitHubRepoClient("", "", nil)
+	}
+	repo, err := client.fetchRepoMetadata(ctx, repoURL)
+	if err != nil {
+		return newToolOutput("github_read_file", command, "", start, false, err), err
+	}
+	if ref == "" {
+		ref = repo.DefaultBranch
+	}
+	target := repo
+	target.DefaultBranch = ref
+	body, err := client.fetchRawFile(ctx, target, cleanPath)
+	if err != nil {
+		return newToolOutput("github_read_file", command, "", start, false, err), err
+	}
+	content := string(body)
+	truncated := false
+	const maxChars = 60000
+	if len(content) > maxChars {
+		content = content[:maxChars] + "\n... (truncated)"
+		truncated = true
+	}
+	header := fmt.Sprintf("%s @ %s — %s\n\n", repo.FullName, ref, cleanPath)
+	return newToolOutput("github_read_file", command, header+content, start, truncated, nil), nil
+}
+
+type githubListFilesSkill struct {
+	client *githubRepoClient
+}
+
+func (*githubListFilesSkill) Name() string { return "github_list_files" }
+
+func (*githubListFilesSkill) Description() string {
+	return "ดูรายชื่อไฟล์ใน GitHub repository"
+}
+
+func (s *githubListFilesSkill) ToolDefinition() model.ToolDefinition {
+	schema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"repo_url": map[string]any{
+				"type":        "string",
+				"description": "GitHub repository URL (https://github.com/owner/repo)",
+			},
+			"path": map[string]any{
+				"type":        "string",
+				"description": "Directory path inside the repo (default: repo root)",
+			},
+		},
+		"required":             []string{"repo_url"},
+		"additionalProperties": false,
+	}
+	payload, _ := json.Marshal(schema)
+	return model.ToolDefinition{
+		Type: "function",
+		Function: model.ToolFunction{
+			Name:        "github_list_files",
+			Description: "List the files and directories at a path in a GitHub repository. Use before github_read_file to find paths.",
+			Parameters:  payload,
+		},
+	}
+}
+
+func (s *githubListFilesSkill) Execute(ctx context.Context, input Input) (Output, error) {
+	args := stringSlice(input["args"])
+	if len(args) == 0 {
+		err := errors.New("usage: github_list_files <repo-url> [path]")
+		return newToolOutput("github_list_files", "github_list_files", "", time.Now(), false, err), err
+	}
+	path := ""
+	if len(args) > 1 {
+		path = args[1]
+	}
+	return s.list(ctx, args[0], path)
+}
+
+func (s *githubListFilesSkill) ExecuteTool(ctx context.Context, args map[string]any) (Output, error) {
+	repoURL, _ := args["repo_url"].(string)
+	path, _ := args["path"].(string)
+	return s.list(ctx, strings.TrimSpace(repoURL), strings.TrimSpace(path))
+}
+
+func (s *githubListFilesSkill) list(ctx context.Context, repoURL, path string) (Output, error) {
+	start := time.Now()
+	command := strings.TrimSpace("github_list_files " + repoURL + " " + path)
+	if repoURL == "" {
+		err := errors.New("repo_url is required")
+		return newToolOutput("github_list_files", command, "", start, false, err), err
+	}
+	client := s.client
+	if client == nil {
+		client = newGitHubRepoClient("", "", nil)
+	}
+	target, ok := ExtractGitHubRepoURL(repoURL)
+	if !ok {
+		err := errors.New("invalid GitHub repository URL")
+		return newToolOutput("github_list_files", command, "", start, false, err), err
+	}
+	endpoint := fmt.Sprintf("%s/repos/%s/%s/contents", client.apiBaseURL, url.PathEscape(target.Owner), url.PathEscape(target.Repo))
+	if path != "" {
+		cleanPath, err := normalizeManifestRelativePath(path)
+		if err != nil {
+			return newToolOutput("github_list_files", command, "", start, false, err), err
+		}
+		endpoint += "/" + cleanPath
+	}
+	body, statusCode, err := client.doJSONRequest(ctx, endpoint)
+	if err != nil {
+		return newToolOutput("github_list_files", command, "", start, false, err), err
+	}
+	if statusCode == http.StatusNotFound {
+		err := fmt.Errorf("path not found in %s/%s: %s", target.Owner, target.Repo, emptyFallback(path, "(root)"))
+		return newToolOutput("github_list_files", command, "", start, false, err), err
+	}
+	if statusCode < 200 || statusCode >= 300 {
+		err := fmt.Errorf("github list failed with status %d", statusCode)
+		return newToolOutput("github_list_files", command, "", start, false, err), err
+	}
+	var entries []struct {
+		Name string `json:"name"`
+		Path string `json:"path"`
+		Type string `json:"type"`
+		Size int    `json:"size"`
+	}
+	if err := json.Unmarshal(body, &entries); err != nil {
+		// A file path returns an object, not an array — point the model at the right tool.
+		err := errors.New("path is a file, not a directory — use github_read_file")
+		return newToolOutput("github_list_files", command, "", start, false, err), err
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s/%s — %s:\n", target.Owner, target.Repo, emptyFallback(path, "(root)"))
+	for _, e := range entries {
+		if e.Type == "dir" {
+			fmt.Fprintf(&b, "%s/\n", e.Path)
+			continue
+		}
+		fmt.Fprintf(&b, "%s (%d bytes)\n", e.Path, e.Size)
+	}
+	return newToolOutput("github_list_files", command, strings.TrimSpace(b.String()), start, false, nil), nil
 }

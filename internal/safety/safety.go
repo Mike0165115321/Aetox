@@ -225,12 +225,14 @@ func AssessCommand(skillName string, args []string) Assessment {
 				Reason:    "plugin install can write files outside the repository",
 			}
 		}
-		if skillName == "github_repo_summary" {
+		// All github_* skills are read-only API calls (plugin_install, the
+		// one that writes, is handled above this branch).
+		if strings.HasPrefix(skillName, "github_") {
 			return Assessment{
-				SkillName: "github_repo_summary",
+				SkillName: skillName,
 				Risk:      RiskLow,
 				Effects:   []Effect{EffectUseNetwork},
-				Reason:    "read-only network request for repository summary",
+				Reason:    "read-only GitHub API request",
 			}
 		}
 		if skillName == "web_fetch" || skillName == "web_search" {
