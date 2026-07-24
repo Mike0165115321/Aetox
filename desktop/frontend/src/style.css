@@ -37,6 +37,9 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .app.sidebar-collapsed.inspector-collapsed { grid-template-columns:0px 0px minmax(360px, 1fr) 0px 0px; }
 .app.sidebar-collapsed .handle-l,
 .app.sidebar-collapsed .side { display:none; }
+/* the logo column collapses to 0 but .brand's padding still overflows it,
+   overlapping the sidebar-toggle button — hide the brand with its column */
+.app.sidebar-collapsed .brand { display:none; }
 
 .resize-handle { cursor:col-resize; position:relative; }
 .resize-handle.handle-l { grid-area:handle-l; }
