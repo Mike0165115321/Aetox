@@ -5,101 +5,125 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Aetox — สถาปัตยกรรม &gt; พารามิเตอร์ | AI Agent Desktop สำหรับ Windows</title>
 <meta name="description" content="Aetox ขยายศักยภาพให้ทุกโมเดล: โมเดลที่อ่านภาพไม่ได้ ดูวิดีโอไม่ได้ แตะเครื่องไม่ได้ — ทำได้หมดผ่านสถาปัตยกรรม เลือกได้ 13 providers หรือรัน local ไม่มี lock-in">
+<meta property="og:title" content="Aetox — สถาปัตยกรรม > พารามิเตอร์">
+<meta property="og:description" content="AI Agent Desktop ที่ขยายศักยภาพให้ทุกโมเดล — no lock-in, 13 providers, รัน local ได้">
+<meta name="theme-color" content="#0b0d10">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-8 -8 820 778'%3E%3Crect x='-8' y='-8' width='820' height='778' rx='130' fill='%230b0d10'/%3E%3Cpath fill='%2343d98a' fill-rule='evenodd' d='M 116.0,742.5 L 92.0,742.5 L 73.0,737.5 L 53.0,726.5 L 36.5,711.0 L 21.5,680.0 L 20.5,640.0 L 37.5,594.0 L 245.5,120.0 L 265.5,90.0 L 293.0,60.5 L 321.0,40.5 L 347.0,28.5 L 380.0,20.5 L 416.0,19.5 L 452.0,26.5 L 484.0,40.5 L 509.0,57.5 L 533.5,82.0 L 565.5,134.0 L 656.5,345.0 L 658.5,375.0 L 651.5,396.0 L 641.5,410.0 L 622.0,425.5 L 581.0,440.5 L 367.0,442.5 L 339.0,446.5 L 311.0,457.5 L 285.5,479.0 L 275.5,494.0 L 183.5,700.0 L 153.0,729.5 L 137.0,737.5 L 116.0,742.5 Z M 115.5,703.0 L 136.0,694.5 L 154.5,673.0 L 242.5,473.0 L 257.5,452.0 L 276.0,434.5 L 312.0,414.5 L 349.0,405.5 L 494.5,404.0 L 402.0,190.5 L 322.5,371.0 L 313.0,379.5 L 300.0,380.5 L 293.0,377.5 L 285.5,367.0 L 285.5,357.0 L 363.5,179.0 L 373.5,161.0 L 386.0,150.5 L 411.0,147.5 L 425.0,154.5 L 433.5,164.0 L 539.0,404.5 L 567.0,403.5 L 589.0,398.5 L 605.0,390.5 L 616.5,379.0 L 619.5,371.0 L 617.5,350.0 L 530.5,152.0 L 500.5,104.0 L 465.0,74.5 L 443.0,64.5 L 416.0,58.5 L 389.0,58.5 L 357.0,66.5 L 335.0,77.5 L 317.0,91.5 L 294.5,116.0 L 279.5,139.0 L 61.5,637.0 L 58.5,664.0 L 67.5,687.0 L 87.0,701.5 L 115.5,703.0 Z M 711.0,742.5 L 689.0,742.5 L 664.0,735.5 L 642.0,722.5 L 623.5,704.0 L 610.5,683.0 L 553.0,547.5 L 329.0,547.5 L 322.0,544.5 L 314.5,534.0 L 316.5,518.0 L 331.0,508.5 L 573.0,509.5 L 581.5,516.0 L 587.5,527.0 L 652.5,678.0 L 664.0,690.5 L 680.0,700.5 L 710.0,703.5 L 724.0,698.5 L 737.5,686.0 L 743.5,674.0 L 745.5,652.0 L 738.5,627.0 L 661.5,450.0 L 661.5,441.0 L 670.0,429.5 L 678.0,426.5 L 690.0,428.5 L 699.5,440.0 L 775.5,615.0 L 784.5,653.0 L 781.5,681.0 L 764.5,714.0 L 740.0,733.5 L 711.0,742.5 Z'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 :root{
-  --bg:#0b0d10; --panel:#10141a; --line:#242a33; --line-strong:#39424e;
-  --text:#e7ebf0; --muted:#98a2b0; --accent:#43d98a; --accent-dim:#2b8f5c;
+  --bg:#0b0d10; --panel:#10141a; --panel2:#0e1116; --line:#242a33; --line-strong:#39424e;
+  --text:#e7ebf0; --muted:#98a2b0; --accent:#43d98a; --accent-dim:#2b8f5c; --accent-glow:rgba(67,217,138,.22);
   --mono:"Cascadia Code",Consolas,"Courier New",monospace;
-  --sans:"Leelawadee UI","Segoe UI",Tahoma,sans-serif;
-  --s1:.5rem; --s2:1rem; --s3:1.5rem; --s4:2.5rem; --s5:4.5rem;
+  --sans:"IBM Plex Sans Thai","Leelawadee UI","Segoe UI",Tahoma,sans-serif;
+  --s1:.5rem; --s2:1rem; --s3:1.5rem; --s4:2.5rem; --s5:5rem;
 }
 *{margin:0;padding:0;box-sizing:border-box}
 html{scroll-behavior:smooth}
-@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}*{transition:none!important}}
-body{background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.65}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}*{transition:none!important;animation:none!important}}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.7}
 a{color:inherit;text-decoration:none}
 a:hover{color:var(--accent)}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .wrap{max-width:1120px;margin:0 auto;padding:0 var(--s3)}
 .mono{font-family:var(--mono)}
+svg.mark-a{display:block}
 
 /* ── header ─────────────────────────────────────────── */
-header{border-bottom:1px solid var(--line)}
-.bar{display:flex;align-items:baseline;gap:var(--s2);padding:var(--s2) 0}
-.mark{font-family:var(--mono);font-weight:700;font-size:1.05rem;letter-spacing:.35em}
-.ver{font-family:var(--mono);font-size:.75rem;color:var(--accent);border:1px solid var(--line);padding:.1rem .5rem}
-.bar nav{margin-left:auto;display:flex;gap:var(--s3);font-size:.9rem;color:var(--muted)}
+header{border-bottom:1px solid var(--line);position:sticky;top:0;background:rgba(11,13,16,.92);backdrop-filter:blur(6px);z-index:10}
+.bar{display:flex;align-items:center;gap:var(--s2);padding:.8rem 0}
+.lockup{display:flex;align-items:center;gap:.7rem}
+.lockup .mark-a{width:26px;height:auto;color:var(--accent)}
+.lockup .mark-w{height:15px;width:auto;color:var(--text)}
+.ver{font-family:var(--mono);font-size:.72rem;color:var(--accent);border:1px solid var(--line);padding:.12rem .55rem;margin-left:.3rem}
+.bar nav{margin-left:auto;display:flex;gap:var(--s3);font-size:.88rem;color:var(--muted)}
 
 /* ── hero ───────────────────────────────────────────── */
-.hero{display:grid;grid-template-columns:7fr 5fr;gap:var(--s4);padding:var(--s5) 0;border-bottom:1px solid var(--line)}
-.kicker{font-family:var(--mono);font-size:.75rem;letter-spacing:.25em;color:var(--accent);margin-bottom:var(--s2)}
-h1{font-size:clamp(2rem,4.5vw,3.1rem);line-height:1.2;font-weight:700;margin-bottom:var(--s2)}
+.hero{position:relative;overflow:hidden;border-bottom:1px solid var(--line)}
+.hero-grid{display:grid;grid-template-columns:7fr 5fr;gap:var(--s4);padding:var(--s5) 0;position:relative}
+.watermark{position:absolute;right:-4%;top:50%;transform:translateY(-46%);width:min(44vw,540px);color:var(--accent);opacity:.05;pointer-events:none;z-index:0}
+.hero-copy,.term{position:relative;z-index:1}
+.kicker{font-family:var(--mono);font-size:.74rem;letter-spacing:.28em;color:var(--accent);margin-bottom:var(--s2)}
+h1{font-size:clamp(2.3rem,5vw,3.5rem);line-height:1.15;font-weight:700;margin-bottom:var(--s2);letter-spacing:-.01em}
 h1 .gt{color:var(--accent)}
-.lede{color:var(--muted);max-width:34rem;margin-bottom:var(--s3)}
+.lede{color:var(--muted);max-width:33rem;margin-bottom:var(--s3);font-size:1.02rem}
 .cta{display:flex;flex-wrap:wrap;gap:var(--s2);align-items:center;margin-bottom:var(--s2)}
-.btn{display:inline-block;background:var(--accent);color:#06130c;font-weight:700;padding:.7rem 1.4rem;border:1px solid var(--accent);transition:background .12s}
-.btn:hover{background:#5fe8a0;color:#06130c}
-.ghost{border:1px solid var(--line-strong);padding:.7rem 1.2rem;color:var(--muted);transition:border-color .12s}
-.ghost:hover{border-color:var(--accent)}
-.cmdrow{display:flex;align-items:center;gap:var(--s1);border:1px solid var(--line);background:var(--panel);padding:.55rem .8rem;font-family:var(--mono);font-size:.78rem;color:var(--muted);max-width:100%;overflow-x:auto;white-space:nowrap}
+.btn{display:inline-flex;align-items:center;gap:.6rem;background:var(--accent);color:#06130c;font-weight:700;font-size:1rem;padding:.75rem 1.5rem;border:1px solid var(--accent);box-shadow:0 0 22px var(--accent-glow);transition:background .12s,box-shadow .12s}
+.btn:hover{background:#5fe8a0;color:#06130c;box-shadow:0 0 34px var(--accent-glow)}
+.btn svg{width:15px;height:15px}
+.ghost{border:1px solid var(--line-strong);padding:.75rem 1.2rem;color:var(--muted);font-size:.92rem;transition:border-color .12s,color .12s}
+.ghost:hover{border-color:var(--accent);color:var(--accent)}
+.cmdrow{display:flex;align-items:center;gap:var(--s1);border:1px solid var(--line);background:var(--panel);padding:.6rem .85rem;font-family:var(--mono);font-size:.76rem;color:var(--muted);max-width:100%;overflow-x:auto;white-space:nowrap}
 .cmdrow b{color:var(--text);font-weight:400}
-.copy{margin-left:auto;background:none;border:1px solid var(--line-strong);color:var(--muted);font-family:var(--mono);font-size:.7rem;padding:.15rem .5rem;cursor:pointer}
+.copy{margin-left:auto;background:none;border:1px solid var(--line-strong);color:var(--muted);font-family:var(--mono);font-size:.68rem;padding:.18rem .55rem;cursor:pointer;transition:color .12s,border-color .12s}
 .copy:hover{color:var(--accent);border-color:var(--accent)}
-.fine{font-size:.78rem;color:var(--muted);margin-top:var(--s2)}
+.fine{font-size:.78rem;color:var(--muted);margin-top:var(--s2);line-height:1.9}
 .fine em{color:var(--text);font-style:normal}
 
 /* terminal evidence */
-.term{border:1px solid var(--line-strong);background:var(--panel);font-family:var(--mono);font-size:.8rem;align-self:start}
-.term-head{display:flex;align-items:center;gap:.45rem;border-bottom:1px solid var(--line);padding:.5rem .8rem;color:var(--muted);font-size:.7rem}
-.dot{width:.55rem;height:.55rem;border-radius:50%;border:1px solid var(--line-strong)}
-.term-body{padding:var(--s2);display:grid;gap:.55rem;line-height:1.5}
+.term{border:1px solid var(--line-strong);border-top:2px solid var(--accent);background:var(--panel);font-family:var(--mono);font-size:.79rem;align-self:start}
+.term-head{display:flex;align-items:center;gap:.45rem;border-bottom:1px solid var(--line);padding:.55rem .85rem;color:var(--muted);font-size:.68rem}
+.dot{width:.5rem;height:.5rem;border-radius:50%;border:1px solid var(--line-strong)}
+.term-body{padding:var(--s2);display:grid;gap:.6rem;line-height:1.55}
 .u{color:var(--text)}
 .t{color:var(--accent)}
 .t small{color:var(--muted)}
-.r{color:var(--muted)}
-.term-body .final{color:var(--text);border-top:1px solid var(--line);padding-top:.55rem}
+.term-body .final{color:var(--text);border-top:1px solid var(--line);padding-top:.6rem}
+.caret{display:inline-block;width:.55em;height:1.05em;background:var(--accent);vertical-align:text-bottom;animation:blink 1.1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
 
-/* ── capability band ────────────────────────────────── */
+/* ── sections ───────────────────────────────────────── */
 section{padding:var(--s5) 0;border-bottom:1px solid var(--line)}
-h2{font-size:1.55rem;margin-bottom:var(--s1)}
-.sub{color:var(--muted);margin-bottom:var(--s4);max-width:40rem}
+.sec-head{display:flex;align-items:baseline;gap:var(--s2);margin-bottom:var(--s1)}
+.idx{font-family:var(--mono);font-size:.78rem;color:var(--accent)}
+h2{font-size:1.6rem;letter-spacing:-.01em}
+.sub{color:var(--muted);margin-bottom:var(--s4);max-width:42rem}
+
+/* capability band */
 .caps{display:grid;grid-template-columns:1fr 1fr 1fr}
 .cap{padding:0 var(--s3)}
 .cap:first-child{padding-left:0}
 .cap+.cap{border-left:1px solid var(--line)}
-.cap .tool{font-family:var(--mono);color:var(--accent);font-size:.9rem;margin-bottom:var(--s1)}
+.cap .tool{font-family:var(--mono);color:var(--accent);font-size:.92rem;margin-bottom:var(--s1)}
 .cap p{color:var(--muted);font-size:.92rem;margin-bottom:var(--s2)}
-.cap samp{display:block;font-family:var(--mono);font-size:.72rem;color:var(--muted);border-left:2px solid var(--accent-dim);padding-left:.7rem;white-space:pre-line}
+.cap samp{display:block;font-family:var(--mono);font-size:.72rem;color:var(--muted);border-left:2px solid var(--accent-dim);padding-left:.75rem;white-space:pre-line;background:var(--panel2);padding-top:.5rem;padding-bottom:.5rem}
 
-/* ── install ────────────────────────────────────────── */
+/* install */
 .install{display:grid;grid-template-columns:5fr 7fr;gap:var(--s4)}
 .method{margin-bottom:var(--s3)}
 .method h3{font-size:1rem;margin-bottom:var(--s1)}
-.method h3 .n{font-family:var(--mono);color:var(--accent);margin-right:.6rem}
+.method h3 .n{font-family:var(--mono);color:var(--accent);margin-right:.6rem;font-size:.85rem}
 .method p{color:var(--muted);font-size:.9rem}
 ol.steps{list-style:none;counter-reset:s;border-left:1px solid var(--line);margin:var(--s2) 0 0}
-ol.steps li{counter-increment:s;padding:.35rem 0 .35rem 1.2rem;position:relative;color:var(--muted);font-size:.92rem}
-ol.steps li::before{content:counter(s);font-family:var(--mono);color:var(--accent);position:absolute;left:-.55rem;top:.45rem;background:var(--bg);font-size:.75rem}
+ol.steps li{counter-increment:s;padding:.4rem 0 .4rem 1.25rem;position:relative;color:var(--muted);font-size:.92rem}
+ol.steps li::before{content:counter(s,decimal-leading-zero);font-family:var(--mono);color:var(--accent);position:absolute;left:-.85rem;top:.52rem;background:var(--bg);font-size:.7rem}
 ol.steps li b{color:var(--text);font-weight:600}
-.note{border:1px solid var(--line);border-left:2px solid var(--accent);background:var(--panel);padding:var(--s2);font-size:.85rem;color:var(--muted)}
+.note{border:1px solid var(--line);border-left:2px solid var(--accent);background:var(--panel);padding:var(--s2) var(--s3);font-size:.88rem;color:var(--muted)}
 .note b{color:var(--text)}
+.note+.note{margin-top:var(--s2)}
 
-/* ── tools table ────────────────────────────────────── */
+/* tools */
 .tools{display:grid;grid-template-columns:repeat(3,1fr);gap:0 var(--s4)}
-.trow{display:flex;gap:var(--s2);padding:.45rem 0;border-bottom:1px solid var(--line);font-size:.85rem}
-.trow .tn{font-family:var(--mono);color:var(--text);min-width:9.5rem;font-size:.78rem}
+.trow{display:flex;gap:var(--s2);padding:.5rem .4rem;border-bottom:1px solid var(--line);font-size:.85rem;transition:background .12s}
+.trow:hover{background:var(--panel)}
+.trow .tn{font-family:var(--mono);color:var(--text);min-width:9.5rem;font-size:.77rem}
 .trow .td{color:var(--muted)}
 .providers{margin-top:var(--s4);color:var(--muted);font-size:.9rem}
-.providers .mono{color:var(--text);font-size:.78rem;line-height:2}
+.providers .mono{color:var(--text);font-size:.78rem;line-height:2.1}
 
-/* ── footer ─────────────────────────────────────────── */
-footer{padding:var(--s4) 0;color:var(--muted);font-size:.85rem;display:flex;flex-wrap:wrap;gap:var(--s2) var(--s4);align-items:baseline}
-footer .links{display:flex;gap:var(--s3)}
-footer .own{margin-left:auto}
+/* footer */
+footer{padding:var(--s4) 0}
+.foot{display:flex;flex-wrap:wrap;gap:var(--s2) var(--s4);align-items:center;color:var(--muted);font-size:.85rem}
+.foot .mark-w{height:13px;width:auto;color:var(--muted)}
+.foot .links{display:flex;gap:var(--s3)}
+.foot .own{margin-left:auto}
 
-/* ── responsive ─────────────────────────────────────── */
+/* responsive */
 @media (max-width:860px){
-  .hero{grid-template-columns:1fr;padding:var(--s4) 0}
+  .hero-grid{grid-template-columns:1fr;padding:var(--s4) 0}
+  .watermark{display:none}
   .caps{grid-template-columns:1fr}
   .cap{padding:var(--s3) 0}
   .cap+.cap{border-left:none;border-top:1px solid var(--line)}
@@ -107,15 +131,27 @@ footer .own{margin-left:auto}
   .install{grid-template-columns:1fr}
   .tools{grid-template-columns:1fr}
   .bar nav{gap:var(--s2)}
-  footer .own{margin-left:0}
+  .foot .own{margin-left:0}
 }
 </style>
 </head>
 <body>
 
+<svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="logoA" viewBox="-8 -8 820 778">
+    <path fill="currentColor" fill-rule="evenodd" d="M 116.0,742.5 L 92.0,742.5 L 73.0,737.5 L 53.0,726.5 L 36.5,711.0 L 21.5,680.0 L 20.5,640.0 L 37.5,594.0 L 245.5,120.0 L 265.5,90.0 L 293.0,60.5 L 321.0,40.5 L 347.0,28.5 L 380.0,20.5 L 416.0,19.5 L 452.0,26.5 L 484.0,40.5 L 509.0,57.5 L 533.5,82.0 L 565.5,134.0 L 656.5,345.0 L 658.5,375.0 L 651.5,396.0 L 641.5,410.0 L 622.0,425.5 L 581.0,440.5 L 367.0,442.5 L 339.0,446.5 L 311.0,457.5 L 285.5,479.0 L 275.5,494.0 L 183.5,700.0 L 153.0,729.5 L 137.0,737.5 L 116.0,742.5 Z M 115.5,703.0 L 136.0,694.5 L 154.5,673.0 L 242.5,473.0 L 257.5,452.0 L 276.0,434.5 L 312.0,414.5 L 349.0,405.5 L 494.5,404.0 L 402.0,190.5 L 322.5,371.0 L 313.0,379.5 L 300.0,380.5 L 293.0,377.5 L 285.5,367.0 L 285.5,357.0 L 363.5,179.0 L 373.5,161.0 L 386.0,150.5 L 411.0,147.5 L 425.0,154.5 L 433.5,164.0 L 539.0,404.5 L 567.0,403.5 L 589.0,398.5 L 605.0,390.5 L 616.5,379.0 L 619.5,371.0 L 617.5,350.0 L 530.5,152.0 L 500.5,104.0 L 465.0,74.5 L 443.0,64.5 L 416.0,58.5 L 389.0,58.5 L 357.0,66.5 L 335.0,77.5 L 317.0,91.5 L 294.5,116.0 L 279.5,139.0 L 61.5,637.0 L 58.5,664.0 L 67.5,687.0 L 87.0,701.5 L 115.5,703.0 Z M 711.0,742.5 L 689.0,742.5 L 664.0,735.5 L 642.0,722.5 L 623.5,704.0 L 610.5,683.0 L 553.0,547.5 L 329.0,547.5 L 322.0,544.5 L 314.5,534.0 L 316.5,518.0 L 331.0,508.5 L 573.0,509.5 L 581.5,516.0 L 587.5,527.0 L 652.5,678.0 L 664.0,690.5 L 680.0,700.5 L 710.0,703.5 L 724.0,698.5 L 737.5,686.0 L 743.5,674.0 L 745.5,652.0 L 738.5,627.0 L 661.5,450.0 L 661.5,441.0 L 670.0,429.5 L 678.0,426.5 L 690.0,428.5 L 699.5,440.0 L 775.5,615.0 L 784.5,653.0 L 781.5,681.0 L 764.5,714.0 L 740.0,733.5 L 711.0,742.5 Z"/>
+  </symbol>
+  <symbol id="wordmark" viewBox="243.0 75.5 2158.0 454.0">
+    <path fill="currentColor" fill-rule="evenodd" d="M 318.64,506.50 L 306.50,505.86 L 294.37,502.03 L 276.81,488.94 L 266.60,469.79 L 265.96,446.16 L 393.02,156.92 L 403.24,140.96 L 420.80,122.12 L 448.89,104.88 L 470.60,99.14 L 492.31,98.50 L 508.91,101.69 L 529.98,110.63 L 542.75,119.57 L 555.84,132.66 L 568.61,150.54 L 575.63,164.58 L 625.43,276.96 L 627.35,297.39 L 622.88,311.44 L 606.60,327.72 L 582.34,336.02 L 461.02,337.30 L 443.78,340.49 L 430.37,346.24 L 416.65,358.05 L 408.35,370.18 L 357.90,483.19 L 340.98,499.48 L 329.49,504.58 L 318.64,506.50 Z M 319.59,483.83 L 332.68,478.41 L 341.30,468.51 L 390.47,357.41 L 398.13,345.92 L 411.86,332.19 L 432.93,320.70 L 455.27,315.59 L 534.77,315.27 L 482.73,193.00 L 437.72,296.12 L 428.46,304.10 L 415.37,303.14 L 417.28,288.45 L 461.34,185.02 L 465.17,177.99 L 471.88,171.93 L 480.18,169.37 L 487.84,170.01 L 496.14,174.48 L 500.93,180.55 L 559.99,314.31 L 586.17,312.40 L 597.02,307.29 L 603.73,299.95 L 605.64,294.84 L 603.73,280.79 L 550.09,162.67 L 536.04,143.51 L 517.85,129.15 L 502.52,122.76 L 487.84,120.21 L 472.51,120.85 L 457.83,124.68 L 436.76,136.81 L 422.39,151.81 L 410.90,169.69 L 287.67,448.72 L 287.67,464.04 L 292.78,473.62 L 304.59,482.24 L 319.59,483.83 Z M 657.04,505.86 L 644.27,505.86 L 632.14,502.67 L 620.65,496.28 L 610.75,487.03 L 599.89,469.79 L 568.29,397.32 L 445.06,397.32 L 435.48,394.12 L 431.33,389.97 L 430.05,384.87 L 431.97,380.40 L 444.42,374.97 L 580.42,375.61 L 586.49,382.31 L 625.43,470.42 L 633.42,478.41 L 641.72,482.88 L 658.96,482.88 L 672.68,472.98 L 676.51,465.32 L 677.79,455.10 L 673.96,441.05 L 630.54,344.64 L 629.90,338.89 L 632.46,332.51 L 644.91,325.81 L 694.39,433.39 L 699.50,451.91 L 698.22,469.79 L 689.92,487.03 L 676.83,498.84 L 657.04,505.86 Z M 1226.0,500.5 L 1141.0,500.5 L 1109.0,422.5 L 935.0,422.5 L 904.0,500.5 L 819.5,500.0 L 976.0,98.5 L 1070.5,99.0 L 1226.0,500.5 Z  M 1680.0,505.5 L 1655.0,503.5 L 1634.0,497.5 L 1619.0,488.5 L 1602.5,469.0 L 1594.5,448.0 L 1591.5,424.0 L 1591.5,273.0 L 1548.5,272.0 L 1547.5,205.0 L 1591.5,204.0 L 1592.0,123.5 L 1672.0,123.5 L 1672.5,204.0 L 1729.5,205.0 L 1729.5,271.0 L 1672.5,272.0 L 1672.5,415.0 L 1676.5,426.0 L 1689.0,434.5 L 1709.0,434.5 L 1727.5,430.0 L 1736.5,491.0 L 1720.0,499.5 L 1680.0,505.5 Z  M 1081.5,350.0 L 1021.0,187.5 L 961.5,350.0 L 1081.5,350.0 Z  M 1407.0,506.5 L 1373.0,505.5 L 1341.0,499.5 L 1294.0,477.5 L 1267.5,454.0 L 1253.5,435.0 L 1240.5,408.0 L 1233.5,378.0 L 1232.5,334.0 L 1236.5,309.0 L 1244.5,285.0 L 1259.5,258.0 L 1284.0,231.5 L 1301.0,219.5 L 1328.0,206.5 L 1359.0,198.5 L 1418.0,198.5 L 1444.0,205.5 L 1476.0,221.5 L 1499.5,243.0 L 1515.5,267.0 L 1526.5,295.0 L 1532.5,324.0 L 1532.0,379.5 L 1316.5,380.0 L 1321.5,398.0 L 1330.5,412.0 L 1342.0,423.5 L 1362.0,434.5 L 1392.0,440.5 L 1422.0,438.5 L 1444.0,431.5 L 1473.0,415.5 L 1512.5,465.0 L 1492.0,481.5 L 1465.0,494.5 L 1438.0,502.5 L 1407.0,506.5 Z  M 1932.0,505.5 L 1894.0,505.5 L 1870.0,501.5 L 1841.0,491.5 L 1818.0,478.5 L 1787.5,451.0 L 1776.5,436.0 L 1763.5,410.0 L 1755.5,381.0 L 1753.5,339.0 L 1757.5,313.0 L 1766.5,286.0 L 1779.5,263.0 L 1801.0,238.5 L 1825.0,220.5 L 1851.0,207.5 L 1886.0,198.5 L 1915.0,196.5 L 1951.0,200.5 L 1979.0,209.5 L 2009.0,226.5 L 2034.5,249.0 L 2047.5,266.0 L 2063.5,298.0 L 2070.5,328.0 L 2071.5,366.0 L 2065.5,399.0 L 2054.5,426.0 L 2039.5,449.0 L 2017.0,471.5 L 1993.0,487.5 L 1967.0,498.5 L 1932.0,505.5 Z  M 2378.0,500.5 L 2289.0,500.5 L 2224.0,407.5 L 2159.0,500.5 L 2070.0,500.5 L 2174.5,349.0 L 2072.5,204.0 L 2163.0,203.5 L 2224.0,289.5 L 2285.0,203.5 L 2373.0,203.5 L 2272.5,348.0 L 2378.0,500.5 Z  M 1452.5,321.0 L 1447.5,299.0 L 1439.5,285.0 L 1422.0,269.5 L 1398.0,261.5 L 1371.0,262.5 L 1344.0,274.5 L 1325.5,295.0 L 1316.5,319.0 L 1317.0,321.5 L 1452.5,321.0 Z  M 1923.5,434.0 L 1950.0,425.5 L 1972.5,405.0 L 1986.5,374.0 L 1988.5,340.0 L 1976.5,304.0 L 1959.0,283.5 L 1937.0,271.5 L 1902.0,268.5 L 1873.0,278.5 L 1849.5,302.0 L 1838.5,329.0 L 1837.5,368.0 L 1848.5,399.0 L 1864.0,417.5 L 1893.0,432.5 L 1923.5,434.0 Z"/>
+  </symbol>
+</svg>
+
 <header>
   <div class="wrap bar">
-    <span class="mark">AETOX</span>
+    <a class="lockup" href="#" aria-label="Aetox — กลับขึ้นบนสุด">
+      <svg class="mark-a" viewBox="-8 -8 820 778" aria-hidden="true"><use href="#logoA"/></svg>
+      <svg class="mark-w" viewBox="243.0 75.5 2158.0 454.0" aria-hidden="true"><use href="#wordmark"/></svg>
+    </a>
     <span class="ver">v0.4.0 · Windows</span>
     <nav>
       <a href="#install">ติดตั้ง</a>
@@ -126,41 +162,47 @@ footer .own{margin-left:auto}
 </header>
 
 <main>
-<div class="wrap">
 
   <div class="hero">
-    <div>
-      <p class="kicker">AI AGENT DESKTOP · NO LOCK-IN</p>
-      <h1>สถาปัตยกรรม <span class="gt">&gt;</span> พารามิเตอร์</h1>
-      <p class="lede">โมเดลที่อ่านภาพไม่ได้ ดูวิดีโอไม่ได้ แตะเครื่องไม่ได้ — ทำได้ทั้งหมดเมื่อวิ่งผ่าน Aetox
-      เพราะความสามารถอยู่ที่สถาปัตยกรรมที่ควบคุมโมเดล ไม่ใช่ตัวโมเดล
-      เลือกได้ 13 providers หรือรันโมเดลฟรีในเครื่องคุณเอง</p>
-      <div class="cta">
-        <a class="btn" href="https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-desktop-amd64-installer.exe">ดาวน์โหลดสำหรับ Windows</a>
-        <a class="ghost" href="https://github.com/Mike0165115321/Aetox/releases/latest">ทุกไฟล์ / portable .zip</a>
+    <svg class="watermark" viewBox="-8 -8 820 778" aria-hidden="true"><use href="#logoA"/></svg>
+    <div class="wrap hero-grid">
+      <div class="hero-copy">
+        <p class="kicker">AI AGENT DESKTOP · NO LOCK-IN</p>
+        <h1>สถาปัตยกรรม <span class="gt">&gt;</span><br>พารามิเตอร์</h1>
+        <p class="lede">โมเดลที่อ่านภาพไม่ได้ ดูวิดีโอไม่ได้ แตะเครื่องไม่ได้ — ทำได้ทั้งหมดเมื่อวิ่งผ่าน Aetox
+        เพราะความสามารถอยู่ที่สถาปัตยกรรมที่ควบคุมโมเดล ไม่ใช่ตัวโมเดล
+        เลือกได้ 13 providers หรือรันโมเดลฟรีในเครื่องคุณเอง</p>
+        <div class="cta">
+          <a class="btn" href="https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-desktop-amd64-installer.exe">
+            <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1v9.3L4.7 7 3.3 8.4 8 13l4.7-4.6L11.3 7 8 10.3V1H8zM2 14h12v1.5H2z"/></svg>
+            ดาวน์โหลดสำหรับ Windows</a>
+          <a class="ghost" href="https://github.com/Mike0165115321/Aetox/releases/latest">แบบไม่ต้องติดตั้ง (.zip) + ไฟล์อื่น</a>
+        </div>
+        <div class="cmdrow"><span>&gt;</span><b id="scoopCmd">scoop install https://raw.githubusercontent.com/Mike0165115321/Aetox/main/scoop/aetox.json</b><button class="copy" data-copy="scoopCmd" aria-label="คัดลอกคำสั่ง scoop">copy</button></div>
+        <p class="fine">ตัวติดตั้ง ~12 MB · Windows 10/11 · ลง WebView2 และ Tesseract (ไทย+อังกฤษ) ให้อัตโนมัติ<br>
+        <em>ยังไม่ได้เซ็นโค้ด</em> — SmartScreen อาจเตือนครั้งแรก กด More info → Run anyway</p>
       </div>
-      <div class="cmdrow"><span>&gt;</span><b id="scoopCmd">scoop install https://raw.githubusercontent.com/Mike0165115321/Aetox/main/scoop/aetox.json</b><button class="copy" data-copy="scoopCmd" aria-label="คัดลอกคำสั่ง scoop">copy</button></div>
-      <p class="fine">ตัวติดตั้ง ~12 MB · Windows 10/11 · ลง WebView2 และ Tesseract (ไทย+อังกฤษ) ให้อัตโนมัติ<br>
-      <em>ยังไม่ได้เซ็นโค้ด</em> — SmartScreen อาจเตือนครั้งแรก กด More info → Run anyway</p>
-    </div>
 
-    <div class="term" aria-label="ตัวอย่างการทำงานจริง">
-      <div class="term-head"><span class="dot"></span><span class="dot"></span><span class="dot"></span>
-        <span>ornith:9b — โมเดล 9B ในเครื่อง ไม่มีความสามารถด้านภาพ</span></div>
-      <div class="term-body">
-        <div class="u">› อ่านหน้าจอตอนนี้ แล้วช่วยกรอกฟอร์มสมัครให้หน่อย</div>
-        <div class="t">✓ computer <small>screenshot → screenshots/screen_1731.png</small></div>
-        <div class="t">✓ image_ocr <small>→ "แบบฟอร์มสมาชิก — ชื่อ / อีเมล / จังหวัด"</small></div>
-        <div class="t">✓ browser_read <small>→ [3] input อีเมล · [5] select จังหวัด [options: …]</small></div>
-        <div class="t">✓ browser_type <small>ref 5 "เชียงใหม่"</small></div>
-        <div class="t">✓ browser_type <small>ref 3 "mike@example.com" enter</small></div>
-        <div class="final">กรอกและส่งฟอร์มเรียบร้อยครับ — โมเดลไม่มีตา แต่สถาปัตยกรรมเห็นแทน</div>
+      <div class="term" aria-label="ตัวอย่างการทำงานจริง">
+        <div class="term-head"><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+          <span>ornith:9b — โมเดล 9B ในเครื่อง ไม่มีความสามารถด้านภาพ</span></div>
+        <div class="term-body">
+          <div class="u">› อ่านหน้าจอตอนนี้ แล้วช่วยกรอกฟอร์มสมัครให้หน่อย</div>
+          <div class="t">✓ computer <small>screenshot → screenshots/screen_1731.png</small></div>
+          <div class="t">✓ image_ocr <small>→ "แบบฟอร์มสมาชิก — ชื่อ / อีเมล / จังหวัด"</small></div>
+          <div class="t">✓ browser_read <small>→ [3] input อีเมล · [5] select จังหวัด [options: …]</small></div>
+          <div class="t">✓ browser_type <small>ref 5 "เชียงใหม่"</small></div>
+          <div class="t">✓ browser_type <small>ref 3 "mike@example.com" enter</small></div>
+          <div class="final">กรอกและส่งฟอร์มเรียบร้อยครับ — โมเดลไม่มีตา แต่สถาปัตยกรรมเห็นแทน <span class="caret" aria-hidden="true"></span></div>
+        </div>
       </div>
     </div>
   </div>
 
+  <div class="wrap">
+
   <section id="caps">
-    <h2>โมเดลตาบอดก็เห็นได้ มือด้วนก็ทำงานได้</h2>
+    <div class="sec-head"><span class="idx">01</span><h2>โมเดลตาบอดก็เห็นได้ มือด้วนก็ทำงานได้</h2></div>
     <p class="sub">ทุกเครื่องมือเสิร์ฟให้ทุกโมเดลเท่ากัน — ไม่ตัดสินล่วงหน้าว่าโมเดลไหน "ไม่ควรได้"
     ตัวเล็กแค่ไหนก็มีสิทธิ์ใช้ครบ และทุก action อันตรายต้องผ่านการอนุมัติจากคุณ</p>
     <div class="caps">
@@ -186,7 +228,7 @@ footer .own{margin-left:auto}
   </section>
 
   <section id="install">
-    <h2>ติดตั้ง</h2>
+    <div class="sec-head"><span class="idx">02</span><h2>ติดตั้ง</h2></div>
     <p class="sub">สองทาง เลือกที่ถนัด — ทั้งคู่ได้แอปเดียวกัน</p>
     <div class="install">
       <div>
@@ -205,7 +247,7 @@ footer .own{margin-left:auto}
         </div>
       </div>
       <div>
-        <div class="note" style="margin-bottom:1rem">
+        <div class="note">
           <b>ใช้กับโมเดลอะไร?</b> ใส่ API key ของ provider ที่คุณมี — หรือไม่ต้องมีเลยสักตัว:
           ติดตั้ง <span class="mono">Ollama</span> / <span class="mono">LM Studio</span> แล้วรันโมเดล open-source ฟรีในเครื่อง
           Aetox ทำหน้าที่ขยายศักยภาพให้โมเดลที่คุณเลือก ไม่ใช่บังคับว่าต้องใช้ค่ายไหน
@@ -220,7 +262,7 @@ footer .own{margin-left:auto}
   </section>
 
   <section id="tools">
-    <h2>เครื่องมือในตัว 22 ตัว</h2>
+    <div class="sec-head"><span class="idx">03</span><h2>เครื่องมือในตัว 22 ตัว</h2></div>
     <p class="sub">โมเดลเรียกใช้เองระหว่างคุย — งานเขียนโค้ด ค้นเว็บ คุมเบราว์เซอร์ คุมเครื่อง อยู่ในชุดเดียว</p>
     <div class="tools">
       <div class="trow"><span class="tn">read / write / edit</span><span class="td">อ่าน เขียน แก้ไฟล์แบบเป๊ะ</span></div>
@@ -243,12 +285,12 @@ footer .own{margin-left:auto}
       สลับเมื่อไหร่ก็ได้ ไม่ผูกมัด — และสองตัวท้ายคือโมเดลฟรีในเครื่องคุณเอง</p>
   </section>
 
-</div>
+  </div>
 </main>
 
 <footer>
-  <div class="wrap" style="display:contents">
-    <span class="mark" style="font-size:.85rem">AETOX</span>
+  <div class="wrap foot">
+    <svg class="mark-w" viewBox="243.0 75.5 2158.0 454.0" aria-label="Aetox"><use href="#wordmark"/></svg>
     <nav class="links">
       <a href="https://github.com/Mike0165115321/Aetox">GitHub</a>
       <a href="https://github.com/Mike0165115321/Aetox/blob/main/ARCHITECTURE.md">Architecture</a>
