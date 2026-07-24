@@ -114,11 +114,12 @@ ol.steps li b{color:var(--text);font-weight:600}
 .providers .mono{color:var(--text);font-size:.78rem;line-height:2.1}
 
 /* footer */
-footer{padding:var(--s4) 0}
-.foot{display:flex;flex-wrap:wrap;gap:var(--s2) var(--s4);align-items:center;color:var(--muted);font-size:.85rem}
+footer{border-top:1px solid var(--line);padding:var(--s3) 0}
+.foot{display:flex;flex-wrap:wrap;gap:var(--s2) var(--s3);align-items:center;justify-content:space-between;color:var(--muted);font-size:.85rem}
+.foot-brand{display:flex;align-items:center;gap:.75rem}
 .foot .mark-w{height:13px;width:auto;color:var(--muted)}
+.foot .own b{color:var(--text);font-weight:600}
 .foot .links{display:flex;gap:var(--s3)}
-.foot .own{margin-left:auto}
 
 /* responsive */
 @media (max-width:860px){
@@ -131,7 +132,7 @@ footer{padding:var(--s4) 0}
   .install{grid-template-columns:1fr}
   .tools{grid-template-columns:1fr}
   .bar nav{gap:var(--s2)}
-  .foot .own{margin-left:0}
+  .foot{justify-content:flex-start}
 }
 </style>
 </head>
@@ -176,7 +177,7 @@ footer{padding:var(--s4) 0}
           <a class="btn" href="https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-desktop-amd64-installer.exe">
             <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1v9.3L4.7 7 3.3 8.4 8 13l4.7-4.6L11.3 7 8 10.3V1H8zM2 14h12v1.5H2z"/></svg>
             ดาวน์โหลดสำหรับ Windows</a>
-          <a class="ghost" href="https://github.com/Mike0165115321/Aetox/releases/latest">แบบไม่ต้องติดตั้ง (.zip) + ไฟล์อื่น</a>
+          <a class="ghost" href="https://github.com/Mike0165115321/Aetox/releases/latest">ดูไฟล์ดาวน์โหลดทั้งหมด</a>
         </div>
         <div class="cmdrow"><span>&gt;</span><b id="scoopCmd">scoop install https://raw.githubusercontent.com/Mike0165115321/Aetox/main/scoop/aetox.json</b><button class="copy" data-copy="scoopCmd" aria-label="คัดลอกคำสั่ง scoop">copy</button></div>
         <p class="fine">ตัวติดตั้ง ~12 MB · Windows 10/11 · ลง WebView2 และ Tesseract (ไทย+อังกฤษ) ให้อัตโนมัติ<br>
@@ -290,13 +291,15 @@ footer{padding:var(--s4) 0}
 
 <footer>
   <div class="wrap foot">
-    <svg class="mark-w" viewBox="243.0 75.5 2158.0 454.0" aria-label="Aetox"><use href="#wordmark"/></svg>
+    <div class="foot-brand">
+      <svg class="mark-w" viewBox="243.0 75.5 2158.0 454.0" aria-label="Aetox"><use href="#wordmark"/></svg>
+      <span class="own">© 2026 <b>Mike0165115321</b> — สร้างโดยคนคนเดียวที่ใช้มันจริงทุกวัน</span>
+    </div>
     <nav class="links">
       <a href="https://github.com/Mike0165115321/Aetox">GitHub</a>
       <a href="https://github.com/Mike0165115321/Aetox/blob/main/ARCHITECTURE.md">Architecture</a>
       <a href="https://github.com/Mike0165115321/Aetox/issues">Issues</a>
     </nav>
-    <span class="own">© 2026 Mike0165115321 — สร้างโดยคนคนเดียวที่ใช้มันจริงทุกวัน</span>
   </div>
 </footer>
 
