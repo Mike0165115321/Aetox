@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -115,8 +116,40 @@ func resolveSandboxPath(root string, requestPath string) (string, error) {
 		return "", err
 	}
 
-	if safeTarget != safeRoot && !strings.HasPrefix(safeTarget+string(filepath.Separator), safeRoot+string(filepath.Separator)) {
+	// A lexical prefix check is not containment: a symlink sitting inside the
+	// root and pointing at C:\Users or /etc passes it untouched. Compare the
+	// link-resolved forms instead, but still hand back the lexical path so
+	// callers and their output keep showing the path the user asked for.
+	if !withinRoot(evalExistingSymlinks(safeTarget), evalExistingSymlinks(safeRoot)) {
 		return "", fmt.Errorf("path is outside sandbox root")
 	}
 	return safeTarget, nil
+}
+
+// evalExistingSymlinks resolves symlinks on the deepest prefix of path that
+// actually exists and re-attaches the rest. The leaf is often missing — write
+// and edit create it — and EvalSymlinks fails outright on a missing path.
+func evalExistingSymlinks(path string) string {
+	rest := ""
+	for {
+		if resolved, err := filepath.EvalSymlinks(path); err == nil {
+			return filepath.Join(resolved, rest)
+		}
+		parent := filepath.Dir(path)
+		if parent == path {
+			return filepath.Join(path, rest)
+		}
+		rest = filepath.Join(filepath.Base(path), rest)
+		path = parent
+	}
+}
+
+// withinRoot compares case-insensitively on Windows: NTFS is case-insensitive,
+// so rejecting C:\Work under root c:\work is a false positive, not safety.
+func withinRoot(target, root string) bool {
+	if runtime.GOOS == "windows" {
+		target, root = strings.ToLower(target), strings.ToLower(root)
+	}
+	sep := string(filepath.Separator)
+	return target == root || strings.HasPrefix(target+sep, root+sep)
 }

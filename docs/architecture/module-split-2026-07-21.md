@@ -1,7 +1,7 @@
 # Module Split Proposal — 3 Go Modules by Separation of Concerns
 
 > **Date:** 2026-07-21
-> **Status:** Structure scaffolded (go.mod + go.work), zero code migrated yet
+> **Status:** Proposed. The `go.mod`/`go.work` scaffold this doc describes was **deleted 2026-07-25** ([ARCHITECTURE.md §28](../../ARCHITECTURE.md)) after four days of empty directories confused readers about where the code lives. The reason for the split below — `internal/model` importing `internal/provider` — is unchanged and still unaddressed. Re-create the structure when migration actually begins, not before.
 
 ## Why Split?
 

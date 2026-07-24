@@ -1,10 +1,9 @@
 package skill
 
 import (
-	"bytes"
 	"context"
 	"errors"
-	"io"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -211,25 +210,26 @@ func (s *fsSkill) execCat(start time.Time, params []string) (Output, error) {
 		_ = file.Close()
 	}()
 
-	const maxBytes = 16384
-	data, err := io.ReadAll(io.LimitReader(file, maxBytes+1))
+	// Same line-paging as the read tool (read.go) rather than a second byte
+	// ceiling: one truncation rule, and the model can page past it here too.
+	binary, err := looksBinary(file)
 	if err != nil {
 		return newToolOutput("fs", command, "", start, false, err), err
 	}
-
-	if len(data) > maxBytes {
-		data = data[:maxBytes]
-		content := strings.TrimSpace(string(data))
-		if content == "" {
-			content = "(no output)"
-		}
-		content += "\n... (truncated)"
-		return newToolOutput("fs", command, content, start, true, nil), nil
-	}
-
-	if bytes.Contains(data, []byte{0}) {
+	if binary {
 		return newToolOutput("fs", command, "(binary file)", start, false, nil), nil
 	}
-	content := string(data)
-	return newToolOutput("fs", command, strings.TrimSpace(content), start, false, nil), nil
+
+	content, next, err := readTextLines(file, 1, readDefaultLines)
+	if err != nil {
+		return newToolOutput("fs", command, "", start, false, err), err
+	}
+	content = strings.TrimSpace(content)
+	if content == "" {
+		content = "(no output)"
+	}
+	if next > 0 {
+		content += fmt.Sprintf("\n... (truncated — read %s with offset=%d for more)", requestPath, next)
+	}
+	return newToolOutput("fs", command, content, start, next > 0, nil), nil
 }

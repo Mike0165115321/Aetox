@@ -2,7 +2,7 @@
     "version": "0.4.0",
     "description": "Aetox — AI agent desktop: architecture that expands any model's capability (OCR, video, browser, desktop control)",
     "homepage": "https://github.com/Mike0165115321/Aetox",
-    "license": "TBD",
+    "license": "MIT",
     "url": "https://github.com/Mike0165115321/Aetox/releases/download/v0.4.0/aetox-windows-amd64-portable.zip",
     "hash": "94d55364cd7d2202825afbf28ac3860f79fdff48d680efdd8c25e30bde009ed5",
     "shortcuts": [

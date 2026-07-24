@@ -18,6 +18,36 @@ type shellSkill struct {
 	root string
 }
 
+// shellOutputCap bounds what one command may buffer in RAM. limitLines only
+// trims after the command exits, so an unbounded buffer lets a runaway
+// producer (`yes`, a looping log tail, a chatty build) grow to gigabytes for
+// the full tool timeout and take the desktop app down with it.
+const shellOutputCap = 1 << 20 // 1 MiB
+
+// cappedWriter keeps the first shellOutputCap bytes and drops the rest — the
+// head is what the model needs and limitLines trims it further anyway.
+// No mutex: os/exec reuses a single pipe and copy goroutine when Stdout and
+// Stderr hold the same interface value, which is how Execute wires it.
+type cappedWriter struct {
+	buf     bytes.Buffer
+	dropped bool
+}
+
+func (w *cappedWriter) Write(p []byte) (int, error) {
+	room := shellOutputCap - w.buf.Len()
+	if room <= 0 {
+		w.dropped = true
+		return len(p), nil
+	}
+	if len(p) > room {
+		w.buf.Write(p[:room])
+		w.dropped = true
+		return len(p), nil
+	}
+	w.buf.Write(p)
+	return len(p), nil
+}
+
 func (*shellSkill) Name() string { return "shell" }
 
 func (*shellSkill) Description() string {
@@ -59,13 +89,15 @@ func (s *shellSkill) Execute(ctx context.Context, input Input) (Output, error) {
 	}
 	cmd.Dir = workDir
 	proc.HideConsole(cmd)
-	buffer := &bytes.Buffer{}
+	proc.KillOnCancel(cmd)
+	buffer := &cappedWriter{}
 	cmd.Stdout = buffer
 	cmd.Stderr = buffer
 
 	err = cmd.Run()
-	out := strings.TrimSpace(buffer.String())
+	out := strings.TrimSpace(buffer.buf.String())
 	truncatedOutput, truncated := limitLines(out, defaultToolOutputLineLimit)
+	truncated = truncated || buffer.dropped
 	command := "shell " + commandLine
 	result := newToolOutput("shell", command, truncatedOutput, start, truncated, err)
 

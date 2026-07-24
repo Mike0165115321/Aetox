@@ -1,0 +1,45 @@
+# Every push and PR: vet + the whole test suite. Windows because that is the
+# platform Aetox actually ships on — job objects, ConPTY and WebView2 have no
+# meaningful Linux equivalent to test against.
+#
+# The frontend build is not optional: desktop/main.go does `go:embed
+# all:frontend/dist`, and dist is gitignored, so `go vet ./...` fails on a
+# fresh checkout until vite has produced it.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/frontend/package-lock.json
+
+      - name: Install frontend deps
+        working-directory: desktop/frontend
+        run: npm ci
+
+      - name: Build frontend (required by desktop's go:embed)
+        working-directory: desktop/frontend
+        run: npm run build
+
+      - run: go vet ./...
+
+      - run: go test ./...
+
+      - name: Frontend tests
+        working-directory: desktop/frontend
+        run: npm test

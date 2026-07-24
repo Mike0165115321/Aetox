@@ -55,6 +55,25 @@ func TestShellSkillCommandFailureReturnsError(t *testing.T) {
 	}
 }
 
+// The buffer must stop growing mid-command, not after it exits: limitLines
+// only runs once the process is done, which is too late for a runaway
+// producer to avoid eating RAM for the whole tool timeout.
+func TestCappedWriterStopsGrowing(t *testing.T) {
+	w := &cappedWriter{}
+	chunk := make([]byte, 64*1024)
+	for range 40 { // 2.5 MiB offered, well past the 1 MiB cap
+		if n, err := w.Write(chunk); n != len(chunk) || err != nil {
+			t.Fatalf("Write = (%d, %v), want (%d, nil) — a short write aborts the command", n, err, len(chunk))
+		}
+	}
+	if w.buf.Len() > shellOutputCap {
+		t.Errorf("buffered %d bytes, want at most %d", w.buf.Len(), shellOutputCap)
+	}
+	if !w.dropped {
+		t.Error("dropped = false, want true so the output is reported as truncated")
+	}
+}
+
 func TestShellSkillMissingArgs(t *testing.T) {
 	isolateAuditLog(t)
 	s := &shellSkill{root: t.TempDir()}
