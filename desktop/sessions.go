@@ -25,6 +25,12 @@ type SessionMessage struct {
 	Role string `json:"role"` // "user" | "agent"
 	Text string `json:"text"`
 	Time string `json:"time"`
+	// Reasoning is the model's thinking for this reply, kept so the panel
+	// survives turn completion and session reloads (collapsed by default).
+	Reasoning string `json:"reasoning,omitempty"`
+	// ThinkSecs is how long the model streamed thinking (first→last reasoning
+	// chunk), for the "คิดเป็นเวลา Xs" label. 0 when the turn had no thinking.
+	ThinkSecs int `json:"thinkSecs,omitempty"`
 }
 
 // SessionMeta is one row in the sidebar's history list. Snippet is only set

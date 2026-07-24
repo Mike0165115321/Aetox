@@ -350,6 +350,52 @@ func TestEffectiveWireFormatFallsBackToProviderDefault(t *testing.T) {
 	}
 }
 
+func TestEnabledProvidersDefaultsToActiveProviderFromCfg(t *testing.T) {
+	t.Setenv("AppData", t.TempDir()) // no saved preference — untouched install
+	a := &App{cfg: config.Config{ModelProvider: "deepseek"}}
+	got := a.EnabledProviders()
+	if len(got) != 1 || got[0] != "deepseek" {
+		t.Fatalf("EnabledProviders() = %v, want [deepseek] (default to the active provider)", got)
+	}
+}
+
+func TestSetProviderEnabledAddsAndRemoves(t *testing.T) {
+	t.Setenv("AppData", t.TempDir())
+	a := &App{cfg: config.Config{ModelProvider: "deepseek"}}
+
+	got, err := a.SetProviderEnabled("openai", true)
+	if err != nil {
+		t.Fatalf("enable openai: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("after enabling openai = %v, want 2 entries (deepseek + openai)", got)
+	}
+
+	got, err = a.SetProviderEnabled("deepseek", false)
+	if err != nil {
+		t.Fatalf("disable deepseek: %v", err)
+	}
+	if len(got) != 1 || got[0] != "openai" {
+		t.Fatalf("after disabling deepseek = %v, want [openai]", got)
+	}
+
+	if _, err := a.SetProviderEnabled("openai", false); err == nil {
+		t.Fatal("disabling the last remaining provider must be refused, got nil error")
+	}
+	// Refused removal must not have mutated the persisted state.
+	if got := a.EnabledProviders(); len(got) != 1 || got[0] != "openai" {
+		t.Fatalf("EnabledProviders() after refused removal = %v, want [openai] unchanged", got)
+	}
+}
+
+func TestSetProviderEnabledUnknownProviderErrors(t *testing.T) {
+	t.Setenv("AppData", t.TempDir())
+	a := &App{cfg: config.Config{ModelProvider: "deepseek"}}
+	if _, err := a.SetProviderEnabled("not-a-real-provider-xyz", true); err == nil {
+		t.Fatal("expected an error for an unrecognized provider name")
+	}
+}
+
 func TestSaveChatImageCopiesIntoSandbox(t *testing.T) {
 	root := t.TempDir()
 	src := filepath.Join(t.TempDir(), "photo.png")
@@ -398,5 +444,43 @@ func TestSaveChatImageNoProjectOpen(t *testing.T) {
 	a := &App{}
 	if _, err := a.SaveChatImage("whatever.png"); err == nil {
 		t.Error("expected an error with no project open, got nil")
+	}
+}
+
+// A model/provider switch re-bootstraps the engine — the new agent must
+// inherit the old agent's REAL context (including tool messages and their
+// results), not just the text transcript. Regression for the switch dropping
+// tool history.
+func TestApplyConfigInheritsPriorAgentContext(t *testing.T) {
+	root := t.TempDir()
+	a := &App{}
+	cfg := config.Config{SandboxRoot: root, ModelProvider: "aetox", ModelName: "Aetox0.0.1:0b"}
+	a.applyConfig(cfg)
+	if a.agent == nil {
+		t.Fatal("setup: agent must bootstrap")
+	}
+
+	a.agent.RestoreHistory([]model.Message{
+		{Role: model.RoleUser, Content: "read the config file"},
+		{Role: model.RoleAssistant, Content: "reading", ToolCalls: []model.ToolCall{{
+			ID: "call_1", Type: "function",
+			Function: model.FunctionCall{Name: "read", Arguments: `{"path":"config.json"}`},
+		}}},
+		{Role: model.RoleTool, Name: "read", ToolCallID: "call_1", Content: "config contents: xyz"},
+		{Role: model.RoleAssistant, Content: "the config says xyz"},
+	})
+
+	// Switch models — a fresh agent is built and must inherit everything.
+	cfg.ModelName = "aetox-think:test"
+	a.applyConfig(cfg)
+
+	sawToolResult := false
+	for _, m := range a.agent.ContextMessages() {
+		if m.Role == model.RoleTool && m.ToolCallID == "call_1" {
+			sawToolResult = true
+		}
+	}
+	if !sawToolResult {
+		t.Fatal("tool result must survive the model switch (prior context inheritance)")
 	}
 }

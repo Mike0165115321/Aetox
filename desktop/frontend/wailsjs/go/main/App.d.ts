@@ -7,6 +7,8 @@ import {config} from '../models';
 
 export function AddMCPServer(arg1:string,arg2:Array<string>):Promise<void>;
 
+export function AnswerUserQuestion(arg1:string):Promise<void>;
+
 export function BrowserBack(arg1:string):Promise<void>;
 
 export function BrowserClickRef(arg1:string,arg2:number):Promise<void>;
@@ -42,6 +44,8 @@ export function CurrentSessionID():Promise<string>;
 export function DeleteIdentityFile(arg1:string):Promise<void>;
 
 export function DeleteSession(arg1:string):Promise<void>;
+
+export function EnabledProviders():Promise<Array<string>>;
 
 export function GetContextBreakdown():Promise<main.ContextBreakdown>;
 
@@ -125,6 +129,8 @@ export function SendMessage(arg1:string):Promise<string>;
 
 export function SetAPIKey(arg1:string,arg2:string):Promise<main.ModelInfo>;
 
+export function SetProviderEnabled(arg1:string,arg2:boolean):Promise<Array<string>>;
+
 export function SetProviderWireFormat(arg1:string):Promise<main.ModelInfo>;
 
 export function SupportedProviders():Promise<Array<string>>;
@@ -150,6 +156,8 @@ export function TerminalStart(arg1:string,arg2:number,arg3:number):Promise<strin
 export function TerminalWrite(arg1:string,arg2:string):Promise<void>;
 
 export function TestMCPServer(arg1:string):Promise<main.MCPServerInfo>;
+
+export function TestProviderConnection(arg1:string):Promise<string>;
 
 export function ToggleMCPServer(arg1:string,arg2:boolean):Promise<void>;
 

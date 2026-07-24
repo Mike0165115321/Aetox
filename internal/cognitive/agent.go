@@ -187,11 +187,21 @@ func (a *Agent) RespondWithTools(
 		if ctx.Err() != nil {
 			return "", anyToolUsed, ctx.Err()
 		}
+		// Re-check every round (OpenCode checks per step): a single long tool
+		// loop can cross the budget mid-turn, and without this the context
+		// falls back to dropping old turns verbatim instead of summarizing.
+		// SplitForCompaction can't split the in-flight turn — its boundary
+		// lands on a RoleUser message — so live tool results stay verbatim.
+		if i > 0 {
+			a.compactIfNeeded(ctx)
+		}
 		response, err := a.completeToolLoop(ctx, a.buildRequest(a.context.Messages(), loopMaxTokens, 0.2, modelTools, "auto", opts), onReasoningChunk)
 		if err != nil {
 			debuglog.Msg("Complete() error: %v", err)
 			if i == 0 {
-				reply, err := a.Respond(ctx, msg, opts)
+				// The user message is already in context — respond over it
+				// rather than via Respond(msg), which would add it a second time.
+				reply, err := a.respondFromContext(ctx, opts)
 				return reply, false, err
 			}
 			return "", false, err
@@ -436,8 +446,14 @@ func (a *Agent) Respond(ctx context.Context, userMessage string, opts turn.TurnO
 
 	a.compactIfNeeded(ctx)
 	a.context.Add(model.RoleUser, msg)
+	return a.respondFromContext(ctx, opts)
+}
 
-	response, err := a.provider.Complete(ctx, a.buildRequest(a.context.Messages(), 768, 0.2, nil, "", opts))
+// respondFromContext completes over the context as-is — the user message must
+// already be in history. Shared by Respond and the tool-loop fallback so the
+// fallback can't add the user message a second time.
+func (a *Agent) respondFromContext(ctx context.Context, opts turn.TurnOptions) (string, error) {
+	response, err := a.provider.Complete(ctx, a.buildRequest(a.context.Messages(), a.toolLoopMaxTokens(), 0.2, nil, "", opts))
 	if err != nil {
 		return "", err
 	}
@@ -457,6 +473,27 @@ func (a *Agent) Respond(ctx context.Context, userMessage string, opts turn.TurnO
 	return reply, nil
 }
 
+// RespondEphemeral answers a one-shot prompt over the current conversation
+// WITHOUT writing anything into history — the Claude Code/OpenCode pattern for
+// meta work (tool-run summaries, titles): the session transcript must never
+// contain fabricated user messages carrying kilobytes of tool output.
+func (a *Agent) RespondEphemeral(ctx context.Context, prompt string, opts turn.TurnOptions) (string, error) {
+	if a.provider == nil {
+		return "", errors.New("agent provider is not initialized")
+	}
+	prompt = strings.TrimSpace(prompt)
+	if prompt == "" {
+		return "", errors.New("input is empty")
+	}
+	msgs := append(a.context.Messages(), model.Message{Role: model.RoleUser, Content: prompt})
+	response, err := a.provider.Complete(ctx, a.buildRequest(msgs, 768, 0.2, nil, "", opts))
+	if err != nil {
+		return "", err
+	}
+	a.recordUsage(response.Usage)
+	return strings.TrimSpace(response.Text), nil
+}
+
 func (a *Agent) RespondStream(ctx context.Context, userMessage string, onChunk func(string) error, onReasoningChunk func(string) error, opts turn.TurnOptions) (string, bool, error) {
 	if a.provider == nil {
 		return "", false, errors.New("agent provider is not initialized")
@@ -470,7 +507,10 @@ func (a *Agent) RespondStream(ctx context.Context, userMessage string, onChunk f
 	a.compactIfNeeded(ctx)
 	a.context.Add(model.RoleUser, msg)
 
-	req := a.buildRequest(a.context.Messages(), 768, 0.2, nil, "", opts)
+	// Same per-provider output ceiling as the tool loop (OpenCode's
+	// OUTPUT_TOKEN_MAX approach) — a ceiling costs nothing until used, and 768
+	// used to truncate long answers mid-sentence for non-tool-calling models.
+	req := a.buildRequest(a.context.Messages(), a.toolLoopMaxTokens(), 0.2, nil, "", opts)
 
 	if streamer, ok := a.provider.(model.StreamingProvider); ok {
 		response, err := streamer.StreamComplete(ctx, req, onChunk, onReasoningChunk)

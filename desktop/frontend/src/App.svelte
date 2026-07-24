@@ -12,6 +12,7 @@
     switchProvider, switchThinkLevel,
     switchModel, submitAPIKey, setActiveView, restoreActiveView, closeFile, applyAgentStatus, applyToolEvent,
     applyAgentChunk, applyReasoningChunk, attachImageFromPath,
+    applyAskUser, applyAskDone, applyTodos,
   } from './lib/stores/cockpit.svelte'
   import { RelativizePath, CloseAllBrowserTabs } from '../wailsjs/go/main/App'
   import { OnFileDrop, OnFileDropOff, EventsOn } from '../wailsjs/runtime/runtime'
@@ -80,6 +81,9 @@
     const offAgentTool = EventsOn('agent:tool', applyToolEvent)
     const offAgentChunk = EventsOn('agent:chunk', applyAgentChunk)
     const offAgentReasoning = EventsOn('agent:reasoning', applyReasoningChunk)
+    const offAskUser = EventsOn('ask:user', applyAskUser)
+    const offAskDone = EventsOn('ask:done', applyAskDone)
+    const offTodos = EventsOn('todo:update', applyTodos)
 
     for (const panel of Object.values(panels)) {
       const stored = localStorage.getItem(panel.storageKey)
@@ -117,6 +121,9 @@
       offAgentTool()
       offAgentChunk()
       offAgentReasoning()
+      offAskUser()
+      offAskDone()
+      offTodos()
     }
   })
 

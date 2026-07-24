@@ -10,7 +10,8 @@
   import { i18n, t, setLocale, localeNames, type Locale } from './i18n.svelte'
   import {
     SupportedProviders, HasAPIKey, RequiresAPIKey, TerminalShells,
-    ListModelsForProvider, ProviderBaseURL, ProviderWireFormats,
+    ListModelsForProvider, ProviderBaseURL, ProviderWireFormats, TestProviderConnection,
+    EnabledProviders, SetProviderEnabled,
     ListMCPServers, SaveMCPServer, RemoveMCPServer, TestMCPServer, ToggleMCPServer,
     ListExternalSkills, InstallSkillFromGitHub, RemoveExternalSkill, RefreshSkills,
     UsageStats, ListCustomCommands, OpenCommandsFolder,
@@ -53,6 +54,8 @@
   type ProviderRow = { name: string; requiresKey: boolean; hasKey: boolean }
 
   let providers = $state<ProviderRow[]>([])
+  let enabledNames = $state<string[]>([])
+  let showAddProvider = $state(false)
   let selected = $state('')
   let baseURL = $state('')
   let wireFormats = $state<string[]>([])
@@ -66,6 +69,8 @@
 
   const selectedRow = $derived(providers.find((p) => p.name === selected))
   const isActiveProvider = $derived(cockpit.model.provider === selected)
+  const enabledRows = $derived(providers.filter((p) => enabledNames.includes(p.name)))
+  const addableRows = $derived(providers.filter((p) => !enabledNames.includes(p.name)))
   // Only meaningful while this provider is the active one — otherwise nothing
   // has been bootstrapped for it yet, so show what would be the default.
   const currentWireFormat = $derived(isActiveProvider ? cockpit.model.wireFormat : (wireFormats[0] ?? ''))
@@ -75,7 +80,8 @@
     if (!shells.some((s) => s.path === defaultShell)) defaultShell = shells[0]?.path ?? ''
 
     await refreshProviders()
-    selectProvider(cockpit.model.provider || providers[0]?.name || '')
+    await refreshEnabledProviders()
+    selectProvider(cockpit.model.provider || enabledRows[0]?.name || providers[0]?.name || '')
 
     await loadMCP()
     await loadSkills()
@@ -90,11 +96,34 @@
     })))
   }
 
+  async function refreshEnabledProviders() {
+    enabledNames = await EnabledProviders()
+  }
+
+  const addProvider = (name: string) => run('enable:' + name, async () => {
+    enabledNames = await SetProviderEnabled(name, true)
+    showAddProvider = false
+    await selectProvider(name)
+  })
+
+  const removeProvider = (name: string) => run('disable:' + name, async () => {
+    const wasActiveEngine = cockpit.model.provider === name
+    enabledNames = await SetProviderEnabled(name, false)
+    if (selected === name) await selectProvider(enabledNames[0] ?? '')
+    // Removing the provider Aetox is actually running on must move the engine
+    // too — otherwise it keeps running unlisted while the picker shows a
+    // provider that's no longer selectable. Falls back to aetox (Aetox's own
+    // built-in engine, always available, needs no key) rather than an
+    // arbitrary "next" provider, since that's the deliberate safe default.
+    if (wasActiveEngine) await switchProvider('aetox')
+  })
+
   async function selectProvider(name: string) {
     if (!name) return
     selected = name
     errorMsg = ''
     keyDraft = ''
+    connTest = ''
     baseURL = await ProviderBaseURL(name)
     wireFormats = await ProviderWireFormats(name)
     loadingModels = true
@@ -142,6 +171,18 @@
   const useFormat = (fmt: string) => run('format:' + fmt, async () => {
     if (!isActiveProvider) await switchProvider(selected)
     await switchWireFormat(fmt)
+  })
+
+  // Connection test: a real 1-token completion through the chat path.
+  // '' = untested, 'ok:…' / 'err:…' render as success / failure.
+  let connTest = $state('')
+  const testConnection = () => run('test', async () => {
+    connTest = ''
+    try {
+      connTest = 'ok:' + await TestProviderConnection(selected)
+    } catch (err) {
+      connTest = 'err:' + String(err)
+    }
   })
 
   const saveKey = () => run('key', async () => {
@@ -562,12 +603,35 @@
       <div class="settings-card mset">
         <aside class="mset-side">
           <div class="settings-group-label eyebrow">{t('settings.providers')}</div>
-          {#each providers as p}
-            <button class="mset-prov" class:selected={selected === p.name} onclick={() => selectProvider(p.name)}>
-              {p.name}
-              <span class="dot" class:green={p.hasKey}></span>
-            </button>
+          {#each enabledRows as p (p.name)}
+            <div class="mset-prov-row">
+              <button class="mset-prov" class:selected={selected === p.name} onclick={() => selectProvider(p.name)}>
+                {p.name}
+                <span class="dot" class:green={p.hasKey}></span>
+              </button>
+              {#if enabledRows.length > 1}
+                <button class="icobtn tiny" disabled={busy === 'disable:' + p.name}
+                  aria-label={t('settings.remove')} onclick={() => removeProvider(p.name)}>✕</button>
+              {/if}
+            </div>
           {/each}
+
+          <button class="mset-prov mset-add-toggle" onclick={() => (showAddProvider = !showAddProvider)}>
+            + {t('settings.addProvider')}
+          </button>
+          {#if showAddProvider}
+            <div class="mset-add-list">
+              {#each addableRows as p (p.name)}
+                <button class="mset-prov" disabled={busy === 'enable:' + p.name} onclick={() => addProvider(p.name)}>
+                  {p.name}
+                  <span class="dot">{busy === 'enable:' + p.name ? '…' : '+'}</span>
+                </button>
+              {/each}
+              {#if addableRows.length === 0}
+                <div class="muted" style="font-size:12px; padding:4px 10px">{t('settings.noMoreProviders')}</div>
+              {/if}
+            </div>
+          {/if}
         </aside>
 
         <div class="mset-detail">
@@ -581,7 +645,15 @@
                   {busy === 'provider' ? t('settings.switching') : t('settings.useThisProvider')}
                 </button>
               {/if}
+              <button class="ctrl" disabled={busy !== ''} onclick={testConnection}>
+                {busy === 'test' ? t('settings.testing') : '🔌 ' + t('settings.testConnection')}
+              </button>
             </div>
+            {#if connTest}
+              <div class="conn-test" class:ok={connTest.startsWith('ok:')}>
+                {connTest.startsWith('ok:') ? '✓ ' + t('settings.connOk') + ' — ' + connTest.slice(3) : '✕ ' + connTest.slice(4)}
+              </div>
+            {/if}
 
             <div class="mset-field">
               <div class="eyebrow">{t('settings.baseUrl')}</div>

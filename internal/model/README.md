@@ -20,6 +20,14 @@
 - [anthropic.go](anthropic.go) — real Messages-API client (content blocks, `x-api-key` — *not* OpenAI-shaped, hence its own file). Added 2026-07-22, see ARCHITECTURE.md §6.9.
 - [ollama.go](ollama.go) · [openrouter.go](openrouter.go) · [noop.go](noop.go) (offline/test stand-in).
 
+## Wire formats & discovery (§27.2, 2026-07-25)
+
+A provider can speak two wire formats (DeepSeek: Anthropic default + OpenAI-compatible alt). Two rules keep endpoint resolution honest:
+
+- **Empty BaseURL always means "this provider's own default"** — persisted preferences strip the catalog-default URL to `""`, so every client must default per-provider ([anthropic.go](anthropic.go) once defaulted to api.anthropic.com and sent DeepSeek keys there → 401).
+- **Switching wire formats swaps a default-format URL for the other format's URL** ([factory.go](factory.go), both directions); only a user-customized URL survives the switch.
+- **Model discovery routes through the alt endpoint** when the primary runtime has no `/models` (`ModelChoicesWithEndpointAndAPIKey` default case): chat stays on the Anthropic format, listing uses the OpenAI-compatible one, same key.
+
 ## Rules of thumb
 
 - New OpenAI-compatible provider = catalog entry + base URL, **not** a new client file. Only genuinely different wire formats (like Anthropic) earn a file.

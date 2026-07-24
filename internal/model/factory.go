@@ -24,7 +24,7 @@ type ProviderOptions struct {
 func NewProvider(opts ProviderOptions) (Provider, error) {
 	provider := NormalizeProvider(opts.Provider)
 	if provider == "" {
-		provider = "noop"
+		provider = "aetox"
 	}
 
 	info, ok := LookupProviderInfo(provider)
@@ -42,9 +42,14 @@ func NewProvider(opts ProviderOptions) (Provider, error) {
 	baseURL := opts.BaseURL
 	if wf := strings.TrimSpace(opts.WireFormat); wf != "" && info.AltRuntime != "" && wf == info.AltRuntime {
 		runtime = info.AltRuntime
-		if baseURL == "" {
+		// The default-format URL is wrong for the alt wire format — only a
+		// user-customized URL survives the switch.
+		if baseURL == "" || baseURL == info.BaseURL {
 			baseURL = info.AltBaseURL
 		}
+	} else if info.AltBaseURL != "" && baseURL == info.AltBaseURL {
+		// Symmetric: a stale alt-format URL under the default wire format.
+		baseURL = info.BaseURL
 	}
 	opts.BaseURL = baseURL
 

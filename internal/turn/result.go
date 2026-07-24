@@ -67,7 +67,9 @@ func (e *Executor) summarizeToolExecution(
 
 	summaryCtx, cancel := context.WithTimeout(ctx, e.summaryTimeout)
 	defer cancel()
-	summary, err := e.agent.Respond(summaryCtx, summaryPrompt, e.turnOptions)
+	// Ephemeral: the summary prompt (with kilobytes of tool output) must never
+	// land in conversation history as a fake user message.
+	summary, err := e.agent.RespondEphemeral(summaryCtx, summaryPrompt, e.turnOptions)
 	if err != nil {
 		return "", err
 	}

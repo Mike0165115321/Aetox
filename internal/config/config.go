@@ -56,6 +56,46 @@ type ModelPreference struct {
 	ThinkLevel      string            `json:"think_level,omitempty"`
 	ApprovalMode    string            `json:"approval_mode,omitempty"`
 	ModelAPIKeys    map[string]string `json:"provider_api_keys,omitempty"`
+	// EnabledProviders is the set of providers shown in the Settings sidebar
+	// and the chat composer's picker. Empty means "never customized" — callers
+	// resolve that case via ResolvedEnabledProviders rather than persisting a
+	// default here, so old preference files don't need migrating.
+	EnabledProviders []string `json:"enabled_providers,omitempty"`
+}
+
+// ResolvedEnabledProviders returns the providers that should actually be shown.
+// Only the untouched-install case (enabled is empty — the user has never
+// customized it) falls back to activeProvider, so a fresh install shows just
+// what's already configured instead of the full catalog — including "aetox"
+// itself (Aetox's own built-in engine, needs no key), since that is exactly
+// what a genuinely fresh install is running on and what removing an active
+// provider falls back to; hiding it here would contradict both. Once the user
+// has customized the set at all, it is respected exactly as given
+// (deduped/normalized) — the active provider is NOT force-appended, so
+// explicitly disabling it (e.g. to switch away and hide it) actually takes
+// effect instead of being fought by this function on every read.
+func ResolvedEnabledProviders(enabled []string, activeProvider string) []string {
+	if len(enabled) == 0 {
+		active := strings.TrimSpace(model.NormalizeProvider(activeProvider))
+		if active == "" {
+			return []string{}
+		}
+		return []string{active}
+	}
+	seen := make(map[string]struct{}, len(enabled))
+	out := make([]string, 0, len(enabled))
+	for _, p := range enabled {
+		p = strings.TrimSpace(model.NormalizeProvider(p))
+		if p == "" {
+			continue
+		}
+		if _, ok := seen[p]; ok {
+			continue
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	return out
 }
 
 func (p *ModelPreference) normalizeProviderKey(provider string) string {
@@ -120,7 +160,7 @@ func Load(opt ConfigOptions) Config {
 
 	provider := model.NormalizeProvider(opt.ModelProvider)
 	if provider == "" {
-		provider = "noop"
+		provider = "aetox"
 	}
 
 	modelName := strings.TrimSpace(opt.ModelName)

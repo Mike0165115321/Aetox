@@ -678,3 +678,158 @@ func (p *deepSeekLikeProvider) Complete(_ context.Context, req model.Request) (m
 	p.requests = append(p.requests, req)
 	return model.Response{Text: "ok"}, nil
 }
+
+// RespondEphemeral must never write into conversation history — the whole
+// point is keeping summary prompts (with kilobytes of tool output) out of the
+// session transcript.
+func TestRespondEphemeralDoesNotTouchContext(t *testing.T) {
+	provider := &toolLoopProvider{responses: []model.Response{{Text: "summary text"}}}
+	agent := NewAgent(AgentConfig{Provider: provider, Model: "test-model"})
+	before := len(agent.ContextMessages())
+
+	reply, err := agent.RespondEphemeral(context.Background(), "summarize this tool run", turn.TurnOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if reply != "summary text" {
+		t.Fatalf("expected provider reply, got %q", reply)
+	}
+	if got := len(agent.ContextMessages()); got != before {
+		t.Fatalf("ephemeral respond leaked into context: %d messages before, %d after", before, got)
+	}
+	// The prompt itself must still have reached the provider (as the last message).
+	req := provider.requests[0]
+	last := req.Messages[len(req.Messages)-1]
+	if last.Role != model.RoleUser || !strings.Contains(last.Content, "summarize this tool run") {
+		t.Fatalf("prompt did not reach provider, last message: %+v", last)
+	}
+}
+
+// failFirstProvider errors on the first Complete and answers normally after —
+// the tool loop's first-call failure path falls back to a plain response.
+type failFirstProvider struct {
+	calls    int
+	requests []model.Request
+}
+
+func (p *failFirstProvider) Name() string                  { return "fail-first" }
+func (p *failFirstProvider) SupportsToolCalling() bool     { return true }
+func (p *failFirstProvider) Complete(_ context.Context, req model.Request) (model.Response, error) {
+	p.calls++
+	p.requests = append(p.requests, req)
+	if p.calls == 1 {
+		return model.Response{}, fmt.Errorf("boom")
+	}
+	return model.Response{Text: "fallback answer"}, nil
+}
+
+// Regression: the first-call-failure fallback used to call Respond(msg), which
+// added the user message to context a second time.
+func TestToolLoopFirstCallFailureDoesNotDuplicateUserMessage(t *testing.T) {
+	provider := &failFirstProvider{}
+	agent := NewAgent(AgentConfig{Provider: provider, Model: "test-model"})
+
+	reply, usedTools, err := agent.RespondWithTools(
+		context.Background(),
+		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
+		"hello world",
+		func(_ context.Context, _ model.ToolCall) (string, error) { return "", nil },
+		nil,
+		turn.TurnOptions{},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if usedTools {
+		t.Fatal("no tool ran — usedTools must be false")
+	}
+	if reply != "fallback answer" {
+		t.Fatalf("expected fallback answer, got %q", reply)
+	}
+	userCount := 0
+	for _, m := range agent.ContextMessages() {
+		if m.Role == model.RoleUser && m.Content == "hello world" {
+			userCount++
+		}
+	}
+	if userCount != 1 {
+		t.Fatalf("user message must appear exactly once in context, found %d", userCount)
+	}
+	// The fallback request must also carry exactly one copy.
+	fallbackReq := provider.requests[len(provider.requests)-1]
+	reqCount := 0
+	for _, m := range fallbackReq.Messages {
+		if m.Role == model.RoleUser && m.Content == "hello world" {
+			reqCount++
+		}
+	}
+	if reqCount != 1 {
+		t.Fatalf("fallback request must carry the user message exactly once, found %d", reqCount)
+	}
+}
+
+// Long tool loops must compact mid-turn (OpenCode checks per step) — without
+// this, a single mega-loop overflows the char budget and old turns get dropped
+// verbatim instead of summarized.
+func TestToolLoopCompactsMidLoop(t *testing.T) {
+	provider := &toolLoopProvider{responses: []model.Response{
+		// round 1: a tool call whose result inflates the context past 80%
+		{ToolCalls: []model.ToolCall{{ID: "c1", Type: "function",
+			Function: model.FunctionCall{Name: "read", Arguments: `{"path":"big.txt"}`}}}},
+		// (compaction summary request consumes the next scripted response)
+		{Text: "summary of earlier turns"},
+		// round 2: final text
+		{Text: "done"},
+	}}
+	agent := NewAgent(AgentConfig{Provider: provider, Model: "m", MaxChars: 5000})
+	// Seed enough history that SplitForCompaction has something to fold
+	// (it needs keepRecent+4 messages) without tripping the hard char trim.
+	seed := make([]model.Message, 0, 8)
+	for i := 0; i < 4; i++ {
+		seed = append(seed,
+			model.Message{Role: model.RoleUser, Content: strings.Repeat("old question ", 20)},
+			model.Message{Role: model.RoleAssistant, Content: strings.Repeat("old answer ", 20)},
+		)
+	}
+	agent.RestoreHistory(seed)
+
+	_, _, err := agent.RespondWithTools(
+		context.Background(),
+		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
+		"read big.txt",
+		func(_ context.Context, _ model.ToolCall) (string, error) {
+			return strings.Repeat("huge tool output ", 150), nil // ~2550 chars → history ~4500 crosses 80% of 5000
+		},
+		nil,
+		turn.TurnOptions{},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	sawCompaction := false
+	for _, req := range provider.requests {
+		if len(req.Messages) > 0 && strings.Contains(req.Messages[0].Content, "compacting a long conversation") {
+			sawCompaction = true
+		}
+	}
+	if !sawCompaction {
+		t.Fatal("expected a mid-loop compaction request to the provider")
+	}
+}
+
+// Plain conversation replies use the same per-provider output ceiling as the
+// tool loop — the old flat 768 truncated long answers mid-sentence.
+func TestRespondUsesPerProviderOutputCeiling(t *testing.T) {
+	provider := &toolLoopProvider{responses: []model.Response{{Text: "hi"}}}
+	agent := NewAgent(AgentConfig{Provider: provider, Model: "m"})
+	if _, err := agent.Respond(context.Background(), "hello", turn.TurnOptions{}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got := provider.requests[0].MaxTokens
+	if got == 768 {
+		t.Fatal("conversation replies must not be capped at the old flat 768")
+	}
+	if want := agent.toolLoopMaxTokens(); got != want {
+		t.Fatalf("MaxTokens = %d, want per-provider ceiling %d", got, want)
+	}
+}

@@ -88,6 +88,10 @@ export interface ChatMessage {
   contextLabel?: string
   /** tool calls made during this turn, kept on the reply for a persistent timeline. */
   steps?: ToolStep[]
+  /** the model's thinking for this reply — kept after the turn, collapsed by default. */
+  reasoning?: string
+  /** seconds the model spent thinking (first→last reasoning chunk). */
+  thinkSecs?: number
 }
 
 /** One tool call in the live per-turn timeline ("Using browser_read… 12s"). */
@@ -200,6 +204,10 @@ export interface CockpitState {
   pendingImage: PendingImage | null
   /** File/browser tab dragged into the composer, staged before send. */
   pendingContext: PendingContext | null
+  /** Question the model is blocked on (ask_user tool), null when none. */
+  ask: { question: string; options: string[] } | null
+  /** The model's task checklist (todo_write tool), replaced wholesale each call. */
+  todos: { content: string; status: 'pending' | 'in_progress' | 'completed' }[]
 }
 
 /** A blank, well-formed state so the UI renders before the source hydrates. */
@@ -224,6 +232,8 @@ export function emptyCockpitState(): CockpitState {
     toolSteps: [],
     streamingText: '',
     reasoningText: '',
+    ask: null,
+    todos: [],
     pendingImage: null,
     pendingContext: null,
   }

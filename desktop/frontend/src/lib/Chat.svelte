@@ -4,7 +4,7 @@
   import Logo from './Logo.svelte'
   import { onMount } from 'svelte'
   import {
-    SupportedProviders, SupportedThinkLevels,
+    EnabledProviders, SupportedThinkLevels,
     ListModelsForProvider, RequiresAPIKey, HasAPIKey, PickAttachmentImage,
     GetContextBreakdown,
   } from '../../wailsjs/go/main/App'
@@ -13,7 +13,7 @@
   import { openUrlInWorkbench } from './stores/workbench.svelte'
   import {
     cockpit, attachImageFromPath, clearPendingImage, attachTabContext, clearPendingContext,
-    openProject, openFolder, clearProjectFocus,
+    openProject, openFolder, clearProjectFocus, cancelTurn, answerAsk,
   } from './stores/cockpit.svelte'
 
   let {
@@ -38,14 +38,14 @@
   let providers = $state<string[]>([])
   let thinkLevels = $state<string[]>([])
   let models = $state<string[]>([])
-  let showCustomModel = $state(false)
-  let customModel = $state('')
   let needsApiKey = $state(false)
   let apiKeyDraft = $state('')
   let reasoningCollapsed = $state(false)
+  // Per finished message: which persisted thinking panels are open (collapsed default).
+  let expandedReasoning = $state<Record<number, boolean>>({})
 
   onMount(async () => {
-    providers = await SupportedProviders()
+    providers = await EnabledProviders()
   })
 
   async function refreshProviderDerived(provider: string) {
@@ -60,7 +60,6 @@
   $effect(() => {
     const provider = model.provider
     if (!provider) return
-    showCustomModel = false
     refreshProviderDerived(provider)
   })
   // One-shot fetch with no catch used to strand thinkLevels as [] forever if
@@ -80,24 +79,12 @@
     refreshThinkLevels()
   })
 
-  async function handleProviderChange(e: Event) {
-    await onSwitchProvider((e.target as HTMLSelectElement).value)
+  async function handleProviderChange(value: string) {
+    await onSwitchProvider(value)
   }
 
-  async function handleModelChange(e: Event) {
-    const value = (e.target as HTMLSelectElement).value
-    if (value === '__custom__') {
-      showCustomModel = true
-      return
-    }
-    showCustomModel = false
+  async function handleModelChange(value: string) {
     await onSwitchModel(value)
-  }
-
-  async function submitCustomModel() {
-    if (!customModel.trim()) return
-    await onSwitchModel(customModel.trim())
-    customModel = ''
   }
 
   async function submitApiKey() {
@@ -111,6 +98,12 @@
   let modelMenuOpen = $state(false)
   let focusMenuOpen = $state(false)
   let ctxMenuOpen = $state(false)
+  // Which of the provider/model/think-level pickers inside the model-menu
+  // popover is expanded — native <select> can't be forced to open its option
+  // list upward (browser-controlled, not stylable), so these render as a
+  // small custom dropdown instead, anchored with bottom:100% like the rest
+  // of this popover.
+  let openDropdown = $state<'provider' | 'model' | 'thinkLevel' | ''>('')
 
   // Auto-grow the composer upward while typing (the composer is anchored at
   // the bottom, so extra height expands up) — capped, then it scrolls inside.
@@ -126,9 +119,10 @@
 
   function closeMenusOnOutside(e: MouseEvent) {
     const el = e.target as HTMLElement
-    if (modelMenuOpen && !el.closest('.model-pick')) modelMenuOpen = false
+    if (modelMenuOpen && !el.closest('.model-pick')) { modelMenuOpen = false; openDropdown = '' }
     if (focusMenuOpen && !el.closest('.focus-pick')) focusMenuOpen = false
     if (ctxMenuOpen && !el.closest('.ctx-pick')) ctxMenuOpen = false
+    if (openDropdown && !el.closest('.updrop')) openDropdown = ''
   }
 
   // Context meter: how full the model's context window is and what fills it.
@@ -186,7 +180,51 @@
     draft = prompt
   }
 
+  // Pinned auto-scroll (Claude Code/OpenCode behavior): while the user is at
+  // the bottom, every new message / stream chunk / reasoning chunk / tool step
+  // keeps the view pinned there. Scrolling up unpins so reading is never
+  // hijacked; scrolling back down re-pins.
+  let chatEl = $state<HTMLDivElement | null>(null)
+  let pinnedToBottom = $state(true)
+  function onChatScroll() {
+    const el = chatEl
+    if (!el) return
+    pinnedToBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+  }
+  $effect(() => {
+    // every live-updating piece of the transcript re-triggers this
+    void messages.length
+    void streamingText
+    void reasoningText
+    void toolSteps.length
+    void cockpit.todos.length
+    void cockpit.ask
+    void awaitingReply
+    const el = chatEl
+    if (!el || !pinnedToBottom) return
+    // after DOM update, not before — otherwise we scroll to the old height
+    requestAnimationFrame(() => (el.scrollTop = el.scrollHeight))
+  })
+
+  // Copy an AI reply as plain text. '✓' feedback resets after a moment.
+  let copiedText = $state('')
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined
+  async function copyMessage(text: string) {
+    await navigator.clipboard.writeText(text)
+    copiedText = text
+    clearTimeout(copiedTimer)
+    copiedTimer = setTimeout(() => (copiedText = ''), 1500)
+  }
+
   function submit() {
+    // While the model is blocked on ask_user, typed text is the free-text answer.
+    if (cockpit.ask) {
+      if (draft.trim()) {
+        answerAsk(draft)
+        draft = ''
+      }
+      return
+    }
     if (!draft.trim() && !cockpit.pendingImage && !cockpit.pendingContext) return
     onSend(draft)
     draft = ''
@@ -244,6 +282,36 @@
 
 <svelte:window onclick={modelMenuOpen || focusMenuOpen ? closeMenusOnOutside : undefined} />
 
+{#snippet upSelect(
+  id: 'provider' | 'model' | 'thinkLevel',
+  options: { value: string; label: string }[],
+  current: string,
+  onPick: (value: string) => void,
+)}
+  <div class="updrop">
+    <button
+      type="button"
+      class="ctrl updrop-trigger"
+      onclick={(e) => { e.stopPropagation(); openDropdown = openDropdown === id ? '' : id }}
+    >
+      <span class="t">{options.find((o) => o.value === current)?.label ?? current}</span>
+      <span class="caret">{openDropdown === id ? '⌃' : '⌄'}</span>
+    </button>
+    {#if openDropdown === id}
+      <div class="updrop-list">
+        {#each options as opt}
+          <button
+            type="button"
+            class="updrop-opt"
+            class:selected={opt.value === current}
+            onclick={(e) => { e.stopPropagation(); openDropdown = ''; onPick(opt.value) }}
+          >{opt.label}</button>
+        {/each}
+      </div>
+    {/if}
+  </div>
+{/snippet}
+
 {#snippet toolTimeline(steps: ToolStep[], live: boolean)}
   <div class="tool-steps">
     {#each steps as s}
@@ -280,9 +348,9 @@
   {:else}
     <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
     <!-- delegated click target is the <a> tags rendered inside .markdown-body, already interactive -->
-    <div class="chat" onclick={onChatClick}>
+    <div class="chat" bind:this={chatEl} onscroll={onChatScroll} onclick={onChatClick}>
     <div class="chat-inner">
-      {#each messages as m}
+      {#each messages as m, i}
         <div class="msg {m.role === 'user' ? 'user' : 'bot'}">
           <div class="bubble">
             {#if m.role === 'agent' && m.tag}
@@ -294,11 +362,30 @@
             {#if m.contextLabel}
               <div class="attach-chip"><span class="ic">📎</span> <span class="attach-name">{m.contextLabel}</span></div>
             {/if}
+            {#if m.reasoning}
+              <div class="reasoning-panel">
+                <button class="reasoning-toggle" onclick={() => (expandedReasoning[i] = !expandedReasoning[i])}>
+                  <span class="chev">{expandedReasoning[i] ? '▾' : '▸'}</span>
+                  {m.thinkSecs ? t('chat.thoughtFor', { secs: m.thinkSecs }) : t('chat.thoughtDone')}
+                </button>
+                {#if expandedReasoning[i]}
+                  <div class="reasoning-body">{m.reasoning}</div>
+                {/if}
+              </div>
+            {/if}
             {#if m.steps?.length}
               {@render toolTimeline(m.steps, false)}
             {/if}
             <div class="markdown-body">{@html renderMarkdown(m.text)}</div>
-            <div class="time">{m.time}</div>
+            <div class="time">
+              {m.time}
+              {#if m.role === 'agent' && m.text}
+                <button type="button" class="msg-copy" aria-label={t('chat.copy')}
+                  onclick={() => copyMessage(m.text)}>
+                  {copiedText === m.text ? '✓' : '⧉'}
+                </button>
+              {/if}
+            </div>
           </div>
         </div>
       {/each}
@@ -322,11 +409,35 @@
                 {/if}
               </div>
             {/if}
+            {#if cockpit.todos.length > 0}
+              <div class="todo-panel">
+                {#each cockpit.todos as td}
+                  <div class="todo-item {td.status}">
+                    <span class="mark">{td.status === 'completed' ? '✓' : td.status === 'in_progress' ? '▸' : '○'}</span>
+                    <span class="t">{td.content}</span>
+                  </div>
+                {/each}
+              </div>
+            {/if}
             {#if toolSteps.length > 0}
               {@render toolTimeline(toolSteps, true)}
             {/if}
             {#if streamingText}
               <div class="markdown-body">{@html renderMarkdown(streamingText)}</div>
+            {/if}
+            {#if cockpit.ask}
+              <div class="ask-panel">
+                <div class="ask-q">{cockpit.ask.question}</div>
+                <div class="ask-opts">
+                  {#each cockpit.ask.options as opt, i}
+                    <button type="button" class="ask-opt" onclick={() => answerAsk(opt)}>
+                      <span class="ask-key">{String.fromCharCode(65 + i)}</span>
+                      <span class="ask-label">{opt}</span>
+                    </button>
+                  {/each}
+                </div>
+                <div class="ask-hint">{t('chat.askHint')}</div>
+              </div>
             {/if}
           </div>
         </div>
@@ -451,45 +562,38 @@
               <div class="model-menu">
                 <div class="mm-row">
                   <span class="lbl">{t('chat.provider')}</span>
-                  <select class="ctrl" value={model.provider} onchange={handleProviderChange}>
-                    {#each providers as p}<option value={p}>{p}</option>{/each}
-                  </select>
+                  {@render upSelect('provider', providers.map((p) => ({ value: p, label: p })), model.provider, handleProviderChange)}
                 </div>
                 <div class="mm-row">
                   <span class="lbl">{t('chat.model')}</span>
-                  <select class="ctrl" value={showCustomModel ? '__custom__' : model.modelName} onchange={handleModelChange}>
-                    {#each models || [] as m}<option value={m}>{m}</option>{/each}
-                    <option value="__custom__">Custom…</option>
-                  </select>
+                  {#if models && models.length > 0}
+                    {@render upSelect('model', models.map((m) => ({ value: m, label: m })), model.modelName, handleModelChange)}
+                  {:else}
+                    <!-- No discoverable list — read-only; custom model ids are set in Settings -->
+                    <span class="mm-static">{model.modelName || '—'}</span>
+                  {/if}
                 </div>
-                {#if showCustomModel || !models || models.length === 0}
-                  <input
-                    class="ctrl"
-                    type="text"
-                    placeholder={t('chat.modelIdPlaceholder')}
-                    value={customModel || model.modelName}
-                    oninput={(e) => (customModel = (e.target as HTMLInputElement).value)}
-                    onkeydown={(e) => e.key === 'Enter' && submitCustomModel()}
-                  />
-                {/if}
                 {#if thinkLevels.length > 0}
                   <div class="mm-row">
                     <span class="lbl">{t('chat.thinkLevel')}</span>
-                    <select class="ctrl" value={model.thinkLevel} onchange={(e) => onSwitchThinkLevel((e.target as HTMLSelectElement).value)}>
-                      {#each thinkLevels as lvl}<option value={lvl}>{lvl}</option>{/each}
-                    </select>
+                    {@render upSelect('thinkLevel', thinkLevels.map((lvl) => ({ value: lvl, label: lvl })), model.thinkLevel, onSwitchThinkLevel)}
                   </div>
                 {/if}
               </div>
             {/if}
-            <button type="button" class="model-chip" onclick={(e) => { e.stopPropagation(); modelMenuOpen = !modelMenuOpen; if (modelMenuOpen) refreshThinkLevels() }}>
+            <button type="button" class="model-chip" onclick={(e) => { e.stopPropagation(); modelMenuOpen = !modelMenuOpen; if (modelMenuOpen) { refreshThinkLevels(); EnabledProviders().then((p) => (providers = p)) } }}>
               <span class="t">{model.modelName || model.provider}</span>
               {#if model.thinkLevel}<span class="lvl">{model.thinkLevel}</span>{/if}
               <span class="caret">{modelMenuOpen ? '⌃' : '⌄'}</span>
             </button>
           </div>
         {/if}
-        <button class="send" aria-label="Send" onclick={submit}>➤</button>
+        {#if awaitingReply}
+          <!-- The tool loop is unbounded — this is the user's brake (Ctrl+C of the UI) -->
+          <button class="send stop" aria-label="Stop" onclick={cancelTurn}>■</button>
+        {:else}
+          <button class="send" aria-label="Send" onclick={submit}>➤</button>
+        {/if}
       </div>
     </div>
   </div>

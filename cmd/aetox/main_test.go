@@ -61,7 +61,9 @@ func TestResolveModelStatusIncludesThinkFallback(t *testing.T) {
 	}, model.BootstrapResult{
 		Provider: model.NewNoopProvider("noop"),
 	})
-	want := "noop/noop(high)"
+	// ModelProvider "noop" is a backward-compat alias — ResolveStatus
+	// normalizes it to the current canonical name "aetox".
+	want := "aetox/noop(high)"
 	if status != want {
 		t.Fatalf("want %q got %q", want, status)
 	}
@@ -75,7 +77,7 @@ func TestResolveModelStatusSupportsNoThinking(t *testing.T) {
 	}, model.BootstrapResult{
 		Provider: model.NewNoopProvider("noop"),
 	})
-	want := "noop/noop(off)"
+	want := "aetox/noop(off)"
 	if status != want {
 		t.Fatalf("want %q got %q", want, status)
 	}

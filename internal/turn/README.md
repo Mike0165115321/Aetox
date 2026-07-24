@@ -25,3 +25,7 @@ Since §17 (2026-07-23) there is deliberately **no keyword/regex intent guessing
 - Changing what the *model sees* after a tool runs → `modelToolReceipt`. Changing what the *user sees* → the summarize/fallback-summary paths.
 - Never add a tool-execution path that skips `resolveApproval`.
 - Never add heuristics that pick tools from natural language on the model's behalf — that layer was deleted by design (§17); `TestExecute_ConversationTextNeverTriggersToolsDirectly` pins it.
+
+## Slow-tool guard (§27.1, 2026-07-25)
+
+`executeTool` runs every model-driven tool call under a 60s deadline (`toolExecutionTimeout`, a var so tests shrink it). Overrun → the model gets a truthful *"abnormally slow … abandoned, retry with a narrower scope"* receipt instead of the turn hanging. Tools that ignore ctx (grep/list walk the FS) keep running in a discarded goroutine — `ponytail:` marked. Tools in `interactiveTools` (`ask_user`) are exempt: they block on a human by design; ctx cancel (Stop) remains their only brake. Turn summaries go through `Agent.RespondEphemeral` — never `Respond` — so summary prompts stay out of conversation history.

@@ -28,8 +28,21 @@ const (
 	defaultToolSummaryPromptMaxLen = 4096
 )
 
+// A single tool call that runs longer than this is reported back to the model
+// as abnormally slow so it can retry with a narrower scope instead of hanging
+// the turn. Applies to tool execution only, not conversation. Var (not const)
+// so tests can shrink it.
+var toolExecutionTimeout = 60 * time.Second
+
+// interactiveTools block on a human answering — waiting is their job, so the
+// slow-tool guard must not abandon them. Ctx cancel (Stop) remains the brake.
+var interactiveTools = map[string]bool{"ask_user": true}
+
 type Agent interface {
 	Respond(context.Context, string, TurnOptions) (string, error)
+	// RespondEphemeral answers a one-shot prompt without writing anything into
+	// conversation history — for meta work like tool-run summaries.
+	RespondEphemeral(context.Context, string, TurnOptions) (string, error)
 	RespondStream(context.Context, string, func(string) error, func(string) error, TurnOptions) (string, bool, error)
 	RespondWithTools(context.Context, []model.ToolDefinition, string, func(context.Context, model.ToolCall) (string, error), func(string) error, TurnOptions) (string, bool, error)
 	SupportsToolCalling() bool
@@ -474,11 +487,47 @@ func (e *Executor) executeTool(ctx context.Context, name string, args map[string
 		}, true, nil
 	}
 
-	output, handled, err := e.dispatcher.ExecuteTool(ctx, name, args)
-	if !handled {
-		return output, false, fmt.Errorf("tool %q is not exposed to agent", name)
+	// Run under a per-tool deadline. Tools that honor ctx (http, mcp) stop on
+	// cancel; those that don't (grep/list walk the FS ignoring ctx) keep running
+	// in this goroutine after we return — its result is just discarded.
+	// ponytail: leaks the stray goroutine's CPU until it finishes on its own;
+	// plumb ctx into the FS-walking tools if that leak ever bites.
+	// Interactive tools wait on a human — no deadline, ctx cancel is the brake.
+	if interactiveTools[strings.ToLower(name)] {
+		output, handled, err := e.dispatcher.ExecuteTool(ctx, name, args)
+		if !handled {
+			return output, false, fmt.Errorf("tool %q is not exposed to agent", name)
+		}
+		return output, true, err
 	}
-	return output, true, err
+	toolCtx, cancel := context.WithTimeout(ctx, toolExecutionTimeout)
+	defer cancel()
+
+	type toolExecResult struct {
+		output  skill.Output
+		handled bool
+		err     error
+	}
+	done := make(chan toolExecResult, 1)
+	go func() {
+		output, handled, err := e.dispatcher.ExecuteTool(toolCtx, name, args)
+		done <- toolExecResult{output, handled, err}
+	}()
+
+	select {
+	case r := <-done:
+		if !r.handled {
+			return r.output, false, fmt.Errorf("tool %q is not exposed to agent", name)
+		}
+		return r.output, true, r.err
+	case <-ctx.Done():
+		// Parent turn canceled (user hit stop) — propagate, not a slowness report.
+		return skill.Output{Name: name, Content: "tool execution canceled", RawOutput: "tool execution canceled", Success: false, Stderr: ctx.Err().Error()}, true, ctx.Err()
+	case <-time.After(toolExecutionTimeout):
+		cancel() // nudge ctx-aware tools to stop
+		msg := fmt.Sprintf("tool %q is abnormally slow: still running after %s and was abandoned. Retry with a narrower scope (a more specific path or pattern) or a different approach.", name, toolExecutionTimeout)
+		return skill.Output{Name: name, Content: msg, RawOutput: msg, Success: false, Stderr: msg}, true, errors.New(msg)
+	}
 }
 
 func toolCallToArgs(name string, args map[string]any) []string {

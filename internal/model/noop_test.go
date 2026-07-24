@@ -16,14 +16,14 @@ func TestNoopProviderComplete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("complete failed: %v", err)
 	}
-	if resp.Provider != "noop" {
-		t.Fatalf("expected provider noop, got %s", resp.Provider)
+	if resp.Provider != "aetox" {
+		t.Fatalf("expected provider aetox, got %s", resp.Provider)
 	}
 	if resp.Model != "test-model" {
 		t.Fatalf("expected model test-model, got %s", resp.Model)
 	}
-	if resp.Text != "[noop:test-model] hello" {
-		t.Fatalf("unexpected text: %s", resp.Text)
+	if resp.Text != noopOnboardingReply {
+		t.Fatalf("unconfigured install must get the onboarding reply, got: %s", resp.Text)
 	}
 }
 
@@ -37,8 +37,8 @@ func TestNoopProviderEmptyPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("complete failed: %v", err)
 	}
-	if resp.Text != "[noop:model-x] (empty prompt)" {
-		t.Fatalf("unexpected text: %s", resp.Text)
+	if resp.Text != noopOnboardingReply {
+		t.Fatalf("empty prompt on an unconfigured install must still get the onboarding reply, got: %s", resp.Text)
 	}
 }
 
@@ -83,9 +83,10 @@ func TestNoopProviderTestModels(t *testing.T) {
 		}
 	}
 
-	// default model stays a plain echo
-	if got := ask("Aetox0.0.1:0b", "สวัสดี").Text; got != "[noop:Aetox0.0.1:0b] สวัสดี" {
-		t.Errorf("default model must stay echo, got %q", got)
+	// the catalog's default noop model is what a genuinely unconfigured
+	// install lands on — it must guide the user to Settings, not echo debug text
+	if got := ask("Aetox0.0.1:0b", "สวัสดี").Text; got != noopOnboardingReply {
+		t.Errorf("default model must return the onboarding reply, got %q", got)
 	}
 }
 
@@ -136,8 +137,83 @@ func TestNoopProviderImageScenarios(t *testing.T) {
 	if got := ask("imgmix"); !strings.Contains(got, "|") || strings.Count(got, "picsum.photos") != 3 {
 		t.Errorf("imgmix must include a table and 3 images, got:\n%s", got)
 	}
-	// scenario keys trigger only as the first word — normal chat stays echo
-	if got := ask("ผมชอบ img5 นะ"); !strings.HasPrefix(got, "[noop:test-model]") {
+	// scenario keys trigger only as the first word — normal chat falls
+	// through to the onboarding reply, same as any other unscripted prompt
+	if got := ask("ผมชอบ img5 นะ"); got != noopOnboardingReply {
 		t.Errorf("mid-sentence keyword must not trigger a scenario, got:\n%s", got)
+	}
+}
+
+// aetox-tools:test walks a fixed script: todo_write → ask_user → todo_write
+// (all done) → final text. Each round is derived from the tool results already
+// in the transcript, so the sequence is stateless and deterministic.
+func TestNoopToolsModelScriptsToolLoop(t *testing.T) {
+	p := NewNoopProvider("aetox-tools:test")
+	if !p.SupportsToolCalling() {
+		t.Fatal("aetox-tools:test must opt into tool calling")
+	}
+	if NewNoopProvider("Aetox0.0.1:0b").SupportsToolCalling() {
+		t.Fatal("plain aetox models must stay tool-less")
+	}
+
+	msgs := []Message{{Role: RoleUser, Content: "เริ่มทดสอบ"}}
+	step := func() Response {
+		resp, err := p.Complete(context.Background(), Request{Model: "aetox-tools:test", Messages: msgs})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		return resp
+	}
+	feed := func(resp Response, result string) {
+		msgs = append(msgs, Message{Role: RoleAssistant, ToolCalls: resp.ToolCalls})
+		msgs = append(msgs, Message{
+			Role: RoleTool, Name: resp.ToolCalls[0].Function.Name,
+			ToolCallID: resp.ToolCalls[0].ID, Content: result,
+		})
+	}
+
+	r1 := step()
+	if len(r1.ToolCalls) != 1 || r1.ToolCalls[0].Function.Name != "todo_write" {
+		t.Fatalf("round 1 must call todo_write, got %+v", r1.ToolCalls)
+	}
+	feed(r1, "todo list updated: 4 items, 1 completed")
+
+	r2 := step()
+	if len(r2.ToolCalls) != 1 || r2.ToolCalls[0].Function.Name != "ask_user" {
+		t.Fatalf("round 2 must call ask_user, got %+v", r2.ToolCalls)
+	}
+	feed(r2, "user chose: ขำๆ มีอีโมจิ")
+
+	r3 := step()
+	if len(r3.ToolCalls) != 1 || r3.ToolCalls[0].Function.Name != "todo_write" {
+		t.Fatalf("round 3 must complete the todos, got %+v", r3.ToolCalls)
+	}
+	feed(r3, "todo list updated: 4 items, 4 completed")
+
+	r4 := step()
+	if len(r4.ToolCalls) != 0 {
+		t.Fatalf("round 4 must be the final text, got tool calls %+v", r4.ToolCalls)
+	}
+	if !strings.Contains(r4.Text, "ขำๆ มีอีโมจิ") {
+		t.Fatalf("final text must echo the user's choice, got %q", r4.Text)
+	}
+}
+
+// aetox-think:test must produce a LONG multi-section reasoning stream — it is
+// the workout for the reasoning panel's unbounded height and auto-scroll.
+func TestNoopThinkModelProducesLongSectionedReasoning(t *testing.T) {
+	p := NewNoopProvider("aetox-think:test")
+	resp, err := p.Complete(context.Background(), Request{
+		Model:    "aetox-think:test",
+		Messages: []Message{{Role: RoleUser, Content: "ทดสอบ"}},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(resp.ReasoningContent) < 1000 {
+		t.Fatalf("reasoning too short to exercise the panel: %d chars", len(resp.ReasoningContent))
+	}
+	if !strings.Contains(resp.ReasoningContent, "[1/6]") || !strings.Contains(resp.ReasoningContent, "[6/6]") {
+		t.Fatal("reasoning must keep its numbered sections")
 	}
 }

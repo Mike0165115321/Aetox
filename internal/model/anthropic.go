@@ -57,6 +57,13 @@ func NewAnthropicProvider(cfg AnthropicConfig) (*AnthropicProvider, error) {
 		return nil, ErrMissingAPIKey
 	}
 	if baseURL == "" {
+		// Default to THIS provider's endpoint, not Anthropic's — this client
+		// also serves Anthropic-wire-format providers like DeepSeek, and an
+		// empty BaseURL (the persisted-preference normal case) used to send
+		// their key to the real api.anthropic.com → 401 invalid x-api-key.
+		baseURL = DefaultBaseURL(name)
+	}
+	if baseURL == "" {
 		baseURL = DefaultBaseURL("anthropic")
 	}
 	baseURL = strings.TrimSuffix(baseURL, "/")

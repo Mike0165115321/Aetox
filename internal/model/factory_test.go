@@ -15,8 +15,8 @@ func TestNewProviderDefaultsToNoop(t *testing.T) {
 	if p == nil {
 		t.Fatal("provider is nil")
 	}
-	if p.Name() != "noop" {
-		t.Fatalf("expected provider noop, got %s", p.Name())
+	if p.Name() != "aetox" {
+		t.Fatalf("expected provider aetox, got %s", p.Name())
 	}
 }
 
@@ -142,5 +142,68 @@ func TestNewProviderAnthropicMissingAPIKey(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error for missing API key")
+	}
+}
+
+// Regression (401 invalid x-api-key): an empty BaseURL — the normal case,
+// since persisted preferences strip the catalog-default URL — must resolve to
+// DeepSeek's own Anthropic-format endpoint, never api.anthropic.com.
+func TestNewProviderDeepSeekEmptyBaseURLStaysOnDeepSeek(t *testing.T) {
+	p, err := NewProvider(ProviderOptions{
+		Provider: "deepseek",
+		Model:    "deepseek-v4-flash",
+		APIKey:   "sk-test",
+		BaseURL:  "", // persisted-preference normal case
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	ap, ok := p.(*AnthropicProvider)
+	if !ok {
+		t.Fatalf("expected AnthropicProvider, got %T", p)
+	}
+	if ap.baseURL != DefaultBaseURL("deepseek") {
+		t.Fatalf("empty BaseURL must default to the provider's own endpoint, got %q", ap.baseURL)
+	}
+}
+
+// Regression: switching to the alt wire format while cfg still carries the
+// default-format URL must swap to the alt endpoint — OpenAI-format requests
+// aimed at the /anthropic endpoint just 404.
+func TestNewProviderDeepSeekAltFormatReplacesDefaultURL(t *testing.T) {
+	p, err := NewProvider(ProviderOptions{
+		Provider:   "deepseek",
+		Model:      "deepseek-v4-flash",
+		APIKey:     "sk-test",
+		BaseURL:    DefaultBaseURL("deepseek"), // stale default-format URL
+		WireFormat: "openai-compatible",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := p.(*AnthropicProvider); ok {
+		t.Fatal("alt wire format must not build the Anthropic client")
+	}
+}
+
+// Symmetric regression: a stale alt-format URL combined with the default wire
+// format must snap back to the default endpoint — Anthropic-format requests
+// aimed at the plain OpenAI endpoint 404.
+func TestNewProviderDeepSeekDefaultFormatReplacesStaleAltURL(t *testing.T) {
+	p, err := NewProvider(ProviderOptions{
+		Provider: "deepseek",
+		Model:    "deepseek-v4-flash",
+		APIKey:   "sk-test",
+		BaseURL:  "https://api.deepseek.com", // stale alt-format URL
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	ap, ok := p.(*AnthropicProvider)
+	if !ok {
+		t.Fatalf("expected AnthropicProvider, got %T", p)
+	}
+	if ap.baseURL != DefaultBaseURL("deepseek") {
+		t.Fatalf("stale alt URL must snap back to the default endpoint, got %q", ap.baseURL)
 	}
 }

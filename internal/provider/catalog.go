@@ -100,9 +100,14 @@ type entry struct {
 // only — they are not guaranteed to be live, available, or appropriate
 // for every model behind the provider.
 var catalog = map[string]*entry{
-	"noop": {
-		canonical:      "noop",
-		aliases:        []string{"noop", "none", "stub"},
+	"aetox": {
+		canonical: "aetox",
+		// "noop" stays a recognized alias so preference files saved before
+		// this rename (config.ModelPreference.ModelProvider/EnabledProviders
+		// literally containing "noop") keep normalizing correctly — the same
+		// mechanism every other provider's aliases already use, no migration
+		// step needed.
+		aliases:        []string{"aetox", "noop", "none", "stub"},
 		requiresAPIKey: false,
 		runtime:        RuntimeNoop,
 		baseURL:        "",
@@ -117,6 +122,7 @@ var catalog = map[string]*entry{
 				"aetox-image:test",
 				"aetox-think:test",
 				"aetox-markdown:test",
+				"aetox-tools:test",
 			},
 		},
 		capabilities: Capabilities{},
@@ -304,7 +310,7 @@ func sortedCanonicalKeys() []string {
 func Normalize(name string) string {
 	key := strings.ToLower(strings.TrimSpace(name))
 	if key == "" {
-		return "noop"
+		return "aetox"
 	}
 	for canonical, e := range catalog {
 		for _, alias := range e.aliases {

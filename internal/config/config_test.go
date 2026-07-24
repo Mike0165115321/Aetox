@@ -83,8 +83,8 @@ func TestLoadInvalidValues(t *testing.T) {
 	if cfg.ModelTimeoutSec != 30 {
 		t.Fatalf("expected fallback model timeout 30, got %d", cfg.ModelTimeoutSec)
 	}
-	if cfg.ModelProvider != "noop" {
-		t.Fatalf("expected model provider fallback noop, got %q", cfg.ModelProvider)
+	if cfg.ModelProvider != "aetox" {
+		t.Fatalf("expected model provider fallback aetox, got %q", cfg.ModelProvider)
 	}
 	if cfg.ThinkLevel != "low" {
 		t.Fatalf("expected fallback think level low, got %q", cfg.ThinkLevel)
@@ -114,6 +114,60 @@ func TestSaveAndLoadModelPreferenceThinkLevel(t *testing.T) {
 	}
 	if got.ThinkLevel != want.ThinkLevel {
 		t.Fatalf("expected think level %q, got %q", want.ThinkLevel, got.ThinkLevel)
+	}
+}
+
+func TestResolvedEnabledProvidersDefaultsToActiveProvider(t *testing.T) {
+	// Never customized (empty slice) — an install must still show something,
+	// and it must be exactly the provider already configured, not the whole catalog.
+	got := ResolvedEnabledProviders(nil, "deepseek")
+	if len(got) != 1 || got[0] != "deepseek" {
+		t.Fatalf("ResolvedEnabledProviders(nil, deepseek) = %v, want [deepseek]", got)
+	}
+}
+
+// A genuinely fresh install (never customized, never picked a real provider)
+// runs on "aetox" (Aetox's own built-in engine) — it must show up by default,
+// not be hidden, since that's exactly what removing an active provider falls
+// back to and what the onboarding reply points a user back at.
+func TestResolvedEnabledProvidersShowsAetoxByDefault(t *testing.T) {
+	got := ResolvedEnabledProviders(nil, "aetox")
+	if len(got) != 1 || got[0] != "aetox" {
+		t.Fatalf("ResolvedEnabledProviders(nil, aetox) = %v, want [aetox]", got)
+	}
+	// "noop" is a backward-compat alias — must resolve the same way.
+	got = ResolvedEnabledProviders(nil, "noop")
+	if len(got) != 1 || got[0] != "aetox" {
+		t.Fatalf("ResolvedEnabledProviders(nil, noop) = %v, want [aetox] (noop normalizes to aetox)", got)
+	}
+}
+
+func TestResolvedEnabledProvidersRespectsCustomSetEvenWithoutActiveProvider(t *testing.T) {
+	// A customized set wins outright — the active provider is NOT force-appended.
+	// Otherwise explicitly disabling the currently-active provider (to switch
+	// away and hide it) would be silently undone on every subsequent read.
+	got := ResolvedEnabledProviders([]string{"openai", "anthropic"}, "deepseek")
+	want := []string{"openai", "anthropic"}
+	if len(got) != len(want) {
+		t.Fatalf("ResolvedEnabledProviders = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("ResolvedEnabledProviders = %v, want %v", got, want)
+		}
+	}
+}
+
+func TestResolvedEnabledProvidersDedupesAndNormalizes(t *testing.T) {
+	got := ResolvedEnabledProviders([]string{"OpenAI", "openai", " anthropic "}, "openai")
+	want := []string{"openai", "anthropic"}
+	if len(got) != len(want) {
+		t.Fatalf("ResolvedEnabledProviders = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("ResolvedEnabledProviders = %v, want %v", got, want)
+		}
 	}
 }
 

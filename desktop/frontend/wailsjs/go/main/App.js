@@ -6,6 +6,10 @@ export function AddMCPServer(arg1, arg2) {
   return window['go']['main']['App']['AddMCPServer'](arg1, arg2);
 }
 
+export function AnswerUserQuestion(arg1) {
+  return window['go']['main']['App']['AnswerUserQuestion'](arg1);
+}
+
 export function BrowserBack(arg1) {
   return window['go']['main']['App']['BrowserBack'](arg1);
 }
@@ -76,6 +80,10 @@ export function DeleteIdentityFile(arg1) {
 
 export function DeleteSession(arg1) {
   return window['go']['main']['App']['DeleteSession'](arg1);
+}
+
+export function EnabledProviders() {
+  return window['go']['main']['App']['EnabledProviders']();
 }
 
 export function GetContextBreakdown() {
@@ -242,6 +250,10 @@ export function SetAPIKey(arg1, arg2) {
   return window['go']['main']['App']['SetAPIKey'](arg1, arg2);
 }
 
+export function SetProviderEnabled(arg1, arg2) {
+  return window['go']['main']['App']['SetProviderEnabled'](arg1, arg2);
+}
+
 export function SetProviderWireFormat(arg1) {
   return window['go']['main']['App']['SetProviderWireFormat'](arg1);
 }
@@ -292,6 +304,10 @@ export function TerminalWrite(arg1, arg2) {
 
 export function TestMCPServer(arg1) {
   return window['go']['main']['App']['TestMCPServer'](arg1);
+}
+
+export function TestProviderConnection(arg1) {
+  return window['go']['main']['App']['TestProviderConnection'](arg1);
 }
 
 export function ToggleMCPServer(arg1, arg2) {

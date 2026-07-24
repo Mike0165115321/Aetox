@@ -225,6 +225,8 @@ export namespace main {
 	    role: string;
 	    text: string;
 	    time: string;
+	    reasoning?: string;
+	    thinkSecs?: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new SessionMessage(source);
@@ -235,6 +237,8 @@ export namespace main {
 	        this.role = source["role"];
 	        this.text = source["text"];
 	        this.time = source["time"];
+	        this.reasoning = source["reasoning"];
+	        this.thinkSecs = source["thinkSecs"];
 	    }
 	}
 	export class SessionMeta {

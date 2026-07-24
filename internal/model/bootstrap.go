@@ -37,20 +37,20 @@ func BootstrapProvider(opts BootstrapOptions) BootstrapResult {
 	}
 
 	fallback, fallbackErr := NewProvider(ProviderOptions{
-		Provider: "noop",
-		Model:    "noop",
+		Provider: "aetox",
+		Model:    "aetox",
 	})
 	if fallbackErr != nil {
 		return BootstrapResult{
 			Provider: nil,
-			Warning:  "cannot initialize noop fallback provider",
+			Warning:  "cannot initialize aetox fallback provider",
 			Error:    initErr,
 		}
 	}
 
 	return BootstrapResult{
 		Provider: fallback,
-		Warning:  "model provider unavailable; using noop fallback",
+		Warning:  "model provider unavailable; using aetox fallback",
 		Error:    initErr,
 	}
 }

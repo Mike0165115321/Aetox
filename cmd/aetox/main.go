@@ -275,7 +275,7 @@ func main() {
 	cfg.ModelContextTokens = modelContextTokens
 
 	if strings.TrimSpace(cfg.ModelName) == "" &&
-		!strings.EqualFold(strings.TrimSpace(cfg.ModelProvider), "noop") {
+		!strings.EqualFold(strings.TrimSpace(cfg.ModelProvider), "aetox") {
 		cfg.ModelName = model.DefaultModel(cfg.ModelProvider)
 		modelName = cfg.ModelName
 	}
@@ -442,7 +442,7 @@ func switchProvider(ctx context.Context, cfg *config.Config) (app.ModelSwitchRes
 	cfg.ModelBaseURL = strings.TrimSpace(selectedBaseURL)
 	cfg.ThinkLevel = selectedThinkLevel
 
-	if cfg.ModelName == "" && !strings.EqualFold(cfg.ModelProvider, "noop") {
+	if cfg.ModelName == "" && !strings.EqualFold(cfg.ModelProvider, "aetox") {
 		cfg.ModelName = model.DefaultModel(cfg.ModelProvider)
 	}
 	cfg.ThinkLevel = model.NormalizeThinkingLevel(cfg.ModelProvider, cfg.ModelName, cfg.ThinkLevel)

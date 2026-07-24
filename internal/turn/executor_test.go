@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Mike0165115321/Aetox/internal/command"
 	"github.com/Mike0165115321/Aetox/internal/model"
@@ -224,6 +225,10 @@ func (a *toolAwareAgent) Respond(_ context.Context, _ string, _ TurnOptions) (st
 	return a.summaryReply, nil
 }
 
+func (a *toolAwareAgent) RespondEphemeral(ctx context.Context, prompt string, opts TurnOptions) (string, error) {
+	return a.Respond(ctx, prompt, opts)
+}
+
 func (a *toolAwareAgent) RespondStream(_ context.Context, _ string, _ func(string) error, _ func(string) error, _ TurnOptions) (string, bool, error) {
 	return a.summaryReply, false, nil
 }
@@ -279,12 +284,84 @@ func TestExecuteToolCallWithOutcome_TruncatedArgsFailLoudly(t *testing.T) {
 	}
 }
 
+// slowDispatcher hangs in ExecuteTool until released, ignoring ctx — like the
+// FS-walking skills do.
+type slowDispatcher struct {
+	toolDispatcher
+	release chan struct{}
+}
+
+func (d *slowDispatcher) ExecuteTool(_ context.Context, _ string, _ map[string]any) (skill.Output, bool, error) {
+	<-d.release
+	return skill.Output{Success: true}, true, nil
+}
+
+func TestExecuteTool_AbnormallySlowToolReportsBackToModel(t *testing.T) {
+	saved := toolExecutionTimeout
+	toolExecutionTimeout = 50 * time.Millisecond
+	defer func() { toolExecutionTimeout = saved }()
+
+	dispatcher := &slowDispatcher{toolDispatcher: toolDispatcher{root: t.TempDir(), t: t}, release: make(chan struct{})}
+	defer close(dispatcher.release)
+	executor := NewExecutor(ExecutorOptions{
+		Agent:        &toolAwareAgent{supportsTools: true},
+		Dispatcher:   dispatcher,
+		ApprovalMode: safety.ApprovalFullAccess,
+	})
+
+	output, handled, err := executor.executeTool(context.Background(), "grep", map[string]any{"pattern": "x"})
+	if !handled {
+		t.Fatal("slow tool must still be reported as handled")
+	}
+	if err == nil || !strings.Contains(err.Error(), "abnormally slow") {
+		t.Fatalf("expected an abnormally-slow error for the model, got %v", err)
+	}
+	if output.Success {
+		t.Fatal("abandoned tool must not be reported as success")
+	}
+}
+
+// Interactive tools (ask_user) wait on a human — the slow-tool guard must let
+// them run past the timeout instead of abandoning them.
+func TestExecuteTool_InteractiveToolExemptFromTimeout(t *testing.T) {
+	saved := toolExecutionTimeout
+	toolExecutionTimeout = 50 * time.Millisecond
+	defer func() { toolExecutionTimeout = saved }()
+
+	dispatcher := &slowDispatcher{toolDispatcher: toolDispatcher{root: t.TempDir(), t: t}, release: make(chan struct{})}
+	executor := NewExecutor(ExecutorOptions{
+		Agent:        &toolAwareAgent{supportsTools: true},
+		Dispatcher:   dispatcher,
+		ApprovalMode: safety.ApprovalFullAccess,
+	})
+
+	// Release ("the user answers") well after the timeout would have fired.
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		close(dispatcher.release)
+	}()
+	output, handled, err := executor.executeTool(context.Background(), "ask_user", map[string]any{"question": "q"})
+	if !handled {
+		t.Fatal("interactive tool must be handled")
+	}
+	if err != nil {
+		t.Fatalf("interactive tool must not be timed out: %v", err)
+	}
+	if !output.Success {
+		t.Fatal("expected the released tool result, not an abandonment")
+	}
+}
+
 // writeToolCallAgent models a tool-capable model that decides on its own to
 // call `write` — the only remaining route from natural language to a tool.
 type writeToolCallAgent struct{}
 
 func (a *writeToolCallAgent) Respond(_ context.Context, _ string, _ TurnOptions) (string, error) {
 	return "done", nil
+}
+
+func (a *writeToolCallAgent) RespondEphemeral(ctx context.Context, prompt string, opts TurnOptions) (string, error) {
+	return a.Respond(ctx, prompt, opts)
 }
 
 func (a *writeToolCallAgent) RespondStream(_ context.Context, _ string, _ func(string) error, _ func(string) error, _ TurnOptions) (string, bool, error) {
@@ -321,6 +398,10 @@ type successfulToolCallAgent struct{}
 
 func (a *successfulToolCallAgent) Respond(_ context.Context, _ string, _ TurnOptions) (string, error) {
 	return "done", nil
+}
+
+func (a *successfulToolCallAgent) RespondEphemeral(ctx context.Context, prompt string, opts TurnOptions) (string, error) {
+	return a.Respond(ctx, prompt, opts)
 }
 
 func (a *successfulToolCallAgent) RespondStream(_ context.Context, _ string, _ func(string) error, _ func(string) error, _ TurnOptions) (string, bool, error) {

@@ -39,9 +39,10 @@ func TestNormalize_KnownAlias(t *testing.T) {
 		{"ollamaai", "ollama"},
 		{"anthropic", "anthropic"},
 		{"claude", "anthropic"},
-		{"noop", "noop"},
-		{"none", "noop"},
-		{"stub", "noop"},
+		{"aetox", "aetox"},
+		{"noop", "aetox"},
+		{"none", "aetox"},
+		{"stub", "aetox"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
@@ -63,12 +64,12 @@ func TestNormalize_Unknown(t *testing.T) {
 
 func TestNormalize_Empty(t *testing.T) {
 	got := Normalize("")
-	if got != "noop" {
-		t.Fatalf("empty string should normalize to noop, got %q", got)
+	if got != "aetox" {
+		t.Fatalf("empty string should normalize to aetox, got %q", got)
 	}
 	got = Normalize("   ")
-	if got != "noop" {
-		t.Fatalf("whitespace should normalize to noop, got %q", got)
+	if got != "aetox" {
+		t.Fatalf("whitespace should normalize to aetox, got %q", got)
 	}
 }
 

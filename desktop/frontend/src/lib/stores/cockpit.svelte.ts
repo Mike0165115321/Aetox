@@ -12,6 +12,7 @@ import {
   ListSessions, LoadSession, NewSession, CurrentSessionID, SearchSessions, DeleteSession,
   SaveChatImage, ReadImageDataURL, CancelTurn, BrowserGetText, RecentProjects,
   ListAllSessions, SearchAllSessions, LoadSessionAnyProject, ClearProjectFocus,
+  AnswerUserQuestion,
 } from '../../../wailsjs/go/main/App'
 import type { main } from '../../../wailsjs/go/models'
 import { t } from '../i18n.svelte'
@@ -131,10 +132,14 @@ export async function searchGlobalHistory(query: string): Promise<void> {
 /** Open a session from the global history list — switches project first if it belongs to a different one. */
 export async function selectGlobalSession(session: Session): Promise<void> {
   const messages = await LoadSessionAnyProject(session.id)
+  cockpit.todos = []
+  cockpit.ask = null
   cockpit.chat = messages.map((m) => ({
     role: m.role === 'agent' ? 'agent' as const : 'user' as const,
     text: m.text,
     time: m.time,
+    reasoning: m.reasoning || undefined,
+    thinkSecs: m.thinkSecs || undefined,
   }))
   await switchWorkbenchSession(session.id)
   const project = await GetProjectStatus()
@@ -271,7 +276,11 @@ export async function sendUserMessage(text: string): Promise<void> {
   try {
     const reply = await SendMessage(sentText)
     const steps = cockpit.toolSteps.length ? cockpit.toolSteps.map((s) => ({ ...s })) : undefined
-    cockpit.chat.push({ role: 'agent', text: reply, time: nowLabel(), steps })
+    // Keep the thinking on the finished message (collapsed) — the live panel
+    // alone would vanish the moment the turn completes.
+    const reasoning = cockpit.reasoningText.trim() || undefined
+    const thinkSecs = reasoning ? Math.max(1, Math.round((thinkLastAt - thinkStartedAt) / 1000)) : undefined
+    cockpit.chat.push({ role: 'agent', text: reply, time: nowLabel(), steps, reasoning, thinkSecs })
   } catch (err) {
     cockpit.chat.push({ role: 'agent', text: t('cockpit.sendError', { err: String(err) }), time: nowLabel() })
   } finally {
@@ -291,6 +300,27 @@ export function cancelTurn(): void {
   CancelTurn()
 }
 
+/** ask_user tool: the model is blocked waiting for the user to pick an option. */
+export function applyAskUser(payload: { question: string; options: string[] }): void {
+  cockpit.ask = payload
+}
+
+export function applyAskDone(): void {
+  cockpit.ask = null
+}
+
+/** Deliver the user's choice (an option click or free text) to the blocked tool. */
+export function answerAsk(answer: string): void {
+  if (!answer.trim()) return
+  cockpit.ask = null
+  AnswerUserQuestion(answer)
+}
+
+/** todo_write tool: the model replaced its task checklist. */
+export function applyTodos(todos: CockpitState['todos']): void {
+  cockpit.todos = Array.isArray(todos) ? todos : []
+}
+
 /** Live turn-progress text from the Go engine (see desktop/app.go emitAgentStatus). */
 export function applyAgentStatus(status: string): void {
   cockpit.agentStatus = status
@@ -303,11 +333,18 @@ export function applyAgentChunk(chunk: string): void {
   cockpit.streamingText += chunk
 }
 
+// First/last reasoning-chunk timestamps this turn, for the "thought for Xs" label.
+let thinkStartedAt = 0
+let thinkLastAt = 0
+
 /** Live reasoning/thinking text from the Go engine (see desktop/app.go
  * SendMessage's onReasoningChunk) — only fires for providers that stream
  * reasoning tokens (DeepSeek, Anthropic extended thinking, ...); '' means
  * either idle or this provider/turn had none to show. */
 export function applyReasoningChunk(chunk: string): void {
+  const now = Date.now()
+  if (!cockpit.reasoningText) thinkStartedAt = now
+  thinkLastAt = now
   cockpit.reasoningText += chunk
 }
 
@@ -429,10 +466,14 @@ export function restoreActiveView(): void {
 /** Switch to a stored session — the transcript loads back and the agent's memory is restored. */
 export async function selectSession(session: Session): Promise<void> {
   const messages = await LoadSession(session.id)
+  cockpit.todos = []
+  cockpit.ask = null
   cockpit.chat = messages.map((m) => ({
     role: m.role === 'agent' ? 'agent' as const : 'user' as const,
     text: m.text,
     time: m.time,
+    reasoning: m.reasoning || undefined,
+    thinkSecs: m.thinkSecs || undefined,
   }))
   await switchWorkbenchSession(session.id)
   await refreshSessions()
@@ -452,6 +493,8 @@ export async function deleteSession(session: Session): Promise<void> {
 export async function newSession(): Promise<void> {
   await NewSession()
   cockpit.chat = []
+  cockpit.todos = []
+  cockpit.ask = null
   // Explicit switch (not adopt): a brand-new session starts with an empty
   // workbench; the old session's layout stays saved for when it's reopened.
   await switchWorkbenchSession(await CurrentSessionID())

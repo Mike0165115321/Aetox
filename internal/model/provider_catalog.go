@@ -103,7 +103,7 @@ func FormatProviderMenuLabel(name string, keyFound bool) string {
 func ResolveStatus(p, model string, _ error) string {
 	canonical := provider.Normalize(p)
 	if canonical == "" {
-		canonical = "noop"
+		canonical = "aetox"
 	}
 	label := resolveStatusModelLabel(canonical, strings.TrimSpace(model))
 	return canonical + "/" + label
@@ -154,6 +154,12 @@ func ModelChoicesWithEndpointAndAPIKey(p, baseURL, apiKey string) ([]string, err
 		}
 		return nil, err
 	default:
+		// The primary runtime (e.g. Anthropic) has no /models endpoint. If the
+		// provider also speaks OpenAI-compatible on an alt endpoint (DeepSeek
+		// exposes https://api.deepseek.com), discover through that instead.
+		if spec, ok := provider.Lookup(canonical); ok && spec.AltRuntime == provider.RuntimeOpenAICompatible && spec.AltBaseURL != "" {
+			return DiscoverOpenAICompatibleModels(canonical, spec.AltBaseURL, apiKey)
+		}
 		return nil, fmt.Errorf("provider %q does not support remote model discovery", canonical)
 	}
 }

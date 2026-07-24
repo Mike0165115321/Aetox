@@ -15,7 +15,7 @@ This document is an evidence-first architecture map, distinct from [README.md](R
 
 | Doc | What it is |
 |---|---|
-| **This file** | Evidence-first whole-system map + the numbered Decision log (§10–§19). Start here; everything below is a spoke. |
+| **This file** | Evidence-first whole-system map + the numbered Decision log (§10–§27). Start here; everything below is a spoke. |
 | [README.md](README.md) · [AETOX.md](AETOX.md) · [Aetox Desktop.md](Aetox%20Desktop.md) | Product vision/pitch documents — mix shipped state with roadmap; this file wins on conflicts. |
 | [docs/architecture/module-split-2026-07-21.md](docs/architecture/module-split-2026-07-21.md) | Why the `engine/`/`providers/`/`cli/` module scaffold exists and the migration plan (§4). |
 | [docs/architecture/browser-security-2026-07-21.md](docs/architecture/browser-security-2026-07-21.md) | Browser tab `postMessage` bridge — threat model, 3-check defense, residual risk (§6.6). |
@@ -883,6 +883,53 @@ One session, three engine layers fixed; OpenCode/Claude Code are the confirmed r
 **Rejected alternative:** per-tab WebView2 user-data folders (would remove *this* `ERROR_INVALID_STATE` trigger but not the class — other machines hit other transient webview errors that all route through the same `os.Exit`). The vendor+patch is trigger-independent.
 
 **Not done:** upgrading past v1.0.22 (re-apply the four patch blocks when doing so); process-isolating the browser host (heavier, unnecessary now that errors are non-fatal).
+
+---
+
+## 27. Decision — Engine Parity Batch + Interactive UI Tools (2026-07-25)
+
+One session, three fronts; OpenCode/Claude Code remain the reference implementations (per §20's owner directive). Everything below is unit-tested; the suite is green across `go test ./...` + vitest.
+
+### 27.1 Engine parity fixes (OpenCode/Claude Code alignment audit)
+
+An audit of model selection / tool loop / long-run behavior against the references found five deviations; all fixed in [internal/cognitive/agent.go](internal/cognitive/agent.go), [internal/turn](internal/turn), [desktop/app.go](desktop/app.go):
+
+1. **Ephemeral tool summaries** — `summarizeToolExecution` used to route through `Respond`, which wrote the summary prompt (kilobytes of tool output, as a fake user message) into conversation history forever. New `Agent.RespondEphemeral` completes over the context without writing anything — the references never let meta-work pollute the transcript.
+2. **No duplicate user message** — the tool loop's first-call-failure fallback re-added the user message via `Respond(msg)`; extracted `respondFromContext` responds over history as-is.
+3. **Per-provider output ceiling for plain conversation** — `Respond`/`RespondStream` were flat-capped at 768 tokens (truncating long answers for non-tool-calling models); now they use `toolLoopMaxTokens()` like everything else. A ceiling costs nothing until used.
+4. **Mid-loop compaction** — §20.3's known ceiling closed: `compactIfNeeded` now runs every tool-loop round (OpenCode checks per step). `SplitForCompaction`'s user-turn boundary guarantees the in-flight turn's tool results are never summarized away.
+5. **Model switch keeps tool history** — `applyConfig` now replays the *outgoing agent's real context* (tool calls, results, compaction summaries) into the fresh agent instead of the text-only transcript; falls back to transcript when no live agent exists. Project-switch paths are safe: every `reload` caller immediately `startNewSession`/`LoadSession`s, which resets context.
+
+**Slow-tool guard (owner-requested):** a single chokepoint in [internal/turn/executor.go](internal/turn/executor.go) `executeTool` runs every model-driven tool call under a 60s deadline; overrun returns a truthful "abnormally slow … abandoned, retry with a narrower scope" receipt to the model instead of hanging the turn (the 270s `grep "(?i)aetox" .` case). FS-walking tools ignore ctx and finish in a stray goroutine whose result is discarded — `ponytail:` marked, plumb ctx if the CPU leak ever bites. `interactiveTools` (ask_user) are exempt: waiting on a human is their job.
+
+### 27.2 Wire-format latent bugs (the 401 restart bug)
+
+`c49ec3b`'s wire-format support had two endpoint-resolution bugs that only surfaced when the app finally restarted (preferences normalize the catalog-default BaseURL to `""` on save):
+
+- [internal/model/anthropic.go](internal/model/anthropic.go): empty BaseURL defaulted to `DefaultBaseURL("anthropic")` — the real api.anthropic.com — ignoring `cfg.Provider`. A restarted app sent the DeepSeek key to Anthropic → `401 invalid x-api-key`. Now defaults to the *provider's own* endpoint first.
+- [internal/model/factory.go](internal/model/factory.go): switching wire formats kept a stale other-format BaseURL (OpenAI requests aimed at `/anthropic/v1` and vice versa). The default-format URL now swaps to the alt endpoint on an alt-format switch and back; only a user-customized URL survives.
+
+**Model discovery through the alt endpoint** ([internal/model/provider_catalog.go](internal/model/provider_catalog.go)): Anthropic-format providers have no `/models` endpoint, so DeepSeek's model list was always empty. Discovery now routes through the OpenAI-compatible `AltBaseURL` when the primary runtime can't discover — chat stays on the Anthropic format (clean streamed tool calls), listing uses the alt endpoint, same account/key. Verified live against api.deepseek.com.
+
+**Dev loop:** [desktop/wails.json](desktop/wails.json) gained `reloaddirs: ../internal,../cmd` — backend edits outside `desktop/` now trigger the rebuild they always should have (the missing piece behind several "แก้แล้วหน้าจอเหมือนเดิม" sessions).
+
+### 27.3 Interactive UI tools: `ask_user` + `todo_write` (desktop-side skills)
+
+Two new skills in [desktop/ask_user.go](desktop/ask_user.go), registered with the workbench tools (same pattern as `browser_*`) because they talk to the UI over Wails events:
+
+- **`ask_user`** — the Claude Code AskUserQuestion pattern: the model blocks mid-turn on a question + 2–4 options; the chat renders stacked A/B/C/D option cards; the composer doubles as free-text answer input while pending. One question in flight at a time (second concurrent ask fails loudly); turn cancel unblocks; exempt from the slow-tool deadline.
+- **`todo_write`** — the Claude Code TodoWrite pattern: the model maintains a task checklist (full-list replace per call; ○/▸/✓ statuses) rendered live in the turn bubble. `ponytail:` frontend-state only — persist with the session if surviving reloads ever matters.
+
+**UI test model** ([internal/model/noop.go](internal/model/noop.go)): `aetox-tools:test` added to the aetox picker — a stateless scripted turn (round derived from tool results in the transcript): todo_write → ask_user (really blocks) → todo_write all-completed → final text echoing the user's pick. `aetox-think:test` now streams ~6 numbered sections of long reasoning to exercise the unbounded panel.
+
+### 27.4 Chat UX (owner-driven)
+
+- **Thinking persists** — reasoning chunks are accumulated in `SendMessage` and saved on the session turn (`SessionMessage.Reasoning` + `ThinkSecs`, first→last chunk); finished messages show a collapsed "คิดเป็นเวลา Xs" toggle. Live panel unchanged; the 220px CSS max-height wall is gone (thinking renders at natural height).
+- **Pinned auto-scroll** — while at the bottom, every live update (chunks, reasoning, tool steps, todos, ask panel) keeps the view pinned; scrolling up unpins, scrolling back re-pins. Reference behavior.
+- **Stop button** — `CancelTurn` existed backend-side but *nothing in the UI called it*; the send button now becomes a red ■ during a turn.
+- Copy button on AI replies; provider connection test (`TestProviderConnection`: a real 1-token completion through the same client chat uses — endpoint+key+wire format in one shot); chat model menu is picker-only (custom model ids live in Settings); sidebar projects fold their chat history by default.
+
+**Not yet built (proposed, awaiting owner):** edit-previous-message + resend (needs history truncation), queued mid-turn send, retry button, `aetox-error:test`/`aetox-doomloop:test` UI test models.
 
 ---
 

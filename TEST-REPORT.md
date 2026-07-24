@@ -102,3 +102,17 @@
 2. **`internal/app` (Module 4)** — เพิ่มเทสสำหรับ approval-mode picker และ command routing ก่อนที่จะแยก package ตาม §6.1
 3. `internal/memory`/`internal/debuglog` (Module 6) — ต่ำสุด ทำเมื่อมีเวลาเหลือ
 4. `browser.go`/`workbench.go`/`TerminalStart`/`TerminalClose` (Module 5) — ไม่ใช่ priority เพราะทดสอบอัตโนมัติไม่ได้ตามโครงสร้างปัจจุบัน (ต้องมี Wails runtime context จริง) ถ้าจะปิดช่องนี้จริงต้องเปลี่ยนสถาปัตยกรรม ไม่ใช่แค่เพิ่มเทส
+
+---
+
+## Addendum 2026-07-25 — Engine parity batch + interactive tools (§27)
+
+New coverage added with the §27 work (all green, `go test ./...` + vitest 16/16):
+
+| Area | Tests | Pins |
+|---|---|---|
+| `internal/cognitive` | `TestRespondEphemeralDoesNotTouchContext` · `TestToolLoopFirstCallFailureDoesNotDuplicateUserMessage` · `TestToolLoopCompactsMidLoop` · `TestRespondUsesPerProviderOutputCeiling` | summary prompts stay out of history; no duplicate user msg on first-call failure; compaction fires mid-loop; the flat-768 cap stays dead |
+| `internal/turn` | `TestExecuteTool_AbnormallySlowToolReportsBackToModel` · `TestExecuteTool_InteractiveToolExemptFromTimeout` | 60s slow-tool receipt; ask_user never abandoned |
+| `internal/model` | `TestNewProviderDeepSeekEmptyBaseURLStaysOnDeepSeek` · `TestNewProviderDeepSeekAltFormatReplacesDefaultURL` · `TestNewProviderDeepSeekDefaultFormatReplacesStaleAltURL` · `TestModelDiscovery*` (2) · `TestNoopToolsModelScriptsToolLoop` · `TestNoopThinkModelProducesLongSectionedReasoning` | the 401-to-real-Anthropic restart bug (both directions); alt-endpoint discovery routing; the scripted UI-test models |
+| `desktop` | `TestAskUser*` (4) · `TestAnswerUserQuestionNoPendingIsNoop` · `TestTodoWrite*` (2) · `TestApplyConfigInheritsPriorAgentContext` | ask_user round-trip/cancel/single-flight; todo sanitize+counts; model switch keeps tool history |
+| frontend (vitest) | `cockpitAskTodo.test.ts` (5) | ask/answer/clear store flow; todo replace-wholesale; junk payload safety |

@@ -58,6 +58,9 @@ type App struct {
 	turnMu     sync.Mutex
 	turnCancel context.CancelFunc // cancels the chat turn in flight, nil when idle
 
+	askMu sync.Mutex
+	askCh chan string // the in-flight ask_user question's answer channel, nil when idle
+
 	mcp      *mcp.Manager    // configured MCP servers; built once, survives re-bootstraps
 	registry *skill.Registry // current skill/tool registry, for the Tools panel
 
@@ -527,7 +530,7 @@ type ModelInfo struct {
 
 // desktopProviders is the curated subset of the full engine catalog
 // (model.SupportedProviders()) exposed in the desktop UI's provider picker.
-var desktopProviders = []string{"ollama", "deepseek", "gemini", "openai", "openrouter", "zai", "anthropic", "noop"}
+var desktopProviders = []string{"ollama", "deepseek", "gemini", "openai", "openrouter", "zai", "anthropic", "aetox"}
 
 // NewApp creates a new App application struct
 func NewApp() *App {
@@ -588,17 +591,35 @@ func (a *App) SendMessage(text string) (string, error) {
 		a.turnCancel = nil
 		a.turnMu.Unlock()
 	}()
+	// Accumulate reasoning at the source so it persists with the turn — the
+	// live panel alone would vanish once the turn completes. First/last chunk
+	// times give the "thought for Xs" label.
+	var reasoning strings.Builder
+	var firstThink, lastThink time.Time
 	reply, err := a.chat.RunOnceStream(ctx, text, func(chunk string) {
 		wailsruntime.EventsEmit(a.ctx, "agent:chunk", chunk)
 	}, func(chunk string) {
+		if firstThink.IsZero() {
+			firstThink = time.Now()
+		}
+		lastThink = time.Now()
+		reasoning.WriteString(chunk)
 		wailsruntime.EventsEmit(a.ctx, "agent:reasoning", chunk)
 	})
 	if err != nil {
 		return reply, err
 	}
+	thinkSecs := 0
+	if !firstThink.IsZero() {
+		// round up so even a sub-second think shows as 1s, matching the label
+		thinkSecs = int(lastThink.Sub(firstThink).Round(time.Second) / time.Second)
+		if thinkSecs < 1 {
+			thinkSecs = 1
+		}
+	}
 	now := time.Now().Format("15:04")
 	userMsg := SessionMessage{Role: "user", Text: text, Time: now}
-	agentMsg := SessionMessage{Role: "agent", Text: reply, Time: now}
+	agentMsg := SessionMessage{Role: "agent", Text: reply, Time: now, Reasoning: strings.TrimSpace(reasoning.String()), ThinkSecs: thinkSecs}
 	a.transcript = append(a.transcript, userMsg, agentMsg)
 	a.appendTurn(userMsg, agentMsg)
 	return reply, nil
@@ -809,6 +830,60 @@ func (a *App) SupportedProviders() []string {
 	return out
 }
 
+// EnabledProviders is the subset of SupportedProviders the Settings sidebar
+// and the chat composer's picker should actually show — everything else stays
+// reachable via the "+" add flow in Settings. See config.ResolvedEnabledProviders
+// for the default-to-active-provider rule an untouched install falls back to.
+func (a *App) EnabledProviders() []string {
+	pref, _, _ := config.LoadModelPreference()
+	return config.ResolvedEnabledProviders(pref.EnabledProviders, a.cfg.ModelProvider)
+}
+
+// SetProviderEnabled adds or removes providerName from the enabled set and
+// returns the refreshed list. Removing the last remaining entry is refused
+// (there must always be at least one provider visible); adding is a no-op if
+// providerName is already enabled.
+func (a *App) SetProviderEnabled(providerName string, enabled bool) ([]string, error) {
+	if strings.TrimSpace(providerName) == "" {
+		return nil, fmt.Errorf("provider name is required")
+	}
+	canonical := model.NormalizeProvider(providerName)
+	if _, ok := model.LookupProviderInfo(canonical); !ok {
+		return nil, fmt.Errorf("unknown provider: %q", providerName)
+	}
+	pref, ok, _ := config.LoadModelPreference()
+	if !ok {
+		pref = config.ModelPreference{}
+	}
+	// Materialize the resolved (possibly default) set before mutating, so
+	// toggling one provider never silently drops the implicit active one.
+	current := config.ResolvedEnabledProviders(pref.EnabledProviders, a.cfg.ModelProvider)
+
+	next := make([]string, 0, len(current)+1)
+	found := false
+	for _, p := range current {
+		if p == canonical {
+			found = true
+			if !enabled {
+				continue // drop it
+			}
+		}
+		next = append(next, p)
+	}
+	if enabled && !found {
+		next = append(next, canonical)
+	}
+	if !enabled && len(next) == 0 {
+		return current, fmt.Errorf("cannot disable %s: at least one provider must stay enabled", canonical)
+	}
+
+	pref.EnabledProviders = next
+	if err := config.SaveModelPreference(pref); err != nil {
+		return current, err
+	}
+	return next, nil
+}
+
 // ListModelsForProvider mirrors the CLI's model-selection discovery chain:
 // live API discovery first, falling back to the static recommended list.
 // An empty result means "no known models" — the frontend should offer a
@@ -830,6 +905,45 @@ func (a *App) ListModelsForProvider(providerName string) []string {
 // read-only display in the settings UI.
 func (a *App) ProviderBaseURL(providerName string) string {
 	return model.DefaultBaseURL(model.NormalizeProvider(providerName))
+}
+
+// TestProviderConnection proves a provider is actually reachable by running a
+// minimal 1-token completion through the same client chat uses — endpoint,
+// key, and wire format all verified in one shot. Returns the latency label on
+// success; the error carries the provider's real failure message.
+func (a *App) TestProviderConnection(providerName string) (string, error) {
+	canonical := model.NormalizeProvider(providerName)
+	modelName := model.DefaultModel(canonical)
+	wireFormat := ""
+	if canonical == model.NormalizeProvider(a.cfg.ModelProvider) {
+		if strings.TrimSpace(a.cfg.ModelName) != "" {
+			modelName = a.cfg.ModelName
+		}
+		wireFormat = a.cfg.ModelWireFormat
+	}
+	p, err := model.NewProvider(model.ProviderOptions{
+		Provider:   canonical,
+		Model:      modelName,
+		APIKey:     resolveAPIKeyForProvider(canonical),
+		BaseURL:    model.DefaultBaseURL(canonical),
+		Timeout:    15 * time.Second,
+		WireFormat: wireFormat,
+	})
+	if err != nil {
+		return "", err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	start := time.Now()
+	_, err = p.Complete(ctx, model.Request{
+		Model:     modelName,
+		Messages:  []model.Message{{Role: model.RoleUser, Content: "ping"}},
+		MaxTokens: 1,
+	})
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s · %dms", modelName, time.Since(start).Milliseconds()), nil
 }
 
 // SwitchModel re-bootstraps the engine on a specific model name for the
@@ -997,6 +1111,8 @@ func (a *App) applyConfig(cfg config.Config) {
 		&browserReadSkill{app: a},
 		&browserClickSkill{app: a},
 		&browserTypeSkill{app: a},
+		&askUserSkill{app: a},
+		&todoWriteSkill{app: a},
 	}
 	if a.mcp == nil {
 		servers, err := config.LoadMCPServers()
@@ -1004,6 +1120,14 @@ func (a *App) applyConfig(cfg config.Config) {
 			debuglog.Msg("mcp: load servers: %v", err)
 		}
 		a.mcp = mcp.NewManager(toMCPServers(servers))
+	}
+	// Capture the outgoing agent's real context before it's replaced: it holds
+	// what the text transcript doesn't — tool calls, tool results, compaction
+	// summaries — so a model switch keeps the model's working memory intact
+	// (OpenCode/Claude Code keep tool history across switches too).
+	var priorContext []model.Message
+	if a.agent != nil {
+		priorContext = a.agent.ContextMessages()
 	}
 	chatApp, agent, status, registry := bootstrapFromConfig(cfg, a.recordToolAction, a.emitAgentStatus, workbenchTools, a.mcp)
 	a.chat = chatApp
@@ -1015,9 +1139,15 @@ func (a *App) applyConfig(cfg config.Config) {
 		a.agent.SetUsageReporter(a.recordTokenUsage)
 	}
 	// A re-bootstrap (model/provider switch) creates a fresh agent — replay the
-	// current session so the conversation's memory survives the switch.
-	if a.agent != nil && len(a.transcript) > 0 {
-		a.agent.RestoreHistory(transcriptToModelMessages(a.transcript))
+	// old agent's context (minus its system prompt; the new agent builds its
+	// own). Falls back to the persisted text transcript when there is no live
+	// agent to inherit from (e.g. first bootstrap after loading a session).
+	if a.agent != nil {
+		if len(priorContext) > 1 {
+			a.agent.RestoreHistory(priorContext[1:])
+		} else if len(a.transcript) > 0 {
+			a.agent.RestoreHistory(transcriptToModelMessages(a.transcript))
+		}
 	}
 	persistModelPreference(cfg)
 
@@ -1074,7 +1204,7 @@ func resolveConfig(opts config.ConfigOptions) config.Config {
 	if cfg.ModelAPIKey == "" {
 		cfg.ModelAPIKey = model.ResolveModelAPIKey(cfg.ModelProvider)
 	}
-	if cfg.ModelName == "" && !strings.EqualFold(cfg.ModelProvider, "noop") {
+	if cfg.ModelName == "" && !strings.EqualFold(cfg.ModelProvider, "aetox") {
 		cfg.ModelName = model.DefaultModel(cfg.ModelProvider)
 	}
 	cfg.ThinkLevel = model.NormalizeThinkingLevel(cfg.ModelProvider, cfg.ModelName, cfg.ThinkLevel)

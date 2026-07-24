@@ -39,7 +39,7 @@
   // nested beneath (matched by projectName from the global history list).
   const PROJECT_GROUP_PREVIEW = 3
   let expandedProjects = $state<Record<string, boolean>>({})
-  let collapsedProjects = $state<Record<string, boolean>>({}) // fold a project's session list
+  let openProjects = $state<Record<string, boolean>>({}) // unfold a project's session list; default closed (chats hidden)
 
   // Two-step delete: first click arms ("ยืนยัน?"), second click deletes.
   let confirmDeleteId = $state('')
@@ -60,7 +60,7 @@
 
   let identityOpen = $state(true)
   let projectsOpen = $state(true)
-  let historyOpen = $state(false)
+  let historyOpen = $state(true)
 
   let identityLoadedOnce = false
   let newIdentityName = $state('')
@@ -171,8 +171,8 @@
           <div class="proj-group">
             <div class="proj-group-row">
               <button type="button" class="proj-group-chev" aria-label={g.project.name}
-                onclick={() => (collapsedProjects[g.project.key] = !collapsedProjects[g.project.key])}>
-                {collapsedProjects[g.project.key] ? '▸' : '▾'}
+                onclick={() => (openProjects[g.project.key] = !openProjects[g.project.key])}>
+                {openProjects[g.project.key] ? '▾' : '▸'}
               </button>
               <button type="button" class="proj-group-head" class:active={g.project.active} onclick={() => openProject(g.project.path)}>
                 <span class="ic">{g.project.active ? '📂' : '📁'}</span>
@@ -180,7 +180,7 @@
                 {#if g.project.active && cockpit.project.branch}<span class="proj-branch">⑂ {cockpit.project.branch}</span>{/if}
               </button>
             </div>
-            {#if !collapsedProjects[g.project.key]}
+            {#if openProjects[g.project.key]}
               {#each expandedProjects[g.project.key] ? g.sessions : g.sessions.slice(0, PROJECT_GROUP_PREVIEW) as s (s.id)}
                 <div class="proj-group-sess" class:active={s.active}>
                   <button type="button" class="proj-group-sess-open" onclick={() => selectGlobalSession(s)}>{s.title}</button>
