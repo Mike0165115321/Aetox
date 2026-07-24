@@ -46,11 +46,52 @@ func (p *NoopProvider) Complete(_ context.Context, req Request) (Response, error
 		text = "(empty prompt)"
 	}
 
+	if scripted, ok := noopScenario(text); ok {
+		return Response{
+			Provider: p.Name(),
+			Model:    model,
+			Text:     scripted,
+		}, nil
+	}
+
 	return Response{
 		Provider: p.Name(),
 		Model:    model,
 		Text:     fmt.Sprintf("[noop:%s] %s", model, text),
 	}, nil
+}
+
+// noopScenario returns a canned reply for UI test keywords, so rendering
+// paths (image galleries, tables, broken URLs, ...) can be exercised without
+// a live API key: switch provider to noop and type the keyword.
+// Deterministic images come from picsum.photos seeds.
+func noopScenario(text string) (string, bool) {
+	key := strings.ToLower(strings.TrimSpace(strings.Fields(text)[0]))
+	img := func(seed string, w, h int) string {
+		return fmt.Sprintf("![ภาพทดสอบ %s](https://picsum.photos/seed/%s/%d/%d)", seed, seed, w, h)
+	}
+	switch key {
+	case "img1":
+		return "รูปเดี่ยวขนาดปกติครับ:\n\n" + img("aetox1", 640, 420) + "\n\nข้อความหลังรูปต้องเว้นระยะสวยงาม", true
+	case "img5":
+		return "แกลเลอรี 5 รูปติดกัน (ต้องเรียงแถวแล้ว wrap ไม่ใช่ตั้งซ้อนเต็มจอ):\n\n" +
+			img("a1", 400, 300) + " " + img("a2", 300, 400) + " " + img("a3", 400, 260) + " " +
+			img("a4", 350, 350) + " " + img("a5", 420, 280), true
+	case "imgbig":
+		return "รูปยักษ์ 4000px (ต้องโดนบีบให้พอดี bubble ไม่ทะลุจอ):\n\n" + img("aetoxbig", 4000, 1400), true
+	case "imgbroken":
+		return "รูปดี-รูปเสีย-รูปดี (ตัวกลางต้องยุบเป็น alt text ไม่ค้างเป็นซาก):\n\n" +
+			img("ok1", 400, 300) + " ![รูปนี้พังแน่นอน](https://aetox.invalid/broken.jpg) " + img("ok2", 400, 300), true
+	case "imgmix":
+		return "## เทียบมือถือ 3 รุ่น (จำลองคำตอบ research จริง)\n\n" +
+			"จากการค้นหา เจอ 3 รุ่นที่น่าสนใจครับ:\n\n" +
+			img("phone1", 380, 300) + " " + img("phone2", 380, 300) + " " + img("phone3", 380, 300) + "\n\n" +
+			"| รุ่น | ราคา | จุดเด่น |\n|---|---|---|\n| Alpha 12 | 19,900 | กล้อง 200MP |\n| Beta X | 24,500 | แบต 6000mAh |\n| Gamma 5 | 15,900 | คุ้มสุด |\n\n" +
+			"- **Alpha 12** เหมาะกับสายถ่ายรูป\n- **Beta X** เหมาะกับสายเกม\n\nอยากดูรีวิวรุ่นไหนบอกได้เลยครับ", true
+	case "imghelp", "imgtest":
+		return "คีย์เวิร์ดทดสอบ UI รูปภาพ: `img1` เดี่ยว · `img5` แกลเลอรี · `imgbig` รูปยักษ์ · `imgbroken` ลิงก์เสีย · `imgmix` คำตอบ research เต็มรูปแบบ", true
+	}
+	return "", false
 }
 
 // StreamComplete simulates real-model streaming by trickling the noop
