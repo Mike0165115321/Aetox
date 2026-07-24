@@ -2,6 +2,10 @@ module github.com/Mike0165115321/Aetox
 
 go 1.25.0
 
+// Local patch — Win11 phantom Windows Terminal window with unmodified ConPTY.
+// See third_party/conpty/conpty.go for the one-flag fix and full explanation.
+replace github.com/UserExistsError/conpty => ./third_party/conpty
+
 require golang.org/x/term v0.43.0
 
 require (

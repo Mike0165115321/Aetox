@@ -397,21 +397,24 @@ const activeViewStorageKey = 'aetox.activeView'
 
 export function setActiveView(view: string): void {
   cockpit.activeView = view
-  // Survive an F5: remember chat/settings (file tabs don't persist, so a
-  // stored file path would point at nothing after reload).
+  // Survive an F5 *within this run* only: remember chat/settings (file tabs
+  // don't persist, so a stored file path would point at nothing after
+  // reload). sessionStorage, not localStorage — a real app relaunch must
+  // always land on chat, never reopen straight into Settings because that's
+  // where a previous session happened to be force-quit.
   if (view === 'chat' || view === 'settings') {
     try {
-      localStorage.setItem(activeViewStorageKey, view)
+      sessionStorage.setItem(activeViewStorageKey, view)
     } catch {
       /* storage unavailable — view just won't persist */
     }
   }
 }
 
-/** Restore the last chat/settings view after a frontend reload. */
+/** Restore the last chat/settings view after a frontend reload (same run only). */
 export function restoreActiveView(): void {
   try {
-    const saved = localStorage.getItem(activeViewStorageKey)
+    const saved = sessionStorage.getItem(activeViewStorageKey)
     if (saved === 'settings' || saved === 'chat') cockpit.activeView = saved
   } catch {
     /* storage unavailable */

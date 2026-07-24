@@ -156,6 +156,16 @@ Section
     !insertmacro wails.webview2runtime
     !insertmacro wails.tesseractocr
 
+    ; A running instance locks its own exe, so a reinstall/update over top of
+    ; it fails with "Can't write: ...\aetox-desktop.exe" and the installer
+    ; just aborts, blaming the user for not closing the app first. taskkill
+    ; it ourselves instead — /F is synchronous (returns only once the process
+    ; is actually gone), so the file handle is released by the time this
+    ; macro returns.
+    DetailPrint "Closing any running Aetox instance…"
+    nsExec::ExecToLog 'taskkill /IM "${PRODUCT_EXECUTABLE}" /F'
+    Pop $0
+
     SetOutPath $INSTDIR
 
     !insertmacro wails.files
