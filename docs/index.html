@@ -156,6 +156,18 @@ footer{border-top:1px solid var(--line);padding:var(--s3) 0}
   .bar nav{gap:var(--s2);margin-left:0;width:100%}
   .foot{justify-content:flex-start}
 }
+@media (max-width:520px){
+  :root{--s3:1.1rem;--s4:1.75rem;--s5:2.75rem}
+  h1{font-size:1.45rem}
+  h2{font-size:1.25rem}
+  .lede{font-size:.95rem}
+  .btn,.ghost{width:100%;justify-content:center;text-align:center}
+  .term{font-size:.72rem}
+  .trow{flex-direction:column;gap:.15rem;padding:.55rem .4rem}
+  .trow .tn{min-width:0}
+  .sec-head{align-items:flex-start}
+  .sec-head .idx{margin-top:.2rem}
+}
 </style>
 </head>
 <body>
@@ -210,7 +222,7 @@ footer{border-top:1px solid var(--line);padding:var(--s3) 0}
         เพราะความสามารถอยู่ที่สถาปัตยกรรมที่ควบคุมโมเดล ไม่ใช่ตัวโมเดล
         เลือกได้ 13 providers หรือรันโมเดลฟรีในเครื่องคุณเอง</p>
         <div class="cta">
-          <a class="btn" href="https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-desktop-amd64-installer.exe">
+          <a class="btn" href="https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-amd64-installer.exe">
             <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1v9.3L4.7 7 3.3 8.4 8 13l4.7-4.6L11.3 7 8 10.3V1H8zM2 14h12v1.5H2z"/></svg>
             ดาวน์โหลดสำหรับ Windows</a>
           <a class="ghost" href="https://github.com/Mike0165115321/Aetox/releases/latest">ดูไฟล์ดาวน์โหลดทั้งหมด</a>
@@ -271,7 +283,7 @@ footer{border-top:1px solid var(--line);padding:var(--s3) 0}
         <div class="method">
           <h3><span class="n">01</span>ตัวติดตั้ง (แนะนำ)</h3>
           <ol class="steps">
-            <li><b>ดาวน์โหลด</b> aetox-desktop-amd64-installer.exe</li>
+            <li><b>ดาวน์โหลด</b> aetox-amd64-installer.exe</li>
             <li><b>ดับเบิลคลิก</b> — ถ้า SmartScreen เตือน: More info → Run anyway</li>
             <li>ตัวติดตั้งจัดการ <b>WebView2 + Tesseract ภาษาไทย</b> ให้เอง</li>
             <li>เปิดจาก Start Menu → <b>เลือก provider หรือ Ollama</b> → คุยได้เลย</li>

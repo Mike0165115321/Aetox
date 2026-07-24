@@ -47,10 +47,10 @@ jobs:
 
       - name: Package portable zip + checksums
         run: |
-          Compress-Archive -Path desktop/build/bin/aetox-desktop.exe -DestinationPath aetox-desktop-windows-amd64-portable.zip
+          Compress-Archive -Path desktop/build/bin/aetox.exe -DestinationPath aetox-windows-amd64-portable.zip
           $files = @(
-            "desktop/build/bin/aetox-desktop-amd64-installer.exe",
-            "aetox-desktop-windows-amd64-portable.zip",
+            "desktop/build/bin/aetox-amd64-installer.exe",
+            "aetox-windows-amd64-portable.zip",
             "aetox-cli-windows-amd64.exe"
           )
           $files | ForEach-Object {
@@ -63,7 +63,7 @@ jobs:
         with:
           draft: true
           files: |
-            desktop/build/bin/aetox-desktop-amd64-installer.exe
-            aetox-desktop-windows-amd64-portable.zip
+            desktop/build/bin/aetox-amd64-installer.exe
+            aetox-windows-amd64-portable.zip
             aetox-cli-windows-amd64.exe
             checksums.txt
