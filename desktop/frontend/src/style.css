@@ -683,6 +683,11 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .mswitch input:checked + span::after { transform:translateX(15px); background:var(--text-on-interactive); }
 .mswitch input:disabled + span { opacity:.5; }
 .mcp-kind { flex:0 0 88px; text-align:center; }
+
+/* Skills page */
+.mono-dim { font-family:var(--mono); font-size:12.5px; color:var(--text-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.skill-result { margin:0; padding:10px 12px; border-radius:8px; background:var(--surface-sunken); border:1px solid var(--border-subtle); color:var(--text-muted); font-family:var(--mono); font-size:13px; white-space:pre-wrap; word-break:break-word; }
+.settings-page .ctrl.danger { color:var(--status-danger); border-color:var(--status-danger); }
 .insp-foot { padding:12px 14px; border-top:1px solid var(--border-default); }
 .stopbtn {
   width:100%; height:44px; border-radius:10px; font-weight:600; font-size:15.5px;

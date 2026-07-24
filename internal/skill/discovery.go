@@ -68,12 +68,22 @@ func DefaultDiscoveryPaths() []string {
 	}
 }
 
-// DiscoverSkills scans each directory in paths for <dir>/*/SKILL.md and
-// parses it into a Skill. A missing scan directory is not an error (most
-// default paths won't exist); a malformed SKILL.md is collected as an error
-// but does not stop the scan.
-func DiscoverSkills(paths []string) ([]Skill, []error) {
-	var found []Skill
+// DiscoveredSkill describes one SKILL.md found on disk including where it
+// lives — the Settings management surface needs Dir to delete or reveal it.
+type DiscoveredSkill struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Dir         string `json:"dir"`
+
+	body string
+}
+
+// scanSkills is the one scan loop both public views share: each directory in
+// paths is scanned for <dir>/*/SKILL.md. A missing scan directory is not an
+// error (most default paths won't exist); a malformed SKILL.md is collected
+// as an error but does not stop the scan.
+func scanSkills(paths []string) ([]DiscoveredSkill, []error) {
+	var found []DiscoveredSkill
 	var errs []error
 	for _, dir := range paths {
 		dir = strings.TrimSpace(dir)
@@ -91,23 +101,41 @@ func DiscoverSkills(paths []string) ([]Skill, []error) {
 			if !entry.IsDir() {
 				continue
 			}
-			skillPath := filepath.Join(dir, entry.Name(), "SKILL.md")
-			raw, readErr := os.ReadFile(skillPath)
+			skillDir := filepath.Join(dir, entry.Name())
+			raw, readErr := os.ReadFile(filepath.Join(skillDir, "SKILL.md"))
 			if readErr != nil {
 				continue
 			}
 			name, description, body, parseErr := parseSkillMarkdown(string(raw))
 			if parseErr != nil {
-				errs = append(errs, fmt.Errorf("parse %s: %w", skillPath, parseErr))
+				errs = append(errs, fmt.Errorf("parse %s: %w", filepath.Join(skillDir, "SKILL.md"), parseErr))
 				continue
 			}
 			if name == "" {
 				name = entry.Name()
 			}
-			found = append(found, &markdownSkill{name: name, description: description, body: body})
+			found = append(found, DiscoveredSkill{Name: name, Description: description, Dir: skillDir, body: body})
 		}
 	}
 	return found, errs
+}
+
+// ListDiscovered reports every SKILL.md found under paths, with locations —
+// for management UIs. Scan errors are dropped: a listing that shows what IS
+// loadable is still useful when one stray file is malformed.
+func ListDiscovered(paths []string) []DiscoveredSkill {
+	found, _ := scanSkills(paths)
+	return found
+}
+
+// DiscoverSkills scans paths and wraps each SKILL.md into an invokable Skill.
+func DiscoverSkills(paths []string) ([]Skill, []error) {
+	discovered, errs := scanSkills(paths)
+	skills := make([]Skill, 0, len(discovered))
+	for _, d := range discovered {
+		skills = append(skills, &markdownSkill{name: d.Name, description: d.Description, body: d.body})
+	}
+	return skills, errs
 }
 
 // RegisterDiscovered scans paths for SKILL.md files and registers each into

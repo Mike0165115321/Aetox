@@ -291,3 +291,24 @@ export namespace main {
 
 }
 
+export namespace skill {
+	
+	export class DiscoveredSkill {
+	    name: string;
+	    description: string;
+	    dir: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new DiscoveredSkill(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.description = source["description"];
+	        this.dir = source["dir"];
+	    }
+	}
+
+}
+

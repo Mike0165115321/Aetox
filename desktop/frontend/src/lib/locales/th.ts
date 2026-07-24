@@ -196,4 +196,17 @@ export const th = {
   'settings.add': 'เพิ่ม',
   'settings.adding': 'กำลังเพิ่ม…',
   'settings.cancel': 'ยกเลิก',
+
+  'settings.skills': 'สกิล',
+  'settings.skillsDesc': 'สกิลภายนอกที่ค้นพบจาก ~/.agents/skills และ ~/.claude/skills (โฟลเดอร์ SKILL.md) — ผู้ช่วยเรียกใช้เป็นเครื่องมือได้',
+  'settings.skillsInstalled': 'สกิลที่ติดตั้งแล้ว',
+  'settings.noSkills': 'ยังไม่มีสกิลภายนอก — ติดตั้งด้านล่าง หรือวางโฟลเดอร์ SKILL.md ใน ~/.agents/skills',
+  'settings.skillInstall': 'ติดตั้งจาก GITHUB',
+  'settings.skillInstallPlaceholder': 'URL ของ GitHub repo เช่น https://github.com/user/skill-repo',
+  'settings.skillInstallHint': 'repo ต้องมีไฟล์ aetox-plugin.json (type "skill-bundle") พร้อม SKILL.md — จะติดตั้งลง ~/.agents/skills และใช้ได้ทันที',
+  'settings.install': 'ติดตั้ง',
+  'settings.installing': 'กำลังติดตั้ง…',
+  'settings.refresh': 'รีเฟรช',
+  'settings.refreshing': 'กำลังรีเฟรช…',
+  'settings.confirmRemove': 'ยืนยัน?',
 }

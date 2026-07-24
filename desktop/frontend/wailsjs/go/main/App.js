@@ -98,8 +98,16 @@ export function HasAPIKey(arg1) {
   return window['go']['main']['App']['HasAPIKey'](arg1);
 }
 
+export function InstallSkillFromGitHub(arg1) {
+  return window['go']['main']['App']['InstallSkillFromGitHub'](arg1);
+}
+
 export function ListAllSessions() {
   return window['go']['main']['App']['ListAllSessions']();
+}
+
+export function ListExternalSkills() {
+  return window['go']['main']['App']['ListExternalSkills']();
 }
 
 export function ListIdentityFiles() {
@@ -174,8 +182,16 @@ export function RecentProjects() {
   return window['go']['main']['App']['RecentProjects']();
 }
 
+export function RefreshSkills() {
+  return window['go']['main']['App']['RefreshSkills']();
+}
+
 export function RelativizePath(arg1) {
   return window['go']['main']['App']['RelativizePath'](arg1);
+}
+
+export function RemoveExternalSkill(arg1) {
+  return window['go']['main']['App']['RemoveExternalSkill'](arg1);
 }
 
 export function RemoveMCPServer(arg1) {

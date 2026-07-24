@@ -12,6 +12,7 @@
     SupportedProviders, HasAPIKey, RequiresAPIKey, TerminalShells,
     ListModelsForProvider, ProviderBaseURL,
     ListMCPServers, SaveMCPServer, RemoveMCPServer, TestMCPServer, ToggleMCPServer,
+    ListExternalSkills, InstallSkillFromGitHub, RemoveExternalSkill, RefreshSkills,
   } from '../../wailsjs/go/main/App'
   import { config } from '../../wailsjs/go/models'
   import { cockpit, switchProvider, switchModel, submitAPIKey, switchApprovalMode } from './stores/cockpit.svelte'
@@ -72,6 +73,7 @@
     selectProvider(cockpit.model.provider || providers[0]?.name || '')
 
     await loadMCP()
+    await loadSkills()
   })
 
   async function refreshProviders() {
@@ -268,6 +270,55 @@
     return `background:${c}`
   }
 
+  // ---------- Skills (discovered SKILL.md + plugin install) ----------
+  type SkillRow = { name: string; description: string; dir: string }
+  let extSkills = $state<SkillRow[]>([])
+  let skillBusy = $state('')
+  let skillError = $state('')
+  let skillInstallUrl = $state('')
+  let skillInstallResult = $state('')
+  let skillConfirm = $state('') // name pending delete confirmation
+
+  async function loadSkills() {
+    extSkills = await ListExternalSkills()
+  }
+
+  async function runSkill(label: string, fn: () => Promise<void>) {
+    skillBusy = label
+    skillError = ''
+    try {
+      await fn()
+    } catch (err) {
+      skillError = String(err)
+    } finally {
+      skillBusy = ''
+    }
+  }
+
+  const installSkill = () => runSkill('install', async () => {
+    skillInstallResult = ''
+    skillInstallResult = await InstallSkillFromGitHub(skillInstallUrl.trim())
+    skillInstallUrl = ''
+    await loadSkills()
+  })
+
+  const removeSkill = (name: string) => {
+    if (skillConfirm !== name) {
+      skillConfirm = name
+      return
+    }
+    skillConfirm = ''
+    void runSkill('rm:' + name, async () => {
+      await RemoveExternalSkill(name)
+      await loadSkills()
+    })
+  }
+
+  const refreshSkills = () => runSkill('refresh', async () => {
+    await RefreshSkills()
+    await loadSkills()
+  })
+
   // ---------- Nav ----------
   const sections = $derived([
     { group: t('settings.groupPersonal'), items: [
@@ -278,6 +329,7 @@
       { id: 'models', label: t('settings.modelSettings'), icon: '🧠' },
     ]},
     { group: t('settings.groupTools'), items: [
+      { id: 'skills', label: t('settings.skills'), icon: '🧩' },
       { id: 'mcp', label: t('settings.mcpServers'), icon: '🔌' },
     ]},
   ])
@@ -532,6 +584,55 @@
               <div class="mset-error">{errorMsg}</div>
             {/if}
           {/if}
+        </div>
+      </div>
+    {:else if active === 'skills'}
+      <h2>{t('settings.skills')}</h2>
+      <p class="muted set-sub">{t('settings.skillsDesc')}</p>
+
+      <div class="settings-card">
+        <div class="card-form">
+          <div class="mset-keyrow">
+            <div class="eyebrow" style="flex:1">{t('settings.skillsInstalled')}</div>
+            <button class="ctrl" disabled={skillBusy !== ''} onclick={refreshSkills}>
+              {skillBusy === 'refresh' ? t('settings.refreshing') : t('settings.refresh')}
+            </button>
+          </div>
+        </div>
+        {#if extSkills.length === 0}
+          <div class="set-row"><div class="muted">{t('settings.noSkills')}</div></div>
+        {:else}
+          {#each extSkills as s (s.dir)}
+            <div class="set-row">
+              <div class="set-txt">
+                <div class="t">{s.name}</div>
+                <div class="d">{s.description || '—'}</div>
+                <div class="d mono-dim">{s.dir}</div>
+              </div>
+              <button class="ctrl" class:danger={skillConfirm === s.name} disabled={skillBusy !== ''} onclick={() => removeSkill(s.name)}>
+                {skillConfirm === s.name ? t('settings.confirmRemove') : t('settings.remove')}
+              </button>
+            </div>
+          {/each}
+        {/if}
+      </div>
+
+      <div class="settings-card">
+        <div class="card-form">
+          <div class="eyebrow">{t('settings.skillInstall')}</div>
+          <div class="mset-keyrow">
+            <input
+              class="ctrl key-input" placeholder={t('settings.skillInstallPlaceholder')}
+              bind:value={skillInstallUrl}
+              onkeydown={(e) => e.key === 'Enter' && skillInstallUrl.trim() && installSkill()}
+            />
+            <button class="ctrl" disabled={skillBusy !== '' || !skillInstallUrl.trim()} onclick={installSkill}>
+              {skillBusy === 'install' ? t('settings.installing') : t('settings.install')}
+            </button>
+          </div>
+          <div class="d muted">{t('settings.skillInstallHint')}</div>
+          {#if skillInstallResult}<pre class="skill-result">{skillInstallResult}</pre>{/if}
+          {#if skillError}<div class="mset-error">{skillError}</div>{/if}
         </div>
       </div>
     {:else if active === 'mcp'}

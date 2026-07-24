@@ -197,4 +197,17 @@ export const en: Record<keyof typeof th, string> = {
   'settings.add': 'Add',
   'settings.adding': 'Adding…',
   'settings.cancel': 'Cancel',
+
+  'settings.skills': 'Skills',
+  'settings.skillsDesc': 'External skills discovered from ~/.agents/skills and ~/.claude/skills (SKILL.md folders) — the assistant can invoke them as tools',
+  'settings.skillsInstalled': 'INSTALLED SKILLS',
+  'settings.noSkills': 'No external skill yet — install one below or drop a SKILL.md folder into ~/.agents/skills',
+  'settings.skillInstall': 'INSTALL FROM GITHUB',
+  'settings.skillInstallPlaceholder': 'GitHub repo URL, e.g. https://github.com/user/skill-repo',
+  'settings.skillInstallHint': 'The repo must contain an aetox-plugin.json manifest (type "skill-bundle") with a SKILL.md — installs into ~/.agents/skills and loads immediately',
+  'settings.install': 'Install',
+  'settings.installing': 'Installing…',
+  'settings.refresh': 'Refresh',
+  'settings.refreshing': 'Refreshing…',
+  'settings.confirmRemove': 'Confirm?',
 }
