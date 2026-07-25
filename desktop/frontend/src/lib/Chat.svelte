@@ -6,7 +6,7 @@
   import { onMount } from 'svelte'
   import {
     EnabledProviders, SupportedThinkLevels,
-    ListModelsForProvider, RequiresAPIKey, HasAPIKey, PickAttachmentImage,
+    ListModelsForProvider, RequiresAPIKey, HasAPIKey, PickAttachment,
     GetContextBreakdown,
   } from '../../wailsjs/go/main/App'
   import { t } from './i18n.svelte'
@@ -14,6 +14,7 @@
   import { openUrlInWorkbench } from './stores/workbench.svelte'
   import {
     cockpit, attachImageFromPath, clearPendingImage, attachTabContext, clearPendingContext,
+    attachFileFromPath, clearPendingFile, fileKind,
     openProject, openFolder, clearProjectFocus, cancelTurn, answerAsk,
   } from './stores/cockpit.svelte'
 
@@ -253,9 +254,15 @@
     inputEl?.focus()
   }
 
+  // One attach button for everything: images keep their thumbnail path, and a
+  // clip or document is copied into the sandbox and handed over as a path the
+  // tools can open. Splitting this across two buttons was the duplication the
+  // owner spotted (ARCHITECTURE.md §38).
   async function attachViaDialog() {
-    const path = await PickAttachmentImage()
-    if (path) await attachImageFromPath(path)
+    const path = await PickAttachment()
+    if (!path) return
+    if (fileKind(path) === 'image') await attachImageFromPath(path)
+    else await attachFileFromPath(path)
   }
 
   // A file/browser tab dragged from the workbench (Workbench.svelte's
@@ -297,7 +304,18 @@
   }
 </script>
 
-<svelte:window onclick={modelMenuOpen || focusMenuOpen || palette ? closeMenusOnOutside : undefined} />
+<!-- "/" is the prompt list on its own button; Ctrl+K opens the same component in
+     full mode (model, approval, tool counts, shortcuts) — those rows lost their
+     button when "+" became the attach control, not their home. -->
+<svelte:window
+  onclick={modelMenuOpen || focusMenuOpen || palette ? closeMenusOnOutside : undefined}
+  onkeydown={(e) => {
+    if (e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'k') {
+      e.preventDefault()
+      palette = palette === 'all' ? '' : 'all'
+    }
+  }}
+/>
 
 {#snippet upSelect(
   id: 'provider' | 'model' | 'thinkLevel',
@@ -487,6 +505,13 @@
         <button class="attach-remove" aria-label={t('chat.removeAttachment')} onclick={clearPendingImage}>✕</button>
       </div>
     {/if}
+    {#if cockpit.pendingFile}
+      <div class="attach-chip">
+        <span class="ic">{cockpit.pendingFile.kind === 'audio' ? '🎧' : cockpit.pendingFile.kind === 'video' ? '🎬' : '📄'}</span>
+        <span class="attach-name">{cockpit.pendingFile.label}</span>
+        <button class="attach-remove" aria-label={t('chat.removeAttachment')} onclick={clearPendingFile}>✕</button>
+      </div>
+    {/if}
     {#if cockpit.pendingContext}
       <div class="attach-chip">
         <span class="ic">{cockpit.pendingContext.kind === 'file' ? '📄' : '🌐'}</span>
@@ -533,6 +558,10 @@
         onkeydown={onKeydown}
       ></textarea>
       <div class="tools">
+        <button
+          class="icobtn" aria-label={t('chat.attachFile')} data-tip={t('chat.attachFile')}
+          onclick={attachViaDialog}
+        >+</button>
         <div class="pal-pick">
           {#if palette}
             <Palette
@@ -544,17 +573,11 @@
             />
           {/if}
           <button
-            class="icobtn" class:active={palette === 'all'}
-            aria-label={t('palette.title')} data-tip={t('palette.title')}
-            onclick={(e) => { e.stopPropagation(); palette = palette === 'all' ? '' : 'all' }}
-          >+</button>
-          <button
-            class="icobtn slash" class:active={palette === 'prompts'}
+            class="icobtn slash" class:active={palette !== ''}
             aria-label={t('palette.promptsTitle')} data-tip={t('palette.promptsTitle')}
-            onclick={(e) => { e.stopPropagation(); palette = palette === 'prompts' ? '' : 'prompts' }}
+            onclick={(e) => { e.stopPropagation(); palette = palette ? '' : 'prompts' }}
           >/</button>
         </div>
-        <button class="icobtn" aria-label={t('chat.attachImage')} data-tip={t('chat.attachImage')} onclick={attachViaDialog}>📎</button>
         {#if ctx && ctx.maxTokens > 0}
           <div class="ctx-pick">
             {#if ctxMenuOpen}

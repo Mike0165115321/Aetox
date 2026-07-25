@@ -111,6 +111,18 @@ export interface PendingImage {
   dataUrl: string
 }
 
+/** A non-image file attached from the composer's "+" — copied into the sandbox
+ * and handed to the model as a path rather than inlined, because a clip is for
+ * a tool to open, not for the message to carry. */
+export interface PendingFile {
+  /** Sandbox-relative path — what audio_transcribe / video_ocr / read operate on. */
+  relPath: string
+  /** Chip label — the original file name. */
+  label: string
+  /** Decides which tool the model is pointed at. */
+  kind: 'audio' | 'video' | 'file'
+}
+
 /** A workbench tab (file or browser) dragged into the composer, staged before
  * send — its content is inlined into the message so the model reads it
  * directly, no tool call needed. */
@@ -204,6 +216,8 @@ export interface CockpitState {
   pendingImage: PendingImage | null
   /** File/browser tab dragged into the composer, staged before send. */
   pendingContext: PendingContext | null
+  /** Non-image file attached in the composer, staged before send. */
+  pendingFile: PendingFile | null
   /** Question the model is blocked on (ask_user tool), null when none. */
   ask: { question: string; options: string[] } | null
   /** The model's task checklist (todo_write tool), replaced wholesale each call. */
@@ -236,5 +250,6 @@ export function emptyCockpitState(): CockpitState {
     todos: [],
     pendingImage: null,
     pendingContext: null,
+    pendingFile: null,
   }
 }

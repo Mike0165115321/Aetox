@@ -885,3 +885,13 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .pp-bodyhead { display:flex; align-items:center; gap:8px; }
 .pp-textarea::placeholder { color:var(--text-dim); opacity:.75; line-height:1.7; }
 .ctrl.tiny { font-size:12px; padding:3px 8px; }
+
+/* "/" carries a box so it reads as a key you press, not a slash you typed —
+   Claude Code's affordance, and the reason the button is findable at all. */
+.composer .icobtn.slash {
+  font-size:14px; font-weight:700; width:26px; height:26px; border-radius:6px;
+  border:1px solid var(--border-strong); color:var(--text-secondary);
+}
+.composer .icobtn.slash:hover { border-color:var(--interactive); color:var(--text-primary); }
+.composer .icobtn.slash.active { border-color:var(--interactive); background:var(--surface-selected); color:var(--accent); }
+.composer .icobtn { font-size:18px; }

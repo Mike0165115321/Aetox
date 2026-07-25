@@ -1215,6 +1215,24 @@ That last row is why this was not a nice-to-have. §35 had just shipped prompt p
 
 ---
 
+## 38. Decision — `+` Is Attach, `/` Is Prompts, Ctrl+K Is Everything Else (2026-07-25)
+
+**Trigger:** owner, with a crop of the composer showing `+ / 📎` — *"บทบาท มันซ้ำกันครับ ลบออกสักตัว ... เอา + มาเป็นสำหรับโยนไฟล์ หรืออัปโหลด เหมือนที่ปุ่มอันนี้ทำอยู่"*, then on being asked: *"+ แนบไฟล์อัปโหลดไฟล์ เหมือน 📎 ไง และเอา 📎 ออกเพราะมันซ้ำกัน อัปโหลดวิดีโอหรืออะไร ... / เอาสี่เหลี่ยมมาครอบเหมือน Claude Code ก็ดี จะได้เห็นภาพ"*.
+
+He was right, and §36 had caused it: `+` opened a palette whose Context group's first row was *"แนบรูป…"*, so `+` and 📎 were two doors to the same action sitting next to each other.
+
+**Asked before acting, on his instruction** (*"ถามผมก่อนนะถ้าไม่มั่นใจ"*). What was certain — 📎 goes, `+` becomes attach — was never the question; where the palette's *other* rows (model, approval, tool counts, shortcuts) should live was, and guessing would have quietly deleted a surface.
+
+**Result: three roles, no overlap.** `+` attaches. `/` lists prompt presets, in a bordered square so it reads as a key you press rather than a slash you typed — Claude Code's affordance, and what makes the button findable at all. `Ctrl+K` opens the same palette component in full mode, so nothing shipped in §36 was lost, only unbuttoned.
+
+**Attaching is no longer image-only.** `SaveChatImage` already copied into `<sandbox>/.aetox-attachments/` and returned a relative path any sandboxed tool can open — the mechanism was general, only the door was narrow. It now backs `SaveChatFile` too: **streamed with `io.Copy` instead of `os.ReadFile`**, because the whole point of attaching a 1GB clip is that it is a clip, and a 2GB cap that loads into memory first is not a cap, it is a crash. A half-written copy is removed rather than left behind.
+
+**A file is handed over as a path, never inlined.** An image already worked this way; a clip has no other option. The staged attachment names the tool that opens it — audio → `audio_transcribe`, video → *both* `audio_transcribe` and `video_ocr` (speech and screen, §33's pair), anything else → `read`. Naming the wrong tool costs a wasted turn; naming none makes the model guess.
+
+**Status:** `Done 2026-07-25.` Go green; frontend 28 tests (5 new: extension classification, a clip staged as a path with a label, the hint naming `audio_transcribe` for audio and both tools for video, no fenced content in the message, removable before send). Desktop rebuilt.
+
+---
+
 ## Validation
 
 1. **Claim traceability:** every claim above cites a file or an existing project doc; the two `Unverified`/`Inferred, Verify first: Yes` items are marked as such, not stated as fact.

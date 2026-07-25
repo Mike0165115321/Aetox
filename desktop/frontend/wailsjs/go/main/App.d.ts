@@ -91,6 +91,8 @@ export function OpenProjectPath(arg1:string):Promise<main.ProjectStatus>;
 
 export function OpenPromptsFolder():Promise<void>;
 
+export function PickAttachment():Promise<string>;
+
 export function PickAttachmentImage():Promise<string>;
 
 export function PickPresetImage(arg1:string):Promise<string>;
@@ -120,6 +122,8 @@ export function RemoveMCPServer(arg1:string):Promise<void>;
 export function RemovePresetImage(arg1:string):Promise<void>;
 
 export function RequiresAPIKey(arg1:string):Promise<boolean>;
+
+export function SaveChatFile(arg1:string):Promise<string>;
 
 export function SaveChatImage(arg1:string):Promise<string>;
 

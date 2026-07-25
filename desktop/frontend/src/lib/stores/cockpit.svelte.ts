@@ -10,7 +10,7 @@ import {
   SwitchProvider, SwitchThinkLevel, SwitchApprovalMode, SetProviderWireFormat,
   SwitchModel, SetAPIKey, ProjectTree, CommandHistory, GitChangedFiles, ReadFile,
   ListSessions, LoadSession, NewSession, CurrentSessionID, SearchSessions, DeleteSession,
-  SaveChatImage, ReadImageDataURL, CancelTurn, BrowserGetText, RecentProjects,
+  SaveChatImage, SaveChatFile, ReadImageDataURL, CancelTurn, BrowserGetText, RecentProjects,
   ListAllSessions, SearchAllSessions, LoadSessionAnyProject, ClearProjectFocus,
   AnswerUserQuestion,
 } from '../../../wailsjs/go/main/App'
@@ -246,7 +246,8 @@ export async function sendUserMessage(text: string): Promise<void> {
   const trimmed = text.trim()
   const image = cockpit.pendingImage
   const context = cockpit.pendingContext
-  if (!trimmed && !image && !context) return
+  const file = cockpit.pendingFile
+  if (!trimmed && !image && !context && !file) return
   // The model only ever sees text, so an attached image is handed to it as a
   // sandboxed path reference it can pass to image_ocr — the bubble itself
   // shows just the caption + thumbnail, not that reference line. A dragged-in
@@ -257,6 +258,16 @@ export async function sendUserMessage(text: string): Promise<void> {
   // a file on disk vs a live web page. Only the model sees these lines.
   let sentText = trimmed
   if (image) sentText += `\n\n[attachment: user-attached image — read it with image_ocr] ${image.relPath}`
+  if (file) {
+    // Point at the tool that actually opens this kind of file. Naming the wrong
+    // one costs a wasted turn; naming none costs the model guessing.
+    const how = file.kind === 'audio'
+      ? 'read it with audio_transcribe'
+      : file.kind === 'video'
+        ? 'read its speech with audio_transcribe, its on-screen text with video_ocr'
+        : 'read it with read'
+    sentText += `\n\n[attachment: user-attached ${file.kind} — ${how}] ${file.relPath}`
+  }
   if (context) {
     const kindLabel = context.kind === 'file' ? 'file from a workbench tab' : 'web page text from a workbench browser tab'
     sentText += `\n\n[attachment: ${kindLabel}] ${context.label}:\n\`\`\`\n${context.content}\n\`\`\``
@@ -268,6 +279,7 @@ export async function sendUserMessage(text: string): Promise<void> {
   })
   cockpit.pendingImage = null
   cockpit.pendingContext = null
+  cockpit.pendingFile = null
   cockpit.awaitingReply = true
   cockpit.agentStatus = ''
   cockpit.toolSteps = []
@@ -377,6 +389,39 @@ export async function attachImageFromPath(absPath: string): Promise<void> {
 
 export function clearPendingImage(): void {
   cockpit.pendingImage = null
+}
+
+const AUDIO_EXT = ['mp3', 'wav', 'm4a', 'flac', 'ogg', 'aac', 'wma']
+const VIDEO_EXT = ['mp4', 'mov', 'mkv', 'webm', 'avi', 'wmv', 'flv']
+export const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp']
+
+export function fileKind(path: string): 'image' | 'audio' | 'video' | 'file' {
+  const ext = path.split('.').pop()?.toLowerCase() ?? ''
+  if (IMAGE_EXT.includes(ext)) return 'image'
+  if (AUDIO_EXT.includes(ext)) return 'audio'
+  if (VIDEO_EXT.includes(ext)) return 'video'
+  return 'file'
+}
+
+/** Attach any non-image file: copied into the sandbox, then handed to the model
+ * as a path. A 300MB clip cannot be inlined into a prompt — and should not be:
+ * the tools exist precisely to open it. */
+export async function attachFileFromPath(absPath: string): Promise<void> {
+  try {
+    const relPath = await SaveChatFile(absPath)
+    const kind = fileKind(absPath)
+    cockpit.pendingFile = {
+      relPath,
+      label: absPath.split(/[\\/]/).pop() ?? relPath,
+      kind: kind === 'image' ? 'file' : kind,
+    }
+  } catch (err) {
+    cockpit.chat.push({ role: 'agent', text: t('cockpit.attachError', { err: String(err) }), time: nowLabel() })
+  }
+}
+
+export function clearPendingFile(): void {
+  cockpit.pendingFile = null
 }
 
 /** Stage a dragged-in workbench tab (file or browser) as the composer's pending

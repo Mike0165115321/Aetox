@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"mime"
 	"os"
 	"os/exec"
@@ -439,6 +440,17 @@ func (a *App) PickAttachmentImage() (string, error) {
 // becomes a normal relative path any sandboxed skill (image_ocr, read, ...)
 // can already operate on, with no path-escaping special case.
 func (a *App) SaveChatImage(sourcePath string) (string, error) {
+	return a.saveChatAttachment(sourcePath, 20<<20) // generous for a photo/screenshot
+}
+
+// SaveChatFile is the same for anything else the user attaches — a clip to
+// transcribe, a PDF to read. The cap is high because the point of attaching a
+// video is that it is a video; the copy streams rather than loading it whole.
+func (a *App) SaveChatFile(sourcePath string) (string, error) {
+	return a.saveChatAttachment(sourcePath, 2<<30) // 2GB
+}
+
+func (a *App) saveChatAttachment(sourcePath string, maxBytes int64) (string, error) {
 	root := strings.TrimSpace(a.cfg.SandboxRoot)
 	if root == "" {
 		return "", fmt.Errorf("no project open")
@@ -454,14 +466,8 @@ func (a *App) SaveChatImage(sourcePath string) (string, error) {
 	if info.IsDir() {
 		return "", fmt.Errorf("%q is a directory", sourcePath)
 	}
-	const maxBytes = 20 << 20 // 20MB — generous for a chat-attached photo/screenshot
 	if info.Size() > maxBytes {
-		return "", fmt.Errorf("image too large (%d bytes, max 20MB)", info.Size())
-	}
-
-	data, err := os.ReadFile(sourcePath)
-	if err != nil {
-		return "", err
+		return "", fmt.Errorf("ไฟล์ใหญ่เกินไป (%d MB, สูงสุด %d MB)", info.Size()>>20, maxBytes>>20)
 	}
 
 	destDir := filepath.Join(root, attachmentsDir)
@@ -471,7 +477,24 @@ func (a *App) SaveChatImage(sourcePath string) (string, error) {
 	seq := atomic.AddInt64(&attachmentSeq, 1)
 	destName := fmt.Sprintf("%d-%d%s", time.Now().UnixMilli(), seq, filepath.Ext(sourcePath))
 	destPath := filepath.Join(destDir, destName)
-	if err := os.WriteFile(destPath, data, 0o600); err != nil {
+
+	// Streamed, not ReadFile: a 1GB clip must not have to fit in memory first.
+	src, err := os.Open(sourcePath)
+	if err != nil {
+		return "", err
+	}
+	defer src.Close()
+	dst, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return "", err
+	}
+	if _, err := io.Copy(dst, src); err != nil {
+		dst.Close()
+		os.Remove(destPath) // a half-copied attachment is worse than none
+		return "", err
+	}
+	if err := dst.Close(); err != nil {
+		os.Remove(destPath)
 		return "", err
 	}
 
@@ -480,6 +503,20 @@ func (a *App) SaveChatImage(sourcePath string) (string, error) {
 		return "", err
 	}
 	return filepath.ToSlash(rel), nil
+}
+
+// PickAttachment prompts for any file to attach — image, clip, document. The
+// image-only picker stays for the paths that specifically want one.
+func (a *App) PickAttachment() (string, error) {
+	return wailsruntime.OpenFileDialog(a.ctx, wailsruntime.OpenDialogOptions{
+		Title: "แนบไฟล์",
+		Filters: []wailsruntime.FileFilter{
+			{DisplayName: "ไฟล์ที่แนบได้ทั้งหมด", Pattern: "*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp;*.mp4;*.mov;*.mkv;*.webm;*.avi;*.mp3;*.wav;*.m4a;*.flac;*.ogg;*.pdf;*.txt;*.md;*.csv;*.json"},
+			{DisplayName: "รูปภาพ", Pattern: "*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp"},
+			{DisplayName: "วิดีโอ / เสียง", Pattern: "*.mp4;*.mov;*.mkv;*.webm;*.avi;*.mp3;*.wav;*.m4a;*.flac;*.ogg"},
+			{DisplayName: "ทุกไฟล์", Pattern: "*.*"},
+		},
+	})
 }
 
 // ReadImageDataURL reads a sandboxed image back as a data: URL, for inline

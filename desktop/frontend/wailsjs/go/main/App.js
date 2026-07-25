@@ -174,6 +174,10 @@ export function OpenPromptsFolder() {
   return window['go']['main']['App']['OpenPromptsFolder']();
 }
 
+export function PickAttachment() {
+  return window['go']['main']['App']['PickAttachment']();
+}
+
 export function PickAttachmentImage() {
   return window['go']['main']['App']['PickAttachmentImage']();
 }
@@ -232,6 +236,10 @@ export function RemovePresetImage(arg1) {
 
 export function RequiresAPIKey(arg1) {
   return window['go']['main']['App']['RequiresAPIKey'](arg1);
+}
+
+export function SaveChatFile(arg1) {
+  return window['go']['main']['App']['SaveChatFile'](arg1);
 }
 
 export function SaveChatImage(arg1) {
