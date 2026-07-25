@@ -40,6 +40,15 @@ jobs:
 
       - run: go test ./...
 
+      # The !windows halves of internal/proc are otherwise never even
+      # compiled, and a file named *_windows.go is an implicit build
+      # constraint — which is how context_windows.go (token limits, nothing
+      # to do with the OS) kept the CLI from building on Linux at all.
+      - name: Cross-compile the non-Windows paths
+        run: |
+          $env:GOOS="linux";  go build ./cmd/... ./internal/...
+          $env:GOOS="darwin"; go build ./cmd/... ./internal/...
+
       - name: Frontend tests
         working-directory: desktop/frontend
         run: npm test
