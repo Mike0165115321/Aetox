@@ -131,6 +131,111 @@ func TestUserPresetShadowsBundled(t *testing.T) {
 	}
 }
 
+func TestValidPresetNameRejectsWhatCannotBeAFilename(t *testing.T) {
+	for _, bad := range []string{"", "  ", "..", ".", "a/b", `a\b`, "a b", "a:b", "a*b", strings.Repeat("ก", 41)} {
+		if err := ValidPresetName(bad); err == nil {
+			t.Errorf("ValidPresetName(%q) = nil, want an error — this name becomes a path", bad)
+		}
+	}
+	for _, ok := range []string{"landing", "my-prompt", "สรุป", "a_b.c"} {
+		if err := ValidPresetName(ok); err != nil {
+			t.Errorf("ValidPresetName(%q) = %v, want it accepted", ok, err)
+		}
+	}
+}
+
+// Saving creates the folder on demand — a user should never have to make it.
+func TestSavePresetCreatesFolderAndIsUsableImmediately(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("AETOX_DATA_ROOT", root)
+
+	if err := SavePreset("mine", "ทำสิ่งนี้ให้: $ARGUMENTS"); err != nil {
+		t.Fatalf("SavePreset: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "prompts", "mine.md")); err != nil {
+		t.Fatalf("preset file not written: %v", err)
+	}
+	got, ok := ExpandPreset("/mine เรื่องนี้")
+	if !ok || got != "ทำสิ่งนี้ให้: เรื่องนี้" {
+		t.Errorf("saved preset not usable: %q, %v", got, ok)
+	}
+	if err := SavePreset("mine", "   "); err == nil {
+		t.Error("an empty body must be refused")
+	}
+}
+
+// Overriding a bundled preset writes a separate file; deleting the override
+// brings the bundled one back. That round trip is what makes editing a
+// shipped preset safe to try.
+func TestOverrideAndDeleteRestoresBundled(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("AETOX_DATA_ROOT", root)
+
+	original, ok := ExpandPreset("/landing ร้านกาแฟ")
+	if !ok {
+		t.Fatal("bundled /landing should expand before any override")
+	}
+	if err := SavePreset("landing", "ของผม $ARGUMENTS"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := ExpandPreset("/landing ร้านกาแฟ"); got != "ของผม ร้านกาแฟ" {
+		t.Fatalf("override not in effect: %q", got)
+	}
+	if err := DeletePreset("landing"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := ExpandPreset("/landing ร้านกาแฟ"); got != original {
+		t.Error("deleting an override must restore the bundled preset, not remove the command")
+	}
+}
+
+func TestPresetCoverImageRoundTrip(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("AETOX_DATA_ROOT", root)
+	if err := SavePreset("mine", "body $ARGUMENTS"); err != nil {
+		t.Fatal(err)
+	}
+
+	src := filepath.Join(t.TempDir(), "cover.png")
+	if err := os.WriteFile(src, []byte("\x89PNG\r\n\x1a\nfake"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := SavePresetImage("mine", src); err != nil {
+		t.Fatalf("SavePresetImage: %v", err)
+	}
+
+	var mine *Preset
+	for _, p := range ListPresets() {
+		if p.Name == "mine" {
+			cp := p
+			mine = &cp
+		}
+	}
+	if mine == nil || !strings.HasPrefix(mine.Image, "data:image/png;base64,") {
+		t.Fatalf("cover should come back as a png data URI, got %+v", mine)
+	}
+	if mine.Body != "body $ARGUMENTS" {
+		t.Errorf("Body = %q, want the prompt itself so the UI can edit it", mine.Body)
+	}
+
+	// A cover is not a prompt: the .md glob must not pick it up as one.
+	for _, p := range ListPresets() {
+		if strings.HasSuffix(p.Name, ".png") {
+			t.Errorf("image file leaked into the preset list as %q", p.Name)
+		}
+	}
+
+	if err := SavePresetImage("mine", filepath.Join(t.TempDir(), "notes.txt")); err == nil {
+		t.Error("a non-image extension must be refused")
+	}
+	if err := DeletePreset("mine"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := presetImagePath("mine"); ok {
+		t.Error("deleting a preset must take its cover with it")
+	}
+}
+
 func TestListPresetsIncludesUserPresets(t *testing.T) {
 	dir := setupPresetsDir(t)
 	if err := os.WriteFile(filepath.Join(dir, "zz-mine.md"), []byte("# พรอมต์ของผม\nbody"), 0o644); err != nil {

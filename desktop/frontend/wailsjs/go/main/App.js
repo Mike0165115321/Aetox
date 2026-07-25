@@ -78,6 +78,10 @@ export function DeleteIdentityFile(arg1) {
   return window['go']['main']['App']['DeleteIdentityFile'](arg1);
 }
 
+export function DeletePromptPreset(arg1) {
+  return window['go']['main']['App']['DeletePromptPreset'](arg1);
+}
+
 export function DeleteSession(arg1) {
   return window['go']['main']['App']['DeleteSession'](arg1);
 }
@@ -174,6 +178,10 @@ export function PickAttachmentImage() {
   return window['go']['main']['App']['PickAttachmentImage']();
 }
 
+export function PickPresetImage(arg1) {
+  return window['go']['main']['App']['PickPresetImage'](arg1);
+}
+
 export function ProjectTree() {
   return window['go']['main']['App']['ProjectTree']();
 }
@@ -218,6 +226,10 @@ export function RemoveMCPServer(arg1) {
   return window['go']['main']['App']['RemoveMCPServer'](arg1);
 }
 
+export function RemovePresetImage(arg1) {
+  return window['go']['main']['App']['RemovePresetImage'](arg1);
+}
+
 export function RequiresAPIKey(arg1) {
   return window['go']['main']['App']['RequiresAPIKey'](arg1);
 }
@@ -232,6 +244,10 @@ export function SaveIdentityFile(arg1, arg2) {
 
 export function SaveMCPServer(arg1, arg2) {
   return window['go']['main']['App']['SaveMCPServer'](arg1, arg2);
+}
+
+export function SavePromptPreset(arg1, arg2) {
+  return window['go']['main']['App']['SavePromptPreset'](arg1, arg2);
 }
 
 export function SearchAllSessions(arg1) {

@@ -20,8 +20,13 @@ package command
 
 import (
 	"embed"
+	"encoding/base64"
+	"errors"
+	"fmt"
+	"mime"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -35,9 +40,22 @@ var bundledPresets embed.FS
 type Preset struct {
 	Name        string `json:"name"`
 	Description string `json:"description"` // first non-empty line of the body
+	Body        string `json:"body"`        // the prompt itself, so the UI can show and edit it
 	Path        string `json:"path"`        // on-disk path, or "" for a bundled preset
 	Builtin     bool   `json:"builtin"`     // shipped with Aetox, not written by the user
+	Image       string `json:"image"`       // cover as a data URI, "" when none is set
 }
+
+// presetImageExts are the cover-image formats a preset may carry, in lookup
+// order. The cover lives next to the prompt as <name>.<ext>, so a preset is
+// still just files in a folder someone can back up or edit by hand.
+var presetImageExts = []string{".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
+
+// maxPresetImageBytes caps what gets inlined as a data URI. A cover is
+// decoration; a 20MB camera original would stall the whole settings page for
+// no benefit, so oversized files are ignored rather than shipped across.
+// ponytail: no downscaling — add it if someone actually hits this.
+const maxPresetImageBytes = 4 << 20
 
 // PresetsDir returns <DataRoot>/prompts (not created here).
 func PresetsDir() (string, error) {
@@ -60,7 +78,10 @@ func ListPresets() []Preset {
 		if err != nil {
 			continue
 		}
-		byName[name] = Preset{Name: name, Description: firstLine(string(body)), Builtin: true}
+		byName[name] = Preset{
+			Name: name, Description: firstLine(string(body)),
+			Body: string(body), Builtin: true, Image: presetImage(name),
+		}
 		order = append(order, name)
 	}
 
@@ -73,7 +94,10 @@ func ListPresets() []Preset {
 		if _, shadowed := byName[name]; !shadowed {
 			order = append(order, name)
 		}
-		byName[name] = Preset{Name: name, Description: firstLine(string(body)), Path: path}
+		byName[name] = Preset{
+			Name: name, Description: firstLine(string(body)),
+			Body: string(body), Path: path, Image: presetImage(name),
+		}
 	}
 
 	out := make([]Preset, 0, len(order))
@@ -158,6 +182,147 @@ func userPresetFiles() []string {
 	}
 	sort.Strings(files)
 	return files
+}
+
+// ValidPresetName rejects anything that would not survive being a filename or
+// a "/name" in chat. The name is user input that becomes a path, so this is a
+// trust boundary, not a formatting nicety.
+func ValidPresetName(name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return errors.New("ต้องตั้งชื่อพรอมต์ก่อน")
+	}
+	if len([]rune(name)) > 40 {
+		return errors.New("ชื่อยาวเกินไป (ไม่เกิน 40 ตัวอักษร)")
+	}
+	if name == "." || name == ".." || strings.ContainsAny(name, `\/:*?"<>|`) || strings.ContainsAny(name, " \t\n") {
+		return errors.New(`ชื่อห้ามมีช่องว่างหรืออักขระเหล่านี้: \ / : * ? " < > |`)
+	}
+	return nil
+}
+
+// SavePreset writes a user preset, creating the prompts folder on demand. It
+// always writes to the user directory — saving a bundled preset's name creates
+// an override rather than touching what shipped, which is what makes every
+// bundled preset editable without being mutable.
+func SavePreset(name, body string) error {
+	if err := ValidPresetName(name); err != nil {
+		return err
+	}
+	if strings.TrimSpace(body) == "" {
+		return errors.New("เนื้อพรอมต์ว่างไม่ได้")
+	}
+	dir, err := PresetsDir()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, strings.TrimSpace(name)+".md"), []byte(body), 0o644)
+}
+
+// DeletePreset removes a user preset and its cover. A bundled preset cannot be
+// deleted — deleting an override just restores the one that ships, which is
+// the behavior that makes overriding safe to try.
+func DeletePreset(name string) error {
+	if err := ValidPresetName(name); err != nil {
+		return err
+	}
+	dir, err := PresetsDir()
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(filepath.Join(dir, strings.TrimSpace(name)+".md")); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if path, ok := presetImagePath(name); ok {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return nil
+}
+
+// SavePresetImage copies srcPath in as the preset's cover, replacing any
+// existing one. The cover keeps its source extension so the folder stays
+// readable by hand.
+func SavePresetImage(name, srcPath string) error {
+	if err := ValidPresetName(name); err != nil {
+		return err
+	}
+	ext := strings.ToLower(filepath.Ext(srcPath))
+	if !slices.Contains(presetImageExts, ext) {
+		return fmt.Errorf("ไฟล์รูปต้องเป็นนามสกุล %s", strings.Join(presetImageExts, " "))
+	}
+	data, err := os.ReadFile(srcPath)
+	if err != nil {
+		return err
+	}
+	if len(data) > maxPresetImageBytes {
+		return fmt.Errorf("รูปใหญ่เกิน %d MB — ย่อก่อนแล้วลองใหม่", maxPresetImageBytes>>20)
+	}
+	dir, err := PresetsDir()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	if old, ok := presetImagePath(name); ok {
+		_ = os.Remove(old)
+	}
+	return os.WriteFile(filepath.Join(dir, strings.TrimSpace(name)+ext), data, 0o644)
+}
+
+// RemovePresetImage drops the cover, leaving the prompt itself alone.
+func RemovePresetImage(name string) error {
+	if err := ValidPresetName(name); err != nil {
+		return err
+	}
+	if path, ok := presetImagePath(name); ok {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return nil
+}
+
+func presetImagePath(name string) (string, bool) {
+	dir, err := PresetsDir()
+	if err != nil {
+		return "", false
+	}
+	for _, ext := range presetImageExts {
+		path := filepath.Join(dir, strings.TrimSpace(name)+ext)
+		if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
+			return path, true
+		}
+	}
+	return "", false
+}
+
+// presetImage returns the cover as a data URI. Empty when there is none, when
+// it is unreadable, or when it is too big to be worth inlining — the card
+// falls back to a generated cover in every one of those cases.
+func presetImage(name string) string {
+	path, ok := presetImagePath(name)
+	if !ok {
+		return ""
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Size() > maxPresetImageBytes {
+		return ""
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	mimeType := mime.TypeByExtension(filepath.Ext(path))
+	if mimeType == "" {
+		mimeType = "image/png"
+	}
+	return "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data)
 }
 
 // firstLine is the preset's one-line description: the first line with content,

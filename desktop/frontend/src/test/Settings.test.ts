@@ -18,8 +18,8 @@ beforeEach(() => {
     week: [], all: [],
   } as any)
   vi.mocked(ListPromptPresets).mockResolvedValue([
-    { name: 'landing', description: 'สร้างแลนดิ้งเพจ', path: '', builtin: true },
-    { name: 'mine', description: 'พรอมต์ของผม', path: 'C:/prompts/mine.md', builtin: false },
+    { name: 'landing', description: 'สร้างแลนดิ้งเพจ', body: 'ทำแลนดิ้งเพจ $ARGUMENTS', path: '', builtin: true, image: '' },
+    { name: 'mine', description: 'พรอมต์ของผม', body: 'ของผมเอง', path: 'C:/prompts/mine.md', builtin: false, image: '' },
   ] as any)
 })
 
@@ -61,18 +61,33 @@ describe('Settings pages', () => {
     expect(screen.getByText('340')).toBeTruthy()
   })
 
-  it('Prompt presets page lists bundled and user presets, badging the bundled ones', async () => {
+  it('Prompt presets page is a card gallery, badging the bundled ones', async () => {
     const { container } = render(Settings, { onClose: () => {} })
     await openSection(container, 'พรอมต์สำเร็จรูป')
-    // Match the name row only — the user preset's path also contains "/mine".
-    const nameRow = (name: string) => screen.getAllByText(
-      (_, el) => el?.className === 't' && el.textContent?.trim().startsWith('/' + name) === true,
-    )
-    await waitFor(() => expect(nameRow('landing').length).toBe(1))
+
+    await waitFor(() => expect(container.querySelectorAll('.pp-card').length).toBe(3)) // 2 presets + "new"
     expect(screen.getByText('สร้างแลนดิ้งเพจ')).toBeTruthy()
-    expect(nameRow('mine').length).toBe(1)
-    // Only the bundled one carries the badge; the user's shows its file path.
     expect(screen.getAllByText('มากับแอป')).toHaveLength(1)
-    expect(screen.getByText('C:/prompts/mine.md')).toBeTruthy()
+    // No cover set → the generated one, not a broken <img>.
+    expect(container.querySelector('.pp-cover img')).toBeNull()
+    expect(container.querySelectorAll('.pp-cover .pp-mono').length).toBeGreaterThan(0)
+  })
+
+  it('clicking a preset card opens its full text for editing', async () => {
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'พรอมต์สำเร็จรูป')
+    await waitFor(() => expect(container.querySelectorAll('.pp-card').length).toBe(3))
+
+    const card = Array.from(container.querySelectorAll('.pp-card'))
+      .find((el) => el.textContent?.includes('/landing'))!
+    await fireEvent.click(card)
+
+    const body = container.querySelector('.pp-textarea') as HTMLTextAreaElement
+    expect(body).toBeTruthy()
+    expect(body.value).toBe('ทำแลนดิ้งเพจ $ARGUMENTS')
+    // A bundled preset says what saving will do rather than refusing the edit.
+    expect(screen.getByText(/สร้างเป็นของคุณทับไว้/)).toBeTruthy()
+    // Its name is fixed; a new preset is where you get to choose one.
+    expect((container.querySelector('.pp-field input.ctrl') as HTMLInputElement).disabled).toBe(true)
   })
 })

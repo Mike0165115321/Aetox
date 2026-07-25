@@ -1190,6 +1190,26 @@ That last row is why this was not a nice-to-have. §35 had just shipped prompt p
 
 ---
 
+## 37. Decision — Preset Gallery: Cards, Covers, and Editable Where the Reference Sites Are Not (2026-07-25)
+
+**Trigger:** owner — *"ผมอยากให้แบ่งเป็นบล็อคๆ ... ตอนเพิ่มพรอมต์ก็ให้ใส่รูปภาพได้ด้วย คนจะได้เห็นว่านี่คือพรอมต์สำเร็จรูป เหมือนเว็บที่พวกเขาแจกพรอมต์สำหรับแลนดิ้งเพจ ... กดมาหน้าพรอมต์สำเร็จรูป ต้องแสดงพรอมต์และแก้ไขได้"*, plus a request to go find the site he was thinking of.
+
+**The reference sites, read rather than guessed:** [jiro.build](https://jiro.build/) is a card grid — cover thumbnail, title, category tag, copy button, click through to a detail page. [websiteprompts.com](https://websiteprompts.com/) is cards with tags and a truncated preview, no images. **Both are copy-only: neither lets you edit the prompt.** That is the gap worth taking, and it is free for us — our presets are already files the user owns (§35), so editing is the natural behavior, not a feature to bolt on.
+
+**Cards, not rows.** A preset is chosen by looking at it, so [Settings.svelte](desktop/frontend/src/lib/Settings.svelte)'s section is a `minmax(220px, 1fr)` grid: cover, `/name`, badge, two-line description. Clicking one opens it — name, cover, and the full prompt in a textarea, saved back to disk.
+
+**Covers are optional and none ship.** A preset with no image gets a generated cover: hue derived from its own name, so the grid reads as a gallery on a fresh install with **zero bytes added to the installer** — the same constraint §32 set for models applies to decoration. A user cover is a real file next to the prompt (`<name>.png` beside `<name>.md`), inlined as a data URI, capped at 4MB so a camera original cannot stall the settings page.
+
+**Editing a bundled preset writes an override, never the binary.** Saving `/landing` creates `<DataRoot>/prompts/landing.md`, which shadows the compiled one; deleting it restores what shipped. The UI says so on the editor rather than disabling the fields — the round trip is safe, so let people try it. Bundled presets have no delete button because there is nothing of theirs to delete.
+
+**The name is a trust boundary, not a label.** It becomes a filename and a `/command`, so `ValidPresetName` rejects empty, `.`/`..`, path separators, Windows-reserved characters, whitespace and anything over 40 runes — tested against all of them, because this is the one field where user input turns into a path.
+
+**Three more presets, sourced from the same reading.** Both sites split "whole page" from "one section", so the shipped set now covers both: `/hero` and `/pricing` are section-level, `/waitlist` is a whole page with a single job. Eight bundled presets, still under 30KB compiled in.
+
+**Status:** `Done 2026-07-25.` Go suite green (5 new preset tests: name validation, folder-created-on-save, override-then-delete restores the bundled original, cover round trip, cover not mistaken for a prompt); frontend 22 tests green (gallery renders cards with generated covers, clicking one opens its full text with the override note and a locked name). Desktop rebuilt.
+
+---
+
 ## Validation
 
 1. **Claim traceability:** every claim above cites a file or an existing project doc; the two `Unverified`/`Inferred, Verify first: Yes` items are marked as such, not stated as fact.

@@ -3,8 +3,10 @@ export namespace command {
 	export class Preset {
 	    name: string;
 	    description: string;
+	    body: string;
 	    path: string;
 	    builtin: boolean;
+	    image: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Preset(source);
@@ -14,8 +16,10 @@ export namespace command {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
 	        this.description = source["description"];
+	        this.body = source["body"];
 	        this.path = source["path"];
 	        this.builtin = source["builtin"];
+	        this.image = source["image"];
 	    }
 	}
 

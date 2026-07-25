@@ -15,6 +15,7 @@
     ListMCPServers, SaveMCPServer, RemoveMCPServer, TestMCPServer, ToggleMCPServer,
     ListExternalSkills, InstallSkillFromGitHub, RemoveExternalSkill, RefreshSkills,
     UsageStats, ListPromptPresets, OpenPromptsFolder,
+    SavePromptPreset, DeletePromptPreset, PickPresetImage, RemovePresetImage,
   } from '../../wailsjs/go/main/App'
   import { config } from '../../wailsjs/go/models'
   import { cockpit, switchProvider, switchModel, submitAPIKey, switchApprovalMode, switchWireFormat } from './stores/cockpit.svelte'
@@ -403,12 +404,93 @@
   })
 
   // ---------- Prompt presets ----------
-  type PresetRow = { name: string; description: string; path: string; builtin: boolean }
+  type PresetRow = { name: string; description: string; body: string; path: string; builtin: boolean; image: string }
   let presets = $state<PresetRow[]>([])
+  // null = the gallery. Anything else = the editor, on a copy of that preset.
+  let editing = $state<PresetRow | null>(null)
+  let draftName = $state('')
+  let draftBody = $state('')
+  let draftImage = $state('')
+  let presetBusy = $state('')
+  let presetError = $state('')
+  let confirmDelete = $state(false)
 
   async function loadPresets() {
     presets = await ListPromptPresets()
   }
+
+  // Bundled presets have no cover to ship, so a card without an image gets a
+  // stable colour derived from its name — the gallery reads as a gallery on a
+  // fresh install, with no assets in the installer.
+  function coverHue(name: string): number {
+    let h = 0
+    for (const ch of name) h = (h * 31 + ch.codePointAt(0)!) % 360
+    return h
+  }
+
+  function openPreset(p: PresetRow) {
+    editing = p
+    draftName = p.name
+    draftBody = p.body
+    draftImage = p.image
+    presetError = ''
+    confirmDelete = false
+  }
+
+  function newPreset() {
+    editing = { name: '', description: '', body: '', path: '', builtin: false, image: '' }
+    draftName = ''
+    draftBody = ''
+    draftImage = ''
+    presetError = ''
+    confirmDelete = false
+  }
+
+  async function runPreset(label: string, fn: () => Promise<void>) {
+    presetBusy = label
+    presetError = ''
+    try {
+      await fn()
+    } catch (err) {
+      presetError = String(err)
+    } finally {
+      presetBusy = ''
+    }
+  }
+
+  const savePreset = () => runPreset('save', async () => {
+    await SavePromptPreset(draftName.trim(), draftBody)
+    await loadPresets()
+    editing = null
+  })
+
+  const deletePreset = () => {
+    if (!confirmDelete) { confirmDelete = true; return }
+    void runPreset('delete', async () => {
+      await DeletePromptPreset(draftName.trim())
+      await loadPresets()
+      editing = null
+    })
+  }
+
+  // A cover can only be attached to a preset that exists on disk, so an unsaved
+  // one is saved first — otherwise the image would have nothing to belong to.
+  const pickImage = () => runPreset('image', async () => {
+    const name = draftName.trim()
+    if (!name) { presetError = t('settings.promptNameFirst'); return }
+    if (!presets.some((p) => p.name === name && !p.builtin)) {
+      await SavePromptPreset(name, draftBody || ' ')
+    }
+    const dataUrl = await PickPresetImage(name)
+    if (dataUrl) draftImage = dataUrl
+    await loadPresets()
+  })
+
+  const dropImage = () => runPreset('image', async () => {
+    await RemovePresetImage(draftName.trim())
+    draftImage = ''
+    await loadPresets()
+  })
 
   $effect(() => {
     if (active === 'prompts') void loadPresets()
@@ -785,28 +867,87 @@
       <h2>{t('settings.prompts')}</h2>
       <p class="muted set-sub">{t('settings.promptsDesc')}</p>
 
-      <div class="settings-card">
-        <div class="card-form">
-          <div class="mset-keyrow">
-            <div class="eyebrow" style="flex:1">{t('settings.promptsList')}</div>
-            <button class="ctrl" onclick={() => loadPresets()}>{t('settings.refresh')}</button>
-            <button class="ctrl" onclick={() => OpenPromptsFolder()}>{t('settings.promptsAdd')}</button>
+      {#if editing === null}
+        <div class="pp-bar">
+          <button class="ctrl" onclick={() => loadPresets()}>{t('settings.refresh')}</button>
+          <button class="ctrl" onclick={() => OpenPromptsFolder()}>{t('settings.promptsFolder')}</button>
+        </div>
+        <div class="pp-grid">
+          <button class="pp-card pp-new" onclick={newPreset}>
+            <span class="pp-plus">+</span>
+            <span class="pp-newtxt">{t('settings.promptNew')}</span>
+          </button>
+          {#each presets as p (p.name)}
+            <button class="pp-card" onclick={() => openPreset(p)}>
+              <span class="pp-cover" style="--h:{coverHue(p.name)}">
+                {#if p.image}
+                  <img src={p.image} alt="" />
+                {:else}
+                  <span class="pp-mono">/{p.name}</span>
+                {/if}
+              </span>
+              <span class="pp-body">
+                <span class="pp-title">
+                  /{p.name}
+                  {#if p.builtin}<span class="badge on">{t('settings.promptBuiltin')}</span>{/if}
+                </span>
+                <span class="pp-desc">{p.description || '—'}</span>
+              </span>
+            </button>
+          {/each}
+        </div>
+        <p class="muted set-sub">{t('settings.promptsHint')}</p>
+      {:else}
+        <div class="pp-bar">
+          <button class="ctrl" onclick={() => (editing = null)}>← {t('settings.promptBack')}</button>
+          <div style="flex:1"></div>
+          {#if !editing.builtin && editing.name}
+            <button class="ctrl" class:danger={confirmDelete} disabled={presetBusy !== ''} onclick={deletePreset}>
+              {confirmDelete ? t('settings.confirmRemove') : t('settings.remove')}
+            </button>
+          {/if}
+          <button class="ctrl" disabled={presetBusy !== '' || !draftName.trim() || !draftBody.trim()} onclick={savePreset}>
+            {presetBusy === 'save' ? t('settings.installing') : t('settings.promptSave')}
+          </button>
+        </div>
+
+        {#if editing.builtin}
+          <p class="muted set-sub">{t('settings.promptOverrideNote')}</p>
+        {/if}
+
+        <div class="settings-card">
+          <div class="card-form pp-edit">
+            <label class="pp-field">
+              <span class="eyebrow">{t('settings.promptName')}</span>
+              <input class="ctrl" bind:value={draftName} placeholder="landing" disabled={editing.name !== ''} />
+            </label>
+
+            <div class="pp-field">
+              <span class="eyebrow">{t('settings.promptCover')}</span>
+              <div class="pp-coveredit">
+                <span class="pp-cover lg" style="--h:{coverHue(draftName || 'x')}">
+                  {#if draftImage}<img src={draftImage} alt="" />{:else}<span class="pp-mono">/{draftName || '…'}</span>{/if}
+                </span>
+                <div class="pp-coverbtns">
+                  <button class="ctrl" disabled={presetBusy !== ''} onclick={pickImage}>{t('settings.promptPickImage')}</button>
+                  {#if draftImage}
+                    <button class="ctrl" disabled={presetBusy !== ''} onclick={dropImage}>{t('settings.promptDropImage')}</button>
+                  {/if}
+                  <div class="d muted">{t('settings.promptCoverHint')}</div>
+                </div>
+              </div>
+            </div>
+
+            <label class="pp-field">
+              <span class="eyebrow">{t('settings.promptBody')}</span>
+              <textarea class="ctrl pp-textarea" bind:value={draftBody} spellcheck="false"></textarea>
+              <div class="d muted">{t('settings.promptBodyHint')}</div>
+            </label>
+
+            {#if presetError}<div class="mset-error">{presetError}</div>{/if}
           </div>
         </div>
-        {#each presets as p (p.name)}
-          <div class="set-row">
-            <div class="set-txt">
-              <div class="t">
-                /{p.name}
-                {#if p.builtin}<span class="badge on">{t('settings.promptBuiltin')}</span>{/if}
-              </div>
-              <div class="d">{p.description || '—'}</div>
-              {#if p.path}<div class="d mono-dim">{p.path}</div>{/if}
-            </div>
-          </div>
-        {/each}
-      </div>
-      <p class="muted set-sub">{t('settings.promptsHint')}</p>
+      {/if}
     {:else if active === 'usage'}
       <h2>{t('settings.usage')}</h2>
       <p class="muted set-sub">{t('settings.usageDesc')}</p>

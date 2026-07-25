@@ -43,6 +43,8 @@ export function CurrentSessionID():Promise<string>;
 
 export function DeleteIdentityFile(arg1:string):Promise<void>;
 
+export function DeletePromptPreset(arg1:string):Promise<void>;
+
 export function DeleteSession(arg1:string):Promise<void>;
 
 export function EnabledProviders():Promise<Array<string>>;
@@ -91,6 +93,8 @@ export function OpenPromptsFolder():Promise<void>;
 
 export function PickAttachmentImage():Promise<string>;
 
+export function PickPresetImage(arg1:string):Promise<string>;
+
 export function ProjectTree():Promise<Array<main.TreeNode>>;
 
 export function ProviderBaseURL(arg1:string):Promise<string>;
@@ -113,6 +117,8 @@ export function RemoveExternalSkill(arg1:string):Promise<void>;
 
 export function RemoveMCPServer(arg1:string):Promise<void>;
 
+export function RemovePresetImage(arg1:string):Promise<void>;
+
 export function RequiresAPIKey(arg1:string):Promise<boolean>;
 
 export function SaveChatImage(arg1:string):Promise<string>;
@@ -120,6 +126,8 @@ export function SaveChatImage(arg1:string):Promise<string>;
 export function SaveIdentityFile(arg1:string,arg2:string):Promise<void>;
 
 export function SaveMCPServer(arg1:string,arg2:config.MCPServerConfig):Promise<void>;
+
+export function SavePromptPreset(arg1:string,arg2:string):Promise<void>;
 
 export function SearchAllSessions(arg1:string):Promise<Array<main.SessionMeta>>;
 
