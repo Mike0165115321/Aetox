@@ -18,7 +18,7 @@
 
 - [openai_compatible.go](openai_compatible.go) — the workhorse: OpenAI, DeepSeek, Gemini (OpenAI endpoint), Groq, Mistral, xAI, Z.AI, and friends all reuse it with different base URLs.
 - [anthropic.go](anthropic.go) — real Messages-API client (content blocks, `x-api-key` — *not* OpenAI-shaped, hence its own file). Added 2026-07-22, see ARCHITECTURE.md §6.9.
-- [ollama.go](ollama.go) · [openrouter.go](openrouter.go) · [noop.go](noop.go) (offline/test stand-in).
+- [ollama.go](ollama.go) · [noop.go](noop.go) (offline/test stand-in). OpenRouter has no file of its own — it is another base URL on `openai_compatible.go`, resolved through [provider_catalog.go](provider_catalog.go).
 
 ## Wire formats & discovery (§27.2, 2026-07-25)
 

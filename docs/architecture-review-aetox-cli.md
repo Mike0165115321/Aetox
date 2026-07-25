@@ -37,7 +37,7 @@ Pass level: Full Mode
 Inspection limitations:
 
 - เอกสารนี้เน้น current state ของ execution path, provider/model integration, thinking architecture, และ terminal UX state
-- เอกสาร target architecture ใน [architecture-aetox.md](E:\Aetox\Aetox-cli\docs\architecture-aetox.md) ถูกใช้เป็นบริบทเปรียบเทียบ ไม่ใช่ source of truth หลัก
+- เอกสาร target architecture ใน `docs/architecture-aetox.md` (ในรีโป Aetox-cli เดิม ไม่ได้อยู่ในรีโปนี้) ถูกใช้เป็นบริบทเปรียบเทียบ ไม่ใช่ source of truth หลัก
 - ข้อความที่เป็นข้อเสนออนาคตถูกแยกไว้ในส่วน open questions และ risks เท่านั้น
 
 ## 2. Executive Summary
@@ -520,4 +520,4 @@ Open questions:
   - live capability discovery แทน family heuristics
   - tool allowlist per provider/model capability matrix
   - session persistence (Risk 4)
-- ใช้แยก current state ออกจาก target architecture ใน [architecture-aetox.md](E:\Aetox\Aetox-cli\docs\architecture-aetox.md)
+- ใช้แยก current state ออกจาก target architecture ใน `docs/architecture-aetox.md` (ในรีโป Aetox-cli เดิม ไม่ได้อยู่ในรีโปนี้)

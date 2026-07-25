@@ -160,7 +160,7 @@ provider `aetox` ในตัวมีโมเดลจำลองให้ล
 scoop install https://raw.githubusercontent.com/Mike0165115321/Aetox/main/scoop/aetox.json
 ```
 
-**Portable** — [zip ไม่ต้องติดตั้ง](https://github.com/Mike0165115321/Aetox/releases/latest) แตกแล้วรัน `aetox.exe`
+**Portable** — [โหลด zip ไม่ต้องติดตั้ง](https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-windows-amd64-portable.zip) แตกแล้วรัน `aetox.exe` · [ดูไฟล์ทั้งหมดของรุ่นล่าสุด](https://github.com/Mike0165115321/Aetox/releases/latest)
 
 > ตัวติดตั้งยังไม่ได้ code signing ครั้งแรก Windows SmartScreen จะขึ้นเตือน "unknown publisher" —
 > กด More info → Run anyway
