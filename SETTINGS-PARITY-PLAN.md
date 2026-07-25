@@ -26,7 +26,7 @@ Commands / Indexing / Usage stats / Onboard) กับสิ่งที่ Aeto
 - Phase 0 ✅ (`761e5e0`) · Phase 1 ✅ · Phase 2 ✅ · Phase 3 ✅ · Phase 4 ✅ ·
   Phase 5 ✅ — ทุก phase ทดสอบ (unit + สดบน exe จริงเป็นส่วนใหญ่) และ commit แยกแล้ว
 - Phase 6: Decision §25 ร่างแล้ว (Proposed) — **รอ owner อนุมัติก่อนเขียนโค้ด**
-- หมายเหตุ: CLI ยังไม่ได้ wire `command.ExpandCustom` (desktop-first);
+- หมายเหตุ: CLI ยังไม่ได้ wire `command.ExpandPreset` (desktop-first);
   เพิ่มได้ที่จุดรับ input ของ `cmd/aetox` เมื่อต้องการ
 
 ## Phase 0 — เก็บงานค้าง + hardening (✅ เสร็จ, `761e5e0`)
@@ -65,13 +65,17 @@ ZCode แยกสองหน้า แต่ของเรามันกล�
 - หน้า Settings: รวมวันนี้ / 7 วัน / ทั้งหมด แยกตาม model — v1 ตัวเลขล้วน
   ไม่มีกราฟ (เพิ่มเมื่ออยากได้จริง)
 
-## Phase 4 — Commands (custom slash commands)
+## Phase 4 — พรอมต์สำเร็จรูป (เดิมชื่อ "Commands")
 
-ตาม pattern Claude Code (แหล่งอ้างอิงหลักของโปรเจกต์): custom command =
-ไฟล์ `.md` ใน `<DataRoot>/commands/<name>.md` → พิมพ์ `/<name>` ใน chat =
-ยิงเนื้อไฟล์เป็น prompt (แทนที่ `$ARGUMENTS` ด้วยข้อความหลังชื่อ command)
-เพิ่ม lookup ชั้นเดียวก่อน grammar เดิม (built-in ชนะเสมอ) + หน้า Settings
-list + ปุ่มเปิดโฟลเดอร์
+ไฟล์ `.md` → พิมพ์ `/<name>` ใน chat = ยิงเนื้อไฟล์เป็น prompt (แทนที่
+`$ARGUMENTS` ด้วยข้อความหลังชื่อ) lookup ชั้นเดียวหลัง grammar เดิม
+(built-in grammar ชนะเสมอ) + หน้า Settings
+
+**ปรับใหม่ 2026-07-25 (ARCHITECTURE.md §35):** เปลี่ยนชื่อเป็น
+"พรอมต์สำเร็จรูป" ทั้งชั้น (โค้ด + โฟลเดอร์ `<DataRoot>/prompts/` + UI) และ
+**ฝังพรอมต์ตัวอย่าง 5 อันมากับ binary** ด้วย `go:embed` — เพราะหน้าที่เปิดมา
+แล้วว่างเปล่าคือสาเหตุที่เกือบถูกลบทิ้ง ไฟล์ของผู้ใช้ชื่อชนกับของที่ฝังมา
+จะชนะ (แก้พรอมต์ = ก๊อปแล้วแก้ ไม่ต้องสู้กับแอป)
 
 ## Phase 5 — Code preview (workbench ไม่ใช่ Settings)
 

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/svelte'
 import Settings from '../lib/Settings.svelte'
 import {
-  ListMCPServers, ToggleMCPServer, ListExternalSkills, UsageStats, ListCustomCommands,
+  ListMCPServers, ToggleMCPServer, ListExternalSkills, UsageStats, ListPromptPresets,
 } from './mocks/wailsApp'
 
 beforeEach(() => {
@@ -17,8 +17,9 @@ beforeEach(() => {
     today: [{ model: 'deepseek-chat', promptTokens: 1200, completionTokens: 340, calls: 5 }],
     week: [], all: [],
   } as any)
-  vi.mocked(ListCustomCommands).mockResolvedValue([
-    { name: 'review', description: 'Review helper', path: 'C:/cmd/review.md' },
+  vi.mocked(ListPromptPresets).mockResolvedValue([
+    { name: 'landing', description: 'สร้างแลนดิ้งเพจ', path: '', builtin: true },
+    { name: 'mine', description: 'พรอมต์ของผม', path: 'C:/prompts/mine.md', builtin: false },
   ] as any)
 })
 
@@ -60,10 +61,18 @@ describe('Settings pages', () => {
     expect(screen.getByText('340')).toBeTruthy()
   })
 
-  it('Commands page lists custom commands with slash names', async () => {
+  it('Prompt presets page lists bundled and user presets, badging the bundled ones', async () => {
     const { container } = render(Settings, { onClose: () => {} })
-    await openSection(container, 'คำสั่ง')
-    await waitFor(() => expect(screen.getByText('/review')).toBeTruthy())
-    expect(screen.getByText('Review helper')).toBeTruthy()
+    await openSection(container, 'พรอมต์สำเร็จรูป')
+    // Match the name row only — the user preset's path also contains "/mine".
+    const nameRow = (name: string) => screen.getAllByText(
+      (_, el) => el?.className === 't' && el.textContent?.trim().startsWith('/' + name) === true,
+    )
+    await waitFor(() => expect(nameRow('landing').length).toBe(1))
+    expect(screen.getByText('สร้างแลนดิ้งเพจ')).toBeTruthy()
+    expect(nameRow('mine').length).toBe(1)
+    // Only the bundled one carries the badge; the user's shows its file path.
+    expect(screen.getAllByText('มากับแอป')).toHaveLength(1)
+    expect(screen.getByText('C:/prompts/mine.md')).toBeTruthy()
   })
 })

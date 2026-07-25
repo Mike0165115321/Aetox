@@ -1,12 +1,13 @@
 export namespace command {
 	
-	export class CustomCommand {
+	export class Preset {
 	    name: string;
 	    description: string;
 	    path: string;
+	    builtin: boolean;
 	
 	    static createFrom(source: any = {}) {
-	        return new CustomCommand(source);
+	        return new Preset(source);
 	    }
 	
 	    constructor(source: any = {}) {
@@ -14,6 +15,7 @@ export namespace command {
 	        this.name = source["name"];
 	        this.description = source["description"];
 	        this.path = source["path"];
+	        this.builtin = source["builtin"];
 	    }
 	}
 

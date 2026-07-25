@@ -26,7 +26,7 @@ func TestBindingsNeverReturnNilSlices(t *testing.T) {
 	// Zero-argument bindings that are safe to call with no engine and no DB.
 	noArgs := []string{
 		"ListExternalSkills",
-		"ListCustomCommands",
+		"ListPromptPresets",
 		"SupportedProviders",
 		"EnabledProviders",
 		"SupportedThinkLevels",

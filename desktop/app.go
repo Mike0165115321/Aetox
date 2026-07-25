@@ -575,10 +575,10 @@ func (a *App) SendMessage(text string) (string, error) {
 	if a.chat == nil {
 		return "", fmt.Errorf("aetox core not ready: %s", a.modelStatus)
 	}
-	// Custom slash commands (<DataRoot>/commands/<name>.md) expand into their
-	// prompt body before the engine sees the text; unknown "/..." passes
-	// through to the model unchanged, so nothing regresses.
-	if expanded, ok := command.ExpandCustom(text); ok {
+	// Prompt presets ("/name args") expand into their prompt body before the
+	// engine sees the text — bundled ones and the user's alike; unknown "/..."
+	// passes through to the model unchanged, so nothing regresses.
+	if expanded, ok := command.ExpandPreset(text); ok {
 		text = expanded
 	}
 	ctx, cancel := context.WithCancel(a.ctx)

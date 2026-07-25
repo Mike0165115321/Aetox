@@ -114,10 +114,6 @@ export function ListAllSessions() {
   return window['go']['main']['App']['ListAllSessions']();
 }
 
-export function ListCustomCommands() {
-  return window['go']['main']['App']['ListCustomCommands']();
-}
-
 export function ListExternalSkills() {
   return window['go']['main']['App']['ListExternalSkills']();
 }
@@ -132,6 +128,10 @@ export function ListMCPServers() {
 
 export function ListModelsForProvider(arg1) {
   return window['go']['main']['App']['ListModelsForProvider'](arg1);
+}
+
+export function ListPromptPresets() {
+  return window['go']['main']['App']['ListPromptPresets']();
 }
 
 export function ListSessions() {
@@ -158,16 +158,16 @@ export function NewSession() {
   return window['go']['main']['App']['NewSession']();
 }
 
-export function OpenCommandsFolder() {
-  return window['go']['main']['App']['OpenCommandsFolder']();
-}
-
 export function OpenProjectFolder() {
   return window['go']['main']['App']['OpenProjectFolder']();
 }
 
 export function OpenProjectPath(arg1) {
   return window['go']['main']['App']['OpenProjectPath'](arg1);
+}
+
+export function OpenPromptsFolder() {
+  return window['go']['main']['App']['OpenPromptsFolder']();
 }
 
 export function PickAttachmentImage() {

@@ -1131,6 +1131,35 @@ Which is why it reads as "the button doesn't work" rather than "something crashe
 
 ---
 
+## 35. Decision — Prompt Presets: Ship the Examples, Not an Empty Folder (2026-07-25)
+
+**Trigger, in three steps, all in one sitting:**
+1. §34's fix made Settings → คำสั่ง open for the first time. It showed *"ยังไม่มีคำสั่ง"* — an empty page.
+2. Owner: *"ผมว่าเอาออกดีกว่า ผมเองยังไม่รู้เลยว่ามันเอาไว้ทำอะไรยังไง"*. The removal was written and staged.
+3. Before it was committed: *"คิดไปคิดมาแม่งดีนะ เป็นเหมือนคลังเก็บพรอมต์คำสั่งดีๆ ใช่ไหมครับ"* — reverted with `git restore`, nothing lost.
+
+**The lesson is the diagnosis.** The feature was never the problem. A working feature that shows an empty list, under a name that describes its mechanism ("คำสั่ง" / commands) rather than its value, is indistinguishable from a broken one — the owner who *built it* could not tell what it was for. It nearly got deleted for that alone.
+
+**Renamed to what it is: "พรอมต์สำเร็จรูป" / Prompt presets.** Mechanism-names describe the implementation; this one now describes what the user gets. The rename goes all the way down rather than stopping at the label — `CustomCommand`→`Preset`, `ExpandCustom`→`ExpandPreset`, `ListCustomCommands`→`ListPromptPresets`, `<DataRoot>/commands/`→`<DataRoot>/prompts/` — so the next reader never finds product and code disagreeing. Nobody had a file in the old folder, so there is nothing to migrate.
+
+**Bundled presets, compiled in.** [internal/command/presets/](internal/command/presets) ships five `.md` files via `//go:embed`, so the page is useful on a fresh install with no folder created and no file written. Rejected: seeding the folder on first run — updates would never reach existing users, and a user who deletes a preset would watch the app recreate it, which is the app fighting its owner.
+
+**A user file shadows a bundled one of the same name.** Editing a preset is copying it out and changing it; the app never argues. Aetox's own slash grammar still wins over both.
+
+**The five, written from researched structure rather than invented.** Every source on prompt quality converges on the same five parts — role and goal, real context, hard constraints, an output format, and an instruction to verify — so each preset carries all five, and each one ends by consuming `$ARGUMENTS`:
+
+| `/landing` | one-file landing page: scroll-reveal animation, `prefers-reduced-motion` honored, **no invented testimonials or metrics** |
+| `/review` | code review biased to real defects: every finding needs file+line, a concrete failure scenario, and a fix — no style comments |
+| `/debug` | root cause over symptom: reproduce first, grep every sibling caller, smallest fix at the shared frame, one test proven to fail |
+| `/clip` | `audio_transcribe` + `video_ocr` over one file, read together — the §33 architecture as a one-word command |
+| `/explain` | a map of unfamiliar code: entry point, data flow, the 20 lines that matter, the traps |
+
+**Tests pin the promise, not the prose.** Every bundled preset must expand, must consume `$ARGUMENTS` (a preset that ignores its input is a snippet, not a command), must carry a description the settings page can show, and must work with no user folder present. Shadowing is asserted to replace rather than duplicate.
+
+**Status:** `Done 2026-07-25.` Go and frontend suites green; desktop rebuilt.
+
+---
+
 ## Validation
 
 1. **Claim traceability:** every claim above cites a file or an existing project doc; the two `Unverified`/`Inferred, Verify first: Yes` items are marked as such, not stated as fact.

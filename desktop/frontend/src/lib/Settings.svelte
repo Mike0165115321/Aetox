@@ -14,7 +14,7 @@
     EnabledProviders, SetProviderEnabled,
     ListMCPServers, SaveMCPServer, RemoveMCPServer, TestMCPServer, ToggleMCPServer,
     ListExternalSkills, InstallSkillFromGitHub, RemoveExternalSkill, RefreshSkills,
-    UsageStats, ListCustomCommands, OpenCommandsFolder,
+    UsageStats, ListPromptPresets, OpenPromptsFolder,
   } from '../../wailsjs/go/main/App'
   import { config } from '../../wailsjs/go/models'
   import { cockpit, switchProvider, switchModel, submitAPIKey, switchApprovalMode, switchWireFormat } from './stores/cockpit.svelte'
@@ -402,16 +402,16 @@
     if (active === 'usage') void loadUsage()
   })
 
-  // ---------- Custom commands ----------
-  type CommandRow = { name: string; description: string; path: string }
-  let customCommands = $state<CommandRow[]>([])
+  // ---------- Prompt presets ----------
+  type PresetRow = { name: string; description: string; path: string; builtin: boolean }
+  let presets = $state<PresetRow[]>([])
 
-  async function loadCommands() {
-    customCommands = await ListCustomCommands()
+  async function loadPresets() {
+    presets = await ListPromptPresets()
   }
 
   $effect(() => {
-    if (active === 'commands') void loadCommands()
+    if (active === 'prompts') void loadPresets()
   })
 
   // ---------- Nav ----------
@@ -426,7 +426,7 @@
     { group: t('settings.groupTools'), items: [
       { id: 'skills', label: t('settings.skills'), icon: '🧩' },
       { id: 'mcp', label: t('settings.mcpServers'), icon: '🔌' },
-      { id: 'commands', label: t('settings.commands'), icon: '⌨' },
+      { id: 'prompts', label: t('settings.prompts'), icon: '✨' },
       { id: 'usage', label: t('settings.usage'), icon: '📊' },
     ]},
   ])
@@ -781,32 +781,32 @@
           {#if skillError}<div class="mset-error">{skillError}</div>{/if}
         </div>
       </div>
-    {:else if active === 'commands'}
-      <h2>{t('settings.commands')}</h2>
-      <p class="muted set-sub">{t('settings.commandsDesc')}</p>
+    {:else if active === 'prompts'}
+      <h2>{t('settings.prompts')}</h2>
+      <p class="muted set-sub">{t('settings.promptsDesc')}</p>
 
       <div class="settings-card">
         <div class="card-form">
           <div class="mset-keyrow">
-            <div class="eyebrow" style="flex:1">{t('settings.commandsList')}</div>
-            <button class="ctrl" onclick={() => loadCommands()}>{t('settings.refresh')}</button>
-            <button class="ctrl" onclick={() => OpenCommandsFolder()}>{t('settings.openFolder')}</button>
+            <div class="eyebrow" style="flex:1">{t('settings.promptsList')}</div>
+            <button class="ctrl" onclick={() => loadPresets()}>{t('settings.refresh')}</button>
+            <button class="ctrl" onclick={() => OpenPromptsFolder()}>{t('settings.promptsAdd')}</button>
           </div>
         </div>
-        {#if customCommands.length === 0}
-          <div class="set-row"><div class="muted">{t('settings.noCommands')}</div></div>
-        {:else}
-          {#each customCommands as c (c.path)}
-            <div class="set-row">
-              <div class="set-txt">
-                <div class="t">/{c.name}</div>
-                <div class="d">{c.description || '—'}</div>
-                <div class="d mono-dim">{c.path}</div>
+        {#each presets as p (p.name)}
+          <div class="set-row">
+            <div class="set-txt">
+              <div class="t">
+                /{p.name}
+                {#if p.builtin}<span class="badge on">{t('settings.promptBuiltin')}</span>{/if}
               </div>
+              <div class="d">{p.description || '—'}</div>
+              {#if p.path}<div class="d mono-dim">{p.path}</div>{/if}
             </div>
-          {/each}
-        {/if}
+          </div>
+        {/each}
       </div>
+      <p class="muted set-sub">{t('settings.promptsHint')}</p>
     {:else if active === 'usage'}
       <h2>{t('settings.usage')}</h2>
       <p class="muted set-sub">{t('settings.usageDesc')}</p>

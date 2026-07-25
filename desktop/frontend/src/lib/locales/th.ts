@@ -249,9 +249,10 @@ export const th = {
   'settings.usageCompletion': 'Output',
   'settings.usageCalls': 'ครั้ง',
 
-  'settings.commands': 'คำสั่ง',
-  'settings.commandsDesc': 'คำสั่ง slash ของคุณเอง — ไฟล์ commands/<ชื่อ>.md จะกลายเป็น /<ชื่อ> ในแชท; $ARGUMENTS ในไฟล์จะถูกแทนด้วยข้อความหลังคำสั่ง',
-  'settings.commandsList': 'คำสั่งของคุณ',
-  'settings.noCommands': 'ยังไม่มีคำสั่ง — เปิดโฟลเดอร์แล้ววางไฟล์ .md ลงไป',
-  'settings.openFolder': 'เปิดโฟลเดอร์',
+  'settings.prompts': 'พรอมต์สำเร็จรูป',
+  'settings.promptsDesc': 'พรอมต์ที่ใช้ซ้ำได้ เรียกด้วย /ชื่อ ในแชท — พิมพ์ต่อท้ายได้เลย ข้อความนั้นจะถูกแทนที่ $ARGUMENTS ในพรอมต์',
+  'settings.promptsList': 'พรอมต์ที่ใช้ได้ตอนนี้',
+  'settings.promptBuiltin': 'มากับแอป',
+  'settings.promptsAdd': 'เพิ่มของคุณเอง',
+  'settings.promptsHint': 'กด "เพิ่มของคุณเอง" แล้ววางไฟล์ .md ลงในโฟลเดอร์ ชื่อไฟล์คือชื่อคำสั่ง — ตั้งชื่อชนกับของที่มากับแอปได้ ของคุณจะถูกใช้แทน',
 }
