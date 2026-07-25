@@ -59,7 +59,7 @@ func (a *App) DeletePromptPreset(name string) error {
 // card updates without re-reading the whole list.
 func (a *App) PickPresetImage(name string) (string, error) {
 	path, err := wailsruntime.OpenFileDialog(a.ctx, wailsruntime.OpenDialogOptions{
-		Title: "เลือกรูปหน้าปกพรอมต์",
+		Title: "เลือกรูปหน้าปกชุดคำสั่ง",
 		Filters: []wailsruntime.FileFilter{
 			{DisplayName: "Images (*.png, *.jpg, *.jpeg, *.webp, *.gif, *.bmp)", Pattern: "*.png;*.jpg;*.jpeg;*.webp;*.gif;*.bmp"},
 		},

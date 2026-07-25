@@ -1140,6 +1140,8 @@ Which is why it reads as "the button doesn't work" rather than "something crashe
 
 **The lesson is the diagnosis.** The feature was never the problem. A working feature that shows an empty list, under a name that describes its mechanism ("คำสั่ง" / commands) rather than its value, is indistinguishable from a broken one — the owner who *built it* could not tell what it was for. It nearly got deleted for that alone.
 
+> **Thai name changed again 2026-07-25 → "ชุดคำสั่ง"** (owner). Only the user-facing Thai word moved; English stays *Prompt presets*, and the code and folder keep `preset` / `prompts/`. The sections below keep the name they were written with — they are a record, not a spec.
+
 **Renamed to what it is: "พรอมต์สำเร็จรูป" / Prompt presets.** Mechanism-names describe the implementation; this one now describes what the user gets. The rename goes all the way down rather than stopping at the label — `CustomCommand`→`Preset`, `ExpandCustom`→`ExpandPreset`, `ListCustomCommands`→`ListPromptPresets`, `<DataRoot>/commands/`→`<DataRoot>/prompts/` — so the next reader never finds product and code disagreeing. Nobody had a file in the old folder, so there is nothing to migrate.
 
 **Bundled presets, compiled in.** [internal/command/presets/](internal/command/presets) ships five `.md` files via `//go:embed`, so the page is useful on a fresh install with no folder created and no file written. Rejected: seeding the folder on first run — updates would never reach existing users, and a user who deletes a preset would watch the app recreate it, which is the app fighting its owner.

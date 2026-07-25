@@ -275,12 +275,12 @@ func TestPresetCoverImageRoundTrip(t *testing.T) {
 
 func TestListPresetsIncludesUserPresets(t *testing.T) {
 	dir := setupPresetsDir(t)
-	if err := os.WriteFile(filepath.Join(dir, "zz-mine.md"), []byte("# พรอมต์ของผม\nbody"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "zz-mine.md"), []byte("# ชุดคำสั่งของผม\nbody"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	for _, p := range ListPresets() {
 		if p.Name == "zz-mine" {
-			if p.Builtin || p.Description != "พรอมต์ของผม" || p.Path == "" {
+			if p.Builtin || p.Description != "ชุดคำสั่งของผม" || p.Path == "" {
 				t.Errorf("user preset = %+v, want non-builtin with a path", p)
 			}
 			return

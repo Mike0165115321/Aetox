@@ -48,7 +48,7 @@ export const th = {
   'chat.starter3Prompt': 'ช่วยรีวิวโค้ดที่แก้ล่าสุดหน่อย',
   'chat.starter4Title': 'แก้ไขปัญหาและข้อผิดพลาด',
   'chat.starter4Prompt': 'ช่วยหาสาเหตุที่บั๊กนี้เกิดขึ้น: ',
-  'chat.inputPlaceholder': 'พิมพ์คำขอของคุณ… (กด / ดูพรอมต์สำเร็จรูป · + แนบไฟล์ · Ctrl+K ดูคำสั่งทั้งหมด)',
+  'chat.inputPlaceholder': 'พิมพ์คำขอของคุณ… (กด / ดูชุดคำสั่ง · + แนบไฟล์ · Ctrl+K ค้นหาทุกอย่าง)',
   'chat.attachImage': 'แนบรูปภาพ',
   'chat.attachFile': 'แนบไฟล์ — รูป วิดีโอ เสียง เอกสาร',
   'chat.thinking': 'กำลังคิด',
@@ -250,12 +250,12 @@ export const th = {
   'settings.usageCompletion': 'Output',
   'settings.usageCalls': 'ครั้ง',
 
-  'palette.title': 'คำสั่งและการตั้งค่า',
-  'palette.promptsTitle': 'พรอมต์สำเร็จรูป',
-  'palette.search': 'ค้นหาคำสั่ง…',
-  'palette.searchPrompts': 'ค้นหาพรอมต์…',
+  'palette.title': 'ค้นหาและตั้งค่า',
+  'palette.promptsTitle': 'ชุดคำสั่ง',
+  'palette.search': 'ค้นหาทุกอย่าง…',
+  'palette.searchPrompts': 'ค้นหาชุดคำสั่ง…',
   'palette.noMatch': 'ไม่พบอะไรที่ตรง',
-  'palette.groupPrompts': 'พรอมต์สำเร็จรูป',
+  'palette.groupPrompts': 'ชุดคำสั่ง',
   'palette.groupContext': 'บริบท',
   'palette.groupModel': 'โมเดล',
   'palette.groupTools': 'เครื่องมือที่เอเจนต์ใช้ได้',
@@ -269,14 +269,14 @@ export const th = {
   'palette.togglePanels': 'ซ่อน/แสดง Sidebar · Inspector',
   'palette.workbenchTabs': 'แท็บเบราว์เซอร์ · หน้า Review',
 
-  'settings.prompts': 'พรอมต์สำเร็จรูป',
-  'settings.promptsDesc': 'พรอมต์ที่ใช้ซ้ำได้ เรียกด้วย /ชื่อ ในแชท — พิมพ์ต่อท้ายได้เลย ข้อความนั้นจะถูกแทนที่ $ARGUMENTS ในพรอมต์',
-  'settings.promptsList': 'พรอมต์ที่ใช้ได้ตอนนี้',
+  'settings.prompts': 'ชุดคำสั่ง',
+  'settings.promptsDesc': 'ชุดคำสั่งที่ใช้ซ้ำได้ เรียกด้วย /ชื่อ ในแชท — พิมพ์ต่อท้ายได้เลย ข้อความนั้นจะถูกแทนที่ $ARGUMENTS ในชุดคำสั่ง',
+  'settings.promptsList': 'ชุดคำสั่งที่ใช้ได้ตอนนี้',
   'settings.promptBuiltin': 'มากับแอป',
   'settings.promptsAdd': 'เพิ่มของคุณเอง',
   'settings.promptsFolder': 'เปิดโฟลเดอร์',
-  'settings.promptsHint': 'ทุกพรอมต์คือไฟล์ .md ในโฟลเดอร์เดียว จะแก้ในนี้หรือแก้ไฟล์ตรงๆ ก็ได้ — ตั้งชื่อชนกับของที่มากับแอปได้ ของคุณจะถูกใช้แทน',
-  'settings.promptNew': 'สร้างพรอมต์ใหม่',
+  'settings.promptsHint': 'ทุกชุดคำสั่งคือไฟล์ .md ในโฟลเดอร์เดียว จะแก้ในนี้หรือแก้ไฟล์ตรงๆ ก็ได้ — ตั้งชื่อชนกับของที่มากับแอปได้ ของคุณจะถูกใช้แทน',
+  'settings.promptNew': 'สร้างชุดคำสั่งใหม่',
   'settings.promptBack': 'กลับไปหน้ารวม',
   'settings.promptSave': 'บันทึก',
   'settings.promptName': 'ชื่อ (จะกลายเป็น /ชื่อ ในแชท)',
@@ -284,10 +284,10 @@ export const th = {
   'settings.promptCover': 'รูปหน้าปก',
   'settings.promptPickImage': 'เลือกรูป…',
   'settings.promptDropImage': 'เอารูปออก',
-  'settings.promptCoverHint': 'ใส่ภาพผลลัพธ์ที่พรอมต์นี้ทำได้ จะได้รู้ว่าใช้แล้วได้อะไร (ไม่ใส่ก็ได้ ระบบสร้างปกให้เอง)',
-  'settings.promptBody': 'เนื้อพรอมต์',
+  'settings.promptCoverHint': 'ใส่ภาพผลลัพธ์ที่ชุดคำสั่งนี้ทำได้ จะได้รู้ว่าใช้แล้วได้อะไร (ไม่ใส่ก็ได้ ระบบสร้างปกให้เอง)',
+  'settings.promptBody': 'เนื้อคำสั่ง',
   'settings.promptBodyHint': 'ใส่ $ARGUMENTS ตรงที่อยากให้แทนด้วยข้อความที่พิมพ์ตามหลังคำสั่ง — บรรทัดแรกจะกลายเป็นคำอธิบายใต้ชื่อการ์ด',
-  'settings.promptBodyPlaceholder': 'พิมพ์พรอมต์ตรงนี้…\n\nพรอมต์ที่ได้ผลมักมีครบห้าอย่าง:\nบอกบทบาทและเป้าหมาย · ให้บริบทจริง · บอกข้อห้ามให้ชัด\nกำหนดรูปแบบผลลัพธ์ · สั่งให้ตรวจงานตัวเองก่อนตอบ',
+  'settings.promptBodyPlaceholder': 'พิมพ์คำสั่งตรงนี้…\n\nชุดคำสั่งที่ได้ผลมักมีครบห้าอย่าง:\nบอกบทบาทและเป้าหมาย · ให้บริบทจริง · บอกข้อห้ามให้ชัด\nกำหนดรูปแบบผลลัพธ์ · สั่งให้ตรวจงานตัวเองก่อนตอบ',
   'settings.promptStarter': `บอกว่าให้ทำอะไร ในบทบาทไหน และผลลัพธ์ที่ดีหน้าตาเป็นยังไง
 (บรรทัดแรกนี้จะกลายเป็นคำอธิบายใต้ชื่อการ์ด)
 
@@ -301,5 +301,5 @@ export const th = {
 ตรวจงานตัวเองก่อนตอบ ถ้าไม่แน่ใจตรงไหนให้บอกมาตรงๆ
 
 **สิ่งที่ผมจะพิมพ์ต่อท้ายคำสั่ง:** $ARGUMENTS`,
-  'settings.promptOverrideNote': 'นี่คือพรอมต์ที่มากับแอป — กดบันทึกจะสร้างเป็นของคุณทับไว้ ของเดิมไม่หาย ลบของคุณเมื่อไหร่ของเดิมก็กลับมา',
+  'settings.promptOverrideNote': 'นี่คือชุดคำสั่งที่มากับแอป — กดบันทึกจะสร้างเป็นของคุณทับไว้ ของเดิมไม่หาย ลบของคุณเมื่อไหร่ของเดิมก็กลับมา',
 }

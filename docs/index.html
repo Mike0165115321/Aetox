@@ -56,7 +56,6 @@
   --code-strong:#fff; --code-text:#e7ebf0; --code-dim:#98a2b0;
   --danger:#ee8f8f; --danger-line:rgba(255,120,120,.28); --danger-bg:rgba(255,90,90,.07);
   --warn:#e8b45f; --warn-line:rgba(255,180,80,.30); --warn-bg:rgba(255,170,60,.06);
-  --ok:#84d494; --ok-line:rgba(120,220,140,.34); --ok-bg:rgba(120,220,140,.08);
   --particle:#f3f4f6;
   --mono:"Cascadia Code",Consolas,"Courier New",monospace;
   --sans:"IBM Plex Sans Thai","Leelawadee UI","Segoe UI",Tahoma,sans-serif;
@@ -82,7 +81,6 @@
   --code-strong:#0e1116; --code-text:#2a313b; --code-dim:#646c78;
   --danger:#b3261e; --danger-line:rgba(179,38,30,.30); --danger-bg:rgba(179,38,30,.06);
   --warn:#8a5a00; --warn-line:rgba(138,90,0,.30); --warn-bg:rgba(240,180,60,.12);
-  --ok:#146c2e; --ok-line:rgba(20,108,46,.30); --ok-bg:rgba(20,108,46,.07);
   --particle:#0e1116;
 }
 *{margin:0;padding:0;box-sizing:border-box}
@@ -287,19 +285,6 @@ ol.steps li b{color:var(--text);font-weight:600}
 .preset p{color:var(--muted);font-size:.86rem}
 .preset .grp{font-family:var(--mono);font-size:.66rem;color:var(--dim);letter-spacing:.08em}
 
-/* ── roadmap ────────────────────────────────────────── */
-.road{border:1px solid var(--line);border-radius:var(--r-lg);overflow:hidden;background:var(--bg-elev)}
-.road-row{display:grid;grid-template-columns:1.6rem 1fr auto;gap:var(--s2);
-  padding:var(--s3);border-top:1px solid var(--line);align-items:start}
-.road-row:first-child{border-top:none}
-.road-row .n{font-family:var(--mono);color:var(--dim);font-size:.78rem;padding-top:.15rem}
-.road-row h4{font-size:1rem;font-weight:600;margin-bottom:.3rem}
-.road-row p{color:var(--muted);font-size:.9rem}
-.status{font-family:var(--mono);font-size:.66rem;border-radius:999px;padding:.24rem .7rem;
-  white-space:nowrap;border:1px solid var(--line-strong);color:var(--muted)}
-.status.now{color:var(--ok);border-color:var(--ok-line);background:var(--ok-bg)}
-.status.soon{color:var(--warn);border-color:var(--warn-line);background:var(--warn-bg)}
-
 /* ── contact / open to collaborators ────────────────── */
 .contact{text-align:center}
 .contact-box{max-width:780px;margin:0 auto;border:1px solid var(--line);border-radius:var(--r-lg);
@@ -332,8 +317,6 @@ footer{border-top:1px solid var(--line);padding:var(--s5) 0 var(--s3);overflow:h
   .install{grid-template-columns:1fr;gap:var(--s4)}
   .sec-grid{grid-template-columns:1fr}
   .presets{grid-template-columns:repeat(2,1fr)}
-  .road-row{grid-template-columns:1.6rem 1fr;row-gap:.6rem}
-  .road-row .status{grid-column:2}
   .tools{grid-template-columns:1fr}
   /* five Thai anchors will not fit a phone bar — the page is one linear
      scroll story, so drop the jump links and keep the outbound one */
@@ -384,7 +367,7 @@ footer{border-top:1px solid var(--line);padding:var(--s5) 0 var(--s3);overflow:h
     <span class="ver"><span class="led" aria-hidden="true"></span>v0.4.0 · Windows</span>
     <nav>
       <a href="#fix">ปิดจุดอ่อน</a>
-      <a href="#presets">พรอมต์สำเร็จรูป</a>
+      <a href="#presets">ชุดคำสั่ง</a>
       <a href="#privacy">ความปลอดภัย</a>
       <a href="#install">ติดตั้ง</a>
       <a class="gh" href="https://github.com/Mike0165115321/Aetox">GitHub</a>
@@ -449,10 +432,11 @@ footer{border-top:1px solid var(--line);padding:var(--s5) 0 var(--s3);overflow:h
 
   <!-- ══ 01 ปิดจุดอ่อนให้โมเดล ══ -->
   <section id="fix">
-    <div class="sec-head"><span class="idx">01</span><h2 data-reveal>โมเดลขาดอะไร สถาปัตยกรรมเติมให้</h2></div>
-    <p class="sub">แชท AI ทั่วไปทำได้แค่ตอบ — อ่านสลิปที่คุณถ่ายมาไม่ได้ ดูคลิปประชุมให้ไม่ได้
-    เข้าไปกรอกฟอร์มในเว็บแทนคุณไม่ได้ Aetox ไม่ได้เปลี่ยนโมเดล แต่เติมเครื่องมือให้มันทำได้จริง
-    และทุกเครื่องมือเสิร์ฟให้ทุกโมเดลเท่ากัน ไม่ตัดสินล่วงหน้าว่าโมเดลไหน "ไม่ควรได้"</p>
+    <div class="sec-head"><span class="idx">01</span><h2 data-reveal>โมเดลที่อ่านภาพไม่ได้ ก็อ่านสลิปให้คุณได้</h2></div>
+    <p class="sub">ไม่ใช่เพราะเราไปทำให้โมเดลฉลาดขึ้น — แต่เพราะสิ่งที่ครอบมันอยู่จัดการแทน
+    Aetox แปลงรูปเป็นตัวหนังสือก่อนส่งให้โมเดลอ่าน แปลงคลิปเป็นข้อความพร้อมเวลา
+    เปิดเว็บจริงแล้วอ่านให้ ผลคือโมเดลถูก ๆ ที่รับได้แต่ตัวอักษร ก็ทำงานกับรูป คลิป
+    และหน้าเว็บได้จริง นี่คือสิ่งที่สถาปัตยกรรมทำ และเป็นเหตุผลว่าทำไมคุณไม่ต้องจ่ายแพงขึ้นเพื่อให้ได้งานแบบนี้</p>
 
     <div class="fix">
       <div class="fix-copy">
@@ -559,12 +543,14 @@ footer{border-top:1px solid var(--line);padding:var(--s5) 0 var(--s3);overflow:h
     แทนที่จะเดาแล้วทำผิดยาว</p>
   </section>
 
-  <!-- ══ 03 พรอมต์สำเร็จรูป ══ -->
+  <!-- ══ 03 ชุดคำสั่ง ══ -->
   <section id="presets">
-    <div class="sec-head"><span class="idx">03</span><h2 data-reveal>ไม่รู้จะสั่งยังไง? มีพรอมต์สำเร็จรูปให้ 8 ชุด</h2></div>
-    <p class="sub">อุปสรรคที่แท้จริงของคนส่วนใหญ่ไม่ใช่ "AI ทำไม่ได้" แต่คือ "ไม่รู้จะพิมพ์อะไร" —
-    Aetox เลยฝังชุดคำสั่งที่เขียนไว้ดีแล้วมาให้ในโปรแกรม กด <code class="mono">/</code> เลือกแล้วใช้ได้เลย
-    ไม่ต้องโหลดเพิ่ม ไม่ต้องต่อเน็ต และแก้เป็นของคุณเองได้ทุกตัว</p>
+    <div class="sec-head"><span class="idx">03</span><h2 data-reveal>ชุดคำสั่งที่เขียนไว้ให้แล้ว — เปิดดูว่างานดี ๆ เขาสั่งกันยังไง</h2></div>
+    <p class="sub">กำแพงจริงของคนส่วนใหญ่ไม่ใช่ "AI ทำไม่ได้" แต่คือ "ไม่รู้จะพิมพ์อะไร" —
+    กด <code class="mono">/</code> ในช่องแชทเพื่อเปิดดูชุดคำสั่งที่มากับโปรแกรม
+    ทุกตัวเปิดอ่านได้ว่าข้างในเขียนอะไร แก้เป็นของคุณเองได้ ตั้งชื่อทับของเดิมได้
+    และลบของคุณเมื่อไหร่ ของเดิมก็กลับมาเอง — มันไม่ใช่ปุ่มที่ทำได้แค่ที่เขียนไว้
+    แต่เป็นตัวอย่างให้เห็นว่าคำสั่งที่ได้งานดีหน้าตาเป็นยังไง</p>
 
     <div class="presets">
       <div class="preset" data-card>
@@ -641,62 +627,9 @@ footer{border-top:1px solid var(--line);padding:var(--s5) 0 var(--s3);overflow:h
     </div>
   </section>
 
-  <!-- ══ 05 เส้นทางถัดไป ══ -->
-  <section id="roadmap">
-    <div class="sec-head"><span class="idx">05</span><h2 data-reveal>วันนี้คือ agent เดี่ยว พรุ่งนี้คือทีม agent</h2></div>
-    <p class="sub">บอกตรง ๆ ว่าอะไรใช้ได้แล้ววันนี้ และอะไรกำลังมา —
-    รากฐานถูกวางไว้ตั้งแต่ต้นให้ต่อยอดได้ ไม่ต้องรื้อสร้างใหม่ เพราะ agent แต่ละตัวเป็นหน่วยจบในตัว
-    ที่มีโมเดลและความจำของตัวเอง เครื่องมือแชร์ผ่านทางเดียว และคำขออนุญาตวิ่งผ่านด่านเดียว</p>
-
-    <div class="road">
-      <div class="road-row" data-card>
-        <span class="n">01</span>
-        <div>
-          <h4>Agent เดี่ยวที่ใช้เครื่องมือเป็น</h4>
-          <p>วางแผนเอง เลือกเครื่องมือเอง ทำงานหลายขั้นจนจบ หยุดถามเมื่อไม่แน่ใจ — คือสิ่งที่คุณโหลดไปใช้ได้วันนี้</p>
-        </div>
-        <span class="status now">ใช้ได้แล้ว</span>
-      </div>
-      <div class="road-row" data-card>
-        <span class="n">02</span>
-        <div>
-          <h4>Subagent — ลูกน้องที่มีความจำของตัวเอง</h4>
-          <p>agent หลักส่งงานย่อยให้ agent ลูกไปทำในพื้นที่ความจำแยก แล้วรับกลับมาแค่ข้อสรุป
-          งานค้นหาหรืออ่านไฟล์เยอะ ๆ จะไม่กินความจำของบทสนทนาหลักอีกต่อไป</p>
-        </div>
-        <span class="status soon">ออกแบบเสร็จ กำลังสร้าง</span>
-      </div>
-      <div class="road-row" data-card>
-        <span class="n">03</span>
-        <div>
-          <h4>ทีม agent ทำงานพร้อมกัน</h4>
-          <p>สั่งครั้งเดียว แตกเป็นหลายตัวลุยพร้อมกัน — ค้นข้อมูล 5 มุมในเวลาเดียว
-          หรือให้แต่ละตัวใช้โมเดลคนละค่ายแล้วเอาผลมาเทียบกัน</p>
-        </div>
-        <span class="status soon">ถัดจากขั้น 02</span>
-      </div>
-      <div class="road-row" data-card>
-        <span class="n">04</span>
-        <div>
-          <h4>Multi-Agent — ทีมที่มีบทบาทชัดเจน</h4>
-          <p>คนวางแผน คนลงมือ คนตรวจ ส่งงานต่อกันเอง รวมถึงให้หลายโมเดลถกเถียงกันจนได้คำตอบที่ดีที่สุด</p>
-        </div>
-        <span class="status">วิสัยทัศน์ระยะยาว</span>
-      </div>
-      <div class="road-row" data-card>
-        <span class="n">05</span>
-        <div>
-          <h4>สั่งเป็นภาษาไทย แล้วให้มันทำซ้ำเองทุกวัน</h4>
-          <p>บอกว่าอยากให้ทำอะไร เมื่อไหร่ → Aetox สร้างสคริปต์และตั้งเวลารันให้เอง</p>
-        </div>
-        <span class="status">หลัง core แข็งแรง</span>
-      </div>
-    </div>
-  </section>
-
-  <!-- ══ 06 ติดตั้ง ══ -->
+  <!-- ══ 05 ติดตั้ง ══ -->
   <section id="install">
-    <div class="sec-head"><span class="idx">06</span><h2 data-reveal>ติดตั้งแล้วใช้ได้เลย ไม่ต้องมี API key ก่อน</h2></div>
+    <div class="sec-head"><span class="idx">05</span><h2 data-reveal>ติดตั้งแล้วใช้ได้เลย ไม่ต้องมี API key ก่อน</h2></div>
     <p class="sub">provider <code class="mono">aetox</code> ในตัวมีโมเดลจำลองให้ลองทุกฟีเจอร์ก่อนตัดสินใจ —
     เรียก tools ได้จริง คิดยาวได้จริง ไม่ต้องสมัครอะไรเลย</p>
     <div class="install">
@@ -726,7 +659,7 @@ footer{border-top:1px solid var(--line);padding:var(--s5) 0 var(--s3);overflow:h
 
   <!-- ══ 05 เครื่องมือ ══ -->
   <section id="tools">
-    <div class="sec-head"><span class="idx">07</span><h2 data-reveal>เครื่องมือในตัว 22 ตัว</h2></div>
+    <div class="sec-head"><span class="idx">06</span><h2 data-reveal>เครื่องมือในตัว 22 ตัว</h2></div>
     <p class="sub">สี่ตัวเด่นอยู่ด้านบนแล้ว — ที่เหลือคืองานเขียนโค้ด ค้นเว็บ ค้น GitHub อยู่ในชุดเดียวกันหมด</p>
     <div class="tools">
       <div class="trow"><span class="tn">read / write / edit</span><span class="td">อ่าน เขียน แก้ไฟล์แบบเป๊ะ</span></div>

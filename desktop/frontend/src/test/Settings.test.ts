@@ -20,7 +20,7 @@ beforeEach(() => {
   vi.mocked(ListPromptPresets).mockResolvedValue([
     // Bundled presets ship cover art; a user preset may have none yet.
     { name: 'landing', description: 'สร้างแลนดิ้งเพจ', body: 'ทำแลนดิ้งเพจ $ARGUMENTS', path: '', builtin: true, image: 'data:image/svg+xml;base64,PHN2Zy8+' },
-    { name: 'mine', description: 'พรอมต์ของผม', body: 'ของผมเอง', path: 'C:/prompts/mine.md', builtin: false, image: '' },
+    { name: 'mine', description: 'ชุดคำสั่งของผม', body: 'ของผมเอง', path: 'C:/prompts/mine.md', builtin: false, image: '' },
   ] as any)
 })
 
@@ -64,7 +64,7 @@ describe('Settings pages', () => {
 
   it('Prompt presets page is a card gallery, badging the bundled ones', async () => {
     const { container } = render(Settings, { onClose: () => {} })
-    await openSection(container, 'พรอมต์สำเร็จรูป')
+    await openSection(container, 'ชุดคำสั่ง')
 
     await waitFor(() => expect(container.querySelectorAll('.pp-card').length).toBe(3)) // 2 presets + "new"
     expect(screen.getByText('สร้างแลนดิ้งเพจ')).toBeTruthy()
@@ -77,7 +77,7 @@ describe('Settings pages', () => {
 
   it('clicking a preset card opens its full text for editing', async () => {
     const { container } = render(Settings, { onClose: () => {} })
-    await openSection(container, 'พรอมต์สำเร็จรูป')
+    await openSection(container, 'ชุดคำสั่ง')
     await waitFor(() => expect(container.querySelectorAll('.pp-card').length).toBe(3))
 
     const card = Array.from(container.querySelectorAll('.pp-card'))
@@ -96,7 +96,7 @@ describe('Settings pages', () => {
   // An empty 300px box tells you nothing about what belongs in it.
   it('a new preset opens on a starter skeleton, not a blank box', async () => {
     const { container } = render(Settings, { onClose: () => {} })
-    await openSection(container, 'พรอมต์สำเร็จรูป')
+    await openSection(container, 'ชุดคำสั่ง')
     await waitFor(() => expect(container.querySelector('.pp-new')).toBeTruthy())
 
     await fireEvent.click(container.querySelector('.pp-new')!)

@@ -6,8 +6,8 @@ import { setLocale } from '../lib/i18n.svelte'
 import { GuideTopics } from './mocks/wailsApp'
 
 const TOPICS = [
-  { id: 'skills', question: 'สกิล กับ พรอมต์สำเร็จรูป ต่างกันยังไง' },
-  { id: 'prompts', question: 'พรอมต์สำเร็จรูปใช้ยังไง' },
+  { id: 'skills', question: 'สกิล กับ ชุดคำสั่ง ต่างกันยังไง' },
+  { id: 'prompts', question: 'ชุดคำสั่งใช้ยังไง' },
   { id: 'connect', question: 'ต่อโมเดลจริงยังไง ทำไมต้องต่อเอง' },
 ]
 
@@ -60,7 +60,7 @@ describe('guide options', () => {
     await waitFor(() => expect(container.querySelector('.guide-card')).toBeTruthy())
 
     await fireEvent.click(container.querySelectorAll('.guide-card .ask-opt')[1])
-    expect(sent).toEqual(['พรอมต์สำเร็จรูปใช้ยังไง'])
+    expect(sent).toEqual(['ชุดคำสั่งใช้ยังไง'])
   })
 
   // "Already asked" is read off the transcript, so it survives a reload and
@@ -68,12 +68,12 @@ describe('guide options', () => {
   it('drops questions already present in the transcript', async () => {
     const { container } = render(Chat, {
       ...baseProps, model: aetox as any,
-      messages: [reply('hi'), asked('พรอมต์สำเร็จรูปใช้ยังไง'), reply('...')] as any,
+      messages: [reply('hi'), asked('ชุดคำสั่งใช้ยังไง'), reply('...')] as any,
     })
 
     await waitFor(() => expect(container.querySelectorAll('.guide-card .ask-opt').length).toBe(2))
     const labels = Array.from(container.querySelectorAll('.guide-card .ask-label')).map((el) => el.textContent)
-    expect(labels).not.toContain('พรอมต์สำเร็จรูปใช้ยังไง')
+    expect(labels).not.toContain('ชุดคำสั่งใช้ยังไง')
   })
 
   it('stays hidden for a real provider and while a reply is coming', async () => {

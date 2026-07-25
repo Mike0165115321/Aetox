@@ -1,6 +1,6 @@
 package command
 
-// Prompt presets ("พรอมต์สำเร็จรูป"): a reusable prompt saved under a short
+// Prompt presets ("ชุดคำสั่ง"): a reusable prompt saved under a short
 // name, invoked as "/name <args>" in chat. The file's body becomes the prompt,
 // with "$ARGUMENTS" replaced by whatever followed the name (appended when the
 // body never mentions it).
@@ -190,7 +190,7 @@ func userPresetFiles() []string {
 func ValidPresetName(name string) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return errors.New("ต้องตั้งชื่อพรอมต์ก่อน")
+		return errors.New("ต้องตั้งชื่อชุดคำสั่งก่อน")
 	}
 	if len([]rune(name)) > 40 {
 		return errors.New("ชื่อยาวเกินไป (ไม่เกิน 40 ตัวอักษร)")
@@ -210,7 +210,7 @@ func SavePreset(name, body string) error {
 		return err
 	}
 	if strings.TrimSpace(body) == "" {
-		return errors.New("เนื้อพรอมต์ว่างไม่ได้")
+		return errors.New("เนื้อคำสั่งว่างไม่ได้")
 	}
 	dir, err := PresetsDir()
 	if err != nil {
