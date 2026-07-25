@@ -74,7 +74,7 @@ func (s *editSkill) Execute(_ context.Context, input Input) (Output, error) {
 		return newToolOutput("edit", "edit", "", start, false, err), err
 	}
 
-	requestPath := placedFallback(s.root, s.outputSubdir, strings.TrimSpace(args[0]))
+	requestPath := PlacedPath(s.root, s.outputSubdir, strings.TrimSpace(args[0]))
 	oldString := args[1]
 	newString := args[2]
 	command := "edit " + requestPath

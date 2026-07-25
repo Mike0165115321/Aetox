@@ -37,16 +37,19 @@ func (s *writeSkill) placed(requestPath string) string {
 	return filepath.ToSlash(filepath.Join(subdir, requestPath))
 }
 
-// placedFallback is the read side of the same rule. write steers a new
-// relative file into the session output folder, so a later read/edit/delete of
-// the path the model originally asked for has to look there too — otherwise
-// the model loses the file it just created and burns turns hunting for it.
+// PlacedPath is the read side of the same rule, and the single definition of
+// it: write steers a new relative file into the session output folder, so
+// anything resolving the path the model originally asked for has to look there
+// too, or the model loses the file it just created and burns turns hunting for
+// it. Exported because the rule reaches past this package — browser_open shows
+// the user what write just produced, and a second copy of the rule there is a
+// second chance for the two to disagree.
 //
 // The literal path always wins: the fallback only fires when nothing resolves
 // there, so a real file is never shadowed by a same-named artifact in the
 // output folder. Unfocused sessions are the only ones with a subdir at all
 // (see App.outputSubdir), so a focused project never takes this path.
-func placedFallback(root string, outputSubdir func() string, requestPath string) string {
+func PlacedPath(root string, outputSubdir func() string, requestPath string) string {
 	if outputSubdir == nil || requestPath == "" || filepath.IsAbs(requestPath) {
 		return requestPath
 	}
@@ -97,8 +100,13 @@ func (*writeSkill) ToolDefinition() model.ToolDefinition {
 	return model.ToolDefinition{
 		Type: "function",
 		Function: model.ToolFunction{
-			Name:        "write",
-			Description: "Write content to a file in sandbox root.",
+			Name: "write",
+			// The placement rule is stated here rather than in the system
+			// prompt because the destination changes per chat session and the
+			// prompt is built once at bootstrap — a tool description travels
+			// with every request and cannot go stale. Without it the model
+			// assumed the file was at the sandbox root and told the user so.
+			Description: "Write content to a file. A relative path may be placed in a per-session output folder rather than at the sandbox root — the result reports where the file actually landed, so use that path when telling the user where it is, and when reading, editing or opening it later.",
 			Parameters:  payload,
 		},
 	}

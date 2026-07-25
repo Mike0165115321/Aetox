@@ -64,7 +64,7 @@ func (s *deleteSkill) Execute(_ context.Context, input Input) (Output, error) {
 		return newToolOutput("delete", "delete", "", start, false, err), err
 	}
 
-	requestPath = placedFallback(s.root, s.outputSubdir, requestPath)
+	requestPath = PlacedPath(s.root, s.outputSubdir, requestPath)
 	targetPath, err := resolveSandboxPath(s.root, requestPath)
 	if err != nil {
 		return newToolOutput("delete", "delete "+requestPath, "", start, false, err), err

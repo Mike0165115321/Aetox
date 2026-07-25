@@ -99,7 +99,7 @@ func (s *grepSkill) Execute(_ context.Context, input Input) (Output, error) {
 	pattern := args[0]
 	searchPath := "."
 	if len(args) > 1 {
-		searchPath = placedFallback(s.root, s.outputSubdir, strings.TrimSpace(strings.Join(args[1:], " ")))
+		searchPath = PlacedPath(s.root, s.outputSubdir, strings.TrimSpace(strings.Join(args[1:], " ")))
 	}
 	// Named options rather than more positional args: the CLI form stays
 	// "grep <pattern> [path]" while a tool call can ask for more.

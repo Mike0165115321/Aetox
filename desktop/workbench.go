@@ -38,12 +38,16 @@ var (
 // https://file///... page.
 //
 // A path relative to the sandbox root resolves to file:/// too. Every other
-// tool speaks relative paths — write reports "aetox/output/<session>/index.html"
-// and never the absolute one on purpose (see writeSkill.Execute) — so without
-// this the model has to splice the sandbox root in by hand to view what it just
-// made, and "aetox/output/s1/index.html" fell through to the bare-domain case
-// and navigated to https://aetox/output/s1/index.html.
-func normalizeWorkbenchURL(url, sandboxRoot string) string {
+// tool speaks relative paths, so without this the model has to splice the
+// sandbox root in by hand to view what it just made, and "index.html" fell
+// through to the bare-domain case and navigated to https://index.html.
+//
+// It resolves through skill.PlacedPath rather than joining onto the root
+// directly, because write steers a new relative file into the session output
+// folder: the model asks to open "index.html", the file is really at
+// "aetox/output/<session>/index.html", and a plain root join finds nothing and
+// silently degrades to a DNS lookup for a hostname called index.html.
+func normalizeWorkbenchURL(url, sandboxRoot string, outputSubdir func() string) string {
 	switch {
 	case driveLetterRe.MatchString(url):
 		return "file:///" + strings.ReplaceAll(url, `\`, "/")
@@ -54,7 +58,8 @@ func normalizeWorkbenchURL(url, sandboxRoot string) string {
 	// still becomes https:// — the check is "is there such a file", not "does
 	// this look path-shaped".
 	if root := strings.TrimSpace(sandboxRoot); root != "" {
-		if abs, err := filepath.Abs(filepath.Join(root, filepath.FromSlash(url))); err == nil {
+		placed := skill.PlacedPath(root, outputSubdir, url)
+		if abs, err := filepath.Abs(filepath.Join(root, filepath.FromSlash(placed))); err == nil {
 			if _, statErr := os.Stat(abs); statErr == nil {
 				return "file:///" + strings.ReplaceAll(abs, `\`, "/")
 			}
@@ -73,7 +78,7 @@ func (a *App) workbenchOpenBrowser(ctx context.Context, url string) (title, fina
 	if url == "" {
 		return "", "", fmt.Errorf("url is required")
 	}
-	url = normalizeWorkbenchURL(url, a.cfg.SandboxRoot)
+	url = normalizeWorkbenchURL(url, a.cfg.SandboxRoot, a.outputSubdir)
 
 	id := fmt.Sprintf("web-agent-%d", atomic.AddInt64(&agentBrowserSeq, 1))
 	wailsruntime.EventsEmit(a.ctx, "workbench:open-browser", map[string]string{"id": id, "url": url})

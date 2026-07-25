@@ -75,7 +75,7 @@ func (s *diagnosticsSkill) ExecuteTool(ctx context.Context, args map[string]any)
 		err := errors.New("path is required")
 		return newToolOutput("diagnostics", "diagnostics", "", start, false, err), err
 	}
-	path = placedFallback(s.root, s.outputSubdir, path)
+	path = PlacedPath(s.root, s.outputSubdir, path)
 	command := "diagnostics " + path
 
 	// Resolved for the sandbox check only — the server is handed the absolute

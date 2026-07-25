@@ -56,7 +56,7 @@ func (s *listSkill) Execute(_ context.Context, input Input) (Output, error) {
 	args := stringSlice(input["args"])
 	requestPath := "."
 	if len(args) > 0 {
-		requestPath = placedFallback(s.root, s.outputSubdir, strings.Join(args, " "))
+		requestPath = PlacedPath(s.root, s.outputSubdir, strings.Join(args, " "))
 	}
 
 	targetPath, err := resolveSandboxPath(s.root, requestPath)

@@ -127,7 +127,7 @@ func TestNormalizeWorkbenchURL(t *testing.T) {
 		{"localhost:5173", "https://localhost:5173"},
 	}
 	for _, c := range cases {
-		if got := normalizeWorkbenchURL(c.in, ""); got != c.want {
+		if got := normalizeWorkbenchURL(c.in, "", nil); got != c.want {
 			t.Errorf("normalizeWorkbenchURL(%q) = %q, want %q", c.in, got, c.want)
 		}
 	}
@@ -149,12 +149,45 @@ func TestNormalizeWorkbenchURLResolvesSandboxRelativePaths(t *testing.T) {
 	}
 
 	want := "file:///" + strings.ReplaceAll(full, `\`, "/")
-	if got := normalizeWorkbenchURL(rel, root); got != want {
+	if got := normalizeWorkbenchURL(rel, root, nil); got != want {
 		t.Errorf("normalizeWorkbenchURL(%q, root) = %q, want %q", rel, got, want)
 	}
 
 	// A bare domain must still reach the web, not be mistaken for a local file.
-	if got := normalizeWorkbenchURL("example.com", root); got != "https://example.com" {
+	if got := normalizeWorkbenchURL("example.com", root, nil); got != "https://example.com" {
+		t.Errorf("bare domain = %q, want https://example.com", got)
+	}
+}
+
+// The path the model asks to open is the path it asked write for — "index.html"
+// — but write steers new files into the session output folder, so that name
+// resolves to nothing at the root. Resolving only against the root found no
+// file, fell through to the bare-domain case, and the workbench went off to do
+// a DNS lookup for a host called index.html.
+func TestNormalizeWorkbenchURLFindsWhatWriteSteeredIntoTheOutputFolder(t *testing.T) {
+	root := t.TempDir()
+	subdir := "aetox/output/20260726-063257.366"
+	outputSubdir := func() string { return subdir }
+
+	full := filepath.Join(root, filepath.FromSlash(subdir), "index.html")
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(full, []byte("<h1>a</h1>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	want := "file:///" + strings.ReplaceAll(full, `\`, "/")
+	if got := normalizeWorkbenchURL("index.html", root, outputSubdir); got != want {
+		t.Errorf("normalizeWorkbenchURL(index.html) = %q, want %q", got, want)
+	}
+	// The placed path spelled out in full must work too — that is what write
+	// reported back, and a model may repeat it verbatim.
+	if got := normalizeWorkbenchURL(subdir+"/index.html", root, outputSubdir); got != want {
+		t.Errorf("normalizeWorkbenchURL(placed path) = %q, want %q", got, want)
+	}
+	// Still a domain, not a file, when nothing of that name exists.
+	if got := normalizeWorkbenchURL("example.com", root, outputSubdir); got != "https://example.com" {
 		t.Errorf("bare domain = %q, want https://example.com", got)
 	}
 }

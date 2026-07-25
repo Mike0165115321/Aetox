@@ -20,7 +20,7 @@ type RegistryOptions struct {
 	//
 	// Every skill that consumes an existing file by relative path needs it too,
 	// not just write: read/edit/delete/apply_patch fall back to this folder when
-	// the literal path resolves to nothing (placedFallback). Hand it to any new
+	// the literal path resolves to nothing (PlacedPath). Hand it to any new
 	// file-consuming skill as well, or that skill will fail to find whatever
 	// write just produced.
 	OutputSubdir func() string

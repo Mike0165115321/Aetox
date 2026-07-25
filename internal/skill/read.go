@@ -90,7 +90,7 @@ func (s *readSkill) Execute(_ context.Context, input Input) (Output, error) {
 	offset := intArg(input["offset"])
 	limit := intArg(input["limit"])
 
-	requestPath = placedFallback(s.root, s.outputSubdir, requestPath)
+	requestPath = PlacedPath(s.root, s.outputSubdir, requestPath)
 	command := "read " + requestPath
 	targetPath, err := resolveSandboxPath(s.root, requestPath)
 	if err != nil {

@@ -105,7 +105,7 @@ func (s *applyPatchSkill) ExecuteTool(_ context.Context, args map[string]any) (O
 	var added, removed int
 
 	for i, e := range edits {
-		e.Path = placedFallback(s.root, s.outputSubdir, e.Path)
+		e.Path = PlacedPath(s.root, s.outputSubdir, e.Path)
 		targetPath, resolveErr := resolveSandboxPath(s.root, e.Path)
 		if resolveErr != nil {
 			return newToolOutput("apply_patch", command, "", start, false, resolveErr), resolveErr

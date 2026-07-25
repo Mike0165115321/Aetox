@@ -113,12 +113,12 @@ func TestPlacedFallbackPrefersTheLiteralPath(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if got := placedFallback(root, subdir, "index.html"); got != "index.html" {
+	if got := PlacedPath(root, subdir, "index.html"); got != "index.html" {
 		t.Errorf("both exist: got %q, want the literal path to win", got)
 	}
 
 	// Nothing anywhere: report the path the caller asked for, so the error names it.
-	if got := placedFallback(root, subdir, "missing.html"); got != "missing.html" {
+	if got := PlacedPath(root, subdir, "missing.html"); got != "missing.html" {
 		t.Errorf("neither exists: got %q, want the original path", got)
 	}
 }
