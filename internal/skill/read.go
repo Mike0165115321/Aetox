@@ -124,7 +124,9 @@ func (s *readSkill) Execute(_ context.Context, input Input) (Output, error) {
 	if err != nil {
 		return newToolOutput("read", command, "", start, false, err), err
 	}
-	content = strings.TrimRight(content, "\n")
+	// "\r\n" not "\n": on Windows the last line would otherwise keep a stray
+	// carriage return that the old whole-blob TrimSpace used to remove.
+	content = strings.TrimRight(content, "\r\n")
 	if strings.TrimSpace(content) == "" {
 		if offset > 1 {
 			content = fmt.Sprintf("(no lines at offset %d)", offset)

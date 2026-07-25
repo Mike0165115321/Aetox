@@ -13,6 +13,10 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/model"
 )
 
+// editMaxFileBytes is generous enough that no source file, lockfile or config
+// ever hits it, and small enough that four in-memory copies stay harmless.
+const editMaxFileBytes = 16 << 20 // 16 MiB
+
 type editSkill struct {
 	root string
 }
@@ -89,6 +93,16 @@ func (s *editSkill) Execute(_ context.Context, input Input) (Output, error) {
 
 	targetPath, err := resolveSandboxPath(s.root, requestPath)
 	if err != nil {
+		return newToolOutput("edit", command, "", start, false, err), err
+	}
+
+	// Exact search-and-replace needs the whole file, and between `data`, the
+	// string conversion, the Replace result and the write-back that is four
+	// copies live at once — a few hundred MB of generated log or lockfile is
+	// enough to take a desktop app down. Refuse early and say what to do
+	// instead, rather than OOM mid-edit.
+	if info, statErr := os.Stat(targetPath); statErr == nil && info.Size() > editMaxFileBytes {
+		err = fmt.Errorf("file is %d MB, too large to edit safely (limit %d MB) — narrow the change with shell tools instead", info.Size()>>20, int64(editMaxFileBytes)>>20)
 		return newToolOutput("edit", command, "", start, false, err), err
 	}
 

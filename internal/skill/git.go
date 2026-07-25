@@ -1,7 +1,6 @@
 package skill
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -65,12 +64,19 @@ func (s *gitSkill) Execute(ctx context.Context, input Input) (Output, error) {
 	}
 
 	command := append([]string{action}, actionArgs...)
-	output, err := executeCommand(ctx, "git", root, command...)
+	output, capped, err := executeCommand(ctx, "git", root, command...)
 	output = strings.TrimSpace(output)
 	if output == "" {
 		output = "(no output)"
 	}
 	output, truncated := limitLines(output, defaultToolOutputLineLimit)
+	// A capped `git show` of a committed binary is one very long line, which
+	// limitLines happily calls complete. Say so, or the model reasons about a
+	// diff it only half received.
+	if capped {
+		truncated = true
+		output += "\n... (output exceeded 1 MiB and was cut)"
+	}
 	commandText := "git " + strings.Join(args, " ")
 	result := newToolOutput("git", commandText, output, start, truncated, err)
 
@@ -140,7 +146,7 @@ func resolveSafeWorkspace(root string) (string, error) {
 }
 
 func ensureGitRepo(ctx context.Context, workspace string) error {
-	output, err := executeCommand(ctx, "git", workspace, "rev-parse", "--is-inside-work-tree")
+	output, _, err := executeCommand(ctx, "git", workspace, "rev-parse", "--is-inside-work-tree")
 	if err != nil {
 		return errors.New(strings.TrimSpace(output))
 	}
@@ -150,20 +156,33 @@ func ensureGitRepo(ctx context.Context, workspace string) error {
 	return nil
 }
 
-func executeCommand(ctx context.Context, name, dir string, args ...string) (string, error) {
+// executeCommand runs a git command and reports whether its output hit the
+// byte cap, so callers can tell the model the result is partial.
+func executeCommand(ctx context.Context, name, dir string, args ...string) (string, bool, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
 	proc.HideConsole(cmd)
-	buffer := &bytes.Buffer{}
-	cmd.Stdout = buffer
-	cmd.Stderr = buffer
+	// Same cap as shell: `git log` with no range, `git diff` on a big change
+	// or `git show` of a commit that added a binary are all unbounded output.
+	//
+	// stdout and stderr are kept apart, and stderr only surfaces on failure.
+	// Merging them meant every `git diff` on Windows arrived with a "warning:
+	// LF will be replaced by CRLF" line per touched file glued to the front —
+	// pure noise that the model reads as part of the diff and that can push
+	// the real content past the 220-line output limit on a large change.
+	stdout, stderr := &cappedWriter{}, &cappedWriter{}
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 	err := cmd.Run()
-	out := strings.TrimSpace(buffer.String())
+	out := strings.TrimSpace(stdout.buf.String())
 	if err != nil {
+		if msg := strings.TrimSpace(stderr.buf.String()); msg != "" {
+			out = strings.TrimSpace(out + "\n" + msg)
+		}
 		if out == "" {
 			out = "(command failed)"
 		}
-		return out, err
+		return out, stdout.dropped, err
 	}
-	return out, nil
+	return out, stdout.dropped, nil
 }

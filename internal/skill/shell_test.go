@@ -69,8 +69,8 @@ func TestCappedWriterStopsGrowing(t *testing.T) {
 			t.Fatalf("Write = (%d, %v), want (%d, nil) — a short write aborts the command", n, err, len(chunk))
 		}
 	}
-	if w.buf.Len() > shellOutputCap {
-		t.Errorf("buffered %d bytes, want at most %d", w.buf.Len(), shellOutputCap)
+	if w.buf.Len() > toolOutputByteCap {
+		t.Errorf("buffered %d bytes, want at most %d", w.buf.Len(), toolOutputByteCap)
 	}
 	if !w.dropped {
 		t.Error("dropped = false, want true so the output is reported as truncated")

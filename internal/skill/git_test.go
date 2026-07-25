@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -91,5 +92,36 @@ func TestGitSkillNotARepo(t *testing.T) {
 	s := &gitSkill{root: dir}
 	if _, err := s.Execute(context.Background(), Input{"args": []string{"status"}}); err == nil {
 		t.Fatal("expected error outside a git repository, got nil")
+	}
+}
+
+// On Windows every `git diff` used to arrive with a "warning: LF will be
+// replaced by CRLF" line per touched file glued to the front, because stderr
+// was merged into stdout. The model reads that as part of the diff, and on a
+// large change it can push the real content past the output line limit.
+func TestGitExecuteCommandKeepsStderrOutOfSuccessfulOutput(t *testing.T) {
+	name, args := "sh", []string{"-c", "echo OUT; echo ERR 1>&2"}
+	if runtime.GOOS == "windows" {
+		name, args = "cmd", []string{"/C", "echo OUT&echo ERR 1>&2"}
+	}
+
+	out, _, err := executeCommand(context.Background(), name, t.TempDir(), args...)
+	if err != nil {
+		t.Fatalf("executeCommand: unexpected error: %v", err)
+	}
+	if strings.Contains(out, "ERR") {
+		t.Errorf("output = %q, want stderr excluded on success", out)
+	}
+	if !strings.Contains(out, "OUT") {
+		t.Errorf("output = %q, want stdout kept", out)
+	}
+
+	// On failure stderr is the only place the reason lives, so it must appear.
+	out, _, err = executeCommand(context.Background(), "git", t.TempDir(), "--no-such-flag")
+	if err == nil {
+		t.Fatal("expected an error from an invalid git flag, got nil")
+	}
+	if strings.TrimSpace(out) == "" || out == "(command failed)" {
+		t.Errorf("output = %q, want git's stderr explaining the failure", out)
 	}
 }

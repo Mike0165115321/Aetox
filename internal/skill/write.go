@@ -82,7 +82,10 @@ func (s *writeSkill) Execute(_ context.Context, input Input) (Output, error) {
 		return newToolOutput("write", "write "+requestPath, "", start, false, err), err
 	}
 
-	output := "write done: " + filepath.ToSlash(targetPath)
+	// Echo the path the caller asked for, like edit does — the resolved
+	// absolute path is noise in context and nudges the model into repeating
+	// the sandbox root back at the user (see internal/prompt environment()).
+	output := "write done: " + requestPath
 	return newToolOutput("write", "write "+requestPath, output, start, false, nil), nil
 }
 

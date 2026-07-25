@@ -1,7 +1,6 @@
 package skill
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"strings"
@@ -14,36 +13,6 @@ import (
 
 type shellSkill struct {
 	root string
-}
-
-// shellOutputCap bounds what one command may buffer in RAM. limitLines only
-// trims after the command exits, so an unbounded buffer lets a runaway
-// producer (`yes`, a looping log tail, a chatty build) grow to gigabytes for
-// the full tool timeout and take the desktop app down with it.
-const shellOutputCap = 1 << 20 // 1 MiB
-
-// cappedWriter keeps the first shellOutputCap bytes and drops the rest — the
-// head is what the model needs and limitLines trims it further anyway.
-// No mutex: os/exec reuses a single pipe and copy goroutine when Stdout and
-// Stderr hold the same interface value, which is how Execute wires it.
-type cappedWriter struct {
-	buf     bytes.Buffer
-	dropped bool
-}
-
-func (w *cappedWriter) Write(p []byte) (int, error) {
-	room := shellOutputCap - w.buf.Len()
-	if room <= 0 {
-		w.dropped = true
-		return len(p), nil
-	}
-	if len(p) > room {
-		w.buf.Write(p[:room])
-		w.dropped = true
-		return len(p), nil
-	}
-	w.buf.Write(p)
-	return len(p), nil
 }
 
 func (*shellSkill) Name() string { return "shell" }

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -81,7 +80,8 @@ func (s *deleteSkill) Execute(_ context.Context, input Input) (Output, error) {
 		return newToolOutput("delete", "delete "+requestPath, "", start, false, err), err
 	}
 
-	output := "delete done: " + filepath.ToSlash(targetPath)
+	// Relative, matching edit and write — see write.go for why.
+	output := "delete done: " + requestPath
 	return newToolOutput("delete", "delete "+requestPath, output, start, false, nil), nil
 }
 
