@@ -10,10 +10,6 @@ export function AnswerUserQuestion(arg1) {
   return window['go']['main']['App']['AnswerUserQuestion'](arg1);
 }
 
-export function AppendGuideTurn(arg1, arg2) {
-  return window['go']['main']['App']['AppendGuideTurn'](arg1, arg2);
-}
-
 export function BrowserBack(arg1) {
   return window['go']['main']['App']['BrowserBack'](arg1);
 }
@@ -108,6 +104,10 @@ export function GetProjectStatus() {
 
 export function GitChangedFiles() {
   return window['go']['main']['App']['GitChangedFiles']();
+}
+
+export function GuideTopics() {
+  return window['go']['main']['App']['GuideTopics']();
 }
 
 export function HasAPIKey(arg1) {

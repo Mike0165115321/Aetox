@@ -392,6 +392,25 @@ export namespace main {
 
 }
 
+export namespace model {
+	
+	export class GuideTopic {
+	    id: string;
+	    question: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new GuideTopic(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.question = source["question"];
+	    }
+	}
+
+}
+
 export namespace skill {
 	
 	export class DiscoveredSkill {

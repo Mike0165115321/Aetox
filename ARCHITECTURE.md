@@ -1311,6 +1311,24 @@ Only the guide gets the two-column treatment: `ask_user`'s own panel keeps its s
 
 ---
 
+## 42. Decision — The Guide Stops Being a Second Path (2026-07-25)
+
+**Trigger:** owner, watching a guide answer appear — *"เวลากดอ่ะครับมันตู้มเดียวเลย ทำไมไม่เป็นแพทเทิร์นเดียวกันอ่ะ ผมกลัวจะมีหนี้ทางระบบมากถ้าสร้างแบบนี้แยกกันเยอะ"*.
+
+**He was reading the symptom and diagnosing the cause correctly.** The answer arrived in one lump because §39 had built the guide as a **parallel path**: `pushGuideExchange` pushed two messages into the store directly, `AppendGuideTurn` persisted them separately, and neither touched the engine. Everything a normal reply gets for free had to be re-implemented or gone without — streaming was gone, persistence was a second Go binding, and scrolling needed its own special case because the normal auto-scroll assumed streaming.
+
+**§40 had already removed the reason for the split.** §39 put the answers in the frontend locale files because Go could not know the UI language. §40 gave the built-in provider the locale. The workaround outlived its constraint by two sections.
+
+**So the guide became a message.** [internal/model/noop.go](internal/model/noop.go) owns the questions and answers in both languages; `GuideTopics(locale)` hands the UI a list; clicking one calls `onSend(question)` — **the same function the composer calls**. From there the answer streams word by word, is persisted by the same `appendTurn` a real turn uses, and scrolls by following the bottom like every other reply.
+
+**Deleted, not moved:** `pushGuideExchange`, the `AppendGuideTurn` binding, its mock, the guide-specific scroll override (`pinnedToBottom` juggling plus a `scrollIntoView`), and 12 locale keys × 2 languages. "Already asked" is no longer state either — it is read off the transcript, so it survives a reload for free and cannot drift from what is on screen.
+
+**One thing the collapse fixed on its own:** the guide question now matches *before* the model-specific test scripts, so clicking an option on `aetox-tools:test` answers the question instead of being hijacked by the tool-loop script. On the old path that bug could not even be expressed — which is the argument against parallel paths in one line.
+
+**Status:** `Done 2026-07-25.` Go green with a new test walking every guide question in both languages: each must resolve (not fall through to onboarding), answer in the right language, still match after a language switch, and not be intercepted by the tools script. Frontend 33 green. Net effect on the tree: **365 lines deleted against 368 added**, and the added ones are almost entirely the answer text moving house.
+
+---
+
 ## Validation
 
 1. **Claim traceability:** every claim above cites a file or an existing project doc; the two `Unverified`/`Inferred, Verify first: Yes` items are marked as such, not stated as fact.

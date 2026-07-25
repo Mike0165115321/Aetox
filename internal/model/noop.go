@@ -49,6 +49,178 @@ Open **Settings → Model settings**, pick a provider you trust, and it powers A
 **The bet behind this**
 What makes an agent useful is not the knowledge packed into the model, it is the architecture governing how it works. There was no funding to train a model, so the bet went on architecture — and on letting you plug in whichever model you like.`
 
+// GuideTopic is one question the built-in engine can answer about Aetox
+// itself. The UI renders the questions as options; clicking one sends it as an
+// ordinary message, so the answer streams, persists and scrolls exactly like
+// any other reply — one path, not a parallel one (ARCHITECTURE.md §42).
+type GuideTopic struct {
+	ID       string `json:"id"`
+	Question string `json:"question"`
+}
+
+// guideAnswers is the whole guide: question and answer, both languages, in one
+// place. Matching is done against these exact strings, so the questions the UI
+// shows and the questions this matches are the same values by construction.
+var guideAnswers = []struct{ id, qTH, qEN, aTH, aEN string }{
+	{
+		id:  "skills",
+		qTH: "สกิล กับ พรอมต์สำเร็จรูป ต่างกันยังไง",
+		qEN: "How are skills and prompt presets different?",
+		aTH: `ต่างกันที่ **ใครเป็นคนเรียก** ครับ ไม่ใช่ที่เนื้อใน
+
+**พรอมต์สำเร็จรูป** — คุณเป็นคนเรียก พิมพ์ ` + "`/landing`" + ` ในแชท เนื้อพรอมต์จะไปแทนข้อความของคุณ **ก่อน** โมเดลเห็น คุณควบคุมได้ 100% ว่าจะใช้เมื่อไหร่
+
+**สกิล** — โมเดลเป็นคนเรียกเอง มันเห็นรายชื่อสกิลทั้งหมดแล้วตัดสินใจว่าอันไหนเกี่ยวกับงานตรงหน้า คุณไม่ต้องสั่ง
+
+ที่น่าสนใจคือ สกิลแบบไฟล์ ` + "`SKILL.md`" + ` เนื้อในก็คือข้อความล้วนเหมือนกันเป๊ะ — มันไม่ได้เรียกเครื่องมืออะไรเองเลย ต่างกันแค่คนกด
+
+**ผลที่ตามมาจริงๆ มีสองข้อ**
+1. พรอมต์สำเร็จรูปกินโทเคนเฉพาะตอนคุณกดใช้ ส่วนสกิลเอาคำอธิบายไปแปะให้โมเดลเห็นทุกเทิร์น ไม่ว่าจะได้ใช้หรือไม่
+2. พรอมต์สำเร็จรูปคุณกดเอง รู้ตัวเสมอ ส่วนสกิลโมเดลหยิบไปใช้ได้โดยคุณไม่ได้สั่ง`,
+		aEN: `The difference is **who invokes them**, not what is inside.
+
+**Prompt presets** — you invoke them. Type ` + "`/landing`" + ` and the prompt replaces your message **before** the model ever sees it. You decide when, every time.
+
+**Skills** — the model invokes them. It sees the list and decides which one is relevant. You never ask.
+
+The interesting part: a ` + "`SKILL.md`" + ` skill is also just text — it calls no tools of its own. The only difference is who presses the button.
+
+**Two consequences that actually matter**
+1. A preset costs tokens only when you use it. A skill puts its description in front of the model every single turn, used or not.
+2. You press a preset knowingly. A skill can be pulled in without you asking.`,
+	},
+	{
+		id:  "prompts",
+		qTH: "พรอมต์สำเร็จรูปใช้ยังไง",
+		qEN: "How do I use prompt presets?",
+		aTH: `พิมพ์ ` + "`/`" + ` ในช่องแชท (หรือกดปุ่ม ` + "`/`" + `) แล้วเลือกจากรายการ
+
+พิมพ์ต่อท้ายได้เลย เช่น ` + "`/landing เว็บขายกาแฟคั่วเอง กลุ่มคนทำงาน`" + ` — ข้อความที่พิมพ์ต่อจะไปแทนที่ ` + "`$ARGUMENTS`" + ` ในพรอมต์
+
+ตอนนี้มีให้ 8 ตัว: ` + "`/landing` `/hero` `/pricing` `/waitlist`" + ` ทำเว็บ · ` + "`/review` `/debug` `/explain`" + ` งานโค้ด · ` + "`/clip`" + ` สรุปคลิป
+
+**เพิ่มเองได้** ที่ ตั้งค่า → พรอมต์สำเร็จรูป กดสร้างใหม่ ใส่รูปหน้าปกได้ด้วย และแก้ของที่มีอยู่ได้ทุกตัว (ของเดิมไม่หาย ลบของคุณเมื่อไหร่มันกลับมาเอง)`,
+		aEN: `Type ` + "`/`" + ` in the composer (or press the ` + "`/`" + ` button) and pick from the list.
+
+Keep typing after the name: ` + "`/landing a coffee roastery site for office workers`" + ` — everything after the name replaces ` + "`$ARGUMENTS`" + ` in the prompt.
+
+Eight ship with Aetox: ` + "`/landing` `/hero` `/pricing` `/waitlist`" + ` for web work · ` + "`/review` `/debug` `/explain`" + ` for code · ` + "`/clip`" + ` to summarize a recording.
+
+**Add your own** in Settings → Prompt presets. Cover images included, and every shipped preset is editable — the original stays, and deleting yours brings it back.`,
+	},
+	{
+		id:  "connect",
+		qTH: "ต่อโมเดลจริงยังไง ทำไมต้องต่อเอง",
+		qEN: "How do I connect a real model, and why do I have to?",
+		aTH: `Aetox สร้างโดยนักพัฒนาคนเดียว ไม่มีทุนไปซื้อโมเดลมาแจกฟรี — ตรงไปตรงมาแบบนั้นครับ แลกมาด้วยข้อดีคือคุณเลือกเองได้ว่าจะเชื่อใจใคร
+
+**วิธีต่อ** ไปที่ ตั้งค่า → การตั้งค่าโมเดล เลือกผู้ให้บริการ ใส่ API key แล้วกดใช้
+
+**ถ้าไม่อยากให้ข้อมูลออกจากเครื่องเลย** เลือก **Ollama** หรือ **LM Studio** รันโมเดลบนเครื่องคุณเอง ไม่ต้องมี key ไม่มี prompt ไหนออกจากเครื่องแม้แต่ byte เดียว
+
+รองรับ 13 ผู้ให้บริการ สลับได้ตลอด ไม่ผูกมัด`,
+		aEN: `Aetox is built by one developer with no funding to give away model access — that is the plain answer. What you get in exchange is choosing who to trust.
+
+**To connect** go to Settings → Model settings, pick a provider, paste an API key, press use.
+
+**To keep everything on your machine**, pick **Ollama** or **LM Studio** and run the model locally. No key, and not a byte of your prompts leaves the machine.
+
+Thirteen providers supported, switchable any time.`,
+	},
+	{
+		id:  "privacy",
+		qTH: "ข้อมูลของผมปลอดภัยแค่ไหน",
+		qEN: "How safe is my data?",
+		aTH: `**ไม่มีเซิร์ฟเวอร์ของเราคั่นกลางเลย** ประวัติแชทและไฟล์โปรเจกต์อยู่ในเครื่องคุณล้วนๆ (SQLite ในเครื่อง) เราไม่เห็นอะไรทั้งนั้น
+
+เวลาคุณต่อ provider คลาวด์ prompt จะวิ่งจากเครื่องคุณไปหาเขาโดยตรง ไม่ผ่านเรา
+
+**เครื่องมือที่แตะเครื่องคุณต้องขออนุมัติ** — รันคำสั่ง เขียนไฟล์ ลบไฟล์ ขึ้นให้กดยืนยันก่อนทุกครั้ง ปรับระดับได้ที่ Ctrl+K → โหมดอนุมัติ
+
+ถอดเสียง อ่านรูป อ่านวิดีโอ ทำในเครื่องทั้งหมด ไฟล์ไม่ได้ถูกอัปโหลดไปไหน`,
+		aEN: `**No server of ours sits in the middle.** Chat history and project files stay on your machine (local SQLite). We see none of it.
+
+When you connect a cloud provider, prompts go from your machine straight to them — never through us.
+
+**Anything that touches your machine asks first** — running commands, writing files, deleting files all prompt for confirmation. Adjust the level under Ctrl+K → Approval mode.
+
+Transcription, image reading and video reading all run locally. Those files are not uploaded anywhere.`,
+	},
+	{
+		id:  "tools",
+		qTH: "Aetox ทำอะไรได้บ้าง",
+		qEN: "What can Aetox actually do?",
+		aTH: `มีเครื่องมือในตัว 22 ตัว ที่เด่นคือกลุ่มที่**เติมประสาทสัมผัสให้โมเดล**:
+
+- **อ่านรูป** ` + "`image_ocr`" + ` — โมเดลที่มองไม่เห็นรูปก็อ่านสลิป สกรีนช็อตได้
+- **อ่านวิดีโอ** ` + "`video_ocr`" + ` — แตกเฟรมแล้ว OCR ได้ข้อความพร้อมเวลา
+- **ฟังเสียง** ` + "`audio_transcribe`" + ` — ถอดเสียงพูดในเครื่อง ไทย+อังกฤษ
+- **ลงมือทำในเว็บ** ` + "`browser_*`" + ` — เปิด อ่าน คลิก กรอกฟอร์มจริงได้
+
+บวกกับงานโค้ดครบชุด อ่าน/เขียน/แก้ไฟล์ · git · รันคำสั่ง · ค้นเว็บ · ค้น GitHub
+
+**จุดสำคัญ** เครื่องมือทั้งหมดนี้เสิร์ฟให้ทุกโมเดลเท่ากัน โมเดลเล็กราคาถูกก็ได้ของครบเหมือนกัน — ความสามารถอยู่ที่สถาปัตยกรรม ไม่ใช่ราคาโมเดล`,
+		aEN: `22 built-in tools. The standouts are the ones that **give a model senses it does not have**:
+
+- **See images** ` + "`image_ocr`" + ` — a model with no vision still reads receipts and screenshots
+- **Read video** ` + "`video_ocr`" + ` — frames sampled and OCR'd, with timestamps
+- **Hear** ` + "`audio_transcribe`" + ` — speech to text, locally, Thai and English
+- **Act on the web** ` + "`browser_*`" + ` — open, read, click, fill real forms
+
+Plus the full coding set: read/write/edit files · git · shell · web search · GitHub search.
+
+**The point:** every tool is served to every model equally. A cheap small model gets the same kit — the capability lives in the architecture, not the price of the model.`,
+	},
+	{
+		id:  "who",
+		qTH: "ใครทำ Aetox และทำไป",
+		qEN: "Who makes Aetox, and why?",
+		aTH: `นักพัฒนาคนเดียวครับ ไม่มีทีม ไม่มีนักลงทุน ทุกบรรทัดเขียนโดยคนที่ใช้มันทำงานจริงทุกวัน
+
+**ความเชื่อที่อยู่เบื้องหลัง** — หัวใจของ AI agent ไม่ใช่ความรู้ที่อัดอยู่ในโมเดล แต่คือ **สถาปัตยกรรมที่ควบคุมวิธีคิด** โมเดลเก่งแค่ไหนถ้าไม่มีเครื่องมือ ไม่มีขอบเขตความปลอดภัย ไม่มีวิธีจัดการบริบท ก็ทำงานจริงไม่ได้
+
+เราไม่มีทุนเทรนโมเดลเอง เลยเลือกเอาดีทางสถาปัตยกรรมแทน แล้วเปิดให้คุณเสียบโมเดลอะไรก็ได้เข้ามา
+
+ถ้าอยากร่วมพัฒนา หรือลองแล้วอยากบอกว่าตรงไหนห่วย — เปิด issue บน GitHub ได้เลย อ่านทุกข้อความ`,
+		aEN: `One developer. No team, no investors. Every line written by someone who uses it for real work daily.
+
+**The belief behind it** — what makes an AI agent useful is not the knowledge packed into the model, it is the **architecture that governs how it works**. However capable the model, without tools, safety boundaries and context management it cannot do real work.
+
+There was no funding to train a model, so the bet went on architecture instead — and on letting you plug in whichever model you like.
+
+Want to help, or just tell us what is bad about it? Open an issue on GitHub. Every message gets read.`,
+	},
+}
+
+// GuideTopics lists the questions the built-in engine can answer, in the given
+// UI language. The UI renders these verbatim and sends the chosen one back as
+// an ordinary message.
+func GuideTopics(locale string) []GuideTopic {
+	english := strings.HasPrefix(strings.ToLower(strings.TrimSpace(locale)), "en")
+	out := make([]GuideTopic, 0, len(guideAnswers))
+	for _, g := range guideAnswers {
+		q := g.qTH
+		if english {
+			q = g.qEN
+		}
+		out = append(out, GuideTopic{ID: g.id, Question: q})
+	}
+	return out
+}
+
+// guideAnswer matches an incoming message against the guide questions. Both
+// languages are matched regardless of the current locale, so a question asked
+// before a language switch still resolves.
+func (p *NoopProvider) guideAnswer(text string) (string, bool) {
+	text = strings.TrimSpace(text)
+	for _, g := range guideAnswers {
+		if text == g.qTH || text == g.qEN {
+			return p.pick(g.aTH, g.aEN), true
+		}
+	}
+	return "", false
+}
+
 // english reports whether the UI is in English. Everything else falls back to
 // Thai, which is what a fresh install runs in. Every canned string this
 // provider produces goes through this — the built-in models are the only part
@@ -104,6 +276,13 @@ func (p *NoopProvider) Complete(_ context.Context, req Request) (Response, error
 	text := strings.TrimSpace(lastMessage.Content)
 	if text == "" {
 		text = "(empty prompt)"
+	}
+
+	// A guide question wins over every model-specific script below: it is the
+	// user clicking an option Aetox itself offered, and it must answer the same
+	// on whichever built-in model happens to be selected.
+	if answer, ok := p.guideAnswer(text); ok {
+		return Response{Provider: p.Name(), Model: model, Text: answer}, nil
 	}
 
 	// Test models: the picked model name decides the response shape, so each

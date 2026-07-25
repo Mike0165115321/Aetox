@@ -7,14 +7,14 @@
   import {
     EnabledProviders, SupportedThinkLevels,
     ListModelsForProvider, RequiresAPIKey, HasAPIKey, PickAttachment,
-    GetContextBreakdown,
+    GetContextBreakdown, GuideTopics,
   } from '../../wailsjs/go/main/App'
-  import { t } from './i18n.svelte'
+  import { t, i18n } from './i18n.svelte'
   import { renderMarkdown } from './markdown'
   import { openUrlInWorkbench } from './stores/workbench.svelte'
   import {
     cockpit, attachImageFromPath, clearPendingImage, attachTabContext, clearPendingContext,
-    attachFileFromPath, clearPendingFile, fileKind, pushGuideExchange,
+    attachFileFromPath, clearPendingFile, fileKind,
     openProject, openFolder, clearProjectFocus, cancelTurn, answerAsk,
   } from './stores/cockpit.svelte'
 
@@ -172,39 +172,26 @@
     return Math.max(0, Math.round((now - s.startedAt) / 1000))
   }
 
-  // Guided onboarding: while Aetox runs on its own built-in engine there is no
-  // model to answer questions about Aetox, so the answers are canned — and they
-  // live in the locale files, which is also why they follow the UI language for
-  // free rather than needing a locale plumbed into Go (ARCHITECTURE.md §39).
-  const guideTopics = $derived([
-    { key: 'skills', q: t('guide.q1'), a: t('guide.a1') },
-    { key: 'prompts', q: t('guide.q2'), a: t('guide.a2') },
-    { key: 'connect', q: t('guide.q3'), a: t('guide.a3') },
-    { key: 'privacy', q: t('guide.q4'), a: t('guide.a4') },
-    { key: 'tools', q: t('guide.q5'), a: t('guide.a5') },
-    { key: 'who', q: t('guide.q6'), a: t('guide.a6') },
-  ])
-  let askedGuide = $state<string[]>([])
-  const remainingGuide = $derived(guideTopics.filter((g) => !askedGuide.includes(g.key)))
+  // Guided onboarding. The questions come from the engine, and picking one
+  // SENDS IT as an ordinary message — so the answer streams, persists and
+  // scrolls through exactly the same path as every other reply. There is no
+  // second code path to keep in sync (ARCHITECTURE.md §42).
+  let guideTopics = $state<{ id: string; question: string }[]>([])
+  $effect(() => {
+    // Re-fetch on language change: the engine returns them already localized.
+    void i18n.locale
+    GuideTopics().then((t) => (guideTopics = t)).catch(() => {})
+  })
+  // "Already asked" is read off the transcript rather than kept as state, so it
+  // survives a reload for free and cannot drift from what is on screen.
+  const remainingGuide = $derived(
+    guideTopics.filter((g) => !messages.some((m) => m.role === 'user' && m.text === g.question)),
+  )
   // Only while running on the built-in engine: a configured model answers for
-  // itself, and canned chips under a real reply would be noise.
+  // itself, and canned options under a real reply would be noise.
   const guideOpen = $derived(
     model.provider === 'aetox' && !awaitingReply && messages.length > 0 && remainingGuide.length > 0,
   )
-
-  function askGuide(topic: { key: string; q: string; a: string }) {
-    askedGuide = [...askedGuide, topic.key]
-    // This answer arrives whole instead of streaming, so "follow the bottom" is
-    // the wrong instinct: it lands past a long answer, on the options card
-    // below it. Take the wheel from that effect and put the TOP of the new
-    // reply at the top of the view, where reading starts.
-    pinnedToBottom = false
-    pushGuideExchange(topic.q, topic.a)
-    requestAnimationFrame(() => {
-      const answers = chatEl?.querySelectorAll('.msg.bot:not(.guide-card)')
-      answers?.[answers.length - 1]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    })
-  }
 
   const starters = $derived([
     { icon: '🧭', title: t('chat.starter1Title'), prompt: t('chat.starter1Prompt') },
@@ -470,10 +457,10 @@
             <div class="ask-panel">
               <div class="ask-q">{t('guide.intro')}</div>
               <div class="ask-opts">
-                {#each remainingGuide as g, i (g.key)}
-                  <button type="button" class="ask-opt" onclick={() => askGuide(g)}>
+                {#each remainingGuide as g, i (g.id)}
+                  <button type="button" class="ask-opt" onclick={() => onSend(g.question)}>
                     <span class="ask-key">{String.fromCharCode(65 + i)}</span>
-                    <span class="ask-label">{g.q}</span>
+                    <span class="ask-label">{g.question}</span>
                   </button>
                 {/each}
               </div>

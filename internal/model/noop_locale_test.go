@@ -131,3 +131,75 @@ func TestEveryBuiltinModelSpeaksEnglishWhenAsked(t *testing.T) {
 		}
 	}
 }
+
+// The guide is answered by the engine on the normal reply path (§42), so every
+// question the UI can show must resolve to an answer — in both languages, on
+// any built-in model.
+func TestGuideQuestionsAllAnswer(t *testing.T) {
+	thai := func(s string) bool {
+		for _, r := range s {
+			if r >= 0x0E00 && r <= 0x0E7F {
+				return true
+			}
+		}
+		return false
+	}
+
+	for _, locale := range []string{"th", "en"} {
+		topics := GuideTopics(locale)
+		if len(topics) < 6 {
+			t.Fatalf("locale %q: only %d guide topics", locale, len(topics))
+		}
+		for _, topic := range topics {
+			if topic.ID == "" || topic.Question == "" {
+				t.Errorf("locale %q: incomplete topic %+v", locale, topic)
+			}
+			p := NewNoopProvider("aetox-grid")
+			p.Locale = locale
+			resp, err := p.Complete(context.Background(), Request{
+				Messages: []Message{{Role: RoleUser, Content: topic.Question}},
+			})
+			if err != nil {
+				t.Fatalf("%s/%s: %v", locale, topic.ID, err)
+			}
+			if resp.Text == noopOnboardingReply || resp.Text == noopOnboardingReplyEN {
+				t.Errorf("%s/%s fell through to the onboarding reply — the question did not match",
+					locale, topic.ID)
+			}
+			if len(resp.Text) < 120 {
+				t.Errorf("%s/%s answer is too short to be an answer: %q", locale, topic.ID, resp.Text)
+			}
+			if locale == "en" && thai(resp.Text) {
+				t.Errorf("en/%s answered with Thai:\n%s", topic.ID, resp.Text)
+			}
+		}
+	}
+
+	// A question asked before a language switch must still resolve afterwards.
+	p := NewNoopProvider("aetox-grid")
+	p.Locale = "en"
+	thaiQuestion := GuideTopics("th")[0].Question
+	resp, err := p.Complete(context.Background(), Request{
+		Messages: []Message{{Role: RoleUser, Content: thaiQuestion}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Text == noopOnboardingReplyEN {
+		t.Error("a Thai question must still match after switching to English")
+	}
+
+	// And it answers the same on whichever built-in model is selected — the
+	// user clicked an option Aetox offered, not a test scenario.
+	tools := NewNoopProvider("aetox-tools:test")
+	toolsResp, err := tools.Complete(context.Background(), Request{
+		Model:    "aetox-tools:test",
+		Messages: []Message{{Role: RoleUser, Content: GuideTopics("th")[0].Question}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(toolsResp.ToolCalls) != 0 {
+		t.Error("a guide question must not be hijacked by the tools test script")
+	}
+}

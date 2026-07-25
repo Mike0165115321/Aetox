@@ -251,63 +251,6 @@ export const en: Record<keyof typeof th, string> = {
   'settings.usageCompletion': 'Output',
   'settings.usageCalls': 'Calls',
 
-  'guide.intro': 'What would you like to know?',
-  'guide.q1': 'How are skills and prompt presets different?',
-  'guide.a1': `The difference is **who invokes them**, not what is inside.
-
-**Prompt presets** — you invoke them. Type \`/landing\` and the prompt replaces your message **before** the model ever sees it. You decide when, every time.
-
-**Skills** — the model invokes them. It sees the list and decides which one is relevant. You never ask.
-
-The interesting part: a \`SKILL.md\` skill is also just text — it calls no tools of its own. The only difference is who presses the button.
-
-**Two consequences that actually matter**
-1. A preset costs tokens only when you use it. A skill puts its description in front of the model every single turn, used or not.
-2. You press a preset knowingly. A skill can be pulled in without you asking.`,
-  'guide.q2': 'How do I use prompt presets?',
-  'guide.a2': `Type \`/\` in the composer (or press the \`/\` button) and pick from the list.
-
-Keep typing after the name: \`/landing a coffee roastery site for office workers\` — everything after the name replaces \`$ARGUMENTS\` in the prompt.
-
-Eight ship with Aetox: \`/landing\` \`/hero\` \`/pricing\` \`/waitlist\` for web work · \`/review\` \`/debug\` \`/explain\` for code · \`/clip\` to summarize a recording.
-
-**Add your own** in Settings → Prompt presets. Cover images included, and every shipped preset is editable — the original stays, and deleting yours brings it back.`,
-  'guide.q3': 'How do I connect a real model, and why do I have to?',
-  'guide.a3': `Aetox is built by one developer with no funding to give away model access — that is the plain answer. What you get in exchange is choosing who to trust.
-
-**To connect** go to Settings → Model settings, pick a provider, paste an API key, press use.
-
-**To keep everything on your machine**, pick **Ollama** or **LM Studio** and run the model locally. No key, and not a byte of your prompts leaves the machine.
-
-Thirteen providers supported, switchable any time.`,
-  'guide.q4': 'How safe is my data?',
-  'guide.a4': `**No server of ours sits in the middle.** Chat history and project files stay on your machine (local SQLite). We see none of it.
-
-When you connect a cloud provider, prompts go from your machine straight to them — never through us.
-
-**Anything that touches your machine asks first** — running commands, writing files, deleting files all prompt for confirmation. Adjust the level under Ctrl+K → Approval mode.
-
-Transcription, image reading and video reading all run locally. Those files are not uploaded anywhere.`,
-  'guide.q5': 'What can Aetox actually do?',
-  'guide.a5': `22 built-in tools. The standouts are the ones that **give a model senses it does not have**:
-
-- **See images** \`image_ocr\` — a model with no vision still reads receipts and screenshots
-- **Read video** \`video_ocr\` — frames sampled and OCR'd, with timestamps
-- **Hear** \`audio_transcribe\` — speech to text, locally, Thai and English
-- **Act on the web** \`browser_*\` — open, read, click, fill real forms
-
-Plus the full coding set: read/write/edit files · git · shell · web search · GitHub search.
-
-**The point:** every tool is served to every model equally. A cheap small model gets the same kit — the capability lives in the architecture, not the price of the model.`,
-  'guide.q6': 'Who makes Aetox, and why?',
-  'guide.a6': `One developer. No team, no investors. Every line written by someone who uses it for real work daily.
-
-**The belief behind it** — what makes an AI agent useful is not the knowledge packed into the model, it is the **architecture that governs how it works**. However capable the model, without tools, safety boundaries and context management it cannot do real work.
-
-There was no funding to train a model, so the bet went on architecture instead — and on letting you plug in whichever model you like.
-
-Want to help, or just tell us what is bad about it? Open an issue on GitHub. Every message gets read.`,
-
   'palette.title': 'Actions & settings',
   'palette.promptsTitle': 'Prompt presets',
   'palette.search': 'Filter actions…',
