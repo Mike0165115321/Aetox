@@ -1249,7 +1249,13 @@ He was right, and §36 had caused it: `+` opened a palette whose Context group's
 
 **Found and reported, not silently fixed:** the onboarding greeting itself still cannot switch language, for the reason above — it is engine-side. Rather than leave English users with one trailing line, both halves are now complete on their own. Full switching needs the locale plumbed into Go, which is a separate decision to make deliberately rather than smuggle in here.
 
-**Status:** `Done 2026-07-25.` Go green; frontend 32 tests (4 new: the exchange lands without a model, every topic has a real question and answer in **both** languages with missing-key detection, switching locale switches the answer text and not just labels, and the skills-vs-presets answer actually names who invokes each). Desktop rebuilt.
+**Amendment — lettered cards, and the disappearing act.** Owner, with a screenshot of the `ask_user` panel: *"ควรจะแสดงแบบนี้ไม่ใช่หรอครับ ที่ผมบอก ABCD อ่ะ"*. His earlier *"แบบ A ..."* had meant **option A**, not "for example". The guide now renders in the same `.ask-panel` component the `ask_user` tool uses — lettered A/B/C/D rows inside an agent bubble, **reusing the existing markup and CSS wholesale**; the pill-chip styles written for it were deleted rather than kept alongside.
+
+Correcting a claim made in the §40 summary: guide messages already in the transcript do **not** re-render when the language changes. `pushGuideExchange` stores the resolved string, and `ChatMessage.text` is a plain `string` — only the un-clicked options are `$derived` on `t()`. Retroactive translation was considered and rejected: a transcript records what was said, and no chat app rewrites its own history.
+
+Checking that claim surfaced a real defect: `pushGuideExchange` only pushed into the in-memory array, while the transcript is persisted exclusively inside `SendMessage` ([app.go](desktop/app.go)) — so **every guide exchange vanished on reload**. `AppendGuideTurn` now records it through the same `appendTurn` a real turn uses. It reads as part of the conversation, so it has to survive like part of the conversation; a silent disappearance is the one thing an onboarding guide must never do.
+
+**Status:** `Done 2026-07-25.` Go green; frontend 33 tests (5: the exchange lands without a model, it is persisted, every topic has a real question and answer in **both** languages with missing-key detection, switching locale switches the answer text and not just labels, and the skills-vs-presets answer actually names who invokes each). Desktop rebuilt.
 
 ---
 

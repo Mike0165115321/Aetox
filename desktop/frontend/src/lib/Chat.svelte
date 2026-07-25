@@ -451,12 +451,22 @@
       {/each}
 
       {#if guideOpen}
-        <div class="guide">
-          <div class="guide-head">{t('guide.intro')}</div>
-          <div class="guide-chips">
-            {#each remainingGuide as g (g.key)}
-              <button class="guide-chip" onclick={() => askGuide(g)}>{g.q}</button>
-            {/each}
+        <!-- Same card as ask_user: a lettered list Aetox is offering, not chips
+             floating loose in the transcript. Owner asked for A/B/C/D and the
+             component already existed — reused wholesale, no new CSS. -->
+        <div class="msg bot">
+          <div class="bubble">
+            <div class="ask-panel">
+              <div class="ask-q">{t('guide.intro')}</div>
+              <div class="ask-opts">
+                {#each remainingGuide as g, i (g.key)}
+                  <button type="button" class="ask-opt" onclick={() => askGuide(g)}>
+                    <span class="ask-key">{String.fromCharCode(65 + i)}</span>
+                    <span class="ask-label">{g.q}</span>
+                  </button>
+                {/each}
+              </div>
+            </div>
           </div>
         </div>
       {/if}

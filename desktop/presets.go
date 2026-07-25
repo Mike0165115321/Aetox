@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/Mike0165115321/Aetox/internal/command"
 	"github.com/Mike0165115321/Aetox/internal/proc"
@@ -16,6 +17,24 @@ import (
 // the ones bundled with Aetox plus anything in <DataRoot>/prompts/*.md.
 func (a *App) ListPromptPresets() []command.Preset {
 	return jsonSlice(command.ListPresets())
+}
+
+// AppendGuideTurn records a canned Aetox guide exchange in the session, the
+// same way a real turn is recorded. No model is involved — the text comes from
+// the UI's locale files (§39) — but the user read it and it looks like part of
+// the conversation, so it must survive a reload like part of the conversation.
+func (a *App) AppendGuideTurn(question, answer string) error {
+	question = strings.TrimSpace(question)
+	answer = strings.TrimSpace(answer)
+	if question == "" || answer == "" {
+		return nil
+	}
+	now := time.Now().Format("15:04")
+	userMsg := SessionMessage{Role: "user", Text: question, Time: now}
+	agentMsg := SessionMessage{Role: "agent", Text: answer, Time: now}
+	a.transcript = append(a.transcript, userMsg, agentMsg)
+	a.appendTurn(userMsg, agentMsg)
+	return nil
 }
 
 // SetUILocale records the language the UI is showing so Aetox's own built-in

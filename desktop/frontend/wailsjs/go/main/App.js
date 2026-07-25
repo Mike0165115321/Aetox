@@ -10,6 +10,10 @@ export function AnswerUserQuestion(arg1) {
   return window['go']['main']['App']['AnswerUserQuestion'](arg1);
 }
 
+export function AppendGuideTurn(arg1, arg2) {
+  return window['go']['main']['App']['AppendGuideTurn'](arg1, arg2);
+}
+
 export function BrowserBack(arg1) {
   return window['go']['main']['App']['BrowserBack'](arg1);
 }

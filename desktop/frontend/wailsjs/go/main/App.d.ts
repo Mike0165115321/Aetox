@@ -9,6 +9,8 @@ export function AddMCPServer(arg1:string,arg2:Array<string>):Promise<void>;
 
 export function AnswerUserQuestion(arg1:string):Promise<void>;
 
+export function AppendGuideTurn(arg1:string,arg2:string):Promise<void>;
+
 export function BrowserBack(arg1:string):Promise<void>;
 
 export function BrowserClickRef(arg1:string,arg2:number):Promise<void>;

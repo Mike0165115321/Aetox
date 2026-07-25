@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest'
+import { vi } from 'vitest'
 import { cockpit, pushGuideExchange } from '../lib/stores/cockpit.svelte'
 import { setLocale, t } from '../lib/i18n.svelte'
+import { AppendGuideTurn } from './mocks/wailsApp'
 
 const TOPIC_KEYS = ['guide.q1', 'guide.q2', 'guide.q3', 'guide.q4', 'guide.q5', 'guide.q6'] as const
 
@@ -15,6 +17,15 @@ describe('Aetox guide', () => {
     expect(cockpit.chat).toHaveLength(2)
     expect(cockpit.chat[0]).toMatchObject({ role: 'user', text: 'คำถาม' })
     expect(cockpit.chat[1]).toMatchObject({ role: 'agent', text: 'คำตอบ' })
+  })
+
+  // It looks like part of the conversation, so it has to survive a reload like
+  // part of the conversation — vanishing silently is the surprise an onboarding
+  // guide must never spring.
+  it('persists the exchange so it is still there after a reload', () => {
+    vi.mocked(AppendGuideTurn).mockClear()
+    pushGuideExchange('คำถาม', 'คำตอบ')
+    expect(AppendGuideTurn).toHaveBeenCalledWith('คำถาม', 'คำตอบ')
   })
 
   // The whole reason the guide lives in the locale files: the owner's

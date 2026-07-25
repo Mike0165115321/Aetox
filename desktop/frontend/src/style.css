@@ -896,19 +896,3 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .composer .icobtn.slash.active { border-color:var(--interactive); background:var(--surface-selected); color:var(--accent); }
 .composer .icobtn { font-size:18px; }
 
-/* ── Guided onboarding chips ────────────────────────────
-   Only while Aetox runs on its own engine: there is no model to answer
-   questions about Aetox, so the answers are canned and live in the locale
-   files (ARCHITECTURE.md §39). */
-.guide { margin:6px 0 2px; }
-.guide-head { color:var(--text-dim); font-size:12.5px; margin-bottom:8px; }
-.guide-chips { display:flex; flex-wrap:wrap; gap:8px; }
-.guide-chip {
-  padding:7px 13px; border-radius:999px; cursor:pointer; text-align:left;
-  border:1px solid var(--border-default); background:var(--surface-raised);
-  color:var(--text-secondary); font-size:13px; line-height:1.35;
-  transition:border-color .15s, color .15s, transform .15s;
-}
-.guide-chip:hover {
-  border-color:var(--interactive); color:var(--text-primary); transform:translateY(-1px);
-}
