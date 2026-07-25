@@ -331,8 +331,22 @@ func DiscoverOpenAICompatibleModels(p, baseURL, apiKey string) ([]string, error)
 }
 
 type geminiModel struct {
+	// Name is what the API actually sends — "models/gemini-2.5-flash".
+	// baseModelId is documented but absent from every entry the live endpoint
+	// returns, so reading only that skipped every model and left the picker
+	// empty with "no valid IDs" for anyone using Gemini.
+	Name                       string   `json:"name"`
 	BaseModelID                string   `json:"baseModelId"`
 	SupportedGenerationMethods []string `json:"supportedGenerationMethods"`
+}
+
+// id is the bare model name a request needs, from whichever field the endpoint
+// chose to populate.
+func (m geminiModel) id() string {
+	if v := strings.TrimSpace(m.BaseModelID); v != "" {
+		return v
+	}
+	return strings.TrimPrefix(strings.TrimSpace(m.Name), "models/")
 }
 
 type geminiModelsResponse struct {
@@ -387,7 +401,7 @@ func DiscoverGeminiModels(baseURL, apiKey string) ([]string, error) {
 		if !supportsGeminiGenerateContent(item.SupportedGenerationMethods) {
 			continue
 		}
-		id := strings.TrimSpace(item.BaseModelID)
+		id := item.id()
 		if id == "" {
 			continue
 		}

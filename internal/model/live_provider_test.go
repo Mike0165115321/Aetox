@@ -59,14 +59,38 @@ func liveWriteTool() ToolDefinition {
 	}
 }
 
+// Both wire formats are covered, because the reporting is implemented once per
+// format and a fake stream cannot prove either one matches what the API really
+// sends. DeepSeek exercises the Anthropic format (its catalog default), Gemini
+// the OpenAI-compatible one.
 func TestLiveToolCallProgress(t *testing.T) {
-	key := liveProviderKey(t, "deepseek")
+	for _, tc := range []struct {
+		provider, model string
+		// streamsArguments records what the API actually does, measured, not
+		// assumed: DeepSeek sends a tool call's arguments in hundreds of
+		// fragments, so the row's line count climbs the whole way. Gemini sends
+		// the finished call in a single delta at the end, so there is nothing to
+		// count — the row can only appear, correctly named, once. Asserting one
+		// rule for both would either fail on Gemini or stop checking DeepSeek.
+		streamsArguments bool
+	}{
+		{"deepseek", "deepseek-v4-flash", true},
+		{"gemini", "gemini-2.5-flash", false},
+	} {
+		t.Run(tc.provider, func(t *testing.T) {
+			liveToolCallProgress(t, tc.provider, tc.model, tc.streamsArguments)
+		})
+	}
+}
+
+func liveToolCallProgress(t *testing.T, provider, modelName string, streamsArguments bool) {
+	key := liveProviderKey(t, provider)
 
 	// Exactly how the app builds it: provider name only, catalog decides the
-	// runtime and URL. For deepseek that is the Anthropic wire format.
+	// runtime and URL.
 	p, err := NewProvider(ProviderOptions{
-		Provider: "deepseek",
-		Model:    "deepseek-v4-flash",
+		Provider: provider,
+		Model:    modelName,
 		APIKey:   key,
 		Timeout:  5 * time.Minute,
 	})
@@ -84,7 +108,7 @@ func TestLiveToolCallProgress(t *testing.T) {
 	start := time.Now()
 
 	resp, err := streamer.StreamComplete(context.Background(), Request{
-		Model:       "deepseek-v4-flash",
+		Model:       modelName,
 		MaxTokens:   8000,
 		Temperature: 0.2,
 		Tools:       []ToolDefinition{liveWriteTool()},
@@ -126,14 +150,28 @@ func TestLiveToolCallProgress(t *testing.T) {
 	if len(seen) == 0 {
 		t.Fatal("no progress updates — a large write is still silent on this provider")
 	}
+	// The id the UI saw must be the id the finished call carries, on every
+	// provider: that is what stops the timeline drawing the same call twice.
+	if seen[0].id != resp.ToolCalls[0].ID {
+		t.Errorf("streamed id %q != finished id %q — the timeline would draw two rows",
+			seen[0].id, resp.ToolCalls[0].ID)
+	}
+	// And the row must end up naming the file, however few updates it took.
+	if last := seen[len(seen)-1]; last.subject == "" {
+		t.Errorf("the row never learned the path: %+v", last)
+	}
+
+	if !streamsArguments {
+		// Nothing more to check: one delta carried the whole call, so a single
+		// update at the end is the most this provider can offer.
+		return
+	}
 	// The row must open long before the call finishes, or it is not progress.
 	if firstAt > total/2 {
 		t.Errorf("first update at %v of a %v stream — too late to be useful", firstAt, total)
 	}
-	// The id the UI saw must be the id the finished call carries.
-	if seen[0].id != resp.ToolCalls[0].ID {
-		t.Errorf("streamed id %q != finished id %q — the timeline would draw two rows",
-			seen[0].id, resp.ToolCalls[0].ID)
+	if len(seen) < 5 {
+		t.Errorf("%d updates over %v — the counter would look stalled", len(seen), total)
 	}
 	if last := seen[len(seen)-1]; last.lines < 2 {
 		t.Errorf("final line count %d never climbed", last.lines)

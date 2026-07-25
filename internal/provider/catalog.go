@@ -187,13 +187,17 @@ var catalog = map[string]*entry{
 		baseURL:        "https://generativelanguage.googleapis.com/v1beta/openai",
 		envKeys:        []string{"GEMINI_API_KEY", "GOOGLE_API_KEY"},
 		modelDefaults: ModelDefaults{
-			FallbackModel: "gemini-2.5-flash-lite",
+			// gemini-2.5-flash, not -flash-lite: the lite model is still listed
+			// by the models endpoint but the chat endpoint answers 404 "no
+			// longer available to new users", so it was a first-run failure for
+			// anyone picking Gemini today. Verified against the live API.
+			FallbackModel: "gemini-2.5-flash",
 			RecommendedModels: []string{
-				"gemini-2.5-flash-lite",
 				"gemini-2.5-flash",
-				"gemini-3.5-flash",
-				"gemini-2.0-flash-lite",
 				"gemini-2.5-pro",
+				"gemini-2.0-flash",
+				"gemini-3-flash-preview",
+				"gemini-3-pro-preview",
 			},
 		},
 		capabilities: Capabilities{ToolCalling: true, Reasoning: true},

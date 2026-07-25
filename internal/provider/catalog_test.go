@@ -138,7 +138,7 @@ func TestDefaultModel_FallbackOnly(t *testing.T) {
 		{"openrouter", "deepseek/deepseek-r1"},
 		{"openai", "gpt-4o-mini"},
 		{"deepseek", "deepseek-v4-flash"},
-		{"gemini", "gemini-2.5-flash-lite"},
+		{"gemini", "gemini-2.5-flash"},
 		{"groq", "llama-3.3-70b-versatile"},
 		{"mistral", "mistral-small"},
 		{"together", "google/gemma-2-9b-it"},

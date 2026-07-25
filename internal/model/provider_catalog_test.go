@@ -64,3 +64,30 @@ func TestResolveDefaultModelUsesCatalogForCloudProviders(t *testing.T) {
 		t.Fatalf("ResolveDefaultModel(anthropic): want catalog default %q, got %q", DefaultModel("anthropic"), got)
 	}
 }
+
+// The live endpoint sends "name": "models/gemini-2.5-flash" and populates no
+// baseModelId at all. Reading only baseModelId skipped every entry, so the
+// model picker came up empty with "no valid IDs" for anyone on Gemini.
+func TestDiscoverGeminiModelsReadsTheNameField(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"models":[
+			{"name":"models/gemini-2.5-flash","supportedGenerationMethods":["generateContent","countTokens"]},
+			{"name":"models/gemini-2.5-pro","supportedGenerationMethods":["generateContent"]},
+			{"name":"models/text-embedding-004","supportedGenerationMethods":["embedContent"]},
+			{"name":"models/legacy","baseModelId":"legacy-id","supportedGenerationMethods":["generateContent"]}
+		]}`))
+	}))
+	defer srv.Close()
+
+	models, err := DiscoverGeminiModels(srv.URL, "k")
+	if err != nil {
+		t.Fatalf("discover: %v", err)
+	}
+	got := strings.Join(models, ",")
+	// Sorted, prefix stripped, embedding-only model dropped, and an explicit
+	// baseModelId still wins where the endpoint does send one.
+	if want := "gemini-2.5-flash,gemini-2.5-pro,legacy-id"; got != want {
+		t.Errorf("models = %q, want %q", got, want)
+	}
+}
