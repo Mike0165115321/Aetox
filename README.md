@@ -100,7 +100,6 @@ Aetox ยังอยู่ในช่วงหล่อหลอม — แก
 
 | ความสามารถ | รายละเอียด |
 |:-----------|:-----------|
-| **CLI โต้ตอบ** | โหมด interactive + one-shot |
 | **11 Providers** | OpenAI, Anthropic, DeepSeek, Google Gemini, Groq, Mistral, Together, Perplexity, Cohere, LM Studio, Ollama |
 | **Tool Calling** | model-driven tool loop — agent เลือกใช้ tools เอง |
 | **15 Tools ในตัว** | read, write, edit, list, shell, git, grep และอื่นๆ |
@@ -149,33 +148,30 @@ Aetox ไม่ส่งข้อมูลอะไรออกจากเค�
 
 ## เริ่มต้นใช้
 
+Aetox เป็นแอปเดสก์ท็อปบน Windows โหลดแล้วเปิดใช้ได้เลย ไม่ต้องมี API key ก่อน —
+provider `aetox` ในตัวมีโมเดลจำลองให้ลองทุกฟีเจอร์ก่อนตัดสินใจ
+
+**ตัวติดตั้ง** — [ดาวน์โหลดตัวล่าสุด](https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-amd64-installer.exe)
+ติดตั้งแล้วมีใน Start Menu จัดการ Tesseract (OCR) ให้อัตโนมัติ
+
+**Scoop** — ถ้าใช้ scoop อยู่แล้ว
+
 ```powershell
-# build
-./build.ps1
-
-# โหมดโต้ตอบ (เลือก provider ครั้งแรก)
-aetox
-
-# one-shot
-aetox chat "ช่วยดูโค้ด module นี้หน่อย"
-
-# เลือก provider และ model
-aetox --model-provider deepseek --model-name deepseek-v4-flash
-
-# กำหนด thinking level
-aetox --model-provider deepseek --model-name "deepseek-v4-flash(high)"
-
-# approval mode
-aetox --approval full-access
+scoop install https://raw.githubusercontent.com/Mike0165115321/Aetox/main/scoop/aetox.json
 ```
 
-### Flags
+**Portable** — [zip ไม่ต้องติดตั้ง](https://github.com/Mike0165115321/Aetox/releases/latest) แตกแล้วรัน `aetox.exe`
 
-| Flag | คำอธิบาย |
-|:-----|:---------|
-| `--model-provider` | `openai`, `anthropic`, `deepseek`, `gemini`, `groq`, `mistral`, `together`, `perplexity`, `cohere`, `lmstudio`, `ollama` |
-| `--model-name` | ชื่อ model หรือ `model(think-level)` เช่น `deepseek-v4-flash(high)` |
-| `--think` | thinking level — `off-think`, `high`, `max` (แล้วแต่ provider) |
+> ตัวติดตั้งยังไม่ได้ code signing ครั้งแรก Windows SmartScreen จะขึ้นเตือน "unknown publisher" —
+> กด More info → Run anyway
+
+### build เอง
+
+```powershell
+cd desktop
+wails build          # ได้ desktop/build/bin/aetox.exe
+wails build -nsis    # พร้อมตัวติดตั้ง
+```
 | `--approval` | approval mode — `ask`, `unsafe-only`, `full-access` |
 | `--no-banner` | ไม่แสดง banner ตอนเข้า interactive mode |
 | `--debug` | เขียน debug log |
@@ -266,14 +262,14 @@ aetox --approval full-access
 
 ```
 Aetox/
-├── cmd/aetox/              # entry point
-│   ├── main.go             # CLI flags, provider selection, bootstrap
+├── cmd/aetox/              # CLI entry point — ยังไม่ปล่อยเป็นโปรดักต์
+│   ├── main.go             # flags, provider selection, bootstrap
 │   ├── main_windows.go     # UTF-8 console support
 │   ├── main_other.go       # cross-platform
 │   └── main_test.go
 │
 ├── internal/               # core packages
-│   ├── app/                # interactive CLI loop, banner, prompt
+│   ├── app/                # bootstrap + terminal loop (desktop ใช้แค่บางส่วน)
 │   ├── audit/              # execution logging
 │   ├── cognitive/          # Agent — tool loop, respond, stream
 │   ├── command/            # intent parsing
@@ -327,7 +323,6 @@ Aetox/
 | Layer | สถานะ |
 |-------|-------|
 | **Core Runtime** | ✅ v0.4.0 — providers, tools, turn loop, safety |
-| **CLI** | ✅ interactive + one-shot + auto-save preference |
 | **Tool Calling** | ✅ model-driven เท่านั้น — โมเดลเลือก tool เองทุกครั้ง (§17) |
 | **15 Built-in Tools** | ✅ read, write, list, shell, git, grep และอื่นๆ |
 | **Desktop App** | ✅ Wails + Svelte 5 — Sidebar, Chat, Workbench (tabbed dock), TopBar |
@@ -354,7 +349,6 @@ Aetox/
 > คือ AGI ที่ไม่ผูกมัดกับระบบใด  
 > คือรากฐานของสถาปัตยกรรมที่จะควบคุมวิธีคิดของโมเดล
 >
-> วันนี้คือ CLI ไม่กี่พันบรรทัด  
 > พรุ่งนี้คือ ecosystem ของตัวเอง
 >
 > ไม่มีทีมใหญ่ แต่วิสัยทัศน์ไกล  

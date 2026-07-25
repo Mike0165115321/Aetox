@@ -1,6 +1,9 @@
 # Windows release: push a tag like v0.4.0 and this builds the desktop app
-# (NSIS installer + portable zip) and the CLI, then attaches everything to a
-# GitHub Release. ARCHITECTURE.md §23 has the release checklist.
+# (NSIS installer + portable zip) and attaches it to a GitHub Release.
+# ARCHITECTURE.md §23 has the release checklist.
+#
+# The CLI (cmd/aetox) is deliberately NOT shipped — see §30. It still builds
+# and its tests still run in CI; it just is not a product yet.
 name: release
 
 on:
@@ -42,16 +45,12 @@ jobs:
         working-directory: desktop
         run: wails build -nsis -platform windows/amd64
 
-      - name: Build CLI
-        run: go build -trimpath -ldflags "-s -w" -o aetox-cli-windows-amd64.exe ./cmd/aetox
-
       - name: Package portable zip + checksums
         run: |
           Compress-Archive -Path desktop/build/bin/aetox.exe -DestinationPath aetox-windows-amd64-portable.zip
           $files = @(
             "desktop/build/bin/aetox-amd64-installer.exe",
-            "aetox-windows-amd64-portable.zip",
-            "aetox-cli-windows-amd64.exe"
+            "aetox-windows-amd64-portable.zip"
           )
           $files | ForEach-Object {
             "{0}  {1}" -f (Get-FileHash $_ -Algorithm SHA256).Hash, (Split-Path $_ -Leaf)
@@ -65,5 +64,4 @@ jobs:
           files: |
             desktop/build/bin/aetox-amd64-installer.exe
             aetox-windows-amd64-portable.zip
-            aetox-cli-windows-amd64.exe
             checksums.txt
