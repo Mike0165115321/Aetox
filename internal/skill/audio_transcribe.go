@@ -1,19 +1,16 @@
 package skill
 
 // audio_transcribe gives the agent ears. ffmpeg strips a 16kHz mono WAV out of
-// whatever it's handed (audio file or video — the same command covers both),
-// whisper.cpp transcribes it locally, and the segments come back as "[m:ss]
-// text" lines: byte-identical in shape to video_ocr, so both tools can be run
-// over one clip and read as a single transcript.
+// whatever it's handed (audio file or video — one command covers both), an
+// internal/stt engine transcribes it, and the segments come back as "[m:ss]
+// text": byte-identical in shape to video_ocr, so both tools can be run over
+// one clip and read as a single transcript.
 //
-// Local binary, not a cloud API, on purpose — audio leaving the machine would
-// contradict the one promise Aetox actually makes.
-//
-// The ggml model is deliberately NOT bundled: base is ~142MB against a ~12MB
-// installer, and downloading it silently on first use would spend the user's
-// bandwidth without asking. Missing model = an error that says what to fetch,
-// how big it is, and where to put it.
-// ponytail: whisper.cpp's own timestamps are taken as-is; no VAD, no diarization.
+// This file knows nothing about whisper, ggml or any other engine — picking
+// one, finding its binary and its model, and translating its output into
+// []stt.Segment all live in internal/stt (ARCHITECTURE.md §33). What is left
+// here is the part that is genuinely this skill's: sandboxing the path,
+// producing a WAV, and formatting timestamps the way video_ocr does.
 
 import (
 	"bytes"
@@ -24,38 +21,26 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
-	"sort"
-	"strconv"
 	"strings"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/config"
 	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/proc"
+	"github.com/Mike0165115321/Aetox/internal/stt"
 )
 
-// whisper.cpp renamed its CLI from `main` to `whisper-cli`; Homebrew ships it
-// as `whisper-cpp`. Both take the same flags. `main` is too generic a name to
-// go looking for on PATH.
-var whisperBinaryNames = []string{"whisper-cli", "whisper-cpp"}
-
-// whisperDefaultModel is what the error message tells users to download: the
-// best accuracy-per-megabyte for Thai. Any other ggml-*.bin already sitting in
-// the models dir is used as-is rather than nagging for this exact one.
-const whisperDefaultModel = "ggml-base.bin"
-
-// swapped in tests — production always resolves through PATH.
-var whisperLookPath = exec.LookPath
-
 type audioTranscribeSkill struct {
-	root string
+	root   string
+	speech stt.Options
+	// newEngine is swapped in tests to exercise this file without a real
+	// engine; production always builds from the catalog.
+	newEngine func(stt.Options) (stt.Engine, error)
 }
 
 func (*audioTranscribeSkill) Name() string { return "audio_transcribe" }
 
 func (*audioTranscribeSkill) Description() string {
-	return "ถอดเสียงพูดในไฟล์เสียงหรือวิดีโอเป็นข้อความพร้อมเวลากำกับ (whisper.cpp ในเครื่อง ไทย+อังกฤษ) — ใช้เมื่อโมเดลปัจจุบันฟังเสียงไม่ได้"
+	return "ถอดเสียงพูดในไฟล์เสียงหรือวิดีโอเป็นข้อความพร้อมเวลากำกับ (ถอดในเครื่อง ไทย+อังกฤษ) — ใช้เมื่อโมเดลปัจจุบันฟังเสียงไม่ได้"
 }
 
 func (*audioTranscribeSkill) ToolDefinition() model.ToolDefinition {
@@ -75,7 +60,7 @@ func (*audioTranscribeSkill) ToolDefinition() model.ToolDefinition {
 		Type: "function",
 		Function: model.ToolFunction{
 			Name:        "audio_transcribe",
-			Description: "Transcribe spoken words from an audio or video file into text, offline (whisper.cpp, auto-detected language, Thai+English). Use this to hear a file's content when you cannot listen to it — including a video whose screen has no text for video_ocr to read. Returns '[m:ss] text' lines.",
+			Description: "Transcribe spoken words from an audio or video file into text, offline (auto-detected language, Thai+English). Use this to hear a file's content when you cannot listen to it — including a video whose screen has no text for video_ocr to read. Returns '[m:ss] text' lines.",
 			Parameters:  payload,
 		},
 	}
@@ -115,11 +100,13 @@ func (s *audioTranscribeSkill) run(ctx context.Context, start time.Time, request
 		return fail(fmt.Errorf("ไม่พบไฟล์ %s ใน workspace — ตรวจชื่อไฟล์และที่อยู่อีกครั้ง", requestPath))
 	}
 
-	binPath, err := whisperBinary()
-	if err != nil {
-		return fail(err)
+	// Resolve the engine before spending ffmpeg time: a missing binary or model
+	// is the most likely failure and its error is the same either way.
+	build := s.newEngine
+	if build == nil {
+		build = stt.New
 	}
-	modelPath, err := whisperModelPath()
+	engine, err := build(s.speech)
 	if err != nil {
 		return fail(err)
 	}
@@ -135,12 +122,12 @@ func (s *audioTranscribeSkill) run(ctx context.Context, start time.Time, request
 		return fail(err)
 	}
 
-	raw, err := runWhisper(ctx, binPath, modelPath, wavPath)
+	segments, err := engine.Transcribe(ctx, wavPath)
 	if err != nil {
 		return fail(err)
 	}
 
-	result := strings.Join(parseWhisperSegments(raw), "\n")
+	result := formatSegments(segments)
 	if result == "" {
 		result = "(ไม่พบเสียงพูดในไฟล์)"
 	}
@@ -148,9 +135,20 @@ func (s *audioTranscribeSkill) run(ctx context.Context, start time.Time, request
 	return newToolOutput("audio_transcribe", command, truncated, start, wasTruncated, nil), nil
 }
 
+// formatSegments renders "[m:ss] text" — the same shape video_ocr emits, so a
+// clip run through both tools reads as one transcript.
+func formatSegments(segments []stt.Segment) string {
+	lines := make([]string, 0, len(segments))
+	for _, seg := range segments {
+		sec := seg.StartMs / 1000
+		lines = append(lines, fmt.Sprintf("[%d:%02d] %s", sec/60, sec%60, seg.Text))
+	}
+	return strings.Join(lines, "\n")
+}
+
 // extractAudioTrack normalizes anything ffmpeg can open into the 16kHz mono
-// PCM whisper.cpp expects. -vn makes a video file just another audio source,
-// so audio and video inputs need no branch here.
+// PCM every engine in internal/stt expects. -vn makes a video file just another
+// audio source, so audio and video inputs need no branch here.
 func extractAudioTrack(ctx context.Context, inputPath, wavPath string) error {
 	cmd := exec.CommandContext(ctx, "ffmpeg",
 		"-hide_banner", "-loglevel", "error", "-y",
@@ -172,132 +170,4 @@ func extractAudioTrack(ctx context.Context, inputPath, wavPath string) error {
 		return fmt.Errorf("ดึงเสียงออกจากไฟล์ไม่ได้ — ไฟล์อาจไม่มีแทร็กเสียงหรือเสียหาย (%s)", msg)
 	}
 	return nil
-}
-
-func runWhisper(ctx context.Context, binPath, modelPath, wavPath string) (string, error) {
-	// -l auto detects Thai vs English per file; -np drops whisper's banner and
-	// progress lines so stdout is nothing but segments.
-	cmd := exec.CommandContext(ctx, binPath, "-m", modelPath, "-f", wavPath, "-l", "auto", "-np")
-	proc.HideConsole(cmd)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		if errors.Is(err, exec.ErrNotFound) {
-			return "", missingWhisperError()
-		}
-		msg := strings.TrimSpace(stderr.String())
-		if msg == "" {
-			msg = err.Error()
-		}
-		return "", errors.New(msg)
-	}
-	return stdout.String(), nil
-}
-
-// parseWhisperSegments turns whisper.cpp's
-// "[00:00:03.000 --> 00:00:06.000]   สวัสดีครับ" into "[0:03] สวัสดีครับ",
-// dropping anything that isn't a segment line. Consecutive repeats collapse —
-// whisper loops the same phrase over long silences.
-func parseWhisperSegments(raw string) []string {
-	var lines []string
-	lastText := ""
-	for _, line := range strings.Split(raw, "\n") {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "[") {
-			continue
-		}
-		closing := strings.IndexByte(line, ']')
-		arrow := strings.Index(line, "-->")
-		if closing < 0 || arrow < 0 || arrow > closing {
-			continue
-		}
-		sec, ok := parseWhisperTimestamp(line[1:arrow])
-		if !ok {
-			continue
-		}
-		text := strings.TrimSpace(line[closing+1:])
-		if text == "" || text == lastText {
-			continue
-		}
-		lastText = text
-		lines = append(lines, fmt.Sprintf("[%d:%02d] %s", sec/60, sec%60, text))
-	}
-	return lines
-}
-
-// parseWhisperTimestamp reads "HH:MM:SS.mmm" (or "MM:SS.mmm") as whole seconds.
-func parseWhisperTimestamp(ts string) (int, bool) {
-	ts = strings.TrimSpace(ts)
-	if dot := strings.IndexByte(ts, '.'); dot >= 0 {
-		ts = ts[:dot]
-	}
-	parts := strings.Split(ts, ":")
-	if len(parts) < 2 || len(parts) > 3 {
-		return 0, false
-	}
-	total := 0
-	for _, part := range parts {
-		n, err := strconv.Atoi(strings.TrimSpace(part))
-		if err != nil || n < 0 {
-			return 0, false
-		}
-		total = total*60 + n
-	}
-	return total, true
-}
-
-func whisperBinary() (string, error) {
-	for _, name := range whisperBinaryNames {
-		if path, err := whisperLookPath(name); err == nil {
-			return path, nil
-		}
-	}
-	return "", missingWhisperError()
-}
-
-// whisperModelPath prefers the model the error message asks for, but accepts
-// any ggml-*.bin already in the models dir — someone who downloaded tiny or
-// small should not be told to fetch base as well.
-func whisperModelPath() (string, error) {
-	root, err := config.DataRoot()
-	if err != nil {
-		return "", err
-	}
-	dir := filepath.Join(root, "models")
-	if preferred := filepath.Join(dir, whisperDefaultModel); isRegularFile(preferred) {
-		return preferred, nil
-	}
-	matches, _ := filepath.Glob(filepath.Join(dir, "ggml-*.bin"))
-	sort.Strings(matches)
-	for _, match := range matches {
-		if isRegularFile(match) {
-			return match, nil
-		}
-	}
-	return "", missingWhisperModelError(dir)
-}
-
-func isRegularFile(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.Mode().IsRegular()
-}
-
-func missingWhisperModelError(dir string) error {
-	return fmt.Errorf("ยังไม่มีไฟล์โมเดลถอดเสียงในเครื่อง — Aetox ไม่โหลดให้เองเพราะไฟล์ใหญ่ ~142 MB ต้องให้คุณตัดสินใจก่อน\n"+
-		"1) โหลดไฟล์: https://huggingface.co/ggerganov/whisper.cpp/resolve/main/%s\n"+
-		"2) วางไว้ที่: %s\n"+
-		"ถ้าพื้นที่หรือเน็ตจำกัด ใช้ ggml-tiny.bin (~75 MB) แทนได้ในโฟลเดอร์เดียวกัน แลกกับความแม่นที่ลดลง",
-		whisperDefaultModel, filepath.Join(dir, whisperDefaultModel))
-}
-
-func missingWhisperError() error {
-	switch runtime.GOOS {
-	case "darwin":
-		return errors.New("ไม่พบโปรแกรม whisper.cpp ในเครื่อง — ติดตั้งด้วย: brew install whisper-cpp")
-	case "linux":
-		return errors.New("ไม่พบโปรแกรม whisper.cpp ในเครื่อง — build จาก https://github.com/ggml-org/whisper.cpp แล้วให้คำสั่ง whisper-cli อยู่ใน PATH")
-	default: // windows and anything else
-		return errors.New("ไม่พบโปรแกรม whisper.cpp ในเครื่อง — โหลด binary จาก https://github.com/ggml-org/whisper.cpp/releases แตกไฟล์แล้ววาง whisper-cli.exe ไว้ในโฟลเดอร์ที่อยู่ใน PATH")
-	}
 }
