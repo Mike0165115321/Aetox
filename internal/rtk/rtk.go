@@ -44,6 +44,84 @@ var pipeFilters = map[string]bool{
 // ARCHITECTURE.md §13.4: rtk's file-reading filter is a different mechanism,
 // `rtk read --level`, and folding it in risked dropping doc comments the
 // agent needs).
+const (
+	// rtkTimeout bounds one call to the rtk binary.
+	rtkTimeout = 5 * time.Second
+
+	// waitDelay is what actually makes rtkTimeout mean anything.
+	//
+	// Stdout here is a bytes.Buffer, not a file, so os/exec puts a pipe in
+	// between and Wait blocks until the copying goroutine finishes. Killing rtk
+	// on timeout does not close that pipe if a *grandchild* inherited the write
+	// end — and rtk is a process supervisor whose whole job is running the real
+	// command as a child, so grandchildren are the normal case, not an edge one.
+	// Without WaitDelay, Run can block forever and the context above is
+	// decorative. Observed: a call that should have given up after 5 seconds
+	// still had not returned after five minutes (2026-07-26).
+	//
+	// WaitDelay gives those goroutines a deadline of their own, after which
+	// Run returns regardless. Whatever output arrived by then is used; rtk
+	// failing simply means the caller keeps the original text.
+	waitDelay = 2 * time.Second
+)
+
+// rewriteAllowlist is the set of command families rtk measurably shrinks,
+// as an allowlist rather than a blocklist: an unknown command runs raw, and
+// the worst case of that is "no better than before". Measured on the Aetox
+// repo, 2026-07-26:
+//
+//	git log     185,616 -> 4,514 bytes   (-97%)
+//	git diff    155,258 -> 28,306        (-82%)
+//	git status    2,834 -> 2,347         (-17%)
+//	go build (ok)     0 -> 96            (worse)
+//	go build (fail) 218 -> 439           (worse — it reformats four short
+//	                                      error lines into a decorated list)
+//	go test (ok)     60 -> 111           (worse)
+//
+// The pattern is that rtk wins on large output and loses on small, because it
+// pays a fixed cost per call. Anything not listed here is left alone.
+//
+// ponytail: a hand-measured list, so a command rtk learns to compact later
+// gains nothing until someone adds it. Re-measure with:
+//
+//	raw=$(<cmd> 2>&1 | wc -c); rtk=$(rtk <cmd> 2>&1 | wc -c)
+var rewriteAllowlist = map[string]map[string]bool{
+	"git": {"log": true, "diff": true, "show": true, "status": true},
+}
+
+func worthRewriting(command string) bool {
+	fields := strings.Fields(command)
+	if len(fields) < 2 {
+		return false
+	}
+	subs, ok := rewriteAllowlist[strings.ToLower(fields[0])]
+	if !ok {
+		return false
+	}
+	return subs[strings.ToLower(fields[1])]
+}
+
+// StripBanner removes rtk's own chatter from output on its way to the model.
+// rtk prefixes every invocation with a line advertising `rtk init -g` — 74
+// bytes of nothing, on every call, which is most of why small commands came
+// out larger than they went in. Matching the "[rtk]" prefix rather than the
+// exact sentence means this quietly becomes a no-op if the wording changes or
+// the banner goes away.
+func StripBanner(output string) string {
+	if !strings.Contains(output, "[rtk]") {
+		return output
+	}
+	lines := strings.Split(output, "\n")
+	kept := lines[:0]
+	for _, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "[rtk]") {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return strings.TrimSpace(strings.Join(kept, "\n"))
+}
+
 func FilterForTool(toolName string, args map[string]any) string {
 	switch strings.ToLower(strings.TrimSpace(toolName)) {
 	case "git":
@@ -75,18 +153,25 @@ func FilterForTool(toolName string, args map[string]any) string {
 // rewrite`'s own --help documents "exits 0 on success," but a live check
 // (v0.34.3) showed a successful rewrite exiting 3 — its exit code doesn't
 // reliably follow its own documented convention, while stdout does.
-func Rewrite(command string) (string, bool) {
+func Rewrite(ctx context.Context, command string) (string, bool) {
 	command = strings.TrimSpace(command)
 	bin := resolve()
 	if command == "" || bin == "" {
 		return "", false
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if !worthRewriting(command) {
+		return "", false
+	}
+	// The caller's context, not a detached one: rtk is a subprocess running on
+	// the user's behalf during a turn, and Stop has to reach it like it reaches
+	// everything else. The timeout is a ceiling on top of that, not instead.
+	ctx, cancel := context.WithTimeout(ctx, rtkTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, "rewrite", command)
 	proc.HideConsole(cmd)
 	var out bytes.Buffer
 	cmd.Stdout = &out
+	cmd.WaitDelay = waitDelay
 	_ = cmd.Run()
 	rewritten := strings.TrimSpace(out.String())
 	if rewritten == "" || rewritten == command {
@@ -98,18 +183,19 @@ func Rewrite(command string) (string, bool) {
 // Filter pipes content through `rtk pipe -f <filter>`. Returns the original
 // content unchanged (ok=false) on any error, timeout, missing binary, or
 // unknown filter — filtering must never be the reason a tool result is lost.
-func Filter(filter, content string) (string, bool) {
+func Filter(ctx context.Context, filter, content string) (string, bool) {
 	bin := resolve()
 	if filter == "" || !pipeFilters[filter] || strings.TrimSpace(content) == "" || bin == "" {
 		return content, false
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, rtkTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, "pipe", "-f", filter)
 	proc.HideConsole(cmd)
 	cmd.Stdin = strings.NewReader(content)
 	var out bytes.Buffer
 	cmd.Stdout = &out
+	cmd.WaitDelay = waitDelay
 	if err := cmd.Run(); err != nil {
 		return content, false
 	}

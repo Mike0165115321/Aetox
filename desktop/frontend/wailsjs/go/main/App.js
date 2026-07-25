@@ -130,6 +130,10 @@ export function ListAllSessions() {
   return window['go']['main']['App']['ListAllSessions']();
 }
 
+export function ListBuiltinSkills() {
+  return window['go']['main']['App']['ListBuiltinSkills']();
+}
+
 export function ListExternalSkills() {
   return window['go']['main']['App']['ListExternalSkills']();
 }
@@ -298,6 +302,10 @@ export function SetUILocale(arg1) {
   return window['go']['main']['App']['SetUILocale'](arg1);
 }
 
+export function SetUserName(arg1) {
+  return window['go']['main']['App']['SetUserName'](arg1);
+}
+
 export function SupportedProviders() {
   return window['go']['main']['App']['SupportedProviders']();
 }
@@ -360,6 +368,10 @@ export function ToolCounts() {
 
 export function UsageStats() {
   return window['go']['main']['App']['UsageStats']();
+}
+
+export function UserName() {
+  return window['go']['main']['App']['UserName']();
 }
 
 export function WriteFile(arg1, arg2) {

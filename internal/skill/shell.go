@@ -44,7 +44,7 @@ func (s *shellSkill) Execute(ctx context.Context, input Input) (Output, error) {
 	// the audit log below still see the original commandLine; only what
 	// actually executes changes.
 	execLine := commandLine
-	if rewritten, ok := rtk.Rewrite(commandLine); ok {
+	if rewritten, ok := rtk.Rewrite(ctx, commandLine); ok {
 		execLine = rewritten
 	}
 
@@ -57,7 +57,8 @@ func (s *shellSkill) Execute(ctx context.Context, input Input) (Output, error) {
 	cmd.Stderr = buffer
 
 	err = cmd.Run()
-	out := strings.TrimSpace(buffer.buf.String())
+	// rtk advertises itself on every invocation; the model has no use for it.
+	out := rtk.StripBanner(strings.TrimSpace(buffer.buf.String()))
 	truncatedOutput, truncated := limitLines(out, defaultToolOutputLineLimit)
 	truncated = truncated || buffer.dropped
 	command := "shell " + commandLine

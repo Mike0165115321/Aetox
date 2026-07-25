@@ -70,6 +70,7 @@ func BuildWithReport(surface Surface, sandboxRoot string) (string, Loaded) {
 	var b strings.Builder
 	b.WriteString(identity(surface))
 	b.WriteString(environment(sandboxRoot))
+	b.WriteString(fileEditing())
 
 	var loaded Loaded
 	loaded.UserGlobalPaths = foldIdentityLayers(&b)
@@ -117,6 +118,28 @@ func identity(surface Surface) string {
 		place = "a desktop chat UI"
 	}
 	return fmt.Sprintf("You are Aetox, a concise assistant in Thai and English that helps users through %s.\n", place)
+}
+
+// fileEditing tells the model how to change a file it has already written.
+// Nothing used to, and the tool descriptions alone ("Create or overwrite a
+// file" vs "Replace an exact string") give no reason to prefer one — so a
+// small fix to an 800-line file was answered by streaming all 800 lines back
+// through `write` again. Those lines are output tokens, paid for and slow:
+// the user watches a minute of silence per edit, every edit.
+func fileEditing() string {
+	return "When changing a file that already exists, use the edit tool on just the part that changes. " +
+		"Do NOT re-send the whole file through write — its content is output tokens, so rewriting an " +
+		"800-line file to fix one line costs 800 lines of generation every time, and every one of those " +
+		"lines also lands in the conversation.\n" +
+		"Use write only to create a new file, or when genuinely replacing nearly all of an existing one.\n" +
+		"Changing more than one place? Use apply_patch to make all the edits in a single atomic call — " +
+		"either every edit applies or none do, and it costs one round instead of one per edit.\n" +
+		"After changing source files, call diagnostics on them to confirm the change compiles before " +
+		"moving on. Finding out later, from the user, means having built more work on a broken file.\n" +
+		"To find the exact text to match, grep for it with a context of a few lines (and a glob when you " +
+		"know the file type) — that usually gives you enough to write the edit without reading the file " +
+		"at all. Otherwise read with offset and limit around the part you care about. Do not read a large " +
+		"file end to end just to change one line in it.\n"
 }
 
 func environment(sandboxRoot string) string {

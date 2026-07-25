@@ -225,7 +225,7 @@ func TestShellSkillRewritesToRTKWhenAvailable(t *testing.T) {
 	// resolvable: Rewrite legitimately returns ok=false when rtk has no
 	// equivalent for a command, and the old `rtk.Available()` guard turned
 	// that normal outcome into a red build (CI, 2026-07-25).
-	if _, ok := rtk.Rewrite("git status"); !ok {
+	if _, ok := rtk.Rewrite(context.Background(), "git status"); !ok {
 		t.Skip("rtk has no rewrite for `git status` here (not installed, or no equivalent)")
 	}
 	isolateAuditLog(t)

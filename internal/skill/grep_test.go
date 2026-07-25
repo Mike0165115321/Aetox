@@ -203,3 +203,110 @@ func TestGrepSkillExecuteToolMissingPattern(t *testing.T) {
 		t.Fatal("expected error for missing pattern, got nil")
 	}
 }
+
+// A search that walks node_modules is not a search: on the Aetox repo that is
+// 10,826 of 12,073 files, so the 200-result cap fills with vendored code
+// before reaching src/.
+func TestGrepSkipsDependencyAndBuildDirs(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel, body string) {
+		full := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("src/app.go", "func handleClick() {}\n")
+	write("node_modules/pkg/index.js", "function handleClick() {}\n")
+	write("dist/bundle.js", "function handleClick() {}\n")
+	write("vendor/lib/x.go", "func handleClick() {}\n")
+
+	s := &grepSkill{root: root}
+	out, err := s.ExecuteTool(context.Background(), map[string]any{"pattern": "handleClick"})
+	if err != nil {
+		t.Fatalf("grep failed: %v", err)
+	}
+	if !strings.Contains(out.Content, "src/app.go") {
+		t.Errorf("the user's own code was not found:\n%s", out.Content)
+	}
+	for _, noise := range []string{"node_modules", "dist", "vendor"} {
+		if strings.Contains(out.Content, noise) {
+			t.Errorf("grep descended into %s:\n%s", noise, out.Content)
+		}
+	}
+}
+
+// Without a glob, a search for a common word drags in every language in the
+// repo; without context, the model must call read again just to see enough
+// code to build an exact edit — one wasted round trip per fix.
+func TestGrepGlobAndContext(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel, body string) {
+		full := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("a.go", "package main\n\nfunc target() {\n\tprintln(1)\n}\n")
+	write("b.ts", "export function target() {}\n")
+	write("c.svelte", "<script>function target() {}</script>\n")
+	s := &grepSkill{root: root}
+
+	only := func(args map[string]any) string {
+		out, err := s.ExecuteTool(context.Background(), args)
+		if err != nil {
+			t.Fatalf("grep failed: %v", err)
+		}
+		return out.Content
+	}
+
+	got := only(map[string]any{"pattern": "target", "glob": "*.go"})
+	if !strings.Contains(got, "a.go") || strings.Contains(got, "b.ts") || strings.Contains(got, "c.svelte") {
+		t.Errorf("glob *.go did not narrow the search:\n%s", got)
+	}
+
+	got = only(map[string]any{"pattern": "target", "glob": "*.{ts,svelte}"})
+	if !strings.Contains(got, "b.ts") || !strings.Contains(got, "c.svelte") || strings.Contains(got, "a.go") {
+		t.Errorf("brace alternation did not work:\n%s", got)
+	}
+
+	// Context lines use ripgrep's separators: ':' on the match, '-' around it.
+	got = only(map[string]any{"pattern": "func target", "path": "a.go", "context": 1})
+	if !strings.Contains(got, "a.go:3:func target() {") {
+		t.Errorf("match line missing or mis-numbered:\n%s", got)
+	}
+	if !strings.Contains(got, "a.go-2-") || !strings.Contains(got, "a.go-4-\tprintln(1)") {
+		t.Errorf("context lines missing:\n%s", got)
+	}
+
+	// Zero context stays exactly as before.
+	got = only(map[string]any{"pattern": "func target", "path": "a.go"})
+	if strings.Contains(got, "a.go-") {
+		t.Errorf("context appeared without being asked for:\n%s", got)
+	}
+}
+
+func TestMatchesGlob(t *testing.T) {
+	cases := []struct {
+		glob, name string
+		want       bool
+	}{
+		{"*.go", "app.go", true},
+		{"*.go", "app.ts", false},
+		{"*.{ts,svelte}", "Chat.svelte", true},
+		{"*.{ts,svelte}", "main.go", false},
+		{"**/*.go", "app.go", true}, // a pattern copied from another tool still works
+		{"", "anything", true},
+		{"app.go", "app.go", true},
+	}
+	for _, c := range cases {
+		if got := matchesGlob(c.glob, c.name); got != c.want {
+			t.Errorf("matchesGlob(%q, %q) = %v, want %v", c.glob, c.name, got, c.want)
+		}
+	}
+}

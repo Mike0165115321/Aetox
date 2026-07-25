@@ -86,6 +86,13 @@ export interface ChatMessage {
   imageDataUrl?: string
   /** Label of a dragged-in file/browser tab, for a small chip on the bubble (content itself is inlined into text). */
   contextLabel?: string
+  /** A user-attached video/audio/document, for the same chip. Only the path
+   * goes to the model, so without this the bubble showed nothing at all. */
+  attachLabel?: string
+  attachKind?: PendingFile['kind']
+  /** Sandbox path of an attached image on a restored message — the thumbnail is
+   * read back from it, since a data URL has no business in the history DB. */
+  imageRelPath?: string
   /** tool calls made during this turn, kept on the reply for a persistent timeline. */
   steps?: ToolStep[]
   /** the model's thinking for this reply — kept after the turn, collapsed by default. */
@@ -95,9 +102,25 @@ export interface ChatMessage {
 }
 
 /** One tool call in the live per-turn timeline ("Using browser_read… 12s"). */
+/** One tool call/result as the engine sends it — mirrors turn.ToolEvent in Go. */
+export interface ToolEvent {
+  action: 'call' | 'result'
+  name: string
+  subject?: string
+  ok?: boolean
+  error?: string
+  added?: number
+  removed?: number
+}
+
 export interface ToolStep {
   label: string
   state: 'run' | 'done' | 'err'
+  /** Why it failed, straight from the engine's result event. Only on 'err'. */
+  error?: string
+  /** Lines a write or edit changed, for the "+9 -0" readout. */
+  added?: number
+  removed?: number
   startedAt: number
   /** seconds it took, filled in when the result arrives */
   secs?: number

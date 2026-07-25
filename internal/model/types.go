@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -65,6 +67,14 @@ type Request struct {
 	ToolChoice  string           `json:"tool_choice,omitempty"`
 	Reasoning   *ReasoningConfig `json:"reasoning,omitempty"`
 	Thinking    *ThinkingConfig  `json:"thinking,omitempty"`
+	// OnToolCallProgress, if set, tracks a tool call while it is still being
+	// written: first when it becomes nameable (tool name + the argument worth
+	// reading), then again each time another line of `content` arrives.
+	// Writing an 800-line file means the model spends a minute streaming that
+	// content, and the call is only dispatched once the JSON is complete — so
+	// without this the UI has nothing to show for the longest part of the job.
+	// Not serialized; providers that don't stream simply never call it.
+	OnToolCallProgress func(name, subject string, lines int) `json:"-"`
 }
 
 type Response struct {
@@ -124,6 +134,92 @@ func normalizeUsage(usage Usage) *Usage {
 		TotalTokens:      usage.TotalTokenCount(),
 	}
 	return &normalized
+}
+
+// ArgSubjectKeys is the priority order for "which argument names this call" —
+// the path a write touches, the URL a fetch opens. Shared with the turn
+// executor so the label shown while a call streams in is byte-identical to the
+// one shown when it runs; the UI matches on that label to avoid drawing the
+// same call twice.
+var ArgSubjectKeys = []string{"path", "file_path", "url", "command", "pattern", "query", "name"}
+
+// partialArgRe matches one complete "key": "value" pair. The closing quote is
+// required, so a value still arriving cannot match and be reported truncated.
+var partialArgRe = regexp.MustCompile(`"(path|file_path|url|command|pattern|query|name)"\s*:\s*"((?:[^"\\]|\\.)*)"`)
+
+// SubjectFromPartialArgs pulls the first readable argument out of a tool call
+// whose JSON is still streaming in, so the UI can name the call before its
+// arguments finish. Reports ok=false while nothing is complete yet.
+//
+// ponytail: a scan, not a parser — a `"url": "..."` sitting inside an earlier
+// string value would be taken at face value. Models emit arguments in schema
+// order (path before content), so the first match is the real one in practice;
+// swap in a streaming JSON tokenizer if that ever stops holding.
+func SubjectFromPartialArgs(args string) (string, bool) {
+	matches := partialArgRe.FindAllStringSubmatch(args, -1)
+	if len(matches) == 0 {
+		return "", false
+	}
+	firstByKey := map[string]string{}
+	for _, m := range matches {
+		if _, seen := firstByKey[m[1]]; !seen {
+			firstByKey[m[1]] = m[2]
+		}
+	}
+	for _, key := range ArgSubjectKeys {
+		raw, ok := firstByKey[key]
+		if !ok {
+			continue
+		}
+		value := raw
+		if unquoted, err := strconv.Unquote(`"` + raw + `"`); err == nil {
+			value = unquoted
+		}
+		if value = strings.TrimSpace(value); value != "" {
+			return capSubject(value), true
+		}
+	}
+	return "", false
+}
+
+// SubjectFromArgs is the same choice made over arguments that have finished
+// arriving and parsed cleanly.
+//
+// Both paths live here, and both end in capSubject, because the UI recognizes
+// a call by its label: if the streaming path and the completed path disagree
+// by so much as a truncation, one tool call draws two rows.
+func SubjectFromArgs(args map[string]any) string {
+	for _, key := range ArgSubjectKeys {
+		if v, ok := args[key].(string); ok {
+			if v = strings.TrimSpace(v); v != "" {
+				return capSubject(v)
+			}
+		}
+	}
+	return ""
+}
+
+// subjectCap keeps a label to one readable line. Cut on a rune boundary, so a
+// Thai or otherwise multi-byte path is never sliced into mojibake.
+const subjectCap = 60
+
+func capSubject(s string) string {
+	runes := []rune(s)
+	if len(runes) <= subjectCap {
+		return s
+	}
+	return string(runes[:subjectCap]) + "…"
+}
+
+// ContentLinesSoFar counts the lines of a `content` argument that has only
+// partly arrived. JSON escapes a newline as the two characters \ and n, so the
+// count is of those, not of real newlines — the raw stream has none.
+func ContentLinesSoFar(args string) int {
+	i := strings.Index(args, `"content"`)
+	if i < 0 {
+		return 0
+	}
+	return strings.Count(args[i:], `\n`) + 1
 }
 
 func ParseToolArguments(raw string) (map[string]any, error) {

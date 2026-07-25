@@ -13,14 +13,33 @@
     ListModelsForProvider, ProviderBaseURL, ProviderWireFormats, TestProviderConnection,
     EnabledProviders, SetProviderEnabled,
     ListMCPServers, SaveMCPServer, RemoveMCPServer, TestMCPServer, ToggleMCPServer,
-    ListExternalSkills, InstallSkillFromGitHub, RemoveExternalSkill, RefreshSkills,
+    ListExternalSkills, ListBuiltinSkills, InstallSkillFromGitHub, RemoveExternalSkill, RefreshSkills,
     UsageStats, ListPromptPresets, OpenPromptsFolder,
     SavePromptPreset, DeletePromptPreset, PickPresetImage, RemovePresetImage,
   } from '../../wailsjs/go/main/App'
   import { config } from '../../wailsjs/go/models'
   import { cockpit, switchProvider, switchModel, submitAPIKey, switchApprovalMode, switchWireFormat } from './stores/cockpit.svelte'
+  import {
+    identity, loadIdentityFiles, openIdentityFile, saveIdentityFile,
+    createIdentityFile, deleteIdentityFile, identityTemplates,
+  } from './identity.svelte'
 
   let { onClose }: { onClose: () => void } = $props()
+
+  // ---------- AI identity (moved out of the sidebar: it is configuration you
+  // edit once in a while, not a list you navigate between chats) ----------
+  let newIdentityName = $state('')
+  const identityDirty = $derived(identity.draft !== identity.saved)
+  const missingTemplates = $derived(
+    identity.loaded && identity.files
+      ? identityTemplates.filter((tpl) => !(identity.files || []).some((f) => f.name === tpl.name))
+      : [],
+  )
+  function addIdentityFile() {
+    if (!newIdentityName.trim()) return
+    createIdentityFile(newIdentityName)
+    newIdentityName = ''
+  }
 
   const approvalOptions = [
     { value: 'ask', label: t('chat.approvalAsk') },
@@ -337,6 +356,9 @@
   // ---------- Skills (discovered SKILL.md + plugin install) ----------
   type SkillRow = { name: string; description: string; dir: string }
   let extSkills = $state<SkillRow[]>([])
+  // Read-only: the tools compiled into the engine. Without them this page reads
+  // as "the AI has no skills", when in fact every install ships a full set.
+  let builtinSkills = $state<{ name: string; description: string }[]>([])
   let skillBusy = $state('')
   let skillError = $state('')
   let skillInstallUrl = $state('')
@@ -345,6 +367,7 @@
 
   async function loadSkills() {
     extSkills = await ListExternalSkills()
+    builtinSkills = await ListBuiltinSkills()
   }
 
   async function runSkill(label: string, fn: () => Promise<void>) {
@@ -513,12 +536,16 @@
   $effect(() => {
     if (active === 'prompts') void loadPresets()
   })
+  $effect(() => {
+    if (active === 'identity') loadIdentityFiles()
+  })
 
   // ---------- Nav ----------
   const sections = $derived([
     { group: t('settings.groupPersonal'), items: [
       { id: 'general', label: t('settings.general'), icon: '⚙' },
       { id: 'appearance', label: t('settings.appearance'), icon: '🎨' },
+      { id: 'identity', label: t('sidebar.identity'), icon: '👤' },
     ]},
     { group: t('settings.groupModels'), items: [
       { id: 'models', label: t('settings.modelSettings'), icon: '🧠' },
@@ -836,6 +863,25 @@
       <h2>{t('settings.skills')}</h2>
       <p class="muted set-sub">{t('settings.skillsDesc')}</p>
 
+      <!-- Built-ins first: they are what the AI can do before the user adds
+           anything, and this page used to claim there were none. -->
+      <div class="settings-card">
+        <div class="card-form">
+          <div class="mset-keyrow">
+            <div class="eyebrow" style="flex:1">{t('settings.skillsBuiltin', { n: builtinSkills.length })}</div>
+          </div>
+        </div>
+        {#each builtinSkills as s (s.name)}
+          <div class="set-row">
+            <div class="set-txt">
+              <div class="t">{s.name}</div>
+              <div class="d">{s.description || '—'}</div>
+            </div>
+            <span class="muted">{t('settings.skillsAlwaysOn')}</span>
+          </div>
+        {/each}
+      </div>
+
       <div class="settings-card">
         <div class="card-form">
           <div class="mset-keyrow">
@@ -975,6 +1021,56 @@
           </div>
         </div>
       {/if}
+    {:else if active === 'identity'}
+      <h2>{t('sidebar.identity')}</h2>
+      <div class="settings-card">
+        <div class="identity-body">
+          <div class="identity-files">
+            {#each identity.files as f (f.name)}
+              <div class="identity-file" class:active={identity.activeName === f.name}>
+                <button type="button" class="identity-file-open" onclick={() => openIdentityFile(f.name)}>
+                  <span class="ic">📄</span>
+                  <span class="t">{f.name}</span>
+                </button>
+                <button type="button" class="identity-file-del" aria-label={t('settings.remove')} onclick={() => deleteIdentityFile(f.name)}>✕</button>
+              </div>
+            {/each}
+            {#if identity.files.length === 0}
+              <div class="empty">{t('sidebar.noIdentityFiles')}</div>
+            {/if}
+          </div>
+          {#if missingTemplates.length > 0}
+            <div class="identity-templates">
+              {#each missingTemplates as tpl (tpl.name)}
+                <button type="button" class="identity-template" onclick={() => createIdentityFile(tpl.name, tpl.content)}>
+                  ＋ {tpl.name}
+                </button>
+              {/each}
+            </div>
+          {/if}
+          <div class="identity-newfile">
+            <input
+              class="identity-newfile-input" placeholder={t('sidebar.newIdentityFile')}
+              bind:value={newIdentityName}
+              onkeydown={(e) => e.key === 'Enter' && addIdentityFile()}
+            />
+            <button type="button" class="icobtn tiny" aria-label={t('sidebar.newIdentityFile')} onclick={addIdentityFile}>＋</button>
+          </div>
+          {#if identity.activeName}
+            <textarea
+              class="identity-input" placeholder={t('sidebar.identityPlaceholder')}
+              bind:value={identity.draft}
+            ></textarea>
+            <button
+              type="button" class="ctrl identity-save"
+              disabled={!identityDirty || identity.saving}
+              onclick={saveIdentityFile}
+            >
+              {identity.saving ? t('settings.saving') : t('settings.save')}
+            </button>
+          {/if}
+        </div>
+      </div>
     {:else if active === 'usage'}
       <h2>{t('settings.usage')}</h2>
       <p class="muted set-sub">{t('settings.usageDesc')}</p>

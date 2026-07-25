@@ -47,11 +47,19 @@ type SkillInfo struct {
 }
 
 // ListSkills returns the user-added tools the AI can use — MCP tools and
-// discovered skills — sorted by name. Built-in tools are embedded in the engine
-// and intentionally excluded: this decision lives here in the backend (which
-// owns each tool's Source), not in the frontend, so the panel just renders what
-// it receives.
-func (a *App) ListSkills() []SkillInfo {
+// discovered skills — sorted by name. Built-in tools are excluded here because
+// the workbench Tools panel is about what the user plugged in; Settings asks
+// the other question ("what can this thing do at all?") and calls
+// ListBuiltinSkills for the rest. Either way the split is decided here in the
+// backend, which owns each tool's Source, not in the frontend.
+func (a *App) ListSkills() []SkillInfo { return a.skillsFrom(false) }
+
+// ListBuiltinSkills returns the tools compiled into the engine — always
+// available, nothing to install or remove. Settings lists them read-only, so a
+// fresh install stops looking like the AI has no tools at all.
+func (a *App) ListBuiltinSkills() []SkillInfo { return a.skillsFrom(true) }
+
+func (a *App) skillsFrom(builtin bool) []SkillInfo {
 	if a.registry == nil {
 		return []SkillInfo{} // never nil: §34, a nil slice crashes the frontend
 	}
@@ -64,7 +72,7 @@ func (a *App) ListSkills() []SkillInfo {
 			continue
 		}
 		src, _ := a.registry.SourceOf(n)
-		if src == skill.SourceBuiltin {
+		if (src == skill.SourceBuiltin) != builtin {
 			continue
 		}
 		out = append(out, SkillInfo{Name: n, Description: s.Description(), Source: string(src)})

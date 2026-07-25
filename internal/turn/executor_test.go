@@ -262,7 +262,7 @@ func TestExecuteToolCallWithOutcome_TruncatedArgsFailLoudly(t *testing.T) {
 		ApprovalMode: safety.ApprovalFullAccess,
 	})
 
-	_, success, err := executor.executeToolCallWithOutcome(context.Background(), model.ToolCall{
+	_, _, success, err := executor.executeToolCallWithOutcome(context.Background(), model.ToolCall{
 		ID:   "call_trunc",
 		Type: "function",
 		Function: model.FunctionCall{

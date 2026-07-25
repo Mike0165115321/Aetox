@@ -1,6 +1,7 @@
 package turn
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -22,6 +23,7 @@ func TestModelToolReceipt_GitStatusIsFilteredWhenRTKAvailable(t *testing.T) {
 	raw := "On branch main\nYour branch is up to date with 'origin/main'.\n\nnothing to commit, working tree clean\n"
 
 	receipt := e.modelToolReceipt(
+		context.Background(),
 		"git",
 		map[string]any{"args": []any{"status"}},
 		skill.Output{Success: true, RawOutput: raw, Command: "git status"},
@@ -48,6 +50,7 @@ func TestModelToolReceipt_UnmappedToolPassesThroughUnfiltered(t *testing.T) {
 	raw := "package main\n\nfunc main() {}\n"
 
 	receipt := e.modelToolReceipt(
+		context.Background(),
 		"read",
 		map[string]any{"path": "main.go"},
 		skill.Output{Success: true, RawOutput: raw, Command: "read main.go"},

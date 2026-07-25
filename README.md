@@ -7,6 +7,8 @@
 No lock-in. No subscription pressure. No boundaries.  
 Your rules, your data, your AGI.
 
+**🌐 [ดูหน้าเว็บแนะนำ Aetox](https://mike0165115321.github.io/Aetox/)** — เห็นภาพว่ามันทำอะไรได้บ้างใน 1 นาที
+
 ---
 
 ## Aetox คืออะไร
@@ -86,9 +88,9 @@ Aetox ยังอยู่ในช่วงหล่อหลอม — แก
 
 | ความสามารถ | รายละเอียด |
 |:-----------|:-----------|
-| **11 Providers** | OpenAI, Anthropic, DeepSeek, Google Gemini, Groq, Mistral, Together, Perplexity, Cohere, LM Studio, Ollama |
+| **13 Providers** | OpenAI, Anthropic, DeepSeek, Google Gemini, Groq, Mistral, Together, Perplexity, Cohere, OpenRouter, Z.ai, LM Studio, Ollama |
 | **Tool Calling** | model-driven tool loop — agent เลือกใช้ tools เอง |
-| **15 Tools ในตัว** | read, write, edit, list, shell, git, grep และอื่นๆ |
+| **26 Tools ในตัว** | read, write, edit, list, shell, git, grep, image_ocr, video_ocr, audio_transcribe, browser_* และอื่นๆ |
 | **Safety 3 ระดับ** | ถามก่อน → คำสั่งเสี่ยง → รันเต็มที่ |
 | **Multi-provider** | ใช้ providers ต่างกันใน session เดียวกัน |
 | **Model Switching** | เปลี่ยน provider/model ได้ทันที โดยไม่เสีย context |
@@ -176,7 +178,7 @@ wails build -nsis    # พร้อมตัวติดตั้ง
 │                                          │
 ├──────────────────────────────────────────┤
 │    Core Runtime                          │ ← แกนกลางที่ทำงานแล้ว
-│    11 Providers | Tools | Turn Loop      │
+│    13 Providers | Tools | Turn Loop      │
 │    Safety | Audit | Config               │
 ├──────────────────────────────────────────┤
 │    Terminal + File System                │
@@ -200,12 +202,13 @@ wails build -nsis    # พร้อมตัวติดตั้ง
 | **Perplexity** | `PERPLEXITY_API_KEY` | ✅ | ❌ |
 | **Cohere** | `COHERE_API_KEY` | ✅ | ❌ |
 | **OpenRouter** | `OPENROUTER_API_KEY` | ✅ | ✅ |
+| **Z.ai** | `ZAI_API_KEY` | ✅ | ✅ |
 | **LM Studio** | ท้องถิ่น (localhost) | ✅ | ❌ |
 | **Ollama** | ท้องถิ่น (localhost) | ✅ | ❌ |
 
 ---
 
-## Tools ในตัว (22 ตัว)
+## Tools ในตัว (26 ตัว)
 
 | Tool | ใช้ทำอะไร |
 |:-----|:----------|
@@ -231,6 +234,10 @@ wails build -nsis    # พร้อมตัวติดตั้ง
 | `github_search` | ค้นโค้ด/repo บน GitHub |
 | `github_read_file` | อ่านไฟล์จาก repo GitHub |
 | `github_list_files` | ดูโครงสร้างไฟล์ของ repo GitHub |
+| `browser_open` | เปิดหน้าเว็บในแท็บ Workbench |
+| `browser_read` | อ่านหน้าเว็บ พร้อมแปะเลข ref ให้ทุก element |
+| `browser_click` | คลิก element ด้วยเลข ref |
+| `browser_type` | พิมพ์ลงช่อง หรือเลือก dropdown ด้วยเลข ref |
 
 ---
 
@@ -255,9 +262,9 @@ Aetox/
 │   ├── memory/             # context management
 │   ├── model/              # provider types, factory, bootstrap
 │   ├── plan/               # execution planning
-│   ├── provider/           # provider catalog (11 providers)
+│   ├── provider/           # provider catalog (13 providers)
 │   ├── safety/             # 3-tier approval
-│   ├── skill/              # 15 built-in tools
+│   ├── skill/              # 22 built-in tools
 │   ├── think/              # thinking level configuration
 │   └── turn/               # turn pipeline — explicit command → model tool loop → chat (§17)
 │

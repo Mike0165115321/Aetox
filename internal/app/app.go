@@ -58,7 +58,7 @@ type App struct {
 
 	statusReporter     func(string)
 	lastPrintedTool    string
-	toolActionListener func(action, detail string)
+	toolActionListener func(turn.ToolEvent)
 }
 
 type ModelSwitchResult struct {
@@ -95,7 +95,7 @@ type Options struct {
 	OnApprovalChange func(safety.ApprovalMode)
 	// OnToolAction, if set, is notified of every tool call/result this session
 	// runs (e.g. for a UI command-history panel). Nil means silent, as before.
-	OnToolAction func(action, detail string)
+	OnToolAction func(turn.ToolEvent)
 	// StatusReporter, if set, receives human-readable turn-progress messages
 	// ("กำลังคิดคำตอบ...", "กำลังรันเครื่องมือ...") as the turn executor moves
 	// through phases, and a final "" when the turn completes. CLI wires its own
@@ -197,9 +197,9 @@ func (a *App) RunOnceStream(ctx context.Context, message string, onChunk func(st
 	return result.Reply, err
 }
 
-func (a *App) onToolAction(action, detail string) {
+func (a *App) onToolAction(ev turn.ToolEvent) {
 	if a.toolActionListener != nil {
-		a.toolActionListener(action, detail)
+		a.toolActionListener(ev)
 	}
 }
 

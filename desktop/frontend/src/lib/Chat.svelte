@@ -42,9 +42,38 @@
   let models = $state<string[]>([])
   let needsApiKey = $state(false)
   let apiKeyDraft = $state('')
-  let reasoningCollapsed = $state(false)
-  // Per finished message: which persisted thinking panels are open (collapsed default).
-  let expandedReasoning = $state<Record<number, boolean>>({})
+  // Thinking and the tool list are two views of the same turn, so they take
+  // turns in one slot instead of stacking — opening one closes the other.
+  // '' = both collapsed, which is how a finished reply starts.
+  let openPanel = $state<Record<number, 'think' | 'tools' | ''>>({})
+  function togglePanel(i: number, p: 'think' | 'tools') {
+    openPanel[i] = openPanel[i] === p ? '' : p
+  }
+  // The live turn opens on thinking: that is the part still streaming in.
+  let livePanel = $state<'think' | 'tools' | ''>('think')
+
+  // A finished tool call is history — it collapses behind a count next to the
+  // thinking toggle, same as reasoning does. Only what is still running stays
+  // on screen.
+  const liveRunning = $derived(toolSteps.filter((s) => s.state === 'run'))
+  const liveDone = $derived(toolSteps.filter((s) => s.state !== 'run'))
+  // The engine's phase message is a fallback, not the headline. It says
+  // "กำลังคิดคำตอบ..." for the whole tool loop — which duplicates the thinking
+  // toggle right below it and stops being true the moment a tool starts.
+  // Whatever is concretely on screen (reasoning, a running tool, the answer
+  // arriving) IS the status; the phrase only fills the gap before any of it.
+  const liveStatus = $derived(
+    streamingText || reasoningText || liveRunning.length ? '' : agentStatus,
+  )
+  // One icon table for the two places a file chip shows up: the composer's
+  // pending chip and the sent bubble's.
+  const fileIcon = (kind?: string) => (kind === 'audio' ? '🎧' : kind === 'video' ? '🎬' : '📄')
+
+  function toolsLabel(steps: ToolStep[]): string {
+    const failed = steps.filter((s) => s.state === 'err').length
+    const base = t('chat.usedTools', { n: steps.length })
+    return failed ? `${base} · ✕${failed}` : base
+  }
 
   onMount(async () => {
     providers = await EnabledProviders()
@@ -108,7 +137,9 @@
   let openDropdown = $state<'provider' | 'model' | 'thinkLevel' | ''>('')
 
   // Auto-grow the composer upward while typing (the composer is anchored at
-  // the bottom, so extra height expands up) — capped, then it scrolls inside.
+  // the bottom, so extra height expands up). The ceiling is the stylesheet's
+  // max-height alone — a second cap here only ever fought it, and a long
+  // pasted prompt deserves the whole window, not 220px.
   // Reacts to every draft change so starter picks and post-send clears resize too.
   let inputEl = $state<HTMLTextAreaElement | null>(null)
   $effect(() => {
@@ -116,7 +147,7 @@
     const el = inputEl
     if (!el) return
     el.style.height = 'auto'
-    el.style.height = Math.min(el.scrollHeight, 220) + 'px'
+    el.style.height = el.scrollHeight + 'px'
   })
 
   function closeMenusOnOutside(e: MouseEvent) {
@@ -383,6 +414,15 @@
         {:else if s.secs}
           <span class="secs">· {s.secs}s</span>
         {/if}
+        {#if s.added || s.removed}
+          <!-- While it runs, only the climbing "+N" is real — the removed
+               count isn't known until the file is actually written. -->
+          <span class="tool-stat">
+            <span class="add">+{s.added ?? 0}</span>
+            {#if s.state !== 'run'}<span class="del">-{s.removed ?? 0}</span>{/if}
+          </span>
+        {/if}
+        {#if s.error}<span class="tool-err">{s.error}</span>{/if}
       </div>
     {/each}
   </div>
@@ -415,22 +455,36 @@
             {#if m.imageDataUrl}
               <img src={m.imageDataUrl} alt="" class="msg-image" />
             {/if}
+            {#if m.attachLabel}
+              <div class="attach-chip">
+                <span class="ic">{fileIcon(m.attachKind)}</span>
+                <span class="attach-name">{m.attachLabel}</span>
+              </div>
+            {/if}
             {#if m.contextLabel}
               <div class="attach-chip"><span class="ic">📎</span> <span class="attach-name">{m.contextLabel}</span></div>
             {/if}
-            {#if m.reasoning}
-              <div class="reasoning-panel">
-                <button class="reasoning-toggle" onclick={() => (expandedReasoning[i] = !expandedReasoning[i])}>
-                  <span class="chev">{expandedReasoning[i] ? '▾' : '▸'}</span>
-                  {m.thinkSecs ? t('chat.thoughtFor', { secs: m.thinkSecs }) : t('chat.thoughtDone')}
-                </button>
-                {#if expandedReasoning[i]}
-                  <div class="reasoning-body">{m.reasoning}</div>
+            {#if m.reasoning || m.steps?.length}
+              <div class="meta-row">
+                {#if m.reasoning}
+                  <button class="reasoning-toggle" onclick={() => togglePanel(i, 'think')}>
+                    <span class="chev">{openPanel[i] === 'think' ? '▾' : '▸'}</span>
+                    {m.thinkSecs ? t('chat.thoughtFor', { secs: m.thinkSecs }) : t('chat.thoughtDone')}
+                  </button>
+                {/if}
+                {#if m.steps?.length}
+                  <button class="reasoning-toggle" onclick={() => togglePanel(i, 'tools')}>
+                    <span class="chev">{openPanel[i] === 'tools' ? '▾' : '▸'}</span>
+                    {toolsLabel(m.steps)}
+                  </button>
                 {/if}
               </div>
-            {/if}
-            {#if m.steps?.length}
-              {@render toolTimeline(m.steps, false)}
+              {#if m.reasoning && openPanel[i] === 'think'}
+                <div class="reasoning-body">{m.reasoning}</div>
+              {/if}
+              {#if m.steps?.length && openPanel[i] === 'tools'}
+                {@render toolTimeline(m.steps, false)}
+              {/if}
             {/if}
             <div class="markdown-body">{@html renderMarkdown(m.text)}</div>
             <div class="time">
@@ -473,20 +527,30 @@
         <div class="msg bot">
           <div class="bubble typing-bubble">
             <div class="typing-row">
-              {#if agentStatus && !streamingText}
-                <span class="typing-status">{agentStatus}</span>
+              {#if liveStatus}
+                <span class="typing-status">{liveStatus}</span>
               {/if}
               <span class="typing-dots"><span></span><span></span><span></span></span>
             </div>
-            {#if reasoningText}
-              <div class="reasoning-panel">
-                <button class="reasoning-toggle" onclick={() => (reasoningCollapsed = !reasoningCollapsed)}>
-                  <span class="chev">{reasoningCollapsed ? '▸' : '▾'}</span> {t('chat.thinking')}
-                </button>
-                {#if !reasoningCollapsed}
-                  <div class="reasoning-body">{reasoningText}</div>
+            {#if reasoningText || liveDone.length}
+              <div class="meta-row">
+                {#if reasoningText}
+                  <button class="reasoning-toggle" onclick={() => (livePanel = livePanel === 'think' ? '' : 'think')}>
+                    <span class="chev">{livePanel === 'think' ? '▾' : '▸'}</span> {t('chat.thinking')}
+                  </button>
+                {/if}
+                {#if liveDone.length}
+                  <button class="reasoning-toggle" onclick={() => (livePanel = livePanel === 'tools' ? '' : 'tools')}>
+                    <span class="chev">{livePanel === 'tools' ? '▾' : '▸'}</span> {toolsLabel(liveDone)}
+                  </button>
                 {/if}
               </div>
+              {#if reasoningText && livePanel === 'think'}
+                <div class="reasoning-body">{reasoningText}</div>
+              {/if}
+              {#if liveDone.length && livePanel === 'tools'}
+                {@render toolTimeline(liveDone, false)}
+              {/if}
             {/if}
             {#if cockpit.todos.length > 0}
               <div class="todo-panel">
@@ -498,8 +562,8 @@
                 {/each}
               </div>
             {/if}
-            {#if toolSteps.length > 0}
-              {@render toolTimeline(toolSteps, true)}
+            {#if liveRunning.length > 0}
+              {@render toolTimeline(liveRunning, true)}
             {/if}
             {#if streamingText}
               <div class="markdown-body">{@html renderMarkdown(streamingText)}</div>
@@ -530,6 +594,14 @@
   {/if}
 
   <div class="composer">
+    <!-- Scrolling up unpins the transcript; this is the way back. Sits on the
+         composer rather than inside .chat so it can't scroll away with it. -->
+    {#if !pinnedToBottom && messages.length > 0}
+      <button
+        class="scroll-bottom" aria-label={t('chat.scrollToBottom')}
+        onclick={() => { if (chatEl) chatEl.scrollTop = chatEl.scrollHeight }}
+      >↓</button>
+    {/if}
     {#if needsApiKey}
       <div class="api-key-banner">
         <input
@@ -551,7 +623,7 @@
     {/if}
     {#if cockpit.pendingFile}
       <div class="attach-chip">
-        <span class="ic">{cockpit.pendingFile.kind === 'audio' ? '🎧' : cockpit.pendingFile.kind === 'video' ? '🎬' : '📄'}</span>
+        <span class="ic">{fileIcon(cockpit.pendingFile.kind)}</span>
         <span class="attach-name">{cockpit.pendingFile.label}</span>
         <button class="attach-remove" aria-label={t('chat.removeAttachment')} onclick={clearPendingFile}>✕</button>
       </div>

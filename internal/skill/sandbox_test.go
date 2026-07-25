@@ -90,4 +90,3 @@ func TestResolveSandboxPathRejectsAbsolute(t *testing.T) {
 		t.Errorf("resolveSandboxPath(absolute path): expected error, got nil")
 	}
 }
-

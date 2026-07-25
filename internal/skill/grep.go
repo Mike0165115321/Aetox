@@ -18,6 +18,21 @@ import (
 
 var errGrepLimitReached = errors.New("grep result limit reached")
 
+// IgnoredDirs are directories no search should descend into: dependency trees
+// and build output, which are not the user's code and are enormous. On this
+// repo alone node_modules is 10,826 of 12,073 files — searching it means
+// opening ten thousand irrelevant files and filling the result limit with
+// matches from vendored code before ever reaching src/.
+//
+// Exported so the desktop file tree hides exactly the same set: two lists that
+// disagree about what "noise" means is how a search starts contradicting the
+// tree beside it.
+var IgnoredDirs = map[string]bool{
+	"node_modules": true, "vendor": true, "dist": true, "build": true,
+	"target": true, "bin": true, "obj": true, "__pycache__": true,
+	".vs": true, ".idea": true,
+}
+
 type grepSkill struct {
 	root string
 }
@@ -40,6 +55,14 @@ func (*grepSkill) ToolDefinition() model.ToolDefinition {
 				"type":        "string",
 				"description": "Relative file or directory to search (default: whole sandbox)",
 			},
+			"glob": map[string]any{
+				"type":        "string",
+				"description": "Only search files whose name matches this pattern, e.g. *.go or *.{ts,svelte}",
+			},
+			"context": map[string]any{
+				"type":        "integer",
+				"description": "Lines of surrounding context to show around each match (default 0, max 20). Use it to see enough of the code to build an exact edit without a second read call.",
+			},
 		},
 		"required":             []string{"pattern"},
 		"additionalProperties": false,
@@ -49,7 +72,7 @@ func (*grepSkill) ToolDefinition() model.ToolDefinition {
 		Type: "function",
 		Function: model.ToolFunction{
 			Name:        "grep",
-			Description: "Search file contents by regex; returns path:line:text matches.",
+			Description: "Search file contents by regex. Returns path:line:text for matches and path-line-text for context lines. Dependency and build directories are never searched.",
 			Parameters:  payload,
 		},
 	}
@@ -73,9 +96,25 @@ func (s *grepSkill) Execute(_ context.Context, input Input) (Output, error) {
 	if len(args) > 1 {
 		searchPath = strings.TrimSpace(strings.Join(args[1:], " "))
 	}
+	// Named options rather than more positional args: the CLI form stays
+	// "grep <pattern> [path]" while a tool call can ask for more.
+	glob := strings.TrimSpace(stringArg(input["glob"]))
+	ctxLines := intArg(input["context"])
+	if ctxLines < 0 {
+		ctxLines = 0
+	}
+	if ctxLines > maxGrepContext {
+		ctxLines = maxGrepContext
+	}
 	command := "grep " + pattern
 	if searchPath != "." {
 		command += " " + searchPath
+	}
+	if glob != "" {
+		command += " --glob " + glob
+	}
+	if ctxLines > 0 {
+		command += " -C " + strconv.Itoa(ctxLines)
 	}
 
 	re, err := regexp.Compile(pattern)
@@ -98,6 +137,7 @@ func (s *grepSkill) Execute(_ context.Context, input Input) (Output, error) {
 		maxLineLen   = 200
 	)
 	results := make([]string, 0)
+	matches := 0
 
 	walkErr := filepath.WalkDir(basePath, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -105,9 +145,14 @@ func (s *grepSkill) Execute(_ context.Context, input Input) (Output, error) {
 		}
 		if d.IsDir() {
 			// ponytail: skips all dot-dirs (.git, .cache, ...), allowlist if a dot-dir ever matters
-			if name := d.Name(); strings.HasPrefix(name, ".") && path != basePath {
+			name := d.Name()
+			if path != basePath && (strings.HasPrefix(name, ".") || IgnoredDirs[name]) {
 				return filepath.SkipDir
 			}
+			return nil
+		}
+
+		if glob != "" && !matchesGlob(glob, d.Name()) {
 			return nil
 		}
 
@@ -127,16 +172,45 @@ func (s *grepSkill) Execute(_ context.Context, input Input) (Output, error) {
 			display = filepath.ToSlash(rel)
 		}
 
-		for i, line := range strings.Split(string(data), "\n") {
+		clip := func(s string) string {
+			s = strings.TrimRight(s, "\r")
+			if len(s) > maxLineLen {
+				s = s[:maxLineLen] + "..."
+			}
+			return s
+		}
+
+		lines := strings.Split(string(data), "\n")
+		lastShown := -1 // last line index already written out for this file
+		for i, line := range lines {
 			if !re.MatchString(line) {
 				continue
 			}
-			line = strings.TrimRight(line, "\r")
-			if len(line) > maxLineLen {
-				line = line[:maxLineLen] + "..."
+			from, to := i-ctxLines, i+ctxLines
+			if from < 0 {
+				from = 0
 			}
-			results = append(results, display+":"+strconv.Itoa(i+1)+":"+line)
-			if len(results) >= maxResults {
+			if to > len(lines)-1 {
+				to = len(lines) - 1
+			}
+			// ripgrep's conventions, because models already read them fluently:
+			// "--" between separated groups, ":" on a match, "-" on context.
+			if lastShown >= 0 && from > lastShown+1 {
+				results = append(results, "--")
+			}
+			if from <= lastShown {
+				from = lastShown + 1
+			}
+			for j := from; j <= to; j++ {
+				sep := "-"
+				if j == i {
+					sep = ":"
+				}
+				results = append(results, display+sep+strconv.Itoa(j+1)+sep+clip(lines[j]))
+			}
+			lastShown = to
+			matches++
+			if matches >= maxResults {
 				return errGrepLimitReached
 			}
 		}
@@ -154,12 +228,42 @@ func (s *grepSkill) Execute(_ context.Context, input Input) (Output, error) {
 		output = "(no matches)"
 	}
 	output, truncated := limitLines(output, defaultToolOutputLineLimit)
-	if len(results) >= maxResults {
+	if matches >= maxResults {
 		output += "\n... (max results reached)"
 		truncated = true
 	}
 
 	return newToolOutput("grep", command, output, start, truncated, nil), nil
+}
+
+// maxGrepContext caps how much surrounding code one match may drag in. At 20
+// lines either side, 200 matches would already be 8,000 lines of context —
+// the output line limit would eat most of it, and the model would pay for the
+// rest. Enough to build an exact edit from, not enough to bury the answer.
+const maxGrepContext = 20
+
+// matchesGlob reports whether a file name satisfies a caller's glob. Supports
+// the two forms that actually get typed: "*.go" and "*.{ts,svelte}". A leading
+// "**/" is accepted and ignored — matching is on the file name — so a pattern
+// copied from another tool does not silently match nothing.
+func matchesGlob(glob, name string) bool {
+	glob = strings.TrimPrefix(strings.TrimSpace(glob), "**/")
+	if glob == "" {
+		return true
+	}
+	open := strings.Index(glob, "{")
+	close := strings.Index(glob, "}")
+	if open >= 0 && close > open {
+		prefix, suffix := glob[:open], glob[close+1:]
+		for _, alt := range strings.Split(glob[open+1:close], ",") {
+			if ok, _ := filepath.Match(prefix+strings.TrimSpace(alt)+suffix, name); ok {
+				return true
+			}
+		}
+		return false
+	}
+	ok, _ := filepath.Match(glob, name)
+	return ok
 }
 
 func (s *grepSkill) ExecuteTool(ctx context.Context, args map[string]any) (Output, error) {
@@ -172,5 +276,9 @@ func (s *grepSkill) ExecuteTool(ctx context.Context, args map[string]any) (Outpu
 	if path, ok := args["path"].(string); ok && strings.TrimSpace(path) != "" {
 		callArgs = append(callArgs, strings.TrimSpace(path))
 	}
-	return s.Execute(ctx, Input{"args": callArgs})
+	return s.Execute(ctx, Input{
+		"args":    callArgs,
+		"glob":    args["glob"],
+		"context": args["context"],
+	})
 }

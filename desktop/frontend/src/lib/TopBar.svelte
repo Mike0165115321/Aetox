@@ -1,5 +1,6 @@
 <script lang="ts">
   import { t } from './i18n.svelte'
+  import { newSession } from './stores/cockpit.svelte'
   import Wordmark from './Wordmark.svelte'
 
   let {
@@ -25,9 +26,13 @@
   </button>
   <span class="spacer"></span>
 
-  <!-- tip-r: this sits flush against the window's right edge, so a centred
-       tooltip gets clipped by it. -->
+  <!-- tip-r on both: these sit flush against the window's right edge, so a
+       centred (or left-anchored) tooltip gets clipped by it. -->
   <div class="winbtns">
+    <button
+      class="icobtn tip-r" aria-label={t('sidebar.newSession')}
+      data-tip="{t('sidebar.newSession')} · Ctrl+N" onclick={newSession}
+    >＋</button>
     <button
       class="icobtn tip-r" aria-label={inspectorCollapsed ? t('topbar.showPanel') : t('topbar.hidePanel')}
       data-tip={t('topbar.toggleInspectorTip')} onclick={onToggleInspector}

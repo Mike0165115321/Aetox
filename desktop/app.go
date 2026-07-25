@@ -29,6 +29,7 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/prompt"
 	"github.com/Mike0165115321/Aetox/internal/safety"
 	"github.com/Mike0165115321/Aetox/internal/skill"
+	"github.com/Mike0165115321/Aetox/internal/turn"
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -82,15 +83,20 @@ const maxToolHistory = 50
 // recordToolAction is the engine's live tool-call feed for this session,
 // kept for the Inspector's Command History panel. Only "call" events are
 // recorded — "result" events are noise for a command-log view.
-func (a *App) recordToolAction(action, detail string) {
+//
+// The event goes to the UI as a struct rather than a formatted string: the
+// frontend used to decide success by matching the Thai word "สำเร็จ" at the end
+// of a detail line, so localizing that word (or appending anything to it) would
+// have silently marked every tool call as failed.
+func (a *App) recordToolAction(ev turn.ToolEvent) {
 	// Relay every call/result live to the chat's tool timeline.
 	if a.ctx != nil {
-		wailsruntime.EventsEmit(a.ctx, "agent:tool", map[string]string{"action": action, "detail": detail})
+		wailsruntime.EventsEmit(a.ctx, "agent:tool", ev)
 	}
-	if action != "call" {
+	if ev.Action != "call" {
 		return
 	}
-	a.toolHistory = append(a.toolHistory, detail)
+	a.toolHistory = append(a.toolHistory, ev.Label())
 	if len(a.toolHistory) > maxToolHistory {
 		a.toolHistory = a.toolHistory[len(a.toolHistory)-maxToolHistory:]
 	}
@@ -155,10 +161,9 @@ type TreeNode struct {
 }
 
 // treeIgnore skips VCS/build/dependency noise a dev never wants in the sidebar.
-var treeIgnore = map[string]bool{
-	".git": true, "node_modules": true, "dist": true, "build": true,
-	".vs": true, ".idea": true, "bin": true, "obj": true,
-}
+// It is skill.IgnoredDirs — the same set grep refuses to search — so the tree
+// and the search never disagree about what counts as the user's code.
+var treeIgnore = skill.IgnoredDirs
 
 // ProjectTree walks the sandbox root and returns a flat, depth-first file
 // tree for the sidebar (dirs collapsed by default, matching Sidebar.svelte's
@@ -593,6 +598,25 @@ func (a *App) startup(ctx context.Context) {
 	defer debuglog.Block("App.startup")()
 	a.focusNone()
 	a.startNewSession()
+}
+
+// outputSubdir is where a brand new file goes, relative to the sandbox root.
+//
+// Focused on a project, that is the project itself — the whole point of
+// focusing is that the AI works inside it. Unfocused, the root is the user's
+// home directory, so "write index.html" used to drop a stray file beside
+// Documents and Downloads, and the next chat that wrote index.html overwrote
+// it. Each session gets its own folder instead; the session id is already a
+// timestamp, so the folders sort by when the work happened.
+//
+// Read as a func at call time, not baked in at bootstrap: it changes every
+// time the user starts or opens a chat, and re-bootstrapping the engine to
+// change one folder name would be an absurd price.
+func (a *App) outputSubdir() string {
+	if a.projectFocused || a.sessionID == "" {
+		return ""
+	}
+	return "aetox/output/" + a.sessionID
 }
 
 // focusNone re-roots the engine at the user's home dir and marks the app as
@@ -1166,7 +1190,7 @@ func (a *App) applyConfig(cfg config.Config) {
 	if a.agent != nil {
 		priorContext = a.agent.ContextMessages()
 	}
-	chatApp, agent, status, registry := bootstrapFromConfig(cfg, a.recordToolAction, a.emitAgentStatus, workbenchTools, a.mcp)
+	chatApp, agent, status, registry := bootstrapFromConfig(cfg, a.recordToolAction, a.emitAgentStatus, workbenchTools, a.mcp, a.outputSubdir)
 	a.chat = chatApp
 	a.agent = agent
 	a.cfg = cfg
@@ -1174,6 +1198,13 @@ func (a *App) applyConfig(cfg config.Config) {
 	a.registry = registry
 	if a.agent != nil {
 		a.agent.SetUsageReporter(a.recordTokenUsage)
+		// Draw the row while the model is still writing the call, not after,
+		// and tick its line count up as the content arrives. The executor emits
+		// the same label when the call actually runs, and the UI matches on it
+		// rather than drawing the call twice.
+		a.agent.SetToolCallProgressReporter(func(name, subject string, lines int) {
+			a.recordToolAction(turn.ToolEvent{Action: "call", Name: name, Subject: subject, Added: lines})
+		})
 	}
 	// A re-bootstrap (model/provider switch) creates a fresh agent — replay the
 	// old agent's context (minus its system prompt; the new agent builds its
@@ -1274,8 +1305,14 @@ func toMCPServers(cfgs []config.MCPServerConfig) []mcp.Server {
 	return out
 }
 
-func bootstrapFromConfig(cfg config.Config, onToolAction func(action, detail string), onStatus func(string), extraSkills []skill.Skill, mcpMgr *mcp.Manager) (*aetoxapp.App, *cognitive.Agent, string, *skill.Registry) {
+func bootstrapFromConfig(cfg config.Config, onToolAction func(turn.ToolEvent), onStatus func(string), extraSkills []skill.Skill, mcpMgr *mcp.Manager, outputSubdir func() string) (*aetoxapp.App, *cognitive.Agent, string, *skill.Registry) {
 	defer debuglog.Block("bootstrapFromConfig")()
+	// Which model this actually resolved to. The log recorded that a bootstrap
+	// happened but never what came out of it, so "it switched models on its
+	// own" had no evidence either way — the same reason startup logs a
+	// checkpoint at all.
+	debuglog.Info("resolved model", fmt.Sprintf("%s / %s (think=%s, approval=%s)",
+		cfg.ModelProvider, cfg.ModelName, cfg.ThinkLevel, cfg.ApprovalMode))
 	status := model.ResolveStatus(cfg.ModelProvider, cfg.ModelName, nil)
 
 	providerDone := debuglog.Block("model.BootstrapProvider")
@@ -1312,7 +1349,8 @@ func bootstrapFromConfig(cfg config.Config, onToolAction func(action, detail str
 	})
 
 	registry := skill.NewDefaultRegistry(skill.RegistryOptions{
-		SandboxRoot: cfg.SandboxRoot,
+		SandboxRoot:  cfg.SandboxRoot,
+		OutputSubdir: outputSubdir,
 	})
 	for _, s := range extraSkills {
 		if err := registry.Register(s, skill.SourceExternal); err != nil {
@@ -1355,6 +1393,24 @@ func bootstrapFromConfig(cfg config.Config, onToolAction func(action, detail str
 		return nil, nil, status + " (init failed: " + err.Error() + ")", nil
 	}
 	return chatApp, agent, status, registry
+}
+
+// UserName / SetUserName back the sidebar footer's display name. They go
+// through the preference file rather than localStorage for the reason spelled
+// out on config.ModelPreference.UserName. persistModelPreference is a
+// load-modify-save, so a later model switch leaves this field alone.
+func (a *App) UserName() string {
+	pref, _, _ := config.LoadModelPreference()
+	return pref.UserName
+}
+
+func (a *App) SetUserName(name string) error {
+	pref, _, err := config.LoadModelPreference()
+	if err != nil {
+		return err
+	}
+	pref.UserName = strings.TrimSpace(name)
+	return config.SaveModelPreference(pref)
 }
 
 // persistModelPreference saves the current model/approval choice to the same
@@ -1430,4 +1486,3 @@ func readGitBranch(root string) string {
 	}
 	return head
 }
-

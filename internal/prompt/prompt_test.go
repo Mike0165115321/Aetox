@@ -109,3 +109,15 @@ func mustWrite(t *testing.T, path, content string) {
 		t.Fatalf("write %s: %v", path, err)
 	}
 }
+
+// Without this the model answers "fix one line" by streaming the whole file
+// back through write — every line of it an output token, and a minute of
+// silence for the user each time.
+func TestPromptTellsTheModelToEditRatherThanRewrite(t *testing.T) {
+	got := Build(SurfaceDesktop, t.TempDir())
+	for _, want := range []string{"edit tool", "Do NOT re-send the whole file"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("system prompt is missing %q:\n%s", want, got)
+		}
+	}
+}

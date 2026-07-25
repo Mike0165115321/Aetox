@@ -12,6 +12,12 @@ type RegistryOptions struct {
 	// Speech configures audio_transcribe: which engine, which model file.
 	// The zero value means the catalog default with an auto-discovered model.
 	Speech stt.Options
+	// OutputSubdir answers "where should a brand new file go?" as a path
+	// relative to SandboxRoot — returning "" writes straight to the root, as
+	// before. A func rather than a string because the answer changes per chat
+	// session, and re-bootstrapping the whole engine to change one folder name
+	// would be an absurd price. See writeSkill.placed.
+	OutputSubdir func() string
 }
 
 func NewDefaultRegistry(opts RegistryOptions) *Registry {
@@ -34,9 +40,12 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 		&gitSkill{root: opts.SandboxRoot},
 		&fsSkill{root: opts.SandboxRoot},
 		&shellSkill{root: opts.SandboxRoot},
-		&writeSkill{root: opts.SandboxRoot},
+		&writeSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
 		&editSkill{root: opts.SandboxRoot},
 		&grepSkill{root: opts.SandboxRoot},
+		&globSkill{root: opts.SandboxRoot},
+		&applyPatchSkill{root: opts.SandboxRoot},
+		&diagnosticsSkill{root: opts.SandboxRoot},
 		&deleteSkill{root: opts.SandboxRoot},
 		&pluginInstallSkill{},
 		&imageOCRSkill{root: opts.SandboxRoot},

@@ -63,7 +63,13 @@ type ModelPreference struct {
 	ApprovalMode    string            `json:"approval_mode,omitempty"`
 	// UILocale sits next to ApprovalMode because it is the same kind of thing:
 	// a choice the user made in the UI that the engine needs on next start.
-	UILocale     string            `json:"ui_locale,omitempty"`
+	UILocale string `json:"ui_locale,omitempty"`
+	// UserName is what the user calls themselves in the sidebar footer. It
+	// lives here rather than in the webview's localStorage because that store
+	// is keyed by origin — a name typed under `wails dev` (…:34115) was a
+	// different bucket from the built app's, so it had to be typed again on
+	// every switch.
+	UserName     string            `json:"user_name,omitempty"`
 	ModelAPIKeys map[string]string `json:"provider_api_keys,omitempty"`
 	// EnabledProviders is the set of providers shown in the Settings sidebar
 	// and the chat composer's picker. Empty means "never customized" — callers

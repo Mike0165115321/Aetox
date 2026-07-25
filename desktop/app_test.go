@@ -10,6 +10,7 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/config"
 	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/safety"
+	"github.com/Mike0165115321/Aetox/internal/turn"
 )
 
 func TestSafeSandboxPathAllowsInside(t *testing.T) {
@@ -177,10 +178,10 @@ func TestReadFileRejectsDirectory(t *testing.T) {
 func TestCommandHistoryOrderAndCap(t *testing.T) {
 	a := &App{}
 	for i := 0; i < maxToolHistory+5; i++ {
-		a.recordToolAction("call", "action-"+string(rune('a'+i%26)))
+		a.recordToolAction(turn.ToolEvent{Action: "call", Name: "action-" + string(rune('a'+i%26))})
 	}
 	// "result" events must be ignored.
-	a.recordToolAction("result", "should-not-appear")
+	a.recordToolAction(turn.ToolEvent{Action: "result", Name: "should-not-appear"})
 
 	hist := a.CommandHistory()
 	if len(hist) != maxToolHistory {

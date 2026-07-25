@@ -92,12 +92,16 @@ func (a *Agent) toolLoopMaxTokens() int {
 }
 
 type Agent struct {
-	provider     model.Provider
-	model        string
-	context      *memory.Context
-	lastUsage    model.Usage
-	onUsage      func(model.Usage) // observer for every API response's usage; nil = off
-	maxToolCalls int
+	provider  model.Provider
+	model     string
+	context   *memory.Context
+	lastUsage model.Usage
+	onUsage   func(model.Usage) // observer for every API response's usage; nil = off
+	// onToolCallStart is told a tool call is coming while its arguments are
+	// still streaming — the UI's only signal during the long silence of a
+	// model writing a large file. nil = off.
+	onToolCallProgress func(name, subject string, lines int)
+	maxToolCalls       int
 }
 
 // SetUsageReporter registers fn to receive every model response's token
@@ -108,6 +112,16 @@ func (a *Agent) SetUsageReporter(fn func(model.Usage)) {
 		return
 	}
 	a.onUsage = fn
+}
+
+// SetToolCallStartReporter wires the "a tool call is being written" signal —
+// see the onToolCallStart field. Set alongside SetUsageReporter after a
+// bootstrap; a fresh agent starts with none.
+func (a *Agent) SetToolCallProgressReporter(fn func(name, subject string, lines int)) {
+	if a == nil {
+		return
+	}
+	a.onToolCallProgress = fn
 }
 
 // recordUsage is the one place a response's usage is taken in: it keeps
@@ -624,6 +638,8 @@ func (a *Agent) buildRequest(messages []model.Message, maxTokens int, temperatur
 		Temperature: temperature,
 		Tools:       tools,
 		ToolChoice:  toolChoice,
+		// Only meaningful when tools are on the table — see the field's doc.
+		OnToolCallProgress: a.onToolCallProgress,
 	}
 	profile := a.ResolveThinkProfile(opts.ThinkLevel)
 	if effort := profile.ReasoningEffort(); effort != "" {

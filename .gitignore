@@ -24,6 +24,11 @@ venv/
 /aetox.exe
 bin/
 dist/
+
+# Node dependencies anywhere, not just desktop/ (desktop/.gitignore covers that
+# one). Running a frontend command from the repo root creates a node_modules
+# here, and without this rule it lands in a commit.
+node_modules/
 *.test
 *.out
 *.prof

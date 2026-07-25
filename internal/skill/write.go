@@ -13,7 +13,28 @@ import (
 )
 
 type writeSkill struct {
-	root string
+	root         string
+	outputSubdir func() string
+}
+
+// placed decides where a new file actually lands. Without a project focused,
+// the sandbox root is the user's home directory, so "write index.html" dropped
+// a stray file next to Documents and Downloads — and the next chat that wrote
+// index.html silently overwrote it. A relative path is therefore steered into
+// the session's own output folder; an absolute one is an explicit destination
+// and is left exactly where the caller asked for it.
+//
+// The returned path is what gets echoed back to the model, so a later read or
+// edit of the same relative path finds the file where it was actually written.
+func (s *writeSkill) placed(requestPath string) string {
+	if s.outputSubdir == nil || filepath.IsAbs(requestPath) {
+		return requestPath
+	}
+	subdir := strings.TrimSpace(s.outputSubdir())
+	if subdir == "" {
+		return requestPath
+	}
+	return filepath.ToSlash(filepath.Join(subdir, requestPath))
 }
 
 func (*writeSkill) Name() string { return "write" }
@@ -68,6 +89,7 @@ func (s *writeSkill) Execute(_ context.Context, input Input) (Output, error) {
 		err := errors.New("usage: write <path> <content>")
 		return newToolOutput("write", "write "+strings.TrimSpace(strings.Join(args, " ")), "", start, false, err), err
 	}
+	requestPath = s.placed(requestPath)
 
 	targetPath, err := resolveSandboxPath(s.root, requestPath)
 	if err != nil {
@@ -78,6 +100,11 @@ func (s *writeSkill) Execute(_ context.Context, input Input) (Output, error) {
 		return newToolOutput("write", "write "+requestPath, "", start, false, err), err
 	}
 
+	// Read the outgoing version before clobbering it, so the timeline can say
+	// whether this was a new file or a rewrite of N lines. A failed read means
+	// "no file there" — a brand new file, nothing removed.
+	previous, _ := os.ReadFile(targetPath)
+
 	if err := os.WriteFile(targetPath, []byte(content), 0o644); err != nil {
 		return newToolOutput("write", "write "+requestPath, "", start, false, err), err
 	}
@@ -86,7 +113,9 @@ func (s *writeSkill) Execute(_ context.Context, input Input) (Output, error) {
 	// absolute path is noise in context and nudges the model into repeating
 	// the sandbox root back at the user (see internal/prompt environment()).
 	output := "write done: " + requestPath
-	return newToolOutput("write", "write "+requestPath, output, start, false, nil), nil
+	out := newToolOutput("write", "write "+requestPath, output, start, false, nil)
+	out.LinesAdded, out.LinesRemoved = LineDelta(string(previous), content)
+	return out, nil
 }
 
 func (s *writeSkill) ExecuteTool(ctx context.Context, args map[string]any) (Output, error) {

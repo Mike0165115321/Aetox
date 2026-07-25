@@ -3,6 +3,7 @@ package skill
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/Mike0165115321/Aetox/internal/model"
@@ -20,6 +21,23 @@ type Output struct {
 	Success    bool
 	Truncated  bool
 	DurationMs int64
+	// LinesAdded/LinesRemoved describe what a write did to a file, for the
+	// timeline's "+9 -0". Both zero on tools that touch no file.
+	LinesAdded   int
+	LinesRemoved int
+}
+
+// LineDelta counts how a replacement changed a file, for Output's stats.
+// Exact-replacement edits make this the true count; a whole-file write reports
+// the old file against the new one.
+func LineDelta(before, after string) (added, removed int) {
+	countLines := func(s string) int {
+		if s == "" {
+			return 0
+		}
+		return strings.Count(s, "\n") + 1
+	}
+	return countLines(after), countLines(before)
 }
 
 type Skill interface {

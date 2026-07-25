@@ -70,6 +70,8 @@ export function InstallSkillFromGitHub(arg1:string):Promise<string>;
 
 export function ListAllSessions():Promise<Array<main.SessionMeta>>;
 
+export function ListBuiltinSkills():Promise<Array<main.SkillInfo>>;
+
 export function ListExternalSkills():Promise<Array<skill.DiscoveredSkill>>;
 
 export function ListIdentityFiles():Promise<Array<main.IdentityFile>>;
@@ -154,6 +156,8 @@ export function SetProviderWireFormat(arg1:string):Promise<main.ModelInfo>;
 
 export function SetUILocale(arg1:string):Promise<void>;
 
+export function SetUserName(arg1:string):Promise<void>;
+
 export function SupportedProviders():Promise<Array<string>>;
 
 export function SupportedThinkLevels():Promise<Array<string>>;
@@ -185,5 +189,7 @@ export function ToggleMCPServer(arg1:string,arg2:boolean):Promise<void>;
 export function ToolCounts():Promise<main.ToolCounts>;
 
 export function UsageStats():Promise<main.UsageStats>;
+
+export function UserName():Promise<string>;
 
 export function WriteFile(arg1:string,arg2:string):Promise<void>;

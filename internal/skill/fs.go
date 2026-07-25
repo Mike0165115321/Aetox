@@ -135,6 +135,11 @@ func (s *fsSkill) execFind(start time.Time, params []string) (Output, error) {
 			return nil
 		}
 		if d.IsDir() {
+			// Same set grep refuses to search: a file search that returns 200
+			// hits from node_modules has answered a question nobody asked.
+			if name := d.Name(); path != basePath && (strings.HasPrefix(name, ".") || IgnoredDirs[name]) {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		name := strings.ToLower(d.Name())

@@ -1,26 +1,38 @@
 <script lang="ts">
+  import { onMount } from 'svelte'
   import {
     cockpit, newSession, openFolder, openProject,
     searchGlobalHistory, selectGlobalSession, deleteSession,
   } from './stores/cockpit.svelte'
   import type { Session } from './types'
-  import { identity, loadIdentityFiles, openIdentityFile, saveIdentityFile, createIdentityFile, deleteIdentityFile, identityTemplates } from './identity.svelte'
+  import { UserName, SetUserName } from '../../wailsjs/go/main/App'
   import { t, i18n, setLocale, localeNames, type Locale } from './i18n.svelte'
+  import { theme, applyTheme, THEMES, type ThemeName } from './theme.svelte'
 
   let { onOpenSettings }: { onOpenSettings: () => void } = $props()
 
   let historyQuery = $state('')
   let historySearchTimer: ReturnType<typeof setTimeout> | undefined
 
-  let profileName = $state(localStorage.getItem('profileName') ?? '')
+  // The name is read back from Aetox's preference file, not localStorage —
+  // see config.ModelPreference.UserName for why it used to vanish.
+  let profileName = $state('')
   let profileOpen = $state(false)
-  // svelte-ignore state_referenced_locally
-  let nameDraft = $state(profileName)
+  let nameDraft = $state('')
   const avatarInitial = $derived((profileName.trim()[0] ?? 'A').toUpperCase())
+
+  onMount(async () => {
+    try {
+      profileName = await UserName()
+      nameDraft = profileName
+    } catch {
+      /* backend not up yet — typing a name still saves it */
+    }
+  })
 
   function saveName() {
     profileName = nameDraft.trim()
-    localStorage.setItem('profileName', profileName)
+    void SetUserName(profileName)
   }
 
   function closeProfileOnOutsideClick(e: MouseEvent) {
@@ -39,7 +51,9 @@
   // nested beneath (matched by projectName from the global history list).
   const PROJECT_GROUP_PREVIEW = 3
   let expandedProjects = $state<Record<string, boolean>>({})
-  let openProjects = $state<Record<string, boolean>>({}) // unfold a project's session list; default closed (chats hidden)
+  // Tracks what the user folded AWAY, so every project shows its recent chats
+  // by default — a project row with nothing under it says nothing.
+  let collapsedProjects = $state<Record<string, boolean>>({})
 
   // Two-step delete: first click arms ("ยืนยัน?"), second click deletes.
   let confirmDeleteId = $state('')
@@ -58,28 +72,10 @@
     }))
   )
 
-  let identityOpen = $state(true)
-  let projectsOpen = $state(true)
-  let historyOpen = $state(true)
-
-  let identityLoadedOnce = false
-  let newIdentityName = $state('')
-  const identityDirty = $derived(identity.draft !== identity.saved)
-  const missingTemplates = $derived(
-    identity.loaded && identity.files ? identityTemplates.filter((tpl) => !(identity.files || []).some((f) => f.name === tpl.name)) : []
-  )
-
-  $effect(() => {
-    if (identityLoadedOnce) return
-    identityLoadedOnce = true
-    loadIdentityFiles()
-  })
-
-  function addIdentityFile() {
-    if (!newIdentityName.trim()) return
-    createIdentityFile(newIdentityName)
-    newIdentityName = ''
-  }
+  // Chats and projects are two views of the same list, so they take turns in
+  // one column instead of splitting it into stacked half-panels. Chats opens
+  // first — it is the list you actually come back to.
+  let tab = $state<'projects' | 'history'>('history')
 
   function onHistorySearchInput() {
     clearTimeout(historySearchTimer)
@@ -98,81 +94,31 @@
 />
 
 <aside class="side">
-  <div class="side-sections">
-  <div class="side-panel" style={identityOpen ? 'flex:0 0 260px' : 'flex:0 0 auto'}>
-    <button type="button" class="side-head" onclick={() => (identityOpen = !identityOpen)}>
-      <span class="chev">{identityOpen ? '▾' : '▸'}</span>
-      <span class="eyebrow">{t('sidebar.identity')}</span>
-    </button>
-    {#if identityOpen}
-      <div class="identity-body">
-        <div class="identity-files">
-          {#each identity.files as f (f.name)}
-            <div class="identity-file" class:active={identity.activeName === f.name}>
-              <button type="button" class="identity-file-open" onclick={() => openIdentityFile(f.name)}>
-                <span class="ic">📄</span>
-                <span class="t">{f.name}</span>
-              </button>
-              <button type="button" class="identity-file-del" aria-label={t('settings.remove')} onclick={() => deleteIdentityFile(f.name)}>✕</button>
-            </div>
-          {/each}
-          {#if identity.files.length === 0}
-            <div class="empty">{t('sidebar.noIdentityFiles')}</div>
-          {/if}
-        </div>
-        {#if missingTemplates.length > 0}
-          <div class="identity-templates">
-            {#each missingTemplates as tpl (tpl.name)}
-              <button type="button" class="identity-template" onclick={() => createIdentityFile(tpl.name, tpl.content)}>
-                ＋ {tpl.name}
-              </button>
-            {/each}
-          </div>
-        {/if}
-        <div class="identity-newfile">
-          <input
-            class="identity-newfile-input" placeholder={t('sidebar.newIdentityFile')}
-            bind:value={newIdentityName}
-            onkeydown={(e) => e.key === 'Enter' && addIdentityFile()}
-          />
-          <button type="button" class="icobtn tiny" aria-label={t('sidebar.newIdentityFile')} onclick={addIdentityFile}>＋</button>
-        </div>
-        {#if identity.activeName}
-          <textarea
-            class="identity-input" placeholder={t('sidebar.identityPlaceholder')}
-            bind:value={identity.draft}
-          ></textarea>
-          <button
-            type="button" class="ctrl identity-save"
-            disabled={!identityDirty || identity.saving}
-            onclick={saveIdentityFile}
-          >
-            {identity.saving ? t('settings.saving') : t('settings.save')}
-          </button>
-        {/if}
-      </div>
-    {/if}
+  <!-- Outside .side-sections so the switch stays put while the list scrolls. -->
+  <div class="side-tabs">
+    <div class="seg">
+      <button type="button" class="seg-btn" class:active={tab === 'history'} onclick={() => (tab = 'history')}>
+        <span class="ic">💬</span> {t('sidebar.globalHistory')}
+      </button>
+      <button type="button" class="seg-btn" class:active={tab === 'projects'} onclick={() => (tab = 'projects')}>
+        <span class="ic">📁</span> {t('sidebar.projects')}
+      </button>
+    </div>
   </div>
 
+  <div class="side-sections">
   <div class="side-panel">
-    <div class="side-head">
-      <button type="button" class="side-head-toggle" onclick={() => (projectsOpen = !projectsOpen)}>
-        <span class="chev">{projectsOpen ? '▾' : '▸'}</span>
-        <span class="eyebrow">{t('sidebar.projects')}</span>
-      </button>
-      <button type="button" class="icobtn tiny tip-r" aria-label={t('topbar.openFolder')}
-        data-tip={t('topbar.openFolder')} onclick={openFolder}>＋</button>
-      <button type="button" class="icobtn tiny tip-r" aria-label={t('sidebar.newSession')}
-        data-tip="{t('sidebar.newSession')} · Ctrl+N" onclick={newSession}>✎</button>
-    </div>
-    {#if projectsOpen}
+    {#if tab === 'projects'}
       <div class="scroll">
+        <button type="button" class="proj-add" onclick={openFolder}>
+          <span class="ic">＋</span> {t('sidebar.addProject')}
+        </button>
         {#each projectGroups as g (g.project.key)}
           <div class="proj-group">
             <div class="proj-group-row">
               <button type="button" class="proj-group-chev" aria-label={g.project.name}
-                onclick={() => (openProjects[g.project.key] = !openProjects[g.project.key])}>
-                {openProjects[g.project.key] ? '▾' : '▸'}
+                onclick={() => (collapsedProjects[g.project.key] = !collapsedProjects[g.project.key])}>
+                {collapsedProjects[g.project.key] ? '▸' : '▾'}
               </button>
               <button type="button" class="proj-group-head" class:active={g.project.active} onclick={() => openProject(g.project.path)}>
                 <span class="ic">{g.project.active ? '📂' : '📁'}</span>
@@ -180,7 +126,7 @@
                 {#if g.project.active && cockpit.project.branch}<span class="proj-branch">⑂ {cockpit.project.branch}</span>{/if}
               </button>
             </div>
-            {#if openProjects[g.project.key]}
+            {#if !collapsedProjects[g.project.key]}
               {#each expandedProjects[g.project.key] ? g.sessions : g.sessions.slice(0, PROJECT_GROUP_PREVIEW) as s (s.id)}
                 <div class="proj-group-sess" class:active={s.active}>
                   <button type="button" class="proj-group-sess-open" onclick={() => selectGlobalSession(s)}>{s.title}</button>
@@ -199,20 +145,12 @@
           </div>
         {/each}
       </div>
-    {/if}
-  </div>
-
-  <div class="side-panel">
-    <div class="side-head">
-      <button type="button" class="side-head-toggle" onclick={() => (historyOpen = !historyOpen)}>
-        <span class="chev">{historyOpen ? '▾' : '▸'}</span>
-        <span class="eyebrow">{t('sidebar.globalHistory')}</span>
-      </button>
-      <button type="button" class="icobtn tiny tip-r" aria-label={t('sidebar.newSession')}
-        data-tip="{t('sidebar.newSession')} · Ctrl+N" onclick={newSession}>✎</button>
-    </div>
-    {#if historyOpen}
+    {:else}
       <div class="scroll">
+        <button type="button" class="proj-add" onclick={newSession}>
+          <span class="ic">＋</span> {t('sidebar.newSession')}
+          <span class="kbd">Ctrl+N</span>
+        </button>
         <input class="sess-search" placeholder={t('sidebar.searchHistory')} bind:value={historyQuery} oninput={onHistorySearchInput} />
         {#each cockpit.history as s (s.id)}
           <button type="button" class="sess-row" class:active={s.active} onclick={() => selectGlobalSession(s)}>
@@ -227,7 +165,11 @@
                 {confirmDeleteId === s.id ? t('sidebar.confirmDelete') : '✕'}
               </span>
             </span>
-            {#if s.projectName}<span class="snip">{s.projectName}{#if s.snippet} — {s.snippet}{/if}</span>{/if}
+            <!-- Second line only while searching: the matched excerpt is why
+                 this row is in the results. The project name used to live here
+                 too, but the projects tab already groups by project — and for
+                 a no-focus chat it printed the raw project_key. -->
+            {#if s.snippet}<span class="snip">{s.snippet}</span>{/if}
           </button>
         {/each}
         {#if cockpit.history.length === 0}
@@ -257,6 +199,14 @@
           />
         </div>
         <div class="menu-sep"></div>
+        <div class="plus-menu-item">
+          <span class="ic">🎨</span> {t('settings.themeTitle')}
+          <select class="lang-select" value={theme.name} onchange={(e) => applyTheme(e.currentTarget.value as ThemeName)}>
+            {#each THEMES as th (th.value)}
+              <option value={th.value}>{th.label}</option>
+            {/each}
+          </select>
+        </div>
         <div class="plus-menu-item">
           <span class="ic">🌐</span> {t('settings.languageTitle')}
           <select class="lang-select" value={i18n.locale} onchange={(e) => setLocale(e.currentTarget.value as Locale)}>

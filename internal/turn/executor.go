@@ -71,7 +71,7 @@ type Executor struct {
 	summaryLimit   int
 	turnOptions    TurnOptions
 	statusReporter func(string)
-	onToolAction   func(action, detail string)
+	onToolAction   func(ToolEvent)
 }
 
 type ExecutorOptions struct {
@@ -85,7 +85,7 @@ type ExecutorOptions struct {
 	SummaryLimit   int
 	TurnOptions    TurnOptions
 	StatusReporter func(string)
-	OnToolAction   func(action, detail string)
+	OnToolAction   func(ToolEvent)
 }
 
 type Result struct {
@@ -134,15 +134,54 @@ func (e *Executor) stopSpinner() {
 	}
 }
 
+// ToolEvent is one entry in a UI's live tool timeline. It replaced a pair of
+// formatted strings ("write {\"path\":\"internal/skil", "write: สำเร็จ"): the
+// frontend had to parse a *localized* Thai word to tell success from failure,
+// and anything the UI wanted to show beyond the name had nowhere to travel.
+// New per-call facts belong here as fields, not as more text to re-parse.
+type ToolEvent struct {
+	Action string `json:"action"` // "call" | "result"
+	Name   string `json:"name"`
+	// Subject is the one argument worth reading in a list: the path a write
+	// touches, the URL a fetch opens. Empty when the tool takes nothing nameable.
+	Subject string `json:"subject,omitempty"`
+	OK      bool   `json:"ok"`              // result only
+	Error   string `json:"error,omitempty"` // result only, when !OK
+	// Added/Removed are the line counts of a write or edit, zero elsewhere.
+	Added   int `json:"added,omitempty"`
+	Removed int `json:"removed,omitempty"`
+}
+
+// Label is what a timeline row reads, e.g. "write internal/skill/edit.go".
+func (ev ToolEvent) Label() string {
+	return strings.TrimSpace(ev.Name + " " + ev.Subject)
+}
+
 func (e *Executor) reportToolCall(name, args string) {
 	if e.onToolAction != nil {
-		e.onToolAction("call", name+" "+truncate(args, 40))
+		e.onToolAction(ToolEvent{Action: "call", Name: name, Subject: toolCallSubject(args)})
 	}
 }
 
-func (e *Executor) reportToolResult(name, status string) {
+// toolCallSubject picks the one argument worth reading in a timeline row — the
+// path a write touches, the URL a fetch opens. The raw JSON truncated at 40
+// characters used to cut mid-key ("write {\"path\":\"internal/skil"), which is
+// the least useful 40 characters available. Falls back to the old behaviour
+// when the arguments are not JSON or carry nothing nameable.
+func toolCallSubject(args string) string {
+	parsed, err := model.ParseToolArguments(args)
+	if err != nil {
+		return truncate(args, 40)
+	}
+	// One definition, shared with the streaming path — see model.SubjectFromArgs
+	// for why the two must not drift apart by even a truncation.
+	return model.SubjectFromArgs(parsed)
+}
+
+func (e *Executor) reportToolResult(ev ToolEvent) {
 	if e.onToolAction != nil {
-		e.onToolAction("result", name+": "+status)
+		ev.Action = "result"
+		e.onToolAction(ev)
 	}
 }
 
@@ -356,14 +395,22 @@ func (e *Executor) executeAgentToolLoop(
 
 	reply, usedTools, err := e.agent.RespondWithTools(ctx, toolDefs, intent.Raw, func(ctx context.Context, call model.ToolCall) (string, error) {
 		e.reportToolCall(call.Function.Name, call.Function.Arguments)
-		receipt, success, execErr := e.executeToolCallWithOutcome(ctx, call)
-		if success {
-			e.reportToolResult(call.Function.Name, "สำเร็จ")
-		} else if execErr != nil {
-			e.reportToolResult(call.Function.Name, execErr.Error())
-		} else {
-			e.reportToolResult(call.Function.Name, "ไม่สำเร็จ")
+		receipt, output, success, execErr := e.executeToolCallWithOutcome(ctx, call)
+		ev := ToolEvent{
+			Name:    call.Function.Name,
+			Subject: toolCallSubject(call.Function.Arguments),
+			OK:      success,
+			Added:   output.LinesAdded,
+			Removed: output.LinesRemoved,
 		}
+		if !success {
+			if execErr != nil {
+				ev.Error = execErr.Error()
+			} else {
+				ev.Error = "ไม่สำเร็จ"
+			}
+		}
+		e.reportToolResult(ev)
 		return receipt, execErr
 	}, asStreamHandler(onReasoningChunk), e.turnOptions)
 	if err != nil {
@@ -382,33 +429,35 @@ func (e *Executor) executeAgentToolLoop(
 	}, true, nil
 }
 
-func (e *Executor) executeToolCallWithOutcome(ctx context.Context, call model.ToolCall) (string, bool, error) {
+// The skill.Output is returned alongside the receipt because the receipt is
+// written for the model, and the UI needs facts the model has no use for —
+// today the write/edit line counts.
+func (e *Executor) executeToolCallWithOutcome(ctx context.Context, call model.ToolCall) (string, skill.Output, bool, error) {
 	args, parseErr := model.ParseToolArguments(call.Function.Arguments)
 	if parseErr != nil {
 		// No salvage: writing half a file and reporting success is worse than
 		// failing loudly. Truncated JSON usually means the output token limit
 		// cut the call short — say so, so the model fixes the size, not the path.
-		return "", false, fmt.Errorf(
+		return "", skill.Output{}, false, fmt.Errorf(
 			"tool call NOT executed: arguments are not valid JSON (%v) — likely truncated by the output token limit; retry with shorter content or split the work into smaller calls",
 			parseErr)
 	}
 
 	name := strings.TrimSpace(call.Function.Name)
 	if name == "" {
-		return "", false, errors.New("tool call has empty function name")
+		return "", skill.Output{}, false, errors.New("tool call has empty function name")
 	}
 	output, handled, execErr := e.executeTool(ctx, name, args)
-	if !handled {
-		return e.modelToolReceipt(name, args, output, execErr), false, execErr
+	if !handled || execErr != nil {
+		return e.modelToolReceipt(ctx, name, args, output, execErr), output, false, execErr
 	}
-	if execErr != nil {
-		return e.modelToolReceipt(name, args, output, execErr), false, execErr
-	}
-	success := output.Success
-	return e.modelToolReceipt(name, args, output, nil), success, nil
+	return e.modelToolReceipt(ctx, name, args, output, nil), output, output.Success, nil
 }
 
-func (e *Executor) modelToolReceipt(name string, args map[string]any, output skill.Output, execErr error) string {
+// ctx is threaded in for the rtk pass below: it shells out, and a subprocess
+// running during a turn has to be reachable by the user's Stop like every
+// other one.
+func (e *Executor) modelToolReceipt(ctx context.Context, name string, args map[string]any, output skill.Output, execErr error) string {
 	status := string(TurnStatusDone)
 	success := output.Success && execErr == nil
 	if !success {
@@ -424,8 +473,8 @@ func (e *Executor) modelToolReceipt(name string, args map[string]any, output ski
 	// additive — falls through to the untouched result if rtk isn't
 	// installed or this tool call has no matching filter.
 	if filter := rtk.FilterForTool(name, args); filter != "" {
-		if filtered, ok := rtk.Filter(filter, result); ok {
-			result = filtered
+		if filtered, ok := rtk.Filter(ctx, filter, result); ok {
+			result = rtk.StripBanner(filtered)
 		}
 	}
 	result = e.sanitizeAndTrimOutput(result)
@@ -629,4 +678,3 @@ func asStreamHandler(callback func(string)) func(string) error {
 		return nil
 	}
 }
-

@@ -3,7 +3,7 @@
 // incremental updates here — append a chat message, advance a timeline step) and
 // the UI reacts. Do not reassign `cockpit` itself; mutate its properties.
 
-import { emptyCockpitState, type CockpitState, type TreeNode, type ChangedFile, type Session, type ToolStep } from '../types'
+import { emptyCockpitState, type CockpitState, type TreeNode, type ChangedFile, type Session, type ToolStep, type ToolEvent, type ChatMessage, type PendingFile } from '../types'
 import type { CockpitSource } from '../services/cockpit'
 import {
   SendMessage, GetProjectStatus, GetModelInfo, OpenProjectFolder, OpenProjectPath,
@@ -129,18 +129,51 @@ export async function searchGlobalHistory(query: string): Promise<void> {
   }))
 }
 
+// sendUserMessage folds attachments into the sent text as marker lines, because
+// the model only ever reads text — and that text is exactly what the transcript
+// stores. So restoring a session has to fold them back out, or the bubble shows
+// a raw "[attachment: …] .aetox-attachments/x.mp4" line and no chip at all.
+// These two patterns are the inverse of the ones written there; change both together.
+const ATTACH_CTX_RE = /\n*\[attachment: [^\]]*\] ([^\n]*):\n```\n[\s\S]*?\n```/g
+const ATTACH_FILE_RE = /\n*\[attachment: user-attached (image|audio|video|file) — [^\]]*\] (\S+)/g
+
+function restoreAttachments(m: main.SessionMessage): ChatMessage {
+  const out: ChatMessage = {
+    role: m.role === 'agent' ? 'agent' : 'user',
+    text: m.text,
+    time: m.time,
+    reasoning: m.reasoning || undefined,
+    thinkSecs: m.thinkSecs || undefined,
+  }
+  if (out.role === 'agent') return out
+  out.text = out.text
+    .replace(ATTACH_CTX_RE, (_all, label: string) => { out.contextLabel = label; return '' })
+    .replace(ATTACH_FILE_RE, (_all, kind: string, relPath: string) => {
+      if (kind === 'image') out.imageRelPath = relPath
+      else { out.attachKind = kind as PendingFile['kind']; out.attachLabel = relPath.split('/').pop() }
+      return ''
+    })
+    .trim()
+  return out
+}
+
+/** Thumbnails are read back off disk, so they land a moment after the text. */
+function hydrateImages(): void {
+  cockpit.chat.forEach((m, i) => {
+    if (!m.imageRelPath || m.imageDataUrl) return
+    ReadImageDataURL(m.imageRelPath)
+      .then((url) => { cockpit.chat[i].imageDataUrl = url })
+      .catch(() => {}) // file moved or sandbox cleared — the chip still names it
+  })
+}
+
 /** Open a session from the global history list — switches project first if it belongs to a different one. */
 export async function selectGlobalSession(session: Session): Promise<void> {
   const messages = await LoadSessionAnyProject(session.id)
   cockpit.todos = []
   cockpit.ask = null
-  cockpit.chat = messages.map((m) => ({
-    role: m.role === 'agent' ? 'agent' as const : 'user' as const,
-    text: m.text,
-    time: m.time,
-    reasoning: m.reasoning || undefined,
-    thinkSecs: m.thinkSecs || undefined,
-  }))
+  cockpit.chat = messages.map(restoreAttachments)
+  hydrateImages()
   await switchWorkbenchSession(session.id)
   const project = await GetProjectStatus()
   Object.assign(cockpit.project, project)
@@ -276,6 +309,7 @@ export async function sendUserMessage(text: string): Promise<void> {
   cockpit.chat.push({
     role: 'user', text: trimmed, time: nowLabel(),
     imageDataUrl: image?.dataUrl, contextLabel: context?.label,
+    attachLabel: file?.label, attachKind: file?.kind,
   })
   cockpit.pendingImage = null
   cockpit.pendingContext = null
@@ -360,20 +394,33 @@ export function applyReasoningChunk(chunk: string): void {
   cockpit.reasoningText += chunk
 }
 
-/** Live tool call/result feed from the Go engine (see desktop/app.go recordToolAction).
- * "call" opens a running step; "result" ("name: สำเร็จ" | "name: <error>") closes the
- * oldest one still running. */
-export function applyToolEvent(ev: { action: string; detail: string }): void {
+/** Live tool call/result feed from the Go engine (turn.ToolEvent, relayed by
+ * desktop/app.go recordToolAction). "call" opens a running step; "result"
+ * closes the oldest one still running. */
+export function applyToolEvent(ev: ToolEvent): void {
+  const label = [ev.name, ev.subject].filter(Boolean).join(' ')
   if (ev.action === 'call') {
-    cockpit.toolSteps.push({ label: ev.detail, state: 'run', startedAt: Date.now() })
+    // A call is announced repeatedly while the model writes it — once per line
+    // of content — and once more when it actually runs. Same label every time,
+    // so the row is reused: the counter climbs and the elapsed clock keeps
+    // running instead of the timeline growing a row per line.
+    const open = cockpit.toolSteps.find((s) => s.state === 'run' && s.label === label)
+    if (open) {
+      if (ev.added) open.added = ev.added
+      return
+    }
+    cockpit.toolSteps.push({ label, state: 'run', startedAt: Date.now(), added: ev.added || undefined })
     return
   }
   if (ev.action !== 'result') return
   const step = cockpit.toolSteps.find((s) => s.state === 'run')
   if (!step) return
-  // note: "ไม่สำเร็จ" also ends with "สำเร็จ" — match the full ": สำเร็จ" suffix
-  step.state = ev.detail.endsWith(': สำเร็จ') ? 'done' : 'err'
+  step.state = ev.ok ? 'done' : 'err'
   step.secs = Math.round((Date.now() - step.startedAt) / 1000)
+  step.error = ev.ok ? undefined : ev.error
+  // Only a write/edit carries these; everything else reports 0 and shows nothing.
+  step.added = ev.added || undefined
+  step.removed = ev.removed || undefined
 }
 
 /** Copy an image (from a native file-picker or a drop) into the sandbox, and stage it as the composer's pending attachment. */
@@ -514,13 +561,8 @@ export async function selectSession(session: Session): Promise<void> {
   const messages = await LoadSession(session.id)
   cockpit.todos = []
   cockpit.ask = null
-  cockpit.chat = messages.map((m) => ({
-    role: m.role === 'agent' ? 'agent' as const : 'user' as const,
-    text: m.text,
-    time: m.time,
-    reasoning: m.reasoning || undefined,
-    thinkSecs: m.thinkSecs || undefined,
-  }))
+  cockpit.chat = messages.map(restoreAttachments)
+  hydrateImages()
   await switchWorkbenchSession(session.id)
   await refreshSessions()
   await refreshGlobalHistory()

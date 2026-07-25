@@ -132,7 +132,10 @@ func (s *editSkill) Execute(_ context.Context, input Input) (Output, error) {
 		return newToolOutput("edit", command, "", start, false, err), err
 	}
 
-	return newToolOutput("edit", command, "edit done: "+requestPath, start, false, nil), nil
+	out := newToolOutput("edit", command, "edit done: "+requestPath, start, false, nil)
+	// Exactly one occurrence was replaced, so the two strings are the change.
+	out.LinesAdded, out.LinesRemoved = LineDelta(oldString, newString)
+	return out, nil
 }
 
 func (s *editSkill) ExecuteTool(ctx context.Context, args map[string]any) (Output, error) {

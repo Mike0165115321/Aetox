@@ -1,6 +1,9 @@
 package rtk
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestFilterForToolGitSubcommands(t *testing.T) {
 	cases := map[string]string{
@@ -33,7 +36,7 @@ func TestFilterForToolUnknownToolPassesThrough(t *testing.T) {
 }
 
 func TestRewriteUnavailableOrEmptyIsNoop(t *testing.T) {
-	if got, ok := Rewrite(""); ok || got != "" {
+	if got, ok := Rewrite(context.Background(), ""); ok || got != "" {
 		t.Errorf("Rewrite(\"\"): got (%q, %v), want (\"\", false)", got, ok)
 	}
 }
@@ -46,7 +49,7 @@ func TestRewriteRealBinary(t *testing.T) {
 	if !Available() {
 		t.Skip("rtk not installed on PATH")
 	}
-	got, ok := Rewrite("git status")
+	got, ok := Rewrite(context.Background(), "git status")
 	if !ok {
 		t.Fatal("expected rtk to have an equivalent for \"git status\"")
 	}
@@ -60,21 +63,21 @@ func TestRewriteNoEquivalentIsNoop(t *testing.T) {
 		t.Skip("rtk not installed on PATH")
 	}
 	// A command rtk has no registry entry for — confirmed live: exits 1, no output.
-	got, ok := Rewrite("aetox-definitely-not-a-real-command --xyz")
+	got, ok := Rewrite(context.Background(), "aetox-definitely-not-a-real-command --xyz")
 	if ok || got != "" {
 		t.Errorf("Rewrite with no equivalent: got (%q, %v), want (\"\", false)", got, ok)
 	}
 }
 
 func TestFilterUnknownFilterNameIsNoop(t *testing.T) {
-	got, ok := Filter("not-a-real-filter", "some output")
+	got, ok := Filter(context.Background(), "not-a-real-filter", "some output")
 	if ok || got != "some output" {
 		t.Errorf("Filter with bad name: got (%q, %v), want (\"some output\", false)", got, ok)
 	}
 }
 
 func TestFilterEmptyContentIsNoop(t *testing.T) {
-	got, ok := Filter("git-status", "")
+	got, ok := Filter(context.Background(), "git-status", "")
 	if ok || got != "" {
 		t.Errorf("Filter with empty content: got (%q, %v), want (\"\", false)", got, ok)
 	}
@@ -86,11 +89,49 @@ func TestFilterRealBinary(t *testing.T) {
 	if !Available() {
 		t.Skip("rtk not installed on PATH")
 	}
-	got, ok := Filter("git-status", "On branch main\nnothing to commit, working tree clean\n")
+	got, ok := Filter(context.Background(), "git-status", "On branch main\nnothing to commit, working tree clean\n")
 	if !ok {
 		t.Fatal("expected rtk to successfully filter well-formed git-status input")
 	}
 	if got == "" {
 		t.Fatal("filtered output was empty")
+	}
+}
+
+func TestStripBanner(t *testing.T) {
+	const banner = "[rtk] ⚠ No hook installed — run `rtk init -g` for automatic token savings"
+	cases := []struct{ name, in, want string }{
+		{"banner then content", banner + "\nGo build: Success", "Go build: Success"},
+		{"banner only", banner, ""},
+		{"no banner is untouched", "M  internal/rtk/rtk.go\n?? new.go", "M  internal/rtk/rtk.go\n?? new.go"},
+		{"indented banner still goes", "  " + banner + "\nok", "ok"},
+		{"a line merely mentioning rtk stays", "rtk saved 20%", "rtk saved 20%"},
+		{"empty", "", ""},
+	}
+	for _, c := range cases {
+		if got := StripBanner(c.in); got != c.want {
+			t.Errorf("%s: StripBanner(%q) = %q, want %q", c.name, c.in, got, c.want)
+		}
+	}
+}
+
+// An allowlist, so an unknown command runs raw — the worst case being "no
+// better than before" rather than the silent bloat measured on go build/test.
+func TestWorthRewriting(t *testing.T) {
+	yes := []string{"git log", "git diff", "git status", "git show HEAD", "GIT LOG --oneline"}
+	no := []string{
+		"go build ./...", "go test ./...", "go vet ./...",
+		"npm install -g typescript", "npm ci",
+		"git", "", "git commit -m x", "ls",
+	}
+	for _, c := range yes {
+		if !worthRewriting(c) {
+			t.Errorf("worthRewriting(%q) = false, want true", c)
+		}
+	}
+	for _, c := range no {
+		if worthRewriting(c) {
+			t.Errorf("worthRewriting(%q) = true, want false", c)
+		}
 	}
 }

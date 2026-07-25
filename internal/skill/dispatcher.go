@@ -1,10 +1,10 @@
 package skill
 
 import (
-	"github.com/Mike0165115321/Aetox/internal/command"
-	"github.com/Mike0165115321/Aetox/internal/model"
 	"context"
 	"fmt"
+	"github.com/Mike0165115321/Aetox/internal/command"
+	"github.com/Mike0165115321/Aetox/internal/model"
 	"strings"
 )
 

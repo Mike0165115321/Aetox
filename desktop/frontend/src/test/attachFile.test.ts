@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import {
-  cockpit, fileKind, attachFileFromPath, clearPendingFile, sendUserMessage,
+  cockpit, fileKind, attachFileFromPath, clearPendingFile, sendUserMessage, selectSession,
 } from '../lib/stores/cockpit.svelte'
-import { SaveChatFile, SendMessage } from './mocks/wailsApp'
+import { SaveChatFile, SendMessage, LoadSession, ReadImageDataURL } from './mocks/wailsApp'
 
 beforeEach(() => {
   cockpit.pendingFile = null
@@ -45,6 +45,50 @@ describe('attaching a file from the composer', () => {
     // A 300MB clip must never end up inside the prompt.
     expect(sent).not.toContain('```')
     expect(cockpit.pendingFile).toBeNull()
+  })
+
+  // The model only ever gets the path, so the transcript has to carry the
+  // label itself — otherwise a sent clip leaves no trace in the bubble.
+  it('keeps the attachment visible on the sent message', async () => {
+    vi.mocked(SaveChatFile).mockResolvedValue('.aetox-attachments/9-1.mp4' as any)
+    await attachFileFromPath('D:/v/clip.mp4')
+    await sendUserMessage('สรุปคลิปนี้ให้หน่อย')
+
+    expect(cockpit.chat[0]).toMatchObject({
+      role: 'user',
+      attachLabel: 'clip.mp4',
+      attachKind: 'video',
+    })
+  })
+
+  // What the DB stores is the sent text, markers and all. Reopening a session
+  // must fold them back into chips instead of printing the raw path line.
+  it('restores attachments when a stored session is reopened', async () => {
+    vi.mocked(LoadSession).mockResolvedValue([
+      {
+        role: 'user', time: '00:52',
+        text: 'คลิปนี้สรุปให้หน่อย\n\n[attachment: user-attached video — read its speech with audio_transcribe, its on-screen text with video_ocr] .aetox-attachments/17-3.mp4',
+      },
+      {
+        role: 'user', time: '00:50',
+        text: 'รูปนี้อ่านให้หน่อย\n\n[attachment: user-attached image — read it with image_ocr] .aetox-attachments/17-1.png',
+      },
+    ] as any)
+    vi.mocked(ReadImageDataURL).mockResolvedValue('data:image/png;base64,AAA' as any)
+
+    await selectSession({ id: 's1' } as any)
+
+    expect(cockpit.chat[0]).toMatchObject({
+      text: 'คลิปนี้สรุปให้หน่อย', // the marker line is gone from the bubble
+      attachLabel: '17-3.mp4',
+      attachKind: 'video',
+    })
+    expect(cockpit.chat[1]).toMatchObject({
+      text: 'รูปนี้อ่านให้หน่อย',
+      imageRelPath: '.aetox-attachments/17-1.png',
+    })
+    // the thumbnail is read back off disk, so it lands a tick later
+    await vi.waitFor(() => expect(cockpit.chat[1].imageDataUrl).toBe('data:image/png;base64,AAA'))
   })
 
   it('a video points at both tools, since it has speech and a screen', async () => {

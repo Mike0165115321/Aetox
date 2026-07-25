@@ -168,16 +168,6 @@ h1 .gt{text-shadow:0 0 26px var(--glow)}
 /* showcase panel under the hero — the "here is the whole idea" moment */
 .showcase{border-top:none;padding-top:0}
 .showcase-cap{text-align:center;color:var(--dim);font-size:.88rem;margin-top:var(--s3)}
-.term{border:1px solid var(--line-strong);background:linear-gradient(180deg,var(--sheen),transparent 40%),var(--bg-elev);border-radius:var(--r-md);font-family:var(--mono);font-size:.79rem;max-width:1040px;margin:0 auto;box-shadow:var(--shadow);overflow:hidden}
-.term-head{display:flex;align-items:center;gap:.45rem;border-bottom:1px solid var(--line);padding:.6rem .9rem;color:var(--muted);font-size:.68rem}
-.dot{width:.5rem;height:.5rem;border-radius:50%;border:1px solid var(--line-strong)}
-.term-body{padding:var(--s2);display:grid;gap:.6rem;line-height:1.55}
-.u{color:var(--code-strong)}
-.t{color:var(--code-text)}
-.t small{color:var(--code-dim)}
-.term-body .final{color:var(--code-strong);border-top:1px solid var(--line);padding-top:.6rem}
-.caret{display:inline-block;width:.55em;height:1.05em;background:var(--code-text);vertical-align:text-bottom;animation:blink2 1.1s steps(1) infinite}
-@keyframes blink2{50%{opacity:0}}
 
 /* ── sections ───────────────────────────────────────── */
 section{padding:var(--s6) 0;border-top:1px solid var(--line)}
@@ -200,18 +190,26 @@ h2{font-size:clamp(1.55rem,3vw,2.4rem);letter-spacing:-.01em;line-height:1.3;fon
 .fix .meta{margin-top:var(--s2);font-size:.8rem;color:var(--dim);font-family:var(--mono)}
 
 /* app-window mockup */
-.shot{border:1px solid var(--line-strong);border-radius:var(--r-lg);overflow:hidden;
+/* the frame is a real <button>: reset the UA styles, keep the panel look */
+.shot{display:block;width:100%;padding:0;margin:0;font:inherit;color:inherit;text-align:inherit;
+  border:1px solid var(--line-strong);border-radius:var(--r-lg);overflow:hidden;cursor:zoom-in;
+  background:var(--bg-elev);box-shadow:var(--shadow);will-change:transform;
+  transition:border-color .18s,box-shadow .18s}
+.shot:hover{border-color:var(--text)}
+.shot:focus-visible{outline:2px solid var(--text);outline-offset:3px}
+
+/* lightbox — native <dialog> gives Esc, backdrop and focus handling for free */
+dialog#lightbox{border:0;padding:0;background:transparent;max-width:96vw;max-height:96vh;
+  width:auto;overflow:visible;color:var(--text)}
+dialog#lightbox::backdrop{background:rgba(4,4,5,.88);backdrop-filter:blur(4px)}
+dialog#lightbox img{display:block;max-width:96vw;max-height:90vh;width:auto;height:auto;
+  border:1px solid var(--line-strong);border-radius:var(--r-md);background:var(--bg-elev)}
+.lb-close{position:absolute;top:-2.6rem;right:0;background:none;border:1px solid var(--line-strong);
+  color:var(--text);border-radius:999px;width:2.1rem;height:2.1rem;cursor:pointer;font-size:.9rem;
+  display:grid;place-items:center}
+.lb-close:hover{border-color:var(--text);background:rgba(255,255,255,.08)}
+@media (max-width:560px){.lb-close{top:auto;bottom:-2.8rem;right:50%;transform:translateX(50%)}}
   background:var(--bg-elev);box-shadow:var(--shadow-lg);will-change:transform}
-.shot-bar{display:flex;align-items:center;gap:.45rem;padding:.65rem .9rem;border-bottom:1px solid var(--line);
-  background:var(--bg-elev2);font-family:var(--mono);font-size:.68rem;color:var(--muted)}
-.shot-bar .dot{width:.5rem;height:.5rem}
-.shot-bar .name{margin-left:.5rem}
-.shot-body{padding:var(--s3);font-family:var(--mono);font-size:.78rem;line-height:1.7;display:grid;gap:.55rem}
-.shot-body .in{color:var(--code-strong)}
-.shot-body .ok{color:var(--code-text)}
-.shot-body .ok b{font-weight:400;color:var(--code-strong)}
-.shot-body .ok small{color:var(--code-dim)}
-.shot-body .out{color:var(--muted);border-left:2px solid var(--line-strong);padding-left:.75rem;white-space:pre-line}
 /* drop a real screenshot straight into a .shot panel and it fits itself */
 .shot img{display:block;width:100%;height:auto}
 
@@ -327,7 +325,6 @@ footer{border-top:1px solid var(--line);padding:var(--s5) 0 var(--s3);overflow:h
 @media (max-width:560px){
   :root{--s3:1.1rem;--s4:1.75rem;--s5:2.75rem;--s6:3.5rem}
   .btn,.ghost{width:100%;justify-content:center;text-align:center}
-  .term{font-size:.72rem}
   .trow{flex-direction:column;gap:.15rem}
   .trow .tn{min-width:0}
   .ver{display:none}
@@ -414,18 +411,9 @@ footer{border-top:1px solid var(--line);padding:var(--s5) 0 var(--s3);overflow:h
 
   <!-- ══ ของจริงหนึ่งตัวอย่าง — เต็มลูป ══ -->
   <section class="showcase">
-    <div class="term" data-shot aria-label="ตัวอย่างการทำงานจริง">
-      <div class="term-head"><span class="dot"></span><span class="dot"></span><span class="dot"></span>
-        <span>deepseek-v4-flash — โมเดลข้อความล้วน ไม่รองรับภาพ</span></div>
-      <div class="term-body">
-        <div class="u">› อ่านรูปนี้ form.png แล้วช่วยกรอกฟอร์มสมัครในเว็บให้หน่อย</div>
-        <div class="t">✓ image_ocr <small>form.png → "แบบฟอร์มสมาชิก — ชื่อ / อีเมล / จังหวัด"</small></div>
-        <div class="t">✓ browser_read <small>→ [3] input อีเมล · [5] select จังหวัด [options: …]</small></div>
-        <div class="t">✓ browser_type <small>ref 5 "น่าน"</small></div>
-        <div class="t">✓ browser_type <small>ref 3 "phrmsawanachyphl@gmail.com" enter</small></div>
-        <div class="final">กรอกและส่งฟอร์มเรียบร้อยครับ — โมเดลไม่มีตา แต่สถาปัตยกรรมเห็นแทน <span class="caret" aria-hidden="true"></span></div>
-      </div>
-    </div>
+    <button class="shot" data-shot type="button">
+      <img src="assets/hero-app.png" alt="หน้าต่าง Aetox ขณะทำงานจริง — อ่านเว็บ 6 เจ้าแล้วสรุปเป็นตารางเปรียบเทียบ ใช้เครื่องมือไป 21 ครั้ง" width="1536" height="960" decoding="async">
+    </button>
     <p class="showcase-cap">deepseek-v4-flash รับได้แต่ข้อความ มันไม่เคย "เห็น" รูปเลยสักครั้ง —
     ทุกอย่างในลูปนี้มาจากเครื่องมือที่สถาปัตยกรรมเติมให้</p>
   </section>
@@ -446,61 +434,26 @@ footer{border-top:1px solid var(--line);padding:var(--s5) 0 var(--s3);overflow:h
         ก็อ่านสลิป สกรีนช็อต เอกสาร ป้ายราคา ได้ทันที</p>
         <p class="meta">ทำงานออฟไลน์ · ไม่ส่งรูปออกจากเครื่อง</p>
       </div>
-      <div class="shot" data-shot>
-        <div class="shot-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="name">image_ocr</span></div>
-        <div class="shot-body">
-          <div class="in">› อ่านสลิปใบนี้ให้หน่อย slip.png</div>
-          <div class="ok">✓ <b>image_ocr</b> <small>slip.png · tha+eng · 0.8s</small></div>
-          <div class="out">โอนเงินสำเร็จ
-จำนวน 1,250.00 บาท
-ไปยัง ธนาคารกสิกรไทย x-4471
-25 ก.ค. 2569 09:14 น.</div>
-        </div>
-      </div>
+      <button class="shot" data-shot type="button">
+        <img src="assets/cap-image-ocr.png" alt="Aetox ใช้ image_ocr อ่านข้อความจากรูปภาพ แล้วตอบกลับเป็นข้อความ" width="1536" height="960" loading="lazy" decoding="async">
+      </button>
     </div>
 
     <div class="fix flip">
       <div class="fix-copy">
-        <span class="problem">โมเดลดูวิดีโอไม่ได้</span>
-        <h3>Aetox เติม <code>video_ocr</code> ให้ — ได้ข้อความพร้อมเวลากำกับทั้งคลิป</h3>
-        <p>คลิปประชุมสองชั่วโมง สไลด์อบรม วิดีโอสอนงาน — แตกเฟรมทุก N วินาทีแล้วอ่านตัวหนังสือบนจอ
-        ให้คุณรู้ว่าเรื่องที่ต้องการอยู่นาทีไหน โดยไม่ต้องนั่งดูเองทั้งคลิป</p>
-        <p class="meta">คืนค่าเป็นเวลา <code>[m:ss]</code> กระโดดไปดูจุดนั้นได้เลย</p>
+        <span class="problem">โมเดลดูคลิปไม่ได้ ฟังไม่ออก</span>
+        <h3>Aetox เติม <code>video_ocr</code> + <code>audio_transcribe</code> ให้ — เข้าใจคลิปได้ทั้งภาพและเสียง</h3>
+        <p>คลิปประชุมสองชั่วโมง วิดีโอสอนงาน หรือคลิปภาษาที่คุณฟังไม่ออก — ตัวหนึ่งอ่านตัวหนังสือที่ขึ้นบนจอ
+        อีกตัวถอดเสียงพูดออกมาเป็นข้อความพร้อมคำแปล ทั้งคู่คืนเวลาแบบเดียวกัน เลยต่อกันเป็นเรื่องเดียวได้
+        คุณจึงรู้ว่าเรื่องที่ต้องการอยู่นาทีไหน โดยไม่ต้องนั่งดูเองทั้งคลิป</p>
+        <p class="meta">ถอดเสียงในเครื่อง ไม่ส่งขึ้นคลาวด์ · คืนค่าเป็นเวลา <code>[m:ss]</code> กระโดดไปดูจุดนั้นได้เลย</p>
       </div>
-      <div class="shot" data-shot>
-        <div class="shot-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="name">video_ocr</span></div>
-        <div class="shot-body">
-          <div class="in">› คลิปประชุมเมื่อวานสรุปให้หน่อย meeting-0724.mp4</div>
-          <div class="ok">✓ <b>video_ocr</b> <small>meeting-0724.mp4 · 96 เฟรม · ทุก 5 วิ</small></div>
-          <div class="out">[0:00] วาระประชุม — งบไตรมาส 3
-[2:15] ยอดขายต่ำกว่าเป้า 12%
-[7:40] มติ: เลื่อนเปิดตัวไปเดือนหน้า
-[9:05] ผู้รับผิดชอบ: ฝ่ายการตลาด</div>
-        </div>
-      </div>
+      <button class="shot" data-shot type="button">
+        <img src="assets/cap-clip.png" alt="Aetox ถอดเสียงคลิปภาษาเกาหลีเป็นข้อความพร้อมคำแปลไทยและเวลากำกับ พร้อมอ่านตัวหนังสือที่ปรากฏบนจอ" width="1536" height="960" loading="lazy" decoding="async">
+      </button>
     </div>
 
     <div class="fix">
-      <div class="fix-copy">
-        <span class="problem">โมเดลฟังเสียงไม่ได้</span>
-        <h3>Aetox เติม <code>audio_transcribe</code> ให้ — ถอดเสียงพูดเป็นข้อความในเครื่อง</h3>
-        <p>คลิปที่พูดอย่างเดียวโดยจอไม่มีตัวหนังสือ <code>video_ocr</code> คืนค่าว่าง
-        ตัวนี้ดึงเสียงออกมาถอดด้วย whisper.cpp บนเครื่องคุณ ทั้งไฟล์เสียงและไฟล์วิดีโอ</p>
-        <p class="meta">ไม่ส่งเสียงขึ้นคลาวด์แม้แต่วินาทีเดียว · ครั้งแรกต้องโหลดไฟล์โมเดลเอง ~142 MB (บอกวิธีให้ตอนเรียกใช้)</p>
-      </div>
-      <div class="shot" data-shot>
-        <div class="shot-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="name">audio_transcribe</span></div>
-        <div class="shot-body">
-          <div class="in">› สรุปว่าคลิปประชุมนี้ตกลงอะไรกันบ้าง meeting.mp4</div>
-          <div class="ok">✓ <b>audio_transcribe</b> <small>meeting.mp4 · ตรวจภาษาอัตโนมัติ · ในเครื่อง</small></div>
-          <div class="out">[0:00] เริ่มจากเรื่องงบก่อนนะครับ
-[0:42] ตกลงว่าเลื่อนไปต้นเดือนหน้า
-[3:15] ใครรับผิดชอบส่วนดีไซน์</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="fix flip">
       <div class="fix-copy">
         <span class="problem">โมเดลลงมือทำในเว็บไม่ได้</span>
         <h3>Aetox เติม <code>browser_*</code> ให้ — อ่านหน้าเว็บจริง คลิก กรอกฟอร์มแทนได้</h3>
@@ -508,16 +461,9 @@ footer{border-top:1px solid var(--line);padding:var(--s5) 0 var(--s3);overflow:h
         โมเดลสั่งคลิกและพิมพ์ด้วย ref นั้น — เลือก dropdown กดส่งฟอร์มได้ครบ</p>
         <p class="meta">ไม่ติด X-Frame-Options เหมือน iframe · คุณเห็นทุกอย่างที่มันทำสด ๆ</p>
       </div>
-      <div class="shot" data-shot>
-        <div class="shot-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="name">browser</span></div>
-        <div class="shot-body">
-          <div class="in">› สมัครสมาชิกเว็บนี้ให้หน่อย ใช้อีเมลผม</div>
-          <div class="ok">✓ <b>browser_open</b> <small>example.com/register</small></div>
-          <div class="ok">✓ <b>browser_read</b> <small>[3] input อีเมล · [5] select จังหวัด [options: …]</small></div>
-          <div class="ok">✓ <b>browser_type</b> <small>ref 5 "น่าน" · ref 3 อีเมล + enter</small></div>
-          <div class="out">กรอกและส่งฟอร์มเรียบร้อย — คุณดูมันทำได้ทุกขั้นในแท็บเดียวกัน</div>
-        </div>
-      </div>
+      <button class="shot" data-shot type="button">
+        <img src="assets/cap-browser.png" alt="Aetox เปิด Hacker News อ่านหน้าแรก แล้วพิมพ์คำค้นในช่องค้นหาเองจริง" width="1536" height="960" loading="lazy" decoding="async">
+      </button>
     </div>
   </section>
 
@@ -659,7 +605,7 @@ footer{border-top:1px solid var(--line);padding:var(--s5) 0 var(--s3);overflow:h
 
   <!-- ══ 05 เครื่องมือ ══ -->
   <section id="tools">
-    <div class="sec-head"><span class="idx">06</span><h2 data-reveal>เครื่องมือในตัว 22 ตัว</h2></div>
+    <div class="sec-head"><span class="idx">06</span><h2 data-reveal>เครื่องมือในตัว 26 ตัว</h2></div>
     <p class="sub">สี่ตัวเด่นอยู่ด้านบนแล้ว — ที่เหลือคืองานเขียนโค้ด ค้นเว็บ ค้น GitHub อยู่ในชุดเดียวกันหมด</p>
     <div class="tools">
       <div class="trow"><span class="tn">read / write / edit</span><span class="td">อ่าน เขียน แก้ไฟล์แบบเป๊ะ</span></div>
@@ -719,6 +665,11 @@ footer{border-top:1px solid var(--line);padding:var(--s5) 0 var(--s3);overflow:h
 </div><!-- /#smooth-content -->
 </div><!-- /#smooth-wrapper -->
 
+<dialog id="lightbox" aria-label="รูปขยาย">
+  <button class="lb-close" type="button" aria-label="ปิด">✕</button>
+  <img alt="">
+</dialog>
+
 <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/ScrollTrigger.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/ScrollSmoother.min.js" defer></script>
@@ -761,6 +712,29 @@ footer{border-top:1px solid var(--line);padding:var(--s5) 0 var(--s3);overflow:h
       });
     }
   } catch (e) {}
+
+  /* ── image lightbox ────────────────────────────────────
+     <dialog> handles Esc, the backdrop and focus return on its own — no
+     library, and it still works if GSAP never loads. */
+  (function () {
+    var lb = document.getElementById("lightbox");
+    if (!lb || typeof lb.showModal !== "function") return;   // very old browser: images stay static
+    var big = lb.querySelector("img");
+    document.querySelectorAll("[data-shot]").forEach(function (frame) {
+      var thumb = frame.querySelector("img");
+      if (!thumb) return;
+      frame.setAttribute("aria-label", "ขยายรูป: " + (thumb.alt || ""));
+      frame.addEventListener("click", function () {
+        big.src = thumb.currentSrc || thumb.src;
+        big.alt = thumb.alt;
+        lb.showModal();
+      });
+    });
+    lb.querySelector(".lb-close").addEventListener("click", function () { lb.close(); });
+    // click outside the picture closes it
+    lb.addEventListener("click", function (e) { if (e.target === lb) lb.close(); });
+    lb.addEventListener("close", function () { big.removeAttribute("src"); });
+  })();
 
   /* ── copy button ───────────────────────────────────── */
   document.querySelectorAll(".copy").forEach(function (btn) {
@@ -1096,5 +1070,6 @@ footer{border-top:1px solid var(--line);padding:var(--s5) 0 var(--s3);overflow:h
   else window.addEventListener("load", boot);
 })();
 </script>
+
 </body>
 </html>
