@@ -13,13 +13,24 @@
     saveWorkbenchSnapshot,
     type WorkbenchTab,
   } from '../stores/workbench.svelte'
-  import { TerminalShells, BrowserBack, BrowserForward, BrowserReload } from '../../../wailsjs/go/main/App'
+  import { TerminalShells, BrowserBack, BrowserForward, BrowserReload, BrowserOpenDevTools } from '../../../wailsjs/go/main/App'
   import { EventsOn } from '../../../wailsjs/runtime/runtime'
   import { t } from '../i18n.svelte'
 
-  let { onToggleInspector }: { onToggleInspector: () => void } = $props()
-
   const tabIcon: Record<string, string> = { review: '▤', terminal: '⌨', browser: '🌐', files: '⧉', file: '📄', tools: '🛠' }
+
+  // Chrome DevTools' default device presets. CSS viewport sizes — BrowserPane
+  // turns one into a real window of that aspect + a matching page zoom.
+  const DEVICES = [
+    { name: 'Galaxy S8+', w: 360, h: 740 },
+    { name: 'iPhone SE', w: 375, h: 667 },
+    { name: 'iPhone 12 Pro', w: 390, h: 844 },
+    { name: 'Pixel 7', w: 412, h: 915 },
+    { name: 'iPhone 14 Pro Max', w: 430, h: 932 },
+    { name: 'iPad Mini', w: 768, h: 1024 },
+    { name: 'iPad Pro', w: 1024, h: 1366 },
+    { name: 'Desktop', w: 1280, h: 800 },
+  ]
 
   let shells = $state<{ name: string; path: string }[]>([])
   let menuOpen = $state(false)
@@ -59,6 +70,11 @@
   function pick(fn: () => void) {
     menuOpen = false
     fn()
+  }
+
+  /** Device-size preset for the active browser tab; '' = fill the pane. */
+  function setViewport(name: string) {
+    if (activeTab) activeTab.viewport = DEVICES.find((d) => d.name === name)
   }
 
   // "google.com" -> https://, "E:\site\index.html" -> file:///, and anything
@@ -147,11 +163,6 @@
       </div>
     {/if}
   </div>
-  <div class="insp-tabs-icons">
-    <span class="icobtn tiny" aria-label={t('workbench.fullscreen')}>⤢</span>
-    <span class="icobtn tiny" aria-label={t('workbench.restore')}>▢</span>
-    <button class="icobtn tiny" aria-label={t('workbench.collapsePanel')} title={t('workbench.collapsePanel')} onclick={onToggleInspector}>▤</button>
-  </div>
 </div>
 {#if activeTab?.kind === 'browser'}
 <div class="insp-addr">
@@ -163,7 +174,23 @@
     onkeydown={(e) => e.key === 'Enter' && navigate()}
   />
   <button class="icobtn tiny" aria-label={t('workbench.go')} data-tip={t('workbench.go')} onclick={navigate}>↗</button>
-  <span class="icobtn tiny">⋮</span>
+  <button class="icobtn tiny tip-r" aria-label={t('workbench.devtools')} data-tip={t('workbench.devtools')} onclick={() => browserCmd(BrowserOpenDevTools)}>🛠</button>
+  <!-- A transparent native <select> over the ⋮ glyph. Chromium renders its
+       popup as an OS window, so it floats above the tab's own native window —
+       a DOM dropdown here is invisible unless the page hides, which reads as
+       the page crashing. Looks like a button, behaves like the platform. -->
+  <span class="vp-picker tip-r" data-tip={activeTab?.viewport ? `${activeTab.viewport.w}×${activeTab.viewport.h}` : t('workbench.viewportFill')}>
+    <span class="icobtn tiny" aria-hidden="true">⋮</span>
+    <select
+      class="vp-select" aria-label={t('workbench.viewport')} value={activeTab?.viewport?.name ?? ''}
+      onchange={(e) => setViewport(e.currentTarget.value)}
+    >
+      <option value="">{t('workbench.viewportFill')}</option>
+      {#each DEVICES as d}
+        <option value={d.name}>{d.name} — {d.w}×{d.h}</option>
+      {/each}
+    </select>
+  </span>
 </div>
 {/if}
 
@@ -190,7 +217,7 @@
       {:else if tab.kind === 'file'}
         <FileEditor path={tab.path ?? ''} content={tab.content ?? ''} />
       {:else}
-        <BrowserPane tab={tab} active={workbench.activeId === tab.id} />
+        <BrowserPane tab={tab} active={workbench.activeId === tab.id} menuOpen={menuOpen} />
       {/if}
     </div>
   {/each}

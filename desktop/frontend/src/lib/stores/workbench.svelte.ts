@@ -13,6 +13,7 @@ export type WorkbenchTab = {
   kind: WorkbenchTabKind
   name: string
   url?: string // browser tabs
+  viewport?: { name: string; w: number; h: number } // browser tabs: device-size emulation; unset = fill the pane
   path?: string // file tabs
   content?: string // file tabs (initial content; editor keeps its own draft)
 }

@@ -24,11 +24,15 @@ export function BrowserNavigate(arg1:string,arg2:string):Promise<void>;
 
 export function BrowserOpen(arg1:string,arg2:string,arg3:number,arg4:number,arg5:number,arg6:number):Promise<void>;
 
+export function BrowserOpenDevTools(arg1:string):Promise<void>;
+
 export function BrowserReload(arg1:string):Promise<void>;
 
 export function BrowserSetBounds(arg1:string,arg2:number,arg3:number,arg4:number,arg5:number):Promise<void>;
 
 export function BrowserSetVisible(arg1:string,arg2:boolean):Promise<void>;
+
+export function BrowserSetZoom(arg1:string,arg2:number):Promise<void>;
 
 export function BrowserTypeRef(arg1:string,arg2:number,arg3:string,arg4:boolean):Promise<void>;
 

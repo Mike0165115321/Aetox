@@ -25,9 +25,11 @@
   </button>
   <span class="spacer"></span>
 
+  <!-- tip-r: this sits flush against the window's right edge, so a centred
+       tooltip gets clipped by it. -->
   <div class="winbtns">
     <button
-      class="icobtn" aria-label={inspectorCollapsed ? t('topbar.showPanel') : t('topbar.hidePanel')}
+      class="icobtn tip-r" aria-label={inspectorCollapsed ? t('topbar.showPanel') : t('topbar.hidePanel')}
       data-tip={t('topbar.toggleInspectorTip')} onclick={onToggleInspector}
     >
       {inspectorCollapsed ? '▥' : '▤'}

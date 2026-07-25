@@ -285,6 +285,9 @@ type browserTab struct {
 	visMu  sync.Mutex
 	hidden bool // BrowserSetVisible(false); nav-completed re-glue must not surface hidden tabs
 
+	zoomMu sync.Mutex
+	zoom   float64 // device-size emulation (see BrowserSetZoom); 0 = never set
+
 	textMu    sync.Mutex
 	textCh    chan browserSnapshot
 	textToken string // token BrowserGetText is currently waiting on; empty = none pending
@@ -493,6 +496,14 @@ func (h *browserHost) open(id, url string, x, y, w, hgt int) {
 			if !hidden {
 				procSetWindowPos.Call(hwnd, hwndTop, 0, 0, 0, 0, swpNoMove|swpNoSize|swpShowWindow|swpNoActivate)
 			}
+			// WebView2 keeps zoom per origin, so a cross-site navigation drops
+			// the device-emulation factor back to 1 — re-assert it here.
+			tab.zoomMu.Lock()
+			z := tab.zoom
+			tab.zoomMu.Unlock()
+			if z > 0 {
+				chromium.PutZoomFactor(z)
+			}
 			chromium.Eval(metaScript)
 		}
 
@@ -570,6 +581,28 @@ func (a *App) browserHostLazy() (*browserHost, error) {
 	return h, h.start()
 }
 
+// withTab runs fn against a tab on the browser thread — looking the tab up
+// THERE, not here. open() only registers the tab at the very end of its own
+// queued command, so anything that checked host.tab(id) on the caller's
+// goroutine found nil for every call made in the moments after BrowserOpen and
+// dropped it silently. That is what left a freshly opened tab's window at the
+// rect the pane had before the address bar existed — covering the toolbar until
+// something else forced a resize. do() is FIFO, so by the time this runs the
+// open ahead of it has finished.
+func (h *browserHost) withTab(id string, fn func(*browserTab)) {
+	h.do(func() {
+		if t := h.tab(id); t != nil {
+			fn(t)
+		}
+	})
+}
+
+func (a *App) withTab(id string, fn func(*browserTab)) {
+	if host, err := a.browserHostLazy(); err == nil {
+		host.withTab(id, fn)
+	}
+}
+
 // BrowserOpen creates a native browser tab at the given physical-pixel bounds.
 func (a *App) BrowserOpen(id, url string, x, y, w, h int) error {
 	host, err := a.browserHostLazy()
@@ -582,48 +615,51 @@ func (a *App) BrowserOpen(id, url string, x, y, w, h int) error {
 
 // BrowserNavigate loads a URL in an existing tab.
 func (a *App) BrowserNavigate(id, url string) {
-	if host, err := a.browserHostLazy(); err == nil {
-		if t := host.tab(id); t != nil {
-			host.do(func() { t.chromium.Navigate(url) })
-		}
-	}
+	a.withTab(id, func(t *browserTab) { t.chromium.Navigate(url) })
 }
 
 // BrowserSetBounds moves/resizes a tab's window (physical pixels, relative to
 // the main window client area).
 func (a *App) BrowserSetBounds(id string, x, y, w, h int) {
-	if host, err := a.browserHostLazy(); err == nil {
-		if t := host.tab(id); t != nil {
-			host.do(func() {
-				procSetWindowPos.Call(t.hwnd, hwndTop, uintptr(x), uintptr(y), uintptr(w), uintptr(h), swpShowWindow|swpNoActivate)
-				t.chromium.Resize()
-			})
-		}
+	a.withTab(id, func(t *browserTab) {
+		procSetWindowPos.Call(t.hwnd, hwndTop, uintptr(x), uintptr(y), uintptr(w), uintptr(h), swpShowWindow|swpNoActivate)
+		t.chromium.Resize()
+	})
+}
+
+// BrowserSetZoom scales the page inside a tab — this is what makes the device
+// presets real emulation rather than a small window: with the tab's window sized
+// to deviceWidth*factor, a zoom of `factor` leaves the page a CSS viewport of
+// exactly deviceWidth, so its media queries fire as they would on that device.
+// 1 = no emulation (the pane-filling default).
+func (a *App) BrowserSetZoom(id string, factor float64) {
+	if factor <= 0 {
+		factor = 1
 	}
+	a.withTab(id, func(t *browserTab) {
+		t.zoomMu.Lock()
+		t.zoom = factor
+		t.zoomMu.Unlock()
+		t.chromium.PutZoomFactor(factor)
+	})
 }
 
 // BrowserSetVisible shows/hides a tab (hidden when its dock tab is inactive or
 // the settings overlay is open — a native window always floats above the UI).
 func (a *App) BrowserSetVisible(id string, visible bool) {
-	if host, err := a.browserHostLazy(); err == nil {
-		if t := host.tab(id); t != nil {
-			if visible {
-				host.mu.Lock()
-				host.lastID = id
-				host.mu.Unlock()
-			}
-			t.visMu.Lock()
-			t.hidden = !visible
-			t.visMu.Unlock()
-			host.do(func() {
-				if visible {
-					procSetWindowPos.Call(t.hwnd, hwndTop, 0, 0, 0, 0, swpNoMove|swpNoSize|swpShowWindow|swpNoActivate)
-				} else {
-					procShowWindow.Call(t.hwnd, uintptr(swHide))
-				}
-			})
+	a.withTab(id, func(t *browserTab) {
+		t.visMu.Lock()
+		t.hidden = !visible
+		t.visMu.Unlock()
+		if visible {
+			a.browsers.mu.Lock()
+			a.browsers.lastID = id
+			a.browsers.mu.Unlock()
+			procSetWindowPos.Call(t.hwnd, hwndTop, 0, 0, 0, 0, swpNoMove|swpNoSize|swpShowWindow|swpNoActivate)
+		} else {
+			procShowWindow.Call(t.hwnd, uintptr(swHide))
 		}
-	}
+	})
 }
 
 // BrowserBack / BrowserForward / BrowserReload drive history via script — the
@@ -632,12 +668,15 @@ func (a *App) BrowserBack(id string)    { a.browserEval(id, "history.back()") }
 func (a *App) BrowserForward(id string) { a.browserEval(id, "history.forward()") }
 func (a *App) BrowserReload(id string)  { a.browserEval(id, "location.reload()") }
 
+// BrowserOpenDevTools opens Chromium's own DevTools on a tab — find-in-page,
+// console, network, element inspection and its screenshot tools, none of which
+// are worth reimplementing in our toolbar.
+func (a *App) BrowserOpenDevTools(id string) {
+	a.withTab(id, func(t *browserTab) { t.chromium.OpenDevToolsWindow() })
+}
+
 func (a *App) browserEval(id, js string) {
-	if host, err := a.browserHostLazy(); err == nil {
-		if t := host.tab(id); t != nil {
-			host.do(func() { t.chromium.Eval(js) })
-		}
-	}
+	a.withTab(id, func(t *browserTab) { t.chromium.Eval(js) })
 }
 
 // CloseAllBrowserTabs destroys every native browser window this process still

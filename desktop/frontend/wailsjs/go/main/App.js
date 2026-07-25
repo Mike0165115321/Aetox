@@ -38,6 +38,10 @@ export function BrowserOpen(arg1, arg2, arg3, arg4, arg5, arg6) {
   return window['go']['main']['App']['BrowserOpen'](arg1, arg2, arg3, arg4, arg5, arg6);
 }
 
+export function BrowserOpenDevTools(arg1) {
+  return window['go']['main']['App']['BrowserOpenDevTools'](arg1);
+}
+
 export function BrowserReload(arg1) {
   return window['go']['main']['App']['BrowserReload'](arg1);
 }
@@ -48,6 +52,10 @@ export function BrowserSetBounds(arg1, arg2, arg3, arg4, arg5) {
 
 export function BrowserSetVisible(arg1, arg2) {
   return window['go']['main']['App']['BrowserSetVisible'](arg1, arg2);
+}
+
+export function BrowserSetZoom(arg1, arg2) {
+  return window['go']['main']['App']['BrowserSetZoom'](arg1, arg2);
 }
 
 export function BrowserTypeRef(arg1, arg2, arg3, arg4) {

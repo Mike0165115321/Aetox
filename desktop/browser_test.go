@@ -165,3 +165,38 @@ func TestTextScriptListsSelectOptions(t *testing.T) {
 		t.Errorf("textScript should surface select options so the model knows what browser_type can choose, got: %s", js)
 	}
 }
+
+// A tab is only registered at the END of open()'s own queued command, so any
+// lookup done on the caller's goroutine finds nil for every call made right
+// after BrowserOpen — which silently dropped the bounds correction the frontend
+// sends once the address bar has appeared, leaving the tab's window covering
+// the toolbar. withTab must therefore resolve the tab inside the queue.
+func TestWithTabResolvesAfterAQueuedOpen(t *testing.T) {
+	h := &browserHost{tabs: map[string]*browserTab{}}
+
+	// Stands in for open(): registers the tab only when its command runs.
+	h.do(func() {
+		h.mu.Lock()
+		h.tabs["web-1"] = &browserTab{hwnd: 7}
+		h.mu.Unlock()
+	})
+	// Stands in for BrowserSetBounds, issued before that command has run.
+	var got uintptr
+	h.withTab("web-1", func(tab *browserTab) { got = tab.hwnd })
+
+	h.drain()
+
+	if got != 7 {
+		t.Fatalf("command dropped: hwnd = %d, want 7", got)
+	}
+}
+
+func TestWithTabSkipsAnUnknownTab(t *testing.T) {
+	h := &browserHost{tabs: map[string]*browserTab{}}
+	ran := false
+	h.withTab("gone", func(*browserTab) { ran = true })
+	h.drain()
+	if ran {
+		t.Fatal("ran against a tab that does not exist")
+	}
+}

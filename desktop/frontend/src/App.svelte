@@ -265,7 +265,7 @@
     onpointerdown={startInspectorResize}
   ></div>
   <aside class="inspector">
-    <Workbench onToggleInspector={toggleInspector} />
+    <Workbench />
   </aside>
 </div>
 
