@@ -1301,7 +1301,13 @@ Three options were put up: translate all four, leave them and document them as d
 
 So `askGuide` takes the wheel: it drops the pin, then puts the **top** of the new reply at the top of the view — where reading starts. The guide card carries a `guide-card` class purely so the scroll target can tell an offer from an answer. Streaming behavior is untouched.
 
-**Status:** `Done 2026-07-25.` Go green including the family-wide language test; frontend 33 green. Desktop rebuilt.
+**Amendment — the guide is a menu, so it stops pretending to be a chat bubble.** Owner: *"ทำไมมันไม่แยกเป็น 2 แถวอ่ะครับ เช็คการแสดงผลดีๆด้วยนะครับ เผื่อขนาดเล็กๆด้วย"*. Six options stacked in a 72%-wide bubble is a tall thin column. `.guide-card` now takes the full reading width and lays its options out with `repeat(auto-fit, minmax(min(260px, 100%), 1fr))` — two columns while each can hold 260px, one the moment it cannot, no media query.
+
+The `min(260px, 100%)` is the point, and it is the small-size check he asked for: a bare `minmax(260px, 1fr)` has a **hard** floor, so in a container narrower than 260px the track refuses to shrink and overflows instead of wrapping. The same guard was applied to the preset gallery's grid, and `max-width:100%` to the preset cover, which was a fixed 230px inside a wrapping flex. Every other fixed width added in this session is a 14–48px icon or badge — audited, no overflow risk.
+
+Only the guide gets the two-column treatment: `ask_user`'s own panel keeps its single column, because those options are an answer being chosen, not a menu being browsed. The modifier hangs off `.guide-card`, so the shared component is untouched.
+
+**Status:** `Done 2026-07-25.` Go green including the family-wide language test; frontend 37 green (4 new: the guide renders A–F on the built-in engine, stays hidden for a real provider, stays hidden mid-reply, and keeps the markup the grid is written against — jsdom applies no external CSS, so that last one pins the contract rather than the pixels). Desktop rebuilt.
 
 ---
 
