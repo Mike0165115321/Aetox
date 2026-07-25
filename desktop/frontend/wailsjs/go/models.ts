@@ -295,6 +295,22 @@ export namespace main {
 	        this.source = source["source"];
 	    }
 	}
+	export class ToolCounts {
+	    builtin: number;
+	    skill: number;
+	    mcp: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ToolCounts(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.builtin = source["builtin"];
+	        this.skill = source["skill"];
+	        this.mcp = source["mcp"];
+	    }
+	}
 	export class TreeNode {
 	    label: string;
 	    path: string;

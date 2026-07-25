@@ -27,6 +27,7 @@ func TestBindingsNeverReturnNilSlices(t *testing.T) {
 	noArgs := []string{
 		"ListExternalSkills",
 		"ListPromptPresets",
+		"ListSkills",
 		"SupportedProviders",
 		"EnabledProviders",
 		"SupportedThinkLevels",

@@ -12,6 +12,33 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/skill"
 )
 
+// ToolCounts is the "what can the agent do right now" readout the composer
+// palette shows in one line. Derived from the live registry rather than a
+// written-down number, so it cannot rot the way a docs count does.
+type ToolCounts struct {
+	Builtin int `json:"builtin"` // compiled in, always on
+	Skill   int `json:"skill"`   // discovered SKILL.md the user added
+	MCP     int `json:"mcp"`     // bridged from configured MCP servers
+}
+
+func (a *App) ToolCounts() ToolCounts {
+	var counts ToolCounts
+	if a.registry == nil {
+		return counts
+	}
+	for _, name := range a.registry.Names() {
+		switch src, _ := a.registry.SourceOf(name); src {
+		case skill.SourceBuiltin:
+			counts.Builtin++
+		case skill.SourceMCP:
+			counts.MCP++
+		default:
+			counts.Skill++
+		}
+	}
+	return counts
+}
+
 // SkillInfo is one tool the AI can currently call, for the Tools panel.
 type SkillInfo struct {
 	Name        string `json:"name"`
@@ -26,7 +53,7 @@ type SkillInfo struct {
 // it receives.
 func (a *App) ListSkills() []SkillInfo {
 	if a.registry == nil {
-		return nil
+		return []SkillInfo{} // never nil: §34, a nil slice crashes the frontend
 	}
 	names := a.registry.Names()
 	sort.Strings(names)

@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { ChatMessage, TaskState, ModelStatus, ToolStep, ContextBreakdown } from './types'
   import TaskTimeline from './TaskTimeline.svelte'
+  import Palette from './Palette.svelte'
   import Logo from './Logo.svelte'
   import { onMount } from 'svelte'
   import {
@@ -123,6 +124,7 @@
     if (focusMenuOpen && !el.closest('.focus-pick')) focusMenuOpen = false
     if (ctxMenuOpen && !el.closest('.ctx-pick')) ctxMenuOpen = false
     if (openDropdown && !el.closest('.updrop')) openDropdown = ''
+    if (palette && !el.closest('.pal-pick')) palette = ''
   }
 
   // Context meter: how full the model's context window is and what fills it.
@@ -233,7 +235,22 @@
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       submit()
+      return
     }
+    // "/" on an empty composer opens the preset list — the placeholder has
+    // promised this since before there was anything to show.
+    if (e.key === '/' && draft.trim() === '') {
+      e.preventDefault()
+      palette = 'prompts'
+    }
+  }
+
+  // '' = closed. The two composer buttons and the "/" key set it.
+  let palette = $state<'' | 'all' | 'prompts'>('')
+  function insertFromPalette(text: string) {
+    draft = text
+    palette = ''
+    inputEl?.focus()
   }
 
   async function attachViaDialog() {
@@ -280,7 +297,7 @@
   }
 </script>
 
-<svelte:window onclick={modelMenuOpen || focusMenuOpen ? closeMenusOnOutside : undefined} />
+<svelte:window onclick={modelMenuOpen || focusMenuOpen || palette ? closeMenusOnOutside : undefined} />
 
 {#snippet upSelect(
   id: 'provider' | 'model' | 'thinkLevel',
@@ -516,6 +533,27 @@
         onkeydown={onKeydown}
       ></textarea>
       <div class="tools">
+        <div class="pal-pick">
+          {#if palette}
+            <Palette
+              mode={palette}
+              oninsert={insertFromPalette}
+              onclose={() => { palette = ''; inputEl?.focus() }}
+              onopenmodel={() => { palette = ''; modelMenuOpen = true; refreshThinkLevels() }}
+              onswitchthink={(lvl) => onSwitchThinkLevel(lvl)}
+            />
+          {/if}
+          <button
+            class="icobtn" class:active={palette === 'all'}
+            aria-label={t('palette.title')} data-tip={t('palette.title')}
+            onclick={(e) => { e.stopPropagation(); palette = palette === 'all' ? '' : 'all' }}
+          >+</button>
+          <button
+            class="icobtn slash" class:active={palette === 'prompts'}
+            aria-label={t('palette.promptsTitle')} data-tip={t('palette.promptsTitle')}
+            onclick={(e) => { e.stopPropagation(); palette = palette === 'prompts' ? '' : 'prompts' }}
+          >/</button>
+        </div>
         <button class="icobtn" aria-label={t('chat.attachImage')} data-tip={t('chat.attachImage')} onclick={attachViaDialog}>📎</button>
         {#if ctx && ctx.maxTokens > 0}
           <div class="ctx-pick">

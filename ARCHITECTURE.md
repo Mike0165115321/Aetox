@@ -1160,6 +1160,36 @@ Which is why it reads as "the button doesn't work" rather than "something crashe
 
 ---
 
+## 36. Decision — Composer Palette: `+` and `/`, Split by What Enter Does (2026-07-25)
+
+**Trigger:** owner, with a screenshot of Claude Code's action palette — *"ฟีเจอร์เริ่มเยอะละ เพิ่มปุ่มแบบนี้ดีไหม ... เพราะมันมีคำสั่ง มีสกิล"* — then a second screenshot of a `+` and `/` button pair: *"ทำเป็นปุ่มประมาณนี้นะครับ"*.
+
+**What the survey found before anything was designed:**
+
+| | State |
+|---|---|
+| Composer controls | 📎 attach · context-window ring · model chip · send. That is all. |
+| Keyboard shortcuts | **Six already exist** — `Ctrl+,` `Ctrl+Alt+B` `Ctrl+Alt+S` `Ctrl+N` `Ctrl+T` `Ctrl+Shift+G` — spread across four components and **listed nowhere in the app**. |
+| The `/` menu | Did not exist. The placeholder said *"(ใช้ / เพื่อดูคำสั่ง)"* anyway, and had since before there was anything to show. |
+
+That last row is why this was not a nice-to-have. §35 had just shipped prompt presets invoked with `/`, into an app that advertised a `/` menu it did not have. The discovery surface was the missing half of the feature, not decoration.
+
+**Decision — one component, two entry points, split by what Enter does.** Claude Code merges everything into one palette; Aetox cannot, because here `/` means *"write this into my message"* (presets expand engine-side, [internal/command](internal/command)) while `+` means *"do this to the app"*. A list where Enter sometimes types and sometimes executes is a list nobody trusts, so [Palette.svelte](desktop/frontend/src/lib/Palette.svelte) renders both from the same code and the same rows, and the mode decides which rows exist and what picking one does. Typing `/` in an empty composer opens the same list in prompts mode — the placeholder's promise, finally true.
+
+**What the rows carry, and why:**
+- **Current value on the right** — model, approval mode and think level live in three different places today; the palette is the first surface that shows all three at once, so it doubles as a status readout rather than only a launcher.
+- **Shortcut on the right** — the only place the app has ever told anyone those six shortcuts exist.
+- **A read-only tools row** — `ToolCounts()` counts the live registry by `Source` (builtin / skill / MCP) instead of a written-down number, so it cannot rot the way [internal/skill/README.md](internal/skill/README.md)'s "15 built-ins" did (§31 commit). It answers "what can the agent do right now" at the exact moment the user is about to ask for something, which is where the architecture story belongs.
+- **Cycling, not submenus**, for approval and think level: the value is on the row, three modes is short, and one click showing the next value beats opening anything.
+
+**Grows by itself.** Presets come from `ListPromptPresets()`, counts from the registry. A new preset, skill or MCP server appears without the palette being touched.
+
+**Another §34 offender found on the way.** `ListSkills()` returned a bare `nil` when the engine was not ready yet — same nil-slice-to-JSON-null crash, in a binding the tools panel already used. Fixed and added to `binding_slices_test.go`'s list, which is now the third defect that test has caught.
+
+**Status:** `Done 2026-07-25.` Go and frontend suites green (21 frontend tests, 5 new for the palette: prompts-mode isolation, insert-with-trailing-space, live counts, static rows not behaving as buttons, filtering, Escape). Desktop rebuilt. Not built: `Ctrl+K` as a keyboard twin of `+` — three lines on the same component whenever it is wanted.
+
+---
+
 ## Validation
 
 1. **Claim traceability:** every claim above cites a file or an existing project doc; the two `Unverified`/`Inferred, Verify first: Yes` items are marked as such, not stated as fact.
