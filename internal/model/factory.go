@@ -19,6 +19,11 @@ type ProviderOptions struct {
 	// "anthropic" for DeepSeek. Empty uses the catalog's default runtime.
 	// Unknown values, or a provider with no alt, are ignored (default wins).
 	WireFormat string
+	// Locale ("th", "en") is consumed by the noop runtime alone — Aetox's own
+	// built-in provider, which is an onboarding surface rather than a model and
+	// therefore has to speak the user's language (ARCHITECTURE.md §40). Every
+	// other runtime below ignores it.
+	Locale string
 }
 
 func NewProvider(opts ProviderOptions) (Provider, error) {
@@ -55,7 +60,9 @@ func NewProvider(opts ProviderOptions) (Provider, error) {
 
 	switch runtime {
 	case string(pvdr.RuntimeNoop):
-		return NewNoopProvider(opts.Model), nil
+		noop := NewNoopProvider(opts.Model)
+		noop.Locale = opts.Locale
+		return noop, nil
 	case string(pvdr.RuntimeOllama):
 		return NewOllamaProvider(OllamaConfig{
 			Model:   opts.Model,

@@ -18,6 +18,22 @@ func (a *App) ListPromptPresets() []command.Preset {
 	return jsonSlice(command.ListPresets())
 }
 
+// SetUILocale records the language the UI is showing so Aetox's own built-in
+// provider can answer in it — the only part of the engine that has any business
+// with language (ARCHITECTURE.md §40). Persisted next to the other preferences
+// and applied through the same path a model change takes, so there is no new
+// machinery here at all.
+func (a *App) SetUILocale(locale string) error {
+	locale = strings.ToLower(strings.TrimSpace(locale))
+	if locale == "" || locale == a.cfg.UILocale {
+		return nil // nothing to do; never re-bootstrap for no reason
+	}
+	cfg := a.cfg
+	cfg.UILocale = locale
+	a.applyConfig(cfg)
+	return nil
+}
+
 // SavePromptPreset writes (or overwrites) a user preset. Saving under a
 // bundled preset's name creates an override — see internal/command.
 func (a *App) SavePromptPreset(name, body string) error {

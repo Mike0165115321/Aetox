@@ -6,6 +6,7 @@
 
 import { th } from './locales/th'
 import { en } from './locales/en'
+import { SetUILocale } from '../../wailsjs/go/main/App'
 
 export type Locale = 'th' | 'en'
 export type TKey = keyof typeof th
@@ -20,12 +21,24 @@ export const i18n = $state<{ locale: Locale }>({ locale: 'th' })
 export function setLocale(locale: Locale): void {
   i18n.locale = locale
   localStorage.setItem(STORAGE_KEY, locale)
+  tellEngine(locale)
 }
 
 /** Call once before mount so nothing flashes in the wrong language. */
 export function initLocale(): void {
   const saved = localStorage.getItem(STORAGE_KEY)
   i18n.locale = saved === 'en' ? 'en' : 'th'
+  // Push it down on every start too, so the engine's copy self-heals if the
+  // two ever drift (fresh install, preference file restored from elsewhere).
+  tellEngine(i18n.locale)
+}
+
+// The engine needs the language for exactly one thing: Aetox's own built-in
+// provider, which is an onboarding surface rather than a model and has to talk
+// to the user in their language (ARCHITECTURE.md §40). Failing to reach it is
+// never worth breaking the UI over — the built-in falls back to Thai.
+function tellEngine(locale: Locale): void {
+  void SetUILocale(locale)?.catch?.(() => {})
 }
 
 /** Look up `key` in the active locale, falling back to th, with optional {var} substitution. */

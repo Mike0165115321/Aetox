@@ -9,6 +9,11 @@ import (
 
 type NoopProvider struct {
 	DefaultModel string
+	// Locale is the UI's language ("th", "en"). This provider is the one place
+	// in the engine that needs it: it is not a model, it is the screen a user
+	// with nothing configured is talking to (ARCHITECTURE.md §40). Empty falls
+	// back to Thai.
+	Locale string
 }
 
 // noopOnboardingReply is what a genuinely unconfigured install sees on every
@@ -17,10 +22,9 @@ type NoopProvider struct {
 // "aetox") until they visit Settings. It replaces what used to be a raw
 // "[noop:model] text" debug echo, which no first-time user should ever see.
 //
-// Bilingual by construction, not by locale: nothing tells Go which language the
-// UI is in (§39 — the guide chips that follow this reply live in the frontend
-// locale files precisely because they can switch and this cannot). Both halves
-// are complete on their own, so neither language reads as an afterthought.
+// One per language, picked by NoopProvider.Locale (§40). The guide chips that
+// follow this reply live in the frontend locale files (§39); this one cannot,
+// because it is a model reply, so the locale is carried to it instead.
 const noopOnboardingReply = `สวัสดีครับ Aetox ยังไม่ได้เชื่อมต่อกับโมเดลจริง
 
 **ทำไมถึงเป็นแบบนี้**
@@ -32,13 +36,27 @@ Aetox เกิดจากความคิดของนักพัฒน�
 **วิสัยทัศน์ของเรา**
 แม้ว่าทางเราจะไม่มีทุน แต่เรามีวิสัยทัศน์ ผู้พัฒนาเล็งเห็นว่า หัวใจไม่ใช่ความรู้ในโมเดล แต่คือ Architecture ที่ควบคุมวิธีคิด แต่เราไม่มีทุนในการเทรนโมเดลใหม่เอง จำใจต้องใช้วิธีนี้
 
----
+(Aetox isn't connected to a real model yet — open Settings and pick a provider you trust to power it.)`
 
-**Aetox isn't connected to a real model yet.**
+const noopOnboardingReplyEN = `Hi — Aetox isn't connected to a real model yet.
 
-Aetox is built by one developer — no team, no company, and no budget to hand out free model access. Open **Settings → Model settings**, pick a provider you trust, and it powers Aetox from there. Want nothing leaving your machine? Choose **Ollama** or **LM Studio** and run the model locally.
+**Why**
+Aetox is built by one developer. No team, no company, and no budget to hand out free model access.
 
-The bet behind this: what makes an agent useful is the architecture governing how it works, not the knowledge packed into the model.`
+**What to do**
+Open **Settings → Model settings**, pick a provider you trust, and it powers Aetox from there. Want nothing leaving your machine? Choose **Ollama** or **LM Studio** and run the model locally — no key, and not a byte of your prompts leaves the machine.
+
+**The bet behind this**
+What makes an agent useful is not the knowledge packed into the model, it is the architecture governing how it works. There was no funding to train a model, so the bet went on architecture — and on letting you plug in whichever model you like.`
+
+// onboardingReply picks the language the UI is showing. Anything that isn't
+// English falls back to Thai, which is what a fresh install runs in.
+func (p *NoopProvider) onboardingReply() string {
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(p.Locale)), "en") {
+		return noopOnboardingReplyEN
+	}
+	return noopOnboardingReply
+}
 
 func NewNoopProvider(model string) *NoopProvider {
 	return &NoopProvider{DefaultModel: model}
@@ -115,7 +133,7 @@ func (p *NoopProvider) Complete(_ context.Context, req Request) (Response, error
 	return Response{
 		Provider: p.Name(),
 		Model:    model,
-		Text:     noopOnboardingReply,
+		Text:     p.onboardingReply(),
 	}, nil
 }
 

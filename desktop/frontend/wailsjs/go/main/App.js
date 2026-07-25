@@ -282,6 +282,10 @@ export function SetProviderWireFormat(arg1) {
   return window['go']['main']['App']['SetProviderWireFormat'](arg1);
 }
 
+export function SetUILocale(arg1) {
+  return window['go']['main']['App']['SetUILocale'](arg1);
+}
+
 export function SupportedProviders() {
   return window['go']['main']['App']['SupportedProviders']();
 }

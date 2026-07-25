@@ -29,6 +29,12 @@ type Config struct {
 	ModelWireFormat    string
 	ModelTimeoutSec    int
 	ModelContextTokens int
+	// UILocale is the language the desktop UI is showing ("th", "en"). The
+	// engine has no business with language — the one exception is Aetox's own
+	// built-in provider, which is an onboarding surface wearing a Provider
+	// interface and must speak to the user in their language (ARCHITECTURE.md
+	// §40). Empty means "not set", and the built-in falls back to Thai.
+	UILocale string
 }
 
 type ConfigOptions struct {
@@ -55,7 +61,10 @@ type ModelPreference struct {
 	ModelWireFormat string            `json:"wire_format,omitempty"`
 	ThinkLevel      string            `json:"think_level,omitempty"`
 	ApprovalMode    string            `json:"approval_mode,omitempty"`
-	ModelAPIKeys    map[string]string `json:"provider_api_keys,omitempty"`
+	// UILocale sits next to ApprovalMode because it is the same kind of thing:
+	// a choice the user made in the UI that the engine needs on next start.
+	UILocale     string            `json:"ui_locale,omitempty"`
+	ModelAPIKeys map[string]string `json:"provider_api_keys,omitempty"`
 	// EnabledProviders is the set of providers shown in the Settings sidebar
 	// and the chat composer's picker. Empty means "never customized" — callers
 	// resolve that case via ResolvedEnabledProviders rather than persisting a

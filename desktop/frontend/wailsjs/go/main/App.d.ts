@@ -145,6 +145,8 @@ export function SetProviderEnabled(arg1:string,arg2:boolean):Promise<Array<strin
 
 export function SetProviderWireFormat(arg1:string):Promise<main.ModelInfo>;
 
+export function SetUILocale(arg1:string):Promise<void>;
+
 export function SupportedProviders():Promise<Array<string>>;
 
 export function SupportedThinkLevels():Promise<Array<string>>;

@@ -1253,6 +1253,32 @@ He was right, and §36 had caused it: `+` opened a palette whose Context group's
 
 ---
 
+## 40. Decision — The Locale Reaches Exactly One Provider (2026-07-25)
+
+**Trigger:** owner pushing back on §39's own excuse — *"คือตอนแรก มันยากมากใช่ไหมที่จะทำให้โมเดลมันเปลี่ยนตามภาษา ... ผูกแค่ aetox ก็พอ ผมกลัวเป็นหนี้ทางระบบมากเลย"*.
+
+**The pushback was right and the estimate was wrong.** §39 claimed ~40 lines plus a re-bootstrap on every language switch. Counted properly: `BootstrapOptions{}` is built in **two** places, `NewNoopProvider` is called in **one** production place ([factory.go](internal/model/factory.go)), and `applyConfig` **already** re-bootstraps on every settings change — so the "extra" machinery was machinery that already existed. Real cost: ~15 lines.
+
+**Three options were weighed against debt, not line count:**
+
+| | Approach | Debt taken on |
+|---|---|---|
+| **A** ✅ | Locale in the preference file → `BootstrapOptions` → `ProviderOptions` → `NoopProvider` | Almost none — the file already stores what the user chose, and language is what the user chose |
+| B | The engine returns a sentinel (`[[aetox:onboarding]]`), the frontend renders it | **Real** — an internal token lands in the user's SQLite transcript forever; changing it later breaks old sessions |
+| C | Do nothing; keep the greeting bilingual | None, but an English user reads a Thai paragraph first |
+
+B looks shorter and is the trap: it puts an internal identifier inside user data, which is exactly the kind of debt that shows up on the day you want to change something.
+
+**Why A is not layer pollution.** The owner's *"ผูกแค่ aetox ก็พอ"* is what makes it clean: `NoopProvider` **is not a model — it is an onboarding screen wearing a Provider interface**, the thing a user with nothing configured is talking to. Giving it the UI language is not "the engine doing i18n", it is a screen speaking to its user. Every real provider ignores `Locale` entirely, and a test asserts that.
+
+**`SetUILocale` adds no new path.** It writes to `a.cfg` and calls `applyConfig`, which already persists preferences and re-bootstraps; it no-ops when the locale is unchanged, so switching Settings around never re-bootstraps for nothing. The frontend pushes the locale on every start as well as on change, so the two copies self-heal if they ever drift.
+
+**Division of labour, now explicit:** prose the *UI* owns lives in the locale files (§39's guide chips — switching language re-renders them instantly, including history). Prose the *engine* emits — one greeting — takes the locale as data. Nothing else in the engine gets to have a language.
+
+**Status:** `Done 2026-07-25.` Go green including 3 new tests: the greeting follows the locale with Thai as the fallback for empty/unknown, the locale survives the real path (`BootstrapProvider` → factory → provider) rather than only a direct field set, and a real provider never resolves to the built-in one. Frontend 32 green. Desktop rebuilt.
+
+---
+
 ## Validation
 
 1. **Claim traceability:** every claim above cites a file or an existing project doc; the two `Unverified`/`Inferred, Verify first: Yes` items are marked as such, not stated as fact.

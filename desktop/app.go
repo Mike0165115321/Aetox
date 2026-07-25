@@ -1234,6 +1234,9 @@ func resolveConfig(opts config.ConfigOptions) config.Config {
 		if v := strings.TrimSpace(pref.ApprovalMode); v != "" {
 			cfg.ApprovalMode = v
 		}
+		if v := strings.TrimSpace(pref.UILocale); v != "" {
+			cfg.UILocale = v
+		}
 		if key := pref.APIKeyForProvider(cfg.ModelProvider); key != "" {
 			cfg.ModelAPIKey = key
 		}
@@ -1278,6 +1281,7 @@ func bootstrapFromConfig(cfg config.Config, onToolAction func(action, detail str
 		BaseURL:    cfg.ModelBaseURL,
 		Timeout:    30 * time.Second,
 		WireFormat: cfg.ModelWireFormat,
+		Locale:     cfg.UILocale,
 	})
 	providerDone()
 	if bootstrapResult.Provider == nil {
@@ -1373,6 +1377,11 @@ func persistModelPreference(cfg config.Config) {
 	pref.ModelWireFormat = strings.TrimSpace(cfg.ModelWireFormat)
 	pref.ThinkLevel = model.NormalizeThinkingLevel(canonicalProvider, pref.ModelName, cfg.ThinkLevel)
 	pref.ApprovalMode = string(safety.NormalizeApprovalMode(cfg.ApprovalMode))
+	// Only overwrite when we actually have one: a model change must not wipe a
+	// language the user already picked.
+	if v := strings.TrimSpace(cfg.UILocale); v != "" {
+		pref.UILocale = v
+	}
 	_ = config.SaveModelPreference(pref)
 }
 
