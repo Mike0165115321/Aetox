@@ -1285,6 +1285,26 @@ B looks shorter and is the trap: it puts an internal identifier inside user data
 
 ---
 
+## 41. Decision — Every Built-in Model Speaks the User's Language, and an Instant Answer Scrolls to Its Top (2026-07-25)
+
+**Trigger:** owner, three things at once — *"ตอนกดแล้ว มันดันไม่เด้งไปหน้าที่ AI มันตอบ ... เวลา AI ตอบควรพาไปโฟกัสที่ AI ตอบ"*, *"aetox อื่นๆ ก็ทำภาษาอังกฤษด้วยครับ"*, and *"aetox-review เปลี่ยนเป็น aetox-grid ดีกว่ามั้ง"*.
+
+**The audit he asked for, run before answering:** counting Thai-bearing lines per canned surface in [noop.go](internal/model/noop.go) showed **1 of 5 built-in models was language-ready** — the default (§40) — while `aetox-image:test` (11 lines), `aetox-think:test` (7), `aetox-tools:test` (5) and `aetox-markdown:test` (4) were Thai-only.
+
+Three options were put up: translate all four, leave them and document them as dev instruments, or drop them from the model picker so a user never meets them. **Owner chose translation**, and that is the right call for a reason the "they're only test models" argument misses: they are listed in `RecommendedModels`, so they are *in the picker a real user chooses from*. Anything a user can pick is a surface, and a surface that answers in the wrong language is broken regardless of why it exists.
+
+**Implementation is one seam, not four.** `NoopProvider.english()` and `pick(th, en)` — every canned string in the file now routes through them, including the `aetox-tools:test` **tool arguments**, since its todo items and `ask_user` options reach the user through panels rather than message text. A test walks the whole family: each model must answer with no Thai under `locale=en`, the tools model's tool arguments included, and Thai must remain the default for all of them.
+
+**Renamed `aetox-review` → `aetox-grid`** (owner's call).
+
+**The scroll bug was a wrong instinct, not a missing feature.** The chat already auto-scrolls, and the auto-scroll was working: `scrollTop = scrollHeight` on every transcript change while pinned to the bottom. That is correct for a *streamed* reply — following the bottom is following the text as it arrives. It is exactly wrong for an answer that appears **whole**: the guide answers are long, so landing at the bottom lands *past* them, on the options card underneath.
+
+So `askGuide` takes the wheel: it drops the pin, then puts the **top** of the new reply at the top of the view — where reading starts. The guide card carries a `guide-card` class purely so the scroll target can tell an offer from an answer. Streaming behavior is untouched.
+
+**Status:** `Done 2026-07-25.` Go green including the family-wide language test; frontend 33 green. Desktop rebuilt.
+
+---
+
 ## Validation
 
 1. **Claim traceability:** every claim above cites a file or an existing project doc; the two `Unverified`/`Inferred, Verify first: Yes` items are marked as such, not stated as fact.

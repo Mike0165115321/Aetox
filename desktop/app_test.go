@@ -454,7 +454,7 @@ func TestSaveChatImageNoProjectOpen(t *testing.T) {
 func TestApplyConfigInheritsPriorAgentContext(t *testing.T) {
 	root := t.TempDir()
 	a := &App{}
-	cfg := config.Config{SandboxRoot: root, ModelProvider: "aetox", ModelName: "aetox-review"}
+	cfg := config.Config{SandboxRoot: root, ModelProvider: "aetox", ModelName: "aetox-grid"}
 	a.applyConfig(cfg)
 	if a.agent == nil {
 		t.Fatal("setup: agent must bootstrap")

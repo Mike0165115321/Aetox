@@ -194,7 +194,16 @@
 
   function askGuide(topic: { key: string; q: string; a: string }) {
     askedGuide = [...askedGuide, topic.key]
+    // This answer arrives whole instead of streaming, so "follow the bottom" is
+    // the wrong instinct: it lands past a long answer, on the options card
+    // below it. Take the wheel from that effect and put the TOP of the new
+    // reply at the top of the view, where reading starts.
+    pinnedToBottom = false
     pushGuideExchange(topic.q, topic.a)
+    requestAnimationFrame(() => {
+      const answers = chatEl?.querySelectorAll('.msg.bot:not(.guide-card)')
+      answers?.[answers.length - 1]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
   }
 
   const starters = $derived([
@@ -454,7 +463,9 @@
         <!-- Same card as ask_user: a lettered list Aetox is offering, not chips
              floating loose in the transcript. Owner asked for A/B/C/D and the
              component already existed — reused wholesale, no new CSS. -->
-        <div class="msg bot">
+        <!-- guide-card marks this as an offer rather than an answer, so
+             scroll targeting can tell them apart -->
+        <div class="msg bot guide-card">
           <div class="bubble">
             <div class="ask-panel">
               <div class="ask-q">{t('guide.intro')}</div>
