@@ -31,10 +31,15 @@ var IgnoredDirs = map[string]bool{
 	"node_modules": true, "vendor": true, "dist": true, "build": true,
 	"target": true, "bin": true, "obj": true, "__pycache__": true,
 	".vs": true, ".idea": true,
+	// Unfocused, the sandbox root is the user's home directory, and AppData is
+	// the bulk of it — hundreds of thousands of files of machine state that no
+	// one has ever asked the assistant to search.
+	"AppData": true,
 }
 
 type grepSkill struct {
-	root string
+	root         string
+	outputSubdir func() string
 }
 
 func (*grepSkill) Name() string { return "grep" }
@@ -94,7 +99,7 @@ func (s *grepSkill) Execute(_ context.Context, input Input) (Output, error) {
 	pattern := args[0]
 	searchPath := "."
 	if len(args) > 1 {
-		searchPath = strings.TrimSpace(strings.Join(args[1:], " "))
+		searchPath = placedFallback(s.root, s.outputSubdir, strings.TrimSpace(strings.Join(args[1:], " ")))
 	}
 	// Named options rather than more positional args: the CLI form stays
 	// "grep <pattern> [path]" while a tool call can ask for more.

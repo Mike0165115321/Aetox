@@ -22,5 +22,9 @@ import (
 func ShellCommand(ctx context.Context, line string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, "cmd")
 	cmd.SysProcAttr = &syscall.SysProcAttr{CmdLine: `cmd /S /C "` + line + `"`}
+	// After the assignment, never before — it replaces SysProcAttr wholesale.
+	// Done here rather than left to callers so the shell path cannot flash a
+	// console window even if a new caller forgets.
+	HideConsole(cmd)
 	return cmd
 }

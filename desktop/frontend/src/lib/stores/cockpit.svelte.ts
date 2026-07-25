@@ -274,8 +274,25 @@ function nowLabel(): string {
   return new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 }
 
+// Typing while a turn is running is normal use, not a mistake — but the Go
+// engine holds one conversation, so a second SendMessage fired into a live turn
+// races the first and is simply lost. Those messages wait here instead and go
+// out the instant the engine is free; the composer stays usable throughout.
+export const queuedMessages = $state<string[]>([])
+
+/** Drop anything still waiting — Stop has to mean stop, including what was typed under it. */
+export function clearQueuedMessages(): void {
+  queuedMessages.length = 0
+}
+
 /** Append the user message, then call the Go core and append its reply. */
 export async function sendUserMessage(text: string): Promise<void> {
+  if (cockpit.awaitingReply) {
+    // Attachments stay staged in the composer and are picked up when this
+    // actually sends, so a queued message keeps whatever was attached to it.
+    if (text.trim()) queuedMessages.push(text)
+    return
+  }
   const trimmed = text.trim()
   const image = cockpit.pendingImage
   const context = cockpit.pendingContext
@@ -339,10 +356,14 @@ export async function sendUserMessage(text: string): Promise<void> {
   await refreshWorkspace()
   await refreshSessions()
   await refreshGlobalHistory()
+  // Engine is free again: whatever was typed under the running turn goes now.
+  const next = queuedMessages.shift()
+  if (next !== undefined) await sendUserMessage(next)
 }
 
 /** Abort the turn in flight — the engine's tool loop is unbounded, this is the user's brake. */
 export function cancelTurn(): void {
+  clearQueuedMessages()
   CancelTurn()
 }
 
@@ -399,22 +420,31 @@ export function applyReasoningChunk(chunk: string): void {
  * closes the oldest one still running. */
 export function applyToolEvent(ev: ToolEvent): void {
   const label = [ev.name, ev.subject].filter(Boolean).join(' ')
+  // A row is recognized by the engine's call id, not by its label. The label is
+  // incomplete on the early events — a model may stream a write's content long
+  // before its path — so matching on it drew a second row the moment the name
+  // arrived. Falls back to the label for engines that send no id.
+  const running = (s: ToolStep) =>
+    s.state === 'run' && (ev.ref && s.ref ? s.ref === ev.ref : s.label === label)
   if (ev.action === 'call') {
-    // A call is announced repeatedly while the model writes it — once per line
-    // of content — and once more when it actually runs. Same label every time,
-    // so the row is reused: the counter climbs and the elapsed clock keeps
-    // running instead of the timeline growing a row per line.
-    const open = cockpit.toolSteps.find((s) => s.state === 'run' && s.label === label)
+    // A call is announced repeatedly while the model writes it — once the tool
+    // name is known, then as the content streams — and once more when it
+    // actually runs. The row is reused: the counter climbs and the elapsed
+    // clock keeps running instead of the timeline growing a row per line.
+    const open = cockpit.toolSteps.find(running)
     if (open) {
       if (ev.added) open.added = ev.added
+      // Let the row name itself once the subject shows up.
+      if (ev.subject) open.label = label
       return
     }
-    cockpit.toolSteps.push({ label, state: 'run', startedAt: Date.now(), added: ev.added || undefined })
+    cockpit.toolSteps.push({ label, ref: ev.ref, state: 'run', startedAt: Date.now(), added: ev.added || undefined })
     return
   }
   if (ev.action !== 'result') return
-  const step = cockpit.toolSteps.find((s) => s.state === 'run')
+  const step = cockpit.toolSteps.find(running) ?? cockpit.toolSteps.find((s) => s.state === 'run')
   if (!step) return
+  if (ev.subject) step.label = label
   step.state = ev.ok ? 'done' : 'err'
   step.secs = Math.round((Date.now() - step.startedAt) / 1000)
   step.error = ev.ok ? undefined : ev.error

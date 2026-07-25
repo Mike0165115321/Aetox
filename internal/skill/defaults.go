@@ -17,6 +17,12 @@ type RegistryOptions struct {
 	// before. A func rather than a string because the answer changes per chat
 	// session, and re-bootstrapping the whole engine to change one folder name
 	// would be an absurd price. See writeSkill.placed.
+	//
+	// Every skill that consumes an existing file by relative path needs it too,
+	// not just write: read/edit/delete/apply_patch fall back to this folder when
+	// the literal path resolves to nothing (placedFallback). Hand it to any new
+	// file-consuming skill as well, or that skill will fail to find whatever
+	// write just produced.
 	OutputSubdir func() string
 }
 
@@ -34,19 +40,19 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 		&helpSkill{registry: registry},
 		&echoSkill{},
 		&timeSkill{},
-		&listSkill{root: opts.SandboxRoot},
-		&readSkill{root: opts.SandboxRoot},
+		&listSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
+		&readSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
 		&githubRepoSummarySkill{},
 		&gitSkill{root: opts.SandboxRoot},
 		&fsSkill{root: opts.SandboxRoot},
 		&shellSkill{root: opts.SandboxRoot},
 		&writeSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
-		&editSkill{root: opts.SandboxRoot},
-		&grepSkill{root: opts.SandboxRoot},
+		&editSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
+		&grepSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
 		&globSkill{root: opts.SandboxRoot},
-		&applyPatchSkill{root: opts.SandboxRoot},
-		&diagnosticsSkill{root: opts.SandboxRoot},
-		&deleteSkill{root: opts.SandboxRoot},
+		&applyPatchSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
+		&diagnosticsSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
+		&deleteSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
 		&pluginInstallSkill{},
 		&imageOCRSkill{root: opts.SandboxRoot},
 		&videoOCRSkill{root: opts.SandboxRoot},

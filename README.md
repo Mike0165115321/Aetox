@@ -80,7 +80,7 @@ Aetox ไม่ส่งข้อมูลอะไรออกจากเค�
 
 ---
 
-## สถานะปัจจุบัน — v0.4.0
+## สถานะปัจจุบัน — v0.5.0
 
 Aetox ยังอยู่ในช่วงหล่อหลอม — แกนกลางพร้อมแล้ว ชั้นถัดไปกำลังถูกสร้าง
 
@@ -305,7 +305,7 @@ Aetox/
 
 | Layer | สถานะ |
 |-------|-------|
-| **Core Runtime** | ✅ v0.4.0 — providers, tools, turn loop, safety |
+| **Core Runtime** | ✅ v0.5.0 — providers, tools, turn loop, safety |
 | **Tool Calling** | ✅ model-driven เท่านั้น — โมเดลเลือก tool เองทุกครั้ง (§17) |
 | **15 Built-in Tools** | ✅ read, write, list, shell, git, grep และอื่นๆ |
 | **Desktop App** | ✅ Wails + Svelte 5 — Sidebar, Chat, Workbench (tabbed dock), TopBar |
@@ -338,6 +338,14 @@ Aetox/
 > ไม่มีคนมากมาย แต่มีไฟจากใจผู้สร้าง
 >
 > — Mike (ชยพล พรมสะวะนา)
+
+---
+
+## ติดต่อ
+
+เปิดรับการติดต่อเรื่องธุรกิจ ความร่วมมือ และการลงทุน — เป้าหมายระยะยาวคือเทรนโมเดลของเราเอง ให้สถาปัตยกรรมกับโมเดลถูกออกแบบมาเพื่อกันและกันตั้งแต่ต้น
+
+📧 [phrmsawanachyphl@gmail.com](mailto:phrmsawanachyphl@gmail.com) · 🐙 [เปิด Issue](https://github.com/Mike0165115321/Aetox/issues)
 
 ---
 

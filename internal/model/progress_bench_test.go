@@ -21,7 +21,32 @@ func BenchmarkStreamAccumulatorLargeWrite(b *testing.B) {
 
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		acc := newStreamToolAccumulator(func(string, string, int) {})
+		acc := newStreamToolAccumulator(func(string, string, string, int) {})
+		for _, f := range frags {
+			acc.add([]streamToolCallDelta{{Index: 0, Function: struct {
+				Name      string `json:"name"`
+				Arguments string `json:"arguments"`
+			}{Name: "write", Arguments: f}}})
+		}
+	}
+}
+
+// The same 800-line file with the arguments in the other order. When "content"
+// arrives first the subject stays unresolved for the whole write, so the regex
+// re-scans an ever-growing buffer on every fragment instead of matching once.
+// Argument order is the model's choice, so this ordering is not hypothetical —
+// and it is 8x the cost of the other one.
+func BenchmarkStreamAccumulatorLargeWriteContentFirst(b *testing.B) {
+	var frags []string
+	frags = append(frags, `{"content": "`)
+	for i := 0; i < 800; i++ {
+		frags = append(frags, fmt.Sprintf(`  <div class=\"row-%d\">line of content here</div>\n`, i))
+	}
+	frags = append(frags, `", "path": "landing.html"}`)
+
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		acc := newStreamToolAccumulator(func(string, string, string, int) {})
 		for _, f := range frags {
 			acc.add([]streamToolCallDelta{{Index: 0, Function: struct {
 				Name      string `json:"name"`

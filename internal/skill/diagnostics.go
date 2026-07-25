@@ -16,7 +16,8 @@ import (
 // learns the file is broken several turns later — from the user, after more
 // work has been stacked on top of it.
 type diagnosticsSkill struct {
-	root string
+	root         string
+	outputSubdir func() string
 }
 
 // diagnosticsTimeout is generous on purpose: gopls indexes the workspace on
@@ -74,6 +75,7 @@ func (s *diagnosticsSkill) ExecuteTool(ctx context.Context, args map[string]any)
 		err := errors.New("path is required")
 		return newToolOutput("diagnostics", "diagnostics", "", start, false, err), err
 	}
+	path = placedFallback(s.root, s.outputSubdir, path)
 	command := "diagnostics " + path
 
 	// Resolved for the sandbox check only — the server is handed the absolute

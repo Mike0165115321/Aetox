@@ -150,6 +150,7 @@ func tryAutoInstallTesseract(ctx context.Context) bool {
 		return false
 	}
 	cmd := exec.CommandContext(ctx, "brew", "install", "tesseract", "tesseract-lang")
+	proc.HideConsole(cmd) // no-op on darwin; keeps the "every exec site" rule exception-free
 	return cmd.Run() == nil
 }
 

@@ -2,8 +2,10 @@ package skill
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -69,5 +71,75 @@ func TestGlobSkillSortsNewestFirstAndSkipsNoise(t *testing.T) {
 	}
 	if strings.Contains(out.Content, "node_modules") {
 		t.Errorf("walked into node_modules:\n%s", out.Content)
+	}
+}
+
+func TestGlobPrefix(t *testing.T) {
+	cases := []struct{ pattern, want string }{
+		{"aetox/output/**/*.html", "aetox/output"}, // the 51-second case
+		{"**/*.go", ""},
+		{"*.go", ""},
+		{"src/**/*.{ts,svelte}", "src"},
+		{"src/lib/App.svelte", "src/lib"},
+		{`src\lib\**\*.ts`, "src/lib"},
+		{"*/output/*.html", ""}, // meta in the first segment: cannot narrow
+	}
+	for _, c := range cases {
+		if got := globPrefix(c.pattern); got != c.want {
+			t.Errorf("globPrefix(%q) = %q, want %q", c.pattern, got, c.want)
+		}
+	}
+}
+
+// The walk must start at the pattern's literal prefix, not at the sandbox root:
+// a narrow pattern never reaches maxResults, so a root-anchored walk visits
+// every file under it before returning one hit.
+func TestGlobDoesNotWalkOutsideThePatternPrefix(t *testing.T) {
+	root := t.TempDir()
+	mustWrite := func(rel string) {
+		full := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mustWrite("aetox/output/s1/index.html")
+	mustWrite("elsewhere/decoy.html")
+
+	// Cancelled up front: the walk aborts on the first callback, so the only way
+	// to still return the hit is never to have walked outside the prefix... and
+	// the only way to fail is to start at the root, where "elsewhere" comes first.
+	out, err := (&globSkill{root: root}).ExecuteTool(context.Background(), map[string]any{
+		"pattern": "aetox/output/**/*.html",
+	})
+	if err != nil {
+		t.Fatalf("glob: %v", err)
+	}
+	body := out.Content
+	if !strings.Contains(body, "aetox/output/s1/index.html") {
+		t.Fatalf("missed the file it was pointed at: %q", body)
+	}
+	if strings.Contains(body, "decoy") {
+		t.Fatalf("matched outside the prefix: %q", body)
+	}
+}
+
+func TestGlobStopsWhenCancelled(t *testing.T) {
+	root := t.TempDir()
+	for i := 0; i < 50; i++ {
+		dir := filepath.Join(root, "d", strconv.Itoa(i))
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := (&globSkill{root: root}).ExecuteTool(ctx, map[string]any{"pattern": "**/*.go"}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled glob returned %v, want context.Canceled", err)
 	}
 }

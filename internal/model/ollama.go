@@ -319,6 +319,7 @@ func (p *OllamaProvider) StreamComplete(ctx context.Context, req Request, onChun
 	var toolCallBuilders []*streamToolCallBuilder
 	var lastUsage *Usage
 	var doneReason string
+	progress := newToolProgressTracker(req.OnToolCallProgress)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
@@ -352,7 +353,7 @@ func (p *OllamaProvider) StreamComplete(ctx context.Context, req Request, onChun
 			}
 		}
 
-		toolCallBuilders = mergeStreamToolCalls(toolCallBuilders, parsed.Message.ToolCalls)
+		toolCallBuilders = mergeStreamToolCalls(toolCallBuilders, parsed.Message.ToolCalls, progress)
 
 		lastPromptTokens := maxInt(0, parsed.PromptTokens)
 		lastCompletionTokens := maxInt(0, parsed.CompletionTokens)
@@ -418,7 +419,7 @@ type streamToolCallBuilder struct {
 	argsBuf strings.Builder
 }
 
-func mergeStreamToolCalls(existing []*streamToolCallBuilder, incoming []ollamaToolCall) []*streamToolCallBuilder {
+func mergeStreamToolCalls(existing []*streamToolCallBuilder, incoming []ollamaToolCall, progress *toolProgressTracker) []*streamToolCallBuilder {
 	for _, tc := range incoming {
 		idx := len(existing)
 		existing = append(existing, &streamToolCallBuilder{
@@ -427,8 +428,20 @@ func mergeStreamToolCalls(existing []*streamToolCallBuilder, incoming []ollamaTo
 			argsBuf: strings.Builder{},
 		})
 		existing[idx].argsBuf.WriteString(strings.TrimSpace(string(tc.Function.Arguments)))
+		// Ollama hands over a whole call at once, so there is no counter to
+		// climb here. Announcing it anyway puts the row on screen with the id
+		// finalizeStreamToolCalls will give it, so the UI reuses that row when
+		// the call runs instead of drawing a second one.
+		progress.report(idx, ollamaToolCallID(idx), existing[idx].name, existing[idx].argsBuf.String())
 	}
 	return existing
+}
+
+// ollamaToolCallID is the id Ollama calls are known by. Ollama sends none, so
+// one is synthesized — in one place, because the streaming announcement and the
+// finished call must agree on it or the UI draws the call twice.
+func ollamaToolCallID(index int) string {
+	return fmt.Sprintf("call_%d", index)
 }
 
 func finalizeStreamToolCalls(builders []*streamToolCallBuilder) []ToolCall {
@@ -442,7 +455,7 @@ func finalizeStreamToolCalls(builders []*streamToolCallBuilder) []ToolCall {
 			args = "{}"
 		}
 		out = append(out, ToolCall{
-			ID:   fmt.Sprintf("call_%d", b.index),
+			ID:   ollamaToolCallID(b.index),
 			Type: "function",
 			Function: FunctionCall{
 				Name:      strings.TrimSpace(b.name),

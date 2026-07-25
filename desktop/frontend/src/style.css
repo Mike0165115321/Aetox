@@ -325,6 +325,11 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .msg.user > .bubble { flex:0 1 auto; }
 .bubble { border-radius:12px; padding:11px 14px; min-width:0; overflow-wrap:break-word; word-break:break-word; }
 .msg.user .bubble { background:var(--surface-raised); border:1px solid var(--border-default); border-top-right-radius:4px; }
+/* Typed while a turn was running: shown where it will land, dashed and dimmed
+   so it reads as "waiting to send" rather than "sent and ignored". */
+.msg.user.queued .bubble { opacity:.55; border-style:dashed; position:relative; padding-right:30px; }
+.queued-drop { position:absolute; top:6px; right:8px; color:var(--text-dim); font-size:12px; line-height:1; }
+.queued-drop:hover { color:var(--text-primary); }
 /* The reply is not a card. Only the user's own line keeps a bubble — the
    agent's answer is the page, so it sits on the app background with no box
    and no padding stealing width from tables and code. */

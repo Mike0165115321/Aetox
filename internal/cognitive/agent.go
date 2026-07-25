@@ -100,7 +100,7 @@ type Agent struct {
 	// onToolCallStart is told a tool call is coming while its arguments are
 	// still streaming — the UI's only signal during the long silence of a
 	// model writing a large file. nil = off.
-	onToolCallProgress func(name, subject string, lines int)
+	onToolCallProgress func(id, name, subject string, lines int)
 	maxToolCalls       int
 }
 
@@ -117,7 +117,7 @@ func (a *Agent) SetUsageReporter(fn func(model.Usage)) {
 // SetToolCallStartReporter wires the "a tool call is being written" signal —
 // see the onToolCallStart field. Set alongside SetUsageReporter after a
 // bootstrap; a fresh agent starts with none.
-func (a *Agent) SetToolCallProgressReporter(fn func(name, subject string, lines int)) {
+func (a *Agent) SetToolCallProgressReporter(fn func(id, name, subject string, lines int)) {
 	if a == nil {
 		return
 	}

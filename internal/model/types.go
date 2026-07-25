@@ -68,13 +68,18 @@ type Request struct {
 	Reasoning   *ReasoningConfig `json:"reasoning,omitempty"`
 	Thinking    *ThinkingConfig  `json:"thinking,omitempty"`
 	// OnToolCallProgress, if set, tracks a tool call while it is still being
-	// written: first when it becomes nameable (tool name + the argument worth
-	// reading), then again each time another line of `content` arrives.
-	// Writing an 800-line file means the model spends a minute streaming that
-	// content, and the call is only dispatched once the JSON is complete — so
-	// without this the UI has nothing to show for the longest part of the job.
+	// written: first the moment the tool name is known, then again each time
+	// another line of `content` arrives, and once more when the subject (the
+	// argument worth reading) finally shows up. Writing an 800-line file means
+	// the model spends a minute streaming that content, and the call is only
+	// dispatched once the JSON is complete — so without this the UI has nothing
+	// to show for the longest part of the job.
+	//
+	// id is the provider's tool-call id, which the UI uses to recognize the row
+	// across updates; subject may be empty on the early ones, because argument
+	// order is the model's choice and "content" can arrive long before "path".
 	// Not serialized; providers that don't stream simply never call it.
-	OnToolCallProgress func(name, subject string, lines int) `json:"-"`
+	OnToolCallProgress func(id, name, subject string, lines int) `json:"-"`
 }
 
 type Response struct {

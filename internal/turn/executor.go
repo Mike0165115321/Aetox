@@ -142,6 +142,14 @@ func (e *Executor) stopSpinner() {
 type ToolEvent struct {
 	Action string `json:"action"` // "call" | "result"
 	Name   string `json:"name"`
+	// Ref is the provider's tool-call id, and it is what the UI keys a timeline
+	// row on. The label used to serve as identity, which forced the streaming
+	// path to stay silent until it could name the call — a model that streams a
+	// write's content before its path then showed nothing at all for the whole
+	// file. With a stable ref the label is free to fill itself in later. Empty
+	// for providers that send no id; the UI falls back to matching on the
+	// label, as before.
+	Ref string `json:"ref,omitempty"`
 	// Subject is the one argument worth reading in a list: the path a write
 	// touches, the URL a fetch opens. Empty when the tool takes nothing nameable.
 	Subject string `json:"subject,omitempty"`
@@ -157,9 +165,9 @@ func (ev ToolEvent) Label() string {
 	return strings.TrimSpace(ev.Name + " " + ev.Subject)
 }
 
-func (e *Executor) reportToolCall(name, args string) {
+func (e *Executor) reportToolCall(ref, name, args string) {
 	if e.onToolAction != nil {
-		e.onToolAction(ToolEvent{Action: "call", Name: name, Subject: toolCallSubject(args)})
+		e.onToolAction(ToolEvent{Action: "call", Ref: ref, Name: name, Subject: toolCallSubject(args)})
 	}
 }
 
@@ -394,9 +402,10 @@ func (e *Executor) executeAgentToolLoop(
 	}
 
 	reply, usedTools, err := e.agent.RespondWithTools(ctx, toolDefs, intent.Raw, func(ctx context.Context, call model.ToolCall) (string, error) {
-		e.reportToolCall(call.Function.Name, call.Function.Arguments)
+		e.reportToolCall(call.ID, call.Function.Name, call.Function.Arguments)
 		receipt, output, success, execErr := e.executeToolCallWithOutcome(ctx, call)
 		ev := ToolEvent{
+			Ref:     call.ID,
 			Name:    call.Function.Name,
 			Subject: toolCallSubject(call.Function.Arguments),
 			OK:      success,

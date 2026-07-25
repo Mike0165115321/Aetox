@@ -64,3 +64,61 @@ func TestWritePlacementLeavesExplicitDestinationsAlone(t *testing.T) {
 		t.Errorf("with a nil hook, placed(index.html) = %q, want unchanged", got)
 	}
 }
+
+// The bug this closes: write steered index.html into the session folder, then
+// "edit index.html" resolved against the root, failed, and the model spent a
+// dozen tool calls re-finding the file it had just written.
+func TestReadAndEditFindWhatWriteJustPlaced(t *testing.T) {
+	root := t.TempDir()
+	subdir := func() string { return "aetox/output/s1" }
+	ctx := context.Background()
+
+	w := &writeSkill{root: root, outputSubdir: subdir}
+	if _, err := w.ExecuteTool(ctx, map[string]any{"path": "index.html", "content": "<h1>a</h1>"}); err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+
+	// The model repeats the path it originally asked for, not the placed one.
+	r := &readSkill{root: root, outputSubdir: subdir}
+	out, err := r.Execute(ctx, Input{"args": []string{"index.html"}})
+	if err != nil {
+		t.Fatalf("read of the original path failed: %v", err)
+	}
+	if out.Command != "read aetox/output/s1/index.html" {
+		t.Errorf("read echoed %q, want the placed path so the model learns where it is", out.Command)
+	}
+
+	e := &editSkill{root: root, outputSubdir: subdir}
+	if _, err := e.Execute(ctx, Input{"args": []string{"index.html", "<h1>a</h1>", "<h1>b</h1>"}}); err != nil {
+		t.Fatalf("edit of the original path failed: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "aetox", "output", "s1", "index.html"))
+	if err != nil || string(data) != "<h1>b</h1>" {
+		t.Errorf("edit landed wrong: %q, %v", data, err)
+	}
+}
+
+// The fallback must never shadow a real file — that would make a focused
+// project read stale artifacts instead of its own source.
+func TestPlacedFallbackPrefersTheLiteralPath(t *testing.T) {
+	root := t.TempDir()
+	subdir := func() string { return "aetox/output/s1" }
+
+	for _, rel := range []string{"index.html", "aetox/output/s1/index.html"} {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(rel), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := placedFallback(root, subdir, "index.html"); got != "index.html" {
+		t.Errorf("both exist: got %q, want the literal path to win", got)
+	}
+
+	// Nothing anywhere: report the path the caller asked for, so the error names it.
+	if got := placedFallback(root, subdir, "missing.html"); got != "missing.html" {
+		t.Errorf("neither exists: got %q, want the original path", got)
+	}
+}

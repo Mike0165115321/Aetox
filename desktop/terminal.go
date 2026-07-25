@@ -9,6 +9,8 @@ import (
 
 	"github.com/UserExistsError/conpty"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
+
+	"github.com/Mike0165115321/Aetox/internal/lsp"
 )
 
 // TerminalSession wraps one live shell process attached to a ConPTY.
@@ -164,6 +166,11 @@ func (a *App) shutdown(_ context.Context) {
 	if a.mcp != nil {
 		_ = a.mcp.Close()
 	}
+	// Language servers are process-wide and shared per workspace root, so
+	// nothing else owns them: without this, gopls/node keep running and only
+	// the Windows job object reaps them — off Windows there is no job object
+	// and they orphan for good.
+	lsp.CloseShared()
 	a.terminalsMu.Lock()
 	ids := make([]string, 0, len(a.terminals))
 	for id := range a.terminals {

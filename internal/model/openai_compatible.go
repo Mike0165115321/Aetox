@@ -398,20 +398,14 @@ type streamToolCallDelta struct {
 type streamToolAccumulator struct {
 	byIndex map[int]*ToolCall
 	order   []int
-	// onProgress reports a call as it is written — see Request.OnToolCallProgress.
-	onProgress func(name, subject string, lines int)
-	subject    map[int]string    // resolved once, then reused for every update
-	lastLines  map[int]int       // last count reported, so identical updates are dropped
-	lastAt     map[int]time.Time // when that report went out, for pacing
+	// progress reports a call as it is written — see Request.OnToolCallProgress.
+	progress *toolProgressTracker
 }
 
-func newStreamToolAccumulator(onProgress func(name, subject string, lines int)) *streamToolAccumulator {
+func newStreamToolAccumulator(onProgress func(id, name, subject string, lines int)) *streamToolAccumulator {
 	return &streamToolAccumulator{
-		byIndex:    map[int]*ToolCall{},
-		onProgress: onProgress,
-		subject:    map[int]string{},
-		lastLines:  map[int]int{},
-		lastAt:     map[int]time.Time{},
+		byIndex:  map[int]*ToolCall{},
+		progress: newToolProgressTracker(onProgress),
 	}
 }
 
@@ -433,42 +427,8 @@ func (a *streamToolAccumulator) add(deltas []streamToolCallDelta) {
 			call.Function.Name = d.Function.Name
 		}
 		call.Function.Arguments += d.Function.Arguments
-		a.announce(d.Index, call)
+		a.progress.report(d.Index, call.ID, call.Function.Name, call.Function.Arguments)
 	}
-}
-
-// toolProgressInterval paces the "still writing" updates. Fast enough to read
-// as a live counter rather than a stalled one, slow enough that an 800-line
-// file is a couple of hundred IPC messages instead of a thousand — the model
-// emits lines far faster than a screen is worth repainting.
-// Var (not const) so tests can shrink it.
-var toolProgressInterval = 200 * time.Millisecond
-
-// announce reports a call the moment it is recognizable, then keeps it ticking
-// while the content streams in. The first update is immediate — that is the row
-// appearing — and the rest are paced; identical counts are dropped either way.
-// The true final numbers come from the tool's own result, not from here.
-func (a *streamToolAccumulator) announce(index int, call *ToolCall) {
-	if a.onProgress == nil || call.Function.Name == "" {
-		return
-	}
-	subject, known := a.subject[index]
-	if !known {
-		resolved, ok := SubjectFromPartialArgs(call.Function.Arguments)
-		if !ok {
-			return // the interesting argument hasn't finished arriving yet
-		}
-		subject = resolved
-		a.subject[index] = resolved
-	}
-	lines := ContentLinesSoFar(call.Function.Arguments)
-	now := time.Now()
-	if known && (lines == a.lastLines[index] || now.Sub(a.lastAt[index]) < toolProgressInterval) {
-		return
-	}
-	a.lastLines[index] = lines
-	a.lastAt[index] = now
-	a.onProgress(call.Function.Name, subject, lines)
 }
 
 func (a *streamToolAccumulator) finalize() []ToolCall {

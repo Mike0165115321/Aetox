@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
-	"time"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -36,7 +35,12 @@ func TestConnectListCall(t *testing.T) {
 		Name:        "echo",
 		Command:     []string{bin},
 		Environment: map[string]string{"AETOX_TEST": "merged"},
-		Timeout:     10 * time.Second,
+		// No Timeout override: the production default (30s) is the one worth
+		// exercising, and a tighter one only made this flaky. Connecting takes
+		// ~2s alone but spawns a subprocess and handshakes over stdio, and
+		// `go test ./...` runs this alongside packages that saturate the
+		// machine — under that load 10s was not enough and the whole suite
+		// went red for no defect.
 	})
 	t.Cleanup(func() { c.Close() })
 

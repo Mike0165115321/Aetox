@@ -255,8 +255,9 @@ var catalog = map[string]*entry{
 		runtime:        RuntimeOpenAICompatible,
 		baseURL:        "http://localhost:1234/v1",
 		envKeys:        []string{"LLM_API_KEY", "OPENAI_API_KEY"},
-		modelDefaults:  ModelDefaults{FallbackModel: "local-model"},
-		capabilities:   Capabilities{ToolCalling: true},
+		// No FallbackModel on purpose — see "ollama" below.
+		modelDefaults: ModelDefaults{},
+		capabilities:  Capabilities{ToolCalling: true},
 	},
 	"ollama": {
 		canonical:      "ollama",
@@ -265,10 +266,13 @@ var catalog = map[string]*entry{
 		runtime:        RuntimeOllama,
 		baseURL:        "http://localhost:11434",
 		envKeys:        nil,
-		modelDefaults: ModelDefaults{
-			FallbackModel: "gemma3:4b",
-		},
-		capabilities: Capabilities{ToolCalling: true},
+		// No FallbackModel on purpose. A local runtime serves whatever the
+		// user pulled, so any name written here is a guess that fails as
+		// "model 'x' not found" against a server that is working fine. The
+		// empty fallback is the signal to ask the server instead — see
+		// model.ResolveDefaultModel.
+		modelDefaults: ModelDefaults{},
+		capabilities:  Capabilities{ToolCalling: true},
 	},
 	"anthropic": {
 		canonical:      "anthropic",

@@ -54,7 +54,31 @@ func (*globSkill) ToolDefinition() model.ToolDefinition {
 	}
 }
 
-func (s *globSkill) Execute(_ context.Context, input Input) (Output, error) {
+// globPrefix returns the pattern's leading literal directories.
+//
+// A pattern is only ever a filter here, so the walk used to start at the
+// sandbox root regardless — which, with no project focused, is the user's
+// entire home directory. The narrower the pattern the worse that got: nothing
+// matched, so the maxResults early exit never fired and the walk ran to the
+// last file under AppData. "aetox/output/**/*.html" took 51s on a real home
+// directory to find one file it already knew the directory of. Starting the
+// walk at that literal prefix makes it immediate.
+func globPrefix(pattern string) string {
+	segs := strings.Split(strings.ReplaceAll(strings.TrimSpace(pattern), `\`, "/"), "/")
+	if len(segs) < 2 {
+		return "" // no directory part: matches a basename anywhere, so the walk can't narrow
+	}
+	literal := make([]string, 0, len(segs)-1)
+	for _, seg := range segs[:len(segs)-1] {
+		if seg == "" || strings.ContainsAny(seg, "*?[{") {
+			break
+		}
+		literal = append(literal, seg)
+	}
+	return strings.Join(literal, "/")
+}
+
+func (s *globSkill) Execute(ctx context.Context, input Input) (Output, error) {
 	start := time.Now()
 	if s == nil {
 		err := errors.New("glob skill unavailable")
@@ -76,13 +100,27 @@ func (s *globSkill) Execute(_ context.Context, input Input) (Output, error) {
 		command += " " + searchPath
 	}
 
-	basePath, err := resolveSandboxPath(s.root, searchPath)
+	walkFrom := searchPath
+	// Only when no explicit path was given: with one, the caller has already
+	// narrowed the walk, and the pattern may well be written relative to it.
+	if searchPath == "." {
+		if prefix := globPrefix(pattern); prefix != "" {
+			walkFrom = prefix
+		}
+	}
+	basePath, err := resolveSandboxPath(s.root, walkFrom)
 	if err != nil {
 		return newToolOutput("glob", command, "", start, false, err), err
 	}
 	root, err := resolveSandboxPath(s.root, ".")
 	if err != nil {
 		return newToolOutput("glob", command, "", start, false, err), err
+	}
+	// A literal prefix that isn't a directory means nothing can match — say so
+	// instead of walking, and never as an error: "no such directory" for a
+	// pattern the user only guessed at reads like a broken tool.
+	if info, statErr := os.Stat(basePath); statErr != nil || !info.IsDir() {
+		return newToolOutput("glob", command, "(no files matched)", start, false, nil), nil
 	}
 
 	const maxResults = 300
@@ -93,6 +131,11 @@ func (s *globSkill) Execute(_ context.Context, input Input) (Output, error) {
 	hits := make([]hit, 0)
 
 	walkErr := filepath.WalkDir(basePath, func(path string, d os.DirEntry, err error) error {
+		// Without this the Stop button does nothing: a walk over a home
+		// directory runs for a minute with no way out.
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
 		if err != nil {
 			return nil
 		}

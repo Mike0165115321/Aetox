@@ -470,6 +470,11 @@ func (p *AnthropicProvider) StreamComplete(ctx context.Context, req Request, onC
 	var text, reasoning strings.Builder
 	toolBuilders := map[int]*anthropicStreamToolBuilder{}
 	var toolOrder []int
+	// Anthropic is the wire format Claude uses — and DeepSeek's default one, so
+	// this is the path most tool calls actually take. Without it a model writing
+	// a large file is silent from the end of its thinking until the call is
+	// complete, which reads as a freeze.
+	progress := newToolProgressTracker(req.OnToolCallProgress)
 	respModel := model
 	var usage Usage
 
@@ -498,11 +503,15 @@ func (p *AnthropicProvider) StreamComplete(ctx context.Context, req Request, onC
 			}
 		case "content_block_start":
 			if event.ContentBlock != nil && event.ContentBlock.Type == "tool_use" {
-				toolBuilders[event.Index] = &anthropicStreamToolBuilder{
+				builder := &anthropicStreamToolBuilder{
 					id:   event.ContentBlock.ID,
 					name: event.ContentBlock.Name,
 				}
+				toolBuilders[event.Index] = builder
 				toolOrder = append(toolOrder, event.Index)
+				// Anthropic names the tool before sending a byte of its input,
+				// so the row can appear immediately — no arguments needed.
+				progress.report(event.Index, builder.id, builder.name, "")
 			}
 		case "content_block_delta":
 			if event.Delta == nil {
@@ -528,6 +537,9 @@ func (p *AnthropicProvider) StreamComplete(ctx context.Context, req Request, onC
 			case "input_json_delta":
 				if b, ok := toolBuilders[event.Index]; ok {
 					b.argsBuf.WriteString(event.Delta.PartialJSON)
+					// Builder.String() is a view, not a copy — reading it every
+					// delta costs nothing, and the tracker paces the scanning.
+					progress.report(event.Index, b.id, b.name, b.argsBuf.String())
 				}
 			}
 		case "message_delta":

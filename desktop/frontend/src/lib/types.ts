@@ -106,6 +106,9 @@ export interface ChatMessage {
 export interface ToolEvent {
   action: 'call' | 'result'
   name: string
+  /** The engine's tool-call id — how a row is recognized across updates. The
+   * label cannot serve: it is empty of its subject on the early events. */
+  ref?: string
   subject?: string
   ok?: boolean
   error?: string
@@ -115,6 +118,8 @@ export interface ToolEvent {
 
 export interface ToolStep {
   label: string
+  /** ToolEvent.ref of the call this row is showing, when the engine sent one. */
+  ref?: string
   state: 'run' | 'done' | 'err'
   /** Why it failed, straight from the engine's result event. Only on 'err'. */
   error?: string

@@ -102,6 +102,10 @@ func ensureInstalled(ctx context.Context, binary string) bool {
 	defer cancel()
 	cmd := exec.CommandContext(runCtx, spec.command, spec.args...)
 	proc.HideConsole(cmd)
+	// `npm install -g` forks node; on the 5-minute timeout CommandContext would
+	// kill only npm itself and leave node downloading for the rest of the
+	// session. This is the one exec site where that window is minutes long.
+	proc.KillOnCancel(cmd)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		debuglog.Msg("lsp: install %s failed: %v — %s", binary, err, truncate(string(out), 400))
 		return false

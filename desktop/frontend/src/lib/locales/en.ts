@@ -62,6 +62,7 @@ export const en: Record<keyof typeof th, string> = {
   'guide.intro': 'Where would you like to start?',
   'chat.askHint': 'Pick an option or type your own answer below',
   'chat.removeAttachment': 'Remove attachment',
+  'chat.removeQueued': 'Remove queued message',
   'chat.saveKey': 'Save key',
   'chat.apiKeyPlaceholder': 'API key for {provider}',
   'chat.approvalAsk': 'Ask',

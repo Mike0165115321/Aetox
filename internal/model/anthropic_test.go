@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestNewAnthropicProviderRequiresModelAndKey(t *testing.T) {
@@ -261,5 +262,89 @@ func TestConvertMessagesToAnthropicMergesConsecutiveToolResults(t *testing.T) {
 	}
 	if msgs[2].Role != "user" || len(msgs[2].Content) != 2 {
 		t.Fatalf("expected merged tool_result turn with 2 blocks, got %#v", msgs[2])
+	}
+}
+
+// The Anthropic wire format is what Claude uses — and DeepSeek's default — so
+// this is the path most tool calls actually take. It had no progress reporting
+// at all: a model writing a large file went silent from the end of its thinking
+// until the call was complete, which reads as a freeze.
+func TestAnthropicStreamReportsToolCallProgress(t *testing.T) {
+	defer func(prev time.Duration) { toolProgressInterval = prev }(toolProgressInterval)
+	toolProgressInterval = 0
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"type\":\"message_start\",\"message\":{\"model\":\"claude-haiku-4-5\",\"usage\":{\"input_tokens\":4}}}\n\n"))
+		// The name arrives before a single byte of input — the row can open at once.
+		_, _ = w.Write([]byte("data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_01\",\"name\":\"write\"}}\n\n"))
+		for _, frag := range []string{
+			// \\n here so the JSON-decoded partial_json carries an escaped \n,
+			// which is what a real newline inside a JSON string value looks like
+			// on the wire — and what ContentLinesSoFar counts.
+			`{\"path\": \"lan`,
+			`ding.html\", \"content\": \"<h1>a</h1>\\n`,
+			`<p>b</p>\\n`,
+			`<p>c</p>\\n\"}`,
+		} {
+			_, _ = w.Write([]byte("data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"" + frag + "\"}}\n\n"))
+		}
+		_, _ = w.Write([]byte("data: {\"type\":\"content_block_stop\",\"index\":0}\n\n"))
+		_, _ = w.Write([]byte("data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\"},\"usage\":{\"output_tokens\":2}}\n\n"))
+		_, _ = w.Write([]byte("data: {\"type\":\"message_stop\"}\n\n"))
+	}))
+	defer server.Close()
+
+	provider, err := NewAnthropicProvider(AnthropicConfig{Model: "claude-haiku-4-5", APIKey: "k", BaseURL: server.URL})
+	if err != nil {
+		t.Fatalf("new provider failed: %v", err)
+	}
+
+	type upd struct {
+		id, name, subject string
+		lines             int
+	}
+	var seen []upd
+	resp, err := provider.StreamComplete(context.Background(), Request{
+		Messages: []Message{{Role: RoleUser, Content: "make a page"}},
+		OnToolCallProgress: func(id, name, subject string, lines int) {
+			seen = append(seen, upd{id, name, subject, lines})
+		},
+	}, nil, nil)
+	if err != nil {
+		t.Fatalf("stream complete failed: %v", err)
+	}
+
+	if len(seen) == 0 {
+		t.Fatal("no progress at all — this is the freeze the tracker exists to prevent")
+	}
+	// The row opens on the tool name, before any arguments exist.
+	if seen[0].name != "write" || seen[0].id != "toolu_01" || seen[0].lines != 0 {
+		t.Errorf("first update = %+v, want the row opening on name+id with no content yet", seen[0])
+	}
+	// It then names itself and the count climbs.
+	last := seen[len(seen)-1]
+	if last.subject != "landing.html" {
+		t.Errorf("final update never carried the path: %+v", last)
+	}
+	if last.lines != 4 {
+		t.Errorf("final line count = %d, want 4", last.lines)
+	}
+	for i := 1; i < len(seen); i++ {
+		if seen[i].lines < seen[i-1].lines {
+			t.Errorf("count went backwards at %d: %+v after %+v", i, seen[i], seen[i-1])
+		}
+		if seen[i].id != "toolu_01" {
+			t.Errorf("update %d lost the call id: %+v", i, seen[i])
+		}
+	}
+
+	// The id the UI saw while streaming must be the id the finished call carries,
+	// or the timeline draws the same call twice.
+	if len(resp.ToolCalls) != 1 || resp.ToolCalls[0].ID != "toolu_01" {
+		t.Fatalf("tool calls = %+v", resp.ToolCalls)
+	}
+	if got := resp.ToolCalls[0].Function.Arguments; got != `{"path": "landing.html", "content": "<h1>a</h1>\n<p>b</p>\n<p>c</p>\n"}` {
+		t.Errorf("arguments not stitched back correctly: %q", got)
 	}
 }

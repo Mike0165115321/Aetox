@@ -276,7 +276,7 @@ func main() {
 
 	if strings.TrimSpace(cfg.ModelName) == "" &&
 		!strings.EqualFold(strings.TrimSpace(cfg.ModelProvider), "aetox") {
-		cfg.ModelName = model.DefaultModel(cfg.ModelProvider)
+		cfg.ModelName = model.ResolveDefaultModel(cfg.ModelProvider, cfg.ModelBaseURL, cfg.ModelAPIKey)
 		modelName = cfg.ModelName
 	}
 	cfg.ThinkLevel = model.NormalizeThinkingLevel(cfg.ModelProvider, cfg.ModelName, thinkLevel)
@@ -443,7 +443,7 @@ func switchProvider(ctx context.Context, cfg *config.Config) (app.ModelSwitchRes
 	cfg.ThinkLevel = selectedThinkLevel
 
 	if cfg.ModelName == "" && !strings.EqualFold(cfg.ModelProvider, "aetox") {
-		cfg.ModelName = model.DefaultModel(cfg.ModelProvider)
+		cfg.ModelName = model.ResolveDefaultModel(cfg.ModelProvider, cfg.ModelBaseURL, cfg.ModelAPIKey)
 	}
 	cfg.ThinkLevel = model.NormalizeThinkingLevel(cfg.ModelProvider, cfg.ModelName, cfg.ThinkLevel)
 
@@ -590,7 +590,7 @@ func promptModelSelection(cfg config.Config, askThinkLevel bool) (string, string
 		idx, ok := pickFromMenu(reader, "No model provider configured. Select one.", providerOptions, 0, "Use ↑/↓ then Enter.")
 		if !ok {
 			defaultProvider := providers[0]
-			defaultModel := model.DefaultModel(defaultProvider)
+			defaultModel := model.ResolveDefaultModel(defaultProvider, cfg.ModelBaseURL, model.ResolveModelAPIKey(defaultProvider))
 			return defaultProvider, defaultModel, "", cfg.ModelBaseURL, defaultThinkLevel(defaultProvider, defaultModel, cfg.ThinkLevel), false
 		}
 		provider := providers[idx]
@@ -674,7 +674,12 @@ func pickModelForProvider(reader *bufio.Reader, provider, existing, baseURL, api
 	if err != nil || len(modelChoices) == 0 {
 		modelChoices = model.ModelChoices(provider)
 	}
+	// Local providers carry no catalog default, so the first discovered model
+	// is the default — modelChoices is already in hand, no second round trip.
 	defaultModel := model.DefaultModel(provider)
+	if defaultModel == "" && len(modelChoices) > 0 {
+		defaultModel = modelChoices[0]
+	}
 	if existing != "" {
 		defaultModel = existing
 	}

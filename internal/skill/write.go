@@ -37,6 +37,40 @@ func (s *writeSkill) placed(requestPath string) string {
 	return filepath.ToSlash(filepath.Join(subdir, requestPath))
 }
 
+// placedFallback is the read side of the same rule. write steers a new
+// relative file into the session output folder, so a later read/edit/delete of
+// the path the model originally asked for has to look there too — otherwise
+// the model loses the file it just created and burns turns hunting for it.
+//
+// The literal path always wins: the fallback only fires when nothing resolves
+// there, so a real file is never shadowed by a same-named artifact in the
+// output folder. Unfocused sessions are the only ones with a subdir at all
+// (see App.outputSubdir), so a focused project never takes this path.
+func placedFallback(root string, outputSubdir func() string, requestPath string) string {
+	if outputSubdir == nil || requestPath == "" || filepath.IsAbs(requestPath) {
+		return requestPath
+	}
+	subdir := strings.TrimSpace(outputSubdir())
+	if subdir == "" || existsInSandbox(root, requestPath) {
+		return requestPath
+	}
+	// Report the original path when the fallback misses too: the error the
+	// caller gets should name the path they actually asked for.
+	if candidate := filepath.ToSlash(filepath.Join(subdir, requestPath)); existsInSandbox(root, candidate) {
+		return candidate
+	}
+	return requestPath
+}
+
+func existsInSandbox(root, requestPath string) bool {
+	target, err := resolveSandboxPath(root, requestPath)
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(target)
+	return err == nil
+}
+
 func (*writeSkill) Name() string { return "write" }
 
 func (*writeSkill) Description() string {

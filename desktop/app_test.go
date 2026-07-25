@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Mike0165115321/Aetox/internal/cognitive"
@@ -126,9 +127,35 @@ func TestNormalizeWorkbenchURL(t *testing.T) {
 		{"localhost:5173", "https://localhost:5173"},
 	}
 	for _, c := range cases {
-		if got := normalizeWorkbenchURL(c.in); got != c.want {
+		if got := normalizeWorkbenchURL(c.in, ""); got != c.want {
 			t.Errorf("normalizeWorkbenchURL(%q) = %q, want %q", c.in, got, c.want)
 		}
+	}
+}
+
+// write reports where a file landed as a sandbox-relative path and never the
+// absolute one, so browser_open has to accept that same path — otherwise the
+// model cannot show the user what it just built without splicing in the
+// sandbox root by hand.
+func TestNormalizeWorkbenchURLResolvesSandboxRelativePaths(t *testing.T) {
+	root := t.TempDir()
+	rel := "aetox/output/s1/index.html"
+	full := filepath.Join(root, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(full, []byte("<h1>a</h1>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	want := "file:///" + strings.ReplaceAll(full, `\`, "/")
+	if got := normalizeWorkbenchURL(rel, root); got != want {
+		t.Errorf("normalizeWorkbenchURL(%q, root) = %q, want %q", rel, got, want)
+	}
+
+	// A bare domain must still reach the web, not be mistaken for a local file.
+	if got := normalizeWorkbenchURL("example.com", root); got != "https://example.com" {
+		t.Errorf("bare domain = %q, want https://example.com", got)
 	}
 }
 

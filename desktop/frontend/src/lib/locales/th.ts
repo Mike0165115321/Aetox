@@ -61,6 +61,7 @@ export const th = {
   'guide.intro': 'อยากเริ่มจากเรื่องไหนดี?',
   'chat.askHint': 'เลือกตัวเลือก หรือพิมพ์คำตอบเองด้านล่างก็ได้',
   'chat.removeAttachment': 'เอาไฟล์แนบออก',
+  'chat.removeQueued': 'เอาข้อความที่รอส่งออก',
   'chat.saveKey': 'บันทึกคีย์',
   'chat.apiKeyPlaceholder': 'API key สำหรับ {provider}',
   'chat.approvalAsk': 'ถาม',

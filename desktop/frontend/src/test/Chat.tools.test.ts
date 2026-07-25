@@ -69,6 +69,36 @@ describe('tool events from the engine', () => {
     applyToolEvent({ action: 'call', name: 'todo_write' })
     expect(cockpit.toolSteps[0].label).toBe('todo_write')
   })
+
+  // Argument order is the model's choice: when a write's "content" streams
+  // before its "path" the row appears unnamed and has to name itself later.
+  // Keyed on the label, the arrival of the name drew a second row.
+  it('names a row that started before its subject arrived, without splitting it', () => {
+    applyToolEvent({ action: 'call', ref: 'call_1', name: 'write', added: 12 })
+    expect(cockpit.toolSteps).toHaveLength(1)
+    expect(cockpit.toolSteps[0]).toMatchObject({ label: 'write', added: 12 })
+
+    applyToolEvent({ action: 'call', ref: 'call_1', name: 'write', added: 260 })
+    applyToolEvent({ action: 'call', ref: 'call_1', name: 'write', subject: 'landing.html', added: 402 })
+    expect(cockpit.toolSteps).toHaveLength(1)
+    expect(cockpit.toolSteps[0]).toMatchObject({ label: 'write landing.html', added: 402 })
+
+    applyToolEvent({ action: 'result', ref: 'call_1', name: 'write', subject: 'landing.html', ok: true, added: 402 })
+    expect(cockpit.toolSteps).toHaveLength(1)
+    expect(cockpit.toolSteps[0]).toMatchObject({ label: 'write landing.html', state: 'done' })
+  })
+
+  // Two writes in flight at once are two rows, even though both start unnamed
+  // and share a tool name.
+  it('keeps concurrent calls apart by ref', () => {
+    applyToolEvent({ action: 'call', ref: 'call_1', name: 'write', added: 3 })
+    applyToolEvent({ action: 'call', ref: 'call_2', name: 'write', added: 5 })
+    expect(cockpit.toolSteps).toHaveLength(2)
+
+    applyToolEvent({ action: 'result', ref: 'call_2', name: 'write', subject: 'b.html', ok: true })
+    expect(cockpit.toolSteps[1]).toMatchObject({ label: 'write b.html', state: 'done' })
+    expect(cockpit.toolSteps[0].state).toBe('run')
+  })
 })
 
 describe('tool timeline collapsing', () => {

@@ -15,7 +15,7 @@
   import {
     cockpit, attachImageFromPath, clearPendingImage, attachTabContext, clearPendingContext,
     attachFileFromPath, clearPendingFile, fileKind,
-    openProject, openFolder, clearProjectFocus, cancelTurn, answerAsk,
+    openProject, openFolder, clearProjectFocus, cancelTurn, answerAsk, queuedMessages,
   } from './stores/cockpit.svelte'
 
   let {
@@ -522,6 +522,15 @@
           </div>
         </div>
       {/if}
+
+      {#each queuedMessages as q, i}
+        <div class="msg user queued">
+          <div class="bubble">
+            {q}
+            <button class="queued-drop" aria-label={t('chat.removeQueued')} onclick={() => queuedMessages.splice(i, 1)}>✕</button>
+          </div>
+        </div>
+      {/each}
 
       {#if awaitingReply}
         <div class="msg bot">

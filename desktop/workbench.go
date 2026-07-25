@@ -10,6 +10,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync/atomic"
@@ -34,15 +36,31 @@ var (
 // passes through, and only bare domains get https://. The old ^https?://-only
 // check stamped https:// onto file:/// URLs, navigating to a blank
 // https://file///... page.
-func normalizeWorkbenchURL(url string) string {
+//
+// A path relative to the sandbox root resolves to file:/// too. Every other
+// tool speaks relative paths — write reports "aetox/output/<session>/index.html"
+// and never the absolute one on purpose (see writeSkill.Execute) — so without
+// this the model has to splice the sandbox root in by hand to view what it just
+// made, and "aetox/output/s1/index.html" fell through to the bare-domain case
+// and navigated to https://aetox/output/s1/index.html.
+func normalizeWorkbenchURL(url, sandboxRoot string) string {
 	switch {
 	case driveLetterRe.MatchString(url):
 		return "file:///" + strings.ReplaceAll(url, `\`, "/")
 	case urlSchemeRe.MatchString(url) || bareSchemeRe.MatchString(url):
 		return url
-	default:
-		return "https://" + url
 	}
+	// Only a path that actually exists is treated as a file, so a bare domain
+	// still becomes https:// — the check is "is there such a file", not "does
+	// this look path-shaped".
+	if root := strings.TrimSpace(sandboxRoot); root != "" {
+		if abs, err := filepath.Abs(filepath.Join(root, filepath.FromSlash(url))); err == nil {
+			if _, statErr := os.Stat(abs); statErr == nil {
+				return "file:///" + strings.ReplaceAll(abs, `\`, "/")
+			}
+		}
+	}
+	return "https://" + url
 }
 
 // workbenchOpenBrowser asks the frontend to open a workbench browser tab, then
@@ -55,7 +73,7 @@ func (a *App) workbenchOpenBrowser(ctx context.Context, url string) (title, fina
 	if url == "" {
 		return "", "", fmt.Errorf("url is required")
 	}
-	url = normalizeWorkbenchURL(url)
+	url = normalizeWorkbenchURL(url, a.cfg.SandboxRoot)
 
 	id := fmt.Sprintf("web-agent-%d", atomic.AddInt64(&agentBrowserSeq, 1))
 	wailsruntime.EventsEmit(a.ctx, "workbench:open-browser", map[string]string{"id": id, "url": url})
@@ -155,11 +173,11 @@ func (*browserOpenSkill) Description() string {
 
 func (*browserOpenSkill) ToolDefinition() model.ToolDefinition {
 	return toolDef("browser_open",
-		"Open a URL in the workbench browser (visible to the user) and wait for it to load. Use browser_read afterwards to read the page.",
+		"Open a URL in the workbench browser (visible to the user) and wait for it to load. Also opens a local file: pass the same path write reported, relative to the sandbox root — no need to build a file:// URL yourself. Use it to show the user any page you just created. Use browser_read afterwards to read the page.",
 		map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"url": map[string]any{"type": "string", "description": "The URL to open"},
+				"url": map[string]any{"type": "string", "description": "A URL, or a file path relative to the sandbox root"},
 			},
 			"required": []string{"url"},
 		})

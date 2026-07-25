@@ -22,7 +22,8 @@ import (
 // applies leaves the tree in a state neither the user nor the model predicted,
 // and the model's next move would be based on a false picture of the code.
 type applyPatchSkill struct {
-	root string
+	root         string
+	outputSubdir func() string
 }
 
 func (*applyPatchSkill) Name() string { return "apply_patch" }
@@ -104,6 +105,7 @@ func (s *applyPatchSkill) ExecuteTool(_ context.Context, args map[string]any) (O
 	var added, removed int
 
 	for i, e := range edits {
+		e.Path = placedFallback(s.root, s.outputSubdir, e.Path)
 		targetPath, resolveErr := resolveSandboxPath(s.root, e.Path)
 		if resolveErr != nil {
 			return newToolOutput("apply_patch", command, "", start, false, resolveErr), resolveErr

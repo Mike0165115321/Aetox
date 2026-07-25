@@ -182,7 +182,7 @@ export function TerminalWrite(arg1:string,arg2:string):Promise<void>;
 
 export function TestMCPServer(arg1:string):Promise<main.MCPServerInfo>;
 
-export function TestProviderConnection(arg1:string):Promise<string>;
+export function TestProviderConnection(arg1:string,arg2:string):Promise<string>;
 
 export function ToggleMCPServer(arg1:string,arg2:boolean):Promise<void>;
 

@@ -71,9 +71,32 @@ func RequiresAPIKey(name string) bool {
 	return provider.RequiresAPIKey(name)
 }
 
-// DefaultModel delegates to provider.DefaultModel.
+// DefaultModel delegates to provider.DefaultModel. It is a pure catalog
+// lookup — use it for capability tables keyed by model id. To pick a model to
+// actually run on, use ResolveDefaultModel.
 func DefaultModel(name string) string {
 	return provider.DefaultModel(name)
+}
+
+// ResolveDefaultModel picks the model a provider should start on when nothing
+// is configured yet. Providers serving a published catalog carry a static
+// fallback and use it. Local runtimes (Ollama, LM Studio) serve whatever the
+// user installed, so the catalog carries no fallback for them and the name
+// comes from the server itself. Returns "" when the server has nothing to
+// offer — an honest empty beats a hardcoded guess that fails as "model not
+// found" against a server that is working fine.
+func ResolveDefaultModel(p, baseURL, apiKey string) string {
+	canonical := provider.Normalize(p)
+	if fallback := provider.DefaultModel(canonical); fallback != "" {
+		return fallback
+	}
+	if strings.TrimSpace(baseURL) == "" {
+		baseURL = provider.DefaultBaseURL(canonical)
+	}
+	if models, err := ModelChoicesWithEndpointAndAPIKey(canonical, baseURL, apiKey); err == nil && len(models) > 0 {
+		return models[0]
+	}
+	return ""
 }
 
 // DefaultBaseURL delegates to provider.DefaultBaseURL.

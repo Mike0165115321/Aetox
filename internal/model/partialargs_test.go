@@ -57,7 +57,7 @@ func TestStreamAccumulatorReportsProgress(t *testing.T) {
 	toolProgressInterval = 0
 
 	var seen []update
-	acc := newStreamToolAccumulator(func(name, subject string, lines int) {
+	acc := newStreamToolAccumulator(func(_, name, subject string, lines int) {
 		seen = append(seen, update{name, subject, lines})
 	})
 	for _, frag := range []string{`{"path": "a.h`, `tml", "content": "<p>`, `hi</p>
@@ -71,13 +71,29 @@ func TestStreamAccumulatorReportsProgress(t *testing.T) {
 	if len(seen) == 0 {
 		t.Fatal("never announced the call")
 	}
-	if seen[0].name != "write" || seen[0].subject != "a.html" {
-		t.Errorf("first update = %+v, want write/a.html", seen[0])
+	// The row opens on the tool name alone — "a.h" is still mid-value, and
+	// waiting for the whole path is what used to make a large write silent.
+	if seen[0].name != "write" || seen[0].subject != "" {
+		t.Errorf("first update = %+v, want write with no subject yet", seen[0])
 	}
-	// The count climbs and never repeats a value — that is what the UI shows.
+	// Once the path completes it is reported, and never lost again.
+	named := -1
+	for i, u := range seen {
+		if u.subject == "a.html" && named < 0 {
+			named = i
+		}
+		if named >= 0 && u.subject != "a.html" {
+			t.Errorf("update %d dropped the subject: %+v", i, u)
+		}
+	}
+	if named < 0 {
+		t.Fatalf("the path never reached the UI: %+v", seen)
+	}
+	// The count only ever climbs — that is what the UI shows. It repeats once,
+	// on the update that exists to deliver the name rather than a new line.
 	for i := 1; i < len(seen); i++ {
-		if seen[i].lines <= seen[i-1].lines {
-			t.Errorf("update %d went backwards or stalled: %+v after %+v", i, seen[i], seen[i-1])
+		if seen[i].lines < seen[i-1].lines {
+			t.Errorf("update %d went backwards: %+v after %+v", i, seen[i], seen[i-1])
 		}
 	}
 	if got := acc.finalize()[0].Function.Arguments; got != `{"path": "a.html", "content": "<p>hi</p>
@@ -92,7 +108,7 @@ func TestStreamAccumulatorReportsProgress(t *testing.T) {
 // firing a thousand IPC messages.
 func TestStreamAccumulatorPacesUpdates(t *testing.T) {
 	var count int
-	acc := newStreamToolAccumulator(func(string, string, int) { count++ })
+	acc := newStreamToolAccumulator(func(string, string, string, int) { count++ })
 	acc.add([]streamToolCallDelta{{Index: 0, Function: struct {
 		Name      string `json:"name"`
 		Arguments string `json:"arguments"`
@@ -156,7 +172,7 @@ func TestStreamAccumulatorHandlesNameArrivingLate(t *testing.T) {
 	toolProgressInterval = 0
 
 	var names []string
-	acc := newStreamToolAccumulator(func(name, _ string, _ int) { names = append(names, name) })
+	acc := newStreamToolAccumulator(func(_, name, _ string, _ int) { names = append(names, name) })
 	mk := func(name, args string) []streamToolCallDelta {
 		return []streamToolCallDelta{{Index: 0, Function: struct {
 			Name      string `json:"name"`
@@ -170,5 +186,59 @@ func TestStreamAccumulatorHandlesNameArrivingLate(t *testing.T) {
 	acc.add(mk("write", ` "content": "x`)) // name arrives late
 	if len(names) != 1 || names[0] != "write" {
 		t.Errorf("late name was not announced: %v", names)
+	}
+}
+
+// Argument order is the model's choice, not the schema's. When "content" comes
+// before "path", waiting for the subject before saying anything meant a
+// 400-line file went by with nothing on screen and the row appeared only once
+// the call was already complete — the "it freezes while writing" this whole
+// path exists to prevent.
+func TestStreamAccumulatorCountsBeforeThePathArrives(t *testing.T) {
+	defer func(prev time.Duration) { toolProgressInterval = prev }(toolProgressInterval)
+	toolProgressInterval = 0
+
+	type update struct {
+		id, subject string
+		lines       int
+	}
+	var seen []update
+	acc := newStreamToolAccumulator(func(id, _, subject string, lines int) {
+		seen = append(seen, update{id, subject, lines})
+	})
+	frag := func(id, name, args string) []streamToolCallDelta {
+		return []streamToolCallDelta{{Index: 0, ID: id, Function: struct {
+			Name      string `json:"name"`
+			Arguments string `json:"arguments"`
+		}{Name: name, Arguments: args}}}
+	}
+
+	// id and name ride the first delta, as OpenAI-style streams send them.
+	acc.add(frag("call_1", "write", `{"content": "<!doctype html>\n`))
+	acc.add(frag("", "", `<html>\n`))
+	acc.add(frag("", "", `<body>\n`))
+
+	if len(seen) != 3 {
+		t.Fatalf("3 fragments of content produced %d updates, want 3 — a silent write is the bug: %+v", len(seen), seen)
+	}
+	for i, u := range seen {
+		if u.id != "call_1" {
+			t.Errorf("update %d carries id %q, want call_1 — the UI keys the row on it", i, u.id)
+		}
+		if u.subject != "" {
+			t.Errorf("update %d reported subject %q before the path was sent", i, u.subject)
+		}
+		if want := i + 2; u.lines != want {
+			t.Errorf("update %d counted %d lines, want %d", i, u.lines, want)
+		}
+	}
+
+	acc.add(frag("", "", `</body>\n</html>", "path": "landing.html"}`))
+	last := seen[len(seen)-1]
+	if last.subject != "landing.html" {
+		t.Errorf("the path never reached the row: %+v", last)
+	}
+	if last.id != "call_1" {
+		t.Errorf("the naming update lost the id: %+v", last)
 	}
 }

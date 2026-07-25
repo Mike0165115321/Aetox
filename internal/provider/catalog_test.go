@@ -144,10 +144,13 @@ func TestDefaultModel_FallbackOnly(t *testing.T) {
 		{"together", "google/gemma-2-9b-it"},
 		{"perplexity", "llama-3.1-sonar-small-128k-online"},
 		{"cohere", "command-r-plus"},
-		{"lmstudio", "local-model"},
-		{"ollama", "gemma3:4b"},
 		{"anthropic", "claude-haiku-4-5"},
 		{"unknown", ""},
+		// Local runtimes deliberately carry no fallback: they serve whatever
+		// the user installed, so any name here would be a guess. The empty
+		// value is what tells model.ResolveDefaultModel to ask the server.
+		{"lmstudio", ""},
+		{"ollama", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.provider, func(t *testing.T) {

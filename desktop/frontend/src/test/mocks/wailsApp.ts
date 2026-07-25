@@ -4,10 +4,13 @@
 // render without per-test setup.
 import { vi } from 'vitest'
 
-const arr = () => vi.fn(async () => [] as any[])
-const str = () => vi.fn(async () => '')
-const boolFn = (v: boolean) => vi.fn(async () => v)
-const noop = () => vi.fn(async () => undefined)
+// Variadic on purpose: the real bindings take arguments, and a zero-arg mock
+// types `mock.calls[0]` as an empty tuple — so a test asserting what was sent
+// (`mock.calls[0][0]`) fails to type-check even though it passes at runtime.
+const arr = () => vi.fn(async (..._args: any[]) => [] as any[])
+const str = () => vi.fn(async (..._args: any[]) => '')
+const boolFn = (v: boolean) => vi.fn(async (..._args: any[]) => v)
+const noop = () => vi.fn(async (..._args: any[]) => undefined)
 
 export const AddMCPServer = noop()
 export const BrowserBack = noop()

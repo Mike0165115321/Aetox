@@ -354,8 +354,8 @@ export function TestMCPServer(arg1) {
   return window['go']['main']['App']['TestMCPServer'](arg1);
 }
 
-export function TestProviderConnection(arg1) {
-  return window['go']['main']['App']['TestProviderConnection'](arg1);
+export function TestProviderConnection(arg1, arg2) {
+  return window['go']['main']['App']['TestProviderConnection'](arg1, arg2);
 }
 
 export function ToggleMCPServer(arg1, arg2) {

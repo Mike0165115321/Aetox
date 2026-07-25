@@ -144,6 +144,7 @@
     errorMsg = ''
     keyDraft = ''
     connTest = ''
+    connTestModel = ''
     baseURL = await ProviderBaseURL(name)
     wireFormats = await ProviderWireFormats(name)
     loadingModels = true
@@ -193,13 +194,17 @@
     await switchWireFormat(fmt)
   })
 
-  // Connection test: a real 1-token completion through the chat path.
-  // '' = untested, 'ok:…' / 'err:…' render as success / failure.
+  // Connection test: a real 1-token completion through the chat path, run per
+  // model so a model can be proven before switching to it. connTestModel says
+  // which row the result belongs under; connTest is '' = untested, 'ok:…' /
+  // 'err:…' render as success / failure.
   let connTest = $state('')
-  const testConnection = () => run('test', async () => {
+  let connTestModel = $state('')
+  const testConnection = (name: string) => run('test:' + name, async () => {
     connTest = ''
+    connTestModel = name
     try {
-      connTest = 'ok:' + await TestProviderConnection(selected)
+      connTest = 'ok:' + await TestProviderConnection(selected, name)
     } catch (err) {
       connTest = 'err:' + String(err)
     }
@@ -772,15 +777,7 @@
                   {busy === 'provider' ? t('settings.switching') : t('settings.useThisProvider')}
                 </button>
               {/if}
-              <button class="ctrl" disabled={busy !== ''} onclick={testConnection}>
-                {busy === 'test' ? t('settings.testing') : '🔌 ' + t('settings.testConnection')}
-              </button>
             </div>
-            {#if connTest}
-              <div class="conn-test" class:ok={connTest.startsWith('ok:')}>
-                {connTest.startsWith('ok:') ? '✓ ' + t('settings.connOk') + ' — ' + connTest.slice(3) : '✕ ' + connTest.slice(4)}
-              </div>
-            {/if}
 
             <div class="mset-field">
               <div class="eyebrow">{t('settings.baseUrl')}</div>
@@ -833,6 +830,10 @@
                 {#each models as m}
                   <div class="mrow">
                     <span class="mname">{m}</span>
+                    <button
+                      class="icobtn tiny" title={t('settings.testConnection')} aria-label={t('settings.testConnection')}
+                      disabled={busy !== ''} onclick={() => testConnection(m)}
+                    >{busy === 'test:' + m ? '…' : '🔌'}</button>
                     {#if isActiveProvider && cockpit.model.modelName === m}
                       <span class="badge on">{t('settings.inUse')}</span>
                     {:else}
@@ -841,6 +842,11 @@
                       </button>
                     {/if}
                   </div>
+                  {#if connTestModel === m && connTest}
+                    <div class="conn-test" class:ok={connTest.startsWith('ok:')}>
+                      {connTest.startsWith('ok:') ? '✓ ' + t('settings.connOk') + ' — ' + connTest.slice(3) : '✕ ' + connTest.slice(4)}
+                    </div>
+                  {/if}
                 {/each}
               {/if}
               <div class="mset-keyrow">

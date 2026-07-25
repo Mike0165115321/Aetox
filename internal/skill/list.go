@@ -15,7 +15,8 @@ import (
 )
 
 type listSkill struct {
-	root string
+	root         string
+	outputSubdir func() string
 }
 
 func (*listSkill) Name() string { return "list" }
@@ -55,7 +56,7 @@ func (s *listSkill) Execute(_ context.Context, input Input) (Output, error) {
 	args := stringSlice(input["args"])
 	requestPath := "."
 	if len(args) > 0 {
-		requestPath = strings.Join(args, " ")
+		requestPath = placedFallback(s.root, s.outputSubdir, strings.Join(args, " "))
 	}
 
 	targetPath, err := resolveSandboxPath(s.root, requestPath)

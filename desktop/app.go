@@ -572,7 +572,7 @@ type ModelInfo struct {
 
 // desktopProviders is the curated subset of the full engine catalog
 // (model.SupportedProviders()) exposed in the desktop UI's provider picker.
-var desktopProviders = []string{"ollama", "deepseek", "gemini", "openai", "openrouter", "zai", "anthropic", "aetox"}
+var desktopProviders = []string{"ollama", "lmstudio", "deepseek", "gemini", "openai", "openrouter", "zai", "anthropic", "aetox"}
 
 // NewApp creates a new App application struct
 func NewApp() *App {
@@ -970,23 +970,33 @@ func (a *App) ProviderBaseURL(providerName string) string {
 
 // TestProviderConnection proves a provider is actually reachable by running a
 // minimal 1-token completion through the same client chat uses — endpoint,
-// key, and wire format all verified in one shot. Returns the latency label on
-// success; the error carries the provider's real failure message.
-func (a *App) TestProviderConnection(providerName string) (string, error) {
+// key, and wire format all verified in one shot. modelName picks which model
+// to ping, so a model can be proven before switching to it; empty falls back
+// to the active model for this provider, else the catalog default. Returns the
+// latency label on success; the error carries the provider's real failure
+// message.
+func (a *App) TestProviderConnection(providerName, modelName string) (string, error) {
 	canonical := model.NormalizeProvider(providerName)
-	modelName := model.DefaultModel(canonical)
+	baseURL := model.DefaultBaseURL(canonical)
+	apiKey := resolveAPIKeyForProvider(canonical)
 	wireFormat := ""
+	fallback := ""
 	if canonical == model.NormalizeProvider(a.cfg.ModelProvider) {
-		if strings.TrimSpace(a.cfg.ModelName) != "" {
-			modelName = a.cfg.ModelName
-		}
+		fallback = strings.TrimSpace(a.cfg.ModelName)
 		wireFormat = a.cfg.ModelWireFormat
+	}
+	if fallback == "" {
+		fallback = model.ResolveDefaultModel(canonical, baseURL, apiKey)
+	}
+	modelName = strings.TrimSpace(modelName)
+	if modelName == "" {
+		modelName = fallback
 	}
 	p, err := model.NewProvider(model.ProviderOptions{
 		Provider:   canonical,
 		Model:      modelName,
-		APIKey:     resolveAPIKeyForProvider(canonical),
-		BaseURL:    model.DefaultBaseURL(canonical),
+		APIKey:     apiKey,
+		BaseURL:    baseURL,
 		Timeout:    15 * time.Second,
 		WireFormat: wireFormat,
 	})
@@ -1013,7 +1023,7 @@ func (a *App) SwitchModel(modelName string) (ModelInfo, error) {
 	next := a.cfg
 	next.ModelName = strings.TrimSpace(modelName)
 	if next.ModelName == "" {
-		next.ModelName = model.DefaultModel(next.ModelProvider)
+		next.ModelName = model.ResolveDefaultModel(next.ModelProvider, next.ModelBaseURL, next.ModelAPIKey)
 	}
 	next.ThinkLevel = model.NormalizeThinkingLevel(next.ModelProvider, next.ModelName, next.ThinkLevel)
 	a.applyConfig(next)
@@ -1095,10 +1105,10 @@ func (a *App) SupportedThinkLevels() []string {
 func (a *App) SwitchProvider(provider string) (ModelInfo, error) {
 	next := a.cfg
 	next.ModelProvider = model.NormalizeProvider(provider)
-	next.ModelName = model.DefaultModel(next.ModelProvider)
 	next.ModelBaseURL = model.DefaultBaseURL(next.ModelProvider)
 	next.ModelWireFormat = "" // reset to the new provider's default format
 	next.ModelAPIKey = resolveAPIKeyForProvider(next.ModelProvider)
+	next.ModelName = model.ResolveDefaultModel(next.ModelProvider, next.ModelBaseURL, next.ModelAPIKey)
 	next.ThinkLevel = model.NormalizeThinkingLevel(next.ModelProvider, next.ModelName, "")
 	a.applyConfig(next)
 	if a.chat == nil {
@@ -1200,10 +1210,11 @@ func (a *App) applyConfig(cfg config.Config) {
 		a.agent.SetUsageReporter(a.recordTokenUsage)
 		// Draw the row while the model is still writing the call, not after,
 		// and tick its line count up as the content arrives. The executor emits
-		// the same label when the call actually runs, and the UI matches on it
-		// rather than drawing the call twice.
-		a.agent.SetToolCallProgressReporter(func(name, subject string, lines int) {
-			a.recordToolAction(turn.ToolEvent{Action: "call", Name: name, Subject: subject, Added: lines})
+		// the same Ref when the call actually runs, so the UI reuses the row
+		// rather than drawing the call twice — including when the early updates
+		// carried no subject yet and the label filled itself in later.
+		a.agent.SetToolCallProgressReporter(func(id, name, subject string, lines int) {
+			a.recordToolAction(turn.ToolEvent{Action: "call", Ref: id, Name: name, Subject: subject, Added: lines})
 		})
 	}
 	// A re-bootstrap (model/provider switch) creates a fresh agent — replay the
@@ -1281,7 +1292,7 @@ func resolveConfig(opts config.ConfigOptions) config.Config {
 	// default with a real job (it answers the guide, §42), so a fresh install
 	// that shows no model name at all is the wrong end of that trade.
 	if cfg.ModelName == "" {
-		cfg.ModelName = model.DefaultModel(cfg.ModelProvider)
+		cfg.ModelName = model.ResolveDefaultModel(cfg.ModelProvider, cfg.ModelBaseURL, cfg.ModelAPIKey)
 	}
 	cfg.ThinkLevel = model.NormalizeThinkingLevel(cfg.ModelProvider, cfg.ModelName, cfg.ThinkLevel)
 	return cfg
