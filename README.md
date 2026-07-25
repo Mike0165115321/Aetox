@@ -1,13 +1,21 @@
 # Aetox — Architecture > Parameters
 
+<p align="center">
+  <img src="docs/assets/og.png" alt="Aetox — หัวใจไม่ใช่ความรู้ในโมเดล แต่คือ Architecture ที่ควบคุมวิธีคิด" width="100%">
+</p>
+
+<p align="center">
+  <a href="https://mike0165115321.github.io/Aetox/"><strong>🌐 ดูหน้าเว็บแนะนำ Aetox</strong></a> — เห็นภาพว่ามันทำอะไรได้บ้างใน 1 นาที
+  ·
+  <a href="https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-amd64-installer.exe"><strong>⬇️ ดาวน์โหลด</strong></a>
+</p>
+
 > **AI Agent + ผู้ช่วยส่วนตัว** — ไม่ผูกมัดกับระบบใด เป็นอิสระจากทุกข้อจำกัด
 > ไม่ได้เกิดมาเพื่อเป็น framework อีกตัว  
 > แต่เป็นรากฐานของ AGI ที่สถาปัตยกรรมคือหัวใจ ไม่ใช่โมเดล
 
 No lock-in. No subscription pressure. No boundaries.  
 Your rules, your data, your AGI.
-
-**🌐 [ดูหน้าเว็บแนะนำ Aetox](https://mike0165115321.github.io/Aetox/)** — เห็นภาพว่ามันทำอะไรได้บ้างใน 1 นาที
 
 ---
 
