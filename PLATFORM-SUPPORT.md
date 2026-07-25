@@ -17,21 +17,21 @@
 | `internal/` (engine, tools, providers) | ✅ build + test + ใช้จริง | ⚠️ compile ผ่าน ไม่เคยรัน | ต้องมีเครื่อง/CI job จริงถึงจะรู้ |
 | `cmd/aetox` (CLI) | ✅ build + test + ใช้จริง | ⚠️ compile ผ่าน ไม่เคยรัน | เหมือนข้างบน |
 | `desktop/` (Wails GUI) | ✅ build + test + ใช้จริง | ❌ compile ไม่ผ่าน | conpty, go-webview2, `browser.go` เรียก Win32 ตรงๆ ไม่มี build tag |
+| binary ภายนอก (tesseract, ffmpeg, whisper.cpp) | ✅ ใช้จริง | ✅ ข้ามแพลตฟอร์มอยู่แล้ว | เรียกผ่าน `exec` ไม่มีโค้ดเฉพาะ OS — มีแต่ข้อความบอกวิธีติดตั้งที่แยกตาม OS |
 
 ## สิ่งที่ต้องแก้ถ้าจะไปจริง (เรียงจากถูกไปแพง)
 
 1. **รัน test suite บน Linux จริง** — เพิ่ม job `ubuntu-latest` ใน CI สำหรับ `./cmd/... ./internal/...`
    นี่คือขั้นที่ถูกที่สุดและได้ข้อมูลมากที่สุด เพราะโค้ดฝั่ง `!windows` ทุกไฟล์ (`hide_other.go`,
-   `job_other.go`, `shell_other.go`, `tree_other.go`, `computer_other.go`) **compile ผ่านแต่ไม่เคยถูกรัน**
+   `job_other.go`, `shell_other.go`, `tree_other.go`) **compile ผ่านแต่ไม่เคยถูกรัน**
    โดยเฉพาะ `tree_other.go` ที่ใช้ `Setpgid` + `kill(-pgid)` ซึ่งเป็นโค้ดที่ต้องเจอ process จริงถึงจะรู้ว่าถูก
 2. **`proc.KillTreeOnExit` เป็น no-op นอก Windows** — Job Object ไม่มีบน Unix ต้องใช้ process group
    หรือ `prctl(PR_SET_PDEATHSIG)` แทน ตอนนี้ปิดแอปบน Unix แล้ว MCP server จะค้าง
-3. **`computer` tool** — `computer_other.go` คือ stub เมาส์/คีย์บอร์ด/screenshot ยังไม่มีของจริงนอก Windows
-4. **Desktop GUI** — งานใหญ่สุด ต้องหา WebView ของแต่ละ OS (WebKitGTK / WKWebView) และเขียน
+3. **Desktop GUI** — งานใหญ่สุด ต้องหา WebView ของแต่ละ OS (WebKitGTK / WKWebView) และเขียน
    `browser.go` ใหม่ทั้งไฟล์ มี blueprint อยู่แล้วใน
    [docs/architecture/native-browser-embedding-2026-07-24.md](docs/architecture/native-browser-embedding-2026-07-24.md)
-5. **Terminal (ConPTY)** — ต้องเปลี่ยนไปใช้ pty ของ Unix
-6. **Distribution** — ตอนนี้มีแต่ NSIS installer + portable zip + Scoop (ARCHITECTURE.md §23)
+4. **Terminal (ConPTY)** — ต้องเปลี่ยนไปใช้ pty ของ Unix
+5. **Distribution** — ตอนนี้มีแต่ NSIS installer + portable zip + Scoop (ARCHITECTURE.md §23)
 
 ## ที่ทำไปแล้วโดยไม่ได้ตั้งใจจะพอร์ต
 

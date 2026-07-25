@@ -67,6 +67,25 @@ func TestAssessCommand(t *testing.T) {
 	}
 }
 
+// audio_transcribe reads a file the user pointed at and shells out to local
+// binaries to do it — exactly what video_ocr does, so it must land in the same
+// tier and never grow an approval prompt video_ocr doesn't have.
+func TestAssessCommandMediaToolsMatchVideoOCR(t *testing.T) {
+	reference := AssessCommand("video_ocr", []string{"clip.mp4"})
+	for _, name := range []string{"audio_transcribe", "image_ocr"} {
+		got := AssessCommand(name, []string{"clip.mp4"})
+		if got.Risk != reference.Risk || len(got.Effects) != len(reference.Effects) {
+			t.Errorf("AssessCommand(%q) = risk %v effects %v, want the video_ocr tier: risk %v effects %v",
+				name, got.Risk, got.Effects, reference.Risk, reference.Effects)
+		}
+		for _, mode := range []ApprovalMode{ApprovalFullAccess, ApprovalUnsafeOnly, ApprovalMode("")} {
+			if ShouldPrompt(mode, got) != ShouldPrompt(mode, reference) {
+				t.Errorf("%s prompts differently from video_ocr under mode %q", name, mode)
+			}
+		}
+	}
+}
+
 func TestNormalizeApprovalMode(t *testing.T) {
 	if got := NormalizeApprovalMode(" Full-Access "); got != ApprovalFullAccess {
 		t.Errorf("NormalizeApprovalMode trims/lowers: got %q", got)

@@ -31,7 +31,7 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 		&pluginInstallSkill{},
 		&imageOCRSkill{root: opts.SandboxRoot},
 		&videoOCRSkill{root: opts.SandboxRoot},
-		&computerSkill{root: opts.SandboxRoot},
+		&audioTranscribeSkill{root: opts.SandboxRoot},
 		&webFetchSkill{},
 		&webSearchSkill{},
 		&githubSearchSkill{},
