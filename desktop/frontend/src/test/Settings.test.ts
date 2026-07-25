@@ -18,7 +18,8 @@ beforeEach(() => {
     week: [], all: [],
   } as any)
   vi.mocked(ListPromptPresets).mockResolvedValue([
-    { name: 'landing', description: 'สร้างแลนดิ้งเพจ', body: 'ทำแลนดิ้งเพจ $ARGUMENTS', path: '', builtin: true, image: '' },
+    // Bundled presets ship cover art; a user preset may have none yet.
+    { name: 'landing', description: 'สร้างแลนดิ้งเพจ', body: 'ทำแลนดิ้งเพจ $ARGUMENTS', path: '', builtin: true, image: 'data:image/svg+xml;base64,PHN2Zy8+' },
     { name: 'mine', description: 'พรอมต์ของผม', body: 'ของผมเอง', path: 'C:/prompts/mine.md', builtin: false, image: '' },
   ] as any)
 })
@@ -68,9 +69,10 @@ describe('Settings pages', () => {
     await waitFor(() => expect(container.querySelectorAll('.pp-card').length).toBe(3)) // 2 presets + "new"
     expect(screen.getByText('สร้างแลนดิ้งเพจ')).toBeTruthy()
     expect(screen.getAllByText('มากับแอป')).toHaveLength(1)
-    // No cover set → the generated one, not a broken <img>.
-    expect(container.querySelector('.pp-cover img')).toBeNull()
-    expect(container.querySelectorAll('.pp-cover .pp-mono').length).toBeGreaterThan(0)
+    // Shipped cover renders as a real image; the one without falls back to the
+    // generated cover rather than a broken <img>.
+    expect(container.querySelectorAll('.pp-cover img').length).toBe(1)
+    expect(container.querySelectorAll('.pp-cover .pp-mono').length).toBe(1)
   })
 
   it('clicking a preset card opens its full text for editing', async () => {
@@ -89,5 +91,20 @@ describe('Settings pages', () => {
     expect(screen.getByText(/สร้างเป็นของคุณทับไว้/)).toBeTruthy()
     // Its name is fixed; a new preset is where you get to choose one.
     expect((container.querySelector('.pp-field input.ctrl') as HTMLInputElement).disabled).toBe(true)
+  })
+
+  // An empty 300px box tells you nothing about what belongs in it.
+  it('a new preset opens on a starter skeleton, not a blank box', async () => {
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'พรอมต์สำเร็จรูป')
+    await waitFor(() => expect(container.querySelector('.pp-new')).toBeTruthy())
+
+    await fireEvent.click(container.querySelector('.pp-new')!)
+    const body = container.querySelector('.pp-textarea') as HTMLTextAreaElement
+    expect(body.value).toContain('$ARGUMENTS')
+    expect(body.value.length).toBeGreaterThan(80)
+    expect(body.placeholder).toBeTruthy()
+    // The one token a preset cannot work without gets its own button.
+    expect(screen.getByText('+ $ARGUMENTS')).toBeTruthy()
   })
 })

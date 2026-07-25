@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 150" width="320" height="150">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#451a03"/><stop offset="1" stop-color="#0f172a"/>
+    </linearGradient>
+  </defs>
+  <rect width="320" height="150" fill="url(#bg)"/>
+  <!-- the focus frame: only the hero matters here -->
+  <rect x="14" y="20" width="292" height="110" rx="10" fill="#fff" opacity=".05"/>
+  <rect x="14" y="20" width="292" height="110" rx="10" fill="none" stroke="#fbbf24" stroke-opacity=".45" stroke-dasharray="5 4"/>
+  <rect x="32" y="42" width="150" height="13" rx="6.5" fill="#fff" opacity=".88"/>
+  <rect x="32" y="62" width="106" height="13" rx="6.5" fill="#fff" opacity=".88"/>
+  <rect x="32" y="86" width="140" height="5" rx="2.5" fill="#fff" opacity=".3"/>
+  <rect x="32" y="102" width="58" height="16" rx="8" fill="#f59e0b"/>
+  <rect x="98" y="102" width="42" height="16" rx="8" fill="none" stroke="#fff" stroke-opacity=".3"/>
+  <rect x="206" y="42" width="82" height="76" rx="8" fill="#fbbf24" opacity=".14"/>
+  <rect x="206" y="42" width="82" height="76" rx="8" fill="none" stroke="#fbbf24" stroke-opacity=".4"/>
+  <circle cx="247" cy="72" r="13" fill="#fbbf24" opacity=".35"/>
+  <rect x="222" y="94" width="50" height="4" rx="2" fill="#fff" opacity=".2"/>
+  <text x="160" y="144" font-family="monospace" font-size="9" fill="#fbbf24" fill-opacity=".55" text-anchor="middle">hero section only</text>
+</svg>

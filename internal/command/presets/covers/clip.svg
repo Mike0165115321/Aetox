@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 150" width="320" height="150">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#042f2e"/><stop offset="1" stop-color="#0f172a"/>
+    </linearGradient>
+  </defs>
+  <rect width="320" height="150" fill="url(#bg)"/>
+  <!-- waveform: sound going in -->
+  <g fill="#2dd4bf" fill-opacity=".55">
+    <rect x="18" y="40" width="3" height="14" rx="1.5"/><rect x="25" y="32" width="3" height="30" rx="1.5"/>
+    <rect x="32" y="24" width="3" height="46" rx="1.5"/><rect x="39" y="36" width="3" height="22" rx="1.5"/>
+    <rect x="46" y="18" width="3" height="58" rx="1.5"/><rect x="53" y="30" width="3" height="34" rx="1.5"/>
+    <rect x="60" y="38" width="3" height="18" rx="1.5"/><rect x="67" y="26" width="3" height="42" rx="1.5"/>
+    <rect x="74" y="34" width="3" height="26" rx="1.5"/><rect x="81" y="42" width="3" height="10" rx="1.5"/>
+    <rect x="88" y="28" width="3" height="38" rx="1.5"/><rect x="95" y="36" width="3" height="22" rx="1.5"/>
+  </g>
+  <!-- arrow into text -->
+  <path d="M108 47 L130 47" stroke="#2dd4bf" stroke-opacity=".6" stroke-width="1.6"/>
+  <path d="M126 43 L132 47 L126 51 Z" fill="#2dd4bf" fill-opacity=".85"/>
+  <!-- transcript lines with timestamps -->
+  <text x="140" y="30" font-family="monospace" font-size="9" fill="#5eead4" fill-opacity=".9">[0:00]</text>
+  <rect x="182" y="23" width="112" height="5" rx="2.5" fill="#fff" opacity=".32"/>
+  <text x="140" y="52" font-family="monospace" font-size="9" fill="#5eead4" fill-opacity=".9">[0:42]</text>
+  <rect x="182" y="45" width="88" height="5" rx="2.5" fill="#fff" opacity=".32"/>
+  <text x="140" y="74" font-family="monospace" font-size="9" fill="#5eead4" fill-opacity=".9">[3:15]</text>
+  <rect x="182" y="67" width="102" height="5" rx="2.5" fill="#fff" opacity=".32"/>
+  <!-- the screen half: video_ocr reading the same clip -->
+  <rect x="18" y="92" width="86" height="42" rx="7" fill="#fff" opacity=".08"/>
+  <rect x="18" y="92" width="86" height="42" rx="7" fill="none" stroke="#2dd4bf" stroke-opacity=".35"/>
+  <rect x="30" y="104" width="46" height="4" rx="2" fill="#fff" opacity=".28"/>
+  <rect x="30" y="114" width="60" height="4" rx="2" fill="#fff" opacity=".18"/>
+  <path d="M112 113 L132 113" stroke="#2dd4bf" stroke-opacity=".45" stroke-width="1.4"/>
+  <text x="140" y="100" font-family="monospace" font-size="8.5" fill="#fff" fill-opacity=".38">เสียง + ตัวหนังสือบนจอ</text>
+  <text x="140" y="118" font-family="monospace" font-size="8.5" fill="#fff" fill-opacity=".38">อ่านต่อกันเป็นสคริปต์เดียว</text>
+</svg>

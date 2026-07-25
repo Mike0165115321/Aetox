@@ -882,3 +882,6 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   min-height:320px; resize:vertical; line-height:1.6;
   font-family:var(--font-mono, monospace); font-size:13px; white-space:pre-wrap;
 }
+.pp-bodyhead { display:flex; align-items:center; gap:8px; }
+.pp-textarea::placeholder { color:var(--text-dim); opacity:.75; line-height:1.7; }
+.ctrl.tiny { font-size:12px; padding:3px 8px; }

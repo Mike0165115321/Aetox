@@ -1206,7 +1206,12 @@ That last row is why this was not a nice-to-have. §35 had just shipped prompt p
 
 **Three more presets, sourced from the same reading.** Both sites split "whole page" from "one section", so the shipped set now covers both: `/hero` and `/pricing` are section-level, `/waitlist` is a whole page with a single job. Eight bundled presets, still under 30KB compiled in.
 
-**Status:** `Done 2026-07-25.` Go suite green (5 new preset tests: name validation, folder-created-on-save, override-then-delete restores the bundled original, cover round trip, cover not mistaken for a prompt); frontend 22 tests green (gallery renders cards with generated covers, clicking one opens its full text with the override note and a locked name). Desktop rebuilt.
+**Amendment, same day — real covers and a textarea that says something.** Owner on seeing it live: *"ผมอยากได้รูปจริงด้วยอ่ะครับ"* and *"เนื้อพรอมต์ ทำไมโล่งแบบนั้น ... ควรจะมีอะไรชี้ให้กดหน่อย มันเป็นเรื่องของ UX UI"*. Both were fair:
+
+- **Generated covers are "no image, handled gracefully", not artwork.** All eight bundled presets now ship a hand-drawn SVG of *what they produce* — a wireframe for `/landing`, three tiers with the middle one lifted for `/pricing`, a waveform feeding `[m:ss]` lines for `/clip`, a symptom arrow tracing back to a root cause and out to sibling callers for `/debug`. Vector, **15.2KB for all eight**, installer unchanged at 12.52MB. A test asserts *every* bundled preset has one, because a grid where some cards have art and others have a coloured rectangle reads as broken rather than minimal. A user cover still wins over the shipped one.
+- **A blank 300px box is a question with no hint.** A new preset now opens on the five-part skeleton every good prompt shares, so the work is editing rather than starting; the textarea keeps a placeholder for when it is cleared; and `$ARGUMENTS` — the one token a preset cannot work without and nobody remembers how to spell — gets a button that inserts it at the caret.
+
+**Status:** `Done 2026-07-25.` Go suite green (7 preset tests: name validation, folder-created-on-save, override-then-delete restores the bundled original, cover round trip, cover not mistaken for a prompt, every bundled preset ships a cover, user cover wins); frontend 23 tests green (gallery renders shipped covers as images and falls back to the generated one, clicking a card opens its full text with the override note and a locked name, a new preset opens on the skeleton). Desktop rebuilt.
 
 ---
 

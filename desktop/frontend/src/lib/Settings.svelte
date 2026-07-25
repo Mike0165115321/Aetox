@@ -437,13 +437,31 @@
     confirmDelete = false
   }
 
+  // A blank 300px textarea tells you nothing about what belongs in it, so a new
+  // preset starts on the skeleton every good prompt shares (role and goal,
+  // hard constraints, where the arguments go) — edit-and-replace beats
+  // stare-at-nothing.
   function newPreset() {
     editing = { name: '', description: '', body: '', path: '', builtin: false, image: '' }
     draftName = ''
-    draftBody = ''
+    draftBody = t('settings.promptStarter')
     draftImage = ''
     presetError = ''
     confirmDelete = false
+  }
+
+  // Inserts at the caret, because $ARGUMENTS is the one token a preset cannot
+  // work without and the one nobody remembers how to spell.
+  let bodyEl = $state<HTMLTextAreaElement | null>(null)
+  function insertArguments() {
+    const el = bodyEl
+    if (!el) { draftBody += '$ARGUMENTS'; return }
+    const at = el.selectionStart ?? draftBody.length
+    draftBody = draftBody.slice(0, at) + '$ARGUMENTS' + draftBody.slice(el.selectionEnd ?? at)
+    requestAnimationFrame(() => {
+      el.focus()
+      el.setSelectionRange(at + 10, at + 10)
+    })
   }
 
   async function runPreset(label: string, fn: () => Promise<void>) {
@@ -938,11 +956,20 @@
               </div>
             </div>
 
-            <label class="pp-field">
-              <span class="eyebrow">{t('settings.promptBody')}</span>
-              <textarea class="ctrl pp-textarea" bind:value={draftBody} spellcheck="false"></textarea>
+            <div class="pp-field">
+              <div class="pp-bodyhead">
+                <span class="eyebrow" style="flex:1">{t('settings.promptBody')}</span>
+                <button class="ctrl tiny" onclick={insertArguments}>+ $ARGUMENTS</button>
+              </div>
+              <textarea
+                class="ctrl pp-textarea"
+                bind:this={bodyEl}
+                bind:value={draftBody}
+                spellcheck="false"
+                placeholder={t('settings.promptBodyPlaceholder')}
+              ></textarea>
               <div class="d muted">{t('settings.promptBodyHint')}</div>
-            </label>
+            </div>
 
             {#if presetError}<div class="mset-error">{presetError}</div>{/if}
           </div>

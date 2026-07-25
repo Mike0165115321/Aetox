@@ -33,7 +33,7 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/config"
 )
 
-//go:embed presets/*.md
+//go:embed presets/*.md presets/covers/*.svg
 var bundledPresets embed.FS
 
 // Preset is one prompt preset, for management UIs.
@@ -302,12 +302,20 @@ func presetImagePath(name string) (string, bool) {
 	return "", false
 }
 
-// presetImage returns the cover as a data URI. Empty when there is none, when
-// it is unreadable, or when it is too big to be worth inlining — the card
-// falls back to a generated cover in every one of those cases.
+// presetImage returns the cover as a data URI: the user's file if they set
+// one, otherwise the SVG that ships with the preset. Empty only when neither
+// exists or the file is too big to be worth inlining — then the card draws its
+// generated cover instead.
+//
+// The bundled covers are hand-drawn SVGs of what each preset produces (a
+// wireframe for /landing, a waveform feeding timestamps for /clip). Vector, so
+// a few KB each buys a real thumbnail without putting bitmaps in the installer.
 func presetImage(name string) string {
 	path, ok := presetImagePath(name)
 	if !ok {
+		if svg, err := bundledPresets.ReadFile("presets/covers/" + name + ".svg"); err == nil {
+			return "data:image/svg+xml;base64," + base64.StdEncoding.EncodeToString(svg)
+		}
 		return ""
 	}
 	info, err := os.Stat(path)

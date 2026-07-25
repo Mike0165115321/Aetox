@@ -131,6 +131,43 @@ func TestUserPresetShadowsBundled(t *testing.T) {
 	}
 }
 
+// Every bundled preset ships its own cover art. A gallery where some cards
+// have a picture and others have a coloured rectangle looks broken, not
+// minimal — so this is all-or-nothing by test.
+func TestEveryBundledPresetShipsACover(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+	for _, p := range ListPresets() {
+		if !p.Builtin {
+			continue
+		}
+		if !strings.HasPrefix(p.Image, "data:image/svg+xml;base64,") {
+			t.Errorf("bundled preset %q has no cover — add internal/command/presets/covers/%s.svg", p.Name, p.Name)
+		}
+	}
+}
+
+// A user cover replaces the shipped one rather than fighting it.
+func TestUserCoverWinsOverBundledCover(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("AETOX_DATA_ROOT", root)
+	src := filepath.Join(t.TempDir(), "shot.png")
+	if err := os.WriteFile(src, []byte("\x89PNG\r\n\x1a\nfake"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := SavePresetImage("landing", src); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range ListPresets() {
+		if p.Name == "landing" {
+			if !strings.HasPrefix(p.Image, "data:image/png;base64,") {
+				t.Errorf("user cover should win, got %.40q", p.Image)
+			}
+			return
+		}
+	}
+	t.Fatal("landing preset disappeared")
+}
+
 func TestValidPresetNameRejectsWhatCannotBeAFilename(t *testing.T) {
 	for _, bad := range []string{"", "  ", "..", ".", "a/b", `a\b`, "a b", "a:b", "a*b", strings.Repeat("ก", 41)} {
 		if err := ValidPresetName(bad); err == nil {

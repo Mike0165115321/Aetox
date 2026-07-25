@@ -286,6 +286,20 @@ export const en: Record<keyof typeof th, string> = {
   'settings.promptDropImage': 'Remove image',
   'settings.promptCoverHint': 'Show what this prompt produces, so anyone can see what they get. Optional — a cover is generated otherwise.',
   'settings.promptBody': 'Prompt',
-  'settings.promptBodyHint': 'Put $ARGUMENTS where whatever follows the command should go.',
+  'settings.promptBodyHint': 'Put $ARGUMENTS where whatever follows the command should go — the first line becomes the description on the card.',
+  'settings.promptBodyPlaceholder': 'Write the prompt here…\n\nThe ones that work carry five things:\nrole and goal · real context · hard constraints\nan output format · an instruction to check its own work',
+  'settings.promptStarter': `Say what to do, in what role, and what a good result looks like
+(this first line becomes the description on the card)
+
+**Must have**
+- the thing it cannot skip
+- the thing it must always include
+
+**Never**
+- what you do not want — be more specific here than about what you do
+
+Check your own work before answering; say so plainly if unsure.
+
+**What I type after the command:** $ARGUMENTS`,
   'settings.promptOverrideNote': 'This one ships with Aetox — saving creates your own copy over it. The original stays; delete yours and it comes back.',
 }

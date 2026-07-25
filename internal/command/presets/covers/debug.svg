@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 150" width="320" height="150">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#431407"/><stop offset="1" stop-color="#0f172a"/>
+    </linearGradient>
+  </defs>
+  <rect width="320" height="150" fill="url(#bg)"/>
+  <!-- the reported symptom, top right -->
+  <rect x="196" y="18" width="108" height="26" rx="7" fill="#fb923c" opacity=".16"/>
+  <rect x="196" y="18" width="108" height="26" rx="7" fill="none" stroke="#fb923c" stroke-opacity=".45"/>
+  <text x="208" y="35" font-family="monospace" font-size="9" fill="#fdba74">symptom</text>
+  <!-- trace back to the shared frame -->
+  <path d="M196 31 C150 31 150 74 112 74" fill="none" stroke="#fb923c" stroke-opacity=".5" stroke-width="1.6" stroke-dasharray="4 3"/>
+  <!-- root cause -->
+  <circle cx="96" cy="74" r="17" fill="#ea580c" opacity=".28"/>
+  <circle cx="96" cy="74" r="17" fill="none" stroke="#fb923c" stroke-opacity=".8"/>
+  <circle cx="96" cy="74" r="5" fill="#fb923c"/>
+  <text x="60" y="106" font-family="monospace" font-size="9" fill="#fdba74" fill-opacity=".85">root cause</text>
+  <!-- sibling callers found by grep -->
+  <path d="M96 91 L52 116" fill="none" stroke="#fff" stroke-opacity=".22" stroke-width="1.4"/>
+  <path d="M96 91 L160 116" fill="none" stroke="#fff" stroke-opacity=".22" stroke-width="1.4"/>
+  <path d="M96 91 L246 112" fill="none" stroke="#fff" stroke-opacity=".22" stroke-width="1.4"/>
+  <rect x="28" y="116" width="48" height="14" rx="4" fill="#fff" opacity=".1"/>
+  <rect x="136" y="116" width="48" height="14" rx="4" fill="#fff" opacity=".1"/>
+  <rect x="222" y="112" width="48" height="14" rx="4" fill="#fff" opacity=".1"/>
+  <text x="222" y="140" font-family="monospace" font-size="8.5" fill="#fff" fill-opacity=".35">every caller</text>
+</svg>
