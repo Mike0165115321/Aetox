@@ -36,3 +36,4 @@
 
 - Engine behavior does not belong here — if it isn't presentation, persistence, or a native-window concern, put it in `internal/*`.
 - `wailsruntime.EventsEmit` requires a real Wails context — code paths that tests reach must guard `a.ctx != nil` (see `TEST-REPORT.md` on what's structurally untestable).
+- **A binding that returns a slice returns it through `jsonSlice()`** ([jsonslice.go](jsonslice.go)). A nil Go slice marshals to JSON `null`, the frontend does `.length` on it, and Svelte aborts the render mid-flush — the page looks unclickable rather than broken (ARCHITECTURE.md §34). `binding_slices_test.go` enforces it.

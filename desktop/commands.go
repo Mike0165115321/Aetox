@@ -12,7 +12,7 @@ import (
 // ListCustomCommands reports the user's custom slash commands
 // (<DataRoot>/commands/*.md) for the Settings page.
 func (a *App) ListCustomCommands() []command.CustomCommand {
-	return command.ListCustom()
+	return jsonSlice(command.ListCustom())
 }
 
 // OpenCommandsFolder creates the commands directory if needed and reveals it

@@ -14,7 +14,7 @@ import (
 // the Settings → Skills page. Fresh scan per call — the page is the manager,
 // it must see what's on disk right now, not what the engine loaded at boot.
 func (a *App) ListExternalSkills() []skill.DiscoveredSkill {
-	return skill.ListDiscovered(skill.DefaultDiscoveryPaths())
+	return jsonSlice(skill.ListDiscovered(skill.DefaultDiscoveryPaths()))
 }
 
 // InstallSkillFromGitHub runs the plugin_install tool directly (a Settings
