@@ -1244,7 +1244,12 @@ func resolveConfig(opts config.ConfigOptions) config.Config {
 	if cfg.ModelAPIKey == "" {
 		cfg.ModelAPIKey = model.ResolveModelAPIKey(cfg.ModelProvider)
 	}
-	if cfg.ModelName == "" && !strings.EqualFold(cfg.ModelProvider, "aetox") {
+	// Every provider gets its catalog default, aetox included. It used to be
+	// excluded, from when its models were only test fixtures and a made-up name
+	// in the picker would have been noise — but aetox-grid is now a real
+	// default with a real job (it answers the guide, §42), so a fresh install
+	// that shows no model name at all is the wrong end of that trade.
+	if cfg.ModelName == "" {
 		cfg.ModelName = model.DefaultModel(cfg.ModelProvider)
 	}
 	cfg.ThinkLevel = model.NormalizeThinkingLevel(cfg.ModelProvider, cfg.ModelName, cfg.ThinkLevel)

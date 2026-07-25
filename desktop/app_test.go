@@ -484,3 +484,19 @@ func TestApplyConfigInheritsPriorAgentContext(t *testing.T) {
 		t.Fatal("tool result must survive the model switch (prior context inheritance)")
 	}
 }
+
+// A fresh install — no preference file — must land on Aetox's own engine with
+// its real model name showing, not a blank. aetox used to be excluded from the
+// catalog-default fill, which left the composer with no model name at all on
+// first run (ARCHITECTURE.md §43).
+func TestFreshInstallDefaultsToTheGuideModel(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir()) // no model-preference.json anywhere
+	cfg := resolveConfig(config.ConfigOptions{RootPath: t.TempDir()})
+
+	if cfg.ModelProvider != "aetox" {
+		t.Errorf("fresh install provider = %q, want aetox (its own engine, no key needed)", cfg.ModelProvider)
+	}
+	if cfg.ModelName != "aetox-grid" {
+		t.Errorf("fresh install model = %q, want aetox-grid — a blank name shows nothing in the picker", cfg.ModelName)
+	}
+}

@@ -1331,6 +1331,24 @@ Only the guide gets the two-column treatment: `ask_user`'s own panel keeps its s
 
 ---
 
+## 43. Decision — A Fresh Install Shows Its Model Name (2026-07-25)
+
+**Trigger:** owner — *"ผมให้ค่าเริ่มต้นไง ตอนเปิดมาครั้งแรกหลังติดตั้งอ่ะ ให้เป็น aetox grid"*.
+
+**Probed rather than assumed.** A throwaway test against `resolveConfig` with no preference file reported `provider="aetox" model=""` — **the model name was blank on a fresh install**, so the composer chip fell back to showing the provider. The catalog has had `FallbackModel: "aetox-grid"` all along; it just never reached a first run.
+
+**The cause was one deliberate exclusion** ([desktop/app.go](desktop/app.go)): `if cfg.ModelName == "" && !strings.EqualFold(cfg.ModelProvider, "aetox")`. It dates from §27, when every aetox model was a test fixture and putting a made-up name in the picker would have been noise. That trade has since inverted — `aetox-grid` answers the guide (§42) and is what a fresh install actually runs on — so the exclusion is gone and aetox gets its catalog default like every other provider.
+
+**Checked before removing, not after:** the noop provider switches on substrings (`image`/`think`/`markdown`/`tools`), and `aetox-grid` matches none of them, so the behavior on a fresh install is unchanged — only the name it reports.
+
+**Pinned by a test, because a default that nobody looks at is a default that drifts.** `TestFreshInstallDefaultsToTheGuideModel` runs `resolveConfig` against an empty data root and asserts both provider and model name.
+
+**Footnote on naming:** the model was briefly renamed to `aetox-guide` on a misread of this instruction, then reverted within the same turn. It stays `aetox-grid`.
+
+**Status:** `Done 2026-07-25.` Go green, frontend 33 green, desktop rebuilt.
+
+---
+
 ## Validation
 
 1. **Claim traceability:** every claim above cites a file or an existing project doc; the two `Unverified`/`Inferred, Verify first: Yes` items are marked as such, not stated as fact.
