@@ -424,6 +424,15 @@ export function clearPendingFile(): void {
   cockpit.pendingFile = null
 }
 
+/** A canned Aetox guide exchange, appended straight to the transcript. No model
+ * is involved on purpose: these are questions *about Aetox*, asked while Aetox
+ * has no model configured to answer them — and keeping the text in the locale
+ * files is what makes it follow the UI language with no locale plumbed into Go. */
+export function pushGuideExchange(question: string, answer: string): void {
+  cockpit.chat.push({ role: 'user', text: question, time: nowLabel() })
+  cockpit.chat.push({ role: 'agent', text: answer, time: nowLabel() })
+}
+
 /** Stage a dragged-in workbench tab (file or browser) as the composer's pending
  * context — read fresh from disk/page rather than trusting any stale in-memory
  * copy, so the model sees what's there now. */

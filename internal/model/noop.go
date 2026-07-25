@@ -16,6 +16,11 @@ type NoopProvider struct {
 // so every chat request lands here (see config.Load: provider defaults to
 // "aetox") until they visit Settings. It replaces what used to be a raw
 // "[noop:model] text" debug echo, which no first-time user should ever see.
+//
+// Bilingual by construction, not by locale: nothing tells Go which language the
+// UI is in (§39 — the guide chips that follow this reply live in the frontend
+// locale files precisely because they can switch and this cannot). Both halves
+// are complete on their own, so neither language reads as an afterthought.
 const noopOnboardingReply = `สวัสดีครับ Aetox ยังไม่ได้เชื่อมต่อกับโมเดลจริง
 
 **ทำไมถึงเป็นแบบนี้**
@@ -27,7 +32,13 @@ Aetox เกิดจากความคิดของนักพัฒน�
 **วิสัยทัศน์ของเรา**
 แม้ว่าทางเราจะไม่มีทุน แต่เรามีวิสัยทัศน์ ผู้พัฒนาเล็งเห็นว่า หัวใจไม่ใช่ความรู้ในโมเดล แต่คือ Architecture ที่ควบคุมวิธีคิด แต่เราไม่มีทุนในการเทรนโมเดลใหม่เอง จำใจต้องใช้วิธีนี้
 
-(Aetox isn't connected to a real model yet — open Settings and pick a provider you trust to power it.)`
+---
+
+**Aetox isn't connected to a real model yet.**
+
+Aetox is built by one developer — no team, no company, and no budget to hand out free model access. Open **Settings → Model settings**, pick a provider you trust, and it powers Aetox from there. Want nothing leaving your machine? Choose **Ollama** or **LM Studio** and run the model locally.
+
+The bet behind this: what makes an agent useful is the architecture governing how it works, not the knowledge packed into the model.`
 
 func NewNoopProvider(model string) *NoopProvider {
 	return &NoopProvider{DefaultModel: model}

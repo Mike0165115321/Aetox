@@ -1233,6 +1233,26 @@ He was right, and §36 had caused it: `+` opened a palette whose Context group's
 
 ---
 
+## 39. Decision — The Guide Lives in the Locale Files, Not in the Engine (2026-07-25)
+
+**Trigger:** owner, after settling that *"สกิลคือสิ่งที่โมเดลเรียกเองได้ ส่วนพรอมต์คือคำสั่งสำเร็จว่าเราจะเรียกตอนไหน"* — *"ตอนกด Aetox อ่ะครับ เวลามันตอบให้มันยื่นคำถามมาด้วย ทีละประเด็นเป็นไกด์ ... คำตอบสำเร็จรูปของ Aetox ต้องเปลี่ยนตามภาษานะครับ เช็คดีๆ ... เปลี่ยนชื่อด้วย Aetox 0.0.1 บ้าอะไร"*.
+
+**The constraint decided the architecture.** A guide about Aetox is needed exactly when Aetox has **no model configured** — that is the whole point of the built-in engine. So the answers must be canned. And they must follow the UI language. But **nothing tells Go which language the UI is in**: `config.Config` has no locale field and no binding sets one. Plumbing one through `BootstrapOptions` → `ProviderOptions` → `NoopProvider` would be ~40 lines and a re-bootstrap on every language switch.
+
+**So the guide lives in the frontend locale files.** Question and answer are both `t()` keys, which means language switching is not a feature that had to be built — it is the absence of a problem. `pushGuideExchange` appends the pair straight to the transcript; no model is involved, because there is no model to involve and nothing a model could add about software it has never seen.
+
+**Chips appear only on the built-in engine** (`model.provider === 'aetox'`), one topic at a time, each disappearing once asked. A configured model answers for itself, and canned chips under a real reply would be noise.
+
+**Six topics**, ordered by what a first-run user actually hits: skills vs presets (the distinction that prompted this), how to use presets, how to connect a real model, data safety, what the tools do, who built it and why. The first answer states the real difference — **who invokes it**, not "one calls tools" — because §35/§36's own code proves `markdownSkill.Execute` returns its body and calls nothing ([discovery.go:29](internal/skill/discovery.go#L29)).
+
+**Renamed `Aetox0.0.1:0b` → `aetox-review`.** Owner's call and overdue: the id was a fake version number in a family whose other members are `aetox-image:test`, `aetox-think:test`, `aetox-tools:test`. Renamed at the catalog and every test that pinned it.
+
+**Found and reported, not silently fixed:** the onboarding greeting itself still cannot switch language, for the reason above — it is engine-side. Rather than leave English users with one trailing line, both halves are now complete on their own. Full switching needs the locale plumbed into Go, which is a separate decision to make deliberately rather than smuggle in here.
+
+**Status:** `Done 2026-07-25.` Go green; frontend 32 tests (4 new: the exchange lands without a model, every topic has a real question and answer in **both** languages with missing-key detection, switching locale switches the answer text and not just labels, and the skills-vs-presets answer actually names who invokes each). Desktop rebuilt.
+
+---
+
 ## Validation
 
 1. **Claim traceability:** every claim above cites a file or an existing project doc; the two `Unverified`/`Inferred, Verify first: Yes` items are marked as such, not stated as fact.

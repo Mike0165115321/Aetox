@@ -14,7 +14,7 @@
   import { openUrlInWorkbench } from './stores/workbench.svelte'
   import {
     cockpit, attachImageFromPath, clearPendingImage, attachTabContext, clearPendingContext,
-    attachFileFromPath, clearPendingFile, fileKind,
+    attachFileFromPath, clearPendingFile, fileKind, pushGuideExchange,
     openProject, openFolder, clearProjectFocus, cancelTurn, answerAsk,
   } from './stores/cockpit.svelte'
 
@@ -170,6 +170,31 @@
   })
   function liveSecs(s: ToolStep): number {
     return Math.max(0, Math.round((now - s.startedAt) / 1000))
+  }
+
+  // Guided onboarding: while Aetox runs on its own built-in engine there is no
+  // model to answer questions about Aetox, so the answers are canned — and they
+  // live in the locale files, which is also why they follow the UI language for
+  // free rather than needing a locale plumbed into Go (ARCHITECTURE.md §39).
+  const guideTopics = $derived([
+    { key: 'skills', q: t('guide.q1'), a: t('guide.a1') },
+    { key: 'prompts', q: t('guide.q2'), a: t('guide.a2') },
+    { key: 'connect', q: t('guide.q3'), a: t('guide.a3') },
+    { key: 'privacy', q: t('guide.q4'), a: t('guide.a4') },
+    { key: 'tools', q: t('guide.q5'), a: t('guide.a5') },
+    { key: 'who', q: t('guide.q6'), a: t('guide.a6') },
+  ])
+  let askedGuide = $state<string[]>([])
+  const remainingGuide = $derived(guideTopics.filter((g) => !askedGuide.includes(g.key)))
+  // Only while running on the built-in engine: a configured model answers for
+  // itself, and canned chips under a real reply would be noise.
+  const guideOpen = $derived(
+    model.provider === 'aetox' && !awaitingReply && messages.length > 0 && remainingGuide.length > 0,
+  )
+
+  function askGuide(topic: { key: string; q: string; a: string }) {
+    askedGuide = [...askedGuide, topic.key]
+    pushGuideExchange(topic.q, topic.a)
   }
 
   const starters = $derived([
@@ -424,6 +449,17 @@
           </div>
         </div>
       {/each}
+
+      {#if guideOpen}
+        <div class="guide">
+          <div class="guide-head">{t('guide.intro')}</div>
+          <div class="guide-chips">
+            {#each remainingGuide as g (g.key)}
+              <button class="guide-chip" onclick={() => askGuide(g)}>{g.q}</button>
+            {/each}
+          </div>
+        </div>
+      {/if}
 
       {#if awaitingReply}
         <div class="msg bot">

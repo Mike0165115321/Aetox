@@ -85,7 +85,7 @@ func TestNoopProviderTestModels(t *testing.T) {
 
 	// the catalog's default noop model is what a genuinely unconfigured
 	// install lands on — it must guide the user to Settings, not echo debug text
-	if got := ask("Aetox0.0.1:0b", "สวัสดี").Text; got != noopOnboardingReply {
+	if got := ask("aetox-review", "สวัสดี").Text; got != noopOnboardingReply {
 		t.Errorf("default model must return the onboarding reply, got %q", got)
 	}
 }
@@ -152,7 +152,7 @@ func TestNoopToolsModelScriptsToolLoop(t *testing.T) {
 	if !p.SupportsToolCalling() {
 		t.Fatal("aetox-tools:test must opt into tool calling")
 	}
-	if NewNoopProvider("Aetox0.0.1:0b").SupportsToolCalling() {
+	if NewNoopProvider("aetox-review").SupportsToolCalling() {
 		t.Fatal("plain aetox models must stay tool-less")
 	}
 
