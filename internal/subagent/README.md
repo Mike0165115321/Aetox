@@ -23,7 +23,7 @@ Frontmatter is parsed by `skill.ParseFrontmatter` — one `key: value` per line,
 
 | | Where |
 |---|---|
-| Bundled | [profiles/](profiles) via `//go:embed` — `explore`, `general`. Present on a fresh install with no folder created |
+| Bundled | [profiles/](profiles) via `//go:embed` — `explore` (read-only searcher, 4 tools) and `general` (the looper: a list of items is ONE job it works through itself, 48 steps). Present on a fresh install with no folder created |
 | User | `<DataRoot>/subagents/*.md`. A file named after a bundled one **wins**; deleting it restores the original — that is the "revert" |
 
 ## How one runs — and why it does not block
@@ -36,6 +36,10 @@ Two tools, registered together by `NewTaskTools` and sharing one runner ([runner
 One start does: pick the profile → `FilterRegistry` for the child's tools → a fresh `cognitive.Agent` on the profile's brief and cap → a full turn through the real `turn.Executor`, in a goroutine → the collector gets the final text plus `[task <name>: N tool calls, X.Ys]`, and nothing else. Tool events are stamped with the `task` call's id (`turn.CallID`) so the UI shows them as the delegate's work.
 
 Because starting never waits, N delegates started before the first collect run at the same time — parallelism is a property of the pair, not a separate mechanism. Four in flight per turn is the cap. A delegate's context descends from the turn's, so Stop kills every outstanding one and nothing outlives the reply.
+
+**Repeated work is one delegate looping**, never one per item: a delegate already runs its own tool loop, so twelve files is one brief with twelve items. `task`'s description says so, because one-delegate-per-item pays for twelve fresh contexts.
+
+A loop that ends without the delegate choosing to — its step cap, or the doom-loop guard — comes back as a **failed** result naming the next action (split the batch / sharpen the brief), recognised via `cognitive.ToolLoopExhausted` and `cognitive.DoomLoopStopPrefix` rather than by matching their prose.
 
 ## What consumes a profile
 

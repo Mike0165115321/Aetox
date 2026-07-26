@@ -58,6 +58,19 @@ const maxDSMLNudges = 2
 
 const dsmlLeakNudge = "[system] Your previous reply wrote a tool call as plain-text markup, so nothing ran and no file was created. Do NOT write tool calls as text or invent your own tool-call format. Call the tool through the normal tool interface — e.g. the write tool with a `path` argument (not `file_path`) and a `content` argument. You may issue several tool calls at once. Do it now."
 
+// The two ways a tool loop can end without the model choosing to stop. Both are
+// returned as ordinary replies (no error) because the user has to see them — but
+// a *caller* has to be able to recognise them too, and matching the prose would
+// break the first time it is reworded or translated (the §27 lesson). A sub-agent
+// turns both into something its parent can act on (internal/subagent).
+const (
+	// ToolLoopExhausted is the reply when MaxToolCalls is reached.
+	ToolLoopExhausted = "agent tool loop reached maximum iterations"
+	// DoomLoopStopPrefix begins the reply when the doom-loop guard aborts an
+	// identical call repeated with no progress.
+	DoomLoopStopPrefix = "หยุดการทำงาน:"
+)
+
 const dsmlLeakFallback = "โมเดลพยายามเรียกเครื่องมือแต่ส่งออกมาเป็นข้อความแทนคำสั่งจริง จึงไม่มีอะไรทำงานและไม่มีไฟล์ถูกสร้าง — ลองสั่งใหม่หรือเปลี่ยนโมเดลครับ (The model wrote a tool call as text instead of a real call, so nothing ran. Try again or switch models.)"
 
 const compactionPrompt = "You are compacting a long conversation so it can continue in less context. " +
@@ -299,7 +312,7 @@ func (a *Agent) RespondWithTools(
 			}
 			if repeatedCalls >= doomLoopStop {
 				debuglog.Msg("doom loop: %s repeated %d times, stopping", toolCall.Function.Name, repeatedCalls)
-				stopMsg := fmt.Sprintf("หยุดการทำงาน: เรียกเครื่องมือ %s ด้วยค่าเดิมซ้ำ %d ครั้งติดกันโดยไม่คืบหน้า — ลองสั่งใหม่หรือปรับคำสั่งดูครับ", toolCall.Function.Name, repeatedCalls)
+				stopMsg := fmt.Sprintf("%s เรียกเครื่องมือ %s ด้วยค่าเดิมซ้ำ %d ครั้งติดกันโดยไม่คืบหน้า — ลองสั่งใหม่หรือปรับคำสั่งดูครับ", DoomLoopStopPrefix, toolCall.Function.Name, repeatedCalls)
 				a.context.AddMessage(model.Message{
 					Role:       model.RoleTool,
 					Name:       toolCall.Function.Name,
@@ -335,7 +348,7 @@ func (a *Agent) RespondWithTools(
 		}
 	}
 
-	return "agent tool loop reached maximum iterations", anyToolUsed, nil
+	return ToolLoopExhausted, anyToolUsed, nil
 }
 
 // completeToolLoop runs one tool-loop request. When a reasoning handler is

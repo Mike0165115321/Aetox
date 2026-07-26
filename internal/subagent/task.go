@@ -85,7 +85,11 @@ func (t *taskTool) Description() string {
 		"files for something you cannot name yet, or the same mechanical change repeated across many places. " +
 		"WHEN NOT TO: anything you can already name. Reading a file, one grep, one edit, a handful of known " +
 		"paths — do those yourself. A delegate costs a second system prompt and its own tool list on every " +
-		"round, so a small job is strictly more expensive delegated than done here. Available: " +
+		"round, so a small job is strictly more expensive delegated than done here. " +
+		"REPEATED WORK IS ONE JOB: hand the whole list to ONE sub-agent and let it loop — twelve items is one " +
+		"task with twelve items in its prompt, never twelve tasks. Each sub-agent you start pays for its own " +
+		"context, so starting one per item multiplies the cost of the very thing you were saving. " +
+		"Start several only when the jobs are genuinely unrelated. Available: " +
 		strings.Join(profileNames(), ", ") + "."
 }
 
@@ -245,6 +249,24 @@ func (t *taskTool) ExecuteTool(ctx context.Context, args map[string]any) (skill.
 		reply := strings.TrimSpace(result.Reply)
 		if reply == "" {
 			reply = "(the sub-agent returned nothing)"
+		}
+		// A loop that ends without the delegate choosing to stop is not a result.
+		// Both of cognitive's endings are replies rather than errors (the user has to
+		// see them), and both are useless to a parent model as written — one is an
+		// internal sentence, the other is Thai prose addressed to a human. Recognised
+		// by exported sentinel, not by matching the words, and turned into the thing
+		// the parent can actually do next.
+		switch {
+		case strings.Contains(reply, cognitive.ToolLoopExhausted):
+			return failure(self.id, label, elapsed, fmt.Sprintf(
+				"sub-agent %s ran out of room: it used all %d of its tool-call steps after %d calls and did not finish. "+
+					"Split the work into smaller batches and start it again, or raise `steps:` in its profile.",
+				profile.Name, profile.MaxToolCalls(), self.calls()))
+		case strings.HasPrefix(reply, cognitive.DoomLoopStopPrefix):
+			return failure(self.id, label, elapsed, fmt.Sprintf(
+				"sub-agent %s was stopped after repeating the same tool call with no progress (%d calls). "+
+					"Its brief was probably too vague to act on — say concretely what to look at and what the answer must contain, then start it again.",
+				profile.Name, self.calls()))
 		}
 		// What the parent model sees: the result, plus one line of receipt. NOT the
 		// delegate's tool log — that would put back the context cost delegating just

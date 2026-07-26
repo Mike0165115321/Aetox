@@ -1486,6 +1486,19 @@ The model stays in charge of what happens in between, which is exactly the disti
 - **`task_result` waits with no cap of its own.** The turn's ctx (Stop) is the brake, same as the tool loop itself. A model that collects too early waits — which is the cost of its own ordering, and the description tells it to work first.
 - **The single-delegation case pays one extra round trip** versus the old blocking call. Accepted: the alternative is two modes of one tool, and the model can always collect immediately when it has nothing else to do.
 
+### 44.12 Repeated work is one delegate looping, not one delegate per item
+
+Owner, thinking past the feature — *"งานซ้ำอ่ะ ไม่จำเป็นต้องทำเอเจนแยก ให้มันลูปเลย เราทำให้ซับเอเจนทำหน้าที่นั้นได้เลยนี่หว่า"*. Right, and it is worth being explicit about **why nothing had to be built for it**: a delegate already runs a full tool loop of its own, so "do this to twelve files" is one brief with twelve items in it. The looping is the sub-agent, not a layer above it.
+
+What that made necessary was a *guard*, because §44.11 had just made the expensive version possible: twelve delegates with one item each, each paying for its own fresh context — multiplying exactly the cost delegation exists to avoid. So:
+
+- **`task`'s description states it as a rule:** *REPEATED WORK IS ONE JOB — hand the whole list to ONE sub-agent and let it loop; twelve items is one task with twelve items in its prompt, never twelve tasks.* With the cost reason attached, and the exception named (start several only when the jobs are genuinely unrelated).
+- **`general` is now written as the looper it always was.** Its brief says a list is one job, work through it one after another in the same run, verify as you go, carry on past a failed item with the failure named, and — if it runs out of room — say exactly where it stopped so the work can be resumed rather than repeated. Its cap went from the default 24 to **48**, because a loop over a list needs more rounds than a search does.
+
+**Two real bugs this exposed, both about a loop that ends without the delegate choosing to.** `cognitive`'s tool loop has two such endings — the `MaxToolCalls` ceiling and the doom-loop guard — and both are returned as ordinary *replies* rather than errors, because the user has to see them. For a delegate that is wrong twice over: the parent model got `agent tool loop reached maximum iterations` (an internal sentence) or `หยุดการทำงาน: …ลองสั่งใหม่หรือปรับคำสั่งดูครับ` (Thai prose addressed to a human), **and both came back marked successful**.
+
+Fixed at both ends. `cognitive` exports the two sentinels (`ToolLoopExhausted`, `DoomLoopStopPrefix`) so a caller can recognise them **without matching prose** — the §27 lesson, where the frontend once decided success by matching a Thai word. `task` translates each into the next action: a step-cap ending says *split the work into smaller batches or raise `steps:`*, a doom-loop ending says *the brief was too vague, say concretely what to look at*. Both are failed results, so the parent cannot mistake either for an answer.
+
 ### 44.7 Out of scope for the walking skeleton
 
 ~~Parallel fan-out~~ (arrived with §44.11 — N delegates in flight, collected in one call), background tasks returning as a later synthetic message, persisting sub-agent transcripts, per-call model override beyond what the profile names, anything from ADR 0002 (ensemble/routing/consensus), cross-process orchestration.

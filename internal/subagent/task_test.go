@@ -541,3 +541,128 @@ func TestCollectingAnUnknownIDNamesWhatIsRunning(t *testing.T) {
 		t.Errorf("collecting twice failed: %q", twice.Content)
 	}
 }
+
+// Repetitive work is one delegate looping, not one delegate per item — the model
+// has to be told, because fanning out is now possible and is much more expensive.
+func TestTaskDescriptionPrefersOneLoopingDelegate(t *testing.T) {
+	isolate(t)
+	d := namedTool(t, NewTaskTools(TaskOptions{}), "task").Description()
+	for _, want := range []string{"REPEATED WORK IS ONE JOB", "never twelve tasks", "own context"} {
+		if !strings.Contains(d, want) {
+			t.Errorf("the description does not steer repeated work into one delegate (%q): %s", want, d)
+		}
+	}
+}
+
+// general is the looper, so its brief has to say a list is one job and its cap has
+// to be big enough for one.
+func TestGeneralIsTheLooper(t *testing.T) {
+	isolate(t)
+	p, ok := Load("general")
+	if !ok {
+		t.Fatal("general profile missing")
+	}
+	if p.MaxToolCalls() <= defaultSteps {
+		t.Errorf("general's cap is %d, no bigger than the default %d — a loop over a list needs room", p.MaxToolCalls(), defaultSteps)
+	}
+	for _, want := range []string{"A list is one job", "one after another", "where you stopped"} {
+		if !strings.Contains(p.Prompt, want) {
+			t.Errorf("general's brief is missing %q", want)
+		}
+	}
+}
+
+// Both ways a delegate's loop can end without it choosing to must reach the parent
+// as something it can act on — not as cognitive's internal sentence, and not as
+// Thai prose written for a human to read.
+func TestALoopThatEndsItselfIsAnActionableFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		provider model.Provider
+		want     []string
+	}{
+		{
+			// Identical calls trip the doom-loop guard before the step cap.
+			name: "doom loop", provider: &loopingProvider{},
+			want: []string{"repeating the same tool call", "too vague"},
+		},
+		{
+			// Varied calls get all the way to the step cap.
+			name: "step cap exhausted", provider: &variedLoopProvider{},
+			want: []string{"ran out of room", "smaller batches"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			isolate(t)
+			registry := skill.NewDefaultRegistry(skill.RegistryOptions{SandboxRoot: t.TempDir()})
+			// A provider that never stops calling tools is the only way to reach either
+			// ending; that is a provider *edge case*, which §45 still allows a stub for.
+			for _, tool := range NewTaskTools(TaskOptions{
+				Provider:     tc.provider,
+				Model:        "loop-fake",
+				Registry:     registry,
+				ApprovalMode: safety.ApprovalFullAccess,
+			}) {
+				if err := registry.Register(tool, skill.SourceBuiltin); err != nil {
+					t.Fatalf("register %s: %v", tool.Name(), err)
+				}
+			}
+
+			ctx := turn.WithCallID(context.Background(), "call_1")
+			dispatcher := skill.NewDispatcher(registry)
+			start, _, err := dispatcher.ExecuteTool(ctx, "task", map[string]any{
+				"description": "endless", "prompt": "keep going forever", "agent": "explore",
+			})
+			if err != nil {
+				t.Fatalf("start: %v", err)
+			}
+			out, _, err := dispatcher.ExecuteTool(ctx, "task_result", map[string]any{"task_id": taskIDOf(t, start)})
+			if err != nil {
+				t.Fatalf("collect: %v", err)
+			}
+			t.Logf("%s: success=%v content=%q", tc.name, out.Success, out.Content)
+
+			if out.Success {
+				t.Error("a delegate that never finished reported success")
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(out.Content, want) {
+					t.Errorf("the parent was not told %q: %q", want, out.Content)
+				}
+			}
+			// Neither of cognitive's own endings may reach the parent as written.
+			if strings.Contains(out.Content, cognitive.ToolLoopExhausted) ||
+				strings.Contains(out.Content, cognitive.DoomLoopStopPrefix) {
+				t.Errorf("an internal stop message leaked to the parent: %q", out.Content)
+			}
+		})
+	}
+}
+
+// loopingProvider always asks for the same tool call, so the doom-loop guard fires.
+type loopingProvider struct{}
+
+func (*loopingProvider) Name() string              { return "loop-fake" }
+func (*loopingProvider) SupportsToolCalling() bool { return true }
+func (*loopingProvider) Complete(_ context.Context, _ model.Request) (model.Response, error) {
+	return model.Response{ToolCalls: []model.ToolCall{{
+		ID:       "loop_1",
+		Type:     "function",
+		Function: model.FunctionCall{Name: "list", Arguments: `{"path":"."}`},
+	}}}, nil
+}
+
+// variedLoopProvider never repeats itself, so it slips past the doom-loop guard
+// and runs until the profile's step cap stops it.
+type variedLoopProvider struct{ n int }
+
+func (*variedLoopProvider) Name() string              { return "loop-fake" }
+func (*variedLoopProvider) SupportsToolCalling() bool { return true }
+func (p *variedLoopProvider) Complete(_ context.Context, _ model.Request) (model.Response, error) {
+	p.n++
+	return model.Response{ToolCalls: []model.ToolCall{{
+		ID:       "loop_" + strconv.Itoa(p.n),
+		Type:     "function",
+		Function: model.FunctionCall{Name: "grep", Arguments: `{"pattern":"x` + strconv.Itoa(p.n) + `","path":"."}`},
+	}}}, nil
+}
