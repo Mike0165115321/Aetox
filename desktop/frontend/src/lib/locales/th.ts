@@ -22,6 +22,7 @@ export const th = {
   'sidebar.showMore': 'แสดงเพิ่ม',
   'sidebar.showLess': 'ย่อ',
   'chat.noProject': 'ไม่โฟกัสโปรเจกต์',
+  'chat.agent': 'เอเจน',
   'chat.provider': 'ผู้ให้บริการ',
   'chat.model': 'โมเดล',
   'chat.thinkLevel': 'ระดับความคิด',
@@ -309,4 +310,40 @@ export const th = {
 
 **สิ่งที่ผมจะพิมพ์ต่อท้ายคำสั่ง:** $ARGUMENTS`,
   'settings.promptOverrideNote': 'นี่คือชุดคำสั่งที่มากับแอป — กดบันทึกจะสร้างเป็นของคุณทับไว้ ของเดิมไม่หาย ลบของคุณเมื่อไหร่ของเดิมก็กลับมา',
+
+  'settings.agents': 'เอเจน',
+  'settings.agentsDesc': 'เอเจนคือชุดของ (บทบาท + เครื่องมือที่ใช้ได้ + โมเดล) — เอเจนคือตัวที่คุยกับคุณ ซับเอเจนคือตัวที่เอเจนสั่งให้ไปทำงานแยก สองชั้นนี้แยกโฟลเดอร์และแยกรายการกันคนละอัน',
+  'settings.agentsPrimary': 'เอเจน',
+  'settings.agentsPrimaryHint': 'ตัวที่คุยกับคุณ — มี 2 ตัว ลงมือทำ กับ วางแผน สลับได้กลางบทสนทนา ประวัติแชทไม่หาย',
+  'settings.agentsSub': 'ซับเอเจน',
+  'settings.agentsSubHint': 'เอเจนหลักสั่งให้ทำงานแยก ไม่เห็นประวัติแชท คืนแค่ผลลัพธ์สุดท้าย',
+  'settings.agentsSubSoon': 'เวอร์ชันนี้ยังเรียกใช้จริงไม่ได้ — เครื่องมือ task ที่ใช้สั่งซับเอเจนยังไม่มา ตอนนี้ตั้งค่าและแก้ไฟล์รอไว้ได้',
+  'settings.agentActive': 'กำลังใช้',
+  'settings.agentUse': 'ใช้เอเจนนี้',
+  'settings.agentBuiltin': 'มากับแอป',
+  'settings.agentMine': 'ของคุณ',
+  'settings.agentAllTools': 'เครื่องมือครบ',
+  'settings.agentToolCount': 'เครื่องมือ {n} ตัว',
+  'settings.agentDenyCount': 'ปิด {n} ตัว',
+  'settings.agentSteps': 'จำกัด {n} รอบ',
+  'settings.agentModelInherit': 'ใช้โมเดลที่เลือกอยู่',
+  'settings.agentsFolder': 'เปิดโฟลเดอร์',
+  'settings.agentsHint': 'ทุกเอเจนคือไฟล์ .md ไฟล์เดียว จะแก้ในนี้หรือแก้ไฟล์ตรงๆ ก็ได้ — ตั้งชื่อชนกับของที่มากับแอปได้ ของคุณจะถูกใช้แทน · เอเจนกับซับเอเจนแยกโฟลเดอร์กันคนละที่ ชื่อซ้ำกันได้ไม่ชนกัน',
+  'settings.agentNew': 'สร้างเอเจนใหม่',
+  'settings.agentBack': 'กลับไปหน้ารวม',
+  'settings.agentName': 'ชื่อ (จะกลายเป็นชื่อไฟล์)',
+  'settings.agentKind': 'ประเภท (ตัดสินจากโฟลเดอร์ที่ไฟล์อยู่)',
+  'settings.agentKindHint': 'เอเจนอยู่ที่ agents/ · ซับเอเจนอยู่ที่ subagents/ (คนละโฟลเดอร์ ไม่ซ้อนกัน) — เปลี่ยนประเภทคือย้ายไฟล์ ไม่ใช่แก้ค่าในไฟล์',
+  'settings.agentBody': 'เนื้อไฟล์เอเจน',
+  'settings.agentBodyHint': 'ส่วนหัวระหว่าง --- คือค่าตั้งค่า (description, mode, model, tools, deny, steps) ที่เหลือคือบทบาทที่ส่งให้โมเดล',
+  'settings.agentOverrideNote': 'นี่คือเอเจนที่มากับแอป — กดบันทึกจะสร้างเป็นของคุณทับไว้ ของเดิมไม่หาย ลบของคุณเมื่อไหร่ของเดิมก็กลับมา',
+  'settings.agentStarter': `---
+description: อธิบายสั้นๆ ว่าเอเจนนี้ทำอะไร (โชว์ในหน้านี้)
+tools:
+deny:
+steps:
+---
+
+บอกว่าเอเจนนี้เป็นใคร ทำงานแบบไหน อะไรที่ต้องทำเสมอ อะไรที่ห้าม
+(ส่วนนี้จะกลายเป็นบทบาทที่ส่งให้โมเดลทุกครั้ง)`,
 }

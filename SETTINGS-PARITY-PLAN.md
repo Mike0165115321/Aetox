@@ -25,7 +25,8 @@ Commands / Indexing / Usage stats / Onboard) กับสิ่งที่ Aeto
 
 - Phase 0 ✅ (`761e5e0`) · Phase 1 ✅ · Phase 2 ✅ · Phase 3 ✅ · Phase 4 ✅ ·
   Phase 5 ✅ — ทุก phase ทดสอบ (unit + สดบน exe จริงเป็นส่วนใหญ่) และ commit แยกแล้ว
-- Phase 6: Decision §25 ร่างแล้ว (Proposed) — **รอ owner อนุมัติก่อนเขียนโค้ด**
+- Phase 6: §25 อนุมัติแล้ว 2026-07-26 และรวมเข้า **§44** (สเปกระดับลงมือ: agent profile,
+  5 โปรไฟล์ที่ ship, 3 ช่องที่ต้องแก้ในไฟล์เดิม, ลำดับ 5 commit) — อ่าน §44 ก่อนเขียนโค้ด
 - หมายเหตุ: CLI ยังไม่ได้ wire `command.ExpandPreset` (desktop-first);
   เพิ่มได้ที่จุดรับ input ของ `cmd/aetox` เมื่อต้องการ
 

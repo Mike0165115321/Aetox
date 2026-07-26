@@ -23,6 +23,7 @@ export const en: Record<keyof typeof th, string> = {
   'sidebar.showMore': 'Show more',
   'sidebar.showLess': 'Show less',
   'chat.noProject': 'No project focus',
+  'chat.agent': 'Agent',
   'chat.provider': 'Provider',
   'chat.model': 'Model',
   'chat.thinkLevel': 'Thinking level',
@@ -310,4 +311,40 @@ Check your own work before answering; say so plainly if unsure.
 
 **What I type after the command:** $ARGUMENTS`,
   'settings.promptOverrideNote': 'This one ships with Aetox — saving creates your own copy over it. The original stays; delete yours and it comes back.',
+
+  'settings.agents': 'Agents',
+  'settings.agentsDesc': 'An agent is a bundle: a role, the tools it may use, and a model. An agent is what you talk to; a sub-agent is what an agent hands work to. The two layers are separate folders and separate lists.',
+  'settings.agentsPrimary': 'Agents',
+  'settings.agentsPrimaryHint': 'The one you talk to — two of them, build and plan. Switching mid-conversation keeps the chat.',
+  'settings.agentsSub': 'Sub-agents',
+  'settings.agentsSubHint': 'Spawned by the primary agent. No chat history — they return only their final result.',
+  'settings.agentsSubSoon': 'Not spawnable in this build yet — the `task` tool that calls sub-agents is still to come. You can configure and edit them now.',
+  'settings.agentActive': 'in use',
+  'settings.agentUse': 'Use this agent',
+  'settings.agentBuiltin': 'built in',
+  'settings.agentMine': 'yours',
+  'settings.agentAllTools': 'all tools',
+  'settings.agentToolCount': '{n} tools',
+  'settings.agentDenyCount': '{n} denied',
+  'settings.agentSteps': '{n} steps max',
+  'settings.agentModelInherit': 'Inherit selected model',
+  'settings.agentsFolder': 'Open folder',
+  'settings.agentsHint': 'Every agent is one .md file. Edit it here or on disk — name yours after a built-in one and yours is used instead. Agents and sub-agents are separate folders, so the same name in both is two different profiles.',
+  'settings.agentNew': 'New agent',
+  'settings.agentBack': 'Back to all agents',
+  'settings.agentName': 'Name (becomes the filename)',
+  'settings.agentKind': 'Kind (decided by which folder the file is in)',
+  'settings.agentKindHint': 'Agents live in agents/ · sub-agents in subagents/ (separate folders, not nested) — changing the kind means moving the file, not editing a field in it',
+  'settings.agentBody': 'Agent file',
+  'settings.agentBodyHint': 'The block between --- is settings (description, mode, model, tools, deny, steps); everything after it is the role sent to the model.',
+  'settings.agentOverrideNote': 'This one ships with Aetox — saving creates your own copy over it. The original stays; delete yours and it comes back.',
+  'settings.agentStarter': `---
+description: one line on what this agent is for (shown on this page)
+tools:
+deny:
+steps:
+---
+
+Say who this agent is, how it works, what it must always do and what it must
+never do. (This part becomes the role sent to the model on every turn.)`,
 }

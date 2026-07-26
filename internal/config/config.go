@@ -29,6 +29,11 @@ type Config struct {
 	ModelWireFormat    string
 	ModelTimeoutSec    int
 	ModelContextTokens int
+	// AgentName selects which agent profile the main agent runs as
+	// (internal/agent, ARCHITECTURE.md §44). Empty means agent.DefaultName —
+	// resolved by the agent package, not here, so config stays free of the
+	// profile catalog.
+	AgentName string
 	// UILocale is the language the desktop UI is showing ("th", "en"). The
 	// engine has no business with language — the one exception is Aetox's own
 	// built-in provider, which is an onboarding surface wearing a Provider
@@ -61,6 +66,10 @@ type ModelPreference struct {
 	ModelWireFormat string            `json:"wire_format,omitempty"`
 	ThinkLevel      string            `json:"think_level,omitempty"`
 	ApprovalMode    string            `json:"approval_mode,omitempty"`
+	// AgentName is the agent profile the user picked, by name. Empty (a
+	// preference file written before profiles existed) resolves to the default,
+	// so no migration is needed.
+	AgentName string `json:"agent,omitempty"`
 	// UILocale sits next to ApprovalMode because it is the same kind of thing:
 	// a choice the user made in the UI that the engine needs on next start.
 	UILocale string `json:"ui_locale,omitempty"`

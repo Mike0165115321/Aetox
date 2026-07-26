@@ -16,6 +16,9 @@
     ListExternalSkills, ListBuiltinSkills, InstallSkillFromGitHub, RemoveExternalSkill, RefreshSkills,
     UsageStats, ListPromptPresets, OpenPromptsFolder,
     SavePromptPreset, DeletePromptPreset, PickPresetImage, RemovePresetImage,
+    ListAgentProfiles, ListSubagentProfiles, ActiveAgent, SetActiveAgent, ReadAgentProfile,
+    SaveAgentProfile, DeleteAgentProfile, SetAgentProfileModel,
+    OpenAgentsFolder, OpenSubagentsFolder,
   } from '../../wailsjs/go/main/App'
   import { config } from '../../wailsjs/go/models'
   import { cockpit, switchProvider, switchModel, submitAPIKey, switchApprovalMode, switchWireFormat } from './stores/cockpit.svelte'
@@ -538,6 +541,112 @@
     await loadPresets()
   })
 
+  // ---------- Agents (ARCHITECTURE.md §44) ----------
+  // Two separate lists, from two separate bindings — never one array with a
+  // field to filter on. An agent is what you talk to; a sub-agent is what an
+  // agent hands work to, and this page must not be able to confuse them.
+  type AgentRow = {
+    name: string; description: string; kind: string; model?: string
+    tools?: string[]; deny?: string[]; steps?: number; prompt: string
+    path?: string; builtin: boolean
+  }
+  let agents = $state<AgentRow[]>([])
+  let subagents = $state<AgentRow[]>([])
+  let activeAgent = $state('')
+  // null = the list. Anything else = the editor on that profile's raw file.
+  let agentEditing = $state<AgentRow | null>(null)
+  let agentDraftName = $state('')
+  let agentDraftBody = $state('')
+  let agentBusy = $state('')
+  let agentError = $state('')
+  let agentConfirmDelete = $state(false)
+  // Which directory the file goes in — and the only record of which layer it is
+  // in (the engine has no `kind:` key, so the two can never disagree). Fixed once
+  // a profile exists: changing layer is moving the file, not editing a field.
+  let agentDraftKind = $state('agent')
+
+  // The per-row model dropdown offers the current provider's models — a pin to
+  // a model from some other provider still shows (as its own option) rather
+  // than silently reading as "inherit".
+  let agentModels = $state<string[]>([])
+
+  async function loadAgents() {
+    ;[agents, subagents, activeAgent] = await Promise.all([
+      ListAgentProfiles(), ListSubagentProfiles(), ActiveAgent(),
+    ])
+    try {
+      agentModels = await ListModelsForProvider(cockpit.model.provider)
+    } catch {
+      agentModels = [] // no key / offline: the dropdown still offers "inherit"
+    }
+  }
+
+  async function runAgent(label: string, fn: () => Promise<void>) {
+    agentBusy = label
+    agentError = ''
+    try {
+      await fn()
+    } catch (err) {
+      agentError = String(err)
+    } finally {
+      agentBusy = ''
+    }
+  }
+
+  const useAgent = (name: string) => runAgent('use:' + name, async () => {
+    await SetActiveAgent(name)
+    await loadAgents()
+  })
+
+  // The dropdown on a row: '' means inherit whatever model the chat is on.
+  const pinModel = (row: AgentRow, model: string) => runAgent('model:' + row.kind + ':' + row.name, async () => {
+    await SetAgentProfileModel(row.name, row.kind, model)
+    await loadAgents()
+  })
+
+  // Editing opens the raw .md — including for a bundled profile, where saving
+  // writes your own copy over it (the engine already prefers user files).
+  const openAgent = (a: AgentRow) => runAgent('open:' + a.kind + ':' + a.name, async () => {
+    agentDraftBody = await ReadAgentProfile(a.name, a.kind)
+    agentDraftName = a.name
+    agentDraftKind = a.kind
+    agentEditing = a
+    agentConfirmDelete = false
+  })
+
+  function newAgent() {
+    agentEditing = { name: '', description: '', kind: 'agent', prompt: '', builtin: false }
+    agentDraftName = ''
+    agentDraftKind = 'agent'
+    agentDraftBody = t('settings.agentStarter')
+    agentError = ''
+    agentConfirmDelete = false
+  }
+
+  const saveAgent = () => runAgent('save', async () => {
+    await SaveAgentProfile(agentDraftName.trim(), agentDraftBody, agentDraftKind)
+    await loadAgents()
+    agentEditing = null
+  })
+
+  const deleteAgent = () => {
+    if (!agentConfirmDelete) { agentConfirmDelete = true; return }
+    void runAgent('delete', async () => {
+      await DeleteAgentProfile(agentDraftName.trim(), agentDraftKind)
+      await loadAgents()
+      agentEditing = null
+    })
+  }
+
+  // What the row says about tools has to be what the agent actually gets: an
+  // empty list means the whole registry, not zero tools.
+  const toolBadge = (a: AgentRow) =>
+    a.tools && a.tools.length > 0 ? t('settings.agentToolCount', { n: a.tools.length }) : t('settings.agentAllTools')
+
+  $effect(() => {
+    if (active === 'agents') void loadAgents()
+  })
+
   $effect(() => {
     if (active === 'prompts') void loadPresets()
   })
@@ -554,6 +663,7 @@
     ]},
     { group: t('settings.groupModels'), items: [
       { id: 'models', label: t('settings.modelSettings'), icon: '🧠' },
+      { id: 'agents', label: t('settings.agents'), icon: '🤖' },
     ]},
     { group: t('settings.groupTools'), items: [
       { id: 'skills', label: t('settings.skills'), icon: '🧩' },
@@ -933,6 +1043,119 @@
           {#if skillError}<div class="mset-error">{skillError}</div>{/if}
         </div>
       </div>
+    {:else if active === 'agents'}
+      <h2>{t('settings.agents')}</h2>
+      <p class="muted set-sub">{t('settings.agentsDesc')}</p>
+
+      {#if agentEditing === null}
+        <div class="pp-bar">
+          <button class="ctrl" onclick={newAgent}>{t('settings.agentNew')}</button>
+          <button class="ctrl" onclick={() => loadAgents()}>{t('settings.refresh')}</button>
+        </div>
+        {#if agentError}<div class="mset-error">{agentError}</div>{/if}
+
+        <!-- Grouped by mode, not by who wrote it: a primary agent can be made
+             active, a sub-agent can only be spawned by the main one, and that
+             difference is what the row's controls are about. Built-in vs yours
+             is a badge. -->
+        <!-- Two cards from two bindings. Not one list split by a field: the
+             layers are separate all the way down, so a sub-agent has no path to
+             the row that makes an agent active. -->
+        {#each [{ kind: 'agent', rows: agents, label: t('settings.agentsPrimary'), hint: t('settings.agentsPrimaryHint') },
+                { kind: 'subagent', rows: subagents, label: t('settings.agentsSub'), hint: t('settings.agentsSubHint') }] as group (group.kind)}
+          <div class="settings-card">
+            <div class="card-form">
+              <div class="eyebrow">{group.label} <span class="ag-count">{group.rows.length}</span></div>
+              <div class="d muted">{group.hint}</div>
+              <!-- These profiles are real and editable, but nothing can spawn
+                   one until the `task` tool lands (§44 step 4). Saying so beats
+                   letting the group look broken. -->
+              {#if group.kind === 'subagent'}<div class="d muted">{t('settings.agentsSubSoon')}</div>{/if}
+            </div>
+            {#each group.rows as a (a.name)}
+              <div class="set-row">
+                <div class="set-txt">
+                  <div class="t">
+                    {a.name}
+                    {#if a.name === activeAgent && group.kind === 'agent'}<span class="badge on">{t('settings.agentActive')}</span>{/if}
+                    <span class="tag">{a.builtin ? t('settings.agentBuiltin') : t('settings.agentMine')}</span>
+                    {#if a.model}<span class="tag">{a.model}</span>{/if}
+                    <span class="tag">{toolBadge(a)}</span>
+                    {#if a.deny && a.deny.length > 0}<span class="tag ag-deny">{t('settings.agentDenyCount', { n: a.deny.length })}</span>{/if}
+                    {#if a.steps}<span class="tag">{t('settings.agentSteps', { n: a.steps })}</span>{/if}
+                  </div>
+                  <div class="d">{a.description || '—'}</div>
+                  <div class="d mono-dim">{a.path || 'built-in:' + a.name}</div>
+                </div>
+                {#if group.kind === 'agent' && a.name !== activeAgent}
+                  <button class="ctrl" disabled={agentBusy !== ''} onclick={() => useAgent(a.name)}>
+                    {agentBusy === 'use:' + a.name ? t('settings.switching') : t('settings.agentUse')}
+                  </button>
+                {/if}
+                <select
+                  class="ctrl" value={a.model ?? ''} disabled={agentBusy !== ''}
+                  onchange={(e) => pinModel(a, e.currentTarget.value)}
+                >
+                  <option value="">{t('settings.agentModelInherit')}</option>
+                  {#each agentModels as m}<option value={m}>{m}</option>{/each}
+                  {#if a.model && !agentModels.includes(a.model)}<option value={a.model}>{a.model}</option>{/if}
+                </select>
+                <button class="ctrl" disabled={agentBusy !== ''} onclick={() => openAgent(a)}>{t('settings.edit')}</button>
+              </div>
+            {/each}
+            <div class="set-row">
+              <button class="ctrl" onclick={() => (group.kind === 'agent' ? OpenAgentsFolder() : OpenSubagentsFolder())}>
+                {t('settings.agentsFolder')}
+              </button>
+              <span class="d mono-dim">{group.kind === 'agent' ? 'agents/' : 'subagents/'}</span>
+            </div>
+          </div>
+        {/each}
+        <p class="muted set-sub">{t('settings.agentsHint')}</p>
+      {:else}
+        <div class="pp-bar">
+          <button class="ctrl" onclick={() => (agentEditing = null)}>← {t('settings.agentBack')}</button>
+          <div style="flex:1"></div>
+          {#if !agentEditing.builtin && agentEditing.name}
+            <button class="ctrl" class:danger={agentConfirmDelete} disabled={agentBusy !== ''} onclick={deleteAgent}>
+              {agentConfirmDelete ? t('settings.confirmRemove') : t('settings.remove')}
+            </button>
+          {/if}
+          <button class="ctrl" disabled={agentBusy !== '' || !agentDraftName.trim() || !agentDraftBody.trim()} onclick={saveAgent}>
+            {agentBusy === 'save' ? t('settings.saving') : t('settings.promptSave')}
+          </button>
+        </div>
+
+        {#if agentEditing.builtin}
+          <p class="muted set-sub">{t('settings.agentOverrideNote')}</p>
+        {/if}
+        {#if agentError}<div class="mset-error">{agentError}</div>{/if}
+
+        <div class="settings-card">
+          <div class="card-form pp-edit">
+            <label class="pp-field">
+              <span class="eyebrow">{t('settings.agentName')}</span>
+              <input class="ctrl" bind:value={agentDraftName} placeholder="backend" disabled={agentEditing.name !== ''} />
+            </label>
+            <!-- The kind is the folder, and the folder is the only record of it.
+                 Locked for an existing profile: changing it would mean moving the
+                 file, not editing it. -->
+            <label class="pp-field">
+              <span class="eyebrow">{t('settings.agentKind')}</span>
+              <select class="ctrl" bind:value={agentDraftKind} disabled={agentEditing.name !== ''}>
+                <option value="agent">{t('settings.agentsPrimary')}</option>
+                <option value="subagent">{t('settings.agentsSub')}</option>
+              </select>
+              <span class="d muted">{t('settings.agentKindHint')}</span>
+            </label>
+            <label class="pp-field">
+              <span class="eyebrow">{t('settings.agentBody')}</span>
+              <textarea class="ctrl ag-body" bind:value={agentDraftBody} spellcheck="false"></textarea>
+              <span class="d muted">{t('settings.agentBodyHint')}</span>
+            </label>
+          </div>
+        </div>
+      {/if}
     {:else if active === 'prompts'}
       <h2>{t('settings.prompts')}</h2>
       <p class="muted set-sub">{t('settings.promptsDesc')}</p>

@@ -12,7 +12,7 @@ import {
   ListSessions, LoadSession, NewSession, CurrentSessionID, SearchSessions, DeleteSession,
   SaveChatImage, SaveChatFile, ReadImageDataURL, CancelTurn, BrowserGetText, RecentProjects,
   ListAllSessions, SearchAllSessions, LoadSessionAnyProject, ClearProjectFocus,
-  AnswerUserQuestion,
+  AnswerUserQuestion, SetActiveAgent,
 } from '../../../wailsjs/go/main/App'
 import type { main } from '../../../wailsjs/go/models'
 import { t } from '../i18n.svelte'
@@ -64,6 +64,7 @@ function applyModelInfo(info: main.ModelInfo): void {
     contextMax: info.contextMax,
     approval: info.approvalMode,
     wireFormat: info.wireFormat,
+    agent: info.agent,
   })
   cacheModelInfo(cockpit.model)
 }
@@ -260,6 +261,13 @@ export async function switchApprovalMode(mode: string): Promise<void> {
 
 export async function switchModel(modelName: string): Promise<void> {
   applyModelInfo(await SwitchModel(modelName))
+}
+
+/** Switch which agent profile answers (§44). Same shape as every other switch:
+ *  the binding returns the fresh ModelInfo, so the composer chip needs no
+ *  second round-trip and cannot show a stale agent. */
+export async function switchAgent(name: string): Promise<void> {
+  applyModelInfo(await SetActiveAgent(name))
 }
 
 export async function submitAPIKey(providerName: string, apiKey: string): Promise<void> {

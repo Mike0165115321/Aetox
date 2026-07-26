@@ -172,24 +172,39 @@ func RegisterDiscovered(registry *Registry, paths []string) []error {
 //	---
 //	body (markdown instructions for the model to follow)
 //
-// Only "name" and "description" keys are read; the format is intentionally
-// not full YAML since those are the only two fields this project's skill
-// shape needs (see MCP-SUPPORT-PLAN.md, opencode's own SKILL.md format).
+// Only "name" and "description" keys are read — the rest of the frontmatter is
+// none of a skill's business (see MCP-SUPPORT-PLAN.md, opencode's own SKILL.md
+// format).
 func parseSkillMarkdown(raw string) (name, description, body string, err error) {
+	fields, body, err := ParseFrontmatter(raw)
+	if err != nil {
+		return "", "", "", err
+	}
+	return fields["name"], fields["description"], body, nil
+}
+
+// ParseFrontmatter splits a leading "---" block off a markdown document and
+// returns its keys (lowercased, values unquoted) plus the trimmed body. A
+// document with no frontmatter is not an error — it is all body.
+//
+// Deliberately not YAML: one "key: value" per line, no nesting, no lists;
+// anything else on a line is ignored. Exported because agent profiles
+// (internal/agent, ARCHITECTURE.md §44) are the same file shape with more keys,
+// and a second parser for the same format is a second set of edge cases.
+func ParseFrontmatter(raw string) (map[string]string, string, error) {
+	fields := map[string]string{}
 	raw = strings.ReplaceAll(raw, "\r\n", "\n")
 	trimmed := strings.TrimLeft(raw, "\n")
 	if !strings.HasPrefix(trimmed, "---\n") {
-		return "", "", strings.TrimSpace(raw), nil
+		return fields, strings.TrimSpace(raw), nil
 	}
 	rest := trimmed[len("---\n"):]
 	end := strings.Index(rest, "\n---")
 	if end < 0 {
-		return "", "", "", errors.New("frontmatter is not terminated with a closing ---")
+		return nil, "", errors.New("frontmatter is not terminated with a closing ---")
 	}
-	frontmatter := rest[:end]
-	body = strings.TrimLeft(rest[end+len("\n---"):], "\n")
 
-	for _, line := range strings.Split(frontmatter, "\n") {
+	for _, line := range strings.Split(rest[:end], "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
@@ -198,14 +213,7 @@ func parseSkillMarkdown(raw string) (name, description, body string, err error) 
 		if !ok {
 			continue
 		}
-		key = strings.ToLower(strings.TrimSpace(key))
-		value = strings.Trim(strings.TrimSpace(value), `"'`)
-		switch key {
-		case "name":
-			name = value
-		case "description":
-			description = value
-		}
+		fields[strings.ToLower(strings.TrimSpace(key))] = strings.Trim(strings.TrimSpace(value), `"'`)
 	}
-	return name, description, strings.TrimSpace(body), nil
+	return fields, strings.TrimSpace(rest[end+len("\n---"):]), nil
 }

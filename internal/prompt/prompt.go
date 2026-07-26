@@ -65,10 +65,28 @@ func Build(surface Surface, sandboxRoot string) string {
 	return text
 }
 
+// BuildWithRole is Build with the active agent profile's role text folded in
+// (ARCHITECTURE.md §44.4). Empty role behaves exactly like Build.
+func BuildWithRole(surface Surface, sandboxRoot, role string) string {
+	text, _ := buildWithReport(surface, sandboxRoot, role)
+	return text
+}
+
 // BuildWithReport is Build plus which optional layers were actually found.
 func BuildWithReport(surface Surface, sandboxRoot string) (string, Loaded) {
+	return buildWithReport(surface, sandboxRoot, "")
+}
+
+func buildWithReport(surface Surface, sandboxRoot, role string) (string, Loaded) {
 	var b strings.Builder
 	b.WriteString(identity(surface))
+	// The agent's role goes here — right after identity, deliberately NOT last.
+	// A role is who this agent is; the user's personal files and the project's
+	// AETOX.md are house rules, and §11's ordering rule (most specific last, so
+	// project rules win a conflict) has to keep holding when a role is present.
+	if role = strings.TrimSpace(role); role != "" {
+		b.WriteString(role + "\n")
+	}
 	b.WriteString(environment(sandboxRoot))
 	b.WriteString(fileEditing())
 

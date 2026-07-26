@@ -1,3 +1,38 @@
+export namespace agent {
+	
+	export class Profile {
+	    name: string;
+	    description: string;
+	    kind: string;
+	    model?: string;
+	    tools?: string[];
+	    deny?: string[];
+	    steps?: number;
+	    prompt: string;
+	    path?: string;
+	    builtin: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new Profile(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.description = source["description"];
+	        this.kind = source["kind"];
+	        this.model = source["model"];
+	        this.tools = source["tools"];
+	        this.deny = source["deny"];
+	        this.steps = source["steps"];
+	        this.prompt = source["prompt"];
+	        this.path = source["path"];
+	        this.builtin = source["builtin"];
+	    }
+	}
+
+}
+
 export namespace command {
 	
 	export class Preset {
@@ -169,6 +204,7 @@ export namespace main {
 	    contextUsed: number;
 	    contextMax: number;
 	    wireFormat: string;
+	    agent: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ModelInfo(source);
@@ -183,6 +219,7 @@ export namespace main {
 	        this.contextUsed = source["contextUsed"];
 	        this.contextMax = source["contextMax"];
 	        this.wireFormat = source["wireFormat"];
+	        this.agent = source["agent"];
 	    }
 	}
 	export class ProjectMeta {
