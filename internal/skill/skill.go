@@ -3,6 +3,7 @@ package skill
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 
@@ -119,6 +120,16 @@ func (r *Registry) SourceOf(name string) (Source, bool) {
 	return entry.source, ok
 }
 
+// Names returns every registered skill name, sorted.
+//
+// Sorted, not map order, because the tool definitions built from this list are
+// serialized into the head of every request — before the conversation itself.
+// Go randomizes map iteration, so an unsorted list reshuffled the tool block on
+// every turn (measured: 10 calls, 6 distinct payloads), which changed the
+// prompt prefix and missed the provider's prefix cache every single time. On a
+// local Ollama that cost ~2s of prompt-eval per turn (2.4s vs 0.5s sorted);
+// on a paid API it is the difference between a cache hit and paying full price
+// for ~2,900 tokens of unchanged tool schema. No caller depends on map order.
 func (r *Registry) Names() []string {
 	if r == nil {
 		return nil
@@ -129,6 +140,7 @@ func (r *Registry) Names() []string {
 	for name := range r.entries {
 		names = append(names, name)
 	}
+	sort.Strings(names)
 	return names
 }
 
