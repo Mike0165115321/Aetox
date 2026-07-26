@@ -89,6 +89,36 @@ func (p *OpenAICompatibleProvider) SupportsReasoning() bool {
 	return p.reasoning
 }
 
+// openAIUsage is the usage object as this wire format sends it. Cache
+// accounting has two spellings in the wild and both are read: OpenAI's own
+// prompt_tokens_details.cached_tokens, and DeepSeek's flat
+// prompt_cache_hit_tokens (it sends both, in agreement — measured).
+//
+// Pointers, so a provider that does no cache accounting at all leaves the
+// fields nil and is reported as "unknown" rather than as a real zero.
+// prompt_tokens is already the full input here, cached part included, so
+// nothing needs recomputing — unlike the Anthropic format.
+type openAIUsage struct {
+	Usage
+	CacheHitTokens *int `json:"prompt_cache_hit_tokens"`
+	Details        *struct {
+		CachedTokens *int `json:"cached_tokens"`
+	} `json:"prompt_tokens_details"`
+}
+
+func (u openAIUsage) toUsage() Usage {
+	out := u.Usage
+	if u.Details != nil && u.Details.CachedTokens != nil {
+		out.CachedPromptTokens = *u.Details.CachedTokens
+		out.CacheReported = true
+	}
+	if u.CacheHitTokens != nil {
+		out.CachedPromptTokens = *u.CacheHitTokens
+		out.CacheReported = true
+	}
+	return out
+}
+
 func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (Response, error) {
 	if len(req.Messages) == 0 {
 		return Response{}, ErrNoMessages
@@ -172,8 +202,8 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 			} `json:"message"`
 			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
-		Model string `json:"model"`
-		Usage Usage  `json:"usage"`
+		Model string      `json:"model"`
+		Usage openAIUsage `json:"usage"`
 	}
 	if err := json.Unmarshal(responseBody, &parsed); err != nil {
 		return Response{}, fmt.Errorf("%s response parse failed: %w", p.provider, err)
@@ -204,7 +234,7 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 		Text:             text,
 		ReasoningContent: reasoning,
 		ToolCalls:        rawMessage.ToolCalls,
-		Usage:            normalizeUsage(parsed.Usage),
+		Usage:            normalizeUsage(parsed.Usage.toUsage()),
 		FinishReason:     strings.TrimSpace(parsed.Choices[0].FinishReason),
 	}, nil
 }
@@ -315,15 +345,15 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 				} `json:"delta"`
 				FinishReason string `json:"finish_reason"`
 			} `json:"choices"`
-			Model string `json:"model"`
-			Usage Usage  `json:"usage"`
+			Model string      `json:"model"`
+			Usage openAIUsage `json:"usage"`
 		}
 		if err := json.Unmarshal([]byte(data), &parsed); err != nil {
 			return Response{}, fmt.Errorf("%s stream parse failed: %w", p.provider, err)
 		}
 		if len(parsed.Choices) == 0 {
 			if parsed.Usage.TotalTokenCount() > 0 {
-				lastUsage = normalizeUsage(parsed.Usage)
+				lastUsage = normalizeUsage(parsed.Usage.toUsage())
 			}
 			continue
 		}
@@ -349,7 +379,7 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 			}
 		}
 		if parsed.Usage.TotalTokenCount() > 0 {
-			lastUsage = normalizeUsage(parsed.Usage)
+			lastUsage = normalizeUsage(parsed.Usage.toUsage())
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -437,7 +467,12 @@ func (a *streamToolAccumulator) finalize() []ToolCall {
 	}
 	calls := make([]ToolCall, 0, len(a.order))
 	for _, idx := range a.order {
-		calls = append(calls, *a.byIndex[idx])
+		call := a.byIndex[idx]
+		// The arguments are complete now, so this is the last chance for the row
+		// to learn its subject — and the chance pacing would otherwise eat when
+		// the naming argument came last. See toolProgressTracker.flush.
+		a.progress.flush(idx, call.ID, call.Function.Name, call.Function.Arguments)
+		calls = append(calls, *call)
 	}
 	return calls
 }

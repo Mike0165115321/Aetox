@@ -43,6 +43,73 @@ func liveProviderKey(t *testing.T, provider string) string {
 	return key
 }
 
+// Cache accounting is read from fields no fake can vouch for: the unit tests
+// pin the parsing against recorded payloads, but only the real API can prove
+// the field names still exist. Sending the same long prompt twice makes the
+// second call a hit by construction.
+//
+//	AETOX_LIVE=1 go test ./internal/model/ -run TestLiveCacheAccounting -v
+func TestLiveCacheAccounting(t *testing.T) {
+	key := liveProviderKey(t, "deepseek")
+
+	// Long enough to be cacheable at all, and identical across both calls.
+	var filler strings.Builder
+	for i := 0; i < 400; i++ {
+		filler.WriteString("The quick brown fox jumps over the lazy dog. ")
+	}
+	ask := func(p Provider) Usage {
+		resp, err := p.Complete(context.Background(), Request{
+			MaxTokens: 8,
+			Messages: []Message{
+				{Role: RoleSystem, Content: filler.String()},
+				{Role: RoleUser, Content: "Say hi in one word."},
+			},
+		})
+		if err != nil {
+			t.Fatalf("complete: %v", err)
+		}
+		if resp.Usage == nil {
+			t.Fatal("no usage reported at all")
+		}
+		return *resp.Usage
+	}
+
+	// Both wire formats, because each counts input differently and the app can
+	// be configured either way.
+	for _, format := range []string{"anthropic", "openai-compatible"} {
+		t.Run(format, func(t *testing.T) {
+			p, err := NewProvider(ProviderOptions{
+				Provider: "deepseek", Model: "deepseek-chat", APIKey: key,
+				WireFormat: format, Timeout: 2 * time.Minute,
+			})
+			if err != nil {
+				t.Fatalf("provider: %v", err)
+			}
+			ask(p) // prime the cache
+			u := ask(p)
+			t.Logf("prompt=%d cached=%d uncached=%d reported=%v",
+				u.PromptTokens, u.CachedPromptTokens, u.UncachedPromptTokens(), u.CacheReported)
+
+			if !u.CacheReported {
+				t.Fatal("cache accounting went unread — the field names moved")
+			}
+			if u.CachedPromptTokens == 0 {
+				t.Error("no cache hit on an identical repeat; either caching stopped or the field is misread")
+			}
+			// The bug this replaced: PromptTokens carrying only the uncached
+			// remainder, which on a well-cached call is a tiny fraction.
+			if u.PromptTokens <= u.CachedPromptTokens {
+				t.Errorf("PromptTokens %d does not include the %d cached tokens",
+					u.PromptTokens, u.CachedPromptTokens)
+			}
+			if u.PromptTokens < 3000 {
+				t.Errorf("PromptTokens = %d for a ~4000 token prompt — the total is being undercounted",
+					u.PromptTokens)
+			}
+		})
+	}
+}
+
 func liveWriteTool() ToolDefinition {
 	schema, _ := json.Marshal(map[string]any{
 		"type": "object",

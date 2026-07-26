@@ -137,9 +137,37 @@ type anthropicRequest struct {
 	Stream      bool                 `json:"stream,omitempty"`
 }
 
+// anthropicUsage counts input differently from the OpenAI-compatible format,
+// and getting that wrong silently undercounts everything. Measured against
+// DeepSeek's /anthropic endpoint on a well-cached call:
+//
+//	{"input_tokens":43,"cache_read_input_tokens":3968,"cache_creation_input_tokens":0}
+//
+// input_tokens is the freshly-evaluated part ALONE — 43 of a real 4011. The
+// cached tokens are separate addends, not a subset, so the total input is the
+// sum of all three. Reading input_tokens as "the prompt size" recorded that
+// call as 43 tokens, and the better the cache worked the more it lost.
 type anthropicUsage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
+	InputTokens         int `json:"input_tokens"`
+	CacheReadTokens     int `json:"cache_read_input_tokens"`
+	CacheCreationTokens int `json:"cache_creation_input_tokens"`
+	OutputTokens        int `json:"output_tokens"`
+}
+
+// promptTokens is the whole input: fresh + written-to-cache + read-from-cache.
+func (u anthropicUsage) promptTokens() int {
+	return u.InputTokens + u.CacheCreationTokens + u.CacheReadTokens
+}
+
+// toUsage maps the Anthropic counters onto the shared shape. Cache creation
+// counts as uncached: those tokens were evaluated this call, then stored.
+func (u anthropicUsage) toUsage() Usage {
+	return Usage{
+		PromptTokens:       u.promptTokens(),
+		CachedPromptTokens: u.CacheReadTokens,
+		CacheReported:      true,
+		CompletionTokens:   u.OutputTokens,
+	}
 }
 
 type anthropicErrorPayload struct {
@@ -392,10 +420,7 @@ func (p *AnthropicProvider) Complete(ctx context.Context, req Request) (Response
 		ReasoningContent: reasoningOut,
 		ToolCalls:        toolCalls,
 		FinishReason:     finishReason,
-		Usage: normalizeUsage(Usage{
-			PromptTokens:     parsed.Usage.InputTokens,
-			CompletionTokens: parsed.Usage.OutputTokens,
-		}),
+		Usage: normalizeUsage(parsed.Usage.toUsage()),
 	}, nil
 }
 
@@ -499,7 +524,11 @@ func (p *AnthropicProvider) StreamComplete(ctx context.Context, req Request, onC
 				if event.Message.Model != "" {
 					respModel = event.Message.Model
 				}
-				usage.PromptTokens = event.Message.Usage.InputTokens
+				// message_start carries the whole input accounting; the
+				// later message_delta only revises output.
+				usage.PromptTokens = event.Message.Usage.promptTokens()
+				usage.CachedPromptTokens = event.Message.Usage.CacheReadTokens
+				usage.CacheReported = true
 			}
 		case "content_block_start":
 			if event.ContentBlock != nil && event.ContentBlock.Type == "tool_use" {

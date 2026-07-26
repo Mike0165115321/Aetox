@@ -101,9 +101,40 @@ type Response struct {
 const FinishReasonLength = "length"
 
 type Usage struct {
-	PromptTokens     int `json:"prompt_tokens"`
+	// PromptTokens is the TOTAL input for the call — tokens served from the
+	// provider's prompt cache included. The two wire formats disagree about
+	// this and each adapter normalizes to this meaning (measured against
+	// DeepSeek, which serves both):
+	//
+	//	openai-compatible: prompt_tokens 4011 = hit 3968 + miss 43   (total already)
+	//	anthropic:         input_tokens 43, cache_read 3968 separate (miss only)
+	//
+	// The Anthropic reading used to be stored as-is, so a well-cached call was
+	// recorded as 43 input tokens instead of 4011.
+	PromptTokens int `json:"prompt_tokens"`
+
+	// CachedPromptTokens is the part of PromptTokens the provider served from
+	// its prompt cache. The rest (PromptTokens - CachedPromptTokens) was
+	// evaluated fresh, tokens written into the cache included — those are
+	// processed, not reused.
+	CachedPromptTokens int `json:"-"`
+
+	// CacheReported separates "this provider does not do cache accounting"
+	// (Ollama, LM Studio) from "it does, and nothing hit this time". Both are
+	// zero, and a UI that cannot tell them apart shows a local model a
+	// confident 0% hit rate it never claimed.
+	CacheReported bool `json:"-"`
+
 	CompletionTokens int `json:"completion_tokens"`
 	TotalTokens      int `json:"total_tokens"`
+}
+
+// UncachedPromptTokens is the input the provider actually had to evaluate.
+func (u Usage) UncachedPromptTokens() int {
+	if n := u.PromptTokens - u.CachedPromptTokens; n > 0 {
+		return n
+	}
+	return 0
 }
 
 type ReasoningConfig struct {
@@ -134,9 +165,15 @@ func normalizeUsage(usage Usage) *Usage {
 		return nil
 	}
 	normalized := Usage{
-		PromptTokens:     maxInt(0, usage.PromptTokens),
-		CompletionTokens: maxInt(0, usage.CompletionTokens),
-		TotalTokens:      usage.TotalTokenCount(),
+		PromptTokens:       maxInt(0, usage.PromptTokens),
+		CachedPromptTokens: maxInt(0, usage.CachedPromptTokens),
+		CacheReported:      usage.CacheReported,
+		CompletionTokens:   maxInt(0, usage.CompletionTokens),
+		TotalTokens:        usage.TotalTokenCount(),
+	}
+	// A cached count above the total is a parsing mistake, not a discount.
+	if normalized.CachedPromptTokens > normalized.PromptTokens {
+		normalized.CachedPromptTokens = normalized.PromptTokens
 	}
 	return &normalized
 }
@@ -146,11 +183,15 @@ func normalizeUsage(usage Usage) *Usage {
 // executor so the label shown while a call streams in is byte-identical to the
 // one shown when it runs; the UI matches on that label to avoid drawing the
 // same call twice.
-var ArgSubjectKeys = []string{"path", "file_path", "url", "command", "pattern", "query", "name"}
+//
+// `description` is last on purpose: it is `task`'s own "few words naming the
+// job", written for exactly this line, but any tool that also has a real
+// subject (a path, a URL) should be named by that instead.
+var ArgSubjectKeys = []string{"path", "file_path", "url", "command", "pattern", "query", "name", "description"}
 
 // partialArgRe matches one complete "key": "value" pair. The closing quote is
 // required, so a value still arriving cannot match and be reported truncated.
-var partialArgRe = regexp.MustCompile(`"(path|file_path|url|command|pattern|query|name)"\s*:\s*"((?:[^"\\]|\\.)*)"`)
+var partialArgRe = regexp.MustCompile(`"(path|file_path|url|command|pattern|query|name|description)"\s*:\s*"((?:[^"\\]|\\.)*)"`)
 
 // SubjectFromPartialArgs pulls the first readable argument out of a tool call
 // whose JSON is still streaming in, so the UI can name the call before its
