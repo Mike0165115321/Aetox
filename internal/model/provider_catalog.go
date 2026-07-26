@@ -93,6 +93,14 @@ func ResolveDefaultModel(p, baseURL, apiKey string) string {
 	if strings.TrimSpace(baseURL) == "" {
 		baseURL = provider.DefaultBaseURL(canonical)
 	}
+	// Ask the runtime what it actually has loaded before falling back to
+	// picking off a list. The list is sorted for the picker, so its first entry
+	// is only "alphabetically first" — reading a default out of it silently
+	// answers "which model is this server serving?" with a guess, and on LM
+	// Studio that means addressing a model that is not in memory.
+	if active := activeLocalModel(canonical, baseURL, apiKey); active != "" {
+		return active
+	}
 	if models, err := ModelChoicesWithEndpointAndAPIKey(canonical, baseURL, apiKey); err == nil && len(models) > 0 {
 		return models[0]
 	}
@@ -259,6 +267,99 @@ type openAIModel struct {
 
 type openAIModelsResponse struct {
 	Data []openAIModel `json:"data"`
+}
+
+// activeLocalModel asks a local runtime which model it is serving right now,
+// so the app addresses that one instead of guessing off an alphabetical list.
+// Both runtimes will answer; neither says so through the OpenAI-compatible
+// /v1/models list, which is why this exists:
+//
+//	LM Studio  GET /api/v0/models  -> entries carry state "loaded"/"not-loaded"
+//	Ollama     GET /api/ps         -> the models resident in memory right now
+//
+// Returns "" whenever the runtime cannot say — nothing loaded yet, endpoint
+// absent, older build, not a local provider. That is not a failure: the caller
+// falls back to the discovery list, and an empty answer beats a confident wrong
+// one. Errors are swallowed for the same reason; this is a best-effort hint on
+// a path that already has a fallback.
+func activeLocalModel(canonical, baseURL, apiKey string) string {
+	var path string
+	switch canonical {
+	case "lmstudio":
+		path = "/api/v0/models"
+	case "ollama":
+		path = "/api/ps"
+	default:
+		return ""
+	}
+	root := strings.TrimSuffix(strings.TrimRight(strings.TrimSpace(baseURL), "/"), "/v1")
+	if root == "" {
+		return ""
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, root+path, nil)
+	if err != nil {
+		return ""
+	}
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+	resp, err := (&http.Client{Timeout: 3 * time.Second}).Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return ""
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return ""
+	}
+
+	var payload struct {
+		// LM Studio
+		Data []struct {
+			ID    string `json:"id"`
+			Type  string `json:"type"`
+			State string `json:"state"`
+		} `json:"data"`
+		// Ollama
+		Models []struct {
+			Name  string `json:"name"`
+			Model string `json:"model"`
+		} `json:"models"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return ""
+	}
+	for _, m := range payload.Data {
+		// Embedding models also report "loaded" and cannot answer a chat
+		// request, so an explicit non-llm type is skipped. An empty type is
+		// kept: older builds omit it entirely.
+		if m.State == "loaded" && (m.Type == "" || m.Type == "llm" || m.Type == "vlm") {
+			if id := strings.TrimSpace(m.ID); id != "" {
+				return id
+			}
+		}
+	}
+	for _, m := range payload.Models {
+		if name := strings.TrimSpace(firstNonEmpty(m.Name, m.Model)); name != "" {
+			return name
+		}
+	}
+	return ""
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func DiscoverOpenAICompatibleModels(p, baseURL, apiKey string) ([]string, error) {
