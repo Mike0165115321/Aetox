@@ -125,9 +125,14 @@ func TestOllamaComplete_SurfacesLengthDoneReason(t *testing.T) {
 // Reasoning tokens must arrive via onReasoningChunk as each streamed line
 // comes in, not only bundled into the final Response — that's what lets the
 // desktop UI show live "thinking" text instead of a static spinner.
+//
+// Both spellings are covered on purpose: a real Ollama 0.32 sends "thinking"
+// (verified against qwen3:8b), while "reasoning_content" is the
+// OpenAI-compatible name some builds use. Testing only the latter is how every
+// thinking token got dropped without a single test going red.
 func TestOllamaStreamComplete_EmitsReasoningChunksLive(t *testing.T) {
 	lines := []string{
-		`{"model":"tiny","done":false,"message":{"role":"assistant","reasoning_content":"first "}}`,
+		`{"model":"tiny","done":false,"message":{"role":"assistant","thinking":"first "}}`,
 		`{"model":"tiny","done":false,"message":{"role":"assistant","reasoning_content":"second"}}`,
 		`{"model":"tiny","done":false,"message":{"role":"assistant","content":"answer"}}`,
 		`{"model":"tiny","done":true,"message":{"role":"assistant"}}`,
@@ -157,13 +162,91 @@ func TestOllamaStreamComplete_EmitsReasoningChunksLive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stream complete: %v", err)
 	}
-	if got := strings.Join(reasoningChunks, "|"); got != "first|second" {
+	if got := strings.Join(reasoningChunks, "|"); got != "first |second" {
 		t.Fatalf("expected reasoning chunks delivered live, got %q", got)
 	}
 	if got := strings.Join(contentChunks, "|"); got != "answer" {
 		t.Fatalf("expected content chunk delivered live, got %q", got)
 	}
-	if resp.ReasoningContent != "firstsecond" {
+	if resp.ReasoningContent != "first second" {
 		t.Fatalf("expected accumulated reasoning in final response, got %q", resp.ReasoningContent)
+	}
+}
+
+// Ollama streams token-by-token and the whitespace lives inside the tokens.
+// Trimming a chunk turns "Hello world" into "Helloworld" and flattens every
+// code block and list the model writes.
+func TestOllamaStreamComplete_PreservesChunkWhitespace(t *testing.T) {
+	lines := []string{
+		`{"model":"tiny","done":false,"message":{"role":"assistant","content":"Hello"}}`,
+		`{"model":"tiny","done":false,"message":{"role":"assistant","content":" world"}}`,
+		`{"model":"tiny","done":false,"message":{"role":"assistant","content":"\n\n"}}`,
+		`{"model":"tiny","done":false,"message":{"role":"assistant","content":"- item"}}`,
+		`{"model":"tiny","done":true,"message":{"role":"assistant"}}`,
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for _, l := range lines {
+			_, _ = w.Write([]byte(l + "\n"))
+		}
+	}))
+	defer server.Close()
+
+	provider, err := NewOllamaProvider(OllamaConfig{Model: "tiny", BaseURL: server.URL})
+	if err != nil {
+		t.Fatalf("provider: %v", err)
+	}
+
+	var streamed strings.Builder
+	resp, err := provider.StreamComplete(context.Background(), Request{
+		Messages: []Message{{Role: "user", Content: "hi"}},
+	}, func(chunk string) error {
+		streamed.WriteString(chunk)
+		return nil
+	}, nil)
+	if err != nil {
+		t.Fatalf("stream complete: %v", err)
+	}
+	const want = "Hello world\n\n- item"
+	if streamed.String() != want {
+		t.Fatalf("live chunks lost whitespace: got %q, want %q", streamed.String(), want)
+	}
+	if resp.Text != want {
+		t.Fatalf("accumulated text lost whitespace: got %q, want %q", resp.Text, want)
+	}
+}
+
+// The desktop takes the streaming path, so the chat-only backstop has to live
+// there too — otherwise a model without tool support fails the whole turn.
+func TestOllamaStreamComplete_RetriesWithoutToolsWhenModelRejectsThem(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		body, _ := io.ReadAll(r.Body)
+		if strings.Contains(string(body), `"tools"`) {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":"registry.ollama.ai/library/tiny does not support tools"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"model":"tiny","done":true,"message":{"role":"assistant","content":"plain answer"}}` + "\n"))
+	}))
+	defer server.Close()
+
+	provider, err := NewOllamaProvider(OllamaConfig{Model: "tiny", BaseURL: server.URL})
+	if err != nil {
+		t.Fatalf("provider: %v", err)
+	}
+
+	resp, err := provider.StreamComplete(context.Background(), Request{
+		Messages: []Message{{Role: "user", Content: "hi"}},
+		Tools:    []ToolDefinition{{Type: "function", Function: ToolFunction{Name: "write"}}},
+	}, nil, nil)
+	if err != nil {
+		t.Fatalf("expected chat-only retry to succeed, got error: %v", err)
+	}
+	if resp.Text != "plain answer" {
+		t.Fatalf("unexpected reply: %q", resp.Text)
+	}
+	if requests != 2 {
+		t.Fatalf("expected exactly 2 requests (tools, then retry without), got %d", requests)
 	}
 }

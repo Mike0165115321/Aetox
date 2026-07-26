@@ -146,7 +146,19 @@ type ollamaMessage struct {
 	Role             string           `json:"role"`
 	Content          string           `json:"content"`
 	ReasoningContent string           `json:"reasoning_content"`
+	Thinking         string           `json:"thinking"`
 	ToolCalls        []ollamaToolCall `json:"tool_calls"`
+}
+
+// reasoning is where Ollama actually puts a thinking model's tokens: its own
+// field is "thinking" (measured against Ollama 0.32 + qwen3:8b), while
+// "reasoning_content" is the OpenAI-compatible spelling some builds use.
+// Reading only the latter silently dropped every thinking token.
+func (m ollamaMessage) reasoning() string {
+	if m.ReasoningContent != "" {
+		return m.ReasoningContent
+	}
+	return m.Thinking
 }
 
 func (p *OllamaProvider) Complete(ctx context.Context, req Request) (Response, error) {
@@ -212,7 +224,7 @@ func (p *OllamaProvider) Complete(ctx context.Context, req Request) (Response, e
 		// (ARCHITECTURE.md §17). If Ollama itself rejects them for this model,
 		// retry the same request as plain chat so the turn still succeeds —
 		// the model answers in text instead of the turn erroring out.
-		if len(req.Tools) > 0 && strings.Contains(strings.ToLower(string(responseBody)), "does not support tools") {
+		if rejectsTools(req, responseBody) {
 			debuglog.Msg("model rejected tools — retrying without tools (chat-only)")
 			retry := req
 			retry.Tools = nil
@@ -253,7 +265,7 @@ func (p *OllamaProvider) Complete(ctx context.Context, req Request) (Response, e
 		Provider:         p.Name(),
 		Model:            modelOr(parsed.Model, model),
 		Text:             reply,
-		ReasoningContent: strings.TrimSpace(parsed.Message.ReasoningContent),
+		ReasoningContent: strings.TrimSpace(parsed.Message.reasoning()),
 		ToolCalls:        toolCalls,
 		FinishReason:     strings.TrimSpace(parsed.DoneReason), // Ollama already uses "length" for the num_predict cap
 		Usage:            normalizeUsage(Usage{PromptTokens: parsed.PromptTokens, CompletionTokens: parsed.CompletionTokens}),
@@ -310,6 +322,15 @@ func (p *OllamaProvider) StreamComplete(ctx context.Context, req Request, onChun
 		if readErr != nil {
 			return Response{}, fmt.Errorf("ollama request failed with status %d", httpResp.StatusCode)
 		}
+		// Same chat-only backstop as Complete (ARCHITECTURE.md §17). The desktop
+		// takes this streaming path, so without it a model without tool support
+		// fails the whole turn here instead of just answering in text.
+		if rejectsTools(req, responseBody) {
+			retry := req
+			retry.Tools = nil
+			retry.ToolChoice = ""
+			return p.StreamComplete(ctx, retry, onChunk, onReasoningChunk)
+		}
 		return Response{}, fmt.Errorf("ollama request failed with status %d: %s", httpResp.StatusCode, strings.TrimSpace(string(responseBody)))
 	}
 
@@ -332,9 +353,12 @@ func (p *OllamaProvider) StreamComplete(ctx context.Context, req Request, onChun
 		if parsed.Error != "" {
 			return Response{}, fmt.Errorf("ollama error: %s", parsed.Error)
 		}
-		chunk := strings.TrimSpace(parsed.Message.Content)
+		// No TrimSpace here: Ollama streams token-by-token and the spaces and
+		// newlines live *inside* the tokens (" world", "\n\n"). Trimming each
+		// chunk glues every word together and flattens code blocks and lists.
+		chunk := parsed.Message.Content
 		if chunk == "" {
-			chunk = strings.TrimSpace(parsed.Response)
+			chunk = parsed.Response
 		}
 		if chunk != "" {
 			builder.WriteString(chunk)
@@ -344,7 +368,7 @@ func (p *OllamaProvider) StreamComplete(ctx context.Context, req Request, onChun
 				}
 			}
 		}
-		if reasonChunk := strings.TrimSpace(parsed.Message.ReasoningContent); reasonChunk != "" {
+		if reasonChunk := parsed.Message.reasoning(); reasonChunk != "" {
 			reasonBuilder.WriteString(reasonChunk)
 			if onReasoningChunk != nil {
 				if err := onReasoningChunk(reasonChunk); err != nil {
@@ -388,6 +412,13 @@ func (p *OllamaProvider) StreamComplete(ctx context.Context, req Request, onChun
 		FinishReason:     doneReason,
 		Usage:            lastUsage,
 	}, nil
+}
+
+// rejectsTools reports whether an Ollama error body is the "this model has no
+// tool support" refusal, which both Complete and StreamComplete answer by
+// retrying the same request as plain chat.
+func rejectsTools(req Request, responseBody []byte) bool {
+	return len(req.Tools) > 0 && strings.Contains(strings.ToLower(string(responseBody)), "does not support tools")
 }
 
 func convertOllamaToolCalls(raw []ollamaToolCall) []ToolCall {
