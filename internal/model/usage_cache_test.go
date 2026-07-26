@@ -159,6 +159,47 @@ func TestOpenAICompatibleUsageReadsCacheHits(t *testing.T) {
 	}
 }
 
+// The OpenAI spec makes streamed usage opt-in: without stream_options the
+// server is free to send none, and one that follows the spec sends none. LM
+// Studio recorded 0 tokens for every streamed turn — which is every desktop
+// turn — until this was asked for. DeepSeek sends usage unasked, which is why
+// the gap stayed invisible on the provider carrying the most traffic.
+func TestStreamRequestsUsageExplicitly(t *testing.T) {
+	var body map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(`data: {"choices":[{"delta":{"content":"hi"}}]}` + "\n\n"))
+		_, _ = w.Write([]byte(`data: {"choices":[],"usage":{"prompt_tokens":16,"completion_tokens":24}}` + "\n\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	p, err := NewOpenAICompatibleProvider(OpenAICompatibleConfig{
+		Provider: "lmstudio", Model: "m", APIKey: "k", BaseURL: server.URL,
+	})
+	if err != nil {
+		t.Fatalf("provider: %v", err)
+	}
+	resp, err := p.StreamComplete(context.Background(), Request{
+		Messages: []Message{{Role: RoleUser, Content: "hi"}},
+	}, func(string) error { return nil }, nil)
+	if err != nil {
+		t.Fatalf("stream: %v", err)
+	}
+
+	opts, ok := body["stream_options"].(map[string]any)
+	if !ok {
+		t.Fatalf("no stream_options in the streamed request: %v", body)
+	}
+	if opts["include_usage"] != true {
+		t.Errorf("stream_options = %v, want include_usage true", opts)
+	}
+	if resp.Usage == nil || resp.Usage.PromptTokens != 16 || resp.Usage.CompletionTokens != 24 {
+		t.Errorf("usage = %+v, want the 16/24 the final chunk carried", resp.Usage)
+	}
+}
+
 // Ollama has no cache accounting at all, and must not claim any.
 func TestOllamaReportsNoCacheAccounting(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

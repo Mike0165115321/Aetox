@@ -89,6 +89,12 @@ func (p *OpenAICompatibleProvider) SupportsReasoning() bool {
 	return p.reasoning
 }
 
+// streamOptions asks for the usage object on a streamed response. The spec
+// makes it opt-in, so a server that follows it reports nothing without this.
+type streamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
+}
+
 // openAIUsage is the usage object as this wire format sends it. Cache
 // accounting has two spellings in the wild and both are read: OpenAI's own
 // prompt_tokens_details.cached_tokens, and DeepSeek's flat
@@ -260,14 +266,20 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 		ReasoningEffort  string           `json:"reasoning_effort,omitempty"`
 		IncludeReasoning *bool            `json:"include_reasoning,omitempty"`
 		Stream           bool             `json:"stream"`
+		// Without this the spec says a streamed response carries no usage at
+		// all, and a server that follows it sends none: LM Studio recorded 0
+		// tokens for every streamed turn, which is every desktop turn. DeepSeek
+		// happens to send usage unasked, which is why this went unnoticed.
+		StreamOptions *streamOptions `json:"stream_options,omitempty"`
 	}{
 		Model:       model,
 		Messages:    req.Messages,
 		Temperature: req.Temperature,
 		MaxTokens:   req.MaxTokens,
-		Tools:       req.Tools,
-		ToolChoice:  req.ToolChoice,
-		Stream:      true,
+		Tools:         req.Tools,
+		ToolChoice:    req.ToolChoice,
+		Stream:        true,
+		StreamOptions: &streamOptions{IncludeUsage: true},
 	}
 	if p.usesDeepSeekThinking() {
 		payload.Thinking = normalizeDeepSeekThinking(req.Thinking, req.Reasoning)
