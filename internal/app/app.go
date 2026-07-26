@@ -151,7 +151,7 @@ func NewApp(opts Options) (*App, error) {
 		Agent:          a.agent,
 		Dispatcher:     a.skillDispatcher,
 		CommandSet:     a.commandSet,
-		Approve:        a.confirmApproval,
+		Approve:        a.ConfirmApproval,
 		ApprovalMode:   a.approvalMode,
 		Permissions:    a.permissions,
 		OnToolAction:   a.onToolAction,
@@ -171,7 +171,7 @@ func (a *App) wireStatusReporter() {
 		Agent:          a.agent,
 		Dispatcher:     a.skillDispatcher,
 		CommandSet:     a.commandSet,
-		Approve:        a.confirmApproval,
+		Approve:        a.ConfirmApproval,
 		StatusReporter: a.statusReporter,
 		ApprovalMode:   a.approvalMode,
 		Permissions:    a.permissions,
@@ -428,7 +428,7 @@ func (a *App) switchModel(ctx context.Context) error {
 		Agent:        a.agent,
 		Dispatcher:   a.skillDispatcher,
 		CommandSet:   a.commandSet,
-		Approve:      a.confirmApproval,
+		Approve:      a.ConfirmApproval,
 		ApprovalMode: a.approvalMode,
 		Permissions:  a.permissions,
 		TurnOptions: turn.TurnOptions{
@@ -456,7 +456,11 @@ func normalizeApprovalMode(mode safety.ApprovalMode) safety.ApprovalMode {
 	return mode
 }
 
-func (a *App) confirmApproval(ctx context.Context, name, reason string) (bool, error) {
+// ConfirmApproval is the console's y/N prompt, exported because a sub-agent runs
+// its own executor (internal/subagent) and would otherwise get a nil Approve —
+// which turn reads as "approved", silently ignoring the approval mode the user
+// chose. A delegate asks through the same prompt the main agent does.
+func (a *App) ConfirmApproval(ctx context.Context, name, reason string) (bool, error) {
 	reason = strings.TrimSpace(reason)
 	if reason == "" {
 		reason = "อาจมีการเปลี่ยนแปลงหรืออ่านสถานะระบบ"
@@ -542,7 +546,7 @@ func (a *App) applyApprovalMode(modeArg string) {
 			Agent:        a.agent,
 			Dispatcher:   a.skillDispatcher,
 			CommandSet:   a.commandSet,
-			Approve:      a.confirmApproval,
+			Approve:      a.ConfirmApproval,
 			ApprovalMode: a.approvalMode,
 			Permissions:  a.permissions,
 			TurnOptions: turn.TurnOptions{

@@ -620,11 +620,15 @@ func (a *App) startup(ctx context.Context) {
 // outputSubdir is where a brand new file goes, relative to the sandbox root.
 //
 // Focused on a project, that is the project itself — the whole point of
-// focusing is that the AI works inside it. Unfocused, the root is the user's
-// home directory, so "write index.html" used to drop a stray file beside
-// Documents and Downloads, and the next chat that wrote index.html overwrote
-// it. Each session gets its own folder instead; the session id is already a
-// timestamp, so the folders sort by when the work happened.
+// focusing is that the AI works inside it. Unfocused, every chat gets its own
+// folder, so "write index.html" cannot be overwritten by the next chat that
+// writes index.html; the session id is already a timestamp, so the folders
+// sort by when the work happened.
+//
+// This is relative to unfocusedRoot, which is itself <home>/aetox — so the
+// absolute destination is <home>/aetox/output/<session>. Changing either half
+// alone moves every artifact or doubles the folder name; they are checked
+// together in app_test.go.
 //
 // Read as a func at call time, not baked in at bootstrap: it changes every
 // time the user starts or opens a chat, and re-bootstrapping the engine to
@@ -633,17 +637,44 @@ func (a *App) outputSubdir() string {
 	if a.projectFocused || a.sessionID == "" {
 		return ""
 	}
-	return "aetox/output/" + a.sessionID
+	return "output/" + a.sessionID
 }
 
-// focusNone re-roots the engine at the user's home dir and marks the app as
-// not focused on any project. Falls back to cwd only if home can't be resolved.
-func (a *App) focusNone() {
+// unfocusedRoot is the sandbox root with no project open: <home>/aetox, not
+// the home directory itself.
+//
+// Home was the original default, and it made the sandbox everything the user
+// owns — .ssh, .aws, AppData with its browser token stores, Documents — all of
+// it readable by read/grep/glob on every turn and writable without a prompt,
+// since unfocused runs full-access. What made that indefensible rather than
+// merely broad is that web_fetch, web_search and browser_read now sit in the
+// same tool loop: a page can carry an instruction in, and the same loop can
+// carry an answer back out. Reaching anything outside this folder is now a
+// deliberate act — open it as a project, or attach the file.
+//
+// It is the parent of the folder writes already landed in (see outputSubdir),
+// so nothing on disk moved when this changed.
+//
+// Empty when home cannot be resolved, which config.Load turns into cwd — the
+// same fallback as before.
+func unfocusedRoot() string {
 	home, err := os.UserHomeDir()
-	if err != nil {
-		home = ""
+	if err != nil || strings.TrimSpace(home) == "" {
+		return ""
 	}
-	a.reload(config.ConfigOptions{RootPath: home, ApprovalMode: string(safety.ApprovalFullAccess)})
+	return filepath.Join(home, "aetox")
+}
+
+// focusNone re-roots the engine at unfocusedRoot and marks the app as not
+// focused on any project.
+func (a *App) focusNone() {
+	root := unfocusedRoot()
+	if root != "" {
+		// A root that does not exist yet makes `list .` fail on a fresh
+		// install — before the first write has created it.
+		_ = os.MkdirAll(root, 0o755)
+	}
+	a.reload(config.ConfigOptions{RootPath: root, ApprovalMode: string(safety.ApprovalFullAccess)})
 	a.projectFocused = false
 }
 
@@ -684,6 +715,12 @@ func (a *App) SendMessage(text string) (string, error) {
 		reasoning.WriteString(chunk)
 		wailsruntime.EventsEmit(a.ctx, "agent:reasoning", chunk)
 	})
+	// A message can land in the moment between the loop's last drain and the reply
+	// arriving here. Hand it back to the UI instead of swallowing it — this is the
+	// one case the composer's old queue still exists for.
+	if missed := a.agent.DrainInterjections(); len(missed) > 0 {
+		wailsruntime.EventsEmit(a.ctx, "agent:interjection-missed", missed)
+	}
 	if err != nil {
 		return reply, err
 	}
@@ -703,12 +740,42 @@ func (a *App) SendMessage(text string) (string, error) {
 	return reply, nil
 }
 
+// Interject hands the turn already in flight something the user just typed,
+// instead of parking it until the turn ends. The engine picks it up on its next
+// tool-loop round, or keeps the turn going if it was already writing the answer
+// (internal/cognitive.Agent.Interject).
+//
+// It returns nothing to wait on: the text folds into the turn that is running, so
+// its answer arrives as part of that turn's reply. Preset expansion happens here
+// too, or "/name" would work only when the engine was idle.
+func (a *App) Interject(text string) error {
+	if a.agent == nil {
+		return fmt.Errorf("aetox core not ready: %s", a.modelStatus)
+	}
+	if expanded, ok := command.ExpandPreset(text); ok {
+		text = expanded
+	}
+	if strings.TrimSpace(text) == "" {
+		return nil
+	}
+	a.agent.Interject(text)
+	return nil
+}
+
 // CancelTurn aborts the chat turn in flight (the tool loop is unbounded, so
 // this Stop button is the user's brake, same role as Ctrl+C in the CLI).
 // No-op when idle.
 func (a *App) CancelTurn() {
 	a.turnMu.Lock()
 	defer a.turnMu.Unlock()
+	// Stop has to mean stop, including whatever was typed under the turn being
+	// stopped. Dropped here rather than left in the buffer: the loop checks ctx
+	// before it drains, so a cancelled turn returns with the message still
+	// pending, SendMessage would hand it back as a straggler, and the composer
+	// would send the thing the user just cancelled as a fresh turn.
+	if a.agent != nil {
+		a.agent.DrainInterjections()
+	}
 	if a.turnCancel != nil {
 		a.turnCancel()
 	}
@@ -847,8 +914,8 @@ func (a *App) GetProjectStatus() ProjectStatus {
 	return a.currentProjectStatus()
 }
 
-// ClearProjectFocus switches to "no project" mode: tools keep full access to
-// the machine (rooted at home), but the chat is no longer tied to any project.
+// ClearProjectFocus switches to "no project" mode: tools keep working, rooted
+// at unfocusedRoot, but the chat is no longer tied to any project.
 // Starts a fresh session, same as switching projects does.
 func (a *App) ClearProjectFocus() ProjectStatus {
 	a.focusNone()

@@ -53,6 +53,25 @@ func projectKey(sandboxRoot string) string {
 	return filepath.Base(root) + "-" + hex.EncodeToString(sum[:4])
 }
 
+// isUnfocusedKey reports whether a stored session belongs to the "no project
+// open" bucket — the one that never gets a projects-table row.
+//
+// Two keys, not one: the current unfocused root, and the home directory, which
+// was the unfocused root until 2026-07-26 (§19.1 amendment). Every chat held
+// without a project open before then is filed under the old key, and losing
+// the check would answer real, still-present history with "โฟลเดอร์อาจถูกย้าย
+// หรือลบไปแล้ว" — the transcripts are fine, only the bucket was renamed.
+func isUnfocusedKey(key string) bool {
+	if key == "" {
+		return false
+	}
+	if root := unfocusedRoot(); root != "" && key == projectKey(root) {
+		return true
+	}
+	home, err := os.UserHomeDir()
+	return err == nil && home != "" && key == projectKey(home)
+}
+
 func newSessionID() string {
 	return time.Now().Format("20060102-150405.000")
 }
@@ -299,10 +318,10 @@ func (a *App) LoadSessionAnyProject(id string) ([]SessionMessage, error) {
 		return nil, fmt.Errorf("ไม่พบเซสชันนี้")
 	}
 	if key != projectKey(a.cfg.SandboxRoot) {
-		// Sessions chatted "ไม่โฟกัสโปรเจกต์" live under the home-dir bucket,
+		// Sessions chatted "ไม่โฟกัสโปรเจกต์" live in the unfocused bucket,
 		// which never gets a projects-table row — switch back to unfocused
 		// mode for those instead of treating them as an orphaned project.
-		if home, herr := os.UserHomeDir(); herr == nil && key == projectKey(home) {
+		if isUnfocusedKey(key) {
 			a.focusNone()
 			return a.LoadSession(id)
 		}

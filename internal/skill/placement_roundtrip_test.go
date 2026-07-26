@@ -49,7 +49,7 @@ func TestEveryFileToolFindsWhatWritePlaced(t *testing.T) {
 	out := toolCall(t, registry, "write", map[string]any{
 		"path": "index.html", "content": "<h1>alpha</h1>\n<p>beta</p>\n",
 	})
-	if want := "write done: " + subdir + "/index.html"; out.Content != want {
+	if want := "write done: " + subdir + "/index.html (on disk: " + placed + ")"; out.Content != want {
 		t.Fatalf("write receipt = %q, want %q", out.Content, want)
 	}
 	if _, err := os.Stat(placed); err != nil {

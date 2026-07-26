@@ -73,7 +73,7 @@ func Build(surface Surface, sandboxRoot string) string {
 func BuildWithReport(surface Surface, sandboxRoot string) (string, Loaded) {
 	var b strings.Builder
 	b.WriteString(identity(surface))
-	b.WriteString(environment(sandboxRoot))
+	b.WriteString(environment())
 	b.WriteString(fileEditing())
 
 	var loaded Loaded
@@ -146,14 +146,23 @@ func fileEditing() string {
 		"file end to end just to change one line in it.\n"
 }
 
-func environment(sandboxRoot string) string {
-	root := strings.TrimSpace(sandboxRoot)
-	if root == "" {
-		root = "(unknown)"
-	}
-	return "Current working sandbox root is: " + root + ".\n" +
-		"Do NOT proactively mention or leak this path to the user in general greetings or unrelated conversation " +
-		"unless they explicitly ask about files, directories, paths, or workspace locations.\n"
+// environment used to state the sandbox root as an absolute path and then
+// spend a second sentence telling the model not to repeat it — a machine-
+// specific path, with the user's account name in it, sent to whichever
+// provider is configured on every single request.
+//
+// It bought nothing. Every file tool rejects an absolute path (see
+// resolveSandboxPath in internal/skill), so the root could not be used to
+// call a tool even if the model wanted to, and its one real use — answering
+// "where is that file on my machine" — is covered by write's own receipt,
+// which now names the on-disk path. What replaces it is the rule that was
+// actually missing, and whose absence caused the wrong answer: repeat the
+// path a tool gave you, never assemble one.
+func environment() string {
+	return "Every file tool takes a path relative to the folder you are working in; absolute paths are rejected.\n" +
+		"When you tell the user where a file is, repeat the path the tool reported back to you. Do NOT assemble " +
+		"one yourself out of a folder and a filename — where a file lands is the tool's decision and it tells you, " +
+		"so a path you construct is a guess.\n"
 }
 
 func layer(title, path, content string) string {

@@ -48,7 +48,7 @@
   --text:#f3f4f6; --muted:#9aa1ab; --dim:#767d88; --glow:rgba(255,255,255,.55);
   --accent:#f3f4f6; --on-accent:#08090a; --accent-glow:rgba(255,255,255,.32);
   --header-bg:rgba(6,6,7,.82);
-  --grid-line:rgba(255,255,255,.05);
+  --grid-line:rgba(255,255,255,.085);
   --sheen:rgba(255,255,255,.05);
   --hover:rgba(255,255,255,.07);
   --shadow:0 30px 60px -20px rgba(0,0,0,.7);
@@ -60,6 +60,7 @@
   --mono:"Cascadia Code",Consolas,"Courier New",monospace;
   --sans:"IBM Plex Sans Thai","Leelawadee UI","Segoe UI",Tahoma,sans-serif;
   --s1:.5rem; --s2:1rem; --s3:1.5rem; --s4:2.5rem; --s5:5rem; --s6:7.5rem;
+  --wrap-pad:1.5rem;
   --nav-h:56px;
   --r-sm:8px; --r-md:14px; --r-lg:22px;
 }
@@ -73,7 +74,7 @@
   --text:#0e1116; --muted:#4d5561; --dim:#6b7280; --glow:rgba(14,17,22,.22);
   --accent:#0e1116; --on-accent:#ffffff; --accent-glow:rgba(14,17,22,.22);
   --header-bg:rgba(255,255,255,.86);
-  --grid-line:rgba(14,17,22,.055);
+  --grid-line:rgba(14,17,22,.09);
   --sheen:rgba(14,17,22,.03);
   --hover:rgba(14,17,22,.06);
   --shadow:0 20px 44px -20px rgba(14,17,22,.20);
@@ -89,7 +90,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);line-height:
 a{color:inherit;text-decoration:none}
 a:hover{text-decoration:underline;text-underline-offset:.25em}
 :focus-visible{outline:2px solid var(--text);outline-offset:3px;border-radius:4px}
-.wrap{max-width:1180px;margin:0 auto;padding:0 var(--s3)}
+.wrap{max-width:1180px;margin:0 auto;padding:0 var(--wrap-pad)}
 .mono{font-family:var(--mono)}
 
 /* ── header (outside the smooth wrapper — must stay fixed) ── */
@@ -98,7 +99,9 @@ header{position:fixed;top:0;left:0;right:0;z-index:50;border-bottom:1px solid tr
   transition:transform .3s ease-in-out,background-color .3s,border-color .3s}
 header.scrolled{background:var(--header-bg);border-bottom-color:var(--line)}
 header.hidden{transform:translateY(-100%)}
-.bar{display:flex;align-items:center;gap:var(--s2);padding:.8rem 0;min-height:var(--nav-h)}
+/* padding-block, not the `padding` shorthand — the shorthand would reset the
+   horizontal padding .wrap sets and jam the wordmark against the edge */
+.bar{display:flex;align-items:center;gap:var(--s2);padding-block:.8rem;min-height:var(--nav-h)}
 .lockup{display:flex;align-items:center;gap:.7rem}
 .lockup .mark-w{height:20px;width:auto;aspect-ratio:1610/454;flex-shrink:0;color:var(--text)}
 .ver{font-family:var(--mono);font-size:.7rem;color:var(--muted);border:1px solid var(--line-strong);border-radius:999px;padding:.22rem .7rem .22rem .55rem;margin-left:.4rem;display:inline-flex;align-items:center;gap:.4rem;white-space:nowrap}
@@ -171,6 +174,24 @@ h1 .gt{text-shadow:0 0 26px var(--glow)}
 
 /* ── sections ───────────────────────────────────────── */
 section{padding:var(--s6) 0;border-top:1px solid var(--line)}
+/* Same grid as the hero, reused as a section backdrop. Only goes on sections
+   whose content is mostly solid panels — they float on it and gain depth. Behind
+   running text it only competes with the words, so 01/04/05/07 stay flat. */
+.gridded{position:relative}
+.gridded::before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;
+  background-image:linear-gradient(var(--grid-line) 1px,transparent 1px),
+    linear-gradient(90deg,var(--grid-line) 1px,transparent 1px);
+  background-size:64px 64px;
+  -webkit-mask-image:radial-gradient(ellipse 78% 62% at 50% 48%,#000 18%,transparent 76%);
+  mask-image:radial-gradient(ellipse 78% 62% at 50% 48%,#000 18%,transparent 76%)}
+.gridded > *{position:relative;z-index:1}
+/* A grid behind a flat card just gets covered by it. The panels that already had
+   a shadow (.bench/.tl/.shot) read as floating; these did not. Two shadows, one
+   per theme: the drop shadow does the work on light, and is near-invisible on a
+   near-black page — there the 1px inset highlight on the top edge is what reads
+   as raised. Each is inert in the other theme, so one rule covers both. */
+.gridded .card,.gridded .stat,.gridded .preset,.gridded .contact-box{
+  box-shadow:var(--shadow),inset 0 1px 0 rgba(255,255,255,.05)}
 .sec-head{display:flex;align-items:flex-start;gap:var(--s2);margin-bottom:var(--s1)}
 .idx{font-family:var(--mono);font-size:.72rem;color:var(--text);width:1.8rem;height:1.8rem;flex:none;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line-strong);border-radius:50%;margin-top:.35rem}
 h2{font-size:clamp(1.55rem,3vw,2.4rem);letter-spacing:-.01em;line-height:1.3;font-weight:700}
@@ -219,7 +240,7 @@ dialog#lightbox img{display:block;max-width:96vw;max-height:88vh;width:auto;heig
     overflow:auto;-webkit-overflow-scrolling:touch;display:grid;place-items:center}
   dialog#lightbox img{max-width:none;max-height:none;width:auto;height:auto;
     min-width:1180px;border-radius:0;border:0}
-  .lb-close{position:fixed;top:.7rem;right:.7rem}
+  dialog#lightbox .lb-close{position:fixed;top:.7rem;right:.7rem}
 }
 /* drop a real screenshot straight into a .shot panel and it fits itself */
 .shot img{display:block;width:100%;height:auto}
@@ -263,6 +284,117 @@ dialog#lightbox img{display:block;max-width:96vw;max-height:88vh;width:auto;heig
   border-radius:999px;padding:.15rem .6rem;justify-self:start}
 .card.warn{border-color:var(--warn-line);background:var(--warn-bg)}
 .card.warn .tag{color:var(--warn);border-color:var(--warn-line)}
+
+/* ── measured numbers ───────────────────────────────── */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--s2);margin-bottom:var(--s4)}
+.stat{border:1px solid var(--line);border-radius:var(--r-md);padding:var(--s3);background:var(--bg-elev)}
+.stat .n{font-family:var(--mono);font-size:clamp(1.5rem,3.2vw,2.15rem);font-weight:700;line-height:1.1;letter-spacing:-.02em}
+.stat .n small{font-size:.44em;font-weight:400;color:var(--muted);margin-left:.28em;letter-spacing:0}
+.stat .k{color:var(--text);font-size:.9rem;margin-top:.5rem}
+.stat .s{font-family:var(--mono);font-size:.66rem;color:var(--dim);margin-top:.4rem}
+
+/* single-series bar chart — monochrome by design, values direct-labelled */
+.bench{border:1px solid var(--line-strong);border-radius:var(--r-lg);background:var(--bg-elev);
+  overflow:hidden;box-shadow:var(--shadow)}
+.bench-head{padding:.8rem 1.1rem;border-bottom:1px solid var(--line);background:var(--bg-elev2);
+  font-family:var(--mono);font-size:.72rem;color:var(--muted)}
+.bench-body{padding:var(--s3) 1.1rem}
+.brow{display:grid;grid-template-columns:11.8rem 1fr 5.2rem;gap:.8rem;align-items:center;margin-bottom:.6rem}
+.brow:last-child{margin-bottom:0}
+.brow .bk{display:flex;align-items:center;gap:.65rem;min-width:0}
+/* brand mark tile — every logo is monochrome, so it inherits the row's ink */
+.mk{flex:none;width:32px;height:32px;border:1px solid var(--line);border-radius:8px;
+  display:grid;place-items:center;padding:5px;color:var(--muted);background:var(--bg-elev2)}
+.mk svg{width:100%;height:100%;display:block}
+.mk-logo{border-color:var(--line-strong);color:var(--text);background:none}
+.mk-txt{font-family:var(--mono);font-size:.66rem;letter-spacing:-.03em;color:var(--muted)}
+.nm{display:flex;flex-direction:column;line-height:1.3;min-width:0}
+.nm b{font-family:var(--mono);font-size:.82rem;color:var(--text);font-weight:400;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nm .ty{font-family:var(--mono);font-size:.63rem;color:var(--dim);letter-spacing:.04em}
+.brow.us .nm b{color:var(--text);font-weight:700}
+.brow.us .nm .ty{color:var(--muted)}
+.btrack{height:1.7rem;background:var(--sheen);border-radius:0 4px 4px 0}
+/* flat at the zero baseline, 4px rounded at the data end; min-width keeps the
+   smallest bar visible instead of collapsing to nothing */
+.bfill{height:100%;width:var(--w);min-width:3px;background:var(--dim);
+  border-radius:0 4px 4px 0;transform-origin:left center}
+.bfill.us{background:var(--accent)}
+.brow .bv{font-family:var(--mono);font-size:.76rem;color:var(--muted);text-align:right}
+.brow.us .bv{color:var(--text);font-weight:700}
+
+/* head-to-head table */
+.vs{width:100%;border-collapse:collapse;margin-top:var(--s3);font-size:.88rem}
+.vs th,.vs td{padding:.6rem .7rem;border-bottom:1px solid var(--line);text-align:right}
+.vs th:first-child,.vs td:first-child{text-align:left;color:var(--muted)}
+.vs thead th{font-family:var(--mono);font-size:.7rem;color:var(--dim);font-weight:400;
+  border-bottom-color:var(--line-strong)}
+.vs thead th.me{color:var(--text);font-weight:700}
+.vs td.me{font-family:var(--mono);color:var(--text);font-weight:700}
+.vs td.them{font-family:var(--mono);color:var(--muted)}
+.vs tr:last-child td{border-bottom:none}
+.bench-foot{padding:.9rem 1.1rem;border-top:1px solid var(--line);font-family:var(--mono);
+  font-size:.86rem;color:var(--muted);line-height:1.75}
+.bench-foot b{color:var(--text)}
+.bnote{border-left:2px solid var(--line-strong);padding:.2rem 0 .2rem .9rem;margin-top:var(--s3);
+  color:var(--muted);font-size:.92rem;line-height:1.75}
+.bnote b{color:var(--text)}
+
+/* ── two-path fork: local vs provider ───────────────── */
+/* .path piggybacks on .card so .tag keeps its styling — it only overrides the
+   frame, because this is a choose-one moment and needs more presence than the
+   plain info cards elsewhere on the page */
+.fork{display:grid;grid-template-columns:1fr 1fr;gap:var(--s3)}
+/* flex, not the .card grid it inherits: the two cards stretch to equal height
+   and only flex lets the "เหมาะกับ" footer sit on the floor of both */
+.path{display:flex;flex-direction:column;border-color:var(--line-strong);border-radius:var(--r-lg);
+  padding:var(--s4) var(--s3);gap:.55rem;transition:border-color .18s,transform .18s}
+.path:hover{border-color:var(--text);transform:translateY(-2px)}
+/* Title + price are one unit (the offer), the rule under them splits it from the
+   details below. The qualifier sits on its own line, not on the price baseline —
+   beside it, Thai tone marks and descenders collide with the small text. */
+.path h3{margin-bottom:-.15rem}
+.path .price{font-size:clamp(2rem,3.8vw,2.8rem);font-weight:700;line-height:1.25;
+  letter-spacing:-.02em;padding-bottom:var(--s2);margin-bottom:.35rem;
+  border-bottom:1px solid var(--line)}
+.path .price small{display:block;font-size:.31em;font-weight:400;color:var(--muted);
+  font-family:var(--mono);letter-spacing:0;line-height:1.7;margin-top:.1rem}
+.path h3{font-size:1rem;font-weight:600;line-height:1.4;color:var(--muted)}
+.path .why{color:var(--muted);font-size:.94rem}
+.path ul{list-style:none;display:grid;gap:.4rem;margin-top:.3rem}
+.path li{color:var(--muted);font-size:.9rem;padding-left:1.3rem;position:relative}
+.path li::before{content:"✓";position:absolute;left:0;color:var(--text)}
+.path .who{margin-top:auto;padding-top:var(--s2);border-top:1px solid var(--line);
+  font-family:var(--mono);font-size:.72rem;color:var(--dim);line-height:1.7}
+/* clickable provider pills — every one links out, so a stranger can go read
+   about a provider without leaving to search for it */
+.pvs{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.5rem}
+.pv{display:inline-flex;align-items:center;gap:.42rem;font-family:var(--mono);font-size:.72rem;
+  color:var(--muted);border:1px solid var(--line);background:var(--bg-elev2);
+  border-radius:999px;padding:.3rem .72rem .3rem .55rem;transition:color .12s,border-color .12s}
+.pv:hover{color:var(--text);border-color:var(--line-strong);text-decoration:none}
+.pv svg{width:13px;height:13px;flex:none;display:block}
+/* lettered stand-in for the four providers Simple Icons has no mark for */
+.pv i{width:13px;height:13px;flex:none;display:grid;place-items:center;font-style:normal;
+  font-size:.58rem;font-weight:700;border:1px solid currentColor;border-radius:3px;line-height:1}
+.pvmore{margin-top:.7rem;background:none;border:1px solid var(--line-strong);border-radius:999px;
+  padding:.55rem 1rem;color:var(--text);font:inherit;font-size:.86rem;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;gap:.5rem;
+  transition:border-color .15s,background .15s}
+.pvmore::after{content:"→"}
+.pvmore:hover{border-color:var(--text);background:var(--hover)}
+
+/* provider popup — same native <dialog> deal as the lightbox: Esc, backdrop and
+   focus return for free */
+dialog#pvbox{position:fixed;margin:auto;max-width:min(94vw,640px);max-height:88vh;overflow:auto;
+  border:1px solid var(--line-strong);border-radius:var(--r-lg);padding:var(--s4) var(--s3);
+  background:var(--bg-elev);color:var(--text)}
+dialog#pvbox::backdrop{background:rgba(4,4,5,.88);backdrop-filter:blur(4px)}
+dialog#pvbox h3{font-size:1rem;font-weight:700}
+dialog#pvbox h3+p{color:var(--muted);font-size:.86rem;margin-top:.15rem}
+dialog#pvbox .pvs{margin-bottom:var(--s3)}
+dialog#pvbox .pvfoot{border-top:1px solid var(--line);padding-top:var(--s2);
+  font-family:var(--mono);font-size:.72rem;color:var(--dim);line-height:1.7}
 
 /* ── install ────────────────────────────────────────── */
 .install{display:grid;grid-template-columns:1fr 1fr;gap:var(--s5)}
@@ -312,13 +444,21 @@ ol.steps li b{color:var(--text);font-weight:600}
 
 /* ── footer ─────────────────────────────────────────── */
 footer{border-top:1px solid var(--line);padding:var(--s5) 0 var(--s3);overflow:hidden}
+/* The closing bookend to the hero: same grid, but anchored to the bottom edge
+   instead of centred, so it reads as a horizon the wordmark stands on. */
+footer.gridded::before{
+  -webkit-mask-image:radial-gradient(ellipse 90% 82% at 50% 104%,#000 12%,transparent 74%);
+  mask-image:radial-gradient(ellipse 90% 82% at 50% 104%,#000 12%,transparent 74%)}
 .foot{display:flex;flex-wrap:wrap;gap:var(--s2) var(--s3);align-items:center;justify-content:space-between;color:var(--muted);font-size:.85rem}
 .foot-brand{display:flex;align-items:center;gap:.75rem}
 .foot .mark-w{height:13px;width:auto;aspect-ratio:1610/454;flex-shrink:0;color:var(--muted)}
 .foot .own b{color:var(--text);font-weight:600}
 .foot .links{display:flex;gap:var(--s3)}
+/* opacity, not an rgba colour, so it stays theme-agnostic — which also means the
+   glow rides the same .12, hence the very wide blur to stay visible */
 .bigmark{font-size:clamp(3.5rem,17vw,13rem);font-weight:700;letter-spacing:-.04em;line-height:.95;
-  color:var(--text);opacity:.10;text-align:center;margin-top:var(--s4);user-select:none;white-space:nowrap}
+  color:var(--text);opacity:.12;text-align:center;margin-top:var(--s4);user-select:none;white-space:nowrap;
+  text-shadow:0 0 70px var(--glow)}
 .bigmark span{display:inline-block}
 
 /* ── responsive ─────────────────────────────────────── */
@@ -327,8 +467,10 @@ footer{border-top:1px solid var(--line);padding:var(--s5) 0 var(--s3);overflow:h
   .fix{grid-template-columns:1fr;gap:var(--s3);margin-bottom:var(--s5)}
   .fix.flip .fix-copy{order:0}
   .caps{grid-template-columns:1fr;gap:var(--s4)}
+  .fork{grid-template-columns:1fr}
   .install{grid-template-columns:1fr;gap:var(--s4)}
   .sec-grid{grid-template-columns:1fr}
+  .stats{grid-template-columns:repeat(2,1fr)}
   .presets{grid-template-columns:repeat(2,1fr)}
   .tools{grid-template-columns:1fr}
   /* five Thai anchors will not fit a phone bar — the page is one linear
@@ -342,6 +484,11 @@ footer{border-top:1px solid var(--line);padding:var(--s5) 0 var(--s3);overflow:h
   .btn,.ghost{width:100%;justify-content:center;text-align:center}
   .trow{flex-direction:column;gap:.15rem}
   .trow .tn{min-width:0}
+  .brow{grid-template-columns:9.6rem 1fr 3.9rem;gap:.5rem}
+  .mk{width:27px;height:27px;padding:4px;border-radius:7px}
+  .nm b{font-size:.73rem}
+  .nm .ty{font-size:.56rem}
+  .brow .bv{font-size:.68rem}
   .ver{display:none}
   .foot{justify-content:flex-start}
 }
@@ -369,6 +516,31 @@ footer{border-top:1px solid var(--line);padding:var(--s5) 0 var(--s3);overflow:h
   <symbol id="wordmark" viewBox="800 75.5 1610 454">
     <path fill="currentColor" fill-rule="evenodd" d="M 1226.0,500.5 L 1141.0,500.5 L 1109.0,422.5 L 935.0,422.5 L 904.0,500.5 L 819.5,500.0 L 976.0,98.5 L 1070.5,99.0 L 1226.0,500.5 Z  M 1680.0,505.5 L 1655.0,503.5 L 1634.0,497.5 L 1619.0,488.5 L 1602.5,469.0 L 1594.5,448.0 L 1591.5,424.0 L 1591.5,273.0 L 1548.5,272.0 L 1547.5,205.0 L 1591.5,204.0 L 1592.0,123.5 L 1672.0,123.5 L 1672.5,204.0 L 1729.5,205.0 L 1729.5,271.0 L 1672.5,272.0 L 1672.5,415.0 L 1676.5,426.0 L 1689.0,434.5 L 1709.0,434.5 L 1727.5,430.0 L 1736.5,491.0 L 1720.0,499.5 L 1680.0,505.5 Z  M 1081.5,350.0 L 1021.0,187.5 L 961.5,350.0 L 1081.5,350.0 Z  M 1407.0,506.5 L 1373.0,505.5 L 1341.0,499.5 L 1294.0,477.5 L 1267.5,454.0 L 1253.5,435.0 L 1240.5,408.0 L 1233.5,378.0 L 1232.5,334.0 L 1236.5,309.0 L 1244.5,285.0 L 1259.5,258.0 L 1284.0,231.5 L 1301.0,219.5 L 1328.0,206.5 L 1359.0,198.5 L 1418.0,198.5 L 1444.0,205.5 L 1476.0,221.5 L 1499.5,243.0 L 1515.5,267.0 L 1526.5,295.0 L 1532.5,324.0 L 1532.0,379.5 L 1316.5,380.0 L 1321.5,398.0 L 1330.5,412.0 L 1342.0,423.5 L 1362.0,434.5 L 1392.0,440.5 L 1422.0,438.5 L 1444.0,431.5 L 1473.0,415.5 L 1512.5,465.0 L 1492.0,481.5 L 1465.0,494.5 L 1438.0,502.5 L 1407.0,506.5 Z  M 1932.0,505.5 L 1894.0,505.5 L 1870.0,501.5 L 1841.0,491.5 L 1818.0,478.5 L 1787.5,451.0 L 1776.5,436.0 L 1763.5,410.0 L 1755.5,381.0 L 1753.5,339.0 L 1757.5,313.0 L 1766.5,286.0 L 1779.5,263.0 L 1801.0,238.5 L 1825.0,220.5 L 1851.0,207.5 L 1886.0,198.5 L 1915.0,196.5 L 1951.0,200.5 L 1979.0,209.5 L 2009.0,226.5 L 2034.5,249.0 L 2047.5,266.0 L 2063.5,298.0 L 2070.5,328.0 L 2071.5,366.0 L 2065.5,399.0 L 2054.5,426.0 L 2039.5,449.0 L 2017.0,471.5 L 1993.0,487.5 L 1967.0,498.5 L 1932.0,505.5 Z  M 2378.0,500.5 L 2289.0,500.5 L 2224.0,407.5 L 2159.0,500.5 L 2070.0,500.5 L 2174.5,349.0 L 2072.5,204.0 L 2163.0,203.5 L 2224.0,289.5 L 2285.0,203.5 L 2373.0,203.5 L 2272.5,348.0 L 2378.0,500.5 Z  M 1452.5,321.0 L 1447.5,299.0 L 1439.5,285.0 L 1422.0,269.5 L 1398.0,261.5 L 1371.0,262.5 L 1344.0,274.5 L 1325.5,295.0 L 1316.5,319.0 L 1317.0,321.5 L 1452.5,321.0 Z  M 1923.5,434.0 L 1950.0,425.5 L 1972.5,405.0 L 1986.5,374.0 L 1988.5,340.0 L 1976.5,304.0 L 1959.0,283.5 L 1937.0,271.5 L 1902.0,268.5 L 1873.0,278.5 L 1849.5,302.0 L 1838.5,329.0 L 1837.5,368.0 L 1848.5,399.0 L 1864.0,417.5 L 1893.0,432.5 L 1923.5,434.0 Z"/>
   </symbol>
+  <!-- Brand marks for the size comparison, from the Simple Icons set (CC0
+       collection; each mark remains the trademark of its owner and is used here
+       only to identify the product being compared). Inlined so the page still
+       renders them with no network. -->
+  <symbol id="lg-claude" viewBox="0 0 24 24"><path fill="currentColor" d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z"/></symbol>
+  <symbol id="lg-openai" viewBox="0 0 24 24"><path fill="currentColor" d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z"/></symbol>
+  <symbol id="lg-zed" viewBox="0 0 24 24"><path fill="currentColor" d="M2.25 1.5a.75.75 0 0 0-.75.75v16.5H0V2.25A2.25 2.25 0 0 1 2.25 0h20.095c1.002 0 1.504 1.212.795 1.92L10.764 14.298h3.486V12.75h1.5v1.922a1.125 1.125 0 0 1-1.125 1.125H9.264l-2.578 2.578h11.689V9h1.5v9.375a1.5 1.5 0 0 1-1.5 1.5H5.185L2.562 22.5H21.75a.75.75 0 0 0 .75-.75V5.25H24v16.5A2.25 2.25 0 0 1 21.75 24H1.655C.653 24 .151 22.788.86 22.08L13.19 9.75H9.75v1.5h-1.5V9.375A1.125 1.125 0 0 1 9.375 8.25h5.314l2.625-2.625H5.625V15h-1.5V5.625a1.5 1.5 0 0 1 1.5-1.5h13.19L21.438 1.5z"/></symbol>
+  <symbol id="lg-vscode" viewBox="0 0 24 24"><path fill="currentColor" d="M23.15 2.587L18.21.21a1.494 1.494 0 0 0-1.705.29l-9.46 8.63-4.12-3.128a.999.999 0 0 0-1.276.057L.327 7.261A1 1 0 0 0 .326 8.74L3.899 12 .326 15.26a1 1 0 0 0 .001 1.479L1.65 17.94a.999.999 0 0 0 1.276.057l4.12-3.128 9.46 8.63a1.492 1.492 0 0 0 1.704.29l4.942-2.377A1.5 1.5 0 0 0 24 20.06V3.939a1.5 1.5 0 0 0-.85-1.352zm-5.146 14.861L10.826 12l7.178-5.448v10.896z"/></symbol>
+  <symbol id="lg-cursor" viewBox="0 0 24 24"><path fill="currentColor" d="M11.503.131 1.891 5.678a.84.84 0 0 0-.42.726v11.188c0 .3.162.575.42.724l9.609 5.55a1 1 0 0 0 .998 0l9.61-5.55a.84.84 0 0 0 .42-.724V6.404a.84.84 0 0 0-.42-.726L12.497.131a1.01 1.01 0 0 0-.996 0M2.657 6.338h18.55c.263 0 .43.287.297.515L12.23 22.918c-.062.107-.229.064-.229-.06V12.335a.59.59 0 0 0-.295-.51l-9.11-5.257c-.109-.063-.064-.23.061-.23"/></symbol>
+  <symbol id="lg-copilot" viewBox="0 0 24 24"><path fill="currentColor" d="M23.922 16.997C23.061 18.492 18.063 22.02 12 22.02 5.937 22.02.939 18.492.078 16.997A.641.641 0 0 1 0 16.741v-2.869a.883.883 0 0 1 .053-.22c.372-.935 1.347-2.292 2.605-2.656.167-.429.414-1.055.644-1.517a10.098 10.098 0 0 1-.052-1.086c0-1.331.282-2.499 1.132-3.368.397-.406.89-.717 1.474-.952C7.255 2.937 9.248 1.98 11.978 1.98c2.731 0 4.767.957 6.166 2.093.584.235 1.077.546 1.474.952.85.869 1.132 2.037 1.132 3.368 0 .368-.014.733-.052 1.086.23.462.477 1.088.644 1.517 1.258.364 2.233 1.721 2.605 2.656a.841.841 0 0 1 .053.22v2.869a.641.641 0 0 1-.078.256Zm-11.75-5.992h-.344a4.359 4.359 0 0 1-.355.508c-.77.947-1.918 1.492-3.508 1.492-1.725 0-2.989-.359-3.782-1.259a2.137 2.137 0 0 1-.085-.104L4 11.746v6.585c1.435.779 4.514 2.179 8 2.179 3.486 0 6.565-1.4 8-2.179v-6.585l-.098-.104s-.033.045-.085.104c-.793.9-2.057 1.259-3.782 1.259-1.59 0-2.738-.545-3.508-1.492a4.359 4.359 0 0 1-.355-.508Zm2.328 3.25c.549 0 1 .451 1 1v2c0 .549-.451 1-1 1-.549 0-1-.451-1-1v-2c0-.549.451-1 1-1Zm-5 0c.549 0 1 .451 1 1v2c0 .549-.451 1-1 1-.549 0-1-.451-1-1v-2c0-.549.451-1 1-1Zm3.313-6.185c.136 1.057.403 1.913.878 2.497.442.544 1.134.938 2.344.938 1.573 0 2.292-.337 2.657-.751.384-.435.558-1.15.558-2.361 0-1.14-.243-1.847-.705-2.319-.477-.488-1.319-.862-2.824-1.025-1.487-.161-2.192.138-2.533.529-.269.307-.437.808-.438 1.578v.021c0 .265.021.562.063.893Zm-1.626 0c.042-.331.063-.628.063-.894v-.02c-.001-.77-.169-1.271-.438-1.578-.341-.391-1.046-.69-2.533-.529-1.505.163-2.347.537-2.824 1.025-.462.472-.705 1.179-.705 2.319 0 1.211.175 1.926.558 2.361.365.414 1.084.751 2.657.751 1.21 0 1.902-.394 2.344-.938.475-.584.742-1.44.878-2.497Z"/></symbol>
+  <symbol id="lg-perplexity" viewBox="0 0 24 24"><path fill="currentColor" d="M22.3977 7.0896h-2.3106V.0676l-7.5094 6.3542V.1577h-1.1554v6.1966L4.4904 0v7.0896H1.6023v10.3976h2.8882V24l6.932-6.3591v6.2005h1.1554v-6.0469l6.9318 6.1807v-6.4879h2.8882V7.0896zm-3.4657-4.531v4.531h-5.355l5.355-4.531zm-13.2862.0676 4.8691 4.4634H5.6458V2.6262zM2.7576 16.332V8.245h7.8476l-6.1149 6.1147v1.9723H2.7576zm2.8882 5.0404v-3.8852h.0001v-2.6488l5.7763-5.7764v7.0111l-5.7764 5.2993zm12.7086.0248-5.7766-5.1509V9.0618l5.7766 5.7766v6.5588zm2.8882-5.0652h-1.733v-1.9723L13.3948 8.245h7.8478v8.087z"/></symbol>
+  <symbol id="lg-qwen" viewBox="0 0 24 24"><path fill="currentColor" d="M23.919 14.545 20.817 9.17l1.47-2.544a.56.56 0 0 0 0-.566l-1.633-2.83a.57.57 0 0 0-.49-.283h-6.207L12.487.402a.57.57 0 0 0-.49-.284H8.732a.56.56 0 0 0-.49.284L5.139 5.775h-2.94a.56.56 0 0 0-.49.284L.077 8.887a.56.56 0 0 0 0 .567L3.18 14.83l-1.47 2.545a.56.56 0 0 0 0 .566l1.634 2.83a.57.57 0 0 0 .49.283h6.205l1.47 2.545a.57.57 0 0 0 .49.284h3.266a.57.57 0 0 0 .49-.284l3.104-5.375h2.94a.57.57 0 0 0 .49-.283l1.634-2.828a.55.55 0 0 0-.004-.568M8.733.686l1.634 2.828-1.634 2.828H21.8L20.164 9.17H7.425L5.63 6.06Zm1.306 19.801-6.205-.002 1.634-2.83h3.265L2.201 6.344h3.267q3.182 5.517 6.367 11.032zm10.124-5.66L18.53 12l-6.532 11.315-1.634-2.83c2.129-3.673 4.25-7.351 6.373-11.028h3.592l3.102 5.374z"/></symbol>
+  <symbol id="lg-windsurf" viewBox="0 0 24 24"><path fill="currentColor" d="M23.55 5.067c-1.2038-.002-2.1806.973-2.1806 2.1765v4.8676c0 .972-.8035 1.7594-1.7597 1.7594-.568 0-1.1352-.286-1.4718-.7659l-4.9713-7.1003c-.4125-.5896-1.0837-.941-1.8103-.941-1.1334 0-2.1533.9635-2.1533 2.153v4.8957c0 .972-.7969 1.7594-1.7596 1.7594-.57 0-1.1363-.286-1.4728-.7658L.4076 5.1598C.2822 4.9798 0 5.0688 0 5.2882v4.2452c0 .2147.0656.4228.1884.599l5.4748 7.8183c.3234.462.8006.8052 1.3509.9298 1.3771.313 2.6446-.747 2.6446-2.0977v-4.893c0-.972.7875-1.7593 1.7596-1.7593h.003a1.798 1.798 0 0 1 1.4718.7658l4.9723 7.0994c.4135.5905 1.05.941 1.8093.941 1.1587 0 2.1515-.9645 2.1515-2.153v-4.8948c0-.972.7875-1.7594 1.7596-1.7594h.194a.22.22 0 0 0 .2204-.2202v-4.622a.22.22 0 0 0-.2203-.2203Z"/></symbol>
+  <symbol id="lg-opencode" viewBox="0 0 24 24"><path fill="currentColor" d="M22 24H2V0h20zM17 4.8H7v14.4h10z"/></symbol>
+  <!-- Provider marks for the local-vs-provider fork, same Simple Icons source and
+       terms as the marks above. groq / zai / together / cohere have no mark in
+       that set — those pills fall back to a lettered tile in markup. -->
+  <symbol id="lg-ollama" viewBox="0 0 24 24"><path fill="currentColor" d="M16.361 10.26a.894.894 0 0 0-.558.47l-.072.148.001.207c0 .193.004.217.059.353.076.193.152.312.291.448.24.238.51.3.872.205a.86.86 0 0 0 .517-.436.752.752 0 0 0 .08-.498c-.064-.453-.33-.782-.724-.897a1.06 1.06 0 0 0-.466 0zm-9.203.005c-.305.096-.533.32-.65.639a1.187 1.187 0 0 0-.06.52c.057.309.31.59.598.667.362.095.632.033.872-.205.14-.136.215-.255.291-.448.055-.136.059-.16.059-.353l.001-.207-.072-.148a.894.894 0 0 0-.565-.472 1.02 1.02 0 0 0-.474.007Zm4.184 2c-.131.071-.223.25-.195.383.031.143.157.288.353.407.105.063.112.072.117.136.004.038-.01.146-.029.243-.02.094-.036.194-.036.222.002.074.07.195.143.253.064.052.076.054.255.059.164.005.198.001.264-.03.169-.082.212-.234.15-.525-.052-.243-.042-.28.087-.355.137-.08.281-.219.324-.314a.365.365 0 0 0-.175-.48.394.394 0 0 0-.181-.033c-.126 0-.207.03-.355.124l-.085.053-.053-.032c-.219-.13-.259-.145-.391-.143a.396.396 0 0 0-.193.032zm.39-2.195c-.373.036-.475.05-.654.086-.291.06-.68.195-.951.328-.94.46-1.589 1.226-1.787 2.114-.04.176-.045.234-.045.53 0 .294.005.357.043.524.264 1.16 1.332 2.017 2.714 2.173.3.033 1.596.033 1.896 0 1.11-.125 2.064-.727 2.493-1.571.114-.226.169-.372.22-.602.039-.167.044-.23.044-.523 0-.297-.005-.355-.045-.531-.288-1.29-1.539-2.304-3.072-2.497a6.873 6.873 0 0 0-.855-.031zm.645.937a3.283 3.283 0 0 1 1.44.514c.223.148.537.458.671.662.166.251.26.508.303.82.02.143.01.251-.043.482-.08.345-.332.705-.672.957a3.115 3.115 0 0 1-.689.348c-.382.122-.632.144-1.525.138-.582-.006-.686-.01-.853-.042-.57-.107-1.022-.334-1.35-.68-.264-.28-.385-.535-.45-.946-.03-.192.025-.509.137-.776.136-.326.488-.73.836-.963.403-.269.934-.46 1.422-.512.187-.02.586-.02.773-.002zm-5.503-11a1.653 1.653 0 0 0-.683.298C5.617.74 5.173 1.666 4.985 2.819c-.07.436-.119 1.04-.119 1.503 0 .544.064 1.24.155 1.721.02.107.031.202.023.208a8.12 8.12 0 0 1-.187.152 5.324 5.324 0 0 0-.949 1.02 5.49 5.49 0 0 0-.94 2.339 6.625 6.625 0 0 0-.023 1.357c.091.78.325 1.438.727 2.04l.13.195-.037.064c-.269.452-.498 1.105-.605 1.732-.084.496-.095.629-.095 1.294 0 .67.009.803.088 1.266.095.555.288 1.143.503 1.534.071.128.243.393.264.407.007.003-.014.067-.046.141a7.405 7.405 0 0 0-.548 1.873c-.062.417-.071.552-.071.991 0 .56.031.832.148 1.279L3.42 24h1.478l-.05-.091c-.297-.552-.325-1.575-.068-2.597.117-.472.25-.819.498-1.296l.148-.29v-.177c0-.165-.003-.184-.057-.293a.915.915 0 0 0-.194-.25 1.74 1.74 0 0 1-.385-.543c-.424-.92-.506-2.286-.208-3.451.124-.486.329-.918.544-1.154a.787.787 0 0 0 .223-.531c0-.195-.07-.355-.224-.522a3.136 3.136 0 0 1-.817-1.729c-.14-.96.114-2.005.69-2.834.563-.814 1.353-1.336 2.237-1.475.199-.033.57-.028.776.01.226.04.367.028.512-.041.179-.085.268-.19.374-.431.093-.215.165-.333.36-.576.234-.29.46-.489.822-.729.413-.27.884-.467 1.352-.561.17-.035.25-.04.569-.04.319 0 .398.005.569.04a4.07 4.07 0 0 1 1.914.997c.117.109.398.457.488.602.034.057.095.177.132.267.105.241.195.346.374.43.14.068.286.082.503.045.343-.058.607-.053.943.016 1.144.23 2.14 1.173 2.581 2.437.385 1.108.276 2.267-.296 3.153-.097.15-.193.27-.333.419-.301.322-.301.722-.001 1.053.493.539.801 1.866.708 3.036-.062.772-.26 1.463-.533 1.854a2.096 2.096 0 0 1-.224.258.916.916 0 0 0-.194.25c-.054.109-.057.128-.057.293v.178l.148.29c.248.476.38.823.498 1.295.253 1.008.231 2.01-.059 2.581a.845.845 0 0 0-.044.098c0 .006.329.009.732.009h.73l.02-.074.036-.134c.019-.076.057-.3.088-.516.029-.217.029-1.016 0-1.258-.11-.875-.295-1.57-.597-2.226-.032-.074-.053-.138-.046-.141.008-.005.057-.074.108-.152.376-.569.607-1.284.724-2.228.031-.26.031-1.378 0-1.628-.083-.645-.182-1.082-.348-1.525a6.083 6.083 0 0 0-.329-.7l-.038-.064.131-.194c.402-.604.636-1.262.727-2.04a6.625 6.625 0 0 0-.024-1.358 5.512 5.512 0 0 0-.939-2.339 5.325 5.325 0 0 0-.95-1.02 8.097 8.097 0 0 1-.186-.152.692.692 0 0 1 .023-.208c.208-1.087.201-2.443-.017-3.503-.19-.924-.535-1.658-.98-2.082-.354-.338-.716-.482-1.15-.455-.996.059-1.8 1.205-2.116 3.01a6.805 6.805 0 0 0-.097.726c0 .036-.007.066-.015.066a.96.96 0 0 1-.149-.078A4.857 4.857 0 0 0 12 3.03c-.832 0-1.687.243-2.456.698a.958.958 0 0 1-.148.078c-.008 0-.015-.03-.015-.066a6.71 6.71 0 0 0-.097-.725C8.997 1.392 8.337.319 7.46.048a2.096 2.096 0 0 0-.585-.041Zm.293 1.402c.248.197.523.759.682 1.388.03.113.06.244.069.292.007.047.026.152.041.233.067.365.098.76.102 1.24l.002.475-.12.175-.118.178h-.278c-.324 0-.646.041-.954.124l-.238.06c-.033.007-.038-.003-.057-.144a8.438 8.438 0 0 1 .016-2.323c.124-.788.413-1.501.696-1.711.067-.05.079-.049.157.013zm9.825-.012c.17.126.358.46.498.888.28.854.36 2.028.212 3.145-.019.14-.024.151-.057.144l-.238-.06a3.693 3.693 0 0 0-.954-.124h-.278l-.119-.178-.119-.175.002-.474c.004-.669.066-1.19.214-1.772.157-.623.434-1.185.68-1.382.078-.062.09-.063.159-.012z"/></symbol>
+  <symbol id="lg-lmstudio" viewBox="0 0 24 24"><path fill="currentColor" d="M5.6 0A5.6 5.6 0 0 0 0 5.6v12.8A5.6 5.6 0 0 0 5.6 24h12.8a5.6 5.6 0 0 0 5.6-5.6V5.6A5.6 5.6 0 0 0 18.4 0zm0 2h12.8A3.6 3.6 0 0 1 22 5.6v12.8a3.6 3.6 0 0 1-3.6 3.6H5.6A3.6 3.6 0 0 1 2 18.4V5.6A3.6 3.6 0 0 1 5.6 2m-.4 2.8a1.2 1.2 0 0 0 0 2.4h10.4a1.2 1.2 0 0 0 0-2.4zm3.2 4a1.2 1.2 0 0 0 0 2.4h10.4a1.2 1.2 0 0 0 0-2.4zm-3.2 4a1.2 1.2 0 0 0 0 2.4h10.4a1.2 1.2 0 0 0 0-2.4zm3.2 4a1.2 1.2 0 0 0 0 2.4h10.4a1.2 1.2 0 0 0 0-2.4z"/></symbol>
+  <symbol id="lg-anthropic" viewBox="0 0 24 24"><path fill="currentColor" d="M17.3041 3.541h-3.6718l6.696 16.918H24Zm-10.6082 0L0 20.459h3.7442l1.3693-3.5527h7.0052l1.3693 3.5528h3.7442L10.5363 3.5409Zm-.3712 10.2232 2.2914-5.9456 2.2914 5.9456Z"/></symbol>
+  <symbol id="lg-gemini" viewBox="0 0 24 24"><path fill="currentColor" d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81"/></symbol>
+  <symbol id="lg-deepseek" viewBox="0 0 24 24"><path fill="currentColor" d="M23.748 4.651c-.254-.124-.364.113-.512.233-.051.04-.094.09-.137.137-.372.397-.806.657-1.373.626-.829-.046-1.537.214-2.163.848-.133-.782-.575-1.248-1.247-1.548-.352-.155-.708-.311-.955-.65-.172-.24-.219-.509-.305-.774-.055-.16-.11-.323-.293-.35-.2-.031-.278.136-.356.276-.313.572-.434 1.202-.422 1.84.027 1.436.633 2.58 1.838 3.393.137.094.172.187.129.323-.082.28-.18.553-.266.833-.055.179-.137.218-.328.14a5.5 5.5 0 0 1-1.737-1.179c-.857-.828-1.631-1.743-2.597-2.46a12 12 0 0 0-.689-.47c-.985-.957.13-1.743.387-1.836.27-.098.094-.433-.778-.428-.872.003-1.67.295-2.687.685a3 3 0 0 1-.465.136 9.6 9.6 0 0 0-2.883-.101c-1.885.21-3.39 1.1-4.497 2.622C.082 8.776-.231 10.854.152 13.02c.403 2.284 1.568 4.175 3.36 5.653 1.857 1.533 3.997 2.284 6.438 2.14 1.482-.085 3.132-.284 4.994-1.86.47.234.962.328 1.78.398.629.058 1.235-.031 1.705-.129.735-.155.684-.836.418-.961-2.155-1.004-1.682-.595-2.112-.926 1.095-1.295 2.768-3.598 3.284-6.733.05-.346.115-.834.108-1.114-.004-.171.035-.238.23-.257a4.2 4.2 0 0 0 1.545-.475c1.397-.763 1.96-2.016 2.093-3.517.02-.23-.004-.467-.247-.588M11.58 18.168c-2.088-1.642-3.101-2.183-3.52-2.16-.39.024-.32.472-.234.763.09.288.207.487.371.74.114.167.192.416-.113.603-.673.416-1.842-.14-1.897-.168-1.361-.801-2.5-1.86-3.301-3.306-.775-1.393-1.225-2.888-1.299-4.482-.02-.385.094-.522.477-.592a4.7 4.7 0 0 1 1.53-.038c2.131.311 3.946 1.264 5.467 2.774.868.86 1.525 1.887 2.202 2.89.72 1.066 1.494 2.082 2.48 2.915.348.291.626.513.892.677-.802.09-2.14.109-3.055-.615zm1.001-6.44a.306.306 0 0 1 .415-.287.3.3 0 0 1 .113.074.3.3 0 0 1 .086.214c0 .17-.136.307-.308.307a.303.303 0 0 1-.306-.307m3.11 1.596c-.2.081-.4.151-.591.16a1.25 1.25 0 0 1-.798-.254c-.274-.23-.47-.358-.551-.758a1.7 1.7 0 0 1 .015-.588c.07-.327-.007-.537-.238-.727-.188-.156-.426-.199-.689-.199a.6.6 0 0 1-.254-.078.253.253 0 0 1-.114-.358 1 1 0 0 1 .192-.21c.356-.202.767-.136 1.146.016.352.144.618.408 1.001.782.392.451.462.576.685.915.176.264.336.536.446.848.066.194-.02.353-.25.45"/></symbol>
+  <symbol id="lg-openrouter" viewBox="0 0 24 24"><path fill="currentColor" d="M16.778 1.844v1.919q-.569-.026-1.138-.032-.708-.008-1.415.037c-1.93.126-4.023.728-6.149 2.237-2.911 2.066-2.731 1.95-4.14 2.75-.396.223-1.342.574-2.185.798-.841.225-1.753.333-1.751.333v4.229s.768.108 1.61.333c.842.224 1.789.575 2.185.799 1.41.798 1.228.683 4.14 2.75 2.126 1.509 4.22 2.11 6.148 2.236.88.058 1.716.041 2.555.005v1.918l7.222-4.168-7.222-4.17v2.176c-.86.038-1.611.065-2.278.021-1.364-.09-2.417-.357-3.979-1.465-2.244-1.593-2.866-2.027-3.68-2.508.889-.518 1.449-.906 3.822-2.59 1.56-1.109 2.614-1.377 3.978-1.466.667-.044 1.418-.017 2.278.02v2.176L24 6.014Z"/></symbol>
+  <symbol id="lg-mistral" viewBox="0 0 24 24"><path fill="currentColor" d="M17.143 3.429v3.428h-3.429v3.429h-3.428V6.857H6.857V3.43H3.43v13.714H0v3.428h10.286v-3.428H6.857v-3.429h3.429v3.429h3.429v-3.429h3.428v3.429h-3.428v3.428H24v-3.428h-3.43V3.429z"/></symbol>
+  <symbol id="lg-perplexity" viewBox="0 0 24 24"><path fill="currentColor" d="M22.3977 7.0896h-2.3106V.0676l-7.5094 6.3542V.1577h-1.1554v6.1966L4.4904 0v7.0896H1.6023v10.3976h2.8882V24l6.932-6.3591v6.2005h1.1554v-6.0469l6.9318 6.1807v-6.4879h2.8882V7.0896zm-3.4657-4.531v4.531h-5.355l5.355-4.531zm-13.2862.0676 4.8691 4.4634H5.6458V2.6262zM2.7576 16.332V8.245h7.8476l-6.1149 6.1147v1.9723H2.7576zm2.8882 5.0404v-3.8852h.0001v-2.6488l5.7763-5.7764v7.0111l-5.7764 5.2993zm12.7086.0248-5.7766-5.1509V9.0618l5.7766 5.7766v6.5588zm2.8882-5.0652h-1.733v-1.9723L13.3948 8.245h7.8478v8.087z"/></symbol>
 </svg>
 
 <header data-header>
@@ -376,7 +548,7 @@ footer{border-top:1px solid var(--line);padding:var(--s5) 0 var(--s3);overflow:h
     <a class="lockup" href="#" aria-label="Aetox — กลับขึ้นบนสุด">
       <svg class="mark-w" aria-hidden="true"><use href="#wordmark"/></svg>
     </a>
-    <span class="ver"><span class="led" aria-hidden="true"></span>v0.5.0 · Windows</span>
+    <span class="ver"><span class="led" aria-hidden="true"></span>v0.6.0 · Windows</span>
     <nav>
       <a href="#fix">ปิดจุดอ่อน</a>
       <a href="#presets">ชุดคำสั่ง</a>
@@ -407,9 +579,9 @@ footer{border-top:1px solid var(--line);padding:var(--s5) 0 var(--s3);overflow:h
       <div class="hero-copy">
         <p class="kicker" data-intro><span class="led" aria-hidden="true"></span>AI AGENT DESKTOP · NO LOCK-IN</p>
         <h1><span class="typed" data-typed>หัวใจไม่ใช่ความรู้ในโมเดล แต่คือ <span class="gt">Architecture</span> ที่ควบคุมวิธีคิด</span></h1>
-        <p class="lede" data-intro>โมเดลที่อ่านภาพไม่ได้ ดูวิดีโอไม่ได้ แตะเครื่องไม่ได้ ทำได้ทั้งหมดเมื่อวิ่งผ่าน Aetox
-        เพราะความสามารถอยู่ที่สถาปัตยกรรมที่ควบคุมโมเดล ไม่ใช่ตัวโมเดล
-        เลือกได้ 13 providers หรือรันโมเดลฟรีในเครื่องคุณเอง</p>
+        <p class="lede" data-intro>สถาปัตยกรรมที่ดีไม่ใช่แค่ปิดจุดอ่อนให้โมเดล มันขยายศักยภาพเดิมและสร้างมิติใหม่ที่ตัวโมเดลไม่เคยมี
+        ความสามารถของ AI ไม่ได้ผูกอยู่กับโมเดลประมวลผลอย่างเดียว แต่คือทั้งระบบที่ห่อหุ้มมันอยู่
+        การตัดส่วนที่เกิน (ทรัพยากร) เติมส่วนที่ขาด (ความสามารถ)  นั่นคือหัวใจของสถาปัตยกรรมที่ดี</p>
         <div class="cta" data-intro>
           <a class="btn" href="https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-amd64-installer.exe">
             <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1v9.3L4.7 7 3.3 8.4 8 13l4.7-4.6L11.3 7 8 10.3V1H8zM2 14h12v1.5H2z"/></svg>
@@ -425,7 +597,7 @@ footer{border-top:1px solid var(--line);padding:var(--s5) 0 var(--s3);overflow:h
   <div class="wrap">
 
   <!-- ══ ของจริงหนึ่งตัวอย่าง — เต็มลูป ══ -->
-  <section class="showcase">
+  <section class="showcase gridded">
     <button class="shot" data-shot type="button">
       <img src="assets/hero-app.png" alt="หน้าต่าง Aetox ขณะทำงานจริง — อ่านเว็บ 6 เจ้าแล้วสรุปเป็นตารางเปรียบเทียบ ใช้เครื่องมือไป 21 ครั้ง" width="1536" height="960" decoding="async">
     </button>
@@ -434,7 +606,7 @@ footer{border-top:1px solid var(--line);padding:var(--s5) 0 var(--s3);overflow:h
   </section>
 
   <!-- ══ 01 ปิดจุดอ่อนให้โมเดล ══ -->
-  <section id="fix">
+  <section id="fix" class="gridded">
     <div class="sec-head"><span class="idx">01</span><h2 data-reveal>โมเดลที่อ่านภาพไม่ได้ ก็อ่านสลิปให้คุณได้</h2></div>
     <p class="sub">ไม่ใช่เพราะเราไปทำให้โมเดลฉลาดขึ้น — แต่เพราะสิ่งที่ครอบมันอยู่จัดการแทน
     Aetox แปลงรูปเป็นตัวหนังสือก่อนส่งให้โมเดลอ่าน แปลงคลิปเป็นข้อความพร้อมเวลา
@@ -482,9 +654,192 @@ footer{border-top:1px solid var(--line);padding:var(--s5) 0 var(--s3);overflow:h
     </div>
   </section>
 
-  <!-- ══ 02 ตอนทำงานยาว ══ -->
-  <section id="work">
-    <div class="sec-head"><span class="idx">02</span><h2 data-reveal>งานยาวแค่ไหน ก็เห็นว่ามันทำอะไรอยู่</h2></div>
+  <!-- ══ 02 เบา เร็ว เสถียร ══ -->
+  <section id="light" class="gridded">
+    <div class="sec-head"><span class="idx">02</span><h2 data-reveal>เบา เร็ว เสถียร — วัดจริง ไม่ใช่คำโฆษณา</h2></div>
+    <p class="sub">ตัวเลขลอย ๆ ไม่มีความหมายถ้าไม่มีอะไรให้เทียบ — เราเลยลงเครื่องมือ AI ตัวอื่นไว้บนเครื่องเดียวกัน
+    แล้ววัดพร้อมกันทั้งพื้นที่ที่กิน เวลาเปิด และ RAM ที่จองจริง
+    ทุกตัวเลขข้างล่างนี้มาจากการวัด ไม่ใช่การประมาณ และบอกไว้ด้วยว่าตัวไหนวัดไม่ได้เพราะอะไร</p>
+
+    <div class="stats">
+      <div class="stat" data-card>
+        <div class="n">530<small>ms</small></div>
+        <div class="k">เปิดจนใช้งานได้</div>
+        <div class="s">median · 6 รอบ</div>
+      </div>
+      <div class="stat" data-card>
+        <div class="n">33<small>MB</small></div>
+        <div class="k">กินพื้นที่ในเครื่อง</div>
+        <div class="s">ตัวติดตั้งโหลด 13 MB</div>
+      </div>
+      <div class="stat" data-card>
+        <div class="n">252<small>MB</small></div>
+        <div class="k">RAM ตอนเปิดทิ้งไว้</div>
+        <div class="s">private · ทั้ง 7 process</div>
+      </div>
+      <div class="stat" data-card>
+        <div class="n">533<small>/533</small></div>
+        <div class="k">เทสต์ผ่านหมด</div>
+        <div class="s">24 package · 0 fail</div>
+      </div>
+    </div>
+
+    <div class="bench" data-bench>
+      <div class="bench-head">พื้นที่ที่กินในเครื่องหลังติดตั้ง — วัดจากเครื่องเดียวกันทั้งหมด (MB · น้อยกว่าดีกว่า)</div>
+      <div class="bench-body">
+        <div class="brow us">
+          <span class="bk">
+            <span class="mk mk-logo"><svg viewBox="-8 -8 820 778" aria-hidden="true"><use href="#logoA"/></svg></span>
+            <span class="nm"><b>Aetox</b><span class="ty">เดสก์ท็อป</span></span>
+          </span>
+          <div class="btrack"><div class="bfill us" style="--w:2.8%"></div></div>
+          <span class="bv">33 MB</span>
+        </div>
+        <div class="brow">
+          <span class="bk">
+            <span class="mk"><svg aria-hidden="true"><use href="#lg-copilot"/></svg></span>
+            <span class="nm"><b>Copilot CLI</b><span class="ty">คำสั่ง · ไม่มีหน้าจอ</span></span>
+          </span>
+          <div class="btrack"><div class="bfill" style="--w:11.7%"></div></div>
+          <span class="bv">137 MB</span>
+        </div>
+        <div class="brow">
+          <span class="bk">
+            <span class="mk"><svg aria-hidden="true"><use href="#lg-claude"/></svg></span>
+            <span class="nm"><b>Claude Code</b><span class="ty">คำสั่ง · ไม่มีหน้าจอ</span></span>
+          </span>
+          <div class="btrack"><div class="bfill" style="--w:20.2%"></div></div>
+          <span class="bv">236 MB</span>
+        </div>
+        <div class="brow">
+          <span class="bk">
+            <span class="mk"><svg aria-hidden="true"><use href="#lg-zed"/></svg></span>
+            <span class="nm"><b>Zed</b><span class="ty">เดสก์ท็อป</span></span>
+          </span>
+          <div class="btrack"><div class="bfill" style="--w:35.8%"></div></div>
+          <span class="bv">419 MB</span>
+        </div>
+        <div class="brow">
+          <span class="bk">
+            <span class="mk"><svg aria-hidden="true"><use href="#lg-qwen"/></svg></span>
+            <span class="nm"><b>Qwen</b><span class="ty">เดสก์ท็อป</span></span>
+          </span>
+          <div class="btrack"><div class="bfill" style="--w:39.0%"></div></div>
+          <span class="bv">457 MB</span>
+        </div>
+        <div class="brow">
+          <span class="bk">
+            <span class="mk"><svg aria-hidden="true"><use href="#lg-opencode"/></svg></span>
+            <span class="nm"><b>OpenCode</b><span class="ty">คำสั่ง · ไม่มีหน้าจอ</span></span>
+          </span>
+          <div class="btrack"><div class="bfill" style="--w:42.5%"></div></div>
+          <span class="bv">498 MB</span>
+        </div>
+        <div class="brow">
+          <span class="bk">
+            <span class="mk"><svg aria-hidden="true"><use href="#lg-perplexity"/></svg></span>
+            <span class="nm"><b>Comet</b><span class="ty">เดสก์ท็อป · เบราว์เซอร์</span></span>
+          </span>
+          <div class="btrack"><div class="bfill" style="--w:42.8%"></div></div>
+          <span class="bv">501 MB</span>
+        </div>
+        <div class="brow">
+          <span class="bk">
+            <span class="mk"><svg aria-hidden="true"><use href="#lg-openai"/></svg></span>
+            <span class="nm"><b>Codex</b><span class="ty">คำสั่ง · ไม่มีหน้าจอ</span></span>
+          </span>
+          <div class="btrack"><div class="bfill" style="--w:59.6%"></div></div>
+          <span class="bv">698 MB</span>
+        </div>
+        <div class="brow">
+          <span class="bk">
+            <span class="mk"><svg aria-hidden="true"><use href="#lg-cursor"/></svg></span>
+            <span class="nm"><b>Cursor</b><span class="ty">เดสก์ท็อป</span></span>
+          </span>
+          <div class="btrack"><div class="bfill" style="--w:74.6%"></div></div>
+          <span class="bv">874 MB</span>
+        </div>
+        <div class="brow">
+          <span class="bk">
+            <span class="mk"><svg aria-hidden="true"><use href="#lg-windsurf"/></svg></span>
+            <span class="nm"><b>Windsurf</b><span class="ty">เดสก์ท็อป</span></span>
+          </span>
+          <div class="btrack"><div class="bfill" style="--w:80.3%"></div></div>
+          <span class="bv">940 MB</span>
+        </div>
+        <div class="brow">
+          <span class="bk">
+            <span class="mk mk-txt">AG</span>
+            <span class="nm"><b>Antigravity</b><span class="ty">เดสก์ท็อป</span></span>
+          </span>
+          <div class="btrack"><div class="bfill" style="--w:88.0%"></div></div>
+          <span class="bv">1,030 MB</span>
+        </div>
+        <div class="brow">
+          <span class="bk">
+            <span class="mk"><svg aria-hidden="true"><use href="#lg-vscode"/></svg></span>
+            <span class="nm"><b>VS Code</b><span class="ty">เดสก์ท็อป</span></span>
+          </span>
+          <div class="btrack"><div class="bfill" style="--w:100.0%"></div></div>
+          <span class="bv">1,171 MB</span>
+        </div>
+      </div>
+      <div class="bench-foot">เทียบเดสก์ท็อปด้วยกัน Aetox เล็กกว่า Cursor <b>26 เท่า</b> · Windsurf <b>28 เท่า</b> · Antigravity <b>31 เท่า</b> · VS Code <b>35 เท่า</b><br>
+      และต่อให้เอาไปเทียบกับตัวที่เป็นแค่หน้าจอพิมพ์คำสั่ง ไม่มี UI ให้กดสักปุ่ม Aetox ก็ยังเล็กกว่า Claude Code <b>7 เท่า</b> — ทั้งที่มีหน้าต่างแชท เบราว์เซอร์ในตัว อ่านรูป ถอดเสียง ครบอยู่ข้างใน</div>
+    </div>
+
+    <p class="bnote">ทั้งหมดวัดด้วยการรวมขนาดไฟล์ในโฟลเดอร์ที่ติดตั้งจริงบนเครื่องเดียวกัน (Windows 11) ตัวเลขนี้คุณตรวจเองได้
+    · Claude Code / Codex CLI / OpenCode เป็นเครื่องมือแบบพิมพ์คำสั่ง ไม่มีหน้าจอแอป จึงเทียบได้แค่ขนาด ไม่ได้เทียบเวลาเปิดหน้าต่าง</p>
+
+    <h3 style="font-size:1.05rem;margin-top:var(--s5)">เวลาเปิดและ RAM — เทียบกับแอปเดสก์ท็อปด้วยกัน</h3>
+    <table class="vs">
+      <thead>
+        <tr><th>วัดอะไร</th><th class="me">Aetox</th><th>Zed</th><th>Cursor</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>เปิดครั้งแรก (เครื่องยังไม่แคช)</td><td class="me">1.77 วิ</td><td class="them">2.12 วิ</td><td class="them">—</td></tr>
+        <tr><td>เปิดครั้งถัดๆ ไป</td><td class="me">0.53 วิ</td><td class="them">0.53 วิ</td><td class="them">—</td></tr>
+        <tr><td>RAM ที่จองไว้จริง (private)</td><td class="me">252 MB</td><td class="them">471 MB</td><td class="them">1,750 MB</td></tr>
+        <tr><td>จำนวน process ที่เปิดค้างไว้</td><td class="me">7</td><td class="them">4</td><td class="them">10</td></tr>
+        <tr><td>พื้นที่ในเครื่อง</td><td class="me">33 MB</td><td class="them">419 MB</td><td class="them">824 MB</td></tr>
+      </tbody>
+    </table>
+
+    <p class="bnote">ทำไมมี Zed ในตาราง: มันเขียนด้วย Rust เป็นแอปเนทีฟที่ขึ้นชื่อเรื่องความเร็ว ไม่ได้ใช้ Electron —
+    เป็นไม้บรรทัดที่โหดกว่าการไปเทียบกับแอปที่อืดอยู่แล้ว ผลคือเวลาเปิดเสมอกันที่ราวครึ่งวินาที ส่วน RAM เราใช้ราวครึ่งเดียว<br>
+    <b>เงื่อนไขของตัวเลข Cursor:</b> วัดตอนที่มันเปิดค้างใช้งานอยู่จริงราว 6 นาที พร้อมส่วนเสริมที่ผู้ใช้เครื่องนี้ติดตั้งไว้
+    — เป็นสภาพใช้งานจริง แต่ไม่ใช่สภาพเปล่าเท่ากับที่วัด Aetox กับ Zed จึงไม่ได้จับเวลาเปิดให้ เพราะต้องปิดโปรแกรมที่เจ้าของเครื่องกำลังใช้งานอยู่<br>
+    <b>ที่วัดไม่ได้และไม่ขอเดาให้:</b> VS Code กำลังรันงานอยู่บนเครื่องที่วัด ปิดเพื่อวัดไม่ได้ จึงมีแค่ตัวเลขขนาด<br>
+    ตรงไปตรงมาเรื่อง RAM: WebView2 ก็คือ Chromium เหมือนกัน ที่เราใช้น้อยกว่าไม่ใช่เพราะเอนจินวาดหน้าจอวิเศษกว่า
+    แต่เพราะเราไม่ต้องแบกสำเนาของมันมาเอง และไม่ได้ยัดทุกอย่างไว้ในโปรแกรมเดียว</p>
+
+    <div class="sec-grid" style="margin-top:var(--s4)">
+      <div class="card" data-card>
+        <h4>Go + TypeScript ตรวจชนิดข้อมูลตั้งแต่ตอนคอมไพล์</h4>
+        <p>ทั้งฝั่งแกนและฝั่งหน้าจอเป็นภาษาที่มี type ทั้งคู่ — บั๊กประเภทส่งค่าผิดชนิดถูกจับตั้งแต่ตอน build ไม่ใช่ตอนผู้ใช้กดเจอ</p>
+        <span class="tag">go · typescript · svelte-check</span>
+      </div>
+      <div class="card" data-card>
+        <h4>533 เทสต์วิ่งก่อนปล่อยทุกครั้ง</h4>
+        <p>ครอบคลุม 24 package ตั้งแต่ตัวคุยกับ provider ยันด่านความปลอดภัยและการมอบงานให้ sub-agent</p>
+        <span class="tag">go test ./...</span>
+      </div>
+      <div class="card" data-card>
+        <h4>ไฟล์เดียวจบ ไม่มี runtime ให้ลงเพิ่ม</h4>
+        <p>ไม่ต้องลง Node.js หรือ Python ก่อนใช้ และไม่มี node_modules ให้เวอร์ชันตีกันตอนอัปเดต</p>
+        <span class="tag">static binary</span>
+      </div>
+      <div class="card" data-card>
+        <h4>ใช้ WebView2 ที่เครื่องมีอยู่แล้ว</h4>
+        <p>ไม่ต้องแบก Chromium มาเป็นสำเนาของตัวเอง ตัวติดตั้งเลยอยู่ที่ 13 MB ไม่ใช่หลักร้อย</p>
+        <span class="tag">wails · webview2</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 03 ตอนทำงานยาว ══ -->
+  <section id="work" class="gridded">
+    <div class="sec-head"><span class="idx">03</span><h2 data-reveal>งานยาวแค่ไหน ก็เห็นว่ามันทำอะไรอยู่</h2></div>
     <p class="sub">ปัญหาของ agent ส่วนใหญ่คือสั่งไปแล้วเงียบ ไม่รู้ว่าทำถึงไหน ทำอะไรผิดไปหรือเปล่า —
     Aetox แตกงานใหญ่เป็น checklist ให้เห็นสด ๆ ระหว่างทำ กดหยุดกลางคันได้ตลอด
     และย้อนดูได้ว่าโมเดล "คิดอะไร คิดกี่วินาที" ในแต่ละขั้น</p>
@@ -504,9 +859,9 @@ footer{border-top:1px solid var(--line);padding:var(--s5) 0 var(--s3);overflow:h
     แทนที่จะเดาแล้วทำผิดยาว</p>
   </section>
 
-  <!-- ══ 03 ชุดคำสั่ง ══ -->
-  <section id="presets">
-    <div class="sec-head"><span class="idx">03</span><h2 data-reveal>ชุดคำสั่งที่เขียนไว้ให้แล้ว — เปิดดูว่างานดี ๆ เขาสั่งกันยังไง</h2></div>
+  <!-- ══ 04 ชุดคำสั่ง ══ -->
+  <section id="presets" class="gridded">
+    <div class="sec-head"><span class="idx">04</span><h2 data-reveal>ชุดคำสั่งที่เขียนไว้ให้แล้ว — เปิดดูว่างานดี ๆ เขาสั่งกันยังไง</h2></div>
     <p class="sub">กำแพงจริงของคนส่วนใหญ่ไม่ใช่ "AI ทำไม่ได้" แต่คือ "ไม่รู้จะพิมพ์อะไร" —
     กด <code class="mono">/</code> ในช่องแชทเพื่อเปิดดูชุดคำสั่งที่มากับโปรแกรม
     ทุกตัวเปิดอ่านได้ว่าข้างในเขียนอะไร แก้เป็นของคุณเองได้ ตั้งชื่อทับของเดิมได้
@@ -557,9 +912,9 @@ footer{border-top:1px solid var(--line);padding:var(--s5) 0 var(--s3);overflow:h
     </div>
   </section>
 
-  <!-- ══ 04 ความปลอดภัย ══ -->
-  <section id="privacy">
-    <div class="sec-head"><span class="idx">04</span><h2 data-reveal>ข้อมูลอยู่ในเครื่องคุณ ไม่ผ่านเซิร์ฟเวอร์เรา</h2></div>
+  <!-- ══ 05 ความปลอดภัย ══ -->
+  <section id="privacy" class="gridded">
+    <div class="sec-head"><span class="idx">05</span><h2 data-reveal>ข้อมูลอยู่ในเครื่องคุณ ไม่ผ่านเซิร์ฟเวอร์เรา</h2></div>
     <p class="sub">Aetox ไม่มี server ตรงกลาง ไม่มี telemetry ไม่มี account ให้สมัคร —
     การคุยวิ่งตรงจากเครื่องคุณไปหา provider ที่คุณเลือกเท่านั้น
     และถ้าไม่อยากให้ออกจากเครื่องเลย ก็รันโมเดล local ได้</p>
@@ -588,39 +943,66 @@ footer{border-top:1px solid var(--line);padding:var(--s5) 0 var(--s3);overflow:h
     </div>
   </section>
 
-  <!-- ══ 05 ติดตั้ง ══ -->
-  <section id="install">
-    <div class="sec-head"><span class="idx">05</span><h2 data-reveal>ติดตั้งแล้วใช้ได้เลย ไม่ต้องมี API key ก่อน</h2></div>
-    <p class="sub">provider <code class="mono">aetox</code> ในตัวมีโมเดลจำลองให้ลองทุกฟีเจอร์ก่อนตัดสินใจ —
-    เรียก tools ได้จริง คิดยาวได้จริง ไม่ต้องสมัครอะไรเลย</p>
-    <div class="install">
-      <div>
-        <div class="method">
-          <h3><span class="n">01</span>ตัวติดตั้ง (แนะนำ)</h3>
-          <ol class="steps">
-            <li><b>ดาวน์โหลด</b> aetox-amd64-installer.exe</li>
-            <li><b>ดับเบิลคลิก</b> — ถ้า SmartScreen เตือน: More info → Run anyway</li>
-            <li>ตัวติดตั้งจัดการ <b>WebView2 + Tesseract ภาษาไทย</b> ให้เอง</li>
-            <li>เปิดจาก Start Menu → <b>เลือก provider หรือ Ollama</b> → คุยได้เลย</li>
-          </ol>
-        </div>
-        <div class="method">
-          <h3><span class="n">02</span>Scoop (สาย dev)</h3>
-          <p>ได้ portable build พร้อม shortcut อัปเดตผ่าน <span class="mono">scoop update</span> ตามปกติ</p>
-        </div>
+  <!-- ══ 06 ติดตั้ง ══ -->
+  <section id="install" class="gridded">
+    <div class="sec-head"><span class="idx">06</span><h2 data-reveal>เลือกได้ว่าจะรันในเครื่อง หรือใช้ provider ที่คุณไว้ใจ</h2></div>
+    <p class="sub" style="margin-bottom:var(--s3)">สองทาง ไม่ผูกมัดทางไหน สลับกลางคันได้ตลอด — กดที่ชื่อเพื่อไปดูรายละเอียดของแต่ละเจ้าได้เลย</p>
+
+    <div class="fork">
+      <div class="card path" data-card>
+        <h3>รันในเครื่องคุณเอง</h3>
+        <p class="price">ฟรี<small>ไม่ต้องมีคีย์</small></p>
+        <p class="why">Ollama และ LM Studio รองรับเต็มรูปแบบ ไม่ใช่แค่ "ต่อติด" — จูนมาแล้วทั้งการสตรีมความคิดและการเรียก tools</p>
+        <ul>
+          <li>ไม่มีค่าโทเคน ใช้หนักแค่ไหนก็เท่าเดิม</li>
+          <li>prompt ไม่ออกจากเครื่องแม้แต่ไบต์เดียว</li>
+          <li>เน็ตหลุดก็ยังทำงานต่อได้</li>
+        </ul>
+        <p class="who">เหมาะกับ: งานประจำวัน · ข้อมูลที่ห้ามออกนอกองค์กร</p>
+        <button class="pvmore" type="button" data-pv>ดู provider ทั้งหมด</button>
       </div>
-      <div>
-        <div class="note">
-          <b>ใช้กับโมเดลอะไร?</b> ใส่ API key ของ provider ที่คุณมี หรือรัน <span class="mono">Ollama</span> / <span class="mono">LM Studio</span> ฟรีในเครื่องก็ได้ —
-          การคุยวิ่งตรงหาผู้ให้บริการที่คุณเลือกเท่านั้น ไม่มี server กลางของ Aetox ไม่มี telemetry ไม่มี subscription
-        </div>
+
+      <div class="card path" data-card>
+        <h3>ใช้ provider ที่คุณไว้ใจ</h3>
+        <p class="price">จ่ายตามใช้<small>11 เจ้าให้เลือก</small></p>
+        <p class="why">ใส่คีย์ของเจ้าที่คุณมีอยู่แล้ว ได้โมเดลใหญ่ที่สุดเท่าที่ตลาดมี — การคุยวิ่งตรงจากเครื่องคุณไปหาเขา ไม่ผ่านเราเลย</p>
+        <ul>
+          <li>ไม่มี server กลางของ Aetox ไม่มี telemetry</li>
+          <li>สลับเจ้าเมื่อไหร่ก็ได้ ไม่มี lock-in</li>
+          <li>ไม่มี subscription ของเรามาบวกเพิ่ม</li>
+        </ul>
+        <p class="who">เหมาะกับ: งานยาก · งานที่ต้องการคุณภาพสูงสุด</p>
+        <button class="pvmore" type="button" data-pv>ดู provider ทั้งหมด</button>
+      </div>
+    </div>
+
+    <div class="note" style="margin-top:var(--s3)">
+      <b>เลือกทางไหนก็ตาม</b> ประวัติแชทและไฟล์งานเก็บใน SQLite ในเครื่องคุณล้วน ๆ ไม่มีสำเนาที่อื่น —
+      และถ้าอยากดูก่อนตัดสินใจ provider <code class="mono">aetox</code> ในตัวมีโมเดลสาธิตให้กดเล่นได้ทันทีหลังติดตั้ง
+      เห็นหน้าตา การเรียก tools และแผงความคิดครบ โดยยังไม่ต้องต่ออะไรเลย
+    </div>
+
+    <h3 style="font-size:1.05rem;margin-top:var(--s5)">ติดตั้งยังไง</h3>
+    <div class="install" style="margin-top:var(--s2)">
+      <div class="method">
+        <h3><span class="n">01</span>ตัวติดตั้ง (แนะนำ)</h3>
+        <ol class="steps">
+          <li><b>ดาวน์โหลด</b> aetox-amd64-installer.exe</li>
+          <li><b>ดับเบิลคลิก</b> — ถ้า SmartScreen เตือน: More info → Run anyway</li>
+          <li>ตัวติดตั้งจัดการ <b>WebView2 + Tesseract ภาษาไทย</b> ให้เอง</li>
+          <li>เปิดจาก Start Menu → <b>เลือกทางที่คุณชอบข้างบน</b> → คุยได้เลย</li>
+        </ol>
+      </div>
+      <div class="method">
+        <h3><span class="n">02</span>Scoop (สาย dev)</h3>
+        <p>ได้ portable build พร้อม shortcut อัปเดตผ่าน <span class="mono">scoop update</span> ตามปกติ</p>
       </div>
     </div>
   </section>
 
-  <!-- ══ 05 เครื่องมือ ══ -->
+  <!-- ══ 07 เครื่องมือ ══ -->
   <section id="tools">
-    <div class="sec-head"><span class="idx">06</span><h2 data-reveal>เครื่องมือในตัว 26 ตัว</h2></div>
+    <div class="sec-head"><span class="idx">07</span><h2 data-reveal>เครื่องมือในตัว 26 ตัว</h2></div>
     <p class="sub">สี่ตัวเด่นอยู่ด้านบนแล้ว — ที่เหลือคืองานเขียนโค้ด ค้นเว็บ ค้น GitHub อยู่ในชุดเดียวกันหมด</p>
     <div class="tools">
       <div class="trow"><span class="tn">read / write / edit</span><span class="td">อ่าน เขียน แก้ไฟล์แบบเป๊ะ</span></div>
@@ -637,13 +1019,12 @@ footer{border-top:1px solid var(--line);padding:var(--s5) 0 var(--s3);overflow:h
       <div class="trow"><span class="tn">plugin_install</span><span class="td">ติดตั้งสกิลเสริมจาก GitHub</span></div>
       <div class="trow"><span class="tn">help / echo / time</span><span class="td">ยูทิลิตีพื้นฐาน</span></div>
     </div>
-    <p class="providers">รองรับ 13 providers:
-      <span class="mono">anthropic · openai · gemini · deepseek · openrouter · groq · mistral · zai · together · perplexity · cohere · ollama · lmstudio</span><br>
-      สลับเมื่อไหร่ก็ได้ ไม่ผูกมัด — และสองตัวท้ายคือโมเดลฟรีในเครื่องคุณเอง</p>
+    <p class="providers">เครื่องมือชุดนี้ใช้ได้กับทุก provider เหมือนกันหมด ไม่ว่าจะรัน <span class="mono">ollama</span> ในเครื่อง
+      หรือต่อกับเจ้าไหนใน <a href="#install">13 ตัวเลือกข้างบน</a> — โมเดลที่ไม่มีความสามารถนั้นมาแต่แรก ก็ได้มันจากสถาปัตยกรรม</p>
   </section>
 
   <!-- ══ ช่องทางติดต่อ ══ -->
-  <section class="contact">
+  <section class="contact gridded">
     <div class="contact-box" data-card>
       <h2 data-reveal>Aetox สร้างด้วยคนเดียว — แต่ปลายทางคือโมเดลของเราเอง</h2>
       <p>วันนี้ Aetox คือสถาปัตยกรรมที่ทำให้โมเดลของคนอื่นทำงานได้เกินตัว
@@ -663,7 +1044,7 @@ footer{border-top:1px solid var(--line);padding:var(--s5) 0 var(--s3);overflow:h
   </div>
 </main>
 
-<footer>
+<footer class="gridded">
   <div class="wrap">
     <div class="foot">
       <div class="foot-brand">
@@ -686,6 +1067,32 @@ footer{border-top:1px solid var(--line);padding:var(--s5) 0 var(--s3);overflow:h
 <dialog id="lightbox" aria-label="รูปขยาย">
   <button class="lb-close" type="button" aria-label="ปิด">✕</button>
   <img alt="">
+</dialog>
+
+<dialog id="pvbox" aria-label="provider ที่รองรับทั้งหมด">
+  <button class="lb-close" type="button" aria-label="ปิด">✕</button>
+  <h3>รันในเครื่องคุณเอง</h3>
+  <p>ฟรี ไม่ต้องมีคีย์ · prompt ไม่ออกจากเครื่อง</p>
+  <div class="pvs">
+    <a class="pv" href="https://ollama.com" target="_blank" rel="noopener"><svg aria-hidden="true"><use href="#lg-ollama"/></svg>ollama</a>
+    <a class="pv" href="https://lmstudio.ai" target="_blank" rel="noopener"><svg aria-hidden="true"><use href="#lg-lmstudio"/></svg>lmstudio</a>
+  </div>
+  <h3>ใช้ provider ที่คุณไว้ใจ</h3>
+  <p>ใส่คีย์ของเจ้าที่คุณมีอยู่แล้ว · คุยตรงจากเครื่องคุณไปหาเขา ไม่ผ่านเรา</p>
+  <div class="pvs">
+    <a class="pv" href="https://www.anthropic.com" target="_blank" rel="noopener"><svg aria-hidden="true"><use href="#lg-anthropic"/></svg>anthropic</a>
+    <a class="pv" href="https://openai.com" target="_blank" rel="noopener"><svg aria-hidden="true"><use href="#lg-openai"/></svg>openai</a>
+    <a class="pv" href="https://ai.google.dev" target="_blank" rel="noopener"><svg aria-hidden="true"><use href="#lg-gemini"/></svg>gemini</a>
+    <a class="pv" href="https://www.deepseek.com" target="_blank" rel="noopener"><svg aria-hidden="true"><use href="#lg-deepseek"/></svg>deepseek</a>
+    <a class="pv" href="https://openrouter.ai" target="_blank" rel="noopener"><svg aria-hidden="true"><use href="#lg-openrouter"/></svg>openrouter</a>
+    <a class="pv" href="https://mistral.ai" target="_blank" rel="noopener"><svg aria-hidden="true"><use href="#lg-mistral"/></svg>mistral</a>
+    <a class="pv" href="https://www.perplexity.ai" target="_blank" rel="noopener"><svg aria-hidden="true"><use href="#lg-perplexity"/></svg>perplexity</a>
+    <a class="pv" href="https://groq.com" target="_blank" rel="noopener"><i aria-hidden="true">G</i>groq</a>
+    <a class="pv" href="https://z.ai" target="_blank" rel="noopener"><i aria-hidden="true">Z</i>zai</a>
+    <a class="pv" href="https://www.together.ai" target="_blank" rel="noopener"><i aria-hidden="true">T</i>together</a>
+    <a class="pv" href="https://cohere.com" target="_blank" rel="noopener"><i aria-hidden="true">C</i>cohere</a>
+  </div>
+  <p class="pvfoot">กดที่ชื่อเพื่อไปดูรายละเอียดของแต่ละเจ้า · สลับได้ตลอด ไม่ผูกมัด</p>
 </dialog>
 
 <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js" defer></script>
@@ -752,6 +1159,22 @@ footer{border-top:1px solid var(--line);padding:var(--s5) 0 var(--s3);overflow:h
     // click outside the picture closes it
     lb.addEventListener("click", function (e) { if (e.target === lb) lb.close(); });
     lb.addEventListener("close", function () { big.removeAttribute("src"); });
+  })();
+
+  /* ── provider popup ────────────────────────────────── */
+  (function () {
+    var pv = document.getElementById("pvbox");
+    if (!pv || typeof pv.showModal !== "function") return;
+    document.querySelectorAll("[data-pv]").forEach(function (btn) {
+      btn.addEventListener("click", function () { pv.showModal(); });
+    });
+    pv.querySelector(".lb-close").addEventListener("click", function () { pv.close(); });
+    // A backdrop click reports the dialog itself as the target, and so does a
+    // click on its own padding — only the pointer position tells them apart.
+    pv.addEventListener("click", function (e) {
+      var r = pv.getBoundingClientRect();
+      if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) pv.close();
+    });
   })();
 
   /* ── copy button ───────────────────────────────────── */
@@ -1062,6 +1485,15 @@ footer{border-top:1px solid var(--line);padding:var(--s5) 0 var(--s3);overflow:h
               : "ทำไปแล้ว " + Math.min(done, rows.length) + "/" + rows.length + " ขั้น · " + footText;
           }
         }
+      });
+    }
+
+    /* benchmark bars grow from the baseline once the panel is in view */
+    var bench = document.querySelector("[data-bench]");
+    if (bench) {
+      gsap.from(bench.querySelectorAll(".bfill"), {
+        scaleX: 0, duration: .9, ease: "power3.out", stagger: .08,
+        scrollTrigger: { trigger: bench, start: "top 80%", toggleActions: "play none none none" }
       });
     }
 

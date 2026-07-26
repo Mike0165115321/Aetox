@@ -22,12 +22,13 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/prompt"
 	"github.com/Mike0165115321/Aetox/internal/safety"
 	"github.com/Mike0165115321/Aetox/internal/skill"
+	"github.com/Mike0165115321/Aetox/internal/subagent"
 	"github.com/Mike0165115321/Aetox/internal/think"
 
 	"golang.org/x/term"
 )
 
-const appVersion = "0.4.0-dev"
+const appVersion = "0.6.0"
 
 var (
 	noBanner     bool
@@ -369,6 +370,31 @@ func main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "runtime init failed: %v\n", err)
 		os.Exit(1)
+	}
+
+	// `task` / `task_result` / `task_answer` — the same three desktop/app.go
+	// registers, so delegation works from the CLI too. They cannot live in
+	// skill.RegisterDefaults because they need turn+cognitive, which skill cannot
+	// import, so each host registers them itself.
+	//
+	// After NewApp on purpose: a delegate runs its own executor, and with a nil
+	// Approve turn treats every risky call as approved — so it borrows the
+	// console's prompt and the user's approval mode means the same thing inside a
+	// delegate as outside one. The dispatcher holds the registry by pointer, so
+	// registering after it was built is fine.
+	for _, tool := range subagent.NewTaskTools(subagent.TaskOptions{
+		Provider:     bootstrapResult.Provider,
+		Model:        currentConfig.ModelName,
+		Registry:     skillRegistry,
+		Permissions:  permissions,
+		ApprovalMode: effectiveApprovalMode,
+		Approve:      aetoxApp.ConfirmApproval,
+		MaxChars:     resolveContextChars(currentConfig),
+		ThinkLevel:   think.NormalizeLevel(currentConfig.ThinkLevel),
+	}) {
+		if regErr := skillRegistry.Register(tool, skill.SourceBuiltin); regErr != nil {
+			debuglog.Msg("%s registration skipped: %v", tool.Name(), regErr)
+		}
 	}
 
 	ctx := context.Background()

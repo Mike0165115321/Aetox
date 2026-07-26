@@ -5,8 +5,10 @@ package subagent
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,6 +16,7 @@ import (
 	"time"
 
 	"github.com/Mike0165115321/Aetox/internal/cognitive"
+	"github.com/Mike0165115321/Aetox/internal/command"
 	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/safety"
 	"github.com/Mike0165115321/Aetox/internal/skill"
@@ -189,6 +192,174 @@ func TestTaskRunsADelegateAndReturnsOnlyItsResult(t *testing.T) {
 	// fabricating token counts in it would put invented spend on the Usage page.
 }
 
+// A delegate that gets stuck asks the main agent instead of guessing, and keeps
+// everything it had already done while it waits. The three things that make it
+// worth having, each of which fails differently if broken:
+//
+//  1. collecting a stuck delegate returns the question and does NOT block —
+//     otherwise parent and child wait on each other until the user hits Stop;
+//  2. the answer reaches the delegate and it carries on in the same run — a
+//     restarted delegate would have no memory of having asked;
+//  3. collecting again after the answer yields the finished work.
+func TestDelegateAsksTheMainAgentAndResumesWithItsWorkIntact(t *testing.T) {
+	f := newTaskFixture(t, "aetox-tools:test")
+
+	start := f.callTask(t, "call_parent_1", map[string]any{
+		"description": "list the sandbox",
+		"prompt":      "askmain: หาไฟล์ในโฟลเดอร์นี้แล้วรายงาน",
+		"agent":       "explore",
+	})
+	if !start.Success {
+		t.Fatalf("start failed: %s", start.Stderr)
+	}
+	id := taskIDOf(t, start)
+
+	// 1. The question comes back instead of an answer, and comes back fast.
+	deadline := time.Now().Add(20 * time.Second)
+	asked := f.collect(t, id)
+	if time.Now().After(deadline) {
+		t.Fatal("collecting a delegate that is waiting on a question blocked — parent and child were deadlocked")
+	}
+	t.Logf("collected while stuck:\n%s", asked.Content)
+	if !strings.Contains(asked.Content, "list the sandbox root, or stop here?") {
+		t.Fatalf("the delegate's question did not reach the parent: %q", asked.Content)
+	}
+	if !strings.Contains(asked.Content, "task_answer") {
+		t.Errorf("the parent was not told how to unstick it: %q", asked.Content)
+	}
+	if strings.Contains(asked.Content, "[task explore:") {
+		t.Errorf("a question was dressed up as a finished result: %q", asked.Content)
+	}
+
+	// Asking again before answering must repeat the question, not hang.
+	if again := f.collect(t, id); !strings.Contains(again.Content, "or stop here?") {
+		t.Errorf("collecting twice without answering lost the question: %q", again.Content)
+	}
+
+	// 2 + 3. Answer, then collect the finished work.
+	ans := f.call(t, "call_parent_2", "task_answer", map[string]any{
+		"task_id": id, "answer": "go ahead and list it",
+	})
+	if !ans.Success {
+		t.Fatalf("task_answer failed: %s", ans.Stderr)
+	}
+	done := f.collect(t, id)
+	t.Logf("collected after answering:\n%s", done.Content)
+	if !done.Success {
+		t.Fatalf("collect after answering failed: %s", done.Stderr)
+	}
+	if !strings.Contains(done.Content, "hay.txt") {
+		t.Errorf("the delegate did not carry on with the work after being answered: %q", done.Content)
+	}
+	if !strings.Contains(done.Content, "go ahead and list it") {
+		t.Errorf("the delegate lost the answer — it was restarted rather than resumed: %q", done.Content)
+	}
+	if !strings.Contains(done.Content, "[task explore:") {
+		t.Errorf("no receipt on the finished result: %q", done.Content)
+	}
+}
+
+// `aetox-subagent:test` is the delegation bench a developer picks in the app to
+// exercise this by hand with no API key. It is only worth having if it drives
+// the whole path *by itself*, so this runs it through the real executor — no
+// tool calls staged by the test — and asserts the four rounds happened in order
+// on both sides. If the bench stops working, the manual check silently stops
+// checking anything, which is the failure mode worth a test.
+func TestSubagentBenchModelDrivesTheWholeDelegationItself(t *testing.T) {
+	f := newTaskFixture(t, "aetox-subagent:test")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	line := "ทดสอบซับเอเจนหน่อย"
+	result, err := f.exec.Execute(ctx, line, command.Intent{Raw: line, Kind: command.KindConversation}, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("turn failed: %v", err)
+	}
+
+	var mainCalls []string
+	var subCalls []string
+	for _, ev := range f.toolEvents() {
+		if ev.Action != "call" {
+			continue
+		}
+		if ev.Parent == "" {
+			mainCalls = append(mainCalls, ev.Name)
+		} else {
+			subCalls = append(subCalls, ev.Name)
+		}
+	}
+	t.Logf("main: %v", mainCalls)
+	t.Logf("sub : %v", subCalls)
+	t.Logf("reply:\n%s", result.Reply)
+
+	want := []string{"task", "task_result", "task_answer", "task_result"}
+	if len(mainCalls) != len(want) {
+		t.Fatalf("main agent ran %v, want %v", mainCalls, want)
+	}
+	for i, name := range want {
+		if mainCalls[i] != name {
+			t.Fatalf("main agent ran %v, want %v", mainCalls, want)
+		}
+	}
+	// The delegate's own run is the part the bench exists to show: one tool call
+	// under a sub-agent block demonstrates nothing about how a delegation reads.
+	// It asks, then does a real job — and ends with a file on disk.
+	for _, want := range []string{"ask_main", "list", "write", "read", "grep"} {
+		if !contains(subCalls, want) {
+			t.Errorf("the delegate never ran %s; it ran %v", want, subCalls)
+		}
+	}
+	if subCalls[0] != "ask_main" {
+		t.Errorf("the delegate worked before asking, so the bench never shows a parked run: %v", subCalls)
+	}
+	if _, err := os.Stat(filepath.Join(f.root, "subagent-demo.md")); err != nil {
+		t.Errorf("the delegate's file is not on disk: %v", err)
+	}
+	// The delegate's finding has to survive all four rounds back to the reply.
+	if !strings.Contains(result.Reply, "hay.txt") {
+		t.Errorf("the collected work never reached the final answer:\n%s", result.Reply)
+	}
+}
+
+func contains(list []string, want string) bool {
+	for _, v := range list {
+		if v == want {
+			return true
+		}
+	}
+	return false
+}
+
+// Answering something that is not waiting is a model that has lost track of
+// which delegate it was talking to. Saying so beats accepting it and stranding
+// the delegate that really is stuck.
+func TestTaskAnswerRefusesWhatIsNotWaiting(t *testing.T) {
+	f := newTaskFixture(t, "aetox-tools:test")
+
+	missing := f.call(t, "call_parent_1", "task_answer", map[string]any{
+		"task_id": "task_99", "answer": "yes",
+	})
+	if missing.Success {
+		t.Error("answering an unknown id succeeded")
+	}
+
+	start := f.callTask(t, "call_parent_2", map[string]any{
+		"description": "list", "prompt": "หาไฟล์ในโฟลเดอร์นี้", "agent": "explore",
+	})
+	id := taskIDOf(t, start)
+	f.collect(t, id) // runs to completion without asking anything
+
+	finished := f.call(t, "call_parent_3", "task_answer", map[string]any{
+		"task_id": id, "answer": "yes",
+	})
+	if finished.Success {
+		t.Error("answering a finished delegate succeeded")
+	}
+	if !strings.Contains(finished.Content, "already finished") {
+		t.Errorf("unhelpful reason: %q", finished.Content)
+	}
+}
+
 // usageProvider is the one fake §45 still allows: a provider *edge case* — here,
 // a provider that fills Response.Usage, which the built-in one deliberately does
 // not. Everything else about the path is real.
@@ -275,6 +446,24 @@ func TestTaskDelegateCannotRecurseOrMutate(t *testing.T) {
 	if _, ok := generalRegistry.Get("task"); ok {
 		t.Error("general could spawn its own children")
 	}
+	// …and minus the two its profile denies, because nobody is watching this loop
+	// (§44.14). Both halves have to hold: gone from the registry so the model is
+	// never offered them, and denied at the permission layer so a discovered skill
+	// registering under the same name later cannot walk back in.
+	for _, name := range []string{"plugin_install", "delete"} {
+		if _, ok := generalRegistry.Get(name); ok {
+			t.Errorf("%q was handed to an unattended delegate", name)
+		}
+	}
+	denied := map[string]bool{}
+	for _, rule := range general.DenyRules() {
+		if rule.Action == safety.PermissionDeny {
+			denied[rule.Tool] = true
+		}
+	}
+	if !denied["plugin_install"] || !denied["delete"] {
+		t.Errorf("general's denials never reached the permission layer: %v", denied)
+	}
 }
 
 // Bad input comes back as a failed result the model can read and retry, not as an
@@ -360,6 +549,116 @@ func TestTaskStopsWhenTheTurnIsCancelled(t *testing.T) {
 	}
 	if !strings.Contains(out.Content, "stopped") {
 		t.Errorf("the model was not told the delegate was stopped: %q", out.Content)
+	}
+}
+
+// Three delegates parked on questions at the same time, answered in the reverse
+// order they asked. Each has to resume with *its own* answer.
+//
+// One shared runner holds every delegation, and the naive version of parking is
+// one question slot: two parked delegates would then either overwrite each
+// other's question or hand one delegate the other's answer, and both failures
+// look like "the sub-agent did the wrong thing" rather than like a bug here.
+func TestSeveralDelegatesParkAtOnceAndEachGetsItsOwnAnswer(t *testing.T) {
+	f := newTaskFixture(t, "aetox-tools:test")
+
+	ids := make([]string, 0, 3)
+	for i := 0; i < 3; i++ {
+		start := f.callTask(t, "call_parent_"+strconv.Itoa(i), map[string]any{
+			"description": "job " + strconv.Itoa(i),
+			"prompt":      "askmain: หาไฟล์ในโฟลเดอร์นี้ (งานที่ " + strconv.Itoa(i) + ")",
+			"agent":       "explore",
+		})
+		if !start.Success {
+			t.Fatalf("start %d failed: %s", i, start.Stderr)
+		}
+		ids = append(ids, taskIDOf(t, start))
+	}
+
+	// All three ask before any is answered, and collecting each returns its own
+	// question rather than blocking behind the others.
+	for i, id := range ids {
+		out := f.collect(t, id)
+		if !strings.Contains(out.Content, "waiting for a decision") {
+			t.Fatalf("delegate %d (%s) did not come back asking: %q", i, id, out.Content)
+		}
+		if !strings.Contains(out.Content, id) {
+			t.Errorf("the question for %s names a different task: %q", id, out.Content)
+		}
+	}
+
+	// Answered backwards, each answer distinct — a delegate that resumed on
+	// somebody else's answer shows up in its own final text.
+	for i := len(ids) - 1; i >= 0; i-- {
+		ans := f.call(t, "call_answer_"+strconv.Itoa(i), "task_answer", map[string]any{
+			"task_id": ids[i], "answer": "answer-for-" + strconv.Itoa(i),
+		})
+		if !ans.Success {
+			t.Fatalf("answering %s failed: %s", ids[i], ans.Stderr)
+		}
+	}
+
+	for i, id := range ids {
+		done := f.collect(t, id)
+		if !done.Success {
+			t.Fatalf("collect %s failed: %s", id, done.Stderr)
+		}
+		want := "answer-for-" + strconv.Itoa(i)
+		if !strings.Contains(done.Content, want) {
+			t.Errorf("delegate %d resumed on the wrong answer — wanted %q in:\n%s", i, want, done.Content)
+		}
+		for j := range ids {
+			if j == i {
+				continue
+			}
+			if strings.Contains(done.Content, "answer-for-"+strconv.Itoa(j)) {
+				t.Errorf("delegate %d also saw delegate %d's answer:\n%s", i, j, done.Content)
+			}
+		}
+	}
+}
+
+// Stop, while a delegate is parked on a question nobody answered. The parked
+// goroutine is waiting on a channel, so the only thing that can free it is the
+// turn's own context — and if it cannot, the app leaks a goroutine per abandoned
+// question and the user's Stop is a lie.
+func TestStopFreesADelegateParkedOnAQuestion(t *testing.T) {
+	f := newTaskFixture(t, "aetox-tools:test")
+	dispatcher := skill.NewDispatcher(f.registry)
+
+	before := runtime.NumGoroutine()
+	turnCtx, cancel := context.WithCancel(turn.WithCallID(context.Background(), "call_1"))
+	start, _, err := dispatcher.ExecuteTool(turnCtx, "task", map[string]any{
+		"description": "x", "prompt": "askmain: หาไฟล์ในโฟลเดอร์นี้", "agent": "explore",
+	})
+	if err != nil || !start.Success {
+		t.Fatalf("start failed: %v %q", err, start.Content)
+	}
+	id := taskIDOf(t, start)
+
+	// Let it get as far as the question, then stop the turn without answering.
+	asked := f.collect(t, id)
+	if !strings.Contains(asked.Content, "waiting for a decision") {
+		t.Fatalf("the delegate never parked: %q", asked.Content)
+	}
+	cancel()
+
+	// Collected on a live context: what is asserted is the delegate letting go,
+	// not the collector being cancelled with it.
+	out, _, err := dispatcher.ExecuteTool(turn.WithCallID(context.Background(), "call_2"), "task_result",
+		map[string]any{"task_id": id})
+	t.Logf("after Stop: success=%v err=%v content=%q", out.Success, err, out.Content)
+	if out.Success {
+		t.Error("a delegate stopped mid-question reported success")
+	}
+
+	// The parked goroutine has to be gone, not merely unreachable.
+	deadline := time.Now().Add(5 * time.Second)
+	for runtime.NumGoroutine() > before+2 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if leaked := runtime.NumGoroutine() - before; leaked > 2 {
+		t.Errorf("%d goroutines still running after Stop — a parked delegate was never freed", leaked)
 	}
 }
 
@@ -665,4 +964,118 @@ func (p *variedLoopProvider) Complete(_ context.Context, _ model.Request) (model
 		Type:     "function",
 		Function: model.FunctionCall{Name: "grep", Arguments: `{"pattern":"x` + strconv.Itoa(p.n) + `","path":"."}`},
 	}}}, nil
+}
+
+// A delegate calling ONE tool proves the wiring; it does not prove the child's
+// tool loop. This walks a chain — list → glob → grep — and checks the three
+// things that are only true if the loop really ran:
+//
+//  1. every call happened, inside the delegate, stamped as the delegate's;
+//  2. the parent still gets only the answer + receipt, never the tool log (§44.6)
+//     — a three-call delegate is exactly where leaking it would cost the most;
+//  3. the receipt counts all of them, so the "you could have done that here"
+//     nudge stays off work that genuinely needed delegating.
+func TestDelegateRunsAChainOfToolsAndOnlyTheAnswerComesBack(t *testing.T) {
+	f := newTaskFixture(t, "aetox-tools:test")
+
+	start := f.callTask(t, "call_chain", map[string]any{
+		"description": "walk the sandbox",
+		"prompt":      "toolchain: สำรวจโฟลเดอร์นี้ด้วยเครื่องมือทุกตัวที่มี แล้วรายงานผลของแต่ละตัว",
+		"agent":       "explore",
+	})
+	if !start.Success {
+		t.Fatalf("start failed: %s", start.Stderr)
+	}
+	out := f.collect(t, taskIDOf(t, start))
+	t.Logf("collected:\n%s", out.Content)
+	if !out.Success {
+		t.Fatalf("collect failed: %s", out.Stderr)
+	}
+
+	// 1. Every probe ran inside the delegate, not in the parent's own timeline.
+	inDelegate := map[string]bool{}
+	for _, ev := range f.toolEvents() {
+		if ev.Action == "call" && ev.Parent == "call_chain" {
+			inDelegate[ev.Name] = true
+		}
+	}
+	for _, want := range []string{"list", "glob", "grep"} {
+		if !inDelegate[want] {
+			t.Errorf("%q never ran inside the delegate — its loop stopped early: %v", want, inDelegate)
+		}
+	}
+
+	// 2. The parent sees the answer, not the transcript. The delegate's raw tool
+	//    envelopes carry "duration_ms"; one appearing here means the log leaked.
+	if strings.Contains(out.Content, "duration_ms") {
+		t.Errorf("the delegate's tool log reached the parent: %q", out.Content)
+	}
+	for _, want := range []string{"list", "glob", "grep"} {
+		if !strings.Contains(out.Content, want) {
+			t.Errorf("the delegate's report is missing %q: %q", want, out.Content)
+		}
+	}
+
+	// 3. The receipt counts the whole chain, and does not scold a real delegation.
+	if !strings.Contains(out.Content, "[task explore:") {
+		t.Fatalf("no receipt line: %q", out.Content)
+	}
+	if strings.Contains(out.Content, "small enough to have done here") {
+		t.Errorf("a three-call delegate was called pointless: %q", out.Content)
+	}
+	calls := 0
+	if _, err := fmt.Sscanf(out.Content[strings.Index(out.Content, "[task explore:"):], "[task explore: %d tool calls", &calls); err != nil {
+		t.Fatalf("cannot read the call count out of the receipt: %v", err)
+	}
+	if calls < len(inDelegate) {
+		t.Errorf("receipt counted %d calls, but %d ran", calls, len(inDelegate))
+	}
+}
+
+// A brief bigger than the child's context used to be accepted and then silently
+// cut from the tail by memory.Context — the delegate would work from half a brief
+// and report on it with no idea anything was missing. It is refused with the
+// numbers instead, which the parent can act on by splitting the job.
+func TestABriefTooBigForTheChildIsRefusedNotTruncated(t *testing.T) {
+	isolate(t)
+	root := t.TempDir()
+	registry := skill.NewDefaultRegistry(skill.RegistryOptions{SandboxRoot: root})
+	const budget = 4000
+	for _, tool := range NewTaskTools(TaskOptions{
+		Provider:     model.NewNoopProvider("aetox-tools:test"),
+		Model:        "aetox-tools:test",
+		Registry:     registry,
+		ApprovalMode: safety.ApprovalFullAccess,
+		MaxChars:     budget,
+	}) {
+		if err := registry.Register(tool, skill.SourceBuiltin); err != nil {
+			t.Fatalf("register %s: %v", tool.Name(), err)
+		}
+	}
+	run := func(brief string) skill.Output {
+		t.Helper()
+		out, handled, err := skill.NewDispatcher(registry).ExecuteTool(
+			turn.WithCallID(context.Background(), "call_1"), "task",
+			map[string]any{"description": "big", "prompt": brief, "agent": "explore"})
+		if !handled || err != nil {
+			t.Fatalf("dispatch: handled=%v err=%v", handled, err)
+		}
+		return out
+	}
+
+	over := run(strings.Repeat("x", budget+1))
+	if over.Success {
+		t.Fatal("an oversize brief was accepted — the delegate would have run on a truncated one")
+	}
+	// The refusal has to carry the numbers, or the model cannot tell how much to cut.
+	for _, want := range []string{"too long", strconv.Itoa(budget), "Split"} {
+		if !strings.Contains(over.Content, want) {
+			t.Errorf("the refusal is missing %q: %q", want, over.Content)
+		}
+	}
+
+	// And it must not be trigger-happy: a brief that fits still runs.
+	if fits := run("รายงานไฟล์ในโฟลเดอร์นี้"); !fits.Success {
+		t.Errorf("a normal brief was refused: %q", fits.Content)
+	}
 }

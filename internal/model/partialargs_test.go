@@ -107,6 +107,7 @@ func TestStreamAccumulatorReportsProgress(t *testing.T) {
 // update, not one per line — the throttle is what keeps a large file from
 // firing a thousand IPC messages.
 func TestStreamAccumulatorPacesUpdates(t *testing.T) {
+	freezeClock(t) // the rule is one update per interval, not per 500 loop iterations
 	var count int
 	acc := newStreamToolAccumulator(func(string, string, string, int) { count++ })
 	acc.add([]streamToolCallDelta{{Index: 0, Function: struct {

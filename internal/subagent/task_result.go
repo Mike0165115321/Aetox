@@ -23,6 +23,8 @@ func (t *taskResultTool) Description() string {
 	return "Collect a sub-agent started with task, by its task id. Waits only if it has not finished. " +
 		"Pass several ids to collect several at once — sub-agents started before the first collect run " +
 		"concurrently, so collecting three costs the time of the slowest, not the sum. " +
+		"A sub-agent that got stuck on a decision comes back here as a QUESTION rather than an answer — " +
+		"reply with task_answer and collect again; it resumes from where it stopped. " +
 		"Every task you start must be collected: an uncollected sub-agent's work is thrown away when the turn ends."
 }
 
@@ -71,9 +73,12 @@ func (t *taskResultTool) ExecuteTool(ctx context.Context, args map[string]any) (
 	// One id: the result is the result, so hand it back as its own outcome — a
 	// failed delegation stays a failed tool call the model can react to.
 	if len(ids) == 1 {
-		task, err := t.runner.collect(ctx, ids[0])
+		task, ask, err := t.runner.collect(ctx, ids[0])
 		if err != nil {
 			return t.fail(started, err.Error())
+		}
+		if ask != nil {
+			return t.question(started, task, ask), nil
 		}
 		out := task.output
 		out.DurationMs = time.Since(task.started).Milliseconds()
@@ -85,9 +90,14 @@ func (t *taskResultTool) ExecuteTool(ctx context.Context, args map[string]any) (
 	var b strings.Builder
 	anyOK := false
 	for _, id := range ids {
-		task, err := t.runner.collect(ctx, id)
+		task, ask, err := t.runner.collect(ctx, id)
 		if err != nil {
 			fmt.Fprintf(&b, "--- %s ---\n%s\n", id, err.Error())
+			continue
+		}
+		if ask != nil {
+			anyOK = true // a question is not a failure; it is work waiting on one answer
+			fmt.Fprintf(&b, "--- %s (%s) ---\n%s\n", id, task.profile, askedText(id, ask))
 			continue
 		}
 		if task.output.Success {
@@ -104,6 +114,31 @@ func (t *taskResultTool) ExecuteTool(ctx context.Context, args map[string]any) (
 		Success:    anyOK,
 		DurationMs: time.Since(started).Milliseconds(),
 	}, nil
+}
+
+// question is what the parent gets when it collects a delegate that is stuck.
+// Success is true on purpose: nothing failed, and a red row in the timeline for
+// "your delegate needs a decision" tells the user the wrong story. What makes it
+// unmistakable is the text, which names the one tool that unsticks it.
+func (t *taskResultTool) question(started time.Time, task *runningTask, ask *pendingAsk) skill.Output {
+	content := askedText(task.id, ask)
+	return skill.Output{
+		Name:       t.Name(),
+		Command:    "task_result " + task.id,
+		Content:    content,
+		RawOutput:  content,
+		Success:    true,
+		DurationMs: time.Since(started).Milliseconds(),
+	}
+}
+
+func askedText(id string, ask *pendingAsk) string {
+	return fmt.Sprintf(
+		"NOT FINISHED — sub-agent %s is waiting for a decision from you and has stopped until it gets one:\n\n%s\n\n"+
+			"Answer with task_answer(task_id=%q, answer=...), then call task_result again to collect the finished work. "+
+			"It resumes with everything it has already done still in hand, so answering costs far less than starting it over. "+
+			"If the question cannot be answered, answer saying so and what to do instead — leaving it unanswered throws the whole run away.",
+		id, strings.TrimSpace(ask.question), id)
 }
 
 func (t *taskResultTool) fail(started time.Time, reason string) (skill.Output, error) {

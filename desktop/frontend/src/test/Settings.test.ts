@@ -6,6 +6,13 @@ import {
   ListSubagentProfiles, ReadSubagentProfile, SetSubagentModel, ListModelsForProvider,
 } from './mocks/wailsApp'
 
+// The chart plots a window ending today, so a hard-coded date would fall out
+// of it and the fixture would stop covering the chart the day after it was
+// written. Local, not toISOString: the component keys its columns by local day,
+// and in a +07 zone the UTC date is yesterday for the first seven hours.
+const d = new Date()
+const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
 beforeEach(() => {
   vi.mocked(ListMCPServers).mockResolvedValue([
     { name: 'context7', command: ['npx', '-y', '@upstash/context7-mcp'], disabled: false, status: 'connected', tools: 2 },
@@ -26,8 +33,13 @@ beforeEach(() => {
   }
   vi.mocked(UsageStats).mockResolvedValue({
     today: [deepseek], week: [deepseek, ollama], all: [deepseek, ollama],
-    daily: [{ day: '2026-07-27', model: 'deepseek-chat', promptTokens: 1200, completionTokens: 340 }],
-    heatmap: [{ day: '2026-07-27', model: '', promptTokens: 1200, completionTokens: 340 }],
+    // Today, so the 30-day window always contains it. Both models on the same
+    // day: one splits into hit/miss, the local one cannot and must stay whole.
+    daily: [
+      { day: today, model: 'deepseek-chat', promptTokens: 1200, completionTokens: 340, cachedTokens: 900, cacheRows: 5 },
+      { day: today, model: 'ornith:9b', promptTokens: 400, completionTokens: 60, cachedTokens: 0, cacheRows: 0 },
+    ],
+    heatmap: [{ day: today, model: '', promptTokens: 1200, completionTokens: 340, cachedTokens: 900, cacheRows: 5 }],
     totals: {
       promptTokens: 1600, completionTokens: 400, cachedTokens: 900, uncachedTokens: 700,
       cacheRows: 5, calls: 7, sessions: 3, messages: 21,
@@ -134,11 +146,45 @@ describe('Settings pages', () => {
     })
     // The mock carries a single day of usage.
     expect(columns.length).toBe(30)
-    expect(container.querySelectorAll('.daycol.empty').length).toBe(29)
+    expect(container.querySelectorAll('.daycol.idle').length).toBe(29)
     // Gridlines give the bars a scale to be read against.
     expect(container.querySelectorAll('.chart-gridline').length).toBe(5)
     // Axis ticks are rounded, not raw maxima.
     expect(container.querySelector('.chart-y')?.textContent).toContain('0')
+  })
+
+  // The idle-day modifier was once called .empty, which also matched the page's
+  // .empty utility (padding:16px). Twenty-six padded columns ate the whole
+  // track and the days that had data came out half a pixel wide — bars present
+  // in the DOM, invisible on screen, and no jsdom test could see it because
+  // jsdom does not apply the stylesheet. Guard the name instead.
+  it('idle columns do not carry the page-level .empty utility', async () => {
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'สถิติการใช้งาน')
+    await waitFor(() => expect(container.querySelectorAll('.daycol').length).toBe(30))
+    expect(container.querySelectorAll('.daycol.empty').length).toBe(0)
+  })
+
+  // Hue is the model, fill is where the tokens came from. A model that reports
+  // no cache accounting cannot be split, and drawing its input as all-miss
+  // would claim a measurement the provider never made — it gets its own band.
+  it('Usage chart splits each day into cache hit, miss and output', async () => {
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'สถิติการใช้งาน')
+
+    const bar = await waitFor(() => {
+      const found = container.querySelector('.daycol:not(.idle) .daybar')
+      expect(found).toBeTruthy()
+      return found!
+    })
+    const segs = [...bar.querySelectorAll('span')].map((s) => s.className)
+    // deepseek: 900 hit + 300 miss + 340 out. ornith: 400 unsplittable + 60 out.
+    expect(segs).toEqual(['k-hit s1', 'k-miss s1', 'k-raw s2', 'k-out s1', 'k-out s2'])
+    const flex = (cls: string) =>
+      Number((bar.querySelector(`.${cls.replace(' ', '.')}`) as HTMLElement).style.flex.split(' ')[0])
+    expect(flex('k-hit s1')).toBe(900)
+    expect(flex('k-miss s1')).toBe(300)
+    expect(flex('k-raw s2')).toBe(400)
   })
 
   // The period control swaps which aggregate the table renders.

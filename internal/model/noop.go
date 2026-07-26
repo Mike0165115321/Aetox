@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -251,8 +252,11 @@ func (p *NoopProvider) Name() string {
 
 func (p *NoopProvider) SupportsToolCalling() bool {
 	// aetox-tools:test opts into the real tool loop so the tool-driven UI
-	// (todo panel, ask_user cards, tool timeline) is exercisable without a key.
-	return strings.Contains(strings.ToLower(p.DefaultModel), "tools")
+	// (todo panel, ask_user cards, tool timeline) is exercisable without a key;
+	// aetox-subagent:test does the same for delegation, and needs it on both
+	// sides — a delegate runs on whatever model the session is using.
+	name := strings.ToLower(p.DefaultModel)
+	return strings.Contains(name, "tools") || strings.Contains(name, "subagent")
 }
 
 func (p *NoopProvider) SupportsReasoning() bool {
@@ -309,6 +313,8 @@ func (p *NoopProvider) Complete(_ context.Context, req Request) (Response, error
 			Model:    model,
 			Text:     p.noopMarkdownReply(),
 		}, nil
+	case strings.Contains(modelKey, "subagent"):
+		return p.noopSubagentReply(model, req), nil
 	case strings.Contains(modelKey, "tools"):
 		return p.noopToolsReply(model, req), nil
 	}
@@ -372,6 +378,12 @@ func (p *NoopProvider) noopToolsReply(model string, req Request) Response {
 	// tests, and any hand-built Request): keep the historical UI script rather
 	// than guessing it is a delegate.
 	if len(req.Tools) > 0 && (!offersTool(req, "todo_write") || !offersTool(req, "ask_user")) {
+		// Whoever holds `task` is a parent, not a delegate — delegates never get it
+		// (internal/subagent force-denies all three halves). Opt-in by keyword, like
+		// the ask_main script below, so every other tools-test stays one round.
+		if offersTool(req, "task") && briefMentions(req, "subagent") {
+			return p.noopDelegationReply(model, req)
+		}
 		return p.noopDelegateToolsReply(model, req)
 	}
 	todoCalls, askCalls := 0, 0
@@ -419,6 +431,179 @@ func (p *NoopProvider) noopToolsReply(model string, req Request) Response {
 	}
 }
 
+// briefMentions reports whether the user side of the transcript contains a
+// keyword. A delegate's brief is a user message, so this is how a test asks the
+// scripted delegate for a specific behaviour without a second provider.
+func briefMentions(req Request, keyword string) bool {
+	for _, m := range req.Messages {
+		if m.Role == RoleUser && strings.Contains(strings.ToLower(m.Content), keyword) {
+			return true
+		}
+	}
+	return false
+}
+
+// noopSubagentReply is the delegation UI on a bench: switch to
+// aetox-subagent:test, send anything, and the whole §44 path runs with no API
+// key — a delegate is started, it gets stuck and asks, the answer goes back, and
+// the finished work is collected. What that exercises on screen is the part no
+// unit test can look at: the nested tool timeline, a delegate's rows appearing
+// under its `task` row, and the question sitting in the transcript until it is
+// answered.
+//
+// Both sides of the delegation run on this same model — a delegate inherits the
+// session's provider — so this function is the parent script and hands the child
+// to noopDelegateToolsReply, told apart by which tools the request offers. A
+// delegate never sees `task`, structurally (internal/subagent, depth 1).
+//
+// Stateless like its siblings: the round is read off the transcript, so it
+// survives a re-bootstrap and cannot drift from what actually happened.
+func (p *NoopProvider) noopSubagentReply(model string, req Request) Response {
+	if !offersTool(req, "task") {
+		return p.noopSubagentDelegateReply(model, req)
+	}
+
+	started, collected, answered := 0, 0, 0
+	for _, m := range req.Messages {
+		if m.Role != RoleTool {
+			continue
+		}
+		switch strings.ToLower(m.Name) {
+		case "task":
+			started++
+		case "task_result":
+			collected++
+		case "task_answer":
+			answered++
+		}
+	}
+	call := func(id, name, args string) Response {
+		return Response{Provider: p.Name(), Model: model, ToolCalls: []ToolCall{{
+			ID:       id,
+			Type:     "function",
+			Function: FunctionCall{Name: name, Arguments: args},
+		}}}
+	}
+
+	switch {
+	case started == 0:
+		// "askmain" in the brief is what makes the delegate stop and ask — the
+		// same opt-in keyword the offline tests use, so the bench and the suite
+		// exercise one script rather than two.
+		// `general`, not `explore`: the bench is there to be watched, and a
+		// read-only delegate can only ever show a search. This one lists, writes
+		// a real file, reads it back and greps it — the shape of an actual
+		// delegated job, and an artifact on disk at the end of it.
+		return call("noop_task_1", "task", p.pick(
+			`{"description":"ทดสอบซับเอเจน","prompt":"askmain: ดูว่าในโฟลเดอร์นี้มีไฟล์อะไรบ้าง เขียนไฟล์สรุปไว้หนึ่งไฟล์ อ่านกลับมายืนยัน แล้วรายงานผล","agent":"general"}`,
+			`{"description":"sub-agent test","prompt":"askmain: list what is in this folder, write a summary file, read it back to confirm, then report","agent":"general"}`))
+	case collected == 0:
+		return call("noop_task_collect_1", "task_result", `{"task_id":"`+firstTaskID(req)+`"}`)
+	case answered == 0:
+		// The delegate is parked on its question; this is the round that proves
+		// the answer travels back into a run that is still alive.
+		return call("noop_task_answer_1", "task_answer", p.pick(
+			`{"task_id":"`+firstTaskID(req)+`","answer":"ลุยเลย ลิสต์ทั้งโฟลเดอร์ได้"}`,
+			`{"task_id":"`+firstTaskID(req)+`","answer":"go ahead, list the whole folder"}`))
+	case collected == 1:
+		return call("noop_task_collect_2", "task_result", `{"task_id":"`+firstTaskID(req)+`"}`)
+	}
+
+	last := ""
+	for _, m := range req.Messages {
+		if m.Role == RoleTool && strings.EqualFold(m.Name, "task_result") {
+			last = strings.TrimSpace(m.Content)
+		}
+	}
+	return Response{Provider: p.Name(), Model: model, Text: p.pick(
+		"✅ จบชุดทดสอบซับเอเจนครับ — สั่งงาน → มันติดแล้วถามกลับ → ตอบไป → มันทำต่อจนจบ แล้วเก็บผลได้ครบ\n\nผลจากซับเอเจน: ",
+		"✅ Sub-agent test set complete — delegated, it got stuck and asked, the answer went back, it finished, and the work was collected.\n\nWhat the sub-agent returned: ") + clipNoop(last, 600)}
+}
+
+// noopSubagentDelegateReply is the bench's delegate: a job with several steps in
+// it, because one tool call shows nothing about how a delegation reads on
+// screen. It asks first, then lists, writes a summary file, reads it back and
+// greps it — five rows under one sub-agent block, ending in a real artifact.
+//
+// Every step is conditional on the tool actually being offered, so the same
+// script degrades gracefully on a profile with a narrower allowlist rather than
+// calling something it was never handed. Stateless like its siblings: which step
+// we are on is read off the transcript.
+func (p *NoopProvider) noopSubagentDelegateReply(model string, req Request) Response {
+	const demoFile = "subagent-demo.md"
+	ran := map[string]string{}
+	for _, m := range req.Messages {
+		if m.Role == RoleTool {
+			ran[strings.ToLower(strings.TrimSpace(m.Name))] = strings.TrimSpace(m.Content)
+		}
+	}
+	did := func(name string) bool { _, ok := ran[name]; return ok }
+	step := func(id, name, args string) Response {
+		return Response{Provider: p.Name(), Model: model, ToolCalls: []ToolCall{{
+			ID: id, Type: "function", Function: FunctionCall{Name: name, Arguments: args},
+		}}}
+	}
+	body := p.pick(
+		"# สรุปโฟลเดอร์\\n\\nไฟล์นี้เขียนโดยซับเอเจนระหว่างชุดทดสอบ\\n\\n- ตรวจแล้ว: OK\\n",
+		"# Folder summary\\n\\nWritten by a sub-agent during the test set.\\n\\n- checked: OK\\n")
+
+	switch {
+	case !did("ask_main") && offersTool(req, "ask_main") && briefMentions(req, "askmain"):
+		return step("noop_sub_ask", "ask_main", p.pick(
+			`{"question":"[tools-test] ให้ลิสต์ทั้งโฟลเดอร์แล้วเขียนไฟล์สรุปเลยไหม หรือหยุดแค่นี้?"}`,
+			`{"question":"[tools-test] list the whole folder and write the summary file, or stop here?"}`))
+	case !did("list") && offersTool(req, "list"):
+		return step("noop_sub_list", "list", `{"path":"."}`)
+	case !did("write") && offersTool(req, "write"):
+		return step("noop_sub_write", "write", `{"path":"`+demoFile+`","content":"`+body+`"}`)
+	case !did("read") && offersTool(req, "read"):
+		return step("noop_sub_read", "read", `{"path":"`+demoFile+`"}`)
+	case !did("grep") && offersTool(req, "grep"):
+		return step("noop_sub_grep", "grep", `{"pattern":"checked|ตรวจแล้ว","path":"`+demoFile+`"}`)
+	}
+
+	var b strings.Builder
+	b.WriteString(p.pick("[tools-test] ซับเอเจนทำงานเสร็จแล้ว:\n", "[tools-test] the sub-agent is done:\n"))
+	for _, s := range []struct{ tool, th, en string }{
+		{"list", "ดูไฟล์ในโฟลเดอร์", "listed the folder"},
+		{"write", "เขียนไฟล์ " + demoFile, "wrote " + demoFile},
+		{"read", "อ่านกลับมายืนยัน", "read it back to confirm"},
+		{"grep", "ค้นข้อความในไฟล์", "grepped it"},
+	} {
+		if out, ok := ran[s.tool]; ok {
+			fmt.Fprintf(&b, "- %s: %s\n", p.pick(s.th, s.en), clipNoop(out, 160))
+		}
+	}
+	if answer, ok := ran["ask_main"]; ok {
+		// Echoing the answer proves the delegate resumed the same run rather
+		// than being restarted: a fresh one would not remember having asked.
+		b.WriteString(p.pick("คำตอบจากเมนเอเจน: ", "main agent answered: ") + clipNoop(answer, 200) + "\n")
+	}
+	return Response{Provider: p.Name(), Model: model, Text: strings.TrimRight(b.String(), "\n")}
+}
+
+// firstTaskID digs the handle out of whatever `task` reported. The id travels to
+// the model inside a tool result, so the script has to read it back the same way
+// a real model would rather than being handed it — which is also what makes this
+// break loudly if the handle ever stops being named in that result.
+func firstTaskID(req Request) string {
+	for _, m := range req.Messages {
+		if m.Role != RoleTool || !strings.EqualFold(m.Name, "task") {
+			continue
+		}
+		for _, field := range strings.FieldsFunc(m.Content, func(r rune) bool {
+			return r != '_' && !('a' <= r && r <= 'z') && !('0' <= r && r <= '9')
+		}) {
+			if rest, ok := strings.CutPrefix(field, "task_"); ok && rest != "" {
+				if _, err := strconv.Atoi(rest); err == nil {
+					return field
+				}
+			}
+		}
+	}
+	return "task_1" // nothing to read: let the tool report the real failure
+}
+
 // offersTool reports whether this request actually put the named tool on the
 // table. The scripted provider consults it for the same reason a real model
 // does: calling something you were not handed goes nowhere.
@@ -429,6 +614,134 @@ func offersTool(req Request, name string) bool {
 		}
 	}
 	return false
+}
+
+// noopDelegationReply is the parent half of §44 as a script: start a delegate,
+// go and collect it, report. It exists because the CLI has no todo_write/ask_user
+// — so its main agent lands on the delegate script below and would never touch
+// `task`, leaving delegation the one path with no keyless way to exercise it.
+//
+// Two rounds and no more, deliberately: this proves the wiring the parent owns
+// (a handle comes back without blocking, task_result redeems it). What the
+// delegate does inside is the script below, driven by the same provider.
+//
+// The brief picks the profile — "general" if it says so, otherwise explore, which
+// is what `task` itself defaults to.
+func (p *NoopProvider) noopDelegationReply(model string, req Request) Response {
+	started, collected := "", ""
+	for _, m := range req.Messages {
+		if m.Role != RoleTool {
+			continue
+		}
+		switch strings.ToLower(strings.TrimSpace(m.Name)) {
+		case "task":
+			if id := taskIDIn(m.Content); id != "" {
+				started = id
+			}
+		case "task_result":
+			collected = strings.TrimSpace(m.Content)
+		}
+	}
+
+	profile := "explore"
+	if briefMentions(req, "general") {
+		profile = "general"
+	}
+	call := func(id, name, args string) Response {
+		return Response{Provider: p.Name(), Model: model, ToolCalls: []ToolCall{{
+			ID:       id,
+			Type:     "function",
+			Function: FunctionCall{Name: name, Arguments: args},
+		}}}
+	}
+
+	// Keywords the delegate's own script reads have to survive into its brief, or
+	// they can only be used from a test that writes the brief by hand — the CLI
+	// could never reach them, which is the surface this script exists to serve.
+	passthrough := ""
+	for _, keyword := range []string{"toolchain", "askmain"} {
+		if briefMentions(req, keyword) {
+			passthrough += keyword + ": "
+		}
+	}
+
+	switch {
+	case started == "":
+		return call("noop_task_1", "task", fmt.Sprintf(
+			`{"description":"list the sandbox root","prompt":"%sList what is in the sandbox root and report the paths you found. Nothing else.","agent":%q}`,
+			passthrough, profile))
+	case collected == "":
+		return call("noop_task_collect_1", "task_result", fmt.Sprintf(`{"task_id":%q}`, started))
+	}
+	return Response{Provider: p.Name(), Model: model, Text: p.pick(
+		"[tools-test] ส่งงานให้ซับเอเจน "+profile+" แล้วเก็บผลกลับมาได้ ผลที่ได้:\n",
+		"[tools-test] delegated to sub-agent "+profile+" and collected it. Result:\n") + clipNoop(collected, 600)}
+}
+
+// taskIDIn digs the handle out of what `task` returned. It reads the id rather
+// than assuming "task_1" so a script that starts two delegates still collects the
+// right one. task_result is skipped explicitly — it shares the prefix.
+func taskIDIn(content string) string {
+	for _, field := range strings.Fields(content) {
+		id := strings.Trim(field, `"'.,;:—`)
+		if !strings.HasPrefix(id, "task_") || id == "task_result" {
+			continue
+		}
+		if _, err := strconv.Atoi(strings.TrimPrefix(id, "task_")); err == nil {
+			return id
+		}
+	}
+	return ""
+}
+
+// toolchainProbes is the sequence a brief containing "toolchain" walks — one
+// read-only tool per round, each with arguments that work in any sandbox,
+// including an empty one. Every other script here stops after a single call,
+// which proves a delegate *can* call a tool but not that its loop survives
+// several of them with results accumulating in between.
+var toolchainProbes = []struct{ name, args string }{
+	{"list", `{"path":"."}`},
+	{"glob", `{"pattern":"*"}`},
+	{"grep", `{"pattern":"e","path":"."}`},
+}
+
+// noopToolchainReply runs each probe it was actually handed, one per round, then
+// reports what every one of them returned. Stateless like its siblings: which
+// round we are in is read off the transcript, never counted.
+func (p *NoopProvider) noopToolchainReply(model string, req Request) Response {
+	ran := map[string]string{}
+	for _, m := range req.Messages {
+		if m.Role == RoleTool {
+			ran[strings.ToLower(strings.TrimSpace(m.Name))] = strings.TrimSpace(m.Content)
+		}
+	}
+	for _, probe := range toolchainProbes {
+		if _, done := ran[probe.name]; done || !offersTool(req, probe.name) {
+			continue
+		}
+		return Response{Provider: p.Name(), Model: model, ToolCalls: []ToolCall{{
+			ID:       "noop_chain_" + probe.name,
+			Type:     "function",
+			Function: FunctionCall{Name: probe.name, Arguments: probe.args},
+		}}}
+	}
+	if len(ran) == 0 {
+		return Response{Provider: p.Name(), Model: model, Text: p.pick(
+			"[tools-test] ไม่ได้รับเครื่องมืออ่านข้อมูลเลย จึงไม่มีอะไรให้รายงาน",
+			"[tools-test] I was handed no read-only tool, so there is nothing to report")}
+	}
+	// A digest, not the raw envelopes — which is what a delegate is for, and what
+	// makes the report checkable at both ends: a loop that quietly stopped after
+	// the first probe cannot fake these lines, and a raw tool envelope appearing
+	// in what the parent receives can only mean the transcript leaked (§44.6).
+	var b strings.Builder
+	b.WriteString(p.pick("[tools-test] เรียกครบทุกตัวแล้ว:", "[tools-test] ran the whole chain:"))
+	for _, probe := range toolchainProbes {
+		if out, done := ran[probe.name]; done {
+			fmt.Fprintf(&b, "\n- %s → %d bytes", probe.name, len(out))
+		}
+	}
+	return Response{Provider: p.Name(), Model: model, Text: b.String()}
 }
 
 // noopDelegateToolsReply is the tool-loop script for a caller running on a
@@ -442,13 +755,40 @@ func offersTool(req Request, name string) bool {
 // Stateless like its sibling: which round we are in is read off the transcript,
 // so it survives a re-bootstrap mid-run.
 func (p *NoopProvider) noopDelegateToolsReply(model string, req Request) Response {
+	// Opt-in per brief, like askmain: a delegate that calls three tools instead of
+	// one, so the child's *loop* is exercised and not just its first call.
+	if briefMentions(req, "toolchain") {
+		return p.noopToolchainReply(model, req)
+	}
 	const probe = "list"
 	result := ""
 	ran := false
+	answer := ""
+	asked := false
 	for _, m := range req.Messages {
-		if m.Role == RoleTool && strings.EqualFold(m.Name, probe) {
-			ran, result = true, strings.TrimSpace(m.Content)
+		if m.Role != RoleTool {
+			continue
 		}
+		switch {
+		case strings.EqualFold(m.Name, probe):
+			ran, result = true, strings.TrimSpace(m.Content)
+		case strings.EqualFold(m.Name, "ask_main"):
+			asked, answer = true, strings.TrimSpace(m.Content)
+		}
+	}
+
+	// Asking is opt-in per brief, the same way the image scenarios are opt-in per
+	// keyword: a delegate that asked on every run would turn every other test
+	// into a two-step dance for no reason. A brief containing "askmain" gets the
+	// ask round first, so the test exercises a real park-and-resume — the list
+	// round below then happens only after an answer comes back, on the same agent
+	// with the same context.
+	if !asked && offersTool(req, "ask_main") && briefMentions(req, "askmain") {
+		return Response{Provider: p.Name(), Model: model, ToolCalls: []ToolCall{{
+			ID:       "noop_delegate_ask",
+			Type:     "function",
+			Function: FunctionCall{Name: "ask_main", Arguments: `{"question":"[tools-test] list the sandbox root, or stop here?"}`},
+		}}}
 	}
 
 	if !ran && offersTool(req, probe) {
@@ -465,9 +805,13 @@ func (p *NoopProvider) noopDelegateToolsReply(model string, req Request) Respons
 			"[tools-test] ไม่ได้รับเครื่องมืออ่านข้อมูลเลย จึงไม่มีอะไรให้รายงาน",
 			"[tools-test] I was handed no read-only tool, so there is nothing to report")}
 	}
-	return Response{Provider: p.Name(), Model: model, Text: p.pick(
-		"[tools-test] เรียก list แล้ว ผลที่ได้: ",
-		"[tools-test] ran list, result: ") + clipNoop(result, 400)}
+	reply := p.pick("[tools-test] เรียก list แล้ว ผลที่ได้: ", "[tools-test] ran list, result: ") + clipNoop(result, 400)
+	if asked {
+		// Echoing the answer proves the delegate resumed the same run rather than
+		// being restarted: a fresh agent would have no memory of having asked.
+		reply += p.pick("\nคำตอบจากเมนเอเจน: ", "\nmain agent answered: ") + clipNoop(answer, 200)
+	}
+	return Response{Provider: p.Name(), Model: model, Text: reply}
 }
 
 // noopLongReasoning produces a multi-paragraph thinking stream (~2 minutes of

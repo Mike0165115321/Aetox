@@ -15,7 +15,7 @@ This document is an evidence-first architecture map, distinct from [README.md](R
 
 | Doc | What it is |
 |---|---|
-| **This file** | Evidence-first whole-system map + the numbered Decision log (§10–§44). Start here; everything below is a spoke. |
+| **This file** | Evidence-first whole-system map + the numbered Decision log (§10–§46). Start here; everything below is a spoke. |
 | [README.md](README.md) · [AETOX.md](AETOX.md) · [Aetox Desktop.md](Aetox%20Desktop.md) | Product vision/pitch documents — mix shipped state with roadmap; this file wins on conflicts. |
 | [docs/architecture/module-split-2026-07-21.md](docs/architecture/module-split-2026-07-21.md) | Why an `engine/`/`providers/`/`cli/` split was proposed and the migration plan (§4). ⚠️ The scaffold directories it describes were deleted in §28 — the rationale stands, the on-disk structure is gone. |
 | [docs/architecture/browser-security-2026-07-21.md](docs/architecture/browser-security-2026-07-21.md) | Browser tab `postMessage` bridge — threat model, 3-check defense, residual risk (§6.6). |
@@ -23,6 +23,7 @@ This document is an evidence-first architecture map, distinct from [README.md](R
 | [docs/architecture/model-control-layer-2026-07-22.md](docs/architecture/model-control-layer-2026-07-22.md) | Layer-2 deep dive (`turn`/`cognitive`/`skill`/`safety`). ⚠️ Executor sections superseded by §17 — the doc says so itself. |
 | [docs/architecture/tesseract-ocr-bundling-2026-07-22.md](docs/architecture/tesseract-ocr-bundling-2026-07-22.md) | How `image_ocr`'s Tesseract dependency reaches the user's machine per OS. |
 | [docs/architecture/native-browser-embedding-2026-07-24.md](docs/architecture/native-browser-embedding-2026-07-24.md) | Native browser embedding: architecture, 7-entry failure catalog, macOS/Linux port blueprint (§18). |
+| [docs/architecture/foreign-coding-clis-2026-07-27.md](docs/architecture/foreign-coding-clis-2026-07-27.md) | Why Claude Code / Codex / OpenCode may be consultants but never the provider seam; the deferred `claude-cli` profile plan (§46). |
 | [docs/adr/0001-native-tool-calling-foundation.md](docs/adr/0001-native-tool-calling-foundation.md) | ADR, Accepted 2026-06-07 — native tool calling as the agentic foundation. |
 | [docs/adr/0002-directional-cognition-engine.md](docs/adr/0002-directional-cognition-engine.md) | ADR, Proposed 2026-07-10 — long-term multi-AI orchestration vision (ensemble/routing/consensus). |
 | [MCP-SUPPORT-PLAN.md](MCP-SUPPORT-PLAN.md) | MCP integration plan (skill.Tool is already MCP-shaped; staged rollout). |
@@ -30,6 +31,7 @@ This document is an evidence-first architecture map, distinct from [README.md](R
 | [SETTINGS-PARITY-PLAN.md](SETTINGS-PARITY-PLAN.md) | Settings-parity roadmap vs ZCode (Skills/Plugins → Onboarding → Usage → Commands → Preview → Subagents; Indexing deliberately skipped) — decisions recorded in §24. |
 | [third_party/go-webview2/AETOX-PATCH.md](third_party/go-webview2/AETOX-PATCH.md) | Why go-webview2 is vendored+patched: stop a single browser tab's WebView2 error from `os.Exit`-crashing the whole app (§26). |
 | [TEST-REPORT.md](TEST-REPORT.md) | Module-by-module test coverage and known untestable seams. CI that runs it all: [.github/workflows/ci.yml](.github/workflows/ci.yml) (§28). |
+| [BENCHMARK.md](BENCHMARK.md) · [bench.ps1](bench.ps1) | Measured comparison against 13 installed rivals (disk/startup/RAM/soak) — the fairness rules, the raw results, and which numbers are **not** clean enough to publish. Every figure quoted in README.md or docs/index.html must trace back to a passing row here. |
 | [LICENSE](LICENSE) | MIT (§28) — the license README and `scoop/aetox.json` both reference. |
 | [docs/opencode-study/](docs/opencode-study/README.md) | Source-level reading of opencode at a pinned commit (agents, MCP, permissions, plugin hooks, snapshot). |
 | [docs/architecture-reference-opencode.md](docs/architecture-reference-opencode.md) · [docs/competitor-research.md](docs/competitor-research.md) | Package/feature-level comparisons that motivated the deep study above. |
@@ -94,7 +96,7 @@ flowchart LR
         Bindings["Wails-bound App\ndesktop/app.go\n(bindings return [] never nil — §19.3)"]
         BrowserHost["Native browser host — desktop/browser.go\nWebView2 child windows on one STA thread\nparent found by PID, never title (§18)"]
         Term["Embedded terminals\ndesktop/terminal.go (ConPTY)"]
-        Sessions["Session persistence + FTS5 search\ndesktop/sessions.go · db.go\nunfocused chats → home-dir bucket (§19.1)"]
+        Sessions["Session persistence + FTS5 search\ndesktop/sessions.go · db.go\nunfocused chats → their own bucket (§19.1)"]
         FE <--> Bindings
         Bindings --> BrowserHost
         Bindings --> Term
@@ -129,7 +131,7 @@ flowchart LR
     GH[["GitHub API\ngithub_repo_summary · plugin_install · rtk self-install"]]
     MCPExt[["Configured MCP servers"]]
     Web[["Live web pages\n(inside native browser tabs)"]]
-    FS[("Local filesystem + shell + git\nrooted at project, or home when unfocused (§19.1)")]
+    FS[("Local filesystem + shell + git\nrooted at project, or ~/aetox when unfocused (§19.1)")]
 
     Model --> Providers
     Skills --> GH
@@ -730,6 +732,18 @@ Three same-day desktop decisions, recorded together; all owner-driven, all shipp
 
 **Design ([desktop/app.go](desktop/app.go), [desktop/sessions.go](desktop/sessions.go)):** `App.projectFocused` flag; startup calls `focusNone()` — engine re-roots at the user's **home dir** (tools all work, rooted neutrally), no `touchProject`, so launch cwd never pollutes recent projects. `ClearProjectFocus` binding + a focus picker on the composer chip (no-focus / recent projects / open folder). Unfocused sessions live under the home-dir `projectKey` bucket — no schema change — and `LoadSessionAnyProject` special-cases that bucket back into unfocused mode instead of erroring "project not found". `ProjectTree`/`GitChangedFiles` return empty when unfocused (never eagerly walk a home dir). `ProjectStatus.Focused` drives the UI.
 
+**Amendment 2026-07-26 — the unfocused root is `<home>/aetox`, not the home directory.** Owner, reading the system prompt aloud: *"Current working sandbox root is: C:\Users\Gigabyte. บรรทัดนี้เหี้ยมาก … แล้ว sandbox คืออันนี้จริงๆหรอ"*. It was. Containment is "anything under the root" ([resolveSandboxPath](internal/skill/list.go)), so unfocused the sandbox held `.ssh`, `.aws`, `.gitconfig`, `AppData` with its browser token stores, Documents — readable by `read`/`grep`/`glob` on any turn and writable with no prompt, since `focusNone` sets full-access in the same call.
+
+What makes this a reversal rather than a correction of a mistake: **the original call was sound for the tools that existed on 2026-07-24.** What changed is the loop's shape — `web_fetch`, `web_search` and `browser_read` now sit in it, so a page can carry an instruction in and the same loop can carry an answer back out. Broad read access stops being a blast radius and becomes an exfiltration path the moment untrusted text and network egress share a loop.
+
+- **`focusNone` roots at `<home>/aetox`** ([desktop/app.go](desktop/app.go)), created on demand so `list .` works on a fresh install.
+- **`outputSubdir` drops its `aetox/` prefix** in the same commit — it is now `output/<session>`, joined onto the new root. The absolute destination is unchanged (`<home>/aetox/output/<session>`), so **nothing on disk moved and no migration runs**: the new root is exactly the parent of the folder writes already landed in. Owner caught this one: *"อย่าลืมนะครับ เรามี aetox\output ด้วยหนา"*. The two halves are asserted together in `desktop/app_test.go` — alone, either change doubles the folder name or strands every artifact.
+- **`LoadSessionAnyProject` accepts both bucket keys** ([desktop/sessions.go](desktop/sessions.go)): the new root's, and the home dir's for every chat held before this. Dropping the old key would answer real, still-present history with "โฟลเดอร์อาจถูกย้ายหรือลบไปแล้ว".
+- **Reaching outside is now a deliberate act**, and both routes already existed: open the folder as a project, or attach the file (`saveChatAttachment` copies it under the root, so it works whatever the root is). What is genuinely lost is *"ไปส่องโฟลเดอร์ Downloads ให้หน่อย"* without focusing anything first — which is the ask that should require a click.
+- **Not done, deliberately:** deny-rules for `.ssh`/`.aws`/… while staying rooted at home. That is a list to maintain forever, and it fails on the first entry nobody thought of.
+
+**The prompt line went with it.** [internal/prompt](internal/prompt) no longer states the sandbox root at all: it is machine-specific, carries the user's account name, was sent to whichever provider is configured on every request, and the next sentence told the model not to repeat it. It bought nothing — every file tool rejects an absolute path, so the root could not be used in a tool call — and its one real use, answering *"ไฟล์อยู่ที่ไหนในเครื่อง"*, is now served by `write`'s receipt, which names the on-disk path when placement moved the file. What replaces it is the rule whose absence caused the wrong answer in the first place: **repeat the path a tool reported, never assemble one**. The cost of the trade is that the model can no longer name the project's absolute path unprompted; the UI's project badge already shows it.
+
 ### 19.2 Workbench (right pane) state is per-session
 
 **Trigger:** owner: "แต่ละเซสชันต้องผูกกับฝั่งขวาที่เปิดไว้ด้วย" — switching sessions must bring back what was open.
@@ -785,7 +799,7 @@ One session, three engine layers fixed; OpenCode/Claude Code are the confirmed r
 - [internal/skill/github_tools.go](internal/skill/github_tools.go) — `github_search` / `github_list_files` / `github_read_file` on the existing `githubRepoClient`; `GITHUB_TOKEN`/`GH_TOKEN` honored on every GitHub request (rate limit 60→5000/h, private repos); path traversal rejected before any request; all read-only network in `safety` (github_* prefix), `plugin_install` keeps its stricter assessment.
 - Composer attachments now carry `[attachment: <type>]` source tags (user image vs dragged file-tab vs dragged browser-tab) — the model can no longer confuse provenance ([cockpit.svelte.ts](desktop/frontend/src/lib/stores/cockpit.svelte.ts)).
 - Chat rendering: `.markdown-body img` rules (single image capped 240px; multiple images in one paragraph flow as a wrapping gallery at ~⅓ bubble width); fenced code got the standard AI-chat chrome — language label + copy button + highlight.js (delegated clicks; DOMPurify still sanitizes).
-- [internal/model/noop.go](internal/model/noop.go) — noop is the UI test harness: picker models `aetox-image:test` / `aetox-think:test` / `aetox-markdown:test` (plus `img1/img5/imgbig/imgbroken` keyword cases) exercise every rendering path with no API key; `aetox-think:test` streams reasoning through `onReasoningChunk` before the answer.
+- [internal/model/noop.go](internal/model/noop.go) — noop is the UI test harness: picker models `aetox-image:test` / `aetox-think:test` / `aetox-markdown:test` (plus `img1/img5/imgbig/imgbroken` keyword cases) exercise every rendering path with no API key; `aetox-think:test` streams reasoning through `onReasoningChunk` before the answer. Later joined by `aetox-tools:test` (tool loop, todo panel, ask_user cards) and `aetox-subagent:test` (delegation end to end — §44.13).
 
 **Status:** `Done 2026-07-24.` Full suite green; rendering verified live by owner (noop screenshots). Not yet built, deliberately: web_search fallback engine, per-domain fetch rate limiting, browser screenshots (WebView2 `CapturePreview`).
 
@@ -1478,7 +1492,7 @@ The model stays in charge of what happens in between, which is exactly the disti
 
 **A cap, because a model in a loop is a real failure mode:** four delegates in flight per turn (`maxConcurrent`). Past that, `task` refuses with a message that says how to make room. This is the concurrency question §44.9 left open, answered with a desktop-sized number rather than a setting nobody would know how to tune.
 
-**One real bug this introduced, found by reasoning rather than by the race detector** (`-race` needs cgo and this machine has no gcc — stated so nobody assumes it was checked): tool events now arrive from a delegate's goroutine, and `App.toolHistory` was an unguarded slice written by what used to be the only turn goroutine. Two writers is now normal, so it takes a mutex — and the same fix applies to any App field a delegate's callbacks touch. `recordTokenUsage` was already safe (it only writes through `database/sql`, which is concurrency-safe).
+**One real bug this introduced, found by reasoning rather than by the race detector** (at the time `-race` needed cgo and this machine had no gcc — stated so nobody assumed it was checked; **that gap is closed as of 2026-07-27**: gcc 15.2.0 is installed, [verify.sh](verify.sh) carries a `race` stage, and the whole repo is clean under `-race` in 44s, delegation included): tool events now arrive from a delegate's goroutine, and `App.toolHistory` was an unguarded slice written by what used to be the only turn goroutine. Two writers is now normal, so it takes a mutex — and the same fix applies to any App field a delegate's callbacks touch. `recordTokenUsage` was already safe (it only writes through `database/sql`, which is concurrency-safe).
 
 **Known ceilings, deliberate:**
 
@@ -1498,6 +1512,84 @@ What that made necessary was a *guard*, because §44.11 had just made the expens
 **Two real bugs this exposed, both about a loop that ends without the delegate choosing to.** `cognitive`'s tool loop has two such endings — the `MaxToolCalls` ceiling and the doom-loop guard — and both are returned as ordinary *replies* rather than errors, because the user has to see them. For a delegate that is wrong twice over: the parent model got `agent tool loop reached maximum iterations` (an internal sentence) or `หยุดการทำงาน: …ลองสั่งใหม่หรือปรับคำสั่งดูครับ` (Thai prose addressed to a human), **and both came back marked successful**.
 
 Fixed at both ends. `cognitive` exports the two sentinels (`ToolLoopExhausted`, `DoomLoopStopPrefix`) so a caller can recognise them **without matching prose** — the §27 lesson, where the frontend once decided success by matching a Thai word. `task` translates each into the next action: a step-cap ending says *split the work into smaller batches or raise `steps:`*, a doom-loop ending says *the brief was too vague, say concretely what to look at*. Both are failed results, so the parent cannot mistake either for an answer.
+
+### 44.13 A sub-agent that gets stuck asks the main agent — `ask_main` / `task_answer` (2026-07-27)
+
+Owner: *"ผมอยากให้มันเวลามีปัญหา หรือต้องตัดสินใจให้มันถามเมน"*. Until now a delegate could only guess or stop: `ask_user` is force-denied to it (no human watches its loop), `task` is not in its registry, and its whole vocabulary back to the parent was one final string.
+
+**The shape is forced by the loop, not chosen.** The main agent's tool loop is synchronous — the only place a message can enter its head is as the result of a tool it called itself. A delegate therefore cannot interrupt; it can only be *found waiting*. So:
+
+1. The delegate calls **`ask_main`**, which **parks its goroutine inside the tool call**.
+2. The next **`task_result`** finds a question instead of an answer, and says which tool unsticks it.
+3. **`task_answer`** supplies the reply; it becomes the return value of the parked call.
+4. The delegate carries on **in the same loop**, with every file it read and every dead end it ruled out still in context. A second `task_result` collects the finished work.
+
+**Parking rather than returning is the whole value.** A delegate that ended its run to ask would have to be re-briefed and started fresh — the work paid for twice: ten files read, then read again because the answer to *"which folder?"* arrived after they were forgotten. Nothing needed storing to make this work; the child's context stays alive because the child is literally still inside a tool call.
+
+**The deadlock this had to avoid** is the obvious one and it is why `collect` was restructured: the delegate waits on the parent, so a parent that waited on the delegate would leave both parked until the user pressed Stop. `runner.collect` checks for an outstanding question **before** selecting on `done`, and returns the same question every time it is asked until it is answered — collecting a stuck delegate never blocks, however many times a confused model collects it.
+
+**Distribution of the tool:** `ask_main` is injected into each child's registry inside the goroutine (it is bound to one delegation, so it cannot exist before it), **regardless of the profile's `tools:` allowlist** — asking touches nothing on the machine, and a profile that cannot ask is exactly the state this replaces. `task_answer` joins `task`/`task_result` in `forcedDenials`, for the same structural reason: a delegate must not answer a question meant for the main agent.
+
+Both bundled profiles were rewritten — `general`'s brief said *"Do not ask for clarification, because nobody is watching to answer"*, which this makes false, and `explore` claimed a four-tool inventory it no longer has. Both now name the one case worth asking about (the brief means two different things / a problem it did not anticipate) and rule out checking in.
+
+**Scripted-provider support:** the delegate script in [internal/model/noop.go](internal/model/noop.go) asks first when the brief contains `askmain`, so the park-and-resume path is exercised in `verify.sh` with no key — opt-in per brief, the same way the image scenarios are opt-in per keyword, so every other test keeps its one-round delegate.
+
+**The bench that was missing: `aetox-subagent:test`.** Scripting the ask behind a keyword made it *testable* but not *checkable by hand* — §45 says the built-in models double as the manual surface, and delegation had no entry in the picker at all, so nobody could watch the nested timeline without an API key. It is now the sixth built-in model ([internal/provider/catalog.go](internal/provider/catalog.go)): pick it, send anything, and it drives all four rounds itself — `task` → `task_result` (question) → `task_answer` → `task_result` (finished work) — while the delegate runs `ask_main` → `list` underneath. Both sides run on it, since a delegate inherits the session's provider; which script a request gets is decided by whether it was offered `task`, which a delegate structurally never is. The parent script reads the handle back out of the tool result the way a real model would, rather than being handed it.
+
+**Status:** `Done 2026-07-27.` Offline tests cover the three ways it breaks differently (collect-does-not-block, answer-reaches-the-same-run, refusing what is not waiting), plus one that runs the bench model through the real executor and asserts the four rounds in order — a bench that quietly stops working takes the manual check with it. Live-verified on deepseek-v4-flash: two config files, the delegate told not to guess, and exactly the one the main agent named came back edited.
+
+### 44.14 Delegation reaches the CLI, and one over-narrowing reverted (2026-07-27)
+
+Owner: *"เริ่มเลย สร้าง aetox สำหรับเทสซับเอเจนให้ผมด้วยนะ"*. Building a binary to test §44 with turned up the reason there wasn't one: **`task` was registered only in `desktop/app.go`**, so `aetox.exe` — the fastest surface to try anything on — could not delegate at all. Three things followed.
+
+**1. The CLI registers the same three tools.** [cmd/aetox/main.go](cmd/aetox/main.go) now does what `bootstrapFromConfig` does, with one difference that is the interesting part: it registers **after** `app.NewApp` so it can pass `Approve: aetoxApp.ConfirmApproval`. A delegate runs its own `turn.Executor`, and `approveOrDeny` reads a **nil `Approve` as approved** — so the desktop's `ApprovalFullAccess` was hiding a hole rather than choosing one. On the CLI a delegate now asks through the same y/N prompt the main agent does, and the user's approval mode means the same thing inside a delegation as outside it. That is a partial answer to the question §44.9 left open about approvals from children; the remaining half (N children prompting at once) is still open.
+
+**2. The built-in model can drive the parent half.** §45 says whole-path tests run on `aetox-tools:test`, and it could not reach `task`: the CLI has no `todo_write`/`ask_user`, so its main agent landed on `noopDelegateToolsReply` — the *delegate* script — and never delegated. [noop.go](internal/model/noop.go) gains `noopDelegationReply`: whoever holds `task` is a parent (delegates are force-denied all three halves), and a brief containing `subagent` gets `task` → `task_result` → report. Opt-in by keyword like the `askmain` script, so every other tools-test stays one round. The handle is **parsed** out of what `task` returned rather than assumed to be `task_1`, or a two-delegate turn would collect the wrong one.
+
+Verified by running the binary, not only by test:
+
+```
+aetox --model-name "aetox-tools:test" --root <sandbox> "ส่งงานให้ subagent general ไปดูหน่อยว่ามีไฟล์อะไรบ้าง"
+→ task(general) → delegate runs list → task_result → "[task general: 1 tool calls, 0.0s] NOTE: that was one tool call…"
+```
+
+The §44.12 receipt firing on a one-call delegate in a real run is the nudge working as designed.
+
+**3. An allowlist for `general` was built and reverted — worth recording because the revert is the decision.** `general` inherits the whole registry (~25 tool definitions re-sent on every one of its 48 rounds), so a `tools:` line trimming it to find/change/verify looked free. It was not: it silently took `web_search` from a delegate, breaking the live test that asks one to research something, within minutes of being written. A profile named **general** that has to be told about each new tool goes stale the moment one is added — the default has to be *in*.
+
+What shipped instead is `deny: plugin_install, delete` — the two with a reason that is not a token count, both being about **nobody watching the loop**: one changes what Aetox itself can do, the other is one-shot and irreversible. `shell` stays, so this is not a wall; it removes the two a model would otherwise reach for *by name*. `Deny` does both jobs (it trims the handed list *and* reaches `PermissionConfig`), which is why it is the right knob here and `Tools` is not. The token saving stays unclaimed because it was never measured.
+
+**Known ceiling, now written down where it lives.** `maxConcurrent` counts delegates, not writers: four `general` delegates editing one file would interleave, and nothing in [runner.go](internal/subagent/runner.go) stops them. The only guard is prose — `task`'s description and `general`'s brief both say a list goes to **one** delegate (§44.12) — which matches how delegation is meant to be used, so it holds until it doesn't. If two delegates ever genuinely need to write at once, the fix is a git worktree each, not a lock.
+
+**Tests added since, across the dimensions the earlier ones left alone:**
+
+- **The child's tool *loop*, not just its first call.** Every earlier test had the delegate run one `list`. A brief containing `toolchain` now walks `list` → `glob` → `grep`, and the test asserts all three ran **inside** the delegate (parent-stamped), that the receipt counted all three so the one-call nudge stays off real work, and that what reached the parent is the delegate's digest with **no raw tool envelope in it** (§44.6). The script reports byte counts rather than echoing results, which is what makes that last check able to fail.
+- **Deny at both layers.** `general`'s two denials have to be gone from the child registry *and* present as `PermissionDeny` rules, so a discovered skill registering under the same name later cannot walk back in.
+- **An oversize brief is refused, not truncated.** `memory.Context` trims the *last* message from its tail, so a brief bigger than the child's budget used to arrive cut off at an arbitrary point — and the delegate would work from half of it, confidently, with nothing telling it the rest existed. `task` now compares `len(brief) + len(profile.Prompt)` against `MaxChars` and refuses with all three numbers so the parent can split the job. The ceiling that bites first in practice is different and lives upstream: the parent has to *generate* the brief as tool-call arguments, so it cannot exceed one response's output budget (`cognitive.toolLoopMaxTokens` — 32K tokens, 64K on DeepSeek V4, 8K on the safe default).
+
+**Status:** `Done 2026-07-27.` `go test ./...` green; CLI path verified by running the binary against the built-in model.
+
+### 44.14 A delegation looks like a delegation — and three bugs that only harder tests found (2026-07-27)
+
+Owner, on the timeline: *"UI ตอนซับเอเจนทำงานอ่ะ ควรจะมี 1 ซับเอเจน และชื่อซับเอเจนตัวนั้นด้วยดิ … tool ที่ซับเอเจนรัน ควรจะไปแสดงในซับเอเจนนั้นๆ ถ้าแสดงพรอมที่เมนสั่งซับเอเจนด้วยยิ่งดี"*. The timeline said **"ใช้ 6 เครื่องมือ"** for a turn where four of them were somebody else's work.
+
+- **`ToolEvent` gained `Agent` and `Brief`**, set only on the `task` call that opens a delegation ([internal/turn/executor.go](internal/turn/executor.go)). `turn` names one specific tool to fill them, which it otherwise never does: the alternative is a UI reading a delegate's identity out of English prose in a tool result. Nothing dispatches on the name — a mismatch costs a label, not a turn.
+- **`description` joined `ArgSubjectKeys`**, last, so a `task` row reads as the job it was given. It is `task`'s own *"few words naming the job"* — written for exactly this line.
+- **The timeline renders a delegation as a block** ([types.ts](desktop/frontend/src/lib/types.ts) `groupSteps`/`isDelegation`, [Chat.svelte](desktop/frontend/src/lib/Chat.svelte)): the sub-agent's name, the job, its own tool count, the brief the main agent wrote (clamped, full text on hover), and its steps inside. The collapsed line counts the two separately — **"ใช้ 3 เครื่องมือ · ซับเอเจน 1 ตัว"**. An orphaned child, whose `task` row is not in the list, stays visible at the top level: a row in the wrong place beats work that vanished.
+
+**Sub-agents are their own panel, not rows in the tool list** (owner: *"ทำไมซับเอเจนกับใช้เครื่องมือดันมาอยู่เป็นก้อนเดียวกันอ่ะ ควรจะแยก เหมือนความคิดกับเครื่องมือดิ"*). Three toggles sharing one slot — **ความคิด · เครื่องมือ · ซับเอเจน** — because *what did it do itself* and *what did it hand to someone else* are different questions and one list answers neither. The split is total: a row counts as the agent's own only if it has no parent and is not itself a delegation, so nothing falls through and gets counted as the agent's work. A delegation is placed by the state of its own `task` row, never its children's — a delegate three tools in and still working is one running block, not three finished fragments and a live one.
+
+**The bench delegate now does a real job**, since a bench exists to be watched: `aetox-subagent:test` delegates to `general` rather than `explore` and the delegate asks, lists, writes a summary file, reads it back and greps it — five rows under one block, ending in an artifact on disk. Each step is conditional on the tool actually being offered, so the same script degrades on a narrower profile instead of calling something it was never handed.
+
+**The brief is the part worth arguing for.** It is the only thing on screen the user did not write and cannot otherwise see — the main agent wrote it, and it is the whole reason the delegate did what it did. Without it a delegation is a black box that happens to have a name.
+
+**Then: "เทสหนักกว่านี้ได้ไหมครับ" — three real bugs, one per new test.**
+
+1. **A question outlived its delegate.** Stop frees a parked goroutine but cannot un-ask its question, and `collect` checked for a pending question *first* — so after Stop the parent was told "it is waiting for a decision" about a delegate that was already dead, forever, and answering it failed. Fixed at both ends: `ask` clears the slot when its context dies, and `collect` treats finished-or-cancelled as outranking any question. The task's own context is what makes that exact instead of a race against the goroutine waking up.
+2. **A row could never learn its name.** Argument order is the model's choice, and when it puts `content` first the `path` arrives in the very last fragment — inside the pacing window the previous update just opened. Pacing swallowed the one update that would have named the row, and it stayed unnamed for the rest of the turn. Caught live on a 9KB write. `toolProgressTracker.flush` now runs at `finalize`, forcing the window open once when the arguments are complete.
+3. **A pacing test that measured the machine, not the rule.** `TestToolProgressTrackerPaces` fed 500 fragments and hoped they finished inside a real 200ms window; on a loaded box they did not, and the suite went red for no reason. `nowFunc` is now indirected, the test holds the clock still, and it checks the boundary in both directions — which the racing version could not.
+
+**What "harder" bought, beyond those:** three delegates parked at once and answered in reverse order, each asserting it resumed on *its own* answer and saw no one else's; Stop while parked, with a goroutine count taken before and after; two concurrent delegations in the UI asserting no cross-contamination between blocks; and live, two delegates on the real internet at once collected in one `task_result` — 18s wall clock for a 4-tool and a 2-tool delegate, which is the concurrency claim §44.11 makes, measured rather than asserted.
 
 ### 44.7 Out of scope for the walking skeleton
 
@@ -1575,6 +1667,65 @@ Owner supplied a screenshot of ZCode's **Subagents** page as the reference, the 
 **Where the fixture lives:** `model.NewNoopProvider("aetox-tools:test")`, no options needed. See [internal/subagent/spawn_demo_test.go](internal/subagent/spawn_demo_test.go) for the pattern: build a registry, build a `cognitive.Agent` on the built-in provider, drive it through `turn.NewExecutor`, assert on the tool events and the final text.
 
 **Status:** `Settled 2026-07-26.` Recorded in [TEST-REPORT.md](TEST-REPORT.md) as the convention new tests follow.
+
+---
+
+## 46. Decision — Foreign Coding CLIs Are Consultants, Never the Engine (Deferred 2026-07-27)
+
+**Trigger:** owner asked whether Claude Code / Codex / OpenCode could run through Aetox, so that someone paying for another subscription could try it — then parked the whole thread in favour of the automation direction.
+
+**Settled, so it is not re-argued:** a foreign coding CLI may **never** occupy the `model.Provider` seam. They are agents, not models — one in that slot bypasses the registry, `safety`, rtk (§13), `task` (§44) and compaction (§20.3), leaving Claude Code in an Aetox window; and subscription auth inside a winget/Scoop-distributed product (§23) risks the *user's* account. The allowed shape is a **user-file sub-agent profile used as a consultant** (read-only, one `claude -p` call, `tools: shell`), never bundled and never an implementer. It does not solve "try Aetox without paying" — that is first-run onboarding over the free catalog entries, a separate decision.
+
+**Full reasoning, the rejected alternatives, the profile sketch and its costs:** [docs/architecture/foreign-coding-clis-2026-07-27.md](docs/architecture/foreign-coding-clis-2026-07-27.md).
+
+**Status:** `Deferred 2026-07-27.` Nothing built; the profile written during the discussion was deleted so an unused delegate could not sit in `task`'s enum spending the owner's quota.
+
+---
+
+## 47. Decision — Typing While Aetox Works Goes Into the Turn, Not a Queue (2026-07-27)
+
+Owner, for the second time: *"เวลาพิมพ์อะไรลงไป มันต้องส่งต่อได้ทันทีดิ ไม่ใช่แบบต้องรอให้มันทำงานเสร็จก่อนถึงจะส่งได้ ผมเคยบอกไปแล้วรอบนึง แต่ตอนนั้นไม่ได้ทำ"*. The first pass built the composer half only: a message typed under a running turn was parked in `queuedMessages` and fired as a **fresh turn** once the engine went idle. The composer stayed usable, which is what got checked — but the message still waited, which is what was asked about.
+
+**Why it was a queue.** The engine holds one conversation and the tool loop is synchronous, so a second `SendMessage` into a live turn races the first and is lost. Parking it was the correct fix for *that* bug and the wrong answer to the request.
+
+**What it is now.** The loop already has the only seam this needs — it comes back to the top on every round:
+
+1. **`Agent.Interject(text)`** ([internal/cognitive/agent.go](internal/cognitive/agent.go)) appends to a mutex-guarded buffer. It is called from the UI's goroutine while the loop sits inside a provider call on another.
+2. **The loop drains it at the top of every round**, before the next request is built, so the model reads it alongside the tool results it just got rather than after the turn.
+3. **An interjection keeps a finishing turn alive.** If the model returned text with no tool calls — it had decided to stop — the drain runs anyway, and a non-empty buffer makes the loop `continue` instead of return. Without this the common case is the lost one: users type while the answer is being written.
+4. **`DrainInterjections` gives the host what was left.** A message can still land in the gap between the loop's last drain and the reply arriving; `App.SendMessage` takes it and emits `agent:interjection-missed`, and the composer's old queue — now only a straggler net — sends it as its own turn.
+
+**No new message plumbing.** Consecutive `RoleUser` messages are already merged by the providers that require alternating roles ([convertMessagesToAnthropic](internal/model/anthropic.go)), so an interjection following a tool result needs nothing special.
+
+**It arrives marked, and the mark does not decide anything.** The first cut appended the raw text, which made it identical to a message typed before the turn began — read as a fresh instruction, *"ใส่สีน้ำเงินด้วยนะ"* is a reason to abandon a half-written file. The second cut over-corrected and hard-coded one answer ("treat it as an addition and carry on"), which is the §17 mistake: pre-judging on the model's behalf.
+
+What `interjectionNote` supplies is the one fact the model cannot infer — **this arrived while you were working** — plus the choices, and then gets out of the way. The owner's description of what makes the feature good is exactly this judgement: *"โคตรเจ๋ง โมเดลฉลาดเลือกด้วยนะว่าที่บอกกลางคันนั้นคืออะไร จะทำตอนนี้เลย เช่นบอกปรับสี หรือไว้ทำตอนเสร็จงานใหญ่ที่ทำอยู่ก่อน"*. So the note names three dispositions — **small enough to fold in now** (a colour, a name, a correction), **a change to the job in hand** (adjust course), **separate or larger** (finish the current work first, then do it, and say so) — with one hard rule: only drop what it is doing if the message plainly says to stop.
+
+The straggler path deliberately carries **no** note: by the time it is re-sent the turn really has ended, so it genuinely is a new request.
+
+**Known ceiling: a message typed while a sub-agent is running waits for it.** `task_result` blocks inside a tool call, so the loop has not reached the top where the drain lives — the interjection lands the moment the delegate is collected, not while it is still working. Consistent with the design (the parent's loop is synchronous and §44.11 is built on that), and the parent is told to do other work rather than collect immediately, which shortens the wait. Revisit only if delegations get long enough that this is felt.
+
+**What the user sees:** the bubble appears the moment they press Enter, and the answer arrives inside the turn that was already running — not as a second turn after the first one finishes. `sendUserMessage` therefore pushes the bubble and clears attachments **before** the `awaitingReply` branch, and returns without touching `toolSteps` / `streamingText`, which belong to the turn still in flight.
+
+**Not done:** the CLI. `RunInteractive` blocks on readline, so there is no moment at which a second line can be typed — a different problem (input multiplexing) with a different answer.
+
+**One bug the tests found, and it was pointing the wrong way.** The loop checks `ctx.Err()` *before* it drains, so a cancelled turn returned with the message still buffered — `SendMessage` then handed it back as a straggler and the composer sent **the very thing the user had just cancelled** as a fresh turn. `App.CancelTurn` now discards the buffer before cancelling. Stop meaning stop includes what was typed under it; the composer already cleared its own queue, and this was the half that had no owner.
+
+**Status:** `Done 2026-07-27.` Coverage, by the way each part fails differently:
+
+| Dimension | Test |
+|---|---|
+| Lands on the next round, **after** the tool result | `TestInterjectionReachesTheModelOnTheNextRound` |
+| Keeps a finishing turn alive, earlier answer still in context | `TestInterjectionKeepsAFinishingTurnAlive` |
+| Several at once: all delivered, in order, blanks dropped, never twice | `TestInterjectionsArriveTogetherInOrder` |
+| Cancelled turn hands it back **unmarked**, fit to re-send | `TestACancelledTurnLeavesTheInterjectionForTheHost` |
+| Quiet path allocates nothing; nil agent does not panic | `TestDrainInterjectionsIsEmptyWhenNobodyTyped` |
+| All three dispositions survive an edit to the note | `TestTheMidWorkNoteLeavesTheChoiceToTheModel` |
+| Binding hands text over, drops blanks, errors with no engine | `TestInterjectHandsTheTextToTheRunningAgent` |
+| **Stop discards what was typed under it** | `TestCancelTurnDropsWhatWasTypedUnderIt` |
+| Composer: immediate handover, no second `SendMessage`, bubble on send | frontend `queuedMessages.test.ts` |
+| Straggler sends as its own turn with no duplicate bubble | same |
+| An attachment attached mid-turn rides the interjection, not the next message | same |
 
 ---
 

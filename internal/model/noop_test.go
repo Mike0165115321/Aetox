@@ -254,6 +254,78 @@ func TestNoopToolsModelScriptsADelegateRound(t *testing.T) {
 	}
 }
 
+// The other side of the same coin: a caller holding `task` is a parent, and the
+// built-in model has to be able to drive delegation too — otherwise the CLI, which
+// has no todo_write/ask_user, can never exercise §44 without an API key.
+func TestNoopToolsModelDelegatesAndCollects(t *testing.T) {
+	p := NewNoopProvider("aetox-tools:test")
+	parentTools := []ToolDefinition{
+		{Type: "function", Function: ToolFunction{Name: "read"}},
+		{Type: "function", Function: ToolFunction{Name: "task"}},
+		{Type: "function", Function: ToolFunction{Name: "task_result"}},
+	}
+	const brief = "ส่งงานให้ subagent general ไปดูหน่อย"
+	msgs := []Message{{Role: RoleUser, Content: brief}}
+	step := func() Response {
+		resp, err := p.Complete(context.Background(), Request{
+			Model: "aetox-tools:test", Tools: parentTools, Messages: msgs,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		return resp
+	}
+	feed := func(resp Response, result string) {
+		msgs = append(msgs, Message{Role: RoleAssistant, ToolCalls: resp.ToolCalls})
+		msgs = append(msgs, Message{
+			Role: RoleTool, Name: resp.ToolCalls[0].Function.Name,
+			ToolCallID: resp.ToolCalls[0].ID, Content: result,
+		})
+	}
+
+	r1 := step()
+	if len(r1.ToolCalls) != 1 || r1.ToolCalls[0].Function.Name != "task" {
+		t.Fatalf("round 1 must delegate, got %+v", r1.ToolCalls)
+	}
+	if !strings.Contains(r1.ToolCalls[0].Function.Arguments, `"general"`) {
+		t.Errorf("the brief named general, so the script must pick it: %s", r1.ToolCalls[0].Function.Arguments)
+	}
+	// Word for word what task.go hands back, so the id is parsed the way it will be.
+	feed(r1, `started sub-agent general as task_2 — it is running now. Do other work, then call task_result with task_id "task_2" to collect it.`)
+
+	r2 := step()
+	if len(r2.ToolCalls) != 1 || r2.ToolCalls[0].Function.Name != "task_result" {
+		t.Fatalf("round 2 must collect, got %+v", r2.ToolCalls)
+	}
+	// The id has to be read out of the handle, not assumed: "task_1" would be wrong
+	// here, and would collect somebody else's delegate in a two-task turn.
+	if !strings.Contains(r2.ToolCalls[0].Function.Arguments, `"task_2"`) {
+		t.Fatalf("round 2 collected the wrong id: %s", r2.ToolCalls[0].Function.Arguments)
+	}
+	feed(r2, "hay.txt\nnotes.md\n[task general: 1 tool calls, 0.2s]")
+
+	r3 := step()
+	if len(r3.ToolCalls) != 0 {
+		t.Fatalf("round 3 must report and stop, got %+v", r3.ToolCalls)
+	}
+	if !strings.Contains(r3.Text, "hay.txt") {
+		t.Fatalf("the parent must report what the delegate returned, got %q", r3.Text)
+	}
+
+	// Without the keyword it stays a one-round delegate script — delegating on every
+	// prompt would make every other tools-test a three-round affair.
+	plain, err := p.Complete(context.Background(), Request{
+		Model: "aetox-tools:test", Tools: parentTools,
+		Messages: []Message{{Role: RoleUser, Content: "สวัสดี"}},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(plain.ToolCalls) == 1 && plain.ToolCalls[0].Function.Name == "task" {
+		t.Error("delegation must be opt-in by keyword, not the default round")
+	}
+}
+
 // aetox-think:test must produce a LONG multi-section reasoning stream — it is
 // the workout for the reasoning panel's unbounded height and auto-scroll.
 func TestNoopThinkModelProducesLongSectionedReasoning(t *testing.T) {

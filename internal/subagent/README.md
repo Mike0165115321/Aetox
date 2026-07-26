@@ -28,10 +28,11 @@ Frontmatter is parsed by `skill.ParseFrontmatter` — one `key: value` per line,
 
 ## How one runs — and why it does not block
 
-Two tools, registered together by `NewTaskTools` and sharing one runner ([runner.go](runner.go)):
+Three tools, registered together by `NewTaskTools` and sharing one runner ([runner.go](runner.go)):
 
 - **`task`** ([task.go](task.go)) starts a delegate and **returns a handle immediately** — the model goes on with its turn.
 - **`task_result`** ([task_result.go](task_result.go)) redeems the handle, waiting only if that delegate has not finished. It takes several ids at once.
+- **`task_answer`** ([ask.go](ask.go)) replies to a delegate that got stuck and asked.
 
 One start does: pick the profile → `FilterRegistry` for the child's tools → a fresh `cognitive.Agent` on the profile's brief and cap → a full turn through the real `turn.Executor`, in a goroutine → the collector gets the final text plus `[task <name>: N tool calls, X.Ys]`, and nothing else. Tool events are stamped with the `task` call's id (`turn.CallID`) so the UI shows them as the delegate's work.
 
@@ -40,6 +41,14 @@ Because starting never waits, N delegates started before the first collect run a
 **Repeated work is one delegate looping**, never one per item: a delegate already runs its own tool loop, so twelve files is one brief with twelve items. `task`'s description says so, because one-delegate-per-item pays for twelve fresh contexts.
 
 A loop that ends without the delegate choosing to — its step cap, or the doom-loop guard — comes back as a **failed** result naming the next action (split the batch / sharpen the brief), recognised via `cognitive.ToolLoopExhausted` and `cognitive.DoomLoopStopPrefix` rather than by matching their prose.
+
+## When a delegate gets stuck: `ask_main`
+
+A delegate blocked on a decision only the main agent can make calls **`ask_main`** ([ask.go](ask.go)), which **parks its goroutine inside the tool call**. The next `task_result` finds a question instead of an answer; `task_answer` supplies the reply, which becomes the return value of the parked call, and the delegate carries on in the same loop with everything it had already done. Parking rather than returning is the point — a delegate that ended its run to ask would be re-briefed from scratch and read the same ten files twice.
+
+`ask_main` is injected into every child's registry regardless of its `tools:` allowlist (it touches nothing); `task_answer` is force-denied to children like the rest of the pair.
+
+**The deadlock this design has to avoid:** the delegate waits on the parent, so a parent that waited on the delegate would leave both parked until Stop. `runner.collect` therefore checks for an outstanding question *before* selecting on `done`, and returns the same question every time until it is answered — collecting a stuck delegate never blocks.
 
 ## What consumes a profile
 

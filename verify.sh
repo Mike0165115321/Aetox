@@ -2,7 +2,8 @@
 # Full-stack verification in one command, so checking the base is healthy does
 # not mean watching an agent run a long loop.
 #
-#   ./verify.sh              everything offline: vet, build, Go tests, frontend
+#   ./verify.sh              everything offline: vet, build, Go tests (shuffled,
+#                            + race when a C compiler is installed), frontend
 #   ./verify.sh --live       + real API calls (needs a provider key in config)
 #   ./verify.sh --build      + wails build and the NSIS installer
 #   ./verify.sh --live --build
@@ -65,7 +66,31 @@ stage "vet" go vet ./...
 stage "build" go build ./...
 # -count=1 defeats the test cache: a cached pass proves nothing about a tree
 # that just changed underneath it.
-stage "test" go test -count=1 ./...
+#
+# -shuffle=on because several things here are package-level state a test can
+# leave behind — the progress tracker's clock, the cockpit store, the identity
+# dir — and a suite that only passes in file order is a suite that will fail on
+# somebody else's machine.
+#
+# -timeout well under the 10m default: the engine now parks goroutines on
+# purpose (a sub-agent waiting on ask_main), so a deadlock is a real failure
+# mode and it should report in minutes rather than at the end of a coffee break.
+stage "test" go test -count=1 -shuffle=on -timeout 5m ./...
+
+# The race detector is the check this codebase most needs and least has: a
+# delegate runs on its own goroutine, tool events arrive from it while the main
+# turn is still writing, and the runner's map, the parked-question slot and the
+# desktop's tool history are all touched from both sides. None of that is
+# provable by reading.
+#
+# It needs cgo, which needs a C compiler, which this machine does not have — so
+# the stage skips with the command that fixes it rather than silently not
+# existing. The moment gcc is installed it starts running with no edit here.
+if command -v "$(go env CC)" >/dev/null 2>&1; then
+  stage "race" env CGO_ENABLED=1 go test -count=1 -race -timeout 15m ./...
+else
+  skip "race" "no C compiler — scoop install gcc"
+fi
 
 echo
 echo "Frontend"
@@ -77,13 +102,20 @@ echo
 echo "Live (real API)"
 if [ "$LIVE" = 1 ]; then
   # Skipped by default because they cost money and need a key. They answer what
-  # fakes cannot: that tool-call progress really arrives from the configured
-  # provider, and that the API accepts every tool definition in one batch.
+  # fakes cannot: that a real model, given the real tool batch, does the thing.
+  #
+  # Named one stage per claim rather than one stage for the whole desktop
+  # package: when a live run goes red at 03:00 the stage name should say what
+  # broke, not "the live tests".
   stage "provider progress" env AETOX_LIVE=1 go test -count=1 -timeout 15m ./internal/model/ -run TestLive
-  stage "all tools accepted" env AETOX_LIVE=1 go test -count=1 -timeout 10m ./desktop/ -run TestLive
+  stage "tool batch accepted" env AETOX_LIVE=1 go test -count=1 -timeout 10m ./desktop/ -run TestLiveAllToolsAccepted
+  stage "chat writes files" env AETOX_LIVE=1 go test -count=1 -timeout 10m ./desktop/ -run TestLiveUnfocusedChat
+  stage "sub-agents" env AETOX_LIVE=1 go test -count=1 -timeout 15m ./desktop/ -run 'TestLiveSubAgent|TestLiveTwoSubAgents'
 else
   skip "provider progress" "pass --live"
-  skip "all tools accepted" "pass --live"
+  skip "tool batch accepted" "pass --live"
+  skip "chat writes files" "pass --live"
+  skip "sub-agents" "pass --live"
 fi
 
 echo

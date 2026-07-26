@@ -114,15 +114,18 @@ var catalog = map[string]*entry{
 		envKeys:        nil,
 		modelDefaults: ModelDefaults{
 			FallbackModel: "aetox-grid",
-			// Each test model exercises one chat-rendering path without an
-			// API key: plain echo, image galleries, live thinking panel,
-			// rich markdown. Behavior switches on the model name in noop.go.
+			// Each test model exercises one path without an API key: plain
+			// echo, image galleries, live thinking panel, rich markdown, the
+			// tool-driven UI, and delegation end to end (start a sub-agent, it
+			// asks, answer it, collect). Behavior switches on the model name in
+			// noop.go.
 			RecommendedModels: []string{
 				"aetox-grid",
 				"aetox-image:test",
 				"aetox-think:test",
 				"aetox-markdown:test",
 				"aetox-tools:test",
+				"aetox-subagent:test",
 			},
 		},
 		capabilities: Capabilities{},

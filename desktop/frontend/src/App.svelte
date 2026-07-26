@@ -12,7 +12,7 @@
     switchProvider, switchThinkLevel,
     switchModel, submitAPIKey, setActiveView, restoreActiveView, closeFile, applyAgentStatus, applyToolEvent,
     applyAgentChunk, applyReasoningChunk, attachImageFromPath,
-    applyAskUser, applyAskDone, applyTodos,
+    applyAskUser, applyAskDone, applyTodos, applyMissedInterjections,
   } from './lib/stores/cockpit.svelte'
   import { RelativizePath, CloseAllBrowserTabs } from '../wailsjs/go/main/App'
   import { OnFileDrop, OnFileDropOff, EventsOn } from '../wailsjs/runtime/runtime'
@@ -84,6 +84,9 @@
     const offAskUser = EventsOn('ask:user', applyAskUser)
     const offAskDone = EventsOn('ask:done', applyAskDone)
     const offTodos = EventsOn('todo:update', applyTodos)
+    // A message typed in the moment the turn was already returning: the engine
+    // could not fold it in, so it comes back here and goes out as its own turn.
+    const offMissed = EventsOn('agent:interjection-missed', applyMissedInterjections)
 
     for (const panel of Object.values(panels)) {
       const stored = localStorage.getItem(panel.storageKey)
@@ -124,6 +127,7 @@
       offAskUser()
       offAskDone()
       offTodos()
+      offMissed()
     }
   })
 

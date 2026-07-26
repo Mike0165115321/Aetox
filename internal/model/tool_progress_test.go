@@ -94,8 +94,14 @@ func TestToolProgressTrackerRules(t *testing.T) {
 
 // Pacing is what keeps an 800-line file from firing a thousand IPC messages.
 // Left at its real interval, a burst collapses to the one update that opened
-// the row.
+// the row — and one more once the interval has actually passed.
+//
+// The clock is held still rather than raced against: this used to feed 500
+// fragments and hope they finished inside a real 200ms window, which is a test
+// of how loaded the machine is. It failed on a busy one.
 func TestToolProgressTrackerPaces(t *testing.T) {
+	clock := freezeClock(t)
+
 	var seen []progressUpdate
 	tr := newToolProgressTracker(recordProgress(&seen))
 	args := `{"path": "x.html", "content": "`
@@ -104,8 +110,84 @@ func TestToolProgressTrackerPaces(t *testing.T) {
 		tr.report(0, "call_1", "write", args)
 	}
 	if len(seen) != 1 {
-		t.Errorf("500 fragments inside one interval produced %d updates, want 1", len(seen))
+		t.Fatalf("500 fragments inside one interval produced %d updates, want 1", len(seen))
 	}
+
+	// A tick short of the interval is still the same window.
+	clock.advance(toolProgressInterval - time.Millisecond)
+	args += `line\n`
+	tr.report(0, "call_1", "write", args)
+	if len(seen) != 1 {
+		t.Errorf("an update escaped before the interval elapsed: %+v", seen)
+	}
+
+	// Past it, the counter is allowed to move again.
+	clock.advance(2 * time.Millisecond)
+	args += `line\n`
+	tr.report(0, "call_1", "write", args)
+	if len(seen) != 2 {
+		t.Fatalf("no update after the interval elapsed: %+v", seen)
+	}
+	if seen[1].lines <= seen[0].lines {
+		t.Errorf("the line count did not climb: %+v", seen)
+	}
+}
+
+// The naming argument arriving last is the model's choice, not an edge case:
+// `{"content": "...800 lines...", "path": "index.html"}` is a shape DeepSeek
+// really produces, and the row then learns its name in the final fragment —
+// inside the pacing window opened by the update just before it. Without a flush
+// at the end, that row stays unnamed for the whole turn.
+func TestToolProgressTrackerNamesTheRowWhenThePathArrivesLast(t *testing.T) {
+	clock := freezeClock(t)
+
+	var seen []progressUpdate
+	tr := newToolProgressTracker(recordProgress(&seen))
+	args := `{"content": "`
+	for i := 0; i < 40; i++ {
+		args += `line\n`
+		tr.report(0, "call_1", "write", args)
+		clock.advance(time.Millisecond) // 40ms all told: well inside one 200ms window
+	}
+	if last := seen[len(seen)-1]; last.subject != "" {
+		t.Fatalf("nothing should have named the row yet: %+v", last)
+	}
+
+	// The tail arrives — the path, right at the end, inside the same window.
+	args += `", "path": "index.html"}`
+	tr.report(0, "call_1", "write", args)
+	if last := seen[len(seen)-1]; last.subject != "" {
+		t.Errorf("pacing was supposed to swallow this one: %+v", last)
+	}
+
+	tr.flush(0, "call_1", "write", args)
+	last := seen[len(seen)-1]
+	if last.subject != "index.html" {
+		t.Errorf("the row never learned the path: %+v", last)
+	}
+
+	// Flushing again says nothing: the row is already named and the count stood
+	// still, so a finished call cannot spam the UI on the way out.
+	before := len(seen)
+	tr.flush(0, "call_1", "write", args)
+	if len(seen) != before {
+		t.Errorf("a second flush sent %d extra update(s)", len(seen)-before)
+	}
+}
+
+// testClock hands a test the clock the tracker reads, so pacing is checked
+// exactly instead of being raced against wall time.
+type testClock struct{ at time.Time }
+
+func (c *testClock) advance(d time.Duration) { c.at = c.at.Add(d) }
+
+func freezeClock(t *testing.T) *testClock {
+	t.Helper()
+	c := &testClock{at: time.Now()}
+	prev := nowFunc
+	nowFunc = func() time.Time { return c.at }
+	t.Cleanup(func() { nowFunc = prev })
+	return c
 }
 
 // Ollama hands over a whole tool call at once rather than streaming its

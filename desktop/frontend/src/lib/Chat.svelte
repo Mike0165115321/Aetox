@@ -1,5 +1,6 @@
 <script lang="ts">
-  import type { ChatMessage, TaskState, ModelStatus, ToolStep, ContextBreakdown } from './types'
+  import type { ChatMessage, TaskState, ModelStatus, ToolStep, TimelineNode, ContextBreakdown } from './types'
+  import { groupSteps, isDelegation } from './types'
   import TaskTimeline from './TaskTimeline.svelte'
   import Palette from './Palette.svelte'
   import Logo from './Logo.svelte'
@@ -42,21 +43,41 @@
   let models = $state<string[]>([])
   let needsApiKey = $state(false)
   let apiKeyDraft = $state('')
-  // Thinking and the tool list are two views of the same turn, so they take
-  // turns in one slot instead of stacking — opening one closes the other.
-  // '' = both collapsed, which is how a finished reply starts.
-  let openPanel = $state<Record<number, 'think' | 'tools' | ''>>({})
-  function togglePanel(i: number, p: 'think' | 'tools') {
+  // Thinking, the agent's own tools, and what it delegated are three views of
+  // the same turn, so they take turns in one slot instead of stacking — opening
+  // one closes the others. '' = all collapsed, which is how a finished reply
+  // starts. Sub-agents are their own view rather than rows mixed into the tool
+  // list: "what did it do itself" and "what did it hand to someone else" are
+  // different questions, and one list answers neither.
+  type Panel = 'think' | 'tools' | 'subs' | ''
+  let openPanel = $state<Record<number, Panel>>({})
+  function togglePanel(i: number, p: Panel) {
     openPanel[i] = openPanel[i] === p ? '' : p
   }
   // The live turn opens on thinking: that is the part still streaming in.
-  let livePanel = $state<'think' | 'tools' | ''>('think')
+  let livePanel = $state<Panel>('think')
 
   // A finished tool call is history — it collapses behind a count next to the
   // thinking toggle, same as reasoning does. Only what is still running stays
   // on screen.
-  const liveRunning = $derived(toolSteps.filter((s) => s.state === 'run'))
+  //
+  // A delegation is split by the state of its own `task` row, never by its
+  // children's: a delegate that has finished three tools and is still on its
+  // fourth is one running block, not three finished fragments and a live one.
+  // The partition is total: a row is the agent's own only if it has no parent
+  // and is not itself a delegation. Everything else — a delegate's step, and a
+  // step whose `task` row is missing — belongs to the sub-agent view, so no row
+  // can fall through the gap and be counted as the agent's own work.
+  const isOwn = (n: TimelineNode) => !n.step.parent && !isDelegation(n)
+  const ownSteps = (steps: ToolStep[]) => groupSteps(steps).filter(isOwn).map((n) => n.step)
+  const delegated = (steps: ToolStep[]) => groupSteps(steps).filter((n) => !isOwn(n))
+
   const liveDone = $derived(toolSteps.filter((s) => s.state !== 'run'))
+  const liveRunning = $derived(toolSteps.filter((s) => s.state === 'run'))
+  const doneOwn = $derived(ownSteps(toolSteps).filter((s) => s.state !== 'run'))
+  const runningOwn = $derived(ownSteps(toolSteps).filter((s) => s.state === 'run'))
+  const doneSubs = $derived(delegated(toolSteps).filter((n) => n.step.state !== 'run'))
+  const runningSubs = $derived(delegated(toolSteps).filter((n) => n.step.state === 'run'))
   // The engine's phase message is a fallback, not the headline. It says
   // "กำลังคิดคำตอบ..." for the whole tool loop — which duplicates the thinking
   // toggle right below it and stops being true the moment a tool starts.
@@ -69,9 +90,21 @@
   // pending chip and the sent bubble's.
   const fileIcon = (kind?: string) => (kind === 'audio' ? '🎧' : kind === 'video' ? '🎬' : '📄')
 
+  // The agent's own steps and its delegations are counted apart, because "used
+  // 6 tools" on a turn where four of them were a sub-agent's says nothing about
+  // who did the work. A delegate's steps are counted inside its block, never
+  // here.
   function toolsLabel(steps: ToolStep[]): string {
-    const failed = steps.filter((s) => s.state === 'err').length
-    const base = t('chat.usedTools', { n: steps.length })
+    const own = ownSteps(steps)
+    const failed = own.filter((s) => s.state === 'err').length
+    const base = t('chat.usedTools', { n: own.length })
+    return failed ? `${base} · ✕${failed}` : base
+  }
+
+  function subagentsLabel(steps: ToolStep[]): string {
+    const nodes = delegated(steps)
+    const failed = nodes.filter((n) => n.step.state === 'err').length
+    const base = t('chat.usedSubagents', { n: nodes.length })
     return failed ? `${base} · ✕${failed}` : base
   }
 
@@ -399,35 +432,82 @@
   </div>
 {/snippet}
 
+{#snippet toolRow(s: ToolStep, live: boolean)}
+  <div class="tool-step {s.state}">
+    {#if s.state === 'run'}
+      <span class="glyph spin"></span>
+    {:else}
+      <span class="glyph">{s.state === 'done' ? '✓' : '✕'}</span>
+    {/if}
+    <span class="lbl">{s.label}</span>
+    {#if s.state === 'run' && live}
+      <span class="secs">· {liveSecs(s)}s</span>
+    {:else if s.secs}
+      <span class="secs">· {s.secs}s</span>
+    {/if}
+    {#if s.added || s.removed}
+      <!-- While it runs, only the climbing "+N" is real — the removed
+           count isn't known until the file is actually written. -->
+      <span class="tool-stat">
+        <span class="add">+{s.added ?? 0}</span>
+        {#if s.state !== 'run'}<span class="del">-{s.removed ?? 0}</span>{/if}
+      </span>
+    {/if}
+    {#if s.error}<span class="tool-err">{s.error}</span>{/if}
+  </div>
+{/snippet}
+
 {#snippet toolTimeline(steps: ToolStep[], live: boolean)}
   <div class="tool-steps">
     {#each steps as s}
-      <!-- A sub-agent's row is indented under the `task` row that caused it: the
-           events arrive on the same channel, so without this a delegate's work
-           reads as the agent's own (§44.5). -->
-      <div class="tool-step {s.state}" class:sub={s.parent}>
-        {#if s.parent}<span class="sub-mark" title={t('chat.subagentStep')}>↳</span>{/if}
-        {#if s.state === 'run'}
-          <span class="glyph spin"></span>
-        {:else}
-          <span class="glyph">{s.state === 'done' ? '✓' : '✕'}</span>
-        {/if}
-        <span class="lbl">{s.label}</span>
-        {#if s.state === 'run' && live}
-          <span class="secs">· {liveSecs(s)}s</span>
-        {:else if s.secs}
-          <span class="secs">· {s.secs}s</span>
-        {/if}
-        {#if s.added || s.removed}
-          <!-- While it runs, only the climbing "+N" is real — the removed
-               count isn't known until the file is actually written. -->
-          <span class="tool-stat">
-            <span class="add">+{s.added ?? 0}</span>
-            {#if s.state !== 'run'}<span class="del">-{s.removed ?? 0}</span>{/if}
-          </span>
-        {/if}
-        {#if s.error}<span class="tool-err">{s.error}</span>{/if}
-      </div>
+      {@render toolRow(s, live)}
+    {/each}
+  </div>
+{/snippet}
+
+<!-- A delegation is drawn as a block of its own, titled with the sub-agent doing
+     the work, with the brief it was given and the steps it ran inside it. The
+     events all arrive on one channel, so without this a delegate's work reads as
+     the agent's own (§44.5) — and it lives behind its own toggle, because what
+     the agent did itself and what it handed to someone else are different
+     questions. -->
+{#snippet subagentTimeline(nodes: TimelineNode[], live: boolean)}
+  <div class="tool-steps">
+    {#each nodes as node}
+        <div class="subagent {node.step.state}">
+          <div class="subagent-head">
+            {#if node.step.state === 'run'}
+              <span class="glyph spin"></span>
+            {:else}
+              <span class="glyph">{node.step.state === 'done' ? '✓' : '✕'}</span>
+            {/if}
+            <span class="ag-name">{node.step.agent || t('chat.subagent')}</span>
+            <span class="ag-job">{node.step.label.replace(/^task\s*/, '')}</span>
+            {#if node.children.length}
+              <span class="secs">· {t('chat.usedTools', { n: node.children.length })}</span>
+            {/if}
+            {#if node.step.state === 'run' && live}
+              <span class="secs">· {liveSecs(node.step)}s</span>
+            {:else if node.step.secs}
+              <span class="secs">· {node.step.secs}s</span>
+            {/if}
+          </div>
+          {#if node.step.brief}
+            <!-- The brief is the whole reason a delegate did what it did, and it
+                 is the one thing the user never otherwise sees: it is written by
+                 the main agent, not typed by them. Clamped to a few lines; the
+                 full text is the title. -->
+            <div class="subagent-brief" title={node.step.brief}>{node.step.brief}</div>
+          {/if}
+          {#if node.children.length}
+            <div class="subagent-steps">
+              {#each node.children as child}
+                {@render toolRow(child, live)}
+              {/each}
+            </div>
+          {/if}
+          {#if node.step.error}<div class="tool-err">{node.step.error}</div>{/if}
+        </div>
     {/each}
   </div>
 {/snippet}
@@ -476,10 +556,16 @@
                     {m.thinkSecs ? t('chat.thoughtFor', { secs: m.thinkSecs }) : t('chat.thoughtDone')}
                   </button>
                 {/if}
-                {#if m.steps?.length}
+                {#if ownSteps(m.steps ?? []).length}
                   <button class="reasoning-toggle" onclick={() => togglePanel(i, 'tools')}>
                     <span class="chev">{openPanel[i] === 'tools' ? '▾' : '▸'}</span>
-                    {toolsLabel(m.steps)}
+                    {toolsLabel(m.steps ?? [])}
+                  </button>
+                {/if}
+                {#if delegated(m.steps ?? []).length}
+                  <button class="reasoning-toggle" onclick={() => togglePanel(i, 'subs')}>
+                    <span class="chev">{openPanel[i] === 'subs' ? '▾' : '▸'}</span>
+                    {subagentsLabel(m.steps ?? [])}
                   </button>
                 {/if}
               </div>
@@ -487,7 +573,10 @@
                 <div class="reasoning-body">{m.reasoning}</div>
               {/if}
               {#if m.steps?.length && openPanel[i] === 'tools'}
-                {@render toolTimeline(m.steps, false)}
+                {@render toolTimeline(ownSteps(m.steps), false)}
+              {/if}
+              {#if m.steps?.length && openPanel[i] === 'subs'}
+                {@render subagentTimeline(delegated(m.steps), false)}
               {/if}
             {/if}
             <div class="markdown-body">{@html renderMarkdown(m.text)}</div>
@@ -545,24 +634,32 @@
               {/if}
               <span class="typing-dots"><span></span><span></span><span></span></span>
             </div>
-            {#if reasoningText || liveDone.length}
+            {#if reasoningText || doneOwn.length || doneSubs.length}
               <div class="meta-row">
                 {#if reasoningText}
                   <button class="reasoning-toggle" onclick={() => (livePanel = livePanel === 'think' ? '' : 'think')}>
                     <span class="chev">{livePanel === 'think' ? '▾' : '▸'}</span> {t('chat.thinking')}
                   </button>
                 {/if}
-                {#if liveDone.length}
+                {#if doneOwn.length}
                   <button class="reasoning-toggle" onclick={() => (livePanel = livePanel === 'tools' ? '' : 'tools')}>
                     <span class="chev">{livePanel === 'tools' ? '▾' : '▸'}</span> {toolsLabel(liveDone)}
+                  </button>
+                {/if}
+                {#if doneSubs.length}
+                  <button class="reasoning-toggle" onclick={() => (livePanel = livePanel === 'subs' ? '' : 'subs')}>
+                    <span class="chev">{livePanel === 'subs' ? '▾' : '▸'}</span> {subagentsLabel(liveDone)}
                   </button>
                 {/if}
               </div>
               {#if reasoningText && livePanel === 'think'}
                 <div class="reasoning-body">{reasoningText}</div>
               {/if}
-              {#if liveDone.length && livePanel === 'tools'}
-                {@render toolTimeline(liveDone, false)}
+              {#if doneOwn.length && livePanel === 'tools'}
+                {@render toolTimeline(doneOwn, false)}
+              {/if}
+              {#if doneSubs.length && livePanel === 'subs'}
+                {@render subagentTimeline(doneSubs, false)}
               {/if}
             {/if}
             {#if cockpit.todos.length > 0}
@@ -575,8 +672,14 @@
                 {/each}
               </div>
             {/if}
-            {#if liveRunning.length > 0}
-              {@render toolTimeline(liveRunning, true)}
+            <!-- What is running stays on screen, delegations first: a sub-agent
+                 is the slowest thing in a turn and the one the user most wants
+                 to see moving. -->
+            {#if runningSubs.length > 0}
+              {@render subagentTimeline(runningSubs, true)}
+            {/if}
+            {#if runningOwn.length > 0}
+              {@render toolTimeline(runningOwn, true)}
             {/if}
             {#if streamingText}
               <div class="markdown-body">{@html renderMarkdown(streamingText)}</div>

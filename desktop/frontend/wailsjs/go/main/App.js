@@ -130,6 +130,10 @@ export function InstallSkillFromGitHub(arg1) {
   return window['go']['main']['App']['InstallSkillFromGitHub'](arg1);
 }
 
+export function Interject(arg1) {
+  return window['go']['main']['App']['Interject'](arg1);
+}
+
 export function ListAllSessions() {
   return window['go']['main']['App']['ListAllSessions']();
 }

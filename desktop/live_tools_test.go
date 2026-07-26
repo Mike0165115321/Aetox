@@ -3,8 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -23,23 +21,7 @@ import (
 // schema a validator tolerates but an API rejects fails every tool in the turn,
 // not just its own, so it is worth one real request to know.
 func TestLiveAllToolsAccepted(t *testing.T) {
-	if os.Getenv("AETOX_LIVE") != "1" {
-		t.Skip("set AETOX_LIVE=1 to run the live tool-batch test")
-	}
-	data, err := os.ReadFile(filepath.Join(os.Getenv("APPDATA"), "aetox", "model-preference.json"))
-	if err != nil {
-		t.Skipf("no model-preference.json: %v", err)
-	}
-	var pref struct {
-		ProviderAPIKeys map[string]string `json:"provider_api_keys"`
-	}
-	if err := json.Unmarshal(data, &pref); err != nil {
-		t.Fatalf("preference file unreadable: %v", err)
-	}
-	key := strings.TrimSpace(pref.ProviderAPIKeys["deepseek"])
-	if key == "" {
-		t.Skip("no deepseek key configured")
-	}
+	key := liveDeepSeekKey(t)
 
 	// Exactly the batch applyConfig assembles: every built-in plus the
 	// workbench tools the desktop app adds.

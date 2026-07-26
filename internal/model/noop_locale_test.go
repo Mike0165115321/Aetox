@@ -116,6 +116,25 @@ func TestEveryBuiltinModelSpeaksEnglishWhenAsked(t *testing.T) {
 		t.Errorf("tools model sends Thai todo items under locale en:\n%s", resp.ToolCalls[0].Function.Arguments)
 	}
 
+	// Same for the delegation bench: its first move is a `task` call, and the
+	// brief inside it is what the user reads in the timeline.
+	sub := NewNoopProvider("aetox-subagent:test")
+	sub.Locale = "en"
+	subResp, err := sub.Complete(context.Background(), Request{
+		Model:    "aetox-subagent:test",
+		Messages: []Message{{Role: RoleUser, Content: "go"}},
+		Tools:    []ToolDefinition{{Type: "function", Function: ToolFunction{Name: "task"}}},
+	})
+	if err != nil {
+		t.Fatalf("subagent model: %v", err)
+	}
+	if len(subResp.ToolCalls) == 0 {
+		t.Fatal("subagent model must open by starting a delegate")
+	}
+	if thai(subResp.ToolCalls[0].Function.Arguments) {
+		t.Errorf("subagent model briefs its delegate in Thai under locale en:\n%s", subResp.ToolCalls[0].Function.Arguments)
+	}
+
 	// And Thai stays the default for everyone.
 	for _, modelName := range []string{"aetox-grid", "aetox-markdown:test"} {
 		p := NewNoopProvider(modelName)

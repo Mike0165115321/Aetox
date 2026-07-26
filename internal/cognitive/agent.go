@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/Mike0165115321/Aetox/internal/debuglog"
 	"github.com/Mike0165115321/Aetox/internal/memory"
@@ -50,6 +51,19 @@ const (
 const emptyReplyNudge = "[system] Your previous reply was empty. Respond now, in the same language the user writes in. If tools are available that can do what you cannot do natively (reading images, files, searching, etc.), call one now instead of refusing. Only if no tool can help and the task is truly impossible for you, tell the user briefly that it exceeds the current model's capability."
 
 const emptyReplyFallback = "เกินขีดจำกัดของโมเดลปัจจุบัน — โมเดลตอบกลับว่างเปล่า ลองแบ่งงานให้เล็กลงหรือเปลี่ยนโมเดล (Beyond the current model's limits — it returned an empty reply. Try a smaller task or a stronger model.)"
+
+// interjectionNote marks a message that arrived while the turn was already
+// running. Without it the message is indistinguishable from one the user typed
+// before anything started — and the two want opposite behaviour: read as a fresh
+// instruction, "ใส่สีน้ำเงินด้วยนะ" becomes a reason to abandon a half-written file.
+//
+// What it does NOT do is decide for the model. The owner's own description of
+// what makes this good is that the model judges — *"โคตรเจ๋ง โมเดลฉลาดเลือกด้วยนะว่า
+// ที่บอกกลางคันนั้นคืออะไร จะทำตอนนี้เลย เช่นบอกปรับสี หรือไว้ทำตอนเสร็จงานใหญ่ที่ทำอยู่ก่อน"*. So
+// the note supplies the one fact the model cannot infer (this arrived mid-work)
+// and names the choices, rather than picking one. Same principle as §17: the
+// model is told what is true and left to decide, never pre-judged.
+const interjectionNote = "[system] The user sent this WHILE you were working on the task above — they did not wait for you to finish. Judge which kind it is and act accordingly: small enough to fold into what you are doing right now (a colour, a name, a correction) — do it now; a change to the job in hand — adjust course and carry on; something separate or larger — finish what you are already doing first, then do it, and say that is what you are doing. Only drop the current work if the message plainly tells you to stop. Either way, acknowledge it in your final answer.\n\n"
 
 // maxDSMLNudges caps corrective retries when the model leaks tool-call markup
 // as text (see model.ContainsLeakedDSML). Each retry is one extra round-trip,
@@ -115,6 +129,51 @@ type Agent struct {
 	// model writing a large file. nil = off.
 	onToolCallProgress func(id, name, subject string, lines int)
 	maxToolCalls       int
+
+	// interjections are messages the user typed while a turn was already
+	// running. Guarded because they arrive from the UI's goroutine while the
+	// tool loop is inside a provider call on another.
+	interjectMu  sync.Mutex
+	interjection []string
+}
+
+// Interject hands the running turn a message the user typed while it was still
+// working. It is picked up at the start of the next tool-loop round, or — if the
+// model was already writing its final answer — it keeps the turn going instead
+// of letting it end (see Chat).
+//
+// Queueing it until the turn finished was the old behaviour and the owner's
+// complaint: *"เวลาพิมพ์อะไรลงไป มันต้องส่งต่อได้ทันทีดิ ไม่ใช่ต้องรอให้มันทำงานเสร็จก่อน"*.
+// Nothing here checks whether a turn is actually in flight — the buffer is drained
+// by whoever runs next, and the host takes back what was left over
+// (DrainInterjections) so a message can never be silently swallowed.
+func (a *Agent) Interject(text string) {
+	if a == nil {
+		return
+	}
+	if text = strings.TrimSpace(text); text == "" {
+		return
+	}
+	a.interjectMu.Lock()
+	a.interjection = append(a.interjection, text)
+	a.interjectMu.Unlock()
+}
+
+// DrainInterjections empties the buffer and returns what was in it. The tool loop
+// calls it every round; the host calls it once more after a turn returns, to catch
+// anything that arrived in the moment between the last round and the reply.
+func (a *Agent) DrainInterjections() []string {
+	if a == nil {
+		return nil
+	}
+	a.interjectMu.Lock()
+	defer a.interjectMu.Unlock()
+	if len(a.interjection) == 0 {
+		return nil
+	}
+	taken := a.interjection
+	a.interjection = nil
+	return taken
 }
 
 // SetUsageReporter registers fn to receive every model response's token
@@ -222,6 +281,14 @@ func (a *Agent) RespondWithTools(
 		if i > 0 {
 			a.compactIfNeeded(ctx)
 		}
+		// Anything the user typed under the running turn goes in before the next
+		// request is built, so the model sees it on this round rather than after
+		// the turn ends. Consecutive user messages are merged by the providers
+		// that require alternating roles (see convertMessagesToAnthropic).
+		for _, text := range a.DrainInterjections() {
+			debuglog.Msg("interjection folded in before round %d (%d chars)", i+1, len(text))
+			a.context.Add(model.RoleUser, interjectionNote+text)
+		}
 		response, err := a.completeToolLoop(ctx, a.buildRequest(a.context.Messages(), loopMaxTokens, 0.2, modelTools, "auto", opts), onReasoningChunk)
 		if err != nil {
 			debuglog.Msg("Complete() error: %v", err)
@@ -271,6 +338,18 @@ func (a *Agent) RespondWithTools(
 				Content:          content,
 				ReasoningContent: strings.TrimSpace(response.ReasoningContent),
 			})
+			// The model was ready to stop, but the user typed while it was writing
+			// this. Keeping the turn alive is the whole point of Interject: ending
+			// here would make them wait out a reply they have already moved past.
+			// The answer it just gave stays in context, so the next round builds on
+			// it instead of repeating it.
+			if pending := a.DrainInterjections(); len(pending) > 0 {
+				for _, text := range pending {
+					debuglog.Msg("interjection kept the turn alive (%d chars)", len(text))
+					a.context.Add(model.RoleUser, interjectionNote+text)
+				}
+				continue
+			}
 			return content, anyToolUsed, nil
 		}
 		anyToolUsed = true

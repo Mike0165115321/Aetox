@@ -131,6 +131,7 @@ func (s *writeSkill) Execute(_ context.Context, input Input) (Output, error) {
 		err := errors.New("usage: write <path> <content>")
 		return newToolOutput("write", "write "+strings.TrimSpace(strings.Join(args, " ")), "", start, false, err), err
 	}
+	original := requestPath
 	requestPath = s.placed(requestPath)
 
 	targetPath, err := resolveSandboxPath(s.root, requestPath)
@@ -154,7 +155,18 @@ func (s *writeSkill) Execute(_ context.Context, input Input) (Output, error) {
 	// Echo the path the caller asked for, like edit does — the resolved
 	// absolute path is noise in context and nudges the model into repeating
 	// the sandbox root back at the user (see internal/prompt environment()).
+	//
+	// Unless placement moved the file. Then "where is it on my machine" cannot
+	// be answered from anything in context: the prompt has the root, the
+	// receipt has a relative path, and the model has to compose the two. A
+	// model that composes the root with the name it typed drops the output
+	// folder in the middle and sends the user to a file that is not there —
+	// which is exactly what happened. So the one case that needs it gets the
+	// on-disk path handed over instead of computed.
 	output := "write done: " + requestPath
+	if requestPath != original {
+		output += " (on disk: " + targetPath + ")"
+	}
 	out := newToolOutput("write", "write "+requestPath, output, start, false, nil)
 	out.LinesAdded, out.LinesRemoved = LineDelta(string(previous), content)
 	return out, nil

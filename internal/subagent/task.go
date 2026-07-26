@@ -67,7 +67,11 @@ type taskTool struct {
 // counter.
 func NewTaskTools(opts TaskOptions) []skill.Skill {
 	shared := newRunner()
-	return []skill.Skill{&taskTool{opts: opts, runner: shared}, &taskResultTool{runner: shared}}
+	return []skill.Skill{
+		&taskTool{opts: opts, runner: shared},
+		&taskResultTool{runner: shared},
+		&taskAnswerTool{runner: shared},
+	}
 }
 
 func (t *taskTool) Name() string { return "task" }
@@ -89,8 +93,10 @@ func (t *taskTool) Description() string {
 		"REPEATED WORK IS ONE JOB: hand the whole list to ONE sub-agent and let it loop — twelve items is one " +
 		"task with twelve items in its prompt, never twelve tasks. Each sub-agent you start pays for its own " +
 		"context, so starting one per item multiplies the cost of the very thing you were saving. " +
-		"Start several only when the jobs are genuinely unrelated. Available: " +
-		strings.Join(profileNames(), ", ") + "."
+		"Start several only when the jobs are genuinely unrelated. " +
+		"A sub-agent that gets stuck on a decision only you can make will come back through task_result as a " +
+		"question instead of an answer — reply with task_answer and it carries on from where it stopped. " +
+		"Available: " + strings.Join(profileNames(), ", ") + "."
 }
 
 func profileNames() []string {
@@ -170,6 +176,16 @@ func (t *taskTool) ExecuteTool(ctx context.Context, args map[string]any) (skill.
 	if t.opts.Provider == nil || t.opts.Registry == nil {
 		return t.fail(label, started, "the engine is not ready to spawn a sub-agent")
 	}
+	// A brief the child cannot hold is not simply a smaller job. memory trims the
+	// last message from its tail (memory.Context.truncateLastIfNeeded), so an
+	// oversize brief arrives cut off at an arbitrary point and the delegate works
+	// from half of it — confidently, because nothing tells it the rest existed.
+	// Refuse with the numbers instead, so the parent can split the work.
+	if budget := t.opts.MaxChars; budget > 0 && len(brief)+len(profile.Prompt) > budget {
+		return t.fail(label, started, fmt.Sprintf(
+			"the brief is too long for sub-agent %s: %d characters on top of its %d-character instructions goes past the %d it can hold, and the end would be silently cut off. Split it into smaller jobs.",
+			profile.Name, len(brief), len(profile.Prompt), budget))
+	}
 
 	defer debuglog.Block("task: " + profile.Name + " — " + truncate(label, 60))()
 
@@ -207,6 +223,13 @@ func (t *taskTool) ExecuteTool(ctx context.Context, args map[string]any) (skill.
 
 	task, err := t.runner.start(ctx, profile.Name, label, func(runCtx context.Context, self *runningTask) skill.Output {
 		defer debuglog.Block("task: " + profile.Name + " — " + truncate(label, 60))()
+
+		// `ask_main` is bound to this delegation and cannot exist before it, so it
+		// is the one tool registered inside the goroutine rather than with the
+		// rest. Every profile gets it, allowlist or not — see ask.go.
+		if regErr := childRegistry.Register(&askMainTool{task: self}, skill.SourceBuiltin); regErr != nil {
+			debuglog.Msg("ask_main unavailable to %s: %v", profile.Name, regErr)
+		}
 
 		// Every event the delegate causes is stamped with the `task` call's id, so
 		// the UI can nest it instead of mixing it into the main agent's timeline.

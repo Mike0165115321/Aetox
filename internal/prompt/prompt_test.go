@@ -7,13 +7,20 @@ import (
 	"testing"
 )
 
+// The sandbox root must NOT reach the prompt: it is a machine-specific path
+// carrying the user's account name, it would be sent to whichever provider is
+// configured on every request, and no file tool accepts an absolute path
+// anyway — so it was cost without a use.
 func TestBuildIncludesIdentityAndEnvironment(t *testing.T) {
 	got := Build(SurfaceCLI, "/tmp/proj")
 	if !strings.Contains(got, "terminal conversation") {
 		t.Fatalf("missing CLI identity: %s", got)
 	}
-	if !strings.Contains(got, "/tmp/proj") {
-		t.Fatalf("missing sandbox root: %s", got)
+	if strings.Contains(got, "/tmp/proj") {
+		t.Fatalf("the sandbox root leaked into the prompt: %s", got)
+	}
+	if !strings.Contains(got, "relative to the folder you are working in") {
+		t.Fatalf("missing environment layer: %s", got)
 	}
 }
 

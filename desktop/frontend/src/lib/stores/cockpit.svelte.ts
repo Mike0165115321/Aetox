@@ -12,7 +12,7 @@ import {
   ListSessions, LoadSession, NewSession, CurrentSessionID, SearchSessions, DeleteSession,
   SaveChatImage, SaveChatFile, ReadImageDataURL, CancelTurn, BrowserGetText, RecentProjects,
   ListAllSessions, SearchAllSessions, LoadSessionAnyProject, ClearProjectFocus,
-  AnswerUserQuestion,
+  AnswerUserQuestion, Interject,
 } from '../../../wailsjs/go/main/App'
 import type { main } from '../../../wailsjs/go/models'
 import { t } from '../i18n.svelte'
@@ -274,10 +274,14 @@ function nowLabel(): string {
   return new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 }
 
-// Typing while a turn is running is normal use, not a mistake — but the Go
-// engine holds one conversation, so a second SendMessage fired into a live turn
-// races the first and is simply lost. Those messages wait here instead and go
-// out the instant the engine is free; the composer stays usable throughout.
+// Typing while a turn is running goes STRAIGHT into that turn — the engine folds
+// it in on its next tool-loop round, or keeps the turn alive if it was already
+// writing the answer (App.Interject → cognitive.Agent.Interject). Waiting for the
+// engine to be free was the old behaviour and the owner's complaint.
+//
+// This queue is what is left of it: the straggler net. A message that lands in
+// the moment between the loop's last check and the reply arriving comes back on
+// `agent:interjection-missed` and goes out as its own turn.
 export const queuedMessages = $state<string[]>([])
 
 /** Drop anything still waiting — Stop has to mean stop, including what was typed under it. */
@@ -285,14 +289,24 @@ export function clearQueuedMessages(): void {
   queuedMessages.length = 0
 }
 
-/** Append the user message, then call the Go core and append its reply. */
-export async function sendUserMessage(text: string): Promise<void> {
-  if (cockpit.awaitingReply) {
-    // Attachments stay staged in the composer and are picked up when this
-    // actually sends, so a queued message keeps whatever was attached to it.
+/**
+ * The engine handed back a message it could not fold into the turn that was
+ * ending. Its bubble is already on screen (it was shown the moment it was typed),
+ * so it goes out as its own turn with `alreadyShown` set.
+ */
+export function applyMissedInterjections(texts: string[]): void {
+  for (const text of texts) {
     if (text.trim()) queuedMessages.push(text)
-    return
   }
+}
+
+/**
+ * Append the user message, then call the Go core and append its reply.
+ *
+ * `alreadyShown` is for the straggler path above: the bubble is on screen and the
+ * attachment markers are already folded into `text`, so both steps are skipped.
+ */
+export async function sendUserMessage(text: string, alreadyShown = false): Promise<void> {
   const trimmed = text.trim()
   const image = cockpit.pendingImage
   const context = cockpit.pendingContext
@@ -323,14 +337,24 @@ export async function sendUserMessage(text: string): Promise<void> {
     sentText += `\n\n[attachment: ${kindLabel}] ${context.label}:\n\`\`\`\n${context.content}\n\`\`\``
   }
   sentText = sentText.trim()
-  cockpit.chat.push({
-    role: 'user', text: trimmed, time: nowLabel(),
-    imageDataUrl: image?.dataUrl, contextLabel: context?.label,
-    attachLabel: file?.label, attachKind: file?.kind,
-  })
+  if (!alreadyShown) {
+    cockpit.chat.push({
+      role: 'user', text: trimmed, time: nowLabel(),
+      imageDataUrl: image?.dataUrl, contextLabel: context?.label,
+      attachLabel: file?.label, attachKind: file?.kind,
+    })
+  }
   cockpit.pendingImage = null
   cockpit.pendingContext = null
   cockpit.pendingFile = null
+  // A turn is already running: hand it the message rather than starting a second
+  // one. Its answer arrives inside that turn's reply, so nothing below runs — the
+  // live state (toolSteps, streaming text) belongs to the turn still in flight and
+  // resetting it here would blank the UI mid-work.
+  if (cockpit.awaitingReply) {
+    await Interject(sentText)
+    return
+  }
   cockpit.awaitingReply = true
   cockpit.agentStatus = ''
   cockpit.toolSteps = []
@@ -356,9 +380,10 @@ export async function sendUserMessage(text: string): Promise<void> {
   await refreshWorkspace()
   await refreshSessions()
   await refreshGlobalHistory()
-  // Engine is free again: whatever was typed under the running turn goes now.
+  // Only stragglers land here now — anything typed under a running turn went
+  // straight into it via Interject. Their bubbles are already on screen.
   const next = queuedMessages.shift()
-  if (next !== undefined) await sendUserMessage(next)
+  if (next !== undefined) await sendUserMessage(next, true)
 }
 
 /** Abort the turn in flight — the engine's tool loop is unbounded, this is the user's brake. */
@@ -444,6 +469,9 @@ export function applyToolEvent(ev: ToolEvent): void {
     }
     cockpit.toolSteps.push({
       label, ref: ev.ref, parent: ev.parent || undefined,
+      // Only a `task` call carries these, and they arrive on the first event —
+      // the delegation is named before its first delegate step shows up.
+      agent: ev.agent || undefined, brief: ev.brief || undefined,
       state: 'run', startedAt: Date.now(), added: ev.added || undefined,
     })
     return

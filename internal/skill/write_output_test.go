@@ -29,8 +29,11 @@ func TestWritePlacesNewFilesInTheSessionOutputFolder(t *testing.T) {
 		t.Error("file also landed at the sandbox root — that is the littering this prevents")
 	}
 	// The echoed path is what the model will read/edit next; it has to point
-	// at where the file actually is.
-	if want := "write done: aetox/output/20260726-021530.123/index.html"; out.Content != want {
+	// at where the file actually is. The on-disk path rides along because the
+	// user's question is "where is it on my machine", and a model composing
+	// root + the name it typed answers that wrong.
+	want := "write done: aetox/output/20260726-021530.123/index.html (on disk: " + landed + ")"
+	if out.Content != want {
 		t.Errorf("receipt = %q, want %q", out.Content, want)
 	}
 }

@@ -187,3 +187,36 @@ func TestDailySeriesIsAggregatedPerDay(t *testing.T) {
 		t.Errorf("top model = %q at %d%%, want m1 at 85%% (55 of 64 tokens)", stats.Totals.TopModel, stats.Totals.TopModelShare)
 	}
 }
+
+// The chart stacks each day by where the tokens came from, so the per-day
+// series has to carry the same cache claim the table does — including the
+// difference between "no hits" and "no cache accounting at all". A day that
+// reported nothing must arrive with CacheRows 0 so the chart draws it as one
+// unsplit input band instead of inventing a 100% miss.
+func TestDailySeriesCarriesTheCacheSplit(t *testing.T) {
+	a := &App{cfg: config.Config{ModelName: "api-model"}, dbDir: t.TempDir()}
+	t.Cleanup(func() {
+		if a.db != nil {
+			_ = a.db.Close()
+		}
+	})
+	a.recordTokenUsage(model.Usage{PromptTokens: 1000, CachedPromptTokens: 800, CacheReported: true, CompletionTokens: 90})
+	a.recordTokenUsage(model.Usage{PromptTokens: 500, CachedPromptTokens: 100, CacheReported: true, CompletionTokens: 10})
+	a.cfg.ModelName = "local-model"
+	a.recordTokenUsage(model.Usage{PromptTokens: 400, CompletionTokens: 60})
+
+	stats, err := a.UsageStats()
+	if err != nil {
+		t.Fatalf("UsageStats: %v", err)
+	}
+	byModel := map[string]DayPoint{}
+	for _, p := range stats.Daily {
+		byModel[p.Model] = p
+	}
+	if got := byModel["api-model"]; got.CachedTokens != 900 || got.CacheRows != 2 {
+		t.Errorf("api-model day = %+v, want 900 cached tokens over 2 reporting calls", got)
+	}
+	if got := byModel["local-model"]; got.CachedTokens != 0 || got.CacheRows != 0 {
+		t.Errorf("local-model day = %+v, want no cache accounting at all", got)
+	}
+}

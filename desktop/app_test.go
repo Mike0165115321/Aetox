@@ -139,7 +139,7 @@ func TestNormalizeWorkbenchURL(t *testing.T) {
 // sandbox root by hand.
 func TestNormalizeWorkbenchURLResolvesSandboxRelativePaths(t *testing.T) {
 	root := t.TempDir()
-	rel := "aetox/output/s1/index.html"
+	rel := "output/s1/index.html"
 	full := filepath.Join(root, filepath.FromSlash(rel))
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 		t.Fatal(err)
@@ -166,7 +166,7 @@ func TestNormalizeWorkbenchURLResolvesSandboxRelativePaths(t *testing.T) {
 // a DNS lookup for a host called index.html.
 func TestNormalizeWorkbenchURLFindsWhatWriteSteeredIntoTheOutputFolder(t *testing.T) {
 	root := t.TempDir()
-	subdir := "aetox/output/20260726-063257.366"
+	subdir := "output/20260726-063257.366"
 	outputSubdir := func() string { return subdir }
 
 	full := filepath.Join(root, filepath.FromSlash(subdir), "index.html")
@@ -189,6 +189,28 @@ func TestNormalizeWorkbenchURLFindsWhatWriteSteeredIntoTheOutputFolder(t *testin
 	// Still a domain, not a file, when nothing of that name exists.
 	if got := normalizeWorkbenchURL("example.com", root, outputSubdir); got != "https://example.com" {
 		t.Errorf("bare domain = %q, want https://example.com", got)
+	}
+}
+
+// The unfocused sandbox root and the session output folder are two halves of
+// one absolute path — <home>/aetox plus output/<session>. Changing either half
+// alone either doubles the folder name (<home>/aetox/aetox/output/...) or moves
+// every artifact the app has written so far, so they are checked together.
+func TestUnfocusedRootAndOutputSubdirComposeToTheSessionFolder(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("no home directory on this machine")
+	}
+	a := &App{sessionID: "20260726-063257.366"}
+	got := filepath.Join(unfocusedRoot(), filepath.FromSlash(a.outputSubdir()))
+	if want := filepath.Join(home, "aetox", "output", "20260726-063257.366"); got != want {
+		t.Errorf("unfocused output path = %q, want %q", got, want)
+	}
+
+	// Focused, there is no output folder at all: the project is the destination.
+	a.projectFocused = true
+	if sub := a.outputSubdir(); sub != "" {
+		t.Errorf("focused on a project, outputSubdir = %q, want empty", sub)
 	}
 }
 
@@ -559,5 +581,56 @@ func TestFreshInstallDefaultsToTheGuideModel(t *testing.T) {
 	}
 	if cfg.ModelName != "aetox-grid" {
 		t.Errorf("fresh install model = %q, want aetox-grid — a blank name shows nothing in the picker", cfg.ModelName)
+	}
+}
+
+// The Interject binding: what the composer calls when the user types under a
+// running turn. It must hand the text to the agent and nothing else — no second
+// turn, no waiting on a reply.
+func TestInterjectHandsTheTextToTheRunningAgent(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir()) // no user presets to expand against
+	agent := cognitive.NewAgent(cognitive.AgentConfig{
+		Provider: model.NewNoopProvider("aetox-tools:test"),
+		Model:    "aetox-tools:test",
+	})
+	a := &App{agent: agent}
+
+	if err := a.Interject("ใส่สีน้ำเงินด้วยนะ"); err != nil {
+		t.Fatalf("Interject: %v", err)
+	}
+	// Blank text is not a message — it would cost a round asking the model to
+	// respond to nothing.
+	if err := a.Interject("   "); err != nil {
+		t.Fatalf("blank Interject returned an error: %v", err)
+	}
+	got := agent.DrainInterjections()
+	if len(got) != 1 || got[0] != "ใส่สีน้ำเงินด้วยนะ" {
+		t.Fatalf("agent received %v", got)
+	}
+
+	// No engine yet is a readable error, not a panic — the composer is usable
+	// before a provider is configured.
+	if err := (&App{modelStatus: "no key"}).Interject("hello"); err == nil {
+		t.Error("Interject with no agent should say the core is not ready")
+	}
+}
+
+// Stop has to mean stop, including whatever was typed under the turn being
+// stopped. The loop checks ctx before it drains, so a cancelled turn returns with
+// the message still pending — if CancelTurn left it there, SendMessage would hand
+// it back as a straggler and the composer would send the very thing the user just
+// cancelled.
+func TestCancelTurnDropsWhatWasTypedUnderIt(t *testing.T) {
+	agent := cognitive.NewAgent(cognitive.AgentConfig{
+		Provider: model.NewNoopProvider("aetox-tools:test"),
+		Model:    "aetox-tools:test",
+	})
+	a := &App{agent: agent}
+	agent.Interject("เดี๋ยว เปลี่ยนใจ")
+
+	a.CancelTurn() // no turn in flight: must still clear, and must not panic
+
+	if left := agent.DrainInterjections(); len(left) != 0 {
+		t.Errorf("Stop left %v pending — it would be sent as a fresh turn", left)
 	}
 }

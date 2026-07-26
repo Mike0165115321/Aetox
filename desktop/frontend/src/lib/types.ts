@@ -117,6 +117,12 @@ export interface ToolEvent {
   error?: string
   added?: number
   removed?: number
+  /** Set only on the `task` call that opens a delegation: which sub-agent it is
+   * handing the work to, and the whole brief it handed over. They are what make
+   * a delegation render as a named block with its own steps inside, instead of
+   * one more row reading "task". */
+  agent?: string
+  brief?: string
 }
 
 export interface ToolStep {
@@ -131,9 +137,53 @@ export interface ToolStep {
   /** Lines a write or edit changed, for the "+9 -0" readout. */
   added?: number
   removed?: number
+  /** On a `task` row: the sub-agent doing the work, and the brief it was given. */
+  agent?: string
+  brief?: string
   startedAt: number
   /** seconds it took, filled in when the result arrives */
   secs?: number
+}
+
+/** A row in the timeline plus whatever ran underneath it. Only a `task` row ever
+ * has children — a sub-agent's tool calls, which belong inside its block rather
+ * than mixed into the main agent's list. */
+export interface TimelineNode {
+  step: ToolStep
+  children: ToolStep[]
+}
+
+/** Fold the flat step list the engine produces into what the timeline draws.
+ *
+ * Delegation is the only nesting there is, so this is one pass: a row with no
+ * parent is the agent's own, and a row carrying a parent belongs to the `task`
+ * row with that ref. A child whose parent is not in this list (a persisted turn
+ * trimmed oddly, an event that arrived first) is kept at the top level rather
+ * than dropped — a visible row in the wrong place beats work that vanished.
+ */
+export function groupSteps(steps: ToolStep[]): TimelineNode[] {
+  const byRef = new Map<string, TimelineNode>()
+  const nodes: TimelineNode[] = []
+  for (const step of steps) {
+    if (!step.parent) {
+      const node: TimelineNode = { step, children: [] }
+      if (step.ref) byRef.set(step.ref, node)
+      nodes.push(node)
+      continue
+    }
+    const parent = byRef.get(step.parent)
+    if (parent) parent.children.push(step)
+    else nodes.push({ step, children: [] })
+  }
+  return nodes
+}
+
+/** True when a row is a delegation: the engine named a sub-agent on it, or
+ * something ran underneath it. Both are checked because a delegate that used no
+ * tools has no children, and a `task` call whose `agent` was left to default has
+ * no name. */
+export function isDelegation(node: TimelineNode): boolean {
+  return Boolean(node.step.agent) || node.children.length > 0 || node.step.label.startsWith('task ') || node.step.label === 'task'
 }
 
 /** An image attached in the composer, staged before send. */

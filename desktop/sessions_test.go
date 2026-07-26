@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -20,6 +22,30 @@ func TestProjectKeyStableAndDistinct(t *testing.T) {
 	}
 	if !strings.HasPrefix(k1, "app-") {
 		t.Errorf("projectKey = %q, want prefix %q", k1, "app-")
+	}
+}
+
+// Unfocused chats are filed under a key derived from the unfocused root, and
+// that root changed from <home> to <home>/aetox on 2026-07-26. Both keys have
+// to keep resolving, or every chat held before that date is reported as a
+// project whose folder was moved or deleted — with the transcripts still sitting
+// in the database.
+func TestIsUnfocusedKeyAcceptsBothTheCurrentAndTheLegacyBucket(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("no home directory on this machine")
+	}
+	if !isUnfocusedKey(projectKey(unfocusedRoot())) {
+		t.Error("the current unfocused bucket was not recognised")
+	}
+	if !isUnfocusedKey(projectKey(home)) {
+		t.Error("the pre-2026-07-26 home-dir bucket was not recognised — old chats would read as a missing project")
+	}
+	if isUnfocusedKey(projectKey(filepath.Join(home, "some-project"))) {
+		t.Error("a real project was mistaken for the unfocused bucket")
+	}
+	if isUnfocusedKey("") {
+		t.Error("an empty key must not match any bucket")
 	}
 }
 

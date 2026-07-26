@@ -71,6 +71,8 @@ export function HasAPIKey(arg1:string):Promise<boolean>;
 
 export function InstallSkillFromGitHub(arg1:string):Promise<string>;
 
+export function Interject(arg1:string):Promise<void>;
+
 export function ListAllSessions():Promise<Array<main.SessionMeta>>;
 
 export function ListBuiltinSkills():Promise<Array<main.SkillInfo>>;

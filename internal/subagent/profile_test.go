@@ -74,19 +74,38 @@ func TestExploreIsReadOnlyAndCannotRecurse(t *testing.T) {
 	}
 }
 
-// general has no tools: line at all, so it inherits the registry — the forced
-// denials are the only thing standing between it and spawning its own children.
-func TestGeneralInheritsToolsButNotTask(t *testing.T) {
+// general still inherits the registry — a profile named "general" that had to be
+// told about each new tool would go stale the moment one is added, and an
+// allowlist here was tried and cut: it silently took web_search away from a
+// delegate asked to research something. What it denies is the short list with a
+// reason that is not "fewer tokens": nobody is watching this loop.
+//
+// `shell` stays, so this is not a wall — a delegate can still reach the disk. It
+// removes the two the model would otherwise reach for *by name*.
+func TestGeneralInheritsToolsButNotTheUnattendedOnes(t *testing.T) {
 	isolate(t)
 	p, ok := Load("general")
 	if !ok {
 		t.Fatal("general profile missing")
 	}
-	if len(p.Tools) != 0 {
-		t.Fatalf("general tools = %v, want empty (inherit)", p.Tools)
+	// Inherits: whatever the registry has, including tools added after this test.
+	for _, tool := range []string{"read", "edit", "write", "shell", "grep", "web_search"} {
+		if !p.AllowsTool(tool) {
+			t.Errorf("general cannot use %q — it is the catch-all delegate and should inherit the registry", tool)
+		}
 	}
-	if !p.AllowsTool("shell") || !p.AllowsTool("write") {
-		t.Error("general should inherit the mutating tools")
+	// plugin_install changes what Aetox itself can do; delete is one-shot and
+	// irreversible. Both with no human attached to the loop.
+	for _, tool := range []string{"plugin_install", "delete"} {
+		if p.AllowsTool(tool) {
+			t.Errorf("general is handed %q, which no unattended delegate should reach for", tool)
+		}
+	}
+	// Deny is the safety gate, not just a token filter — it has to reach the
+	// permission layer too, or a discovered skill by the same name walks through.
+	rules := p.DenyRules()
+	if len(rules) != 2 {
+		t.Errorf("general deny rules = %d, want 2 (plugin_install, delete)", len(rules))
 	}
 	for _, tool := range forcedDenials {
 		if p.AllowsTool(tool) {

@@ -9,6 +9,15 @@ import "time"
 // Var (not const) so tests can shrink it.
 var toolProgressInterval = 200 * time.Millisecond
 
+// nowFunc is time.Now, indirected so a test can hold the clock still.
+//
+// The rule here is "at most one update per interval". A test that proved it by
+// racing 500 iterations against a real 200ms window was not testing the rule —
+// it was testing how busy the machine is, and it failed on a loaded one while
+// passing on an idle one. With the clock in the test's hand the rule is checked
+// exactly, and its boundary can be checked too.
+var nowFunc = time.Now
+
 // toolProgressTracker decides what Request.OnToolCallProgress hears while a
 // tool call is still being written. Every wire format accumulates the call
 // differently — OpenAI streams argument fragments keyed by index, Anthropic
@@ -59,7 +68,7 @@ func (t *toolProgressTracker) report(key int, id, name, args string) {
 	// file being written, so measuring on every fragment is what made a large
 	// write quadratic. Pacing first bounds the work by wall-clock rate instead
 	// of by how many fragments the provider chose to send.
-	now := time.Now()
+	now := nowFunc()
 	if st.started && now.Sub(st.at) < toolProgressInterval {
 		return
 	}
@@ -81,4 +90,24 @@ func (t *toolProgressTracker) report(key int, id, name, args string) {
 	st.lines = lines
 	st.at = now
 	t.onProgress(id, name, st.subject, lines)
+}
+
+// flush is report with the pacing window forced open, for the moment a call has
+// finished arriving.
+//
+// Argument order is the model's choice, and when it puts `content` first the
+// `path` lands in the very last fragment — inside the pacing window that the
+// update before it just opened. Pacing then swallows the one update that would
+// have named the row, and it stays unnamed for the rest of the turn: caught live
+// on a 9KB write whose row never learned its filename. Nothing else is forced;
+// report's own "nothing changed" check still applies, so a call that was already
+// named sends nothing here.
+func (t *toolProgressTracker) flush(key int, id, name, args string) {
+	if t == nil || t.onProgress == nil {
+		return
+	}
+	if st := t.state[key]; st != nil {
+		st.at = time.Time{}
+	}
+	t.report(key, id, name, args)
 }

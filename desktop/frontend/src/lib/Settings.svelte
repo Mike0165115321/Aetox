@@ -501,9 +501,11 @@
   // provider never said it had, which is the same lie the table renders as "—".
   type Kind = 'hit' | 'miss' | 'raw' | 'out'
   const KINDS: Kind[] = ['hit', 'miss', 'raw', 'out']
+  // Same words the headline card already uses for the same split — a second
+  // vocabulary for hit/miss would make the two read as different measurements.
   const kindLabel: Record<Kind, string> = $derived({
-    hit: t('settings.usageCached'),
-    miss: t('settings.usageCacheMiss'),
+    hit: t('settings.usageHit'),
+    miss: t('settings.usageMiss'),
     raw: t('settings.usageInput'),
     out: t('settings.usageOutput'),
   })
@@ -1519,7 +1521,9 @@
               <div class="chart-head">
                 <div class="chart-legend kind-legend">
                   {#each KINDS as kind (kind)}
-                    <span><i class="dot k-{kind}"></i>{kindLabel[kind]}</span>
+                    <span title={kind === 'raw' ? t('settings.usageCacheUnreported') : ''}>
+                      <i class="dot k-{kind}"></i>{kindLabel[kind]}
+                    </span>
                   {/each}
                 </div>
               </div>

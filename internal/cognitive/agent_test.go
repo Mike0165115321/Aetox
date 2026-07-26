@@ -2,6 +2,7 @@ package cognitive
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -252,12 +253,12 @@ func TestRespondWithToolsSendsPerProviderMaxTokens(t *testing.T) {
 		modelName string
 		want      int
 	}{
-		{"deepseek", "deepseek-chat", 8192},          // V3-era API max — larger values 400
-		{"deepseek", "deepseek-v4-flash", 65536},     // V4 allows up to 384K output; big enough for a whole file in one call
-		{"anthropic", "claude-sonnet-4-5", 32000},    // OUTPUT_TOKEN_MAX ceiling
-		{"openai", "gpt-4o", 16384},                  // gpt-4o floor
-		{"openrouter", "vendor/model", 8192},         // mixed routed models — conservative
-		{"tool-loop-test", "m", 8192},                // unknown provider falls back safe
+		{"deepseek", "deepseek-chat", 8192},       // V3-era API max — larger values 400
+		{"deepseek", "deepseek-v4-flash", 65536},  // V4 allows up to 384K output; big enough for a whole file in one call
+		{"anthropic", "claude-sonnet-4-5", 32000}, // OUTPUT_TOKEN_MAX ceiling
+		{"openai", "gpt-4o", 16384},               // gpt-4o floor
+		{"openrouter", "vendor/model", 8192},      // mixed routed models — conservative
+		{"tool-loop-test", "m", 8192},             // unknown provider falls back safe
 	}
 	for _, tc := range cases {
 		provider := &toolLoopProvider{name: tc.provider, responses: []model.Response{{Text: "done"}}}
@@ -594,6 +595,10 @@ type toolLoopProvider struct {
 	responses []model.Response
 	requests  []model.Request
 	calls     int
+	// beforeReply runs as this call is being served, so a test can act at the
+	// one moment that is otherwise unreachable: while the model is producing a
+	// response. Interjection needs it — the user types mid-answer.
+	beforeReply func(call int)
 }
 
 func (p *toolLoopProvider) Name() string {
@@ -610,6 +615,9 @@ func (p *toolLoopProvider) SupportsReasoning() bool { return true }
 func (p *toolLoopProvider) Complete(_ context.Context, req model.Request) (model.Response, error) {
 	p.requests = append(p.requests, req)
 	p.calls++
+	if p.beforeReply != nil {
+		p.beforeReply(p.calls)
+	}
 	if len(p.responses) == 0 {
 		return model.Response{Text: "done"}, nil
 	}
@@ -712,8 +720,8 @@ type failFirstProvider struct {
 	requests []model.Request
 }
 
-func (p *failFirstProvider) Name() string                  { return "fail-first" }
-func (p *failFirstProvider) SupportsToolCalling() bool     { return true }
+func (p *failFirstProvider) Name() string              { return "fail-first" }
+func (p *failFirstProvider) SupportsToolCalling() bool { return true }
 func (p *failFirstProvider) Complete(_ context.Context, req model.Request) (model.Response, error) {
 	p.calls++
 	p.requests = append(p.requests, req)
@@ -831,5 +839,272 @@ func TestRespondUsesPerProviderOutputCeiling(t *testing.T) {
 	}
 	if want := agent.toolLoopMaxTokens(); got != want {
 		t.Fatalf("MaxTokens = %d, want per-provider ceiling %d", got, want)
+	}
+}
+
+// Typing while the agent is working must reach the model on its next round, not
+// after the turn ends. The owner asked for this twice; the composer used to park
+// the text in a queue and fire it as a fresh turn once the engine was free, which
+// is the behaviour these two tests exist to prevent coming back.
+
+// The common case: the user types while a tool is running.
+func TestInterjectionReachesTheModelOnTheNextRound(t *testing.T) {
+	provider := &toolLoopProvider{
+		responses: []model.Response{
+			{ToolCalls: []model.ToolCall{{ID: "c1", Type: "function", Function: model.FunctionCall{Name: "read", Arguments: `{}`}}}},
+			{Text: "final answer"},
+		},
+	}
+	agent := NewAgent(AgentConfig{Provider: provider, Model: "test-model", SystemPrompt: "sys"})
+
+	const typed = "จริง ๆ แล้วดูไฟล์อีกอันแทน"
+	reply, _, err := agent.RespondWithTools(
+		context.Background(),
+		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
+		"อ่านไฟล์นี้ให้หน่อย",
+		func(_ context.Context, _ model.ToolCall) (string, error) {
+			// The tool is running — exactly when a user gets bored and types.
+			agent.Interject(typed)
+			return "file contents", nil
+		},
+		nil,
+		turn.TurnOptions{},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if reply != "final answer" {
+		t.Fatalf("reply = %q", reply)
+	}
+	if len(provider.requests) != 2 {
+		t.Fatalf("expected two rounds, got %d", len(provider.requests))
+	}
+
+	// Round 2 must carry it, and it must come after the tool result — the model
+	// reads the new instruction knowing what the tool already returned.
+	second := provider.requests[1].Messages
+	typedAt, toolAt := -1, -1
+	for i, m := range second {
+		switch {
+		case m.Role == model.RoleUser && strings.Contains(m.Content, typed):
+			typedAt = i
+		case m.Role == model.RoleTool:
+			toolAt = i
+		}
+	}
+	if typedAt < 0 {
+		t.Fatalf("the interjection never reached the model: %+v", second)
+	}
+	if toolAt < 0 || typedAt < toolAt {
+		t.Errorf("the interjection landed at %d, before the tool result at %d", typedAt, toolAt)
+	}
+	// Unmarked, this is indistinguishable from a message typed before the turn
+	// started — and the model would have no reason to keep doing what it was
+	// doing. The note says which of the two this is, and what to default to.
+	if !strings.Contains(second[typedAt].Content, "WHILE you were working") {
+		t.Errorf("the interjection arrived unmarked, so the model cannot tell it came mid-work: %q", second[typedAt].Content)
+	}
+}
+
+// The case that would otherwise lose it: the model had already decided to stop,
+// so there is no next round to fold it into. The turn has to keep going instead.
+func TestInterjectionKeepsAFinishingTurnAlive(t *testing.T) {
+	const typed = "เดี๋ยว อีกเรื่องนึง"
+	var agent *Agent
+	provider := &toolLoopProvider{
+		responses: []model.Response{{Text: "first answer"}, {Text: "second answer"}},
+		beforeReply: func(call int) {
+			if call == 1 {
+				// Typed while the model was writing an answer with no tool calls in
+				// it — the loop is about to return.
+				agent.Interject(typed)
+			}
+		},
+	}
+	agent = NewAgent(AgentConfig{Provider: provider, Model: "test-model", SystemPrompt: "sys"})
+
+	reply, _, err := agent.RespondWithTools(
+		context.Background(),
+		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
+		"ถามอะไรสักอย่าง",
+		func(_ context.Context, _ model.ToolCall) (string, error) { return "", nil },
+		nil,
+		turn.TurnOptions{},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if reply != "second answer" {
+		t.Fatalf("the turn ended instead of picking the message up: reply = %q", reply)
+	}
+	if len(provider.requests) != 2 {
+		t.Fatalf("expected the turn to continue into a second round, got %d", len(provider.requests))
+	}
+	// What it already said stays in context, so the second round builds on it.
+	var sawFirst, sawTyped bool
+	for _, m := range provider.requests[1].Messages {
+		if m.Role == model.RoleAssistant && strings.Contains(m.Content, "first answer") {
+			sawFirst = true
+		}
+		if m.Role == model.RoleUser && strings.Contains(m.Content, typed) {
+			sawTyped = true
+		}
+	}
+	if !sawFirst {
+		t.Error("the answer it had already given was dropped from context")
+	}
+	if !sawTyped {
+		t.Error("the interjection never reached the second round")
+	}
+	// Nothing is left over for the host to pick up — it was delivered, not parked.
+	if left := agent.DrainInterjections(); len(left) != 0 {
+		t.Errorf("interjection was left in the buffer: %v", left)
+	}
+}
+
+// Several messages typed under one turn all arrive, in the order they were sent —
+// a user firing off three corrections must not have two of them dropped, or get
+// them shuffled into an order that reverses their own decisions.
+func TestInterjectionsArriveTogetherInOrder(t *testing.T) {
+	provider := &toolLoopProvider{
+		responses: []model.Response{
+			{ToolCalls: []model.ToolCall{{ID: "c1", Type: "function", Function: model.FunctionCall{Name: "read", Arguments: `{}`}}}},
+			{Text: "final answer"},
+		},
+	}
+	agent := NewAgent(AgentConfig{Provider: provider, Model: "test-model", SystemPrompt: "sys"})
+
+	_, _, err := agent.RespondWithTools(
+		context.Background(),
+		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
+		"งานหลัก",
+		func(_ context.Context, _ model.ToolCall) (string, error) {
+			agent.Interject("อันแรก")
+			agent.Interject("   ") // blank: nothing to say, must not become a message
+			agent.Interject("อันสอง")
+			agent.Interject("อันสาม")
+			return "file contents", nil
+		},
+		nil,
+		turn.TurnOptions{},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var got []string
+	for _, m := range provider.requests[1].Messages {
+		if m.Role != model.RoleUser {
+			continue
+		}
+		for _, want := range []string{"อันแรก", "อันสอง", "อันสาม"} {
+			if strings.Contains(m.Content, want) {
+				got = append(got, want)
+			}
+		}
+	}
+	if len(got) != 3 {
+		t.Fatalf("expected all three interjections, got %v", got)
+	}
+	for i, want := range []string{"อันแรก", "อันสอง", "อันสาม"} {
+		if got[i] != want {
+			t.Fatalf("order was scrambled: %v", got)
+		}
+	}
+	// A blank interjection is not a message — it would cost a whole round asking
+	// the model to respond to nothing.
+	for _, m := range provider.requests[1].Messages {
+		if m.Role == model.RoleUser && strings.HasSuffix(strings.TrimSpace(m.Content), "]") {
+			t.Errorf("a blank interjection became a message: %q", m.Content)
+		}
+	}
+	// Delivered means gone: a second drain must not hand them out again, or the
+	// host would re-send messages the model has already answered.
+	if left := agent.DrainInterjections(); len(left) != 0 {
+		t.Errorf("interjections were delivered twice: %v", left)
+	}
+}
+
+// A cancelled turn returns before the loop reaches its drain, so the message is
+// still in the buffer — and the host has to be able to see it, because that is how
+// Stop knows there is something to throw away (desktop App.CancelTurn) and how a
+// straggler gets picked up at all.
+func TestACancelledTurnLeavesTheInterjectionForTheHost(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	provider := &toolLoopProvider{
+		responses: []model.Response{
+			{ToolCalls: []model.ToolCall{{ID: "c1", Type: "function", Function: model.FunctionCall{Name: "read", Arguments: `{}`}}}},
+			{Text: "never reached"},
+		},
+	}
+	agent := NewAgent(AgentConfig{Provider: provider, Model: "test-model", SystemPrompt: "sys"})
+
+	_, _, err := agent.RespondWithTools(
+		ctx,
+		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
+		"งานหลัก",
+		func(_ context.Context, _ model.ToolCall) (string, error) {
+			agent.Interject("พิมพ์แล้วกด Stop")
+			cancel() // the user's brake, hit right after typing
+			return "file contents", nil
+		},
+		nil,
+		turn.TurnOptions{},
+	)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected the turn to stop, got err=%v", err)
+	}
+	if len(provider.requests) != 1 {
+		t.Errorf("the loop ran another round after Stop: %d requests", len(provider.requests))
+	}
+	left := agent.DrainInterjections()
+	if len(left) != 1 || !strings.Contains(left[0], "Stop") {
+		t.Fatalf("the message was swallowed instead of handed back: %v", left)
+	}
+	// And the note is NOT baked in by Interject — it is added where the message
+	// joins the context, so what the host gets back is the user's own text, fit to
+	// re-send as its own turn.
+	if strings.Contains(left[0], "[system]") {
+		t.Errorf("the mid-work note leaked into what the host takes back: %q", left[0])
+	}
+}
+
+// Nothing typed, nothing to hand over — the host calls this after every turn, so
+// the quiet path has to be the cheap one.
+func TestDrainInterjectionsIsEmptyWhenNobodyTyped(t *testing.T) {
+	agent := NewAgent(AgentConfig{Provider: &toolLoopProvider{}, Model: "test-model"})
+	if left := agent.DrainInterjections(); left != nil {
+		t.Errorf("expected nil, got %v", left)
+	}
+	var nilAgent *Agent
+	nilAgent.Interject("must not panic")
+	if left := nilAgent.DrainInterjections(); left != nil {
+		t.Errorf("nil agent returned %v", left)
+	}
+}
+
+// The note is a prompt, so it is asserted like the repo asserts its other prompts
+// (see TestTaskDescriptionSaysWhenNotToDelegate): the point is not the wording but
+// that all three dispositions survive an edit. Losing one silently collapses the
+// feature back to "the model guesses", which is what the note exists to replace.
+func TestTheMidWorkNoteLeavesTheChoiceToTheModel(t *testing.T) {
+	for _, want := range []string{
+		"WHILE you were working", // the fact it cannot infer
+		"do it now",              // small enough to fold in
+		"adjust course",          // a change to the job in hand
+		"finish what you are already doing first", // separate or larger
+		"Only drop the current work if",           // the one hard rule
+		"acknowledge it",                          // the user has to see it landed
+	} {
+		if !strings.Contains(interjectionNote, want) {
+			t.Errorf("the mid-work note no longer says %q:\n%s", want, interjectionNote)
+		}
+	}
+	// It must not decide for the model — a single hard-coded disposition is the
+	// §17 mistake this wording was rewritten to undo.
+	for _, forbidden := range []string{"always treat", "ignore it until"} {
+		if strings.Contains(strings.ToLower(interjectionNote), forbidden) {
+			t.Errorf("the note pre-judges with %q", forbidden)
+		}
 	}
 }

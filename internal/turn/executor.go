@@ -178,6 +178,13 @@ type ToolEvent struct {
 	// Added/Removed are the line counts of a write or edit, zero elsewhere.
 	Added   int `json:"added,omitempty"`
 	Removed int `json:"removed,omitempty"`
+	// Agent and Brief describe a delegation, and are set only on the `task` call
+	// that opens one. They are what lets the UI show a sub-agent as a sub-agent —
+	// titled with who is doing the work and what it was asked — instead of one
+	// more row reading "task". Without them the delegate's name lives only in
+	// prose inside the tool result, which is not a place a UI can read.
+	Agent string `json:"agent,omitempty"`
+	Brief string `json:"brief,omitempty"`
 }
 
 // Label is what a timeline row reads, e.g. "write internal/skill/edit.go".
@@ -187,8 +194,35 @@ func (ev ToolEvent) Label() string {
 
 func (e *Executor) reportToolCall(ref, name, args string) {
 	if e.onToolAction != nil {
-		e.onToolAction(ToolEvent{Action: "call", Ref: ref, Name: name, Subject: toolCallSubject(args)})
+		agent, brief := delegationOf(name, args)
+		e.onToolAction(ToolEvent{
+			Action: "call", Ref: ref, Name: name, Subject: toolCallSubject(args),
+			Agent: agent, Brief: brief,
+		})
 	}
+}
+
+// delegationOf reports which sub-agent a `task` call is handing work to, and the
+// brief it is handing over.
+//
+// This is the one place `turn` names a specific tool, and it earns it: the
+// alternative is a UI that reads a delegate's identity out of English prose in a
+// tool result. Nothing is dispatched on the name — it decides a label, and a
+// mismatch costs a plain "task" row rather than a broken turn. The default when
+// `agent` is omitted is deliberately not repeated here; an unnamed delegate
+// reports an empty agent and the UI falls back to the row's own label, which
+// keeps the profile registry in one package.
+func delegationOf(name, args string) (agent, brief string) {
+	if !strings.EqualFold(strings.TrimSpace(name), "task") {
+		return "", ""
+	}
+	parsed, err := model.ParseToolArguments(args)
+	if err != nil {
+		return "", ""
+	}
+	agent, _ = parsed["agent"].(string)
+	brief, _ = parsed["prompt"].(string)
+	return strings.TrimSpace(agent), strings.TrimSpace(brief)
 }
 
 // toolCallSubject picks the one argument worth reading in a timeline row — the

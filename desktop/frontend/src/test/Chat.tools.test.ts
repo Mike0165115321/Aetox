@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, fireEvent } from '@testing-library/svelte'
+import { tick } from 'svelte'
 import Chat from '../lib/Chat.svelte'
 import { cockpit, applyToolEvent } from '../lib/stores/cockpit.svelte'
 import { setLocale } from '../lib/i18n.svelte'
@@ -177,7 +178,19 @@ describe('sub-agent tool events', () => {
     expect(cockpit.toolSteps[0].state).toBe('run')
   })
 
-  it('renders a delegate’s step indented under the task that caused it', () => {
+  it('carries the sub-agent name and brief onto the task row', () => {
+    applyToolEvent({
+      action: 'call', name: 'task', subject: 'find every caller', ref: 'task_1',
+      agent: 'explore', brief: 'search internal/ for callers of Resolve and list the paths',
+    })
+    expect(cockpit.toolSteps[0].agent).toBe('explore')
+    expect(cockpit.toolSteps[0].brief).toContain('callers of Resolve')
+  })
+
+  // The delegation block is the whole point: one titled group per sub-agent,
+  // with its own steps inside it and the brief the main agent wrote. A flat list
+  // of rows cannot say who did what.
+  it('draws a delegation as its own named block with the delegate’s steps inside', () => {
     const { container } = render(Chat, {
       ...baseProps,
       // The live rows only exist during a turn, which is when a delegate runs.
@@ -185,15 +198,121 @@ describe('sub-agent tool events', () => {
       // 'run' because a finished step collapses behind the toggle; the live rows
       // are the ones on screen while a delegate is actually working.
       toolSteps: [
-        { label: 'task explore', state: 'run', startedAt: Date.now() },
+        {
+          label: 'task find every caller', ref: 'task_1', agent: 'explore',
+          brief: 'search internal/ for callers of Resolve', state: 'run', startedAt: Date.now(),
+        },
         { label: 'grep needle', parent: 'task_1', state: 'run', startedAt: Date.now() },
+        { label: 'read hay.txt', parent: 'task_1', state: 'run', startedAt: Date.now() },
       ] as any,
       messages: [{ role: 'agent', text: 'done', time: '10:54' }] as any,
     })
-    const rows = container.querySelectorAll('.tool-step')
-    expect(rows.length).toBe(2)
-    expect(rows[0].classList.contains('sub')).toBe(false)
-    expect(rows[1].classList.contains('sub')).toBe(true)
-    expect(rows[1].querySelector('.sub-mark')).toBeTruthy()
+
+    const block = container.querySelector('.subagent')
+    expect(block).toBeTruthy()
+    expect(block?.querySelector('.ag-name')?.textContent).toContain('explore')
+    expect(block?.querySelector('.ag-job')?.textContent).toContain('find every caller')
+    expect(block?.querySelector('.subagent-brief')?.textContent).toContain('callers of Resolve')
+    // The delegate's tools live inside the block, not in the agent's own list.
+    expect(block?.querySelectorAll('.subagent-steps .tool-step').length).toBe(2)
+    expect(container.querySelectorAll('.tool-steps > .tool-step').length).toBe(0)
+  })
+
+  // Two delegates run at once and their events interleave on one channel — the
+  // reason ToolEvent.parent exists at all. Each block must hold its own steps.
+  it('keeps two concurrent delegations in separate blocks', () => {
+    const { container } = render(Chat, {
+      ...baseProps,
+      awaitingReply: true,
+      toolSteps: [
+        { label: 'task hunt callers', ref: 't1', agent: 'explore', brief: 'brief one', state: 'run', startedAt: Date.now() },
+        { label: 'task rename them', ref: 't2', agent: 'general', brief: 'brief two', state: 'run', startedAt: Date.now() },
+        { label: 'grep alpha', parent: 't1', state: 'run', startedAt: Date.now() },
+        { label: 'edit beta.go', parent: 't2', state: 'run', startedAt: Date.now() },
+        { label: 'grep gamma', parent: 't1', state: 'run', startedAt: Date.now() },
+      ] as any,
+      messages: [{ role: 'agent', text: 'done', time: '10:54' }] as any,
+    })
+
+    const blocks = container.querySelectorAll('.subagent')
+    expect(blocks.length).toBe(2)
+    expect(blocks[0].querySelector('.ag-name')?.textContent).toContain('explore')
+    expect(blocks[1].querySelector('.ag-name')?.textContent).toContain('general')
+    expect(blocks[0].querySelectorAll('.subagent-steps .tool-step').length).toBe(2)
+    expect(blocks[1].querySelectorAll('.subagent-steps .tool-step').length).toBe(1)
+    // No cross-contamination: the second delegate's edit is not in the first block.
+    expect(blocks[0].textContent).not.toContain('edit beta.go')
+    expect(blocks[1].textContent).not.toContain('grep alpha')
+    expect(blocks[0].querySelector('.subagent-brief')?.textContent).toContain('brief one')
+    expect(blocks[1].querySelector('.subagent-brief')?.textContent).toContain('brief two')
+  })
+
+  // A child whose task row is not in the list must still be visible. It happens
+  // on a persisted turn and on out-of-order arrival, and silently dropping a row
+  // means work that vanished.
+  it('shows an orphaned delegate step rather than dropping it', () => {
+    const { container } = render(Chat, {
+      ...baseProps,
+      awaitingReply: true,
+      toolSteps: [
+        { label: 'grep orphan', parent: 'gone', state: 'run', startedAt: Date.now() },
+      ] as any,
+      messages: [{ role: 'agent', text: 'done', time: '10:54' }] as any,
+    })
+    expect(container.textContent).toContain('grep orphan')
+  })
+
+  it('counts sub-agents separately from tools in the collapsed line', () => {
+    const { container } = render(Chat, {
+      ...baseProps,
+      messages: [{
+        role: 'agent', text: 'done', time: '10:54',
+        steps: [
+          { label: 'read a.txt', state: 'done', startedAt: 0 },
+          { label: 'task find every caller', ref: 'task_1', agent: 'explore', state: 'done', startedAt: 0 },
+          { label: 'grep needle', parent: 'task_1', state: 'done', startedAt: 0 },
+          { label: 'task_result task_1', state: 'done', startedAt: 0 },
+        ],
+      }] as any,
+    })
+    // Two separate toggles, like thinking and tools are separate: what the agent
+    // did itself, and what it handed to someone else.
+    const toggles = [...container.querySelectorAll('.meta-row .reasoning-toggle')]
+      .map((b) => b.textContent ?? '')
+    expect(toggles.length).toBe(2)
+    // Two tools of its own (read, task_result) — the delegate's grep is counted
+    // inside its block — and one sub-agent.
+    expect(toggles[0]).toContain('Used 2 tools')
+    expect(toggles[1]).toContain('Sub-agents: 1')
+    expect(toggles[0]).not.toContain('Sub-agents')
+  })
+
+  // Opening one panel closes the other, and each shows only its own kind.
+  it('keeps the tools panel and the sub-agents panel apart', async () => {
+    const steps = [
+      { label: 'read a.txt', state: 'done', startedAt: 0 },
+      { label: 'task hunt', ref: 't1', agent: 'explore', brief: 'go hunt', state: 'done', startedAt: 0 },
+      { label: 'grep needle', parent: 't1', state: 'done', startedAt: 0 },
+    ]
+    const { container } = render(Chat, {
+      ...baseProps,
+      messages: [{ role: 'agent', text: 'done', time: '10:54', steps }] as any,
+    })
+    const [toolsBtn, subsBtn] = [...container.querySelectorAll('.meta-row .reasoning-toggle')] as HTMLElement[]
+
+    toolsBtn.click()
+    await tick()
+    expect(container.querySelector('.subagent')).toBeNull()
+    expect(container.textContent).toContain('read a.txt')
+    expect(container.querySelectorAll('.tool-steps .tool-step').length).toBe(1)
+
+    subsBtn.click()
+    await tick()
+    // The tools panel closed with it — one slot, same as thinking.
+    expect(container.querySelectorAll('.tool-steps > .tool-step').length).toBe(0)
+    const block = container.querySelector('.subagent')
+    expect(block).toBeTruthy()
+    expect(block?.textContent).toContain('grep needle')
+    expect(block?.querySelector('.subagent-brief')?.textContent).toContain('go hunt')
   })
 })
