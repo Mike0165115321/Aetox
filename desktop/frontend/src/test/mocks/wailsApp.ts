@@ -27,6 +27,7 @@ export const BrowserSetVisible = noop()
 export const BrowserSetZoom = noop()
 export const BrowserTypeRef = noop()
 export const CancelTurn = noop()
+export const Interject = noop()
 export const AnswerUserQuestion = noop()
 export const ClearProjectFocus = noop()
 export const CloseAllBrowserTabs = noop()
@@ -111,5 +112,12 @@ export const PickPresetImage = str()
 export const RemovePresetImage = noop()
 export const ToggleMCPServer = noop()
 export const ToolCounts = vi.fn(async () => ({ builtin: 0, skill: 0, mcp: 0 }))
-export const UsageStats = vi.fn(async () => ({ today: [], week: [], all: [] }))
+export const UsageStats = vi.fn(async () => ({
+  today: [], week: [], all: [], daily: [], heatmap: [],
+  totals: {
+    promptTokens: 0, completionTokens: 0, cachedTokens: 0, uncachedTokens: 0,
+    cacheRows: 0, calls: 0, sessions: 0, messages: 0,
+    activeDays: 0, currentStreak: 0, topModel: '', topModelShare: 0,
+  },
+}))
 export const WriteFile = noop()

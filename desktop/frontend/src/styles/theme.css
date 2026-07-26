@@ -88,10 +88,29 @@
   --diff-hunk-bg:var(--c-plum-950);
   --diff-hunk-text:var(--c-violet-400);
 
+  /* charts — the one family of roles a named theme may leave alone. A theme
+     re-skins the app's chrome; a categorical series palette is validated as a
+     set (CVD separation, lightness band, contrast) and re-picking it per theme
+     would mean re-validating fourteen sets. These are validated once against
+     both the darkest and lightest surfaces in this file, so every theme
+     inherits a set that passes. Only the heat ramp is overridden, by the light
+     themes below, because a sequential ramp must be re-stepped per ground. */
+  --chart-1:var(--c-chart-1);
+  --chart-2:var(--c-chart-2);
+  --chart-3:var(--c-chart-3);
+  --chart-4:var(--c-chart-4);
+  --chart-5:var(--c-chart-5);
+  --chart-other:var(--text-dim); /* the tail past slot 5, deliberately mute */
+  --chart-heat-1:var(--c-heat-dark-1);
+  --chart-heat-2:var(--c-heat-dark-2);
+  --chart-heat-3:var(--c-heat-dark-3);
+  --chart-heat-4:var(--c-heat-dark-4);
+
   /* chrome */
   --scrollbar-thumb:#2a2a2e80;
   --scrollbar-thumb-hover:#3a3a40;
 }
+
 
 /* ---------- named themes — each block is a full, independent override of
    every semantic token above. Palettes sourced from each project's official
@@ -139,6 +158,10 @@
   --node-active-bg:#e2ecff; --node-active-text:#1e66f5; --node-active-ring:#b6ccf3;
   --diff-add-text:#40a02b; --diff-del-text:#d20f39; --diff-hunk-bg:#f0eafb; --diff-hunk-text:#8839ef;
   --scrollbar-thumb:#ccd0da99; --scrollbar-thumb-hover:#acb0be;
+  /* light ground: the heat ramp is re-stepped, not flipped — the pale end
+     must still clear a pale surface. Series hues need no override. */
+  --chart-heat-1:var(--c-heat-light-1); --chart-heat-2:var(--c-heat-light-2);
+  --chart-heat-3:var(--c-heat-light-3); --chart-heat-4:var(--c-heat-light-4);
 }
 
 :root[data-theme="nord"] {
@@ -227,6 +250,10 @@
   --node-active-bg:#e1eef0; --node-active-text:#286983; --node-active-ring:#bcdbe0;
   --diff-add-text:#4f7a3d; --diff-del-text:#b4637a; --diff-hunk-bg:#ece5f5; --diff-hunk-text:#907aa9;
   --scrollbar-thumb:#e4d9cd99; --scrollbar-thumb-hover:#d7cabc;
+  /* light ground: the heat ramp is re-stepped, not flipped — the pale end
+     must still clear a pale surface. Series hues need no override. */
+  --chart-heat-1:var(--c-heat-light-1); --chart-heat-2:var(--c-heat-light-2);
+  --chart-heat-3:var(--c-heat-light-3); --chart-heat-4:var(--c-heat-light-4);
 }
 
 :root[data-theme="gruvbox-dark"] {
@@ -271,6 +298,10 @@
   --node-active-bg:#dbe9ec; --node-active-text:#076678; --node-active-ring:#b3d4da;
   --diff-add-text:#79740e; --diff-del-text:#9d0006; --diff-hunk-bg:#ece1ec; --diff-hunk-text:#8f3f71;
   --scrollbar-thumb:#d5c4a199; --scrollbar-thumb-hover:#bdae93;
+  /* light ground: the heat ramp is re-stepped, not flipped — the pale end
+     must still clear a pale surface. Series hues need no override. */
+  --chart-heat-1:var(--c-heat-light-1); --chart-heat-2:var(--c-heat-light-2);
+  --chart-heat-3:var(--c-heat-light-3); --chart-heat-4:var(--c-heat-light-4);
 }
 
 :root[data-theme="one-dark"] {
@@ -359,6 +390,10 @@
   --node-active-bg:#dcebf7; --node-active-text:#268bd2; --node-active-ring:#b7d8ef;
   --diff-add-text:#657b00; --diff-del-text:#dc322f; --diff-hunk-bg:#e6e6f5; --diff-hunk-text:#6c71c4;
   --scrollbar-thumb:#d9d2c299; --scrollbar-thumb-hover:#b8b09c;
+  /* light ground: the heat ramp is re-stepped, not flipped — the pale end
+     must still clear a pale surface. Series hues need no override. */
+  --chart-heat-1:var(--c-heat-light-1); --chart-heat-2:var(--c-heat-light-2);
+  --chart-heat-3:var(--c-heat-light-3); --chart-heat-4:var(--c-heat-light-4);
 }
 
 :root[data-theme="tokyo-night"] {

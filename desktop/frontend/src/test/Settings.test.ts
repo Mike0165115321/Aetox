@@ -14,9 +14,25 @@ beforeEach(() => {
   vi.mocked(ListExternalSkills).mockResolvedValue([
     { name: 'gridgeist', description: 'grid design', dir: 'C:/skills/gridgeist' },
   ] as any)
+  // Two models on purpose: one hosted (reports cache accounting) and one local
+  // (reports none), which is the pair the page has to render differently.
+  const deepseek = {
+    model: 'deepseek-chat', promptTokens: 1200, completionTokens: 340,
+    cachedTokens: 900, uncachedTokens: 300, cacheRows: 5, calls: 5,
+  }
+  const ollama = {
+    model: 'ornith:9b', promptTokens: 400, completionTokens: 60,
+    cachedTokens: 0, uncachedTokens: 400, cacheRows: 0, calls: 2,
+  }
   vi.mocked(UsageStats).mockResolvedValue({
-    today: [{ model: 'deepseek-chat', promptTokens: 1200, completionTokens: 340, calls: 5 }],
-    week: [], all: [],
+    today: [deepseek], week: [deepseek, ollama], all: [deepseek, ollama],
+    daily: [{ day: '2026-07-27', model: 'deepseek-chat', promptTokens: 1200, completionTokens: 340 }],
+    heatmap: [{ day: '2026-07-27', model: '', promptTokens: 1200, completionTokens: 340 }],
+    totals: {
+      promptTokens: 1600, completionTokens: 400, cachedTokens: 900, uncachedTokens: 700,
+      cacheRows: 5, calls: 7, sessions: 3, messages: 21,
+      activeDays: 2, currentStreak: 2, topModel: 'deepseek-chat', topModelShare: 77,
+    },
   } as any)
   vi.mocked(ListPromptPresets).mockResolvedValue([
     // Bundled presets ship cover art; a user preset may have none yet.
@@ -68,9 +84,72 @@ describe('Settings pages', () => {
   it('Usage page shows per-model aggregates', async () => {
     const { container } = render(Settings, { onClose: () => {} })
     await openSection(container, 'สถิติการใช้งาน')
-    await waitFor(() => expect(screen.getByText('deepseek-chat')).toBeTruthy())
-    expect(screen.getByText('1,200')).toBeTruthy()
-    expect(screen.getByText('340')).toBeTruthy()
+    const row = await waitFor(() => {
+      const found = container.querySelector('.usage-row')
+      expect(found).toBeTruthy()
+      return found!
+    })
+    expect(row.querySelector('.u-model')?.textContent).toContain('deepseek-chat')
+    const nums = [...row.querySelectorAll('.u-num')].map((n) => n.textContent?.trim())
+    expect(nums[0]).toBe('1,200') // input
+    expect(nums[2]).toBe('340') // output
+  })
+
+  // A provider that reports no cache accounting must render an em dash, not
+  // 0%: zero hits and no cache to hit are different claims, and only one of
+  // them is the provider's.
+  it('Usage page separates a measured cache rate from an unreported one', async () => {
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'สถิติการใช้งาน')
+
+    const rows = await waitFor(() => {
+      const found = container.querySelectorAll('.usage-row')
+      expect(found.length).toBe(2)
+      return found
+    })
+    const cacheCell = (row: Element) => row.querySelectorAll('.u-num')[1]
+    // 900 of 1,200 input tokens reused.
+    expect(cacheCell(rows[0]).textContent).toContain('75%')
+    expect(cacheCell(rows[1]).textContent?.trim()).toBe('—')
+
+    // The headline cards summarise the same split: 900 cached of 1,600 input.
+    const cards = [...container.querySelectorAll('.stat-card')]
+    const cacheCard = cards.find((c) => c.textContent?.includes('แคช prompt'))!
+    expect(cacheCard.querySelector('.stat-big')?.textContent?.replace(/\s/g, '')).toBe('56%')
+    expect(container.querySelector('.stat-model')?.textContent).toBe('deepseek-chat')
+  })
+
+  // Plotting only the days that have data turns a month of usage into a handful
+  // of fat blocks and silently rescales the x-axis, so a 4-day-old install and
+  // a 30-day-old one look identical. Every day in the window gets a column; the
+  // empty ones are the point.
+  it('Usage chart plots every day in the window, not only the days with data', async () => {
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'สถิติการใช้งาน')
+
+    const columns = await waitFor(() => {
+      const found = container.querySelectorAll('.daycol')
+      expect(found.length).toBeGreaterThan(0)
+      return found
+    })
+    // The mock carries a single day of usage.
+    expect(columns.length).toBe(30)
+    expect(container.querySelectorAll('.daycol.empty').length).toBe(29)
+    // Gridlines give the bars a scale to be read against.
+    expect(container.querySelectorAll('.chart-gridline').length).toBe(5)
+    // Axis ticks are rounded, not raw maxima.
+    expect(container.querySelector('.chart-y')?.textContent).toContain('0')
+  })
+
+  // The period control swaps which aggregate the table renders.
+  it('Usage page switches period', async () => {
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'สถิติการใช้งาน')
+    await waitFor(() => expect(container.querySelectorAll('.usage-row').length).toBe(2))
+
+    const today = [...container.querySelectorAll('.seg-btn')].find((b) => b.textContent?.includes('วันนี้'))!
+    await fireEvent.click(today)
+    await waitFor(() => expect(container.querySelectorAll('.usage-row').length).toBe(1))
   })
 
   it('Prompt presets page is a card gallery, badging the bundled ones', async () => {

@@ -11,6 +11,7 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -56,15 +57,58 @@ CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
 END;
 
 CREATE TABLE IF NOT EXISTS token_usage (
-  id                INTEGER PRIMARY KEY AUTOINCREMENT,
-  session_id        TEXT NOT NULL DEFAULT '',
-  model             TEXT NOT NULL,
-  prompt_tokens     INTEGER NOT NULL,
-  completion_tokens INTEGER NOT NULL,
-  time              TEXT NOT NULL
+  id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id           TEXT NOT NULL DEFAULT '',
+  model                TEXT NOT NULL,
+  prompt_tokens        INTEGER NOT NULL,
+  completion_tokens    INTEGER NOT NULL,
+  cached_prompt_tokens INTEGER,
+  time                 TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_token_usage_time ON token_usage(time);
 `
+
+// addedColumns are columns introduced after a table shipped. The schema above
+// is all CREATE TABLE IF NOT EXISTS, which is a no-op on a database that
+// already has the table — so a new column reaches existing installs only from
+// here. Without this the INSERT would fail on every turn, and since usage
+// writes only log their errors, the stats page would quietly stop growing.
+//
+// cached_prompt_tokens is nullable on purpose: NULL means "this provider does
+// no cache accounting" (Ollama, LM Studio, and every row written before the
+// column existed), which is not the same as a measured zero hits. SUM skips
+// NULLs and COUNT counts only non-NULLs, so both questions stay answerable.
+var addedColumns = []struct{ table, column, definition string }{
+	{"token_usage", "cached_prompt_tokens", "INTEGER"},
+}
+
+// applyAddedColumns adds any missing column in addedColumns. Safe to run on
+// every open: existing columns are detected first, so nothing is attempted
+// twice and no data is touched.
+func applyAddedColumns(db *sql.DB) error {
+	for _, c := range addedColumns {
+		has, err := hasColumn(db, c.table, c.column)
+		if err != nil {
+			return err
+		}
+		if has {
+			continue
+		}
+		if _, err := db.Exec("ALTER TABLE " + c.table + " ADD COLUMN " + c.column + " " + c.definition); err != nil {
+			return fmt.Errorf("add %s.%s: %w", c.table, c.column, err)
+		}
+	}
+	return nil
+}
+
+func hasColumn(db *sql.DB, table, column string) (bool, error) {
+	rows, err := db.Query("SELECT 1 FROM pragma_table_info(?) WHERE name = ?", table, column)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	return rows.Next(), rows.Err()
+}
 
 // database opens (once) the app-wide SQLite store.
 func (a *App) database() (*sql.DB, error) {
@@ -90,6 +134,11 @@ func (a *App) database() (*sql.DB, error) {
 			return
 		}
 		if _, err := db.Exec(dbSchema); err != nil {
+			a.dbErr = err
+			_ = db.Close()
+			return
+		}
+		if err := applyAddedColumns(db); err != nil {
 			a.dbErr = err
 			_ = db.Close()
 			return

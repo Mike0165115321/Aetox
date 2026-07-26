@@ -858,6 +858,115 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .usage-head { color:var(--text-dim); font-size:13px; letter-spacing:.05em; text-transform:uppercase; }
 .u-model { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:var(--mono); font-size:14px; }
 .u-num { flex:0 0 110px; text-align:right; font-family:var(--mono); font-size:14px; }
+.u-num.sm { flex:0 0 74px; }
+
+/* ---------- usage stats page ----------
+   Series colour is an identity: slot n belongs to a model, so switching the
+   period filter never repaints the models that survive it. Five slots, then
+   .s0 (mute) carries the tail — a sixth hue would not survive the CVD check.
+   Tokens are validated as a set in palette.css; nothing here invents a colour. */
+.s0 { --hue:var(--chart-other); }
+.s1 { --hue:var(--chart-1); }
+.s2 { --hue:var(--chart-2); }
+.s3 { --hue:var(--chart-3); }
+.s4 { --hue:var(--chart-4); }
+.s5 { --hue:var(--chart-5); }
+.dot.s0, .dot.s1, .dot.s2, .dot.s3, .dot.s4, .dot.s5 { background:var(--hue); }
+
+.wide-card { max-width:960px; }
+/* 12 columns so the two wide cards make a clean first row and the four small
+   ones a clean second, instead of auto-fit leaving a hole beside a span-2. */
+.stat-cards { display:grid; grid-template-columns:repeat(12, 1fr); gap:12px; max-width:960px; margin-bottom:28px; }
+.stat-card {
+  border:1px solid var(--border-subtle); border-radius:12px; background:var(--surface-panel);
+  padding:14px 16px; display:flex; flex-direction:column; gap:6px; min-width:0; grid-column:span 3;
+}
+.stat-card.wide { grid-column:span 6; }
+@media (max-width:900px) {
+  .stat-card { grid-column:span 6; }
+  .stat-card.wide { grid-column:span 12; }
+}
+/* Proportional figures, not tabular: at display size equal-width digits make a
+   number like 121 look loose. tabular-nums belongs in the table below. */
+.stat-big { font-size:30px; font-weight:700; line-height:1.1; }
+.stat-big.dim { color:var(--text-dim); font-weight:500; }
+.stat-big .unit { font-size:15px; font-weight:500; color:var(--text-muted); margin-left:3px; }
+.stat-model { font-family:var(--mono); font-size:17px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.stat-sub { color:var(--text-muted); font-size:13.5px; }
+
+/* one bar, two shares — the split reads instantly where two numbers would not.
+   The 2px gap is the separator; no stroke is drawn around the fills. */
+.stat-split { display:flex; gap:2px; height:6px; margin-top:2px; }
+.stat-split .seg { display:block; min-width:2px; border-radius:2px; }
+.seg.in, .dot.in { background:var(--chart-1); }
+.seg.out, .dot.out { background:var(--chart-4); }
+.seg.hit, .dot.hit { background:var(--chart-3); }
+.seg.miss, .dot.miss { background:var(--chart-2); }
+.stat-legend { display:flex; flex-wrap:wrap; gap:4px 14px; color:var(--text-muted); font-size:13px; }
+.dot { display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:6px; vertical-align:baseline; flex:0 0 auto; }
+
+/* ---- per-day column chart ---- */
+.chart-head { display:flex; align-items:baseline; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+.chart-body { display:grid; grid-template-columns:auto 1fr; gap:0 10px; margin-top:4px; }
+.chart-y { display:flex; flex-direction:column; justify-content:space-between; height:170px;
+  font-size:12px; font-family:var(--mono); font-variant-numeric:tabular-nums; color:var(--text-dim); text-align:right; }
+.chart-y span { transform:translateY(-50%); }
+.chart-y span:last-child { transform:translateY(-100%); }
+.chart-plot { position:relative; height:170px; }
+/* Solid hairlines one step off the surface — never dashed, never heavy. */
+.chart-gridline { position:absolute; left:0; right:0; height:1px; background:var(--border-subtle); }
+.daychart { position:absolute; inset:0; display:flex; align-items:flex-end; }
+/* The column is the hit target (full height, ~24px+ wide); the bar inside is
+   capped so the band keeps its air instead of the fill swallowing it. */
+.daycol { flex:1 1 0; min-width:0; height:100%; display:flex; align-items:flex-end; justify-content:center; position:relative; }
+.daycol::before { content:""; position:absolute; inset:0; }
+.daycol:hover::before, .daycol.on::before { background:var(--surface-hover); opacity:.5; }
+.daybar { width:100%; max-width:22px; display:flex; flex-direction:column-reverse; gap:2px; position:relative; }
+.daybar span { display:block; width:100%; min-height:2px; }
+/* 4px rounded data-end, square at the baseline. */
+.daybar span:last-child { border-radius:4px 4px 0 0; }
+.daycol.empty .daybar { background:var(--border-subtle); height:1px; min-height:1px; border-radius:0; }
+.chart-x { display:flex; margin-top:7px; color:var(--text-dim); font-size:12px; font-family:var(--mono); }
+.chart-x span { flex:1 1 0; text-align:center; min-width:0; }
+.chart-legend { display:flex; flex-wrap:wrap; align-items:center; gap:6px 16px; color:var(--text-muted); font-size:13px; }
+
+/* Tooltip enhances; every value is also in the table below, so nothing is
+   gated behind hover. */
+.chart-tip {
+  position:absolute; z-index:5; pointer-events:none; transform:translate(-50%, -100%);
+  background:var(--surface-raised); border:1px solid var(--border-default); border-radius:8px;
+  padding:7px 10px; font-size:13px; white-space:nowrap; box-shadow:0 6px 20px #0006;
+}
+.chart-tip .tip-day { color:var(--text-dim); font-size:12px; margin-bottom:3px; }
+.chart-tip .tip-row { display:flex; align-items:center; gap:8px; font-variant-numeric:tabular-nums; }
+.chart-tip .tip-row .val { margin-left:auto; color:var(--text-secondary); font-family:var(--mono); }
+
+/* ---- heatmap: one hue, four steps, validated as a ramp ---- */
+.heatmap { display:flex; gap:3px; overflow-x:auto; padding-bottom:2px; }
+.heat-week { display:flex; flex-direction:column; gap:3px; }
+.heat-cell { display:block; width:11px; height:11px; border-radius:2px; background:var(--surface-sunken); }
+/* Days that have not happened yet are absent, not empty — an idle-looking
+   square for tomorrow would read as a day the user skipped. */
+.heat-cell.lx { background:transparent; }
+.heat-cell.l1 { background:var(--chart-heat-1); }
+.heat-cell.l2 { background:var(--chart-heat-2); }
+.heat-cell.l3 { background:var(--chart-heat-3); }
+.heat-cell.l4 { background:var(--chart-heat-4); }
+.heat-scale .heat-cell { display:inline-block; }
+
+.usage-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.seg-ctrl { display:inline-flex; border:1px solid var(--border-default); border-radius:7px; overflow:hidden; }
+.seg-btn { padding:4px 12px; font-size:14px; color:var(--text-muted); background:var(--surface-sunken); }
+.seg-btn + .seg-btn { border-left:1px solid var(--border-default); }
+.seg-btn:hover { color:var(--text-primary); background:var(--surface-hover); }
+.seg-btn.selected { background:var(--surface-selected); color:var(--text-selected); }
+
+/* the share bar rides under the model name, so weight is visible without
+   spending a column on a percentage nobody reads precisely */
+.usage-row .u-model { position:relative; padding-bottom:7px; }
+.u-share { position:absolute; left:0; bottom:0; height:2px; border-radius:1px; background:var(--border-strong); }
+.u-num .u-sub { display:block; color:var(--text-dim); font-size:12px; }
+.u-num .dim { color:var(--text-dim); }
 
 /* Onboarding wizard */
 .onboard-overlay { position:fixed; inset:0; z-index:60; background:var(--surface-app); display:flex; align-items:center; justify-content:center; }
@@ -984,8 +1093,28 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
    list answers "what is this sub-agent allowed to do" without opening anything. */
 .ag-count { color:var(--text-dim); font-weight:400; }
 .set-row .t .tag { margin-left:6px; font-weight:400; vertical-align:middle; }
-.tool-step.sub { padding-left:18px; }
-.tool-step .sub-mark { color:var(--text-dim); flex:none; }
+/* A delegation in the timeline: one titled block per sub-agent, its brief under
+   the title, its own steps inside. The left rule is what says "everything in
+   here was somebody else's work" without a mark on every row. */
+.subagent { margin:4px 0; padding:4px 0 4px 10px; border-left:2px solid var(--border-strong); }
+.subagent.run { border-left-color:var(--accent); }
+.subagent.err { border-left-color:var(--status-danger); }
+.subagent-head { display:flex; align-items:center; gap:8px; min-width:0; }
+.subagent-head .ag-name {
+  flex:0 0 auto; font-size:12.5px; font-weight:600; color:var(--text);
+  letter-spacing:.01em;
+}
+.subagent-head .ag-job {
+  min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  font-family:var(--mono); font-size:12.5px; color:var(--text-muted);
+}
+.subagent-brief {
+  margin:3px 0 2px 23px; font-size:12px; line-height:1.45; color:var(--text-dim);
+  display:-webkit-box; -webkit-line-clamp:3; line-clamp:3; -webkit-box-orient:vertical;
+  overflow:hidden; white-space:pre-wrap; word-break:break-word;
+}
+.subagent-steps { padding-left:15px; }
+.subagent > .tool-err { margin-left:23px; font-size:12px; color:var(--status-danger); }
 .tag.ag-override { background:var(--badge-think-bg); color:var(--badge-think-text); border-color:var(--badge-think-border); }
 .tag.ag-deny { background:var(--diff-del-bg); color:var(--status-danger); border-color:var(--status-danger); }
 .ag-body {

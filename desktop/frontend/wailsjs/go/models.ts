@@ -121,6 +121,28 @@ export namespace main {
 		}
 	}
 	
+	export class DayPoint {
+	    day: string;
+	    model: string;
+	    promptTokens: number;
+	    completionTokens: number;
+	    cachedTokens: number;
+	    cacheRows: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new DayPoint(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.day = source["day"];
+	        this.model = source["model"];
+	        this.promptTokens = source["promptTokens"];
+	        this.completionTokens = source["completionTokens"];
+	        this.cachedTokens = source["cachedTokens"];
+	        this.cacheRows = source["cacheRows"];
+	    }
+	}
 	export class IdentityFile {
 	    name: string;
 	
@@ -341,6 +363,9 @@ export namespace main {
 	    model: string;
 	    promptTokens: number;
 	    completionTokens: number;
+	    cachedTokens: number;
+	    uncachedTokens: number;
+	    cacheRows: number;
 	    calls: number;
 	
 	    static createFrom(source: any = {}) {
@@ -352,13 +377,53 @@ export namespace main {
 	        this.model = source["model"];
 	        this.promptTokens = source["promptTokens"];
 	        this.completionTokens = source["completionTokens"];
+	        this.cachedTokens = source["cachedTokens"];
+	        this.uncachedTokens = source["uncachedTokens"];
+	        this.cacheRows = source["cacheRows"];
 	        this.calls = source["calls"];
+	    }
+	}
+	export class UsageTotals {
+	    promptTokens: number;
+	    completionTokens: number;
+	    cachedTokens: number;
+	    uncachedTokens: number;
+	    cacheRows: number;
+	    calls: number;
+	    sessions: number;
+	    messages: number;
+	    activeDays: number;
+	    currentStreak: number;
+	    topModel: string;
+	    topModelShare: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new UsageTotals(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.promptTokens = source["promptTokens"];
+	        this.completionTokens = source["completionTokens"];
+	        this.cachedTokens = source["cachedTokens"];
+	        this.uncachedTokens = source["uncachedTokens"];
+	        this.cacheRows = source["cacheRows"];
+	        this.calls = source["calls"];
+	        this.sessions = source["sessions"];
+	        this.messages = source["messages"];
+	        this.activeDays = source["activeDays"];
+	        this.currentStreak = source["currentStreak"];
+	        this.topModel = source["topModel"];
+	        this.topModelShare = source["topModelShare"];
 	    }
 	}
 	export class UsageStats {
 	    today: UsageRow[];
 	    week: UsageRow[];
 	    all: UsageRow[];
+	    totals: UsageTotals;
+	    daily: DayPoint[];
+	    heatmap: DayPoint[];
 	
 	    static createFrom(source: any = {}) {
 	        return new UsageStats(source);
@@ -369,6 +434,9 @@ export namespace main {
 	        this.today = this.convertValues(source["today"], UsageRow);
 	        this.week = this.convertValues(source["week"], UsageRow);
 	        this.all = this.convertValues(source["all"], UsageRow);
+	        this.totals = this.convertValues(source["totals"], UsageTotals);
+	        this.daily = this.convertValues(source["daily"], DayPoint);
+	        this.heatmap = this.convertValues(source["heatmap"], DayPoint);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

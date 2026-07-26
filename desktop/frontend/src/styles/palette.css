@@ -60,6 +60,36 @@
   --c-violet-700:#362b4d;
   --c-violet-900:#241f33;
 
+  /* chart series — a categorical set, not the status/accent roles reused.
+     Status hues are reserved for good/bad and must never mean "series 4", and
+     the UI accent already means "interactive". Verified with the dataviz
+     validator against every theme surface in theme.css:
+       dark  (#16161a): all checks pass — L inside 0.48–0.67, chroma >= 0.1,
+                        worst adjacent CVD dE 8.9 (protan), contrast >= 3:1
+       light (#ffffff): all checks pass; on the two cream light themes
+                        (gruvbox-light, solarized-light) contrast lands at
+                        ~2.5:1, a WARN whose required relief is the legend and
+                        the per-model table that ship beside every chart.
+     Order is fixed and must not be re-sorted: slot n is an identity, and
+     swapping two entries repaints charts users have already learned. */
+  --c-chart-1:#4599CB;
+  --c-chart-2:#C98100;
+  --c-chart-3:#00946F;
+  --c-chart-4:#9E74DC;
+  --c-chart-5:#D05F55;
+
+  /* heat ramp — one hue, monotone lightness, for the activity heatmap. Two
+     sets because a sequential ramp has to be re-stepped per ground, not
+     flipped: the pale end must still clear its own surface (>= 2:1). */
+  --c-heat-dark-1:#2A4E64;
+  --c-heat-dark-2:#336A8A;
+  --c-heat-dark-3:#3E85AF;
+  --c-heat-dark-4:#4FA3D5;
+  --c-heat-light-1:#8ABDDE;
+  --c-heat-light-2:#5D9CC5;
+  --c-heat-light-3:#3778A2;
+  --c-heat-light-4:#1B5175;
+
   /* one-off tints */
   --c-navy-badge:#182234;
   --c-navy-badge-border:#243347;

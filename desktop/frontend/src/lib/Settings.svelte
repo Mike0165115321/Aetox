@@ -414,20 +414,188 @@
   })
 
   // ---------- Usage stats ----------
-  type UsageRow = { model: string; promptTokens: number; completionTokens: number; calls: number }
-  let usage = $state<{ today: UsageRow[]; week: UsageRow[]; all: UsageRow[] } | null>(null)
+  // cacheRows counts the calls whose provider reported cache accounting at all.
+  // Zero means "no cache to report" (a local runtime), which must render as an
+  // em dash — a 0% hit rate would be a claim the provider never made.
+  type UsageRow = {
+    model: string; promptTokens: number; completionTokens: number
+    cachedTokens: number; uncachedTokens: number; cacheRows: number; calls: number
+  }
+  type DayPoint = {
+    day: string; model: string; promptTokens: number; completionTokens: number
+    cachedTokens: number; cacheRows: number
+  }
+  type UsageTotals = {
+    promptTokens: number; completionTokens: number; cachedTokens: number; uncachedTokens: number
+    cacheRows: number; calls: number; sessions: number; messages: number
+    activeDays: number; currentStreak: number; topModel: string; topModelShare: number
+  }
+  type Usage = {
+    today: UsageRow[]; week: UsageRow[]; all: UsageRow[]
+    totals: UsageTotals; daily: DayPoint[]; heatmap: DayPoint[]
+  }
+
+  let usage = $state<Usage | null>(null)
   let usageError = $state('')
+  let usagePeriod = $state<'today' | 'week' | 'all'>('week')
 
   async function loadUsage() {
     usageError = ''
     try {
-      usage = await UsageStats()
+      usage = await UsageStats() as Usage
     } catch (err) {
       usageError = String(err)
     }
   }
 
   const fmtTokens = (n: number) => n.toLocaleString('en-US')
+  // Headline numbers reach eight digits; the cards need the shape, not the digits.
+  const fmtCompact = (n: number) =>
+    n >= 1e9 ? (n / 1e9).toFixed(1) + 'B'
+    : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M'
+    : n >= 1e4 ? Math.round(n / 1e3) + 'K'
+    : n.toLocaleString('en-US')
+  const pct = (part: number, whole: number) => (whole > 0 ? Math.round((part / whole) * 100) : 0)
+  const dayKey = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+  const usageRows = $derived(usage ? usage[usagePeriod] : [])
+  const usageTotal = (r: UsageRow) => r.promptTokens + r.completionTokens
+  const periodTotal = $derived(usageRows.reduce((sum, r) => sum + usageTotal(r), 0))
+
+  // Colour follows the entity, not its row number: the top five all-time
+  // models take the five slots and keep them, so switching the period filter
+  // never repaints the models that survive it. The tail shares one mute slot —
+  // a sixth hue could not stay distinguishable under colour-vision deficiency.
+  const seriesOf = $derived.by(() => {
+    const map = new Map<string, number>()
+    const top = (usage?.all ?? []).slice(0, 5).map((r) => r.model).sort()
+    top.forEach((model, i) => map.set(model, i + 1))
+    return map
+  })
+  const slotOf = (model: string) => seriesOf.get(model) ?? 0
+
+  // Round a maximum up to a clean axis top, so the ticks read 0 / 250K / 500K
+  // instead of 0 / 231,904 / 463,808.
+  const niceMax = (value: number) => {
+    if (value <= 0) return 1
+    const mag = Math.pow(10, Math.floor(Math.log10(value)))
+    for (const step of [1, 1.5, 2, 2.5, 3, 4, 5, 7.5]) {
+      if (value <= step * mag) return step * mag
+    }
+    return 10 * mag
+  }
+
+  // Every day in the window gets a column, including the empty ones. Plotting
+  // only the days that have data turns a month into four fat blocks and quietly
+  // rescales the x-axis — the gaps ARE the story on a usage chart.
+  const CHART_DAYS = 30
+
+  // A column carries two encodings at once: hue is the model, fill is where the
+  // tokens came from. Stacking is kind-outer, model-inner, so the hit|miss and
+  // in|out boundaries land at the same depth in every column and can be read
+  // straight across — the model split then reads as hue inside each band.
+  //
+  // 'raw' is input from a model that reported no cache accounting that day. It
+  // is its own band on purpose: folding it into miss would claim a cache the
+  // provider never said it had, which is the same lie the table renders as "—".
+  type Kind = 'hit' | 'miss' | 'raw' | 'out'
+  const KINDS: Kind[] = ['hit', 'miss', 'raw', 'out']
+  const kindLabel: Record<Kind, string> = $derived({
+    hit: t('settings.usageCached'),
+    miss: t('settings.usageCacheMiss'),
+    raw: t('settings.usageInput'),
+    out: t('settings.usageOutput'),
+  })
+
+  const dailyChart = $derived.by(() => {
+    if (!usage) return null
+    // day -> kind -> model -> tokens
+    const byDay = new Map<string, Map<Kind, Map<string, number>>>()
+    const add = (day: string, kind: Kind, model: string, value: number) => {
+      if (value <= 0) return
+      let kinds = byDay.get(day)
+      if (!kinds) { kinds = new Map(); byDay.set(day, kinds) }
+      let models = kinds.get(kind)
+      if (!models) { models = new Map(); kinds.set(kind, models) }
+      models.set(model, (models.get(model) ?? 0) + value)
+    }
+    for (const p of usage.daily) {
+      if (p.cacheRows > 0) {
+        add(p.day, 'hit', p.model, Math.min(p.cachedTokens, p.promptTokens))
+        add(p.day, 'miss', p.model, p.promptTokens - p.cachedTokens)
+      } else {
+        add(p.day, 'raw', p.model, p.promptTokens)
+      }
+      add(p.day, 'out', p.model, p.completionTokens)
+    }
+    if (byDay.size === 0) return null
+
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const days = []
+    for (let i = CHART_DAYS - 1; i >= 0; i--) {
+      const d = new Date(today)
+      d.setDate(d.getDate() - i)
+      const key = dayKey(d)
+      const kinds = byDay.get(key)
+      const parts: { kind: Kind; model: string; value: number }[] = []
+      const byKind = {} as Record<Kind, number>
+      const byModel = new Map<string, number>()
+      for (const kind of KINDS) {
+        const models = [...(kinds?.get(kind) ?? new Map<string, number>())]
+          // Stack in slot order so a model sits at the same depth every column.
+          .sort((a, b) => slotOf(a[0]) - slotOf(b[0]))
+        byKind[kind] = models.reduce((s, [, value]) => s + value, 0)
+        for (const [model, value] of models) {
+          parts.push({ kind, model, value })
+          byModel.set(model, (byModel.get(model) ?? 0) + value)
+        }
+      }
+      const models = [...byModel].sort((a, b) => slotOf(a[0]) - slotOf(b[0]))
+      days.push({ day: key, total: parts.reduce((s, p) => s + p.value, 0), parts, byKind, models })
+    }
+    const max = niceMax(Math.max(...days.map((d) => d.total)))
+    // Four gridlines top-down, the last being the baseline.
+    const ticks = [1, 0.75, 0.5, 0.25, 0].map((f) => ({ frac: f, value: Math.round(max * f) }))
+    return { days, max, ticks }
+  })
+
+  // Five x-labels evenly spaced; more collide at this width.
+  const chartXLabels = $derived.by(() => {
+    const days = dailyChart?.days ?? []
+    if (days.length === 0) return []
+    const every = Math.max(1, Math.round(days.length / 5))
+    return days.map((d, i) => (i % every === 0 || i === days.length - 1 ? d.day.slice(5) : ''))
+  })
+
+  let hoverDay = $state<number | null>(null)
+  const hoveredColumn = $derived(hoverDay === null ? null : (dailyChart?.days[hoverDay] ?? null))
+
+  // 26 whole weeks ending with the current one. Cells past today are rendered
+  // blank rather than as zero-activity days that have not happened yet.
+  const heatmap = $derived.by(() => {
+    const totals = new Map<string, number>()
+    for (const p of usage?.heatmap ?? []) {
+      totals.set(p.day, (totals.get(p.day) ?? 0) + p.promptTokens + p.completionTokens)
+    }
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const end = new Date(today)
+    end.setDate(end.getDate() + (6 - end.getDay()))
+    const cells: { day: string; value: number; future: boolean }[] = []
+    for (let i = 26 * 7 - 1; i >= 0; i--) {
+      const d = new Date(end)
+      d.setDate(d.getDate() - i)
+      const key = dayKey(d)
+      cells.push({ day: key, value: totals.get(key) ?? 0, future: d > today })
+    }
+    const max = Math.max(1, ...cells.map((c) => c.value))
+    const weeks: (typeof cells)[] = []
+    for (let w = 0; w < 26; w++) weeks.push(cells.slice(w * 7, w * 7 + 7))
+    return { weeks, max }
+  })
+  const heatLevel = (value: number, max: number) => (value <= 0 ? 0 : Math.min(4, Math.ceil((value / max) * 4)))
 
   $effect(() => {
     if (active === 'usage') void loadUsage()
@@ -1272,33 +1440,234 @@
       <p class="muted set-sub">{t('settings.usageDesc')}</p>
 
       {#if usageError}<div class="mset-error">{usageError}</div>{/if}
-      {#each [
-        { title: t('settings.usageToday'), rows: usage?.today ?? [] },
-        { title: t('settings.usageWeek'), rows: usage?.week ?? [] },
-        { title: t('settings.usageAll'), rows: usage?.all ?? [] },
-      ] as period}
-        <div class="settings-card">
-          <div class="card-form"><div class="eyebrow">{period.title}</div></div>
-          {#if period.rows.length === 0}
-            <div class="set-row"><div class="muted">{t('settings.usageEmpty')}</div></div>
-          {:else}
-            <div class="set-row usage-head">
-              <div class="u-model">{t('settings.usageModel')}</div>
-              <div class="u-num">{t('settings.usagePrompt')}</div>
-              <div class="u-num">{t('settings.usageCompletion')}</div>
-              <div class="u-num">{t('settings.usageCalls')}</div>
+
+      {#if usage && usage.totals.calls > 0}
+        {@const tot = usage.totals}
+        <div class="stat-cards">
+          <div class="stat-card wide">
+            <div class="eyebrow">{t('settings.usageTotalTokens')}</div>
+            <div class="stat-big">{fmtCompact(tot.promptTokens + tot.completionTokens)}</div>
+            <div class="stat-split" aria-hidden="true">
+              <span class="seg in" style="flex:{Math.max(tot.promptTokens, 1)}"></span>
+              <span class="seg out" style="flex:{Math.max(tot.completionTokens, 1)}"></span>
             </div>
-            {#each period.rows as r (r.model)}
-              <div class="set-row">
-                <div class="u-model">{r.model}</div>
-                <div class="u-num">{fmtTokens(r.promptTokens)}</div>
-                <div class="u-num">{fmtTokens(r.completionTokens)}</div>
-                <div class="u-num">{fmtTokens(r.calls)}</div>
+            <div class="stat-legend">
+              <span><i class="dot in"></i>{t('settings.usageInput')} {fmtCompact(tot.promptTokens)}</span>
+              <span><i class="dot out"></i>{t('settings.usageOutput')} {fmtCompact(tot.completionTokens)}</span>
+            </div>
+          </div>
+
+          <div class="stat-card wide">
+            <div class="eyebrow">{t('settings.usageCacheHitRate')}</div>
+            {#if tot.cacheRows === 0}
+              <div class="stat-big dim">—</div>
+              <div class="stat-sub">{t('settings.usageCacheUnreported')}</div>
+            {:else}
+              <div class="stat-big">{pct(tot.cachedTokens, tot.promptTokens)}<span class="unit">%</span></div>
+              <div class="stat-split" aria-hidden="true">
+                <span class="seg hit" style="flex:{Math.max(tot.cachedTokens, 1)}"></span>
+                <span class="seg miss" style="flex:{Math.max(tot.uncachedTokens, 1)}"></span>
               </div>
-            {/each}
-          {/if}
+              <div class="stat-legend">
+                <span><i class="dot hit"></i>{t('settings.usageHit')} {fmtCompact(tot.cachedTokens)}</span>
+                <span><i class="dot miss"></i>{t('settings.usageMiss')} {fmtCompact(tot.uncachedTokens)}</span>
+              </div>
+            {/if}
+          </div>
+
+          <div class="stat-card">
+            <div class="eyebrow">{t('settings.usageCalls')}</div>
+            <div class="stat-big">{fmtCompact(tot.calls)}</div>
+            <div class="stat-sub">{t('settings.usageMessages')} {fmtTokens(tot.messages)}</div>
+          </div>
+
+          <div class="stat-card">
+            <div class="eyebrow">{t('settings.usageSessions')}</div>
+            <div class="stat-big">{fmtCompact(tot.sessions)}</div>
+            <div class="stat-sub">{t('settings.usageActiveDays')} {tot.activeDays}</div>
+          </div>
+
+          <div class="stat-card">
+            <div class="eyebrow">{t('settings.usageStreak')}</div>
+            <div class="stat-big">{tot.currentStreak}<span class="unit">{t('settings.usageDaysUnit')}</span></div>
+            <div class="stat-sub">{t('settings.usageActiveDays')} {tot.activeDays}</div>
+          </div>
+
+          <div class="stat-card">
+            <div class="eyebrow">{t('settings.usageTopModel')}</div>
+            <div class="stat-model">{tot.topModel || '—'}</div>
+            <div class="stat-sub">{tot.topModelShare}% {t('settings.usageOfTokens')}</div>
+          </div>
         </div>
-      {/each}
+
+        {#if dailyChart}
+          <div class="settings-card wide-card">
+            <div class="card-form">
+              <div class="chart-head">
+                <div class="eyebrow">{t('settings.usagePerDay')}</div>
+                <!-- two keys, because the bar carries two encodings: hue names
+                     the model, fill names where the tokens came from -->
+                <div class="chart-legend">
+                  {#each usage.all.slice(0, 5) as r (r.model)}
+                    <span><i class="dot s{slotOf(r.model)}"></i>{r.model}</span>
+                  {/each}
+                  {#if usage.all.length > 5}
+                    <span><i class="dot s0"></i>{t('settings.usageOther')}</span>
+                  {/if}
+                </div>
+              </div>
+              <div class="chart-head">
+                <div class="chart-legend kind-legend">
+                  {#each KINDS as kind (kind)}
+                    <span><i class="dot k-{kind}"></i>{kindLabel[kind]}</span>
+                  {/each}
+                </div>
+              </div>
+
+              <div class="chart-body">
+                <div class="chart-y" aria-hidden="true">
+                  {#each dailyChart.ticks as tick (tick.frac)}
+                    <span>{fmtCompact(tick.value)}</span>
+                  {/each}
+                </div>
+                <div class="chart-plot" role="img" aria-label={t('settings.usagePerDay')}>
+                  {#each dailyChart.ticks as tick (tick.frac)}
+                    <div class="chart-gridline" style="bottom:{tick.frac * 100}%"></div>
+                  {/each}
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <div class="daychart" onpointerleave={() => (hoverDay = null)}>
+                    {#each dailyChart.days as d, i (d.day)}
+                      <div
+                        class="daycol"
+                        class:on={hoverDay === i}
+                        class:idle={d.total === 0}
+                        onpointerenter={() => (hoverDay = i)}
+                      >
+                        <!-- idle days get their baseline tick from CSS; an inline
+                             height:0 here would win and erase it -->
+                        <div class="daybar" style={d.total === 0 ? '' : `height:${Math.max(2, (d.total / dailyChart.max) * 100)}%`}>
+                          {#each d.parts as part (part.kind + part.model)}
+                            <span class="k-{part.kind} s{slotOf(part.model)}" style="flex:{part.value}"></span>
+                          {/each}
+                        </div>
+                      </div>
+                    {/each}
+                  </div>
+                  {#if hoveredColumn && hoverDay !== null}
+                    <div
+                      class="chart-tip"
+                      style="left:{((hoverDay + 0.5) / dailyChart.days.length) * 100}%; bottom:{Math.min(88, (hoveredColumn.total / dailyChart.max) * 100 + 6)}%"
+                    >
+                      <div class="tip-day">{hoveredColumn.day}</div>
+                      {#if hoveredColumn.total === 0}
+                        <div class="tip-row muted">{t('settings.usageNoActivity')}</div>
+                      {:else}
+                        {#each KINDS as kind (kind)}
+                          {#if hoveredColumn.byKind[kind] > 0}
+                            <div class="tip-row">
+                              <i class="dot k-{kind}"></i>{kindLabel[kind]}
+                              <span class="val">{fmtTokens(hoveredColumn.byKind[kind])}</span>
+                            </div>
+                          {/if}
+                        {/each}
+                        <div class="tip-sep"></div>
+                        {#each hoveredColumn.models as [model, value] (model)}
+                          <div class="tip-row">
+                            <i class="dot s{slotOf(model)}"></i>{model}
+                            <span class="val">{fmtTokens(value)}</span>
+                          </div>
+                        {/each}
+                      {/if}
+                    </div>
+                  {/if}
+                </div>
+                <div></div>
+                <div class="chart-x" aria-hidden="true">
+                  {#each chartXLabels as label, i (i)}<span>{label}</span>{/each}
+                </div>
+              </div>
+            </div>
+          </div>
+        {/if}
+
+        <div class="settings-card wide-card">
+          <div class="card-form">
+            <div class="eyebrow">{t('settings.usageHeatmap')}</div>
+            <div class="heatmap">
+              {#each heatmap.weeks as week, w (w)}
+                <div class="heat-week">
+                  {#each week as cell (cell.day)}
+                    <span
+                      class="heat-cell l{cell.future ? 'x' : heatLevel(cell.value, heatmap.max)}"
+                      title={cell.future ? '' : `${cell.day} · ${fmtTokens(cell.value)}`}
+                    ></span>
+                  {/each}
+                </div>
+              {/each}
+            </div>
+            <div class="chart-legend heat-scale">
+              <span>{t('settings.usageLess')}</span>
+              <i class="heat-cell l0"></i><i class="heat-cell l1"></i><i class="heat-cell l2"></i>
+              <i class="heat-cell l3"></i><i class="heat-cell l4"></i>
+              <span>{t('settings.usageMore')}</span>
+            </div>
+          </div>
+        </div>
+      {/if}
+
+      <div class="settings-card wide-card">
+        <div class="card-form">
+          <div class="usage-toolbar">
+            <div class="eyebrow">{t('settings.usageByModel')}</div>
+            <div class="seg-ctrl">
+              {#each [
+                { id: 'today', label: t('settings.usageToday') },
+                { id: 'week', label: t('settings.usageWeek') },
+                { id: 'all', label: t('settings.usageAll') },
+              ] as opt (opt.id)}
+                <button
+                  type="button"
+                  class="seg-btn"
+                  class:selected={usagePeriod === opt.id}
+                  onclick={() => (usagePeriod = opt.id as typeof usagePeriod)}
+                >{opt.label}</button>
+              {/each}
+            </div>
+          </div>
+        </div>
+        {#if usageRows.length === 0}
+          <div class="set-row"><div class="muted">{t('settings.usageEmpty')}</div></div>
+        {:else}
+          <div class="set-row usage-head">
+            <div class="u-model">{t('settings.usageModel')}</div>
+            <div class="u-num">{t('settings.usageInput')}</div>
+            <div class="u-num">{t('settings.usageCached')}</div>
+            <div class="u-num">{t('settings.usageOutput')}</div>
+            <div class="u-num sm">{t('settings.usageCalls')}</div>
+            <div class="u-num sm">{t('settings.usageAvgCall')}</div>
+          </div>
+          {#each usageRows as r (r.model)}
+            <div class="set-row usage-row">
+              <div class="u-model">
+                <i class="dot s{slotOf(r.model)}"></i>{r.model}
+                <span class="u-share" style="width:{pct(usageTotal(r), periodTotal)}%"></span>
+              </div>
+              <div class="u-num">{fmtTokens(r.promptTokens)}</div>
+              <div class="u-num">
+                {#if r.cacheRows === 0}
+                  <span class="dim" title={t('settings.usageCacheUnreported')}>—</span>
+                {:else}
+                  {pct(r.cachedTokens, r.promptTokens)}%
+                  <span class="u-sub">{fmtCompact(r.cachedTokens)}</span>
+                {/if}
+              </div>
+              <div class="u-num">{fmtTokens(r.completionTokens)}</div>
+              <div class="u-num sm">{fmtTokens(r.calls)}</div>
+              <div class="u-num sm">{fmtCompact(Math.round(usageTotal(r) / Math.max(r.calls, 1)))}</div>
+            </div>
+          {/each}
+        {/if}
+      </div>
     {:else if active === 'mcp'}
       <h2>{t('settings.mcpServers')}</h2>
       <p class="muted set-sub">{t('settings.mcpDesc')}</p>
