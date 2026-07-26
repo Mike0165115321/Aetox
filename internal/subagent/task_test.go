@@ -7,7 +7,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -23,9 +25,19 @@ import (
 type taskFixture struct {
 	root     string
 	registry *skill.Registry
-	events   []turn.ToolEvent
-	usage    []model.Usage
 	exec     *turn.Executor
+
+	// Delegates emit from their own goroutines, so the collectors are guarded —
+	// the same reason desktop/app.go locks its tool history (§44.11).
+	mu     sync.Mutex
+	events []turn.ToolEvent
+	usage  []model.Usage
+}
+
+func (f *taskFixture) toolEvents() []turn.ToolEvent {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]turn.ToolEvent(nil), f.events...)
 }
 
 func newTaskFixture(t *testing.T, mainModel string) *taskFixture {
@@ -43,17 +55,27 @@ func newTaskFixture(t *testing.T, mainModel string) *taskFixture {
 
 	f.registry = skill.NewDefaultRegistry(skill.RegistryOptions{SandboxRoot: f.root})
 	provider := model.NewNoopProvider(mainModel)
-	onToolAction := func(ev turn.ToolEvent) { f.events = append(f.events, ev) }
+	onToolAction := func(ev turn.ToolEvent) {
+		f.mu.Lock()
+		f.events = append(f.events, ev)
+		f.mu.Unlock()
+	}
 
-	if err := f.registry.Register(NewTaskTool(TaskOptions{
+	for _, tool := range NewTaskTools(TaskOptions{
 		Provider:     provider,
 		Model:        mainModel,
 		Registry:     f.registry,
 		ApprovalMode: safety.ApprovalFullAccess,
 		OnToolAction: onToolAction,
-		OnUsage:      func(u model.Usage) { f.usage = append(f.usage, u) },
-	}), skill.SourceBuiltin); err != nil {
-		t.Fatalf("register task: %v", err)
+		OnUsage: func(u model.Usage) {
+			f.mu.Lock()
+			f.usage = append(f.usage, u)
+			f.mu.Unlock()
+		},
+	}) {
+		if err := f.registry.Register(tool, skill.SourceBuiltin); err != nil {
+			t.Fatalf("register %s: %v", tool.Name(), err)
+		}
 	}
 
 	mainAgent := cognitive.NewAgent(cognitive.AgentConfig{
@@ -70,19 +92,43 @@ func newTaskFixture(t *testing.T, mainModel string) *taskFixture {
 	return f
 }
 
-// callTask invokes the tool the way the executor does — through the dispatcher,
-// with a call id on the context, so ToolEvent.Parent gets stamped for real.
+// callTask starts a delegation the way the executor does — through the
+// dispatcher, with a call id on the context, so ToolEvent.Parent gets stamped for
+// real. It returns as soon as the sub-agent is running.
 func (f *taskFixture) callTask(t *testing.T, callID string, args map[string]any) skill.Output {
 	t.Helper()
+	return f.call(t, callID, "task", args)
+}
+
+// collect redeems a handle. Blocks only if the delegate has not finished.
+func (f *taskFixture) collect(t *testing.T, ids string) skill.Output {
+	t.Helper()
+	return f.call(t, "call_collect", "task_result", map[string]any{"task_id": ids})
+}
+
+func (f *taskFixture) call(t *testing.T, callID, tool string, args map[string]any) skill.Output {
+	t.Helper()
 	ctx := turn.WithCallID(context.Background(), callID)
-	out, handled, err := skill.NewDispatcher(f.registry).ExecuteTool(ctx, "task", args)
+	out, handled, err := skill.NewDispatcher(f.registry).ExecuteTool(ctx, tool, args)
 	if !handled {
-		t.Fatal("task is not registered")
+		t.Fatalf("%s is not registered", tool)
 	}
 	if err != nil {
-		t.Fatalf("task returned an error instead of a failed result: %v", err)
+		t.Fatalf("%s returned an error instead of a failed result: %v", tool, err)
 	}
 	return out
+}
+
+// taskIDOf pulls the handle out of what `task` told the model.
+func taskIDOf(t *testing.T, out skill.Output) string {
+	t.Helper()
+	for _, word := range strings.Fields(strings.ReplaceAll(out.Content, "\"", " ")) {
+		if strings.HasPrefix(word, "task_") {
+			return strings.Trim(word, ".,\"")
+		}
+	}
+	t.Fatalf("no task id in %q", out.Content)
+	return ""
 }
 
 // The whole point, end to end: a delegate runs, does real work, and the parent
@@ -90,15 +136,28 @@ func (f *taskFixture) callTask(t *testing.T, callID string, args map[string]any)
 func TestTaskRunsADelegateAndReturnsOnlyItsResult(t *testing.T) {
 	f := newTaskFixture(t, "aetox-tools:test")
 
-	out := f.callTask(t, "call_parent_1", map[string]any{
+	start := f.callTask(t, "call_parent_1", map[string]any{
 		"description": "list the sandbox",
 		"prompt":      "หาไฟล์ทั้งหมดในโฟลเดอร์นี้แล้วรายงานชื่อไฟล์",
 		"agent":       "explore",
 	})
-	t.Logf("task output:\n%s", out.Content)
+	t.Logf("task said: %s", start.Content)
+	if !start.Success {
+		t.Fatalf("start failed: %s", start.Stderr)
+	}
+	// Starting must NOT return the answer — that is the whole point (§44.11): the
+	// model gets a handle back and its turn carries on.
+	if strings.Contains(start.Content, "hay.txt") {
+		t.Errorf("task blocked and returned the result: %q", start.Content)
+	}
+	if !strings.Contains(start.Content, "task_result") {
+		t.Errorf("task did not tell the model how to collect: %q", start.Content)
+	}
 
+	out := f.collect(t, taskIDOf(t, start))
+	t.Logf("collected:\n%s", out.Content)
 	if !out.Success {
-		t.Fatalf("task failed: %s", out.Stderr)
+		t.Fatalf("collect failed: %s", out.Stderr)
 	}
 	// The delegate's real tool result reached the parent…
 	if !strings.Contains(out.Content, "hay.txt") {
@@ -112,7 +171,7 @@ func TestTaskRunsADelegateAndReturnsOnlyItsResult(t *testing.T) {
 	// Every event the delegate caused is stamped with the parent call's id, and
 	// the parent's own events are not.
 	var stamped, unstamped int
-	for _, ev := range f.events {
+	for _, ev := range f.toolEvents() {
 		if ev.Parent == "call_parent_1" {
 			stamped++
 		} else if ev.Parent == "" {
@@ -148,23 +207,40 @@ func TestTaskDelegateUsageReachesTheParent(t *testing.T) {
 	root := t.TempDir()
 	registry := skill.NewDefaultRegistry(skill.RegistryOptions{SandboxRoot: root})
 	var usage []model.Usage
-	if err := registry.Register(NewTaskTool(TaskOptions{
+	var mu sync.Mutex
+	for _, tool := range NewTaskTools(TaskOptions{
 		Provider:     usageProvider{},
 		Model:        "usage-fake-model",
 		Registry:     registry,
 		ApprovalMode: safety.ApprovalFullAccess,
-		OnUsage:      func(u model.Usage) { usage = append(usage, u) },
-	}), skill.SourceBuiltin); err != nil {
-		t.Fatalf("register task: %v", err)
+		OnUsage: func(u model.Usage) {
+			mu.Lock()
+			usage = append(usage, u)
+			mu.Unlock()
+		},
+	}) {
+		if err := registry.Register(tool, skill.SourceBuiltin); err != nil {
+			t.Fatalf("register %s: %v", tool.Name(), err)
+		}
 	}
 
 	ctx := turn.WithCallID(context.Background(), "call_1")
-	out, _, err := skill.NewDispatcher(registry).ExecuteTool(ctx, "task", map[string]any{
+	dispatcher := skill.NewDispatcher(registry)
+	start, _, err := dispatcher.ExecuteTool(ctx, "task", map[string]any{
 		"description": "x", "prompt": "report the files", "agent": "explore",
+	})
+	if err != nil {
+		t.Fatalf("start failed: %v", err)
+	}
+	// Collect, so the delegate has certainly finished before usage is inspected.
+	out, _, err := dispatcher.ExecuteTool(ctx, "task_result", map[string]any{
+		"task_id": taskIDOf(t, start),
 	})
 	if err != nil || !out.Success {
 		t.Fatalf("task failed: %v %q", err, out.Content)
 	}
+	mu.Lock()
+	defer mu.Unlock()
 	if len(usage) == 0 {
 		t.Fatal("the delegate's usage never reached the parent's reporter")
 	}
@@ -230,22 +306,22 @@ func TestTaskRefusesBadInputAsAResult(t *testing.T) {
 // No `agent` argument means the cheapest delegate, not a failure.
 func TestTaskDefaultsToExplore(t *testing.T) {
 	f := newTaskFixture(t, "aetox-tools:test")
-	out := f.callTask(t, "call_1", map[string]any{"description": "look around", "prompt": "รายงานไฟล์ในโฟลเดอร์"})
-	if !out.Success {
-		t.Fatalf("default spawn failed: %s", out.Stderr)
+	start := f.callTask(t, "call_1", map[string]any{"description": "look around", "prompt": "รายงานไฟล์ในโฟลเดอร์"})
+	if !start.Success {
+		t.Fatalf("default spawn failed: %s", start.Stderr)
 	}
-	if !strings.Contains(out.Content, "[task explore:") {
-		t.Errorf("default profile is not explore: %q", out.Content)
+	if !strings.Contains(start.Content, "explore") {
+		t.Errorf("default profile is not explore: %q", start.Content)
+	}
+	if out := f.collect(t, taskIDOf(t, start)); !strings.Contains(out.Content, "[task explore:") {
+		t.Errorf("the receipt does not name the default profile: %q", out.Content)
 	}
 }
 
 // The tool the model sees has to describe what it can pick, or it will guess.
 func TestTaskDefinitionListsTheProfiles(t *testing.T) {
 	isolate(t)
-	tool := NewTaskTool(TaskOptions{}).(interface {
-		ToolDefinition() model.ToolDefinition
-	})
-	def := tool.ToolDefinition()
+	def := toolDefOf(t, NewTaskTools(TaskOptions{}), "task")
 	schema := string(def.Function.Parameters)
 	for _, want := range []string{"explore", "general", "\"required\"", "prompt", "description"} {
 		if !strings.Contains(schema, want) {
@@ -261,18 +337,29 @@ func TestTaskDefinitionListsTheProfiles(t *testing.T) {
 // loop with no human watching it.
 func TestTaskStopsWhenTheTurnIsCancelled(t *testing.T) {
 	f := newTaskFixture(t, "aetox-tools:test")
-	ctx, cancel := context.WithCancel(turn.WithCallID(context.Background(), "call_1"))
-	cancel()
+	dispatcher := skill.NewDispatcher(f.registry)
 
-	out, handled, err := skill.NewDispatcher(f.registry).ExecuteTool(ctx, "task", map[string]any{
+	// The delegate's context descends from the turn's, so cancelling the turn must
+	// reach a delegate that is already running.
+	turnCtx, cancel := context.WithCancel(turn.WithCallID(context.Background(), "call_1"))
+	start, _, err := dispatcher.ExecuteTool(turnCtx, "task", map[string]any{
 		"description": "x", "prompt": "รายงานไฟล์ในโฟลเดอร์", "agent": "explore",
 	})
-	if !handled {
-		t.Fatal("task is not registered")
+	if err != nil || !start.Success {
+		t.Fatalf("start failed: %v %q", err, start.Content)
 	}
-	t.Logf("cancelled run: success=%v content=%q err=%v", out.Success, out.Content, err)
+	cancel()
+
+	// Collected on a live context, so what is asserted is the delegate stopping —
+	// not the collector being cancelled out from under it.
+	out, _, err := dispatcher.ExecuteTool(turn.WithCallID(context.Background(), "call_2"), "task_result",
+		map[string]any{"task_id": taskIDOf(t, start)})
+	t.Logf("after Stop: success=%v content=%q err=%v", out.Success, out.Content, err)
 	if out.Success {
 		t.Error("a cancelled delegate reported success")
+	}
+	if !strings.Contains(out.Content, "stopped") {
+		t.Errorf("the model was not told the delegate was stopped: %q", out.Content)
 	}
 }
 
@@ -320,11 +407,137 @@ func TestReceiptCallsOutAPointlessDelegation(t *testing.T) {
 // rule and the reason, not hint at them.
 func TestTaskDescriptionSaysWhenNotToDelegate(t *testing.T) {
 	isolate(t)
-	tool := NewTaskTool(TaskOptions{}).(skill.Skill)
-	d := tool.Description()
+	d := namedTool(t, NewTaskTools(TaskOptions{}), "task").Description()
 	for _, want := range []string{"WHEN TO USE", "WHEN NOT TO", "yourself", "second system prompt"} {
 		if !strings.Contains(d, want) {
 			t.Errorf("the description is missing %q: %s", want, d)
 		}
+	}
+}
+
+// namedTool / toolDefOf keep the delegation pair's tests from caring which slot
+// each tool came back in.
+func namedTool(t *testing.T, tools []skill.Skill, name string) skill.Skill {
+	t.Helper()
+	for _, tool := range tools {
+		if tool.Name() == name {
+			return tool
+		}
+	}
+	t.Fatalf("no tool named %q in the pair", name)
+	return nil
+}
+
+func toolDefOf(t *testing.T, tools []skill.Skill, name string) model.ToolDefinition {
+	t.Helper()
+	definer, ok := namedTool(t, tools, name).(interface {
+		ToolDefinition() model.ToolDefinition
+	})
+	if !ok {
+		t.Fatalf("%q has no tool definition", name)
+	}
+	return definer.ToolDefinition()
+}
+
+// The point of not waiting: three delegates started before the first collect run
+// at the same time, so the wall clock is the slowest one rather than the sum.
+func TestDelegatesStartedTogetherRunConcurrently(t *testing.T) {
+	f := newTaskFixture(t, "aetox-tools:test")
+
+	started := time.Now()
+	ids := make([]string, 0, 3)
+	for i := range 3 {
+		out := f.callTask(t, "call_"+strconv.Itoa(i), map[string]any{
+			"description": "look " + strconv.Itoa(i), "prompt": "รายงานไฟล์ในโฟลเดอร์", "agent": "explore",
+		})
+		if !out.Success {
+			t.Fatalf("start %d failed: %s", i, out.Stderr)
+		}
+		ids = append(ids, taskIDOf(t, out))
+	}
+	startingTook := time.Since(started)
+	t.Logf("starting three took %v (they are running now)", startingTook)
+
+	// One collect, three results — the model pays one round trip for the batch.
+	out := f.collect(t, strings.Join(ids, ","))
+	t.Logf("batch result:\n%s", out.Content)
+	if !out.Success {
+		t.Fatalf("batch collect failed: %s", out.Content)
+	}
+	for _, id := range ids {
+		if !strings.Contains(out.Content, id) {
+			t.Errorf("%s is missing from the batch: %q", id, out.Content)
+		}
+	}
+	if strings.Count(out.Content, "hay.txt") != 3 {
+		t.Errorf("expected three real results, got: %q", out.Content)
+	}
+	// Each delegate's events carry its own parent id, so three timelines stay three.
+	parents := map[string]bool{}
+	for _, ev := range f.toolEvents() {
+		if ev.Parent != "" {
+			parents[ev.Parent] = true
+		}
+	}
+	if len(parents) != 3 {
+		t.Errorf("events carry %d parent ids, want 3: %v", len(parents), parents)
+	}
+}
+
+// A model in a loop must not be able to melt the machine or the provider's rate
+// limit, so there is a ceiling on delegates in flight.
+func TestConcurrencyIsCapped(t *testing.T) {
+	isolate(t)
+	r := newRunner()
+	block := make(chan struct{})
+	defer close(block)
+
+	for i := range maxConcurrent {
+		if _, err := r.start(context.Background(), "explore", "held", func(context.Context, *runningTask) skill.Output {
+			<-block
+			return skill.Output{Success: true}
+		}); err != nil {
+			t.Fatalf("start %d refused early: %v", i, err)
+		}
+	}
+	_, err := r.start(context.Background(), "explore", "one too many", func(context.Context, *runningTask) skill.Output {
+		return skill.Output{}
+	})
+	if err == nil {
+		t.Fatal("the cap did not hold")
+	}
+	t.Logf("refusal the model reads: %v", err)
+	if !strings.Contains(err.Error(), "task_result") {
+		t.Errorf("the refusal does not say how to make room: %v", err)
+	}
+}
+
+// Collecting an id that was never handed out has to be a correctable mistake: say
+// what is actually outstanding.
+func TestCollectingAnUnknownIDNamesWhatIsRunning(t *testing.T) {
+	f := newTaskFixture(t, "aetox-tools:test")
+	start := f.callTask(t, "call_1", map[string]any{
+		"description": "x", "prompt": "รายงานไฟล์ในโฟลเดอร์", "agent": "explore",
+	})
+	realID := taskIDOf(t, start)
+
+	out := f.collect(t, "task_999")
+	t.Logf("unknown id: %q", out.Content)
+	if out.Success {
+		t.Error("collecting a made-up id succeeded")
+	}
+	// Either it names the outstanding one, or that one already finished — both are
+	// honest; what matters is that the message is not a dead end.
+	if !strings.Contains(out.Content, "task_999") {
+		t.Errorf("the refusal does not name the id asked for: %q", out.Content)
+	}
+
+	// The real one still collects afterwards: a wrong guess costs nothing.
+	if again := f.collect(t, realID); !again.Success {
+		t.Errorf("the real delegate was lost after a bad collect: %q", again.Content)
+	}
+	// And collecting the same one twice returns the same answer rather than failing.
+	if twice := f.collect(t, realID); !twice.Success {
+		t.Errorf("collecting twice failed: %q", twice.Content)
 	}
 }

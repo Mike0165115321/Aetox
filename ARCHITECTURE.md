@@ -1457,9 +1457,38 @@ Owner, right after it started working — *"งานเล็กๆน้อย
 
 **Still unmeasured:** whether a real paid model actually respects either guard. The built-in provider always makes exactly one call, so the tests pin the *mechanism*, not the model's judgement. That answer needs `--live` or a real session, and it is the honest open item on this whole feature.
 
+### 44.11 Delegation does not block the turn
+
+Owner, once it worked — *"งานไหนคิดว่าควรจะส่งต่อให้ซับเอเจนให้มันพิจารณาถูกแล้วครับ แต่ตอนส่งงานไปให้ซับเอเจนมันจะต้องไม่เสียเวลารอนะ มันต้องไปทำอย่างอื่นได้ระหว่างรอ ไม่ใช่ให้มันโยนงานนะแต่มันต้องรู้ว่าต้องทำอะไร"*. The first cut was foreground and blocking (which §44.7 had listed as fine for a walking skeleton); that is now wrong.
+
+**The shape, and why it is not "make the loop async".** The tool loop is synchronous by design — one round, then the next. Rather than reopen that, delegation splits into two tools:
+
+| | |
+|---|---|
+| `task` | starts a delegate and **returns immediately** with a handle (`task_1`) |
+| `task_result` | redeems a handle; waits only if that delegate has not finished |
+
+The model stays in charge of what happens in between, which is exactly the distinction the owner drew: not *throwing work away*, but knowing what to do while it runs. Nothing in `cognitive` or `turn` changed to allow it — a background goroutine plus a handle was enough, because the loop was never the thing that had to wait.
+
+**What falls out for free:**
+
+- **Parallelism.** N delegates started before the first collect run at once, so wall clock is the slowest rather than the sum. This is §44.9's fan-out arriving as a property of the tool pair rather than as a second mechanism — and it needed no change to `internal/subagent` or to a child's loop, exactly as the study predicted.
+- **Batch collection.** `task_result` takes several ids, so collecting three costs one round trip, not three.
+- **Turn-bounded lifetime.** A delegate's context descends from the turn's, so Stop cancels every outstanding one and none can outlive the reply it was meant to serve. No reaper, no leak.
+
+**A cap, because a model in a loop is a real failure mode:** four delegates in flight per turn (`maxConcurrent`). Past that, `task` refuses with a message that says how to make room. This is the concurrency question §44.9 left open, answered with a desktop-sized number rather than a setting nobody would know how to tune.
+
+**One real bug this introduced, found by reasoning rather than by the race detector** (`-race` needs cgo and this machine has no gcc — stated so nobody assumes it was checked): tool events now arrive from a delegate's goroutine, and `App.toolHistory` was an unguarded slice written by what used to be the only turn goroutine. Two writers is now normal, so it takes a mutex — and the same fix applies to any App field a delegate's callbacks touch. `recordTokenUsage` was already safe (it only writes through `database/sql`, which is concurrency-safe).
+
+**Known ceilings, deliberate:**
+
+- **An uncollected delegate's work is thrown away** when the turn ends. Both tool descriptions say so; nothing pushes a finished result at the model, because that would mean synthesizing a message into a turn that may already have ended. Revisit only if a model demonstrably forgets.
+- **`task_result` waits with no cap of its own.** The turn's ctx (Stop) is the brake, same as the tool loop itself. A model that collects too early waits — which is the cost of its own ordering, and the description tells it to work first.
+- **The single-delegation case pays one extra round trip** versus the old blocking call. Accepted: the alternative is two modes of one tool, and the model can always collect immediately when it has nothing else to do.
+
 ### 44.7 Out of scope for the walking skeleton
 
-Parallel fan-out (see 44.9 — studied, not built), background tasks returning as a later synthetic message, persisting sub-agent transcripts, per-call model override beyond what the profile names, anything from ADR 0002 (ensemble/routing/consensus), cross-process orchestration.
+~~Parallel fan-out~~ (arrived with §44.11 — N delegates in flight, collected in one call), background tasks returning as a later synthetic message, persisting sub-agent transcripts, per-call model override beyond what the profile names, anything from ADR 0002 (ensemble/routing/consensus), cross-process orchestration.
 
 **Reversed on the way (2026-07-26):** this section originally said `task` would ship **disabled by default** behind a settings toggle. It ships **on**, with no toggle. The owner asked for it working (*"เอาให้มันทำงานได้นะครับ"*), and the caution the toggle stood for is already carried by three things that are actually in the code — `Steps` capping a loop nobody watches, `Tools` shrinking what is re-sent per round, and the parent seeing only a summary. A toggle nobody knows exists protects nobody; if a kill switch is ever wanted it is a preference field and one line at the registration site.
 

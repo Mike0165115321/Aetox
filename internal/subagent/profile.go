@@ -46,11 +46,12 @@ var bundledProfiles embed.FS
 const defaultSteps = 24
 
 // forcedDenials are refused to every sub-agent whatever its profile says:
-// `task` because depth 1 is enforced by absence rather than a counter, `help`
-// because its listing belongs to the parent's registry, and `ask_user` /
-// `todo_write` because no human is attached to a sub-agent's loop — a question
-// nobody can see would just burn the tool deadline.
-var forcedDenials = []string{"task", "help", "ask_user", "todo_write"}
+// `task`/`task_result` because depth 1 is enforced by absence rather than a
+// counter — and both halves have to go, or a delegate could collect work it was
+// never allowed to start; `help` because its listing belongs to the parent's
+// registry; `ask_user` / `todo_write` because no human is attached to a
+// sub-agent's loop — a question nobody can see would just burn the tool deadline.
+var forcedDenials = []string{"task", "task_result", "help", "ask_user", "todo_write"}
 
 // Profile is one sub-agent definition. JSON tags are for the settings page,
 // which renders exactly these fields as its row badges.

@@ -26,9 +26,16 @@ Frontmatter is parsed by `skill.ParseFrontmatter` — one `key: value` per line,
 | Bundled | [profiles/](profiles) via `//go:embed` — `explore`, `general`. Present on a fresh install with no folder created |
 | User | `<DataRoot>/subagents/*.md`. A file named after a bundled one **wins**; deleting it restores the original — that is the "revert" |
 
-## How one runs
+## How one runs — and why it does not block
 
-`task` (this package, [task.go](task.go)) is the only way. The host registers it at bootstrap with the live provider, registry and permissions; the model calls it with `{description, prompt, agent}`. One call: pick the profile → `FilterRegistry` for the child's tools → a fresh `cognitive.Agent` on the profile's brief and cap → a full turn through the real `turn.Executor` → back comes the final text plus `[task <name>: N tool calls, X.Ys]`, and nothing else. Tool events are stamped with the `task` call's id (`turn.CallID`) so the UI shows them as the delegate's work.
+Two tools, registered together by `NewTaskTools` and sharing one runner ([runner.go](runner.go)):
+
+- **`task`** ([task.go](task.go)) starts a delegate and **returns a handle immediately** — the model goes on with its turn.
+- **`task_result`** ([task_result.go](task_result.go)) redeems the handle, waiting only if that delegate has not finished. It takes several ids at once.
+
+One start does: pick the profile → `FilterRegistry` for the child's tools → a fresh `cognitive.Agent` on the profile's brief and cap → a full turn through the real `turn.Executor`, in a goroutine → the collector gets the final text plus `[task <name>: N tool calls, X.Ys]`, and nothing else. Tool events are stamped with the `task` call's id (`turn.CallID`) so the UI shows them as the delegate's work.
+
+Because starting never waits, N delegates started before the first collect run at the same time — parallelism is a property of the pair, not a separate mechanism. Four in flight per turn is the cap. A delegate's context descends from the turn's, so Stop kills every outstanding one and nothing outlives the reply.
 
 ## What consumes a profile
 

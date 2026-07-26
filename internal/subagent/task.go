@@ -24,9 +24,9 @@ import (
 // injects ask_user/todo_write. Everything it needs from the session arrives in
 // TaskOptions; it holds no global state.
 //
-// What one call does: pick a profile, build the child's registry from it, build a
-// fresh agent with the profile's brief, run a full turn through the real
-// executor, hand back only the final text plus a one-line receipt.
+// One call does NOT wait: it picks a profile, builds the child's registry from
+// it, starts a full turn in the background and returns a handle. `task_result`
+// redeems the handle later. See runner.go for why that shape and not another.
 
 // defaultProfile is what `task` spawns when the model names nothing: the
 // read-only searcher, because that is both the cheapest delegate and the one a
@@ -55,12 +55,20 @@ type TaskOptions struct {
 	ThinkLevel think.Level
 }
 
-type taskTool struct{ opts TaskOptions }
+type taskTool struct {
+	opts   TaskOptions
+	runner *runner
+}
 
-// NewTaskTool builds the tool. Register it into the same registry passed in
-// opts.Registry — FilterRegistry drops `task` from every child, so depth stays 1
-// structurally rather than by a counter.
-func NewTaskTool(opts TaskOptions) skill.Skill { return &taskTool{opts: opts} }
+// NewTaskTools builds the delegation pair — `task` to start one, `task_result` to
+// collect it — sharing one runner, because they are two halves of one mechanism.
+// Register both into the same registry passed in opts.Registry; FilterRegistry
+// drops both from every child, so depth stays 1 structurally rather than by a
+// counter.
+func NewTaskTools(opts TaskOptions) []skill.Skill {
+	shared := newRunner()
+	return []skill.Skill{&taskTool{opts: opts, runner: shared}, &taskResultTool{runner: shared}}
+}
 
 func (t *taskTool) Name() string { return "task" }
 
@@ -69,7 +77,9 @@ func (t *taskTool) Name() string { return "task" }
 // is the honest one: a delegate pays for a second system prompt and its own tool
 // list, so anything you can already name is cheaper done here.
 func (t *taskTool) Description() string {
-	return "Hand a self-contained job to a sub-agent and get back only its result. " +
+	return "Start a self-contained job on a sub-agent. RETURNS IMMEDIATELY with a task id — it does NOT wait. " +
+		"Do other useful work in the meantime (read the next file, start a second sub-agent), then call " +
+		"task_result with the id to collect the answer. If you have nothing else to do, collect it straight away. " +
 		"The sub-agent has NO access to this conversation, so `prompt` must carry everything it needs. " +
 		"WHEN TO USE: the work would otherwise pour a lot into this conversation — hunting through many " +
 		"files for something you cannot name yet, or the same mechanical change repeated across many places. " +
@@ -170,6 +180,11 @@ func (t *taskTool) ExecuteTool(ctx context.Context, args map[string]any) (skill.
 	if profile.Model != "" {
 		childModel = profile.Model
 	}
+
+	// Everything below the goroutine boundary is built here, on the calling
+	// goroutine, so a configuration mistake is reported as a failed tool call
+	// rather than surfacing minutes later out of a background run.
+	parentRef := turn.CallID(ctx)
 	child := cognitive.NewAgent(cognitive.AgentConfig{
 		Provider:     t.opts.Provider,
 		Model:        childModel,
@@ -180,76 +195,98 @@ func (t *taskTool) ExecuteTool(ctx context.Context, args map[string]any) (skill.
 	if t.opts.OnUsage != nil {
 		child.SetUsageReporter(t.opts.OnUsage)
 	}
-
-	// Every event the delegate causes is stamped with this `task` call's id, so
-	// the UI can nest it instead of mixing it into the main agent's timeline.
-	parentRef := turn.CallID(ctx)
-	toolCalls := 0
-	var relay func(turn.ToolEvent)
-	if t.opts.OnToolAction != nil {
-		relay = func(ev turn.ToolEvent) {
-			if ev.Action == "call" {
-				toolCalls++
-			}
-			ev.Parent = parentRef
-			t.opts.OnToolAction(ev)
-		}
-	} else {
-		relay = func(ev turn.ToolEvent) {
-			if ev.Action == "call" {
-				toolCalls++
-			}
-		}
-	}
-
 	// A delegate inherits the session's prohibitions and adds its own; it never
 	// inherits a permission the session has that its profile does not.
 	permissions := safety.PermissionConfig{
 		Rules: append(append([]safety.PermissionRule{}, t.opts.Permissions.Rules...), profile.DenyRules()...),
 	}
-	exec := turn.NewExecutor(turn.ExecutorOptions{
-		Agent:        child,
-		Dispatcher:   skill.NewDispatcher(childRegistry),
-		Approve:      t.opts.Approve,
-		ApprovalMode: t.opts.ApprovalMode,
-		Permissions:  permissions,
-		OnToolAction: relay,
-		TurnOptions:  turn.TurnOptions{ThinkLevel: t.opts.ThinkLevel},
+
+	task, err := t.runner.start(ctx, profile.Name, label, func(runCtx context.Context, self *runningTask) skill.Output {
+		defer debuglog.Block("task: " + profile.Name + " — " + truncate(label, 60))()
+
+		// Every event the delegate causes is stamped with the `task` call's id, so
+		// the UI can nest it instead of mixing it into the main agent's timeline.
+		relay := func(ev turn.ToolEvent) {
+			if ev.Action == "call" {
+				self.countCall()
+			}
+			if t.opts.OnToolAction != nil {
+				ev.Parent = parentRef
+				t.opts.OnToolAction(ev)
+			}
+		}
+		exec := turn.NewExecutor(turn.ExecutorOptions{
+			Agent:        child,
+			Dispatcher:   skill.NewDispatcher(childRegistry),
+			Approve:      t.opts.Approve,
+			ApprovalMode: t.opts.ApprovalMode,
+			Permissions:  permissions,
+			OnToolAction: relay,
+			TurnOptions:  turn.TurnOptions{ThinkLevel: t.opts.ThinkLevel},
+		})
+
+		// An explicit Intent is load-bearing: without one the executor parses the
+		// brief, and a brief that happens to start with a tool name ("read every
+		// test file and…") would run as a single explicit tool call, not a turn.
+		result, runErr := exec.Execute(runCtx, brief, command.Intent{Raw: brief, Kind: command.KindConversation}, nil, nil, nil)
+		elapsed := time.Since(self.started)
+
+		// Cancellation is checked BEFORE runErr and independently of it: a stopped
+		// turn can come back with runErr == nil carrying the empty-reply fallback,
+		// and calling that a successful delegation is a lie the user cannot see —
+		// they pressed Stop.
+		if runCtx.Err() != nil {
+			return failure(self.id, label, elapsed, "sub-agent stopped: "+runCtx.Err().Error())
+		}
+		if runErr != nil {
+			return failure(self.id, label, elapsed, "sub-agent failed: "+runErr.Error())
+		}
+
+		reply := strings.TrimSpace(result.Reply)
+		if reply == "" {
+			reply = "(the sub-agent returned nothing)"
+		}
+		// What the parent model sees: the result, plus one line of receipt. NOT the
+		// delegate's tool log — that would put back the context cost delegating just
+		// saved (§44.6). The user sees every step live in the UI instead.
+		content := reply + "\n" + receiptFor(profile.Name, self.calls(), elapsed)
+		return skill.Output{
+			Name:       "task_result",
+			Command:    "task " + profile.Name,
+			Content:    content,
+			RawOutput:  content,
+			Success:    true,
+			DurationMs: elapsed.Milliseconds(),
+		}
 	})
-
-	// An explicit Intent is load-bearing: without one the executor parses the
-	// brief, and a brief that happens to start with a tool name ("read every test
-	// file and…") would run as a single explicit tool call instead of a turn.
-	result, err := exec.Execute(ctx, brief, command.Intent{Raw: brief, Kind: command.KindConversation}, nil, nil, nil)
-	elapsed := time.Since(started)
-	// Cancellation is checked BEFORE err, and independently of it: a stopped turn
-	// can come back with err == nil carrying the empty-reply fallback text, and
-	// reporting that to the model as a successful delegation would be a lie the
-	// user can't see — they pressed Stop.
-	if ctx.Err() != nil {
-		return t.fail(label, started, "sub-agent stopped: "+ctx.Err().Error())
-	}
 	if err != nil {
-		return t.fail(label, started, "sub-agent failed: "+err.Error())
+		return t.fail(label, started, err.Error())
 	}
 
-	reply := strings.TrimSpace(result.Reply)
-	if reply == "" {
-		reply = "(the sub-agent returned nothing)"
-	}
-	// What the parent model sees: the result, plus one line of receipt. NOT the
-	// delegate's tool log — that would put back the context cost delegating just
-	// saved (§44.6). The user sees every step live in the UI instead.
-	receipt := fmt.Sprintf("[task %s: %d tool calls, %.1fs]", profile.Name, toolCalls, elapsed.Seconds())
-	content := reply + "\n" + receipt
+	started_ := fmt.Sprintf("started sub-agent %s as %s — it is running now. Do other work, then call task_result with task_id %q to collect it.",
+		profile.Name, task.id, task.id)
 	return skill.Output{
 		Name:       t.Name(),
 		Command:    "task " + profile.Name,
-		Content:    content,
-		RawOutput:  content,
+		Content:    started_,
+		RawOutput:  started_,
 		Success:    true,
-		DurationMs: elapsed.Milliseconds(),
+		DurationMs: time.Since(started).Milliseconds(),
 	}, nil
+}
+
+// failure is the shape a background run reports a refusal in: a failed result the
+// collector hands to the model, never a Go error nobody is left to receive.
+func failure(id, label string, elapsed time.Duration, reason string) skill.Output {
+	return skill.Output{
+		Name:       "task_result",
+		Command:    "task " + label,
+		Content:    reason,
+		RawOutput:  reason,
+		Stderr:     reason,
+		Success:    false,
+		DurationMs: elapsed.Milliseconds(),
+	}
 }
 
 // receiptFor is the one line the parent model gets about how the delegation went.

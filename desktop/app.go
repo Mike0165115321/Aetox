@@ -68,6 +68,11 @@ type App struct {
 	mcp      *mcp.Manager    // configured MCP servers; built once, survives re-bootstraps
 	registry *skill.Registry // current skill/tool registry, for the Tools panel
 
+	// toolHistoryMu guards toolHistory. Until sub-agents existed every tool event
+	// arrived on the one turn goroutine; a delegate runs in its own (§44.11), so
+	// two writers are now normal rather than impossible.
+	toolHistoryMu sync.Mutex
+
 	dbInit sync.Once
 	db     *sql.DB
 	dbErr  error
@@ -104,6 +109,8 @@ func (a *App) recordToolAction(ev turn.ToolEvent) {
 	if ev.Parent != "" {
 		return
 	}
+	a.toolHistoryMu.Lock()
+	defer a.toolHistoryMu.Unlock()
 	a.toolHistory = append(a.toolHistory, ev.Label())
 	if len(a.toolHistory) > maxToolHistory {
 		a.toolHistory = a.toolHistory[len(a.toolHistory)-maxToolHistory:]
@@ -121,6 +128,8 @@ func (a *App) emitAgentStatus(status string) {
 
 // CommandHistory returns this session's real tool-call history, most recent first.
 func (a *App) CommandHistory() []string {
+	a.toolHistoryMu.Lock()
+	defer a.toolHistoryMu.Unlock()
 	out := make([]string, len(a.toolHistory))
 	for i, c := range a.toolHistory {
 		out[len(out)-1-i] = c
@@ -1399,13 +1408,14 @@ func bootstrapFromConfig(cfg config.Config, onToolAction func(turn.ToolEvent), o
 	// User rules stay last (last-match-wins) so explicit choices still win.
 	permissions.Rules = append(mcpMgr.PermissionRules(), permissions.Rules...)
 
-	// `task` — the one way a sub-agent runs (§44.4). Registered here rather than
+	// `task` + `task_result` — the only way a sub-agent runs (§44.4, §44.11:
+	// starting one never blocks the turn). Registered here rather than
 	// in skill.RegisterDefaults because it needs turn+cognitive, which skill
 	// cannot import. It holds the live provider/registry/permissions, so a
 	// re-bootstrap replaces it along with everything else instead of leaving it
 	// pointed at a dead engine. FilterRegistry drops it from every child, which
 	// is what keeps delegation depth at 1.
-	if err := registry.Register(subagent.NewTaskTool(subagent.TaskOptions{
+	for _, tool := range subagent.NewTaskTools(subagent.TaskOptions{
 		Provider:     bootstrapResult.Provider,
 		Model:        cfg.ModelName,
 		Registry:     registry,
@@ -1415,8 +1425,10 @@ func bootstrapFromConfig(cfg config.Config, onToolAction func(turn.ToolEvent), o
 		OnUsage:      onUsage,
 		MaxChars:     ctxTokens * 4,
 		ThinkLevel:   think.NormalizeLevel(cfg.ThinkLevel),
-	}), skill.SourceBuiltin); err != nil {
-		debuglog.Msg("task tool registration skipped: %v", err)
+	}) {
+		if err := registry.Register(tool, skill.SourceBuiltin); err != nil {
+			debuglog.Msg("%s registration skipped: %v", tool.Name(), err)
+		}
 	}
 
 	chatApp, err := aetoxapp.NewApp(aetoxapp.Options{

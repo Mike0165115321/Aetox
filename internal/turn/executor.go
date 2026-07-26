@@ -38,12 +38,14 @@ var toolExecutionTimeout = 60 * time.Second
 // reasons that both end the same way: waiting IS the work.
 //
 //   - ask_user blocks on a human answering.
-//   - task runs a whole nested agent loop — a delegate doing real work takes
-//     minutes, and its own step cap (internal/subagent) is what bounds it.
+//   - task starts a nested agent loop, and task_result waits for one. A delegate
+//     doing real work takes minutes; its own step cap (internal/subagent) is what
+//     bounds it, and by the time the parent collects, the waiting is time the
+//     model chose to spend rather than time it was forced to.
 //
 // Ctx cancel — Ctrl+C in the CLI, the Stop button in the desktop — remains the
 // brake for both, and it propagates into a sub-agent's loop unchanged.
-var noDeadlineTools = map[string]bool{"ask_user": true, "task": true}
+var noDeadlineTools = map[string]bool{"ask_user": true, "task": true, "task_result": true}
 
 // HasNoDeadline reports whether the named tool is exempt from the per-tool
 // deadline. Exported so the tools that depend on the exemption can assert it
