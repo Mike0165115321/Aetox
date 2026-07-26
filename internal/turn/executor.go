@@ -34,9 +34,21 @@ const (
 // so tests can shrink it.
 var toolExecutionTimeout = 60 * time.Second
 
-// interactiveTools block on a human answering — waiting is their job, so the
-// slow-tool guard must not abandon them. Ctx cancel (Stop) remains the brake.
-var interactiveTools = map[string]bool{"ask_user": true}
+// noDeadlineTools are exempt from the slow-tool guard above, for two different
+// reasons that both end the same way: waiting IS the work.
+//
+//   - ask_user blocks on a human answering.
+//   - task runs a whole nested agent loop — a delegate doing real work takes
+//     minutes, and its own step cap (internal/subagent) is what bounds it.
+//
+// Ctx cancel — Ctrl+C in the CLI, the Stop button in the desktop — remains the
+// brake for both, and it propagates into a sub-agent's loop unchanged.
+var noDeadlineTools = map[string]bool{"ask_user": true, "task": true}
+
+// HasNoDeadline reports whether the named tool is exempt from the per-tool
+// deadline. Exported so the tools that depend on the exemption can assert it
+// without sleeping a minute to find out (internal/subagent).
+func HasNoDeadline(name string) bool { return noDeadlineTools[strings.ToLower(strings.TrimSpace(name))] }
 
 type Agent interface {
 	Respond(context.Context, string, TurnOptions) (string, error)
@@ -150,6 +162,12 @@ type ToolEvent struct {
 	// for providers that send no id; the UI falls back to matching on the
 	// label, as before.
 	Ref string `json:"ref,omitempty"`
+	// Parent is the Ref of the tool call that caused this one — set only on
+	// events from inside a sub-agent, where it carries the id of the `task` call
+	// that spawned it. Empty for everything the main agent does itself. Without
+	// it a delegate's tool calls arrive on the same channel as the main agent's
+	// and are indistinguishable from them (ARCHITECTURE.md §44.5).
+	Parent string `json:"parent,omitempty"`
 	// Subject is the one argument worth reading in a list: the path a write
 	// touches, the URL a fetch opens. Empty when the tool takes nothing nameable.
 	Subject string `json:"subject,omitempty"`
@@ -403,6 +421,10 @@ func (e *Executor) executeAgentToolLoop(
 
 	reply, usedTools, err := e.agent.RespondWithTools(ctx, toolDefs, intent.Raw, func(ctx context.Context, call model.ToolCall) (string, error) {
 		e.reportToolCall(call.ID, call.Function.Name, call.Function.Arguments)
+		// A tool that spawns anything needs to know which call it is, so the work
+		// it causes can be traced back to this row (`task` stamps ToolEvent.Parent
+		// with it). Nothing else reads it, and a tool that ignores it is unaffected.
+		ctx = WithCallID(ctx, call.ID)
 		receipt, output, success, execErr := e.executeToolCallWithOutcome(ctx, call)
 		ev := ToolEvent{
 			Ref:     call.ID,
@@ -551,7 +573,7 @@ func (e *Executor) executeTool(ctx context.Context, name string, args map[string
 	// ponytail: leaks the stray goroutine's CPU until it finishes on its own;
 	// plumb ctx into the FS-walking tools if that leak ever bites.
 	// Interactive tools wait on a human — no deadline, ctx cancel is the brake.
-	if interactiveTools[strings.ToLower(name)] {
+	if noDeadlineTools[strings.ToLower(name)] {
 		output, handled, err := e.dispatcher.ExecuteTool(ctx, name, args)
 		if !handled {
 			return output, false, fmt.Errorf("tool %q is not exposed to agent", name)

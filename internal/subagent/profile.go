@@ -64,6 +64,11 @@ type Profile struct {
 	Prompt      string   `json:"prompt"`
 	Path        string   `json:"path,omitempty"` // on-disk path; "" for a bundled profile
 	Builtin     bool     `json:"builtin"`
+	// Overrides marks a user file that shadows a bundled profile of the same
+	// name. The settings page needs it because deleting one is a **revert** — the
+	// bundled profile comes back — not a removal, and a delete button that lies
+	// about that is how a user loses a capability they meant to reset.
+	Overrides bool `json:"overrides,omitempty"`
 }
 
 // Dir returns <DataRoot>/subagents (not created here).
@@ -99,11 +104,13 @@ func List() []Profile {
 			continue
 		}
 		name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-		if _, shadowed := byName[name]; !shadowed {
+		_, shadowed := byName[name]
+		if !shadowed {
 			order = append(order, name)
 		}
 		p := parse(name, string(raw))
 		p.Path = path
+		p.Overrides = shadowed
 		byName[name] = p
 	}
 
@@ -129,6 +136,8 @@ func Load(name string) (Profile, bool) {
 		if raw, err := os.ReadFile(path); err == nil {
 			p := parse(name, string(raw))
 			p.Path = path
+			_, err := bundledProfiles.ReadFile("profiles/" + name + ".md")
+			p.Overrides = err == nil
 			return p, true
 		}
 	}

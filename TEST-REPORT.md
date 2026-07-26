@@ -6,6 +6,25 @@
 
 **Total: 207 passing tests, 0 failing, across 16 tested packages** (updated after Module 5 pass — see below).
 
+## Convention — whole-path tests run on Aetox's own model (2026-07-26, ARCHITECTURE.md §45)
+
+A test that exercises a **whole path** — a turn, a tool loop, a delegation to a
+sub-agent — uses the built-in provider, not a fake written for the test:
+
+```go
+provider := model.NewNoopProvider("aetox-tools:test") // real Provider, no key, no network
+agent := cognitive.NewAgent(cognitive.AgentConfig{Provider: provider, Model: "aetox-tools:test", ...})
+exec := turn.NewExecutor(turn.ExecutorOptions{Agent: agent, Dispatcher: skill.NewDispatcher(registry), ...})
+```
+
+It goes down the same channel a real provider does, costs nothing, needs no key,
+and is deterministic (its scripts read the next round off the transcript). A
+per-test fake is a second implementation of the thing under test and can pass
+while the real path is broken. Reference: [internal/subagent/spawn_demo_test.go](internal/subagent/spawn_demo_test.go).
+
+Hand-written stubs stay right for **provider edge cases** only — a truncated tool
+call, leaked DSML, a 401 — where the point is to produce one exact wire condition.
+
 ---
 
 ## Module 1 — การจัดการโมเดล (Model Management)

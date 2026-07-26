@@ -35,8 +35,8 @@ func TestBundledProfilesAreUsable(t *testing.T) {
 		if p.Name != want[i] {
 			t.Errorf("List()[%d] = %q, want %q (alphabetical)", i, p.Name, want[i])
 		}
-		if !p.Builtin || p.Path != "" {
-			t.Errorf("%s: Builtin=%v Path=%q, want true and empty", p.Name, p.Builtin, p.Path)
+		if !p.Builtin || p.Path != "" || p.Overrides {
+			t.Errorf("%s: Builtin=%v Path=%q Overrides=%v", p.Name, p.Builtin, p.Path, p.Overrides)
 		}
 		// No description = invisible in the settings row; no prompt = a nameless
 		// delegate with no brief.
@@ -140,6 +140,11 @@ func TestUserFileShadowsBundled(t *testing.T) {
 	if p.Builtin || p.Path == "" {
 		t.Errorf("Builtin=%v Path=%q, want false and a real path", p.Builtin, p.Path)
 	}
+	// The settings page groups by source, so a shadow has to declare itself: it
+	// belongs under "yours", and deleting it reverts rather than removes.
+	if !p.Overrides {
+		t.Error("a user file shadowing a bundled profile did not set Overrides")
+	}
 
 	// Shadowing replaces, it does not duplicate.
 	var seen int
@@ -168,6 +173,10 @@ func TestUserProfileAddsToTheList(t *testing.T) {
 	}
 	if !slices.Equal(p.Tools, []string{"read", "grep"}) {
 		t.Fatalf("parsed wrong: %+v", p)
+	}
+	// A name of its own overrides nothing.
+	if p.Overrides {
+		t.Error("a user-only profile claims to override a bundled one")
 	}
 	if got := len(List()); got != 3 {
 		t.Fatalf("List() = %d, want 3 (2 bundled + 1 user)", got)

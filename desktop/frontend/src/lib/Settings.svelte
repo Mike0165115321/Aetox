@@ -546,9 +546,14 @@
   type SubagentRow = {
     name: string; description: string; model?: string
     tools?: string[]; deny?: string[]; steps?: number; prompt: string
-    path?: string; builtin: boolean
+    path?: string; builtin: boolean; overrides?: boolean
   }
   let subagents = $state<SubagentRow[]>([])
+  // Split by who wrote it, which is what a user actually asks of this page. A
+  // file of yours that shadows a bundled one counts as yours — it IS your file —
+  // and carries a badge saying so, because deleting it reverts rather than removes.
+  const mySubagents = $derived(subagents.filter((a) => !a.builtin))
+  const builtinSubagents = $derived(subagents.filter((a) => a.builtin))
   // null = the list. Anything else = the editor on that profile's raw file.
   let agentEditing = $state<SubagentRow | null>(null)
   let agentDraftName = $state('')
@@ -1029,6 +1034,9 @@
     {:else if active === 'agents'}
       <h2>{t('settings.subagents')}</h2>
       <p class="muted set-sub">{t('settings.subagentsDesc')}</p>
+      <!-- Real and editable, but nothing can spawn one until the `task` tool
+           lands (§44 step 4). Saying so beats looking broken. -->
+      <p class="muted set-sub">{t('settings.agentsSubSoon')}</p>
 
       {#if agentEditing === null}
         <div class="pp-bar">
@@ -1038,39 +1046,46 @@
         </div>
         {#if agentError}<div class="mset-error">{agentError}</div>{/if}
 
-        <div class="settings-card">
-          <div class="card-form">
-            <div class="eyebrow">{t('settings.subagentsList')} <span class="ag-count">{subagents.length}</span></div>
-            <!-- Real and editable, but nothing can spawn one until the `task`
-                 tool lands (§44 step 4). Saying so beats looking broken. -->
-            <div class="d muted">{t('settings.agentsSubSoon')}</div>
-          </div>
-          {#each subagents as a (a.name)}
-            <div class="set-row">
-              <div class="set-txt">
-                <div class="t">
-                  {a.name}
-                  <span class="tag">{a.builtin ? t('settings.agentBuiltin') : t('settings.agentMine')}</span>
-                  {#if a.model}<span class="tag">{a.model}</span>{/if}
-                  <span class="tag">{toolBadge(a)}</span>
-                  {#if a.deny && a.deny.length > 0}<span class="tag ag-deny">{t('settings.agentDenyCount', { n: a.deny.length })}</span>{/if}
-                  <span class="tag">{t('settings.agentSteps', { n: a.steps || 24 })}</span>
-                </div>
-                <div class="d">{a.description || '—'}</div>
-                <div class="d mono-dim">{a.path || 'built-in:' + a.name}</div>
-              </div>
-              <select
-                class="ctrl" value={a.model ?? ''} disabled={agentBusy !== ''}
-                onchange={(e) => pinModel(a.name, e.currentTarget.value)}
-              >
-                <option value="">{t('settings.agentModelInherit')}</option>
-                {#each agentModels as m}<option value={m}>{m}</option>{/each}
-                {#if a.model && !agentModels.includes(a.model)}<option value={a.model}>{a.model}</option>{/if}
-              </select>
-              <button class="ctrl" disabled={agentBusy !== ''} onclick={() => openAgent(a)}>{t('settings.edit')}</button>
+        <!-- Two cards, split by who wrote it — the question this page is actually
+             asked. Built-ins are second because a fresh install has only those and
+             the interesting list is the one you grow. -->
+        {#each [{ id: 'mine', rows: mySubagents, label: t('settings.subagentsMine'), hint: t('settings.subagentsMineHint') },
+                { id: 'builtin', rows: builtinSubagents, label: t('settings.subagentsBuiltin'), hint: t('settings.subagentsBuiltinHint') }] as group (group.id)}
+          <div class="settings-card">
+            <div class="card-form">
+              <div class="eyebrow">{group.label} <span class="ag-count">{group.rows.length}</span></div>
+              <div class="d muted">{group.hint}</div>
             </div>
-          {/each}
-        </div>
+            {#if group.rows.length === 0}
+              <div class="set-row"><div class="muted">{t('settings.subagentsNoneOfMine')}</div></div>
+            {/if}
+            {#each group.rows as a (a.name)}
+              <div class="set-row">
+                <div class="set-txt">
+                  <div class="t">
+                    {a.name}
+                    {#if a.overrides}<span class="tag ag-override">{t('settings.agentOverrides')}</span>{/if}
+                    {#if a.model}<span class="tag">{a.model}</span>{/if}
+                    <span class="tag">{toolBadge(a)}</span>
+                    {#if a.deny && a.deny.length > 0}<span class="tag ag-deny">{t('settings.agentDenyCount', { n: a.deny.length })}</span>{/if}
+                    <span class="tag">{t('settings.agentSteps', { n: a.steps || 24 })}</span>
+                  </div>
+                  <div class="d">{a.description || '—'}</div>
+                  <div class="d mono-dim">{a.path || 'built-in:' + a.name}</div>
+                </div>
+                <select
+                  class="ctrl" value={a.model ?? ''} disabled={agentBusy !== ''}
+                  onchange={(e) => pinModel(a.name, e.currentTarget.value)}
+                >
+                  <option value="">{t('settings.agentModelInherit')}</option>
+                  {#each agentModels as m}<option value={m}>{m}</option>{/each}
+                  {#if a.model && !agentModels.includes(a.model)}<option value={a.model}>{a.model}</option>{/if}
+                </select>
+                <button class="ctrl" disabled={agentBusy !== ''} onclick={() => openAgent(a)}>{t('settings.edit')}</button>
+              </div>
+            {/each}
+          </div>
+        {/each}
         <p class="muted set-sub">{t('settings.agentsHint')}</p>
       {:else}
         <div class="pp-bar">
@@ -1078,7 +1093,9 @@
           <div style="flex:1"></div>
           {#if !agentEditing.builtin && agentEditing.name}
             <button class="ctrl" class:danger={agentConfirmDelete} disabled={agentBusy !== ''} onclick={deleteAgent}>
-              {agentConfirmDelete ? t('settings.confirmRemove') : t('settings.remove')}
+              {agentConfirmDelete
+                ? t('settings.confirmRemove')
+                : agentEditing.overrides ? t('settings.agentRevert') : t('settings.remove')}
             </button>
           {/if}
           <button class="ctrl" disabled={agentBusy !== '' || !agentDraftName.trim() || !agentDraftBody.trim()} onclick={saveAgent}>

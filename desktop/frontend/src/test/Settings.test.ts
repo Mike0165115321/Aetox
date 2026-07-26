@@ -25,7 +25,11 @@ beforeEach(() => {
   ] as any)
   vi.mocked(ListSubagentProfiles).mockResolvedValue([
     { name: 'explore', description: 'ค้นไฟล์', tools: ['grep', 'glob', 'list', 'read'], prompt: 'role', builtin: true },
+    { name: 'general', description: 'งานซ้ำ', prompt: 'role', builtin: true },
     { name: 'backend', description: 'ของผม', model: 'deepseek-v4', steps: 8, prompt: 'role', path: 'C:/subagents/backend.md', builtin: false },
+    // A file of yours that shadows a bundled one: counts as yours, and its
+    // delete button has to read as a revert.
+    { name: 'mine-explore', description: 'ของผมทับ', prompt: 'role', path: 'C:/subagents/mine-explore.md', builtin: false, overrides: true },
   ] as any)
   vi.mocked(ReadSubagentProfile).mockResolvedValue('---\ndescription: ค้นไฟล์\ntools: grep, read\n---\nYou search files.' as any)
   vi.mocked(ListModelsForProvider).mockResolvedValue(['deepseek-v4', 'deepseek-chat'] as any)
@@ -116,25 +120,33 @@ describe('Settings pages', () => {
   })
 
   // §44.0: there is no agent picker — the main agent is the assistant. This page
-  // manages only who it delegates to, and every row states what that delegate is
-  // allowed to do without opening anything.
-  it('Sub-agents page badges each row with its real config', async () => {
+  // manages only who it delegates to, split by who wrote each profile (§44.10).
+  it('Sub-agents page splits yours from the ones that ship with Aetox', async () => {
     const { container } = render(Settings, { onClose: () => {} })
     await openSection(container, 'ซับเอเจน')
 
     await waitFor(() => expect(screen.getByText('ค้นไฟล์')).toBeTruthy())
-    const rows = container.querySelectorAll('.set-row')
-    expect(rows.length).toBe(2)
-    expect(rows[0].textContent).toContain('explore')
-    expect(rows[1].textContent).toContain('backend')
+    const cards = container.querySelectorAll('.settings-card')
+    expect(cards.length).toBe(2)
+    // Yours first: a fresh install has only built-ins, and the list you grow is
+    // the interesting one.
+    expect(cards[0].textContent).toContain('ของคุณ')
+    expect(cards[0].textContent).toContain('backend')
+    expect(cards[0].textContent).toContain('mine-explore')
+    expect(cards[0].textContent).not.toContain('general')
+    expect(cards[1].textContent).toContain('มากับแอป')
+    expect(cards[1].textContent).toContain('explore')
+    expect(cards[1].textContent).toContain('general')
+    expect(cards[1].textContent).not.toContain('backend')
 
-    // Badges are read off the profile, not written down: an empty tool list means
-    // the whole registry, a 4-item list means 4, and every sub-agent is capped.
+    // A shadow sits under yours and says what it is, because deleting it reverts.
+    expect(screen.getByText('ทับของแอป')).toBeTruthy()
+
+    // Badges are read off the profile, not written down.
     expect(screen.getByText('เครื่องมือ 4 ตัว')).toBeTruthy()
-    expect(screen.getByText('เครื่องมือครบ')).toBeTruthy()
-    expect(screen.getByText('จำกัด 8 รอบ')).toBeTruthy()   // backend's own steps
-    expect(screen.getByText('จำกัด 24 รอบ')).toBeTruthy()  // explore falls back to the default cap
-    expect(screen.getByText('ของคุณ')).toBeTruthy()
+    expect(screen.getAllByText('เครื่องมือครบ').length).toBe(3)
+    expect(screen.getByText('จำกัด 8 รอบ')).toBeTruthy()          // backend's own steps
+    expect(screen.getAllByText('จำกัด 24 รอบ').length).toBe(3)    // the rest fall back to the cap
     expect(screen.getByText('C:/subagents/backend.md')).toBeTruthy()
     expect(screen.getByText('built-in:explore')).toBeTruthy()
 
@@ -146,26 +158,40 @@ describe('Settings pages', () => {
   it('the model dropdown pins a model per sub-agent', async () => {
     const { container } = render(Settings, { onClose: () => {} })
     await openSection(container, 'ซับเอเจน')
-    await waitFor(() => expect(container.querySelectorAll('.set-row select.ctrl').length).toBe(2))
+    await waitFor(() => expect(container.querySelectorAll('.set-row select.ctrl').length).toBe(4))
 
     const selects = Array.from(container.querySelectorAll('.set-row select.ctrl')) as HTMLSelectElement[]
-    expect(selects[0].value).toBe('') // '' = inherit whatever the chat is on
-    await fireEvent.change(selects[0], { target: { value: 'deepseek-chat' } })
-    await waitFor(() => expect(vi.mocked(SetSubagentModel)).toHaveBeenCalledWith('explore', 'deepseek-chat'))
+    expect(selects[0].value).toBe('deepseek-v4') // backend is pinned
+    await fireEvent.change(selects[0], { target: { value: '' } })
+    await waitFor(() => expect(vi.mocked(SetSubagentModel)).toHaveBeenCalledWith('backend', ''))
   })
 
   it('editing a built-in sub-agent opens its real file and says what saving does', async () => {
     const { container } = render(Settings, { onClose: () => {} })
     await openSection(container, 'ซับเอเจน')
-    await waitFor(() => expect(screen.getAllByText('แก้ไข').length).toBe(2))
+    await waitFor(() => expect(screen.getAllByText('แก้ไข').length).toBe(4))
 
-    await fireEvent.click(screen.getAllByText('แก้ไข')[0])
+    // The built-in group's first row (explore) — index 2 overall: yours come first.
+    await fireEvent.click(screen.getAllByText('แก้ไข')[2])
     await waitFor(() => expect(container.querySelector('.ag-body')).toBeTruthy())
     const body = container.querySelector('.ag-body') as HTMLTextAreaElement
     expect(body.value).toContain('You search files.')
     // Editable where ZCode is not — but honest about creating your own copy.
     expect(screen.getByText(/สร้างเป็นของคุณทับไว้/)).toBeTruthy()
     // A built-in has no delete button; there is nothing of yours to remove yet.
+    expect(screen.queryByText('ลบ')).toBeNull()
+    expect(screen.queryByText('คืนค่าของแอป')).toBeNull()
+  })
+
+  // Deleting a shadow restores the bundled profile, so the button must not say
+  // "delete" — the row is not going away.
+  it('a shadow offers to revert, not to delete', async () => {
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'ซับเอเจน')
+    await waitFor(() => expect(screen.getAllByText('แก้ไข').length).toBe(4))
+
+    await fireEvent.click(screen.getAllByText('แก้ไข')[1]) // mine-explore, the shadow
+    await waitFor(() => expect(screen.getByText('คืนค่าของแอป')).toBeTruthy())
     expect(screen.queryByText('ลบ')).toBeNull()
   })
 

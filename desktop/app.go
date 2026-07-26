@@ -29,6 +29,8 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/prompt"
 	"github.com/Mike0165115321/Aetox/internal/safety"
 	"github.com/Mike0165115321/Aetox/internal/skill"
+	"github.com/Mike0165115321/Aetox/internal/subagent"
+	"github.com/Mike0165115321/Aetox/internal/think"
 	"github.com/Mike0165115321/Aetox/internal/turn"
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -94,6 +96,12 @@ func (a *App) recordToolAction(ev turn.ToolEvent) {
 		wailsruntime.EventsEmit(a.ctx, "agent:tool", ev)
 	}
 	if ev.Action != "call" {
+		return
+	}
+	// A sub-agent's calls are stamped with the `task` call that caused them
+	// (§44.5). They belong to the chat timeline, not to this session's command
+	// log, which is a list of what the agent itself did.
+	if ev.Parent != "" {
 		return
 	}
 	a.toolHistory = append(a.toolHistory, ev.Label())
@@ -1200,7 +1208,7 @@ func (a *App) applyConfig(cfg config.Config) {
 	if a.agent != nil {
 		priorContext = a.agent.ContextMessages()
 	}
-	chatApp, agent, status, registry := bootstrapFromConfig(cfg, a.recordToolAction, a.emitAgentStatus, workbenchTools, a.mcp, a.outputSubdir)
+	chatApp, agent, status, registry := bootstrapFromConfig(cfg, a.recordToolAction, a.emitAgentStatus, a.recordTokenUsage, workbenchTools, a.mcp, a.outputSubdir)
 	a.chat = chatApp
 	a.agent = agent
 	a.cfg = cfg
@@ -1316,7 +1324,7 @@ func toMCPServers(cfgs []config.MCPServerConfig) []mcp.Server {
 	return out
 }
 
-func bootstrapFromConfig(cfg config.Config, onToolAction func(turn.ToolEvent), onStatus func(string), extraSkills []skill.Skill, mcpMgr *mcp.Manager, outputSubdir func() string) (*aetoxapp.App, *cognitive.Agent, string, *skill.Registry) {
+func bootstrapFromConfig(cfg config.Config, onToolAction func(turn.ToolEvent), onStatus func(string), onUsage func(model.Usage), extraSkills []skill.Skill, mcpMgr *mcp.Manager, outputSubdir func() string) (*aetoxapp.App, *cognitive.Agent, string, *skill.Registry) {
 	defer debuglog.Block("bootstrapFromConfig")()
 	// Which model this actually resolved to. The log recorded that a bootstrap
 	// happened but never what came out of it, so "it switched models on its
@@ -1390,6 +1398,26 @@ func bootstrapFromConfig(cfg config.Config, onToolAction func(turn.ToolEvent), o
 	// can't be called before its "<server>_*" ask-rule exists, so nothing races.
 	// User rules stay last (last-match-wins) so explicit choices still win.
 	permissions.Rules = append(mcpMgr.PermissionRules(), permissions.Rules...)
+
+	// `task` — the one way a sub-agent runs (§44.4). Registered here rather than
+	// in skill.RegisterDefaults because it needs turn+cognitive, which skill
+	// cannot import. It holds the live provider/registry/permissions, so a
+	// re-bootstrap replaces it along with everything else instead of leaving it
+	// pointed at a dead engine. FilterRegistry drops it from every child, which
+	// is what keeps delegation depth at 1.
+	if err := registry.Register(subagent.NewTaskTool(subagent.TaskOptions{
+		Provider:     bootstrapResult.Provider,
+		Model:        cfg.ModelName,
+		Registry:     registry,
+		Permissions:  permissions,
+		ApprovalMode: safety.ApprovalFullAccess,
+		OnToolAction: onToolAction,
+		OnUsage:      onUsage,
+		MaxChars:     ctxTokens * 4,
+		ThinkLevel:   think.NormalizeLevel(cfg.ThinkLevel),
+	}), skill.SourceBuiltin); err != nil {
+		debuglog.Msg("task tool registration skipped: %v", err)
+	}
 
 	chatApp, err := aetoxapp.NewApp(aetoxapp.Options{
 		Agent:          agent,

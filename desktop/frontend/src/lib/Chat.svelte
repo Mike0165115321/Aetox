@@ -402,7 +402,11 @@
 {#snippet toolTimeline(steps: ToolStep[], live: boolean)}
   <div class="tool-steps">
     {#each steps as s}
-      <div class="tool-step {s.state}">
+      <!-- A sub-agent's row is indented under the `task` row that caused it: the
+           events arrive on the same channel, so without this a delegate's work
+           reads as the agent's own (§44.5). -->
+      <div class="tool-step {s.state}" class:sub={s.parent}>
+        {#if s.parent}<span class="sub-mark" title={t('chat.subagentStep')}>↳</span>{/if}
         {#if s.state === 'run'}
           <span class="glyph spin"></span>
         {:else}

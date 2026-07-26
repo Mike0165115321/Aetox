@@ -26,6 +26,10 @@ Frontmatter is parsed by `skill.ParseFrontmatter` — one `key: value` per line,
 | Bundled | [profiles/](profiles) via `//go:embed` — `explore`, `general`. Present on a fresh install with no folder created |
 | User | `<DataRoot>/subagents/*.md`. A file named after a bundled one **wins**; deleting it restores the original — that is the "revert" |
 
+## How one runs
+
+`task` (this package, [task.go](task.go)) is the only way. The host registers it at bootstrap with the live provider, registry and permissions; the model calls it with `{description, prompt, agent}`. One call: pick the profile → `FilterRegistry` for the child's tools → a fresh `cognitive.Agent` on the profile's brief and cap → a full turn through the real `turn.Executor` → back comes the final text plus `[task <name>: N tool calls, X.Ys]`, and nothing else. Tool events are stamped with the `task` call's id (`turn.CallID`) so the UI shows them as the delegate's work.
+
 ## What consumes a profile
 
 Nothing here executes anything. Three existing knobs read it:

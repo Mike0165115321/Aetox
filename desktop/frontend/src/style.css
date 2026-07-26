@@ -984,6 +984,9 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
    list answers "what is this sub-agent allowed to do" without opening anything. */
 .ag-count { color:var(--text-dim); font-weight:400; }
 .set-row .t .tag { margin-left:6px; font-weight:400; vertical-align:middle; }
+.tool-step.sub { padding-left:18px; }
+.tool-step .sub-mark { color:var(--text-dim); flex:none; }
+.tag.ag-override { background:var(--badge-think-bg); color:var(--badge-think-text); border-color:var(--badge-think-border); }
 .tag.ag-deny { background:var(--diff-del-bg); color:var(--status-danger); border-color:var(--status-danger); }
 .ag-body {
   min-height:340px; resize:vertical; line-height:1.6;

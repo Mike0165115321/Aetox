@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mike0165115321/Aetox/internal/skill"
 	"github.com/Mike0165115321/Aetox/internal/subagent"
 )
 
@@ -111,5 +113,41 @@ func TestSubagentProfileBindings(t *testing.T) {
 		if p.Name == "explore" && p.Model != "aetox-grid" {
 			t.Errorf("model pin not listed: %+v", p)
 		}
+	}
+}
+
+// The main agent must actually be handed `task`, or none of the sub-agent work
+// is reachable from a chat turn. Bootstrapped the real way, on Aetox's own model.
+func TestTaskToolIsRegisteredForTheMainAgent(t *testing.T) {
+	a := newSubagentTestApp(t)
+
+	if _, ok := a.registry.Get("task"); !ok {
+		t.Fatal("task is not in the main agent's registry — the model can never delegate")
+	}
+	if src, _ := a.registry.SourceOf("task"); src != skill.SourceBuiltin {
+		t.Errorf("task registered as %q, want builtin — it ships with the engine", src)
+	}
+	// It reaches the model as a tool definition naming the profiles it can pick.
+	var def *model.ToolDefinition
+	for _, d := range skill.NewDispatcher(a.registry).ToolDefinitions() {
+		if d.Function.Name == "task" {
+			d := d
+			def = &d
+		}
+	}
+	if def == nil {
+		t.Fatal("task has no tool definition, so no model can call it")
+	}
+	if !strings.Contains(string(def.Function.Parameters), "explore") {
+		t.Errorf("the task schema does not offer the bundled profiles: %s", def.Function.Parameters)
+	}
+
+	// And a delegate never gets it back: depth 1, structurally.
+	profile, ok := subagent.Load("explore")
+	if !ok {
+		t.Fatal("explore profile missing")
+	}
+	if _, ok := subagent.FilterRegistry(a.registry, profile).Get("task"); ok {
+		t.Error("a sub-agent was handed task — it could spawn its own children")
 	}
 }

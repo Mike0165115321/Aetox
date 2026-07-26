@@ -199,6 +199,61 @@ func TestNoopToolsModelScriptsToolLoop(t *testing.T) {
 	}
 }
 
+// A caller handed a trimmed tool set is a sub-agent (internal/subagent
+// force-denies todo_write/ask_user to every delegate). The script has to work
+// there too, or the built-in model cannot exercise the delegation path at all —
+// and system tests are supposed to run on this provider, not on a fake one.
+func TestNoopToolsModelScriptsADelegateRound(t *testing.T) {
+	p := NewNoopProvider("aetox-tools:test")
+	readOnly := []ToolDefinition{
+		{Type: "function", Function: ToolFunction{Name: "read"}},
+		{Type: "function", Function: ToolFunction{Name: "grep"}},
+		{Type: "function", Function: ToolFunction{Name: "list"}},
+	}
+
+	r1, err := p.Complete(context.Background(), Request{
+		Model: "aetox-tools:test", Tools: readOnly,
+		Messages: []Message{{Role: RoleUser, Content: "สำรวจโฟลเดอร์นี้"}},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(r1.ToolCalls) != 1 || r1.ToolCalls[0].Function.Name != "list" {
+		t.Fatalf("a delegate round must call a read-only tool it was given, got %+v", r1.ToolCalls)
+	}
+
+	r2, err := p.Complete(context.Background(), Request{
+		Model: "aetox-tools:test", Tools: readOnly,
+		Messages: []Message{
+			{Role: RoleUser, Content: "สำรวจโฟลเดอร์นี้"},
+			{Role: RoleAssistant, ToolCalls: r1.ToolCalls},
+			{Role: RoleTool, Name: "list", ToolCallID: r1.ToolCalls[0].ID, Content: "hay.txt\nnotes.md"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(r2.ToolCalls) != 0 {
+		t.Fatalf("round 2 must report and stop, got %+v", r2.ToolCalls)
+	}
+	if !strings.Contains(r2.Text, "hay.txt") {
+		t.Fatalf("the delegate must report what the tool returned, got %q", r2.Text)
+	}
+
+	// Handed nothing readable, it says so instead of calling something it lacks.
+	r3, err := p.Complete(context.Background(), Request{
+		Model: "aetox-tools:test",
+		Tools: []ToolDefinition{{Type: "function", Function: ToolFunction{Name: "web_search"}}},
+		Messages: []Message{{Role: RoleUser, Content: "ไปดูให้หน่อย"}},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(r3.ToolCalls) != 0 || r3.Text == "" {
+		t.Fatalf("with no read-only tool it must answer in text, got %+v / %q", r3.ToolCalls, r3.Text)
+	}
+}
+
 // aetox-think:test must produce a LONG multi-section reasoning stream — it is
 // the workout for the reasoning panel's unbounded height and auto-scroll.
 func TestNoopThinkModelProducesLongSectionedReasoning(t *testing.T) {

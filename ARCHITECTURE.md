@@ -1445,15 +1445,21 @@ So the three things that make this a saving rather than a spend are all in the d
 
 ### 44.7 Out of scope for the walking skeleton
 
-Parallel fan-out (see 44.9 — studied, not built), background tasks returning as a later synthetic message, persisting sub-agent transcripts, per-call model override beyond what the profile names, anything from ADR 0002 (ensemble/routing/consensus), cross-process orchestration. The `task` tool ships **disabled by default** — one toggle on the existing General settings page.
+Parallel fan-out (see 44.9 — studied, not built), background tasks returning as a later synthetic message, persisting sub-agent transcripts, per-call model override beyond what the profile names, anything from ADR 0002 (ensemble/routing/consensus), cross-process orchestration.
+
+**Reversed on the way (2026-07-26):** this section originally said `task` would ship **disabled by default** behind a settings toggle. It ships **on**, with no toggle. The owner asked for it working (*"เอาให้มันทำงานได้นะครับ"*), and the caution the toggle stood for is already carried by three things that are actually in the code — `Steps` capping a loop nobody watches, `Tools` shrinking what is re-sent per round, and the parent seeing only a summary. A toggle nobody knows exists protects nobody; if a kill switch is ever wanted it is a preference field and one line at the registration site.
 
 ### 44.8 Build order
 
 1. ~~Decision~~ ✅ this section.
 2. ~~`internal/subagent`~~ ✅ **done 2026-07-26.** [profile.go](internal/subagent/profile.go) + [store.go](internal/subagent/store.go) + [profiles/](internal/subagent/profiles) (2 files, `//go:embed`), `List`/`Load`/`Dir`, `ReadRaw`/`Save`/`Delete`/`SetModel`, `AllowsTool`/`DenyRules`/`MaxToolCalls`/`FilterRegistry`, user shadowing, path-traversal guard on the name (it arrives from a model-written tool call). `skill.ParseFrontmatter` extracted. Tests: the bundled two, `explore` read-only and unable to recurse, `general` inheriting tools but not `task`, deny rules reaching `PermissionConfig`, step caps, shadow-replaces-not-duplicates, `SetModel` editing exactly one line, `FilterRegistry` never handing back the parent registry, traversal rejection.
 3. ~~Settings → ซับเอเจน page~~ ✅ **done 2026-07-26.** [desktop/subagents.go](desktop/subagents.go) bindings (list · read · save · delete · pin model · open folder) and one card in Settings per §44.10, each row carrying its whole configuration as badges. 4 frontend tests.
-4. 44.5's three gaps, then `task` itself. Tests: `task` absent from a child registry; a prompt starting with a tool name still runs as a conversation; child usage reaches the parent's reporter; `Steps` caps the child loop; child tool events carry `Parent`.
-5. Frontend nesting of stamped events + the enable toggle.
+4. ~~44.5's three gaps, then `task` itself~~ ✅ **done 2026-07-26.** All three gaps closed: `interactiveTools` → `noDeadlineTools` + `task` (with `turn.HasNoDeadline` exported so the dependency can be asserted without sleeping 60s), `ToolEvent.Parent`, and [internal/turn/callid.go](internal/turn/callid.go) (`WithCallID`/`CallID`, stamped one line before `executeToolCallWithOutcome`). The tool is [internal/subagent/task.go](internal/subagent/task.go), registered as `SourceBuiltin` in `bootstrapFromConfig` with the live provider/registry/permissions so a re-bootstrap replaces it. 9 tests on Aetox's own model (§45): a delegate does real work and only its text + receipt comes back, its events are stamped and the parent's are not, `task`/`write`/`shell`/`help`/`ask_user`/`todo_write` are all absent from a child registry while `general` keeps `write`, bad input returns a *failed result* the model can read rather than an error, no `agent` defaults to `explore`, the schema names the profiles, a cancelled turn stops the delegate, and the deadline exemption holds. `recordToolAction` skips stamped events so Command History stays the agent's own log.
+5. ~~Frontend nesting~~ ✅ **done 2026-07-26.** `ToolStep.parent` carries the stamp; a delegate's row renders indented with a `↳` mark; `applyToolEvent` matches rows **within their own scope**, because two delegates (or a delegate and the main agent) running `grep` at the same moment would otherwise claim each other's row. 2 frontend tests. **Enable toggle: not built** — see 44.7.
+
+**Two bugs the tests caught, both real:**
+- **A cancelled delegate reported success.** `exec.Execute` can return `err == nil` carrying the empty-reply fallback text after a Stop, and the first cut of `task` only checked `err`. Now `ctx.Err()` is checked first and independently: a stopped delegation can never come back as a successful one.
+- **Aetox's own model called tools it was never handed.** `aetox-tools:test` scripted `todo_write`/`ask_user` unconditionally, but every delegate is force-denied both — so the built-in model could not drive the delegation path at all, which is exactly what §45 requires it to do. It now scripts from the tool list it was actually given (`noopDelegateToolsReply`), the way a real model does.
 
 ### 44.9 Parallel sub-agents — studied before building, per the owner
 
@@ -1490,6 +1496,29 @@ Owner supplied a screenshot of ZCode's **Subagents** page as the reference, the 
 **Sidebar naming:** the page is `ซับเอเจน`, sitting next to สกิล / ชุดคำสั่ง / MCP, with its own *Open folder* button. Noted for the record: ZCode's sidebar also carries *Indexing*, which [SETTINGS-PARITY-PLAN.md](SETTINGS-PARITY-PLAN.md) deliberately dropped (no user-facing knob, and Aetox does not RAG-index a repo) — seeing it in their UI does not reopen that.
 
 **One thing the page must never grow:** a picker for the main agent. See §44.0.
+
+---
+
+## 45. Decision — System Tests Run on Aetox's Own Model (2026-07-26)
+
+**Trigger:** owner, on being shown a sub-agent rehearsal driven by a hand-written fake provider — *"เวลาเทสอ่ะ เทสผ่านโมเดล Aetox นะครับทั้งตัวเมนและซับ"* … *"ตั้งค่าเลยเวลาเทสระบบให้ใช้ Aetox เป็นโมเดลสำหรับเทสยาวๆเลย เพราะเราให้มันผ่านช่องเดียวกันอยู่ละ"*.
+
+**Settled:** any test that exercises a *whole path* — a turn, a tool loop, a delegation — runs on the built-in `aetox` provider ([internal/model/noop.go](internal/model/noop.go)), model `aetox-tools:test` when tools are involved. Not a fake provider written for the test.
+
+**Why it is the better default, and it is not just convenience:**
+
+- **Same channel.** The built-in provider is a real `model.Provider` going through `cognitive.Agent` → `turn.Executor` → the registry, exactly like DeepSeek would. A per-test fake is a second implementation of the thing under test, and it passes even when the real path is broken.
+- **No key, no cost, no network.** Which is what makes it usable in `verify.sh` on every run rather than behind `--live`.
+- **Deterministic and stateless.** Its scripts derive the next round from the transcript, so they survive a re-bootstrap mid-run and never flake.
+- **It doubles as the manual test surface.** `aetox-tools:test` is what a developer switches to in the app to exercise the tool UI by hand (§27.3, §42) — the same model, so a green test and a hand-check are looking at the same behavior.
+
+**What this obliges the provider to do:** stay capable of driving whatever path is under test. It earned a second tool script the same day for exactly that reason — `noopDelegateToolsReply`, taken when the request's tool list lacks `todo_write`/`ask_user`, which is the case for **any** trimmed registry: a sub-agent (they are force-denied to every delegate) and equally the engine-only registry in a Go test, where those two live desktop-side. It runs one read-only `list` and reports the result. Scripting a tool the caller never offered would have tested nothing, because the call dies at dispatch — the same way a real model's would.
+
+**Fakes are still right for one thing:** a test about a provider *edge case* — a truncated tool call, a leaked DSML block, a 401 — needs a provider that can produce that exact wire condition on demand. Those stay hand-written and stay small. The rule is about whole-path tests, not about never writing a stub.
+
+**Where the fixture lives:** `model.NewNoopProvider("aetox-tools:test")`, no options needed. See [internal/subagent/spawn_demo_test.go](internal/subagent/spawn_demo_test.go) for the pattern: build a registry, build a `cognitive.Agent` on the built-in provider, drive it through `turn.NewExecutor`, assert on the tool events and the final text.
+
+**Status:** `Settled 2026-07-26.` Recorded in [TEST-REPORT.md](TEST-REPORT.md) as the convention new tests follow.
 
 ---
 

@@ -424,8 +424,12 @@ export function applyToolEvent(ev: ToolEvent): void {
   // incomplete on the early events — a model may stream a write's content long
   // before its path — so matching on it drew a second row the moment the name
   // arrived. Falls back to the label for engines that send no id.
+  // A sub-agent's rows are matched within their own scope: two delegates (or a
+  // delegate and the main agent) can be running `grep` at the same moment, and
+  // without the parent in the key one would claim the other's row.
   const running = (s: ToolStep) =>
-    s.state === 'run' && (ev.ref && s.ref ? s.ref === ev.ref : s.label === label)
+    s.state === 'run' && (s.parent ?? '') === (ev.parent ?? '') &&
+    (ev.ref && s.ref ? s.ref === ev.ref : s.label === label)
   if (ev.action === 'call') {
     // A call is announced repeatedly while the model writes it — once the tool
     // name is known, then as the content streams — and once more when it
@@ -438,7 +442,10 @@ export function applyToolEvent(ev: ToolEvent): void {
       if (ev.subject) open.label = label
       return
     }
-    cockpit.toolSteps.push({ label, ref: ev.ref, state: 'run', startedAt: Date.now(), added: ev.added || undefined })
+    cockpit.toolSteps.push({
+      label, ref: ev.ref, parent: ev.parent || undefined,
+      state: 'run', startedAt: Date.now(), added: ev.added || undefined,
+    })
     return
   }
   if (ev.action !== 'result') return

@@ -157,3 +157,43 @@ describe('tool timeline collapsing', () => {
     expect(container.querySelector('.meta-row .reasoning-toggle')?.textContent).toContain('Used 2 tools')
   })
 })
+
+// A sub-agent's tool calls arrive on the same channel as the main agent's, told
+// apart only by ToolEvent.parent (§44.5). The timeline has to show whose work is
+// whose, and two delegates running the same tool must not share a row.
+describe('sub-agent tool events', () => {
+  beforeEach(() => { cockpit.toolSteps = [] })
+
+  it('keeps a delegate’s row separate from an identical call by the main agent', () => {
+    applyToolEvent({ action: 'call', name: 'grep', subject: 'needle', ref: 'main_1' })
+    applyToolEvent({ action: 'call', name: 'grep', subject: 'needle', ref: 'sub_1', parent: 'task_1' })
+    expect(cockpit.toolSteps.length).toBe(2)
+    expect(cockpit.toolSteps[0].parent).toBeUndefined()
+    expect(cockpit.toolSteps[1].parent).toBe('task_1')
+
+    // Each result lands on its own row.
+    applyToolEvent({ action: 'result', name: 'grep', subject: 'needle', ref: 'sub_1', parent: 'task_1', ok: true })
+    expect(cockpit.toolSteps[1].state).toBe('done')
+    expect(cockpit.toolSteps[0].state).toBe('run')
+  })
+
+  it('renders a delegate’s step indented under the task that caused it', () => {
+    const { container } = render(Chat, {
+      ...baseProps,
+      // The live rows only exist during a turn, which is when a delegate runs.
+      awaitingReply: true,
+      // 'run' because a finished step collapses behind the toggle; the live rows
+      // are the ones on screen while a delegate is actually working.
+      toolSteps: [
+        { label: 'task explore', state: 'run', startedAt: Date.now() },
+        { label: 'grep needle', parent: 'task_1', state: 'run', startedAt: Date.now() },
+      ] as any,
+      messages: [{ role: 'agent', text: 'done', time: '10:54' }] as any,
+    })
+    const rows = container.querySelectorAll('.tool-step')
+    expect(rows.length).toBe(2)
+    expect(rows[0].classList.contains('sub')).toBe(false)
+    expect(rows[1].classList.contains('sub')).toBe(true)
+    expect(rows[1].querySelector('.sub-mark')).toBeTruthy()
+  })
+})

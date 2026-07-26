@@ -362,6 +362,18 @@ func (p *NoopProvider) noopMarkdownReply() string {
 //  3. todo_write (all items completed)
 //  4. final text echoing the user's choice
 func (p *NoopProvider) noopToolsReply(model string, req Request) Response {
+	// Script only tools the caller actually offered. A sub-agent runs on a
+	// filtered registry — `todo_write` and `ask_user` are force-denied to every
+	// delegate (internal/subagent) — and a model that calls a tool it was never
+	// given just fails at dispatch, which tests nothing. Real models behave the
+	// same way, so this is fidelity, not a special case.
+	//
+	// A request that declares no tools at all is the caller not saying (some
+	// tests, and any hand-built Request): keep the historical UI script rather
+	// than guessing it is a delegate.
+	if len(req.Tools) > 0 && (!offersTool(req, "todo_write") || !offersTool(req, "ask_user")) {
+		return p.noopDelegateToolsReply(model, req)
+	}
 	todoCalls, askCalls := 0, 0
 	lastAnswer := ""
 	for _, m := range req.Messages {
@@ -405,6 +417,57 @@ func (p *NoopProvider) noopToolsReply(model string, req Request) Response {
 				"✅ Tools UI test set complete — todo panel, ask_user cards and the tool timeline all worked.\n\nask_user returned: ") + lastAnswer,
 		}
 	}
+}
+
+// offersTool reports whether this request actually put the named tool on the
+// table. The scripted provider consults it for the same reason a real model
+// does: calling something you were not handed goes nowhere.
+func offersTool(req Request, name string) bool {
+	for _, t := range req.Tools {
+		if strings.EqualFold(strings.TrimSpace(t.Function.Name), name) {
+			return true
+		}
+	}
+	return false
+}
+
+// noopDelegateToolsReply is the tool-loop script for a caller running on a
+// trimmed tool set: a sub-agent (internal/subagent), or anyone else — the engine
+// registry alone has no ask_user/todo_write either, since those are desktop-side
+// skills. Two rounds, mirroring what a delegate does: run one read-only tool,
+// then report the result and stop. It is `list` rather than `grep` because
+// listing needs no pattern to match, so the round is meaningful in any sandbox
+// including an empty one.
+//
+// Stateless like its sibling: which round we are in is read off the transcript,
+// so it survives a re-bootstrap mid-run.
+func (p *NoopProvider) noopDelegateToolsReply(model string, req Request) Response {
+	const probe = "list"
+	result := ""
+	ran := false
+	for _, m := range req.Messages {
+		if m.Role == RoleTool && strings.EqualFold(m.Name, probe) {
+			ran, result = true, strings.TrimSpace(m.Content)
+		}
+	}
+
+	if !ran && offersTool(req, probe) {
+		return Response{Provider: p.Name(), Model: model, ToolCalls: []ToolCall{{
+			ID:       "noop_delegate_1",
+			Type:     "function",
+			Function: FunctionCall{Name: probe, Arguments: `{"path":"."}`},
+		}}}
+	}
+
+	if !ran {
+		// Nothing read-only was offered at all — say so instead of inventing work.
+		return Response{Provider: p.Name(), Model: model, Text: p.pick(
+			"[tools-test] ไม่ได้รับเครื่องมืออ่านข้อมูลเลย จึงไม่มีอะไรให้รายงาน",
+			"[tools-test] I was handed no read-only tool, so there is nothing to report")}
+	}
+	return Response{Provider: p.Name(), Model: model, Text: p.pick(
+		"[tools-test] เรียก list แล้ว ผลที่ได้: ",
+		"[tools-test] ran list, result: ") + clipNoop(result, 400)}
 }
 
 // noopLongReasoning produces a multi-paragraph thinking stream (~2 minutes of

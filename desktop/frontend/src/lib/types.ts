@@ -109,6 +109,9 @@ export interface ToolEvent {
   /** The engine's tool-call id — how a row is recognized across updates. The
    * label cannot serve: it is empty of its subject on the early events. */
   ref?: string
+  /** Set only on events from inside a sub-agent: the ref of the `task` call that
+   * spawned it. The row is shown as that task's work rather than the agent's own. */
+  parent?: string
   subject?: string
   ok?: boolean
   error?: string
@@ -120,6 +123,8 @@ export interface ToolStep {
   label: string
   /** ToolEvent.ref of the call this row is showing, when the engine sent one. */
   ref?: string
+  /** Set when this row is a sub-agent's work, carrying the `task` call's ref. */
+  parent?: string
   state: 'run' | 'done' | 'err'
   /** Why it failed, straight from the engine's result event. Only on 'err'. */
   error?: string

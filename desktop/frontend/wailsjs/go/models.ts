@@ -444,6 +444,7 @@ export namespace subagent {
 	    prompt: string;
 	    path?: string;
 	    builtin: boolean;
+	    overrides?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Profile(source);
@@ -460,6 +461,7 @@ export namespace subagent {
 	        this.prompt = source["prompt"];
 	        this.path = source["path"];
 	        this.builtin = source["builtin"];
+	        this.overrides = source["overrides"];
 	    }
 	}
 
