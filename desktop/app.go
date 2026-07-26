@@ -18,10 +18,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	// Aliased: `agent` is already the name of the local cognitive.Agent in
-	// bootstrapFromConfig, and shadowing a package with a variable in the one
-	// function that needs both is how you get a very confusing compile error.
-	agentprofile "github.com/Mike0165115321/Aetox/internal/agent"
 	aetoxapp "github.com/Mike0165115321/Aetox/internal/app"
 	"github.com/Mike0165115321/Aetox/internal/cognitive"
 	"github.com/Mike0165115321/Aetox/internal/command"
@@ -572,11 +568,6 @@ type ModelInfo struct {
 	// one (e.g. DeepSeek's "anthropic" vs "openai-compatible"). Empty when
 	// the provider has only one format or uses the catalog default.
 	WireFormat string `json:"wireFormat"`
-	// Agent is the active profile's name (§44). It rides along with the model
-	// rather than getting its own binding because the composer reads them as
-	// one fact — "who is answering, on which brain" — and two sources for one
-	// chip is how they drift apart.
-	Agent string `json:"agent"`
 }
 
 // desktopProviders is the curated subset of the full engine catalog
@@ -743,7 +734,6 @@ func (a *App) GetModelInfo() ModelInfo {
 		ContextUsed:  used,
 		ContextMax:   a.contextWindowTokens(),
 		WireFormat:   effectiveWireFormat(a.cfg.ModelProvider, a.cfg.ModelWireFormat),
-		Agent:        a.ActiveAgent(),
 	}
 }
 
@@ -1289,9 +1279,6 @@ func resolveConfig(opts config.ConfigOptions) config.Config {
 		if v := strings.TrimSpace(pref.UILocale); v != "" {
 			cfg.UILocale = v
 		}
-		if v := strings.TrimSpace(pref.AgentName); v != "" {
-			cfg.AgentName = v
-		}
 		if key := pref.APIKeyForProvider(cfg.ModelProvider); key != "" {
 			cfg.ModelAPIKey = key
 		}
@@ -1361,23 +1348,15 @@ func bootstrapFromConfig(cfg config.Config, onToolAction func(turn.ToolEvent), o
 	if ctxTokens <= 0 {
 		ctxTokens = model.ContextWindowTokens(cfg.ModelProvider, cfg.ModelName)
 	}
-	// Which agent the user picked (§44.4). An unknown or deleted name resolves to
-	// the default rather than leaving the app with no agent — and a sub-agent name
-	// is "unknown" here by construction: LoadOrDefault only searches the agent
-	// layer, so there is no fallback branch to get wrong.
-	profile := agentprofile.LoadOrDefault(cfg.AgentName)
-	debuglog.Info("agent profile", fmt.Sprintf("%s (tools=%d, deny=%d, steps=%d)",
-		profile.Name, len(profile.Tools), len(profile.Deny), profile.MaxToolCalls()))
 	agent := cognitive.NewAgent(cognitive.AgentConfig{
 		Provider:     bootstrapResult.Provider,
 		Model:        cfg.ModelName,
-		SystemPrompt: prompt.BuildWithRole(prompt.SurfaceDesktop, cfg.SandboxRoot, profile.Prompt),
+		SystemPrompt: prompt.Build(prompt.SurfaceDesktop, cfg.SandboxRoot),
 		// Scale the retained-history budget to the model's real window
 		// (0 → NewContext's 128k-char default). ponytail: trims oldest turns
 		// when over budget — upgrade to summarizing compaction if losing old
 		// turns verbatim starts to hurt long sessions.
-		MaxChars:     ctxTokens * 4,
-		MaxToolCalls: profile.MaxToolCalls(),
+		MaxChars: ctxTokens * 4,
 	})
 
 	registry := skill.NewDefaultRegistry(skill.RegistryOptions{
@@ -1397,12 +1376,6 @@ func bootstrapFromConfig(cfg config.Config, onToolAction func(turn.ToolEvent), o
 		debuglog.Msg("skill discovery: %v", discErr)
 	}
 	discoverDone()
-	// What the profile allows is what the agent is handed — a tool the profile
-	// excludes is not sent to the model at all, which is where the saving is
-	// (§44.2). Profiles that filter nothing get the same registry object back,
-	// so the common case is untouched. The Tools panel reads this one too: it
-	// answers "what can the agent do right now", and that has to be the truth.
-	registry = agentprofile.FilterRegistry(registry, profile)
 	dispatcher := skill.NewDispatcher(registry)
 
 	permissions, permErr := config.LoadPermissions()
@@ -1417,13 +1390,6 @@ func bootstrapFromConfig(cfg config.Config, onToolAction func(turn.ToolEvent), o
 	// can't be called before its "<server>_*" ask-rule exists, so nothing races.
 	// User rules stay last (last-match-wins) so explicit choices still win.
 	permissions.Rules = append(mcpMgr.PermissionRules(), permissions.Rules...)
-	// …except the active profile's denials, which go after even those, because
-	// PermissionConfig is last-match-wins (safety.Resolve) and a `plan` agent
-	// that quietly writes files whenever the user happens to have an
-	// `allow write *` rule is the "badge lies" bug this repo has now fixed three
-	// times. Picking a profile IS the explicit choice; overriding it means
-	// editing the profile file, which the user owns.
-	permissions.Rules = append(permissions.Rules, profile.DenyRules()...)
 
 	chatApp, err := aetoxapp.NewApp(aetoxapp.Options{
 		Agent:          agent,

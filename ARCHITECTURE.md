@@ -34,7 +34,7 @@ This document is an evidence-first architecture map, distinct from [README.md](R
 | [docs/opencode-study/](docs/opencode-study/README.md) | Source-level reading of opencode at a pinned commit (agents, MCP, permissions, plugin hooks, snapshot). |
 | [docs/architecture-reference-opencode.md](docs/architecture-reference-opencode.md) · [docs/competitor-research.md](docs/competitor-research.md) | Package/feature-level comparisons that motivated the deep study above. |
 | [docs/architecture-review-aetox-cli.md](docs/architecture-review-aetox-cli.md) | **Superseded** (predates `desktop/`); kept for history. |
-| Tier-1 module READMEs | `internal/{app,turn,skill,model,grammar,prompt,rtk,agent}/README.md`, `cmd/aetox/README.md`, `desktop/README.md` — hub-and-spoke rule per §12: meaningful change to a module updates its README in the same commit. [internal/agent/README.md](internal/agent/README.md) is also the **profile file-format reference** (§44). |
+| Tier-1 module READMEs | `internal/{app,turn,skill,model,grammar,prompt,rtk,subagent}/README.md`, `cmd/aetox/README.md`, `desktop/README.md` — hub-and-spoke rule per §12: meaningful change to a module updates its README in the same commit. [internal/subagent/README.md](internal/subagent/README.md) is also the **sub-agent profile file-format reference** (§44). |
 
 ---
 
@@ -861,7 +861,7 @@ One session, three engine layers fixed; OpenCode/Claude Code are the confirmed r
 
 **Explicitly out of scope (this decision):** ADR 0002's ensemble/routing/consensus, per-task model override (phase 2 if wanted), parallel fan-out, persistence of sub-agent transcripts, and any cross-process orchestration.
 
-**Status: Approved 2026-07-26, folded into §44.** The owner approved the shape above; §44 is the same decision at implementation resolution (profile format, the shipped profiles, the two-layer separation, the three gaps in existing files, build order). Read §44, not this section, before writing code — where the two disagree, §44 wins because it was written against the code rather than against the plan.
+**Status: Approved 2026-07-26, folded into §44.** Read §44, not this section, before writing code — it is the same decision at implementation resolution, and where the two disagree §44 wins because it was written against the code. Note the one thing §44 adds that this section never had: **a primary-agent picker was built on top of this plan and then cut** (§44.0) — the main agent is the assistant, and only the sub-agent half of Phase 6 survives.
 
 ---
 
@@ -1349,133 +1349,128 @@ Only the guide gets the two-column treatment: `ask_user`'s own panel keeps its s
 
 ---
 
-## 44. Decision — Agent Profiles + the `task` Tool, at Implementation Resolution (Proposed 2026-07-26)
+## 44. Decision — Sub-agents: the `task` Tool and Its Profiles (2026-07-26)
 
-**Trigger:** owner — *"เราจะผูกค่าเริ่มต้นเลย เอเจนที่เราจะสร้าง เริ่มต้นเลยคือ เอเจนผู้ช่วยส่วนตัว เอเจนทำงานโค้ด และเอเจนวางแผน และต่อยอดไประบบซับเอเจน ที่คอยช่วยงานซ้ำหรืองานที่เอเจนเมนไม่จำเป็นต้องเสียเวลารันลูปเอง เวลา hit สูง เงินจะได้ไม่โดนผลาญ ... มันต้องแสดง tool ด้วย ตัวเมนจะได้รู้ว่ามันทำอะไรอยู่"* — then, after the readiness survey: *"โอเคครับตามนี้เลย แต่ขอให้ชัดก่อนเราจะทำยังไงกันแน่"*. This section is that answer; §25 is approved and folded into it.
+**Trigger:** [SETTINGS-PARITY-PLAN.md](SETTINGS-PARITY-PLAN.md) Phase 6 — the last parity item, and the first real caller for the `internal/orchestrator` scaffold (§10) that has sat unused since it was built. Owner's framing: *"ซับเอเจน ที่คอยช่วยงานซ้ำหรืองานที่เอเจนเมนไม่จำเป็นต้องเสียเวลารันลูปเอง เวลา hit สูง เงินจะได้ไม่โดนผลาญ … มันต้องแสดง tool ด้วย ตัวเมนจะได้รู้ว่ามันทำอะไรอยู่"*.
+
+### 44.0 The main agent is not chosen from a list — and the road to knowing that
+
+This section spent a day being about two things and is now about one. The record matters more than the code that got deleted, because the same mistake is easy to make again.
+
+**What happened.** Asked for "เอเจน 3 ตัว" (personal assistant, coding, planning) plus sub-agents, this document specified both: an agent layer the user picks from, and a sub-agent layer the agent delegates to. Both were built and shipped green — profiles, a preference, a picker in Settings, an agent badge on the composer chip. Then the owner looked at it in the app and cut the first half: *"ผมว่าตัดเลยดีกว่า เมนหลักไม่มีเอเจน เมนหลักคือตัวหลักจริงๆ มันมีผลเชิง UX ต้องถามก่อนว่าเราสร้างมันมาเพื่ออะไร ผมอยากให้มันเป็นผู้ช่วยส่วนตัวอัจฉริยะ การจะมาแบ่งเอเจนทำให้มันแตกไปหลายบุคลิก"*.
+
+**Why he is right, in the terms this document should have used from the start:**
+
+1. **There is already a layer that answers "who is the AI".** The identity directory (§11 — `identity.md`, `thinking.md`, `context.md`) rides into every project and every session. An agent profile carrying its own role prompt is a **second mechanism for the same question**, and the two would eventually contradict each other with no rule for which wins. That is the same class of debt the owner caught twice in one day inside this very feature (a `mode:` key that could disagree with its folder; two layers sharing one list).
+2. **`build` and `plan` were never two personalities** — [docs/opencode-study/agents.md](docs/opencode-study/agents.md) says so in its own conclusion: a "mode" is a bundle of (permission ruleset + prompt), not a branch in the engine. But *calling* it an agent and putting it in a dropdown turns it into "who are you talking to", which is precisely the fragmentation the owner felt. Claude Code ships the same capability as **plan mode** (shift+tab) on one assistant; Codex ships no agent switch at all. Only OpenCode models it as a selectable agent — and following that one detail of the reference implementation cost more in product coherence than it bought.
+3. **The requirement was never primary switching.** Phase 6 asked for sub-agents. The agent layer was scope this document added on its own.
+
+**Settled: the main agent is the assistant.** One identity, configured by the identity files, never selected from a list. `internal/prompt` has no role-override layer and will not get one. Profiles exist for exactly one purpose — describing who the assistant *delegates to*.
+
+**Kept as a possible future, deliberately not built:** "อ่านได้ แก้ไม่ได้" is genuinely useful during a large refactor. If it returns it returns as a **mode** — one toggle next to approval/think, the same assistant with its hands tied — reusing `Profile.DenyRules` + `FilterRegistry`, which already exist. Not an agent to pick.
+
+**The deleted work is in `6f7ad46`**, committed before the cut on purpose: the reasoning above is worth more than the code, but the code is one `git show` away if a read-only mode ever wants it.
 
 ### 44.1 The survey: almost everything needed is already built and unused
 
-| Needed | State (all `Direct`, re-read 2026-07-26) |
+| Needed | State (all `Direct`) |
 |---|---|
 | Multi-agent lifecycle | [internal/orchestrator](internal/orchestrator/orchestrator.go) — `Spawn/Get/Stop/List`, **zero callers** since §10 |
-| What a profile even is | [docs/opencode-study/agents.md](docs/opencode-study/agents.md) §1 — profile = prompt override + model override + permission ruleset. No per-agent tool registry needed |
-| Restricting a planner from editing | [safety.go:80](internal/safety/safety.go#L80) `PermissionConfig.Resolve` — glob over tool + args, already prompt/allow/deny |
-| Showing tools live | [app.go:91](desktop/app.go#L91) `recordToolAction` → `agent:tool` event, already carries a struct not a string (§27) |
-| Per-agent tool-loop cap | `cognitive.AgentConfig.MaxToolCalls` exists; main deliberately runs unbounded ([agent.go:191](internal/cognitive/agent.go#L191)) |
+| What a profile even is | [docs/opencode-study/agents.md](docs/opencode-study/agents.md) §1 — profile = prompt + model override + permission ruleset |
+| Restricting what a delegate may touch | [safety.go:80](internal/safety/safety.go#L80) `PermissionConfig.Resolve` — glob over tool + args, already allow/deny/ask |
+| Showing tools live | [app.go:91](desktop/app.go#L91) `recordToolAction` → `agent:tool` event, already a struct not a string (§27) |
+| Per-sub-agent loop cap | `cognitive.AgentConfig.MaxToolCalls` exists; the main agent deliberately runs unbounded ([agent.go:191](internal/cognitive/agent.go#L191)) |
 | Absorbing sub-agent token spend | `SetUsageReporter`, wired at [app.go:1210](desktop/app.go#L1210) |
 | Ship examples not an empty folder | §35's `//go:embed` + user-file-shadows-bundled rule |
-| Switching without losing the chat | [app.go:1179](desktop/app.go#L1179) `applyConfig` + `RestoreHistory` — the existing model-switch path |
-| Frontmatter `.md` parsing | [discovery.go:178](internal/skill/discovery.go#L178) `parseSkillMarkdown` — unexported, reads only `name`/`description` |
+| Frontmatter `.md` parsing | [discovery.go](internal/skill/discovery.go)'s parser, now exported as `skill.ParseFrontmatter` |
 
-### 44.2 Profile format — one new package, `internal/agent`
+### 44.2 Profile format — one package, `internal/subagent`
 
 ```go
 type Profile struct {
-	Name        string   // file basename, also the selector
-	Description string   // shown in the palette row
-	Mode        string   // "primary" (can be the main agent) | "subagent" (only spawnable via task)
-	Model       string   // "" = whatever model is selected; a profile never forces a provider switch
+	Name        string   // file basename; also how `task` selects it
+	Description string   // shown in the settings row
+	Model       string   // "" = whatever model is selected; never forces a provider switch
 	Tools       []string // "" = everything in the registry; non-empty = only these
-	Deny        []string // → safety.PermissionRule{Tool: x, Action: Deny}, prepended to user rules
-	Steps       int      // → AgentConfig.MaxToolCalls; 0 = package default (24 for subagents, unbounded for primary)
-	Prompt      string   // the markdown body: role text, not steps
+	Deny        []string // → safety.PermissionRule{Tool: x, Action: Deny}
+	Steps       int      // → AgentConfig.MaxToolCalls; 0 = 24
+	Prompt      string   // the markdown body: the brief, not steps
 }
 ```
 
-Frontmatter keys `name/description/mode/model/tools/deny/steps`, body = prompt. Rather than a second parser, [discovery.go:178](internal/skill/discovery.go#L178) becomes exported and generic — `skill.ParseFrontmatter(raw) (map[string]string, body string, err error)` — and its one existing call site reads `name`/`description` off the map. Comma-separated lists for `tools`/`deny`; still not YAML, same reasoning as the original.
+Frontmatter keys `description/model/tools/deny/steps`, body = the brief. Rather than a second parser, [discovery.go](internal/skill/discovery.go)'s became exported and generic — `skill.ParseFrontmatter(raw) (map[string]string, body string, err error)` — and its one existing call site reads `name`/`description` off the map. Comma-separated lists; still not YAML, same reasoning as the original. `name:` is **not read**: the filename is the name, because a key that can disagree with the file it lives in is the split §35 was written about.
 
-**`Tools` is a real allowlist even though opencode has none, and the reason is cost, not safety.** A denied tool is still *sent* to the model on every round of the loop — deny only blocks execution. Cutting `explore` from ~25 tool definitions to 4 is a per-round saving on the exact agent that gets spawned most often, which is the whole point the owner raised. Safety stays where it already is (`Deny` + the permission layer); this field is a token budget.
+**`Tools` is a real allowlist even though opencode has none, and the reason is cost, not safety.** A denied tool is still *sent* to the model on every round of the loop — deny only blocks execution. Cutting `explore` from ~25 tool definitions to 4 is a per-round saving on the delegate that gets spawned most often, which is the whole point the owner raised. Safety stays where it already is (`Deny` + the permission layer); this field is a token budget.
 
-**Storage, per §35's precedent:** `internal/agent/profiles/*.md` compiled in via `//go:embed`; a user file at `<DataRoot>/agents/<name>.md` shadows a bundled one of the same name; nothing is ever written to disk on first run.
+**Storage, per §35's precedent:** `profiles/*.md` compiled in via `//go:embed`; a user file at `<DataRoot>/subagents/<name>.md` shadows a bundled one of the same name; nothing is written on first run.
 
-### 44.3 The four that ship — two agents, two sub-agents
+### 44.3 The two that ship
 
-Cut from five to four on the owner's call after the first build (*"ผมคิดไปคิดมา เอเจนเริ่มต้น แค่ 2 ตัวพอครับ … Claude Code Codex อะไรพวกนี้ไม่เห็นใช้เลย แต่ผมคิดว่าการมีก็ไม่ได้เสียหาย ผมว่าจะผูกติดระบบไปเลย"*). `assistant` and `code` collapsed into one **`build`**: with only two agents, the doer has to cover ordinary conversation too, so its role text carries both halves. The observation behind the cut is correct and worth recording — **Claude Code and Codex ship no primary-agent switch at all**; OpenCode does (`build`/`plan`), which is the precedent being followed.
-
-| Profile | Layer | Tools | Deny | Why it exists |
-|---|---|---|---|---|
-| `build` | agent (**default**) | all | — | ตัวลงมือทำ — the agent a fresh install talks to: answers, finds things out, and changes real files |
-| `plan` | agent | all | `write`, `edit`, `delete`, `apply_patch`, `shell`, `plugin_install` | Read-only planning. Per the study's headline finding, **not a code path** — one profile whose permission ruleset denies every mutation. `plugin_install` joined the list while writing the file: it downloads and writes into the skills directory, so leaving it out because "a planner has no reason to call it" would have been intent standing in for enforcement |
-| `explore` | sub-agent | `grep`, `glob`, `list`, `read` | — | File-search specialist. The cheapest possible win: searching is what floods MAIN's context worst |
-| `general` | sub-agent | all minus the forced denials | — | The "งานซ้ำ" worker — can actually edit and run things, under a step cap |
-
-Forced for every sub-agent regardless of profile: `task` (depth 1, structural — see 44.5), `help` (its registry pointer is the parent's), `ask_user` and `todo_write` (no human is attached to a sub-agent's loop; `ask_user` would block until the per-tool deadline, and a sub-agent writing the user's todo list is noise — same force-deny opencode applies).
-
-### 44.3.1 The layers are separated all the way down, not by a field
-
-Owner, twice, the second time after seeing all five profiles in one folder: *"แยก เอเจนกับซับเอเจนดิ อนาคตจะเป็นหนี้ในระบบนะ"* … *"แยกชั้นกับซับเอเจนให้เด็ดขาดนะครับ แม่งชอบเอามาปนกัน"*. He was right, and the first fix (a `subagents/` subfolder while `Load` still searched both and `List` still returned one array with a `mode` field) was not enough — that is separation in the file manager only.
-
-**What the reference implementations do, read before deciding** (from the owner's own library at `E:\MikeData\OpenSource-Study`): LangGraph is supervisor→worker with fan-out/fan-in (`14-Multi-Agent-Enterprise/02-Team-Orchestration/LangGraph.md`), CrewAI is a role-based crew with a defined process. **Every one of them keeps the orchestrator and the workers as distinct things.** None models "one list of agents with a flag saying which kind".
-
-So the split goes through every layer:
-
-| | Agent | Sub-agent |
+| Profile | Tools | Why it exists |
 |---|---|---|
-| Bundled | `profiles/agents/*.md` | `profiles/subagents/*.md` |
-| User files | `<DataRoot>/agents/` | `<DataRoot>/subagents/` — a **sibling**, not a child (nesting made the agent listing have to remember to skip a subdirectory, and "remember to" eventually gets forgotten) |
-| Go listing | `List()` | `ListSubagents()` |
-| Go lookup | `Load(name)` | `LoadSubagent(name)` — **neither falls back to the other layer** |
-| Writes | `Save/Delete/ReadRaw/SetModel(…, KindAgent)` | same, `KindSubagent` — a typed `Kind`, not a bare string, and no function searches the other layer |
-| Bindings | `ListAgentProfiles()` | `ListSubagentProfiles()` |
-| Settings page | its own card | its own card, its own folder button |
+| `explore` | `grep`, `glob`, `list`, `read` | File-search specialist. The cheapest possible win: searching is what floods the main context worst |
+| `general` | all minus the forced denials | The "งานซ้ำ" worker — can actually edit and run things, under a step cap |
 
-Two consequences worth stating: a sub-agent name **cannot** be selected as the session's agent (it does not resolve there — no guard needed, no branch to get wrong), and the same name in both layers is simply two different profiles, so the tie-break rule the nested version needed is gone.
+Forced for every sub-agent regardless of profile: `task` (depth 1, structural — see 44.5), `help` (its registry pointer is the parent's), `ask_user` and `todo_write` (no human is attached to a sub-agent's loop; `ask_user` would block until the per-tool deadline, and a delegate writing the user's todo list is noise — same force-deny opencode applies).
 
-**And there is no `kind:`/`mode:` frontmatter key at all.** The directory is the only record. A key that could contradict the folder is the same product-vs-code split §35 was written about; a misplaced file shows up under the wrong card in Settings, which is a visible mistake rather than a silent one.
+### 44.4 `task` — where it lives, and why not in `internal/skill`
 
-**Where this is going (recorded, not built):** the owner's next want is agents that run in parallel on deep work, research before acting, and eventually generating their own sub-agents for repetitive jobs — *"ตัวหลักก็คือตัวหลัก"*. All three are supervisor→worker patterns, and all three are additions to the sub-agent layer only. Keeping that layer separate now is what makes them additions rather than rewrites.
+**It cannot be a built-in in [internal/skill](internal/skill/defaults.go): `turn` imports `skill`, and `task` needs `turn` + `cognitive`.** It goes in `internal/subagent` (same package as the profiles — no reason for two), registered at bootstrap as `SourceExternal`, which is exactly how the desktop already injects `ask_user`/`todo_write`/browser tools (§27.3).
 
-### 44.4 Selecting the primary agent
-
-- `config.ModelPreference.AgentName string \`json:"agent,omitempty"\`` — empty means `build` (`agent.DefaultName`), so no preference file needs migrating (same trick as `EnabledProviders`).
-- [app.go:1179](desktop/app.go#L1179) `applyConfig` loads the profile and feeds four things it already feeds from other sources: system prompt, `MaxToolCalls`, `permissions.Rules` (profile denials prepended, user rules stay last so explicit choices still win), and the model override if the profile names one.
-- The prompt layer: `prompt.BuildWithRole(surface, root, role)`, with `Build` kept as a one-line wrapper so the CLI call site doesn't churn. The role text is inserted **after identity, before the user-global and project layers** — deliberately *not* last, so §11's invariant holds: project `AETOX.md` still wins on conflict. A role is who the agent is; project rules are house rules, and house rules outrank the role.
-- `SetAgent(name)` binding → the existing `applyConfig` + `RestoreHistory` path, so switching agent mid-chat keeps the conversation exactly like switching model does today.
-- UI: one palette row (§36), cycling with the current value on the right — the pattern already used for approval mode and think level.
-
-### 44.5 `task` — where it lives, and why not in `internal/skill`
-
-**It cannot be a built-in in [internal/skill](internal/skill/defaults.go): `turn` imports `skill`, and `task` needs `turn` + `cognitive`.** It goes in `internal/agent` (same package as the profiles — no reason for two), registered at bootstrap as `SourceExternal`, which is exactly how the desktop already injects `ask_user`/`todo_write`/browser tools (§27.3).
-
-Schema `{description, prompt, agent}` — `agent` defaults to `explore`, enum = `agent.ListSubagents()`. Resolved with `LoadSubagent`, which cannot reach the agent layer, so `task` can never spawn the session's own agent (§44.3.1).
+Schema `{description, prompt, agent}` — `agent` defaults to `explore`, enum = `subagent.List()`.
 
 One call does:
 
-1. **Build the child registry** — `skill.Registry` from the parent's `Snapshot()` ([skill.go:135](internal/skill/skill.go#L135)) keeping only `Tools` (or everything minus the forced denials). Depth 1 is then structural, as §25 wanted: `task` is simply not in the child's registry, so no counter can be got wrong.
-2. **Build the child agent** — `cognitive.NewAgent` with the profile's prompt, a **fresh context** (no history — the `prompt` argument must carry everything), `MaxToolCalls` from `Steps`, and `SetUsageReporter` pointed at the same hook as MAIN so Usage stats absorb the spend with no new plumbing.
+1. **Build the child registry** — `FilterRegistry` over the parent's `Snapshot()` ([skill.go:135](internal/skill/skill.go#L135)), keeping only what the profile allows. Depth 1 is then structural: `task` is simply not in the child's registry, so no counter can be got wrong.
+2. **Build the child agent** — `cognitive.NewAgent` with the profile's brief, a **fresh context** (no history — the `prompt` argument must carry everything), `MaxToolCalls` from `Steps`, and `SetUsageReporter` pointed at the same hook as the main agent so Usage stats absorb the spend with no new plumbing.
 3. **Run the full loop through the real executor** — `turn.NewExecutor` over the child registry, then `Execute(ctx, prompt, command.Intent{Raw: prompt, Kind: command.KindConversation}, nil, nil, nil)`. **The explicit `Intent` is load-bearing:** [executor.go:663](internal/turn/executor.go#L663) returns a caller-supplied intent untouched, and without one, a prompt that happens to begin with a tool name ("read every test file and…") would be parsed as an explicit skill command and dispatched as a single tool call instead of a conversation.
-4. **Permissions** — the parent's `Deny` rules plus the child profile's, per the study's point 4: a sub-agent inherits its parent's prohibitions but never inherits its parent's permissions.
+4. **Permissions** — the session's deny rules plus the profile's, per the study's point 4: a sub-agent inherits its parent's prohibitions but never inherits its parent's permissions.
 5. **Return** — `Result.Reply` (the final text, nothing else) plus one line of receipt: `[task explore: 7 tools, 12.4s]`.
 
-### 44.6 Three gaps in existing files, fixed before `task` can work at all
+### 44.5 Three gaps in existing files, fixed before `task` can work at all
 
 1. **The 60-second per-tool deadline would kill every sub-agent.** [executor.go:35](internal/turn/executor.go#L35) abandons any tool still running after 60s, and the only exemption is `ask_user` via `interactiveTools` ([executor.go:39](internal/turn/executor.go#L39)). A sub-agent runs for minutes by design. Rename to `noDeadlineTools`, add `task`, and rewrite the comment to state both reasons (waiting on a human; running a whole nested loop) — the brake for both is ctx cancel, i.e. the Stop button, which already propagates.
-2. **`ToolEvent` has no way to say who made the call.** Every event goes down one `agent:tool` channel ([app.go:94](desktop/app.go#L94)), so a sub-agent's tools would land in the timeline indistinguishable from MAIN's. Add `Parent string \`json:"parent,omitempty"\`` to [ToolEvent](internal/turn/executor.go#L142); the child's `OnToolAction` stamps it with the `task` call's own id; the frontend nests those rows under the `task` row. `recordToolAction`'s Command History skips stamped events, or it becomes a flat dump of somebody else's work.
+2. **`ToolEvent` has no way to say who made the call.** Every event goes down one `agent:tool` channel ([app.go:94](desktop/app.go#L94)), so a sub-agent's tools would land in the timeline indistinguishable from the main agent's. Add `Parent string` to [ToolEvent](internal/turn/executor.go#L142); the child's `OnToolAction` stamps it with the `task` call's own id; the frontend nests those rows under the `task` row. `recordToolAction`'s Command History skips stamped events, or it becomes a flat dump of somebody else's work.
 3. **Nothing hands a tool its own call id.** `Dispatcher.ExecuteTool(ctx, name, args)` doesn't carry one, and gap 2 needs it. `turn` exports `WithCallID`/`CallID` and stamps ctx at [executor.go:405](internal/turn/executor.go#L405), immediately before `executeToolCallWithOutcome`. Two small functions, and the same seam serves any future depth accounting.
 
-### 44.7 Correcting the premise: sub-agents do not save money by existing
+### 44.6 Correcting the premise: sub-agents do not save money by existing
 
-The owner's goal — *"เวลา hit สูง เงินจะได้ไม่โดนผลาญ"* — is right about the mechanism but it is narrower than it sounds, and recording it here keeps a later reader from expecting savings the design cannot deliver.
+The owner's goal — *"เวลา hit สูง เงินจะได้ไม่โดนผลาญ"* — is right about the mechanism but narrower than it sounds, and recording it here keeps a later reader from expecting savings the design cannot deliver.
 
-**What actually saves:** a large tool result (a 200-line grep, a whole file) never enters MAIN's context, so it is not re-sent on every subsequent round of MAIN's loop. That resend is the real cost of a long loop, and it is quadratic-ish in a way a single call price is not.
+**What actually saves:** a large tool result (a 200-line grep, a whole file) never enters the main context, so it is not re-sent on every subsequent round of the main loop. That resend is the real cost of a long loop, and it grows in a way a single call price does not.
 
-**What costs more:** a fresh context pays MAIN's system prompt over again, and the child re-sends its own tool definitions every round of its own loop. Delegating a small task is strictly more expensive than doing it inline.
+**What costs more:** a fresh context pays the system prompt over again, and the child re-sends its own tool definitions every round of its own loop. Delegating a small task is strictly more expensive than doing it inline.
 
-So the three things that make this a saving rather than a spend are all in the design above, and none of them is the `task` tool itself: `Steps` capping a loop nobody is watching, `Tools` shrinking what gets re-sent per round, and **MAIN seeing only the final text plus a one-line receipt**. That last one is the owner's *"มันต้องแสดง tool ด้วย"* split in two: the **UI** shows every sub-agent tool call live (free — it travels over the event channel, not the context window), while the **model** gets the summary. Feeding the tool log back into MAIN's context would undo the entire saving in the name of showing it.
+So the three things that make this a saving rather than a spend are all in the design above, and none of them is the `task` tool itself: `Steps` capping a loop nobody is watching, `Tools` shrinking what gets re-sent per round, and **the main agent seeing only the final text plus a one-line receipt**. That last one is the owner's *"มันต้องแสดง tool ด้วย"* split in two: the **UI** shows every sub-agent tool call live (free — it travels over the event channel, not the context window), while the **model** gets the summary. Feeding the tool log back into the main context would undo the entire saving in the name of showing it.
 
-### 44.8 Out of scope, deliberately
+### 44.7 Out of scope for the walking skeleton
 
-Parallel fan-out (`task` is foreground and blocking); background tasks returning as a later synthetic message; persisting sub-agent transcripts; per-call model override beyond what the profile names; anything from ADR 0002 (ensemble/routing/consensus); cross-process orchestration. The `task` tool ships **disabled by default** (§25 point 5) — one toggle on the existing General settings page.
+Parallel fan-out (see 44.9 — studied, not built), background tasks returning as a later synthetic message, persisting sub-agent transcripts, per-call model override beyond what the profile names, anything from ADR 0002 (ensemble/routing/consensus), cross-process orchestration. The `task` tool ships **disabled by default** — one toggle on the existing General settings page.
 
-### 44.9 Build order — five commits, each green on its own
+### 44.8 Build order
 
-1. ~~This section~~ ✅ docs only, no code.
-2. ~~`internal/agent`~~ ✅ **done 2026-07-26** (restructured the same day per §44.3.1). [internal/agent/profile.go](internal/agent/profile.go) + [profiles/agents/](internal/agent/profiles/agents) and [profiles/subagents/](internal/agent/profiles/subagents) (4 files, `//go:embed`), a typed `Kind`, per-layer `List`/`ListSubagents`, `Load`/`LoadSubagent`, `LoadOrDefault`, `Dir`/`SubagentDir`, plus `AllowsTool`/`DenyRules`/`MaxToolCalls`, user shadowing, and a path-traversal guard on the selector (it arrives from a hand-editable preference file). [discovery.go](internal/skill/discovery.go)'s parser became `skill.ParseFrontmatter` — generic map + body, one call site updated, no second parser. Tests in [profile_test.go](internal/agent/profile_test.go) / [store_test.go](internal/agent/store_test.go): the bundled four, **the layers not leaking into each other**, `plan` denying every mutator **and** `PermissionConfig.Resolve` agreeing, `build` keeping everything, `explore` read-only and unable to recurse, `general` inheriting tools but not `task`, step caps, shadow-replaces-not-duplicates, the directory deciding the kind (a stray `kind:` key cannot override it), same name in both layers staying two profiles, writes staying in their layer, `SetModel` not relocating a file, traversal rejection.
-3. ~~Primary-agent selection~~ ✅ **done 2026-07-26, together with the settings page** (owner: *"ที่แน่ๆทำ หน้าตั้งค่าให้พร้อมก่อน"*). `config.ModelPreference.AgentName` (+ `Config.AgentName`, read in `resolveConfig`), `prompt.BuildWithRole`, profile wiring in `bootstrapFromConfig` (prompt · `MaxToolCalls` · `FilterRegistry` · deny rules), [desktop/agents.go](desktop/agents.go) bindings, and the Settings → เอเจน page per §44.10. **Correction found while wiring it:** §44.4 said profile denials go *before* user rules so "explicit choices still win" — but `safety.Resolve` is **last-match-wins**, so that ordering would let a user's `allow write *` rule override `plan`'s denial. They now go last: picking a profile *is* the explicit choice, and overriding it means editing the profile file. 8 Go tests ([desktop/agents_test.go](desktop/agents_test.go)) drive the real bootstrap: default is `build` with every tool, switching to `plan` actually removes the six mutators from the live registry (and switching back restores them), a sub-agent name is refused as the main agent (it does not resolve in that layer at all), the choice survives `persistModelPreference` + a fresh `resolveConfig`, history survives the switch, the role text reaches the system prompt before the environment layer, and editing/deleting the active profile re-applies live. Palette row: **not built** — the settings page is the surface the owner asked for; the palette row stays step 5's.
-4. 44.6's three gaps, then `task` itself. Tests: `task` is absent from a child registry; a prompt starting with a tool name still runs as a conversation; child usage reaches the parent's reporter; `Steps` caps the child loop; child tool events carry `Parent`.
-5. Frontend nesting of stamped events + the enable toggle + the palette row for switching agent without opening Settings.
+1. ~~Decision~~ ✅ this section.
+2. ~~`internal/subagent`~~ ✅ **done 2026-07-26.** [profile.go](internal/subagent/profile.go) + [store.go](internal/subagent/store.go) + [profiles/](internal/subagent/profiles) (2 files, `//go:embed`), `List`/`Load`/`Dir`, `ReadRaw`/`Save`/`Delete`/`SetModel`, `AllowsTool`/`DenyRules`/`MaxToolCalls`/`FilterRegistry`, user shadowing, path-traversal guard on the name (it arrives from a model-written tool call). `skill.ParseFrontmatter` extracted. Tests: the bundled two, `explore` read-only and unable to recurse, `general` inheriting tools but not `task`, deny rules reaching `PermissionConfig`, step caps, shadow-replaces-not-duplicates, `SetModel` editing exactly one line, `FilterRegistry` never handing back the parent registry, traversal rejection.
+3. ~~Settings → ซับเอเจน page~~ ✅ **done 2026-07-26.** [desktop/subagents.go](desktop/subagents.go) bindings (list · read · save · delete · pin model · open folder) and one card in Settings per §44.10, each row carrying its whole configuration as badges. 4 frontend tests.
+4. 44.5's three gaps, then `task` itself. Tests: `task` absent from a child registry; a prompt starting with a tool name still runs as a conversation; child usage reaches the parent's reporter; `Steps` caps the child loop; child tool events carry `Parent`.
+5. Frontend nesting of stamped events + the enable toggle.
 
-**What the page actually shipped (2026-07-26), against §44.10's plan:** two `settings-card` groups, one per layer, each from its own binding; each row carries name · active badge · built-in-or-yours · pinned model · tool count (`เครื่องมือครบ` when the profile inherits the registry) · denial count · step cap · description · the file path in mono (`built-in:<name>` when there is no file yet); a `use` button on inactive primary rows only; a model `<select>` whose empty value means inherit, listing the current provider's models plus the pinned one if it came from elsewhere; and Edit on every row, which opens the **raw file** — including a bundled one, where saving writes the shadow and the note says so. Skipped as planned: search/filter (five rows), per-row enable toggle. 4 frontend tests cover the two layers staying apart, badge truth, switching, model pinning (with the layer passed through), the built-in edit note, and the new-agent skeleton — whose kind picker replaced the `mode:` line nobody can now mistype.
+### 44.9 Parallel sub-agents — studied before building, per the owner
+
+Owner: *"เมนยังสร้างเอเจนมารันขนานกันได้ในงานซ้ำ จุดนี้อยากให้ศึกษาจากคนอื่นก่อนลงมือทำ เห็นว่าเจ้าอื่นๆก็ทำได้หนิ"*. Read from his own library at `E:\MikeData\OpenSource-Study` (`14-Multi-Agent-Enterprise/`):
+
+| Source | The pattern | What it implies for Aetox |
+|---|---|---|
+| **LangGraph** (`02-Team-Orchestration/LangGraph.md`) | Supervisor→worker; `Topic` does fan-out → fan-in (map-reduce) inside one superstep; nodes that don't depend on each other run together | The shape to copy: one `task` call that takes N briefs, spawns N children, waits, returns N results in order |
+| **CrewAI** | Role-based crew + explicit process (sequential vs hierarchical) | Roles are our profiles already; the "process" is the parent's choice, not new machinery |
+| **deer-flow** (ByteDance) | SuperAgent harness + sub-agents | Confirms the harness lives with the parent, not in each child |
+| **OpenCode** ([study §2](docs/opencode-study/agents.md)) | `task` is foreground+blocking; background mode exists but sits behind an experimental flag | Foreground first is the reference behavior too, not a shortcut |
+
+**What every one of them has in common, and it is the load-bearing observation:** the orchestrator and the workers are distinct things, and parallelism is the *orchestrator's* concern — never something a worker knows about. So parallel fan-out is an addition to the `task` tool's own signature (`prompts: []string` → N children → N results) plus a concurrency cap, and it changes **nothing** in `internal/subagent` or in a child's loop.
+
+**Not designed yet, on purpose** — the questions it has to answer first, all of which need the serial version running to answer honestly: what a sensible concurrency cap is on one desktop machine, whether N children each holding a fresh context blows the provider's rate limit before it blows the wallet, how the UI shows N live timelines without becoming noise, and whether approval prompts from N children at once are usable at all (they are all `ApprovalFullAccess` on the desktop today, which hides the problem rather than solving it).
+
+**Status: settled 2026-07-26 for §44.0–44.8; steps 4–5 pending; 44.9 studied, not designed.** `./verify.sh` green: vet · build · `go test ./...` · 70 frontend tests · svelte-check 0 errors · vite build.
 
 ### 44.10 The settings page, read off ZCode's rather than invented
 
@@ -1483,18 +1478,18 @@ Owner supplied a screenshot of ZCode's **Subagents** page as the reference, the 
 
 | ZCode does | Aetox |
 |---|---|
-| Two groups on one page — *User subagents* / *Built-in subagents* | **Take, but split by layer instead** (เอเจน / ซับเอเจน), each card fed by its own binding, with built-in-vs-yours as a row badge. The layer changes what the row *offers* — an agent row can be made active, a sub-agent row can only be spawned by `task` — and that is the distinction ZCode does not have to make, because it has no primary agents at all |
-| Row badges: model · `All tools` / `7 tools` | **Take verbatim** — those are `Profile.Model` and `len(Tools)`, and the count is computed from the live registry the way `ToolCounts()` already is (§36), never written down |
+| Two groups on one page — *User subagents* / *Built-in subagents* | **Take the grouping idea, drop the split** — one list, with built-in-vs-yours as a row badge, because a user file shadowing a bundled one is the *same* entry, not a second one |
+| Row badges: model · `All tools` / `7 tools` | **Take verbatim** — those are `Profile.Model` and `len(Tools)`, computed from the profile the way `ToolCounts()` counts the live registry (§36), never written down. Plus the step cap, which is the thing that decides what a delegate costs |
 | The file's absolute path under each row, in mono | **Take.** It is the cheapest way to say "this is a file you own" |
-| *"Built-in profiles are runtime defaults and cannot be edited here"* | **Reject — this is the gap worth taking, and it is free.** Bundled profiles here are shadowable by a same-named user file (§35), so Edit on a built-in row copies it out and opens it. Same move as §37: editable where the reference is not |
-| `Inherit default ▾` model dropdown on built-in rows | **Take**, implemented as the shadow: picking a model writes `<DataRoot>/agents/<name>.md` with the bundled body and one changed `model:` line. No second override store |
-| Per-row enable/disable toggle | **Defer.** With five profiles the single `task` on/off switch (§44.8) is the same control at less machinery. Revisit past ~a dozen profiles |
-| Search box + `All` filter dropdown | **Skip.** Five rows. The palette already filters (§36) |
-| Row shows no permission info | **Add what they lack:** `plan`'s six denials must be visible on its row, or a user who picked it will not understand why it refuses to edit |
+| *"Built-in profiles are runtime defaults and cannot be edited here"* | **Reject — this is the gap worth taking, and it is free.** Bundled profiles here are shadowable by a same-named user file (§35), so Edit on a built-in row opens the real text and saving writes your own copy. Same move as §37: editable where the reference is not |
+| `Inherit default ▾` model dropdown | **Take**, implemented as the shadow: picking a model writes `<DataRoot>/subagents/<name>.md` with the bundled body and one changed `model:` line. No second override store |
+| Per-row enable/disable toggle | **Defer.** With two profiles the single `task` on/off switch (§44.7) is the same control at less machinery |
+| Search box + `All` filter dropdown | **Skip.** Two rows |
+| Row shows no permission info | **Add what they lack:** a profile's denials are visible on its row, or a user will not understand why a delegate refuses to edit |
 
-**Sidebar naming:** the page is `เอเจน`, sitting next to สกิล / ชุดคำสั่ง / MCP. Each card carries its own *Open folder* button (`agents/` and `subagents/`) — a user told the layers are separate should not have to navigate to find that out. Noted for the record: ZCode's sidebar also carries *Indexing*, which [SETTINGS-PARITY-PLAN.md](SETTINGS-PARITY-PLAN.md) deliberately dropped (no user-facing knob, and Aetox does not RAG-index a repo) — seeing it in their UI does not reopen that.
+**Sidebar naming:** the page is `ซับเอเจน`, sitting next to สกิล / ชุดคำสั่ง / MCP, with its own *Open folder* button. Noted for the record: ZCode's sidebar also carries *Indexing*, which [SETTINGS-PARITY-PLAN.md](SETTINGS-PARITY-PLAN.md) deliberately dropped (no user-facing knob, and Aetox does not RAG-index a repo) — seeing it in their UI does not reopen that.
 
-**Status: steps 2–3 done 2026-07-26 (profiles + selection + settings page), steps 4–5 proposed** (`task` itself, its three prerequisite gaps, event nesting, palette row). `./verify.sh` green end to end: vet · build · `go test ./...` · 70 frontend tests · svelte-check 0 errors · vite build.
+**One thing the page must never grow:** a picker for the main agent. See §44.0.
 
 ---
 

@@ -189,7 +189,7 @@ func parseSkillMarkdown(raw string) (name, description, body string, err error) 
 //
 // Deliberately not YAML: one "key: value" per line, no nesting, no lists;
 // anything else on a line is ignored. Exported because agent profiles
-// (internal/agent, ARCHITECTURE.md §44) are the same file shape with more keys,
+// (internal/subagent, ARCHITECTURE.md §44) are the same file shape with more keys,
 // and a second parser for the same format is a second set of edge cases.
 func ParseFrontmatter(raw string) (map[string]string, string, error) {
 	fields := map[string]string{}

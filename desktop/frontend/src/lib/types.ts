@@ -61,8 +61,6 @@ export interface ModelStatus {
   /** Active wire format for providers that speak more than one (e.g. DeepSeek's
    *  "anthropic" vs "openai-compatible"). Empty for single-format providers. */
   wireFormat: string
-  /** Which agent profile is answering (§44) — 'assistant', 'plan', … */
-  agent: string
 }
 
 /** One labeled share of the context window; key: system | tools | messages | free. */
@@ -262,7 +260,7 @@ export function emptyCockpitState(): CockpitState {
     tree: [],
     sessions: [],
     history: [],
-    model: { provider: '', modelName: '', thinkLevel: '', contextUsed: 0, contextMax: 0, approval: 'ask', wireFormat: '', agent: '' },
+    model: { provider: '', modelName: '', thinkLevel: '', contextUsed: 0, contextMax: 0, approval: 'ask', wireFormat: '' },
     chat: [],
     task: { elapsed: '', steps: [] },
     changedFiles: [],

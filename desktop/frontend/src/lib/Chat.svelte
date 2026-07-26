@@ -7,7 +7,7 @@
   import {
     EnabledProviders, SupportedThinkLevels,
     ListModelsForProvider, RequiresAPIKey, HasAPIKey, PickAttachment,
-    GetContextBreakdown, GuideTopics, PrimaryAgents,
+    GetContextBreakdown, GuideTopics,
   } from '../../wailsjs/go/main/App'
   import { t, i18n } from './i18n.svelte'
   import { renderMarkdown } from './markdown'
@@ -16,7 +16,6 @@
     cockpit, attachImageFromPath, clearPendingImage, attachTabContext, clearPendingContext,
     attachFileFromPath, clearPendingFile, fileKind,
     openProject, openFolder, clearProjectFocus, cancelTurn, answerAsk, queuedMessages,
-    switchAgent,
   } from './stores/cockpit.svelte'
 
   let {
@@ -41,9 +40,6 @@
   let providers = $state<string[]>([])
   let thinkLevels = $state<string[]>([])
   let models = $state<string[]>([])
-  // Primary profiles only — a sub-agent in this picker would hand the user a
-  // session that cannot do anything (the backend refuses it anyway).
-  let agentNames = $state<string[]>([])
   let needsApiKey = $state(false)
   let apiKeyDraft = $state('')
   // Thinking and the tool list are two views of the same turn, so they take
@@ -122,14 +118,6 @@
     await onSwitchModel(value)
   }
 
-  // Straight to the store rather than through a prop like provider/model do:
-  // switching agent is a re-bootstrap the store already knows how to absorb
-  // (applyModelInfo), and one more hop through App would carry nothing.
-  async function onSwitchAgent(value: string) {
-    if (!value || value === model.agent) return
-    await switchAgent(value)
-  }
-
   async function submitApiKey() {
     if (!apiKeyDraft.trim()) return
     await onSubmitAPIKey(model.provider, apiKeyDraft.trim())
@@ -146,7 +134,7 @@
   // list upward (browser-controlled, not stylable), so these render as a
   // small custom dropdown instead, anchored with bottom:100% like the rest
   // of this popover.
-  let openDropdown = $state<'provider' | 'model' | 'thinkLevel' | 'agent' | ''>('')
+  let openDropdown = $state<'provider' | 'model' | 'thinkLevel' | ''>('')
 
   // Auto-grow the composer upward while typing (the composer is anchored at
   // the bottom, so extra height expands up). The ceiling is the stylesheet's
@@ -382,7 +370,7 @@
 />
 
 {#snippet upSelect(
-  id: 'provider' | 'model' | 'thinkLevel' | 'agent',
+  id: 'provider' | 'model' | 'thinkLevel',
   options: { value: string; label: string }[],
   current: string,
   onPick: (value: string) => void,
@@ -758,17 +746,6 @@
           <div class="model-pick">
             {#if modelMenuOpen}
               <div class="model-menu">
-                <!-- Agent first: it decides the role and which tools exist at
-                     all, and the model is which brain runs it. Same menu, same
-                     chip — two readouts for "who is answering" would drift. -->
-                <div class="mm-row">
-                  <span class="lbl">{t('chat.agent')}</span>
-                  {#if agentNames.length > 1}
-                    {@render upSelect('agent', agentNames.map((a) => ({ value: a, label: a })), model.agent, onSwitchAgent)}
-                  {:else}
-                    <span class="mm-static">{model.agent || '—'}</span>
-                  {/if}
-                </div>
                 <div class="mm-row">
                   <span class="lbl">{t('chat.provider')}</span>
                   {@render upSelect('provider', providers.map((p) => ({ value: p, label: p })), model.provider, handleProviderChange)}
@@ -790,8 +767,7 @@
                 {/if}
               </div>
             {/if}
-            <button type="button" class="model-chip" onclick={(e) => { e.stopPropagation(); modelMenuOpen = !modelMenuOpen; if (modelMenuOpen) { refreshThinkLevels(); EnabledProviders().then((p) => (providers = p)); PrimaryAgents().then((a) => (agentNames = a)) } }}>
-              {#if model.agent}<span class="agent">{model.agent}</span>{/if}
+            <button type="button" class="model-chip" onclick={(e) => { e.stopPropagation(); modelMenuOpen = !modelMenuOpen; if (modelMenuOpen) { refreshThinkLevels(); EnabledProviders().then((p) => (providers = p)) } }}>
               <span class="t">{model.modelName || model.provider}</span>
               {#if model.thinkLevel}<span class="lvl">{model.thinkLevel}</span>{/if}
               <span class="caret">{modelMenuOpen ? '⌃' : '⌄'}</span>
