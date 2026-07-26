@@ -64,11 +64,18 @@ func NewTaskTool(opts TaskOptions) skill.Skill { return &taskTool{opts: opts} }
 
 func (t *taskTool) Name() string { return "task" }
 
+// Description is also the only thing standing between a model and delegating
+// everything, so it states the rule rather than hinting at it. The cost argument
+// is the honest one: a delegate pays for a second system prompt and its own tool
+// list, so anything you can already name is cheaper done here.
 func (t *taskTool) Description() string {
 	return "Hand a self-contained job to a sub-agent and get back only its result. " +
 		"The sub-agent has NO access to this conversation, so `prompt` must carry everything it needs. " +
-		"Use it for work that would flood this context (searching a large tree, repetitive edits) — " +
-		"not for a single quick tool call, which is cheaper done directly. Available: " +
+		"WHEN TO USE: the work would otherwise pour a lot into this conversation — hunting through many " +
+		"files for something you cannot name yet, or the same mechanical change repeated across many places. " +
+		"WHEN NOT TO: anything you can already name. Reading a file, one grep, one edit, a handful of known " +
+		"paths — do those yourself. A delegate costs a second system prompt and its own tool list on every " +
+		"round, so a small job is strictly more expensive delegated than done here. Available: " +
 		strings.Join(profileNames(), ", ") + "."
 }
 
@@ -243,6 +250,26 @@ func (t *taskTool) ExecuteTool(ctx context.Context, args map[string]any) (skill.
 		Success:    true,
 		DurationMs: elapsed.Milliseconds(),
 	}, nil
+}
+
+// receiptFor is the one line the parent model gets about how the delegation went.
+//
+// When the delegate did almost nothing, the receipt says so. Judging *afterwards*
+// is the honest way round: how big a job turns out to be is not knowable from the
+// brief, so a pre-flight heuristic would refuse real work and wave through
+// pointless work. A model that reads "you could have done that here" mid-turn
+// stops doing it for the rest of the conversation, which is the behaviour the
+// description alone cannot enforce.
+//
+// ponytail: the threshold is tool calls, not seconds — one slow grep is still one
+// call, and wall-clock says more about the disk than about the work. Revisit if a
+// one-call delegate ever turns out to be worth it.
+func receiptFor(name string, toolCalls int, elapsed time.Duration) string {
+	receipt := fmt.Sprintf("[task %s: %d tool calls, %.1fs]", name, toolCalls, elapsed.Seconds())
+	if toolCalls <= 1 {
+		receipt += " NOTE: that was one tool call — small enough to have done here, and delegating it cost a whole second context. Do work this size yourself."
+	}
+	return receipt
 }
 
 // fail reports a refusal to the model as a normal unsuccessful tool result: it

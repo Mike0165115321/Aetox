@@ -1443,6 +1443,20 @@ The owner's goal — *"เวลา hit สูง เงินจะได้ไ
 
 So the three things that make this a saving rather than a spend are all in the design above, and none of them is the `task` tool itself: `Steps` capping a loop nobody is watching, `Tools` shrinking what gets re-sent per round, and **the main agent seeing only the final text plus a one-line receipt**. That last one is the owner's *"มันต้องแสดง tool ด้วย"* split in two: the **UI** shows every sub-agent tool call live (free — it travels over the event channel, not the context window), while the **model** gets the summary. Feeding the tool log back into the main context would undo the entire saving in the name of showing it.
 
+### 44.6.1 What stops the model delegating everything
+
+Owner, right after it started working — *"งานเล็กๆน้อยๆที่เมนทำได้ ไม่ใช่โยนไปซับหมดนะ"*. Correct, and the first cut had only one weak line of prose against it. Two guards now, and it is worth being precise that **neither is enforcement**:
+
+1. **The tool description states the rule and the reason.** WHEN TO USE: work that would otherwise pour into the conversation — hunting through many files for something you cannot name yet, the same mechanical change across many places. WHEN NOT TO: anything you can already name; one read, one grep, one edit, a handful of known paths. With the cost argument attached, because a rule with a reason survives a model's paraphrase where a bare prohibition does not: *a delegate pays for a second system prompt and its own tool list on every round, so a small job is strictly more expensive delegated*.
+
+2. **The receipt judges the delegation afterwards.** A delegate that made ≤1 tool call comes back with `NOTE: that was one tool call — small enough to have done here … Do work this size yourself.` appended to its receipt, which the parent model reads mid-turn.
+
+**Why after and not before.** How big a job turns out to be is not knowable from its brief: "find every caller of Resolve" is one grep in a small repo and forty reads in a large one. A pre-flight heuristic (brief length, paths named) would refuse real work *and* wave through pointless work, which is the worst of both. Measuring the delegation that actually happened costs one line and cannot be wrong about what it observed — and a model that reads "you could have done that here" stops doing it for the rest of the conversation.
+
+**Deliberately not built:** a hard refusal. `task` never declines on size, because the guess would be wrong in both directions and a refused delegation is a turn the user waits through for nothing. The threshold is tool calls rather than seconds — one slow grep is still one call, and wall-clock says more about the disk than the work.
+
+**Still unmeasured:** whether a real paid model actually respects either guard. The built-in provider always makes exactly one call, so the tests pin the *mechanism*, not the model's judgement. That answer needs `--live` or a real session, and it is the honest open item on this whole feature.
+
 ### 44.7 Out of scope for the walking skeleton
 
 Parallel fan-out (see 44.9 — studied, not built), background tasks returning as a later synthetic message, persisting sub-agent transcripts, per-call model override beyond what the profile names, anything from ADR 0002 (ensemble/routing/consensus), cross-process orchestration.

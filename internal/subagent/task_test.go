@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Mike0165115321/Aetox/internal/cognitive"
 	"github.com/Mike0165115321/Aetox/internal/model"
@@ -286,5 +287,44 @@ func TestTaskIsExemptFromTheToolDeadline(t *testing.T) {
 	}
 	if turn.HasNoDeadline("grep") {
 		t.Error("an ordinary tool must keep its deadline")
+	}
+}
+
+// The receipt is what keeps a model from delegating everything: it judges the
+// delegation after the fact, because how big a job is cannot be read off a brief.
+func TestReceiptCallsOutAPointlessDelegation(t *testing.T) {
+	small := receiptFor("explore", 1, 400*time.Millisecond)
+	if !strings.Contains(small, "[task explore: 1 tool calls") {
+		t.Errorf("receipt lost its numbers: %q", small)
+	}
+	if !strings.Contains(small, "Do work this size yourself") {
+		t.Errorf("a one-call delegation was not called out: %q", small)
+	}
+
+	// Zero calls is the same lesson — the delegate answered from its brief alone.
+	if !strings.Contains(receiptFor("general", 0, time.Second), "yourself") {
+		t.Error("a no-call delegation was not called out")
+	}
+
+	// Real work gets a plain receipt: no lecture where none is due.
+	big := receiptFor("explore", 7, 12*time.Second)
+	if strings.Contains(big, "NOTE") {
+		t.Errorf("a real delegation was lectured: %q", big)
+	}
+	if !strings.Contains(big, "7 tool calls, 12.0s") {
+		t.Errorf("receipt lost its numbers: %q", big)
+	}
+}
+
+// The description is the only pre-flight guard there is, so it has to state the
+// rule and the reason, not hint at them.
+func TestTaskDescriptionSaysWhenNotToDelegate(t *testing.T) {
+	isolate(t)
+	tool := NewTaskTool(TaskOptions{}).(skill.Skill)
+	d := tool.Description()
+	for _, want := range []string{"WHEN TO USE", "WHEN NOT TO", "yourself", "second system prompt"} {
+		if !strings.Contains(d, want) {
+			t.Errorf("the description is missing %q: %s", want, d)
+		}
 	}
 }
