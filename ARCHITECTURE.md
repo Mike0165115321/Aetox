@@ -15,7 +15,7 @@ This document is an evidence-first architecture map, distinct from [README.md](R
 
 | Doc | What it is |
 |---|---|
-| **This file** | Evidence-first whole-system map + the numbered Decision log (§10–§46). Start here; everything below is a spoke. |
+| **This file** | Evidence-first whole-system map + the numbered Decision log (§10–§48). Start here; everything below is a spoke. |
 | [README.md](README.md) · [AETOX.md](AETOX.md) · [Aetox Desktop.md](Aetox%20Desktop.md) | Product vision/pitch documents — mix shipped state with roadmap; this file wins on conflicts. |
 | [docs/architecture/module-split-2026-07-21.md](docs/architecture/module-split-2026-07-21.md) | Why an `engine/`/`providers/`/`cli/` split was proposed and the migration plan (§4). ⚠️ The scaffold directories it describes were deleted in §28 — the rationale stands, the on-disk structure is gone. |
 | [docs/architecture/browser-security-2026-07-21.md](docs/architecture/browser-security-2026-07-21.md) | Browser tab `postMessage` bridge — threat model, 3-check defense, residual risk (§6.6). |
@@ -27,7 +27,7 @@ This document is an evidence-first architecture map, distinct from [README.md](R
 | [docs/adr/0001-native-tool-calling-foundation.md](docs/adr/0001-native-tool-calling-foundation.md) | ADR, Accepted 2026-06-07 — native tool calling as the agentic foundation. |
 | [docs/adr/0002-directional-cognition-engine.md](docs/adr/0002-directional-cognition-engine.md) | ADR, Proposed 2026-07-10 — long-term multi-AI orchestration vision (ensemble/routing/consensus). |
 | [MCP-SUPPORT-PLAN.md](MCP-SUPPORT-PLAN.md) | MCP integration plan (skill.Tool is already MCP-shaped; staged rollout). |
-| [PLATFORM-SUPPORT.md](PLATFORM-SUPPORT.md) | What actually runs where: Windows is the only real platform, CLI/engine cross-compile but have never been executed on Unix, desktop is hard-blocked. Deliberately a record, not a plan (§29). |
+| [PLATFORM-SUPPORT.md](PLATFORM-SUPPORT.md) | What runs where **and the live port plan** — phases, per-phase blockers, and what each one has actually been measured to do. Was a record only; §48 made it the work. |
 | [SETTINGS-PARITY-PLAN.md](SETTINGS-PARITY-PLAN.md) | Settings-parity roadmap vs ZCode (Skills/Plugins → Onboarding → Usage → Commands → Preview → Subagents; Indexing deliberately skipped) — decisions recorded in §24. |
 | [third_party/go-webview2/AETOX-PATCH.md](third_party/go-webview2/AETOX-PATCH.md) | Why go-webview2 is vendored+patched: stop a single browser tab's WebView2 error from `os.Exit`-crashing the whole app (§26). |
 | [TEST-REPORT.md](TEST-REPORT.md) | Module-by-module test coverage and known untestable seams. CI that runs it all: [.github/workflows/ci.yml](.github/workflows/ci.yml) (§28). |
@@ -1726,6 +1726,34 @@ The straggler path deliberately carries **no** note: by the time it is re-sent t
 | Composer: immediate handover, no second `SendMessage`, bubble on send | frontend `queuedMessages.test.ts` |
 | Straggler sends as its own turn with no duplicate bubble | same |
 | An attachment attached mid-turn rides the interjection, not the next message | same |
+
+---
+
+## 48. Decision — §29 Reversed: the Linux/macOS Port Is Now the Work, Desktop First (2026-07-27)
+
+**Trigger:** owner — *"ผมจะทำให้มันรองรับ mac และ ลีนุ๊กครับ"*, then *"ผมจะทำเดสท็อปก่อนครับ เท่านั้น"*, then *"เราจะสร้าง เวอร์ชั่น 0.7.0 ให้มันรองรับกัน"*. This supersedes §29 Decision 1 ("Windows is the platform; portability is a record, not a roadmap item"). [PLATFORM-SUPPORT.md](PLATFORM-SUPPORT.md) changes role from record to live plan.
+
+**Decision 1 — the port is phased, and CI comes before any port code.** Wails cannot cross-compile a GUI app, and the owner's Windows machine has no C compiler (`verify.sh` skips the `race` stage and says so). Together that means *nothing about this port is provable on the development machine*. The order is therefore: **0** CI matrix → **1** `terminal.go` split → **2** `browser.go` split with a stub host off Windows → **3a** Linux WebKitGTK host → **3b** macOS WKWebView host → **4** packaging. Phases 0–2 touch no GTK and no Objective-C but leave the app building, running and green on all three platforms minus the browser tab — so an abandoned or deferred phase 3 still leaves shippable work rather than an unmergeable branch.
+
+**Decision 2 — the exported binding surface is identical on every platform; only implementations get build tags.** `desktop/frontend/wailsjs/go/main/App.d.ts` is committed and is generated from `App`'s exported methods. Tagging `BrowserOpen`/`TerminalStart` out of a non-Windows build would regenerate that file without them and break `BrowserPane.svelte`'s imports at `vite build` time, not at runtime. Every `App.Browser*`/`App.Terminal*` method therefore exists everywhere; the platform seam sits one level below, at the `hostBackend`/`tabView`/`ptySession` interfaces. This is the constraint that rules out splitting `desktop/` into per-OS directories: two `package main`s means two binding sets.
+
+**Decision 3 — `do()` is asynchronous on every platform.** On Windows the browser host owns a dedicated STA thread and `do()` posts to it. GTK and Cocoa require the webview on the *main* thread, so off Windows `do()` becomes `g_idle_add`/`dispatch_async` — and must never become `dispatch_sync`. `browserSnapshot` ([desktop/browser.go](desktop/browser.go)) calls `do()` and then blocks up to 5s waiting on a channel; a synchronous `do()` called from the main thread deadlocks the read path the agent uses for `browser_read`. Unit tests cannot see this.
+
+**Decision 4 — Linux ships as `.deb`/`.rpm`/tarball, never AppImage.** [BENCHMARK.md](BENCHMARK.md) §4's headline is 33 MB, 4–35× smaller than every competitor, and the stated reason is that Aetox uses the OS's own webview instead of bundling Chromium. That reason holds on macOS (WKWebView is always present) and holds on Linux **only if WebKitGTK stays a declared dependency**. An AppImage bundling it lands near 150 MB and deletes the product's headline number. Flatpak keeps the size but its sandbox fights what Aetox is — an agent that runs shells, git and MCP servers across the user's machine.
+
+**Measured on real Linux (Docker `golang:1.25`, 2026-07-27), not cross-compiled:**
+
+| Check | Result |
+|---|---|
+| `go vet ./cmd/... ./internal/...` | clean |
+| `go test` — 23 packages | all `ok` — first execution of this code on Linux, ever |
+| `go test -race` — 23 packages | all `ok`, zero races — the check `verify.sh` has never once been able to run |
+| `TestShellSkillCancelKillsGrandchild` | **PASS (2.55s)** — `tree_other.go`'s `Setpgid` + `kill(-pgid)` proven against a real grandchild process, not merely compiled |
+| `libwebkit2gtk-4.0-dev` on Ubuntu 24.04 | **does not exist** — 4.1 only, so the Linux job pins `libwebkit2gtk-4.1-dev` and phase 3a needs `-tags webkit2_41` |
+
+The §29 line "the `!windows` files still have never been executed anywhere" is now closed with evidence rather than removed.
+
+**Open cost, found while writing this and not yet paid — phase 3 needs a third vendored patch.** [docs/architecture/native-browser-embedding-2026-07-24.md](docs/architecture/native-browser-embedding-2026-07-24.md) porting rule 1 is *"never locate your own window/view by title or any ambient global — hold a direct handle from the toolkit"*, written out of that session's failure catalog. Wails v2.13.0 exports no such handle: there is no `NativeWindowHandle`/`GetNativeHandle` anywhere in the module, and `pkg/runtime/window.go` stops at geometry. Following the rule means patching Wails in `third_party/` alongside conpty and go-webview2. `findOwnMainWindow()` in `browser.go` already violates the rule on Windows (it enumerates toplevels and matches by PID) — that is pre-existing debt the port should retire, not copy.
 
 ---
 
