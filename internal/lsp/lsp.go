@@ -173,6 +173,11 @@ type conn struct {
 	dead    bool
 	diags   map[string][]Diagnostic // by file URI, replaced wholesale per notification
 	updated chan string             // URIs that just got fresh diagnostics
+	// pending correlates a reply with the call that asked for it. Diagnostics
+	// arrive as notifications and need no id, which is why the handshake could
+	// get away without this; hover and definition are requests, and a request
+	// whose answer nobody is waiting for is just a slow no-op.
+	pending map[int]chan json.RawMessage
 }
 
 func startConn(ctx context.Context, root string, spec server) (*conn, error) {
@@ -196,6 +201,7 @@ func startConn(ctx context.Context, root string, spec server) (*conn, error) {
 		stdout:  bufio.NewReader(stdout),
 		diags:   map[string][]Diagnostic{},
 		updated: make(chan string, 64),
+		pending: map[int]chan json.RawMessage{},
 	}
 	go cn.readLoop()
 
@@ -237,6 +243,171 @@ func (c *conn) close() {
 		_ = c.cmd.Process.Kill()
 	}
 	_ = c.cmd.Wait()
+}
+
+// SymbolInfo is what a language server knows about one identifier: the type
+// signature and doc comment it would show on hover, and where it is declared.
+type SymbolInfo struct {
+	Hover      string
+	DefPath    string
+	DefLine    int
+	Occurrence int // 1-based line in the queried file where the name was found
+}
+
+// Symbol answers "what is this and where does it come from" for a name in a
+// file.
+//
+// Located by name rather than by line and column, because that is what a model
+// has: it reads code, not coordinates, and asking it to count characters
+// invites an off-by-one that returns confidently wrong information about a
+// neighbouring token. The first occurrence wins — for the case this serves,
+// "what is this thing", any occurrence resolves to the same declaration.
+func (c *Client) Symbol(ctx context.Context, path, name string, timeout time.Duration) (*SymbolInfo, error) {
+	spec, ok := servers[strings.ToLower(filepath.Ext(path))]
+	if !ok {
+		return nil, nil
+	}
+	if !ensureInstalled(ctx, spec.command) {
+		return nil, nil
+	}
+	cn, err := c.connFor(ctx, spec)
+	if err != nil {
+		debuglog.Msg("lsp: start %s: %v", spec.command, err)
+		return nil, nil
+	}
+	abs := path
+	if !filepath.IsAbs(abs) {
+		abs = filepath.Join(c.root, path)
+	}
+	return cn.symbol(ctx, abs, spec.languageID, name, timeout)
+}
+
+// findIdentifier returns the 0-based line and character of the first standalone
+// occurrence of name. Standalone matters: searching for "Get" must not land
+// inside "Getter", which would resolve to a different symbol entirely.
+func findIdentifier(text, name string) (line, character int, ok bool) {
+	isWord := func(r byte) bool {
+		return r == '_' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
+	}
+	for i, l := range strings.Split(text, "\n") {
+		from := 0
+		for {
+			at := strings.Index(l[from:], name)
+			if at < 0 {
+				break
+			}
+			at += from
+			beforeOK := at == 0 || !isWord(l[at-1])
+			end := at + len(name)
+			afterOK := end >= len(l) || !isWord(l[end])
+			if beforeOK && afterOK {
+				return i, at, true
+			}
+			from = at + 1
+		}
+	}
+	return 0, 0, false
+}
+
+func (c *conn) symbol(ctx context.Context, abs, languageID, name string, timeout time.Duration) (*SymbolInfo, error) {
+	text, err := readFileString(abs)
+	if err != nil {
+		return nil, err
+	}
+	line, character, found := findIdentifier(text, name)
+	if !found {
+		return nil, fmt.Errorf("%q does not appear in %s", name, filepath.Base(abs))
+	}
+
+	uri := pathToURI(abs)
+	c.mu.Lock()
+	c.nextID++
+	version := c.nextID
+	c.mu.Unlock()
+	if err := c.notify("textDocument/didOpen", map[string]any{
+		"textDocument": map[string]any{"uri": uri, "languageId": languageID, "version": version, "text": text},
+	}); err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = c.notify("textDocument/didClose", map[string]any{"textDocument": map[string]any{"uri": uri}})
+	}()
+
+	position := map[string]any{
+		"textDocument": map[string]any{"uri": uri},
+		"position":     map[string]any{"line": line, "character": character},
+	}
+	info := &SymbolInfo{Occurrence: line + 1}
+
+	// Hover and definition are asked for separately and either may come back
+	// empty: a local variable has a type but no interesting declaration
+	// elsewhere, and a package name has a declaration but no hover text.
+	if raw, err := c.call(ctx, "textDocument/hover", position, timeout); err == nil {
+		info.Hover = parseHover(raw)
+	}
+	if raw, err := c.call(ctx, "textDocument/definition", position, timeout); err == nil {
+		info.DefPath, info.DefLine = parseDefinition(raw)
+	}
+	if info.Hover == "" && info.DefPath == "" {
+		return nil, fmt.Errorf("the language server knows nothing about %q here", name)
+	}
+	return info, nil
+}
+
+// parseHover copes with all three shapes the protocol has carried: a MarkupContent
+// object, a bare string, and the old array of marked strings.
+func parseHover(raw json.RawMessage) string {
+	var wrapper struct {
+		Contents json.RawMessage `json:"contents"`
+	}
+	if json.Unmarshal(raw, &wrapper) != nil || len(wrapper.Contents) == 0 {
+		return ""
+	}
+	var markup struct {
+		Value string `json:"value"`
+	}
+	if json.Unmarshal(wrapper.Contents, &markup) == nil && markup.Value != "" {
+		return strings.TrimSpace(markup.Value)
+	}
+	var plain string
+	if json.Unmarshal(wrapper.Contents, &plain) == nil {
+		return strings.TrimSpace(plain)
+	}
+	var parts []struct {
+		Value string `json:"value"`
+	}
+	if json.Unmarshal(wrapper.Contents, &parts) == nil {
+		var out []string
+		for _, p := range parts {
+			if v := strings.TrimSpace(p.Value); v != "" {
+				out = append(out, v)
+			}
+		}
+		return strings.Join(out, "\n")
+	}
+	return ""
+}
+
+// parseDefinition takes either a single Location or a list of them; servers
+// disagree and both are legal.
+func parseDefinition(raw json.RawMessage) (string, int) {
+	type location struct {
+		URI   string `json:"uri"`
+		Range struct {
+			Start struct {
+				Line int `json:"line"`
+			} `json:"start"`
+		} `json:"range"`
+	}
+	var one location
+	if json.Unmarshal(raw, &one) == nil && one.URI != "" {
+		return uriToPath(one.URI), one.Range.Start.Line + 1
+	}
+	var many []location
+	if json.Unmarshal(raw, &many) == nil && len(many) > 0 {
+		return uriToPath(many[0].URI), many[0].Range.Start.Line + 1
+	}
+	return "", 0
 }
 
 func (c *conn) diagnose(ctx context.Context, abs, languageID string, timeout time.Duration) ([]Diagnostic, error) {
@@ -307,10 +478,27 @@ func (c *conn) readLoop() {
 			return
 		}
 		var msg struct {
+			ID     *int            `json:"id"`
 			Method string          `json:"method"`
 			Params json.RawMessage `json:"params"`
+			Result json.RawMessage `json:"result"`
 		}
-		if json.Unmarshal(payload, &msg) != nil || msg.Method != "textDocument/publishDiagnostics" {
+		if json.Unmarshal(payload, &msg) != nil {
+			continue
+		}
+		// A reply to something we asked. Method is empty on a response, which
+		// is what separates it from a server-initiated request carrying an id.
+		if msg.ID != nil && msg.Method == "" {
+			c.mu.Lock()
+			waiter, ok := c.pending[*msg.ID]
+			delete(c.pending, *msg.ID)
+			c.mu.Unlock()
+			if ok {
+				waiter <- msg.Result // buffered, so a caller that gave up cannot block this loop
+			}
+			continue
+		}
+		if msg.Method != "textDocument/publishDiagnostics" {
 			continue
 		}
 		var params struct {
@@ -411,6 +599,41 @@ func (c *conn) request(ctx context.Context, method string, params any) error {
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
+	}
+}
+
+// call is request with the answer kept. Used for hover and definition, where
+// the reply is the whole point.
+func (c *conn) call(ctx context.Context, method string, params any, timeout time.Duration) (json.RawMessage, error) {
+	reply := make(chan json.RawMessage, 1)
+	c.mu.Lock()
+	c.nextID++
+	id := c.nextID
+	c.pending[id] = reply
+	c.mu.Unlock()
+	// Registered before sending, never after: a fast server can answer before
+	// the sending goroutine gets back to the map.
+	if err := c.send(map[string]any{
+		"jsonrpc": "2.0", "id": id, "method": method, "params": params,
+	}); err != nil {
+		c.mu.Lock()
+		delete(c.pending, id)
+		c.mu.Unlock()
+		return nil, err
+	}
+	select {
+	case result := <-reply:
+		return result, nil
+	case <-time.After(timeout):
+		c.mu.Lock()
+		delete(c.pending, id)
+		c.mu.Unlock()
+		return nil, fmt.Errorf("%s timed out", method)
+	case <-ctx.Done():
+		c.mu.Lock()
+		delete(c.pending, id)
+		c.mu.Unlock()
+		return nil, ctx.Err()
 	}
 }
 

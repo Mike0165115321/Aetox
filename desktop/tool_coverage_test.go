@@ -333,6 +333,11 @@ func toolCases(t *testing.T, root string, dispatcher *skill.Dispatcher) map[stri
 			available: haveBinary("gopls"),
 			why:       "no gopls",
 		},
+		"symbol": {
+			args:      map[string]any{"path": "main.go", "name": "main"},
+			available: haveBinary("gopls"),
+			why:       "no gopls",
+		},
 		// No check: Success already means git was found, the action passed the
 		// read-only allowlist, ensureGitRepo confirmed a real repository and
 		// output came back. Matching on the text would pin git's own wording,

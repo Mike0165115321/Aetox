@@ -83,6 +83,7 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 		&applyPatchSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
 		&notebookEditSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
 		&diagnosticsSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
+		&symbolSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
 		&deleteSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
 		&pluginInstallSkill{},
 		&imageOCRSkill{root: opts.SandboxRoot},
