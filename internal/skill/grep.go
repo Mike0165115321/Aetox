@@ -18,6 +18,17 @@ import (
 
 var errGrepLimitReached = errors.New("grep result limit reached")
 
+// The three shapes a search can come back in. content is what grep always did;
+// the other two exist because "which files mention this" is the commonest
+// question asked of a code search and answering it with every matching line
+// costs one or two orders of magnitude more tokens than answering it with a
+// list of paths.
+const (
+	grepModeContent = "content"
+	grepModeFiles   = "files_with_matches"
+	grepModeCount   = "count"
+)
+
 // IgnoredDirs are directories no search should descend into: dependency trees
 // and build output, which are not the user's code and are enormous. On this
 // repo alone node_modules is 10,826 of 12,073 files — searching it means
@@ -68,6 +79,19 @@ func (*grepSkill) ToolDefinition() model.ToolDefinition {
 				"type":        "integer",
 				"description": "Lines of surrounding context to show around each match (default 0, max 20). Use it to see enough of the code to build an exact edit without a second read call.",
 			},
+			"output_mode": map[string]any{
+				"type":        "string",
+				"enum":        []string{"content", "files_with_matches", "count"},
+				"description": "content (default) returns the matching lines; files_with_matches returns only the file paths; count returns a per-file tally. Use one of the latter two when you are mapping where something lives — they cost a fraction of the tokens.",
+			},
+			"head_limit": map[string]any{
+				"type":        "integer",
+				"description": "Return at most this many entries — matches in content mode, files otherwise.",
+			},
+			"offset": map[string]any{
+				"type":        "integer",
+				"description": "Skip this many entries first. Together with head_limit this pages through a search that hit the result cap, instead of having to invent a narrower pattern.",
+			},
 		},
 		"required":             []string{"pattern"},
 		"additionalProperties": false,
@@ -77,7 +101,7 @@ func (*grepSkill) ToolDefinition() model.ToolDefinition {
 		Type: "function",
 		Function: model.ToolFunction{
 			Name:        "grep",
-			Description: "Search file contents by regex. Returns path:line:text for matches and path-line-text for context lines. Dependency and build directories are never searched.",
+			Description: "Search file contents by regex (Go/RE2 syntax: no backreferences or lookaround). Returns path:line:text for matches and path-line-text for context lines. Dependency and build directories are never searched.",
 			Parameters:  payload,
 		},
 	}
@@ -111,6 +135,18 @@ func (s *grepSkill) Execute(_ context.Context, input Input) (Output, error) {
 	if ctxLines > maxGrepContext {
 		ctxLines = maxGrepContext
 	}
+	mode := strings.ToLower(strings.TrimSpace(stringArg(input["output_mode"])))
+	if mode == "" {
+		mode = grepModeContent
+	}
+	if mode != grepModeContent && mode != grepModeFiles && mode != grepModeCount {
+		err := errors.New("output_mode must be content, files_with_matches or count")
+		return newToolOutput("grep", "grep "+pattern, "", start, false, err), err
+	}
+	skip := intArg(input["offset"])
+	if skip < 0 {
+		skip = 0
+	}
 	command := "grep " + pattern
 	if searchPath != "." {
 		command += " " + searchPath
@@ -120,6 +156,12 @@ func (s *grepSkill) Execute(_ context.Context, input Input) (Output, error) {
 	}
 	if ctxLines > 0 {
 		command += " -C " + strconv.Itoa(ctxLines)
+	}
+	if mode != grepModeContent {
+		command += " --" + mode
+	}
+	if skip > 0 {
+		command += " --offset " + strconv.Itoa(skip)
 	}
 
 	re, err := regexp.Compile(pattern)
@@ -141,8 +183,21 @@ func (s *grepSkill) Execute(_ context.Context, input Input) (Output, error) {
 		maxFileBytes = 1 << 20
 		maxLineLen   = 200
 	)
+	// head_limit only ever tightens the cap. A model asking for 10,000 matches
+	// is not a reason to send it 10,000 matches.
+	limit := maxResults
+	if want := intArg(input["head_limit"]); want > 0 && want < limit {
+		limit = want
+	}
 	results := make([]string, 0)
-	matches := 0
+	// matches counts every hit the walk sees, offset included, so the caller can
+	// be told there is more behind the cap. emitted counts what came back.
+	matches, emitted := 0, 0
+	type fileHit struct {
+		display string
+		count   int
+	}
+	var perFile []fileHit
 
 	walkErr := filepath.WalkDir(basePath, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -187,9 +242,23 @@ func (s *grepSkill) Execute(_ context.Context, input Input) (Output, error) {
 
 		lines := strings.Split(string(data), "\n")
 		lastShown := -1 // last line index already written out for this file
+		hits := 0
 		for i, line := range lines {
 			if !re.MatchString(line) {
 				continue
+			}
+			matches++
+			hits++
+			if mode != grepModeContent {
+				// files_with_matches has its answer for this file after one
+				// hit; count needs the tally, so it keeps going.
+				if mode == grepModeFiles {
+					break
+				}
+				continue
+			}
+			if matches <= skip {
+				continue // paging past a page already returned
 			}
 			from, to := i-ctxLines, i+ctxLines
 			if from < 0 {
@@ -214,8 +283,17 @@ func (s *grepSkill) Execute(_ context.Context, input Input) (Output, error) {
 				results = append(results, display+sep+strconv.Itoa(j+1)+sep+clip(lines[j]))
 			}
 			lastShown = to
-			matches++
-			if matches >= maxResults {
+			emitted++
+			if emitted >= limit {
+				return errGrepLimitReached
+			}
+		}
+		if hits > 0 {
+			perFile = append(perFile, fileHit{display: display, count: hits})
+			// The file modes page over files, so their cap counts files too —
+			// otherwise a repo-wide search walks every file to build a list
+			// the caller asked to have cut short.
+			if mode != grepModeContent && len(perFile) >= skip+limit {
 				return errGrepLimitReached
 			}
 		}
@@ -228,13 +306,42 @@ func (s *grepSkill) Execute(_ context.Context, input Input) (Output, error) {
 		return newToolOutput("grep", command, "", start, false, walkErr), walkErr
 	}
 
+	capped := false
+	switch mode {
+	case grepModeContent:
+		capped = emitted >= limit
+	default:
+		if skip < len(perFile) {
+			perFile = perFile[skip:]
+		} else {
+			perFile = nil
+		}
+		capped = len(perFile) >= limit
+		if len(perFile) > limit {
+			perFile = perFile[:limit]
+		}
+		results = make([]string, 0, len(perFile))
+		for _, f := range perFile {
+			if mode == grepModeCount {
+				results = append(results, f.display+":"+strconv.Itoa(f.count))
+				continue
+			}
+			results = append(results, f.display)
+		}
+	}
+
 	output := strings.Join(results, "\n")
 	if output == "" {
 		output = "(no matches)"
+		if skip > 0 {
+			output = "(no matches past offset " + strconv.Itoa(skip) + ")"
+		}
 	}
 	output, truncated := limitLines(output, defaultToolOutputLineLimit)
-	if matches >= maxResults {
-		output += "\n... (max results reached)"
+	if capped {
+		// Naming the next offset, not just the fact of the cap: the whole point
+		// of paging is that the caller can continue without guessing.
+		output += "\n... (result cap reached — continue with offset=" + strconv.Itoa(skip+limit) + ")"
 		truncated = true
 	}
 
@@ -282,8 +389,11 @@ func (s *grepSkill) ExecuteTool(ctx context.Context, args map[string]any) (Outpu
 		callArgs = append(callArgs, strings.TrimSpace(path))
 	}
 	return s.Execute(ctx, Input{
-		"args":    callArgs,
-		"glob":    args["glob"],
-		"context": args["context"],
+		"args":        callArgs,
+		"glob":        args["glob"],
+		"context":     args["context"],
+		"output_mode": args["output_mode"],
+		"head_limit":  args["head_limit"],
+		"offset":      args["offset"],
 	})
 }

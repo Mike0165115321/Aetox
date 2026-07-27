@@ -7,7 +7,7 @@ func TestNewDefaultRegistryRegistersAllBuiltins(t *testing.T) {
 
 	want := []string{
 		"help", "echo", "time", "list", "read", "github_repo_summary",
-		"git", "fs", "shell", "write", "edit", "grep", "glob", "apply_patch", "diagnostics", "delete", "plugin_install", "image_ocr", "video_ocr", "pdf_read", "audio_transcribe",
+		"git", "fs", "shell", "shell_output", "shell_kill", "write", "edit", "grep", "glob", "apply_patch", "diagnostics", "delete", "plugin_install", "image_ocr", "video_ocr", "pdf_read", "audio_transcribe",
 		"web_fetch", "web_search",
 		"github_search", "github_read_file", "github_list_files",
 	}

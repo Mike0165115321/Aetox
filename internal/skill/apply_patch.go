@@ -69,7 +69,8 @@ func (*applyPatchSkill) ToolDefinition() model.ToolDefinition {
 		Function: model.ToolFunction{
 			Name: "apply_patch",
 			Description: "Apply several edits across one or more files in a single atomic call — either all of them " +
-				"apply or none do. Prefer this over repeated edit calls when a change touches more than one place.",
+				"apply or none do. Prefer this over repeated edit calls when a change touches more than one place. " +
+				"read prefixes every line with its number and a tab — strip that prefix before matching, it is not in the file.",
 			Parameters: payload,
 		},
 	}

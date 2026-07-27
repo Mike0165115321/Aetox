@@ -226,7 +226,7 @@ func (s *fsSkill) execCat(start time.Time, params []string) (Output, error) {
 		return newToolOutput("fs", command, "", start, false, err), err
 	}
 
-	content, next, err := readTextLines(file, 1, readDefaultLines)
+	content, next, err := readTextLines(file, 1, readDefaultLines, false)
 	if err != nil {
 		return newToolOutput("fs", command, "", start, false, err), err
 	}

@@ -33,6 +33,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -44,12 +46,15 @@ import (
 )
 
 // cliOnlySkills are registered but have no ToolDefinition, so the model is
-// never offered them. shell is deliberate and documented (docs/adr/
-// 0001-native-tool-calling-foundation.md: "shell is not exposed as an automatic
-// model tool"); the rest are CLI-era surface kept for the console. Pinned here
-// so that dropping a real tool off the model's surface fails loudly instead of
-// looking like nothing changed.
-var cliOnlySkills = []string{"echo", "fs", "git", "help", "shell"}
+// never offered them: CLI-era surface kept for the console. Pinned here so that
+// dropping a real tool off the model's surface fails loudly instead of looking
+// like nothing changed.
+//
+// shell and git left this list on 2026-07-28 (ARCHITECTURE.md §49). ADR 0001
+// had held them back as phase-1 caution; the narrower tools it was waiting for
+// shipped long ago, and until then the agent could edit code without ever being
+// able to run it.
+var cliOnlySkills = []string{"echo", "fs", "help"}
 
 // toolCase is how one tool gets driven. args are what the model would send.
 type toolCase struct {
@@ -87,7 +92,7 @@ func TestEveryToolRunsThroughTheRealDispatcher(t *testing.T) {
 
 	assertModelSurfaceIsIntact(t, registry, dispatcher)
 
-	cases := toolCases(t, root)
+	cases := toolCases(t, root, dispatcher)
 	var ran, skipped []string
 
 	for _, def := range dispatcher.ToolDefinitions() {
@@ -204,8 +209,37 @@ func assertReachable(t *testing.T, d *skill.Dispatcher, name string, tc toolCase
 	}
 }
 
-func toolCases(t *testing.T, root string) map[string]toolCase {
+// startBackgroundFixture launches one long-running command through the real
+// dispatcher and returns its handle, so shell_output and shell_kill are driven
+// against a process that genuinely exists. Without it the only way to exercise
+// them is an invented id, which tests the error path and nothing else.
+func startBackgroundFixture(t *testing.T, d *skill.Dispatcher) string {
 	t.Helper()
+	command := `ping -n 60 127.0.0.1 >nul & echo aetox-bg-done`
+	if runtime.GOOS != "windows" {
+		command = `sleep 60; echo aetox-bg-done`
+	}
+	out, _, err := d.ExecuteTool(context.Background(), "shell", map[string]any{
+		"command":           command,
+		"run_in_background": true,
+	})
+	if err != nil {
+		t.Fatalf("background fixture: %v", err)
+	}
+	id := regexp.MustCompile(`\bbg_\d+\b`).FindString(out.Content)
+	if id == "" {
+		t.Fatalf("background fixture returned no handle: %q", out.Content)
+	}
+	return id
+}
+
+func toolCases(t *testing.T, root string, dispatcher *skill.Dispatcher) map[string]toolCase {
+	t.Helper()
+	// Started once and shared by both cases below. shell_kill runs before
+	// shell_output (the tools are driven in sorted order), which is the right
+	// way round: a killed job keeps its unread output, so the read still has
+	// something to return.
+	backgroundID := startBackgroundFixture(t, dispatcher)
 	return map[string]toolCase{
 		// --- pure local: no excuse for these to fail anywhere ---
 		"time": {args: map[string]any{}},
@@ -238,6 +272,23 @@ func toolCases(t *testing.T, root string) map[string]toolCase {
 		"todo_write": {args: map[string]any{"todos": []any{
 			map[string]any{"content": "prove the tool runs", "status": "completed"},
 		}}},
+		// echo is the one command cmd.exe and sh both spell the same way, and
+		// the point here is the plumbing — a real child process, its output
+		// captured and handed back — not the command itself.
+		"shell": {
+			args:  map[string]any{"command": "echo aetox-shell-ok"},
+			check: outputContains("aetox-shell-ok"),
+		},
+		"shell_kill": {
+			args:  map[string]any{"shell_id": backgroundID},
+			check: outputContains("killed"),
+		},
+		"shell_output": {
+			args: map[string]any{"shell_id": backgroundID},
+			// Reading a killed job still works and still says what happened to
+			// it — the handle outlives the process on purpose.
+			check: outputContains(backgroundID),
+		},
 
 		// ask_user blocks until a human answers — so the test answers, through
 		// the same binding the UI calls. This is the one tool whose real path
@@ -277,6 +328,15 @@ func toolCases(t *testing.T, root string) map[string]toolCase {
 			args:      map[string]any{"path": "main.go"},
 			available: haveBinary("gopls"),
 			why:       "no gopls",
+		},
+		// No check: Success already means git was found, the action passed the
+		// read-only allowlist, ensureGitRepo confirmed a real repository and
+		// output came back. Matching on the text would pin git's own wording,
+		// which is localized and version-dependent.
+		"git": {
+			args:      map[string]any{"action": "status", "args": []any{"--short"}},
+			available: haveBinary("git"),
+			why:       "no git",
 		},
 
 		// --- needs the network ---
@@ -479,6 +539,14 @@ func writeToolFixtures(t *testing.T, root string) {
 	write("doc.pdf", tinyPDFDoc)
 	writeTestPNG(t, filepath.Join(root, "shot.png"))
 	writeTestWAV(t, filepath.Join(root, "tone.wav"))
+
+	// git refuses to run outside a work tree, so the sandbox has to be one. A
+	// real init rather than a faked .git: ensureGitRepo asks git itself.
+	if _, err := exec.LookPath("git"); err == nil {
+		if err := exec.Command("git", "-C", root, "init", "-q").Run(); err != nil {
+			t.Logf("could not init the git fixture (%v) — git will report as unavailable", err)
+		}
+	}
 
 	// A real one-second video, built from the PNG by the same ffmpeg video_ocr
 	// will use. Skipped silently when ffmpeg is absent — the case above then

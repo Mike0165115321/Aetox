@@ -41,7 +41,7 @@ func (*listSkill) ToolDefinition() model.ToolDefinition {
 		Type: "function",
 		Function: model.ToolFunction{
 			Name:        "list",
-			Description: "List filenames in a sandbox folder.",
+			Description: "List the entries of a sandbox folder. Directories end in \"/\"; everything else is a file.",
 			Parameters:  payload,
 		},
 	}
@@ -69,8 +69,16 @@ func (s *listSkill) Execute(_ context.Context, input Input) (Output, error) {
 		return newToolOutput("list", "list "+requestPath, "", start, false, err), err
 	}
 
+	// A trailing "/" on directories, the way ls -F and every file listing a
+	// model has ever read marks them. Without it "sub" and "sub.txt" are the
+	// same kind of thing on the page, and the only way to find out was to call
+	// list again and see whether it errored.
 	names := make([]string, 0, len(entries))
 	for _, entry := range entries {
+		if entry.IsDir() {
+			names = append(names, entry.Name()+"/")
+			continue
+		}
 		names = append(names, entry.Name())
 	}
 	sort.Strings(names)

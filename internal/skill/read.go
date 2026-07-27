@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -30,6 +31,26 @@ const (
 type readSkill struct {
 	root         string
 	outputSubdir func() string
+	// vision turns read into the tool that opens an image, rather than the one
+	// that refuses to. False keeps the old refusal, which points at image_ocr.
+	vision bool
+}
+
+// readMaxImageBytes bounds what read will hand a provider inline. Every one of
+// them re-encodes an image to base64 in the request body, so the wire cost is
+// a third larger again than this; a screenshot is well under it and a scanned
+// poster is not something to send by accident.
+const readMaxImageBytes = 5 << 20
+
+// imageMediaTypes is the set read will open as a picture. Deliberately short:
+// these are what the three providers agree they accept, and a format only one
+// of them takes is worse than a clear refusal.
+var imageMediaTypes = map[string]string{
+	".png":  "image/png",
+	".jpg":  "image/jpeg",
+	".jpeg": "image/jpeg",
+	".gif":  "image/gif",
+	".webp": "image/webp",
 }
 
 func (*readSkill) Name() string { return "read" }
@@ -62,9 +83,10 @@ func (*readSkill) ToolDefinition() model.ToolDefinition {
 	return model.ToolDefinition{
 		Type: "function",
 		Function: model.ToolFunction{
-			Name:        "read",
-			Description: "Read a text file in sandbox root. Returns up to 2000 lines; if the output says it was truncated, call read again with the offset it gives you to get the rest.",
-			Parameters:  payload,
+			Name: "read",
+			Description: "Read a text file in sandbox root. Every line comes back prefixed with its line number and a tab — that prefix is added by this tool and is not in the file, so strip it before passing text to edit or apply_patch. " +
+				"Returns up to 2000 lines; if the output says it was truncated, call read again with the offset it gives you to get the rest.",
+			Parameters: payload,
 		},
 	}
 }
@@ -105,6 +127,9 @@ func (s *readSkill) Execute(_ context.Context, input Input) (Output, error) {
 		err = errors.New("read target is a directory")
 		return newToolOutput("read", command, "", start, false, err), err
 	}
+	if mediaType, isImage := imageMediaTypes[strings.ToLower(filepath.Ext(targetPath))]; isImage {
+		return s.readImage(targetPath, requestPath, command, mediaType, info.Size(), start)
+	}
 
 	file, err := os.Open(targetPath)
 	if err != nil {
@@ -128,7 +153,7 @@ func (s *readSkill) Execute(_ context.Context, input Input) (Output, error) {
 		return newToolOutput("read", command, "", start, false, err), err
 	}
 
-	content, next, err := readTextLines(file, offset, limit)
+	content, next, err := readTextLines(file, offset, limit, true)
 	if err != nil {
 		return newToolOutput("read", command, "", start, false, err), err
 	}
@@ -163,7 +188,35 @@ func (s *readSkill) ExecuteTool(ctx context.Context, args map[string]any) (Outpu
 
 // readTextLines returns lines [offset, offset+limit) of f. The second result
 // is the 1-based line the caller should resume from, or 0 when the file ended.
-func readTextLines(f *os.File, offset, limit int) (string, int, error) {
+// readImage answers "open this picture" — the request §51 made possible for a
+// user's attachment and this makes possible for a file the model found itself.
+//
+// When the model cannot see, the answer is the same refusal read has always
+// given, and it names the tool that can help. That refusal is deliberate: a
+// tool that returned "(binary file)" with a green tick taught the model it had
+// merely failed to understand a result, and it kept guessing at other ways in.
+func (s *readSkill) readImage(targetPath, shown, command, mediaType string, size int64, start time.Time) (Output, error) {
+	if !s.vision {
+		err := errors.New("read cannot open an image for this model — use image_ocr to get the text out of it")
+		return newToolOutput("read", command, "", start, false, err), err
+	}
+	if size > readMaxImageBytes {
+		err := fmt.Errorf("image is %d MB, too large to send (limit %d MB) — use image_ocr if you only need the text",
+			size>>20, int64(readMaxImageBytes)>>20)
+		return newToolOutput("read", command, "", start, false, err), err
+	}
+	data, err := os.ReadFile(targetPath)
+	if err != nil {
+		return newToolOutput("read", command, "", start, false, err), err
+	}
+	out := newToolOutput("read", command, "image attached: "+shown, start, false, nil)
+	out.Images = []model.Image{{MediaType: mediaType, Data: data}}
+	return out, nil
+}
+
+// numbered is false for the CLI-facing `fs cat`, which prints to a human who
+// asked for the file, not to a model that has to cite it.
+func readTextLines(f *os.File, offset, limit int, numbered bool) (string, int, error) {
 	if offset < 1 {
 		offset = 1
 	}
@@ -184,7 +237,18 @@ func readTextLines(f *os.File, offset, limit int) (string, int, error) {
 				if taken == limit || b.Len() >= readMaxBytes {
 					return b.String(), line, nil
 				}
-				b.WriteString(text)
+				// Numbered like `cat -n`, which is what Claude Code and
+				// opencode both hand their models: without it the model can
+				// only cite a location by quoting the code back, and every
+				// "which line is this" question costs a second call to grep.
+				// The prefix is not in the file — read's description and
+				// edit's both say so, because an old_string that includes one
+				// silently never matches.
+				if numbered {
+					b.WriteString(fmt.Sprintf("%6d\t%s", line, text))
+				} else {
+					b.WriteString(text)
+				}
 				taken++
 			}
 		}

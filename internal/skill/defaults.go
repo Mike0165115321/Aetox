@@ -1,6 +1,21 @@
 package skill
 
-import "github.com/Mike0165115321/Aetox/internal/stt"
+import (
+	"context"
+
+	"github.com/Mike0165115321/Aetox/internal/stt"
+)
+
+// Digester answers a question about a block of text. web_fetch uses it to hand
+// back an answer instead of a whole web page: a documentation page is tens of
+// thousands of characters and the model usually wants one paragraph of it, so
+// without this the tool's own output is the expensive part of the call.
+//
+// A function, not a model.Provider: internal/skill has no business knowing how
+// a completion is made, and a func is what a test can supply in one line. The
+// host wires it in RegistryOptions; when it is nil, web_fetch returns the full
+// page exactly as it always has.
+type Digester func(ctx context.Context, question, text string) (string, error)
 
 // RegistryOptions carries what built-in skills need from the host. Most skills
 // only want the sandbox root; a skill that the *user* configures (rather than
@@ -24,6 +39,16 @@ type RegistryOptions struct {
 	// file-consuming skill as well, or that skill will fail to find whatever
 	// write just produced.
 	OutputSubdir func() string
+	// Digest lets web_fetch answer a question about a page instead of
+	// returning the page. Nil is a supported configuration — the CLI has no
+	// provider handy at registry-build time — and simply means the tool keeps
+	// its old behaviour.
+	Digest Digester
+	// Vision reports whether the model behind this registry can look at an
+	// image. It decides one thing: whether `read` hands back a .png or tells
+	// the caller to run image_ocr on it. False is the safe value and the one
+	// every caller that does not know should pass (ARCHITECTURE.md §51).
+	Vision bool
 }
 
 func NewDefaultRegistry(opts RegistryOptions) *Registry {
@@ -36,16 +61,21 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 	if registry == nil {
 		return
 	}
+	// One registry of background commands, shared by the three tools that see
+	// them: shell starts, shell_output reads, shell_kill ends.
+	shells := newBackgroundShells()
 	defaults := []Skill{
 		&helpSkill{registry: registry},
 		&echoSkill{},
 		&timeSkill{},
 		&listSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
-		&readSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
+		&readSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir, vision: opts.Vision},
 		&githubRepoSummarySkill{},
 		&gitSkill{root: opts.SandboxRoot},
 		&fsSkill{root: opts.SandboxRoot},
-		&shellSkill{root: opts.SandboxRoot},
+		&shellSkill{root: opts.SandboxRoot, shells: shells},
+		&shellOutputSkill{shells: shells},
+		&shellKillSkill{shells: shells},
 		&writeSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
 		&editSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
 		&grepSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
@@ -58,7 +88,7 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 		&videoOCRSkill{root: opts.SandboxRoot},
 		&pdfReadSkill{root: opts.SandboxRoot},
 		&audioTranscribeSkill{root: opts.SandboxRoot, speech: opts.Speech},
-		&webFetchSkill{},
+		&webFetchSkill{digest: opts.Digest},
 		&webSearchSkill{},
 		&githubSearchSkill{},
 		&githubReadFileSkill{},

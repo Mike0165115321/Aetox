@@ -91,6 +91,53 @@ func TestEditSkillRejectsAmbiguousMatch(t *testing.T) {
 	}
 }
 
+// replace_all is the answer to the error the test above asserts: the ambiguity
+// guard stays the default, and this is how the model says it meant all of them.
+func TestEditSkillReplaceAll(t *testing.T) {
+	root := t.TempDir()
+	path := writeEditFixture(t, root, "a.txt", "old\nkeep\nold\nold\n")
+	s := &editSkill{root: root}
+
+	out, err := s.ExecuteTool(context.Background(), map[string]any{
+		"path":        "a.txt",
+		"old_string":  "old",
+		"new_string":  "new",
+		"replace_all": true,
+	})
+	if err != nil {
+		t.Fatalf("ExecuteTool: %v", err)
+	}
+	data, _ := os.ReadFile(path)
+	if string(data) != "new\nkeep\nnew\nnew\n" {
+		t.Errorf("file = %q, want every occurrence replaced and nothing else touched", string(data))
+	}
+	if !strings.Contains(out.Content, "3 occurrences") {
+		t.Errorf("Content = %q, want the count of what changed", out.Content)
+	}
+	// Three replacements of one line by one line, not one.
+	if out.LinesAdded != 3 || out.LinesRemoved != 3 {
+		t.Errorf("LinesAdded/Removed = %d/%d, want 3/3", out.LinesAdded, out.LinesRemoved)
+	}
+}
+
+// replace_all off (or absent) must still refuse an ambiguous match — the guard
+// is the default, not a mode the caller opts into.
+func TestEditSkillReplaceAllFalseStillRejectsAmbiguity(t *testing.T) {
+	root := t.TempDir()
+	writeEditFixture(t, root, "a.txt", "dup dup")
+	s := &editSkill{root: root}
+
+	_, err := s.ExecuteTool(context.Background(), map[string]any{
+		"path":        "a.txt",
+		"old_string":  "dup",
+		"new_string":  "x",
+		"replace_all": false,
+	})
+	if err == nil || !strings.Contains(err.Error(), "replace_all") {
+		t.Fatalf("expected the ambiguity error to name replace_all as the way out, got %v", err)
+	}
+}
+
 func TestEditSkillRejectsBinaryFile(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "bin.dat"), []byte{'a', 0, 'b'}, 0o644); err != nil {

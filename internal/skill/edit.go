@@ -44,6 +44,10 @@ func (*editSkill) ToolDefinition() model.ToolDefinition {
 				"type":        "string",
 				"description": "Replacement text. Empty string deletes old_string.",
 			},
+			"replace_all": map[string]any{
+				"type":        "boolean",
+				"description": "Replace every occurrence instead of requiring exactly one. This is how you rename a symbol throughout a file in one call.",
+			},
 		},
 		"required":             []string{"path", "old_string", "new_string"},
 		"additionalProperties": false,
@@ -52,9 +56,11 @@ func (*editSkill) ToolDefinition() model.ToolDefinition {
 	return model.ToolDefinition{
 		Type: "function",
 		Function: model.ToolFunction{
-			Name:        "edit",
-			Description: "Replace an exact, unique string in an existing file. Safer than write for changing part of a file.",
-			Parameters:  payload,
+			Name: "edit",
+			Description: "Replace an exact string in an existing file. Safer than write for changing part of a file. " +
+				"The text must appear exactly once unless replace_all is set. " +
+				"read prefixes every line with its number and a tab — strip that prefix before matching, it is not in the file.",
+			Parameters: payload,
 		},
 	}
 }
@@ -116,26 +122,40 @@ func (s *editSkill) Execute(_ context.Context, input Input) (Output, error) {
 		return newToolOutput("edit", command, "", start, false, err), err
 	}
 
+	replaceAll, _ := input["replace_all"].(bool)
+
 	content := string(data)
-	switch count := strings.Count(content, oldString); count {
-	case 0:
+	count := strings.Count(content, oldString)
+	switch {
+	case count == 0:
 		err = errors.New("old_string not found in file; re-read the file and match the text exactly")
 		return newToolOutput("edit", command, "", start, false, err), err
-	case 1:
-		// unique match, safe to replace
-	default:
-		err = fmt.Errorf("old_string matches %d times; add surrounding lines to make it unique", count)
+	case count > 1 && !replaceAll:
+		// Still the default, and still the safer one: a model that meant to
+		// change one call site and matched eight has made a mistake worth
+		// stopping, and replace_all is how it says it meant all eight.
+		err = fmt.Errorf("old_string matches %d times; add surrounding lines to make it unique, or set replace_all to change all %d", count, count)
 		return newToolOutput("edit", command, "", start, false, err), err
 	}
 
-	updated := strings.Replace(content, oldString, newString, 1)
+	replacements := 1
+	if replaceAll {
+		replacements = count
+	}
+	updated := strings.Replace(content, oldString, newString, replacements)
 	if err := os.WriteFile(targetPath, []byte(updated), 0o644); err != nil {
 		return newToolOutput("edit", command, "", start, false, err), err
 	}
 
-	out := newToolOutput("edit", command, "edit done: "+requestPath, start, false, nil)
-	// Exactly one occurrence was replaced, so the two strings are the change.
+	result := "edit done: " + requestPath
+	if replacements > 1 {
+		result = fmt.Sprintf("edit done: %s (%d occurrences)", requestPath, replacements)
+	}
+	out := newToolOutput("edit", command, result, start, false, nil)
+	// The two strings are the whole change, once per occurrence replaced.
 	out.LinesAdded, out.LinesRemoved = LineDelta(oldString, newString)
+	out.LinesAdded *= replacements
+	out.LinesRemoved *= replacements
 	return out, nil
 }
 
@@ -156,5 +176,8 @@ func (s *editSkill) ExecuteTool(ctx context.Context, args map[string]any) (Outpu
 		err := errors.New("old_string is required")
 		return newToolOutput("edit", "edit "+path, "", time.Now(), false, err), err
 	}
-	return s.Execute(ctx, Input{"args": []string{path, oldString, newString}})
+	return s.Execute(ctx, Input{
+		"args":        []string{path, oldString, newString},
+		"replace_all": args["replace_all"],
+	})
 }

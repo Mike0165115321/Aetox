@@ -121,8 +121,68 @@ func TestGrepSkillCapsResults(t *testing.T) {
 	if !out.Truncated {
 		t.Error("Truncated = false, want true at result cap")
 	}
-	if !strings.Contains(out.Content, "(max results reached)") {
-		t.Errorf("Content missing max-results marker: %q", out.Content[len(out.Content)-100:])
+	// The marker names the next offset, not just the fact of the cap — that is
+	// the whole point of paging, and a marker without it sends the model back to
+	// inventing a narrower pattern.
+	if !strings.Contains(out.Content, "offset=200") {
+		t.Errorf("Content missing the resume offset: %q", out.Content[len(out.Content)-100:])
+	}
+}
+
+// The three output shapes, on one tree, so the cheap ones are provably cheaper
+// than the expensive one rather than merely different.
+func TestGrepSkillOutputModes(t *testing.T) {
+	root := t.TempDir()
+	for name, body := range map[string]string{
+		"a.txt": "needle\nneedle\nother\n",
+		"b.txt": "needle\n",
+		"c.txt": "nothing here\n",
+	} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0o644); err != nil {
+			t.Fatalf("setup: %v", err)
+		}
+	}
+	s := &grepSkill{root: root}
+
+	run := func(t *testing.T, args map[string]any) string {
+		t.Helper()
+		args["pattern"] = "needle"
+		out, err := s.ExecuteTool(context.Background(), args)
+		if err != nil {
+			t.Fatalf("ExecuteTool(%v): %v", args, err)
+		}
+		return out.Content
+	}
+
+	files := run(t, map[string]any{"output_mode": "files_with_matches"})
+	if !strings.Contains(files, "a.txt") || !strings.Contains(files, "b.txt") {
+		t.Errorf("files_with_matches = %q, want both matching files", files)
+	}
+	if strings.Contains(files, "c.txt") || strings.Contains(files, ":1:") {
+		t.Errorf("files_with_matches = %q, want paths only and no non-matching file", files)
+	}
+
+	counts := run(t, map[string]any{"output_mode": "count"})
+	if !strings.Contains(counts, "a.txt:2") || !strings.Contains(counts, "b.txt:1") {
+		t.Errorf("count = %q, want a.txt:2 and b.txt:1", counts)
+	}
+
+	// head_limit and offset are one mechanism seen from both ends: page one and
+	// page two must not overlap, and together must cover everything.
+	first := run(t, map[string]any{"head_limit": 2})
+	second := run(t, map[string]any{"head_limit": 2, "offset": 2})
+	if strings.Count(first, "needle") != 2 {
+		t.Errorf("head_limit=2 returned %q, want two matches", first)
+	}
+	if strings.Contains(second, "a.txt:1:") {
+		t.Errorf("offset=2 returned %q, want the first page skipped", second)
+	}
+	if !strings.Contains(first, "offset=2") {
+		t.Errorf("head_limit=2 returned %q, want a resume hint", first)
+	}
+
+	if _, err := s.ExecuteTool(context.Background(), map[string]any{"pattern": "needle", "output_mode": "nonsense"}); err == nil {
+		t.Error("output_mode=nonsense was accepted; an unknown mode must fail rather than silently return content")
 	}
 }
 

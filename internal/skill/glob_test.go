@@ -74,6 +74,50 @@ func TestGlobSkillSortsNewestFirstAndSkipsNoise(t *testing.T) {
 	}
 }
 
+// Paging, and the property that makes it worth having: page two continues
+// where page one stopped, in the same newest-first order, with no overlap.
+func TestGlobPagesThroughResults(t *testing.T) {
+	root := t.TempDir()
+	for i, name := range []string{"oldest.go", "middle.go", "newest.go"} {
+		full := filepath.Join(root, name)
+		if err := os.WriteFile(full, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		stamp := time.Now().Add(-time.Duration(2-i) * time.Hour)
+		if err := os.Chtimes(full, stamp, stamp); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := &globSkill{root: root}
+
+	first, err := s.ExecuteTool(context.Background(), map[string]any{"pattern": "*.go", "head_limit": 2})
+	if err != nil {
+		t.Fatalf("page one: %v", err)
+	}
+	if !strings.HasPrefix(first.Content, "newest.go\nmiddle.go") {
+		t.Errorf("page one = %q, want the two newest in order", first.Content)
+	}
+	if !strings.Contains(first.Content, "offset=2") {
+		t.Errorf("page one = %q, want the offset to continue from", first.Content)
+	}
+
+	second, err := s.ExecuteTool(context.Background(), map[string]any{"pattern": "*.go", "head_limit": 2, "offset": 2})
+	if err != nil {
+		t.Fatalf("page two: %v", err)
+	}
+	if strings.TrimSpace(second.Content) != "oldest.go" {
+		t.Errorf("page two = %q, want only what page one did not show", second.Content)
+	}
+
+	past, err := s.ExecuteTool(context.Background(), map[string]any{"pattern": "*.go", "offset": 99})
+	if err != nil {
+		t.Fatalf("past the end: %v", err)
+	}
+	if !strings.Contains(past.Content, "no files past offset") {
+		t.Errorf("past the end = %q, want it said so rather than looking like no match at all", past.Content)
+	}
+}
+
 func TestGlobPrefix(t *testing.T) {
 	cases := []struct{ pattern, want string }{
 		{"aetox/output/**/*.html", "aetox/output"}, // the 51-second case

@@ -26,6 +26,30 @@ func TestListSkillExecute(t *testing.T) {
 	}
 }
 
+// Without the "/" a model cannot tell a folder from a file and has to call
+// list again on each name to find out.
+func TestListSkillMarksDirectories(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "sub"), 0o755); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "sub.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	s := &listSkill{root: root}
+
+	out, err := s.ExecuteTool(context.Background(), map[string]any{})
+	if err != nil {
+		t.Fatalf("ExecuteTool: %v", err)
+	}
+	// The pair is deliberate: one name is a prefix of the other, which is
+	// exactly when guessing from the name alone goes wrong.
+	want := "sub.txt\nsub/"
+	if out.Content != want {
+		t.Errorf("Content = %q, want %q", out.Content, want)
+	}
+}
+
 func TestListSkillMissingDir(t *testing.T) {
 	s := &listSkill{root: t.TempDir()}
 	_, err := s.Execute(context.Background(), Input{"args": []string{"nope"}})

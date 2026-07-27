@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Mike0165115321/Aetox/internal/model"
@@ -22,6 +23,21 @@ import (
 // scripting; this is for research: read many pages quickly.
 type webFetchSkill struct {
 	httpClient *http.Client
+	// digest, when the host supplies one, answers a caller's question about a
+	// page instead of returning the whole page. See RegistryOptions.Digest.
+	digest Digester
+
+	mu    sync.Mutex
+	cache map[string]webFetchEntry
+}
+
+// webFetchEntry is one page held for the few minutes a model spends reading
+// around a topic. Fetching the same URL twice in one turn is the normal shape
+// of research — follow a link, come back, follow the next — and the second
+// fetch is a second download and a second wait for bytes that have not changed.
+type webFetchEntry struct {
+	body    string
+	fetched time.Time
 }
 
 const (
@@ -29,7 +45,37 @@ const (
 	webFetchMaxText  = 40000   // chars of extracted text handed to the model
 	webFetchMaxImgs  = 20
 	webFetchMaxLinks = 40
+	// webFetchCacheTTL matches what Claude Code's WebFetch keeps. Long enough
+	// to cover one research turn, short enough that a page the user is actively
+	// editing and reloading is not served stale.
+	webFetchCacheTTL = 15 * time.Minute
+	// webFetchCacheMax bounds the map. A plain size cap cleared wholesale on
+	// overflow, because an LRU here would be more machinery than the problem.
+	// ponytail: swap for an LRU if a long session starts thrashing it.
+	webFetchCacheMax = 32
 )
+
+func (s *webFetchSkill) cached(url string) (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	entry, ok := s.cache[url]
+	if !ok || time.Since(entry.fetched) > webFetchCacheTTL {
+		return "", false
+	}
+	return entry.body, true
+}
+
+func (s *webFetchSkill) remember(url, body string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cache == nil {
+		s.cache = make(map[string]webFetchEntry, webFetchCacheMax)
+	}
+	if len(s.cache) >= webFetchCacheMax {
+		s.cache = make(map[string]webFetchEntry, webFetchCacheMax)
+	}
+	s.cache[url] = webFetchEntry{body: body, fetched: time.Now()}
+}
 
 func (*webFetchSkill) Name() string { return "web_fetch" }
 
@@ -44,6 +90,10 @@ func (*webFetchSkill) ToolDefinition() model.ToolDefinition {
 			"url": map[string]any{
 				"type":        "string",
 				"description": "The http(s) URL to fetch",
+			},
+			"prompt": map[string]any{
+				"type":        "string",
+				"description": "What you want from the page, e.g. \"the exact signature of the retry option\". Given this, the page is read for you and only the answer comes back — far cheaper than reading the whole thing. Leave it out when you genuinely need the full text.",
 			},
 		},
 		"required":             []string{"url"},
@@ -68,15 +118,35 @@ func (s *webFetchSkill) Execute(ctx context.Context, input Input) (Output, error
 		err := errors.New("usage: web_fetch <url>")
 		return newToolOutput("web_fetch", "web_fetch", "", time.Now(), false, err), err
 	}
-	return s.fetch(ctx, strings.TrimSpace(strings.Join(args, " ")))
+	return s.fetch(ctx, strings.TrimSpace(strings.Join(args, " ")), "")
 }
 
 func (s *webFetchSkill) ExecuteTool(ctx context.Context, args map[string]any) (Output, error) {
 	rawURL, _ := args["url"].(string)
-	return s.fetch(ctx, strings.TrimSpace(rawURL))
+	question, _ := args["prompt"].(string)
+	return s.fetch(ctx, strings.TrimSpace(rawURL), strings.TrimSpace(question))
 }
 
-func (s *webFetchSkill) fetch(ctx context.Context, rawURL string) (Output, error) {
+// answer is the single exit every successful fetch takes, so the cache and the
+// digest both apply no matter which content type came back.
+func (s *webFetchSkill) answer(ctx context.Context, command, key, body string, start time.Time, truncated bool, question string) (Output, error) {
+	if key != "" {
+		s.remember(key, body)
+	}
+	if question == "" || s.digest == nil {
+		return newToolOutput("web_fetch", command, body, start, truncated, nil), nil
+	}
+	digested, err := s.digest(ctx, question, body)
+	if err != nil || strings.TrimSpace(digested) == "" {
+		// The page is in hand either way. Returning it whole costs tokens;
+		// returning an error for a question that was only ever an optimization
+		// would cost the model the page.
+		return newToolOutput("web_fetch", command, body, start, truncated, nil), nil
+	}
+	return newToolOutput("web_fetch", command, strings.TrimSpace(digested), start, false, nil), nil
+}
+
+func (s *webFetchSkill) fetch(ctx context.Context, rawURL, question string) (Output, error) {
 	start := time.Now()
 	command := "web_fetch " + rawURL
 	if rawURL == "" {
@@ -90,6 +160,13 @@ func (s *webFetchSkill) fetch(ctx context.Context, rawURL string) (Output, error
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
 		err := fmt.Errorf("only http(s) URLs are supported, got %q", rawURL)
 		return newToolOutput("web_fetch", command, "", start, false, err), err
+	}
+
+	// Served before the request is even built: research means walking back over
+	// the same few pages, and the second walk should cost nothing.
+	cacheKey := parsed.String()
+	if body, ok := s.cached(cacheKey); ok {
+		return s.answer(ctx, command, "", body, start, false, question)
 	}
 
 	client := s.httpClient
@@ -131,7 +208,7 @@ func (s *webFetchSkill) fetch(ctx context.Context, rawURL string) (Output, error
 			content = content[:webFetchMaxText] + "\n... (truncated)"
 			truncated = true
 		}
-		return newToolOutput("web_fetch", command, "URL: "+finalURL.String()+"\n\n"+strings.TrimSpace(content), start, truncated, nil), nil
+		return s.answer(ctx, command, cacheKey, "URL: "+finalURL.String()+"\n\n"+strings.TrimSpace(content), start, truncated, question)
 	}
 
 	page := extractReadablePage(body, finalURL)
@@ -156,7 +233,7 @@ func (s *webFetchSkill) fetch(ctx context.Context, rawURL string) (Output, error
 		truncated = true
 	}
 	fmt.Fprintf(&b, "\n%s", text)
-	return newToolOutput("web_fetch", command, b.String(), start, truncated, nil), nil
+	return s.answer(ctx, command, cacheKey, b.String(), start, truncated, question)
 }
 
 type pageImage struct {

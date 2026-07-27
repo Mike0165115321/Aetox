@@ -52,18 +52,66 @@ var noDeadlineTools = map[string]bool{"ask_user": true, "task": true, "task_resu
 // without sleeping a minute to find out (internal/subagent).
 func HasNoDeadline(name string) bool { return noDeadlineTools[strings.ToLower(strings.TrimSpace(name))] }
 
+// maxToolExecutionTimeout bounds what a tool call may ask for. Ten minutes is
+// long enough for a full test suite or a cold build and short enough that a
+// command which will never finish still ends the turn rather than hanging it.
+const maxToolExecutionTimeout = 10 * time.Minute
+
+// toolCallDeadline is the per-call deadline, which only `shell` can move: a 60
+// second cap is right for a tool that reads a file and wrong for one that runs
+// `go test ./...`, and the tool itself is the only thing that knows which it is
+// about to do. Anything absent, unparseable, negative or over the ceiling falls
+// back to the default rather than failing the call — a bad timeout is not worth
+// refusing to run over.
+//
+// JSON numbers decode to float64, so an integer schema still arrives as one.
+func toolCallDeadline(name string, args map[string]any) time.Duration {
+	if strings.ToLower(strings.TrimSpace(name)) != "shell" {
+		return toolExecutionTimeout
+	}
+	var seconds float64
+	switch v := args["timeout_seconds"].(type) {
+	case float64:
+		seconds = v
+	case int:
+		seconds = float64(v)
+	default:
+		return toolExecutionTimeout
+	}
+	if seconds <= 0 {
+		return toolExecutionTimeout
+	}
+	if d := time.Duration(seconds) * time.Second; d > toolExecutionTimeout {
+		if d > maxToolExecutionTimeout {
+			return maxToolExecutionTimeout
+		}
+		return d
+	}
+	// A request to shorten the default is honored too — a model that expects a
+	// command to be instant has told us something useful about when to give up.
+	return time.Duration(seconds) * time.Second
+}
+
 type Agent interface {
 	Respond(context.Context, string, TurnOptions) (string, error)
 	// RespondEphemeral answers a one-shot prompt without writing anything into
 	// conversation history — for meta work like tool-run summaries.
 	RespondEphemeral(context.Context, string, TurnOptions) (string, error)
 	RespondStream(context.Context, string, func(string) error, func(string) error, TurnOptions) (string, bool, error)
-	RespondWithTools(context.Context, []model.ToolDefinition, string, func(context.Context, model.ToolCall) (string, error), func(string) error, TurnOptions) (string, bool, error)
+	// The tool callback returns images alongside its text so a tool can hand
+	// back a picture instead of a description of one — today only `read` on an
+	// image file. Nil for every other tool and every other call.
+	RespondWithTools(context.Context, []model.ToolDefinition, string, func(context.Context, model.ToolCall) (string, []model.Image, error), func(string) error, TurnOptions) (string, bool, error)
 	SupportsToolCalling() bool
 }
 
 type TurnOptions struct {
 	ThinkLevel think.Level
+	// Images ride with this turn's user message and this turn's only — they are
+	// set per Execute call, never on the executor, so an attachment cannot leak
+	// into the next question. Empty unless the caller both had an image and
+	// established that the model can see one (model.ResolveVision).
+	Images []model.Image
 }
 
 type Dispatcher interface {
@@ -254,6 +302,25 @@ func (e *Executor) conversationThinkingStatus() string {
 	return "กำลังคิดคำตอบ..."
 }
 
+// ExecuteWithImages is Execute for a turn that carries attachments. Execute
+// itself stays at six parameters — every caller but the desktop's chat path has
+// no image to pass, and a seventh nil argument at each of them would be noise.
+func (e *Executor) ExecuteWithImages(
+	ctx context.Context,
+	line string,
+	intent command.Intent,
+	onChunk func(string),
+	onReasoningChunk func(string),
+	onToolComplete func(),
+	images []model.Image,
+) (Result, error) {
+	// A copy, not a write to e.turnOptions: the executor outlives the turn, and
+	// a field set here would still be set on the next question.
+	turnOptions := e.turnOptions
+	turnOptions.Images = images
+	return e.execute(ctx, line, intent, onChunk, onReasoningChunk, onToolComplete, turnOptions)
+}
+
 func (e *Executor) Execute(
 	ctx context.Context,
 	line string,
@@ -261,6 +328,18 @@ func (e *Executor) Execute(
 	onChunk func(string),
 	onReasoningChunk func(string),
 	onToolComplete func(),
+) (Result, error) {
+	return e.execute(ctx, line, intent, onChunk, onReasoningChunk, onToolComplete, e.turnOptions)
+}
+
+func (e *Executor) execute(
+	ctx context.Context,
+	line string,
+	intent command.Intent,
+	onChunk func(string),
+	onReasoningChunk func(string),
+	onToolComplete func(),
+	turnOptions TurnOptions,
 ) (Result, error) {
 	line = strings.TrimSpace(line)
 	if line == "" {
@@ -291,13 +370,13 @@ func (e *Executor) Execute(
 		e.dispatcher != nil && len(e.dispatcher.ToolDefinitions()) > 0
 	if agentCanUseTools {
 		debuglog.Msg("path: executeAgentToolLoop (model-driven tool calling)")
-		if result, handled, err := e.executeAgentToolLoop(ctx, parsed, onChunk, onReasoningChunk); handled {
+		if result, handled, err := e.executeAgentToolLoop(ctx, parsed, onChunk, onReasoningChunk, turnOptions); handled {
 			return result, err
 		}
 	}
 
 	debuglog.Msg("path: conversation (streaming chat)")
-	reply, streamed, err := e.agent.RespondStream(ctx, parsed.Raw, asStreamHandler(onChunk), asStreamHandler(onReasoningChunk), e.turnOptions)
+	reply, streamed, err := e.agent.RespondStream(ctx, parsed.Raw, asStreamHandler(onChunk), asStreamHandler(onReasoningChunk), turnOptions)
 	return Result{
 		Reply:    reply,
 		Streamed: streamed,
@@ -437,6 +516,7 @@ func (e *Executor) executeAgentToolLoop(
 	intent command.Intent,
 	onChunk func(string),
 	onReasoningChunk func(string),
+	turnOptions TurnOptions,
 ) (Result, bool, error) {
 	if e.agent == nil || !e.agent.SupportsToolCalling() {
 		return Result{}, false, nil
@@ -455,7 +535,7 @@ func (e *Executor) executeAgentToolLoop(
 		debuglog.Msg("tool: %s", td.Function.Name)
 	}
 
-	reply, usedTools, err := e.agent.RespondWithTools(ctx, toolDefs, intent.Raw, func(ctx context.Context, call model.ToolCall) (string, error) {
+	reply, usedTools, err := e.agent.RespondWithTools(ctx, toolDefs, intent.Raw, func(ctx context.Context, call model.ToolCall) (string, []model.Image, error) {
 		e.reportToolCall(call.ID, call.Function.Name, call.Function.Arguments)
 		// A tool that spawns anything needs to know which call it is, so the work
 		// it causes can be traced back to this row (`task` stamps ToolEvent.Parent
@@ -478,8 +558,8 @@ func (e *Executor) executeAgentToolLoop(
 			}
 		}
 		e.reportToolResult(ev)
-		return receipt, execErr
-	}, asStreamHandler(onReasoningChunk), e.turnOptions)
+		return receipt, output.Images, execErr
+	}, asStreamHandler(onReasoningChunk), turnOptions)
 	if err != nil {
 		return Result{}, false, err
 	}
@@ -616,7 +696,8 @@ func (e *Executor) executeTool(ctx context.Context, name string, args map[string
 		}
 		return output, true, err
 	}
-	toolCtx, cancel := context.WithTimeout(ctx, toolExecutionTimeout)
+	deadline := toolCallDeadline(name, args)
+	toolCtx, cancel := context.WithTimeout(ctx, deadline)
 	defer cancel()
 
 	type toolExecResult struct {
@@ -639,9 +720,9 @@ func (e *Executor) executeTool(ctx context.Context, name string, args map[string
 	case <-ctx.Done():
 		// Parent turn canceled (user hit stop) — propagate, not a slowness report.
 		return skill.Output{Name: name, Content: "tool execution canceled", RawOutput: "tool execution canceled", Success: false, Stderr: ctx.Err().Error()}, true, ctx.Err()
-	case <-time.After(toolExecutionTimeout):
+	case <-time.After(deadline):
 		cancel() // nudge ctx-aware tools to stop
-		msg := fmt.Sprintf("tool %q is abnormally slow: still running after %s and was abandoned. Retry with a narrower scope (a more specific path or pattern) or a different approach.", name, toolExecutionTimeout)
+		msg := fmt.Sprintf("tool %q is abnormally slow: still running after %s and was abandoned. Retry with a narrower scope (a more specific path or pattern) or a different approach.", name, deadline)
 		return skill.Output{Name: name, Content: msg, RawOutput: msg, Success: false, Stderr: msg}, true, errors.New(msg)
 	}
 }
@@ -687,6 +768,32 @@ func toolCallToArgs(name string, args map[string]any) []string {
 		if raw, ok := args["repo_url"].(string); ok {
 			return []string{strings.TrimSpace(raw)}
 		}
+	case "shell":
+		// Tokenized, because this is what safety.AssessCommand reads: it judges
+		// the command word against isShellHighRisk and takes the rest as its
+		// flags. Handing it the whole line as one element makes every call look
+		// like an unrecognized command, and handing it nothing makes every call
+		// read as "shell with empty command" — high risk, every time, which
+		// trains the user to click through the prompt that matters most.
+		if raw, ok := args["command"].(string); ok {
+			return strings.Fields(raw)
+		}
+	case "git":
+		// action first, then its arguments — the same shape the text path
+		// produces, so one permission rule matches whether the human typed the
+		// command or the model called the tool.
+		result := make([]string, 0, 4)
+		if raw, ok := args["action"].(string); ok && strings.TrimSpace(raw) != "" {
+			result = append(result, strings.TrimSpace(raw))
+		}
+		if raw, ok := args["args"].([]any); ok {
+			for _, item := range raw {
+				if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
+					result = append(result, strings.TrimSpace(s))
+				}
+			}
+		}
+		return result
 	}
 	return nil
 }

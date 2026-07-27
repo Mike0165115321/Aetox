@@ -237,7 +237,7 @@ func (a *toolAwareAgent) RespondWithTools(
 	_ context.Context,
 	_ []model.ToolDefinition,
 	_ string,
-	_ func(context.Context, model.ToolCall) (string, error),
+	_ func(context.Context, model.ToolCall) (string, []model.Image, error),
 	_ func(string) error,
 	_ TurnOptions,
 ) (string, bool, error) {
@@ -321,6 +321,69 @@ func TestExecuteTool_AbnormallySlowToolReportsBackToModel(t *testing.T) {
 	}
 }
 
+func TestToolCallDeadline(t *testing.T) {
+	saved := toolExecutionTimeout
+	toolExecutionTimeout = 60 * time.Second
+	defer func() { toolExecutionTimeout = saved }()
+
+	cases := []struct {
+		name string
+		tool string
+		args map[string]any
+		want time.Duration
+	}{
+		{"no argument keeps the default", "shell", map[string]any{"command": "go build ./..."}, 60 * time.Second},
+		{"a test suite may ask for longer", "shell", map[string]any{"timeout_seconds": float64(300)}, 300 * time.Second},
+		{"an int survives a non-JSON caller", "shell", map[string]any{"timeout_seconds": 300}, 300 * time.Second},
+		{"shorter is honored too", "shell", map[string]any{"timeout_seconds": float64(5)}, 5 * time.Second},
+		{"the ceiling holds", "shell", map[string]any{"timeout_seconds": float64(99999)}, maxToolExecutionTimeout},
+		{"nonsense falls back rather than failing the call", "shell", map[string]any{"timeout_seconds": "soon"}, 60 * time.Second},
+		{"zero is not a deadline", "shell", map[string]any{"timeout_seconds": float64(0)}, 60 * time.Second},
+		{"negative is not a deadline", "shell", map[string]any{"timeout_seconds": float64(-9)}, 60 * time.Second},
+		// Only shell knows how long its own work takes; nothing else gets to
+		// extend the guard by naming a field.
+		{"another tool cannot buy time", "grep", map[string]any{"timeout_seconds": float64(600)}, 60 * time.Second},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := toolCallDeadline(tc.tool, tc.args); got != tc.want {
+				t.Errorf("toolCallDeadline(%q, %v) = %s, want %s", tc.tool, tc.args, got, tc.want)
+			}
+		})
+	}
+}
+
+// The deadline is read where it is enforced, not just where it is computed.
+func TestExecuteTool_ShellTimeoutOutlivesTheDefault(t *testing.T) {
+	saved := toolExecutionTimeout
+	toolExecutionTimeout = 50 * time.Millisecond
+	defer func() { toolExecutionTimeout = saved }()
+
+	dispatcher := &slowDispatcher{toolDispatcher: toolDispatcher{root: t.TempDir(), t: t}, release: make(chan struct{})}
+	executor := NewExecutor(ExecutorOptions{
+		Agent:        &toolAwareAgent{supportsTools: true},
+		Dispatcher:   dispatcher,
+		ApprovalMode: safety.ApprovalFullAccess,
+	})
+
+	// Finishes long after the 50ms default, well inside the second it asked for.
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		close(dispatcher.release)
+	}()
+	output, handled, err := executor.executeTool(context.Background(), "shell",
+		map[string]any{"command": "go test ./...", "timeout_seconds": float64(1)})
+	if !handled {
+		t.Fatal("shell must be handled")
+	}
+	if err != nil {
+		t.Fatalf("a command inside its own timeout must not be abandoned: %v", err)
+	}
+	if !output.Success {
+		t.Error("Success = false, want the command's own result")
+	}
+}
+
 // Interactive tools (ask_user) wait on a human — the slow-tool guard must let
 // them run past the timeout instead of abandoning them.
 func TestExecuteTool_InteractiveToolExemptFromTimeout(t *testing.T) {
@@ -372,11 +435,11 @@ func (a *writeToolCallAgent) RespondWithTools(
 	ctx context.Context,
 	_ []model.ToolDefinition,
 	_ string,
-	exec func(context.Context, model.ToolCall) (string, error),
+	exec func(context.Context, model.ToolCall) (string, []model.Image, error),
 	_ func(string) error,
 	_ TurnOptions,
 ) (string, bool, error) {
-	_, err := exec(ctx, model.ToolCall{
+	_, _, err := exec(ctx, model.ToolCall{
 		ID:   "write_call_1",
 		Type: "function",
 		Function: model.FunctionCall{
@@ -412,11 +475,11 @@ func (a *successfulToolCallAgent) RespondWithTools(
 	ctx context.Context,
 	_ []model.ToolDefinition,
 	_ string,
-	exec func(context.Context, model.ToolCall) (string, error),
+	exec func(context.Context, model.ToolCall) (string, []model.Image, error),
 	_ func(string) error,
 	_ TurnOptions,
 ) (string, bool, error) {
-	_, err := exec(ctx, model.ToolCall{
+	_, _, err := exec(ctx, model.ToolCall{
 		ID:   "good_call_1",
 		Type: "function",
 		Function: model.FunctionCall{

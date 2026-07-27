@@ -4,6 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -38,7 +42,7 @@ func (*diagnosticsSkill) ToolDefinition() model.ToolDefinition {
 		"properties": map[string]any{
 			"path": map[string]any{
 				"type":        "string",
-				"description": "Relative path of the file to check",
+				"description": "Relative path of a file, or of a folder to check every supported file inside it.",
 			},
 		},
 		"required":             []string{"path"},
@@ -49,9 +53,10 @@ func (*diagnosticsSkill) ToolDefinition() model.ToolDefinition {
 		Type: "function",
 		Function: model.ToolFunction{
 			Name: "diagnostics",
-			Description: "Check a file for compile/type errors using its language server (gopls, tsserver, ...). " +
+			Description: "Check for compile/type errors using the language server (gopls, tsserver, ...). " +
+				"Give it a file, or a folder to check every supported file inside it — \".\" checks the whole project. " +
 				"Call it after editing source files to confirm the change is valid before moving on. " +
-				"Returns '(no problems)' when the file is clean and nothing when no server is installed for that language.",
+				"Returns '(no problems)' when everything checked is clean, and says so when no server is installed for that language.",
 			Parameters: payload,
 		},
 	}
@@ -80,8 +85,12 @@ func (s *diagnosticsSkill) ExecuteTool(ctx context.Context, args map[string]any)
 
 	// Resolved for the sandbox check only — the server is handed the absolute
 	// path, and the model keeps seeing the path it asked about.
-	if _, err := resolveSandboxPath(s.root, path); err != nil {
+	resolved, err := resolveSandboxPath(s.root, path)
+	if err != nil {
 		return newToolOutput("diagnostics", command, "", start, false, err), err
+	}
+	if info, statErr := os.Stat(resolved); statErr == nil && info.IsDir() {
+		return s.diagnoseTree(ctx, path, resolved, command, start)
 	}
 	// Three distinct answers, never collapsed into one: no server exists for
 	// this language, a server exists but could not be obtained, or the file
@@ -109,4 +118,102 @@ func (s *diagnosticsSkill) ExecuteTool(ctx context.Context, args map[string]any)
 	}
 	out, truncated := limitLines(strings.Join(lines, "\n"), defaultToolOutputLineLimit)
 	return newToolOutput("diagnostics", command, out, start, truncated, nil), nil
+}
+
+// maxDiagnosticsFiles bounds a folder check. Each file is a round trip to the
+// language server, and the tool has 60 seconds before the turn abandons it
+// (internal/turn) — a whole-repo sweep that returns nothing is worse than a
+// partial one that says how far it got.
+const maxDiagnosticsFiles = 40
+
+// diagnoseTree answers "is anything in here broken", which is the question a
+// model actually has after an edit that touched four files. Before this it
+// could only ask about one file at a time, so it either asked four times or —
+// far more often — asked about one and assumed the rest.
+func (s *diagnosticsSkill) diagnoseTree(ctx context.Context, shown, absDir, command string, start time.Time) (Output, error) {
+	var files []string
+	walkErr := filepath.WalkDir(absDir, func(path string, d os.DirEntry, err error) error {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			// The same exclusions grep and glob use: node_modules holds more
+			// TypeScript than the project does, and none of it is the answer.
+			if name := d.Name(); path != absDir && (strings.HasPrefix(name, ".") || IgnoredDirs[name]) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if lsp.Configured(path) {
+			files = append(files, path)
+		}
+		return nil
+	})
+	if walkErr != nil && ctx.Err() != nil {
+		return newToolOutput("diagnostics", command, "", start, false, walkErr), walkErr
+	}
+	if len(files) == 0 {
+		return newToolOutput("diagnostics", command,
+			"(no files with a language server under "+shown+" — nothing checked)", start, false, nil), nil
+	}
+	// Sorted so two runs over an unchanged tree report in the same order, and
+	// so the truncation below cuts predictably rather than by walk order.
+	sort.Strings(files)
+	capped := false
+	if len(files) > maxDiagnosticsFiles {
+		files = files[:maxDiagnosticsFiles]
+		capped = true
+	}
+
+	var (
+		lines    []string
+		checked  int
+		skipped  int
+		problems int
+	)
+	for _, file := range files {
+		if ctx.Err() != nil {
+			break
+		}
+		if !lsp.Available(ctx, file) {
+			skipped++
+			continue
+		}
+		diags, err := lsp.Shared(s.root).Diagnose(ctx, file, diagnosticsTimeout)
+		if err != nil {
+			// One unreachable server must not lose the findings from every
+			// other file already checked.
+			skipped++
+			continue
+		}
+		checked++
+		if len(diags) == 0 {
+			continue
+		}
+		rel := file
+		if r, relErr := filepath.Rel(absDir, file); relErr == nil {
+			rel = filepath.ToSlash(filepath.Join(shown, r))
+		}
+		lines = append(lines, rel+":")
+		for _, d := range diags {
+			lines = append(lines, "  "+d.String())
+			problems++
+		}
+	}
+
+	summary := fmt.Sprintf("%d file(s) checked, %d problem(s)", checked, problems)
+	if skipped > 0 {
+		summary += fmt.Sprintf(", %d skipped (no server available)", skipped)
+	}
+	if capped {
+		summary += fmt.Sprintf(" — stopped at the first %d files, check a subfolder for the rest", maxDiagnosticsFiles)
+	}
+	if len(lines) == 0 {
+		return newToolOutput("diagnostics", command, "(no problems) — "+summary, start, capped, nil), nil
+	}
+	out, truncated := limitLines(strings.Join(lines, "\n"), defaultToolOutputLineLimit)
+	return newToolOutput("diagnostics", command, out+"\n\n"+summary, start, truncated || capped, nil), nil
 }

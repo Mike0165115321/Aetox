@@ -119,17 +119,27 @@ func (s *writeSkill) Execute(_ context.Context, input Input) (Output, error) {
 		return newToolOutput("write", "write", "", start, false, err), err
 	}
 
-	args := stringSlice(input["args"])
+	// raw []string, exactly as edit.go does and for exactly the reason its
+	// comment gives: stringSlice trims every element and drops the empty ones.
+	// Run over a file's contents that silently deleted the trailing newline
+	// from every file Aetox ever wrote, deleted the indentation of any file
+	// whose first line was indented (YAML, Python, a continued expression), and
+	// made an empty file impossible to create — `content: ""` was dropped, the
+	// slice came back one element short, and the tool answered "usage:".
+	// Found 2026-07-28 by writing files through the tool and diffing the bytes.
+	args, _ := input["args"].([]string)
 	if len(args) < 2 {
 		err := errors.New("usage: write <path> <content>")
 		return newToolOutput("write", "write", "", start, false, err), err
 	}
 
 	requestPath := strings.TrimSpace(args[0])
+	// The remaining elements are one content string on the tool path; the CLI
+	// splits on spaces, so joining them back is what it means there.
 	content := strings.Join(args[1:], " ")
 	if requestPath == "" {
 		err := errors.New("usage: write <path> <content>")
-		return newToolOutput("write", "write "+strings.TrimSpace(strings.Join(args, " ")), "", start, false, err), err
+		return newToolOutput("write", "write", "", start, false, err), err
 	}
 	original := requestPath
 	requestPath = s.placed(requestPath)

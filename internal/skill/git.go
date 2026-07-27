@@ -2,14 +2,17 @@ package skill
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
+	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/proc"
 )
 
@@ -21,6 +24,63 @@ func (*gitSkill) Name() string { return "git" }
 
 func (*gitSkill) Description() string {
 	return "รันคำสั่ง git แบบอ่านอย่างเดียวที่ปลอดภัย (status, log, branch, diff, show)"
+}
+
+// ToolDefinition hands git to the model, alongside shell and for the same
+// reason: an agent that cannot read `git diff` cannot see what it just did.
+//
+// This one is the narrower half of that pair — `allowedGitReadActions` is a
+// read-only allowlist and validateGitReadArgs blocks the options that would
+// escape the workspace, so nothing here can mutate a repository. The enum is
+// built from that same map rather than restated, or the schema drifts from the
+// check the day an action is added; sorted because an unsorted enum reshuffles
+// the tool payload on every turn and misses the provider's prefix cache (see
+// Registry.Names).
+func (*gitSkill) ToolDefinition() model.ToolDefinition {
+	actions := make([]string, 0, len(allowedGitReadActions))
+	for action := range allowedGitReadActions {
+		actions = append(actions, action)
+	}
+	sort.Strings(actions)
+
+	schema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"action": map[string]any{
+				"type":        "string",
+				"enum":        actions,
+				"description": "Which read-only git command to run.",
+			},
+			"args": map[string]any{
+				"type":        "array",
+				"items":       map[string]any{"type": "string"},
+				"description": "Arguments for the action, one per element, e.g. [\"--stat\", \"HEAD~1\"]. Omit for the plain command.",
+			},
+		},
+		"required":             []string{"action"},
+		"additionalProperties": false,
+	}
+	payload, _ := json.Marshal(schema)
+	return model.ToolDefinition{
+		Type: "function",
+		Function: model.ToolFunction{
+			Name: "git",
+			Description: "Read the repository's git state: " + strings.Join(actions, ", ") + ". " +
+				"Use diff to check what your own edits changed before reporting them done. " +
+				"Read-only — committing, checking out or anything else that writes belongs in shell, where the user approves it.",
+			Parameters: payload,
+		},
+	}
+}
+
+func (s *gitSkill) ExecuteTool(ctx context.Context, args map[string]any) (Output, error) {
+	action, _ := args["action"].(string)
+	if strings.TrimSpace(action) == "" {
+		err := errors.New("action is required")
+		return newToolOutput("git", "git", "", time.Now(), false, err), err
+	}
+	callArgs := append([]string{action}, anyStringSlice(args["args"])...)
+	return s.Execute(ctx, Input{"args": callArgs})
 }
 
 func (s *gitSkill) Execute(ctx context.Context, input Input) (Output, error) {

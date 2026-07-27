@@ -26,6 +26,11 @@ type Output struct {
 	// timeline's "+9 -0". Both zero on tools that touch no file.
 	LinesAdded   int
 	LinesRemoved int
+	// Images is how a tool returns a picture rather than a description of one.
+	// Only `read` sets it, only when the host has said the model can see
+	// (RegistryOptions.Vision) — a tool result is text everywhere else, and a
+	// blind model still gets the image_ocr path it has always had.
+	Images []model.Image
 }
 
 // LineDelta counts how a replacement changed a file, for Output's stats.

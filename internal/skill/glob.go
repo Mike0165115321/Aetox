@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -36,6 +37,14 @@ func (*globSkill) ToolDefinition() model.ToolDefinition {
 			"path": map[string]any{
 				"type":        "string",
 				"description": "Relative directory to search from (default: whole sandbox)",
+			},
+			"head_limit": map[string]any{
+				"type":        "integer",
+				"description": "Return at most this many paths.",
+			},
+			"offset": map[string]any{
+				"type":        "integer",
+				"description": "Skip this many paths first. With head_limit this pages through a result set that hit the cap, instead of having to invent a narrower pattern.",
 			},
 		},
 		"required":             []string{"pattern"},
@@ -123,7 +132,28 @@ func (s *globSkill) Execute(ctx context.Context, input Input) (Output, error) {
 		return newToolOutput("glob", command, "(no files matched)", start, false, nil), nil
 	}
 
-	const maxResults = 300
+	const (
+		maxResults = 300  // one page, when the caller asks for no particular size
+		maxScan    = 5000 // ceiling on what a single walk will hold in memory
+	)
+	limit := maxResults
+	if want := intArg(input["head_limit"]); want > 0 && want < limit {
+		limit = want
+	}
+	skip := intArg(input["offset"])
+	if skip < 0 {
+		skip = 0
+	}
+	// Collect a page's worth past the offset and stop. Sorting happens after
+	// the walk, so this has to gather everything the caller might be shown
+	// before it can cut anything.
+	// ponytail: past maxScan the newest-first order is over the first 5,000
+	// paths the walk happened to reach, not over the whole tree — raise it, or
+	// index by mtime, only if a tree that large ever needs exact paging.
+	collect := skip + limit
+	if collect > maxScan {
+		collect = maxScan
+	}
 	type hit struct {
 		rel string
 		mod time.Time
@@ -159,7 +189,7 @@ func (s *globSkill) Execute(ctx context.Context, input Input) (Output, error) {
 			mod = info.ModTime()
 		}
 		hits = append(hits, hit{rel: rel, mod: mod})
-		if len(hits) >= maxResults {
+		if len(hits) >= collect {
 			return errGlobLimitReached
 		}
 		return nil
@@ -171,7 +201,18 @@ func (s *globSkill) Execute(ctx context.Context, input Input) (Output, error) {
 		return newToolOutput("glob", command, "", start, false, walkErr), walkErr
 	}
 
+	// Sort before paging: "newest first" has to mean newest of everything the
+	// walk saw, or page two would be a different ordering than page one.
 	sort.Slice(hits, func(i, j int) bool { return hits[i].mod.After(hits[j].mod) })
+	capped := len(hits) >= collect
+	if skip < len(hits) {
+		hits = hits[skip:]
+	} else {
+		hits = nil
+	}
+	if len(hits) > limit {
+		hits = hits[:limit]
+	}
 	paths := make([]string, 0, len(hits))
 	for _, h := range hits {
 		paths = append(paths, h.rel)
@@ -180,10 +221,13 @@ func (s *globSkill) Execute(ctx context.Context, input Input) (Output, error) {
 	output := strings.Join(paths, "\n")
 	if output == "" {
 		output = "(no files matched)"
+		if skip > 0 {
+			output = "(no files past offset " + strconv.Itoa(skip) + ")"
+		}
 	}
 	output, truncated := limitLines(output, defaultToolOutputLineLimit)
-	if len(hits) >= maxResults {
-		output += "\n... (max results reached — narrow the pattern)"
+	if capped {
+		output += "\n... (result cap reached — continue with offset=" + strconv.Itoa(skip+limit) + ")"
 		truncated = true
 	}
 	return newToolOutput("glob", command, output, start, truncated, nil), nil
@@ -239,5 +283,9 @@ func (s *globSkill) ExecuteTool(ctx context.Context, args map[string]any) (Outpu
 	if path, ok := args["path"].(string); ok && strings.TrimSpace(path) != "" {
 		callArgs = append(callArgs, strings.TrimSpace(path))
 	}
-	return s.Execute(ctx, Input{"args": callArgs})
+	return s.Execute(ctx, Input{
+		"args":       callArgs,
+		"head_limit": args["head_limit"],
+		"offset":     args["offset"],
+	})
 }

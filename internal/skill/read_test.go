@@ -20,8 +20,11 @@ func TestReadSkillExecute(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute: unexpected error: %v", err)
 	}
-	if out.Content != "hi there" {
-		t.Errorf("Content = %q, want %q", out.Content, "hi there")
+	// `cat -n` shape: the number is right-aligned in six columns, then a tab.
+	// Pinned exactly, because edit's description promises the model a prefix it
+	// can strip and a change of format here silently breaks that promise.
+	if out.Content != "     1\thi there" {
+		t.Errorf("Content = %q, want %q", out.Content, "     1\thi there")
 	}
 	if !out.Success {
 		t.Error("Success = false, want true")
@@ -44,6 +47,57 @@ func TestReadSkillFailsOnBinaryInsteadOfReportingSuccess(t *testing.T) {
 	}
 	if out.Success {
 		t.Error("Success = true on a file that could not be read")
+	}
+}
+
+// The other half of ARCHITECTURE.md §51: the user's attachment reaches a
+// sighted model as a picture, and so does a file the model went and found.
+func TestReadSkillReturnsAnImageToASightedModel(t *testing.T) {
+	root := t.TempDir()
+	png := []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01}
+	if err := os.WriteFile(filepath.Join(root, "shot.png"), png, 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	s := &readSkill{root: root, vision: true}
+
+	out, err := s.ExecuteTool(context.Background(), map[string]any{"path": "shot.png"})
+	if err != nil {
+		t.Fatalf("ExecuteTool: %v", err)
+	}
+	if len(out.Images) != 1 {
+		t.Fatalf("Images = %d, want the picture itself", len(out.Images))
+	}
+	if out.Images[0].MediaType != "image/png" {
+		t.Errorf("MediaType = %q, want image/png", out.Images[0].MediaType)
+	}
+	if string(out.Images[0].Data) != string(png) {
+		t.Error("the bytes handed over are not the bytes on disk")
+	}
+	// The text still names the file, because the model has to be able to talk
+	// about it and edit it later.
+	if !strings.Contains(out.Content, "shot.png") {
+		t.Errorf("Content = %q, want the path", out.Content)
+	}
+}
+
+// A blind model must get the refusal that names image_ocr, not an image it
+// cannot see and not a silent empty success.
+func TestReadSkillRefusesAnImageForABlindModel(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "shot.png"), []byte{0x89, 'P', 'N', 'G'}, 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	s := &readSkill{root: root} // vision off, the default everywhere
+
+	out, err := s.ExecuteTool(context.Background(), map[string]any{"path": "shot.png"})
+	if err == nil {
+		t.Fatal("expected a refusal")
+	}
+	if !strings.Contains(err.Error(), "image_ocr") {
+		t.Errorf("err = %v, want it to name the tool that can help", err)
+	}
+	if out.Success || len(out.Images) != 0 {
+		t.Error("a refused read must return neither success nor an image")
 	}
 }
 
@@ -107,7 +161,9 @@ func TestReadSkillPagesByLine(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute: unexpected error: %v", err)
 	}
-	if !strings.HasPrefix(out.Content, "line-10\nline-11\nline-12") {
+	// The numbers are the file's own, not a count from the start of the page:
+	// paging that renumbered from 1 would make every citation past page one wrong.
+	if !strings.HasPrefix(out.Content, "    10\tline-10\n    11\tline-11\n    12\tline-12") {
 		t.Errorf("Content = %q, want to start at line-10 and hold 3 lines", out.Content)
 	}
 	if !out.Truncated || !strings.Contains(out.Content, "offset=13") {
@@ -150,8 +206,8 @@ func TestReadSkillExecuteToolOffsetTypes(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ExecuteTool(offset=%v): unexpected error: %v", offset, err)
 		}
-		if !strings.HasPrefix(out.Content, "two") {
-			t.Errorf("ExecuteTool(offset=%v) = %q, want to start at %q", offset, out.Content, "two")
+		if !strings.HasPrefix(out.Content, "     2\ttwo") {
+			t.Errorf("ExecuteTool(offset=%v) = %q, want to start at %q", offset, out.Content, "     2\ttwo")
 		}
 	}
 }

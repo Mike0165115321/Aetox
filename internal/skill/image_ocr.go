@@ -1,8 +1,16 @@
 package skill
 
-// image_ocr lets the agent read text out of an image it can't otherwise see
-// (most chat models have no vision at all, or the current provider path
-// doesn't send images). It shells out to Tesseract rather than embedding an
+// image_ocr lets the agent read text out of an image it can't otherwise see.
+//
+// This is the fallback path now, not the only one: since ARCHITECTURE.md §51 a
+// model that can actually look at a picture is handed the picture, and this
+// tool is what runs for the models that cannot (model.ResolveVision decides,
+// and an unrecognized model counts as blind). OCR keeps the letters and loses
+// the image, which is the right trade for a model with no eyes and a loss for
+// every other one — so reaching for it when vision is available is a mistake,
+// and desktop/app.go's visionAttachments is what makes sure that never happens.
+//
+// It shells out to Tesseract rather than embedding an
 // OCR engine — the only real Go options are CGo-bound to a system Tesseract
 // install anyway, or an abandoned pure-Go WASM port, so a plain subprocess is
 // the least fragile choice.

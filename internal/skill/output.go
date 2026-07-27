@@ -2,6 +2,8 @@ package skill
 
 import (
 	"bytes"
+	"fmt"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -37,6 +39,23 @@ func (w *cappedWriter) Write(p []byte) (int, error) {
 	}
 	w.buf.Write(p)
 	return len(p), nil
+}
+
+// filterLines keeps the lines of s that match pattern. Shared by shell_output;
+// a Go regexp because that is what grep already documents to the model, so one
+// syntax covers both.
+func filterLines(s, pattern string) (string, error) {
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return "", fmt.Errorf("filter is not a valid regular expression: %w", err)
+	}
+	kept := make([]string, 0, 16)
+	for _, line := range strings.Split(s, "\n") {
+		if re.MatchString(line) {
+			kept = append(kept, line)
+		}
+	}
+	return strings.Join(kept, "\n"), nil
 }
 
 func newToolOutput(name, command, content string, start time.Time, truncated bool, execErr error) Output {

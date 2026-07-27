@@ -9,7 +9,7 @@
 | Seam | What hangs off it |
 |---|---|
 | `Skill` + `Tool` interfaces ([skill.go](skill.go)) | A skill optionally implements `Tool` to expose a JSON-schema `ToolDefinition` to the model. **Already MCP-shaped** — an MCP client would adapt remote tools to exactly this interface. |
-| `RegistryOptions` ([defaults.go](defaults.go)) | How the host configures built-ins. `SandboxRoot` for everyone; `Speech` for `audio_transcribe` (engine + model file). **This is the only path user settings have into a built-in skill** — a new configurable skill adds a field here (ARCHITECTURE.md §33). |
+| `RegistryOptions` ([defaults.go](defaults.go)) | How the host configures built-ins. `SandboxRoot` for everyone; `Speech` for `audio_transcribe` (engine + model file); `Digest` for `web_fetch` (a func, not a provider — §52 — and nil is supported, meaning the tool returns whole pages). **This is the only path user settings have into a built-in skill** — a new configurable skill adds a field here (ARCHITECTURE.md §33). |
 | `Registry` + `Source` ([skill.go](skill.go), [defaults.go](defaults.go)) | `NewDefaultRegistry(RegistryOptions{...})` builds the 22 built-ins. `Register(skill, Source)` rejects name collisions (fixed 2026-07-21 — used to silently overwrite). `SourceExternal` marks desktop workbench tools / discovered / future MCP tools. |
 | `Dispatcher` ([dispatcher.go](dispatcher.go)) | Two doors, same tools: `Execute(ctx, line)` for text commands, `ExecuteTool(ctx, name, args)` + `ToolDefinitions()` for the model loop. Snapshots the registry at construction — register everything *before* `NewDispatcher`. |
 | `RegisterDiscovered` ([discovery.go](discovery.go)) | Loads user-dropped skill definitions from `DefaultDiscoveryPaths()`. |
@@ -27,4 +27,5 @@ Desktop-only browser tools (`browser_open/read/click/type`) are **not** here —
 ## Rules of thumb
 
 - New tool = one file here implementing `Skill` (+ `Tool` if the model should call it), registered in [defaults.go](defaults.go). Approval/safety is **not** your job — `internal/turn` gates every call.
+- **`Source` is not `Tool`.** Registering as `SourceBuiltin` puts a name on Settings' Tools page; only implementing `Tool` puts it in front of the model. `shell` and `git` sat on the wrong side of that gap for the life of the product (ARCHITECTURE.md §49) — `cliOnlySkills` in [desktop/tool_coverage_test.go](../../desktop/tool_coverage_test.go) pins whatever is deliberately hidden.
 - Sandbox discipline: file tools resolve paths against `RegistryOptions.SandboxRoot` — keep it that way.

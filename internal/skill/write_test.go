@@ -27,6 +27,56 @@ func TestWriteSkillCreatesFile(t *testing.T) {
 	}
 }
 
+// write used to run its content through stringSlice, which trims every element
+// and drops the empty ones. Every file it wrote lost its trailing newline, any
+// file whose first line was indented lost that indentation, and an empty file
+// could not be created at all — the content vanished and the tool answered
+// "usage:". Byte-exact, because "close enough" is exactly what hid it.
+func TestWriteSkillWritesExactBytes(t *testing.T) {
+	root := t.TempDir()
+	s := &writeSkill{root: root}
+
+	cases := map[string]string{
+		"trailing-newline.go": "package main\n\nfunc main() {}\n",
+		"indented.yaml":       "  first: line is indented\n  second: too\n",
+		"leading-blanks.txt":  "\n\nstarts after two blank lines\n",
+		"crlf.txt":            "windows\r\nline\r\nendings\r\n",
+		"no-newline.txt":      "no trailing newline",
+	}
+	for name, body := range cases {
+		if _, err := s.ExecuteTool(context.Background(), map[string]any{"path": name, "content": body}); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+		got, err := os.ReadFile(filepath.Join(root, name))
+		if err != nil {
+			t.Fatalf("read back %s: %v", name, err)
+		}
+		if string(got) != body {
+			t.Errorf("%s: wrote %q, file holds %q", name, body, string(got))
+		}
+	}
+}
+
+func TestWriteSkillCreatesEmptyFile(t *testing.T) {
+	root := t.TempDir()
+	s := &writeSkill{root: root}
+
+	out, err := s.ExecuteTool(context.Background(), map[string]any{"path": "empty.txt", "content": ""})
+	if err != nil {
+		t.Fatalf("an empty file is a legitimate thing to create: %v", err)
+	}
+	if !out.Success {
+		t.Error("Success = false, want true")
+	}
+	data, err := os.ReadFile(filepath.Join(root, "empty.txt"))
+	if err != nil {
+		t.Fatalf("empty.txt not created: %v", err)
+	}
+	if len(data) != 0 {
+		t.Errorf("file holds %q, want nothing", string(data))
+	}
+}
+
 func TestWriteSkillCreatesParentDirs(t *testing.T) {
 	root := t.TempDir()
 	s := &writeSkill{root: root}
