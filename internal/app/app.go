@@ -197,6 +197,14 @@ func (a *App) RunOnceStream(ctx context.Context, message string, onChunk func(st
 	return result.Reply, err
 }
 
+// RunOnceStreamWithImages is RunOnceStream for a turn the user attached a
+// picture to. Split rather than folded in, so the CLI path and every other
+// caller keep the signature they had.
+func (a *App) RunOnceStreamWithImages(ctx context.Context, message string, images []model.Image, onChunk func(string), onReasoningChunk func(string)) (string, error) {
+	result, err := a.turnExecutor.ExecuteWithImages(ctx, message, a.parseInputIntent(message), onChunk, onReasoningChunk, nil, images)
+	return result.Reply, err
+}
+
 func (a *App) onToolAction(ev turn.ToolEvent) {
 	if a.toolActionListener != nil {
 		a.toolActionListener(ev)

@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -30,6 +31,7 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/prompt"
 	"github.com/Mike0165115321/Aetox/internal/safety"
 	"github.com/Mike0165115321/Aetox/internal/skill"
+	"github.com/Mike0165115321/Aetox/internal/snapshot"
 	"github.com/Mike0165115321/Aetox/internal/stt"
 	"github.com/Mike0165115321/Aetox/internal/subagent"
 	"github.com/Mike0165115321/Aetox/internal/think"
@@ -68,6 +70,13 @@ type App struct {
 
 	turnMu     sync.Mutex
 	turnCancel context.CancelFunc // cancels the chat turn in flight, nil when idle
+
+	// snapshots is the undo net (internal/snapshot). Nil whenever it cannot
+	// work — no git, or a project that is not a repository — and every use of
+	// it is written to carry on without it rather than refuse to run.
+	snapshotMu   sync.Mutex
+	snapshots    *snapshot.Store
+	lastSnapshot string // the tree captured before the last turn, "" if none
 
 	askMu sync.Mutex
 	askCh chan string // the in-flight ask_user question's answer channel, nil when idle
@@ -578,6 +587,144 @@ func (a *App) ReadImageDataURL(relPath string) (string, error) {
 	return "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data), nil
 }
 
+// attachedImageRe matches the line the composer appends for a user-attached
+// image (see cockpit.svelte.ts sendUserMessage). Both ends of that line are
+// ours and the frontend already parses it back out on session restore, so it is
+// a format we own rather than text we are guessing at.
+var attachedImageRe = regexp.MustCompile(`\n*\[attachment: user-attached image — [^\]]*\] (\S+)`)
+
+// visionAttachments answers the one question that decides how an attached image
+// reaches the model: can this model look at it?
+//
+// Yes — the bytes are loaded and the marker line is rewritten, because a model
+// holding the picture should not also be told to go OCR it. No — nothing
+// changes at all: the marker stands, image_ocr runs, and the model reads the
+// letters out of it exactly as it has since §22. That is the whole point of
+// keeping OCR rather than replacing it; the fallback is not a lesser path, it
+// is the only path for a model with no eyes.
+//
+// Returns the text to send and the images to attach.
+func (a *App) visionAttachments(text string) (string, []model.Image) {
+	matches := attachedImageRe.FindAllStringSubmatch(text, -1)
+	if len(matches) == 0 {
+		return text, nil
+	}
+	if !model.ResolveVision(a.cfg.ModelProvider, a.cfg.ModelName) {
+		return text, nil
+	}
+	root := strings.TrimSpace(a.cfg.SandboxRoot)
+	if root == "" {
+		return text, nil
+	}
+
+	var images []model.Image
+	rewritten := text
+	for _, m := range matches {
+		relPath := m[1]
+		full, err := safeSandboxPath(root, relPath)
+		if err != nil {
+			continue // outside the sandbox: leave the OCR line, which is bounded too
+		}
+		data, err := os.ReadFile(full)
+		if err != nil {
+			continue // unreadable: the OCR path will report it in the model's own terms
+		}
+		mediaType := mime.TypeByExtension(filepath.Ext(full))
+		if !strings.HasPrefix(mediaType, "image/") {
+			continue
+		}
+		images = append(images, model.Image{MediaType: mediaType, Data: data})
+		// The path stays in the text: the model still needs to know what the
+		// file is called to talk about it, or to edit it later.
+		rewritten = strings.Replace(rewritten, m[0],
+			"\n\n[attachment: user-attached image, included below] "+relPath, 1)
+	}
+	if len(images) == 0 {
+		return text, nil
+	}
+	return rewritten, images
+}
+
+// --- undo ------------------------------------------------------------------
+
+// UndoResult is what the UI shows after an undo: which files went back, or why
+// nothing did.
+type UndoResult struct {
+	Files  []string `json:"files"`
+	Reason string   `json:"reason,omitempty"`
+}
+
+// captureSnapshot records the project before a turn runs. Failure is silent on
+// purpose — a machine without git, or a folder that is not a repository, must
+// still be able to hold a conversation, and an error banner about a safety net
+// the user never asked for is worse than not having one.
+func (a *App) captureSnapshot() {
+	a.snapshotMu.Lock()
+	store := a.snapshots
+	a.snapshotMu.Unlock()
+	if store == nil {
+		return
+	}
+	id, err := store.Capture(a.ctx)
+	if err != nil {
+		debuglog.Msg("snapshot capture skipped: %v", err)
+		return
+	}
+	a.snapshotMu.Lock()
+	a.lastSnapshot = id
+	a.snapshotMu.Unlock()
+}
+
+// UndoLastTurn puts every file the last turn changed back the way it was.
+//
+// One turn deep, deliberately. The question a user actually asks is "undo what
+// it just did", asked immediately, and an undo stack invites the far more
+// dangerous "undo the last six" long after the reasons are forgotten.
+func (a *App) UndoLastTurn() (UndoResult, error) {
+	a.snapshotMu.Lock()
+	store, id := a.snapshots, a.lastSnapshot
+	a.snapshotMu.Unlock()
+
+	if store == nil {
+		return UndoResult{Reason: "undo needs the project to be a git repository"}, nil
+	}
+	if id == "" {
+		return UndoResult{Reason: "nothing to undo yet"}, nil
+	}
+	files, err := store.Restore(a.ctx, id, nil)
+	if err != nil {
+		return UndoResult{}, err
+	}
+	if len(files) == 0 {
+		return UndoResult{Reason: "the last turn changed no files"}, nil
+	}
+	// The restore IS the new state, so undoing twice must not undo further —
+	// re-capturing here is what makes the second press a no-op instead of a
+	// second, silent step backwards.
+	a.captureSnapshot()
+	return UndoResult{Files: files}, nil
+}
+
+// PendingUndo reports what an undo would touch right now, so the UI can offer
+// it only when there is something to offer.
+func (a *App) PendingUndo() []string {
+	a.snapshotMu.Lock()
+	store, id := a.snapshots, a.lastSnapshot
+	a.snapshotMu.Unlock()
+	if store == nil || id == "" {
+		return []string{}
+	}
+	current, err := store.Capture(a.ctx)
+	if err != nil {
+		return []string{}
+	}
+	files, err := store.Changed(a.ctx, id, current)
+	if err != nil || files == nil {
+		return []string{} // never nil: §34, a nil slice crashes the frontend
+	}
+	return files
+}
+
 // ProjectStatus is the real project/git state for the sandbox root the engine runs in.
 type ProjectStatus struct {
 	Name             string `json:"name"`
@@ -725,7 +872,14 @@ func (a *App) SendMessage(text string) (string, error) {
 	// times give the "thought for Xs" label.
 	var reasoning strings.Builder
 	var firstThink, lastThink time.Time
-	reply, err := a.chat.RunOnceStream(ctx, text, func(chunk string) {
+	// An attached image goes to the model as a picture when the model can see
+	// one, and as a path for image_ocr when it cannot. `text` is rewritten only
+	// in the first case, and only the model sees the rewrite — the transcript
+	// below keeps what the user's composer actually sent.
+	// Before anything runs, so an undo has somewhere to go back to.
+	a.captureSnapshot()
+	sent, images := a.visionAttachments(text)
+	reply, err := a.chat.RunOnceStreamWithImages(ctx, sent, images, func(chunk string) {
 		wailsruntime.EventsEmit(a.ctx, "agent:chunk", chunk)
 	}, func(chunk string) {
 		if firstThink.IsZero() {
@@ -1418,6 +1572,19 @@ func (a *App) workbenchSkills() []skill.Skill {
 // applyConfig re-bootstraps the engine from an already-resolved config, then
 // persists the model/approval choice so the CLI and desktop app share one preference.
 func (a *App) applyConfig(cfg config.Config) {
+	// Rebuilt with the engine, because the work tree it watches is the sandbox
+	// root and that is exactly what a re-bootstrap can change. An error here is
+	// the ordinary "this folder is not a repository" case — no undo, no fuss,
+	// and every caller of a.snapshots is written for nil.
+	a.snapshotMu.Lock()
+	if store, err := snapshot.New(cfg.SandboxRoot); err == nil {
+		a.snapshots = store
+	} else {
+		a.snapshots = nil
+	}
+	a.lastSnapshot = "" // a snapshot of the previous project is not an undo for this one
+	a.snapshotMu.Unlock()
+
 	workbenchTools := a.workbenchSkills()
 	if a.mcp == nil {
 		servers, err := config.LoadMCPServers()
@@ -1609,6 +1776,11 @@ func bootstrapFromConfig(cfg config.Config, onToolAction func(turn.ToolEvent), o
 		// Empty ModelPath keeps the original behaviour — auto-discover — so a
 		// user who never opens the picker sees no change.
 		Speech: stt.Options{ModelPath: cfg.SpeechModelPath},
+		Digest: pageDigester(bootstrapResult.Provider, cfg.ModelName),
+		// The same question visionAttachments asks of a user's attachment,
+		// asked once here for the files the model finds on its own. Re-asked on
+		// every re-bootstrap, which is what happens when the model changes.
+		Vision: model.ResolveVision(cfg.ModelProvider, cfg.ModelName),
 	})
 	for _, s := range extraSkills {
 		if err := registry.Register(s, skill.SourceWorkbench); err != nil {
