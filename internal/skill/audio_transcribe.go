@@ -131,6 +131,12 @@ func (s *audioTranscribeSkill) run(ctx context.Context, start time.Time, request
 	if result == "" {
 		result = "(ไม่พบเสียงพูดในไฟล์)"
 	}
+	// Appended to the transcript, not logged: the caution has to travel with the
+	// text to whoever reads it. What it says is the engine's to decide — this
+	// file still knows nothing about which models exist or what they are called.
+	if note := engine.ModelCaution(); note != "" {
+		result += "\n\n" + note
+	}
 	truncated, wasTruncated := limitLines(result, defaultToolOutputLineLimit)
 	return newToolOutput("audio_transcribe", command, truncated, start, wasTruncated, nil), nil
 }
@@ -150,7 +156,7 @@ func formatSegments(segments []stt.Segment) string {
 // PCM every engine in internal/stt expects. -vn makes a video file just another
 // audio source, so audio and video inputs need no branch here.
 func extractAudioTrack(ctx context.Context, inputPath, wavPath string) error {
-	cmd := exec.CommandContext(ctx, "ffmpeg",
+	cmd := exec.CommandContext(ctx, bundledBinary("ffmpeg", "ffmpeg"),
 		"-hide_banner", "-loglevel", "error", "-y",
 		"-i", inputPath,
 		"-vn", "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le",

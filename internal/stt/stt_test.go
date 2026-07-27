@@ -340,3 +340,23 @@ func TestWhisperTranscribeCommandLine(t *testing.T) {
 		t.Errorf("ID() = %q, want whisper-cpp", engine.ID())
 	}
 }
+
+// Which models guess is whisper's own business, so the check lives here rather
+// than in the skill that prints the warning — internal/skill/audio_transcribe.go
+// states in its header that it knows nothing about ggml, and it has to stay true.
+func TestWhisperFlagsTheTinyModelsOnly(t *testing.T) {
+	for _, tc := range []struct {
+		model    string
+		wantWarn bool
+	}{
+		{"ggml-tiny-q5_1.bin", true},
+		{"ggml-tiny.bin", true},
+		{"ggml-base.bin", false},
+		{"ggml-large-v3.bin", false},
+	} {
+		w := &whisperCPP{modelPath: filepath.Join("C:", "models", tc.model)}
+		if got := w.ModelCaution() != ""; got != tc.wantWarn {
+			t.Errorf("%s: caution present = %v, want %v", tc.model, got, tc.wantWarn)
+		}
+	}
+}

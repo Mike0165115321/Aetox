@@ -29,6 +29,11 @@ type Config struct {
 	ModelWireFormat    string
 	ModelTimeoutSec    int
 	ModelContextTokens int
+	// SpeechModelPath pins which speech model audio_transcribe uses. Empty
+	// means "whatever is on disk", which is what shipped first — fine until a
+	// machine has more than one, and no way at all to trade accuracy for size
+	// (ggml-tiny ~31MB against ggml-base ~141MB) without moving files by hand.
+	SpeechModelPath string
 	// UILocale is the language the desktop UI is showing ("th", "en"). The
 	// engine has no business with language — the one exception is Aetox's own
 	// built-in provider, which is an onboarding surface wearing a Provider
@@ -64,6 +69,11 @@ type ModelPreference struct {
 	// UILocale sits next to ApprovalMode because it is the same kind of thing:
 	// a choice the user made in the UI that the engine needs on next start.
 	UILocale string `json:"ui_locale,omitempty"`
+	// SpeechModelPath is the speech model the user picked, by absolute path
+	// rather than by name: models legitimately live outside Aetox's own folder
+	// (Ollama's and LM Studio's stores are scanned too, see internal/stt), and
+	// a bare filename could not tell two of those apart.
+	SpeechModelPath string `json:"speech_model_path,omitempty"`
 	// UserName is what the user calls themselves in the sidebar footer. It
 	// lives here rather than in the webview's localStorage because that store
 	// is keyed by origin — a name typed under `wails dev` (…:34115) was a
@@ -71,6 +81,14 @@ type ModelPreference struct {
 	// every switch.
 	UserName     string            `json:"user_name,omitempty"`
 	ModelAPIKeys map[string]string `json:"provider_api_keys,omitempty"`
+	// ModelBaseURLs holds per-provider endpoint overrides. ModelBaseURL above
+	// is the older single-slot version, which only ever held the *active*
+	// provider's URL — switching away reset it to the catalog default and the
+	// custom one was gone. Keyed per provider it survives, which is what a
+	// local runtime on a non-default port (LM Studio's server port is
+	// user-configurable) actually needs. An absent entry means "catalog
+	// default"; ModelBaseURL is still read as a fallback for old files.
+	ModelBaseURLs map[string]string `json:"provider_base_urls,omitempty"`
 	// EnabledProviders is the set of providers shown in the Settings sidebar
 	// and the chat composer's picker. Empty means "never customized" — callers
 	// resolve that case via ResolvedEnabledProviders rather than persisting a
@@ -148,6 +166,38 @@ func (p *ModelPreference) SetAPIKeyForProvider(provider, apiKey string) {
 	}
 	p.EnsureProviderMap()
 	p.ModelAPIKeys[key] = trimmed
+}
+
+func (p ModelPreference) BaseURLForProvider(provider string) string {
+	key := p.normalizeProviderKey(provider)
+	if key == "" {
+		return ""
+	}
+	for providerKey, value := range p.ModelBaseURLs {
+		if strings.EqualFold(strings.TrimSpace(providerKey), key) {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+// SetBaseURLForProvider records a custom endpoint. Unlike SetAPIKeyForProvider,
+// an empty value is meaningful — it deletes the override so the provider goes
+// back to its catalog default, which is the only way to undo a typo'd port.
+func (p *ModelPreference) SetBaseURLForProvider(provider, baseURL string) {
+	key := p.normalizeProviderKey(provider)
+	if key == "" {
+		return
+	}
+	trimmed := strings.TrimSpace(baseURL)
+	if trimmed == "" {
+		delete(p.ModelBaseURLs, key)
+		return
+	}
+	if p.ModelBaseURLs == nil {
+		p.ModelBaseURLs = make(map[string]string)
+	}
+	p.ModelBaseURLs[key] = trimmed
 }
 
 func Load(opt ConfigOptions) Config {
@@ -469,7 +519,20 @@ func SaveModelPreference(pref ModelPreference) error {
 		return err
 	}
 
-	return os.WriteFile(path, payload, 0o600)
+	// Write-then-rename, not a plain WriteFile: this file holds the API keys,
+	// and a truncate-then-write loses all of them if a second Aetox process
+	// (another window, the CLI) writes at the same moment or the app dies
+	// mid-write. Rename is atomic, so a reader sees the old file or the new
+	// one, never half of either.
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, payload, 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 func loadDotEnv() {

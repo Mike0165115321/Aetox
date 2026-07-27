@@ -38,6 +38,9 @@ func Stores(opts Options) []Store {
 	if dir, err := ModelDir(opts); err == nil && dir != "" {
 		stores = append(stores, Store{Label: "Aetox", Dir: dir, Managed: true})
 	}
+	if dir := shippedModelDir(); dir != "" {
+		stores = append(stores, Store{Label: "มากับ Aetox", Dir: dir})
+	}
 	for _, dir := range opts.ExtraModelDirs {
 		if dir = strings.TrimSpace(dir); dir != "" {
 			stores = append(stores, Store{Label: "โฟลเดอร์ที่คุณตั้งไว้", Dir: dir})
@@ -90,6 +93,22 @@ func KnownExternalStores() []Store {
 		}
 	}
 	return out
+}
+
+// shippedModelDir is <install dir>/models — the starter model the Windows
+// installer unpacks so a fresh install can transcribe without the user
+// downloading anything first.
+//
+// Not Managed: the installer put it there and the uninstaller takes it away, so
+// a delete button in the settings UI would be lying about who owns it. It also
+// cannot live in <DataRoot>/models — that is a per-user path, and a
+// per-machine install has no user to write it for.
+func shippedModelDir() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(exe), "models")
 }
 
 func envOr(key, fallback string) string {

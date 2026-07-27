@@ -17,16 +17,63 @@ import (
 // dragging a real engine in. The engine's own command line is covered by
 // internal/stt's helper-process test.
 type fakeEngine struct {
-	segments []stt.Segment
-	err      error
-	gotWav   string
+	segments  []stt.Segment
+	err       error
+	gotWav    string
+	modelPath string
+	caution   string
 }
 
 func (*fakeEngine) ID() string { return "fake" }
 
+func (f *fakeEngine) ModelPath() string    { return f.modelPath }
+func (f *fakeEngine) ModelCaution() string { return f.caution }
+
 func (f *fakeEngine) Transcribe(_ context.Context, wavPath string) ([]stt.Segment, error) {
 	f.gotWav = wavPath
 	return f.segments, f.err
+}
+
+// The installer ships the smallest whisper model so a fresh install can
+// transcribe at all — and the smallest one mishears. The transcript has to say
+// so, in the transcript, or nobody knows to doubt it.
+func TestTranscriptFromTheSmallModelCarriesAWarning(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not installed on this machine")
+	}
+	root := t.TempDir()
+	clip := filepath.Join(root, "tone.wav")
+	build := exec.Command("ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+		"-f", "lavfi", "-i", "sine=frequency=440:duration=1", clip)
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("building the clip: %v\n%s", err, out)
+	}
+
+	for _, tc := range []struct {
+		model    string
+		caution  string
+		wantWarn bool
+	}{
+		{"C:/aetox/models/ggml-tiny-q5_1.bin", "(ถอดด้วยโมเดล tiny ...)", true},
+		{"C:/aetox/models/ggml-base.bin", "", false},
+	} {
+		engine := &fakeEngine{
+			modelPath: tc.model,
+			caution:   tc.caution,
+			segments:  []stt.Segment{{StartMs: 0, EndMs: 900, Text: "สวัสดี"}},
+		}
+		s := withEngine(&audioTranscribeSkill{root: root}, engine, nil)
+		out, err := s.ExecuteTool(context.Background(), map[string]any{"path": "tone.wav"})
+		if err != nil {
+			t.Fatalf("%s: %v", tc.model, err)
+		}
+		if !strings.Contains(out.Content, "สวัสดี") {
+			t.Errorf("%s: transcript missing from the output: %q", tc.model, out.Content)
+		}
+		if got := strings.Contains(out.Content, "tiny"); got != tc.wantWarn {
+			t.Errorf("%s: warning present = %v, want %v\ngot: %s", tc.model, got, tc.wantWarn, out.Content)
+		}
+	}
 }
 
 func withEngine(s *audioTranscribeSkill, engine stt.Engine, err error) *audioTranscribeSkill {

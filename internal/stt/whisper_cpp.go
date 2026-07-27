@@ -48,6 +48,23 @@ func newWhisperCPP(desc Descriptor, opts Options) (Engine, error) {
 
 func (*whisperCPP) ID() string { return "whisper-cpp" }
 
+func (w *whisperCPP) ModelPath() string { return w.modelPath }
+
+// ModelCaution flags the tiny models. The Windows installer ships one so a
+// fresh install can transcribe at all, and tiny is the least accurate whisper
+// offers — on Thai and on noisy audio it guesses. A wrong transcript nobody
+// thought to doubt is worse than a slow one.
+//
+// ponytail: matches whisper.cpp's own file naming (ggml-tiny*). Its convention,
+// checked inside its own file — but still a name check, so a rename upstream
+// would quietly stop the warning.
+func (w *whisperCPP) ModelCaution() string {
+	if strings.HasPrefix(strings.ToLower(filepath.Base(w.modelPath)), "ggml-tiny") {
+		return "(ถอดด้วยโมเดล tiny ซึ่งเล็กและแม่นน้อยที่สุด — ถ้าข้อความไม่ตรงกับที่ได้ยิน เปลี่ยนเป็นโมเดลใหญ่กว่าได้ที่ ตั้งค่า → เครื่องมือ → audio_transcribe)"
+	}
+	return ""
+}
+
 func (w *whisperCPP) Transcribe(ctx context.Context, wavPath string) ([]Segment, error) {
 	// -l auto detects Thai vs English per file; -np drops whisper's banner and
 	// progress lines so stdout is nothing but segments.

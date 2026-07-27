@@ -38,6 +38,15 @@ type Segment struct {
 type Engine interface {
 	// ID matches the Descriptor it was built from.
 	ID() string
+	// ModelPath is the model file this engine resolved to — for showing the
+	// user what the transcript came off, not for judging it.
+	ModelPath() string
+	// ModelCaution is what the user needs told about that model's accuracy, in
+	// their language, or "" when there is nothing to say. It lives here because
+	// only an engine knows what its own models are called and which of them
+	// guess: a caller matching on file names would be this package's business
+	// leaking one level up, which is the thing this package exists to stop.
+	ModelCaution() string
 	Transcribe(ctx context.Context, wavPath string) ([]Segment, error)
 }
 
