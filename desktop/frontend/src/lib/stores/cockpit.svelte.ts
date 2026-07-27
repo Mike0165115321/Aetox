@@ -8,11 +8,11 @@ import type { CockpitSource } from '../services/cockpit'
 import {
   SendMessage, GetProjectStatus, GetModelInfo, OpenProjectFolder, OpenProjectPath,
   SwitchProvider, SwitchThinkLevel, SwitchApprovalMode, SetProviderWireFormat,
-  SwitchModel, SetAPIKey, ProjectTree, CommandHistory, GitChangedFiles, ReadFile,
+  SwitchModel, SetAPIKey, SetProviderBaseURL, ProjectTree, CommandHistory, GitChangedFiles, ReadFile,
   ListSessions, LoadSession, NewSession, CurrentSessionID, SearchSessions, DeleteSession,
   SaveChatImage, SaveChatFile, ReadImageDataURL, CancelTurn, BrowserGetText, RecentProjects,
   ListAllSessions, SearchAllSessions, LoadSessionAnyProject, ClearProjectFocus,
-  AnswerUserQuestion, Interject,
+  AnswerUserQuestion, Interject, RetryActiveProvider,
 } from '../../../wailsjs/go/main/App'
 import type { main } from '../../../wailsjs/go/models'
 import { t } from '../i18n.svelte'
@@ -64,8 +64,12 @@ function applyModelInfo(info: main.ModelInfo): void {
     contextMax: info.contextMax,
     approval: info.approvalMode,
     wireFormat: info.wireFormat,
+    warning: info.warning,
   })
-  cacheModelInfo(cockpit.model)
+  // warning is live state, not a paint-smoothing hint: a provider that was
+  // unreachable last run may well be up now, and seeding a stale "not running"
+  // banner before the real GetModelInfo lands would be a lie on every launch.
+  cacheModelInfo({ ...cockpit.model, warning: '' })
 }
 
 /** Pull the real file tree / command history / git status the Go engine currently has. */
@@ -270,6 +274,16 @@ export async function switchWireFormat(format: string): Promise<void> {
   applyModelInfo(await SetProviderWireFormat(format))
 }
 
+/** Re-bootstrap if the engine is stuck on the aetox fallback; no-op otherwise. */
+export async function retryActiveProvider(): Promise<void> {
+  applyModelInfo(await RetryActiveProvider())
+}
+
+/** Point a provider at a custom endpoint; '' clears the override. */
+export async function setProviderBaseURL(providerName: string, baseURL: string): Promise<void> {
+  applyModelInfo(await SetProviderBaseURL(providerName, baseURL))
+}
+
 function nowLabel(): string {
   return new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 }
@@ -325,11 +339,16 @@ export async function sendUserMessage(text: string, alreadyShown = false): Promi
   if (file) {
     // Point at the tool that actually opens this kind of file. Naming the wrong
     // one costs a wasted turn; naming none costs the model guessing.
+    // A PDF branches on the extension rather than on kind: it is still a
+    // 'file' everywhere else (chip, icon, the restore regex below), and only
+    // the tool differs. `read` refuses it — a PDF is a binary container.
     const how = file.kind === 'audio'
       ? 'read it with audio_transcribe'
       : file.kind === 'video'
         ? 'read its speech with audio_transcribe, its on-screen text with video_ocr'
-        : 'read it with read'
+        : file.relPath.toLowerCase().endsWith('.pdf')
+          ? 'read it with pdf_read'
+          : 'read it with read'
     sentText += `\n\n[attachment: user-attached ${file.kind} — ${how}] ${file.relPath}`
   }
   if (context) {

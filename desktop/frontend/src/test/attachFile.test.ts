@@ -47,6 +47,29 @@ describe('attaching a file from the composer', () => {
     expect(cockpit.pendingFile).toBeNull()
   })
 
+  // A PDF is kind 'file' like a .txt, but `read` refuses it — pointing the
+  // model at read is what sent it round the houses (browser_open, web_fetch,
+  // an HTML wrapper) before giving up on an attached statement.
+  it('points a PDF at pdf_read rather than read', async () => {
+    vi.mocked(SaveChatFile).mockResolvedValue('.aetox-attachments/3-1.pdf' as any)
+    await attachFileFromPath('D:/docs/สรุปการเงิน.PDF')
+    await sendUserMessage('สรุปเอกสารนี้หน่อย')
+
+    const sent = vi.mocked(SendMessage).mock.calls[0][0] as string
+    expect(sent).toContain('pdf_read')
+    expect(sent).toContain('.aetox-attachments/3-1.pdf')
+  })
+
+  it('still points a plain text file at read', async () => {
+    vi.mocked(SaveChatFile).mockResolvedValue('.aetox-attachments/4-1.md' as any)
+    await attachFileFromPath('D:/docs/notes.md')
+    await sendUserMessage('อ่านให้หน่อย')
+
+    const sent = vi.mocked(SendMessage).mock.calls[0][0] as string
+    expect(sent).toContain('read it with read')
+    expect(sent).not.toContain('pdf_read')
+  })
+
   // The model only ever gets the path, so the transcript has to carry the
   // label itself — otherwise a sent clip leaves no trace in the bubble.
   it('keeps the attachment visible on the sent message', async () => {

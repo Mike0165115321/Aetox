@@ -1,21 +1,23 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte'
-  import { ListSkills } from '../../../wailsjs/go/main/App'
+  import { ListTools, ListSkills } from '../../../wailsjs/go/main/App'
   import { EventsOn } from '../../../wailsjs/runtime/runtime'
   import { t } from '../i18n.svelte'
 
   type SkillRow = { name: string; description: string; source: string }
   let skills = $state<SkillRow[]>([])
 
-  // The backend (ListSkills) decides what belongs here — MCP tools and
-  // discovered skills, never embedded built-ins. This just renders the groups.
+  // This panel is what the user plugged in, so it takes the MCP tools out of
+  // the tool list and shows the skills beside them — two different kinds of
+  // thing, listed as two, rather than merged under one word as they used to be.
   const groups = $derived([
     { key: 'mcp', label: t('toolsPane.mcpTools'), icon: '🔌' },
-    { key: 'external', label: t('toolsPane.externalSkills'), icon: '📦' },
+    { key: 'skill', label: t('toolsPane.externalSkills'), icon: '📦' },
   ])
 
   async function load() {
-    skills = await ListSkills()
+    const [tools, docs] = await Promise.all([ListTools(), ListSkills()])
+    skills = [...tools.filter((s) => s.source === 'mcp'), ...docs]
   }
   onMount(load)
   // MCP servers connect in the background after startup; the backend emits

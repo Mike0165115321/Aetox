@@ -10,7 +10,7 @@ beforeEach(() => {
     { name: 'landing', description: 'แลนดิ้งเพจไฟล์เดียว', path: '', builtin: true },
     { name: 'review', description: 'รีวิวหาบั๊กจริง', path: '', builtin: true },
   ] as any)
-  vi.mocked(ToolCounts).mockResolvedValue({ builtin: 22, skill: 1, mcp: 3 } as any)
+  vi.mocked(ToolCounts).mockResolvedValue({ builtin: 22, workbench: 6, skill: 1, mcp: 3 } as any)
 })
 
 describe('Composer palette', () => {
@@ -42,14 +42,14 @@ describe('Composer palette', () => {
     })
 
     // Counts land a tick after the presets — wait for the row that needs them.
-    await waitFor(() => expect(screen.getByText('ในตัว 22 · สกิลเสริม 1 · MCP 3')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('เครื่องมือ 28 · สกิล 1 · MCP 3')).toBeTruthy())
     expect(screen.getByText('สลับโมเดล…')).toBeTruthy()
     expect(screen.getByText('โหมดอนุมัติ')).toBeTruthy()
     // The only place the app tells anyone its shortcuts exist.
     expect(screen.getByText('Ctrl+,')).toBeTruthy()
 
     // Status rows must not look or behave like buttons.
-    const toolsRow = screen.getByText('ในตัว 22 · สกิลเสริม 1 · MCP 3').closest('.pal-row')
+    const toolsRow = screen.getByText('เครื่องมือ 28 · สกิล 1 · MCP 3').closest('.pal-row')
     expect(toolsRow?.classList.contains('static')).toBe(true)
     expect(container.querySelectorAll('.pal-row').length).toBeGreaterThan(4)
   })

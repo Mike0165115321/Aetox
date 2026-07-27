@@ -109,7 +109,13 @@
     out.push(
       {
         id: 'tools', group: t('palette.groupTools'),
-        label: t('palette.toolsLine', { builtin: String(counts.builtin), skill: String(counts.skill), mcp: String(counts.mcp) }),
+        // builtin + workbench are both tools Aetox ships; the split matters in
+        // Settings, not in a one-line readout.
+        label: t('palette.toolsLine', {
+          tools: String(counts.builtin + counts.workbench),
+          skill: String(counts.skill),
+          mcp: String(counts.mcp),
+        }),
         hint: t('palette.toolsHint'),
       },
       { id: 'sc-settings', group: t('palette.groupKeys'), label: t('palette.openSettings'), hint: 'Ctrl+,' },

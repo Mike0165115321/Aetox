@@ -75,8 +75,6 @@ export function Interject(arg1:string):Promise<void>;
 
 export function ListAllSessions():Promise<Array<main.SessionMeta>>;
 
-export function ListBuiltinSkills():Promise<Array<main.SkillInfo>>;
-
 export function ListExternalSkills():Promise<Array<skill.DiscoveredSkill>>;
 
 export function ListIdentityFiles():Promise<Array<main.IdentityFile>>;
@@ -91,7 +89,11 @@ export function ListSessions():Promise<Array<main.SessionMeta>>;
 
 export function ListSkills():Promise<Array<main.SkillInfo>>;
 
+export function ListSpeechModels():Promise<Array<main.SpeechModelInfo>>;
+
 export function ListSubagentProfiles():Promise<Array<subagent.Profile>>;
+
+export function ListTools():Promise<Array<main.SkillInfo>>;
 
 export function LoadSession(arg1:string):Promise<Array<main.SessionMessage>>;
 
@@ -107,6 +109,8 @@ export function OpenProjectPath(arg1:string):Promise<main.ProjectStatus>;
 
 export function OpenPromptsFolder():Promise<void>;
 
+export function OpenSpeechModelDir(arg1:string):Promise<void>;
+
 export function OpenSubagentsFolder():Promise<void>;
 
 export function PickAttachment():Promise<string>;
@@ -118,6 +122,8 @@ export function PickPresetImage(arg1:string):Promise<string>;
 export function ProjectTree():Promise<Array<main.TreeNode>>;
 
 export function ProviderBaseURL(arg1:string):Promise<string>;
+
+export function ProviderBaseURLIsCustom(arg1:string):Promise<boolean>;
 
 export function ProviderWireFormats(arg1:string):Promise<Array<string>>;
 
@@ -143,6 +149,10 @@ export function RemovePresetImage(arg1:string):Promise<void>;
 
 export function RequiresAPIKey(arg1:string):Promise<boolean>;
 
+export function RetryActiveProvider():Promise<main.ModelInfo>;
+
+export function RevealSpeechModel(arg1:string):Promise<void>;
+
 export function SaveChatFile(arg1:string):Promise<string>;
 
 export function SaveChatImage(arg1:string):Promise<string>;
@@ -163,15 +173,23 @@ export function SendMessage(arg1:string):Promise<string>;
 
 export function SetAPIKey(arg1:string,arg2:string):Promise<main.ModelInfo>;
 
+export function SetProviderBaseURL(arg1:string,arg2:string):Promise<main.ModelInfo>;
+
 export function SetProviderEnabled(arg1:string,arg2:boolean):Promise<Array<string>>;
 
 export function SetProviderWireFormat(arg1:string):Promise<main.ModelInfo>;
+
+export function SetSpeechModel(arg1:string):Promise<void>;
 
 export function SetSubagentModel(arg1:string,arg2:string):Promise<void>;
 
 export function SetUILocale(arg1:string):Promise<void>;
 
 export function SetUserName(arg1:string):Promise<void>;
+
+export function SpeechModelDirs():Promise<Array<main.SpeechDirInfo>>;
+
+export function SpeechStatus():Promise<string>;
 
 export function SupportedProviders():Promise<Array<string>>;
 

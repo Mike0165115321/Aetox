@@ -191,6 +191,7 @@ export namespace main {
 	    contextUsed: number;
 	    contextMax: number;
 	    wireFormat: string;
+	    warning: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ModelInfo(source);
@@ -205,6 +206,7 @@ export namespace main {
 	        this.contextUsed = source["contextUsed"];
 	        this.contextMax = source["contextMax"];
 	        this.wireFormat = source["wireFormat"];
+	        this.warning = source["warning"];
 	    }
 	}
 	export class ProjectMeta {
@@ -321,10 +323,49 @@ export namespace main {
 	        this.source = source["source"];
 	    }
 	}
+	export class SpeechDirInfo {
+	    path: string;
+	    label: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SpeechDirInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.label = source["label"];
+	    }
+	}
+	export class SpeechModelInfo {
+	    path: string;
+	    name: string;
+	    sizeMB: number;
+	    store: string;
+	    managed: boolean;
+	    active: boolean;
+	    where: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SpeechModelInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.name = source["name"];
+	        this.sizeMB = source["sizeMB"];
+	        this.store = source["store"];
+	        this.managed = source["managed"];
+	        this.active = source["active"];
+	        this.where = source["where"];
+	    }
+	}
 	export class ToolCounts {
 	    builtin: number;
-	    skill: number;
+	    workbench: number;
 	    mcp: number;
+	    skill: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new ToolCounts(source);
@@ -333,8 +374,9 @@ export namespace main {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.builtin = source["builtin"];
-	        this.skill = source["skill"];
+	        this.workbench = source["workbench"];
 	        this.mcp = source["mcp"];
+	        this.skill = source["skill"];
 	    }
 	}
 	export class TreeNode {

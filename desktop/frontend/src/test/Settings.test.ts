@@ -4,6 +4,7 @@ import Settings from '../lib/Settings.svelte'
 import {
   ListMCPServers, ToggleMCPServer, ListExternalSkills, UsageStats, ListPromptPresets,
   ListSubagentProfiles, ReadSubagentProfile, SetSubagentModel, ListModelsForProvider,
+  ListSpeechModels, SetSpeechModel, ListTools, SpeechModelDirs, RevealSpeechModel,
 } from './mocks/wailsApp'
 
 // The chart plots a window ending today, so a hard-coded date would fall out
@@ -20,6 +21,23 @@ beforeEach(() => {
   ] as any)
   vi.mocked(ListExternalSkills).mockResolvedValue([
     { name: 'gridgeist', description: 'grid design', dir: 'C:/skills/gridgeist' },
+  ] as any)
+  // A desktop tool and a built-in one: both belong on the Tools page, and
+  // neither is anything the user installed.
+  vi.mocked(ListTools).mockResolvedValue([
+    { name: 'browser_open', description: 'open a page', source: 'workbench' },
+    { name: 'read', description: 'read a file', source: 'builtin' },
+    { name: 'audio_transcribe', description: 'transcribe audio', source: 'builtin' },
+  ] as any)
+  // One in Aetox's own folder, one already sitting in Ollama's — the case the
+  // picker exists for, since neither is reachable without naming a full path.
+  vi.mocked(SpeechModelDirs).mockResolvedValue([
+    { path: 'C:/aetox/models', label: '%APPDATA%/aetox/models' },
+    { path: 'C:/Users/x/.ollama/models', label: '~/.ollama/models' },
+  ] as any)
+  vi.mocked(ListSpeechModels).mockResolvedValue([
+    { path: 'C:/aetox/models/ggml-tiny-q5_1.bin', name: 'ggml-tiny-q5_1.bin', sizeMB: 31, store: 'Aetox', managed: true, active: false },
+    { path: 'C:/Users/x/.ollama/models/ggml-base.bin', name: 'ggml-base.bin', sizeMB: 141, store: 'Ollama', managed: false, active: true },
   ] as any)
   // Two models on purpose: one hosted (reports cache accounting) and one local
   // (reports none), which is the pair the page has to render differently.
@@ -91,6 +109,122 @@ describe('Settings pages', () => {
     await openSection(container, 'สกิล')
     await waitFor(() => expect(screen.getByText('gridgeist')).toBeTruthy())
     expect(screen.getByText('C:/skills/gridgeist')).toBeTruthy()
+  })
+
+  // The two are different things and now get different pages. Mixing them on
+  // one page is what made every tool read as a "skill" the user had installed.
+  it('tools and skills are separate pages, neither showing the other', async () => {
+    const { container } = render(Settings, { onClose: () => {} })
+
+    await openSection(container, 'เครื่องมือ')
+    await waitFor(() => expect(screen.getByText('browser_open')).toBeTruthy())
+    expect(screen.queryByText('gridgeist')).toBeNull()
+
+    await openSection(container, 'สกิล')
+    await waitFor(() => expect(screen.getByText('gridgeist')).toBeTruthy())
+    expect(screen.queryByText('browser_open')).toBeNull()
+  })
+
+  // Models come from three different tools' folders and their paths are long,
+  // so the picker has to show where each one lives and hand the engine the
+  // exact path — a name alone could not tell two ggml-base.bin apart.
+  // An MCP server writes its own tool descriptions and some run to a paragraph.
+  // One line each keeps 39 rows scannable; the full text is one click away.
+  it('tool descriptions show one line until the row is clicked', async () => {
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'เครื่องมือ')
+
+    await waitFor(() => expect(screen.getByText('browser_open')).toBeTruthy())
+    const row = Array.from(container.querySelectorAll('.tool-row'))
+      .find((r) => r.textContent?.includes('browser_open'))!
+    expect(row.querySelector('.d')!.classList.contains('clamp')).toBe(true)
+
+    await fireEvent.click(row)
+    expect(row.querySelector('.d')!.classList.contains('clamp')).toBe(false)
+
+    await fireEvent.click(row)
+    expect(row.querySelector('.d')!.classList.contains('clamp')).toBe(true)
+  })
+
+  // Each source gets its own card, so "where did this come from" is answered
+  // once per group instead of repeated on all 39 rows.
+  it('tools are grouped by source, not listed flat', async () => {
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'เครื่องมือ')
+
+    await waitFor(() => expect(screen.getByText('browser_open')).toBeTruthy())
+    // Heading and count sit above the card, not inside it.
+    const heads = Array.from(container.querySelectorAll('.group-head')).map((h) => h.textContent)
+    expect(heads.some((h) => h?.includes('ในตัว') && h?.includes('2'))).toBe(true)
+    expect(heads.some((h) => h?.includes('เดสก์ท็อป') && h?.includes('1'))).toBe(true)
+    expect(container.querySelector('.settings-card .group-head')).toBeNull()
+  })
+
+  // The picker hangs off audio_transcribe's own row: a tool's setting sitting in
+  // a card somewhere else is a setting nobody ties back to the tool.
+  it('the speech model is picked from audio_transcribe’s own row', async () => {
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'เครื่องมือ')
+
+    await waitFor(() => expect(screen.getByText('audio_transcribe')).toBeTruthy())
+    // Closed until asked — the tool list stays one row per tool.
+    expect(screen.queryByText('ggml-tiny-q5_1.bin')).toBeNull()
+
+    const toolRow = Array.from(container.querySelectorAll('.set-row'))
+      .find((r) => r.textContent?.includes('audio_transcribe'))!
+    await fireEvent.click(toolRow.querySelector('.ctrl')!)
+
+    await waitFor(() => expect(screen.getByText('ggml-tiny-q5_1.bin')).toBeTruthy())
+    expect(screen.getByText('31 MB · Aetox')).toBeTruthy()
+    expect(screen.getByText('141 MB · Ollama')).toBeTruthy()
+
+    // A dropdown over the page, not an expanding section: the rows below
+    // audio_transcribe must not move when it opens.
+    expect(container.querySelector('.rowdrop-list')).toBeTruthy()
+
+    const tiny = Array.from(container.querySelectorAll('.rowdrop-opt'))
+      .find((r) => r.textContent?.includes('ggml-tiny-q5_1.bin'))!
+    await fireEvent.click(tiny)
+
+    await waitFor(() =>
+      expect(vi.mocked(SetSpeechModel)).toHaveBeenCalledWith('C:/aetox/models/ggml-tiny-q5_1.bin'),
+    )
+    // Picking closes it — an open menu covering the page after the choice is
+    // made is just something else to dismiss.
+    await waitFor(() => expect(container.querySelector('.rowdrop-list')).toBeNull())
+
+    // And clicking away closes it without choosing anything.
+    await fireEvent.click(toolRow.querySelector('.ctrl')!)
+    await waitFor(() => expect(container.querySelector('.rowdrop-list')).toBeTruthy())
+    await fireEvent.click(container.querySelector('.drop-backdrop')!)
+    expect(container.querySelector('.rowdrop-list')).toBeNull()
+  })
+
+  // "Where is this file, and where does Aetox even look?" — answerable by
+  // clicking, not by reading a path out of a tooltip and pasting it somewhere.
+  it('the speech picker opens the folder a model lives in, and the scanned ones', async () => {
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'เครื่องมือ')
+    await waitFor(() => expect(screen.getByText('audio_transcribe')).toBeTruthy())
+
+    const toolRow = Array.from(container.querySelectorAll('.set-row'))
+      .find((r) => r.textContent?.includes('audio_transcribe'))!
+    await fireEvent.click(toolRow.querySelector('.ctrl')!)
+    await waitFor(() => expect(screen.getByText('ggml-tiny-q5_1.bin')).toBeTruthy())
+
+    const tinyRow = Array.from(container.querySelectorAll('.rowdrop-row'))
+      .find((r) => r.textContent?.includes('ggml-tiny-q5_1.bin'))!
+    await fireEvent.click(tinyRow.querySelector('.rowdrop-reveal')!)
+    await waitFor(() =>
+      expect(vi.mocked(RevealSpeechModel)).toHaveBeenCalledWith('C:/aetox/models/ggml-tiny-q5_1.bin'),
+    )
+
+    // Every scanned folder is listed, so a missing model has somewhere to go.
+    const dirs = Array.from(container.querySelectorAll('.rowdrop-dir')).map((d) => d.textContent?.trim())
+    expect(dirs.some((d) => d?.includes('%APPDATA%/aetox/models'))).toBe(true)
+    expect(dirs.some((d) => d?.includes('~/.ollama/models'))).toBe(true)
+    // No account name anywhere on screen.
+    expect(dirs.every((d) => !d?.includes('Users'))).toBe(true)
   })
 
   it('Usage page shows per-model aggregates', async () => {

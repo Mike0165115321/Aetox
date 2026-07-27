@@ -138,10 +138,6 @@ export function ListAllSessions() {
   return window['go']['main']['App']['ListAllSessions']();
 }
 
-export function ListBuiltinSkills() {
-  return window['go']['main']['App']['ListBuiltinSkills']();
-}
-
 export function ListExternalSkills() {
   return window['go']['main']['App']['ListExternalSkills']();
 }
@@ -170,8 +166,16 @@ export function ListSkills() {
   return window['go']['main']['App']['ListSkills']();
 }
 
+export function ListSpeechModels() {
+  return window['go']['main']['App']['ListSpeechModels']();
+}
+
 export function ListSubagentProfiles() {
   return window['go']['main']['App']['ListSubagentProfiles']();
+}
+
+export function ListTools() {
+  return window['go']['main']['App']['ListTools']();
 }
 
 export function LoadSession(arg1) {
@@ -202,6 +206,10 @@ export function OpenPromptsFolder() {
   return window['go']['main']['App']['OpenPromptsFolder']();
 }
 
+export function OpenSpeechModelDir(arg1) {
+  return window['go']['main']['App']['OpenSpeechModelDir'](arg1);
+}
+
 export function OpenSubagentsFolder() {
   return window['go']['main']['App']['OpenSubagentsFolder']();
 }
@@ -224,6 +232,10 @@ export function ProjectTree() {
 
 export function ProviderBaseURL(arg1) {
   return window['go']['main']['App']['ProviderBaseURL'](arg1);
+}
+
+export function ProviderBaseURLIsCustom(arg1) {
+  return window['go']['main']['App']['ProviderBaseURLIsCustom'](arg1);
 }
 
 export function ProviderWireFormats(arg1) {
@@ -274,6 +286,14 @@ export function RequiresAPIKey(arg1) {
   return window['go']['main']['App']['RequiresAPIKey'](arg1);
 }
 
+export function RetryActiveProvider() {
+  return window['go']['main']['App']['RetryActiveProvider']();
+}
+
+export function RevealSpeechModel(arg1) {
+  return window['go']['main']['App']['RevealSpeechModel'](arg1);
+}
+
 export function SaveChatFile(arg1) {
   return window['go']['main']['App']['SaveChatFile'](arg1);
 }
@@ -314,12 +334,20 @@ export function SetAPIKey(arg1, arg2) {
   return window['go']['main']['App']['SetAPIKey'](arg1, arg2);
 }
 
+export function SetProviderBaseURL(arg1, arg2) {
+  return window['go']['main']['App']['SetProviderBaseURL'](arg1, arg2);
+}
+
 export function SetProviderEnabled(arg1, arg2) {
   return window['go']['main']['App']['SetProviderEnabled'](arg1, arg2);
 }
 
 export function SetProviderWireFormat(arg1) {
   return window['go']['main']['App']['SetProviderWireFormat'](arg1);
+}
+
+export function SetSpeechModel(arg1) {
+  return window['go']['main']['App']['SetSpeechModel'](arg1);
 }
 
 export function SetSubagentModel(arg1, arg2) {
@@ -332,6 +360,14 @@ export function SetUILocale(arg1) {
 
 export function SetUserName(arg1) {
   return window['go']['main']['App']['SetUserName'](arg1);
+}
+
+export function SpeechModelDirs() {
+  return window['go']['main']['App']['SpeechModelDirs']();
+}
+
+export function SpeechStatus() {
+  return window['go']['main']['App']['SpeechStatus']();
 }
 
 export function SupportedProviders() {

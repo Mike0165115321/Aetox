@@ -10,17 +10,21 @@
   import { i18n, t, setLocale, localeNames, type Locale } from './i18n.svelte'
   import {
     SupportedProviders, HasAPIKey, RequiresAPIKey, TerminalShells,
-    ListModelsForProvider, ProviderBaseURL, ProviderWireFormats, TestProviderConnection,
+    ListModelsForProvider, ProviderBaseURL, ProviderBaseURLIsCustom,
+    ProviderWireFormats, TestProviderConnection,
     EnabledProviders, SetProviderEnabled,
     ListMCPServers, SaveMCPServer, RemoveMCPServer, TestMCPServer, ToggleMCPServer,
-    ListExternalSkills, ListBuiltinSkills, InstallSkillFromGitHub, RemoveExternalSkill, RefreshSkills,
+    ListExternalSkills, ListTools, InstallSkillFromGitHub, RemoveExternalSkill, RefreshSkills,
+    ListSpeechModels, SetSpeechModel, SpeechStatus, RevealSpeechModel, SpeechModelDirs, OpenSpeechModelDir,
     UsageStats, ListPromptPresets, OpenPromptsFolder,
     SavePromptPreset, DeletePromptPreset, PickPresetImage, RemovePresetImage,
     ListSubagentProfiles, ReadSubagentProfile, SaveSubagentProfile,
     DeleteSubagentProfile, SetSubagentModel, OpenSubagentsFolder,
   } from '../../wailsjs/go/main/App'
+  import { BrowserOpenURL } from '../../wailsjs/runtime/runtime'
+  import promptPayQR from '../assets/images/promptpay-qr.png'
   import { config } from '../../wailsjs/go/models'
-  import { cockpit, switchProvider, switchModel, submitAPIKey, switchApprovalMode, switchWireFormat } from './stores/cockpit.svelte'
+  import { cockpit, switchProvider, switchModel, submitAPIKey, switchApprovalMode, switchWireFormat, setProviderBaseURL, retryActiveProvider } from './stores/cockpit.svelte'
   import {
     identity, loadIdentityFiles, openIdentityFile, saveIdentityFile,
     createIdentityFile, deleteIdentityFile, identityTemplates,
@@ -148,12 +152,19 @@
     connTest = ''
     connTestModel = ''
     baseURL = await ProviderBaseURL(name)
+    baseURLDraft = baseURL
+    baseURLIsCustom = await ProviderBaseURLIsCustom(name)
     wireFormats = await ProviderWireFormats(name)
     loadingModels = true
     models = []
     try {
       const res = await ListModelsForProvider(name)
       models = Array.isArray(res) ? res : []
+      // Discovery just proved this endpoint answers. If the engine is still on
+      // the fallback from a switch made while it was down, this is the moment
+      // it can get off — otherwise the warning sits there next to the model
+      // list that disproves it.
+      if (models.length > 0 && cockpit.model.warning) await retryActiveProvider()
     } finally {
       loadingModels = false
     }
@@ -210,6 +221,15 @@
     } catch (err) {
       connTest = 'err:' + String(err)
     }
+  })
+
+  // Endpoint override. Saving '' clears it — that is the reset, so the button
+  // is enabled on an empty box rather than treated as "nothing to save".
+  let baseURLDraft = $state('')
+  let baseURLIsCustom = $state(false)
+  const saveBaseURL = (value: string) => run('baseUrl', async () => {
+    await setProviderBaseURL(selected, value)
+    await selectProvider(selected)
   })
 
   const saveKey = () => run('key', async () => {
@@ -363,9 +383,27 @@
   // ---------- Skills (discovered SKILL.md + plugin install) ----------
   type SkillRow = { name: string; description: string; dir: string }
   let extSkills = $state<SkillRow[]>([])
-  // Read-only: the tools compiled into the engine. Without them this page reads
-  // as "the AI has no skills", when in fact every install ships a full set.
-  let builtinSkills = $state<{ name: string; description: string }[]>([])
+  // Read-only: every tool the AI can run — Aetox's own plus anything an MCP
+  // server bridged in. Separate from the skills below, which are documents, not
+  // things it runs.
+  let tools = $state<{ name: string; description: string; source: string }[]>([])
+  // One card per source instead of one list with a badge repeated on every row:
+  // where a tool comes from is a property of the group, not of each line.
+  const TOOL_SOURCES = ['builtin', 'workbench', 'mcp'] as const
+  const toolGroups = $derived(
+    TOOL_SOURCES
+      .map((key) => ({ key, items: tools.filter((s) => s.source === key) }))
+      .filter((g) => g.items.length > 0),
+  )
+  let expandedTool = $state('') // name of the row showing its full description
+  // The speech picker belongs to audio_transcribe, so it hangs off that tool's
+  // row rather than sitting in a card of its own — a setting parked away from
+  // the thing it configures is a setting nobody connects to it.
+  const SPEECH_TOOL = 'audio_transcribe'
+  let speechOpen = $state(false)
+  const activeSpeechLabel = $derived(
+    speechModels.find((m) => m.active)?.name ?? t('settings.speechAuto'),
+  )
   let skillBusy = $state('')
   let skillError = $state('')
   let skillInstallUrl = $state('')
@@ -374,7 +412,41 @@
 
   async function loadSkills() {
     extSkills = await ListExternalSkills()
-    builtinSkills = await ListBuiltinSkills()
+    tools = await ListTools()
+    await loadSpeech()
+  }
+
+  // ---------- Speech model (what audio_transcribe runs on) ----------
+  // Models differ by an order of magnitude in size and accuracy, and a machine
+  // can hold several — including ones Ollama or LM Studio already downloaded.
+  // Without this the engine just took whichever it found first.
+  type SpeechRow = { path: string; name: string; sizeMB: number; store: string; managed: boolean; active: boolean }
+  let speechModels = $state<SpeechRow[]>([])
+  let speechStatus = $state('') // engine's own reason it cannot run; '' means ready
+  let speechBusy = $state(false)
+  let speechError = $state('')
+
+  let speechDirs = $state<{ path: string; label: string }[]>([])
+
+  async function loadSpeech() {
+    speechModels = await ListSpeechModels()
+    speechStatus = await SpeechStatus()
+    speechDirs = await SpeechModelDirs()
+  }
+
+  // '' pins nothing, which is how the user gets back to auto-discovery.
+  async function pickSpeechModel(path: string) {
+    speechBusy = true
+    speechError = ''
+    try {
+      await SetSpeechModel(path)
+      await loadSpeech()
+      speechOpen = false // the choice is made; leaving it open just covers the page
+    } catch (err) {
+      speechError = String(err) // stays open so the reason is readable
+    } finally {
+      speechBusy = false
+    }
   }
 
   async function runSkill(label: string, fn: () => Promise<void>) {
@@ -824,12 +896,22 @@
       { id: 'agents', label: t('settings.subagents'), icon: '🤖' },
     ]},
     { group: t('settings.groupTools'), items: [
+      // Two pages, not two cards on one: a tool is something the AI runs, a
+      // skill is a document telling it how. Sharing a page is what made them
+      // read as one thing.
+      { id: 'tools', label: t('settings.tools'), icon: '🛠' },
       { id: 'skills', label: t('settings.skills'), icon: '🧩' },
       { id: 'mcp', label: t('settings.mcpServers'), icon: '🔌' },
       { id: 'prompts', label: t('settings.prompts'), icon: '✨' },
       { id: 'usage', label: t('settings.usage'), icon: '📊' },
     ]},
+    { group: t('settings.groupAbout'), items: [
+      { id: 'sponsor', label: t('settings.sponsor'), icon: '❤' },
+    ]},
   ])
+
+  const SPONSOR_URL = 'https://github.com/Mike0165115321/Aetox/blob/main/SPONSOR.md'
+  const SITE_URL = 'https://mike0165115321.github.io/Aetox/'
 
   let active = $state('general')
   let query = $state('')
@@ -1047,9 +1129,28 @@
               {/if}
             </div>
 
+            {#if isActiveProvider && cockpit.model.warning}
+              <!-- Without this the "Active" badge above claims a provider the
+                   engine never reached (LM Studio with its server off). -->
+              <div class="conn-test">{t('chat.providerFallback')} · {cockpit.model.warning}</div>
+            {/if}
+
             <div class="mset-field">
               <div class="eyebrow">{t('settings.baseUrl')}</div>
-              <div class="mset-ro">{baseURL || '—'}</div>
+              <div class="muted" style="font-size:12px; margin-bottom:6px">{t('settings.baseUrlDesc')}</div>
+              <div class="mset-keyrow">
+                <input
+                  class="ctrl key-input" placeholder={baseURL || 'http://localhost:1234/v1'}
+                  bind:value={baseURLDraft}
+                  onkeydown={(e) => e.key === 'Enter' && saveBaseURL(baseURLDraft)}
+                />
+                <button class="ctrl" disabled={busy !== '' || baseURLDraft.trim() === baseURL} onclick={() => saveBaseURL(baseURLDraft)}>
+                  {busy === 'baseUrl' ? t('settings.saving') : t('settings.save')}
+                </button>
+                {#if baseURLIsCustom}
+                  <button class="ctrl" disabled={busy !== ''} onclick={() => saveBaseURL('')}>{t('settings.baseUrlReset')}</button>
+                {/if}
+              </div>
             </div>
 
             {#if wireFormats.length > 1}
@@ -1133,28 +1234,98 @@
           {/if}
         </div>
       </div>
+    {:else if active === 'tools'}
+      <h2>{t('settings.toolsHeading', { n: tools.length })}</h2>
+      <p class="muted set-sub">{t('settings.toolsDesc')}</p>
+
+      {#each toolGroups as g (g.key)}
+        <!-- Heading outside the card, not boxed in with the rows: the card is
+             the list, and a title sealed inside its own border reads as one
+             more entry in it. -->
+        <div class="group-head">
+          <span class="group-title">{t('settings.toolSource_' + g.key)}</span>
+          <span class="group-count">{t('settings.itemCount', { n: g.items.length })}</span>
+        </div>
+        <div class="settings-card">
+          {#each g.items as s (s.name)}
+            <div class="set-row">
+              <button
+                class="tool-row"
+                onclick={() => (expandedTool = expandedTool === s.name ? '' : s.name)}
+              >
+                <div class="set-txt">
+                  <div class="t">{s.name}</div>
+                  <div class="d" class:clamp={expandedTool !== s.name}>{s.description || '—'}</div>
+                </div>
+              </button>
+              {#if s.name === SPEECH_TOOL}
+                <!-- A dropdown, not an expanding section: picking a model must
+                     not shove the rest of the tool list down the page. -->
+                <div class="tool-setting">
+                  <button class="ctrl" disabled={speechBusy} onclick={() => (speechOpen = !speechOpen)}>
+                    {activeSpeechLabel} {speechOpen ? '▴' : '▾'}
+                  </button>
+                  {#if speechOpen}
+                    <button
+                      class="drop-backdrop"
+                      aria-label={t('settings.close')}
+                      onclick={() => (speechOpen = false)}
+                    ></button>
+                    <div class="rowdrop-list">
+                      {#if speechStatus}<div class="rowdrop-note mset-error">{speechStatus}</div>{/if}
+                      {#if speechModels.length === 0}
+                        <div class="rowdrop-note muted">{t('settings.speechNoModels')}</div>
+                      {:else}
+                        <button
+                          class="rowdrop-opt"
+                          class:selected={speechModels.every((m) => !m.active)}
+                          onclick={() => pickSpeechModel('')}
+                        >
+                          <div class="t">{t('settings.speechAuto')}</div>
+                          <div class="sub">{t('settings.speechAutoDesc')}</div>
+                        </button>
+                        {#each speechModels as m (m.path)}
+                          <div class="rowdrop-row">
+                            <button
+                              class="rowdrop-opt"
+                              class:selected={m.active}
+                              onclick={() => pickSpeechModel(m.path)}
+                            >
+                              <div class="t">{m.name}</div>
+                              <div class="sub">{m.sizeMB} MB · {m.store}</div>
+                            </button>
+                            <button
+                              class="rowdrop-reveal"
+                              title={m.where}
+                              aria-label={t('settings.speechOpenFolder')}
+                              onclick={() => RevealSpeechModel(m.path)}
+                            >📁</button>
+                          </div>
+                        {/each}
+                      {/if}
+                      {#if speechError}<div class="rowdrop-note mset-error">{speechError}</div>{/if}
+
+                      <!-- Where the scan looks. Without it a missing model is a
+                           dead end; with it, it is "put the file in one of
+                           these". -->
+                      <div class="rowdrop-sep"></div>
+                      <div class="rowdrop-note muted">{t('settings.speechScanned')}</div>
+                      {#each speechDirs as d (d.path)}
+                        <button class="rowdrop-opt rowdrop-dir" onclick={() => OpenSpeechModelDir(d.path)}>
+                          📁 {d.label}
+                        </button>
+                      {/each}
+                    </div>
+                  {/if}
+                </div>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      {/each}
     {:else if active === 'skills'}
       <h2>{t('settings.skills')}</h2>
       <p class="muted set-sub">{t('settings.skillsDesc')}</p>
-
-      <!-- Built-ins first: they are what the AI can do before the user adds
-           anything, and this page used to claim there were none. -->
-      <div class="settings-card">
-        <div class="card-form">
-          <div class="mset-keyrow">
-            <div class="eyebrow" style="flex:1">{t('settings.skillsBuiltin', { n: builtinSkills.length })}</div>
-          </div>
-        </div>
-        {#each builtinSkills as s (s.name)}
-          <div class="set-row">
-            <div class="set-txt">
-              <div class="t">{s.name}</div>
-              <div class="d">{s.description || '—'}</div>
-            </div>
-            <span class="muted">{t('settings.skillsAlwaysOn')}</span>
-          </div>
-        {/each}
-      </div>
 
       <div class="settings-card">
         <div class="card-form">
@@ -1201,6 +1372,7 @@
           {#if skillError}<div class="mset-error">{skillError}</div>{/if}
         </div>
       </div>
+
     {:else if active === 'agents'}
       <h2>{t('settings.subagents')}</h2>
       <p class="muted set-sub">{t('settings.subagentsDesc')}</p>
@@ -1762,6 +1934,27 @@
             </button>
           </div>
         {/each}
+      </div>
+    {:else if active === 'sponsor'}
+      <h2>{t('settings.sponsor')}</h2>
+      <div class="settings-card">
+        <div class="set-row">
+          <div class="set-txt">
+            <div class="t">{t('settings.sponsorIntro')}</div>
+            <div class="d">{t('settings.sponsorDesc')}</div>
+          </div>
+          <button class="ctrl" onclick={() => BrowserOpenURL(SITE_URL)}>{t('settings.sponsorOpenSite')}</button>
+          <button class="ctrl" onclick={() => BrowserOpenURL(SPONSOR_URL)}>{t('settings.sponsorOpenGitHub')}</button>
+        </div>
+        <div class="set-row">
+          <div class="set-txt">
+            <div class="t">PromptPay</div>
+            <div class="d">{t('settings.sponsorScanHint')}</div>
+          </div>
+        </div>
+        <div class="set-row" style="justify-content:center">
+          <img src={promptPayQR} alt="PromptPay QR" style="width:260px;max-width:100%;border-radius:12px" />
+        </div>
       </div>
     {/if}
     </div>
