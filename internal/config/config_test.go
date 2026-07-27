@@ -9,6 +9,25 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/safety"
 )
 
+// isolateUserDirs points every "where does this user's data live" lookup at a
+// temp directory, on every platform.
+//
+// Setting APPDATA/LOCALAPPDATA alone only isolates Windows. os.UserConfigDir
+// reads XDG_CONFIG_HOME on Linux and $HOME/Library/Application Support on
+// macOS, so on those platforms these tests were reading and writing the real
+// ~/.config/aetox — which is how a "missing file returns nil" test started
+// failing the moment another package's tests ran first and left a file there.
+func isolateUserDirs(t *testing.T) string {
+	t.Helper()
+	base := t.TempDir()
+	t.Setenv("APPDATA", base)         // windows: os.UserConfigDir
+	t.Setenv("LOCALAPPDATA", base)    // windows: the legacy preference path
+	t.Setenv("USERPROFILE", base)     // windows: os.UserHomeDir
+	t.Setenv("XDG_CONFIG_HOME", base) // linux: os.UserConfigDir
+	t.Setenv("HOME", base)            // linux + macos: os.UserHomeDir, and macOS' config dir
+	return base
+}
+
 func TestLoadDefaults(t *testing.T) {
 	t.Setenv("OPENROUTER_API_KEY", "env-key")
 
@@ -92,9 +111,7 @@ func TestLoadInvalidValues(t *testing.T) {
 }
 
 func TestSaveAndLoadModelPreferenceThinkLevel(t *testing.T) {
-	base := t.TempDir()
-	t.Setenv("APPDATA", base)
-	t.Setenv("LOCALAPPDATA", base)
+	isolateUserDirs(t)
 
 	want := ModelPreference{
 		ModelProvider: "openrouter",
@@ -172,9 +189,7 @@ func TestResolvedEnabledProvidersDedupesAndNormalizes(t *testing.T) {
 }
 
 func TestLoadPermissionsMissingFileReturnsEmpty(t *testing.T) {
-	base := t.TempDir()
-	t.Setenv("APPDATA", base)
-	t.Setenv("LOCALAPPDATA", base)
+	isolateUserDirs(t)
 
 	got, err := LoadPermissions()
 	if err != nil {
@@ -186,9 +201,7 @@ func TestLoadPermissionsMissingFileReturnsEmpty(t *testing.T) {
 }
 
 func TestLoadMCPServersMissingFileReturnsNil(t *testing.T) {
-	base := t.TempDir()
-	t.Setenv("APPDATA", base)
-	t.Setenv("LOCALAPPDATA", base)
+	isolateUserDirs(t)
 
 	got, err := LoadMCPServers()
 	if err != nil {
@@ -200,9 +213,7 @@ func TestLoadMCPServersMissingFileReturnsNil(t *testing.T) {
 }
 
 func TestSaveAndLoadMCPServers(t *testing.T) {
-	base := t.TempDir()
-	t.Setenv("APPDATA", base)
-	t.Setenv("LOCALAPPDATA", base)
+	isolateUserDirs(t)
 
 	want := []MCPServerConfig{
 		{Name: "fs", Command: []string{"npx", "-y", "server-filesystem", "/tmp"}, TimeoutMs: 5000},
@@ -228,9 +239,7 @@ func TestSaveAndLoadMCPServers(t *testing.T) {
 }
 
 func TestLoadPermissions(t *testing.T) {
-	base := t.TempDir()
-	t.Setenv("APPDATA", base)
-	t.Setenv("LOCALAPPDATA", base)
+	isolateUserDirs(t)
 
 	want := safety.PermissionConfig{Rules: []safety.PermissionRule{
 		{Tool: "shell", Pattern: "rm *", Action: safety.PermissionDeny},

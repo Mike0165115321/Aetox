@@ -15,9 +15,7 @@ import (
 // without an API key.
 func newMCPTestApp(t *testing.T) *App {
 	t.Helper()
-	base := t.TempDir()
-	t.Setenv("APPDATA", base)
-	t.Setenv("LOCALAPPDATA", base)
+	isolateUserDirs(t)
 	return &App{cfg: config.Config{ModelProvider: "noop", SandboxRoot: t.TempDir()}}
 }
 

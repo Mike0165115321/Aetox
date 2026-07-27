@@ -16,10 +16,8 @@ import (
 // the real one. noop is the provider so nothing reaches the network.
 func newSubagentTestApp(t *testing.T) *App {
 	t.Helper()
-	base := t.TempDir()
+	base := isolateUserDirs(t)
 	t.Setenv("AETOX_DATA_ROOT", filepath.Join(base, "data"))
-	t.Setenv("APPDATA", base)
-	t.Setenv("LOCALAPPDATA", base)
 	a := &App{
 		cfg:   config.Config{ModelProvider: "noop", ModelName: "aetox-grid", SandboxRoot: t.TempDir()},
 		dbDir: t.TempDir(),

@@ -23,9 +23,7 @@ func (usageProvider) Complete(_ context.Context, _ model.Request) (model.Respons
 // come back aggregated from UsageStats. This is the chain the Settings page
 // shows.
 func TestUsagePipelineEndToEnd(t *testing.T) {
-	base := t.TempDir()
-	t.Setenv("APPDATA", base)
-	t.Setenv("LOCALAPPDATA", base)
+	isolateUserDirs(t)
 	a := &App{cfg: config.Config{ModelProvider: "noop", ModelName: "usage-fake-model", SandboxRoot: t.TempDir()}, dbDir: t.TempDir()}
 	t.Cleanup(func() {
 		if a.db != nil {

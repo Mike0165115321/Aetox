@@ -16,11 +16,11 @@
 |:---|:---|:---|:---|
 | `internal/` (engine, tools, providers) | ✅ ใช้จริง | ✅ **เทสต์ผ่านจริง + race สะอาด** | ⚠️ compile ผ่าน ยังไม่เคยรัน |
 | `cmd/aetox` (CLI) | ✅ ใช้จริง | ✅ **เทสต์ผ่านจริง** | ⚠️ compile ผ่าน ยังไม่เคยรัน |
-| `desktop/` — terminal | ✅ ใช้จริง | ✅ **เทสต์ผ่านบนเคอร์เนลจริง** | ⚠️ โค้ดตัวเดียวกับ Linux แต่ **ยังไม่เคยคอมไพล์หรือรันบน mac เลย** |
-| `desktop/` — ที่เหลือ (GUI, browser) | ✅ ใช้จริง | ❌ ยังคอมไพล์ไม่ผ่าน (เฟส 2–3a) | ❌ ยังคอมไพล์ไม่ผ่าน (เฟส 2–3b) |
+| `desktop/` — ทั้งแพ็กเกจ | ✅ ใช้จริง | ✅ **`go test ./...` ผ่านบนเคอร์เนลจริง** | ⚠️ type-check ผ่าน (`GOOS=darwin go vet`) ยังไม่เคยรัน |
+| `desktop/` — แท็บ browser | ✅ ใช้จริง | ⏳ stub (เฟส 3a) | ⏳ stub (เฟส 3b) |
 | binary ภายนอก (tesseract, ffmpeg) | ✅ | ✅ มีข้อความติดตั้งแยก OS อยู่แล้ว | ✅ auto-install ผ่าน brew อยู่แล้ว |
 
-> **ระวังการอ่านตาราง:** ✅ ของ Linux แปลว่า *รันจริงบนเคอร์เนล Linux แล้วผ่าน* ส่วน macOS ยัง **ไม่มีอะไรถูกพิสูจน์เลยสักอย่าง** — ไม่มี container ไม่มี VM ที่ถูกกฎ และ job `unix` ใน CI ยังไม่แตะ `./desktop/...` เพราะแพ็กเกจยังคอมไพล์ไม่ผ่านนอก Windows **เฟส 2 คือจุดที่ mac ได้รับการตรวจครั้งแรกในชีวิต**
+> **ระวังการอ่านตาราง:** ✅ ของ Linux แปลว่า *รันจริงบนเคอร์เนล Linux แล้วผ่าน* ส่วน macOS ยัง **ไม่เคยถูกรันเลยสักครั้ง** — ไม่มี container ไม่มี VM ที่ถูกกฎ พิสูจน์ได้แค่ว่าคอมไพล์และ type-check ผ่าน ตั้งแต่เฟส 2 เป็นต้นไป job `unix` ใน CI รัน `./...` ครบแล้ว **`macos-latest` จึงเป็นที่เดียวที่ mac ถูกรันจริง**
 
 ## เฟส
 
@@ -28,7 +28,7 @@
 |:--|:---|:---|
 | **0** | CI matrix — job `unix` (ubuntu + macos) รัน `vet` + `test` บน `./cmd/... ./internal/...`, Linux เพิ่ม `-race` | ✅ **เสร็จ** |
 | **1** | `terminal.go` → `ptySession` interface + `terminal_windows.go` / `terminal_unix.go` (`creack/pty` v1.1.24) | ✅ **เสร็จ** — Windows + Linux พิสูจน์แล้ว, mac ยังไม่ถูกตรวจ |
-| 2 | `browser.go` → แยก `hostBackend`/`tabView` + `browser_windows.go` + `browser_other.go` (stub) → `desktop/` เขียวทั้ง 3 OS | ยังไม่เริ่ม |
+| **2** | `browser.go` → แยก `hostBackend`/`tabView` + `browser_windows.go` + `browser_other.go` (stub) → `desktop/` เขียวทั้ง 3 OS | ✅ **เสร็จ** — Windows + Linux รันจริงผ่าน, mac type-check ผ่าน |
 | 3a | `browser_linux.go` — WebKitGTK widget ใน `GtkOverlay`/`GtkFixed` | ยังไม่เริ่ม |
 | 3b | `browser_darwin.go` — `WKWebView` เป็น subview ของ Wails `NSView` | ยังไม่เริ่ม |
 | 4 | packaging (`.deb`/`.rpm`/tar.gz + `.app`/`.dmg`) + `bench.sh` | ยังไม่เริ่ม |
@@ -42,8 +42,9 @@
 | `terminal.go` | — | ✅ | ✅ | ✅ | `ptySession`, `App.Terminal*` ทั้งหมด, ลูปอ่าน |
 | `terminal_windows.go` | ชื่อไฟล์ | ✅ | | | ConPTY + รายชื่อเชลล์ของ Windows |
 | `terminal_unix.go` | `//go:build unix` | | ✅ | ✅ | `creack/pty` + `$SHELL` + การกวาด session |
-| `browser.go` | — | ✅ | ✅ | ✅ | JS builders, `sameOrigin`, `onMessage`, `App.Browser*` (เฟส 2) |
-| `browser_windows.go` | ชื่อไฟล์ | ✅ | | | Win32 + WebView2 (เฟส 2) |
+| `browser.go` | — | ✅ | ✅ | ✅ | `tabView`/`hostBackend`/`tabCallbacks`, JS builders, `sameOrigin`, `onMessage`, `navCompleted`, `App.Browser*` |
+| `browser_windows.go` | ชื่อไฟล์ | ✅ | | | Win32 + WebView2 (`win32Host`/`win32Tab`) |
+| `browser_other.go` | `//go:build !windows` | | ⏳ | ⏳ | stub ชั่วคราว — หายไปเมื่อ 3a และ 3b เสร็จทั้งคู่ |
 | `browser_linux.go` | ชื่อไฟล์ | | ✅ | | WebKitGTK (เฟส 3a) |
 | `browser_darwin.go` | ชื่อไฟล์ | | | ✅ | WKWebView (เฟส 3b) |
 

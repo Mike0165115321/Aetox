@@ -11,14 +11,21 @@ import (
 )
 
 func TestProjectKeyStableAndDistinct(t *testing.T) {
-	k1 := projectKey(`C:\projects\app`)
-	k2 := projectKey(`C:\projects\app`)
+	// Built with filepath.Join rather than written out: projectKey ends in
+	// filepath.Base, and a hardcoded `C:\projects\app` is one undivided name
+	// off Windows, so the "app-" prefix check passed for the wrong reason
+	// there and failed outright once these tests ran on Linux.
+	root := filepath.Join(string(filepath.Separator), "projects", "app")
+	other := filepath.Join(string(filepath.Separator), "other", "app")
+
+	k1 := projectKey(root)
+	k2 := projectKey(root)
 	if k1 != k2 {
 		t.Errorf("projectKey not stable: %q != %q", k1, k2)
 	}
-	k3 := projectKey(`C:\other\app`)
+	k3 := projectKey(other)
 	if k1 == k3 {
-		t.Errorf("projectKey(%q) == projectKey(%q) = %q, want distinct keys for two folders both named \"app\"", `C:\projects\app`, `C:\other\app`, k1)
+		t.Errorf("projectKey(%q) == projectKey(%q) = %q, want distinct keys for two folders both named \"app\"", root, other, k1)
 	}
 	if !strings.HasPrefix(k1, "app-") {
 		t.Errorf("projectKey = %q, want prefix %q", k1, "app-")

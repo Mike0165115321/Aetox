@@ -12,11 +12,7 @@ import (
 // (~/.aetox/skills via USERPROFILE/HOME) into temp dirs.
 func newSkillsTestApp(t *testing.T) *App {
 	t.Helper()
-	base := t.TempDir()
-	t.Setenv("APPDATA", base)
-	t.Setenv("LOCALAPPDATA", base)
-	t.Setenv("USERPROFILE", base)
-	t.Setenv("HOME", base)
+	isolateUserDirs(t)
 	return &App{cfg: config.Config{ModelProvider: "noop", SandboxRoot: t.TempDir()}}
 }
 

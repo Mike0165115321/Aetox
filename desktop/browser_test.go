@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestSameOrigin(t *testing.T) {
@@ -166,36 +169,177 @@ func TestTextScriptListsSelectOptions(t *testing.T) {
 	}
 }
 
+// fakeBackend is a hostBackend that queues commands without ever touching a
+// real webview, so the bookkeeping around them can be tested on any platform.
+// It exists because that bookkeeping used to need a live HWND to reach.
+type fakeBackend struct {
+	mu   sync.Mutex
+	cmds []func()
+}
+
+func (b *fakeBackend) start() error { return nil }
+
+func (b *fakeBackend) do(fn func()) {
+	b.mu.Lock()
+	b.cmds = append(b.cmds, fn)
+	b.mu.Unlock()
+}
+
+// drain runs the queued commands in order, the way a real host's pump does.
+func (b *fakeBackend) drain() {
+	for {
+		b.mu.Lock()
+		if len(b.cmds) == 0 {
+			b.mu.Unlock()
+			return
+		}
+		fn := b.cmds[0]
+		b.cmds = b.cmds[1:]
+		b.mu.Unlock()
+		fn()
+	}
+}
+
+func (b *fakeBackend) openTab(id, url string, x, y, w, h int, cb tabCallbacks) tabView {
+	return &fakeView{}
+}
+
+// fakeView records what the portable layer asked a tab to do.
+type fakeView struct {
+	lastJS      string
+	visible     []bool
+	zoom        float64
+	bounds      [4]int
+	destroyed   bool
+	devToolsHit bool
+}
+
+func (v *fakeView) navigate(url string)  { v.lastJS = "navigate:" + url }
+func (v *fakeView) eval(js string)       { v.lastJS = js }
+func (v *fakeView) setZoom(f float64)    { v.zoom = f }
+func (v *fakeView) openDevTools()        { v.devToolsHit = true }
+func (v *fakeView) destroy()             { v.destroyed = true }
+func (v *fakeView) setVisible(show bool) { v.visible = append(v.visible, show) }
+func (v *fakeView) setBounds(x, y, w, h int) {
+	v.bounds = [4]int{x, y, w, h}
+}
+
 // A tab is only registered at the END of open()'s own queued command, so any
 // lookup done on the caller's goroutine finds nil for every call made right
 // after BrowserOpen — which silently dropped the bounds correction the frontend
 // sends once the address bar has appeared, leaving the tab's window covering
 // the toolbar. withTab must therefore resolve the tab inside the queue.
 func TestWithTabResolvesAfterAQueuedOpen(t *testing.T) {
-	h := &browserHost{tabs: map[string]*browserTab{}}
+	b := &fakeBackend{}
+	h := &browserHost{backend: b, tabs: map[string]*browserTab{}}
+	registered := &fakeView{}
 
 	// Stands in for open(): registers the tab only when its command runs.
-	h.do(func() {
+	b.do(func() {
 		h.mu.Lock()
-		h.tabs["web-1"] = &browserTab{hwnd: 7}
+		h.tabs["web-1"] = &browserTab{view: registered}
 		h.mu.Unlock()
 	})
 	// Stands in for BrowserSetBounds, issued before that command has run.
-	var got uintptr
-	h.withTab("web-1", func(tab *browserTab) { got = tab.hwnd })
+	var got tabView
+	h.withTab("web-1", func(tab *browserTab) { got = tab.view })
 
-	h.drain()
+	b.drain()
 
-	if got != 7 {
-		t.Fatalf("command dropped: hwnd = %d, want 7", got)
+	if got != registered {
+		t.Fatalf("command dropped: withTab never reached the registered tab")
+	}
+}
+
+// navCompleted carries three rules that only ever ran against a live WebView2
+// before the platform seam existed: record the outcome before waking waiters,
+// do not surface a tab the UI has hidden, and re-assert the emulation zoom that
+// a cross-origin navigation resets.
+func TestNavCompletedRaisesReassertsZoomAndAsksForMeta(t *testing.T) {
+	h := &browserHost{app: &App{}, tabs: map[string]*browserTab{}}
+	tab := &browserTab{navDone: make(chan struct{})}
+	tab.zoom = 0.5
+	view := &fakeView{}
+
+	h.navCompleted(tab, view, true)
+
+	if !tab.navLoaded() {
+		t.Error("navOK not recorded")
+	}
+	select {
+	case <-tab.navDone:
+	default:
+		t.Error("navDone still open — a waiter would hang")
+	}
+	if len(view.visible) != 1 || !view.visible[0] {
+		t.Errorf("tab not raised: setVisible calls = %v", view.visible)
+	}
+	if view.zoom != 0.5 {
+		t.Errorf("zoom re-asserted as %v, want 0.5 — a cross-site navigation resets it", view.zoom)
+	}
+	if !strings.Contains(view.lastJS, "__aetox") {
+		t.Errorf("did not ask the page for its title/url, last js = %q", view.lastJS)
+	}
+}
+
+// A tab the user has switched away from must stay down when its page finishes
+// loading, or it pops over the UI on every background navigation.
+func TestNavCompletedLeavesAHiddenTabHidden(t *testing.T) {
+	h := &browserHost{app: &App{}, tabs: map[string]*browserTab{}}
+	tab := &browserTab{navDone: make(chan struct{}), hidden: true}
+	view := &fakeView{}
+
+	h.navCompleted(tab, view, true)
+
+	for _, shown := range view.visible {
+		if shown {
+			t.Fatal("raised a tab the UI had hidden")
+		}
+	}
+}
+
+// browser_open used to report success on ANY completed navigation, so a
+// file:// path that does not exist came back with a green tick and the model
+// went on working against Chrome's own File-not-found page.
+func TestAwaitNavigationFailsWhenThePageDidNotLoad(t *testing.T) {
+	tab := &browserTab{navDone: make(chan struct{})}
+	tab.setNavOK(false)
+	close(tab.navDone)
+
+	err := tab.awaitNavigation(context.Background(), time.Second)
+	if err == nil {
+		t.Fatal("expected an error for a navigation that failed, got nil")
+	}
+	// Must not be reported as "still loading" — that sends the caller back to
+	// waiting instead of fixing the URL.
+	if strings.Contains(err.Error(), "did not finish loading") {
+		t.Errorf("error = %q, want it to name a load failure, not a timeout", err)
+	}
+}
+
+func TestAwaitNavigationPassesWhenThePageLoaded(t *testing.T) {
+	tab := &browserTab{navDone: make(chan struct{})}
+	tab.setNavOK(true)
+	close(tab.navDone)
+
+	if err := tab.awaitNavigation(context.Background(), time.Second); err != nil {
+		t.Fatalf("awaitNavigation on a loaded page: %v", err)
+	}
+}
+
+func TestAwaitNavigationTimesOutWhileStillLoading(t *testing.T) {
+	tab := &browserTab{navDone: make(chan struct{})} // never completes
+	if err := tab.awaitNavigation(context.Background(), 10*time.Millisecond); err == nil {
+		t.Fatal("expected a timeout error while the page is still loading, got nil")
 	}
 }
 
 func TestWithTabSkipsAnUnknownTab(t *testing.T) {
-	h := &browserHost{tabs: map[string]*browserTab{}}
+	b := &fakeBackend{}
+	h := &browserHost{backend: b, tabs: map[string]*browserTab{}}
 	ran := false
 	h.withTab("gone", func(*browserTab) { ran = true })
-	h.drain()
+	b.drain()
 	if ran {
 		t.Fatal("ran against a tab that does not exist")
 	}

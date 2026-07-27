@@ -15,17 +15,16 @@
 # That makes this runner the only place the delegate goroutine, the parked
 # ask_main slot and the shared tool history are ever checked for real.
 #
-# desktop/ is excluded off Windows until the port lands (PLATFORM-SUPPORT.md):
-# it imports ConPTY and go-webview2, and browser.go calls Win32 with no build
-# tag. Naming ./cmd/... ./internal/... explicitly instead of ./... is also what
-# catches the *_windows.go filename trap — context_windows.go (model token
-# limits, nothing to do with the OS) once kept the CLI from building on Linux
-# at all, and only a real non-Windows compile finds that class of bug.
+# All three jobs run the whole tree. desktop/ was excluded off Windows until
+# phase 2 split ConPTY and WebView2 behind build tags; now every platform
+# compiles and tests it, which is what catches the *_windows.go filename trap —
+# context_windows.go (model token limits, nothing to do with the OS) once kept
+# the CLI from building on Linux at all, and only a real non-Windows compile
+# finds that class of bug.
 #
-# The frontend build is not optional on Windows: desktop/main.go does `go:embed
+# The frontend build is not optional anywhere: desktop/main.go does `go:embed
 # all:frontend/dist`, and dist is gitignored, so `go vet ./...` fails on a fresh
-# checkout until vite has produced it. The Unix jobs skip npm entirely — they
-# never touch desktop/.
+# checkout until vite has produced it.
 name: ci
 
 on:
@@ -78,18 +77,33 @@ jobs:
         with:
           go-version-file: go.mod
 
-      # Nothing here needs GTK yet — desktop/ is excluded below. Installing it
-      # now is the cheap half of the port's biggest unknown: the package split
-      # (webkit2gtk-4.0 on older Ubuntu, 4.1 from 24.04 on) is exactly the kind
-      # of thing that should fail in a 20-second step rather than halfway
-      # through writing browser_linux.go.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/frontend/package-lock.json
+
+      # Not needed to link anything yet — the browser host off Windows is still
+      # the stub in browser_other.go. Installing it now is the cheap half of the
+      # port's biggest unknown: the package split (webkit2gtk-4.0 on older
+      # Ubuntu, 4.1 from 24.04 on) is exactly the kind of thing that should fail
+      # in a 20-second step rather than halfway through writing
+      # browser_linux.go.
       - name: GTK + WebKit dev packages (Wails' Linux backend)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
 
-      - run: go vet ./cmd/... ./internal/...
+      - name: Install frontend deps
+        working-directory: desktop/frontend
+        run: npm ci
+
+      - name: Build frontend (required by desktop's go:embed)
+        working-directory: desktop/frontend
+        run: npm run build
+
+      - run: go vet ./...
 
       # -race subsumes a plain run, so Linux does not need both. The timeout is
       # verify.sh's: the engine parks goroutines on purpose (a sub-agent waiting
@@ -97,8 +111,8 @@ jobs:
       # minutes rather than at the 10m default.
       - name: Test (race)
         if: runner.os == 'Linux'
-        run: go test -count=1 -race -timeout 15m ./cmd/... ./internal/...
+        run: go test -count=1 -race -timeout 15m ./...
 
       - name: Test
         if: runner.os != 'Linux'
-        run: go test -count=1 -timeout 10m ./cmd/... ./internal/...
+        run: go test -count=1 -timeout 10m ./...

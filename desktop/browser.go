@@ -1,14 +1,17 @@
 package main
 
-// Native in-app browser: each browser tab is a real WebView2 (same engine the
-// app itself runs in) embedded as a Win32 child window positioned over the
-// dock's browser pane. This exists because iframes can't render sites that
-// send X-Frame-Options/CSP deny (YouTube, Google, anything with bot checks),
-// and because the AI needs to read real page content (BrowserGetText).
+// Native in-app browser: each browser tab is a real webview of whatever engine
+// the OS ships (WebView2, WebKitGTK, WKWebView), positioned over the dock's
+// browser pane. This exists because iframes can't render sites that send
+// X-Frame-Options/CSP deny (YouTube, Google, anything with bot checks), and
+// because the AI needs to read real page content (BrowserGetText).
 //
-// Threading model: WebView2 is COM/STA — every webview lives on ONE dedicated
-// OS thread that runs a Windows message pump. All operations are marshalled
-// onto that thread via a command queue + PostThreadMessage(WM_APP) wake-up.
+// This file is everything that does not care which engine that is: the injected
+// scripts, the message bridge's security model, tab bookkeeping, and every
+// Wails binding. One platform file behind it supplies the engine —
+// browser_windows.go today, browser_linux.go and browser_darwin.go later. See
+// PLATFORM-SUPPORT.md for the file map and ARCHITECTURE.md §48 for why the
+// bindings themselves are never behind a build tag.
 
 import (
 	"context"
@@ -17,103 +20,74 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"os"
-	"path/filepath"
-	"runtime"
 	"sync"
-	"syscall"
 	"time"
-	"unsafe"
 
 	"github.com/Mike0165115321/Aetox/internal/debuglog"
-	"github.com/wailsapp/go-webview2/pkg/edge"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-var (
-	user32               = syscall.NewLazyDLL("user32.dll")
-	procFindWindowW      = user32.NewProc("FindWindowW")
-	procRegisterClassExW = user32.NewProc("RegisterClassExW")
-	procCreateWindowExW  = user32.NewProc("CreateWindowExW")
-	procDestroyWindow    = user32.NewProc("DestroyWindow")
-	procShowWindow       = user32.NewProc("ShowWindow")
-	procSetWindowPos     = user32.NewProc("SetWindowPos")
-	procGetMessageW      = user32.NewProc("GetMessageW")
-	procTranslateMessage = user32.NewProc("TranslateMessage")
-	procDispatchMessageW = user32.NewProc("DispatchMessageW")
-	procPostThreadMsgW   = user32.NewProc("PostThreadMessageW")
-	procDefWindowProcW   = user32.NewProc("DefWindowProcW")
-
-	procGetWindowDpiAwarenessCtx  = user32.NewProc("GetWindowDpiAwarenessContext")
-	procSetThreadDpiAwarenessCtx  = user32.NewProc("SetThreadDpiAwarenessContext")
-	procGetWindowThreadProcessID  = user32.NewProc("GetWindowThreadProcessId")
-	procEnumWindows               = user32.NewProc("EnumWindows")
-	procIsWindowVisible           = user32.NewProc("IsWindowVisible")
-
-	kernel32               = syscall.NewLazyDLL("kernel32.dll")
-	procGetCurrentThreadID = kernel32.NewProc("GetCurrentThreadId")
-
-	ole32             = syscall.NewLazyDLL("ole32.dll")
-	procCoInitializeEx = ole32.NewProc("CoInitializeEx")
-)
-
-const (
-	wmApp       = 0x8000
-	wsChild     = 0x40000000
-	wsVisible   = 0x10000000
-	wsClipSibl  = 0x04000000
-	swHide = 0
-
-	coinitApartmentThreaded = 0x2
-
-	// hwndTop + these SWP flags force the tab's WebView2 child window to the
-	// top of the Z order: two separate WebView2 controllers in the same
-	// top-level window each composite independently, so plain ShowWindow/
-	// MoveWindow (no Z-order change) can leave the tab rendered behind the
-	// app's own webview — invisible, even though it's really navigated and
-	// painting.
-	hwndTop        = 0
-	swpNoMove      = 0x0002
-	swpNoSize      = 0x0001
-	swpNoActivate  = 0x0010
-	swpShowWindow  = 0x0040
-)
-
-type winMsg struct {
-	Hwnd    uintptr
-	Message uint32
-	WParam  uintptr
-	LParam  uintptr
-	Time    uint32
-	Pt      struct{ X, Y int32 }
+// tabView is one platform's live webview for one tab. Every method is called
+// on the thread that owns the webview — that is, from inside hostBackend.do.
+type tabView interface {
+	navigate(url string)
+	eval(js string)
+	setBounds(x, y, w, h int)
+	// setVisible(true) both shows the view and raises it: on Windows two
+	// webviews in the same top-level window composite independently, so a tab
+	// that is merely shown can stay behind the app's own webview — loaded,
+	// painting, invisible.
+	setVisible(visible bool)
+	setZoom(factor float64)
+	openDevTools()
+	destroy()
 }
 
-type wndClassExW struct {
-	Size       uint32
-	Style      uint32
-	WndProc    uintptr
-	ClsExtra   int32
-	WndExtra   int32
-	Instance   uintptr
-	Icon       uintptr
-	Cursor     uintptr
-	Background uintptr
-	MenuName   *uint16
-	ClassName  *uint16
-	IconSm     uintptr
+// tabCallbacks are the portable reactions a platform host wires into a tab it
+// creates.
+type tabCallbacks struct {
+	// onMessage carries one postMessage envelope plus the sending frame's real
+	// origin as the engine reports it — never what the page claims. See
+	// aetoxMsg for why that distinction is the whole security model.
+	onMessage func(raw, source string)
+	// onNavDone fires when a navigation finishes. ok is whether the page
+	// actually loaded, as opposed to the engine stopping on its own error
+	// page; view is passed in because this can fire before the caller has
+	// finished storing it.
+	onNavDone func(view tabView, ok bool)
 }
 
-// aetoxMsg is the JSON envelope pages post back to Go via
-// window.chrome.webview.postMessage (see metaScript / textScript).
+// hostBackend is one platform's webview host.
+type hostBackend interface {
+	// start brings the host up — its owning thread, message pump, window
+	// class, whatever the platform needs. Idempotent; blocks until ready.
+	start() error
+	// do runs fn on the thread that owns the webviews.
+	//
+	// ALWAYS asynchronous, on every platform. Windows has a dedicated STA
+	// thread for this; GTK and Cocoa require the webviews on the app's *main*
+	// thread, which makes the obvious dispatch_sync/g_main_context_invoke_sync
+	// spelling deadlock — browserSnapshot calls do() and then blocks up to
+	// five seconds waiting for the page to answer, and that is the path the
+	// agent reads pages through. ARCHITECTURE.md §48 Decision 3.
+	do(fn func())
+	// openTab creates a webview at the given physical-pixel bounds and starts
+	// it navigating. Called from inside do, so it is already on the owning
+	// thread. Returns nil if the platform could not create it, having logged
+	// why.
+	openTab(id, url string, x, y, w, h int, cb tabCallbacks) tabView
+}
+
+// aetoxMsg is the JSON envelope pages post back to Go via the platform's script
+// bridge (see metaScript / textScript).
 //
-// SECURITY: any page loaded in the tab can call window.chrome.webview.
-// postMessage itself, at any time, with an arbitrary __aetox envelope — this
-// bridge is not exclusive to our own injected scripts. Two checks guard
-// against that (see onMessage): the "meta" case cross-checks the claimed URL
-// against args.GetSource() (the frame's real origin, reported by the WebView2
-// runtime itself — a page cannot forge this), so a page can't make the
-// address bar show a URL it isn't actually at (phishing-enabling spoof). The
-// "text" case additionally requires a per-request Token minted by
+// SECURITY: any page loaded in the tab can call that bridge itself, at any
+// time, with an arbitrary __aetox envelope — it is not exclusive to our own
+// injected scripts. Two checks guard against that (see onMessage): the "meta"
+// case cross-checks the claimed URL against the sending frame's real origin as
+// reported by the engine itself (a page cannot forge that), so a page can't
+// make the address bar show a URL it isn't actually at (phishing-enabling
+// spoof). The "text" case additionally requires a per-request Token minted by
 // BrowserGetText, so a page can't preempt/replay a fake page-content response
 // into the AI agent's read path. Neither check stops a page from lying within
 // its own real DOM/title — that's inherent to any "agent reads a live page"
@@ -154,7 +128,14 @@ type browserSnapshot struct {
 	Images   []browserImage
 }
 
-const metaScript = `window.chrome.webview.postMessage(JSON.stringify({__aetox:"meta",title:document.title,url:location.href}))`
+// metaScript reports the page's real title and URL back over the bridge. The
+// call itself is the one part of these scripts that is engine-specific —
+// bridgePost is `window.chrome.webview.postMessage` on WebView2 and
+// `window.webkit.messageHandlers.aetox.postMessage` on both WebKits — so it
+// comes from the platform file and everything below is shared.
+func metaScript() string {
+	return bridgePost + `(JSON.stringify({__aetox:"meta",title:document.title,url:location.href}))`
+}
 
 // textScript reads page text and, in the same pass, tags every visible
 // interactive element with a data-aetox-ref so browser_click/browser_type can
@@ -190,8 +171,8 @@ func textScript(token string) string {
     seen[src]=1;
     imgs.push({src:src.slice(0,600),alt:(im.alt||'').trim().replace(/\s+/g,' ').slice(0,120)});
   }
-  window.chrome.webview.postMessage(JSON.stringify({__aetox:"text",token:%q,title:document.title,url:location.href,text:(document.body&&document.body.innerText||"").slice(0,200000),elements:out,images:imgs}));
-})()`, token)
+  %s(JSON.stringify({__aetox:"text",token:%q,title:document.title,url:location.href,text:(document.body&&document.body.innerText||"").slice(0,200000),elements:out,images:imgs}));
+})()`, bridgePost, token)
 }
 
 // clickScript clicks the element tagged with the given ref (see textScript).
@@ -247,7 +228,7 @@ func typeScript(ref int, text string, enter bool) string {
 }
 
 // sameOrigin reports whether a and b share a scheme+host — used to check a
-// page's claimed URL against its real origin as reported by WebView2.
+// page's claimed URL against its real origin as reported by the engine.
 func sameOrigin(a, b string) bool {
 	ua, err1 := url.Parse(a)
 	ub, err2 := url.Parse(b)
@@ -273,8 +254,7 @@ func newMessageToken() string {
 }
 
 type browserTab struct {
-	hwnd     uintptr
-	chromium *edge.Chromium
+	view tabView
 
 	navDone chan struct{} // closed after the first completed navigation
 	navOnce sync.Once
@@ -283,9 +263,9 @@ type browserTab struct {
 	title  string
 	url    string
 	// navOK is the last completed navigation's real outcome. False means the
-	// window is showing Chrome's own error page — a state that used to be
-	// indistinguishable from a loaded page, since NavigationCompleted fires
-	// either way (see the GetIsSuccess binding in third_party/go-webview2).
+	// window is showing the engine's own error page — a state that used to be
+	// indistinguishable from a loaded page, since navigation-completed fires
+	// either way.
 	navOK bool
 
 	visMu  sync.Mutex
@@ -337,143 +317,19 @@ func (t *browserTab) awaitNavigation(ctx context.Context, timeout time.Duration)
 }
 
 type browserHost struct {
-	app *App
+	app     *App
+	backend hostBackend
 
-	mu       sync.Mutex
-	cmds     []func()
-	tabs     map[string]*browserTab
-	lastID   string // most recently opened/shown tab — what browser_read targets
-	threadID uint32
-	parent   uintptr
-	ready    chan struct{}
-	started  bool
-	class    *uint16
+	mu     sync.Mutex
+	tabs   map[string]*browserTab
+	lastID string // most recently opened/shown tab — what browser_read targets
 }
 
 func newBrowserHost(app *App) *browserHost {
-	return &browserHost{app: app, tabs: map[string]*browserTab{}, ready: make(chan struct{})}
+	return &browserHost{app: app, backend: newHostBackend(), tabs: map[string]*browserTab{}}
 }
 
-// start spins up the dedicated STA browser thread (idempotent).
-func (h *browserHost) start() error {
-	h.mu.Lock()
-	if h.started {
-		h.mu.Unlock()
-		<-h.ready
-		return nil
-	}
-	h.started = true
-	h.mu.Unlock()
-
-	parent := findOwnMainWindow()
-	if parent == 0 {
-		debuglog.Msg("browser.start: main window not found")
-		return fmt.Errorf("main window not found")
-	}
-	debuglog.Msg("browser.start: parent hwnd=%#x (pid=%d)", parent, os.Getpid())
-	h.parent = parent
-
-	go h.run()
-	<-h.ready
-	debuglog.Msg("browser.start: host thread ready (tid=%d)", h.threadID)
-	return nil
-}
-
-// findOwnMainWindow returns this process's visible top-level window (the wails
-// main window). Never look it up by TITLE: FindWindowW("Aetox Desktop") matches
-// any window that happens to carry that text — a browser tab showing the dev
-// URL, explorer's taskbar thumbnail host, another instance — and a parent from
-// a foreign process makes every CreateWindowExW child fail with "Access is
-// denied", silently killing all browser tabs.
-func findOwnMainWindow() uintptr {
-	self := uint32(os.Getpid())
-	var found uintptr
-	cb := syscall.NewCallback(func(hwnd, _ uintptr) uintptr {
-		var pid uint32
-		procGetWindowThreadProcessID.Call(hwnd, uintptr(unsafe.Pointer(&pid)))
-		if pid != self {
-			return 1 // keep enumerating
-		}
-		if vis, _, _ := procIsWindowVisible.Call(hwnd); vis == 0 {
-			return 1
-		}
-		found = hwnd
-		return 0 // stop
-	})
-	procEnumWindows.Call(cb, 0)
-	return found
-}
-
-func (h *browserHost) run() {
-	runtime.LockOSThread()
-	procCoInitializeEx.Call(0, coinitApartmentThreaded)
-
-	// Match the main window's DPI awareness context. Windows refuses to
-	// create a child window whose thread runs under a different DPI context
-	// than the parent — CreateWindowExW fails with ERROR_ACCESS_DENIED. A raw
-	// goroutine thread starts on the process default, which does not
-	// necessarily match the wails main window's per-monitor context.
-	if ctx, _, _ := procGetWindowDpiAwarenessCtx.Call(h.parent); ctx != 0 {
-		prev, _, _ := procSetThreadDpiAwarenessCtx.Call(ctx)
-		debuglog.Msg("browser.run: thread DPI ctx set to parent's (prev=%#x)", prev)
-	}
-
-	tid, _, _ := procGetCurrentThreadID.Call()
-	h.threadID = uint32(tid)
-
-	// Child window class; all messages go to DefWindowProc — sizing is driven
-	// explicitly from BrowserSetBounds.
-	wndProc := syscall.NewCallback(func(hwnd, msg, wparam, lparam uintptr) uintptr {
-		r, _, _ := procDefWindowProcW.Call(hwnd, msg, wparam, lparam)
-		return r
-	})
-	className, _ := syscall.UTF16PtrFromString("AetoxBrowserHost")
-	h.class = className
-	wc := wndClassExW{
-		Size:      uint32(unsafe.Sizeof(wndClassExW{})),
-		WndProc:   wndProc,
-		ClassName: className,
-	}
-	atom, _, regErr := procRegisterClassExW.Call(uintptr(unsafe.Pointer(&wc)))
-	debuglog.Msg("browser.run: RegisterClassExW atom=%d err=%v", atom, regErr)
-
-	close(h.ready)
-
-	var msg winMsg
-	for {
-		r, _, _ := procGetMessageW.Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0)
-		if r == 0 {
-			return
-		}
-		h.drain()
-		if msg.Message != wmApp {
-			procTranslateMessage.Call(uintptr(unsafe.Pointer(&msg)))
-			procDispatchMessageW.Call(uintptr(unsafe.Pointer(&msg)))
-		}
-	}
-}
-
-// do queues fn onto the browser thread and wakes its pump.
-func (h *browserHost) do(fn func()) {
-	h.mu.Lock()
-	h.cmds = append(h.cmds, fn)
-	h.mu.Unlock()
-	procPostThreadMsgW.Call(uintptr(h.threadID), wmApp, 0, 0)
-}
-
-func (h *browserHost) drain() {
-	for {
-		h.mu.Lock()
-		if len(h.cmds) == 0 {
-			h.mu.Unlock()
-			return
-		}
-		fn := h.cmds[0]
-		h.cmds = h.cmds[1:]
-		h.mu.Unlock()
-		fn()
-	}
-}
+func (h *browserHost) start() error { return h.backend.start() }
 
 func (h *browserHost) tab(id string) *browserTab {
 	h.mu.Lock()
@@ -481,106 +337,67 @@ func (h *browserHost) tab(id string) *browserTab {
 	return h.tabs[id]
 }
 
-// open creates the child window + webview for a tab (on the browser thread).
+// open creates the webview for a tab, on the thread that owns webviews.
 func (h *browserHost) open(id, url string, x, y, w, hgt int) {
 	debuglog.Msg("browser.open(%s): queueing (url=%s)", id, url)
-	h.do(func() {
-		debuglog.Msg("browser.open(%s): running on browser thread", id)
-		if _, exists := h.tabs[id]; exists {
+	h.backend.do(func() {
+		debuglog.Msg("browser.open(%s): running on the host thread", id)
+		if h.tab(id) != nil {
 			return
 		}
-		hwnd, _, lastErr := procCreateWindowExW.Call(
-			0,
-			uintptr(unsafe.Pointer(h.class)),
-			0,
-			wsChild|wsVisible|wsClipSibl,
-			uintptr(x), uintptr(y), uintptr(w), uintptr(hgt),
-			h.parent, 0, 0, 0,
-		)
-		if hwnd == 0 {
-			debuglog.Msg("browser.open(%s): CreateWindowExW FAILED: %v", id, lastErr)
-			return
-		}
-
-		chromium := edge.NewChromium()
-		chromium.DataPath = webviewUserDataDir("browser")
-		if chromium.DataPath == "" {
-			chromium.DataPath = filepath.Join(os.Getenv("AppData"), "aetox-browser")
-		}
-		chromium.SetErrorCallback(func(err error) {
-			// default handler calls os.Exit(1) — never acceptable for a tab
-			fmt.Fprintln(os.Stderr, "browser tab error:", err)
-			debuglog.Msg("browser tab %s error: %v", id, err)
+		tab := &browserTab{navDone: make(chan struct{})}
+		view := h.backend.openTab(id, url, x, y, w, hgt, tabCallbacks{
+			onMessage: func(raw, source string) { h.onMessage(id, tab, raw, source) },
+			onNavDone: func(v tabView, ok bool) { h.navCompleted(tab, v, ok) },
 		})
-		tab := &browserTab{hwnd: hwnd, chromium: chromium, navDone: make(chan struct{})}
-
-		chromium.MessageCallback = func(message string, _ *edge.ICoreWebView2, args *edge.ICoreWebView2WebMessageReceivedEventArgs) {
-			source, _ := args.GetSource()
-			h.onMessage(id, tab, message, source)
+		if view == nil {
+			return // the backend has already logged why
 		}
-		chromium.NavigationCompletedCallback = func(_ *edge.ICoreWebView2, args *edge.ICoreWebView2NavigationCompletedEventArgs) {
-			// Recorded before navDone is closed, so a waiter that wakes on it
-			// reads this navigation's outcome and not the previous one's. An
-			// unreadable flag counts as success: the tab is usable either way,
-			// and inventing a failure is worse than missing one.
-			ok := true
-			if args != nil {
-				if success, err := args.GetIsSuccess(); err == nil {
-					ok = success
-				} else {
-					debuglog.Msg("browser tab %s: navigation status unavailable: %v", id, err)
-				}
-			}
-			tab.setNavOK(ok)
-			tab.navOnce.Do(func() { close(tab.navDone) })
-			// Force this tab's window to the top of the Z order now that the
-			// page has rendered. The frontend's browser:meta handler used to be
-			// the only thing doing this, which made visibility depend on page
-			// JS delivering a message that passes the origin check — never true
-			// for file:// before the sameOrigin fix, and fragile in general:
-			// the page stayed loaded but composited invisibly behind the app's
-			// own webview. Runs on the browser STA thread (WebView2 callback).
-			tab.visMu.Lock()
-			hidden := tab.hidden
-			tab.visMu.Unlock()
-			if !hidden {
-				procSetWindowPos.Call(hwnd, hwndTop, 0, 0, 0, 0, swpNoMove|swpNoSize|swpShowWindow|swpNoActivate)
-			}
-			// WebView2 keeps zoom per origin, so a cross-site navigation drops
-			// the device-emulation factor back to 1 — re-assert it here.
-			tab.zoomMu.Lock()
-			z := tab.zoom
-			tab.zoomMu.Unlock()
-			if z > 0 {
-				chromium.PutZoomFactor(z)
-			}
-			chromium.Eval(metaScript)
-		}
-
-		debuglog.Msg("browser.open(%s): embedding webview (dataPath=%s)", id, chromium.DataPath)
-		if !chromium.Embed(hwnd) {
-			debuglog.Msg("browser.open(%s): Embed FAILED", id)
-			procDestroyWindow.Call(hwnd)
-			return
-		}
-		debuglog.Msg("browser.open(%s): embed ok, navigating", id)
-		chromium.Resize()
-		procSetWindowPos.Call(hwnd, hwndTop, 0, 0, 0, 0, swpNoMove|swpNoSize|swpShowWindow|swpNoActivate)
+		tab.view = view
 
 		h.mu.Lock()
 		h.tabs[id] = tab
 		h.lastID = id
 		h.mu.Unlock()
-
-		if url != "" {
-			chromium.Navigate(url)
-		}
 	})
 }
 
+// navCompleted is the portable half of "a navigation finished". It takes the
+// view rather than reading tab.view because a fast first navigation can land
+// before open() has stored it.
+func (h *browserHost) navCompleted(tab *browserTab, view tabView, ok bool) {
+	// Recorded before navDone is closed, so a waiter that wakes on it reads
+	// this navigation's outcome and not the previous one's.
+	tab.setNavOK(ok)
+	tab.navOnce.Do(func() { close(tab.navDone) })
+
+	// Raise the tab now that the page has rendered. The frontend's
+	// browser:meta handler used to be the only thing doing this, which made
+	// visibility depend on page JS delivering a message that passes the origin
+	// check — never true for file:// before the sameOrigin fix, and fragile in
+	// general: the page stayed loaded but composited invisibly behind the
+	// app's own webview.
+	tab.visMu.Lock()
+	hidden := tab.hidden
+	tab.visMu.Unlock()
+	if !hidden {
+		view.setVisible(true)
+	}
+
+	// Engines keep zoom per origin, so a cross-site navigation drops the
+	// device-emulation factor back to 1 — re-assert it here.
+	tab.zoomMu.Lock()
+	z := tab.zoom
+	tab.zoomMu.Unlock()
+	if z > 0 {
+		view.setZoom(z)
+	}
+	view.eval(metaScript())
+}
+
 // onMessage handles one postMessage envelope from a tab's page. source is the
-// sending frame's real origin per WebView2 (args.GetSource()) — trustworthy,
-// unlike anything else in the message, which any page script can set freely.
+// sending frame's real origin as the engine reports it — trustworthy, unlike
+// anything else in the message, which any page script can set freely.
 func (h *browserHost) onMessage(id string, tab *browserTab, raw string, source string) {
 	var m aetoxMsg
 	if err := json.Unmarshal([]byte(raw), &m); err != nil || m.Aetox == "" {
@@ -589,7 +406,7 @@ func (h *browserHost) onMessage(id string, tab *browserTab, raw string, source s
 	switch m.Aetox {
 	case "meta":
 		// A page can claim any url it likes in the envelope; only trust it if
-		// it matches where WebView2 says the message actually came from —
+		// it matches where the engine says the message actually came from —
 		// otherwise a page could make the address bar show a URL it isn't at.
 		if !sameOrigin(source, m.URL) {
 			return
@@ -620,6 +437,12 @@ func (h *browserHost) onMessage(id string, tab *browserTab, raw string, source s
 // ---------------------------------------------------------------------------
 // Wails bindings
 // ---------------------------------------------------------------------------
+//
+// Every method below exists on every platform, and none of them is behind a
+// build tag. desktop/frontend/wailsjs/go/main/App.d.ts is generated from this
+// set and committed; a platform that dropped one would regenerate that file
+// without it and break BrowserPane.svelte's imports at vite build time.
+// ARCHITECTURE.md §48 Decision 2.
 
 func (a *App) browserHostLazy() (*browserHost, error) {
 	a.terminalsMu.Lock()
@@ -631,7 +454,7 @@ func (a *App) browserHostLazy() (*browserHost, error) {
 	return h, h.start()
 }
 
-// withTab runs fn against a tab on the browser thread — looking the tab up
+// withTab runs fn against a tab on the host thread — looking the tab up
 // THERE, not here. open() only registers the tab at the very end of its own
 // queued command, so anything that checked host.tab(id) on the caller's
 // goroutine found nil for every call made in the moments after BrowserOpen and
@@ -640,7 +463,7 @@ func (a *App) browserHostLazy() (*browserHost, error) {
 // something else forced a resize. do() is FIFO, so by the time this runs the
 // open ahead of it has finished.
 func (h *browserHost) withTab(id string, fn func(*browserTab)) {
-	h.do(func() {
+	h.backend.do(func() {
 		if t := h.tab(id); t != nil {
 			fn(t)
 		}
@@ -665,20 +488,17 @@ func (a *App) BrowserOpen(id, url string, x, y, w, h int) error {
 
 // BrowserNavigate loads a URL in an existing tab.
 func (a *App) BrowserNavigate(id, url string) {
-	a.withTab(id, func(t *browserTab) { t.chromium.Navigate(url) })
+	a.withTab(id, func(t *browserTab) { t.view.navigate(url) })
 }
 
-// BrowserSetBounds moves/resizes a tab's window (physical pixels, relative to
+// BrowserSetBounds moves/resizes a tab's view (physical pixels, relative to
 // the main window client area).
 func (a *App) BrowserSetBounds(id string, x, y, w, h int) {
-	a.withTab(id, func(t *browserTab) {
-		procSetWindowPos.Call(t.hwnd, hwndTop, uintptr(x), uintptr(y), uintptr(w), uintptr(h), swpShowWindow|swpNoActivate)
-		t.chromium.Resize()
-	})
+	a.withTab(id, func(t *browserTab) { t.view.setBounds(x, y, w, h) })
 }
 
 // BrowserSetZoom scales the page inside a tab — this is what makes the device
-// presets real emulation rather than a small window: with the tab's window sized
+// presets real emulation rather than a small window: with the tab's view sized
 // to deviceWidth*factor, a zoom of `factor` leaves the page a CSS viewport of
 // exactly deviceWidth, so its media queries fire as they would on that device.
 // 1 = no emulation (the pane-filling default).
@@ -690,12 +510,12 @@ func (a *App) BrowserSetZoom(id string, factor float64) {
 		t.zoomMu.Lock()
 		t.zoom = factor
 		t.zoomMu.Unlock()
-		t.chromium.PutZoomFactor(factor)
+		t.view.setZoom(factor)
 	})
 }
 
 // BrowserSetVisible shows/hides a tab (hidden when its dock tab is inactive or
-// the settings overlay is open — a native window always floats above the UI).
+// the settings overlay is open — a native view always floats above the UI).
 func (a *App) BrowserSetVisible(id string, visible bool) {
 	a.withTab(id, func(t *browserTab) {
 		t.visMu.Lock()
@@ -705,40 +525,39 @@ func (a *App) BrowserSetVisible(id string, visible bool) {
 			a.browsers.mu.Lock()
 			a.browsers.lastID = id
 			a.browsers.mu.Unlock()
-			procSetWindowPos.Call(t.hwnd, hwndTop, 0, 0, 0, 0, swpNoMove|swpNoSize|swpShowWindow|swpNoActivate)
-		} else {
-			procShowWindow.Call(t.hwnd, uintptr(swHide))
 		}
+		t.view.setVisible(visible)
 	})
 }
 
-// BrowserBack / BrowserForward / BrowserReload drive history via script — the
-// vtable procs for GoBack/GoForward aren't exposed by the edge wrapper.
+// BrowserBack / BrowserForward / BrowserReload drive history via script — not
+// every engine wrapper exposes GoBack/GoForward, and the script works on all
+// of them.
 func (a *App) BrowserBack(id string)    { a.browserEval(id, "history.back()") }
 func (a *App) BrowserForward(id string) { a.browserEval(id, "history.forward()") }
 func (a *App) BrowserReload(id string)  { a.browserEval(id, "location.reload()") }
 
-// BrowserOpenDevTools opens Chromium's own DevTools on a tab — find-in-page,
+// BrowserOpenDevTools opens the engine's own DevTools on a tab — find-in-page,
 // console, network, element inspection and its screenshot tools, none of which
 // are worth reimplementing in our toolbar.
 func (a *App) BrowserOpenDevTools(id string) {
-	a.withTab(id, func(t *browserTab) { t.chromium.OpenDevToolsWindow() })
+	a.withTab(id, func(t *browserTab) { t.view.openDevTools() })
 }
 
 func (a *App) browserEval(id, js string) {
-	a.withTab(id, func(t *browserTab) { t.chromium.Eval(js) })
+	a.withTab(id, func(t *browserTab) { t.view.eval(js) })
 }
 
-// CloseAllBrowserTabs destroys every native browser window this process still
+// CloseAllBrowserTabs destroys every native browser view this process still
 // holds. Called once by the frontend right after it (re)loads (App.svelte
 // onMount) — a freshly loaded frontend owns zero workbench tabs by
 // definition, so anything still open here is orphaned from a previous
 // frontend lifetime: the Go backend is a long-lived process, but a `wails
 // dev` Vite HMR full-reload (or any webview reload) wipes the JS-side
 // `workbench` store without running BrowserPane's onDestroy, leaving the
-// native WebView2 child window behind with nothing left to reposition or
-// close it — it just floats, stuck at its last bounds. On a genuine fresh
-// app start `a.browsers` is nil and this is a no-op.
+// native view behind with nothing left to reposition or close it — it just
+// floats, stuck at its last bounds. On a genuine fresh app start `a.browsers`
+// is nil and this is a no-op.
 func (a *App) CloseAllBrowserTabs() {
 	if a.browsers == nil {
 		return
@@ -755,17 +574,13 @@ func (a *App) CloseAllBrowserTabs() {
 	}
 }
 
-// BrowserClose destroys a tab's native window.
 func (a *App) BrowserClose(id string) {
 	if host, err := a.browserHostLazy(); err == nil {
 		if t := host.tab(id); t != nil {
 			host.mu.Lock()
 			delete(host.tabs, id)
 			host.mu.Unlock()
-			// ponytail: DestroyWindow only — the WebView2 controller isn't
-			// explicitly Closed (wrapper doesn't expose it); its process is
-			// reclaimed when the app exits.
-			host.do(func() { procDestroyWindow.Call(t.hwnd) })
+			host.backend.do(func() { t.view.destroy() })
 		}
 	}
 }
@@ -799,7 +614,8 @@ func (a *App) browserSnapshot(id string) (browserSnapshot, error) {
 	t.textToken = token
 	t.textMu.Unlock()
 
-	host.do(func() { t.chromium.Eval(textScript(token)) })
+	// This blocks below, so do() must not: see hostBackend.do.
+	host.backend.do(func() { t.view.eval(textScript(token)) })
 
 	select {
 	case snap := <-ch:
@@ -809,13 +625,6 @@ func (a *App) browserSnapshot(id string) (browserSnapshot, error) {
 		t.textCh = nil
 		t.textToken = ""
 		t.textMu.Unlock()
-		// A tab parked on Chrome's own error page never answers — there is no
-		// page script there to answer with. Reporting that as "still loading"
-		// pointed the caller back at waiting for something that was never
-		// going to arrive, instead of at the URL that was wrong.
-		if !t.navLoaded() {
-			return browserSnapshot{}, fmt.Errorf("nothing to read — the page failed to load")
-		}
 		return browserSnapshot{}, fmt.Errorf("page did not respond (still loading?)")
 	}
 }
@@ -831,7 +640,7 @@ func (a *App) BrowserClickRef(id string, ref int) error {
 	if t == nil {
 		return fmt.Errorf("no browser tab %q", id)
 	}
-	host.do(func() { t.chromium.Eval(clickScript(ref)) })
+	host.backend.do(func() { t.view.eval(clickScript(ref)) })
 	return nil
 }
 
@@ -847,6 +656,6 @@ func (a *App) BrowserTypeRef(id string, ref int, text string, enter bool) error 
 	if t == nil {
 		return fmt.Errorf("no browser tab %q", id)
 	}
-	host.do(func() { t.chromium.Eval(typeScript(ref, text, enter)) })
+	host.backend.do(func() { t.view.eval(typeScript(ref, text, enter)) })
 	return nil
 }
