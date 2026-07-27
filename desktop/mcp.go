@@ -16,9 +16,10 @@ import (
 // palette shows in one line. Derived from the live registry rather than a
 // written-down number, so it cannot rot the way a docs count does.
 type ToolCounts struct {
-	Builtin int `json:"builtin"` // compiled in, always on
-	Skill   int `json:"skill"`   // discovered SKILL.md the user added
-	MCP     int `json:"mcp"`     // bridged from configured MCP servers
+	Builtin   int `json:"builtin"`   // compiled in, always on
+	Workbench int `json:"workbench"` // desktop-only tools (browser, ask_user, todo_write)
+	MCP       int `json:"mcp"`       // bridged from configured MCP servers
+	Skill     int `json:"skill"`     // SKILL.md documents the user added — not tools
 }
 
 func (a *App) ToolCounts() ToolCounts {
@@ -30,36 +31,42 @@ func (a *App) ToolCounts() ToolCounts {
 		switch src, _ := a.registry.SourceOf(name); src {
 		case skill.SourceBuiltin:
 			counts.Builtin++
+		case skill.SourceWorkbench:
+			counts.Workbench++
 		case skill.SourceMCP:
 			counts.MCP++
-		default:
+		case skill.SourceSkill:
 			counts.Skill++
 		}
 	}
 	return counts
 }
 
-// SkillInfo is one tool the AI can currently call, for the Tools panel.
+// SkillInfo is one entry in the registry, tool or skill, for the UI lists.
 type SkillInfo struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
-	Source      string `json:"source"` // builtin | external | mcp
+	Source      string `json:"source"` // builtin | workbench | mcp | skill
 }
 
-// ListSkills returns the user-added tools the AI can use — MCP tools and
-// discovered skills — sorted by name. Built-in tools are excluded here because
-// the workbench Tools panel is about what the user plugged in; Settings asks
-// the other question ("what can this thing do at all?") and calls
-// ListBuiltinSkills for the rest. Either way the split is decided here in the
-// backend, which owns each tool's Source, not in the frontend.
-func (a *App) ListSkills() []SkillInfo { return a.skillsFrom(false) }
+// ListTools returns everything the AI can actually run — the compiled-in tools,
+// the desktop's own, and anything bridged from an MCP server — sorted by name,
+// each carrying the source so the UI can group them.
+//
+// Skills are deliberately not in here. A skill is a document that tells the AI
+// how to do something; a tool is a thing it runs. They used to share one list
+// and one word, which is how ask_user and the browser tools ended up shown to
+// the user as add-ons they had installed.
+func (a *App) ListTools() []SkillInfo {
+	return a.registryEntries(func(src skill.Source) bool { return src != skill.SourceSkill })
+}
 
-// ListBuiltinSkills returns the tools compiled into the engine — always
-// available, nothing to install or remove. Settings lists them read-only, so a
-// fresh install stops looking like the AI has no tools at all.
-func (a *App) ListBuiltinSkills() []SkillInfo { return a.skillsFrom(true) }
+// ListSkills returns only the SKILL.md documents the user added.
+func (a *App) ListSkills() []SkillInfo {
+	return a.registryEntries(func(src skill.Source) bool { return src == skill.SourceSkill })
+}
 
-func (a *App) skillsFrom(builtin bool) []SkillInfo {
+func (a *App) registryEntries(keep func(skill.Source) bool) []SkillInfo {
 	if a.registry == nil {
 		return []SkillInfo{} // never nil: §34, a nil slice crashes the frontend
 	}
@@ -72,7 +79,7 @@ func (a *App) skillsFrom(builtin bool) []SkillInfo {
 			continue
 		}
 		src, _ := a.registry.SourceOf(n)
-		if (src == skill.SourceBuiltin) != builtin {
+		if !keep(src) {
 			continue
 		}
 		out = append(out, SkillInfo{Name: n, Description: s.Description(), Source: string(src)})

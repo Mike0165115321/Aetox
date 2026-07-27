@@ -59,9 +59,14 @@ type Tool interface {
 type Source string
 
 const (
-	SourceBuiltin  Source = "builtin"  // compiled-in tools, trusted
-	SourceExternal Source = "external" // discovered SKILL.md files
-	SourceMCP      Source = "mcp"      // tools bridged from an MCP server
+	// The first three are tools: things the AI runs to get work done. The last
+	// is not — a skill is a document telling it how to do something, and
+	// lumping the two under one word ("external") is what let six of Aetox's
+	// own desktop tools show up in the UI as things the user had installed.
+	SourceBuiltin   Source = "builtin"   // tools compiled into the engine
+	SourceWorkbench Source = "workbench" // tools only the desktop app can offer
+	SourceMCP       Source = "mcp"       // tools bridged from an MCP server
+	SourceSkill     Source = "skill"     // a SKILL.md the user added — instructions, not a tool
 )
 
 type registryEntry struct {

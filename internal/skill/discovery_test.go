@@ -126,8 +126,8 @@ func TestRegisterDiscovered_RegistersAsExternal(t *testing.T) {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
 	src, ok := registry.SourceOf("helper_skill")
-	if !ok || src != SourceExternal {
-		t.Fatalf("SourceOf(helper_skill) = %v, %v; want %v, true", src, ok, SourceExternal)
+	if !ok || src != SourceSkill {
+		t.Fatalf("SourceOf(helper_skill) = %v, %v; want %v, true", src, ok, SourceSkill)
 	}
 }
 

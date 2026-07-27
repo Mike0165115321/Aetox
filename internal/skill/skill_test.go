@@ -29,7 +29,7 @@ func TestRegisterRefusesCollision(t *testing.T) {
 	if err := r.Register(&stubSkill{name: "read"}, SourceBuiltin); err != nil {
 		t.Fatalf("first Register: unexpected error: %v", err)
 	}
-	err := r.Register(&stubSkill{name: "read"}, SourceExternal)
+	err := r.Register(&stubSkill{name: "read"}, SourceSkill)
 	if err == nil {
 		t.Fatal("second Register with same name: expected error, got nil")
 	}

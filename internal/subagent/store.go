@@ -151,7 +151,10 @@ func FilterRegistry(parent *skill.Registry, p Profile) *skill.Registry {
 		}
 		source, ok := parent.SourceOf(name)
 		if !ok {
-			source = skill.SourceExternal
+			// Unreachable: name came out of this same snapshot. Skipping beats
+			// inventing a source, which is how a tool ends up filed as
+			// something the user installed.
+			continue
 		}
 		if err := filtered.Register(s, source); err != nil {
 			continue // a duplicate name can't happen in a fresh registry; ignore rather than panic

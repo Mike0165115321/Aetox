@@ -157,7 +157,7 @@ func RegisterDiscovered(registry *Registry, paths []string) []error {
 	}
 	discovered, errs := DiscoverSkills(paths)
 	for _, s := range discovered {
-		if err := registry.Register(s, SourceExternal); err != nil {
+		if err := registry.Register(s, SourceSkill); err != nil {
 			errs = append(errs, err)
 		}
 	}
