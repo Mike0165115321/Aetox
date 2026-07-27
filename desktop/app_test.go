@@ -14,6 +14,25 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/turn"
 )
 
+// isolateUserDirs points every "where does this user's data live" lookup at a
+// temp directory, on every platform.
+//
+// Setting APPDATA/LOCALAPPDATA alone only isolates Windows. os.UserConfigDir
+// reads XDG_CONFIG_HOME on Linux and $HOME/Library/Application Support on
+// macOS, so on those platforms these tests were reading and writing the real
+// ~/.config/aetox — which is how a "missing file returns nil" test started
+// failing the moment another package's tests ran first and left a file there.
+func isolateUserDirs(t *testing.T) string {
+	t.Helper()
+	base := t.TempDir()
+	t.Setenv("APPDATA", base)         // windows: os.UserConfigDir
+	t.Setenv("LOCALAPPDATA", base)    // windows: the legacy preference path
+	t.Setenv("USERPROFILE", base)     // windows: os.UserHomeDir
+	t.Setenv("XDG_CONFIG_HOME", base) // linux: os.UserConfigDir
+	t.Setenv("HOME", base)            // linux + macos: os.UserHomeDir, and macOS' config dir
+	return base
+}
+
 func TestSafeSandboxPathAllowsInside(t *testing.T) {
 	root := t.TempDir()
 	got, err := safeSandboxPath(root, filepath.Join("sub", "file.txt"))
@@ -369,7 +388,7 @@ func TestProjectTreeEmptyRoot(t *testing.T) {
 // discarded on the next startup/OpenProjectFolder call — see
 // desktop/app.go's resolveConfig.
 func TestResolveConfigLoadsApprovalModeFromPreference(t *testing.T) {
-	t.Setenv("AppData", t.TempDir())
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
 	pref := config.ModelPreference{ApprovalMode: string(safety.ApprovalFullAccess)}
 	if err := config.SaveModelPreference(pref); err != nil {
 		t.Fatalf("setup: %v", err)
@@ -383,7 +402,11 @@ func TestResolveConfigLoadsApprovalModeFromPreference(t *testing.T) {
 }
 
 func TestResolveConfigKeepsOptsApprovalModeWithNoSavedPreference(t *testing.T) {
-	t.Setenv("AppData", t.TempDir()) // empty dir — no preference file exists
+	// Both roots have to be empty, not just the new one: with only
+	// AETOX_DATA_ROOT set, resolveConfig still found the legacy preference path
+	// under the developer's real config dir off Windows.
+	isolateUserDirs(t)
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir()) // empty dir — no preference file exists
 
 	cfg := resolveConfig(config.ConfigOptions{ApprovalMode: string(safety.ApprovalUnsafeOnly)})
 	if cfg.ApprovalMode != string(safety.ApprovalUnsafeOnly) {
@@ -410,7 +433,7 @@ func TestProviderWireFormatsEmptyForSingleFormatProvider(t *testing.T) {
 // resolveConfig must round-trip a saved wire-format preference the same way
 // it already does for provider/model/base URL.
 func TestResolveConfigLoadsWireFormatFromPreference(t *testing.T) {
-	t.Setenv("AppData", t.TempDir())
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
 	pref := config.ModelPreference{ModelProvider: "deepseek", ModelWireFormat: "openai-compatible"}
 	if err := config.SaveModelPreference(pref); err != nil {
 		t.Fatalf("setup: %v", err)
@@ -434,7 +457,7 @@ func TestEffectiveWireFormatFallsBackToProviderDefault(t *testing.T) {
 }
 
 func TestEnabledProvidersDefaultsToActiveProviderFromCfg(t *testing.T) {
-	t.Setenv("AppData", t.TempDir()) // no saved preference — untouched install
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir()) // no saved preference — untouched install
 	a := &App{cfg: config.Config{ModelProvider: "deepseek"}}
 	got := a.EnabledProviders()
 	if len(got) != 1 || got[0] != "deepseek" {
@@ -443,7 +466,7 @@ func TestEnabledProvidersDefaultsToActiveProviderFromCfg(t *testing.T) {
 }
 
 func TestSetProviderEnabledAddsAndRemoves(t *testing.T) {
-	t.Setenv("AppData", t.TempDir())
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
 	a := &App{cfg: config.Config{ModelProvider: "deepseek"}}
 
 	got, err := a.SetProviderEnabled("openai", true)
@@ -472,7 +495,7 @@ func TestSetProviderEnabledAddsAndRemoves(t *testing.T) {
 }
 
 func TestSetProviderEnabledUnknownProviderErrors(t *testing.T) {
-	t.Setenv("AppData", t.TempDir())
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
 	a := &App{cfg: config.Config{ModelProvider: "deepseek"}}
 	if _, err := a.SetProviderEnabled("not-a-real-provider-xyz", true); err == nil {
 		t.Fatal("expected an error for an unrecognized provider name")
@@ -581,6 +604,62 @@ func TestFreshInstallDefaultsToTheGuideModel(t *testing.T) {
 	}
 	if cfg.ModelName != "aetox-grid" {
 		t.Errorf("fresh install model = %q, want aetox-grid — a blank name shows nothing in the picker", cfg.ModelName)
+	}
+}
+
+// Opening a project must not change the model this window is running on.
+// reload() used to re-resolve from model-preference.json — a global file every
+// other Aetox window and the CLI also write — so a project switch adopted
+// someone else's model mid-session (see desktop/app.go reload).
+func TestReloadKeepsTheRunningModelWhenTheGlobalPreferenceChanges(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+	a := &App{}
+	a.applyConfig(config.Config{
+		SandboxRoot:   t.TempDir(),
+		ModelProvider: "aetox",
+		ModelName:     "aetox-grid",
+		ApprovalMode:  string(safety.ApprovalFullAccess),
+	})
+
+	// Another instance writes the shared preference file out from under us.
+	if err := config.SaveModelPreference(config.ModelPreference{
+		ModelProvider: "aetox",
+		ModelName:     "aetox-think:test",
+		ApprovalMode:  string(safety.ApprovalAsk),
+	}); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	root := t.TempDir()
+	a.reload(config.ConfigOptions{RootPath: root, ApprovalMode: string(safety.ApprovalFullAccess)})
+
+	if a.cfg.ModelName != "aetox-grid" {
+		t.Errorf("model after project switch = %q, want aetox-grid (the running model must survive)", a.cfg.ModelName)
+	}
+	if a.cfg.ApprovalMode != string(safety.ApprovalFullAccess) {
+		t.Errorf("approval mode after project switch = %q, want %q", a.cfg.ApprovalMode, safety.ApprovalFullAccess)
+	}
+	if a.cfg.SandboxRoot != root {
+		t.Errorf("sandbox root after project switch = %q, want %q (the root is the one thing reload changes)", a.cfg.SandboxRoot, root)
+	}
+}
+
+// The other half of the same branch: startup has no running model, so it must
+// still load the one the user saved last time.
+func TestReloadLoadsTheSavedModelOnFirstBootstrap(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+	if err := config.SaveModelPreference(config.ModelPreference{
+		ModelProvider: "aetox",
+		ModelName:     "aetox-think:test",
+	}); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	a := &App{} // nothing bootstrapped yet — this is App.startup
+	a.reload(config.ConfigOptions{RootPath: t.TempDir()})
+
+	if a.cfg.ModelName != "aetox-think:test" {
+		t.Errorf("model on first bootstrap = %q, want the saved aetox-think:test", a.cfg.ModelName)
 	}
 }
 

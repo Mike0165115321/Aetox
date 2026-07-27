@@ -1262,8 +1262,28 @@ func (a *App) SwitchApprovalMode(mode string) (ModelInfo, error) {
 	return a.GetModelInfo(), nil
 }
 
+// reload re-points the engine at a different project root. Only the root
+// changes — the model this window is running on stays put.
+//
+// It used to re-run resolveConfig on every switch, which re-reads
+// model-preference.json: a single global file (config.PreferencePath is under
+// DataRoot, not per-project) that the CLI and every other open Aetox window
+// also write. So opening a project silently adopted whoever wrote it last, and
+// applyConfig then persisted that value back — one window's test model spread
+// to the rest and stuck. The log signature was a bootstrap that flipped model
+// *and* approval mode in one line, which no Switch* call can produce (they all
+// copy a.cfg).
+//
+// The first bootstrap has no running model to keep, so startup still resolves
+// from disk — that is how the user's saved model gets loaded at launch.
 func (a *App) reload(opts config.ConfigOptions) {
-	a.applyConfig(resolveConfig(opts))
+	if a.cfg.ModelProvider == "" {
+		a.applyConfig(resolveConfig(opts))
+		return
+	}
+	next := a.cfg
+	next.SandboxRoot = config.Load(opts).SandboxRoot
+	a.applyConfig(next)
 }
 
 // applyConfig re-bootstraps the engine from an already-resolved config, then
