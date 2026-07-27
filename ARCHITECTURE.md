@@ -1768,6 +1768,133 @@ The general shape is worth keeping: **an environment variable that names a Windo
 
 ---
 
+## 49. Decision — The Agent Can Finally Run What It Writes: `shell` and `git` Reach the Model (2026-07-28)
+
+**The gap, and how long it hid.** [ADR 0001](docs/adr/0001-native-tool-calling-foundation.md) set a phase-1 rule — "`shell` is not exposed as an automatic model tool", available "only through explicit user command paths" — and a phase-3 exit: "keep `shell` manual until narrower tools prove sufficient." The narrower tools shipped: `read`/`grep` (§15), `glob`/`apply_patch`/`diagnostics` (§21, §27). The exit condition was met and never checked, so for the whole life of the desktop product the agent could edit code and **never once run it** — no `go test`, no build, no linter, no package install, no `git diff` of its own work. Explore→Read→Edit→**Verify** was missing its last step, and the loop's own name says so.
+
+Two things made this worse than an unfinished phase:
+
+1. **The docs had already moved on.** §22's amendment justified deleting `computer` by saying the machine half was "covered … by `shell`", and §44 justified a sub-agent deny-list with "`shell` stays, so this is not a wall". Both describe a world where the model has the tool. Neither was true.
+2. **The UI claimed it.** After `0ccee0e` split tools from skills, `ListTools` ([desktop/mcp.go](desktop/mcp.go)) returns every registry entry whose `Source` is not `SourceSkill` — which includes `shell` and `git`, since they are `SourceBuiltin`. The model's list is built from a *different* filter: `ToolDefinitions()` ([internal/skill/dispatcher.go](internal/skill/dispatcher.go)) keeps only entries that satisfy the `Tool` interface. Settings therefore listed a capability under "Tools" that was never sent. **`Source` says where a thing came from; `Tool` says whether the model can call it. They are not the same question, and the Settings page can only answer the first.**
+
+**The change.** `ToolDefinition()` + `ExecuteTool()` on [shell.go](internal/skill/shell.go) and [git.go](internal/skill/git.go) — the two methods that were missing, nothing else about either tool touched. `shell` takes one `command` string; `git` takes an `action` enum plus `args`, with the enum built from `allowedGitReadActions` rather than restated, so the schema cannot drift from the allowlist it is supposed to mirror (sorted, because an unsorted enum reshuffles the tool payload every turn and misses the provider's prefix cache — the same reason `Registry.Names` sorts).
+
+**What did not change is the point.** Everything that guards a shell command was already built and already in the path: `safety.AssessCommand`'s `EffectExecuteShell` branch with `isShellHighRisk` on the command word, `PermissionConfig.Resolve`'s per-tool patterns, the approval prompt, the audit log, `cappedWriter`'s 1 MiB ceiling (§28), `proc.KillOnCancel`'s process-tree kill (§28), rtk rewriting (§13.5), and the sandbox root. Under the default `ask` mode a human still approves every call. This decision hands the model a door that was already fitted with every lock — it had simply never been shown the door.
+
+**The one non-obvious wiring detail.** `toolCallToArgs` ([internal/turn/executor.go](internal/turn/executor.go)) translates a tool call into the `[]string` that `safety` reads, and it had no case for either tool. Without one, `AssessCommand("shell", nil)` takes the `len(args) == 0` branch and returns **RiskHigh, "shell with empty command"** for every call alike — `go test` and `rm -rf` rendered identically in the prompt, which is how a user learns to click through the one prompt that matters. So `shell` now passes `strings.Fields(command)` (tokenized, because `isShellHighRisk` reads the command word and its flags separately) and `git` passes `action` followed by its arguments — the same shape the text path produces, so one permission rule matches whether a human typed the command or the model called the tool.
+
+**The pin that will catch the next regression.** `cliOnlySkills` in [desktop/tool_coverage_test.go](desktop/tool_coverage_test.go) is now `{echo, fs, help}`, and both tools got a real case in the coverage test: `shell` runs `echo` and its output is checked, `git` runs `status --short` against a sandbox the fixtures now `git init`. That test failing is what would have caught this years earlier — it pins the hidden set, and the hidden set was simply never questioned once written down.
+
+**Recorded, not fixed, because they are separate work:** a tool is abandoned after 60 seconds (`toolExecutionTimeout`), which a full suite on a large repo will exceed, and there is no background execution at all — no dev server, no watch mode, no long build. `shell`'s description tells the model both limits rather than letting it discover them as failures.
+
+---
+
+## 50. Decision — Four Parameters the Standard Tools Have and Ours Did Not (2026-07-28)
+
+§49 asked whether the model has a tool at all. This asks whether the tools it has are as good as the ones it is used to. Every model Aetox drives has been trained against Claude Code's and opencode's tool schemas, so a missing parameter is not only a missing capability — it is a capability the model *expects* and works around badly. All four below were found by dumping Aetox's real tool definitions and diffing them against those two, parameter by parameter, rather than by reading our own source and deciding it looked complete.
+
+**1. `edit` gained `replace_all`.** Renaming a symbol at ten call sites in one file previously meant ten `apply_patch` entries, each carrying enough surrounding context to be unique, or a whole-file `write`. The uniqueness guard stays the default and stays right — a model that meant one call site and matched eight has made a mistake worth stopping — so the error now names `replace_all` as the way through instead of only demanding more context. Line counts multiply by the number of occurrences replaced, because the timeline's "+9 −0" should describe the change that happened.
+
+**2. `read` numbers its lines.** Both references hand the model `cat -n` output; Aetox handed it bare text, so the model could cite a location only by quoting the code back, and "which line is that" cost a second call to `grep`. Numbering is `%6d\t`, the file's own numbers rather than a count from the top of the page — paging that renumbered from 1 would make every citation past page one wrong. **The prefix is not in the file**, which makes it a hazard for the two exact-match tools: `read`, `edit` and `apply_patch` all now say so in their descriptions, and `read_test.go` pins the exact format, because a change to it silently breaks a promise those descriptions make. `fs cat` opts out via a new argument to `readTextLines` — it prints to a human who asked for the file, not to a model that has to cite it.
+
+**3. `grep` gained `output_mode`, `head_limit` and `offset`.** "Which files mention this" is the commonest question asked of a code search, and answering it with every matching line costs one to two orders of magnitude more tokens than answering it with a list of paths — `files_with_matches` and `count` answer it directly. The paging pair fixes a genuine dead end: the 200-match cap had no way past it, so a search that hit the ceiling left the model inventing a narrower pattern, and the marker now names the offset to resume from. `head_limit` may only tighten the cap, never raise it. In the file modes the cap counts *files*, so a repo-wide search stops walking once it has the page it was asked for.
+
+**4. `shell` gained `description` and `timeout_seconds`.** `description` is what the user reads on the timeline row — "run the speech tests" rather than a wrapped command line — which required `description` to outrank `command` in `model.ArgSubjectKeys`; `task` has no `command`, so nothing else moved. `timeout_seconds` is the first per-call override of the 60-second guard, and it lives in `internal/turn` because that is where the deadline is enforced, not in the skill: `toolCallDeadline` reads it for `shell` alone (nothing else knows how long its own work takes), clamps to ten minutes, and falls back to the default on anything absent, unparseable, zero or negative — a bad timeout is not worth refusing to run over. The 60-second default was already too short for this repo's own suite, which §49 recorded and this pays.
+
+**Still open, and deliberately not bundled here:** background execution (`run_in_background` plus a way to read and kill a running command), images reaching the model at all rather than through OCR, and checkpoint/undo. Each is a design, not a parameter.
+
+---
+
+## 51. Decision — Models With Eyes Get the Picture; OCR Becomes the Fallback It Was Always Meant to Be (2026-07-28)
+
+**What was wrong, and why it took this long to see.** §22 and §31 built four "senses" tools on a premise that was true when they were written: *most models have no vision at all* ([image_ocr.go](internal/skill/image_ocr.go) says so in its own comment). `image_ocr` turns a screenshot into the letters inside it. For a blind model that is the whole picture. For every model shipped since, it is a picture thrown away — a UI bug screenshot, a diagram, a chart, a design mock all arrive as a handful of stray words. The owner named the trap exactly: the design solved *"make a model that cannot see understand the meaning"* so thoroughly that nobody went back and asked whether the models that **can** see were being served at all. They were not: `Message.Content` was a `string`, so no image could reach any provider by any route.
+
+**The fix is not a second model.** Asking a separate vision model to describe the picture costs an extra round trip, an extra key, and — the part that actually kills it — that model has none of the conversation. It can answer "what is in this image", never "why does this layout look wrong given what we just changed".
+
+**`Message.Images []Image`, `json:"-"`.** Raw bytes plus a media type, deliberately not base64: the three wire formats disagree about the envelope, and holding the encoded form would mean decoding it back to re-wrap it. The `json:"-"` is the load-bearing part — each adapter owns its own shape, and an adapter that has not been taught about images sends the text alone rather than an invalid body.
+
+- **OpenAI-compatible** takes content parts, so `[]Message` could no longer be marshalled straight into the payload. `openAIRequestMessage` mirrors `Message` field for field, tag for tag **and in the same order**, differing only in `content` being `any`. Go emits keys in field order, so a message with no image serializes to exactly the bytes it did before — pinned by a test that marshals both and compares, because the conversation prefix is what providers cache and a reordered key would miss that cache on every turn for every user.
+- **Anthropic** already built `[]anthropicContentBlock`, so this is one new block type plus a nested `source` object. One trap: an image with no caption must **not** carry an empty text block — the API rejects it.
+- **Ollama** wants bare base64 in a sibling `images` field, no media type, no `data:` prefix. Getting that wrong is an image silently ignored, which is why it has its own test.
+
+**`ResolveVision(provider, model)` decides, and unknown means blind.** Modelled on `ResolveThinkingCapabilities`: matched on substrings of the model id rather than a table of exact ids, because ids churn weekly (dated snapshots, `:free`, `:nitro`, `:q4_K_M`). Text-only markers win over family markers, so a family with one sighted member and one text-only member does not call both sighted. An unrecognized model is treated as blind on purpose — that costs a working OCR path, while the other way costs an image silently dropped and an answer invented from the caption, with nothing in the transcript to say so.
+
+**Threading, and the one rule that matters.** `TurnOptions.Images` carries them, set per `ExecuteWithImages` call and never on the executor, so an attachment cannot leak into the next question. In `cognitive`, `addUserTurn` attaches them to the message that **opens** the turn and to nothing else: every later `RoleUser` entry in the same loop — an interjection, the empty-reply nudge, the DSML nudge — is Aetox talking to the model, and re-attaching there would resend the image every round. `memory.Context.AddMessage` rebuilds messages field by field and had to be taught the new one, or the image would vanish between the composer and the provider with no visible symptom.
+
+**Where the decision is made.** `App.visionAttachments` ([desktop/app.go](desktop/app.go)) reads the marker line the composer already appends, and either loads the bytes and rewrites that line — a model holding the picture should not also be told to go OCR it — or changes nothing at all. Sandbox escape, an unreadable file and a non-image type all fall back to leaving the line alone rather than erroring: `image_ocr` resolves paths through the same guard and will refuse them in terms the model already understands. The frontend is untouched, and the transcript keeps what the composer actually sent.
+
+**Not done, and next:** the model asking to look at an image it found itself. Anthropic allows image blocks inside `tool_result`, so `read` could return one directly; the OpenAI-compatible APIs do not, and the workaround — a synthetic user message carrying the image after the tool result — is tool-loop plumbing, not an adapter change. Separate decision, separate work.
+
+---
+
+## 52. Decision — The Sweep Behind §50: One Real Defect and Four Dead Ends (2026-07-28)
+
+§50 compared tool *schemas* against Claude Code's and opencode's. This pass compared tool *behaviour*, by driving every remaining tool through a throwaway test and reading what came back instead of reading the source and deciding it looked right. That distinction found something the schema diff could not.
+
+**`write` had been corrupting every file it wrote.** [write.go](internal/skill/write.go) passed the content through `stringSlice`, which trims each element and drops the empty ones. Driven for real, that is:
+
+```
+in="package main\n\nfunc main() {}\n"  → out="package main\n\nfunc main() {}"
+in="  indented first line\nsecond\n"   → out="indented first line\nsecond"
+in="\n\nleading blank lines\n"         → out="leading blank lines"
+content:""                             → error "usage: write <path> <content>"
+```
+
+Every file written by the agent lost its trailing newline; any file whose first line was indented — YAML, a Python block, a continued expression — lost that indentation; an empty file could not be created at all. The fix is to take the raw `[]string`, which is **what [edit.go](internal/skill/edit.go) already does, with a comment naming this exact hazard**. The lesson is not "write was wrong"; it is that a hazard documented at one call site does not fix the sibling call site, and only running the tool would have shown it. `TestWriteSkillWritesExactBytes` now compares bytes, because "close enough" is precisely what hid this.
+
+**Three dead ends, all the same shape: a cap with no way past it.**
+
+- **`glob`** stopped at 300 paths and said "narrow the pattern". It now takes `head_limit`/`offset` and names the offset to resume from, the same as `grep` gained in §50. Sorting happens before paging, so page two continues page one's newest-first order rather than reordering it. A `maxScan` ceiling bounds the walk, and the caveat that past it the ordering is over what the walk reached rather than the whole tree is marked rather than hidden.
+- **`list`** returned bare names, so `sub` and `sub.txt` were the same kind of thing on the page and the only way to tell was to call `list` again and see whether it errored. Directories now end in `/`.
+- **`diagnostics`** took one file, so "is anything I just changed broken" meant one call per file — and in practice meant asking about one and assuming the rest. It now accepts a folder, walks it with the same exclusions `grep` and `glob` use, and reports how many files it checked and how many it skipped. Bounded at 40 files because each is a round trip and the turn abandons a tool at 60 seconds; a partial answer that says how far it got beats a complete one that never arrives.
+
+**`web_fetch` gained a cache and a `prompt`.** The cache is 15 minutes, matching Claude Code's, because research is a walk back and forth over the same few pages and the second walk should cost nothing — counted at the test server, since "it returned the same text" is also true of a cache that never worked. `prompt` is the larger one: a documentation page is tens of thousands of characters and the model usually wants one paragraph, and every character of the rest stays in context for the rest of the session. The seam is `RegistryOptions.Digest`, a **function** rather than a `model.Provider` — `internal/skill` has no business knowing how a completion is made, and a func is what a test supplies in one line. Nil is a supported configuration (the CLI builds its registry with no provider in hand) and means the tool behaves exactly as it always did. So does a digester that errors, and so does a page short enough that the round trip would cost more than the page: **every failure returns the full page**, because the question was only ever an optimization and the page is already in hand.
+
+**Left alone, with reasons:** `delete` still refuses directories (`shell` covers it now, under approval); `apply_patch` still cannot create files (`write` does); `web_search` is still a DuckDuckGo HTML scrape, which owes nobody an API key but will break the day their markup changes — worth knowing, not worth pre-emptively rewriting; MCP is still tools-only, no resources or prompts or OAuth, which is where the official Go SDK and every server we have met agree the value is.
+
+---
+
+## 53. Decision — The Three That Were Designs, Not Parameters (2026-07-28)
+
+§50 and §52 closed everything that was a missing argument or a wrong line of code. What was left were three capabilities with no home in the existing shapes at all. Each gets its own seam here.
+
+### 53.1 Background commands — `run_in_background`, `shell_output`, `shell_kill`
+
+`shell` runs a command and waits. That covers a test run and a build, and it cannot cover the other half of development — a dev server, a watch build, a log tail — because those never exit, and **never exiting is not a slow command, it is a different shape of work**. Before this the model could not start one at all: it would hang until the deadline and be killed with nothing to show.
+
+Three tools over one runner, the arrangement §44 already uses for `task`. The model holds a **handle**, never a pid, so it cannot reach a process Aetox did not start. Four decisions worth keeping:
+
+- **`context.Background()`, not the turn's context.** A background command whose whole point is to outlive the answer that started it cannot be tied to that answer's lifetime. What still stops them is §24's job object, which every child is already inside — so nothing outlives the app, which is the property that actually matters.
+- **The buffer keeps the tail, not the head.** `cappedWriter` keeps the first 1 MiB, which is right for a command that finishes and exactly wrong for one that is still printing: for a server the interesting line is always the most recent. The read cursor slides with the buffer, or the next read replays bytes the caller already had.
+- **Output is consumed.** Each `shell_output` returns only what is new. A model polling a chatty server otherwise pays for every line once per poll.
+- **A killed job keeps its unread output.** The handle outlives the process on purpose: the reason it was killed is usually in the last few lines it printed.
+
+### 53.2 `read` opens an image — the other half of §51
+
+§51 got a *user's* attachment to a sighted model. This gets a file the model found itself: `read` on a `.png` returns the picture rather than the refusal that points at `image_ocr`. `RegistryOptions.Vision` decides, resolved by the same `model.ResolveVision` the attachment path uses, and false everywhere it is unknown — a blind model still gets exactly the refusal it always got, naming exactly the tool that can help it.
+
+**The plumbing decision:** a picture cannot ride inside the tool result. Anthropic allows an image block in `tool_result`, the OpenAI-compatible APIs do not, and Ollama has no `tool_result` shape at all. Rather than three code paths, the tool loop appends **one follow-up user message** carrying the image, which works on all three. It costs one extra message in history and it says which call it belongs to — a user message the user did not send is otherwise indistinguishable from one they did. `skill.Output.Images` is how the tool says so, and the tool callback's signature grew a `[]model.Image` to carry it out of `internal/turn`.
+
+### 53.3 Undo — `internal/snapshot`
+
+The only thing between an agent and a bad edit was the approval prompt, and approval is a judgement made *before* seeing the result. When the result is wrong, the user's own git history was the entire safety net — which works exactly as well as they commit.
+
+The design is opencode's, read from its source ([docs/opencode-study/snapshot.md](docs/opencode-study/snapshot.md)) rather than invented, and it earns its place by **adding nothing**: no storage format, no database, no daemon, no new dependency. A **shadow git repository** per project lives in Aetox's data root with its work tree pointed at the real project; a snapshot is a **git tree object** from `write-tree`; `alternates` links the shadow store to the project's own objects so a committed file is never stored twice.
+
+What that buys, and what each is pinned by a test for:
+
+- **The user's repository never notices.** No commits, no staged changes, no stash, nothing in `git status`. This is the property that makes it safe to run on every turn, so it is asserted directly rather than assumed.
+- **`.gitignore` is obeyed**, because it is already git's answer to "what is not the user's code" and a snapshot has no business disagreeing.
+- **Restore is per file.** Undoing one bad edit must not throw away the four good ones made beside it.
+- **"Restore to before" includes "before it existed"** — a file the agent created is deleted, or a created file could never be undone.
+- **Undo is one turn deep.** The question a user asks is "undo what it just did", asked immediately; an undo stack invites the far more dangerous "undo the last six" long after the reasons are forgotten. Pressing it twice is a no-op, because the restore is itself the state now.
+
+Unavailable is an ordinary condition, not a failure: no git, or a folder that is not a repository, means no undo and no fuss — `App.snapshots` is nil and every caller is written for nil.
+
+**Not done:** the button. `UndoLastTurn` and `PendingUndo` are bound and tested; putting them in front of the user is frontend work, and [Chat.svelte](desktop/frontend/src/lib/Chat.svelte) currently carries uncommitted changes of the owner's that this should not collide with.
+
+---
+
 ## Validation
 
 1. **Claim traceability:** every claim above cites a file or an existing project doc; the two `Unverified`/`Inferred, Verify first: Yes` items are marked as such, not stated as fact.
