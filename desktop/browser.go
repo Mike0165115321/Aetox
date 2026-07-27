@@ -11,6 +11,7 @@ package main
 // onto that thread via a command queue + PostThreadMessage(WM_APP) wake-up.
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -281,6 +282,11 @@ type browserTab struct {
 	metaMu sync.Mutex
 	title  string
 	url    string
+	// navOK is the last completed navigation's real outcome. False means the
+	// window is showing Chrome's own error page — a state that used to be
+	// indistinguishable from a loaded page, since NavigationCompleted fires
+	// either way (see the GetIsSuccess binding in third_party/go-webview2).
+	navOK bool
 
 	visMu  sync.Mutex
 	hidden bool // BrowserSetVisible(false); nav-completed re-glue must not surface hidden tabs
@@ -297,6 +303,37 @@ func (t *browserTab) meta() (title, url string) {
 	t.metaMu.Lock()
 	defer t.metaMu.Unlock()
 	return t.title, t.url
+}
+
+func (t *browserTab) setNavOK(ok bool) {
+	t.metaMu.Lock()
+	t.navOK = ok
+	t.metaMu.Unlock()
+}
+
+func (t *browserTab) navLoaded() bool {
+	t.metaMu.Lock()
+	defer t.metaMu.Unlock()
+	return t.navOK
+}
+
+// awaitNavigation blocks until the tab's first navigation completes, then
+// reports whether the page actually loaded. Waiting alone is not enough:
+// "navigation completed" only says the engine stopped, not that it stopped on
+// the page that was asked for, so a caller that trusted navDone reported
+// success over a File-not-found page and kept working from it.
+func (t *browserTab) awaitNavigation(ctx context.Context, timeout time.Duration) error {
+	select {
+	case <-t.navDone:
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(timeout):
+		return fmt.Errorf("page did not finish loading")
+	}
+	if !t.navLoaded() {
+		return fmt.Errorf("page failed to load — not found, or unreachable")
+	}
+	return nil
 }
 
 type browserHost struct {
@@ -481,7 +518,20 @@ func (h *browserHost) open(id, url string, x, y, w, hgt int) {
 			source, _ := args.GetSource()
 			h.onMessage(id, tab, message, source)
 		}
-		chromium.NavigationCompletedCallback = func(_ *edge.ICoreWebView2, _ *edge.ICoreWebView2NavigationCompletedEventArgs) {
+		chromium.NavigationCompletedCallback = func(_ *edge.ICoreWebView2, args *edge.ICoreWebView2NavigationCompletedEventArgs) {
+			// Recorded before navDone is closed, so a waiter that wakes on it
+			// reads this navigation's outcome and not the previous one's. An
+			// unreadable flag counts as success: the tab is usable either way,
+			// and inventing a failure is worse than missing one.
+			ok := true
+			if args != nil {
+				if success, err := args.GetIsSuccess(); err == nil {
+					ok = success
+				} else {
+					debuglog.Msg("browser tab %s: navigation status unavailable: %v", id, err)
+				}
+			}
+			tab.setNavOK(ok)
 			tab.navOnce.Do(func() { close(tab.navDone) })
 			// Force this tab's window to the top of the Z order now that the
 			// page has rendered. The frontend's browser:meta handler used to be
@@ -759,6 +809,13 @@ func (a *App) browserSnapshot(id string) (browserSnapshot, error) {
 		t.textCh = nil
 		t.textToken = ""
 		t.textMu.Unlock()
+		// A tab parked on Chrome's own error page never answers — there is no
+		// page script there to answer with. Reporting that as "still loading"
+		// pointed the caller back at waiting for something that was never
+		// going to arrive, instead of at the URL that was wrong.
+		if !t.navLoaded() {
+			return browserSnapshot{}, fmt.Errorf("nothing to read — the page failed to load")
+		}
 		return browserSnapshot{}, fmt.Errorf("page did not respond (still loading?)")
 	}
 }

@@ -34,7 +34,17 @@ callback; the `os.Exit` fired regardless.
 4. `Embed` returns `false` on `embedFailed`, so `desktop/browser.go` destroys
    the orphan child window instead of navigating a nil webview.
 
+## A second, unrelated patch
+
+`pkg/edge/ICoreWebView2NavigationCompletedEventArgs.go` binds `GetIsSuccess`.
+Upstream declares the vtbl slot but no method, so every `NavigationCompleted`
+looked identical whether the page loaded or Chrome rendered its own error page
+— `browser_open` reported success over `ERR_FILE_NOT_FOUND`. The sibling
+`pkg/webview2` copy of this interface already binds it; this is the same
+binding, in the `edge` package's own idiom.
+
 ## Upgrading go-webview2
 
-Re-copy the module, then re-apply the four `AETOX PATCH` blocks. Keep the
-version in this note and the root `go.mod` require in sync.
+Re-copy the module, then re-apply the four `AETOX PATCH` blocks plus the
+`GetIsSuccess` binding above. Keep the version in this note and the root
+`go.mod` require in sync.
