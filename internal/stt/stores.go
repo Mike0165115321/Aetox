@@ -46,7 +46,6 @@ func Stores(opts Options) []Store {
 			stores = append(stores, Store{Label: "โฟลเดอร์ที่คุณตั้งไว้", Dir: dir})
 		}
 	}
-	stores = append(stores, KnownExternalStores()...)
 
 	seen := make(map[string]bool, len(stores))
 	out := make([]Store, 0, len(stores))
@@ -66,34 +65,22 @@ func Stores(opts Options) []Store {
 	return out
 }
 
-// KnownExternalStores returns the model directories other local-AI tools use on
-// this machine, whether or not they exist — callers filter. Aetox looks here so
-// a user who does not know where their models live does not have to find out.
-func KnownExternalStores() []Store {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		home = ""
-	}
-	join := func(parts ...string) string {
-		if home == "" {
-			return ""
-		}
-		return filepath.Join(append([]string{home}, parts...)...)
-	}
-	stores := []Store{
-		{Label: "Ollama", Dir: envOr("OLLAMA_MODELS", join(".ollama", "models"))},
-		{Label: "LM Studio", Dir: join(".lmstudio", "models")},
-		{Label: "LM Studio", Dir: join(".cache", "lm-studio", "models")},
-		{Label: "Hugging Face cache", Dir: envOr("HF_HOME", join(".cache", "huggingface", "hub"))},
-	}
-	out := make([]Store, 0, len(stores))
-	for _, s := range stores {
-		if strings.TrimSpace(s.Dir) != "" {
-			out = append(out, s)
-		}
-	}
-	return out
-}
+// Ollama's, LM Studio's and the HuggingFace cache's model folders were scanned
+// here too, on the reasoning that someone who already has 40GB of models should
+// not have to download again. That reasoning was about LLMs and does not carry
+// to speech:
+//
+//   - Ollama stores content-addressed blobs (models/blobs/sha256-…) with no
+//     file names at all, so a name glob can never match one.
+//   - LM Studio keeps .gguf under publisher/repo — a different format for a
+//     different runtime, which whisper.cpp cannot load.
+//   - The HuggingFace cache does hold real ggml file names, but nested under
+//     models--org--repo/snapshots/<sha>/, and InstalledModels globs one level
+//     deep by design.
+//
+// Checked against a machine with Ollama actually installed: zero matches in any
+// of the three. They were folders the picker promised to search and never
+// could. Options.ExtraModelDirs remains for a user who keeps models elsewhere.
 
 // shippedModelDir is <install dir>/models — the starter model the Windows
 // installer unpacks so a fresh install can transcribe without the user
