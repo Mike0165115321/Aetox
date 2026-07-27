@@ -507,3 +507,83 @@ func TestOpenAICompatibleProviderStreamCollectsReasoningAndContent(t *testing.T)
 		t.Fatalf("unexpected usage: got %+v want %+v", response.Usage, wantUsage)
 	}
 }
+
+// The sibling of TestOpenAICompatibleProviderAllowsReasoningOnlyResponse for
+// the other field name. Ollama's OpenAI-compatible endpoint and llama.cpp
+// (LM Studio's runtime) send "reasoning", not DeepSeek's "reasoning_content".
+// Reading only the latter dropped the whole answer and reported a healthy
+// server as "response has empty text" — measured against Ollama 0.32 +
+// ornith:9b, whose first token always goes to the reasoning channel.
+func TestOpenAICompatibleProviderReadsPlainReasoningField(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"model": "ornith:9b",
+			"choices": [
+				{"message": {"role":"assistant", "content":"", "reasoning":"The"}, "finish_reason":"length"}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	requireKey := false
+	provider, err := NewOpenAICompatibleProvider(OpenAICompatibleConfig{
+		Provider: "lmstudio", Model: "ornith:9b", BaseURL: server.URL, RequireAPIKey: &requireKey,
+	})
+	if err != nil {
+		t.Fatalf("new provider failed: %v", err)
+	}
+
+	response, err := provider.Complete(context.Background(), Request{
+		Messages: []Message{{Role: RoleUser, Content: "ping"}},
+	})
+	if err != nil {
+		t.Fatalf("a reasoning-only answer must not read as a failure: %v", err)
+	}
+	if response.ReasoningContent != "The" {
+		t.Errorf("reasoning = %q, want %q", response.ReasoningContent, "The")
+	}
+}
+
+// Same field, streaming — the path chat actually runs on. Chunks must arrive
+// through onReasoningChunk with their spacing intact, not trimmed per chunk.
+func TestOpenAICompatibleProviderStreamReadsPlainReasoningField(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		for _, chunk := range []string{
+			`{"choices":[{"delta":{"reasoning":"The user"}}]}`,
+			`{"choices":[{"delta":{"reasoning":" sent ping"}}]}`,
+			`{"choices":[{"delta":{"content":"pong"},"finish_reason":"stop"}]}`,
+		} {
+			_, _ = w.Write([]byte("data: " + chunk + "\n\n"))
+		}
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	requireKey := false
+	provider, err := NewOpenAICompatibleProvider(OpenAICompatibleConfig{
+		Provider: "lmstudio", Model: "ornith:9b", BaseURL: server.URL, RequireAPIKey: &requireKey,
+	})
+	if err != nil {
+		t.Fatalf("new provider failed: %v", err)
+	}
+
+	var streamed string
+	response, err := provider.StreamComplete(context.Background(), Request{
+		Messages: []Message{{Role: RoleUser, Content: "ping"}},
+	}, nil, func(chunk string) error {
+		streamed += chunk
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("stream failed: %v", err)
+	}
+	if want := "The user sent ping"; streamed != want {
+		t.Errorf("streamed reasoning = %q, want %q", streamed, want)
+	}
+	if response.ReasoningContent != "The user sent ping" {
+		t.Errorf("final reasoning = %q", response.ReasoningContent)
+	}
+}

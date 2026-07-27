@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +12,81 @@ import (
 	"strings"
 	"time"
 )
+
+// openAIMessage mirrors Message field for field, tag for tag and — this is the
+// part that matters — in the same order, differing only in that `content` can
+// be a string or an array of parts. Go emits JSON object keys in struct field
+// order, so keeping the order means a message with no images serializes to
+// exactly the bytes it did before this type existed. That is not tidiness: the
+// conversation prefix is what providers cache, and a reordered key would miss
+// the cache on every turn for every user (Registry.Names carries the same note
+// for the same reason).
+type openAIRequestMessage struct {
+	Role             MessageRole `json:"role"`
+	Content          any         `json:"content"`
+	ReasoningContent string      `json:"reasoning_content,omitempty"`
+	Name             string      `json:"name,omitempty"`
+	ToolCallID       string      `json:"tool_call_id,omitempty"`
+	ToolCalls        []ToolCall  `json:"tool_calls,omitempty"`
+}
+
+type openAIContentPart struct {
+	Type     string          `json:"type"`
+	Text     string          `json:"text,omitempty"`
+	ImageURL *openAIImageURL `json:"image_url,omitempty"`
+}
+
+// openAIImageURL is a struct rather than a bare string because the field is an
+// object in the spec, and providers that reject a plain string do so with a
+// generic schema error that is miserable to trace back to this line.
+type openAIImageURL struct {
+	URL string `json:"url"`
+}
+
+// convertMessagesToOpenAI is the identity function for every message without an
+// image, and the parts form for the few that carry one.
+func convertMessagesToOpenAI(msgs []Message) []openAIRequestMessage {
+	out := make([]openAIRequestMessage, 0, len(msgs))
+	for _, m := range msgs {
+		converted := openAIRequestMessage{
+			Role:             m.Role,
+			Content:          m.Content,
+			ReasoningContent: m.ReasoningContent,
+			Name:             m.Name,
+			ToolCallID:       m.ToolCallID,
+			ToolCalls:        m.ToolCalls,
+		}
+		if len(m.Images) > 0 {
+			parts := make([]openAIContentPart, 0, len(m.Images)+1)
+			// Text first: the question about the picture reads as a caption
+			// under it otherwise, and several providers weight the last part
+			// most heavily.
+			if m.Content != "" {
+				parts = append(parts, openAIContentPart{Type: "text", Text: m.Content})
+			}
+			for _, img := range m.Images {
+				parts = append(parts, openAIContentPart{
+					Type:     "image_url",
+					ImageURL: &openAIImageURL{URL: dataURL(img)},
+				})
+			}
+			converted.Content = parts
+		}
+		out = append(out, converted)
+	}
+	return out
+}
+
+// dataURL wraps an image the way the OpenAI-compatible APIs take one inline —
+// the same `data:` form a browser understands, which is also what the desktop
+// already builds for the composer's thumbnail.
+func dataURL(img Image) string {
+	mediaType := strings.TrimSpace(img.MediaType)
+	if mediaType == "" {
+		mediaType = "image/png"
+	}
+	return "data:" + mediaType + ";base64," + base64.StdEncoding.EncodeToString(img.Data)
+}
 
 type OpenAICompatibleConfig struct {
 	Provider      string
@@ -67,6 +143,29 @@ func NewOpenAICompatibleProvider(cfg OpenAICompatibleConfig) (*OpenAICompatibleP
 		reasoning:  supportsNativeReasoning(provider),
 		httpClient: newModelHTTPClient(timeout),
 	}, nil
+}
+
+// openAIMessage is the response-side message shape: the shared Message plus
+// the other spelling of the reasoning field. Message carries DeepSeek's
+// "reasoning_content"; Ollama's OpenAI-compatible endpoint and llama.cpp
+// (LM Studio's runtime) send plain "reasoning" instead, which was dropped —
+// so a thinking model that had spent its budget reasoning came back with an
+// empty content field and was reported as "response has empty text" against a
+// server that had answered perfectly. Same bug ollamaMessage.reasoning already
+// fixes for the native Ollama client.
+type openAIMessage struct {
+	Message
+	Reasoning string `json:"reasoning"`
+}
+
+// reasoningText returns whichever field the provider populated. Not trimmed:
+// streaming deltas split mid-sentence, and trimming each chunk eats the spaces
+// between them.
+func (m openAIMessage) reasoningText() string {
+	if m.ReasoningContent != "" {
+		return m.ReasoningContent
+	}
+	return m.Reasoning
 }
 
 func defaultOpenAICompatibleBaseURL(provider string) string {
@@ -137,7 +236,7 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 
 	payload := struct {
 		Model            string           `json:"model"`
-		Messages         []Message        `json:"messages"`
+		Messages         []openAIRequestMessage `json:"messages"`
 		Temperature      float64          `json:"temperature,omitempty"`
 		MaxTokens        int              `json:"max_tokens,omitempty"`
 		Tools            []ToolDefinition `json:"tools,omitempty"`
@@ -148,7 +247,7 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 		IncludeReasoning *bool            `json:"include_reasoning,omitempty"`
 	}{
 		Model:       model,
-		Messages:    req.Messages,
+		Messages:    convertMessagesToOpenAI(req.Messages),
 		Temperature: req.Temperature,
 		MaxTokens:   req.MaxTokens,
 		Tools:       req.Tools,
@@ -203,7 +302,7 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 	var parsed struct {
 		Choices []struct {
 			Message struct {
-				Message
+				openAIMessage
 				ToolCalls []ToolCall `json:"tool_calls"`
 			} `json:"message"`
 			FinishReason string `json:"finish_reason"`
@@ -218,7 +317,7 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 		return Response{}, fmt.Errorf("%s response has no choices", p.provider)
 	}
 
-	rawMessage := parsed.Choices[0].Message.Message
+	rawMessage := parsed.Choices[0].Message.openAIMessage.Message
 	rawMessage.ToolCalls = append(rawMessage.ToolCalls, parsed.Choices[0].Message.ToolCalls...)
 	text := strings.TrimSpace(rawMessage.Content)
 	// Backstop for DeepSeek's DSML leak: tool-call markup arriving as plain
@@ -229,7 +328,7 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 			rawMessage.ToolCalls = calls
 		}
 	}
-	reasoning := strings.TrimSpace(rawMessage.ReasoningContent)
+	reasoning := strings.TrimSpace(parsed.Choices[0].Message.reasoningText())
 	if text == "" && reasoning == "" && len(rawMessage.ToolCalls) == 0 {
 		return Response{}, fmt.Errorf("%s response has empty text", p.provider)
 	}
@@ -256,7 +355,7 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 	}
 	payload := struct {
 		Model            string           `json:"model"`
-		Messages         []Message        `json:"messages"`
+		Messages         []openAIRequestMessage `json:"messages"`
 		Temperature      float64          `json:"temperature,omitempty"`
 		MaxTokens        int              `json:"max_tokens,omitempty"`
 		Tools            []ToolDefinition `json:"tools,omitempty"`
@@ -273,7 +372,7 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 		StreamOptions *streamOptions `json:"stream_options,omitempty"`
 	}{
 		Model:       model,
-		Messages:    req.Messages,
+		Messages:    convertMessagesToOpenAI(req.Messages),
 		Temperature: req.Temperature,
 		MaxTokens:   req.MaxTokens,
 		Tools:         req.Tools,
@@ -352,7 +451,7 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 		var parsed struct {
 			Choices []struct {
 				Delta struct {
-					Message
+					openAIMessage
 					ToolCalls []streamToolCallDelta `json:"tool_calls"`
 				} `json:"delta"`
 				FinishReason string `json:"finish_reason"`
@@ -382,7 +481,7 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 				}
 			}
 		}
-		if reasoningChunk := delta.ReasoningContent; reasoningChunk != "" {
+		if reasoningChunk := delta.reasoningText(); reasoningChunk != "" {
 			reasoningBuilder.WriteString(reasoningChunk)
 			if onReasoningChunk != nil {
 				if err := onReasoningChunk(reasoningChunk); err != nil {
