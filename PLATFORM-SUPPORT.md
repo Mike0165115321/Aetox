@@ -16,15 +16,18 @@
 |:---|:---|:---|:---|
 | `internal/` (engine, tools, providers) | ✅ ใช้จริง | ✅ **เทสต์ผ่านจริง + race สะอาด** | ⚠️ compile ผ่าน ยังไม่เคยรัน |
 | `cmd/aetox` (CLI) | ✅ ใช้จริง | ✅ **เทสต์ผ่านจริง** | ⚠️ compile ผ่าน ยังไม่เคยรัน |
-| `desktop/` (Wails GUI) | ✅ ใช้จริง | ❌ ยังไม่ผ่าน (เฟส 1–3a) | ❌ ยังไม่ผ่าน (เฟส 1–3b) |
+| `desktop/` — terminal | ✅ ใช้จริง | ✅ **เทสต์ผ่านบนเคอร์เนลจริง** | ⚠️ โค้ดตัวเดียวกับ Linux แต่ **ยังไม่เคยคอมไพล์หรือรันบน mac เลย** |
+| `desktop/` — ที่เหลือ (GUI, browser) | ✅ ใช้จริง | ❌ ยังคอมไพล์ไม่ผ่าน (เฟส 2–3a) | ❌ ยังคอมไพล์ไม่ผ่าน (เฟส 2–3b) |
 | binary ภายนอก (tesseract, ffmpeg) | ✅ | ✅ มีข้อความติดตั้งแยก OS อยู่แล้ว | ✅ auto-install ผ่าน brew อยู่แล้ว |
+
+> **ระวังการอ่านตาราง:** ✅ ของ Linux แปลว่า *รันจริงบนเคอร์เนล Linux แล้วผ่าน* ส่วน macOS ยัง **ไม่มีอะไรถูกพิสูจน์เลยสักอย่าง** — ไม่มี container ไม่มี VM ที่ถูกกฎ และ job `unix` ใน CI ยังไม่แตะ `./desktop/...` เพราะแพ็กเกจยังคอมไพล์ไม่ผ่านนอก Windows **เฟส 2 คือจุดที่ mac ได้รับการตรวจครั้งแรกในชีวิต**
 
 ## เฟส
 
 | # | งาน | สถานะ |
 |:--|:---|:---|
 | **0** | CI matrix — job `unix` (ubuntu + macos) รัน `vet` + `test` บน `./cmd/... ./internal/...`, Linux เพิ่ม `-race` | ✅ **เสร็จ** |
-| **1** | `terminal.go` → `ptySession` interface + `terminal_windows.go` / `terminal_unix.go` (`creack/pty` v1.1.24) | ✅ **เสร็จ** |
+| **1** | `terminal.go` → `ptySession` interface + `terminal_windows.go` / `terminal_unix.go` (`creack/pty` v1.1.24) | ✅ **เสร็จ** — Windows + Linux พิสูจน์แล้ว, mac ยังไม่ถูกตรวจ |
 | 2 | `browser.go` → แยก `hostBackend`/`tabView` + `browser_windows.go` + `browser_other.go` (stub) → `desktop/` เขียวทั้ง 3 OS | ยังไม่เริ่ม |
 | 3a | `browser_linux.go` — WebKitGTK widget ใน `GtkOverlay`/`GtkFixed` | ยังไม่เริ่ม |
 | 3b | `browser_darwin.go` — `WKWebView` เป็น subview ของ Wails `NSView` | ยังไม่เริ่ม |
