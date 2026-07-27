@@ -713,3 +713,117 @@ func TestCancelTurnDropsWhatWasTypedUnderIt(t *testing.T) {
 		t.Errorf("Stop left %v pending — it would be sent as a fresh turn", left)
 	}
 }
+
+// Picking a local runtime whose server is not up must not read as success.
+// BootstrapProvider swaps in the built-in aetox provider so the window stays
+// alive, which left a non-nil chat — the only thing every Switch* method
+// checked — so the picker showed "lmstudio / —" with no error anywhere while
+// the engine answered as Aetox. The fallback stays; the warning now travels.
+func TestSwitchToUnreachableProviderReportsTheFallback(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+	a := &App{}
+	a.applyConfig(config.Config{
+		SandboxRoot:   t.TempDir(),
+		ModelProvider: "lmstudio",
+		ModelBaseURL:  "http://127.0.0.1:1/v1", // nothing ever listens on port 1
+		ApprovalMode:  string(safety.ApprovalFullAccess),
+	})
+
+	info, err := a.modelSwitchResult()
+	if err != nil {
+		t.Fatalf("the aetox fallback must keep the app usable: %v", err)
+	}
+	if info.Warning == "" {
+		t.Fatal("no warning — the UI would show lmstudio as if it were connected")
+	}
+	if !strings.Contains(info.Warning, "lmstudio") {
+		t.Errorf("warning %q does not name the provider that failed", info.Warning)
+	}
+}
+
+// The same path on a reachable provider must stay quiet, or the banner cries
+// wolf on every switch.
+func TestSwitchToWorkingProviderReportsNoWarning(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+	a := &App{}
+	a.applyConfig(config.Config{
+		SandboxRoot:   t.TempDir(),
+		ModelProvider: "aetox",
+		ModelName:     "aetox-tools:test",
+		ApprovalMode:  string(safety.ApprovalFullAccess),
+	})
+
+	info, err := a.modelSwitchResult()
+	if err != nil {
+		t.Fatalf("switch to the built-in provider failed: %v", err)
+	}
+	if info.Warning != "" {
+		t.Errorf("warning on a healthy switch: %q", info.Warning)
+	}
+}
+
+// LM Studio's server port is user-configurable, so the catalog default is a
+// guess, not a fact — and the base URL used to be read-only in Settings with no
+// way to say otherwise. The override has to reach every path that dials the
+// provider, not just the field that displays it.
+func TestCustomBaseURLIsWhatEveryProviderPathDials(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+	a := &App{}
+	a.applyConfig(config.Config{
+		SandboxRoot:   t.TempDir(),
+		ModelProvider: "aetox",
+		ModelName:     "aetox-tools:test",
+		ApprovalMode:  string(safety.ApprovalFullAccess),
+	})
+
+	const custom = "http://127.0.0.1:54998/v1"
+	if _, err := a.SetProviderBaseURL("lmstudio", custom); err != nil {
+		t.Fatalf("SetProviderBaseURL: %v", err)
+	}
+	if got := a.ProviderBaseURL("lmstudio"); got != custom {
+		t.Errorf("ProviderBaseURL = %q, want %q", got, custom)
+	}
+	if !a.ProviderBaseURLIsCustom("lmstudio") {
+		t.Error("override not reported as custom — the UI would offer no reset")
+	}
+	if got := resolveBaseURLForProvider("lmstudio"); got != custom {
+		t.Errorf("resolveBaseURLForProvider = %q — discovery and the connection test dial the wrong host", got)
+	}
+	// The single-slot predecessor stored only the active provider's URL, so
+	// visiting another provider wiped it. Per-provider means it survives.
+	if _, err := a.SwitchProvider("aetox"); err != nil {
+		t.Fatalf("SwitchProvider: %v", err)
+	}
+	if got := a.ProviderBaseURL("lmstudio"); got != custom {
+		t.Errorf("after visiting another provider, lmstudio URL = %q, want %q", got, custom)
+	}
+
+	// Empty is the reset, and it has to actually clear rather than store "".
+	if _, err := a.SetProviderBaseURL("lmstudio", ""); err != nil {
+		t.Fatalf("reset: %v", err)
+	}
+	if got, want := a.ProviderBaseURL("lmstudio"), model.DefaultBaseURL("lmstudio"); got != want {
+		t.Errorf("after reset = %q, want the catalog default %q", got, want)
+	}
+	if a.ProviderBaseURLIsCustom("lmstudio") {
+		t.Error("still reported as custom after reset")
+	}
+}
+
+// The value becomes an outbound request target, so garbage must be refused at
+// the boundary rather than saved and re-surfacing later as a provider outage.
+func TestSetProviderBaseURLRejectsWhatCannotBeDialed(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+	a := &App{}
+	for _, bad := range []string{"localhost:1234", "file:///etc/passwd", "ftp://x/y", "://nope"} {
+		if _, err := a.SetProviderBaseURL("lmstudio", bad); err == nil {
+			t.Errorf("accepted %q", bad)
+		}
+	}
+	if got, want := a.ProviderBaseURL("lmstudio"), model.DefaultBaseURL("lmstudio"); got != want {
+		t.Errorf("a rejected value still landed: %q", got)
+	}
+	if _, err := a.SetProviderBaseURL("nonsense-provider", "http://x/v1"); err == nil {
+		t.Error("accepted an unknown provider")
+	}
+}

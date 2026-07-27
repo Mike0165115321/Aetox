@@ -108,22 +108,51 @@ func TestAddMCPServerValidation(t *testing.T) {
 	}
 }
 
-// ListSkills must exclude embedded built-ins — the Tools panel is only for
-// user-added tools (MCP / discovered). With none configured, it's empty even
-// though the engine has its 12 built-ins registered.
-func TestListSkillsExcludesBuiltins(t *testing.T) {
+// Tools and skills are different things and the two lists must not overlap. A
+// tool is something the AI runs; a skill is a document telling it how. They
+// shared one word once, and the visible cost was ask_user and the four browser
+// tools — Aetox's own — being listed to the user as add-ons they had installed.
+func TestToolsAndSkillsAreSeparateLists(t *testing.T) {
 	a := newMCPTestApp(t)
-	a.applyConfig(a.cfg) // bootstrap so a.registry is populated with built-ins
+	a.applyConfig(a.cfg) // bootstrap so the registry is populated
 
+	tools := a.ListTools()
+	if len(tools) == 0 {
+		t.Fatal("no tools listed at all")
+	}
+	inTools := map[string]bool{}
+	for _, s := range tools {
+		if s.Source == "skill" {
+			t.Errorf("skill %q is in ListTools — a document is not something the AI runs", s.Name)
+		}
+		inTools[s.Name] = true
+	}
 	for _, s := range a.ListSkills() {
-		if s.Source == "builtin" {
-			t.Fatalf("built-in %q leaked into ListSkills; panel should only show added tools", s.Name)
+		if s.Source != "skill" {
+			t.Errorf("%q has source %q but is in ListSkills", s.Name, s.Source)
+		}
+		if inTools[s.Name] {
+			t.Errorf("%q appears in both lists", s.Name)
+		}
+	}
+
+	// The specific regression: the desktop's own tools are Aetox's, not the
+	// user's, and must say so.
+	for _, name := range []string{"ask_user", "browser_open", "todo_write"} {
+		var src string
+		for _, s := range tools {
+			if s.Name == name {
+				src = s.Source
+			}
+		}
+		if src != "workbench" {
+			t.Errorf("%s has source %q, want \"workbench\" — it ships with Aetox, nobody installed it", name, src)
 		}
 	}
 }
 
 // End-to-end backend detection: adding a real MCP server makes its tool show up
-// in ListSkills as source "mcp" — proving the panel is driven by what the
+// in ListTools as source "mcp" — proving the panel is driven by what the
 // backend actually connected to, not a hardcoded list.
 func TestListSkillsSurfacesMCPTool(t *testing.T) {
 	a := newMCPTestApp(t)
@@ -146,7 +175,7 @@ func TestListSkillsSurfacesMCPTool(t *testing.T) {
 	var found *SkillInfo
 	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
-		for _, s := range a.ListSkills() {
+		for _, s := range a.ListTools() {
 			if s.Source == "mcp" {
 				sc := s
 				found = &sc
@@ -159,7 +188,7 @@ func TestListSkillsSurfacesMCPTool(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	if found == nil {
-		t.Fatalf("no mcp-sourced tool in ListSkills after 15s; got %+v", a.ListSkills())
+		t.Fatalf("no mcp-sourced tool in ListTools after 15s; got %+v", a.ListTools())
 	}
 	if found.Name != "echo_echo" {
 		t.Fatalf("mcp tool name = %q, want echo_echo", found.Name)

@@ -103,12 +103,10 @@ func (a *App) workbenchOpenBrowser(ctx context.Context, url string) (title, fina
 		}
 	}
 
-	select {
-	case <-tab.navDone:
-	case <-ctx.Done():
-		return "", "", ctx.Err()
-	case <-time.After(20 * time.Second):
-		return "", "", fmt.Errorf("page did not finish loading")
+	if err := tab.awaitNavigation(ctx, 20*time.Second); err != nil {
+		// Naming the URL matters here: it is usually a path the model built
+		// itself, and seeing it back is what tells it the path was the problem.
+		return "", "", fmt.Errorf("%w: %s", err, url)
 	}
 	// meta (title/url) arrives just after navigation — give it a beat.
 	for i := 0; i < 20; i++ {

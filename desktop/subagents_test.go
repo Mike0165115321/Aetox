@@ -40,7 +40,7 @@ func TestMainAgentIsNotConfiguredByAProfile(t *testing.T) {
 	a := newSubagentTestApp(t)
 
 	tools := map[string]bool{}
-	for _, list := range [][]SkillInfo{a.ListBuiltinSkills(), a.ListSkills()} {
+	for _, list := range [][]SkillInfo{a.ListTools(), a.ListSkills()} {
 		for _, s := range list {
 			tools[strings.ToLower(s.Name)] = true
 		}

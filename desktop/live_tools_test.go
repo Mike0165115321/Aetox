@@ -27,14 +27,7 @@ func TestLiveAllToolsAccepted(t *testing.T) {
 	// workbench tools the desktop app adds.
 	registry := skill.NewDefaultRegistry(skill.RegistryOptions{SandboxRoot: t.TempDir()})
 	app := &App{}
-	for _, s := range []skill.Skill{
-		&browserOpenSkill{app: app},
-		&browserReadSkill{app: app},
-		&browserClickSkill{app: app},
-		&browserTypeSkill{app: app},
-		&askUserSkill{app: app},
-		&todoWriteSkill{app: app},
-	} {
+	for _, s := range app.workbenchSkills() {
 		if err := registry.Register(s, skill.SourceBuiltin); err != nil {
 			t.Fatalf("register %s: %v", s.Name(), err)
 		}

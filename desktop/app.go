@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"mime"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,6 +30,7 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/prompt"
 	"github.com/Mike0165115321/Aetox/internal/safety"
 	"github.com/Mike0165115321/Aetox/internal/skill"
+	"github.com/Mike0165115321/Aetox/internal/stt"
 	"github.com/Mike0165115321/Aetox/internal/subagent"
 	"github.com/Mike0165115321/Aetox/internal/think"
 	"github.com/Mike0165115321/Aetox/internal/turn"
@@ -43,6 +45,11 @@ type App struct {
 	agent       *cognitive.Agent
 	cfg         config.Config
 	modelStatus string
+	// modelErr is why the last bootstrap could not reach the configured
+	// provider. Non-nil with a live chat means the engine is running the
+	// built-in aetox fallback while the UI names something else — see
+	// modelSwitchResult.
+	modelErr    error
 	toolHistory []string
 
 	terminalsMu sync.Mutex
@@ -593,6 +600,11 @@ type ModelInfo struct {
 	// one (e.g. DeepSeek's "anthropic" vs "openai-compatible"). Empty when
 	// the provider has only one format or uses the catalog default.
 	WireFormat string `json:"wireFormat"`
+	// Warning is why the named provider is not actually running: the engine
+	// fell back to the built-in aetox provider so the app stays usable, and
+	// the UI has to say so instead of showing a provider nobody is talking to.
+	// Empty means the provider bootstrapped for real.
+	Warning string `json:"warning"`
 }
 
 // desktopProviders is the curated subset of the full engine catalog
@@ -818,6 +830,10 @@ func (a *App) GetModelInfo() ModelInfo {
 		_, usedChars, _ := a.agent.ContextUsage()
 		used = (usedChars + 3) / 4
 	}
+	warning := ""
+	if a.modelErr != nil {
+		warning = a.modelErr.Error()
+	}
 	return ModelInfo{
 		Provider:     a.cfg.ModelProvider,
 		ModelName:    a.cfg.ModelName,
@@ -826,7 +842,22 @@ func (a *App) GetModelInfo() ModelInfo {
 		ContextUsed:  used,
 		ContextMax:   a.contextWindowTokens(),
 		WireFormat:   effectiveWireFormat(a.cfg.ModelProvider, a.cfg.ModelWireFormat),
+		Warning:      warning,
 	}
+}
+
+// modelSwitchResult reports the engine state every Switch* method ends on.
+// `a.chat == nil` on its own used to be the whole check, which read a
+// fallback bootstrap as success: picking an unreachable provider (LM Studio
+// with its server off) silently left the engine on the built-in aetox
+// provider while the picker showed LM Studio and no error anywhere. The
+// fallback stays — the app must not go dead — but it now travels as
+// ModelInfo.Warning so the UI can say which provider is really answering.
+func (a *App) modelSwitchResult() (ModelInfo, error) {
+	if a.chat == nil {
+		return ModelInfo{}, fmt.Errorf("switch failed: %s", a.modelStatus)
+	}
+	return a.GetModelInfo(), nil
 }
 
 // effectiveWireFormat resolves the format actually in effect: the explicit
@@ -1043,7 +1074,7 @@ func (a *App) SetProviderEnabled(providerName string, enabled bool) ([]string, e
 // free-text input for a custom model id.
 func (a *App) ListModelsForProvider(providerName string) []string {
 	canonical := model.NormalizeProvider(providerName)
-	baseURL := model.DefaultBaseURL(canonical)
+	baseURL := resolveBaseURLForProvider(canonical)
 	apiKey := resolveAPIKeyForProvider(canonical)
 	if choices, err := model.ModelChoicesWithEndpointAndAPIKey(canonical, baseURL, apiKey); err == nil && len(choices) > 0 {
 		return choices
@@ -1054,10 +1085,17 @@ func (a *App) ListModelsForProvider(providerName string) []string {
 	return []string{}
 }
 
-// ProviderBaseURL reports the default API endpoint for a provider, for
-// read-only display in the settings UI.
+// ProviderBaseURL reports the API endpoint a provider will actually be called
+// on: the user's override if there is one, else the catalog default.
 func (a *App) ProviderBaseURL(providerName string) string {
-	return model.DefaultBaseURL(model.NormalizeProvider(providerName))
+	return resolveBaseURLForProvider(model.NormalizeProvider(providerName))
+}
+
+// ProviderBaseURLIsCustom says whether ProviderBaseURL is a user override
+// rather than the catalog default — the UI needs it to offer a reset.
+func (a *App) ProviderBaseURLIsCustom(providerName string) bool {
+	canonical := model.NormalizeProvider(providerName)
+	return resolveBaseURLForProvider(canonical) != model.DefaultBaseURL(canonical)
 }
 
 // TestProviderConnection proves a provider is actually reachable by running a
@@ -1069,7 +1107,7 @@ func (a *App) ProviderBaseURL(providerName string) string {
 // message.
 func (a *App) TestProviderConnection(providerName, modelName string) (string, error) {
 	canonical := model.NormalizeProvider(providerName)
-	baseURL := model.DefaultBaseURL(canonical)
+	baseURL := resolveBaseURLForProvider(canonical)
 	apiKey := resolveAPIKeyForProvider(canonical)
 	wireFormat := ""
 	fallback := ""
@@ -1119,10 +1157,7 @@ func (a *App) SwitchModel(modelName string) (ModelInfo, error) {
 	}
 	next.ThinkLevel = model.NormalizeThinkingLevel(next.ModelProvider, next.ModelName, next.ThinkLevel)
 	a.applyConfig(next)
-	if a.chat == nil {
-		return ModelInfo{}, fmt.Errorf("switch failed: %s", a.modelStatus)
-	}
-	return a.GetModelInfo(), nil
+	return a.modelSwitchResult()
 }
 
 // HasAPIKey reports whether a key-requiring provider already has a resolvable
@@ -1139,6 +1174,56 @@ func (a *App) HasAPIKey(providerName string) bool {
 // RequiresAPIKey exposes model.RequiresAPIKey to the frontend.
 func (a *App) RequiresAPIKey(providerName string) bool {
 	return model.RequiresAPIKey(model.NormalizeProvider(providerName))
+}
+
+// SetProviderBaseURL persists a custom endpoint for a provider and, if it's
+// the active one, re-bootstraps onto it. An empty baseURL clears the override
+// and returns the provider to its catalog default. Reported by a user running
+// LM Studio's server on a port other than 1234, which the read-only field this
+// replaces made unreachable — the catalog default was the only address Aetox
+// would ever call.
+func (a *App) SetProviderBaseURL(providerName, baseURL string) (ModelInfo, error) {
+	canonical := model.NormalizeProvider(providerName)
+	if _, ok := model.LookupProviderInfo(canonical); !ok {
+		return ModelInfo{}, fmt.Errorf("unknown provider: %q", providerName)
+	}
+	trimmed := strings.TrimSpace(baseURL)
+	// This value becomes an outbound request target, so it is validated here
+	// rather than trusted: a bare "localhost:1234" or a "file://" would
+	// otherwise be saved and fail later as something that reads like a
+	// provider outage.
+	if trimmed != "" {
+		parsed, err := url.Parse(trimmed)
+		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+			return ModelInfo{}, fmt.Errorf("base URL must be a full http:// or https:// address, got %q", baseURL)
+		}
+		trimmed = strings.TrimRight(trimmed, "/")
+	}
+
+	pref, ok, _ := config.LoadModelPreference()
+	if !ok {
+		pref = config.ModelPreference{}
+	}
+	pref.SetBaseURLForProvider(canonical, trimmed)
+	if strings.EqualFold(a.cfg.ModelProvider, canonical) {
+		// The legacy single slot is what resolveConfig reads first; leaving a
+		// stale value there would fight the change on the next launch.
+		pref.ModelBaseURL = trimmed
+	}
+	if err := config.SaveModelPreference(pref); err != nil {
+		return ModelInfo{}, err
+	}
+
+	if strings.EqualFold(a.cfg.ModelProvider, canonical) {
+		next := a.cfg
+		next.ModelBaseURL = resolveBaseURLForProvider(canonical)
+		// The model name came from the old endpoint's discovery, so it is a
+		// guess about a server we have not spoken to yet — re-resolve it.
+		next.ModelName = model.ResolveDefaultModel(canonical, next.ModelBaseURL, next.ModelAPIKey)
+		next.ThinkLevel = model.NormalizeThinkingLevel(canonical, next.ModelName, next.ThinkLevel)
+		a.applyConfig(next)
+	}
+	return a.modelSwitchResult()
 }
 
 // SetAPIKey persists an API key for a provider and, if it's the active
@@ -1163,11 +1248,21 @@ func (a *App) SetAPIKey(providerName, apiKey string) (ModelInfo, error) {
 		next := a.cfg
 		next.ModelAPIKey = key
 		a.applyConfig(next)
-		if a.chat == nil {
-			return ModelInfo{}, fmt.Errorf("switch failed: %s", a.modelStatus)
+	}
+	return a.modelSwitchResult()
+}
+
+// resolveBaseURLForProvider is the one place that answers "where do we call
+// this provider?" — the saved override, else the catalog default. Every
+// discovery, connection test, and switch goes through it, so a custom endpoint
+// cannot be honored on one path and ignored on another.
+func resolveBaseURLForProvider(canonicalProvider string) string {
+	if pref, ok, _ := config.LoadModelPreference(); ok {
+		if v := pref.BaseURLForProvider(canonicalProvider); v != "" {
+			return v
 		}
 	}
-	return a.GetModelInfo(), nil
+	return model.DefaultBaseURL(canonicalProvider)
 }
 
 func resolveAPIKeyForProvider(canonicalProvider string) string {
@@ -1193,20 +1288,45 @@ func (a *App) SupportedThinkLevels() []string {
 	return caps.Levels
 }
 
+// RetryActiveProvider re-bootstraps when the engine is sitting on the aetox
+// fallback, so a provider that has come up since the switch is picked up
+// without the user re-selecting it by hand. No-op when the last bootstrap
+// succeeded.
+//
+// ModelInfo.Warning is a snapshot of switch time. Starting LM Studio's server
+// a minute later left that snapshot nagging in red — next to a model list that
+// had just been discovered from the very endpoint it called unreachable — and
+// the engine really was still on the fallback, so hiding the banner alone
+// would have been the lie. This un-sticks the engine, and the warning clears
+// because it stopped being true.
+func (a *App) RetryActiveProvider() ModelInfo {
+	if a.modelErr == nil {
+		return a.GetModelInfo()
+	}
+	next := a.cfg
+	next.ModelBaseURL = resolveBaseURLForProvider(next.ModelProvider)
+	next.ModelAPIKey = resolveAPIKeyForProvider(next.ModelProvider)
+	// A failed bootstrap on a local runtime leaves the name empty (the server
+	// had nothing to offer), and that empty name is what fails again.
+	if strings.TrimSpace(next.ModelName) == "" {
+		next.ModelName = model.ResolveDefaultModel(next.ModelProvider, next.ModelBaseURL, next.ModelAPIKey)
+		next.ThinkLevel = model.NormalizeThinkingLevel(next.ModelProvider, next.ModelName, next.ThinkLevel)
+	}
+	a.applyConfig(next)
+	return a.GetModelInfo()
+}
+
 // SwitchProvider re-bootstraps the engine on a different provider, using its default model.
 func (a *App) SwitchProvider(provider string) (ModelInfo, error) {
 	next := a.cfg
 	next.ModelProvider = model.NormalizeProvider(provider)
-	next.ModelBaseURL = model.DefaultBaseURL(next.ModelProvider)
+	next.ModelBaseURL = resolveBaseURLForProvider(next.ModelProvider)
 	next.ModelWireFormat = "" // reset to the new provider's default format
 	next.ModelAPIKey = resolveAPIKeyForProvider(next.ModelProvider)
 	next.ModelName = model.ResolveDefaultModel(next.ModelProvider, next.ModelBaseURL, next.ModelAPIKey)
 	next.ThinkLevel = model.NormalizeThinkingLevel(next.ModelProvider, next.ModelName, "")
 	a.applyConfig(next)
-	if a.chat == nil {
-		return ModelInfo{}, fmt.Errorf("switch failed: %s", a.modelStatus)
-	}
-	return a.GetModelInfo(), nil
+	return a.modelSwitchResult()
 }
 
 // ProviderWireFormats lists the wire formats providerName can speak — e.g.
@@ -1234,10 +1354,7 @@ func (a *App) SetProviderWireFormat(format string) (ModelInfo, error) {
 	}
 	next.ModelWireFormat = format
 	a.applyConfig(next)
-	if a.chat == nil {
-		return ModelInfo{}, fmt.Errorf("switch failed: %s", a.modelStatus)
-	}
-	return a.GetModelInfo(), nil
+	return a.modelSwitchResult()
 }
 
 // SwitchThinkLevel changes the reasoning depth for the current provider/model.
@@ -1245,10 +1362,7 @@ func (a *App) SwitchThinkLevel(level string) (ModelInfo, error) {
 	next := a.cfg
 	next.ThinkLevel = model.NormalizeThinkingLevel(next.ModelProvider, next.ModelName, level)
 	a.applyConfig(next)
-	if a.chat == nil {
-		return ModelInfo{}, fmt.Errorf("switch failed: %s", a.modelStatus)
-	}
-	return a.GetModelInfo(), nil
+	return a.modelSwitchResult()
 }
 
 // SwitchApprovalMode changes the safety approval mode the engine runs with.
@@ -1256,10 +1370,7 @@ func (a *App) SwitchApprovalMode(mode string) (ModelInfo, error) {
 	next := a.cfg
 	next.ApprovalMode = string(safety.NormalizeApprovalMode(mode))
 	a.applyConfig(next)
-	if a.chat == nil {
-		return ModelInfo{}, fmt.Errorf("switch failed: %s", a.modelStatus)
-	}
-	return a.GetModelInfo(), nil
+	return a.modelSwitchResult()
 }
 
 // reload re-points the engine at a different project root. Only the root
@@ -1286,10 +1397,15 @@ func (a *App) reload(opts config.ConfigOptions) {
 	a.applyConfig(next)
 }
 
-// applyConfig re-bootstraps the engine from an already-resolved config, then
-// persists the model/approval choice so the CLI and desktop app share one preference.
-func (a *App) applyConfig(cfg config.Config) {
-	workbenchTools := []skill.Skill{
+// workbenchSkills are the tools only the desktop app can offer — they need a
+// window, or a human, to mean anything. Everything else the agent gets comes
+// from skill.NewDefaultRegistry.
+//
+// A function rather than a literal inside applyConfig because the tool coverage
+// test has to assemble the exact same set: a list copied into a test is a list
+// that silently stops matching the day someone adds a tool here.
+func (a *App) workbenchSkills() []skill.Skill {
+	return []skill.Skill{
 		&browserOpenSkill{app: a},
 		&browserReadSkill{app: a},
 		&browserClickSkill{app: a},
@@ -1297,6 +1413,12 @@ func (a *App) applyConfig(cfg config.Config) {
 		&askUserSkill{app: a},
 		&todoWriteSkill{app: a},
 	}
+}
+
+// applyConfig re-bootstraps the engine from an already-resolved config, then
+// persists the model/approval choice so the CLI and desktop app share one preference.
+func (a *App) applyConfig(cfg config.Config) {
+	workbenchTools := a.workbenchSkills()
 	if a.mcp == nil {
 		servers, err := config.LoadMCPServers()
 		if err != nil {
@@ -1312,11 +1434,12 @@ func (a *App) applyConfig(cfg config.Config) {
 	if a.agent != nil {
 		priorContext = a.agent.ContextMessages()
 	}
-	chatApp, agent, status, registry := bootstrapFromConfig(cfg, a.recordToolAction, a.emitAgentStatus, a.recordTokenUsage, workbenchTools, a.mcp, a.outputSubdir)
+	chatApp, agent, status, registry, bootErr := bootstrapFromConfig(cfg, a.recordToolAction, a.emitAgentStatus, a.recordTokenUsage, workbenchTools, a.mcp, a.outputSubdir)
 	a.chat = chatApp
 	a.agent = agent
 	a.cfg = cfg
 	a.modelStatus = status
+	a.modelErr = bootErr
 	a.registry = registry
 	if a.agent != nil {
 		a.agent.SetUsageReporter(a.recordTokenUsage)
@@ -1391,8 +1514,17 @@ func resolveConfig(opts config.ConfigOptions) config.Config {
 		if v := strings.TrimSpace(pref.UILocale); v != "" {
 			cfg.UILocale = v
 		}
+		if v := strings.TrimSpace(pref.SpeechModelPath); v != "" {
+			cfg.SpeechModelPath = v
+		}
 		if key := pref.APIKeyForProvider(cfg.ModelProvider); key != "" {
 			cfg.ModelAPIKey = key
+		}
+		// After pref.ModelBaseURL above, not before: the per-provider entry is
+		// the one the user set for *this* provider, the legacy slot is whatever
+		// provider happened to be active when it was written.
+		if v := pref.BaseURLForProvider(cfg.ModelProvider); v != "" {
+			cfg.ModelBaseURL = v
 		}
 	}
 	if cfg.ModelAPIKey == "" {
@@ -1428,7 +1560,7 @@ func toMCPServers(cfgs []config.MCPServerConfig) []mcp.Server {
 	return out
 }
 
-func bootstrapFromConfig(cfg config.Config, onToolAction func(turn.ToolEvent), onStatus func(string), onUsage func(model.Usage), extraSkills []skill.Skill, mcpMgr *mcp.Manager, outputSubdir func() string) (*aetoxapp.App, *cognitive.Agent, string, *skill.Registry) {
+func bootstrapFromConfig(cfg config.Config, onToolAction func(turn.ToolEvent), onStatus func(string), onUsage func(model.Usage), extraSkills []skill.Skill, mcpMgr *mcp.Manager, outputSubdir func() string) (*aetoxapp.App, *cognitive.Agent, string, *skill.Registry, error) {
 	defer debuglog.Block("bootstrapFromConfig")()
 	// Which model this actually resolved to. The log recorded that a bootstrap
 	// happened but never what came out of it, so "it switched models on its
@@ -1450,7 +1582,7 @@ func bootstrapFromConfig(cfg config.Config, onToolAction func(turn.ToolEvent), o
 	})
 	providerDone()
 	if bootstrapResult.Provider == nil {
-		return nil, nil, status + " (init failed: " + bootstrapResult.Error.Error() + ")", nil
+		return nil, nil, status + " (init failed: " + bootstrapResult.Error.Error() + ")", nil, bootstrapResult.Error
 	}
 	if bootstrapResult.Warning != "" {
 		status += " (" + bootstrapResult.Warning + ")"
@@ -1474,9 +1606,12 @@ func bootstrapFromConfig(cfg config.Config, onToolAction func(turn.ToolEvent), o
 	registry := skill.NewDefaultRegistry(skill.RegistryOptions{
 		SandboxRoot:  cfg.SandboxRoot,
 		OutputSubdir: outputSubdir,
+		// Empty ModelPath keeps the original behaviour — auto-discover — so a
+		// user who never opens the picker sees no change.
+		Speech: stt.Options{ModelPath: cfg.SpeechModelPath},
 	})
 	for _, s := range extraSkills {
-		if err := registry.Register(s, skill.SourceExternal); err != nil {
+		if err := registry.Register(s, skill.SourceWorkbench); err != nil {
 			debuglog.Msg("skill registration skipped: %v", err)
 		}
 	}
@@ -1536,9 +1671,12 @@ func bootstrapFromConfig(cfg config.Config, onToolAction func(turn.ToolEvent), o
 		StatusReporter: onStatus,
 	})
 	if err != nil {
-		return nil, nil, status + " (init failed: " + err.Error() + ")", nil
+		return nil, nil, status + " (init failed: " + err.Error() + ")", nil, err
 	}
-	return chatApp, agent, status, registry
+	// bootstrapResult.Error survives a successful return on purpose: the
+	// engine is up, but on the aetox fallback rather than the provider the
+	// caller asked for, and only this error says why.
+	return chatApp, agent, status, registry, bootstrapResult.Error
 }
 
 // UserName / SetUserName back the sidebar footer's display name. They go
@@ -1578,9 +1716,10 @@ func persistModelPreference(cfg config.Config) {
 	pref.ModelName = strings.TrimSpace(cfg.ModelName)
 	baseURL := strings.TrimSpace(cfg.ModelBaseURL)
 	if baseURL == model.DefaultBaseURL(canonicalProvider) {
-		baseURL = ""
+		baseURL = "" // matches the catalog — store nothing, so a later catalog change lands
 	}
 	pref.ModelBaseURL = baseURL
+	pref.SetBaseURLForProvider(canonicalProvider, baseURL)
 	pref.ModelWireFormat = strings.TrimSpace(cfg.ModelWireFormat)
 	pref.ThinkLevel = model.NormalizeThinkingLevel(canonicalProvider, pref.ModelName, cfg.ThinkLevel)
 	pref.ApprovalMode = string(safety.NormalizeApprovalMode(cfg.ApprovalMode))
@@ -1589,6 +1728,10 @@ func persistModelPreference(cfg config.Config) {
 	if v := strings.TrimSpace(cfg.UILocale); v != "" {
 		pref.UILocale = v
 	}
+	// Unlike the language, an empty value here is a real choice — it is how
+	// "go back to picking whatever is on disk" is expressed — so it is written
+	// through rather than treated as "nothing to say".
+	pref.SpeechModelPath = strings.TrimSpace(cfg.SpeechModelPath)
 	_ = config.SaveModelPreference(pref)
 }
 
