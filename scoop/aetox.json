@@ -8,7 +8,7 @@
     "shortcuts": [
         ["aetox.exe", "Aetox"]
     ],
-    "notes": "Portable build: WebView2 runtime is preinstalled on Windows 11; the image_ocr/video_ocr/audio_transcribe skills will explain how to get Tesseract, ffmpeg and whisper.cpp on first use (or use the full installer .exe from the GitHub release, which sets Tesseract up automatically). Speech transcription also needs a ggml model file the tool tells you how to download — nothing is fetched without asking.",
+    "notes": "Portable build: WebView2 runtime is preinstalled on Windows 11; the image_ocr/video_ocr/audio_transcribe/pdf_read skills will explain how to get Tesseract, ffmpeg, whisper.cpp and poppler on first use (or use the full installer .exe from the GitHub release, which sets Tesseract, poppler and ffmpeg up automatically). Speech transcription also needs a ggml model file the tool tells you how to download — nothing is fetched without asking.",
     "checkver": "github",
     "autoupdate": {
         "url": "https://github.com/Mike0165115321/Aetox/releases/download/v$version/aetox-windows-amd64-portable.zip"

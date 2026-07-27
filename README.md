@@ -49,8 +49,9 @@ Aetox คือ **ยุคใหม่ของ AGI** ที่:
 | โมเดลทำไม่ได้ | Aetox เติมให้ด้วย | ผลลัพธ์ |
 |:--------------|:------------------|:--------|
 | มองไม่เห็นรูปภาพ | `image_ocr` (Tesseract ไทย+อังกฤษ) | อ่านข้อความในรูปได้ทุกโมเดล |
-| ดูวิดีโอไม่ได้ | `video_ocr` (ffmpeg แตกเฟรม + OCR) | ได้ข้อความพร้อม timestamp `[m:ss]` จากวิดีโอ |
+| ดูวิดีโอไม่ได้ | `video_ocr` (ffmpeg มากับตัวติดตั้ง + OCR) | ได้ข้อความพร้อม timestamp `[m:ss]` จากวิดีโอ |
 | ฟังเสียงไม่ได้ | `audio_transcribe` (whisper.cpp ในเครื่อง) | ถอดเสียงพูดเป็นข้อความพร้อม `[m:ss]` ทั้งไฟล์เสียงและวิดีโอ |
+| เปิด PDF ไม่ได้ | `pdf_read` (poppler มากับตัวติดตั้ง) | แนบ PDF แล้วให้สรุปได้เลย ภาษาไทยไม่เพี้ยน |
 | ลงมือทำในเว็บไม่ได้ | `browser_open`/`read`/`click`/`type` | อ่านหน้าเว็บจริง คลิก กรอกฟอร์ม เลือก dropdown แทนได้ |
 
 ลูปเต็มของโมเดลที่ไม่มีตาไม่มีหู: รูปหรือคลิป → `image_ocr` / `video_ocr` / `audio_transcribe` แปลงเป็นข้อความ → ตัดสินใจ → `browser_click/type` ลงมือทำต่อในเว็บ
@@ -211,7 +212,7 @@ Aetox ยังอยู่ในช่วงหล่อหลอม — แก
 |:-----------|:-----------|
 | **13 Providers** | OpenAI, Anthropic, DeepSeek, Google Gemini, Groq, Mistral, Together, Perplexity, Cohere, OpenRouter, Z.ai, LM Studio, Ollama |
 | **Tool Calling** | model-driven tool loop — agent เลือกใช้ tools เอง |
-| **26 Tools ในตัว** | read, write, edit, list, shell, git, grep, image_ocr, video_ocr, audio_transcribe, browser_* และอื่นๆ |
+| **26 Tools ในตัว** | read, write, edit, list, shell, git, grep, image_ocr, video_ocr, pdf_read, audio_transcribe, browser_* และอื่นๆ |
 | **Safety 3 ระดับ** | ถามก่อน → คำสั่งเสี่ยง → รันเต็มที่ |
 | **Multi-provider** | ใช้ providers ต่างกันใน session เดียวกัน |
 | **Model Switching** | เปลี่ยน provider/model ได้ทันที โดยไม่เสีย context |
@@ -348,6 +349,7 @@ wails build -nsis    # พร้อมตัวติดตั้ง
 | `github_repo_summary` | สรุป repo จาก GitHub |
 | `plugin_install` | ติดตั้ง plugin จาก GitHub |
 | `image_ocr` | อ่านข้อความจากรูป (Tesseract ไทย+อังกฤษ) |
+| `pdf_read` | อ่านข้อความจากไฟล์ PDF (poppler ติดตั้งมาให้พร้อมแอป) |
 | `video_ocr` | อ่านข้อความจากวิดีโอ (ffmpeg แตกเฟรม + OCR พร้อม timestamp) |
 | `audio_transcribe` | ถอดเสียงพูดในไฟล์เสียง/วิดีโอเป็นข้อความ (whisper.cpp ออฟไลน์ ไทย+อังกฤษ) |
 | `web_fetch` | อ่านเนื้อหาหน้าเว็บ |
@@ -365,17 +367,13 @@ wails build -nsis    # พร้อมตัวติดตั้ง
 ## จากผู้สร้าง
 
 > Aetox เกิดมาไม่ใช่เพื่อแข่งกับใคร  
+> แต่มาเพื่อยืนในจุดที่ตลาดขาด  
 > ไม่ใช่เพื่อเป็นอีกหนึ่ง agent framework  
 > ไม่ใช่เพื่อ lock-in ผู้ใช้เข้าสู่ระบบใด
 >
 > Aetox คือ **ผู้ช่วยส่วนตัว** ที่พร้อมจะเติบโต  
-> คือ AGI ที่ไม่ผูกมัดกับระบบใด  
+> ระบบปลอดภัยพร้อมในสภาพแวดล้อมปิดแบบเต็มรูปแบบ  
 > คือรากฐานของสถาปัตยกรรมที่จะควบคุมวิธีคิดของโมเดล
->
-> พรุ่งนี้คือ ecosystem ของตัวเอง
->
-> ไม่มีทีมใหญ่ แต่วิสัยทัศน์ไกล  
-> ไม่มีคนมากมาย แต่มีไฟจากใจผู้สร้าง
 >
 > — Mike (ชยพล พรมสะวะนา)
 
@@ -385,7 +383,7 @@ wails build -nsis    # พร้อมตัวติดตั้ง
 
 เปิดรับการติดต่อเรื่องธุรกิจ ความร่วมมือ และการลงทุน — เป้าหมายระยะยาวคือเทรนโมเดลของเราเอง ให้สถาปัตยกรรมกับโมเดลถูกออกแบบมาเพื่อกันและกันตั้งแต่ต้น
 
-📧 [phrmsawanachyphl@gmail.com](mailto:phrmsawanachyphl@gmail.com) · 🐙 [เปิด Issue](https://github.com/Mike0165115321/Aetox/issues)
+📧 [phrmsawanachyphl@gmail.com](mailto:phrmsawanachyphl@gmail.com) · 🐙 [เปิด Issue](https://github.com/Mike0165115321/Aetox/issues) · ❤️ [สนับสนุนโปรเจกต์](SPONSOR.md)
 
 ---
 
