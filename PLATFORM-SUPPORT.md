@@ -24,11 +24,29 @@
 | # | งาน | สถานะ |
 |:--|:---|:---|
 | **0** | CI matrix — job `unix` (ubuntu + macos) รัน `vet` + `test` บน `./cmd/... ./internal/...`, Linux เพิ่ม `-race` | ✅ **เสร็จ** |
-| 1 | `terminal.go` → `ptySession` interface + `terminal_windows.go` / `terminal_unix.go` (`creack/pty` v1.1.24) | ยังไม่เริ่ม |
+| **1** | `terminal.go` → `ptySession` interface + `terminal_windows.go` / `terminal_unix.go` (`creack/pty` v1.1.24) | ✅ **เสร็จ** |
 | 2 | `browser.go` → แยก `hostBackend`/`tabView` + `browser_windows.go` + `browser_other.go` (stub) → `desktop/` เขียวทั้ง 3 OS | ยังไม่เริ่ม |
 | 3a | `browser_linux.go` — WebKitGTK widget ใน `GtkOverlay`/`GtkFixed` | ยังไม่เริ่ม |
 | 3b | `browser_darwin.go` — `WKWebView` เป็น subview ของ Wails `NSView` | ยังไม่เริ่ม |
 | 4 | packaging (`.deb`/`.rpm`/tar.gz + `.app`/`.dmg`) + `bench.sh` | ยังไม่เริ่ม |
+
+## แผนที่ไฟล์ — ไฟล์ไหนของ OS ไหน
+
+กฎ: **แยกไฟล์ก็ต่อเมื่อ type หรือ import ต่างกัน** ถ้าต่างแค่ชื่อคำสั่งที่จะรัน ใช้ `switch runtime.GOOS` ในไฟล์เดิม (เช่น `presets.go` / `subagents.go` ที่เลือกระหว่าง `explorer`/`open`/`xdg-open`) และ**ไม่แยกโฟลเดอร์** เพราะ Go นับ 1 โฟลเดอร์ = 1 package ส่วน `App` ต้องอยู่ใน `package main` เดียวไม่งั้น Wails generate `App.d.ts` ออกมาคนละชุด (ARCHITECTURE.md §48 Decision 2)
+
+| ไฟล์ | build tag | Win | Linux | mac | มีอะไร |
+|:---|:---|:-:|:-:|:-:|:---|
+| `terminal.go` | — | ✅ | ✅ | ✅ | `ptySession`, `App.Terminal*` ทั้งหมด, ลูปอ่าน |
+| `terminal_windows.go` | ชื่อไฟล์ | ✅ | | | ConPTY + รายชื่อเชลล์ของ Windows |
+| `terminal_unix.go` | `//go:build unix` | | ✅ | ✅ | `creack/pty` + `$SHELL` + การกวาด session |
+| `browser.go` | — | ✅ | ✅ | ✅ | JS builders, `sameOrigin`, `onMessage`, `App.Browser*` (เฟส 2) |
+| `browser_windows.go` | ชื่อไฟล์ | ✅ | | | Win32 + WebView2 (เฟส 2) |
+| `browser_linux.go` | ชื่อไฟล์ | | ✅ | | WebKitGTK (เฟส 3a) |
+| `browser_darwin.go` | ชื่อไฟล์ | | | ✅ | WKWebView (เฟส 3b) |
+
+`_unix.go` ต้องเขียน `//go:build unix` เอง เพราะ Go ไม่ถือว่า `_unix` เป็นคำลงท้ายพิเศษเหมือน `_windows`/`_linux`/`_darwin` — เลือก `unix` แทน `!windows` (แบบที่ `internal/proc` ใช้) เพราะมันตรงกับชื่อไฟล์และไม่ลากไป js/wasm กับ plan9 ที่ `creack/pty` ไม่รองรับ
+
+**เฟส 2 ต้องการ stub อะไรบ้าง** — วัดจากการ type-check จริงบน Linux: `browserElement` · `browserImage` · `browserSnapshot` · `browserTab{navDone}` + `meta()` · `browserHost{mu, lastID, tabs}` + `tab()` · `App.browserSnapshot` · `App.BrowserClickRef` · `App.BrowserTypeRef` · `App.CloseAllBrowserTabs` · `App.BrowserClose` เท่านี้พอให้ `desktop/` ทั้งแพ็กเกจ vet ผ่านบน Linux
 
 พิมพ์เขียวของเฟส 3 อยู่ที่ [docs/architecture/native-browser-embedding-2026-07-24.md](docs/architecture/native-browser-embedding-2026-07-24.md) §"macOS / Linux port blueprint" — เขียนจากรอบดีบักจริง ไม่ใช่ทฤษฎี **ยึดกฎ 5 ข้อท้ายเอกสารนั้นเป็นหลัก**
 

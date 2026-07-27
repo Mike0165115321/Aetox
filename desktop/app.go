@@ -77,6 +77,14 @@ type App struct {
 	db     *sql.DB
 	dbErr  error
 	dbDir  string // overrides the default <UserConfigDir>/aetox directory; empty means production default. Test seam only.
+
+	// emit stands in for wailsruntime.EventsEmit. The indirection exists
+	// because EventsEmit calls log.Fatalf — a hard os.Exit, not an error a
+	// test can recover from — whenever ctx is not Wails-bound, which it never
+	// is in a unit test. That is why the terminal read loop had no test at
+	// all; see emitEvent in terminal.go. nil means the real thing. Test seam
+	// only.
+	emit func(event string, data ...any)
 }
 
 // ChangedFile is one working-tree change reported by `git status`.

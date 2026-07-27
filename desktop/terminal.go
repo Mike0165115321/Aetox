@@ -3,20 +3,31 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os/exec"
 	"strconv"
 	"sync/atomic"
 
-	"github.com/UserExistsError/conpty"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"github.com/Mike0165115321/Aetox/internal/lsp"
 )
 
-// TerminalSession wraps one live shell process attached to a ConPTY.
+// ptySession is the whole of what differs between platforms in this file:
+// Windows drives a ConPTY, Unix an ordinary pty master. *conpty.ConPty already
+// has exactly this method set, so terminal_windows.go needs no adapter type at
+// all; terminal_unix.go wraps creack/pty's *os.File only because resizing there
+// is a package function rather than a method, and because closing has to sweep
+// the shell's process group by hand.
+type ptySession interface {
+	io.ReadWriteCloser
+	Resize(cols, rows int) error
+}
+
+// TerminalSession wraps one live shell process attached to a pty.
 type TerminalSession struct {
 	id  string
-	pty *conpty.ConPty
+	pty ptySession
 }
 
 // ShellProfile is one shell the terminal picker can offer.
@@ -31,21 +42,34 @@ func nextTerminalID() string {
 	return "term-" + strconv.FormatInt(atomic.AddInt64(&terminalSeq, 1), 10)
 }
 
-// TerminalShells detects which shells are actually available on this
-// machine, so the "+" picker never offers one that doesn't exist.
-func (a *App) TerminalShells() []ShellProfile {
-	candidates := []ShellProfile{
-		{Name: "PowerShell 7", Path: "pwsh.exe"},
-		{Name: "Windows PowerShell", Path: "powershell.exe"},
-		{Name: "Command Prompt", Path: "cmd.exe"},
-		{Name: "Git Bash", Path: "bash.exe"},
-		{Name: "WSL", Path: "wsl.exe"},
+// emitEvent sends a frontend event, through a.emit when a test has installed
+// one. See App.emit for why the indirection has to exist at all.
+func (a *App) emitEvent(event string, data ...any) {
+	if a.emit != nil {
+		a.emit(event, data...)
+		return
 	}
+	wailsruntime.EventsEmit(a.ctx, event, data...)
+}
+
+// TerminalShells detects which shells are actually available on this
+// machine, so the "+" picker never offers one that doesn't exist. The list of
+// what to look for is per-OS (terminal_windows.go / terminal_unix.go).
+//
+// Deduplicating on the resolved path matters on Unix, where $SHELL almost
+// always points at the same binary as one of the named fallbacks — without it
+// the picker offers "bash (default)" and "Bash" as two separate choices that
+// start the identical shell.
+func (a *App) TerminalShells() []ShellProfile {
 	out := []ShellProfile{}
-	for _, c := range candidates {
-		if resolved, err := exec.LookPath(c.Path); err == nil {
-			out = append(out, ShellProfile{Name: c.Name, Path: resolved})
+	seen := map[string]bool{}
+	for _, c := range shellCandidates() {
+		resolved, err := exec.LookPath(c.Path)
+		if err != nil || seen[resolved] {
+			continue
 		}
+		seen[resolved] = true
+		out = append(out, ShellProfile{Name: c.Name, Path: resolved})
 	}
 	return out
 }
@@ -59,11 +83,7 @@ func (a *App) TerminalStart(shellPath string, cols, rows int) (string, error) {
 	if rows <= 0 {
 		rows = 24
 	}
-	pty, err := conpty.Start(
-		shellPath,
-		conpty.ConPtyDimensions(cols, rows),
-		conpty.ConPtyWorkDir(a.cfg.SandboxRoot),
-	)
+	pty, err := startPTY(shellPath, cols, rows, a.cfg.SandboxRoot)
 	if err != nil {
 		return "", fmt.Errorf("start terminal: %w", err)
 	}
@@ -89,7 +109,7 @@ func (a *App) pumpTerminalOutput(s *TerminalSession) {
 	for {
 		n, err := s.pty.Read(buf)
 		if n > 0 {
-			wailsruntime.EventsEmit(a.ctx, "terminal:data:"+s.id, string(buf[:n]))
+			a.emitEvent("terminal:data:"+s.id, string(buf[:n]))
 		}
 		if err != nil {
 			break
@@ -114,7 +134,7 @@ func (a *App) closeSession(id string) {
 		return
 	}
 	_ = s.pty.Close()
-	wailsruntime.EventsEmit(a.ctx, "terminal:closed:"+id, nil)
+	a.emitEvent("terminal:closed:"+id, nil)
 }
 
 func (a *App) getSession(id string) (*TerminalSession, error) {
