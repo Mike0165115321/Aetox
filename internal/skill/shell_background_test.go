@@ -195,11 +195,20 @@ func TestBackgroundShellCapsConcurrentJobs(t *testing.T) {
 		t.Fatalf("the %dth background command was accepted: err = %v", maxBackgroundShells+1, err)
 	}
 	// Leaving them running would outlive the test; the job object handles the
-	// app, but a test should clean up after itself.
+	// app, but a test should clean up after itself. Waiting for them to
+	// actually die matters on Windows: t.TempDir's cleanup fails while a
+	// surviving child still holds the working directory open.
 	for _, id := range s.shells.running() {
 		if job, ok := s.shells.get(id); ok {
 			job.cancel()
 		}
+	}
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) && len(s.shells.running()) > 0 {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if left := s.shells.running(); len(left) > 0 {
+		t.Errorf("%d background commands survived cancellation: %v", len(left), left)
 	}
 }
 

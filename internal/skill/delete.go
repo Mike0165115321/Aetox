@@ -28,7 +28,11 @@ func (*deleteSkill) ToolDefinition() model.ToolDefinition {
 		"properties": map[string]any{
 			"path": map[string]any{
 				"type":        "string",
-				"description": "Relative file path to delete",
+				"description": "Relative path of the file or folder to delete",
+			},
+			"recursive": map[string]any{
+				"type":        "boolean",
+				"description": "Required to delete a folder, and it takes everything inside. Naming a folder without this is refused, because \"delete\" of a path that turned out to be a directory is the one mistake with no undo at the tool level.",
 			},
 		},
 		"required":             []string{"path"},
@@ -39,7 +43,7 @@ func (*deleteSkill) ToolDefinition() model.ToolDefinition {
 		Type: "function",
 		Function: model.ToolFunction{
 			Name:        "delete",
-			Description: "Delete a file in sandbox root. Requires user approval through Aetox safety policy.",
+			Description: "Delete a file in sandbox root, or a folder and its contents with recursive. Requires user approval through Aetox safety policy.",
 			Parameters:  payload,
 		},
 	}
@@ -74,9 +78,25 @@ func (s *deleteSkill) Execute(_ context.Context, input Input) (Output, error) {
 	if err != nil {
 		return newToolOutput("delete", "delete "+requestPath, "", start, false, err), err
 	}
+	recursive, _ := input["recursive"].(bool)
 	if info.IsDir() {
-		err = errors.New("delete target is a directory")
-		return newToolOutput("delete", "delete "+requestPath, "", start, false, err), err
+		if !recursive {
+			// Named rather than assumed: a model that thought it was deleting
+			// one generated file and passed a folder path takes the whole
+			// folder with it, and there is no smaller mistake to make here.
+			err = errors.New("delete target is a directory — pass recursive to remove it and everything inside")
+			return newToolOutput("delete", "delete "+requestPath, "", start, false, err), err
+		}
+		// The sandbox root itself is not a thing to delete: it is the project.
+		if root, rootErr := resolveSandboxPath(s.root, "."); rootErr == nil && targetPath == root {
+			err = errors.New("refusing to delete the sandbox root")
+			return newToolOutput("delete", "delete "+requestPath, "", start, false, err), err
+		}
+		if err := os.RemoveAll(targetPath); err != nil {
+			return newToolOutput("delete", "delete "+requestPath, "", start, false, err), err
+		}
+		output := "delete done: " + requestPath + "/ (folder and contents)"
+		return newToolOutput("delete", "delete "+requestPath, output, start, false, nil), nil
 	}
 	if err := os.Remove(targetPath); err != nil {
 		return newToolOutput("delete", "delete "+requestPath, "", start, false, err), err
@@ -93,5 +113,5 @@ func (s *deleteSkill) ExecuteTool(ctx context.Context, args map[string]any) (Out
 		err := errors.New("path is required")
 		return newToolOutput("delete", "delete", "", time.Now(), false, err), err
 	}
-	return s.Execute(ctx, Input{"args": []string{path}})
+	return s.Execute(ctx, Input{"args": []string{path}, "recursive": args["recursive"]})
 }

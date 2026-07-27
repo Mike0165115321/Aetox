@@ -138,6 +138,36 @@ func TestEditSkillReplaceAllFalseStillRejectsAmbiguity(t *testing.T) {
 	}
 }
 
+// The staleness question, answered by the uniqueness rule rather than by a
+// read-before-edit ledger: if the file moved under the model, the text it
+// remembered either no longer matches (refused) or now matches twice
+// (refused). The dangerous case — an edit landing somewhere the model never
+// looked — is what these two assert cannot happen.
+func TestEditSkillRefusesWhenTheFileMovedUnderIt(t *testing.T) {
+	root := t.TempDir()
+	path := writeEditFixture(t, root, "a.go", "func handler() {\n\treturn 1\n}\n")
+	s := &editSkill{root: root}
+
+	// Someone else rewrote the file after the model read it.
+	if err := os.WriteFile(path, []byte("func handler() {\n\treturn 2\n}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := s.ExecuteTool(context.Background(), map[string]any{
+		"path": "a.go", "old_string": "\treturn 1\n", "new_string": "\treturn 3\n",
+	})
+	if err == nil {
+		t.Fatal("an edit against text that is no longer in the file must fail")
+	}
+	if !strings.Contains(err.Error(), "re-read") {
+		t.Errorf("err = %v, want it to tell the model to look again", err)
+	}
+	data, _ := os.ReadFile(path)
+	if !strings.Contains(string(data), "return 2") {
+		t.Error("the other change was clobbered")
+	}
+}
+
 func TestEditSkillRejectsBinaryFile(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "bin.dat"), []byte{'a', 0, 'b'}, 0o644); err != nil {

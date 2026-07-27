@@ -70,8 +70,8 @@ func TestSubagentProfileBindings(t *testing.T) {
 	a := newSubagentTestApp(t)
 
 	list := a.ListSubagentProfiles()
-	if len(list) != 2 {
-		t.Fatalf("ListSubagentProfiles() = %d, want 2 bundled", len(list))
+	if len(list) != 3 {
+		t.Fatalf("ListSubagentProfiles() = %d, want 3 bundled", len(list))
 	}
 
 	raw, err := a.ReadSubagentProfile("explore")

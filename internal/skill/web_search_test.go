@@ -58,3 +58,43 @@ func TestWebSearchEmptyQueryFails(t *testing.T) {
 		t.Fatal("empty query must fail")
 	}
 }
+
+func TestFilterByDomain(t *testing.T) {
+	results := []searchResult{
+		{Title: "std", URL: "https://pkg.go.dev/net/http"},
+		{Title: "blog", URL: "https://go.dev/blog/errors"},
+		{Title: "farm", URL: "https://www.tutorialfarm.example/go"},
+		{Title: "lookalike", URL: "https://notgo.dev/whatever"},
+	}
+
+	only := filterByDomain(results, []string{"go.dev"}, nil)
+	if len(only) != 2 {
+		t.Fatalf("allowed go.dev kept %d results, want 2 (the subdomain counts)", len(only))
+	}
+	// The boundary check: notgo.dev ends in "go.dev" as a string and must not
+	// be treated as a subdomain of it.
+	for _, r := range only {
+		if strings.Contains(r.URL, "notgo.dev") {
+			t.Error("notgo.dev matched a go.dev filter")
+		}
+	}
+
+	without := filterByDomain(results, nil, []string{"tutorialfarm.example"})
+	if len(without) != 3 {
+		t.Errorf("blocking one domain kept %d results, want 3", len(without))
+	}
+	for _, r := range without {
+		if strings.Contains(r.URL, "tutorialfarm") {
+			t.Error("a blocked domain survived")
+		}
+	}
+
+	// www. is noise on both sides of the comparison.
+	if got := filterByDomain(results, []string{"www.tutorialfarm.example"}, nil); len(got) != 1 {
+		t.Errorf("www-prefixed filter kept %d, want 1", len(got))
+	}
+
+	if got := filterByDomain(results, nil, nil); len(got) != len(results) {
+		t.Errorf("no filter changed the list: %d vs %d", len(got), len(results))
+	}
+}

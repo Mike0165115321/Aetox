@@ -130,6 +130,18 @@ func (s *readSkill) Execute(_ context.Context, input Input) (Output, error) {
 	if mediaType, isImage := imageMediaTypes[strings.ToLower(filepath.Ext(targetPath))]; isImage {
 		return s.readImage(targetPath, requestPath, command, mediaType, info.Size(), start)
 	}
+	// A notebook is JSON with the code escaped inside it and every past output
+	// embedded. Handing that over raw costs a fortune in context to show five
+	// lines of Python, so it is rendered as cells instead — and those cell
+	// numbers are what notebook_edit takes.
+	if strings.EqualFold(filepath.Ext(targetPath), notebookExt) {
+		nb, nbErr := loadNotebook(targetPath)
+		if nbErr != nil {
+			return newToolOutput("read", command, "", start, false, nbErr), nbErr
+		}
+		rendered, truncated := limitLines(renderNotebook(nb, requestPath), defaultToolOutputLineLimit)
+		return newToolOutput("read", command, rendered, start, truncated, nil), nil
+	}
 
 	file, err := os.Open(targetPath)
 	if err != nil {

@@ -261,6 +261,10 @@ func toolCases(t *testing.T, root string, dispatcher *skill.Dispatcher) map[stri
 			}},
 			check: fileContains("patch-me.txt", "TWO"),
 		},
+		"notebook_edit": {
+			args:  map[string]any{"path": "nb.ipynb", "cell": 0, "source": "y = 99\n"},
+			check: fileContains("nb.ipynb", "y = 99"),
+		},
 		"delete": {
 			args: map[string]any{"path": "victim.txt"},
 			check: func(t *testing.T, _ skill.Output, root string) {
@@ -537,6 +541,16 @@ func writeToolFixtures(t *testing.T, root string) {
 	write("main.go", "package main\n\nfunc main() {}\n")
 	write(filepath.Join("sub", "inner.txt"), "alpha inside\n")
 	write("doc.pdf", tinyPDFDoc)
+	// A minimal but genuine nbformat 4 notebook — notebook_edit parses it as
+	// JSON and writes it back, so a hand-waved fixture would fail for the wrong
+	// reason.
+	write("nb.ipynb", `{
+ "cells": [{"cell_type": "code", "execution_count": null, "metadata": {}, "outputs": [], "source": ["x = 1\n"]}],
+ "metadata": {},
+ "nbformat": 4,
+ "nbformat_minor": 5
+}
+`)
 	writeTestPNG(t, filepath.Join(root, "shot.png"))
 	writeTestWAV(t, filepath.Join(root, "tone.wav"))
 

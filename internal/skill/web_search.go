@@ -45,6 +45,16 @@ func (*webSearchSkill) ToolDefinition() model.ToolDefinition {
 				"type":        "string",
 				"description": "The search query",
 			},
+			"allowed_domains": map[string]any{
+				"type":        "array",
+				"items":       map[string]any{"type": "string"},
+				"description": "Only keep results from these domains, e.g. [\"go.dev\", \"pkg.go.dev\"]. Use it when you know where the authoritative answer lives.",
+			},
+			"blocked_domains": map[string]any{
+				"type":        "array",
+				"items":       map[string]any{"type": "string"},
+				"description": "Drop results from these domains. Use it to get past a content farm that keeps outranking the real source.",
+			},
 		},
 		"required":             []string{"query"},
 		"additionalProperties": false,
@@ -68,15 +78,57 @@ func (s *webSearchSkill) Execute(ctx context.Context, input Input) (Output, erro
 		err := errors.New("usage: web_search <query>")
 		return newToolOutput("web_search", "web_search", "", time.Now(), false, err), err
 	}
-	return s.search(ctx, strings.TrimSpace(strings.Join(args, " ")))
+	return s.search(ctx, strings.TrimSpace(strings.Join(args, " ")), nil, nil)
 }
 
 func (s *webSearchSkill) ExecuteTool(ctx context.Context, args map[string]any) (Output, error) {
 	query, _ := args["query"].(string)
-	return s.search(ctx, strings.TrimSpace(query))
+	return s.search(ctx, strings.TrimSpace(query),
+		anyStringSlice(args["allowed_domains"]), anyStringSlice(args["blocked_domains"]))
 }
 
-func (s *webSearchSkill) search(ctx context.Context, query string) (Output, error) {
+// filterByDomain keeps or drops results by host.
+//
+// Suffix matching, not equality: a filter written as "go.dev" has to catch
+// "pkg.go.dev", which is what anyone means by naming a domain. The boundary
+// check on the character before the suffix is what stops "go.dev" from also
+// matching "notgo.dev".
+func filterByDomain(results []searchResult, allowed, blocked []string) []searchResult {
+	if len(allowed) == 0 && len(blocked) == 0 {
+		return results
+	}
+	matches := func(host string, domains []string) bool {
+		host = strings.ToLower(strings.TrimPrefix(host, "www."))
+		for _, d := range domains {
+			d = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(d, "www.")))
+			if d == "" {
+				continue
+			}
+			if host == d || strings.HasSuffix(host, "."+d) {
+				return true
+			}
+		}
+		return false
+	}
+	kept := make([]searchResult, 0, len(results))
+	for _, r := range results {
+		parsed, err := url.Parse(r.URL)
+		if err != nil {
+			continue // an unparseable URL cannot be shown to satisfy a filter
+		}
+		host := parsed.Hostname()
+		if len(blocked) > 0 && matches(host, blocked) {
+			continue
+		}
+		if len(allowed) > 0 && !matches(host, allowed) {
+			continue
+		}
+		kept = append(kept, r)
+	}
+	return kept
+}
+
+func (s *webSearchSkill) search(ctx context.Context, query string, allowed, blocked []string) (Output, error) {
 	start := time.Now()
 	command := "web_search " + query
 	if query == "" {
@@ -115,7 +167,15 @@ func (s *webSearchSkill) search(ctx context.Context, query string) (Output, erro
 	}
 
 	results := parseDuckDuckGoResults(body)
+	before := len(results)
+	results = filterByDomain(results, allowed, blocked)
 	if len(results) == 0 {
+		if before > 0 {
+			// Distinguished on purpose: "the engine found nothing" and "your
+			// own filter removed everything" call for opposite next moves.
+			return newToolOutput("web_search", command,
+				fmt.Sprintf("(all %d results were removed by the domain filter)", before), start, false, nil), nil
+		}
 		return newToolOutput("web_search", command, "(no results)", start, false, nil), nil
 	}
 	var b strings.Builder

@@ -170,8 +170,9 @@ func (*todoWriteSkill) ToolDefinition() model.ToolDefinition {
 				"items": map[string]any{
 					"type": "object",
 					"properties": map[string]any{
-						"content": map[string]any{"type": "string", "description": "Short task description in the user's language"},
-						"status":  map[string]any{"type": "string", "enum": []string{"pending", "in_progress", "completed"}},
+						"content":    map[string]any{"type": "string", "description": "Short task description in the user's language"},
+						"status":     map[string]any{"type": "string", "enum": []string{"pending", "in_progress", "completed"}},
+						"activeForm": map[string]any{"type": "string", "description": "The same task worded as what is happening right now — \"reading the config\" rather than \"read the config\". Shown while the item is in_progress, in the user's language."},
 					},
 					"required":             []string{"content", "status"},
 					"additionalProperties": false,
@@ -198,6 +199,10 @@ func (s *todoWriteSkill) ExecuteTool(_ context.Context, args map[string]any) (sk
 	type todoItem struct {
 		Content string `json:"content"`
 		Status  string `json:"status"`
+		// ActiveForm is what the row reads while the step is running. Optional:
+		// a model that omits it leaves the UI showing Content, which is what
+		// happened before this field existed.
+		ActiveForm string `json:"activeForm,omitempty"`
 	}
 	items := make([]todoItem, 0, len(raw))
 	for _, r := range raw {
@@ -207,7 +212,9 @@ func (s *todoWriteSkill) ExecuteTool(_ context.Context, args map[string]any) (sk
 		}
 		content, _ := m["content"].(string)
 		status, _ := m["status"].(string)
+		activeForm, _ := m["activeForm"].(string)
 		content = strings.TrimSpace(content)
+		activeForm = strings.TrimSpace(activeForm)
 		switch status {
 		case "pending", "in_progress", "completed":
 		default:
@@ -216,7 +223,7 @@ func (s *todoWriteSkill) ExecuteTool(_ context.Context, args map[string]any) (sk
 		if content == "" {
 			continue
 		}
-		items = append(items, todoItem{Content: content, Status: status})
+		items = append(items, todoItem{Content: content, Status: status, ActiveForm: activeForm})
 	}
 	if s.app.ctx != nil {
 		wailsruntime.EventsEmit(s.app.ctx, "todo:update", items)

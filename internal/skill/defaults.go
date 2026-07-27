@@ -81,6 +81,7 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 		&grepSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
 		&globSkill{root: opts.SandboxRoot},
 		&applyPatchSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
+		&notebookEditSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
 		&diagnosticsSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
 		&deleteSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
 		&pluginInstallSkill{},

@@ -1895,6 +1895,24 @@ Unavailable is an ordinary condition, not a failure: no git, or a folder that is
 
 ---
 
+## 54. Decision — Clearing the Rest of the Parity List (2026-07-28)
+
+The tail of §52's sweep, done rather than recorded. Each of these was small on its own; the reason to do them together is that a coding agent is judged on the one tool that was missing, not the twenty that were there.
+
+**`notebook_edit`, and `read` renders notebooks.** A `.ipynb` is JSON with the code buried inside it — `"source": ["def f():\n", "    return 1\n"]` — plus every output the cell ever produced, including base64 images running to tens of thousands of characters. That broke both halves of the normal path: `read` handed the model raw JSON, so looking at five lines of Python cost an enormous amount of context on a picture it could not see; and `edit` matches an exact string, which in the file is JSON-escaped, so a match either failed or corrupted the notebook. So `read` renders cells with their numbers and summarises outputs (a traceback is often the answer, a base64 PNG never is), and `notebook_edit` changes a cell **through the JSON**. Everything not named — metadata, kernelspec, nbformat version, other cells' outputs — is written back untouched, and source is written as a list of lines the way Jupyter writes it, or a one-cell change becomes a diff covering the whole notebook. Replacing a cell clears **that cell's** outputs, because a recorded result describing code that is no longer there is how a model reads a stale traceback as current.
+
+**`delete` takes a folder, but only when asked.** `recursive` is required and refused by name otherwise: "delete" of a path that turned out to be a directory is the one mistake at this layer with nothing smaller to get wrong. The sandbox root is refused outright — it is the project.
+
+**`web_search` gained `allowed_domains`/`blocked_domains`.** Suffix matching, so `go.dev` catches `pkg.go.dev`, with a boundary check so it does not also catch `notgo.dev`. "The engine found nothing" and "your own filter removed everything" are reported differently, because they call for opposite next moves.
+
+**`todo_write` gained `activeForm`** — the task worded as what is happening now, which is what the row should read while a step runs. Optional, so a model that omits it leaves the UI showing what it showed before.
+
+**The staleness question, answered by what was already there.** Claude Code enforces read-before-edit with a ledger. Aetox does not need one: `edit` requires the text to appear exactly once, so a file that moved under the model either no longer matches (refused) or now matches twice (refused). The failure mode a ledger prevents — an edit landing somewhere the model never looked — cannot happen here, and a test now says so rather than leaving it a happy accident.
+
+**Plan mode is a sub-agent profile, not a mode.** [docs/opencode-study/agents.md](docs/opencode-study/agents.md) recorded the finding that opencode's `plan` agent is structurally identical to `build` — same loop, same everything — differing only in its permission set. Aetox already had the whole mechanism (§44): [profiles/plan.md](internal/subagent/profiles/plan.md) inherits every reading tool, because a plan built without `diagnostics`, `git` or the web is a worse plan, and denies every writing one. `Deny` rather than a `tools:` allowlist on purpose — the allowlist is a token filter, `Deny` is the gate that reaches `PermissionConfig`, so a discovered skill by the same name cannot walk through. The brief fixes the answer's shape (what is there now / what to change / what could go wrong / what you are unsure of) because a planner that free-forms produces prose nobody can act on.
+
+---
+
 ## Validation
 
 1. **Claim traceability:** every claim above cites a file or an existing project doc; the two `Unverified`/`Inferred, Verify first: Yes` items are marked as such, not stated as fact.

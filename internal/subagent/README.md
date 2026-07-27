@@ -23,7 +23,7 @@ Frontmatter is parsed by `skill.ParseFrontmatter` — one `key: value` per line,
 
 | | Where |
 |---|---|
-| Bundled | [profiles/](profiles) via `//go:embed` — `explore` (read-only searcher, 4 tools) and `general` (the looper: a list of items is ONE job it works through itself, 48 steps). Present on a fresh install with no folder created |
+| Bundled | [profiles/](profiles) via `//go:embed` — `explore` (read-only searcher, 4 tools), `general` (the looper: a list of items is ONE job it works through itself, 48 steps), and `plan` (ARCHITECTURE.md §54 — inherits every reading tool, denies every writing one, and answers in a fixed four-part shape). Present on a fresh install with no folder created |
 | User | `<DataRoot>/subagents/*.md`. A file named after a bundled one **wins**; deleting it restores the original — that is the "revert" |
 
 ## How one runs — and why it does not block

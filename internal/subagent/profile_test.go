@@ -22,12 +22,12 @@ func isolate(t *testing.T) string {
 	return dir
 }
 
-// Two sub-agents ship. The count is asserted because "one more profile, it's
+// Three sub-agents ship. The count is asserted because "one more profile, it's
 // free" is how a bundled set becomes a menu nobody reads.
 func TestBundledProfilesAreUsable(t *testing.T) {
 	isolate(t)
 	got := List()
-	want := []string{"explore", "general"}
+	want := []string{"explore", "general", "plan"}
 	if len(got) != len(want) {
 		t.Fatalf("List() = %d profiles, want %d", len(got), len(want))
 	}
@@ -197,8 +197,8 @@ func TestUserProfileAddsToTheList(t *testing.T) {
 	if p.Overrides {
 		t.Error("a user-only profile claims to override a bundled one")
 	}
-	if got := len(List()); got != 3 {
-		t.Fatalf("List() = %d, want 3 (2 bundled + 1 user)", got)
+	if got := len(List()); got != 4 {
+		t.Fatalf("List() = %d, want 4 (3 bundled + 1 user)", got)
 	}
 }
 
@@ -220,5 +220,31 @@ func TestBrokenFilesStillLoad(t *testing.T) {
 	}
 	if p := parse("x", "---\ndescription: unterminated\nbody"); p.Prompt == "" {
 		t.Error("broken frontmatter dropped the whole file instead of keeping it as prompt")
+	}
+}
+
+// plan is the read-only planner (ARCHITECTURE.md §54). It inherits the whole
+// registry on purpose — a plan built without diagnostics, git or the web is a
+// worse plan — and every tool that writes is denied, which is enforced at
+// execution rather than by trimming the list the model sees.
+func TestPlanProfileCannotWrite(t *testing.T) {
+	isolate(t)
+	p, ok := Load("plan")
+	if !ok {
+		t.Fatal("plan profile missing")
+	}
+	cfg := safety.PermissionConfig{Rules: p.DenyRules()}
+	for _, tool := range []string{"write", "edit", "apply_patch", "notebook_edit", "delete", "shell"} {
+		action, matched := cfg.Resolve(tool, nil)
+		if !matched || action != safety.PermissionDeny {
+			t.Errorf("Resolve(%q) = (%q, %v), want deny — a planner that can write is not a planner", tool, action, matched)
+		}
+	}
+	// Reading is the whole job, so nothing that reads may be caught by the
+	// same net.
+	for _, tool := range []string{"read", "grep", "glob", "diagnostics", "git", "web_fetch"} {
+		if action, matched := cfg.Resolve(tool, nil); matched && action == safety.PermissionDeny {
+			t.Errorf("Resolve(%q) = deny — the planner cannot investigate", tool)
+		}
 	}
 }
