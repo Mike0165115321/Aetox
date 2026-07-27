@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -85,6 +86,9 @@ type ollamaChatMessage struct {
 	Name       string           `json:"name,omitempty"`
 	ToolCallID string           `json:"tool_call_id,omitempty"`
 	ToolCalls  []ollamaToolCall `json:"tool_calls,omitempty"`
+	// Images is Ollama's own shape: a sibling field of bare base64 strings, no
+	// content parts and no media type — it sniffs the format from the bytes.
+	Images []string `json:"images,omitempty"`
 }
 
 type ollamaToolCall struct {
@@ -99,6 +103,9 @@ func convertMessagesToOllama(msgs []Message) []ollamaChatMessage {
 			Content:    m.Content,
 			Name:       m.Name,
 			ToolCallID: m.ToolCallID,
+		}
+		for _, img := range m.Images {
+			ocm.Images = append(ocm.Images, base64.StdEncoding.EncodeToString(img.Data))
 		}
 		if len(m.ToolCalls) > 0 {
 			ocm.ToolCalls = make([]ollamaToolCall, 0, len(m.ToolCalls))

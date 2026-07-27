@@ -34,6 +34,32 @@ type Message struct {
 	ToolCallID string `json:"tool_call_id,omitempty"`
 	// ToolCalls follows the OpenAI-compatible function-call field.
 	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
+	// Images ride along with Content on a user message, for models that can
+	// actually look at one. Aetox's four "senses" tools exist because most
+	// models had no vision when they were written (ARCHITECTURE.md §22/§31);
+	// image_ocr in particular turns a screenshot into the letters inside it and
+	// throws the picture away, which is the right answer for a blind model and
+	// a loss for every model shipped since.
+	//
+	// `json:"-"` on purpose. Each provider spells an image differently — a
+	// content-part array here, a sibling `images` field there — so the wire
+	// shape belongs in each adapter, next to the rest of that API's quirks, and
+	// never in this struct. A caller that forgets to handle Images therefore
+	// sends the text alone rather than an invalid body.
+	//
+	// Only ever set when the model can see: ResolveVision decides, and the
+	// image_ocr path stays exactly as it was for everything that cannot.
+	Images []Image `json:"-"`
+}
+
+// Image is one picture attached to a message, already decoded from whatever the
+// user dropped in. MediaType is an IANA type ("image/png"); Data is raw bytes,
+// base64-encoded per provider rather than stored that way, because two of the
+// three wire formats want it wrapped differently and holding the encoded form
+// would mean decoding it back to re-wrap it.
+type Image struct {
+	MediaType string
+	Data      []byte
 }
 
 type ToolFunction struct {
@@ -184,10 +210,14 @@ func normalizeUsage(usage Usage) *Usage {
 // one shown when it runs; the UI matches on that label to avoid drawing the
 // same call twice.
 //
-// `description` is last on purpose: it is `task`'s own "few words naming the
-// job", written for exactly this line, but any tool that also has a real
-// subject (a path, a URL) should be named by that instead.
-var ArgSubjectKeys = []string{"path", "file_path", "url", "command", "pattern", "query", "name", "description"}
+// `description` sits below the real subjects — a path, a URL — because a tool
+// that touches a named thing should be labelled with that thing. It sits above
+// `command` because a shell call's own "few words naming the job" is what the
+// user wants on that row; the command line itself is one click away in the
+// detail view and is usually too long to read there anyway. `task` has only a
+// description, so its label is unaffected by where the two sit relative to
+// each other.
+var ArgSubjectKeys = []string{"path", "file_path", "url", "description", "command", "pattern", "query", "name"}
 
 // partialArgRe matches one complete "key": "value" pair. The closing quote is
 // required, so a value still arriving cannot match and be reported truncated.

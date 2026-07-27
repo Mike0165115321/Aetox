@@ -55,6 +55,11 @@ func (c *Context) AddMessage(message model.Message) {
 		ToolCallID: strings.TrimSpace(message.ToolCallID),
 		Content:    strings.TrimSpace(message.Content),
 		ToolCalls:  message.ToolCalls,
+		// Copied like everything else: this rebuild drops any field it does not
+		// name, and an attached image silently vanishing between the composer
+		// and the provider is a bug with no visible symptom — the model just
+		// answers about a picture it never got.
+		Images: message.Images,
 	})
 
 	c.enforceLimits()

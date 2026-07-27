@@ -234,7 +234,7 @@ func (a *Agent) RespondWithTools(
 	ctx context.Context,
 	modelTools []model.ToolDefinition,
 	userMessage string,
-	execTool func(context.Context, model.ToolCall) (string, error),
+	execTool func(context.Context, model.ToolCall) (string, []model.Image, error),
 	onReasoningChunk func(string) error,
 	opts turn.TurnOptions,
 ) (string, bool, error) {
@@ -254,7 +254,7 @@ func (a *Agent) RespondWithTools(
 		return "", false, errors.New("input is empty")
 	}
 	a.compactIfNeeded(ctx)
-	a.context.Add(model.RoleUser, msg)
+	a.addUserTurn(msg, opts)
 
 	// OpenCode-style loop: run until the model stops calling tools. The brakes
 	// are the permission/approval layer, ctx cancellation (Ctrl+C in the CLI,
@@ -402,7 +402,7 @@ func (a *Agent) RespondWithTools(
 			}
 
 			debuglog.Msg("tool call: %s(%s)", toolCall.Function.Name, truncateStr(toolCall.Function.Arguments, 80))
-			callOutput, toolErr := a.executeToolCall(ctx, toolCall, execTool)
+			callOutput, callImages, toolErr := a.executeToolCall(ctx, toolCall, execTool)
 			callOutput = strings.TrimSpace(callOutput)
 			if callOutput == "" {
 				if toolErr != nil {
@@ -421,6 +421,22 @@ func (a *Agent) RespondWithTools(
 				ToolCallID: toolCall.ID,
 				Content:    callOutput,
 			})
+			// A picture cannot travel in the tool result itself: Anthropic
+			// allows an image block inside tool_result, the OpenAI-compatible
+			// APIs do not, and Ollama has no tool_result shape at all. One
+			// follow-up user message carrying the image works on all three, so
+			// that is what this is — a single path rather than three, at the
+			// cost of one extra message in history.
+			//
+			// It says which call it belongs to, because a user message the user
+			// did not send is otherwise indistinguishable from one they did.
+			if len(callImages) > 0 {
+				a.context.AddMessage(model.Message{
+					Role:    model.RoleUser,
+					Content: "[the image returned by " + toolCall.Function.Name + " follows]",
+					Images:  callImages,
+				})
+			}
 			if toolErr != nil && ctx.Err() != nil {
 				return callOutput, true, ctx.Err()
 			}
@@ -513,16 +529,11 @@ func renderCompactionTranscript(messages []model.Message) string {
 	return b.String()
 }
 
-func (a *Agent) executeToolCall(ctx context.Context, toolCall model.ToolCall, execTool func(context.Context, model.ToolCall) (string, error)) (string, error) {
+func (a *Agent) executeToolCall(ctx context.Context, toolCall model.ToolCall, execTool func(context.Context, model.ToolCall) (string, []model.Image, error)) (string, []model.Image, error) {
 	if strings.TrimSpace(toolCall.Function.Name) == "" {
-		return "tool-call-missing-name", errors.New("tool call missing function name")
+		return "tool-call-missing-name", nil, errors.New("tool call missing function name")
 	}
-
-	output, err := execTool(ctx, toolCall)
-	if err != nil {
-		return output, err
-	}
-	return output, nil
+	return execTool(ctx, toolCall)
 }
 
 // recoverEmptyReply nudges the model once after an empty reply. The nudge is
@@ -551,8 +562,26 @@ func (a *Agent) Respond(ctx context.Context, userMessage string, opts turn.TurnO
 	}
 
 	a.compactIfNeeded(ctx)
-	a.context.Add(model.RoleUser, msg)
+	a.addUserTurn(msg, opts)
 	return a.respondFromContext(ctx, opts)
+}
+
+// addUserTurn writes the message that opens a turn, with whatever the user
+// attached to it. Separate from context.Add because the images belong to this
+// one message only: every later RoleUser entry in the same loop — an
+// interjection, the empty-reply nudge, the DSML nudge — is Aetox talking to the
+// model, not the user handing it a picture, and re-attaching there would send
+// the image again on every round.
+func (a *Agent) addUserTurn(msg string, opts turn.TurnOptions) {
+	if len(opts.Images) == 0 {
+		a.context.Add(model.RoleUser, msg)
+		return
+	}
+	a.context.AddMessage(model.Message{
+		Role:    model.RoleUser,
+		Content: msg,
+		Images:  opts.Images,
+	})
 }
 
 // respondFromContext completes over the context as-is — the user message must

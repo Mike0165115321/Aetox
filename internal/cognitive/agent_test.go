@@ -42,11 +42,11 @@ func TestRespondWithToolsContinuesAfterToolCall(t *testing.T) {
 		context.Background(),
 		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
 		"read note.txt",
-		func(_ context.Context, call model.ToolCall) (string, error) {
+		func(_ context.Context, call model.ToolCall) (string, []model.Image, error) {
 			if call.Function.Name != "read" {
 				t.Fatalf("unexpected tool call: %s", call.Function.Name)
 			}
-			return `{"tool":"read","status":"done","output":"alpha"}`, nil
+			return `{"tool":"read","status":"done","output":"alpha"}`, nil, nil
 		},
 		nil,
 		turn.TurnOptions{ThinkLevel: think.LevelMedium},
@@ -167,9 +167,9 @@ func TestRespondWithToolsSkipsTruncatedToolCall(t *testing.T) {
 		context.Background(),
 		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "write", Parameters: []byte(`{"type":"object"}`)}}},
 		"make me a landing page",
-		func(_ context.Context, _ model.ToolCall) (string, error) {
+		func(_ context.Context, _ model.ToolCall) (string, []model.Image, error) {
 			executed++
-			return "should never run", nil
+			return "should never run", nil, nil
 		},
 		nil,
 		turn.TurnOptions{},
@@ -216,9 +216,9 @@ func TestRespondWithToolsStopsDoomLoop(t *testing.T) {
 		context.Background(),
 		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "write", Parameters: []byte(`{"type":"object"}`)}}},
 		"loop forever",
-		func(_ context.Context, _ model.ToolCall) (string, error) {
+		func(_ context.Context, _ model.ToolCall) (string, []model.Image, error) {
 			executed++
-			return "same failure", nil
+			return "same failure", nil, nil
 		},
 		nil,
 		turn.TurnOptions{},
@@ -268,7 +268,7 @@ func TestRespondWithToolsSendsPerProviderMaxTokens(t *testing.T) {
 			context.Background(),
 			[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
 			"hello",
-			func(_ context.Context, _ model.ToolCall) (string, error) { return "", nil },
+			func(_ context.Context, _ model.ToolCall) (string, []model.Image, error) { return "", nil, nil },
 			nil,
 			turn.TurnOptions{},
 		); err != nil {
@@ -292,7 +292,7 @@ func TestRespondWithToolsLengthWithoutToolCallsReturnsText(t *testing.T) {
 		context.Background(),
 		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
 		"long question",
-		func(_ context.Context, _ model.ToolCall) (string, error) { return "", nil },
+		func(_ context.Context, _ model.ToolCall) (string, []model.Image, error) { return "", nil, nil },
 		nil,
 		turn.TurnOptions{},
 	)
@@ -319,7 +319,7 @@ func TestRespondWithToolsLeakedDSMLNeverSurfacesRawMarkup(t *testing.T) {
 		context.Background(),
 		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "write", Parameters: []byte(`{"type":"object"}`)}}},
 		"write phone.html",
-		func(_ context.Context, _ model.ToolCall) (string, error) { return "", nil },
+		func(_ context.Context, _ model.ToolCall) (string, []model.Image, error) { return "", nil, nil },
 		nil,
 		turn.TurnOptions{},
 	)
@@ -351,7 +351,7 @@ func TestRespondWithToolsStreamsReasoningWhenHandlerPresent(t *testing.T) {
 		context.Background(),
 		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
 		"hi",
-		func(_ context.Context, _ model.ToolCall) (string, error) { return "", nil },
+		func(_ context.Context, _ model.ToolCall) (string, []model.Image, error) { return "", nil, nil },
 		func(chunk string) error { reasoning = append(reasoning, chunk); return nil },
 		turn.TurnOptions{},
 	)
@@ -377,7 +377,7 @@ func TestRespondWithToolsUsesCompleteWithoutReasoningHandler(t *testing.T) {
 		context.Background(),
 		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
 		"hi",
-		func(_ context.Context, _ model.ToolCall) (string, error) { return "", nil },
+		func(_ context.Context, _ model.ToolCall) (string, []model.Image, error) { return "", nil, nil },
 		nil, // no reasoning UI (e.g. CLI) — must stay on the non-streaming path
 		turn.TurnOptions{},
 	); err != nil {
@@ -408,9 +408,9 @@ func TestRespondWithToolsDoomLoopResetsOnDifferentCall(t *testing.T) {
 		context.Background(),
 		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
 		"read some files",
-		func(_ context.Context, _ model.ToolCall) (string, error) {
+		func(_ context.Context, _ model.ToolCall) (string, []model.Image, error) {
 			executed++
-			return "content", nil
+			return "content", nil, nil
 		},
 		nil,
 		turn.TurnOptions{},
@@ -449,7 +449,7 @@ func TestCompactionSummarizesOldTurnsBeforeTheTurn(t *testing.T) {
 		context.Background(),
 		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
 		"คำถามใหม่ล่าสุด",
-		func(_ context.Context, _ model.ToolCall) (string, error) { return "", nil },
+		func(_ context.Context, _ model.ToolCall) (string, []model.Image, error) { return "", nil, nil },
 		nil,
 		turn.TurnOptions{},
 	)
@@ -508,7 +508,7 @@ func TestCompactionFailureIsNonFatal(t *testing.T) {
 		context.Background(),
 		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
 		"ถามต่อ",
-		func(_ context.Context, _ model.ToolCall) (string, error) { return "", nil },
+		func(_ context.Context, _ model.ToolCall) (string, []model.Image, error) { return "", nil, nil },
 		nil,
 		turn.TurnOptions{},
 	)
@@ -522,7 +522,7 @@ func TestCompactionFailureIsNonFatal(t *testing.T) {
 
 func TestRespondWithToolsEmptyReplyNudgeKeepsTools(t *testing.T) {
 	toolDefs := []model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read_image", Parameters: []byte(`{"type":"object"}`)}}}
-	execTool := func(_ context.Context, _ model.ToolCall) (string, error) { return "image says hi", nil }
+	execTool := func(_ context.Context, _ model.ToolCall) (string, []model.Image, error) { return "image says hi", nil, nil }
 
 	provider := &toolLoopProvider{responses: []model.Response{{}, {Text: "recovered"}}}
 	agent := NewAgent(AgentConfig{Provider: provider, Model: "test-model", MaxToolCalls: 4})
@@ -741,7 +741,7 @@ func TestToolLoopFirstCallFailureDoesNotDuplicateUserMessage(t *testing.T) {
 		context.Background(),
 		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
 		"hello world",
-		func(_ context.Context, _ model.ToolCall) (string, error) { return "", nil },
+		func(_ context.Context, _ model.ToolCall) (string, []model.Image, error) { return "", nil, nil },
 		nil,
 		turn.TurnOptions{},
 	)
@@ -805,8 +805,8 @@ func TestToolLoopCompactsMidLoop(t *testing.T) {
 		context.Background(),
 		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
 		"read big.txt",
-		func(_ context.Context, _ model.ToolCall) (string, error) {
-			return strings.Repeat("huge tool output ", 150), nil // ~2550 chars → history ~4500 crosses 80% of 5000
+		func(_ context.Context, _ model.ToolCall) (string, []model.Image, error) {
+			return strings.Repeat("huge tool output ", 150), nil, nil // ~2550 chars → history ~4500 crosses 80% of 5000
 		},
 		nil,
 		turn.TurnOptions{},
@@ -862,10 +862,10 @@ func TestInterjectionReachesTheModelOnTheNextRound(t *testing.T) {
 		context.Background(),
 		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
 		"อ่านไฟล์นี้ให้หน่อย",
-		func(_ context.Context, _ model.ToolCall) (string, error) {
+		func(_ context.Context, _ model.ToolCall) (string, []model.Image, error) {
 			// The tool is running — exactly when a user gets bored and types.
 			agent.Interject(typed)
-			return "file contents", nil
+			return "file contents", nil, nil
 		},
 		nil,
 		turn.TurnOptions{},
@@ -927,7 +927,7 @@ func TestInterjectionKeepsAFinishingTurnAlive(t *testing.T) {
 		context.Background(),
 		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
 		"ถามอะไรสักอย่าง",
-		func(_ context.Context, _ model.ToolCall) (string, error) { return "", nil },
+		func(_ context.Context, _ model.ToolCall) (string, []model.Image, error) { return "", nil, nil },
 		nil,
 		turn.TurnOptions{},
 	)
@@ -978,12 +978,12 @@ func TestInterjectionsArriveTogetherInOrder(t *testing.T) {
 		context.Background(),
 		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
 		"งานหลัก",
-		func(_ context.Context, _ model.ToolCall) (string, error) {
+		func(_ context.Context, _ model.ToolCall) (string, []model.Image, error) {
 			agent.Interject("อันแรก")
 			agent.Interject("   ") // blank: nothing to say, must not become a message
 			agent.Interject("อันสอง")
 			agent.Interject("อันสาม")
-			return "file contents", nil
+			return "file contents", nil, nil
 		},
 		nil,
 		turn.TurnOptions{},
@@ -1043,10 +1043,10 @@ func TestACancelledTurnLeavesTheInterjectionForTheHost(t *testing.T) {
 		ctx,
 		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
 		"งานหลัก",
-		func(_ context.Context, _ model.ToolCall) (string, error) {
+		func(_ context.Context, _ model.ToolCall) (string, []model.Image, error) {
 			agent.Interject("พิมพ์แล้วกด Stop")
 			cancel() // the user's brake, hit right after typing
-			return "file contents", nil
+			return "file contents", nil, nil
 		},
 		nil,
 		turn.TurnOptions{},

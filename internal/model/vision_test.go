@@ -1,0 +1,135 @@
+package model
+
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
+
+func TestResolveVision(t *testing.T) {
+	cases := []struct {
+		provider string
+		model    string
+		want     bool
+	}{
+		{"openai", "gpt-4o", true},
+		{"anthropic", "claude-sonnet-5", true},
+		{"gemini", "gemini-2.5-pro", true},
+		{"ollama", "llava:13b", true},
+		{"ollama", "llama3.2-vision:11b", true},
+		{"openrouter", "qwen/qwen2.5-vl-72b-instruct:free", true},
+		// The family has no vision member; matching "deepseek" must lose to the
+		// text-only list rather than being read as unknown-and-therefore-maybe.
+		{"deepseek", "deepseek-v4", false},
+		{"deepseek", "deepseek-v4-flash", false},
+		{"ollama", "nomic-embed-text", false},
+		{"openai", "whisper-1", false},
+		// Unknown is blind on purpose: OCR still works, a silently dropped
+		// image does not.
+		{"acme", "totally-new-model", false},
+		{"openai", "", false},
+	}
+	for _, tc := range cases {
+		if got := ResolveVision(tc.provider, tc.model); got != tc.want {
+			t.Errorf("ResolveVision(%q, %q) = %v, want %v", tc.provider, tc.model, got, tc.want)
+		}
+	}
+}
+
+// The guarantee the whole design rests on: a message with no image must
+// serialize to the bytes it did before images existed, or every provider's
+// prompt cache misses on every turn.
+func TestOpenAIMessagesUnchangedWithoutImages(t *testing.T) {
+	msgs := []Message{
+		{Role: RoleSystem, Content: "you are a tool"},
+		{Role: RoleUser, Content: "hello"},
+		{Role: RoleAssistant, Content: "", ToolCalls: []ToolCall{{
+			ID: "call_1", Type: "function",
+			Function: FunctionCall{Name: "read", Arguments: `{"path":"a.go"}`},
+		}}},
+		{Role: RoleTool, ToolCallID: "call_1", Content: "package main"},
+	}
+
+	before, err := json.Marshal(msgs)
+	if err != nil {
+		t.Fatalf("marshal Message: %v", err)
+	}
+	after, err := json.Marshal(convertMessagesToOpenAI(msgs))
+	if err != nil {
+		t.Fatalf("marshal openAIRequestMessage: %v", err)
+	}
+	if string(before) != string(after) {
+		t.Errorf("the wire bytes changed for image-free messages\n before: %s\n  after: %s", before, after)
+	}
+}
+
+func TestOpenAIMessagesCarryImages(t *testing.T) {
+	msgs := []Message{{
+		Role:    RoleUser,
+		Content: "why is this layout broken?",
+		Images:  []Image{{MediaType: "image/png", Data: []byte{1, 2, 3}}},
+	}}
+	body, err := json.Marshal(convertMessagesToOpenAI(msgs))
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	got := string(body)
+	if !strings.Contains(got, `"type":"text"`) || !strings.Contains(got, "why is this layout broken?") {
+		t.Errorf("the question did not survive the parts conversion: %s", got)
+	}
+	if !strings.Contains(got, `"image_url":{"url":"data:image/png;base64,AQID"}`) {
+		t.Errorf("image part missing or malformed: %s", got)
+	}
+}
+
+func TestAnthropicMessagesCarryImages(t *testing.T) {
+	_, msgs := convertMessagesToAnthropic([]Message{{
+		Role:    RoleUser,
+		Content: "read this",
+		Images:  []Image{{MediaType: "image/jpeg", Data: []byte{9, 9}}},
+	}})
+	if len(msgs) != 1 || len(msgs[0].Content) != 2 {
+		t.Fatalf("want one message of two blocks, got %+v", msgs)
+	}
+	image := msgs[0].Content[1]
+	if image.Type != "image" || image.Source == nil {
+		t.Fatalf("second block is not an image: %+v", image)
+	}
+	if image.Source.Type != "base64" || image.Source.MediaType != "image/jpeg" || image.Source.Data != "CQk=" {
+		t.Errorf("image source = %+v, want base64/image/jpeg/CQk=", image.Source)
+	}
+}
+
+// An image with no caption must not drag an empty text block along: Anthropic
+// rejects one, and the picture is the message.
+func TestAnthropicImageWithoutTextSendsNoEmptyBlock(t *testing.T) {
+	_, msgs := convertMessagesToAnthropic([]Message{{
+		Role:   RoleUser,
+		Images: []Image{{MediaType: "image/png", Data: []byte{1}}},
+	}})
+	if len(msgs) != 1 || len(msgs[0].Content) != 1 {
+		t.Fatalf("want a single image block, got %+v", msgs)
+	}
+	if msgs[0].Content[0].Type != "image" {
+		t.Errorf("block = %q, want image", msgs[0].Content[0].Type)
+	}
+}
+
+func TestOllamaMessagesCarryImages(t *testing.T) {
+	converted := convertMessagesToOllama([]Message{{
+		Role:    RoleUser,
+		Content: "what is this",
+		Images:  []Image{{MediaType: "image/png", Data: []byte{7}}},
+	}})
+	if len(converted) != 1 {
+		t.Fatalf("want one message, got %d", len(converted))
+	}
+	// Ollama takes bare base64 in a sibling field, with no media type and no
+	// data: prefix — getting this wrong is a silently ignored image.
+	if len(converted[0].Images) != 1 || converted[0].Images[0] != "Bw==" {
+		t.Errorf("Images = %v, want one bare base64 string", converted[0].Images)
+	}
+	if converted[0].Content != "what is this" {
+		t.Errorf("Content = %q, want the question kept beside the image", converted[0].Content)
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -94,15 +95,27 @@ func (p *AnthropicProvider) SupportsReasoning() bool { return true }
 // ---------------------------------------------------------------------------
 
 type anthropicContentBlock struct {
-	Type      string          `json:"type"`
-	Text      string          `json:"text,omitempty"`
-	Thinking  string          `json:"thinking,omitempty"`
-	ID        string          `json:"id,omitempty"`
-	Name      string          `json:"name,omitempty"`
-	Input     json.RawMessage `json:"input,omitempty"`
-	ToolUseID string          `json:"tool_use_id,omitempty"`
-	Content   string          `json:"content,omitempty"`
-	IsError   bool            `json:"is_error,omitempty"`
+	Type      string           `json:"type"`
+	Text      string           `json:"text,omitempty"`
+	Thinking  string           `json:"thinking,omitempty"`
+	ID        string           `json:"id,omitempty"`
+	Name      string           `json:"name,omitempty"`
+	Input     json.RawMessage  `json:"input,omitempty"`
+	ToolUseID string           `json:"tool_use_id,omitempty"`
+	Content   string           `json:"content,omitempty"`
+	IsError   bool             `json:"is_error,omitempty"`
+	Source    *anthropicSource `json:"source,omitempty"`
+}
+
+// anthropicSource carries an image block's bytes. Anthropic takes base64 in a
+// nested object with the media type beside it, rather than the single `data:`
+// URL the OpenAI-compatible APIs take — same picture, different envelope, which
+// is exactly why Message keeps images as raw bytes and lets each adapter wrap
+// them.
+type anthropicSource struct {
+	Type      string `json:"type"`
+	MediaType string `json:"media_type"`
+	Data      string `json:"data"`
 }
 
 type anthropicMessage struct {
@@ -233,7 +246,27 @@ func convertMessagesToAnthropic(msgs []Message) (string, []anthropicMessage) {
 			})
 		default: // RoleUser and anything unrecognized
 			role = "user"
-			blocks = append(blocks, anthropicContentBlock{Type: "text", Text: m.Content})
+			if m.Content != "" || len(m.Images) == 0 {
+				// The empty-text block is kept when there is no image, because
+				// dropping it would silently delete a message the caller sent;
+				// with an image the picture is the message and an empty text
+				// block beside it is rejected by the API.
+				blocks = append(blocks, anthropicContentBlock{Type: "text", Text: m.Content})
+			}
+			for _, img := range m.Images {
+				mediaType := strings.TrimSpace(img.MediaType)
+				if mediaType == "" {
+					mediaType = "image/png"
+				}
+				blocks = append(blocks, anthropicContentBlock{
+					Type: "image",
+					Source: &anthropicSource{
+						Type:      "base64",
+						MediaType: mediaType,
+						Data:      base64.StdEncoding.EncodeToString(img.Data),
+					},
+				})
+			}
 		}
 		if len(blocks) == 0 {
 			continue
