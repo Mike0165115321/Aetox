@@ -159,7 +159,7 @@ func missingTesseractError() error {
 	case "darwin":
 		return errors.New("ไม่พบ Tesseract และติดตั้งอัตโนมัติไม่สำเร็จ (ต้องมี Homebrew) — รันเอง: brew install tesseract tesseract-lang")
 	case "linux":
-		if hint := linuxInstallHint(); hint != "" {
+		if hint := linuxInstallHint("tesseract-ocr tesseract-ocr-tha", "tesseract tesseract-langpack-tha", "tesseract-data-tha tesseract"); hint != "" {
 			return fmt.Errorf("ไม่พบโปรแกรม Tesseract ในเครื่อง — ติดตั้งด้วย: %s", hint)
 		}
 		return errors.New("ไม่พบโปรแกรม Tesseract ในเครื่อง — ติดตั้งผ่าน package manager ของดิสโทรคุณ (แพ็กเกจ tesseract-ocr หรือ tesseract พร้อมชุดภาษาไทย)")
@@ -169,17 +169,18 @@ func missingTesseractError() error {
 }
 
 // linuxInstallHint returns a ready-to-paste install command for whichever
-// package manager is present. Not auto-run — these all need sudo, and
-// running a privileged command silently isn't something to do without the
-// user watching, same reasoning as not scripting around Windows' UAC.
-func linuxInstallHint() string {
+// package manager is present, given each one's package names for the thing
+// being installed. Not auto-run — these all need sudo, and running a
+// privileged command silently isn't something to do without the user
+// watching, same reasoning as not scripting around Windows' UAC.
+func linuxInstallHint(aptPkgs, dnfPkgs, pacmanPkgs string) string {
 	switch {
 	case commandExists("apt-get"):
-		return "sudo apt-get install -y tesseract-ocr tesseract-ocr-tha"
+		return "sudo apt-get install -y " + aptPkgs
 	case commandExists("dnf"):
-		return "sudo dnf install -y tesseract tesseract-langpack-tha"
+		return "sudo dnf install -y " + dnfPkgs
 	case commandExists("pacman"):
-		return "sudo pacman -S tesseract-data-tha tesseract"
+		return "sudo pacman -S " + pacmanPkgs
 	default:
 		return ""
 	}

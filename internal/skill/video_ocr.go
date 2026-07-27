@@ -164,7 +164,7 @@ func (s *videoOCRSkill) run(ctx context.Context, start time.Time, requestPath st
 }
 
 func extractFrames(ctx context.Context, videoPath, outDir string, intervalSec int) ([]string, error) {
-	cmd := exec.CommandContext(ctx, "ffmpeg",
+	cmd := exec.CommandContext(ctx, bundledBinary("ffmpeg", "ffmpeg"),
 		"-hide_banner", "-loglevel", "error", "-y",
 		"-i", videoPath,
 		"-vf", fmt.Sprintf("fps=1/%d", intervalSec),

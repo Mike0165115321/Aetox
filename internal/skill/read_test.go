@@ -28,6 +28,25 @@ func TestReadSkillExecute(t *testing.T) {
 	}
 }
 
+// A PDF (or any binary) used to come back as Success with the text
+// "(binary file)" — a green tick on a read that gave the model nothing, which
+// it read as "keep trying" rather than "this cannot be read".
+func TestReadSkillFailsOnBinaryInsteadOfReportingSuccess(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "doc.pdf"), []byte("%PDF-1.7\x00\x01binary"), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	s := &readSkill{root: root}
+
+	out, err := s.Execute(context.Background(), Input{"args": []string{"doc.pdf"}})
+	if err == nil {
+		t.Fatal("expected an error for a binary file, got nil")
+	}
+	if out.Success {
+		t.Error("Success = true on a file that could not be read")
+	}
+}
+
 func TestReadSkillMissingFile(t *testing.T) {
 	s := &readSkill{root: t.TempDir()}
 	_, err := s.Execute(context.Background(), Input{"args": []string{"does-not-exist.txt"}})

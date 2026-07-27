@@ -222,7 +222,8 @@ func (s *fsSkill) execCat(start time.Time, params []string) (Output, error) {
 		return newToolOutput("fs", command, "", start, false, err), err
 	}
 	if binary {
-		return newToolOutput("fs", command, "(binary file)", start, false, nil), nil
+		err = errors.New("read target is a binary file — there is no text to read")
+		return newToolOutput("fs", command, "", start, false, err), err
 	}
 
 	content, next, err := readTextLines(file, 1, readDefaultLines)

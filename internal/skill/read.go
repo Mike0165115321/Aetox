@@ -118,8 +118,14 @@ func (s *readSkill) Execute(_ context.Context, input Input) (Output, error) {
 	if err != nil {
 		return newToolOutput("read", command, "", start, false, err), err
 	}
+	// An error, not a "(binary file)" note with err == nil: that reported
+	// Success and drew a green tick for a read that returned nothing usable,
+	// so the model treated a dead end as a result it merely hadn't understood
+	// and kept guessing at other ways in. edit already fails the same way on
+	// the same condition.
 	if binary {
-		return newToolOutput("read", command, "(binary file)", start, false, nil), nil
+		err = errors.New("read target is a binary file — there is no text to read")
+		return newToolOutput("read", command, "", start, false, err), err
 	}
 
 	content, next, err := readTextLines(file, offset, limit)
