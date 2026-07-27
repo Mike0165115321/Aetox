@@ -32,8 +32,9 @@ func TestSkillToolBridge(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SkillTools: %v", err)
 	}
-	if len(tools) != 1 {
-		t.Fatalf("got %d tools, want 1", len(tools))
+	// One real tool plus the resource pair, which this server also offers.
+	if len(tools) != 3 {
+		t.Fatalf("got %d tools, want 3 (echo + the resource pair)", len(tools))
 	}
 	tool := tools[0]
 	if tool.Name() != "echo_srv_echo" {

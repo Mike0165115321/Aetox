@@ -112,6 +112,10 @@ func (c *Client) SkillTools(ctx context.Context) ([]skill.Tool, error) {
 	for _, t := range tools {
 		out = append(out, newToolAdapter(c, t))
 	}
+	// Resources are the server's nouns, and a server that is a source of data
+	// rather than a set of verbs looked empty without them. The pair is added
+	// only when there is something to list — see resourceTools.
+	out = append(out, resourceTools(ctx, c)...)
 	return out, nil
 }
 

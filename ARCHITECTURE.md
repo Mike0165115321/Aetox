@@ -1913,6 +1913,26 @@ The tail of §52's sweep, done rather than recorded. Each of these was small on 
 
 ---
 
+## 55. Decision — MCP Resources, `symbol`, and Two Things Deliberately Not Built (2026-07-28)
+
+**`symbol` (§54's LSP gap).** The language server was already running for `diagnostics` and was only ever asked one question. "What is this and where does it come from" is the other one, and without it the model answers by searching — grep the name, open what matched, guess which definition is in scope. That works, it is expensive, and it is subtly wrong in any codebase with two types of the same name, which is most of them once vendored code and test doubles are counted.
+
+It takes a **name, not a line and column**: a model reads code, not coordinates, and asking it to count characters invites an off-by-one that describes the token next door with total confidence. The name is matched as a whole word, so looking up `Get` does not land inside `Getter`.
+
+This needed real request/response correlation in `internal/lsp`, which the client did not have — diagnostics arrive as notifications, and the one request it made (`initialize`) was confirmed by *the server staying alive*, not by matching an id. `readLoop` now routes replies to whoever asked, and the id is registered **before** the message is sent, because a fast server can answer before the sending goroutine gets back to the map. Both parsers accept every shape the protocol has carried for hover contents and definition locations; servers disagree and all of them are legal.
+
+**MCP resources.** A server exposes two different kinds of thing. Tools are verbs. A **resource** is a noun — a document, a record, a config the server is the authority on, addressed by URI. Bridging only the verbs left every server that is a *source of data* looking empty.
+
+Two tools per server, not one per resource: a server can expose thousands, they change while Aetox is running, and a tool definition per resource would be serialized into every request. Listing is a call, not a schema. And the pair is registered **only when the server actually has resources** — a tool that always answers "none" is still paid for in the tool block of every single turn, which is the whole cost of getting this wrong.
+
+**Not built, with reasons.**
+
+- **MCP prompts stay at the client layer.** `Client.Prompts`/`GetPrompt` exist and compile; they are not bridged as model tools. A prompt template is a workflow a *human* picks, which is what the composer's `/` palette is for (§36) — handing one to the model as a tool offers it a canned instruction it has no way to judge. The plumbing is there for whenever the palette wiring happens.
+- **Plugin hooks are not being built.** [docs/opencode-study/plugin-hooks.md](docs/opencode-study/plugin-hooks.md) put them next after MCP, and that ordering has aged out: `plugin_install` is still the half-finished loader of §6.5, so a `tool.execute.before/after` system today would be an extension point with nothing on the other end of it. The same study's own finding applies — *"always grep for the call site, not just the type, before citing a feature as real"* — and building the type first is how you end up citing your own scaffolding. MCP already covers third-party capability, which is what the hooks were wanted for.
+- **The undo button, again.** Same blocker as §53: it needs `wails generate` to regenerate the bindings **and** an edit to [Chat.svelte](desktop/frontend/src/lib/Chat.svelte), which carries the owner's uncommitted work. `UndoLastTurn` and `PendingUndo` are bound and tested on the Go side.
+
+---
+
 ## Validation
 
 1. **Claim traceability:** every claim above cites a file or an existing project doc; the two `Unverified`/`Inferred, Verify first: Yes` items are marked as such, not stated as fact.

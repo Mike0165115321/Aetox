@@ -36,6 +36,18 @@ func main() {
 	}
 	s := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "echo", Version: "1"}, nil)
 	mcpsdk.AddTool(s, &mcpsdk.Tool{Name: "echo", Description: "echoes text"}, echo)
+	// One resource, so the resource bridge has something real to enumerate and
+	// read. AETOX_TEST_NO_RESOURCES drops it, which is how the test proves the
+	// resource tools are not registered for a server that has none.
+	if os.Getenv("AETOX_TEST_NO_RESOURCES") == "" {
+		s.AddResource(
+			&mcpsdk.Resource{URI: "echo://greeting", Name: "greeting", Description: "a fixed greeting"},
+			func(_ context.Context, req *mcpsdk.ReadResourceRequest) (*mcpsdk.ReadResourceResult, error) {
+				return &mcpsdk.ReadResourceResult{Contents: []*mcpsdk.ResourceContents{
+					{URI: req.Params.URI, MIMEType: "text/plain", Text: "hello from a resource"},
+				}}, nil
+			})
+	}
 	if err := s.Run(context.Background(), &mcpsdk.StdioTransport{}); err != nil {
 		os.Exit(1)
 	}

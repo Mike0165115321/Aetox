@@ -192,6 +192,60 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 	return session.CallTool(ctx, &mcpsdk.CallToolParams{Name: name, Arguments: args})
 }
 
+// Resources lists what the server offers to read — files, records, documents
+// it is the authority on. Empty is the normal case: a server that only exposes
+// tools declares no resources, and asking one that does not support them at all
+// is an error, not a fact worth reporting.
+func (c *Client) Resources(ctx context.Context) ([]*mcpsdk.Resource, error) {
+	session, err := c.ensure(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out []*mcpsdk.Resource
+	for resource, iterErr := range session.Resources(ctx, nil) {
+		if iterErr != nil {
+			return nil, iterErr
+		}
+		out = append(out, resource)
+	}
+	return out, nil
+}
+
+// ReadResource fetches one resource's contents by URI.
+func (c *Client) ReadResource(ctx context.Context, uri string) (*mcpsdk.ReadResourceResult, error) {
+	session, err := c.ensure(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return session.ReadResource(ctx, &mcpsdk.ReadResourceParams{URI: uri})
+}
+
+// Prompts lists the server's prompt templates — the workflows its author
+// thought were worth naming.
+func (c *Client) Prompts(ctx context.Context) ([]*mcpsdk.Prompt, error) {
+	session, err := c.ensure(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out []*mcpsdk.Prompt
+	for prompt, iterErr := range session.Prompts(ctx, nil) {
+		if iterErr != nil {
+			return nil, iterErr
+		}
+		out = append(out, prompt)
+	}
+	return out, nil
+}
+
+// GetPrompt renders one prompt template with arguments filled in.
+func (c *Client) GetPrompt(ctx context.Context, name string, args map[string]string) (*mcpsdk.GetPromptResult, error) {
+	session, err := c.ensure(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return session.GetPrompt(ctx, &mcpsdk.GetPromptParams{Name: name, Arguments: args})
+}
+
 // Close terminates the subprocess if connected and resets to idle so a later
 // call can reconnect. Safe to call when never connected.
 func (c *Client) Close() error {
