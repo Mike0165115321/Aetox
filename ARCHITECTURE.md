@@ -1933,6 +1933,25 @@ Two tools per server, not one per resource: a server can expose thousands, they 
 
 ---
 
+## 56. Decision — Vision Proven Against Real Providers, Not Just Against Its Own Schema (2026-07-28)
+
+§51's unit tests prove the JSON has the right shape. They cannot prove a provider agrees with that shape, and every one of the three spells an image differently — which is exactly the kind of claim that passes review and fails in front of a user. Run against a local Ollama serving `qwen3-vl:8b`:
+
+| path | code under test | result |
+|---|---|---|
+| Ollama native | `convertMessagesToOllama` → `images: [base64]` sibling field | **"red green blue"** |
+| OpenAI-compatible | `convertMessagesToOpenAI` → `content` parts with `image_url` | **"Red Green Blue"** |
+
+The fixture is three coloured bars and **contains no text at all**, so `image_ocr` on it returns nothing. A correct answer can only come from a model that actually saw the picture — which is the difference this whole change exists to make.
+
+The second row matters more than the first: that adapter serves almost the entire catalog (OpenAI, DeepSeek, OpenRouter, Groq, LM Studio), and Ollama's own `/v1` endpoint exercises it without a paid key. `web_fetch`'s digester was proven the same way against a real DeepSeek model — it returned "the option is **MaxAttempts**, default **5**" from a page padded with 24,000 characters of filler, which is an answer rather than a summary.
+
+**Still unproven: Anthropic's `source` block.** No key on this machine. The shape is unit-tested and the empty-text-block trap is covered, but it has not met a real server, and this section says so rather than letting the two green rows imply three.
+
+**What stopped this being run at all**, and is worth keeping: the owner refused the first attempt, because a machine already running Ollama could have had a second model pulled into VRAM on top of the first. The concern was right in general and wrong here — `ResolveVision` reads the name of the *currently selected* model and nothing anywhere constructs a second provider for images — but the reason it was worth asking is that "there is a spare vision model on this box, let's use it" was **my** reasoning, not the product's, and I had not checked what else the machine was doing. Verified by grep afterwards rather than asserted: the only three `NewProvider` call sites are bootstrap, its `aetox` fallback, and the settings connection test.
+
+---
+
 ## Validation
 
 1. **Claim traceability:** every claim above cites a file or an existing project doc; the two `Unverified`/`Inferred, Verify first: Yes` items are marked as such, not stated as fact.
