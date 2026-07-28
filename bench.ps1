@@ -10,6 +10,11 @@
     .\bench.ps1 -Start                 เวลาเปิด + RAM ตอนนิ่ง (เปิด/ปิดเองอัตโนมัติ)
     .\bench.ps1 -Snapshot              อ่าน RAM ของตัวที่เปิดค้างอยู่ตอนนี้ (ไม่แตะอะไร)
     .\bench.ps1 -Soak -Hours 8         เปิดทิ้งไว้แล้วเก็บ RAM ทุก 5 นาที หา memory leak
+    .\bench.ps1 -Engine                ข้างในตัวแอป — tool payload, ความเร็ว tool, build, เทส
+    .\bench.ps1 -All                   -Disk แล้ว -Engine ต่อกัน (ไม่รวม -Start ที่ต้องปิดแอปก่อน)
+
+  สามโหมดแรกวัด "แอป" — สิ่งที่ผู้ใช้รู้สึกตอนเปิด -Engine วัด "เครื่องยนต์" — สิ่งที่ผู้ใช้
+  รู้สึกทุกครั้งที่พิมพ์ ทั้งสองอย่างคือคนละคำถาม และเอกสารที่มีแค่ครึ่งเดียวตอบไม่ครบ
 
   ตัวเลือกร่วม
     -App <ชื่อ>       วัดเฉพาะตัวเดียว เช่น -App Aetox
@@ -25,6 +30,9 @@ param(
   [switch]$Start,
   [switch]$Snapshot,
   [switch]$Soak,
+  [switch]$Engine,
+  [switch]$All,
+  [switch]$SkipBuild,
   [string]$App,
   [int]$Runs      = 5,
   [int]$SettleSec = 60,
@@ -222,9 +230,13 @@ function Invoke-Start {
     if ($a.Kind -ne 'desktop') { Write-Host ("{0,-12} ข้าม — ไม่มีหน้าต่าง จับเวลาเปิดไม่ได้" -f $a.Name); continue }
     if (-not (Test-Path $a.Exe)) { Write-Host ("{0,-12} ข้าม — ไม่พบ {1}" -f $a.Name, $a.Exe); continue }
 
-    $running = Get-PidSet $a.Procs
-    if ($running.Count -gt 0) {
-      Write-Host ("{0,-12} ข้าม — เปิดค้างอยู่ ({1} process) ปิดก่อนแล้วรันใหม่ หรือใช้ -Snapshot" -f $a.Name, $running.Count) -ForegroundColor Yellow
+    # ต้องกรองด้วย CmdMatch เหมือน Measure-Procs ไม่งั้น msedgewebview2 ของแอปอื่น
+    # บนเครื่อง (Windows เองก็ใช้) นับเป็นของเรา แล้วโหมดนี้จะข้าม Aetox ตลอดกาล
+    # บนเครื่องที่มีแอป WebView2 ตัวไหนเปิดอยู่ — ซึ่งคือเครื่องส่วนใหญ่
+    # เจอ 2026-07-28: -Start บอก "เปิดค้าง 12 process" ขณะที่ -Snapshot ไม่เห็นสักตัว
+    $running = (Measure-Procs $a $null).Procs
+    if ($running -gt 0) {
+      Write-Host ("{0,-12} ข้าม — เปิดค้างอยู่ ({1} process) ปิดก่อนแล้วรันใหม่ หรือใช้ -Snapshot" -f $a.Name, $running) -ForegroundColor Yellow
       continue
     }
 
@@ -315,13 +327,160 @@ function Invoke-Soak {
   Write-Host "ไฟล์ดิบ: $csv`n"
 }
 
+# ── โหมด: ข้างในเครื่องยนต์ ──────────────────────────────────────────────────
+#
+# สามโหมดข้างบนวัดสิ่งที่ผู้ใช้รู้สึก "ตอนเปิดแอป" ครั้งเดียว โหมดนี้วัดสิ่งที่เขารู้สึก
+# "ทุกครั้งที่พิมพ์" — ซึ่งเจอบ่อยกว่ากันหลายพันเท่าและไม่เคยมีใครวัดมาก่อน
+#
+# ไม่มีคู่แข่งในโหมดนี้ตั้งใจ: ตัวเลขข้างในของ Claude Code/OpenCode วัดจากข้างนอกไม่ได้
+# เอาไปเทียบกันตรง ๆ ก็จะเป็นการเดา ที่นี่จึงวัดของเราเทียบกับตัวเราเองข้ามเวอร์ชัน
+
+function Format-Bytes($b) {
+  if ($null -eq $b) { return '—' }
+  if ($b -ge 1MB) { return ('{0:N1} MB' -f ($b/1MB)) }
+  if ($b -ge 1KB) { return ('{0:N1} KB' -f ($b/1KB)) }
+  "$b B"
+}
+
+# รัน go benchmark หนึ่งตัวแล้วดึง ns/op กับ B/op ออกมา — ไม่ต้องมาอ่านผลดิบเอง
+function Invoke-GoBench($pkg, $name, $iterations = 200) {
+  $raw = & go test $pkg -run '^$' -bench ('^' + $name + '$') -benchtime ("{0}x" -f $iterations) -count 3 2>&1
+  $ns = @(); $bytes = $null
+  foreach ($line in $raw) {
+    if ($line -match '^\S+\s+\d+\s+([\d.]+)\s+ns/op(?:\s+(\d+)\s+B/op)?') {
+      $ns += [double]$Matches[1]
+      if ($Matches[2]) { $bytes = [int]$Matches[2] }
+    }
+  }
+  if ($ns.Count -eq 0) { return $null }
+  [pscustomobject]@{ NsPerOp = (Median $ns); BytesPerOp = $bytes; Runs = $ns.Count }
+}
+
+function Invoke-Engine {
+  Push-Location $PSScriptRoot
+  try {
+    Write-Host "── ขนาดที่ส่งถึงผู้ใช้ ──`n"
+    $exe = "$PSScriptRoot\desktop\build\bin\aetox.exe"
+    if (Test-Path $exe) {
+      $item = Get-Item $exe
+      Write-Host ("  aetox.exe            {0}   (build เมื่อ {1:yyyy-MM-dd HH:mm})" -f (Format-Bytes $item.Length), $item.LastWriteTime)
+    } else {
+      Write-Host "  aetox.exe            ยังไม่ได้ build — รัน wails build ใน desktop\ ก่อน" -ForegroundColor Yellow
+    }
+    # ตัวติดตั้งกับ zip เป็นของที่ผู้ใช้โหลดจริง ขนาดต่างจาก exe เพราะบีบอัด
+    foreach ($extra in @('aetox-desktop-amd64-installer.exe', 'aetox-desktop-amd64.zip')) {
+      $p = "$PSScriptRoot\desktop\build\bin\$extra"
+      if (Test-Path $p) { Write-Host ("  {0,-20} {1}" -f $extra, (Format-Bytes (Get-Item $p).Length)) }
+    }
+    Write-Host ""
+
+    Write-Host "── สิ่งที่จ่ายทุกครั้งที่พิมพ์ ──`n"
+    # payload ของ tools ไปกับ *ทุก* คำขอ ก่อนบทสนทนาเสียอีก — ตัวเลขนี้คือทั้งค่าโทเคน
+    # ที่ผู้ใช้จ่ายและงานที่เครื่องทำ วัดจาก registry จริงไม่ใช่นับด้วยมือ
+    $probe = Join-Path $PSScriptRoot 'internal\skill\zz_bench_probe_test.go'
+    @'
+package skill
+
+import (
+	"encoding/json"
+	"testing"
+)
+
+func TestBenchProbeToolPayload(t *testing.T) {
+	registry := NewDefaultRegistry(RegistryOptions{SandboxRoot: t.TempDir()})
+	defs := NewDispatcher(registry).ToolDefinitions()
+	payload, _ := json.Marshal(defs)
+	t.Logf("PROBE entries=%d tools=%d bytes=%d", len(registry.Names()), len(defs), len(payload))
+}
+
+func BenchmarkBenchProbeAssembly(b *testing.B) {
+	registry := NewDefaultRegistry(RegistryOptions{SandboxRoot: b.TempDir()})
+	dispatcher := NewDispatcher(registry)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		defs := dispatcher.ToolDefinitions()
+		_, _ = json.Marshal(defs)
+	}
+}
+'@ | Set-Content -Path $probe -Encoding utf8
+    try {
+      $out = & go test ./internal/skill/ -run TestBenchProbeToolPayload -count=1 -v 2>&1
+      $line = $out | Select-String 'PROBE entries=(\d+) tools=(\d+) bytes=(\d+)'
+      if ($line) {
+        $m = $line.Matches[0]
+        Write-Host ("  tools ที่โมเดลเห็น    {0} ตัว (registry {1} รายการ)" -f $m.Groups[2].Value, $m.Groups[1].Value)
+        Write-Host ("  payload ต่อคำขอ      {0}" -f (Format-Bytes ([int]$m.Groups[3].Value)))
+      }
+      $asm = Invoke-GoBench './internal/skill/' 'BenchmarkBenchProbeAssembly'
+      if ($asm) {
+        Write-Host ("  เวลาประกอบ+แปลง JSON {0:N2} ms/เทิร์น · {1}/เทิร์น (median {2} รอบ)" -f `
+          ($asm.NsPerOp/1e6), (Format-Bytes $asm.BytesPerOp), $asm.Runs)
+      }
+    } finally { Remove-Item $probe -ErrorAction SilentlyContinue }
+    Write-Host ""
+
+    Write-Host "── ความเร็ว tool ที่มีอยู่แล้วในโปรเจกต์ ──`n"
+    # เฉพาะ benchmark ที่เขียนไว้แล้วจริง ไม่ยัดตัวใหม่เข้าไปให้ตัวเลขดูดี
+    # จำนวนรอบต่างกันตามน้ำหนักงาน — grep เดินทั้ง repo จริง 200 รอบคือหลายนาที
+    $benches = @(
+      @{ Pkg='./internal/skill/'; Name='BenchmarkGrepRealRepo';        N=20;    Label='grep ทั้ง repo จริง' }
+      @{ Pkg='./internal/skill/'; Name='BenchmarkResolveSandboxPath';  N=20000; Label='ตรวจ path ในแซนด์บ็อกซ์' }
+      @{ Pkg='./internal/model/'; Name='BenchmarkSubjectFromPartialArgs'; N=20000; Label='ตั้งชื่อ tool ตอนสตรีม' }
+      @{ Pkg='./internal/model/'; Name='BenchmarkStreamAccumulatorLargeWrite'; N=200; Label='สะสมสตรีมไฟล์ใหญ่' }
+    )
+    $found = $false
+    foreach ($b in $benches) {
+      $r = Invoke-GoBench $b.Pkg $b.Name $b.N
+      if (-not $r) { continue }
+      $found = $true
+      $t = if ($r.NsPerOp -ge 1e6) { '{0:N2} ms' -f ($r.NsPerOp/1e6) }
+           elseif ($r.NsPerOp -ge 1e3) { '{0:N1} µs' -f ($r.NsPerOp/1e3) }
+           else { '{0:N0} ns' -f $r.NsPerOp }
+      Write-Host ("  {0,-26} {1,10}   {2}" -f $b.Label, $t, (Format-Bytes $r.BytesPerOp))
+    }
+    if (-not $found) { Write-Host "  (ไม่พบ benchmark ที่ตรงชื่อ — เพิ่มใน internal/*/ *_bench_test.go)" }
+    Write-Host "  ตัวที่แตะไฟล์จ่าย 'ตรวจ path' ทุกครั้ง — เป็นค่าคงที่ที่ทุก tool แบกร่วมกัน"
+    Write-Host ""
+
+    if (-not $SkipBuild) {
+      Write-Host "── เวลาที่ใช้สร้างตัวแอป ──`n"
+      # นักพัฒนารู้สึกทุกครั้งที่แก้โค้ด และเป็นตัวชี้ว่าโปรเจกต์เริ่มอ้วนหรือยัง
+      & go clean -cache 2>&1 | Out-Null
+      $sw = [System.Diagnostics.Stopwatch]::StartNew()
+      & go build ./... 2>&1 | Out-Null
+      $sw.Stop()
+      Write-Host ("  go build ./... (แคชเปล่า)  {0:N1} วิ" -f $sw.Elapsed.TotalSeconds)
+      $sw.Restart()
+      & go build ./... 2>&1 | Out-Null
+      $sw.Stop()
+      Write-Host ("  go build ./... (แคชอุ่น)   {0:N1} วิ" -f $sw.Elapsed.TotalSeconds)
+      Write-Host ""
+    }
+
+    Write-Host "── เวลาที่ใช้เทสทั้งชุด ──`n"
+    # ไม่ใช่แค่ตัวเลขความเร็ว — เป็นเพดานว่า agent สั่ง `go test ./...` เองแล้วจะทันไหม
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $testOut = & go test ./... -count=1 2>&1
+    $sw.Stop()
+    $pkgs = @($testOut | Select-String '^ok ').Count
+    $fails = @($testOut | Select-String '^(FAIL|---\s+FAIL)').Count
+    $state = if ($fails -eq 0) { 'ผ่านหมด' } else { "ตก $fails" }
+    Write-Host ("  go test ./...          {0:N1} วิ · {1} แพ็กเกจ · {2}" -f $sw.Elapsed.TotalSeconds, $pkgs, $state)
+    Write-Host ("  (เพดาน tool คือ 60 วิ ต่อคำสั่ง — ปรับได้ถึง 600 ด้วย timeout_seconds)")
+    Write-Host ""
+  } finally { Pop-Location }
+}
+
 # ── ทางเข้า ─────────────────────────────────────────────────────────────────
 Show-Machine
-if     ($Disk)     { Invoke-Disk }
+if     ($All)      { Invoke-Disk; Invoke-Engine }
+elseif ($Disk)     { Invoke-Disk }
 elseif ($Start)    { Invoke-Start }
 elseif ($Snapshot) { Invoke-Snapshot }
 elseif ($Soak)     { Invoke-Soak }
+elseif ($Engine)   { Invoke-Engine }
 else {
-  Write-Host "เลือกโหมด: -Disk | -Start | -Snapshot | -Soak"
+  Write-Host "เลือกโหมด: -Disk | -Start | -Snapshot | -Soak | -Engine | -All"
   Write-Host "กติกาและผลที่วัดได้แล้วอยู่ใน BENCHMARK.md`n"
 }
