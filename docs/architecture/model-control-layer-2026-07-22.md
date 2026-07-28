@@ -134,5 +134,5 @@ By the time `buildRequest` runs, `Context.Messages()` is already a flat `[]Messa
 ## Related documents
 
 - [ARCHITECTURE.md](../../ARCHITECTURE.md) — whole-repo map; §4.1 has the file-count table this doc expands on, §6.4 has the Registry/Source fix this doc assumes.
-- [MCP-SUPPORT-PLAN.md](../../MCP-SUPPORT-PLAN.md) — the project's own MCP readiness notes; this doc doesn't repeat its content, only anchors it to specific line-level evidence.
+- `MCP-SUPPORT-PLAN.md` — the project's own MCP readiness notes; this doc doesn't repeat its content, only anchors it to specific line-level evidence.
 - [TEST-REPORT.md](../../TEST-REPORT.md) Module 2 — test coverage for `skill`/`cognitive`/`turn`.

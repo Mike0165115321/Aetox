@@ -1,6 +1,6 @@
 # internal/skill — tool registry + dispatcher (30 built-ins, 27 model-facing)
 
-> Module map: [ARCHITECTURE.md §4.1](../../ARCHITECTURE.md) · Deep dive: [model-control-layer-2026-07-22.md](../../docs/architecture/model-control-layer-2026-07-22.md) · MCP direction: [MCP-SUPPORT-PLAN.md](../../MCP-SUPPORT-PLAN.md)
+> Module map: [ARCHITECTURE.md §4.1](../../ARCHITECTURE.md) · Deep dive: [model-control-layer-2026-07-22.md](../../docs/architecture/model-control-layer-2026-07-22.md) · MCP direction: `MCP-SUPPORT-PLAN.md` (local working note, not published)
 
 **What it is:** everything the agent can *do*. Defines the `Skill`/`Tool` interfaces, the `Registry` (which skills exist, with source tracking), the `Dispatcher` (text command → skill, and model tool-call → skill), and all 30 built-in tools — 27 of which implement `Tool` and are sent to the model; `echo`, `fs` and `help` are console-only.
 
