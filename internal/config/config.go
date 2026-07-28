@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Mike0165115321/Aetox/internal/hook"
 	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/safety"
 )
@@ -60,12 +61,12 @@ type ConfigOptions struct {
 }
 
 type ModelPreference struct {
-	ModelProvider   string            `json:"provider"`
-	ModelName       string            `json:"model"`
-	ModelBaseURL    string            `json:"base_url"`
-	ModelWireFormat string            `json:"wire_format,omitempty"`
-	ThinkLevel      string            `json:"think_level,omitempty"`
-	ApprovalMode    string            `json:"approval_mode,omitempty"`
+	ModelProvider   string `json:"provider"`
+	ModelName       string `json:"model"`
+	ModelBaseURL    string `json:"base_url"`
+	ModelWireFormat string `json:"wire_format,omitempty"`
+	ThinkLevel      string `json:"think_level,omitempty"`
+	ApprovalMode    string `json:"approval_mode,omitempty"`
 	// UILocale sits next to ApprovalMode because it is the same kind of thing:
 	// a choice the user made in the UI that the engine needs on next start.
 	UILocale string `json:"ui_locale,omitempty"`
@@ -352,6 +353,27 @@ func PermissionsPath() (string, error) {
 		return "", err
 	}
 	return filepath.Join(root, "permissions.json"), nil
+}
+
+// HooksPath is where the user's own PreToolUse/PostToolUse commands live.
+// Beside permissions.json rather than inside it: one file answers "may this
+// run", the other "what else should run", and a user editing one should not
+// risk the other.
+func HooksPath() (string, error) {
+	root, err := DataRoot()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(root, "hooks.json"), nil
+}
+
+// LoadHooks reads the user's tool hooks. Missing file is the normal case.
+func LoadHooks() (hook.Config, error) {
+	path, err := HooksPath()
+	if err != nil {
+		return hook.Config{}, err
+	}
+	return hook.Load(path)
 }
 
 // LoadPermissions reads the user's per-tool permission overrides, if any.

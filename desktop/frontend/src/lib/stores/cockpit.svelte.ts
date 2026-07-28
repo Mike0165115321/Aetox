@@ -12,7 +12,7 @@ import {
   ListSessions, LoadSession, NewSession, CurrentSessionID, SearchSessions, DeleteSession,
   SaveChatImage, SaveChatFile, ReadImageDataURL, CancelTurn, BrowserGetText, RecentProjects,
   ListAllSessions, SearchAllSessions, LoadSessionAnyProject, ClearProjectFocus,
-  AnswerUserQuestion, Interject, RetryActiveProvider,
+  AnswerUserQuestion, Interject, RetryActiveProvider, PendingUndo, UndoLastTurn,
 } from '../../../wailsjs/go/main/App'
 import type { main } from '../../../wailsjs/go/models'
 import { t } from '../i18n.svelte'
@@ -182,6 +182,7 @@ export async function selectGlobalSession(session: Session): Promise<void> {
   const project = await GetProjectStatus()
   Object.assign(cockpit.project, project)
   await refreshWorkspace()
+  await refreshUndo()
   await refreshSessions()
   await refreshProjects()
   await refreshGlobalHistory()
@@ -320,6 +321,40 @@ export function applyMissedInterjections(texts: string[]): void {
  * `alreadyShown` is for the straggler path above: the bubble is on screen and the
  * attachment markers are already folded into `text`, so both steps are skipped.
  */
+/**
+ * refreshUndo asks what an undo would touch right now, so the chip is offered
+ * only when there is something to offer. Silent on failure: undo is a safety
+ * net, and a net that shouts when it is absent is worse than one that is quiet.
+ */
+export async function refreshUndo(): Promise<void> {
+  try {
+    cockpit.undoFiles = (await PendingUndo()) ?? []
+  } catch {
+    cockpit.undoFiles = []
+  }
+}
+
+/**
+ * undoLastTurn puts back every file the last turn changed. The result is posted
+ * into the transcript rather than shown as a toast: undoing is a real event in
+ * the session's history, and a message the user can scroll back to is the only
+ * record of it that survives.
+ */
+export async function undoLastTurn(): Promise<void> {
+  try {
+    const result = await UndoLastTurn()
+    const files = result?.files ?? []
+    const text = files.length > 0
+      ? [t('cockpit.undoDone', { count: String(files.length) }), ...files.map((f) => `- ${f}`)].join('\n')
+      : (result?.reason || t('cockpit.undoNothing'))
+    cockpit.chat.push({ role: 'agent', text, time: nowLabel() })
+  } catch (err) {
+    cockpit.chat.push({ role: 'agent', text: t('cockpit.undoFailed', { err: String(err) }), time: nowLabel() })
+  }
+  cockpit.undoFiles = []
+  await refreshWorkspace()
+}
+
 export async function sendUserMessage(text: string, alreadyShown = false): Promise<void> {
   const trimmed = text.trim()
   const image = cockpit.pendingImage
@@ -397,6 +432,8 @@ export async function sendUserMessage(text: string, alreadyShown = false): Promi
     cockpit.reasoningText = ''
   }
   await refreshWorkspace()
+  // After the turn, not before: the chip has to reflect what this turn just did.
+  await refreshUndo()
   await refreshSessions()
   await refreshGlobalHistory()
   // Only stragglers land here now — anything typed under a running turn went

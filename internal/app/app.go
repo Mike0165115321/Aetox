@@ -15,6 +15,7 @@ import (
 
 	"github.com/Mike0165115321/Aetox/internal/cognitive"
 	"github.com/Mike0165115321/Aetox/internal/command"
+	"github.com/Mike0165115321/Aetox/internal/hook"
 	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/safety"
 	"github.com/Mike0165115321/Aetox/internal/skill"
@@ -44,6 +45,7 @@ type App struct {
 	commandSet       map[string]struct{}
 	approvalMode     safety.ApprovalMode
 	permissions      safety.PermissionConfig
+	hooks            *hook.Runner
 	onApprovalChange func(safety.ApprovalMode)
 	turnExecutor     *turn.Executor
 	modelSwitcher    modelSwitcher
@@ -86,12 +88,15 @@ type namedDispatcher interface {
 }
 
 type Options struct {
-	Agent            *cognitive.Agent
-	Console          Console
-	Dispatcher       skillDispatcher
-	ShowBanner       bool
-	ApprovalMode     safety.ApprovalMode
-	Permissions      safety.PermissionConfig
+	Agent        *cognitive.Agent
+	Console      Console
+	Dispatcher   skillDispatcher
+	ShowBanner   bool
+	ApprovalMode safety.ApprovalMode
+	Permissions  safety.PermissionConfig
+	// Hooks are the user's own commands run around every tool call
+	// (ARCHITECTURE.md §57). Nil is the normal case and does nothing.
+	Hooks            *hook.Runner
 	OnApprovalChange func(safety.ApprovalMode)
 	// OnToolAction, if set, is notified of every tool call/result this session
 	// runs (e.g. for a UI command-history panel). Nil means silent, as before.
@@ -136,6 +141,7 @@ func NewApp(opts Options) (*App, error) {
 		showBanner:         opts.ShowBanner,
 		approvalMode:       normalizeApprovalMode(opts.ApprovalMode),
 		permissions:        opts.Permissions,
+		hooks:              opts.Hooks,
 		onApprovalChange:   opts.OnApprovalChange,
 		modelSwitcher:      opts.ModelSwitch,
 		title:              strings.TrimSpace(opts.Title),
@@ -154,6 +160,7 @@ func NewApp(opts Options) (*App, error) {
 		Approve:        a.ConfirmApproval,
 		ApprovalMode:   a.approvalMode,
 		Permissions:    a.permissions,
+		Hooks:          a.hooks,
 		OnToolAction:   a.onToolAction,
 		StatusReporter: opts.StatusReporter,
 		TurnOptions: turn.TurnOptions{
@@ -175,6 +182,7 @@ func (a *App) wireStatusReporter() {
 		StatusReporter: a.statusReporter,
 		ApprovalMode:   a.approvalMode,
 		Permissions:    a.permissions,
+		Hooks:          a.hooks,
 		OnToolAction:   a.onToolAction,
 		TurnOptions: turn.TurnOptions{
 			ThinkLevel: a.thinkLevel,
@@ -439,6 +447,7 @@ func (a *App) switchModel(ctx context.Context) error {
 		Approve:      a.ConfirmApproval,
 		ApprovalMode: a.approvalMode,
 		Permissions:  a.permissions,
+		Hooks:        a.hooks,
 		TurnOptions: turn.TurnOptions{
 			ThinkLevel: a.thinkLevel,
 		},
@@ -557,6 +566,7 @@ func (a *App) applyApprovalMode(modeArg string) {
 			Approve:      a.ConfirmApproval,
 			ApprovalMode: a.approvalMode,
 			Permissions:  a.permissions,
+			Hooks:        a.hooks,
 			TurnOptions: turn.TurnOptions{
 				ThinkLevel: a.thinkLevel,
 			},
@@ -816,4 +826,3 @@ func (a *App) printPromptLine() {
 	spacePad := padding[:len(padding)-len(right)]
 	a.console.Print(ansiBrandBright + ">" + ansiReset + spacePad + ansiSubtle + right + ansiReset + "\r" + ansiBrandBright + "> " + ansiReset)
 }
-

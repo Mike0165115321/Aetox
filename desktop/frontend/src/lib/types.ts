@@ -61,6 +61,10 @@ export interface ModelStatus {
   /** Active wire format for providers that speak more than one (e.g. DeepSeek's
    *  "anthropic" vs "openai-compatible"). Empty for single-format providers. */
   wireFormat: string
+  /** Why `provider` is not actually answering — the engine fell back to the
+   *  built-in aetox provider (e.g. LM Studio's server is not running). Empty
+   *  when the named provider really is the one running. */
+  warning: string
 }
 
 /** One labeled share of the context window; key: system | tools | messages | free. */
@@ -287,6 +291,9 @@ export interface CockpitState {
   activeView: string
   /** True from the moment a message is sent until the reply (or an error) arrives. */
   awaitingReply: boolean
+  /** Files the last turn changed, from PendingUndo. Empty when there is nothing
+   *  to undo — no snapshot yet, not a git repo, or the turn touched no file. */
+  undoFiles: string[]
   /** Live turn-progress text from the Go engine's status reporter ("กำลังคิดคำตอบ...", etc), '' when idle. */
   agentStatus: string
   /** Tool calls of the turn in flight, appended live from agent:tool events. */
@@ -315,7 +322,7 @@ export function emptyCockpitState(): CockpitState {
     tree: [],
     sessions: [],
     history: [],
-    model: { provider: '', modelName: '', thinkLevel: '', contextUsed: 0, contextMax: 0, approval: 'ask', wireFormat: '' },
+    model: { provider: '', modelName: '', thinkLevel: '', contextUsed: 0, contextMax: 0, approval: 'ask', wireFormat: '', warning: '' },
     chat: [],
     task: { elapsed: '', steps: [] },
     changedFiles: [],
@@ -325,6 +332,7 @@ export function emptyCockpitState(): CockpitState {
     openFiles: [],
     activeView: 'chat',
     awaitingReply: false,
+    undoFiles: [],
     agentStatus: '',
     toolSteps: [],
     streamingText: '',

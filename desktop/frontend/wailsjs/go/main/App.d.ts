@@ -113,6 +113,8 @@ export function OpenSpeechModelDir(arg1:string):Promise<void>;
 
 export function OpenSubagentsFolder():Promise<void>;
 
+export function PendingUndo():Promise<Array<string>>;
+
 export function PickAttachment():Promise<string>;
 
 export function PickAttachmentImage():Promise<string>;
@@ -220,6 +222,8 @@ export function TestProviderConnection(arg1:string,arg2:string):Promise<string>;
 export function ToggleMCPServer(arg1:string,arg2:boolean):Promise<void>;
 
 export function ToolCounts():Promise<main.ToolCounts>;
+
+export function UndoLastTurn():Promise<main.UndoResult>;
 
 export function UsageStats():Promise<main.UsageStats>;
 

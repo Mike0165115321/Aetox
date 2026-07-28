@@ -25,6 +25,7 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/command"
 	"github.com/Mike0165115321/Aetox/internal/config"
 	"github.com/Mike0165115321/Aetox/internal/debuglog"
+	"github.com/Mike0165115321/Aetox/internal/hook"
 	"github.com/Mike0165115321/Aetox/internal/mcp"
 	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/proc"
@@ -1801,6 +1802,14 @@ func bootstrapFromConfig(cfg config.Config, onToolAction func(turn.ToolEvent), o
 	if permErr != nil {
 		debuglog.Msg("permissions load failed: %v", permErr)
 	}
+	// The user's own commands around each tool call (ARCHITECTURE.md §57). A
+	// broken hooks file is logged and ignored rather than fatal: a typo in an
+	// optional convenience must never be the reason the app will not start.
+	hookCfg, hookErr := config.LoadHooks()
+	if hookErr != nil {
+		debuglog.Msg("hooks load failed, running without them: %v", hookErr)
+	}
+	hooks := hook.NewRunner(hookCfg, cfg.SandboxRoot)
 	// Prepend the default MCP "ask" rules so MCP tools never auto-run. These are
 	// derived from configured server names WITHOUT connecting — so the safety
 	// gate is in place synchronously here, even though the tools themselves are
@@ -1839,6 +1848,7 @@ func bootstrapFromConfig(cfg config.Config, onToolAction func(turn.ToolEvent), o
 		Dispatcher:     dispatcher,
 		ApprovalMode:   safety.ApprovalFullAccess,
 		Permissions:    permissions,
+		Hooks:          hooks,
 		OnToolAction:   onToolAction,
 		StatusReporter: onStatus,
 	})

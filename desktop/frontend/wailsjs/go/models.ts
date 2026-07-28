@@ -401,6 +401,20 @@ export namespace main {
 	        this.icon = source["icon"];
 	    }
 	}
+	export class UndoResult {
+	    files: string[];
+	    reason?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new UndoResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.files = source["files"];
+	        this.reason = source["reason"];
+	    }
+	}
 	export class UsageRow {
 	    model: string;
 	    promptTokens: number;

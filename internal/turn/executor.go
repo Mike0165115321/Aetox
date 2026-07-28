@@ -10,6 +10,7 @@ import (
 
 	"github.com/Mike0165115321/Aetox/internal/command"
 	"github.com/Mike0165115321/Aetox/internal/debuglog"
+	"github.com/Mike0165115321/Aetox/internal/hook"
 	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/rtk"
 	"github.com/Mike0165115321/Aetox/internal/safety"
@@ -50,7 +51,9 @@ var noDeadlineTools = map[string]bool{"ask_user": true, "task": true, "task_resu
 // HasNoDeadline reports whether the named tool is exempt from the per-tool
 // deadline. Exported so the tools that depend on the exemption can assert it
 // without sleeping a minute to find out (internal/subagent).
-func HasNoDeadline(name string) bool { return noDeadlineTools[strings.ToLower(strings.TrimSpace(name))] }
+func HasNoDeadline(name string) bool {
+	return noDeadlineTools[strings.ToLower(strings.TrimSpace(name))]
+}
 
 // maxToolExecutionTimeout bounds what a tool call may ask for. Ten minutes is
 // long enough for a full test suite or a cold build and short enough that a
@@ -134,6 +137,7 @@ type Executor struct {
 	turnOptions    TurnOptions
 	statusReporter func(string)
 	onToolAction   func(ToolEvent)
+	hooks          *hook.Runner
 }
 
 type ExecutorOptions struct {
@@ -148,6 +152,10 @@ type ExecutorOptions struct {
 	TurnOptions    TurnOptions
 	StatusReporter func(string)
 	OnToolAction   func(ToolEvent)
+	// Hooks are the user's own commands run around every tool call. Nil is the
+	// normal case — almost nobody configures one — and *hook.Runner is written
+	// so that nil does nothing rather than needing a guard at each call site.
+	Hooks *hook.Runner
 }
 
 type Result struct {
@@ -181,6 +189,7 @@ func NewExecutor(opts ExecutorOptions) *Executor {
 		turnOptions:    opts.TurnOptions,
 		statusReporter: opts.StatusReporter,
 		onToolAction:   opts.OnToolAction,
+		hooks:          opts.Hooks,
 	}
 }
 
@@ -683,6 +692,39 @@ func (e *Executor) executeTool(ctx context.Context, name string, args map[string
 		}, true, nil
 	}
 
+	// The user's own PreToolUse commands, after approval and before the tool.
+	// After, deliberately: a hook is a rule the user wrote, and running it on a
+	// call the user is about to refuse anyway would fire their formatter and
+	// their notifier for work that never happens.
+	if e.hooks.Any(hook.PreToolUse) {
+		if decision := e.hooks.Run(ctx, hook.PreToolUse, name, args, nil); decision.Blocked {
+			// Reported as a normal tool result rather than an error, so the
+			// model reads the reason and tries something else instead of
+			// repeating the call into the same wall.
+			msg := "blocked by a PreToolUse hook: " + decision.Reason
+			return skill.Output{
+				Name: name, Content: msg, RawOutput: msg,
+				Success: false, Stderr: msg,
+			}, true, nil
+		}
+	}
+
+	output, handled, err := e.dispatchWithDeadline(ctx, name, args)
+	// PostToolUse fires on whatever happened, success or failure — "run my
+	// formatter after a write" and "tell me when a command fails" are the same
+	// hook point, and a hook that only saw the happy path would be useless for
+	// the second. It cannot change the result: the tool has already run, and
+	// pretending otherwise would be a lie about what the model is reading.
+	if handled && e.hooks.Any(hook.PostToolUse) {
+		e.hooks.Run(ctx, hook.PostToolUse, name, args, &hook.Result{
+			OK:     err == nil && output.Success,
+			Output: output.Content,
+		})
+	}
+	return output, handled, err
+}
+
+func (e *Executor) dispatchWithDeadline(ctx context.Context, name string, args map[string]any) (skill.Output, bool, error) {
 	// Run under a per-tool deadline. Tools that honor ctx (http, mcp) stop on
 	// cancel; those that don't (grep/list walk the FS ignoring ctx) keep running
 	// in this goroutine after we return — its result is just discarded.

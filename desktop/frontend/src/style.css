@@ -534,6 +534,11 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   color:var(--text-secondary); font-size:12px; white-space:nowrap;
 }
 .focus-chip .ic { font-size:12px; opacity:.9; }
+/* Undo the last turn. Present only when that turn changed a file, so it is
+   never a button that does nothing — and quiet rather than alarming, because
+   it is an offer, not a warning. */
+.undo-chip { cursor:pointer; }
+.undo-chip:hover { color:var(--text-primary); border-color:var(--border-strong); }
 /* Project-focus picker — the chip is a button opening an upward menu:
    "no focus" / recent projects / open folder (Claude Desktop-style). */
 .focus-pick { position:relative; }

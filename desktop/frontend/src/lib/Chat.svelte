@@ -17,6 +17,7 @@
     cockpit, attachImageFromPath, clearPendingImage, attachTabContext, clearPendingContext,
     attachFileFromPath, clearPendingFile, fileKind,
     openProject, openFolder, clearProjectFocus, cancelTurn, answerAsk, queuedMessages,
+    retryActiveProvider, undoLastTurn,
   } from './stores/cockpit.svelte'
 
   let {
@@ -115,6 +116,8 @@
   async function refreshProviderDerived(provider: string) {
     const res = await ListModelsForProvider(provider)
     models = Array.isArray(res) ? res : []
+    // Same recovery as Settings: the list loading is proof the endpoint is up.
+    if (models.length > 0 && model.warning) await retryActiveProvider()
     needsApiKey = (await RequiresAPIKey(provider)) && !(await HasAPIKey(provider))
   }
 
@@ -143,12 +146,27 @@
     refreshThinkLevels()
   })
 
+  // A switch that throws outright (no engine at all — distinct from the
+  // fell-back-to-aetox case model.warning covers) used to reject into nothing
+  // here, leaving the picker looking like the switch simply didn't take.
+  let switchError = $state('')
+
   async function handleProviderChange(value: string) {
-    await onSwitchProvider(value)
+    switchError = ''
+    try {
+      await onSwitchProvider(value)
+    } catch (err) {
+      switchError = String(err)
+    }
   }
 
   async function handleModelChange(value: string) {
-    await onSwitchModel(value)
+    switchError = ''
+    try {
+      await onSwitchModel(value)
+    } catch (err) {
+      switchError = String(err)
+    }
   }
 
   async function submitApiKey() {
@@ -777,6 +795,16 @@
         </button>
       </div>
       {#if cockpit.project.focused && cockpit.project.branch}<span class="focus-chip">⑂ {cockpit.project.branch}</span>{/if}
+      <!-- Offered only when the last turn actually changed something, so it is
+           never a button that does nothing. Disappears once pressed. -->
+      {#if cockpit.undoFiles.length > 0}
+        <button
+          type="button"
+          class="focus-chip undo-chip"
+          title={cockpit.undoFiles.join('\n')}
+          onclick={() => undoLastTurn()}
+        >↶ {t('chat.undoTurn', { count: String(cockpit.undoFiles.length) })}</button>
+      {/if}
     </div>
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <!-- drag/drop target for a workbench tab; the textarea/buttons inside remain the real interactive elements -->
@@ -853,6 +881,20 @@
           <div class="model-pick">
             {#if modelMenuOpen}
               <div class="model-menu">
+                {#if model.warning || switchError}
+                  <!-- The picker names a provider the engine never reached; without
+                       this the menu showed "lmstudio / —" and looked fine. -->
+                  <div class="mm-warn">
+                    {#if switchError}
+                      <!-- No fallback headline here: a thrown switch means no
+                           engine at all, not "running the built-in one". -->
+                      <span>{switchError}</span>
+                    {:else}
+                      <strong>{t('chat.providerFallback')}</strong>
+                      <span>{model.warning}</span>
+                    {/if}
+                  </div>
+                {/if}
                 <div class="mm-row">
                   <span class="lbl">{t('chat.provider')}</span>
                   {@render upSelect('provider', providers.map((p) => ({ value: p, label: p })), model.provider, handleProviderChange)}

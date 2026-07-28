@@ -214,6 +214,10 @@ export function OpenSubagentsFolder() {
   return window['go']['main']['App']['OpenSubagentsFolder']();
 }
 
+export function PendingUndo() {
+  return window['go']['main']['App']['PendingUndo']();
+}
+
 export function PickAttachment() {
   return window['go']['main']['App']['PickAttachment']();
 }
@@ -428,6 +432,10 @@ export function ToggleMCPServer(arg1, arg2) {
 
 export function ToolCounts() {
   return window['go']['main']['App']['ToolCounts']();
+}
+
+export function UndoLastTurn() {
+  return window['go']['main']['App']['UndoLastTurn']();
 }
 
 export function UsageStats() {
