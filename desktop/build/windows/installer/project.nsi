@@ -49,7 +49,10 @@ Unicode true
 !define TESSDATA_THA_SHA256  "88032A9F21ACCFF825EFAED29604EB8A534E265CF8058A95EA5417A6DF91C005"
 
 !macro wails.tesseractocr
-    IfFileExists "$PROGRAMFILES64\Tesseract-OCR\tesseract.exe" tesseract_done tesseract_install
+    IfFileExists "$PROGRAMFILES64\Tesseract-OCR\tesseract.exe" 0 tesseract_install
+    SetDetailsPrint both
+    DetailPrint "Skipping: Tesseract OCR is already installed"
+    Goto tesseract_langdata
 
     tesseract_install:
     SetDetailsPrint both
@@ -82,6 +85,18 @@ Unicode true
     ; point at dropping a .traineddata straight into tessdata\ as the silent-
     ; install-friendly way to add a language, so do that instead of trying to
     ; script its GUI component picker.
+    ;
+    ; Checked on its own file, not folded into the skip above: a machine that
+    ; already has Tesseract (from any other app) has the English-only default,
+    ; and jumping straight past this left image_ocr silently unable to read Thai.
+    tesseract_langdata:
+    IfFileExists "$PROGRAMFILES64\Tesseract-OCR\tessdata\tha.traineddata" tesseract_done 0
+
+    SetDetailsPrint both
+    DetailPrint "Installing: Thai language data for Tesseract OCR"
+    SetDetailsPrint listonly
+
+    InitPluginsDir
     nsExec::ExecToLog 'curl.exe -L --max-time 60 -o "$PLUGINSDIR\tha.traineddata" "${TESSDATA_THA_URL}"'
     Pop $0
     ${If} $0 == 0
@@ -106,9 +121,12 @@ Unicode true
 ##    PATH. It is unpacked INTO the install directory and
 ##    internal/skill/pdf_read.go looks for it next to Aetox's own exe. Editing
 ##    the machine's PATH is the other option and a much worse one to get wrong.
-##  - There is no system-wide install to detect, so unlike the Tesseract macro
-##    this does not skip when something is already there: the pinned version is
-##    the one that was tested, and an upgrade has to actually replace it.
+##  - There is no system-wide install to detect, so what is checked instead is
+##    a marker file named after the pinned version inside our own tree:
+##    reinstalling the same version downloads nothing, while bumping the version
+##    changes the marker's name and so still forces a full replace. pdftotext.exe
+##    is checked alongside it, so a half-deleted tree reinstalls rather than
+##    trusting a marker that outlived what it vouched for.
 ##
 ## POPPLER_INNER is the archive's own top folder and carries the version, so
 ## all three defines are bumped together.
@@ -119,6 +137,12 @@ Unicode true
 
 !macro wails.poppler
     SetDetailsPrint both
+    IfFileExists "$INSTDIR\poppler\bin\pdftotext.exe" 0 poppler_install
+    IfFileExists "$INSTDIR\poppler\${POPPLER_INNER}.ok" 0 poppler_install
+    DetailPrint "Skipping: poppler ${POPPLER_INNER} is already installed"
+    Goto poppler_done
+
+    poppler_install:
     DetailPrint "Installing: poppler (used by the agent to read attached PDFs)"
     SetDetailsPrint listonly
 
@@ -148,7 +172,12 @@ Unicode true
     nsExec::ExecToLog 'tar.exe -xf "$PLUGINSDIR\poppler.zip" -C "$INSTDIR\poppler" --strip-components=2 "${POPPLER_INNER}/Library"'
     Pop $0
 
-    IfFileExists "$INSTDIR\poppler\bin\pdftotext.exe" poppler_done 0
+    IfFileExists "$INSTDIR\poppler\bin\pdftotext.exe" 0 poppler_failed
+    FileOpen $2 "$INSTDIR\poppler\${POPPLER_INNER}.ok" w
+    FileClose $2
+    Goto poppler_done
+
+    poppler_failed:
     DetailPrint "poppler did not unpack as expected (tar exit $0) — pdf_read will fall back to any pdftotext already on PATH."
 
     poppler_done:
@@ -179,6 +208,12 @@ Unicode true
 
 !macro wails.ffmpeg
     SetDetailsPrint both
+    IfFileExists "$INSTDIR\ffmpeg\bin\ffmpeg.exe" 0 ffmpeg_install
+    IfFileExists "$INSTDIR\ffmpeg\${FFMPEG_INNER}.ok" 0 ffmpeg_install
+    DetailPrint "Skipping: ffmpeg is already installed at the pinned build"
+    Goto ffmpeg_done
+
+    ffmpeg_install:
     DetailPrint "Installing: ffmpeg (used by the agent to read video and audio)"
     SetDetailsPrint listonly
 
@@ -207,7 +242,12 @@ Unicode true
     nsExec::ExecToLog 'tar.exe -xf "$PLUGINSDIR\ffmpeg.zip" -C "$INSTDIR\ffmpeg" --strip-components=1 "${FFMPEG_INNER}/bin"'
     Pop $0
 
-    IfFileExists "$INSTDIR\ffmpeg\bin\ffmpeg.exe" ffmpeg_done 0
+    IfFileExists "$INSTDIR\ffmpeg\bin\ffmpeg.exe" 0 ffmpeg_failed
+    FileOpen $2 "$INSTDIR\ffmpeg\${FFMPEG_INNER}.ok" w
+    FileClose $2
+    Goto ffmpeg_done
+
+    ffmpeg_failed:
     DetailPrint "ffmpeg did not unpack as expected (tar exit $0) — the tools will fall back to any ffmpeg already on PATH."
 
     ffmpeg_done:
@@ -240,6 +280,14 @@ Unicode true
 
 !macro wails.whispermodel
     SetDetailsPrint both
+    ; The file name carries the model, so its presence is the whole check — no
+    ; version marker as for poppler/ffmpeg. Changing the pinned commit does not
+    ; change these weights; picking a different model would change the name.
+    IfFileExists "$INSTDIR\models\${WHISPER_MODEL_NAME}" 0 whispermodel_install
+    DetailPrint "Skipping: the starter speech model is already installed"
+    Goto whispermodel_done
+
+    whispermodel_install:
     DetailPrint "Installing: starter speech model (used by the agent to transcribe audio)"
     SetDetailsPrint listonly
 
