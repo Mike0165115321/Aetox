@@ -28,7 +28,7 @@ import (
 	"golang.org/x/term"
 )
 
-const appVersion = "0.7.0"
+const appVersion = "0.7.1"
 
 var (
 	noBanner     bool
