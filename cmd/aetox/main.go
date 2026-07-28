@@ -30,6 +30,10 @@ import (
 
 const appVersion = "0.7.1"
 
+// Printed by both --version paths. A rebranded fork has to delete this line by
+// hand rather than just swap a logo, which is the whole point of it being here.
+const versionCredit = "© 2026 Chayaphon Phromsawana (Mike) · Apache-2.0 · github.com/Mike0165115321/Aetox"
+
 var (
 	noBanner     bool
 	showVersion  bool
@@ -167,7 +171,7 @@ func main() {
 	}
 
 	if showVersion {
-		fmt.Printf("aetox version %s\n", appVersion)
+		fmt.Printf("aetox version %s\n%s\n", appVersion, versionCredit)
 		return
 	}
 	if showHelp {
@@ -402,7 +406,7 @@ func main() {
 	case command.ModeHelp:
 		printUsage()
 	case command.ModeVersion:
-		fmt.Printf("aetox version %s\n", appVersion)
+		fmt.Printf("aetox version %s\n%s\n", appVersion, versionCredit)
 	case command.ModeInteractive:
 		if !isInteractive() {
 			printUsage()

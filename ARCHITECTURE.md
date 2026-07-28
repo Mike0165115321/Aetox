@@ -32,7 +32,7 @@ This document is an evidence-first architecture map, distinct from [README.md](R
 | [third_party/go-webview2/AETOX-PATCH.md](third_party/go-webview2/AETOX-PATCH.md) | Why go-webview2 is vendored+patched: stop a single browser tab's WebView2 error from `os.Exit`-crashing the whole app (§26). |
 | [TEST-REPORT.md](TEST-REPORT.md) | Module-by-module test coverage and known untestable seams. CI that runs it all: [.github/workflows/ci.yml](.github/workflows/ci.yml) (§28). |
 | [BENCHMARK.md](BENCHMARK.md) · [bench.ps1](bench.ps1) | Measured comparison against 13 installed rivals (disk/startup/RAM/soak) — the fairness rules, the raw results, and which numbers are **not** clean enough to publish. Every figure quoted in README.md or docs/index.html must trace back to a passing row here. |
-| [LICENSE](LICENSE) | MIT (§28) — the license README and `scoop/aetox.json` both reference. |
+| [LICENSE](LICENSE) · [NOTICE](NOTICE) | Apache-2.0 since §60 (MIT up to v0.7.1, §28). `NOTICE` reserves the "Aetox" name and logo and must travel with every redistribution — the anti-rebrand teeth. |
 | [docs/opencode-study/](docs/opencode-study/README.md) | Source-level reading of opencode at a pinned commit (agents, MCP, permissions, plugin hooks, snapshot). |
 | [docs/architecture-reference-opencode.md](docs/architecture-reference-opencode.md) · [docs/competitor-research.md](docs/competitor-research.md) | Package/feature-level comparisons that motivated the deep study above. |
 | [docs/architecture-review-aetox-cli.md](docs/architecture-review-aetox-cli.md) | **Superseded** (predates `desktop/`); kept for history. |
@@ -849,7 +849,7 @@ One session, three engine layers fixed; OpenCode/Claude Code are the confirmed r
 3. First release only: copy the portable zip's SHA256 from `checksums.txt` into [scoop/aetox.json](scoop/aetox.json) `hash` (autoupdate maintains it afterwards).
 4. When LICENSE lands: `wingetcreate new <installer asset URL>` → PR to microsoft/winget-pkgs.
 
-~~**Open decision (owner):** LICENSE file~~ — **closed 2026-07-25 (§28):** MIT, matching what README already claimed; `scoop/aetox.json` updated from `TBD`. The winget step above is now unblocked.
+~~**Open decision (owner):** LICENSE file~~ — **closed 2026-07-25 (§28):** MIT, matching what README already claimed; `scoop/aetox.json` updated from `TBD`. The winget step above is now unblocked. *(Relicensed to Apache-2.0 in §60; releases up to v0.7.1 remain MIT.)*
 
 **Not built, deliberately:** code signing (unsigned exe = SmartScreen "unknown publisher" warning on first run — Azure Trusted Signing ~$10/mo when distribution volume justifies it), macOS/Linux packaging (desktop is Win32-only today, §22).
 
@@ -964,7 +964,7 @@ Two new skills in [desktop/ask_user.go](desktop/ask_user.go), registered with th
 
 **7. API keys are plaintext JSON at `0600`** — accepted as-is for v0.4, but it now appears in [README.md](README.md)'s security table with the OS-keychain move (Windows DPAPI / macOS Keychain) named as the next step. The product pitch leads with "your data is yours"; the gap between that and the storage belongs in public docs, not only in a reviewer's notes.
 
-**Also added:** [LICENSE](LICENSE) (MIT). README already claimed MIT and `scoop/aetox.json` said `TBD` — without the file, "no lock-in" was legally untrue, since no license means all rights reserved.
+**Also added:** [LICENSE](LICENSE) (MIT). README already claimed MIT and `scoop/aetox.json` said `TBD` — without the file, "no lock-in" was legally untrue, since no license means all rights reserved. *(Superseded by §60: Apache-2.0 from v0.7.2 on.)*
 
 ### 28.1 What CI found in its first hour (the fixes the review did not ask for)
 
@@ -2024,6 +2024,25 @@ The frontend renders notes as plain sentences in the timeline (`kind` on `ToolSt
 **Prompt half:** one sentence in [internal/prompt/prompt.go](internal/prompt/prompt.go) (`narration()`) asking for a short line in the user's language before tool batches. Deliberately one sentence — narration is output tokens on every round.
 
 **Not built, on purpose:** persisting the interleaved timeline across session reloads. Tool rows are already live-only today and nobody has missed them; if that changes, the events are already structured and the persistence is a phase of its own.
+
+---
+
+## 60. Decision — MIT → Apache-2.0, and the Brand Is Carved Out of the Licence (2026-07-28)
+
+**The question.** Could someone clone the GitHub repo, rebrand it, and pass it off as their own? Under MIT: yes, nearly all of it — fork, modify, rename, close the source, sell it. §28 chose MIT to make "no lock-in" legally true, and it did. What it never did was say anything about the *name*, and a survey of the repo found no notice of any kind: no `NOTICE`, no trademark line in [README.md](README.md), and a binary that printed `aetox version 0.7.1` and nothing about who wrote it.
+
+**What changed.** Four things, only the first of which is irreversible:
+
+- **[LICENSE](LICENSE) is now the verbatim Apache-2.0 text** (202 lines, fetched from apache.org, SHA256 `cfc7749b…`, unmodified — the appendix template stays as-is, per convention). Apache buys three things MIT does not have: an explicit trademark carve-out (§6), a patent grant, and §4(b)/(d) — a redistributor must state what they changed and must propagate `NOTICE`.
+- **[NOTICE](NOTICE)** names the author, the repo, and reserves "Aetox" and the logo as trademarks. This file is the load-bearing one: §4(d) makes carrying it a *condition of the licence*, so a rebranded fork that strips the name is in breach and loses its grant — that is a copyright takedown, available today, with nothing registered anywhere.
+- **The running program states its origin.** `aetox --version` prints a credit line (`versionCredit`, [cmd/aetox/main.go](cmd/aetox/main.go)), the desktop Settings → About panel carries the same line ([desktop/frontend/src/lib/Settings.svelte](desktop/frontend/src/lib/Settings.svelte)), and [desktop/wails.json](desktop/wails.json)'s copyright field — which Wails bakes into the Windows exe version resource — now carries the legal name instead of a GitHub handle. None of this *stops* a rebrand; all of it makes stripping the attribution a deliberate act rather than a side effect, which is the difference that matters if it is ever argued.
+- **[README.md](README.md) and `scoop/aetox.json`** say Apache-2.0, and the README gained a licence-and-brand section: fork freely, ship under your own name.
+
+**Why Apache and not something stronger.** AGPL would force a SaaS rebrander to publish their source, and BSL would forbid reselling outright — both were considered and both cost more than they return here: many companies ban AGPL by policy, and BSL is not open source at all, which contradicts the project's own pitch. Apache is the strongest option that keeps "use it for anything" true while still reserving the name.
+
+**Two facts that constrain any future move.** v0.7.1 and everything before it shipped under MIT and stay MIT **permanently** — anyone may fork that tag and continue from it; this change binds only what comes after. And the relicence needed nobody's permission solely because the copyright is one person's. **That ends with the first merged outside PR**, after which a relicence needs every contributor's agreement — so a CLA or DCO has to land before contributions are accepted, or this door closes.
+
+**Not done, on purpose:** no per-file Apache header (the appendix recommends one; `LICENSE` + `NOTICE` already carry the terms, and 200-odd files of boilerplate is noise for a repo one person reads). No trademark registration — that is money and 12–18 months at DIP, and it is the only thing that would enable a *name-based* takedown, so it stays the open item if the name ever becomes worth defending. No CLA yet: there are no outside contributors to bind, but see above for when that stops being true.
 
 ---
 

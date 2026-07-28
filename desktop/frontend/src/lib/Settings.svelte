@@ -1955,6 +1955,16 @@
         <div class="set-row" style="justify-content:center">
           <img src={promptPayQR} alt="PromptPay QR" style="width:260px;max-width:100%;border-radius:12px" />
         </div>
+        <!-- Attribution, not decoration: this is the one place in the running app
+             that names who wrote it and where it came from. Untranslated on
+             purpose — a name, a licence id and a URL read the same in every
+             language, and a translated copyright line is a mistranslated one. -->
+        <div class="set-row">
+          <div class="set-txt">
+            <div class="t">Aetox</div>
+            <div class="d">© 2026 Chayaphon Phromsawana (Mike) · Apache-2.0 · github.com/Mike0165115321/Aetox</div>
+          </div>
+        </div>
       </div>
     {/if}
     </div>
