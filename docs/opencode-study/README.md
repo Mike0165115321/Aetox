@@ -8,11 +8,11 @@
 
 | Doc | Covers | Priority for Aetox |
 |---|---|---|
-| [mcp.md](mcp.md) | MCP client: config shape, connection lifecycle, tool bridging, OAuth, permission integration, error handling | **Next up** — `MCP-SUPPORT-PLAN.md` already scoped this as the next build item |
+| [mcp.md](mcp.md) | MCP client: config shape, connection lifecycle, tool bridging, OAuth, permission integration, error handling | **Built.** Tools and resources are both bridged (resources as a list+read pair per server, registered only when the server has any — ARCHITECTURE.md §55). MCP prompts are read at the client layer but deliberately not bridged as model tools |
 | [permissions.md](permissions.md) | opencode's real permission engine (glob matching, precedence, per-agent layering, persistence) vs. the `safety.PermissionConfig` we just shipped | Reference/validation for what we already built + gaps to consider |
-| [snapshot.md](snapshot.md) | Filesystem snapshot/undo (git-tree-backed) — a capability Aetox has none of yet | Not yet scheduled, but cheap to build once MCP is done (git-only, no new infra) |
-| [plugin-hooks.md](plugin-hooks.md) | Event-driven plugin hook system (`tool.execute.before/after`, `chat.message`, ...) | Scheduled after MCP per the original gap-priority order |
-| [agents.md](agents.md) | Multi-agent / sub-agent system (`task` tool, agent profiles, nesting) | Directly informs wiring `internal/orchestrator` (built, unused — ARCHITECTURE.md §10) |
+| [snapshot.md](snapshot.md) | Filesystem snapshot/undo (git-tree-backed) | **Built** as `internal/snapshot` (ARCHITECTURE.md §53.3): shadow git repo in Aetox's data root, work tree pointed at the real project, one turn deep. Go side only — there is no undo button in the UI yet |
+| [plugin-hooks.md](plugin-hooks.md) | Event-driven plugin hook system (`tool.execute.before/after`, `chat.message`, ...) | **Built in the Claude Code shape instead** (ARCHITECTURE.md §57). opencode's plugin runtime is still not worth it — `plugin_install` is a half-finished loader, so those callback points would be an extension point with nothing to plug into. But what people actually want from hooks is "run my command before/after a tool", and `internal/hook` does that with a shell command in `hooks.json` and no plugin system at all |
+| [agents.md](agents.md) | Multi-agent / sub-agent system (`task` tool, agent profiles, nesting) | **Built** as `internal/subagent` — `task`/`task_result`/`task_answer` plus three bundled profiles (explore, general, plan). Finding 2 below held: plan is a profile that denies the writing tools, not a separate execution path (ARCHITECTURE.md §54). `internal/orchestrator` is still built-and-unused (§10); the sub-agent work did not go through it |
 
 ## Cross-cutting findings worth reading first
 

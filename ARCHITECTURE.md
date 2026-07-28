@@ -15,7 +15,7 @@ This document is an evidence-first architecture map, distinct from [README.md](R
 
 | Doc | What it is |
 |---|---|
-| **This file** | Evidence-first whole-system map + the numbered Decision log (§10–§48). Start here; everything below is a spoke. |
+| **This file** | Evidence-first whole-system map + the numbered Decision log (§10–§56). Start here; everything below is a spoke. |
 | [README.md](README.md) · [AETOX.md](AETOX.md) · [Aetox Desktop.md](Aetox%20Desktop.md) | Product vision/pitch documents — mix shipped state with roadmap; this file wins on conflicts. |
 | [docs/architecture/module-split-2026-07-21.md](docs/architecture/module-split-2026-07-21.md) | Why an `engine/`/`providers/`/`cli/` split was proposed and the migration plan (§4). ⚠️ The scaffold directories it describes were deleted in §28 — the rationale stands, the on-disk structure is gone. |
 | [docs/architecture/browser-security-2026-07-21.md](docs/architecture/browser-security-2026-07-21.md) | Browser tab `postMessage` bridge — threat model, 3-check defense, residual risk (§6.6). |
@@ -47,7 +47,7 @@ A working mental model used for planning this project splits responsibility into
 | Layer | What exists today | Where |
 |---|---|---|
 | 1. Model management | Real behavior, but **not its own module** — lives inside `internal/model` (interface + all 11 provider clients + factory/bootstrap) and `internal/provider` (catalog), both part of the same flat root module. `providers/` (scaffold, §4) is where this is *meant* to move — zero code there yet. |
-| 2. Model-control (skill dispatch, tool-calling loop) | Real, but **three cooperating packages, not one**: `internal/skill` (Registry/Dispatcher/15 tools), `internal/cognitive` (Agent), `internal/turn` (Executor) — see the flow in §5. MCP itself is not built (`MCP-SUPPORT-PLAN.md`). |
+| 2. Model-control (skill dispatch, tool-calling loop) | Real, but **three cooperating packages, not one**: `internal/skill` (Registry/Dispatcher/30 built-ins), `internal/cognitive` (Agent), `internal/turn` (Executor) — see the flow in §5. MCP is real too, in its own package `internal/mcp` (§55). |
 | 3. Orchestrator (multi-agent) | **Scaffold only.** `internal/orchestrator` exists (§10) but nothing calls it — both front ends still construct exactly one `cognitive.Agent` each. |
 | 4. UI/CLI front ends | Real. Two front ends — `cmd/aetox` (CLI) and `desktop/` (GUI) — both driving the same engine through `internal/app`. |
 | 5. Desktop app (browser/terminal/extension surface) | Real, and the most independently-developed layer as of this session: session persistence (SQLite), native browser tab (WebView2), embedded terminal (ConPTY) — see §4.2, `TEST-REPORT.md` Module 5, and `docs/architecture/browser-security-2026-07-21.md`. |
@@ -77,7 +77,7 @@ Aetox is a single-user, local-first AI coding/personal-assistant agent with two 
 - **CLI** (`cmd/aetox`) — interactive REPL or one-shot invocation, Thai-language terminal UI.
 - **Desktop** (`desktop/`) — Wails v2 + Svelte 5 GUI with chat, a tabbed workbench (Review/Terminal/Files/Browser), persistent SQLite-backed sessions, and an agent-controlled native browser (WebView2).
 
-Both front ends drive the same tool-calling agent loop: user message → `cognitive.Agent` → provider API (model-driven tool calls) → `turn.Executor` dispatches to one of 15 built-in skills → result folded back into the conversation.
+Both front ends drive the same tool-calling agent loop: user message → `cognitive.Agent` → provider API (model-driven tool calls) → `turn.Executor` dispatches to one of the 27 model-facing built-in skills → result folded back into the conversation.
 
 No backend server, no cloud database, no multi-tenant concerns — everything runs on the user's machine against third-party model provider APIs.
 
@@ -108,7 +108,7 @@ flowchart LR
         Grammar["grammar (+command facade)\nexplicit tokens only — no NL inference (§17)"]
         Turn["turn.Executor\nexplicit skill → direct dispatch\nelse model tool loop, else streaming chat"]
         Cog["cognitive.Agent\nunbounded tool loop — brakes are\napproval gate + ctx cancel"]
-        Skills["skill.Registry — 15 built-ins\n+ browser_open/read/click/type (SourceExternal)\n+ MCP tools via mcp.Manager"]
+        Skills["skill.Registry — 30 built-ins (27 model-facing)\n+ 6 workbench tools (SourceWorkbench)\n+ 3 sub-agent tools (task/task_result/task_answer)\n+ MCP tools via mcp.Manager"]
         Safety["safety — ask / unsafe-only / full-access\nper-command risk rules"]
         Prompt["prompt — system prompt layers\n(identity · environment · user · project)"]
         RTK["rtk (optional)\nsqueezes tool receipts"]
@@ -150,7 +150,7 @@ flowchart LR
     Engine --> Misc
 ```
 
-- **Confirmed external dependencies:** 12 named provider HTTP APIs, verified against the actual catalog map in `internal/provider/catalog.go` (not README's list — see §6.9, they differ), GitHub REST API (`internal/skill/github_tools.go`), local shell (`internal/skill/shell.go`), local filesystem, SQLite (confirmed `modernc.org/sqlite`, `Direct` — `desktop/db.go:17`), Windows WebView2 (`desktop/browser.go`, Win32 syscalls — Windows-only, `Direct`).
+- **Confirmed external dependencies:** 13 named provider HTTP APIs (14 catalog entries, counting the built-in `aetox` fallback), verified against the actual catalog map in `internal/provider/catalog.go` (not README's list — see §6.9, they differ), GitHub REST API (`internal/skill/github_tools.go`), local shell (`internal/skill/shell.go`), local filesystem, SQLite (confirmed `modernc.org/sqlite`, `Direct` — `desktop/db.go:17`), Windows WebView2 (`desktop/browser.go`, Win32 syscalls — Windows-only, `Direct`).
 - **Not observed:** no outbound telemetry/analytics code found in `internal/` or `desktop/` during inspection (`Inferred`, `Verify first: Yes` — not exhaustively grepped for every HTTP client call).
 
 ---
@@ -171,7 +171,7 @@ flowchart TB
             app["app\nCLI loop + engine wiring"]
             turn["turn\nExecutor — §17 pipeline"]
             cognitive["cognitive\nAgent tool loop"]
-            skill["skill\nRegistry + 15 built-ins"]
+            skill["skill\nRegistry + 30 built-ins"]
             safety["safety\napproval + risk"]
             grammar["grammar (+command)\nexplicit-token parsing"]
             prompt["prompt\nsystem prompt layers"]
@@ -184,6 +184,7 @@ flowchart TB
         subgraph infra["Infra"]
             config["config\nDataRoot() · prefs · permissions"]
             mcp["mcp\nMCP server manager"]
+            snapshot["snapshot\nshadow-git undo — §53.3"]
             rtk["rtk\noptional receipt squeeze"]
             audit["audit"]
             debuglog["debuglog"]
@@ -203,6 +204,7 @@ flowchart TB
         model --> provider
         app --> prompt
         dgo --> mcp
+        dgo --> snapshot
         mcp -.->|tools registered into| skill
         app -.->|not wired in| orch
     end
@@ -220,7 +222,7 @@ Per-module docs (hub-and-spoke, §12): Tier-1 modules carry a `README.md` in the
 | `app` | 4 | CLI interactive loop + orchestration wiring (`NewApp`, `RunOnce`, `RunInteractive`, banner/status bar, approval-mode picker). Shared with desktop only via `NewApp`/`RunOnce` — see [§6.1](#61-internalapp-mixes-orchestration-with-cli-terminal-presentation). | [README](internal/app/README.md) |
 | `cognitive` | 2 | `Agent` — builds provider requests, runs the (unbounded, §11 "related cleanup") tool-call loop, streams responses. | [model-control deep dive](docs/architecture/model-control-layer-2026-07-22.md) |
 | `turn` | 3 | `Executor` — turn pipeline (§17): explicit skill command → direct dispatch, else model-driven tool loop, else streaming chat; approval gate on every tool path. No NL intent inference — that layer was deleted 2026-07-23. | [README](internal/turn/README.md) |
-| `skill` | 19 | `Registry`/`Dispatcher` + all 15 built-in tools (read/write/edit/delete/list/fs/grep/shell/git/echo/time/help/github_repo_summary/plugin_install/image_ocr/pdf_read). | [README](internal/skill/README.md) |
+| `skill` | 32 | `Registry`/`Dispatcher` + all 30 built-in tools. The 27 the model is offered: read/write/edit/delete/list/glob/grep/apply_patch/notebook_edit/diagnostics/symbol/shell/shell_output/shell_kill/git/time/web_fetch/web_search/image_ocr/video_ocr/pdf_read/audio_transcribe/github_repo_summary/github_search/github_read_file/github_list_files/plugin_install. The other 3 (`echo`/`fs`/`help`) are CLI-only and never sent to the model. | [README](internal/skill/README.md) |
 | `model` | 14 | `Provider` interface, `Message`/`Request`/`Response` types, factory, bootstrap, and **all 11 provider client implementations** in the same package. Imports `internal/provider` (see [§6.2](#62-modelprovider-imports-providers-catalog)). | [README](internal/model/README.md) |
 | `provider` | 2 | Provider runtime catalog (names, capabilities) — separate from `model`'s own `provider_catalog.go`, which is a second source for similar data (`Inferred`, `Verify first: Yes` — not diffed line-by-line). | — |
 | `safety` | 2 | 3-tier approval (`ask`/`unsafe-only`/`full-access`), per-command risk assessment (`AssessCommand`, git/fs-specific rules). | [model-control deep dive](docs/architecture/model-control-layer-2026-07-22.md) |
@@ -234,6 +236,7 @@ Per-module docs (hub-and-spoke, §12): Tier-1 modules carry a `README.md` in the
 | `grammar` | 2 | Input classification rules engine (Kind/Intent/slash parsing) behind the `command` facade. | [README](internal/grammar/README.md) |
 | `orchestrator` | 2 | Multi-`cognitive.Agent` lifecycle tracker (`Spawn`/`Get`/`Stop`/`List`). Built this session, **not called by `cmd/aetox` or `desktop/app.go` yet** — see [§10](#10-decision--agent-orchestrator-layer-proposed-approved-2026-07-21) for scope and naming rationale. | §10 |
 | `prompt` | 2 | System prompt assembly (identity/environment/user-global/project layers) — both front ends call it, replacing two near-duplicate `buildSystemPrompt` copies. Built 2026-07-22, see [§11](#11-decision--promptcontext-layer-proposed-being-settled-section-by-section-2026-07-22). | [README](internal/prompt/README.md) |
+| `snapshot` | 1 | Shadow-git undo: a per-project git repository under `DataRoot()` with its work tree pointed at the real project, so a snapshot costs one `write-tree` and the user's own repository never notices. Bound into `desktop/app.go`; **no UI button yet** — see [§53.3](#533-undo--internalsnapshot). | §53.3 |
 | `rtk` | 4 | Optional bridge to the owner's `rtk` CLI — shrinks tool-call output before it's wrapped into the model's receipt (`turn.modelToolReceipt`). v1: `git`+`shell` only. Auto-installs itself once from GitHub if missing (`install.go`), no NSIS changes. Built 2026-07-22, see [§13](#13-decision--rtk-integration-proposed-being-settled-section-by-section-2026-07-22). | [README](internal/rtk/README.md) |
 
 ### 4.2 `desktop/` (root module, `Direct`)
@@ -1949,6 +1952,59 @@ The second row matters more than the first: that adapter serves almost the entir
 **Still unproven: Anthropic's `source` block.** No key on this machine. The shape is unit-tested and the empty-text-block trap is covered, but it has not met a real server, and this section says so rather than letting the two green rows imply three.
 
 **What stopped this being run at all**, and is worth keeping: the owner refused the first attempt, because a machine already running Ollama could have had a second model pulled into VRAM on top of the first. The concern was right in general and wrong here — `ResolveVision` reads the name of the *currently selected* model and nothing anywhere constructs a second provider for images — but the reason it was worth asking is that "there is a spare vision model on this box, let's use it" was **my** reasoning, not the product's, and I had not checked what else the machine was doing. Verified by grep afterwards rather than asserted: the only three `NewProvider` call sites are bootstrap, its `aetox` fallback, and the settings connection test.
+
+---
+
+## 57. Decision — Hooks Are a Shell Command, Not a Plugin Runtime; and Undo Gets a Button (2026-07-28)
+
+**§55 said plugin hooks were not being built. That was the right call about the wrong question.**
+
+opencode's shape is a plugin runtime: a JS module registers `tool.execute.before`/`after` and the host calls it. Aetox has nowhere to run one — `plugin_install` is still the half-finished loader of §6.5 — so those callback points would have been an extension point with nothing on the other end. That reasoning holds and is not revisited here.
+
+What it missed is that **nobody actually wants a plugin runtime**. They want: refuse a command by my own rules, run my formatter after a write, tell me when the agent changes something. Claude Code answers that with a shell command in a settings file and no plugin system at all, and once the question is asked that way Aetox already had every piece.
+
+The pattern was in the codebase three times over, hardcoded: **rtk rewriting a command before it runs** (§13.5), **safety refusing one**, and **rtk compacting the output after** (§13.4). `internal/hook` is that idea made configurable without a Go build — `hooks.json` beside `permissions.json`, one answering "may this run" and the other "what else should run".
+
+Six decisions worth keeping:
+
+- **`PreToolUse` fires *after* approval, not before.** A hook is a rule the user wrote; firing their formatter and their notifier for a call they are about to refuse is work that never happens.
+- **Non-blocking is the default.** A hook is usually a formatter or a notifier, and one that silently starts refusing work because it exited 1 is worse than no hook at all. `blocking: true` is opt-in, per hook.
+- **A blocked call returns as a normal tool result carrying the hook's own stdout**, not as an error. The model then reads *why* and does something else, rather than calling into the same wall again — the same reasoning as §50's rule about the abandoned-tool message.
+- **`PostToolUse` fires on failure too**, because "tell me when a command fails" is the same hook point as "run my formatter after a write". It **cannot block**: the tool has already run, and a hook that pretended otherwise would be lying to the model about what it is reading.
+- **The call reaches the hook two ways at once** — JSON on stdin for a real script, `AETOX_TOOL`/`AETOX_EVENT`/`AETOX_TOOL_ARGS` for a one-line shell guard. One channel would have made half the useful hooks awkward to write.
+- **Ten seconds, not configurable.** A hook sits between the model and its tool, so a slow one is felt on every single call. Anything needing longer is a background job, not a hook.
+
+**And the button.** `internal/snapshot` had worked since §53.3 with no way for a user to reach it, which §53 and §55 both recorded as outstanding. The chip sits in the composer's focus row beside the project and branch, appears **only when the last turn actually changed a file** — so it is never a button that does nothing — and lists those files on hover. Pressing it posts the result into the transcript rather than a toast: undoing is a real event in the session, and a message you can scroll back to is the only record of it that survives.
+
+**One thing this closes that was never on the list.** Formatter-on-save was a Low row in [docs/architecture-reference-opencode.md](docs/architecture-reference-opencode.md)'s gap table, and it is now closed without a single line of formatter code in the product: `PostToolUse` with `matcher: "write"` runs whatever the user already uses.
+
+---
+
+## 58. Decision — v0.7.0, and What the Numbers Say After a Day of Building (2026-07-28)
+
+Version bumped in the four places that carry it: [cmd/aetox/main.go](cmd/aetox/main.go), [desktop/wails.json](desktop/wails.json), [README.md](README.md)'s status heading, and [docs/index.html](docs/index.html)'s badge. Download links needed no change — they point at `releases/latest/`, which is why they were written that way. [scoop/aetox.json](scoop/aetox.json) has its version and URL bumped but **its `hash` is still v0.6.0's**: that hash is of the released zip, which does not exist until CI publishes the tag, so it stays a post-release step exactly as it was for v0.6.0.
+
+**`bench.ps1` gained `-Engine`.** The four existing modes measure what a user feels *once* — install size, launch time, idle RAM, a long soak. Nothing measured what they feel *on every message*, which happens thousands of times more often. The new mode reports the tool payload each request carries, the cost of assembling it, the benchmarks already in the repo, build time, and how long the whole suite takes. **No competitors in that table on purpose**: the internals of Claude Code or opencode cannot be measured from outside, so a comparison would be a guess. It measures us against ourselves across versions.
+
+Measured on the v0.7.0 build:
+
+| | |
+|---|---|
+| `aetox.exe` · installer | 33.1 MB · 12.8 MB |
+| tools the model is sent | **27 built-in** (30 registry entries) |
+| payload per request | **18.1 KB** — was 9.9 KB at 20 tools |
+| assemble + serialize | **0.12 ms/turn** — was 0.13 ms at 20 tools |
+| grep the whole repo | 45.5 ms |
+| resolve one sandbox path | 728 µs — every file tool pays it |
+| `wails build` · `go test ./...` | 43.3 s · 38.5 s, 26 packages green |
+
+Two of those are worth reading twice. **The payload nearly doubled and the time to build it went down**, so the cost of nine new tools is paid in tokens, not in latency. And **38.5 s is a ceiling report, not trivia**: the agent runs `go test ./...` itself now, and §50 set the per-tool deadline at 60 s — 21.5 s of headroom before a full suite needs `timeout_seconds`.
+
+**A bug in the measuring instrument, found by measuring.** `-Start` decided "is the app already running" with `Get-PidSet`, which does **not** apply the `CmdMatch` filter `Measure-Procs` does. `msedgewebview2.exe` is the process name every WebView2 app on the machine shares — Windows itself included — so it counted other apps as Aetox and skipped the run entirely. On any machine with a WebView2 app open, which is most of them, **`-Start` could never measure Aetox**. It reported "12 processes already running" while `-Snapshot` saw none.
+
+[BENCHMARK.md](BENCHMARK.md) §5 had already diagnosed this exact class of bug for `-Snapshot` and `-Soak`, and stated that `-Start` was immune "because it compares process lists before and after". That sentence is half right, which is the dangerous kind: the mode counts processes in **two** places, and only the measurement half had a baseline. The doc is corrected rather than deleted — the wrong version is the more useful record.
+
+**What did not go on the website.** The post-fix startup re-measure (1.96 s cold, 0.53 s warm, 276 MB) ran 3 rounds with a 25 s settle, which breaks BENCHMARK.md's own rules 4 and 5. It stays in BENCHMARK.md as a **no-regression check** — launch time unchanged at 0.53 s despite nine more tools — and explicitly not as a website number. The README keeps the numbers that passed the full methodology, and its test counts are re-measured: **854 Go tests across 26 packages, 92 frontend**.
 
 ---
 

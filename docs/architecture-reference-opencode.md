@@ -315,19 +315,22 @@ Models.dev schema:
 | Turn management | ✅ | internal/turn/ |
 
 ### Aetox CLI ที่ยังขาด / ควรเพิ่ม
-| Feature | Priority | Why |
-|---------|----------|-----|
-| **JSON config** (`aetox.json`) | High | ยืดหยุ่นกว่า CLI flags, รองรับ skill paths, providers, permissions |
-| **Skill auto-discovery** | High | scan `~/.agents/skills/` + config paths แบบ opencode |
-| **Permission per-tool** | High | แทนที่ 3 modes แบบคร่าวๆ ด้วย pattern matching |
-| MCP support | Medium | เชื่อมต่อ external tools ผ่าน Model Context Protocol |
-| LSP integration | Medium | ให้ agent อ่าน code context ได้แม่นยำขึ้น |
-| Plugin system | Medium | ให้ third-party ขยายความสามารถได้ |
-| Snapshot/Undo | Medium | safety net เวลา agent แก้โค้ดผิด |
-| Multiple agents | Medium | plan mode (read-only) + build mode |
-| Custom commands | Low | `/command` templates |
-| Formatter integration | Low | auto-format after edit |
-| Remote skill catalogs | Low | `skills.urls` |
+> **สถานะ 2026-07-28 — ตารางนี้ปิดไปเกือบหมดแล้ว** ตอนเขียน (2026-07-21) ยังเป็นยุค CLI
+> ซึ่ง §30 unship ไปแล้ว หัวข้อ "Aetox CLI ที่ยังขาด" จึงต้องอ่านว่าเป็นของ engine ไม่ใช่ของ CLI
+
+| Feature | สถานะ | หลักฐาน |
+|---------|-------|---------|
+| **JSON config** | ✅ ปิดแล้ว | ไม่ใช่ไฟล์เดียวชื่อ `aetox.json` แต่แยกตามเรื่อง — `permissions.json`, `hooks.json`, `mcp-servers.json`, `model-preference.json` ใน `%APPDATA%etox` ([internal/config](../internal/config)) แยกเพราะคนแก้ทีละเรื่อง ไฟล์เดียวพังทีเดียวหมด |
+| **Skill auto-discovery** | ✅ ปิดแล้ว | `RegisterDiscovered` + `DefaultDiscoveryPaths()` ([internal/skill/discovery.go](../internal/skill/discovery.go)) |
+| **Permission per-tool** | ✅ ปิดแล้ว | `safety.PermissionConfig` glob ต่อ tool/args — [permissions.md](opencode-study/permissions.md) สรุปว่าละเอียดกว่า opencode ตรง argument matching |
+| MCP support | ✅ ปิดแล้ว | tools 2026-07-24 · remote วันเดียวกัน · resources 2026-07-28 · prompts ตั้งใจไม่ bridge · OAuth ยังเลื่อน |
+| LSP integration | ✅ ปิดแล้ว | `diagnostics` (ไฟล์หรือทั้งโฟลเดอร์) + `symbol` (ชนิด/ที่ประกาศ) · Go, TS/JS, Svelte, Python, Rust |
+| Plugin system | ⚠️ เปลี่ยนรูป | plugin runtime ไม่ทำ — `plugin_install` ยัง half-finished แต่สิ่งที่คนอยากได้จริงคือ "รันคำสั่งของฉันก่อน/หลัง tool" ซึ่ง `internal/hook` ทำแล้วเป็นคำสั่ง shell ใน `hooks.json` (ARCHITECTURE.md §57) |
+| Snapshot/Undo | ✅ ปิดแล้ว | `internal/snapshot` — shadow git repo ต่อโปรเจกต์, snapshot = git tree object, restore ทีละไฟล์, มีปุ่มใน composer แล้ว (§53.3, §57) |
+| Multiple agents | ✅ ปิดแล้ว | sub-agent profiles + `plan` ที่ deny ทุก tool ที่เขียน (§44, §54) |
+| Custom commands | ✅ ปิดแล้ว | prompt presets ใน `/` palette (§35, §36) |
+| Formatter integration | ✅ ปิดทางอ้อม | `PostToolUse` hook `matcher: "write"` รัน formatter อะไรก็ได้ — ไม่ต้องมีโค้ด formatter ในตัวแอป |
+| Remote skill catalogs | ⬜ ยังไม่ทำ | `skills.urls` — ยังไม่มีใครขอ |
 
 ### ภาษา
 | | opencode | Aetox CLI |

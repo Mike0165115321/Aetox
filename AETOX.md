@@ -22,35 +22,14 @@ Aetox คือระบบ AI agent บนเครื่องคุณ ที
 ### Core Tools (ทุก agent ใช้ชุดเดียวกัน, profile filter ตามบทบาท)
 | หมวด | Tools |
 |------|-------|
-| File | `read`, `write`, `delete`, `list` |
-| Search | `grep`, `glob`, `find` |
-| Terminal | `shell`, `git`, `ps`, `disk`, `docker` |
-| Web | `web_search`, `web_fetch` |
-| Utils | `echo`, `time` |
+| File | `read`, `write`, `edit`, `delete`, `list`, `apply_patch`, `notebook_edit` |
+| Search | `grep`, `glob`, `symbol`, `diagnostics` |
+| Terminal | `shell`, `shell_output`, `shell_kill`, `git` |
+| Web | `web_search`, `web_fetch`, `github_search`, `github_read_file`, `github_list_files`, `github_repo_summary` |
+| Media | `image_ocr`, `video_ocr`, `pdf_read`, `audio_transcribe` |
+| Utils | `time`, `plugin_install` |
 
-### Automation Engine 🚀
-
-คุณบอก Aetox เป็นภาษาไทยว่าอยากให้ทำอะไรอัตโนมัติ — Aetox สร้าง script + ลง schedule + ตรวจผลให้เอง
-
-**Aetox สร้าง automation อะไรให้คุณได้บ้าง:**
-
-| หมวด | ตัวอย่าง |
-|:-----|:---------|
-| 🔍 **Monitor** | token cost spike, disk space ใกล้เต็ม, Docker container dead, git repo ahead/behind |
-| 🔄 **Sync** | git auto-commit/push, journal backup, dotfiles sync, WSL2 disk compact |
-| 🧹 **Maintenance** | cleanup temp/logs, npm/pip cache clear, dependency update check |
-| 📡 **Watch** | tech news tracking, model release alert, GitHub release watcher |
-| 📝 **Log** | auto-summarize การทำงานแต่ละวัน, สรุป decision log |
-| ⚙️ **Pipeline** | auto-build → test → report, auto-deploy staging |
-
-**สั่งยังไง:**
-| Command | ทำอะไร |
-|:--------|:-------|
-| `aetox auto "..."` | สร้าง automation จากภาษาธรรมชาติ |
-| `aetox auto list` | ดู automation ทั้งหมด |
-| `aetox auto logs <name>` | ดู history + ผลล่าสุด |
-| `aetox auto run <name>` | รันเดี๋ยวนี้ |
-| `aetox auto remove <name>` | ลบ automation |
+`shell` รันคำสั่งจริงได้ และมี `run_in_background` สำหรับ dev server / watch build. โมเดลที่มองภาพได้จะได้รูปจาก `read` ตรงๆ — `image_ocr` เป็นทางสำรองของโมเดลที่มองไม่เห็น
 
 ### Directional Cognition Engine (กำลังออกแบบ)
 - Multi-provider parallel reasoning
@@ -63,7 +42,7 @@ Aetox คือระบบ AI agent บนเครื่องคุณ ที
 - ประวัติ session, ค่าใช้จ่าย, logs
 
 ### Provider Flexibility
-- 11 providers: OpenAI, Anthropic, DeepSeek, Google Gemini, Groq, Mistral, Ollama, Perplexity, Together, OpenRouter, LM Studio
+- 13 providers: OpenAI, Anthropic, DeepSeek, Z.AI, Google Gemini, Groq, Mistral, Cohere, Ollama, Perplexity, Together, OpenRouter, LM Studio
 - abstraction layer เดียวกัน — เปลี่ยน provider โดยไม่กระทบ architecture
 - ควบคุม thinking/reasoning level ต่อ provider
 
@@ -85,7 +64,7 @@ Aetox คือระบบ AI agent บนเครื่องคุณ ที
 │    Cross-Validation | Synthesis          │
 ├──────────────────────────────────────────┤
 │    Core Runtime                          │
-│    Providers | 16 Tools | Turn Loop      │
+│    Providers | 27 Tools | Turn Loop      │
 │    Safety | Audit | Config               │
 ├──────────────────────────────────────────┤
 │    Terminal + File System                │
@@ -97,12 +76,13 @@ Aetox คือระบบ AI agent บนเครื่องคุณ ที
 
 | Layer | สถานะ |
 |-------|--------|
-| Core Runtime | ✅ v0.4.0 |
+| Core Runtime | ✅ |
 | Terminal + File | ✅ core tools พร้อม |
-| Multi-Agent Orchestration | ❌ กำลังออกแบบ |
+| Multi-Agent Orchestration | ✅ sub-agent + profiles (explore, general, plan) |
 | Directional Cognition | 📄 ADR 0002 (Proposed) |
-| Desktop UI | 📄 Aetox Desktop.md (Planned) |
-| Plugin / MCP | 🔜 หลังจาก core แข็ง |
+| Desktop UI | ✅ Wails + Svelte |
+| MCP | ✅ tools + resources (prompts ยังไม่ bridge) |
+| Plugin | 🔜 loader ยังไม่เสร็จ, ยังไม่มี hooks |
 
 ## วิธีใช้
 
@@ -115,21 +95,6 @@ aetox chat "refactor module นี้หน่อย"
 
 # เลือก provider
 aetox --model-provider anthropic --model-name claude-sonnet-5
-
-# สร้าง automation (บอกเป็นภาษาธรรมชาติ)
-aetox auto "ตรวจ token cost ทุกเช้า 9 โมง ถ้าเกิน 50 บาทให้แจ้ง"
-
-# ดู automation ทั้งหมด
-aetox auto list
-
-# รัน automation ทันที
-aetox auto run check-token-cost
-
-# ดู logs
-aetox auto logs check-token-cost
-
-# ลบ automation
-aetox auto remove check-token-cost
 ```
 
 สร้างโดย Mike. Architecture > Parameters.

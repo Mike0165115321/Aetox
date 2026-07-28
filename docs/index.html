@@ -548,7 +548,7 @@ footer.gridded::before{
     <a class="lockup" href="#" aria-label="Aetox — กลับขึ้นบนสุด">
       <svg class="mark-w" aria-hidden="true"><use href="#wordmark"/></svg>
     </a>
-    <span class="ver"><span class="led" aria-hidden="true"></span>v0.6.0 · Windows</span>
+    <span class="ver"><span class="led" aria-hidden="true"></span>v0.7.0 · Windows</span>
     <nav>
       <a href="#fix">ปิดจุดอ่อน</a>
       <a href="#presets">ชุดคำสั่ง</a>
@@ -619,6 +619,8 @@ footer.gridded::before{
         <h3>Aetox เติม <code>image_ocr</code> ให้ — อ่านตัวหนังสือในรูปได้ทุกโมเดล</h3>
         <p>Tesseract ไทย+อังกฤษ ทำงานในเครื่องคุณ โมเดลไม่ต้องมีความสามารถด้าน vision
         ก็อ่านสลิป สกรีนช็อต เอกสาร ป้ายราคา ได้ทันที</p>
+        <p>ส่วนโมเดลที่มองเห็นรูปได้อยู่แล้ว Aetox ส่งรูปให้มันตรง ๆ ไม่ต้องผ่าน OCR —
+        เลือกทางให้เองตามรุ่นที่คุณต่ออยู่ OCR เป็นทางสำรองของโมเดลที่มองไม่เห็นเท่านั้น</p>
         <p class="meta">ทำงานออฟไลน์ · ไม่ส่งรูปออกจากเครื่อง</p>
       </div>
       <button class="shot" data-shot type="button">
@@ -1002,25 +1004,30 @@ footer.gridded::before{
 
   <!-- ══ 07 เครื่องมือ ══ -->
   <section id="tools">
-    <div class="sec-head"><span class="idx">07</span><h2 data-reveal>เครื่องมือในตัว 26 ตัว</h2></div>
-    <p class="sub">สี่ตัวเด่นอยู่ด้านบนแล้ว — ที่เหลือคืองานเขียนโค้ด ค้นเว็บ ค้น GitHub อยู่ในชุดเดียวกันหมด</p>
+    <div class="sec-head"><span class="idx">07</span><h2 data-reveal>เครื่องมือในตัว 36 ตัว</h2></div>
+    <p class="sub">สี่ตัวเด่นอยู่ด้านบนแล้ว — ที่เหลือคืองานเขียนโค้ด รันคำสั่ง ค้นเว็บ ค้น GitHub อยู่ในชุดเดียวกันหมด</p>
     <div class="tools">
       <div class="trow"><span class="tn">read / write / edit</span><span class="td">อ่าน เขียน แก้ไฟล์แบบเป๊ะ</span></div>
-      <div class="trow"><span class="tn">grep / list / fs</span><span class="td">ค้นหาและจัดการไฟล์</span></div>
+      <div class="trow"><span class="tn">grep / glob / list</span><span class="td">ค้นหาไฟล์และเนื้อในทั้งโปรเจกต์</span></div>
+      <div class="trow"><span class="tn">apply_patch</span><span class="td">แก้หลายไฟล์รวดเดียว สำเร็จหมดหรือไม่เปลี่ยนอะไรเลย</span></div>
+      <div class="trow"><span class="tn">delete</span><span class="td">ลบไฟล์หรือทั้งโฟลเดอร์ (ขออนุมัติเสมอ)</span></div>
+      <div class="trow"><span class="tn">diagnostics / symbol</span><span class="td">ถาม language server ว่าโค้ดพังตรงไหน ตัวนี้คืออะไร ประกาศไว้ที่ไหน</span></div>
       <div class="trow"><span class="tn">shell / git</span><span class="td">รันคำสั่ง ผ่านการอนุมัติทุกครั้ง</span></div>
-      <div class="trow"><span class="tn">delete</span><span class="td">ลบไฟล์ (ขออนุมัติเสมอ)</span></div>
+      <div class="trow"><span class="tn">shell_output / shell_kill</span><span class="td">ตามอ่านผลและสั่งหยุดคำสั่งที่รันค้างไว้เบื้องหลัง</span></div>
+      <div class="trow"><span class="tn">notebook_edit</span><span class="td">แก้ Jupyter notebook ทีละเซลล์ ไม่ทำไฟล์พัง</span></div>
+      <div class="trow"><span class="tn">pdf_read</span><span class="td">ดึงข้อความออกจากไฟล์ PDF</span></div>
       <div class="trow"><span class="tn">browser_open / read</span><span class="td">เปิด-อ่านเว็บใน workbench</span></div>
       <div class="trow"><span class="tn">browser_click / type</span><span class="td">คลิก กรอกฟอร์ม เลือก dropdown</span></div>
       <div class="trow"><span class="tn">image_ocr / video_ocr</span><span class="td">อ่านตัวหนังสือจากรูปและวิดีโอ</span></div>
       <div class="trow"><span class="tn">audio_transcribe</span><span class="td">ถอดเสียงพูดเป็นข้อความ ในเครื่อง</span></div>
       <div class="trow"><span class="tn">web_search</span><span class="td">ค้นเว็บ ไม่ต้องมี API key</span></div>
-      <div class="trow"><span class="tn">web_fetch</span><span class="td">อ่านเนื้อหาหน้าเว็บ</span></div>
+      <div class="trow"><span class="tn">web_fetch</span><span class="td">อ่านเนื้อหาหน้าเว็บ หรือถามคำถามกับหน้านั้นตรง ๆ</span></div>
       <div class="trow"><span class="tn">github_*</span><span class="td">ค้น อ่าน repo จาก GitHub (4 ตัว)</span></div>
       <div class="trow"><span class="tn">plugin_install</span><span class="td">ติดตั้งสกิลเสริมจาก GitHub</span></div>
-      <div class="trow"><span class="tn">help / echo / time</span><span class="td">ยูทิลิตีพื้นฐาน</span></div>
     </div>
     <p class="providers">เครื่องมือชุดนี้ใช้ได้กับทุก provider เหมือนกันหมด ไม่ว่าจะรัน <span class="mono">ollama</span> ในเครื่อง
-      หรือต่อกับเจ้าไหนใน <a href="#install">13 ตัวเลือกข้างบน</a> — โมเดลที่ไม่มีความสามารถนั้นมาแต่แรก ก็ได้มันจากสถาปัตยกรรม</p>
+      หรือต่อกับเจ้าไหนใน <a href="#install">13 ตัวเลือกข้างบน</a> — โมเดลที่ไม่มีความสามารถนั้นมาแต่แรก ก็ได้มันจากสถาปัตยกรรม
+      และถ้าต่อ MCP server เพิ่ม เครื่องมือของมันก็เข้าชุดเดียวกันนี้ ส่วนเซิร์ฟเวอร์ที่มี resource ให้อ่าน จะได้ตัวลิสต์กับตัวอ่านเพิ่มมาเองอีกคู่หนึ่ง</p>
   </section>
 
   <!-- ══ ช่องทางติดต่อ ══ -->
