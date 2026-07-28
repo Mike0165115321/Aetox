@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Mike0165115321/Aetox/internal/command"
@@ -30,10 +31,11 @@ const (
 	defaultToolSummaryPromptMaxLen = 4096
 )
 
-// A single tool call that runs longer than this is reported back to the model
-// as abnormally slow so it can retry with a narrower scope instead of hanging
-// the turn. Applies to tool execution only, not conversation. Var (not const)
-// so tests can shrink it.
+// A single tool call that runs longer than this hands the turn back to the
+// model instead of hanging it. The call is NOT abandoned — it keeps running and
+// the model is told to call the same tool with the same arguments to look in on
+// it (see dispatchWithDeadline). Applies to tool execution only, not
+// conversation. Var (not const) so tests can shrink it.
 var toolExecutionTimeout = 60 * time.Second
 
 // noDeadlineTools are exempt from the slow-tool guard above, for two different
@@ -144,11 +146,17 @@ type Dispatcher interface {
 type ApprovalPromptFunc func(context.Context, string, string) (bool, error)
 
 type Executor struct {
-	agent          Agent
-	dispatcher     Dispatcher
-	commandSet     map[string]struct{}
-	approve        ApprovalPromptFunc
-	approvalMode   safety.ApprovalMode
+	agent      Agent
+	dispatcher Dispatcher
+	commandSet map[string]struct{}
+	approve    ApprovalPromptFunc
+	// approvalMode is live rather than a snapshot: the desktop's Settings
+	// dropdown can change it while a turn is running, and a user who just
+	// clicked "full access" *because* the prompts were in the way means this
+	// prompt too. It used to be a plain field fixed at construction, and
+	// switching mid-turn changed nothing until the next one — the engine was
+	// rebuilt around the executor the running turn still held.
+	approvalMode   atomic.Pointer[safety.ApprovalMode]
 	permissions    safety.PermissionConfig
 	summaryTimeout time.Duration
 	summaryLimit   int
@@ -156,6 +164,10 @@ type Executor struct {
 	statusReporter func(string)
 	onToolAction   func(ToolEvent)
 	hooks          *hook.Runner
+
+	// pending holds tool calls that outran their deadline and were left running.
+	pendingMu sync.Mutex
+	pending   map[string]*pendingCall
 }
 
 type ExecutorOptions struct {
@@ -195,12 +207,11 @@ func NewExecutor(opts ExecutorOptions) *Executor {
 	if mode == "" {
 		mode = safety.ApprovalAsk
 	}
-	return &Executor{
+	e := &Executor{
 		agent:          opts.Agent,
 		dispatcher:     opts.Dispatcher,
 		commandSet:     opts.CommandSet,
 		approve:        opts.Approve,
-		approvalMode:   mode,
 		permissions:    opts.Permissions,
 		summaryTimeout: timeout,
 		summaryLimit:   limit,
@@ -209,6 +220,25 @@ func NewExecutor(opts ExecutorOptions) *Executor {
 		onToolAction:   opts.OnToolAction,
 		hooks:          opts.Hooks,
 	}
+	e.SetApprovalMode(mode)
+	return e
+}
+
+// SetApprovalMode swaps the mode a running executor enforces. Safe from another
+// goroutine, which is the point: the desktop's Settings dropdown is on the UI
+// thread and the turn it has to affect is already running on another one.
+func (e *Executor) SetApprovalMode(mode safety.ApprovalMode) {
+	if mode == "" {
+		mode = safety.ApprovalAsk
+	}
+	e.approvalMode.Store(&mode)
+}
+
+func (e *Executor) currentApprovalMode() safety.ApprovalMode {
+	if mode := e.approvalMode.Load(); mode != nil {
+		return *mode
+	}
+	return safety.ApprovalAsk
 }
 
 func (e *Executor) reportStatus(msg string) {
@@ -774,12 +804,18 @@ func (e *Executor) executeTool(ctx context.Context, name string, args map[string
 	return output, handled, err
 }
 
+// pendingCall is one tool call still running after its deadline. Fields other
+// than started are written once, before done is closed, so a second caller
+// needs no lock to read them.
+type pendingCall struct {
+	started time.Time
+	done    chan struct{}
+	output  skill.Output
+	handled bool
+	err     error
+}
+
 func (e *Executor) dispatchWithDeadline(ctx context.Context, name string, args map[string]any) (skill.Output, bool, error) {
-	// Run under a per-tool deadline. Tools that honor ctx (http, mcp) stop on
-	// cancel; those that don't (grep/list walk the FS ignoring ctx) keep running
-	// in this goroutine after we return — its result is just discarded.
-	// ponytail: leaks the stray goroutine's CPU until it finishes on its own;
-	// plumb ctx into the FS-walking tools if that leak ever bites.
 	// Interactive tools wait on a human — no deadline, ctx cancel is the brake.
 	if noDeadlineTools[strings.ToLower(name)] {
 		output, handled, err := e.dispatcher.ExecuteTool(ctx, name, args)
@@ -788,35 +824,100 @@ func (e *Executor) dispatchWithDeadline(ctx context.Context, name string, args m
 		}
 		return output, true, err
 	}
-	deadline := toolCallDeadline(name, args)
-	toolCtx, cancel := context.WithTimeout(ctx, deadline)
-	defer cancel()
 
-	type toolExecResult struct {
-		output  skill.Output
-		handled bool
-		err     error
-	}
-	done := make(chan toolExecResult, 1)
-	go func() {
-		output, handled, err := e.dispatcher.ExecuteTool(toolCtx, name, args)
-		done <- toolExecResult{output, handled, err}
-	}()
+	// The deadline bounds how long the *turn* waits, not how long the tool runs.
+	// It used to be both: an overrun was cancelled and reported as "abnormally
+	// slow, retry with a narrower scope", so a transcription that needed 90
+	// seconds got thrown away at 60 and started again from zero — twice the work
+	// and still no answer. Now the call is left running and the model is told to
+	// look in on it, which is the same shape as shell's run_in_background /
+	// shell_output pair and as task / task_result.
+	deadline := toolCallDeadline(name, args)
+	key := callKey(name, args)
+	call := e.beginCall(ctx, key, name, args)
 
 	select {
-	case r := <-done:
-		if !r.handled {
-			return r.output, false, fmt.Errorf("tool %q is not exposed to agent", name)
+	case <-call.done:
+		e.forget(key)
+		if !call.handled {
+			return call.output, false, fmt.Errorf("tool %q is not exposed to agent", name)
 		}
-		return r.output, true, r.err
+		return call.output, true, call.err
 	case <-ctx.Done():
-		// Parent turn canceled (user hit stop) — propagate, not a slowness report.
+		// Parent turn canceled (user hit stop) — propagate, not a status report.
 		return skill.Output{Name: name, Content: "tool execution canceled", RawOutput: "tool execution canceled", Success: false, Stderr: ctx.Err().Error()}, true, ctx.Err()
 	case <-time.After(deadline):
-		cancel() // nudge ctx-aware tools to stop
-		msg := fmt.Sprintf("tool %q is abnormally slow: still running after %s and was abandoned. Retry with a narrower scope (a more specific path or pattern) or a different approach.", name, deadline)
-		return skill.Output{Name: name, Content: msg, RawOutput: msg, Success: false, Stderr: msg}, true, errors.New(msg)
+		return stillRunning(name, call), true, nil
 	}
+}
+
+// stillRunning is what the model reads when a call outran the turn's patience.
+// Success is true on purpose: nothing failed, and a red row for "still working"
+// tells the user the wrong story — the same call task_result makes for a
+// delegate that is waiting rather than finished. What makes it unmistakable is
+// the text, which names the one thing that collects it.
+func stillRunning(name string, call *pendingCall) skill.Output {
+	msg := fmt.Sprintf(
+		"STILL RUNNING — %q has been working for %s. It was NOT cancelled and NOT restarted; it is still going in the background. "+
+			"Do NOT start the same work again, and do not retry it with different arguments. "+
+			"To look in on it, call %s again with exactly the same arguments: you get its real result the moment it lands, or this line again if it is still working. "+
+			"It is given up on only after %s in total. In the meantime you can run other tools, or tell the user what you are waiting for.",
+		name, time.Since(call.started).Round(time.Second), name, maxToolExecutionTimeout)
+	return skill.Output{
+		Name:       name,
+		Content:    msg,
+		RawOutput:  msg,
+		Success:    true,
+		DurationMs: time.Since(call.started).Milliseconds(),
+	}
+}
+
+// beginCall returns the call already in flight for this exact tool+arguments,
+// starting one only if there is none. That lookup is the whole mechanism: the
+// model's "call it again to check" costs a status read instead of a second run.
+func (e *Executor) beginCall(ctx context.Context, key, name string, args map[string]any) *pendingCall {
+	e.pendingMu.Lock()
+	defer e.pendingMu.Unlock()
+	if call, ok := e.pending[key]; ok {
+		return call
+	}
+	call := &pendingCall{started: time.Now(), done: make(chan struct{})}
+	if e.pending == nil {
+		e.pending = map[string]*pendingCall{}
+	}
+	e.pending[key] = call
+
+	// The work outlives this call but never the turn: ctx is the turn's, so Stop
+	// still kills it, and maxToolExecutionTimeout is the ceiling for a tool that
+	// is never going to finish. Tools that ignore ctx (grep/list walk the FS)
+	// run to their own end either way — the difference is that their result is
+	// now collected instead of discarded.
+	bg, cancel := context.WithTimeout(ctx, maxToolExecutionTimeout)
+	go func() {
+		defer cancel()
+		defer close(call.done)
+		call.output, call.handled, call.err = e.dispatcher.ExecuteTool(bg, name, args)
+	}()
+	return call
+}
+
+// forget drops a call once its result has reached the model, so the next
+// identical call runs fresh instead of replaying an answer from before.
+//
+// ponytail: a parked call the model never checks back on keeps its entry for
+// the life of the session — one small struct per slow tool. Sweep it if a
+// session ever collects enough of them for anyone to notice.
+func (e *Executor) forget(key string) {
+	e.pendingMu.Lock()
+	delete(e.pending, key)
+	e.pendingMu.Unlock()
+}
+
+// callKey identifies "the same call again". encoding/json sorts map keys, so
+// the same arguments key the same way however the model happened to order them.
+func callKey(name string, args map[string]any) string {
+	raw, _ := json.Marshal(args)
+	return strings.ToLower(strings.TrimSpace(name)) + "\x00" + string(raw)
 }
 
 func toolCallToArgs(name string, args map[string]any) []string {
@@ -910,7 +1011,7 @@ func (e *Executor) resolveApproval(ctx context.Context, toolName string, args []
 		case safety.PermissionDeny:
 			return false, nil
 		}
-	} else if !safety.ShouldPrompt(e.approvalMode, assessment) {
+	} else if !safety.ShouldPrompt(e.currentApprovalMode(), assessment) {
 		return true, nil
 	}
 	e.stopSpinner()

@@ -556,6 +556,17 @@ func (a *App) pickApprovalMode() {
 	}
 }
 
+// SetApprovalMode changes the mode the engine enforces, including for a turn
+// that is already running. Rebuilding the executor (what this used to do) left
+// the in-flight turn on the old one: the desktop's Settings dropdown reported
+// full access while the very prompt the user was staring at kept asking.
+func (a *App) SetApprovalMode(mode safety.ApprovalMode) {
+	a.approvalMode = normalizeApprovalMode(mode)
+	if a.turnExecutor != nil {
+		a.turnExecutor.SetApprovalMode(a.approvalMode)
+	}
+}
+
 func (a *App) applyApprovalMode(modeArg string) {
 	modeArg = strings.ToLower(strings.TrimSpace(modeArg))
 	switch modeArg {
@@ -569,19 +580,7 @@ func (a *App) applyApprovalMode(modeArg string) {
 		case "รันเต็มที่", "เต็มที่", "ไม่ถาม":
 			normalized = "full-access"
 		}
-		a.approvalMode = safety.ApprovalMode(normalized)
-		a.turnExecutor = turn.NewExecutor(turn.ExecutorOptions{
-			Agent:        a.agent,
-			Dispatcher:   a.skillDispatcher,
-			CommandSet:   a.commandSet,
-			Approve:      a.approve,
-			ApprovalMode: a.approvalMode,
-			Permissions:  a.permissions,
-			Hooks:        a.hooks,
-			TurnOptions: turn.TurnOptions{
-				ThinkLevel: a.thinkLevel,
-			},
-		})
+		a.SetApprovalMode(safety.ApprovalMode(normalized))
 		if a.onApprovalChange != nil {
 			a.onApprovalChange(a.approvalMode)
 		}

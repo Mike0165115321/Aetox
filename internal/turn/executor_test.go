@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -289,20 +290,25 @@ func TestExecuteToolCallWithOutcome_TruncatedArgsFailLoudly(t *testing.T) {
 type slowDispatcher struct {
 	toolDispatcher
 	release chan struct{}
+	runs    atomic.Int64
 }
 
 func (d *slowDispatcher) ExecuteTool(_ context.Context, _ string, _ map[string]any) (skill.Output, bool, error) {
+	d.runs.Add(1)
 	<-d.release
-	return skill.Output{Success: true}, true, nil
+	return skill.Output{Content: "the real answer", Success: true}, true, nil
 }
 
-func TestExecuteTool_AbnormallySlowToolReportsBackToModel(t *testing.T) {
+// A tool over its deadline is parked, not abandoned: the model is told to call
+// it again with the same arguments, and that second call collects the result
+// instead of starting the work over. The bug this pins cost a 90-second
+// transcription twice — abandoned at 60s, restarted from zero, still no answer.
+func TestExecuteTool_SlowToolIsParkedAndTheSameCallCollectsIt(t *testing.T) {
 	saved := toolExecutionTimeout
 	toolExecutionTimeout = 50 * time.Millisecond
 	defer func() { toolExecutionTimeout = saved }()
 
 	dispatcher := &slowDispatcher{toolDispatcher: toolDispatcher{root: t.TempDir(), t: t}, release: make(chan struct{})}
-	defer close(dispatcher.release)
 	executor := NewExecutor(ExecutorOptions{
 		Agent:        &toolAwareAgent{supportsTools: true},
 		Dispatcher:   dispatcher,
@@ -310,14 +316,58 @@ func TestExecuteTool_AbnormallySlowToolReportsBackToModel(t *testing.T) {
 	})
 
 	output, handled, err := executor.executeTool(context.Background(), "grep", map[string]any{"pattern": "x"})
-	if !handled {
-		t.Fatal("slow tool must still be reported as handled")
+	if !handled || err != nil {
+		t.Fatalf("an overrunning tool is a status, not a failure: handled=%v err=%v", handled, err)
 	}
-	if err == nil || !strings.Contains(err.Error(), "abnormally slow") {
-		t.Fatalf("expected an abnormally-slow error for the model, got %v", err)
+	if !strings.Contains(output.Content, "STILL RUNNING") {
+		t.Fatalf("model must be told the call is still running, got %q", output.Content)
 	}
-	if output.Success {
-		t.Fatal("abandoned tool must not be reported as success")
+	if !output.Success {
+		t.Error("still-running is not a failed row in the user's timeline")
+	}
+
+	close(dispatcher.release) // the parked call finishes while the model is elsewhere
+
+	toolExecutionTimeout = 2 * time.Second // the check-up collects rather than timing out again
+	output, handled, err = executor.executeTool(context.Background(), "grep", map[string]any{"pattern": "x"})
+	if !handled || err != nil {
+		t.Fatalf("collecting a finished call: handled=%v err=%v", handled, err)
+	}
+	if output.Content != "the real answer" {
+		t.Fatalf("check-up must hand back the real result, got %q", output.Content)
+	}
+	if runs := dispatcher.runs.Load(); runs != 1 {
+		t.Fatalf("the check-up must not run the work again: %d runs", runs)
+	}
+}
+
+// The Settings dropdown has to reach the turn that is already running: what
+// makes anyone switch to full access is a prompt sitting on screen right now.
+func TestExecuteTool_ApprovalModeChangeReachesARunningTurn(t *testing.T) {
+	asked := 0
+	executor := NewExecutor(ExecutorOptions{
+		Agent:        &toolAwareAgent{supportsTools: true},
+		Dispatcher:   &toolDispatcher{root: t.TempDir(), t: t},
+		ApprovalMode: safety.ApprovalAsk,
+		Approve: func(context.Context, string, string) (bool, error) {
+			asked++
+			return true, nil
+		},
+	})
+
+	if _, _, err := executor.executeTool(context.Background(), "write", map[string]any{"path": "a.txt", "content": "hi"}); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if asked != 1 {
+		t.Fatalf("ask mode must prompt: %d prompts", asked)
+	}
+
+	executor.SetApprovalMode(safety.ApprovalFullAccess)
+	if _, _, err := executor.executeTool(context.Background(), "write", map[string]any{"path": "b.txt", "content": "hi"}); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if asked != 1 {
+		t.Fatalf("full access must stop the prompts at once, got %d", asked)
 	}
 }
 

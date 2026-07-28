@@ -26,6 +26,10 @@ Since §17 (2026-07-23) there is deliberately **no keyword/regex intent guessing
 - Never add a tool-execution path that skips `resolveApproval`.
 - Never add heuristics that pick tools from natural language on the model's behalf — that layer was deleted by design (§17); `TestExecute_ConversationTextNeverTriggersToolsDirectly` pins it.
 
-## Slow-tool guard (§27.1, 2026-07-25)
+## Slow-tool guard (§27.1, 2026-07-25; parked instead of abandoned 2026-07-29)
 
-`executeTool` runs every model-driven tool call under a 60s deadline (`toolExecutionTimeout`, a var so tests shrink it). Overrun → the model gets a truthful *"abnormally slow … abandoned, retry with a narrower scope"* receipt instead of the turn hanging. Tools that ignore ctx (grep/list walk the FS) keep running in a discarded goroutine — `ponytail:` marked. Tools in `interactiveTools` (`ask_user`) are exempt: they block on a human by design; ctx cancel (Stop) remains their only brake. Turn summaries go through `Agent.RespondEphemeral` — never `Respond` — so summary prompts stay out of conversation history.
+`executeTool` runs every model-driven tool call under a 60s deadline (`toolExecutionTimeout`, a var so tests shrink it). The deadline bounds how long the *turn* waits, not how long the tool runs: on overrun the call is left running and the model gets a *"STILL RUNNING … call the same tool with the same arguments to look in on it"* receipt. `beginCall` keys pending calls by tool name + arguments, so that check-up collects the result instead of starting the work over; `forget` drops the entry once the result reaches the model, so the next identical call runs fresh. `maxToolExecutionTimeout` (10m) is the hard ceiling and the turn's ctx (Stop) is still the brake. Tools in `noDeadlineTools` (`ask_user`, `task`, `task_result`) are exempt: waiting *is* their work.
+
+Approval mode is live (`SetApprovalMode`, an `atomic.Pointer`), not baked in at construction — the desktop's Settings dropdown has to reach the turn already running, which is exactly when a user reaches for it.
+
+Turn summaries go through `Agent.RespondEphemeral` — never `Respond` — so summary prompts stay out of conversation history.

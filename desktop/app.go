@@ -1535,10 +1535,20 @@ func (a *App) SwitchThinkLevel(level string) (ModelInfo, error) {
 }
 
 // SwitchApprovalMode changes the safety approval mode the engine runs with.
+//
+// It used to go through applyConfig, which rebuilds the whole engine — new
+// agent, new registry, new executor. The turn already running kept the old
+// executor, so switching to full access mid-turn did nothing until the next
+// turn: exactly when the user needs it, because what makes anyone reach for
+// that dropdown is a prompt sitting on screen right now. Nothing about a mode
+// change needs a new engine, so it no longer gets one.
 func (a *App) SwitchApprovalMode(mode string) (ModelInfo, error) {
-	next := a.cfg
-	next.ApprovalMode = string(safety.NormalizeApprovalMode(mode))
-	a.applyConfig(next)
+	normalized := safety.NormalizeApprovalMode(mode)
+	a.cfg.ApprovalMode = string(normalized)
+	if a.chat != nil {
+		a.chat.SetApprovalMode(normalized)
+	}
+	persistModelPreference(a.cfg)
 	return a.modelSwitchResult()
 }
 

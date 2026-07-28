@@ -58,7 +58,7 @@ func (*shellSkill) ToolDefinition() model.ToolDefinition {
 			},
 			"timeout_seconds": map[string]any{
 				"type":        "integer",
-				"description": "How long to allow before the command is abandoned. Defaults to 60 and may not exceed 600. Raise it for a full test suite or a large build; leave it alone otherwise. Ignored when run_in_background is set.",
+				"description": "How long to wait before reporting back that the command is still running (it keeps running either way). Defaults to 60 and may not exceed 600. Raise it for a full test suite or a large build; leave it alone otherwise. Ignored when run_in_background is set.",
 			},
 			"run_in_background": map[string]any{
 				"type":        "boolean",
@@ -76,7 +76,7 @@ func (*shellSkill) ToolDefinition() model.ToolDefinition {
 			Description: "Run a command in the sandbox root — tests, builds, linters, package managers, anything the terminal can do. " +
 				"Use it to verify your own work after editing. " +
 				"Prefer read/grep/glob/list for looking at files: they are faster and their output is shaped for you. " +
-				"Abandoned after 60 seconds unless timeout_seconds says otherwise. " +
+				"After 60 seconds (or timeout_seconds) it reports back as still running rather than being killed — call it again with the same command to look in on it. " +
 				"A command that never exits on its own — a dev server, a watch mode, a REPL — must set run_in_background, or it will run out the clock and be killed.",
 			Parameters: payload,
 		},
