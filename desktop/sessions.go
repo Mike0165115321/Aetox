@@ -409,10 +409,61 @@ func (a *App) DeleteSession(id string) error {
 	if err := tx.Commit(); err != nil {
 		return err
 	}
+	// The session's attachments go with it. Session ids are our own timestamp
+	// format, but this id came over the JS binding — refuse anything that could
+	// step out of the attachments folder. Roots we can't see from here (another
+	// project's) are left for sweepAttachments the next time that project opens.
+	if id != "" && id == filepath.Base(id) && !strings.Contains(id, "..") {
+		for _, root := range []string{a.cfg.SandboxRoot, unfocusedRoot()} {
+			if strings.TrimSpace(root) != "" {
+				_ = os.RemoveAll(filepath.Join(root, attachmentsDir, id))
+			}
+		}
+	}
 	if a.sessionID == id {
 		a.startNewSession()
 	}
 	return nil
+}
+
+// sweepAttachments removes what no session owns from <root>/.aetox-attachments:
+// legacy flat files (attachments predating per-session folders — the shared
+// pile any later chat could list and read), and per-session folders whose
+// session row is gone (deleted while another project was open, or a crash
+// between attach and first message). Runs in the background on every root
+// change; a missing folder is the common case and returns immediately.
+func (a *App) sweepAttachments(root string) {
+	root = strings.TrimSpace(root)
+	if root == "" {
+		return
+	}
+	dir := filepath.Join(root, attachmentsDir)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	db, err := a.database()
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			_ = os.Remove(filepath.Join(dir, e.Name()))
+			continue
+		}
+		id := e.Name()
+		var n int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE id = ?`, id).Scan(&n); err != nil || n > 0 {
+			continue
+		}
+		// ponytail: age guard instead of cross-window bookkeeping — a session
+		// has no row until its first message, so a fresh chat in another window
+		// (or this one) must not have its attachments swept out from under it.
+		if info, err := e.Info(); err == nil && time.Since(info.ModTime()) < 24*time.Hour {
+			continue
+		}
+		_ = os.RemoveAll(filepath.Join(dir, id))
+	}
 }
 
 func transcriptToModelMessages(messages []SessionMessage) []model.Message {

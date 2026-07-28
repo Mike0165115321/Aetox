@@ -61,6 +61,7 @@ type App struct {
 	statusReporter     func(string)
 	lastPrintedTool    string
 	toolActionListener func(turn.ToolEvent)
+	approve            turn.ApprovalPromptFunc
 }
 
 type ModelSwitchResult struct {
@@ -108,6 +109,12 @@ type Options struct {
 	// callers (e.g. the desktop app) that want one stable callback for the
 	// session's lifetime, e.g. to relay it to a UI as a live status/typing indicator.
 	StatusReporter func(string)
+	// Approve, if set, replaces the console y/N prompt for tool-call approval.
+	// A GUI host must set this: the default ConfirmApproval reads os.Stdin,
+	// which a windowsgui build does not have — the read fails instantly and
+	// every prompting tool call dies with "read /dev/stdin: The handle is
+	// invalid" before the user ever sees a question.
+	Approve turn.ApprovalPromptFunc
 
 	Title              string
 	Version            string
@@ -153,11 +160,15 @@ func NewApp(opts Options) (*App, error) {
 		skillNames:         skillNames,
 		toolActionListener: opts.OnToolAction,
 	}
+	a.approve = opts.Approve
+	if a.approve == nil {
+		a.approve = a.ConfirmApproval
+	}
 	a.turnExecutor = turn.NewExecutor(turn.ExecutorOptions{
 		Agent:          a.agent,
 		Dispatcher:     a.skillDispatcher,
 		CommandSet:     a.commandSet,
-		Approve:        a.ConfirmApproval,
+		Approve:        a.approve,
 		ApprovalMode:   a.approvalMode,
 		Permissions:    a.permissions,
 		Hooks:          a.hooks,
@@ -178,7 +189,7 @@ func (a *App) wireStatusReporter() {
 		Agent:          a.agent,
 		Dispatcher:     a.skillDispatcher,
 		CommandSet:     a.commandSet,
-		Approve:        a.ConfirmApproval,
+		Approve:        a.approve,
 		StatusReporter: a.statusReporter,
 		ApprovalMode:   a.approvalMode,
 		Permissions:    a.permissions,
@@ -444,7 +455,7 @@ func (a *App) switchModel(ctx context.Context) error {
 		Agent:        a.agent,
 		Dispatcher:   a.skillDispatcher,
 		CommandSet:   a.commandSet,
-		Approve:      a.ConfirmApproval,
+		Approve:      a.approve,
 		ApprovalMode: a.approvalMode,
 		Permissions:  a.permissions,
 		Hooks:        a.hooks,
@@ -563,7 +574,7 @@ func (a *App) applyApprovalMode(modeArg string) {
 			Agent:        a.agent,
 			Dispatcher:   a.skillDispatcher,
 			CommandSet:   a.commandSet,
-			Approve:      a.ConfirmApproval,
+			Approve:      a.approve,
 			ApprovalMode: a.approvalMode,
 			Permissions:  a.permissions,
 			Hooks:        a.hooks,

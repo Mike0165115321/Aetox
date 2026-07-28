@@ -106,6 +106,39 @@ func (s *askUserSkill) ask(ctx context.Context, question string, options []strin
 	}
 }
 
+// approvalAllow / approvalDeny are the exact option strings approveToolCall
+// sends to the UI and compares the answer against. Anything else the user
+// types back — including free text — reads as a refusal.
+const (
+	approvalAllow = "อนุญาต / Allow"
+	approvalDeny  = "ปฏิเสธ / Deny"
+)
+
+// approveToolCall is the desktop's turn.ApprovalPromptFunc: the same in-chat
+// question UI ask_user uses, asked by the engine instead of the model. It
+// exists because the engine's default approver is a console y/N prompt, and a
+// windowsgui build has no console — reading its stdin fails instantly, which
+// is how every prompting tool call used to die with "read /dev/stdin: The
+// handle is invalid" before anyone saw a question.
+func (a *App) approveToolCall(ctx context.Context, command, reason string) (bool, error) {
+	reason = strings.TrimSpace(reason)
+	question := fmt.Sprintf("ขออนุญาตรัน: `%s`", command)
+	if reason != "" {
+		question += fmt.Sprintf(" — %s", reason)
+	}
+	ch, err := a.beginUserQuestion(question, []string{approvalAllow, approvalDeny})
+	if err != nil {
+		return false, err
+	}
+	defer a.endUserQuestion()
+	select {
+	case answer := <-ch:
+		return answer == approvalAllow, nil
+	case <-ctx.Done():
+		return false, ctx.Err()
+	}
+}
+
 // beginUserQuestion registers the single in-flight question and pushes it to
 // the chat UI. Fails loudly if one is already pending.
 func (a *App) beginUserQuestion(question string, options []string) (chan string, error) {

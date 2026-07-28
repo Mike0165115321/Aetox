@@ -122,6 +122,84 @@ func TestAnswerUserQuestionNoPendingIsNoop(t *testing.T) {
 	app.AnswerUserQuestion("stale click") // must not panic
 }
 
+// waitForPendingQuestion blocks until beginUserQuestion has registered a
+// question, or fails the test after 2s.
+func waitForPendingQuestion(t *testing.T, app *App) {
+	t.Helper()
+	deadline := time.After(2 * time.Second)
+	for {
+		app.askMu.Lock()
+		pending := app.askCh != nil
+		app.askMu.Unlock()
+		if pending {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatal("question was never registered")
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+}
+
+// approveToolCall must approve only the exact allow option — the deny option
+// and free text both read as refusal.
+func TestApproveToolCallAllowAndDeny(t *testing.T) {
+	for _, tc := range []struct {
+		answer string
+		want   bool
+	}{
+		{approvalAllow, true},
+		{approvalDeny, false},
+		{"y", false}, // free text is not consent
+	} {
+		app := &App{}
+		type result struct {
+			ok  bool
+			err error
+		}
+		done := make(chan result, 1)
+		go func() {
+			ok, err := app.approveToolCall(context.Background(), "shell rm -rf x", "may delete state")
+			done <- result{ok, err}
+		}()
+		waitForPendingQuestion(t, app)
+		app.AnswerUserQuestion(tc.answer)
+		r := <-done
+		if r.err != nil {
+			t.Fatalf("answer %q: unexpected error: %v", tc.answer, r.err)
+		}
+		if r.ok != tc.want {
+			t.Errorf("answer %q: approved = %v, want %v", tc.answer, r.ok, tc.want)
+		}
+	}
+}
+
+// Turn cancellation (Stop button) must unblock a waiting approval as a denial.
+func TestApproveToolCallCancelDenies(t *testing.T) {
+	app := &App{}
+	ctx, cancel := context.WithCancel(context.Background())
+	type result struct {
+		ok  bool
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		ok, err := app.approveToolCall(ctx, "shell sleep 999", "")
+		done <- result{ok, err}
+	}()
+	waitForPendingQuestion(t, app)
+	cancel()
+	select {
+	case r := <-done:
+		if r.ok || r.err == nil {
+			t.Fatalf("canceled approval must deny with an error, got ok=%v err=%v", r.ok, r.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("cancel did not unblock the approval")
+	}
+}
+
 // todo_write sanitizes junk input and reports honest counts.
 func TestTodoWriteSanitizesAndCounts(t *testing.T) {
 	s := &todoWriteSkill{app: &App{}}

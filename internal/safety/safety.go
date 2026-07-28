@@ -148,11 +148,11 @@ type Assessment struct {
 func ShouldPrompt(mode ApprovalMode, a Assessment) bool {
 	switch mode {
 	case ApprovalFullAccess:
-		for _, e := range a.Effects {
-			if e == EffectExecuteShell {
-				return true
-			}
-		}
+		// No prompts at all — matching what full access means in the reference
+		// implementations (opencode's allow-all, Claude Code's bypassPermissions).
+		// Shell used to be carved out and still prompted here, which made the
+		// desktop fire a dialog per command; a user who wants shell gated has
+		// unsafe-only and ask for exactly that.
 		return false
 	case ApprovalUnsafeOnly:
 		for _, e := range a.Effects {

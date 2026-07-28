@@ -517,7 +517,15 @@ func (a *App) saveChatAttachment(sourcePath string, maxBytes int64) (string, err
 		return "", fmt.Errorf("ไฟล์ใหญ่เกินไป (%d MB, สูงสุด %d MB)", info.Size()>>20, maxBytes>>20)
 	}
 
-	destDir := filepath.Join(root, attachmentsDir)
+	// One subfolder per session, so an attachment lives and dies with its chat
+	// (DeleteSession removes the folder, sweepAttachments catches orphans).
+	// Before this, every session's attachments piled up in one shared folder
+	// forever — a later chat could list and read documents attached to any
+	// earlier one.
+	if a.sessionID == "" {
+		return "", fmt.Errorf("no active session")
+	}
+	destDir := filepath.Join(root, attachmentsDir, a.sessionID)
 	if err := os.MkdirAll(destDir, 0o700); err != nil {
 		return "", err
 	}
@@ -783,6 +791,12 @@ func (a *App) startup(ctx context.Context) {
 	defer debuglog.Block("App.startup")()
 	a.focusNone()
 	a.startNewSession()
+	// Era cleanup: home itself was the unfocused root until 2026-07-26
+	// (§19.1), and attachments copied there never expired. No session writes
+	// there anymore, so this only ever drains the old pile.
+	if home, err := os.UserHomeDir(); err == nil {
+		go a.sweepAttachments(home)
+	}
 }
 
 // outputSubdir is where a brand new file goes, relative to the sandbox root.
@@ -1545,11 +1559,12 @@ func (a *App) SwitchApprovalMode(mode string) (ModelInfo, error) {
 func (a *App) reload(opts config.ConfigOptions) {
 	if a.cfg.ModelProvider == "" {
 		a.applyConfig(resolveConfig(opts))
-		return
+	} else {
+		next := a.cfg
+		next.SandboxRoot = config.Load(opts).SandboxRoot
+		a.applyConfig(next)
 	}
-	next := a.cfg
-	next.SandboxRoot = config.Load(opts).SandboxRoot
-	a.applyConfig(next)
+	go a.sweepAttachments(a.cfg.SandboxRoot)
 }
 
 // workbenchSkills are the tools only the desktop app can offer — they need a
@@ -1602,7 +1617,7 @@ func (a *App) applyConfig(cfg config.Config) {
 	if a.agent != nil {
 		priorContext = a.agent.ContextMessages()
 	}
-	chatApp, agent, status, registry, bootErr := bootstrapFromConfig(cfg, a.recordToolAction, a.emitAgentStatus, a.recordTokenUsage, workbenchTools, a.mcp, a.outputSubdir)
+	chatApp, agent, status, registry, bootErr := bootstrapFromConfig(cfg, a.recordToolAction, a.emitAgentStatus, a.recordTokenUsage, workbenchTools, a.mcp, a.outputSubdir, a.approveToolCall)
 	a.chat = chatApp
 	a.agent = agent
 	a.cfg = cfg
@@ -1728,7 +1743,7 @@ func toMCPServers(cfgs []config.MCPServerConfig) []mcp.Server {
 	return out
 }
 
-func bootstrapFromConfig(cfg config.Config, onToolAction func(turn.ToolEvent), onStatus func(string), onUsage func(model.Usage), extraSkills []skill.Skill, mcpMgr *mcp.Manager, outputSubdir func() string) (*aetoxapp.App, *cognitive.Agent, string, *skill.Registry, error) {
+func bootstrapFromConfig(cfg config.Config, onToolAction func(turn.ToolEvent), onStatus func(string), onUsage func(model.Usage), extraSkills []skill.Skill, mcpMgr *mcp.Manager, outputSubdir func() string, approve turn.ApprovalPromptFunc) (*aetoxapp.App, *cognitive.Agent, string, *skill.Registry, error) {
 	defer debuglog.Block("bootstrapFromConfig")()
 	// Which model this actually resolved to. The log recorded that a bootstrap
 	// happened but never what came out of it, so "it switched models on its
@@ -1826,12 +1841,17 @@ func bootstrapFromConfig(cfg config.Config, onToolAction func(turn.ToolEvent), o
 	// re-bootstrap replaces it along with everything else instead of leaving it
 	// pointed at a dead engine. FilterRegistry drops it from every child, which
 	// is what keeps delegation depth at 1.
+	// The mode the user actually picked (SwitchApprovalMode persists it), not a
+	// hardcoded full-access: with approval hardwired, the Settings toggle was
+	// cosmetic and ask/unsafe-only never reached the engine.
+	approvalMode := safety.NormalizeApprovalMode(cfg.ApprovalMode)
 	for _, tool := range subagent.NewTaskTools(subagent.TaskOptions{
 		Provider:     bootstrapResult.Provider,
 		Model:        cfg.ModelName,
 		Registry:     registry,
 		Permissions:  permissions,
-		ApprovalMode: safety.ApprovalFullAccess,
+		ApprovalMode: approvalMode,
+		Approve:      approve,
 		OnToolAction: onToolAction,
 		OnUsage:      onUsage,
 		MaxChars:     ctxTokens * 4,
@@ -1846,11 +1866,12 @@ func bootstrapFromConfig(cfg config.Config, onToolAction func(turn.ToolEvent), o
 		Agent:          agent,
 		Console:        aetoxapp.NewStdIO(),
 		Dispatcher:     dispatcher,
-		ApprovalMode:   safety.ApprovalFullAccess,
+		ApprovalMode:   approvalMode,
 		Permissions:    permissions,
 		Hooks:          hooks,
 		OnToolAction:   onToolAction,
 		StatusReporter: onStatus,
+		Approve:        approve,
 	})
 	if err != nil {
 		return nil, nil, status + " (init failed: " + err.Error() + ")", nil, err

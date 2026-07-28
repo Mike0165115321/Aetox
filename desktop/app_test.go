@@ -509,6 +509,7 @@ func TestSaveChatImageCopiesIntoSandbox(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 	a := &App{cfg: config.Config{SandboxRoot: root}}
+	a.startNewSession()
 
 	rel, err := a.SaveChatImage(src)
 	if err != nil {
