@@ -108,7 +108,7 @@ export interface ChatMessage {
 /** One tool call in the live per-turn timeline ("Using browser_read… 12s"). */
 /** One tool call/result as the engine sends it — mirrors turn.ToolEvent in Go. */
 export interface ToolEvent {
-  action: 'call' | 'result'
+  action: 'call' | 'result' | 'note' | 'thinking'
   name: string
   /** The engine's tool-call id — how a row is recognized across updates. The
    * label cannot serve: it is empty of its subject on the early events. */
@@ -127,9 +127,18 @@ export interface ToolEvent {
    * one more row reading "task". */
   agent?: string
   brief?: string
+  /** On a "note" event: the narration the model wrote alongside this round's
+   * tool calls — its own words for what it is doing. */
+  text?: string
+  /** On a "thinking" event: how long that round's reasoning streamed. */
+  secs?: number
 }
 
 export interface ToolStep {
+  /** What this row is. Absent means a tool call, as every row was before
+   * "note" (the model's narration between calls) and "thinking" (a reasoning
+   * segment's duration) joined the timeline. */
+  kind?: 'note' | 'thinking'
   label: string
   /** ToolEvent.ref of the call this row is showing, when the engine sent one. */
   ref?: string
@@ -187,6 +196,8 @@ export function groupSteps(steps: ToolStep[]): TimelineNode[] {
  * tools has no children, and a `task` call whose `agent` was left to default has
  * no name. */
 export function isDelegation(node: TimelineNode): boolean {
+  // Narration is free text — it may well start with the word "task".
+  if (node.step.kind) return false
   return Boolean(node.step.agent) || node.children.length > 0 || node.step.label.startsWith('task ') || node.step.label === 'task'
 }
 

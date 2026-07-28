@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Mike0165115321/Aetox/internal/command"
@@ -115,6 +116,23 @@ type TurnOptions struct {
 	// into the next question. Empty unless the caller both had an image and
 	// established that the model can see one (model.ResolveVision).
 	Images []model.Image
+	// OnRound, if set, hears about each completed round of the tool loop — the
+	// text the model wrote alongside that round's tool calls, and whether the
+	// round ended the turn. The executor uses it to interleave narration and
+	// thinking into the live timeline (§59). Carried here rather than as one
+	// more RespondWithTools parameter so the Agent interface, and every fake
+	// implementing it, stays untouched.
+	OnRound func(RoundEvent)
+}
+
+// RoundEvent is one completed round of the model⇄tool loop.
+type RoundEvent struct {
+	// Text is the round's assistant text — narration when the round also called
+	// tools, the reply itself when Final.
+	Text string
+	// Final marks the round that ended the turn. Its Text is the reply the
+	// caller will surface, so the UI must not also show it as narration.
+	Final bool
 }
 
 type Dispatcher interface {
@@ -211,7 +229,7 @@ func (e *Executor) stopSpinner() {
 // and anything the UI wanted to show beyond the name had nowhere to travel.
 // New per-call facts belong here as fields, not as more text to re-parse.
 type ToolEvent struct {
-	Action string `json:"action"` // "call" | "result"
+	Action string `json:"action"` // "call" | "result" | "note" | "thinking"
 	Name   string `json:"name"`
 	// Ref is the provider's tool-call id, and it is what the UI keys a timeline
 	// row on. The label used to serve as identity, which forced the streaming
@@ -235,6 +253,13 @@ type ToolEvent struct {
 	// Added/Removed are the line counts of a write or edit, zero elsewhere.
 	Added   int `json:"added,omitempty"`
 	Removed int `json:"removed,omitempty"`
+	// Text is the model's own words on a "note" event — narration it wrote
+	// alongside a round's tool calls, which used to go into context and nowhere
+	// else. Empty on every other action.
+	Text string `json:"text,omitempty"`
+	// Secs is how long a "thinking" segment streamed (whole seconds, min 1).
+	// Set only on "thinking" events.
+	Secs int `json:"secs,omitempty"`
 	// Agent and Brief describe a delegation, and are set only on the `task` call
 	// that opens one. They are what lets the UI show a sub-agent as a sub-agent —
 	// titled with who is doing the work and what it was asked — instead of one
@@ -544,6 +569,31 @@ func (e *Executor) executeAgentToolLoop(
 		debuglog.Msg("tool: %s", td.Function.Name)
 	}
 
+	// Interleave the loop's own story into the timeline (§59): a "thinking"
+	// segment for each round that streamed reasoning, and a "note" for the
+	// narration the model wrote alongside its tool calls — text that used to go
+	// into context and nowhere else (measured 2026-07-28: 28% of tool rounds
+	// carry it).
+	opts := turnOptions
+	reasoning := onReasoningChunk
+	if e.onToolAction != nil {
+		seg := &thinkSegments{}
+		if onReasoningChunk != nil {
+			reasoning = func(chunk string) {
+				seg.observe()
+				onReasoningChunk(chunk)
+			}
+		}
+		opts.OnRound = func(r RoundEvent) {
+			if secs, ok := seg.flush(); ok {
+				e.onToolAction(ToolEvent{Action: "thinking", Secs: secs})
+			}
+			if text := strings.TrimSpace(r.Text); !r.Final && text != "" {
+				e.onToolAction(ToolEvent{Action: "note", Text: text})
+			}
+		}
+	}
+
 	reply, usedTools, err := e.agent.RespondWithTools(ctx, toolDefs, intent.Raw, func(ctx context.Context, call model.ToolCall) (string, []model.Image, error) {
 		e.reportToolCall(call.ID, call.Function.Name, call.Function.Arguments)
 		// A tool that spawns anything needs to know which call it is, so the work
@@ -568,7 +618,7 @@ func (e *Executor) executeAgentToolLoop(
 		}
 		e.reportToolResult(ev)
 		return receipt, output.Images, execErr
-	}, asStreamHandler(onReasoningChunk), turnOptions)
+	}, asStreamHandler(reasoning), opts)
 	if err != nil {
 		return Result{}, false, err
 	}
@@ -883,6 +933,41 @@ func (e *Executor) dispatchBySkill(ctx context.Context, line string) (skill.Outp
 		return output, handled, err
 	}
 	return output, true, nil
+}
+
+// thinkSegments turns the reasoning-chunk stream into per-round durations for
+// the timeline's "thinking" events: observe() on every chunk, flush() at each
+// round boundary. Chunks and flushes arrive on different call paths, hence the
+// lock.
+type thinkSegments struct {
+	mu    sync.Mutex
+	seen  bool
+	start time.Time
+	last  time.Time
+}
+
+func (s *thinkSegments) observe() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now()
+	if !s.seen {
+		s.seen, s.start = true, now
+	}
+	s.last = now
+}
+
+func (s *thinkSegments) flush() (int, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.seen {
+		return 0, false
+	}
+	s.seen = false
+	secs := int(s.last.Sub(s.start).Seconds())
+	if secs < 1 {
+		secs = 1
+	}
+	return secs, true
 }
 
 func asStreamHandler(callback func(string)) func(string) error {

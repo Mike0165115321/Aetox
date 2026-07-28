@@ -75,6 +75,7 @@ func BuildWithReport(surface Surface, sandboxRoot string) (string, Loaded) {
 	b.WriteString(identity(surface))
 	b.WriteString(environment())
 	b.WriteString(fileEditing())
+	b.WriteString(narration())
 
 	var loaded Loaded
 	loaded.UserGlobalPaths = foldIdentityLayers(&b)
@@ -144,6 +145,17 @@ func fileEditing() string {
 		"know the file type) — that usually gives you enough to write the edit without reading the file " +
 		"at all. Otherwise read with offset and limit around the part you care about. Do not read a large " +
 		"file end to end just to change one line in it.\n"
+}
+
+// narration asks for the one line per tool round that the timeline shows as
+// the model working out loud (§59). Measured before adding this (2026-07-28,
+// 42 debug logs): 28% of tool rounds already carried narration unprompted —
+// the line raises that rate, it does not invent the behavior. Kept to a
+// sentence: the narration is output tokens on every round of the loop.
+func narration() string {
+	return "When you are about to call tools, first say in one short sentence — in the user's language — " +
+		"what you are about to do or what you just found, especially when you change direction. " +
+		"The user watches this live; a silent stretch of tool calls reads as a frozen app.\n"
 }
 
 // environment used to state the sandbox root as an absolute path and then

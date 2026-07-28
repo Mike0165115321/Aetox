@@ -89,6 +89,17 @@ describe('tool events from the engine', () => {
     expect(cockpit.toolSteps[0]).toMatchObject({ label: 'write landing.html', state: 'done' })
   })
 
+  // §59: the model's narration between calls and a round's thinking duration
+  // land as rows of their own kind — born finished, never counted as tools.
+  it('keeps narration and thinking as their own closed rows', () => {
+    applyToolEvent({ action: 'note', name: '', text: '  กำลังไล่หา config  ' })
+    applyToolEvent({ action: 'thinking', name: '', secs: 12 })
+    applyToolEvent({ action: 'note', name: '', text: '   ' }) // blank narration is noise
+    expect(cockpit.toolSteps).toHaveLength(2)
+    expect(cockpit.toolSteps[0]).toMatchObject({ kind: 'note', label: 'กำลังไล่หา config', state: 'done' })
+    expect(cockpit.toolSteps[1]).toMatchObject({ kind: 'thinking', secs: 12, state: 'done' })
+  })
+
   // Two writes in flight at once are two rows, even though both start unnamed
   // and share a tool name.
   it('keeps concurrent calls apart by ref', () => {
@@ -143,6 +154,43 @@ describe('tool timeline collapsing', () => {
 
     await fireEvent.click(tools) // clicking the open one closes it again
     expect(container.querySelector('.tool-step')).toBeNull()
+  })
+
+  // The latest narration stays on screen while the turn runs — that line is
+  // what makes the agent read as working out loud instead of frozen (§59).
+  it('keeps the latest narration on screen mid-turn', () => {
+    const { container } = render(Chat, {
+      ...baseProps, awaitingReply: true,
+      messages: [{ role: 'user', text: 'go', time: '10:54' }] as any,
+      toolSteps: [
+        { kind: 'note', label: 'first thought', state: 'done', startedAt: 0 },
+        { kind: 'note', label: 'scanning the loop', state: 'done', startedAt: 0 },
+        step('browser_read', 'run'),
+      ] as any,
+    })
+    expect(container.querySelector('.tool-note.headline')?.textContent).toBe('scanning the loop')
+  })
+
+  // In the finished timeline the narration and thinking rows render in place,
+  // but the "used N tools" count stays a count of tools.
+  it('renders narration and thinking inside the finished timeline, uncounted', async () => {
+    const { container } = render(Chat, {
+      ...baseProps,
+      messages: [{
+        role: 'agent', text: 'done', time: '10:54',
+        steps: [
+          { kind: 'thinking', label: '', secs: 8, state: 'done', startedAt: 0 },
+          { kind: 'note', label: 'reading the loop first', state: 'done', startedAt: 0 },
+          step('read', 'done'),
+        ],
+      }] as any,
+    })
+    const toggle = [...container.querySelectorAll('.meta-row .reasoning-toggle')]
+      .find((b) => b.textContent?.includes('Used 1'))
+    expect(toggle).toBeTruthy()
+    await fireEvent.click(toggle!)
+    expect(container.querySelector('.tool-note')?.textContent).toBe('reading the loop first')
+    expect(container.querySelector('.tool-think')?.textContent).toContain('8')
   })
 
   it('keeps only the running tool on screen mid-turn', () => {

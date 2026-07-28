@@ -75,6 +75,10 @@
 
   const liveDone = $derived(toolSteps.filter((s) => s.state !== 'run'))
   const liveRunning = $derived(toolSteps.filter((s) => s.state === 'run'))
+  // The model's latest narration stays on screen while it works — that line is
+  // the whole reason notes exist (§59). Older ones collapse into the timeline
+  // with everything else.
+  const liveNote = $derived([...toolSteps].reverse().find((s) => s.kind === 'note' && !s.parent))
   const doneOwn = $derived(ownSteps(toolSteps).filter((s) => s.state !== 'run'))
   const runningOwn = $derived(ownSteps(toolSteps).filter((s) => s.state === 'run'))
   const doneSubs = $derived(delegated(toolSteps).filter((n) => n.step.state !== 'run'))
@@ -96,7 +100,9 @@
   // who did the work. A delegate's steps are counted inside its block, never
   // here.
   function toolsLabel(steps: ToolStep[]): string {
-    const own = ownSteps(steps)
+    // Narration and thinking rows ride in the same list but are not tools —
+    // counting them would inflate "used N tools" with sentences.
+    const own = ownSteps(steps).filter((s) => !s.kind)
     const failed = own.filter((s) => s.state === 'err').length
     const base = t('chat.usedTools', { n: own.length })
     return failed ? `${base} · ✕${failed}` : base
@@ -451,6 +457,13 @@
 {/snippet}
 
 {#snippet toolRow(s: ToolStep, live: boolean)}
+  {#if s.kind === 'note'}
+    <!-- The model's own words for what it is doing, in the position of the
+         work it announces (§59). Plain text, not a status row. -->
+    <div class="tool-note">{s.label}</div>
+  {:else if s.kind === 'thinking'}
+    <div class="tool-think">✳ {t('chat.thoughtFor', { secs: s.secs ?? 1 })}</div>
+  {:else}
   <div class="tool-step {s.state}">
     {#if s.state === 'run'}
       <span class="glyph spin"></span>
@@ -473,6 +486,7 @@
     {/if}
     {#if s.error}<span class="tool-err">{s.error}</span>{/if}
   </div>
+  {/if}
 {/snippet}
 
 {#snippet toolTimeline(steps: ToolStep[], live: boolean)}
@@ -689,6 +703,9 @@
                   </div>
                 {/each}
               </div>
+            {/if}
+            {#if liveNote}
+              <div class="tool-note headline">{liveNote.label}</div>
             {/if}
             <!-- What is running stays on screen, delegations first: a sub-agent
                  is the slowest thing in a turn and the one the user most wants

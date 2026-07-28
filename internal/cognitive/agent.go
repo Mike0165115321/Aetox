@@ -344,11 +344,19 @@ func (a *Agent) RespondWithTools(
 			// The answer it just gave stays in context, so the next round builds on
 			// it instead of repeating it.
 			if pending := a.DrainInterjections(); len(pending) > 0 {
+				// The turn stays alive, so this answer will never be surfaced as
+				// the reply — report it as narration or it is invisible.
+				if opts.OnRound != nil {
+					opts.OnRound(turn.RoundEvent{Text: content})
+				}
 				for _, text := range pending {
 					debuglog.Msg("interjection kept the turn alive (%d chars)", len(text))
 					a.context.Add(model.RoleUser, interjectionNote+text)
 				}
 				continue
+			}
+			if opts.OnRound != nil {
+				opts.OnRound(turn.RoundEvent{Text: content, Final: true})
 			}
 			return content, anyToolUsed, nil
 		}
@@ -360,6 +368,11 @@ func (a *Agent) RespondWithTools(
 			ReasoningContent: strings.TrimSpace(response.ReasoningContent),
 			ToolCalls:        response.ToolCalls,
 		})
+		// Before the tool calls run, so the narration lands in the timeline
+		// above the work it announces.
+		if opts.OnRound != nil {
+			opts.OnRound(turn.RoundEvent{Text: content})
+		}
 
 		// Truncation guard (same failure OpenCode hit, sst/opencode#18108):
 		// finish_reason "length" means the tool-call JSON was cut off at

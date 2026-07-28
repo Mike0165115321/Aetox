@@ -793,3 +793,99 @@ func TestPermissionRulesMatchEditAndGrepArgs(t *testing.T) {
 		t.Errorf("grep: Resolve = (%q, %v), want (allow, true)", action, matched)
 	}
 }
+
+// narratingAgent scripts one round of narration + a tool call + a final reply,
+// streaming a little reasoning first — the shape §59's timeline interleaving
+// consumes.
+type narratingAgent struct{}
+
+func (*narratingAgent) Respond(_ context.Context, _ string, _ TurnOptions) (string, error) {
+	return "", nil
+}
+
+func (*narratingAgent) RespondEphemeral(_ context.Context, _ string, _ TurnOptions) (string, error) {
+	return "", nil
+}
+
+func (*narratingAgent) RespondStream(_ context.Context, _ string, _ func(string) error, _ func(string) error, _ TurnOptions) (string, bool, error) {
+	return "", false, nil
+}
+
+func (a *narratingAgent) RespondWithTools(
+	ctx context.Context,
+	_ []model.ToolDefinition,
+	_ string,
+	exec func(context.Context, model.ToolCall) (string, []model.Image, error),
+	onReasoning func(string) error,
+	opts TurnOptions,
+) (string, bool, error) {
+	if onReasoning != nil {
+		_ = onReasoning("hmm, the folder first")
+	}
+	if opts.OnRound != nil {
+		opts.OnRound(RoundEvent{Text: "กำลังอ่านโฟลเดอร์ก่อน"})
+	}
+	_, _, _ = exec(ctx, model.ToolCall{
+		ID:   "narrate_call_1",
+		Type: "function",
+		Function: model.FunctionCall{
+			Name:      "list",
+			Arguments: `{"path":"internal"}`,
+		},
+	})
+	if opts.OnRound != nil {
+		opts.OnRound(RoundEvent{Text: "เสร็จแล้ว", Final: true})
+	}
+	return "เสร็จแล้ว", true, nil
+}
+
+func (*narratingAgent) SupportsToolCalling() bool { return true }
+
+// §59: a round's thinking and the narration the model wrote alongside its tool
+// calls reach the timeline as events of their own, in the order they happened —
+// thinking, then the note, then the calls it announced. The final reply must
+// NOT also arrive as a note: the reply bubble already shows it.
+func TestExecute_NarrationAndThinkingReachTheTimeline(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "internal"), 0o755); err != nil {
+		t.Fatalf("fixture failed: %v", err)
+	}
+	var events []ToolEvent
+	executor := NewExecutor(ExecutorOptions{
+		Agent:        &narratingAgent{},
+		Dispatcher:   &toolDispatcher{root: root, t: t},
+		ApprovalMode: safety.ApprovalFullAccess,
+		OnToolAction: func(ev ToolEvent) { events = append(events, ev) },
+	})
+
+	input := "อ่านโฟลเดอร์ internal ให้หน่อย"
+	intent := command.Parse(input, command.ParseTokens, nil)
+	if _, err := executor.Execute(context.Background(), input, intent, nil, func(string) {}, nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var actions []string
+	for _, ev := range events {
+		actions = append(actions, ev.Action)
+	}
+	want := []string{"thinking", "note", "call", "result"}
+	if len(actions) != len(want) {
+		t.Fatalf("event actions = %v, want %v", actions, want)
+	}
+	for i := range want {
+		if actions[i] != want[i] {
+			t.Fatalf("event actions = %v, want %v", actions, want)
+		}
+	}
+	if events[0].Secs < 1 {
+		t.Errorf("thinking Secs = %d, want at least 1", events[0].Secs)
+	}
+	if events[1].Text != "กำลังอ่านโฟลเดอร์ก่อน" {
+		t.Errorf("note Text = %q, want the round's narration", events[1].Text)
+	}
+	for _, ev := range events {
+		if ev.Action == "note" && ev.Text == "เสร็จแล้ว" {
+			t.Error("the final reply must not double as a note")
+		}
+	}
+}

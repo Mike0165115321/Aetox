@@ -500,6 +500,25 @@ export function applyReasoningChunk(chunk: string): void {
  * desktop/app.go recordToolAction). "call" opens a running step; "result"
  * closes the oldest one still running. */
 export function applyToolEvent(ev: ToolEvent): void {
+  // The loop's own story, interleaved between the calls it explains (§59).
+  // Both land as finished rows: there is nothing running to close later.
+  if (ev.action === 'note') {
+    const text = ev.text?.trim()
+    if (text) {
+      cockpit.toolSteps.push({
+        kind: 'note', label: text, parent: ev.parent || undefined,
+        state: 'done', startedAt: Date.now(),
+      })
+    }
+    return
+  }
+  if (ev.action === 'thinking') {
+    cockpit.toolSteps.push({
+      kind: 'thinking', label: '', parent: ev.parent || undefined,
+      state: 'done', startedAt: Date.now(), secs: Math.max(1, ev.secs ?? 1),
+    })
+    return
+  }
   const label = [ev.name, ev.subject].filter(Boolean).join(' ')
   // A row is recognized by the engine's call id, not by its label. The label is
   // incomplete on the early events — a model may stream a write's content long

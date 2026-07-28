@@ -1108,3 +1108,51 @@ func TestTheMidWorkNoteLeavesTheChoiceToTheModel(t *testing.T) {
 		}
 	}
 }
+
+// §59: each round of the loop reports its assistant text through
+// TurnOptions.OnRound — narration on a tool round, Final on the round that
+// ends the turn — so the UI can interleave the model's own words into the
+// timeline instead of discarding them.
+func TestRespondWithToolsReportsEachRound(t *testing.T) {
+	provider := &toolLoopProvider{
+		responses: []model.Response{
+			{
+				Text: "แวะดู config ก่อน",
+				ToolCalls: []model.ToolCall{{
+					ID:   "call_read_1",
+					Type: "function",
+					Function: model.FunctionCall{
+						Name:      "read",
+						Arguments: `{"path":"config.json"}`,
+					},
+				}},
+			},
+			{Text: "config เรียบร้อยดี"},
+		},
+	}
+	agent := NewAgent(AgentConfig{Provider: provider, Model: "test-model", MaxToolCalls: 4})
+
+	var rounds []turn.RoundEvent
+	_, _, err := agent.RespondWithTools(
+		context.Background(),
+		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
+		"ดู config ให้หน่อย",
+		func(_ context.Context, _ model.ToolCall) (string, []model.Image, error) {
+			return "ok", nil, nil
+		},
+		nil,
+		turn.TurnOptions{OnRound: func(r turn.RoundEvent) { rounds = append(rounds, r) }},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(rounds) != 2 {
+		t.Fatalf("OnRound calls = %d, want 2 (one per round)", len(rounds))
+	}
+	if rounds[0].Final || rounds[0].Text != "แวะดู config ก่อน" {
+		t.Errorf("round 1 = %+v, want its narration, not Final", rounds[0])
+	}
+	if !rounds[1].Final || rounds[1].Text != "config เรียบร้อยดี" {
+		t.Errorf("round 2 = %+v, want the reply marked Final", rounds[1])
+	}
+}

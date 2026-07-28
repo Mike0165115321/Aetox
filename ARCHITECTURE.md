@@ -2008,6 +2008,25 @@ Two of those are worth reading twice. **The payload nearly doubled and the time 
 
 ---
 
+## 59. Decision — The Loop Works Out Loud: Narration and Thinking Interleaved into the Timeline (2026-07-28)
+
+**What the user saw and asked for.** Watching Claude Code work — "Thought for 60s → tools → thought for 2s → tools", with a sentence of the model's own words between batches — reads as *working while thinking*. Aetox's turn looked like *silence, then an answer*, even though its loop ([internal/cognitive/agent.go](internal/cognitive/agent.go) `RespondWithTools`) is the same OpenCode-style run-until-done loop, streams reasoning every round, and even records the per-round assistant text into context.
+
+**Measured before building** (the bundle lesson, applied): across 42 debug logs of real usage, **28% of 363 tool-call rounds already carried narration text** — "Let me try a different approach to get system info." — that went into context and nowhere else. The other 72% were genuinely silent rounds. So the feature surfaces work the model already does, and a one-line prompt nudge raises the rate; nothing here waits on a future model.
+
+**The mechanism.** Two additions, both on existing seams:
+
+- `TurnOptions.OnRound` ([internal/turn/executor.go](internal/turn/executor.go)) — the loop reports each completed round's text and whether it was final. Carried in the options struct **specifically so the `Agent` interface and every fake implementing it stay untouched**. The interjection-continued round reports too: its answer text was previously invisible everywhere.
+- Two new `ToolEvent` kinds on the one timeline channel the UIs already consume: `"note"` (the round's narration, `Text`) and `"thinking"` (the round's reasoning-stream duration, `Secs`, cut per round by `thinkSegments` wrapping the reasoning handler). Events arrive in causal order — thinking, the note it produced, then the calls the note announces. The final round's text is never a note: the reply bubble owns it.
+
+The frontend renders notes as plain sentences in the timeline (`kind` on `ToolStep`), keeps the **latest** note on screen while the turn runs, and excludes both kinds from the "used N tools" count. Sub-agent rounds flow through the same relay with `Parent` stamped, so a delegate narrates inside its own block. CLI and any listener that ignores unknown actions are unaffected.
+
+**Prompt half:** one sentence in [internal/prompt/prompt.go](internal/prompt/prompt.go) (`narration()`) asking for a short line in the user's language before tool batches. Deliberately one sentence — narration is output tokens on every round.
+
+**Not built, on purpose:** persisting the interleaved timeline across session reloads. Tool rows are already live-only today and nobody has missed them; if that changes, the events are already structured and the persistence is a phase of its own.
+
+---
+
 ## Validation
 
 1. **Claim traceability:** every claim above cites a file or an existing project doc; the two `Unverified`/`Inferred, Verify first: Yes` items are marked as such, not stated as fact.
