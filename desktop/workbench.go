@@ -9,6 +9,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -68,6 +69,38 @@ func normalizeWorkbenchURL(url, sandboxRoot string, outputSubdir func() string) 
 	return "https://" + url
 }
 
+// browserRenderable is what the workbench browser can actually display. A file
+// with no extension at all is let through rather than guessed at.
+var browserRenderable = map[string]bool{
+	".html": true, ".htm": true, ".xhtml": true, ".svg": true, ".pdf": true,
+	".txt": true, ".json": true, ".xml": true, ".csv": true, ".log": true,
+	".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".webp": true, ".bmp": true, ".ico": true,
+	".mp4": true, ".webm": true, ".mp3": true, ".wav": true, ".ogg": true,
+}
+
+// unrenderableFile reports why a local file cannot be shown in the browser, or
+// "" when it is worth trying. Only file:// targets are judged: a URL's
+// extension says nothing about what the server will actually send back.
+//
+// Without this, asking for a .ts file navigated to it, WebView2 aborted the
+// navigation (a source file is a download, not a page), and that surfaced as
+// "page failed to load — not found, or unreachable" — so the model went
+// hunting for a path bug that did not exist. The file was right there.
+func unrenderableFile(url string) string {
+	if !strings.HasPrefix(url, "file:///") {
+		return ""
+	}
+	path := filepath.FromSlash(strings.TrimPrefix(url, "file:///"))
+	ext := strings.ToLower(filepath.Ext(path))
+	if ext == "" || browserRenderable[ext] {
+		return ""
+	}
+	return fmt.Sprintf(
+		"%s exists, but a browser cannot display a %s file — it would be downloaded, not rendered. "+
+			"Use read to see its contents, or open the .html page that loads it.",
+		filepath.Base(path), ext)
+}
+
 // workbenchOpenBrowser asks the frontend to open a workbench browser tab, then
 // waits until the native tab exists and its first navigation completes.
 func (a *App) workbenchOpenBrowser(ctx context.Context, url string) (title, finalURL string, err error) {
@@ -79,6 +112,11 @@ func (a *App) workbenchOpenBrowser(ctx context.Context, url string) (title, fina
 		return "", "", fmt.Errorf("url is required")
 	}
 	url = normalizeWorkbenchURL(url, a.cfg.SandboxRoot, a.outputSubdir)
+	// Refused before a tab is opened: the tab would only show the failure too,
+	// and the user would be left looking at a download prompt or a blank page.
+	if why := unrenderableFile(url); why != "" {
+		return "", "", errors.New(why)
+	}
 
 	id := fmt.Sprintf("web-agent-%d", atomic.AddInt64(&agentBrowserSeq, 1))
 	wailsruntime.EventsEmit(a.ctx, "workbench:open-browser", map[string]string{"id": id, "url": url})
@@ -176,7 +214,7 @@ func (*browserOpenSkill) Description() string {
 
 func (*browserOpenSkill) ToolDefinition() model.ToolDefinition {
 	return toolDef("browser_open",
-		"Open a URL in the workbench browser (visible to the user) and wait for it to load. Also opens a local file: pass the same path write reported, relative to the sandbox root — no need to build a file:// URL yourself. Use it to show the user any page you just created. Use browser_read afterwards to read the page.",
+		"Open a URL in the workbench browser (visible to the user) and wait for it to load. Also opens a local file — pass the same path write reported, relative to the sandbox root, no need to build a file:// URL yourself — as long as it is something a browser renders: .html, .svg, .pdf, an image. Source files (.ts, .go, .css) are downloads, not pages; use read for those. Use it to show the user any page you just created, and browser_read afterwards to read it back.",
 		map[string]any{
 			"type": "object",
 			"properties": map[string]any{
