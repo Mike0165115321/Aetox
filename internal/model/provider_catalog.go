@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Mike0165115321/Aetox/internal/oauth"
 	"github.com/Mike0165115321/Aetox/internal/provider"
 )
 
@@ -87,9 +88,6 @@ func DefaultModel(name string) string {
 // found" against a server that is working fine.
 func ResolveDefaultModel(p, baseURL, apiKey string) string {
 	canonical := provider.Normalize(p)
-	if fallback := provider.DefaultModel(canonical); fallback != "" {
-		return fallback
-	}
 	if strings.TrimSpace(baseURL) == "" {
 		baseURL = provider.DefaultBaseURL(canonical)
 	}
@@ -104,7 +102,11 @@ func ResolveDefaultModel(p, baseURL, apiKey string) string {
 	if models, err := ModelChoicesWithEndpointAndAPIKey(canonical, baseURL, apiKey); err == nil && len(models) > 0 {
 		return models[0]
 	}
-	return ""
+	// The catalog's name is the last resort, not the first answer. It used to be
+	// returned before anything was asked, which meant a model name written here
+	// months ago outranked the list the provider was offering right now — and a
+	// stale one is a 404 that reads like a bug in Aetox.
+	return provider.DefaultModel(canonical)
 }
 
 // DefaultBaseURL delegates to provider.DefaultBaseURL.
@@ -184,13 +186,32 @@ func ModelChoicesWithEndpointAndAPIKey(p, baseURL, apiKey string) ([]string, err
 			return models, nil
 		}
 		return nil, err
-	default:
-		// The primary runtime (e.g. Anthropic) has no /models endpoint. If the
-		// provider also speaks OpenAI-compatible on an alt endpoint (DeepSeek
-		// exposes https://api.deepseek.com), discover through that instead.
+	case provider.RuntimeResponses:
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if apiKey == "" {
+			if token, tokenErr := oauth.Token(ctx, canonical); tokenErr == nil {
+				apiKey = token
+			}
+		}
+		if baseURL == "" {
+			baseURL = oauth.Endpoint(canonical)
+		}
+		return DiscoverResponsesModels(ctx, canonical, baseURL, oauth.Headers(canonical), apiKey)
+	case provider.RuntimeAnthropic:
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		models, err := DiscoverAnthropicModels(ctx, canonical, baseURL, apiKey, oauth.TokenSource(canonical))
+		if err == nil && len(models) > 0 {
+			return models, nil
+		}
+		// DeepSeek serves the Anthropic wire format but not its model list, and
+		// does expose an OpenAI-compatible one on a second host.
 		if spec, ok := provider.Lookup(canonical); ok && spec.AltRuntime == provider.RuntimeOpenAICompatible && spec.AltBaseURL != "" {
 			return DiscoverOpenAICompatibleModels(canonical, spec.AltBaseURL, apiKey)
 		}
+		return nil, err
+	default:
 		return nil, fmt.Errorf("provider %q does not support remote model discovery", canonical)
 	}
 }
@@ -369,6 +390,11 @@ func DiscoverOpenAICompatibleModels(p, baseURL, apiKey string) ([]string, error)
 
 	endpoint := strings.TrimSpace(baseURL)
 	if endpoint == "" {
+		// A signed-in account may be served from its own host (Qwen), which is
+		// only known after login and so cannot live in the catalog.
+		endpoint = oauth.Endpoint(p)
+	}
+	if endpoint == "" {
 		endpoint = provider.DefaultBaseURL(p)
 	}
 	if endpoint == "" {
@@ -386,8 +412,19 @@ func DiscoverOpenAICompatibleModels(p, baseURL, apiKey string) ([]string, error)
 	if err != nil {
 		return nil, err
 	}
+	if apiKey == "" {
+		// Signed-in providers (Copilot, Qwen) reach discovery with no key at
+		// all — without this the model picker is empty for exactly the
+		// providers whose model list the user cannot guess.
+		if token, tokenErr := oauth.Token(ctx, p); tokenErr == nil {
+			apiKey = token
+		}
+	}
 	if apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+	for name, value := range oauth.Headers(p) {
+		req.Header.Set(name, value)
 	}
 	resp, err := (&http.Client{Timeout: 3 * time.Second}).Do(req)
 	if err != nil {

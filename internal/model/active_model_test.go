@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -124,20 +125,24 @@ func TestDefaultModelFallsBackWhenOllamaIsIdle(t *testing.T) {
 	}
 }
 
-// A hosted provider must not be probed for a "loaded" model at all — it has a
-// catalog default and no such concept.
+// A hosted provider has no "currently loaded model" to ask about, so it must
+// never get the local runtime probe. It *is* asked for its model list — that is
+// deliberate, and the catalog name is only what survives when the list does not
+// answer.
 func TestDefaultModelIgnoresActiveProbeForHostedProviders(t *testing.T) {
-	probed := false
+	var paths []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		probed = true
+		paths = append(paths, r.URL.Path)
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer server.Close()
 
 	if got := ResolveDefaultModel("deepseek", server.URL, "k"); got == "" {
-		t.Fatal("hosted provider lost its catalog default")
+		t.Fatal("hosted provider lost its catalog default when discovery failed")
 	}
-	if probed {
-		t.Error("probed a hosted provider for a loaded model")
+	for _, path := range paths {
+		if strings.Contains(path, "/api/ps") || strings.Contains(path, "/api/v0/models") {
+			t.Errorf("probed a hosted provider with the local-runtime endpoint %q", path)
+		}
 	}
 }

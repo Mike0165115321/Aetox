@@ -6,6 +6,7 @@ import {skill} from '../models';
 import {command} from '../models';
 import {subagent} from '../models';
 import {config} from '../models';
+import {oauth} from '../models';
 
 export function AddMCPServer(arg1:string,arg2:Array<string>):Promise<void>;
 
@@ -37,6 +38,8 @@ export function BrowserSetZoom(arg1:string,arg2:number):Promise<void>;
 
 export function BrowserTypeRef(arg1:string,arg2:number,arg3:string,arg4:boolean):Promise<void>;
 
+export function CancelSignIn(arg1:string):Promise<void>;
+
 export function CancelTurn():Promise<void>;
 
 export function ClearProjectFocus():Promise<main.ProjectStatus>;
@@ -44,6 +47,8 @@ export function ClearProjectFocus():Promise<main.ProjectStatus>;
 export function CloseAllBrowserTabs():Promise<void>;
 
 export function CommandHistory():Promise<Array<string>>;
+
+export function CompleteSignIn(arg1:string,arg2:string):Promise<main.ModelInfo>;
 
 export function CurrentSessionID():Promise<string>;
 
@@ -68,6 +73,10 @@ export function GitChangedFiles():Promise<Array<main.ChangedFile>>;
 export function GuideTopics():Promise<Array<model.GuideTopic>>;
 
 export function HasAPIKey(arg1:string):Promise<boolean>;
+
+export function ImportSignIn(arg1:string):Promise<main.ModelInfo>;
+
+export function ImportableSignIns():Promise<Array<string>>;
 
 export function InstallSkillFromGitHub(arg1:string):Promise<string>;
 
@@ -189,9 +198,19 @@ export function SetUILocale(arg1:string):Promise<void>;
 
 export function SetUserName(arg1:string):Promise<void>;
 
+export function SignInMethods():Promise<Array<oauth.Method>>;
+
+export function SignInStatus(arg1:string):Promise<oauth.Status>;
+
+export function SignOut(arg1:string):Promise<main.ModelInfo>;
+
+export function SignedInProviders():Promise<Array<string>>;
+
 export function SpeechModelDirs():Promise<Array<main.SpeechDirInfo>>;
 
 export function SpeechStatus():Promise<string>;
+
+export function StartSignIn(arg1:string):Promise<main.SignInPrompt>;
 
 export function SupportedProviders():Promise<Array<string>>;
 

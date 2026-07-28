@@ -13,6 +13,7 @@ import {
   SaveChatImage, SaveChatFile, ReadImageDataURL, CancelTurn, BrowserGetText, RecentProjects,
   ListAllSessions, SearchAllSessions, LoadSessionAnyProject, ClearProjectFocus,
   AnswerUserQuestion, Interject, RetryActiveProvider, PendingUndo, UndoLastTurn,
+  CompleteSignIn, SignOut, ImportSignIn,
 } from '../../../wailsjs/go/main/App'
 import type { main } from '../../../wailsjs/go/models'
 import { t } from '../i18n.svelte'
@@ -269,6 +270,25 @@ export async function switchModel(modelName: string): Promise<void> {
 
 export async function submitAPIKey(providerName: string, apiKey: string): Promise<void> {
   applyModelInfo(await SetAPIKey(providerName, apiKey))
+}
+
+/**
+ * Finish a sign-in started with StartSignIn. Blocks for as long as the user
+ * takes to approve in their browser, so the caller shows the prompt and a
+ * cancel button rather than a spinner with no way out.
+ */
+export async function completeSignIn(providerName: string, pasted: string): Promise<void> {
+  applyModelInfo(await CompleteSignIn(providerName, pasted))
+}
+
+/** Adopt the session the matching official CLI already holds on this machine. */
+export async function importSignIn(providerName: string): Promise<void> {
+  applyModelInfo(await ImportSignIn(providerName))
+}
+
+/** Forget a provider's sign-in. */
+export async function signOutProvider(providerName: string): Promise<void> {
+  applyModelInfo(await SignOut(providerName))
 }
 
 export async function switchWireFormat(format: string): Promise<void> {

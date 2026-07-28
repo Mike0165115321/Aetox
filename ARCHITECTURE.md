@@ -15,7 +15,7 @@ This document is an evidence-first architecture map, distinct from [README.md](R
 
 | Doc | What it is |
 |---|---|
-| **This file** | Evidence-first whole-system map + the numbered Decision log (§10–§56). Start here; everything below is a spoke. |
+| **This file** | Evidence-first whole-system map + the numbered Decision log (§10–§62). Start here; everything below is a spoke. |
 | [README.md](README.md) | The product as a stranger meets it. Mixes shipped state with roadmap; this file wins on conflicts. |
 | [docs/architecture/module-split-2026-07-21.md](docs/architecture/module-split-2026-07-21.md) | Why an `engine/`/`providers/`/`cli/` split was proposed and the migration plan (§4). ⚠️ The scaffold directories it describes were deleted in §28 — the rationale stands, the on-disk structure is gone. |
 | [docs/architecture/browser-security-2026-07-21.md](docs/architecture/browser-security-2026-07-21.md) | Browser tab `postMessage` bridge — threat model, 3-check defense, residual risk (§6.6). |
@@ -2046,6 +2046,97 @@ The frontend renders notes as plain sentences in the timeline (`kind` on `ToolSt
 **Two facts that constrain any future move.** v0.7.1 and everything before it shipped under MIT and stay MIT **permanently** — anyone may fork that tag and continue from it; this change binds only what comes after. And the relicence needed nobody's permission solely because the copyright is one person's. **That ends with the first merged outside PR**, after which a relicence needs every contributor's agreement — so a CLA or DCO has to land before contributions are accepted, or this door closes.
 
 **Not done, on purpose:** no per-file Apache header (the appendix recommends one; `LICENSE` + `NOTICE` already carry the terms, and 200-odd files of boilerplate is noise for a repo one person reads). No trademark registration — that is money and 12–18 months at DIP, and it is the only thing that would enable a *name-based* takedown, so it stays the open item if the name ever becomes worth defending. No CLA yet: there are no outside contributors to bind, but see above for when that stops being true.
+
+---
+
+## 61. Decision — Sign In With the Plan You Already Pay For (2026-07-29)
+
+**The question.** Every provider Aetox supported wanted the same thing from the user: paste an API key. That excludes the largest group of people who already pay for a model — a Claude Pro subscriber, a ChatGPT subscriber, someone whose employer bought Copilot — because none of those plans issue a key at all. Competing agents (opencode, hermes-agent, plandex, crush) all solved this, and the survey of how is in the commit that added [internal/oauth](internal/oauth): four working flows, four different protocols.
+
+**What shipped.** A sign-in path beside the key path, never instead of it.
+
+| Provider | Flow | Terms | Runtime |
+|---|---|---|---|
+| OpenRouter | PKCE → local redirect listener | **Published** by OpenRouter, no client id needed; mints a real API key the user owns | existing `openai-compatible` |
+| GitHub Copilot | Device code | Editor plugin's OAuth client | existing `openai-compatible` |
+| Qwen | Device code + PKCE | qwen-code CLI's OAuth client | existing `openai-compatible` |
+| Claude Pro/Max | PKCE + pasted code | Claude Code's OAuth client | existing `anthropic` |
+
+Three of the four reach models through runtimes that already existed. That is the reason this order was chosen over the more obvious "Claude first": the expensive part of a provider is its wire format, and picking sign-ins that reuse a wire format meant four providers for roughly one provider's work.
+
+**The one seam that mattered.** An OAuth token expires — a Copilot one after ~25 minutes — and providers are constructed once and reused for a whole session. Resolving credentials at construction, which is what `APIKey string` implies, would hand every long session a dead token. So both runtimes gained `TokenSource func(context.Context) (string, error)`, consulted **per request**, with refresh and write-back behind it ([internal/oauth/token.go](internal/oauth/token.go)). A nil `TokenSource` is the old path byte for byte, which is why no existing provider changed behavior and no call site needed editing: [model.NewProvider](internal/model/factory.go) resolves the sign-in itself.
+
+**Three things the Claude flow requires that nothing else does.** `Authorization: Bearer` **instead of** `x-api-key` (sending both is a 401), `anthropic-beta: oauth-2025-04-20`, and a system prompt that opens with `You are Claude Code, Anthropic's official CLI for Claude.` The last one is a condition of the credential rather than a prompt choice — and §63 later found the check is stricter than "opens with": the line must be a system **block of its own, byte-for-byte** ([anthropic.go](internal/model/anthropic.go) `anthropicSystemField`), with Aetox's prompt as the block after it. It is *not* sent on the API-key path, which is what `TestAnthropicAPIKeyPathUnchanged` exists to hold.
+
+**Risk is a field, not a footnote.** `oauth.Method.Risk` is `open` or `restricted`, and the restricted note renders next to the button in Settings before the user commits. Three of the four flows work by presenting another product's OAuth client: the provider can switch that off without notice, and a consumer plan's terms may not permit driving it from Aetox. That is the user's account and therefore the user's call — but it is not a call anyone can make from a button that says nothing.
+
+**Credentials do not live in `model-preference.json`.** That file is pasted into bug reports and synced between machines; a refresh token in it is a standing account takeover. Sign-ins go to `oauth.json`, 0600, write-then-rename ([internal/oauth/store.go](internal/oauth/store.go)).
+
+**What the live test caught that unit tests could not.** `AETOX_LIVE=1 go test ./internal/oauth/` opens each flow against the real authorization server. It immediately failed on Qwen with `invalid character '<'` — the endpoint answers Go's default `Go-http-client/1.1` User-Agent with an HTML block page while serving curl fine. One header fixed it. No amount of mocking would have found that, and the symptom on a user's machine would have been a sign-in button that fails with a parse error.
+
+**Not done yet, and why.** **ChatGPT/Codex** is the one flow that cannot reuse an existing runtime: `chatgpt.com/backend-api/codex` speaks only the Responses API over SSE, so it needs a fourth runtime with its own tool-call mapping — a bigger piece than all four above combined, and unverifiable without a subscription to test against. **Gemini Code Assist** is the same shape (`cloudcode-pa.googleapis.com`, its own wire format). Both stay on the list; neither is half-shipped here, because a stored credential for a provider that cannot answer is worse than no button at all.
+
+---
+
+## 62. Decision — The Two Wire Formats §61 Deferred, and What Only a Live Call Could Tell Us (2026-07-29)
+
+**What §61 left open.** ChatGPT and Gemini were the two sign-ins that could not ride an existing runtime. Both are now built: [internal/model/responses.go](internal/model/responses.go) (`codex` — a ChatGPT plan via `chatgpt.com/backend-api/codex`) and [internal/model/codeassist.go](internal/model/codeassist.go) (`code-assist` — a personal Google account's free tier via `cloudcode-pa.googleapis.com`). Aetox now speaks five wire formats.
+
+**Neither is a variation on something we had.**
+
+| | Responses (ChatGPT) | Code Assist (Gemini) |
+|---|---|---|
+| System prompt | `instructions`, a top-level string | `systemInstruction` with role `"user"` — there is no system role |
+| History | typed items: `message`, `function_call`, `function_call_output` | `contents[]` of `parts[]`, alternating user/model |
+| Tool result | `function_call_output` matched by `call_id` | a **user** turn holding `functionResponse`, matched by function **name** |
+| Streaming | ~12 named SSE event types | one shape repeated, everything nested under `response` |
+| Reasoning | `response.reasoning_summary_text.delta` | a `text` part carrying `thought: true` |
+
+That last Gemini row is the trap: thoughts and answer arrive in the *same* `text` field, and only the flag separates them. Read it wrong and the model's private notes render as its reply.
+
+**Four things only a real call could have told us,** each of which had already passed unit tests:
+
+1. **`gpt-5.1-codex` does not exist for a ChatGPT account** — 400, by name. There are no fixed model ids on this path any more; the list is per-account and per-plan. Aetox now asks (`DiscoverResponsesModels`, `GET /models?client_version=…`, which returns `slug` rather than `id`) and the catalog list is only a fallback.
+2. **`max_output_tokens` is rejected outright.** A subscription endpoint does not take the knobs a per-token API sells. `Request.MaxTokens` and `Temperature` are simply not expressible here — stated in the code rather than silently dropped.
+3. **Qwen's edge blocks Go's default User-Agent** with an HTML page, surfacing as `invalid character '<'` on an endpoint curl talks to happily. One header. (§61's flows, found by the same live test.)
+4. **Google's refresh response contains no `refresh_token`.** Writing the response through as-is logs the user out on the first refresh — the old one must be carried forward deliberately.
+
+**What is proven, and what is not.** [live_subscription_test.go](internal/model/live_subscription_test.go) (`AETOX_LIVE=1`) adopts the session the matching official CLI already holds on this machine, into an isolated store, and runs the whole agent loop:
+
+- **Code Assist: green, end to end.** Answered "Tokyo is the capital of Japan", called `get_weather({"city":"Bangkok"})`, accepted the result back and answered from it. Usage accounting included, with `thoughtsTokenCount` folded into completion tokens — omitting it under-reports every reasoning turn.
+- **Codex: proven up to metering.** The account used for testing is on the free plan and its Codex quota is spent (`usage_limit_reached`, resets in 3 days). A 429 arrives only *after* the backend has accepted the credentials, headers, model id and body, so the wire format is verified as far as this account can verify it — and no further. That is stated here rather than rounded up to "works".
+
+The live test skips rather than fails on a spent plan (a green suite must not depend on how much of someone's month is left) and paces itself past the Gemini free tier's ~1-request-per-minute limiter.
+
+**Adopting an existing session.** `aetox login codex --import` / `--import` for `code-assist`, and a button beside each sign-in in Settings, read the credential the official CLI already wrote on this machine. Explicit action only: reading another tool's credential file is something a user asks for, never something Aetox discovers on its own. hermes-agent's Claude support is *only* this, and it requires Claude Code to be installed; here it is the shortcut, not the mechanism.
+
+**Naming, deliberately.** `codex` is not an alias of `openai` and `code-assist` is not an alias of `gemini`. The `chatgpt` alias stays pointed at the API-key OpenAI provider — moving it would silently repoint saved preferences at a different account and a different bill. Two tests hold that line.
+
+**One shared piece fell out of it.** [sse.go](internal/model/sse.go): `bufio.Scanner`'s 64 KB line cap is fine for the older formats but not for Responses, which puts an entire turn — every tool call and its arguments — on the single line of the final event. A turn that wrote a large file would have died with "token too long" *after* the model had already done the work.
+
+---
+
+## 63. Decision — The Claude Contract, As the Server Actually Enforces It (2026-07-29)
+
+Every item here passed unit tests and failed (or lied) against the real endpoint; all were settled by live calls (`AETOX_LIVE=1`, [live_subscription_test.go](internal/model/live_subscription_test.go)).
+
+**Thinking depth is `output_config.effort`, not `budget_tokens`.** Current Claude models take exactly two knobs: `thinking` is adaptive-or-off, and depth is `output_config.effort` (`low`→`max`). The old `{"type":"enabled","budget_tokens":N}` is a 400 on every current model, so a think level maps to an effort string, never a token count ([anthropic.go](internal/model/anthropic.go) `convertThinkingToAnthropic`). The Settings dial for Claude is now the real six-step ladder (`thinking_capabilities.go`, default `high` — `xhigh` is what Claude Code uses but quietly spends more of someone's plan, so it is one click away instead of the default). Fable-class models think unconditionally and reject an explicit disable; "off" there means sending no thinking field at all.
+
+**Reasoning arrives empty unless asked for.** `thinking.display` defaults to `omitted` — blocks stream with empty text, so the thinking panel sat blank on a model visibly thinking. `display: "summarized"` fixed it; verified live (six effort levels returned 0 chars until it was set).
+
+**Sampling is gone.** Temperature is rejected alongside thinking on current models, and Aetox sets one on every call — so it is dropped for provider `anthropic` only; DeepSeek's `/anthropic` endpoint still honors it and keeps it.
+
+**The OAuth system check is exact, per block — and its failure mode is a counterfeit 429.** The user's every turn died with `rate_limit_error` while a bare probe passed. Live bisection (system / tools / stream / max_tokens, one at a time) isolated the system prompt, then the encoding: the same content joined as one string (`prefix\n\nAetox prompt`) is refused; split as `[prefix][Aetox prompt]` blocks it is accepted. The endpoint compares the **first system block byte-for-byte** against the Claude Code line and disguises the rejection as a rate limit with body `{"message":"Error"}` and **no rate-limit headers** — the tell that separates it from the real thing. `anthropicSystemField` now emits the block pair on the subscription path (string unchanged for API keys and wire-format borrowers), and the live effort-ladder test carries a real system prompt so this contract stays held.
+
+**A real 429 names its reset in a dialect we didn't read.** A Pro/Max sign-in reports limits as `anthropic-ratelimit-unified-*` with **Unix-seconds** resets, not the documented RFC3339 per-key headers — so the one honest thing a 429 error message can say ("try again in 3m") was unavailable. `rateLimitWindow` reads both dialects. Same live probe also surfaced what the plan headers actually carry: 5h/7d utilization, an `allowed_warning` band, and an overage flag.
+
+**One panic on the same path.** `retryAfter(resp, -1)` — a caller using -1 as "no attempt, just the window" — hit `1 << -1` and killed the whole turn with `negative shift amount`. The function no longer trusts its input, and the caller that wanted the window without an attempt got its own `providerRetryAfter` ([httpclient.go](internal/model/httpclient.go)).
+
+**Three things the first look at the finished UI found, all the same shape: a written-down answer outranking the one the system would give.**
+
+- **The desktop had its own provider allowlist.** `desktopProviders` in [app.go](desktop/app.go) is hand-maintained, so four working sign-in providers were invisible in the picker while every test passed. Now guarded by [providers_test.go](desktop/providers_test.go): anything with a sign-in must be listed, and nothing listed may be a name the engine does not know.
+- **`ResolveDefaultModel` returned the catalog's model name before asking anything.** A name written months ago outranked the list the provider was serving right now. The order is inverted: local probe → live list → catalog name as the last resort. `RecommendedModels` is deleted for every provider that can be asked, and `DiscoverAnthropicModels` (paginated `GET /v1/models`, working with either an API key or a Pro/Max sign-in) fills the one gap that was left. Only two written lists survive: `aetox`, whose models are ours to define, and `code-assist` — its `:fetchAvailableModels` answers **403 PERMISSION_DENIED** on the free tier, verified live, so there is no list to ask for.
+- **A working provider was reported broken.** Settings' "test connection" pings with a tiny `max_tokens`, and every runtime treated an empty completion as a failure — so a model that spent that budget before emitting a visible token came back as `anthropic response has empty text`. One shared guard (`errEmptyCompletion`, [types.go](internal/model/types.go)) now consults the stop reason at all five call sites: truncation is not failure. The Anthropic stream had to start tracking `stop_reason` to answer it, which it never did before.
 
 ---
 

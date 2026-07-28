@@ -62,6 +62,10 @@ export function BrowserTypeRef(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['BrowserTypeRef'](arg1, arg2, arg3, arg4);
 }
 
+export function CancelSignIn(arg1) {
+  return window['go']['main']['App']['CancelSignIn'](arg1);
+}
+
 export function CancelTurn() {
   return window['go']['main']['App']['CancelTurn']();
 }
@@ -76,6 +80,10 @@ export function CloseAllBrowserTabs() {
 
 export function CommandHistory() {
   return window['go']['main']['App']['CommandHistory']();
+}
+
+export function CompleteSignIn(arg1, arg2) {
+  return window['go']['main']['App']['CompleteSignIn'](arg1, arg2);
 }
 
 export function CurrentSessionID() {
@@ -124,6 +132,14 @@ export function GuideTopics() {
 
 export function HasAPIKey(arg1) {
   return window['go']['main']['App']['HasAPIKey'](arg1);
+}
+
+export function ImportSignIn(arg1) {
+  return window['go']['main']['App']['ImportSignIn'](arg1);
+}
+
+export function ImportableSignIns() {
+  return window['go']['main']['App']['ImportableSignIns']();
 }
 
 export function InstallSkillFromGitHub(arg1) {
@@ -366,12 +382,32 @@ export function SetUserName(arg1) {
   return window['go']['main']['App']['SetUserName'](arg1);
 }
 
+export function SignInMethods() {
+  return window['go']['main']['App']['SignInMethods']();
+}
+
+export function SignInStatus(arg1) {
+  return window['go']['main']['App']['SignInStatus'](arg1);
+}
+
+export function SignOut(arg1) {
+  return window['go']['main']['App']['SignOut'](arg1);
+}
+
+export function SignedInProviders() {
+  return window['go']['main']['App']['SignedInProviders']();
+}
+
 export function SpeechModelDirs() {
   return window['go']['main']['App']['SpeechModelDirs']();
 }
 
 export function SpeechStatus() {
   return window['go']['main']['App']['SpeechStatus']();
+}
+
+export function StartSignIn(arg1) {
+  return window['go']['main']['App']['StartSignIn'](arg1);
 }
 
 export function SupportedProviders() {

@@ -307,6 +307,26 @@ export namespace main {
 	        this.path = source["path"];
 	    }
 	}
+	export class SignInPrompt {
+	    provider: string;
+	    kind: string;
+	    url: string;
+	    user_code?: string;
+	    verification_uri?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SignInPrompt(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.provider = source["provider"];
+	        this.kind = source["kind"];
+	        this.url = source["url"];
+	        this.user_code = source["user_code"];
+	        this.verification_uri = source["verification_uri"];
+	    }
+	}
 	export class SkillInfo {
 	    name: string;
 	    description: string;
@@ -530,6 +550,51 @@ export namespace model {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
 	        this.question = source["question"];
+	    }
+	}
+
+}
+
+export namespace oauth {
+	
+	export class Method {
+	    provider: string;
+	    label: string;
+	    kind: string;
+	    risk: string;
+	    note: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Method(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.provider = source["provider"];
+	        this.label = source["label"];
+	        this.kind = source["kind"];
+	        this.risk = source["risk"];
+	        this.note = source["note"];
+	    }
+	}
+	export class Status {
+	    provider: string;
+	    signed_in: boolean;
+	    label?: string;
+	    account?: string;
+	    expires_at?: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Status(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.provider = source["provider"];
+	        this.signed_in = source["signed_in"];
+	        this.label = source["label"];
+	        this.account = source["account"];
+	        this.expires_at = source["expires_at"];
 	    }
 	}
 

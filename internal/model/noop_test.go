@@ -242,8 +242,8 @@ func TestNoopToolsModelScriptsADelegateRound(t *testing.T) {
 
 	// Handed nothing readable, it says so instead of calling something it lacks.
 	r3, err := p.Complete(context.Background(), Request{
-		Model: "aetox-tools:test",
-		Tools: []ToolDefinition{{Type: "function", Function: ToolFunction{Name: "web_search"}}},
+		Model:    "aetox-tools:test",
+		Tools:    []ToolDefinition{{Type: "function", Function: ToolFunction{Name: "web_search"}}},
 		Messages: []Message{{Role: RoleUser, Content: "ไปดูให้หน่อย"}},
 	})
 	if err != nil {

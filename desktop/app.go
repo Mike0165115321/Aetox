@@ -28,6 +28,7 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/hook"
 	"github.com/Mike0165115321/Aetox/internal/mcp"
 	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mike0165115321/Aetox/internal/oauth"
 	"github.com/Mike0165115321/Aetox/internal/proc"
 	"github.com/Mike0165115321/Aetox/internal/prompt"
 	"github.com/Mike0165115321/Aetox/internal/safety"
@@ -764,8 +765,20 @@ type ModelInfo struct {
 }
 
 // desktopProviders is the curated subset of the full engine catalog
-// (model.SupportedProviders()) exposed in the desktop UI's provider picker.
-var desktopProviders = []string{"ollama", "lmstudio", "deepseek", "gemini", "openai", "openrouter", "zai", "anthropic", "aetox"}
+// (model.SupportedProviders()) exposed in the desktop UI's provider picker,
+// in the order the picker shows them.
+//
+// It is an allowlist, so a provider added to the engine catalog is invisible in
+// the desktop until it is named here — which is exactly how the four sign-in
+// providers shipped in §61/§62 stayed missing from the UI while every test
+// passed. The sign-in group is listed first because "use the plan you already
+// pay for" is the shorter path for most people than finding an API key.
+var desktopProviders = []string{
+	// Signed into, not keyed in (internal/oauth).
+	"codex", "code-assist", "github-copilot", "qwen", "anthropic", "openrouter",
+	// API key or a local server.
+	"ollama", "lmstudio", "deepseek", "gemini", "openai", "zai", "aetox",
+}
 
 // NewApp creates a new App application struct
 func NewApp() *App {
@@ -1329,12 +1342,18 @@ func (a *App) SwitchModel(modelName string) (ModelInfo, error) {
 	return a.modelSwitchResult()
 }
 
-// HasAPIKey reports whether a key-requiring provider already has a resolvable
-// key (cached preference or env var). Always true for providers that don't
-// need one.
+// HasAPIKey reports whether a key-requiring provider already has resolvable
+// credentials — a cached key, an env var, or a sign-in. Always true for
+// providers that don't need any.
 func (a *App) HasAPIKey(providerName string) bool {
 	canonical := model.NormalizeProvider(providerName)
 	if !model.RequiresAPIKey(canonical) {
+		return true
+	}
+	// A signed-in provider (Copilot, Qwen, Claude Pro/Max) has no key to find
+	// and never will — asking the user for one would be asking for something
+	// that does not exist.
+	if oauth.Has(canonical) {
 		return true
 	}
 	return resolveAPIKeyForProvider(canonical) != ""

@@ -4,7 +4,7 @@ import { tick } from 'svelte'
 import Chat from '../lib/Chat.svelte'
 import { cockpit, applyToolEvent } from '../lib/stores/cockpit.svelte'
 import { setLocale } from '../lib/i18n.svelte'
-import { GuideTopics } from './mocks/wailsApp'
+import { GuideTopics, SwitchApprovalMode } from './mocks/wailsApp'
 
 const baseProps = {
   task: { title: '', steps: [] } as any,
@@ -204,6 +204,40 @@ describe('tool timeline collapsing', () => {
     expect(steps.length).toBe(1)
     expect(steps[0].textContent).toContain('browser_read')
     expect(container.querySelector('.meta-row .reasoning-toggle')?.textContent).toContain('Used 2 tools')
+  })
+})
+
+// The approval mode reads off the composer chip and is switched from the model
+// menu. Shift+Tab is the shortcut, and it must never be able to REACH
+// full-access: that mode never prompts again, so turning it on stays a
+// deliberate pick from the menu.
+describe('approval mode on the composer', () => {
+  it('shows the mode on the chip, red only at full-access', () => {
+    const ask = render(Chat, { ...baseProps, messages: [] as any }).container
+    expect(ask.querySelector('.model-chip .mode-ic')?.textContent).toBe('✋')
+    expect(ask.querySelector('.model-chip .mode-ic.danger')).toBeNull()
+
+    const full = render(Chat, {
+      ...baseProps, messages: [] as any,
+      model: { ...baseProps.model, approval: 'full-access' },
+    }).container
+    expect(full.querySelector('.model-chip .mode-ic.danger')?.textContent).toBe('⚡')
+  })
+
+  it('shift+tab toggles ask↔unsafe-only and only ever tightens full-access', async () => {
+    SwitchApprovalMode.mockClear()
+    render(Chat, { ...baseProps, messages: [] as any })
+    await fireEvent.keyDown(window, { key: 'Tab', shiftKey: true })
+    expect(SwitchApprovalMode).toHaveBeenCalledWith('unsafe-only')
+
+    SwitchApprovalMode.mockClear()
+    render(Chat, {
+      ...baseProps, messages: [] as any,
+      model: { ...baseProps.model, approval: 'full-access' },
+    })
+    await fireEvent.keyDown(window, { key: 'Tab', shiftKey: true })
+    expect(SwitchApprovalMode).toHaveBeenCalledWith('ask')
+    expect(SwitchApprovalMode).not.toHaveBeenCalledWith('full-access')
   })
 })
 

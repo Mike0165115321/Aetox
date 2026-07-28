@@ -17,7 +17,7 @@
     cockpit, attachImageFromPath, clearPendingImage, attachTabContext, clearPendingContext,
     attachFileFromPath, clearPendingFile, fileKind,
     openProject, openFolder, clearProjectFocus, cancelTurn, answerAsk, queuedMessages,
-    retryActiveProvider, undoLastTurn,
+    retryActiveProvider, undoLastTurn, switchApprovalMode,
   } from './stores/cockpit.svelte'
 
   let {
@@ -191,7 +191,22 @@
   // list upward (browser-controlled, not stylable), so these render as a
   // small custom dropdown instead, anchored with bottom:100% like the rest
   // of this popover.
-  let openDropdown = $state<'provider' | 'model' | 'thinkLevel' | ''>('')
+  let openDropdown = $state<'approval' | 'provider' | 'model' | 'thinkLevel' | ''>('')
+
+  // A model list is whatever the provider currently offers — Anthropic alone
+  // returns a dozen names — so a menu that opens scrolled to the top shows the
+  // user an arbitrary slice with their current model nowhere in it.
+  function revealSelected(list: HTMLElement) {
+    const selected = list.querySelector('.updrop-opt.selected')
+    if (selected) selected.scrollIntoView({ block: 'nearest' })
+  }
+
+  // One glyph per approval mode, shown on the chip itself: which mode you are
+  // in has to be readable without opening anything — that is the whole reason
+  // it stopped living only in Settings — and a glyph costs no bar width.
+  const approvalIcons: Record<string, string> = {
+    'ask': '✋', 'unsafe-only': '🛡', 'full-access': '⚡',
+  }
 
   // Auto-grow the composer upward while typing (the composer is anchored at
   // the bottom, so extra height expands up). The ceiling is the stylesheet's
@@ -423,33 +438,51 @@
       e.preventDefault()
       palette = palette === 'all' ? '' : 'all'
     }
+    // Shift+Tab toggles the leash, as in Claude Code. Deliberately only
+    // ask ↔ unsafe-only: full-access means no prompt ever again, which is not
+    // something a stray keystroke should be able to turn on. It can still be
+    // picked from the menu, and from it this tightens rather than cycles.
+    if (e.shiftKey && e.key === 'Tab') {
+      e.preventDefault()
+      switchApprovalMode(model.approval === 'ask' ? 'unsafe-only' : 'ask')
+    }
   }}
 />
 
+<!-- icon/desc are optional per option: approval needs them (picking "full access"
+     blind is the one mistake here that costs something), a provider name does
+     not, so those callers pass neither and render exactly as before. -->
 {#snippet upSelect(
-  id: 'provider' | 'model' | 'thinkLevel',
-  options: { value: string; label: string }[],
+  id: 'approval' | 'provider' | 'model' | 'thinkLevel',
+  options: { value: string; label: string; icon?: string; desc?: string }[],
   current: string,
   onPick: (value: string) => void,
 )}
+  {@const active = options.find((o) => o.value === current)}
   <div class="updrop">
     <button
       type="button"
       class="ctrl updrop-trigger"
       onclick={(e) => { e.stopPropagation(); openDropdown = openDropdown === id ? '' : id }}
     >
-      <span class="t">{options.find((o) => o.value === current)?.label ?? current}</span>
+      {#if active?.icon}<span class="ic">{active.icon}</span>{/if}
+      <span class="t">{active?.label ?? current}</span>
       <span class="caret">{openDropdown === id ? '⌃' : '⌄'}</span>
     </button>
     {#if openDropdown === id}
-      <div class="updrop-list">
+      <div class="updrop-list" use:revealSelected>
         {#each options as opt}
           <button
             type="button"
             class="updrop-opt"
+            class:rich={!!opt.desc}
             class:selected={opt.value === current}
             onclick={(e) => { e.stopPropagation(); openDropdown = ''; onPick(opt.value) }}
-          >{opt.label}</button>
+          >
+            {#if opt.icon}<span class="ic">{opt.icon}</span>{/if}
+            <span class="t">{opt.label}</span>
+            {#if opt.desc}<span class="d">{opt.desc}</span>{/if}
+          </button>
         {/each}
       </div>
     {/if}
@@ -912,6 +945,16 @@
                     {/if}
                   </div>
                 {/if}
+                <!-- Top row on purpose: the knob changed most often, and the
+                     only one on this menu with a safety consequence. -->
+                <div class="mm-row">
+                  <span class="lbl">{t('palette.approval')}</span>
+                  {@render upSelect('approval', [
+                    { value: 'ask', label: t('chat.approvalAsk'), icon: approvalIcons['ask'], desc: t('onboard.approvalAskDesc') },
+                    { value: 'unsafe-only', label: t('chat.approvalUnsafeOnly'), icon: approvalIcons['unsafe-only'], desc: t('onboard.approvalUnsafeDesc') },
+                    { value: 'full-access', label: t('chat.approvalFullAccess'), icon: approvalIcons['full-access'], desc: t('onboard.approvalFullDesc') },
+                  ], model.approval, switchApprovalMode)}
+                </div>
                 <div class="mm-row">
                   <span class="lbl">{t('chat.provider')}</span>
                   {@render upSelect('provider', providers.map((p) => ({ value: p, label: p })), model.provider, handleProviderChange)}
@@ -934,6 +977,8 @@
               </div>
             {/if}
             <button type="button" class="model-chip" onclick={(e) => { e.stopPropagation(); modelMenuOpen = !modelMenuOpen; if (modelMenuOpen) { refreshThinkLevels(); EnabledProviders().then((p) => (providers = p)) } }}>
+              <span class="mode-ic" class:danger={model.approval === 'full-access'}
+                    title={t('settings.approvalTitle')}>{approvalIcons[model.approval] ?? '✋'}</span>
               <span class="t">{model.modelName || model.provider}</span>
               {#if model.thinkLevel}<span class="lvl">{model.thinkLevel}</span>{/if}
               <span class="caret">{modelMenuOpen ? '⌃' : '⌄'}</span>

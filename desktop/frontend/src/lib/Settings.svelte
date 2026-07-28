@@ -20,11 +20,12 @@
     SavePromptPreset, DeletePromptPreset, PickPresetImage, RemovePresetImage,
     ListSubagentProfiles, ReadSubagentProfile, SaveSubagentProfile,
     DeleteSubagentProfile, SetSubagentModel, OpenSubagentsFolder,
+    SignInMethods, SignInStatus, StartSignIn, CancelSignIn, ImportableSignIns,
   } from '../../wailsjs/go/main/App'
   import { BrowserOpenURL } from '../../wailsjs/runtime/runtime'
   import promptPayQR from '../assets/images/promptpay-qr.png'
   import { config } from '../../wailsjs/go/models'
-  import { cockpit, switchProvider, switchModel, submitAPIKey, switchApprovalMode, switchWireFormat, setProviderBaseURL, retryActiveProvider } from './stores/cockpit.svelte'
+  import { cockpit, switchProvider, switchModel, submitAPIKey, switchApprovalMode, switchWireFormat, setProviderBaseURL, retryActiveProvider, completeSignIn, signOutProvider, importSignIn } from './stores/cockpit.svelte'
   import {
     identity, loadIdentityFiles, openIdentityFile, saveIdentityFile,
     createIdentityFile, deleteIdentityFile, identityTemplates,
@@ -90,6 +91,26 @@
   let keyDraft = $state('')
   let showKey = $state(false)
   let customModel = $state('')
+
+  // ---------- Sign-in (use the plan you already pay for) ----------
+  type SignInMethod = { provider: string; label: string; kind: string; risk: string; note: string }
+  type SignInPrompt = { provider: string; kind: string; url: string; user_code?: string; verification_uri?: string }
+
+  let signInMethods = $state<SignInMethod[]>([])
+  let signedIn = $state<Record<string, { signed_in: boolean; label?: string; account?: string }>>({})
+  // The authorization currently on screen. Only one at a time: the flow blocks
+  // on the user, and two half-finished sign-ins is a state nobody can reason
+  // about.
+  let signInPrompt = $state<SignInPrompt | null>(null)
+  let signInCode = $state('')
+  let signInError = $state('')
+  // Providers whose official CLI is already signed in on this machine, so the
+  // user can adopt that session instead of authorizing the same account twice.
+  let importable = $state<string[]>([])
+
+  const signInProviderNames = $derived(new Set(signInMethods.map((m) => m.provider)))
+  const signInMethod = $derived(signInMethods.find((m) => m.provider === selected) ?? null)
+  const signInStatus = $derived(signedIn[selected] ?? null)
   let busy = $state('')
   let errorMsg = $state('')
 
@@ -97,6 +118,11 @@
   const isActiveProvider = $derived(cockpit.model.provider === selected)
   const enabledRows = $derived(providers.filter((p) => enabledNames.includes(p.name)))
   const addableRows = $derived(providers.filter((p) => !enabledNames.includes(p.name)))
+  // Split, because the two kinds ask for completely different things: one wants
+  // a browser and the plan you already pay for, the other wants a key you have
+  // to go find. Mixing them in one alphabetical list hid the sign-ins.
+  const addableSignIn = $derived(addableRows.filter((p) => signInProviderNames.has(p.name)))
+  const addableKeyed = $derived(addableRows.filter((p) => !signInProviderNames.has(p.name)))
   // Only meaningful while this provider is the active one — otherwise nothing
   // has been bootstrapped for it yet, so show what would be the default.
   const currentWireFormat = $derived(isActiveProvider ? cockpit.model.wireFormat : (wireFormats[0] ?? ''))
@@ -107,6 +133,7 @@
 
     await refreshProviders()
     await refreshEnabledProviders()
+    await refreshSignIn()
     selectProvider(cockpit.model.provider || enabledRows[0]?.name || providers[0]?.name || '')
 
     await loadMCP()
@@ -125,6 +152,75 @@
   async function refreshEnabledProviders() {
     enabledNames = await EnabledProviders()
   }
+
+  async function refreshSignIn() {
+    signInMethods = (await SignInMethods()) ?? []
+    const entries = await Promise.all(
+      signInMethods.map(async (m) => [m.provider, await SignInStatus(m.provider)] as const),
+    )
+    signedIn = Object.fromEntries(entries)
+    importable = (await ImportableSignIns()) ?? []
+  }
+
+  // Two calls, not one: the first returns what to show the user (a code to
+  // type, a page to visit), the second blocks until they finish. Device and
+  // browser flows chain straight into the wait; only the paste flow stops here
+  // for input.
+  async function startSignIn() {
+    const method = signInMethod
+    if (!method) return
+    signInError = ''
+    signInCode = ''
+    try {
+      signInPrompt = await StartSignIn(method.provider)
+    } catch (e) {
+      signInError = String(e)
+      return
+    }
+    if (signInPrompt.url) BrowserOpenURL(signInPrompt.url)
+    if (method.kind !== 'paste') await finishSignIn()
+  }
+
+  async function finishSignIn() {
+    const prompt = signInPrompt
+    if (!prompt) return
+    busy = 'signin'
+    signInError = ''
+    try {
+      await completeSignIn(prompt.provider, signInCode.trim())
+      signInPrompt = null
+      signInCode = ''
+      await refreshSignIn()
+      await refreshProviders()
+      // Re-select to pick up the model list, which was unreachable until now.
+      await selectProvider(prompt.provider)
+    } catch (e) {
+      signInError = String(e)
+    } finally {
+      busy = ''
+    }
+  }
+
+  async function abortSignIn() {
+    const prompt = signInPrompt
+    signInPrompt = null
+    signInCode = ''
+    signInError = ''
+    if (prompt) await CancelSignIn(prompt.provider)
+  }
+
+  const doImport = (name: string) => run('import:' + name, async () => {
+    await importSignIn(name)
+    await refreshSignIn()
+    await refreshProviders()
+    await selectProvider(name)
+  })
+
+  const doSignOut = (name: string) => run('signout:' + name, async () => {
+    await signOutProvider(name)
+    await refreshSignIn()
+    await refreshProviders()
+  })
 
   const addProvider = (name: string) => run('enable:' + name, async () => {
     enabledNames = await SetProviderEnabled(name, true)
@@ -146,6 +242,9 @@
 
   async function selectProvider(name: string) {
     if (!name) return
+    // Walking away from a half-finished sign-in must release the listener it
+    // opened, not leave it waiting for a redirect nobody will send.
+    if (signInPrompt && signInPrompt.provider !== name) await abortSignIn()
     selected = name
     errorMsg = ''
     keyDraft = ''
@@ -1103,12 +1202,24 @@
           </button>
           {#if showAddProvider}
             <div class="mset-add-list">
-              {#each addableRows as p (p.name)}
-                <button class="mset-prov" disabled={busy === 'enable:' + p.name} onclick={() => addProvider(p.name)}>
-                  {p.name}
-                  <span class="dot">{busy === 'enable:' + p.name ? '…' : '+'}</span>
-                </button>
-              {/each}
+              {#if addableSignIn.length > 0}
+                <div class="mset-add-group">{t('settings.groupSignIn')}</div>
+                {#each addableSignIn as p (p.name)}
+                  <button class="mset-prov" disabled={busy === 'enable:' + p.name} onclick={() => addProvider(p.name)}>
+                    {p.name}
+                    <span class="dot">{busy === 'enable:' + p.name ? '…' : '+'}</span>
+                  </button>
+                {/each}
+              {/if}
+              {#if addableKeyed.length > 0}
+                <div class="mset-add-group">{t('settings.groupApiKey')}</div>
+                {#each addableKeyed as p (p.name)}
+                  <button class="mset-prov" disabled={busy === 'enable:' + p.name} onclick={() => addProvider(p.name)}>
+                    {p.name}
+                    <span class="dot">{busy === 'enable:' + p.name ? '…' : '+'}</span>
+                  </button>
+                {/each}
+              {/if}
               {#if addableRows.length === 0}
                 <div class="muted" style="font-size:12px; padding:4px 10px">{t('settings.noMoreProviders')}</div>
               {/if}
@@ -1171,9 +1282,82 @@
               </div>
             {/if}
 
+            {#if signInMethod}
+              <div class="mset-field">
+                <div class="eyebrow">{t('settings.signInLabel')}</div>
+
+                {#if signInStatus?.signed_in}
+                  <div class="mset-keyrow">
+                    <span class="badge on">{signInStatus.label || t('settings.signedInAs')}</span>
+                    <button class="ctrl" disabled={busy !== ''} onclick={() => doSignOut(signInMethod.provider)}>
+                      {busy === 'signout:' + signInMethod.provider ? '…' : t('settings.signOut')}
+                    </button>
+                  </div>
+                {:else if signInPrompt}
+                  {@const prompt = signInPrompt}
+                  <div class="signin-flow">
+                    {#if prompt.kind === 'device'}
+                      <div class="muted">{t('settings.signInDeviceStep')}</div>
+                      <div class="signin-code">{prompt.user_code}</div>
+                      <div class="mset-keyrow">
+                        <button class="ctrl" onclick={() => BrowserOpenURL(prompt.verification_uri || prompt.url)}>
+                          {t('settings.signInOpenPage')}
+                        </button>
+                        <button class="ctrl" onclick={abortSignIn}>{t('settings.signInCancel')}</button>
+                      </div>
+                      <div class="muted">{t('settings.signInWaiting')}</div>
+                    {:else if prompt.kind === 'paste'}
+                      <div class="muted">{t('settings.signInPasteStep')}</div>
+                      <div class="mset-keyrow">
+                        <input
+                          class="ctrl key-input" type="password"
+                          placeholder={t('settings.signInPastePlaceholder')}
+                          bind:value={signInCode}
+                          onkeydown={(e) => e.key === 'Enter' && finishSignIn()}
+                        />
+                        <button class="ctrl" disabled={busy === 'signin' || !signInCode.trim()} onclick={finishSignIn}>
+                          {busy === 'signin' ? '…' : t('settings.signInSubmit')}
+                        </button>
+                        <button class="ctrl" onclick={abortSignIn}>{t('settings.signInCancel')}</button>
+                      </div>
+                    {:else}
+                      <div class="muted">{t('settings.signInWaiting')}</div>
+                      <div class="mset-keyrow">
+                        <button class="ctrl" onclick={() => BrowserOpenURL(prompt.url)}>
+                          {t('settings.signInOpenPage')}
+                        </button>
+                        <button class="ctrl" onclick={abortSignIn}>{t('settings.signInCancel')}</button>
+                      </div>
+                    {/if}
+                  </div>
+                {:else}
+                  <div class="mset-keyrow">
+                    <button class="ctrl" disabled={busy !== ''} onclick={startSignIn}>
+                      {t('settings.signInWith', { label: signInMethod.label })}
+                    </button>
+                    {#if importable.includes(signInMethod.provider)}
+                      <button class="ctrl" disabled={busy !== ''} onclick={() => doImport(signInMethod.provider)}>
+                        {busy === 'import:' + signInMethod.provider ? '…' : t('settings.signInImport')}
+                      </button>
+                    {/if}
+                  </div>
+                  <div class="muted">{signInMethod.note}</div>
+                  {#if signInMethod.risk === 'restricted'}
+                    <div class="signin-warn">{t('settings.signInRestricted')}</div>
+                  {/if}
+                {/if}
+
+                {#if signInError}
+                  <div class="conn-test">{signInError}</div>
+                {/if}
+              </div>
+            {/if}
+
             {#if selectedRow.requiresKey}
               <div class="mset-field">
-                <div class="eyebrow">{t('settings.apiKeyLabel')}</div>
+                <div class="eyebrow">
+                  {signInMethod ? t('settings.signInOrKey') : t('settings.apiKeyLabel')}
+                </div>
                 <div class="mset-keyrow">
                   <input
                     class="ctrl key-input" type={showKey ? 'text' : 'password'}

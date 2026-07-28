@@ -77,6 +77,12 @@ func ResolveThinkingCapabilities(provider, modelName string) ThinkingCapabilitie
 		return cloneThinkingCapabilities(resolveOpenRouterThinkingCapabilities(modelID))
 	case "groq":
 		return cloneThinkingCapabilities(resolveGroqThinkingCapabilities(modelID))
+	case "anthropic":
+		return cloneThinkingCapabilities(resolveAnthropicThinkingCapabilities(modelID))
+	case "codex":
+		return cloneThinkingCapabilities(responsesThinkingCapabilities)
+	case "code-assist":
+		return cloneThinkingCapabilities(codeAssistThinkingCapabilities)
 	case "ollama", "lmstudio":
 		return cloneThinkingCapabilities(noThinkingCapabilities)
 	default:
@@ -343,3 +349,70 @@ func cloneThinkingCapabilities(caps ThinkingCapabilities) ThinkingCapabilities {
 	return cloned
 }
 
+// ---------------------------------------------------------------------------
+// Providers whose thinking knob Aetox drives directly
+// ---------------------------------------------------------------------------
+
+// anthropicThinkingCapabilities is a real dial, not a switch.
+//
+// The knob is output_config.effort, which takes low → max; thinking itself is
+// only adaptive-or-off. The older thinking.budget_tokens form — the obvious
+// place to map a "level" onto — is rejected with a 400 on every current Claude,
+// so a runtime that reached for it could not talk to any of them.
+//
+// "high" rather than "xhigh" as the default: xhigh is the better setting for
+// coding work and is what Claude Code uses, but it is also markedly more
+// expensive, and a default that quietly spends more of someone's plan is not
+// ours to choose. It is one click away.
+var anthropicThinkingCapabilities = ThinkingCapabilities{
+	Supported: true,
+	Native:    true,
+	Levels:    []string{"off", "low", "medium", "high", "xhigh", "max"},
+	Default:   "high",
+	Runtime:   ThinkingRuntimeReasoningEffort,
+	Source:    "anthropic-effort",
+}
+
+// resolveAnthropicThinkingCapabilities keeps the switch off models that never
+// had extended thinking. Matching on the family rather than the full id: the
+// model list is live now, and a name written here would be the same staleness
+// the catalog lists just stopped being.
+func resolveAnthropicThinkingCapabilities(modelID string) ThinkingCapabilities {
+	switch {
+	case strings.Contains(modelID, "claude-3-5"), strings.Contains(modelID, "claude-3.5"),
+		strings.Contains(modelID, "claude-3-opus"), strings.Contains(modelID, "claude-3-haiku"),
+		strings.Contains(modelID, "claude-2"), strings.Contains(modelID, "claude-instant"):
+		return noThinkingCapabilities
+	default:
+		// Claude 3.7 and everything after it thinks. Defaulting the unknown
+		// name to "can think" is the right way round: the runtime sends
+		// adaptive, and a provider that ignores it costs nothing, while hiding
+		// the control on a model that supports it is a feature the user cannot
+		// reach.
+		return anthropicThinkingCapabilities
+	}
+}
+
+// responsesThinkingCapabilities is the ChatGPT/Codex dial. The Responses API
+// takes a real effort setting, which internal/model/responses.go passes through
+// alongside summary:auto so the thinking is visible while it happens.
+var responsesThinkingCapabilities = ThinkingCapabilities{
+	Supported: true,
+	Native:    true,
+	Levels:    []string{"off", "low", "medium", "high", "xhigh"},
+	Default:   "medium",
+	Runtime:   ThinkingRuntimeReasoningEffort,
+	Source:    "responses-reasoning-effort",
+}
+
+// codeAssistThinkingCapabilities: Gemini's knob on this path is
+// thinkingConfig.includeThoughts, which is on or off — the budget is the
+// model's to choose.
+var codeAssistThinkingCapabilities = ThinkingCapabilities{
+	Supported: true,
+	Native:    true,
+	Levels:    []string{"off", "adaptive"},
+	Default:   "adaptive",
+	Runtime:   ThinkingRuntimeReasoningObject,
+	Source:    "code-assist-thoughts",
+}

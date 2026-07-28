@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Mike0165115321/Aetox/internal/oauth"
 	pvdr "github.com/Mike0165115321/Aetox/internal/provider"
 )
 
@@ -56,6 +57,17 @@ func NewProvider(opts ProviderOptions) (Provider, error) {
 		// Symmetric: a stale alt-format URL under the default wire format.
 		baseURL = info.BaseURL
 	}
+
+	// A sign-in (internal/oauth) outranks a pasted key for the same provider:
+	// the user did the more deliberate thing, and the two would otherwise
+	// disagree silently. Every provider nobody has signed into gets a nil
+	// tokenSource, which is exactly the path that existed before.
+	tokenSource := oauth.TokenSource(provider)
+	if endpoint := oauth.Endpoint(provider); endpoint != "" && (baseURL == "" || baseURL == info.BaseURL) {
+		// Some sign-ins name the host the account is served from (Qwen). A
+		// base URL the user typed themselves still wins over it.
+		baseURL = endpoint
+	}
 	opts.BaseURL = baseURL
 
 	switch runtime {
@@ -77,14 +89,36 @@ func NewProvider(opts ProviderOptions) (Provider, error) {
 			BaseURL:       opts.BaseURL,
 			Timeout:       timeout,
 			RequireAPIKey: &requireAPIKey,
+			TokenSource:   tokenSource,
+			Headers:       oauth.Headers(provider),
+		})
+	case string(pvdr.RuntimeResponses):
+		return NewResponsesProvider(ResponsesConfig{
+			Provider:    provider,
+			Model:       opts.Model,
+			APIKey:      opts.APIKey,
+			BaseURL:     opts.BaseURL,
+			Timeout:     timeout,
+			TokenSource: tokenSource,
+			Headers:     oauth.Headers(provider),
+		})
+	case string(pvdr.RuntimeCodeAssist):
+		return NewCodeAssistProvider(CodeAssistConfig{
+			Provider:    provider,
+			Model:       opts.Model,
+			BaseURL:     opts.BaseURL,
+			Project:     oauth.CodeAssistProject(),
+			Timeout:     timeout,
+			TokenSource: tokenSource,
 		})
 	case string(pvdr.RuntimeAnthropic):
 		return NewAnthropicProvider(AnthropicConfig{
-			Provider: provider,
-			Model:    opts.Model,
-			APIKey:   opts.APIKey,
-			BaseURL:  opts.BaseURL,
-			Timeout:  timeout,
+			Provider:    provider,
+			Model:       opts.Model,
+			APIKey:      opts.APIKey,
+			BaseURL:     opts.BaseURL,
+			Timeout:     timeout,
+			TokenSource: tokenSource,
 		})
 	default:
 		return nil, fmt.Errorf("unsupported model provider: %q", provider)

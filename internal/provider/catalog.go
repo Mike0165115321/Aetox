@@ -26,6 +26,18 @@ const (
 	RuntimeOpenAICompatible Runtime = "openai-compatible"
 	RuntimeOllama           Runtime = "ollama"
 	RuntimeAnthropic        Runtime = "anthropic"
+	// RuntimeResponses is the OpenAI Responses API — typed input items and a
+	// dozen named SSE event types, sharing almost nothing with
+	// RuntimeOpenAICompatible beyond the company that publishes both. It is
+	// what a ChatGPT subscription speaks and the only thing that endpoint
+	// serves.
+	RuntimeResponses Runtime = "responses"
+	// RuntimeCodeAssist is Google's private Code Assist surface: the standard
+	// Gemini generateContent body wrapped in an envelope that adds the account's
+	// project id. It is what a personal Google account's free tier is served
+	// through, and it is not the same thing as the "gemini" provider, which is
+	// the public API-key endpoint speaking the OpenAI-compatible shape.
+	RuntimeCodeAssist Runtime = "code-assist"
 )
 
 // ModelDefaults holds the static fallback model names for a provider.
@@ -152,6 +164,79 @@ var catalog = map[string]*entry{
 		modelDefaults:  ModelDefaults{FallbackModel: "gpt-4o-mini"},
 		capabilities:   Capabilities{ToolCalling: true, Reasoning: true},
 	},
+	// github-copilot is reached with a token minted from a GitHub sign-in
+	// (internal/oauth), never a pasted key — RequiresAPIKey stays true so the
+	// UI still treats it as "needs credentials", and the factory accepts a
+	// sign-in as satisfying that. One subscription covers models from three
+	// vendors, so the recommended list deliberately spans all of them; the live
+	// /models call is what the picker actually shows.
+	"github-copilot": {
+		canonical:      "github-copilot",
+		aliases:        []string{"github-copilot", "copilot", "githubcopilot", "gh-copilot"},
+		requiresAPIKey: true,
+		runtime:        RuntimeOpenAICompatible,
+		baseURL:        "https://api.githubcopilot.com",
+		envKeys:        []string{"GITHUB_COPILOT_TOKEN"},
+		// The picker comes from Copilot's own /models; this is only the name
+		// used before anyone has signed in.
+		modelDefaults: ModelDefaults{FallbackModel: "gpt-4.1"},
+		capabilities:  Capabilities{ToolCalling: true, Reasoning: true},
+	},
+	// code-assist is a personal Google account's free Gemini tier. Separate
+	// from "gemini" for the same reason codex is separate from "openai": a
+	// different host, different credentials, and a plan instead of a bill.
+	"code-assist": {
+		canonical:      "code-assist",
+		aliases:        []string{"code-assist", "gemini-code-assist", "codeassist", "gemini-oauth", "gemini-google"},
+		requiresAPIKey: true,
+		runtime:        RuntimeCodeAssist,
+		baseURL:        "https://cloudcode-pa.googleapis.com/v1internal",
+		envKeys:        nil,
+		// The one place a written list survives: Code Assist's
+		// :fetchAvailableModels answers 403 PERMISSION_DENIED on the free tier,
+		// so there is no list to ask for. Verified live 2026-07-29.
+		modelDefaults: ModelDefaults{
+			FallbackModel: "gemini-2.5-pro",
+			RecommendedModels: []string{
+				"gemini-2.5-pro",
+				"gemini-2.5-flash",
+				"gemini-3-pro-preview",
+				"gemini-3-flash-preview",
+			},
+		},
+		capabilities: Capabilities{ToolCalling: true, Reasoning: true},
+	},
+	// codex is a ChatGPT *subscription*, reached at chatgpt.com rather than
+	// api.openai.com and paid for by the user's plan rather than per token.
+	// Kept separate from "openai" instead of being a wire-format alternative on
+	// it: different host, different credentials, different billing, different
+	// model list. The "chatgpt" alias deliberately stays on "openai" so nobody's
+	// saved preference silently changes meaning.
+	"codex": {
+		canonical:      "codex",
+		aliases:        []string{"codex", "chatgpt-codex", "chatgpt-subscription", "openai-codex"},
+		requiresAPIKey: true,
+		runtime:        RuntimeResponses,
+		baseURL:        "https://chatgpt.com/backend-api/codex",
+		envKeys:        nil,
+		// DiscoverResponsesModels answers this per account and per plan; the
+		// name below is only what to try before anyone has signed in.
+		modelDefaults: ModelDefaults{FallbackModel: "gpt-5.5"},
+		capabilities:  Capabilities{ToolCalling: true, Reasoning: true},
+	},
+	// qwen's real endpoint is whatever the sign-in hands back as resource_url;
+	// this base URL is the fallback for an API-key login and for first-run
+	// display before anyone has signed in.
+	"qwen": {
+		canonical:      "qwen",
+		aliases:        []string{"qwen", "qwen-code", "dashscope", "tongyi"},
+		requiresAPIKey: true,
+		runtime:        RuntimeOpenAICompatible,
+		baseURL:        "https://dashscope.aliyuncs.com/compatible-mode/v1",
+		envKeys:        []string{"DASHSCOPE_API_KEY", "QWEN_API_KEY"},
+		modelDefaults:  ModelDefaults{FallbackModel: "qwen3-coder-plus"},
+		capabilities:   Capabilities{ToolCalling: true},
+	},
 	"deepseek": {
 		canonical:      "deepseek",
 		aliases:        []string{"deepseek", "deepseek-api", "deepseek-ai"},
@@ -194,14 +279,8 @@ var catalog = map[string]*entry{
 			// by the models endpoint but the chat endpoint answers 404 "no
 			// longer available to new users", so it was a first-run failure for
 			// anyone picking Gemini today. Verified against the live API.
+			// Last resort only — DiscoverGeminiModels answers the picker.
 			FallbackModel: "gemini-2.5-flash",
-			RecommendedModels: []string{
-				"gemini-2.5-flash",
-				"gemini-2.5-pro",
-				"gemini-2.0-flash",
-				"gemini-3-flash-preview",
-				"gemini-3-pro-preview",
-			},
 		},
 		capabilities: Capabilities{ToolCalling: true, Reasoning: true},
 	},
@@ -288,15 +367,10 @@ var catalog = map[string]*entry{
 		runtime:        RuntimeAnthropic,
 		baseURL:        "https://api.anthropic.com/v1",
 		envKeys:        []string{"ANTHROPIC_API_KEY"},
-		modelDefaults: ModelDefaults{
-			FallbackModel: "claude-haiku-4-5",
-			RecommendedModels: []string{
-				"claude-opus-4-8",
-				"claude-sonnet-5",
-				"claude-haiku-4-5",
-			},
-		},
-		capabilities: Capabilities{ToolCalling: true, Reasoning: true},
+		// No RecommendedModels: GET /v1/models answers this, and any list
+		// written here goes stale within months (model.DiscoverAnthropicModels).
+		modelDefaults: ModelDefaults{FallbackModel: "claude-haiku-4-5"},
+		capabilities:  Capabilities{ToolCalling: true, Reasoning: true},
 	},
 }
 

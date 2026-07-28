@@ -5,6 +5,7 @@ import {
   ListMCPServers, ToggleMCPServer, ListExternalSkills, UsageStats, ListPromptPresets,
   ListSubagentProfiles, ReadSubagentProfile, SetSubagentModel, ListModelsForProvider,
   ListSpeechModels, SetSpeechModel, ListTools, SpeechModelDirs, RevealSpeechModel,
+  SignInMethods, SignInStatus, StartSignIn, CompleteSignIn, SupportedProviders, EnabledProviders,
 } from './mocks/wailsApp'
 
 // The chart plots a window ending today, so a hard-coded date would fall out
@@ -80,6 +81,24 @@ beforeEach(() => {
   vi.mocked(ReadSubagentProfile).mockResolvedValue('---\ndescription: ค้นไฟล์\ntools: grep, read\n---\nYou search files.' as any)
   vi.mocked(ListModelsForProvider).mockResolvedValue(['deepseek-v4', 'deepseek-chat'] as any)
 })
+
+// A provider you sign into rather than paste a key for. Copilot is the device
+// flow: Aetox shows a code, the user types it into github.com.
+const seedCopilotSignIn = () => {
+  vi.mocked(SupportedProviders).mockResolvedValue(['github-copilot'] as any)
+  vi.mocked(EnabledProviders).mockResolvedValue(['github-copilot'] as any)
+  vi.mocked(SignInMethods).mockResolvedValue([{
+    provider: 'github-copilot', label: 'GitHub Copilot', kind: 'device',
+    risk: 'restricted', note: 'Needs an active Copilot subscription.',
+  }] as any)
+  vi.mocked(SignInStatus).mockResolvedValue({ provider: 'github-copilot', signed_in: false } as any)
+  vi.mocked(StartSignIn).mockResolvedValue({
+    provider: 'github-copilot', kind: 'device',
+    url: 'https://github.com/login/device',
+    verification_uri: 'https://github.com/login/device',
+    user_code: 'ABCD-1234',
+  } as any)
+}
 
 const openSection = async (container: HTMLElement, label: string) => {
   const item = Array.from(container.querySelectorAll('.settings-nav-item'))
@@ -468,5 +487,49 @@ describe('Settings pages', () => {
     expect(body.value).not.toContain('kind:')
     // A new one gets to choose its name; an existing one does not.
     expect((container.querySelector('.pp-field input.ctrl') as HTMLInputElement).disabled).toBe(false)
+  })
+
+  // The point of the whole sign-in path: a provider you cannot get a key for
+  // must still be reachable, and the code has to be on screen while Aetox
+  // waits for GitHub to say yes.
+  it('a sign-in provider shows its device code and waits for approval', async () => {
+    seedCopilotSignIn()
+    // Hangs on purpose: the real call blocks until the user approves, which is
+    // exactly the window the code has to stay readable.
+    vi.mocked(CompleteSignIn).mockImplementation(() => new Promise(() => {}))
+
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'การตั้งค่าโมเดล')
+
+    const signInButton = await screen.findByText('เข้าสู่ระบบด้วย GitHub Copilot')
+    await fireEvent.click(signInButton)
+
+    await waitFor(() => expect(screen.getByText('ABCD-1234')).toBeTruthy())
+    expect(vi.mocked(StartSignIn)).toHaveBeenCalledWith('github-copilot')
+    expect(vi.mocked(CompleteSignIn)).toHaveBeenCalledWith('github-copilot', '')
+  })
+
+  // Reusing another product's OAuth client can get an account cut off, so the
+  // warning belongs next to the button, not in the docs.
+  it('a restricted sign-in warns before the user commits', async () => {
+    seedCopilotSignIn()
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'การตั้งค่าโมเดล')
+
+    await waitFor(() => expect(container.querySelector('.signin-warn')).toBeTruthy())
+  })
+
+  it('an already signed-in provider offers sign-out instead of sign-in', async () => {
+    seedCopilotSignIn()
+    vi.mocked(SignInStatus).mockResolvedValue({
+      provider: 'github-copilot', signed_in: true, label: 'GitHub Copilot · mike', account: 'mike',
+    } as any)
+
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'การตั้งค่าโมเดล')
+
+    await waitFor(() => expect(screen.getByText('GitHub Copilot · mike')).toBeTruthy())
+    expect(screen.getByText('ออกจากระบบ')).toBeTruthy()
+    expect(screen.queryByText('เข้าสู่ระบบด้วย GitHub Copilot')).toBeNull()
   })
 })

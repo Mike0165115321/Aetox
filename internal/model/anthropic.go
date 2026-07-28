@@ -9,8 +9,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Mike0165115321/Aetox/internal/oauth"
 )
 
 // anthropicAPIVersion is the required anthropic-version header value for
@@ -33,14 +36,20 @@ type AnthropicConfig struct {
 	APIKey   string
 	BaseURL  string
 	Timeout  time.Duration
+	// TokenSource, when set, means this client is driving a Claude
+	// subscription rather than an API key: Bearer instead of x-api-key, the
+	// OAuth beta header, and the system-prompt prefix that endpoint requires.
+	// It is called per request because the access token expires hourly.
+	TokenSource func(context.Context) (string, error)
 }
 
 type AnthropicProvider struct {
-	name       string
-	model      string
-	apiKey     string
-	baseURL    string
-	httpClient *http.Client
+	name        string
+	model       string
+	apiKey      string
+	baseURL     string
+	tokenSource func(context.Context) (string, error)
+	httpClient  *http.Client
 }
 
 func NewAnthropicProvider(cfg AnthropicConfig) (*AnthropicProvider, error) {
@@ -54,7 +63,7 @@ func NewAnthropicProvider(cfg AnthropicConfig) (*AnthropicProvider, error) {
 	if model == "" {
 		return nil, ErrMissingModel
 	}
-	if apiKey == "" {
+	if apiKey == "" && cfg.TokenSource == nil {
 		return nil, ErrMissingAPIKey
 	}
 	if baseURL == "" {
@@ -75,13 +84,19 @@ func NewAnthropicProvider(cfg AnthropicConfig) (*AnthropicProvider, error) {
 	}
 
 	return &AnthropicProvider{
-		name:       name,
-		model:      model,
-		apiKey:     apiKey,
-		baseURL:    baseURL,
-		httpClient: newModelHTTPClient(timeout),
+		name:        name,
+		model:       model,
+		apiKey:      apiKey,
+		baseURL:     baseURL,
+		tokenSource: cfg.TokenSource,
+		httpClient:  newModelHTTPClient(timeout),
 	}, nil
 }
+
+// usesSubscription reports whether this client is driving a signed-in Claude
+// plan rather than an API key. Three things change together when it is, so
+// they are asked one question rather than three.
+func (p *AnthropicProvider) usesSubscription() bool { return p.tokenSource != nil }
 
 func (p *AnthropicProvider) Name() string { return p.name }
 
@@ -136,18 +151,39 @@ type anthropicToolChoice struct {
 
 type anthropicThinking struct {
 	Type string `json:"type"`
+	// Display asks for the reasoning to come back readable. It defaults to
+	// "omitted" on every current model — thinking blocks still stream, with an
+	// empty text field — so without this Aetox's thinking panel sits blank on a
+	// model that is visibly thinking, and the user sees a long pause instead.
+	// Verified live: six effort levels all returned 0 characters of reasoning
+	// until this was set.
+	Display string `json:"display,omitempty"`
 }
 
 type anthropicRequest struct {
-	Model       string               `json:"model"`
-	System      string               `json:"system,omitempty"`
+	Model string `json:"model"`
+	// System is a plain string on the API-key path and a []anthropicSystemBlock
+	// on a Pro/Max sign-in, where the endpoint matches the first block exactly
+	// (see anthropicSystemField). Held as any so each path keeps its shape; nil
+	// means no system prompt at all.
+	System      any                  `json:"system,omitempty"`
 	Messages    []anthropicMessage   `json:"messages"`
 	MaxTokens   int                  `json:"max_tokens"`
 	Temperature float64              `json:"temperature,omitempty"`
 	Tools       []anthropicTool      `json:"tools,omitempty"`
 	ToolChoice  *anthropicToolChoice `json:"tool_choice,omitempty"`
 	Thinking    *anthropicThinking   `json:"thinking,omitempty"`
-	Stream      bool                 `json:"stream,omitempty"`
+	// OutputConfig carries the effort dial. This — not the long-deprecated
+	// thinking.budget_tokens — is how thinking depth is actually chosen on
+	// current models: budget_tokens is rejected with a 400 on Opus 5/4.8/4.7,
+	// Sonnet 5 and Fable 5, so a runtime that maps a think level onto a token
+	// budget is a runtime that cannot talk to any current Claude.
+	OutputConfig *anthropicOutputConfig `json:"output_config,omitempty"`
+	Stream       bool                   `json:"stream,omitempty"`
+}
+
+type anthropicOutputConfig struct {
+	Effort string `json:"effort,omitempty"`
 }
 
 // anthropicUsage counts input differently from the OpenAI-compatible format,
@@ -317,38 +353,148 @@ func convertToolChoiceToAnthropic(choice string) *anthropicToolChoice {
 // convertThinkingToAnthropic maps the internal thinking/reasoning knobs onto
 // Anthropic's adaptive thinking mode. Adaptive is used (rather than a fixed
 // budget_tokens) so this works unmodified across current Claude models.
-func convertThinkingToAnthropic(thinking *ThinkingConfig, reasoning *ReasoningConfig) *anthropicThinking {
-	if thinking != nil && strings.EqualFold(strings.TrimSpace(thinking.Type), "disabled") {
-		return nil
+// convertThinkingToAnthropic decides the thinking block and the effort beside it.
+//
+// Current Claude models expose exactly two knobs: thinking is adaptive or off,
+// and depth comes from output_config.effort (low → max). The older
+// {"type":"enabled","budget_tokens":N} form is a 400 on every current model, so
+// a think level maps to an effort string and never to a token count.
+func convertThinkingToAnthropic(model string, thinking *ThinkingConfig, reasoning *ReasoningConfig) (*anthropicThinking, *anthropicOutputConfig) {
+	off := thinking != nil && strings.EqualFold(strings.TrimSpace(thinking.Type), "disabled")
+	if thinking == nil && reasoning == nil {
+		off = true
 	}
-	if thinking != nil || reasoning != nil {
-		return &anthropicThinking{Type: "adaptive"}
+
+	if off {
+		// Fable-class models think unconditionally and reject an explicit
+		// disable, so "off" there means sending no thinking field at all.
+		if anthropicThinkingAlwaysOn(model) {
+			return nil, nil
+		}
+		return &anthropicThinking{Type: "disabled"}, nil
 	}
-	return nil
+
+	block := &anthropicThinking{Type: "adaptive", Display: "summarized"}
+	effort := anthropicEffort(reasoning)
+	if effort == "" {
+		return block, nil
+	}
+	return block, &anthropicOutputConfig{Effort: effort}
 }
 
-func buildAnthropicRequest(model string, req Request, stream bool) (anthropicRequest, error) {
+// anthropicEffort maps Aetox's think level onto the API's effort ladder. The
+// names line up one for one except Aetox's "none"/"minimal", which have no
+// Anthropic equivalent and land on the nearest real level.
+func anthropicEffort(reasoning *ReasoningConfig) string {
+	if reasoning == nil {
+		return ""
+	}
+	switch strings.ToLower(strings.TrimSpace(reasoning.Effort)) {
+	case "none", "minimal", "low":
+		return "low"
+	case "medium", "default":
+		return "medium"
+	case "high":
+		return "high"
+	case "xhigh":
+		return "xhigh"
+	case "max":
+		return "max"
+	default:
+		return ""
+	}
+}
+
+// anthropicThinkingAlwaysOn reports the models that reject {"type":"disabled"}.
+func anthropicThinkingAlwaysOn(model string) bool {
+	lower := strings.ToLower(model)
+	return strings.Contains(lower, "fable") || strings.Contains(lower, "mythos")
+}
+
+type anthropicSystemBlock struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+// anthropicSystemField shapes the system prompt for the wire.
+//
+// On a Pro/Max sign-in the required Claude Code line must be a block of its
+// own, byte-for-byte, with Aetox's prompt as a second block — the endpoint
+// compares the first block exactly and rejects a concatenated string as a fake
+// 429. A caller whose prompt already opens with the line (an older transcript,
+// a retry) has it stripped so it never appears twice. API-key requests and the
+// providers that merely borrow this wire format keep the plain string they
+// always sent.
+func anthropicSystemField(system string, subscription bool) any {
+	if !subscription {
+		if system == "" {
+			return nil
+		}
+		return system
+	}
+	blocks := []anthropicSystemBlock{{Type: "text", Text: oauth.AnthropicOAuthSystemPrefix}}
+	rest := strings.TrimSpace(strings.TrimPrefix(system, oauth.AnthropicOAuthSystemPrefix))
+	if rest != "" {
+		blocks = append(blocks, anthropicSystemBlock{Type: "text", Text: rest})
+	}
+	return blocks
+}
+
+func buildAnthropicRequest(provider, model string, req Request, stream bool, subscription bool) (anthropicRequest, error) {
 	system, messages := convertMessagesToAnthropic(req.Messages)
 	if len(messages) == 0 {
 		return anthropicRequest{}, ErrNoMessages
 	}
+
+	// A condition of the OAuth credential, not a prompt decision — and the
+	// check is exact, per block: the endpoint compares the FIRST system block
+	// against the Claude Code line and rejects anything else, disguised as a
+	// bodyless 429 "rate_limit_error". Found live by bisection: the same
+	// content joined into one string ("prefix\n\nAetox prompt") is refused,
+	// split into [prefix][Aetox prompt] blocks it is accepted. So the prefix
+	// must ride alone in its own block, never concatenated.
+	systemField := anthropicSystemField(system, subscription)
 
 	maxTokens := req.MaxTokens
 	if maxTokens <= 0 {
 		maxTokens = defaultAnthropicMaxTokens
 	}
 
+	thinking, outputConfig := convertThinkingToAnthropic(model, req.Thinking, req.Reasoning)
+
+	// Sampling parameters are gone from current Claude models: temperature,
+	// top_p and top_k are rejected outright, and even where temperature is
+	// still accepted it is pinned to 1 whenever thinking is on ("temperature
+	// may only be set to 1 when thinking is enabled or in adaptive mode").
+	// Aetox sets a temperature on every call (0.2 for the agent loop, 0.1 for
+	// page digests), so sending it was a 400 that ended the turn.
+	//
+	// Providers that merely borrow this wire format are a different question —
+	// DeepSeek's /anthropic endpoint still honors temperature — so the field is
+	// dropped for Anthropic itself rather than for the runtime.
+	temperature := req.Temperature
+	if anthropicRejectsSampling(provider) {
+		temperature = 0
+	}
+
 	return anthropicRequest{
-		Model:       model,
-		System:      system,
-		Messages:    messages,
-		MaxTokens:   maxTokens,
-		Temperature: req.Temperature,
-		Tools:       convertToolsToAnthropic(req.Tools),
-		ToolChoice:  convertToolChoiceToAnthropic(req.ToolChoice),
-		Thinking:    convertThinkingToAnthropic(req.Thinking, req.Reasoning),
-		Stream:      stream,
+		Model:        model,
+		System:       systemField,
+		Messages:     messages,
+		MaxTokens:    maxTokens,
+		Temperature:  temperature,
+		Tools:        convertToolsToAnthropic(req.Tools),
+		ToolChoice:   convertToolChoiceToAnthropic(req.ToolChoice),
+		Thinking:     thinking,
+		OutputConfig: outputConfig,
+		Stream:       stream,
 	}, nil
+}
+
+// anthropicRejectsSampling reports which providers removed the sampling knobs.
+// Anthropic did; the providers that only speak its wire format did not.
+func anthropicRejectsSampling(provider string) bool {
+	return NormalizeProvider(provider) == "anthropic"
 }
 
 func (p *AnthropicProvider) newHTTPRequest(ctx context.Context, body []byte) (*http.Request, error) {
@@ -357,8 +503,19 @@ func (p *AnthropicProvider) newHTTPRequest(ctx context.Context, body []byte) (*h
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("x-api-key", p.apiKey)
 	httpReq.Header.Set("anthropic-version", anthropicAPIVersion)
+	if p.usesSubscription() {
+		token, err := p.tokenSource(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("claude sign-in: %w", err)
+		}
+		// Bearer *instead of* x-api-key, not alongside it: sending both is a
+		// 401 from an endpoint that is otherwise happy with either.
+		httpReq.Header.Set("Authorization", "Bearer "+token)
+		httpReq.Header.Set("anthropic-beta", oauth.AnthropicBeta)
+		return httpReq, nil
+	}
+	httpReq.Header.Set("x-api-key", p.apiKey)
 	return httpReq, nil
 }
 
@@ -376,7 +533,7 @@ func (p *AnthropicProvider) Complete(ctx context.Context, req Request) (Response
 		model = p.model
 	}
 
-	payload, err := buildAnthropicRequest(model, req, false)
+	payload, err := buildAnthropicRequest(p.name, model, req, false, p.usesSubscription())
 	if err != nil {
 		return Response{}, err
 	}
@@ -403,7 +560,7 @@ func (p *AnthropicProvider) Complete(ctx context.Context, req Request) (Response
 	}
 
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
-		return Response{}, fmt.Errorf("anthropic request failed with status %d: %s", httpResp.StatusCode, strings.TrimSpace(string(responseBody)))
+		return Response{}, p.statusError(httpResp, responseBody)
 	}
 
 	var parsed anthropicResponse
@@ -437,13 +594,13 @@ func (p *AnthropicProvider) Complete(ctx context.Context, req Request) (Response
 
 	textOut := strings.TrimSpace(text.String())
 	reasoningOut := strings.TrimSpace(reasoning.String())
-	if textOut == "" && reasoningOut == "" && len(toolCalls) == 0 {
-		return Response{}, fmt.Errorf("anthropic response has empty text")
-	}
 
 	finishReason := strings.TrimSpace(parsed.StopReason)
 	if finishReason == "max_tokens" {
 		finishReason = FinishReasonLength
+	}
+	if err := errEmptyCompletion(p.Name(), finishReason, textOut, reasoningOut, len(toolCalls)); err != nil {
+		return Response{}, err
 	}
 
 	return Response{
@@ -453,7 +610,7 @@ func (p *AnthropicProvider) Complete(ctx context.Context, req Request) (Response
 		ReasoningContent: reasoningOut,
 		ToolCalls:        toolCalls,
 		FinishReason:     finishReason,
-		Usage: normalizeUsage(parsed.Usage.toUsage()),
+		Usage:            normalizeUsage(parsed.Usage.toUsage()),
 	}, nil
 }
 
@@ -474,6 +631,9 @@ type anthropicStreamEvent struct {
 		Text        string `json:"text"`
 		Thinking    string `json:"thinking"`
 		PartialJSON string `json:"partial_json"`
+		// StopReason rides on the message_delta event, not on the content
+		// deltas — same field, different event, one struct.
+		StopReason string `json:"stop_reason"`
 	} `json:"delta"`
 	Usage *anthropicUsage        `json:"usage"`
 	Error *anthropicErrorPayload `json:"error"`
@@ -495,7 +655,7 @@ func (p *AnthropicProvider) StreamComplete(ctx context.Context, req Request, onC
 		model = p.model
 	}
 
-	payload, err := buildAnthropicRequest(model, req, true)
+	payload, err := buildAnthropicRequest(p.name, model, req, true, p.usesSubscription())
 	if err != nil {
 		return Response{}, err
 	}
@@ -521,7 +681,7 @@ func (p *AnthropicProvider) StreamComplete(ctx context.Context, req Request, onC
 		if readErr != nil {
 			return Response{}, fmt.Errorf("anthropic request failed with status %d", httpResp.StatusCode)
 		}
-		return Response{}, fmt.Errorf("anthropic request failed with status %d: %s", httpResp.StatusCode, strings.TrimSpace(string(responseBody)))
+		return Response{}, p.statusError(httpResp, responseBody)
 	}
 
 	scanner := bufio.NewScanner(httpResp.Body)
@@ -535,6 +695,7 @@ func (p *AnthropicProvider) StreamComplete(ctx context.Context, req Request, onC
 	progress := newToolProgressTracker(req.OnToolCallProgress)
 	respModel := model
 	var usage Usage
+	var finishReason string
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -608,6 +769,12 @@ func (p *AnthropicProvider) StreamComplete(ctx context.Context, req Request, onC
 			if event.Usage != nil {
 				usage.CompletionTokens = event.Usage.OutputTokens
 			}
+			if event.Delta != nil && event.Delta.StopReason != "" {
+				finishReason = event.Delta.StopReason
+				if finishReason == "max_tokens" {
+					finishReason = FinishReasonLength
+				}
+			}
 		case "error":
 			if event.Error != nil {
 				return Response{}, fmt.Errorf("anthropic error: %s", event.Error.Message)
@@ -635,8 +802,8 @@ func (p *AnthropicProvider) StreamComplete(ctx context.Context, req Request, onC
 
 	textOut := strings.TrimSpace(text.String())
 	reasoningOut := strings.TrimSpace(reasoning.String())
-	if textOut == "" && reasoningOut == "" && len(toolCalls) == 0 {
-		return Response{}, fmt.Errorf("anthropic stream response has empty text")
+	if err := errEmptyCompletion(p.Name(), finishReason, textOut, reasoningOut, len(toolCalls)); err != nil {
+		return Response{}, err
 	}
 
 	return Response{
@@ -646,5 +813,156 @@ func (p *AnthropicProvider) StreamComplete(ctx context.Context, req Request, onC
 		ReasoningContent: reasoningOut,
 		ToolCalls:        toolCalls,
 		Usage:            normalizeUsage(usage),
+		FinishReason:     finishReason,
 	}, nil
+}
+
+// ---------------------------------------------------------------------------
+// Model discovery
+// ---------------------------------------------------------------------------
+
+// DiscoverAnthropicModels asks the provider which models this account can use.
+//
+// The Messages API has no /models sibling in the same sense the
+// OpenAI-compatible ones do, but Anthropic does serve GET /v1/models, and it is
+// paginated. Asking beats shipping a list: hardcoded Claude names go stale
+// every few months and a stale one is a 404 that reads like a bug in Aetox.
+//
+// Works for either credential — an API key sends x-api-key, a Pro/Max sign-in
+// sends the bearer token and the OAuth beta header, exactly as the Messages
+// call does.
+func DiscoverAnthropicModels(ctx context.Context, providerName, baseURL, apiKey string, tokenSource func(context.Context) (string, error)) ([]string, error) {
+	endpoint := strings.TrimSuffix(strings.TrimSpace(baseURL), "/")
+	if endpoint == "" {
+		endpoint = strings.TrimSuffix(DefaultBaseURL(providerName), "/")
+	}
+	if endpoint == "" {
+		return nil, fmt.Errorf("provider %q missing base URL", providerName)
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	var out []string
+	afterID := ""
+
+	// Bounded rather than "until has_more is false": a paging bug on either
+	// side must not turn the model picker into an infinite loop.
+	for page := 0; page < 5; page++ {
+		url := endpoint + "/models?limit=100"
+		if afterID != "" {
+			url += "&after_id=" + afterID
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("anthropic-version", anthropicAPIVersion)
+		if tokenSource != nil {
+			token, tokenErr := tokenSource(ctx)
+			if tokenErr != nil {
+				return nil, fmt.Errorf("%s sign-in: %w", providerName, tokenErr)
+			}
+			req.Header.Set("Authorization", "Bearer "+token)
+			req.Header.Set("anthropic-beta", oauth.AnthropicBeta)
+		} else if apiKey != "" {
+			req.Header.Set("x-api-key", apiKey)
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		body, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			return nil, readErr
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return nil, fmt.Errorf("%s model list failed with status %d: %s",
+				providerName, resp.StatusCode, strings.TrimSpace(string(body)))
+		}
+
+		var parsed struct {
+			Data []struct {
+				ID string `json:"id"`
+			} `json:"data"`
+			HasMore bool   `json:"has_more"`
+			LastID  string `json:"last_id"`
+		}
+		if err := json.Unmarshal(body, &parsed); err != nil {
+			return nil, fmt.Errorf("%s model list parse failed: %w", providerName, err)
+		}
+		for _, m := range parsed.Data {
+			if m.ID != "" {
+				out = append(out, m.ID)
+			}
+		}
+		if !parsed.HasMore || parsed.LastID == "" {
+			break
+		}
+		afterID = parsed.LastID
+	}
+	return out, nil
+}
+
+// statusError turns a rejected request into something the user can act on.
+//
+// The rate-limit case is the one that matters: Anthropic's 429 body is often
+// literally {"message":"Error"}, so pasting it in front of the user says
+// nothing. The retry window is in the headers, and by the time this runs the
+// transport has already waited and retried — so what is left to say is when it
+// is worth trying again.
+func (p *AnthropicProvider) statusError(resp *http.Response, body []byte) error {
+	detail := strings.TrimSpace(string(body))
+	if len(detail) > 500 {
+		detail = detail[:500] + "…"
+	}
+	switch resp.StatusCode {
+	case http.StatusTooManyRequests, 529:
+		if wait := rateLimitWindow(resp); wait > 0 {
+			return fmt.Errorf("%s is rate limiting this key — try again in %s", p.Name(), humanizeDuration(wait))
+		}
+		return fmt.Errorf("%s is rate limiting this key — try again shortly (429)", p.Name())
+	case http.StatusUnauthorized:
+		return fmt.Errorf("%s rejected the credentials (401: %s)", p.Name(), detail)
+	default:
+		return fmt.Errorf("%s request failed with status %d: %s", p.Name(), resp.StatusCode, detail)
+	}
+}
+
+// rateLimitWindow reads how long until the limit resets, preferring the plain
+// Retry-After over Anthropic's own reset timestamps.
+//
+// The reset headers come in two dialects, seen live: API keys send the
+// documented anthropic-ratelimit-*-reset headers as RFC3339, but a Pro/Max
+// sign-in sends anthropic-ratelimit-unified-reset as Unix seconds — that one is
+// the binding constraint (its Representative-Claim sibling says which window),
+// so it is checked first, and both formats are accepted everywhere because the
+// dialect is not ours to assume.
+func rateLimitWindow(resp *http.Response) time.Duration {
+	if wait, stated := providerRetryAfter(resp); stated && wait > 0 {
+		return wait
+	}
+	for _, header := range []string{
+		"anthropic-ratelimit-unified-reset",
+		"anthropic-ratelimit-tokens-reset",
+		"anthropic-ratelimit-requests-reset",
+		"anthropic-ratelimit-input-tokens-reset",
+	} {
+		value := resp.Header.Get(header)
+		if value == "" {
+			continue
+		}
+		var when time.Time
+		if parsed, err := time.Parse(time.RFC3339, value); err == nil {
+			when = parsed
+		} else if seconds, err := strconv.ParseInt(value, 10, 64); err == nil {
+			when = time.Unix(seconds, 0)
+		} else {
+			continue
+		}
+		if wait := time.Until(when); wait > 0 {
+			return wait
+		}
+	}
+	return 0
 }

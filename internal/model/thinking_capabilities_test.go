@@ -1,6 +1,9 @@
 package model
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestResolveThinkingCapabilitiesDeepSeekNativeLevels(t *testing.T) {
 	caps := ResolveThinkingCapabilities("deepseek", "deepseek-v4-flash")
@@ -199,5 +202,55 @@ func TestThinkingLevel_OffMapsToProviderNative(t *testing.T) {
 	got = NormalizeThinkingLevel("deepseek", "deepseek-v4-flash", "off")
 	if got != "off" {
 		t.Fatalf("expected off -> off for deepseek native, got %q", got)
+	}
+}
+
+// Claude had no thinking control in the UI at all: ResolveThinkingCapabilities
+// had no anthropic case, so it fell to the non-native fallback and
+// App.SupportedThinkLevels returns nothing for those — the row simply did not
+// render, on the provider whose runtime has been sending thinking:adaptive the
+// whole time.
+func TestThinkingCapabilitiesForProvidersAetoxDrivesDirectly(t *testing.T) {
+	cases := []struct {
+		provider, model string
+		wantNative      bool
+		wantLevels      []string
+	}{
+		{"anthropic", "claude-sonnet-5", true, []string{"off", "low", "medium", "high", "xhigh", "max"}},
+		{"anthropic", "claude-opus-4-8", true, []string{"off", "low", "medium", "high", "xhigh", "max"}},
+		// Pre-thinking Claude keeps the row hidden rather than offering a
+		// switch that does nothing.
+		{"anthropic", "claude-3-5-sonnet-20241022", false, nil},
+		{"codex", "gpt-5.5", true, []string{"off", "low", "medium", "high", "xhigh"}},
+		{"code-assist", "gemini-2.5-flash", true, []string{"off", "adaptive"}},
+	}
+	for _, tc := range cases {
+		caps := ResolveThinkingCapabilities(tc.provider, tc.model)
+		if caps.Native != tc.wantNative {
+			t.Errorf("%s/%s Native = %v; want %v", tc.provider, tc.model, caps.Native, tc.wantNative)
+		}
+		if strings.Join(caps.Levels, ",") != strings.Join(tc.wantLevels, ",") {
+			t.Errorf("%s/%s levels = %v; want %v", tc.provider, tc.model, caps.Levels, tc.wantLevels)
+		}
+	}
+}
+
+// Every level offered must be one the rest of the system understands — "off" in
+// particular, because think.Resolve special-cases exactly that spelling and any
+// other way of saying it silently leaves thinking on.
+func TestEveryOfferedThinkLevelIsAKnownOne(t *testing.T) {
+	known := map[string]bool{
+		"none": true, "minimal": true, "low": true, "medium": true,
+		"high": true, "xhigh": true, "max": true, "default": true,
+		"off": true, "adaptive": true,
+	}
+	for _, provider := range SupportedProviders() {
+		for _, m := range append(ModelChoices(provider), "") {
+			for _, level := range ResolveThinkingCapabilities(provider, m).Levels {
+				if !known[level] {
+					t.Errorf("%s offers think level %q, which nothing else in Aetox knows", provider, level)
+				}
+			}
+		}
 	}
 }

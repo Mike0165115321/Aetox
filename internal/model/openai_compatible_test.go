@@ -587,3 +587,52 @@ func TestOpenAICompatibleProviderStreamReadsPlainReasoningField(t *testing.T) {
 		t.Errorf("final reasoning = %q", response.ReasoningContent)
 	}
 }
+
+// Same class as the Anthropic thinking/temperature clash: OpenAI's reasoning
+// models answer 400 "Unsupported value: 'temperature'" when both are sent, and
+// Aetox sets a temperature on every call.
+func TestOpenAIDropsTemperatureWhenReasoningEffortIsSent(t *testing.T) {
+	var body map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`))
+	}))
+	defer server.Close()
+
+	p, err := NewOpenAICompatibleProvider(OpenAICompatibleConfig{
+		Provider: "openai", Model: "o4-mini", APIKey: "sk-x", BaseURL: server.URL,
+	})
+	if err != nil {
+		t.Fatalf("NewOpenAICompatibleProvider: %v", err)
+	}
+	if _, err := p.Complete(context.Background(), Request{
+		Messages:    []Message{{Role: RoleUser, Content: "hi"}},
+		Temperature: 0.2,
+		Reasoning:   &ReasoningConfig{Effort: "medium"},
+	}); err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	if _, sent := body["temperature"]; sent {
+		t.Fatalf("temperature was sent alongside reasoning_effort: %v", body)
+	}
+	if body["reasoning_effort"] != "medium" {
+		t.Fatalf("reasoning_effort = %v; want it kept", body["reasoning_effort"])
+	}
+
+	// A provider that accepts both must keep both — this is not a blanket rule.
+	body = nil
+	groq, _ := NewOpenAICompatibleProvider(OpenAICompatibleConfig{
+		Provider: "groq", Model: "llama-3.3-70b-versatile", APIKey: "k", BaseURL: server.URL,
+	})
+	if _, err := groq.Complete(context.Background(), Request{
+		Messages:    []Message{{Role: RoleUser, Content: "hi"}},
+		Temperature: 0.2,
+		Reasoning:   &ReasoningConfig{Effort: "medium"},
+	}); err != nil {
+		t.Fatalf("Complete (groq): %v", err)
+	}
+	if body["temperature"] == nil {
+		t.Fatalf("groq lost its temperature: %v", body)
+	}
+}

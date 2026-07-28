@@ -95,15 +95,25 @@ type OpenAICompatibleConfig struct {
 	BaseURL       string
 	Timeout       time.Duration
 	RequireAPIKey *bool
+	// TokenSource, when set, replaces APIKey and is consulted per request
+	// rather than once at construction — an OAuth access token expires, and a
+	// provider built at startup would otherwise be holding a dead one an hour
+	// into the session. Nil is the API-key path, unchanged.
+	TokenSource func(context.Context) (string, error)
+	// Headers are extra headers this provider's credentials require (Copilot
+	// refuses requests that do not identify an editor client).
+	Headers map[string]string
 }
 
 type OpenAICompatibleProvider struct {
-	provider   string
-	model      string
-	apiKey     string
-	baseURL    string
-	reasoning  bool
-	httpClient *http.Client
+	provider    string
+	model       string
+	apiKey      string
+	baseURL     string
+	reasoning   bool
+	tokenSource func(context.Context) (string, error)
+	headers     map[string]string
+	httpClient  *http.Client
 }
 
 func NewOpenAICompatibleProvider(cfg OpenAICompatibleConfig) (*OpenAICompatibleProvider, error) {
@@ -122,7 +132,7 @@ func NewOpenAICompatibleProvider(cfg OpenAICompatibleConfig) (*OpenAICompatibleP
 	if model == "" {
 		return nil, ErrMissingModel
 	}
-	if requireAPIKey && apiKey == "" {
+	if requireAPIKey && apiKey == "" && cfg.TokenSource == nil {
 		return nil, ErrMissingAPIKey
 	}
 	if baseURL == "" {
@@ -136,13 +146,37 @@ func NewOpenAICompatibleProvider(cfg OpenAICompatibleConfig) (*OpenAICompatibleP
 	}
 
 	return &OpenAICompatibleProvider{
-		provider:   provider,
-		model:      model,
-		apiKey:     apiKey,
-		baseURL:    baseURL,
-		reasoning:  supportsNativeReasoning(provider),
-		httpClient: newModelHTTPClient(timeout),
+		provider:    provider,
+		model:       model,
+		apiKey:      apiKey,
+		baseURL:     baseURL,
+		reasoning:   supportsNativeReasoning(provider),
+		tokenSource: cfg.TokenSource,
+		headers:     cfg.Headers,
+		httpClient:  newModelHTTPClient(timeout),
 	}, nil
+}
+
+// applyAuth sets every header that depends on credentials. It runs per
+// request, which is the whole point: a TokenSource refreshes an expiring token
+// here, where a failure can still be reported as a request error.
+func (p *OpenAICompatibleProvider) applyAuth(ctx context.Context, req *http.Request) error {
+	req.Header.Set("Content-Type", "application/json")
+	for name, value := range p.headers {
+		req.Header.Set(name, value)
+	}
+	if p.tokenSource != nil {
+		token, err := p.tokenSource(ctx)
+		if err != nil {
+			return fmt.Errorf("%s sign-in: %w", p.provider, err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		return nil
+	}
+	if p.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	}
+	return nil
 }
 
 // openAIMessage is the response-side message shape: the shared Message plus
@@ -235,16 +269,16 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 	}
 
 	payload := struct {
-		Model            string           `json:"model"`
+		Model            string                 `json:"model"`
 		Messages         []openAIRequestMessage `json:"messages"`
-		Temperature      float64          `json:"temperature,omitempty"`
-		MaxTokens        int              `json:"max_tokens,omitempty"`
-		Tools            []ToolDefinition `json:"tools,omitempty"`
-		ToolChoice       string           `json:"tool_choice,omitempty"`
-		Reasoning        *ReasoningConfig `json:"reasoning,omitempty"`
-		Thinking         *ThinkingConfig  `json:"thinking,omitempty"`
-		ReasoningEffort  string           `json:"reasoning_effort,omitempty"`
-		IncludeReasoning *bool            `json:"include_reasoning,omitempty"`
+		Temperature      float64                `json:"temperature,omitempty"`
+		MaxTokens        int                    `json:"max_tokens,omitempty"`
+		Tools            []ToolDefinition       `json:"tools,omitempty"`
+		ToolChoice       string                 `json:"tool_choice,omitempty"`
+		Reasoning        *ReasoningConfig       `json:"reasoning,omitempty"`
+		Thinking         *ThinkingConfig        `json:"thinking,omitempty"`
+		ReasoningEffort  string                 `json:"reasoning_effort,omitempty"`
+		IncludeReasoning *bool                  `json:"include_reasoning,omitempty"`
 	}{
 		Model:       model,
 		Messages:    convertMessagesToOpenAI(req.Messages),
@@ -261,6 +295,13 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 		payload.IncludeReasoning = boolPtr(false)
 	} else if p.usesOpenAIReasoningEffort() || p.usesGeminiReasoningEffort() {
 		payload.ReasoningEffort = normalizeStandardReasoningEffort(req.Reasoning)
+		if payload.ReasoningEffort != "" && p.usesOpenAIReasoningEffort() {
+			// OpenAI's reasoning models reject temperature outright ("Unsupported
+			// value: 'temperature'"), the same way Anthropic rejects it alongside
+			// extended thinking. Aetox sets one on every call, so a reasoning
+			// effort and a temperature together is a 400 that ends the turn.
+			payload.Temperature = 0
+		}
 	} else if p.SupportsReasoning() {
 		payload.Reasoning = req.Reasoning
 	}
@@ -274,9 +315,8 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 	if err != nil {
 		return Response{}, err
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	if p.apiKey != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
+	if err := p.applyAuth(ctx, httpReq); err != nil {
+		return Response{}, err
 	}
 
 	httpResp, err := p.httpClient.Do(httpReq)
@@ -329,8 +369,8 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 		}
 	}
 	reasoning := strings.TrimSpace(parsed.Choices[0].Message.reasoningText())
-	if text == "" && reasoning == "" && len(rawMessage.ToolCalls) == 0 {
-		return Response{}, fmt.Errorf("%s response has empty text", p.provider)
+	if err := errEmptyCompletion(p.provider, strings.TrimSpace(parsed.Choices[0].FinishReason), text, reasoning, len(rawMessage.ToolCalls)); err != nil {
+		return Response{}, err
 	}
 
 	return Response{
@@ -354,27 +394,27 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 		model = p.model
 	}
 	payload := struct {
-		Model            string           `json:"model"`
+		Model            string                 `json:"model"`
 		Messages         []openAIRequestMessage `json:"messages"`
-		Temperature      float64          `json:"temperature,omitempty"`
-		MaxTokens        int              `json:"max_tokens,omitempty"`
-		Tools            []ToolDefinition `json:"tools,omitempty"`
-		ToolChoice       string           `json:"tool_choice,omitempty"`
-		Reasoning        *ReasoningConfig `json:"reasoning,omitempty"`
-		Thinking         *ThinkingConfig  `json:"thinking,omitempty"`
-		ReasoningEffort  string           `json:"reasoning_effort,omitempty"`
-		IncludeReasoning *bool            `json:"include_reasoning,omitempty"`
-		Stream           bool             `json:"stream"`
+		Temperature      float64                `json:"temperature,omitempty"`
+		MaxTokens        int                    `json:"max_tokens,omitempty"`
+		Tools            []ToolDefinition       `json:"tools,omitempty"`
+		ToolChoice       string                 `json:"tool_choice,omitempty"`
+		Reasoning        *ReasoningConfig       `json:"reasoning,omitempty"`
+		Thinking         *ThinkingConfig        `json:"thinking,omitempty"`
+		ReasoningEffort  string                 `json:"reasoning_effort,omitempty"`
+		IncludeReasoning *bool                  `json:"include_reasoning,omitempty"`
+		Stream           bool                   `json:"stream"`
 		// Without this the spec says a streamed response carries no usage at
 		// all, and a server that follows it sends none: LM Studio recorded 0
 		// tokens for every streamed turn, which is every desktop turn. DeepSeek
 		// happens to send usage unasked, which is why this went unnoticed.
 		StreamOptions *streamOptions `json:"stream_options,omitempty"`
 	}{
-		Model:       model,
-		Messages:    convertMessagesToOpenAI(req.Messages),
-		Temperature: req.Temperature,
-		MaxTokens:   req.MaxTokens,
+		Model:         model,
+		Messages:      convertMessagesToOpenAI(req.Messages),
+		Temperature:   req.Temperature,
+		MaxTokens:     req.MaxTokens,
 		Tools:         req.Tools,
 		ToolChoice:    req.ToolChoice,
 		Stream:        true,
@@ -388,6 +428,13 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 		payload.IncludeReasoning = boolPtr(false)
 	} else if p.usesOpenAIReasoningEffort() || p.usesGeminiReasoningEffort() {
 		payload.ReasoningEffort = normalizeStandardReasoningEffort(req.Reasoning)
+		if payload.ReasoningEffort != "" && p.usesOpenAIReasoningEffort() {
+			// OpenAI's reasoning models reject temperature outright ("Unsupported
+			// value: 'temperature'"), the same way Anthropic rejects it alongside
+			// extended thinking. Aetox sets one on every call, so a reasoning
+			// effort and a temperature together is a 400 that ends the turn.
+			payload.Temperature = 0
+		}
 	} else if p.SupportsReasoning() {
 		payload.Reasoning = req.Reasoning
 	}
@@ -402,9 +449,8 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 	if err != nil {
 		return Response{}, err
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	if p.apiKey != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
+	if err := p.applyAuth(ctx, httpReq); err != nil {
+		return Response{}, err
 	}
 
 	httpResp, err := p.httpClient.Do(httpReq)
@@ -508,8 +554,8 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 			toolCalls = calls
 		}
 	}
-	if reply == "" && reasoning == "" && len(toolCalls) == 0 {
-		return Response{}, fmt.Errorf("%s stream response has empty text", p.provider)
+	if err := errEmptyCompletion(p.provider, strings.TrimSpace(finishReason), reply, reasoning, len(toolCalls)); err != nil {
+		return Response{}, err
 	}
 	return Response{
 		Provider:         p.Name(),

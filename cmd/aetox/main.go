@@ -95,6 +95,14 @@ func main() {
 	// force-kill. See ARCHITECTURE.md §24.5.
 	proc.KillTreeOnExit()
 	setUTF8Console()
+
+	// Sign-in is a subcommand, intercepted before the flag parser: everything
+	// below assumes it is starting a session, and `aetox login copilot` is not
+	// a session. Returns false for every other invocation.
+	if handled, code := runAuthCommand(os.Args[1:]); handled {
+		os.Exit(code)
+	}
+
 	providerUsageHint := "model provider (" + strings.Join(model.SupportedProviders(), "|") + ")"
 
 	var rootPath string

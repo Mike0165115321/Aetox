@@ -24,7 +24,7 @@ import "strings"
 var visionModelMarkers = []string{
 	"gpt-4o", "gpt-4.1", "gpt-5", "o3", "o4-mini", // OpenAI
 	"claude-3", "claude-4", "claude-5", "sonnet", "opus", "haiku", // Anthropic
-	"gemini", // Google — every Gemini generation is multimodal
+	"gemini",                                                                                   // Google — every Gemini generation is multimodal
 	"llava", "bakllava", "moondream", "minicpm-v", "llama3.2-vision", "qwen2-vl", "qwen2.5-vl", // local
 	"pixtral", "vision", "-vl", "multimodal",
 }

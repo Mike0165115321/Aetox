@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -346,5 +348,220 @@ func TestAnthropicStreamReportsToolCallProgress(t *testing.T) {
 	}
 	if got := resp.ToolCalls[0].Function.Arguments; got != `{"path": "landing.html", "content": "<h1>a</h1>\n<p>b</p>\n<p>c</p>\n"}` {
 		t.Errorf("arguments not stitched back correctly: %q", got)
+	}
+}
+
+// The picker used to show three Claude names written into the catalog by hand.
+// They go stale every few months, and a stale one is a 404 that reads like a
+// bug in Aetox — so the provider is asked instead.
+func TestDiscoverAnthropicModelsPaginates(t *testing.T) {
+	var gotAuth, gotVersion string
+	var seen []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("x-api-key")
+		gotVersion = r.Header.Get("anthropic-version")
+		seen = append(seen, r.URL.RawQuery)
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("after_id") == "" {
+			_, _ = w.Write([]byte(`{"data":[{"id":"claude-a"},{"id":"claude-b"}],"has_more":true,"last_id":"claude-b"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":[{"id":"claude-c"}],"has_more":false,"last_id":"claude-c"}`))
+	}))
+	defer server.Close()
+
+	models, err := DiscoverAnthropicModels(context.Background(), "anthropic", server.URL, "sk-ant-key", nil)
+	if err != nil {
+		t.Fatalf("DiscoverAnthropicModels: %v", err)
+	}
+	if strings.Join(models, ",") != "claude-a,claude-b,claude-c" {
+		t.Fatalf("models = %v; want every page, in order", models)
+	}
+	if len(seen) != 2 || !strings.Contains(seen[1], "after_id=claude-b") {
+		t.Fatalf("requests = %v; want the second page keyed off last_id", seen)
+	}
+	if gotAuth != "sk-ant-key" || gotVersion != anthropicAPIVersion {
+		t.Fatalf("auth = %q, version = %q", gotAuth, gotVersion)
+	}
+}
+
+func TestDiscoverAnthropicModelsUsesTheSignInWhenThereIsOne(t *testing.T) {
+	var gotAuth, gotAPIKey, gotBeta string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		gotAPIKey = r.Header.Get("x-api-key")
+		gotBeta = r.Header.Get("anthropic-beta")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"claude-x"}],"has_more":false}`))
+	}))
+	defer server.Close()
+
+	models, err := DiscoverAnthropicModels(context.Background(), "anthropic", server.URL, "",
+		func(context.Context) (string, error) { return "oat-token", nil })
+	if err != nil || len(models) != 1 {
+		t.Fatalf("models = %v, err = %v", models, err)
+	}
+	if gotAuth != "Bearer oat-token" || gotAPIKey != "" || gotBeta == "" {
+		t.Fatalf("subscription path sent Authorization=%q x-api-key=%q beta=%q", gotAuth, gotAPIKey, gotBeta)
+	}
+}
+
+// The desktop pings a provider with a tiny max_tokens to prove it is reachable.
+// A model that spends that budget before emitting a visible token is a working
+// provider, and reporting it as "response has empty text" told users otherwise.
+func TestAnthropicTruncatedPingIsNotAnError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"content":[],"stop_reason":"max_tokens","usage":{"input_tokens":9,"output_tokens":1}}`))
+	}))
+	defer server.Close()
+
+	p, err := NewAnthropicProvider(AnthropicConfig{Provider: "anthropic", Model: "claude-x", APIKey: "k", BaseURL: server.URL})
+	if err != nil {
+		t.Fatalf("NewAnthropicProvider: %v", err)
+	}
+	resp, err := p.Complete(context.Background(), Request{
+		Messages:  []Message{{Role: RoleUser, Content: "ping"}},
+		MaxTokens: 1,
+	})
+	if err != nil {
+		t.Fatalf("a truncated ping was reported as a failure: %v", err)
+	}
+	if resp.FinishReason != FinishReasonLength {
+		t.Fatalf("FinishReason = %q; want the truncation marker", resp.FinishReason)
+	}
+}
+
+// But a genuinely empty answer with no reason to be empty is still an error.
+func TestAnthropicEmptyAnswerWithoutTruncationStillFails(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"content":[],"stop_reason":"end_turn"}`))
+	}))
+	defer server.Close()
+
+	p, _ := NewAnthropicProvider(AnthropicConfig{Provider: "anthropic", Model: "claude-x", APIKey: "k", BaseURL: server.URL})
+	if _, err := p.Complete(context.Background(), Request{Messages: []Message{{Role: RoleUser, Content: "hi"}}}); err == nil {
+		t.Fatal("an empty end_turn answer was accepted")
+	}
+}
+
+// The thinking contract on current Claude models, in one test.
+//
+// There are exactly two knobs — thinking is adaptive or off, and depth is
+// output_config.effort. The obvious-looking third one, thinking.budget_tokens,
+// is rejected with a 400 by every current model, so a level must never become a
+// token count.
+func TestAnthropicThinkingUsesEffortNotBudget(t *testing.T) {
+	payload, err := buildAnthropicRequest("anthropic", "claude-sonnet-5", Request{
+		Messages:  []Message{{Role: RoleUser, Content: "hi"}},
+		Reasoning: &ReasoningConfig{Effort: "xhigh"},
+	}, false, false)
+	if err != nil {
+		t.Fatalf("buildAnthropicRequest: %v", err)
+	}
+	if payload.Thinking == nil || payload.Thinking.Type != "adaptive" {
+		t.Fatalf("thinking = %+v; want adaptive", payload.Thinking)
+	}
+	// Without this the reasoning arrives as empty strings and the thinking
+	// panel stays blank on a model that is visibly thinking.
+	if payload.Thinking.Display != "summarized" {
+		t.Fatalf("thinking.display = %q; want summarized", payload.Thinking.Display)
+	}
+	if payload.OutputConfig == nil || payload.OutputConfig.Effort != "xhigh" {
+		t.Fatalf("output_config = %+v; want the effort the user chose", payload.OutputConfig)
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(body), "budget_tokens") {
+		t.Fatalf("request carries budget_tokens, which is a 400 on every current model: %s", body)
+	}
+}
+
+// Sampling and thinking cannot coexist on Anthropic: the API answers
+// "temperature may only be set to 1 when thinking is enabled or in adaptive
+// mode", and Aetox sets a temperature on every call — so this rejected every
+// Claude request with a think level chosen.
+func TestAnthropicOmitsTemperatureButOtherProvidersKeepIt(t *testing.T) {
+	req := Request{
+		Messages:    []Message{{Role: RoleUser, Content: "hi"}},
+		Temperature: 0.2,
+		Reasoning:   &ReasoningConfig{Effort: "high"},
+	}
+
+	claude, err := buildAnthropicRequest("anthropic", "claude-sonnet-5", req, false, false)
+	if err != nil {
+		t.Fatalf("buildAnthropicRequest: %v", err)
+	}
+	// omitempty means zero is absent on the wire, which is the goal.
+	if claude.Temperature != 0 {
+		t.Fatalf("temperature = %v; want it left off for Anthropic", claude.Temperature)
+	}
+
+	// DeepSeek only borrows this wire format and still honors temperature —
+	// dropping it there would be a silent behavior change for a provider that
+	// never had the problem.
+	deepseek, err := buildAnthropicRequest("deepseek", "deepseek-v4-flash", req, false, false)
+	if err != nil {
+		t.Fatalf("buildAnthropicRequest: %v", err)
+	}
+	if deepseek.Temperature != 0.2 {
+		t.Fatalf("temperature = %v; want the caller's value kept for DeepSeek", deepseek.Temperature)
+	}
+}
+
+func TestAnthropicThinkingOff(t *testing.T) {
+	off := Request{
+		Messages: []Message{{Role: RoleUser, Content: "hi"}},
+		Thinking: &ThinkingConfig{Type: "disabled"},
+	}
+
+	payload, err := buildAnthropicRequest("anthropic", "claude-sonnet-5", off, false, false)
+	if err != nil {
+		t.Fatalf("buildAnthropicRequest: %v", err)
+	}
+	if payload.Thinking == nil || payload.Thinking.Type != "disabled" {
+		t.Fatalf("thinking = %+v; want an explicit disable", payload.Thinking)
+	}
+	if payload.OutputConfig != nil {
+		t.Fatalf("output_config = %+v; effort is meaningless with thinking off", payload.OutputConfig)
+	}
+
+	// Fable-class models think unconditionally and reject an explicit disable,
+	// so "off" there has to mean sending no thinking field at all.
+	fable, err := buildAnthropicRequest("anthropic", "claude-fable-5", off, false, false)
+	if err != nil {
+		t.Fatalf("buildAnthropicRequest: %v", err)
+	}
+	if fable.Thinking != nil {
+		t.Fatalf("thinking = %+v; want the field omitted entirely on a fable model", fable.Thinking)
+	}
+}
+
+// A Pro/Max sign-in reports its limits as anthropic-ratelimit-unified-reset in
+// Unix seconds — not the RFC3339 per-key headers — and the one 429 a real user
+// hit showed "try again shortly" because the runtime could read neither. Both
+// dialects must resolve to a real duration.
+func TestRateLimitWindowReadsBothHeaderDialects(t *testing.T) {
+	unified := &http.Response{Header: http.Header{}}
+	unified.Header.Set("anthropic-ratelimit-unified-reset",
+		strconv.FormatInt(time.Now().Add(90*time.Second).Unix(), 10))
+	if wait := rateLimitWindow(unified); wait < 80*time.Second || wait > 100*time.Second {
+		t.Fatalf("unified unix reset → %s; want ~90s", wait)
+	}
+
+	apiKey := &http.Response{Header: http.Header{}}
+	apiKey.Header.Set("anthropic-ratelimit-tokens-reset",
+		time.Now().Add(45*time.Second).UTC().Format(time.RFC3339))
+	if wait := rateLimitWindow(apiKey); wait < 35*time.Second || wait > 55*time.Second {
+		t.Fatalf("rfc3339 reset → %s; want ~45s", wait)
+	}
+
+	silent := &http.Response{Header: http.Header{}}
+	if wait := rateLimitWindow(silent); wait != 0 {
+		t.Fatalf("no headers → %s; want 0", wait)
 	}
 }

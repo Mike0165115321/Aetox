@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -355,4 +356,26 @@ func modelOr(value string, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+// errEmptyCompletion is the error a runtime returns when a provider answered
+// with nothing at all — no text, no reasoning, no tool call.
+//
+// Except when the provider stopped because it hit the token limit. That case is
+// a truncation, and it is a normal thing to ask for: the desktop's "test
+// connection" button pings with a tiny max_tokens precisely because it does not
+// want an answer, only proof that the endpoint is alive. Reporting that as
+// "response has empty text" told users their working provider was broken.
+//
+// Returns nil when there is nothing to complain about, so call sites read:
+//
+//	if err := errEmptyCompletion(name, finishReason, text, reasoning, calls); err != nil {
+func errEmptyCompletion(provider, finishReason, text, reasoning string, toolCalls int) error {
+	if text != "" || reasoning != "" || toolCalls > 0 {
+		return nil
+	}
+	if finishReason == FinishReasonLength {
+		return nil
+	}
+	return fmt.Errorf("%s response has empty text", provider)
 }
