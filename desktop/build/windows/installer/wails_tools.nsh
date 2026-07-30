@@ -14,7 +14,7 @@
     !define INFO_PRODUCTNAME "Aetox"
 !endif
 !ifndef INFO_PRODUCTVERSION
-    !define INFO_PRODUCTVERSION "0.8.0"
+    !define INFO_PRODUCTVERSION "0.8.1"
 !endif
 !ifndef INFO_COPYRIGHT
     !define INFO_COPYRIGHT "© 2026 Chayaphon Phromsawana — Apache-2.0"
