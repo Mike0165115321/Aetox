@@ -186,22 +186,10 @@ func ModelChoicesWithEndpointAndAPIKey(p, baseURL, apiKey string) ([]string, err
 			return models, nil
 		}
 		return nil, err
-	case provider.RuntimeResponses:
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if apiKey == "" {
-			if token, tokenErr := oauth.Token(ctx, canonical); tokenErr == nil {
-				apiKey = token
-			}
-		}
-		if baseURL == "" {
-			baseURL = oauth.Endpoint(canonical)
-		}
-		return DiscoverResponsesModels(ctx, canonical, baseURL, oauth.Headers(canonical), apiKey)
 	case provider.RuntimeAnthropic:
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		models, err := DiscoverAnthropicModels(ctx, canonical, baseURL, apiKey, oauth.TokenSource(canonical))
+		models, err := DiscoverAnthropicModels(ctx, canonical, baseURL, apiKey)
 		if err == nil && len(models) > 0 {
 			return models, nil
 		}
@@ -413,18 +401,15 @@ func DiscoverOpenAICompatibleModels(p, baseURL, apiKey string) ([]string, error)
 		return nil, err
 	}
 	if apiKey == "" {
-		// Signed-in providers (Copilot, Qwen) reach discovery with no key at
-		// all — without this the model picker is empty for exactly the
-		// providers whose model list the user cannot guess.
+		// Signed-in providers (Qwen) reach discovery with no key at all —
+		// without this the model picker is empty for exactly the providers
+		// whose model list the user cannot guess.
 		if token, tokenErr := oauth.Token(ctx, p); tokenErr == nil {
 			apiKey = token
 		}
 	}
 	if apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+apiKey)
-	}
-	for name, value := range oauth.Headers(p) {
-		req.Header.Set(name, value)
 	}
 	resp, err := (&http.Client{Timeout: 3 * time.Second}).Do(req)
 	if err != nil {

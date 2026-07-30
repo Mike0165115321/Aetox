@@ -1,6 +1,7 @@
 package model
 
 import (
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -122,6 +123,20 @@ func retryableStatus(status int) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+// humanizeDuration renders a wait window for an error message a person reads.
+func humanizeDuration(d time.Duration) string {
+	switch {
+	case d >= 48*time.Hour:
+		return fmt.Sprintf("%d days", int(d.Hours()/24))
+	case d >= 2*time.Hour:
+		return fmt.Sprintf("%d hours", int(d.Hours()))
+	case d >= 2*time.Minute:
+		return fmt.Sprintf("%d minutes", int(d.Minutes()))
+	default:
+		return fmt.Sprintf("%d seconds", int(d.Seconds()))
 	}
 }
 

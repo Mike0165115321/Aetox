@@ -26,12 +26,6 @@ const (
 	RuntimeOpenAICompatible Runtime = "openai-compatible"
 	RuntimeOllama           Runtime = "ollama"
 	RuntimeAnthropic        Runtime = "anthropic"
-	// RuntimeResponses is the OpenAI Responses API — typed input items and a
-	// dozen named SSE event types, sharing almost nothing with
-	// RuntimeOpenAICompatible beyond the company that publishes both. It is
-	// what a ChatGPT subscription speaks and the only thing that endpoint
-	// serves.
-	RuntimeResponses Runtime = "responses"
 	// RuntimeCodeAssist is Google's private Code Assist surface: the standard
 	// Gemini generateContent body wrapped in an envelope that adds the account's
 	// project id. It is what a personal Google account's free tier is served
@@ -164,27 +158,9 @@ var catalog = map[string]*entry{
 		modelDefaults:  ModelDefaults{FallbackModel: "gpt-4o-mini"},
 		capabilities:   Capabilities{ToolCalling: true, Reasoning: true},
 	},
-	// github-copilot is reached with a token minted from a GitHub sign-in
-	// (internal/oauth), never a pasted key — RequiresAPIKey stays true so the
-	// UI still treats it as "needs credentials", and the factory accepts a
-	// sign-in as satisfying that. One subscription covers models from three
-	// vendors, so the recommended list deliberately spans all of them; the live
-	// /models call is what the picker actually shows.
-	"github-copilot": {
-		canonical:      "github-copilot",
-		aliases:        []string{"github-copilot", "copilot", "githubcopilot", "gh-copilot"},
-		requiresAPIKey: true,
-		runtime:        RuntimeOpenAICompatible,
-		baseURL:        "https://api.githubcopilot.com",
-		envKeys:        []string{"GITHUB_COPILOT_TOKEN"},
-		// The picker comes from Copilot's own /models; this is only the name
-		// used before anyone has signed in.
-		modelDefaults: ModelDefaults{FallbackModel: "gpt-4.1"},
-		capabilities:  Capabilities{ToolCalling: true, Reasoning: true},
-	},
 	// code-assist is a personal Google account's free Gemini tier. Separate
-	// from "gemini" for the same reason codex is separate from "openai": a
-	// different host, different credentials, and a plan instead of a bill.
+	// from "gemini": a different host, different credentials, and a plan
+	// instead of a bill.
 	"code-assist": {
 		canonical:      "code-assist",
 		aliases:        []string{"code-assist", "gemini-code-assist", "codeassist", "gemini-oauth", "gemini-google"},
@@ -205,24 +181,6 @@ var catalog = map[string]*entry{
 			},
 		},
 		capabilities: Capabilities{ToolCalling: true, Reasoning: true},
-	},
-	// codex is a ChatGPT *subscription*, reached at chatgpt.com rather than
-	// api.openai.com and paid for by the user's plan rather than per token.
-	// Kept separate from "openai" instead of being a wire-format alternative on
-	// it: different host, different credentials, different billing, different
-	// model list. The "chatgpt" alias deliberately stays on "openai" so nobody's
-	// saved preference silently changes meaning.
-	"codex": {
-		canonical:      "codex",
-		aliases:        []string{"codex", "chatgpt-codex", "chatgpt-subscription", "openai-codex"},
-		requiresAPIKey: true,
-		runtime:        RuntimeResponses,
-		baseURL:        "https://chatgpt.com/backend-api/codex",
-		envKeys:        nil,
-		// DiscoverResponsesModels answers this per account and per plan; the
-		// name below is only what to try before anyone has signed in.
-		modelDefaults: ModelDefaults{FallbackModel: "gpt-5.5"},
-		capabilities:  Capabilities{ToolCalling: true, Reasoning: true},
 	},
 	// qwen's real endpoint is whatever the sign-in hands back as resource_url;
 	// this base URL is the fallback for an API-key login and for first-run

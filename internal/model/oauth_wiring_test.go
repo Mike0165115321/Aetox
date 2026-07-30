@@ -2,7 +2,6 @@ package model
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -22,137 +21,10 @@ func signIn(t *testing.T, provider string, cred oauth.Credential) {
 	}
 }
 
-func oauthCredential(access, account string) oauth.Credential {
-	return oauth.Credential{Type: "oauth", Access: access, Account: account}
-}
-
-func TestAnthropicSubscriptionSendsBearerNotAPIKey(t *testing.T) {
-	var gotAuth, gotAPIKey, gotBeta string
-	var gotSystem []anthropicSystemBlock
+func TestOpenAICompatibleSendsToken(t *testing.T) {
+	var gotAuth string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
-		gotAPIKey = r.Header.Get("x-api-key")
-		gotBeta = r.Header.Get("anthropic-beta")
-
-		var payload struct {
-			System []anthropicSystemBlock `json:"system"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&payload)
-		gotSystem = payload.System
-
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"hi"}],"stop_reason":"end_turn"}`))
-	}))
-	defer server.Close()
-
-	p, err := NewAnthropicProvider(AnthropicConfig{
-		Provider: "anthropic",
-		Model:    "claude-sonnet-5",
-		BaseURL:  server.URL,
-		TokenSource: func(context.Context) (string, error) {
-			return "oat-token", nil
-		},
-	})
-	if err != nil {
-		t.Fatalf("NewAnthropicProvider: %v", err)
-	}
-
-	_, err = p.Complete(context.Background(), Request{
-		Messages: []Message{
-			{Role: RoleSystem, Content: "You are Aetox."},
-			{Role: RoleUser, Content: "hello"},
-		},
-	})
-	if err != nil {
-		t.Fatalf("Complete: %v", err)
-	}
-
-	if gotAuth != "Bearer oat-token" {
-		t.Fatalf("Authorization = %q; want the bearer token", gotAuth)
-	}
-	// Sending both is a 401 from an endpoint that accepts either alone.
-	if gotAPIKey != "" {
-		t.Fatalf("x-api-key = %q; want it absent on the subscription path", gotAPIKey)
-	}
-	if gotBeta != oauth.AnthropicBeta {
-		t.Fatalf("anthropic-beta = %q; want %q", gotBeta, oauth.AnthropicBeta)
-	}
-	// The endpoint compares the first block byte-for-byte, so the prefix must
-	// be alone in its own block — concatenation is what drew the fake 429.
-	if len(gotSystem) != 2 || gotSystem[0].Text != oauth.AnthropicOAuthSystemPrefix {
-		t.Fatalf("system blocks = %+v; want the exact prefix alone in block 0", gotSystem)
-	}
-	if gotSystem[1].Text != "You are Aetox." {
-		t.Fatalf("system blocks = %+v; want Aetox's own prompt as block 1", gotSystem)
-	}
-}
-
-func TestAnthropicAPIKeyPathUnchanged(t *testing.T) {
-	var gotAuth, gotAPIKey, gotSystem string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotAuth = r.Header.Get("Authorization")
-		gotAPIKey = r.Header.Get("x-api-key")
-		var payload struct {
-			System string `json:"system"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&payload)
-		gotSystem = payload.System
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"hi"}],"stop_reason":"end_turn"}`))
-	}))
-	defer server.Close()
-
-	p, err := NewAnthropicProvider(AnthropicConfig{
-		Provider: "anthropic",
-		Model:    "claude-sonnet-5",
-		APIKey:   "sk-ant-key",
-		BaseURL:  server.URL,
-	})
-	if err != nil {
-		t.Fatalf("NewAnthropicProvider: %v", err)
-	}
-	if _, err := p.Complete(context.Background(), Request{
-		Messages: []Message{
-			{Role: RoleSystem, Content: "You are Aetox."},
-			{Role: RoleUser, Content: "hello"},
-		},
-	}); err != nil {
-		t.Fatalf("Complete: %v", err)
-	}
-
-	if gotAPIKey != "sk-ant-key" || gotAuth != "" {
-		t.Fatalf("api-key path sent Authorization=%q x-api-key=%q", gotAuth, gotAPIKey)
-	}
-	// The Claude Code prefix is a condition of the OAuth credential only — it
-	// must not leak into requests paid for by an API key.
-	if strings.Contains(gotSystem, oauth.AnthropicOAuthSystemPrefix) {
-		t.Fatalf("system = %q; want no OAuth prefix on the api-key path", gotSystem)
-	}
-}
-
-func TestAnthropicSubscriptionDoesNotDoublePrefix(t *testing.T) {
-	req := Request{Messages: []Message{
-		{Role: RoleSystem, Content: oauth.AnthropicOAuthSystemPrefix + "\n\nYou are Aetox."},
-		{Role: RoleUser, Content: "hi"},
-	}}
-	payload, err := buildAnthropicRequest("anthropic", "claude-sonnet-5", req, false, true)
-	if err != nil {
-		t.Fatalf("buildAnthropicRequest: %v", err)
-	}
-	blocks, ok := payload.System.([]anthropicSystemBlock)
-	if !ok || len(blocks) != 2 {
-		t.Fatalf("system = %+v; want two blocks", payload.System)
-	}
-	if blocks[0].Text != oauth.AnthropicOAuthSystemPrefix || strings.Contains(blocks[1].Text, oauth.AnthropicOAuthSystemPrefix) {
-		t.Fatalf("system blocks = %+v; want the prefix exactly once, alone in block 0", blocks)
-	}
-}
-
-func TestOpenAICompatibleSendsTokenAndProviderHeaders(t *testing.T) {
-	var gotAuth, gotIntegration string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotAuth = r.Header.Get("Authorization")
-		gotIntegration = r.Header.Get("Copilot-Integration-Id")
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}]}`))
 	}))
@@ -160,14 +32,13 @@ func TestOpenAICompatibleSendsTokenAndProviderHeaders(t *testing.T) {
 
 	calls := 0
 	p, err := NewOpenAICompatibleProvider(OpenAICompatibleConfig{
-		Provider: "github-copilot",
-		Model:    "gpt-4.1",
+		Provider: "qwen",
+		Model:    "qwen3-coder-plus",
 		BaseURL:  server.URL,
 		TokenSource: func(context.Context) (string, error) {
 			calls++
 			return "minted-token", nil
 		},
-		Headers: oauth.CopilotHeaders(),
 	})
 	if err != nil {
 		t.Fatalf("NewOpenAICompatibleProvider: %v", err)
@@ -184,11 +55,8 @@ func TestOpenAICompatibleSendsTokenAndProviderHeaders(t *testing.T) {
 	if gotAuth != "Bearer minted-token" {
 		t.Fatalf("Authorization = %q; want the minted token", gotAuth)
 	}
-	if gotIntegration == "" {
-		t.Fatal("Copilot-Integration-Id was not sent; Copilot answers 400 without it")
-	}
-	// Per request, not once at construction — a Copilot token dies after ~25
-	// minutes and a session outlives that.
+	// Per request, not once at construction — signed-in tokens expire and a
+	// session outlives them.
 	if calls != 2 {
 		t.Fatalf("token source consulted %d times for 2 requests; want 2", calls)
 	}
@@ -196,8 +64,8 @@ func TestOpenAICompatibleSendsTokenAndProviderHeaders(t *testing.T) {
 
 func TestOpenAICompatibleReportsTokenFailure(t *testing.T) {
 	p, err := NewOpenAICompatibleProvider(OpenAICompatibleConfig{
-		Provider: "github-copilot",
-		Model:    "gpt-4.1",
+		Provider: "qwen",
+		Model:    "qwen3-coder-plus",
 		BaseURL:  "https://example.invalid",
 		TokenSource: func(context.Context) (string, error) {
 			return "", context.DeadlineExceeded
@@ -213,16 +81,16 @@ func TestOpenAICompatibleReportsTokenFailure(t *testing.T) {
 }
 
 func TestFactoryUsesSignInInsteadOfAPIKey(t *testing.T) {
-	signIn(t, "github-copilot", oauth.Credential{Type: "oauth", Access: "tok"})
+	signIn(t, "qwen", oauth.Credential{Type: "oauth", Access: "tok"})
 
 	// No APIKey at all: a signed-in provider has no key to give, and demanding
 	// one would make the whole feature unreachable.
-	p, err := NewProvider(ProviderOptions{Provider: "copilot", Model: "gpt-4.1"})
+	p, err := NewProvider(ProviderOptions{Provider: "qwen-code", Model: "qwen3-coder-plus"})
 	if err != nil {
 		t.Fatalf("NewProvider: %v", err)
 	}
-	if p.Name() != "github-copilot" {
-		t.Fatalf("Name = %q; want github-copilot", p.Name())
+	if p.Name() != "qwen" {
+		t.Fatalf("Name = %q; want qwen", p.Name())
 	}
 }
 
@@ -273,11 +141,7 @@ func TestFactoryUnaffectedWhenNobodySignedIn(t *testing.T) {
 	if _, err := NewProvider(ProviderOptions{Provider: "anthropic", Model: "claude-sonnet-5"}); err == nil {
 		t.Fatal("a provider with no key and no sign-in was accepted")
 	}
-	p, err := NewProvider(ProviderOptions{Provider: "anthropic", Model: "claude-sonnet-5", APIKey: "sk-ant"})
-	if err != nil {
+	if _, err := NewProvider(ProviderOptions{Provider: "anthropic", Model: "claude-sonnet-5", APIKey: "sk-ant"}); err != nil {
 		t.Fatalf("NewProvider with a key: %v", err)
-	}
-	if anthropic, ok := p.(*AnthropicProvider); !ok || anthropic.usesSubscription() {
-		t.Fatal("an api-key provider was built as a subscription one")
 	}
 }

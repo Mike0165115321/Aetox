@@ -90,17 +90,6 @@ func NewProvider(opts ProviderOptions) (Provider, error) {
 			Timeout:       timeout,
 			RequireAPIKey: &requireAPIKey,
 			TokenSource:   tokenSource,
-			Headers:       oauth.Headers(provider),
-		})
-	case string(pvdr.RuntimeResponses):
-		return NewResponsesProvider(ResponsesConfig{
-			Provider:    provider,
-			Model:       opts.Model,
-			APIKey:      opts.APIKey,
-			BaseURL:     opts.BaseURL,
-			Timeout:     timeout,
-			TokenSource: tokenSource,
-			Headers:     oauth.Headers(provider),
 		})
 	case string(pvdr.RuntimeCodeAssist):
 		return NewCodeAssistProvider(CodeAssistConfig{
@@ -113,12 +102,11 @@ func NewProvider(opts ProviderOptions) (Provider, error) {
 		})
 	case string(pvdr.RuntimeAnthropic):
 		return NewAnthropicProvider(AnthropicConfig{
-			Provider:    provider,
-			Model:       opts.Model,
-			APIKey:      opts.APIKey,
-			BaseURL:     opts.BaseURL,
-			Timeout:     timeout,
-			TokenSource: tokenSource,
+			Provider: provider,
+			Model:    opts.Model,
+			APIKey:   opts.APIKey,
+			BaseURL:  opts.BaseURL,
+			Timeout:  timeout,
 		})
 	default:
 		return nil, fmt.Errorf("unsupported model provider: %q", provider)

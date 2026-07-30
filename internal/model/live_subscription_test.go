@@ -3,7 +3,6 @@ package model
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -11,7 +10,7 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/oauth"
 )
 
-// Live round trips against the two subscription backends, skipped unless
+// Live round trip against the Code Assist subscription backend, skipped unless
 // AETOX_LIVE=1.
 //
 //	AETOX_LIVE=1 go test ./internal/model/ -run TestLiveSubscription -v -count=1
@@ -30,29 +29,6 @@ func TestLiveSubscriptionAsksAndAnswers(t *testing.T) {
 	if os.Getenv("AETOX_LIVE") != "1" {
 		t.Skip("set AETOX_LIVE=1 to run against real subscription backends")
 	}
-
-	t.Run("codex", func(t *testing.T) {
-		t.Setenv("AETOX_DATA_ROOT", t.TempDir())
-		if !oauth.CodexCLIAvailable() {
-			t.Skip("no Codex CLI session on this machine to adopt")
-		}
-		if err := oauth.ImportCodexCLI(); err != nil {
-			t.Fatalf("ImportCodexCLI: %v", err)
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		defer cancel()
-
-		p, err := NewProvider(ProviderOptions{
-			Provider: "codex",
-			Model:    "gpt-5.5",
-			Timeout:  90 * time.Second,
-		})
-		if err != nil {
-			t.Fatalf("NewProvider: %v", err)
-		}
-		assertAnswersLive(ctx, t, p)
-	})
 
 	t.Run("code-assist", func(t *testing.T) {
 		t.Setenv("AETOX_DATA_ROOT", t.TempDir())
@@ -236,18 +212,10 @@ func TestLiveAnthropicEffortLadder(t *testing.T) {
 	if os.Getenv("AETOX_LIVE") != "1" {
 		t.Skip("set AETOX_LIVE=1 to run against the real Anthropic API")
 	}
-	// TestMain points the whole package at a throwaway credential store; this
-	// test is the one that wants the real one, because the credential under
-	// test is the machine's actual Claude sign-in.
-	if root := strings.TrimSpace(os.Getenv("AETOX_REAL_DATA_ROOT")); root != "" {
-		t.Setenv("AETOX_DATA_ROOT", root)
-	} else {
-		t.Setenv("AETOX_DATA_ROOT", defaultUserDataRoot())
-	}
 
 	apiKey := strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY"))
-	if apiKey == "" && !oauth.Has("anthropic") {
-		t.Skip("no Claude credentials: set ANTHROPIC_API_KEY or sign in with `aetox login anthropic`")
+	if apiKey == "" {
+		t.Skip("no Claude credentials: set ANTHROPIC_API_KEY")
 	}
 
 	model := strings.TrimSpace(os.Getenv("AETOX_LIVE_MODEL"))
@@ -268,10 +236,6 @@ func TestLiveAnthropicEffortLadder(t *testing.T) {
 			}
 
 			req := Request{
-				// A real system prompt rides along on purpose: the OAuth
-				// endpoint matches the first system block byte-for-byte and a
-				// concatenated prompt is refused as a fake 429 — a contract
-				// only a live call can hold us to.
 				Messages: []Message{
 					{Role: RoleSystem, Content: "You are Aetox, a helpful assistant."},
 					{Role: RoleUser, Content: "Reply with the single word: ok"},
@@ -300,15 +264,4 @@ func TestLiveAnthropicEffortLadder(t *testing.T) {
 				strings.TrimSpace(resp.Text), len(resp.ReasoningContent))
 		})
 	}
-}
-
-// defaultUserDataRoot mirrors config.DataRoot for the one test that needs the
-// real credential store rather than the package's throwaway one.
-func defaultUserDataRoot() string {
-	dir, err := os.UserConfigDir()
-	if err != nil || dir == "" {
-		home, _ := os.UserHomeDir()
-		dir = filepath.Join(home, ".config")
-	}
-	return filepath.Join(dir, "aetox")
 }

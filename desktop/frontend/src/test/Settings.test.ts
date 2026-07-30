@@ -82,20 +82,20 @@ beforeEach(() => {
   vi.mocked(ListModelsForProvider).mockResolvedValue(['deepseek-v4', 'deepseek-chat'] as any)
 })
 
-// A provider you sign into rather than paste a key for. Copilot is the device
-// flow: Aetox shows a code, the user types it into github.com.
-const seedCopilotSignIn = () => {
-  vi.mocked(SupportedProviders).mockResolvedValue(['github-copilot'] as any)
-  vi.mocked(EnabledProviders).mockResolvedValue(['github-copilot'] as any)
+// A provider you sign into rather than paste a key for. Qwen is the device
+// flow: Aetox shows a code, the user types it into the provider's page.
+const seedQwenSignIn = () => {
+  vi.mocked(SupportedProviders).mockResolvedValue(['qwen'] as any)
+  vi.mocked(EnabledProviders).mockResolvedValue(['qwen'] as any)
   vi.mocked(SignInMethods).mockResolvedValue([{
-    provider: 'github-copilot', label: 'GitHub Copilot', kind: 'device',
-    risk: 'restricted', note: 'Needs an active Copilot subscription.',
+    provider: 'qwen', label: 'Qwen', kind: 'device',
+    risk: 'restricted', note: "Signs in through the qwen-code CLI's OAuth client.",
   }] as any)
-  vi.mocked(SignInStatus).mockResolvedValue({ provider: 'github-copilot', signed_in: false } as any)
+  vi.mocked(SignInStatus).mockResolvedValue({ provider: 'qwen', signed_in: false } as any)
   vi.mocked(StartSignIn).mockResolvedValue({
-    provider: 'github-copilot', kind: 'device',
-    url: 'https://github.com/login/device',
-    verification_uri: 'https://github.com/login/device',
+    provider: 'qwen', kind: 'device',
+    url: 'https://chat.qwen.ai/authorize',
+    verification_uri: 'https://chat.qwen.ai/authorize',
     user_code: 'ABCD-1234',
   } as any)
 }
@@ -491,9 +491,9 @@ describe('Settings pages', () => {
 
   // The point of the whole sign-in path: a provider you cannot get a key for
   // must still be reachable, and the code has to be on screen while Aetox
-  // waits for GitHub to say yes.
+  // waits for the provider to say yes.
   it('a sign-in provider shows its device code and waits for approval', async () => {
-    seedCopilotSignIn()
+    seedQwenSignIn()
     // Hangs on purpose: the real call blocks until the user approves, which is
     // exactly the window the code has to stay readable.
     vi.mocked(CompleteSignIn).mockImplementation(() => new Promise(() => {}))
@@ -501,18 +501,18 @@ describe('Settings pages', () => {
     const { container } = render(Settings, { onClose: () => {} })
     await openSection(container, 'การตั้งค่าโมเดล')
 
-    const signInButton = await screen.findByText('เข้าสู่ระบบด้วย GitHub Copilot')
+    const signInButton = await screen.findByText('เข้าสู่ระบบด้วย Qwen')
     await fireEvent.click(signInButton)
 
     await waitFor(() => expect(screen.getByText('ABCD-1234')).toBeTruthy())
-    expect(vi.mocked(StartSignIn)).toHaveBeenCalledWith('github-copilot')
-    expect(vi.mocked(CompleteSignIn)).toHaveBeenCalledWith('github-copilot', '')
+    expect(vi.mocked(StartSignIn)).toHaveBeenCalledWith('qwen')
+    expect(vi.mocked(CompleteSignIn)).toHaveBeenCalledWith('qwen', '')
   })
 
   // Reusing another product's OAuth client can get an account cut off, so the
   // warning belongs next to the button, not in the docs.
   it('a restricted sign-in warns before the user commits', async () => {
-    seedCopilotSignIn()
+    seedQwenSignIn()
     const { container } = render(Settings, { onClose: () => {} })
     await openSection(container, 'การตั้งค่าโมเดล')
 
@@ -520,16 +520,16 @@ describe('Settings pages', () => {
   })
 
   it('an already signed-in provider offers sign-out instead of sign-in', async () => {
-    seedCopilotSignIn()
+    seedQwenSignIn()
     vi.mocked(SignInStatus).mockResolvedValue({
-      provider: 'github-copilot', signed_in: true, label: 'GitHub Copilot · mike', account: 'mike',
+      provider: 'qwen', signed_in: true, label: 'Qwen · mike', account: 'mike',
     } as any)
 
     const { container } = render(Settings, { onClose: () => {} })
     await openSection(container, 'การตั้งค่าโมเดล')
 
-    await waitFor(() => expect(screen.getByText('GitHub Copilot · mike')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('Qwen · mike')).toBeTruthy())
     expect(screen.getByText('ออกจากระบบ')).toBeTruthy()
-    expect(screen.queryByText('เข้าสู่ระบบด้วย GitHub Copilot')).toBeNull()
+    expect(screen.queryByText('เข้าสู่ระบบด้วย Qwen')).toBeNull()
   })
 })

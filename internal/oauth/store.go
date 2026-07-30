@@ -31,7 +31,7 @@ type Credential struct {
 	Key       string `json:"key,omitempty"`        // type "api" only
 	ExpiresAt int64  `json:"expires_at,omitempty"` // unix millis; 0 = never expires
 	// Account is the caller identity a provider wants echoed back on every
-	// request (ChatGPT's account id), or the login name we show in the UI.
+	// request, or the login name we show in the UI.
 	Account string `json:"account,omitempty"`
 	// Endpoint overrides the catalog base URL when the provider tells us at
 	// login time which host this account is served from (Qwen's resource_url).
@@ -40,10 +40,10 @@ type Credential struct {
 	Label string `json:"label,omitempty"`
 }
 
-// expiryGrace refreshes a token slightly before it dies. A Copilot token
-// lives ~25 minutes and a long streaming turn can outlive the tail of that
-// window, so the grace is generous enough to cover one turn rather than one
-// request.
+// expiryGrace refreshes a token slightly before it dies. Some providers hand
+// out short-lived tokens and a long streaming turn can outlive the tail of
+// that window, so the grace is generous enough to cover one turn rather than
+// one request.
 const expiryGrace = 2 * time.Minute
 
 // Expired reports whether the access token needs refreshing. API keys and
@@ -85,6 +85,17 @@ func StorePath() string {
 // write. Add a lock file if that ever shows up in practice.
 var storeMu sync.Mutex
 
+// removedProviders are sign-ins Aetox no longer offers (v0.8.1 dropped the
+// Claude Pro/Max, ChatGPT and Copilot flows — they rode other products' OAuth
+// clients against consumer plans, a standing account risk for the user).
+// Credentials left in the store by an older version are dropped on load so a
+// stale token is never sent anywhere, and the next save purges them from disk.
+var removedProviders = map[string]bool{
+	"anthropic":      true,
+	"codex":          true,
+	"github-copilot": true,
+}
+
 func load() map[string]Credential {
 	raw, err := os.ReadFile(StorePath())
 	if err != nil {
@@ -96,6 +107,11 @@ func load() map[string]Credential {
 		// the fix a user can act on is "log in again", and returning an error
 		// here would instead block the app from starting at all.
 		return map[string]Credential{}
+	}
+	for name := range out {
+		if removedProviders[name] {
+			delete(out, name)
+		}
 	}
 	return out
 }

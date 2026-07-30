@@ -3,7 +3,6 @@ package oauth
 import (
 	"context"
 	"os"
-	"strings"
 	"testing"
 	"time"
 )
@@ -31,20 +30,6 @@ func TestLiveSignInStarts(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	t.Run("github-copilot", func(t *testing.T) {
-		pending, err := StartCopilot(ctx)
-		if err != nil {
-			t.Fatalf("StartCopilot: %v", err)
-		}
-		if pending.UserCode == "" || pending.deviceCode == "" {
-			t.Fatalf("device code response was empty: %+v", pending)
-		}
-		if !strings.HasPrefix(pending.VerificationURI, "https://github.com/") {
-			t.Fatalf("verification URI = %q; want a github.com page", pending.VerificationURI)
-		}
-		t.Logf("copilot device code issued (user code %s)", pending.UserCode)
-	})
-
 	t.Run("qwen", func(t *testing.T) {
 		pending, err := StartQwen(ctx)
 		if err != nil {
@@ -56,17 +41,9 @@ func TestLiveSignInStarts(t *testing.T) {
 		t.Logf("qwen device code issued (user code %s)", pending.UserCode)
 	})
 
-	// Anthropic and OpenRouter build their authorize URL locally, so the live
-	// question for them is whether that URL is still served at all. A GET that
-	// is not a redirect to a login page means the flow moved.
-	t.Run("anthropic authorize page", func(t *testing.T) {
-		pending, err := StartAnthropic()
-		if err != nil {
-			t.Fatalf("StartAnthropic: %v", err)
-		}
-		assertReachable(ctx, t, pending.URL)
-	})
-
+	// OpenRouter builds its authorize URL locally, so the live question for it
+	// is whether that URL is still served at all. A GET that is not a redirect
+	// to a login page means the flow moved.
 	t.Run("openrouter authorize page", func(t *testing.T) {
 		pending, err := StartOpenRouter()
 		if err != nil {

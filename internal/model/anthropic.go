@@ -12,8 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/Mike0165115321/Aetox/internal/oauth"
 )
 
 // anthropicAPIVersion is the required anthropic-version header value for
@@ -36,20 +34,14 @@ type AnthropicConfig struct {
 	APIKey   string
 	BaseURL  string
 	Timeout  time.Duration
-	// TokenSource, when set, means this client is driving a Claude
-	// subscription rather than an API key: Bearer instead of x-api-key, the
-	// OAuth beta header, and the system-prompt prefix that endpoint requires.
-	// It is called per request because the access token expires hourly.
-	TokenSource func(context.Context) (string, error)
 }
 
 type AnthropicProvider struct {
-	name        string
-	model       string
-	apiKey      string
-	baseURL     string
-	tokenSource func(context.Context) (string, error)
-	httpClient  *http.Client
+	name       string
+	model      string
+	apiKey     string
+	baseURL    string
+	httpClient *http.Client
 }
 
 func NewAnthropicProvider(cfg AnthropicConfig) (*AnthropicProvider, error) {
@@ -63,7 +55,7 @@ func NewAnthropicProvider(cfg AnthropicConfig) (*AnthropicProvider, error) {
 	if model == "" {
 		return nil, ErrMissingModel
 	}
-	if apiKey == "" && cfg.TokenSource == nil {
+	if apiKey == "" {
 		return nil, ErrMissingAPIKey
 	}
 	if baseURL == "" {
@@ -84,19 +76,13 @@ func NewAnthropicProvider(cfg AnthropicConfig) (*AnthropicProvider, error) {
 	}
 
 	return &AnthropicProvider{
-		name:        name,
-		model:       model,
-		apiKey:      apiKey,
-		baseURL:     baseURL,
-		tokenSource: cfg.TokenSource,
-		httpClient:  newModelHTTPClient(timeout),
+		name:       name,
+		model:      model,
+		apiKey:     apiKey,
+		baseURL:    baseURL,
+		httpClient: newModelHTTPClient(timeout),
 	}, nil
 }
-
-// usesSubscription reports whether this client is driving a signed-in Claude
-// plan rather than an API key. Three things change together when it is, so
-// they are asked one question rather than three.
-func (p *AnthropicProvider) usesSubscription() bool { return p.tokenSource != nil }
 
 func (p *AnthropicProvider) Name() string { return p.name }
 
@@ -161,12 +147,8 @@ type anthropicThinking struct {
 }
 
 type anthropicRequest struct {
-	Model string `json:"model"`
-	// System is a plain string on the API-key path and a []anthropicSystemBlock
-	// on a Pro/Max sign-in, where the endpoint matches the first block exactly
-	// (see anthropicSystemField). Held as any so each path keeps its shape; nil
-	// means no system prompt at all.
-	System      any                  `json:"system,omitempty"`
+	Model       string               `json:"model"`
+	System      string               `json:"system,omitempty"`
 	Messages    []anthropicMessage   `json:"messages"`
 	MaxTokens   int                  `json:"max_tokens"`
 	Temperature float64              `json:"temperature,omitempty"`
@@ -411,49 +393,11 @@ func anthropicThinkingAlwaysOn(model string) bool {
 	return strings.Contains(lower, "fable") || strings.Contains(lower, "mythos")
 }
 
-type anthropicSystemBlock struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
-}
-
-// anthropicSystemField shapes the system prompt for the wire.
-//
-// On a Pro/Max sign-in the required Claude Code line must be a block of its
-// own, byte-for-byte, with Aetox's prompt as a second block — the endpoint
-// compares the first block exactly and rejects a concatenated string as a fake
-// 429. A caller whose prompt already opens with the line (an older transcript,
-// a retry) has it stripped so it never appears twice. API-key requests and the
-// providers that merely borrow this wire format keep the plain string they
-// always sent.
-func anthropicSystemField(system string, subscription bool) any {
-	if !subscription {
-		if system == "" {
-			return nil
-		}
-		return system
-	}
-	blocks := []anthropicSystemBlock{{Type: "text", Text: oauth.AnthropicOAuthSystemPrefix}}
-	rest := strings.TrimSpace(strings.TrimPrefix(system, oauth.AnthropicOAuthSystemPrefix))
-	if rest != "" {
-		blocks = append(blocks, anthropicSystemBlock{Type: "text", Text: rest})
-	}
-	return blocks
-}
-
-func buildAnthropicRequest(provider, model string, req Request, stream bool, subscription bool) (anthropicRequest, error) {
+func buildAnthropicRequest(provider, model string, req Request, stream bool) (anthropicRequest, error) {
 	system, messages := convertMessagesToAnthropic(req.Messages)
 	if len(messages) == 0 {
 		return anthropicRequest{}, ErrNoMessages
 	}
-
-	// A condition of the OAuth credential, not a prompt decision — and the
-	// check is exact, per block: the endpoint compares the FIRST system block
-	// against the Claude Code line and rejects anything else, disguised as a
-	// bodyless 429 "rate_limit_error". Found live by bisection: the same
-	// content joined into one string ("prefix\n\nAetox prompt") is refused,
-	// split into [prefix][Aetox prompt] blocks it is accepted. So the prefix
-	// must ride alone in its own block, never concatenated.
-	systemField := anthropicSystemField(system, subscription)
 
 	maxTokens := req.MaxTokens
 	if maxTokens <= 0 {
@@ -479,7 +423,7 @@ func buildAnthropicRequest(provider, model string, req Request, stream bool, sub
 
 	return anthropicRequest{
 		Model:        model,
-		System:       systemField,
+		System:       system,
 		Messages:     messages,
 		MaxTokens:    maxTokens,
 		Temperature:  temperature,
@@ -504,17 +448,6 @@ func (p *AnthropicProvider) newHTTPRequest(ctx context.Context, body []byte) (*h
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("anthropic-version", anthropicAPIVersion)
-	if p.usesSubscription() {
-		token, err := p.tokenSource(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("claude sign-in: %w", err)
-		}
-		// Bearer *instead of* x-api-key, not alongside it: sending both is a
-		// 401 from an endpoint that is otherwise happy with either.
-		httpReq.Header.Set("Authorization", "Bearer "+token)
-		httpReq.Header.Set("anthropic-beta", oauth.AnthropicBeta)
-		return httpReq, nil
-	}
 	httpReq.Header.Set("x-api-key", p.apiKey)
 	return httpReq, nil
 }
@@ -533,7 +466,7 @@ func (p *AnthropicProvider) Complete(ctx context.Context, req Request) (Response
 		model = p.model
 	}
 
-	payload, err := buildAnthropicRequest(p.name, model, req, false, p.usesSubscription())
+	payload, err := buildAnthropicRequest(p.name, model, req, false)
 	if err != nil {
 		return Response{}, err
 	}
@@ -655,7 +588,7 @@ func (p *AnthropicProvider) StreamComplete(ctx context.Context, req Request, onC
 		model = p.model
 	}
 
-	payload, err := buildAnthropicRequest(p.name, model, req, true, p.usesSubscription())
+	payload, err := buildAnthropicRequest(p.name, model, req, true)
 	if err != nil {
 		return Response{}, err
 	}
@@ -827,11 +760,7 @@ func (p *AnthropicProvider) StreamComplete(ctx context.Context, req Request, onC
 // OpenAI-compatible ones do, but Anthropic does serve GET /v1/models, and it is
 // paginated. Asking beats shipping a list: hardcoded Claude names go stale
 // every few months and a stale one is a 404 that reads like a bug in Aetox.
-//
-// Works for either credential — an API key sends x-api-key, a Pro/Max sign-in
-// sends the bearer token and the OAuth beta header, exactly as the Messages
-// call does.
-func DiscoverAnthropicModels(ctx context.Context, providerName, baseURL, apiKey string, tokenSource func(context.Context) (string, error)) ([]string, error) {
+func DiscoverAnthropicModels(ctx context.Context, providerName, baseURL, apiKey string) ([]string, error) {
 	endpoint := strings.TrimSuffix(strings.TrimSpace(baseURL), "/")
 	if endpoint == "" {
 		endpoint = strings.TrimSuffix(DefaultBaseURL(providerName), "/")
@@ -856,14 +785,7 @@ func DiscoverAnthropicModels(ctx context.Context, providerName, baseURL, apiKey 
 			return nil, err
 		}
 		req.Header.Set("anthropic-version", anthropicAPIVersion)
-		if tokenSource != nil {
-			token, tokenErr := tokenSource(ctx)
-			if tokenErr != nil {
-				return nil, fmt.Errorf("%s sign-in: %w", providerName, tokenErr)
-			}
-			req.Header.Set("Authorization", "Bearer "+token)
-			req.Header.Set("anthropic-beta", oauth.AnthropicBeta)
-		} else if apiKey != "" {
+		if apiKey != "" {
 			req.Header.Set("x-api-key", apiKey)
 		}
 

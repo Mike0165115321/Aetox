@@ -14,8 +14,7 @@ import (
 // Providers that let us choose the redirect URI get this instead of asking the
 // user to copy a code out of a browser: the browser lands back on 127.0.0.1,
 // the code arrives in a query parameter, and the page tells the user they can
-// close the tab. Only the sign-ins that pin their redirect elsewhere
-// (Anthropic) fall back to pasting.
+// close the tab.
 type loopback struct {
 	// RedirectURI is what to send as redirect_uri / callback_url.
 	RedirectURI string
@@ -32,24 +31,7 @@ type loopbackResult struct {
 }
 
 // startLoopback listens on 127.0.0.1. Pass port 0 for any free port; pass a
-// specific one when the provider has the redirect URI registered against it
-// (ChatGPT insists on 1455).
-//
-// host names the address to *advertise* in RedirectURI, which is not always the
-// address we bind. OAuth redirect matching is a string comparison, so a client
-// registered against "localhost" rejects "127.0.0.1" even though both resolve
-// here. Empty means advertise what we bound.
-func startLoopbackAs(host string, port int, path string) (*loopback, error) {
-	lb, err := startLoopback(port, path)
-	if err != nil {
-		return nil, err
-	}
-	if host != "" {
-		lb.RedirectURI = fmt.Sprintf("http://%s:%d%s", host, lb.port, path)
-	}
-	return lb, nil
-}
-
+// specific one when the provider has the redirect URI registered against it.
 func startLoopback(port int, path string) (*loopback, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
 	if err != nil {

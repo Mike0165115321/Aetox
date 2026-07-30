@@ -103,8 +103,8 @@ func (a *App) StartSignIn(providerName string) (SignInPrompt, error) {
 // a browser flow waits for the redirect. The UI shows the prompt and awaits
 // this call; CancelSignIn is how the user backs out.
 //
-// pasted carries the code for providers that make the user copy one
-// (Anthropic) and is ignored by the rest.
+// pasted carries the code for providers that make the user copy one and is
+// ignored by the rest.
 func (a *App) CompleteSignIn(providerName, pasted string) (ModelInfo, error) {
 	canonical := model.NormalizeProvider(providerName)
 
@@ -150,9 +150,6 @@ func (a *App) CancelSignIn(providerName string) {
 // second authorization for the same account.
 func (a *App) ImportableSignIns() []string {
 	var out []string
-	if oauth.CodexCLIAvailable() {
-		out = append(out, "codex")
-	}
 	if oauth.GeminiCLIAvailable() {
 		out = append(out, "code-assist")
 	}
@@ -168,8 +165,6 @@ func (a *App) ImportSignIn(providerName string) (ModelInfo, error) {
 
 	var err error
 	switch canonical {
-	case "codex":
-		err = oauth.ImportCodexCLI()
 	case "code-assist":
 		err = oauth.ImportGeminiCLI(ctx)
 	default:
@@ -194,7 +189,7 @@ func (a *App) SignOut(providerName string) (ModelInfo, error) {
 }
 
 // reloadAfterCredentialChange re-bootstraps only when the change touches the
-// provider in use — signing into Copilot while running on Ollama should not
+// provider in use — signing into Qwen while running on Ollama should not
 // restart anything.
 func (a *App) reloadAfterCredentialChange(canonical string) (ModelInfo, error) {
 	if strings.EqualFold(model.NormalizeProvider(a.cfg.ModelProvider), canonical) {

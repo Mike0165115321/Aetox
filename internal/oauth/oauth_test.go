@@ -23,12 +23,12 @@ func isolateStore(t *testing.T) string {
 func TestStoreRoundTrip(t *testing.T) {
 	dir := isolateStore(t)
 
-	if _, ok := Get("github-copilot"); ok {
+	if _, ok := Get("code-assist"); ok {
 		t.Fatal("empty store reported a credential")
 	}
 
 	want := Credential{Type: "oauth", Access: "at", Refresh: "rt", ExpiresAt: 999, Account: "mike"}
-	if err := Set("github-copilot", want); err != nil {
+	if err := Set("code-assist", want); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
 	// A second provider must not disturb the first.
@@ -36,7 +36,7 @@ func TestStoreRoundTrip(t *testing.T) {
 		t.Fatalf("Set qwen: %v", err)
 	}
 
-	got, ok := Get("github-copilot")
+	got, ok := Get("code-assist")
 	if !ok || got != want {
 		t.Fatalf("Get = %+v, %v; want %+v", got, ok, want)
 	}
@@ -44,10 +44,10 @@ func TestStoreRoundTrip(t *testing.T) {
 		t.Fatalf("LoggedIn = %v; want 2 entries", LoggedIn())
 	}
 
-	if err := Delete("github-copilot"); err != nil {
+	if err := Delete("code-assist"); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	if _, ok := Get("github-copilot"); ok {
+	if _, ok := Get("code-assist"); ok {
 		t.Fatal("credential survived Delete")
 	}
 	if _, ok := Get("qwen"); !ok {
@@ -173,13 +173,13 @@ func TestTokenAPIKeyCredentialNeedsNoRefresher(t *testing.T) {
 
 func TestTokenSourceNilWhenSignedOut(t *testing.T) {
 	isolateStore(t)
-	if TokenSource("anthropic") != nil {
+	if TokenSource("qwen") != nil {
 		t.Fatal("TokenSource returned a source for a provider nobody signed into")
 	}
-	if err := Set("anthropic", Credential{Type: "oauth", Access: "a", ExpiresAt: time.Now().Add(time.Hour).UnixMilli()}); err != nil {
+	if err := Set("qwen", Credential{Type: "oauth", Access: "a", ExpiresAt: time.Now().Add(time.Hour).UnixMilli()}); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
-	src := TokenSource("claude") // alias, not the canonical id
+	src := TokenSource("qwen-code") // alias, not the canonical id
 	if src == nil {
 		t.Fatal("TokenSource returned nil for a signed-in provider")
 	}
@@ -191,18 +191,48 @@ func TestTokenSourceNilWhenSignedOut(t *testing.T) {
 
 func TestStatusForNeverLeaksTokens(t *testing.T) {
 	isolateStore(t)
-	if err := Set("github-copilot", Credential{
+	if err := Set("qwen", Credential{
 		Type: "oauth", Access: "secret-access", Refresh: "secret-refresh",
-		Account: "mike", Label: "GitHub Copilot · mike",
+		Account: "mike", Label: "Qwen · mike",
 	}); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
-	status := StatusFor("copilot")
+	status := StatusFor("qwen-code")
 	if !status.SignedIn || status.Account != "mike" {
 		t.Fatalf("StatusFor = %+v; want a signed-in status for mike", status)
 	}
-	if status.Provider != "github-copilot" {
+	if status.Provider != "qwen" {
 		t.Fatalf("StatusFor provider = %q; want the canonical id", status.Provider)
+	}
+}
+
+// Credentials for the sign-ins v0.8.1 removed (Claude Pro/Max, ChatGPT,
+// Copilot) may still sit in an oauth.json written by an older version. They
+// must read as signed out — never refreshed, never sent.
+func TestRemovedProviderCredentialsAreDropped(t *testing.T) {
+	dir := isolateStore(t)
+	raw := `{
+  "anthropic":      {"type": "oauth", "access": "a", "refresh": "r"},
+  "codex":          {"type": "oauth", "access": "a", "refresh": "r"},
+  "github-copilot": {"type": "oauth", "access": "a", "refresh": "r"},
+  "qwen":           {"type": "oauth", "access": "keep-me"}
+}`
+	if err := os.WriteFile(filepath.Join(dir, "oauth.json"), []byte(raw), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	for _, provider := range []string{"anthropic", "codex", "github-copilot"} {
+		if _, ok := Get(provider); ok {
+			t.Fatalf("removed provider %q still reads as signed in", provider)
+		}
+		if TokenSource(provider) != nil {
+			t.Fatalf("removed provider %q still yields a token source", provider)
+		}
+	}
+	if _, ok := Get("qwen"); !ok {
+		t.Fatal("surviving provider was dropped along with the removed ones")
+	}
+	if got := LoggedIn(); len(got) != 1 {
+		t.Fatalf("LoggedIn = %v; want only qwen", got)
 	}
 }
 
@@ -218,31 +248,6 @@ func TestQwenEndpointNormalization(t *testing.T) {
 	for in, want := range cases {
 		if got := qwenEndpoint(in); got != want {
 			t.Fatalf("qwenEndpoint(%q) = %q; want %q", in, got, want)
-		}
-	}
-}
-
-func TestSplitAnthropicCode(t *testing.T) {
-	cases := []struct {
-		in          string
-		code, state string
-		ok          bool
-	}{
-		{"abc#xyz", "abc", "xyz", true},
-		{"  abc#xyz  ", "abc", "xyz", true},
-		// No state means no CSRF check is possible, so it is a hard no rather
-		// than a best-effort exchange.
-		{"abc", "", "", false},
-		{"", "", "", false},
-		{"#xyz", "", "", false},
-		// Pasting the whole callback URL is a normal user mistake, not a fault.
-		{"https://console.anthropic.com/oauth/code/callback?code=abc&state=xyz", "abc", "xyz", true},
-	}
-	for _, tc := range cases {
-		code, state, ok := splitAnthropicCode(tc.in)
-		if ok != tc.ok || (ok && (code != tc.code || state != tc.state)) {
-			t.Fatalf("splitAnthropicCode(%q) = %q, %q, %v; want %q, %q, %v",
-				tc.in, code, state, ok, tc.code, tc.state, tc.ok)
 		}
 	}
 }
@@ -326,16 +331,6 @@ func TestPollDeviceCodeIgnoresTransportBlips(t *testing.T) {
 	}
 	if got.AccessToken != "ok" {
 		t.Fatalf("token = %q; want ok", got.AccessToken)
-	}
-}
-
-func TestHeadersOnlyForCopilot(t *testing.T) {
-	if got := Headers("qwen"); got != nil {
-		t.Fatalf("Headers(qwen) = %v; want nil", got)
-	}
-	got := Headers("copilot")
-	if got["Copilot-Integration-Id"] != copilotIntegration {
-		t.Fatalf("Headers(copilot) = %v; want the editor identification", got)
 	}
 }
 

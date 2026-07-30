@@ -79,8 +79,6 @@ func ResolveThinkingCapabilities(provider, modelName string) ThinkingCapabilitie
 		return cloneThinkingCapabilities(resolveGroqThinkingCapabilities(modelID))
 	case "anthropic":
 		return cloneThinkingCapabilities(resolveAnthropicThinkingCapabilities(modelID))
-	case "codex":
-		return cloneThinkingCapabilities(responsesThinkingCapabilities)
 	case "code-assist":
 		return cloneThinkingCapabilities(codeAssistThinkingCapabilities)
 	case "ollama", "lmstudio":
@@ -391,18 +389,6 @@ func resolveAnthropicThinkingCapabilities(modelID string) ThinkingCapabilities {
 		// reach.
 		return anthropicThinkingCapabilities
 	}
-}
-
-// responsesThinkingCapabilities is the ChatGPT/Codex dial. The Responses API
-// takes a real effort setting, which internal/model/responses.go passes through
-// alongside summary:auto so the thinking is visible while it happens.
-var responsesThinkingCapabilities = ThinkingCapabilities{
-	Supported: true,
-	Native:    true,
-	Levels:    []string{"off", "low", "medium", "high", "xhigh"},
-	Default:   "medium",
-	Runtime:   ThinkingRuntimeReasoningEffort,
-	Source:    "responses-reasoning-effort",
 }
 
 // codeAssistThinkingCapabilities: Gemini's knob on this path is

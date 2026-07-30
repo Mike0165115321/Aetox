@@ -11,6 +11,12 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/oauth"
 )
 
+// sseLines joins event payloads into a stream body. The blank line between
+// events is part of the framing, not decoration.
+func sseLines(events ...string) string {
+	return strings.Join(events, "\n\n") + "\n\n"
+}
+
 func codeAssistServer(t *testing.T, body string, capture func(*http.Request, []byte)) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

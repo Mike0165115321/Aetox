@@ -769,15 +769,15 @@ type ModelInfo struct {
 // in the order the picker shows them.
 //
 // It is an allowlist, so a provider added to the engine catalog is invisible in
-// the desktop until it is named here — which is exactly how the four sign-in
+// the desktop until it is named here — which is exactly how the sign-in
 // providers shipped in §61/§62 stayed missing from the UI while every test
 // passed. The sign-in group is listed first because "use the plan you already
 // pay for" is the shorter path for most people than finding an API key.
 var desktopProviders = []string{
 	// Signed into, not keyed in (internal/oauth).
-	"codex", "code-assist", "github-copilot", "qwen", "anthropic", "openrouter",
+	"code-assist", "qwen", "openrouter",
 	// API key or a local server.
-	"ollama", "lmstudio", "deepseek", "gemini", "openai", "zai", "aetox",
+	"anthropic", "ollama", "lmstudio", "deepseek", "gemini", "openai", "zai", "aetox",
 }
 
 // NewApp creates a new App application struct
@@ -1350,9 +1350,9 @@ func (a *App) HasAPIKey(providerName string) bool {
 	if !model.RequiresAPIKey(canonical) {
 		return true
 	}
-	// A signed-in provider (Copilot, Qwen, Claude Pro/Max) has no key to find
-	// and never will — asking the user for one would be asking for something
-	// that does not exist.
+	// A signed-in provider (Qwen, Code Assist) has no key to find and never
+	// will — asking the user for one would be asking for something that does
+	// not exist.
 	if oauth.Has(canonical) {
 		return true
 	}

@@ -121,8 +121,6 @@ func runImport(provider string) int {
 
 	var err error
 	switch strings.ToLower(provider) {
-	case "codex":
-		err = oauth.ImportCodexCLI()
 	case "code-assist":
 		err = oauth.ImportGeminiCLI(ctx)
 	default:
@@ -191,11 +189,8 @@ func printSignInMethods() {
 	fmt.Println("\n  * = already signed in")
 	// Only offered when there is actually something to adopt — advertising an
 	// import for a CLI the user does not have is noise.
-	if oauth.CodexCLIAvailable() {
-		fmt.Println("\n  aetox login codex --import         adopt the Codex CLI session on this machine")
-	}
 	if oauth.GeminiCLIAvailable() {
-		fmt.Println("  aetox login code-assist --import   adopt the Gemini CLI session on this machine")
+		fmt.Println("\n  aetox login code-assist --import   adopt the Gemini CLI session on this machine")
 	}
 	fmt.Println()
 }

@@ -2140,6 +2140,18 @@ Every item here passed unit tests and failed (or lied) against the real endpoint
 
 ---
 
+## 64. Decision — The Restricted Sign-Ins Come Back Out (v0.8.1, 2026-07-31)
+
+**What changed.** The Claude Pro/Max, ChatGPT (codex) and GitHub Copilot sign-ins that §61/§62 shipped are removed. §61 named the risk honestly — those three flows work by presenting another product's OAuth client against a consumer plan, the provider can switch that off without notice, and the plan's terms may not permit it — and put the call in the user's hands with a warning next to the button. v0.8.1 reverses that: the warning does not neutralize the standing risk to the user's account, and a sign-in whose safest outcome is "the provider hasn't noticed yet" is not a feature Aetox should hold open. This is the one risk in the product that lands on the *user's* account rather than on Aetox, so it goes first and alone in a release.
+
+**What stays.** Every sign-in whose terms are the provider's own to publish: OpenRouter (published PKCE flow that mints a key the user owns), Qwen (qwen-code's device flow against the user's free quota), and Gemini Code Assist (a personal Google account's free tier). Anthropic remains a provider — API key only, exactly as before §61. The `codex` and `github-copilot` providers are gone entirely, because neither has any credential path other than the removed flows; with them went the Responses runtime ([responses.go](internal/model/responses.go), codex was its only rider) and the per-block system-prompt encoding §63 documented (subscription-path only, so the API-key path is byte-for-byte what it always sent).
+
+**Stored credentials are dropped, not just orphaned.** An `oauth.json` written by 0.8.0 may still hold refresh tokens for the three removed providers. The store filters them on load ([store.go](internal/oauth/store.go) `removedProviders`), so they are never read, never refreshed, never sent — and the next write purges them from disk. `TestRemovedProviderCredentialsAreDropped` holds that line.
+
+**What §61 got right survives.** The `TokenSource`-per-request seam, the risk field on every method, the 0600 write-then-rename store, and the live sign-in smoke tests all remain — they serve the three flows that stay.
+
+---
+
 ## Validation
 
 1. **Claim traceability:** every claim above cites a file or an existing project doc; the two `Unverified`/`Inferred, Verify first: Yes` items are marked as such, not stated as fact.

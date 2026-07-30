@@ -370,7 +370,7 @@ func TestDiscoverAnthropicModelsPaginates(t *testing.T) {
 	}))
 	defer server.Close()
 
-	models, err := DiscoverAnthropicModels(context.Background(), "anthropic", server.URL, "sk-ant-key", nil)
+	models, err := DiscoverAnthropicModels(context.Background(), "anthropic", server.URL, "sk-ant-key")
 	if err != nil {
 		t.Fatalf("DiscoverAnthropicModels: %v", err)
 	}
@@ -382,27 +382,6 @@ func TestDiscoverAnthropicModelsPaginates(t *testing.T) {
 	}
 	if gotAuth != "sk-ant-key" || gotVersion != anthropicAPIVersion {
 		t.Fatalf("auth = %q, version = %q", gotAuth, gotVersion)
-	}
-}
-
-func TestDiscoverAnthropicModelsUsesTheSignInWhenThereIsOne(t *testing.T) {
-	var gotAuth, gotAPIKey, gotBeta string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotAuth = r.Header.Get("Authorization")
-		gotAPIKey = r.Header.Get("x-api-key")
-		gotBeta = r.Header.Get("anthropic-beta")
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"data":[{"id":"claude-x"}],"has_more":false}`))
-	}))
-	defer server.Close()
-
-	models, err := DiscoverAnthropicModels(context.Background(), "anthropic", server.URL, "",
-		func(context.Context) (string, error) { return "oat-token", nil })
-	if err != nil || len(models) != 1 {
-		t.Fatalf("models = %v, err = %v", models, err)
-	}
-	if gotAuth != "Bearer oat-token" || gotAPIKey != "" || gotBeta == "" {
-		t.Fatalf("subscription path sent Authorization=%q x-api-key=%q beta=%q", gotAuth, gotAPIKey, gotBeta)
 	}
 }
 
@@ -456,7 +435,7 @@ func TestAnthropicThinkingUsesEffortNotBudget(t *testing.T) {
 	payload, err := buildAnthropicRequest("anthropic", "claude-sonnet-5", Request{
 		Messages:  []Message{{Role: RoleUser, Content: "hi"}},
 		Reasoning: &ReasoningConfig{Effort: "xhigh"},
-	}, false, false)
+	}, false)
 	if err != nil {
 		t.Fatalf("buildAnthropicRequest: %v", err)
 	}
@@ -492,7 +471,7 @@ func TestAnthropicOmitsTemperatureButOtherProvidersKeepIt(t *testing.T) {
 		Reasoning:   &ReasoningConfig{Effort: "high"},
 	}
 
-	claude, err := buildAnthropicRequest("anthropic", "claude-sonnet-5", req, false, false)
+	claude, err := buildAnthropicRequest("anthropic", "claude-sonnet-5", req, false)
 	if err != nil {
 		t.Fatalf("buildAnthropicRequest: %v", err)
 	}
@@ -504,7 +483,7 @@ func TestAnthropicOmitsTemperatureButOtherProvidersKeepIt(t *testing.T) {
 	// DeepSeek only borrows this wire format and still honors temperature —
 	// dropping it there would be a silent behavior change for a provider that
 	// never had the problem.
-	deepseek, err := buildAnthropicRequest("deepseek", "deepseek-v4-flash", req, false, false)
+	deepseek, err := buildAnthropicRequest("deepseek", "deepseek-v4-flash", req, false)
 	if err != nil {
 		t.Fatalf("buildAnthropicRequest: %v", err)
 	}
@@ -519,7 +498,7 @@ func TestAnthropicThinkingOff(t *testing.T) {
 		Thinking: &ThinkingConfig{Type: "disabled"},
 	}
 
-	payload, err := buildAnthropicRequest("anthropic", "claude-sonnet-5", off, false, false)
+	payload, err := buildAnthropicRequest("anthropic", "claude-sonnet-5", off, false)
 	if err != nil {
 		t.Fatalf("buildAnthropicRequest: %v", err)
 	}
@@ -532,7 +511,7 @@ func TestAnthropicThinkingOff(t *testing.T) {
 
 	// Fable-class models think unconditionally and reject an explicit disable,
 	// so "off" there has to mean sending no thinking field at all.
-	fable, err := buildAnthropicRequest("anthropic", "claude-fable-5", off, false, false)
+	fable, err := buildAnthropicRequest("anthropic", "claude-fable-5", off, false)
 	if err != nil {
 		t.Fatalf("buildAnthropicRequest: %v", err)
 	}
