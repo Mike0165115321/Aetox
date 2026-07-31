@@ -161,6 +161,8 @@ export namespace main {
 	    url?: string;
 	    environment?: Record<string, string>;
 	    headers?: Record<string, string>;
+	    cwd?: string;
+	    timeoutMs?: number;
 	    disabled: boolean;
 	    status: string;
 	    tools: number;
@@ -177,6 +179,8 @@ export namespace main {
 	        this.url = source["url"];
 	        this.environment = source["environment"];
 	        this.headers = source["headers"];
+	        this.cwd = source["cwd"];
+	        this.timeoutMs = source["timeoutMs"];
 	        this.disabled = source["disabled"];
 	        this.status = source["status"];
 	        this.tools = source["tools"];

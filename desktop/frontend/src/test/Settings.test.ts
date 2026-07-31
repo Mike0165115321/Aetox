@@ -8,6 +8,7 @@ import {
   SignInMethods, SignInStatus, StartSignIn, CompleteSignIn, SupportedProviders, EnabledProviders,
   RemoveMCPServer, RemoveExternalSkill, SetProviderEnabled, TerminalShells,
   SkillsDir, SkillScanIssues, OpenSkillsFolder, InstallSkillFromZip,
+  MCPConfigPath, OpenMCPFolder, SaveMCPServer,
 } from './mocks/wailsApp'
 import { applyTypeScale } from '../lib/typeScale.svelte'
 import { cockpit } from '../lib/stores/cockpit.svelte'
@@ -1006,5 +1007,92 @@ describe('Skills page — zip install', () => {
     await fireEvent.click(screen.getByText('เลือกไฟล์ zip…'))
     await waitFor(() => expect(container.querySelector('.mset-error')).toBeTruthy())
     expect(container.querySelector('.mset-error')?.textContent).toContain('evil.txt')
+  })
+})
+
+// Four things the MCP page knew and did not say.
+describe('MCP servers page', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(MCPConfigPath).mockResolvedValue('C:/Users/x/AppData/Roaming/aetox/mcp-servers.json' as any)
+  })
+
+  const openMcp = async (container: HTMLElement) => {
+    await openSection(container, 'MCP servers')
+    await waitFor(() => expect(screen.getByText('2 เครื่องมือ')).toBeTruthy())
+  }
+
+  it('shows the file the servers are persisted to, and opens it', async () => {
+    const { container } = render(Settings, { onClose: () => {} })
+    await openMcp(container)
+
+    expect(screen.getByText('C:/Users/x/AppData/Roaming/aetox/mcp-servers.json')).toBeTruthy()
+    await fireEvent.click(screen.getByText('เปิดโฟลเดอร์'))
+    expect(vi.mocked(OpenMCPFolder)).toHaveBeenCalled()
+  })
+
+  // Two of the three colours here were --c-green-500 and --c-red-500 copied by
+  // value, so the dot stayed dark-theme green under a light theme.
+  it('paints the status dot from theme tokens, not hex literals', async () => {
+    const { container } = render(Settings, { onClose: () => {} })
+    await openMcp(container)
+
+    const dots = Array.from(container.querySelectorAll('.set-row .dot'))
+      .map((d) => d.getAttribute('style') ?? '')
+    expect(dots.length).toBeGreaterThan(0)
+    for (const style of dots) {
+      expect(style).toMatch(/var\(--/)
+      expect(style).not.toMatch(/#[0-9a-f]{3,6}/i)
+    }
+  })
+
+  // A preset that needs a key used to be written to disk without one, so the
+  // click produced a server that could never connect.
+  it('hands a key-needing preset to the form instead of saving it broken', async () => {
+    const { container } = render(Settings, { onClose: () => {} })
+    await openMcp(container)
+
+    const exaRow = Array.from(container.querySelectorAll('.set-row'))
+      .find((r) => r.textContent?.includes('Web search'))!
+    await fireEvent.click(exaRow.querySelector('button')!)
+
+    expect(vi.mocked(SaveMCPServer)).not.toHaveBeenCalled()
+    // The header it needs is already named; only the key is missing.
+    const headers = container.querySelector('.mcp-lines') as HTMLTextAreaElement
+    expect(headers.value).toContain('x-api-key:')
+    expect(container.textContent).toContain('ยังไม่มีอะไรถูกบันทึก')
+  })
+
+  it('adds a preset that needs nothing straight away', async () => {
+    const { container } = render(Settings, { onClose: () => {} })
+    await openMcp(container)
+
+    const row = Array.from(container.querySelectorAll('.set-row'))
+      .find((r) => r.textContent?.includes('Knowledge-graph memory'))!
+    await fireEvent.click(row.querySelector('button')!)
+    await waitFor(() => expect(vi.mocked(SaveMCPServer)).toHaveBeenCalled())
+  })
+
+  // Both fields were in the stored config from the start with no way to reach
+  // them, so editing a server silently dropped whatever was set.
+  it('round-trips the working directory and timeout', async () => {
+    vi.mocked(ListMCPServers).mockResolvedValue([
+      { name: 'local', command: ['node', 'server.js'], cwd: 'D:/work', timeoutMs: 45000, disabled: false, status: 'connected', tools: 2 },
+    ] as any)
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'MCP servers')
+    await waitFor(() => expect(screen.getByText('local')).toBeTruthy())
+
+    const row = Array.from(container.querySelectorAll('.set-row')).find((r) => r.textContent?.includes('local'))!
+    await fireEvent.click(Array.from(row.querySelectorAll('button')).find((b) => b.textContent?.trim() === 'แก้ไข')!)
+
+    const inputs = Array.from(container.querySelectorAll('.mcp-more-body input')) as HTMLInputElement[]
+    expect(inputs.map((i) => i.value)).toEqual(['D:/work', '45000'])
+
+    await fireEvent.click(screen.getByText('บันทึก'))
+    await waitFor(() => expect(vi.mocked(SaveMCPServer)).toHaveBeenCalled())
+    const saved = vi.mocked(SaveMCPServer).mock.calls.at(-1)![1] as any
+    expect(saved.cwd).toBe('D:/work')
+    expect(saved.timeoutMs).toBe(45000)
   })
 })

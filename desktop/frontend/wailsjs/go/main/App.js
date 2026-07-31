@@ -206,12 +206,20 @@ export function LoadSessionAnyProject(arg1) {
   return window['go']['main']['App']['LoadSessionAnyProject'](arg1);
 }
 
+export function MCPConfigPath() {
+  return window['go']['main']['App']['MCPConfigPath']();
+}
+
 export function ModelStatus() {
   return window['go']['main']['App']['ModelStatus']();
 }
 
 export function NewSession() {
   return window['go']['main']['App']['NewSession']();
+}
+
+export function OpenMCPFolder() {
+  return window['go']['main']['App']['OpenMCPFolder']();
 }
 
 export function OpenProjectFolder() {

@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -95,10 +97,15 @@ type MCPServerInfo struct {
 	URL         string            `json:"url,omitempty"`
 	Environment map[string]string `json:"environment,omitempty"`
 	Headers     map[string]string `json:"headers,omitempty"`
-	Disabled    bool              `json:"disabled"`
-	Status      string            `json:"status"` // idle | connected | failed | disabled
-	Tools       int               `json:"tools"`  // tools seen on the last successful connect
-	Err         string            `json:"err,omitempty"`
+	// Cwd and TimeoutMs round-trip through the settings form. They were in the
+	// stored config from the start but not in this shape, so the form could not
+	// show them and editing a server silently dropped whatever was set.
+	Cwd       string `json:"cwd,omitempty"`
+	TimeoutMs int    `json:"timeoutMs,omitempty"`
+	Disabled  bool   `json:"disabled"`
+	Status    string `json:"status"` // idle | connected | failed | disabled
+	Tools     int    `json:"tools"`  // tools seen on the last successful connect
+	Err       string `json:"err,omitempty"`
 }
 
 // ListMCPServers returns the persisted servers with live status from the active
@@ -117,6 +124,8 @@ func (a *App) ListMCPServers() []MCPServerInfo {
 			URL:         s.URL,
 			Environment: s.Environment,
 			Headers:     s.Headers,
+			Cwd:         s.Cwd,
+			TimeoutMs:   s.TimeoutMs,
 			Disabled:    s.Disabled,
 			Status:      string(mcp.StatusIdle),
 		}
@@ -132,6 +141,35 @@ func (a *App) ListMCPServers() []MCPServerInfo {
 		out = append(out, info)
 	}
 	return out
+}
+
+// MCPConfigPath is the file the servers are persisted to, for the page to show.
+//
+// Read from config rather than written into the UI's strings, for the same
+// reason SkillsDir is: a path the page states on its own authority is a path
+// that can drift from the one actually used, which is exactly what had
+// happened on the Skills page.
+func (a *App) MCPConfigPath() string {
+	path, err := config.MCPServersPath()
+	if err != nil {
+		return ""
+	}
+	return path
+}
+
+// OpenMCPFolder reveals the folder holding mcp-servers.json, so a server that
+// will not connect can be inspected or backed up by hand — the same affordance
+// the prompts, sub-agents and skills pages have.
+func (a *App) OpenMCPFolder() error {
+	path, err := config.MCPServersPath()
+	if err != nil {
+		return err
+	}
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	return openInFileManager(dir)
 }
 
 // AddMCPServer persists a new local stdio server (name + argv). Kept as the

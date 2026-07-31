@@ -21,6 +21,7 @@
     ListMCPServers, SaveMCPServer, RemoveMCPServer, TestMCPServer, ToggleMCPServer,
     ListExternalSkills, ListTools, InstallSkillFromGitHub, RemoveExternalSkill, RefreshSkills,
     SkillsDir, SkillScanIssues, OpenSkillsFolder, InstallSkillFromZip,
+    MCPConfigPath, OpenMCPFolder,
     ListSpeechModels, SetSpeechModel, SpeechStatus, RevealSpeechModel, SpeechModelDirs, OpenSpeechModelDir,
     UsageStats, ListPromptPresets, OpenPromptsFolder,
     SavePromptPreset, DeletePromptPreset, PickPresetImage, RemovePresetImage,
@@ -436,6 +437,7 @@
   type MCPRow = {
     name: string; command?: string[]; url?: string
     environment?: Record<string, string>; headers?: Record<string, string>
+    cwd?: string; timeoutMs?: number
     disabled: boolean; status: string; tools: number; err?: string
   }
   let mcpServers = $state<MCPRow[]>([])
@@ -452,6 +454,16 @@
   let mcpUrl = $state('')
   let mcpEnvText = $state('')
   let mcpHeadersText = $state('')
+  // Both were in the stored config all along with no field to reach them, so a
+  // server needing a working directory or a slower start could only be set up
+  // by editing the JSON — which the page did not say the location of either.
+  let mcpCwd = $state('')
+  let mcpTimeout = $state('')
+  // Set when a preset was handed to the form because it needs a key, so the
+  // form can say why it opened instead of just appearing.
+  let mcpNeedsKey = $state(false)
+  // Where the servers are persisted. From the engine, not written here.
+  let mcpPath = $state('')
 
   const mcpFiltered = $derived(mcpServers.filter((s) => {
     const q = mcpQuery.trim().toLowerCase()
@@ -467,6 +479,7 @@
 
   async function loadMCP() {
     mcpServers = await ListMCPServers()
+    mcpPath = await MCPConfigPath()
   }
 
   async function runMCP(label: string, fn: () => Promise<void>) {
@@ -505,6 +518,9 @@
     mcpUrl = ''
     mcpEnvText = ''
     mcpHeadersText = ''
+    mcpCwd = ''
+    mcpTimeout = ''
+    mcpNeedsKey = false
   }
 
   function editMCP(s: MCPRow) {
@@ -515,6 +531,9 @@
     mcpUrl = s.url ?? ''
     mcpEnvText = mapToLines(s.environment, '=')
     mcpHeadersText = mapToLines(s.headers, ': ')
+    mcpCwd = s.cwd ?? ''
+    mcpTimeout = s.timeoutMs ? String(s.timeoutMs) : ''
+    mcpNeedsKey = false
     mcpError = ''
   }
 
@@ -525,6 +544,9 @@
       url: mcpKind === 'http' ? mcpUrl.trim() : '',
       environment: mcpKind === 'stdio' ? parseLines(mcpEnvText, '=') : {},
       headers: mcpKind === 'http' ? parseLines(mcpHeadersText, ':') : {},
+      cwd: mcpCwd.trim(),
+      // A blank box means "no override", which is 0 — not a timeout of zero.
+      timeoutMs: Number.parseInt(mcpTimeout, 10) > 0 ? Number.parseInt(mcpTimeout, 10) : 0,
     })
     await SaveMCPServer(mcpOriginal, server)
     resetMCPForm()
@@ -555,26 +577,48 @@
 
   // Curated quick-adds; every package name verified against the npm registry
   // (or, for URLs, the provider's published MCP endpoint) before listing.
-  const mcpPresets: { name: string; desc: string; command?: string[]; url?: string }[] = [
+  // `headers` names what the server cannot work without. A preset that needs a
+  // key used to be saved straight to disk with none, so one click produced a
+  // server that could never connect and the page never said which header it
+  // wanted — it knew, and did not tell.
+  const mcpPresets: { name: string; desc: string; command?: string[]; url?: string; headers?: string[] }[] = [
     { name: 'context7', desc: 'Up-to-date library docs', command: ['npx', '-y', '@upstash/context7-mcp'] },
     { name: 'sequential-thinking', desc: 'Step-by-step reasoning scratchpad', command: ['npx', '-y', '@modelcontextprotocol/server-sequential-thinking'] },
     { name: 'memory', desc: 'Knowledge-graph memory', command: ['npx', '-y', '@modelcontextprotocol/server-memory'] },
     { name: 'js-repl', desc: 'Run JavaScript/Node code', command: ['npx', '-y', 'mcp-repl'] },
-    { name: 'exa', desc: 'Web search (needs API key header)', url: 'https://mcp.exa.ai/mcp' },
+    { name: 'exa', desc: 'Web search', url: 'https://mcp.exa.ai/mcp', headers: ['x-api-key'] },
   ]
 
   const presetTaken = (name: string) => mcpServers.some((s) => s.name.toLowerCase() === name.toLowerCase())
 
   const addPreset = (p: (typeof mcpPresets)[number]) => runMCP('preset:' + p.name, async () => {
+    if (p.headers?.length) {
+      // Hand it to the form with the header names already in, rather than
+      // saving something that cannot connect. Nothing is written until the key
+      // is pasted and Save is pressed.
+      resetMCPForm()
+      mcpKind = p.url ? 'http' : 'stdio'
+      mcpName = p.name
+      mcpUrl = p.url ?? ''
+      mcpCommand = (p.command ?? []).join(' ')
+      mcpHeadersText = p.headers.map((h) => `${h}: `).join('\n')
+      mcpNeedsKey = true
+      return
+    }
     await SaveMCPServer('', new config.MCPServerConfig({
       name: p.name, command: p.command ?? [], url: p.url ?? '',
     }))
     await loadMCP()
   })
 
-  function statusColor(status: string): string {
-    const c = status === 'connected' ? '#3fb950' : status === 'failed' ? '#f85149' : '#8b949e'
-    return `background:${c}`
+  // Colours come from the theme, not from three hex literals. theme.css states
+  // that every rule references only semantic tokens, and two of the three that
+  // were here were --c-green-500 and --c-red-500 copied by value — so the dot
+  // stayed dark-theme green on a light theme.
+  function statusVar(status: string): string {
+    if (status === 'connected') return 'background:var(--status-success)'
+    if (status === 'failed') return 'background:var(--status-danger)'
+    return 'background:var(--text-dim)'
   }
 
   // ---------- Skills (discovered SKILL.md + plugin install) ----------
@@ -2606,19 +2650,28 @@
       <p class="muted set-sub">{t('settings.mcpDesc')}</p>
 
       <div class="settings-card">
-        {#if mcpServers.length > 3}
-          <div class="card-form">
-            <input class="ctrl" placeholder={t('settings.mcpSearchPlaceholder')} bind:value={mcpQuery} />
+        <div class="card-form">
+          <div class="mset-keyrow">
+            <div class="eyebrow eyebrow-grow">{t('settings.mcpConfigured')}</div>
+            <button class="ctrl" disabled={mcpBusy !== ''} onclick={() => OpenMCPFolder()}>
+              {t('settings.skillsFolder')}
+            </button>
           </div>
-        {/if}
+          <!-- The file the servers live in. A server that will not connect is
+               inspectable and backup-able only if this is findable. -->
+          <div class="d mono-dim">{mcpPath}</div>
+          {#if mcpServers.length > 3}
+            <input class="ctrl" placeholder={t('settings.mcpSearchPlaceholder')} bind:value={mcpQuery} />
+          {/if}
+        </div>
         {#if mcpServers.length === 0}
-          <div class="muted">{t('settings.noMcpServers')}</div>
+          <div class="set-row"><div class="muted">{t('settings.noMcpServers')}</div></div>
         {:else}
           {#each mcpFiltered as s (s.name)}
             <div class="set-row" class:mcp-off={s.disabled}>
               <div class="set-txt">
                 <div class="t">
-                  <span class="dot" style={statusColor(s.status)}></span> {s.name}
+                  <span class="dot" style={statusVar(s.status)}></span> {s.name}
                   <span class="mcp-badge">{s.url ? 'http' : 'stdio'}</span>
                   {#if s.tools > 0}<span class="mcp-badge">{t('settings.mcpToolCount', { n: String(s.tools) })}</span>{/if}
                 </div>
@@ -2664,14 +2717,39 @@
             <textarea class="ctrl mcp-lines" rows="2" placeholder={t('settings.mcpHeadersPlaceholder')} bind:value={mcpHeadersText}></textarea>
           {/if}
 
+          <!-- Both fields the stored config always had and the form never
+               offered. Folded away because the common server needs neither. -->
+          <details class="mcp-more">
+            <summary>{t('settings.mcpAdvanced')}</summary>
+            <div class="mcp-more-body">
+              <label class="pp-field">
+                <span class="eyebrow">{t('settings.mcpCwd')}</span>
+                <input class="ctrl" placeholder={t('settings.mcpCwdPlaceholder')} bind:value={mcpCwd} />
+              </label>
+              <label class="pp-field">
+                <span class="eyebrow">{t('settings.mcpTimeout')}</span>
+                <div class="mset-keyrow">
+                  <input class="ctrl set-num" inputmode="numeric" placeholder="0" bind:value={mcpTimeout} />
+                  <span class="muted set-unit">ms</span>
+                </div>
+                <span class="d muted">{t('settings.mcpTimeoutHint')}</span>
+              </label>
+            </div>
+          </details>
+
           <div class="mset-keyrow">
             <button class="ctrl ctrl-primary" disabled={mcpBusy !== '' || !mcpFormValid} onclick={saveMCP}>
               {mcpBusy === 'save' ? t('settings.saving') : (mcpOriginal ? t('settings.save') : t('settings.add'))}
             </button>
-            {#if mcpOriginal}
+            {#if mcpOriginal || mcpNeedsKey}
               <button class="ctrl" disabled={mcpBusy !== ''} onclick={resetMCPForm}>{t('settings.cancel')}</button>
             {/if}
           </div>
+          {#if mcpNeedsKey}
+            <!-- Says why the form filled itself in. Without it the preset's
+                 button appears to have done nothing. -->
+            <div class="d muted">{t('settings.mcpNeedsKey', { name: mcpName })}</div>
+          {/if}
           {#if mcpError}<div class="mset-error">{mcpError}</div>{/if}
         </div>
       </div>

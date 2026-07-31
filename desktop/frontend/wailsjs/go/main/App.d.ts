@@ -110,9 +110,13 @@ export function LoadSession(arg1:string):Promise<Array<main.SessionMessage>>;
 
 export function LoadSessionAnyProject(arg1:string):Promise<Array<main.SessionMessage>>;
 
+export function MCPConfigPath():Promise<string>;
+
 export function ModelStatus():Promise<string>;
 
 export function NewSession():Promise<string>;
+
+export function OpenMCPFolder():Promise<void>;
 
 export function OpenProjectFolder():Promise<main.ProjectStatus>;
 

@@ -1592,3 +1592,9 @@ button.ctrl, label.ctrl { display:inline-flex; align-items:center; justify-conte
 /* The zip row sits under the GitHub form as an alternative, not a second form:
    a rule above it says "or", and its hint carries the weight the URL box has. */
 .skill-zip { margin-top:12px; padding-top:12px; border-top:1px solid var(--border-subtle); }
+
+/* Cwd and timeout, folded away: the common server needs neither, and putting
+   them in the main flow would make every add look more complicated than it is. */
+.mcp-more > summary { cursor:pointer; font-size:var(--fs-sm); color:var(--text-muted); padding:2px 0; }
+.mcp-more > summary:hover { color:var(--text-primary); }
+.mcp-more-body { display:flex; flex-direction:column; gap:12px; padding:10px 0 2px; }
