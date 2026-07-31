@@ -26,12 +26,6 @@ const (
 	RuntimeOpenAICompatible Runtime = "openai-compatible"
 	RuntimeOllama           Runtime = "ollama"
 	RuntimeAnthropic        Runtime = "anthropic"
-	// RuntimeCodeAssist is Google's private Code Assist surface: the standard
-	// Gemini generateContent body wrapped in an envelope that adds the account's
-	// project id. It is what a personal Google account's free tier is served
-	// through, and it is not the same thing as the "gemini" provider, which is
-	// the public API-key endpoint speaking the OpenAI-compatible shape.
-	RuntimeCodeAssist Runtime = "code-assist"
 )
 
 // ModelDefaults holds the static fallback model names for a provider.
@@ -158,33 +152,10 @@ var catalog = map[string]*entry{
 		modelDefaults:  ModelDefaults{FallbackModel: "gpt-4o-mini"},
 		capabilities:   Capabilities{ToolCalling: true, Reasoning: true},
 	},
-	// code-assist is a personal Google account's free Gemini tier. Separate
-	// from "gemini": a different host, different credentials, and a plan
-	// instead of a bill.
-	"code-assist": {
-		canonical:      "code-assist",
-		aliases:        []string{"code-assist", "gemini-code-assist", "codeassist", "gemini-oauth", "gemini-google"},
-		requiresAPIKey: true,
-		runtime:        RuntimeCodeAssist,
-		baseURL:        "https://cloudcode-pa.googleapis.com/v1internal",
-		envKeys:        nil,
-		// The one place a written list survives: Code Assist's
-		// :fetchAvailableModels answers 403 PERMISSION_DENIED on the free tier,
-		// so there is no list to ask for. Verified live 2026-07-29.
-		modelDefaults: ModelDefaults{
-			FallbackModel: "gemini-2.5-pro",
-			RecommendedModels: []string{
-				"gemini-2.5-pro",
-				"gemini-2.5-flash",
-				"gemini-3-pro-preview",
-				"gemini-3-flash-preview",
-			},
-		},
-		capabilities: Capabilities{ToolCalling: true, Reasoning: true},
-	},
-	// qwen's real endpoint is whatever the sign-in hands back as resource_url;
-	// this base URL is the fallback for an API-key login and for first-run
-	// display before anyone has signed in.
+	// API key only since v0.8.1 (§65): the qwen-code device flow that used to
+	// stand behind this entry never completed a sign-in and is gone. DashScope's
+	// OpenAI-compatible endpoint is the only path left, so it is a fixed base
+	// URL again rather than one the login hands back.
 	"qwen": {
 		canonical:      "qwen",
 		aliases:        []string{"qwen", "qwen-code", "dashscope", "tongyi"},

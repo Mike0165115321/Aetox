@@ -378,8 +378,8 @@ func DiscoverOpenAICompatibleModels(p, baseURL, apiKey string) ([]string, error)
 
 	endpoint := strings.TrimSpace(baseURL)
 	if endpoint == "" {
-		// A signed-in account may be served from its own host (Qwen), which is
-		// only known after login and so cannot live in the catalog.
+		// A signed-in account may be served from its own host, which is only
+		// known after login and so cannot live in the catalog.
 		endpoint = oauth.Endpoint(p)
 	}
 	if endpoint == "" {
@@ -401,9 +401,9 @@ func DiscoverOpenAICompatibleModels(p, baseURL, apiKey string) ([]string, error)
 		return nil, err
 	}
 	if apiKey == "" {
-		// Signed-in providers (Qwen) reach discovery with no key at all —
-		// without this the model picker is empty for exactly the providers
-		// whose model list the user cannot guess.
+		// Signed-in providers reach discovery with no key at all — without this
+		// the model picker is empty for exactly the providers whose model list
+		// the user cannot guess.
 		if token, tokenErr := oauth.Token(ctx, p); tokenErr == nil {
 			apiKey = token
 		}

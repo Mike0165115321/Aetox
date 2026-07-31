@@ -72,9 +72,9 @@ func randomString(n int) (string, error) {
 var httpClient = &http.Client{Timeout: 30 * time.Second}
 
 // clientUserAgent identifies Aetox to authorization servers. Not cosmetic:
-// Qwen's edge answers Go's default "Go-http-client/1.1" with an HTML block
-// page, which surfaced as "invalid character '<'" on an endpoint that works
-// fine from curl. Anything that names a client gets through.
+// some edges answer Go's default "Go-http-client/1.1" with an HTML block page,
+// which surfaces as "invalid character '<'" on an endpoint that works fine
+// from curl. Anything that names a client gets through.
 const clientUserAgent = "Aetox"
 
 // readJSON decodes a successful response, or turns a non-2xx into an error
@@ -102,11 +102,8 @@ type tokenResponse struct {
 	RefreshToken string `json:"refresh_token"`
 	ExpiresIn    int64  `json:"expires_in"`
 	TokenType    string `json:"token_type"`
-	// ResourceURL is Qwen's: the account's own inference host, handed over at
-	// login rather than fixed in a catalog.
-	ResourceURL string `json:"resource_url"`
-	Error       string `json:"error"`
-	ErrorDesc   string `json:"error_description"`
+	Error        string `json:"error"`
+	ErrorDesc    string `json:"error_description"`
 }
 
 func (t tokenResponse) expiresAt() int64 {

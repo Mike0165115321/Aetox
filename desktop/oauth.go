@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/oauth"
@@ -148,32 +147,19 @@ func (a *App) CancelSignIn(providerName string) {
 // ImportableSignIns lists providers whose official CLI already holds a session
 // on this machine, so Settings can offer "use the one you have" instead of a
 // second authorization for the same account.
+//
+// Empty since §66: the Gemini CLI was the last tool Aetox read a session from,
+// and adopting another product's credential file only ever made sense for the
+// borrowed-client sign-ins that are now gone. The seam stays because it is the
+// UI's contract — Settings hides the button on an empty list.
 func (a *App) ImportableSignIns() []string {
-	var out []string
-	if oauth.GeminiCLIAvailable() {
-		out = append(out, "code-assist")
-	}
-	return out
+	return nil
 }
 
 // ImportSignIn adopts that existing session. Explicit action only — the button
 // says which tool it is reading from.
 func (a *App) ImportSignIn(providerName string) (ModelInfo, error) {
-	canonical := model.NormalizeProvider(providerName)
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
-	var err error
-	switch canonical {
-	case "code-assist":
-		err = oauth.ImportGeminiCLI(ctx)
-	default:
-		return ModelInfo{}, fmt.Errorf("%s has no session to import", canonical)
-	}
-	if err != nil {
-		return ModelInfo{}, err
-	}
-	return a.reloadAfterCredentialChange(canonical)
+	return ModelInfo{}, fmt.Errorf("%s has no session to import", model.NormalizeProvider(providerName))
 }
 
 // SignOut forgets a provider's credential. If it was the active provider the
@@ -189,7 +175,7 @@ func (a *App) SignOut(providerName string) (ModelInfo, error) {
 }
 
 // reloadAfterCredentialChange re-bootstraps only when the change touches the
-// provider in use — signing into Qwen while running on Ollama should not
+// provider in use — signing into OpenRouter while running on Ollama should not
 // restart anything.
 func (a *App) reloadAfterCredentialChange(canonical string) (ModelInfo, error) {
 	if strings.EqualFold(model.NormalizeProvider(a.cfg.ModelProvider), canonical) {

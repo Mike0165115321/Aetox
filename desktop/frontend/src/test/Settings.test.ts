@@ -82,23 +82,44 @@ beforeEach(() => {
   vi.mocked(ListModelsForProvider).mockResolvedValue(['deepseek-v4', 'deepseek-chat'] as any)
 })
 
-// A provider you sign into rather than paste a key for. Qwen is the device
-// flow: Aetox shows a code, the user types it into the provider's page.
-const seedQwenSignIn = () => {
-  vi.mocked(SupportedProviders).mockResolvedValue(['qwen'] as any)
-  vi.mocked(EnabledProviders).mockResolvedValue(['qwen'] as any)
+// A provider you sign into rather than paste a key for. OpenRouter is the only
+// one Aetox ships (§66) and it is the browser flow: Aetox opens the provider's
+// page and waits for the redirect.
+const seedSignIn = (method: Record<string, unknown> = {}, prompt: Record<string, unknown> = {}) => {
+  const provider = (method.provider as string) ?? 'openrouter'
+  vi.mocked(SupportedProviders).mockResolvedValue([provider] as any)
+  vi.mocked(EnabledProviders).mockResolvedValue([provider] as any)
   vi.mocked(SignInMethods).mockResolvedValue([{
-    provider: 'qwen', label: 'Qwen', kind: 'device',
-    risk: 'restricted', note: "Signs in through the qwen-code CLI's OAuth client.",
+    provider, label: 'OpenRouter', kind: 'browser', risk: 'open',
+    note: 'Published OAuth flow. Mints an API key you own and can revoke.',
+    ...method,
   }] as any)
-  vi.mocked(SignInStatus).mockResolvedValue({ provider: 'qwen', signed_in: false } as any)
+  vi.mocked(SignInStatus).mockResolvedValue({ provider, signed_in: false } as any)
   vi.mocked(StartSignIn).mockResolvedValue({
-    provider: 'qwen', kind: 'device',
-    url: 'https://chat.qwen.ai/authorize',
-    verification_uri: 'https://chat.qwen.ai/authorize',
-    user_code: 'ABCD-1234',
+    provider, kind: 'browser', url: 'https://openrouter.ai/auth',
+    ...prompt,
   } as any)
 }
+
+// Two kinds of method the UI still draws that no shipped sign-in produces any
+// more: the device code (Qwen was the last, §65) and the restricted-risk
+// warning (Code Assist was the last, §66). Both branches are the contract a
+// future sign-in arrives into, so they keep their coverage on a synthetic
+// method rather than losing it with the provider that used to supply one.
+const seedDeviceSignIn = () => seedSignIn(
+  { provider: 'example-device', label: 'Example', kind: 'device' },
+  {
+    provider: 'example-device', kind: 'device',
+    url: 'https://example.test/activate',
+    verification_uri: 'https://example.test/activate',
+    user_code: 'ABCD-1234',
+  },
+)
+
+const seedRestrictedSignIn = () => seedSignIn(
+  { provider: 'example-restricted', label: 'Example', risk: 'restricted' },
+  { provider: 'example-restricted', url: 'https://example.test/authorize' },
+)
 
 const openSection = async (container: HTMLElement, label: string) => {
   const item = Array.from(container.querySelectorAll('.settings-nav-item'))
@@ -493,7 +514,7 @@ describe('Settings pages', () => {
   // must still be reachable, and the code has to be on screen while Aetox
   // waits for the provider to say yes.
   it('a sign-in provider shows its device code and waits for approval', async () => {
-    seedQwenSignIn()
+    seedDeviceSignIn()
     // Hangs on purpose: the real call blocks until the user approves, which is
     // exactly the window the code has to stay readable.
     vi.mocked(CompleteSignIn).mockImplementation(() => new Promise(() => {}))
@@ -501,18 +522,18 @@ describe('Settings pages', () => {
     const { container } = render(Settings, { onClose: () => {} })
     await openSection(container, 'การตั้งค่าโมเดล')
 
-    const signInButton = await screen.findByText('เข้าสู่ระบบด้วย Qwen')
+    const signInButton = await screen.findByText('เข้าสู่ระบบด้วย Example')
     await fireEvent.click(signInButton)
 
     await waitFor(() => expect(screen.getByText('ABCD-1234')).toBeTruthy())
-    expect(vi.mocked(StartSignIn)).toHaveBeenCalledWith('qwen')
-    expect(vi.mocked(CompleteSignIn)).toHaveBeenCalledWith('qwen', '')
+    expect(vi.mocked(StartSignIn)).toHaveBeenCalledWith('example-device')
+    expect(vi.mocked(CompleteSignIn)).toHaveBeenCalledWith('example-device', '')
   })
 
   // Reusing another product's OAuth client can get an account cut off, so the
   // warning belongs next to the button, not in the docs.
   it('a restricted sign-in warns before the user commits', async () => {
-    seedQwenSignIn()
+    seedRestrictedSignIn()
     const { container } = render(Settings, { onClose: () => {} })
     await openSection(container, 'การตั้งค่าโมเดล')
 
@@ -520,16 +541,16 @@ describe('Settings pages', () => {
   })
 
   it('an already signed-in provider offers sign-out instead of sign-in', async () => {
-    seedQwenSignIn()
+    seedSignIn()
     vi.mocked(SignInStatus).mockResolvedValue({
-      provider: 'qwen', signed_in: true, label: 'Qwen · mike', account: 'mike',
+      provider: 'openrouter', signed_in: true, label: 'OpenRouter · mike', account: 'mike',
     } as any)
 
     const { container } = render(Settings, { onClose: () => {} })
     await openSection(container, 'การตั้งค่าโมเดล')
 
-    await waitFor(() => expect(screen.getByText('Qwen · mike')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('OpenRouter · mike')).toBeTruthy())
     expect(screen.getByText('ออกจากระบบ')).toBeTruthy()
-    expect(screen.queryByText('เข้าสู่ระบบด้วย Qwen')).toBeNull()
+    expect(screen.queryByText('เข้าสู่ระบบด้วย OpenRouter')).toBeNull()
   })
 })

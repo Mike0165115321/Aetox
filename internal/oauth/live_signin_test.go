@@ -18,9 +18,8 @@ import (
 // be retired without notice, and the symptom on a user's machine is a sign-in
 // button that fails with a bare 404.
 //
-// Only the opening request of each flow is made — it asks for a device code
-// and never approves it, so nothing is authorized and no account is touched.
-// The codes expire on their own.
+// Only the opening request of each flow is made — nothing is approved, so
+// nothing is authorized and no account is touched.
 func TestLiveSignInStarts(t *testing.T) {
 	if os.Getenv("AETOX_LIVE") != "1" {
 		t.Skip("set AETOX_LIVE=1 to run against the real authorization servers")
@@ -29,17 +28,6 @@ func TestLiveSignInStarts(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-
-	t.Run("qwen", func(t *testing.T) {
-		pending, err := StartQwen(ctx)
-		if err != nil {
-			t.Fatalf("StartQwen: %v", err)
-		}
-		if pending.UserCode == "" || pending.deviceCode == "" {
-			t.Fatalf("device code response was empty: %+v", pending)
-		}
-		t.Logf("qwen device code issued (user code %s)", pending.UserCode)
-	})
 
 	// OpenRouter builds its authorize URL locally, so the live question for it
 	// is whether that URL is still served at all. A GET that is not a redirect

@@ -79,8 +79,6 @@ func ResolveThinkingCapabilities(provider, modelName string) ThinkingCapabilitie
 		return cloneThinkingCapabilities(resolveGroqThinkingCapabilities(modelID))
 	case "anthropic":
 		return cloneThinkingCapabilities(resolveAnthropicThinkingCapabilities(modelID))
-	case "code-assist":
-		return cloneThinkingCapabilities(codeAssistThinkingCapabilities)
 	case "ollama", "lmstudio":
 		return cloneThinkingCapabilities(noThinkingCapabilities)
 	default:
@@ -389,16 +387,4 @@ func resolveAnthropicThinkingCapabilities(modelID string) ThinkingCapabilities {
 		// reach.
 		return anthropicThinkingCapabilities
 	}
-}
-
-// codeAssistThinkingCapabilities: Gemini's knob on this path is
-// thinkingConfig.includeThoughts, which is on or off — the budget is the
-// model's to choose.
-var codeAssistThinkingCapabilities = ThinkingCapabilities{
-	Supported: true,
-	Native:    true,
-	Levels:    []string{"off", "adaptive"},
-	Default:   "adaptive",
-	Runtime:   ThinkingRuntimeReasoningObject,
-	Source:    "code-assist-thoughts",
 }

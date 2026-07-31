@@ -11,9 +11,8 @@ import (
 // Providers with no discovery path and no OpenAI-compatible alt endpoint must
 // say so clearly instead of guessing an endpoint.
 func TestModelDiscoveryUnsupportedProviderFailsLoudly(t *testing.T) {
-	// code-assist is the one provider with no list to ask for: its
-	// :fetchAvailableModels answers 403 on the free tier.
-	_, err := ModelChoicesWithEndpointAndAPIKey("code-assist", "", "")
+	// aetox is the built-in provider: it has no remote catalog to ask.
+	_, err := ModelChoicesWithEndpointAndAPIKey("aetox", "", "")
 	if err == nil || !strings.Contains(err.Error(), "does not support remote model discovery") {
 		t.Fatalf("expected a clear unsupported-discovery error, got %v", err)
 	}

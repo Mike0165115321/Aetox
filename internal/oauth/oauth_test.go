@@ -23,20 +23,23 @@ func isolateStore(t *testing.T) string {
 func TestStoreRoundTrip(t *testing.T) {
 	dir := isolateStore(t)
 
-	if _, ok := Get("code-assist"); ok {
+	if _, ok := Get("openrouter"); ok {
 		t.Fatal("empty store reported a credential")
 	}
 
 	want := Credential{Type: "oauth", Access: "at", Refresh: "rt", ExpiresAt: 999, Account: "mike"}
-	if err := Set("code-assist", want); err != nil {
+	if err := Set("openrouter", want); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
-	// A second provider must not disturb the first.
-	if err := Set("qwen", Credential{Type: "oauth", Access: "other"}); err != nil {
-		t.Fatalf("Set qwen: %v", err)
+	// A second provider must not disturb the first. The store is keyed by a
+	// plain string and does not consult the sign-in registry, so a stand-in
+	// name is the honest way to say "some other provider" now that OpenRouter
+	// is the only real one.
+	if err := Set("example-provider", Credential{Type: "api", Key: "other"}); err != nil {
+		t.Fatalf("Set example-provider: %v", err)
 	}
 
-	got, ok := Get("code-assist")
+	got, ok := Get("openrouter")
 	if !ok || got != want {
 		t.Fatalf("Get = %+v, %v; want %+v", got, ok, want)
 	}
@@ -44,13 +47,13 @@ func TestStoreRoundTrip(t *testing.T) {
 		t.Fatalf("LoggedIn = %v; want 2 entries", LoggedIn())
 	}
 
-	if err := Delete("code-assist"); err != nil {
+	if err := Delete("openrouter"); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	if _, ok := Get("code-assist"); ok {
+	if _, ok := Get("openrouter"); ok {
 		t.Fatal("credential survived Delete")
 	}
-	if _, ok := Get("qwen"); !ok {
+	if _, ok := Get("example-provider"); !ok {
 		t.Fatal("Delete removed the wrong provider")
 	}
 
@@ -66,7 +69,7 @@ func TestStoreFileIsPrivate(t *testing.T) {
 		t.Skip("unix permission bits are not meaningful on windows")
 	}
 	isolateStore(t)
-	if err := Set("qwen", Credential{Type: "oauth", Access: "at"}); err != nil {
+	if err := Set("openrouter", Credential{Type: "oauth", Access: "at"}); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
 	info, err := os.Stat(StorePath())
@@ -83,14 +86,14 @@ func TestCorruptStoreReadsAsSignedOut(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "oauth.json"), []byte("{not json"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	if _, ok := Get("qwen"); ok {
+	if _, ok := Get("openrouter"); ok {
 		t.Fatal("corrupt store reported a credential")
 	}
 	// And signing in again must still work rather than inheriting the damage.
-	if err := Set("qwen", Credential{Type: "oauth", Access: "at"}); err != nil {
+	if err := Set("openrouter", Credential{Type: "oauth", Access: "at"}); err != nil {
 		t.Fatalf("Set over corrupt store: %v", err)
 	}
-	if _, ok := Get("qwen"); !ok {
+	if _, ok := Get("openrouter"); !ok {
 		t.Fatal("credential did not survive a rewrite over a corrupt store")
 	}
 }
@@ -173,13 +176,13 @@ func TestTokenAPIKeyCredentialNeedsNoRefresher(t *testing.T) {
 
 func TestTokenSourceNilWhenSignedOut(t *testing.T) {
 	isolateStore(t)
-	if TokenSource("qwen") != nil {
+	if TokenSource("openrouter") != nil {
 		t.Fatal("TokenSource returned a source for a provider nobody signed into")
 	}
-	if err := Set("qwen", Credential{Type: "oauth", Access: "a", ExpiresAt: time.Now().Add(time.Hour).UnixMilli()}); err != nil {
+	if err := Set("openrouter", Credential{Type: "oauth", Access: "a", ExpiresAt: time.Now().Add(time.Hour).UnixMilli()}); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
-	src := TokenSource("qwen-code") // alias, not the canonical id
+	src := TokenSource("open-router") // alias, not the canonical id
 	if src == nil {
 		t.Fatal("TokenSource returned nil for a signed-in provider")
 	}
@@ -191,36 +194,39 @@ func TestTokenSourceNilWhenSignedOut(t *testing.T) {
 
 func TestStatusForNeverLeaksTokens(t *testing.T) {
 	isolateStore(t)
-	if err := Set("qwen", Credential{
+	if err := Set("openrouter", Credential{
 		Type: "oauth", Access: "secret-access", Refresh: "secret-refresh",
-		Account: "mike", Label: "Qwen · mike",
+		Account: "mike", Label: "OpenRouter · mike",
 	}); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
-	status := StatusFor("qwen-code")
+	status := StatusFor("open-router")
 	if !status.SignedIn || status.Account != "mike" {
 		t.Fatalf("StatusFor = %+v; want a signed-in status for mike", status)
 	}
-	if status.Provider != "qwen" {
+	if status.Provider != "openrouter" {
 		t.Fatalf("StatusFor provider = %q; want the canonical id", status.Provider)
 	}
 }
 
-// Credentials for the sign-ins v0.8.1 removed (Claude Pro/Max, ChatGPT,
-// Copilot) may still sit in an oauth.json written by an older version. They
-// must read as signed out — never refreshed, never sent.
+// Credentials for the five sign-ins v0.8.1 removed — Claude Pro/Max, ChatGPT,
+// Copilot, Qwen and Gemini Code Assist — may still sit in an oauth.json written
+// by an older version. They must read as signed out: never refreshed, never
+// sent.
 func TestRemovedProviderCredentialsAreDropped(t *testing.T) {
 	dir := isolateStore(t)
 	raw := `{
   "anthropic":      {"type": "oauth", "access": "a", "refresh": "r"},
   "codex":          {"type": "oauth", "access": "a", "refresh": "r"},
   "github-copilot": {"type": "oauth", "access": "a", "refresh": "r"},
-  "qwen":           {"type": "oauth", "access": "keep-me"}
+  "qwen":           {"type": "oauth", "access": "a", "refresh": "r"},
+  "code-assist":    {"type": "oauth", "access": "a", "refresh": "r"},
+  "openrouter":     {"type": "api",   "key":    "keep-me"}
 }`
 	if err := os.WriteFile(filepath.Join(dir, "oauth.json"), []byte(raw), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	for _, provider := range []string{"anthropic", "codex", "github-copilot"} {
+	for _, provider := range []string{"anthropic", "codex", "github-copilot", "qwen", "code-assist"} {
 		if _, ok := Get(provider); ok {
 			t.Fatalf("removed provider %q still reads as signed in", provider)
 		}
@@ -228,26 +234,26 @@ func TestRemovedProviderCredentialsAreDropped(t *testing.T) {
 			t.Fatalf("removed provider %q still yields a token source", provider)
 		}
 	}
-	if _, ok := Get("qwen"); !ok {
+	if _, ok := Get("openrouter"); !ok {
 		t.Fatal("surviving provider was dropped along with the removed ones")
 	}
 	if got := LoggedIn(); len(got) != 1 {
-		t.Fatalf("LoggedIn = %v; want only qwen", got)
+		t.Fatalf("LoggedIn = %v; want only openrouter", got)
 	}
 }
 
-func TestQwenEndpointNormalization(t *testing.T) {
-	cases := map[string]string{
-		"":                            qwenFallbackEP,
-		"portal.qwen.ai":              "https://portal.qwen.ai/v1",
-		"portal.qwen.ai/":             "https://portal.qwen.ai/v1",
-		"https://portal.qwen.ai/v1":   "https://portal.qwen.ai/v1",
-		"https://portal.qwen.ai/v1/":  "https://portal.qwen.ai/v1",
-		"http://internal.example.com": "http://internal.example.com/v1",
-	}
-	for in, want := range cases {
-		if got := qwenEndpoint(in); got != want {
-			t.Fatalf("qwenEndpoint(%q) = %q; want %q", in, got, want)
+// Every removed sign-in must also be gone from the registry — a Method left
+// behind would draw a button that starts a flow Start() no longer knows.
+func TestRemovedProvidersHaveNoSignIn(t *testing.T) {
+	for provider := range removedProviders {
+		if _, ok := methods[provider]; ok {
+			t.Fatalf("removed provider %q still offers a sign-in method", provider)
+		}
+		if _, ok := refreshers[provider]; ok {
+			t.Fatalf("removed provider %q still has a refresher", provider)
+		}
+		if _, err := Start(context.Background(), provider); err == nil {
+			t.Fatalf("Start accepted removed provider %q", provider)
 		}
 	}
 }

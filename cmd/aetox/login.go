@@ -41,13 +41,6 @@ func runLogin(args []string) int {
 	}
 	provider := strings.TrimSpace(args[0])
 
-	// Adopting a session the matching official CLI already holds on this
-	// machine beats making the user authorize the same account twice. Opt-in
-	// by name, never automatic — reading another tool's credential file is
-	// something you ask for.
-	if len(args) > 1 && strings.EqualFold(strings.TrimSpace(args[1]), "--import") {
-		return runImport(provider)
-	}
 	if _, ok := oauth.MethodFor(provider); !ok {
 		fmt.Fprintf(os.Stderr, "no sign-in for %q.\n\n", provider)
 		printSignInMethods()
@@ -115,27 +108,6 @@ func runLogin(args []string) int {
 	return 0
 }
 
-func runImport(provider string) int {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
-
-	var err error
-	switch strings.ToLower(provider) {
-	case "code-assist":
-		err = oauth.ImportGeminiCLI(ctx)
-	default:
-		fmt.Fprintf(os.Stderr, "%s has no session to import — run `aetox login %s` instead\n", provider, provider)
-		return 2
-	}
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "import failed: %v\n", err)
-		return 1
-	}
-	status := oauth.StatusFor(provider)
-	fmt.Printf("\n  signed in — %s\n\n", status.Label)
-	return 0
-}
-
 func runLogout(args []string) int {
 	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr, "usage: aetox logout <provider>")
@@ -187,11 +159,6 @@ func printSignInMethods() {
 		fmt.Printf("  %s %-16s %s\n", mark, method.Provider, method.Note)
 	}
 	fmt.Println("\n  * = already signed in")
-	// Only offered when there is actually something to adopt — advertising an
-	// import for a CLI the user does not have is noise.
-	if oauth.GeminiCLIAvailable() {
-		fmt.Println("\n  aetox login code-assist --import   adopt the Gemini CLI session on this machine")
-	}
 	fmt.Println()
 }
 

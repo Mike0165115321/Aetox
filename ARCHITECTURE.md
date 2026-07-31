@@ -2150,6 +2150,45 @@ Every item here passed unit tests and failed (or lied) against the real endpoint
 
 **What §61 got right survives.** The `TokenSource`-per-request seam, the risk field on every method, the 0600 write-then-rename store, and the live sign-in smoke tests all remain — they serve the three flows that stay.
 
+> **Superseded within the same release.** The two restricted sign-ins this section kept — Qwen and Gemini Code Assist — are removed by §65 and §66, which ship in v0.8.1 alongside it. Read §64 as the decision that started the sweep, not as a description of what v0.8.1 ships.
+
+---
+
+## 65. Decision — Qwen's Sign-In Goes Too (v0.8.1, 2026-08-01)
+
+**What changed.** The Qwen device-code sign-in §61 shipped and §64 kept is removed. §64 kept it on the reasoning that its terms were "the provider's own to publish" — but it was in the same class as the three §64 deleted: it presented the qwen-code CLI's public client id (`f0304373b74a44d2b584a3fb70ca9e56`) against a consumer account, which is `RiskRestricted` by Aetox's own definition. The plainer reason is that it did not work in practice, so what was left was a button carrying a standing account risk and no working path behind it.
+
+**Qwen the provider stays; only the sign-in goes.** Unlike `codex` and `github-copilot` in §64, `qwen` has a credential path that never depended on OAuth: `DASHSCOPE_API_KEY` / `QWEN_API_KEY` against DashScope's OpenAI-compatible endpoint. It keeps its catalog entry and its place in the desktop picker — moved out of the "signed into" group into the API-key group ([app.go](desktop/app.go) `desktopProviders`). Its base URL is a fixed catalog entry again rather than one the login handed back, so `resource_url` and the `qwenEndpoint` normalizer went with the flow.
+
+**Stored credentials are dropped, not just orphaned.** `qwen` joins `removedProviders` in [store.go](internal/oauth/store.go): a refresh token an 0.8.0 `oauth.json` still holds is never read, never refreshed, never sent, and the next write purges it. `TestRemovedProviderCredentialsAreDropped` covers it, and a new `TestRemovedProvidersHaveNoSignIn` closes the other half — a removed provider may not still carry a `Method`, a refresher, or a `Start()` case.
+
+**The device-code machinery stays, unridden.** [device.go](internal/oauth/device.go) had exactly two riders — Copilot (§64) and Qwen (§65) — and now has none. It stays because it is RFC 8628 verbatim, tested on its own rather than through a provider, and it is the implementation half of the `device` kind that `Method` and the Settings UI still promise. Its test seeds a synthetic method instead of a shipped one, which is the honest version of that coverage.
+
+---
+
+## 66. Decision — Code Assist Goes; One Sign-In Left (v0.8.1, 2026-08-01)
+
+**What changed.** The Gemini Code Assist sign-in is removed, and with it the `code-assist` provider and the Code Assist runtime. `OpenRouter is the only sign-in Aetox has.` This closes the arc §61 opened: what survives is one flow, the one whose terms the provider publishes for third-party apps to use.
+
+**Why, and this one is not a judgement call.** Two facts, both from Google:
+
+1. Google announced detection for "policy-violating use cases (e.g. using Gemini CLI oAuth with third-party software)" in [gemini-cli discussion #22970](https://github.com/google-gemini/gemini-cli/discussions/22970), effective 2026-03-25. The flow Aetox shipped is that use case by name.
+2. [Google's transition post](https://developers.googleblog.com/an-important-update-transitioning-gemini-cli-to-antigravity-cli/) retired Gemini CLI and the Code Assist IDE extensions for the free and consumer-paid tiers on **2026-06-18**, in favour of Antigravity CLI. The free personal-account tier is exactly what `code-assist` targeted.
+
+So the button was pointed at a policy Google enforces against, serving a tier that stopped answering six weeks before this release. The §64 test — does the risk land on the user's account rather than on Aetox — answers yes, and unlike §64 there is not even a working feature on the other side of it.
+
+**The provider goes with the sign-in, exactly as `codex` did.** `code-assist` had `envKeys: nil` and no API-key path: OAuth was its only credential, so removing the sign-in leaves a provider nobody can authenticate. Deleted with it: [internal/model/codeassist.go](internal/model/codeassist.go) (the `RuntimeCodeAssist` wire format — `code-assist` was its only rider, same as `codex` and the Responses runtime), the `RuntimeCodeAssist` constant, the catalog entry and its five aliases, and `codeAssistThinkingCapabilities`. **The `gemini` provider is untouched** — that is the public API-key endpoint at `ai.google.dev`, a different host, different credentials, and a bill instead of a plan. §62's "`code-assist` is not an alias of `gemini`" is what makes removing one and keeping the other a clean cut.
+
+**Stored credentials are dropped, not just orphaned.** `code-assist` joins `removedProviders` alongside `qwen` in [store.go](internal/oauth/store.go). A Google refresh token an 0.8.0 `oauth.json` still holds is never read, never refreshed, never sent, and the next write purges it — which matters more here than anywhere else in this file, because that token is a live Google account credential.
+
+**Session import is now an empty registry.** `aetox login <provider> --import` and `ImportableSignIns`/`ImportSignIn` existed to adopt the credential another product's CLI had already written — first Codex, then only Gemini CLI. With both gone there is nothing to adopt, so the CLI flag is removed and the desktop bindings return nothing rather than pretending. Reading another tool's credential file was always the shortcut for a borrowed-client sign-in; with no borrowed clients left, the shortcut has no destination.
+
+**Two UI branches now outlive their producers, on purpose.** The `device` kind (§65) and the `RiskRestricted` warning (this section) are drawn by Settings but produced by no shipped `Method`. Both keep their tests on a synthetic method — [Settings.test.ts](desktop/frontend/src/test/Settings.test.ts) `seedDeviceSignIn` / `seedRestrictedSignIn` — rather than losing coverage with the provider that used to supply one. The risk field in particular is the thing §61 got right and must survive: the next sign-in that needs a warning should not have to reinvent it.
+
+**Considered and rejected: Antigravity.** Antigravity CLI is Google's replacement for the Gemini CLI this section removes, it still serves consumer accounts, and third-party OAuth plugins for it already exist and work ([opencode-antigravity-auth](https://github.com/NoeFabris/opencode-antigravity-auth) reaches `gemini-3-pro` and `claude-opus-4-5-thinking` on a user's Google plan through a `localhost:36742` loopback that `loopback.go` could serve unchanged). It is rejected anyway, and it is the clearest rejection in this file. The [Antigravity Additional Terms](https://antigravity.google/terms) name this exact case — third-party software reaching the service, with an OAuth-plugin example spelled out in parentheses — as a breach, and give suspension or termination as the consequence. Google has already acted on it: [discussion #20632](https://github.com/google-gemini/gemini-cli/discussions/20632) documents the bans, a recertification form to get reinstated, and a **permanent ban on a second violation**. That Antigravity still works is what makes it worse than Code Assist, not better — Code Assist stopped answering, so nobody could lose an account to it; Antigravity would serve happily until the day the account goes, and what goes is the user's whole Google account rather than a quota. This is the same question §64 answered, asked once more with the enforcement now visible, and the answer does not change.
+
+**Where a new sign-in would come from.** The published, register-your-own-client kind, not the borrowed kind — that is now the only kind Aetox accepts. Hugging Face is the closest fit: [public OAuth apps with no client secret](https://huggingface.co/docs/hub/en/oauth), authorization-code + PKCE *and* RFC 8628 device code, an `inference-api` scope that makes inference calls on the user's behalf, and an [OpenAI-compatible router](https://huggingface.co/docs/inference-providers/index) at `https://router.huggingface.co/v1` — `RuntimeOpenAICompatible` unchanged, `loopback.go` unchanged, and `device.go` ridden again. The honest caveat is the free allowance: $0.10/month, $2 on PRO. `Proposed, pending approval.`
+
 ---
 
 ## Validation

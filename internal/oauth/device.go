@@ -18,10 +18,13 @@ var pollFloor = 5 * time.Second
 // typing a short code into a web page, and we ask the token endpoint every few
 // seconds whether they finished.
 //
-// Shared by Copilot and Qwen because RFC 8628 is genuinely the same on both
-// sides — including the two error strings that are not failures:
-// authorization_pending (keep waiting) and slow_down (back off, and the
-// interval increase is required, not advisory).
+// Provider-agnostic on purpose: it is RFC 8628 verbatim, including the two
+// error strings that are not failures — authorization_pending (keep waiting)
+// and slow_down (back off, and the interval increase is required, not
+// advisory). No sign-in currently rides it: Copilot (§64) and Qwen (§65) were
+// its two riders. It stays because it is the implementation half of the
+// "device" kind the Method vocabulary and the Settings UI still promise, and
+// it is tested on its own rather than through a provider.
 func pollDeviceCode(
 	ctx context.Context,
 	pending *Pending,

@@ -40,27 +40,24 @@ type Method struct {
 
 // methods is the registry of working sign-ins. A provider absent from here has
 // no OAuth path — Settings offers it an API key field and nothing else.
+//
+// One entry, and that is the whole point: v0.8.1 (§66) kept only the sign-ins
+// whose flow the provider publishes for third-party apps to use. A sign-in that
+// works by presenting another product's OAuth client is not a shortcut Aetox
+// gets to take on the user's account, whatever the plan it unlocks.
 var methods = map[string]Method{
 	"openrouter": {
 		Provider: "openrouter", Label: "OpenRouter", Kind: "browser", Risk: RiskOpen,
 		Note: "Published OAuth flow. Mints an API key you own and can revoke on your OpenRouter dashboard.",
 	},
-	"qwen": {
-		Provider: "qwen", Label: "Qwen", Kind: "device", Risk: RiskRestricted,
-		Note: "Signs in through the qwen-code CLI's OAuth client, against your free Qwen quota.",
-	},
-	"code-assist": {
-		Provider: "code-assist", Label: "Gemini (Google account)", Kind: "browser", Risk: RiskRestricted,
-		Note: "Signs in with a Google account through the Gemini CLI's OAuth client, against the free Code Assist tier.",
-	},
 }
 
 // refreshers maps a provider to how its access token is renewed. Credentials
-// of type "api" never appear here: nothing about them expires.
-var refreshers = map[string]func(context.Context, Credential) (Credential, error){
-	"qwen":        refreshQwen,
-	"code-assist": refreshGoogle,
-}
+// of type "api" never appear here: nothing about them expires — which is why
+// this is empty while OpenRouter, whose flow mints exactly such a key, is the
+// only sign-in left. A flow that hands back an expiring token registers here,
+// or Token() strands the user on a dead credential.
+var refreshers = map[string]func(context.Context, Credential) (Credential, error){}
 
 // Methods lists every sign-in Aetox offers, in a stable order.
 func Methods() []Method {
@@ -112,8 +109,8 @@ func StatusFor(provider string) Status {
 }
 
 // refreshMu serializes token refreshes.
-// ponytail: one lock for every provider, so a Code Assist refresh briefly
-// blocks a Qwen one. Refreshes are seconds apart at most; split it per provider
+// ponytail: one lock for every provider, so one provider's refresh briefly
+// blocks another's. Refreshes are seconds apart at most; split it per provider
 // only if that ever shows up in a profile.
 var refreshMu sync.Mutex
 
@@ -180,10 +177,6 @@ func Start(ctx context.Context, provider string) (*Pending, error) {
 	switch pvdr.Normalize(provider) {
 	case "openrouter":
 		return StartOpenRouter()
-	case "qwen":
-		return StartQwen(ctx)
-	case "code-assist":
-		return StartGoogle()
 	default:
 		return nil, fmt.Errorf("%s has no sign-in — add an API key instead", pvdr.Normalize(provider))
 	}
@@ -199,10 +192,6 @@ func Finish(ctx context.Context, pending *Pending, pasted string) error {
 	switch pending.provider {
 	case "openrouter":
 		return FinishOpenRouter(ctx, pending)
-	case "qwen":
-		return FinishQwen(ctx, pending)
-	case "code-assist":
-		return FinishGoogle(ctx, pending)
 	default:
 		return fmt.Errorf("unknown sign-in: %q", pending.provider)
 	}

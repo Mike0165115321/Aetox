@@ -64,8 +64,8 @@ func NewProvider(opts ProviderOptions) (Provider, error) {
 	// tokenSource, which is exactly the path that existed before.
 	tokenSource := oauth.TokenSource(provider)
 	if endpoint := oauth.Endpoint(provider); endpoint != "" && (baseURL == "" || baseURL == info.BaseURL) {
-		// Some sign-ins name the host the account is served from (Qwen). A
-		// base URL the user typed themselves still wins over it.
+		// Some sign-ins name the host the account is served from. A base URL
+		// the user typed themselves still wins over it.
 		baseURL = endpoint
 	}
 	opts.BaseURL = baseURL
@@ -90,15 +90,6 @@ func NewProvider(opts ProviderOptions) (Provider, error) {
 			Timeout:       timeout,
 			RequireAPIKey: &requireAPIKey,
 			TokenSource:   tokenSource,
-		})
-	case string(pvdr.RuntimeCodeAssist):
-		return NewCodeAssistProvider(CodeAssistConfig{
-			Provider:    provider,
-			Model:       opts.Model,
-			BaseURL:     opts.BaseURL,
-			Project:     oauth.CodeAssistProject(),
-			Timeout:     timeout,
-			TokenSource: tokenSource,
 		})
 	case string(pvdr.RuntimeAnthropic):
 		return NewAnthropicProvider(AnthropicConfig{

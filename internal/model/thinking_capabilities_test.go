@@ -221,7 +221,6 @@ func TestThinkingCapabilitiesForProvidersAetoxDrivesDirectly(t *testing.T) {
 		// Pre-thinking Claude keeps the row hidden rather than offering a
 		// switch that does nothing.
 		{"anthropic", "claude-3-5-sonnet-20241022", false, nil},
-		{"code-assist", "gemini-2.5-flash", true, []string{"off", "adaptive"}},
 	}
 	for _, tc := range cases {
 		caps := ResolveThinkingCapabilities(tc.provider, tc.model)

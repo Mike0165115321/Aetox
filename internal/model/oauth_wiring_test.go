@@ -32,8 +32,8 @@ func TestOpenAICompatibleSendsToken(t *testing.T) {
 
 	calls := 0
 	p, err := NewOpenAICompatibleProvider(OpenAICompatibleConfig{
-		Provider: "qwen",
-		Model:    "qwen3-coder-plus",
+		Provider: "openrouter",
+		Model:    "deepseek/deepseek-r1",
 		BaseURL:  server.URL,
 		TokenSource: func(context.Context) (string, error) {
 			calls++
@@ -64,8 +64,8 @@ func TestOpenAICompatibleSendsToken(t *testing.T) {
 
 func TestOpenAICompatibleReportsTokenFailure(t *testing.T) {
 	p, err := NewOpenAICompatibleProvider(OpenAICompatibleConfig{
-		Provider: "qwen",
-		Model:    "qwen3-coder-plus",
+		Provider: "openrouter",
+		Model:    "deepseek/deepseek-r1",
 		BaseURL:  "https://example.invalid",
 		TokenSource: func(context.Context) (string, error) {
 			return "", context.DeadlineExceeded
@@ -81,27 +81,27 @@ func TestOpenAICompatibleReportsTokenFailure(t *testing.T) {
 }
 
 func TestFactoryUsesSignInInsteadOfAPIKey(t *testing.T) {
-	signIn(t, "qwen", oauth.Credential{Type: "oauth", Access: "tok"})
+	signIn(t, "openrouter", oauth.Credential{Type: "oauth", Access: "tok"})
 
 	// No APIKey at all: a signed-in provider has no key to give, and demanding
 	// one would make the whole feature unreachable.
-	p, err := NewProvider(ProviderOptions{Provider: "qwen-code", Model: "qwen3-coder-plus"})
+	p, err := NewProvider(ProviderOptions{Provider: "open-router", Model: "deepseek/deepseek-r1"})
 	if err != nil {
 		t.Fatalf("NewProvider: %v", err)
 	}
-	if p.Name() != "qwen" {
-		t.Fatalf("Name = %q; want qwen", p.Name())
+	if p.Name() != "openrouter" {
+		t.Fatalf("Name = %q; want openrouter", p.Name())
 	}
 }
 
 func TestFactoryPrefersSignInEndpoint(t *testing.T) {
-	signIn(t, "qwen", oauth.Credential{
+	signIn(t, "openrouter", oauth.Credential{
 		Type:     "oauth",
 		Access:   "tok",
-		Endpoint: "https://portal.qwen.ai/v1",
+		Endpoint: "https://account.example.com/v1",
 	})
 
-	p, err := NewProvider(ProviderOptions{Provider: "qwen", Model: "qwen3-coder-plus"})
+	p, err := NewProvider(ProviderOptions{Provider: "openrouter", Model: "deepseek/deepseek-r1"})
 	if err != nil {
 		t.Fatalf("NewProvider: %v", err)
 	}
@@ -109,21 +109,21 @@ func TestFactoryPrefersSignInEndpoint(t *testing.T) {
 	if !ok {
 		t.Fatalf("provider type = %T; want the OpenAI-compatible runtime", p)
 	}
-	if compatible.baseURL != "https://portal.qwen.ai/v1" {
+	if compatible.baseURL != "https://account.example.com/v1" {
 		t.Fatalf("baseURL = %q; want the host the sign-in named", compatible.baseURL)
 	}
 }
 
 func TestFactoryKeepsUserBaseURLOverSignInEndpoint(t *testing.T) {
-	signIn(t, "qwen", oauth.Credential{
+	signIn(t, "openrouter", oauth.Credential{
 		Type:     "oauth",
 		Access:   "tok",
-		Endpoint: "https://portal.qwen.ai/v1",
+		Endpoint: "https://account.example.com/v1",
 	})
 
 	p, err := NewProvider(ProviderOptions{
-		Provider: "qwen",
-		Model:    "qwen3-coder-plus",
+		Provider: "openrouter",
+		Model:    "deepseek/deepseek-r1",
 		BaseURL:  "http://localhost:8080/v1",
 	})
 	if err != nil {

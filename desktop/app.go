@@ -775,9 +775,9 @@ type ModelInfo struct {
 // pay for" is the shorter path for most people than finding an API key.
 var desktopProviders = []string{
 	// Signed into, not keyed in (internal/oauth).
-	"code-assist", "qwen", "openrouter",
+	"openrouter",
 	// API key or a local server.
-	"anthropic", "ollama", "lmstudio", "deepseek", "gemini", "openai", "zai", "aetox",
+	"anthropic", "ollama", "lmstudio", "deepseek", "gemini", "openai", "qwen", "zai", "aetox",
 }
 
 // NewApp creates a new App application struct
@@ -1350,9 +1350,8 @@ func (a *App) HasAPIKey(providerName string) bool {
 	if !model.RequiresAPIKey(canonical) {
 		return true
 	}
-	// A signed-in provider (Qwen, Code Assist) has no key to find and never
-	// will — asking the user for one would be asking for something that does
-	// not exist.
+	// A signed-in provider has no key to find and never will — asking the user
+	// for one would be asking for something that does not exist.
 	if oauth.Has(canonical) {
 		return true
 	}

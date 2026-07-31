@@ -6,59 +6,20 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/Mike0165115321/Aetox/internal/oauth"
 )
 
-// Live round trip against the Code Assist subscription backend, skipped unless
-// AETOX_LIVE=1.
-//
-//	AETOX_LIVE=1 go test ./internal/model/ -run TestLiveSubscription -v -count=1
+// Live round trips against real provider backends, skipped unless AETOX_LIVE=1.
 //
 // Everything else in this package proves Aetox builds the request it meant to.
-// Only this proves the request is one the provider accepts — which for a
-// reverse-engineered wire format is the whole question. It asks a real model a
-// real question and requires a real answer.
-//
-// Each subtest signs in by adopting the session the matching official CLI
-// already has on this machine, into an isolated credential store: the test
-// never reads or writes the developer's real oauth.json, and it never needs an
-// interactive browser flow.
-
-func TestLiveSubscriptionAsksAndAnswers(t *testing.T) {
-	if os.Getenv("AETOX_LIVE") != "1" {
-		t.Skip("set AETOX_LIVE=1 to run against real subscription backends")
-	}
-
-	t.Run("code-assist", func(t *testing.T) {
-		t.Setenv("AETOX_DATA_ROOT", t.TempDir())
-		if !oauth.GeminiCLIAvailable() {
-			t.Skip("no Gemini CLI session on this machine to adopt")
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		defer cancel()
-
-		if err := oauth.ImportGeminiCLI(ctx); err != nil {
-			t.Fatalf("ImportGeminiCLI: %v", err)
-		}
-		if oauth.CodeAssistProject() == "" {
-			t.Fatal("import succeeded but no Code Assist project was resolved; every request would 500")
-		}
-
-		p, err := NewProvider(ProviderOptions{
-			Provider: "code-assist",
-			Model:    "gemini-2.5-flash",
-			Timeout:  90 * time.Second,
-		})
-		if err != nil {
-			t.Fatalf("NewProvider: %v", err)
-		}
-		assertAnswersLive(ctx, t, p)
-	})
-}
+// Only these prove the request is one the provider accepts. §66 removed the
+// subscription sign-ins this file was written for (Code Assist was the last),
+// so what is left is the Claude ladder below plus the shared helpers — which
+// are the reusable half, and the half a new provider gets checked with.
 
 // assertAnswersLive runs the two things a provider has to do for Aetox to be
 // usable on it: answer a question, and call a tool when told to.
+//
+//nolint:unused // the harness a live provider check is written against.
 func assertAnswersLive(ctx context.Context, t *testing.T, p Provider) {
 	t.Helper()
 
