@@ -1645,7 +1645,7 @@ func (a *App) applyConfig(cfg config.Config) {
 	if a.agent != nil {
 		priorContext = a.agent.ContextMessages()
 	}
-	chatApp, agent, status, registry, bootErr := bootstrapFromConfig(cfg, a.recordToolAction, a.emitAgentStatus, a.recordTokenUsage, workbenchTools, a.mcp, a.outputSubdir, a.approveToolCall)
+	chatApp, agent, status, registry, bootErr := bootstrapFromConfig(cfg, a.recordToolAction, a.recordToolRun, a.emitAgentStatus, a.recordTokenUsage, workbenchTools, a.mcp, a.outputSubdir, a.approveToolCall)
 	a.chat = chatApp
 	a.agent = agent
 	a.cfg = cfg
@@ -1771,7 +1771,7 @@ func toMCPServers(cfgs []config.MCPServerConfig) []mcp.Server {
 	return out
 }
 
-func bootstrapFromConfig(cfg config.Config, onToolAction func(turn.ToolEvent), onStatus func(string), onUsage func(model.Usage), extraSkills []skill.Skill, mcpMgr *mcp.Manager, outputSubdir func() string, approve turn.ApprovalPromptFunc) (*aetoxapp.App, *cognitive.Agent, string, *skill.Registry, error) {
+func bootstrapFromConfig(cfg config.Config, onToolAction func(turn.ToolEvent), onToolRun func(turn.ToolRun), onStatus func(string), onUsage func(model.Usage), extraSkills []skill.Skill, mcpMgr *mcp.Manager, outputSubdir func() string, approve turn.ApprovalPromptFunc) (*aetoxapp.App, *cognitive.Agent, string, *skill.Registry, error) {
 	defer debuglog.Block("bootstrapFromConfig")()
 	// Which model this actually resolved to. The log recorded that a bootstrap
 	// happened but never what came out of it, so "it switched models on its
@@ -1881,6 +1881,7 @@ func bootstrapFromConfig(cfg config.Config, onToolAction func(turn.ToolEvent), o
 		ApprovalMode: approvalMode,
 		Approve:      approve,
 		OnToolAction: onToolAction,
+		OnToolRun:    onToolRun,
 		OnUsage:      onUsage,
 		MaxChars:     ctxTokens * 4,
 		ThinkLevel:   think.NormalizeLevel(cfg.ThinkLevel),
@@ -1898,6 +1899,7 @@ func bootstrapFromConfig(cfg config.Config, onToolAction func(turn.ToolEvent), o
 		Permissions:    permissions,
 		Hooks:          hooks,
 		OnToolAction:   onToolAction,
+		OnToolRun:      onToolRun,
 		StatusReporter: onStatus,
 		Approve:        approve,
 	})

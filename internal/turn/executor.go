@@ -163,6 +163,7 @@ type Executor struct {
 	turnOptions    TurnOptions
 	statusReporter func(string)
 	onToolAction   func(ToolEvent)
+	onToolRun      func(ToolRun)
 	hooks          *hook.Runner
 
 	// pending holds tool calls that outran their deadline and were left running.
@@ -182,6 +183,10 @@ type ExecutorOptions struct {
 	TurnOptions    TurnOptions
 	StatusReporter func(string)
 	OnToolAction   func(ToolEvent)
+	// OnToolRun, if set, receives one record per finished tool call — the whole
+	// call, not the timeline's summary of it (see ToolRun). Nil records nothing,
+	// which is what the CLI does.
+	OnToolRun func(ToolRun)
 	// Hooks are the user's own commands run around every tool call. Nil is the
 	// normal case — almost nobody configures one — and *hook.Runner is written
 	// so that nil does nothing rather than needing a guard at each call site.
@@ -218,6 +223,7 @@ func NewExecutor(opts ExecutorOptions) *Executor {
 		turnOptions:    opts.TurnOptions,
 		statusReporter: opts.StatusReporter,
 		onToolAction:   opts.OnToolAction,
+		onToolRun:      opts.OnToolRun,
 		hooks:          opts.Hooks,
 	}
 	e.SetApprovalMode(mode)
@@ -304,6 +310,37 @@ func (ev ToolEvent) Label() string {
 	return strings.TrimSpace(ev.Name + " " + ev.Subject)
 }
 
+// ToolRun is one finished tool call, recorded whole.
+//
+// It exists because ToolEvent cannot be widened into this without cost:
+// ToolEvent is drawn on screen and crosses the Wails bridge on every call, so
+// it deliberately keeps one Subject and throws the arguments away. A run
+// record is written to disk and read later by something asking "what did this
+// tool actually get, and what actually came back" — a question the timeline
+// never asks and the learning pass can ask nothing else.
+//
+// Output is the tool's own output *before* the receipt is built for the model:
+// the receipt is shaped for a reader (trimmed, rtk-filtered, wrapped in
+// status), and a record of what the tool returned should not be a record of
+// how we chose to phrase it.
+type ToolRun struct {
+	// Ref is the provider's tool-call id, matching ToolEvent.Ref.
+	Ref string
+	// Parent is the `task` call that caused this run — stamped by the
+	// delegation relay, empty for the main agent's own calls.
+	Parent string
+	// Agent names the sub-agent profile that ran it; empty means the main agent.
+	Agent string
+	Name  string
+	// Args is the raw arguments JSON exactly as the model sent it, unparsed:
+	// a malformed call is itself a thing worth having recorded.
+	Args     string
+	Output   string
+	OK       bool
+	Error    string
+	Duration time.Duration
+}
+
 func (e *Executor) reportToolCall(ref, name, args string) {
 	if e.onToolAction != nil {
 		agent, brief := delegationOf(name, args)
@@ -356,6 +393,12 @@ func (e *Executor) reportToolResult(ev ToolEvent) {
 	if e.onToolAction != nil {
 		ev.Action = "result"
 		e.onToolAction(ev)
+	}
+}
+
+func (e *Executor) reportToolRun(run ToolRun) {
+	if e.onToolRun != nil {
+		e.onToolRun(run)
 	}
 }
 
@@ -630,7 +673,9 @@ func (e *Executor) executeAgentToolLoop(
 		// it causes can be traced back to this row (`task` stamps ToolEvent.Parent
 		// with it). Nothing else reads it, and a tool that ignores it is unaffected.
 		ctx = WithCallID(ctx, call.ID)
+		startedAt := time.Now()
 		receipt, output, success, execErr := e.executeToolCallWithOutcome(ctx, call)
+		elapsed := time.Since(startedAt)
 		ev := ToolEvent{
 			Ref:     call.ID,
 			Name:    call.Function.Name,
@@ -647,6 +692,15 @@ func (e *Executor) executeAgentToolLoop(
 			}
 		}
 		e.reportToolResult(ev)
+		e.reportToolRun(ToolRun{
+			Ref:      call.ID,
+			Name:     call.Function.Name,
+			Args:     call.Function.Arguments,
+			Output:   toolRunOutput(output),
+			OK:       success,
+			Error:    ev.Error,
+			Duration: elapsed,
+		})
 		return receipt, output.Images, execErr
 	}, asStreamHandler(reasoning), opts)
 	if err != nil {
@@ -663,6 +717,17 @@ func (e *Executor) executeAgentToolLoop(
 		Streamed: false,
 		Status:   TurnStatusDone,
 	}, true, nil
+}
+
+// toolRunOutput picks what a tool actually returned. RawOutput is the tool's
+// own bytes and Content is the rendered-for-a-human version; modelToolReceipt
+// prefers Raw for the same reason, and a record that disagreed with what the
+// model was shown would be worse than useless.
+func toolRunOutput(output skill.Output) string {
+	if raw := strings.TrimSpace(output.RawOutput); raw != "" {
+		return raw
+	}
+	return strings.TrimSpace(output.Content)
 }
 
 // The skill.Output is returned alongside the receipt because the receipt is

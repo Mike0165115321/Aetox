@@ -403,6 +403,13 @@ func (a *App) DeleteSession(id string) error {
 	if _, err := tx.Exec(`DELETE FROM messages WHERE session_id = ?`, id); err != nil {
 		return err
 	}
+	// The session's tool runs go with it. A deleted conversation that left its
+	// tool arguments and outputs behind would be the opposite of what the
+	// delete button promises — and those rows hold file contents and page text,
+	// not just labels.
+	if _, err := tx.Exec(`DELETE FROM tool_runs WHERE session_id = ?`, id); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(`DELETE FROM sessions WHERE id = ?`, id); err != nil {
 		return err
 	}

@@ -61,6 +61,7 @@ type App struct {
 	statusReporter     func(string)
 	lastPrintedTool    string
 	toolActionListener func(turn.ToolEvent)
+	toolRunListener    func(turn.ToolRun)
 	approve            turn.ApprovalPromptFunc
 }
 
@@ -102,6 +103,11 @@ type Options struct {
 	// OnToolAction, if set, is notified of every tool call/result this session
 	// runs (e.g. for a UI command-history panel). Nil means silent, as before.
 	OnToolAction func(turn.ToolEvent)
+	// OnToolRun, if set, receives the full record of each finished tool call
+	// for persistence (turn.ToolRun). Separate from OnToolAction because the
+	// two have opposite needs: one is drawn on screen and must stay small, the
+	// other is written to disk and must stay complete.
+	OnToolRun func(turn.ToolRun)
 	// StatusReporter, if set, receives human-readable turn-progress messages
 	// ("กำลังคิดคำตอบ...", "กำลังรันเครื่องมือ...") as the turn executor moves
 	// through phases, and a final "" when the turn completes. CLI wires its own
@@ -159,6 +165,7 @@ func NewApp(opts Options) (*App, error) {
 		thinkLevel:         think.NormalizeLevel(string(opts.ThinkLevel)),
 		skillNames:         skillNames,
 		toolActionListener: opts.OnToolAction,
+		toolRunListener:    opts.OnToolRun,
 	}
 	a.approve = opts.Approve
 	if a.approve == nil {
@@ -173,6 +180,7 @@ func NewApp(opts Options) (*App, error) {
 		Permissions:    a.permissions,
 		Hooks:          a.hooks,
 		OnToolAction:   a.onToolAction,
+		OnToolRun:      a.onToolRun,
 		StatusReporter: opts.StatusReporter,
 		TurnOptions: turn.TurnOptions{
 			ThinkLevel: a.thinkLevel,
@@ -195,6 +203,7 @@ func (a *App) wireStatusReporter() {
 		Permissions:    a.permissions,
 		Hooks:          a.hooks,
 		OnToolAction:   a.onToolAction,
+		OnToolRun:      a.onToolRun,
 		TurnOptions: turn.TurnOptions{
 			ThinkLevel: a.thinkLevel,
 		},
@@ -227,6 +236,12 @@ func (a *App) RunOnceStreamWithImages(ctx context.Context, message string, image
 func (a *App) onToolAction(ev turn.ToolEvent) {
 	if a.toolActionListener != nil {
 		a.toolActionListener(ev)
+	}
+}
+
+func (a *App) onToolRun(run turn.ToolRun) {
+	if a.toolRunListener != nil {
+		a.toolRunListener(run)
 	}
 }
 

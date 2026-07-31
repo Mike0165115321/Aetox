@@ -48,6 +48,10 @@ type TaskOptions struct {
 	// is stamped with the `task` call's own id before it goes down this channel,
 	// so the UI can tell whose work it is.
 	OnToolAction func(turn.ToolEvent)
+	// OnToolRun is the parent's run recorder. Same stamping as OnToolAction,
+	// plus the delegate's profile name — "which sub-agent is bad at what" is the
+	// question the stored record exists to answer, and it needs both.
+	OnToolRun func(turn.ToolRun)
 	// OnUsage is the parent's usage reporter — a delegate's tokens are the user's
 	// tokens, so they land in the same stats with no extra plumbing.
 	OnUsage    func(model.Usage)
@@ -242,6 +246,14 @@ func (t *taskTool) ExecuteTool(ctx context.Context, args map[string]any) (skill.
 				t.opts.OnToolAction(ev)
 			}
 		}
+		relayRun := func(run turn.ToolRun) {
+			if t.opts.OnToolRun == nil {
+				return
+			}
+			run.Parent = parentRef
+			run.Agent = profile.Name
+			t.opts.OnToolRun(run)
+		}
 		exec := turn.NewExecutor(turn.ExecutorOptions{
 			Agent:        child,
 			Dispatcher:   skill.NewDispatcher(childRegistry),
@@ -249,6 +261,7 @@ func (t *taskTool) ExecuteTool(ctx context.Context, args map[string]any) (skill.
 			ApprovalMode: t.opts.ApprovalMode,
 			Permissions:  permissions,
 			OnToolAction: relay,
+			OnToolRun:    relayRun,
 			TurnOptions:  turn.TurnOptions{ThinkLevel: t.opts.ThinkLevel},
 		})
 
