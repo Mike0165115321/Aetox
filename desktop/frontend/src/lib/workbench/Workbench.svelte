@@ -16,8 +16,10 @@
   import { TerminalShells, BrowserBack, BrowserForward, BrowserReload, BrowserOpenDevTools } from '../../../wailsjs/go/main/App'
   import { EventsOn } from '../../../wailsjs/runtime/runtime'
   import { t } from '../i18n.svelte'
+  import Icon from '../Icon.svelte'
+  import type { IconName } from '../icons'
 
-  const tabIcon: Record<string, string> = { review: '▤', terminal: '⌨', browser: '🌐', files: '⧉', file: '📄', tools: '🛠' }
+  const tabIcon: Record<string, IconName> = { review: 'layoutList', terminal: 'keyboard', browser: 'globe', files: 'copy', file: 'fileText', tools: 'wrench' }
 
   // Chrome DevTools' default device presets. CSS viewport sizes — BrowserPane
   // turns one into a real window of that aspect + a matching page zoom.
@@ -142,52 +144,52 @@
       draggable={tab.kind === 'file' || tab.kind === 'browser'}
       ondragstart={(e) => onTabDragStart(e, tab)}
     >
-      <span class="ic">{tabIcon[tab.kind]}</span>
+      <span class="ic"><Icon name={tabIcon[tab.kind] ?? 'fileText'} size={13} /></span>
       <span class="label">{tab.name}</span>
       <span
         class="tab-close" role="button" tabindex="0" aria-label={t('workbench.close', { name: tab.name })}
         onclick={(e) => { e.stopPropagation(); closeTab(tab) }}
         onkeydown={(e) => e.key === 'Enter' && closeTab(tab)}
-      >✕</span>
+      ><Icon name="x" size={12} /></span>
     </button>
   {/each}
   <div class="plus-menu-wrap">
-    <button class="icobtn tiny plus-btn" aria-label={t('workbench.addTab')} data-tip={t('workbench.addTab')} onclick={() => (menuOpen = !menuOpen)}>+</button>
+    <button class="icobtn tiny plus-btn" aria-label={t('workbench.addTab')} data-tip={t('workbench.addTab')} onclick={() => (menuOpen = !menuOpen)}><Icon name="plus" size={14} /></button>
     {#if menuOpen}
       <div class="plus-menu">
-        <button class="plus-menu-item" onclick={() => pick(openReview)}><span class="ic">▤</span> {t('workbench.reviewTab')} <span class="kbd">Ctrl+Shift+G</span></button>
-        <button class="plus-menu-item" disabled={shells.length === 0} onclick={openDefaultTerminal}><span class="ic">⌨</span> {t('workbench.terminalMenu')}</button>
-        <button class="plus-menu-item" onclick={() => pick(openBrowserTab)}><span class="ic">🌐</span> {t('workbench.browserMenu')} <span class="kbd">Ctrl+T</span></button>
-        <button class="plus-menu-item" onclick={() => pick(openFilesTab)}><span class="ic">⧉</span> {t('workbench.filesTab')} <span class="kbd">Ctrl+P</span></button>
-        <button class="plus-menu-item" onclick={() => pick(openToolsTab)}><span class="ic">🛠</span> {t('workbench.toolsTab')}</button>
+        <button class="plus-menu-item" onclick={() => pick(openReview)}><span class="ic"><Icon name="layoutList" size={14} /></span> {t('workbench.reviewTab')} <span class="kbd">Ctrl+Shift+G</span></button>
+        <button class="plus-menu-item" disabled={shells.length === 0} onclick={openDefaultTerminal}><span class="ic"><Icon name="keyboard" size={14} /></span> {t('workbench.terminalMenu')}</button>
+        <button class="plus-menu-item" onclick={() => pick(openBrowserTab)}><span class="ic"><Icon name="globe" size={14} /></span> {t('workbench.browserMenu')} <span class="kbd">Ctrl+T</span></button>
+        <button class="plus-menu-item" onclick={() => pick(openFilesTab)}><span class="ic"><Icon name="copy" size={14} /></span> {t('workbench.filesTab')} <span class="kbd">Ctrl+P</span></button>
+        <button class="plus-menu-item" onclick={() => pick(openToolsTab)}><span class="ic"><Icon name="wrench" size={14} /></span> {t('workbench.toolsTab')}</button>
       </div>
     {/if}
   </div>
 </div>
 {#if activeTab?.kind === 'browser'}
 <div class="insp-addr">
-  <button class="icobtn tiny" aria-label={t('workbench.back')} data-tip={t('workbench.back')} onclick={() => browserCmd(BrowserBack)}>←</button>
-  <button class="icobtn tiny" aria-label={t('workbench.forward')} data-tip={t('workbench.forward')} onclick={() => browserCmd(BrowserForward)}>→</button>
-  <button class="icobtn tiny" aria-label={t('workbench.reload')} data-tip={t('workbench.reload')} onclick={() => browserCmd(BrowserReload)}>↻</button>
+  <button class="icobtn tiny" aria-label={t('workbench.back')} data-tip={t('workbench.back')} onclick={() => browserCmd(BrowserBack)}><Icon name="arrowLeft" size={14} /></button>
+  <button class="icobtn tiny" aria-label={t('workbench.forward')} data-tip={t('workbench.forward')} onclick={() => browserCmd(BrowserForward)}><Icon name="arrowRight" size={14} /></button>
+  <button class="icobtn tiny" aria-label={t('workbench.reload')} data-tip={t('workbench.reload')} onclick={() => browserCmd(BrowserReload)}><Icon name="rotateCw" size={14} /></button>
   <input
     class="insp-url" placeholder={t('workbench.urlPlaceholder')} bind:value={urlDraft}
     onkeydown={(e) => e.key === 'Enter' && navigate()}
   />
-  <button class="icobtn tiny" aria-label={t('workbench.go')} data-tip={t('workbench.go')} onclick={navigate}>↗</button>
-  <button class="icobtn tiny tip-r" aria-label={t('workbench.devtools')} data-tip={t('workbench.devtools')} onclick={() => browserCmd(BrowserOpenDevTools)}>🛠</button>
+  <button class="icobtn tiny" aria-label={t('workbench.go')} data-tip={t('workbench.go')} onclick={navigate}><Icon name="externalLink" size={14} /></button>
+  <button class="icobtn tiny tip-r" aria-label={t('workbench.devtools')} data-tip={t('workbench.devtools')} onclick={() => browserCmd(BrowserOpenDevTools)}><Icon name="wrench" size={14} /></button>
   <!-- A transparent native <select> over the ⋮ glyph. Chromium renders its
        popup as an OS window, so it floats above the tab's own native window —
        a DOM dropdown here is invisible unless the page hides, which reads as
        the page crashing. Looks like a button, behaves like the platform. -->
   <span class="vp-picker tip-r" data-tip={activeTab?.viewport ? `${activeTab.viewport.w}×${activeTab.viewport.h}` : t('workbench.viewportFill')}>
-    <span class="icobtn tiny" aria-hidden="true">⋮</span>
+    <span class="icobtn tiny" aria-hidden="true"><Icon name="ellipsisVertical" size={14} /></span>
     <select
       class="vp-select" aria-label={t('workbench.viewport')} value={activeTab?.viewport?.name ?? ''}
       onchange={(e) => setViewport(e.currentTarget.value)}
     >
       <option value="">{t('workbench.viewportFill')}</option>
       {#each DEVICES as d}
-        <option value={d.name}>{d.name} — {d.w}×{d.h}</option>
+        <option value={d.name}>{d.name} ({d.w}×{d.h})</option>
       {/each}
     </select>
   </span>
@@ -197,11 +199,11 @@
 <div class="insp-body">
   {#if workbench.tabs.length === 0}
     <div class="insp-start">
-      <button class="plus-menu-item" onclick={openReview}><span class="ic">▤</span> {t('workbench.reviewTab')} <span class="kbd">Ctrl+Shift+G</span></button>
-      <button class="plus-menu-item" disabled={shells.length === 0} onclick={openDefaultTerminal}><span class="ic">⌨</span> {t('workbench.terminalMenu')}</button>
-      <button class="plus-menu-item" onclick={() => openBrowserTab()}><span class="ic">🌐</span> {t('workbench.browserMenu')} <span class="kbd">Ctrl+T</span></button>
-      <button class="plus-menu-item" onclick={openFilesTab}><span class="ic">⧉</span> {t('workbench.filesTab')} <span class="kbd">Ctrl+P</span></button>
-      <button class="plus-menu-item" onclick={openToolsTab}><span class="ic">🛠</span> {t('workbench.toolsTab')}</button>
+      <button class="plus-menu-item" onclick={openReview}><span class="ic"><Icon name="layoutList" size={14} /></span> {t('workbench.reviewTab')} <span class="kbd">Ctrl+Shift+G</span></button>
+      <button class="plus-menu-item" disabled={shells.length === 0} onclick={openDefaultTerminal}><span class="ic"><Icon name="keyboard" size={14} /></span> {t('workbench.terminalMenu')}</button>
+      <button class="plus-menu-item" onclick={() => openBrowserTab()}><span class="ic"><Icon name="globe" size={14} /></span> {t('workbench.browserMenu')} <span class="kbd">Ctrl+T</span></button>
+      <button class="plus-menu-item" onclick={openFilesTab}><span class="ic"><Icon name="copy" size={14} /></span> {t('workbench.filesTab')} <span class="kbd">Ctrl+P</span></button>
+      <button class="plus-menu-item" onclick={openToolsTab}><span class="ic"><Icon name="wrench" size={14} /></span> {t('workbench.toolsTab')}</button>
     </div>
   {/if}
   {#each workbench.tabs as tab (tab.id)}
@@ -225,6 +227,6 @@
 
 {#if hasActiveTask}
   <div class="insp-foot">
-    <button class="stopbtn">{t('workbench.stopTask')}</button>
+    <button class="stopbtn"><Icon name="square" size={14} /> {t('workbench.stopTask')}</button>
   </div>
 {/if}

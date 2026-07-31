@@ -7,6 +7,7 @@
   } from '../../../wailsjs/go/main/App'
   import { EventsOn } from '../../../wailsjs/runtime/runtime'
   import { t } from '../i18n.svelte'
+  import Icon from '../Icon.svelte'
 
   let { tab, active, menuOpen }: { tab: WorkbenchTab; active: boolean; menuOpen: boolean } = $props()
 
@@ -107,7 +108,7 @@
 
 {#snippet blank()}
   <div class="insp-blank">
-    <span class="ic">🌐</span>
+    <span class="ic"><Icon name="globe" size={14} /></span>
     <div class="insp-blank-title">{t('browserPane.startBrowsing')}</div>
     <div class="insp-blank-sub">{t('browserPane.enterUrl')}</div>
   </div>

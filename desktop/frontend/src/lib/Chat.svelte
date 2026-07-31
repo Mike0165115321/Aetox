@@ -19,6 +19,8 @@
     openProject, openFolder, clearProjectFocus, cancelTurn, answerAsk, queuedMessages,
     retryActiveProvider, undoLastTurn, switchApprovalMode,
   } from './stores/cockpit.svelte'
+  import Icon from './Icon.svelte'
+  import type { IconName } from './icons'
 
   let {
     messages, task, model, awaitingReply, agentStatus, toolSteps, streamingText, reasoningText,
@@ -93,7 +95,7 @@
   )
   // One icon table for the two places a file chip shows up: the composer's
   // pending chip and the sent bubble's.
-  const fileIcon = (kind?: string) => (kind === 'audio' ? '🎧' : kind === 'video' ? '🎬' : '📄')
+  const fileIcon = (kind?: string): IconName => (kind === 'audio' ? 'headphones' : kind === 'video' ? 'clapperboard' : 'fileText')
 
   // The agent's own steps and its delegations are counted apart, because "used
   // 6 tools" on a turn where four of them were a sub-agent's says nothing about
@@ -105,14 +107,14 @@
     const own = ownSteps(steps).filter((s) => !s.kind)
     const failed = own.filter((s) => s.state === 'err').length
     const base = t('chat.usedTools', { n: own.length })
-    return failed ? `${base} · ✕${failed}` : base
+    return failed ? `${base} · ${t('chat.failedCount', { n: failed })}` : base
   }
 
   function subagentsLabel(steps: ToolStep[]): string {
     const nodes = delegated(steps)
     const failed = nodes.filter((n) => n.step.state === 'err').length
     const base = t('chat.usedSubagents', { n: nodes.length })
-    return failed ? `${base} · ✕${failed}` : base
+    return failed ? `${base} · ${t('chat.failedCount', { n: failed })}` : base
   }
 
   onMount(async () => {
@@ -204,8 +206,8 @@
   // One glyph per approval mode, shown on the chip itself: which mode you are
   // in has to be readable without opening anything — that is the whole reason
   // it stopped living only in Settings — and a glyph costs no bar width.
-  const approvalIcons: Record<string, string> = {
-    'ask': '✋', 'unsafe-only': '🛡', 'full-access': '⚡',
+  const approvalIcons: Record<string, IconName> = {
+    'ask': 'hand', 'unsafe-only': 'shield', 'full-access': 'zap',
   }
 
   // Auto-grow the composer upward while typing (the composer is anchored at
@@ -296,11 +298,11 @@
     model.provider === 'aetox' && !awaitingReply && messages.length > 0 && remainingGuide.length > 0,
   )
 
-  const starters = $derived([
-    { icon: '🧭', title: t('chat.starter1Title'), prompt: t('chat.starter1Prompt') },
-    { icon: '🛠', title: t('chat.starter2Title'), prompt: t('chat.starter2Prompt') },
-    { icon: '🔍', title: t('chat.starter3Title'), prompt: t('chat.starter3Prompt') },
-    { icon: '🩹', title: t('chat.starter4Title'), prompt: t('chat.starter4Prompt') },
+  const starters: { icon: IconName; title: string; prompt: string }[] = $derived([
+    { icon: 'compass', title: t('chat.starter1Title'), prompt: t('chat.starter1Prompt') },
+    { icon: 'wrench', title: t('chat.starter2Title'), prompt: t('chat.starter2Prompt') },
+    { icon: 'search', title: t('chat.starter3Title'), prompt: t('chat.starter3Prompt') },
+    { icon: 'bandage', title: t('chat.starter4Title'), prompt: t('chat.starter4Prompt') },
   ])
 
   function pickStarter(prompt: string) {
@@ -465,9 +467,9 @@
       class="ctrl updrop-trigger"
       onclick={(e) => { e.stopPropagation(); openDropdown = openDropdown === id ? '' : id }}
     >
-      {#if active?.icon}<span class="ic">{active.icon}</span>{/if}
+      {#if active?.icon}<span class="ic"><Icon name={active.icon as IconName} size={13} /></span>{/if}
       <span class="t">{active?.label ?? current}</span>
-      <span class="caret">{openDropdown === id ? '⌃' : '⌄'}</span>
+      <span class="caret"><Icon name={openDropdown === id ? 'chevronUp' : 'chevronDown'} size={12} /></span>
     </button>
     {#if openDropdown === id}
       <div class="updrop-list" use:revealSelected>
@@ -479,7 +481,7 @@
             class:selected={opt.value === current}
             onclick={(e) => { e.stopPropagation(); openDropdown = ''; onPick(opt.value) }}
           >
-            {#if opt.icon}<span class="ic">{opt.icon}</span>{/if}
+            {#if opt.icon}<span class="ic"><Icon name={opt.icon as IconName} size={13} /></span>{/if}
             <span class="t">{opt.label}</span>
             {#if opt.desc}<span class="d">{opt.desc}</span>{/if}
           </button>
@@ -495,13 +497,13 @@
          work it announces (§59). Plain text, not a status row. -->
     <div class="tool-note">{s.label}</div>
   {:else if s.kind === 'thinking'}
-    <div class="tool-think">✳ {t('chat.thoughtFor', { secs: s.secs ?? 1 })}</div>
+    <div class="tool-think"><Icon name="sparkles" size={12} /> {t('chat.thoughtFor', { secs: s.secs ?? 1 })}</div>
   {:else}
   <div class="tool-step {s.state}">
     {#if s.state === 'run'}
       <span class="glyph spin"></span>
     {:else}
-      <span class="glyph">{s.state === 'done' ? '✓' : '✕'}</span>
+      <span class="glyph"><Icon name={s.state === 'done' ? 'check' : 'x'} size={12} /></span>
     {/if}
     <span class="lbl">{s.label}</span>
     {#if s.state === 'run' && live}
@@ -544,7 +546,7 @@
             {#if node.step.state === 'run'}
               <span class="glyph spin"></span>
             {:else}
-              <span class="glyph">{node.step.state === 'done' ? '✓' : '✕'}</span>
+              <span class="glyph"><Icon name={node.step.state === 'done' ? 'check' : 'x'} size={12} /></span>
             {/if}
             <span class="ag-name">{node.step.agent || t('chat.subagent')}</span>
             <span class="ag-job">{node.step.label.replace(/^task\s*/, '')}</span>
@@ -584,7 +586,7 @@
       <div class="starter-grid">
         {#each starters as s}
           <button class="starter-card" onclick={() => pickStarter(s.prompt)}>
-            <span class="ic">{s.icon}</span>
+            <span class="ic"><Icon name={s.icon} size={18} /></span>
             <span class="title">{s.title}</span>
           </button>
         {/each}
@@ -611,25 +613,25 @@
               </div>
             {/if}
             {#if m.contextLabel}
-              <div class="attach-chip"><span class="ic">📎</span> <span class="attach-name">{m.contextLabel}</span></div>
+              <div class="attach-chip"><span class="ic"><Icon name="paperclip" size={13} /></span> <span class="attach-name">{m.contextLabel}</span></div>
             {/if}
             {#if m.reasoning || m.steps?.length}
               <div class="meta-row">
                 {#if m.reasoning}
                   <button class="reasoning-toggle" onclick={() => togglePanel(i, 'think')}>
-                    <span class="chev">{openPanel[i] === 'think' ? '▾' : '▸'}</span>
+                    <span class="chev"><Icon name={openPanel[i] === 'think' ? 'chevronDown' : 'chevronRight'} size={12} /></span>
                     {m.thinkSecs ? t('chat.thoughtFor', { secs: m.thinkSecs }) : t('chat.thoughtDone')}
                   </button>
                 {/if}
                 {#if ownSteps(m.steps ?? []).length}
                   <button class="reasoning-toggle" onclick={() => togglePanel(i, 'tools')}>
-                    <span class="chev">{openPanel[i] === 'tools' ? '▾' : '▸'}</span>
+                    <span class="chev"><Icon name={openPanel[i] === 'tools' ? 'chevronDown' : 'chevronRight'} size={12} /></span>
                     {toolsLabel(m.steps ?? [])}
                   </button>
                 {/if}
                 {#if delegated(m.steps ?? []).length}
                   <button class="reasoning-toggle" onclick={() => togglePanel(i, 'subs')}>
-                    <span class="chev">{openPanel[i] === 'subs' ? '▾' : '▸'}</span>
+                    <span class="chev"><Icon name={openPanel[i] === 'subs' ? 'chevronDown' : 'chevronRight'} size={12} /></span>
                     {subagentsLabel(m.steps ?? [])}
                   </button>
                 {/if}
@@ -650,7 +652,7 @@
               {#if m.role === 'agent' && m.text}
                 <button type="button" class="msg-copy" aria-label={t('chat.copy')}
                   onclick={() => copyMessage(m.text)}>
-                  {copiedText === m.text ? '✓' : '⧉'}
+                  <Icon name={copiedText === m.text ? 'check' : 'copy'} size={13} />
                 </button>
               {/if}
             </div>
@@ -685,7 +687,7 @@
         <div class="msg user queued">
           <div class="bubble">
             {q}
-            <button class="queued-drop" aria-label={t('chat.removeQueued')} onclick={() => queuedMessages.splice(i, 1)}>✕</button>
+            <button class="queued-drop" aria-label={t('chat.removeQueued')} onclick={() => queuedMessages.splice(i, 1)}><Icon name="x" size={12} /></button>
           </div>
         </div>
       {/each}
@@ -703,17 +705,17 @@
               <div class="meta-row">
                 {#if reasoningText}
                   <button class="reasoning-toggle" onclick={() => (livePanel = livePanel === 'think' ? '' : 'think')}>
-                    <span class="chev">{livePanel === 'think' ? '▾' : '▸'}</span> {t('chat.thinking')}
+                    <span class="chev"><Icon name={livePanel === 'think' ? 'chevronDown' : 'chevronRight'} size={12} /></span> {t('chat.thinking')}
                   </button>
                 {/if}
                 {#if doneOwn.length}
                   <button class="reasoning-toggle" onclick={() => (livePanel = livePanel === 'tools' ? '' : 'tools')}>
-                    <span class="chev">{livePanel === 'tools' ? '▾' : '▸'}</span> {toolsLabel(liveDone)}
+                    <span class="chev"><Icon name={livePanel === 'tools' ? 'chevronDown' : 'chevronRight'} size={12} /></span> {toolsLabel(liveDone)}
                   </button>
                 {/if}
                 {#if doneSubs.length}
                   <button class="reasoning-toggle" onclick={() => (livePanel = livePanel === 'subs' ? '' : 'subs')}>
-                    <span class="chev">{livePanel === 'subs' ? '▾' : '▸'}</span> {subagentsLabel(liveDone)}
+                    <span class="chev"><Icon name={livePanel === 'subs' ? 'chevronDown' : 'chevronRight'} size={12} /></span> {subagentsLabel(liveDone)}
                   </button>
                 {/if}
               </div>
@@ -731,7 +733,7 @@
               <div class="todo-panel">
                 {#each cockpit.todos as td}
                   <div class="todo-item {td.status}">
-                    <span class="mark">{td.status === 'completed' ? '✓' : td.status === 'in_progress' ? '▸' : '○'}</span>
+                    <span class="mark"><Icon name={td.status === 'completed' ? 'check' : td.status === 'in_progress' ? 'chevronRight' : 'circle'} size={12} /></span>
                     <span class="t">{td.content}</span>
                   </div>
                 {/each}
@@ -784,7 +786,7 @@
       <button
         class="scroll-bottom" aria-label={t('chat.scrollToBottom')}
         onclick={() => { if (chatEl) chatEl.scrollTop = chatEl.scrollHeight }}
-      >↓</button>
+      ><Icon name="arrowDown" size={14} /></button>
     {/if}
     {#if needsApiKey}
       <div class="api-key-banner">
@@ -802,21 +804,21 @@
       <div class="attach-chip">
         <img src={cockpit.pendingImage.dataUrl} alt="" class="attach-thumb" />
         <span class="attach-name">{cockpit.pendingImage.relPath.split('/').pop()}</span>
-        <button class="attach-remove" aria-label={t('chat.removeAttachment')} onclick={clearPendingImage}>✕</button>
+        <button class="attach-remove" aria-label={t('chat.removeAttachment')} onclick={clearPendingImage}><Icon name="x" size={12} /></button>
       </div>
     {/if}
     {#if cockpit.pendingFile}
       <div class="attach-chip">
         <span class="ic">{fileIcon(cockpit.pendingFile.kind)}</span>
         <span class="attach-name">{cockpit.pendingFile.label}</span>
-        <button class="attach-remove" aria-label={t('chat.removeAttachment')} onclick={clearPendingFile}>✕</button>
+        <button class="attach-remove" aria-label={t('chat.removeAttachment')} onclick={clearPendingFile}><Icon name="x" size={12} /></button>
       </div>
     {/if}
     {#if cockpit.pendingContext}
       <div class="attach-chip">
-        <span class="ic">{cockpit.pendingContext.kind === 'file' ? '📄' : '🌐'}</span>
+        <span class="ic"><Icon name={cockpit.pendingContext.kind === 'file' ? 'fileText' : 'globe'} size={13} /></span>
         <span class="attach-name">{cockpit.pendingContext.label}</span>
-        <button class="attach-remove" aria-label={t('chat.removeAttachment')} onclick={clearPendingContext}>✕</button>
+        <button class="attach-remove" aria-label={t('chat.removeAttachment')} onclick={clearPendingContext}><Icon name="x" size={12} /></button>
       </div>
     {/if}
     <div class="focus-row">
@@ -824,27 +826,27 @@
         {#if focusMenuOpen}
           <div class="focus-menu">
             <button type="button" class="focus-item" class:on={!cockpit.project.focused} onclick={() => { focusMenuOpen = false; clearProjectFocus() }}>
-              <span class="ic">💬</span> {t('chat.noProject')}
+              <span class="ic"><Icon name="messageSquare" size={14} /></span> {t('chat.noProject')}
             </button>
             {#if cockpit.projects.length > 0}<div class="menu-sep"></div>{/if}
             {#each cockpit.projects.slice(0, 8) as p (p.key)}
               <button type="button" class="focus-item" class:on={cockpit.project.focused && p.active} onclick={() => { focusMenuOpen = false; openProject(p.path) }}>
-                <span class="ic">📁</span><span class="t">{p.name}</span>
+                <span class="ic"><Icon name="folder" size={14} /></span><span class="t">{p.name}</span>
               </button>
             {/each}
             <div class="menu-sep"></div>
             <button type="button" class="focus-item" onclick={() => { focusMenuOpen = false; openFolder() }}>
-              <span class="ic">📂</span> {t('topbar.openFolder')}…
+              <span class="ic"><Icon name="folderOpen" size={14} /></span> {t('topbar.openFolder')}…
             </button>
           </div>
         {/if}
         <button type="button" class="focus-chip focus-btn" onclick={() => (focusMenuOpen = !focusMenuOpen)}>
-          <span class="ic">{cockpit.project.focused ? '📁' : '💬'}</span>
+          <span class="ic"><Icon name={cockpit.project.focused ? 'folder' : 'messageSquare'} size={13} /></span>
           {cockpit.project.focused ? cockpit.project.name : t('chat.noProject')}
-          <span class="caret">{focusMenuOpen ? '⌃' : '⌄'}</span>
+          <span class="caret"><Icon name={focusMenuOpen ? 'chevronUp' : 'chevronDown'} size={12} /></span>
         </button>
       </div>
-      {#if cockpit.project.focused && cockpit.project.branch}<span class="focus-chip">⑂ {cockpit.project.branch}</span>{/if}
+      {#if cockpit.project.focused && cockpit.project.branch}<span class="focus-chip"><Icon name="gitBranch" size={11} /> {cockpit.project.branch}</span>{/if}
       <!-- Offered only when the last turn actually changed something, so it is
            never a button that does nothing. Disappears once pressed. -->
       {#if cockpit.undoFiles.length > 0}
@@ -853,7 +855,7 @@
           class="focus-chip undo-chip"
           title={cockpit.undoFiles.join('\n')}
           onclick={() => undoLastTurn()}
-        >↶ {t('chat.undoTurn', { count: String(cockpit.undoFiles.length) })}</button>
+        ><Icon name="undo2" size={13} /> {t('chat.undoTurn', { count: String(cockpit.undoFiles.length) })}</button>
       {/if}
     </div>
     <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -978,18 +980,18 @@
             {/if}
             <button type="button" class="model-chip" onclick={(e) => { e.stopPropagation(); modelMenuOpen = !modelMenuOpen; if (modelMenuOpen) { refreshThinkLevels(); EnabledProviders().then((p) => (providers = p)) } }}>
               <span class="mode-ic" class:danger={model.approval === 'full-access'}
-                    title={t('settings.approvalTitle')}>{approvalIcons[model.approval] ?? '✋'}</span>
+                    title={t('settings.approvalTitle')}><Icon name={approvalIcons[model.approval] ?? 'hand'} size={14} /></span>
               <span class="t">{model.modelName || model.provider}</span>
               {#if model.thinkLevel}<span class="lvl">{model.thinkLevel}</span>{/if}
-              <span class="caret">{modelMenuOpen ? '⌃' : '⌄'}</span>
+              <span class="caret"><Icon name={modelMenuOpen ? 'chevronUp' : 'chevronDown'} size={12} /></span>
             </button>
           </div>
         {/if}
         {#if awaitingReply}
           <!-- The tool loop is unbounded — this is the user's brake (Ctrl+C of the UI) -->
-          <button class="send stop" aria-label="Stop" onclick={cancelTurn}>■</button>
+          <button class="send stop" aria-label="Stop" onclick={cancelTurn}><Icon name="square" size={13} /></button>
         {:else}
-          <button class="send" aria-label="Send" onclick={submit}>➤</button>
+          <button class="send" aria-label="Send" onclick={submit}><Icon name="sendHorizontal" size={15} /></button>
         {/if}
       </div>
     </div>

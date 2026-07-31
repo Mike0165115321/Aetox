@@ -48,6 +48,11 @@
   --interactive-hover-border:#20505a;
   --overlay-focus:#2f6bff1f;
   --shadow-interactive:#2f6bff88;
+  /* Scrim behind a modal. Declared once here and deliberately not overridden
+     per theme: a scrim's job is to push the page back, which means darkening it
+     — a light-theme scrim tinted to match the theme stops reading as "the page
+     behind is not available" and starts reading as a panel. */
+  --overlay-scrim:rgba(0,0,0,.55);
 
   /* status */
   --status-success:var(--c-green-500);

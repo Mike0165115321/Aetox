@@ -100,3 +100,60 @@ describe('theme contrast', () => {
     })
   }
 })
+
+// ---------------------------------------------------------------------------
+// Syntax colours. Chat code blocks used to import one fixed highlight.js
+// stylesheet, so every theme got GitHub Dark Dimmed's tokens — on the four
+// light themes that measured ten of fourteen tokens under 3:1 against the code
+// surface. They now come from syntaxTheme.ts, the same table Monaco builds its
+// editor themes from, so the two surfaces cannot drift apart.
+import { SYNTAX_THEMES, applySyntaxTheme } from '../lib/syntaxTheme'
+import { THEMES } from '../lib/theme.svelte'
+
+const SYNTAX_TOKENS = [
+  'comment', 'string', 'number', 'constant', 'keyword', 'function',
+  'type', 'tag', 'attribute.name', 'variable', 'delimiter', 'regexp', 'invalid',
+]
+
+describe('syntax theme', () => {
+  it('covers every theme the UI offers', () => {
+    const missing = THEMES.map((t) => t.value).filter((name) => !(name in SYNTAX_THEMES))
+    expect(missing, `no syntax palette for: ${missing.join(', ')}`).toHaveLength(0)
+  })
+
+  for (const [name, palette] of Object.entries(SYNTAX_THEMES)) {
+    it(`gives ${name} a complete palette`, () => {
+      const missing = SYNTAX_TOKENS.filter((tok) => !palette.syntax[tok])
+      expect(missing, `${name} is missing: ${missing.join(', ')}`).toHaveLength(0)
+      expect(palette.chrome['editor.background']).toMatch(/^#[0-9a-f]{6}$/i)
+      expect(palette.chrome['editor.foreground']).toMatch(/^#[0-9a-f]{6}$/i)
+    })
+
+    // Comments are excluded on purpose: Nord, Catppuccin Latte and the rest
+    // deliberately recede theirs, and raising them would stop these being the
+    // themes they are named after. Everything else has to be readable on the
+    // background the same palette declares, which is what the code block is
+    // now painted on.
+    it(`keeps ${name}'s code readable on its own background`, () => {
+      const bg = palette.chrome['editor.background']
+      const failures = Object.entries(palette.syntax)
+        .filter(([tok]) => tok !== 'comment')
+        .map(([tok, hex]) => [tok, contrast(hex, bg)] as const)
+        .filter(([, ratio]) => ratio < 2.1)
+        .map(([tok, ratio]) => `${tok} ${ratio.toFixed(2)}:1`)
+      expect(failures, `${name}: ${failures.join(', ')}`).toHaveLength(0)
+    })
+  }
+
+  it('writes the active palette where CSS can reach it', () => {
+    applySyntaxTheme('dracula')
+    const root = document.documentElement.style
+    expect(root.getPropertyValue('--syn-keyword')).toBe(SYNTAX_THEMES.dracula.syntax.keyword)
+    // The one token whose Monaco name carries a dot has to survive the trip.
+    expect(root.getPropertyValue('--syn-attribute-name')).toBe(SYNTAX_THEMES.dracula.syntax['attribute.name'])
+    expect(root.getPropertyValue('--syn-bg')).toBe(SYNTAX_THEMES.dracula.chrome['editor.background'])
+
+    applySyntaxTheme('gruvbox-light')
+    expect(root.getPropertyValue('--syn-keyword')).toBe(SYNTAX_THEMES['gruvbox-light'].syntax.keyword)
+  })
+})

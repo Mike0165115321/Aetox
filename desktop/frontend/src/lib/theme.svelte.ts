@@ -3,6 +3,8 @@
 // swaps every semantic token in theme.css. THEMES is the registry — add a theme by
 // adding a :root[data-theme="x"] block in theme.css and a row here.
 
+import { applySyntaxTheme } from './syntaxTheme'
+
 export type ThemeName =
   | 'aetox'
   | 'catppuccin-mocha' | 'catppuccin-latte'
@@ -48,6 +50,10 @@ export const theme = $state<{ name: ThemeName }>({ name: DEFAULT_DARK })
 export function applyTheme(name: ThemeName): void {
   theme.name = name
   document.documentElement.dataset.theme = name
+  // Syntax colours ride along with the theme rather than being a separate
+  // switch: a chat code block and a file in the editor are the same kind of
+  // thing and have to be coloured by the same palette.
+  applySyntaxTheme(name)
   localStorage.setItem(STORAGE_KEY, name)
 }
 

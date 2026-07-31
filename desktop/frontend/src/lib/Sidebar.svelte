@@ -8,6 +8,7 @@
   import { UserName, SetUserName } from '../../wailsjs/go/main/App'
   import { t, i18n, setLocale, localeNames, type Locale } from './i18n.svelte'
   import { theme, applyTheme, THEMES, type ThemeName } from './theme.svelte'
+  import Icon from './Icon.svelte'
 
   let { onOpenSettings }: { onOpenSettings: () => void } = $props()
 
@@ -98,10 +99,10 @@
   <div class="side-tabs">
     <div class="seg">
       <button type="button" class="seg-btn" class:active={tab === 'history'} onclick={() => (tab = 'history')}>
-        <span class="ic">💬</span> {t('sidebar.globalHistory')}
+        <span class="ic"><Icon name="messageSquare" size={14} /></span> {t('sidebar.globalHistory')}
       </button>
       <button type="button" class="seg-btn" class:active={tab === 'projects'} onclick={() => (tab = 'projects')}>
-        <span class="ic">📁</span> {t('sidebar.projects')}
+        <span class="ic"><Icon name="folder" size={14} /></span> {t('sidebar.projects')}
       </button>
     </div>
   </div>
@@ -111,19 +112,19 @@
     {#if tab === 'projects'}
       <div class="scroll">
         <button type="button" class="proj-add" onclick={openFolder}>
-          <span class="ic">＋</span> {t('sidebar.addProject')}
+          <span class="ic"><Icon name="plus" size={14} /></span> {t('sidebar.addProject')}
         </button>
         {#each projectGroups as g (g.project.key)}
           <div class="proj-group">
             <div class="proj-group-row">
               <button type="button" class="proj-group-chev" aria-label={g.project.name}
                 onclick={() => (collapsedProjects[g.project.key] = !collapsedProjects[g.project.key])}>
-                {collapsedProjects[g.project.key] ? '▸' : '▾'}
+                <Icon name={collapsedProjects[g.project.key] ? 'chevronRight' : 'chevronDown'} size={13} />
               </button>
               <button type="button" class="proj-group-head" class:active={g.project.active} onclick={() => openProject(g.project.path)}>
-                <span class="ic">{g.project.active ? '📂' : '📁'}</span>
+                <span class="ic"><Icon name={g.project.active ? 'folderOpen' : 'folder'} size={14} /></span>
                 <span class="t">{g.project.name}</span>
-                {#if g.project.active && cockpit.project.branch}<span class="proj-branch">⑂ {cockpit.project.branch}</span>{/if}
+                {#if g.project.active && cockpit.project.branch}<span class="proj-branch"><Icon name="gitBranch" size={11} /> {cockpit.project.branch}</span>{/if}
               </button>
             </div>
             {#if !collapsedProjects[g.project.key]}
@@ -132,7 +133,7 @@
                   <button type="button" class="proj-group-sess-open" onclick={() => selectGlobalSession(s)}>{s.title}</button>
                   <button type="button" class="sess-del" class:confirm={confirmDeleteId === s.id}
                     aria-label={t('sidebar.deleteSession')} onclick={() => onDeleteSession(s)}>
-                    {confirmDeleteId === s.id ? t('sidebar.confirmDelete') : '✕'}
+                    {#if confirmDeleteId === s.id}{t('sidebar.confirmDelete')}{:else}<Icon name="x" size={12} />{/if}
                   </button>
                 </div>
               {/each}
@@ -148,7 +149,7 @@
     {:else}
       <div class="scroll">
         <button type="button" class="proj-add" onclick={newSession}>
-          <span class="ic">＋</span> {t('sidebar.newSession')}
+          <span class="ic"><Icon name="plus" size={14} /></span> {t('sidebar.newSession')}
           <span class="kbd">Ctrl+N</span>
         </button>
         <input class="sess-search" placeholder={t('sidebar.searchHistory')} bind:value={historyQuery} oninput={onHistorySearchInput} />
@@ -162,7 +163,7 @@
                 aria-label={t('sidebar.deleteSession')}
                 onclick={(e) => { e.stopPropagation(); onDeleteSession(s) }}
                 onkeydown={(e) => e.key === 'Enter' && (e.stopPropagation(), onDeleteSession(s))}>
-                {confirmDeleteId === s.id ? t('sidebar.confirmDelete') : '✕'}
+                {#if confirmDeleteId === s.id}{t('sidebar.confirmDelete')}{:else}<Icon name="x" size={12} />{/if}
               </span>
             </span>
             <!-- Second line only while searching: the matched excerpt is why
@@ -184,7 +185,7 @@
     <button type="button" class="side-footer" onclick={() => (profileOpen = !profileOpen)}>
       <span class="avatar">{avatarInitial}</span>
       <span class="label">{profileName || t('sidebar.setYourName')}</span>
-      <span class="ic gear">⚙</span>
+      <span class="ic gear"><Icon name="settings" size={15} /></span>
     </button>
     {#if profileOpen}
       <div class="plus-menu profile-menu up">
@@ -200,7 +201,7 @@
         </div>
         <div class="menu-sep"></div>
         <div class="plus-menu-item">
-          <span class="ic">🎨</span> {t('settings.themeTitle')}
+          <span class="ic"><Icon name="palette" size={14} /></span> {t('settings.themeTitle')}
           <select class="lang-select" value={theme.name} onchange={(e) => applyTheme(e.currentTarget.value as ThemeName)}>
             {#each THEMES as th (th.value)}
               <option value={th.value}>{th.label}</option>
@@ -208,7 +209,7 @@
           </select>
         </div>
         <div class="plus-menu-item">
-          <span class="ic">🌐</span> {t('settings.languageTitle')}
+          <span class="ic"><Icon name="globe" size={14} /></span> {t('settings.languageTitle')}
           <select class="lang-select" value={i18n.locale} onchange={(e) => setLocale(e.currentTarget.value as Locale)}>
             {#each Object.entries(localeNames) as [code, name]}
               <option value={code}>{name}</option>
@@ -216,7 +217,7 @@
           </select>
         </div>
         <button class="plus-menu-item" onclick={() => { profileOpen = false; onOpenSettings() }}>
-          <span class="ic">⚙</span> {t('sidebar.settings')} <span class="kbd">{t('sidebar.settingsShortcut')}</span>
+          <span class="ic"><Icon name="settings" size={14} /></span> {t('sidebar.settings')} <span class="kbd">{t('sidebar.settingsShortcut')}</span>
         </button>
       </div>
     {/if}

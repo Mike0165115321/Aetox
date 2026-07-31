@@ -67,6 +67,12 @@ export const ListAllSessions = arr()
 export const ListPromptPresets = arr()
 export const ListTools = arr()
 export const ListExternalSkills = arr()
+// The Skills page reads its folder and its scan errors from the engine rather
+// than naming a path itself — two of the three it used to name were wrong.
+export const SkillsDir = vi.fn(async () => 'C:/Users/x/.aetox/skills')
+export const SkillScanIssues = arr()
+export const OpenSkillsFolder = noop()
+export const InstallSkillFromZip = str()
 export const ListIdentityFiles = arr()
 export const ListMCPServers = arr()
 export const ListModelsForProvider = arr()

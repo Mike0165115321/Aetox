@@ -9,6 +9,7 @@
   import { detectLanguage } from './monacoSetup'
   import { renderMarkdown } from './markdown'
   import { openUrlInWorkbench } from './stores/workbench.svelte'
+  import Icon from './Icon.svelte'
 
   // 'auto' follows the app's named UI theme; any other choice is a manual override.
   const monacoTheme = $derived(editorTheme.choice === 'auto' ? theme.name : editorTheme.choice)
@@ -106,7 +107,7 @@
 <div class="file-editor">
   <div class="fe-head">
     <span class="fe-path">{path}</span>
-    {#if dirty}<span class="fe-dirty">●</span>{/if}
+    {#if dirty}<span class="fe-dirty"><Icon name="dot" size={14} /></span>{/if}
     <span class="spacer"></span>
     {#if errorMsg}<span class="fe-error">{errorMsg}</span>{/if}
     {#if isMarkdown}

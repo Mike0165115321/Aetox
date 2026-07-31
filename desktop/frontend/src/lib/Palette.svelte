@@ -39,7 +39,10 @@
   }
 
   let presets = $state<{ name: string; description: string; builtin: boolean }[]>([])
-  let counts = $state({ builtin: 0, skill: 0, mcp: 0 })
+  // All four fields the Go ToolCounts carries. `workbench` was missing, so the
+  // line rendered "NaN tools" for the frame between opening the palette and
+  // ToolCounts() resolving — builtin + undefined.
+  let counts = $state({ builtin: 0, workbench: 0, skill: 0, mcp: 0 })
   let thinkLevels = $state<string[]>([])
   let query = $state('')
   let cursor = $state(0)
@@ -144,7 +147,10 @@
   }
 
   function onKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') { e.preventDefault(); onclose(); return }
+    // stopPropagation, not just preventDefault: Escape also closes Settings at
+    // the window level, and one press must dismiss one layer — the palette
+    // opened over Settings, so it is the layer that closes.
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onclose(); return }
     if (e.key === 'ArrowDown') { e.preventDefault(); cursor = Math.min(cursor + 1, filtered.length - 1) }
     else if (e.key === 'ArrowUp') { e.preventDefault(); cursor = Math.max(cursor - 1, 0) }
     else if (e.key === 'Enter') { e.preventDefault(); void pick(filtered[cursor]) }

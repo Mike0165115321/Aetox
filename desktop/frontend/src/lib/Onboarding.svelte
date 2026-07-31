@@ -109,7 +109,7 @@
         <div class="onboard-field">
           <div class="eyebrow">{t('settings.providers')}</div>
           <select class="ctrl" bind:value={selected}>
-            {#each providers as p}<option value={p.name}>{p.name}{p.hasKey ? ' ✓' : ''}</option>{/each}
+            {#each providers as p}<option value={p.name}>{p.name}{p.hasKey ? ' · ' + t('onboard.hasKey') : ''}</option>{/each}
           </select>
         </div>
         {#if selectedRow?.requiresKey && !selectedRow?.hasKey}

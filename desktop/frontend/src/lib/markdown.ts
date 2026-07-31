@@ -1,7 +1,11 @@
 import { marked, type Tokens } from 'marked'
 import DOMPurify from 'dompurify'
 import hljs from 'highlight.js/lib/common'
-import 'highlight.js/styles/github-dark-dimmed.css'
+// No stylesheet from highlight.js: it only ships fixed palettes, and importing
+// one pinned every theme to it — on the four light themes that put dark-theme
+// token colours on a light surface, where ten of fourteen measured under 3:1.
+// style.css maps .hljs-* onto the --syn-* properties applySyntaxTheme() writes,
+// so a fenced block is coloured by whatever theme is on.
 import { t } from './i18n.svelte'
 
 marked.setOptions({ breaks: true, gfm: true })

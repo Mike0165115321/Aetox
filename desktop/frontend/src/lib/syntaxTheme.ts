@@ -1,0 +1,420 @@
+// The syntax palette for each named UI theme — one table, two consumers.
+//
+// It used to live inside editorTheme.svelte.ts and serve Monaco alone, while the
+// chat's fenced code blocks imported highlight.js/styles/github-dark-dimmed.css
+// and were pinned to it. On the four light themes that put dark-theme token
+// colours on a light surface: ten of fourteen tokens measured under 3:1 against
+// --surface-code, so most of the highlighting was unreadable.
+//
+// Now applySyntaxTheme() writes these as --syn-* custom properties on the root
+// and style.css maps highlight.js's classes onto them, so a code block in chat
+// and a file in the editor are coloured by the same values.
+//
+// Kept in TypeScript rather than theme.css because Monaco needs them as data —
+// it builds its themes from objects, not from computed style. theme.css stays
+// the source for everything that is only ever painted by CSS.
+
+import type { ThemeName } from './theme.svelte'
+
+export type SyntaxPalette = {
+  base: 'vs-dark' | 'vs'
+  /** Token colours, named for Monaco's Monarch tokens. */
+  syntax: Record<string, string>
+  /** Editor chrome, named with VS Code's colour ids (Monaco reuses them). */
+  chrome: Record<string, string>
+}
+
+export const SYNTAX_THEMES: Record<ThemeName, SyntaxPalette> = {
+  'aetox': {
+    base: 'vs-dark',
+    syntax: {
+      comment: '#56585f',
+      string: '#3fb950',
+      number: '#d29922',
+      constant: '#d29922',
+      keyword: '#a371f7',
+      function: '#58a6ff',
+      type: '#35d0e0',
+      tag: '#f85149',
+      'attribute.name': '#d29922',
+      variable: '#b0b3b8',
+      delimiter: '#a0a3a9',
+      regexp: '#7fe9f3',
+      invalid: '#f85149',
+    },
+    chrome: {
+      'editor.background': '#121215',
+      'editor.foreground': '#f2f2f3',
+      'editor.lineHighlightBackground': '#1f1f23',
+      'editorCursor.foreground': '#35d0e0',
+      'editor.selectionBackground': '#3a3a40',
+      'editorLineNumber.foreground': '#56585f',
+      'editorLineNumber.activeForeground': '#a0a3a9',
+    },
+  },
+  'catppuccin-mocha': {
+    base: 'vs-dark',
+    syntax: {
+      comment: '#6c7086',
+      string: '#a6e3a1',
+      number: '#fab387',
+      constant: '#fab387',
+      keyword: '#cba6f7',
+      function: '#89b4fa',
+      type: '#f9e2af',
+      tag: '#f38ba8',
+      'attribute.name': '#f9e2af',
+      variable: '#cdd6f4',
+      delimiter: '#bac2de',
+      regexp: '#f5c2e7',
+      invalid: '#f38ba8',
+    },
+    chrome: {
+      'editor.background': '#181825',
+      'editor.foreground': '#cdd6f4',
+      'editor.lineHighlightBackground': '#313244',
+      'editorCursor.foreground': '#cba6f7',
+      'editor.selectionBackground': '#45475a',
+      'editorLineNumber.foreground': '#585b70',
+      'editorLineNumber.activeForeground': '#bac2de',
+    },
+  },
+  'catppuccin-latte': {
+    base: 'vs',
+    syntax: {
+      comment: '#9ca0b0',
+      string: '#40a02b',
+      number: '#fe640b',
+      constant: '#fe640b',
+      keyword: '#8839ef',
+      function: '#1e66f5',
+      type: '#df8e1d',
+      tag: '#d20f39',
+      'attribute.name': '#df8e1d',
+      variable: '#4c4f69',
+      delimiter: '#5c5f77',
+      regexp: '#ea76cb',
+      invalid: '#d20f39',
+    },
+    chrome: {
+      'editor.background': '#e6e9ef',
+      'editor.foreground': '#4c4f69',
+      'editor.lineHighlightBackground': '#ccd0da',
+      'editorCursor.foreground': '#8839ef',
+      'editor.selectionBackground': '#bcc0cc',
+      'editorLineNumber.foreground': '#acb0be',
+      'editorLineNumber.activeForeground': '#5c5f77',
+    },
+  },
+  'nord': {
+    base: 'vs-dark',
+    syntax: {
+      comment: '#4c566a',
+      string: '#a3be8c',
+      number: '#b48ead',
+      constant: '#b48ead',
+      keyword: '#81a1c1',
+      function: '#88c0d0',
+      type: '#8fbcbb',
+      tag: '#bf616a',
+      'attribute.name': '#d08770',
+      variable: '#eceff4',
+      delimiter: '#d8dee9',
+      regexp: '#ebcb8b',
+      invalid: '#bf616a',
+    },
+    chrome: {
+      'editor.background': '#3b4252',
+      'editor.foreground': '#eceff4',
+      'editor.lineHighlightBackground': '#434c5e',
+      'editorCursor.foreground': '#88c0d0',
+      'editor.selectionBackground': '#434c5e',
+      'editorLineNumber.foreground': '#4c566a',
+      'editorLineNumber.activeForeground': '#d8dee9',
+    },
+  },
+  'dracula': {
+    base: 'vs-dark',
+    syntax: {
+      comment: '#6272a4',
+      string: '#f1fa8c',
+      number: '#bd93f9',
+      constant: '#bd93f9',
+      keyword: '#ff79c6',
+      function: '#50fa7b',
+      type: '#8be9fd',
+      tag: '#ff5555',
+      'attribute.name': '#50fa7b',
+      variable: '#f8f8f2',
+      delimiter: '#f8f8f2',
+      regexp: '#ff79c6',
+      invalid: '#ff5555',
+    },
+    chrome: {
+      'editor.background': '#282a36',
+      'editor.foreground': '#f8f8f2',
+      'editor.lineHighlightBackground': '#343646',
+      'editorCursor.foreground': '#bd93f9',
+      'editor.selectionBackground': '#44475a',
+      'editorLineNumber.foreground': '#6272a4',
+      'editorLineNumber.activeForeground': '#f8f8f2',
+    },
+  },
+  'rose-pine': {
+    base: 'vs-dark',
+    syntax: {
+      comment: '#6e6a86',
+      string: '#8bbd8b',
+      number: '#f6c177',
+      constant: '#f6c177',
+      keyword: '#9ccfd8',
+      function: '#c4a7e7',
+      type: '#ebbcba',
+      tag: '#eb6f92',
+      'attribute.name': '#f6c177',
+      variable: '#e0def4',
+      delimiter: '#908caa',
+      regexp: '#eb6f92',
+      invalid: '#eb6f92',
+    },
+    chrome: {
+      'editor.background': '#1f1d2e',
+      'editor.foreground': '#e0def4',
+      'editor.lineHighlightBackground': '#26233a',
+      'editorCursor.foreground': '#c4a7e7',
+      'editor.selectionBackground': '#403d52',
+      'editorLineNumber.foreground': '#6e6a86',
+      'editorLineNumber.activeForeground': '#908caa',
+    },
+  },
+  'rose-pine-dawn': {
+    base: 'vs',
+    syntax: {
+      comment: '#9893a5',
+      string: '#4f7a3d',
+      number: '#ea9d34',
+      constant: '#ea9d34',
+      keyword: '#286983',
+      function: '#907aa9',
+      type: '#d7827e',
+      tag: '#b4637a',
+      'attribute.name': '#ea9d34',
+      variable: '#464261',
+      delimiter: '#797593',
+      regexp: '#b4637a',
+      invalid: '#b4637a',
+    },
+    chrome: {
+      'editor.background': '#fffaf3',
+      'editor.foreground': '#464261',
+      'editor.lineHighlightBackground': '#f2e9e1',
+      'editorCursor.foreground': '#907aa9',
+      'editor.selectionBackground': '#dfdad9',
+      'editorLineNumber.foreground': '#9893a5',
+      'editorLineNumber.activeForeground': '#797593',
+    },
+  },
+  'gruvbox-dark': {
+    base: 'vs-dark',
+    syntax: {
+      comment: '#928374',
+      string: '#b8bb26',
+      number: '#d3869b',
+      constant: '#d3869b',
+      keyword: '#fb4934',
+      function: '#8ec07c',
+      type: '#fabd2f',
+      tag: '#fb4934',
+      'attribute.name': '#fabd2f',
+      variable: '#ebdbb2',
+      delimiter: '#ebdbb2',
+      regexp: '#fe8019',
+      invalid: '#fb4934',
+    },
+    chrome: {
+      'editor.background': '#282828',
+      'editor.foreground': '#ebdbb2',
+      'editor.lineHighlightBackground': '#3c3836',
+      'editorCursor.foreground': '#fe8019',
+      'editor.selectionBackground': '#504945',
+      'editorLineNumber.foreground': '#7c6f64',
+      'editorLineNumber.activeForeground': '#bdae93',
+    },
+  },
+  'gruvbox-light': {
+    base: 'vs',
+    syntax: {
+      comment: '#928374',
+      string: '#79740e',
+      number: '#8f3f71',
+      constant: '#8f3f71',
+      keyword: '#9d0006',
+      function: '#427b58',
+      type: '#b57614',
+      tag: '#9d0006',
+      'attribute.name': '#b57614',
+      variable: '#3c3836',
+      delimiter: '#3c3836',
+      regexp: '#af3a03',
+      invalid: '#9d0006',
+    },
+    chrome: {
+      'editor.background': '#fbf1c7',
+      'editor.foreground': '#3c3836',
+      'editor.lineHighlightBackground': '#ebdbb2',
+      'editorCursor.foreground': '#af3a03',
+      'editor.selectionBackground': '#d5c4a1',
+      'editorLineNumber.foreground': '#a89984',
+      'editorLineNumber.activeForeground': '#665c54',
+    },
+  },
+  'tokyo-night': {
+    base: 'vs-dark',
+    syntax: {
+      comment: '#565f89',
+      string: '#9ece6a',
+      number: '#ff9e64',
+      constant: '#ff9e64',
+      keyword: '#9d7cd8',
+      function: '#7aa2f7',
+      type: '#2ac3de',
+      tag: '#f7768e',
+      'attribute.name': '#bb9af7',
+      variable: '#c0caf5',
+      delimiter: '#a9b1d6',
+      regexp: '#b4f9f8',
+      invalid: '#f7768e',
+    },
+    chrome: {
+      'editor.background': '#1a1b26',
+      'editor.foreground': '#c0caf5',
+      'editor.lineHighlightBackground': '#292e42',
+      'editorCursor.foreground': '#9d7cd8',
+      'editor.selectionBackground': '#33467c',
+      'editorLineNumber.foreground': '#3b4261',
+      'editorLineNumber.activeForeground': '#a9b1d6',
+    },
+  },
+  'one-dark': {
+    base: 'vs-dark',
+    syntax: {
+      comment: '#5c6370',
+      string: '#98c379',
+      number: '#d19a66',
+      constant: '#d19a66',
+      keyword: '#c678dd',
+      function: '#61afef',
+      type: '#e5c07b',
+      tag: '#e06c75',
+      'attribute.name': '#d19a66',
+      variable: '#abb2bf',
+      delimiter: '#abb2bf',
+      regexp: '#56b6c2',
+      invalid: '#e06c75',
+    },
+    chrome: {
+      'editor.background': '#282c34',
+      'editor.foreground': '#abb2bf',
+      'editor.lineHighlightBackground': '#2f343e',
+      'editorCursor.foreground': '#61afef',
+      'editor.selectionBackground': '#3e4451',
+      'editorLineNumber.foreground': '#495162',
+      'editorLineNumber.activeForeground': '#abb2bf',
+    },
+  },
+  'everforest-dark': {
+    base: 'vs-dark',
+    syntax: {
+      comment: '#859289',
+      string: '#a7c080',
+      number: '#d699b6',
+      constant: '#d699b6',
+      keyword: '#e67e80',
+      function: '#83c092',
+      type: '#dbbc7f',
+      tag: '#e69875',
+      'attribute.name': '#dbbc7f',
+      variable: '#d3c6aa',
+      delimiter: '#d3c6aa',
+      regexp: '#7fbbb3',
+      invalid: '#e67e80',
+    },
+    chrome: {
+      'editor.background': '#2d353b',
+      'editor.foreground': '#d3c6aa',
+      'editor.lineHighlightBackground': '#3d484d',
+      'editorCursor.foreground': '#a7c080',
+      'editor.selectionBackground': '#475258',
+      'editorLineNumber.foreground': '#56635f',
+      'editorLineNumber.activeForeground': '#9da9a0',
+    },
+  },
+  'kanagawa-wave': {
+    base: 'vs-dark',
+    syntax: {
+      comment: '#727169',
+      string: '#98bb6c',
+      number: '#d27e99',
+      constant: '#ffa066',
+      keyword: '#957fb8',
+      function: '#7e9cd8',
+      type: '#7aa89f',
+      tag: '#ff5d62',
+      'attribute.name': '#e6c384',
+      variable: '#dcd7ba',
+      delimiter: '#c8c093',
+      regexp: '#c0a36e',
+      invalid: '#ff5d62',
+    },
+    chrome: {
+      'editor.background': '#1f1f28',
+      'editor.foreground': '#dcd7ba',
+      'editor.lineHighlightBackground': '#2a2a37',
+      'editorCursor.foreground': '#7e9cd8',
+      'editor.selectionBackground': '#2d4f67',
+      'editorLineNumber.foreground': '#54546d',
+      'editorLineNumber.activeForeground': '#c8c093',
+    },
+  },
+  'solarized-light': {
+    base: 'vs',
+    syntax: {
+      comment: '#93a1a1',
+      string: '#2aa198',
+      number: '#d33682',
+      constant: '#cb4b16',
+      keyword: '#859900',
+      function: '#268bd2',
+      type: '#b58900',
+      tag: '#dc322f',
+      'attribute.name': '#b58900',
+      variable: '#657b83',
+      delimiter: '#657b83',
+      regexp: '#d33682',
+      invalid: '#dc322f',
+    },
+    chrome: {
+      'editor.background': '#fdf6e3',
+      'editor.foreground': '#657b83',
+      'editor.lineHighlightBackground': '#eee8d5',
+      'editorCursor.foreground': '#268bd2',
+      'editor.selectionBackground': '#d9d2c2',
+      'editorLineNumber.foreground': '#93a1a1',
+      'editorLineNumber.activeForeground': '#586e75',
+    },
+  },
+}
+
+/** Stamps the active theme's token colours on the root so CSS can paint with
+ *  them. Called by applyTheme() — never on its own, or the two drift. */
+export function applySyntaxTheme(name: ThemeName): void {
+  const palette = SYNTAX_THEMES[name] ?? SYNTAX_THEMES.aetox
+  const root = document.documentElement.style
+  for (const [token, hex] of Object.entries(palette.syntax)) {
+    // Monaco names one token "attribute.name"; a custom property cannot carry
+    // the dot, so it becomes --syn-attribute-name.
+    root.setProperty('--syn-' + token.replaceAll('.', '-'), hex)
+  }
+  root.setProperty('--syn-bg', palette.chrome['editor.background'])
+  root.setProperty('--syn-fg', palette.chrome['editor.foreground'])
+}

@@ -3,10 +3,14 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/svelte'
 import Settings from '../lib/Settings.svelte'
 import {
   ListMCPServers, ToggleMCPServer, ListExternalSkills, UsageStats, ListPromptPresets,
-  ListSubagentProfiles, ReadSubagentProfile, SetSubagentModel, ListModelsForProvider,
+  ListSubagentProfiles, ReadSubagentProfile, SaveSubagentProfile, SetSubagentModel, ListModelsForProvider,
   ListSpeechModels, SetSpeechModel, ListTools, SpeechModelDirs, RevealSpeechModel,
   SignInMethods, SignInStatus, StartSignIn, CompleteSignIn, SupportedProviders, EnabledProviders,
+  RemoveMCPServer, RemoveExternalSkill, SetProviderEnabled, TerminalShells,
+  SkillsDir, SkillScanIssues, OpenSkillsFolder, InstallSkillFromZip,
 } from './mocks/wailsApp'
+import { applyTypeScale } from '../lib/typeScale.svelte'
+import { cockpit } from '../lib/stores/cockpit.svelte'
 
 // The chart plots a window ending today, so a hard-coded date would fall out
 // of it and the fixture would stop covering the chart the day after it was
@@ -465,16 +469,50 @@ describe('Settings pages', () => {
     await waitFor(() => expect(vi.mocked(SetSubagentModel)).toHaveBeenCalledWith('backend', ''))
   })
 
-  it('editing a built-in sub-agent opens its real file and says what saving does', async () => {
+  // The tool-picker chips are drawn from the live registry (ListTools), not
+  // written down in this file — grep/glob are added to the fixture here,
+  // scoped to these two tests, so as not to disturb the Tools page's own
+  // "2 built-in tools" count elsewhere in this file.
+  const withPickableTools = () => vi.mocked(ListTools).mockResolvedValue([
+    { name: 'browser_open', description: 'open a page', source: 'workbench' },
+    { name: 'read', description: 'read a file', source: 'builtin' },
+    { name: 'audio_transcribe', description: 'transcribe audio', source: 'builtin' },
+    { name: 'grep', description: 'search file contents', source: 'builtin' },
+    { name: 'glob', description: 'find files by pattern', source: 'builtin' },
+  ] as any)
+
+  it('editing a built-in sub-agent splits its real file into fields and says what saving does', async () => {
+    withPickableTools()
     const { container } = render(Settings, { onClose: () => {} })
     await openSection(container, 'ซับเอเจน')
-    await waitFor(() => expect(screen.getAllByText('แก้ไข').length).toBe(4))
+    await waitFor(() => expect(screen.getAllByText('ตั้งค่า').length).toBe(4))
 
     // The built-in group's first row (explore) — index 2 overall: yours come first.
-    await fireEvent.click(screen.getAllByText('แก้ไข')[2])
-    await waitFor(() => expect(container.querySelector('.ag-body')).toBeTruthy())
+    await fireEvent.click(screen.getAllByText('ตั้งค่า')[2])
+    await waitFor(() => expect(container.querySelector('.ag-toolsum')).toBeTruthy())
+
+    // ReadSubagentProfile's mock is '---\ndescription: ค้นไฟล์\ntools: grep, read\n---\nYou search files.'
+    // — the frontmatter must land in its own fields, not sit in the role box
+    // as text to hand-edit.
     const body = container.querySelector('.ag-body') as HTMLTextAreaElement
-    expect(body.value).toContain('You search files.')
+    expect(body.value).toBe('You search files.')
+    const description = container.querySelector('.pp-field input.ctrl:not([disabled])') as HTMLInputElement
+    expect(description.value).toBe('ค้นไฟล์')
+
+    // The summary says what the profile does. "2 selected" would be the same
+    // number whether or not a deny list existed, which is the reading the old
+    // two-grid layout forced.
+    expect(container.querySelector('.ag-toolsum-txt .t')?.textContent).toContain('2')
+
+    // The allow-list itself is one state per tool, in the panel.
+    await fireEvent.click(screen.getByText('ตั้งค่า', { selector: '.ag-toolsum button' }))
+    await waitFor(() => expect(document.querySelector('.tp-card')).toBeTruthy())
+    const allowed = Array.from(document.querySelectorAll('.tp-row'))
+      .filter((r) => r.querySelector('.tp-allow.selected'))
+      .map((r) => r.querySelector('.tp-name')?.textContent?.trim())
+    expect(allowed.sort()).toEqual(['grep', 'read'])
+    await fireEvent.click(screen.getByText('เสร็จแล้ว'))
+
     // Editable where ZCode is not — but honest about creating your own copy.
     expect(screen.getByText(/สร้างเป็นของคุณทับไว้/)).toBeTruthy()
     // A built-in has no delete button; there is nothing of yours to remove yet.
@@ -482,30 +520,136 @@ describe('Settings pages', () => {
     expect(screen.queryByText('คืนค่าของแอป')).toBeNull()
   })
 
+  // Setting a tool's state and saving must produce a file the backend can read
+  // back exactly the way it was shown — the field split is a display choice,
+  // not a new file format.
+  const openToolPicker = async (container: HTMLElement, rowIndex: number) => {
+    await openSection(container, 'ซับเอเจน')
+    await waitFor(() => expect(screen.getAllByText('ตั้งค่า').length).toBe(4))
+    await fireEvent.click(screen.getAllByText('ตั้งค่า')[rowIndex])
+    await waitFor(() => expect(container.querySelector('.ag-toolsum')).toBeTruthy())
+    await fireEvent.click(screen.getByText('ตั้งค่า', { selector: '.ag-toolsum button' }))
+    await waitFor(() => expect(document.querySelector('.tp-card')).toBeTruthy())
+  }
+
+  const toolRow = (name: string) =>
+    Array.from(document.querySelectorAll('.tp-row'))
+      .find((r) => r.querySelector('.tp-name')?.textContent?.trim() === name)
+
+  it('allowing a tool in the picker round-trips through the saved file', async () => {
+    withPickableTools()
+    const { container } = render(Settings, { onClose: () => {} })
+    await openToolPicker(container, 2) // built-in explore
+
+    await fireEvent.click(toolRow('glob')!.querySelector('.tp-allow')!)
+    await fireEvent.click(screen.getByText('เสร็จแล้ว'))
+    await fireEvent.click(screen.getByText('บันทึก'))
+
+    await waitFor(() => expect(vi.mocked(SaveSubagentProfile)).toHaveBeenCalled())
+    const [name, saved] = vi.mocked(SaveSubagentProfile).mock.calls.at(-1)!
+    expect(name).toBe('explore')
+    expect(saved).toContain('tools: grep, read, glob')
+    expect(saved.trim().endsWith('You search files.')).toBe(true)
+  })
+
+  // The old two-grid layout let the same tool be ticked in both lists at once —
+  // a state the engine silently resolves as denied while the UI showed it green
+  // above and red below. One state per tool makes it unrepresentable.
+  it('a tool cannot be allowed and denied at the same time', async () => {
+    withPickableTools()
+    const { container } = render(Settings, { onClose: () => {} })
+    await openToolPicker(container, 2)
+
+    // grep arrives allowed (the profile's tools list); denying it must remove
+    // it from allow rather than adding a second, contradictory entry.
+    await fireEvent.click(toolRow('grep')!.querySelector('.tp-deny')!)
+    expect(toolRow('grep')!.querySelector('.tp-allow.selected')).toBeNull()
+    expect(toolRow('grep')!.querySelector('.tp-deny.selected')).toBeTruthy()
+
+    await fireEvent.click(screen.getByText('เสร็จแล้ว'))
+    await fireEvent.click(screen.getByText('บันทึก'))
+    await waitFor(() => expect(vi.mocked(SaveSubagentProfile)).toHaveBeenCalled())
+    const saved = vi.mocked(SaveSubagentProfile).mock.calls.at(-1)![1]
+    expect(saved).toContain('tools: read')
+    expect(saved).toContain('deny: grep')
+    expect(saved).not.toContain('tools: grep')
+  })
+
+  // subagent.forcedDenials never reach a sub-agent whatever the file says.
+  // Offering them was a lie the user only discovered after saving.
+  it('tools a sub-agent can never get are shown as unavailable, not as choices', async () => {
+    vi.mocked(ListTools).mockResolvedValue([
+      { name: 'read', description: 'read a file', source: 'builtin' },
+      { name: 'ask_user', description: 'ask the human', source: 'builtin' },
+    ] as any)
+    const { container } = render(Settings, { onClose: () => {} })
+    await openToolPicker(container, 2)
+
+    expect(toolRow('read')!.querySelector('.tp-seg')).toBeTruthy()
+    expect(toolRow('ask_user')!.querySelector('.tp-seg')).toBeNull()
+    expect(toolRow('ask_user')!.querySelector('.tp-forced')).toBeTruthy()
+  })
+
+  it('the picker searches the list rather than making the user scan 35 rows', async () => {
+    withPickableTools()
+    const { container } = render(Settings, { onClose: () => {} })
+    await openToolPicker(container, 2)
+    expect(document.querySelectorAll('.tp-row').length).toBeGreaterThan(3)
+
+    await fireEvent.input(document.querySelector('.tp-search')!, { target: { value: 'glo' } })
+    const names = Array.from(document.querySelectorAll('.tp-name')).map((n) => n.textContent?.trim())
+    expect(names).toEqual(['glob'])
+  })
+
+  // The engine reads MaxToolCalls <= 0 as unbounded, and only unbounds on the
+  // keyword — a number in the box must never become "no ceiling" by accident.
+  it('the loop cap can be removed, and says so in the file as a word', async () => {
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'ซับเอเจน')
+    await waitFor(() => expect(screen.getAllByText('ตั้งค่า').length).toBe(4))
+    await fireEvent.click(screen.getAllByText('ตั้งค่า')[2])
+    await waitFor(() => expect(container.querySelector('.ag-steprow')).toBeTruthy())
+
+    const box = container.querySelector('.ag-steps') as HTMLInputElement
+    expect(box.disabled).toBe(false)
+
+    await fireEvent.click(container.querySelector('.ag-check input')!)
+    // The number box goes dead rather than keeping a value that no longer applies.
+    await waitFor(() => expect((container.querySelector('.ag-steps') as HTMLInputElement).disabled).toBe(true))
+
+    await fireEvent.click(screen.getByText('บันทึก'))
+    await waitFor(() => expect(vi.mocked(SaveSubagentProfile)).toHaveBeenCalled())
+    expect(vi.mocked(SaveSubagentProfile).mock.calls.at(-1)![1]).toContain('steps: unlimited')
+  })
+
   // Deleting a shadow restores the bundled profile, so the button must not say
   // "delete" — the row is not going away.
   it('a shadow offers to revert, not to delete', async () => {
     const { container } = render(Settings, { onClose: () => {} })
     await openSection(container, 'ซับเอเจน')
-    await waitFor(() => expect(screen.getAllByText('แก้ไข').length).toBe(4))
+    await waitFor(() => expect(screen.getAllByText('ตั้งค่า').length).toBe(4))
 
-    await fireEvent.click(screen.getAllByText('แก้ไข')[1]) // mine-explore, the shadow
+    await fireEvent.click(screen.getAllByText('ตั้งค่า')[1]) // mine-explore, the shadow
     await waitFor(() => expect(screen.getByText('คืนค่าของแอป')).toBeTruthy())
     expect(screen.queryByText('ลบ')).toBeNull()
   })
 
-  it('a new sub-agent opens on a frontmatter skeleton, not a blank box', async () => {
+  it('a new sub-agent opens with guidance in the role field, not a raw frontmatter skeleton', async () => {
     const { container } = render(Settings, { onClose: () => {} })
     await openSection(container, 'ซับเอเจน')
     await waitFor(() => expect(screen.getByText('สร้างซับเอเจนใหม่')).toBeTruthy())
 
     await fireEvent.click(screen.getByText('สร้างซับเอเจนใหม่'))
+    // Frontmatter is fields now, so a new agent has none of it to see or
+    // mistype — the role box only ever holds guidance on what to write.
     const body = container.querySelector('.ag-body') as HTMLTextAreaElement
-    expect(body.value).toContain('description:')
-    expect(body.value).toContain('steps:')
-    // No mode/kind key to mistype: there is only one kind of profile now.
-    expect(body.value).not.toContain('mode:')
-    expect(body.value).not.toContain('kind:')
+    expect(body.value).not.toContain('---')
+    expect(body.value).not.toContain('description:')
+    expect(body.value).not.toContain('steps:')
+    expect(body.value).toContain('บอกว่ามันรับงานแบบไหน')
+    // Nothing pre-selected: an empty allow list means "every tool", exactly as
+    // the badge on the list page already promises for a fresh profile.
+    expect(container.querySelectorAll('.ag-tool.active').length).toBe(0)
     // A new one gets to choose its name; an existing one does not.
     expect((container.querySelector('.pp-field input.ctrl') as HTMLInputElement).disabled).toBe(false)
   })
@@ -552,5 +696,315 @@ describe('Settings pages', () => {
     await waitFor(() => expect(screen.getByText('OpenRouter · mike')).toBeTruthy())
     expect(screen.getByText('ออกจากระบบ')).toBeTruthy()
     expect(screen.queryByText('เข้าสู่ระบบด้วย OpenRouter')).toBeNull()
+  })
+})
+
+// Nothing on this page may destroy anything on the first click. Three of these
+// rows used to do exactly that, while three others armed on the first click and
+// deleted on the second — so the user learned one rule and lost data to the
+// other. Every row now goes through the same dialog.
+describe('Settings destructive actions', () => {
+  // Call history only — the outer beforeEach's resolved values survive
+  // mockClear, and every assertion here is "was the binding reached at all",
+  // which a previous test's call would answer for it.
+  beforeEach(() => { vi.clearAllMocks() })
+
+  const dialog = () => document.querySelector('.confirm-overlay')
+  const clickRemoveIn = async (row: Element, label = 'ลบ') => {
+    const btn = Array.from(row.querySelectorAll('button')).find((b) => b.textContent?.trim() === label)
+    if (!btn) throw new Error(`"${label}" button not found in row`)
+    await fireEvent.click(btn)
+  }
+  const confirmDialog = async () => {
+    const btn = document.querySelector('.confirm-go')
+    if (!btn) throw new Error('confirm button not found')
+    await fireEvent.click(btn)
+  }
+
+  it('removing an MCP server asks first and does nothing until confirmed', async () => {
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'MCP servers')
+    await waitFor(() => expect(screen.getByText('2 เครื่องมือ')).toBeTruthy())
+
+    const row = Array.from(container.querySelectorAll('.set-row'))
+      .find((r) => r.textContent?.includes('context7') && r.querySelector('.mswitch'))!
+    await clickRemoveIn(row)
+
+    // The dialog is up and the binding has NOT been called — this is the whole
+    // point: the server survives until the user agrees to lose it.
+    expect(dialog()).toBeTruthy()
+    expect(vi.mocked(RemoveMCPServer)).not.toHaveBeenCalled()
+    // The name being destroyed is shown verbatim, not just described.
+    expect(document.querySelector('.confirm-detail')?.textContent?.trim()).toBe('context7')
+
+    await confirmDialog()
+    await waitFor(() => expect(vi.mocked(RemoveMCPServer)).toHaveBeenCalledWith('context7'))
+  })
+
+  it('cancelling keeps the server', async () => {
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'MCP servers')
+    await waitFor(() => expect(screen.getByText('2 เครื่องมือ')).toBeTruthy())
+
+    const row = Array.from(container.querySelectorAll('.set-row'))
+      .find((r) => r.textContent?.includes('context7') && r.querySelector('.mswitch'))!
+    await clickRemoveIn(row)
+    await fireEvent.click(document.querySelector('.confirm-cancel')!)
+
+    expect(dialog()).toBeNull()
+    expect(vi.mocked(RemoveMCPServer)).not.toHaveBeenCalled()
+  })
+
+  it('Escape cancels, and focus starts on Cancel so a stray Enter cannot delete', async () => {
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'MCP servers')
+    await waitFor(() => expect(screen.getByText('2 เครื่องมือ')).toBeTruthy())
+
+    const row = Array.from(container.querySelectorAll('.set-row'))
+      .find((r) => r.textContent?.includes('context7') && r.querySelector('.mswitch'))!
+    await clickRemoveIn(row)
+
+    expect(document.activeElement).toBe(document.querySelector('.confirm-cancel'))
+
+    await fireEvent.keyDown(document.querySelector('.confirm-overlay')!, { key: 'Escape' })
+    await waitFor(() => expect(dialog()).toBeNull())
+    expect(vi.mocked(RemoveMCPServer)).not.toHaveBeenCalled()
+  })
+
+  it('removing a skill asks first and names the folder that will be deleted', async () => {
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'สกิล')
+    await waitFor(() => expect(screen.getByText('gridgeist')).toBeTruthy())
+
+    const row = Array.from(container.querySelectorAll('.set-row'))
+      .find((r) => r.textContent?.includes('gridgeist'))!
+    await clickRemoveIn(row)
+
+    expect(vi.mocked(RemoveExternalSkill)).not.toHaveBeenCalled()
+    // A folder is about to leave the disk, so the path is what gets checked.
+    expect(document.querySelector('.confirm-detail')?.textContent?.trim()).toBe('C:/skills/gridgeist')
+
+    await confirmDialog()
+    await waitFor(() => expect(vi.mocked(RemoveExternalSkill)).toHaveBeenCalledWith('gridgeist'))
+  })
+
+  it('removing the running provider warns that the engine will move', async () => {
+    vi.mocked(SupportedProviders).mockResolvedValue(['aetox', 'openrouter'] as any)
+    vi.mocked(EnabledProviders).mockResolvedValue(['aetox', 'openrouter'] as any)
+    // Settings renders on its own here; nothing has run loadRealState(), so the
+    // store has to be told which provider the engine is actually on.
+    cockpit.model.provider = 'aetox'
+
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'การตั้งค่าโมเดล')
+    await waitFor(() => expect(container.querySelectorAll('.mset-prov-row').length).toBe(2))
+
+    const row = Array.from(container.querySelectorAll('.mset-prov-row'))
+      .find((r) => r.textContent?.includes('aetox'))!
+    await fireEvent.click(row.querySelector('.icobtn')!)
+
+    expect(vi.mocked(SetProviderEnabled)).not.toHaveBeenCalled()
+    // Removing the running provider silently moves the engine to aetox. That
+    // side effect is the reason this confirm is worth reading, so it has to be
+    // in the message rather than discovered afterwards.
+    expect(document.querySelector('.confirm-message')?.textContent).toContain('aetox')
+    expect(document.querySelector('.confirm-detail')?.textContent?.trim()).toBe('aetox')
+    cockpit.model.provider = ''
+  })
+
+  it('a provider that is not the running one gets no engine warning', async () => {
+    vi.mocked(SupportedProviders).mockResolvedValue(['aetox', 'openrouter'] as any)
+    vi.mocked(EnabledProviders).mockResolvedValue(['aetox', 'openrouter'] as any)
+    cockpit.model.provider = 'openrouter'
+
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'การตั้งค่าโมเดล')
+    await waitFor(() => expect(container.querySelectorAll('.mset-prov-row').length).toBe(2))
+
+    const row = Array.from(container.querySelectorAll('.mset-prov-row'))
+      .find((r) => r.textContent?.includes('aetox'))!
+    await fireEvent.click(row.querySelector('.icobtn')!)
+
+    expect(document.querySelector('.confirm-message')?.textContent).not.toContain('aetox')
+    cockpit.model.provider = ''
+  })
+})
+
+describe('Settings resilience and state', () => {
+  it('a backend that will not answer shows why, not a blank page', async () => {
+    vi.mocked(TerminalShells).mockRejectedValueOnce(new Error('engine not ready'))
+
+    const { container } = render(Settings, { onClose: () => {} })
+    await waitFor(() => expect(container.querySelector('.settings-banner')).toBeTruthy())
+    expect(screen.getByText('โหลดหน้าตั้งค่าไม่สำเร็จ')).toBeTruthy()
+    // The raw reason is kept — "something went wrong" is not a bug report.
+    expect(container.querySelector('.settings-banner')?.textContent).toContain('engine not ready')
+    expect(screen.getByText('ลองใหม่')).toBeTruthy()
+  })
+
+  it('reloading reopens the page you were on, not the first one', async () => {
+    sessionStorage.setItem('aetox.settingsSection', 'mcp')
+    const { container } = render(Settings, { onClose: () => {} })
+
+    const activeItem = container.querySelector('.settings-nav-item.active')
+    expect(activeItem?.textContent).toContain('MCP servers')
+    sessionStorage.clear()
+  })
+
+  it('a section id that no longer exists falls back instead of rendering nothing', async () => {
+    sessionStorage.setItem('aetox.settingsSection', 'a-page-that-was-deleted')
+    const { container } = render(Settings, { onClose: () => {} })
+
+    expect(container.querySelector('.settings-nav-item.active')?.textContent).toContain('ทั่วไป')
+    sessionStorage.clear()
+  })
+
+  it('search finds a page by what is on it, not only by its name', async () => {
+    const { container } = render(Settings, { onClose: () => {} })
+    const search = container.querySelector('.settings-search') as HTMLInputElement
+
+    // "ธีม" is not the Appearance page's name — it is a control sitting on it,
+    // which is exactly the case the old label-only search could not answer.
+    await fireEvent.input(search, { target: { value: 'ธีม' } })
+    const visible = Array.from(container.querySelectorAll('.settings-nav-item')).map((el) => el.textContent)
+    expect(visible.some((label) => label?.includes('รูปลักษณ์'))).toBe(true)
+    expect(visible.some((label) => label?.includes('สปอนเซอร์'))).toBe(false)
+  })
+
+  it('a search that matches nothing says so rather than emptying the rail', async () => {
+    const { container } = render(Settings, { onClose: () => {} })
+    const search = container.querySelector('.settings-search') as HTMLInputElement
+
+    await fireEvent.input(search, { target: { value: 'zzzznope' } })
+    expect(container.querySelectorAll('.settings-nav-item').length).toBe(0)
+    expect(container.querySelector('.settings-nav-empty')).toBeTruthy()
+  })
+})
+
+describe('Type scale', () => {
+  it('each preset writes its factor to the root so every --fs step follows', () => {
+    applyTypeScale('large')
+    expect(document.documentElement.style.getPropertyValue('--fs-scale')).toBe('1.18')
+
+    applyTypeScale('compact')
+    expect(document.documentElement.style.getPropertyValue('--fs-scale')).toBe('0.92')
+
+    applyTypeScale('default')
+    expect(document.documentElement.style.getPropertyValue('--fs-scale')).toBe('1')
+  })
+
+  it('the overall-size box reports the px the user actually sees', async () => {
+    applyTypeScale('large')
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'รูปลักษณ์')
+
+    // 15.5px base * 1.18 = 18.29 -> 18.3. Without folding the text scale in,
+    // this box would keep claiming 15.5 while the app rendered at 18.3.
+    const box = container.querySelector('input[type="number"]') as HTMLInputElement
+    expect(Number(box.value)).toBeCloseTo(18.3, 1)
+    applyTypeScale('default')
+  })
+})
+
+// The page used to name its own install path in three places and get two of
+// them wrong — they said ~/.agents/skills, which is opencode's and which Aetox
+// never scans, so anyone following the instructions dropped files where nothing
+// was looking. It now asks the engine.
+describe('Skills page', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    // clearAllMocks wipes call history but keeps implementations, so a
+    // mockResolvedValue from one test would otherwise leak into the next.
+    vi.mocked(SkillScanIssues).mockResolvedValue([] as any)
+    vi.mocked(SkillsDir).mockResolvedValue('C:/Users/x/.aetox/skills')
+  })
+
+  it('shows the folder the engine actually scans, not one of its own', async () => {
+    vi.mocked(SkillsDir).mockResolvedValue('C:/Users/x/.aetox/skills')
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'สกิล')
+
+    await waitFor(() => expect(screen.getByText('C:/Users/x/.aetox/skills')).toBeTruthy())
+    // No hardcoded path may survive anywhere on the page.
+    expect(container.textContent).not.toContain('.agents/skills')
+  })
+
+  it('offers to open that folder, like the prompts and sub-agent pages do', async () => {
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'สกิล')
+    await waitFor(() => expect(screen.getByText('gridgeist')).toBeTruthy())
+
+    await fireEvent.click(screen.getByText('เปิดโฟลเดอร์'))
+    expect(vi.mocked(OpenSkillsFolder)).toHaveBeenCalled()
+  })
+
+  it('says when a SKILL.md was found but could not be read', async () => {
+    // Previously the scan collected these and the list dropped them, so a file
+    // with broken frontmatter was indistinguishable from an unwatched folder.
+    vi.mocked(SkillScanIssues).mockResolvedValue([
+      'C:/Users/x/.aetox/skills/broken/SKILL.md: missing description',
+    ] as any)
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'สกิล')
+
+    await waitFor(() => expect(container.querySelector('.skill-issues')).toBeTruthy())
+    expect(screen.getByText(/broken\/SKILL\.md/)).toBeTruthy()
+  })
+
+  it('stays quiet when every file read cleanly', async () => {
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'สกิล')
+    await waitFor(() => expect(screen.getByText('gridgeist')).toBeTruthy())
+    expect(container.querySelector('.skill-issues')).toBeNull()
+  })
+})
+
+// The third install route. A GitHub URL needs the skill published there; the
+// folder button needs it already on this machine. A zip is everything else.
+describe('Skills page — zip install', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(SkillScanIssues).mockResolvedValue([] as any)
+    vi.mocked(SkillsDir).mockResolvedValue('C:/Users/x/.aetox/skills')
+  })
+
+  it('installs from a picked archive and reports what landed', async () => {
+    vi.mocked(InstallSkillFromZip).mockResolvedValue(
+      'ติดตั้งแล้ว 1 สกิล (5 ไฟล์): pdf\nลงที่: C:/Users/x/.aetox/skills' as any,
+    )
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'สกิล')
+    await waitFor(() => expect(screen.getByText('เลือกไฟล์ zip…')).toBeTruthy())
+
+    await fireEvent.click(screen.getByText('เลือกไฟล์ zip…'))
+    await waitFor(() => expect(container.querySelector('.skill-result')).toBeTruthy())
+    expect(container.querySelector('.skill-result')?.textContent).toContain('5 ไฟล์')
+    // The list has to be re-read, or the skill just installed is not on screen.
+    expect(vi.mocked(ListExternalSkills).mock.calls.length).toBeGreaterThan(1)
+  })
+
+  it('treats a dismissed picker as nothing happening, not as a failure', async () => {
+    // The binding returns "" when the native dialog is cancelled.
+    vi.mocked(InstallSkillFromZip).mockResolvedValue('' as any)
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'สกิล')
+    await waitFor(() => expect(screen.getByText('เลือกไฟล์ zip…')).toBeTruthy())
+
+    await fireEvent.click(screen.getByText('เลือกไฟล์ zip…'))
+    expect(container.querySelector('.skill-result')).toBeNull()
+    expect(container.querySelector('.mset-error')).toBeNull()
+  })
+
+  it('surfaces a refused archive instead of failing silently', async () => {
+    vi.mocked(InstallSkillFromZip).mockRejectedValue(
+      new Error('ไฟล์ zip มีเส้นทางที่ออกนอกโฟลเดอร์ติดตั้ง: ../../evil.txt'),
+    )
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'สกิล')
+    await waitFor(() => expect(screen.getByText('เลือกไฟล์ zip…')).toBeTruthy())
+
+    await fireEvent.click(screen.getByText('เลือกไฟล์ zip…'))
+    await waitFor(() => expect(container.querySelector('.mset-error')).toBeTruthy())
+    expect(container.querySelector('.mset-error')?.textContent).toContain('evil.txt')
   })
 })

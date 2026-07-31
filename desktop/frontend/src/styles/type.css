@@ -1,0 +1,45 @@
+/* Tier 2 — type + shape scale. Same contract as theme.css: style.css and every
+   component reference ONLY these tokens, never a raw px size.
+
+   Why px and not rem: style.css sizes everything in fixed px (see
+   lib/systemFont.svelte.ts for the full reasoning — the whole-app zoom control
+   exists precisely because a root font-size var would only cascade to the
+   handful of rules that don't set their own size). Keeping the scale in px
+   means these tokens drop into existing rules as a straight substitution.
+
+   --fs-scale is the one knob: typeScale.svelte.ts writes it to the root element
+   and every step follows. It multiplies TEXT only — the whole-UI zoom
+   (padding, icons, controls) stays its own separate control, because "the
+   letters are too small" and "everything is too small" are different
+   complaints with different fixes.
+
+   The steps below absorb the 23 ad-hoc sizes that were in style.css:
+     10 / 10.5 / 11        -> 2xs      15 / 15.5 / 16   -> lg
+     11.5 / 12 / 12.5      -> xs       16.5 / 17 / 18   -> xl
+     13 / 13.5             -> sm       19 / 21.5        -> 2xl
+     14 / 14.5             -> md       23 / 24 / 26 / 26.5 -> 3xl
+                                       30               -> 4xl */
+
+:root {
+  --fs-scale: 1;
+
+  --fs-2xs:  calc(11px   * var(--fs-scale));  /* badge, tag, group eyebrow */
+  --fs-xs:   calc(12px   * var(--fs-scale));  /* caption, chart axis, path */
+  --fs-sm:   calc(13px   * var(--fs-scale));  /* row description, legend */
+  --fs-md:   calc(14px   * var(--fs-scale));  /* control, table cell, row title */
+  --fs-lg:   calc(15.5px * var(--fs-scale));  /* body — must equal SYSTEM_BASE_PX */
+  --fs-xl:   calc(17px   * var(--fs-scale));  /* sub-heading, stat model name */
+  --fs-2xl:  calc(20px   * var(--fs-scale));  /* card title, provider name */
+  --fs-3xl:  calc(24px   * var(--fs-scale));  /* page heading */
+  --fs-4xl:  calc(30px   * var(--fs-scale));  /* stat figure, device code */
+
+  /* Shape. Not scaled: a corner radius is a property of the surface, not of
+     the text on it, and scaling it with the type makes cards look inflated. */
+  --r-2xs:2px;    /* chart segment, share bar */
+  --r-xs:4px;     /* inline chip, heat cell */
+  --r-sm:6px;     /* control, small button */
+  --r-md:8px;     /* row, nav item, input */
+  --r-lg:12px;    /* card */
+  --r-xl:16px;    /* dialog, composer */
+  --r-full:999px; /* pill badge, toggle */
+}

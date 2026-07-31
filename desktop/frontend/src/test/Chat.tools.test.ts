@@ -127,7 +127,7 @@ describe('tool timeline collapsing', () => {
     expect(toggles.length).toBe(2)
     expect(toggles[0].textContent).toContain('Thought for 34s')
     expect(toggles[1].textContent).toContain('Used 3 tools')
-    expect(toggles[1].textContent).toContain('✕1') // failures stay visible while collapsed
+    expect(toggles[1].textContent).toContain('1 failed') // failures stay visible while collapsed
     expect(container.querySelector('.tool-step')).toBeNull()
 
     await fireEvent.click(toggles[1])
@@ -213,15 +213,22 @@ describe('tool timeline collapsing', () => {
 // deliberate pick from the menu.
 describe('approval mode on the composer', () => {
   it('shows the mode on the chip, red only at full-access', () => {
+    // The mode is drawn as an icon now, so what distinguishes the three is the
+    // path data, not the text — assert the icon is there and that only
+    // full-access carries the red class.
     const ask = render(Chat, { ...baseProps, messages: [] as any }).container
-    expect(ask.querySelector('.model-chip .mode-ic')?.textContent).toBe('✋')
+    const askIcon = ask.querySelector('.model-chip .mode-ic svg')
+    expect(askIcon).toBeTruthy()
     expect(ask.querySelector('.model-chip .mode-ic.danger')).toBeNull()
 
     const full = render(Chat, {
       ...baseProps, messages: [] as any,
       model: { ...baseProps.model, approval: 'full-access' },
     }).container
-    expect(full.querySelector('.model-chip .mode-ic.danger')?.textContent).toBe('⚡')
+    const fullIcon = full.querySelector('.model-chip .mode-ic.danger svg')
+    expect(fullIcon).toBeTruthy()
+    // A different mode has to draw a different mark, not just a different colour.
+    expect(fullIcon!.innerHTML).not.toBe(askIcon!.innerHTML)
   })
 
   it('shift+tab toggles ask↔unsafe-only and only ever tightens full-access', async () => {

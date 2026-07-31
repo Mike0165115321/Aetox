@@ -7,7 +7,12 @@
   import { editorTheme, setBuiltinEditorTheme, setAutoEditorTheme, importThemeFile } from './editorTheme.svelte'
   import { treeFont, applyTreeFontSize } from './treeFont.svelte'
   import { systemZoom, applySystemZoom, SYSTEM_BASE_PX } from './systemFont.svelte'
+  import { typeScale, applyTypeScale, TYPE_SCALES, type TypeScaleName } from './typeScale.svelte'
   import { i18n, t, setLocale, localeNames, type Locale } from './i18n.svelte'
+  import ConfirmDialog from './ConfirmDialog.svelte'
+  import ProviderMark from './ProviderMark.svelte'
+  import Icon from './Icon.svelte'
+  import type { IconName } from './icons'
   import {
     SupportedProviders, HasAPIKey, RequiresAPIKey, TerminalShells,
     ListModelsForProvider, ProviderBaseURL, ProviderBaseURLIsCustom,
@@ -15,6 +20,7 @@
     EnabledProviders, SetProviderEnabled,
     ListMCPServers, SaveMCPServer, RemoveMCPServer, TestMCPServer, ToggleMCPServer,
     ListExternalSkills, ListTools, InstallSkillFromGitHub, RemoveExternalSkill, RefreshSkills,
+    SkillsDir, SkillScanIssues, OpenSkillsFolder, InstallSkillFromZip,
     ListSpeechModels, SetSpeechModel, SpeechStatus, RevealSpeechModel, SpeechModelDirs, OpenSpeechModelDir,
     UsageStats, ListPromptPresets, OpenPromptsFolder,
     SavePromptPreset, DeletePromptPreset, PickPresetImage, RemovePresetImage,
@@ -33,6 +39,48 @@
 
   let { onClose }: { onClose: () => void } = $props()
 
+  // ---------- Destructive actions ----------
+  // One gate for everything that cannot be undone. This page used to have two
+  // different answers to the same question: Skills, Prompts and Sub-agents
+  // armed on the first click and deleted on the second, while MCP servers,
+  // providers and identity files deleted on the first click with no warning at
+  // all. Learning "it asks first" from one page and then losing a configured
+  // MCP server on the next is the worst of both.
+  type PendingConfirm = {
+    title: string
+    message: string
+    /** The exact name/path being destroyed — shown verbatim for checking. */
+    detail?: string
+    confirmLabel: string
+    run: () => void
+  }
+  let pendingConfirm = $state<PendingConfirm | null>(null)
+
+  function askConfirm(req: PendingConfirm) {
+    pendingConfirm = req
+  }
+
+  function runPendingConfirm() {
+    const req = pendingConfirm
+    pendingConfirm = null
+    req?.run()
+  }
+
+  // Leaving a full-page editor with unsaved work is the same class of loss as a
+  // delete — the work is gone and nothing says so — so it goes through the same
+  // gate. Dirty is measured against a snapshot taken when the editor opened,
+  // not against a field-by-field comparison: the sub-agent editor has seven
+  // drafts and the diff only ever gets asked one question.
+  function guardUnsaved(dirty: boolean, leave: () => void) {
+    if (!dirty) { leave(); return }
+    askConfirm({
+      title: t('settings.unsavedTitle'),
+      message: t('settings.unsavedMessage'),
+      confirmLabel: t('settings.unsavedAction'),
+      run: leave,
+    })
+  }
+
   // ---------- AI identity (moved out of the sidebar: it is configuration you
   // edit once in a while, not a list you navigate between chats) ----------
   let newIdentityName = $state('')
@@ -47,6 +95,14 @@
     createIdentityFile(newIdentityName)
     newIdentityName = ''
   }
+
+  const removeIdentityFile = (name: string) => askConfirm({
+    title: t('settings.confirmIdentityTitle'),
+    message: t('settings.confirmIdentityMessage'),
+    detail: name,
+    confirmLabel: t('settings.confirmDeleteAction'),
+    run: () => deleteIdentityFile(name),
+  })
 
   const approvalOptions = [
     { value: 'ask', label: t('chat.approvalAsk') },
@@ -127,18 +183,44 @@
   // has been bootstrapped for it yet, so show what would be the default.
   const currentWireFormat = $derived(isActiveProvider ? cockpit.model.wireFormat : (wireFormats[0] ?? ''))
 
-  onMount(async () => {
-    shells = await TerminalShells()
-    if (!shells.some((s) => s.path === defaultShell)) defaultShell = shells[0]?.path ?? ''
+  // Whether the first load finished, and why it didn't. Without this the whole
+  // page was one unguarded await chain: a single throw from TerminalShells()
+  // left providers, sign-in, MCP and skills all unloaded, and the user got a
+  // blank Settings page with nothing saying anything had gone wrong.
+  let booting = $state(true)
+  let bootError = $state('')
 
-    await refreshProviders()
-    await refreshEnabledProviders()
-    await refreshSignIn()
-    selectProvider(cockpit.model.provider || enabledRows[0]?.name || providers[0]?.name || '')
+  async function bootSettings() {
+    booting = true
+    bootError = ''
+    try {
+      // Three independent groups, run together rather than in a queue. They
+      // were sequential, which made the tool list — needed by the sub-agent
+      // editor — the last thing to arrive after every provider round-trip, so
+      // opening a sub-agent quickly could find it still empty. Only the
+      // provider chain has an internal order.
+      await Promise.all([
+        (async () => {
+          shells = await TerminalShells()
+          if (!shells.some((s) => s.path === defaultShell)) defaultShell = shells[0]?.path ?? ''
+        })(),
+        loadMCP(),
+        loadSkills(),
+        (async () => {
+          await refreshProviders()
+          await refreshEnabledProviders()
+          await refreshSignIn()
+          await selectProvider(cockpit.model.provider || enabledRows[0]?.name || providers[0]?.name || '')
+        })(),
+      ])
+    } catch (err) {
+      bootError = String(err)
+    } finally {
+      booting = false
+    }
+  }
 
-    await loadMCP()
-    await loadSkills()
-  })
+  onMount(bootSettings)
 
   async function refreshProviders() {
     const names = await SupportedProviders()
@@ -228,16 +310,26 @@
     await selectProvider(name)
   })
 
-  const removeProvider = (name: string) => run('disable:' + name, async () => {
-    const wasActiveEngine = cockpit.model.provider === name
-    enabledNames = await SetProviderEnabled(name, false)
-    if (selected === name) await selectProvider(enabledNames[0] ?? '')
-    // Removing the provider Aetox is actually running on must move the engine
-    // too — otherwise it keeps running unlisted while the picker shows a
-    // provider that's no longer selectable. Falls back to aetox (Aetox's own
-    // built-in engine, always available, needs no key) rather than an
-    // arbitrary "next" provider, since that's the deliberate safe default.
-    if (wasActiveEngine) await switchProvider('aetox')
+  const removeProvider = (name: string) => askConfirm({
+    title: t('settings.confirmProviderTitle'),
+    // Removing the running provider moves the engine as a side effect, which
+    // is exactly the kind of thing a confirm exists to say out loud.
+    message: cockpit.model.provider === name
+      ? t('settings.confirmProviderMessage') + ' ' + t('settings.confirmProviderActive')
+      : t('settings.confirmProviderMessage'),
+    detail: name,
+    confirmLabel: t('settings.remove'),
+    run: () => run('disable:' + name, async () => {
+      const wasActiveEngine = cockpit.model.provider === name
+      enabledNames = await SetProviderEnabled(name, false)
+      if (selected === name) await selectProvider(enabledNames[0] ?? '')
+      // Removing the provider Aetox is actually running on must move the engine
+      // too — otherwise it keeps running unlisted while the picker shows a
+      // provider that's no longer selectable. Falls back to aetox (Aetox's own
+      // built-in engine, always available, needs no key) rather than an
+      // arbitrary "next" provider, since that's the deliberate safe default.
+      if (wasActiveEngine) await switchProvider('aetox')
+    }),
   })
 
   async function selectProvider(name: string) {
@@ -439,10 +531,16 @@
     await loadMCP()
   })
 
-  const removeMCP = (name: string) => runMCP('rm:' + name, async () => {
-    await RemoveMCPServer(name)
-    if (mcpOriginal === name) resetMCPForm()
-    await loadMCP()
+  const removeMCP = (name: string) => askConfirm({
+    title: t('settings.confirmMcpTitle'),
+    message: t('settings.confirmMcpMessage'),
+    detail: name,
+    confirmLabel: t('settings.remove'),
+    run: () => runMCP('rm:' + name, async () => {
+      await RemoveMCPServer(name)
+      if (mcpOriginal === name) resetMCPForm()
+      await loadMCP()
+    }),
   })
 
   const testMCP = (name: string) => runMCP('test:' + name, async () => {
@@ -500,18 +598,22 @@
   // the thing it configures is a setting nobody connects to it.
   const SPEECH_TOOL = 'audio_transcribe'
   let speechOpen = $state(false)
-  const activeSpeechLabel = $derived(
-    speechModels.find((m) => m.active)?.name ?? t('settings.speechAuto'),
-  )
   let skillBusy = $state('')
   let skillError = $state('')
   let skillInstallUrl = $state('')
   let skillInstallResult = $state('')
-  let skillConfirm = $state('') // name pending delete confirmation
+  // Where skills actually live, and which SKILL.md files were found but could
+  // not be read. Both come from the engine: a path the page states on its own
+  // authority is a path that can drift from the one being scanned, which is
+  // exactly what had happened.
+  let skillsDir = $state('')
+  let skillIssues = $state<string[]>([])
 
   async function loadSkills() {
     extSkills = await ListExternalSkills()
     tools = await ListTools()
+    skillsDir = await SkillsDir()
+    skillIssues = (await SkillScanIssues()) ?? []
     await loadSpeech()
   }
 
@@ -526,6 +628,13 @@
   let speechError = $state('')
 
   let speechDirs = $state<{ path: string; label: string }[]>([])
+
+  // Below the state it reads, not above it: $derived is lazy so the old
+  // ordering worked at runtime, but it put speechModels in its own temporal
+  // dead zone as far as the compiler was concerned.
+  const activeSpeechLabel = $derived(
+    speechModels.find((m) => m.active)?.name ?? t('settings.speechAuto'),
+  )
 
   async function loadSpeech() {
     speechModels = await ListSpeechModels()
@@ -567,17 +676,29 @@
     await loadSkills()
   })
 
-  const removeSkill = (name: string) => {
-    if (skillConfirm !== name) {
-      skillConfirm = name
-      return
-    }
-    skillConfirm = ''
-    void runSkill('rm:' + name, async () => {
+  // The picker is native, so there is nothing to pass in. An empty result means
+  // the dialog was dismissed — cancelling is not a failure and must not leave a
+  // stale report on screen.
+  const installSkillZip = () => runSkill('zip', async () => {
+    skillInstallResult = ''
+    const report = await InstallSkillFromZip()
+    if (!report) return
+    skillInstallResult = report
+    await loadSkills()
+  })
+
+  const removeSkill = (name: string, dir: string) => askConfirm({
+    title: t('settings.confirmSkillTitle'),
+    message: t('settings.confirmSkillMessage'),
+    // The folder, not the name: this deletes something off disk, so the path
+    // is the thing worth checking before agreeing to it.
+    detail: dir || name,
+    confirmLabel: t('settings.remove'),
+    run: () => runSkill('rm:' + name, async () => {
       await RemoveExternalSkill(name)
       await loadSkills()
-    })
-  }
+    }),
+  })
 
   const refreshSkills = () => runSkill('refresh', async () => {
     await RefreshSkills()
@@ -784,7 +905,6 @@
   let draftImage = $state('')
   let presetBusy = $state('')
   let presetError = $state('')
-  let confirmDelete = $state(false)
 
   async function loadPresets() {
     presets = await ListPromptPresets()
@@ -799,14 +919,20 @@
     return h
   }
 
+  const presetDraftKey = () => JSON.stringify([draftName, draftBody, draftImage])
+  let presetSnapshot = ''
+
   function openPreset(p: PresetRow) {
     editing = p
     draftName = p.name
     draftBody = p.body
     draftImage = p.image
     presetError = ''
-    confirmDelete = false
+    presetSnapshot = presetDraftKey()
   }
+
+  const closePresetEditor = () =>
+    guardUnsaved(presetDraftKey() !== presetSnapshot, () => { editing = null })
 
   // A blank 300px textarea tells you nothing about what belongs in it, so a new
   // preset starts on the skeleton every good prompt shares (role and goal,
@@ -818,7 +944,7 @@
     draftBody = t('settings.promptStarter')
     draftImage = ''
     presetError = ''
-    confirmDelete = false
+    presetSnapshot = presetDraftKey()
   }
 
   // Inserts at the caret, because $ARGUMENTS is the one token a preset cannot
@@ -853,14 +979,17 @@
     editing = null
   })
 
-  const deletePreset = () => {
-    if (!confirmDelete) { confirmDelete = true; return }
-    void runPreset('delete', async () => {
+  const deletePreset = () => askConfirm({
+    title: t('settings.confirmPromptTitle'),
+    message: t('settings.confirmPromptMessage'),
+    detail: '/' + draftName.trim(),
+    confirmLabel: t('settings.confirmDeleteAction'),
+    run: () => runPreset('delete', async () => {
       await DeletePromptPreset(draftName.trim())
       await loadPresets()
       editing = null
-    })
-  }
+    }),
+  })
 
   // A cover can only be attached to a preset that exists on disk, so an unsaved
   // one is saved first — otherwise the image would have nothing to belong to.
@@ -898,10 +1027,20 @@
   // null = the list. Anything else = the editor on that profile's raw file.
   let agentEditing = $state<SubagentRow | null>(null)
   let agentDraftName = $state('')
-  let agentDraftBody = $state('')
+  // The .md file is still `--- key: value ---` plus a role prompt underneath —
+  // that has not changed, and SaveSubagentProfile still only ever receives
+  // that same text. What changed is that the editor stopped asking a person to
+  // read and hand-edit it: each frontmatter key gets its own field below, and
+  // agentDraftModel is carried through untouched because the per-row dropdown
+  // (pinModel) already owns that one key.
+  let agentDraftDescription = $state('')
+  let agentDraftModel = $state('')
+  let agentDraftTools = $state<string[]>([])
+  let agentDraftDeny = $state<string[]>([])
+  let agentDraftSteps = $state('')
+  let agentDraftPrompt = $state('')
   let agentBusy = $state('')
   let agentError = $state('')
-  let agentConfirmDelete = $state(false)
 
   // The per-row model dropdown offers the current provider's models — a pin to a
   // model from some other provider still shows (as its own option) rather than
@@ -935,35 +1074,97 @@
     await loadAgents()
   })
 
+  // The agent file is as long as the role you wrote, so a fixed box means
+  // scrolling a small window inside a page that has room to spare. This grows
+  // the field to its content instead; `min-height` in the CSS is still the
+  // floor, so a short file looks exactly as it did before.
+  //
+  // Takes the text as its parameter rather than listening to `input` alone:
+  // switching to another sub-agent replaces the value without any keystroke,
+  // and a field left at the previous file's height is the bug this fixes.
+  function autogrow(node: HTMLTextAreaElement, _value: string) {
+    const fit = () => {
+      // Collapse first: scrollHeight of an already-tall box reports the box,
+      // not the text, so without this the field can only ever grow.
+      node.style.height = 'auto'
+      node.style.height = node.scrollHeight + 'px'
+    }
+    fit()
+    node.addEventListener('input', fit)
+    return {
+      update: () => fit(),
+      destroy: () => node.removeEventListener('input', fit),
+    }
+  }
+
   // Editing opens the raw .md — including for a bundled profile, where saving
   // writes your own copy over it (the engine already prefers user files).
+  // Everything the editor can change, in one string. Compared against the value
+  // captured when the editor opened (and re-captured on save) to answer the one
+  // question the Back button needs answered.
+  const agentDraftKey = () => JSON.stringify([
+    agentDraftName, agentDraftDescription, agentDraftModel,
+    agentDraftTools, agentDraftDeny, agentDraftSteps, agentDraftPrompt,
+  ])
+  let agentSnapshot = ''
+
   const openAgent = (a: SubagentRow) => runAgent('open:' + a.name, async () => {
-    agentDraftBody = await ReadSubagentProfile(a.name)
+    const parsed = parseAgentFile(await ReadSubagentProfile(a.name))
     agentDraftName = a.name
+    agentDraftDescription = parsed.description
+    agentDraftModel = parsed.model
+    agentDraftTools = parsed.tools
+    agentDraftDeny = parsed.deny
+    agentDraftSteps = parsed.steps
+    agentDraftPrompt = parsed.body
     agentEditing = a
-    agentConfirmDelete = false
+    agentSnapshot = agentDraftKey()
   })
 
   function newAgent() {
     agentEditing = { name: '', description: '', prompt: '', builtin: false }
     agentDraftName = ''
-    agentDraftBody = t('settings.agentStarter')
+    agentDraftDescription = ''
+    agentDraftModel = ''
+    agentDraftTools = []
+    agentDraftDeny = []
+    agentDraftSteps = ''
+    agentDraftPrompt = t('settings.agentStarter')
     agentError = ''
-    agentConfirmDelete = false
+    agentSnapshot = agentDraftKey()
   }
 
+  const closeAgentEditor = () =>
+    guardUnsaved(agentDraftKey() !== agentSnapshot, () => { agentEditing = null })
+
   const saveAgent = () => runAgent('save', async () => {
-    await SaveSubagentProfile(agentDraftName.trim(), agentDraftBody)
+    await SaveSubagentProfile(agentDraftName.trim(), serializeAgentFile({
+      description: agentDraftDescription,
+      model: agentDraftModel,
+      tools: agentDraftTools,
+      deny: agentDraftDeny,
+      steps: agentDraftSteps,
+      body: agentDraftPrompt,
+    }))
     await loadAgents()
     agentEditing = null
   })
 
+  // Two different actions behind one button: deleting a profile the user wrote,
+  // versus dropping an override so a built-in goes back to how it shipped. They
+  // lose different things, so they say different things.
   const deleteAgent = () => {
-    if (!agentConfirmDelete) { agentConfirmDelete = true; return }
-    void runAgent('delete', async () => {
-      await DeleteSubagentProfile(agentDraftName.trim())
-      await loadAgents()
-      agentEditing = null
+    const reverting = agentEditing?.overrides === true
+    askConfirm({
+      title: reverting ? t('settings.confirmAgentRevertTitle') : t('settings.confirmAgentTitle'),
+      message: reverting ? t('settings.confirmAgentRevertMessage') : t('settings.confirmAgentMessage'),
+      detail: agentEditing?.path || agentDraftName.trim(),
+      confirmLabel: reverting ? t('settings.confirmAgentRevertAction') : t('settings.confirmDeleteAction'),
+      run: () => runAgent('delete', async () => {
+        await DeleteSubagentProfile(agentDraftName.trim())
+        await loadAgents()
+        agentEditing = null
+      }),
     })
   }
 
@@ -971,6 +1172,160 @@
   // empty list means the whole registry, not zero tools.
   const toolBadge = (a: SubagentRow) =>
     a.tools && a.tools.length > 0 ? t('settings.agentToolCount', { n: a.tools.length }) : t('settings.agentAllTools')
+
+  // A count alone ("2 denied") sends you to the .md file to find out which two.
+  // The names are already on the row — the badge just has to say them.
+  const toolBadgeTip = (a: SubagentRow) =>
+    a.tools && a.tools.length > 0
+      ? t('settings.agentToolsTip', { list: a.tools.join(', ') })
+      : t('settings.agentAllToolsTip')
+
+  const denyTip = (a: SubagentRow) => t('settings.agentDenyTip', { list: (a.deny ?? []).join(', ') })
+
+  // What you may put in `tools:`/`deny:`. The editor is a raw .md field, so the
+  // question it leaves you with is "what are the names?" — asking the running
+  // registry beats a list written down here that drifts the day a tool is added.
+  //
+  // AGENT_FORCED_DENIALS mirrors subagent.forcedDenials: names a sub-agent never
+  // gets no matter what the file says. Listing them as available would be a lie
+  // the user only discovers after saving.
+  const AGENT_FORCED_DENIALS = ['task', 'task_result', 'task_answer', 'help', 'ask_user', 'todo_write']
+  // Mirrors subagent.stepsUnlimitedKeyword. The frontmatter carries a word
+  // rather than a sentinel number because the file is hand-editable.
+  const STEPS_UNLIMITED = 'unlimited'
+
+  type AgentFields = {
+    description: string; model: string; tools: string[]; deny: string[]; steps: string; body: string
+  }
+
+  // Mirrors internal/subagent/profile.go's parse(): a leading `---`-fenced block
+  // of `key: value` lines, then the role prompt underneath. Duplicated here
+  // rather than asked of the backend because this is purely a display choice —
+  // the file format itself has not changed, so there's nothing to add to the
+  // Go side for it. Falls back to treating the whole thing as the prompt when
+  // there's no recognizable frontmatter, so a hand-edited or malformed file is
+  // never silently emptied under the user.
+  function parseAgentFile(raw: string): AgentFields {
+    const asPromptOnly = { description: '', model: '', tools: [] as string[], deny: [] as string[], steps: '', body: raw.trim() }
+    const normalized = raw.replace(/\r\n/g, '\n').replace(/^\n+/, '')
+    if (!normalized.startsWith('---\n')) return asPromptOnly
+    const rest = normalized.slice(4)
+    const end = rest.indexOf('\n---')
+    if (end < 0) return asPromptOnly
+    const fields: Record<string, string> = {}
+    for (const line of rest.slice(0, end).split('\n')) {
+      const t = line.trim()
+      const i = t.indexOf(':')
+      if (i < 0) continue
+      const key = t.slice(0, i).trim().toLowerCase()
+      if (key) fields[key] = t.slice(i + 1).trim().replace(/^["']+|["']+$/g, '')
+    }
+    const list = (v?: string) => (v ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
+    return {
+      description: fields.description ?? '',
+      model: fields.model ?? '',
+      tools: list(fields.tools),
+      deny: list(fields.deny),
+      steps: (fields.steps ?? '').trim(),
+      body: rest.slice(end + 4).trim(),
+    }
+  }
+
+  // The inverse of parseAgentFile. What SaveSubagentProfile receives here is
+  // exactly what ReadSubagentProfile would hand back for it afterwards — the
+  // backend never has to know the editor stopped showing it the raw text.
+  function serializeAgentFile(f: AgentFields): string {
+    const lines = ['---', `description: ${f.description.trim()}`]
+    if (f.model.trim()) lines.push(`model: ${f.model.trim()}`)
+    if (f.tools.length) lines.push(`tools: ${f.tools.join(', ')}`)
+    if (f.deny.length) lines.push(`deny: ${f.deny.join(', ')}`)
+    // The keyword, not a number: internal/subagent/profile.go only unbounds a
+    // loop on this exact word, so a typo'd ceiling falls back to the default
+    // rather than removing it.
+    if (f.steps.trim().toLowerCase() === STEPS_UNLIMITED) {
+      lines.push(`steps: ${STEPS_UNLIMITED}`)
+    } else {
+      const steps = parseInt(f.steps, 10)
+      if (Number.isFinite(steps) && steps > 0) lines.push(`steps: ${steps}`)
+    }
+    lines.push('---', '', f.body.trim())
+    return lines.join('\n')
+  }
+
+  // ---------- Sub-agent tool permissions ----------
+  // The engine resolves one question per tool, not two lists
+  // (internal/subagent/profile.go AllowsTool): a forced denial always wins, then
+  // deny, then an empty allow-list means everything, then membership.
+  //
+  // The editor used to draw those two lists as two identical 35-chip grids, so
+  // the user had to join them in their head to find out what a tool actually
+  // ended up as — and nothing stopped the same tool being ticked in both, a
+  // contradiction the engine silently resolves as denied. One row, one state.
+  type ToolState = 'default' | 'allow' | 'deny'
+
+  function toolStateOf(name: string): ToolState {
+    if (agentDraftDeny.includes(name)) return 'deny'
+    if (agentDraftTools.includes(name)) return 'allow'
+    return 'default'
+  }
+
+  function setToolState(name: string, state: ToolState) {
+    agentDraftDeny = agentDraftDeny.filter((n) => n !== name)
+    agentDraftTools = agentDraftTools.filter((n) => n !== name)
+    if (state === 'deny') agentDraftDeny = [...agentDraftDeny, name]
+    if (state === 'allow') agentDraftTools = [...agentDraftTools, name]
+  }
+
+  let toolPickerOpen = $state(false)
+  let toolQuery = $state('')
+
+  // Back to the default every profile starts on: no allow-list, no deny-list,
+  // which the engine reads as "whatever the registry has".
+  function resetAgentTools() {
+    agentDraftTools = []
+    agentDraftDeny = []
+  }
+
+  // Grouped by where the tool came from, same split the Tools page uses — with
+  // 35+ entries "which of these did I install" is the question that narrows the
+  // list fastest.
+  const agentToolGroups = $derived.by(() => {
+    const q = toolQuery.trim().toLowerCase()
+    return TOOL_SOURCES
+      .map((key) => ({
+        key,
+        items: tools
+          .filter((s) => s.source === key && (!q || s.name.toLowerCase().includes(q)))
+          .map((s) => ({ name: s.name, forced: AGENT_FORCED_DENIALS.includes(s.name) }))
+          .sort((a, b) => a.name.localeCompare(b.name)),
+      }))
+      .filter((g) => g.items.length > 0)
+  })
+
+  const toolMatchCount = $derived(agentToolGroups.reduce((n, g) => n + g.items.length, 0))
+
+  // Says what the profile actually does, not how many boxes are ticked. An
+  // empty allow-list is the common case and means "everything", which a bare
+  // "0 selected" reads as the opposite of.
+  const agentToolSummary = $derived(
+    agentDraftTools.length === 0 && agentDraftDeny.length === 0
+      ? t('settings.agentToolsAllOf')
+      : agentDraftTools.length === 0
+        ? t('settings.agentToolsAllExcept', { n: agentDraftDeny.length })
+        : agentDraftDeny.length === 0
+          ? t('settings.agentToolsOnly', { n: agentDraftTools.length })
+          : t('settings.agentToolsOnlyExcept', { n: agentDraftTools.length, d: agentDraftDeny.length }),
+  )
+
+  // ---------- Step limit ----------
+  const agentStepsUnlimited = $derived(agentDraftSteps.trim().toLowerCase() === STEPS_UNLIMITED)
+
+  // Ticking remembers nothing, unticking restores the default rather than an
+  // empty box: the field is disabled while unlimited is on, so whatever was in
+  // it is not something the user can see or was looking at.
+  function toggleStepsUnlimited() {
+    agentDraftSteps = agentStepsUnlimited ? '' : STEPS_UNLIMITED
+  }
 
   $effect(() => {
     if (active === 'agents') void loadAgents()
@@ -984,60 +1339,131 @@
   })
 
   // ---------- Nav ----------
-  const sections = $derived([
+  // `terms` is what the page is actually about, not just what it is called.
+  // Search used to match the nav label alone, so "font" and "ธีม" — two of the
+  // most likely things anyone types into a settings search — found nothing,
+  // even though the Appearance page has five font controls on it. The terms are
+  // the page's own setting titles, so they translate with everything else.
+  type NavItem = { id: string; label: string; icon: IconName; terms: string[] }
+  const sections: { group: string; items: NavItem[] }[] = $derived([
     { group: t('settings.groupPersonal'), items: [
-      { id: 'general', label: t('settings.general'), icon: '⚙' },
-      { id: 'appearance', label: t('settings.appearance'), icon: '🎨' },
-      { id: 'identity', label: t('sidebar.identity'), icon: '👤' },
+      { id: 'general', label: t('settings.general'), icon: 'slidersHorizontal',
+        terms: [t('settings.shellTitle'), t('settings.approvalTitle')] },
+      { id: 'appearance', label: t('settings.appearance'), icon: 'palette',
+        terms: [
+          t('settings.languageTitle'), t('settings.themeTitle'), t('settings.uiFontTitle'),
+          t('settings.typeScaleTitle'), t('settings.systemZoomTitle'), t('settings.editorFontTitle'),
+          t('settings.chatFontTitle'), t('settings.treeFontTitle'), t('settings.codeThemeTitle'),
+        ] },
+      { id: 'identity', label: t('sidebar.identity'), icon: 'userRound', terms: [] },
     ]},
     { group: t('settings.groupModels'), items: [
-      { id: 'models', label: t('settings.modelSettings'), icon: '🧠' },
-      { id: 'agents', label: t('settings.subagents'), icon: '🤖' },
+      { id: 'models', label: t('settings.modelSettings'), icon: 'brain',
+        terms: [t('settings.providers'), t('settings.apiKeyLabel'), t('settings.baseUrl'), t('settings.signInLabel'), t('settings.modelList')] },
+      { id: 'agents', label: t('settings.subagents'), icon: 'bot',
+        terms: [t('settings.subagentsMine'), t('settings.subagentsBuiltin')] },
     ]},
     { group: t('settings.groupTools'), items: [
       // Two pages, not two cards on one: a tool is something the AI runs, a
       // skill is a document telling it how. Sharing a page is what made them
       // read as one thing.
-      { id: 'tools', label: t('settings.tools'), icon: '🛠' },
-      { id: 'skills', label: t('settings.skills'), icon: '🧩' },
-      { id: 'mcp', label: t('settings.mcpServers'), icon: '🔌' },
-      { id: 'prompts', label: t('settings.prompts'), icon: '✨' },
-      { id: 'usage', label: t('settings.usage'), icon: '📊' },
+      { id: 'tools', label: t('settings.tools'), icon: 'wrench', terms: [SPEECH_TOOL] },
+      { id: 'skills', label: t('settings.skills'), icon: 'puzzle', terms: [t('settings.skillInstall')] },
+      { id: 'mcp', label: t('settings.mcpServers'), icon: 'plug', terms: [t('settings.mcpPresets'), t('settings.addServer')] },
+      { id: 'prompts', label: t('settings.prompts'), icon: 'sparkles', terms: [t('settings.promptNew')] },
+      { id: 'usage', label: t('settings.usage'), icon: 'chartColumn',
+        terms: [t('settings.usageByModel'), t('settings.usageTotalTokens'), t('settings.usageCacheHitRate')] },
     ]},
     { group: t('settings.groupAbout'), items: [
-      { id: 'sponsor', label: t('settings.sponsor'), icon: '❤' },
+      { id: 'sponsor', label: t('settings.sponsor'), icon: 'heart', terms: ['PromptPay', 'GitHub'] },
     ]},
   ])
 
   const SPONSOR_URL = 'https://github.com/Mike0165115321/Aetox/blob/main/SPONSOR.md'
   const SITE_URL = 'https://mike0165115321.github.io/Aetox/'
 
-  let active = $state('general')
+  // Which page is open survives an F5. Same reasoning as the chat/settings view
+  // itself (see setActiveView in stores/cockpit.svelte.ts): sessionStorage, not
+  // localStorage, because reopening the app should always start from the top —
+  // but a reload during a run should not throw away where you were. Reloading
+  // while three pages deep into MCP config and landing back on General is a
+  // small thing that happens every single time.
+  const SECTION_KEY = 'aetox.settingsSection'
+  const SECTION_IDS = new Set(['general', 'appearance', 'identity', 'models', 'agents', 'tools', 'skills', 'mcp', 'prompts', 'usage', 'sponsor'])
+
+  function restoredSection(): string {
+    try {
+      const saved = sessionStorage.getItem(SECTION_KEY)
+      // Validated, not trusted: a page that was removed since the value was
+      // written would otherwise render nothing at all.
+      if (saved && SECTION_IDS.has(saved)) return saved
+    } catch {
+      /* storage unavailable — start where a fresh open would */
+    }
+    return 'general'
+  }
+
+  let active = $state(restoredSection())
   let query = $state('')
 
-  const filteredSections = $derived(
-    sections
-      .map((g) => ({ ...g, items: g.items.filter((it) => it.label.toLowerCase().includes(query.trim().toLowerCase())) }))
-      .filter((g) => g.items.length > 0),
-  )
+  function openSection(id: string) {
+    active = id
+    try {
+      sessionStorage.setItem(SECTION_KEY, id)
+    } catch {
+      /* storage unavailable — the page just won't be remembered */
+    }
+  }
+
+  const filteredSections = $derived.by(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return sections
+    return sections
+      .map((g) => ({
+        ...g,
+        items: g.items.filter((it) =>
+          it.label.toLowerCase().includes(q) || it.terms.some((term) => term.toLowerCase().includes(q)),
+        ),
+      }))
+      .filter((g) => g.items.length > 0)
+  })
+
+  const noSearchResults = $derived(query.trim() !== '' && filteredSections.length === 0)
 </script>
 
 <div class="settings-page">
   <aside class="settings-nav">
-    <button class="settings-back" onclick={onClose}>{t('settings.backToApp')}</button>
+    <button class="settings-back" onclick={onClose}><Icon name="arrowLeft" size={14} /> {t('settings.backToApp')}</button>
     <input class="settings-search" placeholder={t('settings.searchPlaceholder')} bind:value={query} />
     {#each filteredSections as g}
       <div class="settings-group-label eyebrow">{g.group}</div>
       {#each g.items as it}
-        <button class="settings-nav-item" class:active={active === it.id} onclick={() => (active = it.id)}>
-          <span class="ic">{it.icon}</span> {it.label}
+        <button class="settings-nav-item" class:active={active === it.id} onclick={() => openSection(it.id)}>
+          <span class="ic"><Icon name={it.icon} /></span> {it.label}
         </button>
       {/each}
     {/each}
+    {#if noSearchResults}
+      <div class="settings-nav-empty">{t('settings.searchNoResults', { q: query.trim() })}</div>
+    {/if}
   </aside>
 
   <div class="settings-content">
-    <div class="settings-inner">
+    <div class="settings-inner" style:--content-max={active === 'usage' ? '960px' : null}>
+    {#if bootError}
+      <!-- The whole page used to be one unguarded await chain, so a backend
+           that wasn't up yet produced a blank page and no explanation. -->
+      <div class="settings-banner">
+        <div class="set-txt">
+          <div class="t">{t('settings.bootErrorTitle')}</div>
+          <div class="d">{t('settings.bootErrorHint')}</div>
+          <div class="d mono-dim">{bootError}</div>
+        </div>
+        <button class="ctrl ctrl-primary" disabled={booting} onclick={bootSettings}>
+          {booting ? t('settings.loading') : t('settings.retry')}
+        </button>
+      </div>
+    {/if}
     {#if active === 'general'}
       <h2>{t('settings.general')}</h2>
       <div class="settings-card">
@@ -1068,6 +1494,11 @@
       </div>
     {:else if active === 'appearance'}
       <h2>{t('settings.appearance')}</h2>
+      <!-- Every zone carries a heading, including the first. One unlabelled card
+           above three labelled ones reads as an oversight, not as an intro. -->
+      <div class="group-head">
+        <span class="group-title">{t('settings.zoneLook')}</span>
+      </div>
       <div class="settings-card">
         <div class="set-row">
           <div class="set-txt">
@@ -1102,28 +1533,67 @@
             {/each}
           </select>
         </div>
+      </div>
+
+      <div class="group-head">
+        <span class="group-title">{t('settings.zoneTextSize')}</span>
+      </div>
+      <div class="settings-card">
+        <!-- Text size sits above overall size on purpose: it is the one people
+             actually come here for, and reading the two in this order is what
+             makes the difference between them land. -->
+        <div class="set-row">
+          <div class="set-txt">
+            <div class="t">{t('settings.typeScaleTitle')}</div>
+            <div class="d">{t('settings.typeScaleDesc')}</div>
+          </div>
+          <div class="seg-ctrl">
+            {#each TYPE_SCALES as s (s.value)}
+              <button
+                type="button" class="seg-btn" class:selected={typeScale.name === s.value}
+                onclick={() => applyTypeScale(s.value as TypeScaleName)}
+              >{t(s.labelKey)}</button>
+            {/each}
+          </div>
+        </div>
+        <!-- Three steps of the scale at once. A single sample line cannot show
+             what a scale does — the thing being chosen is the gap between the
+             heading and the caption, not any one size. -->
+        <div class="set-row type-preview">
+          <div class="tsp-heading">{t('settings.typeScalePreviewHeading')}</div>
+          <div class="tsp-body">{t('settings.typeScalePreviewBody')}</div>
+          <div class="tsp-caption">{t('settings.typeScalePreviewCaption')}</div>
+        </div>
         <div class="set-row">
           <div class="set-txt">
             <div class="t">{t('settings.systemZoomTitle')}</div>
             <div class="d">{t('settings.systemZoomDesc')}</div>
           </div>
           <input
-            class="ctrl" type="number" min="12" max="20" step="0.5"
-            value={Math.round(systemZoom.value * SYSTEM_BASE_PX * 10) / 10}
-            onchange={(e) => applySystemZoom(parseFloat(e.currentTarget.value) / SYSTEM_BASE_PX)}
+            class="ctrl set-num" type="number" min="12" max="20" step="0.5"
+            value={Math.round(systemZoom.value * SYSTEM_BASE_PX * typeScale.scale * 10) / 10}
+            onchange={(e) => applySystemZoom(parseFloat(e.currentTarget.value) / (SYSTEM_BASE_PX * typeScale.scale))}
           />
-          <span class="muted" style="margin-left:6px">px</span>
+          <span class="muted set-unit">px</span>
         </div>
+      </div>
+
+      <div class="group-head">
+        <span class="group-title">{t('settings.zonePaneSizes')}</span>
+        <span class="group-count">{t('settings.zonePaneSizesHint')}</span>
+      </div>
+      <div class="settings-card">
         <div class="set-row">
           <div class="set-txt">
             <div class="t">{t('settings.editorFontTitle')}</div>
             <div class="d">{t('settings.editorFontDesc')}</div>
           </div>
           <input
-            class="ctrl" type="number" min="10" max="24" step="0.5"
+            class="ctrl set-num" type="number" min="10" max="24" step="0.5"
             value={editorFont.size}
             onchange={(e) => applyEditorFontSize(parseFloat(e.currentTarget.value))}
           />
+          <span class="muted set-unit">px</span>
         </div>
         <div class="set-row">
           <div class="set-txt">
@@ -1131,10 +1601,11 @@
             <div class="d">{t('settings.chatFontDesc')}</div>
           </div>
           <input
-            class="ctrl" type="number" min="12" max="22" step="0.5"
+            class="ctrl set-num" type="number" min="12" max="22" step="0.5"
             value={chatFont.size}
             onchange={(e) => applyChatFontSize(parseFloat(e.currentTarget.value))}
           />
+          <span class="muted set-unit">px</span>
         </div>
         <div class="set-row">
           <div class="set-txt">
@@ -1142,12 +1613,20 @@
             <div class="d">{t('settings.treeFontDesc')}</div>
           </div>
           <input
-            class="ctrl" type="number" min="11" max="18" step="0.5"
+            class="ctrl set-num" type="number" min="11" max="18" step="0.5"
             value={treeFont.size}
             onchange={(e) => applyTreeFontSize(parseFloat(e.currentTarget.value))}
           />
+          <span class="muted set-unit">px</span>
         </div>
+      </div>
+
+      <div class="group-head">
+        <span class="group-title">{t('settings.zoneCode')}</span>
+      </div>
+      <div class="settings-card">
         <div class="set-row">
+          <span class="muted set-unit">px</span>
           <div class="set-txt">
             <div class="t">{t('settings.codeThemeTitle')}</div>
             <div class="d">{t('settings.codeThemeDesc')}</div>
@@ -1159,6 +1638,7 @@
           }}>
             <option value="auto">{t('settings.codeThemeAuto')}</option>
             <option value="vs-dark">{t('settings.codeThemeDark')}</option>
+          <span class="muted set-unit">px</span>
             <option value="vs">{t('settings.codeThemeLight')}</option>
             {#if editorTheme.importedName}
               <option value="imported">{editorTheme.importedName}</option>
@@ -1187,18 +1667,19 @@
           {#each enabledRows as p (p.name)}
             <div class="mset-prov-row">
               <button class="mset-prov" class:selected={selected === p.name} onclick={() => selectProvider(p.name)}>
-                {p.name}
+                <ProviderMark name={p.name} size={15} />
+                <span class="mset-prov-name">{p.name}</span>
                 <span class="dot" class:green={p.hasKey}></span>
               </button>
               {#if enabledRows.length > 1}
                 <button class="icobtn tiny" disabled={busy === 'disable:' + p.name}
-                  aria-label={t('settings.remove')} onclick={() => removeProvider(p.name)}>✕</button>
+                  aria-label={t('settings.remove')} onclick={() => removeProvider(p.name)}><Icon name="x" size={13} /></button>
               {/if}
             </div>
           {/each}
 
           <button class="mset-prov mset-add-toggle" onclick={() => (showAddProvider = !showAddProvider)}>
-            + {t('settings.addProvider')}
+            <Icon name="plus" size={14} /> {t('settings.addProvider')}
           </button>
           {#if showAddProvider}
             <div class="mset-add-list">
@@ -1206,7 +1687,8 @@
                 <div class="mset-add-group">{t('settings.groupSignIn')}</div>
                 {#each addableSignIn as p (p.name)}
                   <button class="mset-prov" disabled={busy === 'enable:' + p.name} onclick={() => addProvider(p.name)}>
-                    {p.name}
+                    <ProviderMark name={p.name} size={15} />
+                    <span class="mset-prov-name">{p.name}</span>
                     <span class="dot">{busy === 'enable:' + p.name ? '…' : '+'}</span>
                   </button>
                 {/each}
@@ -1215,13 +1697,14 @@
                 <div class="mset-add-group">{t('settings.groupApiKey')}</div>
                 {#each addableKeyed as p (p.name)}
                   <button class="mset-prov" disabled={busy === 'enable:' + p.name} onclick={() => addProvider(p.name)}>
-                    {p.name}
+                    <ProviderMark name={p.name} size={15} />
+                    <span class="mset-prov-name">{p.name}</span>
                     <span class="dot">{busy === 'enable:' + p.name ? '…' : '+'}</span>
                   </button>
                 {/each}
               {/if}
               {#if addableRows.length === 0}
-                <div class="muted" style="font-size:12px; padding:4px 10px">{t('settings.noMoreProviders')}</div>
+                <div class="muted set-note">{t('settings.noMoreProviders')}</div>
               {/if}
             </div>
           {/if}
@@ -1230,11 +1713,12 @@
         <div class="mset-detail">
           {#if selectedRow}
             <div class="mset-head">
+              <ProviderMark name={selected} size={22} />
               <span class="mset-name">{selected}</span>
               {#if isActiveProvider}
                 <span class="badge on">{t('settings.active')}</span>
               {:else}
-                <button class="ctrl" disabled={busy !== ''} onclick={useProvider}>
+                <button class="ctrl ctrl-primary" disabled={busy !== ''} onclick={useProvider}>
                   {busy === 'provider' ? t('settings.switching') : t('settings.useThisProvider')}
                 </button>
               {/if}
@@ -1248,14 +1732,14 @@
 
             <div class="mset-field">
               <div class="eyebrow">{t('settings.baseUrl')}</div>
-              <div class="muted" style="font-size:12px; margin-bottom:6px">{t('settings.baseUrlDesc')}</div>
+              <div class="muted set-hint">{t('settings.baseUrlDesc')}</div>
               <div class="mset-keyrow">
                 <input
                   class="ctrl key-input" placeholder={baseURL || 'http://localhost:1234/v1'}
                   bind:value={baseURLDraft}
                   onkeydown={(e) => e.key === 'Enter' && saveBaseURL(baseURLDraft)}
                 />
-                <button class="ctrl" disabled={busy !== '' || baseURLDraft.trim() === baseURL} onclick={() => saveBaseURL(baseURLDraft)}>
+                <button class="ctrl ctrl-primary" disabled={busy !== '' || baseURLDraft.trim() === baseURL} onclick={() => saveBaseURL(baseURLDraft)}>
                   {busy === 'baseUrl' ? t('settings.saving') : t('settings.save')}
                 </button>
                 {#if baseURLIsCustom}
@@ -1267,7 +1751,7 @@
             {#if wireFormats.length > 1}
               <div class="mset-field">
                 <div class="eyebrow">{t('settings.wireFormat')}</div>
-                <div class="muted" style="font-size:12px; margin-bottom:6px">{t('settings.wireFormatDesc')}</div>
+                <div class="muted set-hint">{t('settings.wireFormatDesc')}</div>
                 <div class="mset-keyrow">
                   {#each wireFormats as fmt}
                     {#if currentWireFormat === fmt}
@@ -1332,7 +1816,7 @@
                   </div>
                 {:else}
                   <div class="mset-keyrow">
-                    <button class="ctrl" disabled={busy !== ''} onclick={startSignIn}>
+                    <button class="ctrl ctrl-primary" disabled={busy !== ''} onclick={startSignIn}>
                       {t('settings.signInWith', { label: signInMethod.label })}
                     </button>
                     {#if importable.includes(signInMethod.provider)}
@@ -1365,8 +1849,8 @@
                     bind:value={keyDraft}
                     onkeydown={(e) => e.key === 'Enter' && saveKey()}
                   />
-                  <button class="icobtn tiny" aria-label={t('settings.showKey')} onclick={() => (showKey = !showKey)}>👁</button>
-                  <button class="ctrl" disabled={busy === 'key' || !keyDraft.trim()} onclick={saveKey}>
+                  <button class="icobtn tiny" aria-label={t('settings.showKey')} onclick={() => (showKey = !showKey)}><Icon name="eye" size={14} /></button>
+                  <button class="ctrl ctrl-primary" disabled={busy === 'key' || !keyDraft.trim()} onclick={saveKey}>
                     {busy === 'key' ? t('settings.saving') : t('settings.save')}
                   </button>
                 </div>
@@ -1386,7 +1870,7 @@
                     <button
                       class="icobtn tiny" title={t('settings.testConnection')} aria-label={t('settings.testConnection')}
                       disabled={busy !== ''} onclick={() => testConnection(m)}
-                    >{busy === 'test:' + m ? '…' : '🔌'}</button>
+                    >{#if busy === 'test:' + m}…{:else}<Icon name="plugZap" size={14} />{/if}</button>
                     {#if isActiveProvider && cockpit.model.modelName === m}
                       <span class="badge on">{t('settings.inUse')}</span>
                     {:else}
@@ -1397,7 +1881,11 @@
                   </div>
                   {#if connTestModel === m && connTest}
                     <div class="conn-test" class:ok={connTest.startsWith('ok:')}>
-                      {connTest.startsWith('ok:') ? '✓ ' + t('settings.connOk') + ' — ' + connTest.slice(3) : '✕ ' + connTest.slice(4)}
+                      {#if connTest.startsWith('ok:')}
+                        <Icon name="check" size={13} /> {t('settings.connOk')}: {connTest.slice(3)}
+                      {:else}
+                        <Icon name="x" size={13} /> {connTest.slice(4)}
+                      {/if}
                     </div>
                   {/if}
                 {/each}
@@ -1415,6 +1903,18 @@
             {#if errorMsg}
               <div class="mset-error">{errorMsg}</div>
             {/if}
+          {:else if booting}
+            <!-- refreshProviders fans out one IPC round-trip per provider, so
+                 this pane sat completely blank on every open. A skeleton says
+                 "coming"; nothing says "broken". -->
+            <div class="mset-skeleton" aria-label={t('settings.loading')}>
+              <span class="sk sk-head"></span>
+              <span class="sk sk-line"></span>
+              <span class="sk sk-line short"></span>
+              <span class="sk sk-block"></span>
+            </div>
+          {:else}
+            <div class="mset-empty muted">{t('settings.noProviderSelected')}</div>
           {/if}
         </div>
       </div>
@@ -1427,7 +1927,10 @@
              the list, and a title sealed inside its own border reads as one
              more entry in it. -->
         <div class="group-head">
-          <span class="group-title">{t('settings.toolSource_' + g.key)}</span>
+          <!-- Template literal, not concatenation: TOOL_SOURCES is a literal
+               union, so this resolves to a real message key and a source added
+               without its label becomes a compile error. -->
+          <span class="group-title">{t(`settings.toolSource_${g.key}`)}</span>
           <span class="group-count">{t('settings.itemCount', { n: g.items.length })}</span>
         </div>
         <div class="settings-card">
@@ -1447,7 +1950,7 @@
                      not shove the rest of the tool list down the page. -->
                 <div class="tool-setting">
                   <button class="ctrl" disabled={speechBusy} onclick={() => (speechOpen = !speechOpen)}>
-                    {activeSpeechLabel} {speechOpen ? '▴' : '▾'}
+                    {activeSpeechLabel} <Icon name={speechOpen ? 'chevronUp' : 'chevronDown'} size={13} />
                   </button>
                   {#if speechOpen}
                     <button
@@ -1478,12 +1981,17 @@
                               <div class="t">{m.name}</div>
                               <div class="sub">{m.sizeMB} MB · {m.store}</div>
                             </button>
+                            <!-- data-tip, not title: the app has its own tooltip
+                                 and the native one is slow and unstyleable. The
+                                 path is what the tip is for — `m.where` was
+                                 never a field on this row, so it showed
+                                 nothing. -->
                             <button
                               class="rowdrop-reveal"
-                              title={m.where}
+                              data-tip={m.path}
                               aria-label={t('settings.speechOpenFolder')}
                               onclick={() => RevealSpeechModel(m.path)}
-                            >📁</button>
+                            ><Icon name="folderOpen" size={14} /></button>
                           </div>
                         {/each}
                       {/if}
@@ -1496,7 +2004,7 @@
                       <div class="rowdrop-note muted">{t('settings.speechScanned')}</div>
                       {#each speechDirs as d (d.path)}
                         <button class="rowdrop-opt rowdrop-dir" onclick={() => OpenSpeechModelDir(d.path)}>
-                          📁 {d.label}
+                          <Icon name="folderOpen" size={13} /> {d.label}
                         </button>
                       {/each}
                     </div>
@@ -1514,12 +2022,34 @@
       <div class="settings-card">
         <div class="card-form">
           <div class="mset-keyrow">
-            <div class="eyebrow" style="flex:1">{t('settings.skillsInstalled')}</div>
+            <div class="eyebrow eyebrow-grow">{t('settings.skillsInstalled')}</div>
+            <button class="ctrl" disabled={skillBusy !== ''} onclick={() => OpenSkillsFolder()}>
+              {t('settings.skillsFolder')}
+            </button>
             <button class="ctrl" disabled={skillBusy !== ''} onclick={refreshSkills}>
               {skillBusy === 'refresh' ? t('settings.refreshing') : t('settings.refresh')}
             </button>
           </div>
+          <!-- The real path, read from the engine. Two of the three places this
+               page used to name one had it wrong (~/.agents/skills, which is
+               opencode's and which Aetox never scans), so anyone who followed
+               the instructions put files where nothing was looking. -->
+          <div class="d mono-dim">{skillsDir}</div>
         </div>
+        {#if skillIssues.length > 0}
+          <!-- Files that are in the right folder and still did not appear. The
+               scan has always collected these and the list has always dropped
+               them, so a broken SKILL.md looked exactly like a folder the app
+               was not reading. -->
+          <div class="set-row skill-issues">
+            <div class="set-txt">
+              <div class="t">{t('settings.skillIssues', { n: skillIssues.length })}</div>
+              {#each skillIssues as issue (issue)}
+                <div class="d mono-dim" title={issue}>{issue}</div>
+              {/each}
+            </div>
+          </div>
+        {/if}
         {#if extSkills.length === 0}
           <div class="set-row"><div class="muted">{t('settings.noSkills')}</div></div>
         {:else}
@@ -1530,8 +2060,8 @@
                 <div class="d">{s.description || '—'}</div>
                 <div class="d mono-dim">{s.dir}</div>
               </div>
-              <button class="ctrl" class:danger={skillConfirm === s.name} disabled={skillBusy !== ''} onclick={() => removeSkill(s.name)}>
-                {skillConfirm === s.name ? t('settings.confirmRemove') : t('settings.remove')}
+              <button class="ctrl ctrl-danger" disabled={skillBusy !== ''} onclick={() => removeSkill(s.name, s.dir)}>
+                {t('settings.remove')}
               </button>
             </div>
           {/each}
@@ -1547,11 +2077,21 @@
               bind:value={skillInstallUrl}
               onkeydown={(e) => e.key === 'Enter' && skillInstallUrl.trim() && installSkill()}
             />
-            <button class="ctrl" disabled={skillBusy !== '' || !skillInstallUrl.trim()} onclick={installSkill}>
+            <button class="ctrl ctrl-primary" disabled={skillBusy !== '' || !skillInstallUrl.trim()} onclick={installSkill}>
               {skillBusy === 'install' ? t('settings.installing') : t('settings.install')}
             </button>
           </div>
           <div class="d muted">{t('settings.skillInstallHint')}</div>
+
+          <!-- The third way in. A GitHub URL needs the skill to be published
+               there; the folder button needs it to already be on this machine.
+               A zip is what a skill looks like arriving by any other road. -->
+          <div class="mset-keyrow skill-zip">
+            <div class="d muted eyebrow-grow">{t('settings.skillZipHint')}</div>
+            <button class="ctrl" disabled={skillBusy !== ''} onclick={installSkillZip}>
+              {skillBusy === 'zip' ? t('settings.installing') : t('settings.skillZip')}
+            </button>
+          </div>
           {#if skillInstallResult}<pre class="skill-result">{skillInstallResult}</pre>{/if}
           {#if skillError}<div class="mset-error">{skillError}</div>{/if}
         </div>
@@ -1560,9 +2100,6 @@
     {:else if active === 'agents'}
       <h2>{t('settings.subagents')}</h2>
       <p class="muted set-sub">{t('settings.subagentsDesc')}</p>
-      <!-- Real and editable, but nothing can spawn one until the `task` tool
-           lands (§44 step 4). Saying so beats looking broken. -->
-      <p class="muted set-sub">{t('settings.agentsSubSoon')}</p>
 
       {#if agentEditing === null}
         <div class="pp-bar">
@@ -1592,9 +2129,9 @@
                     {a.name}
                     {#if a.overrides}<span class="tag ag-override">{t('settings.agentOverrides')}</span>{/if}
                     {#if a.model}<span class="tag">{a.model}</span>{/if}
-                    <span class="tag">{toolBadge(a)}</span>
-                    {#if a.deny && a.deny.length > 0}<span class="tag ag-deny">{t('settings.agentDenyCount', { n: a.deny.length })}</span>{/if}
-                    <span class="tag">{t('settings.agentSteps', { n: a.steps || 24 })}</span>
+                    <span class="tag" title={toolBadgeTip(a)}>{toolBadge(a)}</span>
+                    {#if a.deny && a.deny.length > 0}<span class="tag ag-deny" title={denyTip(a)}>{t('settings.agentDenyCount', { n: a.deny.length })}</span>{/if}
+                    <span class="tag" title={t('settings.agentStepsTip', { n: a.steps || 24 })}>{t('settings.agentSteps', { n: a.steps || 24 })}</span>
                   </div>
                   <div class="d">{a.description || '—'}</div>
                   <div class="d mono-dim">{a.path || 'built-in:' + a.name}</div>
@@ -1607,7 +2144,7 @@
                   {#each agentModels as m}<option value={m}>{m}</option>{/each}
                   {#if a.model && !agentModels.includes(a.model)}<option value={a.model}>{a.model}</option>{/if}
                 </select>
-                <button class="ctrl" disabled={agentBusy !== ''} onclick={() => openAgent(a)}>{t('settings.edit')}</button>
+                <button class="ctrl" disabled={agentBusy !== ''} onclick={() => openAgent(a)}>{t('settings.agentConfigure')}</button>
               </div>
             {/each}
           </div>
@@ -1615,16 +2152,14 @@
         <p class="muted set-sub">{t('settings.agentsHint')}</p>
       {:else}
         <div class="pp-bar">
-          <button class="ctrl" onclick={() => (agentEditing = null)}>← {t('settings.agentBack')}</button>
-          <div style="flex:1"></div>
+          <button class="ctrl" onclick={closeAgentEditor}><Icon name="arrowLeft" size={14} /> {t('settings.agentBack')}</button>
+          <div class="pp-bar-gap"></div>
           {#if !agentEditing.builtin && agentEditing.name}
-            <button class="ctrl" class:danger={agentConfirmDelete} disabled={agentBusy !== ''} onclick={deleteAgent}>
-              {agentConfirmDelete
-                ? t('settings.confirmRemove')
-                : agentEditing.overrides ? t('settings.agentRevert') : t('settings.remove')}
+            <button class="ctrl ctrl-danger" disabled={agentBusy !== ''} onclick={deleteAgent}>
+              {agentEditing.overrides ? t('settings.agentRevert') : t('settings.remove')}
             </button>
           {/if}
-          <button class="ctrl" disabled={agentBusy !== '' || !agentDraftName.trim() || !agentDraftBody.trim()} onclick={saveAgent}>
+          <button class="ctrl ctrl-primary" disabled={agentBusy !== '' || !agentDraftName.trim() || !agentDraftPrompt.trim()} onclick={saveAgent}>
             {agentBusy === 'save' ? t('settings.saving') : t('settings.promptSave')}
           </button>
         </div>
@@ -1641,10 +2176,48 @@
               <input class="ctrl" bind:value={agentDraftName} placeholder="backend" disabled={agentEditing.name !== ''} />
             </label>
             <label class="pp-field">
+              <span class="eyebrow">{t('settings.agentDescription')}</span>
+              <input class="ctrl" bind:value={agentDraftDescription} placeholder={t('settings.agentDescriptionPlaceholder')} />
+            </label>
+            <label class="pp-field">
               <span class="eyebrow">{t('settings.agentBody')}</span>
-              <textarea class="ctrl ag-body" bind:value={agentDraftBody} spellcheck="false"></textarea>
+              <textarea class="ctrl ag-body" bind:value={agentDraftPrompt} spellcheck="false" use:autogrow={agentDraftPrompt}></textarea>
               <span class="d muted">{t('settings.agentBodyHint')}</span>
             </label>
+            <!-- A summary and a way in, not seventy chips. What each tool ends
+                 up as is one question, so it is answered one row at a time in
+                 the panel below rather than across two grids the reader has to
+                 join themselves. -->
+            <div class="pp-field">
+              <span class="eyebrow">{t('settings.agentTools')}</span>
+              <div class="ag-toolsum">
+                <div class="ag-toolsum-txt">
+                  <div class="t">{agentToolSummary}</div>
+                  <div class="d muted">{t('settings.agentToolsRule')}</div>
+                </div>
+                <button type="button" class="ctrl" onclick={() => (toolPickerOpen = true)}>
+                  {t('settings.agentToolsConfigure')} <Icon name="chevronRight" size={13} />
+                </button>
+              </div>
+            </div>
+
+            <div class="pp-field">
+              <span class="eyebrow">{t('settings.agentStepsField')}</span>
+              <div class="ag-steprow">
+                <input
+                  class="ctrl ag-steps" bind:value={agentDraftSteps} inputmode="numeric" placeholder="24"
+                  disabled={agentStepsUnlimited}
+                  aria-label={t('settings.agentStepsField')}
+                />
+                <label class="ag-check">
+                  <input type="checkbox" checked={agentStepsUnlimited} onchange={toggleStepsUnlimited} />
+                  {t('settings.agentStepsUnlimited')}
+                </label>
+              </div>
+              <span class="d muted">
+                {agentStepsUnlimited ? t('settings.agentStepsUnlimitedWarn') : t('settings.agentStepsFieldHint')}
+              </span>
+            </div>
           </div>
         </div>
       {/if}
@@ -1685,14 +2258,14 @@
         <p class="muted set-sub">{t('settings.promptsHint')}</p>
       {:else}
         <div class="pp-bar">
-          <button class="ctrl" onclick={() => (editing = null)}>← {t('settings.promptBack')}</button>
-          <div style="flex:1"></div>
+          <button class="ctrl" onclick={closePresetEditor}><Icon name="arrowLeft" size={14} /> {t('settings.promptBack')}</button>
+          <div class="pp-bar-gap"></div>
           {#if !editing.builtin && editing.name}
-            <button class="ctrl" class:danger={confirmDelete} disabled={presetBusy !== ''} onclick={deletePreset}>
-              {confirmDelete ? t('settings.confirmRemove') : t('settings.remove')}
+            <button class="ctrl ctrl-danger" disabled={presetBusy !== ''} onclick={deletePreset}>
+              {t('settings.remove')}
             </button>
           {/if}
-          <button class="ctrl" disabled={presetBusy !== '' || !draftName.trim() || !draftBody.trim()} onclick={savePreset}>
+          <button class="ctrl ctrl-primary" disabled={presetBusy !== '' || !draftName.trim() || !draftBody.trim()} onclick={savePreset}>
             {presetBusy === 'save' ? t('settings.installing') : t('settings.promptSave')}
           </button>
         </div>
@@ -1726,7 +2299,7 @@
 
             <div class="pp-field">
               <div class="pp-bodyhead">
-                <span class="eyebrow" style="flex:1">{t('settings.promptBody')}</span>
+                <span class="eyebrow eyebrow-grow">{t('settings.promptBody')}</span>
                 <button class="ctrl tiny" onclick={insertArguments}>+ $ARGUMENTS</button>
               </div>
               <textarea
@@ -1751,10 +2324,10 @@
             {#each identity.files as f (f.name)}
               <div class="identity-file" class:active={identity.activeName === f.name}>
                 <button type="button" class="identity-file-open" onclick={() => openIdentityFile(f.name)}>
-                  <span class="ic">📄</span>
+                  <span class="ic"><Icon name="fileText" size={14} /></span>
                   <span class="t">{f.name}</span>
                 </button>
-                <button type="button" class="identity-file-del" aria-label={t('settings.remove')} onclick={() => deleteIdentityFile(f.name)}>✕</button>
+                <button type="button" class="identity-file-del" aria-label={t('settings.remove')} onclick={() => removeIdentityFile(f.name)}><Icon name="x" size={13} /></button>
               </div>
             {/each}
             {#if identity.files.length === 0}
@@ -1765,7 +2338,7 @@
             <div class="identity-templates">
               {#each missingTemplates as tpl (tpl.name)}
                 <button type="button" class="identity-template" onclick={() => createIdentityFile(tpl.name, tpl.content)}>
-                  ＋ {tpl.name}
+                  <Icon name="plus" size={13} /> {tpl.name}
                 </button>
               {/each}
             </div>
@@ -1776,7 +2349,7 @@
               bind:value={newIdentityName}
               onkeydown={(e) => e.key === 'Enter' && addIdentityFile()}
             />
-            <button type="button" class="icobtn tiny" aria-label={t('sidebar.newIdentityFile')} onclick={addIdentityFile}>＋</button>
+            <button type="button" class="icobtn tiny" aria-label={t('sidebar.newIdentityFile')} onclick={addIdentityFile}><Icon name="plus" size={14} /></button>
           </div>
           {#if identity.activeName}
             <textarea
@@ -1784,7 +2357,7 @@
               bind:value={identity.draft}
             ></textarea>
             <button
-              type="button" class="ctrl identity-save"
+              type="button" class="ctrl identity-save ctrl-primary"
               disabled={!identityDirty || identity.saving}
               onclick={saveIdentityFile}
             >
@@ -2049,9 +2622,9 @@
                   <span class="mcp-badge">{s.url ? 'http' : 'stdio'}</span>
                   {#if s.tools > 0}<span class="mcp-badge">{t('settings.mcpToolCount', { n: String(s.tools) })}</span>{/if}
                 </div>
-                <div class="d">{s.url || (s.command ?? []).join(' ')}{s.err ? ' — ' + s.err : ''}</div>
+                <div class="d">{s.url || (s.command ?? []).join(' ')}{s.err ? ' · ' + s.err : ''}</div>
               </div>
-              <div style="display:flex; gap:8px; align-items:center">
+              <div class="mcp-row-actions">
                 <label class="mswitch" title={s.disabled ? t('settings.add') : ''}>
                   <input type="checkbox" checked={!s.disabled} disabled={mcpBusy !== ''} onchange={() => toggleMCP(s)} />
                   <span></span>
@@ -2060,7 +2633,7 @@
                   {mcpBusy === 'test:' + s.name ? t('settings.testing') : t('settings.test')}
                 </button>
                 <button class="ctrl" disabled={mcpBusy !== ''} onclick={() => editMCP(s)}>{t('settings.edit')}</button>
-                <button class="ctrl" disabled={mcpBusy !== ''} onclick={() => removeMCP(s.name)}>{t('settings.remove')}</button>
+                <button class="ctrl ctrl-danger" disabled={mcpBusy !== ''} onclick={() => removeMCP(s.name)}>{t('settings.remove')}</button>
               </div>
             </div>
           {/each}
@@ -2092,7 +2665,7 @@
           {/if}
 
           <div class="mset-keyrow">
-            <button class="ctrl" disabled={mcpBusy !== '' || !mcpFormValid} onclick={saveMCP}>
+            <button class="ctrl ctrl-primary" disabled={mcpBusy !== '' || !mcpFormValid} onclick={saveMCP}>
               {mcpBusy === 'save' ? t('settings.saving') : (mcpOriginal ? t('settings.save') : t('settings.add'))}
             </button>
             {#if mcpOriginal}
@@ -2111,7 +2684,7 @@
           <div class="set-row">
             <div class="set-txt">
               <div class="t">{p.name} <span class="mcp-badge">{p.url ? 'http' : 'stdio'}</span></div>
-              <div class="d">{p.desc} — {p.url ?? p.command?.join(' ')}</div>
+              <div class="d">{p.desc} · {p.url ?? p.command?.join(' ')}</div>
             </div>
             <button class="ctrl" disabled={mcpBusy !== '' || presetTaken(p.name)} onclick={() => addPreset(p)}>
               {mcpBusy === 'preset:' + p.name ? t('settings.adding') : t('settings.add')}
@@ -2136,8 +2709,8 @@
             <div class="d">{t('settings.sponsorScanHint')}</div>
           </div>
         </div>
-        <div class="set-row" style="justify-content:center">
-          <img src={promptPayQR} alt="PromptPay QR" style="width:260px;max-width:100%;border-radius:12px" />
+        <div class="set-row sponsor-center">
+          <img src={promptPayQR} alt="PromptPay QR" class="sponsor-qr" />
         </div>
         <!-- Attribution, not decoration: this is the one place in the running app
              that names who wrote it and where it came from. Untranslated on
@@ -2154,3 +2727,93 @@
     </div>
   </div>
 </div>
+
+{#if toolPickerOpen}
+  <!-- Edits land straight on the draft — there is no OK/Cancel here, because
+       the editor behind it already has a Save and a discard guard, and a second
+       layer of "are you sure" over the same draft is one too many. -->
+  <div class="tp-overlay" role="dialog" aria-modal="true" aria-labelledby="tp-title">
+    <button class="confirm-backdrop" aria-label={t('settings.close')} onclick={() => (toolPickerOpen = false)}></button>
+    <div class="tp-card">
+      <div class="tp-head">
+        <div>
+          <h3 id="tp-title" class="tp-title">{t('settings.agentToolsTitle', { name: agentDraftName || '—' })}</h3>
+          <div class="d muted">{t('settings.agentToolsRule')}</div>
+        </div>
+        <button class="icobtn" aria-label={t('settings.close')} onclick={() => (toolPickerOpen = false)}>
+          <Icon name="x" size={15} />
+        </button>
+      </div>
+
+      <input
+        class="ctrl tp-search" placeholder={t('settings.agentToolsSearch')}
+        bind:value={toolQuery}
+      />
+
+      <div class="tp-body">
+        {#if toolMatchCount === 0}
+          <!-- Two different nothings: the registry has not arrived yet, or it
+               has and the search excluded everything. Saying "no matches" while
+               the list is still loading is the wrong answer to both. -->
+          <div class="muted tp-empty">
+            {#if tools.length === 0}{t('settings.loading')}
+            {:else}{t('settings.searchNoResults', { q: toolQuery.trim() })}{/if}
+          </div>
+        {/if}
+        {#each agentToolGroups as g (g.key)}
+          <div class="group-head tp-group">
+            <span class="group-title">{t(`settings.toolSource_${g.key}`)}</span>
+            <span class="group-count">{t('settings.itemCount', { n: g.items.length })}</span>
+          </div>
+          {#each g.items as item (item.name)}
+            <div class="tp-row" class:forced={item.forced}>
+              <span class="tp-name">{item.name}</span>
+              {#if item.forced}
+                <!-- Listing these as choosable was a lie the user only found out
+                     about after saving — see subagent.forcedDenials. -->
+                <span class="tp-forced">{t('settings.agentToolsForced')}</span>
+              {:else}
+                {@const state = toolStateOf(item.name)}
+                <div class="seg-ctrl tp-seg">
+                  {#each [
+                    { id: 'default', label: t('settings.agentToolDefault') },
+                    { id: 'allow', label: t('settings.agentToolAllow') },
+                    { id: 'deny', label: t('settings.agentToolDeny') },
+                  ] as opt (opt.id)}
+                    <button
+                      type="button" class="seg-btn tp-{opt.id}"
+                      class:selected={state === opt.id}
+                      aria-pressed={state === opt.id}
+                      onclick={() => setToolState(item.name, opt.id as ToolState)}
+                    >{opt.label}</button>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          {/each}
+        {/each}
+      </div>
+
+      <div class="tp-foot">
+        <span class="muted">{agentToolSummary}</span>
+        <div class="pp-bar-gap"></div>
+        <button class="ctrl" onclick={resetAgentTools} disabled={agentDraftTools.length === 0 && agentDraftDeny.length === 0}>
+          {t('settings.agentToolsReset')}
+        </button>
+        <button class="ctrl ctrl-primary" onclick={() => (toolPickerOpen = false)}>{t('settings.done')}</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if pendingConfirm}
+  {@const req = pendingConfirm}
+  <ConfirmDialog
+    title={req.title}
+    message={req.message}
+    detail={req.detail ?? ''}
+    confirmLabel={req.confirmLabel}
+    onConfirm={runPendingConfirm}
+    onCancel={() => (pendingConfirm = null)}
+  />
+{/if}

@@ -2,6 +2,7 @@
   import { cockpit, toggleNode, visibleTree } from '../stores/cockpit.svelte'
   import { workbench, openFileTab } from '../stores/workbench.svelte'
   import { t } from '../i18n.svelte'
+  import Icon from '../Icon.svelte'
 
   const rows = $derived(visibleTree(cockpit.tree))
 </script>
@@ -17,7 +18,7 @@
         {#if node.kind === 'dir'}
           <span class="tw" class:open={node.open}></span>
         {/if}
-        <span class="ic">{node.kind === 'dir' ? (node.open ? '📂' : '📁') : '📄'}</span>
+        <span class="ic"><Icon name={node.kind === 'dir' ? (node.open ? 'folderOpen' : 'folder') : 'fileText'} size={13} /></span>
         {node.label}
         {#if node.status === 'M'}<span class="st m">M</span>{/if}
         {#if node.status === 'U'}<span class="st u">U</span>{/if}

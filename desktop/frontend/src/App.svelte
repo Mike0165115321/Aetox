@@ -17,6 +17,7 @@
   import { RelativizePath, CloseAllBrowserTabs } from '../wailsjs/go/main/App'
   import { OnFileDrop, OnFileDropOff, EventsOn } from '../wailsjs/runtime/runtime'
   import { workbench } from './lib/stores/workbench.svelte'
+  import Icon from './lib/Icon.svelte'
 
   function fileLabel(path: string): string {
     return path.split('/').pop() ?? path
@@ -206,6 +207,11 @@
     } else if (e.ctrlKey && !e.altKey && e.key === ',') {
       e.preventDefault()
       setActiveView('settings')
+    } else if (e.key === 'Escape' && cockpit.activeView === 'settings') {
+      // Ctrl+, opened it; Escape is the other half nobody had. Anything layered
+      // over Settings — the confirm dialog, the command palette — stops the key
+      // before it reaches window, so this only ever fires on a bare page.
+      setActiveView('chat')
     }
   }
 </script>
@@ -234,7 +240,7 @@
               class="tab-close" role="button" tabindex="0" aria-label={`Close ${fileLabel(f.path)}`}
               onclick={(e) => { e.stopPropagation(); closeFile(f.path) }}
               onkeydown={(e) => e.key === 'Enter' && closeFile(f.path)}
-            >✕</span>
+            ><Icon name="x" size={12} /></span>
           </button>
         {/each}
       </div>

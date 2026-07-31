@@ -2,6 +2,7 @@
   import { t } from './i18n.svelte'
   import { newSession } from './stores/cockpit.svelte'
   import Wordmark from './Wordmark.svelte'
+  import Icon from './Icon.svelte'
 
   let {
     inspectorCollapsed, onToggleInspector, sidebarCollapsed, onToggleSidebar,
@@ -50,7 +51,7 @@
     <button
       class="icobtn tip-r" aria-label={t('sidebar.newSession')}
       data-tip="{t('sidebar.newSession')} · Ctrl+N" onclick={newSession}
-    >＋</button>
+    ><Icon name="plus" size={15} /></button>
     <button
       class="icobtn tip-r" aria-label={inspectorCollapsed ? t('topbar.showPanel') : t('topbar.hidePanel')}
       data-tip={t('topbar.toggleInspectorTip')} onclick={onToggleInspector}
