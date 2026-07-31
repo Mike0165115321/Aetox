@@ -203,7 +203,14 @@ func buildEchoServer(t *testing.T) string {
 	if runtime.GOOS == "windows" {
 		bin += ".exe"
 	}
-	out, err := exec.Command("go", "build", "-o", bin,
+	// -buildvcs=false: this is a throwaway test fixture, and stamping it with
+	// the repository's commit is both pointless and a dependency on git being
+	// readable from inside a nested `go build`. Where it is not — a sandboxed
+	// test runner, a container that never got the repo marked safe, a source
+	// tarball with no .git at all — the build fails with "error obtaining VCS
+	// status" and the whole end-to-end MCP test goes red for a reason that has
+	// nothing to do with MCP.
+	out, err := exec.Command("go", "build", "-buildvcs=false", "-o", bin,
 		"github.com/Mike0165115321/Aetox/internal/mcp/testdata/echoserver").CombinedOutput()
 	if err != nil {
 		t.Fatalf("build echoserver: %v\n%s", err, out)

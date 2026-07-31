@@ -45,6 +45,20 @@ var bundledProfiles embed.FS
 // that make delegation cheaper rather than pricier (§44.7).
 const defaultSteps = 24
 
+// StepsUnlimited is what `steps: unlimited` parses to. Distinct from 0, which is
+// what an absent or unreadable value gives and still means "use defaultSteps" —
+// a profile has to say it wants no ceiling before it gets one.
+//
+// The loop it feeds already understands this: cognitive.Agent treats
+// MaxToolCalls <= 0 as unbounded, which is exactly how the main agent runs. So
+// this does not add a mode; it lets a sub-agent opt into the one that already
+// exists, for the delegation that legitimately cannot be sized up front.
+const StepsUnlimited = -1
+
+// stepsUnlimitedKeyword is what the frontmatter carries, rather than a bare -1:
+// the file is something the user reads and edits by hand.
+const stepsUnlimitedKeyword = "unlimited"
+
 // forcedDenials are refused to every sub-agent whatever its profile says:
 // `task`/`task_result`/`task_answer` because depth 1 is enforced by absence
 // rather than a counter — every half has to go, or a delegate could collect work
@@ -156,7 +170,16 @@ func Load(name string) (Profile, bool) {
 }
 
 // MaxToolCalls is what cognitive.AgentConfig gets for this sub-agent.
+//
+// Three cases, and the middle one is the reason this is not a bare max():
+// a negative value is a deliberate "no ceiling" and is passed through as such,
+// while 0 is an absent or unparseable field and still falls back to the
+// default. Collapsing them would turn a typo in the frontmatter into an
+// unbounded loop nobody asked for.
 func (p Profile) MaxToolCalls() int {
+	if p.Steps < 0 {
+		return StepsUnlimited
+	}
 	if p.Steps > 0 {
 		return p.Steps
 	}
@@ -206,7 +229,7 @@ func parse(name, raw string) Profile {
 		// dropping a profile the user can see on disk and can't explain missing.
 		return Profile{Name: name, Prompt: strings.TrimSpace(raw)}
 	}
-	steps, _ := strconv.Atoi(strings.TrimSpace(fields["steps"]))
+	steps := parseSteps(fields["steps"])
 	return Profile{
 		Name:        name,
 		Description: fields["description"],
@@ -216,6 +239,23 @@ func parse(name, raw string) Profile {
 		Steps:       steps,
 		Prompt:      body,
 	}
+}
+
+// parseSteps reads the `steps:` field. A number is a ceiling; the word
+// "unlimited" removes it; anything else — blank, a typo, a negative number
+// someone hand-wrote — returns 0, which MaxToolCalls reads as "use the
+// default". Only the keyword can unbound a loop, so a mistyped ceiling fails
+// closed rather than open.
+func parseSteps(value string) int {
+	v := strings.ToLower(strings.TrimSpace(value))
+	if v == stepsUnlimitedKeyword {
+		return StepsUnlimited
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
 }
 
 // splitList reads a comma-separated frontmatter value into lowercased tool

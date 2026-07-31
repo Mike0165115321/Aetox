@@ -121,6 +121,49 @@ func TestMaxToolCalls(t *testing.T) {
 	if got := (Profile{Steps: 3}).MaxToolCalls(); got != 3 {
 		t.Errorf("steps override = %d, want 3", got)
 	}
+	// cognitive.Agent reads <= 0 as unbounded, so this has to arrive negative
+	// rather than as a very large number pretending to be infinity.
+	if got := (Profile{Steps: StepsUnlimited}).MaxToolCalls(); got > 0 {
+		t.Errorf("unlimited steps = %d, want a value the agent loop reads as no ceiling", got)
+	}
+}
+
+// The only way to remove a sub-agent's ceiling is to ask for it by name. A
+// blank field, a typo or a hand-written negative all have to land on the
+// default — a loop nobody is watching must fail closed.
+func TestParseStepsOnlyUnboundsOnTheKeyword(t *testing.T) {
+	unbounds := []string{"unlimited", "  Unlimited  ", "UNLIMITED"}
+	for _, in := range unbounds {
+		if got := parseSteps(in); got != StepsUnlimited {
+			t.Errorf("parseSteps(%q) = %d, want StepsUnlimited", in, got)
+		}
+	}
+
+	defaults := []string{"", "   ", "none", "-1", "-40", "12abc", "infinity"}
+	for _, in := range defaults {
+		if got := parseSteps(in); got != 0 {
+			t.Errorf("parseSteps(%q) = %d, want 0 so MaxToolCalls falls back to the default", in, got)
+		}
+		if got := (Profile{Steps: parseSteps(in)}).MaxToolCalls(); got != defaultSteps {
+			t.Errorf("parseSteps(%q) reached MaxToolCalls as %d, want the default %d", in, got, defaultSteps)
+		}
+	}
+
+	if got := parseSteps("8"); got != 8 {
+		t.Errorf("parseSteps(\"8\") = %d, want 8", got)
+	}
+}
+
+// The frontmatter is what the user edits by hand, so the keyword has to survive
+// a real file rather than only the field parser.
+func TestParseUnlimitedFromFrontmatter(t *testing.T) {
+	p := parse("runner", "---\ndescription: long job\nsteps: unlimited\n---\nYou run until done.")
+	if p.Steps != StepsUnlimited {
+		t.Fatalf("Steps = %d, want StepsUnlimited", p.Steps)
+	}
+	if got := p.MaxToolCalls(); got > 0 {
+		t.Errorf("MaxToolCalls = %d, want no ceiling", got)
+	}
 }
 
 // A profile may deny tools as well as list them, and the permission layer has to

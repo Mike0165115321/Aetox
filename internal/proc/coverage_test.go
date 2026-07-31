@@ -22,6 +22,18 @@ import (
 // So: every exec.Command/exec.CommandContext in non-test code must be followed
 // within a few lines by HideConsole on the same command. Fails loudly with the
 // file and line when it isn't.
+//
+// The one exception is a spawn whose window IS the point — launching the OS
+// file manager. HideConsole sets HideWindow and CREATE_NO_WINDOW, which on a
+// GUI program suppresses the window it was asked to show; every "open folder"
+// button in the app did nothing until that was removed. Those sites opt out
+// with an explicit marker comment rather than by being skipped silently, so the
+// exception is as visible in the source as the rule.
+// showWindowMarker is what a spawn writes to opt out: it must appear in the
+// source, so the exception is reviewable rather than a name on a skip list
+// somewhere else.
+const showWindowMarker = "proc-show-window: launching a GUI program"
+
 func TestEveryExecSiteHidesTheConsole(t *testing.T) {
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
@@ -65,9 +77,19 @@ func TestEveryExecSiteHidesTheConsole(t *testing.T) {
 			want := "HideConsole(" + m[1] + ")"
 			hidden := false
 			for j := i; j < len(lines) && j < i+8; j++ {
-				if strings.Contains(lines[j], want) {
+				if strings.Contains(lines[j], want) || strings.Contains(lines[j], showWindowMarker) {
 					hidden = true
 					break
+				}
+			}
+			// The marker may also sit just above the switch that builds the
+			// command, which is where a file-manager launcher naturally puts it.
+			if !hidden {
+				for j := i; j >= 0 && j > i-12; j-- {
+					if strings.Contains(lines[j], showWindowMarker) {
+						hidden = true
+						break
+					}
 				}
 			}
 			if !hidden {

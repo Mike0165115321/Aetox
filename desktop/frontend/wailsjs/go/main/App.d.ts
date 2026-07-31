@@ -80,6 +80,8 @@ export function ImportableSignIns():Promise<Array<string>>;
 
 export function InstallSkillFromGitHub(arg1:string):Promise<string>;
 
+export function InstallSkillFromZip():Promise<string>;
+
 export function Interject(arg1:string):Promise<void>;
 
 export function ListAllSessions():Promise<Array<main.SessionMeta>>;
@@ -117,6 +119,8 @@ export function OpenProjectFolder():Promise<main.ProjectStatus>;
 export function OpenProjectPath(arg1:string):Promise<main.ProjectStatus>;
 
 export function OpenPromptsFolder():Promise<void>;
+
+export function OpenSkillsFolder():Promise<void>;
 
 export function OpenSpeechModelDir(arg1:string):Promise<void>;
 
@@ -205,6 +209,10 @@ export function SignInStatus(arg1:string):Promise<oauth.Status>;
 export function SignOut(arg1:string):Promise<main.ModelInfo>;
 
 export function SignedInProviders():Promise<Array<string>>;
+
+export function SkillScanIssues():Promise<Array<string>>;
+
+export function SkillsDir():Promise<string>;
 
 export function SpeechModelDirs():Promise<Array<main.SpeechDirInfo>>;
 

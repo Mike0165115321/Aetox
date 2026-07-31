@@ -19,7 +19,6 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/Mike0165115321/Aetox/internal/proc"
 	"github.com/Mike0165115321/Aetox/internal/stt"
 )
 
@@ -173,7 +172,21 @@ func (a *App) OpenSpeechModelDir(dir string) error {
 	return fmt.Errorf("ไม่ใช่โฟลเดอร์ที่ Aetox ค้นหาโมเดล: %s", dir)
 }
 
+// openInFileManager reveals a directory in the OS file manager. The one place
+// every "open folder" button in the app goes through.
+//
+// Deliberately NOT wrapped in proc.HideConsole. That helper sets HideWindow and
+// CREATE_NO_WINDOW so a background console process (git, a shell) does not flash
+// a black box — but explorer.exe is a GUI program whose window is the entire
+// point, and those flags suppress it. Every folder button in the app was hiding
+// the window it had just asked for, which reads as the button doing nothing.
+//
+// explorer.exe also exits non-zero on success, so Start() (not Run()) is what
+// this wants regardless: launch it and stop caring.
 func openInFileManager(dir string) error {
+	// proc-show-window: launching a GUI program — see the comment above and
+	// TestEveryExecSiteHidesTheConsole. HideConsole here would hide the very
+	// window this function exists to open.
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "windows":
@@ -183,7 +196,6 @@ func openInFileManager(dir string) error {
 	default:
 		cmd = exec.Command("xdg-open", dir)
 	}
-	proc.HideConsole(cmd)
 	return cmd.Start()
 }
 

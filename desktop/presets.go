@@ -2,13 +2,10 @@ package main
 
 import (
 	"os"
-	"os/exec"
-	"runtime"
 	"strings"
 
 	"github.com/Mike0165115321/Aetox/internal/command"
 	"github.com/Mike0165115321/Aetox/internal/model"
-	"github.com/Mike0165115321/Aetox/internal/proc"
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -94,15 +91,7 @@ func (a *App) OpenPromptsFolder() error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "windows":
-		cmd = exec.Command("explorer", dir)
-	case "darwin":
-		cmd = exec.Command("open", dir)
-	default:
-		cmd = exec.Command("xdg-open", dir)
-	}
-	proc.HideConsole(cmd)
-	return cmd.Start()
+	// One implementation, in speech.go — the three copies of this switch had
+	// all inherited the same window-hiding bug.
+	return openInFileManager(dir)
 }

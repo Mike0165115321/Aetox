@@ -146,6 +146,10 @@ export function InstallSkillFromGitHub(arg1) {
   return window['go']['main']['App']['InstallSkillFromGitHub'](arg1);
 }
 
+export function InstallSkillFromZip() {
+  return window['go']['main']['App']['InstallSkillFromZip']();
+}
+
 export function Interject(arg1) {
   return window['go']['main']['App']['Interject'](arg1);
 }
@@ -220,6 +224,10 @@ export function OpenProjectPath(arg1) {
 
 export function OpenPromptsFolder() {
   return window['go']['main']['App']['OpenPromptsFolder']();
+}
+
+export function OpenSkillsFolder() {
+  return window['go']['main']['App']['OpenSkillsFolder']();
 }
 
 export function OpenSpeechModelDir(arg1) {
@@ -396,6 +404,14 @@ export function SignOut(arg1) {
 
 export function SignedInProviders() {
   return window['go']['main']['App']['SignedInProviders']();
+}
+
+export function SkillScanIssues() {
+  return window['go']['main']['App']['SkillScanIssues']();
+}
+
+export function SkillsDir() {
+  return window['go']['main']['App']['SkillsDir']();
 }
 
 export function SpeechModelDirs() {

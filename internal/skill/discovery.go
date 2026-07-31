@@ -137,6 +137,14 @@ func ListDiscovered(paths []string) []DiscoveredSkill {
 	return found
 }
 
+// ScanIssues is ListDiscovered's other half: the SKILL.md files the scan found
+// but could not read. The settings page shows these, because a file dropped in
+// the right folder that never appears in the list is otherwise indistinguishable
+// from a folder the app is not looking at.
+func ScanIssues(paths []string) ([]DiscoveredSkill, []error) {
+	return scanSkills(paths)
+}
+
 // DiscoverSkills scans paths and wraps each SKILL.md into an invokable Skill.
 func DiscoverSkills(paths []string) ([]Skill, []error) {
 	discovered, errs := scanSkills(paths)

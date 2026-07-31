@@ -9,8 +9,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -72,6 +74,30 @@ type aetoxPluginFileEntry struct {
 	Source string `json:"source"`
 	Target string `json:"target"`
 }
+
+// githubTreeEntry is one row of the git-trees listing used to find a plain
+// SKILL.md repository's layout.
+type githubTreeEntry struct {
+	Path string `json:"path"`
+	Type string `json:"type"` // "blob" | "tree"
+	Size int64  `json:"size"`
+}
+
+const skillFileName = "SKILL.md"
+
+// There is deliberately no size or file-count ceiling on an install.
+//
+// An earlier version had one, on the theory that a repository which merely
+// happens to contain a SKILL.md might be a monorepo. That is Aetox deciding how
+// much of the user's own disk they are allowed to spend on something they went
+// and asked for, by name, by URL. Nothing is uploaded, nothing is hosted, no
+// cost lands anywhere but their machine — so the judgement was not ours to
+// make, and a refusal would only send them to download it by hand anyway.
+//
+// What stays is the part that is not a policy: the set installs whole or not at
+// all, paths that escape the install folder are refused, and a listing GitHub
+// truncated is refused because completeness cannot be established from it.
+// Those are about correctness and safety, not about size.
 
 func ExtractGitHubRepoURL(raw string) (GitHubRepoTarget, bool) {
 	match := reGitHubRepoURL.FindStringSubmatch(strings.TrimSpace(raw))
@@ -259,8 +285,10 @@ func (s *pluginInstallSkill) execute(ctx context.Context, repoURL string, start 
 		return newToolOutput("plugin_install", "plugin_install "+repo.FullName, "", start, false, err), err
 	}
 	if !found {
-		content := fmt.Sprintf("plugin install unsupported: %s does not define %s", repo.FullName, aetoxPluginManifestName)
-		return newToolOutput("plugin_install", "plugin_install "+repo.FullName, content, start, false, nil), nil
+		// No manifest is the normal case, not an error: a skill published on
+		// GitHub is a folder with a SKILL.md in it. Fall back to reading the
+		// repository's own layout.
+		return s.installPlainSkills(ctx, client, repo, start)
 	}
 	if strings.TrimSpace(manifest.Type) != "skill-bundle" {
 		content := fmt.Sprintf("plugin install unsupported: manifest type %q is not supported", manifest.Type)
@@ -314,6 +342,214 @@ func (s *pluginInstallSkill) execute(ctx context.Context, repoURL string, start 
 	}
 	if strings.TrimSpace(manifest.Version) != "" {
 		lines = append(lines, "Version: "+manifest.Version)
+	}
+	return newToolOutput("plugin_install", "plugin_install "+repo.FullName, strings.Join(lines, "\n"), start, false, nil), nil
+}
+
+// plainSkill is one SKILL.md found in a repository with no aetox-plugin.json,
+// together with the files that sit beside it.
+type plainSkill struct {
+	name   string   // the folder it installs as
+	prefix string   // "" for a SKILL.md at the repo root
+	files  []string // repo-relative paths, SKILL.md first
+	bytes  int64
+}
+
+// notSkillMaterial are directory names that hold other people's code rather
+// than a published skill. A SKILL.md underneath one of these belongs to a
+// dependency or a build artefact, not to this repository.
+var notSkillMaterial = map[string]bool{
+	"node_modules": true, "vendor": true, "dist": true, "build": true,
+	"target": true, "out": true, "coverage": true, "__pycache__": true,
+}
+
+// findPlainSkills reads a repository listing the way a person would: the folder
+// that directly contains a SKILL.md is the skill.
+//
+// Depth is not part of that definition, and an earlier version that searched
+// only the root and one level down missed the most common published layout of
+// all — a `skills/` directory with a folder per skill, which is what
+// shadcn/ui and Anthropic's own repositories use. It reported "no skill found"
+// on repositories that plainly had two.
+//
+// What is excluded is by kind, not by depth: dependency and build directories,
+// and anything under a dot-directory. A SKILL.md inside node_modules came with
+// somebody else's package.
+func findPlainSkills(entries []githubTreeEntry, repoName string) []plainSkill {
+	blobs := make([]githubTreeEntry, 0, len(entries))
+	for _, e := range entries {
+		if e.Type == "blob" {
+			blobs = append(blobs, e)
+		}
+	}
+
+	// Root SKILL.md wins outright: the repository is the skill, so a nested one
+	// is part of its material rather than a sibling skill.
+	for _, e := range blobs {
+		if e.Path == skillFileName {
+			return []plainSkill{collectPlainSkill(blobs, "", sanitizeSkillName(repoName))}
+		}
+	}
+
+	var dirs []string
+	seen := map[string]bool{}
+	for _, e := range blobs {
+		dir, file := path.Split(e.Path)
+		if file != skillFileName {
+			continue
+		}
+		dir = strings.TrimSuffix(dir, "/")
+		if dir == "" || seen[dir] || !isSkillLocation(dir) {
+			continue
+		}
+		seen[dir] = true
+		dirs = append(dirs, dir)
+	}
+	sort.Strings(dirs)
+
+	// Name by the folder, since that is what the author called the skill —
+	// `skills/shadcn/` installs as `shadcn`, not as `skills-shadcn`. Two folders
+	// at different paths can share a basename, so a collision falls back to the
+	// full path to stay distinguishable rather than overwriting.
+	basenames := map[string]int{}
+	for _, dir := range dirs {
+		basenames[path.Base(dir)]++
+	}
+	out := make([]plainSkill, 0, len(dirs))
+	for _, dir := range dirs {
+		base := path.Base(dir)
+		name := base
+		if basenames[base] > 1 {
+			name = strings.ReplaceAll(dir, "/", "-")
+		}
+		out = append(out, collectPlainSkill(blobs, dir+"/", sanitizeSkillName(name)))
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].name < out[j].name })
+	return out
+}
+
+// isSkillLocation rejects directories whose contents came from somewhere else.
+func isSkillLocation(dir string) bool {
+	for _, seg := range strings.Split(dir, "/") {
+		if strings.HasPrefix(seg, ".") || notSkillMaterial[strings.ToLower(seg)] {
+			return false
+		}
+	}
+	return true
+}
+
+// collectPlainSkill gathers the whole set under prefix — SKILL.md and every
+// file beside it, at any depth, because that is what a skill is: the document
+// plus the scripts, references and templates it sends the model to.
+//
+// SKILL.md is listed first so it is written first, and the whole set is taken
+// or none of it — see plainSkill.tooBig.
+func collectPlainSkill(blobs []githubTreeEntry, prefix, name string) plainSkill {
+	skill := plainSkill{name: name, prefix: prefix}
+	var rest []githubTreeEntry
+	for _, e := range blobs {
+		if prefix != "" && !strings.HasPrefix(e.Path, prefix) {
+			continue
+		}
+		rel := strings.TrimPrefix(e.Path, prefix)
+		if rel == "" || strings.HasPrefix(rel, ".") || strings.Contains(rel, "/.") {
+			continue // dotfiles: .github workflows and the like are not skill material
+		}
+		if rel == skillFileName {
+			skill.files = append(skill.files, e.Path)
+			continue
+		}
+		rest = append(rest, e)
+	}
+	sort.Slice(rest, func(i, j int) bool { return rest[i].Path < rest[j].Path })
+
+	for _, e := range rest {
+		skill.bytes += e.Size
+		skill.files = append(skill.files, e.Path)
+	}
+	return skill
+}
+
+// sanitizeSkillName turns a repo or folder name into a single safe path
+// segment — the install root must never be escaped by something named in a
+// repository we do not control.
+func sanitizeSkillName(raw string) string {
+	name := strings.TrimSpace(raw)
+	name = strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '-', r == '_':
+			return r
+		case r >= 'A' && r <= 'Z':
+			return r + ('a' - 'A')
+		case r == ' ' || r == '.':
+			return '-'
+		default:
+			return -1
+		}
+	}, name)
+	name = strings.Trim(name, "-_")
+	if name == "" {
+		return "skill"
+	}
+	return name
+}
+
+// installPlainSkills handles a repository with no aetox-plugin.json.
+func (s *pluginInstallSkill) installPlainSkills(ctx context.Context, client *githubRepoClient, repo githubRepoMetadata, start time.Time) (Output, error) {
+	fail := func(err error) (Output, error) {
+		return newToolOutput("plugin_install", "plugin_install "+repo.FullName, "", start, false, err), err
+	}
+
+	entries, truncated, err := client.fetchRepoTree(ctx, repo)
+	if err != nil {
+		return fail(err)
+	}
+	skills := findPlainSkills(entries, repo.Repo)
+	if len(skills) == 0 {
+		content := fmt.Sprintf(
+			"no skill found in %s: no folder in it contains a %s (directories like node_modules, vendor and build output are not searched). It also does not define %s.",
+			repo.FullName, skillFileName, aetoxPluginManifestName)
+		return newToolOutput("plugin_install", "plugin_install "+repo.FullName, content, start, false, nil), nil
+	}
+
+	installRoot, err := s.resolveInstallRoot()
+	if err != nil {
+		return fail(err)
+	}
+
+	// A truncated listing means the set is not knowably complete, and a skill
+	// has to arrive whole. Stopping here is the only honest answer.
+	if truncated {
+		content := fmt.Sprintf(
+			"cannot install from %s: GitHub truncated its file listing, so the skill's full set of files cannot be determined. Install it by hand, or point at the specific skill's repository.",
+			repo.FullName)
+		return newToolOutput("plugin_install", "plugin_install "+repo.FullName, content, start, false, nil), nil
+	}
+
+	lines := []string{fmt.Sprintf("installed %d skill(s) from %s", len(skills), repo.FullName), "Install root: " + filepath.ToSlash(installRoot)}
+	for _, sk := range skills {
+		targetRoot := filepath.Join(installRoot, sk.name)
+		if err := os.MkdirAll(targetRoot, 0o755); err != nil {
+			return fail(err)
+		}
+		for _, srcPath := range sk.files {
+			rel, err := normalizeManifestRelativePath(strings.TrimPrefix(srcPath, sk.prefix))
+			if err != nil {
+				return fail(fmt.Errorf("invalid path %q in %s: %w", srcPath, repo.FullName, err))
+			}
+			body, err := client.fetchRawFile(ctx, repo, srcPath)
+			if err != nil {
+				return fail(err)
+			}
+			targetPath := filepath.Join(targetRoot, filepath.FromSlash(rel))
+			if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
+				return fail(err)
+			}
+			if err := os.WriteFile(targetPath, body, 0o644); err != nil {
+				return fail(err)
+			}
+		}
+		lines = append(lines, fmt.Sprintf("  %s — %d file(s), %d KB", sk.name, len(sk.files), sk.bytes/1024))
 	}
 	return newToolOutput("plugin_install", "plugin_install "+repo.FullName, strings.Join(lines, "\n"), start, false, nil), nil
 }
@@ -457,6 +693,38 @@ func (c *githubRepoClient) fetchPluginManifest(ctx context.Context, repo githubR
 	return &manifest, true, nil
 }
 
+// fetchRepoTree lists every file in the repository at its default branch.
+//
+// Needed because almost no repository in the world ships aetox-plugin.json:
+// a skill published on GitHub is a folder with a SKILL.md in it. Without a
+// listing there is no way to find that folder, so install only ever worked for
+// repositories written specifically for Aetox — which is close to none.
+//
+// GitHub caps this response and sets `truncated` rather than paginating. That
+// is reported to the caller instead of being swallowed: a partial listing that
+// looks complete is how a skill silently installs with half its files.
+func (c *githubRepoClient) fetchRepoTree(ctx context.Context, repo githubRepoMetadata) ([]githubTreeEntry, bool, error) {
+	endpoint := fmt.Sprintf("%s/repos/%s/%s/git/trees/%s?recursive=1",
+		c.apiBaseURL, url.PathEscape(repo.Owner), url.PathEscape(repo.Repo), url.PathEscape(repo.DefaultBranch))
+	// Its own limit, not doJSONRequest's: this response is sized by the
+	// repository, and the shared 1 MB metadata limit silently halved it.
+	body, statusCode, err := c.doRequest(ctx, endpoint, "application/vnd.github+json", treeReadLimit)
+	if err != nil {
+		return nil, false, fmt.Errorf("list repository files: %w", err)
+	}
+	if statusCode < 200 || statusCode >= 300 {
+		return nil, false, fmt.Errorf("list repository files failed with status %d", statusCode)
+	}
+	var payload struct {
+		Tree      []githubTreeEntry `json:"tree"`
+		Truncated bool              `json:"truncated"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, false, fmt.Errorf("parse repository listing: %w", err)
+	}
+	return payload.Tree, payload.Truncated, nil
+}
+
 func (c *githubRepoClient) fetchRawFile(ctx context.Context, repo githubRepoMetadata, sourcePath string) ([]byte, error) {
 	endpoint := fmt.Sprintf("%s/%s/%s/%s/%s", c.rawBaseURL, repo.Owner, repo.Repo, repo.DefaultBranch, sourcePath)
 	body, statusCode, err := c.doRawRequest(ctx, endpoint)
@@ -472,15 +740,30 @@ func (c *githubRepoClient) fetchRawFile(ctx context.Context, repo githubRepoMeta
 	return body, nil
 }
 
+// Read limits, per kind of response — one number for all of them was the bug.
+//
+//   - metadataReadLimit: search results, repo metadata, a plugin manifest. All
+//     small and bounded by their own shape.
+//   - treeReadLimit: a recursive file listing, whose size tracks the repository
+//     rather than the skill. 6,362 files came to 1.6 MB, so the old 1 MB was
+//     under real-world traffic, not above it.
+//   - fileReadLimit: one file being installed. Bounded by what a skill may
+//     weigh in total, since a single template or asset can be most of one.
+const (
+	metadataReadLimit = 1 << 20 // 1 MiB
+	treeReadLimit     = 32 << 20
+	fileReadLimit     = 256 << 20
+)
+
 func (c *githubRepoClient) doJSONRequest(ctx context.Context, endpoint string) ([]byte, int, error) {
-	return c.doRequest(ctx, endpoint, "application/vnd.github+json")
+	return c.doRequest(ctx, endpoint, "application/vnd.github+json", metadataReadLimit)
 }
 
 func (c *githubRepoClient) doRawRequest(ctx context.Context, endpoint string) ([]byte, int, error) {
-	return c.doRequest(ctx, endpoint, "application/octet-stream")
+	return c.doRequest(ctx, endpoint, "application/octet-stream", fileReadLimit)
 }
 
-func (c *githubRepoClient) doRequest(ctx context.Context, endpoint string, accept string) ([]byte, int, error) {
+func (c *githubRepoClient) doRequest(ctx context.Context, endpoint string, accept string, limit int64) ([]byte, int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, 0, err
@@ -499,11 +782,33 @@ func (c *githubRepoClient) doRequest(ctx context.Context, endpoint string, accep
 		return nil, 0, err
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	body, err := readBounded(resp.Body, limit)
 	if err != nil {
 		return nil, resp.StatusCode, err
 	}
 	return body, resp.StatusCode, nil
+}
+
+// readBounded reads at most limit bytes and says so when there were more.
+//
+// The obvious spelling, io.ReadAll(io.LimitReader(r, limit)), cannot tell "the
+// response was exactly limit bytes" from "the response was larger and I stopped
+// early" — it returns the truncated bytes with a nil error. That is how a
+// 1.6 MB repository listing arrived cut in half and surfaced as
+// "parse repository listing: unexpected end of JSON input": a size problem
+// wearing a syntax problem's clothes, with the real number nowhere on screen.
+//
+// Reading one byte past the limit makes the overflow detectable, and the error
+// names both figures so the next one is diagnosable from the message alone.
+func readBounded(r io.Reader, limit int64) ([]byte, error) {
+	body, err := io.ReadAll(io.LimitReader(r, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(body)) > limit {
+		return nil, fmt.Errorf("response is larger than the %d KB this request allows", limit/1024)
+	}
+	return body, nil
 }
 
 func emptyFallback(value string, fallback string) string {

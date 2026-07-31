@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Mike0165115321/Aetox/internal/skill"
+	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // ListExternalSkills reports every discovered SKILL.md with its location, for
@@ -15,6 +16,75 @@ import (
 // it must see what's on disk right now, not what the engine loaded at boot.
 func (a *App) ListExternalSkills() []skill.DiscoveredSkill {
 	return jsonSlice(skill.ListDiscovered(skill.DefaultDiscoveryPaths()))
+}
+
+// SkillsDir is where skills actually live, for the page to display.
+//
+// Read from skill.DefaultSkillsDir rather than written into the UI's strings:
+// two of the three places the Skills page named a path had it wrong (they said
+// ~/.agents/skills, which belongs to opencode and which Aetox never reads), so
+// anyone following the instructions dropped files somewhere nothing scans.
+// A path the UI cannot state independently cannot drift from the truth.
+func (a *App) SkillsDir() string {
+	return skill.DefaultSkillsDir()
+}
+
+// SkillScanIssues reports SKILL.md files that were found but could not be read.
+//
+// The scan has always collected these and ListDiscovered has always dropped
+// them, so a file with broken frontmatter simply never appeared and nothing
+// said why. Being told the file is wrong is the difference between a two-minute
+// fix and giving up on the feature.
+func (a *App) SkillScanIssues() []string {
+	_, errs := skill.ScanIssues(skill.DefaultDiscoveryPaths())
+	out := make([]string, 0, len(errs))
+	for _, err := range errs {
+		out = append(out, err.Error())
+	}
+	return out
+}
+
+// InstallSkillFromZip installs a skill from a .zip the user picks.
+//
+// The third road in, and the one that covers everything the other two do not: a
+// skill that arrived by email, by download, as a release asset, or from someone
+// who does not publish it on GitHub at all.
+//
+// Returns "" with no error when the picker was dismissed — cancelling is not a
+// failure and must not raise one.
+func (a *App) InstallSkillFromZip() (string, error) {
+	path, err := wailsruntime.OpenFileDialog(a.ctx, wailsruntime.OpenDialogOptions{
+		Title:   "เลือกไฟล์ zip ของสกิล",
+		Filters: []wailsruntime.FileFilter{{DisplayName: "Skill archive (*.zip)", Pattern: "*.zip"}},
+	})
+	if err != nil || strings.TrimSpace(path) == "" {
+		return "", err
+	}
+	dir := skill.DefaultSkillsDir()
+	if dir == "" {
+		return "", fmt.Errorf("หาโฟลเดอร์บ้านของผู้ใช้ไม่เจอ")
+	}
+	res, err := skill.InstallSkillsFromZip(path, dir)
+	if err != nil {
+		return "", err
+	}
+	a.rebuildMCP() // same re-bootstrap the GitHub route does: usable immediately
+	return fmt.Sprintf("ติดตั้งแล้ว %d สกิล (%d ไฟล์): %s\nลงที่: %s",
+		len(res.Names), res.Files, strings.Join(res.Names, ", "), res.Root), nil
+}
+
+// OpenSkillsFolder creates the skills directory if needed and reveals it, so
+// installing by hand is "drop a folder here" — the same contract the prompts
+// and sub-agents folders already had, and which this page was missing.
+func (a *App) OpenSkillsFolder() error {
+	dir := skill.DefaultSkillsDir()
+	if dir == "" {
+		return fmt.Errorf("หาโฟลเดอร์บ้านของผู้ใช้ไม่เจอ")
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	return openInFileManager(dir)
 }
 
 // InstallSkillFromGitHub runs the plugin_install tool directly (a Settings
