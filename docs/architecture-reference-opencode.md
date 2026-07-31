@@ -91,7 +91,7 @@ internal/
 ├── debuglog/     # Debug logging
 ├── grammar/      # Thai grammar/nlp utilities
 ├── memory/       # Session memory/context
-├── model/        # Model provider abstraction (12 providers)
+├── model/        # Model provider abstraction (14 providers)
 ├── provider/     # Provider-specific implementation
 ├── safety/       # Approval modes (ask, unsafe-only, full-access)
 ├── skill/        # Skill registry + built-in skills (fs, write, read, git, shell, etc)

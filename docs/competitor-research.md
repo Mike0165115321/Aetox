@@ -1,6 +1,11 @@
 # Competitor Research — 17 Jul 2026
 
 > Reference document, not a decision. เก็บไว้ดูตอนออกแบบฟีเจอร์
+>
+> **อัปเดต 1 ส.ค. 2026** — คอลัมน์ Aetox เดิมล้าสมัยไปหลายช่อง (MCP, Desktop UI,
+> sub-agents ทำเสร็จไปแล้วตั้งแต่ ก.ค.) แก้ให้ตรงกับโค้ดจริงแล้ว และเพิ่มหัวข้อ
+> Hermes Agent ด้านล่าง **หมายเหตุจุดยืน:** ตารางนี้เทียบกับ coding agent เพราะ
+> เป็นสนามที่ engine ทับกัน — ไม่ใช่สนามที่ Aetox ตั้งใจไปแข่ง (ดู [AETOX.md](../AETOX.md) หัวข้อ "จุดยืน")
 
 ---
 
@@ -8,16 +13,43 @@
 
 | Capability | OpenCode | Claude Code | Codex CLI | Cursor | Aider | Aetox |
 |-----------|----------|-------------|-----------|--------|-------|-------|
-| Multi-provider | ✅ 40+ | ❌ Anthropic | ❌ OpenAI | ✅ หลายตัว | ✅ หลายตัว | ✅ 11 |
-| Sub-agents | ✅ primary/sub | ✅ custom | ✅ verifier | ✅ | ❌ | ❌ กำลังออกแบบ |
-| MCP | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
-| Plugins | ✅ JS/TS | ✅ | ❌ | ✅ | ❌ | ❌ |
-| Desktop UI | ✅ TUI+Web | ✅ CLI+Desktop+Web | ✅ TUI+Desktop | ✅ IDE | ❌ CLI | ❌ CLI |
-| Autonomous mode | ❌ | ✅ routines | ✅ /goal | ✅ bg agents | ❌ | ❌ |
-| Git integration | ✅ | ✅ | ✅ | ✅ | ✅ (ดีสุด) | ✅ บางส่วน |
-| Voice | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| Multi-provider | ✅ 40+ | ❌ Anthropic | ❌ OpenAI | ✅ หลายตัว | ✅ หลายตัว | ✅ 14 |
+| Sub-agents | ✅ primary/sub | ✅ custom | ✅ verifier | ✅ | ❌ | ✅ `task`/`task_result`, profiles explore/general/plan (depth 1) |
+| MCP | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ stdio + remote, tools + resources |
+| Plugins | ✅ JS/TS | ✅ | ❌ | ✅ | ❌ | ⚠️ skill auto-discovery ✅ / `plugin_install` ยังไม่ครบ / hooks ไม่ทำ |
+| Desktop UI | ✅ TUI+Web | ✅ CLI+Desktop+Web | ✅ TUI+Desktop | ✅ IDE | ❌ CLI | ✅ CLI + Desktop (Wails, browser + terminal pane) |
+| Browser automation | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ `browser_open/read/click/type` — ไม่ต้องใช้ vision model |
+| Autonomous mode | ❌ | ✅ routines | ✅ /goal | ✅ bg agents | ❌ | 🔜 workflow builder หลัง 1.0.0 |
+| Git integration | ✅ | ✅ | ✅ | ✅ | ✅ (ดีสุด) | ✅ บางส่วน (`git` tool + snapshot/undo) |
+| Voice | ❌ | ❌ | ❌ | ❌ | ✅ | ⚠️ `audio_transcribe` (input เท่านั้น ไม่ใช่ voice coding) |
 | HTML output | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Knowledge base | AGENTS.md | CLAUDE.md | AGENTS.md | .cursor/rules | AGENTS.md | ❌ |
+| Knowledge base | AGENTS.md | CLAUDE.md | AGENTS.md | .cursor/rules | AGENTS.md | ✅ AETOX.md → AGENTS.md → CLAUDE.md |
+| ข้อมูลอยู่ที่ไหน | local | cloud model | cloud model | cloud | local+cloud | ✅ local 100% |
+
+---
+
+## Hermes Agent (Nous Research) — คนละสนาม
+
+ปล่อย 25 ก.พ. 2026 · ทะลุ ~175,000 GitHub stars ในไม่ถึง 4 เดือน ไม่ได้อยู่ในตาราง
+ข้างบนเพราะมันไม่ใช่ coding agent — มันคือ persistent personal agent ซึ่งเป็น
+สนามเดียวกับ Aetox แต่เดินคนละทาง จึงเป็น **proof ว่าตลาดนี้มีจริง** มากกว่าจะเป็น
+คู่แข่งที่ต้องไล่ฟีเจอร์ตาม
+
+| | Hermes Agent | Aetox |
+|---|---|---|
+| เรียนรู้แบบไหน | สมองเดียวโตขึ้น (skill สะสม, DSPy + GEPA optimize ตัวเองหลังทำงาน) | กองทัพ Agent แต่ละตัวฉลาดในขอบเขตตัวเอง |
+| Context เมื่องานเยอะ | โตขึ้นเรื่อย ๆ | ไม่โต — Main ไม่รู้ว่า Agent โหลดอะไร |
+| Context window ขั้นต่ำ | 64,000 tokens ขึ้นไป | โมเดลถูก context เล็กก็พอ |
+| UI | CLI + 20+ messaging platform | Desktop Windows native พร้อม browser/terminal |
+| ข้อมูล | ไม่ชัดเจน | local 100% |
+| Vision model จำเป็นไหม | ขึ้นกับ model ที่ใช้ | ไม่จำเป็น — OCR + `browser_read` ทำแทน |
+
+**ช่องที่ Aetox ยืนอยู่:** "กองทัพที่เบา" — ต่อให้ Hermes ฉลาดขึ้นแค่ไหน มันยังต้องการ
+context ใหญ่และสมองเดียว ซึ่งขัดกับ "โมเดลถูกก็พอ ข้อมูลอยู่ในเครื่อง" โดยพื้นฐาน
+
+**สิ่งที่ควร borrow:** DSPy + GEPA (วัดผล → กลายพันธุ์ prompt → เก็บตัวที่ดีที่สุด)
+เอาแนวคิดมาใช้ได้ แต่ของ Aetox ต้องแยกว่า main เรียนรู้อะไร sub-agent เรียนรู้อะไร
+ในขอบเขตตัวเอง — ดู learning loop ชั้น 3
 
 ---
 
@@ -61,16 +93,16 @@
 
 | ของมีแล้ว | ใช้ตอนไหน |
 |-----------|-----------|
-| 11 providers abstraction | ✅ ใช้ได้เลย |
+| 14 providers abstraction | ✅ ใช้ได้เลย |
 | Tool calling loop | ✅ ใช้ได้เลย |
 | Safety + audit | ✅ ใช้ได้เลย |
 | Git integration (skill) | ✅ ใช้ได้เลย |
 | Multi-provider thinking/reasoning | ✅ ใช้ได้เลย |
 | Agent model switching | ✅ ใช้ได้เลย |
-| Skill library (67 skills) | 📦 มีแต่ยังไม่ connect กับ Aetox runtime |
-| Knowledge base (Obsidian vault) | 📦 มี MCP server แต่ Aetox ยังไม่ใช้ |
-| Web search (Firecrawl CLI + Exa) | 📦 มี CLI แต่ยังไม่เป็น tool ใน Aetox |
-| Token cost calculator | 📦 skill มี แต่ยังไม่ integrate |
+| Skill library | ✅ connect แล้ว 2026-07-22 — `DiscoverSkills` scan `~/.agents/skills/`, `~/.claude/skills/` |
+| Knowledge base (Obsidian vault) | 📦 มี MCP server — ต่อผ่าน MCP ได้แล้ว แต่ยังไม่ได้ตั้งค่าใช้จริง |
+| Web search | ✅ `web_search` + `web_fetch` เป็น builtin tool แล้ว |
+| Token cost calculator | ⚠️ `token_usage` เก็บลง SQLite แล้ว (ผูกกับ session) — ยังไม่มี attribution ต่อ agent/tool |
 
 ---
 
