@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <a href="https://mike0165115321.github.io/Aetox/"><strong>🌐 ดูหน้าเว็บแนะนำ Aetox</strong></a> — เห็นภาพว่ามันทำอะไรได้บ้างใน 1 นาที
+  <a href="https://aetox-puce.vercel.app/"><strong>🌐 ดูหน้าเว็บแนะนำ Aetox</strong></a> — เห็นภาพว่ามันทำอะไรได้บ้างใน 1 นาที
   ·
   <a href="https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-amd64-installer.exe"><strong>⬇️ ดาวน์โหลด</strong></a>
 </p>

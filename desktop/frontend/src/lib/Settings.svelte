@@ -1424,7 +1424,7 @@
   ])
 
   const SPONSOR_URL = 'https://github.com/Mike0165115321/Aetox/blob/main/SPONSOR.md'
-  const SITE_URL = 'https://mike0165115321.github.io/Aetox/'
+  const SITE_URL = 'https://aetox-puce.vercel.app/'
 
   // Which page is open survives an F5. Same reasoning as the chat/settings view
   // itself (see setActiveView in stores/cockpit.svelte.ts): sessionStorage, not
