@@ -655,6 +655,84 @@ func (a *App) visionAttachments(text string) (string, []model.Image) {
 	return rewritten, images
 }
 
+// attachedDocumentRe matches the line the composer appends for a PDF. Same
+// contract as attachedImageRe: both ends are ours, and the composer's wording
+// is pinned by a test on each side.
+var attachedDocumentRe = regexp.MustCompile(`\n*\[attachment: user-attached file — read it with pdf_read\] (\S+)`)
+
+// documentMaxInlineBytes is where handing the model the whole document stops
+// being the better trade.
+//
+// Unlike an image, a document has no ceiling on what it costs to read: pdf_read
+// returns 220 lines whatever the input, while the file itself is the entire
+// thing. A 200-page report inlined is tens of thousands of tokens on a question
+// that a truncated extract might have answered. 10MB is generous for the
+// documents people attach to a chat (a statement, a spec, a paper) and well
+// under the size where the bill becomes the story.
+const documentMaxInlineBytes = 10 << 20
+
+// documentAttachments is visionAttachments for a PDF, and deliberately its
+// twin: the model that can read a document itself is handed the document, and
+// the model that cannot is left exactly where it was — the marker stands,
+// pdf_read runs, and nothing about that path changes.
+//
+// The asymmetry worth knowing is the cost. Sending an image to a model that can
+// see is strictly better than OCR. Sending a document is better *and* dearer:
+// the layout, the tables and the pages pdf_read truncates all survive, and the
+// token count goes up rather than down. Hence the size cap above, which the
+// image path has no equivalent of and does not need.
+func (a *App) documentAttachments(text string) (string, []model.Document) {
+	matches := attachedDocumentRe.FindAllStringSubmatch(text, -1)
+	if len(matches) == 0 {
+		return text, nil
+	}
+	if !model.ResolveDocuments(a.cfg.ModelProvider, a.cfg.ModelName) {
+		return text, nil
+	}
+	root := strings.TrimSpace(a.cfg.SandboxRoot)
+	if root == "" {
+		return text, nil
+	}
+
+	var docs []model.Document
+	rewritten := text
+	for _, m := range matches {
+		relPath := m[1]
+		full, err := safeSandboxPath(root, relPath)
+		if err != nil {
+			continue // outside the sandbox: leave the pdf_read line, which is bounded too
+		}
+		info, err := os.Stat(full)
+		if err != nil {
+			continue // unreadable: pdf_read will report it in the model's own terms
+		}
+		if info.Size() > documentMaxInlineBytes {
+			continue // too big to be the cheaper answer — pdf_read's truncation wins
+		}
+		mediaType := mime.TypeByExtension(filepath.Ext(full))
+		if !model.SupportsDocumentType(mediaType) {
+			continue
+		}
+		data, err := os.ReadFile(full)
+		if err != nil {
+			continue
+		}
+		docs = append(docs, model.Document{
+			Name:      filepath.Base(full),
+			MediaType: mediaType,
+			Data:      data,
+		})
+		// The path stays in the text for the same reason it does for an image:
+		// the model still has to be able to name the file it is talking about.
+		rewritten = strings.Replace(rewritten, m[0],
+			"\n\n[attachment: user-attached file, included below] "+relPath, 1)
+	}
+	if len(docs) == 0 {
+		return text, nil
+	}
+	return rewritten, docs
+}
+
 // --- undo ------------------------------------------------------------------
 
 // UndoResult is what the UI shows after an undo: which files went back, or why
@@ -775,7 +853,7 @@ type ModelInfo struct {
 // pay for" is the shorter path for most people than finding an API key.
 var desktopProviders = []string{
 	// Signed into, not keyed in (internal/oauth).
-	"openrouter",
+	"codex", "openrouter",
 	// API key or a local server.
 	"anthropic", "ollama", "lmstudio", "deepseek", "gemini", "openai", "qwen", "zai", "aetox",
 }
@@ -900,14 +978,17 @@ func (a *App) SendMessage(text string) (string, error) {
 	// times give the "thought for Xs" label.
 	var reasoning strings.Builder
 	var firstThink, lastThink time.Time
-	// An attached image goes to the model as a picture when the model can see
-	// one, and as a path for image_ocr when it cannot. `text` is rewritten only
-	// in the first case, and only the model sees the rewrite — the transcript
-	// below keeps what the user's composer actually sent.
+	// An attachment goes to the model whole when the model can take it — a
+	// picture when it can see, a document when it can read one — and as a path
+	// for image_ocr / pdf_read when it cannot. `text` is rewritten only in the
+	// first case, and only the model sees the rewrite: the transcript below
+	// keeps what the user's composer actually sent. Chained, because one message
+	// can carry both.
 	// Before anything runs, so an undo has somewhere to go back to.
 	a.captureSnapshot()
 	sent, images := a.visionAttachments(text)
-	reply, err := a.chat.RunOnceStreamWithImages(ctx, sent, images, func(chunk string) {
+	sent, documents := a.documentAttachments(sent)
+	reply, err := a.chat.RunOnceStreamWithAttachments(ctx, sent, images, documents, func(chunk string) {
 		wailsruntime.EventsEmit(a.ctx, "agent:chunk", chunk)
 	}, func(chunk string) {
 		if firstThink.IsZero() {

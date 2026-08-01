@@ -225,11 +225,11 @@ func (a *App) RunOnceStream(ctx context.Context, message string, onChunk func(st
 	return result.Reply, err
 }
 
-// RunOnceStreamWithImages is RunOnceStream for a turn the user attached a
-// picture to. Split rather than folded in, so the CLI path and every other
-// caller keep the signature they had.
-func (a *App) RunOnceStreamWithImages(ctx context.Context, message string, images []model.Image, onChunk func(string), onReasoningChunk func(string)) (string, error) {
-	result, err := a.turnExecutor.ExecuteWithImages(ctx, message, a.parseInputIntent(message), onChunk, onReasoningChunk, nil, images)
+// RunOnceStreamWithAttachments is RunOnceStream for a turn the user attached a
+// picture or a document to. Split rather than folded in, so the CLI path and
+// every other caller keep the signature they had.
+func (a *App) RunOnceStreamWithAttachments(ctx context.Context, message string, images []model.Image, documents []model.Document, onChunk func(string), onReasoningChunk func(string)) (string, error) {
+	result, err := a.turnExecutor.ExecuteWithAttachments(ctx, message, a.parseInputIntent(message), onChunk, onReasoningChunk, nil, images, documents)
 	return result.Reply, err
 }
 

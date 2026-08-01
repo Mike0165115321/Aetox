@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"regexp"
 	"testing"
 
 	"github.com/Mike0165115321/Aetox/internal/model"
@@ -38,6 +40,44 @@ func TestDesktopPickerNamesOnlyRealProviders(t *testing.T) {
 		}
 		if canonical := model.NormalizeProvider(p); canonical != p {
 			t.Errorf("desktopProviders lists %q, whose canonical name is %q — the picker keys rows by this string", p, canonical)
+		}
+	}
+}
+
+// A third list nobody was comparing: the brand marks live in TypeScript, keyed
+// by the same canonical name this Go slice holds, and ProviderMark.svelte falls
+// back to a lettered tile when the key is missing. That fallback is deliberate
+// (a gap would break the row's width) but it is silent — `codex` shipped as a
+// grey "C" next to fourteen real marks and no test had an opinion.
+//
+// Reading the .ts from Go rather than asserting in vitest is the point: the
+// authority on which rows exist is this slice, and a frontend test would have
+// to restate it and could then drift from it. Same shape as
+// internal/proc/coverage_test.go, which scans source for the same reason.
+func TestEveryDesktopProviderHasABrandMark(t *testing.T) {
+	const marksPath = "frontend/src/lib/providerMarks.ts"
+	raw, err := os.ReadFile(marksPath)
+	if err != nil {
+		t.Fatalf("read %s: %v", marksPath, err)
+	}
+	// Keys are bare identifiers at one indent level: `  openai: ` + backtick.
+	keyed := regexp.MustCompile("(?m)^\t*  ([a-z0-9-]+): `")
+	marks := make(map[string]bool)
+	for _, m := range keyed.FindAllStringSubmatch(string(raw), -1) {
+		marks[m[1]] = true
+	}
+	if len(marks) == 0 {
+		t.Fatalf("parsed no marks out of %s — the shape of that file changed and this test is now blind", marksPath)
+	}
+
+	for _, p := range desktopProviders {
+		// aetox is the documented exception: its mark is Logo.svelte, because it
+		// carries the brand colour and an entrance animation no other row gets.
+		if p == "aetox" {
+			continue
+		}
+		if !marks[p] {
+			t.Errorf("desktopProviders lists %q with no entry in %s — it renders as a lettered tile", p, marksPath)
 		}
 	}
 }

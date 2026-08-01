@@ -106,11 +106,12 @@ const seedSignIn = (method: Record<string, unknown> = {}, prompt: Record<string,
   } as any)
 }
 
-// Two kinds of method the UI still draws that no shipped sign-in produces any
-// more: the device code (Qwen was the last, §65) and the restricted-risk
-// warning (Code Assist was the last, §66). Both branches are the contract a
-// future sign-in arrives into, so they keep their coverage on a synthetic
-// method rather than losing it with the provider that used to supply one.
+// Two branches of the sign-in UI that no shipped method produces: the device
+// code (Qwen was the last, §65) and the restricted-risk warning (§70 cleared
+// the last one when ChatGPT came back without it). Both are the contract a
+// future sign-in arrives into — the warning especially, since §70's whole point
+// is that it fires on evidence and must still fire when there is some — so they
+// keep their coverage on a synthetic method rather than losing it.
 const seedDeviceSignIn = () => seedSignIn(
   { provider: 'example-device', label: 'Example', kind: 'device' },
   {

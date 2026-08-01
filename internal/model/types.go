@@ -51,6 +51,19 @@ type Message struct {
 	// Only ever set when the model can see: ResolveVision decides, and the
 	// image_ocr path stays exactly as it was for everything that cannot.
 	Images []Image `json:"-"`
+	// Documents are whole files handed to the model to read itself — a PDF with
+	// its tables and figures intact, rather than the flattened text layer
+	// pdf_read extracts. Same contract as Images in every respect: `json:"-"`
+	// because each wire format spells a file differently, set only when
+	// ResolveDocuments says this model accepts one, and a caller that ignores
+	// the field sends the text alone rather than an invalid body.
+	//
+	// The trade against pdf_read is the opposite of the usual one and is worth
+	// stating: this costs more tokens, not fewer — the model ingests the whole
+	// document instead of 220 extracted lines. It buys fidelity (layout, tables,
+	// charts, scanned pages) and completeness. desktop/app.go caps the size at
+	// which that trade stops being worth making.
+	Documents []Document `json:"-"`
 }
 
 // Image is one picture attached to a message, already decoded from whatever the
@@ -59,6 +72,15 @@ type Message struct {
 // three wire formats want it wrapped differently and holding the encoded form
 // would mean decoding it back to re-wrap it.
 type Image struct {
+	MediaType string
+	Data      []byte
+}
+
+// Document is one file attached for the model to read. Name is carried because
+// unlike an image these arrive with a filename the model is expected to refer
+// to — and at least one backend requires the field.
+type Document struct {
+	Name      string
 	MediaType string
 	Data      []byte
 }

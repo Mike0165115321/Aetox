@@ -31,7 +31,7 @@ type Credential struct {
 	Key       string `json:"key,omitempty"`        // type "api" only
 	ExpiresAt int64  `json:"expires_at,omitempty"` // unix millis; 0 = never expires
 	// Account is the caller identity a provider wants echoed back on every
-	// request, or the login name we show in the UI.
+	// request (ChatGPT's account id), or the login name we show in the UI.
 	Account string `json:"account,omitempty"`
 	// Endpoint overrides the catalog base URL when the sign-in itself names the
 	// host this account is served from, rather than it being a fixed entry.
@@ -85,7 +85,7 @@ func StorePath() string {
 // write. Add a lock file if that ever shows up in practice.
 var storeMu sync.Mutex
 
-// removedProviders are sign-ins Aetox no longer offers. v0.8.1 dropped all five
+// removedProviders are sign-ins Aetox no longer offers. v0.8.1 dropped five
 // — Claude Pro/Max, ChatGPT and Copilot (§64), then Qwen (§65) and Gemini Code
 // Assist (§66). They were the same shape: another product's OAuth client
 // presented against a consumer plan, which the provider may switch off and the
@@ -94,9 +94,13 @@ var storeMu sync.Mutex
 // stale token is never sent anywhere, and the next save purges them from disk.
 // Removing a *sign-in* is not always removing the provider: qwen still runs on
 // an API key, which never lived in this file.
+//
+// ChatGPT came back in §69 — see codex.go and ARCHITECTURE.md — so it is
+// deliberately absent below. An oauth.json that survived §64 without being
+// written since still holds a usable codex credential, and it is read again
+// rather than dropped.
 var removedProviders = map[string]bool{
 	"anthropic":      true,
-	"codex":          true,
 	"github-copilot": true,
 	"qwen":           true,
 	"code-assist":    true,

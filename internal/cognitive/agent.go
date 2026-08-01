@@ -586,14 +586,15 @@ func (a *Agent) Respond(ctx context.Context, userMessage string, opts turn.TurnO
 // model, not the user handing it a picture, and re-attaching there would send
 // the image again on every round.
 func (a *Agent) addUserTurn(msg string, opts turn.TurnOptions) {
-	if len(opts.Images) == 0 {
+	if len(opts.Images) == 0 && len(opts.Documents) == 0 {
 		a.context.Add(model.RoleUser, msg)
 		return
 	}
 	a.context.AddMessage(model.Message{
-		Role:    model.RoleUser,
-		Content: msg,
-		Images:  opts.Images,
+		Role:      model.RoleUser,
+		Content:   msg,
+		Images:    opts.Images,
+		Documents: opts.Documents,
 	})
 }
 

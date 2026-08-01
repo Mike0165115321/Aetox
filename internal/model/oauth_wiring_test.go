@@ -21,6 +21,10 @@ func signIn(t *testing.T, provider string, cred oauth.Credential) {
 	}
 }
 
+func oauthCredential(access, account string) oauth.Credential {
+	return oauth.Credential{Type: "oauth", Access: access, Account: account}
+}
+
 func TestOpenAICompatibleSendsToken(t *testing.T) {
 	var gotAuth string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -88,6 +88,27 @@ func dataURL(img Image) string {
 	return "data:" + mediaType + ";base64," + base64.StdEncoding.EncodeToString(img.Data)
 }
 
+// documentDataURL is dataURL for a file. Split rather than made generic over
+// both: the default media type differs, and a document silently defaulting to
+// image/png would be a very confusing 400.
+func documentDataURL(doc Document) string {
+	mediaType := strings.TrimSpace(doc.MediaType)
+	if mediaType == "" {
+		mediaType = "application/pdf"
+	}
+	return "data:" + mediaType + ";base64," + base64.StdEncoding.EncodeToString(doc.Data)
+}
+
+// documentFilename is what the model refers to the document by. Never empty:
+// at least one backend rejects the part without it, and "document.pdf" is a
+// better failure than a 400.
+func documentFilename(doc Document) string {
+	if name := strings.TrimSpace(doc.Name); name != "" {
+		return name
+	}
+	return "document.pdf"
+}
+
 type OpenAICompatibleConfig struct {
 	Provider      string
 	Model         string

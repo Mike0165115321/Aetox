@@ -41,6 +41,13 @@ func runLogin(args []string) int {
 	}
 	provider := strings.TrimSpace(args[0])
 
+	// Adopting a session the matching official CLI already holds on this
+	// machine beats making the user authorize the same account twice. Opt-in
+	// by name, never automatic — reading another tool's credential file is
+	// something you ask for.
+	if len(args) > 1 && strings.EqualFold(strings.TrimSpace(args[1]), "--import") {
+		return runImport(provider)
+	}
 	if _, ok := oauth.MethodFor(provider); !ok {
 		fmt.Fprintf(os.Stderr, "no sign-in for %q.\n\n", provider)
 		printSignInMethods()
@@ -61,11 +68,11 @@ func runLogin(args []string) int {
 	}
 	defer pending.Cancel()
 
-	fmt.Printf("\n  %s\n", method.Label)
-	if method.Risk == oauth.RiskRestricted {
-		fmt.Printf("  %s\n", method.Note)
-	}
-	fmt.Println()
+	// Printed for every method, not only the restricted ones it used to gate on:
+	// since §70 the Note carries what the flow needs rather than a caveat about
+	// it — which port must be free, whose quota pays — and that is worth reading
+	// before the browser opens, not after it fails.
+	fmt.Printf("\n  %s\n  %s\n\n", method.Label, method.Note)
 
 	pasted := ""
 	switch method.Kind {
@@ -149,6 +156,24 @@ func runAuthStatus() int {
 	return 0
 }
 
+func runImport(provider string) int {
+	var err error
+	switch strings.ToLower(provider) {
+	case "codex":
+		err = oauth.ImportCodexCLI()
+	default:
+		fmt.Fprintf(os.Stderr, "%s has no session to import — run `aetox login %s` instead\n", provider, provider)
+		return 2
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "import failed: %v\n", err)
+		return 1
+	}
+	status := oauth.StatusFor(provider)
+	fmt.Printf("\n  signed in — %s\n\n", status.Label)
+	return 0
+}
+
 func printSignInMethods() {
 	fmt.Printf("\n  usage: aetox login <provider>\n\n")
 	for _, method := range oauth.Methods() {
@@ -159,6 +184,11 @@ func printSignInMethods() {
 		fmt.Printf("  %s %-16s %s\n", mark, method.Provider, method.Note)
 	}
 	fmt.Println("\n  * = already signed in")
+	// Only offered when there is actually something to adopt — advertising an
+	// import for a CLI the user does not have is noise.
+	if oauth.CodexCLIAvailable() {
+		fmt.Println("\n  aetox login codex --import         adopt the Codex CLI session on this machine")
+	}
 	fmt.Println()
 }
 

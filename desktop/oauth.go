@@ -148,18 +148,33 @@ func (a *App) CancelSignIn(providerName string) {
 // on this machine, so Settings can offer "use the one you have" instead of a
 // second authorization for the same account.
 //
-// Empty since §66: the Gemini CLI was the last tool Aetox read a session from,
-// and adopting another product's credential file only ever made sense for the
-// borrowed-client sign-ins that are now gone. The seam stays because it is the
-// UI's contract — Settings hides the button on an empty list.
+// One entry again since §69: the Codex CLI writes a session Aetox can adopt, so
+// someone already signed into it never authorizes the same ChatGPT account
+// twice. Settings hides the button on an empty list.
 func (a *App) ImportableSignIns() []string {
-	return nil
+	var out []string
+	if oauth.CodexCLIAvailable() {
+		out = append(out, "codex")
+	}
+	return out
 }
 
 // ImportSignIn adopts that existing session. Explicit action only — the button
 // says which tool it is reading from.
 func (a *App) ImportSignIn(providerName string) (ModelInfo, error) {
-	return ModelInfo{}, fmt.Errorf("%s has no session to import", model.NormalizeProvider(providerName))
+	canonical := model.NormalizeProvider(providerName)
+
+	var err error
+	switch canonical {
+	case "codex":
+		err = oauth.ImportCodexCLI()
+	default:
+		return ModelInfo{}, fmt.Errorf("%s has no session to import", canonical)
+	}
+	if err != nil {
+		return ModelInfo{}, err
+	}
+	return a.reloadAfterCredentialChange(canonical)
 }
 
 // SignOut forgets a provider's credential. If it was the active provider the

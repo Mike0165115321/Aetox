@@ -26,6 +26,12 @@ const (
 	RuntimeOpenAICompatible Runtime = "openai-compatible"
 	RuntimeOllama           Runtime = "ollama"
 	RuntimeAnthropic        Runtime = "anthropic"
+	// RuntimeResponses is the OpenAI Responses API — typed input items and a
+	// dozen named SSE event types, sharing almost nothing with
+	// RuntimeOpenAICompatible beyond the company that publishes both. It is
+	// what a ChatGPT subscription speaks and the only thing that endpoint
+	// serves.
+	RuntimeResponses Runtime = "responses"
 )
 
 // ModelDefaults holds the static fallback model names for a provider.
@@ -151,6 +157,26 @@ var catalog = map[string]*entry{
 		envKeys:        []string{"OPENAI_API_KEY", "OPENAI_TOKEN"},
 		modelDefaults:  ModelDefaults{FallbackModel: "gpt-4o-mini"},
 		capabilities:   Capabilities{ToolCalling: true, Reasoning: true},
+	},
+	// codex is a ChatGPT *subscription*, reached at chatgpt.com rather than
+	// api.openai.com and paid for by the user's plan rather than per token —
+	// the same quota the Codex CLI spends.
+	//
+	// Kept separate from "openai" instead of being a wire-format alternative on
+	// it: different host, different credentials, different billing, different
+	// model list. The "chatgpt" alias deliberately stays on "openai" so nobody's
+	// saved preference silently changes meaning.
+	"codex": {
+		canonical:      "codex",
+		aliases:        []string{"codex", "chatgpt-codex", "chatgpt-subscription", "openai-codex"},
+		requiresAPIKey: true,
+		runtime:        RuntimeResponses,
+		baseURL:        "https://chatgpt.com/backend-api/codex",
+		envKeys:        nil,
+		// DiscoverResponsesModels answers this per account and per plan; the
+		// name below is only what to try before anyone has signed in.
+		modelDefaults: ModelDefaults{FallbackModel: "gpt-5.5"},
+		capabilities:  Capabilities{ToolCalling: true, Reasoning: true},
 	},
 	// API key only since v0.8.1 (§65): the qwen-code device flow that used to
 	// stand behind this entry never completed a sign-in and is gone. DashScope's

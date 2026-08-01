@@ -13,11 +13,19 @@ import (
 // Risk says what a user is agreeing to by signing in, and it is shown on the
 // sign-in screen rather than buried in docs.
 //
-// The distinction is real, not legal hedging: RiskOpen flows are published by
-// the provider for third-party apps to use, and RiskRestricted flows work by
-// presenting another product's OAuth client. The second kind can be switched
-// off by the provider at any time, and a consumer plan's terms may not permit
-// driving it from Aetox — the user's account, so the user's call.
+// RiskRestricted means Aetox knows of a specific reason this sign-in could cost
+// the user their account: an enforcement the provider has announced or acted on.
+// RiskOpen is everything else — either the provider publishes the flow for
+// third-party apps (OpenRouter), or the plan it reaches is one the provider
+// serves through this client and has not moved against (ChatGPT, §70).
+//
+// The bar deliberately sits at *evidence*, not at *shape*: §64 warned on shape
+// alone — a borrowed OAuth client — and the warning it produced was speculation
+// dressed as a finding, on a flow that has worked throughout. A warning that
+// fires on everything is one users learn to click past, which costs exactly the
+// case it exists for. No sign-in Aetox currently ships is RiskRestricted; the
+// level stays because Antigravity (§66) is the worked example of one that would
+// be, and the next candidate gets measured against it.
 type Risk string
 
 const (
@@ -41,23 +49,31 @@ type Method struct {
 // methods is the registry of working sign-ins. A provider absent from here has
 // no OAuth path — Settings offers it an API key field and nothing else.
 //
-// One entry, and that is the whole point: v0.8.1 (§66) kept only the sign-ins
-// whose flow the provider publishes for third-party apps to use. A sign-in that
-// works by presenting another product's OAuth client is not a shortcut Aetox
-// gets to take on the user's account, whatever the plan it unlocks.
+// Two entries. §66 cut this to OpenRouter alone on the rule "only flows the
+// provider publishes for third-party apps"; §69 put ChatGPT back and §70 dropped
+// the warning that came with it — see the Risk comment above for where the bar
+// sits now. The Note still says what the sign-in does, because that is
+// information rather than a caveat: which client it presents, and whose quota
+// the turns come out of.
 var methods = map[string]Method{
 	"openrouter": {
 		Provider: "openrouter", Label: "OpenRouter", Kind: "browser", Risk: RiskOpen,
 		Note: "Published OAuth flow. Mints an API key you own and can revoke on your OpenRouter dashboard.",
 	},
+	"codex": {
+		Provider: "codex", Label: "ChatGPT", Kind: "browser", Risk: RiskOpen,
+		Note: "Signs in through the Codex CLI's OAuth client and runs on your ChatGPT plan — the same quota Codex spends. Needs port 1455 free.",
+	},
 }
 
 // refreshers maps a provider to how its access token is renewed. Credentials
-// of type "api" never appear here: nothing about them expires — which is why
-// this is empty while OpenRouter, whose flow mints exactly such a key, is the
-// only sign-in left. A flow that hands back an expiring token registers here,
-// or Token() strands the user on a dead credential.
-var refreshers = map[string]func(context.Context, Credential) (Credential, error){}
+// of type "api" never appear here: nothing about them expires, which is why
+// OpenRouter — whose flow mints exactly such a key — is absent. A flow that
+// hands back an expiring token registers here, or Token() strands the user on a
+// dead credential.
+var refreshers = map[string]func(context.Context, Credential) (Credential, error){
+	"codex": refreshCodex,
+}
 
 // Methods lists every sign-in Aetox offers, in a stable order.
 func Methods() []Method {
@@ -171,12 +187,33 @@ func Endpoint(provider string) string {
 	return cred.Endpoint
 }
 
+// Headers reports extra headers this provider's credentials require. Empty for
+// most; the ChatGPT backend routes on an account id that is a property of the
+// sign-in rather than of the request.
+func Headers(provider string) map[string]string {
+	switch pvdr.Normalize(provider) {
+	case "codex":
+		headers := map[string]string{
+			"originator": CodexOriginator,
+			"User-Agent": clientUserAgent,
+		}
+		if cred, ok := Get("codex"); ok && cred.Account != "" {
+			headers["chatgpt-account-id"] = cred.Account
+		}
+		return headers
+	default:
+		return nil
+	}
+}
+
 // Start begins a sign-in. What comes back tells the caller what to show: a URL
 // to open, and for device flows the short code to type.
 func Start(ctx context.Context, provider string) (*Pending, error) {
 	switch pvdr.Normalize(provider) {
 	case "openrouter":
 		return StartOpenRouter()
+	case "codex":
+		return StartCodex()
 	default:
 		return nil, fmt.Errorf("%s has no sign-in — add an API key instead", pvdr.Normalize(provider))
 	}
@@ -192,6 +229,8 @@ func Finish(ctx context.Context, pending *Pending, pasted string) error {
 	switch pending.provider {
 	case "openrouter":
 		return FinishOpenRouter(ctx, pending)
+	case "codex":
+		return FinishCodex(ctx, pending)
 	default:
 		return fmt.Errorf("unknown sign-in: %q", pending.provider)
 	}

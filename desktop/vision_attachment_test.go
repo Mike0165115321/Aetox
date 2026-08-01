@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -116,5 +117,38 @@ func TestVisionAttachmentsSurvivesAMissingFile(t *testing.T) {
 	}
 	if text != gone {
 		t.Errorf("text = %q, want it unchanged", text)
+	}
+}
+
+// A tripwire, not a behaviour test.
+//
+// An attached image is capability-gated in both directions: the composer writes
+// "read it with image_ocr", and visionAttachments above rewrites that line when
+// ResolveVision says the model can look. A clip is not. The composer writes
+// "read its speech with audio_transcribe, its on-screen text with video_ocr"
+// and nothing ever revisits it — so a model that could watch the video itself
+// would be handed an instruction to go OCR it instead, obey, and nobody would
+// see a failure. The answer would just be worse.
+//
+// That asymmetry is correct *today* and only today, for one reason: there is no
+// channel to send a clip through. model.Message carries Images and nothing
+// else, so the skill route is the only route for every model Aetox has. The
+// hint cannot be wrong because there is no alternative for it to be wrong
+// about.
+//
+// This test fails the day that stops being true. When it does, the fix is not
+// here — it is to gate the composer's clip hint the way the image hint is
+// gated, and to give this file a sibling of visionAttachments to rewrite it.
+func TestClipHintStaysUngatedOnlyWhileNoClipChannelExists(t *testing.T) {
+	media := reflect.VisibleFields(reflect.TypeOf(model.Message{}))
+	for _, f := range media {
+		switch strings.ToLower(f.Name) {
+		case "images":
+			continue // the gated one — visionAttachments is its rewrite
+		case "video", "videos", "audio", "audios", "clips", "media", "attachments", "files":
+			t.Fatalf("model.Message gained %q: a clip can now reach a model directly, so the composer's "+
+				"\"read it with video_ocr / audio_transcribe\" hint must be capability-gated like the image "+
+				"hint is — see cockpit.svelte.ts sendUserMessage and visionAttachments in app.go", f.Name)
+		}
 	}
 }

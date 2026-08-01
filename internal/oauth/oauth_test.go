@@ -2,6 +2,7 @@ package oauth
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"net/url"
 	"os"
@@ -209,10 +210,13 @@ func TestStatusForNeverLeaksTokens(t *testing.T) {
 	}
 }
 
-// Credentials for the five sign-ins v0.8.1 removed — Claude Pro/Max, ChatGPT,
+// Credentials for the four sign-ins that stayed removed — Claude Pro/Max,
 // Copilot, Qwen and Gemini Code Assist — may still sit in an oauth.json written
 // by an older version. They must read as signed out: never refreshed, never
 // sent.
+//
+// ChatGPT is in the same file and is the control: §69 brought it back, so a
+// credential §64 would have dropped is read again rather than discarded.
 func TestRemovedProviderCredentialsAreDropped(t *testing.T) {
 	dir := isolateStore(t)
 	raw := `{
@@ -226,7 +230,7 @@ func TestRemovedProviderCredentialsAreDropped(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "oauth.json"), []byte(raw), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	for _, provider := range []string{"anthropic", "codex", "github-copilot", "qwen", "code-assist"} {
+	for _, provider := range []string{"anthropic", "github-copilot", "qwen", "code-assist"} {
 		if _, ok := Get(provider); ok {
 			t.Fatalf("removed provider %q still reads as signed in", provider)
 		}
@@ -234,11 +238,13 @@ func TestRemovedProviderCredentialsAreDropped(t *testing.T) {
 			t.Fatalf("removed provider %q still yields a token source", provider)
 		}
 	}
-	if _, ok := Get("openrouter"); !ok {
-		t.Fatal("surviving provider was dropped along with the removed ones")
+	for _, provider := range []string{"openrouter", "codex"} {
+		if _, ok := Get(provider); !ok {
+			t.Fatalf("surviving provider %q was dropped along with the removed ones", provider)
+		}
 	}
-	if got := LoggedIn(); len(got) != 1 {
-		t.Fatalf("LoggedIn = %v; want only openrouter", got)
+	if got := LoggedIn(); len(got) != 2 {
+		t.Fatalf("LoggedIn = %v; want openrouter and codex", got)
 	}
 }
 
@@ -363,5 +369,48 @@ func TestMethodsCoverEveryRefresher(t *testing.T) {
 func TestStartRejectsUnknownProvider(t *testing.T) {
 	if _, err := Start(context.Background(), "ollama"); err == nil {
 		t.Fatal("Start accepted a provider with no sign-in")
+	}
+}
+
+// The ChatGPT backend routes on an account id that appears nowhere in the token
+// response body — only in a namespaced claim inside the id_token. Losing it
+// means every request 401s, so the extraction is pinned here rather than left
+// to the live test.
+func TestCodexAccountFromIDToken(t *testing.T) {
+	claims := `{"email":"mike@example.com","https://api.openai.com/auth":{"chatgpt_account_id":"acct_42","chatgpt_plan_type":"plus"}}`
+	idToken := "ignored." + base64.RawURLEncoding.EncodeToString([]byte(claims)) + ".sig"
+
+	account, email := codexAccountFromIDToken(idToken)
+	if account != "acct_42" {
+		t.Fatalf("account = %q; want acct_42", account)
+	}
+	if email != "mike@example.com" {
+		t.Fatalf("email = %q; want the address for the Settings label", email)
+	}
+
+	// A malformed token must degrade to empty rather than panic — a refresh
+	// response often omits id_token entirely.
+	if account, _ := codexAccountFromIDToken("not-a-jwt"); account != "" {
+		t.Fatalf("account = %q on a malformed token; want empty", account)
+	}
+}
+
+// Headers is what carries that account id onto the wire. Only codex has any:
+// every other provider must send nothing extra.
+func TestHeadersOnlyForCodex(t *testing.T) {
+	isolateStore(t)
+	if got := Headers("openrouter"); got != nil {
+		t.Fatalf("Headers(openrouter) = %v; want nil", got)
+	}
+
+	if err := Set("codex", Credential{Type: "oauth", Access: "a", Account: "acct_42"}); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	got := Headers("chatgpt-codex")
+	if got["chatgpt-account-id"] != "acct_42" {
+		t.Fatalf("Headers(codex) = %v; want the account id from the sign-in", got)
+	}
+	if got["originator"] != CodexOriginator {
+		t.Fatalf("Headers(codex) = %v; want the originator the backend requires", got)
 	}
 }

@@ -118,6 +118,9 @@ type TurnOptions struct {
 	// into the next question. Empty unless the caller both had an image and
 	// established that the model can see one (model.ResolveVision).
 	Images []model.Image
+	// Documents ride with the same message under the same rule, set only when
+	// model.ResolveDocuments says this endpoint takes a file part.
+	Documents []model.Document
 	// OnRound, if set, hears about each completed round of the tool loop — the
 	// text the model wrote alongside that round's tool calls, and whether the
 	// round ended the turn. The executor uses it to interleave narration and
@@ -409,10 +412,11 @@ func (e *Executor) conversationThinkingStatus() string {
 	return "กำลังคิดคำตอบ..."
 }
 
-// ExecuteWithImages is Execute for a turn that carries attachments. Execute
-// itself stays at six parameters — every caller but the desktop's chat path has
-// no image to pass, and a seventh nil argument at each of them would be noise.
-func (e *Executor) ExecuteWithImages(
+// ExecuteWithAttachments is Execute for a turn that carries attachments —
+// pictures the model can look at, documents it can read, or both. Execute
+// itself stays at six parameters: every caller but the desktop's chat path has
+// nothing to attach, and two more nil arguments at each of them would be noise.
+func (e *Executor) ExecuteWithAttachments(
 	ctx context.Context,
 	line string,
 	intent command.Intent,
@@ -420,11 +424,13 @@ func (e *Executor) ExecuteWithImages(
 	onReasoningChunk func(string),
 	onToolComplete func(),
 	images []model.Image,
+	documents []model.Document,
 ) (Result, error) {
 	// A copy, not a write to e.turnOptions: the executor outlives the turn, and
 	// a field set here would still be set on the next question.
 	turnOptions := e.turnOptions
 	turnOptions.Images = images
+	turnOptions.Documents = documents
 	return e.execute(ctx, line, intent, onChunk, onReasoningChunk, onToolComplete, turnOptions)
 }
 

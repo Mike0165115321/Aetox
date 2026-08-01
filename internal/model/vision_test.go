@@ -18,6 +18,12 @@ func TestResolveVision(t *testing.T) {
 		{"ollama", "llava:13b", true},
 		{"ollama", "llama3.2-vision:11b", true},
 		{"openrouter", "qwen/qwen2.5-vl-72b-instruct:free", true},
+		// codex is a ChatGPT plan, so the models it serves are OpenAI's and the
+		// gpt-5 marker already covers them. Pinned because the provider key is
+		// new to this table and the Responses runtime is the only one whose
+		// image part nothing else in this file exercises.
+		{"codex", "gpt-5.5", true},
+		{"codex", "gpt-5.1-codex", true},
 		// The family has no vision member; matching "deepseek" must lose to the
 		// text-only list rather than being read as unknown-and-therefore-maybe.
 		{"deepseek", "deepseek-v4", false},
@@ -79,6 +85,48 @@ func TestOpenAIMessagesCarryImages(t *testing.T) {
 	}
 	if !strings.Contains(got, `"image_url":{"url":"data:image/png;base64,AQID"}`) {
 		t.Errorf("image part missing or malformed: %s", got)
+	}
+}
+
+// The Responses runtime spells an image differently again: a typed input item
+// whose parts are "input_text"/"input_image", with the picture as a flat
+// image_url string rather than the nested object /chat/completions wants.
+//
+// This is the one wire format in this file with no other coverage of its image
+// path — §69 restored the runtime from a snapshot, and a silently dropped part
+// here reads exactly like a model that looked and saw nothing.
+func TestResponsesMessagesCarryImages(t *testing.T) {
+	_, input := convertMessagesToResponses([]Message{{
+		Role:    RoleUser,
+		Content: "why is this layout broken?",
+		Images:  []Image{{MediaType: "image/png", Data: []byte{1, 2, 3}}},
+	}})
+	if len(input) != 1 || len(input[0].Content) != 2 {
+		t.Fatalf("want one message of two parts, got %+v", input)
+	}
+	if text := input[0].Content[0]; text.Type != "input_text" || text.Text != "why is this layout broken?" {
+		t.Errorf("first part = %+v, want the question as input_text", text)
+	}
+	image := input[0].Content[1]
+	if image.Type != "input_image" {
+		t.Errorf("second part type = %q, want input_image", image.Type)
+	}
+	if image.ImageURL != "data:image/png;base64,AQID" {
+		t.Errorf("image_url = %q, want the data URL", image.ImageURL)
+	}
+}
+
+// Same guarantee the OpenAI case above states: no image, no parts churn.
+func TestResponsesImageWithoutTextSendsNoEmptyPart(t *testing.T) {
+	_, input := convertMessagesToResponses([]Message{{
+		Role:   RoleUser,
+		Images: []Image{{MediaType: "image/webp", Data: []byte{7}}},
+	}})
+	if len(input) != 1 || len(input[0].Content) != 1 {
+		t.Fatalf("want one message of one part, got %+v", input)
+	}
+	if input[0].Content[0].Type != "input_image" {
+		t.Errorf("parts = %+v, want the image alone", input[0].Content)
 	}
 }
 

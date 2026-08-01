@@ -186,6 +186,18 @@ func ModelChoicesWithEndpointAndAPIKey(p, baseURL, apiKey string) ([]string, err
 			return models, nil
 		}
 		return nil, err
+	case provider.RuntimeResponses:
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if apiKey == "" {
+			if token, tokenErr := oauth.Token(ctx, canonical); tokenErr == nil {
+				apiKey = token
+			}
+		}
+		if baseURL == "" {
+			baseURL = oauth.Endpoint(canonical)
+		}
+		return DiscoverResponsesModels(ctx, canonical, baseURL, oauth.Headers(canonical), apiKey)
 	case provider.RuntimeAnthropic:
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
