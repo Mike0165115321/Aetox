@@ -10,10 +10,17 @@ import { t } from './i18n.svelte'
 
 marked.setOptions({ breaks: true, gfm: true })
 
+// Languages whose fenced blocks get a Run button beside Copy. Only tags that
+// unambiguously mean "a command for this machine's shell" — `console` and
+// `text` are for showing output, `python` and friends are source files, and
+// running either would be a wrong guess with a real side effect.
+const runnableLangs = new Set(['bash', 'sh', 'shell', 'zsh', 'powershell', 'ps1', 'cmd', 'bat'])
+
 // Fenced code blocks render like a normal AI chat: a header bar with the
-// language label and a copy button, plus syntax highlighting. The copy
-// button's click is handled by delegation in Chat.svelte (markup from
-// {@html} can't carry Svelte handlers).
+// language label and a copy button, plus syntax highlighting. Shell-tagged
+// blocks also get a Run button — the same affordance Claude Code puts on
+// them. Both buttons' clicks are handled by delegation in Chat.svelte
+// (markup from {@html} can't carry Svelte handlers).
 const renderer = {
   code({ text, lang }: Tokens.Code): string {
     const language = (lang ?? '').trim().split(/\s+/)[0]
@@ -22,9 +29,13 @@ const renderer = {
       ? hljs.highlight(text, { language }).value
       : hljs.highlightAuto(text).value
     const label = known ? language : 'code'
+    const run = runnableLangs.has(language.toLowerCase())
+      ? `<button class="code-run" type="button">${t('chat.runCode')}</button>`
+      : ''
     return (
       `<div class="codeblock">` +
       `<div class="codeblock-head"><span class="lang">${label}</span>` +
+      run +
       `<button class="code-copy" type="button">${t('chat.copyCode')}</button></div>` +
       `<pre><code class="hljs">${highlighted}</code></pre>` +
       `</div>`

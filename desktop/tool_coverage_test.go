@@ -294,6 +294,18 @@ func toolCases(t *testing.T, root string, dispatcher *skill.Dispatcher) map[stri
 			args:  map[string]any{"query": "nothing-recorded-yet"},
 			check: outputContains("No history matches"),
 		},
+		"suggest_task": {
+			args: map[string]any{
+				"title":  "Fix the stale badge",
+				"prompt": "In README.md the CI badge points at a workflow that was renamed; update the URL to the current one.",
+				"tldr":   "The README badge is dead.",
+			},
+			check: func(t *testing.T, out skill.Output, _ string) {
+				if !strings.Contains(out.Content, "Noted") {
+					t.Errorf("suggest_task receipt missing: %q", out.Content)
+				}
+			},
+		},
 		// echo is the one command cmd.exe and sh both spell the same way, and
 		// the point here is the plumbing — a real child process, its output
 		// captured and handed back — not the command itself.

@@ -2299,6 +2299,20 @@ Five changes shipped together, all pointed at the same claim: a cheap model with
 
 ---
 
+## 72. Decision — The Chat Learns Two Gestures: Run This, and Do That Later (2026-08-02)
+
+Two owner-requested features, both about what a suggestion in the chat can become without the user retyping anything.
+
+**Run on shell-tagged code blocks.** A fenced block tagged `bash`/`sh`/`shell`/`zsh`/`powershell`/`ps1`/`cmd`/`bat` gets a Run button beside Copy ([markdown.ts](desktop/frontend/src/lib/markdown.ts)); output lands in a `<pre>` appended inside the same block, via `textContent` — command output is untrusted text and the surrounding markup already passed DOMPurify once. Only those eight tags: `console` and `text` are for *showing* output, `python` and friends are source files, and running either would be a wrong guess with a real side effect. The click is the consent — the command is fully visible in the block, exactly as if the user retyped it into the Workbench terminal, so there is no approval dialog on top. What the click does not bypass is the machinery: `RunChatCommand` ([run_block.go](desktop/run_block.go)) resolves the `shell` skill from the live registry and calls `ExecuteTool`, never a bare `exec.Cmd` — sandbox working directory, background-shells registry, RTK rewrite (§13), and the shell audit log all apply, so there is exactly one way a command runs in Aetox whether the model called it or the user clicked it.
+
+**Suggested-task chips.** A new workbench tool, `suggest_task` ([task_chips.go](desktop/task_chips.go)): mid-task, the agent flags side work it noticed but was not asked to do — title, tldr, and a prompt that must stand alone. A chip appears on the composer; clicking it consumes the chip, opens a fresh session, and sends the prompt verbatim ([cockpit.svelte.ts](desktop/frontend/src/lib/stores/cockpit.svelte.ts) `startTaskChip`); the ✕ declines it. The turn that flagged it never stops — the tool's receipt explicitly redirects the model back to its current work, and the test pins that sentence, because a model that starts doing the flagged task itself defeats the entire feature. Two guards on the input: title+prompt required, and a prompt under 40 characters is rejected with "name the files, the finding, and what to do" — a thin prompt would start a future session that has no idea what it is about, and the retry costs one round now instead of a wasted session later. Chips live in memory for the app run, not in `aetox.db`: a chip is a suggestion, not a record, and persisting declined suggestions forever would make the store a nag list.
+
+**The event seam grew one guard.** `emitTaskChips` does not use `emitEvent`: that helper assumes either the test seam or a live Wails ctx, and this event also fires from the tool-coverage harness where neither exists. A chip added with nobody listening is still added — rendered on next mount from `ListTaskChips`.
+
+**Where this is going.** The chip's producer today is the model noticing things mid-turn. The intended v2 producer is the store: `tool_runs` (§67) plus its FTS index (§71) can eventually notice "this user has done this same job three times" and suggest the automation itself — the chip UI, start-fresh-session flow, and standalone-prompt contract built here are that feature's delivery mechanism, built first because they are useful on their own.
+
+---
+
 ## Validation
 
 1. **Claim traceability:** every claim above cites a file or an existing project doc; the two `Unverified`/`Inferred, Verify first: Yes` items are marked as such, not stated as fact.

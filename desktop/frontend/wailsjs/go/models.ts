@@ -255,6 +255,22 @@ export namespace main {
 	        this.governanceLoaded = source["governanceLoaded"];
 	    }
 	}
+	export class RunBlockResult {
+	    output: string;
+	    success: boolean;
+	    durationMs: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new RunBlockResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.output = source["output"];
+	        this.success = source["success"];
+	        this.durationMs = source["durationMs"];
+	    }
+	}
 	export class SessionMessage {
 	    role: string;
 	    text: string;
@@ -383,6 +399,26 @@ export namespace main {
 	        this.managed = source["managed"];
 	        this.active = source["active"];
 	        this.where = source["where"];
+	    }
+	}
+	export class TaskChip {
+	    id: string;
+	    title: string;
+	    tldr: string;
+	    prompt: string;
+	    createdAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new TaskChip(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.title = source["title"];
+	        this.tldr = source["tldr"];
+	        this.prompt = source["prompt"];
+	        this.createdAt = source["createdAt"];
 	    }
 	}
 	export class ToolCounts {

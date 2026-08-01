@@ -103,6 +103,10 @@ type App struct {
 	// all; see emitEvent in terminal.go. nil means the real thing. Test seam
 	// only.
 	emit func(event string, data ...any)
+
+	// taskChips holds the side work the agent has flagged with suggest_task
+	// and the user has not yet started or dismissed (task_chips.go).
+	taskChips taskChips
 }
 
 // ChangedFile is one working-tree change reported by `git status`.
@@ -1692,6 +1696,7 @@ func (a *App) workbenchSkills() []skill.Skill {
 		&askUserSkill{app: a},
 		&todoWriteSkill{app: a},
 		&sessionSearchSkill{app: a},
+		&suggestTaskSkill{app: a},
 	}
 }
 

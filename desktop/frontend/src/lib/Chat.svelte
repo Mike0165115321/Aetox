@@ -8,7 +8,7 @@
   import {
     EnabledProviders, SupportedThinkLevels,
     ListModelsForProvider, RequiresAPIKey, HasAPIKey, PickAttachment,
-    GetContextBreakdown, GuideTopics,
+    GetContextBreakdown, GuideTopics, RunChatCommand,
   } from '../../wailsjs/go/main/App'
   import { t, i18n } from './i18n.svelte'
   import { renderMarkdown } from './markdown'
@@ -18,6 +18,7 @@
     attachFileFromPath, clearPendingFile, fileKind,
     openProject, openFolder, clearProjectFocus, cancelTurn, answerAsk, queuedMessages,
     retryActiveProvider, undoLastTurn, switchApprovalMode,
+    startTaskChip, dismissTaskChip,
   } from './stores/cockpit.svelte'
   import Icon from './Icon.svelte'
   import type { IconName } from './icons'
@@ -408,11 +409,48 @@
     await attachTabContext(kind, ref, label)
   }
 
+  // Runs the command in a shell-tagged code block the user clicked Run on.
+  // Output lands in a <pre> appended inside the same block — inserted with
+  // textContent, never innerHTML: command output is untrusted text, and this
+  // element lives inside {@html} markup that DOMPurify has already left.
+  async function runCodeBlock(runBtn: HTMLButtonElement) {
+    if (runBtn.dataset.running) return
+    const block = runBtn.closest('.codeblock')
+    const command = block?.querySelector('code')?.textContent ?? ''
+    if (!block || !command.trim()) return
+    runBtn.dataset.running = '1'
+    runBtn.textContent = t('chat.runningCode')
+    let out = block.querySelector<HTMLPreElement>('.code-run-out')
+    if (!out) {
+      out = document.createElement('pre')
+      out.className = 'code-run-out'
+      block.appendChild(out)
+    }
+    try {
+      const res = await RunChatCommand(command)
+      out.textContent = res.output
+      out.classList.toggle('failed', !res.success)
+      runBtn.textContent = res.success ? t('chat.ranCode') : t('chat.runFailed')
+    } catch (err) {
+      out.textContent = String(err)
+      out.classList.add('failed')
+      runBtn.textContent = t('chat.runFailed')
+    } finally {
+      delete runBtn.dataset.running
+      setTimeout(() => (runBtn.textContent = t('chat.runCode')), 2500)
+    }
+  }
+
   // Links in rendered markdown must not navigate the app's own webview away —
   // open them in a workbench browser tab instead.
   function onChatClick(e: MouseEvent) {
     const el = e.target as HTMLElement
-    // copy button on a rendered code block ({@html} markup can't carry handlers)
+    // buttons on a rendered code block ({@html} markup can't carry handlers)
+    const runBtn = el.closest('.code-run')
+    if (runBtn) {
+      void runCodeBlock(runBtn as HTMLButtonElement)
+      return
+    }
     const copyBtn = el.closest('.code-copy')
     if (copyBtn) {
       const code = copyBtn.closest('.codeblock')?.querySelector('code')
@@ -780,6 +818,24 @@
   {/if}
 
   <div class="composer">
+    <!-- Side work the agent flagged (suggest_task): each chip starts its own
+         fresh session on click. Lives on the composer, not in the transcript —
+         a suggestion is pending input, not part of what was said. -->
+    {#if cockpit.taskChips.length > 0}
+      <div class="task-chips">
+        {#each cockpit.taskChips as chip (chip.id)}
+          <div class="task-chip" title={chip.tldr || chip.title}>
+            <button class="task-chip-start" onclick={() => startTaskChip(chip)}>
+              <Icon name="plus" size={11} />
+              <span class="task-chip-title">{chip.title}</span>
+            </button>
+            <button class="task-chip-drop" aria-label={t('chat.dismissTask')} onclick={() => dismissTaskChip(chip.id)}>
+              <Icon name="x" size={11} />
+            </button>
+          </div>
+        {/each}
+      </div>
+    {/if}
     <!-- Scrolling up unpins the transcript; this is the way back. Sits on the
          composer rather than inside .chat so it can't scroll away with it. -->
     {#if !pinnedToBottom && messages.length > 0}

@@ -14,6 +14,7 @@ import {
   ListAllSessions, SearchAllSessions, LoadSessionAnyProject, ClearProjectFocus,
   AnswerUserQuestion, Interject, RetryActiveProvider, PendingUndo, UndoLastTurn,
   CompleteSignIn, SignOut, ImportSignIn,
+  ListTaskChips, DismissTaskChip,
 } from '../../../wailsjs/go/main/App'
 import type { main } from '../../../wailsjs/go/models'
 import { t } from '../i18n.svelte'
@@ -212,6 +213,7 @@ export async function loadRealState(): Promise<void> {
   await refreshSessions()
   await refreshProjects()
   await refreshGlobalHistory()
+  await refreshTaskChips()
   if (!modelInfo.provider && bootRetries < 8) {
     bootRetries += 1
     setTimeout(loadRealState, 1500)
@@ -487,6 +489,33 @@ export function answerAsk(answer: string): void {
 /** todo_write tool: the model replaced its task checklist. */
 export function applyTodos(todos: CockpitState['todos']): void {
   cockpit.todos = Array.isArray(todos) ? todos : []
+}
+
+/** suggest_task tool: the agent's pending side-work chips, replaced wholesale. */
+export function applyTaskChips(chips: CockpitState['taskChips']): void {
+  cockpit.taskChips = Array.isArray(chips) ? chips : []
+}
+
+/** Chips suggested before this view mounted — fetch what the backend holds. */
+export async function refreshTaskChips(): Promise<void> {
+  try {
+    applyTaskChips((await ListTaskChips()) as CockpitState['taskChips'])
+  } catch {
+    // Engine not ready yet — the tasks:changed event will bring them later.
+  }
+}
+
+/** Start a suggested task: consume the chip, then run its prompt in a fresh
+ *  session. The prompt was written to stand alone (suggest_task requires it),
+ *  so the new session needs nothing from the one that suggested it. */
+export async function startTaskChip(chip: CockpitState['taskChips'][number]): Promise<void> {
+  await DismissTaskChip(chip.id)
+  await newSession()
+  await sendUserMessage(chip.prompt)
+}
+
+export async function dismissTaskChip(id: string): Promise<void> {
+  await DismissTaskChip(id)
 }
 
 /** Live turn-progress text from the Go engine (see desktop/app.go emitAgentStatus). */

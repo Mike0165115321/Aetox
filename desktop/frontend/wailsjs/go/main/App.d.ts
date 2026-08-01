@@ -60,6 +60,8 @@ export function DeleteSession(arg1:string):Promise<void>;
 
 export function DeleteSubagentProfile(arg1:string):Promise<void>;
 
+export function DismissTaskChip(arg1:string):Promise<void>;
+
 export function EnabledProviders():Promise<Array<string>>;
 
 export function GetContextBreakdown():Promise<main.ContextBreakdown>;
@@ -103,6 +105,8 @@ export function ListSkills():Promise<Array<main.SkillInfo>>;
 export function ListSpeechModels():Promise<Array<main.SpeechModelInfo>>;
 
 export function ListSubagentProfiles():Promise<Array<subagent.Profile>>;
+
+export function ListTaskChips():Promise<Array<main.TaskChip>>;
 
 export function ListTools():Promise<Array<main.SkillInfo>>;
 
@@ -171,6 +175,8 @@ export function RequiresAPIKey(arg1:string):Promise<boolean>;
 export function RetryActiveProvider():Promise<main.ModelInfo>;
 
 export function RevealSpeechModel(arg1:string):Promise<void>;
+
+export function RunChatCommand(arg1:string):Promise<main.RunBlockResult>;
 
 export function SaveChatFile(arg1:string):Promise<string>;
 

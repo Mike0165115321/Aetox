@@ -323,6 +323,17 @@ export interface CockpitState {
   ask: { question: string; options: string[] } | null
   /** The model's task checklist (todo_write tool), replaced wholesale each call. */
   todos: { content: string; status: 'pending' | 'in_progress' | 'completed' }[]
+  /** Side work the agent flagged with suggest_task — chips the user can start or dismiss. */
+  taskChips: TaskChip[]
+}
+
+/** One suggested side task from the agent (suggest_task tool). */
+export interface TaskChip {
+  id: string
+  title: string
+  tldr: string
+  prompt: string
+  createdAt: string
 }
 
 /** A blank, well-formed state so the UI renders before the source hydrates. */
@@ -350,6 +361,7 @@ export function emptyCockpitState(): CockpitState {
     reasoningText: '',
     ask: null,
     todos: [],
+    taskChips: [],
     pendingImage: null,
     pendingContext: null,
     pendingFile: null,

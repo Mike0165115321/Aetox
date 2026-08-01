@@ -493,16 +493,47 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 /* One filled block, not a titled panel: the language label floats inside the
    same surface and the copy button only shows on hover (or keyboard focus). */
 .markdown-body .codeblock-head {
-  display:flex; align-items:center; justify-content:space-between;
+  display:flex; align-items:center; gap:6px;
   padding:9px 12px 0; background:none; border-bottom:none;
 }
-.markdown-body .codeblock-head .lang { font-size:var(--fs-xs); color:var(--text-dim); font-family:var(--font-mono, monospace); }
-.markdown-body .code-copy {
+/* margin-right:auto (not space-between) so the run+copy pair clusters right —
+   space-between would strand the middle button when a block has all three. */
+.markdown-body .codeblock-head .lang { font-size:var(--fs-xs); color:var(--text-dim); font-family:var(--font-mono, monospace); margin-right:auto; }
+.markdown-body .code-copy, .markdown-body .code-run {
   font-size:var(--fs-xs); color:var(--text-muted); padding:2px 8px; border-radius:var(--r-sm); cursor:pointer;
   opacity:0; transition:opacity .12s;
 }
-.markdown-body .codeblock:hover .code-copy, .markdown-body .code-copy:focus-visible { opacity:1; }
-.markdown-body .code-copy:hover { background:var(--surface-hover); color:var(--text-primary); }
+.markdown-body .codeblock:hover .code-copy, .markdown-body .code-copy:focus-visible,
+.markdown-body .codeblock:hover .code-run, .markdown-body .code-run:focus-visible { opacity:1; }
+.markdown-body .code-copy:hover, .markdown-body .code-run:hover { background:var(--surface-hover); color:var(--text-primary); }
+/* Output of the Run button, appended inside the block. Its own surface and a
+   top border so result reads as distinct from the command that produced it. */
+.markdown-body .code-run-out {
+  margin:0; border:none; border-top:1px solid var(--border-default); border-radius:0;
+  background:var(--surface-code); color:var(--text-muted);
+  font-family:var(--font-mono, monospace); font-size:var(--fs-xs);
+  padding:.5em .9em; max-height:16em; overflow:auto; white-space:pre-wrap;
+}
+.markdown-body .code-run-out.failed { color:var(--status-danger); }
+
+/* ---------- suggested-task chips (suggest_task tool) ----------
+   A row of pills on the composer: side work the agent flagged. Click starts
+   it in a fresh session; the x declines it. Deliberately quiet — these are
+   suggestions the user may ignore, not tasks demanding attention. */
+.task-chips { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; }
+.task-chip {
+  display:flex; align-items:center; overflow:hidden;
+  border:1px dashed var(--border-default); border-radius:var(--r-lg);
+  background:var(--surface-raised); font-size:var(--fs-xs);
+}
+.task-chip-start {
+  display:flex; align-items:center; gap:5px; padding:4px 4px 4px 10px;
+  color:var(--text-muted); cursor:pointer; min-width:0;
+}
+.task-chip-start:hover { color:var(--text-primary); background:var(--surface-hover); }
+.task-chip-title { max-width:32ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.task-chip-drop { padding:4px 8px 4px 5px; color:var(--text-dim); cursor:pointer; }
+.task-chip-drop:hover { color:var(--status-danger); }
 .markdown-body .codeblock pre { margin:0; border:none; border-radius:0; background:none; padding:.5em .9em .8em; }
 .markdown-body .codeblock code.hljs { display:block; background:transparent; padding:0; overflow-x:auto; color:var(--syn-fg); }
 

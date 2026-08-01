@@ -106,6 +106,10 @@ export function DeleteSubagentProfile(arg1) {
   return window['go']['main']['App']['DeleteSubagentProfile'](arg1);
 }
 
+export function DismissTaskChip(arg1) {
+  return window['go']['main']['App']['DismissTaskChip'](arg1);
+}
+
 export function EnabledProviders() {
   return window['go']['main']['App']['EnabledProviders']();
 }
@@ -192,6 +196,10 @@ export function ListSpeechModels() {
 
 export function ListSubagentProfiles() {
   return window['go']['main']['App']['ListSubagentProfiles']();
+}
+
+export function ListTaskChips() {
+  return window['go']['main']['App']['ListTaskChips']();
 }
 
 export function ListTools() {
@@ -328,6 +336,10 @@ export function RetryActiveProvider() {
 
 export function RevealSpeechModel(arg1) {
   return window['go']['main']['App']['RevealSpeechModel'](arg1);
+}
+
+export function RunChatCommand(arg1) {
+  return window['go']['main']['App']['RunChatCommand'](arg1);
 }
 
 export function SaveChatFile(arg1) {
