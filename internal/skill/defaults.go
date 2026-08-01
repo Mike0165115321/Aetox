@@ -95,6 +95,11 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 		&githubSearchSkill{},
 		&githubReadFileSkill{},
 		&githubListFilesSkill{},
+		// Progressive skill loading (see progressive.go): these two flat
+		// definitions are how the model reaches every SKILL.md, in place of
+		// one definition per discovered skill.
+		&skillsListSkill{},
+		&skillViewSkill{},
 	}
 	for _, s := range defaults {
 		if err := registry.Register(s, SourceBuiltin); err != nil {

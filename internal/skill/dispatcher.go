@@ -71,6 +71,14 @@ func (d *Dispatcher) ToolDefinitions() []model.ToolDefinition {
 		if !ok {
 			continue
 		}
+		// SourceSkill entries stay registered — the user's /skill-name command
+		// still dispatches them — but their definitions are not sent to the
+		// model. The model reaches skills through skills_list/skill_view
+		// (progressive.go), so the tool block stays the same size whether the
+		// user has installed three skills or three hundred.
+		if source, ok := d.registry.SourceOf(name); ok && source == SourceSkill {
+			continue
+		}
 		definitions = append(definitions, tool.ToolDefinition())
 	}
 	return definitions

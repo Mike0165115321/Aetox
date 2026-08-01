@@ -1691,6 +1691,7 @@ func (a *App) workbenchSkills() []skill.Skill {
 		&browserTypeSkill{app: a},
 		&askUserSkill{app: a},
 		&todoWriteSkill{app: a},
+		&sessionSearchSkill{app: a},
 	}
 }
 
@@ -1889,9 +1890,10 @@ func bootstrapFromConfig(cfg config.Config, onToolAction func(turn.ToolEvent), o
 		Model:        cfg.ModelName,
 		SystemPrompt: prompt.Build(prompt.SurfaceDesktop, cfg.SandboxRoot),
 		// Scale the retained-history budget to the model's real window
-		// (0 → NewContext's 128k-char default). ponytail: trims oldest turns
-		// when over budget — upgrade to summarizing compaction if losing old
-		// turns verbatim starts to hurt long sessions.
+		// (0 → NewContext's 128k-char default). At 80% of this budget the
+		// agent summarizes older turns into one message (cognitive
+		// compactIfNeeded); the verbatim oldest-turn trim in enforceLimits
+		// remains only as the hard floor when summarization fails.
 		MaxChars: ctxTokens * 4,
 	})
 

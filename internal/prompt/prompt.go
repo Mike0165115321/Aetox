@@ -75,6 +75,7 @@ func BuildWithReport(surface Surface, sandboxRoot string) (string, Loaded) {
 	b.WriteString(identity(surface))
 	b.WriteString(environment())
 	b.WriteString(fileEditing())
+	b.WriteString(batchWork())
 	b.WriteString(narration())
 
 	var loaded Loaded
@@ -145,6 +146,24 @@ func fileEditing() string {
 		"know the file type) — that usually gives you enough to write the edit without reading the file " +
 		"at all. Otherwise read with offset and limit around the part you care about. Do not read a large " +
 		"file end to end just to change one line in it.\n"
+}
+
+// batchWork tells the model to collapse list-shaped work into one script.
+// Nothing used to, and the default failure mode is expensive in a way the
+// model cannot see: renaming 200 files as 200 shell calls costs 200 rounds of
+// schemas and results — a small-context model loses the thread long before
+// the list ends, and a paid one re-reads the whole growing conversation every
+// round. One script that loops is a single round at constant context, and the
+// cheap models Aetox targets can write a 10-line loop far more reliably than
+// they can stay coherent across 200 turns.
+func batchWork() string {
+	return "When the work is the same operation over many items — renaming files, converting a folder of " +
+		"documents, applying one change to every match — do NOT loop by calling a tool once per item. " +
+		"Write one shell script (or one command with a loop or glob) that does the whole list, run it with " +
+		"shell, and check its summary output. Each tool call costs a full round of conversation; a script " +
+		"costs one round for any list length. Spot-check a result or two afterwards instead of verifying " +
+		"every item with its own call. Stay with individual tool calls when items genuinely need separate " +
+		"judgment — code edits that differ per file are per-item work, not batch work.\n"
 }
 
 // narration asks for the one line per tool round that the timeline shows as

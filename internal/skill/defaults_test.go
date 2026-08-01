@@ -10,6 +10,7 @@ func TestNewDefaultRegistryRegistersAllBuiltins(t *testing.T) {
 		"git", "fs", "shell", "shell_output", "shell_kill", "write", "edit", "grep", "glob", "apply_patch", "notebook_edit", "diagnostics", "symbol", "delete", "plugin_install", "image_ocr", "video_ocr", "pdf_read", "audio_transcribe",
 		"web_fetch", "web_search",
 		"github_search", "github_read_file", "github_list_files",
+		"skills_list", "skill_view",
 	}
 	for _, name := range want {
 		if _, ok := registry.Get(name); !ok {

@@ -57,3 +57,9 @@ Thumbs.db
 /MCP-SUPPORT-PLAN.md
 /SETTINGS-PARITY-PLAN.md
 /WINDMILL-AUTOMATION.md
+
+# Teardown ของ agent ตัวอื่นแบบเจาะลึก (owner, 2026-08-02). ต่างจาก
+# docs/competitor-research.md ที่เทียบความสามารถระดับหัวข้อและเผยแพร่ได้:
+# ไฟล์กลุ่มนี้อ่านโครงสร้างภายในของโปรเจกต์คนอื่นทีละไฟล์ แล้วสรุปว่าจะหยิบ
+# อะไรมาใช้ — เป็นโน้ตทำงาน ไม่ใช่คำแถลงต่อสาธารณะ จึงอยู่บนดิสก์เท่านั้น
+/docs/hermes-agent-teardown.md

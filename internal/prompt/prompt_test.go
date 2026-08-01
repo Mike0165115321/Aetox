@@ -128,3 +128,16 @@ func TestPromptTellsTheModelToEditRatherThanRewrite(t *testing.T) {
 		}
 	}
 }
+
+// List-shaped work must be steered into one script rather than one tool call
+// per item — a 200-item list as 200 calls exhausts a small-context model
+// before the list ends, and that failure arrives silently, as a half-done job.
+func TestBuildTeachesBatchWorkAsOneScript(t *testing.T) {
+	got := Build(SurfaceCLI, "")
+	if !strings.Contains(got, "same operation over many items") {
+		t.Fatalf("missing batch-work guidance: %s", got)
+	}
+	if !strings.Contains(got, "per-item work, not batch work") {
+		t.Fatalf("batch guidance lost its boundary — without it, per-file judgment edits get scripted too: %s", got)
+	}
+}

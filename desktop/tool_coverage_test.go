@@ -240,6 +240,7 @@ func toolCases(t *testing.T, root string, dispatcher *skill.Dispatcher) map[stri
 	// way round: a killed job keeps its unread output, so the read still has
 	// something to return.
 	backgroundID := startBackgroundFixture(t, dispatcher)
+	writeCoverageSkill(t)
 	return map[string]toolCase{
 		// --- pure local: no excuse for these to fail anywhere ---
 		"time": {args: map[string]any{}},
@@ -276,6 +277,23 @@ func toolCases(t *testing.T, root string, dispatcher *skill.Dispatcher) map[stri
 		"todo_write": {args: map[string]any{"todos": []any{
 			map[string]any{"content": "prove the tool runs", "status": "completed"},
 		}}},
+		// Progressive skill loading: a fixture skill is installed into the
+		// (isolated) discovery dir by writeCoverageSkill, so the list has one
+		// real entry and the view has a real body to return.
+		"skills_list": {
+			args:  map[string]any{},
+			check: outputContains("coverage-skill"),
+		},
+		"skill_view": {
+			args:  map[string]any{"name": "coverage-skill"},
+			check: outputContains("the coverage body"),
+		},
+		// Empty history is this test's reality — "no matches" IS the success
+		// case, proving the query ran against a real database.
+		"session_search": {
+			args:  map[string]any{"query": "nothing-recorded-yet"},
+			check: outputContains("No history matches"),
+		},
 		// echo is the one command cmd.exe and sh both spell the same way, and
 		// the point here is the plumbing — a real child process, its output
 		// captured and handed back — not the command itself.
@@ -641,5 +659,22 @@ func writeTestWAV(t *testing.T, path string) {
 
 	if err := os.WriteFile(path, buf, 0o644); err != nil {
 		t.Fatalf("wav fixture: %v", err)
+	}
+}
+
+// writeCoverageSkill installs one SKILL.md into the isolated discovery dir so
+// skills_list has a real entry and skill_view a real body. Written to
+// DefaultSkillsDir — under the temp home isolateUserDirs set up — because the
+// progressive tools scan the disk at call time, not a path frozen at registry
+// build.
+func writeCoverageSkill(t *testing.T) {
+	t.Helper()
+	dir := filepath.Join(skill.DefaultSkillsDir(), "coverage-skill")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("skill fixture dir: %v", err)
+	}
+	content := "---\nname: coverage-skill\ndescription: proves discovery works\n---\nthe coverage body\n"
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(content), 0o644); err != nil {
+		t.Fatalf("skill fixture: %v", err)
 	}
 }

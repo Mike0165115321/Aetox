@@ -41,7 +41,14 @@ func TestAnthropicProviderCompleteSendsExpectedPayload(t *testing.T) {
 		if err := json.Unmarshal(body, &payload); err != nil {
 			t.Fatalf("unmarshal failed: %v", err)
 		}
-		if payload["system"] != "be terse" {
+		// On Anthropic itself the system prompt travels as a block array so a
+		// cache breakpoint can ride on it (TestAnthropicCacheBreakpoints);
+		// the text inside must still be exactly what the caller sent.
+		sysBlocks, ok := payload["system"].([]any)
+		if !ok || len(sysBlocks) != 1 {
+			t.Fatalf("expected one system block, got %#v", payload["system"])
+		}
+		if block, _ := sysBlocks[0].(map[string]any); block["text"] != "be terse" {
 			t.Fatalf("expected system prompt, got %#v", payload["system"])
 		}
 		msgs, ok := payload["messages"].([]any)
@@ -542,5 +549,86 @@ func TestRateLimitWindowReadsBothHeaderDialects(t *testing.T) {
 	silent := &http.Response{Header: http.Header{}}
 	if wait := rateLimitWindow(silent); wait != 0 {
 		t.Fatalf("no headers → %s; want 0", wait)
+	}
+}
+
+// Anthropic caches nothing without an explicit cache_control marker — the
+// reader that reports CacheReadTokens was wired long before anything wrote a
+// breakpoint, so every Claude call re-evaluated the full prompt at full price
+// while the usage panel dutifully showed 0 cached. Three markers cover the
+// stable prefixes: last tool definition, system prompt, end of history.
+func TestAnthropicCacheBreakpoints(t *testing.T) {
+	req := Request{
+		Messages: []Message{
+			{Role: RoleSystem, Content: "be terse"},
+			{Role: RoleUser, Content: "hi"},
+			{Role: RoleAssistant, Content: "hello"},
+			{Role: RoleUser, Content: "and again"},
+		},
+		Tools: []ToolDefinition{
+			{Type: "function", Function: ToolFunction{Name: "grep"}},
+			{Type: "function", Function: ToolFunction{Name: "read"}},
+		},
+	}
+
+	payload, err := buildAnthropicRequest("anthropic", "claude-sonnet-5", req, false)
+	if err != nil {
+		t.Fatalf("buildAnthropicRequest: %v", err)
+	}
+
+	if payload.Tools[0].CacheControl != nil {
+		t.Fatalf("marker on first tool; want only the last so one breakpoint covers them all")
+	}
+	if payload.Tools[1].CacheControl == nil {
+		t.Fatalf("no marker on last tool; tool schemas are the biggest stable block in the request")
+	}
+	if !payload.System.Cached {
+		t.Fatalf("system prompt not marked cacheable")
+	}
+	last := payload.Messages[len(payload.Messages)-1]
+	if last.Content[len(last.Content)-1].CacheControl == nil {
+		t.Fatalf("no marker on the final block; the history prefix would never be cached")
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	// The system field must become the block-array shape when cached — a
+	// cache_control key cannot ride on a plain JSON string.
+	if !strings.Contains(string(body), `"system":[{"type":"text"`) {
+		t.Fatalf("cached system prompt did not marshal as a block array: %s", body)
+	}
+	if got := strings.Count(string(body), `"cache_control"`); got != 3 {
+		t.Fatalf("marshaled request carries %d cache_control markers; want 3 (tools, system, history)", got)
+	}
+}
+
+// DeepSeek only borrows the wire format: it caches automatically and never
+// documented cache_control, so markers there would be an undocumented field
+// sent on faith. It keeps the plain-string system shape it has always had.
+func TestAnthropicWireFormatBorrowersGetNoCacheMarkers(t *testing.T) {
+	req := Request{
+		Messages: []Message{
+			{Role: RoleSystem, Content: "sys"},
+			{Role: RoleUser, Content: "hi"},
+		},
+		Tools: []ToolDefinition{{Type: "function", Function: ToolFunction{Name: "grep"}}},
+	}
+
+	payload, err := buildAnthropicRequest("deepseek", "deepseek-v4-flash", req, false)
+	if err != nil {
+		t.Fatalf("buildAnthropicRequest: %v", err)
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(body), "cache_control") {
+		t.Fatalf("cache_control sent to a provider that never documented it: %s", body)
+	}
+	if !strings.Contains(string(body), `"system":"sys"`) {
+		t.Fatalf("system should stay a plain string off Anthropic: %s", body)
 	}
 }

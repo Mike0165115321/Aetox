@@ -171,12 +171,15 @@ func TestListSkillsSurfacesMCPTool(t *testing.T) {
 
 	// MCP tools now register on a background goroutine (see applyConfig) so
 	// startup isn't blocked on a cold connect — poll until the echo server's
-	// tool surfaces instead of reading once.
+	// tool surfaces instead of reading once. Poll for echo_echo by name, not
+	// "the first mcp-sourced tool": another test's leaked server config can
+	// connect first, and which one wins the race is not what this test is
+	// about — the server THIS test added must surface ITS tool.
 	var found *SkillInfo
 	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
 		for _, s := range a.ListTools() {
-			if s.Source == "mcp" {
+			if s.Source == "mcp" && s.Name == "echo_echo" {
 				sc := s
 				found = &sc
 				break
@@ -188,10 +191,7 @@ func TestListSkillsSurfacesMCPTool(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	if found == nil {
-		t.Fatalf("no mcp-sourced tool in ListTools after 15s; got %+v", a.ListTools())
-	}
-	if found.Name != "echo_echo" {
-		t.Fatalf("mcp tool name = %q, want echo_echo", found.Name)
+		t.Fatalf("echo_echo not in ListTools as source mcp after 15s; got %+v", a.ListTools())
 	}
 }
 

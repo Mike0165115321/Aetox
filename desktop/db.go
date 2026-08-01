@@ -109,6 +109,25 @@ CREATE INDEX IF NOT EXISTS idx_tool_runs_session ON tool_runs(session_id, id);
 CREATE INDEX IF NOT EXISTS idx_tool_runs_tool ON tool_runs(tool, time);
 `
 
+// toolRunsFTSSchema (schema version 3) makes the work history searchable the
+// same way the chat history already is: trigram FTS5, so Thai substrings match
+// without word boundaries. Indexing the stored (clamped) args/output — not the
+// full originals — is deliberate: the clamp bounds the index the same way it
+// bounds the table, and anything worth finding again ("that OCR that read the
+// wrong amount", "the fetch that hit a login page") shows in the first
+// kilobytes. session_search reads this; nothing else does.
+const toolRunsFTSSchema = `
+CREATE VIRTUAL TABLE IF NOT EXISTS tool_runs_fts USING fts5(
+  tool, args, output, content='tool_runs', content_rowid='id', tokenize='trigram'
+);
+CREATE TRIGGER IF NOT EXISTS tool_runs_ai AFTER INSERT ON tool_runs BEGIN
+  INSERT INTO tool_runs_fts(rowid, tool, args, output) VALUES (new.id, new.tool, new.args, new.output);
+END;
+CREATE TRIGGER IF NOT EXISTS tool_runs_ad AFTER DELETE ON tool_runs BEGIN
+  INSERT INTO tool_runs_fts(tool_runs_fts, rowid, tool, args, output) VALUES ('delete', old.id, old.tool, old.args, old.output);
+END;
+`
+
 // migration is one step from schema version N-1 to N. The version a database
 // is on lives in SQLite's own `PRAGMA user_version` rather than a table of our
 // own: it costs no row, no join and no bootstrap ordering problem, and it is
@@ -146,6 +165,21 @@ var migrations = []migration{
 		name:    "tool_runs",
 		apply: func(tx *sql.Tx) error {
 			_, err := tx.Exec(toolRunsSchema)
+			return err
+		},
+	},
+	{
+		version: 3,
+		name:    "tool_runs_fts",
+		apply: func(tx *sql.Tx) error {
+			if _, err := tx.Exec(toolRunsFTSSchema); err != nil {
+				return err
+			}
+			// Databases that lived at version 2 already hold rows the new
+			// triggers never saw; index them now or they would be the one
+			// permanently unsearchable stretch of history.
+			_, err := tx.Exec(`INSERT INTO tool_runs_fts(rowid, tool, args, output)
+				SELECT id, tool, args, output FROM tool_runs`)
 			return err
 		},
 	},

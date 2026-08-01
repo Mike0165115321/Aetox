@@ -106,6 +106,17 @@ type anthropicContentBlock struct {
 	Content   string           `json:"content,omitempty"`
 	IsError   bool             `json:"is_error,omitempty"`
 	Source    *anthropicSource `json:"source,omitempty"`
+	// CacheControl marks this block as the end of a cacheable prefix. Only
+	// applyAnthropicCacheBreakpoints sets it, and only for Anthropic itself —
+	// see that function for why.
+	CacheControl *anthropicCacheControl `json:"cache_control,omitempty"`
+}
+
+// anthropicCacheControl is a prompt-cache breakpoint. "ephemeral" is the only
+// type the API has; the default 5-minute TTL refreshes on every hit, which an
+// agent loop calling every few seconds never outlives.
+type anthropicCacheControl struct {
+	Type string `json:"type"`
 }
 
 // anthropicSource carries an image block's bytes. Anthropic takes base64 in a
@@ -128,6 +139,30 @@ type anthropicTool struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description,omitempty"`
 	InputSchema json.RawMessage `json:"input_schema,omitempty"`
+	// CacheControl on the LAST tool caches every definition before it — the
+	// registry's 30-odd schemas are the biggest stable block in the request.
+	CacheControl *anthropicCacheControl `json:"cache_control,omitempty"`
+}
+
+// anthropicSystem is the request's system field. Anthropic accepts either a
+// plain string or an array of text blocks; the block form exists so a
+// cache_control marker can ride on it. Providers that only borrow this wire
+// format always get the string — same information, no assumption that they
+// parse the array shape.
+type anthropicSystem struct {
+	Text   string
+	Cached bool
+}
+
+func (s anthropicSystem) MarshalJSON() ([]byte, error) {
+	if s.Cached {
+		return json.Marshal([]anthropicContentBlock{{
+			Type:         "text",
+			Text:         s.Text,
+			CacheControl: &anthropicCacheControl{Type: "ephemeral"},
+		}})
+	}
+	return json.Marshal(s.Text)
 }
 
 type anthropicToolChoice struct {
@@ -148,7 +183,7 @@ type anthropicThinking struct {
 
 type anthropicRequest struct {
 	Model       string               `json:"model"`
-	System      string               `json:"system,omitempty"`
+	System      anthropicSystem      `json:"system,omitzero"`
 	Messages    []anthropicMessage   `json:"messages"`
 	MaxTokens   int                  `json:"max_tokens"`
 	Temperature float64              `json:"temperature,omitempty"`
@@ -421,9 +456,9 @@ func buildAnthropicRequest(provider, model string, req Request, stream bool) (an
 		temperature = 0
 	}
 
-	return anthropicRequest{
+	request := anthropicRequest{
 		Model:        model,
-		System:       system,
+		System:       anthropicSystem{Text: system},
 		Messages:     messages,
 		MaxTokens:    maxTokens,
 		Temperature:  temperature,
@@ -432,7 +467,46 @@ func buildAnthropicRequest(provider, model string, req Request, stream bool) (an
 		Thinking:     thinking,
 		OutputConfig: outputConfig,
 		Stream:       stream,
-	}, nil
+	}
+	if anthropicNativeCaching(provider) {
+		applyAnthropicCacheBreakpoints(&request)
+	}
+	return request, nil
+}
+
+// anthropicNativeCaching reports which providers honor cache_control markers.
+// Anthropic requires them — without a marker nothing is cached and the whole
+// prompt is re-evaluated at full price every turn. The wire-format borrowers
+// are the opposite: DeepSeek caches automatically and ignores markers, so
+// sending them buys nothing and assumes a field those APIs never documented.
+// Same split, same reason, as anthropicRejectsSampling.
+func anthropicNativeCaching(provider string) bool {
+	return NormalizeProvider(provider) == "anthropic"
+}
+
+// applyAnthropicCacheBreakpoints marks the request's stable prefixes as
+// cacheable: the tool definitions, the system prompt after them, and the
+// conversation so far. Three of the four breakpoints the API allows.
+//
+// The first two never change within a session (the registry is fixed after
+// bootstrap; prompt.Build runs once), so from the second call on they are
+// pure 90%-discount reads. The last one moves forward every turn — Anthropic
+// finds the previous turn's entry by checking earlier block boundaries, so
+// the growing history re-reads from cache and only the newest turn is
+// evaluated fresh. Prompts under the API's minimum (1024 tokens on most
+// models) are silently not cached; the markers are still harmless there.
+func applyAnthropicCacheBreakpoints(req *anthropicRequest) {
+	if n := len(req.Tools); n > 0 {
+		req.Tools[n-1].CacheControl = &anthropicCacheControl{Type: "ephemeral"}
+	}
+	if req.System.Text != "" {
+		req.System.Cached = true
+	}
+	if n := len(req.Messages); n > 0 {
+		if blocks := req.Messages[n-1].Content; len(blocks) > 0 {
+			blocks[len(blocks)-1].CacheControl = &anthropicCacheControl{Type: "ephemeral"}
+		}
+	}
 }
 
 // anthropicRejectsSampling reports which providers removed the sampling knobs.
