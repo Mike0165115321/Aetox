@@ -28,7 +28,7 @@ import (
 	"golang.org/x/term"
 )
 
-const appVersion = "0.8.2"
+const appVersion = "0.8.3"
 
 // Printed by both --version paths. A rebranded fork has to delete this line by
 // hand rather than just swap a logo, which is the whole point of it being here.
