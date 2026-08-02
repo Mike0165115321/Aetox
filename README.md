@@ -126,7 +126,7 @@ CLI ทุกตัวในลิสต์นั้นใหญ่กว่า 
 
 เปิดเร็วเสมอ Zed ที่ราวครึ่งวินาที ใช้ RAM ราวครึ่งเดียวของ Zed และราว 1 ใน 7 ของ Cursor
 
-**ความเสถียร** — `go test ./...` ผ่าน **862/862** ครอบคลุม 26 package, 0 fail · ฝั่งหน้าจออีก **95/95**
+**ความเสถียร** — `go test ./...` ผ่าน **983/983** ครอบคลุม 27 package, 0 fail · ฝั่งหน้าจออีก **165/165**
 
 > **เงื่อนไขของตัวเลข Cursor:** วัดตอนที่มันเปิดค้างใช้งานอยู่จริงราว 6 นาที พร้อมส่วนเสริมที่ผู้ใช้เครื่องนี้ติดตั้งไว้
 > — เป็นสภาพใช้งานจริง แต่ไม่ใช่สภาพเปล่าเท่ากับที่วัด Aetox กับ Zed จึงไม่ได้จับเวลาเปิดให้ เพราะต้องปิดโปรแกรมที่เจ้าของเครื่องกำลังใช้อยู่
@@ -226,7 +226,7 @@ Aetox ไม่ส่งข้อมูลอะไรออกจากเค�
 
 ---
 
-## สถานะปัจจุบัน — v0.8.3
+## สถานะปัจจุบัน — v0.8.4
 
 Aetox ยังอยู่ในช่วงหล่อหลอม — แกนกลางพร้อมแล้ว ชั้นถัดไปกำลังถูกสร้าง
 
@@ -236,7 +236,7 @@ Aetox ยังอยู่ในช่วงหล่อหลอม — แก
 |:-----------|:-----------|
 | **13 Providers** | OpenAI, Anthropic, DeepSeek, Google Gemini, Groq, Mistral, Together, Perplexity, Cohere, OpenRouter, Z.ai, LM Studio, Ollama |
 | **Tool Calling** | model-driven tool loop — agent เลือกใช้ tools เอง |
-| **36 Tools ที่โมเดลเรียกได้** | 27 ตัวในเครื่องยนต์ (read, write, edit, shell, git, grep, glob, symbol, notebook_edit, image_ocr, video_ocr, pdf_read, audio_transcribe …) + browser_* + sub-agent + ที่ต่อจาก MCP |
+| **36 Tools ที่โมเดลเรียกได้** | 29 ตัวในเครื่องยนต์ (read, write, edit, shell, git, grep, glob, symbol, notebook_edit, image_ocr, video_ocr, pdf_read, audio_transcribe, skills_list, skill_view …) + browser_* + session_search + suggest_task + sub-agent + ที่ต่อจาก MCP |
 | **รันโค้ดที่เพิ่งเขียนเองได้** | agent เรียก `shell` และ `git` เองได้ — แก้โค้ดเสร็จ รันเทสต์ อ่านผล แล้วแก้ต่อในเทิร์นเดียว · คำสั่งที่ไม่จบเอง (dev server, watch build) สั่งให้รันเบื้องหลังแล้วตามอ่าน log ทีหลังได้ |
 | **Safety 3 ระดับ** | ถามก่อน → คำสั่งเสี่ยง → รันเต็มที่ |
 | **Multi-provider** | ใช้ providers ต่างกันใน session เดียวกัน |
