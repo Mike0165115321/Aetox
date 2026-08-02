@@ -22,9 +22,14 @@
 # the CLI from building on Linux at all, and only a real non-Windows compile
 # finds that class of bug.
 #
-# The frontend build is not optional anywhere: desktop/main.go does `go:embed
-# all:frontend/dist`, and dist is gitignored, so `go vet ./...` fails on a fresh
-# checkout until vite has produced it.
+# desktop/main.go does `go:embed all:frontend/dist` and dist is gitignored, so
+# every job needs *something* there before `go vet ./...` will compile. Only
+# Windows needs it to be the real bundle: it is the only job that runs the
+# frontend tests, and the bundle is platform-independent, so building it three
+# times per push bought nothing. The unix jobs write a stub instead — which also
+# retired the macos failure, where `npm run build` died with Abort trap: 6
+# (node's default heap against monaco's 7MB ts.worker) and took the whole job
+# with it.
 name: ci
 
 on:
@@ -32,17 +37,26 @@ on:
     branches: [main]
   pull_request:
 
+# A newer push makes the older run's answer irrelevant, and `npm ci`,
+# `npm run build` and the apt install carry no timeout of their own.
+# Deliberately not on release.yml: cancelling a publish half-way is a much
+# worse failure than paying for a superseded run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   windows:
     runs-on: windows-latest
+    timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -70,18 +84,13 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: desktop/frontend/package-lock.json
 
       # Not needed to link anything yet — the browser host off Windows is still
       # the stub in browser_other.go. Installing it now is the cheap half of the
@@ -95,13 +104,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
 
-      - name: Install frontend deps
-        working-directory: desktop/frontend
-        run: npm ci
-
-      - name: Build frontend (required by desktop's go:embed)
-        working-directory: desktop/frontend
-        run: npm run build
+      # Stub, not a build — see the header. go:embed only needs the directory
+      # to exist with a file in it; nothing off Windows reads its contents.
+      - name: Stub frontend dist (satisfies go:embed)
+        run: |
+          mkdir -p desktop/frontend/dist
+          echo '<!doctype html><title>ci stub</title>' > desktop/frontend/dist/index.html
 
       - run: go vet ./...
 

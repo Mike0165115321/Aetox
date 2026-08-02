@@ -17,13 +17,13 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
 
@@ -63,6 +63,19 @@ jobs:
       - name: Build desktop app + NSIS installer
         working-directory: desktop
         run: wails build -nsis -platform windows/amd64
+
+      # The tag check above proves the NUMBER is right; this proves the BUILD is.
+      # Until now the release path ran exactly one package's tests
+      # (internal/version) and had no dependency on the ci workflow — so v0.8.6
+      # was published from a commit whose ci run was red. It runs here, after
+      # the build, because desktop/main.go go:embeds frontend/dist and nothing
+      # produces that on a fresh checkout until wails has compiled the frontend.
+      # Windows is the only platform this workflow ships and the one ci covers
+      # in full, so the same two commands close the gap for ~2 minutes.
+      - name: The suite must pass on what is about to ship
+        run: |
+          go vet ./...
+          go test ./...
 
       - name: Package portable zip + checksums
         run: |

@@ -89,7 +89,14 @@ stage "test" go test -count=1 -shuffle=on -timeout 5m ./...
 if command -v "$(go env CC)" >/dev/null 2>&1; then
   stage "race" env CGO_ENABLED=1 go test -count=1 -race -timeout 15m ./...
 else
-  skip "race" "no C compiler — scoop install gcc"
+  # Loud, not quiet. This skipped silently for months while ARCHITECTURE.md
+  # asserted the opposite, so the one thing that checks the delegate goroutine
+  # and the parked ask_main slot was believed to be running and was not — which
+  # is how a CI failure that had nothing to do with concurrency was read as a
+  # data race for six days. A skip that is easy to miss is worse than no stage.
+  skip "race" "NOT CHECKED — no C compiler on PATH. Install one (scoop install gcc) or trust only CI's ubuntu job"
+  printf '  %s
+' "‼ the race detector did NOT run: this machine has no $(go env CC) on PATH"
 fi
 
 echo

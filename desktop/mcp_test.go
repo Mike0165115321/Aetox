@@ -1,9 +1,11 @@
 package main
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -210,10 +212,48 @@ func buildEchoServer(t *testing.T) string {
 	// tarball with no .git at all — the build fails with "error obtaining VCS
 	// status" and the whole end-to-end MCP test goes red for a reason that has
 	// nothing to do with MCP.
-	out, err := exec.Command("go", "build", "-buildvcs=false", "-o", bin,
-		"github.com/Mike0165115321/Aetox/internal/mcp/testdata/echoserver").CombinedOutput()
+	cmd := exec.Command("go", "build", "-buildvcs=false", "-o", bin,
+		"github.com/Mike0165115321/Aetox/internal/mcp/testdata/echoserver")
+	// The caches must be named explicitly, because isolateUserDirs has already
+	// pointed HOME at this test's own t.TempDir(). A child `go` derives
+	// GOPATH=$HOME/go from it and writes its module cache there — with
+	// directories mode 0555, which is exactly what Go intends and exactly what
+	// t.TempDir cannot then delete:
+	//
+	//   TempDir RemoveAll cleanup: unlinkat …/go/pkg/mod/…: permission denied
+	//
+	// That failed the whole `unix` job for 21 consecutive CI runs, and it read
+	// as a data race because ubuntu is the only job running -race. It is not a
+	// race; the detector had been clean the entire time and nobody could see it.
+	// Windows never showed it: it deletes read-only directories happily.
+	//
+	// Reusing the real caches also stops the fixture re-downloading the whole
+	// dependency graph on every run (measured: 14.0s isolated vs 2.1s shared).
+	cmd.Env = append(os.Environ(), goCacheEnv()...)
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("build echoserver: %v\n%s", err, out)
 	}
 	return bin
 }
+
+// realGoCaches is resolved once, at package init — before any test has had a
+// chance to call t.Setenv. Asking `go env` later would return the isolated
+// answer and defeat the point.
+var realGoCaches = func() []string {
+	out, err := exec.Command("go", "env", "GOPATH", "GOMODCACHE", "GOCACHE").Output()
+	if err != nil {
+		return nil
+	}
+	fields := strings.Fields(string(out))
+	if len(fields) != 3 {
+		return nil
+	}
+	return []string{
+		"GOPATH=" + fields[0],
+		"GOMODCACHE=" + fields[1],
+		"GOCACHE=" + fields[2],
+	}
+}()
+
+func goCacheEnv() []string { return realGoCaches }
