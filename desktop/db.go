@@ -216,6 +216,48 @@ var migrations = []migration{
 			return nil
 		},
 	},
+	{
+		version: 5,
+		name:    "fts_update_triggers",
+		apply: func(tx *sql.Tx) error {
+			for _, stmt := range []string{
+				// An external-content FTS5 table is not a view: nothing updates it
+				// but a trigger, and version 4 shipped `text` as a column that gets
+				// UPDATEd (storeVariants, when the user asks for another answer).
+				// The insert/delete pair alone leaves the index holding a row the
+				// table no longer has, and SQLite then reports the whole database
+				// as "malformed" on the delete that tries to reconcile them — in
+				// the exact place DeleteSession promises to remove a session.
+				//
+				// Written as delete-then-insert rather than an FTS 'update'
+				// command because that is the documented shape for external
+				// content, and because the old value has to come from OLD.
+				`DROP TRIGGER IF EXISTS messages_au`,
+				`CREATE TRIGGER messages_au AFTER UPDATE ON messages BEGIN
+				   INSERT INTO messages_fts(messages_fts, rowid, text) VALUES ('delete', old.id, old.text);
+				   INSERT INTO messages_fts(rowid, text) VALUES (new.id, new.text);
+				 END`,
+				// tool_runs has no UPDATE anywhere today. The trigger goes in
+				// anyway: the cost is one unfired trigger, and the alternative is
+				// the same silent corruption the first time somebody adds one.
+				`DROP TRIGGER IF EXISTS tool_runs_au`,
+				`CREATE TRIGGER tool_runs_au AFTER UPDATE ON tool_runs BEGIN
+				   INSERT INTO tool_runs_fts(tool_runs_fts, rowid, tool, args, output) VALUES ('delete', old.id, old.tool, old.args, old.output);
+				   INSERT INTO tool_runs_fts(rowid, tool, args, output) VALUES (new.id, new.tool, new.args, new.output);
+				 END`,
+				// Repair, not just prevention. Anyone who pressed "ตอบใหม่" on
+				// v0.8.6 already has a desynced index, and it will not heal on its
+				// own — rebuild puts it back from the table it shadows.
+				`INSERT INTO messages_fts(messages_fts) VALUES('rebuild')`,
+				`INSERT INTO tool_runs_fts(tool_runs_fts) VALUES('rebuild')`,
+			} {
+				if _, err := tx.Exec(stmt); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
 }
 
 // latestSchemaVersion is what this build understands.

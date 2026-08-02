@@ -57,6 +57,11 @@ type SessionVariant struct {
 	Text      string `json:"text"`
 	Reasoning string `json:"reasoning,omitempty"`
 	ThinkSecs int    `json:"thinkSecs,omitempty"`
+	// Parts is the sequence THIS answer produced. Each attempt does its own
+	// work — a second try may read different files — so a variant that carried
+	// only its text left the bubble showing one answer beside another answer's
+	// tool calls the moment the user flipped between them.
+	Parts []turn.TurnPart `json:"parts,omitempty"`
 }
 
 // SessionMeta is one row in the sidebar's history list. Snippet is only set

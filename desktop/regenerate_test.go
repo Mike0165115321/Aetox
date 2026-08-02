@@ -2,6 +2,8 @@ package main
 
 import (
 	"testing"
+
+	"github.com/Mike0165115321/Aetox/internal/turn"
 )
 
 // Reasoning and its clock were fields on SessionMessage from the day thinking
@@ -229,5 +231,89 @@ func TestVariantsOfPromotesASingleAnswer(t *testing.T) {
 	got[0].Text = "mutated"
 	if existing[0].Text != "a" {
 		t.Error("variantsOf handed back the caller's own slice")
+	}
+}
+
+// v0.8.6 shipped an UPDATE on messages.text with no AFTER UPDATE trigger on the
+// external-content FTS index. One press of "ตอบใหม่" left the index holding a
+// row the table no longer had, and SQLite then reported the whole database as
+// malformed on the delete that tried to reconcile them — in the exact place
+// DeleteSession promises to remove a session. The existing tests never touched
+// messages_fts, which is why it shipped.
+func TestRegeneratingKeepsTheSearchIndexInStep(t *testing.T) {
+	a := newTestApp(t, t.TempDir())
+	a.appendTurn(
+		SessionMessage{Role: "user", Text: "ทำไมแบตขึ้นช้า", Time: "00:34"},
+		SessionMessage{Role: "agent", Text: "เพราะหัวชาร์จจ่ายไฟน้อย", Time: "00:34"},
+	)
+
+	a.storeVariants([]SessionVariant{
+		{Text: "เพราะหัวชาร์จจ่ายไฟน้อย"},
+		{Text: "เพราะสายชาร์จเส้นนั้นรองรับแค่ห้าวัตต์"},
+	}, 1)
+
+	// The live answer is findable...
+	hits := a.SearchSessions("ห้าวัตต์")
+	if len(hits) == 0 {
+		t.Error("the regenerated answer is not in the search index")
+	}
+	// ...and the answer it replaced is not.
+	if stale := a.SearchSessions("หัวชาร์จจ่ายไฟน้อย"); len(stale) > 0 {
+		t.Error("the replaced answer still matches — the index is holding a row the table no longer has")
+	}
+
+	// The reconciling delete is where a desynced index surfaces as
+	// "database disk image is malformed"; it must simply work.
+	if err := a.DeleteSession(a.sessionID); err != nil {
+		t.Fatalf("DeleteSession after a regenerate: %v", err)
+	}
+	if left := a.SearchSessions("ห้าวัตต์"); len(left) > 0 {
+		t.Error("the deleted session is still searchable")
+	}
+}
+
+// Each attempt does its own work — a second try may read different files — so
+// flipping between answers has to move the sequence with them. Without it the
+// bubble showed one answer above the other attempt's tool calls.
+func TestSwitchingAnswersMovesTheirWorkToo(t *testing.T) {
+	a := newTestApp(t, t.TempDir())
+	firstWork := []turn.TurnPart{
+		{Kind: turn.PartTool, Tool: &turn.ToolPart{Name: "read", Subject: "a.txt", OK: true}},
+		{Kind: turn.PartText, Text: "คำตอบแรก"},
+	}
+	secondWork := []turn.TurnPart{
+		{Kind: turn.PartTool, Tool: &turn.ToolPart{Name: "grep", Subject: "battery", OK: true}},
+		{Kind: turn.PartText, Text: "คำตอบที่สอง"},
+	}
+	a.appendTurn(
+		SessionMessage{Role: "user", Text: "ถาม", Time: "00:34"},
+		SessionMessage{Role: "agent", Text: "คำตอบที่สอง", Time: "00:34", Parts: secondWork},
+	)
+	variants := []SessionVariant{
+		{Text: "คำตอบแรก", Parts: firstWork},
+		{Text: "คำตอบที่สอง", Parts: secondWork},
+	}
+	a.transcript = []SessionMessage{
+		{Role: "user", Text: "ถาม", Time: "00:34"},
+		{Role: "agent", Text: "คำตอบที่สอง", Time: "00:34", Parts: secondWork, Variants: variants, Active: 1},
+	}
+	a.storeVariants(variants, 1)
+	a.storeParts(secondWork)
+
+	result, err := a.SwitchVariant(0)
+	if err != nil {
+		t.Fatalf("SwitchVariant: %v", err)
+	}
+	if len(result.Parts) == 0 || result.Parts[0].Tool == nil || result.Parts[0].Tool.Name != "read" {
+		t.Fatalf("returned parts = %+v; want the first answer's own work", result.Parts)
+	}
+
+	messages, err := a.LoadSession(a.sessionID)
+	if err != nil {
+		t.Fatalf("LoadSession: %v", err)
+	}
+	stored := messages[1].Parts
+	if len(stored) == 0 || stored[0].Tool == nil || stored[0].Tool.Name != "read" {
+		t.Fatalf("stored parts = %+v; want the chosen answer's work, not the other one's", stored)
 	}
 }

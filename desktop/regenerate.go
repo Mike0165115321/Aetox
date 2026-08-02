@@ -99,6 +99,7 @@ func (a *App) RegenerateReply(revertFiles bool) (RegenerateResult, error) {
 	live := a.transcript[len(a.transcript)-1]
 	variants := append(variantsOf(live), SessionVariant{
 		Text: agentMsg.Text, Reasoning: agentMsg.Reasoning, ThinkSecs: agentMsg.ThinkSecs,
+		Parts: agentMsg.Parts,
 	})
 	active := len(variants) - 1
 
@@ -158,12 +159,16 @@ func (a *App) SwitchVariant(index int) (RegenerateResult, error) {
 
 	chosen := live.Variants[index]
 	live.Text, live.Reasoning, live.ThinkSecs = chosen.Text, chosen.Reasoning, chosen.ThinkSecs
+	// The work moves with the answer. Without this the bubble showed the chosen
+	// reply above the other attempt's tool calls.
+	live.Parts = chosen.Parts
 	live.Active = index
 	a.transcript[len(a.transcript)-1] = live
 	a.storeVariants(live.Variants, index)
+	a.storeParts(chosen.Parts)
 	a.restoreContext(a.transcript)
 
-	return RegenerateResult{Text: chosen.Text, Variants: live.Variants, Active: index}, nil
+	return RegenerateResult{Text: chosen.Text, Parts: chosen.Parts, Variants: live.Variants, Active: index}, nil
 }
 
 // lastQuestion returns the text of the last completed exchange's user message.
@@ -204,7 +209,7 @@ func variantsOf(m SessionMessage) []SessionVariant {
 	if len(m.Variants) > 0 {
 		return append([]SessionVariant(nil), m.Variants...)
 	}
-	return []SessionVariant{{Text: m.Text, Reasoning: m.Reasoning, ThinkSecs: m.ThinkSecs}}
+	return []SessionVariant{{Text: m.Text, Reasoning: m.Reasoning, ThinkSecs: m.ThinkSecs, Parts: m.Parts}}
 }
 
 // storeVariants writes the answer list back onto the session's last agent row.
