@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ChatMessage, TaskState, ModelStatus, ToolStep, TimelineNode, TurnPart, ContextBreakdown } from './types'
+  import type { ChatMessage, TaskState, ModelStatus, ToolStep, TimelineNode, ContextBreakdown } from './types'
   import { groupSteps, isDelegation } from './types'
   import TaskTimeline from './TaskTimeline.svelte'
   import Palette from './Palette.svelte'
@@ -624,34 +624,6 @@
   {/if}
 {/snippet}
 
-<!-- A turn, drawn as the sequence it was: what the model said, the work it did,
-     and what it said next — in that order, in one bubble. Before this, prose in
-     front of a tool call was banished to a collapsed panel and only the closing
-     sentence was the "answer", which is why a turn that did five things read as
-     one paragraph with a "used 5 tools" toggle beside it. -->
-{#snippet turnSequence(parts: TurnPart[])}
-  {#each parts as part}
-    {#if part.kind === 'text' && part.text}
-      <div class="markdown-body">{@html renderMarkdown(part.text)}</div>
-    {:else if part.kind === 'thinking' && part.secs}
-      <div class="tool-think"><Icon name="sparkles" size={12} /> {t('chat.thoughtFor', { secs: part.secs })}</div>
-    {:else if part.kind === 'tool' && part.tool}
-      <div class="tool-step seq {part.tool.ok ? 'done' : 'err'}">
-        <span class="glyph"><Icon name={part.tool.ok ? 'check' : 'x'} size={12} /></span>
-        <span class="lbl">{[part.tool.name, part.tool.subject].filter(Boolean).join(' ')}</span>
-        {#if part.tool.secs}<span class="secs">· {part.tool.secs}s</span>{/if}
-        {#if part.tool.added || part.tool.removed}
-          <span class="tool-stat">
-            <span class="add">+{part.tool.added ?? 0}</span>
-            <span class="del">-{part.tool.removed ?? 0}</span>
-          </span>
-        {/if}
-        {#if part.tool.error}<span class="tool-err">{part.tool.error}</span>{/if}
-      </div>
-    {/if}
-  {/each}
-{/snippet}
-
 {#snippet toolTimeline(steps: ToolStep[], live: boolean)}
   <div class="tool-steps">
     {#each steps as s}
@@ -751,11 +723,7 @@
                     {m.thinkSecs ? t('chat.thoughtFor', { secs: m.thinkSecs }) : t('chat.thoughtDone')}
                   </button>
                 {/if}
-                {#if ownSteps(m.steps ?? []).length && !m.parts?.length}
-                  <!-- Hidden once the sequence draws the work in place: the
-                       panel and the bubble would otherwise show the same calls
-                       twice. Sub-agents keep their toggle — a delegate's own
-                       steps are not in the sequence, only the task call is. -->
+                {#if ownSteps(m.steps ?? []).length}
                   <button class="reasoning-toggle" onclick={() => togglePanel(i, 'tools')}>
                     <span class="chev"><Icon name={openPanel[i] === 'tools' ? 'chevronDown' : 'chevronRight'} size={12} /></span>
                     {toolsLabel(m.steps ?? [])}
@@ -795,8 +763,6 @@
                 <button type="button" class="ctrl" onclick={() => (editingIndex = -1)}>{t('chat.cancelEdit')}</button>
                 <button type="button" class="ctrl edit-send" onclick={commitEdit}>{t('chat.saveEdit')}</button>
               </div>
-            {:else if m.parts?.length}
-              {@render turnSequence(m.parts)}
             {:else}
               <div class="markdown-body">{@html renderMarkdown(m.text)}</div>
             {/if}

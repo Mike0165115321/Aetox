@@ -156,9 +156,12 @@ function restoreAttachments(m: main.SessionMessage): ChatMessage {
     // only for whatever is generated from here on.
     variants: m.variants?.length ? (m.variants as MessageVariant[]) : undefined,
     activeVariant: m.variants?.length ? (m.active ?? 0) : undefined,
-    // The stored sequence is what the bubble draws; a turn from before it
-    // existed has none and falls back to plain text.
     parts: m.parts?.length ? (m.parts as TurnPart[]) : undefined,
+    // The stored sequence, folded back into the timeline the bubble has always
+    // drawn. This is what the sequence bought: the toggles under a reopened
+    // answer used to be empty, because a tool call was never written down
+    // anywhere a message could reach.
+    steps: stepsFromParts(m.parts as TurnPart[] | undefined),
   }
   if (out.role === 'agent') return out
   // What is folded out is also kept: editing a restored question has to be able
@@ -175,6 +178,55 @@ function restoreAttachments(m: main.SessionMessage): ChatMessage {
     .trim()
   if (suffix) out.attachSuffix = suffix
   return out
+}
+
+/**
+ * Fold a stored turn sequence back into the timeline rows the bubble draws.
+ *
+ * The layout is deliberately the one it has always been: the answer, and a row
+ * of collapsed toggles above it. Drawing the sequence inline was tried and read
+ * worse — the same thinking segment appeared twice, once as a toggle and once
+ * between the paragraphs, and the answer stopped being the thing your eye lands
+ * on. The sequence's job is to be recorded, not to be the layout.
+ *
+ * What it buys is that those toggles now work on a reopened session. Tool calls
+ * were never written down anywhere a message could reach, so every restored
+ * answer used to come back with an empty timeline.
+ *
+ * The last text part is the answer and is already the bubble; every earlier one
+ * is narration and becomes a note row, exactly where it sat before.
+ */
+function stepsFromParts(parts?: TurnPart[]): ToolStep[] | undefined {
+  if (!parts?.length) return undefined
+  const lastTextAt = parts.map((p) => p.kind).lastIndexOf('text')
+  const steps: ToolStep[] = []
+  parts.forEach((part, i) => {
+    if (part.kind === 'text') {
+      if (i !== lastTextAt && part.text) {
+        steps.push({ kind: 'note', label: part.text, state: 'done', startedAt: 0 })
+      }
+      return
+    }
+    if (part.kind === 'thinking') {
+      steps.push({ kind: 'thinking', label: '', state: 'done', secs: part.secs, startedAt: 0 })
+      return
+    }
+    const tool = part.tool
+    if (!tool) return
+    steps.push({
+      label: [tool.name, tool.subject].filter(Boolean).join(' '),
+      ref: tool.ref,
+      state: tool.ok ? 'done' : 'err',
+      error: tool.error || undefined,
+      secs: tool.secs || undefined,
+      added: tool.added || undefined,
+      removed: tool.removed || undefined,
+      agent: tool.agent || undefined,
+      brief: tool.brief || undefined,
+      startedAt: 0,
+    })
+  })
+  return steps.length ? steps : undefined
 }
 
 /** Thumbnails are read back off disk, so they land a moment after the text. */

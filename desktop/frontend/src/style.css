@@ -608,13 +608,6 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .variant-pick .msg-copy { margin-left:0; }
 .variant-n { color:var(--text-muted); font-size:var(--fs-xs); font-variant-numeric:tabular-nums; min-width:26px; text-align:center; }
 
-/* A tool call drawn inline in the turn, between the prose it sits between.
-   Indented and quieter than the text so the sentence stays the thing being
-   read and the work reads as an aside — the same weight it has in the
-   collapsed timeline, just in its real place. */
-.tool-step.seq { margin:6px 0 6px 2px; padding-left:8px; border-left:2px solid var(--border-default); }
-.tool-step.seq + .markdown-body { margin-top:6px; }
-
 .msg-reverted { display:flex; align-items:center; gap:5px; margin-top:6px; color:var(--text-muted); font-size:var(--fs-xs); }
 .msg-error { margin-top:6px; color:var(--status-danger); font-size:var(--fs-sm); }
 
