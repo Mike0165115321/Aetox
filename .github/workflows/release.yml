@@ -39,7 +39,9 @@ jobs:
           $tag = "$env:GITHUB_REF_NAME".TrimStart("v")
           $src = [regex]::Match((Get-Content internal/version/version.go -Raw), 'Current = "([^"]+)"').Groups[1].Value
           if ($src -ne $tag) { throw "tag is v$tag but internal/version.Current is $src — one of them was not bumped" }
-          Write-Host "v$tag confirmed in source, wails.json, scoop, README and docs"
+          $notes = "docs/release-notes/$env:GITHUB_REF_NAME.md"
+          if (-not (Test-Path $notes)) { throw "$notes is missing — write the release notes before tagging" }
+          Write-Host "v$tag confirmed in source, wails.json, scoop, README and docs; notes at $notes"
 
       - name: Install wails (pinned to go.mod) and NSIS
         run: |
@@ -74,10 +76,20 @@ jobs:
           } | Set-Content checksums.txt
           Get-Content checksums.txt
 
+      # Release notes come from a file in the repo, reviewed in the same PR as
+      # the code they describe — not typed into the GitHub web form at publish
+      # time. That form is why v0.6.0, v0.8.1, v0.8.2 and v0.8.4 all shipped
+      # with an empty body: writing them was a manual step after the release
+      # already existed, so it was the step that got skipped.
+      #
+      # generate_release_notes fills in the commit list underneath, so a tag
+      # pushed without its notes file still says something rather than nothing.
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           draft: true
+          body_path: docs/release-notes/${{ github.ref_name }}.md
+          generate_release_notes: true
           files: |
             desktop/build/bin/aetox-amd64-installer.exe
             aetox-windows-amd64-portable.zip
