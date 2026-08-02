@@ -49,18 +49,22 @@ func (c *Context) AddMessage(message model.Message) {
 	if c == nil {
 		return
 	}
-	c.messages = append(c.messages, model.Message{
-		Role:       message.Role,
-		Name:       strings.TrimSpace(message.Name),
-		ToolCallID: strings.TrimSpace(message.ToolCallID),
-		Content:    strings.TrimSpace(message.Content),
-		ToolCalls:  message.ToolCalls,
-		// Copied like everything else: this rebuild drops any field it does not
-		// name, and an attached image silently vanishing between the composer
-		// and the provider is a bug with no visible symptom — the model just
-		// answers about a picture it never got.
-		Images: message.Images,
-	})
+	// Copy the message, then normalise — rather than rebuilding it field by
+	// field. The old form dropped anything it did not name, and its own comment
+	// warned about exactly that: "an attached image silently vanishing between
+	// the composer and the provider is a bug with no visible symptom — the model
+	// just answers about a picture it never got."
+	//
+	// Documents was added later and fell into that trap. Every PDF a user
+	// attached was discarded here, one call after cognitive.addUserTurn put it
+	// on the message, so no provider ever received one and the model answered
+	// from the filename. Assigning the struct is what stops the next field
+	// repeating it.
+	stored := message
+	stored.Name = strings.TrimSpace(message.Name)
+	stored.ToolCallID = strings.TrimSpace(message.ToolCallID)
+	stored.Content = strings.TrimSpace(message.Content)
+	c.messages = append(c.messages, stored)
 
 	c.enforceLimits()
 }
