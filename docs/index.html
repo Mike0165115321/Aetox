@@ -858,7 +858,9 @@ footer.gridded::before{
     </div>
 
     <p class="sub" style="margin-top:var(--s4);margin-bottom:0">เมื่อ agent ตัดสินใจเองไม่ได้ มันจะหยุดถามเป็นตัวเลือก A/B/C/D ให้คุณกดเลือก
-    แทนที่จะเดาแล้วทำผิดยาว</p>
+    แทนที่จะเดาแล้วทำผิดยาว
+    · คำสั่ง shell ที่มันแนะนำในแชท มีปุ่ม<b>รัน</b>กดได้เลยไม่ต้องก๊อปไปวางเอง
+    · และงานข้างทางที่มันเจอระหว่างทำ — บั๊กข้าง ๆ, doc ที่ล้าสมัย — จะถูกแขวนเป็นการ์ดให้คุณกดทำทีหลัง งานตรงหน้าไม่สะดุด</p>
   </section>
 
   <!-- ══ 04 ชุดคำสั่ง ══ -->
@@ -1023,6 +1025,9 @@ footer.gridded::before{
       <div class="trow"><span class="tn">web_search</span><span class="td">ค้นเว็บ ไม่ต้องมี API key</span></div>
       <div class="trow"><span class="tn">web_fetch</span><span class="td">อ่านเนื้อหาหน้าเว็บ หรือถามคำถามกับหน้านั้นตรง ๆ</span></div>
       <div class="trow"><span class="tn">github_*</span><span class="td">ค้น อ่าน repo จาก GitHub (4 ตัว)</span></div>
+      <div class="trow"><span class="tn">session_search</span><span class="td">ค้นแชทเก่าและงานที่เคยทำในเซสชันก่อน ๆ — ไทยก็ค้นได้ ไม่กินโทเคน</span></div>
+      <div class="trow"><span class="tn">skills_list / skill_view</span><span class="td">ดูรายชื่อสกิลที่ติดตั้งไว้ แล้วเปิดอ่านเฉพาะตัวที่จะใช้ — ลงกี่ตัวก็ไม่ทำให้แชทแพงขึ้น</span></div>
+      <div class="trow"><span class="tn">suggest_task</span><span class="td">แขวนงานข้างทางที่เจอไว้เป็นการ์ด ให้คุณกดทำในเซสชันใหม่ทีหลัง</span></div>
       <div class="trow"><span class="tn">plugin_install</span><span class="td">ติดตั้งสกิลเสริมจาก GitHub</span></div>
     </div>
     <p class="providers">เครื่องมือชุดนี้ใช้ได้กับทุก provider เหมือนกันหมด ไม่ว่าจะรัน <span class="mono">ollama</span> ในเครื่อง
