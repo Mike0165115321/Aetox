@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>หัวใจไม่ใช่ความรู้ในโมเดล แต่คือ Architecture ที่ควบคุมวิธีคิด · Aetox</title>
-<meta name="description" content="Aetox ปิดจุดอ่อนให้โมเดล: โมเดลที่อ่านภาพไม่ได้ ดูวิดีโอไม่ได้ ลงมือทำในเว็บไม่ได้ — ทำได้หมดผ่านสถาปัตยกรรม เก็บข้อมูลในเครื่อง รันโมเดล local ได้ ไม่มี lock-in">
+<title>งานเดิม ๆ ทุกวัน ไม่ต้องเป็นคุณที่ทำ · Aetox</title>
+<meta name="description" content="ผู้ช่วยที่อยู่ในคอมของคุณ — เปิดเว็บ กรอกฟอร์ม อ่านสลิป ถอดคลิป จัดไฟล์ แล้วส่งกลับมาเป็นไฟล์ที่ใช้ต่อได้ ไม่มีค่ารายเดือน ข้อมูลไม่ออกจากเครื่อง ไม่มีอะไรออกจากเครื่อง">
 <link rel="canonical" href="https://mike0165115321.github.io/Aetox/">
 <meta name="theme-color" content="#060607">
 <script>
@@ -25,16 +25,16 @@
 <meta property="og:site_name" content="Aetox">
 <meta property="og:locale" content="th_TH">
 <meta property="og:url" content="https://mike0165115321.github.io/Aetox/">
-<meta property="og:title" content="หัวใจไม่ใช่ความรู้ในโมเดล แต่คือ Architecture ที่ควบคุมวิธีคิด">
-<meta property="og:description" content="AI Agent Desktop ที่ปิดจุดอ่อนให้ทุกโมเดล — อ่านภาพ อ่านวิดีโอ ลงมือทำในเว็บได้ เก็บข้อมูลในเครื่อง รัน local ได้ ไม่มี lock-in">
+<meta property="og:title" content="งานเดิม ๆ ทุกวัน ไม่ต้องเป็นคุณที่ทำ">
+<meta property="og:description" content="ผู้ช่วยที่อยู่ในคอมของคุณ เปิดเว็บ กรอกฟอร์ม อ่านสลิป ถอดคลิป จัดไฟล์ แล้วส่งกลับมาเป็นไฟล์ที่ใช้ต่อได้ ไม่มีค่ารายเดือน ข้อมูลไม่ออกจากเครื่อง">
 <meta property="og:image" content="https://mike0165115321.github.io/Aetox/assets/og.png">
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Aetox — หัวใจไม่ใช่ความรู้ในโมเดล แต่คือ Architecture ที่ควบคุมวิธีคิด">
+<meta property="og:image:alt" content="Aetox — งานเดิม ๆ ทุกวัน ไม่ต้องเป็นคุณที่ทำ">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="หัวใจไม่ใช่ความรู้ในโมเดล แต่คือ Architecture ที่ควบคุมวิธีคิด">
-<meta name="twitter:description" content="AI Agent Desktop ที่ปิดจุดอ่อนให้ทุกโมเดล — เก็บข้อมูลในเครื่อง รัน local ได้ ไม่มี lock-in">
+<meta name="twitter:title" content="งานเดิม ๆ ทุกวัน ไม่ต้องเป็นคุณที่ทำ">
+<meta name="twitter:description" content="ผู้ช่วยที่อยู่ในคอมของคุณ ลงมือทำงานให้จริง ไม่มีค่ารายเดือน ข้อมูลไม่ออกจากเครื่อง">
 <meta name="twitter:image" content="https://mike0165115321.github.io/Aetox/assets/og.png">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-8 -8 820 778'%3E%3Crect x='-8' y='-8' width='820' height='778' rx='130' fill='%23060607'/%3E%3Cpath fill='%23f3f4f6' fill-rule='evenodd' d='M 116.0,742.5 L 92.0,742.5 L 73.0,737.5 L 53.0,726.5 L 36.5,711.0 L 21.5,680.0 L 20.5,640.0 L 37.5,594.0 L 245.5,120.0 L 265.5,90.0 L 293.0,60.5 L 321.0,40.5 L 347.0,28.5 L 380.0,20.5 L 416.0,19.5 L 452.0,26.5 L 484.0,40.5 L 509.0,57.5 L 533.5,82.0 L 565.5,134.0 L 656.5,345.0 L 658.5,375.0 L 651.5,396.0 L 641.5,410.0 L 622.0,425.5 L 581.0,440.5 L 367.0,442.5 L 339.0,446.5 L 311.0,457.5 L 285.5,479.0 L 275.5,494.0 L 183.5,700.0 L 153.0,729.5 L 137.0,737.5 L 116.0,742.5 Z M 115.5,703.0 L 136.0,694.5 L 154.5,673.0 L 242.5,473.0 L 257.5,452.0 L 276.0,434.5 L 312.0,414.5 L 349.0,405.5 L 494.5,404.0 L 402.0,190.5 L 322.5,371.0 L 313.0,379.5 L 300.0,380.5 L 293.0,377.5 L 285.5,367.0 L 285.5,357.0 L 363.5,179.0 L 373.5,161.0 L 386.0,150.5 L 411.0,147.5 L 425.0,154.5 L 433.5,164.0 L 539.0,404.5 L 567.0,403.5 L 589.0,398.5 L 605.0,390.5 L 616.5,379.0 L 619.5,371.0 L 617.5,350.0 L 530.5,152.0 L 500.5,104.0 L 465.0,74.5 L 443.0,64.5 L 416.0,58.5 L 389.0,58.5 L 357.0,66.5 L 335.0,77.5 L 317.0,91.5 L 294.5,116.0 L 279.5,139.0 L 61.5,637.0 L 58.5,664.0 L 67.5,687.0 L 87.0,701.5 L 115.5,703.0 Z M 711.0,742.5 L 689.0,742.5 L 664.0,735.5 L 642.0,722.5 L 623.5,704.0 L 610.5,683.0 L 553.0,547.5 L 329.0,547.5 L 322.0,544.5 L 314.5,534.0 L 316.5,518.0 L 331.0,508.5 L 573.0,509.5 L 581.5,516.0 L 587.5,527.0 L 652.5,678.0 L 664.0,690.5 L 680.0,700.5 L 710.0,703.5 L 724.0,698.5 L 737.5,686.0 L 743.5,674.0 L 745.5,652.0 L 738.5,627.0 L 661.5,450.0 L 661.5,441.0 L 670.0,429.5 L 678.0,426.5 L 690.0,428.5 L 699.5,440.0 L 775.5,615.0 L 784.5,653.0 L 781.5,681.0 L 764.5,714.0 L 740.0,733.5 L 711.0,742.5 Z'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -143,6 +143,9 @@ header.hidden{transform:translateY(-100%)}
 .kicker .led{width:6px;height:6px;border-radius:50%;background:var(--text);box-shadow:0 0 8px 2px var(--glow);animation:pulse 2.4s ease-in-out infinite}
 h1{font-size:clamp(2.1rem,5.4vw,4.2rem);line-height:1.2;font-weight:700;margin-bottom:var(--s3);letter-spacing:-.02em}
 h1 .gt{text-shadow:0 0 26px var(--glow)}
+/* Thai breaks by dictionary, and it likes to strand the last syllable of the
+   payoff on its own line — keep the phrase whole */
+.hero-copy h1 .gt{white-space:nowrap}
 /* typed headline */
 .typed{position:relative;display:inline}
 .typed .w{display:inline-block;white-space:nowrap}
@@ -409,6 +412,24 @@ ol.steps li b{color:var(--text);font-weight:600}
 .note{border:1px solid var(--line);border-left:2px solid var(--text);background:var(--bg-elev);border-radius:0 var(--r-sm) var(--r-sm) 0;padding:var(--s3);font-size:.9rem;color:var(--muted)}
 .note b{color:var(--text)}
 
+/* ── how it works: four plain steps ─────────────────── */
+.how{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--s3)}
+.how .step{border-top:1px solid var(--line-strong);padding-top:var(--s2)}
+.how .step .n{font-family:var(--mono);font-size:.72rem;color:var(--dim);display:block;margin-bottom:.5rem}
+.how .step h3{font-size:1rem;line-height:1.4;margin-bottom:.4rem;font-weight:600}
+.how .step p{color:var(--muted);font-size:.9rem}
+
+/* ── faq: the objections, answered once, near the end ─ */
+.faq{border-top:1px solid var(--line)}
+.faq details{border-bottom:1px solid var(--line)}
+.faq summary{cursor:pointer;padding:1.05rem 0;font-weight:600;font-size:1rem;color:var(--text);
+  list-style:none;display:flex;justify-content:space-between;align-items:center;gap:var(--s2)}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::after{content:'+';font-family:var(--mono);font-weight:400;color:var(--dim);flex:none}
+.faq details[open] summary::after{content:'\2212'}
+.faq details p{color:var(--muted);font-size:.94rem;max-width:52rem;padding-bottom:1.05rem}
+.faq details p+p{margin-top:-.5rem}
+
 /* ── tools list ─────────────────────────────────────── */
 .tools{display:grid;grid-template-columns:repeat(3,1fr)}
 .trow{display:flex;gap:var(--s2);padding:.6rem;border-bottom:1px solid var(--line);font-size:.85rem;transition:background-color .12s}
@@ -469,6 +490,7 @@ footer.gridded::before{
   .caps{grid-template-columns:1fr;gap:var(--s4)}
   .fork{grid-template-columns:1fr}
   .install{grid-template-columns:1fr;gap:var(--s4)}
+  .how{grid-template-columns:repeat(2,1fr)}
   .sec-grid{grid-template-columns:1fr}
   .stats{grid-template-columns:repeat(2,1fr)}
   .presets{grid-template-columns:repeat(2,1fr)}
@@ -482,6 +504,7 @@ footer.gridded::before{
 @media (max-width:560px){
   :root{--s3:1.1rem;--s4:1.75rem;--s5:2.75rem;--s6:3.5rem}
   .btn,.ghost{width:100%;justify-content:center;text-align:center}
+  .how{grid-template-columns:1fr}
   .trow{flex-direction:column;gap:.15rem}
   .trow .tn{min-width:0}
   .brow{grid-template-columns:9.6rem 1fr 3.9rem;gap:.5rem}
@@ -550,8 +573,8 @@ footer.gridded::before{
     </a>
     <span class="ver"><span class="led" aria-hidden="true"></span>v0.8.7 · Windows</span>
     <nav>
-      <a href="#fix">ปิดจุดอ่อน</a>
-      <a href="#presets">ชุดคำสั่ง</a>
+      <a href="#how">ใช้ยังไง</a>
+      <a href="#fix">ทำอะไรได้</a>
       <a href="#privacy">ความปลอดภัย</a>
       <a href="#install">ติดตั้ง</a>
       <a class="gh" href="https://github.com/Mike0165115321/Aetox">GitHub</a>
@@ -577,11 +600,10 @@ footer.gridded::before{
     <canvas id="logoCanvas" aria-hidden="true"></canvas>
     <div class="wrap hero-center">
       <div class="hero-copy">
-        <p class="kicker" data-intro><span class="led" aria-hidden="true"></span>AI AGENT DESKTOP · NO LOCK-IN</p>
-        <h1><span class="typed" data-typed>หัวใจไม่ใช่ความรู้ในโมเดล แต่คือ <span class="gt">Architecture</span> ที่ควบคุมวิธีคิด</span></h1>
-        <p class="lede" data-intro>สถาปัตยกรรมที่ดีไม่ใช่แค่ปิดจุดอ่อนให้โมเดล มันขยายศักยภาพเดิมและสร้างมิติใหม่ที่ตัวโมเดลไม่เคยมี
-        ความสามารถของ AI ไม่ได้ผูกอยู่กับโมเดลประมวลผลอย่างเดียว แต่คือทั้งระบบที่ห่อหุ้มมันอยู่
-        การตัดส่วนที่เกิน (ทรัพยากร) เติมส่วนที่ขาด (ความสามารถ)  นั่นคือหัวใจของสถาปัตยกรรมที่ดี</p>
+        <p class="kicker" data-intro><span class="led" aria-hidden="true"></span>ผู้ช่วยส่วนตัวที่อยู่ในคอมของคุณ</p>
+        <h1><span class="typed" data-typed>งานเดิม ๆ ทุกวัน <span class="gt">ไม่ต้องเป็นคุณที่ทำ</span></span></h1>
+        <p class="lede" data-intro>Aetox ติดตั้งอยู่ในคอมของคุณ เปิดเว็บ กรอกฟอร์ม อ่านตัวหนังสือในรูป
+        ถอดเสียงคลิป ค้นและจัดไฟล์ แล้วส่งกลับมาเป็นไฟล์ที่คุณเอาไปใช้ต่อได้เลย</p>
         <div class="cta" data-intro>
           <a class="btn" href="https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-amd64-installer.exe">
             <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1v9.3L4.7 7 3.3 8.4 8 13l4.7-4.6L11.3 7 8 10.3V1H8zM2 14h12v1.5H2z"/></svg>
@@ -589,7 +611,7 @@ footer.gridded::before{
           <a class="ghost" href="https://github.com/Mike0165115321/Aetox/releases/latest">ดูไฟล์ดาวน์โหลดทั้งหมด</a>
         </div>
         <div class="cmdrow" data-intro><span>&gt;</span><b id="scoopCmd">scoop install https://raw.githubusercontent.com/Mike0165115321/Aetox/main/scoop/aetox.json</b><button class="copy" data-copy="scoopCmd" aria-label="คัดลอกคำสั่ง scoop">copy</button></div>
-        <p class="fine" data-intro>ตัวติดตั้ง ~12 MB · Windows 10/11 · <em>ยังไม่ได้เซ็นโค้ด</em> — SmartScreen อาจเตือน กด More info → Run anyway</p>
+        <p class="fine" data-intro>ติดตั้ง 2 นาที · ไม่มีค่ารายเดือน · ไม่มีอะไรออกจากเครื่อง · ถอนออกคลิกเดียว</p>
       </div>
     </div>
   </div>
@@ -601,27 +623,53 @@ footer.gridded::before{
     <button class="shot" data-shot type="button">
       <img src="assets/hero-app.png" alt="หน้าต่าง Aetox ขณะทำงานจริง — อ่านเว็บ 6 เจ้าแล้วสรุปเป็นตารางเปรียบเทียบ ใช้เครื่องมือไป 21 ครั้ง" width="1536" height="960" decoding="async">
     </button>
-    <p class="showcase-cap">deepseek-v4-flash รับได้แต่ข้อความ มันไม่เคย "เห็น" รูปเลยสักครั้ง —
-    ทุกอย่างในลูปนี้มาจากเครื่องมือที่สถาปัตยกรรมเติมให้</p>
+    <p class="showcase-cap">งานจริงหนึ่งงาน สั่งครั้งเดียว — มันเปิดอ่านเว็บ 6 เจ้าเอง
+    เก็บราคากับฟีเจอร์มาเรียงเป็นตาราง แล้วส่งคืนเป็นไฟล์ที่พร้อมส่งต่อ</p>
   </section>
 
-  <!-- ══ 01 ปิดจุดอ่อนให้โมเดล ══ -->
+  <!-- ══ 01 ใช้จริงเป็นยังไง ══ -->
+  <section id="how" class="gridded">
+    <div class="sec-head"><span class="idx">01</span><h2 data-reveal>ใช้จริงเป็นยังไง</h2></div>
+    <p class="sub">สี่ขั้น จบภายในไม่กี่นาทีแรกหลังติดตั้ง</p>
+
+    <div class="how">
+      <div class="step" data-card>
+        <span class="n">01</span>
+        <h3>เปิดโปรแกรม</h3>
+        <p>ไฟล์เดียวจบ ไม่ต้องลง Node หรือ Python มาก่อน และไม่ต้องตั้งค่าอะไรให้ยุ่งยาก</p>
+      </div>
+      <div class="step" data-card>
+        <span class="n">02</span>
+        <h3>เลือกว่าจะให้ใครคิดให้</h3>
+        <p>รันโมเดลในเครื่องด้วย Ollama หรือ LM Studio ก็ได้ หรือใส่คีย์ของเจ้าที่คุณมีอยู่แล้ว</p>
+      </div>
+      <div class="step" data-card>
+        <span class="n">03</span>
+        <h3>บอกงานเป็นภาษาคน</h3>
+        <p>พิมพ์ว่าอยากได้อะไร ไม่ต้องรู้ชื่อคำสั่ง มันแตกเป็นขั้น ๆ ให้เห็นแล้วลงมือทำ</p>
+      </div>
+      <div class="step" data-card>
+        <span class="n">04</span>
+        <h3>รับงานที่เสร็จแล้ว</h3>
+        <p>ได้ออกมาเป็นไฟล์จริงในโฟลเดอร์ที่คุณเปิดไว้ ไม่ใช่ข้อความให้ก๊อปไปทำต่อเอง</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 02 ทำอะไรได้บ้าง ══ -->
   <section id="fix" class="gridded">
-    <div class="sec-head"><span class="idx">01</span><h2 data-reveal>โมเดลที่อ่านภาพไม่ได้ ก็อ่านสลิปให้คุณได้</h2></div>
-    <p class="sub">ไม่ใช่เพราะเราไปทำให้โมเดลฉลาดขึ้น — แต่เพราะสิ่งที่ครอบมันอยู่จัดการแทน
-    Aetox แปลงรูปเป็นตัวหนังสือก่อนส่งให้โมเดลอ่าน แปลงคลิปเป็นข้อความพร้อมเวลา
-    เปิดเว็บจริงแล้วอ่านให้ ผลคือโมเดลถูก ๆ ที่รับได้แต่ตัวอักษร ก็ทำงานกับรูป คลิป
-    และหน้าเว็บได้จริง นี่คือสิ่งที่สถาปัตยกรรมทำ และเป็นเหตุผลว่าทำไมคุณไม่ต้องจ่ายแพงขึ้นเพื่อให้ได้งานแบบนี้</p>
+    <div class="sec-head"><span class="idx">02</span><h2 data-reveal>งานที่เคยต้องนั่งทำเอง</h2></div>
+    <p class="sub">สามอย่างที่คนเสียเวลากับมันมากที่สุด และ Aetox ทำแทนได้ทั้งหมดตั้งแต่ติดตั้งเสร็จ</p>
 
     <div class="fix">
       <div class="fix-copy">
-        <span class="problem">โมเดลมองไม่เห็นรูปภาพ</span>
-        <h3>Aetox เติม <code>image_ocr</code> ให้ — อ่านตัวหนังสือในรูปได้ทุกโมเดล</h3>
-        <p>Tesseract ไทย+อังกฤษ ทำงานในเครื่องคุณ โมเดลไม่ต้องมีความสามารถด้าน vision
-        ก็อ่านสลิป สกรีนช็อต เอกสาร ป้ายราคา ได้ทันที</p>
-        <p>ส่วนโมเดลที่มองเห็นรูปได้อยู่แล้ว Aetox ส่งรูปให้มันตรง ๆ ไม่ต้องผ่าน OCR —
-        เลือกทางให้เองตามรุ่นที่คุณต่ออยู่ OCR เป็นทางสำรองของโมเดลที่มองไม่เห็นเท่านั้น</p>
-        <p class="meta">ทำงานออฟไลน์ · ไม่ส่งรูปออกจากเครื่อง</p>
+        <span class="problem">เคยต้องนั่งพิมพ์ตามทีละใบ</span>
+        <h3>กองสลิปในโฟลเดอร์ กลายเป็นตารางที่เปิดใช้ได้</h3>
+        <p>ชี้โฟลเดอร์ที่เก็บรูปไว้ แล้วบอกว่าอยากได้อะไร มันอ่านตัวหนังสือในรูปเองทั้งไทยและอังกฤษ
+        แล้วเรียงออกมาเป็นตารางให้ ใช้ได้กับสลิป สกรีนช็อต เอกสารถ่ายรูป ป้ายราคา</p>
+        <p>ทำงานได้แม้กับโมเดลเล็กที่มองรูปไม่เห็น ส่วนโมเดลที่เห็นรูปอยู่แล้ว มันจะส่งรูปให้ตรง ๆ
+        โดยไม่ต้องอ่านซ้ำ — เลือกทางให้เองตามรุ่นที่คุณต่ออยู่</p>
+        <p class="meta">อ่านในเครื่อง ไม่ต้องต่อเน็ต · รูปไม่ออกจากเครื่อง</p>
       </div>
       <button class="shot" data-shot type="button">
         <img src="assets/cap-image-ocr.png" alt="Aetox ใช้ image_ocr อ่านข้อความจากรูปภาพ แล้วตอบกลับเป็นข้อความ" width="1536" height="960" loading="lazy" decoding="async">
@@ -630,12 +678,13 @@ footer.gridded::before{
 
     <div class="fix flip">
       <div class="fix-copy">
-        <span class="problem">โมเดลดูคลิปไม่ได้ ฟังไม่ออก</span>
-        <h3>Aetox เติม <code>video_ocr</code> + <code>audio_transcribe</code> ให้ — เข้าใจคลิปได้ทั้งภาพและเสียง</h3>
-        <p>คลิปประชุมสองชั่วโมง วิดีโอสอนงาน หรือคลิปภาษาที่คุณฟังไม่ออก — ตัวหนึ่งอ่านตัวหนังสือที่ขึ้นบนจอ
-        อีกตัวถอดเสียงพูดออกมาเป็นข้อความพร้อมคำแปล ทั้งคู่คืนเวลาแบบเดียวกัน เลยต่อกันเป็นเรื่องเดียวได้
-        คุณจึงรู้ว่าเรื่องที่ต้องการอยู่นาทีไหน โดยไม่ต้องนั่งดูเองทั้งคลิป</p>
-        <p class="meta">ถอดเสียงในเครื่อง ไม่ส่งขึ้นคลาวด์ · คืนค่าเป็นเวลา <code>[m:ss]</code> กระโดดไปดูจุดนั้นได้เลย</p>
+        <span class="problem">เคยต้องนั่งดูเองทั้งคลิป</span>
+        <h3>ประชุมสองชั่วโมง เหลือสรุปที่บอกด้วยว่าเรื่องไหนอยู่นาทีไหน</h3>
+        <p>โยนไฟล์คลิปหรือไฟล์เสียงให้ มันถอดเสียงพูดเป็นข้อความ พร้อมอ่านตัวหนังสือที่ขึ้นบนจอไปด้วย
+        แล้วเย็บสองอย่างเข้าด้วยกันเป็นเรื่องเดียว</p>
+        <p>คลิปภาษาที่คุณฟังไม่ออกก็ได้คำแปลมาด้วย และทุกบรรทัดติดเวลากำกับไว้
+        อยากดูตรงไหนกดกระโดดไปได้เลย</p>
+        <p class="meta">ถอดเสียงในเครื่อง ไม่ขึ้นคลาวด์ · ติดเวลาแบบ <code>[m:ss]</code> ทุกบรรทัด</p>
       </div>
       <button class="shot" data-shot type="button">
         <img src="assets/cap-clip.png" alt="Aetox ถอดเสียงคลิปภาษาเกาหลีเป็นข้อความพร้อมคำแปลไทยและเวลากำกับ พร้อมอ่านตัวหนังสือที่ปรากฏบนจอ" width="1536" height="960" loading="lazy" decoding="async">
@@ -644,11 +693,12 @@ footer.gridded::before{
 
     <div class="fix">
       <div class="fix-copy">
-        <span class="problem">โมเดลลงมือทำในเว็บไม่ได้</span>
-        <h3>Aetox เติม <code>browser_*</code> ให้ — อ่านหน้าเว็บจริง คลิก กรอกฟอร์มแทนได้</h3>
-        <p>เปิดเว็บในแท็บ Workbench แล้ว <code>browser_read</code> แปะเลข ref ให้ทุก element
-        โมเดลสั่งคลิกและพิมพ์ด้วย ref นั้น — เลือก dropdown กดส่งฟอร์มได้ครบ</p>
-        <p class="meta">ไม่ติด X-Frame-Options เหมือน iframe · คุณเห็นทุกอย่างที่มันทำสด ๆ</p>
+        <span class="problem">เคยต้องเปิดทีละแท็บแล้วก๊อปเอง</span>
+        <h3>ให้มันเปิดเว็บ อ่าน แล้วกรอกฟอร์มแทน โดยคุณนั่งดูอยู่</h3>
+        <p>มันเปิดหน้าเว็บจริงในหน้าต่างของโปรแกรม อ่านเนื้อหาออกมาเอง แล้วคลิก พิมพ์
+        เลือกตัวเลือกในดรอปดาวน์ และกดส่งฟอร์มได้ครบ</p>
+        <p>ทุกจังหวะเกิดขึ้นตรงหน้าคุณ เห็นว่ามันกดอะไร ไปหน้าไหน และหยุดมันได้ทุกเมื่อ</p>
+        <p class="meta">เป็นเบราว์เซอร์จริง ไม่ใช่กรอบฝัง จึงเปิดได้แทบทุกเว็บ</p>
       </div>
       <button class="shot" data-shot type="button">
         <img src="assets/cap-browser.png" alt="Aetox เปิด Hacker News อ่านหน้าแรก แล้วพิมพ์คำค้นในช่องค้นหาเองจริง" width="1536" height="960" loading="lazy" decoding="async">
@@ -656,195 +706,67 @@ footer.gridded::before{
     </div>
   </section>
 
-  <!-- ══ 02 เบา เร็ว เสถียร ══ -->
+  <!-- ══ 03 เบาจนลืมว่าเปิดอยู่ ══ -->
   <section id="light" class="gridded">
-    <div class="sec-head"><span class="idx">02</span><h2 data-reveal>เบา เร็ว เสถียร — วัดจริง ไม่ใช่คำโฆษณา</h2></div>
-    <p class="sub">ตัวเลขลอย ๆ ไม่มีความหมายถ้าไม่มีอะไรให้เทียบ — เราเลยลงเครื่องมือ AI ตัวอื่นไว้บนเครื่องเดียวกัน
-    แล้ววัดพร้อมกันทั้งพื้นที่ที่กิน เวลาเปิด และ RAM ที่จองจริง
-    ทุกตัวเลขข้างล่างนี้มาจากการวัด ไม่ใช่การประมาณ และบอกไว้ด้วยว่าตัวไหนวัดไม่ได้เพราะอะไร</p>
+    <div class="sec-head"><span class="idx">03</span><h2 data-reveal>เบาจนเปิดทิ้งไว้ทั้งวันได้</h2></div>
+    <p class="sub">ผู้ช่วยที่ต้องคอยปิดเพราะเครื่องอืด สุดท้ายก็ไม่ได้ใช้ Aetox เลยถูกทำให้เล็กตั้งแต่ต้น</p>
 
     <div class="stats">
       <div class="stat" data-card>
-        <div class="n">530<small>ms</small></div>
-        <div class="k">เปิดจนใช้งานได้</div>
-        <div class="s">median · 6 รอบ</div>
+        <div class="n">0.5<small>วิ</small></div>
+        <div class="k">กดแล้วพร้อมใช้</div>
+        <div class="s">วัด 6 รอบ เอาค่ากลาง</div>
       </div>
       <div class="stat" data-card>
         <div class="n">33<small>MB</small></div>
-        <div class="k">กินพื้นที่ในเครื่อง</div>
-        <div class="s">ตัวติดตั้งโหลด 13 MB</div>
+        <div class="k">พื้นที่ในเครื่อง</div>
+        <div class="s">โหลดตัวติดตั้ง 13 MB</div>
       </div>
       <div class="stat" data-card>
         <div class="n">252<small>MB</small></div>
-        <div class="k">RAM ตอนเปิดทิ้งไว้</div>
-        <div class="s">private · ทั้ง 7 process</div>
+        <div class="k">แรมตอนเปิดทิ้งไว้</div>
+        <div class="s">พอ ๆ กับเปิดเว็บไว้ไม่กี่แท็บ</div>
       </div>
       <div class="stat" data-card>
         <div class="n">533<small>/533</small></div>
-        <div class="k">เทสต์ผ่านหมด</div>
-        <div class="s">24 package · 0 fail</div>
+        <div class="k">เทสต์ผ่านก่อนปล่อย</div>
+        <div class="s">24 ส่วน ไม่มีตัวไหนพัง</div>
       </div>
     </div>
 
-    <div class="bench" data-bench>
-      <div class="bench-head">พื้นที่ที่กินในเครื่องหลังติดตั้ง — วัดจากเครื่องเดียวกันทั้งหมด (MB · น้อยกว่าดีกว่า)</div>
-      <div class="bench-body">
-        <div class="brow us">
-          <span class="bk">
-            <span class="mk mk-logo"><svg viewBox="-8 -8 820 778" aria-hidden="true"><use href="#logoA"/></svg></span>
-            <span class="nm"><b>Aetox</b><span class="ty">เดสก์ท็อป</span></span>
-          </span>
-          <div class="btrack"><div class="bfill us" style="--w:2.8%"></div></div>
-          <span class="bv">33 MB</span>
-        </div>
-        <div class="brow">
-          <span class="bk">
-            <span class="mk"><svg aria-hidden="true"><use href="#lg-copilot"/></svg></span>
-            <span class="nm"><b>Copilot CLI</b><span class="ty">คำสั่ง · ไม่มีหน้าจอ</span></span>
-          </span>
-          <div class="btrack"><div class="bfill" style="--w:11.7%"></div></div>
-          <span class="bv">137 MB</span>
-        </div>
-        <div class="brow">
-          <span class="bk">
-            <span class="mk"><svg aria-hidden="true"><use href="#lg-claude"/></svg></span>
-            <span class="nm"><b>Claude Code</b><span class="ty">คำสั่ง · ไม่มีหน้าจอ</span></span>
-          </span>
-          <div class="btrack"><div class="bfill" style="--w:20.2%"></div></div>
-          <span class="bv">236 MB</span>
-        </div>
-        <div class="brow">
-          <span class="bk">
-            <span class="mk"><svg aria-hidden="true"><use href="#lg-zed"/></svg></span>
-            <span class="nm"><b>Zed</b><span class="ty">เดสก์ท็อป</span></span>
-          </span>
-          <div class="btrack"><div class="bfill" style="--w:35.8%"></div></div>
-          <span class="bv">419 MB</span>
-        </div>
-        <div class="brow">
-          <span class="bk">
-            <span class="mk"><svg aria-hidden="true"><use href="#lg-qwen"/></svg></span>
-            <span class="nm"><b>Qwen</b><span class="ty">เดสก์ท็อป</span></span>
-          </span>
-          <div class="btrack"><div class="bfill" style="--w:39.0%"></div></div>
-          <span class="bv">457 MB</span>
-        </div>
-        <div class="brow">
-          <span class="bk">
-            <span class="mk"><svg aria-hidden="true"><use href="#lg-opencode"/></svg></span>
-            <span class="nm"><b>OpenCode</b><span class="ty">คำสั่ง · ไม่มีหน้าจอ</span></span>
-          </span>
-          <div class="btrack"><div class="bfill" style="--w:42.5%"></div></div>
-          <span class="bv">498 MB</span>
-        </div>
-        <div class="brow">
-          <span class="bk">
-            <span class="mk"><svg aria-hidden="true"><use href="#lg-perplexity"/></svg></span>
-            <span class="nm"><b>Comet</b><span class="ty">เดสก์ท็อป · เบราว์เซอร์</span></span>
-          </span>
-          <div class="btrack"><div class="bfill" style="--w:42.8%"></div></div>
-          <span class="bv">501 MB</span>
-        </div>
-        <div class="brow">
-          <span class="bk">
-            <span class="mk"><svg aria-hidden="true"><use href="#lg-openai"/></svg></span>
-            <span class="nm"><b>Codex</b><span class="ty">คำสั่ง · ไม่มีหน้าจอ</span></span>
-          </span>
-          <div class="btrack"><div class="bfill" style="--w:59.6%"></div></div>
-          <span class="bv">698 MB</span>
-        </div>
-        <div class="brow">
-          <span class="bk">
-            <span class="mk"><svg aria-hidden="true"><use href="#lg-cursor"/></svg></span>
-            <span class="nm"><b>Cursor</b><span class="ty">เดสก์ท็อป</span></span>
-          </span>
-          <div class="btrack"><div class="bfill" style="--w:74.6%"></div></div>
-          <span class="bv">874 MB</span>
-        </div>
-        <div class="brow">
-          <span class="bk">
-            <span class="mk"><svg aria-hidden="true"><use href="#lg-windsurf"/></svg></span>
-            <span class="nm"><b>Windsurf</b><span class="ty">เดสก์ท็อป</span></span>
-          </span>
-          <div class="btrack"><div class="bfill" style="--w:80.3%"></div></div>
-          <span class="bv">940 MB</span>
-        </div>
-        <div class="brow">
-          <span class="bk">
-            <span class="mk mk-txt">AG</span>
-            <span class="nm"><b>Antigravity</b><span class="ty">เดสก์ท็อป</span></span>
-          </span>
-          <div class="btrack"><div class="bfill" style="--w:88.0%"></div></div>
-          <span class="bv">1,030 MB</span>
-        </div>
-        <div class="brow">
-          <span class="bk">
-            <span class="mk"><svg aria-hidden="true"><use href="#lg-vscode"/></svg></span>
-            <span class="nm"><b>VS Code</b><span class="ty">เดสก์ท็อป</span></span>
-          </span>
-          <div class="btrack"><div class="bfill" style="--w:100.0%"></div></div>
-          <span class="bv">1,171 MB</span>
-        </div>
-      </div>
-      <div class="bench-foot">เทียบเดสก์ท็อปด้วยกัน Aetox เล็กกว่า Cursor <b>26 เท่า</b> · Windsurf <b>28 เท่า</b> · Antigravity <b>31 เท่า</b> · VS Code <b>35 เท่า</b><br>
-      และต่อให้เอาไปเทียบกับตัวที่เป็นแค่หน้าจอพิมพ์คำสั่ง ไม่มี UI ให้กดสักปุ่ม Aetox ก็ยังเล็กกว่า Claude Code <b>7 เท่า</b> — ทั้งที่มีหน้าต่างแชท เบราว์เซอร์ในตัว อ่านรูป ถอดเสียง ครบอยู่ข้างใน</div>
-    </div>
-
-    <p class="bnote">ทั้งหมดวัดด้วยการรวมขนาดไฟล์ในโฟลเดอร์ที่ติดตั้งจริงบนเครื่องเดียวกัน (Windows 11) ตัวเลขนี้คุณตรวจเองได้
-    · Claude Code / Codex CLI / OpenCode เป็นเครื่องมือแบบพิมพ์คำสั่ง ไม่มีหน้าจอแอป จึงเทียบได้แค่ขนาด ไม่ได้เทียบเวลาเปิดหน้าต่าง</p>
-
-    <h3 style="font-size:1.05rem;margin-top:var(--s5)">เวลาเปิดและ RAM — เทียบกับแอปเดสก์ท็อปด้วยกัน</h3>
-    <table class="vs">
-      <thead>
-        <tr><th>วัดอะไร</th><th class="me">Aetox</th><th>Zed</th><th>Cursor</th></tr>
-      </thead>
-      <tbody>
-        <tr><td>เปิดครั้งแรก (เครื่องยังไม่แคช)</td><td class="me">1.77 วิ</td><td class="them">2.12 วิ</td><td class="them">—</td></tr>
-        <tr><td>เปิดครั้งถัดๆ ไป</td><td class="me">0.53 วิ</td><td class="them">0.53 วิ</td><td class="them">—</td></tr>
-        <tr><td>RAM ที่จองไว้จริง (private)</td><td class="me">252 MB</td><td class="them">471 MB</td><td class="them">1,750 MB</td></tr>
-        <tr><td>จำนวน process ที่เปิดค้างไว้</td><td class="me">7</td><td class="them">4</td><td class="them">10</td></tr>
-        <tr><td>พื้นที่ในเครื่อง</td><td class="me">33 MB</td><td class="them">419 MB</td><td class="them">874 MB</td></tr>
-      </tbody>
-    </table>
-
-    <p class="bnote">ทำไมมี Zed ในตาราง: มันเขียนด้วย Rust เป็นแอปเนทีฟที่ขึ้นชื่อเรื่องความเร็ว ไม่ได้ใช้ Electron —
-    เป็นไม้บรรทัดที่โหดกว่าการไปเทียบกับแอปที่อืดอยู่แล้ว ผลคือเวลาเปิดเสมอกันที่ราวครึ่งวินาที ส่วน RAM เราใช้ราวครึ่งเดียว<br>
-    <b>เงื่อนไขของตัวเลข Cursor:</b> วัดตอนที่มันเปิดค้างใช้งานอยู่จริงราว 6 นาที พร้อมส่วนเสริมที่ผู้ใช้เครื่องนี้ติดตั้งไว้
-    — เป็นสภาพใช้งานจริง แต่ไม่ใช่สภาพเปล่าเท่ากับที่วัด Aetox กับ Zed จึงไม่ได้จับเวลาเปิดให้ เพราะต้องปิดโปรแกรมที่เจ้าของเครื่องกำลังใช้งานอยู่<br>
-    <b>ที่วัดไม่ได้และไม่ขอเดาให้:</b> VS Code กำลังรันงานอยู่บนเครื่องที่วัด ปิดเพื่อวัดไม่ได้ จึงมีแค่ตัวเลขขนาด<br>
-    ตรงไปตรงมาเรื่อง RAM: WebView2 ก็คือ Chromium เหมือนกัน ที่เราใช้น้อยกว่าไม่ใช่เพราะเอนจินวาดหน้าจอวิเศษกว่า
-    แต่เพราะเราไม่ต้องแบกสำเนาของมันมาเอง และไม่ได้ยัดทุกอย่างไว้ในโปรแกรมเดียว</p>
+    <p class="bnote">ตัวเลขทั้งหมดวัดจากเครื่องจริงบน Windows 11 ไม่ใช่การประมาณ — วิธีวัดกับผลดิบอยู่ใน
+    <a href="https://github.com/Mike0165115321/Aetox/blob/main/BENCHMARK.md">BENCHMARK.md</a> ตรวจซ้ำเองได้<br>
+    ตรงไปตรงมาเรื่อง RAM: หน้าจอของเราวาดด้วย WebView2 ที่ Windows มีอยู่แล้ว เราเลยไม่ต้องแบกสำเนาเบราว์เซอร์มาเอง
+    นั่นคือเหตุผลเดียวที่ตัวเลขมันเล็ก ไม่ใช่เวทมนตร์อะไร</p>
 
     <div class="sec-grid" style="margin-top:var(--s4)">
       <div class="card" data-card>
-        <h4>Go + TypeScript ตรวจชนิดข้อมูลตั้งแต่ตอนคอมไพล์</h4>
-        <p>ทั้งฝั่งแกนและฝั่งหน้าจอเป็นภาษาที่มี type ทั้งคู่ — บั๊กประเภทส่งค่าผิดชนิดถูกจับตั้งแต่ตอน build ไม่ใช่ตอนผู้ใช้กดเจอ</p>
-        <span class="tag">go · typescript · svelte-check</span>
+        <h4>ลงแล้วใช้ได้เลย ไม่ต้องลงอย่างอื่นก่อน</h4>
+        <p>ไม่ต้องมี Node หรือ Python ในเครื่องมาก่อน ตัวโปรแกรมเป็นไฟล์เดียวจบ</p>
+        <span class="tag">ไฟล์เดียว</span>
       </div>
       <div class="card" data-card>
-        <h4>533 เทสต์วิ่งก่อนปล่อยทุกครั้ง</h4>
-        <p>ครอบคลุม 24 package ตั้งแต่ตัวคุยกับ provider ยันด่านความปลอดภัยและการมอบงานให้ sub-agent</p>
-        <span class="tag">go test ./...</span>
+        <h4>อัปเดตแล้วของเดิมไม่พัง</h4>
+        <p>ทุกครั้งก่อนปล่อยเวอร์ชันใหม่ มีชุดทดสอบ 533 ตัววิ่งครบทุกส่วนก่อนเสมอ</p>
+        <span class="tag">533 เทสต์</span>
       </div>
       <div class="card" data-card>
-        <h4>ไฟล์เดียวจบ ไม่มี runtime ให้ลงเพิ่ม</h4>
-        <p>ไม่ต้องลง Node.js หรือ Python ก่อนใช้ และไม่มี node_modules ให้เวอร์ชันตีกันตอนอัปเดต</p>
-        <span class="tag">static binary</span>
+        <h4>ไม่แย่งเครื่องกับงานที่คุณทำอยู่</h4>
+        <p>ใช้ตัวแสดงผลที่ Windows มีให้อยู่แล้ว จึงไม่ต้องแบกเบราว์เซอร์มาอีกชุด</p>
+        <span class="tag">33 MB</span>
       </div>
       <div class="card" data-card>
-        <h4>ใช้ WebView2 ที่เครื่องมีอยู่แล้ว</h4>
-        <p>ไม่ต้องแบก Chromium มาเป็นสำเนาของตัวเอง ตัวติดตั้งเลยอยู่ที่ 13 MB ไม่ใช่หลักร้อย</p>
-        <span class="tag">wails · webview2</span>
+        <h4>ไม่ชอบก็ถอนออกได้ทันที</h4>
+        <p>ถอนจาก Add or remove programs ตามปกติ ไม่มีบัญชีให้ตามไปลบ ไม่มีข้อมูลค้างที่อื่น</p>
+        <span class="tag">ไม่ผูกมัด</span>
       </div>
     </div>
   </section>
 
-  <!-- ══ 03 ตอนทำงานยาว ══ -->
+  <!-- ══ 04 ตอนทำงานยาว ══ -->
   <section id="work" class="gridded">
-    <div class="sec-head"><span class="idx">03</span><h2 data-reveal>งานยาวแค่ไหน ก็เห็นว่ามันทำอะไรอยู่</h2></div>
-    <p class="sub">ปัญหาของ agent ส่วนใหญ่คือสั่งไปแล้วเงียบ ไม่รู้ว่าทำถึงไหน ทำอะไรผิดไปหรือเปล่า —
-    Aetox แตกงานใหญ่เป็น checklist ให้เห็นสด ๆ ระหว่างทำ กดหยุดกลางคันได้ตลอด
-    และย้อนดูได้ว่าโมเดล "คิดอะไร คิดกี่วินาที" ในแต่ละขั้น</p>
+    <div class="sec-head"><span class="idx">04</span><h2 data-reveal>สั่งไปแล้วไม่ต้องนั่งลุ้น</h2></div>
+    <p class="sub">งานใหญ่ถูกแตกเป็นรายการให้เห็นตั้งแต่ต้น ติ๊กทีละข้อต่อหน้าคุณ และกดหยุดได้ทุกเมื่อ</p>
 
     <div class="tl" data-timeline>
       <div class="tl-head"><span class="spin" aria-hidden="true"></span>กำลังทำงาน — สำรวจคู่แข่ง 6 เจ้า ทำตารางเทียบส่งหัวหน้า</div>
@@ -854,23 +776,20 @@ footer.gridded::before{
       <div class="tl-row"><span class="box" aria-hidden="true"></span><span class="lbl">จัดข้อมูลทั้งหมดเป็นตารางเทียบกัน</span></div>
       <div class="tl-row"><span class="box" aria-hidden="true"></span><span class="lbl">เขียนเป็นไฟล์สรุปพร้อมข้อเสนอแนะ 3 ข้อ</span></div>
       <div class="tl-row"><span class="box" aria-hidden="true"></span><span class="lbl">เปิดไฟล์ให้ดูในเบราว์เซอร์ — ตรวจแล้วส่งได้เลย</span></div>
-      <div class="tl-foot" data-tl-foot>ทุกขั้นเก็บ log ไว้ · กด Stop หยุดได้ทุกเมื่อ · คลิกดูความคิดของโมเดลย้อนหลังได้</div>
+      <div class="tl-foot" data-tl-foot>ทุกขั้นถูกบันทึกไว้ · กดหยุดได้ทุกเมื่อ · ย้อนดูได้ว่ามันคิดอะไรในแต่ละขั้น</div>
     </div>
 
-    <p class="sub" style="margin-top:var(--s4);margin-bottom:0">เมื่อ agent ตัดสินใจเองไม่ได้ มันจะหยุดถามเป็นตัวเลือก A/B/C/D ให้คุณกดเลือก
-    แทนที่จะเดาแล้วทำผิดยาว
-    · คำสั่ง shell ที่มันแนะนำในแชท มีปุ่ม<b>รัน</b>กดได้เลยไม่ต้องก๊อปไปวางเอง
-    · และงานข้างทางที่มันเจอระหว่างทำ — บั๊กข้าง ๆ, doc ที่ล้าสมัย — จะถูกแขวนเป็นการ์ดให้คุณกดทำทีหลัง งานตรงหน้าไม่สะดุด</p>
+    <p class="sub" style="margin-top:var(--s4);margin-bottom:0">ถ้าถึงจุดที่มันตัดสินใจแทนคุณไม่ได้ มันจะหยุดถามเป็นตัวเลือกให้กด
+    แทนที่จะเดาเองแล้วทำผิดยาว และงานอื่นที่มันบังเอิญเจอระหว่างทาง
+    จะถูกแขวนเป็นการ์ดไว้ให้คุณกดทำทีหลัง งานตรงหน้าไม่สะดุด</p>
   </section>
 
-  <!-- ══ 04 ชุดคำสั่ง ══ -->
+  <!-- ══ 05 ชุดคำสั่ง ══ -->
   <section id="presets" class="gridded">
-    <div class="sec-head"><span class="idx">04</span><h2 data-reveal>ชุดคำสั่งที่เขียนไว้ให้แล้ว — เปิดดูว่างานดี ๆ เขาสั่งกันยังไง</h2></div>
-    <p class="sub">กำแพงจริงของคนส่วนใหญ่ไม่ใช่ "AI ทำไม่ได้" แต่คือ "ไม่รู้จะพิมพ์อะไร" —
-    กด <code class="mono">/</code> ในช่องแชทเพื่อเปิดดูชุดคำสั่งที่มากับโปรแกรม
-    ทุกตัวเปิดอ่านได้ว่าข้างในเขียนอะไร แก้เป็นของคุณเองได้ ตั้งชื่อทับของเดิมได้
-    และลบของคุณเมื่อไหร่ ของเดิมก็กลับมาเอง — มันไม่ใช่ปุ่มที่ทำได้แค่ที่เขียนไว้
-    แต่เป็นตัวอย่างให้เห็นว่าคำสั่งที่ได้งานดีหน้าตาเป็นยังไง</p>
+    <div class="sec-head"><span class="idx">05</span><h2 data-reveal>งานที่ทำซ้ำทุกอาทิตย์ เก็บเป็นคำสั่งของคุณเองได้</h2></div>
+    <p class="sub">พิมพ์วิธีสั่งที่ได้ผลเก็บไว้ครั้งเดียว ครั้งต่อไปกด <code class="mono">/</code> แล้วเรียกใช้ได้เลย
+    ในโปรแกรมมีตัวอย่างมาให้ 8 ตัว เปิดอ่านข้างในได้ทุกตัวว่าเขาเขียนสั่งกันยังไง
+    แก้เป็นของคุณได้ และถ้าลบของคุณทิ้ง ของเดิมก็กลับมาเอง</p>
 
     <div class="presets">
       <div class="preset" data-card>
@@ -881,7 +800,7 @@ footer.gridded::before{
       <div class="preset" data-card>
         <span class="grp">งานเว็บ</span>
         <span class="pname">/landing</span>
-        <p>สร้างแลนดิ้งเพจหน้าเดียวจบ รองรับมือถือ ใช้งานได้จริง ไม่ใช่เทมเพลตสำเร็จรูป</p>
+        <p>สร้างแลนดิ้งเพจหน้าเดียวจบ รองรับมือถือ เปิดใช้ได้จริงตั้งแต่ไฟล์แรก</p>
       </div>
       <div class="preset" data-card>
         <span class="grp">งานเว็บ</span>
@@ -891,7 +810,7 @@ footer.gridded::before{
       <div class="preset" data-card>
         <span class="grp">งานขาย</span>
         <span class="pname">/pricing</span>
-        <p>ทำตารางราคาที่คนอ่านแล้วเลือกได้ภายในสิบวินาที ไม่ใช่ตารางที่คนอ่านแล้วปิดหนี</p>
+        <p>ทำตารางราคาที่คนอ่านแล้วเลือกแพ็กเกจได้ภายในสิบวินาที</p>
       </div>
       <div class="preset" data-card>
         <span class="grp">งานขาย</span>
@@ -901,66 +820,65 @@ footer.gridded::before{
       <div class="preset" data-card>
         <span class="grp">งานโค้ด</span>
         <span class="pname">/debug</span>
-        <p>ไล่บั๊กถึงต้นตอ ไม่ใช่แค่ทำให้อาการหาย บังคับให้ทำซ้ำให้ได้ก่อนแก้</p>
+        <p>ไล่บั๊กถึงต้นตอ บังคับให้ทำอาการซ้ำให้ได้ก่อนถึงจะลงมือแก้</p>
       </div>
       <div class="preset" data-card>
         <span class="grp">งานโค้ด</span>
         <span class="pname">/explain</span>
-        <p>อธิบายโค้ดให้คนที่เพิ่งเข้าโปรเจกต์เข้าใจภายในห้านาที — ได้แผนที่ ไม่ใช่คำบรรยายทีละบรรทัด</p>
+        <p>อธิบายโค้ดให้คนที่เพิ่งเข้าโปรเจกต์เข้าใจภายในห้านาที ได้ออกมาเป็นแผนที่ภาพรวม</p>
       </div>
       <div class="preset" data-card>
         <span class="grp">งานโค้ด</span>
         <span class="pname">/review</span>
-        <p>รีวิวโค้ดแบบ senior ที่กำลังจะกด merge ขึ้น production หาข้อบกพร่องจริง ไม่ติสไตล์</p>
+        <p>รีวิวโค้ดด้วยสายตาคนที่กำลังจะกด merge ขึ้น production มองหาข้อบกพร่องที่ทำให้พังจริง</p>
       </div>
     </div>
   </section>
 
   <!-- ══ 05 ความปลอดภัย ══ -->
   <section id="privacy" class="gridded">
-    <div class="sec-head"><span class="idx">05</span><h2 data-reveal>ข้อมูลอยู่ในเครื่องคุณ ไม่ผ่านเซิร์ฟเวอร์เรา</h2></div>
-    <p class="sub">Aetox ไม่มี server ตรงกลาง ไม่มี telemetry ไม่มี account ให้สมัคร —
-    การคุยวิ่งตรงจากเครื่องคุณไปหา provider ที่คุณเลือกเท่านั้น
-    และถ้าไม่อยากให้ออกจากเครื่องเลย ก็รันโมเดล local ได้</p>
+    <div class="sec-head"><span class="idx">06</span><h2 data-reveal>ข้อมูลอยู่ในเครื่องคุณ ไม่ผ่านเซิร์ฟเวอร์เรา</h2></div>
+    <p class="sub">เราไม่มีเซิร์ฟเวอร์ตรงกลาง ไม่เก็บสถิติการใช้งาน และไม่มีบัญชีให้สมัคร
+    ถ้าเลือกใช้โมเดลในเครื่อง ข้อมูลจะไม่ออกไปไหนเลยแม้แต่ไบต์เดียว</p>
 
     <div class="sec-grid">
       <div class="card" data-card>
-        <h4>ประวัติแชท &amp; ไฟล์โปรเจกต์</h4>
-        <p>เก็บใน SQLite ในเครื่องคุณล้วน ๆ ค้นหาแบบ full-text ได้ทั้งไทยและอังกฤษ ไม่มีสำเนาที่อื่น</p>
-        <span class="tag">local-only</span>
+        <h4>บทสนทนาและไฟล์งานของคุณ</h4>
+        <p>เก็บอยู่ในเครื่องคุณที่เดียว ค้นย้อนหลังได้ทั้งไทยและอังกฤษ และไม่มีสำเนาอยู่ที่อื่น</p>
+        <span class="tag">อยู่ในเครื่องเท่านั้น</span>
       </div>
       <div class="card" data-card>
-        <h4>ตัดขาดจาก cloud ได้ 100%</h4>
-        <p>รันโมเดลผ่าน LM Studio หรือ Ollama บนเครื่องคุณเอง — prompt ไม่ออกจากเครื่องแม้แต่ไบต์เดียว</p>
-        <span class="tag">ollama · lmstudio</span>
+        <h4>ตัดขาดจากอินเทอร์เน็ตได้ทั้งหมด</h4>
+        <p>ถ้าเลือกรันโมเดลในเครื่องด้วย Ollama หรือ LM Studio สิ่งที่คุณพิมพ์จะไม่ออกจากเครื่องเลย</p>
+        <span class="tag">ใช้ออฟไลน์ได้</span>
       </div>
       <div class="card" data-card>
-        <h4>คำสั่งที่ agent รัน</h4>
-        <p>จำกัดอยู่ในโฟลเดอร์โปรเจกต์ที่คุณเปิดเท่านั้น ออกนอกโฟลเดอร์ไม่ได้ และบันทึกไว้ทุกคำสั่ง</p>
-        <span class="tag">sandboxed · audited</span>
+        <h4>มันแตะได้แค่โฟลเดอร์ที่คุณเปิดให้</h4>
+        <p>ออกนอกโฟลเดอร์นั้นไม่ได้ คำสั่งที่รันทุกคำสั่งถูกบันทึกไว้ให้ย้อนดูได้</p>
+        <span class="tag">จำกัดขอบเขต</span>
       </div>
       <div class="card warn" data-card>
-        <h4>API key — ยังไม่เข้ารหัส</h4>
-        <p>ตอนนี้เก็บเป็นไฟล์ plaintext ในเครื่อง กำลังย้ายเข้า Windows DPAPI ก่อน แล้วขยายไป macOS Keychain / Linux secret service</p>
-        <span class="tag">🔜 กำลังทำ</span>
+        <h4>คีย์ที่คุณใส่ไว้ ยังไม่ได้เข้ารหัส</h4>
+        <p>ตอนนี้เก็บเป็นไฟล์ธรรมดาในเครื่องคุณ กำลังย้ายไปใช้ที่เก็บรหัสของ Windows อยู่ บอกไว้ตรง ๆ ก่อนคุณตัดสินใจ</p>
+        <span class="tag">🔜 กำลังแก้</span>
       </div>
     </div>
   </section>
 
-  <!-- ══ 06 ติดตั้ง ══ -->
+  <!-- ══ 07 ติดตั้ง ══ -->
   <section id="install" class="gridded">
-    <div class="sec-head"><span class="idx">06</span><h2 data-reveal>เลือกได้ว่าจะรันในเครื่อง หรือใช้ provider ที่คุณไว้ใจ</h2></div>
-    <p class="sub" style="margin-bottom:var(--s3)">สองทาง ไม่ผูกมัดทางไหน สลับกลางคันได้ตลอด — กดที่ชื่อเพื่อไปดูรายละเอียดของแต่ละเจ้าได้เลย</p>
+    <div class="sec-head"><span class="idx">07</span><h2 data-reveal>เลือกได้ว่าจะให้ใครเป็นคนคิดให้</h2></div>
+    <p class="sub" style="margin-bottom:var(--s3)">สองทาง สลับกลางคันได้ตลอด และไม่ผูกมัดทางไหน</p>
 
     <div class="fork">
       <div class="card path" data-card>
         <h3>รันในเครื่องคุณเอง</h3>
         <p class="price">ฟรี<small>ไม่ต้องมีคีย์</small></p>
-        <p class="why">Ollama และ LM Studio รองรับเต็มรูปแบบ ไม่ใช่แค่ "ต่อติด" — จูนมาแล้วทั้งการสตรีมความคิดและการเรียก tools</p>
+        <p class="why">ต่อกับ Ollama หรือ LM Studio ที่คุณลงไว้ รองรับเต็มรูปแบบทั้งการเรียกใช้เครื่องมือและการแสดงความคิด</p>
         <ul>
-          <li>ไม่มีค่าโทเคน ใช้หนักแค่ไหนก็เท่าเดิม</li>
-          <li>prompt ไม่ออกจากเครื่องแม้แต่ไบต์เดียว</li>
-          <li>เน็ตหลุดก็ยังทำงานต่อได้</li>
+          <li>ใช้หนักแค่ไหนก็ไม่เสียเงินเพิ่ม</li>
+          <li>สิ่งที่คุณพิมพ์ไม่ออกจากเครื่อง</li>
+          <li>เน็ตหลุดก็ทำงานต่อได้</li>
         </ul>
         <p class="who">เหมาะกับ: งานประจำวัน · ข้อมูลที่ห้ามออกนอกองค์กร</p>
         <button class="pvmore" type="button" data-pv>ดู provider ทั้งหมด</button>
@@ -969,11 +887,11 @@ footer.gridded::before{
       <div class="card path" data-card>
         <h3>ใช้ provider ที่คุณไว้ใจ</h3>
         <p class="price">จ่ายตามใช้<small>11 เจ้าให้เลือก</small></p>
-        <p class="why">ใส่คีย์ของเจ้าที่คุณมีอยู่แล้ว — หรือล็อกอินด้วย ChatGPT (ใช้โควต้าแพลนที่จ่ายอยู่) · OpenRouter ก็ได้ ไม่ต้องมีคีย์สักตัว ได้โมเดลใหญ่ที่สุดเท่าที่ตลาดมี การคุยวิ่งตรงจากเครื่องคุณไปหาเขา ไม่ผ่านเราเลย</p>
+        <p class="why">ใส่คีย์ของเจ้าที่คุณมีอยู่แล้ว จะได้โมเดลตัวใหญ่ที่สุดเท่าที่ตลาดมี การคุยวิ่งตรงจากเครื่องคุณไปหาเขา ไม่ผ่านเรา</p>
         <ul>
-          <li>ไม่มี server กลางของ Aetox ไม่มี telemetry</li>
-          <li>สลับเจ้าเมื่อไหร่ก็ได้ ไม่มี lock-in</li>
-          <li>ไม่มี subscription ของเรามาบวกเพิ่ม</li>
+          <li>จ่ายให้เขาเท่าที่ใช้ เราไม่บวกเพิ่ม</li>
+          <li>สลับไปเจ้าอื่นเมื่อไหร่ก็ได้</li>
+          <li>ไม่มีเซิร์ฟเวอร์ของเราอยู่ตรงกลาง</li>
         </ul>
         <p class="who">เหมาะกับ: งานยาก · งานที่ต้องการคุณภาพสูงสุด</p>
         <button class="pvmore" type="button" data-pv>ดู provider ทั้งหมด</button>
@@ -981,9 +899,8 @@ footer.gridded::before{
     </div>
 
     <div class="note" style="margin-top:var(--s3)">
-      <b>เลือกทางไหนก็ตาม</b> ประวัติแชทและไฟล์งานเก็บใน SQLite ในเครื่องคุณล้วน ๆ ไม่มีสำเนาที่อื่น —
-      และถ้าอยากดูก่อนตัดสินใจ provider <code class="mono">aetox</code> ในตัวมีโมเดลสาธิตให้กดเล่นได้ทันทีหลังติดตั้ง
-      เห็นหน้าตา การเรียก tools และแผงความคิดครบ โดยยังไม่ต้องต่ออะไรเลย
+      <b>ยังไม่อยากตัดสินใจก็ได้</b> ในโปรแกรมมีโมเดลสาธิตให้กดเล่นทันทีหลังติดตั้ง
+      เห็นหน้าตาจริง เห็นมันหยิบเครื่องมือมาใช้ และเห็นความคิดของมันครบ โดยยังไม่ต้องต่ออะไรเลยสักอย่าง
     </div>
 
     <h3 style="font-size:1.05rem;margin-top:var(--s5)">ติดตั้งยังไง</h3>
@@ -991,10 +908,10 @@ footer.gridded::before{
       <div class="method">
         <h3><span class="n">01</span>ตัวติดตั้ง (แนะนำ)</h3>
         <ol class="steps">
-          <li><b>ดาวน์โหลด</b> aetox-amd64-installer.exe</li>
-          <li><b>ดับเบิลคลิก</b> — ถ้า SmartScreen เตือน: More info → Run anyway</li>
-          <li>ตัวติดตั้งจัดการ <b>WebView2 + Tesseract ภาษาไทย</b> ให้เอง</li>
-          <li>เปิดจาก Start Menu → <b>เลือกทางที่คุณชอบข้างบน</b> → คุยได้เลย</li>
+          <li><b>ดาวน์โหลด</b> aetox-amd64-installer.exe (~13 MB · Windows 10/11)</li>
+          <li><b>ดับเบิลคลิก</b> — Windows จะขึ้นเตือนเพราะโปรแกรมยังไม่ได้เซ็นโค้ด กด More info → Run anyway</li>
+          <li>ตัวติดตั้งจัดการส่วนที่ต้องใช้ให้เอง รวมถึงตัวอ่านตัวหนังสือภาษาไทย</li>
+          <li>เปิดจาก Start Menu แล้วเลือกทางที่คุณชอบข้างบน จากนั้นสั่งงานได้เลย</li>
         </ol>
       </div>
       <div class="method">
@@ -1006,50 +923,102 @@ footer.gridded::before{
 
   <!-- ══ 07 เครื่องมือ ══ -->
   <section id="tools">
-    <div class="sec-head"><span class="idx">07</span><h2 data-reveal>เครื่องมือในตัว 36 ตัว</h2></div>
-    <p class="sub">สี่ตัวเด่นอยู่ด้านบนแล้ว — ที่เหลือคืองานเขียนโค้ด รันคำสั่ง ค้นเว็บ ค้น GitHub อยู่ในชุดเดียวกันหมด</p>
+    <div class="sec-head"><span class="idx">08</span><h2 data-reveal>มันมีมืออะไรให้ใช้บ้าง</h2></div>
+    <p class="sub">เครื่องมือ 36 อย่างที่ติดมากับโปรแกรม เรียงตามงานที่คุณน่าจะสั่ง</p>
     <div class="tools">
-      <div class="trow"><span class="tn">read / write / edit</span><span class="td">อ่าน เขียน แก้ไฟล์แบบเป๊ะ</span></div>
-      <div class="trow"><span class="tn">grep / glob / list</span><span class="td">ค้นหาไฟล์และเนื้อในทั้งโปรเจกต์</span></div>
-      <div class="trow"><span class="tn">apply_patch</span><span class="td">แก้หลายไฟล์รวดเดียว สำเร็จหมดหรือไม่เปลี่ยนอะไรเลย</span></div>
-      <div class="trow"><span class="tn">delete</span><span class="td">ลบไฟล์หรือทั้งโฟลเดอร์ (ขออนุมัติเสมอ)</span></div>
-      <div class="trow"><span class="tn">diagnostics / symbol</span><span class="td">ถาม language server ว่าโค้ดพังตรงไหน ตัวนี้คืออะไร ประกาศไว้ที่ไหน</span></div>
-      <div class="trow"><span class="tn">shell / git</span><span class="td">รันคำสั่ง ผ่านการอนุมัติทุกครั้ง</span></div>
-      <div class="trow"><span class="tn">shell_output / shell_kill</span><span class="td">ตามอ่านผลและสั่งหยุดคำสั่งที่รันค้างไว้เบื้องหลัง</span></div>
-      <div class="trow"><span class="tn">notebook_edit</span><span class="td">แก้ Jupyter notebook ทีละเซลล์ ไม่ทำไฟล์พัง</span></div>
-      <div class="trow"><span class="tn">pdf_read</span><span class="td">ดึงข้อความออกจากไฟล์ PDF</span></div>
-      <div class="trow"><span class="tn">browser_open / read</span><span class="td">เปิด-อ่านเว็บใน workbench</span></div>
-      <div class="trow"><span class="tn">browser_click / type</span><span class="td">คลิก กรอกฟอร์ม เลือก dropdown</span></div>
-      <div class="trow"><span class="tn">image_ocr / video_ocr</span><span class="td">อ่านตัวหนังสือจากรูปและวิดีโอ</span></div>
-      <div class="trow"><span class="tn">audio_transcribe</span><span class="td">ถอดเสียงพูดเป็นข้อความ ในเครื่อง</span></div>
-      <div class="trow"><span class="tn">web_search</span><span class="td">ค้นเว็บ ไม่ต้องมี API key</span></div>
-      <div class="trow"><span class="tn">web_fetch</span><span class="td">อ่านเนื้อหาหน้าเว็บ หรือถามคำถามกับหน้านั้นตรง ๆ</span></div>
-      <div class="trow"><span class="tn">github_*</span><span class="td">ค้น อ่าน repo จาก GitHub (4 ตัว)</span></div>
-      <div class="trow"><span class="tn">session_search</span><span class="td">ค้นแชทเก่าและงานที่เคยทำในเซสชันก่อน ๆ — ไทยก็ค้นได้ ไม่กินโทเคน</span></div>
-      <div class="trow"><span class="tn">skills_list / skill_view</span><span class="td">ดูรายชื่อสกิลที่ติดตั้งไว้ แล้วเปิดอ่านเฉพาะตัวที่จะใช้ — ลงกี่ตัวก็ไม่ทำให้แชทแพงขึ้น</span></div>
-      <div class="trow"><span class="tn">suggest_task</span><span class="td">แขวนงานข้างทางที่เจอไว้เป็นการ์ด ให้คุณกดทำในเซสชันใหม่ทีหลัง</span></div>
-      <div class="trow"><span class="tn">plugin_install</span><span class="td">ติดตั้งสกิลเสริมจาก GitHub</span></div>
+      <div class="trow"><span class="tn">อ่านรูป</span><span class="td">ดึงตัวหนังสือออกจากรูปถ่าย สลิป สกรีนช็อต ทั้งไทยและอังกฤษ</span></div>
+      <div class="trow"><span class="tn">อ่านคลิป</span><span class="td">อ่านตัวหนังสือที่ขึ้นบนจอในวิดีโอ พร้อมเวลากำกับ</span></div>
+      <div class="trow"><span class="tn">ถอดเสียง</span><span class="td">แปลงเสียงพูดในคลิปหรือไฟล์เสียงเป็นข้อความ ทำในเครื่อง</span></div>
+      <div class="trow"><span class="tn">อ่าน PDF</span><span class="td">ดึงเนื้อหาออกจากไฟล์ PDF มาสรุปหรือค้นต่อได้</span></div>
+      <div class="trow"><span class="tn">เปิดเว็บ</span><span class="td">เปิดหน้าเว็บจริงในโปรแกรม แล้วอ่านเนื้อหาออกมา</span></div>
+      <div class="trow"><span class="tn">กดเว็บแทน</span><span class="td">คลิก พิมพ์ เลือกดรอปดาวน์ และกดส่งฟอร์มให้</span></div>
+      <div class="trow"><span class="tn">ค้นเว็บ</span><span class="td">ค้นหาข้อมูลจากอินเทอร์เน็ต โดยไม่ต้องมีคีย์อะไรเพิ่ม</span></div>
+      <div class="trow"><span class="tn">ดึงหน้าเว็บ</span><span class="td">อ่านเนื้อหาจากลิงก์ที่ให้ หรือถามคำถามกับหน้านั้นตรง ๆ</span></div>
+      <div class="trow"><span class="tn">หาไฟล์</span><span class="td">ค้นชื่อไฟล์และค้นข้อความข้างในทั่วทั้งโฟลเดอร์</span></div>
+      <div class="trow"><span class="tn">อ่าน เขียน แก้ไฟล์</span><span class="td">สร้างไฟล์ใหม่ หรือแก้ของเดิมแบบตรงจุด</span></div>
+      <div class="trow"><span class="tn">แก้หลายไฟล์รวดเดียว</span><span class="td">เปลี่ยนพร้อมกันหลายไฟล์ ถ้าพลาดตรงไหนคือไม่เปลี่ยนอะไรเลย</span></div>
+      <div class="trow"><span class="tn">ลบไฟล์</span><span class="td">ลบไฟล์หรือทั้งโฟลเดอร์ ถามคุณก่อนทุกครั้ง</span></div>
+      <div class="trow"><span class="tn">รันคำสั่ง</span><span class="td">สั่งงานเครื่องผ่านเทอร์มินัล ขออนุมัติจากคุณก่อนเสมอ</span></div>
+      <div class="trow"><span class="tn">ตามงานที่รันค้าง</span><span class="td">อ่านผลของคำสั่งที่ยังทำอยู่เบื้องหลัง และสั่งหยุดได้</span></div>
+      <div class="trow"><span class="tn">ค้นของเก่า</span><span class="td">ค้นบทสนทนาและงานที่เคยทำไว้ ค้นภาษาไทยได้ ไม่มีค่าใช้จ่ายเพิ่ม</span></div>
+      <div class="trow"><span class="tn">แขวนงานไว้ทีหลัง</span><span class="td">เจอเรื่องที่ควรทำระหว่างทาง เก็บเป็นการ์ดไว้ให้คุณกดทำวันหลัง</span></div>
+      <div class="trow"><span class="tn">ค้น GitHub</span><span class="td">ค้นและอ่านโค้ดจากโปรเจกต์บน GitHub</span></div>
+      <div class="trow"><span class="tn">งานโค้ดเฉพาะทาง</span><span class="td">ถามว่าโค้ดพังตรงไหน แก้ Jupyter notebook และใช้ git ได้</span></div>
+      <div class="trow"><span class="tn">สกิลเสริม</span><span class="td">ดูและเรียกใช้สกิลที่ลงไว้ ลงกี่ตัวก็ไม่ทำให้แชทช้าลง</span></div>
+      <div class="trow"><span class="tn">ต่อของใหม่เข้ามา</span><span class="td">ติดตั้งสกิลเพิ่มจาก GitHub หรือต่อเครื่องมือจากที่อื่นเข้าชุดเดียวกัน</span></div>
     </div>
-    <p class="providers">เครื่องมือชุดนี้ใช้ได้กับทุก provider เหมือนกันหมด ไม่ว่าจะรัน <span class="mono">ollama</span> ในเครื่อง
-      หรือต่อกับเจ้าไหนใน <a href="#install">13 ตัวเลือกข้างบน</a> — โมเดลที่ไม่มีความสามารถนั้นมาแต่แรก ก็ได้มันจากสถาปัตยกรรม
-      และถ้าต่อ MCP server เพิ่ม เครื่องมือของมันก็เข้าชุดเดียวกันนี้ ส่วนเซิร์ฟเวอร์ที่มี resource ให้อ่าน จะได้ตัวลิสต์กับตัวอ่านเพิ่มมาเองอีกคู่หนึ่ง</p>
+    <p class="providers">เครื่องมือชุดนี้ใช้ได้เหมือนกันหมดไม่ว่าคุณจะเลือกทางไหนในหัวข้อที่แล้ว
+      โมเดลเล็กที่ทำสิ่งเหล่านี้ไม่ได้มาแต่แรก พอมาอยู่ในนี้ก็ทำได้ เพราะตัวโปรแกรมเป็นคนทำให้ ไม่ใช่ตัวโมเดล</p>
   </section>
 
-  <!-- ══ ช่องทางติดต่อ ══ -->
+  <!-- ══ 09 คำถามที่คนถามก่อนโหลด ══ -->
+  <section id="faq" class="gridded">
+    <div class="sec-head"><span class="idx">09</span><h2 data-reveal>คำถามที่คนถามก่อนกดโหลด</h2></div>
+    <p class="sub">ตอบตรง ๆ รวมถึงข้อที่ยังทำได้ไม่ดี</p>
+
+    <div class="faq">
+      <details>
+        <summary>ต่างจากการถาม AI ในเว็บยังไง</summary>
+        <p>ผู้ช่วยในเว็บตอบคำถามคุณ แล้วคุณเอาคำตอบไปทำต่อเอง Aetox ทำงานนั้นให้จบ
+        เพราะมันอยู่ในเครื่องคุณ มันจึงเปิดไฟล์จริง เขียนไฟล์จริง เปิดเว็บจริงและกดปุ่มจริงได้</p>
+        <p>สิ่งที่ได้กลับมาคือไฟล์ในโฟลเดอร์ของคุณ ไม่ใช่ข้อความในกล่องแชทที่ต้องก๊อปไปวางต่อ</p>
+      </details>
+      <details>
+        <summary>ต้องเขียนโปรแกรมเป็นไหม</summary>
+        <p>ไม่ต้อง คุณพิมพ์บอกเป็นภาษาคนว่าอยากได้อะไร ที่เหลือมันจัดการเอง</p>
+        <p>ที่ต้องยอมรับตรง ๆ คือตอนนี้คำสั่งสำเร็จรูปที่แถมมา 8 ตัว เอียงไปทางงานเว็บกับงานโค้ด
+        ส่วนงานอื่นคุณสั่งเป็นภาษาคนได้ตามปกติ และเก็บวิธีสั่งที่ได้ผลไว้ใช้ซ้ำเองได้</p>
+      </details>
+      <details>
+        <summary>ข้อมูลผมปลอดภัยแค่ไหน</summary>
+        <p>บทสนทนาและไฟล์งานอยู่ในเครื่องคุณที่เดียว เราไม่มีเซิร์ฟเวอร์ตรงกลาง ไม่เก็บสถิติการใช้งาน
+        และไม่มีบัญชีให้สมัคร ถ้าเลือกใช้โมเดลในเครื่อง ข้อมูลจะไม่ออกจากเครื่องเลย</p>
+        <p>ถ้าเลือกใส่คีย์ของผู้ให้บริการเจ้าอื่น สิ่งที่คุณพิมพ์จะวิ่งตรงจากเครื่องคุณไปหาเขา ไม่ผ่านเรา
+        และคีย์ที่คุณใส่ไว้ตอนนี้ยังเก็บเป็นไฟล์ธรรมดา ยังไม่ได้เข้ารหัส กำลังแก้อยู่</p>
+      </details>
+      <details>
+        <summary>ต้องจ่ายเท่าไหร่</summary>
+        <p>ตัวโปรแกรมฟรี ไม่มีค่ารายเดือนของเรา ไม่มีรุ่นเสียเงิน และไม่มีบัญชีให้สมัคร</p>
+        <p>ถ้าใช้โมเดลในเครื่องก็ไม่มีค่าใช้จ่ายอะไรเลย ถ้าเลือกใส่คีย์ของเจ้าอื่น คุณจ่ายให้เขาตามที่ใช้จริง
+        เราไม่ได้อยู่ตรงกลางและไม่ได้บวกอะไรเพิ่ม</p>
+      </details>
+      <details>
+        <summary>เครื่องผมต้องแรงแค่ไหน</summary>
+        <p>ตัวโปรแกรมกินพื้นที่ 33 MB และใช้แรมตอนเปิดทิ้งไว้ราว 252 MB เครื่องทั่วไปเปิดได้สบาย</p>
+        <p>ที่กินแรงคือโมเดล ถ้าจะรันโมเดลในเครื่องเองควรมีแรมเหลือพอสมควร แต่ถ้าใช้คีย์ของเจ้าอื่น
+        เครื่องคุณแทบไม่ต้องออกแรงเลย</p>
+      </details>
+      <details>
+        <summary>ทำไมตอนติดตั้ง Windows ถึงขึ้นเตือน</summary>
+        <p>เพราะโปรแกรมยังไม่ได้เซ็นโค้ด ใบรับรองมีค่าใช้จ่ายรายปีที่ยังไม่ได้ทำ Windows เลยขึ้นเตือนไว้ก่อน
+        กด More info แล้ว Run anyway ได้</p>
+        <p>ถ้ายังไม่สบายใจ โค้ดทั้งหมดเปิดอยู่บน GitHub อ่านและ build เองได้</p>
+      </details>
+      <details>
+        <summary>ถ้าไม่ชอบ ถอนออกยังไง</summary>
+        <p>ถอนจาก Add or remove programs ของ Windows ตามปกติ ไม่มีบัญชีให้ตามไปลบ
+        และไม่มีข้อมูลของคุณค้างอยู่ที่ไหนนอกจากเครื่องคุณเอง</p>
+      </details>
+      <details>
+        <summary>รองรับเครื่อง Mac หรือ Linux ไหม</summary>
+        <p>ยัง ตอนนี้ทำ Windows ให้ดีก่อนอย่างเดียว เพราะคนเขียนมีคนเดียวและใช้ Windows ทำงานจริงทุกวัน
+        ระบบอื่นเป็นแผนหลังจากนี้</p>
+      </details>
+    </div>
+  </section>
+
+  <!-- ══ ปิดท้าย ══ -->
   <section class="contact gridded">
     <div class="contact-box" data-card>
-      <h2 data-reveal>Aetox สร้างด้วยคนเดียว — แต่ปลายทางคือโมเดลของเราเอง</h2>
-      <p>วันนี้ Aetox คือสถาปัตยกรรมที่ทำให้โมเดลของคนอื่นทำงานได้เกินตัว
-      เป้าหมายระยะยาวคือเทรนโมเดลของเราเอง ให้สถาปัตยกรรมกับโมเดลถูกออกแบบมาเพื่อกันและกันตั้งแต่ต้น
-      ไม่ใช่เอาของสำเร็จรูปมาต่อกัน</p>
-      <p>ทุกบรรทัดในนี้เขียนโดยคนที่ใช้มันทำงานจริงทุกวัน ไม่มีทีม ไม่มีนักลงทุน —
-      <b>เปิดรับการติดต่อเรื่องธุรกิจ ความร่วมมือ และการลงทุน</b> ถ้าคุณเห็นภาพเดียวกัน คุยกันได้เลย</p>
+      <h2 data-reveal>ลองสักงานหนึ่ง แล้วดูว่ามันคืนเวลาให้คุณได้จริงไหม</h2>
+      <p>โหลด ติดตั้ง แล้วสั่งงานแรกได้ภายในสองนาที ไม่ต้องผูกบัตร ไม่มีค่ารายเดือน
+      ถ้าไม่ถูกใจ ถอนออกได้ทันทีโดยไม่มีอะไรค้างไว้</p>
       <div class="contact-links">
-        <a class="primary" href="mailto:phrmsawanachyphl@gmail.com?subject=ติดต่อธุรกิจ%20—%20Aetox">ติดต่อเรื่องธุรกิจ</a>
+        <a class="primary" href="https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-amd64-installer.exe">ดาวน์โหลดสำหรับ Windows</a>
         <a href="https://github.com/Mike0165115321/Aetox">ดูโค้ดบน GitHub</a>
       </div>
-      <p class="contact-mail">หรือเขียนหาโดยตรงที่
-        <a href="mailto:phrmsawanachyphl@gmail.com">phrmsawanachyphl@gmail.com</a></p>
+      <p class="contact-mail">สร้างโดยคนคนเดียวที่ใช้มันทำงานจริงทุกวัน · เรื่องธุรกิจและความร่วมมือ เขียนหาได้ที่<br>
+        <a href="mailto:phrmsawanachyphl@gmail.com?subject=ติดต่อธุรกิจ%20—%20Aetox">phrmsawanachyphl@gmail.com</a></p>
     </div>
   </section>
 
