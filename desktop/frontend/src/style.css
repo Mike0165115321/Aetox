@@ -1246,6 +1246,10 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .eyebrow-grow { flex:1; }
 .sponsor-center { justify-content:center; }
 .sponsor-qr { width:260px; max-width:100%; border-radius:var(--r-lg); }
+/* The upgrade command on the About page. Selectable and monospaced because it
+   is meant to be read and typed, not just looked at — the copy button next to
+   it is a convenience, not the only way to get at it. */
+.about-cmd { display:inline-block; margin-top:6px; padding:3px 8px; border:1px solid var(--border-subtle); border-radius:var(--r-sm); background:var(--surface-raised); font-family:var(--mono); font-size:var(--fs-sm); user-select:text; }
 .mcp-row-actions { display:flex; gap:8px; align-items:center; }
 
 /* Text-size preview. Three steps of the live scale stacked, because what the

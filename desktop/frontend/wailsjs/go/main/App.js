@@ -10,6 +10,10 @@ export function AnswerUserQuestion(arg1) {
   return window['go']['main']['App']['AnswerUserQuestion'](arg1);
 }
 
+export function AppVersion() {
+  return window['go']['main']['App']['AppVersion']();
+}
+
 export function BrowserBack(arg1) {
   return window['go']['main']['App']['BrowserBack'](arg1);
 }
@@ -68,6 +72,10 @@ export function CancelSignIn(arg1) {
 
 export function CancelTurn() {
   return window['go']['main']['App']['CancelTurn']();
+}
+
+export function CheckForUpdate() {
+  return window['go']['main']['App']['CheckForUpdate']();
 }
 
 export function ClearProjectFocus() {

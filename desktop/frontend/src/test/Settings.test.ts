@@ -8,7 +8,7 @@ import {
   SignInMethods, SignInStatus, StartSignIn, CompleteSignIn, SupportedProviders, EnabledProviders,
   RemoveMCPServer, RemoveExternalSkill, SetProviderEnabled, TerminalShells,
   SkillsDir, SkillScanIssues, OpenSkillsFolder, InstallSkillFromZip,
-  MCPConfigPath, OpenMCPFolder, SaveMCPServer,
+  MCPConfigPath, OpenMCPFolder, SaveMCPServer, AppVersion, CheckForUpdate,
 } from './mocks/wailsApp'
 import { applyTypeScale } from '../lib/typeScale.svelte'
 import { cockpit } from '../lib/stores/cockpit.svelte'
@@ -1095,5 +1095,119 @@ describe('MCP servers page', () => {
     const saved = vi.mocked(SaveMCPServer).mock.calls.at(-1)![1] as any
     expect(saved.cwd).toBe('D:/work')
     expect(saved.timeoutMs).toBe(45000)
+  })
+})
+
+// The About page is the only place in the running app that answers "which
+// version am I on, and is there a newer one" — and the only place the
+// install-channel design becomes visible to the user.
+describe('Settings About page', () => {
+  const openAbout = async () => {
+    const r = render(Settings, { onClose: () => {} })
+    await openSection(r.container, 'เกี่ยวกับ Aetox')
+    return r
+  }
+
+  it('shows the installed version without anyone asking GitHub anything', async () => {
+    await openAbout()
+    await waitFor(() => expect(screen.getByText('v0.8.4')).toBeTruthy())
+    expect(vi.mocked(AppVersion)).toHaveBeenCalled()
+    // Nothing leaves the machine until the button is pressed.
+    expect(vi.mocked(CheckForUpdate)).not.toHaveBeenCalled()
+  })
+
+  it('tells a Scoop install to run scoop, and offers no download to unpack over it', async () => {
+    vi.mocked(CheckForUpdate).mockResolvedValue({
+      current: '0.8.4', latest: '0.9.0', available: true, disabled: false,
+      channel: 'scoop', hint: 'scoop update aetox',
+      url: 'https://example.invalid/r/v0.9.0', checkedAt: '',
+    } as any)
+    const { container } = await openAbout()
+    await fireEvent.click(screen.getByText('ตรวจหาการอัปเดต'))
+
+    await waitFor(() => expect(screen.getByText('มีเวอร์ชันใหม่ — v0.9.0')).toBeTruthy())
+    expect(screen.getByText('scoop update aetox')).toBeTruthy()
+    expect(container.textContent).toContain('ติดตั้งผ่าน Scoop')
+    // Exactly one — the release-notes row at the bottom. The update row itself
+    // must not hand a Scoop user a zip.
+    expect(screen.getAllByText('เปิดหน้าดาวน์โหลด').length).toBe(1)
+  })
+
+  it('sends a portable install to the release page instead of inventing a command', async () => {
+    vi.mocked(CheckForUpdate).mockResolvedValue({
+      current: '0.8.4', latest: '0.9.0', available: true, disabled: false,
+      channel: 'portable', hint: '', url: 'https://example.invalid/r/v0.9.0', checkedAt: '',
+    } as any)
+    await openAbout()
+    await fireEvent.click(screen.getByText('ตรวจหาการอัปเดต'))
+
+    await waitFor(() => expect(screen.getByText('มีเวอร์ชันใหม่ — v0.9.0')).toBeTruthy())
+    expect(screen.queryByText('scoop update aetox')).toBeNull()
+    expect(screen.getAllByText('เปิดหน้าดาวน์โหลด').length).toBe(2)
+  })
+
+  it('says so plainly when there is nothing to update to', async () => {
+    vi.mocked(CheckForUpdate).mockResolvedValue({
+      current: '0.8.4', latest: '0.8.4', available: false, disabled: false,
+      channel: 'installer', hint: '', url: 'https://example.invalid/r', checkedAt: '',
+    } as any)
+    await openAbout()
+    await fireEvent.click(screen.getByText('ตรวจหาการอัปเดต'))
+    await waitFor(() => expect(screen.getByText('นี่คือเวอร์ชันล่าสุดแล้ว')).toBeTruthy())
+  })
+
+  // Offline is the common case, not the exceptional one. It must not read like
+  // the app broke, and it must not dump a Go error string at the user.
+  it('a failed check reassures instead of alarming', async () => {
+    vi.mocked(CheckForUpdate).mockRejectedValue(new Error('dial tcp: no such host'))
+    const { container } = await openAbout()
+    await fireEvent.click(screen.getByText('ตรวจหาการอัปเดต'))
+
+    await waitFor(() => expect(screen.getByText('ตรวจหาการอัปเดตไม่สำเร็จ')).toBeTruthy())
+    expect(container.textContent).not.toContain('dial tcp')
+  })
+
+  // The command exists to be run, and retyping it from a screenshot of a
+  // settings page is exactly the friction the copy button removes.
+  it('the scoop command can be copied without retyping it', async () => {
+    const writeText = vi.fn(async () => {})
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    vi.mocked(CheckForUpdate).mockResolvedValue({
+      current: '0.8.4', latest: '0.9.0', available: true, disabled: false,
+      channel: 'scoop', hint: 'scoop update aetox',
+      url: 'https://example.invalid/r/v0.9.0', checkedAt: '',
+    } as any)
+    await openAbout()
+    await fireEvent.click(screen.getByText('ตรวจหาการอัปเดต'))
+    await waitFor(() => expect(screen.getByText('scoop update aetox')).toBeTruthy())
+
+    await fireEvent.click(screen.getByText('คัดลอก'))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('scoop update aetox'))
+    expect(screen.getByText('คัดลอกแล้ว')).toBeTruthy()
+  })
+
+  // "Where do I see my version" is a search, not a place people remember. The
+  // page has to be findable by what is on it, like every other settings page.
+  it('is reachable by searching for what it answers', async () => {
+    const { container } = render(Settings, { onClose: () => {} })
+    const search = container.querySelector('.settings-search') as HTMLInputElement
+
+    await fireEvent.input(search, { target: { value: 'อัปเดต' } })
+    const visible = Array.from(container.querySelectorAll('.settings-nav-item')).map((el) => el.textContent)
+    expect(visible.some((label) => label?.includes('เกี่ยวกับ Aetox'))).toBe(true)
+  })
+
+  // Switched off is a choice the user made, not a failure to report.
+  it('a disabled check is reported as off, naming the switch', async () => {
+    vi.mocked(CheckForUpdate).mockResolvedValue({
+      current: '0.8.4', latest: '', available: false, disabled: true,
+      channel: 'portable', hint: '', url: 'https://example.invalid/r', checkedAt: '',
+    } as any)
+    const { container } = await openAbout()
+    await fireEvent.click(screen.getByText('ตรวจหาการอัปเดต'))
+
+    await waitFor(() => expect(screen.getByText('การตรวจหาการอัปเดตถูกปิดไว้')).toBeTruthy())
+    expect(container.textContent).toContain('AETOX_DISABLE_UPDATE_CHECK')
+    expect(screen.queryByText('ตรวจหาการอัปเดตไม่สำเร็จ')).toBeNull()
   })
 })

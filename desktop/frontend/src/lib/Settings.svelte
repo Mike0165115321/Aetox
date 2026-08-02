@@ -8,7 +8,7 @@
   import { treeFont, applyTreeFontSize } from './treeFont.svelte'
   import { systemZoom, applySystemZoom, SYSTEM_BASE_PX } from './systemFont.svelte'
   import { typeScale, applyTypeScale, TYPE_SCALES, type TypeScaleName } from './typeScale.svelte'
-  import { i18n, t, setLocale, localeNames, type Locale } from './i18n.svelte'
+  import { i18n, t, setLocale, localeNames, type Locale, type TKey } from './i18n.svelte'
   import ConfirmDialog from './ConfirmDialog.svelte'
   import ProviderMark from './ProviderMark.svelte'
   import Icon from './Icon.svelte'
@@ -28,10 +28,11 @@
     ListSubagentProfiles, ReadSubagentProfile, SaveSubagentProfile,
     DeleteSubagentProfile, SetSubagentModel, OpenSubagentsFolder,
     SignInMethods, SignInStatus, StartSignIn, CancelSignIn, ImportableSignIns,
+    AppVersion, CheckForUpdate,
   } from '../../wailsjs/go/main/App'
   import { BrowserOpenURL } from '../../wailsjs/runtime/runtime'
   import promptPayQR from '../assets/images/promptpay-qr.png'
-  import { config } from '../../wailsjs/go/models'
+  import { config, update } from '../../wailsjs/go/models'
   import { cockpit, switchProvider, switchModel, submitAPIKey, switchApprovalMode, switchWireFormat, setProviderBaseURL, retryActiveProvider, completeSignIn, signOutProvider, importSignIn } from './stores/cockpit.svelte'
   import {
     identity, loadIdentityFiles, openIdentityFile, saveIdentityFile,
@@ -222,6 +223,56 @@
   }
 
   onMount(bootSettings)
+
+  // ---------- About ----------
+  // Kept out of bootSettings on purpose. The version is a constant the Go side
+  // always has, and folding it into that Promise.all would let a stumble here
+  // take the whole Settings page down with it for nothing.
+  let appVersion = $state('')
+  let updateStatus = $state<update.Status | null>(null)
+  let updateChecking = $state(false)
+  let updateError = $state('')
+  let hintCopied = $state(false)
+
+  onMount(async () => {
+    try {
+      appVersion = await AppVersion()
+    } catch {
+      /* the About page shows a dash rather than an error */
+    }
+  })
+
+  const CHANNEL_LABELS: Record<string, TKey> = {
+    scoop: 'settings.aboutChannelScoop',
+    installer: 'settings.aboutChannelInstaller',
+    portable: 'settings.aboutChannelPortable',
+    unknown: 'settings.aboutChannelUnknown',
+  }
+
+  async function checkForUpdate() {
+    updateChecking = true
+    updateError = ''
+    try {
+      updateStatus = await CheckForUpdate()
+    } catch (err) {
+      // Offline, rate-limited, proxy in the way: say so and change nothing
+      // else. A failed check is not a broken app.
+      updateStatus = null
+      updateError = String(err)
+    } finally {
+      updateChecking = false
+    }
+  }
+
+  async function copyUpgradeHint(command: string) {
+    try {
+      await navigator.clipboard.writeText(command)
+      hintCopied = true
+      setTimeout(() => (hintCopied = false), 1500)
+    } catch {
+      /* clipboard blocked — the command is on screen to be typed */
+    }
+  }
 
   async function refreshProviders() {
     const names = await SupportedProviders()
@@ -1419,12 +1470,16 @@
         terms: [t('settings.usageByModel'), t('settings.usageTotalTokens'), t('settings.usageCacheHitRate')] },
     ]},
     { group: t('settings.groupAbout'), items: [
+      { id: 'about', label: t('settings.about'), icon: 'package',
+        terms: [t('settings.aboutVersion'), t('settings.aboutCheck')] },
       { id: 'sponsor', label: t('settings.sponsor'), icon: 'heart', terms: ['PromptPay', 'GitHub'] },
     ]},
   ])
 
   const SPONSOR_URL = 'https://github.com/Mike0165115321/Aetox/blob/main/SPONSOR.md'
   const SITE_URL = 'https://aetox-puce.vercel.app/'
+  // The one link that is right on every channel, whether or not a check ran.
+  const RELEASES_URL = 'https://github.com/Mike0165115321/Aetox/releases'
 
   // Which page is open survives an F5. Same reasoning as the chat/settings view
   // itself (see setActiveView in stores/cockpit.svelte.ts): sessionStorage, not
@@ -1433,7 +1488,7 @@
   // while three pages deep into MCP config and landing back on General is a
   // small thing that happens every single time.
   const SECTION_KEY = 'aetox.settingsSection'
-  const SECTION_IDS = new Set(['general', 'appearance', 'identity', 'models', 'agents', 'tools', 'skills', 'mcp', 'prompts', 'usage', 'sponsor'])
+  const SECTION_IDS = new Set(['general', 'appearance', 'identity', 'models', 'agents', 'tools', 'skills', 'mcp', 'prompts', 'usage', 'about', 'sponsor'])
 
   function restoredSection(): string {
     try {
@@ -2769,6 +2824,89 @@
             </button>
           </div>
         {/each}
+      </div>
+    {:else if active === 'about'}
+      <h2>{t('settings.about')}</h2>
+      <div class="settings-card">
+        <div class="set-row">
+          <div class="set-txt">
+            <div class="t">{t('settings.aboutVersion')}</div>
+            <div class="d">
+              {appVersion ? 'v' + appVersion : '—'}
+              {#if updateStatus}
+                · {t(CHANNEL_LABELS[updateStatus.channel] ?? 'settings.aboutChannelUnknown')}
+              {/if}
+              {#if updateStatus?.checkedAt}
+                · {t('settings.aboutLastChecked', { when: new Date(updateStatus.checkedAt).toLocaleString() })}
+              {/if}
+            </div>
+          </div>
+          <button class="ctrl" disabled={updateChecking} onclick={checkForUpdate}>
+            {updateChecking ? t('settings.aboutChecking') : t('settings.aboutCheck')}
+          </button>
+        </div>
+
+        <!-- Four outcomes, four different sentences. "Switched off" is not a
+             failure and must not read like one, and a failed check must never
+             leave the impression that something in the app broke. -->
+        {#if updateError}
+          <div class="set-row">
+            <div class="set-txt">
+              <div class="t">{t('settings.aboutCheckFailed')}</div>
+              <div class="d">{t('settings.aboutCheckFailedHint')}</div>
+            </div>
+          </div>
+        {:else if updateStatus?.disabled}
+          <div class="set-row">
+            <div class="set-txt">
+              <div class="t">{t('settings.aboutCheckOff')}</div>
+              <div class="d">{t('settings.aboutCheckOffHint', { env: 'AETOX_DISABLE_UPDATE_CHECK' })}</div>
+            </div>
+          </div>
+        {:else if updateStatus?.available}
+          <div class="set-row">
+            <div class="set-txt">
+              <div class="t">{t('settings.aboutNewVersion', { version: updateStatus.latest })}</div>
+              <!-- Scoop installed us, so Scoop upgrades us: Aetox never writes
+                   into someone else's package directory. Every other channel
+                   gets the release page, which is always a correct answer. -->
+              <div class="d">
+                {updateStatus.hint ? t('settings.aboutRunCommand') : t('settings.aboutDownloadHint')}
+              </div>
+              {#if updateStatus.hint}
+                <code class="about-cmd">{updateStatus.hint}</code>
+              {/if}
+            </div>
+            <!-- One action, not two. Offering a Scoop user the download page
+                 next to `scoop update aetox` invites them to unpack a zip on
+                 top of a Scoop-managed install, which is exactly the mess this
+                 whole design exists to avoid. What changed is still one row
+                 down, for everybody. -->
+            {#if updateStatus.hint}
+              <button class="ctrl" onclick={() => copyUpgradeHint(updateStatus!.hint)}>
+                {hintCopied ? t('settings.aboutCopied') : t('settings.aboutCopy')}
+              </button>
+            {:else}
+              <button class="ctrl" onclick={() => BrowserOpenURL(updateStatus!.url)}>
+                {t('settings.aboutOpenRelease')}
+              </button>
+            {/if}
+          </div>
+        {:else if updateStatus}
+          <div class="set-row">
+            <div class="set-txt">
+              <div class="t">{t('settings.aboutUpToDate')}</div>
+            </div>
+          </div>
+        {/if}
+
+        <div class="set-row">
+          <div class="set-txt">
+            <div class="t">{t('settings.aboutReleaseNotes')}</div>
+            <div class="d">{RELEASES_URL}</div>
+          </div>
+          <button class="ctrl" onclick={() => BrowserOpenURL(RELEASES_URL)}>{t('settings.aboutOpenRelease')}</button>
+        </div>
       </div>
     {:else if active === 'sponsor'}
       <h2>{t('settings.sponsor')}</h2>

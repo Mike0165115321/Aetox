@@ -24,15 +24,10 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/skill"
 	"github.com/Mike0165115321/Aetox/internal/subagent"
 	"github.com/Mike0165115321/Aetox/internal/think"
+	"github.com/Mike0165115321/Aetox/internal/version"
 
 	"golang.org/x/term"
 )
-
-const appVersion = "0.8.4"
-
-// Printed by both --version paths. A rebranded fork has to delete this line by
-// hand rather than just swap a logo, which is the whole point of it being here.
-const versionCredit = "© 2026 Chayaphon Phromsawana (Mike) · Apache-2.0 · github.com/Mike0165115321/Aetox"
 
 var (
 	noBanner     bool
@@ -179,7 +174,7 @@ func main() {
 	}
 
 	if showVersion {
-		fmt.Printf("aetox version %s\n%s\n", appVersion, versionCredit)
+		fmt.Printf("aetox version %s\n%s\n", version.Current, version.Credit)
 		return
 	}
 	if showHelp {
@@ -366,7 +361,7 @@ func main() {
 			}
 		},
 		Title:    "Aetox CLI",
-		Version:  appVersion,
+		Version:  version.Current,
 		UserInfo: resolveDisplayUser(),
 		ModelStatus: resolveModelStatus(config.Config{
 			ModelProvider: modelProvider,
@@ -414,7 +409,7 @@ func main() {
 	case command.ModeHelp:
 		printUsage()
 	case command.ModeVersion:
-		fmt.Printf("aetox version %s\n%s\n", appVersion, versionCredit)
+		fmt.Printf("aetox version %s\n%s\n", version.Current, version.Credit)
 	case command.ModeInteractive:
 		if !isInteractive() {
 			printUsage()

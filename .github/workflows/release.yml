@@ -27,6 +27,20 @@ jobs:
         with:
           node-version: 22
 
+      # The tag is the one copy of the version that lives outside the repo, so
+      # it is the one `go test ./internal/version` cannot check. Everything
+      # else — wails.json, scoop/aetox.json, the README heading, the docs badge
+      # — is checked against internal/version.Current by that test, so these
+      # two lines close the loop: tag == source == every published copy.
+      # Cheap, and it fails before a wrong-numbered build exists.
+      - name: The tag, the source and the docs must all agree
+        run: |
+          go test ./internal/version/
+          $tag = "$env:GITHUB_REF_NAME".TrimStart("v")
+          $src = [regex]::Match((Get-Content internal/version/version.go -Raw), 'Current = "([^"]+)"').Groups[1].Value
+          if ($src -ne $tag) { throw "tag is v$tag but internal/version.Current is $src — one of them was not bumped" }
+          Write-Host "v$tag confirmed in source, wails.json, scoop, README and docs"
+
       - name: Install wails (pinned to go.mod) and NSIS
         run: |
           $v = go list -m -f '{{.Version}}' github.com/wailsapp/wails/v2
@@ -34,6 +48,9 @@ jobs:
           choco install nsis -y --no-progress
           Add-Content $env:GITHUB_PATH "C:\Program Files (x86)\NSIS"
 
+      # A no-op since the step above started proving wails.json already carries
+      # the tag's version. Kept as the belt to that braces: if the check is ever
+      # loosened, the built exe still gets the right version resource.
       - name: Stamp version from tag into wails.json
         run: |
           $version = "$env:GITHUB_REF_NAME".TrimStart("v")

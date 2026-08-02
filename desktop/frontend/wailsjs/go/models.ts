@@ -696,3 +696,34 @@ export namespace subagent {
 
 }
 
+export namespace update {
+	
+	export class Status {
+	    current: string;
+	    latest: string;
+	    available: boolean;
+	    disabled: boolean;
+	    channel: string;
+	    hint: string;
+	    url: string;
+	    checkedAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Status(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.current = source["current"];
+	        this.latest = source["latest"];
+	        this.available = source["available"];
+	        this.disabled = source["disabled"];
+	        this.channel = source["channel"];
+	        this.hint = source["hint"];
+	        this.url = source["url"];
+	        this.checkedAt = source["checkedAt"];
+	    }
+	}
+
+}
+

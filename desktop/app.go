@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -38,6 +39,8 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/subagent"
 	"github.com/Mike0165115321/Aetox/internal/think"
 	"github.com/Mike0165115321/Aetox/internal/turn"
+	"github.com/Mike0165115321/Aetox/internal/update"
+	"github.com/Mike0165115321/Aetox/internal/version"
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -154,6 +157,34 @@ func (a *App) emitAgentStatus(status string) {
 	if a.ctx != nil {
 		wailsruntime.EventsEmit(a.ctx, "agent:status", status)
 	}
+}
+
+// AppVersion is the release this build calls itself, for Settings → About.
+//
+// Until now the desktop app had no idea which version it was: the number was
+// baked into the exe's Windows version resource by Wails and into a const in
+// cmd/aetox, i.e. into a file this binary does not compile and a resource Go
+// cannot read back. "Which version am I running?" was answerable only by
+// right-clicking the exe — and an update check cannot be built on that at all.
+func (a *App) AppVersion() string { return version.Current }
+
+// CheckForUpdate asks GitHub whether a newer release exists. Explicitly, from
+// the button in Settings → About — nothing calls it on a timer yet.
+//
+// ErrDisabled is folded into the returned Status rather than raised: the user
+// switching the check off is not a failure, and rendering it as one would put
+// a red error under a setting they chose. Every other failure does reject, so
+// "could not reach GitHub" reads as what it is.
+func (a *App) CheckForUpdate() (update.Status, error) {
+	ctx := a.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	st, err := update.Check(ctx, version.Current)
+	if errors.Is(err, update.ErrDisabled) {
+		return st, nil
+	}
+	return st, err
 }
 
 // CommandHistory returns this session's real tool-call history, most recent first.

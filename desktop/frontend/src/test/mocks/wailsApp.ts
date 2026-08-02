@@ -32,6 +32,14 @@ export const AnswerUserQuestion = noop()
 export const ClearProjectFocus = noop()
 export const CloseAllBrowserTabs = noop()
 export const CommandHistory = arr()
+export const AppVersion = vi.fn(async () => '0.8.4')
+// Defaults to "checked, nothing new": the About page has to render before any
+// button is pressed, and a mock that claimed an update would make every other
+// Settings test assert against a banner it never asked for.
+export const CheckForUpdate = vi.fn(async () => ({
+  current: '0.8.4', latest: '0.8.4', available: false, disabled: false,
+  channel: 'portable', hint: '', url: 'https://example.invalid/releases', checkedAt: '',
+}) as any)
 export const CurrentSessionID = str()
 export const DismissTaskChip = noop()
 export const DeleteIdentityFile = noop()
