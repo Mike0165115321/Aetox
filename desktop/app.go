@@ -159,6 +159,38 @@ func (a *App) emitAgentStatus(status string) {
 	}
 }
 
+// chatChunk is one write to the live answer bubble.
+//
+// Replace makes the payload the bubble's whole content instead of an addition,
+// which is what lets one event name carry three different things safely: a
+// streamed fragment (Replace false), an erased preview (Replace true, empty),
+// and the finished reply (Replace true, whole text).
+//
+// It matters that all three ride the SAME event. Wails delivers emits of one
+// event name in order, so "erase, then here is the answer" cannot arrive
+// backwards — and because the delivery replaces rather than appends, the answer
+// cannot end up printed twice even if a preview was mid-flight.
+type chatChunk struct {
+	Text    string `json:"text"`
+	Replace bool   `json:"replace"`
+}
+
+// emitChatChunk is the one way anything reaches the live answer bubble.
+func (a *App) emitChatChunk(text string, replace bool) {
+	if a.ctx != nil {
+		wailsruntime.EventsEmit(a.ctx, "agent:chunk", chatChunk{Text: text, Replace: replace})
+	}
+}
+
+// previewAnswer shows the model's answer as it is written. Wired session-wide
+// (aetoxapp.Options.OnContentPreview) rather than per turn, because a window can
+// always draw a preview — see the doc on that field for why it is not a delivery.
+func (a *App) previewAnswer(chunk string) { a.emitChatChunk(chunk, false) }
+
+// discardAnswerPreview erases it, for every round whose text turns out not to be
+// the answer.
+func (a *App) discardAnswerPreview() { a.emitChatChunk("", true) }
+
 // AppVersion is the release this build calls itself, for Settings → About.
 //
 // Until now the desktop app had no idea which version it was: the number was
@@ -986,11 +1018,49 @@ func (a *App) focusNone() {
 	a.projectFocused = false
 }
 
+// TurnReply is one finished turn as the UI receives it: the answer, and the
+// sequence that produced it.
+//
+// Parts is what a bubble should actually draw — prose, thinking segments and
+// tool calls in the order they happened (turn.TurnPart). Text is the
+// concatenation of its prose, kept because it is what the store, the model's
+// context and every older reader use, and because a turn from before the
+// sequence existed has nothing else.
+type TurnReply struct {
+	Text  string          `json:"text"`
+	Parts []turn.TurnPart `json:"parts,omitempty"`
+}
+
+func replyOf(m SessionMessage) TurnReply {
+	return TurnReply{Text: m.Text, Parts: m.Parts}
+}
+
 // SendMessage runs one chat turn through the Aetox engine and returns the reply.
 // The turn is appended to the current session and persisted.
-func (a *App) SendMessage(text string) (string, error) {
+func (a *App) SendMessage(text string) (TurnReply, error) {
+	userMsg, agentMsg, err := a.runTurn(text)
+	if err != nil {
+		return replyOf(agentMsg), err
+	}
+	a.transcript = append(a.transcript, userMsg, agentMsg)
+	a.appendTurn(userMsg, agentMsg)
+	return replyOf(agentMsg), nil
+}
+
+// runTurn runs one exchange through the engine and hands back the two messages
+// it produced, recording nothing.
+//
+// Every entry point that answers a question shares it — a fresh send, a retry
+// after a failure, a regenerate, an edited resend — because they differ only in
+// what they do with the result. Keeping the engine call in one place is what
+// stops them drifting apart on cancellation, attachments, snapshots or the
+// thinking clock.
+//
+// On failure the returned agent message still carries whatever text arrived
+// before the error, which is what the caller shows.
+func (a *App) runTurn(text string) (SessionMessage, SessionMessage, error) {
 	if a.chat == nil {
-		return "", fmt.Errorf("aetox core not ready: %s", a.modelStatus)
+		return SessionMessage{}, SessionMessage{}, fmt.Errorf("aetox core not ready: %s", a.modelStatus)
 	}
 	// Prompt presets ("/name args") expand into their prompt body before the
 	// engine sees the text — bundled ones and the user's alike; unknown "/..."
@@ -1023,8 +1093,10 @@ func (a *App) SendMessage(text string) (string, error) {
 	a.captureSnapshot()
 	sent, images := a.visionAttachments(text)
 	sent, documents := a.documentAttachments(sent)
-	reply, err := a.chat.RunOnceStreamWithAttachments(ctx, sent, images, documents, func(chunk string) {
-		wailsruntime.EventsEmit(a.ctx, "agent:chunk", chunk)
+	result, err := a.chat.RunOnceStreamWithAttachments(ctx, sent, images, documents, func(chunk string) {
+		// The authoritative delivery: replaces whatever the live preview holds,
+		// so the answer lands exactly once no matter what streamed before it.
+		a.emitChatChunk(chunk, true)
 	}, func(chunk string) {
 		if firstThink.IsZero() {
 			firstThink = time.Now()
@@ -1039,8 +1111,11 @@ func (a *App) SendMessage(text string) (string, error) {
 	if missed := a.agent.DrainInterjections(); len(missed) > 0 {
 		wailsruntime.EventsEmit(a.ctx, "agent:interjection-missed", missed)
 	}
+	now := time.Now().Format("15:04")
 	if err != nil {
-		return reply, err
+		return SessionMessage{Role: "user", Text: text, Time: now},
+			SessionMessage{Role: "agent", Text: result.Reply, Time: now},
+			err
 	}
 	thinkSecs := 0
 	if !firstThink.IsZero() {
@@ -1050,12 +1125,15 @@ func (a *App) SendMessage(text string) (string, error) {
 			thinkSecs = 1
 		}
 	}
-	now := time.Now().Format("15:04")
-	userMsg := SessionMessage{Role: "user", Text: text, Time: now}
-	agentMsg := SessionMessage{Role: "agent", Text: reply, Time: now, Reasoning: strings.TrimSpace(reasoning.String()), ThinkSecs: thinkSecs}
-	a.transcript = append(a.transcript, userMsg, agentMsg)
-	a.appendTurn(userMsg, agentMsg)
-	return reply, nil
+	return SessionMessage{Role: "user", Text: text, Time: now},
+		SessionMessage{
+			Role: "agent", Text: result.Reply, Time: now,
+			Reasoning: strings.TrimSpace(reasoning.String()), ThinkSecs: thinkSecs,
+			// The turn as it happened, so reopening this session shows the work
+			// and not just the sentence it ended on.
+			Parts: result.Parts,
+		},
+		nil
 }
 
 // Interject hands the turn already in flight something the user just typed,
@@ -1763,7 +1841,7 @@ func (a *App) applyConfig(cfg config.Config) {
 	if a.agent != nil {
 		priorContext = a.agent.ContextMessages()
 	}
-	chatApp, agent, status, registry, bootErr := bootstrapFromConfig(cfg, a.recordToolAction, a.recordToolRun, a.emitAgentStatus, a.recordTokenUsage, workbenchTools, a.mcp, a.outputSubdir, a.approveToolCall)
+	chatApp, agent, status, registry, bootErr := bootstrapFromConfig(cfg, a.recordToolAction, a.recordToolRun, a.emitAgentStatus, a.previewAnswer, a.discardAnswerPreview, a.recordTokenUsage, workbenchTools, a.mcp, a.outputSubdir, a.approveToolCall)
 	a.chat = chatApp
 	a.agent = agent
 	a.cfg = cfg
@@ -1889,7 +1967,7 @@ func toMCPServers(cfgs []config.MCPServerConfig) []mcp.Server {
 	return out
 }
 
-func bootstrapFromConfig(cfg config.Config, onToolAction func(turn.ToolEvent), onToolRun func(turn.ToolRun), onStatus func(string), onUsage func(model.Usage), extraSkills []skill.Skill, mcpMgr *mcp.Manager, outputSubdir func() string, approve turn.ApprovalPromptFunc) (*aetoxapp.App, *cognitive.Agent, string, *skill.Registry, error) {
+func bootstrapFromConfig(cfg config.Config, onToolAction func(turn.ToolEvent), onToolRun func(turn.ToolRun), onStatus func(string), onPreview func(string), onPreviewReset func(), onUsage func(model.Usage), extraSkills []skill.Skill, mcpMgr *mcp.Manager, outputSubdir func() string, approve turn.ApprovalPromptFunc) (*aetoxapp.App, *cognitive.Agent, string, *skill.Registry, error) {
 	defer debuglog.Block("bootstrapFromConfig")()
 	// Which model this actually resolved to. The log recorded that a bootstrap
 	// happened but never what came out of it, so "it switched models on its
@@ -2020,7 +2098,12 @@ func bootstrapFromConfig(cfg config.Config, onToolAction func(turn.ToolEvent), o
 		OnToolAction:   onToolAction,
 		OnToolRun:      onToolRun,
 		StatusReporter: onStatus,
-		Approve:        approve,
+		// The answer streams into the live bubble as the model writes it; the
+		// reset is what keeps a round that turns out to be narration, a nudged
+		// draft or a failure from being mistaken for the reply.
+		OnContentPreview: onPreview,
+		OnContentReset:   onPreviewReset,
+		Approve:          approve,
 	})
 	if err != nil {
 		return nil, nil, status + " (init failed: " + err.Error() + ")", nil, err

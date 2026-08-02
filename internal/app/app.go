@@ -59,6 +59,8 @@ type App struct {
 	skillNames         []string
 
 	statusReporter     func(string)
+	contentPreview     func(string)
+	contentReset       func()
 	lastPrintedTool    string
 	toolActionListener func(turn.ToolEvent)
 	toolRunListener    func(turn.ToolRun)
@@ -115,6 +117,18 @@ type Options struct {
 	// callers (e.g. the desktop app) that want one stable callback for the
 	// session's lifetime, e.g. to relay it to a UI as a live status/typing indicator.
 	StatusReporter func(string)
+	// OnContentPreview and OnContentReset, if set, show the model's answer as it
+	// is written — the same live text the reasoning stream already gets. They are
+	// a session-level pair rather than per-turn callbacks because wanting a
+	// preview is a property of the front end (a window can draw one, a terminal
+	// scrollback cannot), not of any one question.
+	//
+	// A preview is NOT a delivery: the reply still arrives exactly once, through
+	// the turn's onChunk, and OnContentReset erases the preview on every path
+	// where the text turns out not to be the answer. Wiring only the first of the
+	// two is a bug — see turn.TurnOptions.
+	OnContentPreview func(string)
+	OnContentReset   func()
 	// Approve, if set, replaces the console y/N prompt for tool-call approval.
 	// A GUI host must set this: the default ConfirmApproval reads os.Stdin,
 	// which a windowsgui build does not have — the read fails instantly and
@@ -166,6 +180,8 @@ func NewApp(opts Options) (*App, error) {
 		skillNames:         skillNames,
 		toolActionListener: opts.OnToolAction,
 		toolRunListener:    opts.OnToolRun,
+		contentPreview:     opts.OnContentPreview,
+		contentReset:       opts.OnContentReset,
 	}
 	a.approve = opts.Approve
 	if a.approve == nil {
@@ -183,7 +199,9 @@ func NewApp(opts Options) (*App, error) {
 		OnToolRun:      a.onToolRun,
 		StatusReporter: opts.StatusReporter,
 		TurnOptions: turn.TurnOptions{
-			ThinkLevel: a.thinkLevel,
+			ThinkLevel:     a.thinkLevel,
+			OnContent:      a.contentPreview,
+			OnContentReset: a.contentReset,
 		},
 	})
 	return a, nil
@@ -205,7 +223,9 @@ func (a *App) wireStatusReporter() {
 		OnToolAction:   a.onToolAction,
 		OnToolRun:      a.onToolRun,
 		TurnOptions: turn.TurnOptions{
-			ThinkLevel: a.thinkLevel,
+			ThinkLevel:     a.thinkLevel,
+			OnContent:      a.contentPreview,
+			OnContentReset: a.contentReset,
 		},
 	})
 }
@@ -228,9 +248,13 @@ func (a *App) RunOnceStream(ctx context.Context, message string, onChunk func(st
 // RunOnceStreamWithAttachments is RunOnceStream for a turn the user attached a
 // picture or a document to. Split rather than folded in, so the CLI path and
 // every other caller keep the signature they had.
-func (a *App) RunOnceStreamWithAttachments(ctx context.Context, message string, images []model.Image, documents []model.Document, onChunk func(string), onReasoningChunk func(string)) (string, error) {
-	result, err := a.turnExecutor.ExecuteWithAttachments(ctx, message, a.parseInputIntent(message), onChunk, onReasoningChunk, nil, images, documents)
-	return result.Reply, err
+//
+// It hands back the whole turn.Result, not just the reply: Result.Parts is the
+// turn as a sequence (prose, thinking, tool calls in order), and a front end
+// that draws the work rather than only its conclusion needs it. Reply is still
+// there and still means what it did.
+func (a *App) RunOnceStreamWithAttachments(ctx context.Context, message string, images []model.Image, documents []model.Document, onChunk func(string), onReasoningChunk func(string)) (turn.Result, error) {
+	return a.turnExecutor.ExecuteWithAttachments(ctx, message, a.parseInputIntent(message), onChunk, onReasoningChunk, nil, images, documents)
 }
 
 func (a *App) onToolAction(ev turn.ToolEvent) {
@@ -475,7 +499,9 @@ func (a *App) switchModel(ctx context.Context) error {
 		Permissions:  a.permissions,
 		Hooks:        a.hooks,
 		TurnOptions: turn.TurnOptions{
-			ThinkLevel: a.thinkLevel,
+			ThinkLevel:     a.thinkLevel,
+			OnContent:      a.contentPreview,
+			OnContentReset: a.contentReset,
 		},
 	})
 	return nil

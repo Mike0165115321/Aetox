@@ -127,7 +127,22 @@ export const SaveMCPServer = noop()
 export const SearchAllSessions = arr()
 export const SearchSessions = arr()
 export const RunChatCommand = vi.fn(async (..._args: any[]) => ({ output: '', success: true, durationMs: 0 }))
-export const SendMessage = str()
+// A finished turn is { text, parts } now, not a bare string — the sequence is
+// what the bubble draws. The default is that shape so any test that does not
+// care about the reply still gets something the store can read.
+const turnReply = () => vi.fn(async (..._args: any[]) =>
+  ({ text: '' } as { text: string; parts?: any[] }))
+export const SendMessage = turnReply()
+// Re-running a turn. RegenerateReply/SwitchVariant hand back the whole answer
+// list, so their default is the shape the store destructures, not an empty one.
+export const RetryFailedTurn = turnReply()
+export const ResendEdited = turnReply()
+const rerun = () => vi.fn(async (..._args: any[]) =>
+  ({ text: '', variants: [] as any[], active: 0 } as { text: string; variants: any[]; active: number; reverted?: string[] }))
+export const RegenerateReply = rerun()
+export const SwitchVariant = rerun()
+export const PendingUndo = arr()
+export const UndoLastTurn = vi.fn(async (..._args: any[]) => ({ files: [] as string[] }))
 export const SetAPIKey = vi.fn(async () => modelInfo())
 export const SetProviderEnabled = arr()
 export const SetProviderWireFormat = vi.fn(async () => modelInfo())

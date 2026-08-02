@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ChatMessage, TaskState, ModelStatus, ToolStep, TimelineNode, ContextBreakdown } from './types'
+  import type { ChatMessage, TaskState, ModelStatus, ToolStep, TimelineNode, TurnPart, ContextBreakdown } from './types'
   import { groupSteps, isDelegation } from './types'
   import TaskTimeline from './TaskTimeline.svelte'
   import Palette from './Palette.svelte'
@@ -19,7 +19,9 @@
     openProject, openFolder, clearProjectFocus, cancelTurn, answerAsk, queuedMessages,
     retryActiveProvider, undoLastTurn, switchApprovalMode,
     startTaskChip, dismissTaskChip,
+    retryFailedTurn, regenerateReply, switchVariant, resendEdited,
   } from './stores/cockpit.svelte'
+  import ConfirmDialog from './ConfirmDialog.svelte'
   import Icon from './Icon.svelte'
   import type { IconName } from './icons'
 
@@ -59,7 +61,17 @@
     openPanel[i] = openPanel[i] === p ? '' : p
   }
   // The live turn opens on thinking: that is the part still streaming in.
+  //
+  // Reset at the start of every turn, because this used to be set once for the
+  // lifetime of the component: collapsing the panel — or opening the tools view
+  // — once left every later turn in that session with nothing on screen at all
+  // but the bouncing dots, which is the difference between "working" and
+  // "frozen". Only reacts to awaitingReply, so toggling it mid-turn still sticks
+  // for that turn.
   let livePanel = $state<Panel>('think')
+  $effect(() => {
+    if (awaitingReply) livePanel = 'think'
+  })
 
   // A finished tool call is history — it collapses behind a count next to the
   // thinking toggle, same as reasoning does. Only what is still running stays
@@ -346,6 +358,56 @@
     copiedTimer = setTimeout(() => (copiedText = ''), 1500)
   }
 
+  // Re-running a turn ——————————————————————————————————————————————————————
+  //
+  // Only the newest exchange can be re-run. Regenerating an older one would
+  // invalidate everything said after it, and there is no honest way to draw a
+  // transcript whose middle has been replaced.
+  const lastIndex = $derived(messages.length - 1)
+  const canRerun = $derived(!awaitingReply && !cockpit.ask)
+  // Editing the question re-runs the exchange, which only works when there is a
+  // recorded exchange to replace. A failed turn was persisted nowhere, so its
+  // affordance is Retry, not Edit.
+  const canEditLast = $derived(
+    canRerun && messages.at(-1)?.role === 'agent' && !messages.at(-1)?.failed,
+  )
+
+  // A turn that wrote files is the one case where answering again is dangerous:
+  // its tools would run a second time on top of their own output. The revert is
+  // not optional — it is what makes the re-run mean what the button says — so
+  // the dialog asks whether to proceed at all, not whether to revert.
+  let confirmRerun = $state<'regenerate' | 'edit' | ''>('')
+
+  function askRegenerate() {
+    if (!canRerun) return
+    if (cockpit.undoFiles.length > 0) { confirmRerun = 'regenerate'; return }
+    regenerateReply(false)
+  }
+
+  // Editing a question the agent already acted on has the same problem, plus a
+  // deletion: the answer to the old wording is thrown away, not kept as a variant.
+  let editingIndex = $state(-1)
+  let editDraft = $state('')
+  function startEdit(i: number, text: string) {
+    editingIndex = i
+    editDraft = text
+  }
+  function commitEdit() {
+    if (!editDraft.trim()) return
+    if (cockpit.undoFiles.length > 0) { confirmRerun = 'edit'; return }
+    const text = editDraft
+    editingIndex = -1
+    resendEdited(text, false)
+  }
+  function confirmRerunNow() {
+    const which = confirmRerun
+    confirmRerun = ''
+    if (which === 'regenerate') { regenerateReply(true); return }
+    const text = editDraft
+    editingIndex = -1
+    resendEdited(text, true)
+  }
+
   function submit() {
     // While the model is blocked on ask_user, typed text is the free-text answer.
     if (cockpit.ask) {
@@ -562,6 +624,34 @@
   {/if}
 {/snippet}
 
+<!-- A turn, drawn as the sequence it was: what the model said, the work it did,
+     and what it said next — in that order, in one bubble. Before this, prose in
+     front of a tool call was banished to a collapsed panel and only the closing
+     sentence was the "answer", which is why a turn that did five things read as
+     one paragraph with a "used 5 tools" toggle beside it. -->
+{#snippet turnSequence(parts: TurnPart[])}
+  {#each parts as part}
+    {#if part.kind === 'text' && part.text}
+      <div class="markdown-body">{@html renderMarkdown(part.text)}</div>
+    {:else if part.kind === 'thinking' && part.secs}
+      <div class="tool-think"><Icon name="sparkles" size={12} /> {t('chat.thoughtFor', { secs: part.secs })}</div>
+    {:else if part.kind === 'tool' && part.tool}
+      <div class="tool-step seq {part.tool.ok ? 'done' : 'err'}">
+        <span class="glyph"><Icon name={part.tool.ok ? 'check' : 'x'} size={12} /></span>
+        <span class="lbl">{[part.tool.name, part.tool.subject].filter(Boolean).join(' ')}</span>
+        {#if part.tool.secs}<span class="secs">· {part.tool.secs}s</span>{/if}
+        {#if part.tool.added || part.tool.removed}
+          <span class="tool-stat">
+            <span class="add">+{part.tool.added ?? 0}</span>
+            <span class="del">-{part.tool.removed ?? 0}</span>
+          </span>
+        {/if}
+        {#if part.tool.error}<span class="tool-err">{part.tool.error}</span>{/if}
+      </div>
+    {/if}
+  {/each}
+{/snippet}
+
 {#snippet toolTimeline(steps: ToolStep[], live: boolean)}
   <div class="tool-steps">
     {#each steps as s}
@@ -661,7 +751,11 @@
                     {m.thinkSecs ? t('chat.thoughtFor', { secs: m.thinkSecs }) : t('chat.thoughtDone')}
                   </button>
                 {/if}
-                {#if ownSteps(m.steps ?? []).length}
+                {#if ownSteps(m.steps ?? []).length && !m.parts?.length}
+                  <!-- Hidden once the sequence draws the work in place: the
+                       panel and the bubble would otherwise show the same calls
+                       twice. Sub-agents keep their toggle — a delegate's own
+                       steps are not in the sequence, only the task call is. -->
                   <button class="reasoning-toggle" onclick={() => togglePanel(i, 'tools')}>
                     <span class="chev"><Icon name={openPanel[i] === 'tools' ? 'chevronDown' : 'chevronRight'} size={12} /></span>
                     {toolsLabel(m.steps ?? [])}
@@ -684,14 +778,86 @@
                 {@render subagentTimeline(delegated(m.steps), false)}
               {/if}
             {/if}
-            <div class="markdown-body">{@html renderMarkdown(m.text)}</div>
+            {#if editingIndex === i}
+              <!-- The question itself becomes the editor, in place: what is being
+                   changed is the message, not a copy of it in a dialog. -->
+              <!-- svelte-ignore a11y_autofocus -->
+              <textarea
+                class="msg-edit"
+                autofocus
+                bind:value={editDraft}
+                onkeydown={(e) => {
+                  if (e.key === 'Escape') { editingIndex = -1; return }
+                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commitEdit() }
+                }}
+              ></textarea>
+              <div class="msg-edit-actions">
+                <button type="button" class="ctrl" onclick={() => (editingIndex = -1)}>{t('chat.cancelEdit')}</button>
+                <button type="button" class="ctrl edit-send" onclick={commitEdit}>{t('chat.saveEdit')}</button>
+              </div>
+            {:else if m.parts?.length}
+              {@render turnSequence(m.parts)}
+            {:else}
+              <div class="markdown-body">{@html renderMarkdown(m.text)}</div>
+            {/if}
+            {#if m.revertedFiles?.length}
+              <!-- An answer that had quietly undone six files would be the worse
+                   surprise, so the bubble says it did. -->
+              <div class="msg-reverted" title={m.revertedFiles.join('\n')}>
+                <Icon name="undo2" size={12} /> {t('chat.revertedFiles', { count: String(m.revertedFiles.length) })}
+              </div>
+            {/if}
+            {#if m.error}
+              <!-- A re-run that failed. The answer above is still the real one. -->
+              <div class="msg-error">{m.error}</div>
+            {/if}
             <div class="time">
               {m.time}
-              {#if m.role === 'agent' && m.text}
+              {#if m.role === 'agent' && m.text && !m.failed}
                 <button type="button" class="msg-copy" aria-label={t('chat.copy')}
                   onclick={() => copyMessage(m.text)}>
                   <Icon name={copiedText === m.text ? 'check' : 'copy'} size={13} />
                 </button>
+              {/if}
+              {#if m.role === 'agent' && i === lastIndex && (m.variants?.length ?? 0) > 1}
+                <!-- Which answer of the several this question has had is on
+                     screen. Switching also rewrites what the conversation
+                     continues from — picking one and being replied to as if you
+                     had picked the other is the trap this avoids. -->
+                <span class="variant-pick">
+                  <button
+                    type="button" class="msg-copy" aria-label={t('chat.prevVariant')}
+                    disabled={!canRerun || (m.activeVariant ?? 0) <= 0}
+                    onclick={() => switchVariant((m.activeVariant ?? 0) - 1)}
+                  ><Icon name="arrowLeft" size={13} /></button>
+                  <span class="variant-n">{t('chat.variantCount', {
+                    n: String((m.activeVariant ?? 0) + 1), total: String(m.variants?.length ?? 1),
+                  })}</span>
+                  <button
+                    type="button" class="msg-copy" aria-label={t('chat.nextVariant')}
+                    disabled={!canRerun || (m.activeVariant ?? 0) >= (m.variants?.length ?? 1) - 1}
+                    onclick={() => switchVariant((m.activeVariant ?? 0) + 1)}
+                  ><Icon name="arrowRight" size={13} /></button>
+                </span>
+              {/if}
+              {#if m.role === 'agent' && m.failed && m.failedText}
+                <!-- A turn that never reached the model. The question above is
+                     still the question, so only this bubble is replaced. -->
+                <button
+                  type="button" class="msg-act retry" disabled={!canRerun}
+                  onclick={() => retryFailedTurn(i)}
+                ><Icon name="rotateCw" size={12} /> {t('chat.retry')}</button>
+              {:else if m.role === 'agent' && i === lastIndex && m.text}
+                <button
+                  type="button" class="msg-act" disabled={!canRerun}
+                  onclick={askRegenerate}
+                ><Icon name="refreshCw" size={12} /> {t('chat.regenerate')}</button>
+              {/if}
+              {#if m.role === 'user' && i === lastIndex - 1 && canEditLast && editingIndex !== i}
+                <button
+                  type="button" class="msg-copy" aria-label={t('chat.editMessage')}
+                  onclick={() => startEdit(i, m.text)}
+                ><Icon name="pencil" size={13} /></button>
               {/if}
             </div>
           </div>
@@ -815,6 +981,19 @@
       {/if}
     </div>
     </div>
+  {/if}
+
+  {#if confirmRerun}
+    <ConfirmDialog
+      title={confirmRerun === 'regenerate' ? t('chat.regenTitle') : t('chat.editTitle')}
+      message={confirmRerun === 'regenerate'
+        ? t('chat.regenMessage', { count: String(cockpit.undoFiles.length) })
+        : t('chat.editMessageBody', { count: String(cockpit.undoFiles.length) })}
+      detail={cockpit.undoFiles.join('\n')}
+      confirmLabel={confirmRerun === 'regenerate' ? t('chat.regenConfirm') : t('chat.editConfirm')}
+      onConfirm={confirmRerunNow}
+      onCancel={() => (confirmRerun = '')}
+    />
   {/if}
 
   <div class="composer">

@@ -167,6 +167,8 @@ export function RecentProjects():Promise<Array<main.ProjectMeta>>;
 
 export function RefreshSkills():Promise<void>;
 
+export function RegenerateReply(arg1:boolean):Promise<main.RegenerateResult>;
+
 export function RelativizePath(arg1:string):Promise<string>;
 
 export function RemoveExternalSkill(arg1:string):Promise<void>;
@@ -177,7 +179,11 @@ export function RemovePresetImage(arg1:string):Promise<void>;
 
 export function RequiresAPIKey(arg1:string):Promise<boolean>;
 
+export function ResendEdited(arg1:string,arg2:boolean):Promise<main.TurnReply>;
+
 export function RetryActiveProvider():Promise<main.ModelInfo>;
+
+export function RetryFailedTurn(arg1:string):Promise<main.TurnReply>;
 
 export function RevealSpeechModel(arg1:string):Promise<void>;
 
@@ -199,7 +205,7 @@ export function SearchAllSessions(arg1:string):Promise<Array<main.SessionMeta>>;
 
 export function SearchSessions(arg1:string):Promise<Array<main.SessionMeta>>;
 
-export function SendMessage(arg1:string):Promise<string>;
+export function SendMessage(arg1:string):Promise<main.TurnReply>;
 
 export function SetAPIKey(arg1:string,arg2:string):Promise<main.ModelInfo>;
 
@@ -246,6 +252,8 @@ export function SwitchModel(arg1:string):Promise<main.ModelInfo>;
 export function SwitchProvider(arg1:string):Promise<main.ModelInfo>;
 
 export function SwitchThinkLevel(arg1:string):Promise<main.ModelInfo>;
+
+export function SwitchVariant(arg1:number):Promise<main.RegenerateResult>;
 
 export function TerminalClose(arg1:string):Promise<void>;
 

@@ -183,6 +183,39 @@ var migrations = []migration{
 			return err
 		},
 	},
+	{
+		version: 4,
+		name:    "message_variants",
+		apply: func(tx *sql.Tx) error {
+			for _, stmt := range []string{
+				// A regenerated answer is an alternate for the SAME bubble, not a
+				// second bubble: `text` stays the live one, so FTS, session titles
+				// and the context rebuild all keep reading the column they always
+				// did, and none of them learn what a variant is. The alternates
+				// ride alongside as JSON (see storedVariant), which costs one
+				// column instead of a second table and a grouping key.
+				`ALTER TABLE messages ADD COLUMN variants TEXT NOT NULL DEFAULT ''`,
+				// The turn as it actually happened — prose, thinking segments and
+				// tool calls in order (turn.TurnPart). `text` is the concatenation
+				// of its prose, so every older reader is unaffected; this is what
+				// lets a reopened session show the work rather than only the
+				// conclusion, which no amount of columns on `text` could.
+				`ALTER TABLE messages ADD COLUMN parts TEXT NOT NULL DEFAULT ''`,
+				`ALTER TABLE messages ADD COLUMN variant_active INTEGER NOT NULL DEFAULT 0`,
+				// Reasoning and its clock were on SessionMessage from the start and
+				// written to nothing: appendTurn inserted role/text/time only, so
+				// reopening a session dropped every "คิดเป็นเวลา Xs" panel it had.
+				// They are stored per variant too, inside the JSON above.
+				`ALTER TABLE messages ADD COLUMN reasoning TEXT NOT NULL DEFAULT ''`,
+				`ALTER TABLE messages ADD COLUMN think_secs INTEGER NOT NULL DEFAULT 0`,
+			} {
+				if _, err := tx.Exec(stmt); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
 }
 
 // latestSchemaVersion is what this build understands.

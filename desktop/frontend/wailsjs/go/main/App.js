@@ -318,6 +318,10 @@ export function RefreshSkills() {
   return window['go']['main']['App']['RefreshSkills']();
 }
 
+export function RegenerateReply(arg1) {
+  return window['go']['main']['App']['RegenerateReply'](arg1);
+}
+
 export function RelativizePath(arg1) {
   return window['go']['main']['App']['RelativizePath'](arg1);
 }
@@ -338,8 +342,16 @@ export function RequiresAPIKey(arg1) {
   return window['go']['main']['App']['RequiresAPIKey'](arg1);
 }
 
+export function ResendEdited(arg1, arg2) {
+  return window['go']['main']['App']['ResendEdited'](arg1, arg2);
+}
+
 export function RetryActiveProvider() {
   return window['go']['main']['App']['RetryActiveProvider']();
+}
+
+export function RetryFailedTurn(arg1) {
+  return window['go']['main']['App']['RetryFailedTurn'](arg1);
 }
 
 export function RevealSpeechModel(arg1) {
@@ -476,6 +488,10 @@ export function SwitchProvider(arg1) {
 
 export function SwitchThinkLevel(arg1) {
   return window['go']['main']['App']['SwitchThinkLevel'](arg1);
+}
+
+export function SwitchVariant(arg1) {
+  return window['go']['main']['App']['SwitchVariant'](arg1);
 }
 
 export function TerminalClose(arg1) {

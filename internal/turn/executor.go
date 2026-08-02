@@ -128,6 +128,22 @@ type TurnOptions struct {
 	// more RespondWithTools parameter so the Agent interface, and every fake
 	// implementing it, stays untouched.
 	OnRound func(RoundEvent)
+	// OnContent, if set, receives the model's answer text as it is generated,
+	// for a live preview only. It is NOT the delivery channel: the reply still
+	// arrives exactly once, through onChunk, when the turn ends.
+	//
+	// The distinction is the whole design. A tool loop writes text every round
+	// and only the last round's text is the answer — the others are narration,
+	// a draft the loop is about to nudge away, or a finished reply demoted to
+	// narration because the user typed under it. A preview can be thrown away;
+	// a delivery cannot. So this streams freely and OnContentReset erases it
+	// the instant the round turns out not to be the answer.
+	OnContent func(chunk string)
+	// OnContentReset discards whatever OnContent has shown so far. Called after
+	// every provider call whose text is not going to be surfaced as the reply,
+	// and once more immediately before the reply is delivered — so the preview
+	// is always empty when the real answer lands, and it cannot be doubled.
+	OnContentReset func()
 }
 
 // RoundEvent is one completed round of the model⇄tool loop.
@@ -197,7 +213,15 @@ type ExecutorOptions struct {
 }
 
 type Result struct {
-	Reply    string
+	Reply string
+	// Parts is the turn as it actually happened — prose, thinking segments and
+	// tool calls in order (see part.go). Reply is the concatenation of its text
+	// parts, kept so every caller that predates this keeps working; new readers
+	// should draw Parts, because Reply alone cannot say where the work went.
+	//
+	// Nil for the paths that produce a single answer and no sequence: an
+	// explicit skill command, and the plain conversational turn.
+	Parts    []TurnPart
 	Streamed bool
 	Status   TurnStatus
 }
@@ -648,6 +672,12 @@ func (e *Executor) executeAgentToolLoop(
 		debuglog.Msg("tool: %s", td.Function.Name)
 	}
 
+	// The turn is assembled as it happens, in order, instead of being reduced to
+	// its last sentence. Narration, thinking segments and tool calls all land in
+	// `parts` at the moment they occur — which is the whole reason the caller can
+	// later draw the turn the way it actually went.
+	parts := &partList{}
+
 	// Interleave the loop's own story into the timeline (§59): a "thinking"
 	// segment for each round that streamed reasoning, and a "note" for the
 	// narration the model wrote alongside its tool calls — text that used to go
@@ -655,21 +685,42 @@ func (e *Executor) executeAgentToolLoop(
 	// carry it).
 	opts := turnOptions
 	reasoning := onReasoningChunk
-	if e.onToolAction != nil {
-		seg := &thinkSegments{}
-		if onReasoningChunk != nil {
-			reasoning = func(chunk string) {
-				seg.observe()
-				onReasoningChunk(chunk)
-			}
+	seg := &thinkSegments{}
+	if onReasoningChunk != nil {
+		reasoning = func(chunk string) {
+			seg.observe()
+			onReasoningChunk(chunk)
 		}
-		opts.OnRound = func(r RoundEvent) {
-			if secs, ok := seg.flush(); ok {
+	}
+	// Always set now, not only when someone is listening to tool events: the
+	// sequence is the turn's own record, and a caller that draws no live
+	// timeline still wants it back.
+	opts.OnRound = func(r RoundEvent) {
+		secs, streamed := seg.flush()
+		if streamed {
+			parts.addThinking(secs)
+			if e.onToolAction != nil {
 				e.onToolAction(ToolEvent{Action: "thinking", Secs: secs})
 			}
-			if text := strings.TrimSpace(r.Text); !r.Final && text != "" {
-				e.onToolAction(ToolEvent{Action: "note", Text: text})
-			}
+		}
+		text := strings.TrimSpace(r.Text)
+		if text == "" {
+			return
+		}
+		// Both narration and the closing answer are text parts — the difference
+		// between them was only ever "which one gets shown", and in a sequence
+		// both do.
+		parts.addText(text)
+		if r.Final {
+			return
+		}
+		// This round's prose is now in the record. The live preview hands it
+		// over rather than showing the same sentence twice while the tools run.
+		if turnOptions.OnContentReset != nil {
+			turnOptions.OnContentReset()
+		}
+		if e.onToolAction != nil {
+			e.onToolAction(ToolEvent{Action: "note", Text: text})
 		}
 	}
 
@@ -707,19 +758,56 @@ func (e *Executor) executeAgentToolLoop(
 			Error:    ev.Error,
 			Duration: elapsed,
 		})
+		// The work goes into the sequence where it happened — between the
+		// narration that announced it and whatever the model said next.
+		parts.addTool(ToolPart{
+			Ref:     call.ID,
+			Name:    call.Function.Name,
+			Subject: ev.Subject,
+			OK:      success,
+			Error:   ev.Error,
+			Secs:    int(elapsed.Round(time.Second) / time.Second),
+			Added:   output.LinesAdded,
+			Removed: output.LinesRemoved,
+		})
 		return receipt, output.Images, execErr
 	}, asStreamHandler(reasoning), opts)
 	if err != nil {
-		return Result{}, false, err
+		// handled=true: this path RAN and this is its outcome. Reporting false
+		// here conflated "the tool loop failed" with the guard clauses above,
+		// which mean "the tool loop does not apply" — and execute() reacts to
+		// the latter by falling through to RespondStream. A failed turn was
+		// therefore re-sent as a second, non-tool completion that added the
+		// user's message to the context a second time and discarded this error
+		// in favour of whatever the retry produced. One DNS failure cost three
+		// provider calls and left the question in the model's memory twice.
+		return Result{}, true, err
 	}
 	debuglog.Info("agent tool loop", fmt.Sprintf("usedTools=%v", usedTools))
+	// A reply the loop produced itself rather than taking from a round — the
+	// doom-loop stop, ToolLoopExhausted, a cancelled tool's output — never went
+	// through OnRound, so the sequence has not heard of it. Record it, or the
+	// turn would be drawn without the only thing the user is actually told.
+	if trimmed := strings.TrimSpace(reply); trimmed != "" {
+		if last, ok := parts.lastText(); !ok || last != trimmed {
+			parts.addText(trimmed)
+		}
+	}
+	assembled := parts.all()
 	if onChunk != nil {
+		// Erase the live preview first. Whatever it holds is at best the same
+		// answer arriving a moment earlier, and at worst a draft the loop
+		// discarded — either way the delivery below is the authority.
+		if opts.OnContentReset != nil {
+			opts.OnContentReset()
+		}
 		if strings.TrimSpace(reply) != "" {
 			onChunk(reply)
 		}
 	}
 	return Result{
 		Reply:    reply,
+		Parts:    assembled,
 		Streamed: false,
 		Status:   TurnStatusDone,
 	}, true, nil

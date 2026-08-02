@@ -18,6 +18,7 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/config"
 	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/safety"
+	"github.com/Mike0165115321/Aetox/internal/turn"
 )
 
 // SessionMessage is one chat bubble, as the UI shows it.
@@ -31,6 +32,31 @@ type SessionMessage struct {
 	// ThinkSecs is how long the model streamed thinking (first→last reasoning
 	// chunk), for the "คิดเป็นเวลา Xs" label. 0 when the turn had no thinking.
 	ThinkSecs int `json:"thinkSecs,omitempty"`
+	// Variants holds every answer this bubble has had, oldest first, when the
+	// user asked the question more than once. Text/Reasoning/ThinkSecs above
+	// always mirror Variants[Active] — the live answer — so every reader that
+	// predates variants keeps working unchanged.
+	//
+	// Empty for the overwhelming majority of messages, which were answered once.
+	Variants []SessionVariant `json:"variants,omitempty"`
+	Active   int              `json:"active,omitempty"`
+	// Parts is the turn as it happened — prose, thinking segments and tool
+	// calls in order (turn.TurnPart). Text is the concatenation of its prose,
+	// so a reader that only knows about Text is unaffected; a reader that draws
+	// Parts gets narration in the place it was said and the work in between.
+	//
+	// Nil on a user message, and on every agent message written before the
+	// sequence existed.
+	Parts []turn.TurnPart `json:"parts,omitempty"`
+}
+
+// SessionVariant is one of the answers a question received. Stored as JSON in
+// messages.variants rather than as extra rows, so the transcript stays one row
+// per bubble and nothing else in this file has to learn what a variant is.
+type SessionVariant struct {
+	Text      string `json:"text"`
+	Reasoning string `json:"reasoning,omitempty"`
+	ThinkSecs int    `json:"thinkSecs,omitempty"`
 }
 
 // SessionMeta is one row in the sidebar's history list. Snippet is only set
@@ -107,8 +133,8 @@ func (a *App) appendTurn(userMsg, agentMsg SessionMessage) {
 		ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at`,
 		a.sessionID, projectKey(a.cfg.SandboxRoot), sessionTitleFrom(userMsg.Text), now, now)
 	for _, m := range []SessionMessage{userMsg, agentMsg} {
-		_, _ = tx.Exec(`INSERT INTO messages(session_id, role, text, time) VALUES(?,?,?,?)`,
-			a.sessionID, m.Role, m.Text, m.Time)
+		_, _ = tx.Exec(`INSERT INTO messages(session_id, role, text, time, reasoning, think_secs, parts) VALUES(?,?,?,?,?,?,?)`,
+			a.sessionID, m.Role, m.Text, m.Time, m.Reasoning, m.ThinkSecs, encodeParts(m.Parts))
 	}
 	_ = tx.Commit()
 }
@@ -344,7 +370,7 @@ func (a *App) LoadSession(id string) ([]SessionMessage, error) {
 		return nil, err
 	}
 	rows, err := db.Query(`
-		SELECT m.role, m.text, m.time
+		SELECT m.role, m.text, m.time, m.reasoning, m.think_secs, m.variants, m.variant_active, m.parts
 		FROM messages m
 		JOIN sessions s ON s.id = m.session_id
 		WHERE m.session_id = ? AND s.project_key = ?
@@ -358,7 +384,10 @@ func (a *App) LoadSession(id string) ([]SessionMessage, error) {
 	messages := []SessionMessage{}
 	for rows.Next() {
 		var m SessionMessage
-		if rows.Scan(&m.Role, &m.Text, &m.Time) == nil {
+		var variants, parts string
+		if rows.Scan(&m.Role, &m.Text, &m.Time, &m.Reasoning, &m.ThinkSecs, &variants, &m.Active, &parts) == nil {
+			m.Variants = decodeVariants(variants)
+			m.Parts = decodeParts(parts)
 			messages = append(messages, m)
 		}
 	}

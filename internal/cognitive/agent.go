@@ -289,9 +289,12 @@ func (a *Agent) RespondWithTools(
 			debuglog.Msg("interjection folded in before round %d (%d chars)", i+1, len(text))
 			a.context.Add(model.RoleUser, interjectionNote+text)
 		}
-		response, err := a.completeToolLoop(ctx, a.buildRequest(a.context.Messages(), loopMaxTokens, 0.2, modelTools, "auto", opts), onReasoningChunk)
+		response, err := a.completeToolLoop(ctx, a.buildRequest(a.context.Messages(), loopMaxTokens, 0.2, modelTools, "auto", opts), onReasoningChunk, opts)
 		if err != nil {
 			debuglog.Msg("Complete() error: %v", err)
+			// A half-written answer must not survive the failure that
+			// interrupted it — whatever replaces it says something different.
+			discardPreview(opts)
 			if i == 0 {
 				// The user message is already in context — respond over it
 				// rather than via Respond(msg), which would add it a second time.
@@ -313,6 +316,10 @@ func (a *Agent) RespondWithTools(
 			// Never accept that as the answer: tell the model to call the tool
 			// for real and retry, capped so a persistent leaker can't spin.
 			if model.ContainsLeakedDSML(content) {
+				// The gate kept the markup itself off screen, but the prose in
+				// front of it streamed — and this round is about to be thrown
+				// away, so that prose is not the answer either.
+				discardPreview(opts)
 				if dsmlNudges < maxDSMLNudges {
 					dsmlNudges++
 					debuglog.Msg("leaked DSML tool call, nudging (%d/%d)", dsmlNudges, maxDSMLNudges)
@@ -325,6 +332,9 @@ func (a *Agent) RespondWithTools(
 				// Nudge inside the loop, not via recoverEmptyReply: here the
 				// model keeps its tools, so it can cover a missing capability
 				// (e.g. reading an image) by calling a skill instead of refusing.
+				// Whitespace-only text is empty to this check but was streamed,
+				// so the preview is cleared here too.
+				discardPreview(opts)
 				if !nudgedEmpty {
 					nudgedEmpty = true
 					debuglog.Msg("empty reply in tool loop, nudging once")
@@ -344,8 +354,11 @@ func (a *Agent) RespondWithTools(
 			// The answer it just gave stays in context, so the next round builds on
 			// it instead of repeating it.
 			if pending := a.DrainInterjections(); len(pending) > 0 {
-				// The turn stays alive, so this answer will never be surfaced as
-				// the reply — report it as narration or it is invisible.
+				// The turn stays alive, so this answer is not the reply — but it
+				// is still something the model said, so it goes into the
+				// sequence as a non-final part rather than being retracted. That
+				// is the difference the parts model makes: nothing has to be
+				// un-said, only re-placed.
 				if opts.OnRound != nil {
 					opts.OnRound(turn.RoundEvent{Text: content})
 				}
@@ -368,8 +381,10 @@ func (a *Agent) RespondWithTools(
 			ReasoningContent: strings.TrimSpace(response.ReasoningContent),
 			ToolCalls:        response.ToolCalls,
 		})
-		// Before the tool calls run, so the narration lands in the timeline
-		// above the work it announces.
+		// Before the tool calls run, so the narration lands in the sequence
+		// above the work it announces. It is a part of the turn, not a draft to
+		// be taken back — the executor's OnRound is what records it and hands
+		// the live preview over.
 		if opts.OnRound != nil {
 			opts.OnRound(turn.RoundEvent{Text: content})
 		}
@@ -461,19 +476,49 @@ func (a *Agent) RespondWithTools(
 
 // completeToolLoop runs one tool-loop request. When a reasoning handler is
 // present and the provider can stream, it uses StreamComplete so the model's
-// thinking reaches the UI live (the whole non-streaming call would otherwise
-// show nothing until it finishes). Content is NOT streamed live — a nil content
-// handler keeps any leaked DSML tool-call markup off-screen and lets the
-// executor deliver the final text once at the end; StreamComplete still
-// accumulates and parses that content. Non-streaming providers, or turns with
-// no reasoning handler (e.g. the CLI), keep using Complete unchanged.
-func (a *Agent) completeToolLoop(ctx context.Context, req model.Request, onReasoningChunk func(string) error) (model.Response, error) {
+// thinking — and, when the caller asked for it, the answer as it is written —
+// reaches the UI live. Non-streaming providers, or turns with no reasoning
+// handler (e.g. the CLI), keep using Complete unchanged.
+//
+// Content used to be withheld outright: a nil handler was the only thing
+// keeping leaked DSML tool-call markup off-screen, at the price of the answer
+// arriving in one silent jump. model.GateLeakedDSML now does that job at the
+// chunk level, so the text can stream and the markup still cannot.
+//
+// What the gate does NOT decide is whether this round's text is the answer at
+// all — only the loop knows that, and it says so by erasing the preview
+// (opts.OnContentReset) on every path that does not surface `content`.
+func (a *Agent) completeToolLoop(ctx context.Context, req model.Request, onReasoningChunk func(string) error, opts turn.TurnOptions) (model.Response, error) {
 	if onReasoningChunk != nil {
 		if streamer, ok := a.provider.(model.StreamingProvider); ok {
-			return streamer.StreamComplete(ctx, req, nil, onReasoningChunk)
+			var onContent model.StreamChunkHandler
+			if opts.OnContent != nil {
+				onContent = model.GateLeakedDSML(func(chunk string) error {
+					opts.OnContent(chunk)
+					return nil
+				})
+			}
+			return streamer.StreamComplete(ctx, req, onContent, onReasoningChunk)
 		}
 	}
 	return a.provider.Complete(ctx, req)
+}
+
+// discardPreview erases whatever the live preview has shown for the round that
+// just finished.
+//
+// Only three callers are left, and they are the only rounds whose text never
+// enters the turn at all: one that leaked markup and is about to be nudged, one
+// that came back empty, and one that failed. Narration and an interjected-over
+// answer used to be here too — they are parts of the turn now, recorded rather
+// than retracted, which is the point of the sequence.
+//
+// A no-op when nobody asked for a preview, which is every caller but the
+// desktop.
+func discardPreview(opts turn.TurnOptions) {
+	if opts.OnContentReset != nil {
+		opts.OnContentReset()
+	}
 }
 
 func truncateStr(s string, max int) string {
@@ -662,7 +707,11 @@ func (a *Agent) RespondStream(ctx context.Context, userMessage string, onChunk f
 	req := a.buildRequest(a.context.Messages(), a.toolLoopMaxTokens(), 0.2, nil, "", opts)
 
 	if streamer, ok := a.provider.(model.StreamingProvider); ok {
-		response, err := streamer.StreamComplete(ctx, req, onChunk, onReasoningChunk)
+		// Gated for the same reason the tool loop is: this path has no DSML
+		// backstop at all (it never inspects the reply), and it tells its caller
+		// the text is already on screen — so raw markup here would be permanent,
+		// not merely early.
+		response, err := streamer.StreamComplete(ctx, req, model.GateLeakedDSML(onChunk), onReasoningChunk)
 		if err == nil {
 			reply := strings.TrimSpace(response.Text)
 			streamed := true

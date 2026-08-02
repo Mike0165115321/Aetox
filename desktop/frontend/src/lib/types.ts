@@ -97,12 +97,76 @@ export interface ChatMessage {
   /** Sandbox path of an attached image on a restored message — the thumbnail is
    * read back from it, since a data URL has no business in the history DB. */
   imageRelPath?: string
+  /** The attachment marker lines that were appended to this message when it was
+   * sent — the part the model reads and the bubble never shows. Kept so editing
+   * the prose can re-send them: without it, fixing a typo would silently detach
+   * the file the question is about. */
+  attachSuffix?: string
   /** tool calls made during this turn, kept on the reply for a persistent timeline. */
   steps?: ToolStep[]
+  /** The turn as it happened — prose, thinking segments and tool calls in the
+   * order they occurred. When present this is what the bubble draws, so
+   * narration appears where it was said instead of collapsed into a panel.
+   * Absent on user messages and on every turn from before the sequence existed,
+   * which fall back to rendering `text`. */
+  parts?: TurnPart[]
   /** the model's thinking for this reply — kept after the turn, collapsed by default. */
   reasoning?: string
   /** seconds the model spent thinking (first→last reasoning chunk). */
   thinkSecs?: number
+  /** Every answer this question has had, when it was asked more than once.
+   * text/reasoning/thinkSecs/steps above always mirror variants[activeVariant].
+   * Fewer than two means no switcher is drawn. */
+  variants?: MessageVariant[]
+  activeVariant?: number
+  /** This bubble is a turn that never completed. failedText is exactly what was
+   * sent — attachment marker lines and all — so a retry re-sends the same thing
+   * rather than a reconstruction of it. */
+  failed?: boolean
+  failedText?: string
+  /** Files put back before this answer was regenerated, named on the bubble:
+   * an answer that quietly undid six files would be the worse surprise. */
+  revertedFiles?: string[]
+  /** A re-run that failed, shown under the answer it could not replace. The
+   * previous answer is still the one on screen. */
+  error?: string
+}
+
+/** One piece of an assistant turn — mirrors turn.TurnPart in Go.
+ *
+ * The shape a turn actually has: a provider streams prose, a tool call, more
+ * prose. Collapsing that to one string is what put narration in a separate
+ * panel and made the tool timeline impossible to store. */
+export interface TurnPart {
+  kind: 'text' | 'thinking' | 'tool'
+  /** prose, on a 'text' part */
+  text?: string
+  /** seconds a 'thinking' segment streamed */
+  secs?: number
+  tool?: ToolPartInfo
+}
+
+export interface ToolPartInfo {
+  ref?: string
+  name: string
+  subject?: string
+  agent?: string
+  brief?: string
+  ok: boolean
+  error?: string
+  secs?: number
+  added?: number
+  removed?: number
+}
+
+/** One of the answers a question received. */
+export interface MessageVariant {
+  text: string
+  reasoning?: string
+  thinkSecs?: number
+  /** Live only. The store keeps no tool timeline, so a variant read back from a
+   * reloaded session has none — the switcher just shows no toggle for it. */
+  steps?: ToolStep[]
 }
 
 /** One tool call in the live per-turn timeline ("Using browser_read… 12s"). */

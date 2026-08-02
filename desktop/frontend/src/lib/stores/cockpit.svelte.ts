@@ -3,7 +3,7 @@
 // incremental updates here — append a chat message, advance a timeline step) and
 // the UI reacts. Do not reassign `cockpit` itself; mutate its properties.
 
-import { emptyCockpitState, type CockpitState, type TreeNode, type ChangedFile, type Session, type ToolStep, type ToolEvent, type ChatMessage, type PendingFile } from '../types'
+import { emptyCockpitState, type CockpitState, type TreeNode, type ChangedFile, type Session, type ToolStep, type ToolEvent, type ChatMessage, type MessageVariant, type TurnPart, type PendingFile } from '../types'
 import type { CockpitSource } from '../services/cockpit'
 import {
   SendMessage, GetProjectStatus, GetModelInfo, OpenProjectFolder, OpenProjectPath,
@@ -15,6 +15,7 @@ import {
   AnswerUserQuestion, Interject, RetryActiveProvider, PendingUndo, UndoLastTurn,
   CompleteSignIn, SignOut, ImportSignIn,
   ListTaskChips, DismissTaskChip,
+  RetryFailedTurn, RegenerateReply, ResendEdited, SwitchVariant,
 } from '../../../wailsjs/go/main/App'
 import type { main } from '../../../wailsjs/go/models'
 import { t } from '../i18n.svelte'
@@ -150,16 +151,29 @@ function restoreAttachments(m: main.SessionMessage): ChatMessage {
     time: m.time,
     reasoning: m.reasoning || undefined,
     thinkSecs: m.thinkSecs || undefined,
+    // A reloaded answer keeps its alternates but not their tool timelines —
+    // the store has never held one. The switcher works; the toggles come back
+    // only for whatever is generated from here on.
+    variants: m.variants?.length ? (m.variants as MessageVariant[]) : undefined,
+    activeVariant: m.variants?.length ? (m.active ?? 0) : undefined,
+    // The stored sequence is what the bubble draws; a turn from before it
+    // existed has none and falls back to plain text.
+    parts: m.parts?.length ? (m.parts as TurnPart[]) : undefined,
   }
   if (out.role === 'agent') return out
+  // What is folded out is also kept: editing a restored question has to be able
+  // to re-send the exact lines the model was given the first time.
+  let suffix = ''
   out.text = out.text
-    .replace(ATTACH_CTX_RE, (_all, label: string) => { out.contextLabel = label; return '' })
-    .replace(ATTACH_FILE_RE, (_all, kind: string, relPath: string) => {
+    .replace(ATTACH_CTX_RE, (all, label: string) => { out.contextLabel = label; suffix += all; return '' })
+    .replace(ATTACH_FILE_RE, (all, kind: string, relPath: string) => {
       if (kind === 'image') out.imageRelPath = relPath
       else { out.attachKind = kind as PendingFile['kind']; out.attachLabel = relPath.split('/').pop() }
+      suffix += all
       return ''
     })
     .trim()
+  if (suffix) out.attachSuffix = suffix
   return out
 }
 
@@ -391,8 +405,10 @@ export async function sendUserMessage(text: string, alreadyShown = false): Promi
   // Explicit source tags so the model can tell attachment types apart —
   // a user-attached image vs a dragged-in workbench tab, and for tabs,
   // a file on disk vs a live web page. Only the model sees these lines.
-  let sentText = trimmed
-  if (image) sentText += `\n\n[attachment: user-attached image — read it with image_ocr] ${image.relPath}`
+  // Built apart from the prose so the two can be recombined later: editing the
+  // question re-sends these lines verbatim, and the bubble never shows them.
+  let attachSuffix = ''
+  if (image) attachSuffix += `\n\n[attachment: user-attached image — read it with image_ocr] ${image.relPath}`
   if (file) {
     // Point at the tool that actually opens this kind of file. Naming the wrong
     // one costs a wasted turn; naming none costs the model guessing.
@@ -406,18 +422,19 @@ export async function sendUserMessage(text: string, alreadyShown = false): Promi
         : file.relPath.toLowerCase().endsWith('.pdf')
           ? 'read it with pdf_read'
           : 'read it with read'
-    sentText += `\n\n[attachment: user-attached ${file.kind} — ${how}] ${file.relPath}`
+    attachSuffix += `\n\n[attachment: user-attached ${file.kind} — ${how}] ${file.relPath}`
   }
   if (context) {
     const kindLabel = context.kind === 'file' ? 'file from a workbench tab' : 'web page text from a workbench browser tab'
-    sentText += `\n\n[attachment: ${kindLabel}] ${context.label}:\n\`\`\`\n${context.content}\n\`\`\``
+    attachSuffix += `\n\n[attachment: ${kindLabel}] ${context.label}:\n\`\`\`\n${context.content}\n\`\`\``
   }
-  sentText = sentText.trim()
+  const sentText = (trimmed + attachSuffix).trim()
   if (!alreadyShown) {
     cockpit.chat.push({
       role: 'user', text: trimmed, time: nowLabel(),
       imageDataUrl: image?.dataUrl, contextLabel: context?.label,
       attachLabel: file?.label, attachKind: file?.kind,
+      attachSuffix: attachSuffix || undefined,
     })
   }
   cockpit.pendingImage = null
@@ -431,21 +448,45 @@ export async function sendUserMessage(text: string, alreadyShown = false): Promi
     await Interject(sentText)
     return
   }
+  await runLiveTurn(async () => {
+    try {
+      const reply = await SendMessage(sentText)
+      cockpit.chat.push({
+        role: 'agent', text: reply.text, parts: reply.parts as TurnPart[] | undefined,
+        time: nowLabel(), ...turnArtifacts(),
+      })
+    } catch (err) {
+      // The engine persists nothing for a turn that failed, so the text it was
+      // given rides on the bubble: it is the only copy left to retry with.
+      cockpit.chat.push({
+        role: 'agent', text: t('cockpit.sendError', { err: String(err) }), time: nowLabel(),
+        failed: true, failedText: sentText,
+      })
+    }
+  })
+  // Only stragglers land here now — anything typed under a running turn went
+  // straight into it via Interject. Their bubbles are already on screen.
+  const next = queuedMessages.shift()
+  if (next !== undefined) await sendUserMessage(next, true)
+}
+
+/**
+ * Wraps one engine call in the live-turn scaffolding: the typing bubble, the
+ * tool timeline, the streamed text, and the refreshes that follow a turn.
+ *
+ * Shared by every path that produces an answer — a send, a retry, a regenerate,
+ * an edited resend — because the reset is the part that is easy to get subtly
+ * wrong, and four half-copies of it would strand `awaitingReply` on the first
+ * path anyone forgot.
+ */
+async function runLiveTurn(call: () => Promise<void>): Promise<void> {
   cockpit.awaitingReply = true
   cockpit.agentStatus = ''
   cockpit.toolSteps = []
   cockpit.streamingText = ''
   cockpit.reasoningText = ''
   try {
-    const reply = await SendMessage(sentText)
-    const steps = cockpit.toolSteps.length ? cockpit.toolSteps.map((s) => ({ ...s })) : undefined
-    // Keep the thinking on the finished message (collapsed) — the live panel
-    // alone would vanish the moment the turn completes.
-    const reasoning = cockpit.reasoningText.trim() || undefined
-    const thinkSecs = reasoning ? Math.max(1, Math.round((thinkLastAt - thinkStartedAt) / 1000)) : undefined
-    cockpit.chat.push({ role: 'agent', text: reply, time: nowLabel(), steps, reasoning, thinkSecs })
-  } catch (err) {
-    cockpit.chat.push({ role: 'agent', text: t('cockpit.sendError', { err: String(err) }), time: nowLabel() })
+    await call()
   } finally {
     cockpit.awaitingReply = false
     cockpit.agentStatus = ''
@@ -458,10 +499,136 @@ export async function sendUserMessage(text: string, alreadyShown = false): Promi
   await refreshUndo()
   await refreshSessions()
   await refreshGlobalHistory()
-  // Only stragglers land here now — anything typed under a running turn went
-  // straight into it via Interject. Their bubbles are already on screen.
-  const next = queuedMessages.shift()
-  if (next !== undefined) await sendUserMessage(next, true)
+}
+
+/**
+ * Snapshots what the turn that just finished produced, so it survives the reset
+ * above — the live panels alone vanish the moment the turn completes.
+ * Must be called before runLiveTurn's finally runs, i.e. inside the call.
+ */
+function turnArtifacts(): Pick<ChatMessage, 'steps' | 'reasoning' | 'thinkSecs'> {
+  const steps = cockpit.toolSteps.length ? cockpit.toolSteps.map((s) => ({ ...s })) : undefined
+  const reasoning = cockpit.reasoningText.trim() || undefined
+  const thinkSecs = reasoning ? Math.max(1, Math.round((thinkLastAt - thinkStartedAt) / 1000)) : undefined
+  return { steps, reasoning, thinkSecs }
+}
+
+/**
+ * Re-run a turn that failed. The error bubble goes; the question stays exactly
+ * where it is, because it is still the question being asked.
+ *
+ * The engine rebuilds its memory from the transcript first (App.RetryFailedTurn)
+ * — a failed turn leaves its question in the model's context and nowhere else,
+ * so sending the text again without that would ask it twice.
+ */
+export async function retryFailedTurn(index: number): Promise<void> {
+  const failed = cockpit.chat[index]
+  const text = failed?.failedText
+  if (!text || cockpit.awaitingReply) return
+  cockpit.chat.splice(index, 1)
+  await runLiveTurn(async () => {
+    try {
+      const reply = await RetryFailedTurn(text)
+      cockpit.chat.push({
+        role: 'agent', text: reply.text, parts: reply.parts as TurnPart[] | undefined,
+        time: nowLabel(), ...turnArtifacts(),
+      })
+    } catch (err) {
+      cockpit.chat.push({
+        role: 'agent', text: t('cockpit.sendError', { err: String(err) }), time: nowLabel(),
+        failed: true, failedText: text,
+      })
+    }
+  })
+}
+
+/**
+ * Answer the last question again, keeping the previous answer switchable.
+ *
+ * revertFiles puts back whatever the previous attempt wrote. Answering again
+ * without it is the genuinely risky option — the turn's tools run a second time
+ * on top of their own output — so the caller offers it whenever there is
+ * anything to revert.
+ */
+export async function regenerateReply(revertFiles: boolean): Promise<void> {
+  const last = cockpit.chat.at(-1)
+  if (!last || last.role !== 'agent' || last.failed || cockpit.awaitingReply) return
+  // Whatever is on screen becomes variant 0 — with its tool timeline, which the
+  // engine's own list cannot carry (the store keeps no timeline).
+  const previous: MessageVariant[] = last.variants ?? [
+    { text: last.text, reasoning: last.reasoning, thinkSecs: last.thinkSecs, steps: last.steps },
+  ]
+  await runLiveTurn(async () => {
+    try {
+      const result = await RegenerateReply(revertFiles)
+      const artifacts = turnArtifacts()
+      const variants: MessageVariant[] = result.variants.map((v, i) => ({ ...v, steps: previous[i]?.steps }))
+      variants[result.active] = { ...variants[result.active], steps: artifacts.steps }
+      Object.assign(last, artifacts, {
+        text: result.text, parts: result.parts as TurnPart[] | undefined,
+        time: nowLabel(), variants, activeVariant: result.active,
+        revertedFiles: result.reverted?.length ? result.reverted : undefined,
+        error: undefined,
+      })
+    } catch (err) {
+      // The answer on screen is still the real one — the engine put its memory
+      // back. Say what went wrong under it rather than replacing it.
+      last.error = t('cockpit.regenerateError', { err: String(err) })
+    }
+  })
+}
+
+/** Show a different one of the stored answers, and continue the conversation
+ *  from it: the engine rewrites its memory to match (App.SwitchVariant). */
+export async function switchVariant(index: number): Promise<void> {
+  const last = cockpit.chat.at(-1)
+  if (!last || !last.variants || cockpit.awaitingReply) return
+  const local = last.variants[index]
+  try {
+    const result = await SwitchVariant(index)
+    Object.assign(last, {
+      text: result.text,
+      activeVariant: result.active,
+      reasoning: local?.reasoning || undefined,
+      thinkSecs: local?.thinkSecs || undefined,
+      steps: local?.steps,
+      error: undefined,
+    })
+  } catch (err) {
+    last.error = t('cockpit.regenerateError', { err: String(err) })
+  }
+}
+
+/**
+ * Replace the last question with a corrected one and answer it fresh.
+ *
+ * The old exchange is deleted rather than kept as a variant: two answers to two
+ * different questions are not alternatives to each other.
+ */
+export async function resendEdited(text: string, revertFiles: boolean): Promise<void> {
+  const trimmed = text.trim()
+  if (!trimmed || cockpit.awaitingReply || cockpit.chat.length < 2) return
+  const question = cockpit.chat[cockpit.chat.length - 2]
+  if (question.role !== 'user') return
+  // The attachment goes with the question, not with its wording: fixing a typo
+  // must not detach the file the question is about.
+  const sent = (trimmed + (question.attachSuffix ?? '')).trim()
+  const previous = cockpit.chat.splice(cockpit.chat.length - 2, 2)
+  cockpit.chat.push({ ...previous[0], text: trimmed, time: nowLabel() })
+  await runLiveTurn(async () => {
+    try {
+      const reply = await ResendEdited(sent, revertFiles)
+      cockpit.chat.push({
+        role: 'agent', text: reply.text, parts: reply.parts as TurnPart[] | undefined,
+        time: nowLabel(), ...turnArtifacts(),
+      })
+    } catch (err) {
+      cockpit.chat.push({
+        role: 'agent', text: t('cockpit.sendError', { err: String(err) }), time: nowLabel(),
+        failed: true, failedText: sent,
+      })
+    }
+  })
 }
 
 /** Abort the turn in flight — the engine's tool loop is unbounded, this is the user's brake. */
@@ -523,11 +690,26 @@ export function applyAgentStatus(status: string): void {
   cockpit.agentStatus = status
 }
 
-/** Live reply text from the Go engine (see desktop/app.go SendMessage's onChunk).
- * One call with the whole reply for a tool-using turn, or many small calls for a
- * plain streamed conversational one — either way, just keep appending. */
-export function applyAgentChunk(chunk: string): void {
-  cockpit.streamingText += chunk
+/**
+ * Live answer text from the Go engine (desktop/app.go emitChatChunk).
+ *
+ * One event carries three things, told apart by `replace`:
+ *   { text, replace: false } — a fragment the model just wrote, append it
+ *   { text: '', replace: true } — that round was not the answer, erase it
+ *   { text: reply, replace: true } — the finished reply, the authority
+ *
+ * The last one replacing rather than appending is what makes doubling
+ * impossible: however much streamed first, the delivery overwrites it. A bare
+ * string is still accepted so a frontend reload against an older engine build
+ * degrades to the previous append-only behaviour instead of rendering [object].
+ */
+export function applyAgentChunk(payload: string | { text: string; replace: boolean }): void {
+  if (typeof payload === 'string') {
+    cockpit.streamingText += payload
+    return
+  }
+  if (payload.replace) cockpit.streamingText = payload.text
+  else cockpit.streamingText += payload.text
 }
 
 // First/last reasoning-chunk timestamps this turn, for the "thought for Xs" label.

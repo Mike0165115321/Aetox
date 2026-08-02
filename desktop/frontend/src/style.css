@@ -583,6 +583,49 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .msg-copy { margin-left:6px; color:var(--text-dim); font-size:var(--fs-xs); opacity:0; transition:opacity .12s; }
 .msg:hover .msg-copy { opacity:1; }
 .msg-copy:hover { color:var(--accent); }
+/* Hidden until hover like the rest — a disabled control that stayed on screen
+   while the row was idle would advertise itself as the one thing you cannot do. */
+.msg-copy:disabled { cursor:default; }
+.msg:hover .msg-copy:disabled { opacity:.35; }
+
+/* Re-running a turn. These sit in the timestamp row with the copy button and
+   appear on hover the same way — an answer you are happy with should not be
+   ringed by buttons offering to replace it. Retry is the exception: a turn that
+   failed has nothing else to offer, so its button is always visible. */
+.msg-act { margin-left:8px; display:inline-flex; align-items:center; gap:4px; color:var(--text-dim); font:inherit; font-size:var(--fs-xs); opacity:0; transition:opacity .12s; vertical-align:middle; }
+.msg:hover .msg-act { opacity:1; }
+.msg-act:hover:not(:disabled) { color:var(--accent); }
+.msg-act.retry { opacity:1; color:var(--status-danger); }
+.msg-act.retry:hover:not(:disabled) { color:var(--status-danger-strong, var(--status-danger)); }
+/* Last, so it wins over .msg-act.retry's always-on opacity: a turn is running
+   and nothing here can be pressed. */
+.msg-act:disabled { opacity:.35; cursor:default; }
+
+/* The 1/2 readout stays visible whenever there is more than one answer: it is
+   state, not an action, and hiding it would leave no sign the other answer
+   exists. Only its arrows fade in with the rest. */
+.variant-pick { margin-left:8px; display:inline-flex; align-items:center; gap:2px; vertical-align:middle; }
+.variant-pick .msg-copy { margin-left:0; }
+.variant-n { color:var(--text-muted); font-size:var(--fs-xs); font-variant-numeric:tabular-nums; min-width:26px; text-align:center; }
+
+/* A tool call drawn inline in the turn, between the prose it sits between.
+   Indented and quieter than the text so the sentence stays the thing being
+   read and the work reads as an aside — the same weight it has in the
+   collapsed timeline, just in its real place. */
+.tool-step.seq { margin:6px 0 6px 2px; padding-left:8px; border-left:2px solid var(--border-default); }
+.tool-step.seq + .markdown-body { margin-top:6px; }
+
+.msg-reverted { display:flex; align-items:center; gap:5px; margin-top:6px; color:var(--text-muted); font-size:var(--fs-xs); }
+.msg-error { margin-top:6px; color:var(--status-danger); font-size:var(--fs-sm); }
+
+/* Editing a question in place: the bubble becomes the field, so what is being
+   changed stays where it was said. */
+.msg-edit { width:100%; min-height:64px; resize:vertical; box-sizing:border-box; background:var(--surface-sunken); border:1px solid var(--border-strong); border-radius:var(--r-sm); color:var(--text-primary); font:inherit; padding:8px 10px; }
+.msg-edit:focus { outline:none; border-color:var(--interactive); }
+.msg-edit-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:8px; }
+.msg-edit-actions .ctrl { appearance:none; background:var(--surface-sunken); border:1px solid var(--border-strong); border-radius:var(--r-sm); color:var(--text-secondary); font:inherit; font-size:var(--fs-md); padding:5px 12px; cursor:pointer; }
+.msg-edit-actions .ctrl:hover { border-color:var(--interactive); color:var(--text-primary); }
+.msg-edit-actions .edit-send { color:var(--accent); border-color:var(--accent); font-weight:600; }
 
 .timeline { align-self:stretch; max-width:820px; margin:2px 0 6px; border:1px solid var(--border-default); border-radius:var(--r-lg); background:var(--surface-panel); overflow:hidden; }
 .tl-head { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:1px solid var(--border-subtle); }

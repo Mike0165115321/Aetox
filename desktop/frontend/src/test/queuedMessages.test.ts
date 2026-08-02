@@ -18,8 +18,8 @@ beforeEach(() => {
 
 describe('messages typed during a turn', () => {
   it('goes into the running turn immediately instead of waiting for it', async () => {
-    let finishTurn: (reply: string) => void = () => {}
-    SendMessage.mockImplementationOnce(() => new Promise<string>((resolve) => { finishTurn = resolve }))
+    let finishTurn: (reply: { text: string }) => void = () => {}
+    SendMessage.mockImplementationOnce(() => new Promise<{ text: string }>((resolve) => { finishTurn = resolve }))
 
     const inFlight = sendUserMessage('one')
     await vi.waitFor(() => expect(cockpit.awaitingReply).toBe(true))
@@ -33,7 +33,7 @@ describe('messages typed during a turn', () => {
     // And the user sees their message the moment they send it, not after the turn.
     expect(cockpit.chat.filter((m) => m.role === 'user').map((m) => m.text)).toEqual(['one', 'two'])
 
-    finishTurn('reply to one')
+    finishTurn({ text: 'reply to one' })
     await inFlight
 
     // Nothing re-sent: 'two' was answered inside the turn it was typed into.
@@ -41,8 +41,8 @@ describe('messages typed during a turn', () => {
   })
 
   it('sends a straggler as its own turn, without a second bubble', async () => {
-    let finishTurn: (reply: string) => void = () => {}
-    SendMessage.mockImplementationOnce(() => new Promise<string>((resolve) => { finishTurn = resolve }))
+    let finishTurn: (reply: { text: string }) => void = () => {}
+    SendMessage.mockImplementationOnce(() => new Promise<{ text: string }>((resolve) => { finishTurn = resolve }))
 
     const inFlight = sendUserMessage('one')
     await vi.waitFor(() => expect(cockpit.awaitingReply).toBe(true))
@@ -50,7 +50,7 @@ describe('messages typed during a turn', () => {
 
     // The engine could not fold it in and handed it back.
     applyMissedInterjections(['too late'])
-    finishTurn('reply to one')
+    finishTurn({ text: 'reply to one' })
     await inFlight
 
     expect(queuedMessages).toEqual([])
@@ -81,8 +81,8 @@ describe('messages typed during a turn', () => {
 // and rides along with the next unrelated message.
 describe('an interjected message carries its attachment', () => {
   it('folds the attachment in and clears the composer', async () => {
-    let finishTurn: (reply: string) => void = () => {}
-    SendMessage.mockImplementationOnce(() => new Promise<string>((resolve) => { finishTurn = resolve }))
+    let finishTurn: (reply: { text: string }) => void = () => {}
+    SendMessage.mockImplementationOnce(() => new Promise<{ text: string }>((resolve) => { finishTurn = resolve }))
     const inFlight = sendUserMessage('งานหลัก')
     await vi.waitFor(() => expect(cockpit.awaitingReply).toBe(true))
 
@@ -99,7 +99,7 @@ describe('an interjected message carries its attachment', () => {
     // The bubble keeps the label, since the model only ever got the path.
     expect(cockpit.chat.at(-1)).toMatchObject({ role: 'user', attachLabel: 'standup.m4a' })
 
-    finishTurn('done')
+    finishTurn({ text: 'done' })
     await inFlight
   })
 })

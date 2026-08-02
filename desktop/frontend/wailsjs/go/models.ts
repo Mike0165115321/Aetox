@@ -255,6 +255,60 @@ export namespace main {
 	        this.governanceLoaded = source["governanceLoaded"];
 	    }
 	}
+	export class SessionVariant {
+	    text: string;
+	    reasoning?: string;
+	    thinkSecs?: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new SessionVariant(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.text = source["text"];
+	        this.reasoning = source["reasoning"];
+	        this.thinkSecs = source["thinkSecs"];
+	    }
+	}
+	export class RegenerateResult {
+	    text: string;
+	    parts?: turn.TurnPart[];
+	    variants: SessionVariant[];
+	    active: number;
+	    reverted?: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new RegenerateResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.text = source["text"];
+	        this.parts = this.convertValues(source["parts"], turn.TurnPart);
+	        this.variants = this.convertValues(source["variants"], SessionVariant);
+	        this.active = source["active"];
+	        this.reverted = source["reverted"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class RunBlockResult {
 	    output: string;
 	    success: boolean;
@@ -277,6 +331,9 @@ export namespace main {
 	    time: string;
 	    reasoning?: string;
 	    thinkSecs?: number;
+	    variants?: SessionVariant[];
+	    active?: number;
+	    parts?: turn.TurnPart[];
 	
 	    static createFrom(source: any = {}) {
 	        return new SessionMessage(source);
@@ -289,7 +346,28 @@ export namespace main {
 	        this.time = source["time"];
 	        this.reasoning = source["reasoning"];
 	        this.thinkSecs = source["thinkSecs"];
+	        this.variants = this.convertValues(source["variants"], SessionVariant);
+	        this.active = source["active"];
+	        this.parts = this.convertValues(source["parts"], turn.TurnPart);
 	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class SessionMeta {
 	    id: string;
@@ -313,6 +391,7 @@ export namespace main {
 	        this.projectName = source["projectName"];
 	    }
 	}
+	
 	export class ShellProfile {
 	    name: string;
 	    path: string;
@@ -460,6 +539,38 @@ export namespace main {
 	        this.status = source["status"];
 	        this.icon = source["icon"];
 	    }
+	}
+	export class TurnReply {
+	    text: string;
+	    parts?: turn.TurnPart[];
+	
+	    static createFrom(source: any = {}) {
+	        return new TurnReply(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.text = source["text"];
+	        this.parts = this.convertValues(source["parts"], turn.TurnPart);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class UndoResult {
 	    files: string[];
@@ -692,6 +803,77 @@ export namespace subagent {
 	        this.builtin = source["builtin"];
 	        this.overrides = source["overrides"];
 	    }
+	}
+
+}
+
+export namespace turn {
+	
+	export class ToolPart {
+	    ref?: string;
+	    name: string;
+	    subject?: string;
+	    agent?: string;
+	    brief?: string;
+	    ok: boolean;
+	    error?: string;
+	    secs?: number;
+	    added?: number;
+	    removed?: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ToolPart(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ref = source["ref"];
+	        this.name = source["name"];
+	        this.subject = source["subject"];
+	        this.agent = source["agent"];
+	        this.brief = source["brief"];
+	        this.ok = source["ok"];
+	        this.error = source["error"];
+	        this.secs = source["secs"];
+	        this.added = source["added"];
+	        this.removed = source["removed"];
+	    }
+	}
+	export class TurnPart {
+	    kind: string;
+	    text?: string;
+	    secs?: number;
+	    tool?: ToolPart;
+	
+	    static createFrom(source: any = {}) {
+	        return new TurnPart(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.text = source["text"];
+	        this.secs = source["secs"];
+	        this.tool = this.convertValues(source["tool"], ToolPart);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 
 }
