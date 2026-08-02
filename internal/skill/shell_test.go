@@ -252,3 +252,16 @@ func TestShellSkillRewritesToRTKWhenAvailable(t *testing.T) {
 		t.Errorf("Command = %q, want to contain original \"git status\" and not \"rtk\"", out.Command)
 	}
 }
+
+// The eight call sites that ask for "." pay the containment check to learn a
+// constant. Kept beside the general benchmark so the gap between them stays
+// visible — it is the whole reason the root resolution is cached.
+func BenchmarkResolveSandboxRoot(b *testing.B) {
+	root := b.TempDir()
+	b.ResetTimer()
+	for b.Loop() {
+		if _, err := resolveSandboxPath(root, "."); err != nil {
+			b.Fatalf("resolveSandboxPath: %v", err)
+		}
+	}
+}

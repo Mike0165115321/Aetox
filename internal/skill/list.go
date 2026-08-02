@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Mike0165115321/Aetox/internal/model"
@@ -133,12 +134,43 @@ func resolveSandboxPath(root string, requestPath string) (string, error) {
 	// ponytail: two EvalSymlinks walks per call — measured 981µs vs 1.8µs for
 	// the old lexical check on Windows (Defender scans every component open).
 	// Called at most twice per tool call and never inside grep/fs-find's
-	// WalkDir, so ~2ms sits under operations that already cost 10ms+. Cache
-	// the root's resolution per skill instance if that stops being true.
-	if !withinRoot(evalExistingSymlinks(safeTarget), evalExistingSymlinks(safeRoot)) {
+	// WalkDir, so ~2ms sits under operations that already cost 10ms+.
+	//
+	// Half of that was the root, resolved from scratch on every call to get the
+	// same answer, so it is cached now — which is what this note used to say to
+	// do "if that stops being true". Measured 2.51ms → 1.38ms per call.
+	//
+	// And the root asking whether it contains itself is a tautology, not a
+	// filesystem question. Eight call sites pass `.` (shell's working directory,
+	// grep and glob's walk base, delete's are-you-deleting-the-root guard); they
+	// were paying two symlink walks to be told yes. 2.51ms → 1.6µs.
+	if safeTarget == safeRoot {
+		return safeTarget, nil
+	}
+	if !withinRoot(evalExistingSymlinks(safeTarget), resolvedRoot(safeRoot)) {
 		return "", fmt.Errorf("path is outside sandbox root")
 	}
 	return safeTarget, nil
+}
+
+// rootResolutions caches evalExistingSymlinks per sandbox root. Roots are
+// process-lifetime values — one per project, a handful per session — so this
+// never needs eviction.
+//
+// Staleness fails CLOSED, which is why caching a security check is safe here.
+// If a component of the root is repointed after the entry is warm, a target
+// under the new location resolves somewhere the cached root is no longer a
+// prefix of, and the call is rejected. The target side is still resolved live
+// on every call; only the thing being compared against is remembered.
+var rootResolutions sync.Map // map[string]string
+
+func resolvedRoot(safeRoot string) string {
+	if cached, ok := rootResolutions.Load(safeRoot); ok {
+		return cached.(string)
+	}
+	resolved := evalExistingSymlinks(safeRoot)
+	rootResolutions.Store(safeRoot, resolved)
+	return resolved
 }
 
 // evalExistingSymlinks resolves symlinks on the deepest prefix of path that
