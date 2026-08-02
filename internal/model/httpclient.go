@@ -1,6 +1,10 @@
 package model
 
 import (
+	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -33,7 +37,8 @@ func newModelHTTPClient(connectTimeout time.Duration) *http.Client {
 	return &http.Client{Transport: &retryTransport{base: transport}}
 }
 
-// retryTransport retries the answers that mean "ask again shortly".
+// retryTransport retries the answers that mean "ask again shortly", and the
+// failures that mean the network was not there for a moment.
 //
 // Every runtime builds its client here, so this is the one place that covers
 // all five wire formats — and until now there were none: a single rate-limit
@@ -45,6 +50,11 @@ func newModelHTTPClient(connectTimeout time.Duration) *http.Client {
 // when the provider's own Retry-After can be honored or a short backoff is
 // safe. A 400, a 401 or a 403 is never retried — those mean the request itself
 // is wrong, and repeating it just wastes the user's quota.
+//
+// A request that never reached the provider at all is retried on the same
+// budget (see retryableTransportError): a laptop whose Wi-Fi drops for two
+// seconds answers "no such host", and losing a whole turn's work to that is
+// the failure this was extended for.
 type retryTransport struct {
 	base http.RoundTripper
 	// attempts is the number of extra tries after the first. Two matches what
@@ -76,8 +86,25 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	var err error
 	for attempt := 0; ; attempt++ {
 		resp, err = t.base.RoundTrip(req)
-		if err != nil || attempt >= attempts || !replayable || !retryableStatus(resp.StatusCode) {
-			return resp, err
+
+		// No response at all — the request never left, or died before any
+		// header came back. Nothing has reached the caller, so a replay is
+		// safe when the cause looks momentary.
+		if err != nil {
+			if attempt >= attempts || !replayable || !retryableTransportError(req.Context(), err) {
+				return nil, err
+			}
+			if waitErr := sleepBeforeRetry(req, backoffFor(attempt)); waitErr != nil {
+				return nil, waitErr
+			}
+			if bodyErr := rewindBody(req); bodyErr != nil {
+				return nil, bodyErr
+			}
+			continue
+		}
+
+		if attempt >= attempts || !replayable || !retryableStatus(resp.StatusCode) {
+			return resp, nil
 		}
 
 		wait := retryAfter(resp, attempt)
@@ -92,20 +119,80 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 		_ = resp.Body.Close()
 
-		select {
-		case <-req.Context().Done():
-			return nil, req.Context().Err()
-		case <-time.After(wait):
+		if waitErr := sleepBeforeRetry(req, wait); waitErr != nil {
+			return nil, waitErr
 		}
-
-		if req.GetBody != nil {
-			body, bodyErr := req.GetBody()
-			if bodyErr != nil {
-				return nil, bodyErr
-			}
-			req.Body = body
+		if bodyErr := rewindBody(req); bodyErr != nil {
+			return nil, bodyErr
 		}
 	}
+}
+
+// sleepBeforeRetry waits out the backoff, but never past the caller's own
+// cancellation — the desktop Stop button has to take effect during a retry
+// pause, not only between them.
+func sleepBeforeRetry(req *http.Request, wait time.Duration) error {
+	select {
+	case <-req.Context().Done():
+		return req.Context().Err()
+	case <-time.After(wait):
+		return nil
+	}
+}
+
+// rewindBody rebuilds a request body that has already been consumed, so the
+// replay sends the same bytes rather than an empty request.
+func rewindBody(req *http.Request) error {
+	if req.GetBody == nil {
+		return nil
+	}
+	body, err := req.GetBody()
+	if err != nil {
+		return err
+	}
+	req.Body = body
+	return nil
+}
+
+// retryableTransportError reports whether a failure to get any response at all
+// is worth asking again.
+//
+// The distinction it draws is "the network was briefly not there" versus "this
+// request will fail the same way forever". A wrong hostname and a hostname that
+// could not be resolved while the interface was reconnecting are the same error
+// value, so DNS is treated as retryable: two extra tries cost three seconds,
+// and the alternative is what the owner hit — a whole turn thrown away because
+// the Wi-Fi blinked.
+func retryableTransportError(ctx context.Context, err error) bool {
+	if err == nil {
+		return false
+	}
+	// Stop was pressed, or the caller's own deadline ran out. Neither is the
+	// network faltering, and retrying either ignores an explicit instruction.
+	if ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	// A certificate that does not verify will not verify a second later.
+	// Checked before the net.OpError case, which some TLS failures arrive in.
+	var certErr *tls.CertificateVerificationError
+	var unknownAuthority x509.UnknownAuthorityError
+	var hostname x509.HostnameError
+	if errors.As(err, &certErr) || errors.As(err, &unknownAuthority) || errors.As(err, &hostname) {
+		return false
+	}
+	// "no such host" — the case in the owner's screenshot.
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return true
+	}
+	// Refused, reset, or unreachable. A local provider still starting up
+	// (LM Studio, Ollama) reads exactly like this.
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		return true
+	}
+	// The connection closed before the response headers arrived.
+	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)
 }
 
 // retryableStatus lists the answers that mean "not now, try again".
@@ -172,6 +259,17 @@ func retryAfter(resp *http.Response, attempt int) time.Duration {
 	if wait, stated := providerRetryAfter(resp); stated {
 		return wait
 	}
+	return backoffFor(attempt)
+}
+
+// backoffFor is the wait before attempt+1 when nobody told us one — after a
+// retryable status with no Retry-After, and after a transport failure, which
+// has no response to carry a header at all.
+//
+// attempt is the zero-based index of the try that just failed, so it is never
+// negative here; it clamps rather than trusting its input because the shift
+// below would panic outright.
+func backoffFor(attempt int) time.Duration {
 	if attempt < 0 {
 		attempt = 0
 	}
@@ -180,7 +278,6 @@ func retryAfter(resp *http.Response, attempt int) time.Duration {
 	if attempt > 4 {
 		attempt = 4
 	}
-	// No guidance: back off, but stay short enough that the user does not think
-	// the app has hung.
+	// Stay short enough that the user does not think the app has hung.
 	return time.Duration(1<<attempt) * time.Second
 }
