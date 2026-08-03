@@ -324,7 +324,22 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .chat { flex:1; overflow-y:auto; overflow-x:hidden; }
 .chat-inner { max-width:1040px; margin:0 auto; width:100%; min-width:0; padding:22px 26px 8px; display:flex; flex-direction:column; gap:18px; font-size:var(--chat-font-size, 15.5px); }
 
-.empty-state { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; padding:32px; text-align:center; }
+.empty-state { position:relative; flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; padding:32px; text-align:center; }
+/* Same 64px grid the landing page uses behind its hero — one visual language
+   across the site and the app. --border-subtle is the faintest line role each
+   theme defines, so the grid re-tints itself on all 14 themes without a token
+   of its own. The radial mask is what keeps it a backdrop: full strength under
+   the logo and the cards, gone before it reaches the window edges, so it never
+   reads as a table drawn on the screen. */
+.empty-state::before {
+  content:""; position:absolute; inset:0; z-index:0; pointer-events:none;
+  background-image:linear-gradient(var(--border-subtle) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border-subtle) 1px, transparent 1px);
+  background-size:64px 64px;
+  -webkit-mask-image:radial-gradient(ellipse 62% 58% at 50% 50%, #000 20%, transparent 78%);
+  mask-image:radial-gradient(ellipse 62% 58% at 50% 50%, #000 20%, transparent 78%);
+}
+.empty-state > * { position:relative; z-index:1; }
 .empty-state h2 { margin:0; font-size:var(--fs-3xl); font-weight:700; }
 .starter-grid { display:grid; grid-template-columns:repeat(2, minmax(180px, 220px)); gap:10px; }
 .starter-card {
