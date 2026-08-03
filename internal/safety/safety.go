@@ -201,6 +201,35 @@ func AssessCommand(skillName string, args []string) Assessment {
 				Reason:    "write can create or overwrite repository files",
 			}
 		}
+		// sheet_write creates files exactly as write does, so it is assessed
+		// exactly as write is. Without an entry here it falls through to the
+		// catch-all at the bottom of this branch, which answers RiskLow with no
+		// effects — and a tool that writes to disk would then skip the approval
+		// gate that write, edit and delete all pass through.
+		if skillName == "sheet_write" {
+			return Assessment{
+				SkillName: "sheet_write",
+				Risk:      RiskHigh,
+				Effects:   []Effect{EffectWriteWorkspace},
+				Reason:    "sheet_write can create or overwrite a workbook file",
+			}
+		}
+		if skillName == "slides_write" {
+			return Assessment{
+				SkillName: "slides_write",
+				Risk:      RiskHigh,
+				Effects:   []Effect{EffectWriteWorkspace},
+				Reason:    "slides_write can create or overwrite a presentation file",
+			}
+		}
+		if skillName == "doc_write" {
+			return Assessment{
+				SkillName: "doc_write",
+				Risk:      RiskHigh,
+				Effects:   []Effect{EffectWriteWorkspace},
+				Reason:    "doc_write can create or overwrite a document file",
+			}
+		}
 		if skillName == "edit" {
 			return Assessment{
 				SkillName: "edit",

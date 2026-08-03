@@ -234,6 +234,10 @@ export function NewSession() {
   return window['go']['main']['App']['NewSession']();
 }
 
+export function OpenFileExternally(arg1) {
+  return window['go']['main']['App']['OpenFileExternally'](arg1);
+}
+
 export function OpenMCPFolder() {
   return window['go']['main']['App']['OpenMCPFolder']();
 }
@@ -308,6 +312,10 @@ export function ReadImageDataURL(arg1) {
 
 export function ReadSubagentProfile(arg1) {
   return window['go']['main']['App']['ReadSubagentProfile'](arg1);
+}
+
+export function ReadWorkbook(arg1) {
+  return window['go']['main']['App']['ReadWorkbook'](arg1);
 }
 
 export function RecentProjects() {

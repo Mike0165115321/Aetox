@@ -12,7 +12,7 @@ import (
 
 func shouldUseDeterministicToolSummary(name string) bool {
 	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "write", "read", "delete", "github_repo_summary", "plugin_install":
+	case "write", "sheet_write", "slides_write", "doc_write", "read", "delete", "github_repo_summary", "plugin_install":
 		return true
 	default:
 		return false

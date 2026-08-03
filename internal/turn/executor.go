@@ -316,6 +316,11 @@ type ToolEvent struct {
 	// Added/Removed are the line counts of a write or edit, zero elsewhere.
 	Added   int `json:"added,omitempty"`
 	Removed int `json:"removed,omitempty"`
+	// Artifacts carries skill.Output.Artifacts through to the UI: finished
+	// files this call made for the user, which the chat shows as cards with an
+	// open button instead of leaving them to be hunted for in the file tree.
+	// Empty for every tool whose output is text.
+	Artifacts []string `json:"artifacts,omitempty"`
 	// Text is the model's own words on a "note" event — narration it wrote
 	// alongside a round's tool calls, which used to go into context and nowhere
 	// else. Empty on every other action.
@@ -734,12 +739,13 @@ func (e *Executor) executeAgentToolLoop(
 		receipt, output, success, execErr := e.executeToolCallWithOutcome(ctx, call)
 		elapsed := time.Since(startedAt)
 		ev := ToolEvent{
-			Ref:     call.ID,
-			Name:    call.Function.Name,
-			Subject: toolCallSubject(call.Function.Arguments),
-			OK:      success,
-			Added:   output.LinesAdded,
-			Removed: output.LinesRemoved,
+			Ref:       call.ID,
+			Name:      call.Function.Name,
+			Subject:   toolCallSubject(call.Function.Arguments),
+			OK:        success,
+			Added:     output.LinesAdded,
+			Removed:   output.LinesRemoved,
+			Artifacts: output.Artifacts,
 		}
 		if !success {
 			if execErr != nil {
@@ -1104,6 +1110,13 @@ func toolCallToArgs(name string, args map[string]any) []string {
 			return []string{strings.TrimSpace(raw)}
 		}
 	case "read", "delete", "edit":
+		if raw, ok := args["path"].(string); ok {
+			return []string{strings.TrimSpace(raw)}
+		}
+	case "sheet_write", "slides_write", "doc_write":
+		// Path only. The other argument is the entire document as JSON, and
+		// these strings are what the approval prompt shows: the question is
+		// "overwrite quarterly.xlsx?", not several thousand characters of rows.
 		if raw, ok := args["path"].(string); ok {
 			return []string{strings.TrimSpace(raw)}
 		}

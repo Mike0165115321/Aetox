@@ -31,6 +31,19 @@ type Output struct {
 	// (RegistryOptions.Vision) — a tool result is text everywhere else, and a
 	// blind model still gets the image_ocr path it has always had.
 	Images []model.Image
+	// Artifacts are sandbox-relative paths to finished files this call produced
+	// *for the user* — the spreadsheet they asked for, not the config file
+	// something rewrote along the way. It is the same idea as Images one line
+	// up: the tool hands back the thing itself instead of a sentence about it.
+	//
+	// The UI turns each into a card under the answer with a button that opens
+	// it. That matters because the alternative is what shipped first: the file
+	// existed, the model said its name, and reaching it meant opening the file
+	// panel and hunting the tree — four clicks away from a product whose
+	// promise is finished work. Only tools whose whole output *is* a file set
+	// this; `write` and `edit` deliberately do not, or every code edit in a
+	// coding turn would print a card.
+	Artifacts []string
 }
 
 // LineDelta counts how a replacement changed a file, for Output's stats.

@@ -6,6 +6,7 @@ import {model} from '../models';
 import {skill} from '../models';
 import {command} from '../models';
 import {subagent} from '../models';
+import {ooxml} from '../models';
 import {config} from '../models';
 import {oauth} from '../models';
 
@@ -125,6 +126,8 @@ export function ModelStatus():Promise<string>;
 
 export function NewSession():Promise<string>;
 
+export function OpenFileExternally(arg1:string):Promise<void>;
+
 export function OpenMCPFolder():Promise<void>;
 
 export function OpenProjectFolder():Promise<main.ProjectStatus>;
@@ -162,6 +165,8 @@ export function ReadIdentityFile(arg1:string):Promise<string>;
 export function ReadImageDataURL(arg1:string):Promise<string>;
 
 export function ReadSubagentProfile(arg1:string):Promise<string>;
+
+export function ReadWorkbook(arg1:string):Promise<ooxml.WorkbookPreview>;
 
 export function RecentProjects():Promise<Array<main.ProjectMeta>>;
 

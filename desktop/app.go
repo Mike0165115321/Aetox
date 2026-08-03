@@ -30,6 +30,7 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/mcp"
 	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/oauth"
+	"github.com/Mike0165115321/Aetox/internal/ooxml"
 	"github.com/Mike0165115321/Aetox/internal/proc"
 	"github.com/Mike0165115321/Aetox/internal/prompt"
 	"github.com/Mike0165115321/Aetox/internal/safety"
@@ -372,6 +373,84 @@ func (a *App) RelativizePath(absPath string) (string, error) {
 		return "", fmt.Errorf("path is outside project root")
 	}
 	return filepath.ToSlash(rel), nil
+}
+
+// OpenFileExternally hands a file inside the sandbox root to whatever program
+// the operating system opens it with.
+//
+// It exists because the agent now produces files this app cannot render.
+// `sheet_write` writes a real .xlsx (ARCHITECTURE.md §75) and ReadFile below
+// correctly refuses it — a spreadsheet is a ZIP — so clicking the workbook the
+// agent just announced opened an editor containing the words "binary file
+// cannot be previewed". The app promised finished work and then declined to
+// show it.
+//
+// Handing it to Excel rather than building a viewer is the whole positioning:
+// the file is already on the user's machine and so is the program that opens
+// it. A worse spreadsheet inside Aetox is not a feature, and rendering one
+// would mean writing an OOXML *reader* — explicitly out of scope in
+// OFFICE-EXPORT-PLAN.md §8.
+//
+// The sandbox check is not decoration. This launches a program of the OS's
+// choosing on a path a caller supplies, so the path has to be one the user
+// could have clicked in their own project.
+func (a *App) OpenFileExternally(relPath string) error {
+	root := strings.TrimSpace(a.cfg.SandboxRoot)
+	if root == "" {
+		return fmt.Errorf("no project open")
+	}
+	full, err := safeSandboxPath(root, relPath)
+	if err != nil {
+		return err
+	}
+	info, err := os.Stat(full)
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		return fmt.Errorf("%q is a directory", relPath)
+	}
+	// Same one implementation the three reveal buttons share (speech.go): on
+	// every platform the command it runs opens a file with its default program
+	// just as it opens a folder in the file manager.
+	return openInFileManager(full)
+}
+
+// ReadWorkbook renders a .xlsx inside the sandbox root as rows of display
+// text, for the file pane's spreadsheet preview.
+//
+// It is a preview and not an editor, and the distinction is the whole design
+// (ARCHITECTURE.md §79): every value comes back as a string already formatted
+// the way Excel would show it, nothing round-trips, and the "open with my
+// computer's app" button stays for anything past a glance. Aetox has no
+// business being a worse Excel — but it should be able to answer "what did I
+// just get?" without the user leaving the window.
+//
+// The 8 MB ceiling is about the round trip, not the file: the whole preview is
+// marshalled to JSON and crosses an IPC boundary, and a workbook past that size
+// is one to open in Excel anyway.
+func (a *App) ReadWorkbook(relPath string) (*ooxml.WorkbookPreview, error) {
+	root := strings.TrimSpace(a.cfg.SandboxRoot)
+	if root == "" {
+		return nil, fmt.Errorf("no project open")
+	}
+	full, err := safeSandboxPath(root, relPath)
+	if err != nil {
+		return nil, err
+	}
+	info, err := os.Stat(full)
+	if err != nil {
+		return nil, err
+	}
+	const maxWorkbookBytes = 8 << 20
+	if info.Size() > maxWorkbookBytes {
+		return nil, fmt.Errorf("workbook too large to preview (%d bytes)", info.Size())
+	}
+	data, err := os.ReadFile(full)
+	if err != nil {
+		return nil, err
+	}
+	return ooxml.ReadXLSX(data)
 }
 
 // ReadFile returns the text content of a file inside the sandbox root, for

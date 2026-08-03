@@ -22,10 +22,12 @@ package main
 //     the model ever calling it — stops being an invisible regression.
 
 import (
+	"archive/zip"
 	"context"
 	"encoding/binary"
 	"encoding/json"
 	"image"
+	"io"
 	"image/color"
 	"image/png"
 	"net"
@@ -251,6 +253,40 @@ func toolCases(t *testing.T, root string, dispatcher *skill.Dispatcher) map[stri
 		"write": {
 			args:  map[string]any{"path": "written.txt", "content": "from the tool\n"},
 			check: fileContains("written.txt", "from the tool"),
+		},
+		"sheet_write": {
+			args: map[string]any{
+				"path": "book.xlsx",
+				"sheets": []any{map[string]any{
+					"name":    "รายการ",
+					"columns": []any{"ชื่อ", "ยอด"},
+					"rows":    []any{[]any{"กาแฟ", 185.5}},
+				}},
+			},
+			check: workbookHasNumericCell("book.xlsx", "185.5"),
+		},
+		"slides_write": {
+			args: map[string]any{
+				"path": "deck.pptx",
+				"slides": []any{map[string]any{
+					"title":   "สรุปยอดขาย",
+					"bullets": []any{"โตขึ้น ๑๒%"},
+					"notes":   "พูดถึงลูกค้าเก่า",
+				}},
+			},
+			check: packageHasPart("deck.pptx", "ppt/slides/slide1.xml", "สรุปยอดขาย"),
+		},
+		"doc_write": {
+			args: map[string]any{
+				"path": "memo.docx",
+				"blocks": []any{
+					map[string]any{"type": "heading", "text": "บันทึกข้อความ", "level": 1},
+					map[string]any{"type": "paragraph", "text": "เรียน ผู้จัดการฝ่ายขาย"},
+					map[string]any{"type": "bullets", "items": []any{"ยอดโตขึ้น ๑๒%"}},
+					map[string]any{"type": "table", "columns": []any{"หมวด", "ยอด"}, "rows": []any{[]any{"อาหาร", "95"}}},
+				},
+			},
+			check: packageHasPart("memo.docx", "word/document.xml", "บันทึกข้อความ"),
 		},
 		"edit": {
 			args:  map[string]any{"path": "notes.txt", "old_string": "beta", "new_string": "BETA"},
@@ -530,6 +566,54 @@ func fileContains(rel, want string) func(*testing.T, skill.Output, string) {
 		if !strings.Contains(string(data), want) {
 			t.Errorf("%s on disk does not contain %q — the tool reported success without writing", rel, want)
 		}
+	}
+}
+
+// workbookHasNumericCell proves sheet_write produced a real workbook rather
+// than a file with the right name. fileContains cannot: an .xlsx is a ZIP, so
+// the value is inside a compressed part and no substring of the raw bytes finds
+// it. Checking for the <v> form specifically is the point — a value that landed
+// as an inline string looks identical to the user and cannot be summed.
+func workbookHasNumericCell(rel, value string) func(*testing.T, skill.Output, string) {
+	// Checking for the <v> form specifically is the point — a value that landed
+	// as an inline string looks identical to the user and cannot be summed.
+	return packageHasPart(rel, "xl/worksheets/sheet1.xml", "<v>"+value+"</v>")
+}
+
+// packageHasPart proves an Office tool produced a real package rather than a
+// file with the right name. fileContains cannot: .xlsx and .pptx are ZIPs, so
+// the content lives inside a compressed part and no substring of the raw bytes
+// finds it.
+func packageHasPart(rel, part, want string) func(*testing.T, skill.Output, string) {
+	return func(t *testing.T, _ skill.Output, root string) {
+		t.Helper()
+		zr, err := zip.OpenReader(filepath.Join(root, rel))
+		if err != nil {
+			t.Errorf("%s is not a readable package: %v", rel, err)
+			return
+		}
+		defer zr.Close()
+		for _, f := range zr.File {
+			if f.Name != part {
+				continue
+			}
+			rc, err := f.Open()
+			if err != nil {
+				t.Errorf("opening %s in %s: %v", part, rel, err)
+				return
+			}
+			body, err := io.ReadAll(rc)
+			rc.Close()
+			if err != nil {
+				t.Errorf("reading %s in %s: %v", part, rel, err)
+				return
+			}
+			if !strings.Contains(string(body), want) {
+				t.Errorf("%s: %s does not contain %q — the tool reported success without doing its job", rel, part, want)
+			}
+			return
+		}
+		t.Errorf("%s has no part %s", rel, part)
 	}
 }
 

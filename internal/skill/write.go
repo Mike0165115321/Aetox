@@ -27,10 +27,18 @@ type writeSkill struct {
 // The returned path is what gets echoed back to the model, so a later read or
 // edit of the same relative path finds the file where it was actually written.
 func (s *writeSkill) placed(requestPath string) string {
-	if s.outputSubdir == nil || filepath.IsAbs(requestPath) {
+	return placedWrite(s.outputSubdir, requestPath)
+}
+
+// placedWrite is that rule as a function, because write is no longer the only
+// skill that creates files — sheet_write produces a .xlsx and has to land it in
+// the same place, or the session output folder holds half of what the chat
+// made. Any future file-producing skill calls this rather than copying it.
+func placedWrite(outputSubdir func() string, requestPath string) string {
+	if outputSubdir == nil || filepath.IsAbs(requestPath) {
 		return requestPath
 	}
-	subdir := strings.TrimSpace(s.outputSubdir())
+	subdir := strings.TrimSpace(outputSubdir())
 	if subdir == "" {
 		return requestPath
 	}
