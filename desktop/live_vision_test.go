@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Mike0165115321/Aetox/internal/bootstrap"
 	"github.com/Mike0165115321/Aetox/internal/model"
 )
 
@@ -176,9 +177,9 @@ func TestLiveWebFetchDigestAnswersTheQuestion(t *testing.T) {
 		t.Fatalf("provider: %v", err)
 	}
 
-	digest := pageDigester(p, "deepseek-v4-flash")
+	digest := bootstrap.Digester(p, "deepseek-v4-flash")
 	if digest == nil {
-		t.Fatal("pageDigester returned nil for a real provider")
+		t.Fatal("bootstrap.Digester returned nil for a real provider")
 	}
 	page := strings.Repeat("Assorted filler about unrelated topics. ", 400) +
 		"\nThe maximum retry count is controlled by the MaxAttempts option, which defaults to 5.\n" +

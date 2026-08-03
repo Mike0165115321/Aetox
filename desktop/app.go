@@ -22,11 +22,11 @@ import (
 	"time"
 
 	aetoxapp "github.com/Mike0165115321/Aetox/internal/app"
+	"github.com/Mike0165115321/Aetox/internal/bootstrap"
 	"github.com/Mike0165115321/Aetox/internal/cognitive"
 	"github.com/Mike0165115321/Aetox/internal/command"
 	"github.com/Mike0165115321/Aetox/internal/config"
 	"github.com/Mike0165115321/Aetox/internal/debuglog"
-	"github.com/Mike0165115321/Aetox/internal/hook"
 	"github.com/Mike0165115321/Aetox/internal/mcp"
 	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/oauth"
@@ -35,9 +35,6 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/safety"
 	"github.com/Mike0165115321/Aetox/internal/skill"
 	"github.com/Mike0165115321/Aetox/internal/snapshot"
-	"github.com/Mike0165115321/Aetox/internal/stt"
-	"github.com/Mike0165115321/Aetox/internal/subagent"
-	"github.com/Mike0165115321/Aetox/internal/think"
 	"github.com/Mike0165115321/Aetox/internal/turn"
 	"github.com/Mike0165115321/Aetox/internal/update"
 	"github.com/Mike0165115321/Aetox/internal/version"
@@ -1831,7 +1828,7 @@ func (a *App) applyConfig(cfg config.Config) {
 		if err != nil {
 			debuglog.Msg("mcp: load servers: %v", err)
 		}
-		a.mcp = mcp.NewManager(toMCPServers(servers))
+		a.mcp = mcp.NewManager(bootstrap.MCPServers(servers))
 	}
 	// Capture the outgoing agent's real context before it's replaced: it holds
 	// what the text transcript doesn't — tool calls, tool results, compaction
@@ -1841,11 +1838,34 @@ func (a *App) applyConfig(cfg config.Config) {
 	if a.agent != nil {
 		priorContext = a.agent.ContextMessages()
 	}
-	chatApp, agent, status, registry, bootErr := bootstrapFromConfig(cfg, a.recordToolAction, a.recordToolRun, a.emitAgentStatus, a.previewAnswer, a.discardAnswerPreview, a.recordTokenUsage, workbenchTools, a.mcp, a.outputSubdir, a.approveToolCall)
-	a.chat = chatApp
+	// Named fields, not positional: four of these callbacks are func(string) or
+	// func(), and two of them — the status reporter and the answer preview —
+	// used to sit next to each other in the argument list. Swapping that pair
+	// compiles cleanly and shows up only as the UI drawing the wrong text.
+	res, bootErr := bootstrap.Engine(cfg, bootstrap.Options{
+		Surface:          prompt.SurfaceDesktop,
+		Console:          aetoxapp.NewStdIO(),
+		Approve:          a.approveToolCall,
+		Manager:          a.mcp,
+		ExtraSkills:      workbenchTools,
+		OutputSubdir:     a.outputSubdir,
+		OnToolAction:     a.recordToolAction,
+		OnToolRun:        a.recordToolRun,
+		OnStatus:         a.emitAgentStatus,
+		OnContentPreview: a.previewAnswer,
+		OnContentReset:   a.discardAnswerPreview,
+		OnUsage:          a.recordTokenUsage,
+	})
+	if bootErr == nil {
+		// Fallback outlives a successful boot: the engine is up, but on the
+		// built-in provider rather than the one asked for, and only this says why.
+		bootErr = res.Fallback
+	}
+	agent, registry := res.Agent, res.Registry
+	a.chat = res.App
 	a.agent = agent
 	a.cfg = cfg
-	a.modelStatus = status
+	a.modelStatus = res.Status
 	a.modelErr = bootErr
 	a.registry = registry
 	if a.agent != nil {
@@ -1947,171 +1967,6 @@ func resolveConfig(opts config.ConfigOptions) config.Config {
 	}
 	cfg.ThinkLevel = model.NormalizeThinkingLevel(cfg.ModelProvider, cfg.ModelName, cfg.ThinkLevel)
 	return cfg
-}
-
-// toMCPServers translates the persisted config DTOs into mcp.Server values.
-func toMCPServers(cfgs []config.MCPServerConfig) []mcp.Server {
-	out := make([]mcp.Server, 0, len(cfgs))
-	for _, c := range cfgs {
-		out = append(out, mcp.Server{
-			Name:        c.Name,
-			Command:     c.Command,
-			Cwd:         c.Cwd,
-			Environment: c.Environment,
-			URL:         c.URL,
-			Headers:     c.Headers,
-			Timeout:     time.Duration(c.TimeoutMs) * time.Millisecond,
-			Disabled:    c.Disabled,
-		})
-	}
-	return out
-}
-
-func bootstrapFromConfig(cfg config.Config, onToolAction func(turn.ToolEvent), onToolRun func(turn.ToolRun), onStatus func(string), onPreview func(string), onPreviewReset func(), onUsage func(model.Usage), extraSkills []skill.Skill, mcpMgr *mcp.Manager, outputSubdir func() string, approve turn.ApprovalPromptFunc) (*aetoxapp.App, *cognitive.Agent, string, *skill.Registry, error) {
-	defer debuglog.Block("bootstrapFromConfig")()
-	// Which model this actually resolved to. The log recorded that a bootstrap
-	// happened but never what came out of it, so "it switched models on its
-	// own" had no evidence either way — the same reason startup logs a
-	// checkpoint at all.
-	debuglog.Info("resolved model", fmt.Sprintf("%s / %s (think=%s, approval=%s)",
-		cfg.ModelProvider, cfg.ModelName, cfg.ThinkLevel, cfg.ApprovalMode))
-	status := model.ResolveStatus(cfg.ModelProvider, cfg.ModelName, nil)
-
-	providerDone := debuglog.Block("model.BootstrapProvider")
-	bootstrapResult := model.BootstrapProvider(model.BootstrapOptions{
-		Provider:   cfg.ModelProvider,
-		Model:      cfg.ModelName,
-		APIKey:     cfg.ModelAPIKey,
-		BaseURL:    cfg.ModelBaseURL,
-		Timeout:    30 * time.Second,
-		WireFormat: cfg.ModelWireFormat,
-		Locale:     cfg.UILocale,
-	})
-	providerDone()
-	if bootstrapResult.Provider == nil {
-		return nil, nil, status + " (init failed: " + bootstrapResult.Error.Error() + ")", nil, bootstrapResult.Error
-	}
-	if bootstrapResult.Warning != "" {
-		status += " (" + bootstrapResult.Warning + ")"
-	}
-
-	ctxTokens := cfg.ModelContextTokens
-	if ctxTokens <= 0 {
-		ctxTokens = model.ContextWindowTokens(cfg.ModelProvider, cfg.ModelName)
-	}
-	agent := cognitive.NewAgent(cognitive.AgentConfig{
-		Provider:     bootstrapResult.Provider,
-		Model:        cfg.ModelName,
-		SystemPrompt: prompt.Build(prompt.SurfaceDesktop, cfg.SandboxRoot),
-		// Scale the retained-history budget to the model's real window
-		// (0 → NewContext's 128k-char default). At 80% of this budget the
-		// agent summarizes older turns into one message (cognitive
-		// compactIfNeeded); the verbatim oldest-turn trim in enforceLimits
-		// remains only as the hard floor when summarization fails.
-		MaxChars: ctxTokens * 4,
-	})
-
-	registry := skill.NewDefaultRegistry(skill.RegistryOptions{
-		SandboxRoot:  cfg.SandboxRoot,
-		OutputSubdir: outputSubdir,
-		// Empty ModelPath keeps the original behaviour — auto-discover — so a
-		// user who never opens the picker sees no change.
-		Speech: stt.Options{ModelPath: cfg.SpeechModelPath},
-		Digest: pageDigester(bootstrapResult.Provider, cfg.ModelName),
-		// The same question visionAttachments asks of a user's attachment,
-		// asked once here for the files the model finds on its own. Re-asked on
-		// every re-bootstrap, which is what happens when the model changes.
-		Vision: model.ResolveVision(cfg.ModelProvider, cfg.ModelName),
-	})
-	for _, s := range extraSkills {
-		if err := registry.Register(s, skill.SourceWorkbench); err != nil {
-			debuglog.Msg("skill registration skipped: %v", err)
-		}
-	}
-	// Scans ~/.aetox/skills — a real filesystem walk, not a fixed-cost lookup;
-	// timed because a large/slow-disk skills directory is a plausible,
-	// easy-to-overlook source of startup latency.
-	discoverDone := debuglog.Block("skill.RegisterDiscovered")
-	for _, discErr := range skill.RegisterDiscovered(registry, skill.DefaultDiscoveryPaths()) {
-		debuglog.Msg("skill discovery: %v", discErr)
-	}
-	discoverDone()
-	dispatcher := skill.NewDispatcher(registry)
-
-	permissions, permErr := config.LoadPermissions()
-	if permErr != nil {
-		debuglog.Msg("permissions load failed: %v", permErr)
-	}
-	// The user's own commands around each tool call (ARCHITECTURE.md §57). A
-	// broken hooks file is logged and ignored rather than fatal: a typo in an
-	// optional convenience must never be the reason the app will not start.
-	hookCfg, hookErr := config.LoadHooks()
-	if hookErr != nil {
-		debuglog.Msg("hooks load failed, running without them: %v", hookErr)
-	}
-	hooks := hook.NewRunner(hookCfg, cfg.SandboxRoot)
-	// Prepend the default MCP "ask" rules so MCP tools never auto-run. These are
-	// derived from configured server names WITHOUT connecting — so the safety
-	// gate is in place synchronously here, even though the tools themselves are
-	// registered later by a background connect (applyConfig), which is what used
-	// to block startup ~5s on a cold `npx` resolve. A tool named "<server>_x"
-	// can't be called before its "<server>_*" ask-rule exists, so nothing races.
-	// User rules stay last (last-match-wins) so explicit choices still win.
-	permissions.Rules = append(mcpMgr.PermissionRules(), permissions.Rules...)
-
-	// `task` + `task_result` — the only way a sub-agent runs (§44.4, §44.11:
-	// starting one never blocks the turn). Registered here rather than
-	// in skill.RegisterDefaults because it needs turn+cognitive, which skill
-	// cannot import. It holds the live provider/registry/permissions, so a
-	// re-bootstrap replaces it along with everything else instead of leaving it
-	// pointed at a dead engine. FilterRegistry drops it from every child, which
-	// is what keeps delegation depth at 1.
-	// The mode the user actually picked (SwitchApprovalMode persists it), not a
-	// hardcoded full-access: with approval hardwired, the Settings toggle was
-	// cosmetic and ask/unsafe-only never reached the engine.
-	approvalMode := safety.NormalizeApprovalMode(cfg.ApprovalMode)
-	for _, tool := range subagent.NewTaskTools(subagent.TaskOptions{
-		Provider:     bootstrapResult.Provider,
-		Model:        cfg.ModelName,
-		Registry:     registry,
-		Permissions:  permissions,
-		ApprovalMode: approvalMode,
-		Approve:      approve,
-		OnToolAction: onToolAction,
-		OnToolRun:    onToolRun,
-		OnUsage:      onUsage,
-		MaxChars:     ctxTokens * 4,
-		ThinkLevel:   think.NormalizeLevel(cfg.ThinkLevel),
-	}) {
-		if err := registry.Register(tool, skill.SourceBuiltin); err != nil {
-			debuglog.Msg("%s registration skipped: %v", tool.Name(), err)
-		}
-	}
-
-	chatApp, err := aetoxapp.NewApp(aetoxapp.Options{
-		Agent:          agent,
-		Console:        aetoxapp.NewStdIO(),
-		Dispatcher:     dispatcher,
-		ApprovalMode:   approvalMode,
-		Permissions:    permissions,
-		Hooks:          hooks,
-		OnToolAction:   onToolAction,
-		OnToolRun:      onToolRun,
-		StatusReporter: onStatus,
-		// The answer streams into the live bubble as the model writes it; the
-		// reset is what keeps a round that turns out to be narration, a nudged
-		// draft or a failure from being mistaken for the reply.
-		OnContentPreview: onPreview,
-		OnContentReset:   onPreviewReset,
-		Approve:          approve,
-	})
-	if err != nil {
-		return nil, nil, status + " (init failed: " + err.Error() + ")", nil, err
-	}
-	// bootstrapResult.Error survives a successful return on purpose: the
-	// engine is up, but on the aetox fallback rather than the provider the
-	// caller asked for, and only this error says why.
-	return chatApp, agent, status, registry, bootstrapResult.Error
 }
 
 // UserName / SetUserName back the sidebar footer's display name. They go
