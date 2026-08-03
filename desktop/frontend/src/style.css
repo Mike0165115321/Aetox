@@ -430,6 +430,20 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 }
 .tool-note.headline { margin-bottom:2px; }
 .tool-think { padding:3px 0; font-size:var(--fs-xs); color:var(--text-dim); }
+/* The thinking mark is the one glowing thing in a reply, so it stays quiet:
+   --glow-brand is the theme's own halo colour and is already tuned per theme
+   (33 alpha on the light ones, 55 on the dark), and drop-shadow follows the
+   glyph's outline rather than boxing it the way box-shadow would. */
+.think-mark { display:inline-flex; align-items:center; color:var(--accent);
+  filter:drop-shadow(0 0 2px var(--glow-brand)) drop-shadow(0 0 6px var(--glow-brand)); }
+/* Only the live row breathes — on a finished reply the glow is a label, and a
+   row of them pulsing down the transcript would be the loudest thing on screen. */
+.think-mark.live { animation:think-breathe 2.6s ease-in-out infinite; }
+@keyframes think-breathe {
+  0%, 100% { opacity:.7; filter:drop-shadow(0 0 1px var(--glow-brand)); }
+  50% { opacity:1; filter:drop-shadow(0 0 3px var(--glow-brand)) drop-shadow(0 0 8px var(--glow-brand)); }
+}
+@media (prefers-reduced-motion:reduce) { .think-mark.live { animation:none; } }
 .typing-dots { display:inline-flex; gap:4px; }
 .typing-dots span {
   width:6px; height:6px; border-radius:50%; background:var(--text-dim);
@@ -648,11 +662,11 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
    like a real button rather than a footnote: it is the deliverable, and on a
    turn that made a spreadsheet it is the thing the user came for. */
 .msg-files { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
-.filecard { display:inline-flex; align-items:center; gap:8px; padding:8px 10px; border:1px solid var(--border); border-radius:var(--r-md); background:var(--surface-raised); color:var(--text-primary); font-size:var(--fs-sm); cursor:pointer; text-align:left; }
+.filecard { display:inline-flex; align-items:center; gap:8px; padding:8px 10px; border:1px solid var(--border-default); border-radius:var(--r-md); background:var(--surface-raised); color:var(--text-primary); font-size:var(--fs-sm); cursor:pointer; text-align:left; }
 .filecard:hover { border-color:var(--border-strong); background:var(--surface-row-hover); }
 .filecard .ic { flex:none; opacity:.7; display:inline-flex; }
 .fc-name { max-width:32ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.fc-open { flex:none; color:var(--text-muted); font-size:var(--fs-xs); border-left:1px solid var(--border); padding-left:8px; }
+.fc-open { flex:none; color:var(--text-muted); font-size:var(--fs-xs); border-left:1px solid var(--border-subtle); padding-left:8px; }
 .filecard:hover .fc-open { color:var(--text-primary); }
 
 .msg-reverted { display:flex; align-items:center; gap:5px; margin-top:6px; color:var(--text-muted); font-size:var(--fs-xs); }
@@ -874,7 +888,7 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .ctx-seg.tools, .dot.tools { background:#34d399; }
 .ctx-seg.messages, .dot.messages { background:#60a5fa; }
 .dot.free { background:var(--border-strong); }
-.ctx-note { margin-top:8px; padding-top:8px; border-top:1px solid var(--border); color:var(--text-muted); font-size:var(--fs-xs); line-height:1.5; max-width:34ch; }
+.ctx-note { margin-top:8px; padding-top:8px; border-top:1px solid var(--border-subtle); color:var(--text-muted); font-size:var(--fs-xs); line-height:1.5; max-width:34ch; }
 .ctx-row { display:flex; align-items:center; gap:8px; font-size:var(--fs-xs); color:var(--text-secondary); }
 .ctx-row .dot { width:8px; height:8px; border-radius:var(--r-2xs); flex:none; }
 .ctx-row .lbl { flex:1; min-width:0; }
@@ -1572,7 +1586,7 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .subagent.err { border-left-color:var(--status-danger); }
 .subagent-head { display:flex; align-items:center; gap:8px; min-width:0; }
 .subagent-head .ag-name {
-  flex:0 0 auto; font-size:var(--fs-xs); font-weight:600; color:var(--text);
+  flex:0 0 auto; font-size:var(--fs-xs); font-weight:600; color:var(--text-primary);
   letter-spacing:.01em;
 }
 .subagent-head .ag-job {

@@ -399,6 +399,18 @@
     }
   }
 
+  // Clicking a produced file hands it to the OS; dragging it puts it on the
+  // agent's desk instead (Workbench.svelte's drop target reads this same MIME
+  // type, as does the composer above). Two destinations for one deliverable
+  // without a second button on a card that is already small.
+  function onFileCardDragStart(e: DragEvent, path: string) {
+    e.dataTransfer?.setData(
+      'application/x-aetox-tab',
+      JSON.stringify({ kind: 'file', ref: path, label: path.split('/').pop() ?? path }),
+    )
+    e.dataTransfer!.effectAllowed = 'copy'
+  }
+
   // Editing a question the agent already acted on has the same problem, plus a
   // deletion: the answer to the old wording is thrown away, not kept as a variant.
   let editingIndex = $state(-1)
@@ -624,7 +636,7 @@
          work it announces (§59). Plain text, not a status row. -->
     <div class="tool-note">{s.label}</div>
   {:else if s.kind === 'thinking'}
-    <div class="tool-think"><Icon name="sparkles" size={12} /> {t('chat.thoughtFor', { secs: s.secs ?? 1 })}</div>
+    <div class="tool-think"><span class="think-mark live"><Icon name="brain" size={12} /></span> {t('chat.thoughtFor', { secs: s.secs ?? 1 })}</div>
   {:else}
   <div class="tool-step {s.state}">
     {#if s.state === 'run'}
@@ -747,12 +759,12 @@
                 {#if m.reasoning}
                   <!-- Each toggle carries the mark of what it opens, so the row
                        is told apart by shape before the count is read. Same
-                       icon each concept already uses elsewhere: sparkles is the
+                       icon each concept already uses elsewhere: brain is the
                        live thinking row above, wrench is the workbench tools
                        tab. -->
                   <button class="reasoning-toggle" onclick={() => togglePanel(i, 'think')}>
                     <span class="chev"><Icon name={openPanel[i] === 'think' ? 'chevronDown' : 'chevronRight'} size={12} /></span>
-                    <span class="ic"><Icon name="sparkles" size={12} /></span>
+                    <span class="ic think-mark"><Icon name="brain" size={12} /></span>
                     {m.thinkSecs ? t('chat.thoughtFor', { secs: m.thinkSecs }) : t('chat.thoughtDone')}
                   </button>
                 {/if}
@@ -811,6 +823,7 @@
                   <button
                     type="button" class="filecard" title={path}
                     onclick={() => openProducedFile(path)}
+                    draggable="true" ondragstart={(e) => onFileCardDragStart(e, path)}
                   >
                     <span class="ic"><Icon name="fileText" size={16} /></span>
                     <span class="fc-name">{path.split('/').pop() ?? path}</span>
