@@ -429,21 +429,9 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   overflow-wrap:anywhere;
 }
 .tool-note.headline { margin-bottom:2px; }
-.tool-think { padding:3px 0; font-size:var(--fs-xs); color:var(--text-dim); }
-/* The thinking mark is the one glowing thing in a reply, so it stays quiet:
-   --glow-brand is the theme's own halo colour and is already tuned per theme
-   (33 alpha on the light ones, 55 on the dark), and drop-shadow follows the
-   glyph's outline rather than boxing it the way box-shadow would. */
-.think-mark { display:inline-flex; align-items:center; color:var(--accent);
-  filter:drop-shadow(0 0 2px var(--glow-brand)) drop-shadow(0 0 6px var(--glow-brand)); }
-/* Only the live row breathes — on a finished reply the glow is a label, and a
-   row of them pulsing down the transcript would be the loudest thing on screen. */
-.think-mark.live { animation:think-breathe 2.6s ease-in-out infinite; }
-@keyframes think-breathe {
-  0%, 100% { opacity:.7; filter:drop-shadow(0 0 1px var(--glow-brand)); }
-  50% { opacity:1; filter:drop-shadow(0 0 3px var(--glow-brand)) drop-shadow(0 0 8px var(--glow-brand)); }
-}
-@media (prefers-reduced-motion:reduce) { .think-mark.live { animation:none; } }
+/* flex, because .icon is display:block — as a bare child of this block div the
+   svg took its own line and sat above the text instead of beside it. */
+.tool-think { display:flex; align-items:center; gap:6px; padding:3px 0; font-size:var(--fs-xs); color:var(--text-dim); }
 .typing-dots { display:inline-flex; gap:4px; }
 .typing-dots span {
   width:6px; height:6px; border-radius:50%; background:var(--text-dim);

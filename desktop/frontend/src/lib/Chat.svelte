@@ -8,11 +8,11 @@
   import {
     EnabledProviders, SupportedThinkLevels,
     ListModelsForProvider, RequiresAPIKey, HasAPIKey, PickAttachment,
-    GetContextBreakdown, GuideTopics, RunChatCommand, OpenFileExternally,
+    GetContextBreakdown, GuideTopics, RunChatCommand,
   } from '../../wailsjs/go/main/App'
   import { t, i18n } from './i18n.svelte'
   import { renderMarkdown } from './markdown'
-  import { openUrlInWorkbench } from './stores/workbench.svelte'
+  import { openUrlInWorkbench, openFileTab } from './stores/workbench.svelte'
   import {
     cockpit, attachImageFromPath, clearPendingImage, attachTabContext, clearPendingContext,
     attachFileFromPath, clearPendingFile, fileKind,
@@ -385,24 +385,24 @@
     regenerateReply(false)
   }
 
-  // Hands a file the turn produced to whatever program the machine opens it
-  // with. Aetox cannot render a spreadsheet and has no business trying — the
-  // program that opens one is already installed on the machine the whole
-  // product promises to work on.
-  let fileOpenError = $state('')
+  // Opens a file the turn produced on the agent's desk — the workbench panel
+  // that already exists to the right, where a workbook becomes a grid, a
+  // picture becomes a picture, and anything this app cannot render says so and
+  // offers the program that can.
+  //
+  // This used to go straight to the OS. That made handing the file away the
+  // default and looking at it the special case, which is backwards for a panel
+  // whose whole job is showing finished work — and it meant the answer to
+  // "what did I just get?" was a window from another application landing on
+  // top of Aetox. Every pane the file can land in carries its own
+  // open-externally button, so the way out is one click further in, not gone.
   async function openProducedFile(path: string) {
-    fileOpenError = ''
-    try {
-      await OpenFileExternally(path)
-    } catch (err) {
-      fileOpenError = t('workbench.openFileError', { err: String(err) })
-    }
+    await openFileTab(path)
   }
 
-  // Clicking a produced file hands it to the OS; dragging it puts it on the
-  // agent's desk instead (Workbench.svelte's drop target reads this same MIME
-  // type, as does the composer above). Two destinations for one deliverable
-  // without a second button on a card that is already small.
+  // Dragging one does the same thing by hand — the workbench's drop target and
+  // the composer both read this MIME type (ARCHITECTURE.md §80), so the card
+  // can be aimed at either without a second button on a card this small.
   function onFileCardDragStart(e: DragEvent, path: string) {
     e.dataTransfer?.setData(
       'application/x-aetox-tab',
@@ -636,7 +636,7 @@
          work it announces (§59). Plain text, not a status row. -->
     <div class="tool-note">{s.label}</div>
   {:else if s.kind === 'thinking'}
-    <div class="tool-think"><span class="think-mark live"><Icon name="brain" size={12} /></span> {t('chat.thoughtFor', { secs: s.secs ?? 1 })}</div>
+    <div class="tool-think"><span class="ic"><Icon name="brain" size={12} /></span> {t('chat.thoughtFor', { secs: s.secs ?? 1 })}</div>
   {:else}
   <div class="tool-step {s.state}">
     {#if s.state === 'run'}
@@ -764,7 +764,7 @@
                        tab. -->
                   <button class="reasoning-toggle" onclick={() => togglePanel(i, 'think')}>
                     <span class="chev"><Icon name={openPanel[i] === 'think' ? 'chevronDown' : 'chevronRight'} size={12} /></span>
-                    <span class="ic think-mark"><Icon name="brain" size={12} /></span>
+                    <span class="ic"><Icon name="brain" size={12} /></span>
                     {m.thinkSecs ? t('chat.thoughtFor', { secs: m.thinkSecs }) : t('chat.thoughtDone')}
                   </button>
                 {/if}
@@ -831,9 +831,6 @@
                   </button>
                 {/each}
               </div>
-              {#if fileOpenError}
-                <div class="msg-error">{fileOpenError}</div>
-              {/if}
             {/if}
             {#if m.revertedFiles?.length}
               <!-- An answer that had quietly undone six files would be the worse
