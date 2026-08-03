@@ -78,6 +78,11 @@ export interface ContextBreakdown {
   usedTokens: number
   maxTokens: number
   slices: ContextSlice[]
+  /** True once this session has actually sent a round, so usedTokens is the
+   *  provider's own count. False means nothing has been sent and the figure is
+   *  a forecast of the first request — showing that as "used" made a fresh chat
+   *  look like a bill already run up. */
+  measured: boolean
 }
 
 export interface ChatMessage {

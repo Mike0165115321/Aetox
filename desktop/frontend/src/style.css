@@ -874,6 +874,7 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .ctx-seg.tools, .dot.tools { background:#34d399; }
 .ctx-seg.messages, .dot.messages { background:#60a5fa; }
 .dot.free { background:var(--border-strong); }
+.ctx-note { margin-top:8px; padding-top:8px; border-top:1px solid var(--border); color:var(--text-muted); font-size:var(--fs-xs); line-height:1.5; max-width:34ch; }
 .ctx-row { display:flex; align-items:center; gap:8px; font-size:var(--fs-xs); color:var(--text-secondary); }
 .ctx-row .dot { width:8px; height:8px; border-radius:var(--r-2xs); flex:none; }
 .ctx-row .lbl { flex:1; min-width:0; }

@@ -103,6 +103,8 @@ export const en: Record<keyof typeof th, string> = {
   'chat.dismissTask': 'Dismiss suggestion',
   'chat.openFile': 'Open',
   'chat.contextWindow': 'Context window',
+  'chat.contextForecast': 'Your first message will use about',
+  'chat.contextNotSent': 'Nothing has been sent yet — no tokens spent. This is the size of the first request, nearly all of it the tool list that rides along with every message.',
   'chat.ctx_system': 'System prompt',
   'chat.ctx_tools': 'Tools',
   'chat.ctx_messages': 'Messages',

@@ -1340,10 +1340,20 @@ type ContextBreakdown struct {
 	UsedTokens int            `json:"usedTokens"`
 	MaxTokens  int            `json:"maxTokens"`
 	Slices     []ContextSlice `json:"slices"`
+	// Measured reports whether UsedTokens is the provider's own count for a
+	// round this session actually sent, or an estimate of what the next one
+	// will cost. False on a chat nobody has typed into yet.
+	Measured bool `json:"measured"`
 }
 
-// GetContextBreakdown estimates token usage per category. Same chars/4
-// heuristic as GetModelInfo — an estimate for orientation, not billing.
+// GetContextBreakdown reports what is in the model's context window.
+//
+// Two different numbers wear the same label, and conflating them is what made
+// this misleading: before anything is sent, the figure is a *forecast* of the
+// first request — mostly the tool definitions, which ride along with every
+// message. A fresh chat showing "10.1k used" reads as a bill already run up,
+// and that is the reaction it actually got. Once a round has gone out, the
+// provider's own count replaces the estimate and the number becomes a fact.
 func (a *App) GetContextBreakdown() ContextBreakdown {
 	est := func(chars int) int { return (chars + 3) / 4 }
 
@@ -1371,7 +1381,26 @@ func (a *App) GetContextBreakdown() ContextBreakdown {
 
 	maxTokens := a.contextWindowTokens()
 
-	used := est(systemChars) + est(toolChars) + est(msgChars)
+	system, tools, messages := est(systemChars), est(toolChars), est(msgChars)
+	used := system + tools + messages
+
+	// The provider counts tokens with its own tokenizer; chars/4 is an English
+	// rule of thumb that Thai does not obey. Every completed round already
+	// reports its real prompt size, so once this session has sent anything the
+	// total stops being a guess — the per-slice split stays estimated, because
+	// nobody reports that, and is scaled to agree with the real total rather
+	// than being left to contradict it.
+	measured := false
+	if real := a.lastPromptTokens(); real > 0 {
+		measured = true
+		if used > 0 {
+			system = system * real / used
+			tools = tools * real / used
+			messages = real - system - tools
+		}
+		used = real
+	}
+
 	free := maxTokens - used
 	if free < 0 {
 		free = 0
@@ -1379,13 +1408,42 @@ func (a *App) GetContextBreakdown() ContextBreakdown {
 	return ContextBreakdown{
 		UsedTokens: used,
 		MaxTokens:  maxTokens,
+		// Measured is the difference between "this is what you have spent" and
+		// "this is what your next message will cost". Before it is true nothing
+		// has been sent at all, and a meter reading 10.1k on a chat the user has
+		// not typed into reads as a bill they have already run up — which is
+		// what it looked like, and why this field exists.
+		Measured: measured,
 		Slices: []ContextSlice{
-			{Key: "system", Tokens: est(systemChars)},
-			{Key: "tools", Tokens: est(toolChars)},
-			{Key: "messages", Tokens: est(msgChars)},
+			{Key: "system", Tokens: system},
+			{Key: "tools", Tokens: tools},
+			{Key: "messages", Tokens: messages},
 			{Key: "free", Tokens: free},
 		},
 	}
+}
+
+// lastPromptTokens is the real input size of this session's most recent round,
+// as the provider counted it. Zero when the session has sent nothing yet, or
+// when usage could not be read — both mean "no measurement", and the caller
+// falls back to the estimate.
+func (a *App) lastPromptTokens() int {
+	if strings.TrimSpace(a.sessionID) == "" {
+		return 0
+	}
+	db, err := a.database()
+	if err != nil {
+		return 0
+	}
+	var tokens int
+	err = db.QueryRow(
+		`SELECT prompt_tokens FROM token_usage WHERE session_id = ? ORDER BY id DESC LIMIT 1`,
+		a.sessionID,
+	).Scan(&tokens)
+	if err != nil {
+		return 0
+	}
+	return tokens
 }
 
 // currentProjectStatus stamps the focus flag onto the raw status; unfocused

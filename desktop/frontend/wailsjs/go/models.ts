@@ -90,6 +90,7 @@ export namespace main {
 	    usedTokens: number;
 	    maxTokens: number;
 	    slices: ContextSlice[];
+	    measured: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new ContextBreakdown(source);
@@ -100,6 +101,7 @@ export namespace main {
 	        this.usedTokens = source["usedTokens"];
 	        this.maxTokens = source["maxTokens"];
 	        this.slices = this.convertValues(source["slices"], ContextSlice);
+	        this.measured = source["measured"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

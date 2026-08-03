@@ -102,6 +102,8 @@ export const th = {
   'chat.dismissTask': 'ปัดข้อเสนอทิ้ง',
   'chat.openFile': 'เปิด',
   'chat.contextWindow': 'หน้าต่างคอนเท็กซ์',
+  'chat.contextForecast': 'ข้อความแรกจะใช้ประมาณ',
+  'chat.contextNotSent': 'ยังไม่ได้ส่งอะไรเลย — ยังไม่เสียโทเคนสักตัว ตัวเลขนี้คือขนาดของคำขอแรก ซึ่งเกือบทั้งหมดคือรายการเครื่องมือที่ติดไปกับทุกข้อความ',
   'chat.ctx_system': 'System prompt',
   'chat.ctx_tools': 'เครื่องมือ',
   'chat.ctx_messages': 'ข้อความสนทนา',

@@ -1152,7 +1152,7 @@
             {#if ctxMenuOpen}
               <div class="ctx-menu">
                 <div class="ctx-head">
-                  <span class="t">{t('chat.contextWindow')}</span>
+                  <span class="t">{ctx.measured ? t('chat.contextWindow') : t('chat.contextForecast')}</span>
                   <span class="v">{fmtTokens(ctx.usedTokens)} / {fmtTokens(ctx.maxTokens)} ({ctxPct}%)</span>
                 </div>
                 <div class="ctx-track">
@@ -1168,6 +1168,12 @@
                     <span class="pct">{slicePct(s.tokens)}</span>
                   </div>
                 {/each}
+                {#if !ctx.measured}
+                  <!-- Nothing has been sent yet. Without saying so, the tool
+                       definitions read as tokens already spent rather than as
+                       the floor every message starts from. -->
+                  <div class="ctx-note">{t('chat.contextNotSent')}</div>
+                {/if}
               </div>
             {/if}
             <button
