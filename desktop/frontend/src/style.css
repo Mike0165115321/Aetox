@@ -1326,14 +1326,19 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 
 .usage-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .seg-ctrl { display:inline-flex; flex:none; border:1px solid var(--border-default); border-radius:var(--r-sm); overflow:hidden; }
-/* flex:none + nowrap, or the buttons shrink under any width pressure and the
+/* Scoped to .seg-ctrl: the sidebar's tab switch uses the same .seg-btn class
+   inside .seg, and unscoped these four rules reached it — they sit later in the
+   file at equal specificity, so they won the cascade and quietly undid its
+   flex:1, its --fs-xs, and its transparent track, leaving two content-width
+   pills with a divider between them instead of two half-width tabs.
+   flex:none + nowrap, or the buttons shrink under any width pressure and the
    parent's overflow:hidden silently eats the front of the label — "ตามค่าเริ่มต้น"
    was rendering as "วามค่าเริ่มต้น". A control that clips its own text is worse
    than one that wraps. */
-.seg-btn { flex:none; white-space:nowrap; padding:4px 12px; font-size:var(--fs-md); color:var(--text-muted); background:var(--surface-sunken); }
-.seg-btn + .seg-btn { border-left:1px solid var(--border-default); }
-.seg-btn:hover { color:var(--text-primary); background:var(--surface-hover); }
-.seg-btn.selected { background:var(--surface-selected); color:var(--text-selected); }
+.seg-ctrl .seg-btn { flex:none; white-space:nowrap; padding:4px 12px; font-size:var(--fs-md); color:var(--text-muted); background:var(--surface-sunken); }
+.seg-ctrl .seg-btn + .seg-btn { border-left:1px solid var(--border-default); }
+.seg-ctrl .seg-btn:hover { color:var(--text-primary); background:var(--surface-hover); }
+.seg-ctrl .seg-btn.selected { background:var(--surface-selected); color:var(--text-selected); }
 
 /* the share bar rides under the model name, so weight is visible without
    spending a column on a percentage nobody reads precisely */
