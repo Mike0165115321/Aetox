@@ -8,7 +8,7 @@
   import {
     EnabledProviders, SupportedThinkLevels,
     ListModelsForProvider, RequiresAPIKey, HasAPIKey, PickAttachment,
-    GetContextBreakdown, GuideTopics, RunChatCommand,
+    GetContextBreakdown, GuideTopics, RunChatCommand, OpenFileExternally,
   } from '../../wailsjs/go/main/App'
   import { t, i18n } from './i18n.svelte'
   import { renderMarkdown } from './markdown'
@@ -23,6 +23,7 @@
   } from './stores/cockpit.svelte'
   import ConfirmDialog from './ConfirmDialog.svelte'
   import Icon from './Icon.svelte'
+  import ProviderMark from './ProviderMark.svelte'
   import type { IconName } from './icons'
 
   let {
@@ -384,6 +385,20 @@
     regenerateReply(false)
   }
 
+  // Hands a file the turn produced to whatever program the machine opens it
+  // with. Aetox cannot render a spreadsheet and has no business trying — the
+  // program that opens one is already installed on the machine the whole
+  // product promises to work on.
+  let fileOpenError = $state('')
+  async function openProducedFile(path: string) {
+    fileOpenError = ''
+    try {
+      await OpenFileExternally(path)
+    } catch (err) {
+      fileOpenError = t('workbench.openFileError', { err: String(err) })
+    }
+  }
+
   // Editing a question the agent already acted on has the same problem, plus a
   // deletion: the answer to the old wording is thrown away, not kept as a variant.
   let editingIndex = $state(-1)
@@ -556,7 +571,11 @@
      not, so those callers pass neither and render exactly as before. -->
 {#snippet upSelect(
   id: 'approval' | 'provider' | 'model' | 'thinkLevel',
-  options: { value: string; label: string; icon?: string; desc?: string }[],
+  // `icon` is a name from the shared Icon set; `mark` is a provider's own brand
+  // mark. Kept as separate fields rather than one overloaded string — the two
+  // draw from different registries, and a provider named like an icon would
+  // otherwise silently pick the wrong one.
+  options: { value: string; label: string; icon?: string; mark?: string; desc?: string }[],
   current: string,
   onPick: (value: string) => void,
 )}
@@ -567,7 +586,11 @@
       class="ctrl updrop-trigger"
       onclick={(e) => { e.stopPropagation(); openDropdown = openDropdown === id ? '' : id }}
     >
-      {#if active?.icon}<span class="ic"><Icon name={active.icon as IconName} size={13} /></span>{/if}
+      {#if active?.mark}
+        <span class="ic"><ProviderMark name={active.mark} size={13} /></span>
+      {:else if active?.icon}
+        <span class="ic"><Icon name={active.icon as IconName} size={13} /></span>
+      {/if}
       <span class="t">{active?.label ?? current}</span>
       <span class="caret"><Icon name={openDropdown === id ? 'chevronUp' : 'chevronDown'} size={12} /></span>
     </button>
@@ -581,7 +604,11 @@
             class:selected={opt.value === current}
             onclick={(e) => { e.stopPropagation(); openDropdown = ''; onPick(opt.value) }}
           >
-            {#if opt.icon}<span class="ic"><Icon name={opt.icon as IconName} size={13} /></span>{/if}
+            {#if opt.mark}
+              <span class="ic"><ProviderMark name={opt.mark} size={13} /></span>
+            {:else if opt.icon}
+              <span class="ic"><Icon name={opt.icon as IconName} size={13} /></span>
+            {/if}
             <span class="t">{opt.label}</span>
             {#if opt.desc}<span class="d">{opt.desc}</span>{/if}
           </button>
@@ -765,6 +792,27 @@
               </div>
             {:else}
               <div class="markdown-body">{@html renderMarkdown(m.text)}</div>
+            {/if}
+            {#if m.producedFiles?.length}
+              <!-- The deliverable, offered where it was asked for. Before this
+                   the file existed and the answer named it, and getting to it
+                   meant opening the file panel and finding it in the tree —
+                   four clicks from a product that promises finished work. -->
+              <div class="msg-files">
+                {#each m.producedFiles as path}
+                  <button
+                    type="button" class="filecard" title={path}
+                    onclick={() => openProducedFile(path)}
+                  >
+                    <span class="ic"><Icon name="fileText" size={16} /></span>
+                    <span class="fc-name">{path.split('/').pop() ?? path}</span>
+                    <span class="fc-open">{t('chat.openFile')}</span>
+                  </button>
+                {/each}
+              </div>
+              {#if fileOpenError}
+                <div class="msg-error">{fileOpenError}</div>
+              {/if}
             {/if}
             {#if m.revertedFiles?.length}
               <!-- An answer that had quietly undone six files would be the worse
@@ -1160,7 +1208,7 @@
                 </div>
                 <div class="mm-row">
                   <span class="lbl">{t('chat.provider')}</span>
-                  {@render upSelect('provider', providers.map((p) => ({ value: p, label: p })), model.provider, handleProviderChange)}
+                  {@render upSelect('provider', providers.map((p) => ({ value: p, label: p, mark: p })), model.provider, handleProviderChange)}
                 </div>
                 <div class="mm-row">
                   <span class="lbl">{t('chat.model')}</span>

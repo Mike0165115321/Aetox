@@ -623,6 +623,17 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .variant-pick .msg-copy { margin-left:0; }
 .variant-n { color:var(--text-muted); font-size:var(--fs-xs); font-variant-numeric:tabular-nums; min-width:26px; text-align:center; }
 
+/* The file a turn produced, offered under the answer that announced it. Sized
+   like a real button rather than a footnote: it is the deliverable, and on a
+   turn that made a spreadsheet it is the thing the user came for. */
+.msg-files { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+.filecard { display:inline-flex; align-items:center; gap:8px; padding:8px 10px; border:1px solid var(--border); border-radius:var(--r-md); background:var(--surface-raised); color:var(--text-primary); font-size:var(--fs-sm); cursor:pointer; text-align:left; }
+.filecard:hover { border-color:var(--border-strong); background:var(--surface-row-hover); }
+.filecard .ic { flex:none; opacity:.7; display:inline-flex; }
+.fc-name { max-width:32ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.fc-open { flex:none; color:var(--text-muted); font-size:var(--fs-xs); border-left:1px solid var(--border); padding-left:8px; }
+.filecard:hover .fc-open { color:var(--text-primary); }
+
 .msg-reverted { display:flex; align-items:center; gap:5px; margin-top:6px; color:var(--text-muted); font-size:var(--fs-xs); }
 .msg-error { margin-top:6px; color:var(--status-danger); font-size:var(--fs-sm); }
 
@@ -798,6 +809,14 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .updrop-opt:hover { background:var(--surface-row-hover); }
 .updrop-opt.selected { background:var(--surface-selected); color:var(--text-selected); }
 .updrop-trigger .ic { flex:none; font-size:var(--fs-xs); line-height:1; }
+/* A compact option can carry a mark too, and .pv-mark / .icon are display:block
+   — in the default non-flex button the svg would take its own line above the
+   label. Gated on :has(.ic) so the plain model and think-level lists keep the
+   block layout their ellipsis truncation relies on; the ones that do go flex
+   move that truncation onto .t, where the text now lives. */
+.updrop-opt:not(.rich):has(.ic) { display:flex; align-items:center; gap:8px; }
+.updrop-opt:not(.rich):has(.ic) .t { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.updrop-opt .ic { flex:none; display:flex; align-items:center; }
 /* An option carrying a description drops the one-line ellipsis and lays out as
    icon | title / description. Only .rich rows do — a bare provider list keeps
    its compact single-line shape. */
