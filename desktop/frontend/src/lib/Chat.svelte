@@ -745,20 +745,28 @@
             {#if m.reasoning || m.steps?.length}
               <div class="meta-row">
                 {#if m.reasoning}
+                  <!-- Each toggle carries the mark of what it opens, so the row
+                       is told apart by shape before the count is read. Same
+                       icon each concept already uses elsewhere: sparkles is the
+                       live thinking row above, wrench is the workbench tools
+                       tab. -->
                   <button class="reasoning-toggle" onclick={() => togglePanel(i, 'think')}>
                     <span class="chev"><Icon name={openPanel[i] === 'think' ? 'chevronDown' : 'chevronRight'} size={12} /></span>
+                    <span class="ic"><Icon name="sparkles" size={12} /></span>
                     {m.thinkSecs ? t('chat.thoughtFor', { secs: m.thinkSecs }) : t('chat.thoughtDone')}
                   </button>
                 {/if}
                 {#if ownSteps(m.steps ?? []).length}
                   <button class="reasoning-toggle" onclick={() => togglePanel(i, 'tools')}>
                     <span class="chev"><Icon name={openPanel[i] === 'tools' ? 'chevronDown' : 'chevronRight'} size={12} /></span>
+                    <span class="ic"><Icon name="wrench" size={12} /></span>
                     {toolsLabel(m.steps ?? [])}
                   </button>
                 {/if}
                 {#if delegated(m.steps ?? []).length}
                   <button class="reasoning-toggle" onclick={() => togglePanel(i, 'subs')}>
                     <span class="chev"><Icon name={openPanel[i] === 'subs' ? 'chevronDown' : 'chevronRight'} size={12} /></span>
+                    <span class="ic"><Icon name="bot" size={12} /></span>
                     {subagentsLabel(m.steps ?? [])}
                   </button>
                 {/if}
