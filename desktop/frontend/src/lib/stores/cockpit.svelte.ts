@@ -3,12 +3,12 @@
 // incremental updates here — append a chat message, advance a timeline step) and
 // the UI reacts. Do not reassign `cockpit` itself; mutate its properties.
 
-import { emptyCockpitState, type CockpitState, type TreeNode, type ChangedFile, type Session, type ToolStep, type ToolEvent, type ChatMessage, type MessageVariant, type TurnPart, type PendingFile } from '../types'
+import { emptyCockpitState, type CockpitState, type TreeNode, type Session, type ToolStep, type ToolEvent, type ChatMessage, type MessageVariant, type TurnPart, type PendingFile } from '../types'
 import type { CockpitSource } from '../services/cockpit'
 import {
   SendMessage, GetProjectStatus, GetModelInfo, OpenProjectFolder, OpenProjectPath,
   SwitchProvider, SwitchThinkLevel, SwitchApprovalMode, SetProviderWireFormat,
-  SwitchModel, SetAPIKey, SetProviderBaseURL, ProjectTree, CommandHistory, GitChangedFiles, ReadFile,
+  SwitchModel, SetAPIKey, SetProviderBaseURL, ProjectTree, ReadFile,
   ListSessions, LoadSession, NewSession, CurrentSessionID, SearchSessions, DeleteSession,
   SaveChatImage, SaveChatFile, ReadImageDataURL, CancelTurn, BrowserGetText, RecentProjects,
   ListAllSessions, SearchAllSessions, LoadSessionAnyProject, ClearProjectFocus,
@@ -75,16 +75,16 @@ function applyModelInfo(info: main.ModelInfo): void {
   cacheModelInfo({ ...cockpit.model, warning: '' })
 }
 
-/** Pull the real file tree / command history / git status the Go engine currently has. */
+/** Pull the real file tree the Go engine currently has. */
 export async function refreshWorkspace(): Promise<void> {
-  const [tree, commandHistory, changedFiles] = await Promise.all([
-    ProjectTree(), CommandHistory(), GitChangedFiles(),
-  ])
+  // Used to fetch CommandHistory() and GitChangedFiles() alongside this, both
+  // read only by the Review panel — removed 2026-08-03. The tree already
+  // carries git status per node, which is where the M/U badges come from, so
+  // nothing was lost by dropping the second git call.
+  const tree = await ProjectTree()
   // Go's generated bindings type these fields as plain `string`; the values
   // are always one of the frontend's narrower literals ("dir"/"file", "M"/"U"/"").
   cockpit.tree = tree as unknown as TreeNode[]
-  cockpit.commandHistory = commandHistory
-  cockpit.changedFiles = changedFiles as unknown as ChangedFile[]
 }
 
 function agoLabel(iso: string): string {
@@ -543,6 +543,7 @@ async function runLiveTurn(call: () => Promise<void>): Promise<void> {
     cockpit.awaitingReply = false
     cockpit.agentStatus = ''
     cockpit.toolSteps = []
+    cockpit.turnFiles = []
     cockpit.streamingText = ''
     cockpit.reasoningText = ''
   }
@@ -558,11 +559,12 @@ async function runLiveTurn(call: () => Promise<void>): Promise<void> {
  * above — the live panels alone vanish the moment the turn completes.
  * Must be called before runLiveTurn's finally runs, i.e. inside the call.
  */
-function turnArtifacts(): Pick<ChatMessage, 'steps' | 'reasoning' | 'thinkSecs'> {
+function turnArtifacts(): Pick<ChatMessage, 'steps' | 'reasoning' | 'thinkSecs' | 'producedFiles'> {
   const steps = cockpit.toolSteps.length ? cockpit.toolSteps.map((s) => ({ ...s })) : undefined
   const reasoning = cockpit.reasoningText.trim() || undefined
   const thinkSecs = reasoning ? Math.max(1, Math.round((thinkLastAt - thinkStartedAt) / 1000)) : undefined
-  return { steps, reasoning, thinkSecs }
+  const producedFiles = cockpit.turnFiles.length ? [...cockpit.turnFiles] : undefined
+  return { steps, reasoning, thinkSecs, producedFiles }
 }
 
 /**
@@ -844,6 +846,12 @@ export function applyToolEvent(ev: ToolEvent): void {
   // Only a write/edit carries these; everything else reports 0 and shows nothing.
   step.added = ev.added || undefined
   step.removed = ev.removed || undefined
+  // A finished file the user asked for. Deduped because a turn may well write
+  // the same workbook twice — a first pass and a correction — and the answer
+  // should offer it once.
+  for (const path of ev.artifacts ?? []) {
+    if (path && !cockpit.turnFiles.includes(path)) cockpit.turnFiles.push(path)
+  }
 }
 
 /** Copy an image (from a native file-picker or a drop) into the sandbox, and stage it as the composer's pending attachment. */

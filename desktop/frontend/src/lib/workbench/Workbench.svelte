@@ -2,14 +2,15 @@
   import { onMount } from 'svelte'
   import Terminal from '../Terminal.svelte'
   import FileEditor from '../FileEditor.svelte'
-  import ReviewPane from './ReviewPane.svelte'
   import FilesPane from './FilesPane.svelte'
   import BrowserPane from './BrowserPane.svelte'
   import ToolsPane from './ToolsPane.svelte'
+  import ExternalFilePane from './ExternalFilePane.svelte'
+  import SheetPane from './SheetPane.svelte'
   import { cockpit } from '../stores/cockpit.svelte'
   import {
     workbench, activateTab, closeTab, removeTab,
-    openReview, openFilesTab, openBrowserTab, openTerminalTab, openToolsTab,
+    openFilesTab, openBrowserTab, openTerminalTab, openToolsTab,
     saveWorkbenchSnapshot,
     type WorkbenchTab,
   } from '../stores/workbench.svelte'
@@ -19,7 +20,7 @@
   import Icon from '../Icon.svelte'
   import type { IconName } from '../icons'
 
-  const tabIcon: Record<string, IconName> = { review: 'layoutList', terminal: 'keyboard', browser: 'globe', files: 'copy', file: 'fileText', tools: 'wrench' }
+  const tabIcon: Record<string, IconName> = { terminal: 'keyboard', browser: 'globe', files: 'copy', file: 'fileText', tools: 'wrench' }
 
   // Chrome DevTools' default device presets. CSS viewport sizes — BrowserPane
   // turns one into a real window of that aspect + a matching page zoom.
@@ -129,8 +130,7 @@
     if (e.key === 'Escape') { menuOpen = false; return }
     if (!e.ctrlKey || e.altKey || e.metaKey) return
     const k = e.key.toLowerCase()
-    if (e.shiftKey && k === 'g') { e.preventDefault(); openReview() }
-    else if (!e.shiftKey && k === 't') { e.preventDefault(); openBrowserTab() }
+    if (!e.shiftKey && k === 't') { e.preventDefault(); openBrowserTab() }
     else if (!e.shiftKey && k === 'p') { e.preventDefault(); openFilesTab() }
   }
 </script>
@@ -157,7 +157,6 @@
     <button class="icobtn tiny plus-btn" aria-label={t('workbench.addTab')} data-tip={t('workbench.addTab')} onclick={() => (menuOpen = !menuOpen)}><Icon name="plus" size={14} /></button>
     {#if menuOpen}
       <div class="plus-menu">
-        <button class="plus-menu-item" onclick={() => pick(openReview)}><span class="ic"><Icon name="layoutList" size={14} /></span> {t('workbench.reviewTab')} <span class="kbd">Ctrl+Shift+G</span></button>
         <button class="plus-menu-item" disabled={shells.length === 0} onclick={openDefaultTerminal}><span class="ic"><Icon name="keyboard" size={14} /></span> {t('workbench.terminalMenu')}</button>
         <button class="plus-menu-item" onclick={() => pick(openBrowserTab)}><span class="ic"><Icon name="globe" size={14} /></span> {t('workbench.browserMenu')} <span class="kbd">Ctrl+T</span></button>
         <button class="plus-menu-item" onclick={() => pick(openFilesTab)}><span class="ic"><Icon name="copy" size={14} /></span> {t('workbench.filesTab')} <span class="kbd">Ctrl+P</span></button>
@@ -199,7 +198,6 @@
 <div class="insp-body">
   {#if workbench.tabs.length === 0}
     <div class="insp-start">
-      <button class="plus-menu-item" onclick={openReview}><span class="ic"><Icon name="layoutList" size={14} /></span> {t('workbench.reviewTab')} <span class="kbd">Ctrl+Shift+G</span></button>
       <button class="plus-menu-item" disabled={shells.length === 0} onclick={openDefaultTerminal}><span class="ic"><Icon name="keyboard" size={14} /></span> {t('workbench.terminalMenu')}</button>
       <button class="plus-menu-item" onclick={() => openBrowserTab()}><span class="ic"><Icon name="globe" size={14} /></span> {t('workbench.browserMenu')} <span class="kbd">Ctrl+T</span></button>
       <button class="plus-menu-item" onclick={openFilesTab}><span class="ic"><Icon name="copy" size={14} /></span> {t('workbench.filesTab')} <span class="kbd">Ctrl+P</span></button>
@@ -208,16 +206,20 @@
   {/if}
   {#each workbench.tabs as tab (tab.id)}
     <div class="insp-slot" style="display:{workbench.activeId === tab.id ? 'block' : 'none'}">
-      {#if tab.kind === 'review'}
-        <ReviewPane />
-      {:else if tab.kind === 'terminal'}
+      {#if tab.kind === 'terminal'}
         <Terminal sessionId={tab.id} onExit={() => removeTab(tab.id)} />
       {:else if tab.kind === 'files'}
         <FilesPane />
       {:else if tab.kind === 'tools'}
         <ToolsPane />
       {:else if tab.kind === 'file'}
-        <FileEditor path={tab.path ?? ''} content={tab.content ?? ''} />
+        {#if tab.sheet}
+          <SheetPane path={tab.path ?? ''} preview={tab.sheet} />
+        {:else if tab.unreadable}
+          <ExternalFilePane path={tab.path ?? ''} reason={tab.unreadable} />
+        {:else}
+          <FileEditor path={tab.path ?? ''} content={tab.content ?? ''} />
+        {/if}
       {:else}
         <BrowserPane tab={tab} active={workbench.activeId === tab.id} menuOpen={menuOpen} />
       {/if}

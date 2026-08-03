@@ -66,7 +66,7 @@ Aetox คือ **Personal AI Assistant ที่ลงมือทำงาน�
 
 ## ⚡ เบา เร็ว เสถียร — วัดเทียบของจริง ไม่ใช่คำโฆษณา
 
-**Aetox ไม่ใช่แค่กล่องแชท** — ข้างในมี editor ตัวเดียวกับที่ VS Code ใช้ (Monaco), เทอร์มินัล, ทรีไฟล์, หน้าดู git diff, เบราว์เซอร์ที่ agent สั่งงานได้ และตัวตรวจ error ด้วย LSP นั่นคือของที่คนเปิด IDE ไปใช้จริงๆ เกือบทั้งหมด — เราเลยกล้าวางเทียบทั้งกับเครื่องมือ AI และกับแอปที่มีหน้าจอครบแบบเดียวกัน
+**Aetox ไม่ใช่แค่กล่องแชท** — ข้างในมี editor ตัวเดียวกับที่ VS Code ใช้ (Monaco), เทอร์มินัล, ทรีไฟล์, เบราว์เซอร์ที่ agent สั่งงานได้ และตัวตรวจ error ด้วย LSP นั่นคือของที่คนเปิด IDE ไปใช้จริงๆ เกือบทั้งหมด — เราเลยกล้าวางเทียบทั้งกับเครื่องมือ AI และกับแอปที่มีหน้าจอครบแบบเดียวกัน
 
 **พื้นที่ที่กินในเครื่องหลังติดตั้ง** — น้อยกว่าดีกว่า วัดบนเครื่องเดียวกัน (Windows 11)
 
@@ -99,13 +99,13 @@ VS Code       ██████████████████████
 
 CLI ทุกตัวในลิสต์นั้นใหญ่กว่า Aetox ที่มีหน้าจอครบทั้งหมด: Copilot CLI ใหญ่กว่า **4 เท่า** · Claude Code **7 เท่า** · OpenCode **15 เท่า** · Codex **21 เท่า** — ทั้งที่ทั้งหมดนั้นให้คุณได้แค่ช่องพิมพ์คำสั่ง
 
-ตอนเปิดใช้งานจริง Aetox กินแรมราว **40 MB** — น้อยกว่าแท็บ Chrome หนึ่งแท็บ ในขณะที่คุณได้ทั้ง editor (Monaco ตัวเดียวกับ VS Code), เทอร์มินัล, ทรีไฟล์, git diff, เบราว์เซอร์ที่ agent สั่งได้, และ LSP ตรวจ error
+ตอนเปิดใช้งานจริง Aetox กินแรมราว **40 MB** — น้อยกว่าแท็บ Chrome หนึ่งแท็บ ในขณะที่คุณได้ทั้ง editor (Monaco ตัวเดียวกับ VS Code), เทอร์มินัล, ทรีไฟล์, เบราว์เซอร์ที่ agent สั่งได้, และ LSP ตรวจ error
 
 แปลว่า **การเลือก CLI ไม่ได้ประหยัดอะไรอีกต่อไป** คุณแค่จ่ายแพงกว่าเพื่อจะได้ของน้อยกว่า 😄
 
 | สิ่งที่คุณเสียไปเมื่อกลับไปใช้ CLI | Aetox Desktop ให้อะไรแทน |
 |:---|:---|
-| อ่าน diff เป็นข้อความสีเขียว-แดงในเทอร์มินัล | หน้า Review กดดูทีละไฟล์ กด revert ทีละก้อนได้ |
+| ไฟล์ที่ agent ทำเสร็จ ต้องไปหาเองในโฟลเดอร์ | การ์ดไฟล์ขึ้นใต้คำตอบเลย กดปุ่มเดียวเปิด — ตาราง Excel ดูในแอปได้ทันที |
 | agent เปิดเว็บไม่ได้ ต้องก๊อป URL ไปเปิดเอง | Workbench มีเบราว์เซอร์จริงที่ agent คลิก/กรอกฟอร์มเองได้ |
 | ตอบคำถาม agent ด้วยการพิมพ์ y/n | กดปุ่มเลือก A/B/C/D ที่ agent สร้างให้ |
 | ประวัติงานหายไปกับ scrollback ที่ถูกล้าง | เก็บใน SQLite ค้นย้อนหลังได้ทั้งไทย/อังกฤษ · agent ค้นเองได้ด้วย |
@@ -140,7 +140,7 @@ CLI ทุกตัวในลิสต์นั้นใหญ่กว่า 
 **เวลาที่ตัวแอปกินเอง** — งานหนักสุดที่ทำก่อนยิงคำขอ คือประกอบรายการเครื่องมือทั้งชุดแล้วแปลงเป็น JSON
 
 ```
-Aetox  0.12 มิลลิวินาที  ต่อการคุย 1 ครั้ง (tools แกนกลาง 27 ตัว 18.1 KB)
+Aetox  0.12 มิลลิวินาที  ต่อการคุย 1 ครั้ง (ยื่น tools แกนกลางครบชุด)
 ```
 
 เท่ากับ **1 ใน 8,000 ของวินาที** — เวลาที่คุณรอคือเวลาที่โมเดลคิด ไม่ใช่เวลาที่แอปเตรียมของ
@@ -194,7 +194,7 @@ Aetox  0.12 มิลลิวินาที  ต่อการคุย 1 ค
 > ตรงไปตรงมาเรื่อง RAM: WebView2 ก็คือ Chromium เหมือนกัน ตัวเลข 252 MB จึงไม่ใช่การเอาชนะ Electron ที่หน่วยความจำ —
 > ที่ต่างจริงคือมันเป็นของที่ Windows มีอยู่แล้วและใช้ร่วมกับแอปอื่นได้ เราจึงไม่ต้องแถมสำเนาของตัวเองมาให้คุณเก็บไว้อีกชุด
 
-> เบาไม่ได้แปลว่าตัดฟีเจอร์ทิ้ง — 27 tools ในตัว, 14 providers, sub-agent delegation ครบ ในตัวติดตั้ง 13 MB
+> เบาไม่ได้แปลว่าตัดฟีเจอร์ทิ้ง — 32 tools ในตัว, 14 providers, sub-agent delegation ครบ ในตัวติดตั้ง 13 MB
 
 ---
 
@@ -236,14 +236,15 @@ Aetox ยังอยู่ในช่วงหล่อหลอม — แก
 |:-----------|:-----------|
 | **13 Providers** | OpenAI, Anthropic, DeepSeek, Google Gemini, Groq, Mistral, Together, Perplexity, Cohere, OpenRouter, Z.ai, LM Studio, Ollama |
 | **Tool Calling** | model-driven tool loop — agent เลือกใช้ tools เอง |
-| **36 Tools ที่โมเดลเรียกได้** | 29 ตัวในเครื่องยนต์ (read, write, edit, shell, git, grep, glob, symbol, notebook_edit, image_ocr, video_ocr, pdf_read, audio_transcribe, skills_list, skill_view …) + browser_* + session_search + suggest_task + sub-agent + ที่ต่อจาก MCP |
+| **ส่งงานกลับเป็นไฟล์ Office จริง** | `sheet_write` → `.xlsx` · `slides_write` → `.pptx` · `doc_write` → `.docx` — ไฟล์ที่ Excel / PowerPoint / Word เปิดได้จริง ตัวเลขลาก `SUM` ได้ วันที่เรียงได้ ภาษาไทยสระไม่ลอย · ประกอบเองล้วนด้วย `archive/zip` + `encoding/xml` **ไม่มี dependency เพิ่มแม้แต่ตัวเดียว** · คลิกไฟล์ `.xlsx` แล้วดูเป็นตารางในแอปได้เลย ไม่ต้องเปิดโปรแกรมอื่น |
+| **40 Tools ที่โมเดลเรียกได้** | 32 ตัวในเครื่องยนต์ (read, write, sheet_write, slides_write, doc_write, edit, shell, git, grep, glob, symbol, notebook_edit, image_ocr, video_ocr, pdf_read, audio_transcribe, skills_list, skill_view …) + browser_* + session_search + suggest_task + sub-agent + ที่ต่อจาก MCP |
 | **รันโค้ดที่เพิ่งเขียนเองได้** | agent เรียก `shell` และ `git` เองได้ — แก้โค้ดเสร็จ รันเทสต์ อ่านผล แล้วแก้ต่อในเทิร์นเดียว · คำสั่งที่ไม่จบเอง (dev server, watch build) สั่งให้รันเบื้องหลังแล้วตามอ่าน log ทีหลังได้ |
 | **Safety 3 ระดับ** | ถามก่อน → คำสั่งเสี่ยง → รันเต็มที่ |
 | **Multi-provider** | ใช้ providers ต่างกันใน session เดียวกัน |
 | **Model Switching** | เปลี่ยน provider/model ได้ทันที โดยไม่เสีย context |
 | **Streaming** | แสดงผลแบบ real-time สำหรับ conversation |
 | **Auto-save Preference** | ค่า provider, model, API key, approval mode จำอัตโนมัติ |
-| **Desktop App** | Wails + Svelte 5 — Sidebar (file tree + chat history), Chat, Workbench (tabs: Review, Terminal, Files, Browser, File Editor), TopBar |
+| **Desktop App** | Wails + Svelte 5 — Sidebar (file tree + chat history), Chat, Workbench (tabs: Terminal, Files, Browser, File Editor, Sheet Preview), TopBar |
 | **Persistent Sessions** | ประวัติแชททุกโปรเจกต์เก็บใน SQLite ท้องถิ่น (ไม่มีข้อมูลออกจากเครื่อง) — ค้นหาแบบ full-text ได้ทั้งไทย/อังกฤษ |
 | **Agent ค้นความจำตัวเองได้** | พูดว่า "เหมือนคราวที่แล้ว" แล้ว agent ไปค้นเองว่าคราวที่แล้วคุยอะไรและ **ทำอะไรไว้** (`session_search`) — ค้นทั้งบทสนทนาและงานที่ tool เคยทำจริง ไทยก็ค้นได้ · ไม่เรียกโมเดลเพิ่ม จึงไม่มีค่าใช้จ่ายต่อการค้นหนึ่งครั้ง |
 | **Agent-controlled Browser** | Agent เปิด/อ่าน/คลิก/พิมพ์ในเว็บจริงบนแท็บ Workbench ได้เอง (`browser_open`/`browser_read`/`browser_click`/`browser_type`) — ไม่ติด X-Frame-Options เหมือน iframe, คลิกด้วย ref ที่ `browser_read` แปะให้ (แบบเดียวกับ Playwright MCP/browser-use) |
@@ -309,8 +310,8 @@ wails build -nsis    # พร้อมตัวติดตั้ง
 ```
 ┌──────────────────────────────────────────┐
 │         Aetox Desktop (UI)               │ ← Wails + Svelte cockpit
-│ Sidebar(tree+history) · Chat · Workbench │   Workbench = tabs: Review,
-│ (tabs) · TopBar                          │   Terminal, Files, Browser, Editor
+│ Sidebar(tree+history) · Chat · Workbench │   Workbench = tabs: Terminal,
+│ (tabs) · TopBar                          │   Files, Browser, Editor, Sheet
 ├──────────────────────────────────────────┤
 │    Local Store (SQLite, FTS5)            │ ← ประวัติแชททุกโปรเจกต์ ค้นหาได้
 │    เก็บในเครื่อง ไม่มีข้อมูลออกไปไหน        │   ทั้งไทย/อังกฤษ, ไม่มี cloud
@@ -359,12 +360,15 @@ wails build -nsis    # พร้อมตัวติดตั้ง
 
 ---
 
-## Tools ในตัว (27 ตัว)
+## Tools ในตัว (32 ตัว)
 
 | Tool | ใช้ทำอะไร |
 |:-----|:----------|
 | `read` | อ่านไฟล์ |
 | `write` | เขียนไฟล์ทั้งไฟล์ |
+| `sheet_write` | สร้างไฟล์ Excel `.xlsx` จริง — หลายชีต ตัวเลข/วันที่เป็นชนิดจริง |
+| `slides_write` | สร้างไฟล์ PowerPoint `.pptx` จริง — หัวข้อ บุลเล็ต รูป โน้ตผู้บรรยาย |
+| `doc_write` | สร้างไฟล์ Word `.docx` จริง — หัวข้อ ย่อหน้า ลิสต์ ตาราง |
 | `edit` | แก้ไขไฟล์แบบ search & replace เป๊ะๆ |
 | `delete` | ลบไฟล์ |
 | `list` | ดูรายการไฟล์ใน directory |

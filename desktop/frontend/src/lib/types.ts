@@ -104,6 +104,10 @@ export interface ChatMessage {
   attachSuffix?: string
   /** tool calls made during this turn, kept on the reply for a persistent timeline. */
   steps?: ToolStep[]
+  /** Finished files this turn made for the user (see CockpitState.turnFiles).
+   *  Like `steps`, this is not persisted — a reloaded session shows the answer
+   *  without the cards, and the files themselves are still in the file panel. */
+  producedFiles?: string[]
   /** The turn as it happened — prose, thinking segments and tool calls in the
    * order they occurred. When present this is what the bubble draws, so
    * narration appears where it was said instead of collapsed into a panel.
@@ -191,6 +195,11 @@ export interface ToolEvent {
    * one more row reading "task". */
   agent?: string
   brief?: string
+  /** On a result event: sandbox paths of finished files this call made for the
+   * user — set only by tools whose whole output is a file (sheet_write and, in
+   * time, the .pptx and .docx writers). `write` and `edit` deliberately leave
+   * it empty, or a coding turn would print a card per edited source file. */
+  artifacts?: string[]
   /** On a "note" event: the narration the model wrote alongside this round's
    * tool calls — its own words for what it is doing. */
   text?: string
@@ -316,36 +325,12 @@ export interface TaskState {
   steps: TimelineStep[]
 }
 
-export type DiffKind = 'ctx' | 'add' | 'del'
-
-export interface DiffLine {
-  ln: number
-  text: string
-  kind: DiffKind
-}
-
-export interface DiffView {
-  file: string
-  hunk: string
-  lines: DiffLine[]
-}
-
-export type TestState = 'running' | 'pass' | 'fail'
-
-export interface TestCase {
-  name: string
-  state: TestState
-}
-
-export interface TestRun {
-  command: string
-  cases: TestCase[]
-}
-
-export interface ChangedFile {
-  path: string
-  status: GitStatus
-}
+// DiffView / TestRun / ChangedFile lived here for the Review panel, which was
+// removed on 2026-08-03. Two of its four sections — the diff and the test run —
+// were never written to by anything and had shown an empty box since the day
+// they shipped; the two that worked duplicated what the file tree already says
+// with its M/U badges. It was a code-review surface in a product whose promise
+// is finished work for people who do not read diffs.
 
 export interface CockpitState {
   project: ProjectInfo
@@ -357,10 +342,6 @@ export interface CockpitState {
   model: ModelStatus
   chat: ChatMessage[]
   task: TaskState
-  changedFiles: ChangedFile[]
-  diff: DiffView
-  test: TestRun
-  commandHistory: string[]
   openFiles: OpenFile[]
   /** 'chat' or an open file's path — which tab the main panel currently shows. */
   activeView: string
@@ -373,6 +354,11 @@ export interface CockpitState {
   agentStatus: string
   /** Tool calls of the turn in flight, appended live from agent:tool events. */
   toolSteps: ToolStep[]
+  /** Sandbox paths of finished files this turn produced — a spreadsheet, a deck,
+   *  a document. Collected live from agent:tool results so the reply can show
+   *  them as cards with an open button: the file panel is where you go looking,
+   *  and a deliverable should not need looking for. Reset with toolSteps. */
+  turnFiles: string[]
   /** Reply text streamed so far this turn, appended live from agent:chunk events. '' when idle. */
   streamingText: string
   /** Model's reasoning/thinking tokens streamed so far this turn, from agent:reasoning events. '' when idle or the provider doesn't stream reasoning. */
@@ -411,10 +397,7 @@ export function emptyCockpitState(): CockpitState {
     model: { provider: '', modelName: '', thinkLevel: '', contextUsed: 0, contextMax: 0, approval: 'ask', wireFormat: '', warning: '' },
     chat: [],
     task: { elapsed: '', steps: [] },
-    changedFiles: [],
-    diff: { file: '', hunk: '', lines: [] },
-    test: { command: '', cases: [] },
-    commandHistory: [],
+    turnFiles: [],
     openFiles: [],
     activeView: 'chat',
     awaitingReply: false,

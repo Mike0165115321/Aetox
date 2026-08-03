@@ -100,6 +100,7 @@ export const th = {
   'chat.ranCode': 'เสร็จแล้ว',
   'chat.runFailed': 'ล้มเหลว',
   'chat.dismissTask': 'ปัดข้อเสนอทิ้ง',
+  'chat.openFile': 'เปิด',
   'chat.contextWindow': 'หน้าต่างคอนเท็กซ์',
   'chat.ctx_system': 'System prompt',
   'chat.ctx_tools': 'เครื่องมือ',
@@ -109,7 +110,6 @@ export const th = {
   'taskTimeline.title': 'ไทม์ไลน์งาน',
   'taskTimeline.changeSummary': 'สรุปการเปลี่ยนแปลง',
 
-  'workbench.reviewTab': 'ตรวจสอบ',
   'workbench.filesTab': 'ไฟล์',
   'workbench.toolsTab': 'เครื่องมือ',
   'workbench.newTab': 'แท็บใหม่',
@@ -127,6 +127,9 @@ export const th = {
   'workbench.stopTask': 'หยุดงานปัจจุบัน',
   'workbench.close': 'ปิด {name}',
   'workbench.openFileError': 'เปิดไฟล์ไม่ได้: {err}',
+  'workbench.cannotPreview': 'ไฟล์นี้เปิดดูในแอปไม่ได้ แต่โปรแกรมในเครื่องคุณเปิดได้',
+  'workbench.openExternally': 'เปิดด้วยโปรแกรมในเครื่อง',
+  'workbench.sheetTruncated': 'ดูตัวอย่าง {shown} แถวแรก จากทั้งหมด {total} แถว — เปิดด้วยโปรแกรมในเครื่องเพื่อดูครบ',
 
   'cockpit.justNow': 'เมื่อกี้',
   'cockpit.minutesAgo': '{mins} นาที',
@@ -135,12 +138,6 @@ export const th = {
   'cockpit.sendError': 'เกิดข้อผิดพลาด: {err}',
   'cockpit.attachError': 'แนบรูปภาพไม่สำเร็จ: {err}',
 
-  'reviewPane.filesChanged': 'FILES CHANGED ({count})',
-  'reviewPane.diff': 'DIFF',
-  'reviewPane.testResult': 'TEST RESULT',
-  'reviewPane.noTestsRun': 'ยังไม่มีการรันเทสต์',
-  'reviewPane.commandHistory': 'COMMAND HISTORY ({count})',
-  'reviewPane.noCommands': 'ยังไม่มีคำสั่ง',
 
   'browserPane.startBrowsing': 'เริ่มท่องเว็บ',
   'browserPane.enterUrl': 'พิมพ์ URL เพื่อเปิดหน้าเว็บ',

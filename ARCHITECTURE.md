@@ -2367,6 +2367,100 @@ Answering again when the turn wrote files is the one genuinely dangerous case �
 
 ---
 
+## 75. Decision — The Agent Learns to Hand Back a File Excel Opens (2026-08-03)
+
+The landing page promises **finished work**, and everything the agent could return was text. For the people this is built for a `.md` file is not finished work — a file that opens in Excel is. The site's own flagship example ends at a table ("a pile of slips becomes a table you can use") and the best the tools could produce was a CSV: no header, no column widths, and Thai that Excel mis-decodes often enough that the first thing the user sees is garbage. `write` is `os.WriteFile(path, []byte(content))` ([write.go](internal/skill/write.go)); nothing in the repo could emit a binary at all.
+
+**The library question was settled by measurement, not preference.** `.xlsx`, `.pptx` and `.docx` are all ZIPs of XML (OOXML/ECMA-376). The two Go libraries covering all three — unioffice and gooxml — are AGPLv3, which Aetox cannot take on top of Apache-2.0 without making the whole project AGPL; that gate is closed for the same reason Windmill was rejected as a base. The one permissive option, excelize (BSD-3), covers xlsx only. [OFFICE-EXPORT-PLAN.md](OFFICE-EXPORT-PLAN.md) §4 set the deciding number in advance — go with a hand-written builder if excelize costs more than ~3 MB — and it costs **5.5 MB on a 15.8 MB CLI binary**, measured by adding it and building. The hand-written package costs **117 KB**, 47× less, for the same phase-1 capability. Deciding on the number rather than the argument mattered, because the argument alone was already one-sided: excelize's advantages are formulas, charts and rich styling, all of which the plan's own §8 rules out of scope.
+
+**One container, three formats.** [internal/ooxml](internal/ooxml) is the ZIP-of-XML writer plus the xlsx parts on top of it; `.pptx` and `.docx` are further part sets on the same container, which is the whole reason the shared piece was built first — pptx needs a hand-written builder regardless of what happens to xlsx, so building it once buys all three and no new dependency ever.
+
+**What the model is not asked to know.** `sheet_write` takes `{path, sheets: [{name, columns, rows}]}` as ordinary JSON and nothing about OOXML — the same division of labour as `image_ocr` against a model with no vision (§51). A small local model that can only type still returns a working spreadsheet, because the part it cannot do is not asked of it.
+
+The details that decide whether the file is worth anything are all in the architecture, not the prompt: a number sent as a JSON number becomes a numeric cell so `SUM` works (text that looks like money is what makes an export worthless for the accounting job it was made for); an ISO date becomes Excel's day-serial plus a number format, not a string; `"0012"` stays text, because coercing it destroys an invoice number; `03/08/2026` stays text too, because it is 3 August here and 8 March in the US and a silent wrong guess is worse than no guess. Control characters — which arrive routinely from OCR of a scanned slip — are stripped rather than escaped, since one is enough for Excel to declare the whole workbook unreadable. Thai vowels and tone marks are excluded from column-width measurement: they stack on the consonant, and counting them makes every Thai column half again too wide.
+
+**It is gated like `write`, because it writes.** `AssessCommand` ([safety.go](internal/safety/safety.go)) answers `RiskLow` with no effects for any skill name it does not recognise, so a file-producing tool without an explicit entry would have skipped the approval prompt that `write`, `edit` and `delete` all pass through. It shares `write`'s sandbox root and session output folder through `placedWrite`, extracted so the two cannot drift.
+
+**What CI can and cannot prove.** There is no Excel on a build machine, so the tests assert what is checkable — the package unzips, every part is well-formed XML, the parts the spec requires are present, content types and relationships resolve in both directions, numbers are numeric cells and dates are styled serials — and the file is opened by hand once per phase. Phase 1 is xlsx; `.pptx` (title, bullets, image, speaker notes) and `.docx` follow on the same container.
+
+---
+
+## 76. Decision — The Workbench Loses the Review Panel, and Gains a Way Out to the Real Program (2026-08-03)
+
+Two changes to the right-hand workbench, both from the same question: what is that surface actually for, now that the agent finishes work rather than only edits code?
+
+**Review is gone.** It offered four sections. Two of them — the diff and the test run — read `cockpit.diff` and `cockpit.test`, which were initialised empty in [types.ts](desktop/frontend/src/lib/types.ts) and **written by nothing, ever**: they had shown an empty box since the day they shipped. The two that worked, files-changed and command-history, duplicated what the file tree already says — `ProjectTree` folds `GitChangedFiles` in per node, which is where the M/U badges in the Files panel come from. So the panel was half dead and half redundant, and what remained was a code-review surface in a product whose promise is finished work for people who do not read diffs. Removing it also removed four store fields and one redundant git round-trip per project load. `App.CommandHistory` is now called by nothing and is the obvious next thing to cut.
+
+The restore path skips a `review` tab in a layout saved before this rather than failing on it — an old session's other tabs still have to come back.
+
+**A file tab now has a way out.** §75 gave the agent a tool that writes `.xlsx`, and `ReadFile` correctly refuses a ZIP — so clicking the workbook the agent had just announced opened an editor containing the words "binary file cannot be previewed". `App.OpenFileExternally` hands the file to whatever program the OS opens it with, through the same `openInFileManager` the three reveal buttons already share, and [ExternalFilePane.svelte](desktop/frontend/src/lib/workbench/ExternalFilePane.svelte) offers that instead of an editor full of an error.
+
+Deliberately not a preview. Rendering a spreadsheet in here would mean writing an OOXML *reader* — out of scope by OFFICE-EXPORT-PLAN.md §8 — to build a worse Excel than the one already installed on the machine the app promises to work on. The same pane covers `.pptx` and `.docx` when they land.
+
+**But the file should not have to be looked for at all.** Reaching it still meant opening the file panel and finding it in the tree: four clicks and a guess about where to look, from a product that had just said the work was done. The question "where does a produced file appear" was answered *in the chat, under the answer* — the workbench is where you go to look at something, and a deliverable should arrive instead.
+
+`skill.Output.Artifacts` carries it, and the field is modelled on `Images` one line above it: the tool hands back the thing rather than a sentence about the thing. It rides the existing `ToolEvent` feed to the UI, so no new channel and no new panel — `cockpit.turnFiles` accumulates during a turn and `turnArtifacts()` freezes it onto the reply, exactly as it already did for tool steps and reasoning. The chat draws a card per file with a button that calls `OpenFileExternally`.
+
+Only tools whose *whole output is a file* set it. `write` and `edit` deliberately do not: a coding turn touches a dozen source files, and a card for each would bury the one that matters under noise it created itself. Like `steps`, it is not persisted — a reloaded session shows the answer without the cards, and the files are still in the file panel.
+
+---
+
+## 77. Decision — The Deck Writer, and Why It Ignores the Format's Own Layout System (2026-08-04)
+
+Phase 2 of OFFICE-EXPORT-PLAN.md. `slides_write` produces a real `.pptx` on the same container §75 built, and the whole of phase 2 cost **308 KB** on top of phase 1 — 443 KB for both, against a 3 MB budget. Most of that is not the deck code: it is `image/png`, `image/jpeg` and `image/gif` being linked in to measure an embedded picture.
+
+**Explicit shapes, not placeholders.** The idiomatic way to build a slide is to inherit position, size and text style from a layout, the layout from a master. It is also the fragile way: the inheritance chain is where PowerPoint makes its own decisions about what an incomplete file means, and getting one link wrong yields either text somewhere unintended or the repair prompt — neither of which is diagnosable from a machine with no PowerPoint on it. Every shape here carries its own geometry in EMU, and the master and layout exist only because the format refuses a presentation without them. The one deliberate exception is the notes placeholder: the presenter's pane finds its text by placeholder type, so a plain text box there would store the note and show nothing.
+
+**Thai was the whole risk, and it is a two-part fix.** OFFICE-EXPORT-PLAN.md §7 named it first: Thai is a complex script, and with no `cs` typeface on a run PowerPoint chooses a complex-script font itself. The one it chooses routinely has different metrics from the Latin face, which is what leaves vowels and tone marks floating beside their consonants instead of over them. Every run names `+mn-cs`, and theme1.xml carries `<a:font script="Thai" typeface="Leelawadee UI"/>` — the format's own mechanism for "use this face for this script" — so the reference resolves to something chosen rather than to whatever is convenient. Naming the typeface without the theme entry, or the theme entry without the run attribute, fixes nothing.
+
+**Four features, on purpose.** Title, bullets, one picture, speaker notes. That is where a hand-written OOXML writer stops being a file format and starts being a second PowerPoint; charts, animation and custom masters are ruled out by the plan's §8 and stay out.
+
+**Failing loudly on a bad picture is a feature.** A deck that silently dropped the chart it was asked for is worse than one that was never written, because the user sends it before noticing. The image is decoded to validate the format and to measure it — the aspect ratio comes from the file, since a guessed one is a stretched screenshot, and a chart squashed 20% is misleading rather than merely ugly. The image path is sandbox-checked as carefully as the destination: it is the second way out, and the easier one to forget, since a picture read from anywhere on disk would be embedded into a file the user then sends to somebody.
+
+**A deck with no notes ships no notes master.** An empty `notesMasterIdLst` pointing at a part that is not there is exactly the dangling link that makes PowerPoint offer to repair the file, so the part appears only when some slide actually has notes.
+
+`.docx` is phase 3 and the cheapest of the three: `word/document.xml` plus `word/styles.xml` on a container that now has two formats' worth of proof behind it.
+
+---
+
+## 78. Decision — The Document Writer Closes the Set (2026-08-04)
+
+Phase 3 of OFFICE-EXPORT-PLAN.md, and the cheapest of the three exactly as the plan predicted: a document is a flat run of blocks, with none of xlsx's cell typing and none of pptx's coordinate geometry. `doc_write` produces a real `.docx` — headings, paragraphs, bullet and numbered lists, tables — on the container §75 built. All three phases together cost **515 KB** against the 3 MB budget, and `go.mod` has not moved a line since the work started.
+
+**The Thai fix is a third variant, not a third copy — and this one was nearly got wrong.** Word keeps a *separate font, size and language for complex scripts*, and Thai reads that set: `w:cs`, `w:szCs`, `w:lang w:bidi`. Bolding a heading with `w:b` alone puts regular-weight Thai beside bold Latin, and the complex-script twins sit *interleaved* in the schema sequence (`bCs` right after `b`, `szCs` right after `sz`) rather than appended — so the Thai fix and the ordering hazard land in the same line of code.
+
+The part that would have shipped broken: setting only `w:cs` is correct for Word and **wrong for Google Docs**, which has no complex-script model at all and reads `w:ascii`/`w:hAnsi`. Two of the three target readers disagree about which attribute to read, so the only setting that satisfies both is all four font slots naming one family. And unlike pptx, the answer here is to ship **no theme at all**: `w:cstheme` does not fall back to `w:cs`, it replaces it.
+
+**This was found by research, not by testing.** Before writing the generator, six parallel agents were pointed at six dimensions of docx correctness — part manifest, Thai, styles, lists, tables, and what specifically makes a reader refuse a file — and their findings were merged into one checklist and then run against the implementation. It caught nine defects. Three mattered: the font-slot bug above; every list block sharing one `w:abstractNum`, which makes a second numbered list count 3, 4, 5 instead of restarting, because numbering state lives on the abstract definition rather than on the reference; and a table with no explicit `w:tblCellMar` or dxa `w:tblW`, whose text touches the borders and whose column widths are merely advisory. The remaining six were smaller and equally invisible from a passing test suite. The lesson is the one this file already records for OCR and for vision: the details that break a format are the ones you do not know to look for, and a machine with no Word on it will not tell you.
+
+One Thai detail is specific to documents: line spacing is `auto`, never `exact`. Thai stacks a tone mark above a vowel above the consonant, and an exact line height clips the top of that stack — which looks fine on screen and is wrong on paper.
+
+**Ordering is the format's main trap.** Every complex type in WordprocessingML is a *sequence*, so `w:spacing` before `w:pStyle` inside a `w:pPr` is not untidy, it is a document Word offers to repair. `w:sectPr` must be the last child of `w:body`. Every `w:tc` must end with a `w:p` — a cell holding only its `w:tcPr` is the single most common way a hand-built table is declared unreadable. Two tables in a row merge into one unless a paragraph separates them, and a body that ends with a table before `sectPr` is malformed rather than merely unusual; both are handled by emitting an empty paragraph, and both are pinned by tests.
+
+**A heading is a heading because of `w:outlineLvl`.** Without it Word renders large bold text that never reaches the navigation pane or a table of contents — right on screen, wrong in every way that matters. And the bullet is a plain U+2022 in the document's own font rather than Word's usual F0B7 in Symbol: Symbol is a legacy symbol-encoded face whose character is only a bullet while that exact font is applied, and Google Docs and LibreOffice routinely draw it as a box.
+
+**One new test reaches back across all three formats.** A part that is in the package, has a content type, and has no relationship pointing at it is *silently ignored* — the file opens clean and the feature is simply absent, with nothing anywhere saying why. `TestEveryPartIsReachableFromARelationship` now asserts the reverse direction for `.xlsx`, `.pptx` and `.docx` together. It passes today; it exists because the failure it guards against is undetectable by reading the output.
+
+**What CI still cannot prove** is unchanged from §75: there is no Word, PowerPoint or Excel on a build machine. The tests assert that the package unzips, that every part is well-formed XML, that the required parts exist, that content types and relationships resolve in both directions, and that the specific traps above are absent. Worth stating plainly about the research too — every rendering measurement in it came from Word on Windows; the Google Docs and LibreOffice claims are reasoning from files on disk, not measurement.
+
+**Closed out by hand on 2026-08-04.** The owner opened a generated `.xlsx`, `.pptx` and `.docx` on their own machine and all three passed — no repair prompt, Thai intact. That is the only evidence CI can never produce, and it is what makes these three writers shippable rather than merely green. Still unverified, and worth doing before anyone relies on it: **Google Docs / Sheets / Slides and LibreOffice**. Those two are exactly where the research had no measurements either, and several of the docx choices — the four matched font slots, the U+2022 bullet, shipping an explicit `ListParagraph` definition — were made *for* Google Docs specifically and have never been seen working there.
+
+---
+
+## 79. Decision — A Workbook Gets a Grid; a Deck and a Document Do Not (2026-08-04)
+
+§76 said the answer to "I cannot render this file" was a button that hands it to the program that can, and argued against an in-app preview: rendering a spreadsheet would mean writing an OOXML *reader*, ruled out by OFFICE-EXPORT-PLAN.md §8, to build a worse Excel than the one already installed. That argument was too wide. It is right about an *editor* and wrong about a *glance* — and the owner asking to see the file in the right-hand pane is a reasonable thing to want after the agent says the work is done.
+
+**So the position narrows rather than reverses.** `.xlsx` opens as a read-only grid. `.pptx` and `.docx` keep going to the open-externally card, and that is not a "later" — a slide preview is a rendering engine and a document preview is a layout engine, which is exactly the line §76 drew. A spreadsheet is different in kind: it *is* a table, and a table is what a pane can draw without pretending to be anything.
+
+The read-only part is load-bearing. Nothing round-trips, every value crosses the boundary as a display string already formatted the way Excel shows it, and the open-in-Excel button lives in the preview's own header rather than somewhere else. It answers "what did I just get?" and stops.
+
+**It reads more than we write, on purpose.** Aetox's writer uses inline strings; every workbook produced anywhere else uses a shared-string table, and a preview that worked only on Aetox's own files would be the more confusing half-feature. So `ReadXLSX` handles shared strings and their rich-text runs, both the reserved and the custom number formats (a date in xlsx is a day count plus a format — without the format lookup the preview shows `46237` where Excel shows a date, which is the writer's own bug in the other direction), formula cells by their cached value rather than their expression, and sparse rows by cell reference so a missing cell does not slide the rest of the row left. Quoted literals in a format code are skipped when deciding whether it is a date, or a Thai currency format carrying a month abbreviation in quotes would turn a column of amounts into dates.
+
+**The limits are stated rather than silent.** 500 rows, 64 columns, 20 sheets, 8 MB — a preview is a glance, and the whole thing is marshalled to JSON across an IPC boundary. A truncated sheet says so and gives the real row count, because a prefix displayed as if it were the whole file is the one failure here that misleads instead of merely annoying. A workbook the reader cannot make sense of falls through to the card rather than becoming a dead end: it is still a file Excel can open.
+
+---
+
 ## Validation
 
 1. **Claim traceability:** every claim above cites a file or an existing project doc; the two `Unverified`/`Inferred, Verify first: Yes` items are marked as such, not stated as fact.

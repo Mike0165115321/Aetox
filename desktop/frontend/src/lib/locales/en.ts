@@ -101,6 +101,7 @@ export const en: Record<keyof typeof th, string> = {
   'chat.ranCode': 'Done',
   'chat.runFailed': 'Failed',
   'chat.dismissTask': 'Dismiss suggestion',
+  'chat.openFile': 'Open',
   'chat.contextWindow': 'Context window',
   'chat.ctx_system': 'System prompt',
   'chat.ctx_tools': 'Tools',
@@ -110,7 +111,6 @@ export const en: Record<keyof typeof th, string> = {
   'taskTimeline.title': 'Task Timeline',
   'taskTimeline.changeSummary': 'Change Summary',
 
-  'workbench.reviewTab': 'Review',
   'workbench.filesTab': 'Files',
   'workbench.toolsTab': 'Tools',
   'workbench.newTab': 'New tab',
@@ -128,6 +128,9 @@ export const en: Record<keyof typeof th, string> = {
   'workbench.stopTask': 'Stop Current Task',
   'workbench.close': 'Close {name}',
   'workbench.openFileError': 'Couldn’t open file: {err}',
+  'workbench.cannotPreview': 'This file can’t be shown in the app, but a program on your machine opens it.',
+  'workbench.openExternally': 'Open with my computer’s app',
+  'workbench.sheetTruncated': 'Previewing the first {shown} of {total} rows — open it in your own app to see them all',
 
   'cockpit.justNow': 'just now',
   'cockpit.minutesAgo': '{mins} min',
@@ -136,12 +139,6 @@ export const en: Record<keyof typeof th, string> = {
   'cockpit.sendError': 'An error occurred: {err}',
   'cockpit.attachError': 'Failed to attach image: {err}',
 
-  'reviewPane.filesChanged': 'FILES CHANGED ({count})',
-  'reviewPane.diff': 'DIFF',
-  'reviewPane.testResult': 'TEST RESULT',
-  'reviewPane.noTestsRun': 'No tests run yet',
-  'reviewPane.commandHistory': 'COMMAND HISTORY ({count})',
-  'reviewPane.noCommands': 'No commands yet',
 
   'browserPane.startBrowsing': 'Start browsing',
   'browserPane.enterUrl': 'Enter a URL to open a page',
