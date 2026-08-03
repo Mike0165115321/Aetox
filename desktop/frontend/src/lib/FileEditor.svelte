@@ -122,6 +122,8 @@
   <div class="editor-mount" class:fe-hidden={isMarkdown && preview} bind:this={container}></div>
   {#if isMarkdown && preview}
     <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-    <div class="fe-preview markdown-body" onclick={onPreviewClick}>{@html renderMarkdown(draft)}</div>
+    <div class="fe-preview" onclick={onPreviewClick}>
+      <div class="fe-preview-inner markdown-body">{@html renderMarkdown(draft)}</div>
+    </div>
   {/if}
 </div>

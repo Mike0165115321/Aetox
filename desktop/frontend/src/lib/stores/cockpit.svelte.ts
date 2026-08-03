@@ -162,6 +162,7 @@ function restoreAttachments(m: main.SessionMessage): ChatMessage {
     // answer used to be empty, because a tool call was never written down
     // anywhere a message could reach.
     steps: stepsFromParts(m.parts as TurnPart[] | undefined),
+    producedFiles: filesFromParts(m.parts as TurnPart[] | undefined),
   }
   if (out.role === 'agent') return out
   // What is folded out is also kept: editing a restored question has to be able
@@ -196,6 +197,28 @@ function restoreAttachments(m: main.SessionMessage): ChatMessage {
  * The last text part is the answer and is already the bubble; every earlier one
  * is narration and becomes a note row, exactly where it sat before.
  */
+/**
+ * The files a stored turn produced, back out of the same parts.
+ *
+ * The live path collects these into cockpit.turnFiles as the turn runs; this is
+ * the other half, and it exists because the first version had only the live one.
+ * Reopening the app dropped every card, and the workbook the answer was still
+ * talking about had no way back to it — the exact "the file exists and you
+ * cannot reach it" problem the card was built to remove.
+ *
+ * Deduped: a turn may well write the same file twice, once as a correction.
+ */
+function filesFromParts(parts?: TurnPart[]): string[] | undefined {
+  if (!parts?.length) return undefined
+  const files: string[] = []
+  for (const part of parts) {
+    for (const path of part.tool?.artifacts ?? []) {
+      if (path && !files.includes(path)) files.push(path)
+    }
+  }
+  return files.length ? files : undefined
+}
+
 function stepsFromParts(parts?: TurnPart[]): ToolStep[] | undefined {
   if (!parts?.length) return undefined
   const lastTextAt = parts.map((p) => p.kind).lastIndexOf('text')

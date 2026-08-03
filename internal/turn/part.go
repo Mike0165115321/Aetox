@@ -62,6 +62,14 @@ type ToolPart struct {
 	Secs    int    `json:"secs,omitempty"`
 	Added   int    `json:"added,omitempty"`
 	Removed int    `json:"removed,omitempty"`
+	// Artifacts are the finished files this call made for the user, carried
+	// here rather than only on the live ToolEvent because this is the part that
+	// is *written down*. The chat draws an open button per artifact, and until
+	// this field existed that button vanished the moment the app restarted —
+	// the file was still on disk and the user had no way back to it. A new JSON
+	// field inside the existing parts column, so no migration: older rows simply
+	// have no artifacts, which is what they had anyway.
+	Artifacts []string `json:"artifacts,omitempty"`
 }
 
 // partList accumulates a turn as it happens. Not safe for concurrent use, and

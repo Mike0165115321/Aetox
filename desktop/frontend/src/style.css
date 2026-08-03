@@ -316,7 +316,11 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .fe-head .ctrl { appearance:none; background:var(--surface-sunken); border:1px solid var(--border-strong); border-radius:var(--r-sm); color:var(--text-secondary); font-family:var(--sans); font-size:var(--fs-md); padding:4px 10px; cursor:pointer; }
 .fe-head .ctrl:disabled { opacity:.5; cursor:default; }
 .fe-hidden { display:none !important; }
-.fe-preview { flex:1; min-height:0; overflow-y:auto; padding:20px 28px; max-width:860px; }
+/* Same split as .chat/.chat-inner below, and for the same reason: max-width on
+   the scroll container itself left-aligned the whole preview and parked the
+   scrollbar 860px in, leaving a wide dead strip down the right of the pane. */
+.fe-preview { flex:1; min-height:0; overflow-y:auto; }
+.fe-preview-inner { max-width:860px; margin:0 auto; width:100%; min-width:0; padding:20px 28px; }
 .editor-mount { flex:1; min-height:0; position:relative; }
 /* .chat is the scroll container — full main width, so its scrollbar sits flush
    against the window edge. .chat-inner carries the centered reading column;

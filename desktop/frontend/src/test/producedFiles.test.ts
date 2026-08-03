@@ -3,8 +3,8 @@
 // it in a sentence, and reaching it meant opening the file panel and hunting —
 // four clicks from a product whose promise is finished work.
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { cockpit, applyToolEvent, sendUserMessage } from '../lib/stores/cockpit.svelte'
-import { SendMessage } from './mocks/wailsApp'
+import { cockpit, applyToolEvent, sendUserMessage, selectSession } from '../lib/stores/cockpit.svelte'
+import { SendMessage, LoadSession } from './mocks/wailsApp'
 import type { ToolEvent } from '../lib/types'
 
 const call = (ref: string, name: string): ToolEvent => ({ action: 'call', name, ref })
@@ -77,6 +77,44 @@ describe('a file the turn produced', () => {
     })
 
     await sendUserMessage('rename the function')
+
+    expect(cockpit.chat.at(-1)!.producedFiles).toBeUndefined()
+  })
+})
+
+// The failure this half exists for, found by the owner within hours of the card
+// shipping: restart the app, reopen the session, and every open button was gone.
+// The workbook was still on disk and the answer still named it, which is exactly
+// the "the file exists and you cannot reach it" problem the card was built to
+// remove — reintroduced by a reload.
+describe('a reopened session', () => {
+  it('brings the open button back from the stored parts', async () => {
+    LoadSession.mockResolvedValueOnce([
+      { role: 'user', text: 'สรุปสลิปให้หน่อย', time: '01:32' },
+      {
+        role: 'agent', text: 'ทำไฟล์ให้แล้วครับ', time: '01:32',
+        parts: [
+          { kind: 'tool', tool: { name: 'sheet_write', ok: true, artifacts: ['out/สรุปสลิป.xlsx'] } },
+          { kind: 'text', text: 'ทำไฟล์ให้แล้วครับ' },
+        ],
+      },
+    ] as any)
+
+    await selectSession({ id: 'session-1', title: '', ago: '' })
+
+    const reply = cockpit.chat.at(-1)!
+    expect(reply.producedFiles).toEqual(['out/สรุปสลิป.xlsx'])
+  })
+
+  it('leaves a turn that produced nothing without cards', async () => {
+    LoadSession.mockResolvedValueOnce([
+      {
+        role: 'agent', text: 'อ่านให้แล้ว', time: '01:40',
+        parts: [{ kind: 'tool', tool: { name: 'read', ok: true } }, { kind: 'text', text: 'อ่านให้แล้ว' }],
+      },
+    ] as any)
+
+    await selectSession({ id: 'session-2', title: '', ago: '' })
 
     expect(cockpit.chat.at(-1)!.producedFiles).toBeUndefined()
   })

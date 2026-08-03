@@ -767,14 +767,15 @@ func (e *Executor) executeAgentToolLoop(
 		// The work goes into the sequence where it happened — between the
 		// narration that announced it and whatever the model said next.
 		parts.addTool(ToolPart{
-			Ref:     call.ID,
-			Name:    call.Function.Name,
-			Subject: ev.Subject,
-			OK:      success,
-			Error:   ev.Error,
-			Secs:    int(elapsed.Round(time.Second) / time.Second),
-			Added:   output.LinesAdded,
-			Removed: output.LinesRemoved,
+			Ref:       call.ID,
+			Name:      call.Function.Name,
+			Subject:   ev.Subject,
+			OK:        success,
+			Error:     ev.Error,
+			Secs:      int(elapsed.Round(time.Second) / time.Second),
+			Added:     output.LinesAdded,
+			Removed:   output.LinesRemoved,
+			Artifacts: output.Artifacts,
 		})
 		return receipt, output.Images, execErr
 	}, asStreamHandler(reasoning), opts)

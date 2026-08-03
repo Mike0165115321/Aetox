@@ -105,8 +105,9 @@ export interface ChatMessage {
   /** tool calls made during this turn, kept on the reply for a persistent timeline. */
   steps?: ToolStep[]
   /** Finished files this turn made for the user (see CockpitState.turnFiles).
-   *  Like `steps`, this is not persisted — a reloaded session shows the answer
-   *  without the cards, and the files themselves are still in the file panel. */
+   *  Rebuilt from the message's own parts on reload, so the open button survives
+   *  a restart — it did not at first, and the file became unreachable from the
+   *  answer that announced it. */
   producedFiles?: string[]
   /** The turn as it happened — prose, thinking segments and tool calls in the
    * order they occurred. When present this is what the bubble draws, so
@@ -161,6 +162,10 @@ export interface ToolPartInfo {
   secs?: number
   added?: number
   removed?: number
+  /** Finished files this call made for the user. Unlike the live ToolEvent's
+   *  copy, this one is written down with the message — which is what lets the
+   *  open button still be there after a restart. */
+  artifacts?: string[]
 }
 
 /** One of the answers a question received. */
