@@ -32,7 +32,7 @@ export const th = {
   'sidebar.noProjects': 'ยังไม่เคยเปิดโปรเจกต์ไหนเลย',
   'sidebar.explorer': 'ไฟล์',
   'sidebar.refreshTip': 'รีเฟรชรายการไฟล์',
-  'sidebar.noFiles': 'ยังไม่มีไฟล์ เปิดโฟลเดอร์ก่อน',
+  'sidebar.noFiles': 'ยังไม่มีไฟล์ในแผงนี้',
   'sidebar.globalHistory': 'แชท',
   'sidebar.searchHistory': 'ค้นหาประวัติ…',
   'sidebar.noResults': 'ไม่พบผลลัพธ์',

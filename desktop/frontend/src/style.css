@@ -946,6 +946,14 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .spin { color:var(--interactive); }
 .cmd { font-family:var(--mono); font-size:var(--fs-sm); color:var(--text-code); background:var(--surface-code); border-radius:var(--r-sm); padding:6px 9px; }
 .empty { color:var(--text-muted); text-align:center; padding:16px; }
+/* An empty panel that offers the way out rather than only naming the problem.
+   Deliberately not a modifier on .empty — that name is a page-level utility
+   other rules already collide with (see .daycol). .proj-add is the sidebar's
+   dashed add button and is width:100% there; resetting the width is what keeps
+   it a button here instead of a banner spanning the whole workbench pane. */
+.pane-empty { display:flex; flex-direction:column; align-items:center; gap:12px; padding:28px 16px; color:var(--text-muted); text-align:center; }
+.pane-empty p { margin:0; }
+.pane-empty .proj-add { width:auto; margin-bottom:0; justify-content:center; }
 
 /* ---------- settings (full-page overlay) ---------- */
 .settings-overlay { position:fixed; inset:0; z-index:50; background:var(--surface-app); display:flex; }

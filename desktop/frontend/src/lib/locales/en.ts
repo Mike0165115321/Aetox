@@ -33,7 +33,7 @@ export const en: Record<keyof typeof th, string> = {
   'sidebar.noProjects': 'No projects opened yet',
   'sidebar.explorer': 'Explorer',
   'sidebar.refreshTip': 'Refresh file tree',
-  'sidebar.noFiles': 'No files yet. Open a folder first.',
+  'sidebar.noFiles': 'No files to show here yet.',
   'sidebar.globalHistory': 'Chats',
   'sidebar.searchHistory': 'Search history…',
   'sidebar.noResults': 'No results found',

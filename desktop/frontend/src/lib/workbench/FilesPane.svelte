@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { cockpit, toggleNode, visibleTree } from '../stores/cockpit.svelte'
+  import { cockpit, openFolder, toggleNode, visibleTree } from '../stores/cockpit.svelte'
   import { workbench, openFileTab } from '../stores/workbench.svelte'
   import { t } from '../i18n.svelte'
   import Icon from '../Icon.svelte'
@@ -24,6 +24,13 @@
         {#if node.status === 'U'}<span class="st u">U</span>{/if}
       </button>
     {/each}
-    {#if cockpit.tree.length === 0}<div class="empty">{t('sidebar.noFiles')}</div>{/if}
+    {#if cockpit.tree.length === 0}
+      <div class="pane-empty">
+        <p>{t('sidebar.noFiles')}</p>
+        <button type="button" class="proj-add" onclick={openFolder}>
+          <span class="ic"><Icon name="folderOpen" size={14} /></span> {t('topbar.openFolder')}
+        </button>
+      </div>
+    {/if}
   </div>
 </div>
