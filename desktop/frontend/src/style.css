@@ -474,7 +474,11 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 /* Several images in one paragraph = a gallery row: cap each to roughly a
    third of the bubble so 2–3 sit side by side instead of stacking full-size.
    (:only-child keeps a lone image at the larger single-image size above.) */
-.markdown-body p > img:not(:only-child) { max-width:32%; max-height:180px; }
+/* Not a flat 33%: each image also carries a 6px right margin, and the source
+   whitespace between two <img> is a real space under the paragraph's pre-wrap.
+   At 32% three came to ~595px in a 592px bubble and the third wrapped — the
+   row was one pixel-budget short of the 2–3 the cap is for. */
+.markdown-body p > img:not(:only-child) { max-width:calc(33.333% - 12px); max-height:180px; }
 .markdown-body hr { border:none; border-top:1px solid var(--border-subtle); margin:.8em 0; }
 /* Inline code is a word in a sentence, not a boxed widget — tint it and drop
    the border, so `ComProc` mid-paragraph stops looking like a button.
@@ -582,10 +586,23 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
    full grid of boxes fights the prose around it. --border-default because it
    is the whole table now; --border-subtle vanishes into --surface-app on
    rose-pine (1.07:1) and solarized-light (1.14:1). */
-.markdown-body table { border-collapse:collapse; width:100%; margin:.6em 0 1.1em; }
+/* display:block + max-content is what lets a wide table scroll instead of
+   squeezing. width:100% used to force every column into the bubble, and the
+   inherited word-break:break-word then broke the squeezed cells mid-token —
+   a 7-column comparison rendered "anthropic" as "anthro/pic" and, worse,
+   "200000" as "2000/00", which reads as two numbers. min-width:100% keeps a
+   narrow table stretched so its row rules still span the column. */
+.markdown-body table {
+  display:block; width:max-content; min-width:100%; max-width:100%; overflow-x:auto;
+  border-collapse:collapse; margin:.6em 0 1.1em;
+}
 .markdown-body th, .markdown-body td {
   border:none; border-bottom:1px solid var(--border-default);
   padding:.6em 1.2em .6em 0; text-align:left; vertical-align:top;
+  /* Undo .bubble's break-word inside cells: a column is narrow by nature, so
+     the aggressive break fires constantly here and mangles ids and numbers.
+     Long single tokens still wrap via the bubble's overflow-wrap. */
+  word-break:normal;
 }
 .markdown-body th { background:none; color:var(--text-muted); font-weight:600; font-size:.94em; }
 .markdown-body th:last-child, .markdown-body td:last-child { padding-right:0; }
