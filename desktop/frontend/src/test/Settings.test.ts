@@ -31,9 +31,9 @@ beforeEach(() => {
   // A desktop tool and a built-in one: both belong on the Tools page, and
   // neither is anything the user installed.
   vi.mocked(ListTools).mockResolvedValue([
-    { name: 'browser_open', description: 'open a page', source: 'workbench' },
-    { name: 'read', description: 'read a file', source: 'builtin' },
-    { name: 'audio_transcribe', description: 'transcribe audio', source: 'builtin' },
+    { name: 'browser_open', description: 'open a page', source: 'workbench', category: 'web' },
+    { name: 'read', description: 'read a file', source: 'builtin', category: 'files' },
+    { name: 'audio_transcribe', description: 'transcribe audio', source: 'builtin', category: 'media' },
   ] as any)
   // One in Aetox's own folder, one already sitting in Ollama's — the case the
   // picker exists for, since neither is reachable without naming a full path.
@@ -192,17 +192,23 @@ describe('Settings pages', () => {
     expect(row.querySelector('.d')!.classList.contains('clamp')).toBe(true)
   })
 
-  // Each source gets its own card, so "where did this come from" is answered
-  // once per group instead of repeated on all 39 rows.
-  it('tools are grouped by source, not listed flat', async () => {
+  // Grouped by what a tool is FOR, not by where it came from. Source sorts
+  // forty-four rows by an implementation detail and answers a question nobody
+  // asks; "which of these does the assistant need to carry?" could not be asked
+  // from the old page at all, because it could not be read.
+  it('tools are grouped by what they are for, not by where they came from', async () => {
     const { container } = render(Settings, { onClose: () => {} })
     await openSection(container, 'เครื่องมือ')
 
     await waitFor(() => expect(screen.getByText('browser_open')).toBeTruthy())
-    // Heading and count sit above the card, not inside it.
     const heads = Array.from(container.querySelectorAll('.group-head')).map((h) => h.textContent)
-    expect(heads.some((h) => h?.includes('ในตัว') && h?.includes('2'))).toBe(true)
-    expect(heads.some((h) => h?.includes('เดสก์ท็อป') && h?.includes('1'))).toBe(true)
+    // browser_open is web, read is files — two tools that used to be one group
+    // ("built in" / "desktop") and are two abilities.
+    expect(heads.some((h) => h?.includes('เว็บ'))).toBe(true)
+    expect(heads.some((h) => h?.includes('ไฟล์'))).toBe(true)
+    // The old axis is gone: nothing is filed under where it was compiled.
+    expect(heads.some((h) => h?.includes('ในตัว') || h?.includes('เดสก์ท็อป'))).toBe(false)
+    // Heading and count still sit above the card, not inside it.
     expect(container.querySelector('.settings-card .group-head')).toBeNull()
   })
 
@@ -476,9 +482,9 @@ describe('Settings pages', () => {
   // scoped to these two tests, so as not to disturb the Tools page's own
   // "2 built-in tools" count elsewhere in this file.
   const withPickableTools = () => vi.mocked(ListTools).mockResolvedValue([
-    { name: 'browser_open', description: 'open a page', source: 'workbench' },
-    { name: 'read', description: 'read a file', source: 'builtin' },
-    { name: 'audio_transcribe', description: 'transcribe audio', source: 'builtin' },
+    { name: 'browser_open', description: 'open a page', source: 'workbench', category: 'web' },
+    { name: 'read', description: 'read a file', source: 'builtin', category: 'files' },
+    { name: 'audio_transcribe', description: 'transcribe audio', source: 'builtin', category: 'media' },
     { name: 'grep', description: 'search file contents', source: 'builtin' },
     { name: 'glob', description: 'find files by pattern', source: 'builtin' },
   ] as any)

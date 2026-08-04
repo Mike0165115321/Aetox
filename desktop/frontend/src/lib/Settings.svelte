@@ -680,13 +680,21 @@
   // Read-only: every tool the AI can run — Aetox's own plus anything an MCP
   // server bridged in. Separate from the skills below, which are documents, not
   // things it runs.
-  let tools = $state<{ name: string; description: string; source: string }[]>([])
-  // One card per source instead of one list with a badge repeated on every row:
-  // where a tool comes from is a property of the group, not of each line.
-  const TOOL_SOURCES = ['builtin', 'workbench', 'mcp'] as const
+  let tools = $state<{ name: string; description: string; source: string; category: string }[]>([])
+  // Grouped by what a tool is *for*, not by where it came from.
+  //
+  // It used to be one card per source — builtin, workbench, mcp — which sorts
+  // forty-four rows by an implementation detail and answers a question nobody
+  // asks. "Which of these does the assistant need to carry everywhere?" had
+  // nowhere to be asked from, because the page could not be read at all.
+  //
+  // The order comes from Go (internal/skill/category.go) rather than being
+  // restated here, so the grouping the user sees and the grouping the engine
+  // knows are one list.
+  const TOOL_CATEGORIES = ['files', 'shell', 'deliverables', 'media', 'web', 'code', 'agent'] as const
   const toolGroups = $derived(
-    TOOL_SOURCES
-      .map((key) => ({ key, items: tools.filter((s) => s.source === key) }))
+    TOOL_CATEGORIES
+      .map((key) => ({ key, items: tools.filter((s) => (s.category || 'agent') === key) }))
       .filter((g) => g.items.length > 0),
   )
   let expandedTool = $state('') // name of the row showing its full description
@@ -1383,16 +1391,17 @@
     agentDraftDeny = []
   }
 
-  // Grouped by where the tool came from, same split the Tools page uses — with
-  // 35+ entries "which of these did I install" is the question that narrows the
-  // list fastest.
+  // Grouped by what the tool is for, same split the Tools page uses. Choosing
+  // what a delegate may be handed is exactly the "what is this for" question —
+  // "which of these did I install" never was, and it is the one the old
+  // source-based split answered.
   const agentToolGroups = $derived.by(() => {
     const q = toolQuery.trim().toLowerCase()
-    return TOOL_SOURCES
+    return TOOL_CATEGORIES
       .map((key) => ({
         key,
         items: tools
-          .filter((s) => s.source === key && (!q || s.name.toLowerCase().includes(q)))
+          .filter((s) => (s.category || 'agent') === key && (!q || s.name.toLowerCase().includes(q)))
           .map((s) => ({ name: s.name, forced: AGENT_FORCED_DENIALS.includes(s.name) }))
           .sort((a, b) => a.name.localeCompare(b.name)),
       }))
@@ -2100,10 +2109,10 @@
              the list, and a title sealed inside its own border reads as one
              more entry in it. -->
         <div class="group-head">
-          <!-- Template literal, not concatenation: TOOL_SOURCES is a literal
-               union, so this resolves to a real message key and a source added
+          <!-- Template literal, not concatenation: TOOL_CATEGORIES is a literal
+               union, so this resolves to a real message key and a category added
                without its label becomes a compile error. -->
-          <span class="group-title">{t(`settings.toolSource_${g.key}`)}</span>
+          <span class="group-title">{t(`settings.toolGroup_${g.key}`)}</span>
           <span class="group-count">{t('settings.itemCount', { n: g.items.length })}</span>
         </div>
         <div class="settings-card">
@@ -3135,7 +3144,7 @@
         {/if}
         {#each agentToolGroups as g (g.key)}
           <div class="group-head tp-group">
-            <span class="group-title">{t(`settings.toolSource_${g.key}`)}</span>
+            <span class="group-title">{t(`settings.toolGroup_${g.key}`)}</span>
             <span class="group-count">{t('settings.itemCount', { n: g.items.length })}</span>
           </div>
           {#each g.items as item (item.name)}

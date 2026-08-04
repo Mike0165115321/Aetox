@@ -82,3 +82,41 @@ func TestTheToolBlockStaysWithinItsBudget(t *testing.T) {
 		}
 	}
 }
+
+// Every tool the assistant can be handed has to say what it is for, or the
+// surfaces that group them quietly drop it into a catch-all and the page stops
+// being a complete answer.
+//
+// This lives here rather than in internal/skill because only the desktop can
+// see the whole registry at once — builtins, the workbench tools, and the
+// delegation trio are registered from three different places, and a table
+// checked against only one of them would look complete while missing a third.
+func TestEveryToolHasACategory(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+	a := &App{ctx: context.Background(), emit: func(string, ...any) {}, dbDir: t.TempDir(), sessionID: newSessionID()}
+	t.Cleanup(func() {
+		if a.db != nil {
+			_ = a.db.Close()
+		}
+	})
+	a.applyConfig(config.Config{
+		SandboxRoot:   t.TempDir(),
+		ModelProvider: "aetox",
+		ModelName:     "aetox-tools:test",
+		ApprovalMode:  string(safety.ApprovalFullAccess),
+	})
+
+	var missing []string
+	for _, name := range a.registry.Names() {
+		if src, ok := a.registry.SourceOf(name); ok && src == skill.SourceSkill {
+			continue // a SKILL.md document is not a tool and is listed elsewhere
+		}
+		if !skill.HasCategory(name) {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) > 0 {
+		sort.Strings(missing)
+		t.Errorf("these tools are not in internal/skill/category.go, so they fall into the catch-all: %v", missing)
+	}
+}

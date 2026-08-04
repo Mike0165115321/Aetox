@@ -49,6 +49,12 @@ type SkillInfo struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Source      string `json:"source"` // builtin | workbench | mcp | skill
+	// Category is what the tool is *for* (internal/skill/category.go). Source
+	// says where a tool came from, which answers a question nobody asks; this
+	// says what it lets the assistant do, which is the only thing a person
+	// deciding can act on. Both are sent because the page still marks what the
+	// user installed themselves.
+	Category string `json:"category"`
 }
 
 // ListTools returns everything the AI can actually run — the compiled-in tools,
@@ -84,7 +90,10 @@ func (a *App) registryEntries(keep func(skill.Source) bool) []SkillInfo {
 		if !keep(src) {
 			continue
 		}
-		out = append(out, SkillInfo{Name: n, Description: s.Description(), Source: string(src)})
+		out = append(out, SkillInfo{
+			Name: n, Description: s.Description(), Source: string(src),
+			Category: skill.CategoryOf(n),
+		})
 	}
 	return out
 }

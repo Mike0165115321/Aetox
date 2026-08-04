@@ -508,6 +508,7 @@ export namespace main {
 	    name: string;
 	    description: string;
 	    source: string;
+	    category: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new SkillInfo(source);
@@ -518,6 +519,7 @@ export namespace main {
 	        this.name = source["name"];
 	        this.description = source["description"];
 	        this.source = source["source"];
+	        this.category = source["category"];
 	    }
 	}
 	export class SpeechDirInfo {
