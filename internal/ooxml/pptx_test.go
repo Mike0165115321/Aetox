@@ -166,6 +166,36 @@ func TestSpeakerNotesAreWiredBothWays(t *testing.T) {
 	}
 }
 
+// Each master owns its own theme part. The notes master sharing theme1 with
+// the slide master looks legal on paper — OPC allows two relationships to one
+// part — and PowerPoint answers it with "พบปัญหากับเนื้อหา" and a repair
+// prompt, on every deck that has speaker notes. Found by bisecting variants
+// through a live PowerPoint via COM (2026-08-04): giving the notes master a
+// byte-identical theme2.xml was the single change from repair-prompt to
+// opens-clean.
+func TestNotesMasterOwnsItsOwnThemePart(t *testing.T) {
+	parts := buildDeck(t, []Slide{{Title: "one", Notes: "say this"}})
+
+	if _, ok := parts["ppt/theme/theme2.xml"]; !ok {
+		t.Fatal("a deck with notes has no theme2.xml — the notes master is sharing the slide master's theme, which PowerPoint treats as a corrupt file")
+	}
+	if parts["ppt/theme/theme2.xml"] != parts["ppt/theme/theme1.xml"] {
+		t.Error("theme2 drifted from theme1 — the two masters should present one design")
+	}
+	if !strings.Contains(parts["ppt/notesMasters/_rels/notesMaster1.xml.rels"], `Target="../theme/theme2.xml"`) {
+		t.Error("the notes master does not point at its own theme part")
+	}
+	if !strings.Contains(parts["[Content_Types].xml"], `PartName="/ppt/theme/theme2.xml"`) {
+		t.Error("theme2.xml has no content-type override, so it is not a theme to any reader")
+	}
+
+	// No notes → no second theme; the part rides with the notes master only.
+	bare := buildDeck(t, []Slide{{Title: "no notes"}})
+	if _, ok := bare["ppt/theme/theme2.xml"]; ok {
+		t.Error("a deck without notes shipped a second theme it has no master for")
+	}
+}
+
 // A deck with no notes must not carry a notes master: an empty notesMasterIdLst
 // referencing a part that is not there is exactly the dangling link that makes
 // PowerPoint offer to repair the file.

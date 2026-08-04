@@ -110,10 +110,14 @@ func BuildPPTX(slides []Slide) ([]Part, error) {
 	nextRel := 3
 	if hasNotes {
 		types.WriteString(`<Override PartName="/ppt/notesMasters/notesMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesMaster+xml"/>`)
+		// theme2 is the notes master's own copy of the theme — see the
+		// notesMasterRels comment for why sharing theme1 corrupts the file.
+		types.WriteString(`<Override PartName="/ppt/theme/theme2.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>`)
 		fmt.Fprintf(&presRels, `<Relationship Id="rId%d" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesMaster" Target="notesMasters/notesMaster1.xml"/>`, nextRel)
 		parts = append(parts,
 			Part{Name: "ppt/notesMasters/notesMaster1.xml", Data: []byte(notesMasterXML)},
 			Part{Name: "ppt/notesMasters/_rels/notesMaster1.xml.rels", Data: []byte(notesMasterRels)},
+			Part{Name: "ppt/theme/theme2.xml", Data: []byte(themeXML)},
 		)
 		nextRel++
 	}
@@ -365,9 +369,16 @@ const slideLayoutRels = xmlHeader +
 	`<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="../slideMasters/slideMaster1.xml"/>` +
 	`</Relationships>`
 
+// The notes master points at ITS OWN theme part — theme2.xml, byte-identical
+// to theme1. Sharing theme1 with the slide master looks legal on paper (OPC
+// allows two relationships to one part) and is exactly what shipped: every
+// deck with speaker notes opened to "PowerPoint พบปัญหากับเนื้อหา" and a
+// repair prompt. PowerPoint requires each master to own its theme; bisected
+// with a live PowerPoint via COM, 2026-08-04 — giving the notes master its
+// own copy was the single change that turned repair-prompt into opens-clean.
 const notesMasterRels = xmlHeader +
 	`<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
-	`<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="../theme/theme1.xml"/>` +
+	`<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="../theme/theme2.xml"/>` +
 	`</Relationships>`
 
 // The master and layout are as close to empty as the format allows: they carry
