@@ -78,15 +78,37 @@ var credentialStores = []string{
 // refuseCredentialStore rejects a (symlink-resolved) target inside any
 // credential store. A missing home dir fails open on purpose: it means there
 // is no home to protect, not that everything is suspect.
+//
+// The home side goes through the same canonicalization as the target, because
+// the two arrive in different spellings: the target was symlink-resolved,
+// which on Windows also expands 8.3 short names (RUNNER~1 → runneradmin),
+// while os.UserHomeDir returns USERPROFILE verbatim. Compare those raw and a
+// short-named home lets every credential read through — caught by CI, whose
+// runner's TEMP really is spelled C:\Users\RUNNER~1\....
 func refuseCredentialStore(target string) error {
 	home, err := os.UserHomeDir()
 	if err != nil || strings.TrimSpace(home) == "" {
 		return nil
 	}
+	home = resolvedHomeDir(strings.TrimSpace(home))
 	for _, sub := range credentialStores {
 		if withinRoot(target, filepath.Join(home, filepath.FromSlash(sub))) {
 			return fmt.Errorf("path is inside a credential store (%s) and stays off-limits even without a project", sub)
 		}
 	}
 	return nil
+}
+
+// resolvedHomeDir caches evalExistingSymlinks per raw home value — the same
+// trade rootResolutions makes, and safe the same way: keyed by the raw value,
+// so a test re-pointing USERPROFILE gets a fresh entry, not a stale answer.
+var homeResolutions sync.Map // map[string]string
+
+func resolvedHomeDir(raw string) string {
+	if cached, ok := homeResolutions.Load(raw); ok {
+		return cached.(string)
+	}
+	resolved := evalExistingSymlinks(raw)
+	homeResolutions.Store(raw, resolved)
+	return resolved
 }
