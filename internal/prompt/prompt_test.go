@@ -326,3 +326,30 @@ func TestTheCapabilityLessonNamesNoTopics(t *testing.T) {
 		}
 	}
 }
+
+// A brief can be complete and still assume something that is not there. Asked
+// to migrate a project from one UI library to another with no project in the
+// workspace, the model ran list, two session_searches, two globs and three
+// shell commands before asking where it was — eight rounds to reach a question
+// the user answers in a word.
+//
+// The lesson is about the state, not about projects: an empty result twice is
+// evidence, and the thing that is missing is the thing to ask about.
+func TestPromptTeachesThatAnEmptySearchIsAnAnswer(t *testing.T) {
+	got := Build(SurfaceDesktop, Scope{Root: t.TempDir()})
+	for _, want := range []string{
+		"rest on something that is not here",
+		"come back empty",
+		"ask where it is",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("system prompt is missing %q:\n%s", want, got)
+		}
+	}
+	// The case it generalizes from must not be written down as the rule.
+	for _, reject := range []string{"package.json", "components.json", "Radix", "git repo"} {
+		if strings.Contains(got, reject) {
+			t.Errorf("prompt hardcodes the case %q instead of the principle:\n%s", reject, got)
+		}
+	}
+}

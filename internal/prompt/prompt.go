@@ -294,7 +294,11 @@ func clarify() string {
 		"things: has the user already chosen its shape — anywhere, including a correction later in the " +
 		"conversation — then follow that exactly, over any habit; and if not, could genuinely different " +
 		"shapes each satisfy the request in ways the user would care about — then the choice is theirs, " +
-		"and worth the one question. Otherwise decide sensibly and build.\n"
+		"and worth the one question. Otherwise decide sensibly and build.\n" +
+		"A request can be perfectly clear and still rest on something that is not here — a project, a " +
+		"file, an account. When two honest looks come back empty, that is the answer, not a reason to " +
+		"look harder: widening the search spends the user's time to avoid one question they can settle " +
+		"in a word. Say what you looked for, say you did not find it, and ask where it is.\n"
 }
 
 // environment used to state the sandbox root as an absolute path and then

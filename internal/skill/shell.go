@@ -73,7 +73,18 @@ func (*shellSkill) ToolDefinition() model.ToolDefinition {
 		Type: "function",
 		Function: model.ToolFunction{
 			Name: "shell",
+			// Naming the interpreter is not trivia. Without it a model writes
+			// for the shell its training data is mostly made of, which is a
+			// POSIX one — so on Windows the first command spent a round dying
+			// on `ls -la` before the second tried `dir`. The name comes from
+			// proc, beside the invocation it describes, so the description
+			// cannot end up naming a shell the tool does not run.
+			//
+			// The name, and nothing else: a table of equivalents here would be
+			// a case list, and the model already knows the shell it is told
+			// it is writing for.
 			Description: "Run a command in the working folder — tests, builds, linters, package managers, anything the terminal can do. " +
+				"Commands are run by " + proc.ShellName() + " on this machine, so write them in that shell's syntax. " +
 				"Use it to verify your own work after editing. " +
 				"Paths in the command follow the same rule the file tools do: they must be inside the folders this session may use, " +
 				"and a command naming anything outside is refused before it runs. " +

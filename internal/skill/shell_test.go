@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Mike0165115321/Aetox/internal/proc"
 	"github.com/Mike0165115321/Aetox/internal/rtk"
 )
 
@@ -262,6 +263,28 @@ func BenchmarkResolveSandboxRoot(b *testing.B) {
 	for b.Loop() {
 		if _, err := resolveSandboxPath(root, "."); err != nil {
 			b.Fatalf("resolveSandboxPath: %v", err)
+		}
+	}
+}
+
+// A model writes for the shell its training data is mostly made of, which is a
+// POSIX one — so on Windows the first command spent a round dying on `ls -la`
+// before the next tried `dir`. The description now names the interpreter, and
+// the name comes from proc, beside the invocation it describes, so the two
+// cannot drift apart.
+func TestShellDescriptionNamesTheShellItActuallyRuns(t *testing.T) {
+	desc := (&shellSkill{}).ToolDefinition().Function.Description
+	if !strings.Contains(desc, proc.ShellName()) {
+		t.Errorf("shell description does not name %q, so the model has to guess:\n%s", proc.ShellName(), desc)
+	}
+	if !strings.Contains(desc, "that shell's syntax") {
+		t.Errorf("naming the shell without saying why leaves the model no reason to act on it:\n%s", desc)
+	}
+	// The name and nothing else: a table of equivalents would be a case list,
+	// and the model already knows the shell it has been told it is writing for.
+	for _, caseList := range []string{"dir /b", "ls -la", "instead of ls", "use dir"} {
+		if strings.Contains(desc, caseList) {
+			t.Errorf("shell description carries a command table (%q) instead of naming the shell:\n%s", caseList, desc)
 		}
 	}
 }
