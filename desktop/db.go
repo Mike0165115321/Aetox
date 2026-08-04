@@ -367,6 +367,24 @@ CREATE TABLE IF NOT EXISTS project_folders (
 			return err
 		},
 	},
+	{
+		version: 8,
+		name:    "session_mode",
+		apply: func(tx *sql.Tx) error {
+			// Which desk this session was opened at (ARCHITECTURE.md §83) —
+			// assistant, coding, specialized, or '' for every session that
+			// predates modes. '' means "the full desk", so an upgraded install
+			// reopens its history with exactly the tools it had; no backfill
+			// could honestly claim to know which mode an old session was.
+			//
+			// On sessions rather than messages because the mode is decided at
+			// creation and never changes — the entire value of a mode is that
+			// the context never contained the other desks' tools, and a column
+			// that could vary per message would say switching is a thing.
+			_, err := tx.Exec(`ALTER TABLE sessions ADD COLUMN mode TEXT NOT NULL DEFAULT ''`)
+			return err
+		},
+	},
 }
 
 // latestSchemaVersion is what this build understands.

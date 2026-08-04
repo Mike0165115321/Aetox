@@ -96,6 +96,16 @@ func TestExistingUnversionedDatabaseMigratesWithoutLosingHistory(t *testing.T) {
 	if _, err := db.Exec(`SELECT 1 FROM tool_runs LIMIT 1`); err != nil {
 		t.Fatalf("tool_runs missing after migration: %v", err)
 	}
+	// v8: a session from before modes existed must reopen at the full desk —
+	// mode '' — not at a guessed one. No backfill can know which mode an old
+	// conversation was, so the honest answer is the one that changes nothing.
+	var mode string
+	if err := db.QueryRow(`SELECT mode FROM sessions WHERE id = ?`, "20260101-000000.000").Scan(&mode); err != nil {
+		t.Fatalf("sessions.mode missing after migration: %v", err)
+	}
+	if mode != "" {
+		t.Fatalf("a pre-mode session was assigned mode %q; '' is the full desk", mode)
+	}
 }
 
 // A database written by a newer build must be refused rather than used: this
