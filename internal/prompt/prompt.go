@@ -99,6 +99,7 @@ func BuildWithReport(surface Surface, scope Scope) (string, Loaded) {
 	var b strings.Builder
 	b.WriteString(identity(surface))
 	b.WriteString(environment(scope))
+	b.WriteString(capability())
 	b.WriteString(fileEditing())
 	b.WriteString(batchWork())
 	b.WriteString(narration())
@@ -179,6 +180,41 @@ func identity(surface Surface) string {
 		place = "a desktop chat UI"
 	}
 	return fmt.Sprintf("You are Aetox, a concise assistant in Thai and English that helps users through %s.\n", place)
+}
+
+// capability tells the model that the tools listed for it are not the whole
+// inventory. It sits next to environment because they answer the same question
+// from two sides: that one says where this session can reach, this one says
+// what it can do.
+//
+// Nothing used to say it, and the gap is structural rather than hypothetical —
+// skills are *already* behind a door. `skills_list` returns them on request and
+// their bodies are never sent, which is what keeps a library of three hundred
+// as cheap as a library of three (§71). But the only thing telling the model a
+// skill exists at all was that one tool's own description, so whether it ever
+// knocked was left to chance. A skill the user wrote for exactly this task is
+// worth nothing if nobody opens it.
+//
+// Written as a principle rather than "call skills_list when the user mentions
+// X", because the trigger is not a topic — it is a state: being about to say
+// no, or about to build from nothing. That state is recognizable from the
+// inside, and it stays recognizable when the next thing moves behind a door.
+//
+// The cost sentence is load-bearing. A model deciding whether to spend a round
+// on a lookup needs the asymmetry: a lookup that finds nothing costs one cheap
+// round, while a false "I can't" is indistinguishable to the user from a real
+// limit, so they stop asking and the capability may as well not exist. It is
+// the one wrong answer that hides its own mistake.
+func capability() string {
+	return "The tools listed for you are not everything this machine can do. Skill documents — " +
+		"instructions the user installed for particular jobs — are never sent to you; skills_list " +
+		"returns them on request. Work that someone already wrote down for exactly the task in " +
+		"front of you is invisible until you go and look.\n" +
+		"Look at two moments: when you are about to say something cannot be done, and when you are " +
+		"about to build from scratch something that sounds like a job this user does more than once. " +
+		"A lookup that finds nothing costs one cheap round. Telling the user you cannot do something " +
+		"you were simply never shown reads to them exactly like a real limit — so they stop asking, " +
+		"and it is the one wrong answer that hides its own mistake.\n"
 }
 
 // fileEditing tells the model how to change a file it has already written.

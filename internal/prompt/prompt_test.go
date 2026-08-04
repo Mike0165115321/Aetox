@@ -290,3 +290,39 @@ func TestNothingLearnedChangesNothing(t *testing.T) {
 		t.Errorf("an empty memory should add no layer:\n%s", before)
 	}
 }
+
+// Skills are already behind a door — skills_list returns them on request and
+// their bodies are never sent (§71) — and until this section the prompt did not
+// mention them at all. Whether the model ever knocked was left to the one tool
+// description that names them, which is the same shape of mismatch as the
+// sandbox one above: the system can do something the model has no reason to
+// believe it can.
+func TestPromptTeachesThatTheToolListIsNotTheWholeInventory(t *testing.T) {
+	got := Build(SurfaceDesktop, Scope{Root: t.TempDir()})
+	for _, want := range []string{
+		"not everything this machine can do",
+		"skills_list",
+		// The asymmetry is what makes the lookup worth a round.
+		"costs one cheap round",
+		"hides its own mistake",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("system prompt is missing %q:\n%s", want, got)
+		}
+	}
+}
+
+// The trigger is a state the model can recognize from the inside — about to
+// refuse, about to build from nothing — not a list of topics. A topic list
+// answers the failures somebody remembered and nothing else, and it would have
+// to be edited every time anything else moves behind a door.
+func TestTheCapabilityLessonNamesNoTopics(t *testing.T) {
+	got := Build(SurfaceDesktop, Scope{Root: t.TempDir()})
+	for _, reject := range []string{
+		"when the user mentions", "when the user asks about", "if the user says",
+	} {
+		if strings.Contains(strings.ToLower(got), reject) {
+			t.Errorf("prompt hardcodes a trigger phrase %q instead of the state:\n%s", reject, got)
+		}
+	}
+}
