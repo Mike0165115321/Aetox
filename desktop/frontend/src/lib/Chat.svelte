@@ -17,6 +17,7 @@
     cockpit, attachImageFromPath, clearPendingImage, attachTabContext, clearPendingContext,
     attachFileFromPath, clearPendingFile, fileKind, attachmentPreview,
     openProject, openFolder, clearProjectFocus, cancelTurn, answerAsk, queuedMessages,
+    addProjectFolder, removeProjectFolder,
     retryActiveProvider, undoLastTurn, switchApprovalMode,
     startTaskChip, dismissTaskChip,
     retryFailedTurn, regenerateReply, switchVariant, resendEdited,
@@ -201,6 +202,9 @@
   let draft = $state('')
   let modelMenuOpen = $state(false)
   let focusMenuOpen = $state(false)
+  // Why the last "add folder" was refused, '' when there is nothing to say.
+  // Cleared when the menu closes, so a stale refusal never greets the next open.
+  let folderError = $state('')
   let ctxMenuOpen = $state(false)
   // Which of the provider/model/think-level pickers inside the model-menu
   // popover is expanded — native <select> can't be forced to open its option
@@ -241,7 +245,7 @@
   function closeMenusOnOutside(e: MouseEvent) {
     const el = e.target as HTMLElement
     if (modelMenuOpen && !el.closest('.model-pick')) { modelMenuOpen = false; openDropdown = '' }
-    if (focusMenuOpen && !el.closest('.focus-pick')) focusMenuOpen = false
+    if (focusMenuOpen && !el.closest('.focus-pick')) { focusMenuOpen = false; folderError = '' }
     if (ctxMenuOpen && !el.closest('.ctx-pick')) ctxMenuOpen = false
     if (openDropdown && !el.closest('.updrop')) openDropdown = ''
     if (palette && !el.closest('.pal-pick')) palette = ''
@@ -1100,6 +1104,36 @@
             <button type="button" class="focus-item" onclick={() => { focusMenuOpen = false; openFolder() }}>
               <span class="ic"><Icon name="folderOpen" size={14} /></span> {t('topbar.openFolder')}…
             </button>
+            <!-- The extra folders live in the focus menu rather than a settings
+                 page, because they answer the same question the menu already
+                 answers: what can the AI reach right now. Split across two
+                 screens, the list stops being the thing the user reads to know. -->
+            {#if cockpit.project.focused}
+              <div class="menu-sep"></div>
+              <div class="folder-head">{t('chat.extraFolders')}</div>
+              {#each cockpit.projectFolders as f (f.path)}
+                <div class="focus-item folder-row" class:missing={f.missing}>
+                  <span class="ic"><Icon name="folder" size={14} /></span>
+                  <span class="t" title={f.path}>{f.name}</span>
+                  {#if f.missing}<span class="folder-gone">{t('chat.folderMissing')}</span>{/if}
+                  <button
+                    type="button"
+                    class="folder-drop"
+                    aria-label={t('chat.removeFolder', { name: f.name })}
+                    title={t('chat.removeFolder', { name: f.name })}
+                    onclick={() => removeProjectFolder(f.path)}
+                  ><Icon name="x" size={12} /></button>
+                </div>
+              {/each}
+              <button type="button" class="focus-item" onclick={async () => { folderError = await addProjectFolder() }}>
+                <span class="ic"><Icon name="plus" size={14} /></span> {t('chat.addFolder')}…
+              </button>
+              <!-- Shown in the menu, not as a toast: the refusal is about the
+                   folder the user just picked, and it belongs next to the list
+                   they picked it for. -->
+              {#if folderError}<div class="folder-error">{folderError}</div>{/if}
+              <div class="folder-note">{t('chat.extraFoldersNote')}</div>
+            {/if}
           </div>
         {/if}
         <button type="button" class="focus-chip focus-btn" onclick={() => (focusMenuOpen = !focusMenuOpen)}>
@@ -1109,6 +1143,17 @@
         </button>
       </div>
       {#if cockpit.project.focused && cockpit.project.branch}<span class="focus-chip"><Icon name="gitBranch" size={11} /> {cockpit.project.branch}</span>{/if}
+      <!-- Visible without opening the menu: a session that can reach outside its
+           project must say so on the row that says what it is focused on, or
+           the widening is something only the person who set it knows about. -->
+      {#if cockpit.project.focused && cockpit.projectFolders.length > 0}
+        <button
+          type="button"
+          class="focus-chip folder-count"
+          title={cockpit.projectFolders.map((f) => f.path).join('\n')}
+          onclick={() => (focusMenuOpen = !focusMenuOpen)}
+        ><Icon name="folder" size={11} /> {t('chat.extraFolderCount', { count: String(cockpit.projectFolders.length) })}</button>
+      {/if}
       <!-- Offered only when the last turn actually changed something, so it is
            never a button that does nothing. Disappears once pressed. -->
       {#if cockpit.undoFiles.length > 0}

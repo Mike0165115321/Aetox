@@ -733,6 +733,20 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .focus-item:hover { background:var(--surface-hover); color:var(--text-primary); }
 .focus-item.on { color:var(--accent); }
 .focus-item .t { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* Folders added to the focused project. A row rather than a button: the row is
+   a statement of what the AI can reach, and the only action on it is removal. */
+.folder-head { padding:4px 9px 2px; color:var(--text-dim); font-size:var(--fs-2xs); text-transform:uppercase; letter-spacing:.04em; }
+.folder-row { cursor:default; }
+.folder-row:hover { background:var(--surface-hover); }
+.folder-row .t { flex:1; }
+.folder-row.missing .t { color:var(--text-dim); text-decoration:line-through; }
+.folder-gone { color:var(--text-dim); font-size:var(--fs-2xs); }
+.folder-drop { color:var(--text-dim); border-radius:var(--r-xs); padding:2px 4px; cursor:pointer; }
+.folder-drop:hover { background:var(--surface-sunken); color:var(--text-primary); }
+.folder-count { cursor:pointer; }
+.folder-count:hover { border-color:var(--interactive); color:var(--text-primary); }
+.folder-error { padding:5px 9px; color:var(--status-danger); font-size:var(--fs-2xs); line-height:1.5; }
+.folder-note { padding:2px 9px 4px; color:var(--text-dim); font-size:var(--fs-2xs); line-height:1.5; }
 .project-chips { display:flex; gap:6px; margin-bottom:8px; }
 .api-key-banner { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
 .api-key-banner .ctrl:first-child { flex:1; }

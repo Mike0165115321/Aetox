@@ -113,6 +113,13 @@ func (s *gitSkill) Execute(ctx context.Context, input Input) (Output, error) {
 	if err := validateGitReadArgs(action, actionArgs); err != nil {
 		return newToolOutput("git", "git "+strings.Join(args, " "), "", start, false, err), err
 	}
+	// And the same gate every other tool answers to (shell_sandbox.go). The
+	// check above is a denylist of git options someone thought of; this one
+	// asks the only question that generalises — does this argument name
+	// somewhere outside the folders the user chose.
+	if err := guardArgs(s.root, actionArgs); err != nil {
+		return newToolOutput("git", "git "+strings.Join(args, " "), "", start, false, err), err
+	}
 
 	root, err := resolveSafeWorkspace(s.root)
 	if err != nil {

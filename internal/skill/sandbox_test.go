@@ -83,10 +83,29 @@ func TestResolveSandboxPathRejectsSymlinkEscape(t *testing.T) {
 	}
 }
 
-func TestResolveSandboxPathRejectsAbsolute(t *testing.T) {
+// The gate judges where a path lands, not how it was written. An absolute path
+// used to be refused on sight, even when it pointed inside the root — a
+// spelling rule that read like a permission rule. It cannot survive a workspace
+// with a second folder in it (naming that folder in full is the only way to
+// reach it), and a rule that holds for one workspace folder but not the others
+// is the kind of surprise nobody can find later.
+func TestResolveSandboxPathAcceptsAbsolutePathInsideRoot(t *testing.T) {
 	root := t.TempDir()
 	abs := filepath.Join(root, "abs.txt")
-	if _, err := resolveSandboxPath(root, abs); err == nil {
-		t.Errorf("resolveSandboxPath(absolute path): expected error, got nil")
+	got, err := resolveSandboxPath(root, abs)
+	if err != nil {
+		t.Fatalf("resolveSandboxPath(absolute path inside root): unexpected error: %v", err)
+	}
+	if got != abs {
+		t.Errorf("resolveSandboxPath(%q) = %q, want the path unchanged", abs, got)
+	}
+}
+
+// ...and an absolute path outside every workspace folder is still refused, which
+// is the half that was doing real work.
+func TestResolveSandboxPathRejectsAbsoluteOutsideWorkspace(t *testing.T) {
+	root := t.TempDir()
+	if _, err := resolveSandboxPath(root, filepath.Join(t.TempDir(), "elsewhere.txt")); err == nil {
+		t.Error("resolveSandboxPath(absolute path outside the workspace): expected error, got nil")
 	}
 }

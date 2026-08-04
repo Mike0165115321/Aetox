@@ -258,6 +258,30 @@ var migrations = []migration{
 			return nil
 		},
 	},
+	{
+		version: 6,
+		name:    "project_folders",
+		apply: func(tx *sql.Tx) error {
+			// The folders a user added to a project, and the whole of what the
+			// sandbox gate is widened by (skill.RegistryOptions.ExtraRoots).
+			// Stored per project rather than globally because "this project's
+			// bug comes from that library" is a fact about one project, and a
+			// global list would quietly widen every other project too.
+			//
+			// No enabled/disabled column, no read-only flag: a folder is on the
+			// list or it is not. Any second dimension here becomes a permission
+			// the user has to reason about somewhere other than the list they
+			// can see.
+			_, err := tx.Exec(`
+CREATE TABLE IF NOT EXISTS project_folders (
+  project_key TEXT NOT NULL,
+  path        TEXT NOT NULL,
+  added_at    TEXT NOT NULL,
+  PRIMARY KEY (project_key, path)
+);`)
+			return err
+		},
+	},
 }
 
 // latestSchemaVersion is what this build understands.

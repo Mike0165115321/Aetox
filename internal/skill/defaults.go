@@ -49,12 +49,22 @@ type RegistryOptions struct {
 	// the caller to run image_ocr on it. False is the safe value and the one
 	// every caller that does not know should pass (ARCHITECTURE.md §51).
 	Vision bool
-	// OpenSandbox lifts the sandbox wall for this root: file tools accept
-	// absolute paths and paths that climb out, everywhere on the machine
-	// except the credential stores (see sandbox_open.go). The desktop passes
-	// true exactly when no project is focused; false — the default and the
-	// only value the CLI ever passes — keeps the closed sandbox unchanged.
+	// OpenSandbox lifts the sandbox wall for this root: file tools reach
+	// anywhere on the machine except the credential stores (see
+	// sandbox_open.go). The desktop passes true exactly when no project is
+	// focused; false — the default and the only value the CLI ever passes —
+	// keeps the closed sandbox unchanged.
 	OpenSandbox bool
+	// ExtraRoots are folders the user added to a focused project, each with the
+	// same rights as SandboxRoot itself. This is how a session reaches a second
+	// project — a bug whose cause lives in a shared library, a config that comes
+	// from somewhere else — without any mode that reaches everything.
+	//
+	// Nothing but the user's own list belongs here: no path the app decided was
+	// probably fine, no sibling folder inferred from the project's layout. The
+	// list IS the permission, so anything added behind the user's back is a
+	// permission they never gave.
+	ExtraRoots []string
 }
 
 func NewDefaultRegistry(opts RegistryOptions) *Registry {
@@ -67,10 +77,11 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 	if registry == nil {
 		return
 	}
-	// Recorded on every build, not just when true: re-focusing a project after
-	// an unfocused session must close the root again, in the same call that
-	// re-roots the engine.
-	setSandboxOpen(opts.SandboxRoot, opts.OpenSandbox)
+	// Recorded on every build, zero values included: re-focusing a project after
+	// an unfocused session must close the root again, and a project that just
+	// lost a folder must stop reaching it — both in the same call that re-roots
+	// the engine, not on the next restart.
+	setSandboxPolicy(opts.SandboxRoot, opts.OpenSandbox, opts.ExtraRoots)
 	// One registry of background commands, shared by the three tools that see
 	// them: shell starts, shell_output reads, shell_kill ends.
 	shells := newBackgroundShells()

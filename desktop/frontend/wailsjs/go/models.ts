@@ -722,6 +722,23 @@ export namespace main {
 		    return a;
 		}
 	}
+	
+	export class WorkspaceFolder {
+	    path: string;
+	    name: string;
+	    missing: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new WorkspaceFolder(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.name = source["name"];
+	        this.missing = source["missing"];
+	    }
+	}
 
 }
 

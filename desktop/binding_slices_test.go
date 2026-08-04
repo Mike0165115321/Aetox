@@ -45,6 +45,7 @@ func TestBindingsNeverReturnNilSlices(t *testing.T) {
 		"CommandHistory",
 		"GitChangedFiles",
 		"ProjectTree",
+		"WorkspaceFolders",
 	}
 	for _, name := range noArgs {
 		method := value.MethodByName(name)

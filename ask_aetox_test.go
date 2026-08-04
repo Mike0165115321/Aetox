@@ -116,7 +116,7 @@ func TestAskAetox(t *testing.T) {
 	agent := cognitive.NewAgent(cognitive.AgentConfig{
 		Provider:     p,
 		Model:        modelName,
-		SystemPrompt: prompt.Build(prompt.SurfaceDesktop, root, false),
+		SystemPrompt: prompt.Build(prompt.SurfaceDesktop, prompt.Scope{Root: root}),
 		MaxToolCalls: 40, // a survey needs room; nobody is watching this loop
 	})
 	// Delegation is part of the tool set both front ends register, so a probe

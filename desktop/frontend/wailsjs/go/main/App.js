@@ -6,6 +6,10 @@ export function AddMCPServer(arg1, arg2) {
   return window['go']['main']['App']['AddMCPServer'](arg1, arg2);
 }
 
+export function AddWorkspaceFolder() {
+  return window['go']['main']['App']['AddWorkspaceFolder']();
+}
+
 export function AnswerUserQuestion(arg1) {
   return window['go']['main']['App']['AnswerUserQuestion'](arg1);
 }
@@ -350,6 +354,10 @@ export function RemovePresetImage(arg1) {
   return window['go']['main']['App']['RemovePresetImage'](arg1);
 }
 
+export function RemoveWorkspaceFolder(arg1) {
+  return window['go']['main']['App']['RemoveWorkspaceFolder'](arg1);
+}
+
 export function RequiresAPIKey(arg1) {
   return window['go']['main']['App']['RequiresAPIKey'](arg1);
 }
@@ -552,6 +560,10 @@ export function UsageStats() {
 
 export function UserName() {
   return window['go']['main']['App']['UserName']();
+}
+
+export function WorkspaceFolders() {
+  return window['go']['main']['App']['WorkspaceFolders']();
 }
 
 export function WriteFile(arg1, arg2) {

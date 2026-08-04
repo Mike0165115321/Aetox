@@ -344,8 +344,21 @@ export interface TaskState {
 // with its M/U badges. It was a code-review surface in a product whose promise
 // is finished work for people who do not read diffs.
 
+/** One folder the user added to the focused project. It carries the same rights
+ *  the project folder does — the list is the permission, so what is drawn here
+ *  is exactly what the agent can reach. */
+export interface ProjectFolder {
+  path: string
+  name: string
+  /** No longer on disk. Kept on the list (an unplugged drive is not a decision
+   *  to remove it) but drawn as unavailable, or it reads as reachable. */
+  missing: boolean
+}
+
 export interface CockpitState {
   project: ProjectInfo
+  /** Folders added to the focused project, in the order they were added. */
+  projectFolders: ProjectFolder[]
   projects: RecentProject[]
   tree: TreeNode[]
   sessions: Session[]
@@ -402,6 +415,7 @@ export interface TaskChip {
 export function emptyCockpitState(): CockpitState {
   return {
     project: { name: '', path: '', branch: '', focused: false, extraBranches: 0, governanceFile: '', governanceLoaded: false },
+    projectFolders: [],
     projects: [],
     tree: [],
     sessions: [],

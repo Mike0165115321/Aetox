@@ -11,8 +11,8 @@ import (
 // absolute path — the thing the closed sandbox exists to reject — must work.
 func TestOpenSandboxAcceptsAbsolutePaths(t *testing.T) {
 	root := t.TempDir()
-	setSandboxOpen(root, true)
-	t.Cleanup(func() { setSandboxOpen(root, false) })
+	setSandboxPolicy(root, true, nil)
+	t.Cleanup(func() { setSandboxPolicy(root, false, nil) })
 
 	outside := t.TempDir()
 	if err := os.WriteFile(filepath.Join(outside, "stray.pdf"), []byte("%PDF"), 0o644); err != nil {
@@ -39,8 +39,8 @@ func TestOpenSandboxAcceptsClimbingRelativePaths(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(parent, "sibling.txt"), []byte("hi"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	setSandboxOpen(root, true)
-	t.Cleanup(func() { setSandboxOpen(root, false) })
+	setSandboxPolicy(root, true, nil)
+	t.Cleanup(func() { setSandboxPolicy(root, false, nil) })
 
 	if _, err := resolveSandboxPath(root, "../sibling.txt"); err != nil {
 		t.Fatalf("open sandbox rejected a climbing relative path: %v", err)
@@ -73,6 +73,102 @@ func TestRegisterDefaultsClosesAPreviouslyOpenRoot(t *testing.T) {
 	}
 }
 
+// A folder the user added to a focused project is part of the workspace: the
+// point of the feature is that a bug whose cause lives in another project can
+// actually be looked at, so both spellings of that folder have to work while
+// everything the user did NOT add stays refused.
+func TestExtraRootIsReachableAndNothingElseIs(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "project")
+	other := filepath.Join(base, "shared-lib")
+	stranger := filepath.Join(base, "unrelated")
+	for _, dir := range []string{root, other, stranger} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(other, "api.go"), []byte("package api"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	setSandboxPolicy(root, false, []string{other})
+	t.Cleanup(func() { setSandboxPolicy(root, false, nil) })
+
+	for _, path := range []string{
+		filepath.Join(other, "api.go"), // absolute spelling
+		"../shared-lib/api.go",         // climbing spelling of the same file
+		filepath.Join(other, "new.go"), // a file that does not exist yet: writes count too
+	} {
+		if _, err := resolveSandboxPath(root, path); err != nil {
+			t.Errorf("added folder refused %s: %v", path, err)
+		}
+	}
+
+	// Adding one folder widens the workspace by exactly that folder. A sibling
+	// sitting right next to it is still outside.
+	if _, err := resolveSandboxPath(root, filepath.Join(stranger, "secret.txt")); err == nil {
+		t.Error("a folder the user never added was reachable")
+	}
+	if _, err := resolveSandboxPath(root, "../unrelated/secret.txt"); err == nil {
+		t.Error("a folder the user never added was reachable by climbing")
+	}
+}
+
+// Dropping a folder has to take effect in the same reload that dropped it —
+// the registry is rebuilt on every focus change, and a stale entry would mean
+// the UI says one thing while the tools do another.
+func TestRegisterDefaultsDropsRemovedExtraRoots(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "project")
+	other := filepath.Join(base, "shared-lib")
+	for _, dir := range []string{root, other} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	probe := filepath.Join(other, "api.go")
+
+	NewDefaultRegistry(RegistryOptions{SandboxRoot: root, ExtraRoots: []string{other}})
+	if _, err := resolveSandboxPath(root, probe); err != nil {
+		t.Fatalf("registry with an extra root refused it: %v", err)
+	}
+	NewDefaultRegistry(RegistryOptions{SandboxRoot: root})
+	if _, err := resolveSandboxPath(root, probe); err == nil {
+		t.Error("folder stayed reachable after it was removed from the list")
+	}
+}
+
+// The credential cabinet does not answer to the folder list. Someone who adds
+// their home folder to a project has not decided to hand over their SSH key,
+// and the refusal has to hold for the added folder exactly as it does for the
+// unfocused machine.
+func TestExtraRootStillRefusesCredentialStores(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(filepath.Join(home, ".ssh"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".ssh", "id_rsa"), []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(home, "project")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The whole home folder added as one entry — the realistic way this happens.
+	setSandboxPolicy(root, false, []string{home})
+	t.Cleanup(func() { setSandboxPolicy(root, false, nil) })
+
+	if _, err := resolveSandboxPath(root, filepath.Join(home, ".ssh", "id_rsa")); err == nil {
+		t.Error("an added folder handed out a credential store path")
+	} else if !strings.Contains(err.Error(), "credential store") {
+		t.Errorf("wrong refusal — the model should learn WHY: %v", err)
+	}
+	if _, err := resolveSandboxPath(root, filepath.Join(home, "notes.txt")); err != nil {
+		t.Errorf("the rest of the added folder should stay reachable: %v", err)
+	}
+}
+
 // The credential stores are the one thing an open sandbox still refuses: the
 // 2026-07-26 narrowing existed because a fetched page can order a read of
 // .ssh/.aws and the full-access loop would carry it out promptless. Opening
@@ -96,8 +192,8 @@ func TestOpenSandboxRefusesCredentialStores(t *testing.T) {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	setSandboxOpen(root, true)
-	t.Cleanup(func() { setSandboxOpen(root, false) })
+	setSandboxPolicy(root, true, nil)
+	t.Cleanup(func() { setSandboxPolicy(root, false, nil) })
 
 	for _, path := range []string{
 		filepath.Join(home, ".ssh", "id_rsa"), // absolute spelling

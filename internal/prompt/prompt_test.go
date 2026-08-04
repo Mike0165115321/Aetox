@@ -5,27 +5,29 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
 )
 
 // The sandbox root must NOT reach the prompt: it is a machine-specific path
 // carrying the user's account name, it would be sent to whichever provider is
-// configured on every request, and no file tool accepts an absolute path
-// anyway — so it was cost without a use.
+// configured on every request, and relative paths reach it anyway — so it was
+// cost without a use. A folder the user *added* is the one exception, because
+// its full path is the only name it has (TestBuildNamesTheFoldersTheUserAdded).
 func TestBuildIncludesIdentityAndEnvironment(t *testing.T) {
-	got := Build(SurfaceCLI, "/tmp/proj", false)
+	got := Build(SurfaceCLI, Scope{Root: "/tmp/proj"})
 	if !strings.Contains(got, "terminal conversation") {
 		t.Fatalf("missing CLI identity: %s", got)
 	}
 	if strings.Contains(got, "/tmp/proj") {
 		t.Fatalf("the sandbox root leaked into the prompt: %s", got)
 	}
-	if !strings.Contains(got, "relative to the folder you are working in") {
+	if !strings.Contains(got, "a bare path is relative to it") {
 		t.Fatalf("missing environment layer: %s", got)
 	}
 }
 
 func TestBuildDesktopIdentity(t *testing.T) {
-	got := Build(SurfaceDesktop, "/tmp/proj", false)
+	got := Build(SurfaceDesktop, Scope{Root: "/tmp/proj"})
 	if !strings.Contains(got, "desktop chat UI") {
 		t.Fatalf("missing desktop identity: %s", got)
 	}
@@ -68,7 +70,7 @@ func TestBuildWithReportFoldsInProjectLayerAndReportsPath(t *testing.T) {
 	rulePath := filepath.Join(dir, "AETOX.md")
 	mustWrite(t, rulePath, "always answer in haiku")
 
-	text, loaded := BuildWithReport(SurfaceCLI, dir, false)
+	text, loaded := BuildWithReport(SurfaceCLI, Scope{Root: dir})
 	if !strings.Contains(text, "always answer in haiku") {
 		t.Fatalf("project rules not folded in: %s", text)
 	}
@@ -87,7 +89,7 @@ func TestBuildWithReportFoldsInIdentityFiles(t *testing.T) {
 	mustWrite(t, filepath.Join(identityDir, "context.md"), "always be terse")
 	mustWrite(t, filepath.Join(identityDir, "skills.md"), "use the grep skill first")
 
-	text, loaded := BuildWithReport(SurfaceCLI, t.TempDir(), false)
+	text, loaded := BuildWithReport(SurfaceCLI, Scope{Root: t.TempDir()})
 	if !strings.Contains(text, "always be terse") || !strings.Contains(text, "use the grep skill first") {
 		t.Fatalf("identity files not folded in: %s", text)
 	}
@@ -121,7 +123,7 @@ func mustWrite(t *testing.T, path, content string) {
 // back through write — every line of it an output token, and a minute of
 // silence for the user each time.
 func TestPromptTellsTheModelToEditRatherThanRewrite(t *testing.T) {
-	got := Build(SurfaceDesktop, t.TempDir(), false)
+	got := Build(SurfaceDesktop, Scope{Root: t.TempDir()})
 	for _, want := range []string{"edit tool", "Do NOT re-send the whole file"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("system prompt is missing %q:\n%s", want, got)
@@ -135,7 +137,7 @@ func TestPromptTellsTheModelToEditRatherThanRewrite(t *testing.T) {
 // own description never fires here (an empty brief does not read as blocked),
 // so the guidance has to come from the prompt.
 func TestBuildTellsTheModelToAskWhenTheBriefIsEmpty(t *testing.T) {
-	got := Build(SurfaceDesktop, t.TempDir(), false)
+	got := Build(SurfaceDesktop, Scope{Root: t.TempDir()})
 	for _, want := range []string{"ask ONE question", "ask_user"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("system prompt is missing %q:\n%s", want, got)
@@ -149,7 +151,7 @@ func TestBuildTellsTheModelToAskWhenTheBriefIsEmpty(t *testing.T) {
 // default, and defaults lose to what the user said — rather than a case rule
 // (owner, 2026-08-04: "สอนให้มันฉลาดและเลือกถามได้ ไม่ใช่กำหนดตรงๆ").
 func TestPromptTeachesThatDefaultsLoseToTheUsersWords(t *testing.T) {
-	got := Build(SurfaceDesktop, t.TempDir(), false)
+	got := Build(SurfaceDesktop, Scope{Root: t.TempDir()})
 	for _, want := range []string{"a default, not a decision", "the choice is theirs"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("system prompt is missing %q:\n%s", want, got)
@@ -168,7 +170,7 @@ func TestPromptTeachesThatDefaultsLoseToTheUsersWords(t *testing.T) {
 // rejected" there makes it answer "I can't search this machine" while holding
 // tools that can, which is the exact bug that motivated the mode.
 func TestBuildOpenSandboxSwapsTheEnvironmentLayer(t *testing.T) {
-	open := Build(SurfaceDesktop, t.TempDir(), true)
+	open := Build(SurfaceDesktop, Scope{Root: t.TempDir(), Open: true})
 	for _, want := range []string{"any path on this machine", "Credential stores", "output folder"} {
 		if !strings.Contains(open, want) {
 			t.Errorf("open-sandbox prompt is missing %q:\n%s", want, open)
@@ -178,12 +180,37 @@ func TestBuildOpenSandboxSwapsTheEnvironmentLayer(t *testing.T) {
 		t.Errorf("open-sandbox prompt still claims absolute paths are rejected:\n%s", open)
 	}
 
-	closed := Build(SurfaceDesktop, t.TempDir(), false)
-	if !strings.Contains(closed, "absolute paths are rejected") {
+	closed := Build(SurfaceDesktop, Scope{Root: t.TempDir()})
+	if !strings.Contains(closed, "confined to the project folder") {
 		t.Errorf("closed-sandbox prompt lost its wall sentence:\n%s", closed)
 	}
 	if strings.Contains(closed, "any path on this machine") {
 		t.Errorf("closed-sandbox prompt leaked the open-mode text:\n%s", closed)
+	}
+	// A refusal the model cannot act on turns into "I can't", which is the
+	// failure this whole feature exists to end. The wall sentence has to carry
+	// the way out with it.
+	if !strings.Contains(closed, "ask the user to add that folder") {
+		t.Errorf("closed-sandbox prompt states the wall without the remedy:\n%s", closed)
+	}
+}
+
+// A folder the user added is only usable if the model is told it exists — the
+// tools would accept it, but nothing else in the prompt names it, and a model
+// that has not been told a folder is reachable never tries it.
+func TestBuildNamesTheFoldersTheUserAdded(t *testing.T) {
+	other := t.TempDir()
+	got := Build(SurfaceDesktop, Scope{Root: t.TempDir(), Extra: []string{other}})
+	if !strings.Contains(got, other) {
+		t.Errorf("prompt does not name the added folder %q:\n%s", other, got)
+	}
+	// Same rights as the project, stated outright: a model that guesses it has
+	// read-only access to an added folder will refuse edits the user allowed.
+	if !strings.Contains(got, "same rights as the project folder") {
+		t.Errorf("prompt leaves the rights of an added folder to guesswork:\n%s", got)
+	}
+	if strings.Contains(got, "confined to the project folder") {
+		t.Errorf("prompt still claims the project folder is the whole workspace:\n%s", got)
 	}
 }
 
@@ -191,7 +218,7 @@ func TestBuildOpenSandboxSwapsTheEnvironmentLayer(t *testing.T) {
 // per item — a 200-item list as 200 calls exhausts a small-context model
 // before the list ends, and that failure arrives silently, as a half-done job.
 func TestBuildTeachesBatchWorkAsOneScript(t *testing.T) {
-	got := Build(SurfaceCLI, "", false)
+	got := Build(SurfaceCLI, Scope{Root: ""})
 	if !strings.Contains(got, "same operation over many items") {
 		t.Fatalf("missing batch-work guidance: %s", got)
 	}

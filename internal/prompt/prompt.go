@@ -59,14 +59,31 @@ func ProjectContextFile(root string) string {
 	return ""
 }
 
-// Build assembles the full system prompt for the given front end and sandbox
-// root. openSandbox mirrors skill.RegistryOptions.OpenSandbox — the prompt
-// must describe the same wall the tools actually enforce, or the model
-// answers "I can't" to things it can (which is exactly what happened: the
-// unfocused desktop opened the sandbox, and the model kept refusing absolute
-// paths because this text still said they were rejected).
-func Build(surface Surface, sandboxRoot string, openSandbox bool) string {
-	text, _ := BuildWithReport(surface, sandboxRoot, openSandbox)
+// Scope is the set of folders the session may touch, mirroring
+// skill.RegistryOptions field for field (Root/OpenSandbox/ExtraRoots). The
+// prompt has to describe the same workspace the tools actually enforce, or the
+// model answers "I can't" to things it can — which is exactly what happened
+// once: the unfocused desktop opened the sandbox, and the model kept refusing
+// absolute paths because this text still said they were rejected.
+//
+// A struct rather than three positional arguments because two of the three are
+// a bool and a slice, and the compiler has nothing to say when a call site
+// swaps them.
+type Scope struct {
+	// Root is the folder the session is rooted in — the focused project, or
+	// the working root when none is focused.
+	Root string
+	// Open means no project is focused and the machine is the workspace.
+	Open bool
+	// Extra are folders the user added to the focused project. Named in the
+	// prompt in full, because the model cannot use a folder it has not been
+	// told about.
+	Extra []string
+}
+
+// Build assembles the full system prompt for the given front end and scope.
+func Build(surface Surface, scope Scope) string {
+	text, _ := BuildWithReport(surface, scope)
 	return text
 }
 
@@ -75,10 +92,11 @@ func Build(surface Surface, sandboxRoot string, openSandbox bool) string {
 // There is deliberately no per-agent role layer here: the assistant has one
 // identity, and the identity directory (§11) is where it is configured. A second
 // mechanism answering "who is the AI" would drift from it — see §44.0.
-func BuildWithReport(surface Surface, sandboxRoot string, openSandbox bool) (string, Loaded) {
+func BuildWithReport(surface Surface, scope Scope) (string, Loaded) {
+	sandboxRoot := scope.Root
 	var b strings.Builder
 	b.WriteString(identity(surface))
-	b.WriteString(environment(openSandbox))
+	b.WriteString(environment(scope))
 	b.WriteString(fileEditing())
 	b.WriteString(batchWork())
 	b.WriteString(narration())
@@ -225,25 +243,50 @@ func clarify() string {
 // actually missing, and whose absence caused the wrong answer: repeat the
 // path a tool gave you, never assemble one.
 //
-// The open variant exists because the wall itself is now a mode
-// (skill.RegistryOptions.OpenSandbox): unfocused desktop chats may roam the
-// machine, and a model told "absolute paths are rejected" answers "I can't
-// search this machine" while holding tools that can.
-func environment(openSandbox bool) string {
-	if openSandbox {
-		return "No project is focused: file tools accept any path on this machine — absolute paths and paths " +
+// The three variants exist because the workspace itself is the user's choice
+// (skill.sandboxPolicy): unfocused chats may roam the machine, a focused
+// project may have folders added to it, and a model told "absolute paths are
+// rejected" answers "I can't search this machine" while holding tools that can.
+//
+// Added folders are named in full, which is the one place a machine-specific
+// path is worth sending to the provider. The root is not, and does not need to
+// be — relative paths reach it. An added folder has no other name.
+func environment(scope Scope) string {
+	var b strings.Builder
+	switch {
+	case scope.Open:
+		b.WriteString("No project is focused: file tools accept any path on this machine — absolute paths and paths " +
 			"relative to your working folder both work. Credential stores (.ssh, .aws, browser profile data " +
 			"and the like) are refused by every tool; do not try to work around that.\n" +
 			"Create new files with a bare filename — they land in this chat's own output folder automatically, " +
-			"so everything a chat produced sits in one place for the user to inspect.\n" +
-			"When you tell the user where a file is, repeat the path the tool reported back to you. Do NOT assemble " +
-			"one yourself out of a folder and a filename — where a file lands is the tool's decision and it tells you, " +
-			"so a path you construct is a guess.\n"
+			"so everything a chat produced sits in one place for the user to inspect.\n")
+	case len(scope.Extra) > 0:
+		b.WriteString("You are working in a focused project. A bare path is relative to the project folder.\n" +
+			"The user has added these folders to this session, and file tools reach them by full path:\n")
+		for _, dir := range scope.Extra {
+			b.WriteString("  - " + dir + "\n")
+		}
+		b.WriteString("They carry the same rights as the project folder: you can read and edit them. " +
+			"The user added them so you could go look — a problem here often starts somewhere else. " +
+			"When you change a file in one of them, say which folder it was in, because the user is looking at " +
+			"the project and will not assume you went outside it.\n" +
+			"Anything outside the project and those folders is refused. The way through is to ask the user to add " +
+			"that folder, not to look for another route in.\n")
+	default:
+		b.WriteString("You are working in a focused project: every file tool is confined to the project folder, and " +
+			"a bare path is relative to it. Anything outside is refused — if the work needs a file from somewhere " +
+			"else, ask the user to add that folder to the session; they can, and that is the intended way.\n")
 	}
-	return "Every file tool takes a path relative to the folder you are working in; absolute paths are rejected.\n" +
-		"When you tell the user where a file is, repeat the path the tool reported back to you. Do NOT assemble " +
+	b.WriteString("When you tell the user where a file is, repeat the path the tool reported back to you. Do NOT assemble " +
 		"one yourself out of a folder and a filename — where a file lands is the tool's decision and it tells you, " +
-		"so a path you construct is a guess.\n"
+		"so a path you construct is a guess.\n")
+	// shell used to be the one tool outside this rule, so a model that hit a
+	// refusal in read would reach for shell and get through. Now it does not,
+	// and the model has to know that before it wastes a turn discovering it.
+	b.WriteString("This applies to shell too: a command naming a path outside these folders is refused before it runs, " +
+		"and reaching for shell after another tool refused a path will get the same answer. Write paths out literally " +
+		"in commands — one assembled from a variable or a sub-command cannot be checked, so it is refused as well.\n")
+	return b.String()
 }
 
 func layer(title, path, content string) string {

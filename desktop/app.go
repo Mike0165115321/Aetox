@@ -71,6 +71,13 @@ type App struct {
 	// the app must not silently adopt whatever cwd it was launched from.
 	projectFocused bool
 
+	// extraRoots are the folders the user added to the focused project — the
+	// whole of what widens the sandbox beyond it (desktop/workspace.go). Loaded
+	// from the store on every focus switch and handed to the engine and the
+	// system prompt from this one field, so the panel, the prompt and the gate
+	// cannot disagree about what this session can reach.
+	extraRoots []string
+
 	turnMu     sync.Mutex
 	turnCancel context.CancelFunc // cancels the chat turn in flight, nil when idle
 
@@ -1101,9 +1108,9 @@ func unfocusedRoot() string {
 // focusNone re-roots the engine at unfocusedRoot and marks the app as not
 // focused on any project.
 //
-// The flag flips BEFORE reload in all three focus switches: applyConfig reads
-// it to decide OpenSandbox, so setting it after would build one engine in the
-// outgoing mode on every switch.
+// The flag and the folder list are both set BEFORE reload in all three focus
+// switches: applyConfig reads them to build the sandbox, so setting either
+// after would build one engine holding the outgoing project's reach.
 func (a *App) focusNone() {
 	root := unfocusedRoot()
 	if root != "" {
@@ -1112,6 +1119,9 @@ func (a *App) focusNone() {
 		_ = os.MkdirAll(root, 0o755)
 	}
 	a.projectFocused = false
+	// Cleared rather than carried: the added folders belong to the project that
+	// is being left, and this mode reaches the machine anyway.
+	a.extraRoots = nil
 	a.reload(config.ConfigOptions{RootPath: root, ApprovalMode: string(safety.ApprovalFullAccess)})
 }
 
@@ -1508,6 +1518,7 @@ func (a *App) OpenProjectFolder() (ProjectStatus, error) {
 	// Sessions are per project — turns are already persisted incrementally, so
 	// just re-point the engine and start a fresh session for the new project.
 	a.projectFocused = true
+	a.extraRoots = a.storedWorkspaceFolders(dir)
 	a.reload(config.ConfigOptions{RootPath: dir, ApprovalMode: string(safety.ApprovalFullAccess)})
 	a.startNewSession()
 	a.touchProject(a.cfg.SandboxRoot)
@@ -1522,6 +1533,7 @@ func (a *App) OpenProjectPath(root string) (ProjectStatus, error) {
 		return ProjectStatus{}, fmt.Errorf("empty project path")
 	}
 	a.projectFocused = true
+	a.extraRoots = a.storedWorkspaceFolders(root)
 	a.reload(config.ConfigOptions{RootPath: root, ApprovalMode: string(safety.ApprovalFullAccess)})
 	a.startNewSession()
 	a.touchProject(a.cfg.SandboxRoot)
@@ -2007,9 +2019,12 @@ func (a *App) applyConfig(cfg config.Config) {
 		Manager:          a.mcp,
 		ExtraSkills:      workbenchTools,
 		OutputSubdir:     a.outputSubdir,
-		// Unfocused mode roams the machine (minus credential stores); a
-		// focused project keeps the closed sandbox. See unfocusedRoot.
+		// The session's whole reach, in two fields and no third: unfocused mode
+		// roams the machine (minus credential stores), and a focused project
+		// sees itself plus the folders the user added to it. See unfocusedRoot
+		// and desktop/workspace.go.
 		OpenSandbox:      !a.projectFocused,
+		ExtraRoots:       a.extraRoots,
 		OnToolAction:     a.recordToolAction,
 		OnToolRun:        a.recordToolRun,
 		OnStatus:         a.emitAgentStatus,

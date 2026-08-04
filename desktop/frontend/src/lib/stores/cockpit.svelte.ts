@@ -15,6 +15,7 @@ import {
   AnswerUserQuestion, Interject, RetryActiveProvider, PendingUndo, UndoLastTurn,
   CompleteSignIn, SignOut, ImportSignIn,
   ListTaskChips, DismissTaskChip,
+  WorkspaceFolders, AddWorkspaceFolder, RemoveWorkspaceFolder,
   RetryFailedTurn, RegenerateReply, ResendEdited, SwitchVariant,
 } from '../../../wailsjs/go/main/App'
 import type { main } from '../../../wailsjs/go/models'
@@ -299,10 +300,44 @@ export async function selectGlobalSession(session: Session): Promise<void> {
   const project = await GetProjectStatus()
   Object.assign(cockpit.project, project)
   await refreshWorkspace()
+  await refreshProjectFolders()
   await refreshUndo()
   await refreshSessions()
   await refreshProjects()
   await refreshGlobalHistory()
+}
+
+/** Pull the folders added to the focused project.
+ *
+ * Read from Go rather than tracked locally on purpose: this list IS the
+ * permission the agent runs with, and a frontend copy that drifts from it would
+ * show the user a set of folders that is not the set the tools can reach. */
+export async function refreshProjectFolders(): Promise<void> {
+  cockpit.projectFolders = await WorkspaceFolders()
+}
+
+/** Add a folder to the focused project, with the same rights the project has.
+ * Returns the error text to show, or '' — the caller draws it next to the
+ * button that asked, because a refusal the user cannot see reads as a
+ * broken button. */
+export async function addProjectFolder(): Promise<string> {
+  try {
+    cockpit.projectFolders = await AddWorkspaceFolder()
+    return ''
+  } catch (err) {
+    await refreshProjectFolders()
+    return err instanceof Error ? err.message : String(err)
+  }
+}
+
+/** Drop a folder. The running session loses it immediately — the Go side
+ * rebuilds the engine before this resolves. */
+export async function removeProjectFolder(path: string): Promise<void> {
+  try {
+    cockpit.projectFolders = await RemoveWorkspaceFolder(path)
+  } catch {
+    await refreshProjectFolders()
+  }
 }
 
 /** Pull the list of every project ever opened (sidebar's project switcher), newest first. */
@@ -325,6 +360,7 @@ export async function loadRealState(): Promise<void> {
   Object.assign(cockpit.project, project)
   if (modelInfo.provider) applyModelInfo(modelInfo)
   await refreshWorkspace()
+  await refreshProjectFolders()
   await refreshSessions()
   await refreshProjects()
   await refreshGlobalHistory()
@@ -341,6 +377,7 @@ export async function openFolder(): Promise<void> {
   Object.assign(cockpit.project, project)
   cockpit.chat = []
   await refreshWorkspace()
+  await refreshProjectFolders()
   await refreshSessions()
   await refreshProjects()
   await refreshGlobalHistory()
@@ -352,6 +389,7 @@ export async function openProject(path: string): Promise<void> {
   Object.assign(cockpit.project, project)
   cockpit.chat = []
   await refreshWorkspace()
+  await refreshProjectFolders()
   await refreshSessions()
   await refreshProjects()
   await refreshGlobalHistory()
@@ -364,6 +402,7 @@ export async function clearProjectFocus(): Promise<void> {
   Object.assign(cockpit.project, project)
   cockpit.chat = []
   await refreshWorkspace()
+  await refreshProjectFolders()
   await refreshSessions()
   await refreshProjects()
   await refreshGlobalHistory()

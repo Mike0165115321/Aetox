@@ -71,6 +71,12 @@ type Options struct {
 	// closed sandbox.
 	OpenSandbox bool
 
+	// ExtraRoots are folders the user added to the focused project, each with
+	// the same rights as cfg.SandboxRoot. Both the tools and the system prompt
+	// are built from this one list, so what the model is told it can reach and
+	// what it can actually reach cannot drift apart.
+	ExtraRoots []string
+
 	// Digest overrides the page summarizer web_fetch uses. Nil means
 	// Digester(provider, cfg.ModelName) — the normal case. Present so a test
 	// can pin it without standing up a provider.
@@ -156,10 +162,14 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 	if surface == "" {
 		surface = prompt.SurfaceDesktop
 	}
+	// One scope value feeds both the prompt and the registry below — the model's
+	// picture of the workspace and the gate that enforces it come from the same
+	// place by construction.
+	scope := prompt.Scope{Root: cfg.SandboxRoot, Open: opts.OpenSandbox, Extra: opts.ExtraRoots}
 	agent := cognitive.NewAgent(cognitive.AgentConfig{
 		Provider:     bootstrapResult.Provider,
 		Model:        cfg.ModelName,
-		SystemPrompt: prompt.Build(surface, cfg.SandboxRoot, opts.OpenSandbox),
+		SystemPrompt: prompt.Build(surface, scope),
 		// Scale the retained-history budget to the model's real window
 		// (0 → NewContext's 128k-char default). At 80% of this budget the
 		// agent summarizes older turns into one message (cognitive
@@ -175,7 +185,8 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 	registry := skill.NewDefaultRegistry(skill.RegistryOptions{
 		SandboxRoot:  cfg.SandboxRoot,
 		OutputSubdir: opts.OutputSubdir,
-		OpenSandbox:  opts.OpenSandbox,
+		OpenSandbox:  scope.Open,
+		ExtraRoots:   scope.Extra,
 		// Empty ModelPath keeps the original behaviour — auto-discover — so a
 		// user who never opens the picker sees no change.
 		Speech: stt.Options{ModelPath: cfg.SpeechModelPath},

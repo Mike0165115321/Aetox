@@ -314,7 +314,7 @@ func main() {
 	agent := cognitive.NewAgent(cognitive.AgentConfig{
 		Provider:     bootstrapResult.Provider,
 		Model:        currentConfig.ModelName,
-		SystemPrompt: prompt.Build(prompt.SurfaceCLI, cfg.SandboxRoot, false),
+		SystemPrompt: prompt.Build(prompt.SurfaceCLI, prompt.Scope{Root: cfg.SandboxRoot}),
 		MaxChars:     resolveContextChars(currentConfig),
 	})
 
@@ -500,7 +500,7 @@ func switchProvider(ctx context.Context, cfg *config.Config) (app.ModelSwitchRes
 		Agent: cognitive.NewAgent(cognitive.AgentConfig{
 			Provider:     bootstrapResult.Provider,
 			Model:        cfg.ModelName,
-			SystemPrompt: prompt.Build(prompt.SurfaceCLI, cfg.SandboxRoot, false),
+			SystemPrompt: prompt.Build(prompt.SurfaceCLI, prompt.Scope{Root: cfg.SandboxRoot}),
 			MaxChars:     resolveContextChars(*cfg),
 		}),
 		ModelStatus:        modelStatus,

@@ -106,6 +106,18 @@ func (s *listSkill) ExecuteTool(ctx context.Context, args map[string]any) (Outpu
 	return s.Execute(ctx, Input{"args": params})
 }
 
+// resolveSandboxPath turns a requested path into an absolute one and decides,
+// in this one place, whether the caller may have it. Every file tool answers
+// through here; there is deliberately no second check anywhere else.
+//
+// The question it asks is always the same — does the target land inside the
+// workspace? — and the workspace is the project root plus whatever folders the
+// user added to it (sandboxPolicy). How the path was spelled does not change
+// the answer: "D:\Other\api\main.go", "../api/main.go" and a symlink pointing
+// at either are one target with one verdict. Absolute paths used to be refused
+// outright, which was a spelling rule wearing a permission rule's clothes; once
+// a workspace can hold a second folder it stops being expressible at all, since
+// naming that folder in full is the only sane way to reach it.
 func resolveSandboxPath(root string, requestPath string) (string, error) {
 	safeRoot, err := filepath.Abs(strings.TrimSpace(root))
 	if err != nil {
@@ -115,27 +127,20 @@ func resolveSandboxPath(root string, requestPath string) (string, error) {
 	if requestPath == "" {
 		requestPath = "."
 	}
-	if filepath.IsAbs(requestPath) {
-		// An open root (unfocused desktop mode, see sandbox_open.go) accepts
-		// absolute paths anywhere on the machine except the credential stores.
-		if !sandboxIsOpen(safeRoot) {
-			return "", fmt.Errorf("absolute path is not allowed")
-		}
-		safeTarget, err := filepath.Abs(filepath.Clean(requestPath))
-		if err != nil {
-			return "", err
-		}
-		if err := refuseCredentialStore(evalExistingSymlinks(safeTarget)); err != nil {
-			return "", err
-		}
-		return safeTarget, nil
+	if !filepath.IsAbs(requestPath) {
+		requestPath = filepath.Join(safeRoot, requestPath)
 	}
-
-	candidate := filepath.Join(safeRoot, requestPath)
-	normalized := filepath.Clean(candidate)
-	safeTarget, err := filepath.Abs(normalized)
+	safeTarget, err := filepath.Abs(filepath.Clean(requestPath))
 	if err != nil {
 		return "", err
+	}
+
+	// The root asking whether it contains itself is a tautology, not a
+	// filesystem question. Eight call sites pass `.` (shell's working directory,
+	// grep and glob's walk base, delete's are-you-deleting-the-root guard); they
+	// were paying two symlink walks to be told yes. 2.51ms → 1.6µs.
+	if safeTarget == safeRoot {
+		return safeTarget, nil
 	}
 
 	// A lexical prefix check is not containment: a symlink sitting inside the
@@ -151,24 +156,20 @@ func resolveSandboxPath(root string, requestPath string) (string, error) {
 	// Half of that was the root, resolved from scratch on every call to get the
 	// same answer, so it is cached now — which is what this note used to say to
 	// do "if that stops being true". Measured 2.51ms → 1.38ms per call.
-	//
-	// And the root asking whether it contains itself is a tautology, not a
-	// filesystem question. Eight call sites pass `.` (shell's working directory,
-	// grep and glob's walk base, delete's are-you-deleting-the-root guard); they
-	// were paying two symlink walks to be told yes. 2.51ms → 1.6µs.
-	if safeTarget == safeRoot {
+	resolvedTarget := evalExistingSymlinks(safeTarget)
+	if withinRoot(resolvedTarget, resolvedRoot(safeRoot)) {
 		return safeTarget, nil
 	}
-	// A relative path that climbs out ("../Documents/x") gets the same open-
-	// root treatment as an absolute one: allowed, minus the credential stores.
-	if sandboxIsOpen(safeRoot) {
-		if err := refuseCredentialStore(evalExistingSymlinks(safeTarget)); err != nil {
-			return "", err
-		}
-		return safeTarget, nil
+
+	// Outside the project root, so it is only reachable if the user widened the
+	// workspace — by adding this folder, or by working with no project focused
+	// at all. Either way the credential stores stay shut (sandbox_open.go).
+	policy := sandboxPolicyFor(safeRoot)
+	if !policy.open && !policy.covers(resolvedTarget) {
+		return "", fmt.Errorf("path is outside the folders this session can use — the user has to add it first")
 	}
-	if !withinRoot(evalExistingSymlinks(safeTarget), resolvedRoot(safeRoot)) {
-		return "", fmt.Errorf("path is outside sandbox root")
+	if err := refuseCredentialStore(resolvedTarget); err != nil {
+		return "", err
 	}
 	return safeTarget, nil
 }
