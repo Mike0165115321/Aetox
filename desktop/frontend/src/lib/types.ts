@@ -89,6 +89,13 @@ export interface ChatMessage {
   role: 'user' | 'agent'
   text: string
   time: string
+  /** The stored row this reply became. It is what a rating addresses, so a
+   * bubble without one cannot be rated — which is the honest state for a turn
+   * that failed and was persisted nowhere. */
+  id?: number
+  /** The verdict already given for this reply, so a reopened session shows the
+   * thumb that was pressed rather than a blank pair. */
+  rating?: 'good' | 'bad' | 'unknown'
   /** optional badge, e.g. "Thinking (low)" */
   tag?: string
   /** data: URL of an attached image, for inline preview only (not sent to the model). */
@@ -400,6 +407,11 @@ export interface CockpitState {
   todos: { content: string; status: 'pending' | 'in_progress' | 'completed' }[]
   /** Side work the agent flagged with suggest_task — chips the user can start or dismiss. */
   taskChips: TaskChip[]
+  /** How many things the agent wants to remember and is waiting to be allowed to.
+   * Surfaced as a mark on the way into settings: an approval queue nobody is
+   * told about is one that never gets emptied, which would quietly turn
+   * "nothing takes effect without you" into "nothing takes effect". */
+  pendingLearned: number
 }
 
 /** One suggested side task from the agent (suggest_task tool). */
@@ -435,6 +447,7 @@ export function emptyCockpitState(): CockpitState {
     ask: null,
     todos: [],
     taskChips: [],
+    pendingLearned: 0,
     pendingImage: null,
     pendingContext: null,
     pendingFile: null,

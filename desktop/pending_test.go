@@ -1,0 +1,163 @@
+package main
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mike0165115321/Aetox/internal/learned"
+)
+
+func proposal(scope, op, before, body string) learned.Proposal {
+	return learned.Proposal{Kind: "memory", Scope: scope, Op: op, Before: before, Body: body, Reason: "เห็นซ้ำสองรอบ"}
+}
+
+// Nothing an agent proposes may take effect on its own. This is the guarantee
+// the design rests on, so it is checked against the memory file rather than
+// against the queue.
+func TestAProposalDoesNothingUntilApproved(t *testing.T) {
+	a := newJobApp(t)
+
+	if _, err := a.proposeLearned(proposal(learned.MainScope, learned.OpAdd, "", "เครื่องนี้ไม่มี Excel")); err != nil {
+		t.Fatalf("propose: %v", err)
+	}
+	if got := learned.Read(learned.MainScope); got != "" {
+		t.Fatalf("memory changed before approval: %q", got)
+	}
+	pending := a.ListPendingChanges()
+	if len(pending) != 1 || a.PendingLearnedCount() != 1 {
+		t.Fatalf("want one proposal waiting, got %d", len(pending))
+	}
+	if pending[0].Reason == "" || pending[0].Target == "" {
+		t.Errorf("review needs the reasoning and the file it would land on: %+v", pending[0])
+	}
+
+	if err := a.ApprovePendingChange(pending[0].ID); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	if got := learned.Read(learned.MainScope); !strings.Contains(got, "Excel") {
+		t.Fatalf("approval did not reach the file, got %q", got)
+	}
+	if a.PendingLearnedCount() != 0 {
+		t.Error("an approved proposal should leave the queue")
+	}
+}
+
+// The row is the audit trail. Deleting it on approval would leave a line in a
+// memory file with nothing anywhere saying where it came from.
+func TestDecidedProposalsAreKeptAsTheRecord(t *testing.T) {
+	a := newJobApp(t)
+	keep, _ := a.proposeLearned(proposal(learned.MainScope, learned.OpAdd, "", "จำอันนี้"))
+	drop, _ := a.proposeLearned(proposal(learned.MainScope, learned.OpAdd, "", "ไม่ต้องจำอันนี้"))
+
+	if err := a.ApprovePendingChange(keep.ID); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	if err := a.RejectPendingChange(drop.ID); err != nil {
+		t.Fatalf("reject: %v", err)
+	}
+
+	decided := a.ListDecidedChanges(10)
+	if len(decided) != 2 {
+		t.Fatalf("want both decisions on the record, got %d", len(decided))
+	}
+	states := map[string]string{}
+	for _, c := range decided {
+		states[c.Body] = c.State
+		if c.DecidedAt == "" {
+			t.Errorf("a decided proposal should carry when it was decided: %+v", c)
+		}
+	}
+	if states["จำอันนี้"] != stateApproved || states["ไม่ต้องจำอันนี้"] != stateRejected {
+		t.Errorf("states not recorded as decided: %v", states)
+	}
+	if got := learned.Read(learned.MainScope); strings.Contains(got, "ไม่ต้องจำ") {
+		t.Error("a rejected proposal must not reach the file")
+	}
+}
+
+// The agent cannot see the queue — approved memory only reaches it next
+// session — so proposing the same thing twice in one conversation is what a
+// model that does not know it already asked will do.
+func TestTheSameProposalTwiceIsNotQueuedTwice(t *testing.T) {
+	a := newJobApp(t)
+	first, err := a.proposeLearned(proposal(learned.MainScope, learned.OpAdd, "", "ซ้ำ"))
+	if err != nil {
+		t.Fatalf("propose: %v", err)
+	}
+	second, err := a.proposeLearned(proposal(learned.MainScope, learned.OpAdd, "", "ซ้ำ"))
+	if err != nil {
+		t.Fatalf("propose again: %v", err)
+	}
+	if !second.Duplicate || second.ID != first.ID {
+		t.Errorf("want the same row reported as a duplicate, got %+v", second)
+	}
+	if n := a.PendingLearnedCount(); n != 1 {
+		t.Errorf("want one row, got %d", n)
+	}
+}
+
+// Deciding something twice is a stale UI clicking an old button, and it must
+// not apply the change a second time.
+func TestADecisionCannotBeMadeTwice(t *testing.T) {
+	a := newJobApp(t)
+	p, _ := a.proposeLearned(proposal(learned.MainScope, learned.OpAdd, "", "ครั้งเดียว"))
+	if err := a.ApprovePendingChange(p.ID); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	if err := a.ApprovePendingChange(p.ID); err == nil {
+		t.Error("approving twice should be refused")
+	}
+	if err := a.RejectPendingChange(p.ID); err == nil {
+		t.Error("rejecting something already approved should be refused")
+	}
+	if got := learned.Read(learned.MainScope); strings.Count(got, "ครั้งเดียว") != 1 {
+		t.Errorf("the line should appear once, got %q", got)
+	}
+}
+
+// A change that cannot be applied leaves the queue untouched: a row marked
+// approved whose change never landed is a lie in the one place built to be
+// trusted.
+func TestAFailedApplyDoesNotMarkTheProposalApproved(t *testing.T) {
+	a := newJobApp(t)
+	p, _ := a.proposeLearned(proposal(learned.MainScope, learned.OpReplace, "บรรทัดที่ไม่มีอยู่", "ใหม่"))
+	if err := a.ApprovePendingChange(p.ID); err == nil {
+		t.Fatal("replacing a line that does not exist should fail")
+	}
+	if n := a.PendingLearnedCount(); n != 1 {
+		t.Errorf("the proposal should still be waiting, count = %d", n)
+	}
+}
+
+// Scope is carried through to the file, so a delegate's memory lands in the
+// delegate's file and nowhere near the main agent's prompt.
+func TestScopeDecidesWhichFileAnApprovalReaches(t *testing.T) {
+	a := newJobApp(t)
+	p, _ := a.proposeLearned(proposal("explore", learned.OpAdd, "", "fixture อยู่ใน testdata/"))
+	if err := a.ApprovePendingChange(p.ID); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	if got := learned.Read("explore"); !strings.Contains(got, "testdata") {
+		t.Errorf("delegate memory not written: %q", got)
+	}
+	if got := learned.Read(learned.MainScope); got != "" {
+		t.Errorf("a delegate's memory must not land in the main agent's: %q", got)
+	}
+}
+
+// Off means the door is shut, not that proposals pile up unseen.
+func TestLearningOffRefusesProposals(t *testing.T) {
+	a := newJobApp(t)
+	pref, _, _ := config.LoadModelPreference()
+	pref.LearningDisabled = true
+	if err := config.SaveModelPreference(pref); err != nil {
+		t.Fatalf("save preference: %v", err)
+	}
+	if _, err := a.proposeLearned(proposal(learned.MainScope, learned.OpAdd, "", "x")); err == nil {
+		t.Fatal("with learning off, proposing should fail")
+	}
+	if n := a.PendingLearnedCount(); n != 0 {
+		t.Errorf("nothing should have been queued, got %d", n)
+	}
+}

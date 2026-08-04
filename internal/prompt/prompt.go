@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mike0165115321/Aetox/internal/learned"
 )
 
 // Surface distinguishes the one sentence of identity text that differs
@@ -39,6 +40,7 @@ var ProjectContextFileNames = []string{"AETOX.md", "AGENTS.md", "CLAUDE.md"}
 // checking file existence separately and hoping it matches.
 type Loaded struct {
 	UserGlobalPaths []string // every identity file actually folded in, nil if none
+	MemoryPath      string   // agent-written memory, "" when it has learned nothing
 	ProjectPath     string   // "" if not found/empty
 }
 
@@ -104,6 +106,7 @@ func BuildWithReport(surface Surface, scope Scope) (string, Loaded) {
 
 	var loaded Loaded
 	loaded.UserGlobalPaths = foldIdentityLayers(&b)
+	loaded.MemoryPath = foldLearnedMemory(&b)
 	if path := ProjectContextFile(sandboxRoot); path != "" {
 		if content := readCapped(path); content != "" {
 			b.WriteString(layer("Project rules", path, content))
@@ -140,6 +143,34 @@ func foldIdentityLayers(b *strings.Builder) []string {
 		loaded = append(loaded, path)
 	}
 	return loaded
+}
+
+// foldLearnedMemory adds what the agent has worked out for itself and had
+// approved (internal/learned), and returns the file it came from.
+//
+// It sits **after** the user's identity files and **before** the project's
+// rules, and the position is the policy: what the user told the agent outranks
+// what the agent concluded, and what this project requires outranks both.
+// Models weight later context more heavily, so ordering is the only mechanism
+// needed to say so — no precedence language in the prompt, nothing to keep in
+// sync with it.
+//
+// Only the main agent's scope is read here. A delegate's memory is folded into
+// that delegate's own prompt (internal/subagent) and never into this one:
+// carrying every sub-agent's accumulated knowledge in the main context is the
+// thing that makes a single-brain agent's prompt grow with everything it has
+// ever learned, and it is the cost Aetox is built to not pay.
+func foldLearnedMemory(b *strings.Builder) string {
+	content := learned.Read(learned.MainScope)
+	if content == "" {
+		return ""
+	}
+	path, err := learned.FileFor(learned.MainScope)
+	if err != nil {
+		return ""
+	}
+	b.WriteString(layer("What you have learned and the user approved", path, content))
+	return path
 }
 
 func identity(surface Surface) string {

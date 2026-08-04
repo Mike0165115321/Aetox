@@ -88,6 +88,17 @@ export const ListMCPServers = arr()
 export const ListModelsForProvider = arr()
 export const ListSessions = arr()
 export const ListTaskChips = arr()
+export const ListPendingChanges = arr()
+export const ListDecidedChanges = arr()
+export const LearningEnabled = boolFn(true)
+export const SetLearningEnabled = noop()
+export const ApprovePendingChange = noop()
+export const RejectPendingChange = noop()
+export const LearnedMemory = str()
+export const OpenMemoryFolder = noop()
+export const PendingLearnedCount = vi.fn(async (..._args: any[]) => 0)
+export const RateTurn = noop()
+export const TurnRating = str()
 export const ListSkills = arr()
 export const ListSpeechModels = arr()
 export const SetSpeechModel = noop()
@@ -136,7 +147,7 @@ export const RunChatCommand = vi.fn(async (..._args: any[]) => ({ output: '', su
 // what the bubble draws. The default is that shape so any test that does not
 // care about the reply still gets something the store can read.
 const turnReply = () => vi.fn(async (..._args: any[]) =>
-  ({ text: '' } as { text: string; parts?: any[] }))
+  ({ text: '' } as { text: string; parts?: any[]; messageId?: number }))
 export const SendMessage = turnReply()
 // Re-running a turn. RegenerateReply/SwitchVariant hand back the whole answer
 // list, so their default is the shape the store destructures, not an empty one.

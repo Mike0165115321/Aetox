@@ -149,6 +149,15 @@ func FilterRegistry(parent *skill.Registry, p Profile) *skill.Registry {
 		if !p.AllowsTool(name) {
 			continue
 		}
+		// `memory` is scoped to whoever holds it, and the parent's instance is
+		// scoped to the main agent. Inheriting it would let a delegate write into
+		// the main agent's memory; `task` registers a replacement bound to this
+		// profile instead. Dropped here rather than in forcedDenials because a
+		// profile is still allowed to refuse memory in its own frontmatter, and
+		// forcedDenials would take that choice away by answering first.
+		if name == "memory" {
+			continue
+		}
 		source, ok := parent.SourceOf(name)
 		if !ok {
 			// Unreachable: name came out of this same snapshot. Skipping beats

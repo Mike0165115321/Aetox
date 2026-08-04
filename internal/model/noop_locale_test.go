@@ -78,8 +78,11 @@ func TestEveryBuiltinModelSpeaksEnglishWhenAsked(t *testing.T) {
 		return false
 	}
 
+	// The retired names are walked alongside the current one on purpose: they
+	// still resolve, so they still have to answer in the right language.
 	for _, modelName := range []string{
-		"aetox-grid", "aetox-image:test", "aetox-think:test", "aetox-markdown:test",
+		"aetox-grid", "aetox-render:test", "aetox-think:test",
+		"aetox-image:test", "aetox-markdown:test",
 	} {
 		p := NewNoopProvider(modelName)
 		p.Locale = "en"
@@ -136,7 +139,7 @@ func TestEveryBuiltinModelSpeaksEnglishWhenAsked(t *testing.T) {
 	}
 
 	// And Thai stays the default for everyone.
-	for _, modelName := range []string{"aetox-grid", "aetox-markdown:test"} {
+	for _, modelName := range []string{"aetox-grid", "aetox-render:test"} {
 		p := NewNoopProvider(modelName)
 		resp, err := p.Complete(context.Background(), Request{
 			Model:    modelName,

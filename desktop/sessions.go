@@ -23,9 +23,17 @@ import (
 
 // SessionMessage is one chat bubble, as the UI shows it.
 type SessionMessage struct {
+	// ID is the store's rowid, and it is how a reply is addressed after the
+	// fact: the rating under a bubble, and the job rows that bubble produced,
+	// both key on it. 0 on a message that has not been persisted yet.
+	ID   int64  `json:"id,omitempty"`
 	Role string `json:"role"` // "user" | "agent"
 	Text string `json:"text"`
 	Time string `json:"time"`
+	// Rating is the verdict already stored for this reply ("good"/"bad"/
+	// "unknown"), so a reopened session shows the thumb the user pressed
+	// instead of a blank pair. Agent messages only.
+	Rating string `json:"rating,omitempty"`
 	// Reasoning is the model's thinking for this reply, kept so the panel
 	// survives turn completion and session reloads (collapsed by default).
 	Reasoning string `json:"reasoning,omitempty"`
@@ -120,14 +128,18 @@ func sessionTitleFrom(text string) string {
 
 // appendTurn persists one user/agent exchange into the current session.
 // The session row is created on the first turn (title = first user message).
-func (a *App) appendTurn(userMsg, agentMsg SessionMessage) {
+//
+// Returns the agent message's rowid, or 0 if nothing was written. That id is
+// how a rating finds its job later: the thumbs live under a bubble, and the
+// bubble is the only thing the UI can name.
+func (a *App) appendTurn(userMsg, agentMsg SessionMessage) int64 {
 	db, err := a.database()
 	if err != nil || a.sessionID == "" {
-		return
+		return 0
 	}
 	tx, err := db.Begin()
 	if err != nil {
-		return
+		return 0
 	}
 	defer func() { _ = tx.Rollback() }()
 
@@ -137,11 +149,18 @@ func (a *App) appendTurn(userMsg, agentMsg SessionMessage) {
 		VALUES(?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at`,
 		a.sessionID, projectKey(a.cfg.SandboxRoot), sessionTitleFrom(userMsg.Text), now, now)
+	var agentID int64
 	for _, m := range []SessionMessage{userMsg, agentMsg} {
-		_, _ = tx.Exec(`INSERT INTO messages(session_id, role, text, time, reasoning, think_secs, parts) VALUES(?,?,?,?,?,?,?)`,
+		res, execErr := tx.Exec(`INSERT INTO messages(session_id, role, text, time, reasoning, think_secs, parts) VALUES(?,?,?,?,?,?,?)`,
 			a.sessionID, m.Role, m.Text, m.Time, m.Reasoning, m.ThinkSecs, encodeParts(m.Parts))
+		if execErr == nil {
+			agentID, _ = res.LastInsertId() // the agent's row is the second and last
+		}
 	}
-	_ = tx.Commit()
+	if tx.Commit() != nil {
+		return 0
+	}
+	return agentID
 }
 
 // startNewSession begins a fresh transcript (and fresh agent memory). Nothing
@@ -374,8 +393,12 @@ func (a *App) LoadSession(id string) ([]SessionMessage, error) {
 	if err != nil {
 		return nil, err
 	}
+	// m.id comes back so a reopened session can still be rated: the thumbs
+	// address a job by the bubble they sit under, and without the row id an
+	// answer stops being ratable the moment the session is closed — which is
+	// exactly when a user knows whether it was any good.
 	rows, err := db.Query(`
-		SELECT m.role, m.text, m.time, m.reasoning, m.think_secs, m.variants, m.variant_active, m.parts
+		SELECT m.id, m.role, m.text, m.time, m.reasoning, m.think_secs, m.variants, m.variant_active, m.parts
 		FROM messages m
 		JOIN sessions s ON s.id = m.session_id
 		WHERE m.session_id = ? AND s.project_key = ?
@@ -390,9 +413,10 @@ func (a *App) LoadSession(id string) ([]SessionMessage, error) {
 	for rows.Next() {
 		var m SessionMessage
 		var variants, parts string
-		if rows.Scan(&m.Role, &m.Text, &m.Time, &m.Reasoning, &m.ThinkSecs, &variants, &m.Active, &parts) == nil {
+		if rows.Scan(&m.ID, &m.Role, &m.Text, &m.Time, &m.Reasoning, &m.ThinkSecs, &variants, &m.Active, &parts) == nil {
 			m.Variants = decodeVariants(variants)
 			m.Parts = decodeParts(parts)
+			m.Rating = a.TurnRating(m.ID)
 			messages = append(messages, m)
 		}
 	}
@@ -442,6 +466,13 @@ func (a *App) DeleteSession(id string) error {
 	// delete button promises — and those rows hold file contents and page text,
 	// not just labels.
 	if _, err := tx.Exec(`DELETE FROM tool_runs WHERE session_id = ?`, id); err != nil {
+		return err
+	}
+	// The job rows go too. They hold the question and the answer, so a session
+	// the user deleted would otherwise survive in the one table built to be read
+	// back later — and "delete this conversation" has to mean it everywhere, not
+	// everywhere the feature existed when the button was written.
+	if _, err := tx.Exec(`DELETE FROM jobs WHERE session_id = ?`, id); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM sessions WHERE id = ?`, id); err != nil {

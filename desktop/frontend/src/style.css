@@ -272,7 +272,14 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   display:grid; place-items:center; font-size:var(--fs-lg); flex:none;
 }
 .side-footer .label { flex:1; font-size:var(--fs-sm); font-weight:600; }
-.side-footer .gear { color:var(--text-dim); font-size:var(--fs-xl); }
+.side-footer .gear { color:var(--text-dim); font-size:var(--fs-xl); position:relative; }
+/* The agent is waiting to be allowed to remember something. A dot rather than
+   a number: what matters here is that there is anything at all, and the count
+   is on the row inside that opens it. */
+.side-footer .gear.has-pending::after {
+  content:''; position:absolute; top:-1px; right:-2px; width:6px; height:6px;
+  border-radius:50%; background:var(--accent);
+}
 
 .plus-menu.up { top:auto; bottom:calc(100% + 6px); }
 /* Span the sidebar instead of a fixed min-width: .side clips overflow, so a
@@ -626,6 +633,12 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .msg-copy:disabled { cursor:default; }
 .msg:hover .msg-copy:disabled { opacity:.35; }
 
+/* A rating that has been given stays visible after the pointer leaves. The
+   rest of this row is hover-only because it offers actions; this one reports
+   a fact about the answer, and a verdict that vanishes when you look away is
+   one the user cannot tell they already gave. */
+.msg-rate.rated { opacity:1; color:var(--accent); }
+
 /* Re-running a turn. These sit in the timestamp row with the copy button and
    appear on hover the same way — an answer you are happy with should not be
    ringed by buttons offering to replace it. Retry is the exception: a turn that
@@ -944,7 +957,22 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 }
 .ask-opt:hover .ask-key { border-color:var(--accent); color:var(--accent); }
 .ask-label { min-width:0; }
-.ask-hint { margin-top:8px; font-size:var(--fs-xs); color:var(--text-dim); }
+/* The free-text answer, in the card rather than in the composer. It replaced a
+   line of hint text that existed only to point somewhere else on screen. */
+.ask-own { display:flex; align-items:center; gap:6px; margin-top:10px; }
+.ask-own-input {
+  flex:1; min-width:0; padding:7px 10px; font-size:var(--fs-sm);
+  color:var(--text-primary); background:var(--surface-app);
+  border:1px solid var(--border-default); border-radius:var(--r-sm);
+}
+.ask-own-input:focus { outline:none; border-color:var(--accent); }
+.ask-own-input::placeholder { color:var(--text-dim); }
+.ask-own-send {
+  flex:none; display:grid; place-items:center; width:30px; height:30px;
+  color:var(--text-dim); border:1px solid var(--border-default); border-radius:var(--r-sm);
+}
+.ask-own-send:hover:not(:disabled) { color:var(--accent); border-color:var(--accent); }
+.ask-own-send:disabled { opacity:.4; cursor:default; }
 
 /* todo_write: the model's live task checklist */
 .todo-panel { margin-top:8px; display:flex; flex-direction:column; gap:3px; }
@@ -1184,6 +1212,31 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .settings-inner h2 + .set-sub { margin-top:-14px; }
 /* Standing clear of the bar above it, not glued to it. */
 .pp-bar + .set-sub { margin-top:4px; }
+
+/* Learning: proposals waiting for a decision, and what was already decided.
+   Each row has to answer three things before a person can judge it — whose
+   memory this is, what it would become, and what in the work suggested it.
+   A row that showed only the sentence would be asking for a signature on an
+   assertion with no provenance. */
+.set-h3 { margin:0 0 6px; font-size:var(--fs-xl); font-weight:600; }
+/* How many proposals are waiting, on the row that opens them. */
+.nav-count { margin-left:auto; min-width:18px; padding:0 5px; border-radius:999px; background:var(--accent); color:var(--surface-app); font-size:var(--fs-xs); font-weight:600; text-align:center; }
+.learn-row { display:flex; gap:16px; align-items:flex-start; padding:14px 16px; border-bottom:1px solid var(--border-subtle); }
+.learn-row:last-child { border-bottom:none; }
+.learn-main { flex:1; min-width:0; }
+.learn-head { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+.learn-scope { font-size:var(--fs-xs); color:var(--text-dim); border:1px solid var(--border-subtle); border-radius:var(--r-sm); padding:1px 6px; }
+.learn-op { font-size:var(--fs-xs); color:var(--accent); text-transform:uppercase; letter-spacing:.04em; }
+.learn-op.rejected { color:var(--text-dim); }
+.learn-when { font-size:var(--fs-xs); color:var(--text-dim); margin-left:auto; }
+/* What it replaces, struck through above what it becomes: approving a change
+   without seeing what it overwrites is not a decision. */
+.learn-before { font-size:var(--fs-sm); color:var(--text-dim); text-decoration:line-through; margin-bottom:2px; word-break:break-word; }
+.learn-body { font-size:var(--fs-lg); word-break:break-word; }
+.learn-why { margin-top:4px; font-size:var(--fs-sm); color:var(--text-dim); word-break:break-word; }
+.learn-actions { display:flex; gap:8px; flex:none; }
+.learn-row.past { opacity:.72; }
+.learn-memory { margin:0 0 12px; padding:14px 16px; white-space:pre-wrap; word-break:break-word; font-size:var(--fs-sm); }
 
 /* model settings: provider list + detail */
 .mset { display:flex; min-height:420px; }

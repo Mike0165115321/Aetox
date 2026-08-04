@@ -1,0 +1,282 @@
+package main
+
+import (
+	"database/sql"
+	"fmt"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mike0165115321/Aetox/internal/debuglog"
+	"github.com/Mike0165115321/Aetox/internal/learned"
+	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
+)
+
+// The approval door. Everything the agent proposes to learn stops here and
+// does nothing until a human says yes.
+//
+// The rows are not deleted when a proposal is decided — approving sets a state
+// and a timestamp. That is the whole audit trail: for any line sitting in a
+// memory file there is a row saying when it was proposed, what reasoning was
+// offered, what it replaced, and when it was let through. Without it "the
+// agent learned this" is indistinguishable from "the agent changed itself",
+// and the second one is the thing nobody should have to take on trust.
+//
+// `before` is kept for the same reason it is shown: it is what an undo would
+// need. Nothing undoes an approval today — the memory files are plain
+// markdown the user can edit — but a queue that threw away the previous value
+// could never grow one.
+
+// PendingChange is one proposal as the review UI receives it.
+type PendingChange struct {
+	ID        int64  `json:"id"`
+	Kind      string `json:"kind"`
+	Scope     string `json:"scope"`
+	Target    string `json:"target"`
+	Op        string `json:"op"`
+	Before    string `json:"before"`
+	Body      string `json:"body"`
+	Reason    string `json:"reason"`
+	Evidence  string `json:"evidence"`
+	Source    string `json:"source"`
+	State     string `json:"state"`
+	CreatedAt string `json:"createdAt"`
+	DecidedAt string `json:"decidedAt"`
+}
+
+const (
+	statePending  = "pending"
+	stateApproved = "approved"
+	stateRejected = "rejected"
+)
+
+// appProposer adapts the App to learned.Proposer. The indirection exists so
+// the method Wails binds to the frontend is not the same one a tool calls:
+// proposing is something the agent does, and the UI's half of this is approve
+// and reject.
+type appProposer struct{ app *App }
+
+func (p appProposer) Propose(pr learned.Proposal) (learned.Result, error) {
+	return p.app.proposeLearned(pr)
+}
+
+func (a *App) proposeLearned(p learned.Proposal) (learned.Result, error) {
+	if !learningEnabled() {
+		return learned.Result{}, fmt.Errorf("learning is switched off in settings")
+	}
+	db, err := a.database()
+	if err != nil {
+		return learned.Result{}, err
+	}
+
+	target := ""
+	if path, err := learned.FileFor(p.Scope); err == nil {
+		target = path
+	}
+
+	// An identical proposal already waiting is answered as a duplicate rather
+	// than queued again. The agent cannot see the queue — approved memory
+	// reaches it only at the next session — so a second attempt in the same
+	// conversation is the expected behaviour of a model that does not know it
+	// already asked, not a mistake worth an error.
+	var existing int64
+	err = db.QueryRow(
+		`SELECT id FROM pending_changes
+		  WHERE state = ? AND kind = ? AND scope = ? AND op = ? AND body = ? AND before = ?
+		  LIMIT 1`,
+		statePending, p.Kind, p.Scope, p.Op, p.Body, p.Before).Scan(&existing)
+	if err == nil {
+		return learned.Result{ID: existing, Duplicate: true}, nil
+	}
+	if err != sql.ErrNoRows {
+		return learned.Result{}, err
+	}
+
+	res, err := db.Exec(
+		`INSERT INTO pending_changes(kind, scope, target, op, before, body, reason, evidence, source, state, created_at)
+		 VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+		p.Kind, p.Scope, target, p.Op, p.Before, p.Body, p.Reason,
+		"session:"+a.sessionID, "agent", statePending, time.Now().Format(time.RFC3339))
+	if err != nil {
+		return learned.Result{}, err
+	}
+	id, _ := res.LastInsertId()
+	a.emitLearningChanged()
+	return learned.Result{ID: id}, nil
+}
+
+// ListPendingChanges returns what is waiting for a decision, oldest first —
+// the order they were learned in is the order they make sense read in.
+func (a *App) ListPendingChanges() []PendingChange {
+	return a.queryChanges(`WHERE state = ? ORDER BY id`, statePending)
+}
+
+// ListDecidedChanges is the record of what was let through and what was turned
+// down, newest first. This is where "why does it think that?" gets answered.
+func (a *App) ListDecidedChanges(limit int) []PendingChange {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	return a.queryChanges(`WHERE state <> ? ORDER BY id DESC LIMIT `+fmt.Sprint(limit), statePending)
+}
+
+// PendingLearnedCount is the badge. Cheap enough to call on every render.
+func (a *App) PendingLearnedCount() int {
+	db, err := a.database()
+	if err != nil {
+		return 0
+	}
+	var n int
+	if db.QueryRow(`SELECT COUNT(*) FROM pending_changes WHERE state = ?`, statePending).Scan(&n) != nil {
+		return 0
+	}
+	return n
+}
+
+// ApprovePendingChange applies one proposal and marks it approved.
+//
+// The write happens first and the state moves only if it succeeded: a row
+// marked approved whose change never landed would be a lie in the one place
+// that exists to be trusted.
+func (a *App) ApprovePendingChange(id int64) error {
+	db, err := a.database()
+	if err != nil {
+		return err
+	}
+	var c PendingChange
+	err = db.QueryRow(
+		`SELECT id, kind, scope, op, before, body, state FROM pending_changes WHERE id = ?`, id).
+		Scan(&c.ID, &c.Kind, &c.Scope, &c.Op, &c.Before, &c.Body, &c.State)
+	if err != nil {
+		return fmt.Errorf("no such proposal")
+	}
+	if c.State != statePending {
+		return fmt.Errorf("this was already decided")
+	}
+
+	switch c.Kind {
+	case "memory":
+		if err := learned.Apply(c.Scope, c.Op, c.Before, c.Body); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("this build does not know how to apply a %q change", c.Kind)
+	}
+
+	if _, err := db.Exec(
+		`UPDATE pending_changes SET state = ?, decided_at = ? WHERE id = ?`,
+		stateApproved, time.Now().Format(time.RFC3339), id); err != nil {
+		// The change is on disk; only the bookkeeping failed. Say so rather
+		// than reporting a failure the user would try to fix by approving again.
+		debuglog.Msg("pending_changes: approved %d but could not record it: %v", id, err)
+	}
+	a.emitLearningChanged()
+	return nil
+}
+
+// RejectPendingChange turns one down. The row stays: what the agent proposed
+// and was refused is the more interesting half of the record, and it is what a
+// later pass would need to avoid proposing the same thing forever.
+func (a *App) RejectPendingChange(id int64) error {
+	db, err := a.database()
+	if err != nil {
+		return err
+	}
+	res, err := db.Exec(
+		`UPDATE pending_changes SET state = ?, decided_at = ? WHERE id = ? AND state = ?`,
+		stateRejected, time.Now().Format(time.RFC3339), id, statePending)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("this was already decided")
+	}
+	a.emitLearningChanged()
+	return nil
+}
+
+func (a *App) queryChanges(where string, args ...any) []PendingChange {
+	out := []PendingChange{}
+	db, err := a.database()
+	if err != nil {
+		return out
+	}
+	rows, err := db.Query(
+		`SELECT id, kind, scope, target, op, before, body, reason, evidence, source, state, created_at, decided_at
+		   FROM pending_changes `+where, args...)
+	if err != nil {
+		debuglog.Msg("pending_changes: query failed: %v", err)
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var c PendingChange
+		if rows.Scan(&c.ID, &c.Kind, &c.Scope, &c.Target, &c.Op, &c.Before, &c.Body,
+			&c.Reason, &c.Evidence, &c.Source, &c.State, &c.CreatedAt, &c.DecidedAt) == nil {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+func (a *App) emitLearningChanged() {
+	payload := a.PendingLearnedCount()
+	if a.emit != nil {
+		a.emit("learning:changed", payload)
+		return
+	}
+	if a.ctx != nil {
+		wailsruntime.EventsEmit(a.ctx, "learning:changed", payload)
+	}
+}
+
+// LearnedMemory returns what one scope currently holds, for the settings page
+// that shows the user everything shaping the model. Empty scope is the main
+// agent.
+func (a *App) LearnedMemory(scope string) string {
+	return learned.Read(strings.TrimSpace(scope))
+}
+
+// OpenMemoryFolder reveals the memory directory in the file manager. The point
+// of keeping this as plain markdown is that the user can take it elsewhere;
+// that is only true if they can find it.
+func (a *App) OpenMemoryFolder() error {
+	dir, err := learned.Dir()
+	if err != nil {
+		return err
+	}
+	// Created on demand: the folder does not exist until the first approval, and
+	// "open" failing on a fresh install would read as the feature being broken.
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	return openInFileManager(dir)
+}
+
+// learningEnabled is the single switch. Off means the agent stops recording
+// jobs and cannot queue anything — not that proposals pile up unseen.
+//
+// Read from preferences on each use rather than cached: the switch has to take
+// effect on the next turn, and a cached copy would need an invalidation path
+// that exists for nothing else.
+func learningEnabled() bool {
+	pref, ok, _ := config.LoadModelPreference()
+	if !ok {
+		return true
+	}
+	return !pref.LearningDisabled
+}
+
+// SetLearningEnabled persists the switch.
+func (a *App) SetLearningEnabled(on bool) error {
+	pref, _, err := config.LoadModelPreference()
+	if err != nil {
+		return err
+	}
+	pref.LearningDisabled = !on
+	return config.SaveModelPreference(pref)
+}
+
+// LearningEnabled reports the switch for the settings page.
+func (a *App) LearningEnabled() bool { return learningEnabled() }

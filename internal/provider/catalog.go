@@ -121,15 +121,21 @@ var catalog = map[string]*entry{
 		modelDefaults: ModelDefaults{
 			FallbackModel: "aetox-grid",
 			// Each test model exercises one path without an API key: plain
-			// echo, image galleries, live thinking panel, rich markdown, the
+			// echo, the whole chat renderer (markdown and images — one
+			// renderer, so one bench), the live thinking panel, the
 			// tool-driven UI, and delegation end to end (start a sub-agent, it
 			// asks, answer it, collect). Behavior switches on the model name in
-			// noop.go.
+			// noop.go, which still answers to the two names the render model
+			// had when it was two.
+			//
+			// `aetox-tools:test` also carries the opt-in briefs: a message
+			// containing `memory` proposes something to remember (§82), and one
+			// containing `subagent` delegates — keywords rather than models,
+			// because a picker nobody reads to the bottom is not a bench.
 			RecommendedModels: []string{
 				"aetox-grid",
-				"aetox-image:test",
+				"aetox-render:test",
 				"aetox-think:test",
-				"aetox-markdown:test",
 				"aetox-tools:test",
 				"aetox-subagent:test",
 			},

@@ -330,6 +330,20 @@ func toolCases(t *testing.T, root string, dispatcher *skill.Dispatcher) map[stri
 			args:  map[string]any{"query": "nothing-recorded-yet"},
 			check: outputContains("No history matches"),
 		},
+		// The receipt has to say the change is waiting, not that it happened:
+		// a model told "saved" would stop proposing and start assuming, and
+		// nothing reaches memory until a human approves it.
+		"memory": {
+			args: map[string]any{
+				"text": "เครื่องนี้ไม่มี Excel ติดตั้ง",
+				"why":  "เปิดไฟล์ .xlsx แล้วไม่มีโปรแกรมรับ",
+			},
+			check: func(t *testing.T, out skill.Output, _ string) {
+				if !strings.Contains(out.Content, "approve") {
+					t.Errorf("memory receipt should say it is waiting for approval: %q", out.Content)
+				}
+			},
+		},
 		"suggest_task": {
 			args: map[string]any{
 				"title":  "Fix the stale badge",

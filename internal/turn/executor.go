@@ -518,7 +518,36 @@ func (e *Executor) execute(
 	}
 
 	debuglog.Msg("path: conversation (streaming chat)")
-	reply, streamed, err := e.agent.RespondStream(ctx, parsed.Raw, asStreamHandler(onChunk), asStreamHandler(onReasoningChunk), turnOptions)
+	// The live text goes to the preview channel; onChunk gets the finished
+	// answer once, exactly as the tool loop above delivers it.
+	//
+	// This path used to hand onChunk the token stream, which broke the one
+	// contract TurnOptions.OnContent documents ("a preview is NOT a delivery:
+	// the reply arrives exactly once, through onChunk"). A front end is
+	// entitled to read a delivery as the whole answer — the desktop's handler
+	// *replaces* the bubble with whatever it is given, because on every other
+	// path that is the finished reply. Fed one word at a time, the bubble
+	// became each word in turn and finished holding whichever token happened to
+	// be last: a multi-paragraph markdown answer rendered as a stray "12" out
+	// of the middle of a table.
+	//
+	// It went unseen because only a model that cannot call tools reaches this
+	// path. Every real provider takes the loop above, so the failure was
+	// invisible except on Aetox's own test models — the surface §45 says is
+	// supposed to be the one that catches things like this.
+	reply, streamed, err := e.agent.RespondStream(ctx, parsed.Raw,
+		asStreamHandler(turnOptions.OnContent), asStreamHandler(onReasoningChunk), turnOptions)
+	if onChunk != nil {
+		// Erase the preview first, for the reason the tool path does: whatever
+		// it holds is the same answer arriving a moment earlier, and the
+		// delivery below is the authority.
+		if turnOptions.OnContentReset != nil {
+			turnOptions.OnContentReset()
+		}
+		if strings.TrimSpace(reply) != "" {
+			onChunk(reply)
+		}
+	}
 	return Result{
 		Reply:    reply,
 		Streamed: streamed,

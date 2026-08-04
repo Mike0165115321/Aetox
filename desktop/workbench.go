@@ -23,7 +23,6 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/skill"
 
-	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 var agentBrowserSeq int64
@@ -121,7 +120,7 @@ func (a *App) workbenchOpenBrowser(ctx context.Context, url string) (title, fina
 	}
 
 	id := fmt.Sprintf("web-agent-%d", atomic.AddInt64(&agentBrowserSeq, 1))
-	wailsruntime.EventsEmit(a.ctx, "workbench:open-browser", map[string]string{"id": id, "url": url})
+	a.emitEvent("workbench:open-browser", map[string]string{"id": id, "url": url})
 
 	// The frontend creates the tab, which creates the native webview — poll
 	// until it exists, then wait out its first navigation.

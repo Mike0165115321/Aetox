@@ -90,6 +90,12 @@ type ModelPreference struct {
 	// user-configurable) actually needs. An absent entry means "catalog
 	// default"; ModelBaseURL is still read as a fallback for old files.
 	ModelBaseURLs map[string]string `json:"provider_base_urls,omitempty"`
+	// LearningDisabled turns off the whole learning layer: no job rows are
+	// recorded and nothing can be queued for approval. Stored as the negative
+	// so an absent field means enabled — the switch was added after people had
+	// preference files, and defaulting it off would have made the feature
+	// invisible to everyone who already had one.
+	LearningDisabled bool `json:"learning_disabled,omitempty"`
 	// EnabledProviders is the set of providers shown in the Settings sidebar
 	// and the chat composer's picker. Empty means "never customized" — callers
 	// resolve that case via ResolvedEnabledProviders rather than persisting a

@@ -293,11 +293,19 @@ func (p *NoopProvider) Complete(_ context.Context, req Request) (Response, error
 	// chat-rendering path can be exercised on its own (see provider catalog).
 	modelKey := strings.ToLower(model)
 	switch {
-	case strings.Contains(modelKey, "image"):
+	// "image" and "markdown" are the names this model had when it was two.
+	// They were never two benches: images arrive as markdown, and both were one
+	// canned rich reply through one renderer. Kept as aliases rather than
+	// retired, for the reason the provider catalog keeps its own — a preference
+	// file saved before the merge still names one of them, and a model id that
+	// stops resolving is a chat that stops working.
+	case strings.Contains(modelKey, "render"),
+		strings.Contains(modelKey, "image"),
+		strings.Contains(modelKey, "markdown"):
 		return Response{
 			Provider: p.Name(),
 			Model:    model,
-			Text:     p.noopImageReply(text),
+			Text:     p.noopRenderReply(text),
 		}, nil
 	case strings.Contains(modelKey, "think"):
 		return Response{
@@ -306,12 +314,6 @@ func (p *NoopProvider) Complete(_ context.Context, req Request) (Response, error
 			ReasoningContent: p.noopLongReasoning(text),
 			Text: p.pick("[think-test] คำตอบสั้น ๆ หลังคิดเสร็จ: ", "[think-test] short answer after thinking: ") +
 				clipNoop(text, 80),
-		}, nil
-	case strings.Contains(modelKey, "markdown"):
-		return Response{
-			Provider: p.Name(),
-			Model:    model,
-			Text:     p.noopMarkdownReply(),
 		}, nil
 	case strings.Contains(modelKey, "subagent"):
 		return p.noopSubagentReply(model, req), nil
@@ -334,14 +336,25 @@ func (p *NoopProvider) Complete(_ context.Context, req Request) (Response, error
 	}, nil
 }
 
-// noopImageReply: any prompt gets the full research-style gallery; the img*
-// keywords still pick a specific case (single, wrap, huge, broken).
-func (p *NoopProvider) noopImageReply(text string) string {
+// noopRenderReply is the whole chat renderer in one answer: markdown structure
+// (headings, code, a table, both list kinds, a quote, a rule) followed by a
+// research-style reply with an image gallery in it.
+//
+// It was two models, `aetox-image:test` and `aetox-markdown:test`, and the
+// split did not survive looking at it: an image *is* markdown, both were a
+// single canned reply, and the only thing either proved was that one renderer
+// draws what it is given. Checking a table and checking a gallery in one glance
+// is strictly more than checking them in two.
+//
+// Isolation did not go anywhere — the img* keywords still pick one case out
+// (single, wrap, oversized, broken), and they always worked on every built-in
+// model rather than only on the image one.
+func (p *NoopProvider) noopRenderReply(text string) string {
 	if scripted, ok := p.noopScenario(text); ok {
 		return scripted
 	}
-	scripted, _ := p.noopScenario("imgmix")
-	return scripted
+	gallery, _ := p.noopScenario("imgmix")
+	return p.noopMarkdownReply() + "\n\n---\n\n" + gallery
 }
 
 func (p *NoopProvider) noopMarkdownReply() string {
@@ -368,6 +381,26 @@ func (p *NoopProvider) noopMarkdownReply() string {
 //  3. todo_write (all items completed)
 //  4. final text echoing the user's choice
 func (p *NoopProvider) noopToolsReply(model string, req Request) Response {
+	// Delegating wins over proposing, and the order is load-bearing rather than
+	// arbitrary. A brief saying `subagent memory` means the *delegate* is the
+	// one that should remember something; a parent that took the memory branch
+	// first would file the proposal against the main agent and the bench would
+	// show a clean run of the exact failure it exists to catch. (It did, once —
+	// which is why this is two ordered checks and not one combined condition.)
+	//
+	// Whoever holds `task` is a parent: delegates are force-denied all three
+	// halves (internal/subagent), so this cannot fire on a child.
+	if offersTool(req, "task") && briefMentions(req, "subagent") {
+		return p.noopDelegationReply(model, req)
+	}
+	// Opt-in per brief, like askmain and toolchain below: one round that
+	// proposes something to remember, so the approval queue and everything
+	// behind it can be exercised with no API key. Not folded into the default
+	// script, because that one ends in a blocking ask_user and this has to stay
+	// a single round a test can drive to completion.
+	if briefMentions(req, "memory") && offersTool(req, "memory") {
+		return p.noopMemoryReply(model, req)
+	}
 	// Script only tools the caller actually offered. A sub-agent runs on a
 	// filtered registry — `todo_write` and `ask_user` are force-denied to every
 	// delegate (internal/subagent) — and a model that calls a tool it was never
@@ -378,12 +411,6 @@ func (p *NoopProvider) noopToolsReply(model string, req Request) Response {
 	// tests, and any hand-built Request): keep the historical UI script rather
 	// than guessing it is a delegate.
 	if len(req.Tools) > 0 && (!offersTool(req, "todo_write") || !offersTool(req, "ask_user")) {
-		// Whoever holds `task` is a parent, not a delegate — delegates never get it
-		// (internal/subagent force-denies all three halves). Opt-in by keyword, like
-		// the ask_main script below, so every other tools-test stays one round.
-		if offersTool(req, "task") && briefMentions(req, "subagent") {
-			return p.noopDelegationReply(model, req)
-		}
 		return p.noopDelegateToolsReply(model, req)
 	}
 	todoCalls, askCalls := 0, 0
@@ -429,6 +456,33 @@ func (p *NoopProvider) noopToolsReply(model string, req Request) Response {
 				"✅ Tools UI test set complete — todo panel, ask_user cards and the tool timeline all worked.\n\nask_user returned: ") + lastAnswer,
 		}
 	}
+}
+
+// noopMemoryReply drives the learning floor (ARCHITECTURE.md §82) end to end
+// without a key: propose one durable fact, then report what came back.
+//
+// The reported text matters as much as the call. `memory` answers "queued for
+// the user to approve", never "saved", and a bench that hid that answer would
+// let the tool start claiming the write and nobody would notice — which is the
+// one failure that turns "nothing takes effect without you" into a lie.
+//
+// Stateless like its siblings: which round we are in is read off the transcript.
+func (p *NoopProvider) noopMemoryReply(model string, req Request) Response {
+	for _, m := range req.Messages {
+		if m.Role == RoleTool && strings.EqualFold(m.Name, "memory") {
+			return Response{Provider: p.Name(), Model: model, Text: p.pick(
+				"[tools-test] เสนอสิ่งที่อยากจำไปแล้ว ระบบตอบกลับว่า: ",
+				"[tools-test] proposed something to remember. It answered: ") +
+				clipNoop(strings.TrimSpace(m.Content), 300)}
+		}
+	}
+	return Response{Provider: p.Name(), Model: model, ToolCalls: []ToolCall{{
+		ID:   "noop_memory_1",
+		Type: "function",
+		Function: FunctionCall{Name: "memory", Arguments: p.pick(
+			`{"text":"เครื่องนี้ไม่มี Excel ติดตั้ง ต้องส่งไฟล์ .xlsx กลับเป็นไฟล์เสมอ","why":"[tools-test] ชุดทดสอบการเรียนรู้"}`,
+			`{"text":"This machine has no Excel installed, so .xlsx work has to come back as a file","why":"[tools-test] the learning test set"}`)},
+	}}}
 }
 
 // briefMentions reports whether the user side of the transcript contains a
@@ -659,7 +713,7 @@ func (p *NoopProvider) noopDelegationReply(model string, req Request) Response {
 	// they can only be used from a test that writes the brief by hand — the CLI
 	// could never reach them, which is the surface this script exists to serve.
 	passthrough := ""
-	for _, keyword := range []string{"toolchain", "askmain"} {
+	for _, keyword := range []string{"toolchain", "askmain", "memory"} {
 		if briefMentions(req, keyword) {
 			passthrough += keyword + ": "
 		}
@@ -759,6 +813,14 @@ func (p *NoopProvider) noopDelegateToolsReply(model string, req Request) Respons
 	// one, so the child's *loop* is exercised and not just its first call.
 	if briefMentions(req, "toolchain") {
 		return p.noopToolchainReply(model, req)
+	}
+	// The same bench from the other side of the scope line. A delegate holds a
+	// `memory` bound to its own profile (internal/subagent), and the claim worth
+	// checking by hand is which file the proposal lands in — a delegate writing
+	// into the main agent's memory is the one failure that would quietly undo
+	// the flat-context design and still look like it worked.
+	if briefMentions(req, "memory") && offersTool(req, "memory") {
+		return p.noopMemoryReply(model, req)
 	}
 	const probe = "list"
 	result := ""

@@ -10,7 +10,6 @@ import (
 
 	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/skill"
-	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // askUserSkill lets the model pause mid-turn and ask the user to pick between
@@ -148,12 +147,10 @@ func (a *App) beginUserQuestion(question string, options []string) (chan string,
 		return nil, errors.New("another question is already awaiting the user")
 	}
 	a.askCh = make(chan string, 1)
-	if a.ctx != nil {
-		wailsruntime.EventsEmit(a.ctx, "ask:user", map[string]any{
-			"question": question,
-			"options":  options,
-		})
-	}
+	a.emitEvent("ask:user", map[string]any{
+		"question": question,
+		"options":  options,
+	})
 	return a.askCh, nil
 }
 
@@ -161,9 +158,7 @@ func (a *App) endUserQuestion() {
 	a.askMu.Lock()
 	defer a.askMu.Unlock()
 	a.askCh = nil
-	if a.ctx != nil {
-		wailsruntime.EventsEmit(a.ctx, "ask:done", nil)
-	}
+	a.emitEvent("ask:done", nil)
 }
 
 // AnswerUserQuestion delivers the user's choice to the blocked ask_user tool
@@ -259,7 +254,7 @@ func (s *todoWriteSkill) ExecuteTool(_ context.Context, args map[string]any) (sk
 		items = append(items, todoItem{Content: content, Status: status, ActiveForm: activeForm})
 	}
 	if s.app.ctx != nil {
-		wailsruntime.EventsEmit(s.app.ctx, "todo:update", items)
+		s.app.emitEvent("todo:update", items)
 	}
 	doneCount := 0
 	for _, it := range items {

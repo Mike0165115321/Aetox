@@ -20,7 +20,7 @@
     addProjectFolder, removeProjectFolder,
     retryActiveProvider, undoLastTurn, switchApprovalMode,
     startTaskChip, dismissTaskChip,
-    retryFailedTurn, regenerateReply, switchVariant, resendEdited,
+    retryFailedTurn, regenerateReply, switchVariant, resendEdited, rateReply,
   } from './stores/cockpit.svelte'
   import ConfirmDialog from './ConfirmDialog.svelte'
   import Icon from './Icon.svelte'
@@ -352,6 +352,35 @@
     // after DOM update, not before — otherwise we scroll to the old height
     requestAnimationFrame(() => (el.scrollTop = el.scrollHeight))
   })
+
+  // The answer the user types into the question card itself.
+  //
+  // Separate from the composer's `draft` on purpose: they are two places you
+  // can answer from, and sharing one buffer would mean text half-typed in the
+  // composer appeared in the card the moment a question arrived.
+  let askDraft = $state('')
+
+  $effect(() => {
+    // A new question starts with an empty field — a draft left over from the
+    // previous one is an answer to something that is no longer being asked.
+    void cockpit.ask?.question
+    askDraft = ''
+  })
+
+  function submitOwnAnswer(e: Event) {
+    e.preventDefault()
+    const text = askDraft.trim()
+    if (!text) return
+    askDraft = ''
+    answerAsk(text)
+  }
+
+  // Focus lands on the field as the card appears: being asked a question is
+  // the one moment where typing is the expected next thing. Clicking an option
+  // is unaffected.
+  function focusOnMount(el: HTMLInputElement) {
+    el.focus()
+  }
 
   // Copy an AI reply as plain text. '✓' feedback resets after a moment.
   let copiedText = $state('')
@@ -861,6 +890,25 @@
                   <Icon name={copiedText === m.text ? 'check' : 'copy'} size={13} />
                 </button>
               {/if}
+              {#if m.role === 'agent' && m.id && m.text && !m.failed}
+                <!-- Whether the answer was any good. Nothing else in the app
+                     can say: a tool that did not error is not an answer that
+                     helped, and this is the only signal a person can give
+                     that means what it says. Two buttons, no scale — a rating
+                     nobody actually gave is worse than no rating. -->
+                <button
+                  type="button" class="msg-copy msg-rate" class:rated={m.rating === 'good'}
+                  aria-label={t('chat.rateGood')} aria-pressed={m.rating === 'good'}
+                  onclick={() => rateReply(m, 'good')}>
+                  <Icon name="thumbsUp" size={13} />
+                </button>
+                <button
+                  type="button" class="msg-copy msg-rate" class:rated={m.rating === 'bad'}
+                  aria-label={t('chat.rateBad')} aria-pressed={m.rating === 'bad'}
+                  onclick={() => rateReply(m, 'bad')}>
+                  <Icon name="thumbsDown" size={13} />
+                </button>
+              {/if}
               {#if m.role === 'agent' && i === lastIndex && (m.variants?.length ?? 0) > 1}
                 <!-- Which answer of the several this question has had is on
                      screen. Switching also rewrites what the conversation
@@ -1021,7 +1069,26 @@
                     </button>
                   {/each}
                 </div>
-                <div class="ask-hint">{t('chat.askHint')}</div>
+                <!-- The free-text answer belongs where the question is. It was
+                     always accepted — but only through the composer at the
+                     bottom of the window, which is a different place from the
+                     one the user is looking at, so the card had to spend a line
+                     explaining where to go. A field under the options needs no
+                     explaining, and the composer keeps working for anyone who
+                     was already typing there. -->
+                <form class="ask-own" onsubmit={submitOwnAnswer}>
+                  <input
+                    class="ask-own-input"
+                    bind:value={askDraft}
+                    placeholder={t('chat.askOwnPlaceholder')}
+                    aria-label={t('chat.askOwnPlaceholder')}
+                    use:focusOnMount
+                  />
+                  <button
+                    type="submit" class="ask-own-send"
+                    disabled={!askDraft.trim()} aria-label={t('chat.askOwnSend')}
+                  ><Icon name="sendHorizontal" size={14} /></button>
+                </form>
               </div>
             {/if}
           </div>

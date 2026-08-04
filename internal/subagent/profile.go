@@ -31,6 +31,7 @@ import (
 	"strings"
 
 	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mike0165115321/Aetox/internal/learned"
 	"github.com/Mike0165115321/Aetox/internal/safety"
 	"github.com/Mike0165115321/Aetox/internal/skill"
 )
@@ -167,6 +168,25 @@ func Load(name string) (Profile, bool) {
 		return p, true
 	}
 	return Profile{}, false
+}
+
+// promptFor is the system prompt a delegate actually runs with: its profile,
+// plus whatever it has learned in its own scope and had approved.
+//
+// A delegate's memory is folded here and nowhere else. The main agent's prompt
+// never carries it (internal/prompt reads only the main scope), which is what
+// keeps the main context flat no matter how much the delegates accumulate —
+// the structural difference from a single agent that grows one prompt forever.
+//
+// A profile with nothing learned yet gets exactly its old prompt, byte for
+// byte: the common case must not pay for the feature, and prefix caching keys
+// on the leading bytes.
+func promptFor(p Profile) string {
+	memory := learned.Read(p.Name)
+	if memory == "" {
+		return p.Prompt
+	}
+	return p.Prompt + "\n\n---\n# What you have learned doing this job before\n" + memory + "\n"
 }
 
 // MaxToolCalls is what cognitive.AgentConfig gets for this sub-agent.

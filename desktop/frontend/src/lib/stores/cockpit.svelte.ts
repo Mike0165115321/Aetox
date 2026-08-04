@@ -15,6 +15,7 @@ import {
   AnswerUserQuestion, Interject, RetryActiveProvider, PendingUndo, UndoLastTurn,
   CompleteSignIn, SignOut, ImportSignIn,
   ListTaskChips, DismissTaskChip,
+  RateTurn, PendingLearnedCount,
   WorkspaceFolders, AddWorkspaceFolder, RemoveWorkspaceFolder,
   RetryFailedTurn, RegenerateReply, ResendEdited, SwitchVariant,
 } from '../../../wailsjs/go/main/App'
@@ -169,6 +170,8 @@ function restoreAttachments(m: main.SessionMessage): ChatMessage {
     role: m.role === 'agent' ? 'agent' : 'user',
     text: m.text,
     time: m.time,
+    id: m.id || undefined,
+    rating: (m.rating as ChatMessage['rating']) || undefined,
     reasoning: m.reasoning || undefined,
     thinkSecs: m.thinkSecs || undefined,
     // A reloaded answer keeps its alternates but not their tool timelines —
@@ -595,7 +598,7 @@ export async function sendUserMessage(text: string, alreadyShown = false): Promi
       const reply = await SendMessage(sentText)
       cockpit.chat.push({
         role: 'agent', text: reply.text, parts: reply.parts as TurnPart[] | undefined,
-        time: nowLabel(), ...turnArtifacts(),
+        time: nowLabel(), id: reply.messageId || undefined, ...turnArtifacts(),
       })
     } catch (err) {
       // The engine persists nothing for a turn that failed, so the text it was
@@ -675,7 +678,7 @@ export async function retryFailedTurn(index: number): Promise<void> {
       const reply = await RetryFailedTurn(text)
       cockpit.chat.push({
         role: 'agent', text: reply.text, parts: reply.parts as TurnPart[] | undefined,
-        time: nowLabel(), ...turnArtifacts(),
+        time: nowLabel(), id: reply.messageId || undefined, ...turnArtifacts(),
       })
     } catch (err) {
       cockpit.chat.push({
@@ -764,7 +767,7 @@ export async function resendEdited(text: string, revertFiles: boolean): Promise<
       const reply = await ResendEdited(sent, revertFiles)
       cockpit.chat.push({
         role: 'agent', text: reply.text, parts: reply.parts as TurnPart[] | undefined,
-        time: nowLabel(), ...turnArtifacts(),
+        time: nowLabel(), id: reply.messageId || undefined, ...turnArtifacts(),
       })
     } catch (err) {
       cockpit.chat.push({
@@ -813,6 +816,25 @@ export async function refreshTaskChips(): Promise<void> {
     applyTaskChips((await ListTaskChips()) as CockpitState['taskChips'])
   } catch {
     // Engine not ready yet — the tasks:changed event will bring them later.
+  }
+}
+
+/** How many proposals are waiting for the user to decide on them.
+ *
+ * The whole learning design rests on nothing taking effect without approval,
+ * which only holds up if the user knows there is something to approve. This is
+ * the number behind that mark. */
+export function applyPendingLearned(count: number): void {
+  cockpit.pendingLearned = Number(count) || 0
+}
+
+/** The queue as it stands before any proposal arrives in this run — anything
+ * left waiting from a previous session is still waiting. */
+export async function refreshPendingLearned(): Promise<void> {
+  try {
+    applyPendingLearned(await PendingLearnedCount())
+  } catch {
+    // Engine not ready yet — learning:changed will bring it later.
   }
 }
 
@@ -1138,6 +1160,28 @@ export async function selectSession(session: Session): Promise<void> {
   await switchWorkbenchSession(session.id)
   await refreshSessions()
   await refreshGlobalHistory()
+}
+
+/** Record what the user thought of one reply.
+ *
+ * Pressing the thumb that is already lit withdraws the rating rather than
+ * doing nothing: a verdict you cannot take back is one people stop giving.
+ *
+ * The bubble is updated first and the call is not awaited for the redraw —
+ * this is a one-click gesture on a row of small buttons, and a round-trip's
+ * worth of nothing happening is how a user concludes it did not register. */
+export async function rateReply(message: ChatMessage, verdict: 'good' | 'bad'): Promise<void> {
+  if (!message.id) return
+  const next = message.rating === verdict ? 'unknown' : verdict
+  message.rating = next
+  try {
+    await RateTurn(message.id, next)
+  } catch {
+    // A rating is not worth an error bubble in the conversation. Put the
+    // button back where it was so the UI keeps telling the truth about what
+    // is stored.
+    message.rating = message.rating === next ? undefined : message.rating
+  }
 }
 
 /** Permanently delete a session (any project); clears the chat if it was the open one. */

@@ -2,6 +2,8 @@ package skill
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -125,5 +127,100 @@ func TestSkillsListSeesSkillsInstalledAfterRegistryBuild(t *testing.T) {
 	}
 	if !strings.Contains(out.Content, "fresh_skill") {
 		t.Fatalf("freshly installed skill invisible without a re-bootstrap: %q", out.Content)
+	}
+}
+
+// writeSkillFile puts a supporting file inside an existing skill fixture.
+func writeSkillFile(t *testing.T, root, dirName, rel, content string) {
+	t.Helper()
+	path := filepath.Join(root, dirName, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+}
+
+// L2. Without it, a skill too long for one file is a dead end: the body can
+// name its references, but nothing can open them — and a skill written from
+// real work splits into files precisely because it outgrew one.
+func TestSkillViewReadsASupportingFile(t *testing.T) {
+	root := t.TempDir()
+	writeSkillFixture(t, root, "deploy", "---\nname: deploy_notes\ndescription: d\n---\nsee references/rollback.md\n")
+	writeSkillFile(t, root, "deploy", "references/rollback.md", "step one: stop the service")
+
+	view := &skillViewSkill{paths: []string{root}}
+	out, err := view.ExecuteTool(context.Background(), map[string]any{
+		"name": "deploy_notes", "path": "references/rollback.md",
+	})
+	if err != nil {
+		t.Fatalf("skill_view L2: %v", err)
+	}
+	if !strings.Contains(out.Content, "stop the service") {
+		t.Fatalf("reference body missing: %q", out.Content)
+	}
+}
+
+// The model cannot open a file it was never told exists, so L1 lists what else
+// the skill carries.
+func TestSkillViewListsWhatElseTheSkillCarries(t *testing.T) {
+	root := t.TempDir()
+	writeSkillFixture(t, root, "deploy", "---\nname: deploy_notes\ndescription: d\n---\nbody\n")
+	writeSkillFile(t, root, "deploy", "references/rollback.md", "x")
+	writeSkillFile(t, root, "deploy", "scripts/check.sh", "y")
+
+	view := &skillViewSkill{paths: []string{root}}
+	out, err := view.ExecuteTool(context.Background(), map[string]any{"name": "deploy_notes"})
+	if err != nil {
+		t.Fatalf("skill_view: %v", err)
+	}
+	if !containsAll(out.Content, "references/rollback.md", "scripts/check.sh") {
+		t.Fatalf("supporting files not listed: %q", out.Content)
+	}
+	// A skill with nothing but SKILL.md must not grow a stray empty section.
+	writeSkillFixture(t, root, "solo", "---\nname: solo\ndescription: d\n---\nbody\n")
+	plain, err := view.ExecuteTool(context.Background(), map[string]any{"name": "solo"})
+	if err != nil {
+		t.Fatalf("skill_view: %v", err)
+	}
+	if strings.Contains(plain.Content, "Files in this skill") {
+		t.Errorf("a single-file skill should list nothing: %q", plain.Content)
+	}
+}
+
+// `path` is a string the model wrote, joined onto a directory. What the gate
+// judges is where the path lands, never how it was spelled.
+func TestSkillViewRefusesAPathOutsideTheSkill(t *testing.T) {
+	root := t.TempDir()
+	writeSkillFixture(t, root, "deploy", "---\nname: deploy_notes\ndescription: d\n---\nbody\n")
+	writeSkillFixture(t, root, "other", "---\nname: other\ndescription: d\n---\nSECRET\n")
+
+	view := &skillViewSkill{paths: []string{root}}
+	for _, bad := range []string{"../other/SKILL.md", "references/../../other/SKILL.md", `..\other\SKILL.md`} {
+		out, err := view.ExecuteTool(context.Background(), map[string]any{"name": "deploy_notes", "path": bad})
+		if err == nil {
+			t.Errorf("path %q was accepted: %q", bad, out.Content)
+			continue
+		}
+		if strings.Contains(out.Content, "SECRET") {
+			t.Errorf("path %q leaked another skill's body", bad)
+		}
+	}
+}
+
+// Naming a file that is not there is a mistake the model can recover from
+// only if the answer says so.
+func TestSkillViewMissingFileSaysWhereToLook(t *testing.T) {
+	root := t.TempDir()
+	writeSkillFixture(t, root, "deploy", "---\nname: deploy_notes\ndescription: d\n---\nbody\n")
+
+	view := &skillViewSkill{paths: []string{root}}
+	_, err := view.ExecuteTool(context.Background(), map[string]any{"name": "deploy_notes", "path": "references/nope.md"})
+	if err == nil {
+		t.Fatal("want an error for a file the skill does not have")
+	}
+	if !strings.Contains(err.Error(), "not in this skill") {
+		t.Errorf("error should point at the skill body: %v", err)
 	}
 }

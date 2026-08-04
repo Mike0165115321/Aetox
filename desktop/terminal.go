@@ -44,9 +44,17 @@ func nextTerminalID() string {
 
 // emitEvent sends a frontend event, through a.emit when a test has installed
 // one. See App.emit for why the indirection has to exist at all.
+//
+// A nil ctx is silently nothing rather than a crash: an event with no window
+// to reach is not an error, and every emitter used to carry its own `if a.ctx
+// != nil` for exactly that reason. Holding it here is what lets them all go
+// through one door.
 func (a *App) emitEvent(event string, data ...any) {
 	if a.emit != nil {
 		a.emit(event, data...)
+		return
+	}
+	if a.ctx == nil {
 		return
 	}
 	wailsruntime.EventsEmit(a.ctx, event, data...)

@@ -231,6 +231,42 @@ export namespace main {
 	        this.warning = source["warning"];
 	    }
 	}
+	export class PendingChange {
+	    id: number;
+	    kind: string;
+	    scope: string;
+	    target: string;
+	    op: string;
+	    before: string;
+	    body: string;
+	    reason: string;
+	    evidence: string;
+	    source: string;
+	    state: string;
+	    createdAt: string;
+	    decidedAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new PendingChange(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.kind = source["kind"];
+	        this.scope = source["scope"];
+	        this.target = source["target"];
+	        this.op = source["op"];
+	        this.before = source["before"];
+	        this.body = source["body"];
+	        this.reason = source["reason"];
+	        this.evidence = source["evidence"];
+	        this.source = source["source"];
+	        this.state = source["state"];
+	        this.createdAt = source["createdAt"];
+	        this.decidedAt = source["decidedAt"];
+	    }
+	}
 	export class ProjectMeta {
 	    key: string;
 	    name: string;
@@ -364,9 +400,11 @@ export namespace main {
 	    }
 	}
 	export class SessionMessage {
+	    id?: number;
 	    role: string;
 	    text: string;
 	    time: string;
+	    rating?: string;
 	    reasoning?: string;
 	    thinkSecs?: number;
 	    variants?: SessionVariant[];
@@ -379,9 +417,11 @@ export namespace main {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
 	        this.role = source["role"];
 	        this.text = source["text"];
 	        this.time = source["time"];
+	        this.rating = source["rating"];
 	        this.reasoning = source["reasoning"];
 	        this.thinkSecs = source["thinkSecs"];
 	        this.variants = this.convertValues(source["variants"], SessionVariant);
@@ -581,6 +621,7 @@ export namespace main {
 	export class TurnReply {
 	    text: string;
 	    parts?: turn.TurnPart[];
+	    messageId?: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new TurnReply(source);
@@ -590,6 +631,7 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.text = source["text"];
 	        this.parts = this.convertValues(source["parts"], turn.TurnPart);
+	        this.messageId = source["messageId"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

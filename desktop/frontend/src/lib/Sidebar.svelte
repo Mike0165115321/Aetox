@@ -185,7 +185,15 @@
     <button type="button" class="side-footer" onclick={() => (profileOpen = !profileOpen)}>
       <span class="avatar">{avatarInitial}</span>
       <span class="label">{profileName || t('sidebar.setYourName')}</span>
-      <span class="ic gear"><Icon name="settings" size={15} /></span>
+      <!-- A mark on the way into settings when the agent is waiting to be
+           allowed to remember something. Not a count and not a chip in the
+           conversation: it is not work the user has to do now, but a queue
+           they are never told about is one that never gets emptied — which
+           would turn "nothing takes effect without you" into "nothing takes
+           effect". -->
+      <span class="ic gear" class:has-pending={cockpit.pendingLearned > 0}>
+        <Icon name="settings" size={15} />
+      </span>
     </button>
     {#if profileOpen}
       <div class="plus-menu profile-menu up">

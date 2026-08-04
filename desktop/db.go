@@ -128,6 +128,83 @@ CREATE TRIGGER IF NOT EXISTS tool_runs_ad AFTER DELETE ON tool_runs BEGIN
 END;
 `
 
+// learningSchema (schema version 7) is the floor the learning layers stand on.
+//
+// It was written as 6 and became 7 the same day, because `project_folders`
+// reached that number first. A migration must always take the next free one: a
+// step numbered below a version some database has already passed never runs on
+// it, so the tables would be missing on exactly the machines that had been kept
+// most up to date.
+//
+// `tool_runs` remembers what the agent did. Neither it nor `messages` says
+// whether any of it was any good: `tool_runs.ok` means "the tool did not
+// error", which a confidently wrong OCR passes as easily as a correct one. So
+// nothing in the store could answer "which way of doing this job works" — and
+// a system that cannot answer that cannot improve itself, only change itself.
+//
+// `jobs` is one row per unit of work — a chat turn, or one `task` handed to a
+// delegate. Three columns carry the weight:
+//
+//   - tool_seq ("read>image_ocr>sheet_write") is the shape of the work,
+//     matchable with a plain GROUP BY. Finding "this job has happened five
+//     times" costs a query, not a model call, which is what makes repeat
+//     detection affordable enough to run on every turn.
+//   - outcome is the score, and outcome_source records where it came from, so
+//     a rating the user actually gave is never confused with one inferred
+//     from behaviour.
+//   - agent is the scope: "" for the main agent, else the profile that ran.
+//     Every later layer reads it, because what a delegate learned belongs to
+//     that delegate and must not leak into the main agent's prompt.
+//
+// request/answer are clamped like tool_runs' args/output, and for the same
+// reason: this is the user's disk.
+//
+// `pending_changes` is the door. Anything the agent proposes to learn — a
+// memory line, a skill, a prompt revision — lands here and does nothing until
+// a human approves it. Rows are NOT deleted when approved: the row is the only
+// record of why a learned artifact exists and what it replaced, which is the
+// difference between an agent that shows its work and one that quietly
+// rewrites itself. `before` makes an approval reversible; `evidence` names the
+// job rows the proposal was drawn from.
+const learningSchema = `
+CREATE TABLE IF NOT EXISTS jobs (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id     TEXT NOT NULL DEFAULT '',
+  message_id     INTEGER NOT NULL DEFAULT 0,
+  agent          TEXT NOT NULL DEFAULT '',
+  parent_ref     TEXT NOT NULL DEFAULT '',
+  request        TEXT NOT NULL DEFAULT '',
+  answer         TEXT NOT NULL DEFAULT '',
+  tool_seq       TEXT NOT NULL DEFAULT '',
+  tool_count     INTEGER NOT NULL DEFAULT 0,
+  failed_tools   INTEGER NOT NULL DEFAULT 0,
+  duration_ms    INTEGER NOT NULL DEFAULT 0,
+  outcome        TEXT NOT NULL DEFAULT 'unknown',
+  outcome_source TEXT NOT NULL DEFAULT '',
+  time           TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_jobs_session ON jobs(session_id, id);
+CREATE INDEX IF NOT EXISTS idx_jobs_shape ON jobs(agent, tool_seq, outcome);
+CREATE INDEX IF NOT EXISTS idx_jobs_message ON jobs(message_id);
+
+CREATE TABLE IF NOT EXISTS pending_changes (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind       TEXT NOT NULL,
+  scope      TEXT NOT NULL DEFAULT '',
+  target     TEXT NOT NULL DEFAULT '',
+  op         TEXT NOT NULL DEFAULT 'add',
+  before     TEXT NOT NULL DEFAULT '',
+  body       TEXT NOT NULL DEFAULT '',
+  reason     TEXT NOT NULL DEFAULT '',
+  evidence   TEXT NOT NULL DEFAULT '',
+  source     TEXT NOT NULL DEFAULT '',
+  state      TEXT NOT NULL DEFAULT 'pending',
+  created_at TEXT NOT NULL,
+  decided_at TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_pending_state ON pending_changes(state, id);
+`
+
 // migration is one step from schema version N-1 to N. The version a database
 // is on lives in SQLite's own `PRAGMA user_version` rather than a table of our
 // own: it costs no row, no join and no bootstrap ordering problem, and it is
@@ -279,6 +356,14 @@ CREATE TABLE IF NOT EXISTS project_folders (
   added_at    TEXT NOT NULL,
   PRIMARY KEY (project_key, path)
 );`)
+			return err
+		},
+	},
+	{
+		version: 7,
+		name:    "learning_floor",
+		apply: func(tx *sql.Tx) error {
+			_, err := tx.Exec(learningSchema)
 			return err
 		},
 	},

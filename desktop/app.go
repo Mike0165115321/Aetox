@@ -27,6 +27,7 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/command"
 	"github.com/Mike0165115321/Aetox/internal/config"
 	"github.com/Mike0165115321/Aetox/internal/debuglog"
+	"github.com/Mike0165115321/Aetox/internal/learned"
 	"github.com/Mike0165115321/Aetox/internal/mcp"
 	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/oauth"
@@ -135,9 +136,7 @@ const maxToolHistory = 50
 // have silently marked every tool call as failed.
 func (a *App) recordToolAction(ev turn.ToolEvent) {
 	// Relay every call/result live to the chat's tool timeline.
-	if a.ctx != nil {
-		wailsruntime.EventsEmit(a.ctx, "agent:tool", ev)
-	}
+	a.emitEvent("agent:tool", ev)
 	if ev.Action != "call" {
 		return
 	}
@@ -159,9 +158,7 @@ func (a *App) recordToolAction(ev turn.ToolEvent) {
 // "กำลังรันเครื่องมือ...", then "" when done) to the frontend as a live typing/
 // thinking indicator, so the chat doesn't look frozen during a turn.
 func (a *App) emitAgentStatus(status string) {
-	if a.ctx != nil {
-		wailsruntime.EventsEmit(a.ctx, "agent:status", status)
-	}
+	a.emitEvent("agent:status", status)
 }
 
 // chatChunk is one write to the live answer bubble.
@@ -182,9 +179,7 @@ type chatChunk struct {
 
 // emitChatChunk is the one way anything reaches the live answer bubble.
 func (a *App) emitChatChunk(text string, replace bool) {
-	if a.ctx != nil {
-		wailsruntime.EventsEmit(a.ctx, "agent:chunk", chatChunk{Text: text, Replace: replace})
-	}
+	a.emitEvent("agent:chunk", chatChunk{Text: text, Replace: replace})
 }
 
 // previewAnswer shows the model's answer as it is written. Wired session-wide
@@ -1136,21 +1131,36 @@ func (a *App) focusNone() {
 type TurnReply struct {
 	Text  string          `json:"text"`
 	Parts []turn.TurnPart `json:"parts,omitempty"`
+	// MessageID is the stored row this reply became, so the bubble can be rated
+	// without reloading the session first. 0 when the turn failed and nothing
+	// was written — which is also the state in which there is nothing to rate.
+	MessageID int64 `json:"messageId,omitempty"`
 }
 
 func replyOf(m SessionMessage) TurnReply {
-	return TurnReply{Text: m.Text, Parts: m.Parts}
+	return TurnReply{Text: m.Text, Parts: m.Parts, MessageID: m.ID}
 }
 
 // SendMessage runs one chat turn through the Aetox engine and returns the reply.
 // The turn is appended to the current session and persisted.
 func (a *App) SendMessage(text string) (TurnReply, error) {
+	// Taken before the turn so the rows it writes can be told from everything
+	// already in the store — see recordJobs. Cheap (one indexed MAX) and read
+	// even when learning is off, because the alternative is a second capture
+	// path that has to be kept in step with recordToolRun.
+	mark := a.maxToolRunID()
+	started := time.Now()
+
 	userMsg, agentMsg, err := a.runTurn(text)
 	if err != nil {
 		return replyOf(agentMsg), err
 	}
+	messageID := a.appendTurn(userMsg, agentMsg)
+	agentMsg.ID = messageID
 	a.transcript = append(a.transcript, userMsg, agentMsg)
-	a.appendTurn(userMsg, agentMsg)
+	// After the transcript, never instead of it: a failure to record the work
+	// for later learning must not cost the user their conversation.
+	a.recordJobs(messageID, userMsg.Text, agentMsg.Text, mark, time.Since(started))
 	return replyOf(agentMsg), nil
 }
 
@@ -1210,13 +1220,13 @@ func (a *App) runTurn(text string) (SessionMessage, SessionMessage, error) {
 		}
 		lastThink = time.Now()
 		reasoning.WriteString(chunk)
-		wailsruntime.EventsEmit(a.ctx, "agent:reasoning", chunk)
+		a.emitEvent("agent:reasoning", chunk)
 	})
 	// A message can land in the moment between the loop's last drain and the reply
 	// arriving here. Hand it back to the UI instead of swallowing it — this is the
 	// one case the composer's old queue still exists for.
 	if missed := a.agent.DrainInterjections(); len(missed) > 0 {
-		wailsruntime.EventsEmit(a.ctx, "agent:interjection-missed", missed)
+		a.emitEvent("agent:interjection-missed", missed)
 	}
 	now := time.Now().Format("15:04")
 	if err != nil {
@@ -1973,6 +1983,10 @@ func (a *App) workbenchSkills() []skill.Skill {
 		&todoWriteSkill{app: a},
 		&sessionSearchSkill{app: a},
 		&suggestTaskSkill{app: a},
+		// The main agent's own scope. A delegate does not inherit this one —
+		// `task` builds it a replacement bound to its profile (internal/subagent),
+		// so what a sub-agent learns never lands in this prompt.
+		&learned.MemoryTool{Scope: learned.MainScope, Proposer: appProposer{app: a}},
 	}
 }
 
@@ -2027,6 +2041,7 @@ func (a *App) applyConfig(cfg config.Config) {
 		ExtraRoots:       a.extraRoots,
 		OnToolAction:     a.recordToolAction,
 		OnToolRun:        a.recordToolRun,
+		Proposer:         appProposer{app: a},
 		OnStatus:         a.emitAgentStatus,
 		OnContentPreview: a.previewAnswer,
 		OnContentReset:   a.discardAnswerPreview,
@@ -2086,7 +2101,7 @@ func (a *App) applyConfig(cfg config.Config) {
 				debuglog.Msg("mcp: %v", err)
 			}
 			if a.ctx != nil {
-				wailsruntime.EventsEmit(a.ctx, "skills:updated", nil)
+				a.emitEvent("skills:updated", nil)
 			}
 		}()
 	}

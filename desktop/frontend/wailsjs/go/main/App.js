@@ -18,6 +18,10 @@ export function AppVersion() {
   return window['go']['main']['App']['AppVersion']();
 }
 
+export function ApprovePendingChange(arg1) {
+  return window['go']['main']['App']['ApprovePendingChange'](arg1);
+}
+
 export function BrowserBack(arg1) {
   return window['go']['main']['App']['BrowserBack'](arg1);
 }
@@ -170,8 +174,20 @@ export function Interject(arg1) {
   return window['go']['main']['App']['Interject'](arg1);
 }
 
+export function LearnedMemory(arg1) {
+  return window['go']['main']['App']['LearnedMemory'](arg1);
+}
+
+export function LearningEnabled() {
+  return window['go']['main']['App']['LearningEnabled']();
+}
+
 export function ListAllSessions() {
   return window['go']['main']['App']['ListAllSessions']();
+}
+
+export function ListDecidedChanges(arg1) {
+  return window['go']['main']['App']['ListDecidedChanges'](arg1);
 }
 
 export function ListExternalSkills() {
@@ -188,6 +204,10 @@ export function ListMCPServers() {
 
 export function ListModelsForProvider(arg1) {
   return window['go']['main']['App']['ListModelsForProvider'](arg1);
+}
+
+export function ListPendingChanges() {
+  return window['go']['main']['App']['ListPendingChanges']();
 }
 
 export function ListPromptPresets() {
@@ -246,6 +266,10 @@ export function OpenMCPFolder() {
   return window['go']['main']['App']['OpenMCPFolder']();
 }
 
+export function OpenMemoryFolder() {
+  return window['go']['main']['App']['OpenMemoryFolder']();
+}
+
 export function OpenProjectFolder() {
   return window['go']['main']['App']['OpenProjectFolder']();
 }
@@ -268,6 +292,10 @@ export function OpenSpeechModelDir(arg1) {
 
 export function OpenSubagentsFolder() {
   return window['go']['main']['App']['OpenSubagentsFolder']();
+}
+
+export function PendingLearnedCount() {
+  return window['go']['main']['App']['PendingLearnedCount']();
 }
 
 export function PendingUndo() {
@@ -300,6 +328,10 @@ export function ProviderBaseURLIsCustom(arg1) {
 
 export function ProviderWireFormats(arg1) {
   return window['go']['main']['App']['ProviderWireFormats'](arg1);
+}
+
+export function RateTurn(arg1, arg2) {
+  return window['go']['main']['App']['RateTurn'](arg1, arg2);
 }
 
 export function ReadFile(arg1) {
@@ -336,6 +368,10 @@ export function RefreshSkills() {
 
 export function RegenerateReply(arg1) {
   return window['go']['main']['App']['RegenerateReply'](arg1);
+}
+
+export function RejectPendingChange(arg1) {
+  return window['go']['main']['App']['RejectPendingChange'](arg1);
 }
 
 export function RelativizePath(arg1) {
@@ -420,6 +456,10 @@ export function SendMessage(arg1) {
 
 export function SetAPIKey(arg1, arg2) {
   return window['go']['main']['App']['SetAPIKey'](arg1, arg2);
+}
+
+export function SetLearningEnabled(arg1) {
+  return window['go']['main']['App']['SetLearningEnabled'](arg1);
 }
 
 export function SetProviderBaseURL(arg1, arg2) {
@@ -548,6 +588,10 @@ export function ToggleMCPServer(arg1, arg2) {
 
 export function ToolCounts() {
   return window['go']['main']['App']['ToolCounts']();
+}
+
+export function TurnRating(arg1) {
+  return window['go']['main']['App']['TurnRating'](arg1);
 }
 
 export function UndoLastTurn() {

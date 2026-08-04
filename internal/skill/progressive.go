@@ -4,9 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Mike0165115321/Aetox/internal/model"
 )
@@ -91,6 +95,53 @@ func (s *skillsListSkill) ExecuteTool(_ context.Context, _ map[string]any) (Outp
 	return newToolOutput(s.Name(), s.Name(), b.String(), start, false, nil), nil
 }
 
+// readSkillFile returns one supporting file from inside a skill's folder.
+//
+// The containment check is the point. `path` is a string the model wrote, and
+// it is about to be joined onto a directory — "references/../../../.ssh/id_rsa"
+// is the whole attack, and it is a plausible thing for a skill document to
+// contain by accident as well as on purpose. Resolved and compared against the
+// skill's own directory, so what the gate judges is where the path *lands*,
+// never how it was spelled.
+//
+// Deliberately not routed through resolveSandboxPath: a skill lives in
+// ~/.aetox/skills, outside the workspace, so the sandbox would refuse every
+// read here. This is the same rule applied to a different root, and it is the
+// only place that root is readable from.
+func readSkillFile(dir, sub string) (string, error) {
+	base, err := filepath.Abs(dir)
+	if err != nil {
+		return "", fmt.Errorf("cannot read inside this skill")
+	}
+	full, err := filepath.Abs(filepath.Join(base, filepath.FromSlash(sub)))
+	if err != nil {
+		return "", fmt.Errorf("cannot read %q", sub)
+	}
+	rel, err := filepath.Rel(base, full)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("%q is outside the skill's own folder", sub)
+	}
+	info, err := os.Stat(full)
+	if err != nil {
+		return "", fmt.Errorf("%q is not in this skill — the skill body lists what it has", sub)
+	}
+	if info.IsDir() {
+		return "", fmt.Errorf("%q is a folder; name a file inside it", sub)
+	}
+	data, err := os.ReadFile(full)
+	if err != nil {
+		return "", fmt.Errorf("could not read %q: %w", sub, err)
+	}
+	if len(data) > maxSkillFileBytes {
+		cut := maxSkillFileBytes
+		for cut > 0 && !utf8.RuneStart(data[cut]) {
+			cut--
+		}
+		return string(data[:cut]) + fmt.Sprintf("\n\n[cut — file is %d bytes, showed the first %d]", len(data), cut), nil
+	}
+	return string(data), nil
+}
+
 // skillViewSkill is L1: the full body of one skill, fetched by name.
 type skillViewSkill struct {
 	paths []string
@@ -107,6 +158,45 @@ func (s *skillViewSkill) Name() string { return "skill_view" }
 
 func (s *skillViewSkill) Description() string {
 	return "Read one installed skill document by name (as listed by skills_list) and follow its instructions."
+}
+
+// maxSkillFileBytes caps one L2 read. A skill may legitimately ship a large
+// data file; sending all of it costs the same context whether the model needed
+// the whole thing or the first page, and the cut is reported so a truncated
+// read is never mistaken for a short file.
+const maxSkillFileBytes = 32 << 10
+
+// supportingFiles lists what else lives in a skill's folder, so the model can
+// find a reference it was never told about.
+//
+// L1 without this is a dead end whenever a skill is too long for one file:
+// SKILL.md can name its own references, but nothing makes it, and a skill
+// written by the agent itself (which splits work into files precisely because
+// it grew past one) would be unreachable past its first page. Directories are
+// walked, so references/a.md shows as references/a.md rather than as a folder
+// the model has to guess the contents of.
+func supportingFiles(dir string) []string {
+	var out []string
+	root := filepath.Clean(dir)
+	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		rel, relErr := filepath.Rel(root, path)
+		if relErr != nil || rel == "SKILL.md" {
+			return nil
+		}
+		// Slash-separated regardless of platform: this string goes back to the
+		// model as something to pass to `path`, and it is joined here, so one
+		// spelling everywhere is one less thing for it to get wrong.
+		out = append(out, filepath.ToSlash(rel))
+		return nil
+	})
+	sort.Strings(out)
+	if len(out) > 40 {
+		out = out[:40]
+	}
+	return out
 }
 
 func (s *skillViewSkill) Execute(ctx context.Context, input Input) (Output, error) {
@@ -126,6 +216,14 @@ func (s *skillViewSkill) ToolDefinition() model.ToolDefinition {
 			"name": map[string]any{
 				"type":        "string",
 				"description": "Skill name exactly as skills_list reported it",
+			},
+			// L2. Named files are opened only when the model decides it needs
+			// them, which is the whole point of the three levels: a skill can be
+			// as long as it needs to be without any of that length reaching the
+			// context of a session that did not use it.
+			"path": map[string]any{
+				"type":        "string",
+				"description": "Optional: a supporting file inside the skill (as listed at the end of the skill body), e.g. references/formats.md",
 			},
 		},
 		"required":             []string{"name"},
@@ -149,12 +247,27 @@ func (s *skillViewSkill) ExecuteTool(_ context.Context, args map[string]any) (Ou
 		err := fmt.Errorf("name is required — call skills_list to see what is installed")
 		return newToolOutput(s.Name(), s.Name(), err.Error(), start, false, err), err
 	}
+	sub, _ := args["path"].(string)
+	sub = strings.TrimSpace(sub)
 
 	discovered, _ := scanSkills(s.scanPaths())
 	for _, d := range discovered {
-		if strings.EqualFold(d.Name, name) {
-			return newToolOutput(s.Name(), s.Name()+" "+d.Name, d.body, start, false, nil), nil
+		if !strings.EqualFold(d.Name, name) {
+			continue
 		}
+		if sub != "" {
+			content, err := readSkillFile(d.Dir, sub)
+			if err != nil {
+				return newToolOutput(s.Name(), s.Name()+" "+d.Name, err.Error(), start, false, err), err
+			}
+			return newToolOutput(s.Name(), s.Name()+" "+d.Name+"/"+sub, content, start, false, nil), nil
+		}
+		body := d.body
+		if files := supportingFiles(d.Dir); len(files) > 0 {
+			body += "\n\nFiles in this skill — read one with skill_view {\"name\": \"" + d.Name +
+				"\", \"path\": \"…\"}:\n- " + strings.Join(files, "\n- ") + "\n"
+		}
+		return newToolOutput(s.Name(), s.Name()+" "+d.Name, body, start, false, nil), nil
 	}
 
 	// Name the alternatives in the error: the model asked for something that

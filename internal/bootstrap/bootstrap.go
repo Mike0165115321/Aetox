@@ -10,6 +10,7 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/config"
 	"github.com/Mike0165115321/Aetox/internal/debuglog"
 	"github.com/Mike0165115321/Aetox/internal/hook"
+	"github.com/Mike0165115321/Aetox/internal/learned"
 	"github.com/Mike0165115321/Aetox/internal/mcp"
 	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/prompt"
@@ -88,6 +89,12 @@ type Options struct {
 	OnContentPreview func(string)
 	OnContentReset   func()
 	OnUsage          func(model.Usage)
+
+	// Proposer is the approval door for anything an agent wants to learn. Only
+	// the desktop supplies one — it owns the store that holds the queue — and a
+	// nil one means delegates simply have no `memory` tool, which is the honest
+	// state for a front end that cannot persist anything.
+	Proposer learned.Proposer
 }
 
 // Result is a live engine. Every field is what the host needs to drive it or to
@@ -260,6 +267,7 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 		OnUsage:      opts.OnUsage,
 		MaxChars:     maxChars,
 		ThinkLevel:   think.NormalizeLevel(cfg.ThinkLevel),
+		Proposer:     opts.Proposer,
 	}) {
 		if err := registry.Register(tool, skill.SourceBuiltin); err != nil {
 			debuglog.Msg("%s registration skipped: %v", tool.Name(), err)

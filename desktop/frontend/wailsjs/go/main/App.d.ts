@@ -18,6 +18,8 @@ export function AnswerUserQuestion(arg1:string):Promise<void>;
 
 export function AppVersion():Promise<string>;
 
+export function ApprovePendingChange(arg1:number):Promise<void>;
+
 export function BrowserBack(arg1:string):Promise<void>;
 
 export function BrowserClickRef(arg1:string,arg2:number):Promise<void>;
@@ -94,7 +96,13 @@ export function InstallSkillFromZip():Promise<string>;
 
 export function Interject(arg1:string):Promise<void>;
 
+export function LearnedMemory(arg1:string):Promise<string>;
+
+export function LearningEnabled():Promise<boolean>;
+
 export function ListAllSessions():Promise<Array<main.SessionMeta>>;
+
+export function ListDecidedChanges(arg1:number):Promise<Array<main.PendingChange>>;
 
 export function ListExternalSkills():Promise<Array<skill.DiscoveredSkill>>;
 
@@ -103,6 +111,8 @@ export function ListIdentityFiles():Promise<Array<main.IdentityFile>>;
 export function ListMCPServers():Promise<Array<main.MCPServerInfo>>;
 
 export function ListModelsForProvider(arg1:string):Promise<Array<string>>;
+
+export function ListPendingChanges():Promise<Array<main.PendingChange>>;
 
 export function ListPromptPresets():Promise<Array<command.Preset>>;
 
@@ -132,6 +142,8 @@ export function OpenFileExternally(arg1:string):Promise<void>;
 
 export function OpenMCPFolder():Promise<void>;
 
+export function OpenMemoryFolder():Promise<void>;
+
 export function OpenProjectFolder():Promise<main.ProjectStatus>;
 
 export function OpenProjectPath(arg1:string):Promise<main.ProjectStatus>;
@@ -143,6 +155,8 @@ export function OpenSkillsFolder():Promise<void>;
 export function OpenSpeechModelDir(arg1:string):Promise<void>;
 
 export function OpenSubagentsFolder():Promise<void>;
+
+export function PendingLearnedCount():Promise<number>;
 
 export function PendingUndo():Promise<Array<string>>;
 
@@ -159,6 +173,8 @@ export function ProviderBaseURL(arg1:string):Promise<string>;
 export function ProviderBaseURLIsCustom(arg1:string):Promise<boolean>;
 
 export function ProviderWireFormats(arg1:string):Promise<Array<string>>;
+
+export function RateTurn(arg1:number,arg2:string):Promise<void>;
 
 export function ReadFile(arg1:string):Promise<string>;
 
@@ -177,6 +193,8 @@ export function RecentProjects():Promise<Array<main.ProjectMeta>>;
 export function RefreshSkills():Promise<void>;
 
 export function RegenerateReply(arg1:boolean):Promise<main.RegenerateResult>;
+
+export function RejectPendingChange(arg1:number):Promise<void>;
 
 export function RelativizePath(arg1:string):Promise<string>;
 
@@ -219,6 +237,8 @@ export function SearchSessions(arg1:string):Promise<Array<main.SessionMeta>>;
 export function SendMessage(arg1:string):Promise<main.TurnReply>;
 
 export function SetAPIKey(arg1:string,arg2:string):Promise<main.ModelInfo>;
+
+export function SetLearningEnabled(arg1:boolean):Promise<void>;
 
 export function SetProviderBaseURL(arg1:string,arg2:string):Promise<main.ModelInfo>;
 
@@ -283,6 +303,8 @@ export function TestProviderConnection(arg1:string,arg2:string):Promise<string>;
 export function ToggleMCPServer(arg1:string,arg2:boolean):Promise<void>;
 
 export function ToolCounts():Promise<main.ToolCounts>;
+
+export function TurnRating(arg1:number):Promise<string>;
 
 export function UndoLastTurn():Promise<main.UndoResult>;
 

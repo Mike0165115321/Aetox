@@ -24,7 +24,6 @@ import (
 	"time"
 
 	"github.com/Mike0165115321/Aetox/internal/debuglog"
-	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // tabView is one platform's live webview for one tab. Every method is called
@@ -415,7 +414,7 @@ func (h *browserHost) onMessage(id string, tab *browserTab, raw string, source s
 		tab.title, tab.url = m.Title, m.URL
 		tab.metaMu.Unlock()
 		if h.app.ctx != nil {
-			wailsruntime.EventsEmit(h.app.ctx, "browser:meta:"+id, map[string]string{"title": m.Title, "url": m.URL})
+			h.app.emitEvent("browser:meta:"+id, map[string]string{"title": m.Title, "url": m.URL})
 		}
 	case "text":
 		tab.textMu.Lock()

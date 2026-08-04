@@ -10,6 +10,7 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/cognitive"
 	"github.com/Mike0165115321/Aetox/internal/command"
 	"github.com/Mike0165115321/Aetox/internal/debuglog"
+	"github.com/Mike0165115321/Aetox/internal/learned"
 	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/safety"
 	"github.com/Mike0165115321/Aetox/internal/skill"
@@ -57,6 +58,11 @@ type TaskOptions struct {
 	OnUsage    func(model.Usage)
 	MaxChars   int
 	ThinkLevel think.Level
+	// Proposer is the approval door a delegate's `memory` tool writes to. Nil
+	// means delegates get no memory tool at all rather than a broken one — a
+	// front end with no store (the CLI) should not hand out a tool whose whole
+	// promise is that something survives the session.
+	Proposer learned.Proposer
 }
 
 type taskTool struct {
@@ -185,10 +191,13 @@ func (t *taskTool) ExecuteTool(ctx context.Context, args map[string]any) (skill.
 	// oversize brief arrives cut off at an arbitrary point and the delegate works
 	// from half of it — confidently, because nothing tells it the rest existed.
 	// Refuse with the numbers instead, so the parent can split the work.
-	if budget := t.opts.MaxChars; budget > 0 && len(brief)+len(profile.Prompt) > budget {
+	// Its own instructions plus whatever it has learned: both are in its system
+	// prompt on every round, so both count against what a brief can be.
+	childPrompt := promptFor(profile)
+	if budget := t.opts.MaxChars; budget > 0 && len(brief)+len(childPrompt) > budget {
 		return t.fail(label, started, fmt.Sprintf(
 			"the brief is too long for sub-agent %s: %d characters on top of its %d-character instructions goes past the %d it can hold, and the end would be silently cut off. Split it into smaller jobs.",
-			profile.Name, len(brief), len(profile.Prompt), budget))
+			profile.Name, len(brief), len(childPrompt), budget))
 	}
 
 	defer debuglog.Block("task: " + profile.Name + " — " + truncate(label, 60))()
@@ -212,7 +221,7 @@ func (t *taskTool) ExecuteTool(ctx context.Context, args map[string]any) (skill.
 	child := cognitive.NewAgent(cognitive.AgentConfig{
 		Provider:     t.opts.Provider,
 		Model:        childModel,
-		SystemPrompt: profile.Prompt,
+		SystemPrompt: childPrompt,
 		MaxChars:     t.opts.MaxChars,
 		MaxToolCalls: profile.MaxToolCalls(),
 	})
@@ -233,6 +242,20 @@ func (t *taskTool) ExecuteTool(ctx context.Context, args map[string]any) (skill.
 		// rest. Every profile gets it, allowlist or not — see ask.go.
 		if regErr := childRegistry.Register(&askMainTool{task: self}, skill.SourceBuiltin); regErr != nil {
 			debuglog.Msg("ask_main unavailable to %s: %v", profile.Name, regErr)
+		}
+
+		// `memory` is rebuilt per delegate rather than inherited (FilterRegistry
+		// drops the parent's). The parent's instance is bound to the main agent's
+		// scope, and a delegate holding it would write what it learned into the
+		// prompt every other agent pays for — the exact leak the scope split
+		// exists to prevent. Constructing it here with the profile's own name is
+		// what makes the boundary structural: there is no scope a child could
+		// name but its own.
+		if t.opts.Proposer != nil && profile.AllowsTool("memory") {
+			scoped := &learned.MemoryTool{Scope: profile.Name, Proposer: t.opts.Proposer}
+			if regErr := childRegistry.Register(scoped, skill.SourceBuiltin); regErr != nil {
+				debuglog.Msg("memory unavailable to %s: %v", profile.Name, regErr)
+			}
 		}
 
 		// Every event the delegate causes is stamped with the `task` call's id, so

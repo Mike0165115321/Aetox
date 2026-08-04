@@ -13,6 +13,7 @@
     switchModel, submitAPIKey, setActiveView, restoreActiveView, closeFile, applyAgentStatus, applyToolEvent,
     applyAgentChunk, applyReasoningChunk, attachImageFromPath,
     applyAskUser, applyAskDone, applyTodos, applyMissedInterjections, applyTaskChips,
+    applyPendingLearned, refreshPendingLearned,
   } from './lib/stores/cockpit.svelte'
   import { RelativizePath, CloseAllBrowserTabs } from '../wailsjs/go/main/App'
   import { OnFileDrop, OnFileDropOff, EventsOn } from '../wailsjs/runtime/runtime'
@@ -110,6 +111,11 @@
     // could not fold it in, so it comes back here and goes out as its own turn.
     const offMissed = EventsOn('agent:interjection-missed', applyMissedInterjections)
     const offTaskChips = EventsOn('tasks:changed', applyTaskChips)
+    // What the agent wants to remember and cannot until it is allowed to. Also
+    // fetched once here, because anything left undecided in a previous session
+    // is still undecided and nothing would emit for it.
+    const offLearning = EventsOn('learning:changed', applyPendingLearned)
+    void refreshPendingLearned()
 
     for (const panel of Object.values(panels)) {
       const stored = localStorage.getItem(panel.storageKey)
@@ -162,6 +168,7 @@
       offTodos()
       offMissed()
       offTaskChips()
+      offLearning()
     }
   })
 

@@ -29,10 +29,12 @@
     DeleteSubagentProfile, SetSubagentModel, OpenSubagentsFolder,
     SignInMethods, SignInStatus, StartSignIn, CancelSignIn, ImportableSignIns,
     AppVersion, CheckForUpdate,
+    LearningEnabled, SetLearningEnabled, ListPendingChanges, ListDecidedChanges,
+    ApprovePendingChange, RejectPendingChange, LearnedMemory, OpenMemoryFolder,
   } from '../../wailsjs/go/main/App'
   import { BrowserOpenURL } from '../../wailsjs/runtime/runtime'
   import promptPayQR from '../assets/images/promptpay-qr.png'
-  import { config, update } from '../../wailsjs/go/models'
+  import { config, update, main } from '../../wailsjs/go/models'
   import { cockpit, switchProvider, switchModel, submitAPIKey, switchApprovalMode, switchWireFormat, setProviderBaseURL, retryActiveProvider, completeSignIn, signOutProvider, importSignIn } from './stores/cockpit.svelte'
   import {
     identity, loadIdentityFiles, openIdentityFile, saveIdentityFile,
@@ -1433,6 +1435,69 @@
     if (active === 'identity') loadIdentityFiles()
   })
 
+  // ---------- Learning ----------
+  //
+  // This page exists because the agent proposing things is only half the
+  // design. Without somewhere to see what it wants to remember, why, and what
+  // it already remembers, "the agent learns" is indistinguishable from "the
+  // agent changes itself" — and the second one is what nobody should have to
+  // take on trust.
+  let learningOn = $state(true)
+  let pendingChanges = $state<main.PendingChange[]>([])
+  let decidedChanges = $state<main.PendingChange[]>([])
+  let mainMemory = $state('')
+  let learningError = $state('')
+  let learningBusy = $state(0)
+
+  async function loadLearning() {
+    try {
+      learningError = ''
+      learningOn = await LearningEnabled()
+      pendingChanges = await ListPendingChanges()
+      decidedChanges = await ListDecidedChanges(20)
+      mainMemory = await LearnedMemory('')
+    } catch (err) {
+      learningError = String(err)
+    }
+  }
+
+  async function toggleLearning() {
+    try {
+      await SetLearningEnabled(!learningOn)
+      await loadLearning()
+    } catch (err) {
+      learningError = String(err)
+    }
+  }
+
+  async function decideChange(id: number, approve: boolean) {
+    learningBusy = id
+    try {
+      learningError = ''
+      if (approve) await ApprovePendingChange(id)
+      else await RejectPendingChange(id)
+      await loadLearning()
+    } catch (err) {
+      // Shown rather than swallowed: an approval that could not be applied
+      // leaves the proposal in the list, and a button that appears to do
+      // nothing is how a user concludes the feature is broken.
+      learningError = String(err)
+    } finally {
+      learningBusy = 0
+    }
+  }
+
+  // Whose memory a proposal is for. Empty scope is the assistant itself; a
+  // named one is a sub-agent, and saying which matters — it is the difference
+  // between "everything you ask it" and "one job it does".
+  function scopeLabel(scope: string): string {
+    return scope ? scope : t('settings.learningScopeMain')
+  }
+
+  $effect(() => {
+    if (active === 'learning') void loadLearning()
+  })
+
   // ---------- Nav ----------
   // `terms` is what the page is actually about, not just what it is called.
   // Search used to match the nav label alone, so "font" and "ธีม" — two of the
@@ -1451,6 +1516,10 @@
           t('settings.chatFontTitle'), t('settings.treeFontTitle'), t('settings.codeThemeTitle'),
         ] },
       { id: 'identity', label: t('sidebar.identity'), icon: 'userRound', terms: [] },
+      // Next to identity, because they answer the same question from two
+      // sides: what the user told the agent, and what the agent worked out.
+      { id: 'learning', label: t('settings.learning'), icon: 'brain',
+        terms: [t('settings.learningPending'), t('settings.learningMemory')] },
     ]},
     { group: t('settings.groupModels'), items: [
       { id: 'models', label: t('settings.modelSettings'), icon: 'brain',
@@ -1488,7 +1557,7 @@
   // while three pages deep into MCP config and landing back on General is a
   // small thing that happens every single time.
   const SECTION_KEY = 'aetox.settingsSection'
-  const SECTION_IDS = new Set(['general', 'appearance', 'identity', 'models', 'agents', 'tools', 'skills', 'mcp', 'prompts', 'usage', 'about', 'sponsor'])
+  const SECTION_IDS = new Set(['general', 'appearance', 'identity', 'learning', 'models', 'agents', 'tools', 'skills', 'mcp', 'prompts', 'usage', 'about', 'sponsor'])
 
   function restoredSection(): string {
     try {
@@ -1539,6 +1608,11 @@
       {#each g.items as it}
         <button class="settings-nav-item" class:active={active === it.id} onclick={() => openSection(it.id)}>
           <span class="ic"><Icon name={it.icon} /></span> {it.label}
+          {#if it.id === 'learning' && cockpit.pendingLearned > 0}
+            <span class="nav-count" title={t('settings.learningWaiting', { count: String(cockpit.pendingLearned) })}>
+              {cockpit.pendingLearned}
+            </span>
+          {/if}
         </button>
       {/each}
     {/each}
@@ -2465,6 +2539,89 @@
           {/if}
         </div>
       </div>
+    {:else if active === 'learning'}
+      <h2>{t('settings.learning')}</h2>
+      <p class="muted set-sub">{t('settings.learningDesc')}</p>
+
+      {#if learningError}<div class="mset-error">{learningError}</div>{/if}
+
+      <div class="settings-card">
+        <div class="mcp-row">
+          <div class="mcp-row-main">
+            <div class="n">{t('settings.learningEnabled')}</div>
+            <div class="d">{t('settings.learningEnabledHint')}</div>
+          </div>
+          <div class="mcp-row-actions">
+            <label class="mswitch">
+              <input type="checkbox" checked={learningOn} onchange={toggleLearning} />
+              <span></span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <h3 class="set-h3">{t('settings.learningPending')}</h3>
+      <p class="muted set-sub">{t('settings.learningPendingHint')}</p>
+      <div class="settings-card">
+        {#each pendingChanges as c (c.id)}
+          <div class="learn-row">
+            <div class="learn-main">
+              <div class="learn-head">
+                <span class="learn-scope">{scopeLabel(c.scope)}</span>
+                <span class="learn-op">{c.op}</span>
+              </div>
+              {#if c.before}
+                <!-- What it replaces, shown next to what it becomes: approving a
+                     change without seeing what it overwrites is not a decision. -->
+                <div class="learn-before">{c.before}</div>
+              {/if}
+              <div class="learn-body">{c.body}</div>
+              {#if c.reason}<div class="learn-why">{c.reason}</div>{/if}
+            </div>
+            <div class="learn-actions">
+              <button type="button" class="ctrl ctrl-primary" disabled={learningBusy === c.id}
+                onclick={() => decideChange(c.id, true)}>{t('settings.learningApprove')}</button>
+              <button type="button" class="ctrl" disabled={learningBusy === c.id}
+                onclick={() => decideChange(c.id, false)}>{t('settings.learningReject')}</button>
+            </div>
+          </div>
+        {/each}
+        {#if pendingChanges.length === 0}
+          <div class="empty">{t('settings.learningNothingPending')}</div>
+        {/if}
+      </div>
+
+      <h3 class="set-h3">{t('settings.learningMemory')}</h3>
+      <p class="muted set-sub">{t('settings.learningMemoryHint')}</p>
+      <div class="settings-card">
+        {#if mainMemory}
+          <pre class="learn-memory">{mainMemory}</pre>
+        {:else}
+          <div class="empty">{t('settings.learningMemoryEmpty')}</div>
+        {/if}
+        <button type="button" class="ctrl" onclick={() => OpenMemoryFolder()}>
+          <Icon name="folderOpen" size={13} /> {t('settings.learningOpenFolder')}
+        </button>
+      </div>
+
+      {#if decidedChanges.length > 0}
+        <h3 class="set-h3">{t('settings.learningHistory')}</h3>
+        <p class="muted set-sub">{t('settings.learningHistoryHint')}</p>
+        <div class="settings-card">
+          {#each decidedChanges as c (c.id)}
+            <div class="learn-row past">
+              <div class="learn-main">
+                <div class="learn-head">
+                  <span class="learn-scope">{scopeLabel(c.scope)}</span>
+                  <span class="learn-op" class:rejected={c.state === 'rejected'}>{c.state}</span>
+                  <span class="learn-when">{c.decidedAt.slice(0, 10)}</span>
+                </div>
+                <div class="learn-body">{c.body}</div>
+              </div>
+            </div>
+          {/each}
+        </div>
+      {/if}
     {:else if active === 'usage'}
       <h2>{t('settings.usage')}</h2>
       <p class="muted set-sub">{t('settings.usageDesc')}</p>

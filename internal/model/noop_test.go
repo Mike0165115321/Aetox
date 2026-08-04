@@ -62,25 +62,34 @@ func TestNoopProviderTestModels(t *testing.T) {
 		return resp
 	}
 
-	// image model: any prompt returns the gallery showcase...
-	if got := ask("aetox-image:test", "สวัสดี").Text; strings.Count(got, "picsum.photos") != 3 {
-		t.Errorf("image model must reply with the 3-image showcase, got:\n%s", got)
+	// The render model is one bench for one renderer: markdown structure and an
+	// image gallery in the same answer. Two models proved the same thing twice.
+	render := ask("aetox-render:test", "อะไรก็ได้").Text
+	for _, want := range []string{"```go", "| คอลัมน์ |", "> คำพูดยกมา"} {
+		if !strings.Contains(render, want) {
+			t.Errorf("render model missing %q in:\n%s", want, render)
+		}
 	}
-	// ...and the img* keywords still pick specific cases
-	if got := ask("aetox-image:test", "img5").Text; strings.Count(got, "picsum.photos") != 5 {
-		t.Errorf("image model img5 must return 5 images, got:\n%s", got)
+	if strings.Count(render, "picsum.photos") != 3 {
+		t.Errorf("render model must also carry the gallery, got:\n%s", render)
+	}
+	// The img* keywords still pick one case out of it.
+	if got := ask("aetox-render:test", "img5").Text; strings.Count(got, "picsum.photos") != 5 {
+		t.Errorf("render model img5 must return 5 images, got:\n%s", got)
+	}
+
+	// The names it had when it was two still resolve. A preference file saved
+	// before the merge names one of them, and a model id that stops resolving is
+	// a chat that stops working.
+	for _, retired := range []string{"aetox-image:test", "aetox-markdown:test"} {
+		if got := ask(retired, "อะไรก็ได้").Text; !strings.Contains(got, "```go") {
+			t.Errorf("%s no longer resolves to the render bench:\n%s", retired, got)
+		}
 	}
 
 	think := ask("aetox-think:test", "ทำไมฟ้าสีฟ้า")
 	if think.ReasoningContent == "" || !strings.Contains(think.Text, "[think-test]") {
 		t.Errorf("think model must fill ReasoningContent + short answer, got: %+v", think)
-	}
-
-	md := ask("aetox-markdown:test", "อะไรก็ได้").Text
-	for _, want := range []string{"```go", "| คอลัมน์ |", "> คำพูดยกมา"} {
-		if !strings.Contains(md, want) {
-			t.Errorf("markdown model missing %q in:\n%s", want, md)
-		}
 	}
 
 	// the catalog's default noop model is what a genuinely unconfigured
@@ -342,5 +351,120 @@ func TestNoopThinkModelProducesLongSectionedReasoning(t *testing.T) {
 	}
 	if !strings.Contains(resp.ReasoningContent, "[1/6]") || !strings.Contains(resp.ReasoningContent, "[6/6]") {
 		t.Fatal("reasoning must keep its numbered sections")
+	}
+}
+
+// The learning floor (§82) had no keyless bench at all: `memory` is the only
+// way anything reaches the approval queue, and nothing could call it without an
+// API key. Opt-in per brief rather than a seventh model in the picker — a list
+// nobody reads to the bottom is not a bench.
+func TestNoopToolsModelProposesSomethingToRemember(t *testing.T) {
+	provider := NewNoopProvider("aetox-tools:test")
+	tools := []ToolDefinition{
+		{Type: "function", Function: ToolFunction{Name: "memory"}},
+		{Type: "function", Function: ToolFunction{Name: "todo_write"}},
+		{Type: "function", Function: ToolFunction{Name: "ask_user"}},
+	}
+
+	first, err := provider.Complete(context.Background(), Request{
+		Model:    "aetox-tools:test",
+		Tools:    tools,
+		Messages: []Message{{Role: RoleUser, Content: "memory: ลองระบบจำ"}},
+	})
+	if err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	if len(first.ToolCalls) != 1 || first.ToolCalls[0].Function.Name != "memory" {
+		t.Fatalf("a memory brief must open with a memory call, got %+v", first.ToolCalls)
+	}
+	if !strings.Contains(first.ToolCalls[0].Function.Arguments, `"why"`) {
+		t.Errorf("the proposal must carry its reasoning — the review page shows it: %s",
+			first.ToolCalls[0].Function.Arguments)
+	}
+
+	// The reported answer is the point of the second round: `memory` says
+	// "queued for approval", never "saved", and a bench that hid that would let
+	// the tool start claiming the write with nobody noticing.
+	second, err := provider.Complete(context.Background(), Request{
+		Model: "aetox-tools:test",
+		Tools: tools,
+		Messages: []Message{
+			{Role: RoleUser, Content: "memory: ลองระบบจำ"},
+			{Role: RoleTool, Name: "memory", Content: "Queued for the user to approve."},
+		},
+	})
+	if err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	if len(second.ToolCalls) != 0 {
+		t.Fatalf("the memory script is one round, got another call: %+v", second.ToolCalls)
+	}
+	if !strings.Contains(second.Text, "approve") {
+		t.Errorf("the report must repeat what the tool actually answered:\n%s", second.Text)
+	}
+}
+
+// Without the brief it stays the tool-UI script it always was — one keyword
+// must not cost every other bench a round.
+func TestAMemorylessBriefKeepsTheOldToolsScript(t *testing.T) {
+	provider := NewNoopProvider("aetox-tools:test")
+	resp, err := provider.Complete(context.Background(), Request{
+		Model: "aetox-tools:test",
+		Tools: []ToolDefinition{
+			{Type: "function", Function: ToolFunction{Name: "memory"}},
+			{Type: "function", Function: ToolFunction{Name: "todo_write"}},
+			{Type: "function", Function: ToolFunction{Name: "ask_user"}},
+		},
+		Messages: []Message{{Role: RoleUser, Content: "ทดสอบ UI"}},
+	})
+	if err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	if len(resp.ToolCalls) != 1 || resp.ToolCalls[0].Function.Name != "todo_write" {
+		t.Fatalf("want the usual todo_write opener, got %+v", resp.ToolCalls)
+	}
+}
+
+// A tool it was never handed is a call that dies at dispatch — the script has
+// to read the tool list the way a real model does, memory included.
+func TestTheMemoryScriptIsSkippedWhenTheToolIsNotOffered(t *testing.T) {
+	provider := NewNoopProvider("aetox-tools:test")
+	resp, err := provider.Complete(context.Background(), Request{
+		Model: "aetox-tools:test",
+		Tools: []ToolDefinition{
+			{Type: "function", Function: ToolFunction{Name: "todo_write"}},
+			{Type: "function", Function: ToolFunction{Name: "ask_user"}},
+		},
+		Messages: []Message{{Role: RoleUser, Content: "memory: ลองระบบจำ"}},
+	})
+	if err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	for _, c := range resp.ToolCalls {
+		if c.Function.Name == "memory" {
+			t.Fatal("called memory without being handed it")
+		}
+	}
+}
+
+// The delegate half of the same bench. Which file a proposal lands in is the
+// claim the whole flat-context design rests on, and a delegate writing into the
+// main agent's memory would look identical from the outside.
+func TestADelegateBriefedWithMemoryProposesToo(t *testing.T) {
+	provider := NewNoopProvider("aetox-tools:test")
+	resp, err := provider.Complete(context.Background(), Request{
+		Model: "aetox-tools:test",
+		// No todo_write/ask_user: that is what marks the caller as a delegate.
+		Tools: []ToolDefinition{
+			{Type: "function", Function: ToolFunction{Name: "memory"}},
+			{Type: "function", Function: ToolFunction{Name: "list"}},
+		},
+		Messages: []Message{{Role: RoleUser, Content: "memory: จำเรื่องนี้ไว้"}},
+	})
+	if err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	if len(resp.ToolCalls) != 1 || resp.ToolCalls[0].Function.Name != "memory" {
+		t.Fatalf("a delegate briefed with memory must propose, got %+v", resp.ToolCalls)
 	}
 }

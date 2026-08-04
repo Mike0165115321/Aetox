@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Mike0165115321/Aetox/internal/learned"
 )
 
 // The sandbox root must NOT reach the prompt: it is a machine-specific path
@@ -224,5 +225,68 @@ func TestBuildTeachesBatchWorkAsOneScript(t *testing.T) {
 	}
 	if !strings.Contains(got, "per-item work, not batch work") {
 		t.Fatalf("batch guidance lost its boundary — without it, per-file judgment edits get scripted too: %s", got)
+	}
+}
+
+// Learned memory is folded in, and where it sits is the policy: after what the
+// user told the agent, before what this project requires. Models weight later
+// context more heavily, so the order is the whole precedence mechanism — there
+// is no sentence in the prompt claiming a ranking that could drift from it.
+func TestLearnedMemorySitsBetweenTheUsersRulesAndTheProjects(t *testing.T) {
+	dataRoot := t.TempDir()
+	t.Setenv("AETOX_DATA_ROOT", dataRoot)
+
+	identityDir := filepath.Join(dataRoot, "identity")
+	if err := os.MkdirAll(identityDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(identityDir, "context.md"), "IDENTITY-MARKER")
+	if err := learned.Apply(learned.MainScope, learned.OpAdd, "", "MEMORY-MARKER"); err != nil {
+		t.Fatalf("write memory: %v", err)
+	}
+	projectRoot := t.TempDir()
+	mustWrite(t, filepath.Join(projectRoot, "AETOX.md"), "PROJECT-MARKER")
+
+	text, loaded := BuildWithReport(SurfaceDesktop, Scope{Root: projectRoot})
+	identity := strings.Index(text, "IDENTITY-MARKER")
+	memory := strings.Index(text, "MEMORY-MARKER")
+	project := strings.Index(text, "PROJECT-MARKER")
+	if identity < 0 || memory < 0 || project < 0 {
+		t.Fatalf("a layer is missing:\n%s", text)
+	}
+	if !(identity < memory && memory < project) {
+		t.Errorf("layer order is identity(%d) < memory(%d) < project(%d)", identity, memory, project)
+	}
+	if loaded.MemoryPath == "" {
+		t.Error("the report should name the memory file it folded in")
+	}
+}
+
+// A delegate's memory belongs to that delegate. Carrying every sub-agent's
+// accumulated knowledge in the main prompt is exactly the cost this
+// architecture exists not to pay.
+func TestTheMainPromptCarriesNoDelegatesMemory(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+	if err := learned.Apply("explore", learned.OpAdd, "", "DELEGATE-ONLY-MARKER"); err != nil {
+		t.Fatalf("write memory: %v", err)
+	}
+	text, loaded := BuildWithReport(SurfaceDesktop, Scope{Root: t.TempDir()})
+	if strings.Contains(text, "DELEGATE-ONLY-MARKER") {
+		t.Errorf("a sub-agent's memory reached the main prompt:\n%s", text)
+	}
+	if loaded.MemoryPath != "" {
+		t.Errorf("nothing was learned in the main scope, got %q", loaded.MemoryPath)
+	}
+}
+
+// An agent that has learned nothing must produce byte-for-byte the prompt it
+// produced before this existed: the common case cannot pay for the feature,
+// and prefix caching keys on the leading bytes.
+func TestNothingLearnedChangesNothing(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+	root := t.TempDir()
+	before := Build(SurfaceDesktop, Scope{Root: root})
+	if strings.Contains(before, "What you have learned") {
+		t.Errorf("an empty memory should add no layer:\n%s", before)
 	}
 }

@@ -83,9 +83,17 @@ func (a *App) RegenerateReply(revertFiles bool) (RegenerateResult, error) {
 		}
 	}
 
+	// Asking again is the one negative signal that costs the user nothing to
+	// give: they were going to press this button anyway. Recorded before the
+	// second attempt runs, so it lands even if that attempt fails.
+	replyID := a.lastAgentMessageID()
+	a.markTurnRedone(replyID)
+
 	// The model must not see its own previous answer, or "ตอบใหม่" returns a
 	// polite rewrite of it rather than another attempt.
 	a.restoreContext(a.transcript[:len(a.transcript)-2])
+	mark := a.maxToolRunID()
+	started := time.Now()
 	_, agentMsg, err := a.runTurn(question)
 	if err != nil {
 		// The transcript was never touched, but the model's memory now holds a
@@ -109,6 +117,11 @@ func (a *App) RegenerateReply(revertFiles bool) (RegenerateResult, error) {
 	a.transcript[len(a.transcript)-1] = live
 	a.storeVariants(variants, active)
 	a.storeParts(agentMsg.Parts)
+	// A second attempt is a second job against the same bubble. Both rows stay:
+	// "this shape of work needed two tries" is exactly the kind of thing a later
+	// pass should be able to see, and it cannot if the retry overwrites the
+	// attempt that provoked it.
+	a.recordJobs(replyID, question, agentMsg.Text, mark, time.Since(started))
 
 	return RegenerateResult{
 		Text: agentMsg.Text, Parts: agentMsg.Parts,
@@ -260,6 +273,14 @@ func (a *App) dropLastTurnRows() {
 	if err != nil || a.sessionID == "" {
 		return
 	}
+	// The job rows for those messages go with them, and are NOT marked bad on the
+	// way out. An edited question means the user asked for the wrong thing, not
+	// that the agent did it badly — recording it as a failure would teach the
+	// learning layer to avoid whatever the agent happened to do correctly.
+	_, _ = db.Exec(`
+		DELETE FROM jobs
+		WHERE message_id IN (SELECT id FROM messages WHERE session_id = ? ORDER BY id DESC LIMIT 2)`,
+		a.sessionID)
 	_, _ = db.Exec(`
 		DELETE FROM messages
 		WHERE id IN (SELECT id FROM messages WHERE session_id = ? ORDER BY id DESC LIMIT 2)`,
