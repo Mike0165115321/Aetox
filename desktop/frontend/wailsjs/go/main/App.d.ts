@@ -74,6 +74,8 @@ export function DismissTaskChip(arg1:string):Promise<void>;
 
 export function EnabledProviders():Promise<Array<string>>;
 
+export function FileStillThere(arg1:string):Promise<boolean>;
+
 export function GetContextBreakdown():Promise<main.ContextBreakdown>;
 
 export function GetModelInfo():Promise<main.ModelInfo>;

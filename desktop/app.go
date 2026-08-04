@@ -396,6 +396,38 @@ func (a *App) RelativizePath(absPath string) (string, error) {
 // The sandbox check is not decoration. This launches a program of the OS's
 // choosing on a path a caller supplies, so the path has to be one the user
 // could have clicked in their own project.
+// errFileGone is the one failure the file pane translates for itself rather
+// than showing verbatim. Matched by the frontend, so the text is a contract.
+var errFileGone = errors.New("file-gone")
+
+// FileStillThere reports whether a path the app previously produced is still on
+// disk.
+//
+// The file cards in a reply are history: they record what that turn made, and
+// they are rebuilt from the message's own parts on reload (§80, §81), so they
+// must not disappear when a file does — the turn still produced it. What must
+// not survive is the *offer*. The pane used to say "this app cannot preview it,
+// but a program on your machine can" about a file that was not there at all,
+// and only the click revealed otherwise, as an OS error string.
+//
+// So: history says what happened, the pane says what is true now. This is how
+// the pane finds out.
+//
+// A path outside the sandbox, or no project open, answers false — the same as
+// missing, because in both cases there is nothing here to open.
+func (a *App) FileStillThere(relPath string) bool {
+	root := strings.TrimSpace(a.cfg.SandboxRoot)
+	if root == "" {
+		return false
+	}
+	full, err := safeSandboxPath(root, relPath)
+	if err != nil {
+		return false
+	}
+	info, err := os.Stat(full)
+	return err == nil && !info.IsDir()
+}
+
 func (a *App) OpenFileExternally(relPath string) error {
 	root := strings.TrimSpace(a.cfg.SandboxRoot)
 	if root == "" {
@@ -406,6 +438,16 @@ func (a *App) OpenFileExternally(relPath string) error {
 		return err
 	}
 	info, err := os.Stat(full)
+	if os.IsNotExist(err) {
+		// A file the agent produced can legitimately be gone: it can delete
+		// files, and session output folders age out. Raising the OS error here
+		// put "GetFileAttributesEx …: The system cannot find the file
+		// specified" in front of the user, which reads as a crash rather than
+		// as the ordinary thing it is. FileStillThere is what stops the
+		// question being asked at all; this covers the gap between asking and
+		// clicking.
+		return errFileGone
+	}
 	if err != nil {
 		return err
 	}

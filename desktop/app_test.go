@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -908,5 +909,56 @@ func TestSetProviderBaseURLRejectsWhatCannotBeDialed(t *testing.T) {
 	}
 	if _, err := a.SetProviderBaseURL("nonsense-provider", "http://x/v1"); err == nil {
 		t.Error("accepted an unknown provider")
+	}
+}
+
+// A file the agent produced can be gone by the time anyone opens its card: the
+// agent can delete files (it did, testing `delete` on its own output), and
+// session output folders age out. The card is history and stays; the offer to
+// open it must not outlive the file.
+func TestAMissingFileIsReportedAsGoneNotAsAnOSError(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+	root := t.TempDir()
+	a := &App{cfg: config.Config{SandboxRoot: root}}
+
+	if err := os.WriteFile(filepath.Join(root, "made.txt"), []byte("hi"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !a.FileStillThere("made.txt") {
+		t.Fatal("a file that exists must report as still there")
+	}
+
+	if err := os.Remove(filepath.Join(root, "made.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if a.FileStillThere("made.txt") {
+		t.Error("a deleted file must not report as still there")
+	}
+	// The gap between asking and clicking: the answer has to be the one the UI
+	// can translate, not "GetFileAttributesEx …: The system cannot find the
+	// file specified", which reads to a user as a crash.
+	err := a.OpenFileExternally("made.txt")
+	if !errors.Is(err, errFileGone) {
+		t.Errorf("opening a deleted file returned %v, want the named gone error", err)
+	}
+}
+
+// A directory and a path outside the sandbox are both "nothing here to open",
+// and neither may be offered as a file.
+func TestFileStillThereRefusesDirectoriesAndEscapes(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+	root := t.TempDir()
+	a := &App{cfg: config.Config{SandboxRoot: root}}
+	if err := os.Mkdir(filepath.Join(root, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if a.FileStillThere("sub") {
+		t.Error("a directory is not a file to open")
+	}
+	if a.FileStillThere("../outside.txt") {
+		t.Error("a path outside the sandbox must answer false")
+	}
+	if (&App{}).FileStillThere("anything.txt") {
+		t.Error("with no project open there is nothing to open")
 	}
 }

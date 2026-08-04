@@ -130,6 +130,10 @@ export function EnabledProviders() {
   return window['go']['main']['App']['EnabledProviders']();
 }
 
+export function FileStillThere(arg1) {
+  return window['go']['main']['App']['FileStillThere'](arg1);
+}
+
 export function GetContextBreakdown() {
   return window['go']['main']['App']['GetContextBreakdown']();
 }

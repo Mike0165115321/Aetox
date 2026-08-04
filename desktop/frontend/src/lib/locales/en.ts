@@ -139,6 +139,7 @@ export const en: Record<keyof typeof th, string> = {
   'workbench.stopTask': 'Stop Current Task',
   'workbench.close': 'Close {name}',
   'workbench.openFileError': 'Couldn’t open file: {err}',
+  'workbench.fileGone': 'This file is gone — deleted or moved after it was made.',
   'workbench.cannotPreview': 'This file can’t be shown in the app, but a program on your machine opens it.',
   'workbench.officeNoPreview': 'The file is fine — the app just doesn’t render slides or documents itself. PowerPoint and Word do it better.',
   'workbench.openExternally': 'Open with my computer’s app',

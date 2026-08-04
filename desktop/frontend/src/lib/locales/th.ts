@@ -138,6 +138,7 @@ export const th = {
   'workbench.stopTask': 'หยุดงานปัจจุบัน',
   'workbench.close': 'ปิด {name}',
   'workbench.openFileError': 'เปิดไฟล์ไม่ได้: {err}',
+  'workbench.fileGone': 'ไฟล์นี้ไม่อยู่แล้ว — ถูกลบหรือย้ายไปหลังจากที่สร้างเสร็จ',
   'workbench.cannotPreview': 'ไฟล์นี้เปิดดูในแอปไม่ได้ แต่โปรแกรมในเครื่องคุณเปิดได้',
   'workbench.officeNoPreview': 'ไฟล์ปกติดี — แอปแค่ตั้งใจไม่วาดสไลด์/เอกสารเอง เพราะ PowerPoint กับ Word ทำได้ดีกว่า',
   'workbench.openExternally': 'เปิดด้วยโปรแกรมในเครื่อง',
