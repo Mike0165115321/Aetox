@@ -90,10 +90,14 @@ func (*slidesWriteSkill) ToolDefinition() model.ToolDefinition {
 		Type: "function",
 		Function: model.ToolFunction{
 			Name: "slides_write",
-			Description: "Create a real PowerPoint deck (.pptx) that opens in PowerPoint, Google Slides and Keynote. " +
+			// Capability only, no when-to-pick-me language (owner, 2026-08-04):
+			// "the tool tells you what it makes; which shape answers the request
+			// is the model's call." The rest teaches how to hold the tool, which
+			// no model can guess: notes vs bullets, and that images embed.
+			Description: "Create a PowerPoint file (.pptx) — opens in PowerPoint, Google Slides and Keynote. " +
 				"Give each slide a short title and a few one-line bullets — write the long version into `notes`, which only the presenter sees. " +
 				"An `image` is a path to a picture already on disk and gets embedded, so the file stays self-contained. " +
-				"Use this instead of writing an outline in Markdown whenever the user wants slides — the result reports where the file actually landed.",
+				"The result reports where the file actually landed.",
 			Parameters: payload,
 		},
 	}

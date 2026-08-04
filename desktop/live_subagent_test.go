@@ -74,7 +74,7 @@ func TestLiveSubAgentSearchesTheWebAndReportsBack(t *testing.T) {
 	agent := cognitive.NewAgent(cognitive.AgentConfig{
 		Provider:     provider,
 		Model:        "deepseek-v4-flash",
-		SystemPrompt: prompt.Build(prompt.SurfaceDesktop, root),
+		SystemPrompt: prompt.Build(prompt.SurfaceDesktop, root, false),
 		MaxToolCalls: 12,
 	})
 	exec := turn.NewExecutor(turn.ExecutorOptions{
@@ -187,7 +187,7 @@ func TestLiveTwoSubAgentsRunAtOnceAndAreCollectedTogether(t *testing.T) {
 	agent := cognitive.NewAgent(cognitive.AgentConfig{
 		Provider:     provider,
 		Model:        "deepseek-v4-flash",
-		SystemPrompt: prompt.Build(prompt.SurfaceDesktop, root),
+		SystemPrompt: prompt.Build(prompt.SurfaceDesktop, root, false),
 		MaxToolCalls: 14,
 	})
 	exec := turn.NewExecutor(turn.ExecutorOptions{

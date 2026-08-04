@@ -59,9 +59,14 @@ func ProjectContextFile(root string) string {
 	return ""
 }
 
-// Build assembles the full system prompt for the given front end and sandbox root.
-func Build(surface Surface, sandboxRoot string) string {
-	text, _ := BuildWithReport(surface, sandboxRoot)
+// Build assembles the full system prompt for the given front end and sandbox
+// root. openSandbox mirrors skill.RegistryOptions.OpenSandbox — the prompt
+// must describe the same wall the tools actually enforce, or the model
+// answers "I can't" to things it can (which is exactly what happened: the
+// unfocused desktop opened the sandbox, and the model kept refusing absolute
+// paths because this text still said they were rejected).
+func Build(surface Surface, sandboxRoot string, openSandbox bool) string {
+	text, _ := BuildWithReport(surface, sandboxRoot, openSandbox)
 	return text
 }
 
@@ -70,13 +75,14 @@ func Build(surface Surface, sandboxRoot string) string {
 // There is deliberately no per-agent role layer here: the assistant has one
 // identity, and the identity directory (§11) is where it is configured. A second
 // mechanism answering "who is the AI" would drift from it — see §44.0.
-func BuildWithReport(surface Surface, sandboxRoot string) (string, Loaded) {
+func BuildWithReport(surface Surface, sandboxRoot string, openSandbox bool) (string, Loaded) {
 	var b strings.Builder
 	b.WriteString(identity(surface))
-	b.WriteString(environment())
+	b.WriteString(environment(openSandbox))
 	b.WriteString(fileEditing())
 	b.WriteString(batchWork())
 	b.WriteString(narration())
+	b.WriteString(clarify())
 
 	var loaded Loaded
 	loaded.UserGlobalPaths = foldIdentityLayers(&b)
@@ -177,6 +183,35 @@ func narration() string {
 		"The user watches this live; a silent stretch of tool calls reads as a frozen app.\n"
 }
 
+// clarify tells the model what an empty brief calls for: one question, before
+// creating anything. Nothing used to, and an underspecified "create a file"
+// forked two bad ways — the model invents a deliverable the user never asked
+// for (paid for in output tokens, then paid for again in the round of "no,
+// not that"), or it refuses and reports what it cannot do. The ask_user tool
+// exists for exactly this moment, but its own description ("only when
+// blocked") never fires here: a model with an empty brief does not feel
+// blocked — it feels free.
+//
+// Owner constraint (2026-08-04): teach principles the model can weigh, never
+// case rules. A first draft said 'a request for "slides" with no format named
+// must be asked about' — an if-else written in prose, which answers one
+// remembered failure and nothing else. The paragraph below states what the
+// failure generalized to: a tool's usual mapping is a default, and defaults
+// lose to anything the user actually said.
+func clarify() string {
+	return "When asked to create something without enough of a brief to know what the user actually wants — " +
+		"no subject, format, or content named — ask ONE question to pin the brief down before creating anything. " +
+		"Use the ask_user tool when you have it, offering concrete options; otherwise just ask in text. " +
+		"A deliverable you invented costs the user a whole round of correcting you; one question is cheaper. " +
+		"Ask only when the answer changes what you would build. Details the user would not care to decide, " +
+		"decide yourself — and never ask more than once for the same request.\n" +
+		"A tool's usual mapping is a default, not a decision. Before building a deliverable, weigh two " +
+		"things: has the user already chosen its shape — anywhere, including a correction later in the " +
+		"conversation — then follow that exactly, over any habit; and if not, could genuinely different " +
+		"shapes each satisfy the request in ways the user would care about — then the choice is theirs, " +
+		"and worth the one question. Otherwise decide sensibly and build.\n"
+}
+
 // environment used to state the sandbox root as an absolute path and then
 // spend a second sentence telling the model not to repeat it — a machine-
 // specific path, with the user's account name in it, sent to whichever
@@ -189,7 +224,22 @@ func narration() string {
 // which now names the on-disk path. What replaces it is the rule that was
 // actually missing, and whose absence caused the wrong answer: repeat the
 // path a tool gave you, never assemble one.
-func environment() string {
+//
+// The open variant exists because the wall itself is now a mode
+// (skill.RegistryOptions.OpenSandbox): unfocused desktop chats may roam the
+// machine, and a model told "absolute paths are rejected" answers "I can't
+// search this machine" while holding tools that can.
+func environment(openSandbox bool) string {
+	if openSandbox {
+		return "No project is focused: file tools accept any path on this machine — absolute paths and paths " +
+			"relative to your working folder both work. Credential stores (.ssh, .aws, browser profile data " +
+			"and the like) are refused by every tool; do not try to work around that.\n" +
+			"Create new files with a bare filename — they land in this chat's own output folder automatically, " +
+			"so everything a chat produced sits in one place for the user to inspect.\n" +
+			"When you tell the user where a file is, repeat the path the tool reported back to you. Do NOT assemble " +
+			"one yourself out of a folder and a filename — where a file lands is the tool's decision and it tells you, " +
+			"so a path you construct is a guess.\n"
+	}
 	return "Every file tool takes a path relative to the folder you are working in; absolute paths are rejected.\n" +
 		"When you tell the user where a file is, repeat the path the tool reported back to you. Do NOT assemble " +
 		"one yourself out of a folder and a filename — where a file lands is the tool's decision and it tells you, " +

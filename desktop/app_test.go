@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/config"
 	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/safety"
+	"github.com/Mike0165115321/Aetox/internal/skill"
 	"github.com/Mike0165115321/Aetox/internal/turn"
 )
 
@@ -266,6 +268,50 @@ func TestUnfocusedRootAndOutputSubdirComposeToTheSessionFolder(t *testing.T) {
 	a.projectFocused = true
 	if sub := a.outputSubdir(); sub != "" {
 		t.Errorf("focused on a project, outputSubdir = %q, want empty", sub)
+	}
+}
+
+// Unfocused mode roams the machine; focusing a project restores the wall.
+// End-to-end through applyConfig because OpenSandbox rides the bootstrap —
+// a regression in the wiring, not just in resolveSandboxPath, must fail this.
+func TestUnfocusedEngineRoamsFocusedEngineStaysWalled(t *testing.T) {
+	isolateUserDirs(t)
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "stray.pdf"), []byte("%PDF"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	listOutside := func(a *App) (skill.Output, error) {
+		t.Helper()
+		s, ok := a.registry.Get("list")
+		if !ok {
+			t.Fatal("no list skill in the registry")
+		}
+		tool, ok := s.(interface {
+			ExecuteTool(context.Context, map[string]any) (skill.Output, error)
+		})
+		if !ok {
+			t.Fatal("list skill lost ExecuteTool")
+		}
+		return tool.ExecuteTool(context.Background(), map[string]any{"path": outside})
+	}
+
+	a := &App{} // zero value: projectFocused=false, the unfocused startup state
+	a.applyConfig(config.Config{
+		SandboxRoot:   t.TempDir(),
+		ModelProvider: "aetox",
+		ModelName:     "aetox-grid",
+		ApprovalMode:  string(safety.ApprovalFullAccess),
+	})
+	out, err := listOutside(a)
+	if err != nil || !strings.Contains(out.Content, "stray.pdf") {
+		t.Fatalf("unfocused engine could not list an outside folder: err=%v content=%q", err, out.Content)
+	}
+
+	a.projectFocused = true
+	a.applyConfig(a.cfg)
+	if _, err := listOutside(a); err == nil {
+		t.Fatal("focused engine listed a folder outside the project")
 	}
 }
 

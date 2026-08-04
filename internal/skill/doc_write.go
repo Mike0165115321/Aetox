@@ -91,12 +91,13 @@ func (*docWriteSkill) ToolDefinition() model.ToolDefinition {
 		Type: "function",
 		Function: model.ToolFunction{
 			Name: "doc_write",
-			Description: "Create a real Word document (.docx) that opens in Word, Google Docs and LibreOffice. " +
+			// Capability only, no when-to-pick-me language and no routing to
+			// sibling tools (owner, 2026-08-04) — the registry already lists
+			// every option, and which one answers the request is the model's call.
+			Description: "Create a Word file (.docx) — opens in Word, Google Docs and LibreOffice. " +
 				"Build it as an ordered list of blocks — headings become real headings that show up in the navigation pane, " +
 				"and a table is columns plus rows rather than text you have lined up by hand. " +
-				"Use this instead of writing Markdown whenever the user wants a document, report, memo or letter — " +
-				"the result reports where the file actually landed. " +
-				"For a spreadsheet use sheet_write; for slides use slides_write.",
+				"The result reports where the file actually landed.",
 			Parameters: payload,
 		},
 	}

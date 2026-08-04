@@ -97,11 +97,14 @@ func (*sheetWriteSkill) ToolDefinition() model.ToolDefinition {
 			// decides whether the file is useful — a column of amounts sent as
 			// "฿1,234.50" arrives as text, SUM returns 0, and the export is
 			// worthless for the accounting job it was made for.
-			Description: "Create a real Excel workbook (.xlsx) that opens in Excel, LibreOffice and Google Sheets. " +
+			// Capability only, no when-to-pick-me language (owner, 2026-08-04).
+			// The typing rules stay: they are how to hold the tool, and getting
+			// them wrong silently produces a workbook whose SUM returns 0.
+			Description: "Create an Excel file (.xlsx) — opens in Excel, LibreOffice and Google Sheets. " +
 				"Send each value with its natural JSON type: a number as a bare number (1234.5, not \"฿1,234.50\") so it can be summed, " +
 				"and a date as an ISO string (\"2026-08-03\" or \"2026-08-03 14:30\") so it becomes a real date. " +
 				"Anything else stays text, which is what identifiers like \"0012\" need. " +
-				"Use this instead of writing a CSV whenever the user wants a spreadsheet — the result reports where the file actually landed.",
+				"The result reports where the file actually landed.",
 			Parameters: payload,
 		},
 	}

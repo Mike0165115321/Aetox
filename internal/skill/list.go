@@ -116,7 +116,19 @@ func resolveSandboxPath(root string, requestPath string) (string, error) {
 		requestPath = "."
 	}
 	if filepath.IsAbs(requestPath) {
-		return "", fmt.Errorf("absolute path is not allowed")
+		// An open root (unfocused desktop mode, see sandbox_open.go) accepts
+		// absolute paths anywhere on the machine except the credential stores.
+		if !sandboxIsOpen(safeRoot) {
+			return "", fmt.Errorf("absolute path is not allowed")
+		}
+		safeTarget, err := filepath.Abs(filepath.Clean(requestPath))
+		if err != nil {
+			return "", err
+		}
+		if err := refuseCredentialStore(evalExistingSymlinks(safeTarget)); err != nil {
+			return "", err
+		}
+		return safeTarget, nil
 	}
 
 	candidate := filepath.Join(safeRoot, requestPath)
@@ -145,6 +157,14 @@ func resolveSandboxPath(root string, requestPath string) (string, error) {
 	// grep and glob's walk base, delete's are-you-deleting-the-root guard); they
 	// were paying two symlink walks to be told yes. 2.51ms → 1.6µs.
 	if safeTarget == safeRoot {
+		return safeTarget, nil
+	}
+	// A relative path that climbs out ("../Documents/x") gets the same open-
+	// root treatment as an absolute one: allowed, minus the credential stores.
+	if sandboxIsOpen(safeRoot) {
+		if err := refuseCredentialStore(evalExistingSymlinks(safeTarget)); err != nil {
+			return "", err
+		}
 		return safeTarget, nil
 	}
 	if !withinRoot(evalExistingSymlinks(safeTarget), resolvedRoot(safeRoot)) {

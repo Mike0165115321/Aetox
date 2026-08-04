@@ -59,7 +59,7 @@ func TestLiveUnfocusedChatWritesReadsAndReportsWhereItLanded(t *testing.T) {
 		Model:    "deepseek-v4-flash",
 		// The real thing, not a test string: if the prompt stops telling the
 		// model to repeat reported paths, this test is where it shows.
-		SystemPrompt: prompt.Build(prompt.SurfaceDesktop, root),
+		SystemPrompt: prompt.Build(prompt.SurfaceDesktop, root, false),
 		MaxToolCalls: 12, // nobody is watching this loop; the app's brakes are a human
 	})
 

@@ -729,6 +729,18 @@ func (a *App) ReadImageDataURL(relPath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// A data: URL costs about 4/3 its file size as a JavaScript string that then
+	// lives in the DOM. Attachments are already capped on the way in
+	// (SaveChatImage), but the workbench opens whatever image is dropped on it,
+	// and a 200MB scan would take the webview down rather than show anything.
+	info, err := os.Stat(full)
+	if err != nil {
+		return "", err
+	}
+	const maxImageBytes = 20 << 20
+	if info.Size() > maxImageBytes {
+		return "", fmt.Errorf("รูปใหญ่เกินไปสำหรับการแสดงตัวอย่าง (%d MB, สูงสุด %d MB)", info.Size()>>20, maxImageBytes>>20)
+	}
 	data, err := os.ReadFile(full)
 	if err != nil {
 		return "", err
@@ -1056,20 +1068,25 @@ func (a *App) outputSubdir() string {
 	return "output/" + a.sessionID
 }
 
-// unfocusedRoot is the sandbox root with no project open: <home>/aetox, not
+// unfocusedRoot is the working root with no project open: <home>/aetox, not
 // the home directory itself.
 //
-// Home was the original default, and it made the sandbox everything the user
-// owns — .ssh, .aws, AppData with its browser token stores, Documents — all of
-// it readable by read/grep/glob on every turn and writable without a prompt,
-// since unfocused runs full-access. What made that indefensible rather than
-// merely broad is that web_fetch, web_search and browser_read now sit in the
-// same tool loop: a page can carry an instruction in, and the same loop can
-// carry an answer back out. Reaching anything outside this folder is now a
-// deliberate act — open it as a project, or attach the file.
+// The story of this folder is two decisions, in opposite directions. Home was
+// the original root, until 2026-07-26 (§19.1) narrowed everything to this
+// folder: unfocused runs full-access, web_fetch/browser sit in the same tool
+// loop, so a fetched page could order a read of .ssh/.aws and carry it out —
+// with no prompt in the way. Then 2026-08-04 reopened the machine on purpose
+// (OpenSandbox in applyConfig): "no project" should mean the machine is the
+// workspace, not this one folder — being unable to find a PDF the user knows
+// is on disk made the mode useless. What did NOT reopen is the part the
+// 07-26 change was actually protecting: the credential stores stay refused
+// inside resolveSandboxPath itself (skill/sandbox_open.go), and new files
+// still land in output/<session> (outputSubdir) so everything a chat produced
+// stays inspectable in one place.
 //
-// It is the parent of the folder writes already landed in (see outputSubdir),
-// so nothing on disk moved when this changed.
+// This folder remains the working root — relative paths resolve here, and it
+// is the parent of the output folders — so nothing on disk moved when either
+// decision landed.
 //
 // Empty when home cannot be resolved, which config.Load turns into cwd — the
 // same fallback as before.
@@ -1083,6 +1100,10 @@ func unfocusedRoot() string {
 
 // focusNone re-roots the engine at unfocusedRoot and marks the app as not
 // focused on any project.
+//
+// The flag flips BEFORE reload in all three focus switches: applyConfig reads
+// it to decide OpenSandbox, so setting it after would build one engine in the
+// outgoing mode on every switch.
 func (a *App) focusNone() {
 	root := unfocusedRoot()
 	if root != "" {
@@ -1090,8 +1111,8 @@ func (a *App) focusNone() {
 		// install — before the first write has created it.
 		_ = os.MkdirAll(root, 0o755)
 	}
-	a.reload(config.ConfigOptions{RootPath: root, ApprovalMode: string(safety.ApprovalFullAccess)})
 	a.projectFocused = false
+	a.reload(config.ConfigOptions{RootPath: root, ApprovalMode: string(safety.ApprovalFullAccess)})
 }
 
 // TurnReply is one finished turn as the UI receives it: the answer, and the
@@ -1486,8 +1507,8 @@ func (a *App) OpenProjectFolder() (ProjectStatus, error) {
 	}
 	// Sessions are per project — turns are already persisted incrementally, so
 	// just re-point the engine and start a fresh session for the new project.
-	a.reload(config.ConfigOptions{RootPath: dir, ApprovalMode: string(safety.ApprovalFullAccess)})
 	a.projectFocused = true
+	a.reload(config.ConfigOptions{RootPath: dir, ApprovalMode: string(safety.ApprovalFullAccess)})
 	a.startNewSession()
 	a.touchProject(a.cfg.SandboxRoot)
 	return a.currentProjectStatus(), nil
@@ -1500,8 +1521,8 @@ func (a *App) OpenProjectPath(root string) (ProjectStatus, error) {
 	if root == "" {
 		return ProjectStatus{}, fmt.Errorf("empty project path")
 	}
-	a.reload(config.ConfigOptions{RootPath: root, ApprovalMode: string(safety.ApprovalFullAccess)})
 	a.projectFocused = true
+	a.reload(config.ConfigOptions{RootPath: root, ApprovalMode: string(safety.ApprovalFullAccess)})
 	a.startNewSession()
 	a.touchProject(a.cfg.SandboxRoot)
 	return a.currentProjectStatus(), nil
@@ -1986,6 +2007,9 @@ func (a *App) applyConfig(cfg config.Config) {
 		Manager:          a.mcp,
 		ExtraSkills:      workbenchTools,
 		OutputSubdir:     a.outputSubdir,
+		// Unfocused mode roams the machine (minus credential stores); a
+		// focused project keeps the closed sandbox. See unfocusedRoot.
+		OpenSandbox:      !a.projectFocused,
 		OnToolAction:     a.recordToolAction,
 		OnToolRun:        a.recordToolRun,
 		OnStatus:         a.emitAgentStatus,

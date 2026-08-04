@@ -64,6 +64,13 @@ type Options struct {
 	// move it while running. Nil writes to the sandbox root.
 	OutputSubdir func() string
 
+	// OpenSandbox lifts the file-tool wall around cfg.SandboxRoot: any path on
+	// the machine works except the credential stores (skill/sandbox_open.go),
+	// and the system prompt says so. The desktop passes true exactly when no
+	// project is focused; everything else leaves it false and keeps the
+	// closed sandbox.
+	OpenSandbox bool
+
 	// Digest overrides the page summarizer web_fetch uses. Nil means
 	// Digester(provider, cfg.ModelName) — the normal case. Present so a test
 	// can pin it without standing up a provider.
@@ -152,7 +159,7 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 	agent := cognitive.NewAgent(cognitive.AgentConfig{
 		Provider:     bootstrapResult.Provider,
 		Model:        cfg.ModelName,
-		SystemPrompt: prompt.Build(surface, cfg.SandboxRoot),
+		SystemPrompt: prompt.Build(surface, cfg.SandboxRoot, opts.OpenSandbox),
 		// Scale the retained-history budget to the model's real window
 		// (0 → NewContext's 128k-char default). At 80% of this budget the
 		// agent summarizes older turns into one message (cognitive
@@ -168,6 +175,7 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 	registry := skill.NewDefaultRegistry(skill.RegistryOptions{
 		SandboxRoot:  cfg.SandboxRoot,
 		OutputSubdir: opts.OutputSubdir,
+		OpenSandbox:  opts.OpenSandbox,
 		// Empty ModelPath keeps the original behaviour — auto-discover — so a
 		// user who never opens the picker sees no change.
 		Speech: stt.Options{ModelPath: cfg.SpeechModelPath},

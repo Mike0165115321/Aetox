@@ -49,6 +49,12 @@ type RegistryOptions struct {
 	// the caller to run image_ocr on it. False is the safe value and the one
 	// every caller that does not know should pass (ARCHITECTURE.md §51).
 	Vision bool
+	// OpenSandbox lifts the sandbox wall for this root: file tools accept
+	// absolute paths and paths that climb out, everywhere on the machine
+	// except the credential stores (see sandbox_open.go). The desktop passes
+	// true exactly when no project is focused; false — the default and the
+	// only value the CLI ever passes — keeps the closed sandbox unchanged.
+	OpenSandbox bool
 }
 
 func NewDefaultRegistry(opts RegistryOptions) *Registry {
@@ -61,6 +67,10 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 	if registry == nil {
 		return
 	}
+	// Recorded on every build, not just when true: re-focusing a project after
+	// an unfocused session must close the root again, in the same call that
+	// re-roots the engine.
+	setSandboxOpen(opts.SandboxRoot, opts.OpenSandbox)
 	// One registry of background commands, shared by the three tools that see
 	// them: shell starts, shell_output reads, shell_kill ends.
 	shells := newBackgroundShells()
