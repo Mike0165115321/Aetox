@@ -20,7 +20,7 @@ package version
 // `go run` are how this app is actually run all day, and a stamp leaves both
 // of them reporting an empty or "dev" version — i.e. the update check would be
 // dark exactly where it is being developed.
-const Current = "0.8.8"
+const Current = "0.8.9"
 
 // Credit is printed by both --version paths and shown in Settings → About. A
 // rebranded fork has to delete this line by hand rather than just swap a logo,
