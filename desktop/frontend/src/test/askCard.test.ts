@@ -100,6 +100,26 @@ describe('the question card', () => {
     expect(AnswerUserQuestion).toHaveBeenCalledWith('การ์ดต้อนรับ')
   })
 
+  // Its first version restated its own padding, radius, surface and border, and
+  // landed under the list with a margin of its own — so it read as a different
+  // component pasted underneath. It is one more way to answer the same
+  // question, so it takes the option rows' metrics by wearing their class, and
+  // sits inside the same list.
+  it('is the last row of the option list, not a widget under it', async () => {
+    cockpit.ask = ask()
+    const { container } = render(Chat, asking)
+    await tick()
+
+    const own = container.querySelector('.ask-own')!
+    expect(own.classList.contains('ask-opt')).toBe(true)
+    expect(own.parentElement?.classList.contains('ask-opts')).toBe(true)
+    // The same key slot the lettered options carry, so the rows line up.
+    expect(own.querySelector('.ask-key')).toBeTruthy()
+    // It is the last row, after every option.
+    const rows = Array.from(container.querySelectorAll('.ask-opts > *'))
+    expect(rows[rows.length - 1]).toBe(own)
+  })
+
   // A draft left over from the previous question is an answer to something
   // that is no longer being asked.
   it('starts empty when a new question arrives', async () => {

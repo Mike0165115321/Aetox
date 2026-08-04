@@ -2,6 +2,7 @@ package skill
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -222,5 +223,39 @@ func TestSkillViewMissingFileSaysWhereToLook(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "not in this skill") {
 		t.Errorf("error should point at the skill body: %v", err)
+	}
+}
+
+// A model handed a listing of `consumer-props.md` asked for
+// `references/consumer-props.md` instead — following the example that used to
+// end this parameter's description ("e.g. references/formats.md") rather than
+// the data it had just received. An example in a tool description is not an
+// illustration, it is an instruction, and it outranks anything that arrives
+// later in the conversation. Same family as the word-trigger rule in
+// defaults_test.go: what a description says is routing, not documentation.
+func TestSkillViewDoesNotInventAPathShapeForTheModelToCopy(t *testing.T) {
+	def := (&skillViewSkill{}).ToolDefinition()
+	var schema struct {
+		Properties map[string]struct {
+			Description string `json:"description"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(def.Function.Parameters, &schema); err != nil {
+		t.Fatalf("parameters do not parse: %v", err)
+	}
+	desc := schema.Properties["path"].Description
+	if desc == "" {
+		t.Fatal("the path parameter lost its description")
+	}
+	// Any concrete-looking path in here is a shape the model will reproduce.
+	for _, invented := range []string{"references/", "scripts/", "assets/", "e.g.", ".md"} {
+		if strings.Contains(desc, invented) {
+			t.Errorf("path description carries %q, which a model will copy instead of reading the listing: %q",
+				invented, desc)
+		}
+	}
+	// It has to say where the real answer is instead.
+	if !strings.Contains(desc, "listed at the end of the skill body") {
+		t.Errorf("path description does not point at the listing: %q", desc)
 	}
 }

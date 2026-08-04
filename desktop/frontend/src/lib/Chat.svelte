@@ -1068,27 +1068,28 @@
                       <span class="ask-label">{opt}</span>
                     </button>
                   {/each}
+                  <!-- The free-text answer is the last row of the same list,
+                       not a second widget under it: it is one more way to
+                       answer the one question, so it carries the same metrics
+                       and the same key slot as the options it sits with.
+                       Answering here was always possible — but only through the
+                       composer at the far bottom of the window, which is why
+                       the card used to spend a line pointing away from itself. -->
+                  <form class="ask-opt ask-own" onsubmit={submitOwnAnswer}>
+                    <span class="ask-key"><Icon name="pencil" size={12} /></span>
+                    <input
+                      class="ask-own-input"
+                      bind:value={askDraft}
+                      placeholder={t('chat.askOwnPlaceholder')}
+                      aria-label={t('chat.askOwnPlaceholder')}
+                      use:focusOnMount
+                    />
+                    <button
+                      type="submit" class="ask-own-send"
+                      disabled={!askDraft.trim()} aria-label={t('chat.askOwnSend')}
+                    ><Icon name="sendHorizontal" size={14} /></button>
+                  </form>
                 </div>
-                <!-- The free-text answer belongs where the question is. It was
-                     always accepted — but only through the composer at the
-                     bottom of the window, which is a different place from the
-                     one the user is looking at, so the card had to spend a line
-                     explaining where to go. A field under the options needs no
-                     explaining, and the composer keeps working for anyone who
-                     was already typing there. -->
-                <form class="ask-own" onsubmit={submitOwnAnswer}>
-                  <input
-                    class="ask-own-input"
-                    bind:value={askDraft}
-                    placeholder={t('chat.askOwnPlaceholder')}
-                    aria-label={t('chat.askOwnPlaceholder')}
-                    use:focusOnMount
-                  />
-                  <button
-                    type="submit" class="ask-own-send"
-                    disabled={!askDraft.trim()} aria-label={t('chat.askOwnSend')}
-                  ><Icon name="sendHorizontal" size={14} /></button>
-                </form>
               </div>
             {/if}
           </div>

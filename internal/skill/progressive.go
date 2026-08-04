@@ -221,9 +221,17 @@ func (s *skillViewSkill) ToolDefinition() model.ToolDefinition {
 			// them, which is the whole point of the three levels: a skill can be
 			// as long as it needs to be without any of that length reaching the
 			// context of a session that did not use it.
+			// No example path here, deliberately. The first version ended
+			// "e.g. references/formats.md" and a model followed that shape
+			// instead of the listing it had just been handed — asking for
+			// references/consumer-props.md when the skill's own file was
+			// consumer-props.md, flat. An example in a description is not an
+			// illustration, it is an instruction, and it outranks data that
+			// arrives later in the conversation. Name where the truth lives
+			// instead.
 			"path": map[string]any{
 				"type":        "string",
-				"description": "Optional: a supporting file inside the skill (as listed at the end of the skill body), e.g. references/formats.md",
+				"description": "Optional: one of the files listed at the end of the skill body, spelled exactly as it appears there",
 			},
 		},
 		"required":             []string{"name"},

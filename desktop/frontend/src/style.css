@@ -957,22 +957,32 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 }
 .ask-opt:hover .ask-key { border-color:var(--accent); color:var(--accent); }
 .ask-label { min-width:0; }
-/* The free-text answer, in the card rather than in the composer. It replaced a
-   line of hint text that existed only to point somewhere else on screen. */
-.ask-own { display:flex; align-items:center; gap:6px; margin-top:10px; }
+/* The free-text answer, in the card rather than in the composer. It carries
+   .ask-opt as well, so every metric — padding, border, radius, surface, the
+   22px key slot — comes from the option rows rather than being restated here.
+   It is one more way to answer the same question, and a second set of values
+   would have made it read as a different component pasted underneath, which is
+   exactly how the first version looked.
+
+   The input itself is transparent and borderless: the row is the control, so
+   the field must not draw a second one inside it. Focus lands on the row and
+   uses the same accent the options take on hover — one vocabulary for "this is
+   the one you are on". */
+.ask-own { padding:4px 10px; }
+.ask-own:focus-within { border-color:var(--accent); background:var(--surface-row-hover); }
+.ask-own:focus-within .ask-key { border-color:var(--accent); color:var(--accent); }
 .ask-own-input {
-  flex:1; min-width:0; padding:7px 10px; font-size:var(--fs-sm);
-  color:var(--text-primary); background:var(--surface-app);
-  border:1px solid var(--border-default); border-radius:var(--r-sm);
+  flex:1; min-width:0; padding:6px 0; font-size:var(--fs-sm);
+  color:var(--text-primary); background:none; border:none;
 }
-.ask-own-input:focus { outline:none; border-color:var(--accent); }
-.ask-own-input::placeholder { color:var(--text-dim); }
+.ask-own-input:focus { outline:none; }
+.ask-own-input::placeholder { color:var(--text-muted); }
 .ask-own-send {
-  flex:none; display:grid; place-items:center; width:30px; height:30px;
-  color:var(--text-dim); border:1px solid var(--border-default); border-radius:var(--r-sm);
+  flex:none; display:grid; place-items:center; width:24px; height:24px;
+  color:var(--text-muted); border-radius:var(--r-sm);
 }
-.ask-own-send:hover:not(:disabled) { color:var(--accent); border-color:var(--accent); }
-.ask-own-send:disabled { opacity:.4; cursor:default; }
+.ask-own-send:hover:not(:disabled) { color:var(--accent); }
+.ask-own-send:disabled { opacity:.35; cursor:default; }
 
 /* todo_write: the model's live task checklist */
 .todo-panel { margin-top:8px; display:flex; flex-direction:column; gap:3px; }
