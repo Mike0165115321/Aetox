@@ -11,7 +11,9 @@
   import { t } from '../i18n.svelte'
   import Icon from '../Icon.svelte'
 
-  let { path, reason }: { path: string; reason: string } = $props()
+  // `name` carries the label when there is no path to derive one from: a file
+  // dropped on the desk that could not be brought in at all still names itself.
+  let { path, reason, name }: { path: string; reason: string; name?: string } = $props()
 
   let failure = $state('')
 
@@ -27,11 +29,15 @@
 
 <div class="pane-empty extfile">
   <span class="ic"><Icon name="fileText" size={28} /></span>
-  <p class="name">{path.split('/').pop() ?? path}</p>
-  <p class="why">{t('workbench.cannotPreview')}</p>
-  <button type="button" class="proj-add" onclick={open}>
-    <span class="ic"><Icon name="folderOpen" size={14} /></span> {t('workbench.openExternally')}
-  </button>
+  <p class="name">{path ? path.split('/').pop() ?? path : name ?? ''}</p>
+  <p class="why">{path ? t('workbench.cannotPreview') : t('workbench.dropFailed')}</p>
+  {#if path}
+    <!-- No path means the file never made it into the project, so there is
+         nothing here for the OS to open — the reason line is the whole answer. -->
+    <button type="button" class="proj-add" onclick={open}>
+      <span class="ic"><Icon name="folderOpen" size={14} /></span> {t('workbench.openExternally')}
+    </button>
+  {/if}
   {#if failure}
     <p class="why err">{t('workbench.openFileError', { err: failure })}</p>
   {:else}

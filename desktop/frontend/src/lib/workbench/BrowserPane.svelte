@@ -1,15 +1,14 @@
 <script lang="ts">
   import { onDestroy } from 'svelte'
-  import type { WorkbenchTab } from '../stores/workbench.svelte'
+  import { recordVisit, type WorkbenchTab } from '../stores/workbench.svelte'
   import { cockpit } from '../stores/cockpit.svelte'
   import {
     BrowserOpen, BrowserNavigate, BrowserSetBounds, BrowserSetVisible, BrowserClose, BrowserSetZoom,
   } from '../../../wailsjs/go/main/App'
   import { EventsOn } from '../../../wailsjs/runtime/runtime'
-  import { t } from '../i18n.svelte'
-  import Icon from '../Icon.svelte'
+  import BrowserStart from './BrowserStart.svelte'
 
-  let { tab, active, menuOpen }: { tab: WorkbenchTab; active: boolean; menuOpen: boolean } = $props()
+  let { tab, active, menuOpen, dragging }: { tab: WorkbenchTab; active: boolean; menuOpen: boolean; dragging: boolean } = $props()
 
   let host = $state<HTMLDivElement>()
   let opened = $state(false)
@@ -19,7 +18,12 @@
   // app's own webview no matter what the DOM does, so anything the app draws
   // over this pane is invisible until the window hides. That's the settings
   // overlay, and the workbench dropdowns (+ / ⋮) which open downward into it.
-  const visible = $derived(active && opened && !menuOpen && cockpit.activeView !== 'settings')
+  //
+  // `dragging` is the same problem one step further: while this window is up it
+  // also *swallows* the drag, since the pointer is over another window, so the
+  // workbench's drop target could never see a file dropped on a tab with a page
+  // open. It stands down for the length of the drag (Workbench.svelte).
+  const visible = $derived(active && opened && !menuOpen && !dragging && cockpit.activeView !== 'settings')
 
   // Device-size emulation without any emulation trickery: the tab IS a real
   // window, so shrink it to the device's aspect ratio (letterboxed in the pane,
@@ -93,6 +97,9 @@
     lastSent = meta.url
     tab.url = meta.url
     if (meta.title) tab.name = meta.title.length > 24 ? meta.title.slice(0, 24) + '…' : meta.title
+    // Every navigation that lands, whoever caused it — this is the only place
+    // that sees a link clicked inside a page.
+    recordVisit(meta.url, meta.title)
     // Re-glue bounds + z-order after every completed navigation: the app's own
     // WebView2 can composite above the tab's window right after it opens,
     // leaving the page loaded but invisible until something else forces
@@ -106,23 +113,15 @@
   })
 </script>
 
-{#snippet blank()}
-  <div class="insp-blank">
-    <span class="ic"><Icon name="globe" size={14} /></span>
-    <div class="insp-blank-title">{t('browserPane.startBrowsing')}</div>
-    <div class="insp-blank-sub">{t('browserPane.enterUrl')}</div>
-  </div>
-{/snippet}
-
 <div class="native-host" bind:this={host}>
   {#if tab.viewport}
     <!-- CSS letterboxes this to the same box layout() gives the native window,
          so picking a device preset is visible even before a page is loaded —
          otherwise an empty tab makes the whole menu look dead. -->
     <div class="device-frame" style="--dw:{tab.viewport.w}; --dh:{tab.viewport.h}">
-      {#if !tab.url}{@render blank()}{/if}
+      {#if !tab.url}<BrowserStart {tab} />{/if}
     </div>
   {:else if !tab.url}
-    {@render blank()}
+    <BrowserStart {tab} />
   {/if}
 </div>

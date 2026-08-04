@@ -318,6 +318,10 @@ export function ReadWorkbook(arg1) {
   return window['go']['main']['App']['ReadWorkbook'](arg1);
 }
 
+export function RecentAgentPages(arg1) {
+  return window['go']['main']['App']['RecentAgentPages'](arg1);
+}
+
 export function RecentProjects() {
   return window['go']['main']['App']['RecentProjects']();
 }

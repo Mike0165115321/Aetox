@@ -95,6 +95,8 @@ export interface ChatMessage {
   imageDataUrl?: string
   /** Label of a dragged-in file/browser tab, for a small chip on the bubble (content itself is inlined into text). */
   contextLabel?: string
+  /** First lines of that attached file, for the card in the bubble. */
+  contextPreview?: string
   /** A user-attached video/audio/document, for the same chip. Only the path
    * goes to the model, so without this the bubble showed nothing at all. */
   attachLabel?: string

@@ -12,10 +12,10 @@
   } from '../../wailsjs/go/main/App'
   import { t, i18n } from './i18n.svelte'
   import { renderMarkdown } from './markdown'
-  import { openUrlInWorkbench, openFileTab } from './stores/workbench.svelte'
+  import { openUrlInWorkbench, openFileTab, setTabDragPayload, TAB_DRAG_MIME } from './stores/workbench.svelte'
   import {
     cockpit, attachImageFromPath, clearPendingImage, attachTabContext, clearPendingContext,
-    attachFileFromPath, clearPendingFile, fileKind,
+    attachFileFromPath, clearPendingFile, fileKind, attachmentPreview,
     openProject, openFolder, clearProjectFocus, cancelTurn, answerAsk, queuedMessages,
     retryActiveProvider, undoLastTurn, switchApprovalMode,
     startTaskChip, dismissTaskChip,
@@ -404,11 +404,7 @@
   // the composer both read this MIME type (ARCHITECTURE.md §80), so the card
   // can be aimed at either without a second button on a card this small.
   function onFileCardDragStart(e: DragEvent, path: string) {
-    e.dataTransfer?.setData(
-      'application/x-aetox-tab',
-      JSON.stringify({ kind: 'file', ref: path, label: path.split('/').pop() ?? path }),
-    )
-    e.dataTransfer!.effectAllowed = 'copy'
+    setTabDragPayload(e, 'file', path, path.split('/').pop() ?? path)
   }
 
   // Editing a question the agent already acted on has the same problem, plus a
@@ -485,12 +481,12 @@
   // ondragstart) drops here and is staged as pending context.
   let dragOver = $state(false)
   function onComposerDragOver(e: DragEvent) {
-    if (!e.dataTransfer?.types.includes('application/x-aetox-tab')) return
+    if (!e.dataTransfer?.types.includes(TAB_DRAG_MIME)) return
     e.preventDefault()
     dragOver = true
   }
   async function onComposerDrop(e: DragEvent) {
-    const raw = e.dataTransfer?.getData('application/x-aetox-tab')
+    const raw = e.dataTransfer?.getData(TAB_DRAG_MIME)
     dragOver = false
     if (!raw) return
     e.preventDefault()
@@ -746,13 +742,23 @@
               <img src={m.imageDataUrl} alt="" class="msg-image" />
             {/if}
             {#if m.attachLabel}
-              <div class="attach-chip">
-                <span class="ic">{fileIcon(m.attachKind)}</span>
-                <span class="attach-name">{m.attachLabel}</span>
+              <!-- No body: a clip or a PDF was handed over as a path, so there
+                   is nothing to show without opening it. -->
+              <div class="attach-card">
+                <div class="attach-head">
+                  <span class="ic"><Icon name={fileIcon(m.attachKind)} size={13} /></span>
+                  <span class="attach-name">{m.attachLabel}</span>
+                </div>
               </div>
             {/if}
             {#if m.contextLabel}
-              <div class="attach-chip"><span class="ic"><Icon name="paperclip" size={13} /></span> <span class="attach-name">{m.contextLabel}</span></div>
+              <div class="attach-card">
+                <div class="attach-head">
+                  <span class="ic"><Icon name="paperclip" size={13} /></span>
+                  <span class="attach-name">{m.contextLabel}</span>
+                </div>
+                {#if m.contextPreview}<pre class="attach-body">{m.contextPreview}</pre>{/if}
+              </div>
             {/if}
             {#if m.reasoning || m.steps?.length}
               <div class="meta-row">
@@ -939,19 +945,29 @@
             </div>
             {#if reasoningText || doneOwn.length || doneSubs.length}
               <div class="meta-row">
+                <!-- The same three marks the finished bubble's toggles carry
+                     (brain / wrench / bot). These are the identical rows one
+                     moment earlier, and without the marks the row visibly
+                     changed shape the instant the turn ended. -->
                 {#if reasoningText}
                   <button class="reasoning-toggle" onclick={() => (livePanel = livePanel === 'think' ? '' : 'think')}>
-                    <span class="chev"><Icon name={livePanel === 'think' ? 'chevronDown' : 'chevronRight'} size={12} /></span> {t('chat.thinking')}
+                    <span class="chev"><Icon name={livePanel === 'think' ? 'chevronDown' : 'chevronRight'} size={12} /></span>
+                    <span class="ic"><Icon name="brain" size={12} /></span>
+                    {t('chat.thinking')}
                   </button>
                 {/if}
                 {#if doneOwn.length}
                   <button class="reasoning-toggle" onclick={() => (livePanel = livePanel === 'tools' ? '' : 'tools')}>
-                    <span class="chev"><Icon name={livePanel === 'tools' ? 'chevronDown' : 'chevronRight'} size={12} /></span> {toolsLabel(liveDone)}
+                    <span class="chev"><Icon name={livePanel === 'tools' ? 'chevronDown' : 'chevronRight'} size={12} /></span>
+                    <span class="ic"><Icon name="wrench" size={12} /></span>
+                    {toolsLabel(liveDone)}
                   </button>
                 {/if}
                 {#if doneSubs.length}
                   <button class="reasoning-toggle" onclick={() => (livePanel = livePanel === 'subs' ? '' : 'subs')}>
-                    <span class="chev"><Icon name={livePanel === 'subs' ? 'chevronDown' : 'chevronRight'} size={12} /></span> {subagentsLabel(liveDone)}
+                    <span class="chev"><Icon name={livePanel === 'subs' ? 'chevronDown' : 'chevronRight'} size={12} /></span>
+                    <span class="ic"><Icon name="bot" size={12} /></span>
+                    {subagentsLabel(liveDone)}
                   </button>
                 {/if}
               </div>
@@ -1067,27 +1083,6 @@
         <button class="ctrl" onclick={submitApiKey}>{t('chat.saveKey')}</button>
       </div>
     {/if}
-    {#if cockpit.pendingImage}
-      <div class="attach-chip">
-        <img src={cockpit.pendingImage.dataUrl} alt="" class="attach-thumb" />
-        <span class="attach-name">{cockpit.pendingImage.relPath.split('/').pop()}</span>
-        <button class="attach-remove" aria-label={t('chat.removeAttachment')} onclick={clearPendingImage}><Icon name="x" size={12} /></button>
-      </div>
-    {/if}
-    {#if cockpit.pendingFile}
-      <div class="attach-chip">
-        <span class="ic">{fileIcon(cockpit.pendingFile.kind)}</span>
-        <span class="attach-name">{cockpit.pendingFile.label}</span>
-        <button class="attach-remove" aria-label={t('chat.removeAttachment')} onclick={clearPendingFile}><Icon name="x" size={12} /></button>
-      </div>
-    {/if}
-    {#if cockpit.pendingContext}
-      <div class="attach-chip">
-        <span class="ic"><Icon name={cockpit.pendingContext.kind === 'file' ? 'fileText' : 'globe'} size={13} /></span>
-        <span class="attach-name">{cockpit.pendingContext.label}</span>
-        <button class="attach-remove" aria-label={t('chat.removeAttachment')} onclick={clearPendingContext}><Icon name="x" size={12} /></button>
-      </div>
-    {/if}
     <div class="focus-row">
       <div class="focus-pick">
         {#if focusMenuOpen}
@@ -1128,6 +1123,41 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <!-- drag/drop target for a workbench tab; the textarea/buttons inside remain the real interactive elements -->
     <div class="box" class:drag-over={dragOver} ondragover={onComposerDragOver} ondragleave={() => (dragOver = false)} ondrop={onComposerDrop}>
+      <!-- Inside the box, above the text, the way every chat app does it: what
+           is attached is part of the message being written, not a banner
+           floating above the thing you are typing in. -->
+      {#if cockpit.pendingImage}
+        <div class="attach-card">
+          <div class="attach-head">
+            <img src={cockpit.pendingImage.dataUrl} alt="" class="attach-thumb" />
+            <span class="attach-name">{cockpit.pendingImage.relPath.split('/').pop()}</span>
+            <button class="attach-remove" aria-label={t('chat.removeAttachment')} onclick={clearPendingImage}><Icon name="x" size={12} /></button>
+          </div>
+        </div>
+      {/if}
+      {#if cockpit.pendingFile}
+        <div class="attach-card">
+          <div class="attach-head">
+            <span class="ic"><Icon name={fileIcon(cockpit.pendingFile.kind)} size={13} /></span>
+            <span class="attach-name">{cockpit.pendingFile.label}</span>
+            <button class="attach-remove" aria-label={t('chat.removeAttachment')} onclick={clearPendingFile}><Icon name="x" size={12} /></button>
+          </div>
+        </div>
+      {/if}
+      {#if cockpit.pendingContext}
+        {@const preview = attachmentPreview(cockpit.pendingContext.content)}
+        <div class="attach-card">
+          <div class="attach-head">
+            <span class="ic"><Icon name={cockpit.pendingContext.kind === 'file' ? 'fileText' : 'globe'} size={13} /></span>
+            <span class="attach-name">{cockpit.pendingContext.label}</span>
+            <button class="attach-remove" aria-label={t('chat.removeAttachment')} onclick={clearPendingContext}><Icon name="x" size={12} /></button>
+          </div>
+          <!-- The point of the card: what is actually going to the model,
+               before it goes. An empty preview (a blank file) leaves the head
+               alone rather than drawing an empty box under it. -->
+          {#if preview}<pre class="attach-body">{preview}</pre>{/if}
+        </div>
+      {/if}
       <textarea
         class="input"
         rows="1"

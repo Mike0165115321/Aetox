@@ -700,7 +700,7 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   color:var(--text-secondary); font-size:var(--fs-md); box-shadow:0 4px 12px rgba(0,0,0,.28);
 }
 .scroll-bottom:hover { color:var(--text-primary); border-color:var(--border-strong); }
-.composer .box, .project-chips, .api-key-banner, .attach-chip, .focus-row { max-width:1040px; margin-left:auto; margin-right:auto; }
+.composer .box, .project-chips, .api-key-banner, .focus-row { max-width:1040px; margin-left:auto; margin-right:auto; }
 /* What the AI is focused on right now — project + branch, mirrored above the input. */
 .focus-row { display:flex; align-items:center; gap:6px; margin-bottom:7px; }
 .focus-chip {
@@ -736,9 +736,35 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .project-chips { display:flex; gap:6px; margin-bottom:8px; }
 .api-key-banner { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
 .api-key-banner .ctrl:first-child { flex:1; }
-.attach-chip {
-  display:flex; align-items:center; gap:8px; margin-bottom:10px; padding:6px 10px;
-  border:1px solid var(--border-default); border-radius:var(--r-md); background:var(--surface-raised); width:fit-content;
+/* One shape for every attachment, in the composer and in the sent bubble: a
+   head that names the file, and — when there is content in hand — a body
+   showing the first lines of it. An attached image had a real preview while the
+   file beside it was a bare pill, which made the two read as different kinds of
+   thing when they are the same act. A file with nothing to preview (a clip, a
+   PDF, a path handed over rather than read) renders the head alone, which is
+   exactly the old pill. */
+.attach-card {
+  width:fit-content; max-width:100%;
+  border:1px solid var(--border-default); border-radius:var(--r-md);
+  /* One step back from --surface-raised, which is what both of its parents are
+     (the composer box and a user bubble). On the same surface the card would be
+     an outline floating on its background rather than something sitting in it —
+     and --surface-panel is a step away from raised in every theme, darker on
+     the dark ones and less white on the light ones. */
+  background:var(--surface-panel); overflow:hidden;
+}
+/* In a sent bubble the card needs its own gap from the text below it. In the
+   composer, .box is a flex column with gap:10px and adding to that would double
+   the space between the attachment and what you are typing. */
+.bubble .attach-card { margin-bottom:8px; }
+.attach-head { display:flex; align-items:center; gap:8px; padding:6px 10px; }
+.attach-body {
+  margin:0; padding:8px 10px; border-top:1px solid var(--border-subtle);
+  background:var(--surface-code); color:var(--text-muted);
+  font-family:var(--mono); font-size:var(--fs-xs); line-height:1.55;
+  /* Clipped, not wrapped: a preview that reflowed a long line into six would
+     take more room than the message it is attached to. */
+  max-width:min(420px, 100%); overflow:hidden; white-space:pre;
 }
 .attach-thumb { width:32px; height:32px; border-radius:var(--r-sm); object-fit:cover; }
 .attach-name { color:var(--text-secondary); font-size:var(--fs-sm); max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -951,15 +977,17 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   position:absolute; inset:0; margin:auto; aspect-ratio:var(--dw) / var(--dh);
   width:calc(var(--dw) * 1px); max-width:100%; max-height:100%;
   border:1px solid var(--border-default); border-radius:var(--r-2xs);
+  /* The start page renders inside this frame when the tab has no URL yet;
+     clipping keeps it inside the rounded outline at large type scales. */
+  overflow:hidden;
 }
 .insp-body { flex:1; position:relative; overflow:hidden; }
 .insp-slot { position:absolute; inset:0; overflow-y:auto; }
 .insp-start { height:100%; display:flex; flex-direction:column; justify-content:center; gap:6px; padding:24px; }
 .insp-start .plus-menu-item { padding:14px 16px; font-size:var(--fs-lg); border:1px solid var(--border-subtle); border-radius:var(--r-md); }
-.insp-blank { height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; padding:0 16px; }
-.insp-blank .ic { font-size:var(--fs-3xl); opacity:.6; }
-.insp-blank-title { color:var(--text-primary); font-weight:600; font-size:var(--fs-md); max-width:100%; text-align:center; }
-.insp-blank-sub { color:var(--text-dim); font-size:var(--fs-xs); max-width:100%; text-align:center; }
+/* .insp-blank* lived here for the browser tab's two-line empty state, which
+   BrowserStart.svelte replaced (ARCHITECTURE.md §81) and which owns its own
+   scoped styles. Nothing else ever used them. */
 .insp-scroll { padding:14px; display:flex; flex-direction:column; gap:16px; }
 .panel { border:1px solid var(--border-subtle); border-radius:var(--r-md); background:var(--surface-panel); overflow:hidden; }
 .panel > .p-h { display:flex; align-items:center; justify-content:space-between; padding:10px 12px; }

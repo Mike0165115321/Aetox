@@ -60,6 +60,22 @@ describe('opening a workbook', () => {
     expect(ReadWorkbook).not.toHaveBeenCalled()
     expect(workbench.tabs[0].content).toBe('# notes')
   })
+
+  // Routing a deck through the text path made the card blame whichever gate
+  // fired first — "file too large to preview" for a 1.5MB pptx — when the real
+  // reason is that slides are never previewed at any size. The card must tell
+  // the truth, and neither reader should even be asked.
+  it('routes decks and documents straight to the open-externally card', async () => {
+    for (const name of ['xiaomi-sales-deck.pptx', 'สัญญาเช่า.docx']) {
+      await openFileTab(name)
+      const tab = workbench.tabs.find((t) => t.id === `file-${name}`)!
+      expect(tab.unreadable).toBeTruthy()
+      expect(tab.unreadable).not.toContain('too large')
+      expect(tab.content).toBeUndefined()
+    }
+    expect(ReadFile).not.toHaveBeenCalled()
+    expect(ReadWorkbook).not.toHaveBeenCalled()
+  })
 })
 
 describe('the grid', () => {
@@ -68,6 +84,9 @@ describe('the grid', () => {
 
     expect(screen.getByText('ร้านกาแฟ')).toBeTruthy()
     expect(screen.getByText('185.5')).toBeTruthy()
+    // The row numbers are Excel's own, so they must start at 1 — the header row
+    // IS row 1. Blank there made the column read as starting at 2.
+    expect(screen.getByRole('columnheader', { name: '1' })).toBeTruthy()
     // The preview is a glance, never a replacement — the button that hands the
     // file to Excel is part of the pane, not somewhere else.
     const open = screen.getByRole('button', { name: /Open with|เปิดด้วย/ })

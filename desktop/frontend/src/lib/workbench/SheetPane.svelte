@@ -62,7 +62,10 @@
     <table class="sheet-grid">
       <thead>
         <tr>
-          <th class="rownum"></th>
+          <!-- The header IS the sheet's row 1. Leaving this blank made the
+               numbers start at 2 with no 1 anywhere, which reads as a bug in
+               the preview rather than as Excel's own numbering. -->
+          <th class="rownum">1</th>
           {#each Array(columns) as _, c}
             <th class:num={numeric(header[c] ?? '')}>{header[c] ?? ''}</th>
           {/each}
@@ -90,8 +93,18 @@
 
 <style>
   .sheet-pane { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-  .sheet-head { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-bottom: 1px solid var(--border); flex: none; }
-  .sheet-head .ctrl { margin-left: auto; flex: none; }
+  .sheet-head { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-bottom: 1px solid var(--border-default); flex: none; }
+  /* `.ctrl` carries no chrome of its own — every one of its rules in style.css
+     is scoped to a parent (.fe-head, .composer, .settings-page, …) and this
+     header was not one of them, so the way out of the preview rendered as bare
+     text. Same shape as .fe-head .ctrl, the other pane header with an action. */
+  .sheet-head .ctrl {
+    margin-left: auto; flex: none; appearance: none;
+    background: var(--surface-sunken); border: 1px solid var(--border-strong);
+    border-radius: var(--r-sm); color: var(--text-secondary);
+    font: inherit; font-size: var(--fs-sm); padding: 4px 10px; cursor: pointer;
+  }
+  .sheet-head .ctrl:hover { border-color: var(--interactive); color: var(--text-primary); }
   .sheet-name { font-size: var(--fs-sm); color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sheet-tabs { display: flex; gap: 2px; overflow-x: auto; }
   .sheet-tab { border: none; background: none; color: var(--text-muted); font-size: var(--fs-sm); padding: 3px 8px; border-radius: var(--r-sm); cursor: pointer; white-space: nowrap; }
@@ -100,7 +113,7 @@
 
   .sheet-scroll { flex: 1; min-height: 0; overflow: auto; }
   .sheet-grid { border-collapse: collapse; font-size: var(--fs-sm); }
-  .sheet-grid th, .sheet-grid td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; white-space: nowrap; max-width: 340px; overflow: hidden; text-overflow: ellipsis; }
+  .sheet-grid th, .sheet-grid td { border: 1px solid var(--border-subtle); padding: 4px 8px; text-align: left; white-space: nowrap; max-width: 340px; overflow: hidden; text-overflow: ellipsis; }
   .sheet-grid th { background: var(--surface-raised); color: var(--text-primary); font-weight: 600; position: sticky; top: 0; z-index: 1; }
   .sheet-grid td { color: var(--text-primary); }
   .sheet-grid .num { text-align: right; font-variant-numeric: tabular-nums; }
@@ -109,6 +122,6 @@
   .sheet-grid .rownum { position: sticky; left: 0; background: var(--surface-raised); color: var(--text-dim); text-align: right; font-variant-numeric: tabular-nums; z-index: 2; user-select: none; }
   .sheet-grid thead .rownum { z-index: 3; }
 
-  .sheet-note { flex: none; padding: 6px 10px; font-size: var(--fs-xs); color: var(--text-muted); border-top: 1px solid var(--border); }
-  .sheet-note.err { color: var(--status-danger); border-top: none; border-bottom: 1px solid var(--border); }
+  .sheet-note { flex: none; padding: 6px 10px; font-size: var(--fs-xs); color: var(--text-muted); border-top: 1px solid var(--border-default); }
+  .sheet-note.err { color: var(--status-danger); border-top: none; border-bottom: 1px solid var(--border-default); }
 </style>

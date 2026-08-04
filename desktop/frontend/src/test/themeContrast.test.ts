@@ -102,6 +102,59 @@ describe('theme contrast', () => {
 })
 
 // ---------------------------------------------------------------------------
+// Tokens that do not exist. The checks above measure colours that resolve; this
+// one catches the failure a contrast check cannot see, because there is no
+// colour to measure.
+//
+// `border: 1px solid var(--border)` is not a dim border — `--border` was never
+// declared in any theme, so the whole declaration is invalid at computed-value
+// time and the border is simply *not drawn*. It sat in the chat's file cards
+// and the workbook preview's grid, and it reads as "the UI looks unfinished"
+// rather than as anything a person would think to grep for.
+import { readdirSync, statSync } from 'node:fs'
+import { join } from 'node:path'
+
+// src/test is skipped: nothing in it is shipped UI, and this very file names
+// the broken token in prose, which the scan below would otherwise report.
+function sourceFiles(dir: string, out: string[] = []): string[] {
+  for (const name of readdirSync(dir)) {
+    const p = join(dir, name)
+    if (name === 'test') continue
+    if (statSync(p).isDirectory()) sourceFiles(p, out)
+    else if (/\.(svelte|css|ts)$/.test(name)) out.push(p)
+  }
+  return out
+}
+
+describe('css custom properties', () => {
+  it('never asks for a token no theme declares', () => {
+    const files = sourceFiles('src')
+    const declared = new Set<string>()
+    const used = new Map<string, string[]>()
+
+    for (const f of files) {
+      const src = readFileSync(f, 'utf8')
+      // A declaration anywhere counts: theme.css, a scoped <style>, or an
+      // inline style="--dw:390" in markup.
+      for (const m of src.matchAll(/(--[\w-]+)\s*:/g)) declared.add(m[1])
+      // A var() carrying a fallback cannot vanish, so it is not this bug.
+      for (const m of src.matchAll(/var\((--[\w-]+)\s*(,)?/g)) {
+        if (m[2]) continue
+        used.set(m[1], [...(used.get(m[1]) ?? []), f])
+      }
+    }
+
+    // syntaxTheme.ts writes these at runtime under a built-up name
+    // ('--syn-' + token), so no literal declaration exists to find.
+    const missing = [...used.keys()]
+      .filter((k) => !declared.has(k) && !k.startsWith('--syn-'))
+      .map((k) => `${k} (used in ${[...new Set(used.get(k))].join(', ')})`)
+
+    expect(missing, `undeclared: ${missing.join(' | ')}`).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Syntax colours. Chat code blocks used to import one fixed highlight.js
 // stylesheet, so every theme got GitHub Dark Dimmed's tokens — on the four
 // light themes that measured ten of fourteen tokens under 3:1 against the code

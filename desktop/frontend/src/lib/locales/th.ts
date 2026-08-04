@@ -122,7 +122,7 @@ export const th = {
   'workbench.forward': 'ไปหน้าถัดไป',
   'workbench.reload': 'โหลดใหม่',
   'workbench.go': 'ไปที่หน้านี้',
-  'workbench.urlPlaceholder': 'Enter a URL',
+  'workbench.urlPlaceholder': 'พิมพ์ที่อยู่เว็บ',
   'workbench.devtools': 'เครื่องมือนักพัฒนา',
   'workbench.viewport': 'ขนาดหน้าจอ',
   'workbench.viewportFill': 'เต็มแผง',
@@ -130,19 +130,35 @@ export const th = {
   'workbench.close': 'ปิด {name}',
   'workbench.openFileError': 'เปิดไฟล์ไม่ได้: {err}',
   'workbench.cannotPreview': 'ไฟล์นี้เปิดดูในแอปไม่ได้ แต่โปรแกรมในเครื่องคุณเปิดได้',
+  'workbench.officeNoPreview': 'ไฟล์ปกติดี — แอปแค่ตั้งใจไม่วาดสไลด์/เอกสารเอง เพราะ PowerPoint กับ Word ทำได้ดีกว่า',
   'workbench.openExternally': 'เปิดด้วยโปรแกรมในเครื่อง',
   'workbench.sheetTruncated': 'ดูตัวอย่าง {shown} แถวแรก จากทั้งหมด {total} แถว — เปิดด้วยโปรแกรมในเครื่องเพื่อดูครบ',
+  'workbench.dropHere': 'วางตรงนี้ได้เลย',
+  'workbench.dropHint': 'ไฟล์ หรือหน้าเว็บที่ลากมาจากเบราว์เซอร์ — วางแล้วขึ้นบนโต๊ะทันที',
+  'workbench.dropFailed': 'เอาไฟล์นี้เข้ามาไม่ได้',
 
   'cockpit.justNow': 'เมื่อกี้',
   'cockpit.minutesAgo': '{mins} นาที',
   'cockpit.hoursAgo': '{hrs} ชม.',
   'cockpit.daysAgo': '{days} วัน',
   'cockpit.sendError': 'เกิดข้อผิดพลาด: {err}',
-  'cockpit.attachError': 'แนบรูปภาพไม่สำเร็จ: {err}',
+  // ใช้ทั้งกับรูป ไฟล์ และหน้าเว็บที่ลากมาแนบ — ข้อความเดิมพูดถึงรูปอย่างเดียว
+  'cockpit.attachError': 'แนบไม่สำเร็จ: {err}',
+  'cockpit.attachEmptyPage': 'แท็บนี้ยังไม่ได้เปิดหน้าไหน เลยยังไม่มีเนื้อหาให้แนบ',
 
 
-  'browserPane.startBrowsing': 'เริ่มท่องเว็บ',
-  'browserPane.enterUrl': 'พิมพ์ URL เพื่อเปิดหน้าเว็บ',
+  'imagePane.actualSize': 'ดูขนาดจริง',
+  'imagePane.fitToPane': 'ย่อให้พอดีแผง',
+  // แท็บเบราว์เซอร์ที่ยังไม่มี URL — ไม่ใช่กระดาษเปล่าของผู้ใช้ แต่เป็นที่ว่างบนโต๊ะของ AI
+  'browserPane.deskEyebrow': 'โต๊ะของ Aetox',
+  'browserPane.blankTab': 'แท็บนี้ยังว่าง',
+  'browserPane.blankTabSub': 'เวลา Aetox ต้องดูหน้าเว็บ มันจะเปิดขึ้นตรงนี้เอง',
+  'browserPane.agentBusy': 'Aetox กำลังทำงานอยู่ — ถ้าต้องเปิดหน้าเว็บ หน้านั้นจะมาโผล่ตรงนี้',
+  // ทั้งหน้าที่ Aetox เปิดเอง และหน้าที่ผู้ใช้เปิดเอง รวมเป็นรายการเดียว
+  'browserPane.openedTitle': 'หน้าที่เคยเปิดตรงนี้',
+  'browserPane.openedEmpty': 'ยังไม่เคยเปิดหน้าไหน — พิมพ์ที่อยู่เว็บด้านบน หรือให้ Aetox เปิดให้เมื่อสั่งงานที่ต้องใช้เว็บ',
+  'browserPane.showAllPages': 'ดูทั้งหมด {total} หน้า',
+  'browserPane.typeAddress': 'หรือพิมพ์ที่อยู่เว็บในช่องด้านบน แล้วเปิดเอง',
 
   'toolsPane.mcpTools': 'เครื่องมือ MCP',
   'toolsPane.externalSkills': 'สกิลภายนอก',

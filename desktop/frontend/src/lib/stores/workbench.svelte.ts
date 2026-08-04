@@ -3,7 +3,10 @@
 // future agent surfaces — can open a workbench tab without prop drilling. Components
 // under lib/workbench/ render from this; nothing else mutates it directly.
 
-import { TerminalStart, TerminalClose, ReadFile, ReadWorkbook } from '../../../wailsjs/go/main/App'
+import {
+  TerminalStart, TerminalClose, ReadFile, ReadWorkbook, ReadImageDataURL,
+  RelativizePath, SaveChatFile,
+} from '../../../wailsjs/go/main/App'
 import type { ooxml } from '../../../wailsjs/go/models'
 import { t } from '../i18n.svelte'
 
@@ -26,7 +29,16 @@ export type WorkbenchTab = {
   // it answers "what did I just get?" without the user leaving the window, and
   // the open-in-Excel button is still there for anything past a glance.
   sheet?: ooxml.WorkbookPreview
+  // A picture, as a data: URL. Same reasoning as sheet: a screenshot dropped on
+  // the desk is meant to be looked at, and "binary file cannot be previewed" is
+  // not a way to show someone their own screenshot.
+  image?: string
+  // Bumped on every re-read (loadFileTab). The pane is keyed on it so a file
+  // the agent rewrote actually reaches the screen — see loadFileTab.
+  rev?: number
 }
+
+const imageExtRe = /\.(png|jpe?g|gif|webp|bmp|avif|ico)$/i
 
 export const workbench = $state<{ tabs: WorkbenchTab[]; activeId: string }>({
   tabs: [],
@@ -76,11 +88,48 @@ export function openBrowserTab(): string {
   return id
 }
 
-/** Open a URL from outside the workbench (e.g. a link clicked in chat) in a new browser tab. */
+// "google.com" -> https://, "E:\site\index.html" -> file:///, and anything
+// that already carries a scheme (file:, http:, about:) passes through —
+// blindly prepending https:// turns file:/// URLs into a dead https://file/.
+export function normalizeUrl(u: string): string {
+  if (/^[a-z]:[\\/]/i.test(u)) return 'file:///' + u.replace(/\\/g, '/') // E:\site\index.html (before scheme check: "E:" looks like one)
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(u) || /^(about|data|mailto|javascript):/i.test(u)) return u
+  return 'https://' + u // bare domain or host:port
+}
+
+/** Tab-strip label for a URL: the host, or the last path segment for a file. */
+export function labelForUrl(url: string): string {
+  try {
+    const p = new URL(url)
+    return p.hostname || decodeURIComponent(p.pathname.split('/').pop() || url)
+  } catch {
+    return url
+  }
+}
+
+/** The MIME type everything draggable inside Aetox travels as. */
+export const TAB_DRAG_MIME = 'application/x-aetox-tab'
+
+/** Mark a drag as carrying one of our files or pages.
+ *
+ * One definition for all four sources — a workbench tab, a row in the file
+ * tree, a produced-file card in the reply, and anything the composer or the
+ * desk accepts. The shape was being spelled out at each drag source, which is
+ * how a fourth one ends up subtly different from the other three. */
+export function setTabDragPayload(e: DragEvent, kind: 'file' | 'browser', ref: string, label: string): void {
+  if (!e.dataTransfer) return
+  e.dataTransfer.setData(TAB_DRAG_MIME, JSON.stringify({ kind, ref, label }))
+  e.dataTransfer.effectAllowed = 'copy'
+}
+
+/** Open a URL from outside the workbench (a link clicked in chat, a page
+ * dragged in from a real browser) in a new browser tab. */
 export function openUrlInWorkbench(url: string): void {
   const id = openBrowserTab()
   const tab = workbench.tabs.find((t) => t.id === id)
-  if (tab) tab.url = url
+  if (!tab) return
+  tab.url = url
+  tab.name = labelForUrl(url)
 }
 
 export async function openTerminalTab(shell: { name: string; path: string }): Promise<void> {
@@ -89,39 +138,178 @@ export async function openTerminalTab(shell: { name: string; path: string }): Pr
   workbench.activeId = id
 }
 
-/** Open (or re-focus) a file editor tab for a project-relative path. */
-export async function openFileTab(path: string): Promise<void> {
+/** Open (or re-focus) a file editor tab for a project-relative path.
+ *
+ * `displayName` overrides the tab label for files whose stored name is not the
+ * name the user knows them by — a file dragged in from outside the project is
+ * copied in under a generated name (see openPathsInWorkbench), and the tab
+ * still has to read as the file they dropped. */
+export async function openFileTab(path: string, displayName?: string): Promise<void> {
   const id = `file-${path}`
-  if (!workbench.tabs.some((t) => t.id === id)) {
-    const tab: WorkbenchTab = { id, kind: 'file', name: path.split('/').pop() ?? path, path }
+  let tab = workbench.tabs.find((t) => t.id === id)
+  if (!tab) {
+    // Pushed before any await, so the id is taken the moment it is claimed.
+    // Reading first and pushing after left a window — hundreds of ms for a
+    // workbook or a 20MB image — in which a second call saw no tab and pushed
+    // a duplicate. The tab strip is `{#each ... (tab.id)}`, and Svelte throws
+    // each_key_duplicate on a repeated key, taking the panel down.
+    workbench.tabs.push({ id, kind: 'file', name: displayName || path.split('/').pop() || path, path, rev: 0 })
+    // Read it back rather than keeping the literal: `workbench` is $state, so
+    // what lives in the array is a proxy and the object passed to push is not.
+    // Writing to the literal updates the data and tells Svelte nothing — the
+    // pane renders once, empty, and never hears that the file arrived. Every
+    // other tab opener in this file reads it back for the same reason.
+    tab = workbench.tabs.find((t) => t.id === id)!
+  }
+  workbench.activeId = id
+  await loadFileTab(tab, path)
+}
+
+/** (Re)read a file tab's contents off disk.
+ *
+ * Every open re-reads, including a re-open of a tab that is already there. The
+ * agent rewrites the same path constantly — regenerate and undo both do it by
+ * construction — and the tab id is the path, so a cached tab meant clicking the
+ * file the agent had just rewritten showed the previous turn's bytes under the
+ * right filename, with nothing on screen saying so. On the panel whose whole
+ * job is answering "what did I just get?", that is the worst failure available.
+ *
+ * All four fields are assigned every time, undefined included: a file that used
+ * to fail and now reads must lose its `unreadable`, or the pane keeps showing
+ * the old excuse. */
+async function loadFileTab(tab: WorkbenchTab, path: string): Promise<void> {
+  const next: Pick<WorkbenchTab, 'content' | 'image' | 'sheet' | 'unreadable'> = {}
+  if (imageExtRe.test(path)) {
+    try {
+      next.image = await ReadImageDataURL(path)
+    } catch (err) {
+      next.unreadable = String(err) // too large, or not really an image
+    }
+  } else if (path.toLowerCase().endsWith('.xlsx')) {
     // A workbook is tried as a grid first. It is the one produced format worth
     // previewing — a spreadsheet is a table, and a table is exactly what a pane
     // can draw. A deck would need a rendering engine and a document a layout
     // engine, so both keep going straight to the open-externally card.
-    if (path.toLowerCase().endsWith('.xlsx')) {
-      try {
-        tab.sheet = await ReadWorkbook(path)
-      } catch (err) {
-        // A workbook this reader cannot make sense of is still a workbook Excel
-        // can open, so the failure falls through to the card rather than
-        // becoming a dead end.
-        tab.unreadable = String(err)
-      }
-      workbench.tabs.push(tab)
-      workbench.activeId = id
-      return
-    }
     try {
-      tab.content = await ReadFile(path)
+      next.sheet = await ReadWorkbook(path)
     } catch (err) {
-      // Not an editor full of an error message. The two real failures here are
-      // "it is binary" and "it is too large", and in both the file is fine —
-      // this app just is not the thing that opens it.
-      tab.unreadable = String(err)
+      // A workbook this reader cannot make sense of is still a workbook Excel
+      // can open, so the failure falls through to the card rather than
+      // becoming a dead end.
+      next.unreadable = String(err)
     }
-    workbench.tabs.push(tab)
+  } else if (/\.(pptx|docx)$/i.test(path)) {
+    // Straight to the card, without asking ReadFile first. Routing a deck
+    // through the text path made the card report whichever gate fired first —
+    // "file too large to preview" for a 1.5MB pptx — for a file that was never
+    // previewable at any size. The reason shown must be the real one.
+    next.unreadable = t('workbench.officeNoPreview')
+  } else {
+    try {
+      next.content = await ReadFile(path)
+    } catch (err) {
+      // Not an editor full of an error message. The file is fine — this app
+      // just is not the thing that opens it.
+      next.unreadable = String(err)
+    }
   }
+  tab.image = next.image
+  tab.sheet = next.sheet
+  tab.content = next.content
+  tab.unreadable = next.unreadable
+  // FileEditor snapshots `content` into local state once and the pane never
+  // unmounts, so fresh bytes alone would not reach the screen. Workbench.svelte
+  // keys the pane on this.
+  tab.rev = (tab.rev ?? 0) + 1
+}
+
+/** Absolute OS paths dropped onto the desk — from Explorer, the desktop, another
+ * app's save dialog — opened as tabs.
+ *
+ * A file already inside the project opens where it lies. One from outside is
+ * copied in first (the same copy the paperclip button makes), because every
+ * pane below this reads through the sandbox: without the copy the desk could
+ * only answer a dropped file with "outside project root", which is a rule about
+ * this program's internals, not an answer about the file. The copy also means
+ * the agent can read what was dropped — the point of putting it on its desk. */
+export async function openPathsInWorkbench(paths: string[]): Promise<void> {
+  for (const abs of paths) {
+    const label = abs.split(/[\\/]/).pop() || abs
+    let rel = ''
+    try {
+      rel = await RelativizePath(abs)
+    } catch {
+      try {
+        rel = await SaveChatFile(abs) // outside the project: bring a copy in
+      } catch (err) {
+        openDropError(abs, label, String(err))
+        continue
+      }
+    }
+    await openFileTab(rel, label)
+  }
+}
+
+/** A dropped file that could not be brought in at all (too large, unreadable,
+ * no project open) still gets a tab. Silence would read as the desk ignoring
+ * the drop, which is the thing this whole surface is meant to stop. */
+function openDropError(abs: string, label: string, reason: string): void {
+  // Keyed on the full path, not the basename. Two files named the same from
+  // different folders failing for different reasons collapsed onto one tab that
+  // kept the FIRST reason — a pane whose only content is a reason, showing the
+  // wrong one.
+  const id = `drop-error-${abs}`
+  const existing = workbench.tabs.find((t) => t.id === id)
+  if (existing) existing.unreadable = reason // dropped again, failing differently
+  else workbench.tabs.push({ id, kind: 'file', name: label, unreadable: reason })
   workbench.activeId = id
+}
+
+// ---------- pages this browser has shown ----------
+//
+// The other half of the browser tab's start page. RecentAgentPages covers what
+// the agent opened with browser_open; this covers every other navigation the
+// workbench browser completed — an address typed in the bar, a link clicked
+// inside a page — so the list answers "what has been open here", not only
+// "what did the agent open".
+//
+// Kept in localStorage rather than the tool_runs table the agent's own opens
+// live in, deliberately: tool_runs feeds tool_runs_fts, which the agent
+// searches as its own memory (session_search). Putting the user's personal
+// browsing there would make it agent-readable, which is a far bigger decision
+// than a start-page list gets to make. This stays in the UI layer.
+
+export type VisitedPage = { url: string; title: string; time: string }
+
+const visitsKey = 'aetox-browser-history'
+const maxVisits = 200
+
+/** Record a completed navigation. Called from BrowserPane's browser:meta
+ *  handler, which fires for the agent's opens and the user's alike. */
+export function recordVisit(url: string, title: string): void {
+  if (!url || url === 'about:blank') return
+  // Local files are left to RecentAgentPages, which checks on the way out that
+  // the file still exists. A file:// row remembered here could not be checked
+  // from the frontend, and a row that opens the engine's "not found" page is
+  // the dead end the start page exists to prevent. A web page has no such
+  // problem: a 404 still has back, reload and the address bar.
+  if (url.startsWith('file:')) return
+  const next = [{ url, title, time: new Date().toISOString() }, ...recentVisits().filter((v) => v.url !== url)]
+  try {
+    localStorage.setItem(visitsKey, JSON.stringify(next.slice(0, maxVisits)))
+  } catch {
+    // Quota, or a browser refusing storage — history is not worth an error.
+  }
+}
+
+export function recentVisits(): VisitedPage[] {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(visitsKey) ?? '[]')
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((v): v is VisitedPage => !!v && typeof v.url === 'string' && typeof v.time === 'string')
+  } catch {
+    return []
+  }
 }
 
 // ---------- per-session persistence ----------
@@ -140,7 +328,11 @@ const wbKey = (sessionId: string) => `aetox-workbench:${sessionId}`
 /** Persist the current layout under the bound session. Reads workbench.tabs /
  * activeId reactively — run it from a component $effect to autosave. */
 export function saveWorkbenchSnapshot(): void {
-  const restorable = workbench.tabs.filter((t) => t.kind !== 'terminal')
+  // "Restorable" has to mean what restoreWorkbench can actually rebuild, not
+  // just "not a terminal": a file tab with no path (a failed drop) is saved and
+  // then skipped on the way back, which shortens the list the saved index was
+  // counted against and restores focus to whatever slid into that slot.
+  const restorable = workbench.tabs.filter((t) => t.kind !== 'terminal' && (t.kind !== 'file' || !!t.path))
   const activeIdx = restorable.findIndex((t) => t.id === workbench.activeId)
   if (!boundSessionId) return
   const tabs: SavedTab[] = restorable.map(({ kind, name, url, path }) => ({ kind, name, url, path }))
@@ -165,7 +357,7 @@ async function restoreWorkbench(sessionId: string): Promise<void> {
     // session's tabs must still come back.
     if (s.kind === 'files') openFilesTab()
     else if (s.kind === 'tools') openToolsTab()
-    else if (s.kind === 'file' && s.path) await openFileTab(s.path)
+    else if (s.kind === 'file' && s.path) await openFileTab(s.path, s.name)
     else if (s.kind === 'browser') {
       const id = openBrowserTab()
       const tab = workbench.tabs.find((t) => t.id === id)

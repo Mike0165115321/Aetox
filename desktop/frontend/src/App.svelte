@@ -16,7 +16,8 @@
   } from './lib/stores/cockpit.svelte'
   import { RelativizePath, CloseAllBrowserTabs } from '../wailsjs/go/main/App'
   import { OnFileDrop, OnFileDropOff, EventsOn } from '../wailsjs/runtime/runtime'
-  import { workbench } from './lib/stores/workbench.svelte'
+  import { workbench, openPathsInWorkbench } from './lib/stores/workbench.svelte'
+  import { clampPanelWidth } from './lib/panelSize'
   import Icon from './lib/Icon.svelte'
 
   function fileLabel(path: string): string {
@@ -35,22 +36,23 @@
   // without clipping (inspector's 320px fits the workbench tab row — see
   // workbench/Workbench.svelte's .insp-tabs).
   //
-  // The max is computed at drag time (see clampSize) rather than fixed here:
-  // it's whatever's left of window.innerWidth after the OTHER side panel's
-  // current width and .main's own 360px grid floor (2 handles at 6px each).
-  // Dragging a panel wider than that would push the grid's total width past
-  // the viewport, which .app's overflow-x:auto turns into a horizontal
-  // scrollbar instead of an error — technically nothing breaks, but the
-  // composer/chat content scrolls out of view, which reads as "the panel
-  // grows without limit." Capping it here keeps everything on-screen without
-  // reintroducing the old bug this was written to avoid (main getting
-  // squeezed below its 360px floor) — main's grid floor is untouched, this
-  // only stops the OTHER two columns from claiming space main needs.
-  const mainFloor = 360
-  const handleWidths = 12 // two 6px resize handles
+  // The max is computed at drag time rather than fixed here: it's whatever's
+  // left of window.innerWidth after the OTHER side panel and .main's own 360px
+  // grid floor. Dragging a panel wider than that would push the grid's total
+  // width past the viewport, which .app's overflow-x:auto turns into a
+  // horizontal scrollbar instead of an error — technically nothing breaks, but
+  // the composer/chat content scrolls out of view. The arithmetic lives in
+  // lib/panelSize.ts, where it can be tested; it used to be wrong here in a way
+  // nothing on screen could explain (see that file).
   const panels = {
-    sidebar: { cssVar: '--sidebar-width', storageKey: 'sidebarWidth', min: 200, defaultPx: 280 },
-    inspector: { cssVar: '--inspector-width', storageKey: 'inspectorWidth', min: 320, defaultPx: 384 },
+    sidebar: {
+      cssVar: '--sidebar-width', storageKey: 'sidebarWidth', min: 200, defaultPx: 280,
+      isCollapsed: () => sidebarCollapsed,
+    },
+    inspector: {
+      cssVar: '--inspector-width', storageKey: 'inspectorWidth', min: 320, defaultPx: 384,
+      isCollapsed: () => inspectorCollapsed,
+    },
   }
 
   function currentPx(panel: typeof panels.sidebar): number {
@@ -60,12 +62,31 @@
   }
 
   function clampSize(px: number, panel: typeof panels.sidebar, otherPanel: typeof panels.sidebar): number {
-    const max = Math.max(panel.min, window.innerWidth - currentPx(otherPanel) - mainFloor - handleWidths)
-    return Math.min(Math.max(panel.min, px), max)
+    // A collapsed panel is a 0px column and its handle is display:none, so the
+    // space it would have taken belongs to whoever is being dragged.
+    const otherVisible = !otherPanel.isCollapsed()
+    return clampPanelWidth(px, {
+      viewport: window.innerWidth,
+      min: panel.min,
+      otherWidth: otherVisible ? currentPx(otherPanel) : 0,
+      otherVisible,
+    })
   }
 
   function otherOf(panel: typeof panels.sidebar): typeof panels.sidebar {
     return panel === panels.sidebar ? panels.inspector : panels.sidebar
+  }
+
+  // Re-fit a panel to the space that exists right now. Uncollapsing the other
+  // one takes its column back from whatever grew into it while it was away —
+  // without this, reopening the sidebar next to a workbench that had claimed
+  // the whole window is precisely the horizontal scrollbar the cap exists to
+  // prevent. Only the CSS var moves; the remembered width in localStorage is
+  // the user's preference and is left alone.
+  function refit(panel: typeof panels.sidebar): void {
+    if (panel.isCollapsed()) return
+    const size = clampSize(currentPx(panel), panel, otherOf(panel))
+    document.documentElement.style.setProperty(panel.cssVar, `${size}px`)
   }
 
   onMount(() => {
@@ -100,13 +121,23 @@
 
     // Drop a file from Explorer anywhere on the window to open it as a tab,
     // same as clicking it in the sidebar tree — lets the user hand the AI a
-    // file without hunting for it in the project tree first. An image
-    // dropped specifically over the chat composer attaches to the message
-    // instead — OnFileDrop gives window coordinates, so we route on those.
+    // file without hunting for it in the project tree first. Where it lands
+    // decides what "open" means, and OnFileDrop gives window coordinates, so
+    // we route on those: an image over the chat composer attaches to the
+    // message, anything over the workbench opens on the agent's desk, and the
+    // rest opens in the main editor.
     const imageExtRe = /\.(png|jpe?g|gif|webp|bmp)$/i
     OnFileDrop(async (x, y, paths) => {
       const composerEl = document.querySelector('.composer')
       const overComposer = !!composerEl && withinRect(composerEl.getBoundingClientRect(), x, y)
+      const deskEl = document.querySelector('.inspector')
+      // A collapsed panel is display:none, so its rect is empty and nothing
+      // can land in it — no separate check needed.
+      const overDesk = !!deskEl && withinRect(deskEl.getBoundingClientRect(), x, y)
+      if (overDesk) {
+        await openPathsInWorkbench(paths)
+        return
+      }
       for (const path of paths) {
         if (overComposer && imageExtRe.test(path)) {
           await attachImageFromPath(path)
@@ -143,6 +174,29 @@
   // width, not leave it reserved and blank — opening a tab should bring it back.
   $effect(() => {
     inspectorCollapsed = workbench.tabs.length === 0
+  })
+
+  // Whenever a panel comes back, the OTHER one gives up whatever it took while
+  // that panel was away. Which one is which is the whole point: refitting both
+  // in a fixed order clamped the returning panel against the width the other
+  // had grown into, so reopening the sidebar next to a workbench that had
+  // claimed the window pinned the sidebar to its 200px floor and left the
+  // workbench holding the difference — the opposite of what this is for.
+  //
+  // Only an un-collapse needs it. Collapsing frees space; nothing has to move.
+  // svelte-ignore state_referenced_locally — the initial value is the point:
+  // these hold what the flags were on the previous run, so the effect can tell
+  // an un-collapse from a collapse.
+  let wasSidebarCollapsed = sidebarCollapsed
+  // svelte-ignore state_referenced_locally
+  let wasInspectorCollapsed = inspectorCollapsed
+  $effect(() => {
+    const sc = sidebarCollapsed
+    const ic = inspectorCollapsed
+    if (wasSidebarCollapsed && !sc) refit(panels.inspector)
+    if (wasInspectorCollapsed && !ic) refit(panels.sidebar)
+    wasSidebarCollapsed = sc
+    wasInspectorCollapsed = ic
   })
 
   function toggleSidebar() {

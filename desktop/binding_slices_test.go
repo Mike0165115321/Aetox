@@ -21,6 +21,15 @@ func TestBindingsNeverReturnNilSlices(t *testing.T) {
 	t.Setenv("USERPROFILE", t.TempDir())
 
 	app := &App{cfg: config.Config{SandboxRoot: t.TempDir()}}
+	// Some of these open the database and App caches the handle. On Windows an
+	// open file cannot be removed, so t.TempDir's own cleanup fails the test
+	// unless the handle is closed first (Cleanup is LIFO, and the temp dirs
+	// registered theirs above).
+	t.Cleanup(func() {
+		if app.db != nil {
+			_ = app.db.Close()
+		}
+	})
 	value := reflect.ValueOf(app)
 
 	// Zero-argument bindings that are safe to call with no engine and no DB.
@@ -55,6 +64,18 @@ func TestBindingsNeverReturnNilSlices(t *testing.T) {
 			continue
 		}
 		assertNonNilSlices(t, name, method.Call([]reflect.Value{reflect.ValueOf("deepseek")}))
+	}
+
+	// Same rule, one count argument. RecentAgentPages is the browser tab's
+	// start page, which does .length on the result the moment it resolves.
+	withLimit := []string{"RecentAgentPages"}
+	for _, name := range withLimit {
+		method := value.MethodByName(name)
+		if !method.IsValid() {
+			t.Errorf("binding %s no longer exists — update this list", name)
+			continue
+		}
+		assertNonNilSlices(t, name, method.Call([]reflect.Value{reflect.ValueOf(5)}))
 	}
 }
 

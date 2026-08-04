@@ -168,6 +168,8 @@ export function ReadSubagentProfile(arg1:string):Promise<string>;
 
 export function ReadWorkbook(arg1:string):Promise<ooxml.WorkbookPreview>;
 
+export function RecentAgentPages(arg1:number):Promise<Array<main.AgentPage>>;
+
 export function RecentProjects():Promise<Array<main.ProjectMeta>>;
 
 export function RefreshSkills():Promise<void>;

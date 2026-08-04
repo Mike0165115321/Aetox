@@ -19,7 +19,7 @@ import {
 } from '../../../wailsjs/go/main/App'
 import type { main } from '../../../wailsjs/go/models'
 import { t } from '../i18n.svelte'
-import { switchWorkbenchSession, adoptWorkbenchSession, removeWorkbenchState } from './workbench.svelte'
+import { workbench, switchWorkbenchSession, adoptWorkbenchSession, removeWorkbenchState } from './workbench.svelte'
 
 // Model info comes from a real Go IPC round-trip (GetModelInfo), which is
 // only as fast as the whole engine bootstrap (provider client, skill
@@ -87,7 +87,10 @@ export async function refreshWorkspace(): Promise<void> {
   cockpit.tree = tree as unknown as TreeNode[]
 }
 
-function agoLabel(iso: string): string {
+/** "2 นาทีที่แล้ว" for an RFC3339 stamp. Exported because the browser tab's
+ * start page timestamps its rows with it — formatting them in Go would put
+ * Thai copy in a binding and duplicate a vocabulary the frontend owns. */
+export function agoLabel(iso: string): string {
   const parsed = Date.parse(iso)
   if (Number.isNaN(parsed)) return ''
   const mins = Math.max(0, Math.round((Date.now() - parsed) / 60000))
@@ -141,8 +144,24 @@ export async function searchGlobalHistory(query: string): Promise<void> {
 // stores. So restoring a session has to fold them back out, or the bubble shows
 // a raw "[attachment: …] .aetox-attachments/x.mp4" line and no chip at all.
 // These two patterns are the inverse of the ones written there; change both together.
-const ATTACH_CTX_RE = /\n*\[attachment: [^\]]*\] ([^\n]*):\n```\n[\s\S]*?\n```/g
+const ATTACH_CTX_RE = /\n*\[attachment: [^\]]*\] ([^\n]*):\n```\n([\s\S]*?)\n```/g
 const ATTACH_FILE_RE = /\n*\[attachment: user-attached (image|audio|video|file) — [^\]]*\] (\S+)/g
+
+/** The first few lines of an attached file, for its card.
+ *
+ * Blank lines are dropped rather than shown: three lines is the whole budget,
+ * and a markdown file that opens with a heading and a gap would spend two of
+ * them on nothing. Long lines are cut before they reach the DOM — a minified
+ * JSON is one line of 200KB, and CSS clipping it still means holding it. */
+export function attachmentPreview(content: string): string {
+  return content
+    .split('\n')
+    .map((l) => l.trimEnd())
+    .filter((l) => l !== '')
+    .slice(0, 3)
+    .map((l) => (l.length > 200 ? l.slice(0, 200) + '…' : l))
+    .join('\n')
+}
 
 function restoreAttachments(m: main.SessionMessage): ChatMessage {
   const out: ChatMessage = {
@@ -169,7 +188,14 @@ function restoreAttachments(m: main.SessionMessage): ChatMessage {
   // to re-send the exact lines the model was given the first time.
   let suffix = ''
   out.text = out.text
-    .replace(ATTACH_CTX_RE, (all, label: string) => { out.contextLabel = label; suffix += all; return '' })
+    .replace(ATTACH_CTX_RE, (all, label: string, content: string) => {
+      out.contextLabel = label
+      // Rebuilt from the stored block rather than persisted separately, so a
+      // reopened question shows the same card it showed when it was asked.
+      out.contextPreview = attachmentPreview(content)
+      suffix += all
+      return ''
+    })
     .replace(ATTACH_FILE_RE, (all, kind: string, relPath: string) => {
       if (kind === 'image') out.imageRelPath = relPath
       else { out.attachKind = kind as PendingFile['kind']; out.attachLabel = relPath.split('/').pop() }
@@ -507,7 +533,9 @@ export async function sendUserMessage(text: string, alreadyShown = false): Promi
   if (!alreadyShown) {
     cockpit.chat.push({
       role: 'user', text: trimmed, time: nowLabel(),
-      imageDataUrl: image?.dataUrl, contextLabel: context?.label,
+      imageDataUrl: image?.dataUrl,
+      contextLabel: context?.label,
+      contextPreview: context ? attachmentPreview(context.content) : undefined,
       attachLabel: file?.label, attachKind: file?.kind,
       attachSuffix: attachSuffix || undefined,
     })
@@ -930,11 +958,62 @@ export function clearPendingFile(): void {
  * context — read fresh from disk/page rather than trusting any stale in-memory
  * copy, so the model sees what's there now. */
 export async function attachTabContext(kind: 'file' | 'browser', ref: string, label: string): Promise<void> {
+  // A browser tab only has a native window once it has loaded a URL, so a tab
+  // still showing its start page has no text to read. Asking anyway came back
+  // as `no browser tab "web-2"` — an internal id, in a sentence about
+  // attaching an image, for something the user cannot act on.
+  if (kind === 'browser') {
+    // A browser tab only has a native window once it has loaded a URL, so a tab
+    // still showing its start page has no text to read. Asking anyway came back
+    // as `no browser tab "web-2"` — an internal id, in a sentence about
+    // attaching an image, for something the user cannot act on.
+    if (!workbench.tabs.find((t) => t.id === ref)?.url) {
+      cockpit.chat.push({ role: 'agent', text: t('cockpit.attachEmptyPage'), time: nowLabel() })
+      return
+    }
+    try {
+      cockpit.pendingContext = { kind, label, content: await BrowserGetText(ref) }
+    } catch (err) {
+      cockpit.chat.push({ role: 'agent', text: t('cockpit.attachError', { err: String(err) }), time: nowLabel() })
+    }
+    return
+  }
+
+  // A picture goes in as a picture, with its thumbnail in the chip — same as
+  // one attached with the paperclip. Already inside the sandbox, so unlike
+  // attachImageFromPath there is nothing to copy.
+  if (fileKind(ref) === 'image') {
+    try {
+      cockpit.pendingImage = { relPath: ref, dataUrl: await ReadImageDataURL(ref) }
+      return
+    } catch {
+      // Not really an image, or too big to inline — fall through and hand over
+      // the path instead.
+    }
+  }
+
   try {
-    const content = kind === 'file' ? await ReadFile(ref) : await BrowserGetText(ref)
-    cockpit.pendingContext = { kind, label, content }
+    cockpit.pendingContext = { kind, label, content: await ReadFile(ref) }
   } catch (err) {
-    cockpit.chat.push({ role: 'agent', text: t('cockpit.attachError', { err: String(err) }), time: nowLabel() })
+    // Exactly two of ReadFile's refusals mean "the file is fine, inlining it is
+    // not": binary (a PDF, a workbook, a clip) and too large. Those go in as a
+    // path plus the tool that opens it, which is what the paperclip already
+    // does for the same files — dragging a PDF onto the composer used to end at
+    // the raw Go error instead.
+    //
+    // The other five — no project open, outside the sandbox, not found, is a
+    // directory, unreadable — mean the attach genuinely failed, and a catch
+    // that swallowed all seven staged a dead path the model was then told to
+    // read. That costs a turn and reads as the model's fault. So this matches
+    // the two by name and reports everything else; an unrecognised message is
+    // reported, never assumed benign.
+    const msg = String(err)
+    if (!/binary file cannot be previewed|too large/i.test(msg)) {
+      cockpit.chat.push({ role: 'agent', text: t('cockpit.attachError', { err: msg }), time: nowLabel() })
+      return
+    }
+    const fk = fileKind(ref)
+    cockpit.pendingFile = { relPath: ref, label, kind: fk === 'image' ? 'file' : fk }
   }
 }
 

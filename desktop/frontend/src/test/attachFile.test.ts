@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import {
-  cockpit, fileKind, attachFileFromPath, clearPendingFile, sendUserMessage, selectSession,
+  cockpit, fileKind, attachFileFromPath, attachTabContext, attachmentPreview,
+  clearPendingFile, sendUserMessage, selectSession,
 } from '../lib/stores/cockpit.svelte'
-import { SaveChatFile, SendMessage, LoadSession, ReadImageDataURL } from './mocks/wailsApp'
+import { SaveChatFile, SendMessage, LoadSession, ReadImageDataURL, ReadFile } from './mocks/wailsApp'
 
 beforeEach(() => {
   cockpit.pendingFile = null
@@ -130,5 +131,112 @@ describe('attaching a file from the composer', () => {
     expect(cockpit.pendingFile).not.toBeNull()
     clearPendingFile()
     expect(cockpit.pendingFile).toBeNull()
+  })
+})
+
+// The other way in: a file already inside the sandbox, dragged onto the composer
+// from a workbench tab or from a produced-file card in the reply.
+describe('the preview on an attachment card', () => {
+  it('shows the first lines that actually say something', () => {
+    expect(attachmentPreview('\n\n# Installation\n\n## Requirements\n\n- Go 1.22\n- Node 20\n'))
+      .toBe('# Installation\n## Requirements\n- Go 1.22')
+  })
+
+  it('cuts a long line before it reaches the DOM', () => {
+    // A minified file is one line of hundreds of KB. Clipping it in CSS still
+    // means holding all of it in the document.
+    const preview = attachmentPreview('x'.repeat(5000))
+    expect(preview.length).toBeLessThan(210)
+    expect(preview.endsWith('…')).toBe(true)
+  })
+
+  it('gives an empty string for a file with nothing in it', () => {
+    // The card then draws its head alone rather than an empty box under it.
+    expect(attachmentPreview('')).toBe('')
+    expect(attachmentPreview('\n  \n\n')).toBe('')
+  })
+
+  it('survives the round trip through a stored transcript', async () => {
+    vi.mocked(ReadFile).mockResolvedValue('# Installation\n\n## Requirements')
+    await attachTabContext('file', 'INSTALL.md', 'INSTALL.md')
+    await sendUserMessage('อ่านให้หน่อย')
+
+    // Live, from the pending context...
+    expect(cockpit.chat[0].contextPreview).toBe('# Installation\n## Requirements')
+
+    // ...and after a reload, rebuilt from the attachment block in the stored
+    // text, so a reopened question shows the card it was asked with.
+    const stored = vi.mocked(SendMessage).mock.calls[0][0] as string
+    vi.mocked(LoadSession).mockResolvedValue([{ role: 'user', text: stored, time: '01:00' }] as any)
+    await selectSession({ id: 's1' } as any)
+    expect(cockpit.chat[0].contextLabel).toBe('INSTALL.md')
+    expect(cockpit.chat[0].contextPreview).toBe('# Installation\n## Requirements')
+  })
+})
+
+describe('attaching a file dragged in from the workbench', () => {
+  // The file-level beforeEach only clears SendMessage; these assert on the
+  // bindings the tests above also call.
+  beforeEach(() => {
+    vi.mocked(SaveChatFile).mockClear()
+    vi.mocked(ReadFile).mockClear()
+    vi.mocked(ReadImageDataURL).mockClear()
+  })
+
+  it('inlines it when it is text', async () => {
+    vi.mocked(ReadFile).mockResolvedValue('# บันทึก' as any)
+    await attachTabContext('file', 'docs/notes.md', 'notes.md')
+
+    expect(cockpit.pendingContext).toEqual({ kind: 'file', label: 'notes.md', content: '# บันทึก' })
+    expect(cockpit.pendingFile).toBeNull()
+  })
+
+  it('hands over the path when it is not text, instead of failing', async () => {
+    // ReadFile refuses a PDF — it is a binary container. That refusal used to
+    // surface as "แนบไม่สำเร็จ: Error: binary file cannot be previewed" and the
+    // attach was simply lost.
+    vi.mocked(ReadFile).mockRejectedValue(new Error('binary file cannot be previewed'))
+    await attachTabContext('file', 'output/รายงาน.pdf', 'รายงาน.pdf')
+
+    expect(cockpit.pendingFile).toEqual({
+      relPath: 'output/รายงาน.pdf', label: 'รายงาน.pdf', kind: 'file',
+    })
+    expect(cockpit.chat).toHaveLength(0) // no error line
+
+    // ...and the model is pointed at the tool that opens it.
+    await sendUserMessage('อ่านให้หน่อย')
+    expect(vi.mocked(SendMessage).mock.calls[0][0] as string).toContain('pdf_read')
+  })
+
+  it('takes the same route when the file is merely too large to inline', async () => {
+    vi.mocked(ReadFile).mockRejectedValue(new Error('file too large to preview (4194304 bytes)'))
+    await attachTabContext('file', 'data/ยอดขาย.csv', 'ยอดขาย.csv')
+
+    expect(cockpit.pendingFile?.relPath).toBe('data/ยอดขาย.csv')
+    expect(cockpit.chat).toHaveLength(0)
+  })
+
+  it('reports a failure that is not about inlining, instead of staging a dead path', async () => {
+    // ReadFile has seven refusals; only "binary" and "too large" mean the file
+    // is fine. Treating all seven as benign staged an attachment pointing at
+    // nothing, and the first sign of trouble was the model's own read failing
+    // mid-turn — a wasted turn the user cannot attribute to the drag.
+    vi.mocked(ReadFile).mockRejectedValue(new Error('open out/gone.md: no such file or directory'))
+    await attachTabContext('file', 'out/gone.md', 'gone.md')
+
+    expect(cockpit.pendingFile).toBeNull()
+    expect(cockpit.pendingContext).toBeNull()
+    expect(cockpit.chat).toHaveLength(1)
+    expect(cockpit.chat[0].text).toContain('no such file')
+  })
+
+  it('shows a picture as a picture, with no second copy on disk', async () => {
+    vi.mocked(ReadImageDataURL).mockResolvedValue('data:image/png;base64,BBB' as any)
+    await attachTabContext('file', 'shots/หน้าจอ.png', 'หน้าจอ.png')
+
+    expect(cockpit.pendingImage).toEqual({ relPath: 'shots/หน้าจอ.png', dataUrl: 'data:image/png;base64,BBB' })
+    // Already inside the sandbox — copying it again would leave two of them.
+    expect(SaveChatFile).not.toHaveBeenCalled()
+    expect(ReadFile).not.toHaveBeenCalled()
   })
 })

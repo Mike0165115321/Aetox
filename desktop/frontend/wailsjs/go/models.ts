@@ -58,6 +58,22 @@ export namespace config {
 
 export namespace main {
 	
+	export class AgentPage {
+	    url: string;
+	    title: string;
+	    time: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AgentPage(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.url = source["url"];
+	        this.title = source["title"];
+	        this.time = source["time"];
+	    }
+	}
 	export class ChangedFile {
 	    path: string;
 	    status: string;

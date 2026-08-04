@@ -25,6 +25,7 @@ function mount(viewport?: { name: string; w: number; h: number }) {
     tab: { id: 'web-1', kind: 'browser' as const, name: 'x', url: 'https://a.test', viewport },
     active: true,
     menuOpen: false,
+    dragging: false,
   })
   return vi.waitFor(() => expect(BrowserSetZoom).toHaveBeenCalled())
 }
@@ -60,7 +61,7 @@ describe('browser device presets', () => {
     const id = openBrowserTab()
     const tab = workbench.tabs.find((t) => t.id === id)!
     tab.url = 'https://a.test'
-    render(BrowserPane, { tab, active: true, menuOpen: false })
+    render(BrowserPane, { tab, active: true, menuOpen: false, dragging: false })
     await vi.waitFor(() => expect(BrowserSetZoom).toHaveBeenCalled())
     BrowserSetBounds.mockClear()
     BrowserSetZoom.mockClear()
@@ -74,7 +75,7 @@ describe('browser device presets', () => {
   // The tab is a real OS window drawn above the app's own webview, so a dropdown
   // opened over the pane is invisible unless the window steps aside.
   it('hides the native window while a workbench menu is open', async () => {
-    const props = { tab: { id: 'web-1', kind: 'browser' as const, name: 'x', url: 'https://a.test' }, active: true, menuOpen: false }
+    const props = { tab: { id: 'web-1', kind: 'browser' as const, name: 'x', url: 'https://a.test' }, active: true, menuOpen: false, dragging: false }
     const { rerender } = render(BrowserPane, props)
     await vi.waitFor(() => expect(BrowserSetVisible).toHaveBeenCalledWith('web-1', true))
 
