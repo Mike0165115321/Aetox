@@ -431,6 +431,24 @@ describe('Settings pages', () => {
     expect(screen.getByText('+ $ARGUMENTS')).toBeTruthy()
   })
 
+  // A door out, not a page in. Someone who opens Settings looking for the
+  // agents should find the way to them rather than conclude they are gone —
+  // which is exactly what happened when the only entrance was a gear on a card
+  // in another page.
+  it('offers a way out to the team page from the settings nav', async () => {
+    const { container } = render(Settings, { onClose: () => {} })
+
+    const row = Array.from(container.querySelectorAll('.settings-nav-item'))
+      .find((el) => el.textContent?.includes('ทีมเอเจน'))
+    expect(row).toBeTruthy()
+
+    await fireEvent.click(row as HTMLButtonElement)
+
+    // It leaves Settings instead of switching a section inside it.
+    expect(cockpit.activeView).toBe('office')
+    expect(row!.classList.contains('active')).toBe(false)
+  })
+
   // The handshake with the team page. Both halves were tested apart — Office
   // sets cockpit.settingsIntent, Settings consumes it — and a handshake tested
   // only at its two ends is one nobody has actually shaken.

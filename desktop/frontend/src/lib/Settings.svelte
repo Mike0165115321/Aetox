@@ -35,7 +35,7 @@
   import { BrowserOpenURL } from '../../wailsjs/runtime/runtime'
   import promptPayQR from '../assets/images/promptpay-qr.png'
   import { config, update, main } from '../../wailsjs/go/models'
-  import { cockpit, switchProvider, switchModel, submitAPIKey, switchApprovalMode, switchWireFormat, setProviderBaseURL, retryActiveProvider, completeSignIn, signOutProvider, importSignIn } from './stores/cockpit.svelte'
+  import { cockpit, setActiveView, switchProvider, switchModel, submitAPIKey, switchApprovalMode, switchWireFormat, setProviderBaseURL, retryActiveProvider, completeSignIn, signOutProvider, importSignIn } from './stores/cockpit.svelte'
   import {
     identity, loadIdentityFiles, openIdentityFile, saveIdentityFile,
     createIdentityFile, deleteIdentityFile, identityTemplates,
@@ -1568,7 +1568,9 @@
   // most likely things anyone types into a settings search — found nothing,
   // even though the Appearance page has five font controls on it. The terms are
   // the page's own setting titles, so they translate with everything else.
-  type NavItem = { id: string; label: string; icon: IconName; terms: string[] }
+  // leavesSettings: this row is a door out of Settings, not a page inside it.
+  // The id is then an activeView, not a section.
+  type NavItem = { id: string; label: string; icon: IconName; terms: string[]; leavesSettings?: boolean }
   const sections: { group: string; items: NavItem[] }[] = $derived([
     { group: t('settings.groupPersonal'), items: [
       { id: 'general', label: t('settings.general'), icon: 'slidersHorizontal',
@@ -1588,7 +1590,12 @@
     { group: t('settings.groupModels'), items: [
       { id: 'models', label: t('settings.modelSettings'), icon: 'brain',
         terms: [t('settings.providers'), t('settings.apiKeyLabel'), t('settings.baseUrl'), t('settings.signInLabel'), t('settings.modelList')] },
-      { id: 'agents', label: t('settings.subagents'), icon: 'bot',
+      // Not a settings page — a way out to the team's own page. Their roster
+      // lives there, and someone who opens Settings looking for the agents
+      // should find the door rather than conclude they are missing.
+      { id: 'office', label: t('desk.office'), icon: 'bot', leavesSettings: true,
+        terms: [t('office.roster'), t('office.chat')] },
+      { id: 'agents', label: t('settings.subagents'), icon: 'plugZap',
         terms: [t('settings.subagentsMine'), t('settings.subagentsBuiltin')] },
     ]},
     { group: t('settings.groupTools'), items: [
@@ -1670,8 +1677,10 @@
     {#each filteredSections as g}
       <div class="settings-group-label eyebrow">{g.group}</div>
       {#each g.items as it}
-        <button class="settings-nav-item" class:active={active === it.id} onclick={() => openSection(it.id)}>
+        <button class="settings-nav-item" class:active={active === it.id && !it.leavesSettings}
+          onclick={() => (it.leavesSettings ? setActiveView(it.id) : openSection(it.id))}>
           <span class="ic"><Icon name={it.icon} /></span> {it.label}
+          {#if it.leavesSettings}<span class="nav-leave"><Icon name="arrowRight" size={12} /></span>{/if}
           {#if it.id === 'learning' && cockpit.pendingLearned > 0}
             <span class="nav-count" title={t('settings.learningWaiting', { count: String(cockpit.pendingLearned) })}>
               {cockpit.pendingLearned}

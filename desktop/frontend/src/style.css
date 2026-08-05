@@ -1437,6 +1437,10 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .set-h3 { margin:10px 0 6px; font-size:var(--fs-xl); font-weight:600; }
 /* How many proposals are waiting, on the row that opens them. */
 .nav-count { margin-left:auto; min-width:18px; padding:0 5px; border-radius:999px; background:var(--accent); color:var(--surface-app); font-size:var(--fs-xs); font-weight:600; text-align:center; }
+/* Marks the one nav row that is a way out rather than a page — clicking it
+   leaves Settings, and an arrow says so before the click does. */
+.nav-leave { margin-left:auto; display:flex; color:var(--text-dim); }
+.settings-nav-item:hover .nav-leave { color:var(--text-secondary); }
 .learn-row { display:flex; gap:16px; align-items:flex-start; padding:14px 16px; border-bottom:1px solid var(--border-subtle); }
 .learn-row:last-child { border-bottom:none; }
 .learn-main { flex:1; min-width:0; }
