@@ -26,6 +26,7 @@ This document is an evidence-first architecture map, distinct from [README.md](R
 | [docs/architecture/model-control-layer-2026-07-22.md](docs/architecture/model-control-layer-2026-07-22.md) | Layer-2 deep dive (`turn`/`cognitive`/`skill`/`safety`). ⚠️ Executor sections superseded by §17 — the doc says so itself. |
 | [docs/architecture/tesseract-ocr-bundling-2026-07-22.md](docs/architecture/tesseract-ocr-bundling-2026-07-22.md) | How `image_ocr`'s Tesseract dependency reaches the user's machine per OS. |
 | [docs/architecture/native-browser-embedding-2026-07-24.md](docs/architecture/native-browser-embedding-2026-07-24.md) | Native browser embedding: architecture, 7-entry failure catalog, macOS/Linux port blueprint (§18). |
+| [docs/architecture/desk-file-panes-2026-08-06.md](docs/architecture/desk-file-panes-2026-08-06.md) | **The desk's reference table: what the `+` menu's four entries are for, and which pane draws which file** (§87). The menu lists *sources* that start from empty, never file types — a new file type earns a row in the routing table and nothing else. Also records where each size ceiling lives and why, and which formats are deliberately left to the program that already opens them. **§6 is written ahead of its code** (owner's rule: anything arriving on the desk is written here first) and specs the agent's own reach onto the desk — `desk_open`/`desk_list`, and the redaction §81 requires of the latter. |
 | [docs/architecture/foreign-coding-clis-2026-07-27.md](docs/architecture/foreign-coding-clis-2026-07-27.md) | Why Claude Code / Codex / OpenCode may be consultants but never the provider seam; the deferred `claude-cli` profile plan (§46). |
 | [docs/adr/0001-native-tool-calling-foundation.md](docs/adr/0001-native-tool-calling-foundation.md) | ADR, Accepted 2026-06-07 — native tool calling as the agentic foundation. |
 | [docs/adr/0002-directional-cognition-engine.md](docs/adr/0002-directional-cognition-engine.md) | ADR, Proposed 2026-07-10 — long-term multi-AI orchestration vision (ensemble/routing/consensus). |
@@ -510,6 +511,7 @@ product picture in [COMPANY.md](COMPANY.md)) · §82 (the learning floor) · §4
 | §84 | The Company: Five Buttons, One Face, a Star With One Center (2026-08-05) |
 | §85 | Chairs Are Full Agents: Direct Chat in the Office (2026-08-05) |
 | §86 | One Company, Two Doors: Aetox ผู้ช่วย and Aetox โค้ด (2026-08-05) |
+| §87 | Files Travel as Addresses, and the Desk's Menu Does Not Grow (2026-08-06) |
 
 ---
 

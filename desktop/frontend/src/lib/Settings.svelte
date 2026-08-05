@@ -26,7 +26,7 @@
     UsageStats, ListPromptPresets, OpenPromptsFolder,
     SavePromptPreset, DeletePromptPreset, PickPresetImage, RemovePresetImage,
     ListSubagentProfiles, ReadSubagentProfile, SaveSubagentProfile, SaveAgentProfile,
-    DeleteSubagentProfile, SetSubagentModel, OpenSubagentsFolder, ListChairs,
+    DeleteSubagentProfile, SetSubagentModel, OpenSubagentsFolder, OpenAgentsFolder, ListChairs,
     SignInMethods, SignInStatus, StartSignIn, CancelSignIn, ImportableSignIns,
     AppVersion, CheckForUpdate,
     LearningEnabled, SetLearningEnabled, ListPendingChanges, ListDecidedChanges,
@@ -1154,8 +1154,17 @@
   // Split by who wrote it, which is what a user actually asks of this page. A
   // file of yours that shadows a bundled one counts as yours — it IS your file —
   // and carries a badge saying so, because deleting it reverts rather than removes.
-  const mySubagents = $derived(subagents.filter((a) => !a.builtin && !chairNames.has(a.name)))
-  const builtinSubagents = $derived(subagents.filter((a) => a.builtin && !chairNames.has(a.name)))
+  // One split, applied twice: which kind, then who wrote it. Both pages read
+  // these — the markup is shared (profileListPane), so a rule added here lands
+  // on both without either page knowing about the other.
+  const teamRows = $derived({
+    mine: subagents.filter((a) => !a.builtin && chairNames.has(a.name)),
+    builtin: subagents.filter((a) => a.builtin && chairNames.has(a.name)),
+  })
+  const helperRows = $derived({
+    mine: subagents.filter((a) => !a.builtin && !chairNames.has(a.name)),
+    builtin: subagents.filter((a) => a.builtin && !chairNames.has(a.name)),
+  })
   // Which profiles are agents — asked of ListChairs, the same answer the team
   // page draws, never re-derived from a file's fields here.
   let chairNames = $state(new Set<string>())
@@ -1489,7 +1498,7 @@
   }
 
   $effect(() => {
-    if (active === 'agents') void loadAgents()
+    if (active === 'agents' || active === 'team') void loadAgents()
   })
 
   $effect(() => {
@@ -1568,9 +1577,7 @@
   // most likely things anyone types into a settings search — found nothing,
   // even though the Appearance page has five font controls on it. The terms are
   // the page's own setting titles, so they translate with everything else.
-  // leavesSettings: this row is a door out of Settings, not a page inside it.
-  // The id is then an activeView, not a section.
-  type NavItem = { id: string; label: string; icon: IconName; terms: string[]; leavesSettings?: boolean }
+  type NavItem = { id: string; label: string; icon: IconName; terms: string[] }
   const sections: { group: string; items: NavItem[] }[] = $derived([
     { group: t('settings.groupPersonal'), items: [
       { id: 'general', label: t('settings.general'), icon: 'slidersHorizontal',
@@ -1590,11 +1597,8 @@
     { group: t('settings.groupModels'), items: [
       { id: 'models', label: t('settings.modelSettings'), icon: 'brain',
         terms: [t('settings.providers'), t('settings.apiKeyLabel'), t('settings.baseUrl'), t('settings.signInLabel'), t('settings.modelList')] },
-      // Not a settings page — a way out to the team's own page. Their roster
-      // lives there, and someone who opens Settings looking for the agents
-      // should find the door rather than conclude they are missing.
-      { id: 'office', label: t('desk.office'), icon: 'bot', leavesSettings: true,
-        terms: [t('office.roster'), t('office.chat')] },
+      { id: 'team', label: t('desk.office'), icon: 'bot',
+        terms: [t('settings.teamNew'), t('settings.agentConfigure')] },
       { id: 'agents', label: t('settings.subagents'), icon: 'plugZap',
         terms: [t('settings.subagentsMine'), t('settings.subagentsBuiltin')] },
     ]},
@@ -1628,7 +1632,7 @@
   // while three pages deep into MCP config and landing back on General is a
   // small thing that happens every single time.
   const SECTION_KEY = 'aetox.settingsSection'
-  const SECTION_IDS = new Set(['general', 'appearance', 'identity', 'learning', 'models', 'agents', 'tools', 'skills', 'mcp', 'prompts', 'usage', 'about', 'sponsor'])
+  const SECTION_IDS = new Set(['general', 'appearance', 'identity', 'learning', 'models', 'team', 'agents', 'tools', 'skills', 'mcp', 'prompts', 'usage', 'about', 'sponsor'])
 
   function restoredSection(): string {
     try {
@@ -1670,6 +1674,161 @@
   const noSearchResults = $derived(query.trim() !== '' && filteredSections.length === 0)
 </script>
 
+<!-- ตัวแทน and ผู้ช่วยตัวแทน get a page each, and both are drawn from here.
+     One markup, two kinds: the alternative is two copies that agree on the day
+     they are written, which is the debt this whole split exists to refuse.
+     `kind` decides what is listed, what the copy says, and which door a save
+     goes out through — it is never read back off a file. -->
+{#snippet profileRow(a: SubagentRow, kind: 'agent' | 'helper')}
+  <div class="set-row">
+    <div class="set-txt">
+      <div class="t">
+        {a.name}
+        {#if a.overrides}<span class="tag ag-override">{t('settings.agentOverrides')}</span>{/if}
+        {#if a.model}<span class="tag">{a.model}</span>{/if}
+        <span class="tag" title={toolBadgeTip(a)}>{toolBadge(a)}</span>
+        {#if a.deny && a.deny.length > 0}<span class="tag ag-deny" title={denyTip(a)}>{t('settings.agentDenyCount', { n: a.deny.length })}</span>{/if}
+        <span class="tag" title={t('settings.agentStepsTip', { n: a.steps || 24 })}>{t('settings.agentSteps', { n: a.steps || 24 })}</span>
+      </div>
+      <div class="d">{a.description || '—'}</div>
+      <!-- A file that cannot run says why, where its owner will look — never a
+           silent reinterpretation, never a row that just vanishes (the file is
+           still on the user's disk). -->
+      {#if a.invalid}<div class="d ag-invalid">{a.invalid}</div>{/if}
+      <div class="d mono-dim">{a.path || 'built-in:' + a.name}</div>
+    </div>
+    <select
+      class="ctrl" value={a.model ?? ''} disabled={agentBusy !== ''}
+      onchange={(e) => pinModel(a.name, e.currentTarget.value)}
+    >
+      <option value="">{t('settings.agentModelInherit')}</option>
+      {#each agentModels as m}<option value={m}>{m}</option>{/each}
+      {#if a.model && !agentModels.includes(a.model)}<option value={a.model}>{a.model}</option>{/if}
+    </select>
+    <button class="ctrl" disabled={agentBusy !== ''} onclick={() => openAgent(a, kind)}>{t('settings.agentConfigure')}</button>
+  </div>
+{/snippet}
+
+{#snippet profileListPane(kind: 'agent' | 'helper')}
+  {@const isAgent = kind === 'agent'}
+  {@const rows = isAgent ? teamRows : helperRows}
+  <h2>{isAgent ? t('desk.office') : t('settings.subagents')}</h2>
+  <p class="muted set-sub">{isAgent ? t('settings.teamDesc') : t('settings.subagentsDesc')}</p>
+
+  <div class="pp-bar">
+    <button class="ctrl" onclick={() => newAgent(kind)}>{isAgent ? t('settings.teamNew') : t('settings.agentNew')}</button>
+    <button class="ctrl" onclick={() => loadAgents()}>{t('settings.refresh')}</button>
+    <button class="ctrl" onclick={() => (isAgent ? OpenAgentsFolder() : OpenSubagentsFolder())}>{t('settings.agentsFolder')}</button>
+    <!-- The roster with its job history and its chat doors is a page of its
+         own; this one configures. Said out loud rather than left for the user
+         to discover, because two places holding one kind of thing is exactly
+         what needs a stated rule. -->
+    {#if isAgent}
+      <div class="pp-bar-gap"></div>
+      <button class="ctrl" onclick={() => setActiveView('office')}>{t('settings.teamOpenPage')} <Icon name="arrowRight" size={13} /></button>
+    {/if}
+  </div>
+  {#if agentError}<div class="mset-error">{agentError}</div>{/if}
+
+  <!-- Two cards, split by who wrote it — the question this page is actually
+       asked. Built-ins are second because a fresh install has only those and
+       the interesting list is the one you grow. -->
+  {#each [{ id: 'mine', rows: rows.mine, label: t('settings.subagentsMine'), hint: isAgent ? t('settings.teamMineHint') : t('settings.subagentsMineHint') },
+          { id: 'builtin', rows: rows.builtin, label: t('settings.subagentsBuiltin'), hint: t('settings.subagentsBuiltinHint') }] as group (group.id)}
+    <div class="settings-card">
+      <div class="card-form">
+        <div class="eyebrow">{group.label} <span class="ag-count">{group.rows.length}</span></div>
+        <div class="d muted">{group.hint}</div>
+      </div>
+      {#if group.rows.length === 0}
+        <div class="set-row"><div class="muted">{isAgent ? t('settings.teamNoneOfMine') : t('settings.subagentsNoneOfMine')}</div></div>
+      {/if}
+      {#each group.rows as a (a.name)}{@render profileRow(a, kind)}{/each}
+    </div>
+  {/each}
+  <p class="muted set-sub">{t('settings.agentsHint')}</p>
+{/snippet}
+
+<!-- One editor for both kinds. Which kind it is holding was decided by the
+     door it was opened through (agentEditKind), never by reading the file —
+     that is the same rule the storage layer lives by, carried up. -->
+{#snippet agentEditorPane()}
+  {#if agentEditing !== null}
+    <h2>{agentEditKind === 'agent' ? t('settings.editAgentTitle') : t('settings.subagents')}</h2>
+    <p class="muted set-sub">{agentEditKind === 'agent' ? t('settings.editAgentDesc') : t('settings.subagentsDesc')}</p>
+
+    <div class="pp-bar">
+      <button class="ctrl" onclick={closeAgentEditor}><Icon name="arrowLeft" size={14} /> {t('settings.agentBack')}</button>
+      <div class="pp-bar-gap"></div>
+      {#if !agentEditing.builtin && agentEditing.name}
+        <button class="ctrl ctrl-danger" disabled={agentBusy !== ''} onclick={deleteAgent}>
+          {agentEditing.overrides ? t('settings.agentRevert') : t('settings.remove')}
+        </button>
+      {/if}
+      <button class="ctrl ctrl-primary" disabled={agentBusy !== '' || !agentDraftName.trim() || !agentDraftPrompt.trim()} onclick={saveAgent}>
+        {agentBusy === 'save' ? t('settings.saving') : t('settings.promptSave')}
+      </button>
+    </div>
+
+    {#if agentEditing.builtin}
+      <p class="muted set-sub">{t('settings.agentOverrideNote')}</p>
+    {/if}
+    {#if agentError}<div class="mset-error">{agentError}</div>{/if}
+
+    <div class="settings-card">
+      <div class="card-form pp-edit">
+        <label class="pp-field">
+          <span class="eyebrow">{t('settings.agentName')}</span>
+          <input class="ctrl" bind:value={agentDraftName} placeholder="backend" disabled={agentEditing.name !== ''} />
+        </label>
+        <label class="pp-field">
+          <span class="eyebrow">{t('settings.agentDescription')}</span>
+          <input class="ctrl" bind:value={agentDraftDescription} placeholder={t('settings.agentDescriptionPlaceholder')} />
+        </label>
+        <label class="pp-field">
+          <span class="eyebrow">{t('settings.agentBody')}</span>
+          <textarea class="ctrl ag-body" bind:value={agentDraftPrompt} spellcheck="false" use:autogrow={agentDraftPrompt}></textarea>
+          <span class="d muted">{t('settings.agentBodyHint')}</span>
+        </label>
+        <!-- A summary and a way in, not seventy chips. What each tool ends up
+             as is one question, so it is answered one row at a time in the
+             panel below rather than across two grids the reader has to join
+             themselves. -->
+        <div class="pp-field">
+          <span class="eyebrow">{t('settings.agentTools')}</span>
+          <div class="ag-toolsum">
+            <div class="ag-toolsum-txt">
+              <div class="t">{agentToolSummary}</div>
+              <div class="d muted">{t('settings.agentToolsRule')}</div>
+            </div>
+            <button type="button" class="ctrl" onclick={() => (toolPickerOpen = true)}>
+              {t('settings.agentToolsConfigure')} <Icon name="chevronRight" size={13} />
+            </button>
+          </div>
+        </div>
+
+        <div class="pp-field">
+          <span class="eyebrow">{t('settings.agentStepsField')}</span>
+          <div class="ag-steprow">
+            <input
+              class="ctrl ag-steps" bind:value={agentDraftSteps} inputmode="numeric" placeholder="24"
+              disabled={agentStepsUnlimited}
+              aria-label={t('settings.agentStepsField')}
+            />
+            <label class="ag-check">
+              <input type="checkbox" checked={agentStepsUnlimited} onchange={toggleStepsUnlimited} />
+              {t('settings.agentStepsUnlimited')}
+            </label>
+          </div>
+          <span class="d muted">
+            {agentStepsUnlimited ? t('settings.agentStepsUnlimitedWarn') : t('settings.agentStepsFieldHint')}
+          </span>
+        </div>
+      </div>
+    </div>
+  {/if}
+{/snippet}
+
 <div class="settings-page">
   <aside class="settings-nav">
     <button class="settings-back" onclick={onClose}><Icon name="arrowLeft" size={14} /> {t('settings.backToApp')}</button>
@@ -1677,10 +1836,8 @@
     {#each filteredSections as g}
       <div class="settings-group-label eyebrow">{g.group}</div>
       {#each g.items as it}
-        <button class="settings-nav-item" class:active={active === it.id && !it.leavesSettings}
-          onclick={() => (it.leavesSettings ? setActiveView(it.id) : openSection(it.id))}>
+        <button class="settings-nav-item" class:active={active === it.id} onclick={() => openSection(it.id)}>
           <span class="ic"><Icon name={it.icon} /></span> {it.label}
-          {#if it.leavesSettings}<span class="nav-leave"><Icon name="arrowRight" size={12} /></span>{/if}
           {#if it.id === 'learning' && cockpit.pendingLearned > 0}
             <span class="nav-count" title={t('settings.learningWaiting', { count: String(cockpit.pendingLearned) })}>
               {cockpit.pendingLearned}
@@ -2343,142 +2500,12 @@
         </div>
       </div>
 
-    {:else if active === 'agents'}
-      <!-- While the editor holds an agent (walked in from the team page's
-           doors), the heading says so — an agent edited under a sub-agents
-           heading reads as filed in the wrong drawer, which is the exact
-           confusion the split ended. -->
-      {#if agentEditing !== null && agentEditKind === 'agent'}
-        <h2>{t('settings.editAgentTitle')}</h2>
-        <p class="muted set-sub">{t('settings.editAgentDesc')}</p>
+    {:else if active === 'team' || active === 'agents'}
+      {@const kind = active === 'team' ? 'agent' : 'helper'}
+      {#if agentEditing !== null}
+        {@render agentEditorPane()}
       {:else}
-        <h2>{t('settings.subagents')}</h2>
-        <p class="muted set-sub">{t('settings.subagentsDesc')}</p>
-      {/if}
-
-      {#if agentEditing === null}
-        <div class="pp-bar">
-          <button class="ctrl" onclick={() => newAgent()}>{t('settings.agentNew')}</button>
-          <button class="ctrl" onclick={() => loadAgents()}>{t('settings.refresh')}</button>
-          <button class="ctrl" onclick={() => OpenSubagentsFolder()}>{t('settings.agentsFolder')}</button>
-        </div>
-        {#if agentError}<div class="mset-error">{agentError}</div>{/if}
-
-        <!-- Two cards, split by who wrote it — the question this page is actually
-             asked. Built-ins are second because a fresh install has only those and
-             the interesting list is the one you grow. -->
-        {#each [{ id: 'mine', rows: mySubagents, label: t('settings.subagentsMine'), hint: t('settings.subagentsMineHint') },
-                { id: 'builtin', rows: builtinSubagents, label: t('settings.subagentsBuiltin'), hint: t('settings.subagentsBuiltinHint') }] as group (group.id)}
-          <div class="settings-card">
-            <div class="card-form">
-              <div class="eyebrow">{group.label} <span class="ag-count">{group.rows.length}</span></div>
-              <div class="d muted">{group.hint}</div>
-            </div>
-            {#if group.rows.length === 0}
-              <div class="set-row"><div class="muted">{t('settings.subagentsNoneOfMine')}</div></div>
-            {/if}
-            {#each group.rows as a (a.name)}
-              <div class="set-row">
-                <div class="set-txt">
-                  <div class="t">
-                    {a.name}
-                    {#if a.overrides}<span class="tag ag-override">{t('settings.agentOverrides')}</span>{/if}
-                    {#if a.model}<span class="tag">{a.model}</span>{/if}
-                    <span class="tag" title={toolBadgeTip(a)}>{toolBadge(a)}</span>
-                    {#if a.deny && a.deny.length > 0}<span class="tag ag-deny" title={denyTip(a)}>{t('settings.agentDenyCount', { n: a.deny.length })}</span>{/if}
-                    <span class="tag" title={t('settings.agentStepsTip', { n: a.steps || 24 })}>{t('settings.agentSteps', { n: a.steps || 24 })}</span>
-                  </div>
-                  <div class="d">{a.description || '—'}</div>
-                  <!-- A file that cannot run says why, where its owner will
-                       look — never a silent reinterpretation, never a row that
-                       just vanishes (the file is still on the user's disk). -->
-                  {#if a.invalid}<div class="d ag-invalid">{a.invalid}</div>{/if}
-                  <div class="d mono-dim">{a.path || 'built-in:' + a.name}</div>
-                </div>
-                <select
-                  class="ctrl" value={a.model ?? ''} disabled={agentBusy !== ''}
-                  onchange={(e) => pinModel(a.name, e.currentTarget.value)}
-                >
-                  <option value="">{t('settings.agentModelInherit')}</option>
-                  {#each agentModels as m}<option value={m}>{m}</option>{/each}
-                  {#if a.model && !agentModels.includes(a.model)}<option value={a.model}>{a.model}</option>{/if}
-                </select>
-                <button class="ctrl" disabled={agentBusy !== ''} onclick={() => openAgent(a)}>{t('settings.agentConfigure')}</button>
-              </div>
-            {/each}
-          </div>
-        {/each}
-        <p class="muted set-sub">{t('settings.agentsHint')}</p>
-      {:else}
-        <div class="pp-bar">
-          <button class="ctrl" onclick={closeAgentEditor}><Icon name="arrowLeft" size={14} /> {t('settings.agentBack')}</button>
-          <div class="pp-bar-gap"></div>
-          {#if !agentEditing.builtin && agentEditing.name}
-            <button class="ctrl ctrl-danger" disabled={agentBusy !== ''} onclick={deleteAgent}>
-              {agentEditing.overrides ? t('settings.agentRevert') : t('settings.remove')}
-            </button>
-          {/if}
-          <button class="ctrl ctrl-primary" disabled={agentBusy !== '' || !agentDraftName.trim() || !agentDraftPrompt.trim()} onclick={saveAgent}>
-            {agentBusy === 'save' ? t('settings.saving') : t('settings.promptSave')}
-          </button>
-        </div>
-
-        {#if agentEditing.builtin}
-          <p class="muted set-sub">{t('settings.agentOverrideNote')}</p>
-        {/if}
-        {#if agentError}<div class="mset-error">{agentError}</div>{/if}
-
-        <div class="settings-card">
-          <div class="card-form pp-edit">
-            <label class="pp-field">
-              <span class="eyebrow">{t('settings.agentName')}</span>
-              <input class="ctrl" bind:value={agentDraftName} placeholder="backend" disabled={agentEditing.name !== ''} />
-            </label>
-            <label class="pp-field">
-              <span class="eyebrow">{t('settings.agentDescription')}</span>
-              <input class="ctrl" bind:value={agentDraftDescription} placeholder={t('settings.agentDescriptionPlaceholder')} />
-            </label>
-            <label class="pp-field">
-              <span class="eyebrow">{t('settings.agentBody')}</span>
-              <textarea class="ctrl ag-body" bind:value={agentDraftPrompt} spellcheck="false" use:autogrow={agentDraftPrompt}></textarea>
-              <span class="d muted">{t('settings.agentBodyHint')}</span>
-            </label>
-            <!-- A summary and a way in, not seventy chips. What each tool ends
-                 up as is one question, so it is answered one row at a time in
-                 the panel below rather than across two grids the reader has to
-                 join themselves. -->
-            <div class="pp-field">
-              <span class="eyebrow">{t('settings.agentTools')}</span>
-              <div class="ag-toolsum">
-                <div class="ag-toolsum-txt">
-                  <div class="t">{agentToolSummary}</div>
-                  <div class="d muted">{t('settings.agentToolsRule')}</div>
-                </div>
-                <button type="button" class="ctrl" onclick={() => (toolPickerOpen = true)}>
-                  {t('settings.agentToolsConfigure')} <Icon name="chevronRight" size={13} />
-                </button>
-              </div>
-            </div>
-
-            <div class="pp-field">
-              <span class="eyebrow">{t('settings.agentStepsField')}</span>
-              <div class="ag-steprow">
-                <input
-                  class="ctrl ag-steps" bind:value={agentDraftSteps} inputmode="numeric" placeholder="24"
-                  disabled={agentStepsUnlimited}
-                  aria-label={t('settings.agentStepsField')}
-                />
-                <label class="ag-check">
-                  <input type="checkbox" checked={agentStepsUnlimited} onchange={toggleStepsUnlimited} />
-                  {t('settings.agentStepsUnlimited')}
-                </label>
-              </div>
-              <span class="d muted">
-                {agentStepsUnlimited ? t('settings.agentStepsUnlimitedWarn') : t('settings.agentStepsFieldHint')}
-              </span>
-            </div>
-          </div>
-        </div>
+        {@render profileListPane(kind)}
       {/if}
 
     {:else if active === 'prompts'}

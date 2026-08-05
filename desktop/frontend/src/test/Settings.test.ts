@@ -431,22 +431,24 @@ describe('Settings pages', () => {
     expect(screen.getByText('+ $ARGUMENTS')).toBeTruthy()
   })
 
-  // A door out, not a page in. Someone who opens Settings looking for the
-  // agents should find the way to them rather than conclude they are gone —
-  // which is exactly what happened when the only entrance was a gear on a card
-  // in another page.
-  it('offers a way out to the team page from the settings nav', async () => {
+  // ตัวแทน get their own settings page, listing only them — the office page is
+  // where you work with them (chat, job history), this is where you configure
+  // them. Both pages are drawn from one markup (profileListPane), so the two
+  // lists cannot drift into two different ideas of what a profile row is.
+  it('gives agents their own settings page, without the helpers on it', async () => {
+    vi.mocked(ListSubagentProfiles).mockResolvedValue([
+      { name: 'deck', description: 'ทำสไลด์', prompt: 'role', builtin: true, desk: 'specialized' },
+      { name: 'explore', description: 'ค้นไฟล์', prompt: 'role', builtin: true },
+    ] as any)
+    vi.mocked(ListChairs).mockResolvedValue([{ name: 'deck' }] as any)
+
     const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'ทีมเอเจน')
 
-    const row = Array.from(container.querySelectorAll('.settings-nav-item'))
-      .find((el) => el.textContent?.includes('ทีมเอเจน'))
-    expect(row).toBeTruthy()
-
-    await fireEvent.click(row as HTMLButtonElement)
-
-    // It leaves Settings instead of switching a section inside it.
-    expect(cockpit.activeView).toBe('office')
-    expect(row!.classList.contains('active')).toBe(false)
+    await waitFor(() => expect(screen.getByText('ทำสไลด์')).toBeTruthy())
+    expect(screen.queryByText('ค้นไฟล์')).toBeNull()
+    // Stays inside Settings — this row is a section, not a link out.
+    expect(cockpit.activeView).not.toBe('office')
   })
 
   // The handshake with the team page. Both halves were tested apart — Office
