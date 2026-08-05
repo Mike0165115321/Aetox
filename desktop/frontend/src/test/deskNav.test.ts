@@ -3,7 +3,7 @@
 // What is worth pinning here is not that a row of buttons renders — it is the
 // rules a nav that opens sessions has to keep: clicking a desk you are not at
 // opens a session THERE, clicking the desk you are already at does not throw
-// away the conversation in front of you, ออโต้ is a room with the door built
+// away the conversation in front of you, ทำงานอัตโนมัติ is a room with the door built
 // and nothing behind it, and — since the split — each door draws only its own
 // rooms, so the workshop never shows the office's.
 import { describe, it, expect, beforeEach, vi } from 'vitest'
@@ -31,16 +31,18 @@ beforeEach(() => {
 })
 
 describe('the rooms behind each door', () => {
-  it('offers the storefront rooms, with ออโต้ present and disabled', () => {
+  it('offers the storefront rooms, with the deferred ones present and disabled', () => {
     render(Sidebar, { onOpenSettings: () => {} })
 
-    for (const label of ['ผู้ช่วย', 'ทีมเอเจน', 'ออโต้', 'ผลงาน']) {
+    for (const label of ['ผู้ช่วย', 'โปรเจกต์', 'ทีมเอเจน', 'ทำงานอัตโนมัติ', 'ผลงาน']) {
       expect(deskButton(label)).toBeTruthy()
     }
-    // Built, empty, and saying so — a room that appeared later would read as a
+    // Named, empty, and saying so — a room that appeared later would read as a
     // new feature rather than as the plan it already is (§7).
-    expect(deskButton('ออโต้').disabled).toBe(true)
-    expect(deskButton('ออโต้').textContent).toContain('เร็ว ๆ นี้')
+    for (const deferred of ['โปรเจกต์', 'ทำงานอัตโนมัติ']) {
+      expect(deskButton(deferred).disabled).toBe(true)
+      expect(deskButton(deferred).textContent).toContain('เร็ว ๆ นี้')
+    }
   })
 
   // The whole point of §86: the workshop is not the storefront with extra
@@ -51,7 +53,7 @@ describe('the rooms behind each door', () => {
     render(Sidebar, { onOpenSettings: () => {} })
 
     expect(deskButton('โค้ด')).toBeTruthy()
-    for (const hidden of ['ผู้ช่วย', 'ทีมเอเจน', 'ออโต้', 'ผลงาน']) {
+    for (const hidden of ['ผู้ช่วย', 'โปรเจกต์', 'ทีมเอเจน', 'ทำงานอัตโนมัติ', 'ผลงาน']) {
       expect(() => deskButton(hidden)).toThrow()
     }
   })

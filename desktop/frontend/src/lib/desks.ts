@@ -1,6 +1,6 @@
-// The five buttons (COMPANY.md §2), as one list.
+// The rooms of the company (COMPANY.md §2), as one list.
 //
-// Two desks, one office, two pages — fixed, not a rendering of whatever mode
+// Two desks, one office, three pages — fixed, not a rendering of whatever mode
 // files happen to be on disk. A desk manifest is a *capability* file: a user
 // who writes a fourth one gets a fourth desk in the engine, not a fourth
 // button in the product's navigation. The nav is the product's shape and the
@@ -9,8 +9,8 @@
 //
 // `kind` is what a click means, and the three answers are genuinely different:
 // a desk opens a session, a page is a view over data with no session of its
-// own, and `soon` is a button with the room built and the work deliberately
-// deferred (ออโต้ — §7, "อย่าจับปลาหลายมือ").
+// own, and `soon` is a button with the room named and the work deliberately
+// deferred (§7, "อย่าจับปลาหลายมือ").
 
 import type { IconName } from './icons'
 import type { TKey } from './i18n.svelte'
@@ -36,6 +36,12 @@ export interface NavEntry {
 
 export const NAV: NavEntry[] = [
   { id: 'assistant', kind: 'desk', labelKey: 'desk.assistant', blurbKey: 'desk.assistantBlurb', icon: 'sparkles', shell: 'assistant' },
+  // A project groups chats and carries a few files into every session held
+  // inside it, so the assistant starts each one already knowing the context.
+  // It is a folder for conversations, NOT a fence: the assistant keeps the
+  // whole machine either way, which is what separates this from the workshop's
+  // projects — those root the sandbox, and that is the point of them.
+  { id: 'projects', kind: 'soon', labelKey: 'desk.projects', blurbKey: 'desk.projectsBlurb', icon: 'folder', shell: 'assistant' },
   { id: 'office', kind: 'page', labelKey: 'desk.office', blurbKey: 'desk.officeBlurb', icon: 'bot', shell: 'assistant' },
   { id: 'auto', kind: 'soon', labelKey: 'desk.auto', blurbKey: 'desk.autoBlurb', icon: 'timer', shell: 'assistant' },
   { id: 'artifacts', kind: 'page', labelKey: 'desk.artifacts', blurbKey: 'desk.artifactsBlurb', icon: 'package', shell: 'assistant' },
