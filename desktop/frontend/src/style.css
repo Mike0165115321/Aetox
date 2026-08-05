@@ -1219,6 +1219,11 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .door-item .d { font-size:var(--fs-xs); color:var(--text-secondary); line-height:1.5; white-space:nowrap; }
 .door-item .tick { display:flex; align-self:center; color:var(--interactive); }
 
+/* A sentence's own action — the hiring note's folder door. A .ctrl box mid-
+   sentence reads as a second subject; this reads as the rest of the sentence. */
+.linklike { color:var(--text-muted); text-decoration:underline; cursor:pointer; font-size:inherit; }
+.linklike:hover { color:var(--text-primary); }
+
 .office-grid { margin-bottom:14px; }
 /* Slimmer cover than a preset's: an agent card carries chips and a footer a
    preset card does not, and the covers are what was making every row — and

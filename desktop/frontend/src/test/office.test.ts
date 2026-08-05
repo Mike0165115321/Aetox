@@ -24,6 +24,7 @@ const job = (over: Record<string, unknown> = {}) => ({
 beforeEach(() => {
   vi.clearAllMocks()
   cockpit.activeView = 'office'
+  cockpit.settingsIntent = null
   vi.mocked(ListChairs).mockResolvedValue([chair()] as any)
   vi.mocked(ListReceivedJobs).mockResolvedValue([] as any)
 })
@@ -56,11 +57,30 @@ describe('the office roster', () => {
     expect(screen.getByText(/งานที่ทำแล้ว/)).toBeTruthy()
   })
 
-  // Hiring is dropping a file (§84), and the gallery's first card is the door
-  // to the folder where that file goes.
-  it('offers a create-agent card', async () => {
+  // The gallery's first card is the create door. It opens the shared profile
+  // editor with kind=agent carried in the intent — from this roster, kind is
+  // known by construction, and the editor must never re-derive it from a file.
+  it('offers a create-agent card that opens the editor as an agent', async () => {
     render(Office, { onClose: () => {} })
-    await waitFor(() => expect(screen.getByText('สร้างเอเจนใหม่')).toBeTruthy())
+    const card = await screen.findByText('สร้างตัวแทนใหม่')
+
+    await fireEvent.click(card)
+
+    expect(cockpit.settingsIntent).toEqual({ section: 'agents', createAgent: true })
+    expect(cockpit.activeView).toBe('settings')
+  })
+
+  // Configure on the card: the agent's desk is its home page, and the gear is
+  // its own door into the one editor.
+  it('sends a card\'s gear to the editor with that agent\'s name', async () => {
+    render(Office, { onClose: () => {} })
+    await screen.findByText('เก้าอี้ร่างเอกสาร')
+
+    const gear = screen.getAllByLabelText('ตั้งค่า')[0]
+    await fireEvent.click(gear)
+
+    expect(cockpit.settingsIntent).toEqual({ section: 'agents', agent: 'doc' })
+    expect(cockpit.activeView).toBe('settings')
   })
 
   // Walking into the room (§85): the card's chat button opens a session bound

@@ -25,7 +25,7 @@
     ListSpeechModels, SetSpeechModel, SpeechStatus, RevealSpeechModel, SpeechModelDirs, OpenSpeechModelDir,
     UsageStats, ListPromptPresets, OpenPromptsFolder,
     SavePromptPreset, DeletePromptPreset, PickPresetImage, RemovePresetImage,
-    ListSubagentProfiles, ReadSubagentProfile, SaveSubagentProfile,
+    ListSubagentProfiles, ReadSubagentProfile, SaveSubagentProfile, SaveAgentProfile,
     DeleteSubagentProfile, SetSubagentModel, OpenSubagentsFolder, ListChairs,
     SignInMethods, SignInStatus, StartSignIn, CancelSignIn, ImportableSignIns,
     AppVersion, CheckForUpdate,
@@ -225,6 +225,29 @@
   }
 
   onMount(bootSettings)
+
+  // The team page's two doors land here: configure-on-a-card and the create
+  // form both open this page with the editor already holding the right
+  // profile — and the right *kind*, which the intent carries because it came
+  // from the roster, not from re-reading any file. Consumed once and cleared:
+  // an intent that survived into the next plain visit would reopen an editor
+  // nobody asked for.
+  onMount(async () => {
+    const intent = cockpit.settingsIntent
+    if (!intent) return
+    cockpit.settingsIntent = null
+    openSection(intent.section)
+    if (intent.section !== 'agents') return
+    if (intent.createAgent) {
+      newAgent('agent')
+      return
+    }
+    if (intent.agent) {
+      await loadAgents()
+      const row = subagents.find((a) => a.name === intent.agent)
+      if (row) await openAgent(row, 'agent')
+    }
+  })
 
   // ---------- About ----------
   // Kept out of bootSettings on purpose. The version is a constant the Go side
@@ -1227,7 +1250,14 @@
   ])
   let agentSnapshot = ''
 
-  const openAgent = (a: SubagentRow) => runAgent('open:' + a.name, async () => {
+  // Which kind the editor is holding — ตัวแทน or ผู้ช่วยตัวแทน. Set by the door
+  // the editor was opened through and never by reading the file: the same rule
+  // the storage layer lives by (a file's home is its kind), carried up. Saving
+  // goes out through the matching door, so an edit cannot change what
+  // something is as a side effect of where a button happened to be.
+  let agentEditKind = $state<'agent' | 'helper'>('helper')
+
+  const openAgent = (a: SubagentRow, kind?: 'agent' | 'helper') => runAgent('open:' + a.name, async () => {
     const parsed = parseAgentFile(await ReadSubagentProfile(a.name))
     agentDraftName = a.name
     agentDraftDescription = parsed.description
@@ -1237,10 +1267,13 @@
     agentDraftSteps = parsed.steps
     agentDraftPrompt = parsed.body
     agentEditing = a
+    // A row opened from this page answers from the roster the page already
+    // asked for (ListChairs) — never from the file's own fields.
+    agentEditKind = kind ?? (chairNames.has(a.name) ? 'agent' : 'helper')
     agentSnapshot = agentDraftKey()
   })
 
-  function newAgent() {
+  function newAgent(kind: 'agent' | 'helper' = 'helper') {
     agentEditing = { name: '', description: '', prompt: '', builtin: false }
     agentDraftName = ''
     agentDraftDescription = ''
@@ -1250,6 +1283,7 @@
     agentDraftSteps = ''
     agentDraftPrompt = t('settings.agentStarter')
     agentError = ''
+    agentEditKind = kind
     agentSnapshot = agentDraftKey()
   }
 
@@ -1257,14 +1291,19 @@
     guardUnsaved(agentDraftKey() !== agentSnapshot, () => { agentEditing = null })
 
   const saveAgent = () => runAgent('save', async () => {
-    await SaveSubagentProfile(agentDraftName.trim(), serializeAgentFile({
+    const body = serializeAgentFile({
       description: agentDraftDescription,
       model: agentDraftModel,
       tools: agentDraftTools,
       deny: agentDraftDeny,
       steps: agentDraftSteps,
       body: agentDraftPrompt,
-    }))
+    })
+    // Out through the door that matches the kind — the backend refuses a name
+    // the other kind owns, so the wrong door is an error message, never a file
+    // in the wrong home.
+    if (agentEditKind === 'agent') await SaveAgentProfile(agentDraftName.trim(), body)
+    else await SaveSubagentProfile(agentDraftName.trim(), body)
     await loadAgents()
     agentEditing = null
   })
@@ -2299,7 +2338,7 @@
 
       {#if agentEditing === null}
         <div class="pp-bar">
-          <button class="ctrl" onclick={newAgent}>{t('settings.agentNew')}</button>
+          <button class="ctrl" onclick={() => newAgent()}>{t('settings.agentNew')}</button>
           <button class="ctrl" onclick={() => loadAgents()}>{t('settings.refresh')}</button>
           <button class="ctrl" onclick={() => OpenSubagentsFolder()}>{t('settings.agentsFolder')}</button>
         </div>

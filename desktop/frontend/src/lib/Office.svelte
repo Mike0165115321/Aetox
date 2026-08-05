@@ -12,7 +12,7 @@
   // sub-agents' folder would wake up sick.
   import { ListChairs, ListReceivedJobs, OpenAgentsFolder } from '../../wailsjs/go/main/App'
   import { main } from '../../wailsjs/go/models'
-  import { agoLabel, newChairSession, selectGlobalSession, setActiveView } from './stores/cockpit.svelte'
+  import { agoLabel, cockpit, newChairSession, selectGlobalSession, setActiveView } from './stores/cockpit.svelte'
   import { t } from './i18n.svelte'
   import Icon from './Icon.svelte'
 
@@ -56,6 +56,20 @@
     await newChairSession(chair.name)
   }
 
+  // The two doors into the shared profile editor (Settings holds the one
+  // implementation; two copies of an editor is how they drift). The intent
+  // carries kind='agent' by construction — it comes off this roster — so the
+  // editor saves through the agents' door without ever reading a file to
+  // decide what something is.
+  function configure(c: main.Chair) {
+    cockpit.settingsIntent = { section: 'agents', agent: c.name }
+    setActiveView('settings')
+  }
+  function createAgent() {
+    cockpit.settingsIntent = { section: 'agents', createAgent: true }
+    setActiveView('settings')
+  }
+
   // Same name-to-hue hash the preset gallery uses (Settings.svelte), so an
   // agent keeps one colour for life and the two galleries read as one system.
   function coverHue(name: string): number {
@@ -91,7 +105,7 @@
            keeping: these cards are the actual staff, with history — not
            templates to instantiate. -->
       <div class="pp-grid office-grid">
-        <button class="pp-card pp-new" onclick={() => OpenAgentsFolder()}>
+        <button class="pp-card pp-new" onclick={createAgent}>
           <span class="pp-plus">+</span>
           <span class="pp-newtxt">{t('office.newAgent')}</span>
         </button>
@@ -125,6 +139,10 @@
               {:else}
                 <span class="stat idle">{t('office.neverUsed')}</span>
               {/if}
+              <button class="icobtn tiny tip-l" aria-label={t('settings.agentConfigure')}
+                data-tip={t('settings.agentConfigure')} onclick={() => configure(c)}>
+                <Icon name="settings" size={13} />
+              </button>
               <button class="ctrl chair-chat" onclick={() => talkTo(c)}>
                 <Icon name="sparkles" size={12} /> {t('office.chat')}
               </button>
@@ -135,7 +153,10 @@
           <div class="pp-card chair-card empty"><div class="pp-body"><span class="pp-desc">{t('office.noChairs')}</span></div></div>
         {/if}
       </div>
-      <p class="page-note">{t('office.hiringNote')}</p>
+      <p class="page-note">
+        {t('office.hiringNote')}
+        <button class="linklike" onclick={() => OpenAgentsFolder()}>{t('office.openAgentsFolder')}</button>
+      </p>
       <!-- Where the rest of them are. This page is the roster — who takes work
            and what they have done — and it is not every profile the engine
            runs: the assistant's own delegates never sit here. Saying so is what

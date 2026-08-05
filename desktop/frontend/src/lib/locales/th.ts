@@ -631,7 +631,8 @@ export const th = {
   'chat.inputToAgent': 'พิมพ์ถึง {name}…',
   'chat.mainAgent': 'ผู้ช่วยหลัก',
   'chat.agentSwitchNote': 'สลับ = เปิดแชทใหม่เสมอ — แชทเดิมอยู่ในประวัติ',
-  'office.newAgent': 'สร้างเอเจนใหม่',
+  'office.newAgent': 'สร้างตัวแทนใหม่',
+  'office.openAgentsFolder': 'หรือเปิดโฟลเดอร์ตัวแทน',
   'office.toolCalls': 'เรียกเครื่องมือ {n} ครั้ง',
 
   // ---- ผลงาน ----

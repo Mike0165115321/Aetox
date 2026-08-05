@@ -432,6 +432,11 @@ export interface CockpitState {
    * told about is one that never gets emptied, which would quietly turn
    * "nothing takes effect without you" into "nothing takes effect". */
   pendingLearned: number
+  /** A one-shot request from another page for what Settings should open on:
+   * the team page's configure/create doors land in the shared profile editor
+   * this way. Carries the *kind* because it came from the roster — Settings
+   * must never re-derive it from a file. Consumed and cleared on arrival. */
+  settingsIntent: { section: string; agent?: string; createAgent?: boolean } | null
 }
 
 /** One suggested side task from the agent (suggest_task tool). */
@@ -470,6 +475,7 @@ export function emptyCockpitState(): CockpitState {
     todos: [],
     taskChips: [],
     pendingLearned: 0,
+    settingsIntent: null,
     pendingImage: null,
     pendingContext: null,
     pendingFile: null,

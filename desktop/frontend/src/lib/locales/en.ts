@@ -630,6 +630,7 @@ Check your own work before answering; say so plainly if unsure.
   'chat.mainAgent': 'Main assistant',
   'chat.agentSwitchNote': 'Switching always opens a new chat — this one stays in history.',
   'office.newAgent': 'New agent',
+  'office.openAgentsFolder': 'or open the agents folder',
   'office.toolCalls': '{n} tool calls',
 
   // ---- Work ----

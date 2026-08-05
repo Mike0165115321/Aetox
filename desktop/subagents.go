@@ -47,6 +47,13 @@ func (a *App) SaveSubagentProfile(name, body string) error {
 	return subagent.Save(name, body)
 }
 
+// SaveAgentProfile is the team page's door: the file lands in the agents'
+// home, which is what makes it an agent — the caller never writes the kind
+// into the body, and the backend refuses a name the other kind owns.
+func (a *App) SaveAgentProfile(name, body string) error {
+	return subagent.SaveAgent(name, body)
+}
+
 // DeleteSubagentProfile removes a user profile. Deleting a shadow restores the
 // bundled profile it was hiding.
 func (a *App) DeleteSubagentProfile(name string) error {

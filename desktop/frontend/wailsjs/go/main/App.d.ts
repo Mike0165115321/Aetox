@@ -157,6 +157,8 @@ export function NewSession():Promise<string>;
 
 export function NewSessionAt(arg1:string):Promise<string>;
 
+export function SaveAgentProfile(arg1:string,arg2:string):Promise<void>;
+
 export function OpenAgentsFolder():Promise<void>;
 
 export function OpenArtifact(arg1:string):Promise<void>;
@@ -240,7 +242,6 @@ export function RetryFailedTurn(arg1:string):Promise<main.TurnReply>;
 export function RevealSpeechModel(arg1:string):Promise<void>;
 
 export function RunChatCommand(arg1:string):Promise<main.RunBlockResult>;
-
 export function SaveChatFile(arg1:string):Promise<string>;
 
 export function SaveChatImage(arg1:string):Promise<string>;
