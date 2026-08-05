@@ -2554,18 +2554,20 @@
 
       {#if learningError}<div class="mset-error">{learningError}</div>{/if}
 
+      <!-- .set-row, like every other switch on this page. This card used to be
+           built from .mcp-row/.mcp-row-main, which have no CSS at all — so the
+           text sat flush against the card's border and the switch dropped to
+           its own line underneath. -->
       <div class="settings-card">
-        <div class="mcp-row">
-          <div class="mcp-row-main">
-            <div class="n">{t('settings.learningEnabled')}</div>
+        <div class="set-row">
+          <div class="set-txt">
+            <div class="t">{t('settings.learningEnabled')}</div>
             <div class="d">{t('settings.learningEnabledHint')}</div>
           </div>
-          <div class="mcp-row-actions">
-            <label class="mswitch">
-              <input type="checkbox" checked={learningOn} onchange={toggleLearning} />
-              <span></span>
-            </label>
-          </div>
+          <label class="mswitch">
+            <input type="checkbox" checked={learningOn} onchange={toggleLearning} />
+            <span></span>
+          </label>
         </div>
       </div>
 
@@ -2602,15 +2604,22 @@
 
       <h3 class="set-h3">{t('settings.learningMemory')}</h3>
       <p class="muted set-sub">{t('settings.learningMemoryHint')}</p>
+      <!-- The button used to be a bare child of the card, which has no padding
+           of its own — so it sat hard against the left border while the memory
+           text above it was inset by 16px. Its own row puts the two on one
+           left edge and gives the button the same rule every other card
+           footer has. -->
       <div class="settings-card">
         {#if mainMemory}
           <pre class="learn-memory">{mainMemory}</pre>
         {:else}
           <div class="empty">{t('settings.learningMemoryEmpty')}</div>
         {/if}
-        <button type="button" class="ctrl" onclick={() => OpenMemoryFolder()}>
-          <Icon name="folderOpen" size={13} /> {t('settings.learningOpenFolder')}
-        </button>
+        <div class="set-row learn-foot">
+          <button type="button" class="ctrl" onclick={() => OpenMemoryFolder()}>
+            <Icon name="folderOpen" size={13} /> {t('settings.learningOpenFolder')}
+          </button>
+        </div>
       </div>
 
       {#if decidedChanges.length > 0}

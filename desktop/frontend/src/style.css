@@ -1405,7 +1405,10 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
    memory this is, what it would become, and what in the work suggested it.
    A row that showed only the sentence would be asking for a signature on an
    assertion with no provenance. */
-.set-h3 { margin:0 0 6px; font-size:var(--fs-xl); font-weight:600; }
+/* A section break, not just a line of bold text. The card above already ends
+   28px up; without the top margin the next section's heading read as that
+   card's caption, and the page ran together as one column of blocks. */
+.set-h3 { margin:10px 0 6px; font-size:var(--fs-xl); font-weight:600; }
 /* How many proposals are waiting, on the row that opens them. */
 .nav-count { margin-left:auto; min-width:18px; padding:0 5px; border-radius:999px; background:var(--accent); color:var(--surface-app); font-size:var(--fs-xs); font-weight:600; text-align:center; }
 .learn-row { display:flex; gap:16px; align-items:flex-start; padding:14px 16px; border-bottom:1px solid var(--border-subtle); }
@@ -1423,7 +1426,10 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .learn-why { margin-top:4px; font-size:var(--fs-sm); color:var(--text-dim); word-break:break-word; }
 .learn-actions { display:flex; gap:8px; flex:none; }
 .learn-row.past { opacity:.72; }
-.learn-memory { margin:0 0 12px; padding:14px 16px; white-space:pre-wrap; word-break:break-word; font-size:var(--fs-sm); }
+.learn-memory { margin:0; padding:14px 16px; white-space:pre-wrap; word-break:break-word; font-size:var(--fs-sm); }
+/* The card's footer action, ruled off from the memory text above it the same
+   way two .set-rows are ruled off from each other. */
+.learn-foot { border-top:1px solid var(--border-subtle); padding-top:12px; padding-bottom:12px; }
 
 /* model settings: provider list + detail */
 .mset { display:flex; min-height:420px; }
