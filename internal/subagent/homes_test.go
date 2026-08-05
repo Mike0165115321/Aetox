@@ -186,3 +186,49 @@ func TestSetModelFollowsTheOwnersHome(t *testing.T) {
 		t.Fatalf("deck after pin = %+v, ok=%v", p, ok)
 	}
 }
+
+// What the model is told about who it can hand work to.
+//
+// The schema used to be one flat list of names under "Which sub-agent to use",
+// so the model learned there was one kind of worker and told users exactly
+// that — "ซับเอเจน 6 ตัว", with an agent's job described as a chair's. It was
+// not hallucinating; it was repeating this string. The product has two kinds,
+// so this string has to have two.
+func TestTheModelIsToldWhichWorkersAreAgentsAndWhichAreHelpers(t *testing.T) {
+	isolate(t)
+	choice := agentChoice(List())
+
+	for _, want := range []string{"AGENTS (ตัวแทน)", "HELPERS (ผู้ช่วยตัวแทน)", "deck", "explore"} {
+		if !strings.Contains(choice, want) {
+			t.Errorf("the agent parameter never mentions %q:\n%s", want, choice)
+		}
+	}
+	// An agent must be described on the agents side, not among the helpers.
+	agentsHalf, helpersHalf, split := strings.Cut(choice, "HELPERS")
+	if !split {
+		t.Fatal("the two kinds are not separated at all")
+	}
+	if !strings.Contains(agentsHalf, "deck") || strings.Contains(helpersHalf, "deck") {
+		t.Errorf("deck is an agent but is not filed as one:\n%s", choice)
+	}
+	if !strings.Contains(helpersHalf, "explore") || strings.Contains(agentsHalf, "explore") {
+		t.Errorf("explore is a helper but is not filed as one:\n%s", choice)
+	}
+}
+
+// A profile's description says what the JOB is. Its kind is decided by which
+// home the file lives in, so a kind-word inside the description is a second
+// place answering "what kind is this" — and it is the one that goes stale: the
+// bundled files still said "เก้าอี้ทำสไลด์" and "ซับเอเจนค้นไฟล์" for a day
+// after the split, and the model read them out to users verbatim.
+func TestBundledDescriptionsCarryNoKindWord(t *testing.T) {
+	isolate(t)
+	for _, p := range List() {
+		for _, retired := range []string{"เก้าอี้", "ซับเอเจน", "ออฟฟิศ"} {
+			if strings.Contains(p.Description, retired) {
+				t.Errorf("%s's description says %q — the home already decides the kind: %q",
+					p.Name, retired, p.Description)
+			}
+		}
+	}
+}

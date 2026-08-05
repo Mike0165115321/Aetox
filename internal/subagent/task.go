@@ -103,20 +103,21 @@ func (t *taskTool) Name() string { return "task" }
 // is the honest one: a delegate pays for a second system prompt and its own tool
 // list, so anything you can already name is cheaper done here.
 func (t *taskTool) Description() string {
-	return "Start a self-contained job on a sub-agent. RETURNS IMMEDIATELY with a task id — it does NOT wait. " +
-		"Do other useful work in the meantime (read the next file, start a second sub-agent), then call " +
+	return "Hand a self-contained job to an agent or a helper — see the `agent` parameter for who is who. " +
+		"RETURNS IMMEDIATELY with a task id — it does NOT wait. " +
+		"Do other useful work in the meantime (read the next file, start a second one), then call " +
 		"task_result with the id to collect the answer. If you have nothing else to do, collect it straight away. " +
-		"The sub-agent has NO access to this conversation, so `prompt` must carry everything it needs. " +
+		"They have NO access to this conversation, so `prompt` must carry everything they need. " +
 		"WHEN TO USE: the work would otherwise pour a lot into this conversation — hunting through many " +
 		"files for something you cannot name yet, or the same mechanical change repeated across many places. " +
 		"WHEN NOT TO: anything you can already name. Reading a file, one grep, one edit, a handful of known " +
 		"paths — do those yourself. A delegate costs a second system prompt and its own tool list on every " +
 		"round, so a small job is strictly more expensive delegated than done here. " +
-		"REPEATED WORK IS ONE JOB: hand the whole list to ONE sub-agent and let it loop — twelve items is one " +
-		"task with twelve items in its prompt, never twelve tasks. Each sub-agent you start pays for its own " +
+		"REPEATED WORK IS ONE JOB: hand the whole list to ONE of them and let it loop — twelve items is one " +
+		"task with twelve items in its prompt, never twelve tasks. Each one you start pays for its own " +
 		"context, so starting one per item multiplies the cost of the very thing you were saving. " +
 		"Start several only when the jobs are genuinely unrelated. " +
-		"A sub-agent that gets stuck on a decision only you can make will come back through task_result as a " +
+		"One that gets stuck on a decision only you can make will come back through task_result as a " +
 		"question instead of an answer — reply with task_answer and it carries on from where it stopped. " +
 		"Available: " + strings.Join(profileNames(t.available()), ", ") + "."
 }
@@ -176,13 +177,45 @@ func profileNames(profiles []Profile) []string {
 	return out
 }
 
+// agentChoice describes the `agent` parameter, grouped into the two kinds the
+// product actually has (COMPANY.md §4: ตัวแทน and ผู้ช่วยตัวแทน).
+//
+// One flat list of names taught the model there was one kind of worker, so it
+// told users so — "ซับเอเจน 6 ตัว", with an agent's job described as a chair's.
+// It was not wrong; it was repeating what this schema said. The grouping is
+// derived from the resolver's answer (Desk), never from a word in a profile's
+// description — descriptions say what the job *is*, and the kind is decided by
+// which home the file lives in.
+//
+// The Thai terms ride along because this list is the only place the model
+// meets these workers, and a model that has to invent a word for them will.
+func agentChoice(profiles []Profile) string {
+	var agents, helpers []string
+	for _, p := range profiles {
+		line := p.Name + " — " + p.Description
+		if p.Desk != "" {
+			agents = append(agents, line)
+		} else {
+			helpers = append(helpers, line)
+		}
+	}
+	out := "Which one to hand it to. Two kinds, and the difference is whose work it is."
+	if len(agents) > 0 {
+		out += "\nAGENTS (ตัวแทน) — a colleague who takes a whole job off your hands and returns a finished file. " +
+			"Brief them like a coworker, then use what comes back: " + strings.Join(agents, " | ")
+	}
+	if len(helpers) > 0 {
+		out += "\nHELPERS (ผู้ช่วยตัวแทน) — your own hands for one step of YOUR work, in a second context so it " +
+			"stays out of this one: " + strings.Join(helpers, " | ")
+	}
+	return out
+}
+
 func (t *taskTool) ToolDefinition() model.ToolDefinition {
 	profiles := t.available()
 	names := make([]string, 0, len(profiles))
-	described := make([]string, 0, len(profiles))
 	for _, p := range profiles {
 		names = append(names, p.Name)
-		described = append(described, p.Name+" — "+p.Description)
 	}
 	schema := map[string]any{
 		"type": "object",
@@ -199,7 +232,7 @@ func (t *taskTool) ToolDefinition() model.ToolDefinition {
 			"agent": map[string]any{
 				"type":        "string",
 				"enum":        names,
-				"description": "Which sub-agent to use. " + strings.Join(described, " | "),
+				"description": agentChoice(profiles),
 			},
 		},
 		"required":             []string{"description", "prompt"},

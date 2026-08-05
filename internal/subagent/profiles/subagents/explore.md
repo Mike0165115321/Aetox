@@ -1,5 +1,5 @@
 ---
-description: ซับเอเจนค้นไฟล์ — grep/glob/list/read เท่านั้น คืนเป็นรายการ path ที่เกี่ยวข้องจริง
+description: ค้นไฟล์ — grep/glob/list/read เท่านั้น คืนเป็นรายการ path ที่เกี่ยวข้องจริง
 tools: grep, glob, list, read
 ---
 

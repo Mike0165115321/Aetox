@@ -549,7 +549,7 @@ func (p *NoopProvider) noopSubagentReply(model string, req Request) Response {
 		// a real file, reads it back and greps it — the shape of an actual
 		// delegated job, and an artifact on disk at the end of it.
 		return call("noop_task_1", "task", p.pick(
-			`{"description":"ทดสอบซับเอเจน","prompt":"askmain: ดูว่าในโฟลเดอร์นี้มีไฟล์อะไรบ้าง เขียนไฟล์สรุปไว้หนึ่งไฟล์ อ่านกลับมายืนยัน แล้วรายงานผล","agent":"general"}`,
+			`{"description":"ทดสอบผู้ช่วยตัวแทน","prompt":"askmain: ดูว่าในโฟลเดอร์นี้มีไฟล์อะไรบ้าง เขียนไฟล์สรุปไว้หนึ่งไฟล์ อ่านกลับมายืนยัน แล้วรายงานผล","agent":"general"}`,
 			`{"description":"sub-agent test","prompt":"askmain: list what is in this folder, write a summary file, read it back to confirm, then report","agent":"general"}`))
 	case collected == 0:
 		return call("noop_task_collect_1", "task_result", `{"task_id":"`+firstTaskID(req)+`"}`)
@@ -570,7 +570,7 @@ func (p *NoopProvider) noopSubagentReply(model string, req Request) Response {
 		}
 	}
 	return Response{Provider: p.Name(), Model: model, Text: p.pick(
-		"✅ จบชุดทดสอบซับเอเจนครับ — สั่งงาน → มันติดแล้วถามกลับ → ตอบไป → มันทำต่อจนจบ แล้วเก็บผลได้ครบ\n\nผลจากซับเอเจน: ",
+		"✅ จบชุดทดสอบผู้ช่วยตัวแทนครับ — สั่งงาน → มันติดแล้วถามกลับ → ตอบไป → มันทำต่อจนจบ แล้วเก็บผลได้ครบ\n\nผลที่ได้: ",
 		"✅ Sub-agent test set complete — delegated, it got stuck and asked, the answer went back, it finished, and the work was collected.\n\nWhat the sub-agent returned: ") + clipNoop(last, 600)}
 }
 
@@ -598,7 +598,7 @@ func (p *NoopProvider) noopSubagentDelegateReply(model string, req Request) Resp
 		}}}
 	}
 	body := p.pick(
-		"# สรุปโฟลเดอร์\\n\\nไฟล์นี้เขียนโดยซับเอเจนระหว่างชุดทดสอบ\\n\\n- ตรวจแล้ว: OK\\n",
+		"# สรุปโฟลเดอร์\\n\\nไฟล์นี้เขียนโดยผู้ช่วยตัวแทนระหว่างชุดทดสอบ\\n\\n- ตรวจแล้ว: OK\\n",
 		"# Folder summary\\n\\nWritten by a sub-agent during the test set.\\n\\n- checked: OK\\n")
 
 	switch {
@@ -609,7 +609,7 @@ func (p *NoopProvider) noopSubagentDelegateReply(model string, req Request) Resp
 	// that calling a tool you were not handed goes nowhere.
 	case briefMentions(req, "office") && offersTool(req, "doc_write") && !did("doc_write"):
 		return step("noop_sub_doc", "doc_write", p.pick(
-			`{"path":"office-demo.docx","blocks":[{"type":"heading","text":"สรุปงานจากออฟฟิศ"},{"type":"paragraph","text":"เขียนโดยเก้าอี้ในออฟฟิศระหว่างชุดทดสอบ"}]}`,
+			`{"path":"office-demo.docx","blocks":[{"type":"heading","text":"สรุปงานจากทีมเอเจน"},{"type":"paragraph","text":"เขียนโดยตัวแทนระหว่างชุดทดสอบ"}]}`,
 			`{"path":"office-demo.docx","blocks":[{"type":"heading","text":"Office job summary"},{"type":"paragraph","text":"Written by a chair in the office during the test set."}]}`))
 	case !did("ask_main") && offersTool(req, "ask_main") && briefMentions(req, "askmain"):
 		return step("noop_sub_ask", "ask_main", p.pick(
@@ -626,7 +626,7 @@ func (p *NoopProvider) noopSubagentDelegateReply(model string, req Request) Resp
 	}
 
 	var b strings.Builder
-	b.WriteString(p.pick("[tools-test] ซับเอเจนทำงานเสร็จแล้ว:\n", "[tools-test] the sub-agent is done:\n"))
+	b.WriteString(p.pick("[tools-test] ทำงานเสร็จแล้ว:\n", "[tools-test] the delegate is done:\n"))
 	for _, s := range []struct{ tool, th, en string }{
 		{"doc_write", "เขียนเอกสารส่งกลับ", "wrote the document"},
 		{"list", "ดูไฟล์ในโฟลเดอร์", "listed the folder"},
@@ -745,7 +745,7 @@ func (p *NoopProvider) noopDelegationReply(model string, req Request) Response {
 		return call("noop_task_collect_1", "task_result", fmt.Sprintf(`{"task_id":%q}`, started))
 	}
 	return Response{Provider: p.Name(), Model: model, Text: p.pick(
-		"[tools-test] ส่งงานให้ซับเอเจน "+profile+" แล้วเก็บผลกลับมาได้ ผลที่ได้:\n",
+		"[tools-test] ส่งงานให้ "+profile+" แล้วเก็บผลกลับมาได้ ผลที่ได้:\n",
 		"[tools-test] delegated to sub-agent "+profile+" and collected it. Result:\n") + clipNoop(collected, 600)}
 }
 
@@ -917,7 +917,7 @@ func (p *NoopProvider) noopOfficeChairReply(model string, req Request) Response 
 		ID:   "noop_chair_doc",
 		Type: "function",
 		Function: FunctionCall{Name: "doc_write", Arguments: p.pick(
-			`{"path":"office-demo.docx","blocks":[{"type":"heading","text":"สรุปงานจากออฟฟิศ"},{"type":"paragraph","text":"เขียนโดยเก้าอี้ในออฟฟิศระหว่างชุดทดสอบ"}]}`,
+			`{"path":"office-demo.docx","blocks":[{"type":"heading","text":"สรุปงานจากทีมเอเจน"},{"type":"paragraph","text":"เขียนโดยตัวแทนระหว่างชุดทดสอบ"}]}`,
 			`{"path":"office-demo.docx","blocks":[{"type":"heading","text":"Office job summary"},{"type":"paragraph","text":"Written by a chair in the office during the test set."}]}`)},
 	}}}
 }

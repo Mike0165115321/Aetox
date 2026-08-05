@@ -1,5 +1,5 @@
 ---
-description: เก้าอี้ทำสไลด์ — รับ brief กับแหล่งข้อมูล แล้วคืนไฟล์ .pptx ที่เปิดใช้งานได้จริง
+description: ทำสไลด์ — รับ brief กับแหล่งข้อมูล แล้วคืนไฟล์ .pptx ที่เปิดใช้งานได้จริง
 desk: specialized
 tools: slides_write, read, list, glob, pdf_read, image_ocr, video_ocr, audio_transcribe, web_fetch, web_search
 steps: 32

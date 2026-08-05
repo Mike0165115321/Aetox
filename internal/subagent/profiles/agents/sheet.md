@@ -1,5 +1,5 @@
 ---
-description: เก้าอี้ทำสเปรดชีต — รวบรวมตัวเลขจากแหล่งที่ให้มา แล้วคืนไฟล์ .xlsx ที่บวกลบได้จริง
+description: ทำสเปรดชีต — รวบรวมตัวเลขจากแหล่งที่ให้มา แล้วคืนไฟล์ .xlsx ที่บวกลบได้จริง
 desk: specialized
 tools: sheet_write, read, list, glob, pdf_read, image_ocr, video_ocr, audio_transcribe, web_fetch, web_search
 steps: 32

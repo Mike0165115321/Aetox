@@ -1,5 +1,5 @@
 ---
-description: เก้าอี้ร่างเอกสาร — รับ brief กับแหล่งข้อมูล แล้วคืนไฟล์ .docx ที่จัดหัวข้อ/ตารางเรียบร้อย
+description: ร่างเอกสาร — รับ brief กับแหล่งข้อมูล แล้วคืนไฟล์ .docx ที่จัดหัวข้อ/ตารางเรียบร้อย
 desk: specialized
 tools: doc_write, read, list, glob, pdf_read, image_ocr, video_ocr, audio_transcribe, web_fetch, web_search
 steps: 32
