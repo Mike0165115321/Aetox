@@ -193,6 +193,36 @@ describe('tool timeline collapsing', () => {
     expect(container.querySelector('.tool-think')?.textContent).toContain('8')
   })
 
+  // The button and the number on it have to be asked in the same terms. They
+  // were not: the button appeared for any own step, the count excluded
+  // narration and thinking, and a turn that only narrated offered "Used 0
+  // tools" — a control whose whole promise is that there is nothing behind it.
+  it('offers no tool toggle for a turn that only narrated', () => {
+    const { container } = render(Chat, {
+      ...baseProps,
+      messages: [{
+        role: 'agent', text: 'done', time: '10:54',
+        steps: [{ kind: 'note', label: 'looking at the sidebar first', state: 'done', startedAt: 0 }],
+      }] as any,
+    })
+
+    const toggles = [...container.querySelectorAll('.meta-row .reasoning-toggle')]
+    expect(toggles.some((b) => b.textContent?.includes('Used 0'))).toBe(false)
+    // And no empty bar left standing where the toggle would have been.
+    expect(container.querySelector('.meta-row')).toBeNull()
+  })
+
+  it('offers no tool toggle mid-turn either, on the same narration', () => {
+    const { container } = render(Chat, {
+      ...baseProps, awaitingReply: true,
+      messages: [{ role: 'user', text: 'go', time: '10:54' }] as any,
+      toolSteps: [{ kind: 'note', label: 'looking at the sidebar first', state: 'done', startedAt: 0 }] as any,
+    })
+
+    const toggles = [...container.querySelectorAll('.reasoning-toggle')]
+    expect(toggles.some((b) => b.textContent?.includes('Used 0'))).toBe(false)
+  })
+
   it('keeps only the running tool on screen mid-turn', () => {
     const { container } = render(Chat, {
       ...baseProps, awaitingReply: true,

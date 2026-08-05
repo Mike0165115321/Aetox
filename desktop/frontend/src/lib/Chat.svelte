@@ -91,6 +91,15 @@
   const isOwn = (n: TimelineNode) => !n.step.parent && !isDelegation(n)
   const ownSteps = (steps: ToolStep[]) => groupSteps(steps).filter(isOwn).map((n) => n.step)
   const delegated = (steps: ToolStep[]) => groupSteps(steps).filter((n) => !isOwn(n))
+  // The agent's own steps that are actually tools. Narration and thinking rows
+  // ride in the same list and are not — counting them would inflate "used N
+  // tools" with sentences.
+  //
+  // One helper because the count and the button that shows it have to agree.
+  // They did not: the button appeared for any own step at all, the summary
+  // counted only the tools, and a turn that merely narrated offered "ใช้ 0
+  // เครื่องมือ" — a control whose only promise is that there is nothing behind it.
+  const ownTools = (steps: ToolStep[]) => ownSteps(steps).filter((s) => !s.kind)
 
   const liveDone = $derived(toolSteps.filter((s) => s.state !== 'run'))
   const liveRunning = $derived(toolSteps.filter((s) => s.state === 'run'))
@@ -98,7 +107,12 @@
   // the whole reason notes exist (§59). Older ones collapse into the timeline
   // with everything else.
   const liveNote = $derived([...toolSteps].reverse().find((s) => s.kind === 'note' && !s.parent))
+  // Two lists, deliberately: the panel shows every own step, narration
+  // included, because that is the model working out loud and it belongs in the
+  // timeline. The count beside the button is tools only — and so is what
+  // decides whether the button is drawn at all.
   const doneOwn = $derived(ownSteps(toolSteps).filter((s) => s.state !== 'run'))
+  const doneOwnTools = $derived(ownTools(toolSteps).filter((s) => s.state !== 'run'))
   const runningOwn = $derived(ownSteps(toolSteps).filter((s) => s.state === 'run'))
   const doneSubs = $derived(delegated(toolSteps).filter((n) => n.step.state !== 'run'))
   const runningSubs = $derived(delegated(toolSteps).filter((n) => n.step.state === 'run'))
@@ -119,9 +133,7 @@
   // who did the work. A delegate's steps are counted inside its block, never
   // here.
   function toolsLabel(steps: ToolStep[]): string {
-    // Narration and thinking rows ride in the same list but are not tools —
-    // counting them would inflate "used N tools" with sentences.
-    const own = ownSteps(steps).filter((s) => !s.kind)
+    const own = ownTools(steps)
     const failed = own.filter((s) => s.state === 'err').length
     const base = t('chat.usedTools', { n: own.length })
     return failed ? `${base} · ${t('chat.failedCount', { n: failed })}` : base
@@ -821,7 +833,10 @@
                 {#if m.contextPreview}<pre class="attach-body">{m.contextPreview}</pre>{/if}
               </div>
             {/if}
-            {#if m.reasoning || m.steps?.length}
+            <!-- Asked in the same terms as the buttons inside it. `m.steps`
+                 alone drew the row for a turn whose only steps were narration,
+                 and then had nothing to put in it. -->
+            {#if m.reasoning || ownTools(m.steps ?? []).length || delegated(m.steps ?? []).length}
               <div class="meta-row">
                 {#if m.reasoning}
                   <!-- Each toggle carries the mark of what it opens, so the row
@@ -835,7 +850,7 @@
                     {m.thinkSecs ? t('chat.thoughtFor', { secs: m.thinkSecs }) : t('chat.thoughtDone')}
                   </button>
                 {/if}
-                {#if ownSteps(m.steps ?? []).length}
+                {#if ownTools(m.steps ?? []).length}
                   <button class="reasoning-toggle" onclick={() => togglePanel(i, 'tools')}>
                     <span class="chev"><Icon name={openPanel[i] === 'tools' ? 'chevronDown' : 'chevronRight'} size={12} /></span>
                     <span class="ic"><Icon name="wrench" size={12} /></span>
@@ -1023,7 +1038,7 @@
               {/if}
               <span class="typing-dots"><span></span><span></span><span></span></span>
             </div>
-            {#if reasoningText || doneOwn.length || doneSubs.length}
+            {#if reasoningText || doneOwnTools.length || doneSubs.length}
               <div class="meta-row">
                 <!-- The same three marks the finished bubble's toggles carry
                      (brain / wrench / bot). These are the identical rows one
@@ -1036,7 +1051,7 @@
                     {t('chat.thinking')}
                   </button>
                 {/if}
-                {#if doneOwn.length}
+                {#if doneOwnTools.length}
                   <button class="reasoning-toggle" onclick={() => (livePanel = livePanel === 'tools' ? '' : 'tools')}>
                     <span class="chev"><Icon name={livePanel === 'tools' ? 'chevronDown' : 'chevronRight'} size={12} /></span>
                     <span class="ic"><Icon name="wrench" size={12} /></span>
