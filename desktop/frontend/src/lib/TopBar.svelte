@@ -89,10 +89,14 @@
   <!-- tip-r on both: these sit flush against the window's right edge, so a
        centred (or left-anchored) tooltip gets clipped by it. -->
   <div class="winbtns">
-    <button
-      class="icobtn tip-r" aria-label={t('sidebar.newSession')}
-      data-tip="{t('sidebar.newSession')} · Ctrl+N" onclick={newSession}
-    ><Icon name="plus" size={15} /></button>
+    <!-- Only while the sidebar is away: its header row carries this otherwise,
+         and two + buttons on one line is one of them saying nothing. -->
+    {#if sidebarCollapsed}
+      <button
+        class="icobtn tip-r" aria-label={t('sidebar.newSession')}
+        data-tip="{t('sidebar.newSession')} · Ctrl+N" onclick={newSession}
+      ><Icon name="plus" size={15} /></button>
+    {/if}
     <button
       class="icobtn tip-r" aria-label={inspectorCollapsed ? t('topbar.showPanel') : t('topbar.hidePanel')}
       data-tip={t('topbar.toggleInspectorTip')} onclick={onToggleInspector}

@@ -8,7 +8,7 @@
   import { UserName, SetUserName, ListModes } from '../../wailsjs/go/main/App'
   import { navFor, deskLabelKey, type NavEntry } from './desks'
   import { shell } from './shell.svelte'
-  import { t, i18n, setLocale, localeNames, type Locale } from './i18n.svelte'
+  import { t, i18n, setLocale, localeNames, type Locale, type TKey } from './i18n.svelte'
   import { theme, applyTheme, THEMES, type ThemeName } from './theme.svelte'
   import Icon from './Icon.svelte'
 
@@ -111,26 +111,61 @@
       setActiveView(entry.id)
       return
     }
-    // Back to following the desk: a filter the user set on one desk should not
-    // silently hide the chats of the next one they walk to.
-    deskFilter = null
     void openDesk(entry.id)
   }
 
-  // Which desk the history list is showing. Follows whichever desk you are at,
-  // because that is the list you came back for — and clears to everything on
-  // demand, because the sessions held before desks existed live at no desk and
-  // that combined list is the only place they appear.
-  let deskFilter = $state<string | null>(null)
-  const historyDesk = $derived(deskFilter ?? cockpit.desk)
-  const visibleHistory = $derived(
-    historyDesk ? cockpit.history.filter((s) => (s.mode ?? '') === historyDesk) : cockpit.history
-  )
+  // Every chat, always — this column is the chat history, not the chat history
+  // of wherever you happen to be standing.
+  //
+  // It used to follow the desk you were at, on the reasoning that a desk's own
+  // chats are the list you came back for. What that missed is who pays when it
+  // is wrong: a session is only stamped with a desk if it was opened through a
+  // desk button, so every conversation started by opening the app and typing
+  // is held at no desk at all. Walking into a room then emptied the column,
+  // and a link labelled "ดูทั้งหมด" is not an answer to a list that just lost
+  // twenty rows — the row you wanted was on screen a moment ago.
+  const visibleHistory = $derived(cockpit.history)
 
   function onHistorySearchInput() {
     clearTimeout(historySearchTimer)
     historySearchTimer = setTimeout(() => searchGlobalHistory(historyQuery), 200)
   }
+
+  // ---------- Day headers ----------
+  // "3 วันที่แล้ว" on fourteen rows in a column is not a list, it is a wall.
+  // The label answers "how long ago"; the header answers "which day" — and only
+  // the second one lets the eye skip. Calendar days, not 24-hour buckets: a
+  // chat from 11pm last night is yesterday's at 1am, whatever the arithmetic
+  // says.
+  const DAY_MS = 86_400_000
+  function dayBucket(iso: string | undefined): TKey {
+    const parsed = iso ? Date.parse(iso) : NaN
+    if (Number.isNaN(parsed)) return 'sidebar.older'
+    const todayStart = new Date()
+    todayStart.setHours(0, 0, 0, 0)
+    const thatDay = new Date(parsed)
+    thatDay.setHours(0, 0, 0, 0)
+    const days = Math.round((todayStart.getTime() - thatDay.getTime()) / DAY_MS)
+    if (days <= 0) return 'sidebar.today'
+    if (days === 1) return 'sidebar.yesterday'
+    if (days <= 7) return 'sidebar.last7Days'
+    if (days <= 30) return 'sidebar.last30Days'
+    return 'sidebar.older'
+  }
+
+  // Search results rank by match, not by date, so grouping them would print
+  // "วันนี้" three times down one list. A flat list is the honest shape there.
+  const searching = $derived(historyQuery.trim().length > 0)
+  const historyGroups = $derived.by(() => {
+    const out: { key: TKey; items: Session[] }[] = []
+    for (const s of visibleHistory) {
+      const key = dayBucket(s.updatedAt)
+      const last = out.at(-1)
+      if (last && last.key === key) last.items.push(s)
+      else out.push({ key, items: [s] })
+    }
+    return out
+  })
 </script>
 
 <svelte:window
@@ -143,13 +178,45 @@
   }}
 />
 
+<!-- One row, two callers: the flat search results and the day-grouped list are
+     the same rows in a different order, and a copy of this markup in each
+     branch is a copy that drifts. -->
+{#snippet sessionRow(s: Session)}
+  <button type="button" class="sess-row" class:active={s.active} onclick={() => selectGlobalSession(s)}>
+    <span class="sess-line">
+      <span class="t">{s.title}</span>
+      {#if s.agent}
+        <!-- A direct chat is labelled with *who*, which says more than
+             where: every chair lives in the office, so the agent's
+             name subsumes the desk chip below. -->
+        <span class="sess-desk agent">{s.agent}</span>
+      {:else if deskLabelKey(s.mode)}
+        <span class="sess-desk">{t(deskLabelKey(s.mode) as TKey)}</span>
+      {/if}
+      <span class="ago">{s.ago}</span>
+      {#if s.active}<span class="dot green"></span>{/if}
+      <span class="sess-del" class:confirm={confirmDeleteId === s.id} role="button" tabindex="0"
+        aria-label={t('sidebar.deleteSession')}
+        onclick={(e) => { e.stopPropagation(); onDeleteSession(s) }}
+        onkeydown={(e) => e.key === 'Enter' && (e.stopPropagation(), onDeleteSession(s))}>
+        {#if confirmDeleteId === s.id}{t('sidebar.confirmDelete')}{:else}<Icon name="x" size={12} />{/if}
+      </span>
+    </span>
+    <!-- Second line only while searching: the matched excerpt is why
+         this row is in the results. The project name used to live here
+         too, but the projects tab already groups by project — and for
+         a no-focus chat it printed the raw project_key. -->
+    {#if s.snippet}<span class="snip">{s.snippet}</span>{/if}
+  </button>
+{/snippet}
+
 <aside class="side">
   <!-- The rooms behind this door (COMPANY.md §2). Some open a session, some
-       are views over data, and ออโต้ is a room with nothing in it yet — shown
-       rather than hidden, because the shape of the product is the thing being
-       promised and a button that appears later reads as a new feature rather
-       than a finished plan. Which rooms appear is the door's business (§86):
-       the workshop draws none of the office's, and vice versa. -->
+       are views over data, and โปรเจกต์ and ทำงานอัตโนมัติ are rooms with nothing in
+       them yet — shown rather than hidden, because the shape of the product is
+       the thing being promised and a button that appears later reads as a new
+       feature rather than a finished plan. Which rooms appear is the door's
+       business (§86): the workshop draws none of the office's, and vice versa. -->
   <nav class="desk-nav" aria-label={t('desk.navLabel')}>
     {#each rooms as entry (entry.id)}
       <button
@@ -167,14 +234,30 @@
     {/each}
   </nav>
 
+  <!-- The column's own two actions, above whichever list it is showing. They
+       belong to the whole column, not to one list, so they sit outside the
+       scroller with the rooms — a row that scrolls away is a row you go
+       looking for. As icons rather than the two blocks they used to be: this
+       is the top of a list, and the list is what the column is for. -->
+  <div class="side-actions">
+    <span class="side-search">
+      <span class="ic"><Icon name="search" size={14} /></span>
+      <input placeholder={t('sidebar.searchHistory')} aria-label={t('sidebar.searchHistory')}
+        bind:value={historyQuery} oninput={onHistorySearchInput} />
+    </span>
+    <button
+      type="button" class="icobtn tip-r" aria-label={t('sidebar.newSession')}
+      data-tip="{t('sidebar.newSession')} · Ctrl+N" onclick={newSession}
+    ><Icon name="pencil" size={15} /></button>
+  </div>
+
   <div class="side-sections">
   <div class="side-panel">
     {#if showProjects}
       <div class="scroll">
-        <button type="button" class="proj-add" onclick={newSession}>
-          <span class="ic"><Icon name="plus" size={14} /></span> {t('sidebar.newSession')}
-          <span class="kbd">Ctrl+N</span>
-        </button>
+        <!-- No new-session button here: it is on the header row now, where it
+             serves both lists instead of being repeated above each. Adding a
+             project is this list's own action and stays. -->
         <button type="button" class="proj-add" onclick={openFolder}>
           <span class="ic"><Icon name="folder" size={14} /></span> {t('sidebar.addProject')}
         </button>
@@ -212,51 +295,17 @@
       </div>
     {:else}
       <div class="scroll">
-        <button type="button" class="proj-add" onclick={newSession}>
-          <span class="ic"><Icon name="plus" size={14} /></span> {t('sidebar.newSession')}
-          <span class="kbd">Ctrl+N</span>
-        </button>
-        <input class="sess-search" placeholder={t('sidebar.searchHistory')} bind:value={historyQuery} oninput={onHistorySearchInput} />
-        <!-- Which desk's chats these are. Only drawn when it is filtering
-             something, so the ordinary case stays a plain list. -->
-        {#if historyDesk}
-          <div class="sess-filter">
-            <span class="chip">{t(deskLabelKey(historyDesk) || 'desk.assistant')}</span>
-            <button type="button" class="sess-filter-all" onclick={() => (deskFilter = '')}>{t('desk.showAllChats')}</button>
-          </div>
+        {#if searching}
+          {#each visibleHistory as s (s.id)}{@render sessionRow(s)}{/each}
+        {:else}
+          {#each historyGroups as g (g.key)}
+            <div class="sess-day-head">{t(g.key)}</div>
+            {#each g.items as s (s.id)}{@render sessionRow(s)}{/each}
+          {/each}
         {/if}
-        {#each visibleHistory as s (s.id)}
-          <button type="button" class="sess-row" class:active={s.active} onclick={() => selectGlobalSession(s)}>
-            <span class="sess-line">
-              <span class="t">{s.title}</span>
-              {#if s.agent}
-                <!-- A direct chat is labelled with *who*, which says more than
-                     where: every chair lives in the office, so the agent's
-                     name subsumes the desk chip below. -->
-                <span class="sess-desk agent">{s.agent}</span>
-              {:else if !historyDesk && deskLabelKey(s.mode)}
-                <span class="sess-desk">{t(deskLabelKey(s.mode) as import('./i18n.svelte').TKey)}</span>
-              {/if}
-              <span class="ago">{s.ago}</span>
-              {#if s.active}<span class="dot green"></span>{/if}
-              <span class="sess-del" class:confirm={confirmDeleteId === s.id} role="button" tabindex="0"
-                aria-label={t('sidebar.deleteSession')}
-                onclick={(e) => { e.stopPropagation(); onDeleteSession(s) }}
-                onkeydown={(e) => e.key === 'Enter' && (e.stopPropagation(), onDeleteSession(s))}>
-                {#if confirmDeleteId === s.id}{t('sidebar.confirmDelete')}{:else}<Icon name="x" size={12} />{/if}
-              </span>
-            </span>
-            <!-- Second line only while searching: the matched excerpt is why
-                 this row is in the results. The project name used to live here
-                 too, but the projects tab already groups by project — and for
-                 a no-focus chat it printed the raw project_key. -->
-            {#if s.snippet}<span class="snip">{s.snippet}</span>{/if}
-          </button>
-        {/each}
         {#if visibleHistory.length === 0}
           <div class="empty">
             {#if historyQuery.trim()}{t('sidebar.noResults')}
-            {:else if historyDesk}{t('desk.noChatsHere')}
             {:else}{t('sidebar.noHistory')}{/if}
           </div>
         {/if}

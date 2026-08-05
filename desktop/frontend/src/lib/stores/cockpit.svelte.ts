@@ -108,7 +108,7 @@ export function agoLabel(iso: string): string {
 export async function refreshSessions(): Promise<void> {
   const [metas, current] = await Promise.all([ListSessions(), CurrentSessionID()])
   cockpit.sessions = metas.map((m) => ({
-    id: m.id, title: m.title, ago: agoLabel(m.updatedAt), active: m.id === current, mode: m.mode, agent: m.agent,
+    id: m.id, title: m.title, ago: agoLabel(m.updatedAt), updatedAt: m.updatedAt, active: m.id === current, mode: m.mode, agent: m.agent,
   }))
   // Keeps the workbench layout keyed to whichever session is actually live —
   // restores it on app start, migrates it when the engine re-keys the chat.
@@ -120,7 +120,7 @@ export async function searchSessions(query: string): Promise<void> {
   if (!query.trim()) return refreshSessions()
   const [hits, current] = await Promise.all([SearchSessions(query), CurrentSessionID()])
   cockpit.sessions = hits.map((m) => ({
-    id: m.id, title: m.title, ago: agoLabel(m.updatedAt), active: m.id === current, snippet: m.snippet, mode: m.mode, agent: m.agent,
+    id: m.id, title: m.title, ago: agoLabel(m.updatedAt), updatedAt: m.updatedAt, active: m.id === current, snippet: m.snippet, mode: m.mode, agent: m.agent,
   }))
 }
 
@@ -128,7 +128,7 @@ export async function searchSessions(query: string): Promise<void> {
 export async function refreshGlobalHistory(): Promise<void> {
   const [metas, current] = await Promise.all([ListAllSessions(), CurrentSessionID()])
   cockpit.history = metas.map((m) => ({
-    id: m.id, title: m.title, ago: agoLabel(m.updatedAt), active: m.id === current, projectName: m.projectName, mode: m.mode, agent: m.agent,
+    id: m.id, title: m.title, ago: agoLabel(m.updatedAt), updatedAt: m.updatedAt, active: m.id === current, projectName: m.projectName, mode: m.mode, agent: m.agent,
   }))
 }
 
@@ -137,7 +137,7 @@ export async function searchGlobalHistory(query: string): Promise<void> {
   if (!query.trim()) return refreshGlobalHistory()
   const [hits, current] = await Promise.all([SearchAllSessions(query), CurrentSessionID()])
   cockpit.history = hits.map((m) => ({
-    id: m.id, title: m.title, ago: agoLabel(m.updatedAt), active: m.id === current,
+    id: m.id, title: m.title, ago: agoLabel(m.updatedAt), updatedAt: m.updatedAt, active: m.id === current,
     snippet: m.snippet, projectName: m.projectName, mode: m.mode, agent: m.agent,
   }))
 }

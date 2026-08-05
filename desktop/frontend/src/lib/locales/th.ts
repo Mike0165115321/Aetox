@@ -38,6 +38,11 @@ export const th = {
   'sidebar.noResults': 'ไม่พบผลลัพธ์',
   'sidebar.noHistory': 'ยังไม่มีประวัติในโปรเจกต์นี้',
   'sidebar.newSession': 'เริ่มเซสชันใหม่',
+  'sidebar.today': 'วันนี้',
+  'sidebar.yesterday': 'เมื่อวาน',
+  'sidebar.last7Days': '7 วันที่ผ่านมา',
+  'sidebar.last30Days': '30 วันที่ผ่านมา',
+  'sidebar.older': 'เก่ากว่านั้น',
   'sidebar.setYourName': 'ตั้งชื่อของคุณ',
   'sidebar.settings': 'การตั้งค่า',
   'sidebar.settingsShortcut': 'Ctrl+,',
@@ -599,8 +604,6 @@ export const th = {
   'desk.artifacts': 'ผลงาน',
   'desk.artifactsBlurb': 'ทุกไฟล์ที่ Aetox ทำให้',
   'desk.soon': 'เร็ว ๆ นี้',
-  'desk.showAllChats': 'ดูทั้งหมด',
-  'desk.noChatsHere': 'ยังไม่มีแชทที่โต๊ะนี้ — พิมพ์ข้อความแรกได้เลย',
 
   // ---- ทีมเอเจน ----
   'office.intro': 'ผู้ช่วยส่งงานที่สรุปเป็นคำสั่งเดียวจบมาให้ทีมนี้ทำ แล้วรับกลับเป็นไฟล์ ทีมงานไม่เห็นบทสนทนาของคุณ และไม่ส่งงานต่อให้ใคร',

@@ -39,6 +39,11 @@ export const en: Record<keyof typeof th, string> = {
   'sidebar.noResults': 'No results found',
   'sidebar.noHistory': 'No history in this project yet',
   'sidebar.newSession': 'New session',
+  'sidebar.today': 'Today',
+  'sidebar.yesterday': 'Yesterday',
+  'sidebar.last7Days': 'Previous 7 days',
+  'sidebar.last30Days': 'Previous 30 days',
+  'sidebar.older': 'Older',
   'sidebar.setYourName': 'Set your name',
   'sidebar.settings': 'Settings',
   'sidebar.settingsShortcut': 'Ctrl+,',
@@ -597,8 +602,6 @@ Check your own work before answering; say so plainly if unsure.
   'desk.artifacts': 'Work',
   'desk.artifactsBlurb': 'Every file Aetox has made',
   'desk.soon': 'Soon',
-  'desk.showAllChats': 'Show all',
-  'desk.noChatsHere': 'No chats at this desk yet — type the first message.',
 
   // ---- Agent team ----
   'office.intro': 'The assistant hands this team jobs that fit in a single brief and gets a file back. They never see your conversation, and they hand work to no one.',

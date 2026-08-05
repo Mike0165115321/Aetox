@@ -63,7 +63,6 @@ describe('the rooms behind each door', () => {
     const { unmount } = render(Sidebar, { onOpenSettings: () => {} })
     expect(document.querySelector('.side-tabs')).toBeNull()
     expect(screen.queryByText('เพิ่มโปรเจกต์')).toBeNull()
-    expect(screen.queryByPlaceholderText('ค้นหาประวัติ…')).toBeTruthy()
     unmount()
 
     setShell('code')
@@ -122,22 +121,22 @@ describe('the rooms behind each door', () => {
 describe('the history list', () => {
   const chat = (id: string, mode: string) => ({ id, title: `chat ${id}`, ago: '', mode })
 
-  it('shows the chats of the desk you are at, and the way back to all of them', async () => {
+  // The column is the chat history, not the chat history of the room you are
+  // standing in. It used to filter to the desk you were at, and that emptied it
+  // on the first click: a session is only stamped with a desk when it is opened
+  // through a desk button, so every chat begun by opening the app and typing is
+  // held at no desk and vanished the moment you walked into one.
+  it('shows every chat, whichever desk you are at', () => {
     cockpit.desk = 'assistant'
     cockpit.history.push(chat('a', 'assistant'), chat('b', 'coding'), chat('c', ''))
     render(Sidebar, { onOpenSettings: () => {} })
 
-    expect(screen.queryByText('chat a')).toBeTruthy()
-    expect(screen.queryByText('chat b')).toBeNull()
-
-    // The sessions held before desks existed belong to no desk, so the
-    // combined list is the only place they appear — it has to stay reachable.
-    await fireEvent.click(screen.getByText('ดูทั้งหมด'))
-    expect(screen.queryByText('chat b')).toBeTruthy()
-    expect(screen.queryByText('chat c')).toBeTruthy()
+    for (const title of ['chat a', 'chat b', 'chat c']) {
+      expect(screen.queryByText(title)).toBeTruthy()
+    }
   })
 
-  it('labels each chat with its desk in the combined list', () => {
+  it('labels each chat with its desk', () => {
     cockpit.desk = ''
     cockpit.history.push(chat('a', 'assistant'), chat('c', ''))
     render(Sidebar, { onOpenSettings: () => {} })

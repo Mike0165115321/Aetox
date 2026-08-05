@@ -23,6 +23,10 @@ export interface Session {
   id: string
   title: string
   ago: string
+  /** RFC3339 stamp behind `ago`. Kept alongside the rendered label because the
+   *  sidebar groups rows under วันนี้/เมื่อวาน/…, and a day boundary cannot be
+   *  recovered from "3 วันที่แล้ว" — the two answer different questions. */
+  updatedAt?: string
   active?: boolean
   snippet?: string
   /** Only set on the cross-project (global) history list. */
