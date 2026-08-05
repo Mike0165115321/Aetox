@@ -233,19 +233,35 @@ func (a *App) ListSessionsAt(desk string) []SessionMeta {
 	return out
 }
 
-// SessionMode reports which desk a stored session was created at, so the UI can
-// label it. "" is both "no such session" and "the full desk", which is fine
-// here: the label for the second is nothing, and so is the label for the first.
+// SessionMode reports which desk a session is at, so the UI can label it and
+// light the room you are standing in. "" is both "no such session" and "the
+// full desk", which is fine here: the label for the second is nothing, and so
+// is the label for the first.
+//
+// The live session answers from the engine, not from the table. A session row
+// is only written on its first turn, so the one you are looking at right now
+// usually has no row at all — and reading "" back for it would tell the
+// sidebar no room is lit while the engine is standing in one.
 func (a *App) SessionMode(id string) string {
 	db, err := a.database()
 	if err != nil {
-		return ""
+		return a.liveDesk(id)
 	}
 	var desk string
 	if db.QueryRow(`SELECT mode FROM sessions WHERE id = ?`, id).Scan(&desk) != nil {
-		return ""
+		return a.liveDesk(id)
 	}
 	return desk
+}
+
+// liveDesk is the desk of the session being written to right now, and "" for
+// any other id — a stored session with no row is genuinely unknown, and
+// answering with wherever the window happens to be would be inventing one.
+func (a *App) liveDesk(id string) string {
+	if id != "" && id == a.sessionID {
+		return a.desk.DeskName()
+	}
+	return ""
 }
 
 // SessionAgent reports who a stored session was held with (§85): "" for the
@@ -254,13 +270,22 @@ func (a *App) SessionMode(id string) string {
 func (a *App) SessionAgent(id string) string {
 	db, err := a.database()
 	if err != nil {
-		return ""
+		return a.liveChair(id)
 	}
 	var chair string
 	if db.QueryRow(`SELECT agent FROM sessions WHERE id = ?`, id).Scan(&chair) != nil {
-		return ""
+		return a.liveChair(id)
 	}
 	return chair
+}
+
+// liveChair is liveDesk's other half: who the live session is being held with,
+// before its first turn puts a row in the table.
+func (a *App) liveChair(id string) string {
+	if id != "" && id == a.sessionID {
+		return a.chair
+	}
+	return ""
 }
 
 // SearchSessions full-text searches this project's history (FTS5 trigram —
@@ -596,7 +621,30 @@ func (a *App) setStation(desk, chair string) error {
 	}
 	a.desk, a.chair = m, chair
 	a.applyConfig(a.cfg)
+	rememberDesk(m.DeskName())
 	return nil
+}
+
+// rememberDesk records where the window is, so the next launch opens there
+// (COMPANY.md §2). Written here because setStation is the only writer of
+// a.desk — anywhere else would be a second answer to "where am I".
+//
+// The legacy full desk ("") is skipped: it is also the value that means
+// "nothing remembered", and opening a pre-desk conversation to read it back is
+// not the user saying that is where they want to start.
+//
+// Failing to remember is not worth an error. The window is already at the
+// desk; all that is lost is the next launch starting somewhere else.
+func rememberDesk(desk string) {
+	if desk == "" {
+		return
+	}
+	pref, _, err := config.LoadModelPreference()
+	if err != nil || pref.LastDesk == desk {
+		return
+	}
+	pref.LastDesk = desk
+	_ = config.SaveModelPreference(pref)
 }
 
 // CurrentSessionID reports which session the engine is writing to, so the

@@ -49,6 +49,15 @@ var bundledModes embed.FS
 // has to be able to say — everything else about a desk is data.
 const Office = "specialized"
 
+// Default is the desk a window opens at when nothing has been remembered yet —
+// a first run, or a preference file that predates the field.
+//
+// A seed, not a policy. Every later start reads the desk the user was last at
+// (config.ModelPreference.LastDesk), and this name must never win over that:
+// pinning the boot desk to a constant would mean walking into a room, closing
+// the app, and finding yourself back in the entrance hall.
+const Default = "assistant"
+
 // Mode is one desk. JSON tags are for the settings page and the new-session
 // picker, which render exactly these fields.
 //

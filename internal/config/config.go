@@ -80,7 +80,16 @@ type ModelPreference struct {
 	// is keyed by origin — a name typed under `wails dev` (…:34115) was a
 	// different bucket from the built app's, so it had to be typed again on
 	// every switch.
-	UserName     string            `json:"user_name,omitempty"`
+	UserName string `json:"user_name,omitempty"`
+	// LastDesk is the desk the window was last at, so relaunching lands where
+	// the user left off instead of at whatever the product's entrance happens
+	// to be. Same reason UILocale is here: a choice made in the UI that the
+	// engine needs before the first paint.
+	//
+	// Only ever holds a named desk. The legacy full desk is "" — the same value
+	// as "nothing remembered" — and reopening a pre-desk conversation is not a
+	// statement about where you want to start next time.
+	LastDesk     string            `json:"last_desk,omitempty"`
 	ModelAPIKeys map[string]string `json:"provider_api_keys,omitempty"`
 	// ModelBaseURLs holds per-provider endpoint overrides. ModelBaseURL above
 	// is the older single-slot version, which only ever held the *active*

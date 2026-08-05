@@ -1103,11 +1103,39 @@ func (a *App) startup(ctx context.Context) {
 	defer debuglog.Block("App.startup")()
 	a.focusNone()
 	a.startNewSession()
+	a.openAtRememberedDesk()
 	// Era cleanup: home itself was the unfocused root until 2026-07-26
 	// (§19.1), and attachments copied there never expired. No session writes
 	// there anymore, so this only ever drains the old pile.
 	if home, err := os.UserHomeDir(); err == nil {
 		go a.sweepAttachments(home)
+	}
+}
+
+// openAtRememberedDesk points the fresh session at the desk the user was last
+// at, or — first run only — at the product's entrance.
+//
+// Called from startup, and only from there: it is the one moment the session
+// is known to be blank, so putting it at a desk cannot throw away a
+// conversation. Later switches are the nav's business.
+//
+// Without this the engine booted at no desk at all, and a session's desk is
+// stamped when its first message is written — so anything begun by opening the
+// app and typing was recorded as belonging to no desk, while the sidebar drew
+// a room as the one you were standing in. Two answers to the same question,
+// and the sidebar's was the one the user could see.
+//
+// A remembered desk whose file has since been deleted falls back to the
+// entrance rather than refusing: this runs before there is a window to show an
+// error in, and a start that cannot be explained is worse than a start
+// somewhere ordinary.
+func (a *App) openAtRememberedDesk() {
+	desk := mode.Default
+	if pref, ok, err := config.LoadModelPreference(); err == nil && ok && pref.LastDesk != "" {
+		desk = pref.LastDesk
+	}
+	if err := a.setStation(desk, ""); err != nil && desk != mode.Default {
+		_ = a.setStation(mode.Default, "")
 	}
 }
 
