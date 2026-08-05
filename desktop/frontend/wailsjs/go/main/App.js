@@ -294,10 +294,6 @@ export function NewSessionAt(arg1) {
   return window['go']['main']['App']['NewSessionAt'](arg1);
 }
 
-export function SaveAgentProfile(arg1, arg2) {
-  return window['go']['main']['App']['SaveAgentProfile'](arg1, arg2);
-}
-
 export function OpenAgentsFolder() {
   return window['go']['main']['App']['OpenAgentsFolder']();
 }
@@ -465,6 +461,11 @@ export function RevealSpeechModel(arg1) {
 export function RunChatCommand(arg1) {
   return window['go']['main']['App']['RunChatCommand'](arg1);
 }
+
+export function SaveAgentProfile(arg1, arg2) {
+  return window['go']['main']['App']['SaveAgentProfile'](arg1, arg2);
+}
+
 export function SaveChatFile(arg1) {
   return window['go']['main']['App']['SaveChatFile'](arg1);
 }
