@@ -26,7 +26,7 @@ func (a *App) ListSubagentProfiles() []subagent.Profile {
 func (a *App) ReadSubagentProfile(name string) (string, error) {
 	raw, ok := subagent.ReadRaw(name)
 	if !ok {
-		return "", fmt.Errorf("ไม่พบซับเอเจนชื่อ %s", name)
+		return "", fmt.Errorf("ไม่พบโปรไฟล์ชื่อ %s", name)
 	}
 	return raw, nil
 }

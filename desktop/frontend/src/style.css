@@ -1897,10 +1897,8 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .subagent-steps { padding-left:15px; }
 .subagent > .tool-err { margin-left:23px; font-size:var(--fs-xs); color:var(--status-danger); }
 .tag.ag-override { background:var(--badge-think-bg); color:var(--badge-think-text); border-color:var(--badge-think-border); }
-/* Marks the rows that also stand in the office. The plain tag next to it means
-   the opposite, and is left plain on purpose: not being on the team is the
-   ordinary state for a delegate, not a demotion worth a colour. */
-.tag.ag-chair { background:var(--surface-selected); color:var(--text-selected); border-color:var(--border-default); }
+/* Why a file cannot run — the loud half of "refused loudly". */
+.ag-invalid { color:var(--status-danger); }
 .tag.ag-deny { background:var(--diff-del-bg); color:var(--status-danger); border-color:var(--status-danger); }
 /* min-height is the floor a short file sits at — the size this field always
    had — while the height itself is set to the content by `autogrow`, so a long

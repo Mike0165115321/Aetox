@@ -8,7 +8,7 @@ import {
   SignInMethods, SignInStatus, StartSignIn, CompleteSignIn, SupportedProviders, EnabledProviders,
   RemoveMCPServer, RemoveExternalSkill, SetProviderEnabled, TerminalShells,
   SkillsDir, SkillScanIssues, OpenSkillsFolder, InstallSkillFromZip,
-  MCPConfigPath, OpenMCPFolder, SaveMCPServer, AppVersion, CheckForUpdate,
+  MCPConfigPath, OpenMCPFolder, SaveMCPServer, AppVersion, CheckForUpdate, ListChairs,
 } from './mocks/wailsApp'
 import { applyTypeScale } from '../lib/typeScale.svelte'
 import { cockpit } from '../lib/stores/cockpit.svelte'
@@ -430,11 +430,47 @@ describe('Settings pages', () => {
     expect(screen.getByText('+ $ARGUMENTS')).toBeTruthy()
   })
 
+  // The split (owner's call, 2026-08-05): agents live on the team page, and
+  // this page lists only the assistant's own helpers. One profile on two
+  // rosters is the overlap the split ended — so a chair name coming back from
+  // ListChairs must not appear in either card here, even though the full list
+  // (which the shared editor needs) still carries it.
+  it('keeps agents off the sub-agents lists', async () => {
+    vi.mocked(ListSubagentProfiles).mockResolvedValue([
+      { name: 'deck', description: 'เก้าอี้สไลด์', prompt: 'role', builtin: true, desk: 'specialized' },
+      { name: 'explore', description: 'ค้นไฟล์', prompt: 'role', builtin: true },
+    ] as any)
+    vi.mocked(ListChairs).mockResolvedValue([{ name: 'deck' }] as any)
+
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'ผู้ช่วยตัวแทน')
+
+    await waitFor(() => expect(screen.getByText('ค้นไฟล์')).toBeTruthy())
+    expect(screen.queryByText('deck')).toBeNull()
+    expect(screen.queryByText('เก้าอี้สไลด์')).toBeNull()
+  })
+
+  // A file that cannot run is shown with its reason — never silently dropped,
+  // never quietly reinterpreted. The file is still on the user's disk, and a
+  // row that just vanished would be the app refusing to explain itself.
+  it('shows a sick file with the reason it cannot run', async () => {
+    vi.mocked(ListSubagentProfiles).mockResolvedValue([
+      { name: 'หลงบ้าน', description: 'อยากเป็นตัวแทน', prompt: 'role', builtin: false,
+        path: 'C:/subagents/หลงบ้าน.md', invalid: 'ไฟล์นี้อยู่ในบ้านของผู้ช่วยตัวแทน แต่ประกาศ desk: specialized' },
+    ] as any)
+
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'ผู้ช่วยตัวแทน')
+
+    await waitFor(() => expect(screen.getByText('หลงบ้าน')).toBeTruthy())
+    expect(screen.getByText(/ไฟล์นี้อยู่ในบ้านของผู้ช่วยตัวแทน/)).toBeTruthy()
+  })
+
   // §44.0: there is no agent picker — the main agent is the assistant. This page
   // manages only who it delegates to, split by who wrote each profile (§44.10).
   it('Sub-agents page splits yours from the ones that ship with Aetox', async () => {
     const { container } = render(Settings, { onClose: () => {} })
-    await openSection(container, 'ซับเอเจน')
+    await openSection(container, 'ผู้ช่วยตัวแทน')
 
     await waitFor(() => expect(screen.getByText('ค้นไฟล์')).toBeTruthy())
     const cards = container.querySelectorAll('.settings-card')
@@ -468,7 +504,7 @@ describe('Settings pages', () => {
 
   it('the model dropdown pins a model per sub-agent', async () => {
     const { container } = render(Settings, { onClose: () => {} })
-    await openSection(container, 'ซับเอเจน')
+    await openSection(container, 'ผู้ช่วยตัวแทน')
     await waitFor(() => expect(container.querySelectorAll('.set-row select.ctrl').length).toBe(4))
 
     const selects = Array.from(container.querySelectorAll('.set-row select.ctrl')) as HTMLSelectElement[]
@@ -492,7 +528,7 @@ describe('Settings pages', () => {
   it('editing a built-in sub-agent splits its real file into fields and says what saving does', async () => {
     withPickableTools()
     const { container } = render(Settings, { onClose: () => {} })
-    await openSection(container, 'ซับเอเจน')
+    await openSection(container, 'ผู้ช่วยตัวแทน')
     await waitFor(() => expect(screen.getAllByText('ตั้งค่า').length).toBe(4))
 
     // The built-in group's first row (explore) — index 2 overall: yours come first.
@@ -532,7 +568,7 @@ describe('Settings pages', () => {
   // back exactly the way it was shown — the field split is a display choice,
   // not a new file format.
   const openToolPicker = async (container: HTMLElement, rowIndex: number) => {
-    await openSection(container, 'ซับเอเจน')
+    await openSection(container, 'ผู้ช่วยตัวแทน')
     await waitFor(() => expect(screen.getAllByText('ตั้งค่า').length).toBe(4))
     await fireEvent.click(screen.getAllByText('ตั้งค่า')[rowIndex])
     await waitFor(() => expect(container.querySelector('.ag-toolsum')).toBeTruthy())
@@ -613,7 +649,7 @@ describe('Settings pages', () => {
   // keyword — a number in the box must never become "no ceiling" by accident.
   it('the loop cap can be removed, and says so in the file as a word', async () => {
     const { container } = render(Settings, { onClose: () => {} })
-    await openSection(container, 'ซับเอเจน')
+    await openSection(container, 'ผู้ช่วยตัวแทน')
     await waitFor(() => expect(screen.getAllByText('ตั้งค่า').length).toBe(4))
     await fireEvent.click(screen.getAllByText('ตั้งค่า')[2])
     await waitFor(() => expect(container.querySelector('.ag-steprow')).toBeTruthy())
@@ -634,7 +670,7 @@ describe('Settings pages', () => {
   // "delete" — the row is not going away.
   it('a shadow offers to revert, not to delete', async () => {
     const { container } = render(Settings, { onClose: () => {} })
-    await openSection(container, 'ซับเอเจน')
+    await openSection(container, 'ผู้ช่วยตัวแทน')
     await waitFor(() => expect(screen.getAllByText('ตั้งค่า').length).toBe(4))
 
     await fireEvent.click(screen.getAllByText('ตั้งค่า')[1]) // mine-explore, the shadow
@@ -644,10 +680,10 @@ describe('Settings pages', () => {
 
   it('a new sub-agent opens with guidance in the role field, not a raw frontmatter skeleton', async () => {
     const { container } = render(Settings, { onClose: () => {} })
-    await openSection(container, 'ซับเอเจน')
-    await waitFor(() => expect(screen.getByText('สร้างซับเอเจนใหม่')).toBeTruthy())
+    await openSection(container, 'ผู้ช่วยตัวแทน')
+    await waitFor(() => expect(screen.getByText('สร้างผู้ช่วยตัวแทนใหม่')).toBeTruthy())
 
-    await fireEvent.click(screen.getByText('สร้างซับเอเจนใหม่'))
+    await fireEvent.click(screen.getByText('สร้างผู้ช่วยตัวแทนใหม่'))
     // Frontmatter is fields now, so a new agent has none of it to see or
     // mistype — the role box only ever holds guidance on what to write.
     const body = container.querySelector('.ag-body') as HTMLTextAreaElement

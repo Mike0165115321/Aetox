@@ -1144,18 +1144,20 @@
   type SubagentRow = {
     name: string; description: string; model?: string
     tools?: string[]; deny?: string[]; steps?: number; prompt: string
-    path?: string; builtin: boolean; overrides?: boolean
+    path?: string; builtin: boolean; overrides?: boolean; invalid?: string
   }
+  // Every profile, both kinds — kept whole because the shared editor opens
+  // agents here too (the team page's doors land on it with a name). What the
+  // *lists* below draw is only the sub-agents: the agents' roster is the team
+  // page, and one profile on two rosters is the overlap this split ended.
   let subagents = $state<SubagentRow[]>([])
   // Split by who wrote it, which is what a user actually asks of this page. A
   // file of yours that shadows a bundled one counts as yours — it IS your file —
   // and carries a badge saying so, because deleting it reverts rather than removes.
-  const mySubagents = $derived(subagents.filter((a) => !a.builtin))
-  const builtinSubagents = $derived(subagents.filter((a) => a.builtin))
-  // Which of these also stand in the office. Three of the six do, and until the
-  // page said so the other three read as missing from a roster they were never
-  // on — the same profile shown twice with no rule stated, which is how two
-  // pages start drifting into two answers.
+  const mySubagents = $derived(subagents.filter((a) => !a.builtin && !chairNames.has(a.name)))
+  const builtinSubagents = $derived(subagents.filter((a) => a.builtin && !chairNames.has(a.name)))
+  // Which profiles are agents — asked of ListChairs, the same answer the team
+  // page draws, never re-derived from a file's fields here.
   let chairNames = $state(new Set<string>())
   // null = the list. Anything else = the editor on that profile's raw file.
   let agentEditing = $state<SubagentRow | null>(null)
@@ -2333,8 +2335,17 @@
       </div>
 
     {:else if active === 'agents'}
-      <h2>{t('settings.subagents')}</h2>
-      <p class="muted set-sub">{t('settings.subagentsDesc')}</p>
+      <!-- While the editor holds an agent (walked in from the team page's
+           doors), the heading says so — an agent edited under a sub-agents
+           heading reads as filed in the wrong drawer, which is the exact
+           confusion the split ended. -->
+      {#if agentEditing !== null && agentEditKind === 'agent'}
+        <h2>{t('settings.editAgentTitle')}</h2>
+        <p class="muted set-sub">{t('settings.editAgentDesc')}</p>
+      {:else}
+        <h2>{t('settings.subagents')}</h2>
+        <p class="muted set-sub">{t('settings.subagentsDesc')}</p>
+      {/if}
 
       {#if agentEditing === null}
         <div class="pp-bar">
@@ -2362,15 +2373,6 @@
                 <div class="set-txt">
                   <div class="t">
                     {a.name}
-                    <!-- Which room this one is in. The office page draws the
-                         chairs and this page configures every profile, so the
-                         same three appear on both — and without this the other
-                         three read as agents that went missing. -->
-                    {#if chairNames.has(a.name)}
-                      <span class="tag ag-chair" title={t('settings.agentIsChairTip')}>{t('settings.agentIsChair')}</span>
-                    {:else}
-                      <span class="tag" title={t('settings.agentIsDelegateTip')}>{t('settings.agentIsDelegate')}</span>
-                    {/if}
                     {#if a.overrides}<span class="tag ag-override">{t('settings.agentOverrides')}</span>{/if}
                     {#if a.model}<span class="tag">{a.model}</span>{/if}
                     <span class="tag" title={toolBadgeTip(a)}>{toolBadge(a)}</span>
@@ -2378,6 +2380,10 @@
                     <span class="tag" title={t('settings.agentStepsTip', { n: a.steps || 24 })}>{t('settings.agentSteps', { n: a.steps || 24 })}</span>
                   </div>
                   <div class="d">{a.description || '—'}</div>
+                  <!-- A file that cannot run says why, where its owner will
+                       look — never a silent reinterpretation, never a row that
+                       just vanishes (the file is still on the user's disk). -->
+                  {#if a.invalid}<div class="d ag-invalid">{a.invalid}</div>{/if}
                   <div class="d mono-dim">{a.path || 'built-in:' + a.name}</div>
                 </div>
                 <select
