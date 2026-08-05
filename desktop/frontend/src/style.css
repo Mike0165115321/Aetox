@@ -1234,13 +1234,19 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .chair-card .chips .chip.more { color:var(--text-dim); border-style:dashed; }
 .chair-card.empty { border-style:dashed; background:none; }
 /* The foot is its own layer: separated from the body by a rule, stat on the
-   left, the one action on the right, both on one baseline. */
+   left, the actions on the right, all on one baseline.
+   The stat takes the slack rather than space-between doing it: with two
+   actions, space-between spread them apart and left the gear stranded in the
+   middle of the row — present, and impossible to find. */
 .chair-foot {
-  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  display:flex; align-items:center; gap:8px;
   border-top:1px solid var(--border-subtle);
   margin-top:10px; padding:9px 12px 11px;
 }
-.chair-foot .stat { font-size:var(--fs-2xs); color:var(--text-dim); min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.chair-foot .stat { flex:1; font-size:var(--fs-2xs); color:var(--text-dim); min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+/* The gear reads as the quieter of the two: configuring is the occasional
+   errand, talking to them is the point of the card. */
+.chair-foot .icobtn { flex:none; }
 .chair-foot .stat .n { font-size:var(--fs-md); font-weight:600; color:var(--text-secondary); }
 /* The door into a direct chat (§85) — the one action a card offers. */
 .chair-foot .chair-chat { flex:none; display:inline-flex; align-items:center; gap:5px; font-size:var(--fs-2xs); }
