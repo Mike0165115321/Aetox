@@ -162,6 +162,8 @@ export const en: Record<keyof typeof th, string> = {
   'cockpit.attachEmptyPage': 'This tab hasn’t opened a page yet, so there’s nothing to attach',
 
 
+  'mediaPane.unplayable': 'The file is fine — the app just can’t decode it. The codec inside isn’t one the browser supports. Try opening it with a program on your machine.',
+
   'imagePane.actualSize': 'Show at actual size',
   'imagePane.fitToPane': 'Fit to panel',
   'browserPane.deskEyebrow': 'Aetox desk',

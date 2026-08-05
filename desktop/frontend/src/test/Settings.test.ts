@@ -8,7 +8,7 @@ import {
   SignInMethods, SignInStatus, StartSignIn, CompleteSignIn, SupportedProviders, EnabledProviders,
   RemoveMCPServer, RemoveExternalSkill, SetProviderEnabled, TerminalShells,
   SkillsDir, SkillScanIssues, OpenSkillsFolder, InstallSkillFromZip,
-  MCPConfigPath, OpenMCPFolder, SaveMCPServer, AppVersion, CheckForUpdate, ListChairs,
+  MCPConfigPath, OpenMCPFolder, SaveMCPServer, AppVersion, CheckForUpdate, ListChairs, SaveAgentProfile,
 } from './mocks/wailsApp'
 import { applyTypeScale } from '../lib/typeScale.svelte'
 import { cockpit } from '../lib/stores/cockpit.svelte'
@@ -21,6 +21,7 @@ const d = new Date()
 const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
 beforeEach(() => {
+  cockpit.settingsIntent = null
   vi.mocked(ListMCPServers).mockResolvedValue([
     { name: 'context7', command: ['npx', '-y', '@upstash/context7-mcp'], disabled: false, status: 'connected', tools: 2 },
     { name: 'exa', url: 'https://mcp.exa.ai/mcp', disabled: true, status: 'disabled', tools: 0 },
@@ -428,6 +429,45 @@ describe('Settings pages', () => {
     expect(body.placeholder).toBeTruthy()
     // The one token a preset cannot work without gets its own button.
     expect(screen.getByText('+ $ARGUMENTS')).toBeTruthy()
+  })
+
+  // The handshake with the team page. Both halves were tested apart — Office
+  // sets cockpit.settingsIntent, Settings consumes it — and a handshake tested
+  // only at its two ends is one nobody has actually shaken.
+  //
+  // The kind rides in the intent because it came off the roster. This page
+  // must not re-derive it from the file, which is the whole rule the split
+  // rests on, so the assertion is the heading: an agent gets the agent
+  // heading, and saving goes out through the agents' door.
+  it('opens the editor on the agent the team page sent, through the agents door', async () => {
+    vi.mocked(ListSubagentProfiles).mockResolvedValue([
+      { name: 'deck', description: 'ทำสไลด์', prompt: 'role', builtin: true, desk: 'specialized' },
+      { name: 'explore', description: 'ค้นไฟล์', prompt: 'role', builtin: true },
+    ] as any)
+    vi.mocked(ListChairs).mockResolvedValue([{ name: 'deck' }] as any)
+    vi.mocked(ReadSubagentProfile).mockResolvedValue('---\ndescription: ทำสไลด์\n---\nสร้างสไลด์หนึ่งชุด' as any)
+    cockpit.settingsIntent = { section: 'agents', agent: 'deck' }
+
+    render(Settings, { onClose: () => {} })
+
+    await waitFor(() => expect(screen.getByText('ตั้งค่าตัวแทน')).toBeTruthy())
+    // Consumed once — an intent left behind would reopen this editor on the
+    // next plain visit to Settings.
+    expect(cockpit.settingsIntent).toBeNull()
+
+    await fireEvent.click(screen.getByText('บันทึก'))
+    await waitFor(() => expect(vi.mocked(SaveAgentProfile)).toHaveBeenCalled())
+    expect(vi.mocked(SaveSubagentProfile)).not.toHaveBeenCalled()
+    expect(vi.mocked(SaveAgentProfile).mock.calls[0][0]).toBe('deck')
+  })
+
+  it('opens a blank agent form when the team page asks to create one', async () => {
+    cockpit.settingsIntent = { section: 'agents', createAgent: true }
+
+    render(Settings, { onClose: () => {} })
+
+    await waitFor(() => expect(screen.getByText('ตั้งค่าตัวแทน')).toBeTruthy())
+    expect(cockpit.settingsIntent).toBeNull()
   })
 
   // The split (owner's call, 2026-08-05): agents live on the team page, and

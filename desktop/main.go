@@ -47,6 +47,9 @@ func main() {
 		MinHeight: 700,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
+			// Files from the open project reach the panes as URLs under
+			// /aetox-file/ rather than as values across a binding — see filehost.go.
+			Middleware: app.fileHost,
 		},
 		BackgroundColour: &options.RGBA{R: 11, G: 15, B: 22, A: 1},
 		OnStartup:        app.startup,

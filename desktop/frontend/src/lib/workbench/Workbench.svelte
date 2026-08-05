@@ -8,6 +8,9 @@
   import ExternalFilePane from './ExternalFilePane.svelte'
   import SheetPane from './SheetPane.svelte'
   import ImagePane from './ImagePane.svelte'
+  import MediaPane from './MediaPane.svelte'
+  import PdfPane from './PdfPane.svelte'
+  import { fileURL } from '../fileUrl'
   import { cockpit } from '../stores/cockpit.svelte'
   import {
     workbench, activateTab, closeTab, removeTab,
@@ -313,8 +316,12 @@
                renders until the first read resolves, rather than flashing an
                empty editor at every open. -->
           {#key tab.rev}
-            {#if tab.image}
-              <ImagePane src={tab.image} name={tab.name} path={tab.path ?? ''} />
+            {#if tab.view === 'image'}
+              <ImagePane src={fileURL(tab.path ?? '')} name={tab.name} path={tab.path ?? ''} />
+            {:else if tab.view === 'video' || tab.view === 'audio'}
+              <MediaPane path={tab.path ?? ''} name={tab.name} kind={tab.view} />
+            {:else if tab.view === 'pdf'}
+              <PdfPane path={tab.path ?? ''} name={tab.name} />
             {:else if tab.sheet}
               <SheetPane path={tab.path ?? ''} preview={tab.sheet} />
             {:else if tab.unreadable}

@@ -4,7 +4,7 @@
 // under lib/workbench/ render from this; nothing else mutates it directly.
 
 import {
-  TerminalStart, TerminalClose, ReadFile, ReadWorkbook, ReadImageDataURL,
+  TerminalStart, TerminalClose, ReadFile, ReadWorkbook,
   RelativizePath, SaveChatFile,
 } from '../../../wailsjs/go/main/App'
 import type { ooxml } from '../../../wailsjs/go/models'
@@ -29,16 +29,37 @@ export type WorkbenchTab = {
   // it answers "what did I just get?" without the user leaving the window, and
   // the open-in-Excel button is still there for anything past a glance.
   sheet?: ooxml.WorkbookPreview
-  // A picture, as a data: URL. Same reasoning as sheet: a screenshot dropped on
-  // the desk is meant to be looked at, and "binary file cannot be previewed" is
-  // not a way to show someone their own screenshot.
-  image?: string
+  // Which pane draws this file — set by fileView() from the name alone, for
+  // everything the webview can show off a URL. No bytes cross the binding for
+  // these: the pane points at the file host and the webview streams it, which
+  // is why a video is here at all and why an image no longer has a size limit.
+  view?: FileView
   // Bumped on every re-read (loadFileTab). The pane is keyed on it so a file
   // the agent rewrote actually reaches the screen — see loadFileTab.
   rev?: number
 }
 
-const imageExtRe = /\.(png|jpe?g|gif|webp|bmp|avif|ico)$/i
+/** Panes that draw a file straight from its URL, without reading it first. */
+export type FileView = 'image' | 'video' | 'audio' | 'pdf'
+
+// One table, one answer. Every one of these is a type the webview renders
+// natively, so the routing is the whole implementation — the pane is a tag with
+// a src. SVG is here rather than with the text files on purpose: it is a
+// picture that happens to be written down, and showing its source when someone
+// opens it was the old behaviour by accident, not by choice.
+const viewByExt: Record<string, FileView> = {
+  png: 'image', jpg: 'image', jpeg: 'image', gif: 'image', webp: 'image',
+  bmp: 'image', avif: 'image', ico: 'image', svg: 'image',
+  mp4: 'video', webm: 'video', mov: 'video', mkv: 'video', avi: 'video',
+  mp3: 'audio', wav: 'audio', m4a: 'audio', flac: 'audio', ogg: 'audio',
+  pdf: 'pdf',
+}
+
+/** The pane a file belongs in, or undefined for "read it and decide". */
+export function fileView(path: string): FileView | undefined {
+  const ext = path.split('.').pop()?.toLowerCase() ?? ''
+  return viewByExt[ext]
+}
 
 export const workbench = $state<{ tabs: WorkbenchTab[]; activeId: string }>({
   tabs: [],
@@ -178,13 +199,14 @@ export async function openFileTab(path: string, displayName?: string): Promise<v
  * to fail and now reads must lose its `unreadable`, or the pane keeps showing
  * the old excuse. */
 async function loadFileTab(tab: WorkbenchTab, path: string): Promise<void> {
-  const next: Pick<WorkbenchTab, 'content' | 'image' | 'sheet' | 'unreadable'> = {}
-  if (imageExtRe.test(path)) {
-    try {
-      next.image = await ReadImageDataURL(path)
-    } catch (err) {
-      next.unreadable = String(err) // too large, or not really an image
-    }
+  const next: Pick<WorkbenchTab, 'content' | 'view' | 'sheet' | 'unreadable'> = {}
+  const view = fileView(path)
+  if (view) {
+    // Nothing to load and nothing that can fail here: the pane addresses the
+    // file host directly. A file that has gone missing surfaces as the element's
+    // own error rather than as an exception this function could catch, which is
+    // also why opening a 4GB video is instant.
+    next.view = view
   } else if (path.toLowerCase().endsWith('.xlsx')) {
     // A workbook is tried as a grid first. It is the one produced format worth
     // previewing — a spreadsheet is a table, and a table is exactly what a pane
@@ -213,7 +235,7 @@ async function loadFileTab(tab: WorkbenchTab, path: string): Promise<void> {
       next.unreadable = String(err)
     }
   }
-  tab.image = next.image
+  tab.view = next.view
   tab.sheet = next.sheet
   tab.content = next.content
   tab.unreadable = next.unreadable

@@ -119,14 +119,30 @@ describe('dropping OS files on the desk', () => {
     ReadFile.mockReset()
   })
 
-  it('shows a dropped picture as a picture', async () => {
-    ReadImageDataURL.mockResolvedValueOnce('data:image/png;base64,AAA')
-
+  it('shows a dropped picture as a picture, without reading it first', async () => {
     await openFileTab('shots/หน้าจอ.png')
 
-    expect(workbench.tabs[0].image).toBe('data:image/png;base64,AAA')
+    expect(workbench.tabs[0].view).toBe('image')
     // Reading a PNG as text is what produces "binary file cannot be previewed"
     // in front of someone's own screenshot.
+    expect(ReadFile).not.toHaveBeenCalled()
+    // Nor as base64 across the binding: the pane addresses the file host, which
+    // is what took the 20MB ceiling off pictures and let video in at all.
+    expect(ReadImageDataURL).not.toHaveBeenCalled()
+  })
+
+  // Each of these used to end at the same card. They are the reason the file
+  // host exists, so a change that quietly drops one back to "cannot preview"
+  // should fail here rather than on someone's desk.
+  it.each([
+    ['clips/บันทึกหน้าจอ.mp4', 'video'],
+    ['clips/note.m4a', 'audio'],
+    ['out/รายงาน.pdf', 'pdf'],
+    ['assets/logo.svg', 'image'],
+  ])('opens %s in its own pane', async (path, view) => {
+    await openFileTab(path)
+
+    expect(workbench.tabs[0].view).toBe(view)
     expect(ReadFile).not.toHaveBeenCalled()
   })
 })
@@ -219,7 +235,9 @@ describe('the panel as a drop target', () => {
     ReadFile.mockRejectedValueOnce(new Error('binary file cannot be previewed'))
     const { container } = render(Workbench)
 
-    await openFileTab('out/report.pdf')
+    // A container with no pane of its own — the card is the right answer here,
+    // and stays it. (This used to be a .pdf, back when a PDF had nowhere to go.)
+    await openFileTab('out/bundle.zip')
 
     await vi.waitFor(() => expect(container.textContent).toContain('binary file cannot be previewed'))
   })
