@@ -8,8 +8,9 @@
   import {
     EnabledProviders, SupportedThinkLevels,
     ListModelsForProvider, RequiresAPIKey, HasAPIKey, PickAttachment,
-    GetContextBreakdown, GuideTopics, RunChatCommand,
+    GetContextBreakdown, GuideTopics, RunChatCommand, ListChairs,
   } from '../../wailsjs/go/main/App'
+  import type { main } from '../../wailsjs/go/models'
   import { t, i18n } from './i18n.svelte'
   import { renderMarkdown } from './markdown'
   import { openUrlInWorkbench, openFileTab, setTabDragPayload, TAB_DRAG_MIME } from './stores/workbench.svelte'
@@ -21,6 +22,7 @@
     retryActiveProvider, undoLastTurn, switchApprovalMode,
     startTaskChip, dismissTaskChip,
     retryFailedTurn, regenerateReply, switchVariant, resendEdited, rateReply,
+    setActiveView, newChairSession, newSessionAt,
   } from './stores/cockpit.svelte'
   import ConfirmDialog from './ConfirmDialog.svelte'
   import Icon from './Icon.svelte'
@@ -202,6 +204,22 @@
   let draft = $state('')
   let modelMenuOpen = $state(false)
   let focusMenuOpen = $state(false)
+
+  // The who-am-I-talking-to picker (§85). Roster fetched when the menu opens,
+  // not held: hiring is dropping a file, and a list read at mount would miss
+  // an agent hired while the app was running.
+  let agentMenuOpen = $state(false)
+  let officeChairs = $state<main.Chair[]>([])
+  async function toggleAgentMenu() {
+    agentMenuOpen = !agentMenuOpen
+    if (agentMenuOpen) {
+      try {
+        officeChairs = await ListChairs()
+      } catch {
+        officeChairs = []
+      }
+    }
+  }
   // Why the last "add folder" was refused, '' when there is nothing to say.
   // Cleared when the menu closes, so a stale refusal never greets the next open.
   let folderError = $state('')
@@ -764,6 +782,16 @@
     <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
     <!-- delegated click target is the <a> tags rendered inside .markdown-body, already interactive -->
     <div class="chat" bind:this={chatEl} onscroll={onChatScroll} onclick={onChatClick}>
+    <!-- Who this conversation is with (§85). Drawn only for a direct chat —
+         the main assistant is the app's one face and needs no label — and
+         sticky, because "ตอนนี้คุยกับใคร" must survive any scroll depth. -->
+    {#if cockpit.chair}
+      <div class="chair-strip">
+        <Icon name="bot" size={14} />
+        <span class="who">{t('chat.talkingTo', { name: cockpit.chair })}</span>
+        <button type="button" class="back-office" onclick={() => setActiveView('office')}>{t('chat.backToOffice')}</button>
+      </div>
+    {/if}
     <div class="chat-inner">
       {#each messages as m, i}
         <div class="msg {m.role === 'user' ? 'user' : 'bot'}">
@@ -1210,6 +1238,42 @@
           <span class="caret"><Icon name={focusMenuOpen ? 'chevronUp' : 'chevronDown'} size={12} /></span>
         </button>
       </div>
+      <!-- Who this chat is with, and the way to a different who (§85). Same
+           shape as the focus chip beside it: both answer "what am I pointed
+           at right now". Picking someone always opens a NEW session — a desk
+           or a chair is fixed for a session's life, so the switcher is a door
+           to a fresh one, never a dial on this one.
+
+           Not on the coding desk: the star gives โค้ด no path to the office,
+           and a desk that can hand work to no one must not wear a button that
+           offers to. The code desk talks to exactly one agent, so there is
+           nothing to switch. -->
+      {#if cockpit.desk !== 'coding'}
+      <div class="focus-pick">
+        {#if agentMenuOpen}
+          <div class="focus-menu">
+            <button type="button" class="focus-item" class:on={!cockpit.chair}
+              onclick={() => { agentMenuOpen = false; if (cockpit.chair) newSessionAt('assistant') }}>
+              <span class="ic"><Icon name="sparkles" size={14} /></span> {t('chat.mainAgent')}
+            </button>
+            {#if officeChairs.length > 0}<div class="menu-sep"></div>{/if}
+            {#each officeChairs as c (c.name)}
+              <button type="button" class="focus-item" class:on={cockpit.chair === c.name}
+                title={c.description}
+                onclick={() => { agentMenuOpen = false; if (cockpit.chair !== c.name) newChairSession(c.name) }}>
+                <span class="ic"><Icon name="bot" size={14} /></span><span class="t">{c.name}</span>
+              </button>
+            {/each}
+            <div class="folder-note">{t('chat.agentSwitchNote')}</div>
+          </div>
+        {/if}
+        <button type="button" class="focus-chip focus-btn" onclick={toggleAgentMenu}>
+          <span class="ic"><Icon name={cockpit.chair ? 'bot' : 'sparkles'} size={13} /></span>
+          {cockpit.chair || t('chat.mainAgent')}
+          <span class="caret"><Icon name={agentMenuOpen ? 'chevronUp' : 'chevronDown'} size={12} /></span>
+        </button>
+      </div>
+      {/if}
       {#if cockpit.project.focused && cockpit.project.branch}<span class="focus-chip"><Icon name="gitBranch" size={11} /> {cockpit.project.branch}</span>{/if}
       <!-- Visible without opening the menu: a session that can reach outside its
            project must say so on the row that says what it is focused on, or
@@ -1274,7 +1338,7 @@
       <textarea
         class="input"
         rows="1"
-        placeholder={t('chat.inputPlaceholder')}
+        placeholder={cockpit.chair ? t('chat.inputToAgent', { name: cockpit.chair }) : t('chat.inputPlaceholder')}
         bind:this={inputEl}
         bind:value={draft}
         onkeydown={onKeydown}

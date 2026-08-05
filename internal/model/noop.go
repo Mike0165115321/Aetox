@@ -602,6 +602,15 @@ func (p *NoopProvider) noopSubagentDelegateReply(model string, req Request) Resp
 		"# Folder summary\\n\\nWritten by a sub-agent during the test set.\\n\\n- checked: OK\\n")
 
 	switch {
+	// A chair's whole job is one deliverable, so its script is one call: the
+	// writer its desk carries, then the report. It cannot walk the file-tool
+	// sequence below — the office manifest has no `edit`, no `grep`, and the
+	// chair asked for none of them — and a script that tried would only prove
+	// that calling a tool you were not handed goes nowhere.
+	case briefMentions(req, "office") && offersTool(req, "doc_write") && !did("doc_write"):
+		return step("noop_sub_doc", "doc_write", p.pick(
+			`{"path":"office-demo.docx","blocks":[{"type":"heading","text":"สรุปงานจากออฟฟิศ"},{"type":"paragraph","text":"เขียนโดยเก้าอี้ในออฟฟิศระหว่างชุดทดสอบ"}]}`,
+			`{"path":"office-demo.docx","blocks":[{"type":"heading","text":"Office job summary"},{"type":"paragraph","text":"Written by a chair in the office during the test set."}]}`))
 	case !did("ask_main") && offersTool(req, "ask_main") && briefMentions(req, "askmain"):
 		return step("noop_sub_ask", "ask_main", p.pick(
 			`{"question":"[tools-test] ให้ลิสต์ทั้งโฟลเดอร์แล้วเขียนไฟล์สรุปเลยไหม หรือหยุดแค่นี้?"}`,
@@ -619,6 +628,7 @@ func (p *NoopProvider) noopSubagentDelegateReply(model string, req Request) Resp
 	var b strings.Builder
 	b.WriteString(p.pick("[tools-test] ซับเอเจนทำงานเสร็จแล้ว:\n", "[tools-test] the sub-agent is done:\n"))
 	for _, s := range []struct{ tool, th, en string }{
+		{"doc_write", "เขียนเอกสารส่งกลับ", "wrote the document"},
 		{"list", "ดูไฟล์ในโฟลเดอร์", "listed the folder"},
 		{"write", "เขียนไฟล์ " + demoFile, "wrote " + demoFile},
 		{"read", "อ่านกลับมายืนยัน", "read it back to confirm"},
@@ -698,8 +708,15 @@ func (p *NoopProvider) noopDelegationReply(model string, req Request) Response {
 	}
 
 	profile := "explore"
-	if briefMentions(req, "general") {
+	switch {
+	case briefMentions(req, "general"):
 		profile = "general"
+	// "office" hands the job to a chair instead of a delegate (COMPANY.md §4):
+	// a whole deliverable, briefed once, coming back as a file. It is the one
+	// script where the sub-agent runs on a *different* desk's manifest than the
+	// caller's, which is the §84 carve-out and has no other keyless surface.
+	case briefMentions(req, "office") && offersTool(req, "task"):
+		profile = "doc"
 	}
 	call := func(id, name, args string) Response {
 		return Response{Provider: p.Name(), Model: model, ToolCalls: []ToolCall{{
@@ -713,7 +730,7 @@ func (p *NoopProvider) noopDelegationReply(model string, req Request) Response {
 	// they can only be used from a test that writes the brief by hand — the CLI
 	// could never reach them, which is the surface this script exists to serve.
 	passthrough := ""
-	for _, keyword := range []string{"toolchain", "askmain", "memory"} {
+	for _, keyword := range []string{"toolchain", "askmain", "memory", "office"} {
 		if briefMentions(req, keyword) {
 			passthrough += keyword + ": "
 		}
@@ -822,6 +839,14 @@ func (p *NoopProvider) noopDelegateToolsReply(model string, req Request) Respons
 	if briefMentions(req, "memory") && offersTool(req, "memory") {
 		return p.noopMemoryReply(model, req)
 	}
+	// A chair in the office (COMPANY.md §4) is handed a whole deliverable and
+	// hands back a file. It is the one delegate that runs on a *different*
+	// desk's manifest than its caller's — the §84 carve-out — and the claim
+	// worth checking is that a real file comes out of it, in the caller's
+	// session folder, with the work recorded against the chair.
+	if briefMentions(req, "office") && offersTool(req, "doc_write") {
+		return p.noopOfficeChairReply(model, req)
+	}
 	const probe = "list"
 	result := ""
 	ran := false
@@ -874,6 +899,27 @@ func (p *NoopProvider) noopDelegateToolsReply(model string, req Request) Respons
 		reply += p.pick("\nคำตอบจากเมนเอเจน: ", "\nmain agent answered: ") + clipNoop(answer, 200)
 	}
 	return Response{Provider: p.Name(), Model: model, Text: reply}
+}
+
+// noopOfficeChairReply is a chair doing its job: one writer call, then the
+// receipt. Two rounds, because that is the whole shape of the work a desk may
+// hand to another one — a single brief in, a file out — and a script that did
+// more here would be testing the file tools rather than the door.
+func (p *NoopProvider) noopOfficeChairReply(model string, req Request) Response {
+	for _, m := range req.Messages {
+		if m.Role == RoleTool && strings.EqualFold(m.Name, "doc_write") {
+			return Response{Provider: p.Name(), Model: model, Text: p.pick(
+				"[tools-test] เขียนเอกสารเสร็จแล้ว: ", "[tools-test] the document is written: ") +
+				clipNoop(strings.TrimSpace(m.Content), 300)}
+		}
+	}
+	return Response{Provider: p.Name(), Model: model, ToolCalls: []ToolCall{{
+		ID:   "noop_chair_doc",
+		Type: "function",
+		Function: FunctionCall{Name: "doc_write", Arguments: p.pick(
+			`{"path":"office-demo.docx","blocks":[{"type":"heading","text":"สรุปงานจากออฟฟิศ"},{"type":"paragraph","text":"เขียนโดยเก้าอี้ในออฟฟิศระหว่างชุดทดสอบ"}]}`,
+			`{"path":"office-demo.docx","blocks":[{"type":"heading","text":"Office job summary"},{"type":"paragraph","text":"Written by a chair in the office during the test set."}]}`)},
+	}}}
 }
 
 // noopLongReasoning produces a multi-paragraph thinking stream (~2 minutes of

@@ -18,8 +18,8 @@ import (
 // name (server_tool) to avoid collisions across servers and with built-ins.
 type toolAdapter struct {
 	client *Client
-	remote string          // tool name as the server knows it
-	name   string          // namespaced name the model calls
+	remote string // tool name as the server knows it
+	name   string // namespaced name the model calls
 	desc   string
 	schema json.RawMessage // JSON schema for the model's tool definition
 }
@@ -123,7 +123,16 @@ func (c *Client) SkillTools(ctx context.Context) ([]skill.Tool, error) {
 // names must match ^[A-Za-z0-9_-]+$ for the model APIs, so any other rune
 // becomes '_'.
 func toolName(server, tool string) string {
-	return sanitize(server) + "_" + sanitize(tool)
+	return ToolPrefix(server) + sanitize(tool)
+}
+
+// ToolPrefix is what every tool bridged from server is named with. Exported
+// because a caller holding only a tool name has to be able to ask which server
+// it came from — internal/mode decides per-desk MCP visibility that way, and a
+// second copy of this rule anywhere else is a rule that can disagree with the
+// one that does the naming. Keep it the same string toolName builds from.
+func ToolPrefix(server string) string {
+	return sanitize(server) + "_"
 }
 
 func sanitize(s string) string {

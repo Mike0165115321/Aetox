@@ -144,3 +144,55 @@ func TestTheDescriptionTeachesTheCostNotACaseList(t *testing.T) {
 		}
 	}
 }
+
+// A session at a desk can write to two scopes through one tool, and which one
+// it lands in is the model's call — only it knows whether a fact is about the
+// user or about this kind of work (ARCHITECTURE.md §83).
+func TestADeskSessionCanRememberInEitherScope(t *testing.T) {
+	isolate(t)
+	rec := &recorder{}
+	tool := &MemoryTool{Scope: MainScope, Desk: "coding", Proposer: rec}
+
+	if _, err := run(t, tool, map[string]any{"text": "ผู้ใช้ชอบคำตอบสั้น", "why": "บอกไว้"}); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	if _, err := run(t, tool, map[string]any{"text": "repo นี้เทสด้วยสคริปต์", "where": "this-desk", "why": "เห็นตอนรัน"}); err != nil {
+		t.Fatalf("add to desk: %v", err)
+	}
+	if len(rec.got) != 2 {
+		t.Fatalf("want two proposals, got %d", len(rec.got))
+	}
+	if rec.got[0].Scope != MainScope {
+		t.Errorf("the default scope is %q, want the shared file — a guess must land where it always did", rec.got[0].Scope)
+	}
+	if rec.got[1].Scope != ModeScope("coding") {
+		t.Errorf("this-desk proposed into %q, want the desk's own scope", rec.got[1].Scope)
+	}
+
+	// Anything but the one word means the shared file, including a word the
+	// model invented.
+	if _, err := run(t, tool, map[string]any{"text": "อีกอัน", "where": "somewhere-else"}); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	if rec.got[2].Scope != MainScope {
+		t.Errorf("an unrecognised where landed in %q, want the shared file", rec.got[2].Scope)
+	}
+}
+
+// Every session that is not at a desk — a delegate, and everything from before
+// desks existed — must send the tool block it always did. The definition is in
+// every request, so a parameter nobody can use is a bill with no benefit.
+func TestTheMemoryToolGainsNothingWithoutADesk(t *testing.T) {
+	isolate(t)
+	plain := (&MemoryTool{Scope: MainScope}).ToolDefinition()
+	if strings.Contains(string(plain.Function.Parameters), "where") {
+		t.Errorf("a session with no desk was sent the desk parameter: %s", plain.Function.Parameters)
+	}
+	desked := (&MemoryTool{Scope: MainScope, Desk: "coding"}).ToolDefinition()
+	if !strings.Contains(string(desked.Function.Parameters), "where") {
+		t.Errorf("a session at a desk cannot say which scope it means: %s", desked.Function.Parameters)
+	}
+	if !strings.Contains(string(desked.Function.Parameters), "coding") {
+		t.Error("the parameter does not name the desk, so the model cannot tell what this-desk means")
+	}
+}

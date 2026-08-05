@@ -11,6 +11,7 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/command"
 	"github.com/Mike0165115321/Aetox/internal/debuglog"
 	"github.com/Mike0165115321/Aetox/internal/learned"
+	"github.com/Mike0165115321/Aetox/internal/mode"
 	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/safety"
 	"github.com/Mike0165115321/Aetox/internal/skill"
@@ -39,9 +40,20 @@ const defaultProfile = "explore"
 // up, so a re-bootstrap replaces the tool along with everything else instead of
 // leaving it pointed at a dead engine.
 type TaskOptions struct {
-	Provider     model.Provider
-	Model        string
-	Registry     *skill.Registry // the session's registry; the child gets a filtered copy
+	Provider model.Provider
+	Model    string
+	Registry *skill.Registry // the session's registry; the child gets a filtered copy
+	// Desk is the mode this session was opened at, and it decides two things:
+	// the ceiling a delegate runs under, and which chairs this desk may hand a
+	// job to (COMPANY.md §3). Nil is the pre-modes full desk — no ceiling, every
+	// profile reachable — which is what every session before §83 had.
+	//
+	// The registry above stays whole on purpose. The desk filter lives in the
+	// session's dispatcher, so what the *model* is offered is already trimmed;
+	// keeping the registry complete is what lets a cross-desk dispatch hand a
+	// chair a tool its caller cannot see — the file crosses the counter, the
+	// tool never does (§84).
+	Desk         *mode.Mode
 	Permissions  safety.PermissionConfig
 	ApprovalMode safety.ApprovalMode
 	Approve      turn.ApprovalPromptFunc
@@ -106,20 +118,63 @@ func (t *taskTool) Description() string {
 		"Start several only when the jobs are genuinely unrelated. " +
 		"A sub-agent that gets stuck on a decision only you can make will come back through task_result as a " +
 		"question instead of an answer — reply with task_answer and it carries on from where it stopped. " +
-		"Available: " + strings.Join(profileNames(), ", ") + "."
+		"Available: " + strings.Join(profileNames(t.available()), ", ") + "."
 }
 
-func profileNames() []string {
-	profiles := List()
-	names := make([]string, 0, len(profiles))
-	for _, p := range profiles {
-		names = append(names, p.Name)
+// available is the roster this desk may actually start: its own delegates,
+// plus the chairs at any desk it is allowed to hand work to. A profile listed
+// but refused would spend a round of the loop teaching the model a rule the
+// list could have expressed.
+func (t *taskTool) available() []Profile {
+	all := List()
+	out := make([]Profile, 0, len(all))
+	for _, p := range all {
+		if _, err := t.ceilingFor(p); err == nil {
+			out = append(out, p)
+		}
 	}
-	return names
+	return out
+}
+
+// ceilingFor answers which desk's manifest a job on p runs under, or why it
+// cannot run from here at all.
+//
+// Three cases and one rule: work may cross desks only when it compresses to a
+// single brief and comes back as a file (§84).
+//
+//   - An ordinary delegate (no `desk:`) is the caller doing its own work in a
+//     second context, so it runs under the caller's ceiling.
+//   - A chair at the caller's own desk is the same thing by another name.
+//   - A chair at another desk is a dispatch: allowed only if this desk declares
+//     that one in `dispatch:`, and then it runs on the *target* desk's
+//     manifest, in its own context, with only the result crossing back.
+func (t *taskTool) ceilingFor(p Profile) (*mode.Mode, error) {
+	here := t.opts.Desk
+	if p.Desk == "" || p.Desk == here.DeskName() {
+		return here, nil
+	}
+	if !here.AllowsDispatch(p.Desk) {
+		return nil, fmt.Errorf(
+			"%s works at the %s desk, and this desk does not hand work to that one. Do it here, or tell the user which kind of session this belongs in",
+			p.Name, p.Desk)
+	}
+	target, ok := mode.Load(p.Desk)
+	if !ok {
+		return nil, fmt.Errorf("%s says it works at the %q desk, and no such desk exists", p.Name, p.Desk)
+	}
+	return target, nil
+}
+
+func profileNames(profiles []Profile) []string {
+	out := make([]string, 0, len(profiles))
+	for _, p := range profiles {
+		out = append(out, p.Name)
+	}
+	return out
 }
 
 func (t *taskTool) ToolDefinition() model.ToolDefinition {
-	profiles := List()
+	profiles := t.available()
 	names := make([]string, 0, len(profiles))
 	described := make([]string, 0, len(profiles))
 	for _, p := range profiles {
@@ -181,10 +236,17 @@ func (t *taskTool) ExecuteTool(ctx context.Context, args map[string]any) (skill.
 	}
 	profile, ok := Load(name)
 	if !ok {
-		return t.fail(label, started, fmt.Sprintf("no sub-agent named %q; available: %s", name, strings.Join(profileNames(), ", ")))
+		return t.fail(label, started, fmt.Sprintf("no sub-agent named %q; available: %s", name, strings.Join(profileNames(t.available()), ", ")))
 	}
 	if t.opts.Provider == nil || t.opts.Registry == nil {
 		return t.fail(label, started, "the engine is not ready to spawn a sub-agent")
+	}
+	// Which desk this job runs at, decided before anything is built: a dispatch
+	// this desk may not make is a refusal the model can read and act on, not a
+	// job that starts and quietly comes back with half its tools missing.
+	ceiling, err := t.ceilingFor(profile)
+	if err != nil {
+		return t.fail(label, started, err.Error())
 	}
 	// A brief the child cannot hold is not simply a smaller job. memory trims the
 	// last message from its tail (memory.Context.truncateLastIfNeeded), so an
@@ -193,7 +255,7 @@ func (t *taskTool) ExecuteTool(ctx context.Context, args map[string]any) (skill.
 	// Refuse with the numbers instead, so the parent can split the work.
 	// Its own instructions plus whatever it has learned: both are in its system
 	// prompt on every round, so both count against what a brief can be.
-	childPrompt := promptFor(profile)
+	childPrompt := PromptFor(profile)
 	if budget := t.opts.MaxChars; budget > 0 && len(brief)+len(childPrompt) > budget {
 		return t.fail(label, started, fmt.Sprintf(
 			"the brief is too long for sub-agent %s: %d characters on top of its %d-character instructions goes past the %d it can hold, and the end would be silently cut off. Split it into smaller jobs.",
@@ -202,9 +264,10 @@ func (t *taskTool) ExecuteTool(ctx context.Context, args map[string]any) (skill.
 
 	defer debuglog.Block("task: " + profile.Name + " — " + truncate(label, 60))()
 
-	// The child's tool set is its profile's, minus what every delegate is refused
-	// — `task` above all, which is what keeps depth at 1.
-	childRegistry := FilterRegistry(t.opts.Registry, profile)
+	// The child's tool set is its profile's, under the ceiling of the desk the
+	// job runs at, minus what every delegate is refused — `task` above all,
+	// which is what keeps depth at 1.
+	childRegistry := FilterRegistry(t.opts.Registry, profile, ceiling)
 	if len(childRegistry.Names()) == 0 {
 		return t.fail(label, started, fmt.Sprintf("sub-agent %q was left with no tools at all", profile.Name))
 	}

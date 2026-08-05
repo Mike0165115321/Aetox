@@ -8,10 +8,11 @@
 
 | Seam | What it does |
 |---|---|
-| `Build(surface, sandboxRoot)` / `BuildWithReport(...)` ([prompt.go](prompt.go)) | Concatenates layers, most-specific last so it wins on conflict: identity (per `Surface`) → environment (paths are relative; repeat what a tool reported, never assemble a path) → user-global (every `*.md` file in `config.IdentityDir()`, one layer block each) → project (`ProjectContextFile`). Missing/empty files are skipped silently; each file layer is capped at `maxLayerBytes` (16KB). |
+| `Build(surface, scope)` / `BuildForDesk(...)` / `BuildWithReport(...)` ([prompt.go](prompt.go)) | Concatenates layers, most-specific last so it wins on conflict: identity (per `Surface`) → environment (paths are relative; repeat what a tool reported, never assemble a path) → **desk direction** → user-global (every `*.md` file in `config.IdentityDir()`, one layer block each) → learned memory (shared, then this desk's) → project (`ProjectContextFile`). Missing/empty files are skipped silently; each file layer is capped at `maxLayerBytes` (16KB). |
+| `Desk{Name, Direction}` ([prompt.go](prompt.go)) | The mode a session was opened at (ARCHITECTURE.md §83), as two strings — this package must not import `internal/mode`, and the narrow type also keeps the boundary honest: a desk contributes **direction**, never identity. The zero value produces the prompt byte-for-byte as it was before desks existed. Its position (with the engine text, before the user's files) is the precedence policy: what the user wrote outranks what the desk says. |
 | `ProjectContextFile(root)` | Checks `AETOX.md`, then `AGENTS.md`, then `CLAUDE.md` under root. Exposed so `desktop/app.go`'s `projectStatus` badge reports the same file this package would actually load — not a separate `os.Stat` that can drift from reality. |
 | `foldIdentityLayers(b)` | Reads `config.IdentityDir()`, folds every `*.md` file in it into `b` (sorted by filename), returns the paths that actually contributed content. |
-| `Loaded` (`BuildWithReport`'s second return) | `UserGlobalPaths []string` (every identity file folded in) + `ProjectPath` — for the same badge-honesty purpose. |
+| `Loaded` (`BuildWithReport`'s second return) | `UserGlobalPaths []string` (every identity file folded in) + `MemoryPath` + `DeskMemoryPath` + `ProjectPath` — for the same badge-honesty purpose. |
 
 ## Reload timing (settled, don't relitigate without checking ARCHITECTURE.md §11 first)
 
@@ -20,4 +21,5 @@
 ## Rules of thumb
 
 - New layer (e.g. a sub-agent profile prompt) = new function here, not a third copy in a front end.
+- A desk may add direction; nothing may add a second answer to *who the assistant is* (§44.0). The identity directory is the only one.
 - Keep layers append-only and ordered least-to-most-specific — that ordering is the actual conflict-resolution mechanism, not a stylistic choice.

@@ -22,18 +22,28 @@ func isolate(t *testing.T) string {
 	return dir
 }
 
-// Three sub-agents ship. The count is asserted because "one more profile, it's
-// free" is how a bundled set becomes a menu nobody reads.
+// Six profiles ship, in two kinds, and the split is the thing being asserted:
+// three delegates any desk may run, and three chairs that sit in the office
+// (COMPANY.md §4). The counts are pinned because "one more profile, it's free"
+// is how a bundled set becomes a menu nobody reads — and because a chair that
+// lost its `desk:` would silently become a delegate every desk carries.
 func TestBundledProfilesAreUsable(t *testing.T) {
 	isolate(t)
 	got := List()
-	want := []string{"explore", "general", "plan"}
+	want := []string{"deck", "doc", "explore", "general", "plan", "sheet"}
 	if len(got) != len(want) {
 		t.Fatalf("List() = %d profiles, want %d", len(got), len(want))
 	}
+	chairs := map[string]bool{"deck": true, "doc": true, "sheet": true}
 	for i, p := range got {
 		if p.Name != want[i] {
 			t.Errorf("List()[%d] = %q, want %q (alphabetical)", i, p.Name, want[i])
+		}
+		if wantDesk := chairs[p.Name]; wantDesk != (p.Desk != "") {
+			t.Errorf("%s: Desk=%q, want a chair=%v", p.Name, p.Desk, wantDesk)
+		}
+		if chairs[p.Name] && p.Desk != "specialized" {
+			t.Errorf("%s: sits at desk %q, want specialized — the office is the only room with chairs", p.Name, p.Desk)
 		}
 		if !p.Builtin || p.Path != "" || p.Overrides {
 			t.Errorf("%s: Builtin=%v Path=%q Overrides=%v", p.Name, p.Builtin, p.Path, p.Overrides)
@@ -240,8 +250,8 @@ func TestUserProfileAddsToTheList(t *testing.T) {
 	if p.Overrides {
 		t.Error("a user-only profile claims to override a bundled one")
 	}
-	if got := len(List()); got != 4 {
-		t.Fatalf("List() = %d, want 4 (3 bundled + 1 user)", got)
+	if got := len(List()); got != 7 {
+		t.Fatalf("List() = %d, want 7 (6 bundled + 1 user)", got)
 	}
 }
 

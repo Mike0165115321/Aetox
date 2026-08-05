@@ -106,6 +106,10 @@ export function CurrentSessionID() {
   return window['go']['main']['App']['CurrentSessionID']();
 }
 
+export function DeleteArtifact(arg1) {
+  return window['go']['main']['App']['DeleteArtifact'](arg1);
+}
+
 export function DeleteIdentityFile(arg1) {
   return window['go']['main']['App']['DeleteIdentityFile'](arg1);
 }
@@ -190,6 +194,14 @@ export function ListAllSessions() {
   return window['go']['main']['App']['ListAllSessions']();
 }
 
+export function ListArtifacts() {
+  return window['go']['main']['App']['ListArtifacts']();
+}
+
+export function ListChairs() {
+  return window['go']['main']['App']['ListChairs']();
+}
+
 export function ListDecidedChanges(arg1) {
   return window['go']['main']['App']['ListDecidedChanges'](arg1);
 }
@@ -210,6 +222,10 @@ export function ListModelsForProvider(arg1) {
   return window['go']['main']['App']['ListModelsForProvider'](arg1);
 }
 
+export function ListModes() {
+  return window['go']['main']['App']['ListModes']();
+}
+
 export function ListPendingChanges() {
   return window['go']['main']['App']['ListPendingChanges']();
 }
@@ -218,8 +234,16 @@ export function ListPromptPresets() {
   return window['go']['main']['App']['ListPromptPresets']();
 }
 
+export function ListReceivedJobs(arg1) {
+  return window['go']['main']['App']['ListReceivedJobs'](arg1);
+}
+
 export function ListSessions() {
   return window['go']['main']['App']['ListSessions']();
+}
+
+export function ListSessionsAt(arg1) {
+  return window['go']['main']['App']['ListSessionsAt'](arg1);
 }
 
 export function ListSkills() {
@@ -258,8 +282,20 @@ export function ModelStatus() {
   return window['go']['main']['App']['ModelStatus']();
 }
 
+export function NewChairSession(arg1) {
+  return window['go']['main']['App']['NewChairSession'](arg1);
+}
+
 export function NewSession() {
   return window['go']['main']['App']['NewSession']();
+}
+
+export function NewSessionAt(arg1) {
+  return window['go']['main']['App']['NewSessionAt'](arg1);
+}
+
+export function OpenArtifact(arg1) {
+  return window['go']['main']['App']['OpenArtifact'](arg1);
 }
 
 export function OpenFileExternally(arg1) {
@@ -456,6 +492,14 @@ export function SearchSessions(arg1) {
 
 export function SendMessage(arg1) {
   return window['go']['main']['App']['SendMessage'](arg1);
+}
+
+export function SessionAgent(arg1) {
+  return window['go']['main']['App']['SessionAgent'](arg1);
+}
+
+export function SessionMode(arg1) {
+  return window['go']['main']['App']['SessionMode'](arg1);
 }
 
 export function SetAPIKey(arg1, arg2) {

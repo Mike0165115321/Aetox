@@ -16,8 +16,10 @@ import (
 	"time"
 
 	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mike0165115321/Aetox/internal/mode"
 	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/safety"
+	"github.com/Mike0165115321/Aetox/internal/subagent"
 	"github.com/Mike0165115321/Aetox/internal/turn"
 )
 
@@ -76,9 +78,20 @@ type SessionVariant struct {
 // on search results. ProjectKey/ProjectName are only set by the cross-project
 // (global) queries — the per-project ones would just repeat the active project.
 type SessionMeta struct {
-	ID          string `json:"id"`
-	Title       string `json:"title"`
-	UpdatedAt   string `json:"updatedAt"` // RFC3339
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	UpdatedAt string `json:"updatedAt"` // RFC3339
+	// Mode is the desk this conversation was held at, "" for the sessions that
+	// predate desks. Every list carries it, including the cross-project ones,
+	// because the sidebar is where a person picks a chat back up and "which
+	// desk was this?" is the first thing they need to know — and filtering the
+	// list to one desk is impossible from a list that does not say.
+	Mode string `json:"mode,omitempty"`
+	// Agent is who the conversation was held with (§85): "" for the main
+	// assistant, a chair's name for a direct chat in the office. Carried for
+	// the same reason Mode is — the row has to say who you were talking to
+	// before you click it.
+	Agent       string `json:"agent,omitempty"`
 	Snippet     string `json:"snippet,omitempty"`
 	ProjectKey  string `json:"projectKey,omitempty"`
 	ProjectName string `json:"projectName,omitempty"`
@@ -144,11 +157,16 @@ func (a *App) appendTurn(userMsg, agentMsg SessionMessage) int64 {
 	defer func() { _ = tx.Rollback() }()
 
 	now := time.Now().Format(time.RFC3339)
+	// The row is created here, on the first turn, so this is where the desk —
+	// and, since §85, the agent — is recorded; the ON CONFLICT branch
+	// deliberately touches neither. A session is born at a desk, with whoever
+	// it was opened with, and stays there (§83); an UPDATE of either column
+	// would be the mid-session switch the whole design refuses.
 	_, _ = tx.Exec(`
-		INSERT INTO sessions(id, project_key, title, created_at, updated_at)
-		VALUES(?,?,?,?,?)
+		INSERT INTO sessions(id, project_key, title, created_at, updated_at, mode, agent)
+		VALUES(?,?,?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at`,
-		a.sessionID, projectKey(a.cfg.SandboxRoot), sessionTitleFrom(userMsg.Text), now, now)
+		a.sessionID, projectKey(a.cfg.SandboxRoot), sessionTitleFrom(userMsg.Text), now, now, a.desk.DeskName(), a.chair)
 	var agentID int64
 	for _, m := range []SessionMessage{userMsg, agentMsg} {
 		res, execErr := tx.Exec(`INSERT INTO messages(session_id, role, text, time, reasoning, think_secs, parts) VALUES(?,?,?,?,?,?,?)`,
@@ -175,26 +193,74 @@ func (a *App) startNewSession() {
 
 // ListSessions returns this project's chat history, newest first.
 func (a *App) ListSessions() []SessionMeta {
+	return a.ListSessionsAt("")
+}
+
+// ListSessionsAt is ListSessions filtered to one desk — the history list behind
+// a single button (COMPANY.md §2).
+//
+// An empty desk means every desk rather than the legacy one, because that is
+// the question the combined list asks. Sessions from before modes existed hold
+// '' in the column and so appear only here, which is right: they were held at
+// no desk, and filing them under one would be inventing a fact about them.
+func (a *App) ListSessionsAt(desk string) []SessionMeta {
 	out := []SessionMeta{}
 	db, err := a.database()
 	if err != nil {
 		return out
 	}
-	rows, err := db.Query(`
-		SELECT id, title, updated_at FROM sessions
-		WHERE project_key = ? ORDER BY updated_at DESC LIMIT 200`,
-		projectKey(a.cfg.SandboxRoot))
+	query := `
+		SELECT id, title, updated_at, mode, agent FROM sessions
+		WHERE project_key = ? ORDER BY updated_at DESC LIMIT 200`
+	args := []any{projectKey(a.cfg.SandboxRoot)}
+	if desk = strings.TrimSpace(desk); desk != "" {
+		query = `
+		SELECT id, title, updated_at, mode, agent FROM sessions
+		WHERE project_key = ? AND mode = ? ORDER BY updated_at DESC LIMIT 200`
+		args = append(args, desk)
+	}
+	rows, err := db.Query(query, args...)
 	if err != nil {
 		return out
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var m SessionMeta
-		if rows.Scan(&m.ID, &m.Title, &m.UpdatedAt) == nil {
+		if rows.Scan(&m.ID, &m.Title, &m.UpdatedAt, &m.Mode, &m.Agent) == nil {
 			out = append(out, m)
 		}
 	}
 	return out
+}
+
+// SessionMode reports which desk a stored session was created at, so the UI can
+// label it. "" is both "no such session" and "the full desk", which is fine
+// here: the label for the second is nothing, and so is the label for the first.
+func (a *App) SessionMode(id string) string {
+	db, err := a.database()
+	if err != nil {
+		return ""
+	}
+	var desk string
+	if db.QueryRow(`SELECT mode FROM sessions WHERE id = ?`, id).Scan(&desk) != nil {
+		return ""
+	}
+	return desk
+}
+
+// SessionAgent reports who a stored session was held with (§85): "" for the
+// main assistant — which is also the answer for a session that does not
+// exist, and both label as nothing, same shape as SessionMode above.
+func (a *App) SessionAgent(id string) string {
+	db, err := a.database()
+	if err != nil {
+		return ""
+	}
+	var chair string
+	if db.QueryRow(`SELECT agent FROM sessions WHERE id = ?`, id).Scan(&chair) != nil {
+		return ""
+	}
+	return chair
 }
 
 // SearchSessions full-text searches this project's history (FTS5 trigram —
@@ -216,7 +282,7 @@ func (a *App) SearchSessions(query string) []SessionMeta {
 		  SELECT rowid AS mid, snippet(messages_fts, 0, '', '', '…', 10) AS snip
 		  FROM messages_fts WHERE messages_fts MATCH ?
 		)
-		SELECT s.id, s.title, s.updated_at, MIN(f.snip)
+		SELECT s.id, s.title, s.updated_at, s.mode, s.agent, MIN(f.snip)
 		FROM f
 		JOIN messages m ON m.id = f.mid
 		JOIN sessions s ON s.id = m.session_id
@@ -230,7 +296,7 @@ func (a *App) SearchSessions(query string) []SessionMeta {
 	defer rows.Close()
 	for rows.Next() {
 		var m SessionMeta
-		if rows.Scan(&m.ID, &m.Title, &m.UpdatedAt, &m.Snippet) == nil {
+		if rows.Scan(&m.ID, &m.Title, &m.UpdatedAt, &m.Mode, &m.Agent, &m.Snippet) == nil {
 			out = append(out, m)
 		}
 	}
@@ -301,7 +367,7 @@ func (a *App) ListAllSessions() []SessionMeta {
 		return out
 	}
 	rows, err := db.Query(`
-		SELECT s.id, s.title, s.updated_at, s.project_key, COALESCE(p.name, s.project_key)
+		SELECT s.id, s.title, s.updated_at, s.mode, s.agent, s.project_key, COALESCE(p.name, s.project_key)
 		FROM sessions s LEFT JOIN projects p ON p.project_key = s.project_key
 		ORDER BY s.updated_at DESC LIMIT 200`)
 	if err != nil {
@@ -310,7 +376,7 @@ func (a *App) ListAllSessions() []SessionMeta {
 	defer rows.Close()
 	for rows.Next() {
 		var m SessionMeta
-		if rows.Scan(&m.ID, &m.Title, &m.UpdatedAt, &m.ProjectKey, &m.ProjectName) == nil {
+		if rows.Scan(&m.ID, &m.Title, &m.UpdatedAt, &m.Mode, &m.Agent, &m.ProjectKey, &m.ProjectName) == nil {
 			out = append(out, m)
 		}
 	}
@@ -331,7 +397,7 @@ func (a *App) SearchAllSessions(query string) []SessionMeta {
 		  SELECT rowid AS mid, snippet(messages_fts, 0, '', '', '…', 10) AS snip
 		  FROM messages_fts WHERE messages_fts MATCH ?
 		)
-		SELECT s.id, s.title, s.updated_at, s.project_key, COALESCE(p.name, s.project_key), MIN(f.snip)
+		SELECT s.id, s.title, s.updated_at, s.mode, s.agent, s.project_key, COALESCE(p.name, s.project_key), MIN(f.snip)
 		FROM f
 		JOIN messages m ON m.id = f.mid
 		JOIN sessions s ON s.id = m.session_id
@@ -344,7 +410,7 @@ func (a *App) SearchAllSessions(query string) []SessionMeta {
 	defer rows.Close()
 	for rows.Next() {
 		var m SessionMeta
-		if rows.Scan(&m.ID, &m.Title, &m.UpdatedAt, &m.ProjectKey, &m.ProjectName, &m.Snippet) == nil {
+		if rows.Scan(&m.ID, &m.Title, &m.UpdatedAt, &m.Mode, &m.Agent, &m.ProjectKey, &m.ProjectName, &m.Snippet) == nil {
 			out = append(out, m)
 		}
 	}
@@ -393,6 +459,23 @@ func (a *App) LoadSession(id string) ([]SessionMessage, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Back to the desk — and, for a direct chat, the chair — this conversation
+	// was held at, before its history is restored. A session reopened at
+	// another desk would answer the next message with tools it never had; one
+	// reopened without its chair would answer as somebody else. A legacy
+	// session ('','') reopens at the full desk, exactly what it always ran with.
+	//
+	// A desk or chair whose file has since been deleted refuses rather than
+	// falls back: the transcript is intact, but reproducing what that session
+	// could do is impossible without the file, and quietly reopening it wider
+	// — or as the main assistant wearing the chair's history — is worse than
+	// the error. Putting the file back is the way in.
+	var desk, chair string
+	if db.QueryRow(`SELECT mode, agent FROM sessions WHERE id = ?`, id).Scan(&desk, &chair) == nil {
+		if err := a.setStation(desk, chair); err != nil {
+			return nil, err
+		}
+	}
 	// m.id comes back so a reopened session can still be rated: the thumbs
 	// address a job by the bubble they sit under, and without the row id an
 	// answer stops being ratable the moment the session is closed — which is
@@ -433,10 +516,87 @@ func (a *App) LoadSession(id string) ([]SessionMessage, error) {
 	return messages, nil
 }
 
-// NewSession starts a blank session and returns its id.
+// NewSession starts a blank session at the desk the app is already at, and
+// returns its id.
 func (a *App) NewSession() string {
 	a.startNewSession()
 	return a.sessionID
+}
+
+// NewSessionAt starts a blank session at the named desk — the five buttons'
+// entry point (COMPANY.md §2). An empty name is the full desk, which is what
+// NewSession has always given.
+//
+// An unknown name is an error rather than a quiet fall back to the full desk:
+// falling back would hand a session every tool on the machine because a picker
+// sent a stale name, and the one thing a desk must never do is widen by
+// accident.
+//
+// Separate from NewSession rather than replacing it because a bound method's
+// signature is a contract the running frontend already calls. This is the
+// desk-aware door; the old one keeps working for everything that has not been
+// pointed at a desk yet.
+func (a *App) NewSessionAt(desk string) (string, error) {
+	// Cleared first, then switched: setStation re-bootstraps, and a re-bootstrap
+	// carries the outgoing agent's context into the new one. Emptying the
+	// conversation before that means the new desk starts on nothing, which is
+	// the entire promise of opening a session at one.
+	a.startNewSession()
+	if err := a.setStation(desk, ""); err != nil {
+		return "", err
+	}
+	return a.sessionID, nil
+}
+
+// NewChairSession starts a blank session talking directly to one of the
+// office's agents (§85), and returns its id. The desk is implied: a chair
+// only exists in the office.
+func (a *App) NewChairSession(chair string) (string, error) {
+	a.startNewSession()
+	if err := a.setStation(mode.Office, chair); err != nil {
+		return "", err
+	}
+	return a.sessionID, nil
+}
+
+// setStation points the engine at a desk and, optionally, one of the office's
+// chairs — the single writer of both fields, because they only mean anything
+// as a pair: a chair on any desk but the office is a state the product says
+// cannot exist (§85), and two writers is how it would come to exist anyway.
+// Everything the pair decides — the dispatcher's cut, the system prompt, the
+// memory scope — is built once at bootstrap from these values, so changing
+// either means bootstrapping again; same path a project switch takes.
+//
+// A no-op when nothing changed, which is the common case: opening one
+// assistant chat after another rebuilds nothing.
+//
+// Refusals are loud and name the file that is missing. Falling back would
+// either widen a session (a stale desk name landing on the full desk) or
+// impersonate someone (a deleted chair answered by the main assistant).
+func (a *App) setStation(desk, chair string) error {
+	desk, chair = strings.TrimSpace(desk), strings.TrimSpace(chair)
+	if desk == a.desk.DeskName() && chair == a.chair {
+		return nil
+	}
+	if chair != "" {
+		if desk != mode.Office {
+			return fmt.Errorf("เอเจนนั่งได้เฉพาะในออฟฟิศ — โต๊ะ %q มีเอเจนไม่ได้", desk)
+		}
+		p, ok := subagent.Load(chair)
+		if !ok {
+			return fmt.Errorf("ไม่รู้จักเอเจน %q — ไฟล์โปรไฟล์ของเอเจนนี้อาจถูกลบไปแล้ว", chair)
+		}
+		if p.Desk != mode.Office {
+			return fmt.Errorf("%q ไม่ได้เป็นเอเจนของออฟฟิศ — คุยตรงได้เฉพาะโปรไฟล์ที่ประกาศ desk: specialized", chair)
+		}
+	}
+	m, ok := mode.Load(desk)
+	if !ok {
+		return fmt.Errorf("ไม่รู้จักโหมด %q — ไฟล์ของโหมดนี้อาจถูกลบไปแล้ว", desk)
+	}
+	a.desk, a.chair = m, chair
+	a.applyConfig(a.cfg)
+	return nil
 }
 
 // CurrentSessionID reports which session the engine is writing to, so the
@@ -481,10 +641,17 @@ func (a *App) DeleteSession(id string) error {
 	if err := tx.Commit(); err != nil {
 		return err
 	}
-	// The session's attachments go with it. Session ids are our own timestamp
-	// format, but this id came over the JS binding — refuse anything that could
-	// step out of the attachments folder. Roots we can't see from here (another
-	// project's) are left for sweepAttachments the next time that project opens.
+	// The session's attachments go with it — they are inputs the user handed
+	// this conversation. What does NOT go is `output/<session>`: a deleted
+	// conversation must never take the work with it (COMPANY.md §6.7). The
+	// report an employee wrote does not disappear because you deleted the email
+	// thread that asked for it, and the ผลงาน page is the one place a file is
+	// deleted, by the user.
+	//
+	// Session ids are our own timestamp format, but this id came over the JS
+	// binding — refuse anything that could step out of the attachments folder.
+	// Roots we can't see from here (another project's) are left for
+	// sweepAttachments the next time that project opens.
 	if id != "" && id == filepath.Base(id) && !strings.Contains(id, "..") {
 		for _, root := range []string{a.cfg.SandboxRoot, unfocusedRoot()} {
 			if strings.TrimSpace(root) != "" {

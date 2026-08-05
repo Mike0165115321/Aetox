@@ -109,7 +109,7 @@ func TestFilterRegistry(t *testing.T) {
 	parent := skill.NewDefaultRegistry(skill.RegistryOptions{SandboxRoot: t.TempDir()})
 
 	explore, _ := Load("explore")
-	child := FilterRegistry(parent, explore)
+	child := FilterRegistry(parent, explore, nil)
 	if got := len(child.Names()); got != 4 {
 		t.Fatalf("explore registry has %d tools, want 4: %v", got, child.Names())
 	}
@@ -124,7 +124,7 @@ func TestFilterRegistry(t *testing.T) {
 	}
 
 	general, _ := Load("general")
-	generalRegistry := FilterRegistry(parent, general)
+	generalRegistry := FilterRegistry(parent, general, nil)
 	for _, name := range forcedDenials {
 		if _, ok := generalRegistry.Get(name); ok {
 			t.Errorf("%q reached a sub-agent's registry", name)
@@ -140,14 +140,14 @@ func TestFilterRegistry(t *testing.T) {
 	}
 
 	denied := Profile{Deny: []string{"write", "edit"}}
-	deniedRegistry := FilterRegistry(parent, denied)
+	deniedRegistry := FilterRegistry(parent, denied, nil)
 	for _, name := range denied.Deny {
 		if _, ok := deniedRegistry.Get(name); ok {
 			t.Errorf("a denied tool %q was handed over anyway", name)
 		}
 	}
 
-	if FilterRegistry(nil, general) != nil {
+	if FilterRegistry(nil, general, nil) != nil {
 		t.Error("nil parent should stay nil")
 	}
 }

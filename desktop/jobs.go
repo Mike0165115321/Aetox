@@ -105,11 +105,17 @@ func (a *App) recordJobs(messageID int64, request, answer string, sinceToolRun i
 	insertJob(db, jobInsert{
 		sessionID: a.sessionID,
 		messageID: messageID,
-		request:   request,
-		answer:    answer,
-		runs:      mine,
-		duration:  elapsed.Milliseconds(),
-		time:      now,
+		// A direct chat's turns are the chair's own work (§85): scoped to the
+		// chair so the office roster counts them and what gets learned from
+		// them lands in the chair's file — and with no parent_ref, so the
+		// received-work feed (which filters on it) correctly shows briefs
+		// only, not conversations.
+		agent:    a.chair,
+		request:  request,
+		answer:   answer,
+		runs:     mine,
+		duration: elapsed.Milliseconds(),
+		time:     now,
 	})
 
 	// A delegate's job is reconstructed rather than captured: its brief and its

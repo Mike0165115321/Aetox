@@ -20,7 +20,7 @@ func TestADelegateRunsWithItsOwnLearnedMemory(t *testing.T) {
 		t.Fatalf("write main memory: %v", err)
 	}
 
-	got := promptFor(Profile{Name: "explore", Prompt: "you search files"})
+	got := PromptFor(Profile{Name: "explore", Prompt: "you search files"})
 	if !strings.Contains(got, "you search files") {
 		t.Fatalf("the profile's own instructions were lost:\n%s", got)
 	}
@@ -30,7 +30,7 @@ func TestADelegateRunsWithItsOwnLearnedMemory(t *testing.T) {
 	if strings.Contains(got, "MAIN-MARKER") {
 		t.Errorf("the main agent's memory reached a delegate:\n%s", got)
 	}
-	if strings.Contains(promptFor(Profile{Name: "plan", Prompt: "p"}), "SCOPED-MARKER") {
+	if strings.Contains(PromptFor(Profile{Name: "plan", Prompt: "p"}), "SCOPED-MARKER") {
 		t.Error("one delegate's memory reached another's prompt")
 	}
 }
@@ -40,7 +40,7 @@ func TestADelegateRunsWithItsOwnLearnedMemory(t *testing.T) {
 func TestADelegateWithNothingLearnedGetsItsProfileUnchanged(t *testing.T) {
 	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
 	p := Profile{Name: "explore", Prompt: "you search files"}
-	if got := promptFor(p); got != p.Prompt {
+	if got := PromptFor(p); got != p.Prompt {
 		t.Errorf("prompt changed with nothing learned:\n%q", got)
 	}
 }
@@ -58,7 +58,7 @@ func TestADelegateNeverInheritsTheParentsMemoryTool(t *testing.T) {
 	// An empty profile allows everything the parent has, which is what makes
 	// this the strongest form of the check: memory is dropped even when nothing
 	// in the profile asked for it to be.
-	child := FilterRegistry(parent, Profile{Name: "explore"})
+	child := FilterRegistry(parent, Profile{Name: "explore"}, nil)
 	if _, ok := child.Get("memory"); ok {
 		t.Error("the parent's memory tool was inherited")
 	}

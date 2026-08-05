@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Mike0165115321/Aetox/internal/mode"
 	"github.com/Mike0165115321/Aetox/internal/skill"
 )
 
@@ -130,9 +131,17 @@ func setFrontmatterField(raw, key, value string) string {
 }
 
 // FilterRegistry returns the registry to hand a sub-agent running under p: only
-// the tools p allows, always minus the forced denials. Copying rather than
-// filtering at dispatch time is what makes depth 1 structural — `task` is simply
-// not in the child's registry, so no counter can be got wrong.
+// the tools p allows *and* the desk allows, always minus the forced denials.
+// Copying rather than filtering at dispatch time is what makes depth 1
+// structural — `task` is simply not in the child's registry, so no counter can
+// be got wrong.
+//
+// The ceiling is the desk the job runs at (§83/§84): the caller's desk for an
+// ordinary delegate, the chair's own desk for a cross-desk dispatch. It is an
+// intersection and never a union — a profile's `tools:` can only ever narrow
+// what the desk already carries, because a delegate that could reach what its
+// parent cannot would make the desk a façade. A nil ceiling is the pre-modes
+// full desk and narrows nothing.
 //
 // This is the token filter, not the safety gate: see Profile.AllowsTool.
 //
@@ -140,7 +149,7 @@ func setFrontmatterField(raw, key, value string) string {
 // finish connecting in the background — land in the parent only, so a sub-agent
 // spawned earlier never sees them. Fine while a sub-agent is a short-lived
 // delegate; revisit if one is ever kept alive across a server connect.
-func FilterRegistry(parent *skill.Registry, p Profile) *skill.Registry {
+func FilterRegistry(parent *skill.Registry, p Profile, ceiling *mode.Mode) *skill.Registry {
 	if parent == nil {
 		return nil
 	}
@@ -163,6 +172,9 @@ func FilterRegistry(parent *skill.Registry, p Profile) *skill.Registry {
 			// Unreachable: name came out of this same snapshot. Skipping beats
 			// inventing a source, which is how a tool ends up filed as
 			// something the user installed.
+			continue
+		}
+		if !ceiling.Carries(name, source) {
 			continue
 		}
 		if err := filtered.Register(s, source); err != nil {

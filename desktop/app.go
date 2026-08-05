@@ -29,6 +29,7 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/debuglog"
 	"github.com/Mike0165115321/Aetox/internal/learned"
 	"github.com/Mike0165115321/Aetox/internal/mcp"
+	"github.com/Mike0165115321/Aetox/internal/mode"
 	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/oauth"
 	"github.com/Mike0165115321/Aetox/internal/ooxml"
@@ -37,6 +38,7 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/safety"
 	"github.com/Mike0165115321/Aetox/internal/skill"
 	"github.com/Mike0165115321/Aetox/internal/snapshot"
+	"github.com/Mike0165115321/Aetox/internal/subagent"
 	"github.com/Mike0165115321/Aetox/internal/turn"
 	"github.com/Mike0165115321/Aetox/internal/update"
 	"github.com/Mike0165115321/Aetox/internal/version"
@@ -64,6 +66,26 @@ type App struct {
 
 	sessionID  string
 	transcript []SessionMessage
+
+	// desk is the mode the open session was created at (ARCHITECTURE.md §83),
+	// nil for the full desk — every session from before modes existed, and the
+	// state the app starts in. It is set when a session is opened and never
+	// while one is running: a session is born at a desk and stays there, which
+	// is the whole reason its context can be trusted never to have held another
+	// desk's tools.
+	//
+	// Changing it re-bootstraps the engine (switchDesk), because everything the
+	// desk decides — the dispatcher's filter, the system prompt's direction and
+	// memory, the ceiling over sub-agents — is built once, at bootstrap, from
+	// this one value.
+	desk *mode.Mode
+
+	// chair is the session's second coordinate (§85): which of the office's
+	// agents the user is talking to directly, "" for every session held with
+	// the main assistant. Only ever non-empty alongside desk = the office —
+	// setStation is the single writer and enforces that pairing. Same
+	// lifecycle rule as desk: set when a session opens, never while one runs.
+	chair string
 
 	// projectFocused=false runs the engine "ไม่โฟกัสโปรเจกต์": rooted at the
 	// user's home dir so every tool (files/git/terminal) still works on the
@@ -1457,7 +1479,11 @@ func (a *App) GetContextBreakdown() ContextBreakdown {
 
 	toolChars := 0
 	if a.registry != nil {
-		if defs, err := json.Marshal(skill.NewDispatcher(a.registry).ToolDefinitions()); err == nil {
+		// Through the desk's filter, not the whole registry: the tool block is
+		// what a narrower desk exists to shrink, and reporting the full pile
+		// here would tell the user the one number the choice was meant to change
+		// had not changed at all.
+		if defs, err := json.Marshal(a.deskTools().ToolDefinitions()); err == nil {
 			toolChars = len(defs)
 		}
 	}
@@ -2008,6 +2034,42 @@ func (a *App) reload(opts config.ConfigOptions) {
 	go a.sweepAttachments(a.cfg.SandboxRoot)
 }
 
+// deskTools is the installed registry seen through the open session's desk —
+// the same view the engine's own dispatcher was built with. Rebuilt per call
+// rather than held, because it is cheap and because a held one would be a
+// second thing to swap on every re-bootstrap.
+//
+// A chair session reports the chair's cut (profile ∩ office ceiling), built by
+// the same FilterRegistry the engine mounted — what the tools panel shows and
+// what the model can call must be one list, not two readings of the rules.
+func (a *App) deskTools() *skill.Dispatcher {
+	if p := a.chairProfile(); p != nil {
+		return skill.NewDispatcher(subagent.FilterRegistry(a.registry, *p, a.desk))
+	}
+	return skill.NewDispatcherFor(a.registry, a.desk.Carries)
+}
+
+// chairProfile resolves the open session's chair to its profile, nil when the
+// session talks to the main assistant. Read from disk per call — profiles are
+// files, and a held copy would be a second truth that survives an edit.
+//
+// A name that no longer resolves, or resolves to a profile that has stopped
+// declaring the office as its desk, answers nil here; the doors that *open*
+// chair sessions (NewChairSession, LoadSession) refuse those cases loudly
+// first, so this quiet nil is only ever a race with a file deleted mid-session
+// — and falling back to the main assistant's desk view is the readable answer
+// for a tools panel that must render something.
+func (a *App) chairProfile() *subagent.Profile {
+	if a.chair == "" {
+		return nil
+	}
+	p, ok := subagent.Load(a.chair)
+	if !ok || p.Desk != mode.Office {
+		return nil
+	}
+	return &p
+}
+
 // workbenchSkills are the tools only the desktop app can offer — they need a
 // window, or a human, to mean anything. Everything else the agent gets comes
 // from skill.NewDefaultRegistry.
@@ -2028,7 +2090,16 @@ func (a *App) workbenchSkills() []skill.Skill {
 		// The main agent's own scope. A delegate does not inherit this one —
 		// `task` builds it a replacement bound to its profile (internal/subagent),
 		// so what a sub-agent learns never lands in this prompt.
-		&learned.MemoryTool{Scope: learned.MainScope, Proposer: appProposer{app: a}},
+		//
+		// Desk is the second scope this one tool can write to, and it is empty
+		// unless the session was opened at a desk: a fact about the user belongs
+		// in the file every desk reads, while a lesson about this kind of work
+		// belongs where only this kind of work pays for it (§83).
+		&learned.MemoryTool{
+			Scope:    learned.MainScope,
+			Desk:     a.desk.DeskName(),
+			Proposer: appProposer{app: a},
+		},
 	}
 }
 
@@ -2069,8 +2140,17 @@ func (a *App) applyConfig(cfg config.Config) {
 	// used to sit next to each other in the argument list. Swapping that pair
 	// compiles cleanly and shows up only as the UI drawing the wrong text.
 	res, bootErr := bootstrap.Engine(cfg, bootstrap.Options{
-		Surface:          prompt.SurfaceDesktop,
-		Console:          aetoxapp.NewStdIO(),
+		Surface: prompt.SurfaceDesktop,
+		Console: aetoxapp.NewStdIO(),
+		// The desk the open session was created at. Nil — the full desk — until
+		// a session says otherwise, which is what every session before §83 and
+		// every unfiltered path still gets.
+		Mode: a.desk,
+		// The agent the open session talks to directly (§85), nil for the main
+		// assistant. Resolved fresh from disk on every bootstrap so an edited
+		// profile takes effect the next time its chair is sat at, like every
+		// other manifest.
+		Chair:            a.chairProfile(),
 		Approve:          a.approveToolCall,
 		Manager:          a.mcp,
 		ExtraSkills:      workbenchTools,

@@ -152,3 +152,66 @@ func TestUnwrittenScopeReadsEmpty(t *testing.T) {
 		t.Errorf("want empty, got %q", got)
 	}
 }
+
+// A desk's memory is its own file, beside the delegates' and under the same
+// rules — one more scope value, not a second mechanism (ARCHITECTURE.md §83).
+// The three namespaces have to stay apart on disk, because a desk and a
+// sub-agent can legitimately share a name.
+func TestModeScopeIsItsOwnFileBesideTheOthers(t *testing.T) {
+	isolate(t)
+
+	if err := Apply(ModeScope("coding"), OpAdd, "", "this repo runs its tests with a script"); err != nil {
+		t.Fatalf("write desk memory: %v", err)
+	}
+	if err := Apply(MainScope, OpAdd, "", "the user works in Thai"); err != nil {
+		t.Fatalf("write shared memory: %v", err)
+	}
+	if err := Apply("coding", OpAdd, "", "a delegate that happens to share the name"); err != nil {
+		t.Fatalf("write delegate memory: %v", err)
+	}
+
+	desk, err := FileFor(ModeScope("coding"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(filepath.ToSlash(desk), "memory/modes/coding.md") {
+		t.Errorf("a desk's memory landed at %q, want memory/modes/coding.md", desk)
+	}
+	agent, err := FileFor("coding")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if agent == desk {
+		t.Fatalf("a desk and a sub-agent of the same name share one file: %q", desk)
+	}
+
+	if got := Read(ModeScope("coding")); !strings.Contains(got, "tests with a script") {
+		t.Errorf("the desk scope read back %q", got)
+	}
+	if got := Read(ModeScope("coding")); strings.Contains(got, "works in Thai") {
+		t.Error("the shared memory leaked into the desk's own file")
+	}
+	if got := Read(MainScope); strings.Contains(got, "tests with a script") {
+		t.Error("what one desk learned reached the file every desk pays for")
+	}
+	// The header explains the file to whoever opens the folder, and says which
+	// desk it belongs to rather than calling it a sub-agent.
+	raw, err := os.ReadFile(desk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "coding desk") {
+		t.Errorf("the desk file does not say whose it is:\n%s", raw)
+	}
+}
+
+// An unknown scope shape must not be able to walk out of the memory folder —
+// the desk name arrives from a database column.
+func TestModeScopeRefusesPathShapedDesks(t *testing.T) {
+	isolate(t)
+	for _, desk := range []string{"..", "a/b", `a\b`, "a b"} {
+		if _, err := FileFor(ModeScope(desk)); err == nil {
+			t.Errorf("FileFor(mode:%s) accepted a path-shaped desk", desk)
+		}
+	}
+}

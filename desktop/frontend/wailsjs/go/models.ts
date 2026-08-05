@@ -74,6 +74,54 @@ export namespace main {
 	        this.time = source["time"];
 	    }
 	}
+	export class Artifact {
+	    name: string;
+	    path: string;
+	    sessionId?: string;
+	    size: number;
+	    modified: string;
+	    root: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Artifact(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.path = source["path"];
+	        this.sessionId = source["sessionId"];
+	        this.size = source["size"];
+	        this.modified = source["modified"];
+	        this.root = source["root"];
+	    }
+	}
+	export class Chair {
+	    name: string;
+	    description: string;
+	    tools: string[];
+	    builtin: boolean;
+	    overrides?: boolean;
+	    path?: string;
+	    jobs: number;
+	    lastUsed?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Chair(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.description = source["description"];
+	        this.tools = source["tools"];
+	        this.builtin = source["builtin"];
+	        this.overrides = source["overrides"];
+	        this.path = source["path"];
+	        this.jobs = source["jobs"];
+	        this.lastUsed = source["lastUsed"];
+	    }
+	}
 	export class ChangedFile {
 	    path: string;
 	    status: string;
@@ -309,6 +357,36 @@ export namespace main {
 	        this.governanceLoaded = source["governanceLoaded"];
 	    }
 	}
+	export class ReceivedJob {
+	    id: number;
+	    chair: string;
+	    sessionId: string;
+	    request: string;
+	    answer: string;
+	    toolSeq?: string;
+	    toolCount: number;
+	    durationMs: number;
+	    outcome: string;
+	    time: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ReceivedJob(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.chair = source["chair"];
+	        this.sessionId = source["sessionId"];
+	        this.request = source["request"];
+	        this.answer = source["answer"];
+	        this.toolSeq = source["toolSeq"];
+	        this.toolCount = source["toolCount"];
+	        this.durationMs = source["durationMs"];
+	        this.outcome = source["outcome"];
+	        this.time = source["time"];
+	    }
+	}
 	export class SessionVariant {
 	    text: string;
 	    reasoning?: string;
@@ -451,6 +529,8 @@ export namespace main {
 	    id: string;
 	    title: string;
 	    updatedAt: string;
+	    mode?: string;
+	    agent?: string;
 	    snippet?: string;
 	    projectKey?: string;
 	    projectName?: string;
@@ -464,6 +544,8 @@ export namespace main {
 	        this.id = source["id"];
 	        this.title = source["title"];
 	        this.updatedAt = source["updatedAt"];
+	        this.mode = source["mode"];
+	        this.agent = source["agent"];
 	        this.snippet = source["snippet"];
 	        this.projectKey = source["projectKey"];
 	        this.projectName = source["projectName"];
@@ -786,6 +868,43 @@ export namespace main {
 
 }
 
+export namespace mode {
+	
+	export class Mode {
+	    name: string;
+	    description: string;
+	    categories?: string[];
+	    tools?: string[];
+	    deny?: string[];
+	    mcp?: string[];
+	    dispatch?: string[];
+	    prompt: string;
+	    path?: string;
+	    builtin: boolean;
+	    overrides?: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new Mode(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.description = source["description"];
+	        this.categories = source["categories"];
+	        this.tools = source["tools"];
+	        this.deny = source["deny"];
+	        this.mcp = source["mcp"];
+	        this.dispatch = source["dispatch"];
+	        this.prompt = source["prompt"];
+	        this.path = source["path"];
+	        this.builtin = source["builtin"];
+	        this.overrides = source["overrides"];
+	    }
+	}
+
+}
+
 export namespace model {
 	
 	export class GuideTopic {
@@ -933,6 +1052,7 @@ export namespace subagent {
 	    tools?: string[];
 	    deny?: string[];
 	    steps?: number;
+	    desk?: string;
 	    prompt: string;
 	    path?: string;
 	    builtin: boolean;
@@ -950,6 +1070,7 @@ export namespace subagent {
 	        this.tools = source["tools"];
 	        this.deny = source["deny"];
 	        this.steps = source["steps"];
+	        this.desk = source["desk"];
 	        this.prompt = source["prompt"];
 	        this.path = source["path"];
 	        this.builtin = source["builtin"];

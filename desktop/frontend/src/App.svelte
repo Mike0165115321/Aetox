@@ -4,6 +4,8 @@
   import Chat from './lib/Chat.svelte'
   import FileEditor from './lib/FileEditor.svelte'
   import Settings from './lib/Settings.svelte'
+  import Office from './lib/Office.svelte'
+  import Artifacts from './lib/Artifacts.svelte'
   import Onboarding from './lib/Onboarding.svelte'
   import Workbench from './lib/workbench/Workbench.svelte'
   import { onMount } from 'svelte'
@@ -20,6 +22,10 @@
   import { workbench, openPathsInWorkbench } from './lib/stores/workbench.svelte'
   import { clampPanelWidth } from './lib/panelSize'
   import Icon from './lib/Icon.svelte'
+
+  // The views that take the whole window instead of a tab in .main. One list,
+  // so the Escape key and the overlay markup below cannot drift apart.
+  const FULL_PAGE_VIEWS = ['settings', 'office', 'artifacts']
 
   function fileLabel(path: string): string {
     return path.split('/').pop() ?? path
@@ -270,10 +276,12 @@
     } else if (e.ctrlKey && !e.altKey && e.key === ',') {
       e.preventDefault()
       setActiveView('settings')
-    } else if (e.key === 'Escape' && cockpit.activeView === 'settings') {
+    } else if (e.key === 'Escape' && FULL_PAGE_VIEWS.includes(cockpit.activeView)) {
       // Ctrl+, opened it; Escape is the other half nobody had. Anything layered
       // over Settings — the confirm dialog, the command palette — stops the key
-      // before it reaches window, so this only ever fires on a bare page.
+      // before it reaches window, so this only ever fires on a bare page. The
+      // office and the gallery close the same way, because a page you can only
+      // leave with the mouse is one people get stuck on.
       setActiveView('chat')
     }
   }
@@ -342,9 +350,20 @@
   </aside>
 </div>
 
+<!-- The rooms that are not a chat. Each one is a full-window view over the
+     app, which is the seam Settings has always used — the layout underneath is
+     untouched, and closing one puts you back exactly where you were. -->
 {#if cockpit.activeView === 'settings'}
   <div class="settings-overlay">
     <Settings onClose={() => setActiveView('chat')} />
+  </div>
+{:else if cockpit.activeView === 'office'}
+  <div class="settings-overlay">
+    <Office onClose={() => setActiveView('chat')} />
+  </div>
+{:else if cockpit.activeView === 'artifacts'}
+  <div class="settings-overlay">
+    <Artifacts onClose={() => setActiveView('chat')} />
   </div>
 {/if}
 

@@ -59,9 +59,10 @@ func TestBundledCategoriesExist(t *testing.T) {
 	}
 }
 
-// The desks differ where §83 says they differ. Spot checks, one per boundary
-// that matters: coding carries no deck writer, assistant carries no shell,
-// specialized reads files but cannot edit them.
+// The desks differ where COMPANY.md §2 says they differ. Spot checks, one per
+// boundary that matters: coding carries no deck writer, assistant carries
+// everything except the developer tools, specialized reads files but cannot
+// edit them.
 func TestDesksCarryWhatTheyClaim(t *testing.T) {
 	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
 
@@ -82,10 +83,10 @@ func TestDesksCarryWhatTheyClaim(t *testing.T) {
 		{assistant, "memory", true},       // agent category
 		{assistant, "web_search", true},   // web
 		{assistant, "slides_write", true}, // deliverables
-		{assistant, "read", true},         // explicit tools: entry
-		{assistant, "shell", false},       // no shell category
-		{assistant, "edit", false},        // read is explicit; the rest of files is not
-		{assistant, "diagnostics", false}, // no code category
+		{assistant, "read", true},         // files
+		{assistant, "edit", true},         // files — sorting out this machine is this desk's work
+		{assistant, "shell", true},        // shell: COMPANY.md §2 — safety is the gate, not a missing tool
+		{assistant, "diagnostics", false}, // no code category: developer tools are the coding desk's
 
 		{coding, "read", true},          // files
 		{coding, "shell", true},         // shell
@@ -175,6 +176,71 @@ func TestEmptyListsMeanFullDesk(t *testing.T) {
 	}
 	if m.AllowsServer("github") {
 		t.Error("the full desk still attaches no servers unless mcp: names them")
+	}
+}
+
+// Dispatch is the one door between desks and it is default-closed: ผู้ช่วย
+// declares the office, โค้ด declares nothing and so talks to no one, and the
+// office calls no one back (COMPANY.md §3 — the star has one center).
+func TestDispatchIsDefaultClosedAndOneWay(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+
+	load := func(name string) *Mode {
+		m, ok := Load(name)
+		if !ok || m == nil {
+			t.Fatalf("Load(%q) failed", name)
+		}
+		return m
+	}
+	if !load("assistant").AllowsDispatch(Office) {
+		t.Error("ผู้ช่วย cannot hand work to the office — the one dispatch that exists")
+	}
+	if load("coding").AllowsDispatch(Office) {
+		t.Error("โค้ด can hand work to the office; the three left-side desks talk to no one")
+	}
+	if load("assistant").AllowsDispatch("coding") {
+		t.Error("a desk dispatched to one it never named")
+	}
+	if load(Office).AllowsDispatch("assistant") {
+		t.Error("the office hands work back out — a leaf that calls is not a leaf")
+	}
+	if load("assistant").AllowsDispatch("") {
+		t.Error("the empty desk name matched a dispatch rule")
+	}
+
+	// The legacy full desk could always reach every profile, and still can.
+	var full *Mode
+	if !full.AllowsDispatch(Office) {
+		t.Error("a nil mode refused a dispatch it never used to")
+	}
+}
+
+// Carries is where a *registered* tool is judged, and the MCP branch is the
+// §83 trap: CategoryOf answers `agent` for every unknown name, so judging an
+// MCP tool by AllowsTool would attach every installed server to every desk
+// that carries the agent group — which is all of them.
+func TestCarriesJudgesEachSourceItsOwnWay(t *testing.T) {
+	m := parse("x", "---\ncategories: agent\nmcp: notion\n---\nbody")
+
+	if !m.Carries("notion_search", skill.SourceMCP) {
+		t.Error("a tool from the named server is not carried")
+	}
+	if m.Carries("linear_issue", skill.SourceMCP) {
+		t.Error("a tool from an unnamed server was carried — the category fallback decided it")
+	}
+	// The same name, if it were a built-in, would be carried by the agent group.
+	// That contrast is the whole point of splitting the branches.
+	if !m.Carries("linear_issue", skill.SourceBuiltin) {
+		t.Error("the agent category stopped covering unknown built-in names")
+	}
+	// A skill is knowledge, not capability: every desk keeps every skill, so the
+	// user's /skill-name works wherever they type it.
+	if !m.Carries("some-installed-skill", skill.SourceSkill) {
+		t.Error("a desk dropped an installed skill")
+	}
+	var full *Mode
+	if !full.Carries("anything", skill.SourceMCP) || !full.Carries("anything", skill.SourceBuiltin) {
+		t.Error("the legacy full desk stopped carrying something")
 	}
 }
 

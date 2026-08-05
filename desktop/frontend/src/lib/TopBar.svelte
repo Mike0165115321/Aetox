@@ -1,6 +1,7 @@
 <script lang="ts">
   import { t } from './i18n.svelte'
-  import { newSession } from './stores/cockpit.svelte'
+  import { newSession, switchShell } from './stores/cockpit.svelte'
+  import { shell, SHELLS } from './shell.svelte'
   import Wordmark from './Wordmark.svelte'
   import Icon from './Icon.svelte'
 
@@ -12,6 +13,23 @@
     sidebarCollapsed: boolean
     onToggleSidebar: () => void
   } = $props()
+
+  // The door switcher (§86). On the wordmark rather than in the room list,
+  // because it does not change which room you are in — it changes which
+  // building you are standing in, and the two questions must not look like one
+  // control. Same place, and the same gesture, as ChatGPT↔Codex.
+  let doorOpen = $state(false)
+  const current = $derived(SHELLS.find((s) => s.name === shell.name) ?? SHELLS[0])
+
+
+  function closeOnOutsideClick(e: MouseEvent) {
+    if (!(e.target as HTMLElement).closest('.brand')) doorOpen = false
+  }
+
+  async function pick(name: (typeof SHELLS)[number]['name']) {
+    doorOpen = false
+    await switchShell(name)
+  }
 </script>
 
 <!-- The window frame with the panel's own column drawn inside it: filled while
@@ -32,8 +50,31 @@
   </svg>
 {/snippet}
 
+<svelte:window onclick={doorOpen ? closeOnOutsideClick : undefined} />
+
 <div class="brand">
-  <Wordmark height={20} />
+  <button
+    type="button" class="brand-btn" aria-haspopup="menu" aria-expanded={doorOpen}
+    aria-label={t('shell.switch')} onclick={() => (doorOpen = !doorOpen)}
+  >
+    <Wordmark height={20} />
+    <span class="brand-door">{t(current.labelKey)}</span>
+    <span class="brand-caret"><Icon name={doorOpen ? 'chevronUp' : 'chevronDown'} size={12} /></span>
+  </button>
+  {#if doorOpen}
+    <div class="door-menu" role="menu">
+      {#each SHELLS as s (s.name)}
+        <button type="button" class="door-item" class:on={shell.name === s.name} role="menuitem" onclick={() => pick(s.name)}>
+          <span class="ic"><Icon name={s.icon} size={15} /></span>
+          <span class="txt">
+            <span class="t">{t(s.labelKey)}</span>
+            <span class="d">{t(s.blurbKey)}</span>
+          </span>
+          {#if shell.name === s.name}<span class="tick"><Icon name="check" size={13} /></span>{/if}
+        </button>
+      {/each}
+    </div>
+  {/if}
 </div>
 
 <div class="topbar">

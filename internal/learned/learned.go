@@ -54,6 +54,39 @@ const MaxBytes = 8 << 10
 // translation layer that could disagree with itself.
 const MainScope = ""
 
+// modePrefix marks a scope that belongs to a desk rather than to a delegate
+// (ARCHITECTURE.md §83). A prefix rather than a second field because a scope
+// is a string in three places already — the tool that proposes, the
+// pending_changes row that holds it, and the file it lands in — and adding a
+// dimension to it would mean teaching all three what a desk is.
+//
+// ':' cannot appear in a delegate's scope (validScope refuses it, and a
+// profile name is a filename), so the two namespaces cannot collide.
+const modePrefix = "mode:"
+
+// ModeScope is the memory scope of the desk named name: what working at that
+// desk taught the agent, folded into that desk's prompt and no other's.
+//
+// This is the second axis of §44's capability boundary. MEMORY.md stays the
+// cross-desk truths — who the user is, what this machine is like — because
+// those are true wherever they are sitting; what coding work taught the agent
+// about this repository must never cost the assistant desk a token.
+func ModeScope(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return MainScope
+	}
+	return modePrefix + name
+}
+
+// SplitModeScope reports the desk a scope belongs to, and whether it is one at
+// all. Callers that render a scope to a person need it — "coding" reads as a
+// desk, "mode:coding" reads as an implementation detail leaking out.
+func SplitModeScope(scope string) (string, bool) {
+	rest, ok := strings.CutPrefix(strings.TrimSpace(scope), modePrefix)
+	return rest, ok && rest != ""
+}
+
 // Dir is <DataRoot>/memory — separate from <DataRoot>/identity on purpose.
 // Identity is what the user tells the agent about itself; this is what the
 // agent worked out. Keeping them in one folder would make "delete everything
@@ -78,6 +111,12 @@ func FileFor(scope string) (string, error) {
 	scope = strings.TrimSpace(scope)
 	if scope == MainScope {
 		return filepath.Join(dir, "MEMORY.md"), nil
+	}
+	if desk, ok := SplitModeScope(scope); ok {
+		if !validScope(desk) {
+			return "", fmt.Errorf("invalid memory scope %q", scope)
+		}
+		return filepath.Join(dir, "modes", desk+".md"), nil
 	}
 	if !validScope(scope) {
 		return "", fmt.Errorf("invalid memory scope %q", scope)
@@ -177,7 +216,10 @@ func Full(scope string, addBytes int) bool {
 // it expecting the agent to obey rather than to have learned.
 func header(scope string) string {
 	who := "the main agent"
-	if scope != MainScope {
+	switch desk, isDesk := SplitModeScope(scope); {
+	case isDesk:
+		who = "the agent working at the " + desk + " desk"
+	case scope != MainScope:
 		who = "the " + scope + " sub-agent"
 	}
 	return "# Learned by " + who + "\n\n" +

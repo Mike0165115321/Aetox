@@ -9,7 +9,7 @@ import {
   SendMessage, GetProjectStatus, GetModelInfo, OpenProjectFolder, OpenProjectPath,
   SwitchProvider, SwitchThinkLevel, SwitchApprovalMode, SetProviderWireFormat,
   SwitchModel, SetAPIKey, SetProviderBaseURL, ProjectTree, ReadFile,
-  ListSessions, LoadSession, NewSession, CurrentSessionID, SearchSessions, DeleteSession,
+  ListSessions, LoadSession, NewSession, NewSessionAt, NewChairSession, SessionMode, SessionAgent, CurrentSessionID, SearchSessions, DeleteSession,
   SaveChatImage, SaveChatFile, ReadImageDataURL, CancelTurn, BrowserGetText, RecentProjects,
   ListAllSessions, SearchAllSessions, LoadSessionAnyProject, ClearProjectFocus,
   AnswerUserQuestion, Interject, RetryActiveProvider, PendingUndo, UndoLastTurn,
@@ -21,6 +21,7 @@ import {
 } from '../../../wailsjs/go/main/App'
 import type { main } from '../../../wailsjs/go/models'
 import { t } from '../i18n.svelte'
+import { shell, setShell, shellForDesk, SHELLS, type ShellName } from '../shell.svelte'
 import { workbench, switchWorkbenchSession, adoptWorkbenchSession, removeWorkbenchState } from './workbench.svelte'
 
 // Model info comes from a real Go IPC round-trip (GetModelInfo), which is
@@ -107,7 +108,7 @@ export function agoLabel(iso: string): string {
 export async function refreshSessions(): Promise<void> {
   const [metas, current] = await Promise.all([ListSessions(), CurrentSessionID()])
   cockpit.sessions = metas.map((m) => ({
-    id: m.id, title: m.title, ago: agoLabel(m.updatedAt), active: m.id === current,
+    id: m.id, title: m.title, ago: agoLabel(m.updatedAt), active: m.id === current, mode: m.mode, agent: m.agent,
   }))
   // Keeps the workbench layout keyed to whichever session is actually live —
   // restores it on app start, migrates it when the engine re-keys the chat.
@@ -119,7 +120,7 @@ export async function searchSessions(query: string): Promise<void> {
   if (!query.trim()) return refreshSessions()
   const [hits, current] = await Promise.all([SearchSessions(query), CurrentSessionID()])
   cockpit.sessions = hits.map((m) => ({
-    id: m.id, title: m.title, ago: agoLabel(m.updatedAt), active: m.id === current, snippet: m.snippet,
+    id: m.id, title: m.title, ago: agoLabel(m.updatedAt), active: m.id === current, snippet: m.snippet, mode: m.mode, agent: m.agent,
   }))
 }
 
@@ -127,7 +128,7 @@ export async function searchSessions(query: string): Promise<void> {
 export async function refreshGlobalHistory(): Promise<void> {
   const [metas, current] = await Promise.all([ListAllSessions(), CurrentSessionID()])
   cockpit.history = metas.map((m) => ({
-    id: m.id, title: m.title, ago: agoLabel(m.updatedAt), active: m.id === current, projectName: m.projectName,
+    id: m.id, title: m.title, ago: agoLabel(m.updatedAt), active: m.id === current, projectName: m.projectName, mode: m.mode, agent: m.agent,
   }))
 }
 
@@ -137,7 +138,7 @@ export async function searchGlobalHistory(query: string): Promise<void> {
   const [hits, current] = await Promise.all([SearchAllSessions(query), CurrentSessionID()])
   cockpit.history = hits.map((m) => ({
     id: m.id, title: m.title, ago: agoLabel(m.updatedAt), active: m.id === current,
-    snippet: m.snippet, projectName: m.projectName,
+    snippet: m.snippet, projectName: m.projectName, mode: m.mode, agent: m.agent,
   }))
 }
 
@@ -299,6 +300,7 @@ export async function selectGlobalSession(session: Session): Promise<void> {
   cockpit.ask = null
   cockpit.chat = messages.map(restoreAttachments)
   hydrateImages()
+  await refreshDesk()
   await switchWorkbenchSession(session.id)
   const project = await GetProjectStatus()
   Object.assign(cockpit.project, project)
@@ -368,6 +370,7 @@ export async function loadRealState(): Promise<void> {
   await refreshProjects()
   await refreshGlobalHistory()
   await refreshTaskChips()
+  await refreshDesk()
   if (!modelInfo.provider && bootRetries < 8) {
     bootRetries += 1
     setTimeout(loadRealState, 1500)
@@ -1131,7 +1134,7 @@ export function setActiveView(view: string): void {
   // reload). sessionStorage, not localStorage — a real app relaunch must
   // always land on chat, never reopen straight into Settings because that's
   // where a previous session happened to be force-quit.
-  if (view === 'chat' || view === 'settings') {
+  if (view === 'chat' || view === 'settings' || view === 'office' || view === 'artifacts') {
     try {
       sessionStorage.setItem(activeViewStorageKey, view)
     } catch {
@@ -1144,7 +1147,9 @@ export function setActiveView(view: string): void {
 export function restoreActiveView(): void {
   try {
     const saved = sessionStorage.getItem(activeViewStorageKey)
-    if (saved === 'settings' || saved === 'chat') cockpit.activeView = saved
+    if (saved === 'settings' || saved === 'chat' || saved === 'office' || saved === 'artifacts') {
+      cockpit.activeView = saved
+    }
   } catch {
     /* storage unavailable */
   }
@@ -1157,6 +1162,9 @@ export async function selectSession(session: Session): Promise<void> {
   cockpit.ask = null
   cockpit.chat = messages.map(restoreAttachments)
   hydrateImages()
+  // Opening a session takes the engine back to the desk it was held at, so the
+  // nav has to follow it rather than keep pointing at where the user was.
+  await refreshDesk()
   await switchWorkbenchSession(session.id)
   await refreshSessions()
   await refreshGlobalHistory()
@@ -1196,6 +1204,36 @@ export async function deleteSession(session: Session): Promise<void> {
 /** Start a blank session (current one is saved first, engine-side). */
 export async function newSession(): Promise<void> {
   await NewSession()
+  await afterNewSession()
+}
+
+/** Start a blank session at one desk (COMPANY.md §2 — the five buttons).
+ *
+ * A desk cannot be changed inside a session, so this is the only way onto one:
+ * opening a desk opens a session there. It costs nothing — every turn is
+ * already persisted, so the conversation being left is in the history list
+ * before the click, not lost by it. */
+export async function newSessionAt(desk: string): Promise<void> {
+  await NewSessionAt(desk)
+  cockpit.desk = desk
+  cockpit.chair = ''
+  setShell(shellForDesk(desk))
+  await afterNewSession()
+}
+
+/** Open a direct chat with one of the office's agents (§85). The desk is
+ *  implied — a chair only exists in the office — and the engine refuses a
+ *  name that is not an office agent, so a stale card cannot open a chat as
+ *  somebody else. */
+export async function newChairSession(chair: string): Promise<void> {
+  await NewChairSession(chair)
+  cockpit.desk = 'specialized'
+  cockpit.chair = chair
+  setShell('assistant') // the office is behind the storefront door (§86)
+  await afterNewSession()
+}
+
+async function afterNewSession(): Promise<void> {
   cockpit.chat = []
   cockpit.todos = []
   cockpit.ask = null
@@ -1204,4 +1242,53 @@ export async function newSession(): Promise<void> {
   await switchWorkbenchSession(await CurrentSessionID())
   await refreshSessions()
   await refreshGlobalHistory()
+}
+
+/** Walk through the other door (§86): remember it, and land on its desk.
+ *
+ * The doors are UI shells, so switching one costs a render — but the desk
+ * behind it is engine state, and a session is born at a desk and never moves.
+ * So arriving at a door whose desk you are not already at opens a session
+ * there, exactly as clicking that desk's button would. Arriving at the door
+ * you are already behind does nothing at all. */
+export async function switchShell(name: ShellName): Promise<void> {
+  const def = SHELLS.find((s) => s.name === name)
+  if (!def || shell.name === name) return
+  setShell(name)
+  setActiveView('chat')
+  if (cockpit.desk !== def.desk) await newSessionAt(def.desk)
+}
+
+/** Show a desk: its open session if this is already the desk in front of you,
+ *  otherwise a new session on it.
+ *
+ * The difference matters more than it looks. Re-clicking the desk you are
+ * already at has to be a no-op on the conversation — a nav button that threw
+ * away what you were doing would make the whole row unusable — while clicking
+ * a different one is exactly the "open a new session" that changing desks
+ * means (COMPANY.md §2). */
+export async function openDesk(desk: string): Promise<void> {
+  setActiveView('chat')
+  if (cockpit.desk === desk) return
+  await newSessionAt(desk)
+}
+
+/** Read back which desk the engine's current session is at.
+ *
+ * Asked rather than remembered: the engine is the one that knows, a session's
+ * desk is fixed for its whole life, and a UI that kept its own copy would be
+ * the second answer that can disagree. */
+export async function refreshDesk(): Promise<void> {
+  try {
+    const id = await CurrentSessionID()
+    cockpit.desk = id ? await SessionMode(id) : ''
+    cockpit.chair = id ? await SessionAgent(id) : ''
+    // The door follows the desk, never the other way round: reopening a coding
+    // session from the assistant's history has to land you in the workshop, or
+    // the window would be showing one desk's rooms around another desk's chat.
+    setShell(shellForDesk(cockpit.desk))
+  } catch {
+    cockpit.desk = '' // engine not up yet — the full desk is the honest default
+    cockpit.chair = ''
+  }
 }

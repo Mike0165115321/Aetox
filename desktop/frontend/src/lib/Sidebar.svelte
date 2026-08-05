@@ -1,11 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import {
-    cockpit, newSession, openFolder, openProject,
+    cockpit, newSession, openFolder, openProject, openDesk, setActiveView,
     searchGlobalHistory, selectGlobalSession, deleteSession,
   } from './stores/cockpit.svelte'
   import type { Session } from './types'
-  import { UserName, SetUserName } from '../../wailsjs/go/main/App'
+  import { UserName, SetUserName, ListModes } from '../../wailsjs/go/main/App'
+  import { navFor, deskLabelKey, type NavEntry } from './desks'
+  import { shell } from './shell.svelte'
   import { t, i18n, setLocale, localeNames, type Locale } from './i18n.svelte'
   import { theme, applyTheme, THEMES, type ThemeName } from './theme.svelte'
   import Icon from './Icon.svelte'
@@ -73,10 +75,57 @@
     }))
   )
 
-  // Chats and projects are two views of the same list, so they take turns in
-  // one column instead of splitting it into stacked half-panels. Chats opens
-  // first — it is the list you actually come back to.
-  let tab = $state<'projects' | 'history'>('history')
+  // One list per door, and no switch between them (§86). Chats and projects
+  // used to take turns in this column because one window had to serve both
+  // kinds of work; the split settled which is which — the storefront keeps
+  // conversations (it never focuses a project at all, §19), the workshop keeps
+  // projects with their chats nested underneath. A tab offering the other
+  // door's list is the mixing the split exists to end.
+  const showProjects = $derived(shell.name === 'code')
+
+  // The rooms behind the door the window is showing (§86).
+  const rooms = $derived(navFor(shell.name))
+
+  // ---------- The five buttons (COMPANY.md §2) ----------
+  // Each desk's own description, straight from its manifest, so a user who
+  // edits a mode file sees the change on the button that opens it. Failing to
+  // load is not worth an error: the built-in blurb is the fallback.
+  let deskBlurbs = $state<Record<string, string>>({})
+  onMount(async () => {
+    try {
+      for (const m of await ListModes()) deskBlurbs[m.name] = m.description
+    } catch {
+      /* engine not up yet — the built-in blurbs stand in */
+    }
+  })
+
+  function navActive(entry: NavEntry): boolean {
+    if (entry.kind === 'page') return cockpit.activeView === entry.id
+    if (entry.kind === 'desk') return cockpit.activeView === 'chat' && cockpit.desk === entry.id
+    return false
+  }
+
+  function onNavClick(entry: NavEntry) {
+    if (entry.kind === 'soon') return
+    if (entry.kind === 'page') {
+      setActiveView(entry.id)
+      return
+    }
+    // Back to following the desk: a filter the user set on one desk should not
+    // silently hide the chats of the next one they walk to.
+    deskFilter = null
+    void openDesk(entry.id)
+  }
+
+  // Which desk the history list is showing. Follows whichever desk you are at,
+  // because that is the list you came back for — and clears to everything on
+  // demand, because the sessions held before desks existed live at no desk and
+  // that combined list is the only place they appear.
+  let deskFilter = $state<string | null>(null)
+  const historyDesk = $derived(deskFilter ?? cockpit.desk)
+  const visibleHistory = $derived(
+    historyDesk ? cockpit.history.filter((s) => (s.mode ?? '') === historyDesk) : cockpit.history
+  )
 
   function onHistorySearchInput() {
     clearTimeout(historySearchTimer)
@@ -95,24 +144,39 @@
 />
 
 <aside class="side">
-  <!-- Outside .side-sections so the switch stays put while the list scrolls. -->
-  <div class="side-tabs">
-    <div class="seg">
-      <button type="button" class="seg-btn" class:active={tab === 'history'} onclick={() => (tab = 'history')}>
-        <span class="ic"><Icon name="messageSquare" size={14} /></span> {t('sidebar.globalHistory')}
+  <!-- The rooms behind this door (COMPANY.md §2). Some open a session, some
+       are views over data, and ออโต้ is a room with nothing in it yet — shown
+       rather than hidden, because the shape of the product is the thing being
+       promised and a button that appears later reads as a new feature rather
+       than a finished plan. Which rooms appear is the door's business (§86):
+       the workshop draws none of the office's, and vice versa. -->
+  <nav class="desk-nav" aria-label={t('desk.navLabel')}>
+    {#each rooms as entry (entry.id)}
+      <button
+        type="button" class="desk-btn"
+        class:active={navActive(entry)}
+        class:soon={entry.kind === 'soon'}
+        disabled={entry.kind === 'soon'}
+        title={entry.kind === 'soon' ? t('desk.soon') : (deskBlurbs[entry.id] || t(entry.blurbKey))}
+        onclick={() => onNavClick(entry)}
+      >
+        <span class="ic"><Icon name={entry.icon} size={15} /></span>
+        <span class="t">{t(entry.labelKey)}</span>
+        {#if entry.kind === 'soon'}<span class="soon-tag">{t('desk.soon')}</span>{/if}
       </button>
-      <button type="button" class="seg-btn" class:active={tab === 'projects'} onclick={() => (tab = 'projects')}>
-        <span class="ic"><Icon name="folder" size={14} /></span> {t('sidebar.projects')}
-      </button>
-    </div>
-  </div>
+    {/each}
+  </nav>
 
   <div class="side-sections">
   <div class="side-panel">
-    {#if tab === 'projects'}
+    {#if showProjects}
       <div class="scroll">
+        <button type="button" class="proj-add" onclick={newSession}>
+          <span class="ic"><Icon name="plus" size={14} /></span> {t('sidebar.newSession')}
+          <span class="kbd">Ctrl+N</span>
+        </button>
         <button type="button" class="proj-add" onclick={openFolder}>
-          <span class="ic"><Icon name="plus" size={14} /></span> {t('sidebar.addProject')}
+          <span class="ic"><Icon name="folder" size={14} /></span> {t('sidebar.addProject')}
         </button>
         {#each projectGroups as g (g.project.key)}
           <div class="proj-group">
@@ -153,10 +217,26 @@
           <span class="kbd">Ctrl+N</span>
         </button>
         <input class="sess-search" placeholder={t('sidebar.searchHistory')} bind:value={historyQuery} oninput={onHistorySearchInput} />
-        {#each cockpit.history as s (s.id)}
+        <!-- Which desk's chats these are. Only drawn when it is filtering
+             something, so the ordinary case stays a plain list. -->
+        {#if historyDesk}
+          <div class="sess-filter">
+            <span class="chip">{t(deskLabelKey(historyDesk) || 'desk.assistant')}</span>
+            <button type="button" class="sess-filter-all" onclick={() => (deskFilter = '')}>{t('desk.showAllChats')}</button>
+          </div>
+        {/if}
+        {#each visibleHistory as s (s.id)}
           <button type="button" class="sess-row" class:active={s.active} onclick={() => selectGlobalSession(s)}>
             <span class="sess-line">
               <span class="t">{s.title}</span>
+              {#if s.agent}
+                <!-- A direct chat is labelled with *who*, which says more than
+                     where: every chair lives in the office, so the agent's
+                     name subsumes the desk chip below. -->
+                <span class="sess-desk agent">{s.agent}</span>
+              {:else if !historyDesk && deskLabelKey(s.mode)}
+                <span class="sess-desk">{t(deskLabelKey(s.mode) as import('./i18n.svelte').TKey)}</span>
+              {/if}
               <span class="ago">{s.ago}</span>
               {#if s.active}<span class="dot green"></span>{/if}
               <span class="sess-del" class:confirm={confirmDeleteId === s.id} role="button" tabindex="0"
@@ -173,8 +253,12 @@
             {#if s.snippet}<span class="snip">{s.snippet}</span>{/if}
           </button>
         {/each}
-        {#if cockpit.history.length === 0}
-          <div class="empty">{historyQuery.trim() ? t('sidebar.noResults') : t('sidebar.noHistory')}</div>
+        {#if visibleHistory.length === 0}
+          <div class="empty">
+            {#if historyQuery.trim()}{t('sidebar.noResults')}
+            {:else if historyDesk}{t('desk.noChatsHere')}
+            {:else}{t('sidebar.noHistory')}{/if}
+          </div>
         {/if}
       </div>
     {/if}

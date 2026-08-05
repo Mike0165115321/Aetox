@@ -35,11 +35,19 @@ import (
 	"strings"
 
 	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mike0165115321/Aetox/internal/mcp"
 	"github.com/Mike0165115321/Aetox/internal/skill"
 )
 
 //go:embed modes/*.md
 var bundledModes embed.FS
+
+// Office is the desk the chairs sit at (COMPANY.md §4): its manifest is the
+// ceiling every sub-agent profile that declares `desk: specialized` runs
+// under, so a chair that writes `tools: shell` into itself still does not get
+// shell. Named here because it is the one desk name the rest of the codebase
+// has to be able to say — everything else about a desk is data.
+const Office = "specialized"
 
 // Mode is one desk. JSON tags are for the settings page and the new-session
 // picker, which render exactly these fields.
@@ -62,9 +70,15 @@ type Mode struct {
 	Tools       []string `json:"tools,omitempty"` // individual allows beyond the categories
 	Deny        []string `json:"deny,omitempty"`  // individual removals; wins over everything
 	MCP         []string `json:"mcp,omitempty"`   // attached MCP servers, by configured name
-	Prompt      string   `json:"prompt"`          // direction folded into the system prompt
-	Path        string   `json:"path,omitempty"`  // on-disk path; "" for a bundled mode
-	Builtin     bool     `json:"builtin"`
+	// Dispatch names the desks this one may hand a whole job to (COMPANY.md
+	// §3). Default-closed like MCP, and for a stronger reason: dispatch is the
+	// one door between desks, and a door that opens by omission is one nobody
+	// decided to open. ผู้ช่วย declares the office; โค้ด declares nothing and so
+	// talks to no one.
+	Dispatch []string `json:"dispatch,omitempty"`
+	Prompt   string   `json:"prompt"`         // direction folded into the system prompt
+	Path     string   `json:"path,omitempty"` // on-disk path; "" for a bundled mode
+	Builtin  bool     `json:"builtin"`
 	// Overrides marks a user file shadowing a bundled mode of the same name.
 	// Deleting one is a revert — the bundled mode comes back — not a removal,
 	// and the settings page must not lie about that.
@@ -207,6 +221,87 @@ func (m *Mode) AllowsServer(server string) bool {
 	return slices.Contains(m.MCP, server)
 }
 
+// Carries is the whole question — "is this registered tool on this desk?" —
+// answered in one place, because answering it needs something a name alone
+// cannot give: which registry source the tool came from.
+//
+// Three sources, three rules, and the middle one is the trap §83 named:
+//
+//   - **MCP** is judged by its server (CarriesMCP), never by AllowsTool.
+//     CategoryOf answers `agent` for every name it does not know, so letting
+//     it decide would attach every installed server to every desk that
+//     carries the agent group — which all of them do.
+//   - **A skill** is knowledge, not capability: a SKILL.md costs nothing until
+//     the model asks for it, so every desk keeps every skill and the user's
+//     `/skill-name` command works wherever they type it.
+//   - **Everything else** — built-ins and the desktop's workbench tools — is
+//     the categories/tools/deny question AllowsTool already answers.
+//
+// A nil Mode is the pre-modes full desk and carries everything.
+func (m *Mode) Carries(name string, source skill.Source) bool {
+	if m == nil {
+		return true
+	}
+	switch source {
+	case skill.SourceMCP:
+		return m.CarriesMCP(name)
+	case skill.SourceSkill:
+		return true
+	}
+	return m.AllowsTool(name)
+}
+
+// CarriesMCP reports whether an MCP tool named name came from a server this
+// desk attached. The server is read off the name's own prefix — mcp names
+// every bridged tool `server_tool` — rather than passed in beside it, so there
+// is no second place that could disagree about which server a tool belongs to.
+func (m *Mode) CarriesMCP(name string) bool {
+	if m == nil {
+		return true
+	}
+	name = strings.ToLower(strings.TrimSpace(name))
+	for _, server := range m.MCP {
+		if strings.HasPrefix(name, mcp.ToolPrefix(server)) {
+			return true
+		}
+	}
+	return false
+}
+
+// AllowsDispatch reports whether this desk may hand a whole job to the desk
+// named desk (COMPANY.md §3 — the star with one center). Default-closed: a
+// manifest that names no desks talks to none. A nil Mode is the pre-modes full
+// desk, which could always reach every sub-agent and still can.
+func (m *Mode) AllowsDispatch(desk string) bool {
+	if m == nil {
+		return true
+	}
+	desk = strings.ToLower(strings.TrimSpace(desk))
+	if desk == "" {
+		return false
+	}
+	return slices.Contains(m.Dispatch, desk)
+}
+
+// DeskName reports the desk's name, nil-safe, so a caller holding the legacy
+// full desk can say which desk it is without a branch. "" is the full desk,
+// which is exactly what sessions.mode stores for it.
+func (m *Mode) DeskName() string {
+	if m == nil {
+		return ""
+	}
+	return m.Name
+}
+
+// Direction is the manifest body, nil-safe: what the base prompt gains from
+// this desk. Never who the assistant is — see the package doc and §44.0.
+func (m *Mode) Direction() string {
+	if m == nil {
+		return ""
+	}
+	return strings.TrimSpace(m.Prompt)
+}
+
 // parse reads one mode file. The filename is the name, always: a `name:` key
 // in the frontmatter that disagreed with the file it lives in is the exact
 // product-vs-code split §35 was written about.
@@ -226,6 +321,7 @@ func parse(name, raw string) Mode {
 		Tools:       splitList(fields["tools"]),
 		Deny:        splitList(fields["deny"]),
 		MCP:         splitList(fields["mcp"]),
+		Dispatch:    splitList(fields["dispatch"]),
 		Prompt:      body,
 	}
 }

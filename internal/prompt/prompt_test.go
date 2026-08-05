@@ -71,7 +71,7 @@ func TestBuildWithReportFoldsInProjectLayerAndReportsPath(t *testing.T) {
 	rulePath := filepath.Join(dir, "AETOX.md")
 	mustWrite(t, rulePath, "always answer in haiku")
 
-	text, loaded := BuildWithReport(SurfaceCLI, Scope{Root: dir})
+	text, loaded := BuildWithReport(SurfaceCLI, Scope{Root: dir}, Desk{})
 	if !strings.Contains(text, "always answer in haiku") {
 		t.Fatalf("project rules not folded in: %s", text)
 	}
@@ -90,7 +90,7 @@ func TestBuildWithReportFoldsInIdentityFiles(t *testing.T) {
 	mustWrite(t, filepath.Join(identityDir, "context.md"), "always be terse")
 	mustWrite(t, filepath.Join(identityDir, "skills.md"), "use the grep skill first")
 
-	text, loaded := BuildWithReport(SurfaceCLI, Scope{Root: t.TempDir()})
+	text, loaded := BuildWithReport(SurfaceCLI, Scope{Root: t.TempDir()}, Desk{})
 	if !strings.Contains(text, "always be terse") || !strings.Contains(text, "use the grep skill first") {
 		t.Fatalf("identity files not folded in: %s", text)
 	}
@@ -247,7 +247,7 @@ func TestLearnedMemorySitsBetweenTheUsersRulesAndTheProjects(t *testing.T) {
 	projectRoot := t.TempDir()
 	mustWrite(t, filepath.Join(projectRoot, "AETOX.md"), "PROJECT-MARKER")
 
-	text, loaded := BuildWithReport(SurfaceDesktop, Scope{Root: projectRoot})
+	text, loaded := BuildWithReport(SurfaceDesktop, Scope{Root: projectRoot}, Desk{})
 	identity := strings.Index(text, "IDENTITY-MARKER")
 	memory := strings.Index(text, "MEMORY-MARKER")
 	project := strings.Index(text, "PROJECT-MARKER")
@@ -270,7 +270,7 @@ func TestTheMainPromptCarriesNoDelegatesMemory(t *testing.T) {
 	if err := learned.Apply("explore", learned.OpAdd, "", "DELEGATE-ONLY-MARKER"); err != nil {
 		t.Fatalf("write memory: %v", err)
 	}
-	text, loaded := BuildWithReport(SurfaceDesktop, Scope{Root: t.TempDir()})
+	text, loaded := BuildWithReport(SurfaceDesktop, Scope{Root: t.TempDir()}, Desk{})
 	if strings.Contains(text, "DELEGATE-ONLY-MARKER") {
 		t.Errorf("a sub-agent's memory reached the main prompt:\n%s", text)
 	}

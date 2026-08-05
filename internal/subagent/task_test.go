@@ -427,7 +427,7 @@ func TestTaskDelegateCannotRecurseOrMutate(t *testing.T) {
 	f := newTaskFixture(t, "aetox-tools:test")
 
 	profile, _ := Load("explore")
-	child := FilterRegistry(f.registry, profile)
+	child := FilterRegistry(f.registry, profile, nil)
 	for _, name := range []string{"task", "write", "edit", "shell", "help", "ask_user", "todo_write"} {
 		if _, ok := child.Get(name); ok {
 			t.Errorf("%q reached the delegate's registry", name)
@@ -439,7 +439,7 @@ func TestTaskDelegateCannotRecurseOrMutate(t *testing.T) {
 
 	// general inherits everything the parent has, still minus task.
 	general, _ := Load("general")
-	generalRegistry := FilterRegistry(f.registry, general)
+	generalRegistry := FilterRegistry(f.registry, general, nil)
 	if _, ok := generalRegistry.Get("write"); !ok {
 		t.Error("general lost write, which it inherits")
 	}

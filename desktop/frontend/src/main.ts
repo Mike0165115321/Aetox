@@ -14,8 +14,10 @@ import { initLocale } from './lib/i18n.svelte'
 import { initEditorTheme } from './lib/editorTheme.svelte'
 import { initTreeFont } from './lib/treeFont.svelte'
 import { initUiFont } from './lib/uiFont.svelte'
+import { initShell } from './lib/shell.svelte'
 
 initTheme()
+initShell()
 initEditorFont()
 initChatFont()
 initSystemZoom()

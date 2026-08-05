@@ -385,6 +385,22 @@ CREATE TABLE IF NOT EXISTS project_folders (
 			return err
 		},
 	},
+	{
+		version: 9,
+		name:    "session_agent",
+		apply: func(tx *sql.Tx) error {
+			// The session's second coordinate (§85): which agent the user is
+			// talking to directly, '' for every session held with the main
+			// assistant — which is all of them until the office's direct chat
+			// existed, so the default is also the truth about old rows.
+			//
+			// A chair session is mode='specialized' + agent='<chair>'. Same
+			// column name as jobs.agent on purpose: one spelling for "whose
+			// work is this" across the store.
+			_, err := tx.Exec(`ALTER TABLE sessions ADD COLUMN agent TEXT NOT NULL DEFAULT ''`)
+			return err
+		},
+	},
 }
 
 // latestSchemaVersion is what this build understands.

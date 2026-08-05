@@ -27,6 +27,12 @@ export interface Session {
   snippet?: string
   /** Only set on the cross-project (global) history list. */
   projectName?: string
+  /** The desk this conversation was held at (COMPANY.md §2). '' for the ones
+   *  that predate desks — they belong to no desk and are shown unlabelled. */
+  mode?: string
+  /** Who the conversation was held with (§85): '' for the main assistant,
+   *  an agent's name for a direct chat in the office. */
+  agent?: string
 }
 
 export interface RecentProject {
@@ -375,8 +381,18 @@ export interface CockpitState {
   chat: ChatMessage[]
   task: TaskState
   openFiles: OpenFile[]
-  /** 'chat' or an open file's path — which tab the main panel currently shows. */
+  /** 'chat', 'settings', 'office', 'artifacts', or an open file's path —
+   *  which surface the window currently shows. */
   activeView: string
+  /** The desk the open session was created at, '' for the full desk. Read back
+   *  from the engine rather than remembered here: a session is born at a desk
+   *  and never moves, so this changes only when a different session is opened
+   *  (COMPANY.md §6.3). */
+  desk: string
+  /** The agent the open session talks to directly (§85), '' for the main
+   *  assistant. Same lifecycle as desk: fixed at birth, read back, never
+   *  remembered independently. */
+  chair: string
   /** True from the moment a message is sent until the reply (or an error) arrives. */
   awaitingReply: boolean
   /** Files the last turn changed, from PendingUndo. Empty when there is nothing
@@ -438,6 +454,8 @@ export function emptyCockpitState(): CockpitState {
     turnFiles: [],
     openFiles: [],
     activeView: 'chat',
+    desk: '',
+    chair: '',
     awaitingReply: false,
     undoFiles: [],
     agentStatus: '',

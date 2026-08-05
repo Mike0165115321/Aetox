@@ -41,7 +41,23 @@ var ProjectContextFileNames = []string{"AETOX.md", "AGENTS.md", "CLAUDE.md"}
 type Loaded struct {
 	UserGlobalPaths []string // every identity file actually folded in, nil if none
 	MemoryPath      string   // agent-written memory, "" when it has learned nothing
+	DeskMemoryPath  string   // what this desk taught it, "" when the desk has learned nothing
 	ProjectPath     string   // "" if not found/empty
+}
+
+// Desk is the mode a session was opened at (ARCHITECTURE.md §83), as much of
+// it as the prompt needs: a name to scope memory by, and the direction its
+// manifest carries. The zero value is every session from before desks existed
+// and produces the prompt byte-for-byte as it was.
+//
+// A struct of two strings rather than *mode.Mode because prompt must not
+// import mode — mode reads skill, and the dependency would run the wrong way
+// round for a package this low. It also keeps the boundary honest: a desk
+// hands this layer *direction*, never identity. What the assistant is stays in
+// internal/prompt and the identity directory, whatever desk it sits at (§44.0).
+type Desk struct {
+	Name      string
+	Direction string
 }
 
 // ProjectContextFile returns the path of whichever project context file
@@ -83,9 +99,17 @@ type Scope struct {
 	Extra []string
 }
 
-// Build assembles the full system prompt for the given front end and scope.
+// Build assembles the full system prompt for the given front end and scope, at
+// the full desk. Sessions that were opened at one use BuildForDesk.
 func Build(surface Surface, scope Scope) string {
-	text, _ := BuildWithReport(surface, scope)
+	text, _ := BuildWithReport(surface, scope, Desk{})
+	return text
+}
+
+// BuildForDesk is Build for a session opened at a desk: the same prompt, plus
+// that desk's direction and whatever working at it has taught the agent.
+func BuildForDesk(surface Surface, scope Scope, desk Desk) string {
+	text, _ := BuildWithReport(surface, scope, desk)
 	return text
 }
 
@@ -93,8 +117,16 @@ func Build(surface Surface, scope Scope) string {
 //
 // There is deliberately no per-agent role layer here: the assistant has one
 // identity, and the identity directory (§11) is where it is configured. A second
-// mechanism answering "who is the AI" would drift from it — see §44.0.
-func BuildWithReport(surface Surface, scope Scope) (string, Loaded) {
+// mechanism answering "who is the AI" would drift from it — see §44.0. A desk
+// adds direction to that identity and never replaces it: "this session is
+// coding work", never "you are a coding assistant".
+//
+// Order is the whole precedence policy, as it was before desks: engine text
+// first, then what the user told the agent, then what the agent concluded, then
+// what this project requires. The desk's direction sits with the engine text
+// because it is engine text — an identity file the user wrote outranks it, and
+// says so simply by coming later.
+func BuildWithReport(surface Surface, scope Scope, desk Desk) (string, Loaded) {
 	sandboxRoot := scope.Root
 	var b strings.Builder
 	b.WriteString(identity(surface))
@@ -104,10 +136,18 @@ func BuildWithReport(surface Surface, scope Scope) (string, Loaded) {
 	b.WriteString(batchWork())
 	b.WriteString(narration())
 	b.WriteString(clarify())
+	if direction := strings.TrimSpace(desk.Direction); direction != "" {
+		b.WriteString("\n" + direction + "\n")
+	}
 
 	var loaded Loaded
 	loaded.UserGlobalPaths = foldIdentityLayers(&b)
-	loaded.MemoryPath = foldLearnedMemory(&b)
+	loaded.MemoryPath = foldLearnedMemory(&b, learned.MainScope,
+		"What you have learned and the user approved")
+	if desk.Name != "" {
+		loaded.DeskMemoryPath = foldLearnedMemory(&b, learned.ModeScope(desk.Name),
+			"What working on "+desk.Name+" has taught you, and the user approved")
+	}
 	if path := ProjectContextFile(sandboxRoot); path != "" {
 		if content := readCapped(path); content != "" {
 			b.WriteString(layer("Project rules", path, content))
@@ -156,21 +196,28 @@ func foldIdentityLayers(b *strings.Builder) []string {
 // needed to say so — no precedence language in the prompt, nothing to keep in
 // sync with it.
 //
-// Only the main agent's scope is read here. A delegate's memory is folded into
-// that delegate's own prompt (internal/subagent) and never into this one:
-// carrying every sub-agent's accumulated knowledge in the main context is the
-// thing that makes a single-brain agent's prompt grow with everything it has
-// ever learned, and it is the cost Aetox is built to not pay.
-func foldLearnedMemory(b *strings.Builder) string {
-	content := learned.Read(learned.MainScope)
+// Only the main agent's scopes are read here — the cross-desk file, and the
+// one belonging to the desk this session was opened at. A delegate's memory is
+// folded into that delegate's own prompt (internal/subagent) and never into
+// this one: carrying every sub-agent's accumulated knowledge in the main
+// context is the thing that makes a single-brain agent's prompt grow with
+// everything it has ever learned, and it is the cost Aetox is built to not pay.
+// The desk scope is the same boundary along a second axis — what coding work
+// taught the agent is not something the assistant desk pays to carry.
+//
+// A scope with nothing in it writes nothing at all, so a session at a desk that
+// has learned nothing produces exactly the prompt it produced before any of
+// this existed.
+func foldLearnedMemory(b *strings.Builder, scope, title string) string {
+	content := learned.Read(scope)
 	if content == "" {
 		return ""
 	}
-	path, err := learned.FileFor(learned.MainScope)
+	path, err := learned.FileFor(scope)
 	if err != nil {
 		return ""
 	}
-	b.WriteString(layer("What you have learned and the user approved", path, content))
+	b.WriteString(layer(title, path, content))
 	return path
 }
 

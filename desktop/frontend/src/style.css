@@ -131,6 +131,33 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .side-panel { display:flex; flex-direction:column; flex:none; }
 /* Projects and chat history take turns in the column instead of splitting it —
    a segmented switch, with each tab's own actions beside it. */
+/* The five buttons (COMPANY.md §2). A column rather than a row of five icons:
+   they are rooms with names, and a name a user can read is the difference
+   between "which of these five pictures is the office" and knowing. */
+.desk-nav { display:flex; flex-direction:column; gap:2px; flex:none; padding:10px 12px 8px; border-bottom:1px solid var(--border-default); }
+.desk-btn {
+  display:flex; align-items:center; gap:9px; width:100%; min-width:0;
+  padding:7px 9px; border-radius:var(--r-md); border:1px solid transparent;
+  color:var(--text-secondary); font-size:var(--fs-md); text-align:left; cursor:pointer;
+}
+.desk-btn:hover:not(:disabled) { background:var(--surface-row-hover); color:var(--text-primary); }
+/* Same treatment as the tab switcher: the fill alone is near-invisible on the
+   palest themes, so the border is what actually says "you are here". */
+.desk-btn.active { background:var(--surface-selected); border-color:var(--border-default); color:var(--text-selected); font-weight:600; }
+.desk-btn .ic { flex:none; display:flex; }
+.desk-btn .t { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* Built, empty, and saying so. A disabled button with no explanation reads as
+   broken; this one reads as a plan. */
+.desk-btn.soon { color:var(--text-dim); cursor:default; }
+.desk-btn .soon-tag { flex:none; font-size:var(--fs-2xs); color:var(--text-dim); border:1px solid var(--border-subtle); border-radius:999px; padding:1px 7px; }
+
+/* Which desk the history list is showing, and the way back to all of it. */
+.sess-filter { display:flex; align-items:center; gap:8px; margin:0 0 8px; padding:0 2px; }
+.sess-filter .chip { font-size:var(--fs-2xs); font-weight:600; color:var(--text-secondary); background:var(--surface-raised); border:1px solid var(--border-subtle); border-radius:999px; padding:2px 9px; }
+.sess-filter-all { margin-left:auto; font-size:var(--fs-xs); color:var(--text-muted); cursor:pointer; }
+.sess-filter-all:hover { color:var(--text-primary); text-decoration:underline; }
+.sess-row .sess-desk { flex:none; font-size:var(--fs-2xs); color:var(--text-dim); border:1px solid var(--border-subtle); border-radius:999px; padding:0 7px; }
+
 .side-tabs { display:flex; align-items:center; gap:4px; flex:none; padding:10px 12px; border-bottom:1px solid var(--border-default); }
 .seg { display:flex; flex:1; min-width:0; gap:2px; padding:2px; border-radius:var(--r-md); background:var(--surface-app); }
 .seg-btn {
@@ -1080,6 +1107,129 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 
 /* ---------- settings (full-page overlay) ---------- */
 .settings-overlay { position:fixed; inset:0; z-index:50; background:var(--surface-app); display:flex; }
+/* The office and the gallery: full-window pages with no nav rail of their own
+   — they are one list each, not thirty settings. Everything below reuses the
+   settings design system (.settings-card / .set-row / .set-txt / .ctrl) so
+   there is one visual language on this surface and not two. */
+.page-shell { flex:1; display:flex; flex-direction:column; overflow:hidden; background:var(--surface-app); }
+.page-head { flex:none; padding:20px 64px 0; }
+.page-title { max-width:var(--content-max, 760px); margin:18px auto 0; }
+.page-title h2 { margin:0 0 6px; font-size:var(--fs-3xl); }
+.page-title p { margin:0; color:var(--text-muted); font-size:var(--fs-sm); line-height:1.5; max-width:60ch; }
+.page-body { flex:1; overflow-y:auto; padding:28px 64px 56px; }
+.page-body .settings-inner.wide { --content-max:1040px; }
+.section-label { margin:0 0 10px; }
+.page-note { margin:-16px 0 28px; color:var(--text-muted); font-size:var(--fs-sm); line-height:1.5; }
+.page-error { margin:0 0 18px; padding:9px 12px; border-radius:var(--r-md); border:1px solid var(--status-danger); color:var(--status-danger); font-size:var(--fs-sm); }
+.page-empty { display:flex; flex-direction:column; align-items:center; gap:10px; padding:64px 0; color:var(--text-dim); text-align:center; }
+.page-empty p { margin:0; font-size:var(--fs-sm); max-width:44ch; line-height:1.55; }
+.linkish { color:var(--interactive); font-size:inherit; cursor:pointer; }
+.linkish:hover { text-decoration:underline; }
+
+/* One chair. The tool chips are the ceiling made visible, so they get room to
+   wrap rather than being clipped to a line. */
+.job-row { align-items:flex-start; padding:12px 16px; }
+.chair-card .chips, .job-row .chips { display:flex; flex-wrap:wrap; gap:4px; margin-top:7px; }
+.chip { font-size:var(--fs-2xs); color:var(--text-secondary); background:var(--surface-sunken); border:1px solid var(--border-subtle); border-radius:999px; padding:1px 8px; }
+.chip.strong { color:var(--text-primary); font-weight:600; }
+.set-txt .tag { margin-left:6px; font-size:var(--fs-2xs); font-weight:500; color:var(--text-dim); border:1px solid var(--border-subtle); border-radius:999px; padding:1px 7px; }
+/* An agent card is a pp-card that is not itself a button: the door is the
+   chat button in its foot, so the card's own cursor stays honest. */
+/* The door switcher on the wordmark (§86) — the gesture is "which building",
+   so it wears the brand rather than sitting among the room buttons.
+   .brand clipped its overflow to keep a narrow logo column tidy; the menu has
+   to escape it, so the clipping moves onto the label that can actually be too
+   long for the column. */
+.brand { position:relative; overflow:visible; }
+.brand-btn {
+  display:flex; align-items:center; gap:9px; min-width:0; background:none; border:0;
+  padding:4px 8px; margin:-4px -8px; border-radius:var(--r-md); cursor:pointer; color:inherit;
+}
+.brand-btn:hover { background:var(--surface-hover); }
+.brand-door {
+  font-size:var(--fs-xs); color:var(--text-secondary); font-weight:600;
+  min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.brand-caret { display:flex; color:var(--text-dim); }
+/* Detached from the wordmark rather than tucked under it: the menu is a
+   different surface, and a panel touching the control that opened it reads as
+   part of the header instead of as a thing that opened. */
+.door-menu {
+  position:absolute; top:calc(100% + 10px); left:12px; z-index:60; min-width:330px;
+  display:flex; flex-direction:column; gap:3px; padding:8px;
+  background:var(--surface-raised); border:1px solid var(--border-default);
+  border-radius:var(--r-lg); box-shadow:var(--shadow-lg, 0 12px 34px rgb(0 0 0 / .38));
+}
+.door-item {
+  display:flex; align-items:flex-start; gap:12px; text-align:left; cursor:pointer;
+  background:none; border:0; border-radius:var(--r-md); padding:12px 13px; color:var(--text-primary);
+}
+.door-item:hover { background:var(--surface-hover); }
+.door-item .ic { display:flex; padding-top:2px; color:var(--text-secondary); }
+.door-item.on .ic { color:var(--interactive); }
+.door-item .txt { display:flex; flex-direction:column; gap:5px; min-width:0; flex:1; }
+/* Sized to be read, not to be tidy: this menu names the two halves of the
+   product, and a label the eye has to lean in for makes the choice feel
+   incidental. */
+.door-item .t { font-size:var(--fs-lg); font-weight:600; line-height:1.25; }
+/* Secondary, not dim: this line is meant to be read on the way to a choice,
+   and --text-dim is the tone for things you are allowed to skip. */
+.door-item .d { font-size:var(--fs-xs); color:var(--text-secondary); line-height:1.5; white-space:nowrap; }
+.door-item .tick { display:flex; padding-top:5px; color:var(--interactive); }
+
+.office-grid { margin-bottom:14px; }
+/* Slimmer cover than a preset's: an agent card carries chips and a footer a
+   preset card does not, and the covers are what was making every row — and
+   the stretched create-card beside it — tower. */
+.office-grid .pp-cover { height:72px; }
+.chair-card { cursor:default; }
+.chair-card .pp-body { flex:1; }
+.chair-card .chips .chip.more { color:var(--text-dim); border-style:dashed; }
+.chair-card.empty { border-style:dashed; background:none; }
+/* The foot is its own layer: separated from the body by a rule, stat on the
+   left, the one action on the right, both on one baseline. */
+.chair-foot {
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  border-top:1px solid var(--border-subtle);
+  margin-top:10px; padding:9px 12px 11px;
+}
+.chair-foot .stat { font-size:var(--fs-2xs); color:var(--text-dim); min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.chair-foot .stat .n { font-size:var(--fs-md); font-weight:600; color:var(--text-secondary); }
+/* The door into a direct chat (§85) — the one action a card offers. */
+.chair-foot .chair-chat { flex:none; display:inline-flex; align-items:center; gap:5px; font-size:var(--fs-2xs); }
+/* A direct chat's row is labelled with who — slightly brighter than the desk
+   chip, because a name is a stronger fact than a place. */
+.sess-row .sess-desk.agent { color:var(--text-secondary); border-color:var(--border-default); }
+/* Who this chat is with (§85) — sticky so the answer survives any scroll
+   depth, and quiet: it is a label the eye can confirm, not a banner. */
+.chair-strip { position:sticky; top:0; z-index:5; display:flex; align-items:center; gap:8px;
+  padding:7px 14px; font-size:var(--fs-xs); color:var(--text-secondary);
+  background:var(--surface-app); border-bottom:1px solid var(--border-subtle); }
+.chair-strip .who { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.chair-strip .back-office { flex:none; font-size:var(--fs-2xs); color:var(--text-dim);
+  background:none; border:1px solid var(--border-subtle); border-radius:999px; padding:2px 10px; cursor:pointer; }
+.chair-strip .back-office:hover { color:var(--text-secondary); border-color:var(--border-default); }
+.job-row .job-when { margin-left:6px; font-size:var(--fs-2xs); color:var(--text-dim); font-weight:400; }
+.job-row .job-meta { display:flex; gap:12px; align-items:center; margin-top:6px; font-size:var(--fs-2xs); color:var(--text-dim); }
+.job-row .job-meta .ok { color:var(--status-ok, var(--interactive)); display:flex; }
+.job-row .job-meta .bad { color:var(--status-danger); display:flex; }
+.set-txt .d.clamp2 { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+
+/* The gallery. Cards rather than rows: what a person is looking for here is a
+   file they recognise, and a name plus its kind is what they recognise it by. */
+.art-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(210px, 1fr)); gap:14px; }
+.art-card { display:flex; flex-direction:column; border:1px solid var(--border-subtle); border-radius:var(--r-lg); background:var(--surface-panel); overflow:hidden; }
+.art-card:hover { border-color:var(--border-strong); }
+.art-open { display:flex; flex-direction:column; gap:6px; align-items:flex-start; padding:14px 14px 10px; text-align:left; cursor:pointer; }
+.art-mark { display:flex; color:var(--text-muted); }
+.art-name { font-size:var(--fs-md); font-weight:600; word-break:break-all; line-height:1.35; }
+.art-meta { font-size:var(--fs-2xs); color:var(--text-dim); }
+.art-foot { display:flex; align-items:center; gap:8px; padding:7px 12px; border-top:1px solid var(--border-subtle); font-size:var(--fs-xs); }
+.art-orphan { color:var(--text-dim); }
+.art-del { margin-left:auto; display:flex; align-items:center; color:var(--text-dim); padding:2px 6px; border-radius:var(--r-sm); cursor:pointer; }
+.art-del:hover { color:var(--status-danger); background:var(--surface-row-hover); }
+.art-del.confirm { color:var(--status-danger); font-size:var(--fs-2xs); font-weight:600; }
+
 .settings-page { flex:1; display:flex; overflow:hidden; }
 .settings-nav {
   flex:0 0 260px; padding:14px 12px; border-right:1px solid var(--border-default);

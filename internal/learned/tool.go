@@ -44,6 +44,18 @@ type Proposer interface {
 type MemoryTool struct {
 	Scope    string
 	Proposer Proposer
+	// Desk is the second scope a main-agent session can write to: the desk it
+	// was opened at (§83). Empty everywhere else — a delegate has one scope and
+	// a pre-modes session has one file — and when it is empty this tool's
+	// definition is byte-for-byte what it was before desks existed, because the
+	// tool block is in every request and the common case must not pay for a
+	// feature it cannot use.
+	//
+	// Two scopes rather than one because the split is the point: "the user
+	// prefers X" is true at every desk and belongs in MEMORY.md, while "this
+	// repository's tests need Y first" is worth carrying only where that work
+	// happens. Which of the two a fact is, only the model writing it knows.
+	Desk string
 }
 
 func (*MemoryTool) Name() string { return "memory" }
@@ -82,6 +94,15 @@ func (t *MemoryTool) ToolDefinition() model.ToolDefinition {
 			},
 		},
 		"additionalProperties": false,
+	}
+	if t.Desk != "" {
+		schema["properties"].(map[string]any)["where"] = map[string]any{
+			"type": "string",
+			"enum": []string{"everywhere", "this-desk"},
+			"description": "everywhere (default) for a fact that is true whatever you are working on — this user, " +
+				"this machine, how they like things done. this-desk for something only " + t.Desk +
+				" work needs, which then costs nothing anywhere else.",
+		}
 	}
 	payload, _ := json.Marshal(schema)
 	return model.ToolDefinition{
@@ -142,6 +163,13 @@ func (t *MemoryTool) ExecuteTool(_ context.Context, args map[string]any) (skill.
 	text := strings.TrimSpace(stringArg(args, "text"))
 	old := strings.TrimSpace(stringArg(args, "old"))
 	why := strings.TrimSpace(stringArg(args, "why"))
+	// Anything other than the one word that asks for the desk means the shared
+	// file, including the word being absent: a model that guesses at this
+	// parameter should land on the scope that was the only one before it existed.
+	scope := t.Scope
+	if t.Desk != "" && strings.TrimSpace(stringArg(args, "where")) == "this-desk" {
+		scope = ModeScope(t.Desk)
+	}
 
 	switch op {
 	case OpAdd:
@@ -163,7 +191,7 @@ func (t *MemoryTool) ExecuteTool(_ context.Context, args map[string]any) (skill.
 	// Refused here rather than at approval: a proposal that cannot be applied
 	// would sit in the user's review list looking like progress, and the agent
 	// would never learn that it needs to consolidate.
-	if op == OpAdd && Full(t.Scope, len(text)+2) {
+	if op == OpAdd && Full(scope, len(text)+2) {
 		return fail(fmt.Errorf(
 			"this agent's memory is full (limit %d bytes) — replace or remove a line that has stopped being useful before adding another",
 			MaxBytes))
@@ -171,7 +199,7 @@ func (t *MemoryTool) ExecuteTool(_ context.Context, args map[string]any) (skill.
 
 	res, err := t.Proposer.Propose(Proposal{
 		Kind:   "memory",
-		Scope:  t.Scope,
+		Scope:  scope,
 		Op:     op,
 		Before: old,
 		Body:   text,

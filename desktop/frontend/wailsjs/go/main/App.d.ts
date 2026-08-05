@@ -4,6 +4,7 @@ import {main} from '../models';
 import {update} from '../models';
 import {model} from '../models';
 import {skill} from '../models';
+import {mode} from '../models';
 import {command} from '../models';
 import {subagent} from '../models';
 import {ooxml} from '../models';
@@ -62,6 +63,8 @@ export function CompleteSignIn(arg1:string,arg2:string):Promise<main.ModelInfo>;
 
 export function CurrentSessionID():Promise<string>;
 
+export function DeleteArtifact(arg1:string):Promise<void>;
+
 export function DeleteIdentityFile(arg1:string):Promise<void>;
 
 export function DeletePromptPreset(arg1:string):Promise<void>;
@@ -104,6 +107,10 @@ export function LearningEnabled():Promise<boolean>;
 
 export function ListAllSessions():Promise<Array<main.SessionMeta>>;
 
+export function ListArtifacts():Promise<Array<main.Artifact>>;
+
+export function ListChairs():Promise<Array<main.Chair>>;
+
 export function ListDecidedChanges(arg1:number):Promise<Array<main.PendingChange>>;
 
 export function ListExternalSkills():Promise<Array<skill.DiscoveredSkill>>;
@@ -114,11 +121,17 @@ export function ListMCPServers():Promise<Array<main.MCPServerInfo>>;
 
 export function ListModelsForProvider(arg1:string):Promise<Array<string>>;
 
+export function ListModes():Promise<Array<mode.Mode>>;
+
 export function ListPendingChanges():Promise<Array<main.PendingChange>>;
 
 export function ListPromptPresets():Promise<Array<command.Preset>>;
 
+export function ListReceivedJobs(arg1:number):Promise<Array<main.ReceivedJob>>;
+
 export function ListSessions():Promise<Array<main.SessionMeta>>;
+
+export function ListSessionsAt(arg1:string):Promise<Array<main.SessionMeta>>;
 
 export function ListSkills():Promise<Array<main.SkillInfo>>;
 
@@ -138,7 +151,13 @@ export function MCPConfigPath():Promise<string>;
 
 export function ModelStatus():Promise<string>;
 
+export function NewChairSession(arg1:string):Promise<string>;
+
 export function NewSession():Promise<string>;
+
+export function NewSessionAt(arg1:string):Promise<string>;
+
+export function OpenArtifact(arg1:string):Promise<void>;
 
 export function OpenFileExternally(arg1:string):Promise<void>;
 
@@ -237,6 +256,10 @@ export function SearchAllSessions(arg1:string):Promise<Array<main.SessionMeta>>;
 export function SearchSessions(arg1:string):Promise<Array<main.SessionMeta>>;
 
 export function SendMessage(arg1:string):Promise<main.TurnReply>;
+
+export function SessionAgent(arg1:string):Promise<string>;
+
+export function SessionMode(arg1:string):Promise<string>;
 
 export function SetAPIKey(arg1:string,arg2:string):Promise<main.ModelInfo>;
 

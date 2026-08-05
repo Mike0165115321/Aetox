@@ -12,6 +12,7 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/hook"
 	"github.com/Mike0165115321/Aetox/internal/learned"
 	"github.com/Mike0165115321/Aetox/internal/mcp"
+	"github.com/Mike0165115321/Aetox/internal/mode"
 	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/prompt"
 	"github.com/Mike0165115321/Aetox/internal/safety"
@@ -40,6 +41,30 @@ type Options struct {
 	// Console is handed to app.NewApp, which requires a non-nil one. Nil means
 	// app.NewStdIO(). A process with no terminal must pass DiscardConsole().
 	Console aetoxapp.Console
+
+	// Mode is the desk the session being built was opened at (ARCHITECTURE.md
+	// §83). It decides three things and nothing else: which of the one shared
+	// registry the dispatcher shows, what direction and which memory scope the
+	// system prompt gains, and the ceiling a sub-agent runs under.
+	//
+	// Nil is the full desk — every session from before modes existed, plus every
+	// host that has none (the CLI) — and it produces byte-for-byte the engine
+	// this function produced before desks were a thing.
+	//
+	// It never grants anything: the safety gate, the approval rules and the
+	// permission list are identical at every desk, and a narrower desk is not a
+	// narrower gate (§83, and §84 does not amend it).
+	Mode *mode.Mode
+
+	// Chair mounts the engine as one of the office's agents instead of the main
+	// assistant — the direct chat §85 added. Mode must be the office desk; the
+	// chair's tools are its profile intersected with that ceiling
+	// (subagent.FilterRegistry, the same cut its delegate runs get), its prompt
+	// direction is subagent.PromptFor (profile + what it has learned), and its
+	// `memory` tool writes the chair's own scope, never the main's.
+	//
+	// Nil is every session that is not a chair chat, and changes nothing.
+	Chair *subagent.Profile
 
 	// Approve is the human approval gate, used by the App and by every
 	// sub-agent.
@@ -173,10 +198,24 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 	// picture of the workspace and the gate that enforces it come from the same
 	// place by construction.
 	scope := prompt.Scope{Root: cfg.SandboxRoot, Open: opts.OpenSandbox, Extra: opts.ExtraRoots}
+	// Built once, here, and never mutated for the life of the session — the
+	// desk's direction and its memory are part of the prompt prefix the
+	// provider caches, and a prompt that changed mid-conversation would spend
+	// more on cache misses than either layer saves (internal/learned).
+	desk := prompt.Desk{Name: opts.Mode.DeskName(), Direction: opts.Mode.Direction()}
+	if opts.Chair != nil {
+		// A chair chat runs on the chair's own prompt — profile plus what it
+		// has learned, the same fold its delegate runs get (§85: one fold, two
+		// doors, never drifting). The desk's direction is not stacked on top:
+		// the office manifest briefs deliverable work in general, the chair's
+		// file briefs *this job*, and an agent reading both would be serving
+		// two masters where its delegate runs serve one.
+		desk = prompt.Desk{Name: opts.Chair.Name, Direction: subagent.PromptFor(*opts.Chair)}
+	}
 	agent := cognitive.NewAgent(cognitive.AgentConfig{
 		Provider:     bootstrapResult.Provider,
 		Model:        cfg.ModelName,
-		SystemPrompt: prompt.Build(surface, scope),
+		SystemPrompt: prompt.BuildForDesk(surface, scope, desk),
 		// Scale the retained-history budget to the model's real window
 		// (0 → NewContext's 128k-char default). At 80% of this budget the
 		// agent summarizes older turns into one message (cognitive
@@ -216,7 +255,34 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 		debuglog.Msg("skill discovery: %v", discErr)
 	}
 	discoverDone()
-	dispatcher := skill.NewDispatcher(registry)
+	// One registry, one desk's view of it. NewDispatcher moved from boot to
+	// session-open for exactly this (§83): installing a tool still has a single
+	// home, and what varies per session is only which of it is visible. The
+	// filter reads the registry live, so an MCP server that connects mid-session
+	// still appears on the desks that attached it and on no others.
+	dispatcher := skill.NewDispatcherFor(registry, opts.Mode.Carries)
+	if opts.Chair != nil {
+		// A chair chat sees exactly what its delegate runs see: profile ∩ the
+		// office ceiling, cut by the same FilterRegistry — a second reading of
+		// the same rules could drift from the one the delegate actually runs
+		// on. The cut is a snapshot, which is also what keeps `task` out: the
+		// task tools are registered below, after this line, and a leaf stays a
+		// leaf even when spoken to (§85). Note FilterRegistry's own caveat: an
+		// MCP server that finishes connecting after this point reaches every
+		// desk that attached it, but not a chair session already open.
+		child := subagent.FilterRegistry(registry, *opts.Chair, opts.Mode)
+		// `memory` is rebuilt bound to the chair's own scope, exactly as
+		// task.go does for a delegate and for the same reason: the parent's
+		// instance writes the main agent's file, and there must be no scope an
+		// agent can name but its own.
+		if opts.Proposer != nil && opts.Chair.AllowsTool("memory") {
+			scoped := &learned.MemoryTool{Scope: opts.Chair.Name, Proposer: opts.Proposer}
+			if regErr := child.Register(scoped, skill.SourceBuiltin); regErr != nil {
+				debuglog.Msg("memory unavailable to chair %s: %v", opts.Chair.Name, regErr)
+			}
+		}
+		dispatcher = skill.NewDispatcher(child)
+	}
 
 	permissions, permErr := config.LoadPermissions()
 	if permErr != nil {
@@ -256,9 +322,14 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 	// cosmetic and ask/unsafe-only never reached the engine.
 	approvalMode := safety.NormalizeApprovalMode(cfg.ApprovalMode)
 	for _, tool := range subagent.NewTaskTools(subagent.TaskOptions{
-		Provider:     bootstrapResult.Provider,
-		Model:        cfg.ModelName,
-		Registry:     registry,
+		Provider: bootstrapResult.Provider,
+		Model:    cfg.ModelName,
+		Registry: registry,
+		// The desk decides the ceiling a delegate runs under and which chairs
+		// this desk may hand a job to. The registry stays whole: a cross-desk
+		// dispatch runs on the target desk's manifest, so the tool it needs has
+		// to still be in there to be filtered *in* (§84).
+		Desk:         opts.Mode,
 		Permissions:  permissions,
 		ApprovalMode: approvalMode,
 		Approve:      opts.Approve,
@@ -302,9 +373,9 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 	// engine is up, but on the aetox fallback rather than the provider the
 	// caller asked for, and only this error says why.
 	return Result{
-		App:        chatApp,
-		Agent:      agent,
-		Registry:   registry,
+		App:         chatApp,
+		Agent:       agent,
+		Registry:    registry,
 		Dispatcher:  dispatcher,
 		Provider:    bootstrapResult.Provider,
 		Permissions: permissions,

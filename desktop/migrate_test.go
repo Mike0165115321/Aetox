@@ -106,6 +106,15 @@ func TestExistingUnversionedDatabaseMigratesWithoutLosingHistory(t *testing.T) {
 	if mode != "" {
 		t.Fatalf("a pre-mode session was assigned mode %q; '' is the full desk", mode)
 	}
+	// v9: and no agent — every old conversation was held with the main
+	// assistant, which is what '' says.
+	var agent string
+	if err := db.QueryRow(`SELECT agent FROM sessions WHERE id = ?`, "20260101-000000.000").Scan(&agent); err != nil {
+		t.Fatalf("sessions.agent missing after migration: %v", err)
+	}
+	if agent != "" {
+		t.Fatalf("a pre-§85 session was assigned agent %q; '' is the main assistant", agent)
+	}
 }
 
 // A database written by a newer build must be refused rather than used: this

@@ -82,7 +82,18 @@ type Profile struct {
 	Tools       []string `json:"tools,omitempty"` // empty = whatever the registry has
 	Deny        []string `json:"deny,omitempty"`
 	Steps       int      `json:"steps,omitempty"`
-	Prompt      string   `json:"prompt"`
+	// Desk makes this profile a *chair* rather than a delegate (COMPANY.md §4):
+	// it names the desk the job runs at, and that desk's manifest becomes the
+	// ceiling on everything below — so a chair that writes `tools: shell` into
+	// itself simply does not get shell, by structure rather than by discipline.
+	//
+	// Empty is the ordinary sub-agent, which runs under the ceiling of whichever
+	// desk called it. The difference is who the work belongs to: a delegate is
+	// the caller doing its own work in a second context, while a chair is
+	// another desk's job handed over the counter, and only the result comes back
+	// (ARCHITECTURE.md §84).
+	Desk   string `json:"desk,omitempty"`
+	Prompt string `json:"prompt"`
 	Path        string   `json:"path,omitempty"` // on-disk path; "" for a bundled profile
 	Builtin     bool     `json:"builtin"`
 	// Overrides marks a user file that shadows a bundled profile of the same
@@ -142,6 +153,24 @@ func List() []Profile {
 	return out
 }
 
+// Chairs returns the profiles that sit at the named desk — the office's roster
+// (COMPANY.md §4). Hiring is dropping one more file in the folder, so this
+// reads the folder every time rather than caching a list that a new file would
+// not be in.
+func Chairs(desk string) []Profile {
+	desk = strings.ToLower(strings.TrimSpace(desk))
+	if desk == "" {
+		return nil
+	}
+	var out []Profile
+	for _, p := range List() {
+		if p.Desk == desk {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 // Load returns the sub-agent named name, preferring the user's file so a bundled
 // profile can be overridden by writing one with the same name. ok is false when
 // nothing by that name exists.
@@ -170,18 +199,21 @@ func Load(name string) (Profile, bool) {
 	return Profile{}, false
 }
 
-// promptFor is the system prompt a delegate actually runs with: its profile,
+// PromptFor is the system prompt an agent actually runs with: its profile,
 // plus whatever it has learned in its own scope and had approved.
 //
-// A delegate's memory is folded here and nowhere else. The main agent's prompt
+// An agent's memory is folded here and nowhere else. The main agent's prompt
 // never carries it (internal/prompt reads only the main scope), which is what
 // keeps the main context flat no matter how much the delegates accumulate —
 // the structural difference from a single agent that grows one prompt forever.
 //
+// Exported since §85: a chair's *direct chat* mounts exactly the prompt its
+// delegate runs would — one fold, two doors, and they must never drift.
+//
 // A profile with nothing learned yet gets exactly its old prompt, byte for
 // byte: the common case must not pay for the feature, and prefix caching keys
 // on the leading bytes.
-func promptFor(p Profile) string {
+func PromptFor(p Profile) string {
 	memory := learned.Read(p.Name)
 	if memory == "" {
 		return p.Prompt
@@ -257,6 +289,7 @@ func parse(name, raw string) Profile {
 		Tools:       splitList(fields["tools"]),
 		Deny:        splitList(fields["deny"]),
 		Steps:       steps,
+		Desk:        strings.ToLower(strings.TrimSpace(fields["desk"])),
 		Prompt:      body,
 	}
 }
