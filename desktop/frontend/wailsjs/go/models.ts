@@ -1057,6 +1057,7 @@ export namespace subagent {
 	    path?: string;
 	    builtin: boolean;
 	    overrides?: boolean;
+	    invalid?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Profile(source);
@@ -1075,6 +1076,7 @@ export namespace subagent {
 	        this.path = source["path"];
 	        this.builtin = source["builtin"];
 	        this.overrides = source["overrides"];
+	        this.invalid = source["invalid"];
 	    }
 	}
 

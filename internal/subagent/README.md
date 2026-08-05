@@ -24,8 +24,8 @@ Frontmatter is parsed by `skill.ParseFrontmatter` — one `key: value` per line,
 
 | | Where |
 |---|---|
-| Bundled | [profiles/](profiles) via `//go:embed`. **Delegates:** `explore` (read-only searcher, 4 tools), `general` (the looper: a list of items is ONE job it works through itself, 48 steps), `plan` (ARCHITECTURE.md §54 — inherits every reading tool, denies every writing one, and answers in a fixed four-part shape). **Chairs** (`desk: specialized`, ARCHITECTURE.md §84): `deck`, `doc`, `sheet` — one craft each, briefed once, handing back a .pptx / .docx / .xlsx. Present on a fresh install with no folder created |
-| User | `<DataRoot>/subagents/*.md`. A file named after a bundled one **wins**; deleting it restores the original — that is the "revert" |
+| Bundled | [profiles/](profiles) via `//go:embed`, split by kind since 2026-08-05 — **the file's home is its kind** (owner's call: ตัวแทน/ผู้ช่วยตัวแทน). [profiles/agents/](profiles/agents): `deck`, `doc`, `sheet` — the chairs (ARCHITECTURE.md §84), one craft each, briefed once, handing back a .pptx / .docx / .xlsx. [profiles/subagents/](profiles/subagents): `explore` (read-only searcher, 4 tools), `general` (the looper: a list of items is ONE job it works through itself, 48 steps), `plan` (§54 — inherits every reading tool, denies every writing one, answers in a fixed four-part shape). Present on a fresh install with no folder created |
+| User | `<DataRoot>/agents/*.md` and `<DataRoot>/subagents/*.md`. A file named after a bundled one **in the same home wins**; deleting it restores the original — that is the "revert". Across homes a name has one owner (memory, jobs and chat history key on it): the other home's same-named file is a `Conflict`, reported, never run. An agents-home file that names no desk sits in the office; a subagents-home file that claims a desk is `Invalid`, loudly. `Migrate()` moves pre-split chair files home once at startup |
 
 ## How one runs — and why it does not block
 

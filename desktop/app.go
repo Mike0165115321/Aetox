@@ -1101,6 +1101,11 @@ func (a *App) startup(ctx context.Context) {
 	// empty and gives no evidence either way for "why did first paint feel
 	// stuck." This makes the log itself the answer next time it happens.
 	defer debuglog.Block("App.startup")()
+	// Agent files a user dropped into the shared folder before the homes split
+	// (2026-08-05) move to the agents' home, before anything reads a roster.
+	if moved := subagent.Migrate(); len(moved) > 0 {
+		debuglog.Msg("subagent.Migrate moved: %s", strings.Join(moved, ", "))
+	}
 	a.focusNone()
 	a.startNewSession()
 	a.openAtRememberedDesk()

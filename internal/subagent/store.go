@@ -16,31 +16,40 @@ import (
 // file that shadows it, and deleting that file is how "revert to default" works,
 // with no separate override store to keep in sync.
 
-// ReadRaw returns the markdown text behind a profile: the user's file if there is
-// one, otherwise the bundled original. ok is false when neither exists.
+// ReadRaw returns the markdown text behind a profile — the name's owner, via
+// the same resolution every other reader uses. ok is false when the name owns
+// nothing.
 func ReadRaw(name string) (string, bool) {
 	name = strings.TrimSpace(name)
 	if name == "" || !validName(name) {
 		return "", false
 	}
-	if dir, err := Dir(); err == nil {
-		if raw, err := os.ReadFile(filepath.Join(dir, name+".md")); err == nil {
-			return string(raw), true
-		}
-	}
-	if raw, err := bundledProfiles.ReadFile("profiles/" + name + ".md"); err == nil {
-		return string(raw), true
-	}
-	return "", false
+	return rawFor(name)
 }
 
-// Save writes body to <DataRoot>/subagents/<name>.md, creating the directory on
-// first use. A name that could climb out of it is rejected rather than sanitized:
-// it arrives from the UI, so this is the boundary.
+// Save writes a sub-agent's file into the sub-agents' home; SaveAgent writes
+// an agent's into the agents'. Two doors and no kind parameter, because a
+// caller that had to pass one would be re-deciding the rule the homes already
+// carry — and the caller never writes the kind into the file either, the home
+// says it.
+//
+// A name the *other* home owns is refused at the door. A name has one owner
+// across both homes (memory, jobs and chat history all key on it), and a
+// conflict the save could have named is not something to leave for the
+// resolver to flag later.
 func Save(name, body string) error {
+	return save(name, body, false)
+}
+
+// SaveAgent is the team page's door — see Save.
+func SaveAgent(name, body string) error {
+	return save(name, body, true)
+}
+
+func save(name, body string, agentHome bool) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return errors.New("ต้องตั้งชื่อซับเอเจนก่อน")
+		return errors.New("ต้องตั้งชื่อก่อน")
 	}
 	if len([]rune(name)) > 40 {
 		return errors.New("ชื่อยาวเกินไป (ไม่เกิน 40 ตัวอักษร)")
@@ -49,9 +58,29 @@ func Save(name, body string) error {
 		return errors.New(`ชื่อห้ามมีช่องว่างหรืออักขระเหล่านี้: \ / : * ? " < > |`)
 	}
 	if strings.TrimSpace(body) == "" {
-		return errors.New("เนื้อหาซับเอเจนว่างเปล่า")
+		return errors.New("เนื้อหาว่างเปล่า")
 	}
-	dir, err := Dir()
+	for _, p := range List() {
+		if p.Name != name {
+			continue
+		}
+		// A sick file (Invalid) has its Desk cleared, so it reads as owned by
+		// the sub-agents' home — which is where it sits, and where saving over
+		// it is how the user fixes it.
+		if (p.Desk != "") != agentHome {
+			owner := "ผู้ช่วยตัวแทน"
+			if p.Desk != "" {
+				owner = "ตัวแทน"
+			}
+			return errors.New("ชื่อ " + name + " เป็นของ" + owner + "อยู่แล้ว — ความจำและประวัติงานผูกกับชื่อ ต้องตั้งชื่ออื่น")
+		}
+		break
+	}
+	homeDir := Dir
+	if agentHome {
+		homeDir = AgentsDir
+	}
+	dir, err := homeDir()
 	if err != nil {
 		return err
 	}
@@ -61,34 +90,41 @@ func Save(name, body string) error {
 	return os.WriteFile(filepath.Join(dir, name+".md"), []byte(body), 0o644)
 }
 
-// Delete removes the user's file for name. A bundled profile of the same name
-// reappears in its place — that is the revert, not a special case. A name with no
-// user file is not an error: the bundled one was never theirs to delete.
+// Delete removes the user's file for name, from whichever home owns it. A
+// bundled profile of the same name reappears in its place — that is the
+// revert, not a special case. A name with no user file is not an error: the
+// bundled one was never theirs to delete.
 func Delete(name string) error {
 	name = strings.TrimSpace(name)
 	if name == "" || !validName(name) {
-		return errors.New("ชื่อซับเอเจนไม่ถูกต้อง")
+		return errors.New("ชื่อไม่ถูกต้อง")
 	}
-	dir, err := Dir()
-	if err != nil {
-		return err
-	}
-	if err := os.Remove(filepath.Join(dir, name+".md")); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
+	for _, homeDir := range []func() (string, error){AgentsDir, Dir} {
+		dir, err := homeDir()
+		if err != nil {
+			return err
+		}
+		if err := os.Remove(filepath.Join(dir, name+".md")); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
 	}
 	return nil
 }
 
-// SetModel points one profile at a specific model (the settings page's
-// per-profile model dropdown) by rewriting a single frontmatter line and saving
-// the result as a user file. An empty model removes the line, which is what
-// "inherit whatever model is selected" means.
+// SetModel points one profile at a specific model (the per-profile model
+// dropdown) by rewriting a single frontmatter line and saving the result as a
+// user file, through the door of whichever home owns the name. An empty model
+// removes the line, which is what "inherit whatever model is selected" means.
 func SetModel(name, modelName string) error {
 	raw, ok := ReadRaw(name)
 	if !ok {
-		return errors.New("ไม่พบซับเอเจนชื่อ " + name)
+		return errors.New("ไม่พบโปรไฟล์ชื่อ " + name)
 	}
-	return Save(name, setFrontmatterField(raw, "model", strings.TrimSpace(modelName)))
+	body := setFrontmatterField(raw, "model", strings.TrimSpace(modelName))
+	if p, ok := Load(name); ok && p.Desk != "" {
+		return SaveAgent(name, body)
+	}
+	return Save(name, body)
 }
 
 // setFrontmatterField replaces, inserts or (on an empty value) drops one

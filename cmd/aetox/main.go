@@ -290,6 +290,11 @@ func main() {
 	cfg.ThinkLevel = model.NormalizeThinkingLevel(cfg.ModelProvider, cfg.ModelName, thinkLevel)
 
 	currentConfig = cfg
+	// Same move the desktop makes at startup: agent files from before the homes
+	// split (2026-08-05) find their own folder before any roster is read.
+	if moved := subagent.Migrate(); len(moved) > 0 {
+		debuglog.Msg("subagent.Migrate moved: %s", strings.Join(moved, ", "))
+	}
 	bootstrapResult, _ := bootstrapModelWithStatus(cfg)
 
 	effectiveApprovalMode := safety.ApprovalMode(cfg.ApprovalMode)

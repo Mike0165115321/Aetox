@@ -34,7 +34,16 @@ func (a *App) ReadSubagentProfile(name string) (string, error) {
 // SaveSubagentProfile writes a user profile. Saving under a bundled profile's
 // name creates the shadow. No re-bootstrap: a sub-agent's profile is read when it
 // is spawned, so the next delegation already sees the edit.
+//
+// Routed by the name's owner: this binding still serves the settings page's
+// editor, which today edits agents too, and an agent's edit belongs in the
+// agents' home. The answer comes from the resolver (Load), not from a second
+// reading of any rule here. Creating a brand-new agent is the team page's door
+// (commit 2), never this one.
 func (a *App) SaveSubagentProfile(name, body string) error {
+	if p, ok := subagent.Load(name); ok && p.Desk != "" {
+		return subagent.SaveAgent(name, body)
+	}
 	return subagent.Save(name, body)
 }
 
@@ -51,11 +60,22 @@ func (a *App) SetSubagentModel(name, modelName string) error {
 	return subagent.SetModel(name, modelName)
 }
 
-// OpenSubagentsFolder creates <DataRoot>/subagents if needed and reveals it, so
+// OpenSubagentsFolder creates the sub-agents' home if needed and reveals it, so
 // adding a profile is "drop a .md file here" — same contract as the prompts
 // folder, and the reason neither has to exist at install time.
 func (a *App) OpenSubagentsFolder() error {
-	dir, err := subagent.Dir()
+	return revealProfileHome(subagent.Dir)
+}
+
+// OpenAgentsFolder is the agents' half of the same contract — the office
+// page's hiring door. Since the homes split, which folder a file lands in is
+// which kind it is, so the two pages must each open their own.
+func (a *App) OpenAgentsFolder() error {
+	return revealProfileHome(subagent.AgentsDir)
+}
+
+func revealProfileHome(home func() (string, error)) error {
+	dir, err := home()
 	if err != nil {
 		return err
 	}

@@ -227,7 +227,9 @@ func TestAChairIsCappedByTheOfficeCeiling(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dir := filepath.Join(root, "subagents")
+	// The agents' home — since the homes split, a chair file anywhere else is
+	// sick by rule, not a chair.
+	dir := filepath.Join(root, "agents")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}

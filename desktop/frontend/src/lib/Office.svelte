@@ -7,7 +7,10 @@
   // that is exactly as much as this does: it reads, and it lets you walk to the
   // conversation a job came from.
   import { onMount } from 'svelte'
-  import { ListChairs, ListReceivedJobs, OpenSubagentsFolder } from '../../wailsjs/go/main/App'
+  // The hiring door opens the agents' home. Since the homes split, which
+  // folder a file lands in is which kind it is — a chair file dropped into the
+  // sub-agents' folder would wake up sick.
+  import { ListChairs, ListReceivedJobs, OpenAgentsFolder } from '../../wailsjs/go/main/App'
   import { main } from '../../wailsjs/go/models'
   import { agoLabel, newChairSession, selectGlobalSession, setActiveView } from './stores/cockpit.svelte'
   import { t } from './i18n.svelte'
@@ -88,7 +91,7 @@
            keeping: these cards are the actual staff, with history — not
            templates to instantiate. -->
       <div class="pp-grid office-grid">
-        <button class="pp-card pp-new" onclick={() => OpenSubagentsFolder()}>
+        <button class="pp-card pp-new" onclick={() => OpenAgentsFolder()}>
           <span class="pp-plus">+</span>
           <span class="pp-newtxt">{t('office.newAgent')}</span>
         </button>

@@ -157,6 +157,8 @@ export function NewSession():Promise<string>;
 
 export function NewSessionAt(arg1:string):Promise<string>;
 
+export function OpenAgentsFolder():Promise<void>;
+
 export function OpenArtifact(arg1:string):Promise<void>;
 
 export function OpenFileExternally(arg1:string):Promise<void>;

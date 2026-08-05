@@ -129,6 +129,9 @@ func (t *taskTool) available() []Profile {
 	all := List()
 	out := make([]Profile, 0, len(all))
 	for _, p := range all {
+		if p.Invalid != "" {
+			continue // a sick file is the settings page's to explain, never a roster entry
+		}
 		if _, err := t.ceilingFor(p); err == nil {
 			out = append(out, p)
 		}

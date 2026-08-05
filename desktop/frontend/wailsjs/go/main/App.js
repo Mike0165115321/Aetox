@@ -294,6 +294,10 @@ export function NewSessionAt(arg1) {
   return window['go']['main']['App']['NewSessionAt'](arg1);
 }
 
+export function OpenAgentsFolder() {
+  return window['go']['main']['App']['OpenAgentsFolder']();
+}
+
 export function OpenArtifact(arg1) {
   return window['go']['main']['App']['OpenArtifact'](arg1);
 }
