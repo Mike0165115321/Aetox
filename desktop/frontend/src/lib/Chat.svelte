@@ -12,7 +12,7 @@
   } from '../../wailsjs/go/main/App'
   import type { main } from '../../wailsjs/go/models'
   import { t, i18n } from './i18n.svelte'
-  import { renderMarkdown } from './markdown'
+  import { renderMarkdown, renderStreamingMarkdown } from './markdown'
   import { openUrlInWorkbench, openFileTab, setTabDragPayload, TAB_DRAG_MIME } from './stores/workbench.svelte'
   import {
     cockpit, attachImageFromPath, clearPendingImage, attachTabContext, clearPendingContext,
@@ -1084,7 +1084,7 @@
               {@render toolTimeline(runningOwn, true)}
             {/if}
             {#if streamingText}
-              <div class="markdown-body">{@html renderMarkdown(streamingText)}</div>
+              <div class="markdown-body">{@html renderStreamingMarkdown(streamingText)}</div>
             {/if}
             {#if cockpit.ask}
               <div class="ask-panel">

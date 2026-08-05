@@ -353,3 +353,38 @@ func TestPromptTeachesThatAnEmptySearchIsAnAnswer(t *testing.T) {
 		}
 	}
 }
+
+// The chat renders an answer as markdown through DOMPurify, which passes SVG
+// and strips scripts and handlers — so a drawing in an answer has always been
+// possible, and never happened, because nothing said so. This layer says so.
+//
+// Written as the one condition where a picture beats prose (several things and
+// how they relate) rather than as a list of occasions to draw: a list produces
+// drawings on the listed occasions and paragraphs everywhere else, including
+// the places three boxes would have ended the conversation.
+func TestPromptTeachesWhenAPictureBeatsAParagraph(t *testing.T) {
+	got := Build(SurfaceDesktop, Scope{Root: t.TempDir()})
+	for _, want := range []string{
+		"inline <svg>",
+		"how several things relate",
+		"currentColor",
+		// Sized in viewBox units and set to full width: the model cannot know
+		// how wide the panel is, and unsized <text> renders at 16px whatever
+		// the scale and overflows the drawing.
+		"width=\"100%\"",
+		"font-size",
+		// A drawing is not a decoration.
+		"one fact, one number",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("system prompt is missing %q:\n%s", want, got)
+		}
+	}
+	// The kinds of thing worth drawing are examples inside the condition. The
+	// named subjects of any one drawing must not become the trigger.
+	for _, reject := range []string{"flowchart", "architecture diagram", "org chart", "mermaid"} {
+		if strings.Contains(got, reject) {
+			t.Errorf("prompt hardcodes the case %q instead of the principle:\n%s", reject, got)
+		}
+	}
+}

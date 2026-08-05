@@ -134,6 +134,7 @@ func BuildWithReport(surface Surface, scope Scope, desk Desk) (string, Loaded) {
 	b.WriteString(capability())
 	b.WriteString(fileEditing())
 	b.WriteString(batchWork())
+	b.WriteString(drawing())
 	b.WriteString(narration())
 	b.WriteString(clarify())
 	if direction := strings.TrimSpace(desk.Direction); direction != "" {
@@ -302,6 +303,34 @@ func batchWork() string {
 		"costs one round for any list length. Spot-check a result or two afterwards instead of verifying " +
 		"every item with its own call. Stay with individual tool calls when items genuinely need separate " +
 		"judgment — code edits that differ per file are per-item work, not batch work.\n"
+}
+
+// drawing tells the model that the answer surface can render a picture, and
+// what kind of question a picture actually answers.
+//
+// The capability was already there and unused: the chat renders markdown
+// through DOMPurify, which passes SVG and strips scripts and handlers, so an
+// <svg> in an answer has always drawn. Nothing said so, so nothing ever drew.
+//
+// Written as the one condition where a picture wins — the answer is about how
+// several things relate — rather than as a list of occasions to draw. A list
+// of occasions produces drawings on the occasions and prose everywhere else,
+// including the places where three boxes and two arrows would have ended the
+// conversation. The size limit is the same reasoning as batchWork: every path
+// in the drawing is output tokens, paid on the turn that makes it.
+func drawing() string {
+	return "Your answer is rendered as markdown, and inline <svg> in it is drawn. When what you are " +
+		"explaining is how several things relate — an order, a split, what feeds what, before against " +
+		"after — draw it instead of describing it. A reader gets a shape in one look and a paragraph in " +
+		"four sentences.\n" +
+		"Keep it small: a viewBox, a dozen shapes at most, no gradients or filters. Size everything in " +
+		"viewBox units and set width=\"100%\", because you do not know how wide the panel is. Use " +
+		"fill=\"currentColor\" and var(--text-secondary)/var(--border-default)/var(--surface-raised) for " +
+		"colour — the user's theme decides the palette, and a hardcoded #333 disappears on half of them. " +
+		"Put every <text> at a real font-size in viewBox units; text with no size renders at 16px " +
+		"regardless of scale and overflows the drawing.\n" +
+		"A drawing is not a decoration. Do not draw the shape of an answer that is one fact, one number, " +
+		"or one instruction — say it.\n"
 }
 
 // narration asks for the one line per tool round that the timeline shows as

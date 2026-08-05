@@ -529,6 +529,21 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   border-radius:var(--r-md); border:1px solid var(--border-subtle);
   margin:4px 6px 4px 0; background:var(--surface-sunken);
 }
+/* A drawing in an answer (internal/prompt's `drawing` layer). Not styled like
+   an image: it is part of the sentence around it, drawn in the theme's own
+   colours rather than pasted in as a picture with its own frame and
+   background. `color` is what makes fill="currentColor" land on the body tone
+   the paragraphs above it already use.
+   The height cap is the one thing it shares with an image — a model that
+   writes viewBox="0 0 100 4000" must not push the reply off the screen. */
+.markdown-body svg {
+  display:block; max-width:100%; height:auto; max-height:420px;
+  margin:12px 0; color:var(--text-secondary);
+}
+/* A <p> wrapping only a drawing is markdown's doing, not the model's — it must
+   not add a paragraph's leading on top of the drawing's own margin. */
+.markdown-body p > svg:only-child { margin:0; }
+.markdown-body p:has(> svg:only-child) { margin:12px 0; }
 /* Several images in one paragraph = a gallery row: cap each to roughly a
    third of the bubble so 2–3 sit side by side instead of stacking full-size.
    (:only-child keeps a lone image at the larger single-image size above.) */
