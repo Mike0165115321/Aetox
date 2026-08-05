@@ -52,12 +52,7 @@ Thumbs.db
 # drafts and pre-implementation survey notes: they mix vision with roadmap, and
 # a stranger reading them cannot tell which parts shipped. They stay on disk —
 # ARCHITECTURE.md is where anything settled gets restated.
-/AETOX.md
-/Aetox Desktop.md
 /HANDOFF.md
-/MCP-SUPPORT-PLAN.md
-/SETTINGS-PARITY-PLAN.md
-/WINDMILL-AUTOMATION.md
 
 # โน้ตอ่านโครงสร้างภายในของซอฟต์แวร์ตัวอื่นแบบเจาะลึก (owner, 2026-08-02).
 # ต่างจาก docs/competitor-research.md ที่เทียบความสามารถระดับหัวข้อและเผยแพร่ได้:
