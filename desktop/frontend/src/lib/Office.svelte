@@ -133,6 +133,11 @@
         {/if}
       </div>
       <p class="page-note">{t('office.hiringNote')}</p>
+      <!-- Where the rest of them are. This page is the roster — who takes work
+           and what they have done — and it is not every profile the engine
+           runs: the assistant's own delegates never sit here. Saying so is what
+           keeps two pages from reading as one list that disagrees with itself. -->
+      <p class="page-note">{t('office.settingsNote')}</p>
 
       <div class="eyebrow section-label">{t('office.feed')}</div>
       <div class="settings-card">

@@ -26,7 +26,7 @@
     UsageStats, ListPromptPresets, OpenPromptsFolder,
     SavePromptPreset, DeletePromptPreset, PickPresetImage, RemovePresetImage,
     ListSubagentProfiles, ReadSubagentProfile, SaveSubagentProfile,
-    DeleteSubagentProfile, SetSubagentModel, OpenSubagentsFolder,
+    DeleteSubagentProfile, SetSubagentModel, OpenSubagentsFolder, ListChairs,
     SignInMethods, SignInStatus, StartSignIn, CancelSignIn, ImportableSignIns,
     AppVersion, CheckForUpdate,
     LearningEnabled, SetLearningEnabled, ListPendingChanges, ListDecidedChanges,
@@ -1129,6 +1129,11 @@
   // and carries a badge saying so, because deleting it reverts rather than removes.
   const mySubagents = $derived(subagents.filter((a) => !a.builtin))
   const builtinSubagents = $derived(subagents.filter((a) => a.builtin))
+  // Which of these also stand in the office. Three of the six do, and until the
+  // page said so the other three read as missing from a roster they were never
+  // on — the same profile shown twice with no rule stated, which is how two
+  // pages start drifting into two answers.
+  let chairNames = $state(new Set<string>())
   // null = the list. Anything else = the editor on that profile's raw file.
   let agentEditing = $state<SubagentRow | null>(null)
   let agentDraftName = $state('')
@@ -1154,6 +1159,15 @@
 
   async function loadAgents() {
     subagents = await ListSubagentProfiles()
+    // Asked, not worked out from the profile's `desk`. Which profiles sit in
+    // the office is decided in one place (ListChairs), and a second reading of
+    // the same rule here is a second answer waiting to disagree with the page
+    // that actually draws the roster.
+    try {
+      chairNames = new Set((await ListChairs()).map((c) => c.name))
+    } catch {
+      chairNames = new Set() // engine not up: rows just carry no room label
+    }
     try {
       agentModels = await ListModelsForProvider(cockpit.model.provider)
     } catch {
@@ -2309,6 +2323,15 @@
                 <div class="set-txt">
                   <div class="t">
                     {a.name}
+                    <!-- Which room this one is in. The office page draws the
+                         chairs and this page configures every profile, so the
+                         same three appear on both — and without this the other
+                         three read as agents that went missing. -->
+                    {#if chairNames.has(a.name)}
+                      <span class="tag ag-chair" title={t('settings.agentIsChairTip')}>{t('settings.agentIsChair')}</span>
+                    {:else}
+                      <span class="tag" title={t('settings.agentIsDelegateTip')}>{t('settings.agentIsDelegate')}</span>
+                    {/if}
                     {#if a.overrides}<span class="tag ag-override">{t('settings.agentOverrides')}</span>{/if}
                     {#if a.model}<span class="tag">{a.model}</span>{/if}
                     <span class="tag" title={toolBadgeTip(a)}>{toolBadge(a)}</span>
