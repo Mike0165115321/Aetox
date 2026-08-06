@@ -19,6 +19,7 @@
     ProviderWireFormats, TestProviderConnection,
     EnabledProviders, SetProviderEnabled,
     ListMCPServers, SaveMCPServer, RemoveMCPServer, TestMCPServer, ToggleMCPServer,
+    MCPTargets, SetMCPServerTargets,
     ListExternalSkills, ListTools, InstallSkillFromGitHub, RemoveExternalSkill, RefreshSkills,
     SkillsDir, SkillScanIssues, OpenSkillsFolder, InstallSkillFromZip,
     MCPConfigPath, OpenMCPFolder,
@@ -26,7 +27,7 @@
     UsageStats, ListPromptPresets, OpenPromptsFolder,
     SavePromptPreset, DeletePromptPreset, PickPresetImage, RemovePresetImage,
     ListSubagentProfiles, ReadSubagentProfile, SaveSubagentProfile, SaveAgentProfile,
-    DeleteSubagentProfile, SetSubagentModel, OpenSubagentsFolder, OpenAgentsFolder, ListChairs,
+    DeleteSubagentProfile, SetSubagentModel, OpenAgentsFolder, ListChairs,
     SignInMethods, SignInStatus, StartSignIn, CancelSignIn, ImportableSignIns,
     AppVersion, CheckForUpdate,
     LearningEnabled, SetLearningEnabled, ListPendingChanges, ListDecidedChanges,
@@ -515,8 +516,20 @@
     environment?: Record<string, string>; headers?: Record<string, string>
     cwd?: string; timeoutMs?: number
     disabled: boolean; status: string; tools: number; err?: string
+    // Who carries this server's tools. Absent from the row means the engine
+    // sent nothing, which is not the same as "nobody" — treated as [] here and
+    // shown as attached nowhere.
+    for?: string[]
   }
+  type MCPTargetRow = { id: string; name: string; kind: string }
   let mcpServers = $state<MCPRow[]>([])
+  // Everywhere a server can be pointed, from the engine — the desks and the
+  // team that actually exist. Not a list typed in here, so hiring an agent
+  // puts it on these switches without this page being edited.
+  let mcpTargets = $state<MCPTargetRow[]>([])
+  // Which row is expanded. One at a time: the switches are the reason to open
+  // a row, and two rows open at once turns a register into a wall.
+  let mcpOpen = $state('')
   let mcpQuery = $state('')
   let mcpBusy = $state('')
   let mcpError = $state('')
@@ -556,7 +569,21 @@
   async function loadMCP() {
     mcpServers = await ListMCPServers()
     mcpPath = await MCPConfigPath()
+    mcpTargets = await MCPTargets()
   }
+
+  const mcpTargetsOf = (s: MCPRow) => s.for ?? []
+  const mcpServesNobody = (s: MCPRow) => mcpTargetsOf(s).length === 0
+
+  // Flipping one switch sends the whole list back, because that is what the
+  // engine stores — a per-target call would need the engine to merge, and two
+  // places deciding what the list is now is how one of them ends up wrong.
+  const toggleMCPTarget = (s: MCPRow, id: string) => runMCP('target:' + s.name + ':' + id, async () => {
+    const current = mcpTargetsOf(s)
+    const next = current.includes(id) ? current.filter((x) => x !== id) : [...current, id]
+    await SetMCPServerTargets(s.name, next)
+    await loadMCP()
+  })
 
   async function runMCP(label: string, fn: () => Promise<void>) {
     mcpBusy = label
@@ -1597,9 +1624,9 @@
     { group: t('settings.groupModels'), items: [
       { id: 'models', label: t('settings.modelSettings'), icon: 'brain',
         terms: [t('settings.providers'), t('settings.apiKeyLabel'), t('settings.baseUrl'), t('settings.signInLabel'), t('settings.modelList')] },
-      { id: 'team', label: t('desk.office'), icon: 'bot',
-        terms: [t('settings.teamNew'), t('settings.agentConfigure')] },
-      { id: 'agents', label: t('settings.subagents'), icon: 'plugZap',
+      { id: 'team', label: t('settings.team'), icon: 'userRound',
+        terms: [t('settings.teamNew'), t('settings.agentConfigure'), t('desk.office')] },
+      { id: 'agents', label: t('settings.subagents'), icon: 'bot',
         terms: [t('settings.subagentsMine'), t('settings.subagentsBuiltin')] },
     ]},
     { group: t('settings.groupTools'), items: [
@@ -1697,56 +1724,73 @@
       {#if a.invalid}<div class="d ag-invalid">{a.invalid}</div>{/if}
       <div class="d mono-dim">{a.path || 'built-in:' + a.name}</div>
     </div>
-    <select
-      class="ctrl" value={a.model ?? ''} disabled={agentBusy !== ''}
-      onchange={(e) => pinModel(a.name, e.currentTarget.value)}
-    >
-      <option value="">{t('settings.agentModelInherit')}</option>
-      {#each agentModels as m}<option value={m}>{m}</option>{/each}
-      {#if a.model && !agentModels.includes(a.model)}<option value={a.model}>{a.model}</option>{/if}
-    </select>
-    <button class="ctrl" disabled={agentBusy !== ''} onclick={() => openAgent(a, kind)}>{t('settings.agentConfigure')}</button>
+    <!-- Only an agent takes edits — a helper is part of the system, so its row
+         carries no model pin and no way into the editor. -->
+    {#if kind === 'agent'}
+      <select
+        class="ctrl" value={a.model ?? ''} disabled={agentBusy !== ''}
+        onchange={(e) => pinModel(a.name, e.currentTarget.value)}
+      >
+        <option value="">{t('settings.agentModelInherit')}</option>
+        {#each agentModels as m}<option value={m}>{m}</option>{/each}
+        {#if a.model && !agentModels.includes(a.model)}<option value={a.model}>{a.model}</option>{/if}
+      </select>
+      <button class="ctrl" disabled={agentBusy !== ''} onclick={() => openAgent(a, kind)}>{t('settings.agentConfigure')}</button>
+    {/if}
   </div>
 {/snippet}
 
 {#snippet profileListPane(kind: 'agent' | 'helper')}
   {@const isAgent = kind === 'agent'}
   {@const rows = isAgent ? teamRows : helperRows}
-  <h2>{isAgent ? t('desk.office') : t('settings.subagents')}</h2>
+  <h2>{isAgent ? t('settings.team') : t('settings.subagents')}</h2>
   <p class="muted set-sub">{isAgent ? t('settings.teamDesc') : t('settings.subagentsDesc')}</p>
 
-  <div class="pp-bar">
-    <button class="ctrl" onclick={() => newAgent(kind)}>{isAgent ? t('settings.teamNew') : t('settings.agentNew')}</button>
-    <button class="ctrl" onclick={() => loadAgents()}>{t('settings.refresh')}</button>
-    <button class="ctrl" onclick={() => (isAgent ? OpenAgentsFolder() : OpenSubagentsFolder())}>{t('settings.agentsFolder')}</button>
-    <!-- The roster with its job history and its chat doors is a page of its
-         own; this one configures. Said out loud rather than left for the user
-         to discover, because two places holding one kind of thing is exactly
-         what needs a stated rule. -->
-    {#if isAgent}
+  {#if isAgent}
+    <div class="pp-bar">
+      <button class="ctrl" onclick={() => newAgent(kind)}>{t('settings.teamNew')}</button>
+      <button class="ctrl" onclick={() => loadAgents()}>{t('settings.refresh')}</button>
+      <button class="ctrl" onclick={() => OpenAgentsFolder()}>{t('settings.agentsFolder')}</button>
+      <!-- The roster with its job history and its chat doors is a page of its
+           own; this one configures. Said out loud rather than left for the user
+           to discover, because two places holding one kind of thing is exactly
+           what needs a stated rule. -->
       <div class="pp-bar-gap"></div>
       <button class="ctrl" onclick={() => setActiveView('office')}>{t('settings.teamOpenPage')} <Icon name="arrowRight" size={13} /></button>
-    {/if}
-  </div>
+    </div>
+  {/if}
   {#if agentError}<div class="mset-error">{agentError}</div>{/if}
 
-  <!-- Two cards, split by who wrote it — the question this page is actually
-       asked. Built-ins are second because a fresh install has only those and
-       the interesting list is the one you grow. -->
-  {#each [{ id: 'mine', rows: rows.mine, label: t('settings.subagentsMine'), hint: isAgent ? t('settings.teamMineHint') : t('settings.subagentsMineHint') },
-          { id: 'builtin', rows: rows.builtin, label: t('settings.subagentsBuiltin'), hint: t('settings.subagentsBuiltinHint') }] as group (group.id)}
+  {#if isAgent}
+    <!-- Two cards, split by who wrote it — the question this page is actually
+         asked. Built-ins are second because a fresh install has only those and
+         the interesting list is the one you grow. -->
+    {#each [{ id: 'mine', rows: rows.mine, label: t('settings.subagentsMine'), hint: t('settings.teamMineHint') },
+            { id: 'builtin', rows: rows.builtin, label: t('settings.subagentsBuiltin'), hint: t('settings.subagentsBuiltinHint') }] as group (group.id)}
+      <div class="settings-card">
+        <div class="card-form">
+          <div class="eyebrow">{group.label} <span class="ag-count">{group.rows.length}</span></div>
+          <div class="d muted">{group.hint}</div>
+        </div>
+        {#if group.rows.length === 0}
+          <div class="set-row"><div class="muted">{t('settings.teamNoneOfMine')}</div></div>
+        {/if}
+        {#each group.rows as a (a.name)}{@render profileRow(a, kind)}{/each}
+      </div>
+    {/each}
+    <p class="muted set-sub">{t('settings.agentsHint')}</p>
+  {:else}
+    <!-- The helpers are part of the system (owner's call, 2026-08-06): the
+         bundled three are the whole set, so this page reads — no create, no
+         editor, no per-row model pin. One card, because "yours" cannot exist. -->
     <div class="settings-card">
       <div class="card-form">
-        <div class="eyebrow">{group.label} <span class="ag-count">{group.rows.length}</span></div>
-        <div class="d muted">{group.hint}</div>
+        <div class="eyebrow">{t('settings.subagentsBuiltin')} <span class="ag-count">{rows.builtin.length}</span></div>
+        <div class="d muted">{t('settings.helpersFixedHint')}</div>
       </div>
-      {#if group.rows.length === 0}
-        <div class="set-row"><div class="muted">{isAgent ? t('settings.teamNoneOfMine') : t('settings.subagentsNoneOfMine')}</div></div>
-      {/if}
-      {#each group.rows as a (a.name)}{@render profileRow(a, kind)}{/each}
+      {#each rows.builtin as a (a.name)}{@render profileRow(a, kind)}{/each}
     </div>
-  {/each}
-  <p class="muted set-sub">{t('settings.agentsHint')}</p>
+  {/if}
 {/snippet}
 
 <!-- One editor for both kinds. Which kind it is holding was decided by the
@@ -3002,15 +3046,33 @@
           <div class="set-row"><div class="muted">{t('settings.noMcpServers')}</div></div>
         {:else}
           {#each mcpFiltered as s (s.name)}
-            <div class="set-row" class:mcp-off={s.disabled}>
-              <div class="set-txt">
-                <div class="t">
-                  <span class="dot" style={statusVar(s.status)}></span> {s.name}
-                  <span class="mcp-badge">{s.url ? 'http' : 'stdio'}</span>
-                  {#if s.tools > 0}<span class="mcp-badge">{t('settings.mcpToolCount', { n: String(s.tools) })}</span>{/if}
-                </div>
-                <div class="d">{s.url || (s.command ?? []).join(' ')}{s.err ? ' · ' + s.err : ''}</div>
-              </div>
+            <div class="set-row mcp-entry" class:mcp-off={s.disabled}>
+              <!-- The row is the register entry: the header says who this
+                   server is and who it serves, and opening it reveals the
+                   switches. A server connected but pointed at nobody is the
+                   state worth calling out — it works and reaches no one. -->
+              <button
+                class="mcp-head"
+                aria-expanded={mcpOpen === s.name}
+                onclick={() => (mcpOpen = mcpOpen === s.name ? '' : s.name)}
+              >
+                <span class="mcp-caret" class:open={mcpOpen === s.name}>›</span>
+                <span class="set-txt">
+                  <span class="t">
+                    <span class="dot" style={statusVar(s.status)}></span> {s.name}
+                    <span class="mcp-badge">{s.url ? 'http' : 'stdio'}</span>
+                    {#if s.tools > 0}<span class="mcp-badge">{t('settings.mcpToolCount', { n: String(s.tools) })}</span>{/if}
+                    {#if !s.disabled}
+                      <span class="mcp-badge" class:mcp-badge-warn={mcpServesNobody(s)}>
+                        {mcpServesNobody(s)
+                          ? t('settings.mcpForNobody')
+                          : t('settings.mcpForCount', { n: String(mcpTargetsOf(s).length) })}
+                      </span>
+                    {/if}
+                  </span>
+                  <span class="d">{s.url || (s.command ?? []).join(' ')}{s.err ? ' · ' + s.err : ''}</span>
+                </span>
+              </button>
               <div class="mcp-row-actions">
                 <label class="mswitch" title={s.disabled ? t('settings.add') : ''}>
                   <input type="checkbox" checked={!s.disabled} disabled={mcpBusy !== ''} onchange={() => toggleMCP(s)} />
@@ -3022,6 +3084,31 @@
                 <button class="ctrl" disabled={mcpBusy !== ''} onclick={() => editMCP(s)}>{t('settings.edit')}</button>
                 <button class="ctrl ctrl-danger" disabled={mcpBusy !== ''} onclick={() => removeMCP(s.name)}>{t('settings.remove')}</button>
               </div>
+
+              {#if mcpOpen === s.name}
+                <div class="mcp-targets">
+                  <div class="d muted mcp-targets-hint">{t('settings.mcpForHint')}</div>
+                  {#each ['desk', 'agent'] as kind}
+                    {@const rows = mcpTargets.filter((x) => x.kind === kind)}
+                    {#if rows.length > 0}
+                      <div class="eyebrow mcp-targets-group">
+                        {kind === 'desk' ? t('settings.mcpForDesks') : t('settings.mcpForAgents')}
+                      </div>
+                      {#each rows as target (target.id)}
+                        <label class="mcp-target">
+                          <input
+                            type="checkbox"
+                            checked={mcpTargetsOf(s).includes(target.id)}
+                            disabled={mcpBusy !== '' || s.disabled}
+                            onchange={() => toggleMCPTarget(s, target.id)}
+                          />
+                          <span>{target.name}</span>
+                        </label>
+                      {/each}
+                    {/if}
+                  {/each}
+                </div>
+              {/if}
             </div>
           {/each}
         {/if}
@@ -3050,6 +3137,9 @@
           {:else}
             <textarea class="ctrl mcp-lines" rows="2" placeholder={t('settings.mcpHeadersPlaceholder')} bind:value={mcpHeadersText}></textarea>
           {/if}
+          <!-- Said where the key would otherwise be typed. A safer way to write
+               something is worth nothing if it is only in the docs. -->
+          <div class="d muted">{t('settings.mcpSecretHint')}</div>
 
           <!-- Both fields the stored config always had and the form never
                offered. Folded away because the common server needs neither. -->

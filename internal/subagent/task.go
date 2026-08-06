@@ -307,6 +307,21 @@ func (t *taskTool) ExecuteTool(ctx context.Context, args map[string]any) (skill.
 	if len(childRegistry.Names()) == 0 {
 		return t.fail(label, started, fmt.Sprintf("sub-agent %q was left with no tools at all", profile.Name))
 	}
+	// MCP servers register into the parent in the background, so a dispatch in
+	// the seconds after a launch or a settings change can copy a snapshot taken
+	// before the connect landed. The agent would then accept the brief, work
+	// without the tool it was given for the job, and hand back something that
+	// looks like an answer — the failure mode that costs the most to diagnose,
+	// because it only happens sometimes and leaves no trace.
+	//
+	// Refuse instead, naming the server and saying it is a retry. The model can
+	// read that and either wait or tell the user, and the same job succeeds a
+	// moment later.
+	if missing := missingAgentServers(t.opts.Registry, profile); len(missing) > 0 {
+		return t.fail(label, started, fmt.Sprintf(
+			"the MCP server(s) %s that %s works with have not finished connecting yet — start this job again in a moment",
+			strings.Join(missing, ", "), profile.Name))
+	}
 
 	childModel := t.opts.Model
 	if profile.Model != "" {

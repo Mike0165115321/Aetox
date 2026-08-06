@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Mike0165115321/Aetox/internal/debuglog"
 )
 
 // setTestDataRoot isolates a test to its own directory via AETOX_DATA_ROOT
@@ -216,5 +218,33 @@ func TestSanitizeCommand_ReturnsTrimmed(t *testing.T) {
 	result := sanitizeCommand("  echo hello  ")
 	if result != "echo hello" {
 		t.Fatalf("expected %q got %q", "echo hello", result)
+	}
+}
+
+// A command line is one of the likeliest places a credential appears in the
+// clear, and this log is append-only and never rotated: what lands here stays.
+func TestShellAuditRedactsRegisteredSecrets(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+	const key = "sk-1b63c2055de84ff7ac209a5fd53823fd"
+	debuglog.Redact(key)
+
+	if err := WriteShell(ShellEntry{Command: `curl -H "Authorization: Bearer ` + key + `" https://api.example.com`}); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	path, err := ShellAuditLogPath()
+	if err != nil {
+		t.Fatalf("path: %v", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if strings.Contains(string(raw), key) {
+		t.Fatalf("the key was written to the audit log:\n%s", raw)
+	}
+	// The command still has to be recognisable — an audit log that hides which
+	// command ran has stopped being an audit log.
+	if !strings.Contains(string(raw), "curl") {
+		t.Errorf("the entry lost its shape instead of being redacted:\n%s", raw)
 	}
 }

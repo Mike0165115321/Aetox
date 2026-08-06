@@ -376,7 +376,7 @@ func convertToolChoiceToAnthropic(choice string) *anthropicToolChoice {
 // and depth comes from output_config.effort (low → max). The older
 // {"type":"enabled","budget_tokens":N} form is a 400 on every current model, so
 // a think level maps to an effort string and never to a token count.
-func convertThinkingToAnthropic(model string, thinking *ThinkingConfig, reasoning *ReasoningConfig) (*anthropicThinking, *anthropicOutputConfig) {
+func convertThinkingToAnthropic(provider, model string, thinking *ThinkingConfig, reasoning *ReasoningConfig) (*anthropicThinking, *anthropicOutputConfig) {
 	off := thinking != nil && strings.EqualFold(strings.TrimSpace(thinking.Type), "disabled")
 	if thinking == nil && reasoning == nil {
 		off = true
@@ -392,34 +392,31 @@ func convertThinkingToAnthropic(model string, thinking *ThinkingConfig, reasonin
 	}
 
 	block := &anthropicThinking{Type: "adaptive", Display: "summarized"}
-	effort := anthropicEffort(reasoning)
+	effort := anthropicEffort(provider, model, reasoning)
 	if effort == "" {
 		return block, nil
 	}
 	return block, &anthropicOutputConfig{Effort: effort}
 }
 
-// anthropicEffort maps Aetox's think level onto the API's effort ladder. The
-// names line up one for one except Aetox's "none"/"minimal", which have no
-// Anthropic equivalent and land on the nearest real level.
-func anthropicEffort(reasoning *ReasoningConfig) string {
+// anthropicEffort asks the capability table what this provider and model call
+// the requested level on the wire.
+//
+// It used to be a switch of its own, which is how DeepSeek — a borrower of this
+// wire format, not Anthropic — ended up being sent effort names decided by
+// Anthropic's ladder. The switch knew `medium` and `xhigh`, which DeepSeek's
+// picker could never produce, and did not know `ultra`, which DeepSeek accepts;
+// a level it did not recognise fell through to "" and quietly became the
+// provider's own default, so asking for more thinking could get you less.
+func anthropicEffort(provider, model string, reasoning *ReasoningConfig) string {
 	if reasoning == nil {
 		return ""
 	}
-	switch strings.ToLower(strings.TrimSpace(reasoning.Effort)) {
-	case "none", "minimal", "low":
-		return "low"
-	case "medium", "default":
-		return "medium"
-	case "high":
-		return "high"
-	case "xhigh":
-		return "xhigh"
-	case "max":
-		return "max"
-	default:
+	effort, ok := WireEffort(provider, model, reasoning.Effort)
+	if !ok {
 		return ""
 	}
+	return effort
 }
 
 // anthropicThinkingAlwaysOn reports the models that reject {"type":"disabled"}.
@@ -439,7 +436,7 @@ func buildAnthropicRequest(provider, model string, req Request, stream bool) (an
 		maxTokens = defaultAnthropicMaxTokens
 	}
 
-	thinking, outputConfig := convertThinkingToAnthropic(model, req.Thinking, req.Reasoning)
+	thinking, outputConfig := convertThinkingToAnthropic(provider, model, req.Thinking, req.Reasoning)
 
 	// Sampling parameters are gone from current Claude models: temperature,
 	// top_p and top_k are rejected outright, and even where temperature is

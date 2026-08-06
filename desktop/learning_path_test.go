@@ -198,8 +198,10 @@ func TestADelegatesProposalIsFiledUnderTheDelegate(t *testing.T) {
 		if c.Scope != "general" {
 			t.Errorf("proposal scope = %q, want the profile that ran", c.Scope)
 		}
-		if !strings.Contains(filepath.ToSlash(c.Target), "memory/agents/") {
-			t.Errorf("a delegate's memory must land in its own file, got %q", c.Target)
+		// Its own folder since 2026-08-06 — one agent is one folder, and its
+		// memory is part of what it is (config.AgentMemoryPath).
+		if !strings.Contains(filepath.ToSlash(c.Target), "agents/general/MEMORY.md") {
+			t.Errorf("a delegate's memory must land in its own folder, got %q", c.Target)
 		}
 	}
 	if got := learned.Read(learned.MainScope); got != "" {

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mike0165115321/Aetox/internal/debuglog"
 )
 
 type ShellEntry struct {
@@ -61,6 +62,16 @@ func WriteShell(entry ShellEntry) error {
 	return nil
 }
 
+// sanitizeCommand is the last thing between a shell command and a file that
+// outlives the session. A command line is one of the likeliest places a
+// credential appears in the clear — `curl -H "Authorization: Bearer …"`, a
+// token passed as a flag, a key echoed into a config — and this log is append
+// only and never rotated, so anything that lands here stays.
+//
+// The registry is debuglog's because it is already the one place secrets are
+// registered (config.LoadCredentials, config.Load). A second list kept here
+// would drift, and the drift would stay invisible until someone read the file
+// it failed on.
 func sanitizeCommand(command string) string {
-	return strings.TrimSpace(command)
+	return debuglog.Scrub(strings.TrimSpace(command))
 }

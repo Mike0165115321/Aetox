@@ -133,6 +133,8 @@ export function ListSessions():Promise<Array<main.SessionMeta>>;
 
 export function ListSessionsAt(arg1:string):Promise<Array<main.SessionMeta>>;
 
+export function ListSessionsForDoor(arg1:main.DeskFilter):Promise<Array<main.SessionMeta>>;
+
 export function ListSkills():Promise<Array<main.SkillInfo>>;
 
 export function ListSpeechModels():Promise<Array<main.SpeechModelInfo>>;
@@ -148,6 +150,8 @@ export function LoadSession(arg1:string):Promise<Array<main.SessionMessage>>;
 export function LoadSessionAnyProject(arg1:string):Promise<Array<main.SessionMessage>>;
 
 export function MCPConfigPath():Promise<string>;
+
+export function MCPTargets():Promise<Array<main.MCPTarget>>;
 
 export function ModelStatus():Promise<string>;
 
@@ -259,6 +263,8 @@ export function SearchAllSessions(arg1:string):Promise<Array<main.SessionMeta>>;
 
 export function SearchSessions(arg1:string):Promise<Array<main.SessionMeta>>;
 
+export function SearchSessionsForDoor(arg1:string,arg2:main.DeskFilter):Promise<Array<main.SessionMeta>>;
+
 export function SendMessage(arg1:string):Promise<main.TurnReply>;
 
 export function SessionAgent(arg1:string):Promise<string>;
@@ -268,6 +274,8 @@ export function SessionMode(arg1:string):Promise<string>;
 export function SetAPIKey(arg1:string,arg2:string):Promise<main.ModelInfo>;
 
 export function SetLearningEnabled(arg1:boolean):Promise<void>;
+
+export function SetMCPServerTargets(arg1:string,arg2:Array<string>):Promise<void>;
 
 export function SetProviderBaseURL(arg1:string,arg2:string):Promise<main.ModelInfo>;
 
@@ -288,8 +296,6 @@ export function SignInMethods():Promise<Array<oauth.Method>>;
 export function SignInStatus(arg1:string):Promise<oauth.Status>;
 
 export function SignOut(arg1:string):Promise<main.ModelInfo>;
-
-export function SignedInProviders():Promise<Array<string>>;
 
 export function SkillScanIssues():Promise<Array<string>>;
 
@@ -314,6 +320,8 @@ export function SwitchProvider(arg1:string):Promise<main.ModelInfo>;
 export function SwitchThinkLevel(arg1:string):Promise<main.ModelInfo>;
 
 export function SwitchVariant(arg1:number):Promise<main.RegenerateResult>;
+
+export function TerminalAttach(arg1:string):Promise<string>;
 
 export function TerminalClose(arg1:string):Promise<void>;
 
@@ -340,6 +348,8 @@ export function UndoLastTurn():Promise<main.UndoResult>;
 export function UsageStats():Promise<main.UsageStats>;
 
 export function UserName():Promise<string>;
+
+export function WorkbenchTabsChanged(arg1:Array<main.DeskTab>):Promise<void>;
 
 export function WorkspaceFolders():Promise<Array<main.WorkspaceFolder>>;
 

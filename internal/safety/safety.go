@@ -66,6 +66,21 @@ type PermissionRule struct {
 	Tool    string           `json:"tool"`
 	Pattern string           `json:"pattern"`
 	Action  PermissionAction `json:"action"`
+	// Default marks a rule the app generated rather than the user writing it —
+	// today, the "ask before anything from this MCP server" rule that bootstrap
+	// attaches per configured server.
+	//
+	// It exists because those two kinds of rule must lose differently. A rule
+	// the user wrote is their decision and outranks everything, mode included.
+	// A default is the app's opening position, and it must not outrank the mode
+	// the user then went and chose: full access says "รับทุกอย่างโดยไม่ถาม" on
+	// the card the user clicks, and an app-generated ask that survives it makes
+	// that sentence false (found 2026-08-06 — full access, and every MCP call
+	// still opened a dialog).
+	//
+	// Not persisted: a rule read back from the user's permissions file is by
+	// definition the user's, so the zero value is the right one for it.
+	Default bool `json:"-"`
 }
 
 // PermissionConfig is an ordered list of rules; the last matching rule wins,
@@ -77,7 +92,17 @@ type PermissionConfig struct {
 // Resolve returns the action of the last rule matching toolName+args, and
 // whether any rule matched at all. Callers should fall back to
 // ShouldPrompt/ApprovalMode when matched is false.
+//
+// ResolveRule is the same answer with the winning rule attached, for the one
+// caller that needs to know whether the match was the app's default or the
+// user's own decision.
 func (c PermissionConfig) Resolve(toolName string, args []string) (action PermissionAction, matched bool) {
+	rule, matched := c.ResolveRule(toolName, args)
+	return NormalizePermissionAction(string(rule.Action)), matched
+}
+
+// ResolveRule returns the last rule matching toolName+args.
+func (c PermissionConfig) ResolveRule(toolName string, args []string) (winner PermissionRule, matched bool) {
 	tool := strings.ToLower(strings.TrimSpace(toolName))
 	joinedArgs := strings.ToLower(strings.TrimSpace(strings.Join(args, " ")))
 	for _, rule := range c.Rules {
@@ -95,9 +120,10 @@ func (c PermissionConfig) Resolve(toolName string, args []string) (action Permis
 		if !globMatch(pattern, joinedArgs) {
 			continue
 		}
-		action, matched = normalized, true
+		rule.Action = normalized
+		winner, matched = rule, true
 	}
-	return action, matched
+	return winner, matched
 }
 
 // globMatch reports whether s matches pattern, where "*" matches any
@@ -184,6 +210,30 @@ func AssessCommand(skillName string, args []string) Assessment {
 			Effects:   nil,
 			Reason:    "no recognized command",
 		}
+	}
+
+	// desk_terminal types its argument into a real shell on the user's desk and
+	// presses enter. That is `shell` with an audience, so it is assessed as
+	// shell and reaches every gate shell reaches. Letting it fall through to the
+	// catch-all below would have made it a second, quieter way to run any
+	// command — the exact failure the sheet_write note further down describes,
+	// with a worse blast radius.
+	if skillName == "desk_terminal" {
+		if len(args) == 0 {
+			// No command — an empty terminal, opened for the user to type into
+			// themselves. Nothing runs until they do, and what they then type is
+			// theirs, not the agent's. Falling through to the shell branch here
+			// would assess it as "shell with an empty command", which is high
+			// risk by design and would put a prompt in front of opening a window.
+			return Assessment{
+				SkillName: "desk_terminal",
+				Risk:      RiskLow,
+				Reason:    "opens an empty terminal; nothing runs until the user types",
+			}
+		}
+		assessed := AssessCommand("shell", args)
+		assessed.SkillName = "desk_terminal"
+		return assessed
 	}
 
 	if skillName != "shell" {

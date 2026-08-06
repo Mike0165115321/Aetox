@@ -216,3 +216,76 @@ func TestOpenSandboxRefusesCredentialStores(t *testing.T) {
 		t.Errorf("open sandbox refused an ordinary home file: %v", err)
 	}
 }
+
+// The denylist used to name `.aetox` and believe it covered Aetox's own data
+// root. It did not — on every platform the data root comes from
+// os.UserConfigDir (%APPDATA%\aetox, ~/.config/aetox, ~/Library/Application
+// Support/aetox) and `.aetox` is the skills folder. So the file holding the
+// user's model API keys was readable by every file tool, in the mode that roams
+// the machine, in a loop that also holds web_fetch and browser_read: a page
+// could carry an instruction in and the loop could carry a key out, with no
+// approval prompt on the desktop to interrupt it (found 2026-08-06).
+func TestAetoxOwnCredentialFilesAreRefused(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("AETOX_DATA_ROOT", root)
+
+	for _, name := range []string{"credentials.json", "oauth.json", ".env", "model-preference.json", "mcp-servers.json"} {
+		if err := refuseCredentialStore(filepath.Join(root, name)); err == nil {
+			t.Errorf("%s is readable — it holds credentials and must be refused in every mode", name)
+		}
+	}
+
+	// The in-app browser's profile holds cookies and saved logins for every
+	// site signed into through it. Chrome's, Edge's, Brave's and Firefox's are
+	// already refused for exactly that; ours was not.
+	if err := refuseCredentialStore(filepath.Join(root, "webview", "browser", "Default", "Cookies")); err == nil {
+		t.Error("the in-app browser's profile is readable — four other browsers' are refused for the same content")
+	}
+
+	// By file, not by folder: the rest of the data root is Aetox explaining
+	// itself, and being able to read its own logs and memory is worth keeping.
+	for _, keep := range []string{
+		filepath.Join(root, "logs", "aetox-20260806.log"),
+		filepath.Join(root, "memory", "MEMORY.md"),
+		filepath.Join(root, "agents", "doc", "AGENT.md"),
+		filepath.Join(root, "aetox.db"),
+	} {
+		if err := refuseCredentialStore(keep); err != nil {
+			t.Errorf("%s was refused: %v — only the credential files should be shut", keep, err)
+		}
+	}
+}
+
+// A refusal that only says "no" gets relayed to the user as a limitation of the
+// product. Measured 2026-08-06: asked whether MCP was connected, the assistant
+// tried to read mcp-servers.json, was refused, and told the user it could not
+// reach its own MCP configuration — while holding that server's tools. The wall
+// was right; the silence next to it was not.
+func TestARefusedCredentialFileSaysWhereTheAnswerIs(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("AETOX_DATA_ROOT", root)
+
+	err := refuseCredentialStore(filepath.Join(root, "mcp-servers.json"))
+	if err == nil {
+		t.Fatal("mcp-servers.json must stay refused")
+	}
+	// It must point at what the model can actually do instead, or the model has
+	// nothing to offer but the obstacle.
+	for _, want := range []string{"tool list", "Settings"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not mention %q, so it reads as a dead end:\n%v", want, err)
+		}
+	}
+
+	// Every refused path says something actionable, not just this one.
+	for _, name := range []string{"credentials.json", "oauth.json", ".env", "model-preference.json", "webview"} {
+		err := refuseCredentialStore(filepath.Join(root, name))
+		if err == nil {
+			t.Errorf("%s must stay refused", name)
+			continue
+		}
+		if !strings.Contains(err.Error(), "Settings") && !strings.Contains(err.Error(), "browser tools") && !strings.Contains(err.Error(), "path") {
+			t.Errorf("%s refuses without saying what to do instead:\n%v", name, err)
+		}
+	}
+}

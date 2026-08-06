@@ -36,6 +36,7 @@ export namespace config {
 	    headers?: Record<string, string>;
 	    timeout_ms?: number;
 	    disabled?: boolean;
+	    for: string[];
 	
 	    static createFrom(source: any = {}) {
 	        return new MCPServerConfig(source);
@@ -51,6 +52,7 @@ export namespace config {
 	        this.headers = source["headers"];
 	        this.timeout_ms = source["timeout_ms"];
 	        this.disabled = source["disabled"];
+	        this.for = source["for"];
 	    }
 	}
 
@@ -209,6 +211,40 @@ export namespace main {
 	        this.cacheRows = source["cacheRows"];
 	    }
 	}
+	export class DeskFilter {
+	    desks: string[];
+	    exclude: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new DeskFilter(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.desks = source["desks"];
+	        this.exclude = source["exclude"];
+	    }
+	}
+	export class DeskTab {
+	    kind: string;
+	    name: string;
+	    path?: string;
+	    url?: string;
+	    mine: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new DeskTab(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.name = source["name"];
+	        this.path = source["path"];
+	        this.url = source["url"];
+	        this.mine = source["mine"];
+	    }
+	}
 	export class IdentityFile {
 	    name: string;
 	
@@ -230,6 +266,7 @@ export namespace main {
 	    cwd?: string;
 	    timeoutMs?: number;
 	    disabled: boolean;
+	    for: string[];
 	    status: string;
 	    tools: number;
 	    err?: string;
@@ -248,9 +285,26 @@ export namespace main {
 	        this.cwd = source["cwd"];
 	        this.timeoutMs = source["timeoutMs"];
 	        this.disabled = source["disabled"];
+	        this.for = source["for"];
 	        this.status = source["status"];
 	        this.tools = source["tools"];
 	        this.err = source["err"];
+	    }
+	}
+	export class MCPTarget {
+	    id: string;
+	    name: string;
+	    kind: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new MCPTarget(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.kind = source["kind"];
 	    }
 	}
 	export class ModelInfo {
@@ -877,6 +931,7 @@ export namespace mode {
 	    tools?: string[];
 	    deny?: string[];
 	    mcp?: string[];
+	    chairs?: string[];
 	    dispatch?: string[];
 	    prompt: string;
 	    path?: string;
@@ -895,6 +950,7 @@ export namespace mode {
 	        this.tools = source["tools"];
 	        this.deny = source["deny"];
 	        this.mcp = source["mcp"];
+	        this.chairs = source["chairs"];
 	        this.dispatch = source["dispatch"];
 	        this.prompt = source["prompt"];
 	        this.path = source["path"];
@@ -1090,6 +1146,7 @@ export namespace turn {
 	    subject?: string;
 	    agent?: string;
 	    brief?: string;
+	    agentKind?: string;
 	    ok: boolean;
 	    error?: string;
 	    secs?: number;
@@ -1108,6 +1165,7 @@ export namespace turn {
 	        this.subject = source["subject"];
 	        this.agent = source["agent"];
 	        this.brief = source["brief"];
+	        this.agentKind = source["agentKind"];
 	        this.ok = source["ok"];
 	        this.error = source["error"];
 	        this.secs = source["secs"];

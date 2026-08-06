@@ -89,32 +89,34 @@ func TestSubagentProfileBindings(t *testing.T) {
 		t.Error("unknown profile returned no error")
 	}
 
-	// Saving under a bundled name shadows it; deleting the shadow reverts.
-	if err := a.SaveSubagentProfile("explore", "---\ndescription: mine\n---\nMine.\n"); err != nil {
-		t.Fatalf("SaveSubagentProfile: %v", err)
+	// The helpers are part of the system (owner's call, 2026-08-06): both write
+	// doors refuse, and the bundled profile stays exactly as shipped.
+	if err := a.SaveSubagentProfile("explore", "---\ndescription: mine\n---\nMine.\n"); err == nil {
+		t.Fatal("SaveSubagentProfile wrote over a system helper")
 	}
-	if p, _ := subagent.Load("explore"); p.Prompt != "Mine." || p.Builtin {
-		t.Fatalf("save did not take effect: %+v", p)
+	if err := a.SetSubagentModel("explore", "aetox-grid"); err == nil {
+		t.Fatal("SetSubagentModel pinned a model onto a system helper")
 	}
-	if err := a.DeleteSubagentProfile("explore"); err != nil {
-		t.Fatalf("DeleteSubagentProfile: %v", err)
-	}
-	if p, _ := subagent.Load("explore"); !p.Builtin {
-		t.Error("deleting the shadow did not restore the bundled profile")
-	}
-
-	// The model dropdown writes a shadow rather than a second override store.
-	if err := a.SetSubagentModel("explore", "aetox-grid"); err != nil {
-		t.Fatalf("SetSubagentModel: %v", err)
+	if p, _ := subagent.Load("explore"); !p.Builtin || p.Model != "" {
+		t.Fatalf("a refused write still took effect: %+v", p)
 	}
 	dir, _ := subagent.Dir()
-	if _, err := os.Stat(filepath.Join(dir, "explore.md")); err != nil {
-		t.Fatalf("no shadow file written: %v", err)
+	if _, err := os.Stat(filepath.Join(dir, "explore.md")); !os.IsNotExist(err) {
+		t.Fatal("a refused write still left a file in the helpers' home")
 	}
-	for _, p := range a.ListSubagentProfiles() {
-		if p.Name == "explore" && p.Model != "aetox-grid" {
-			t.Errorf("model pin not listed: %+v", p)
-		}
+
+	// An agent still takes both: the team is the extensible kind.
+	if err := a.SaveAgentProfile("doc", "---\ndescription: mine\n---\nMine.\n"); err != nil {
+		t.Fatalf("SaveAgentProfile: %v", err)
+	}
+	if p, _ := subagent.Load("doc"); p.Prompt != "Mine." || !p.Overrides {
+		t.Fatalf("the agent shadow did not take effect: %+v", p)
+	}
+	if err := a.DeleteSubagentProfile("doc"); err != nil {
+		t.Fatalf("DeleteSubagentProfile: %v", err)
+	}
+	if p, _ := subagent.Load("doc"); !p.Builtin {
+		t.Error("deleting the agent's shadow did not restore the bundled profile")
 	}
 }
 

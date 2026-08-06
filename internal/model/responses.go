@@ -159,7 +159,7 @@ type responsesText struct {
 	Verbosity string `json:"verbosity,omitempty"`
 }
 
-func buildResponsesRequest(model string, req Request) (responsesRequest, error) {
+func buildResponsesRequest(provider, model string, req Request) (responsesRequest, error) {
 	instructions, input := convertMessagesToResponses(req.Messages)
 	if len(input) == 0 {
 		return responsesRequest{}, ErrNoMessages
@@ -181,7 +181,7 @@ func buildResponsesRequest(model string, req Request) (responsesRequest, error) 
 		}
 		out.ToolChoice = choice
 	}
-	if effort := normalizeStandardReasoningEffort(req.Reasoning); effort != "" {
+	if effort := responsesEffort(provider, model, req.Reasoning); effort != "" {
 		// summary:auto is what makes the model's thinking visible at all on
 		// this endpoint — without it the reasoning happens and streams nothing,
 		// and Aetox's thinking panel stays empty on a model that is thinking.
@@ -389,7 +389,7 @@ func (p *ResponsesProvider) StreamComplete(ctx context.Context, req Request, onC
 		model = p.model
 	}
 
-	payload, err := buildResponsesRequest(model, req)
+	payload, err := buildResponsesRequest(p.provider, model, req)
 	if err != nil {
 		return Response{}, err
 	}
@@ -694,4 +694,17 @@ func DiscoverResponsesModels(ctx context.Context, providerName, baseURL string, 
 		}
 	}
 	return out, nil
+}
+
+// responsesEffort reads the same capability table every other wire format
+// reads, so this endpoint's ladder cannot drift from the one the picker offers.
+func responsesEffort(provider, model string, reasoning *ReasoningConfig) string {
+	if reasoning == nil {
+		return ""
+	}
+	effort, ok := WireEffort(provider, model, reasoning.Effort)
+	if !ok {
+		return ""
+	}
+	return effort
 }

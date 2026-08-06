@@ -10,7 +10,10 @@ func TestResolveThinkingCapabilitiesDeepSeekNativeLevels(t *testing.T) {
 	if !caps.Supported || !caps.Native {
 		t.Fatalf("expected deepseek native thinking capabilities, got %+v", caps)
 	}
-	want := []string{"off", "high", "max"}
+	// The depths that behave differently, plus off. The service also accepts
+	// medium, xhigh and ultra, but folds the first two onto high itself and
+	// documents the third nowhere — they are aliases, not menu entries.
+	want := []string{"off", "low", "high", "max"}
 	if len(caps.Levels) != len(want) {
 		t.Fatalf("unexpected levels: %#v", caps.Levels)
 	}
@@ -117,6 +120,14 @@ func TestResolveThinkingCapabilitiesOpenRouterKnownReasoningFamilies(t *testing.
 	}
 }
 
+// A stored setting has to land somewhere valid, and a level DeepSeek really has
+// must survive untouched.
+//
+// `low` is the part that changed. It used to be rewritten to "high" here
+// because the picker did not offer it — a real depth of DeepSeek's, thrown
+// away, so a config asking for one depth silently got another. medium, xhigh
+// and ultra are still folded, but now for a reason that survives inspection:
+// the service folds the first two itself, and documents the third nowhere.
 func TestNormalizeThinkingLevelDeepSeekMigratesLegacyValues(t *testing.T) {
 	tests := []struct {
 		raw  string
@@ -124,10 +135,15 @@ func TestNormalizeThinkingLevelDeepSeekMigratesLegacyValues(t *testing.T) {
 	}{
 		{raw: "", want: "high"},
 		{raw: "none", want: "off"},
-		{raw: "low", want: "high"},
+		{raw: "disabled", want: "off"},
+		{raw: "minimal", want: "low"},
+		{raw: "default", want: "high"},
+		{raw: "nonsense", want: "high"}, // unknown, falls to the default
+		{raw: "low", want: "low"},
 		{raw: "medium", want: "high"},
 		{raw: "HIGH", want: "high"},
-		{raw: "xhigh", want: "max"},
+		{raw: "xhigh", want: "high"},
+		{raw: "ultra", want: "max"},
 		{raw: "max", want: "max"},
 		{raw: "off", want: "off"},
 	}
@@ -154,15 +170,43 @@ func TestNormalizeThinkingLevelGeminiMapsOffThinkToNoneWhenAllowed(t *testing.T)
 	}
 }
 
-func TestFallbackThinkingCapabilitiesRemainAvailable(t *testing.T) {
-	levels := SupportedThinkingLevels("unknown", "mystery-model")
-	want := []string{"low", "medium", "high", "off"}
-	if len(levels) != len(want) {
-		t.Fatalf("unexpected levels: %#v", levels)
+// An unknown provider gets no dial, not a guessed one.
+//
+// This used to offer low/medium/high/off to anything unrecognised. The menu was
+// invented, and for a provider that can carry reasoning_effort the invented
+// level really was sent — to a model nobody had checked takes it.
+func TestUnknownProviderGetsNoThinkingDial(t *testing.T) {
+	if levels := SupportedThinkingLevels("unknown", "mystery-model"); len(levels) != 0 {
+		t.Fatalf("unknown provider offers %#v; it must offer nothing", levels)
 	}
-	for i := range want {
-		if levels[i] != want[i] {
-			t.Fatalf("unexpected levels: %#v", levels)
+	if caps := ResolveThinkingCapabilities("unknown", "mystery-model"); caps.Supported {
+		t.Fatalf("unknown provider reports a dial: %+v", caps)
+	}
+}
+
+// The same rule one level down: a provider that does have a dial, asked about a
+// model this table has never heard of, still says no. Groq and OpenAI are the
+// cases that made this concrete — their own catalog defaults
+// (llama-3.3-70b-versatile, gpt-4o-mini) are not reasoning models.
+func TestUnknownModelOfAReasoningProviderGetsNoDial(t *testing.T) {
+	for _, tc := range []struct{ provider, model string }{
+		{"openai", "gpt-4o-mini"},
+		{"groq", "llama-3.3-70b-versatile"},
+		{"kimi", "kimi-k2"},
+	} {
+		if caps := ResolveThinkingCapabilities(tc.provider, tc.model); caps.Supported {
+			t.Errorf("%s/%s reports a dial (%v) — nothing has checked that it has one",
+				tc.provider, tc.model, caps.Levels)
+		}
+	}
+}
+
+// And the providers whose API carries no thinking setting at all offer nothing,
+// however many levels the table might have been able to name.
+func TestProvidersWithoutAReasoningKnobOfferNothing(t *testing.T) {
+	for _, p := range []string{"aetox", "cohere", "mistral", "perplexity", "qwen", "together", "zai", "ollama", "lmstudio"} {
+		if levels := SupportedThinkingLevels(p, ""); len(levels) != 0 {
+			t.Errorf("%s offers %#v but its runtime sends no thinking field at all", p, levels)
 		}
 	}
 }
@@ -173,7 +217,7 @@ func TestResolveThinkingCapabilities_KnownPrefixesResolveToSupported(t *testing.
 		models   []string
 	}{
 		{"deepseek", []string{"deepseek-v4", "deepseek-chat", "deepseek-reasoner"}},
-		{"openai", []string{"gpt-5-pro", "gpt-5.1", "gpt-5.2", "o1", "o3", "o4", "gpt-4o"}},
+		{"openai", []string{"gpt-5-pro", "gpt-5.1", "gpt-5.2", "o1", "o3", "o4"}}, // gpt-4o has no effort knob
 		{"gemini", []string{"gemini-2.5-flash-lite", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-3-pro"}},
 		{"groq", []string{"openai/gpt-oss-20b", "qwen/qwen3-32b"}},
 		{"openrouter", []string{"openai/gpt-4o", "deepseek/deepseek-r1", "google/gemini-2.5-pro", "anthropic/claude-sonnet-4"}},
@@ -189,9 +233,11 @@ func TestResolveThinkingCapabilities_KnownPrefixesResolveToSupported(t *testing.
 }
 
 func TestThinkingLevel_OffMapsToProviderNative(t *testing.T) {
+	// A gemini this table does not know reports no dial, so there is no level
+	// to normalize to — empty, not a guessed "off".
 	got := NormalizeThinkingLevel("gemini", "gemini-4-future", "off")
-	if got != "off" {
-		t.Fatalf("expected off -> off for conservative fallback, got %q", got)
+	if got != "" {
+		t.Fatalf("expected an unknown model to have no level, got %q", got)
 	}
 
 	got = NormalizeThinkingLevel("openai", "gpt-5.2", "off")
@@ -239,8 +285,8 @@ func TestThinkingCapabilitiesForProvidersAetoxDrivesDirectly(t *testing.T) {
 func TestEveryOfferedThinkLevelIsAKnownOne(t *testing.T) {
 	known := map[string]bool{
 		"none": true, "minimal": true, "low": true, "medium": true,
-		"high": true, "xhigh": true, "max": true, "default": true,
-		"off": true, "adaptive": true,
+		"high": true, "xhigh": true, "ultra": true, "max": true,
+		"default": true, "off": true, "on": true, "adaptive": true,
 	}
 	for _, provider := range SupportedProviders() {
 		for _, m := range append(ModelChoices(provider), "") {

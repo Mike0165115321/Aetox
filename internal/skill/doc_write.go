@@ -94,10 +94,14 @@ func (*docWriteSkill) ToolDefinition() model.ToolDefinition {
 			// Capability only, no when-to-pick-me language and no routing to
 			// sibling tools (owner, 2026-08-04) — the registry already lists
 			// every option, and which one answers the request is the model's call.
-			Description: "Create a Word file (.docx) — opens in Word, Google Docs and LibreOffice. " +
-				"Build it as an ordered list of blocks — headings become real headings that show up in the navigation pane, " +
-				"and a table is columns plus rows rather than text you have lined up by hand. " +
-				"The result reports where the file actually landed.",
+			//
+			// One line, and deliberately (owner, 2026-08-06): "เขียนแค่มันคือ
+			// เครื่องมือในการสร้างเอกสารก็พอแล้ว อนาคตจะเจาะลึกอีกเยอะ เอเจนอันนี้".
+			// How to build the blocks is the schema's job and the schema already
+			// says it; the document agent is where the craft will live as it gets
+			// built out, and prose here would only be a second place to keep in
+			// sync with it — paid for on every request that carries this tool.
+			Description: "Create a Word document (.docx).",
 			Parameters: payload,
 		},
 	}

@@ -300,6 +300,7 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 		Thinking         *ThinkingConfig        `json:"thinking,omitempty"`
 		ReasoningEffort  string                 `json:"reasoning_effort,omitempty"`
 		IncludeReasoning *bool                  `json:"include_reasoning,omitempty"`
+		ReasoningSplit   *bool                  `json:"reasoning_split,omitempty"`
 	}{
 		Model:       model,
 		Messages:    convertMessagesToOpenAI(req.Messages),
@@ -310,12 +311,20 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 	}
 	if p.usesDeepSeekThinking() {
 		payload.Thinking = normalizeDeepSeekThinking(req.Thinking, req.Reasoning)
-		payload.ReasoningEffort = normalizeDeepSeekReasoningEffort(req.Reasoning)
+		payload.ReasoningEffort = p.wireEffort(model, req.Reasoning)
+	} else if p.usesMiniMaxThinking() {
+		// The whole dial is the thinking block; there is no effort field to
+		// send, so none is sent. reasoning_split is not optional in practice:
+		// left off, the thinking comes back inside content wrapped in
+		// <think>...</think> and lands in the user's answer instead of the
+		// thinking panel.
+		payload.Thinking = req.Thinking
+		payload.ReasoningSplit = boolPtr(true)
 	} else if p.usesGroqReasoning() {
-		payload.ReasoningEffort = normalizeStandardReasoningEffort(req.Reasoning)
+		payload.ReasoningEffort = p.wireEffort(model, req.Reasoning)
 		payload.IncludeReasoning = boolPtr(false)
-	} else if p.usesOpenAIReasoningEffort() || p.usesGeminiReasoningEffort() {
-		payload.ReasoningEffort = normalizeStandardReasoningEffort(req.Reasoning)
+	} else if p.usesOpenAIReasoningEffort() || p.usesGeminiReasoningEffort() || p.usesPlainReasoningEffort() {
+		payload.ReasoningEffort = p.wireEffort(model, req.Reasoning)
 		if payload.ReasoningEffort != "" && p.usesOpenAIReasoningEffort() {
 			// OpenAI's reasoning models reject temperature outright ("Unsupported
 			// value: 'temperature'"), the same way Anthropic rejects it alongside
@@ -425,6 +434,7 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 		Thinking         *ThinkingConfig        `json:"thinking,omitempty"`
 		ReasoningEffort  string                 `json:"reasoning_effort,omitempty"`
 		IncludeReasoning *bool                  `json:"include_reasoning,omitempty"`
+		ReasoningSplit   *bool                  `json:"reasoning_split,omitempty"`
 		Stream           bool                   `json:"stream"`
 		// Without this the spec says a streamed response carries no usage at
 		// all, and a server that follows it sends none: LM Studio recorded 0
@@ -443,12 +453,20 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 	}
 	if p.usesDeepSeekThinking() {
 		payload.Thinking = normalizeDeepSeekThinking(req.Thinking, req.Reasoning)
-		payload.ReasoningEffort = normalizeDeepSeekReasoningEffort(req.Reasoning)
+		payload.ReasoningEffort = p.wireEffort(model, req.Reasoning)
+	} else if p.usesMiniMaxThinking() {
+		// The whole dial is the thinking block; there is no effort field to
+		// send, so none is sent. reasoning_split is not optional in practice:
+		// left off, the thinking comes back inside content wrapped in
+		// <think>...</think> and lands in the user's answer instead of the
+		// thinking panel.
+		payload.Thinking = req.Thinking
+		payload.ReasoningSplit = boolPtr(true)
 	} else if p.usesGroqReasoning() {
-		payload.ReasoningEffort = normalizeStandardReasoningEffort(req.Reasoning)
+		payload.ReasoningEffort = p.wireEffort(model, req.Reasoning)
 		payload.IncludeReasoning = boolPtr(false)
-	} else if p.usesOpenAIReasoningEffort() || p.usesGeminiReasoningEffort() {
-		payload.ReasoningEffort = normalizeStandardReasoningEffort(req.Reasoning)
+	} else if p.usesOpenAIReasoningEffort() || p.usesGeminiReasoningEffort() || p.usesPlainReasoningEffort() {
+		payload.ReasoningEffort = p.wireEffort(model, req.Reasoning)
 		if payload.ReasoningEffort != "" && p.usesOpenAIReasoningEffort() {
 			// OpenAI's reasoning models reject temperature outright ("Unsupported
 			// value: 'temperature'"), the same way Anthropic rejects it alongside
@@ -655,13 +673,13 @@ func (a *streamToolAccumulator) finalize() []ToolCall {
 	return calls
 }
 
+// supportsNativeReasoning asks the provider catalog, which is where this fact
+// already lived. The hardcoded list this replaces was a second copy of it, and
+// the two had to be edited together every time a provider was added — the same
+// arrangement that let the thinking tables drift apart.
 func supportsNativeReasoning(provider string) bool {
-	switch NormalizeProvider(provider) {
-	case "openrouter", "deepseek", "openai", "groq", "gemini":
-		return true
-	default:
-		return false
-	}
+	_, canReason := providerReasoningCapability(NormalizeProvider(provider))
+	return canReason
 }
 
 func (p *OpenAICompatibleProvider) usesDeepSeekThinking() bool {
@@ -680,6 +698,21 @@ func (p *OpenAICompatibleProvider) usesGeminiReasoningEffort() bool {
 	return NormalizeProvider(p.provider) == "gemini"
 }
 
+// usesPlainReasoningEffort is the top-level reasoning_effort field with none of
+// its neighbours' quirks: Kimi keeps temperature (OpenAI rejects it alongside
+// reasoning) and wants the reasoning back (Groq is asked to suppress it).
+//
+// Named for the shape rather than for Kimi, because the next provider to speak
+// this dialect should join the list instead of growing a fourth branch — this
+// chain of provider tests is the same drift the effort tables just came out of.
+func (p *OpenAICompatibleProvider) usesPlainReasoningEffort() bool {
+	return NormalizeProvider(p.provider) == "kimi"
+}
+
+func (p *OpenAICompatibleProvider) usesMiniMaxThinking() bool {
+	return NormalizeProvider(p.provider) == "minimax"
+}
+
 func normalizeDeepSeekThinking(thinking *ThinkingConfig, reasoning *ReasoningConfig) *ThinkingConfig {
 	if thinking != nil {
 		switch strings.ToLower(strings.TrimSpace(thinking.Type)) {
@@ -695,30 +728,22 @@ func normalizeDeepSeekThinking(thinking *ThinkingConfig, reasoning *ReasoningCon
 	return nil
 }
 
-func normalizeDeepSeekReasoningEffort(reasoning *ReasoningConfig) string {
+// wireEffort is what reasoning_effort should say for this provider and model.
+//
+// It replaces two switches — one for DeepSeek, one for everybody else — that
+// between them were the third and fourth places encoding which levels a
+// provider has. The DeepSeek one is the reason this consolidation happened: it
+// folded low and medium onto "high" and xhigh onto "max", so on this wire
+// format three of DeepSeek's six real levels could not be reached at all.
+func (p *OpenAICompatibleProvider) wireEffort(model string, reasoning *ReasoningConfig) string {
 	if reasoning == nil {
 		return ""
 	}
-	switch strings.ToLower(strings.TrimSpace(reasoning.Effort)) {
-	case "xhigh", "max":
-		return "max"
-	case "low", "medium", "high":
-		return "high"
-	default:
+	effort, ok := WireEffort(p.provider, model, reasoning.Effort)
+	if !ok {
 		return ""
 	}
-}
-
-func normalizeStandardReasoningEffort(reasoning *ReasoningConfig) string {
-	if reasoning == nil {
-		return ""
-	}
-	switch strings.ToLower(strings.TrimSpace(reasoning.Effort)) {
-	case "none", "default", "minimal", "low", "medium", "high", "xhigh":
-		return strings.ToLower(strings.TrimSpace(reasoning.Effort))
-	default:
-		return ""
-	}
+	return effort
 }
 
 func boolPtr(value bool) *bool {

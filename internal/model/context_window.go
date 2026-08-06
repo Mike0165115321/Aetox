@@ -26,6 +26,8 @@ func ContextWindowTokens(provider, modelName string) int {
 		return zaiContextWindow(modelID)
 	case "groq":
 		return 128_000
+	case "kimi":
+		return kimiContextWindow(modelID)
 	case "openrouter":
 		// OpenRouter ids are "vendor/model" — resolve by the underlying vendor.
 		if vendor, name, ok := strings.Cut(modelID, "/"); ok {
@@ -42,6 +44,13 @@ func deepseekContextWindow(modelID string) int {
 		return 1_000_000 // V4 series (incl. -flash): 1M context per DeepSeek docs
 	}
 	return 128_000 // deepseek-chat / deepseek-reasoner / V3.x
+}
+
+func kimiContextWindow(modelID string) int {
+	if strings.HasPrefix(modelID, "kimi-k3") {
+		return 1_000_000 // "a 1M-token context window" — K3 quickstart
+	}
+	return 128_000 // K2 and the moonshot-v1 line
 }
 
 func openaiContextWindow(modelID string) int {

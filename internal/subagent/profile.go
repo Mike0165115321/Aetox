@@ -13,11 +13,14 @@
 //   - **Agents** — the team the user can see: they take jobs over the counter
 //     and hold direct chats (§85). Home: profiles/agents (bundled) and
 //     <DataRoot>/agents (user). A file here that names no desk sits in the
-//     office; naming one is allowed and means that desk.
-//   - **Sub-agents** — the assistant's own hands, never chatted with. Home:
-//     profiles/subagents (bundled) and <DataRoot>/subagents (user). A file
-//     here that claims a desk is a contradiction and is refused loudly
-//     (Invalid), never silently reinterpreted.
+//     office; naming one is allowed and means that desk. This is the
+//     extensible kind: hiring is dropping one more file.
+//   - **Sub-agents** — the assistant's own hands, never chatted with, and
+//     **part of the system** (owner's call, 2026-08-06: ผูกซับเอเจนกับระบบ
+//     เพิ่มหรือแก้ไขไม่ได้): the bundled three in profiles/subagents are the
+//     whole set. A user file in <DataRoot>/subagents is not read — it is
+//     reported as a Conflict so it never vanishes silently — and the write
+//     door (Save) refuses. What the user extends is the team, never the hands.
 //
 // That rule is decided in this file's resolver and nowhere else. The bindings
 // and both pages ask the loaded Profile; the day one of them re-derives the
@@ -52,11 +55,19 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/skill"
 )
 
-//go:embed profiles/agents/*.md profiles/subagents/*.md
+//go:embed profiles/agents/*/AGENT.md profiles/subagents/*.md
 var bundledProfiles embed.FS
 
 // The bundled halves of the two homes. Their names never reach a user; the
 // on-disk halves are AgentsDir and Dir.
+//
+// The two shapes are the two kinds. An agent is a **folder** — one worker, one
+// package, room for the memory it accumulates and the servers it will bring
+// (config.AgentHome) — and the shipped three are laid out exactly like one the
+// user writes, so "copy it out and change it" stays a copy rather than a
+// translation. A helper is one flat file, because the helpers are part of the
+// system and there is nothing per-helper to package: the bundled set is the
+// whole set.
 const (
 	bundledAgentDir  = "profiles/agents"
 	bundledHelperDir = "profiles/subagents"
@@ -141,13 +152,11 @@ func Dir() (string, error) {
 	return filepath.Join(root, "subagents"), nil
 }
 
-// AgentsDir returns <DataRoot>/agents — the agents' home (not created here).
+// AgentsDir returns <DataRoot>/agents — the agents' home (not created here),
+// holding one folder per worker. config owns the layout inside it because
+// internal/learned needs the same paths and cannot import this package.
 func AgentsDir() (string, error) {
-	root, err := config.DataRoot()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(root, "agents"), nil
+	return config.AgentsRoot()
 }
 
 // entry is one resolved profile with the raw text it came from. Everything the
@@ -190,14 +199,18 @@ func applyHomeRules(p *Profile, agentHome bool) {
 // name once. Within a home a user file shadows a bundled one; across homes the
 // first home to hold a name owns it and the other file is a Conflict.
 func resolve() ([]entry, []Conflict) {
+	// Before the first read, from whichever entry point got here first — see
+	// config.MigrateAgentHomes. Cheap after the first call.
+	config.MigrateAgentHomes()
+
 	type source struct {
 		agentHome bool
 		bundled   string
-		userDir   func() (string, error)
+		userFiles func() []string
 	}
 	sources := []source{
-		{agentHome: true, bundled: bundledAgentDir, userDir: AgentsDir},
-		{agentHome: false, bundled: bundledHelperDir, userDir: Dir},
+		{agentHome: true, bundled: bundledAgentDir, userFiles: userAgentFiles},
+		{agentHome: false, bundled: bundledHelperDir, userFiles: userHelperFiles},
 	}
 
 	byName := map[string]int{} // name → index in entries
@@ -234,8 +247,8 @@ func resolve() ([]entry, []Conflict) {
 	}
 
 	for _, src := range sources {
-		for _, name := range bundledNames(src.bundled) {
-			raw, err := bundledProfiles.ReadFile(src.bundled + "/" + name + ".md")
+		for _, name := range bundledNames(src.bundled, src.agentHome) {
+			raw, err := bundledProfiles.ReadFile(bundledPath(src.bundled, name, src.agentHome))
 			if err != nil {
 				continue
 			}
@@ -243,12 +256,24 @@ func resolve() ([]entry, []Conflict) {
 		}
 	}
 	for _, src := range sources {
-		for _, path := range userFiles(src.userDir) {
+		for _, path := range src.userFiles() {
+			name := userProfileName(path, src.agentHome)
+			// The sub-agents' home is closed: the helpers are part of the system
+			// and the bundled set is the whole set. A file the user put there is
+			// never read as a profile — but it is on their disk, so it is
+			// reported rather than silently dead (the same promise Conflict has
+			// always made).
+			if !src.agentHome {
+				conflicts = append(conflicts, Conflict{
+					Name: name, Path: path,
+					Reason: "ผู้ช่วยตัวแทนฝังมากับระบบ เพิ่มหรือแก้ไขไม่ได้ — ไฟล์นี้จึงไม่ถูกอ่าน ถ้าตั้งใจสร้างคนทำงานของคุณเอง สร้างเป็นตัวแทนที่หน้าทีมเอเจน แล้วลบไฟล์นี้ทิ้งได้",
+				})
+				continue
+			}
 			raw, err := os.ReadFile(path)
 			if err != nil {
 				continue
 			}
-			name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 			place(name, string(raw), path, src.agentHome, false)
 		}
 	}
@@ -320,6 +345,36 @@ func Delegates() []Profile {
 		}
 	}
 	return out
+}
+
+// The two piles a delegation can land in, named for the UI (COMPANY.md §4:
+// ตัวแทน / ผู้ช่วยตัวแทน). The kind is decided by which home the file lives
+// in — never by a word in its description — same rule as the `task` schema's
+// grouping (task.go, agentChoice).
+const (
+	KindAgent  = "agent"  // has a desk: a colleague who returns a finished file
+	KindHelper = "helper" // no desk: the assistant's own hands in a second context
+)
+
+// KindOf answers which pile the named worker belongs to, applying the same
+// default `task` applies when the model names nobody. It exists so the engine
+// can stamp the kind onto the events the UI counts — a frontend that guessed
+// from names would be a second place answering a question this package already
+// answers. Empty when no such profile can run: the row falls back to the
+// generic label rather than claiming a kind.
+func KindOf(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = defaultProfile
+	}
+	p, ok := Load(name)
+	if !ok {
+		return ""
+	}
+	if p.Desk != "" {
+		return KindAgent
+	}
+	return KindHelper
 }
 
 // Load returns the runnable profile named name. ok is false when nothing by
@@ -410,6 +465,33 @@ func (p Profile) DenyRules() []safety.PermissionRule {
 // trimming the list here is a token saving, while Deny is the safety gate. Both
 // apply — this one first.
 func (p Profile) AllowsTool(name string) bool {
+	if !p.Permits(name) {
+		return false
+	}
+	if len(p.Tools) == 0 {
+		return true
+	}
+	return slices.Contains(p.Tools, strings.ToLower(strings.TrimSpace(name)))
+}
+
+// Permits is AllowsTool minus the allowlist: what this profile has not
+// *forbidden*, whether or not its `tools:` line happens to name it.
+//
+// The distinction exists for MCP servers the user pointed at this agent in
+// Settings (config.MCPServersForAgent). A profile's `tools:` is a list of
+// built-in names its author chose, written before any server existed — and MCP
+// tool names cannot be known in advance, since they arrive from the server on
+// connect as `notion_search`, `notion_query` and so on. Filtering those through
+// the allowlist would mean the toggle in Settings did nothing until the user
+// also hand-edited AGENT.md with names they have no way to look up, which is a
+// switch that lies.
+//
+// The denials still apply, both of them. `deny:` is the profile refusing
+// something outright and outranks any grant (§44.0), and forcedDenials is what
+// no delegate may hold at all. What is skipped is only the *allowlist* — the
+// question "did the author think to list this", which a server added months
+// later cannot have an answer to.
+func (p Profile) Permits(name string) bool {
 	name = strings.ToLower(strings.TrimSpace(name))
 	if name == "" {
 		return false
@@ -417,13 +499,7 @@ func (p Profile) AllowsTool(name string) bool {
 	if slices.Contains(forcedDenials, name) {
 		return false
 	}
-	if slices.Contains(p.Deny, name) {
-		return false
-	}
-	if len(p.Tools) == 0 {
-		return true
-	}
-	return slices.Contains(p.Tools, name)
+	return !slices.Contains(p.Deny, name)
 }
 
 // parse reads one profile file. The filename is the name, always: a `name:` key
@@ -486,13 +562,22 @@ func validName(name string) bool {
 		!strings.ContainsAny(name, " \t\n")
 }
 
-func bundledNames(dir string) []string {
+// bundledNames lists one bundled home, reading whichever shape that home uses:
+// a folder per agent, a file per helper. The name is the folder's or the
+// file's — never anything inside the file, same rule as parse().
+func bundledNames(dir string, agentHome bool) []string {
 	entries, err := bundledProfiles.ReadDir(dir)
 	if err != nil {
 		return nil
 	}
 	names := make([]string, 0, len(entries))
 	for _, e := range entries {
+		if agentHome {
+			if e.IsDir() {
+				names = append(names, e.Name())
+			}
+			continue
+		}
 		if !e.IsDir() && strings.EqualFold(filepath.Ext(e.Name()), ".md") {
 			names = append(names, strings.TrimSuffix(e.Name(), filepath.Ext(e.Name())))
 		}
@@ -501,14 +586,65 @@ func bundledNames(dir string) []string {
 	return names
 }
 
-func userFiles(home func() (string, error)) []string {
-	dir, err := home()
+// userProfileName reads the name back off a path the readers above produced:
+// an agent is named by its folder, a helper by its file. Both keep the rule
+// that a name comes from where the file sits and never from inside it.
+func userProfileName(path string, agentHome bool) string {
+	if agentHome {
+		return filepath.Base(filepath.Dir(path))
+	}
+	return strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+}
+
+// bundledPath is where a bundled profile's text sits, per that home's shape.
+func bundledPath(dir, name string, agentHome bool) string {
+	if agentHome {
+		return dir + "/" + name + "/" + config.AgentDefinitionFile
+	}
+	return dir + "/" + name + ".md"
+}
+
+// userAgentFiles lists the AGENT.md of every folder in the user's agents home.
+//
+// A folder without one is skipped and *not* reported: that is a worker whose
+// definition is bundled and which has only accumulated memory — the shipped
+// three once they have learned something, and the helpers, whose scope lands
+// here too. It is the normal state of a working install, not a stray file.
+func userAgentFiles() []string {
+	dir, err := AgentsDir()
 	if err != nil {
 		return nil
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil // no folder yet is the normal state, not an error
+	}
+	files := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		path := filepath.Join(dir, e.Name(), config.AgentDefinitionFile)
+		if info, err := os.Stat(path); err != nil || info.IsDir() {
+			continue
+		}
+		files = append(files, path)
+	}
+	sort.Strings(files)
+	return files
+}
+
+// userHelperFiles lists what the user put in the sub-agents' home. That home is
+// closed, so everything here is reported as a Conflict rather than read — but
+// it still has to be *found*, or a file on their disk dies silently.
+func userHelperFiles() []string {
+	dir, err := Dir()
+	if err != nil {
+		return nil
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
 	}
 	files := make([]string, 0, len(entries))
 	for _, e := range entries {

@@ -5,13 +5,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
 	"github.com/Mike0165115321/Aetox/internal/config"
 	"github.com/Mike0165115321/Aetox/internal/debuglog"
 	"github.com/Mike0165115321/Aetox/internal/mcp"
+	"github.com/Mike0165115321/Aetox/internal/mode"
 	"github.com/Mike0165115321/Aetox/internal/skill"
+	"github.com/Mike0165115321/Aetox/internal/subagent"
 )
 
 // ToolCounts is the "what can the agent do right now" readout the composer
@@ -112,9 +115,81 @@ type MCPServerInfo struct {
 	Cwd       string `json:"cwd,omitempty"`
 	TimeoutMs int    `json:"timeoutMs,omitempty"`
 	Disabled  bool   `json:"disabled"`
-	Status    string `json:"status"` // idle | connected | failed | disabled
-	Tools     int    `json:"tools"`  // tools seen on the last successful connect
-	Err       string `json:"err,omitempty"`
+	// For is who carries this server's tools — desk names, and "agent:<name>"
+	// for one of the team. Empty means connected and attached nowhere, which is
+	// a real state and not the same as Disabled (never connected at all).
+	For    []string `json:"for"`
+	Status string   `json:"status"` // idle | connected | failed | disabled
+	Tools  int      `json:"tools"`  // tools seen on the last successful connect
+	Err    string   `json:"err,omitempty"`
+}
+
+// MCPTarget is one place a server can be switched on, for the settings page to
+// render as a row of toggles. Built from the desks and the team that actually
+// exist rather than a list typed into the page, so hiring an agent puts it on
+// this list without anyone remembering to add it.
+type MCPTarget struct {
+	// ID is what goes in a server's `for` list: a desk name, or "agent:<name>".
+	ID   string `json:"id"`
+	Name string `json:"name"` // what to show
+	Kind string `json:"kind"` // "desk" | "agent"
+}
+
+// MCPTargets lists everywhere a server can be pointed. The page shows one
+// toggle per entry; SetMCPServerTargets is where a flip lands.
+func (a *App) MCPTargets() []MCPTarget {
+	var out []MCPTarget
+	for _, m := range mode.List() {
+		name := m.Description
+		if name == "" {
+			name = m.Name
+		}
+		out = append(out, MCPTarget{ID: m.Name, Name: name, Kind: "desk"})
+	}
+	for _, p := range subagent.List() {
+		if p.Desk == "" || p.Invalid != "" {
+			continue // the helpers are part of the system; a sick file is not a target
+		}
+		out = append(out, MCPTarget{ID: config.MCPAgentPrefix + p.Name, Name: p.Name, Kind: "agent"})
+	}
+	return out
+}
+
+// SetMCPServerTargets replaces one server's `for` list and rebuilds the engine,
+// so a toggle takes effect on the next turn rather than the next launch.
+//
+// Separate from SaveMCPServer for the same reason ToggleMCPServer is: switching
+// where a server shows up is one click on a row, and routing it through the
+// full-form save would make the page send back every field it happens to be
+// holding — which is how an edit elsewhere in the form rides along unnoticed.
+func (a *App) SetMCPServerTargets(name string, targets []string) error {
+	servers, err := config.LoadMCPServers()
+	if err != nil {
+		return err
+	}
+	clean := make([]string, 0, len(targets))
+	for _, t := range targets {
+		if t = strings.TrimSpace(t); t != "" && !slices.Contains(clean, t) {
+			clean = append(clean, t)
+		}
+	}
+	for i := range servers {
+		if !strings.EqualFold(servers[i].Name, name) {
+			continue
+		}
+		// Non-nil even when empty: an explicit "attached nowhere" has to
+		// survive, and the migration reads absence to mean "never set".
+		if clean == nil {
+			clean = []string{}
+		}
+		servers[i].For = clean
+		if err := config.SaveMCPServers(servers); err != nil {
+			return err
+		}
+		a.rebuildMCP()
+		return nil
+	}
+	return fmt.Errorf("server %q not found", name)
 }
 
 // ListMCPServers returns the persisted servers with live status from the active
@@ -136,6 +211,7 @@ func (a *App) ListMCPServers() []MCPServerInfo {
 			Cwd:         s.Cwd,
 			TimeoutMs:   s.TimeoutMs,
 			Disabled:    s.Disabled,
+			For:         s.For,
 			Status:      string(mcp.StatusIdle),
 		}
 		if s.Disabled {
@@ -226,7 +302,12 @@ func (a *App) SaveMCPServer(originalName string, server config.MCPServerConfig) 
 	} else if target == -1 {
 		return fmt.Errorf("server %q not found", originalName)
 	} else {
+		// Both switches survive a form save: which desks and agents see this
+		// server is set by SetMCPServerTargets, and being disabled by
+		// ToggleMCPServer. Neither is on the edit form, so taking them from
+		// the payload would reset them to whatever the form defaulted to.
 		server.Disabled = servers[target].Disabled
+		server.For = servers[target].For
 		servers[target] = server
 	}
 

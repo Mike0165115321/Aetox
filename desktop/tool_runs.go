@@ -38,8 +38,17 @@ func (a *App) recordToolRun(run turn.ToolRun) {
 		debuglog.Msg("tool_runs: db unavailable: %v", err)
 		return
 	}
-	args, argsBytes := clampStored(run.Args, maxStoredArgs)
-	output, outputBytes := clampStored(run.Output, maxStoredOutput)
+	// Scrubbed before storing, not before displaying. This row outlives the
+	// session — it is searchable, it is in every backup of the database, and
+	// session_search reads it back into a later conversation. A shell command
+	// carrying `-H "Authorization: Bearer …"`, or a tool that echoed a key into
+	// its output, would otherwise be persisted in the clear and then handed to
+	// a model in some future turn.
+	//
+	// Before clamping, so the replacement cannot be cut in half and leave the
+	// tail of a real key at the boundary.
+	args, argsBytes := clampStored(debuglog.Scrub(run.Args), maxStoredArgs)
+	output, outputBytes := clampStored(debuglog.Scrub(run.Output), maxStoredOutput)
 	// The hash is over the whole output, never the stored head: it is what
 	// tells two runs that truncate to the same prefix apart, which is the one
 	// question a stored prefix cannot answer on its own.

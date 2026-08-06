@@ -829,12 +829,14 @@ func (a *Agent) buildRequest(messages []model.Message, maxTokens int, temperatur
 	if effort := profile.ReasoningEffort(); effort != "" {
 		req.Reasoning = &model.ReasoningConfig{Effort: effort}
 	}
-	if a.provider != nil && model.NormalizeProvider(a.provider.Name()) == "deepseek" {
-		switch think.NormalizeLevel(string(opts.ThinkLevel)) {
-		case think.LevelNoThinking:
-			req.Thinking = &model.ThinkingConfig{Type: "disabled"}
-		default:
-			req.Thinking = &model.ThinkingConfig{Type: "enabled"}
+	// Some providers carry the thinking switch in a `thinking` block rather than
+	// in an effort field. Which ones, and what the block should say, is the
+	// capability table's business — this used to be a check for "deepseek" by
+	// name here, so the second provider of that shape would have needed another
+	// branch in this function.
+	if a.provider != nil {
+		if blockType, ok := model.ThinkingBlockType(a.provider.Name(), a.model, string(opts.ThinkLevel)); ok {
+			req.Thinking = &model.ThinkingConfig{Type: blockType}
 		}
 	}
 	return req

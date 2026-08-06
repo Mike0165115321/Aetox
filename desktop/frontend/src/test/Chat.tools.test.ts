@@ -306,6 +306,26 @@ describe('sub-agent tool events', () => {
     expect(cockpit.toolSteps[0].brief).toContain('callers of Resolve')
   })
 
+  // The row is usually born from the streaming progress announcement, fired
+  // while the model is still writing the call's arguments — no agent, no
+  // brief, no kind yet. The executor's own call event arrives after, carrying
+  // all three, and must land on the SAME row. Dropping them was a live turn
+  // reading "ผู้ช่วยตัวแทน 1 ตัว" for a job the doc agent did, while the
+  // persisted parts said agent/doc — two answers from one turn.
+  it('fills in the delegation facts when they arrive after the row was born', () => {
+    applyToolEvent({ action: 'call', name: 'task', ref: 'task_1' })
+    expect(cockpit.toolSteps[0].agent).toBeUndefined()
+
+    applyToolEvent({
+      action: 'call', name: 'task', subject: 'ทำสรุป 5 ข้อ', ref: 'task_1',
+      agent: 'doc', agentKind: 'agent', brief: 'สร้างไฟล์เอกสาร .docx',
+    })
+    expect(cockpit.toolSteps.length).toBe(1)
+    expect(cockpit.toolSteps[0].agent).toBe('doc')
+    expect(cockpit.toolSteps[0].agentKind).toBe('agent')
+    expect(cockpit.toolSteps[0].brief).toContain('.docx')
+  })
+
   // The delegation block is the whole point: one titled group per sub-agent,
   // with its own steps inside it and the brief the main agent wrote. A flat list
   // of rows cannot say who did what.
@@ -433,5 +453,43 @@ describe('sub-agent tool events', () => {
     expect(block).toBeTruthy()
     expect(block?.textContent).toContain('grep needle')
     expect(block?.querySelector('.subagent-brief')?.textContent).toContain('go hunt')
+  })
+
+  // ตัวแทน and ผู้ช่วยตัวแทน are different piles (COMPANY.md §4), and the chip
+  // used to lump them: a turn where the doc agent made the file read "ซับเอเจน
+  // 1 ตัว". The kind rides on the step (stamped by the engine from which home
+  // the profile lives in), and each pile gets its own toggle and panel. A step
+  // with no kind — every turn persisted before the split — stays a helper.
+  it('counts an agent-kind delegation apart from the sub-agents', async () => {
+    const { container } = render(Chat, {
+      ...baseProps,
+      messages: [{
+        role: 'agent', text: 'done', time: '10:54',
+        steps: [
+          { label: 'read a.txt', state: 'done', startedAt: 0 },
+          { label: 'task make the report', ref: 't1', agent: 'doc', agentKind: 'agent', brief: 'write the meeting summary', state: 'done', startedAt: 0 },
+          { label: 'task hunt callers', ref: 't2', agent: 'explore', agentKind: 'helper', brief: 'find the callers', state: 'done', startedAt: 0 },
+        ],
+      }] as any,
+    })
+    const toggles = [...container.querySelectorAll('.meta-row .reasoning-toggle')] as HTMLElement[]
+    const labels = toggles.map((b) => b.textContent ?? '')
+    expect(labels.length).toBe(3)
+    expect(labels[0]).toContain('Used 1 tools')
+    expect(labels[1]).toContain('Agents: 1')
+    expect(labels[2]).toContain('Sub-agents: 1')
+
+    // Each toggle opens only its own pile.
+    toggles[1].click()
+    await tick()
+    let blocks = [...container.querySelectorAll('.subagent')]
+    expect(blocks.length).toBe(1)
+    expect(blocks[0].querySelector('.ag-name')?.textContent).toContain('doc')
+
+    toggles[2].click()
+    await tick()
+    blocks = [...container.querySelectorAll('.subagent')]
+    expect(blocks.length).toBe(1)
+    expect(blocks[0].querySelector('.ag-name')?.textContent).toContain('explore')
   })
 })

@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+
+	"github.com/Mike0165115321/Aetox/internal/config"
 )
 
 // The workspace is the whole answer to "which folders may this session touch",
@@ -142,7 +144,7 @@ func rootKey(p string) string {
 var credentialStores = []string{
 	".ssh", ".aws", ".gnupg", ".azure", ".kube",
 	".netrc", ".git-credentials", ".config/gh",
-	".aetox", // Aetox's own data root: model API keys live here
+	".aetox", // the skills folder; Aetox's *secrets* are handled by ownSecretFiles
 	"AppData/Roaming/Microsoft/Credentials",
 	"AppData/Local/Microsoft/Credentials",
 	"AppData/Roaming/Microsoft/Protect",
@@ -150,6 +152,47 @@ var credentialStores = []string{
 	"AppData/Local/Microsoft/Edge",
 	"AppData/Roaming/Mozilla",
 	"AppData/Local/BraveSoftware",
+}
+
+// ownSecretFiles are the files inside Aetox's own data root that hold
+// credentials, refused by name wherever that root happens to be.
+//
+// They need their own check because the list above is *home-relative* and the
+// data root is not under the home folder on any platform: it comes from
+// os.UserConfigDir (%APPDATA%\aetox on Windows, ~/.config/aetox on Linux,
+// ~/Library/Application Support/aetox on macOS) and AETOX_DATA_ROOT can move it
+// anywhere. The `.aetox` entry above was written believing it covered this and
+// covered the skills folder instead — so the file holding the user's model API
+// keys was readable by every file tool, in the mode that roams the machine, in
+// a loop that also holds web_fetch and browser_read. That is the exact path in
+// and out this whole denylist exists to break (2026-08-06).
+//
+// By file rather than by folder, deliberately. The rest of the data root —
+// logs, memory, the agents' folders, the database — is Aetox explaining itself,
+// and the assistant being able to read its own logs is worth keeping. Only the
+// files whose interesting content is a credential are shut.
+var ownSecretFiles = []string{
+	"credentials.json",      // provider API keys
+	"oauth.json",            // OAuth refresh tokens
+	".env",                  // whatever the user put in it
+	"model-preference.json", // held the keys before they were split out
+	// The MCP config. It reads like plumbing — a name and a command — but its
+	// `headers` and `environment` maps are where a server's API key goes: the
+	// exa preset in Settings declares `x-api-key` outright, and a stdio server
+	// takes its token through the environment. Left readable at first on the
+	// reasoning that the agent should be able to debug its own MCP setup, which
+	// was a judgement made by looking at one server that happened to have no
+	// key in it. `${env:...}` (bootstrap.MCPServers) is the real fix — a
+	// reference instead of a secret — and this is the belt for the users who
+	// paste the key in anyway.
+	"mcp-servers.json",
+	// The in-app browser's profile: cookies, tokens and saved logins for
+	// every site the user signed into through it. The list above already
+	// refuses Chrome's, Edge's, Brave's and Firefox's profiles for exactly
+	// this content — refusing four other browsers' while leaving our own open
+	// is the same mistake the `.aetox` entry made, one directory over. A
+	// folder, not a file; withinRoot covers both.
+	"webview",
 }
 
 // refuseCredentialStore rejects a (symlink-resolved) target inside any
@@ -163,6 +206,9 @@ var credentialStores = []string{
 // short-named home lets every credential read through — caught by CI, whose
 // runner's TEMP really is spelled C:\Users\RUNNER~1\....
 func refuseCredentialStore(target string) error {
+	if err := refuseOwnSecrets(target); err != nil {
+		return err
+	}
 	home, err := os.UserHomeDir()
 	if err != nil || strings.TrimSpace(home) == "" {
 		return nil
@@ -171,6 +217,26 @@ func refuseCredentialStore(target string) error {
 	for _, sub := range credentialStores {
 		if withinRoot(target, filepath.Join(home, filepath.FromSlash(sub))) {
 			return fmt.Errorf("path is inside a credential store (%s) and stays off-limits in every mode", sub)
+		}
+	}
+	return nil
+}
+
+// refuseOwnSecrets rejects Aetox's own credential files. The data root goes
+// through resolvedHomeDir for the same reason the home folder does: the target
+// arrives symlink-resolved and 8.3-expanded, and comparing those raw lets a
+// short-named path through.
+func refuseOwnSecrets(target string) error {
+	root, err := config.DataRoot()
+	if err != nil || strings.TrimSpace(root) == "" {
+		return nil
+	}
+	root = resolvedHomeDir(strings.TrimSpace(root))
+	for _, name := range ownSecretFiles {
+		if withinRoot(target, filepath.Join(root, name)) {
+			return fmt.Errorf(
+				"%s holds Aetox's own credentials and stays off-limits in every mode. %s",
+				name, ownSecretHint(name))
 		}
 	}
 	return nil
@@ -217,4 +283,34 @@ func resolvedHomeDir(raw string) string {
 	resolved := evalExistingSymlinks(raw)
 	homeResolutions.Store(raw, resolved)
 	return resolved
+}
+
+// ownSecretHint says what to do instead of reading the file.
+//
+// A refusal that only says "no" gets relayed to the user as a limitation of the
+// product. That happened the day these files were shut: asked whether MCP was
+// connected, the assistant tried to read mcp-servers.json, was refused, and
+// reported that it could not reach its own MCP configuration — while holding
+// that server's tools in its tool block. The wall was right; the silence next
+// to it was not.
+//
+// Each hint names where the answer really is, so the model can finish the job
+// rather than describe the obstacle.
+func ownSecretHint(name string) string {
+	switch name {
+	case "mcp-servers.json":
+		return "You do not need it to answer questions about MCP: every tool bridged from a server " +
+			"is already in your tool list and says which server it came from. To change which desks " +
+			"and agents a server is switched on for, the user does that in Settings → MCP servers."
+	case "credentials.json", "model-preference.json":
+		return "The user manages providers and API keys in Settings."
+	case "oauth.json":
+		return "The user signs in and out from Settings."
+	case ".env":
+		return "The user edits this file themselves; you can tell them the path."
+	case "webview":
+		return "This is the in-app browser's profile — cookies and saved logins for sites the user " +
+			"signed into. Use the browser tools to visit a page instead of reading the profile."
+	}
+	return "The user manages this from Settings."
 }

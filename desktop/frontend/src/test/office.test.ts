@@ -89,8 +89,8 @@ describe('the office roster', () => {
     vi.mocked(NewChairSession).mockResolvedValue('20260805-100000.000' as any)
     render(Office, { onClose: () => {} })
 
-    await waitFor(() => expect(screen.getByText('แชทกับเอเจนนี้')).toBeTruthy())
-    await fireEvent.click(screen.getByText('แชทกับเอเจนนี้'))
+    await waitFor(() => expect(screen.getByText('แชทกับตัวแทนนี้')).toBeTruthy())
+    await fireEvent.click(screen.getByText('แชทกับตัวแทนนี้'))
 
     await waitFor(() => expect(vi.mocked(NewChairSession).mock.calls[0][0]).toBe('doc'))
     expect(cockpit.activeView).toBe('chat')

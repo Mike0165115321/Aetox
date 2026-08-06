@@ -181,12 +181,14 @@ notebook), the shape to copy is §3.2: read it in Go, return *display strings*,
 draw them in a pane, keep the way out to the real program. Not a round-trip, not
 an editor.
 
-## 6. Planned — the agent's own reach onto the desk (no code yet)
+## 6. The agent's own reach onto the desk
 
 *"มันควรจะเปิดอะไรได้เองหมด ถ้าหากอยากเปิด"* — owner, 2026-08-06.
 
-**Rows written ahead of the code, per §0.** Nothing in this section exists yet;
-it is here so the shape is agreed before it is built.
+**Written ahead of its code per §0, and built the same day.** Lives in
+[`workbench_desk.go`](../../desktop/workbench_desk.go) — named for the workbench
+because `desk` already means the mode a session was opened at (§83), and the
+file names should not make that collision worse. See §6.6.
 
 ### 6.1 What the agent can reach today: one channel, and it is blind
 
@@ -255,12 +257,54 @@ for the case that genuinely needs a browser: an `.html` that must *execute* and
 load its own assets. The `browserRenderable` list should shrink to match when
 this lands; leaving both routes open for `.pdf` is two answers to one question.
 
-### 6.5 Deliberately not planned
+### 6.5 `desk_terminal(command?)` — and a call this document got wrong
+
+This section first said opening a terminal was *"deliberately not planned"*, on
+the reasoning that the agent already has `shell` and a visible terminal would
+need a whole shared-shell subsystem to be worth anything. That was wrong twice
+over, and the owner said so within the hour: *"มันเปิดเทอร์มินัลไม่ได้ เปิดได้แค่
+เบราว์เซอร์"*.
+
+Wrong on cost: `TerminalStart`, `TerminalWrite` and `TerminalClose` have been
+bindings since the terminal pane shipped, and `terminal:data:<id>` already
+streams a live session to a pane. Nothing had to be built but the way to ask.
+
+Wrong on purpose: `shell` answers *"what does this print?"* — output to the
+agent, in the chat. A visible terminal answers *"watch this run"* — a build, a
+dev server, a session the user will keep typing into afterwards. Those are
+different questions, and only one of them was answerable.
+
+- **Go owns the session first.** Unlike the browser (where the frontend makes the
+  window and Go polls for it), `TerminalStart` returns a live id before the event
+  is sent, so the frontend only mounts a pane onto something already real.
+- **The command is typed, not executed separately** — `TerminalWrite(id, cmd+"\r")`
+  is the agent pressing the keys, in the user's own shell.
+- **Output does not come back.** The reply says so in as many words, so a model
+  waiting for stdout stops waiting and reaches for `shell` instead.
+
+**It reaches the same approval gate as `shell`, by construction.**
+`safety.AssessCommand` routes `desk_terminal` into the shell assessment and keeps
+the tool's own name on the verdict; `toolCallToArgs` tokenizes its command in the
+same `case` as shell's. Anything less would have made this a second, quieter way
+to run any command — with a worse blast radius than the `sheet_write` gap that
+file already warns about. An *empty* terminal is assessed low: nothing runs until
+the user types, and what they then type is theirs.
+
+### 6.6 Known terminology debt: `desk` means two things
+
+§83 uses **desk** for the mode a session was opened at (`a.desk.DeskName()`,
+`desk: specialized` in a chair's profile). §80 uses **desk** for this surface,
+because that is what the owner calls it — โต๊ะทำงาน.
+
+The tools here are named `desk_*` after the second meaning. The collision was
+already in the tree before them and is recorded here rather than quietly widened:
+if it is ever resolved, these three names and `internal/mode` are what move.
+
+### 6.7 Deliberately not built
 
 | | Why |
 |---|---|
 | `desk_close` | Closing a tab the user put there is not the agent's call. Its own tabs are arguable; not worth the surface until something actually needs it |
-| Opening a terminal tab | The agent already has `shell`, and its output already reaches the chat. A *visible* terminal would only be useful if the agent could run inside the user's session — which is a shared-shell feature with its own decision to earn, not a tab to open |
 | Opening the tools tab | It lists the agent's own tools. It has nothing to tell itself |
 
 ## 7. Deliberately not built

@@ -181,6 +181,10 @@ export interface ToolPartInfo {
   subject?: string
   agent?: string
   brief?: string
+  /** Which pile the worker on a `task` row is in: 'agent' (ตัวแทน) or 'helper'
+   *  (ผู้ช่วยตัวแทน). Stamped by the engine — the kind is decided by which home
+   *  the profile file lives in, which only the engine can see. */
+  agentKind?: string
   ok: boolean
   error?: string
   secs?: number
@@ -224,6 +228,10 @@ export interface ToolEvent {
    * one more row reading "task". */
   agent?: string
   brief?: string
+  /** With them, which pile that worker is in: 'agent' (ตัวแทน) or 'helper'
+   * (ผู้ช่วยตัวแทน). The chat counts the two apart; empty lands in the helper
+   * pile, which is where every delegation lived before the split. */
+  agentKind?: string
   /** On a result event: sandbox paths of finished files this call made for the
    * user — set only by tools whose whole output is a file (sheet_write and, in
    * time, the .pptx and .docx writers). `write` and `edit` deliberately leave
@@ -252,9 +260,13 @@ export interface ToolStep {
   /** Lines a write or edit changed, for the "+9 -0" readout. */
   added?: number
   removed?: number
-  /** On a `task` row: the sub-agent doing the work, and the brief it was given. */
+  /** On a `task` row: the worker doing the job, and the brief it was given. */
   agent?: string
   brief?: string
+  /** On a `task` row: 'agent' (ตัวแทน) or 'helper' (ผู้ช่วยตัวแทน) — which of
+   * the two count chips this delegation belongs to. Absent (old turns, engine
+   * without the stamp) counts as a helper, the pre-split reading. */
+  agentKind?: string
   startedAt: number
   /** seconds it took, filled in when the result arrives */
   secs?: number

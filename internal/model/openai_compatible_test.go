@@ -33,7 +33,7 @@ func TestOpenAICompatibleProviderUsesOpenAIReasoningEffortPayload(t *testing.T) 
 
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{
-			"model": "gpt-4o-mini",
+			"model": "gpt-5.2",
 			"choices": [
 				{"message": {"role":"assistant", "content":"ok"}}
 			]
@@ -43,7 +43,7 @@ func TestOpenAICompatibleProviderUsesOpenAIReasoningEffortPayload(t *testing.T) 
 
 	provider, err := NewOpenAICompatibleProvider(OpenAICompatibleConfig{
 		Provider: "openai",
-		Model:    "gpt-4o-mini",
+		Model:    "gpt-5.2", // a model that actually has the knob; gpt-4o-mini does not
 		APIKey:   "k",
 		BaseURL:  server.URL,
 	})
@@ -174,8 +174,12 @@ func TestOpenAICompatibleProviderUsesDeepSeekThinkingPayload(t *testing.T) {
 		if _, ok := payload["reasoning"]; ok {
 			t.Fatalf("expected reasoning to be omitted for deepseek, got %#v", payload["reasoning"])
 		}
-		if got := payload["reasoning_effort"]; got != "high" {
-			t.Fatalf("expected deepseek reasoning_effort=high, got %#v", got)
+		// Verbatim, not folded. This assertion used to expect "high" for a
+		// requested "low", because this path had its own effort table that
+		// collapsed low and medium onto high — three of DeepSeek's six real
+		// levels were unreachable on this wire format as a result.
+		if got := payload["reasoning_effort"]; got != "low" {
+			t.Fatalf("expected deepseek reasoning_effort=low (as asked), got %#v", got)
 		}
 		thinking, ok := payload["thinking"].(map[string]any)
 		if !ok {

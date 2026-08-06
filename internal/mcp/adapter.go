@@ -43,10 +43,28 @@ func newToolAdapter(c *Client, t *mcpsdk.Tool) *toolAdapter {
 func (a *toolAdapter) Name() string        { return a.name }
 func (a *toolAdapter) Description() string { return a.desc }
 
+// ToolDefinition stamps the origin onto every bridged tool's description.
+//
+// Without it the model has no way to know an MCP tool is one. The name is
+// `<server>_<tool>` and the description is whatever the remote server wrote
+// about itself — neither says "MCP" anywhere, and the system prompt never
+// mentions the protocol either. So a user asking "do you have MCP connected?"
+// got "no" from an assistant that was holding the server's tools at that
+// moment: it looked for something labelled MCP, found nothing, and answered
+// honestly about what it could see. Measured on 2026-08-06 with
+// sequential-thinking in the tool block; the model went on to hand-build a
+// test client over stdio to prove MCP worked, having never noticed it was
+// already holding the tool.
+//
+// One line, at the front, in the model's own working vocabulary. The remote's
+// description follows unchanged — it is that server's own words about what the
+// tool does, and this only says where it came from.
 func (a *toolAdapter) ToolDefinition() model.ToolDefinition {
-	desc := a.desc
-	if desc == "" {
-		desc = "MCP tool " + a.remote
+	desc := "From the MCP server \"" + a.client.Name() + "\"."
+	if a.desc != "" {
+		desc += " " + a.desc
+	} else {
+		desc += " Tool: " + a.remote + "."
 	}
 	return model.ToolDefinition{
 		Type: "function",
@@ -133,6 +151,22 @@ func toolName(server, tool string) string {
 // one that does the naming. Keep it the same string toolName builds from.
 func ToolPrefix(server string) string {
 	return sanitize(server) + "_"
+}
+
+// ToolBelongsTo reports whether a bridged tool name came from one of the named
+// servers. The question "is this MCP tool mine?" is now asked from two places —
+// a desk (mode.CarriesMCP) and an agent the user pointed a server at
+// (subagent.FilterRegistry) — and both have to answer it the same way as
+// toolName builds it. Two open-coded prefix loops would be two chances to
+// disagree with the naming rule three functions up.
+func ToolBelongsTo(tool string, servers []string) bool {
+	tool = strings.ToLower(strings.TrimSpace(tool))
+	for _, server := range servers {
+		if strings.HasPrefix(tool, ToolPrefix(server)) {
+			return true
+		}
+	}
+	return false
 }
 
 func sanitize(s string) string {

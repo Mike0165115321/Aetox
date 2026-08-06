@@ -53,7 +53,10 @@ func TestPreparseGlobalFlagsAcceptsOffThink(t *testing.T) {
 	}
 }
 
-func TestResolveModelStatusIncludesThinkFallback(t *testing.T) {
+// The built-in aetox provider has no thinking knob, so its status line carries
+// no think suffix — it used to print one from whatever the config happened to
+// hold, which is a level nothing would ever send.
+func TestResolveModelStatusOmitsThinkWhenTheProviderHasNoDial(t *testing.T) {
 	status := resolveModelStatus(config.Config{
 		ModelProvider: "noop",
 		ModelName:     "noop",
@@ -63,13 +66,13 @@ func TestResolveModelStatusIncludesThinkFallback(t *testing.T) {
 	})
 	// ModelProvider "noop" is a backward-compat alias — ResolveStatus
 	// normalizes it to the current canonical name "aetox".
-	want := "aetox/noop(high)"
+	want := "aetox/noop"
 	if status != want {
 		t.Fatalf("want %q got %q", want, status)
 	}
 }
 
-func TestResolveModelStatusSupportsNoThinking(t *testing.T) {
+func TestResolveModelStatusOmitsThinkEvenWhenTheConfigSaysOff(t *testing.T) {
 	status := resolveModelStatus(config.Config{
 		ModelProvider: "noop",
 		ModelName:     "noop",
@@ -77,7 +80,7 @@ func TestResolveModelStatusSupportsNoThinking(t *testing.T) {
 	}, model.BootstrapResult{
 		Provider: model.NewNoopProvider("noop"),
 	})
-	want := "aetox/noop(off)"
+	want := "aetox/noop"
 	if status != want {
 		t.Fatalf("want %q got %q", want, status)
 	}

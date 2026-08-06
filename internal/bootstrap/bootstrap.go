@@ -321,6 +321,21 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 	// hardcoded full-access: with approval hardwired, the Settings toggle was
 	// cosmetic and ask/unsafe-only never reached the engine.
 	approvalMode := safety.NormalizeApprovalMode(cfg.ApprovalMode)
+
+	// Against this provider's own list, not just parsed. The desktop already
+	// normalizes on every switch, so this changes nothing there; a host that
+	// does not — the CLI's --think, a config file written by hand — used to
+	// hand through a level the provider does not have, and the level a provider
+	// lacks most often is "off". think.Resolve short-circuits "off" to "send no
+	// effort", so on a model that cannot stop thinking (Kimi K3) asking for off
+	// silently produced its default, which is the *most* thinking it has.
+	//
+	// Empty means the provider has no dial at all (ollama, lmstudio); the
+	// original value rides through untouched because nothing will read it.
+	thinkLevel := cfg.ThinkLevel
+	if normalized := model.NormalizeThinkingLevel(cfg.ModelProvider, cfg.ModelName, thinkLevel); normalized != "" {
+		thinkLevel = normalized
+	}
 	for _, tool := range subagent.NewTaskTools(subagent.TaskOptions{
 		Provider: bootstrapResult.Provider,
 		Model:    cfg.ModelName,
@@ -337,7 +352,7 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 		OnToolRun:    opts.OnToolRun,
 		OnUsage:      opts.OnUsage,
 		MaxChars:     maxChars,
-		ThinkLevel:   think.NormalizeLevel(cfg.ThinkLevel),
+		ThinkLevel:   think.NormalizeLevel(thinkLevel),
 		Proposer:     opts.Proposer,
 	}) {
 		if err := registry.Register(tool, skill.SourceBuiltin); err != nil {
@@ -350,9 +365,16 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 		console = aetoxapp.NewStdIO()
 	}
 	chatApp, err := aetoxapp.NewApp(aetoxapp.Options{
-		Agent:          agent,
-		Console:        console,
-		Dispatcher:     dispatcher,
+		Agent:      agent,
+		Console:    console,
+		Dispatcher: dispatcher,
+		// The level the user picked, on the main agent's turns too. Omitting it
+		// left app.thinkLevel resolving an empty string, which think.Normalize
+		// reads as "medium" — so every desktop turn went out at a depth nobody
+		// chose, "off" included, while the sub-agent tools built ten lines above
+		// honoured the setting correctly. The CLI passed it and was never
+		// affected, which is why the picker looked fine everywhere it was tested.
+		ThinkLevel:     think.NormalizeLevel(thinkLevel),
 		ApprovalMode:   approvalMode,
 		Permissions:    permissions,
 		Hooks:          hooks,

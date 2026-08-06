@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -23,7 +24,7 @@ func Init(baseDir string) {
 
 	name := "aetox-" + time.Now().Format("20060102-150405") + ".log"
 	path := filepath.Join(dir, name)
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return
 	}
@@ -36,7 +37,7 @@ func Enable(filepath string) error {
 	if writer != nil {
 		_ = Disable()
 	}
-	f, err := os.OpenFile(filepath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	f, err := os.OpenFile(filepath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
 	}
@@ -91,6 +92,64 @@ func Info(label, value string) {
 	Msg("%-20s = %s", label+":", value)
 }
 
+// Secrets registered with Redact, scrubbed out of every line on the way to the
+// file. A set rather than a slice so registering the same key on each config
+// reload does not grow the list forever.
+var (
+	secretsMu sync.RWMutex
+	secrets   = map[string]bool{}
+)
+
+// Redact registers a value that must never reach the log, whatever a caller
+// does with it. internal/config calls it for every API key it reads or writes.
+//
+// The scrub happens in timestamp() — the single funnel every line goes through
+// — rather than at each call site, because a rule enforced at call sites is a
+// rule the next call site can be written without. A debug log is pasted into
+// bug reports and screenshots by definition, so "we remembered everywhere" is
+// not a standard that survives contact with a new logging line.
+//
+// Short values are ignored. A four-character secret cannot be told apart from
+// ordinary text, and replacing every occurrence of it would shred the log into
+// something nobody can read — losing the log entirely is its own failure.
+func Redact(secret string) {
+	secret = strings.TrimSpace(secret)
+	if len(secret) < 8 {
+		return
+	}
+	secretsMu.Lock()
+	secrets[secret] = true
+	secretsMu.Unlock()
+}
+
+// Scrub returns text with every registered secret replaced. Exported because
+// the debug log is not the only place a key can come to rest: the shell audit
+// log records the command line, and tool_runs records arguments and output — a
+// `curl -H "Authorization: Bearer …"` lands in both.
+//
+// One registry, several sinks. A second list of secrets kept by whoever writes
+// to the database would be a list that drifts, and the drift would be silent
+// until the day someone reads the file it failed on.
+//
+// This package rather than a new one because Redact already lives here and a
+// secret registry with two homes is the thing it exists to prevent. Nothing in
+// here logs, so the dependency is one way and cheap.
+func Scrub(text string) string { return scrub(text) }
+
+// scrub replaces every registered secret with a marker that still says what was
+// there, so a reader can tell "the key was present and correct" from "the key
+// was missing" — which is the one thing a credentials bug needs the log for.
+func scrub(msg string) string {
+	secretsMu.RLock()
+	defer secretsMu.RUnlock()
+	for secret := range secrets {
+		if strings.Contains(msg, secret) {
+			msg = strings.ReplaceAll(msg, secret, "[redacted]")
+		}
+	}
+	return msg
+}
+
 func timestamp(msg string) {
-	fmt.Fprintf(writer, "[%s] %s\n", time.Now().Format("15:04:05.000"), msg)
+	fmt.Fprintf(writer, "[%s] %s\n", time.Now().Format("15:04:05.000"), scrub(msg))
 }

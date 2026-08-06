@@ -54,9 +54,12 @@ type ToolPart struct {
 	Name    string `json:"name"`
 	Subject string `json:"subject,omitempty"`
 	// Agent and Brief are set only on a `task` call: which sub-agent the work
-	// went to, and the brief it was given.
-	Agent   string `json:"agent,omitempty"`
-	Brief   string `json:"brief,omitempty"`
+	// went to, and the brief it was given. AgentKind is which pile that worker
+	// is in — "agent" or "helper", same values as ToolEvent.AgentKind — kept so
+	// a reopened session still counts the two apart.
+	Agent     string `json:"agent,omitempty"`
+	Brief     string `json:"brief,omitempty"`
+	AgentKind string `json:"agentKind,omitempty"`
 	OK      bool   `json:"ok"`
 	Error   string `json:"error,omitempty"`
 	Secs    int    `json:"secs,omitempty"`

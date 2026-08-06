@@ -1,9 +1,11 @@
 // Package oauth holds every "sign in with your own subscription" flow Aetox
 // supports, plus the credential store those flows write to.
 //
-// It imports nothing else from Aetox on purpose. internal/model resolves
-// tokens through this package, and internal/config already imports
-// internal/model — any edge back from here into config would close a cycle.
+// It imports nothing from Aetox except internal/atrest, which imports nothing
+// at all. internal/model resolves tokens through this package, and
+// internal/config already imports internal/model — any edge back from here into
+// config would close a cycle, which is why the at-rest wrapping lives in its
+// own leaf package rather than next to the model keys it also protects.
 // The cost is that Root below repeats config.DataRoot's rule; the two must
 // stay in step, which is what TestRootMatchesConfigDataRoot guards.
 package oauth
@@ -12,6 +14,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+
+	"github.com/Mike0165115321/Aetox/internal/atrest"
 	"strings"
 	"sync"
 	"time"
@@ -112,7 +116,9 @@ func load() map[string]Credential {
 		return map[string]Credential{}
 	}
 	out := map[string]Credential{}
-	if err := json.Unmarshal(raw, &out); err != nil {
+	// Unwrapped on the way in; a store written before this was wrapped, or on a
+	// platform with nothing to wrap it, passes through unchanged (atrest).
+	if err := json.Unmarshal(atrest.Unprotect(raw), &out); err != nil {
 		// A corrupt store reads as logged out rather than as a hard failure:
 		// the fix a user can act on is "log in again", and returning an error
 		// here would instead block the app from starting at all.
@@ -135,10 +141,15 @@ func save(store map[string]Credential) error {
 	if err != nil {
 		return err
 	}
+	// Encrypted at rest where the platform offers it, the same as the model API
+	// keys in config.SaveCredentials. These are OAuth access and refresh tokens
+	// — the same class of secret — and holding two classes of credential to two
+	// different standards is a difference nobody decided on, just one that grew.
+	//
 	// Write-then-rename for the same reason SaveModelPreference does it: a
 	// half-written credential file locks the user out of every provider.
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, payload, 0o600); err != nil {
+	if err := os.WriteFile(tmp, atrest.Protect(payload), 0o600); err != nil {
 		return err
 	}
 	if err := os.Rename(tmp, path); err != nil {

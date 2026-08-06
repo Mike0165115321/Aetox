@@ -9,55 +9,62 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/skill"
 )
 
-func TestSaveShadowsBundledAndDeleteReverts(t *testing.T) {
-	isolate(t)
+// The helpers' write door is closed (owner's call, 2026-08-06): Save refuses
+// everything, the bundled profile stays untouched, and Delete still works as
+// cleanup for a leftover file the lock made inert.
+func TestSaveRefusesTheClosedHelperHome(t *testing.T) {
+	dir := isolate(t)
 
-	raw, ok := ReadRaw("explore")
-	if !ok || !strings.Contains(raw, "tools:") {
-		t.Fatalf("ReadRaw(explore) = %q, %v", raw, ok)
+	err := Save("explore", "---\ndescription: ของผม\n---\nMine.\n")
+	if err == nil {
+		t.Fatal("Save wrote into the closed helper home")
 	}
-	if err := Save("explore", "---\ndescription: ของผม\n---\nMine.\n"); err != nil {
-		t.Fatalf("Save: %v", err)
+	if !strings.Contains(err.Error(), "ตัวแทน") {
+		t.Errorf("the refusal does not point at the team page: %v", err)
 	}
-	if p, _ := Load("explore"); p.Prompt != "Mine." || p.Builtin {
-		t.Fatalf("user file not in effect: %+v", p)
+	if p, _ := Load("explore"); p.Prompt == "Mine." || !p.Builtin {
+		t.Fatalf("the refused save still took effect: %+v", p)
 	}
 
-	// Deleting the shadow is the revert — the bundled profile comes back with its
-	// tool list intact rather than the name disappearing from the list.
+	// A leftover file (written before the lock) is inert but still the user's
+	// to remove — Delete is cleanup now, not revert.
+	if err := os.WriteFile(filepath.Join(dir, "explore.md"), []byte("old shadow"), 0o644); err != nil {
+		t.Fatalf("write leftover: %v", err)
+	}
 	if err := Delete("explore"); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	p, ok := Load("explore")
-	if !ok || !p.Builtin || len(p.Tools) != 4 {
-		t.Fatalf("bundled explore did not come back: %+v ok=%v", p, ok)
+	if _, err := os.Stat(filepath.Join(dir, "explore.md")); !os.IsNotExist(err) {
+		t.Fatal("the leftover file was not removed")
 	}
 	if err := Delete("explore"); err != nil {
 		t.Fatalf("second Delete should be a no-op, got %v", err)
 	}
 }
 
-func TestSaveRejectsBadNames(t *testing.T) {
+// Name and body validation moved with the one write door that still exists.
+func TestSaveAgentRejectsBadNames(t *testing.T) {
 	isolate(t)
 	for _, name := range []string{"", "   ", "..", "../evil", `sub\evil`, "has space", strings.Repeat("x", 41)} {
-		if err := Save(name, "body"); err == nil {
-			t.Errorf("Save(%q) was accepted", name)
+		if err := SaveAgent(name, "body"); err == nil {
+			t.Errorf("SaveAgent(%q) was accepted", name)
 		}
 	}
-	if err := Save("ok-name", "   "); err == nil {
+	if err := SaveAgent("ok-name", "   "); err == nil {
 		t.Error("empty body was accepted")
 	}
 }
 
 // SetModel must edit one line and leave every other key — including ones this
-// package does not read — exactly as written.
+// package does not read — exactly as written. It works on agents only; a
+// helper is part of the system and follows the chat's model.
 func TestSetModelEditsOneLine(t *testing.T) {
-	dir := isolate(t)
+	isolate(t)
 
-	if err := SetModel("explore", "deepseek-v4-flash"); err != nil {
+	if err := SetModel("doc", "deepseek-v4-flash"); err != nil {
 		t.Fatalf("SetModel: %v", err)
 	}
-	raw, err := os.ReadFile(filepath.Join(dir, "explore.md"))
+	raw, err := os.ReadFile(agentDefinition(t, "doc"))
 	if err != nil {
 		t.Fatalf("read back: %v", err)
 	}
@@ -68,20 +75,22 @@ func TestSetModelEditsOneLine(t *testing.T) {
 	if strings.Count(text, "model:") != 1 {
 		t.Errorf("model key appears %d times:\n%s", strings.Count(text, "model:"), text)
 	}
-	p, _ := Load("explore")
-	if p.Model != "deepseek-v4-flash" || len(p.Tools) != 4 {
+	p, _ := Load("doc")
+	if p.Model != "deepseek-v4-flash" || p.Desk != "specialized" {
 		t.Fatalf("other fields damaged: %+v", p)
-	}
-	if !strings.Contains(p.Prompt, "file-search specialist") {
-		t.Errorf("prompt body damaged: %q", p.Prompt)
 	}
 
 	// Empty model = inherit: the line goes away instead of being set to "".
-	if err := SetModel("explore", ""); err != nil {
+	if err := SetModel("doc", ""); err != nil {
 		t.Fatalf("SetModel(clear): %v", err)
 	}
-	if p, _ := Load("explore"); p.Model != "" {
+	if p, _ := Load("doc"); p.Model != "" {
 		t.Errorf("model = %q after clearing", p.Model)
+	}
+
+	// The helper refusal, stated where the settings dropdown would hit it.
+	if err := SetModel("explore", "deepseek-v4-flash"); err == nil {
+		t.Fatal("SetModel edited a system helper")
 	}
 }
 

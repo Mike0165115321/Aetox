@@ -19,6 +19,7 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/safety"
 	"github.com/Mike0165115321/Aetox/internal/skill"
+	"github.com/Mike0165115321/Aetox/internal/subagent"
 	"github.com/Mike0165115321/Aetox/internal/think"
 	"github.com/Mike0165115321/Aetox/internal/turn"
 
@@ -197,6 +198,7 @@ func NewApp(opts Options) (*App, error) {
 		Hooks:          a.hooks,
 		OnToolAction:   a.onToolAction,
 		OnToolRun:      a.onToolRun,
+		DelegateKind:   subagent.KindOf,
 		StatusReporter: opts.StatusReporter,
 		TurnOptions: turn.TurnOptions{
 			ThinkLevel:     a.thinkLevel,
@@ -222,6 +224,7 @@ func (a *App) wireStatusReporter() {
 		Hooks:          a.hooks,
 		OnToolAction:   a.onToolAction,
 		OnToolRun:      a.onToolRun,
+		DelegateKind:   subagent.KindOf,
 		TurnOptions: turn.TurnOptions{
 			ThinkLevel:     a.thinkLevel,
 			OnContent:      a.contentPreview,
@@ -498,6 +501,7 @@ func (a *App) switchModel(ctx context.Context) error {
 		ApprovalMode: a.approvalMode,
 		Permissions:  a.permissions,
 		Hooks:        a.hooks,
+		DelegateKind: subagent.KindOf,
 		TurnOptions: turn.TurnOptions{
 			ThinkLevel:     a.thinkLevel,
 			OnContent:      a.contentPreview,

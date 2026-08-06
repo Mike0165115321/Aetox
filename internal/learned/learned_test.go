@@ -7,17 +7,24 @@ import (
 	"testing"
 )
 
-func isolate(t *testing.T) string {
+// isolate points the data root at a temp dir and returns both halves the tests
+// assert against: the memory folder, and the agents' home next to it.
+func isolate(t *testing.T) (memoryDir, agentsDir string) {
 	t.Helper()
 	root := t.TempDir()
 	t.Setenv("AETOX_DATA_ROOT", root)
-	return filepath.Join(root, "memory")
+	return filepath.Join(root, "memory"), filepath.Join(root, "agents")
 }
 
 // The portability promise: plain markdown, in a folder, under names another
 // agent runtime already understands.
+//
+// Two homes since 2026-08-06, and the split is the point. What has no folder of
+// its own — the main agent, each desk — stays under memory/. A delegate's goes
+// inside that worker's own folder, because one agent is one folder and its
+// memory is part of what it is.
 func TestMemoryIsPlainMarkdownAtAPredictablePath(t *testing.T) {
-	dir := isolate(t)
+	dir, agents := isolate(t)
 
 	main, err := FileFor(MainScope)
 	if err != nil {
@@ -27,12 +34,45 @@ func TestMemoryIsPlainMarkdownAtAPredictablePath(t *testing.T) {
 		t.Errorf("main memory at %q, want %q", main, want)
 	}
 
+	desk, err := FileFor(ModeScope("coding"))
+	if err != nil {
+		t.Fatalf("FileFor(mode:coding): %v", err)
+	}
+	if want := filepath.Join(dir, "modes", "coding.md"); desk != want {
+		t.Errorf("desk memory at %q, want %q", desk, want)
+	}
+
 	child, err := FileFor("explore")
 	if err != nil {
 		t.Fatalf("FileFor(explore): %v", err)
 	}
-	if want := filepath.Join(dir, "agents", "explore.md"); child != want {
+	if want := filepath.Join(agents, "explore", "MEMORY.md"); child != want {
 		t.Errorf("delegate memory at %q, want %q", child, want)
+	}
+}
+
+// The pre-folder layout must not strand what an agent already learned. Both
+// halves move, and the old files are gone afterwards so nothing reads a stale
+// copy — the whole point of one agent being one folder.
+func TestOldMemoryFilesMoveIntoTheAgentsFolder(t *testing.T) {
+	dir, agents := isolate(t)
+
+	old := filepath.Join(dir, "agents", "doc.md")
+	if err := os.MkdirAll(filepath.Dir(old), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(old, []byte("จำได้ว่าเจ้านายชอบตารางสั้น"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	if got := Read("doc"); got != "จำได้ว่าเจ้านายชอบตารางสั้น" {
+		t.Fatalf("Read(doc) = %q — the old memory did not survive the move", got)
+	}
+	if _, err := os.Stat(filepath.Join(agents, "doc", "MEMORY.md")); err != nil {
+		t.Fatalf("memory is not in the agent's folder: %v", err)
+	}
+	if _, err := os.Stat(old); !os.IsNotExist(err) {
+		t.Fatal("the pre-folder file is still there — two copies, and only one of them is read")
 	}
 }
 

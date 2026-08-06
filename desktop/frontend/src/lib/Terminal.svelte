@@ -4,7 +4,7 @@
   import { FitAddon } from '@xterm/addon-fit'
   import '@xterm/xterm/css/xterm.css'
   import { EventsOn } from '../../wailsjs/runtime/runtime'
-  import { TerminalWrite, TerminalResize } from '../../wailsjs/go/main/App'
+  import { TerminalWrite, TerminalResize, TerminalAttach } from '../../wailsjs/go/main/App'
 
   let { sessionId, onExit }: { sessionId: string; onExit: () => void } = $props()
 
@@ -28,8 +28,15 @@
     fit.fit()
     TerminalResize(sessionId, term.cols, term.rows)
 
+    // Subscribe first, attach second. The session emits nothing until it is
+    // attached, so this order is what guarantees the banner and prompt a shell
+    // printed before this pane existed are neither lost nor shown twice — see
+    // TerminalAttach. Reversing these two lines reopens the black-pane bug.
     unsubs.push(EventsOn(`terminal:data:${sessionId}`, (chunk: string) => term.write(chunk)))
     unsubs.push(EventsOn(`terminal:closed:${sessionId}`, () => onExit()))
+    void TerminalAttach(sessionId).then((backlog) => {
+      if (backlog) term.write(backlog)
+    })
     term.onData((data) => { TerminalWrite(sessionId, data) })
 
     resizeObserver = new ResizeObserver(() => {

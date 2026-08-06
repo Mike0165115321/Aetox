@@ -5,6 +5,7 @@
   import Palette from './Palette.svelte'
   import Logo from './Logo.svelte'
   import { onMount } from 'svelte'
+  import { shell } from './shell.svelte'
   import {
     EnabledProviders, SupportedThinkLevels,
     ListModelsForProvider, RequiresAPIKey, HasAPIKey, PickAttachment,
@@ -53,13 +54,16 @@
   let models = $state<string[]>([])
   let needsApiKey = $state(false)
   let apiKeyDraft = $state('')
-  // Thinking, the agent's own tools, and what it delegated are three views of
-  // the same turn, so they take turns in one slot instead of stacking — opening
+  // Thinking, the agent's own tools, and what it delegated are views of the
+  // same turn, so they take turns in one slot instead of stacking — opening
   // one closes the others. '' = all collapsed, which is how a finished reply
   // starts. Sub-agents are their own view rather than rows mixed into the tool
   // list: "what did it do itself" and "what did it hand to someone else" are
-  // different questions, and one list answers neither.
-  type Panel = 'think' | 'tools' | 'subs' | ''
+  // different questions, and one list answers neither. Delegations split once
+  // more into 'agents' (ตัวแทน — a colleague hired for a whole job) and 'subs'
+  // (ผู้ช่วยตัวแทน — the assistant's own hands), because "ซับเอเจน 1 ตัว" on a
+  // turn where the doc agent made the file misnames whose work it was.
+  type Panel = 'think' | 'tools' | 'agents' | 'subs' | ''
   let openPanel = $state<Record<number, Panel>>({})
   function togglePanel(i: number, p: Panel) {
     openPanel[i] = openPanel[i] === p ? '' : p
@@ -91,6 +95,15 @@
   const isOwn = (n: TimelineNode) => !n.step.parent && !isDelegation(n)
   const ownSteps = (steps: ToolStep[]) => groupSteps(steps).filter(isOwn).map((n) => n.step)
   const delegated = (steps: ToolStep[]) => groupSteps(steps).filter((n) => !isOwn(n))
+  // The two piles a delegation lands in (COMPANY.md §4): a ตัวแทน takes a whole
+  // job and returns a file; a ผู้ช่วยตัวแทน is a step of the assistant's own
+  // work. The kind rides on the step, stamped by the engine from which home the
+  // profile file lives in — the frontend never guesses it from a name. A step
+  // with no stamp (an old persisted turn) counts as a helper, which is the pile
+  // every delegation was in before the split.
+  const isAgentNode = (n: TimelineNode) => n.step.agentKind === 'agent'
+  const delegatedAgents = (steps: ToolStep[]) => delegated(steps).filter(isAgentNode)
+  const delegatedHelpers = (steps: ToolStep[]) => delegated(steps).filter((n) => !isAgentNode(n))
   // The agent's own steps that are actually tools. Narration and thinking rows
   // ride in the same list and are not — counting them would inflate "used N
   // tools" with sentences.
@@ -114,8 +127,13 @@
   const doneOwn = $derived(ownSteps(toolSteps).filter((s) => s.state !== 'run'))
   const doneOwnTools = $derived(ownTools(toolSteps).filter((s) => s.state !== 'run'))
   const runningOwn = $derived(ownSteps(toolSteps).filter((s) => s.state === 'run'))
-  const doneSubs = $derived(delegated(toolSteps).filter((n) => n.step.state !== 'run'))
-  const runningSubs = $derived(delegated(toolSteps).filter((n) => n.step.state === 'run'))
+  const doneAgents = $derived(delegatedAgents(toolSteps).filter((n) => n.step.state !== 'run'))
+  const doneHelpers = $derived(delegatedHelpers(toolSteps).filter((n) => n.step.state !== 'run'))
+  // What is still running renders as one list, agents first — each block names
+  // its own worker, so the piles only need separating where they are counted.
+  const runningSubs = $derived(
+    [...delegatedAgents(toolSteps), ...delegatedHelpers(toolSteps)].filter((n) => n.step.state === 'run'),
+  )
   // The engine's phase message is a fallback, not the headline. It says
   // "กำลังคิดคำตอบ..." for the whole tool loop — which duplicates the thinking
   // toggle right below it and stops being true the moment a tool starts.
@@ -139,10 +157,10 @@
     return failed ? `${base} · ${t('chat.failedCount', { n: failed })}` : base
   }
 
-  function subagentsLabel(steps: ToolStep[]): string {
-    const nodes = delegated(steps)
+  // One label builder for both piles — same shape, different word and count.
+  function delegationLabel(nodes: TimelineNode[], key: 'chat.usedAgents' | 'chat.usedSubagents'): string {
     const failed = nodes.filter((n) => n.step.state === 'err').length
-    const base = t('chat.usedSubagents', { n: nodes.length })
+    const base = t(key, { n: nodes.length })
     return failed ? `${base} · ${t('chat.failedCount', { n: failed })}` : base
   }
 
@@ -746,7 +764,7 @@
             {:else}
               <span class="glyph"><Icon name={node.step.state === 'done' ? 'check' : 'x'} size={12} /></span>
             {/if}
-            <span class="ag-name">{node.step.agent || t('chat.subagent')}</span>
+            <span class="ag-name">{node.step.agent || t(isAgentNode(node) ? 'chat.agent' : 'chat.subagent')}</span>
             <span class="ag-job">{node.step.label.replace(/^task\s*/, '')}</span>
             {#if node.children.length}
               <span class="secs">· {t('chat.usedTools', { n: node.children.length })}</span>
@@ -857,11 +875,18 @@
                     {toolsLabel(m.steps ?? [])}
                   </button>
                 {/if}
-                {#if delegated(m.steps ?? []).length}
+                {#if delegatedAgents(m.steps ?? []).length}
+                  <button class="reasoning-toggle" onclick={() => togglePanel(i, 'agents')}>
+                    <span class="chev"><Icon name={openPanel[i] === 'agents' ? 'chevronDown' : 'chevronRight'} size={12} /></span>
+                    <span class="ic"><Icon name="userRound" size={12} /></span>
+                    {delegationLabel(delegatedAgents(m.steps ?? []), 'chat.usedAgents')}
+                  </button>
+                {/if}
+                {#if delegatedHelpers(m.steps ?? []).length}
                   <button class="reasoning-toggle" onclick={() => togglePanel(i, 'subs')}>
                     <span class="chev"><Icon name={openPanel[i] === 'subs' ? 'chevronDown' : 'chevronRight'} size={12} /></span>
                     <span class="ic"><Icon name="bot" size={12} /></span>
-                    {subagentsLabel(m.steps ?? [])}
+                    {delegationLabel(delegatedHelpers(m.steps ?? []), 'chat.usedSubagents')}
                   </button>
                 {/if}
               </div>
@@ -871,8 +896,11 @@
               {#if m.steps?.length && openPanel[i] === 'tools'}
                 {@render toolTimeline(ownSteps(m.steps), false)}
               {/if}
+              {#if m.steps?.length && openPanel[i] === 'agents'}
+                {@render subagentTimeline(delegatedAgents(m.steps), false)}
+              {/if}
               {#if m.steps?.length && openPanel[i] === 'subs'}
-                {@render subagentTimeline(delegated(m.steps), false)}
+                {@render subagentTimeline(delegatedHelpers(m.steps), false)}
               {/if}
             {/if}
             {#if editingIndex === i}
@@ -1038,12 +1066,12 @@
               {/if}
               <span class="typing-dots"><span></span><span></span><span></span></span>
             </div>
-            {#if reasoningText || doneOwnTools.length || doneSubs.length}
+            {#if reasoningText || doneOwnTools.length || doneAgents.length || doneHelpers.length}
               <div class="meta-row">
-                <!-- The same three marks the finished bubble's toggles carry
-                     (brain / wrench / bot). These are the identical rows one
-                     moment earlier, and without the marks the row visibly
-                     changed shape the instant the turn ended. -->
+                <!-- The same marks the finished bubble's toggles carry
+                     (brain / wrench / userRound / bot). These are the identical
+                     rows one moment earlier, and without the marks the row
+                     visibly changed shape the instant the turn ended. -->
                 {#if reasoningText}
                   <button class="reasoning-toggle" onclick={() => (livePanel = livePanel === 'think' ? '' : 'think')}>
                     <span class="chev"><Icon name={livePanel === 'think' ? 'chevronDown' : 'chevronRight'} size={12} /></span>
@@ -1058,11 +1086,18 @@
                     {toolsLabel(liveDone)}
                   </button>
                 {/if}
-                {#if doneSubs.length}
+                {#if doneAgents.length}
+                  <button class="reasoning-toggle" onclick={() => (livePanel = livePanel === 'agents' ? '' : 'agents')}>
+                    <span class="chev"><Icon name={livePanel === 'agents' ? 'chevronDown' : 'chevronRight'} size={12} /></span>
+                    <span class="ic"><Icon name="userRound" size={12} /></span>
+                    {delegationLabel(doneAgents, 'chat.usedAgents')}
+                  </button>
+                {/if}
+                {#if doneHelpers.length}
                   <button class="reasoning-toggle" onclick={() => (livePanel = livePanel === 'subs' ? '' : 'subs')}>
                     <span class="chev"><Icon name={livePanel === 'subs' ? 'chevronDown' : 'chevronRight'} size={12} /></span>
                     <span class="ic"><Icon name="bot" size={12} /></span>
-                    {subagentsLabel(liveDone)}
+                    {delegationLabel(doneHelpers, 'chat.usedSubagents')}
                   </button>
                 {/if}
               </div>
@@ -1072,8 +1107,11 @@
               {#if doneOwn.length && livePanel === 'tools'}
                 {@render toolTimeline(doneOwn, false)}
               {/if}
-              {#if doneSubs.length && livePanel === 'subs'}
-                {@render subagentTimeline(doneSubs, false)}
+              {#if doneAgents.length && livePanel === 'agents'}
+                {@render subagentTimeline(doneAgents, false)}
+              {/if}
+              {#if doneHelpers.length && livePanel === 'subs'}
+                {@render subagentTimeline(doneHelpers, false)}
               {/if}
             {/if}
             {#if cockpit.todos.length > 0}
@@ -1199,13 +1237,29 @@
       </div>
     {/if}
     <div class="focus-row">
+      <!-- Only the workshop points at a project. The storefront is the door
+           that works on the machine rather than in a folder (§19/§86), so a
+           picker there offered a choice that door does not have — and the one
+           it offered loudest, "ไม่โฟกัสโปรเจกต์", was the state it is always
+           in. switchShell clears the focus on the way in, so this is hidden
+           because there is nothing to show, not to hide something real. -->
+      {#if shell.name === 'code'}
       <div class="focus-pick">
         {#if focusMenuOpen}
           <div class="focus-menu">
-            <button type="button" class="focus-item" class:on={!cockpit.project.focused} onclick={() => { focusMenuOpen = false; clearProjectFocus() }}>
-              <span class="ic"><Icon name="messageSquare" size={14} /></span> {t('chat.noProject')}
-            </button>
-            {#if cockpit.projects.length > 0}<div class="menu-sep"></div>{/if}
+            <!-- Not in the โค้ด window (§86): that door is the workshop, and
+                 work there belongs to a project. Offering "no project" there
+                 put every coding chat into the unfocused bucket, which has no
+                 row in the projects table — and the sidebar groups history by
+                 project, so those chats had nowhere to be drawn and read as
+                 lost. The storefront still has it: that door never focuses a
+                 project at all, which is the whole of its half. -->
+            {#if shell.name !== 'code'}
+              <button type="button" class="focus-item" class:on={!cockpit.project.focused} onclick={() => { focusMenuOpen = false; clearProjectFocus() }}>
+                <span class="ic"><Icon name="messageSquare" size={14} /></span> {t('chat.noProject')}
+              </button>
+              {#if cockpit.projects.length > 0}<div class="menu-sep"></div>{/if}
+            {/if}
             {#each cockpit.projects.slice(0, 8) as p (p.key)}
               <button type="button" class="focus-item" class:on={cockpit.project.focused && p.active} onclick={() => { focusMenuOpen = false; openProject(p.path) }}>
                 <span class="ic"><Icon name="folder" size={14} /></span><span class="t">{p.name}</span>
@@ -1248,11 +1302,14 @@
           </div>
         {/if}
         <button type="button" class="focus-chip focus-btn" onclick={() => (focusMenuOpen = !focusMenuOpen)}>
-          <span class="ic"><Icon name={cockpit.project.focused ? 'folder' : 'messageSquare'} size={13} /></span>
-          {cockpit.project.focused ? cockpit.project.name : t('chat.noProject')}
+          <span class="ic"><Icon name={cockpit.project.focused ? 'folder' : (shell.name === 'code' ? 'folderOpen' : 'messageSquare')} size={13} /></span>
+          {cockpit.project.focused
+            ? cockpit.project.name
+            : (shell.name === 'code' ? t('chat.pickProject') : t('chat.noProject'))}
           <span class="caret"><Icon name={focusMenuOpen ? 'chevronUp' : 'chevronDown'} size={12} /></span>
         </button>
       </div>
+      {/if}
       <!-- Who this chat is with, and the way to a different who (§85). Same
            shape as the focus chip beside it: both answer "what am I pointed
            at right now". Picking someone always opens a NEW session — a desk
@@ -1465,7 +1522,13 @@
                     <span class="mm-static">{model.modelName || '—'}</span>
                   {/if}
                 </div>
-                {#if thinkLevels.length > 0}
+                <!-- Two, not one: a picker with a single entry is not a choice,
+                     it just tells the user there is a setting they cannot move.
+                     The command palette has always required two (Palette.svelte);
+                     this row asked for one, so a model with exactly one real
+                     level — gpt-5-pro, MiniMax M2.x, which cannot stop thinking
+                     — drew a dropdown that did nothing when opened. -->
+                {#if thinkLevels.length > 1}
                   <div class="mm-row">
                     <span class="lbl">{t('chat.thinkLevel')}</span>
                     {@render upSelect('thinkLevel', thinkLevels.map((lvl) => ({ value: lvl, label: lvl })), model.thinkLevel, onSwitchThinkLevel)}

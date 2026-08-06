@@ -130,8 +130,16 @@ func TestEachDeskSendsOnlyItsOwnTools(t *testing.T) {
 		// COMPANY.md §2: the assistant desk does everything on this machine
 		// except the developer tools. It has the shell — safety is the gate's
 		// job, not a missing tool's (§6.2) — and no diagnostics or symbol.
-		{"assistant", assistant, true, []string{"read", "edit", "shell", "web_search", "doc_write", "memory", "task"}},
+		{"assistant", assistant, true, []string{"read", "edit", "shell", "web_search", "memory", "task"}},
 		{"assistant", assistant, false, []string{"diagnostics", "symbol", "github_search"}},
+		// The three writers left this desk on the owner's call (2026-08-06):
+		// *"เมนไม่ควรทำเองสิครับ มันคืองานของเอเจนเฉพาะทางที่เราสร้างมาแล้ว"*.
+		// The office already had a chair per format — doc, deck, sheet, each
+		// carrying exactly one writer at desk: specialized — and leaving the
+		// writers here too meant the assistant did the job itself whenever it
+		// looked small, which is a choice made by mood rather than by rule.
+		// `task` above is what stays: the way to have one made.
+		{"assistant", assistant, false, []string{"doc_write", "sheet_write", "slides_write"}},
 	} {
 		for _, name := range c.names {
 			if got := slices.Contains(c.tools, name); got != c.want {
@@ -519,11 +527,18 @@ func (s *stubTool) ToolDefinition() model.ToolDefinition {
 	return model.ToolDefinition{Type: "function", Function: model.ToolFunction{Name: s.name}}
 }
 
-// MCP is the one thing a desk attaches by naming it, and the reason is the
-// trap this test is on: CategoryOf answers `agent` for every name it does not
-// know, so a desk carrying the agent group — all of them do — would pick up
-// every installed server if membership went through AllowsTool. That is the
-// pile modes exist to take apart, arriving through the side door.
+// A server reaches exactly the desks it named, and the reason this is a desk
+// test rather than a unit one is the trap it sits on: CategoryOf answers
+// `agent` for every name it does not know, so a desk carrying the agent group
+// — all of them do — would pick up every installed server if membership went
+// through AllowsTool. That is the pile modes exist to take apart, arriving
+// through the side door.
+//
+// Which way round the naming goes changed on 2026-08-06: the server names its
+// desks in `for:`, not the desk its servers. A manifest is compiled in before
+// any of the user's servers exist, so it could never name one — which is why
+// every configured server was connected, registered and then filtered off
+// every desk, and the assistant reported having no MCP tools at all.
 func TestAServerReachesOnlyTheDesksThatNamedIt(t *testing.T) {
 	a := bootDeskApp(t, "")
 
@@ -535,8 +550,14 @@ func TestAServerReachesOnlyTheDesksThatNamedIt(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	const manifest = "---\ndescription: โต๊ะทดสอบ\ncategories: agent\nmcp: notion\n---\nA desk with one server.\n"
+	const manifest = "---\ndescription: โต๊ะทดสอบ\ncategories: agent\n---\nA desk with one server.\n"
 	if err := os.WriteFile(filepath.Join(dir, "withmcp.md"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.SaveMCPServers([]config.MCPServerConfig{
+		{Name: "notion", Command: []string{"npx", "notion"}, For: []string{"withmcp"}},
+		{Name: "linear", Command: []string{"npx", "linear"}, For: []string{}},
+	}); err != nil {
 		t.Fatal(err)
 	}
 

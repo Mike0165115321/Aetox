@@ -6,6 +6,7 @@ import (
 	"io"
 	"os/exec"
 	"strconv"
+	"sync"
 	"sync/atomic"
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -28,7 +29,26 @@ type ptySession interface {
 type TerminalSession struct {
 	id  string
 	pty ptySession
+
+	// A shell starts talking the moment it exists — banner, then prompt — and
+	// for the first stretch of its life nothing is listening: the pane that will
+	// show it has not mounted yet, and an event with no subscriber is simply
+	// gone. That is a race the user's own "+" menu usually wins by luck and
+	// desk_terminal lost outright, which is what a black pane with a cursor in
+	// it actually was.
+	//
+	// So the session holds its output until a pane says it is there. Nothing is
+	// emitted before that, which means there is no window in which a chunk can
+	// be dropped and none in which one can arrive twice.
+	mu       sync.Mutex
+	backlog  []byte
+	attached bool
 }
+
+// maxBacklog caps what an unattached session keeps. A shell nobody has attached
+// to yet has printed a banner and a prompt; anything past this is a runaway
+// process filling memory for a pane that may never open.
+const maxBacklog = 256 << 10
 
 // ShellProfile is one shell the terminal picker can offer.
 type ShellProfile struct {
@@ -117,13 +137,47 @@ func (a *App) pumpTerminalOutput(s *TerminalSession) {
 	for {
 		n, err := s.pty.Read(buf)
 		if n > 0 {
-			a.emitEvent("terminal:data:"+s.id, string(buf[:n]))
+			s.mu.Lock()
+			if s.attached {
+				s.mu.Unlock()
+				a.emitEvent("terminal:data:"+s.id, string(buf[:n]))
+			} else {
+				s.backlog = append(s.backlog, buf[:n]...)
+				if len(s.backlog) > maxBacklog {
+					// Keep the tail: the prompt the user is about to type at
+					// matters more than the banner above it.
+					s.backlog = s.backlog[len(s.backlog)-maxBacklog:]
+				}
+				s.mu.Unlock()
+			}
 		}
 		if err != nil {
 			break
 		}
 	}
 	a.closeSession(s.id)
+}
+
+// TerminalAttach hands a newly mounted pane everything the session has said so
+// far, and switches it to live events from here on.
+//
+// Called by Terminal.svelte after it subscribes and before it draws anything.
+// That order is the whole design: while unattached the pump emits nothing, so
+// subscribing first cannot miss a chunk, and attaching second cannot replay one
+// that already arrived live.
+func (a *App) TerminalAttach(sessionID string) string {
+	a.terminalsMu.Lock()
+	s := a.terminals[sessionID]
+	a.terminalsMu.Unlock()
+	if s == nil {
+		return ""
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.attached = true
+	backlog := string(s.backlog)
+	s.backlog = nil
+	return backlog
 }
 
 // closeSession removes a session from the map and closes its PTY exactly

@@ -11,7 +11,7 @@ import {
   SwitchModel, SetAPIKey, SetProviderBaseURL, ProjectTree, ReadFile,
   ListSessions, LoadSession, NewSession, NewSessionAt, NewChairSession, SessionMode, SessionAgent, CurrentSessionID, SearchSessions, DeleteSession,
   SaveChatImage, SaveChatFile, ReadImageDataURL, CancelTurn, BrowserGetText, RecentProjects,
-  ListAllSessions, SearchAllSessions, LoadSessionAnyProject, ClearProjectFocus,
+  ListSessionsForDoor, SearchSessionsForDoor, LoadSessionAnyProject, ClearProjectFocus,
   AnswerUserQuestion, Interject, RetryActiveProvider, PendingUndo, UndoLastTurn,
   CompleteSignIn, SignOut, ImportSignIn,
   ListTaskChips, DismissTaskChip,
@@ -21,7 +21,7 @@ import {
 } from '../../../wailsjs/go/main/App'
 import type { main } from '../../../wailsjs/go/models'
 import { t } from '../i18n.svelte'
-import { shell, setShell, shellForDesk, SHELLS, type ShellName } from '../shell.svelte'
+import { shell, setShell, shellForDesk, deskFilterFor, SHELLS, type ShellName } from '../shell.svelte'
 import { workbench, switchWorkbenchSession, adoptWorkbenchSession, removeWorkbenchState } from './workbench.svelte'
 
 // Model info comes from a real Go IPC round-trip (GetModelInfo), which is
@@ -124,18 +124,25 @@ export async function searchSessions(query: string): Promise<void> {
   }))
 }
 
-/** Pull chat history across every project, newest first (sidebar's global history layer). */
+/** Pull this door's chat history across every project, newest first.
+ *
+ * Scoped in SQL rather than filtered here — see deskFilterFor for why the
+ * difference matters once the history is longer than one page. */
 export async function refreshGlobalHistory(): Promise<void> {
-  const [metas, current] = await Promise.all([ListAllSessions(), CurrentSessionID()])
+  const [metas, current] = await Promise.all([
+    ListSessionsForDoor(deskFilterFor(shell.name)), CurrentSessionID(),
+  ])
   cockpit.history = metas.map((m) => ({
     id: m.id, title: m.title, ago: agoLabel(m.updatedAt), updatedAt: m.updatedAt, active: m.id === current, projectName: m.projectName, mode: m.mode, agent: m.agent,
   }))
 }
 
-/** Full-text search chat history across every project. */
+/** Full-text search this door's chat history across every project. */
 export async function searchGlobalHistory(query: string): Promise<void> {
   if (!query.trim()) return refreshGlobalHistory()
-  const [hits, current] = await Promise.all([SearchAllSessions(query), CurrentSessionID()])
+  const [hits, current] = await Promise.all([
+    SearchSessionsForDoor(query, deskFilterFor(shell.name)), CurrentSessionID(),
+  ])
   cockpit.history = hits.map((m) => ({
     id: m.id, title: m.title, ago: agoLabel(m.updatedAt), updatedAt: m.updatedAt, active: m.id === current,
     snippet: m.snippet, projectName: m.projectName, mode: m.mode, agent: m.agent,
@@ -277,6 +284,7 @@ function stepsFromParts(parts?: TurnPart[]): ToolStep[] | undefined {
       removed: tool.removed || undefined,
       agent: tool.agent || undefined,
       brief: tool.brief || undefined,
+      agentKind: tool.agentKind || undefined,
       startedAt: 0,
     })
   })
@@ -371,9 +379,42 @@ export async function loadRealState(): Promise<void> {
   await refreshGlobalHistory()
   await refreshTaskChips()
   await refreshDesk()
+  await restoreLiveTranscript()
   if (!modelInfo.provider && bootRetries < 8) {
     bootRetries += 1
     setTimeout(loadRealState, 1500)
+  }
+}
+
+/** Put the conversation the engine is actually in back on screen.
+ *
+ * The Go backend outlives a webview reload — an F5, and every Vite HMR full
+ * reload under `wails dev` — so it is still holding the session, still has its
+ * memory, and the next message continues where the last one left off. The
+ * frontend that just booted holds nothing, and nothing was reading the
+ * transcript back: `cockpit.chat` stayed empty and the composer's empty state
+ * took the screen. It read as being thrown back to the start of the app, while
+ * the engine had in fact lost nothing.
+ *
+ * Restores only when the screen is empty, so a reload mid-answer cannot wipe
+ * what has already streamed in. A session with no messages — a cold start, or
+ * one the user opened and never spoke to — restores to empty, which is exactly
+ * the welcome screen it should be.
+ */
+async function restoreLiveTranscript(): Promise<void> {
+  if (cockpit.chat.length > 0) return
+  const id = await CurrentSessionID()
+  if (!id) return
+  try {
+    const messages = await LoadSession(id)
+    if (messages.length === 0) return
+    cockpit.chat = messages.map(restoreAttachments)
+    hydrateImages()
+    await switchWorkbenchSession(id)
+  } catch {
+    // A session whose desk or chair file was deleted refuses to reopen
+    // (sessions.go). The welcome screen is the honest fallback — better than
+    // an error bubble in a conversation the user has not started yet.
   }
 }
 
@@ -940,6 +981,15 @@ export function applyToolEvent(ev: ToolEvent): void {
       if (ev.added) open.added = ev.added
       // Let the row name itself once the subject shows up.
       if (ev.subject) open.label = label
+      // Same rule for a delegation's facts. The row is usually born from the
+      // streaming progress event, which fires while the model is still writing
+      // the call's arguments — agent, brief and kind are unknowable then and
+      // arrive only on the executor's own call event, after this row exists.
+      // Dropping them here is how a doc job got counted as "ผู้ช่วยตัวแทน 1
+      // ตัว" on a live turn while the written-down parts said agent/doc.
+      if (ev.agent) open.agent = ev.agent
+      if (ev.brief) open.brief = ev.brief
+      if (ev.agentKind) open.agentKind = ev.agentKind
       return
     }
     cockpit.toolSteps.push({
@@ -947,6 +997,7 @@ export function applyToolEvent(ev: ToolEvent): void {
       // Only a `task` call carries these, and they arrive on the first event —
       // the delegation is named before its first delegate step shows up.
       agent: ev.agent || undefined, brief: ev.brief || undefined,
+      agentKind: ev.agentKind || undefined,
       state: 'run', startedAt: Date.now(), added: ev.added || undefined,
     })
     return
@@ -1254,9 +1305,29 @@ async function afterNewSession(): Promise<void> {
 export async function switchShell(name: ShellName): Promise<void> {
   const def = SHELLS.find((s) => s.name === name)
   if (!def || shell.name === name) return
+  // Decided before the session switch, which refreshes the project list on the
+  // way past: reading it afterwards would make this depend on what a call three
+  // lines up happens to leave behind.
+  const resume = name === 'code' && !cockpit.project.focused ? cockpit.projects[0]?.path : ''
   setShell(name)
   setActiveView('chat')
   if (cockpit.desk !== def.desk) await newSessionAt(def.desk)
+  // The storefront does not focus a project — that is what §19 and §86 have
+  // said all along, and the window was contradicting it: its chat still
+  // carried the project picker, so walking through this door with a project
+  // open left the assistant rooted in it while the sidebar showed
+  // conversations. One engine has one root; the door has to actually set it,
+  // not merely stop drawing the control (owner's call, 2026-08-06).
+  //
+  // Coming back the other way, a project is required rather than optional, so
+  // the door re-opens the one you were last in. Without it every switch would
+  // cost a trip to the sidebar to say what the window already knows — the
+  // list is ordered by opened_at, so the first entry is that project.
+  if (name === 'assistant') {
+    if (cockpit.project.focused) await clearProjectFocus()
+  } else if (resume) {
+    await openProject(resume)
+  }
 }
 
 /** Show a desk: its open session if this is already the desk in front of you,

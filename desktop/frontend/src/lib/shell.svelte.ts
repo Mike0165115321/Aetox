@@ -84,3 +84,20 @@ export function setShell(name: ShellName): void {
 export function shellForDesk(desk: string | undefined): ShellName {
   return desk === 'coding' ? 'code' : 'assistant'
 }
+
+/** The same rule as a database filter: which desks a door's history covers.
+ *
+ * Sent to the engine (ListSessionsForDoor) so the scoping happens in SQL, where
+ * LIMIT is applied after WHERE. Filtering a fetched page here instead meant 200
+ * rows were taken across both doors and half thrown away, so a run of coding
+ * sessions could hand the storefront an empty list while its history sat in the
+ * table — a defect that only shows up once the app has been used enough.
+ *
+ * The storefront asks for everything *except* the workshop's desk rather than
+ * naming its own. That is what keeps shellForDesk's promise on this side too: a
+ * desk added later, a user-written one, or a legacy session held at no desk is
+ * at home in the storefront without anyone remembering to add it to a list. */
+export function deskFilterFor(name: ShellName): { desks: string[]; exclude: boolean } {
+  const workshop = SHELLS.find((s) => s.name === 'code')!.desk
+  return name === 'code' ? { desks: [workshop], exclude: false } : { desks: [workshop], exclude: true }
+}

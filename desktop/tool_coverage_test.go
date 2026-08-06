@@ -463,6 +463,19 @@ func toolCases(t *testing.T, root string, dispatcher *skill.Dispatcher) map[stri
 		"browser_read":  {args: map[string]any{}, available: never, why: "needs the app window"},
 		"browser_click": {args: map[string]any{"ref": 1}, available: never, why: "needs the app window"},
 		"browser_type":  {args: map[string]any{"ref": 1, "text": "hello"}, available: never, why: "needs the app window"},
+
+		// The agent's reach onto the desk (workbench_desk.go). desk_open and
+		// desk_terminal both end in an event the frontend answers, so there is
+		// nothing here to answer them; their behaviour is covered in
+		// workbench_desk_test.go, and what this file adds is the guarantee that
+		// the dispatcher can still route them.
+		//
+		// desk_list is the exception and runs for real: it reads state this
+		// process owns, so it needs no window at all — and a tool that answers
+		// "the desk is empty" is exactly right for a test with no desk.
+		"desk_open":     {args: map[string]any{"path": "note.md"}, available: never, why: "needs the app window"},
+		"desk_terminal": {args: map[string]any{"command": "echo hi"}, available: never, why: "needs the app window"},
+		"desk_list":     {args: map[string]any{}, check: outputContains("โต๊ะ")},
 	}
 }
 

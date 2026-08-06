@@ -166,6 +166,25 @@ func TestPromptTeachesThatDefaultsLoseToTheUsersWords(t *testing.T) {
 	}
 }
 
+// A long explanation used to leave as a `task` to the document writer and come
+// back a .docx — `doc_write` announced itself as the way to hand back writing,
+// and nothing said otherwise. The owner's complaint (2026-08-06) was the folder
+// of one-off documents that produced. The prompt must say what the main agent's
+// own long-form writing is: a .md file it writes itself.
+func TestPromptMakesMarkdownTheDefaultForLongFormWriting(t *testing.T) {
+	got := Build(SurfaceDesktop, Scope{Root: t.TempDir()})
+	for _, want := range []string{"long-form writing", ".md", "Markdown is the default"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("system prompt is missing %q:\n%s", want, got)
+		}
+	}
+	// The writers stay available — the rule is about which request they answer,
+	// not a ban on a tool name (§ the same principle as the defaults test).
+	if strings.Contains(got, "doc_write") {
+		t.Errorf("system prompt names a tool instead of stating what the writers are for:\n%s", got)
+	}
+}
+
 // The prompt must describe the same wall the tools enforce. In the unfocused
 // desktop the sandbox is open — telling the model "absolute paths are
 // rejected" there makes it answer "I can't search this machine" while holding

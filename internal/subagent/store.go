@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mike0165115321/Aetox/internal/mcp"
 	"github.com/Mike0165115321/Aetox/internal/mode"
 	"github.com/Mike0165115321/Aetox/internal/skill"
 )
@@ -27,26 +29,23 @@ func ReadRaw(name string) (string, bool) {
 	return rawFor(name)
 }
 
-// Save writes a sub-agent's file into the sub-agents' home; SaveAgent writes
-// an agent's into the agents'. Two doors and no kind parameter, because a
-// caller that had to pass one would be re-deciding the rule the homes already
-// carry — and the caller never writes the kind into the file either, the home
-// says it.
-//
-// A name the *other* home owns is refused at the door. A name has one owner
-// across both homes (memory, jobs and chat history all key on it), and a
-// conflict the save could have named is not something to leave for the
-// resolver to flag later.
+// Save was the sub-agents' write door, and now refuses everything: the
+// helpers are part of the system (owner's call, 2026-08-06) — the bundled
+// three are the whole set, so there is nothing a save here could legitimately
+// do. Kept as a door rather than deleted so the refusal lives in the layer
+// that owns the rule, and reads the same whichever caller knocks.
 func Save(name, body string) error {
-	return save(name, body, false)
+	return errors.New("ผู้ช่วยตัวแทนฝังมากับระบบ เพิ่มหรือแก้ไขไม่ได้ — ถ้าต้องการคนทำงานแบบของคุณเอง สร้างเป็นตัวแทนที่หน้าทีมเอเจน")
 }
 
-// SaveAgent is the team page's door — see Save.
+// SaveAgent writes an agent's file into the agents' home — the one write door
+// profiles have left. The caller never writes the kind into the file; the
+// home says it.
+//
+// A name the sub-agents own is refused at the door. A name has one owner
+// (memory, jobs and chat history all key on it), and a clash the save could
+// have named is not something to leave for the resolver to flag later.
 func SaveAgent(name, body string) error {
-	return save(name, body, true)
-}
-
-func save(name, body string, agentHome bool) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return errors.New("ต้องตั้งชื่อก่อน")
@@ -64,67 +63,92 @@ func save(name, body string, agentHome bool) error {
 		if p.Name != name {
 			continue
 		}
-		// A sick file (Invalid) has its Desk cleared, so it reads as owned by
-		// the sub-agents' home — which is where it sits, and where saving over
-		// it is how the user fixes it.
-		if (p.Desk != "") != agentHome {
-			owner := "ผู้ช่วยตัวแทน"
-			if p.Desk != "" {
-				owner = "ตัวแทน"
-			}
-			return errors.New("ชื่อ " + name + " เป็นของ" + owner + "อยู่แล้ว — ความจำและประวัติงานผูกกับชื่อ ต้องตั้งชื่ออื่น")
+		if p.Desk == "" {
+			return errors.New("ชื่อ " + name + " เป็นของผู้ช่วยตัวแทนอยู่แล้ว — ความจำและประวัติงานผูกกับชื่อ ต้องตั้งชื่ออื่น")
 		}
 		break
 	}
-	homeDir := Dir
-	if agentHome {
-		homeDir = AgentsDir
-	}
-	dir, err := homeDir()
+	path, err := config.AgentDefinitionPath(name)
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, name+".md"), []byte(body), 0o644)
+	return os.WriteFile(path, []byte(body), 0o644)
 }
 
-// Delete removes the user's file for name, from whichever home owns it. A
-// bundled profile of the same name reappears in its place — that is the
-// revert, not a special case. A name with no user file is not an error: the
-// bundled one was never theirs to delete.
+// Delete removes the user's definition for name. A bundled profile of the same
+// name reappears in its place — that is the revert, not a special case. A name
+// with no user file is not an error: the bundled one was never theirs to delete.
+//
+// Two outcomes, because an agent's folder holds more than its definition and
+// the two buttons mean different things:
+//
+//   - **Reverting a shipped agent** the user edited removes AGENT.md and
+//     nothing else. Its memory belongs to the *name* — it is what this worker
+//     learned doing the job, across every rewrite of the brief — so undoing an
+//     edit to the brief must not throw it away. Skipping this distinction
+//     would make "revert" quietly destroy months of accumulated work.
+//   - **Deleting an agent the user hired** takes the whole folder. There is no
+//     bundled definition to fall back to, so the name is gone; leaving its
+//     memory behind would seed a future agent that reuses the name with a
+//     stranger's notes, and leave a folder on disk that nothing lists.
 func Delete(name string) error {
 	name = strings.TrimSpace(name)
 	if name == "" || !validName(name) {
 		return errors.New("ชื่อไม่ถูกต้อง")
 	}
-	for _, homeDir := range []func() (string, error){AgentsDir, Dir} {
-		dir, err := homeDir()
-		if err != nil {
+	// Asked before anything is removed: after the definition goes, the resolver
+	// can no longer tell a revert from a delete.
+	revert := false
+	for _, p := range List() {
+		if p.Name == name {
+			revert = p.Overrides
+			break
+		}
+	}
+	home, err := config.AgentHome(name)
+	if err != nil {
+		return err
+	}
+	if revert {
+		if err := os.Remove(filepath.Join(home, config.AgentDefinitionFile)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-		if err := os.Remove(filepath.Join(dir, name+".md")); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
+	} else if err := os.RemoveAll(home); err != nil {
+		return err
+	}
+	// The sub-agents' home is closed and its files are never read, but one the
+	// user put there before it closed is still theirs to remove from this door.
+	dir, err := Dir()
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(filepath.Join(dir, name+".md")); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
 	}
 	return nil
 }
 
-// SetModel points one profile at a specific model (the per-profile model
+// SetModel points one agent at a specific model (the per-profile model
 // dropdown) by rewriting a single frontmatter line and saving the result as a
-// user file, through the door of whichever home owns the name. An empty model
-// removes the line, which is what "inherit whatever model is selected" means.
+// user file in the agents' home. An empty model removes the line, which is
+// what "inherit whatever model is selected" means.
+//
+// A helper cannot be pointed anywhere: pinning a model is an edit, and the
+// helpers are part of the system. They follow the chat's model, which is what
+// an absent `model:` line has always meant.
 func SetModel(name, modelName string) error {
 	raw, ok := ReadRaw(name)
 	if !ok {
 		return errors.New("ไม่พบโปรไฟล์ชื่อ " + name)
 	}
-	body := setFrontmatterField(raw, "model", strings.TrimSpace(modelName))
-	if p, ok := Load(name); ok && p.Desk != "" {
-		return SaveAgent(name, body)
+	p, ok := Load(name)
+	if !ok || p.Desk == "" {
+		return errors.New("ผู้ช่วยตัวแทนฝังมากับระบบ แก้ไขไม่ได้ — โมเดลของมันตามโมเดลที่แชทใช้อยู่เสมอ")
 	}
-	return Save(name, body)
+	return SaveAgent(name, setFrontmatterField(raw, "model", strings.TrimSpace(modelName)))
 }
 
 // setFrontmatterField replaces, inserts or (on an empty value) drops one
@@ -179,6 +203,18 @@ func setFrontmatterField(raw, key, value string) string {
 // parent cannot would make the desk a façade. A nil ceiling is the pre-modes
 // full desk and narrows nothing.
 //
+// A **chair** measures against a slightly taller ceiling than the desk's own
+// assistant: mode.CarriesForChair adds the desk's `chairs:` list, which is what
+// the office keeps in the room for its agents without putting it on the desk
+// (owner's call, 2026-08-06 — the assistant must not carry the writers). This
+// is not the union the paragraph above refuses: the desk still decides, in its
+// own manifest, exactly which tools those are. What it stops being is a single
+// list forced to answer two different questions.
+//
+// A delegate with no desk of its own gets the plain ceiling, unchanged. It is
+// the caller working in a second context, and letting it reach past the caller
+// is precisely the façade.
+//
 // This is the token filter, not the safety gate: see Profile.AllowsTool.
 //
 // ponytail: tools registered into the parent *after* this call — MCP servers
@@ -189,9 +225,51 @@ func FilterRegistry(parent *skill.Registry, p Profile, ceiling *mode.Mode) *skil
 	if parent == nil {
 		return nil
 	}
+	// Which question the ceiling is asked, decided once by what p *is* rather
+	// than per tool: a chair is another desk's job handed over the counter, a
+	// delegate is this one's own work in a second context.
+	carries := ceiling.Carries
+	// The servers the user pointed at this agent, if any. Captured out here
+	// because two decisions below need it: whether the ceiling lets the tool
+	// through, and whether the profile's allowlist gets to filter it.
+	var agentServers []string
+	if p.Desk != "" {
+		// The servers the user pointed at this agent in Settings — read once
+		// per dispatch, not per tool. They are already connected and in the
+		// parent's registry (the manager connects every enabled server); what
+		// this decides is which of them the agent may be handed.
+		//
+		// This widens past the desk, and that is the point: an agent brings
+		// tools of its own, which is why `for:` can name one. The authority is
+		// not the desk manifest but the user's own toggle — the same single
+		// gate every other right comes through, and visible in the same place.
+		// The desk still decides what the *assistant* sitting there holds.
+		agentServers = config.MCPServersForAgent(p.Name)
+		chairCarries := ceiling.CarriesForChair
+		carries = func(name string, source skill.Source) bool {
+			if chairCarries(name, source) {
+				return true
+			}
+			return source == skill.SourceMCP && mcp.ToolBelongsTo(name, agentServers)
+		}
+	}
 	filtered := skill.NewRegistry()
 	for name, s := range parent.Snapshot() {
-		if !p.AllowsTool(name) {
+		source, ok := parent.SourceOf(name)
+		if !ok {
+			// Unreachable: name came out of this same snapshot. Skipping beats
+			// inventing a source, which is how a tool ends up filed as
+			// something the user installed.
+			continue
+		}
+		// A server the user pointed at this agent skips the profile's
+		// allowlist, but not its denials — see Profile.Permits for why an
+		// allowlist cannot speak for tool names that arrive from a server.
+		if source == skill.SourceMCP && mcp.ToolBelongsTo(name, agentServers) {
+			if !p.Permits(name) {
+				continue
+			}
+		} else if !p.AllowsTool(name) {
 			continue
 		}
 		// `memory` is scoped to whoever holds it, and the parent's instance is
@@ -203,14 +281,7 @@ func FilterRegistry(parent *skill.Registry, p Profile, ceiling *mode.Mode) *skil
 		if name == "memory" {
 			continue
 		}
-		source, ok := parent.SourceOf(name)
-		if !ok {
-			// Unreachable: name came out of this same snapshot. Skipping beats
-			// inventing a source, which is how a tool ends up filed as
-			// something the user installed.
-			continue
-		}
-		if !ceiling.Carries(name, source) {
+		if !carries(name, source) {
 			continue
 		}
 		if err := filtered.Register(s, source); err != nil {
@@ -218,4 +289,41 @@ func FilterRegistry(parent *skill.Registry, p Profile, ceiling *mode.Mode) *skil
 		}
 	}
 	return filtered
+}
+
+// missingAgentServers names the servers pointed at this agent whose tools are
+// not in the parent registry yet.
+//
+// It exists because the registry is copied at dispatch and MCP servers arrive
+// in it asynchronously (see FilterRegistry's ponytail). Answering "which ones
+// are missing" rather than "is anything missing" lets the refusal name them,
+// and a refusal that names the thing is one the user can act on.
+//
+// A disabled server is not missing — it is off, which the user chose, and
+// config.MCPServersForAgent has already left it out.
+func missingAgentServers(parent *skill.Registry, p Profile) []string {
+	if parent == nil || p.Desk == "" {
+		return nil
+	}
+	servers := config.MCPServersForAgent(p.Name)
+	if len(servers) == 0 {
+		return nil
+	}
+	present := map[string]bool{}
+	for name := range parent.Snapshot() {
+		if source, ok := parent.SourceOf(name); ok && source == skill.SourceMCP {
+			for _, server := range servers {
+				if mcp.ToolBelongsTo(name, []string{server}) {
+					present[server] = true
+				}
+			}
+		}
+	}
+	var missing []string
+	for _, server := range servers {
+		if !present[server] {
+			missing = append(missing, server)
+		}
+	}
+	return missing
 }

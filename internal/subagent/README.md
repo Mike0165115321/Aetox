@@ -24,8 +24,27 @@ Frontmatter is parsed by `skill.ParseFrontmatter` — one `key: value` per line,
 
 | | Where |
 |---|---|
-| Bundled | [profiles/](profiles) via `//go:embed`, split by kind since 2026-08-05 — **the file's home is its kind** (owner's call: ตัวแทน/ผู้ช่วยตัวแทน). [profiles/agents/](profiles/agents): `deck`, `doc`, `sheet` — the chairs (ARCHITECTURE.md §84), one craft each, briefed once, handing back a .pptx / .docx / .xlsx. [profiles/subagents/](profiles/subagents): `explore` (read-only searcher, 4 tools), `general` (the looper: a list of items is ONE job it works through itself, 48 steps), `plan` (§54 — inherits every reading tool, denies every writing one, answers in a fixed four-part shape). Present on a fresh install with no folder created |
-| User | `<DataRoot>/agents/*.md` and `<DataRoot>/subagents/*.md`. A file named after a bundled one **in the same home wins**; deleting it restores the original — that is the "revert". Across homes a name has one owner (memory, jobs and chat history key on it): the other home's same-named file is a `Conflict`, reported, never run. An agents-home file that names no desk sits in the office; a subagents-home file that claims a desk is `Invalid`, loudly. `Migrate()` moves pre-split chair files home once at startup |
+| Bundled | [profiles/](profiles) via `//go:embed`, split by kind since 2026-08-05 — **the file's home is its kind** (owner's call: ตัวแทน/ผู้ช่วยตัวแทน). [profiles/agents/](profiles/agents): `deck`, `doc`, `sheet` — the chairs (ARCHITECTURE.md §84), one craft each, briefed once, handing back a .pptx / .docx / .xlsx, each **a folder holding `AGENT.md`** so a shipped agent is laid out exactly like one the user writes. [profiles/subagents/](profiles/subagents): `explore` (read-only searcher, 4 tools), `general` (the looper: a list of items is ONE job it works through itself, 48 steps), `plan` (§54 — inherits every reading tool, denies every writing one, answers in a fixed four-part shape) — flat `.md`, because there is nothing per-helper to package. Present on a fresh install with no folder created |
+| User | `<DataRoot>/agents/<name>/` only — the sub-agents' home is **closed** (owner's call, 2026-08-06: the helpers are part of the system, never added to or edited; a user file in `<DataRoot>/subagents` is reported as a `Conflict` and never read). In the agents' home, a folder named after a bundled agent **wins**; deleting its `AGENT.md` restores the original — that is the "revert". A name the helpers own is refused at the save door (memory, jobs and chat history key on the bare name). An agents-home file that names no desk sits in the office. `Migrate()` still moves pre-split chair files home once at startup |
+
+### One agent is one folder
+
+Owner's call, 2026-08-06. Everything belonging to a worker lives under `<DataRoot>/agents/<name>/`, so "what is this agent" is a directory listing rather than a search across three trees:
+
+```
+<DataRoot>/agents/doc/AGENT.md    frontmatter + brief    (this package)
+<DataRoot>/agents/doc/MEMORY.md   what it learned        (internal/learned)
+<DataRoot>/agents/doc/mcp.json    the servers it brings  (planned)
+```
+
+The paths are owned by [`internal/config`](../config/agenthome.go), not here: `internal/subagent` imports `internal/learned`, so learned cannot ask this package where an agent's folder is, and a second copy of the path in the package that could not import the first is the kind of second answer this codebase treats as debt.
+
+`AGENT.md` is what makes a folder a **definition the user owns**; the folder alone only means **this worker has state**. A folder holding just `MEMORY.md` is the normal shape of a shipped agent (or a helper) that has learned something, so the resolver keys on `AGENT.md` and skips the rest without reporting them.
+
+Two consequences worth keeping straight, both pinned by tests in [homes_test.go](homes_test.go):
+
+- **Revert ≠ delete.** Reverting a shipped agent removes `AGENT.md` and leaves `MEMORY.md` — memory belongs to the *name*, across every rewrite of the brief. Deleting an agent the user hired takes the whole folder, because the name is gone and a stranger's notes must not seed the next agent to claim it.
+- **The pre-folder layout migrates itself** (`config.MigrateAgentHomes`), called by this package's resolver *and* by learned's path lookup, because there is no single entry point — the CLI, the desktop app and the tests all reach these files.
 
 ## How one runs — and why it does not block
 

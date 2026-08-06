@@ -195,7 +195,11 @@ func TestDenyRulesReachThePermissionLayer(t *testing.T) {
 	}
 }
 
-func TestUserFileShadowsBundled(t *testing.T) {
+// The helpers are part of the system (owner's call, 2026-08-06): a user file
+// named after a bundled one does NOT shadow it — the bundled profile stays
+// authoritative, and the file is reported so it never vanishes silently.
+// Shadowing still exists for agents, in their own home (homes_test covers it).
+func TestHelperShadowIsIgnoredBundledWins(t *testing.T) {
 	dir := isolate(t)
 	body := "---\ndescription: ของผมเอง\nmodel: deepseek-v4\nsteps: 5\n---\nBe mine.\n"
 	if err := os.WriteFile(filepath.Join(dir, "explore.md"), []byte(body), 0o644); err != nil {
@@ -206,52 +210,44 @@ func TestUserFileShadowsBundled(t *testing.T) {
 	if !ok {
 		t.Fatal("Load(explore) failed")
 	}
-	if p.Prompt != "Be mine." || p.Model != "deepseek-v4" || p.Steps != 5 {
-		t.Fatalf("user file not used: %+v", p)
+	if !p.Builtin || p.Overrides || p.Model == "deepseek-v4" || p.Prompt == "Be mine." {
+		t.Fatalf("the shadow took effect on a system helper: %+v", p)
 	}
-	if p.Builtin || p.Path == "" {
-		t.Errorf("Builtin=%v Path=%q, want false and a real path", p.Builtin, p.Path)
+	if len(p.Tools) != 4 {
+		t.Fatalf("bundled explore damaged: %+v", p)
 	}
-	// The settings page groups by source, so a shadow has to declare itself: it
-	// belongs under "yours", and deleting it reverts rather than removes.
-	if !p.Overrides {
-		t.Error("a user file shadowing a bundled profile did not set Overrides")
-	}
-
-	// Shadowing replaces, it does not duplicate.
 	var seen int
 	for _, listed := range List() {
 		if listed.Name == "explore" {
 			seen++
-			if listed.Builtin {
-				t.Error("List() returned the bundled explore, not the user's")
+			if !listed.Builtin {
+				t.Error("List() returned the user's explore, not the bundled one")
 			}
 		}
 	}
 	if seen != 1 {
 		t.Fatalf("explore appears %d times in List()", seen)
 	}
+	if _, ok := findConflict(Conflicts(), "explore"); !ok {
+		t.Fatal("the ignored shadow is not reported — it just vanished")
+	}
 }
 
-func TestUserProfileAddsToTheList(t *testing.T) {
+// Nor can a user file add a NEW delegate: the bundled three are the whole set.
+func TestHelperHomeCannotAddADelegate(t *testing.T) {
 	dir := isolate(t)
 	if err := os.WriteFile(filepath.Join(dir, "backend.md"),
 		[]byte("---\ndescription: API/DB\ntools: read, grep\n---\nBackend work.\n"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	p, ok := Load("backend")
-	if !ok {
-		t.Fatal("user profile not found")
+	if _, ok := Load("backend"); ok {
+		t.Fatal("a helper-home user file loaded as a delegate")
 	}
-	if !slices.Equal(p.Tools, []string{"read", "grep"}) {
-		t.Fatalf("parsed wrong: %+v", p)
+	if got := len(List()); got != 6 {
+		t.Fatalf("List() = %d, want the 6 bundled only", got)
 	}
-	// A name of its own overrides nothing.
-	if p.Overrides {
-		t.Error("a user-only profile claims to override a bundled one")
-	}
-	if got := len(List()); got != 7 {
-		t.Fatalf("List() = %d, want 7 (6 bundled + 1 user)", got)
+	if c, ok := findConflict(Conflicts(), "backend"); !ok || c.Reason == "" {
+		t.Fatal("the locked-out file is not reported with a reason")
 	}
 }
 
@@ -298,6 +294,30 @@ func TestPlanProfileCannotWrite(t *testing.T) {
 	for _, tool := range []string{"read", "grep", "glob", "diagnostics", "git", "web_fetch"} {
 		if action, matched := cfg.Resolve(tool, nil); matched && action == safety.PermissionDeny {
 			t.Errorf("Resolve(%q) = deny — the planner cannot investigate", tool)
+		}
+	}
+}
+
+// KindOf is what the engine stamps onto a `task` call's events, so the UI can
+// count ตัวแทน and ซับเอเจน apart (the chip used to read "ซับเอเจน 1 ตัว" on a
+// turn where the doc agent made the file). The kind comes from which home the
+// file lives in — the same rule the `task` schema's grouping follows — and the
+// default an unnamed delegation gets is the same one `task` itself applies.
+func TestKindOfSplitsTheTwoPiles(t *testing.T) {
+	isolate(t)
+	cases := map[string]string{
+		"doc":     KindAgent,  // a chair in the office
+		"deck":    KindAgent,
+		"sheet":   KindAgent,
+		"explore": KindHelper, // the assistant's own hands
+		"general": KindHelper,
+		"plan":    KindHelper,
+		"":        KindHelper, // unnamed → the default profile, which is explore
+		"nobody":  "",         // not runnable → no kind claimed
+	}
+	for name, want := range cases {
+		if got := KindOf(name); got != want {
+			t.Errorf("KindOf(%q) = %q, want %q", name, got, want)
 		}
 	}
 }

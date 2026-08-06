@@ -82,6 +82,21 @@ var toolCategories = map[string]string{
 	"browser_click": CategoryWeb,
 	"browser_type":  CategoryWeb,
 
+	// Putting things in front of the user on their own desk, and seeing what is
+	// there. Filed under agent rather than files: these do not read or change a
+	// file, they change what the person is looking at — which is the same kind
+	// of act as asking a question or delegating, and it belongs on every desk.
+	//
+	// Categorised wrong once, as shell, which took them off the specialized desk
+	// (no shell there, by design) — the one desk whose whole job is producing a
+	// document to hand back. A tool for showing the user what you made, missing
+	// from the desk that makes things.
+	"desk_open": CategoryAgent,
+	"desk_list": CategoryAgent,
+	// This one really is shell: it starts a shell and types into it. The
+	// specialized desk carries no shell and must not carry this either.
+	"desk_terminal": CategoryShell,
+
 	"diagnostics":         CategoryCode,
 	"symbol":              CategoryCode,
 	"github_search":       CategoryCode,

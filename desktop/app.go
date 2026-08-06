@@ -138,6 +138,11 @@ type App struct {
 	// taskChips holds the side work the agent has flagged with suggest_task
 	// and the user has not yet started or dismissed (task_chips.go).
 	taskChips taskChips
+
+	// openTabs is what the frontend reports is open on the workbench, so the
+	// agent can read its own desk (desk.go). Deliberately not named `desk` —
+	// that field is the mode the session was opened at (§83), a different thing.
+	openTabs deskState
 }
 
 // ChangedFile is one working-tree change reported by `git status`.
@@ -2116,6 +2121,9 @@ func (a *App) workbenchSkills() []skill.Skill {
 		&browserReadSkill{app: a},
 		&browserClickSkill{app: a},
 		&browserTypeSkill{app: a},
+		&deskOpenSkill{app: a},
+		&deskTerminalSkill{app: a},
+		&deskListSkill{app: a},
 		&askUserSkill{app: a},
 		&todoWriteSkill{app: a},
 		&sessionSearchSkill{app: a},

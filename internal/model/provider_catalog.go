@@ -67,6 +67,26 @@ func SupportedProviders() []string {
 	return provider.SupportedProviders()
 }
 
+// providerReasoningCapability answers, from the catalog, whether this provider
+// is known at all and whether its API can carry a thinking/effort setting.
+//
+// It lives here rather than being read inline because the two callers —
+// ResolveThinkingCapabilities, which decides what the picker shows, and
+// supportsNativeReasoning, which decides whether anything is put on the wire —
+// must not be able to answer it differently. They used to: one read a hardcoded
+// list, the other had a table of its own, and seven providers ended up with a
+// full thinking menu that sent nothing.
+//
+// Unexported: outside this package the question to ask is
+// ResolveThinkingCapabilities, which gives the levels as well.
+func providerReasoningCapability(name string) (known, reasoning bool) {
+	spec, ok := provider.Lookup(name)
+	if !ok {
+		return false, false
+	}
+	return true, spec.Capabilities.Reasoning
+}
+
 // RequiresAPIKey delegates to provider.RequiresAPIKey.
 func RequiresAPIKey(name string) bool {
 	return provider.RequiresAPIKey(name)

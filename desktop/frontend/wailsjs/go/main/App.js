@@ -246,6 +246,10 @@ export function ListSessionsAt(arg1) {
   return window['go']['main']['App']['ListSessionsAt'](arg1);
 }
 
+export function ListSessionsForDoor(arg1) {
+  return window['go']['main']['App']['ListSessionsForDoor'](arg1);
+}
+
 export function ListSkills() {
   return window['go']['main']['App']['ListSkills']();
 }
@@ -276,6 +280,10 @@ export function LoadSessionAnyProject(arg1) {
 
 export function MCPConfigPath() {
   return window['go']['main']['App']['MCPConfigPath']();
+}
+
+export function MCPTargets() {
+  return window['go']['main']['App']['MCPTargets']();
 }
 
 export function ModelStatus() {
@@ -498,6 +506,10 @@ export function SearchSessions(arg1) {
   return window['go']['main']['App']['SearchSessions'](arg1);
 }
 
+export function SearchSessionsForDoor(arg1, arg2) {
+  return window['go']['main']['App']['SearchSessionsForDoor'](arg1, arg2);
+}
+
 export function SendMessage(arg1) {
   return window['go']['main']['App']['SendMessage'](arg1);
 }
@@ -516,6 +528,10 @@ export function SetAPIKey(arg1, arg2) {
 
 export function SetLearningEnabled(arg1) {
   return window['go']['main']['App']['SetLearningEnabled'](arg1);
+}
+
+export function SetMCPServerTargets(arg1, arg2) {
+  return window['go']['main']['App']['SetMCPServerTargets'](arg1, arg2);
 }
 
 export function SetProviderBaseURL(arg1, arg2) {
@@ -556,10 +572,6 @@ export function SignInStatus(arg1) {
 
 export function SignOut(arg1) {
   return window['go']['main']['App']['SignOut'](arg1);
-}
-
-export function SignedInProviders() {
-  return window['go']['main']['App']['SignedInProviders']();
 }
 
 export function SkillScanIssues() {
@@ -608,6 +620,10 @@ export function SwitchThinkLevel(arg1) {
 
 export function SwitchVariant(arg1) {
   return window['go']['main']['App']['SwitchVariant'](arg1);
+}
+
+export function TerminalAttach(arg1) {
+  return window['go']['main']['App']['TerminalAttach'](arg1);
 }
 
 export function TerminalClose(arg1) {
@@ -660,6 +676,10 @@ export function UsageStats() {
 
 export function UserName() {
   return window['go']['main']['App']['UserName']();
+}
+
+export function WorkbenchTabsChanged(arg1) {
+  return window['go']['main']['App']['WorkbenchTabsChanged'](arg1);
 }
 
 export function WorkspaceFolders() {

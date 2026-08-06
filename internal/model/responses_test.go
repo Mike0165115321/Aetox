@@ -49,7 +49,7 @@ func TestResponsesBuildsTypedInputAndFlatTools(t *testing.T) {
 		}},
 	}
 
-	payload, err := buildResponsesRequest("gpt-5.1-codex", req)
+	payload, err := buildResponsesRequest("codex", "gpt-5.1-codex", req)
 	if err != nil {
 		t.Fatalf("buildResponsesRequest: %v", err)
 	}

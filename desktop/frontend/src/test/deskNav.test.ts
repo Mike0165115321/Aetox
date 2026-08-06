@@ -11,7 +11,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/svelte'
 import Sidebar from '../lib/Sidebar.svelte'
 import { NewSessionAt, ListModes, SessionMode, CurrentSessionID } from './mocks/wailsApp'
 import { cockpit } from '../lib/stores/cockpit.svelte'
-import { setShell } from '../lib/shell.svelte'
+import { setShell, deskFilterFor } from '../lib/shell.svelte'
 
 const deskButton = (label: string): HTMLButtonElement => {
   const el = Array.from(document.querySelectorAll('.desk-btn'))
@@ -123,19 +123,42 @@ describe('the rooms behind each door', () => {
 describe('the history list', () => {
   const chat = (id: string, mode: string) => ({ id, title: `chat ${id}`, ago: '', mode })
 
-  // The column is the chat history, not the chat history of the room you are
-  // standing in. It used to filter to the desk you were at, and that emptied it
-  // on the first click: a session is only stamped with a desk when it is opened
-  // through a desk button, so every chat begun by opening the app and typing is
-  // held at no desk and vanished the moment you walked into one.
-  it('shows every chat, whichever desk you are at', () => {
+  // The list is the history of the *door*, not of the room you are standing in
+  // (owner's call, 2026-08-06: "แสดงแค่ฝั่งผู้ช่วยก็พอครับ โค้ดก็ส่วนโค้ดแยกกัน").
+  // ผู้ช่วย keeps conversations, โค้ด keeps projects with their chats nested
+  // underneath, and a coding session in the storefront's list is the mixing the
+  // split exists to end.
+  //
+  // Filtering by *desk* was tried before and emptied the column on the first
+  // click — a session is only stamped with a desk when opened through a desk
+  // button, so every chat begun by opening the app and typing is held at no
+  // desk and matched nothing. That regression is guarded below and must stay
+  // guarded: shellForDesk sends '' to the storefront, which is where a session
+  // predating the split is at home, so it is filed rather than dropped.
+  it('draws every chat the store hands it', () => {
+    setShell('assistant')
     cockpit.desk = 'assistant'
-    cockpit.history.push(chat('a', 'assistant'), chat('b', 'coding'), chat('c', ''))
+    cockpit.history.push(chat('a', 'assistant'), chat('c', ''))
     render(Sidebar, { onOpenSettings: () => {} })
 
-    for (const title of ['chat a', 'chat b', 'chat c']) {
+    for (const title of ['chat a', 'chat c']) {
       expect(screen.queryByText(title)).toBeTruthy()
     }
+  })
+
+  // Which door a session belongs to is decided once, by deskFilterFor, and
+  // applied in SQL — see ListSessionsForDoor for why filtering a fetched page
+  // instead starves one list once the history is longer than one page.
+  //
+  // Filtering by *desk* was tried once and emptied the column on the first
+  // click: a session is only stamped with a desk when opened through a desk
+  // button, so every chat begun by opening the app and typing is held at no
+  // desk and matched nothing. The storefront asking for everything *except*
+  // the workshop's desk is what keeps that fixed — '' is not on any list to be
+  // left off.
+  it('scopes each door by excluding the other, never by naming its own', () => {
+    expect(deskFilterFor('code')).toEqual({ desks: ['coding'], exclude: false })
+    expect(deskFilterFor('assistant')).toEqual({ desks: ['coding'], exclude: true })
   })
 
   it('labels each chat with its desk', () => {

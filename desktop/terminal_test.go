@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // These tests are platform-neutral on purpose: the helper below starts a real
@@ -147,7 +148,10 @@ func TestPumpTerminalOutputForwardsThenClosesOnce(t *testing.T) {
 	}
 
 	f := &fakePTY{chunks: [][]byte{[]byte("hello "), []byte("world")}}
-	s := &TerminalSession{id: id, pty: f}
+	// Attached, because that is the state this test is about: a pane is mounted
+	// and every chunk must reach it. The unattached half is
+	// TestTerminalHoldsOutputUntilAPaneAttaches below.
+	s := &TerminalSession{id: id, pty: f, attached: true}
 	a.terminals[id] = s
 
 	a.pumpTerminalOutput(s) // returns once the fake reports EOF
@@ -163,6 +167,143 @@ func TestPumpTerminalOutputForwardsThenClosesOnce(t *testing.T) {
 	}
 	if len(a.terminals) != 0 {
 		t.Errorf("session still in the map after the shell exited: %v", a.terminals)
+	}
+}
+
+// The black-pane bug, pinned.
+//
+// A shell prints its banner and prompt the moment it starts, and for the first
+// stretch of its life no pane is listening — a Wails event with no subscriber is
+// simply gone. The user's own "+" menu usually won that race by luck;
+// desk_terminal, which starts the session from Go before the frontend has heard
+// anything, lost it every time and showed a black rectangle with a cursor in it.
+func TestTerminalHoldsOutputUntilAPaneAttaches(t *testing.T) {
+	var mu sync.Mutex
+	var emitted []string
+
+	a := &App{terminals: map[string]*TerminalSession{}}
+	id := nextTerminalID()
+	a.emit = func(event string, payload ...any) {
+		if event != "terminal:data:"+id {
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		emitted = append(emitted, payload[0].(string))
+	}
+
+	// A shell that stays alive after printing its prompt, which is what every
+	// real one does — fakePTY reports EOF instead, and an EOF tears the session
+	// out of the map before a pane could ever attach to it.
+	f := &livePTY{chunks: [][]byte{[]byte("PowerShell 7\r\n"), []byte("PS D:\\> ")}, idle: make(chan struct{})}
+	s := &TerminalSession{id: id, pty: f}
+	a.terminals[id] = s
+	go a.pumpTerminalOutput(s)
+	f.waitUntilRead(t)
+
+	// Nothing may go out before a pane is there to receive it...
+	mu.Lock()
+	sent := append([]string(nil), emitted...)
+	mu.Unlock()
+	if len(sent) != 0 {
+		t.Errorf("emitted %q before any pane attached — those bytes are the ones that go missing", sent)
+	}
+
+	// ...and the pane must get all of it when it arrives.
+	if got := a.TerminalAttach(id); got != "PowerShell 7\r\nPS D:\\> " {
+		t.Errorf("TerminalAttach = %q, want the banner and prompt", got)
+	}
+	// Handed over once. A second pane (or a re-mount) must not redraw a prompt
+	// the first one already has.
+	if got := a.TerminalAttach(id); got != "" {
+		t.Errorf("second TerminalAttach = %q, want empty", got)
+	}
+	close(f.idle) // let the pump finish so the goroutine does not outlive the test
+}
+
+// livePTY is fakePTY for the case that actually matters here: a shell that
+// prints and then sits there. It blocks after its chunks instead of reporting
+// EOF, so the session stays in the map the way a real one does.
+type livePTY struct {
+	chunks [][]byte
+	idle   chan struct{}
+	read   int
+	mu     sync.Mutex
+	done   chan struct{}
+}
+
+func (f *livePTY) Read(p []byte) (int, error) {
+	f.mu.Lock()
+	if f.read < len(f.chunks) {
+		n := copy(p, f.chunks[f.read])
+		f.read++
+		last := f.read == len(f.chunks)
+		f.mu.Unlock()
+		if last && f.done != nil {
+			close(f.done)
+		}
+		return n, nil
+	}
+	f.mu.Unlock()
+	<-f.idle
+	return 0, io.EOF
+}
+
+func (f *livePTY) Write(p []byte) (int, error) { return len(p), nil }
+func (f *livePTY) Resize(int, int) error       { return nil }
+func (f *livePTY) Close() error                { return nil }
+
+// waitUntilRead blocks until the pump has consumed every chunk, which is the
+// moment the assertion above is meaningful.
+func (f *livePTY) waitUntilRead(t *testing.T) {
+	t.Helper()
+	f.mu.Lock()
+	f.done = make(chan struct{})
+	if f.read == len(f.chunks) {
+		close(f.done)
+	}
+	done := f.done
+	f.mu.Unlock()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("pump never read the shell's output")
+	}
+}
+
+// After attaching, the session is live: output goes straight out as events and
+// stops accumulating, or a long-running shell would grow the backlog forever.
+func TestTerminalAttachSwitchesToLiveEvents(t *testing.T) {
+	a := &App{terminals: map[string]*TerminalSession{}}
+	id := nextTerminalID()
+	var got []string
+	a.emit = func(event string, payload ...any) {
+		if event == "terminal:data:"+id {
+			got = append(got, payload[0].(string))
+		}
+	}
+	s := &TerminalSession{id: id, pty: &fakePTY{chunks: [][]byte{[]byte("live")}}}
+	a.terminals[id] = s
+
+	a.TerminalAttach(id)
+	a.pumpTerminalOutput(s)
+
+	if strings.Join(got, "") != "live" {
+		t.Errorf("emitted %q, want %q", got, "live")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.backlog) != 0 {
+		t.Errorf("backlog = %q, want empty once attached", s.backlog)
+	}
+}
+
+// A session id that is not there answers empty rather than panicking: a pane
+// can outlive its shell by a frame when the shell exits on its own.
+func TestTerminalAttachUnknownSession(t *testing.T) {
+	a := &App{terminals: map[string]*TerminalSession{}}
+	if got := a.TerminalAttach("term-gone"); got != "" {
+		t.Errorf("TerminalAttach = %q, want empty", got)
 	}
 }
 

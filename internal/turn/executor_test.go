@@ -847,6 +847,122 @@ func TestPermissionRulesMatchEditAndGrepArgs(t *testing.T) {
 // narratingAgent scripts one round of narration + a tool call + a final reply,
 // streaming a little reasoning first — the shape §59's timeline interleaving
 // consumes.
+// delegatingAgent hands one job to the doc chair and finishes — the smallest
+// turn that opens a delegation.
+type delegatingAgent struct{}
+
+func (*delegatingAgent) Respond(_ context.Context, _ string, _ TurnOptions) (string, error) {
+	return "", nil
+}
+
+func (*delegatingAgent) RespondEphemeral(_ context.Context, _ string, _ TurnOptions) (string, error) {
+	return "", nil
+}
+
+func (*delegatingAgent) RespondStream(_ context.Context, _ string, _ func(string) error, _ func(string) error, _ TurnOptions) (string, bool, error) {
+	return "", false, nil
+}
+
+func (a *delegatingAgent) RespondWithTools(
+	ctx context.Context,
+	_ []model.ToolDefinition,
+	_ string,
+	exec func(context.Context, model.ToolCall) (string, []model.Image, error),
+	_ func(string) error,
+	_ TurnOptions,
+) (string, bool, error) {
+	_, _, _ = exec(ctx, model.ToolCall{
+		ID:   "task_call_1",
+		Type: "function",
+		Function: model.FunctionCall{
+			Name:      "task",
+			Arguments: `{"description":"ทำรายงานสรุป","prompt":"เขียนรายงานสรุปการประชุมทีมเป็น .docx","agent":"doc"}`,
+		},
+	})
+	return "ส่งงานให้ doc แล้วครับ", true, nil
+}
+
+func (*delegatingAgent) SupportsToolCalling() bool { return true }
+
+// taskDispatcher answers only `task`, successfully — the delegation mechanics
+// themselves are internal/subagent's tests, not this one's.
+type taskDispatcher struct{}
+
+func (*taskDispatcher) Execute(_ context.Context, _ string) (skill.Output, bool, error) {
+	return skill.Output{}, false, nil
+}
+
+func (*taskDispatcher) ToolDefinitions() []model.ToolDefinition {
+	return []model.ToolDefinition{{
+		Type:     "function",
+		Function: model.ToolFunction{Name: "task", Parameters: []byte(`{"type":"object"}`)},
+	}}
+}
+
+func (*taskDispatcher) ExecuteTool(_ context.Context, name string, _ map[string]any) (skill.Output, bool, error) {
+	return skill.Output{Name: name, Content: "started", Success: true}, true, nil
+}
+
+// A `task` call's live event and its written-down part both say which pile the
+// worker is in — the kind the injected DelegateKind resolves, never a guess
+// from the name. The UI counts ตัวแทน and ซับเอเจน apart on both paths: the
+// chip on a live turn reads the event, and a reopened session reads only the
+// parts, where a row that forgot its kind would fall back into the helper pile.
+func TestExecute_DelegationCarriesAgentKind(t *testing.T) {
+	var events []ToolEvent
+	executor := NewExecutor(ExecutorOptions{
+		Agent:        &delegatingAgent{},
+		Dispatcher:   &taskDispatcher{},
+		ApprovalMode: safety.ApprovalFullAccess,
+		OnToolAction: func(ev ToolEvent) { events = append(events, ev) },
+		DelegateKind: func(agent string) string {
+			if agent == "doc" {
+				return "agent"
+			}
+			return "helper"
+		},
+	})
+
+	input := "ทำรายงานสรุปการประชุมให้หน่อย"
+	intent := command.Parse(input, command.ParseTokens, nil)
+	result, err := executor.Execute(context.Background(), input, intent, nil, func(string) {}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var call *ToolEvent
+	for i := range events {
+		if events[i].Action == "call" {
+			call = &events[i]
+		}
+	}
+	if call == nil {
+		t.Fatal("no call event reached the timeline")
+	}
+	if call.Agent != "doc" || call.AgentKind != "agent" {
+		t.Errorf("call event Agent=%q AgentKind=%q, want doc/agent", call.Agent, call.AgentKind)
+	}
+	if call.Brief == "" {
+		t.Error("call event lost the brief")
+	}
+
+	var part *ToolPart
+	for _, p := range result.Parts {
+		if p.Kind == PartTool && p.Tool != nil {
+			part = p.Tool
+		}
+	}
+	if part == nil {
+		t.Fatal("no tool part was written down")
+	}
+	if part.Agent != "doc" || part.AgentKind != "agent" {
+		t.Errorf("stored part Agent=%q AgentKind=%q, want doc/agent — a reopened session would miscount the pile", part.Agent, part.AgentKind)
+	}
+	if part.Brief == "" {
+		t.Error("stored part lost the brief")
+	}
+}
+
 type narratingAgent struct{}
 
 func (*narratingAgent) Respond(_ context.Context, _ string, _ TurnOptions) (string, error) {
@@ -937,5 +1053,65 @@ func TestExecute_NarrationAndThinkingReachTheTimeline(t *testing.T) {
 		if ev.Action == "note" && ev.Text == "เสร็จแล้ว" {
 			t.Error("the final reply must not double as a note")
 		}
+	}
+}
+
+// Full access says "รับทุกอย่างโดยไม่ถาม" on the card the user clicks, and it
+// has to be true. It was not: bootstrap attaches an "ask" rule per MCP server
+// so tools never auto-run before anyone has decided anything, a matched rule
+// skipped the mode check entirely, and every single MCP call opened a dialog
+// under the mode whose whole point is not opening dialogs (2026-08-06).
+//
+// The distinction is who wrote the rule. The app's opening position yields to
+// the mode the user then chose; a rule the user wrote themselves does not.
+func TestAnAppDefaultAskYieldsToFullAccessButAUserAskDoesNot(t *testing.T) {
+	assessment := safety.Assessment{SkillName: "notion_search", Risk: safety.RiskLow}
+
+	appDefault := &Executor{
+		permissions: safety.PermissionConfig{Rules: []safety.PermissionRule{
+			{Tool: "notion_*", Pattern: "*", Action: safety.PermissionAsk, Default: true},
+		}},
+		approve: func(context.Context, string, string) (bool, error) {
+			t.Error("full access prompted on an app-generated ask")
+			return false, nil
+		},
+	}
+	appDefault.SetApprovalMode(safety.ApprovalFullAccess)
+	if ok, err := appDefault.resolveApproval(context.Background(), "notion_search", nil, "notion_search", assessment); err != nil || !ok {
+		t.Fatalf("full access refused an MCP call: ok=%v err=%v", ok, err)
+	}
+
+	// The user's own rule is their decision and still wins.
+	asked := false
+	userWritten := &Executor{
+		permissions: safety.PermissionConfig{Rules: []safety.PermissionRule{
+			{Tool: "notion_*", Pattern: "*", Action: safety.PermissionAsk},
+		}},
+		approve: func(context.Context, string, string) (bool, error) { asked = true; return true, nil },
+	}
+	userWritten.SetApprovalMode(safety.ApprovalFullAccess)
+	if _, err := userWritten.resolveApproval(context.Background(), "notion_search", nil, "notion_search", assessment); err != nil {
+		t.Fatalf("resolveApproval: %v", err)
+	}
+	if !asked {
+		t.Error("a rule the user wrote was skipped — writing it is how they asked to be asked")
+	}
+
+	// A default ask still gates the modes that gate: it is only outranked, not
+	// discarded.
+	gated := false
+	underAsk := &Executor{
+		permissions: safety.PermissionConfig{Rules: []safety.PermissionRule{
+			{Tool: "notion_*", Pattern: "*", Action: safety.PermissionAsk, Default: true},
+		}},
+		approve: func(context.Context, string, string) (bool, error) { gated = true; return true, nil },
+	}
+	underAsk.SetApprovalMode(safety.ApprovalAsk)
+	if _, err := underAsk.resolveApproval(context.Background(), "notion_search", nil, "notion_search",
+		safety.Assessment{SkillName: "notion_search", Effects: []safety.Effect{safety.EffectUseNetwork}}); err != nil {
+		t.Fatalf("resolveApproval: %v", err)
+	}
+	if !gated {
+		t.Error("ask mode stopped prompting for MCP entirely")
 	}
 }

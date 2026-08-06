@@ -4,6 +4,10 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
+	"slices"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/Mike0165115321/Aetox/internal/safety"
@@ -270,6 +274,217 @@ func TestLoadPermissions(t *testing.T) {
 	for i, rule := range want.Rules {
 		if got.Rules[i] != rule {
 			t.Fatalf("rule %d mismatch: want %+v, got %+v", i, rule, got.Rules[i])
+		}
+	}
+}
+
+// A server the user configured used to connect, register, and then be filtered
+// off every desk, because a desk manifest ships compiled in and could not name
+// a server that did not exist yet. The assistant reported having no MCP tools,
+// which from where it stood was true. Ownership now sits on the server.
+func TestMCPServersReachTheDesksTheyNameAndNoOthers(t *testing.T) {
+	withServers(t, `[
+	  {"name":"sequential-thinking","command":["npx","x"],"for":["assistant","coding"]},
+	  {"name":"video-tools","command":["npx","y"],"for":["agent:วิดีโอ"]},
+	  {"name":"off","command":["npx","z"],"for":["assistant"],"disabled":true},
+	  {"name":"shelved","command":["npx","w"],"for":[]}
+	]`)
+
+	if got := MCPServersForDesk("assistant"); !slices.Equal(got, []string{"sequential-thinking"}) {
+		t.Errorf("assistant desk got %v, want just the server that names it", got)
+	}
+	// The separation this field exists for: a server installed for an agent is
+	// never on the main assistant's tool block.
+	for _, desk := range []string{"assistant", "coding", "specialized"} {
+		if slices.Contains(MCPServersForDesk(desk), "video-tools") {
+			t.Errorf("an agent's server leaked onto the %s desk", desk)
+		}
+	}
+	// Two switches, both real: disabled is never connected, empty `for` is
+	// connected and attached nowhere.
+	if got := MCPServersForDesk("assistant"); slices.Contains(got, "off") || slices.Contains(got, "shelved") {
+		t.Errorf("a switched-off server was carried: %v", got)
+	}
+	// The pre-modes full desk still carries everything it can reach.
+	if got := MCPServersForDesk(""); len(got) != 3 {
+		t.Errorf("the full desk got %v, want every enabled server", got)
+	}
+}
+
+// An install written before the field existed must not go dark, and the value
+// it gets must be visible in the file rather than applied invisibly — this
+// field's whole purpose is to be a switch the user can flip.
+func TestMCPOwnersMigrateOnceAndAreWrittenBack(t *testing.T) {
+	path := withServers(t, `[{"name":"sequential-thinking","command":["npx","x"]}]`)
+
+	if got := MCPServersForDesk("assistant"); !slices.Contains(got, "sequential-thinking") {
+		t.Fatalf("a pre-field server went dark: %v", got)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if !strings.Contains(string(raw), `"for"`) {
+		t.Fatalf("the default was applied invisibly — the user cannot switch what they cannot see:\n%s", raw)
+	}
+
+	// An explicit empty list is a switch the user turned off. Absent and empty
+	// decode to the same nil, so the migration reads the raw JSON; if it did
+	// not, turning a server off would silently turn it back on.
+	withServers(t, `[{"name":"shelved","command":["npx","x"],"for":[]}]`)
+	if got := MCPServersForDesk("assistant"); len(got) != 0 {
+		t.Errorf("an explicitly emptied `for` was overwritten by the default: %v", got)
+	}
+}
+
+// withServers points the data root at a temp dir holding one servers file, and
+// resets the once-guard so each test migrates its own fixture.
+func withServers(t *testing.T, body string) string {
+	t.Helper()
+	root := t.TempDir()
+	t.Setenv("AETOX_DATA_ROOT", root)
+	path := filepath.Join(root, "mcp-servers.json")
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("write servers: %v", err)
+	}
+	migratedMCPOwners = sync.Once{}
+	return path
+}
+
+// Turning a server off for everyone must survive a round trip through the
+// file. An empty `for` written with omitempty disappears, the migration reads
+// absence as "predates the field", and the switch the user just turned off is
+// back on at the next launch — a setting that silently undoes itself.
+func TestSwitchingAServerOffForEveryoneSurvivesASave(t *testing.T) {
+	withServers(t, `[{"name":"s","command":["npx","x"],"for":["assistant"]}]`)
+
+	servers, err := LoadMCPServers()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	servers[0].For = []string{}
+	if err := SaveMCPServers(servers); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	migratedMCPOwners = sync.Once{} // the next launch
+	if got := MCPServersForDesk("assistant"); len(got) != 0 {
+		t.Errorf("the server switched itself back on: %v", got)
+	}
+}
+
+// Secrets and settings need different handling, and one file cannot have two.
+// The preference file is opened to check a locale or a last desk, pasted into
+// bug reports and screenshotted; while the keys lived in it, every one of those
+// ordinary acts leaked them — which is how a key reached a debugging transcript
+// on the day this was split (2026-08-06).
+func TestAPIKeysAreNotInThePreferenceFile(t *testing.T) {
+	isolateUserDirs(t)
+
+	const key = "sk-do-not-let-this-into-the-settings-file"
+	if err := SaveModelPreference(ModelPreference{
+		ModelProvider: "deepseek",
+		UILocale:      "th",
+		LastDesk:      "specialized",
+		ModelAPIKeys:  map[string]string{"deepseek": key},
+	}); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	prefPath, _ := PreferencePath()
+	raw, err := os.ReadFile(prefPath)
+	if err != nil {
+		t.Fatalf("read preferences: %v", err)
+	}
+	if strings.Contains(string(raw), key) {
+		t.Fatalf("the API key is still in the settings file:\n%s", raw)
+	}
+	// The settings themselves must still be there and still readable by hand —
+	// that readability is the whole reason the secrets left.
+	if !strings.Contains(string(raw), "specialized") {
+		t.Fatalf("the settings did not survive the split:\n%s", raw)
+	}
+
+	// Callers hand over one struct and get one back: the storage split is this
+	// package's business, not every call site's.
+	got, ok, err := LoadModelPreference()
+	if err != nil || !ok {
+		t.Fatalf("load: ok=%v err=%v", ok, err)
+	}
+	if got.ModelAPIKeys["deepseek"] != key {
+		t.Fatalf("the key did not come back: %+v", got.ModelAPIKeys)
+	}
+	if got.LastDesk != "specialized" {
+		t.Errorf("settings did not come back: %+v", got)
+	}
+}
+
+// An install written before the split must not lose its keys — losing one means
+// the user cannot reach their own provider until they find and retype it.
+func TestKeysInAnOldPreferenceFileMoveOutOnLoad(t *testing.T) {
+	isolateUserDirs(t)
+
+	const key = "sk-written-before-the-split"
+	prefPath, _ := PreferencePath()
+	if err := os.MkdirAll(filepath.Dir(prefPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	old := `{"provider":"deepseek","last_desk":"coding","provider_api_keys":{"deepseek":"` + key + `"}}`
+	if err := os.WriteFile(prefPath, []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, ok, err := LoadModelPreference()
+	if err != nil || !ok {
+		t.Fatalf("load: ok=%v err=%v", ok, err)
+	}
+	if got.ModelAPIKeys["deepseek"] != key {
+		t.Fatalf("the migration lost the key: %+v", got.ModelAPIKeys)
+	}
+	raw, err := os.ReadFile(prefPath)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if strings.Contains(string(raw), key) {
+		t.Fatalf("the key is still in the settings file after migrating:\n%s", raw)
+	}
+	// Two copies of a secret is worse than one: the stripped file must not be
+	// the only thing that happened.
+	creds, err := LoadCredentials()
+	if err != nil {
+		t.Fatalf("load credentials: %v", err)
+	}
+	if creds.ModelAPIKeys["deepseek"] != key {
+		t.Fatalf("the key did not land in the credentials file: %+v", creds)
+	}
+}
+
+// Round trip through whatever the platform gives us. On Windows the file is
+// DPAPI-wrapped and must not contain the key in the clear; everywhere else it
+// is plaintext by design (see secret_other.go) and this still pins that the
+// value survives the trip.
+func TestCredentialsRoundTrip(t *testing.T) {
+	isolateUserDirs(t)
+
+	const key = "sk-round-trip"
+	if err := SaveCredentials(Credentials{ModelAPIKeys: map[string]string{"deepseek": key}}); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	got, err := LoadCredentials()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if got.ModelAPIKeys["deepseek"] != key {
+		t.Fatalf("round trip lost the key: %+v", got)
+	}
+	if runtime.GOOS == "windows" {
+		path, _ := CredentialsPath()
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read: %v", err)
+		}
+		if strings.Contains(string(raw), key) {
+			t.Errorf("the key is in the clear on disk despite DPAPI:\n%s", raw)
 		}
 	}
 }

@@ -218,6 +218,38 @@ var catalog = map[string]*entry{
 		modelDefaults: ModelDefaults{FallbackModel: "deepseek-v4-flash"},
 		capabilities:  Capabilities{ToolCalling: true, Reasoning: true},
 	},
+	"minimax": {
+		canonical:      "minimax",
+		aliases:        []string{"minimax", "minimaxi", "minimax-ai"},
+		requiresAPIKey: true,
+		runtime:        RuntimeOpenAICompatible,
+		baseURL:        "https://api.minimax.io/v1",
+		envKeys:        []string{"MINIMAX_API_KEY"},
+		// A last resort for a cold start with no network, not a model list:
+		// this provider serves GET /v1/models, so the picker is filled from the
+		// account's own catalog (ModelChoicesWithEndpointAndAPIKey) and a name
+		// written here would only ever be the offline fallback.
+		modelDefaults: ModelDefaults{FallbackModel: "MiniMax-M3"},
+		// Thinking is a switch here, not a ladder — there is no effort field at
+		// all. See resolveMiniMaxThinkingCapabilities.
+		capabilities: Capabilities{ToolCalling: true, Reasoning: true},
+	},
+	"kimi": {
+		canonical: "kimi",
+		// "moonshot" is the company and the API host; "kimi" is the name on the
+		// models and on the docs site the platform now redirects to. Both are
+		// what a user will type.
+		aliases:        []string{"kimi", "moonshot", "moonshotai", "kimi-ai"},
+		requiresAPIKey: true,
+		runtime:        RuntimeOpenAICompatible,
+		baseURL:        "https://api.moonshot.ai/v1",
+		envKeys:        []string{"MOONSHOT_API_KEY", "KIMI_API_KEY"},
+		modelDefaults:  ModelDefaults{FallbackModel: "kimi-k3"},
+		// Reasoning is a real dial here (reasoning_effort: low/high/max) but it
+		// has no off position — K3 always thinks. See
+		// resolveKimiThinkingCapabilities for what that costs the picker.
+		capabilities: Capabilities{ToolCalling: true, Reasoning: true},
+	},
 	"zai": {
 		canonical:      "zai",
 		aliases:        []string{"zai", "z.ai", "zhipu", "zhipuai"},

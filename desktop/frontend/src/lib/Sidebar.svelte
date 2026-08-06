@@ -75,6 +75,7 @@
     }))
   )
 
+
   // One list per door, and no switch between them (§86). Chats and projects
   // used to take turns in this column because one window had to serve both
   // kinds of work; the split settled which is which — the storefront keeps
@@ -124,7 +125,10 @@
   // is held at no desk at all. Walking into a room then emptied the column,
   // and a link labelled "ดูทั้งหมด" is not an answer to a list that just lost
   // twenty rows — the row you wanted was on screen a moment ago.
-  const visibleHistory = $derived(cockpit.history)
+  // cockpit.history is already this door's, scoped in SQL by the engine
+  // (deskFilterFor / ListSessionsForDoor) rather than filtered here — so a long
+  // run of the other door's sessions cannot eat this list's page.
+  const visibleHistory = $derived(cockpit.history || [])
 
   function onHistorySearchInput() {
     clearTimeout(historySearchTimer)
@@ -261,6 +265,17 @@
         <button type="button" class="proj-add" onclick={openFolder}>
           <span class="ic"><Icon name="folder" size={14} /></span> {t('sidebar.addProject')}
         </button>
+        <!-- Searching replaces the grouped list: a hit belongs to whatever
+             project it belongs to, and re-nesting it under headings the user
+             is not looking at buries the thing they searched for. The box was
+             wired to the store here but had no renderer on this side, so
+             typing in it did nothing at all in this window. -->
+        {#if searching}
+          {#each visibleHistory as s (s.id)}{@render sessionRow(s)}{/each}
+          {#if visibleHistory.length === 0}
+            <div class="sess-empty">{t('sidebar.noMatches')}</div>
+          {/if}
+        {:else}
         {#each projectGroups as g (g.project.key)}
           <div class="proj-group">
             <div class="proj-group-row">
@@ -292,6 +307,7 @@
             {/if}
           </div>
         {/each}
+        {/if}
       </div>
     {:else}
       <div class="scroll">

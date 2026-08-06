@@ -5,7 +5,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
+	"github.com/Mike0165115321/Aetox/internal/debuglog"
 	"github.com/Mike0165115321/Aetox/internal/hook"
 	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/safety"
@@ -249,6 +251,12 @@ func Load(opt ConfigOptions) Config {
 	if modelAPIKey == "" {
 		modelAPIKey = model.ResolveModelAPIKey(provider)
 	}
+	// The second place a key enters the process, after LoadCredentials: this
+	// one can come from an environment variable or the .env file, which the
+	// credentials file never sees. Registering here as well means every path a
+	// key arrives by is covered, and the debug log cannot print one whichever
+	// way the user supplied it.
+	debuglog.Redact(modelAPIKey)
 	baseURL := strings.TrimSpace(opt.ModelBaseURL)
 	wireFormat := strings.TrimSpace(opt.ModelWireFormat)
 	modelTimeout := opt.ModelTimeout
@@ -428,7 +436,41 @@ type MCPServerConfig struct {
 	// Disabled (not Enabled) so the zero value keeps servers in pre-existing
 	// config files switched on without any migration.
 	Disabled bool `json:"disabled,omitempty"`
+	// For names who this server belongs to — the desks that carry its tools,
+	// and (planned) the agents that bring it along. Owner's call, 2026-08-06.
+	//
+	// The server says where it goes, rather than each desk listing the servers
+	// it wants, because only one of those can be written at the right moment. A
+	// desk manifest ships compiled into the app, before any of the user's
+	// servers exist — so `mcp:` in a bundled manifest could name nothing, every
+	// desk carried no servers, and a server the user had configured connected,
+	// registered, and was filtered off every desk. The model then reported
+	// having no MCP tools, which from where it sat was true.
+	//
+	// This is also the line that keeps a server the user installed *for an
+	// agent* off the main assistant's tool block. "Attach everything" would
+	// have merged the two the moment a second server existed.
+	//
+	// Disabled and For are different switches and both are wanted: Disabled
+	// means do not connect at all, For means who sees it once connected.
+	//
+	// No `omitempty`, unlike every other optional field here. An empty list is
+	// a decision — "connected, shown to nobody" — and omitting it on write
+	// would make it indistinguishable from a file predating the field, which
+	// the migration fills in with the default. Switching a server off for
+	// everyone would then switch itself back on at the next launch.
+	For []string `json:"for"`
 }
+
+// MCPDefaultDesks is where a server with no `for:` lands: the two general
+// desks. It is applied once, by MigrateMCPServerOwners, and written back into
+// the file — not treated as a standing default.
+//
+// Writing it back is the whole point. A silent default is a rule the user
+// cannot see, edit or switch off, and this field exists to be a switch. After
+// the migration the file says exactly what is true, and an empty `for` from
+// then on means what it says: attached nowhere.
+var MCPDefaultDesks = []string{"assistant", "coding"}
 
 func MCPServersPath() (string, error) {
 	root, err := DataRoot()
@@ -457,6 +499,116 @@ func LoadMCPServers() ([]MCPServerConfig, error) {
 		return nil, err
 	}
 	return servers, nil
+}
+
+// MCPAgentPrefix marks an entry in `for:` as naming one of the team rather than
+// a desk. Defined here, next to the file it is written into, because three
+// places say it — the settings page building the toggles, the resolver reading
+// them, and the agent asking what it may carry — and a prefix spelled by hand
+// in any of them is a switch that silently stops matching.
+const MCPAgentPrefix = "agent:"
+
+// MCPServersForDesk returns the servers that desk carries.
+//
+// The empty desk name is the pre-modes full desk and carries everything, which
+// is what a nil *mode.Mode has always meant.
+func MCPServersForDesk(desk string) []string {
+	return mcpServersFor(strings.TrimSpace(desk), strings.TrimSpace(desk) == "")
+}
+
+// MCPServersForAgent returns the servers the user pointed at this agent — the
+// tools it brings to a job that the desk's own assistant never carries.
+//
+// An empty name carries nothing, the opposite of the desk rule above and
+// deliberately so: "no desk" is a real state that means the legacy full desk,
+// while "no agent" is a caller that failed to say who is asking, and answering
+// that with every server would hand a nameless delegate the lot.
+func MCPServersForAgent(name string) []string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil
+	}
+	return mcpServersFor(MCPAgentPrefix+name, false)
+}
+
+// mcpServersFor is the one matcher behind both. A desk name and an
+// "agent:<name>" entry are the same kind of thing — an owner id, exactly as the
+// settings page writes it — so they are compared the same way rather than by
+// two rules that could drift apart.
+//
+// Disabled servers are left out of both: one that is never connected has no
+// tools to carry, whoever it was pointed at.
+func mcpServersFor(owner string, all bool) []string {
+	MigrateMCPServerOwners()
+	servers, err := LoadMCPServers()
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, s := range servers {
+		if s.Disabled || strings.TrimSpace(s.Name) == "" {
+			continue
+		}
+		if all {
+			out = append(out, s.Name)
+			continue
+		}
+		for _, entry := range s.For {
+			if strings.EqualFold(strings.TrimSpace(entry), owner) {
+				out = append(out, s.Name)
+				break
+			}
+		}
+	}
+	return out
+}
+
+var migratedMCPOwners sync.Once
+
+// MigrateMCPServerOwners fills in `for:` on servers configured before the field
+// existed, and writes the file back so the user can see and change it.
+//
+// Only servers with the key entirely absent are touched. An explicit `"for":
+// []` is a switch the user turned off and must survive — which is why the
+// decision is made on the raw JSON rather than on the decoded struct, where
+// absent and empty are the same nil.
+func MigrateMCPServerOwners() {
+	migratedMCPOwners.Do(migrateMCPServerOwners)
+}
+
+func migrateMCPServerOwners() {
+	path, err := MCPServersPath()
+	if err != nil {
+		return
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return // no file is the normal state, not an error
+	}
+	var entries []map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &entries); err != nil {
+		return // a file we cannot parse is the user's to fix, not ours to rewrite
+	}
+	changed := false
+	for _, e := range entries {
+		if _, ok := e["for"]; ok {
+			continue
+		}
+		owners, err := json.Marshal(MCPDefaultDesks)
+		if err != nil {
+			return
+		}
+		e["for"] = owners
+		changed = true
+	}
+	if !changed {
+		return
+	}
+	payload, err := json.MarshalIndent(entries, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(path, payload, 0o600)
 }
 
 func SaveMCPServers(servers []MCPServerConfig) error {
@@ -511,6 +663,14 @@ func LoadModelPreference() (ModelPreference, bool, error) {
 		return pref, false, err
 	}
 	pref = sanitizePreference(pref)
+	// Keys live in credentials.json now; anything still in the settings file is
+	// from before the split and gets moved on the way past. Callers get one
+	// struct with everything in it either way — the storage split is this
+	// package's business, not theirs.
+	migrateCredentialsOutOfPreferences(&pref)
+	if creds, err := LoadCredentials(); err == nil && len(creds.ModelAPIKeys) > 0 {
+		pref.ModelAPIKeys = creds.ModelAPIKeys
+	}
 	return pref, true, nil
 }
 
@@ -541,7 +701,28 @@ func looksLikeAPIKey(s string) bool {
 	return false
 }
 
+// SaveModelPreference persists the user's settings, sending the API keys to
+// the credentials file on the way through (see credentials.go).
+//
+// Callers still hand over one struct with the keys in it, because splitting the
+// storage is not a reason to split every call site — a caller that had to
+// remember two saves is a caller that can do one and lose the other. The keys
+// are cleared from the copy that reaches the preference file and left on the
+// caller's struct, which is still the whole picture in memory.
 func SaveModelPreference(pref ModelPreference) error {
+	if len(pref.ModelAPIKeys) > 0 {
+		if err := SaveCredentials(Credentials{ModelAPIKeys: pref.ModelAPIKeys}); err != nil {
+			return err
+		}
+		pref.ModelAPIKeys = nil // a value copy: the caller's struct is untouched
+	}
+	return saveModelPreferenceFile(pref)
+}
+
+// saveModelPreferenceFile writes the settings file exactly as given. Separate
+// from SaveModelPreference so the migration can rewrite the file *without*
+// re-saving the credentials it is in the middle of moving.
+func saveModelPreferenceFile(pref ModelPreference) error {
 	path, err := PreferencePath()
 	if err != nil {
 		return err
@@ -556,11 +737,10 @@ func SaveModelPreference(pref ModelPreference) error {
 		return err
 	}
 
-	// Write-then-rename, not a plain WriteFile: this file holds the API keys,
-	// and a truncate-then-write loses all of them if a second Aetox process
-	// (another window, the CLI) writes at the same moment or the app dies
-	// mid-write. Rename is atomic, so a reader sees the old file or the new
-	// one, never half of either.
+	// Write-then-rename, not a plain WriteFile: a truncate-then-write loses the
+	// file's contents if a second Aetox process (another window, the CLI)
+	// writes at the same moment or the app dies mid-write. Rename is atomic, so
+	// a reader sees the old file or the new one, never half of either.
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, payload, 0o600); err != nil {
 		return err

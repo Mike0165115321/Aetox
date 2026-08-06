@@ -50,9 +50,9 @@ type Chair struct {
 // ListChairs returns the office roster: every sub-agent profile that declares
 // the office as its desk, in the order profiles list.
 //
-// Hiring is dropping one more .md in <DataRoot>/subagents with `desk:
-// specialized` — there is no registration step here to forget, which is what
-// makes "the company grows by adding chairs" true rather than aspirational.
+// Hiring is dropping one more .md in <DataRoot>/agents — there is no
+// registration step here to forget, which is what makes "the company grows by
+// adding chairs" true rather than aspirational.
 func (a *App) ListChairs() []Chair {
 	ceiling, _ := mode.Load(mode.Office)
 	used := a.chairActivity()

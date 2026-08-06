@@ -14,7 +14,7 @@
   import { cockpit } from '../stores/cockpit.svelte'
   import {
     workbench, activateTab, closeTab, removeTab,
-    openFilesTab, openBrowserTab, openTerminalTab, openToolsTab, openFileTab,
+    openFilesTab, openBrowserTab, openTerminalTab, openToolsTab, openFileTab, reportDeskTabs,
     openUrlInWorkbench, saveWorkbenchSnapshot, normalizeUrl, labelForUrl,
     setTabDragPayload, TAB_DRAG_MIME,
     type WorkbenchTab,
@@ -55,17 +55,40 @@
   // navigate/activate) — snapshot reads workbench state reactively.
   $effect(() => {
     saveWorkbenchSnapshot()
+    // Same trigger, same reason: the agent's view of the desk has to change
+    // when the desk does, including when the user is the one who changed it.
+    reportDeskTabs()
   })
 
   onMount(() => {
     TerminalShells().then((s) => (shells = s))
-    // The AI agent opens pages on its workbench through this event (browser_open skill).
-    return EventsOn('workbench:open-browser', ({ id, url }: { id: string; url: string }) => {
-      if (!workbench.tabs.some((t) => t.id === id)) {
-        workbench.tabs.push({ id, kind: 'browser', name: t('workbench.newTab'), url })
-      }
-      workbench.activeId = id
-    })
+    // The three ways the agent reaches this desk. Each mirrors a door the user
+    // already has — a page, a file, a shell — so nothing here can put something
+    // on the desk that a click could not have.
+    const offs = [
+      // browser_open
+      EventsOn('workbench:open-browser', ({ id, url }: { id: string; url: string }) => {
+        if (!workbench.tabs.some((t) => t.id === id)) {
+          workbench.tabs.push({ id, kind: 'browser', name: t('workbench.newTab'), url, mine: true })
+        }
+        workbench.activeId = id
+      }),
+      // desk_open — straight into the same opener the tree and the drop use, so
+      // the routing table stays the only thing that decides which pane draws it.
+      EventsOn('workbench:open-file', ({ path, name }: { path: string; name: string }) => {
+        void openFileTab(path, name)
+      }),
+      // desk_terminal — the session already exists on the Go side (unlike the
+      // browser, where the frontend creates the window), so this only mounts a
+      // pane onto an id that is already live.
+      EventsOn('workbench:open-terminal', ({ id, name }: { id: string; name: string }) => {
+        if (!workbench.tabs.some((tab) => tab.id === id)) {
+          workbench.tabs.push({ id, kind: 'terminal', name, mine: true })
+        }
+        workbench.activeId = id
+      }),
+    ]
+    return () => offs.forEach((off) => off())
   })
 
   function openDefaultTerminal() {

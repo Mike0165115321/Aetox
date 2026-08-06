@@ -103,12 +103,18 @@ func Dir() (string, error) {
 // FileFor returns the path holding one scope's memory. Named MEMORY.md at the
 // top for the main agent because that filename already means this to every
 // other agent runtime — a folder handed to one of them needs no explanation.
+//
+// A delegate's memory is the exception to "everything the agent worked out
+// lives under <DataRoot>/memory": it sits in that worker's own folder
+// (config.AgentHome) instead, because one agent is one folder (owner's call,
+// 2026-08-06) and its memory is part of what it is. The main agent's and each
+// desk's stay here — neither has a folder of its own to be part of.
 func FileFor(scope string) (string, error) {
+	scope = strings.TrimSpace(scope)
 	dir, err := Dir()
 	if err != nil {
 		return "", err
 	}
-	scope = strings.TrimSpace(scope)
 	if scope == MainScope {
 		return filepath.Join(dir, "MEMORY.md"), nil
 	}
@@ -121,7 +127,10 @@ func FileFor(scope string) (string, error) {
 	if !validScope(scope) {
 		return "", fmt.Errorf("invalid memory scope %q", scope)
 	}
-	return filepath.Join(dir, "agents", scope+".md"), nil
+	// Before the first read, from whichever entry point got here first — a
+	// memory lookup can precede any profile resolution.
+	config.MigrateAgentHomes()
+	return config.AgentMemoryPath(scope)
 }
 
 // Read returns one scope's memory as it stands on disk, or "" when there is

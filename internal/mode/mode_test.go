@@ -80,10 +80,16 @@ func TestDesksCarryWhatTheyClaim(t *testing.T) {
 		tool string
 		want bool
 	}{
-		{assistant, "memory", true},       // agent category
-		{assistant, "web_search", true},   // web
-		{assistant, "slides_write", true}, // deliverables
-		{assistant, "read", true},         // files
+		{assistant, "memory", true},     // agent category
+		{assistant, "web_search", true}, // web
+		// The three writers are the office's, not this desk's — a deliverable is
+		// delegated to the chair whose job it is (§84's star), and leaving the
+		// tools here meant the assistant did the work itself whenever the job
+		// looked small enough, which is a decision by mood rather than by rule.
+		{assistant, "slides_write", false},
+		{assistant, "doc_write", false},
+		{assistant, "sheet_write", false},
+		{assistant, "read", true}, // files
 		{assistant, "edit", true},         // files — sorting out this machine is this desk's work
 		{assistant, "shell", true},        // shell: COMPANY.md §2 — safety is the gate, not a missing tool
 		{assistant, "diagnostics", false}, // no code category: developer tools are the coding desk's
@@ -94,11 +100,17 @@ func TestDesksCarryWhatTheyClaim(t *testing.T) {
 		{coding, "slides_write", false}, // no deliverables
 		{coding, "image_ocr", false},    // no media
 
-		{specialized, "doc_write", true}, // deliverables
-		{specialized, "pdf_read", true},  // media
-		{specialized, "read", true},      // explicit
-		{specialized, "write", true},     // explicit
-		{specialized, "edit", false},     // files category is not on this desk
+		// The writers left this desk too (owner's call, 2026-08-06). The office
+		// still makes documents — its agents do, under `chairs:` — but the
+		// assistant sitting here hands the job over rather than doing it. See
+		// TestChairsAreInTheRoomButNotOnTheDesk for the other half.
+		{specialized, "doc_write", false},
+		{specialized, "sheet_write", false},
+		{specialized, "slides_write", false},
+		{specialized, "pdf_read", true}, // media
+		{specialized, "read", true},     // explicit
+		{specialized, "write", true},    // explicit
+		{specialized, "edit", false},    // files category is not on this desk
 		{specialized, "shell", false},
 		{specialized, "symbol", false}, // no code category
 	}
@@ -112,6 +124,33 @@ func TestDesksCarryWhatTheyClaim(t *testing.T) {
 // A nil Mode is every session from before modes existed, and it must behave
 // exactly as those sessions always did: everything on the desk, every server
 // attached. Load("") is that nil, and it is an answer, not a miss.
+// Showing the user a file is not one desk's privilege. Whatever a session is
+// for, the person at it has to be able to see what was produced — and the desk
+// that produces the most (specialized: decks, documents, workbooks) is the one
+// that lost these when they were first filed under shell.
+func TestEveryDeskCanPutSomethingOnTheDesk(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+
+	for _, name := range []string{"assistant", "coding", "specialized"} {
+		m, ok := Load(name)
+		if !ok || m == nil {
+			t.Fatalf("Load(%q) failed", name)
+		}
+		for _, tool := range []string{"desk_open", "desk_list"} {
+			if !m.AllowsTool(tool) {
+				t.Errorf("%s desk does not carry %s", name, tool)
+			}
+		}
+	}
+
+	// desk_terminal is the exception and must stay one: it starts a shell, and
+	// the specialized desk carries no shell on purpose.
+	specialized, _ := Load("specialized")
+	if specialized.AllowsTool("desk_terminal") {
+		t.Error("specialized desk carries desk_terminal, but it carries no shell")
+	}
+}
+
 func TestNilModeIsTheFullDesk(t *testing.T) {
 	m, ok := Load("")
 	if !ok {
@@ -128,20 +167,32 @@ func TestNilModeIsTheFullDesk(t *testing.T) {
 	}
 }
 
-// MCP is the one default-closed field: a manifest that says nothing about
-// servers attaches none. Letting absence mean "all" would put every installed
-// server on every desk, which is the pile §83 exists to take apart.
-func TestMCPDefaultsClosed(t *testing.T) {
+// MCP stays default-closed, and a manifest can no longer open it: ownership
+// moved onto the server itself (owner's call, 2026-08-06 — see Mode.MCP), so a
+// desk carries exactly the servers whose `for:` names it, and nothing else.
+//
+// The `mcp:` line is deliberately not read. Leaving it half-working would be
+// two places answering "which servers are on this desk", and the one that
+// looks authoritative — the manifest the user is reading — would be the one
+// with no effect.
+func TestMCPIsResolvedFromTheServerNotTheManifest(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir()) // no servers configured
+
 	none := parse("x", "---\ncategories: web\n---\nbody")
 	if none.AllowsServer("github") {
-		t.Error("a mode with no mcp: field attached a server")
+		t.Error("a desk with no servers resolved to it attached one")
 	}
-	some := parse("x", "---\ncategories: web\nmcp: github, Notion\n---\nbody")
-	if !some.AllowsServer("github") || !some.AllowsServer("notion") {
-		t.Error("a named server was not attached (names must match case-insensitively)")
+	if claimed := parse("x", "---\ncategories: web\nmcp: github, Notion\n---\nbody"); claimed.AllowsServer("github") {
+		t.Error("a manifest attached a server by naming it — ownership is the server's, and two answers is one too many")
+	}
+
+	// The resolved field is what AllowsServer reads, case-insensitively.
+	some := &Mode{Name: "x", MCP: []string{"github", "notion"}}
+	if !some.AllowsServer("github") || !some.AllowsServer("Notion") {
+		t.Error("a resolved server was not attached (names must match case-insensitively)")
 	}
 	if some.AllowsServer("linear") {
-		t.Error("an unnamed server was attached")
+		t.Error("an unresolved server was attached")
 	}
 	if some.AllowsServer("") {
 		t.Error("the empty server name matched")
@@ -220,7 +271,8 @@ func TestDispatchIsDefaultClosedAndOneWay(t *testing.T) {
 // MCP tool by AllowsTool would attach every installed server to every desk
 // that carries the agent group — which is all of them.
 func TestCarriesJudgesEachSourceItsOwnWay(t *testing.T) {
-	m := parse("x", "---\ncategories: agent\nmcp: notion\n---\nbody")
+	m := parse("x", "---\ncategories: agent\n---\nbody")
+	m.MCP = []string{"notion"} // resolved from the server's `for:`, not the manifest
 
 	if !m.Carries("notion_search", skill.SourceMCP) {
 		t.Error("a tool from the named server is not carried")
@@ -293,5 +345,44 @@ func TestLoadRefusesPathShapedNames(t *testing.T) {
 	}
 	if _, ok := Load("no-such-mode-anywhere"); ok {
 		t.Error("an unknown mode name reported ok")
+	}
+}
+
+// `chairs:` exists because one list was answering two questions (owner's call,
+// 2026-08-06). Taking the writers off the specialized desk — so the assistant
+// hands the job to an agent instead of doing it itself — used to take them away
+// from the agents as well, because the manifest that describes the desk is also
+// the ceiling FilterRegistry measures a chair against. The office would have
+// lost the ability to make the one thing it exists to make.
+//
+// What this pins is the split itself, from both sides, plus the two boundaries
+// that keep it from becoming a hole: deny still wins, and the widening is for
+// chairs only — an ordinary delegate is answered by Carries and never sees it.
+func TestChairsAreInTheRoomButNotOnTheDesk(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+	specialized, ok := Load("specialized")
+	if !ok {
+		t.Fatal("specialized desk missing")
+	}
+
+	for _, tool := range []string{"doc_write", "sheet_write", "slides_write"} {
+		if specialized.Carries(tool, skill.SourceBuiltin) {
+			t.Errorf("%s is still on the desk — the assistant must hand the job to an agent", tool)
+		}
+		if !specialized.CarriesForChair(tool, skill.SourceBuiltin) {
+			t.Errorf("%s is out of the agents' reach too — the office cannot make what it exists to make", tool)
+		}
+	}
+
+	// Not a back door. `chairs:` says "in the room", never "above the rules".
+	denied := &Mode{Name: "t", Tools: []string{"read"}, Chairs: []string{"doc_write"}, Deny: []string{"doc_write"}}
+	if denied.CarriesForChair("doc_write", skill.SourceBuiltin) {
+		t.Error("deny lost to chairs — a tool the desk removed outright must be gone for everyone")
+	}
+
+	// And not a way around the ceiling for ordinary work: a tool the desk does
+	// not carry stays unreachable to anything that is not a chair.
+	if specialized.Carries("shell", skill.SourceBuiltin) || specialized.CarriesForChair("shell", skill.SourceBuiltin) {
+		t.Error("chairs widened the ceiling past what the desk names")
 	}
 }

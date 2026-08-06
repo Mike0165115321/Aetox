@@ -60,3 +60,6 @@ Thumbs.db
 # ทำงาน ไม่ใช่คำแถลงต่อสาธารณะ จึงอยู่บนดิสก์เท่านั้น. รูปแบบชื่อไฟล์เป็น
 # pattern เพื่อไม่ให้ตัว .gitignore เองต้องเอ่ยชื่อใครบน GitHub
 /docs/*-teardown.md
+
+# Claude Code session state (worktrees, locks, salvaged transcripts) — tooling, not source
+.claude/

@@ -2,8 +2,11 @@ package mcp
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
+
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func TestToolName(t *testing.T) {
@@ -52,5 +55,39 @@ func TestSkillToolBridge(t *testing.T) {
 	}
 	if !out.Success || out.Content != "bridged" {
 		t.Fatalf("output = %+v, want success with content %q", out, "bridged")
+	}
+}
+
+// The model has no other way to know a tool came from MCP. The name is
+// `<server>_<tool>` and the description is the remote server's own words;
+// neither says "MCP", and the system prompt never mentions the protocol.
+//
+// Measured 2026-08-06: asked whether MCP was connected, the assistant answered
+// "no" while holding sequential-thinking's tool in its tool block, then
+// hand-built a stdio client to prove MCP worked — never noticing it was already
+// holding the tool. It was not confused; it was told nothing.
+func TestBridgedToolSaysWhichServerItCameFrom(t *testing.T) {
+	c := New(Server{Name: "sequential-thinking", Command: []string{"npx", "x"}})
+
+	described := newToolAdapter(c, &mcpsdk.Tool{
+		Name:        "sequentialthinking",
+		Description: "A tool for reflective problem solving.",
+	}).ToolDefinition()
+	if !strings.Contains(described.Function.Description, "MCP server") {
+		t.Errorf("nothing marks this as an MCP tool: %q", described.Function.Description)
+	}
+	if !strings.Contains(described.Function.Description, "sequential-thinking") {
+		t.Errorf("the description does not name the server: %q", described.Function.Description)
+	}
+	// The server's own words survive: this says where the tool came from, not
+	// what it does.
+	if !strings.Contains(described.Function.Description, "reflective problem solving") {
+		t.Errorf("the server's description was lost: %q", described.Function.Description)
+	}
+
+	// A server that documents nothing still produces a usable definition.
+	bare := newToolAdapter(c, &mcpsdk.Tool{Name: "ping"}).ToolDefinition()
+	if !strings.Contains(bare.Function.Description, "MCP server") || !strings.Contains(bare.Function.Description, "ping") {
+		t.Errorf("a tool with no description lost its origin too: %q", bare.Function.Description)
 	}
 }

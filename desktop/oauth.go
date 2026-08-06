@@ -56,11 +56,6 @@ func (a *App) SignInStatus(providerName string) oauth.Status {
 	return oauth.StatusFor(providerName)
 }
 
-// SignedInProviders lists the canonical ids that currently hold a credential,
-// so Settings can mark them without asking one by one.
-func (a *App) SignedInProviders() []string {
-	return oauth.LoggedIn()
-}
 
 // StartSignIn opens a sign-in and returns what to show the user. Nothing is
 // stored until CompleteSignIn succeeds.

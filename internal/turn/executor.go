@@ -183,6 +183,7 @@ type Executor struct {
 	statusReporter func(string)
 	onToolAction   func(ToolEvent)
 	onToolRun      func(ToolRun)
+	delegateKind   func(string) string
 	hooks          *hook.Runner
 
 	// pending holds tool calls that outran their deadline and were left running.
@@ -206,6 +207,13 @@ type ExecutorOptions struct {
 	// call, not the timeline's summary of it (see ToolRun). Nil records nothing,
 	// which is what the CLI does.
 	OnToolRun func(ToolRun)
+	// DelegateKind, if set, names which pile a `task` call's worker belongs to —
+	// subagent.KindAgent or subagent.KindHelper — given the profile name the
+	// model passed (empty means the default profile). Injected by the host
+	// because the profile registry lives in internal/subagent, which imports
+	// this package. Nil leaves AgentKind empty and the UI counts the delegation
+	// in the helper pile, which is every delegation's home before the split.
+	DelegateKind func(agent string) string
 	// Hooks are the user's own commands run around every tool call. Nil is the
 	// normal case — almost nobody configures one — and *hook.Runner is written
 	// so that nil does nothing rather than needing a guard at each call site.
@@ -251,6 +259,7 @@ func NewExecutor(opts ExecutorOptions) *Executor {
 		statusReporter: opts.StatusReporter,
 		onToolAction:   opts.OnToolAction,
 		onToolRun:      opts.OnToolRun,
+		delegateKind:   opts.DelegateKind,
 		hooks:          opts.Hooks,
 	}
 	e.SetApprovalMode(mode)
@@ -335,6 +344,13 @@ type ToolEvent struct {
 	// prose inside the tool result, which is not a place a UI can read.
 	Agent string `json:"agent,omitempty"`
 	Brief string `json:"brief,omitempty"`
+	// AgentKind says which pile that worker belongs to — "agent" (ตัวแทน, a
+	// chair with a desk) or "helper" (ผู้ช่วยตัวแทน). The UI counts the two
+	// apart, and it cannot decide this itself: the answer lives in which home
+	// the profile file sits, which only the resolver the host injects can see
+	// (ExecutorOptions.DelegateKind). Empty when no resolver is wired or the
+	// profile cannot run — counted as a helper, the pre-split reading.
+	AgentKind string `json:"agentKind,omitempty"`
 }
 
 // Label is what a timeline row reads, e.g. "write internal/skill/edit.go".
@@ -375,16 +391,29 @@ type ToolRun struct {
 
 func (e *Executor) reportToolCall(ref, name, args string) {
 	if e.onToolAction != nil {
-		agent, brief := delegationOf(name, args)
+		agent, brief, isTask := delegationOf(name, args)
 		e.onToolAction(ToolEvent{
 			Action: "call", Ref: ref, Name: name, Subject: toolCallSubject(args),
-			Agent: agent, Brief: brief,
+			Agent: agent, Brief: brief, AgentKind: e.kindOf(isTask, agent),
 		})
 	}
 }
 
+// kindOf asks the injected resolver which pile a delegation's worker is in.
+// Only a `task` call has a kind — for everything else the resolver is not even
+// consulted, so a tool that happens to take an `agent` argument cannot be
+// mistaken for a delegation.
+func (e *Executor) kindOf(isTask bool, agent string) string {
+	if !isTask || e.delegateKind == nil {
+		return ""
+	}
+	return e.delegateKind(agent)
+}
+
 // delegationOf reports which sub-agent a `task` call is handing work to, and the
-// brief it is handing over.
+// brief it is handing over. isTask distinguishes "not a delegation at all" from
+// "a delegation whose agent was left to default" — the two used to look the
+// same (an empty agent), and the kind stamp needs the difference.
 //
 // This is the one place `turn` names a specific tool, and it earns it: the
 // alternative is a UI that reads a delegate's identity out of English prose in a
@@ -393,17 +422,17 @@ func (e *Executor) reportToolCall(ref, name, args string) {
 // `agent` is omitted is deliberately not repeated here; an unnamed delegate
 // reports an empty agent and the UI falls back to the row's own label, which
 // keeps the profile registry in one package.
-func delegationOf(name, args string) (agent, brief string) {
+func delegationOf(name, args string) (agent, brief string, isTask bool) {
 	if !strings.EqualFold(strings.TrimSpace(name), "task") {
-		return "", ""
+		return "", "", false
 	}
 	parsed, err := model.ParseToolArguments(args)
 	if err != nil {
-		return "", ""
+		return "", "", true
 	}
 	agent, _ = parsed["agent"].(string)
 	brief, _ = parsed["prompt"].(string)
-	return strings.TrimSpace(agent), strings.TrimSpace(brief)
+	return strings.TrimSpace(agent), strings.TrimSpace(brief), true
 }
 
 // toolCallSubject picks the one argument worth reading in a timeline row — the
@@ -795,10 +824,17 @@ func (e *Executor) executeAgentToolLoop(
 		})
 		// The work goes into the sequence where it happened — between the
 		// narration that announced it and whatever the model said next.
+		// Agent/Brief/AgentKind are written down too: the live event named the
+		// delegate, but a reopened session reads only the parts, and a `task`
+		// row that forgot who it hired drew a generic "sub-agent" block.
+		agent, brief, isTask := delegationOf(call.Function.Name, call.Function.Arguments)
 		parts.addTool(ToolPart{
 			Ref:       call.ID,
 			Name:      call.Function.Name,
 			Subject:   ev.Subject,
+			Agent:     agent,
+			Brief:     brief,
+			AgentKind: e.kindOf(isTask, agent),
 			OK:        success,
 			Error:     ev.Error,
 			Secs:      int(elapsed.Round(time.Second) / time.Second),
@@ -1163,7 +1199,12 @@ func toolCallToArgs(name string, args map[string]any) []string {
 		if raw, ok := args["repo_url"].(string); ok {
 			return []string{strings.TrimSpace(raw)}
 		}
-	case "shell":
+	case "shell", "desk_terminal":
+		// desk_terminal shares this case because it runs the same thing in the
+		// same shell — the only difference is that the user watches. Splitting
+		// it off would mean an approval prompt that reads differently for the
+		// visible version of an identical command.
+		//
 		// Tokenized, because this is what safety.AssessCommand reads: it judges
 		// the command word against isShellHighRisk and takes the rest as its
 		// flags. Handing it the whole line as one element makes every call look
@@ -1205,9 +1246,24 @@ func (e *Executor) approveOrDeny(ctx context.Context, name, reason string) (bool
 // ApprovalMode gate. A matching "allow"/"deny" rule short-circuits without
 // prompting; "ask" (or no matching rule under a mode that requires it) goes
 // through the normal approveOrDeny prompt.
+//
+// The one subtlety is which "ask" wins. An ask the *user* wrote is their
+// decision and beats the mode outright — that is what writing it was for. An
+// ask the *app* generated (safety.PermissionRule.Default: the per-server rule
+// bootstrap attaches so MCP tools never auto-run before anyone has decided
+// anything) is only an opening position, and it must step aside for the mode
+// the user then chose. It did not: full access, whose card reads "รับทุกอย่าง
+// โดยไม่ถาม", still opened a dialog on every single MCP call, because a matched
+// rule skipped the mode check entirely (2026-08-06).
+//
+// That is also the permissions rule this codebase already settled: rights come
+// from the user's visible list, and there is no second, quieter tier deciding
+// on their behalf.
 func (e *Executor) resolveApproval(ctx context.Context, toolName string, args []string, commandLine string, assessment safety.Assessment) (bool, error) {
-	if action, matched := e.permissions.Resolve(toolName, args); matched {
-		switch action {
+	rule, matched := e.permissions.ResolveRule(toolName, args)
+	appDefaultAsk := matched && rule.Default && rule.Action == safety.PermissionAsk
+	if matched && !appDefaultAsk {
+		switch rule.Action {
 		case safety.PermissionAllow:
 			return true, nil
 		case safety.PermissionDeny:

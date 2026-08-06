@@ -27,6 +27,11 @@ var visionModelMarkers = []string{
 	"gemini",                                                                                   // Google — every Gemini generation is multimodal
 	"llava", "bakllava", "moondream", "minicpm-v", "llama3.2-vision", "qwen2-vl", "qwen2.5-vl", // local
 	"pixtral", "vision", "-vl", "multimodal",
+	// Kimi K3 has native visual understanding. Named exactly, not as "kimi":
+	// K2 and earlier are text-only, and the family name would call them sighted.
+	// Note the endpoint takes base64 only — no public image URLs — which is
+	// already how convertMessagesToOpenAI sends them.
+	"kimi-k3",
 }
 
 // textOnlyMarkers win over the list above. Some families ship a vision member

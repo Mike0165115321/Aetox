@@ -135,6 +135,7 @@ func BuildWithReport(surface Surface, scope Scope, desk Desk) (string, Loaded) {
 	b.WriteString(fileEditing())
 	b.WriteString(batchWork())
 	b.WriteString(drawing())
+	b.WriteString(longform())
 	b.WriteString(narration())
 	b.WriteString(clarify())
 	if direction := strings.TrimSpace(desk.Direction); direction != "" {
@@ -331,6 +332,48 @@ func drawing() string {
 		"regardless of scale and overflows the drawing.\n" +
 		"A drawing is not a decoration. Do not draw the shape of an answer that is one fact, one number, " +
 		"or one instruction — say it.\n"
+}
+
+// longform says what a long written answer is made of: a markdown file the
+// model writes itself.
+//
+// Nothing used to, and the gap had a direction. `doc_write` announces itself as
+// the way to hand back writing, and the assistant desk told the model that
+// written work is not its to produce — so an explanation, a plan, a set of
+// notes, anything past a few paragraphs, went out to the document writer and
+// came back a .docx. The user ends up with a folder of one-off documents where
+// they wanted one readable file, and every one of them cost a delegated agent
+// with its own context, its own reading, and its own round trip.
+//
+// Stated as what the two things are for rather than as "don't call the writer":
+// the writers are not wrong, they are for deliverables — something to open in
+// another program because the user asked for that. Long-form writing is not a
+// deliverable, it is the answer, and the answer's plain-text home is .md. That
+// distinction keeps working when a fourth writer is added; a prohibition on one
+// tool name does not.
+//
+// Since the `chairs:` split (mode.CarriesForChair, 2026-08-06) the writers are
+// not on any desk the main agent sits at — an agent holds them and the desk
+// hands the job over. So the second paragraph names the *act* rather than the
+// tools: "hand it to the agent whose craft it is" is true at every desk, while
+// "use doc_write when…" would be advice about tools this agent cannot see.
+//
+// The chat surface renders markdown (see drawing), so the same file the user
+// keeps is also the thing they can read in place — which is why there is no
+// third option here to weigh.
+func longform() string {
+	return "When your answer is long-form writing — an explanation, a plan, notes, findings, a comparison, " +
+		"anything that runs past a few paragraphs and the user will want again later — write it to a .md " +
+		"file yourself with write, and reply with a line or two saying what it is. Markdown is the default " +
+		"for writing you produce: it is plain text, it renders here, the user can open it in anything, and " +
+		"correcting it costs one edit.\n" +
+		"A document, workbook or deck is a different request — a file the user asked for so they can open " +
+		"it in another program — and you do not build those yourself: hand the job to the agent whose " +
+		"craft it is and collect the file. Length alone is not that request. Do not send writing out " +
+		"because the answer got long; send it when the user wanted that kind of file.\n" +
+		"One file per thing you were asked, named for what it holds, alongside the work it is about. A new " +
+		"file for every explanation leaves the user hunting through a pile — if you are adding to something " +
+		"you already wrote, edit that file instead.\n"
 }
 
 // narration asks for the one line per tool round that the timeline shows as

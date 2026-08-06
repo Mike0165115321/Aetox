@@ -8,8 +8,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte'
 import TopBar from '../lib/TopBar.svelte'
-import { NewSessionAt, CurrentSessionID, SessionMode, ListModes } from './mocks/wailsApp'
-import { cockpit } from '../lib/stores/cockpit.svelte'
+import { NewSessionAt, CurrentSessionID, SessionMode, ListModes, ClearProjectFocus, OpenProjectPath } from './mocks/wailsApp'
+import { cockpit, switchShell } from '../lib/stores/cockpit.svelte'
 import { shell, setShell } from '../lib/shell.svelte'
 
 const props = {
@@ -71,5 +71,40 @@ describe('the door switcher', () => {
 
     expect(vi.mocked(NewSessionAt)).not.toHaveBeenCalled()
     expect(shell.name).toBe('assistant')
+  })
+})
+
+// §19/§86 have always said the storefront does not focus a project, and the
+// window was contradicting it: its chat carried the project picker, so walking
+// through that door with a project open left the assistant rooted in the folder
+// while the sidebar showed conversations (owner, 2026-08-06: "โหมดผู้ช่วยทำไม
+// ยังมีโปรเจกต์มาปนอยู่ครับ … เบสมันคือไม่โฟกัสโปรเจกต์").
+//
+// Hiding the control would not have been enough. One engine has one root, so
+// the door has to actually set it — otherwise the assistant is working inside a
+// project with nothing on screen saying so, which is worse than the picker was.
+describe('the storefront door and project focus', () => {
+  it('drops the project on the way in, and takes it back on the way out', async () => {
+    setShell('code')
+    cockpit.desk = 'coding'
+    cockpit.project.focused = true
+    cockpit.project.name = 'Aetox_web'
+    cockpit.projects = [{ key: 'k', name: 'Aetox_web', path: 'D:/Aetox_web', active: true }] as any
+    vi.mocked(ClearProjectFocus).mockResolvedValue({ focused: false, name: '' } as any)
+    vi.mocked(OpenProjectPath).mockResolvedValue({ focused: true, name: 'Aetox_web' } as any)
+
+    await switchShell('assistant')
+    expect(vi.mocked(ClearProjectFocus)).toHaveBeenCalled()
+
+    // Coming back, the workshop needs a project — it must not make the user go
+    // and say what the window already knows. The list is ordered by opened_at,
+    // so the first entry is the one they were in.
+    // Re-stated because the session switch refreshes the list from the engine,
+    // and the mocked ListProjects answers empty. In the app the user's projects
+    // come back; what is under test is what switchShell does when they exist.
+    cockpit.project.focused = false
+    cockpit.projects = [{ key: 'k', name: 'Aetox_web', path: 'D:/Aetox_web', active: false }] as any
+    await switchShell('code')
+    expect(vi.mocked(OpenProjectPath)).toHaveBeenCalledWith('D:/Aetox_web')
   })
 })

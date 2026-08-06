@@ -5,9 +5,9 @@
 
 import {
   TerminalStart, TerminalClose, ReadFile, ReadWorkbook,
-  RelativizePath, SaveChatFile,
+  RelativizePath, SaveChatFile, WorkbenchTabsChanged,
 } from '../../../wailsjs/go/main/App'
-import type { ooxml } from '../../../wailsjs/go/models'
+import type { main, ooxml } from '../../../wailsjs/go/models'
 import { t } from '../i18n.svelte'
 
 export type WorkbenchTabKind = 'terminal' | 'browser' | 'files' | 'file' | 'tools'
@@ -37,6 +37,11 @@ export type WorkbenchTab = {
   // Bumped on every re-read (loadFileTab). The pane is keyed on it so a file
   // the agent rewrote actually reaches the screen — see loadFileTab.
   rev?: number
+  // The agent opened this tab, rather than the user. Only `desk_list` reads it,
+  // and only to decide what it is allowed to say: a page the agent opened it
+  // may describe, a page the user opened it may not (§81's rule about the
+  // user's browsing never becoming agent-readable).
+  mine?: boolean
 }
 
 /** Panes that draw a file straight from its URL, without reading it first. */
@@ -349,6 +354,28 @@ const wbKey = (sessionId: string) => `aetox-workbench:${sessionId}`
 
 /** Persist the current layout under the bound session. Reads workbench.tabs /
  * activeId reactively — run it from a component $effect to autosave. */
+/** Tell the Go side what is open, so `desk_list` can answer.
+ *
+ * Pushed on every change rather than tracked on the Go side by watching the
+ * events it sends: the agent is not the only one opening and closing tabs, and
+ * a list rebuilt from its own actions would be wrong the first time the user
+ * closed something. The frontend is where the truth is, so the frontend says. */
+export function reportDeskTabs(): void {
+  // Plain objects, cast rather than built through main.DeskTab.createFrom: the
+  // binding serializes them to the same JSON, and a value-import of the
+  // generated models module would make this file need Wails at runtime — which
+  // it does not, and which breaks every test that renders the workbench.
+  void WorkbenchTabsChanged(
+    workbench.tabs.map((t) => ({
+      kind: t.kind,
+      name: t.name,
+      path: t.path ?? '',
+      url: t.url ?? '',
+      mine: t.mine ?? false,
+    })) as main.DeskTab[],
+  )
+}
+
 export function saveWorkbenchSnapshot(): void {
   // "Restorable" has to mean what restoreWorkbench can actually rebuild, not
   // just "not a terminal": a file tab with no path (a failed drop) is saved and

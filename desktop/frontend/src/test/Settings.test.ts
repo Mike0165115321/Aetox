@@ -76,14 +76,17 @@ beforeEach(() => {
     { name: 'landing', description: 'สร้างแลนดิ้งเพจ', body: 'ทำแลนดิ้งเพจ $ARGUMENTS', path: '', builtin: true, image: 'data:image/svg+xml;base64,PHN2Zy8+' },
     { name: 'mine', description: 'ชุดคำสั่งของผม', body: 'ของผมเอง', path: 'C:/prompts/mine.md', builtin: false, image: '' },
   ] as any)
+  // The helpers (explore/general) are system-fixed; everything editable is an
+  // agent, so the editable fixtures are chairs — a built-in, one of yours, and
+  // a shadow whose delete button has to read as a revert.
   vi.mocked(ListSubagentProfiles).mockResolvedValue([
     { name: 'explore', description: 'ค้นไฟล์', tools: ['grep', 'glob', 'list', 'read'], prompt: 'role', builtin: true },
     { name: 'general', description: 'งานซ้ำ', prompt: 'role', builtin: true },
-    { name: 'backend', description: 'ของผม', model: 'deepseek-v4', steps: 8, prompt: 'role', path: 'C:/subagents/backend.md', builtin: false },
-    // A file of yours that shadows a bundled one: counts as yours, and its
-    // delete button has to read as a revert.
-    { name: 'mine-explore', description: 'ของผมทับ', prompt: 'role', path: 'C:/subagents/mine-explore.md', builtin: false, overrides: true },
+    { name: 'deck', description: 'ทำสไลด์', prompt: 'role', builtin: true, desk: 'specialized' },
+    { name: 'backend', description: 'ของผม', model: 'deepseek-v4', steps: 8, prompt: 'role', path: 'C:/agents/backend.md', builtin: false, desk: 'specialized' },
+    { name: 'mine-deck', description: 'ของผมทับ', prompt: 'role', path: 'C:/agents/mine-deck.md', builtin: false, overrides: true, desk: 'specialized' },
   ] as any)
+  vi.mocked(ListChairs).mockResolvedValue([{ name: 'deck' }, { name: 'backend' }, { name: 'mine-deck' }] as any)
   vi.mocked(ReadSubagentProfile).mockResolvedValue('---\ndescription: ค้นไฟล์\ntools: grep, read\n---\nYou search files.' as any)
   vi.mocked(ListModelsForProvider).mockResolvedValue(['deepseek-v4', 'deepseek-chat'] as any)
 })
@@ -443,7 +446,7 @@ describe('Settings pages', () => {
     vi.mocked(ListChairs).mockResolvedValue([{ name: 'deck' }] as any)
 
     const { container } = render(Settings, { onClose: () => {} })
-    await openSection(container, 'ทีมเอเจน')
+    await openSection(container, 'ตัวแทน')
 
     await waitFor(() => expect(screen.getByText('ทำสไลด์')).toBeTruthy())
     expect(screen.queryByText('ค้นไฟล์')).toBeNull()
@@ -511,61 +514,55 @@ describe('Settings pages', () => {
   })
 
   // A file that cannot run is shown with its reason — never silently dropped,
-  // never quietly reinterpreted. The file is still on the user's disk, and a
-  // row that just vanished would be the app refusing to explain itself.
+  // never quietly reinterpreted. The row must explain itself even on the
+  // read-only roster.
   it('shows a sick file with the reason it cannot run', async () => {
     vi.mocked(ListSubagentProfiles).mockResolvedValue([
-      { name: 'หลงบ้าน', description: 'อยากเป็นตัวแทน', prompt: 'role', builtin: false,
-        path: 'C:/subagents/หลงบ้าน.md', invalid: 'ไฟล์นี้อยู่ในบ้านของผู้ช่วยตัวแทน แต่ประกาศ desk: specialized' },
+      { name: 'หลงบ้าน', description: 'อยากเป็นตัวแทน', prompt: 'role', builtin: true,
+        invalid: 'ไฟล์นี้เสีย จึงไม่ถูกใช้งาน' },
     ] as any)
+    vi.mocked(ListChairs).mockResolvedValue([] as any)
 
     const { container } = render(Settings, { onClose: () => {} })
     await openSection(container, 'ผู้ช่วยตัวแทน')
 
     await waitFor(() => expect(screen.getByText('หลงบ้าน')).toBeTruthy())
-    expect(screen.getByText(/ไฟล์นี้อยู่ในบ้านของผู้ช่วยตัวแทน/)).toBeTruthy()
+    expect(screen.getByText(/ไฟล์นี้เสีย/)).toBeTruthy()
   })
 
-  // §44.0: there is no agent picker — the main agent is the assistant. This page
-  // manages only who it delegates to, split by who wrote each profile (§44.10).
-  it('Sub-agents page splits yours from the ones that ship with Aetox', async () => {
+  // The helpers are part of the system (owner's call, 2026-08-06): the page
+  // reads. No create button, no editor door, no model pin — and only the
+  // bundled set is listed, because "yours" cannot exist.
+  it('the sub-agents page is a read-only system roster', async () => {
     const { container } = render(Settings, { onClose: () => {} })
     await openSection(container, 'ผู้ช่วยตัวแทน')
 
     await waitFor(() => expect(screen.getByText('ค้นไฟล์')).toBeTruthy())
     const cards = container.querySelectorAll('.settings-card')
-    expect(cards.length).toBe(2)
-    // Yours first: a fresh install has only built-ins, and the list you grow is
-    // the interesting one.
-    expect(cards[0].textContent).toContain('ของคุณ')
-    expect(cards[0].textContent).toContain('backend')
-    expect(cards[0].textContent).toContain('mine-explore')
-    expect(cards[0].textContent).not.toContain('general')
-    expect(cards[1].textContent).toContain('มากับแอป')
-    expect(cards[1].textContent).toContain('explore')
-    expect(cards[1].textContent).toContain('general')
-    expect(cards[1].textContent).not.toContain('backend')
+    expect(cards.length).toBe(1)
+    expect(cards[0].textContent).toContain('explore')
+    expect(cards[0].textContent).toContain('general')
+    expect(cards[0].textContent).not.toContain('deck')
+    expect(cards[0].textContent).toContain('เพิ่มหรือแก้ไขไม่ได้')
 
-    // A shadow sits under yours and says what it is, because deleting it reverts.
-    expect(screen.getByText('ทับของแอป')).toBeTruthy()
-
-    // Badges are read off the profile, not written down.
+    // Badges are still read off the profile — the roster informs, it just
+    // does not edit.
     expect(screen.getByText('เครื่องมือ 4 ตัว')).toBeTruthy()
-    expect(screen.getAllByText('เครื่องมือครบ').length).toBe(3)
-    expect(screen.getByText('จำกัด 8 รอบ')).toBeTruthy()          // backend's own steps
-    expect(screen.getAllByText('จำกัด 24 รอบ').length).toBe(3)    // the rest fall back to the cap
-    expect(screen.getByText('C:/subagents/backend.md')).toBeTruthy()
     expect(screen.getByText('built-in:explore')).toBeTruthy()
 
-    // No row offers to become the agent you talk to — that concept is gone.
-    expect(screen.queryByText('ใช้เอเจนนี้')).toBeNull()
-    expect(screen.queryByText('กำลังใช้')).toBeNull()
+    // No doors: nothing to create, configure, or pin. (The description may
+    // *mention* creating an agent — it points at the team page — so the check
+    // is on buttons, not on prose.)
+    const buttonLabels = Array.from(container.querySelectorAll('button')).map((b) => b.textContent ?? '')
+    expect(buttonLabels.some((l) => l.includes('สร้าง'))).toBe(false)
+    expect(container.querySelector('.set-row button')).toBeNull()
+    expect(container.querySelectorAll('.set-row select.ctrl').length).toBe(0)
   })
 
-  it('the model dropdown pins a model per sub-agent', async () => {
+  it('the model dropdown pins a model per agent', async () => {
     const { container } = render(Settings, { onClose: () => {} })
-    await openSection(container, 'ผู้ช่วยตัวแทน')
-    await waitFor(() => expect(container.querySelectorAll('.set-row select.ctrl').length).toBe(4))
+    await openSection(container, 'ตัวแทน')
+    await waitFor(() => expect(container.querySelectorAll('.set-row select.ctrl').length).toBe(3))
 
     const selects = Array.from(container.querySelectorAll('.set-row select.ctrl')) as HTMLSelectElement[]
     expect(selects[0].value).toBe('deepseek-v4') // backend is pinned
@@ -585,13 +582,13 @@ describe('Settings pages', () => {
     { name: 'glob', description: 'find files by pattern', source: 'builtin' },
   ] as any)
 
-  it('editing a built-in sub-agent splits its real file into fields and says what saving does', async () => {
+  it('editing a built-in agent splits its real file into fields and says what saving does', async () => {
     withPickableTools()
     const { container } = render(Settings, { onClose: () => {} })
-    await openSection(container, 'ผู้ช่วยตัวแทน')
-    await waitFor(() => expect(screen.getAllByText('ตั้งค่า').length).toBe(4))
+    await openSection(container, 'ตัวแทน')
+    await waitFor(() => expect(screen.getAllByText('ตั้งค่า').length).toBe(3))
 
-    // The built-in group's first row (explore) — index 2 overall: yours come first.
+    // The built-in group's first row (deck) — index 2 overall: yours come first.
     await fireEvent.click(screen.getAllByText('ตั้งค่า')[2])
     await waitFor(() => expect(container.querySelector('.ag-toolsum')).toBeTruthy())
 
@@ -628,8 +625,8 @@ describe('Settings pages', () => {
   // back exactly the way it was shown — the field split is a display choice,
   // not a new file format.
   const openToolPicker = async (container: HTMLElement, rowIndex: number) => {
-    await openSection(container, 'ผู้ช่วยตัวแทน')
-    await waitFor(() => expect(screen.getAllByText('ตั้งค่า').length).toBe(4))
+    await openSection(container, 'ตัวแทน')
+    await waitFor(() => expect(screen.getAllByText('ตั้งค่า').length).toBe(3))
     await fireEvent.click(screen.getAllByText('ตั้งค่า')[rowIndex])
     await waitFor(() => expect(container.querySelector('.ag-toolsum')).toBeTruthy())
     await fireEvent.click(screen.getByText('ตั้งค่า', { selector: '.ag-toolsum button' }))
@@ -643,15 +640,16 @@ describe('Settings pages', () => {
   it('allowing a tool in the picker round-trips through the saved file', async () => {
     withPickableTools()
     const { container } = render(Settings, { onClose: () => {} })
-    await openToolPicker(container, 2) // built-in explore
+    await openToolPicker(container, 2) // built-in deck
 
     await fireEvent.click(toolRow('glob')!.querySelector('.tp-allow')!)
     await fireEvent.click(screen.getByText('เสร็จแล้ว'))
     await fireEvent.click(screen.getByText('บันทึก'))
 
-    await waitFor(() => expect(vi.mocked(SaveSubagentProfile)).toHaveBeenCalled())
-    const [name, saved] = vi.mocked(SaveSubagentProfile).mock.calls.at(-1)!
-    expect(name).toBe('explore')
+    // An agent's edit goes out through the agents' door.
+    await waitFor(() => expect(vi.mocked(SaveAgentProfile)).toHaveBeenCalled())
+    const [name, saved] = vi.mocked(SaveAgentProfile).mock.calls.at(-1)!
+    expect(name).toBe('deck')
     expect(saved).toContain('tools: grep, read, glob')
     expect(saved.trim().endsWith('You search files.')).toBe(true)
   })
@@ -672,8 +670,8 @@ describe('Settings pages', () => {
 
     await fireEvent.click(screen.getByText('เสร็จแล้ว'))
     await fireEvent.click(screen.getByText('บันทึก'))
-    await waitFor(() => expect(vi.mocked(SaveSubagentProfile)).toHaveBeenCalled())
-    const saved = vi.mocked(SaveSubagentProfile).mock.calls.at(-1)![1]
+    await waitFor(() => expect(vi.mocked(SaveAgentProfile)).toHaveBeenCalled())
+    const saved = vi.mocked(SaveAgentProfile).mock.calls.at(-1)![1]
     expect(saved).toContain('tools: read')
     expect(saved).toContain('deny: grep')
     expect(saved).not.toContain('tools: grep')
@@ -709,8 +707,8 @@ describe('Settings pages', () => {
   // keyword — a number in the box must never become "no ceiling" by accident.
   it('the loop cap can be removed, and says so in the file as a word', async () => {
     const { container } = render(Settings, { onClose: () => {} })
-    await openSection(container, 'ผู้ช่วยตัวแทน')
-    await waitFor(() => expect(screen.getAllByText('ตั้งค่า').length).toBe(4))
+    await openSection(container, 'ตัวแทน')
+    await waitFor(() => expect(screen.getAllByText('ตั้งค่า').length).toBe(3))
     await fireEvent.click(screen.getAllByText('ตั้งค่า')[2])
     await waitFor(() => expect(container.querySelector('.ag-steprow')).toBeTruthy())
 
@@ -722,28 +720,28 @@ describe('Settings pages', () => {
     await waitFor(() => expect((container.querySelector('.ag-steps') as HTMLInputElement).disabled).toBe(true))
 
     await fireEvent.click(screen.getByText('บันทึก'))
-    await waitFor(() => expect(vi.mocked(SaveSubagentProfile)).toHaveBeenCalled())
-    expect(vi.mocked(SaveSubagentProfile).mock.calls.at(-1)![1]).toContain('steps: unlimited')
+    await waitFor(() => expect(vi.mocked(SaveAgentProfile)).toHaveBeenCalled())
+    expect(vi.mocked(SaveAgentProfile).mock.calls.at(-1)![1]).toContain('steps: unlimited')
   })
 
   // Deleting a shadow restores the bundled profile, so the button must not say
   // "delete" — the row is not going away.
   it('a shadow offers to revert, not to delete', async () => {
     const { container } = render(Settings, { onClose: () => {} })
-    await openSection(container, 'ผู้ช่วยตัวแทน')
-    await waitFor(() => expect(screen.getAllByText('ตั้งค่า').length).toBe(4))
+    await openSection(container, 'ตัวแทน')
+    await waitFor(() => expect(screen.getAllByText('ตั้งค่า').length).toBe(3))
 
-    await fireEvent.click(screen.getAllByText('ตั้งค่า')[1]) // mine-explore, the shadow
+    await fireEvent.click(screen.getAllByText('ตั้งค่า')[1]) // mine-deck, the shadow
     await waitFor(() => expect(screen.getByText('คืนค่าของแอป')).toBeTruthy())
     expect(screen.queryByText('ลบ')).toBeNull()
   })
 
-  it('a new sub-agent opens with guidance in the role field, not a raw frontmatter skeleton', async () => {
+  it('a new agent opens with guidance in the role field, not a raw frontmatter skeleton', async () => {
     const { container } = render(Settings, { onClose: () => {} })
-    await openSection(container, 'ผู้ช่วยตัวแทน')
-    await waitFor(() => expect(screen.getByText('สร้างผู้ช่วยตัวแทนใหม่')).toBeTruthy())
+    await openSection(container, 'ตัวแทน')
+    await waitFor(() => expect(screen.getByText('สร้างตัวแทนใหม่')).toBeTruthy())
 
-    await fireEvent.click(screen.getByText('สร้างผู้ช่วยตัวแทนใหม่'))
+    await fireEvent.click(screen.getByText('สร้างตัวแทนใหม่'))
     // Frontmatter is fields now, so a new agent has none of it to see or
     // mistype — the role box only ever holds guidance on what to write.
     const body = container.querySelector('.ag-body') as HTMLTextAreaElement

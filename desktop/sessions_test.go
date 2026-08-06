@@ -1,8 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -246,5 +248,73 @@ func TestLoadSessionUnknownID(t *testing.T) {
 	a := newTestApp(t, t.TempDir())
 	if _, err := a.LoadSession("does-not-exist"); err == nil {
 		t.Error("LoadSession(unknown id): expected error, got nil")
+	}
+}
+
+// The reason the scoping is in SQL and not in the caller.
+//
+// LIMIT is applied after WHERE. Fetching a page across every door and filtering
+// it in the frontend meant 200 rows were taken from the whole table and half
+// thrown away — so a long enough run of coding sessions handed the storefront
+// an empty list while its own history sat in the table, untouched and
+// unreachable. Nothing errors; the column is just blank. It only appears once
+// someone has used the app enough to have 200 sessions, which is the worst
+// moment to find a bug of any kind.
+//
+// 250 workshop sessions, newer than every storefront one, is that state.
+func TestADoorsHistoryIsNotEatenByTheOtherDoorsPage(t *testing.T) {
+	a := newTestApp(t, t.TempDir())
+	db, err := a.database()
+	if err != nil {
+		t.Fatalf("database: %v", err)
+	}
+	key := projectKey(a.cfg.SandboxRoot)
+	insert := func(id, mode, updated string) {
+		t.Helper()
+		if _, err := db.Exec(
+			`INSERT INTO sessions(id, project_key, title, mode, created_at, updated_at) VALUES(?,?,?,?,?,?)`,
+			id, key, "chat "+id, mode, updated, updated); err != nil {
+			t.Fatalf("insert %s: %v", id, err)
+		}
+	}
+	// Oldest first, so every coding session sorts above them all.
+	insert("shop-1", "assistant", "2026-01-01T00:00:01+07:00")
+	insert("shop-2", "", "2026-01-01T00:00:02+07:00") // legacy: held at no desk
+	for i := 0; i < 250; i++ {
+		insert(fmt.Sprintf("code-%03d", i), "coding", fmt.Sprintf("2026-02-01T00:%02d:%02d+07:00", i/60, i%60))
+	}
+
+	storefront := a.ListSessionsForDoor(DeskFilter{Desks: []string{"coding"}, Exclude: true})
+	var ids []string
+	for _, s := range storefront {
+		ids = append(ids, s.ID)
+	}
+	if !slices.Contains(ids, "shop-1") || !slices.Contains(ids, "shop-2") {
+		t.Fatalf("the storefront's history was eaten by the workshop's page: got %v", ids)
+	}
+	// A session held at no desk is at home in the storefront — the regression
+	// that filtering by desk name (rather than excluding the other door's)
+	// caused once before.
+	for _, s := range storefront {
+		if s.Mode == "coding" {
+			t.Errorf("a workshop session reached the storefront's list: %+v", s)
+		}
+	}
+
+	workshop := a.ListSessionsForDoor(DeskFilter{Desks: []string{"coding"}})
+	if len(workshop) != 200 {
+		t.Errorf("workshop got %d sessions, want its own full page of 200", len(workshop))
+	}
+	for _, s := range workshop {
+		if s.Mode != "coding" {
+			t.Errorf("a storefront session reached the workshop's list: %+v", s)
+		}
+	}
+
+	// An empty filter is every session, never none: a door that names no desks
+	// is a bug upstream, and emptying the user's history to report it is the
+	// wrong way round.
+	if all := a.ListSessionsForDoor(DeskFilter{}); len(all) == 0 {
+		t.Error("an empty filter returned nothing instead of everything")
 	}
 }

@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/subagent"
+	"github.com/Mike0165115321/Aetox/internal/config"
 )
 
 // A direct chat with a chair must send the model the chair's cut — profile ∩
@@ -82,14 +82,13 @@ func TestReopeningAChairSessionRestoresTheChairOrRefuses(t *testing.T) {
 	// A user-authored chair, so the file can actually be deleted — the bundled
 	// ones are compiled in and cannot go missing. In the agents' home: since
 	// the homes split, that is what makes it a chair at all.
-	dir, err := subagent.AgentsDir()
+	profile, err := config.AgentDefinitionPath("painter")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(profile), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	profile := filepath.Join(dir, "painter.md")
 	if err := os.WriteFile(profile, []byte("---\ndescription: วาดภาพ\ndesk: specialized\ntools: read, list\n---\npaint things"), 0o644); err != nil {
 		t.Fatal(err)
 	}

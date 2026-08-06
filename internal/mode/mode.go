@@ -78,7 +78,41 @@ type Mode struct {
 	Categories  []string `json:"categories,omitempty"`
 	Tools       []string `json:"tools,omitempty"` // individual allows beyond the categories
 	Deny        []string `json:"deny,omitempty"`  // individual removals; wins over everything
-	MCP         []string `json:"mcp,omitempty"`   // attached MCP servers, by configured name
+	// MCP is the servers this desk carries — **resolved, not declared**. It is
+	// filled in by parse() from each server's own `for:` list
+	// (config.MCPServersForDesk); a `mcp:` line in a manifest is not read.
+	//
+	// Ownership sits on the server because only the server can be written at
+	// the right moment (owner's call, 2026-08-06). A bundled manifest is
+	// compiled before any of the user's servers exist, so it could name none of
+	// them — and with an empty list meaning "no servers", every configured
+	// server connected, registered, and was then filtered off every desk. The
+	// assistant reported having no MCP tools, correctly from where it stood.
+	//
+	// The field stays because the *question* is still the desk's: Carries is
+	// the one place a registered tool is judged, and it needs the answer here.
+	// What moved is who supplies it.
+	MCP []string `json:"mcp,omitempty"`
+	// Chairs are in the room but not on the desk: tools this desk's *agents*
+	// may hold, which the desk's own assistant never carries.
+	//
+	// A manifest answers two questions that used to share one list — what the
+	// assistant sitting here holds, and what a chair working here may be handed
+	// (FilterRegistry's ceiling). While they were the same list, taking a tool
+	// off the desk took it away from the chair too, and the office lost the
+	// ability to make the very thing it exists to make.
+	//
+	// Owner's call, 2026-08-06: the assistant must not carry the document,
+	// workbook and deck writers — that is why the agents exist. It hands the
+	// job over and collects the file. This field is how the office keeps the
+	// tools while the desk puts them down.
+	//
+	// Narrower than Tools on purpose: it widens the ceiling for a **chair**
+	// (a profile with a desk of its own) and for nothing else. An ordinary
+	// delegate is the caller doing its own work in a second context, so
+	// handing it something the caller cannot reach would make the desk a
+	// façade — which is the exact rule FilterRegistry is built on.
+	Chairs []string `json:"chairs,omitempty"`
 	// Dispatch names the desks this one may hand a whole job to (COMPANY.md
 	// §3). Default-closed like MCP, and for a stronger reason: dispatch is the
 	// one door between desks, and a door that opens by omission is one nobody
@@ -260,6 +294,39 @@ func (m *Mode) Carries(name string, source skill.Source) bool {
 	return m.AllowsTool(name)
 }
 
+// CarriesForChair is Carries as a **chair** sees it: what the desk holds, plus
+// what it keeps in the room for its agents (Chairs).
+//
+// Two questions, two methods, one field apart — rather than a flag on Carries,
+// because the caller that must not use this one is the main agent's dispatcher
+// and a boolean argument there would read as a detail. A method named for who
+// is asking cannot be passed by accident.
+//
+// Deny still wins. A tool the desk removed outright is removed for everyone:
+// `chairs:` says "in the room", not "above the rules".
+//
+// MCP and skills are answered entirely by Carries. A skill is on every desk
+// already, and an MCP tool belongs to a server the desk either attached or did
+// not — judging one by a tool-name list is the trap §83 named, and the fix is
+// not to open a second door onto it.
+func (m *Mode) CarriesForChair(name string, source skill.Source) bool {
+	if m == nil {
+		return true
+	}
+	if m.Carries(name, source) {
+		return true
+	}
+	switch source {
+	case skill.SourceMCP, skill.SourceSkill:
+		return false
+	}
+	name = strings.ToLower(strings.TrimSpace(name))
+	if slices.Contains(m.Deny, name) {
+		return false
+	}
+	return slices.Contains(m.Chairs, name)
+}
+
 // CarriesMCP reports whether an MCP tool named name came from a server this
 // desk attached. The server is read off the name's own prefix — mcp names
 // every bridged tool `server_tool` — rather than passed in beside it, so there
@@ -268,13 +335,7 @@ func (m *Mode) CarriesMCP(name string) bool {
 	if m == nil {
 		return true
 	}
-	name = strings.ToLower(strings.TrimSpace(name))
-	for _, server := range m.MCP {
-		if strings.HasPrefix(name, mcp.ToolPrefix(server)) {
-			return true
-		}
-	}
-	return false
+	return mcp.ToolBelongsTo(name, m.MCP)
 }
 
 // AllowsDispatch reports whether this desk may hand a whole job to the desk
@@ -329,7 +390,12 @@ func parse(name, raw string) Mode {
 		Categories:  splitList(fields["categories"]),
 		Tools:       splitList(fields["tools"]),
 		Deny:        splitList(fields["deny"]),
-		MCP:         splitList(fields["mcp"]),
+		// Not splitList(fields["mcp"]) — see Mode.MCP. Read fresh on every
+		// parse rather than cached, so switching a server on in settings takes
+		// effect at the next session without a restart. The file is a few
+		// hundred bytes and a desk is loaded a handful of times a turn.
+		MCP:    config.MCPServersForDesk(name),
+		Chairs: splitList(fields["chairs"]),
 		Dispatch:    splitList(fields["dispatch"]),
 		Prompt:      body,
 	}

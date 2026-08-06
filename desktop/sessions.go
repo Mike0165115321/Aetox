@@ -385,6 +385,132 @@ func (a *App) RecentProjects() []ProjectMeta {
 
 // ListAllSessions returns chat history across every project, newest first —
 // the sidebar's global history layer, independent of which project is active.
+// DeskFilter scopes a history list to one door's desks (§86).
+//
+// The frontend supplies it rather than the engine deriving it, because a door
+// is a UI preference and not engine state — shell.svelte.ts is explicit that
+// "the engine never needs to know which door you walked in through". What the
+// engine stores is sessions.mode, a desk, and that is all this filters on. The
+// door→desk mapping stays in exactly one place, up there, and this stays a
+// question about desks.
+//
+// Exclude is what makes the storefront's list safe as desks are added: the
+// โค้ด window asks for its own desk by name, and ผู้ช่วย asks for *everything
+// else*. A new desk, a user-written one, or a legacy session held at no desk
+// at all lands in the storefront without anyone having to remember to list it —
+// which is the same rule shellForDesk already applies on the other side.
+type DeskFilter struct {
+	Desks   []string `json:"desks"`
+	Exclude bool     `json:"exclude"`
+}
+
+// where renders the filter as a SQL fragment plus its arguments, or ("", nil)
+// when it selects everything.
+func (f DeskFilter) where(column string) (string, []any) {
+	var desks []string
+	for _, d := range f.Desks {
+		if d = strings.TrimSpace(d); d != "" {
+			desks = append(desks, d)
+		}
+	}
+	if len(desks) == 0 {
+		// An exclude-nothing filter is every session; an include-nothing filter
+		// would be none, which is never what a door means — a door with no
+		// desks listed is a bug upstream, and emptying the user's history to
+		// report it is the wrong way round.
+		return "", nil
+	}
+	args := make([]any, 0, len(desks))
+	placeholders := make([]string, 0, len(desks))
+	for _, d := range desks {
+		args = append(args, d)
+		placeholders = append(placeholders, "?")
+	}
+	op := "IN"
+	if f.Exclude {
+		op = "NOT IN"
+	}
+	return column + " " + op + " (" + strings.Join(placeholders, ",") + ")", args
+}
+
+// ListSessionsForDoor is ListAllSessions scoped to one door's desks.
+//
+// The scoping is in SQL and not in the caller, because LIMIT is applied after
+// WHERE and that ordering is the whole point: filtering a fetched page in the
+// frontend meant 200 rows were taken across every door and then thrown away, so
+// 200 coding sessions in a row would hand the storefront an empty list while its
+// history sat in the table. A defect that only appears once someone has used the
+// app enough, which is the worst time to find one.
+func (a *App) ListSessionsForDoor(filter DeskFilter) []SessionMeta {
+	out := []SessionMeta{}
+	db, err := a.database()
+	if err != nil {
+		return out
+	}
+	clause, args := filter.where("s.mode")
+	if clause != "" {
+		clause = "WHERE " + clause
+	}
+	rows, err := db.Query(`
+		SELECT s.id, s.title, s.updated_at, s.mode, s.agent, s.project_key, COALESCE(p.name, s.project_key)
+		FROM sessions s LEFT JOIN projects p ON p.project_key = s.project_key
+		`+clause+`
+		ORDER BY s.updated_at DESC LIMIT 200`, args...)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var m SessionMeta
+		if rows.Scan(&m.ID, &m.Title, &m.UpdatedAt, &m.Mode, &m.Agent, &m.ProjectKey, &m.ProjectName) == nil {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// SearchSessionsForDoor is SearchAllSessions scoped to one door's desks. Its
+// LIMIT is 50, so the starvation ListSessionsForDoor describes arrives four
+// times sooner here.
+func (a *App) SearchSessionsForDoor(query string, filter DeskFilter) []SessionMeta {
+	out := []SessionMeta{}
+	q := strings.TrimSpace(query)
+	db, err := a.database()
+	if err != nil || q == "" {
+		return out
+	}
+	match := `"` + strings.ReplaceAll(q, `"`, `""`) + `"`
+	clause, deskArgs := filter.where("s.mode")
+	if clause != "" {
+		clause = "WHERE " + clause
+	}
+	args := append([]any{match}, deskArgs...)
+	rows, err := db.Query(`
+		WITH f AS MATERIALIZED (
+		  SELECT rowid AS mid, snippet(messages_fts, 0, '', '', '…', 10) AS snip
+		  FROM messages_fts WHERE messages_fts MATCH ?
+		)
+		SELECT s.id, s.title, s.updated_at, s.mode, s.agent, s.project_key, COALESCE(p.name, s.project_key), MIN(f.snip)
+		FROM f
+		JOIN messages m ON m.id = f.mid
+		JOIN sessions s ON s.id = m.session_id
+		LEFT JOIN projects p ON p.project_key = s.project_key
+		`+clause+`
+		GROUP BY s.id
+		ORDER BY s.updated_at DESC LIMIT 50`, args...)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var m SessionMeta
+		if rows.Scan(&m.ID, &m.Title, &m.UpdatedAt, &m.Mode, &m.Agent, &m.ProjectKey, &m.ProjectName, &m.Snippet) == nil {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
 func (a *App) ListAllSessions() []SessionMeta {
 	out := []SessionMeta{}
 	db, err := a.database()

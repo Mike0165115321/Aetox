@@ -53,6 +53,11 @@ func (m *Manager) PermissionRules() []safety.PermissionRule {
 			Tool:    sanitize(c.Name()) + "_*",
 			Pattern: "*",
 			Action:  safety.PermissionAsk,
+			// The app's opening position, not the user's decision — see
+			// safety.PermissionRule.Default. Both places that build this rule
+			// must set it; a copy without the flag is a copy that quietly
+			// outranks the approval mode again.
+			Default: true,
 		})
 	}
 	return rules
@@ -60,8 +65,13 @@ func (m *Manager) PermissionRules() []safety.PermissionRule {
 
 // Register connects each server (lazily, cached) and registers every tool it
 // exposes into registry as SourceExternal. It returns one default "ask"
-// permission rule per server so MCP tools never auto-run — even under
-// full-access — unless the user explicitly allows them. A server that fails to
+// permission rule per server so MCP tools never auto-run before the user has
+// decided anything.
+//
+// "Even under full-access" is what that line used to say, and it was the bug:
+// a mode the user explicitly picked, on a card reading "รับทุกอย่างโดยไม่ถาม",
+// was being overruled by a rule the app wrote for them. The rules are marked
+// Default now and yield to the mode; a rule the *user* writes still wins. A server that fails to
 // connect, or hasn't by the time ctx expires, is skipped and its error
 // collected; the agent loop is unaffected.
 //
@@ -104,6 +114,10 @@ func (m *Manager) Register(ctx context.Context, registry *skill.Registry) ([]saf
 					Tool:    sanitize(c.Name()) + "_*",
 					Pattern: "*",
 					Action:  safety.PermissionAsk,
+					// The app's opening position, not the user's decision — so
+					// it yields to whichever approval mode they picked. See
+					// safety.PermissionRule.Default.
+					Default: true,
 				},
 			}
 		}(c)

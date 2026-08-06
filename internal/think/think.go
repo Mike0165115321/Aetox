@@ -15,9 +15,14 @@ const (
 	LevelMedium     Level = "medium"
 	LevelHigh       Level = "high"
 	LevelXHigh      Level = "xhigh"
+	LevelUltra      Level = "ultra"
 	LevelMax        Level = "max"
 	LevelDefault    Level = "default"
 	LevelNoThinking Level = "off"
+	// LevelOn is the other half of a dial that is a switch rather than a
+	// ladder — MiniMax has a thinking block and no effort field, so "on" is a
+	// real position and not a stand-in for a depth.
+	LevelOn Level = "on"
 )
 
 var levelPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
