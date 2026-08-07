@@ -107,6 +107,7 @@ export namespace main {
 	    path?: string;
 	    jobs: number;
 	    lastUsed?: string;
+	    icon: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Chair(source);
@@ -122,6 +123,7 @@ export namespace main {
 	        this.path = source["path"];
 	        this.jobs = source["jobs"];
 	        this.lastUsed = source["lastUsed"];
+	        this.icon = source["icon"];
 	    }
 	}
 	export class ChangedFile {
@@ -416,6 +418,7 @@ export namespace main {
 	    chair: string;
 	    sessionId: string;
 	    request: string;
+	    brief: string;
 	    answer: string;
 	    toolSeq?: string;
 	    toolCount: number;
@@ -433,6 +436,7 @@ export namespace main {
 	        this.chair = source["chair"];
 	        this.sessionId = source["sessionId"];
 	        this.request = source["request"];
+	        this.brief = source["brief"];
 	        this.answer = source["answer"];
 	        this.toolSeq = source["toolSeq"];
 	        this.toolCount = source["toolCount"];
@@ -1133,6 +1137,7 @@ export namespace subagent {
 	    deny?: string[];
 	    steps?: number;
 	    desk?: string;
+	    icon?: string;
 	    prompt: string;
 	    path?: string;
 	    builtin: boolean;
@@ -1152,6 +1157,7 @@ export namespace subagent {
 	        this.deny = source["deny"];
 	        this.steps = source["steps"];
 	        this.desk = source["desk"];
+	        this.icon = source["icon"];
 	        this.prompt = source["prompt"];
 	        this.path = source["path"];
 	        this.builtin = source["builtin"];

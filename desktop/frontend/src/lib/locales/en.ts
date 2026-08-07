@@ -648,6 +648,11 @@ Check your own work before answering; say so plainly if unsure.
   'chat.mainAgent': 'Main assistant',
   'chat.agentSwitchNote': 'Switching always opens a new chat — this one stays in history.',
   'office.newAgent': 'New agent',
+  'settings.agentSearch': 'Search agents…',
+  'settings.agentNoMatches': 'No agent matches that search',
+  'settings.agentIcon': 'Icon',
+  'settings.agentIconAuto': 'Choose for me',
+  'settings.agentIconAutoHint': 'Derived from what this agent produces',
   'office.openAgentsFolder': 'or open the agents folder',
   'office.toolCalls': '{n} tool calls',
 

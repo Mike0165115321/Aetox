@@ -15,6 +15,8 @@
   import { agoLabel, cockpit, newChairSession, selectGlobalSession, setActiveView } from './stores/cockpit.svelte'
   import { t } from './i18n.svelte'
   import Icon from './Icon.svelte'
+  import { coverHue } from './coverHue'
+  import type { IconName } from './icons'
 
   let { onClose }: { onClose: () => void } = $props()
 
@@ -70,22 +72,6 @@
     setActiveView('settings')
   }
 
-  // Same name-to-hue hash the preset gallery uses (Settings.svelte), so an
-  // agent keeps one colour for life and the two galleries read as one system.
-  function coverHue(name: string): number {
-    let h = 0
-    for (const ch of name) h = (h * 31 + ch.codePointAt(0)!) % 360
-    return h
-  }
-
-  // The card shows six chips, so order decides what a face says. Alphabetical
-  // order buried `slides_write` behind the +N on the very card it defines —
-  // the writers are the office's signature, so they come first; everything
-  // else keeps the engine's order.
-  function orderedTools(c: main.Chair): string[] {
-    const all = c.tools ?? []
-    return [...all.filter((tool) => tool.endsWith('_write')), ...all.filter((tool) => !tool.endsWith('_write'))]
-  }
 </script>
 
 <div class="page-shell">
@@ -109,10 +95,18 @@
           <span class="pp-plus">+</span>
           <span class="pp-newtxt">{t('office.newAgent')}</span>
         </button>
+        <!-- A face, not an inventory. The tool chips were six per card and five
+             of the six were the same on every card — the office ceiling hands
+             everyone the same set, so the list said nothing about who anyone
+             is while taking half the card to say it. What is left is what the
+             card is for: who this is, what they make, and whether they have
+             done any of it. The tools are still one click away, in the editor
+             the gear opens, where changing them is also possible. -->
         {#each chairs as c (c.name)}
           <div class="pp-card chair-card">
-            <span class="pp-cover" style="--h:{coverHue(c.name)}">
-              <span class="pp-mono">{c.name}</span>
+            <span class="chair-cover" style="--h:{coverHue(c.name)}"></span>
+            <span class="chair-face" style="--h:{coverHue(c.name)}">
+              <Icon name={(c.icon || 'bot') as IconName} size={19} />
             </span>
             <div class="pp-body">
               <span class="pp-title">
@@ -121,17 +115,6 @@
                 {#if c.overrides}<span class="badge">{t('office.overrides')}</span>{/if}
               </span>
               <span class="pp-desc">{c.description}</span>
-              <!-- What the chair actually gets, after the office ceiling — not
-                   what its file asked for. This is the card a person checks the
-                   ceiling on, so showing the request would defeat it. Capped at
-                   six on the card — a card is a face, not an inventory — with
-                   the full list one hover away on the +N chip. -->
-              <div class="chips">
-                {#each orderedTools(c).slice(0, 6) as tool (tool)}<span class="chip">{tool}</span>{/each}
-                {#if orderedTools(c).length > 6}
-                  <span class="chip more" title={orderedTools(c).join(' · ')}>+{orderedTools(c).length - 6}</span>
-                {/if}
-              </div>
             </div>
             <div class="chair-foot">
               {#if c.jobs > 0}
@@ -169,7 +152,10 @@
           <div class="set-row job-row">
             <div class="set-txt">
               <div class="t"><span class="chip strong">{j.chair}</span> <span class="job-when">{agoLabel(j.time)}</span></div>
-              <div class="d clamp2">{j.request}</div>
+              <!-- The line the caller wrote, not the arguments the tool call
+                   carried. `request` is the machine's copy and stays available
+                   on hover for anyone who wants it. -->
+              <div class="d clamp2" title={j.request}>{j.brief || j.request}</div>
               <div class="job-meta">
                 <span>{t('office.toolCalls', { n: j.toolCount })}</span>
                 <span>{secs(j.durationMs)}</span>

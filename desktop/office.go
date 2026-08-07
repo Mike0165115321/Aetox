@@ -10,6 +10,8 @@ package main
 // that comes to in code: three readers over things that already exist.
 
 import (
+	"encoding/json"
+	"regexp"
 	"strings"
 
 	"github.com/Mike0165115321/Aetox/internal/debuglog"
@@ -45,6 +47,37 @@ type Chair struct {
 	// fresh install, and not something to dress up as activity.
 	Jobs     int    `json:"jobs"`
 	LastUsed string `json:"lastUsed,omitempty"` // RFC3339, "" when never
+	// Icon is the mark the roster draws, always filled in: the profile's own
+	// `icon:` when it names one, otherwise derived from what this agent
+	// produces. Resolved here rather than in the page because the page would
+	// have to know which tool means which mark, and that is a fact about the
+	// engine's tools, not about a card.
+	Icon string `json:"icon"`
+}
+
+// chairIcon is the face an agent wears when its profile does not choose one.
+//
+// Derived from the deliverable rather than from the name: what a person is
+// looking for on this page is who makes the thing they need, and the writers
+// are the one part of an office agent's tool list that differs between them
+// (the ceiling gives everyone else the same set). An agent with no writer at
+// all gets the generic mark — honest, and the case where the user is most
+// likely to want to choose one themselves.
+func chairIcon(p subagent.Profile, tools []string) string {
+	if named := strings.TrimSpace(p.Icon); named != "" {
+		return named
+	}
+	for _, tool := range tools {
+		switch tool {
+		case "slides_write":
+			return "layoutList"
+		case "doc_write":
+			return "fileText"
+		case "sheet_write":
+			return "chartColumn"
+		}
+	}
+	return "bot"
 }
 
 // ListChairs returns the office roster: every sub-agent profile that declares
@@ -73,6 +106,7 @@ func (a *App) ListChairs() []Chair {
 		if child := subagent.FilterRegistry(a.registry, p, ceiling); child != nil {
 			c.Tools = child.Names()
 		}
+		c.Icon = chairIcon(p, c.Tools)
 		if act, ok := used[p.Name]; ok {
 			c.Jobs, c.LastUsed = act.count, act.last
 		}
@@ -120,12 +154,62 @@ type ReceivedJob struct {
 	Chair     string `json:"chair"`
 	SessionID string `json:"sessionId"` // the caller's session — what the file landed under
 	Request   string `json:"request"`   // the brief, as the `task` call carried it
+	// Brief is the one line a person reads: the `description` the caller wrote
+	// for this job, pulled out of Request.
+	//
+	// Request is the tool call's arguments verbatim — a JSON object with the
+	// brief inside it — because that is what the record has to keep. Putting it
+	// on screen unread turned the feed into five rows of `{"agent":"doc",
+	// "description":…,"prompt":…}`, which is the machine's copy shown to the
+	// person it was never for. Derived here rather than in the page: the page
+	// would have to learn the shape of a tool call to undo it.
+	Brief     string `json:"brief"`
 	Answer    string `json:"answer"`
 	ToolSeq   string `json:"toolSeq,omitempty"`
 	ToolCount int    `json:"toolCount"`
 	Duration  int64  `json:"durationMs"`
 	Outcome   string `json:"outcome"`
 	Time      string `json:"time"`
+}
+
+// briefDescription pulls `"description": "…"` out of a tool call's arguments
+// when the JSON itself will not parse. Stored requests are clamped to a maximum
+// length (jobs.go), so the longest and most interesting ones arrive cut off in
+// the middle — exactly the rows a feed is for, and the ones a strict decode
+// would give up on.
+var briefDescription = regexp.MustCompile(`"description"\s*:\s*"((?:[^"\\]|\\.)*)"`)
+
+// briefOf is the line a person reads, out of the arguments a machine sent.
+//
+// Three answers in order of how much they can be trusted: the decoded
+// description, the same field scraped out of a truncated object, and — for a
+// row that is not a JSON object at all, which is every job written before `task`
+// carried arguments — the text itself. Never an empty string: a feed row with no
+// line is worse than a raw one, because it says nothing at all happened.
+func briefOf(request string) string {
+	trimmed := strings.TrimSpace(request)
+	if !strings.HasPrefix(trimmed, "{") {
+		return trimmed
+	}
+	var args struct {
+		Description string `json:"description"`
+		Prompt      string `json:"prompt"`
+	}
+	if json.Unmarshal([]byte(trimmed), &args) == nil {
+		if d := strings.TrimSpace(args.Description); d != "" {
+			return d
+		}
+		if p := strings.TrimSpace(args.Prompt); p != "" {
+			return p
+		}
+	}
+	if m := briefDescription.FindStringSubmatch(trimmed); len(m) == 2 {
+		var unquoted string
+		if json.Unmarshal([]byte(`"`+m[1]+`"`), &unquoted) == nil && strings.TrimSpace(unquoted) != "" {
+			return strings.TrimSpace(unquoted)
+		}
+	}
+	return trimmed
 }
 
 // ListReceivedJobs returns the work the office has taken in, newest first.
@@ -170,6 +254,7 @@ func (a *App) ListReceivedJobs(limit int) []ReceivedJob {
 		var j ReceivedJob
 		if rows.Scan(&j.ID, &j.Chair, &j.SessionID, &j.Request, &j.Answer,
 			&j.ToolSeq, &j.ToolCount, &j.Duration, &j.Outcome, &j.Time) == nil {
+			j.Brief = briefOf(j.Request)
 			out = append(out, j)
 		}
 	}

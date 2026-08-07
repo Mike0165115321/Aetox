@@ -126,7 +126,16 @@ type Profile struct {
 	// the caller doing its own work in a second context, while a chair is
 	// another desk's job handed over the counter, and only the result comes back
 	// (ARCHITECTURE.md §84).
-	Desk   string `json:"desk,omitempty"`
+	Desk string `json:"desk,omitempty"`
+	// Icon is the mark this agent wears on the roster, by name from the app's
+	// own icon set. Empty is the normal case and not a gap: the roster derives
+	// one from what the agent actually produces, so a profile written before
+	// this field existed — and one written by someone who does not care — still
+	// arrives with a face. Set it to choose a different one.
+	//
+	// A name rather than an image: the file is a .md the user edits by hand,
+	// and a path to a picture would be a second thing to keep alive beside it.
+	Icon   string `json:"icon,omitempty"`
 	Prompt string `json:"prompt"`
 	Path        string   `json:"path,omitempty"` // on-disk path; "" for a bundled profile
 	Builtin     bool     `json:"builtin"`
@@ -521,6 +530,7 @@ func parse(name, raw string) Profile {
 		Deny:        splitList(fields["deny"]),
 		Steps:       steps,
 		Desk:        strings.ToLower(strings.TrimSpace(fields["desk"])),
+		Icon:        strings.TrimSpace(fields["icon"]),
 		Prompt:      body,
 	}
 }

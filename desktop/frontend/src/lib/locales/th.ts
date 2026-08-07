@@ -651,6 +651,11 @@ export const th = {
   'chat.mainAgent': 'ผู้ช่วยหลัก',
   'chat.agentSwitchNote': 'สลับ = เปิดแชทใหม่เสมอ — แชทเดิมอยู่ในประวัติ',
   'office.newAgent': 'สร้างตัวแทนใหม่',
+  'settings.agentSearch': 'ค้นหาตัวแทน…',
+  'settings.agentNoMatches': 'ไม่พบตัวแทนที่ตรงกับคำค้น',
+  'settings.agentIcon': 'ไอคอน',
+  'settings.agentIconAuto': 'เลือกให้อัตโนมัติ',
+  'settings.agentIconAutoHint': 'เลือกให้เองจากงานที่ตัวแทนคนนี้ทำออกมา',
   'office.openAgentsFolder': 'หรือเปิดโฟลเดอร์ตัวแทน',
   'office.toolCalls': 'เรียกเครื่องมือ {n} ครั้ง',
 

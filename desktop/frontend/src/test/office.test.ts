@@ -30,18 +30,31 @@ beforeEach(() => {
 })
 
 describe('the office roster', () => {
-  it('lists each chair with the tools it actually gets', async () => {
+  // A card is a face, not an inventory (2026-08-07). The tool chips were six
+  // per card and five of the six were identical on every card — the office
+  // ceiling hands everyone the same set — so the list took half the card to say
+  // nothing about who anyone is. What the card answers now is who this is and
+  // what they make; the tools moved to the editor behind the gear, which is
+  // also the only place they can be changed.
+  it('shows who a chair is, and no longer lists their tools', async () => {
     vi.mocked(ListChairs).mockResolvedValue([chair({ tools: ['doc_write', 'read'] })] as any)
     render(Office, { onClose: () => {} })
 
-    // The name appears on both the card's cover and its title — that is the
-    // gallery design, so the assertion is "present", not "present once".
     await waitFor(() => expect(screen.getAllByText('doc').length).toBeGreaterThan(0))
     expect(screen.getByText('เก้าอี้ร่างเอกสาร')).toBeTruthy()
-    expect(screen.getByText('doc_write')).toBeTruthy()
-    // Nothing invents a `shell` chip: the page draws the list the engine
-    // computed under the ceiling, so it cannot show more than the chair has.
-    expect(screen.queryByText('shell')).toBeNull()
+    expect(screen.queryByText('doc_write')).toBeNull()
+    expect(screen.queryByText('read')).toBeNull()
+  })
+
+  // Every agent arrives with a face, including one whose profile names no icon
+  // — the roster derives it from what they produce (desktop/office.go). A card
+  // that could render blank would be the feature shipping broken for everyone
+  // who never opens the editor.
+  it('draws a mark for every chair', async () => {
+    vi.mocked(ListChairs).mockResolvedValue([chair({ icon: 'fileText' })] as any)
+    const { container } = render(Office, { onClose: () => {} })
+
+    await waitFor(() => expect(container.querySelector('.chair-face svg')).toBeTruthy())
   })
 
   it('says plainly when a chair has never been handed anything', async () => {

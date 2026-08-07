@@ -12,6 +12,7 @@
   import ConfirmDialog from './ConfirmDialog.svelte'
   import ProviderMark from './ProviderMark.svelte'
   import Icon from './Icon.svelte'
+  import { coverHue } from './coverHue'
   import type { IconName } from './icons'
   import {
     SupportedProviders, HasAPIKey, RequiresAPIKey, TerminalShells,
@@ -1065,15 +1066,6 @@
     presets = await ListPromptPresets()
   }
 
-  // Bundled presets have no cover to ship, so a card without an image gets a
-  // stable colour derived from its name — the gallery reads as a gallery on a
-  // fresh install, with no assets in the installer.
-  function coverHue(name: string): number {
-    let h = 0
-    for (const ch of name) h = (h * 31 + ch.codePointAt(0)!) % 360
-    return h
-  }
-
   const presetDraftKey = () => JSON.stringify([draftName, draftBody, draftImage])
   let presetSnapshot = ''
 
@@ -1171,7 +1163,18 @@
   type SubagentRow = {
     name: string; description: string; model?: string
     tools?: string[]; deny?: string[]; steps?: number; prompt: string
-    path?: string; builtin: boolean; overrides?: boolean; invalid?: string
+    path?: string; builtin: boolean; overrides?: boolean; invalid?: string; icon?: string
+  }
+  // Searching the roster. Name and description both, because half the time the
+  // thing a person remembers about an agent is what it does rather than what it
+  // is called. No filter control beside it: this page is already split into
+  // "yours" and "built-in", which is the same question a filter would ask and
+  // answers it without a click.
+  let agentQuery = $state('')
+  const matchesQuery = (a: SubagentRow) => {
+    const q = agentQuery.trim().toLowerCase()
+    if (!q) return true
+    return a.name.toLowerCase().includes(q) || (a.description ?? '').toLowerCase().includes(q)
   }
   // Every profile, both kinds — kept whole because the shared editor opens
   // agents here too (the team page's doors land on it with a name). What the
@@ -1209,6 +1212,17 @@
   let agentDraftTools = $state<string[]>([])
   let agentDraftDeny = $state<string[]>([])
   let agentDraftSteps = $state('')
+  let agentDraftIcon = $state('')
+  // What the picker offers. A hand-picked subset of the app's marks, not all of
+  // them: forty icons is a wall to scan and most of them mean nothing as a
+  // person — these are the shapes that read as a job. Adding one is adding a
+  // name here, and the value stored is that name, so an icon dropped from the
+  // set later shows as the derived mark rather than as a blank square.
+  const AGENT_ICONS: IconName[] = [
+    'layoutList', 'fileText', 'chartColumn', 'fileCode', 'terminal', 'globe',
+    'search', 'brain', 'palette', 'clapperboard', 'headphones', 'package',
+    'compass', 'puzzle', 'bot',
+  ]
   let agentDraftPrompt = $state('')
   let agentBusy = $state('')
   let agentError = $state('')
@@ -1284,7 +1298,7 @@
   // question the Back button needs answered.
   const agentDraftKey = () => JSON.stringify([
     agentDraftName, agentDraftDescription, agentDraftModel,
-    agentDraftTools, agentDraftDeny, agentDraftSteps, agentDraftPrompt,
+    agentDraftTools, agentDraftDeny, agentDraftSteps, agentDraftIcon, agentDraftPrompt,
   ])
   let agentSnapshot = ''
 
@@ -1303,6 +1317,7 @@
     agentDraftTools = parsed.tools
     agentDraftDeny = parsed.deny
     agentDraftSteps = parsed.steps
+    agentDraftIcon = parsed.icon
     agentDraftPrompt = parsed.body
     agentEditing = a
     // A row opened from this page answers from the roster the page already
@@ -1319,6 +1334,7 @@
     agentDraftTools = []
     agentDraftDeny = []
     agentDraftSteps = ''
+    agentDraftIcon = ''
     agentDraftPrompt = t('settings.agentStarter')
     agentError = ''
     agentEditKind = kind
@@ -1335,6 +1351,7 @@
       tools: agentDraftTools,
       deny: agentDraftDeny,
       steps: agentDraftSteps,
+      icon: agentDraftIcon,
       body: agentDraftPrompt,
     })
     // Out through the door that matches the kind — the backend refuses a name
@@ -1391,7 +1408,7 @@
   const STEPS_UNLIMITED = 'unlimited'
 
   type AgentFields = {
-    description: string; model: string; tools: string[]; deny: string[]; steps: string; body: string
+    description: string; model: string; tools: string[]; deny: string[]; steps: string; icon: string; body: string
   }
 
   // Mirrors internal/subagent/profile.go's parse(): a leading `---`-fenced block
@@ -1402,7 +1419,7 @@
   // there's no recognizable frontmatter, so a hand-edited or malformed file is
   // never silently emptied under the user.
   function parseAgentFile(raw: string): AgentFields {
-    const asPromptOnly = { description: '', model: '', tools: [] as string[], deny: [] as string[], steps: '', body: raw.trim() }
+    const asPromptOnly = { description: '', model: '', tools: [] as string[], deny: [] as string[], steps: '', icon: '', body: raw.trim() }
     const normalized = raw.replace(/\r\n/g, '\n').replace(/^\n+/, '')
     if (!normalized.startsWith('---\n')) return asPromptOnly
     const rest = normalized.slice(4)
@@ -1423,6 +1440,7 @@
       tools: list(fields.tools),
       deny: list(fields.deny),
       steps: (fields.steps ?? '').trim(),
+      icon: (fields.icon ?? '').trim(),
       body: rest.slice(end + 4).trim(),
     }
   }
@@ -1435,6 +1453,10 @@
     if (f.model.trim()) lines.push(`model: ${f.model.trim()}`)
     if (f.tools.length) lines.push(`tools: ${f.tools.join(', ')}`)
     if (f.deny.length) lines.push(`deny: ${f.deny.join(', ')}`)
+    // The mark this agent wears on the roster. Written only when the user chose
+    // one: an absent field means the roster derives it from what the agent
+    // makes, which is the right answer for every profile nobody has opened.
+    if (f.icon.trim()) lines.push(`icon: ${f.icon.trim()}`)
     // The keyword, not a number: internal/subagent/profile.go only unbounds a
     // loop on this exact word, so a typo'd ceiling falls back to the default
     // rather than removing it.
@@ -1708,6 +1730,9 @@
      goes out through — it is never read back off a file. -->
 {#snippet profileRow(a: SubagentRow, kind: 'agent' | 'helper')}
   <div class="set-row">
+    <!-- The same mark this profile wears on the roster, resolved once in Go so
+         one agent cannot show two faces on two pages. -->
+    <span class="ag-rowicon"><Icon name={(a.icon || 'bot') as IconName} size={15} /></span>
     <div class="set-txt">
       <div class="t">
         {a.name}
@@ -1761,19 +1786,31 @@
   {/if}
   {#if agentError}<div class="mset-error">{agentError}</div>{/if}
 
+  <!-- Drawn once there is enough to search. A box over three rows is furniture
+       that explains nothing; over thirty it is the only way back to the one you
+       meant. -->
+  {#if rows.mine.length + rows.builtin.length > 6}
+    <label class="ag-search">
+      <Icon name="search" size={13} />
+      <input bind:value={agentQuery} placeholder={t('settings.agentSearch')} />
+    </label>
+  {/if}
+
   {#if isAgent}
     <!-- Two cards, split by who wrote it — the question this page is actually
          asked. Built-ins are second because a fresh install has only those and
          the interesting list is the one you grow. -->
-    {#each [{ id: 'mine', rows: rows.mine, label: t('settings.subagentsMine'), hint: t('settings.teamMineHint') },
-            { id: 'builtin', rows: rows.builtin, label: t('settings.subagentsBuiltin'), hint: t('settings.subagentsBuiltinHint') }] as group (group.id)}
+    {#each [{ id: 'mine', rows: rows.mine.filter(matchesQuery), label: t('settings.subagentsMine'), hint: t('settings.teamMineHint') },
+            { id: 'builtin', rows: rows.builtin.filter(matchesQuery), label: t('settings.subagentsBuiltin'), hint: t('settings.subagentsBuiltinHint') }] as group (group.id)}
       <div class="settings-card">
         <div class="card-form">
           <div class="eyebrow">{group.label} <span class="ag-count">{group.rows.length}</span></div>
           <div class="d muted">{group.hint}</div>
         </div>
         {#if group.rows.length === 0}
-          <div class="set-row"><div class="muted">{t('settings.teamNoneOfMine')}</div></div>
+          <div class="set-row"><div class="muted">
+            {agentQuery.trim() ? t('settings.agentNoMatches') : t('settings.teamNoneOfMine')}
+          </div></div>
         {/if}
         {#each group.rows as a (a.name)}{@render profileRow(a, kind)}{/each}
       </div>
@@ -1829,6 +1866,28 @@
           <span class="eyebrow">{t('settings.agentDescription')}</span>
           <input class="ctrl" bind:value={agentDraftDescription} placeholder={t('settings.agentDescriptionPlaceholder')} />
         </label>
+        <!-- The face this agent wears on the roster. A row of the app's own
+             marks rather than a text field: the value is a name from a fixed
+             set, and a field where a typo silently means "no icon" is a field
+             that fails without saying so. Choosing none is a real choice and
+             the default — the roster then derives one from what the agent
+             makes, which is right for every profile nobody has opened. -->
+        <div class="pp-field">
+          <span class="eyebrow">{t('settings.agentIcon')}</span>
+          <div class="ag-icons">
+            <button type="button" class="ag-icon" class:on={agentDraftIcon === ''}
+              title={t('settings.agentIconAuto')} onclick={() => (agentDraftIcon = '')}>
+              <Icon name="sparkles" size={16} />
+            </button>
+            {#each AGENT_ICONS as name (name)}
+              <button type="button" class="ag-icon" class:on={agentDraftIcon === name}
+                title={name} onclick={() => (agentDraftIcon = name)}>
+                <Icon {name} size={16} />
+              </button>
+            {/each}
+          </div>
+          <span class="d muted">{agentDraftIcon === '' ? t('settings.agentIconAutoHint') : agentDraftIcon}</span>
+        </div>
         <label class="pp-field">
           <span class="eyebrow">{t('settings.agentBody')}</span>
           <textarea class="ctrl ag-body" bind:value={agentDraftPrompt} spellcheck="false" use:autogrow={agentDraftPrompt}></textarea>

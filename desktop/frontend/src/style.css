@@ -1232,8 +1232,24 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
    preset card does not, and the covers are what was making every row — and
    the stretched create-card beside it — tower. */
 .office-grid .pp-cover { height:72px; }
-.chair-card { cursor:default; }
-.chair-card .pp-body { flex:1; }
+/* A teammate's card: a thin band of their own colour, their mark straddling
+   the edge of it, then who they are. The band is 46px rather than the gallery's
+   104px cover because this is a face, not a thumbnail — a cover that size ate
+   the card and repeated the name printed 12px under it. */
+.chair-card { cursor:default; position:relative; }
+.chair-cover {
+  display:block; height:46px; flex:none;
+  background:
+    radial-gradient(120% 160% at 25% 0%, hsl(var(--h) 70% 42% / .7), transparent 65%),
+    linear-gradient(135deg, hsl(var(--h) 45% 20%), hsl(calc(var(--h) + 40) 45% 13%));
+}
+.chair-face {
+  position:absolute; top:26px; left:14px; width:40px; height:40px;
+  display:grid; place-items:center; border-radius:var(--r-md);
+  background:var(--surface-raised); border:1px solid var(--border-default);
+  color:hsl(var(--h) 60% 82%);
+}
+.chair-card .pp-body { flex:1; padding-top:26px; }
 .chair-card .chips .chip.more { color:var(--text-dim); border-style:dashed; }
 .chair-card.empty { border-style:dashed; background:none; }
 /* The foot is its own layer: separated from the body by a rule, stat on the
@@ -2170,3 +2186,41 @@ button.ctrl, label.ctrl { display:inline-flex; align-items:center; justify-conte
 .crumb-sep { flex:none; color:var(--text-dim); }
 .crumb-here { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-primary); }
 
+/* The icon picker in the agent editor. A row of the marks themselves — the
+   value is a name from a fixed set, so choosing one is recognising it, not
+   typing it. The first cell is "choose none", which is the default and means
+   the roster derives the mark from what the agent makes. */
+.ag-icons { display:flex; flex-wrap:wrap; gap:6px; }
+.ag-icon {
+  width:34px; height:34px; display:grid; place-items:center; border-radius:var(--r-sm);
+  border:1px solid var(--border-subtle); background:var(--surface-sunken); color:var(--text-dim);
+}
+.ag-icon:hover { color:var(--text-primary); border-color:var(--border-strong); }
+.ag-icon.on { color:var(--text-primary); border-color:var(--interactive); background:var(--surface-raised); }
+
+/* The roster's search box, and the mark on each row — the two things the
+   reference UI had that this page did not. The mark is the same one the office
+   card draws, resolved in Go, so one agent has one face everywhere. */
+.ag-search {
+  display:flex; align-items:center; gap:8px; margin:0 0 14px; padding:0 10px; max-width:340px;
+  border:1px solid var(--border-strong); border-radius:var(--r-sm);
+  background:var(--surface-sunken); color:var(--text-dim);
+}
+.ag-search input { flex:1; min-width:0; border:none; background:none; padding:6px 0; color:var(--text-primary); }
+.ag-search input:focus { outline:none; }
+.ag-rowicon {
+  flex:none; width:30px; height:30px; display:grid; place-items:center; margin-right:2px;
+  border:1px solid var(--border-subtle); border-radius:var(--r-sm);
+  background:var(--surface-sunken); color:var(--text-muted);
+}
+
+/* The brake, once it is no longer the only button. A draft in the composer puts
+   Send back in the primary slot (typing into a running turn is supported), so
+   Stop steps down beside it rather than disappearing — the tool loop is
+   unbounded and it stays the user's only way out. */
+.composer .send.stop.secondary { width:30px; height:30px; margin-right:6px; opacity:.75; }
+.composer .send.stop.secondary:hover { opacity:1; }
+
+/* A message sent into a running turn, drawn after the live block instead of
+   above it. .chat-inner is a flex column, so one `order` says it — no second
+   render path, and the array it comes from stays in the order it happened. */

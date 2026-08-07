@@ -17,7 +17,17 @@ import (
 
 // ListSubagentProfiles reports the sub-agents the main agent can hand work to.
 func (a *App) ListSubagentProfiles() []subagent.Profile {
-	return jsonSlice(subagent.List())
+	rows := jsonSlice(subagent.List())
+	// Icon leaves here filled in, the same way the roster's does (office.go).
+	// In a *list* the field means "the mark to draw", never "what the file
+	// says" — the editor reads the file itself for its picker, so the one place
+	// that has to know a blank means "choose for me" is chairIcon. Resolving it
+	// twice, or in TypeScript, is how the same agent ends up wearing two faces
+	// on two pages.
+	for i := range rows {
+		rows[i].Icon = chairIcon(rows[i], rows[i].Tools)
+	}
+	return rows
 }
 
 // ReadSubagentProfile returns the raw markdown behind a profile — the user's file
