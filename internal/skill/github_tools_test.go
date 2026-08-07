@@ -331,10 +331,17 @@ func TestPluginInstallAcceptsAPlainSkillRepo(t *testing.T) {
 		t.Error("a file from outside the skill folder was installed into it")
 	}
 
-	// And the whole point: what was installed is now discoverable.
-	found := ListDiscovered([]string{root})
-	if len(found) != 2 {
-		t.Fatalf("discovery found %d skills after install, want 2", len(found))
+	// And the whole point: what was installed is now discoverable. Counted by
+	// name rather than by length, because every listing also carries the skills
+	// compiled into the binary (bundled_skills.go).
+	installed := make(map[string]bool)
+	for _, d := range ListDiscovered([]string{root}) {
+		installed[d.Name] = true
+	}
+	for _, name := range []string{"pdf", "xlsx"} {
+		if !installed[name] {
+			t.Errorf("%q was installed but discovery does not see it", name)
+		}
 	}
 }
 

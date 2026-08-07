@@ -382,6 +382,7 @@ export const th = {
   'settings.skillZip': 'เลือกไฟล์ zip…',
   'settings.skillZipHint': 'หรือติดตั้งจากไฟล์ zip ที่มี SKILL.md อยู่ข้างใน · ติดตั้งทั้งชุดหรือไม่ติดตั้งเลย ไม่เอาแค่บางไฟล์',
   'settings.skillsFolder': 'เปิดโฟลเดอร์',
+  'settings.skillBundled': 'ติดมากับแอป — ไม่มีโฟลเดอร์ ลบไม่ได้ · ถ้าอยากได้เนื้อหาอื่น สร้างโฟลเดอร์ชื่อเดียวกันในโฟลเดอร์สกิลแล้วเขียนทับ',
   'settings.skillIssues': 'อ่านไม่ผ่าน {n} ไฟล์ — อยู่ในโฟลเดอร์ถูกแล้วแต่เนื้อไฟล์มีปัญหา',
   'settings.skillInstall': 'ติดตั้งจาก GITHUB',
   'settings.skillInstallPlaceholder': 'URL ของ GitHub repo เช่น https://github.com/user/skill-repo',

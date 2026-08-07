@@ -77,21 +77,31 @@ func DefaultDiscoveryPaths() []string {
 	return []string{dir}
 }
 
-// DiscoveredSkill describes one SKILL.md found on disk including where it
-// lives — the Settings management surface needs Dir to delete or reveal it.
+// DiscoveredSkill describes one SKILL.md including where it lives — the
+// Settings management surface needs Dir to delete or reveal it.
 type DiscoveredSkill struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Dir         string `json:"dir"`
+	// Bundled marks a skill that ships inside the binary (bundled_skills.go).
+	// It has no Dir, so it cannot be revealed, deleted, or read a second file
+	// out of — the surfaces that offer those ask this rather than testing Dir
+	// for emptiness, so "no folder" has one meaning in one place.
+	Bundled bool `json:"bundled,omitempty"`
 
 	body string
 }
 
-// scanSkills is the one scan loop both public views share: each directory in
-// paths is scanned for <dir>/*/SKILL.md. A missing scan directory is not an
-// error (most default paths won't exist); a malformed SKILL.md is collected
-// as an error but does not stop the scan.
+// scanSkills is the one scan loop every public view shares: the bundled skills,
+// then each directory in paths scanned for <dir>/*/SKILL.md. A missing scan
+// directory is not an error (most default paths won't exist); a malformed
+// SKILL.md is collected as an error but does not stop the scan.
 func scanSkills(paths []string) ([]DiscoveredSkill, []error) {
+	found, errs := diskSkills(paths)
+	return withBundled(found), errs
+}
+
+func diskSkills(paths []string) ([]DiscoveredSkill, []error) {
 	var found []DiscoveredSkill
 	var errs []error
 	for _, dir := range paths {

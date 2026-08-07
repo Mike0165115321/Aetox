@@ -1112,6 +1112,7 @@ export namespace skill {
 	    name: string;
 	    description: string;
 	    dir: string;
+	    bundled?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new DiscoveredSkill(source);
@@ -1122,6 +1123,7 @@ export namespace skill {
 	        this.name = source["name"];
 	        this.description = source["description"];
 	        this.dir = source["dir"];
+	        this.bundled = source["bundled"];
 	    }
 	}
 

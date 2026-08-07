@@ -2559,16 +2559,22 @@
         {#if extSkills.length === 0}
           <div class="set-row"><div class="muted">{t('settings.noSkills')}</div></div>
         {:else}
-          {#each extSkills as s (s.dir)}
+          <!-- Keyed by name, not dir: a bundled skill has no folder, so dir is
+               empty and would collide the moment a second one ships. Names are
+               unique across the merged list by construction — a user folder of
+               the same name replaces the bundled entry rather than joining it. -->
+          {#each extSkills as s (s.name)}
             <div class="set-row">
               <div class="set-txt">
                 <div class="t">{s.name}</div>
                 <div class="d">{s.description || '—'}</div>
-                <div class="d mono-dim">{s.dir}</div>
+                <div class="d mono-dim">{s.bundled ? t('settings.skillBundled') : s.dir}</div>
               </div>
-              <button class="ctrl ctrl-danger" disabled={skillBusy !== ''} onclick={() => removeSkill(s.name, s.dir)}>
-                {t('settings.remove')}
-              </button>
+              {#if !s.bundled}
+                <button class="ctrl ctrl-danger" disabled={skillBusy !== ''} onclick={() => removeSkill(s.name, s.dir)}>
+                  {t('settings.remove')}
+                </button>
+              {/if}
             </div>
           {/each}
         {/if}

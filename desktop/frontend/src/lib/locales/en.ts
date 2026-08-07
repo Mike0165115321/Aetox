@@ -379,6 +379,7 @@ export const en: Record<keyof typeof th, string> = {
   'settings.skillZip': 'Choose a .zip…',
   'settings.skillZipHint': 'Or install from a .zip containing a SKILL.md. The whole set installs, or none of it does.',
   'settings.skillsFolder': 'Open folder',
+  'settings.skillBundled': 'Ships with Aetox — no folder, cannot be deleted. To change it, create a folder of the same name in the skills folder.',
   'settings.skillIssues': '{n} file(s) could not be read — in the right folder, but the contents have a problem',
   'settings.skillInstall': 'INSTALL FROM GITHUB',
   'settings.skillInstallPlaceholder': 'GitHub repo URL, e.g. https://github.com/user/skill-repo',

@@ -68,14 +68,27 @@ func TestSkillsListReportsNameAndDescription(t *testing.T) {
 	}
 }
 
-func TestSkillsListEmpty(t *testing.T) {
+// This used to assert "No skills installed" on a fresh machine, and that is no
+// longer reachable: the bundled skills (bundled_skills.go) ship inside the
+// binary, so the library is never empty. What is worth pinning instead is that
+// a user who has installed nothing still gets a real listing with the reading
+// instruction on the end — the state a first-run session is actually in.
+func TestSkillsListOnAFreshMachineListsTheBundledSkills(t *testing.T) {
 	list := &skillsListSkill{paths: []string{t.TempDir()}}
 	out, err := list.ExecuteTool(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("skills_list on empty dir: %v", err)
 	}
-	if !strings.Contains(out.Content, "No skills installed") {
-		t.Fatalf("empty library should say so plainly: %q", out.Content)
+	if strings.Contains(out.Content, "No skills installed") {
+		t.Fatalf("the bundled skills should always be listed: %q", out.Content)
+	}
+	for _, b := range bundledSkills() {
+		if !strings.Contains(out.Content, b.Name) {
+			t.Errorf("bundled skill %q is missing from skills_list: %q", b.Name, out.Content)
+		}
+	}
+	if !strings.Contains(out.Content, "skill_view") {
+		t.Errorf("listing does not say how to open one: %q", out.Content)
 	}
 }
 
@@ -116,8 +129,8 @@ func TestSkillsListSeesSkillsInstalledAfterRegistryBuild(t *testing.T) {
 	list := &skillsListSkill{paths: []string{root}}
 
 	out, err := list.ExecuteTool(context.Background(), nil)
-	if err != nil || !strings.Contains(out.Content, "No skills installed") {
-		t.Fatalf("precondition: expected empty library, got %q (%v)", out.Content, err)
+	if err != nil || strings.Contains(out.Content, "fresh_skill") {
+		t.Fatalf("precondition: fresh_skill should not exist yet, got %q (%v)", out.Content, err)
 	}
 
 	writeSkillFixture(t, root, "fresh", "---\nname: fresh_skill\ndescription: just installed\n---\nbody\n")

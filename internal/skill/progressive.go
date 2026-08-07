@@ -109,6 +109,12 @@ func (s *skillsListSkill) ExecuteTool(_ context.Context, _ map[string]any) (Outp
 // read here. This is the same rule applied to a different root, and it is the
 // only place that root is readable from.
 func readSkillFile(dir, sub string) (string, error) {
+	// A bundled skill has no folder. Without this, filepath.Abs("") returns the
+	// process's working directory and the containment check below would then be
+	// measuring the wrong root entirely — every path under cwd would pass.
+	if strings.TrimSpace(dir) == "" {
+		return "", fmt.Errorf("this skill ships inside Aetox and has no files beside it")
+	}
 	base, err := filepath.Abs(dir)
 	if err != nil {
 		return "", fmt.Errorf("cannot read inside this skill")
@@ -176,6 +182,11 @@ const maxSkillFileBytes = 32 << 10
 // walked, so references/a.md shows as references/a.md rather than as a folder
 // the model has to guess the contents of.
 func supportingFiles(dir string) []string {
+	// Same reason as readSkillFile: filepath.Clean("") is ".", and walking that
+	// would list the working directory as if it were a bundled skill's contents.
+	if strings.TrimSpace(dir) == "" {
+		return nil
+	}
 	var out []string
 	root := filepath.Clean(dir)
 	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {

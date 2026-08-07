@@ -57,8 +57,16 @@ func TestZipInstallTakesTheWholeSet(t *testing.T) {
 			t.Errorf("%s missing after install: %v", rel, err)
 		}
 	}
-	if got := ListDiscovered([]string{root}); len(got) != 1 {
-		t.Fatalf("discovery found %d skills, want 1", len(got))
+	// By name, not by count: every listing also carries the skills compiled
+	// into the binary (bundled_skills.go).
+	var seen bool
+	for _, d := range ListDiscovered([]string{root}) {
+		if d.Name == "pdf" {
+			seen = true
+		}
+	}
+	if !seen {
+		t.Fatal("the installed skill is not discoverable")
 	}
 }
 

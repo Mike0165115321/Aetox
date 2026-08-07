@@ -123,6 +123,14 @@ func (a *App) InstallSkillFromGitHub(repoURL string) (string, error) {
 func (a *App) RemoveExternalSkill(name string) error {
 	for _, s := range skill.ListDiscovered(skill.DefaultDiscoveryPaths()) {
 		if strings.EqualFold(s.Name, name) {
+			// A bundled skill has no folder, and os.RemoveAll("") succeeds — so
+			// without this the button would report success, the skill would
+			// still be there, and the app would look broken rather than
+			// principled. Say what to do instead: the override road is real.
+			if s.Bundled {
+				return fmt.Errorf("สกิล %q ติดมากับแอป ลบไม่ได้ — ถ้าอยากได้เนื้อหาอื่น ให้สร้างโฟลเดอร์ชื่อเดียวกันใน %s แล้วเขียน SKILL.md ทับ",
+					s.Name, skill.DefaultSkillsDir())
+			}
 			if err := os.RemoveAll(s.Dir); err != nil {
 				return err
 			}

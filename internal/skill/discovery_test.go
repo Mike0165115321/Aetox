@@ -19,11 +19,33 @@ func writeSkillFixture(t *testing.T, root, dirName, content string) {
 	}
 }
 
+// discoverFromDisk is DiscoverSkills minus the skills compiled into the binary
+// (bundled_skills.go), which every test below is about: they exercise the scan
+// of a fixture directory, and the bundled set is a constant sitting on top of
+// it. Filtering here rather than adjusting each count keeps these tests reading
+// as "one skill in that folder" — which is what they mean — and stops them
+// needing an edit every time a skill ships with the app.
+func discoverFromDisk(t *testing.T, paths []string) ([]Skill, []error) {
+	t.Helper()
+	found, errs := DiscoverSkills(paths)
+	bundled := make(map[string]bool)
+	for _, b := range bundledSkills() {
+		bundled[b.Name] = true
+	}
+	out := make([]Skill, 0, len(found))
+	for _, s := range found {
+		if !bundled[s.Name()] {
+			out = append(out, s)
+		}
+	}
+	return out, errs
+}
+
 func TestDiscoverSkills_ParsesFrontmatterAndBody(t *testing.T) {
 	root := t.TempDir()
 	writeSkillFixture(t, root, "commit-helper", "---\nname: commit_helper\ndescription: Draft a commit message from staged changes\n---\n# Commit Helper\n\nLook at `git diff --staged` and write a message.\n")
 
-	found, errs := DiscoverSkills([]string{root})
+	found, errs := discoverFromDisk(t, []string{root})
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
@@ -49,7 +71,7 @@ func TestDiscoverSkills_MissingNameFallsBackToDirName(t *testing.T) {
 	root := t.TempDir()
 	writeSkillFixture(t, root, "my-skill", "---\ndescription: no name field\n---\nbody\n")
 
-	found, errs := DiscoverSkills([]string{root})
+	found, errs := discoverFromDisk(t, []string{root})
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
@@ -62,7 +84,7 @@ func TestDiscoverSkills_NoFrontmatterUsesWholeFileAsBody(t *testing.T) {
 	root := t.TempDir()
 	writeSkillFixture(t, root, "plain", "just plain instructions, no frontmatter\n")
 
-	found, errs := DiscoverSkills([]string{root})
+	found, errs := discoverFromDisk(t, []string{root})
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
@@ -80,7 +102,7 @@ func TestDiscoverSkills_UnterminatedFrontmatterIsReportedNotFatal(t *testing.T) 
 	writeSkillFixture(t, root, "broken", "---\nname: broken\nno closing marker\n")
 	writeSkillFixture(t, root, "ok-one", "---\nname: ok_one\ndescription: fine\n---\nbody\n")
 
-	found, errs := DiscoverSkills([]string{root})
+	found, errs := discoverFromDisk(t, []string{root})
 	if len(errs) != 1 {
 		t.Fatalf("expected exactly 1 parse error, got %d: %v", len(errs), errs)
 	}
@@ -90,7 +112,7 @@ func TestDiscoverSkills_UnterminatedFrontmatterIsReportedNotFatal(t *testing.T) 
 }
 
 func TestDiscoverSkills_MissingDirIsNotAnError(t *testing.T) {
-	found, errs := DiscoverSkills([]string{filepath.Join(t.TempDir(), "does-not-exist")})
+	found, errs := discoverFromDisk(t, []string{filepath.Join(t.TempDir(), "does-not-exist")})
 	if len(errs) != 0 {
 		t.Fatalf("missing scan dir should not be an error, got %v", errs)
 	}
