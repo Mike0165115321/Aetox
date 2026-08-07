@@ -44,6 +44,57 @@ func TestDesktopPickerNamesOnlyRealProviders(t *testing.T) {
 	}
 }
 
+// The other half of the allowlist, which nothing was watching. The two tests
+// above guard what is *in* desktopProviders; nothing guarded what is missing
+// from it, and a missing name is indistinguishable from a decision — the engine
+// gains a provider, the desktop never shows it, and the only record of why is
+// that nobody typed it.
+//
+// So the absences are written down. A provider that is in the catalog and not
+// on the desktop must be named here with the reason, which makes adding one to
+// the engine a two-line decision instead of a silent omission.
+var notOnTheDesktop = map[string]string{
+	// Reachable from the CLI today, and nothing about them is unfinished:
+	// OpenAI-compatible runtime, a base URL, an API key. They were never typed
+	// into desktopProviders, which is the whole of it.
+	"groq":       "never added; no reason on record",
+	"mistral":    "never added; no reason on record",
+	"together":   "never added; no reason on record",
+	"perplexity": "never added; no reason on record",
+	"minimax":    "never added; no reason on record",
+	"kimi":       "never added; no reason on record",
+	// This one is not just an omission. The catalog points it at Cohere's own
+	// API, and the OpenAI-compatible surface it is declared to speak lives on a
+	// different path — so the row would take a key and fail on first use.
+	// Unverified against the live API, which is exactly why it stays off.
+	"cohere": "catalog base URL is Cohere's native API, not its OpenAI-compatible one — would fail on first use",
+}
+
+func TestDesktopPickerHidesOnlyWhatItMeansTo(t *testing.T) {
+	listed := make(map[string]bool, len(desktopProviders))
+	for _, p := range desktopProviders {
+		listed[p] = true
+	}
+	for _, p := range model.SupportedProviders() {
+		if listed[p] {
+			if _, claimed := notOnTheDesktop[p]; claimed {
+				t.Errorf("%q is in desktopProviders and also listed as not on the desktop — one of the two is stale", p)
+			}
+			continue
+		}
+		if reason, claimed := notOnTheDesktop[p]; !claimed {
+			t.Errorf("the engine knows %q and the desktop never shows it, with no reason recorded — add it to desktopProviders or say here why not", p)
+		} else if reason == "" {
+			t.Errorf("%q is kept off the desktop with an empty reason", p)
+		}
+	}
+	for p := range notOnTheDesktop {
+		if _, known := model.ProviderInfo(p); !known {
+			t.Errorf("notOnTheDesktop names %q, which the engine catalog does not have", p)
+		}
+	}
+}
+
 // A third list nobody was comparing: the brand marks live in TypeScript, keyed
 // by the same canonical name this Go slice holds, and ProviderMark.svelte falls
 // back to a lettered tile when the key is missing. That fallback is deliberate
