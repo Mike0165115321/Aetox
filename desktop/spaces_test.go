@@ -398,6 +398,19 @@ func TestAProjectsChatsStayOutOfTheGeneralHistory(t *testing.T) {
 	}
 }
 
+// The pair the user came for — a script and what it produced — has to land in
+// one place. A script writes where its own text says, so the prompt is the only
+// thing that can keep the two together.
+func TestTheAssistantIsToldWhereAScriptsOutputGoes(t *testing.T) {
+	got := prompt.Build(prompt.SurfaceDesktop, prompt.Scope{Root: t.TempDir(), Open: true})
+
+	for _, want := range []string{"$PSScriptRoot", "write beside itself", "hardcoded"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the prompt does not say where a script's own output belongs (%q missing)", want)
+		}
+	}
+}
+
 func TestTwoProjectsCannotShareAName(t *testing.T) {
 	a := spaceApp(t)
 	if _, err := a.CreateSpace("ซ้ำ"); err != nil {

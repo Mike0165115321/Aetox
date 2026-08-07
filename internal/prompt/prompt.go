@@ -566,7 +566,12 @@ func environment(scope Scope) string {
 			"relative to your working folder both work. Credential stores (.ssh, .aws, browser profile data " +
 			"and the like) are refused by every tool; do not try to work around that.\n" +
 			"Create new files with a bare filename — they land in this chat's own output folder automatically, " +
-			"so everything a chat produced sits in one place for the user to inspect.\n")
+			"so everything a chat produced sits in one place for the user to inspect.\n" +
+			"That folder is chosen for you, and only the file tools know about it. A script you write and then " +
+			"run does not: a path typed inside it is followed exactly, so a hardcoded one drops its results in " +
+			"the working root while the script itself sits in the output folder, and the pair the user came for " +
+			"ends up in two places. Have a script write beside itself — $PSScriptRoot in PowerShell, the " +
+			"script's own directory anywhere else — or take the output path as an argument and pass it in.\n")
 	case len(scope.Extra) > 0:
 		b.WriteString("You are working in a focused project. A bare path is relative to the project folder.\n" +
 			"The user has added these folders to this session, and file tools reach them by full path:\n")
