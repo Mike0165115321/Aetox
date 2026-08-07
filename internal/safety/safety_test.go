@@ -86,6 +86,27 @@ func TestAssessCommandMediaToolsMatchVideoOCR(t *testing.T) {
 	}
 }
 
+// calc asks for no permission, and the reason has to be recorded rather than
+// inherited from the fallback every unrecognised name lands in: a tool that
+// runs in this process and can reach no file, socket or program is not asking
+// for a right. A named assessment is also the only way this stays true — the
+// day calc grows a way out, this test is where it should stop being silent.
+func TestCalcIsAssessedAsAskingForNothing(t *testing.T) {
+	got := AssessCommand("calc", []string{"1234 * 5678"})
+
+	if got.Risk != RiskLow || len(got.Effects) != 0 {
+		t.Errorf("AssessCommand(calc) = risk %v effects %v, want low risk and no effects", got.Risk, got.Effects)
+	}
+	if got.Reason == "" {
+		t.Error("calc fell through to the unrecognised-name fallback — the answer is right by accident, not on purpose")
+	}
+	for _, mode := range []ApprovalMode{ApprovalFullAccess, ApprovalUnsafeOnly, ApprovalAsk, ApprovalMode("")} {
+		if ShouldPrompt(mode, got) {
+			t.Errorf("calc prompts for approval under mode %q", mode)
+		}
+	}
+}
+
 func TestNormalizeApprovalMode(t *testing.T) {
 	if got := NormalizeApprovalMode(" Full-Access "); got != ApprovalFullAccess {
 		t.Errorf("NormalizeApprovalMode trims/lowers: got %q", got)

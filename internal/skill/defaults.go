@@ -89,6 +89,7 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 		&helpSkill{registry: registry},
 		&echoSkill{},
 		&timeSkill{},
+		&calcSkill{},
 		&listSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
 		&readSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir, vision: opts.Vision},
 		&githubRepoSummarySkill{},

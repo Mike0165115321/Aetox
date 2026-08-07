@@ -237,7 +237,7 @@ Aetox ยังอยู่ในช่วงหล่อหลอม — แก
 | **13 Providers** | OpenAI, Anthropic, DeepSeek, Google Gemini, Groq, Mistral, Together, Perplexity, Cohere, OpenRouter, Z.ai, LM Studio, Ollama |
 | **Tool Calling** | model-driven tool loop — agent เลือกใช้ tools เอง |
 | **ส่งงานกลับเป็นไฟล์ Office จริง** | สั่งได้จากแชท แล้ว**ตัวแทน**เป็นคนทำ (`doc` / `sheet` / `deck`) — ผู้ช่วยหลักไม่แบกเครื่องมือพวกนี้ จึงไม่จ่ายค่ามันในทุกคำถาม · `sheet_write` → `.xlsx` · `slides_write` → `.pptx` · `doc_write` → `.docx` — ไฟล์ที่ Excel / PowerPoint / Word เปิดได้จริง ตัวเลขลาก `SUM` ได้ วันที่เรียงได้ ภาษาไทยสระไม่ลอย · ประกอบเองล้วนด้วย `archive/zip` + `encoding/xml` **ไม่มี dependency เพิ่มแม้แต่ตัวเดียว** · คลิกไฟล์ `.xlsx` แล้วดูเป็นตารางในแอปได้เลย ไม่ต้องเปิดโปรแกรมอื่น |
-| **40 Tools ที่โมเดลเรียกได้** | 32 ตัวในเครื่องยนต์ (read, write, sheet_write, slides_write, doc_write, edit, shell, git, grep, glob, symbol, notebook_edit, image_ocr, video_ocr, pdf_read, audio_transcribe, skills_list, skill_view …) + browser_* + session_search + suggest_task + sub-agent + ที่ต่อจาก MCP |
+| **Tools ที่โมเดลเรียกได้** | 33 ตัวในเครื่องยนต์ (read, write, sheet_write, slides_write, doc_write, edit, shell, git, grep, glob, symbol, notebook_edit, calc, image_ocr, video_ocr, pdf_read, audio_transcribe, skills_list, skill_view …) + browser_* + session_search + suggest_task + sub-agent + ที่ต่อจาก MCP |
 | **รันโค้ดที่เพิ่งเขียนเองได้** | agent เรียก `shell` และ `git` เองได้ — แก้โค้ดเสร็จ รันเทสต์ อ่านผล แล้วแก้ต่อในเทิร์นเดียว · คำสั่งที่ไม่จบเอง (dev server, watch build) สั่งให้รันเบื้องหลังแล้วตามอ่าน log ทีหลังได้ |
 | **Safety 3 ระดับ** | ถามก่อน → คำสั่งเสี่ยง → รันเต็มที่ |
 | **Multi-provider** | ใช้ providers ต่างกันใน session เดียวกัน |
@@ -381,6 +381,7 @@ wails build -nsis    # พร้อมตัวติดตั้ง
 | `fs` | file system operations |
 | `echo` | ทดสอบ output |
 | `time` | แสดงเวลาปัจจุบัน |
+| `calc` | คำนวณด้วยการรันสคริปต์ JavaScript ในตัวแอป — ไม่ต้องลงอะไร แตะไฟล์/เน็ตไม่ได้ ผู้ใช้เห็นสคริปต์ข้างคำตอบ |
 | `help` | แสดง help |
 | `github_repo_summary` | สรุป repo จาก GitHub |
 | `plugin_install` | ติดตั้ง plugin จาก GitHub |

@@ -134,6 +134,7 @@ func BuildWithReport(surface Surface, scope Scope, desk Desk) (string, Loaded) {
 	b.WriteString(capability())
 	b.WriteString(fileEditing())
 	b.WriteString(batchWork())
+	b.WriteString(computing())
 	b.WriteString(drawing())
 	b.WriteString(longform())
 	b.WriteString(narration())
@@ -304,6 +305,44 @@ func batchWork() string {
 		"costs one round for any list length. Spot-check a result or two afterwards instead of verifying " +
 		"every item with its own call. Stay with individual tool calls when items genuinely need separate " +
 		"judgment — code edits that differ per file are per-item work, not batch work.\n"
+}
+
+// computing says that a number in an answer is either worked out or made up,
+// and that there is now something here to work it out with.
+//
+// The same shape as drawing: the tool cannot ask to be used, so without a layer
+// saying when, it is a capability that ships and never fires. What makes this
+// one worth a layer of its own is that its failure is invisible from the
+// outside — a wrong sum reads exactly like a right one, in the same confident
+// sentence, and neither the model nor the user finds out. Every other thing the
+// model gets wrong eventually announces itself.
+//
+// Where the line sits is the owner's call and it is not at "any arithmetic":
+// a model doing 20% of 500 in its head is right, and a tool call to prove it
+// costs a round trip and reads as ceremony. The line is at long work.
+//
+// But "long" had to be written as something countable — digits carried, steps
+// that feed the next, a repetition down a list, a figure someone will act on —
+// rather than as "when it is hard". Difficulty is the one thing a model cannot
+// judge about its own arithmetic: 47 × 93 and 4.7 × 9.3 feel identical from the
+// inside, and so does getting one of them wrong. A threshold made of feelings
+// selects for the calculations that already looked easy, which is exactly the
+// set where the silent mistakes are.
+func computing() string {
+	return "Short arithmetic is yours to do: one operation on small numbers, a round percentage, the days " +
+		"between two dates. Say the answer and move on — a tool call there spends a round trip proving " +
+		"something nobody doubted.\n" +
+		"Reach for calc when the work is long, not when it feels hard, because a wrong sum feels exactly " +
+		"like a right one — that is the whole problem with deciding this by how it feels. Long means: " +
+		"numbers of several digits each, steps that feed the one after them (compounding, instalments, a " +
+		"running balance), the same operation repeated down a list of more than a handful, or a figure " +
+		"the user is going to act on — a price, a payroll line, a deadline. The user is shown the script " +
+		"beside the result, so a mistake becomes a line somebody can point at instead of a number they " +
+		"had to trust.\n" +
+		"calc runs inside this app: it keeps nothing between calls, needs nothing installed, and cannot " +
+		"reach a file or the network. When the numbers live in a file, or there are more of them than " +
+		"you would type out, or the work needs a real library, that is write plus shell — which touches " +
+		"the user's machine, and is worth the trip only when calc genuinely cannot answer.\n"
 }
 
 // drawing tells the model that the answer surface can render a picture, and

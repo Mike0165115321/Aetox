@@ -151,6 +151,26 @@ func TestEveryDeskCanPutSomethingOnTheDesk(t *testing.T) {
 	}
 }
 
+// Counting is not one desk's privilege either, and the trap here is subtler
+// than the desk_open one: calc runs a script, so `code` is the category it
+// reads like it belongs to — and `code` is the developer group that assistant
+// and specialized refuse on purpose. Filed there, the desk whose whole job is
+// answering a person's question would have been the one desk that has to do
+// arithmetic in its head.
+func TestEveryDeskCanWorkANumberOut(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+
+	for _, name := range []string{"assistant", "coding", "specialized"} {
+		m, ok := Load(name)
+		if !ok || m == nil {
+			t.Fatalf("Load(%q) failed", name)
+		}
+		if !m.AllowsTool("calc") {
+			t.Errorf("%s desk cannot count: it does not carry calc", name)
+		}
+	}
+}
+
 func TestNilModeIsTheFullDesk(t *testing.T) {
 	m, ok := Load("")
 	if !ok {

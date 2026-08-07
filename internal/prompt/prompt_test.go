@@ -373,6 +373,34 @@ func TestPromptTeachesThatAnEmptySearchIsAnAnswer(t *testing.T) {
 	}
 }
 
+// A wrong sum is the one mistake that never announces itself: it arrives in the
+// same confident sentence as a right one, and neither side finds out. calc can
+// settle it, and a tool cannot ask to be used — so this layer is what decides
+// whether the capability fires at all.
+func TestPromptTeachesThatANumberIsWorkedOutNotRecalled(t *testing.T) {
+	got := Build(SurfaceDesktop, Scope{Root: t.TempDir()})
+	for _, want := range []string{
+		"calc",
+		// The line is at long work, not at any arithmetic: a tool call to prove
+		// 20% of 500 is ceremony, and the user said so.
+		"Short arithmetic is yours to do",
+		// And "long" is countable, because difficulty is the one thing a model
+		// cannot judge about its own arithmetic — 47 × 93 and 4.7 × 9.3 feel
+		// the same from the inside, and so does getting one of them wrong.
+		"not when it feels hard",
+		"a wrong sum feels exactly like a right one",
+		// Why it beats a number in prose — the user can check the arithmetic.
+		"shown the script beside the result",
+		// And where the line is: real data, real libraries, a file — that is
+		// shell, and shell costs the user's machine.
+		"write plus shell",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("system prompt is missing %q:\n%s", want, got)
+		}
+	}
+}
+
 // The chat renders an answer as markdown through DOMPurify, which passes SVG
 // and strips scripts and handlers — so a drawing in an answer has always been
 // possible, and never happened, because nothing said so. This layer says so.

@@ -29,8 +29,24 @@ import (
 // deliberate, which is the whole point.
 const (
 	// Measured 2026-08-04: 44 tools, 35,215 bytes ≈ 8,803 tokens.
-	maxToolBlockTokens = 9500
-	maxToolCount       = 48
+	//
+	// Raised to 9,600 on 2026-08-07 for `calc`, and the argument is on the
+	// record because that is what this test asks for. It is ~130 tokens on
+	// every request, and it was weighed against the two cheaper answers and
+	// beat both: putting it behind `task` means a sum costs a delegated agent,
+	// and leaving it to `shell` means arithmetic costs the right to touch the
+	// user's machine and depends on what they happen to have installed. What
+	// makes it worth carrying everywhere rather than in a profile is that
+	// nothing else in the block fails invisibly — a wrong number arrives in the
+	// same confident sentence as a right one, on any kind of task, so there is
+	// no profile it could sit in that would be the right one.
+	//
+	// Its description was cut to capability alone first (occasions belong in
+	// internal/prompt), which is the order the fix should always take.
+	maxToolBlockTokens = 9600
+	// At 48 the count is now full: the next tool has to displace one, and that
+	// is the intended reading of this number rather than a nuisance.
+	maxToolCount = 48
 )
 
 func TestTheToolBlockStaysWithinItsBudget(t *testing.T) {

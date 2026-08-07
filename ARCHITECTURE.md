@@ -225,7 +225,7 @@ Per-module docs (hub-and-spoke, §12): Tier-1 modules carry a `README.md` in the
 | `app` | 4 | CLI interactive loop + orchestration wiring (`NewApp`, `RunOnce`, `RunInteractive`, banner/status bar, approval-mode picker). Shared with desktop only via `NewApp`/`RunOnce` — see [§6.1](#61-internalapp-mixes-orchestration-with-cli-terminal-presentation). | [README](internal/app/README.md) |
 | `cognitive` | 2 | `Agent` — builds provider requests, runs the (unbounded, §11 "related cleanup") tool-call loop, streams responses. | [model-control deep dive](docs/architecture/model-control-layer-2026-07-22.md) |
 | `turn` | 3 | `Executor` — turn pipeline (§17): explicit skill command → direct dispatch, else model-driven tool loop, else streaming chat; approval gate on every tool path. No NL intent inference — that layer was deleted 2026-07-23. | [README](internal/turn/README.md) |
-| `skill` | 32 | `Registry`/`Dispatcher` + all 30 built-in tools. The 27 the model is offered: read/write/edit/delete/list/glob/grep/apply_patch/notebook_edit/diagnostics/symbol/shell/shell_output/shell_kill/git/time/web_fetch/web_search/image_ocr/video_ocr/pdf_read/audio_transcribe/github_repo_summary/github_search/github_read_file/github_list_files/plugin_install. The other 3 (`echo`/`fs`/`help`) are CLI-only and never sent to the model. | [README](internal/skill/README.md) |
+| `skill` | 41 | `Registry`/`Dispatcher` + all 36 built-in tools. The 33 the model is offered: read/write/edit/delete/list/glob/grep/apply_patch/notebook_edit/diagnostics/symbol/shell/shell_output/shell_kill/git/time/calc/web_fetch/web_search/image_ocr/video_ocr/pdf_read/audio_transcribe/sheet_write/slides_write/doc_write/github_repo_summary/github_search/github_read_file/github_list_files/plugin_install/skills_list/skill_view. The other 3 (`echo`/`fs`/`help`) are CLI-only and never sent to the model. | [README](internal/skill/README.md) |
 | `model` | 18 | `Provider` interface, `Message`/`Request`/`Response` types, factory, bootstrap, and **5 wire-format client implementations** (anthropic, openai_compatible, responses, ollama, noop) serving all 18 catalog providers, in the same package. Imports `internal/provider` (see [§6.2](#62-modelprovider-imports-providers-catalog)). | [README](internal/model/README.md) |
 | `provider` | 2 | Provider runtime catalog (names, capabilities) — separate from `model`'s own `provider_catalog.go`, which is a second source for similar data (`Inferred`, `Verify first: Yes` — not diffed line-by-line). | — |
 | `safety` | 2 | 3-tier approval (`ask`/`unsafe-only`/`full-access`), per-command risk assessment (`AssessCommand`, git/fs-specific rules). `PermissionRule.Default` separates a rule the app generated from one the user wrote: an app default yields to the approval mode the user picked, a user's rule outranks it. | [model-control deep dive](docs/architecture/model-control-layer-2026-07-22.md) |
@@ -514,6 +514,7 @@ product picture in [COMPANY.md](COMPANY.md)) · §82 (the learning floor) · §4
 | §86 | One Company, Two Doors: Aetox ผู้ช่วย and Aetox โค้ด (2026-08-05) |
 | §87 | Files Travel as Addresses, and the Desk's Menu Does Not Grow (2026-08-06) |
 | §88 | A Drawing Is Confined to Its Own Box (2026-08-06) |
+| §89 | A Number Is Worked Out, Not Recalled (2026-08-07) |
 
 ---
 

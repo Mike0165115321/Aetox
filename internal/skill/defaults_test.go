@@ -11,7 +11,7 @@ func TestNewDefaultRegistryRegistersAllBuiltins(t *testing.T) {
 	registry := NewDefaultRegistry(RegistryOptions{SandboxRoot: t.TempDir()})
 
 	want := []string{
-		"help", "echo", "time", "list", "read", "github_repo_summary",
+		"help", "echo", "time", "calc", "list", "read", "github_repo_summary",
 		"git", "fs", "shell", "shell_output", "shell_kill", "write", "sheet_write", "slides_write", "doc_write", "edit", "grep", "glob", "apply_patch", "notebook_edit", "diagnostics", "symbol", "delete", "plugin_install", "image_ocr", "video_ocr", "pdf_read", "audio_transcribe",
 		"web_fetch", "web_search",
 		"github_search", "github_read_file", "github_list_files",

@@ -246,6 +246,9 @@ func toolCases(t *testing.T, root string, dispatcher *skill.Dispatcher) map[stri
 	return map[string]toolCase{
 		// --- pure local: no excuse for these to fail anywhere ---
 		"time": {args: map[string]any{}},
+		// The interpreter is compiled in, so this one has no excuse to fail on
+		// any machine — that is the whole reason it is not `python script.py`.
+		"calc": {args: map[string]any{"script": "1234 * 5678"}, check: outputContains("7006652")},
 		"list": {args: map[string]any{}, check: outputContains("notes.txt")},
 		"read": {args: map[string]any{"path": "notes.txt"}, check: outputContains("alpha")},
 		"grep": {args: map[string]any{"pattern": "alpha"}, check: outputContains("notes.txt")},

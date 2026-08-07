@@ -322,6 +322,20 @@ func AssessCommand(skillName string, args []string) Assessment {
 				Reason:    "read-only web request",
 			}
 		}
+		// calc would reach this file's fallback anyway — RiskLow, no effects,
+		// no prompt — and that is the right answer for a tool that runs in this
+		// process with nothing to reach. It is written down because the right
+		// answer arrived at by accident is indistinguishable from a name nobody
+		// recognised, which is precisely how a writing tool once skipped the
+		// approval prompt (§75).
+		if skillName == "calc" {
+			return Assessment{
+				SkillName: skillName,
+				Risk:      RiskLow,
+				Effects:   nil,
+				Reason:    "runs in-process with no access to files, the network or other programs",
+			}
+		}
 		if skillName == "list" || skillName == "read" || skillName == "grep" || skillName == "time" {
 			return Assessment{
 				SkillName: skillName,

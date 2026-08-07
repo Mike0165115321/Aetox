@@ -121,6 +121,13 @@ var toolCategories = map[string]string{
 	"help":           CategoryAgent,
 	"time":           CategoryAgent,
 	"echo":           CategoryAgent,
+	// Deliberately not `code`, though it runs a script. Categories are how a
+	// desk decides what it carries, and `code` is the developer group that two
+	// of the three desks refuse on purpose — which would have left the desk
+	// that answers "แล้วรวมเป็นเท่าไหร่" as the one desk that cannot count.
+	// Running a script is how this tool works; working out a number is what it
+	// is for, and that belongs beside time and memory.
+	"calc": CategoryAgent,
 }
 
 // CategoryOf reports what a tool is for. An unknown name — an MCP server's
