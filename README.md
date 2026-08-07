@@ -1,438 +1,320 @@
-# Aetox — Architecture > Parameters
+<p align="center">
+  <img src="docs/assets/og.png" alt="Aetox" width="100%">
+</p>
+
+<h1 align="center">Aetox</h1>
 
 <p align="center">
-  <img src="docs/assets/og.png" alt="Aetox — หัวใจไม่ใช่ความรู้ในโมเดล แต่คือ Architecture ที่ควบคุมวิธีคิด" width="100%">
+  <strong>The AI assistant that does the work on your computer.</strong>
 </p>
 
 <p align="center">
-  <a href="https://aetox-puce.vercel.app/"><strong>🌐 ดูหน้าเว็บแนะนำ Aetox</strong></a> — เห็นภาพว่ามันทำอะไรได้บ้างใน 1 นาที
-  ·
-  <a href="https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-amd64-installer.exe"><strong>⬇️ ดาวน์โหลด</strong></a>
+  <a href="https://github.com/Mike0165115321/Aetox/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/Mike0165115321/Aetox?color=2f81f7"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
+  <img alt="Tests" src="https://img.shields.io/badge/tests-1%2C438%20Go%20%2B%20365%20UI-brightgreen">
+  <img alt="Installer" src="https://img.shields.io/badge/installer-13%20MB-brightgreen">
+  <img alt="Platform" src="https://img.shields.io/badge/platform-Windows-lightgrey">
 </p>
 
-> **ChatGPT ตอบคำถามคุณได้ · Aetox ลงมือทำบนเครื่องคุณ**  
-> เปิดเว็บ กรอกฟอร์ม อ่านสลิป จัดไฟล์ แล้วส่งงานที่เสร็จแล้วให้คุณ  
-> ไม่ได้เกิดมาเพื่อเป็น framework อีกตัว — สถาปัตยกรรมคือหัวใจ ไม่ใช่โมเดล
-
-No lock-in. No subscription pressure. No boundaries.  
-Your rules, your data, your machine.
-
----
-
-## Aetox คืออะไร
-
-Aetox คือ **Personal AI Assistant ที่ลงมือทำงานจริงบนเครื่องคุณ**  
-ไม่ใช่ผู้ช่วยที่ตอบแล้วให้คุณไปทำเอง — แต่ทำให้เสร็จแล้วส่งงานกลับมา
-
-- **ลงมือทำจริง** — เปิดเว็บ คลิก กรอกฟอร์ม อ่านสลิป ถอดเสียงประชุม จัดไฟล์
-- **ข้อมูลอยู่ในเครื่อง 100%** — ประวัติแชท ไฟล์ ผลงาน ไม่มีสำเนาที่อื่น
-- **โมเดลถูกก็พอ** — สถาปัตยกรรมเติมความสามารถให้ ไม่ต้องรอโมเดลใหญ่
-- **ไม่ใช่ IDE plugin** — ไม่ผูกติดกับ IDE ใด
-- **ไม่ใช่แค่ chatbot** — คือ architecture ที่วิธีคิดสำคัญกว่าพลังดิบ
-
-และเป็นของที่โตได้:
-
-- **ไม่มีทีมใหญ่** — แต่วิสัยทัศน์ไกล  
-- **ไม่มีคนมากมาย** — แต่มีไฟจากใจผู้สร้าง  
-- **ไม่มีข้อจำกัด** — ไม่มี lock-in, ไม่มี rate limit, ไม่มี vendor ตัดฟีเจอร์  
-- **พร้อมเติบโต** — วันนี้คือผู้ช่วยส่วนตัว วันหน้า ecosystem ของตัวเอง
-
-> "หัวใจไม่ใช่ความรู้ในโมเดล — แต่คือ Architecture ที่ควบคุมวิธีคิด"
+<p align="center">
+  <a href="https://aetox-puce.vercel.app/"><strong>Website</strong></a> ·
+  <a href="https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-amd64-installer.exe"><strong>Download</strong></a> ·
+  <a href="COMPANY.md"><strong>What it is</strong></a> ·
+  <a href="docs/DECISIONS.md"><strong>Why it is that way</strong></a>
+</p>
 
 ---
 
-## ขยายศักยภาพให้โมเดล — โมเดลตาบอดก็เห็นได้ หูหนวกก็ฟังได้ มือด้วนก็ทำงานได้
+**Aetox gives any model — including a 9B running on your own graphics card — eyes, ears,
+hands and a browser.** It reads images, watches video, hears audio, opens real web pages and
+clicks through them, and hands back real `.docx` / `.xlsx` / `.pptx` files. One 35 MB Windows
+app, no runtime to install, and nothing leaves your machine.
 
-นี่คือหัวใจของ **Architecture > Parameters** แบบจับต้องได้:
-โมเดล 9B ที่รันบนเครื่องคุณ อ่านภาพไม่ได้ ดูวิดีโอไม่ได้ ฟังเสียงไม่ได้ ลงมือทำในเว็บไม่ได้ —
-แต่พอวิ่งผ่าน Aetox มันทำได้ทั้งหมด เพราะสถาปัตยกรรมเติมความสามารถให้ ไม่ใช่ตัวโมเดล
+The capability comes from the architecture, not from the model. That is the whole idea:
+**Architecture > Parameters.**
 
-| โมเดลทำไม่ได้ | Aetox เติมให้ด้วย | ผลลัพธ์ |
-|:--------------|:------------------|:--------|
-| มองไม่เห็นรูปภาพ | `image_ocr` (Tesseract ไทย+อังกฤษ) | อ่านข้อความในรูปได้ทุกโมเดล |
-| ดูวิดีโอไม่ได้ | `video_ocr` (ffmpeg มากับตัวติดตั้ง + OCR) | ได้ข้อความพร้อม timestamp `[m:ss]` จากวิดีโอ |
-| ฟังเสียงไม่ได้ | `audio_transcribe` (whisper.cpp ในเครื่อง) | ถอดเสียงพูดเป็นข้อความพร้อม `[m:ss]` ทั้งไฟล์เสียงและวิดีโอ |
-| เปิด PDF ไม่ได้ | `pdf_read` (poppler มากับตัวติดตั้ง) | แนบ PDF แล้วให้สรุปได้เลย ภาษาไทยไม่เพี้ยน |
-| ลงมือทำในเว็บไม่ได้ | `browser_open`/`read`/`click`/`type` | อ่านหน้าเว็บจริง คลิก กรอกฟอร์ม เลือก dropdown แทนได้ |
+<p align="center">
+  <img src="docs/assets/hero-app.png" alt="Aetox desktop" width="90%">
+</p>
 
-ส่วนโมเดลที่มองเห็นภาพได้อยู่แล้ว Aetox ส่งภาพให้ตรงๆ — `read` ไฟล์รูปแล้วได้รูปจริงกลับไป ไม่ใช่ข้อความที่ OCR เดามา `image_ocr` จึงเป็นทางสำรองของโมเดลที่มองไม่เห็น ไม่ใช่ทางเดียวอีกต่อไป
+## Install
 
-ลูปเต็มของโมเดลที่ไม่มีตาไม่มีหู: รูปหรือคลิป → `image_ocr` / `video_ocr` / `audio_transcribe` แปลงเป็นข้อความ → ตัดสินใจ → `browser_click/type` ลงมือทำต่อในเว็บ
-คลิปหนึ่งไฟล์ยิงทั้ง `video_ocr` และ `audio_transcribe` ได้ — ทั้งคู่คืน `[m:ss]` ฟอร์แมตเดียวกัน อ่านต่อกันเป็นสคริปต์เดียว
+**Installer** — [aetox-amd64-installer.exe](https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-amd64-installer.exe)
+· adds a Start Menu entry and sets up Tesseract, poppler and ffmpeg for you.
 
-> โมเดลไหนก็ได้ ยิ่งถูกยิ่งดี — ความสามารถอยู่ที่สถาปัตยกรรม ไม่ใช่ราคาโมเดล
+**Scoop**
 
----
+```powershell
+scoop install https://raw.githubusercontent.com/Mike0165115321/Aetox/main/scoop/aetox.json
+```
 
-## ⚡ เบา เร็ว เสถียร — วัดเทียบของจริง ไม่ใช่คำโฆษณา
+**Portable** — [the zip](https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-windows-amd64-portable.zip),
+unpack and run `aetox.exe`.
 
-**Aetox ไม่ใช่แค่กล่องแชท** — ข้างในมี editor ตัวเดียวกับที่ VS Code ใช้ (Monaco), เทอร์มินัล, ทรีไฟล์, เบราว์เซอร์ที่ agent สั่งงานได้ และตัวตรวจ error ด้วย LSP นั่นคือของที่คนเปิด IDE ไปใช้จริงๆ เกือบทั้งหมด — เราเลยกล้าวางเทียบทั้งกับเครื่องมือ AI และกับแอปที่มีหน้าจอครบแบบเดียวกัน
+**No API key needed to start.** A built-in `aetox` provider ships a mock model that exercises
+every feature — real tool calls, long reasoning, image galleries — so you can try it before
+signing up for anything.
 
-**พื้นที่ที่กินในเครื่องหลังติดตั้ง** — น้อยกว่าดีกว่า วัดบนเครื่องเดียวกัน (Windows 11)
+> The installer is not code-signed yet. The first run shows a SmartScreen warning about an
+> "unknown publisher" — More info → Run anyway.
+
+<details>
+<summary>Build it yourself</summary>
+
+```powershell
+cd desktop
+wails build          # → desktop/build/bin/aetox.exe
+wails build -nsis    # with the installer
+```
+
+</details>
+
+## Two doors, one app
+
+Most tools pick a side: a chat assistant for everyone, or a coding tool for developers.
+Aetox is both, and they do not bleed into each other. One switch on the logo moves between
+them; the app remembers which one you were in.
+
+| | 🏠 **Aetox Assistant** | 🔧 **Aetox Code** |
+|:---|:---|:---|
+| **Who it is for** | Anyone — including someone who has never opened a folder | Developers |
+| **Where it works** | Your whole machine (credential stores always refused) | The project folder you opened, plus folders you add |
+| **What it holds** | Files, shell, web, browser, OCR, speech, PDF, Office output, a team of agents | Files, shell, git, language-server diagnostics, symbol lookup, GitHub, browser |
+| **Rooms** | Assistant · Projects · Agent team · Output gallery · Automation *(coming)* | Code, with the Workbench: editor, terminal, browser, file tree |
+| **What it will not do** | Developer tooling — it says so and points you next door | Slides and documents — that is the other door's work |
+
+**One engine, one store.** Two doors are two shells over the same binary, the same data
+directory, the same settings, memory and permissions. Switching doors is not switching apps.
+
+## What it does that other agents do not
+
+### It gives a small model senses it does not have
+
+A 9B model on your own machine cannot see, hear, or act on a page. Through Aetox it can —
+and **none of this needs a vision model.**
+
+| The model cannot… | Aetox supplies | Result |
+|:---|:---|:---|
+| See images | `image_ocr` (Tesseract, Thai + English) | Any model reads the text in a picture |
+| Watch video | `video_ocr` (ffmpeg + OCR) | Text with `[m:ss]` timestamps |
+| Hear audio | `audio_transcribe` (whisper.cpp, offline) | Speech to text from audio *and* video |
+| Open a PDF | `pdf_read` (poppler) | Attach it and ask; Thai comes out intact |
+| Act on the web | `browser_open` / `read` / `click` / `type` | Reads the real page and clicks by reference |
+
+One clip can go through `video_ocr` and `audio_transcribe` together — both emit the same
+`[m:ss]` format, so the two read as a single transcript. A model that *can* see gets the
+image itself; OCR is the fallback for models without eyes, not the only road in.
+
+### It hands back files, not descriptions of files
+
+`sheet_write` → `.xlsx`, `slides_write` → `.pptx`, `doc_write` → `.docx`. Real files Excel,
+PowerPoint and Word open — numbers you can `SUM`, dates that sort, Thai vowels that sit
+where they belong. Built by hand from `archive/zip` + `encoding/xml`, **with no added
+dependency at all.** Click an `.xlsx` in the app and it renders as a table.
+
+### A number is worked out, not remembered
+
+A wrong sum is the only mistake that never announces itself — it arrives in the same
+confident sentence as a right one. `calc` runs a short JavaScript program in an interpreter
+compiled into the app, and **you see the script beside the result**, so a wrong answer is a
+line of arithmetic you can point at rather than a number you had to trust.
+
+### A team you hire by dropping in a file
+
+The assistant delegates to agents that work in their own memory space without blocking your
+turn. Each one is a folder: `agents/<name>/` holds what it is and what it has learned.
+Hiring one is adding a file — no release, no plugin API. Ask for a deck and the `deck` agent
+makes it; the main assistant never carries those tools, so you do not pay for them on every
+question.
+
+### It knows what it is made of
+
+A bundled skill tells the assistant where its own data, skills, agents and settings live —
+so it stops guessing about its own system, and stops searching the web for something that is
+on your disk. It costs nothing until something opens it.
+
+## Small, fast, steady
+
+**Disk after install** — same machine, Windows 11. Smaller is better.
 
 ```
 Aetox         █                                           35 MB
 Copilot CLI   █████                                      137 MB
 Claude Code   ████████                                   236 MB
 Zed           ██████████████                             419 MB
-Qwen          ████████████████                           457 MB
 OpenCode      █████████████████                          498 MB
-Comet         █████████████████                          501 MB
 Codex         ████████████████████████                   698 MB
 Cursor        ██████████████████████████████             874 MB
-Windsurf      ████████████████████████████████           940 MB
-Antigravity   ███████████████████████████████████      1,030 MB
 VS Code       ████████████████████████████████████████ 1,171 MB
 ```
 
-**เทียบกับเครื่องมือ AI ที่ทำงานเดียวกัน** — Claude Code, Codex CLI, OpenCode เป็น AI ช่วยเขียนโค้ดเหมือนกัน ต่างกันตรงที่มันเป็นแค่หน้าจอพิมพ์คำสั่ง ไม่มี UI ให้กดสักปุ่ม Aetox มีหน้าจอครบแล้วยัง **เล็กกว่า Claude Code 7 เท่า**
+Aetox carries a full UI — Monaco editor, terminal, file tree, agent-driven browser, LSP
+diagnostics — and is still **7× smaller than Claude Code** and **25× smaller than Cursor**.
+Every terminal-only tool in that list is larger than all of Aetox.
 
-**เทียบกับแอปที่มีหน้าจอครบเหมือนกัน** — Aetox เล็กกว่า Cursor **26 เท่า** Windsurf **28 เท่า** Antigravity **31 เท่า** เล็กกว่า VS Code **35 เท่า** ทั้งที่ฝัง editor ตัวเดียวกัน มีเทอร์มินัล มีเบราว์เซอร์ในตัวเหมือนกัน
+> If the reason you still use a CLI is "desktop apps are heavy", that reason has expired.
+> Aetox has a CLI in the source too, and it is deliberately **not shipped** — the desktop
+> does more in less space.
 
-> **ขอบเขตที่เราไม่เคลม:** Aetox ไม่ได้มาแทน IDE ของคุณ — ไม่มี debugger, ไม่มีร้านส่วนขยายเป็นหมื่นตัว,
-> LSP รองรับ Go / TypeScript / Svelte / Python / Rust เท่านั้น สิ่งที่ตัวเลขนี้บอกคือ **เฉพาะของที่ทับกัน เราทำได้ในขนาดเท่านี้**
-> ไม่ใช่ว่าเราทำได้ทุกอย่างที่ IDE ทำ
+**In use** — measured against apps with a UI (a prompt has no window to time). Zed is native
+Rust with a reputation for being light, which makes it the harder ruler.
 
-### แล้วทำไมยังต้องกลับไปพิมพ์ในเทอร์มินัลอีก?
-
-ปกติเหตุผลที่คนเลือก CLI คือ *"มันเบากว่า"* — ลองดูกราฟข้างบนอีกที **มันไม่จริงแล้ว**
-
-CLI ทุกตัวในลิสต์นั้นใหญ่กว่า Aetox ที่มีหน้าจอครบทั้งหมด: Copilot CLI ใหญ่กว่า **4 เท่า** · Claude Code **7 เท่า** · OpenCode **15 เท่า** · Codex **21 เท่า** — ทั้งที่ทั้งหมดนั้นให้คุณได้แค่ช่องพิมพ์คำสั่ง
-
-ตอนเปิดใช้งานจริง Aetox กินแรมราว **40 MB** — น้อยกว่าแท็บ Chrome หนึ่งแท็บ ในขณะที่คุณได้ทั้ง editor (Monaco ตัวเดียวกับ VS Code), เทอร์มินัล, ทรีไฟล์, เบราว์เซอร์ที่ agent สั่งได้, และ LSP ตรวจ error
-
-แปลว่า **การเลือก CLI ไม่ได้ประหยัดอะไรอีกต่อไป** คุณแค่จ่ายแพงกว่าเพื่อจะได้ของน้อยกว่า 😄
-
-| สิ่งที่คุณเสียไปเมื่อกลับไปใช้ CLI | Aetox Desktop ให้อะไรแทน |
-|:---|:---|
-| ไฟล์ที่ agent ทำเสร็จ ต้องไปหาเองในโฟลเดอร์ | การ์ดไฟล์ขึ้นใต้คำตอบเลย กดปุ่มเดียวเปิด — ตาราง Excel ดูในแอปได้ทันที |
-| agent เปิดเว็บไม่ได้ ต้องก๊อป URL ไปเปิดเอง | Workbench มีเบราว์เซอร์จริงที่ agent คลิก/กรอกฟอร์มเองได้ |
-| ตอบคำถาม agent ด้วยการพิมพ์ y/n | กดปุ่มเลือก A/B/C/D ที่ agent สร้างให้ |
-| ประวัติงานหายไปกับ scrollback ที่ถูกล้าง | เก็บใน SQLite ค้นย้อนหลังได้ทั้งไทย/อังกฤษ · agent ค้นเองได้ด้วย |
-| อยากดูว่าโมเดลคิดอะไร ต้องเปิด verbose แล้วอ่านเอง | กดดูได้ทุกคำตอบว่าคิดกี่วินาที คิดอะไร |
-
-> เราไม่ได้บอกว่า CLI ไม่ดี — แต่ถ้าเหตุผลเดียวที่ยังใช้คือ "กลัวแอปหนัก" เหตุผลนั้นหมดอายุไปแล้วครับ
-> (Aetox เองก็มี CLI อยู่ในซอร์ส แต่**ยังไม่ปล่อยเป็นสินค้า** — เพราะเดสก์ท็อปทำได้ครบกว่าในขนาดที่เล็กกว่า CLI ตัวอื่นอยู่แล้ว)
-
-**เวลาเปิดและ RAM** — เครื่องมือแบบพิมพ์คำสั่งไม่มีหน้าจอให้จับเวลาเปิด เทียบส่วนนี้ได้เฉพาะกับแอปที่มี UI ด้วยกัน (Zed เขียนด้วย Rust เป็นแอปเนทีฟที่ขึ้นชื่อเรื่องเบา เป็นไม้บรรทัดที่โหดกว่าการไปเทียบกับแอปที่อืดอยู่แล้ว)
-
-| วัดอะไร | Aetox | Zed | Cursor |
+| | Aetox | Zed | Cursor |
 |:---|:---|:---|:---|
-| **เปิดครั้งแรก** (เครื่องยังไม่แคช) | **1.77 วิ** | 2.12 วิ | — |
-| **เปิดครั้งถัดๆ ไป** | **0.53 วิ** | 0.53 วิ | — |
-| **RAM ที่จองไว้จริง** (private) | **252 MB** | 471 MB | 1,750 MB |
-| **จำนวน process ที่เปิดค้างไว้** | **7** | 4 | 10 |
-| **พื้นที่ในเครื่อง** | **35 MB** | 419 MB | 874 MB |
+| First launch (cold) | **1.77 s** | 2.12 s | — |
+| Every launch after | **0.53 s** | 0.53 s | — |
+| RAM committed | **252 MB** | 471 MB | 1,750 MB |
+| Processes | **7** | 4 | 10 |
+| Disk | **35 MB** | 419 MB | 874 MB |
 
-เปิดเร็วเสมอ Zed ที่ราวครึ่งวินาที ใช้ RAM ราวครึ่งเดียวของ Zed และราว 1 ใน 7 ของ Cursor
+**Per message** — assembling the whole tool list and serialising it costs **0.12 ms**, about
+one eight-thousandth of a second. The time you wait is the model thinking, not the app
+getting ready.
 
-**ความเสถียร** — `go test ./...` ผ่าน **1075/1075** ครอบคลุม 34 package, 0 fail · ฝั่งหน้าจออีก **304/304**
+**On your API bill** — the head of every request is byte-for-byte identical, so providers
+that cache automatically recognise it. Measured over six consecutive messages on DeepSeek:
+**97% of the input tokens came from cache** (17,664 of 18,066), and it improves as the
+conversation grows.
 
-> **เงื่อนไขของตัวเลข Cursor:** วัดตอนที่มันเปิดค้างใช้งานอยู่จริงราว 6 นาที พร้อมส่วนเสริมที่ผู้ใช้เครื่องนี้ติดตั้งไว้
-> — เป็นสภาพใช้งานจริง แต่ไม่ใช่สภาพเปล่าเท่ากับที่วัด Aetox กับ Zed จึงไม่ได้จับเวลาเปิดให้ เพราะต้องปิดโปรแกรมที่เจ้าของเครื่องกำลังใช้อยู่
+> This is easy to lose: shift the tool order by one and the whole cache breaks on every
+> request — no error, no log line, just a quietly larger bill.
 >
-> **VS Code:** กำลังรันงานอยู่บนเครื่องที่วัด ปิดเพื่อวัดไม่ได้ จึงมีแค่ตัวเลขขนาด
+> Anthropic needs the request to declare its own cache points, which Aetox does not send
+> yet, so Claude misses this discount today. 🔜 In progress.
 
-### ⚡ เร็วตรงที่คนอื่นมองข้าม — ต้นทุนต่อการคุย 1 ครั้ง
+**Local models keep up** — a 9B on a consumer GPU with the full tool set attached
+(~3,000 tokens per request): LM Studio starts answering in **1.42 s**, Ollama in **1.75 s**,
+both with live streaming, visible reasoning, real tool calls and correct token accounting.
 
-เบาตอนติดตั้งเป็นเรื่องหนึ่ง เบาตอน**ใช้งานจริง**เป็นอีกเรื่อง ทุกครั้งที่คุณกดส่ง แอปต้องประกอบคำขอก่อนถึงจะยิงไปหาโมเดล ตรงนั้นแหละที่แอบกินเวลาและเงินโดยไม่มีใครเห็น
+**Stability** — `go test ./...` passes **1,438 tests across 34 packages, 0 failures**. The
+frontend suite adds **365** more.
 
-**เวลาที่ตัวแอปกินเอง** — งานหนักสุดที่ทำก่อนยิงคำขอ คือประกอบรายการเครื่องมือทั้งชุดแล้วแปลงเป็น JSON
+<details>
+<summary>Why it stays this small</summary>
 
-```
-Aetox  0.12 มิลลิวินาที  ต่อการคุย 1 ครั้ง (ยื่น tools แกนกลางครบชุด)
-```
-
-เท่ากับ **1 ใน 8,000 ของวินาที** — เวลาที่คุณรอคือเวลาที่โมเดลคิด ไม่ใช่เวลาที่แอปเตรียมของ
-
-> วัดเฉพาะขั้นตอนนี้ ไม่ได้รวมทั้งเส้นทาง — 300 รอบ ทำซ้ำ 3 ครั้ง ได้ค่ากลาง 119 ไมโครวินาที
-
-**ค่า API ที่ประหยัดได้จริง** — โมเดลฝั่ง cloud คิดเงินโทเคนที่ "จำได้แล้ว" ถูกกว่าโทเคนใหม่หลายเท่า แต่มันจะจำได้ก็ต่อเมื่อคำขอที่ส่งไปเหมือนเดิมเป๊ะทุก byte จากต้น Aetox ออกแบบให้ส่วนหัวของคำขอนิ่งสนิททุกครั้ง
-
-วัดจากบทสนทนาจริง 6 คำถามต่อเนื่อง ยื่น tools แกนกลางครบทุกครั้ง (DeepSeek):
-
-```
-คำถามที่ 1   input 2,963 โทเคน   จำได้ 2,944   99%
-คำถามที่ 2   input 2,983 โทเคน   จำได้ 2,944   98%
-คำถามที่ 3   input 3,001 โทเคน   จำได้ 2,944   98%
-คำถามที่ 4   input 3,019 โทเคน   จำได้ 2,944   97%
-คำถามที่ 5   input 3,038 โทเคน   จำได้ 2,944   96%
-คำถามที่ 6   input 3,062 โทเคน   จำได้ 2,944   96%
-─────────────────────────────────────────────────
-รวม 17,664 จาก 18,066 โทเคน มาจากแคช = 97%
-```
-
-**97% ของ input ที่คุณจ่าย เป็นราคาถูก** — ยิ่งคุยยาว ยิ่งได้เปรียบ เพราะส่วนที่ซ้ำมีแต่จะโตขึ้น
-
-> จุดนี้พลาดง่ายกว่าที่คิด: ถ้าลำดับ tools ที่ส่งไปสลับไปมาแม้แต่นิดเดียว แคชจะพังทั้งก้อนทุกครั้ง โดยไม่มี error ไม่มี log ให้เห็น — เห็นแค่บิลที่แพงขึ้นเงียบๆ
->
-> **ตัวเลขนี้ใช้ได้กับเจ้าที่แคชให้อัตโนมัติ** (DeepSeek ที่วัด, OpenAI) ส่วน Anthropic ต้องประกาศจุดแคชในคำขอเอง ซึ่ง Aetox ยังไม่ได้ส่ง — ใช้ Claude ตอนนี้จึงยังไม่ได้ส่วนลดนี้ 🔜 กำลังทำ
-
-**รันโมเดลในเครื่องตัวเองก็ยังไหว** — โมเดล 9B บนการ์ดจอบ้านๆ ยื่น tools แกนกลางครบชุด (~3,000 โทเคนต่อคำขอ) วัดแบบสลับกันคนละรอบ เอาค่ากลาง
-
-| | เริ่มพ่นคำตอบ | จบทั้งคำตอบ |
+| | Aetox | A typical Electron app |
 |:---|:---|:---|
-| **Ollama** (ornith:9b) | 1.75 วิ | 7.14 วิ |
-| **LM Studio** (ornith-1.0-9b) | 1.42 วิ | 2.72 วิ |
+| Stack | Go + Wails + Svelte 5 | Electron + Node.js |
+| The window | The WebView2 Windows already has, shared between apps | Its own copy of Chromium |
+| Runtime to install | None — one file | A bundled Node.js |
+| Type checking | Go + TypeScript, at compile time | Depends on the project |
+| Runtime dependencies | No `node_modules` to disagree on update | More dependencies, more breakage |
 
-ทั้งคู่ได้ครบ — สตรีมคำตอบสด, เห็นความคิดของโมเดลสดๆ, เรียก tools เขียนไฟล์จริง, นับโทเคนถูกต้อง
+Straight about RAM: WebView2 *is* Chromium, so 252 MB is not a win over Electron on memory.
+The real difference is that it is already on the machine and shared, so you are not handed a
+second copy to keep.
 
-> ไม่ได้เอามาชี้ว่าเจ้าไหนดีกว่า — คนละไฟล์โมเดล คนละการตั้งค่า วัดคนละครั้ง ที่บอกได้คือ **ยัด tools ครบชุดเข้าไปแล้วโมเดลในเครื่องยังเริ่มตอบใน 1.5 วินาที** ไม่ได้อืดจนใช้ไม่ได้
->
-> รอบแรกสุดของ Ollama จับได้ 41 วินาที เพราะมันต้องยกโมเดลขึ้น GPU ก่อน ตัวเลขข้างบนเป็นค่าตอนโมเดลอยู่ในเครื่องแล้ว ซึ่งคือสภาพที่คุณเจอตลอดการใช้งานจริง
+**Measurement conditions.** Cursor was measured after about six minutes of real use with the
+extensions this machine's owner had installed — a real working state, not the clean one
+Aetox and Zed were measured in, which is why its launch time is absent. VS Code was running
+a job that could not be interrupted, so only its size is listed.
 
-**ทำไมถึงเบาและเสถียรได้:**
+</details>
 
-| เรื่อง | Aetox | แอป desktop สาย Electron ทั่วไป |
-|:---|:---|:---|
-| **Stack** | Go + Wails + Svelte 5 (TypeScript) | Electron + Node.js |
-| **หน้าจอแอป** | ใช้ WebView2 ที่ Windows มีอยู่แล้ว ใช้ร่วมกับแอปอื่นได้ | แบก Chromium มาเป็นสำเนาของตัวเอง |
-| **Runtime ที่ต้องลงเพิ่ม** | ไม่มี — ไฟล์เดียวรันได้ทันที | ต้องฝัง Node.js runtime มาในแอป |
-| **การตรวจชนิดข้อมูล** | Go + TypeScript ตรวจตั้งแต่ตอนคอมไพล์ (`svelte-check` คุมฝั่ง UI) | ขึ้นกับโปรเจกต์ |
-| **Dependency ตอนรัน** | ไม่มี `node_modules` ให้เวอร์ชันตีกันตอนอัปเดต | ยิ่ง dependency เยอะ ยิ่งเสี่ยง break ตอนอัปเดต |
+## Your data
 
-> ตรงไปตรงมาเรื่อง RAM: WebView2 ก็คือ Chromium เหมือนกัน ตัวเลข 252 MB จึงไม่ใช่การเอาชนะ Electron ที่หน่วยความจำ —
-> ที่ต่างจริงคือมันเป็นของที่ Windows มีอยู่แล้วและใช้ร่วมกับแอปอื่นได้ เราจึงไม่ต้องแถมสำเนาของตัวเองมาให้คุณเก็บไว้อีกชุด
+Aetox sends nothing off your machine except what you ask it to. There is no server of ours
+and no analytics in the middle.
 
-> เบาไม่ได้แปลว่าตัดฟีเจอร์ทิ้ง — 32 tools ในตัว, 18 providers, sub-agent delegation ครบ ในตัวติดตั้ง 13 MB
-
----
-
-## 🔒 ความปลอดภัยของข้อมูลคุณ
-
-Aetox ไม่ส่งข้อมูลอะไรออกจากเครื่องคุณนอกจากที่คุณสั่งให้ทำ
-
-| เรื่อง | สถานะตอนนี้ |
+| | Where it stands |
 |:---|:---|
-| **ประวัติแชท / ไฟล์โปรเจกต์** | อยู่ในเครื่องคุณล้วนๆ (SQLite ท้องถิ่น) ไม่มี server ของเราคั่นกลาง |
-| **อยากตัดขาดจาก cloud ทั้งหมด** | รันโมเดลผ่าน **LM Studio / Ollama** บนเครื่องคุณเองได้ — prompt ไม่ออกจากเครื่องแม้แต่ byte เดียว |
-| **คำสั่งที่ agent รัน** | รันเฉพาะในโฟลเดอร์โปรเจกต์ที่คุณเปิด ออกนอกโฟลเดอร์ไม่ได้ และมีบันทึกไว้ทุกคำสั่ง |
-| **API key** | ตอนนี้เก็บเป็นไฟล์ plaintext ในเครื่อง ยังไม่เข้ารหัส — 🔜 กำลังย้ายเข้า Windows DPAPI ก่อน แล้วขยายไป macOS Keychain / Linux secret service ตามแพลตฟอร์มที่รองรับเพิ่ม |
+| **Chat history, files, output** | On your disk, in local SQLite |
+| **Cutting the cloud off entirely** | Run the model through LM Studio or Ollama — not one byte of the prompt leaves |
+| **What the agent may touch** | The project folder plus folders you added; or, with no project focused, the machine minus the credential stores below. Every shell command is logged |
+| **Never reachable, in any mode** | `.ssh` `.aws` `.gnupg` `.azure` `.kube` `.netrc` `.git-credentials`, browser profiles, and Aetox's own key files — refused by every file tool whatever folders you added |
+| **API keys** | Encrypted at rest against your Windows account (DPAPI), in their own file apart from settings, and stripped from logs, the audit trail and tool history automatically |
 
-ถ้าใช้ cloud provider (OpenAI, Anthropic ฯลฯ) ข้อมูลที่ส่งออกคือสิ่งที่ provider นั้นเห็นตามปกติของ API เขา — Aetox เองไม่มี server หรือ analytics คั่นกลางเพื่อเก็บข้อมูลคุณต่อ
+Using a cloud provider means that provider sees what its API normally sees — nothing more,
+and nothing routed through us.
 
----
+## Tools and providers
 
-## ปรัชญา
+**48 tools reach the model**, grouped by what they are for:
 
-| หลักการ | ความหมาย |
-|:--------|:---------|
-| **Architecture > Parameters** | สถาปัตยกรรมที่ดีเอาชนะ parameter ล้านล้านได้ |
-| **Freedom > Convenience** | ไม่มี lock-in คุ้มค่ากว่าความสะดวกที่ผูกมัด |
-| **You Own It** | คุณเป็นเจ้าของระบบ — ข้อมูล, โมเดล, การตั้งค่า ทั้งหมดเป็นของคุณ |
-| **Direction > Execution** | ทิศทางสำคัญกว่าพลังดิบ — รู้ว่าต้องไปไหนก่อนลงมือ |
-| **Pattern > Ad-hoc** | สร้าง pattern ไม่ใช่สร้างเฉพาะกิจ — ทำครั้งเดียว, automate ถาวร |
-| **Simplicity > Complexity** | แก้ปัญหาด้วยวิธีที่ง่ายที่สุด ไม่ใช่เพิ่ม layer โดยไม่จำเป็น |
+| Group | Tools |
+|:---|:---|
+| **Files** | `read` `write` `edit` `apply_patch` `notebook_edit` `delete` `list` `glob` `grep` |
+| **Code** | `diagnostics` `symbol` `shell` `shell_output` `shell_kill` `git` |
+| **Office output** | `sheet_write` `slides_write` `doc_write` |
+| **Senses** | `image_ocr` `video_ocr` `pdf_read` `audio_transcribe` |
+| **Web** | `web_fetch` `web_search` `browser_open` `browser_read` `browser_click` `browser_type` |
+| **GitHub** | `github_repo_summary` `github_search` `github_read_file` `github_list_files` `plugin_install` |
+| **Thinking** | `calc` `memory` `session_search` `todo_write` `ask_user` `suggest_task` `time` |
+| **Delegation** | `task` `task_result` `task_answer` `desk_list` `desk_open` `desk_terminal` |
+| **Skills** | `skills_list` `skill_view` |
 
----
+A skill document is not a tool: install as many as you like and the tool list stays the same
+size — the agent opens one only when it needs it. MCP servers add their own, and you choose
+which desks and which agents see each server.
 
-## สถานะปัจจุบัน — v0.9.2
+**18 providers** — OpenAI · Anthropic · DeepSeek · Gemini · Groq · Mistral · Together ·
+Perplexity · Cohere · OpenRouter · Codex · Z.ai · Qwen · Kimi · MiniMax · LM Studio ·
+Ollama · and the built-in `aetox`. Sign in where sign-in exists, or bring an API key.
+Local models get everything a cloud one does: they pick up the models you already downloaded,
+stream the answer and the reasoning, really call tools, and count tokens into the same stats.
 
-Aetox ยังอยู่ในช่วงหล่อหลอม — แกนกลางพร้อมแล้ว ชั้นถัดไปกำลังถูกสร้าง
+## Status — v0.9.2
 
-### ✅ พร้อมใช้ตอนนี้
+The core is in place and the next layer is going up. [Release notes](docs/release-notes/v0.9.2.md)
+· [architecture](ARCHITECTURE.md) · [every decision and why](docs/DECISIONS.md).
 
-| ความสามารถ | รายละเอียด |
-|:-----------|:-----------|
-| **13 Providers** | OpenAI, Anthropic, DeepSeek, Google Gemini, Groq, Mistral, Together, Perplexity, Cohere, OpenRouter, Z.ai, LM Studio, Ollama |
-| **Tool Calling** | model-driven tool loop — agent เลือกใช้ tools เอง |
-| **ส่งงานกลับเป็นไฟล์ Office จริง** | สั่งได้จากแชท แล้ว**ตัวแทน**เป็นคนทำ (`doc` / `sheet` / `deck`) — ผู้ช่วยหลักไม่แบกเครื่องมือพวกนี้ จึงไม่จ่ายค่ามันในทุกคำถาม · `sheet_write` → `.xlsx` · `slides_write` → `.pptx` · `doc_write` → `.docx` — ไฟล์ที่ Excel / PowerPoint / Word เปิดได้จริง ตัวเลขลาก `SUM` ได้ วันที่เรียงได้ ภาษาไทยสระไม่ลอย · ประกอบเองล้วนด้วย `archive/zip` + `encoding/xml` **ไม่มี dependency เพิ่มแม้แต่ตัวเดียว** · คลิกไฟล์ `.xlsx` แล้วดูเป็นตารางในแอปได้เลย ไม่ต้องเปิดโปรแกรมอื่น |
-| **Tools ที่โมเดลเรียกได้** | 33 ตัวในเครื่องยนต์ (read, write, sheet_write, slides_write, doc_write, edit, shell, git, grep, glob, symbol, notebook_edit, calc, image_ocr, video_ocr, pdf_read, audio_transcribe, skills_list, skill_view …) + browser_* + session_search + suggest_task + sub-agent + ที่ต่อจาก MCP |
-| **รันโค้ดที่เพิ่งเขียนเองได้** | agent เรียก `shell` และ `git` เองได้ — แก้โค้ดเสร็จ รันเทสต์ อ่านผล แล้วแก้ต่อในเทิร์นเดียว · คำสั่งที่ไม่จบเอง (dev server, watch build) สั่งให้รันเบื้องหลังแล้วตามอ่าน log ทีหลังได้ |
-| **Safety 3 ระดับ** | ถามก่อน → คำสั่งเสี่ยง → รันเต็มที่ |
-| **Multi-provider** | ใช้ providers ต่างกันใน session เดียวกัน |
-| **Model Switching** | เปลี่ยน provider/model ได้ทันที โดยไม่เสีย context |
-| **Streaming** | แสดงผลแบบ real-time สำหรับ conversation |
-| **Auto-save Preference** | ค่า provider, model, API key, approval mode จำอัตโนมัติ |
-| **Desktop App** | Wails + Svelte 5 — Sidebar (file tree + chat history), Chat, Workbench (tabs: Terminal, Files, Browser, File Editor, Sheet Preview), TopBar |
-| **Persistent Sessions** | ประวัติแชททุกโปรเจกต์เก็บใน SQLite ท้องถิ่น (ไม่มีข้อมูลออกจากเครื่อง) — ค้นหาแบบ full-text ได้ทั้งไทย/อังกฤษ |
-| **Agent ค้นความจำตัวเองได้** | พูดว่า "เหมือนคราวที่แล้ว" แล้ว agent ไปค้นเองว่าคราวที่แล้วคุยอะไรและ **ทำอะไรไว้** (`session_search`) — ค้นทั้งบทสนทนาและงานที่ tool เคยทำจริง ไทยก็ค้นได้ · ไม่เรียกโมเดลเพิ่ม จึงไม่มีค่าใช้จ่ายต่อการค้นหนึ่งครั้ง |
-| **Agent-controlled Browser** | Agent เปิด/อ่าน/คลิก/พิมพ์ในเว็บจริงบนแท็บ Workbench ได้เอง (`browser_open`/`browser_read`/`browser_click`/`browser_type`) — ไม่ติด X-Frame-Options เหมือน iframe, คลิกด้วย ref ที่ `browser_read` แปะให้ (แบบเดียวกับ Playwright MCP/browser-use) |
-| **Interactive Agent** | เมื่อ agent ติดสินใจไม่ได้ มันหยุดถามคุณเป็นตัวเลือก A/B/C/D ให้กดเลือก · งานใหญ่ agent ทำ checklist ให้เห็นความคืบหน้าสดๆ · ความคิดของโมเดลถูกเก็บไว้ทุกคำตอบ กดย้อนดูได้ว่า "คิดเป็นเวลากี่วินาที คิดอะไร" · ปุ่ม Stop หยุดงานกลางคันได้ตลอด |
-| **Sub-agent Delegation** | agent หลักมอบงานย่อยให้ agent ลูกไปทำในพื้นที่ความจำแยก โดยไม่บล็อกเทิร์นหลัก — ทำขนานได้พร้อมกันสูงสุด 4 ตัว ถ้าลูกติดตัดสินใจไม่ได้ก็หยุดถามกลับมาที่ agent หลักเอง |
-| **ลองก่อนมีคีย์** | provider `aetox` ในตัวมีโมเดลจำลองให้ลองทุกฟีเจอร์โดยไม่ต้องสมัครอะไรเลย — โมเดลที่เรียก tools จริง, โมเดลคิดยาว, แกลเลอรีรูป, markdown ครบชุด |
-| **จ่ายน้อยลงต่อบทสนทนา** | คุยกับ Claude ยาว ๆ ราคาลดลงเองตั้งแต่ข้อความที่สอง เพราะส่วนที่ไม่เปลี่ยนถูก cache ไว้ฝั่งผู้ให้บริการ (ดูตัวเลขจริงได้ในหน้า usage) · ติดตั้ง skill ไว้กี่ตัวก็ได้โดยที่แต่ละคำถามไม่แพงขึ้น — agent เปิดอ่านเฉพาะตัวที่จะใช้ · งานซ้ำ ๆ หลายร้อยไฟล์ agent เขียนสคริปต์รวบเดียวจบแทนการสั่งทีละไฟล์ |
+**Working today** — everything above, plus: multi-provider in one session, model switching
+without losing context, live streaming, three approval levels, full-text searchable history
+in Thai and English, an agent that can search its own past work, undo for files a turn
+changed, projects that carry context files into every chat inside them, and an update check
+that matches how you installed it.
 
-| **หนึ่งตัวแทน = หนึ่งโฟลเดอร์** | นิยาม ความจำ และ (เร็วๆ นี้) เครื่องมือของตัวแทนแต่ละคนอยู่ที่เดียวกัน — `agents/<ชื่อ>/` · จ้างคือวางไฟล์ ลบคือลบโฟลเดอร์ · คืนค่าตัวแทนที่ฝังมาแล้วความจำที่มันสะสมไว้ไม่หาย เพราะความจำเป็นของชื่อ ไม่ใช่ของ brief |
-| **MCP เลือกได้ว่าใครเห็น** | ตั้ง server ครั้งเดียว แล้วติ๊กว่าจะให้โผล่ที่โต๊ะไหน ตัวแทนคนไหน — server ที่ลงให้ตัวแทนวิดีโอจะไม่ไปกินที่ในบทสนทนาปกติ · เขียน `${env:KEY}` แทนการวาง API key ลงไฟล์ตั้งค่าได้ |
-| **ความลับแยกจากค่าตั้งค่า** | API key และ OAuth token อยู่ไฟล์ของตัวเอง เข้ารหัสกับบัญชี Windows (DPAPI) · ไฟล์ตั้งค่ายังเปิดอ่านและยกไปถามใครก็ได้โดยไม่ติดความลับไปด้วย · key ถูกลบออกจาก log, audit log และประวัติการใช้ tool อัตโนมัติ |
-| **รู้ตัวว่ามีเวอร์ชันใหม่** | Settings → เกี่ยวกับ Aetox บอกเวอร์ชันที่ติดตั้งและวิธีที่ติดตั้งมา · กดตรวจแล้วมันตอบให้ตรงกับช่องนั้น — ลงผ่าน Scoop ก็บอกคำสั่ง `scoop update aetox` ไม่ใช่ชวนโหลด zip มาแตกทับ · ไม่ยิงเน็ตจนกว่าจะกด และปิดถาวรได้ด้วย `AETOX_DISABLE_UPDATE_CHECK` |
+**Next** — agents in parallel; then a team with defined roles handing work to each other;
+then automation, where you describe a repeating job and Aetox writes and schedules it.
 
-### 🚧 เส้นทางถัดไป — จาก Agent เดี่ยว สู่ทีม Agent
+The foundation is already laid for that: every agent is self-contained with its own model
+and memory, all tools share one interface, and every permission question goes through a
+single gate — so adding a team is building on top, not tearing down.
 
-Aetox วันนี้มอบงานให้ sub-agent ลูกได้แล้ว เป้าหมายถัดไปคือให้ทีม agent ทำงานพร้อมกันหลายตัว:
+**Further out** — a plugin ecosystem, a knowledge base over your notes and code, and
+ensemble reasoning where several models argue toward the best answer.
 
-| ขั้น | คืออะไร | สถานะ |
-|:---|:---|:---|
-| **1. ทีม Agent ขนาน** | agent ลูกหลายตัวทำงานพร้อมกัน เช่น ค้นข้อมูล 5 มุมพร้อมกัน หรือ review โค้ดหลายแง่มุมในคราวเดียว — แต่ละตัวใช้โมเดลคนละค่ายได้ | ถัดจาก sub-agent (พร้อมใช้แล้ว) |
-| **2. Multi-Agent Orchestration** | ทีมที่มีบทบาทชัดเจน (วางแผน / เขียนโค้ด / ตรวจ) ส่งงานต่อกันเอง รวมถึงให้หลายโมเดลถกเถียงกันเพื่อหาคำตอบที่ดีที่สุด | วิสัยทัศน์ระยะยาว |
-| **3. Automation Engine** | บอกเป็นภาษาไทยว่าอยากให้ทำอะไรซ้ำๆ เมื่อไหร่ → Aetox สร้าง script และตั้งเวลารันให้เอง | หลัง core agent แข็งแรง |
+## Philosophy
 
-รากฐานสำหรับเส้นทางนี้ถูกวางไว้แล้วตั้งแต่ต้น: agent แต่ละตัวเป็นหน่วยจบในตัวที่มีโมเดลและความจำของตัวเอง เครื่องมือทั้งหมดแชร์ผ่าน interface กลาง และคำขออนุญาตทุกอย่างวิ่งผ่านด่านความปลอดภัยจุดเดียว — การเพิ่มทีม agent จึงเป็นการต่อยอด ไม่ใช่การรื้อสร้างใหม่
-
-### 🔮 อนาคตไกลกว่านั้น
-
-- Aetox Ecosystem — plugin, marketplace, community skills
-- Knowledge Base — Obsidian + codebase + web
-- AGI-level reasoning — ensemble, debate, cross-validation
-- Personal AI that grows with you
+| | |
+|:---|:---|
+| **Architecture > Parameters** | Good architecture beats a trillion parameters |
+| **Freedom > Convenience** | No lock-in is worth more than convenience that binds you |
+| **You Own It** | The data, the models, the settings — all yours |
+| **Direction > Execution** | Know where you are going before you start |
+| **Pattern > Ad-hoc** | Do it once, automate it for good |
+| **Simplicity > Complexity** | The simplest solution, not another layer |
 
 ---
 
-## เริ่มต้นใช้
-
-Aetox เป็นแอปเดสก์ท็อปบน Windows โหลดแล้วเปิดใช้ได้เลย ไม่ต้องมี API key ก่อน —
-provider `aetox` ในตัวมีโมเดลจำลองให้ลองทุกฟีเจอร์ก่อนตัดสินใจ
-
-**ตัวติดตั้ง** — [ดาวน์โหลดตัวล่าสุด](https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-amd64-installer.exe)
-ติดตั้งแล้วมีใน Start Menu จัดการ Tesseract (OCR) ให้อัตโนมัติ
-
-**Scoop** — ถ้าใช้ scoop อยู่แล้ว
-
-```powershell
-scoop install https://raw.githubusercontent.com/Mike0165115321/Aetox/main/scoop/aetox.json
-```
-
-**Portable** — [โหลด zip ไม่ต้องติดตั้ง](https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-windows-amd64-portable.zip) แตกแล้วรัน `aetox.exe` · [ดูไฟล์ทั้งหมดของรุ่นล่าสุด](https://github.com/Mike0165115321/Aetox/releases/latest)
-
-> ตัวติดตั้งยังไม่ได้ code signing ครั้งแรก Windows SmartScreen จะขึ้นเตือน "unknown publisher" —
-> กด More info → Run anyway
-
-### build เอง
-
-```powershell
-cd desktop
-wails build          # ได้ desktop/build/bin/aetox.exe
-wails build -nsis    # พร้อมตัวติดตั้ง
-```
-
----
-
-## Architecture
-
-```
-┌──────────────────────────────────────────┐
-│         Aetox Desktop (UI)               │ ← Wails + Svelte cockpit
-│ Sidebar(tree+history) · Chat · Workbench │   Workbench = tabs: Terminal,
-│ (tabs) · TopBar                          │   Files, Browser, Editor, Sheet
-├──────────────────────────────────────────┤
-│    Local Store (SQLite, FTS5)            │ ← ประวัติแชททุกโปรเจกต์ ค้นหาได้
-│    เก็บในเครื่อง ไม่มีข้อมูลออกไปไหน        │   ทั้งไทย/อังกฤษ, ไม่มี cloud
-├──────────────────────────────────────────┤
-│                                          │
-│    Directional Cognition Engine          │ ← วิธีคิด — ensemble, routing,
-│    Parallel Ensemble | Specialist Route  │   cross-validation, synthesis
-│    Cross-Validation | Synthesis          │   (ออกแบบ)
-│                                          │
-├──────────────────────────────────────────┤
-│    Multi-Provider Orchestration          │ ← ใช้หลาย providers พร้อมกัน
-│    Router | Comparator | Consensus       │   เปรียบเทียบ เลือกคำตอบที่ดีที่สุด
-│                                          │
-├──────────────────────────────────────────┤
-│    Core Runtime                          │ ← แกนกลางที่ทำงานแล้ว
-│    13 Providers | Tools | Turn Loop      │
-│    Safety | Audit | Config               │
-├──────────────────────────────────────────┤
-│    Terminal + File System                │
-│    shell | git | read | write | search   │
-└──────────────────────────────────────────┘
-```
-
----
-
-## Providers ที่รองรับ
-
-| Provider | API Key | Tool Calling | Reasoning |
-|:---------|:--------|:------------|:----------|
-| **OpenAI** | `OPENAI_API_KEY` | ✅ | ✅ |
-| **Anthropic** | `ANTHROPIC_API_KEY` | ✅ | ✅ |
-| **DeepSeek** | `DEEPSEEK_API_KEY` | ✅ | ✅ |
-| **Google Gemini** | `GEMINI_API_KEY` | ✅ | ✅ |
-| **Groq** | `GROQ_API_KEY` | ✅ | ✅ |
-| **Mistral** | `MISTRAL_API_KEY` | ✅ | ❌ |
-| **Together** | `TOGETHER_API_KEY` | ✅ | ❌ |
-| **Perplexity** | `PERPLEXITY_API_KEY` | ✅ | ❌ |
-| **Cohere** | `COHERE_API_KEY` | ✅ | ❌ |
-| **OpenRouter** | `OPENROUTER_API_KEY` | ✅ | ✅ |
-| **Z.ai** | `ZAI_API_KEY` | ✅ | ✅ |
-| **LM Studio** | ท้องถิ่น (localhost) | ✅ | ✅ |
-| **Ollama** | ท้องถิ่น (localhost) | ✅ | ✅ |
-
-> **โมเดลในเครื่องได้ครบเท่า cloud** — สองเจ้านี้เลือกโมเดลที่คุณโหลดไว้ให้เอง ไม่ต้องพิมพ์ชื่อ,
-> สตรีมทั้งคำตอบและความคิดของโมเดล, เรียก tools ได้จริง และนับโทเคนเข้าหน้าสถิติเหมือนกัน
-
----
-
-## Tools ในตัว (32 ตัว)
-
-| Tool | ใช้ทำอะไร |
-|:-----|:----------|
-| `read` | อ่านไฟล์ |
-| `write` | เขียนไฟล์ทั้งไฟล์ |
-| `sheet_write` | สร้างไฟล์ Excel `.xlsx` จริง — หลายชีต ตัวเลข/วันที่เป็นชนิดจริง |
-| `slides_write` | สร้างไฟล์ PowerPoint `.pptx` จริง — หัวข้อ บุลเล็ต รูป โน้ตผู้บรรยาย |
-| `doc_write` | สร้างไฟล์ Word `.docx` จริง — หัวข้อ ย่อหน้า ลิสต์ ตาราง |
-| `edit` | แก้ไขไฟล์แบบ search & replace เป๊ะๆ |
-| `delete` | ลบไฟล์ |
-| `list` | ดูรายการไฟล์ใน directory |
-| `shell` | รันคำสั่ง shell |
-| `git` | คำสั่ง git |
-| `grep` | ค้นหาข้อความในไฟล์ (regex) |
-| `fs` | file system operations |
-| `echo` | ทดสอบ output |
-| `time` | แสดงเวลาปัจจุบัน |
-| `calc` | คำนวณด้วยการรันสคริปต์ JavaScript ในตัวแอป — ไม่ต้องลงอะไร แตะไฟล์/เน็ตไม่ได้ ผู้ใช้เห็นสคริปต์ข้างคำตอบ |
-| `help` | แสดง help |
-| `github_repo_summary` | สรุป repo จาก GitHub |
-| `plugin_install` | ติดตั้ง plugin จาก GitHub |
-| `image_ocr` | อ่านข้อความจากรูป (Tesseract ไทย+อังกฤษ) |
-| `pdf_read` | อ่านข้อความจากไฟล์ PDF (poppler ติดตั้งมาให้พร้อมแอป) |
-| `video_ocr` | อ่านข้อความจากวิดีโอ (ffmpeg แตกเฟรม + OCR พร้อม timestamp) |
-| `audio_transcribe` | ถอดเสียงพูดในไฟล์เสียง/วิดีโอเป็นข้อความ (whisper.cpp ออฟไลน์ ไทย+อังกฤษ) |
-| `web_fetch` | อ่านเนื้อหาหน้าเว็บ |
-| `web_search` | ค้นเว็บ (DuckDuckGo, ไม่ต้องมี API key) |
-| `github_search` | ค้นโค้ด/repo บน GitHub |
-| `github_read_file` | อ่านไฟล์จาก repo GitHub |
-| `github_list_files` | ดูโครงสร้างไฟล์ของ repo GitHub |
-| `browser_open` | เปิดหน้าเว็บในแท็บ Workbench |
-| `browser_read` | อ่านหน้าเว็บ พร้อมแปะเลข ref ให้ทุก element |
-| `browser_click` | คลิก element ด้วยเลข ref |
-| `browser_type` | พิมพ์ลงช่อง หรือเลือก dropdown ด้วยเลข ref |
-
----
-
-## จากผู้สร้าง
-
-> Aetox เกิดมาไม่ใช่เพื่อแข่งกับใคร  
-> แต่มาเพื่อยืนในจุดที่ตลาดขาด  
-> ไม่ใช่เพื่อเป็นอีกหนึ่ง agent framework  
-> ไม่ใช่เพื่อ lock-in ผู้ใช้เข้าสู่ระบบใด
+> Aetox was not born to compete with anyone. It exists to stand where the market has a gap —
+> not to be one more agent framework, and not to lock anyone into anything.
 >
-> Aetox คือ **ผู้ช่วยส่วนตัว** ที่พร้อมจะเติบโต  
-> ระบบปลอดภัยพร้อมในสภาพแวดล้อมปิดแบบเต็มรูปแบบ  
-> คือรากฐานของสถาปัตยกรรมที่จะควบคุมวิธีคิดของโมเดล
->
-> — Mike (ชยพล พรมสะวะนา)
+> — Mike (Chayaphon Phromsawana)
+
+## License and brand
+
+Code under [Apache-2.0](LICENSE): use, modify, redistribute and sell it freely, including in
+closed-source work. Two things asked in return — keep the [NOTICE](NOTICE) file and the
+copyright notice, and say which files you changed.
+
+The name **"Aetox"** and the logo are trademarks and are **not** covered by the license
+(Apache-2.0 clause 6). Fork freely; anything you redistribute carries your own name, so
+nobody is confused about which one is the original. Version 0.7.1 and earlier were MIT, and
+those versions stay MIT forever.
+
+## Contact
+
+Open to conversations about business, partnership and investment. The long-term goal is to
+train our own model, so the architecture and the model are designed for each other from the
+start.
+
+📧 [phrmsawanachyphl@gmail.com](mailto:phrmsawanachyphl@gmail.com) ·
+🐙 [Open an issue](https://github.com/Mike0165115321/Aetox/issues) ·
+❤️ [Support the project](SPONSOR.md)
 
 ---
 
-## สัญญาอนุญาตและแบรนด์
-
-โค้ดอยู่ภายใต้ [Apache License 2.0](LICENSE) — ใช้ แก้ไข แจกจ่าย และใช้เชิงพาณิชย์ได้ฟรี รวมถึงในงานที่ปิดซอร์ส สิ่งที่ขอกลับมามีแค่สองอย่าง: เก็บไฟล์ [NOTICE](NOTICE) กับประกาศลิขสิทธิ์ไว้ และระบุให้ชัดว่าคุณแก้ไฟล์ไหนไปบ้าง
-
-ชื่อ **"Aetox"** และโลโก้เป็นเครื่องหมายการค้าของ ชยพล พรมสะวะนา ไม่ได้รวมอยู่ในสัญญาอนุญาต (ข้อ 6 ของ Apache 2.0) — fork ได้เต็มที่ แต่ตัวที่เอาไปแจกจ่ายต่อต้องใช้ชื่อและโลโก้ของคุณเอง เพื่อไม่ให้ใครสับสนว่าอันไหนคือต้นทาง
-
-เวอร์ชัน 0.7.1 และก่อนหน้าเผยแพร่ภายใต้ MIT — เวอร์ชันเหล่านั้นยังเป็น MIT ตลอดไป
-
----
-
-## ติดต่อ
-
-เปิดรับการติดต่อเรื่องธุรกิจ ความร่วมมือ และการลงทุน — เป้าหมายระยะยาวคือเทรนโมเดลของเราเอง ให้สถาปัตยกรรมกับโมเดลถูกออกแบบมาเพื่อกันและกันตั้งแต่ต้น
-
-📧 [phrmsawanachyphl@gmail.com](mailto:phrmsawanachyphl@gmail.com) · 🐙 [เปิด Issue](https://github.com/Mike0165115321/Aetox/issues) · ❤️ [สนับสนุนโปรเจกต์](SPONSOR.md)
-
----
-
-Project: [github.com/Mike0165115321/Aetox](https://github.com/Mike0165115321/Aetox)  
-© 2026 Chayaphon Phromsawana · License: [Apache-2.0](LICENSE) · "Aetox" เป็นเครื่องหมายการค้า ไม่รวมอยู่ในสัญญาอนุญาต
+<p align="center">
+  © 2026 Chayaphon Phromsawana · <a href="LICENSE">Apache-2.0</a> · "Aetox" is a trademark, not covered by the license
+</p>

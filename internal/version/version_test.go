@@ -65,7 +65,7 @@ func TestScoopManifestCarriesCurrent(t *testing.T) {
 // files are history, not staleness.
 func TestPublishedDocsCarryCurrent(t *testing.T) {
 	for _, c := range []struct{ file, marker, what string }{
-		{"README.md", "## สถานะปัจจุบัน — v" + Current, "status heading"},
+		{"README.md", "## Status — v" + Current, "status heading"},
 		{"docs/index.html", ">v" + Current + " · Windows<", "version badge"},
 	} {
 		if !strings.Contains(repoFile(t, c.file), c.marker) {
