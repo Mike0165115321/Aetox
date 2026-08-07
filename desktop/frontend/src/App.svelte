@@ -6,6 +6,7 @@
   import Settings from './lib/Settings.svelte'
   import Office from './lib/Office.svelte'
   import Artifacts from './lib/Artifacts.svelte'
+  import Projects from './lib/Projects.svelte'
   import Onboarding from './lib/Onboarding.svelte'
   import Workbench from './lib/workbench/Workbench.svelte'
   import { onMount } from 'svelte'
@@ -25,7 +26,7 @@
 
   // The views that take the whole window instead of a tab in .main. One list,
   // so the Escape key and the overlay markup below cannot drift apart.
-  const FULL_PAGE_VIEWS = ['settings', 'office', 'artifacts']
+  const FULL_PAGE_VIEWS = ['settings', 'office', 'artifacts', 'projects']
 
   function fileLabel(path: string): string {
     return path.split('/').pop() ?? path
@@ -364,6 +365,10 @@
 {:else if cockpit.activeView === 'artifacts'}
   <div class="settings-overlay">
     <Artifacts onClose={() => setActiveView('chat')} />
+  </div>
+{:else if cockpit.activeView === 'projects'}
+  <div class="settings-overlay">
+    <Projects onClose={() => setActiveView('chat')} />
   </div>
 {/if}
 

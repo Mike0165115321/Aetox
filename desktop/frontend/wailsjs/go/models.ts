@@ -586,6 +586,7 @@ export namespace main {
 	    mode?: string;
 	    agent?: string;
 	    snippet?: string;
+	    space?: string;
 	    projectKey?: string;
 	    projectName?: string;
 	
@@ -601,6 +602,7 @@ export namespace main {
 	        this.mode = source["mode"];
 	        this.agent = source["agent"];
 	        this.snippet = source["snippet"];
+	        this.space = source["space"];
 	        this.projectKey = source["projectKey"];
 	        this.projectName = source["projectName"];
 	    }
@@ -656,6 +658,28 @@ export namespace main {
 	        this.description = source["description"];
 	        this.source = source["source"];
 	        this.category = source["category"];
+	    }
+	}
+	export class Space {
+	    name: string;
+	    path: string;
+	    contextPath: string;
+	    contextFiles: string[];
+	    chats: number;
+	    updatedAt: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Space(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.path = source["path"];
+	        this.contextPath = source["contextPath"];
+	        this.contextFiles = source["contextFiles"];
+	        this.chats = source["chats"];
+	        this.updatedAt = source["updatedAt"];
 	    }
 	}
 	export class SpeechDirInfo {

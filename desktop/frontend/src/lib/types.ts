@@ -31,6 +31,11 @@ export interface Session {
   snippet?: string
   /** Only set on the cross-project (global) history list. */
   projectName?: string
+  /** The โปรเจกต์ this chat was held inside (§90). Only search results ever
+   *  carry it: the plain lists drop those rows, because a project's chats
+   *  belong to that project's own list. A row with this set was found by
+   *  searching and says so. */
+  space?: string
   /** The desk this conversation was held at (COMPANY.md §2). '' for the ones
    *  that predate desks — they belong to no desk and are shown unlabelled. */
   mode?: string
@@ -391,8 +396,13 @@ export interface CockpitState {
   projects: RecentProject[]
   tree: TreeNode[]
   sessions: Session[]
-  /** All chat history across every project, newest first — sidebar's global history layer. */
+  /** All chat history across every project, newest first — sidebar's global history layer.
+   *  Chats held inside a โปรเจกต์ are not in it: they live in `spaceHistory`. */
   history: Session[]
+  /** The open chat's project's own chats (§90), newest first. Empty whenever
+   *  the open chat is in no project — which is most of the time, and is what
+   *  puts `history` back on screen. */
+  spaceHistory: Session[]
   model: ModelStatus
   chat: ChatMessage[]
   task: TaskState
@@ -409,6 +419,13 @@ export interface CockpitState {
    *  assistant. Same lifecycle as desk: fixed at birth, read back, never
    *  remembered independently. */
   chair: string
+  /** The โปรเจกต์ the open session is being held inside (COMPANY.md §84), ''
+   *  for a chat held outside every project. Same lifecycle as desk and chair:
+   *  fixed when the session is born, read back from the engine when one is
+   *  reopened. It is what the chat shows so a project chat does not look like
+   *  any other chat — a session filed somewhere with nothing on screen saying
+   *  so reads as the project having vanished. */
+  space: string
   /** True from the moment a message is sent until the reply (or an error) arrives. */
   awaitingReply: boolean
   /** Files the last turn changed, from PendingUndo. Empty when there is nothing
@@ -469,6 +486,7 @@ export function emptyCockpitState(): CockpitState {
     tree: [],
     sessions: [],
     history: [],
+    spaceHistory: [],
     model: { provider: '', modelName: '', thinkLevel: '', contextUsed: 0, contextMax: 0, approval: 'ask', wireFormat: '', warning: '' },
     chat: [],
     task: { elapsed: '', steps: [] },
@@ -477,6 +495,7 @@ export function emptyCockpitState(): CockpitState {
     activeView: 'chat',
     desk: '',
     chair: '',
+    space: '',
     awaitingReply: false,
     undoFiles: [],
     agentStatus: '',

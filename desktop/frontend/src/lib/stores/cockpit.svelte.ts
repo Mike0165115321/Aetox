@@ -9,7 +9,7 @@ import {
   SendMessage, GetProjectStatus, GetModelInfo, OpenProjectFolder, OpenProjectPath,
   SwitchProvider, SwitchThinkLevel, SwitchApprovalMode, SetProviderWireFormat,
   SwitchModel, SetAPIKey, SetProviderBaseURL, ProjectTree, ReadFile,
-  ListSessions, LoadSession, NewSession, NewSessionAt, NewChairSession, SessionMode, SessionAgent, CurrentSessionID, SearchSessions, DeleteSession,
+  ListSessions, LoadSession, NewSession, NewSessionAt, NewChairSession, NewSessionInSpace, CurrentSpace, SessionsInSpace, SessionMode, SessionAgent, CurrentSessionID, SearchSessions, DeleteSession,
   SaveChatImage, SaveChatFile, ReadImageDataURL, CancelTurn, BrowserGetText, RecentProjects,
   ListSessionsForDoor, SearchSessionsForDoor, LoadSessionAnyProject, ClearProjectFocus,
   AnswerUserQuestion, Interject, RetryActiveProvider, PendingUndo, UndoLastTurn,
@@ -120,7 +120,7 @@ export async function searchSessions(query: string): Promise<void> {
   if (!query.trim()) return refreshSessions()
   const [hits, current] = await Promise.all([SearchSessions(query), CurrentSessionID()])
   cockpit.sessions = hits.map((m) => ({
-    id: m.id, title: m.title, ago: agoLabel(m.updatedAt), updatedAt: m.updatedAt, active: m.id === current, snippet: m.snippet, mode: m.mode, agent: m.agent,
+    id: m.id, title: m.title, ago: agoLabel(m.updatedAt), updatedAt: m.updatedAt, active: m.id === current, snippet: m.snippet, mode: m.mode, agent: m.agent, space: m.space,
   }))
 }
 
@@ -145,7 +145,7 @@ export async function searchGlobalHistory(query: string): Promise<void> {
   ])
   cockpit.history = hits.map((m) => ({
     id: m.id, title: m.title, ago: agoLabel(m.updatedAt), updatedAt: m.updatedAt, active: m.id === current,
-    snippet: m.snippet, projectName: m.projectName, mode: m.mode, agent: m.agent,
+    snippet: m.snippet, projectName: m.projectName, mode: m.mode, agent: m.agent, space: m.space,
   }))
 }
 
@@ -1268,7 +1268,50 @@ export async function newSessionAt(desk: string): Promise<void> {
   await NewSessionAt(desk)
   cockpit.desk = desk
   cockpit.chair = ''
+  // A chat opened from the nav is in no project — the engine says the same
+  // thing on its side (startNewSession), and the two have to agree or the
+  // window keeps drawing a room the session is no longer in.
+  cockpit.space = ''
   setShell(shellForDesk(desk))
+  await afterNewSession()
+}
+
+/** The open chat's project's own chats, for the sidebar column.
+ *
+ * A chat inside a project runs at the assistant's desk, so the general history
+ * — which now drops project chats on purpose — cannot show it, and standing
+ * inside one used to mean a column of unrelated conversations with the chat you
+ * were in nowhere on it. Empty whenever the chat is in no project, which is
+ * what puts the general list back. */
+export async function refreshSpaceHistory(): Promise<void> {
+  if (!cockpit.space) {
+    cockpit.spaceHistory = []
+    return
+  }
+  const [metas, current] = await Promise.all([SessionsInSpace(cockpit.space), CurrentSessionID()])
+  cockpit.spaceHistory = (metas ?? []).map((m) => ({
+    id: m.id, title: m.title, ago: agoLabel(m.updatedAt), updatedAt: m.updatedAt,
+    active: m.id === current, mode: m.mode, agent: m.agent,
+  }))
+}
+
+/** Start a chat inside a โปรเจกต์ (COMPANY.md §84).
+ *
+ * A session, not a view change. Calling the binding without this was the whole
+ * bug: the engine opened a new session inside the project while the window went
+ * on showing the session that was already there, so the chat the click had just
+ * created was unreachable and the project it belonged to looked like it had
+ * vanished. Every other door onto a session goes through one of these functions
+ * for exactly this reason — the engine's session and the window's session are
+ * two facts, and only these keep them one. */
+export async function newSpaceSession(space: string): Promise<void> {
+  await NewSessionInSpace(space)
+  // A project chat is an assistant chat that happens to be filed somewhere:
+  // the desk is the assistant's, and no agent sits in it.
+  cockpit.desk = 'assistant'
+  cockpit.chair = ''
+  cockpit.space = space
+  setShell('assistant')
   await afterNewSession()
 }
 
@@ -1280,6 +1323,7 @@ export async function newChairSession(chair: string): Promise<void> {
   await NewChairSession(chair)
   cockpit.desk = 'specialized'
   cockpit.chair = chair
+  cockpit.space = '' // for the same reason newSessionAt clears it
   setShell('assistant') // the office is behind the storefront door (§86)
   await afterNewSession()
 }
@@ -1340,7 +1384,12 @@ export async function switchShell(name: ShellName): Promise<void> {
  * means (COMPANY.md §2). */
 export async function openDesk(desk: string): Promise<void> {
   setActiveView('chat')
-  if (cockpit.desk === desk) return
+  // "Already here" is the desk AND the project together. A project chat runs at
+  // the assistant's desk, so comparing desks alone said the user was already at
+  // ผู้ช่วย while they were standing inside a project — and the button did
+  // nothing, with no way back out through the nav. The third coordinate has to
+  // be part of the comparison or it is not the same place.
+  if (cockpit.desk === desk && !cockpit.space) return
   await newSessionAt(desk)
 }
 
@@ -1354,6 +1403,11 @@ export async function refreshDesk(): Promise<void> {
     const id = await CurrentSessionID()
     cockpit.desk = id ? await SessionMode(id) : ''
     cockpit.chair = id ? await SessionAgent(id) : ''
+    // Asked, not remembered, for the same reason as the two above: reopening a
+    // chat from history has to put its project back on screen, and the engine
+    // is the one that read it off the row.
+    cockpit.space = await CurrentSpace()
+    await refreshSpaceHistory()
     // The door follows the desk, never the other way round: reopening a coding
     // session from the assistant's history has to land you in the workshop, or
     // the window would be showing one desk's rooms around another desk's chat.

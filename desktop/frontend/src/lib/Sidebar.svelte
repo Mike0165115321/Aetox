@@ -100,9 +100,19 @@
     }
   })
 
+  // Which room the window is standing in.
+  //
+  // A chat held inside a โปรเจกต์ runs at the assistant's desk — that is how it
+  // gets its tools — so the desk rule alone lit up ผู้ช่วย and the room the chat
+  // actually belongs to stayed dark. True of the engine, wrong on screen: the
+  // question this row answers is "where am I", and the answer is the project.
+  // The same reasoning already applies to a chair chat, which runs at the
+  // office desk and is read back as ทีมเอเจน by its own page being open.
   function navActive(entry: NavEntry): boolean {
+    const inChat = cockpit.activeView === 'chat'
+    if (inChat && cockpit.space) return entry.id === 'projects'
     if (entry.kind === 'page') return cockpit.activeView === entry.id
-    if (entry.kind === 'desk') return cockpit.activeView === 'chat' && cockpit.desk === entry.id
+    if (entry.kind === 'desk') return inChat && cockpit.desk === entry.id
     return false
   }
 
@@ -160,6 +170,10 @@
   // Search results rank by match, not by date, so grouping them would print
   // "วันนี้" three times down one list. A flat list is the honest shape there.
   const searching = $derived(historyQuery.trim().length > 0)
+  // Inside a project chat this column belongs to that project — see the branch
+  // that renders it. Searching is exempt: a search is a question about every
+  // chat there is, and its results already say which project each one is in.
+  const inSpace = $derived(!!cockpit.space && !searching)
   const historyGroups = $derived.by(() => {
     const out: { key: TKey; items: Session[] }[] = []
     for (const s of visibleHistory) {
@@ -189,7 +203,13 @@
   <button type="button" class="sess-row" class:active={s.active} onclick={() => selectGlobalSession(s)}>
     <span class="sess-line">
       <span class="t">{s.title}</span>
-      {#if s.agent}
+      {#if s.space}
+        <!-- Only a search result can carry this: the lists drop project chats,
+             because they belong to the project's own list (§90). Saying which
+             project is what keeps a searched-up row from reading as a chat that
+             is in two places. -->
+        <span class="sess-desk space">{s.space}</span>
+      {:else if s.agent}
         <!-- A direct chat is labelled with *who*, which says more than
              where: every chair lives in the office, so the agent's
              name subsumes the desk chip below. -->
@@ -313,6 +333,22 @@
       <div class="scroll">
         {#if searching}
           {#each visibleHistory as s (s.id)}{@render sessionRow(s)}{/each}
+        {:else if inSpace}
+          <!-- Standing inside a โปรเจกต์, this column is that project's chats
+               (§90). The general list cannot show them — they were taken out of
+               it on purpose — so leaving it up meant a column of unrelated
+               conversations with the chat you were in nowhere on it. The header
+               names the project, so a list that changed under you says why. -->
+          <div class="sess-day-head space-head">
+            <Icon name="folder" size={12} /> {cockpit.space}
+          </div>
+          {#each cockpit.spaceHistory as s (s.id)}{@render sessionRow(s)}{/each}
+          {#if cockpit.spaceHistory.length === 0}
+            <div class="sess-empty">{t('projects.noChats')}</div>
+          {/if}
+          <button type="button" class="linkish space-all" onclick={() => setActiveView('projects')}>
+            {t('projects.allProjects')}
+          </button>
         {:else}
           {#each historyGroups as g (g.key)}
             <div class="sess-day-head">{t(g.key)}</div>

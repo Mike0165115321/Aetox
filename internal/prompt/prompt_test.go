@@ -426,7 +426,6 @@ func TestPromptTeachesThatTheAnswerCanLayThingsOut(t *testing.T) {
 	}
 }
 
-
 // The chat renders an answer as markdown through DOMPurify, which passes SVG
 // and strips scripts and handlers — so a drawing in an answer has always been
 // possible, and never happened, because nothing said so. This layer says so.

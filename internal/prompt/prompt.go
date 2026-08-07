@@ -97,6 +97,27 @@ type Scope struct {
 	// prompt in full, because the model cannot use a folder it has not been
 	// told about.
 	Extra []string
+	// Space is the โปรเจกต์ this session is being held inside, if any. It
+	// changes nothing about what the session may reach — see the Space type.
+	Space Space
+}
+
+// Space is the storefront door's โปรเจกต์: a named folder that groups chats and
+// keeps a few files every session inside it should start knowing about
+// (COMPANY.md §84).
+//
+// It is not a scope, despite living on one. Root, Open and Extra all answer
+// "what may this session touch"; this answers "what is this session about", and
+// the sandbox is exactly the same with it as without. Keeping it here anyway is
+// deliberate: everything the prompt says about where the session stands is
+// assembled from one struct, and a second struct for the half that grants
+// nothing is how the two descriptions start disagreeing.
+type Space struct {
+	Name        string
+	ContextPath string
+	// Files are the names in ContextPath — never their contents. See the
+	// workingIn layer for why naming them is the whole job.
+	Files []string
 }
 
 // Build assembles the full system prompt for the given front end and scope, at
@@ -131,6 +152,11 @@ func BuildWithReport(surface Surface, scope Scope, desk Desk) (string, Loaded) {
 	var b strings.Builder
 	b.WriteString(identity(surface))
 	b.WriteString(environment(scope))
+	// Directly after environment, which is where the session's reach is
+	// described: the project is the one nearby fact that does *not* change that
+	// reach, and it reads as a correction to the sentence above it rather than
+	// as a new rule of its own.
+	b.WriteString(workingIn(scope.Space))
 	b.WriteString(capability())
 	b.WriteString(fileEditing())
 	b.WriteString(batchWork())
@@ -567,6 +593,50 @@ func environment(scope Scope) string {
 	b.WriteString("This applies to shell too: a command naming a path outside these folders is refused before it runs, " +
 		"and reaching for shell after another tool refused a path will get the same answer. Write paths out literally " +
 		"in commands — one assembled from a variable or a sub-command cannot be checked, so it is refused as well.\n")
+	return b.String()
+}
+
+// workingIn says which โปรเจกต์ this conversation is being held inside, and
+// where that project keeps its files.
+//
+// Written as a fact about the conversation rather than as an instruction,
+// because that is what it is: nothing here grants a right, moves the sandbox or
+// tells the assistant to do anything differently. The project is a folder of
+// conversations, not a fence (COMPANY.md §84), and a layer that read like a
+// permission would make it one in the model's understanding even though the
+// gate never moved.
+//
+// The context files are named and not pasted. Naming them costs a line and buys
+// the only thing the assistant is missing — knowing they are there — after
+// which read/grep are already in its hands. Pasting the contents would spend
+// the whole of every context window on files most turns never open, on every
+// turn, forever, which is the version of this feature that quietly makes the
+// assistant worse at everything else.
+//
+// A project with an empty context folder still says so. "There is nothing in it
+// yet" is a different and more useful fact than silence, which the assistant
+// would read as "no such folder" and never mention to the user.
+func workingIn(space Space) string {
+	if strings.TrimSpace(space.Name) == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("This conversation is being held inside the user's project \"" + space.Name + "\". " +
+		"That groups it with their other chats about the same thing; it does not narrow what you can reach, " +
+		"and the folders you may work in are exactly the ones named above.\n")
+	if len(space.Files) == 0 {
+		b.WriteString("The project keeps its material in " + space.ContextPath + ", which is empty so far. " +
+			"When the user hands over something this project should keep — a brief, a spec, a list they " +
+			"keep coming back to — that is where it belongs, and every future chat in this project will see it.\n")
+		return b.String()
+	}
+	b.WriteString("The project keeps its material in " + space.ContextPath + ". These files are in it:\n")
+	for _, name := range space.Files {
+		b.WriteString("  - " + name + "\n")
+	}
+	b.WriteString("They are named here, not included: read the ones a question actually needs. " +
+		"Do not read all of them at the start of a conversation to be thorough — that is the user's whole " +
+		"context window spent before they have asked anything.\n")
 	return b.String()
 }
 

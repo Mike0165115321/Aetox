@@ -116,6 +116,16 @@ export const NewSession = str()
 // render before it renders anything else.
 export const NewSessionAt = str()
 export const NewChairSession = str()
+// โปรเจกต์ (§90): the room's own session door, plus the engine's answer to
+// "which project is the open chat in".
+export const NewSessionInSpace = str()
+export const CurrentSpace = str()
+export const Spaces = arr()
+export const SessionsInSpace = arr()
+export const CreateSpace = noop()
+export const OpenSpaceFolder = noop()
+export const AddSpaceContext = arr()
+export const RemoveSpaceContext = arr()
 export const SessionMode = str()
 export const SessionAgent = str()
 export const ListModes = arr()

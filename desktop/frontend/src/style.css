@@ -1147,7 +1147,13 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .page-title h2 { margin:0 0 6px; font-size:var(--fs-3xl); }
 .page-title p { margin:0; color:var(--text-muted); font-size:var(--fs-sm); line-height:1.5; max-width:60ch; }
 .page-body { flex:1; overflow-y:auto; padding:28px 64px 56px; }
-.page-body .settings-inner.wide { --content-max:1040px; }
+/* The wide column is declared on the whole page, not on the body's inner box.
+   Declared inside the body, only the body knew about it: the header kept
+   centring its title on the default 760px while the content below centred on
+   1040px, so the title sat 140px to the right of the first thing under it. Two
+   containers centring on two widths cannot be made to line up by nudging one —
+   they have to be told the same number, and this is the ancestor both read. */
+.page-shell:has(.settings-inner.wide) { --content-max:1040px; }
 .section-label { margin:0 0 10px; }
 .page-note { margin:-16px 0 28px; color:var(--text-muted); font-size:var(--fs-sm); line-height:1.5; }
 .page-error { margin:0 0 18px; padding:9px 12px; border-radius:var(--r-md); border:1px solid var(--status-danger); color:var(--status-danger); font-size:var(--fs-sm); }
@@ -1250,9 +1256,15 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 /* A direct chat's row is labelled with who — slightly brighter than the desk
    chip, because a name is a stronger fact than a place. */
 .sess-row .sess-desk.agent { color:var(--text-secondary); border-color:var(--border-default); }
+/* A chat found by search that lives in a project. Read as the answer to "then
+   where is it?", so it carries the same weight as the agent chip. */
+.sess-row .sess-desk.space { color:var(--text-secondary); border-color:var(--border-default); }
 /* Who this chat is with (§85) — sticky so the answer survives any scroll
    depth, and quiet: it is a label the eye can confirm, not a banner. */
-.chair-strip { position:sticky; top:0; z-index:5; display:flex; align-items:center; gap:8px;
+/* Sits above the chat rather than inside its scroller, so it is drawn on an
+   empty conversation too — which is the moment it is needed most. `flex:none`
+   because .main is a column and a strip that stretched would eat the chat. */
+.chair-strip { flex:none; z-index:5; display:flex; align-items:center; gap:8px;
   padding:7px 14px; font-size:var(--fs-xs); color:var(--text-secondary);
   background:var(--surface-app); border-bottom:1px solid var(--border-subtle); }
 .chair-strip .who { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -1264,6 +1276,73 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .job-row .job-meta .ok { color:var(--status-ok, var(--interactive)); display:flex; }
 .job-row .job-meta .bad { color:var(--status-danger); display:flex; }
 .set-txt .d.clamp2 { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+
+/* โปรเจกต์ — two levels. The list is cards a person scans for the one they
+   meant; the detail is what is inside that one. A card carries no description
+   because Aetox stores none (the folder is the whole record) — it carries the
+   facts that are already true, which is also what makes an empty project look
+   empty instead of unfinished. */
+.proj-bar { display:flex; align-items:center; gap:10px; margin-bottom:16px; }
+.proj-search { display:flex; align-items:center; gap:7px; flex:1; min-width:0; max-width:280px;
+  padding:0 10px; border:1px solid var(--border-strong); border-radius:var(--r-sm); background:var(--surface-sunken); color:var(--text-dim); }
+.proj-search:focus-within { border-color:var(--interactive); }
+.proj-search input { flex:1; min-width:0; border:none; background:none; padding:6px 0; color:var(--text-primary); }
+.proj-search input:focus { outline:none; }
+.proj-sort { display:flex; align-items:center; gap:7px; margin-left:auto; font-size:var(--fs-xs); color:var(--text-dim); }
+/* The cards are the preset gallery's (pp-*). Only what a project has and a
+   preset does not lives here: a footer line for when it last changed, and the
+   draft card that is a new project being named. */
+.proj-gallery { align-items:stretch; }
+.proj-card { position:relative; }
+.proj-card .pp-body { gap:5px; padding-bottom:26px; }
+.proj-card-foot { position:absolute; left:12px; bottom:9px; font-size:var(--fs-xs); color:var(--text-dim); }
+.proj-draft { cursor:default; }
+.proj-draft:hover { border-color:var(--border-default); transform:none; }
+.proj-draft .pp-body { gap:9px; }
+.proj-draft input { width:100%; }
+.proj-draft-actions { display:flex; gap:7px; }
+.proj-first { margin-top:14px; }
+/* Inside one project: the work on the left, what the project carries on the
+   right. The rail is narrow and fixed — it is a shelf, and a shelf that grows
+   with the window stops reading as one. */
+.proj-crumbs { display:flex; align-items:center; gap:8px; margin-bottom:6px; font-size:var(--fs-xs); color:var(--text-dim); }
+.proj-crumbs button { color:var(--text-secondary); }
+.proj-crumbs button:hover { color:var(--text-primary); text-decoration:underline; }
+.proj-crumb-here { color:var(--text-primary); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.proj-detail-title { margin:0 0 22px; font-size:var(--fs-2xl); font-weight:700; }
+.proj-detail { display:grid; grid-template-columns:minmax(0, 1fr) 300px; gap:26px; align-items:start; }
+@media (max-width: 900px) { .proj-detail { grid-template-columns:1fr; } }
+.proj-work { min-width:0; }
+.proj-start {
+  display:flex; align-items:center; gap:9px; width:100%; margin-bottom:24px; padding:14px 16px;
+  border:1px solid var(--border-subtle); border-radius:var(--r-lg); background:var(--surface-panel);
+  color:var(--text-secondary); font-size:var(--fs-sm); text-align:left;
+}
+.proj-start:hover { border-color:var(--border-strong); background:var(--surface-row-hover); color:var(--text-primary); }
+.proj-rail { min-width:0; }
+.proj-rail-card { border:1px solid var(--border-subtle); border-radius:var(--r-lg); background:var(--surface-panel); padding:14px 16px 12px; }
+.proj-rail-head { display:flex; align-items:center; gap:8px; margin-bottom:4px; }
+.proj-rail-head h4 { margin:0; flex:1; font-size:var(--fs-sm); font-weight:600; }
+.proj-rail-foot { display:block; margin-top:10px; font-size:var(--fs-xs); }
+.proj-drop {
+  display:flex; flex-direction:column; align-items:center; gap:8px; width:100%; padding:22px 14px;
+  border:1px dashed var(--border-default); border-radius:var(--r-md); background:var(--surface-sunken);
+  color:var(--text-dim); font-size:var(--fs-xs); text-align:center; line-height:1.5;
+}
+.proj-drop:hover { border-color:var(--border-strong); color:var(--text-secondary); }
+.proj-file-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.proj-file-del { flex:none; padding:2px 5px; border-radius:var(--r-xs); color:var(--text-dim); font-size:var(--fs-xs); opacity:0; }
+.proj-files li:hover .proj-file-del, .proj-file-del.confirm { opacity:1; }
+.proj-file-del:hover, .proj-file-del.confirm { color:var(--status-danger); }
+.proj-actions { display:flex; gap:8px; flex:none; }
+.proj-hint { margin:0 0 10px; font-size:var(--fs-xs); color:var(--text-dim); line-height:1.5; }
+.proj-none { padding:10px 12px; border:1px dashed var(--border-subtle); border-radius:var(--r-md); color:var(--text-dim); font-size:var(--fs-sm); margin-bottom:22px; }
+.proj-files, .proj-chats { list-style:none; margin:0 0 22px; padding:0; display:flex; flex-direction:column; gap:2px; }
+.proj-files li { display:flex; align-items:center; gap:8px; padding:6px 10px; font-size:var(--fs-sm); color:var(--text-secondary); }
+.proj-chats li button { display:flex; align-items:center; gap:12px; width:100%; padding:7px 10px; border-radius:var(--r-md); text-align:left; }
+.proj-chats li button:hover { background:var(--surface-row-hover); }
+.proj-chat-title { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:var(--fs-sm); color:var(--text-primary); }
+.proj-chat-ago { flex:none; font-size:var(--fs-xs); color:var(--text-dim); }
 
 /* The gallery. Cards rather than rows: what a person is looking for here is a
    file they recognise, and a name plus its kind is what they recognise it by. */
@@ -1369,8 +1448,8 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .group-head { display:flex; align-items:baseline; gap:10px; margin:0 0 8px; padding:0 2px; max-width:760px; }
 .group-title { font-size:var(--fs-md); font-weight:600; color:var(--text-primary); }
 .group-count { font-size:var(--fs-xs); color:var(--text-dim); }
-.settings-page .ctrl { appearance:none; -webkit-appearance:none; background:var(--surface-sunken); border:1px solid var(--border-strong); border-radius:var(--r-sm); color:var(--text-secondary); font:inherit; font-size:var(--fs-md); padding:5px 8px; cursor:pointer; }
-.settings-page input.ctrl { cursor:text; }
+.settings-page .ctrl, .page-shell .ctrl { appearance:none; -webkit-appearance:none; background:var(--surface-sunken); border:1px solid var(--border-strong); border-radius:var(--r-sm); color:var(--text-secondary); font:inherit; font-size:var(--fs-md); padding:5px 8px; cursor:pointer; }
+.settings-page input.ctrl, .page-shell input.ctrl { cursor:text; }
 .settings-page .key-input { flex:1; min-width:0; }
 
 /* Button hierarchy. .ctrl alone used to be every button, input, select and file
@@ -1389,18 +1468,18 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
    quiet, it is invisible: the editor's Back button read as a line of body text,
    and it is the only way out of the page. Quiet is not a weight this theme can
    express, so the role was dropped rather than shipped broken. */
-.settings-page .ctrl-primary {
+.settings-page .ctrl-primary, .page-shell .ctrl-primary {
   background:linear-gradient(180deg,var(--interactive-bright),var(--interactive));
   border-color:transparent; color:var(--text-on-interactive); font-weight:600; padding:5px 14px;
 }
-.settings-page .ctrl-primary:hover:not(:disabled) { filter:brightness(1.07); }
+.settings-page .ctrl-primary:hover:not(:disabled), .page-shell .ctrl-primary:hover:not(:disabled) { filter:brightness(1.07); }
 /* Quiet, but still a button. The first cut used no border and --text-muted,
    which made it read as a line of body copy — and the one place that hurt most
    was the editor's Back button, the only way out of the page. A ghost keeps its
    outline; what it gives up is the fill. */
-.settings-page .ctrl-danger { color:var(--status-danger); border-color:var(--status-danger); background:none; }
-.settings-page .ctrl-danger:hover:not(:disabled) { background:var(--status-danger); color:var(--text-on-interactive); }
-.settings-page .ctrl:disabled { opacity:.5; cursor:default; }
+.settings-page .ctrl-danger, .page-shell .ctrl-danger { color:var(--status-danger); border-color:var(--status-danger); background:none; }
+.settings-page .ctrl-danger:hover:not(:disabled), .page-shell .ctrl-danger:hover:not(:disabled) { background:var(--status-danger); color:var(--text-on-interactive); }
+.settings-page .ctrl:disabled, .page-shell .ctrl:disabled { opacity:.5; cursor:default; }
 /* selects share .ctrl's button-like look but need their own affordance, or
    they read as an unlabeled button (appearance:none strips the native arrow) */
 .settings-page select.ctrl { padding-right:26px; background-repeat:no-repeat; background-position:right 8px center;
@@ -2076,3 +2155,18 @@ button.ctrl, label.ctrl { display:inline-flex; align-items:center; justify-conte
 .mcp-more > summary { cursor:pointer; font-size:var(--fs-sm); color:var(--text-muted); padding:2px 0; }
 .mcp-more > summary:hover { color:var(--text-primary); }
 .mcp-more-body { display:flex; flex-direction:column; gap:12px; padding:10px 0 2px; }
+
+/* The sidebar column while standing inside a โปรเจกต์ (§90): the project's own
+   chats, under a header that names it. Same weight as a day header — it is the
+   same kind of thing, a label saying what the rows below it have in common. */
+.sess-day-head.space-head { display:flex; align-items:center; gap:6px; color:var(--text-secondary); }
+.space-all { display:block; margin:10px 0 0 10px; font-size:var(--fs-2xs); }
+/* The breadcrumb over a project chat: where this conversation sits, and the
+   way back up. Reuses .chair-strip's box so the two banners are one thing in
+   two moods rather than two strips that drifted apart. */
+.crumb-strip { gap:7px; }
+.crumb-up { flex:none; color:var(--text-secondary); background:none; border:none; padding:0; cursor:pointer; font:inherit; }
+.crumb-up:hover { color:var(--text-primary); text-decoration:underline; }
+.crumb-sep { flex:none; color:var(--text-dim); }
+.crumb-here { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-primary); }
+

@@ -91,10 +91,32 @@ type SessionMeta struct {
 	// assistant, a chair's name for a direct chat in the office. Carried for
 	// the same reason Mode is — the row has to say who you were talking to
 	// before you click it.
-	Agent       string `json:"agent,omitempty"`
-	Snippet     string `json:"snippet,omitempty"`
+	Agent   string `json:"agent,omitempty"`
+	Snippet string `json:"snippet,omitempty"`
+	// Space is the โปรเจกต์ the conversation was held inside (§90), "" for the
+	// chats held outside every one. Only search results carry it filled in:
+	// the plain lists have already dropped those rows, so a value here always
+	// means "found by searching, and it lives somewhere else".
+	Space       string `json:"space,omitempty"`
 	ProjectKey  string `json:"projectKey,omitempty"`
 	ProjectName string `json:"projectName,omitempty"`
+}
+
+// heldOutsideAProject is the condition every general history list carries.
+//
+// A chat held inside a โปรเจกต์ belongs to that project's own list and to
+// nothing else — mixed into the sidebar it reads as a chat that is in two
+// places, which is what the room was built to stop. Search is deliberately
+// exempt: a person who types a word is looking for a conversation, not for a
+// tidy list, and the row they get back says which project it came from.
+const heldOutsideAProject = "space = ''"
+
+// andClause appends an optional condition to one that is already there.
+func andClause(clause string) string {
+	if strings.TrimSpace(clause) == "" {
+		return ""
+	}
+	return " AND " + clause
 }
 
 // projectKey isolates each project's history: readable base name + short hash
@@ -163,10 +185,10 @@ func (a *App) appendTurn(userMsg, agentMsg SessionMessage) int64 {
 	// it was opened with, and stays there (§83); an UPDATE of either column
 	// would be the mid-session switch the whole design refuses.
 	_, _ = tx.Exec(`
-		INSERT INTO sessions(id, project_key, title, created_at, updated_at, mode, agent)
-		VALUES(?,?,?,?,?,?,?)
+		INSERT INTO sessions(id, project_key, title, created_at, updated_at, mode, agent, space)
+		VALUES(?,?,?,?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at`,
-		a.sessionID, projectKey(a.cfg.SandboxRoot), sessionTitleFrom(userMsg.Text), now, now, a.desk.DeskName(), a.chair)
+		a.sessionID, projectKey(a.cfg.SandboxRoot), sessionTitleFrom(userMsg.Text), now, now, a.desk.DeskName(), a.chair, a.space)
 	var agentID int64
 	for _, m := range []SessionMessage{userMsg, agentMsg} {
 		res, execErr := tx.Exec(`INSERT INTO messages(session_id, role, text, time, reasoning, think_secs, parts) VALUES(?,?,?,?,?,?,?)`,
@@ -186,6 +208,13 @@ func (a *App) appendTurn(userMsg, agentMsg SessionMessage) int64 {
 func (a *App) startNewSession() {
 	a.sessionID = newSessionID()
 	a.transcript = nil
+	// A new chat is in no project until something says otherwise. Left standing,
+	// the last project a session was opened in would follow the user out of the
+	// room: click ผู้ช่วย for a fresh chat and it would be filed under that
+	// project, told about its files, and recorded on its row — a chat nobody
+	// opened there. NewSessionInSpace sets this again after calling through
+	// here, which is why clearing it first is safe as well as right.
+	a.space = ""
 	if a.agent != nil {
 		a.agent.ClearContext()
 	}
@@ -211,12 +240,12 @@ func (a *App) ListSessionsAt(desk string) []SessionMeta {
 	}
 	query := `
 		SELECT id, title, updated_at, mode, agent FROM sessions
-		WHERE project_key = ? ORDER BY updated_at DESC LIMIT 200`
+		WHERE project_key = ? AND ` + heldOutsideAProject + ` ORDER BY updated_at DESC LIMIT 200`
 	args := []any{projectKey(a.cfg.SandboxRoot)}
 	if desk = strings.TrimSpace(desk); desk != "" {
 		query = `
 		SELECT id, title, updated_at, mode, agent FROM sessions
-		WHERE project_key = ? AND mode = ? ORDER BY updated_at DESC LIMIT 200`
+		WHERE project_key = ? AND ` + heldOutsideAProject + ` AND mode = ? ORDER BY updated_at DESC LIMIT 200`
 		args = append(args, desk)
 	}
 	rows, err := db.Query(query, args...)
@@ -448,9 +477,7 @@ func (a *App) ListSessionsForDoor(filter DeskFilter) []SessionMeta {
 		return out
 	}
 	clause, args := filter.where("s.mode")
-	if clause != "" {
-		clause = "WHERE " + clause
-	}
+	clause = "WHERE s." + heldOutsideAProject + andClause(clause)
 	rows, err := db.Query(`
 		SELECT s.id, s.title, s.updated_at, s.mode, s.agent, s.project_key, COALESCE(p.name, s.project_key)
 		FROM sessions s LEFT JOIN projects p ON p.project_key = s.project_key
@@ -490,7 +517,7 @@ func (a *App) SearchSessionsForDoor(query string, filter DeskFilter) []SessionMe
 		  SELECT rowid AS mid, snippet(messages_fts, 0, '', '', '…', 10) AS snip
 		  FROM messages_fts WHERE messages_fts MATCH ?
 		)
-		SELECT s.id, s.title, s.updated_at, s.mode, s.agent, s.project_key, COALESCE(p.name, s.project_key), MIN(f.snip)
+		SELECT s.id, s.title, s.updated_at, s.mode, s.agent, s.space, s.project_key, COALESCE(p.name, s.project_key), MIN(f.snip)
 		FROM f
 		JOIN messages m ON m.id = f.mid
 		JOIN sessions s ON s.id = m.session_id
@@ -504,7 +531,7 @@ func (a *App) SearchSessionsForDoor(query string, filter DeskFilter) []SessionMe
 	defer rows.Close()
 	for rows.Next() {
 		var m SessionMeta
-		if rows.Scan(&m.ID, &m.Title, &m.UpdatedAt, &m.Mode, &m.Agent, &m.ProjectKey, &m.ProjectName, &m.Snippet) == nil {
+		if rows.Scan(&m.ID, &m.Title, &m.UpdatedAt, &m.Mode, &m.Agent, &m.Space, &m.ProjectKey, &m.ProjectName, &m.Snippet) == nil {
 			out = append(out, m)
 		}
 	}
@@ -621,11 +648,20 @@ func (a *App) LoadSession(id string) ([]SessionMessage, error) {
 	// could do is impossible without the file, and quietly reopening it wider
 	// — or as the main assistant wearing the chair's history — is worse than
 	// the error. Putting the file back is the way in.
-	var desk, chair string
-	if db.QueryRow(`SELECT mode, agent FROM sessions WHERE id = ?`, id).Scan(&desk, &chair) == nil {
+	//
+	// The space comes back the same way and for the same reason, with one
+	// difference: a project whose folder has since been deleted does not refuse
+	// the session. The folder holds context the assistant may read, not the
+	// tools it may use — reopening the conversation without it is a session
+	// that knows less, not a session that can do more, so it is restored as a
+	// chat held outside every project and the transcript stays reachable.
+	var desk, chair, space string
+	if db.QueryRow(`SELECT mode, agent, space FROM sessions WHERE id = ?`, id).Scan(&desk, &chair, &space) == nil {
 		if err := a.setStation(desk, chair); err != nil {
 			return nil, err
 		}
+		a.space = a.resolvedSpace(space)
+		a.applyConfig(a.cfg)
 	}
 	// m.id comes back so a reopened session can still be rated: the thumbs
 	// address a job by the bubble they sit under, and without the row id an

@@ -31,6 +31,16 @@ import (
 // also deliberately NOT split into "desktop" and "headless" sets — an HTTP host
 // streaming over SSE wants OnStatus and OnContentPreview for exactly the reason
 // a window does.
+// SpaceContext is where a โปรเจกต์ keeps the files every session inside it
+// should know about, and which files those are right now. The list is names
+// only — the host reads the folder, the assistant reads the files it needs with
+// the tools it already has, and neither the prompt nor this struct ever carries
+// their contents.
+type SpaceContext struct {
+	Path  string
+	Files []string
+}
+
 type Options struct {
 	// Surface selects the identity sentence in the system prompt
 	// (internal/prompt.Build). Zero value means prompt.SurfaceDesktop, which is
@@ -102,6 +112,14 @@ type Options struct {
 	// are built from this one list, so what the model is told it can reach and
 	// what it can actually reach cannot drift apart.
 	ExtraRoots []string
+
+	// Space and SpaceContext name the โปรเจกต์ this session is being held
+	// inside (COMPANY.md §84) and the folder that project keeps its context in.
+	// Unlike ExtraRoots this widens nothing: the sandbox is untouched, and the
+	// only thing they change is that the assistant is told the project exists.
+	// Empty is a chat held outside every project, which is most of them.
+	Space        string
+	SpaceContext SpaceContext
 
 	// Digest overrides the page summarizer web_fetch uses. Nil means
 	// Digester(provider, cfg.ModelName) — the normal case. Present so a test
@@ -197,7 +215,14 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 	// One scope value feeds both the prompt and the registry below — the model's
 	// picture of the workspace and the gate that enforces it come from the same
 	// place by construction.
-	scope := prompt.Scope{Root: cfg.SandboxRoot, Open: opts.OpenSandbox, Extra: opts.ExtraRoots}
+	scope := prompt.Scope{
+		Root: cfg.SandboxRoot, Open: opts.OpenSandbox, Extra: opts.ExtraRoots,
+		Space: prompt.Space{
+			Name:        opts.Space,
+			ContextPath: opts.SpaceContext.Path,
+			Files:       opts.SpaceContext.Files,
+		},
+	}
 	// Built once, here, and never mutated for the life of the session — the
 	// desk's direction and its memory are part of the prompt prefix the
 	// provider caches, and a prompt that changed mid-conversation would spend

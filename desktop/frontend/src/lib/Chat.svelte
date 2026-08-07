@@ -114,6 +114,11 @@
   // เครื่องมือ" — a control whose only promise is that there is nothing behind it.
   const ownTools = (steps: ToolStep[]) => ownSteps(steps).filter((s) => !s.kind)
 
+  // This chat's own name, for the breadcrumb above it. Read off the project's
+  // list rather than kept here: the title is the store's to know, and a second
+  // copy would be the one that goes stale when a chat is renamed.
+  const spaceChatTitle = $derived(cockpit.spaceHistory.find((s) => s.active)?.title ?? '')
+
   const liveDone = $derived(toolSteps.filter((s) => s.state !== 'run'))
   const liveRunning = $derived(toolSteps.filter((s) => s.state === 'run'))
   // The model's latest narration stays on screen while it works — that line is
@@ -795,6 +800,34 @@
   </div>
 {/snippet}
 
+  <!-- Where this conversation belongs — above the branch, so it is drawn on an
+       empty chat as well as a full one. Inside the branch it was only ever
+       drawn once a message existed, which is precisely backwards: a chat opened
+       from the office or from a project is empty at the moment the user needs
+       telling where they just landed, and without it the screen is the ordinary
+       starter page. Reported as "มันพาเด้งมาหน้าหลัก แล้วโปรเจคก็หายไปเลย". -->
+  {#if cockpit.chair}
+    <div class="chair-strip">
+      <Icon name="bot" size={14} />
+      <span class="who">{t('chat.talkingTo', { name: cockpit.chair })}</span>
+      <button type="button" class="back-office" onclick={() => setActiveView('office')}>{t('chat.backToOffice')}</button>
+    </div>
+  {:else if cockpit.space}
+    <!-- A trail, not a sentence: the project is the level above this chat, so
+         naming both in order says where you are and gets you back in one click.
+         The chat's own name is dropped until it has one — a chat with no first
+         message yet has no title, and "โปรเจกต์ /" trailing into nothing is
+         worse than a breadcrumb of one. -->
+    <nav class="chair-strip crumb-strip">
+      <Icon name="folder" size={13} />
+      <button type="button" class="crumb-up" onclick={() => setActiveView('projects')}>{cockpit.space}</button>
+      {#if spaceChatTitle}
+        <span class="crumb-sep">/</span>
+        <span class="crumb-here">{spaceChatTitle}</span>
+      {/if}
+    </nav>
+  {/if}
+
   {#if messages.length === 0}
     <div class="empty-state">
       <Logo size={56} />
@@ -812,16 +845,6 @@
     <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
     <!-- delegated click target is the <a> tags rendered inside .markdown-body, already interactive -->
     <div class="chat" bind:this={chatEl} onscroll={onChatScroll} onclick={onChatClick}>
-    <!-- Who this conversation is with (§85). Drawn only for a direct chat —
-         the main assistant is the app's one face and needs no label — and
-         sticky, because "ตอนนี้คุยกับใคร" must survive any scroll depth. -->
-    {#if cockpit.chair}
-      <div class="chair-strip">
-        <Icon name="bot" size={14} />
-        <span class="who">{t('chat.talkingTo', { name: cockpit.chair })}</span>
-        <button type="button" class="back-office" onclick={() => setActiveView('office')}>{t('chat.backToOffice')}</button>
-      </div>
-    {/if}
     <div class="chat-inner">
       {#each messages as m, i}
         <div class="msg {m.role === 'user' ? 'user' : 'bot'}">

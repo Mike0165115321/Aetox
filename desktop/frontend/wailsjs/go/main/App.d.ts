@@ -13,6 +13,8 @@ import {oauth} from '../models';
 
 export function AddMCPServer(arg1:string,arg2:Array<string>):Promise<void>;
 
+export function AddSpaceContext(arg1:string):Promise<Array<string>>;
+
 export function AddWorkspaceFolder():Promise<Array<main.WorkspaceFolder>>;
 
 export function AnswerUserQuestion(arg1:string):Promise<void>;
@@ -61,7 +63,11 @@ export function CommandHistory():Promise<Array<string>>;
 
 export function CompleteSignIn(arg1:string,arg2:string):Promise<main.ModelInfo>;
 
+export function CreateSpace(arg1:string):Promise<main.Space>;
+
 export function CurrentSessionID():Promise<string>;
+
+export function CurrentSpace():Promise<string>;
 
 export function DeleteArtifact(arg1:string):Promise<void>;
 
@@ -161,6 +167,8 @@ export function NewSession():Promise<string>;
 
 export function NewSessionAt(arg1:string):Promise<string>;
 
+export function NewSessionInSpace(arg1:string):Promise<string>;
+
 export function OpenAgentsFolder():Promise<void>;
 
 export function OpenArtifact(arg1:string):Promise<void>;
@@ -178,6 +186,8 @@ export function OpenProjectPath(arg1:string):Promise<main.ProjectStatus>;
 export function OpenPromptsFolder():Promise<void>;
 
 export function OpenSkillsFolder():Promise<void>;
+
+export function OpenSpaceFolder(arg1:string):Promise<void>;
 
 export function OpenSpeechModelDir(arg1:string):Promise<void>;
 
@@ -231,6 +241,8 @@ export function RemoveMCPServer(arg1:string):Promise<void>;
 
 export function RemovePresetImage(arg1:string):Promise<void>;
 
+export function RemoveSpaceContext(arg1:string,arg2:string):Promise<Array<string>>;
+
 export function RemoveWorkspaceFolder(arg1:string):Promise<Array<main.WorkspaceFolder>>;
 
 export function RequiresAPIKey(arg1:string):Promise<boolean>;
@@ -271,6 +283,8 @@ export function SessionAgent(arg1:string):Promise<string>;
 
 export function SessionMode(arg1:string):Promise<string>;
 
+export function SessionsInSpace(arg1:string):Promise<Array<main.SessionMeta>>;
+
 export function SetAPIKey(arg1:string,arg2:string):Promise<main.ModelInfo>;
 
 export function SetLearningEnabled(arg1:boolean):Promise<void>;
@@ -300,6 +314,8 @@ export function SignOut(arg1:string):Promise<main.ModelInfo>;
 export function SkillScanIssues():Promise<Array<string>>;
 
 export function SkillsDir():Promise<string>;
+
+export function Spaces():Promise<Array<main.Space>>;
 
 export function SpeechModelDirs():Promise<Array<main.SpeechDirInfo>>;
 

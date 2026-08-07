@@ -6,6 +6,10 @@ export function AddMCPServer(arg1, arg2) {
   return window['go']['main']['App']['AddMCPServer'](arg1, arg2);
 }
 
+export function AddSpaceContext(arg1) {
+  return window['go']['main']['App']['AddSpaceContext'](arg1);
+}
+
 export function AddWorkspaceFolder() {
   return window['go']['main']['App']['AddWorkspaceFolder']();
 }
@@ -102,8 +106,16 @@ export function CompleteSignIn(arg1, arg2) {
   return window['go']['main']['App']['CompleteSignIn'](arg1, arg2);
 }
 
+export function CreateSpace(arg1) {
+  return window['go']['main']['App']['CreateSpace'](arg1);
+}
+
 export function CurrentSessionID() {
   return window['go']['main']['App']['CurrentSessionID']();
+}
+
+export function CurrentSpace() {
+  return window['go']['main']['App']['CurrentSpace']();
 }
 
 export function DeleteArtifact(arg1) {
@@ -302,6 +314,10 @@ export function NewSessionAt(arg1) {
   return window['go']['main']['App']['NewSessionAt'](arg1);
 }
 
+export function NewSessionInSpace(arg1) {
+  return window['go']['main']['App']['NewSessionInSpace'](arg1);
+}
+
 export function OpenAgentsFolder() {
   return window['go']['main']['App']['OpenAgentsFolder']();
 }
@@ -336,6 +352,10 @@ export function OpenPromptsFolder() {
 
 export function OpenSkillsFolder() {
   return window['go']['main']['App']['OpenSkillsFolder']();
+}
+
+export function OpenSpaceFolder(arg1) {
+  return window['go']['main']['App']['OpenSpaceFolder'](arg1);
 }
 
 export function OpenSpeechModelDir(arg1) {
@@ -442,6 +462,10 @@ export function RemovePresetImage(arg1) {
   return window['go']['main']['App']['RemovePresetImage'](arg1);
 }
 
+export function RemoveSpaceContext(arg1, arg2) {
+  return window['go']['main']['App']['RemoveSpaceContext'](arg1, arg2);
+}
+
 export function RemoveWorkspaceFolder(arg1) {
   return window['go']['main']['App']['RemoveWorkspaceFolder'](arg1);
 }
@@ -522,6 +546,10 @@ export function SessionMode(arg1) {
   return window['go']['main']['App']['SessionMode'](arg1);
 }
 
+export function SessionsInSpace(arg1) {
+  return window['go']['main']['App']['SessionsInSpace'](arg1);
+}
+
 export function SetAPIKey(arg1, arg2) {
   return window['go']['main']['App']['SetAPIKey'](arg1, arg2);
 }
@@ -580,6 +608,10 @@ export function SkillScanIssues() {
 
 export function SkillsDir() {
   return window['go']['main']['App']['SkillsDir']();
+}
+
+export function Spaces() {
+  return window['go']['main']['App']['Spaces']();
 }
 
 export function SpeechModelDirs() {

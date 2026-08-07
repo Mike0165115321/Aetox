@@ -515,6 +515,7 @@ product picture in [COMPANY.md](COMPANY.md)) · §82 (the learning floor) · §4
 | §87 | Files Travel as Addresses, and the Desk's Menu Does Not Grow (2026-08-06) |
 | §88 | A Drawing Is Confined to Its Own Box (2026-08-06) |
 | §89 | A Number Is Worked Out, Not Recalled (2026-08-07) |
+| §90 | A Project Is a Folder of Conversations, Not a Fence (2026-08-07) |
 
 ---
 

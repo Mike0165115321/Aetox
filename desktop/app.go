@@ -87,6 +87,18 @@ type App struct {
 	// lifecycle rule as desk: set when a session opens, never while one runs.
 	chair string
 
+	// space is the session's third coordinate: which โปรเจกต์ (the storefront
+	// kind — see spaces.go on why the word is `space` here) this chat is being
+	// held inside, "" for a chat held outside every project. Same lifecycle as
+	// desk and chair: set when a session opens, never while one runs, and
+	// restored from the row when one is reopened.
+	//
+	// It moves no wall. The sandbox is exactly where it was, which is the line
+	// COMPANY.md §84 draws between this and the workshop's project — all this
+	// field changes is that the assistant is told which project it is working
+	// in and where that project keeps its files.
+	space string
+
 	// projectFocused=false runs the engine "ไม่โฟกัสโปรเจกต์": rooted at the
 	// user's home dir so every tool (files/git/terminal) still works on the
 	// machine, but nothing is treated as a project (no tree walk, no recent-
@@ -2202,6 +2214,12 @@ func (a *App) applyConfig(cfg config.Config) {
 		// and desktop/workspace.go.
 		OpenSandbox:      !a.projectFocused,
 		ExtraRoots:       a.extraRoots,
+		// The project this chat is being held inside, and the names of the
+		// files it keeps — read fresh on every bootstrap, like every other
+		// manifest, so a file dropped into the folder is known to the next
+		// session without restarting anything.
+		Space:            a.space,
+		SpaceContext:     a.spaceContextForPrompt(),
 		OnToolAction:     a.recordToolAction,
 		OnToolRun:        a.recordToolRun,
 		Proposer:         appProposer{app: a},

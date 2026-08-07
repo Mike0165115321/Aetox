@@ -39,10 +39,15 @@ describe('the rooms behind each door', () => {
     }
     // Named, empty, and saying so — a room that appeared later would read as a
     // new feature rather than as the plan it already is (§7).
-    for (const deferred of ['โปรเจกต์', 'ทำงานอัตโนมัติ']) {
+    for (const deferred of ['ทำงานอัตโนมัติ']) {
       expect(deskButton(deferred).disabled).toBe(true)
       expect(deskButton(deferred).textContent).toContain('เร็ว ๆ นี้')
     }
+    // โปรเจกต์ opened on 2026-08-07 (§90). A room that has been built must stop
+    // saying it is coming: the badge is the promise, and a promise left up
+    // after it is kept is the same lie as one that was never kept.
+    expect(deskButton('โปรเจกต์').disabled).toBe(false)
+    expect(deskButton('โปรเจกต์').textContent).not.toContain('เร็ว ๆ นี้')
   })
 
   // The whole point of §86: the workshop is not the storefront with extra

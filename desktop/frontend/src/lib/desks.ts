@@ -41,7 +41,7 @@ export const NAV: NavEntry[] = [
   // It is a folder for conversations, NOT a fence: the assistant keeps the
   // whole machine either way, which is what separates this from the workshop's
   // projects — those root the sandbox, and that is the point of them.
-  { id: 'projects', kind: 'soon', labelKey: 'desk.projects', blurbKey: 'desk.projectsBlurb', icon: 'folder', shell: 'assistant' },
+  { id: 'projects', kind: 'page', labelKey: 'desk.projects', blurbKey: 'desk.projectsBlurb', icon: 'folder', shell: 'assistant' },
   { id: 'office', kind: 'page', labelKey: 'desk.office', blurbKey: 'desk.officeBlurb', icon: 'bot', shell: 'assistant' },
   { id: 'auto', kind: 'soon', labelKey: 'desk.auto', blurbKey: 'desk.autoBlurb', icon: 'timer', shell: 'assistant' },
   { id: 'artifacts', kind: 'page', labelKey: 'desk.artifacts', blurbKey: 'desk.artifactsBlurb', icon: 'package', shell: 'assistant' },

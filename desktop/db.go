@@ -401,6 +401,26 @@ CREATE TABLE IF NOT EXISTS project_folders (
 			return err
 		},
 	},
+	{
+		version: 10,
+		name:    "session_space",
+		apply: func(tx *sql.Tx) error {
+			// The session's third coordinate (COMPANY.md §84): which โปรเจกต์
+			// at the storefront door it was held inside, '' for every chat held
+			// outside one — which is all of them until this shipped, so the
+			// default is also the truth about old rows.
+			//
+			// The name of the folder, not a key: `<DataRoot>/project/<name>` is
+			// the only record that a project exists (desktop/spaces.go), so a
+			// number here would be a second identity for something the disk
+			// already names. A renamed folder therefore orphans its chats
+			// rather than following them, which is the honest outcome — the
+			// column records where a conversation was held, and renaming a
+			// folder afterwards does not change where it was held.
+			_, err := tx.Exec(`ALTER TABLE sessions ADD COLUMN space TEXT NOT NULL DEFAULT ''`)
+			return err
+		},
+	},
 }
 
 // latestSchemaVersion is what this build understands.
