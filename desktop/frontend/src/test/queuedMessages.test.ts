@@ -7,9 +7,12 @@ import {
   cockpit, sendUserMessage, cancelTurn, queuedMessages, applyMissedInterjections,
   attachFileFromPath,
 } from '../lib/stores/cockpit.svelte'
-import { SendMessage, Interject, SaveChatFile } from './mocks/wailsApp'
+import { SendMessage, Interject, SaveChatFile, CurrentSessionID } from './mocks/wailsApp'
+import { render, fireEvent, waitFor } from '@testing-library/svelte'
+import Chat from '../lib/Chat.svelte'
 
 beforeEach(() => {
+  localStorage.clear()
   vi.clearAllMocks()
   cockpit.chat.length = 0
   queuedMessages.length = 0
@@ -101,5 +104,84 @@ describe('an interjected message carries its attachment', () => {
 
     finishTurn({ text: 'done' })
     await inFlight
+  })
+})
+
+// Typing into a running turn is supported by the engine (Interject), and the
+// composer was the half that did not keep up: while a turn ran the only button
+// in the send slot was Stop, so the one gesture a person makes after typing
+// threw the work away instead of sending it. Asked directly: "ตอนเอเจนกำลัง
+// ทำงาน เราส่งข้อความต่อไปทันทีได้ไหม … เช็ค UI ด้วยว่ามันทำงานสอดรับกันไหม".
+describe('the composer while a turn is running', () => {
+  const props = {
+    task: { title: '', steps: [] } as any,
+    agentStatus: '', toolSteps: [] as any[], streamingText: '', reasoningText: '',
+    messages: [] as any[], onSend: () => {}, onSwitchProvider: async () => {},
+    onSwitchThinkLevel: async () => {}, onSwitchModel: async () => {}, onSubmitAPIKey: async () => {},
+    model: { provider: 'deepseek', modelName: 'v4', thinkLevel: 'high', approval: 'ask', wireFormat: '' } as any,
+  }
+
+  it('offers only the brake when nothing has been typed', async () => {
+    const { container } = render(Chat, { ...props, awaitingReply: true })
+
+    await waitFor(() => expect(container.querySelectorAll('.composer .send').length).toBe(1))
+    expect(container.querySelector('.composer .send.stop')).toBeTruthy()
+  })
+
+  it('puts send back the moment there is something to send, and keeps the brake', async () => {
+    const { container } = render(Chat, { ...props, awaitingReply: true })
+
+    const input = container.querySelector('.composer .input') as HTMLTextAreaElement
+    await fireEvent.input(input, { target: { value: 'เพิ่มอีกข้อ' } })
+
+    await waitFor(() => {
+      // Send is present and is NOT the stop button — clicking after typing must
+      // never cancel the work.
+      const buttons = Array.from(container.querySelectorAll('.composer .send'))
+      expect(buttons.length).toBe(2)
+      expect(buttons.filter((b) => b.classList.contains('stop')).length).toBe(1)
+    })
+  })
+})
+
+// A half-typed message is the one piece of text in the app that exists nowhere
+// else — not in the transcript, not on disk, not in the engine. Losing it to a
+// reload is the cheapest bad UX there is: "พิมพ์อะไรไว้ตอนรีเฟรชไม่ควรจะหาย".
+describe('the composer draft across a reload', () => {
+  const props = {
+    task: { title: '', steps: [] } as any, awaitingReply: false,
+    agentStatus: '', toolSteps: [] as any[], streamingText: '', reasoningText: '',
+    messages: [] as any[], onSend: () => {}, onSwitchProvider: async () => {},
+    onSwitchThinkLevel: async () => {}, onSwitchModel: async () => {}, onSubmitAPIKey: async () => {},
+    model: { provider: 'deepseek', modelName: 'v4', thinkLevel: 'high', approval: 'ask', wireFormat: '' } as any,
+  }
+
+  it('comes back to the chat it was typed in', async () => {
+    vi.mocked(CurrentSessionID).mockResolvedValue('session-a')
+    const first = render(Chat, props)
+    await fireEvent.input(first.container.querySelector('.composer .input') as HTMLTextAreaElement,
+      { target: { value: 'ยังพิมพ์ไม่เสร็จ' } })
+    await waitFor(() => expect(localStorage.getItem('aetox-composer-draft')).toContain('ยังพิมพ์ไม่เสร็จ'))
+    first.unmount()
+
+    const second = render(Chat, props) // the reload
+    await waitFor(() =>
+      expect((second.container.querySelector('.composer .input') as HTMLTextAreaElement).value).toBe('ยังพิมพ์ไม่เสร็จ'))
+  })
+
+  // The other half, and the one that would be worse: a draft restored into
+  // someone else's conversation looks like something they wrote.
+  it('does not follow the user into a different chat', async () => {
+    vi.mocked(CurrentSessionID).mockResolvedValue('session-a')
+    const first = render(Chat, props)
+    await fireEvent.input(first.container.querySelector('.composer .input') as HTMLTextAreaElement,
+      { target: { value: 'ของแชท A' } })
+    await waitFor(() => expect(localStorage.getItem('aetox-composer-draft')).toContain('ของแชท A'))
+    first.unmount()
+
+    vi.mocked(CurrentSessionID).mockResolvedValue('session-b')
+    const second = render(Chat, props)
+    await new Promise((r) => setTimeout(r, 20))
+    expect((second.container.querySelector('.composer .input') as HTMLTextAreaElement).value).toBe('')
   })
 })

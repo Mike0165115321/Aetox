@@ -9,7 +9,7 @@
   import {
     EnabledProviders, SupportedThinkLevels,
     ListModelsForProvider, RequiresAPIKey, HasAPIKey, PickAttachment,
-    GetContextBreakdown, GuideTopics, RunChatCommand, ListChairs,
+    GetContextBreakdown, GuideTopics, RunChatCommand, ListChairs, CurrentSessionID,
   } from '../../wailsjs/go/main/App'
   import type { main } from '../../wailsjs/go/models'
   import { t, i18n } from './i18n.svelte'
@@ -236,7 +236,60 @@
     await refreshProviderDerived(model.provider)
   }
 
+  // What is half-typed survives a reload.
+  //
+  // It did not: the composer was ordinary component state, so refreshing the
+  // window — or the window refreshing itself — threw away a message that had
+  // not been sent yet, which is the one piece of text in the app that exists
+  // nowhere else. localStorage rather than the engine on purpose: an unsent
+  // draft is not part of the conversation, and writing it into the transcript
+  // would put words in the user's mouth.
+  // Stored with the session it was typed in. A single key restored the same
+  // half-written message into every conversation the user opened next, which
+  // trades one lost draft for a stray one in someone else's chat — the second
+  // is worse, because it looks like something they wrote.
+  const DRAFT_KEY = 'aetox-composer-draft'
   let draft = $state('')
+  // Reactive: it lands after an await, and the effect below has to re-run when
+  // it does. Left as a plain variable, a draft typed in the first moments after
+  // the window opens was never stored at all — the effect had already decided
+  // there was nowhere to file it.
+  // Reactive: it lands after an await, and the effect below has to re-run when
+  // it does. Left as a plain variable, a draft typed in the first moments after
+  // the window opens was never stored at all — the effect had already decided
+  // there was nowhere to file it and nothing told it to look again.
+  let draftSession = $state('')
+
+  onMount(async () => {
+    let id = ''
+    try {
+      id = (await CurrentSessionID()) ?? ''
+    } catch {
+      return // engine not up: an empty composer beats a draft filed under nothing
+    }
+    draftSession = id
+    try {
+      const stored = JSON.parse(localStorage.getItem(DRAFT_KEY) ?? '{}')
+      // Only into an empty composer: the read finishes after the window is
+      // interactive, so a user who has already started typing must not have it
+      // replaced by what they wrote last time.
+      if (!draft && stored && stored.session === id && typeof stored.text === 'string') draft = stored.text
+    } catch {
+      // Unreadable or from an older shape — an empty composer is the fallback.
+    }
+  })
+
+  $effect(() => {
+    // Before the session is known there is nothing to file the draft under, and
+    // writing it anyway is how it ends up restored into the wrong chat.
+    if (!draftSession) return
+    try {
+      if (draft) localStorage.setItem(DRAFT_KEY, JSON.stringify({ session: draftSession, text: draft }))
+      else localStorage.removeItem(DRAFT_KEY)
+    } catch {
+      // Nothing to do and nothing worth saying: the draft is still on screen.
+    }
+  })
   let modelMenuOpen = $state(false)
   let focusMenuOpen = $state(false)
 
@@ -847,7 +900,12 @@
     <div class="chat" bind:this={chatEl} onscroll={onChatScroll} onclick={onChatClick}>
     <div class="chat-inner">
       {#each messages as m, i}
-        <div class="msg {m.role === 'user' ? 'user' : 'bot'}">
+        <!-- A message sent into a running turn belongs below what has already
+             streamed, not above it: it was said at that point, and drawn at the
+             top it reads as something the assistant has not answered yet. The
+             column is a flex box, so ordering is the whole fix — the array
+             stays chronological and the index stays the index. -->
+        <div class="msg {m.role === 'user' ? 'user' : 'bot'}" class:during-turn={m.duringTurn}>
           <div class="bubble">
             {#if m.role === 'agent' && m.tag}
               <div class="name"><span class="tag think">{m.tag}</span></div>
@@ -1569,8 +1627,21 @@
           </div>
         {/if}
         {#if awaitingReply}
-          <!-- The tool loop is unbounded — this is the user's brake (Ctrl+C of the UI) -->
-          <button class="send stop" aria-label="Stop" onclick={cancelTurn}><Icon name="square" size={13} /></button>
+          <!-- Typing into a running turn is supported — the text is handed to
+               the turn in flight (Interject) rather than starting a second one —
+               but the only button here was Stop, so the one gesture a person
+               makes after typing threw the work away instead of sending. With a
+               draft on screen the primary button sends again; the brake stays
+               beside it, because the tool loop is unbounded and it is the
+               user's only Ctrl+C. -->
+          {#if draft.trim()}
+            <button class="send stop secondary" aria-label={t('chat.stopTurn')} onclick={cancelTurn}><Icon name="square" size={12} /></button>
+            <button class="send" aria-label={t('chat.sendIntoTurn')} title={t('chat.sendIntoTurn')} onclick={submit}>
+              <Icon name="sendHorizontal" size={15} />
+            </button>
+          {:else}
+            <button class="send stop" aria-label={t('chat.stopTurn')} onclick={cancelTurn}><Icon name="square" size={13} /></button>
+          {/if}
         {:else}
           <button class="send" aria-label="Send" onclick={submit}><Icon name="sendHorizontal" size={15} /></button>
         {/if}

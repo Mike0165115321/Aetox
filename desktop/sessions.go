@@ -167,6 +167,47 @@ func sessionTitleFrom(text string) string {
 // Returns the agent message's rowid, or 0 if nothing was written. That id is
 // how a rating finds its job later: the thumbs live under a bubble, and the
 // bubble is the only thing the UI can name.
+// openTurn writes the user's message the moment it is sent, before the model
+// has said anything.
+//
+// It used to be written with the answer, in one transaction at the end of the
+// turn — so a window that reloaded while the assistant was still working lost
+// the question too, and the session row was never created at all. What the user
+// saw was a conversation that had been on screen a second ago and now did not
+// exist: "อ้าวแชทหาย … ยังคุยไม่เสร็จเลย". The turn that was interrupted is the
+// exact turn most worth keeping, because it is the one the user has not
+// finished with.
+//
+// The pair is no longer atomic, and that is the point. A question with no
+// answer under it is the honest record of what happened; a conversation that
+// vanishes is not. Returns false when there is nothing to write into, so the
+// caller can carry on rather than treat it as a failed turn.
+func (a *App) openTurn(userMsg SessionMessage) bool {
+	db, err := a.database()
+	if err != nil || a.sessionID == "" {
+		return false
+	}
+	now := time.Now().Format(time.RFC3339)
+	// The session row is created here now, which is also where the desk, the
+	// agent and the project are recorded. Same rule as before: a session is
+	// born with all three and the ON CONFLICT branch touches none of them.
+	if _, err := db.Exec(`
+		INSERT INTO sessions(id, project_key, title, created_at, updated_at, mode, agent, space)
+		VALUES(?,?,?,?,?,?,?,?)
+		ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at`,
+		a.sessionID, projectKey(a.cfg.SandboxRoot), sessionTitleFrom(userMsg.Text), now, now,
+		a.desk.DeskName(), a.chair, a.space); err != nil {
+		return false
+	}
+	if _, err := db.Exec(
+		`INSERT INTO messages(session_id, role, text, time, reasoning, think_secs, parts) VALUES(?,?,?,?,?,?,?)`,
+		a.sessionID, userMsg.Role, userMsg.Text, userMsg.Time, userMsg.Reasoning, userMsg.ThinkSecs, encodeParts(userMsg.Parts)); err != nil {
+		return false
+	}
+	a.turnOpened = true
+	return true
+}
+
 func (a *App) appendTurn(userMsg, agentMsg SessionMessage) int64 {
 	db, err := a.database()
 	if err != nil || a.sessionID == "" {
@@ -189,12 +230,21 @@ func (a *App) appendTurn(userMsg, agentMsg SessionMessage) int64 {
 		VALUES(?,?,?,?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at`,
 		a.sessionID, projectKey(a.cfg.SandboxRoot), sessionTitleFrom(userMsg.Text), now, now, a.desk.DeskName(), a.chair, a.space)
+	// The question, unless openTurn already wrote it when it was asked —
+	// writing it twice would double every user message in the transcript. The
+	// flag is the whole coupling between the two halves, and it is deliberately
+	// on the App rather than passed in: only one turn is ever in flight.
+	pending := []SessionMessage{userMsg, agentMsg}
+	if a.turnOpened {
+		pending = []SessionMessage{agentMsg}
+	}
+	a.turnOpened = false
 	var agentID int64
-	for _, m := range []SessionMessage{userMsg, agentMsg} {
+	for _, m := range pending {
 		res, execErr := tx.Exec(`INSERT INTO messages(session_id, role, text, time, reasoning, think_secs, parts) VALUES(?,?,?,?,?,?,?)`,
 			a.sessionID, m.Role, m.Text, m.Time, m.Reasoning, m.ThinkSecs, encodeParts(m.Parts))
 		if execErr == nil {
-			agentID, _ = res.LastInsertId() // the agent's row is the second and last
+			agentID, _ = res.LastInsertId() // the agent's row is the last one written
 		}
 	}
 	if tx.Commit() != nil {
@@ -208,6 +258,10 @@ func (a *App) appendTurn(userMsg, agentMsg SessionMessage) int64 {
 func (a *App) startNewSession() {
 	a.sessionID = newSessionID()
 	a.transcript = nil
+	// No half-written turn carries into the next conversation: the flag means
+	// "the question for the turn in flight is already stored", and a session
+	// that has not started has no turn in flight.
+	a.turnOpened = false
 	// A new chat is in no project until something says otherwise. Left standing,
 	// the last project a session was opened in would follow the user out of the
 	// room: click ผู้ช่วย for a fresh chat and it would be filed under that

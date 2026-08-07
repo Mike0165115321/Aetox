@@ -318,3 +318,52 @@ func TestADoorsHistoryIsNotEatenByTheOtherDoorsPage(t *testing.T) {
 		t.Error("an empty filter returned nothing instead of everything")
 	}
 }
+
+// A turn that is interrupted is the exact turn most worth keeping: it is the
+// one the user has not finished with. The question used to be written with the
+// answer, in one transaction at the end — so a window reloaded while the
+// assistant was still working lost the message that started it, and the session
+// row with it. Reported as "อ้าวแชทหาย … ยังคุยไม่เสร็จเลย".
+func TestTheQuestionIsStoredBeforeTheAnswerArrives(t *testing.T) {
+	a := newTestApp(t, t.TempDir())
+
+	if !a.openTurn(SessionMessage{Role: "user", Text: "ช่วยดูไฟล์นี้ให้หน่อย", Time: "06:04"}) {
+		t.Fatal("openTurn did not store the question")
+	}
+
+	// Nothing else has happened — this is the moment the window reloads.
+	messages, err := a.LoadSession(a.sessionID)
+	if err != nil {
+		t.Fatalf("LoadSession: %v", err)
+	}
+	if len(messages) != 1 || messages[0].Text != "ช่วยดูไฟล์นี้ให้หน่อย" {
+		t.Fatalf("an interrupted turn left %d messages, want the question standing alone", len(messages))
+	}
+	// And the session is findable, which is the half that made the whole
+	// conversation look deleted rather than merely unanswered.
+	found := false
+	for _, s := range a.ListSessions() {
+		if s.ID == a.sessionID {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("the session is not in the history while its first turn is still running")
+	}
+
+	// When the answer does arrive, the question must not be written twice.
+	a.appendTurn(
+		SessionMessage{Role: "user", Text: "ช่วยดูไฟล์นี้ให้หน่อย", Time: "06:04"},
+		SessionMessage{Role: "agent", Text: "ได้ครับ", Time: "06:05"},
+	)
+	messages, err = a.LoadSession(a.sessionID)
+	if err != nil {
+		t.Fatalf("LoadSession: %v", err)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("the finished turn holds %d messages, want the question and one answer", len(messages))
+	}
+	if messages[0].Role != "user" || messages[1].Role != "agent" {
+		t.Errorf("the transcript is out of order: %s then %s", messages[0].Role, messages[1].Role)
+	}
+}

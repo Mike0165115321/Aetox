@@ -99,6 +99,12 @@ type App struct {
 	// in and where that project keeps its files.
 	space string
 
+	// turnOpened is true between openTurn and appendTurn: the user message for
+	// the turn now running is already in the store, so the closing write must
+	// not add it a second time. See openTurn for why the pair stopped being one
+	// transaction.
+	turnOpened bool
+
 	// projectFocused=false runs the engine "ไม่โฟกัสโปรเจกต์": rooted at the
 	// user's home dir so every tool (files/git/terminal) still works on the
 	// machine, but nothing is treated as a project (no tree walk, no recent-
@@ -1264,6 +1270,11 @@ func (a *App) SendMessage(text string) (TurnReply, error) {
 	// path that has to be kept in step with recordToolRun.
 	mark := a.maxToolRunID()
 	started := time.Now()
+
+	// The question is written before the work starts, not after it finishes.
+	// A turn can take minutes; a window reloaded inside one used to lose the
+	// message that started it and the session with it (openTurn).
+	a.openTurn(SessionMessage{Role: "user", Text: text, Time: time.Now().Format("15:04")})
 
 	userMsg, agentMsg, err := a.runTurn(text)
 	if err != nil {

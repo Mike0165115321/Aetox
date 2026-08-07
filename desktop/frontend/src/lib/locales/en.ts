@@ -85,6 +85,8 @@ export const en: Record<keyof typeof th, string> = {
   'chat.folderMissing': 'not found',
   'chat.extraFolderCount': '+{count} folders',
   'chat.extraFoldersNote': 'Same rights as the project folder — read and edit. Nothing outside this list is reachable.',
+  'chat.stopTurn': 'Stop what is running',
+  'chat.sendIntoTurn': 'Send this into the running turn',
   'chat.retry': 'Try again',
   'chat.regenerate': 'Answer again',
   'chat.editMessage': 'Edit message',

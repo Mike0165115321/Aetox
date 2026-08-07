@@ -2224,3 +2224,4 @@ button.ctrl, label.ctrl { display:inline-flex; align-items:center; justify-conte
 /* A message sent into a running turn, drawn after the live block instead of
    above it. .chat-inner is a flex column, so one `order` says it — no second
    render path, and the array it comes from stays in the order it happened. */
+.chat-inner > .msg.during-turn { order: 1; }

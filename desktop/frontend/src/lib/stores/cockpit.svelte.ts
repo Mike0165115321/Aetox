@@ -619,6 +619,12 @@ export async function sendUserMessage(text: string, alreadyShown = false): Promi
   if (!alreadyShown) {
     cockpit.chat.push({
       role: 'user', text: trimmed, time: nowLabel(),
+      // Sent into a turn that is already running: it belongs *after* what has
+      // streamed so far, not above it. Pushed into the same list either way —
+      // the order in the array is already chronological — and the flag only
+      // tells the transcript to draw it below the live block until that block
+      // is gone (Chat.svelte).
+      duringTurn: cockpit.awaitingReply || undefined,
       imageDataUrl: image?.dataUrl,
       contextLabel: context?.label,
       contextPreview: context ? attachmentPreview(context.content) : undefined,
@@ -678,6 +684,10 @@ async function runLiveTurn(call: () => Promise<void>): Promise<void> {
     await call()
   } finally {
     cockpit.awaitingReply = false
+    // The live block is gone, so anything that was drawn below it takes its
+    // ordinary place in the transcript. The array order never changed — it was
+    // chronological all along — only where those bubbles were painted.
+    for (const m of cockpit.chat) m.duringTurn = undefined
     cockpit.agentStatus = ''
     cockpit.toolSteps = []
     cockpit.turnFiles = []

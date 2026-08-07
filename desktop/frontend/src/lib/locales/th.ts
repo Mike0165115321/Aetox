@@ -84,6 +84,8 @@ export const th = {
   'chat.folderMissing': 'ไม่พบโฟลเดอร์',
   'chat.extraFolderCount': '+{count} โฟลเดอร์',
   'chat.extraFoldersNote': 'สิทธิ์เท่าโฟลเดอร์โปรเจกต์ — อ่านและแก้ไขได้ นอกเหนือจากนี้เข้าไม่ได้',
+  'chat.stopTurn': 'หยุดงานที่กำลังทำ',
+  'chat.sendIntoTurn': 'ส่งเพิ่มเข้าไปในงานที่กำลังทำ',
   'chat.retry': 'ลองใหม่',
   'chat.regenerate': 'ตอบใหม่',
   'chat.editMessage': 'แก้ข้อความ',

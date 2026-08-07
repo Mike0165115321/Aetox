@@ -153,6 +153,11 @@ export interface ChatMessage {
    * Fewer than two means no switcher is drawn. */
   variants?: MessageVariant[]
   activeVariant?: number
+  /** Sent into a turn that was already running (Interject). The transcript
+   *  draws it below the live block instead of above it, because that is where
+   *  it happened — the array order is already right, so the flag is cleared
+   *  the moment the turn ends and the bubble takes its ordinary place. */
+  duringTurn?: boolean
   /** This bubble is a turn that never completed. failedText is exactly what was
    * sent — attachment marker lines and all — so a retry re-sends the same thing
    * rather than a reconstruction of it. */
