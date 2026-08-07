@@ -401,6 +401,32 @@ func TestPromptTeachesThatANumberIsWorkedOutNotRecalled(t *testing.T) {
 	}
 }
 
+// The third capability that was already working and never used: the answer is
+// drawn in the app's own document, so a styled <div> lays out normally and the
+// app's CSS variables resolve against the user's live theme inside it. Without
+// a layer saying so it ships and never fires — twice now the same lesson.
+func TestPromptTeachesThatTheAnswerCanLayThingsOut(t *testing.T) {
+	got := Build(SurfaceDesktop, Scope{Root: t.TempDir()})
+	for _, want := range []string{
+		// The condition, not a list of occasions to decorate.
+		"several things of the same kind",
+		// Why a panel is the app's surface rather than something pasted on it.
+		"var(--surface-panel)",
+		"whichever theme the user is running",
+		// The two hazards: what the sanitizer removes, and the one thing it
+		// cannot catch — a width chosen for a window the model cannot see.
+		"<style> element and a <script> are both removed",
+		"minmax(0, 1fr)",
+		// A panel is a way of saying something, not decoration.
+		"single fact is decoration",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("system prompt is missing %q:\n%s", want, got)
+		}
+	}
+}
+
+
 // The chat renders an answer as markdown through DOMPurify, which passes SVG
 // and strips scripts and handlers — so a drawing in an answer has always been
 // possible, and never happened, because nothing said so. This layer says so.

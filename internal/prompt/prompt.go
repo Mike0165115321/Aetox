@@ -136,6 +136,7 @@ func BuildWithReport(surface Surface, scope Scope, desk Desk) (string, Loaded) {
 	b.WriteString(batchWork())
 	b.WriteString(computing())
 	b.WriteString(drawing())
+	b.WriteString(panel())
 	b.WriteString(longform())
 	b.WriteString(narration())
 	b.WriteString(clarify())
@@ -343,6 +344,43 @@ func computing() string {
 		"reach a file or the network. When the numbers live in a file, or there are more of them than " +
 		"you would type out, or the work needs a real library, that is write plus shell — which touches " +
 		"the user's machine, and is worth the trip only when calc genuinely cannot answer.\n"
+}
+
+// panel says the answer surface can lay things out, not only draw them — the
+// third capability found already working and never used.
+//
+// The chat renders an answer as sanitized markdown in the app's own document.
+// Two consequences nothing had said out loud: a <div> with a style attribute
+// lays out exactly as it would anywhere, and `var(--surface-panel)` inside that
+// attribute resolves against the user's live theme, because it is the same
+// document the app is painted in. A panel written this way is not styled to
+// look like Aetox — it *is* Aetox's surface, on all fourteen themes, including
+// the ones written after it.
+//
+// Separate from drawing() rather than folded into it because they answer
+// different questions. A drawing is for how several things relate; a panel is
+// for several things of the same kind, each with the same few facts — the shape
+// a person scans down a column rather than reads. Merged, the layer would say
+// "make something visual", which is the instruction that produces decoration.
+//
+// The hazards are the ones the sanitizer already enforces (no <style> element,
+// no script) plus the one it cannot: a fixed pixel width overflows a bubble
+// whose width the model never learns, exactly as an unsized <svg> did.
+func panel() string {
+	return "The answer is drawn in the app's own document, so a <div> with a style attribute lays out the " +
+		"way it would anywhere — a row of cards, a small table of figures, a set of bars beside their " +
+		"labels. Reach for it when the answer is several things of the same kind, each carrying the same " +
+		"few facts: that is a shape a person scans, and prose makes them read it instead.\n" +
+		"Colour it with the app's own variables — var(--surface-panel), var(--border-subtle), " +
+		"var(--text-primary), var(--text-dim), var(--interactive) — never a hex value. They resolve " +
+		"against whichever theme the user is running, so a panel written this way is the app's surface " +
+		"rather than something pasted onto it, and it stays right on a theme that did not exist when you " +
+		"wrote it.\n" +
+		"Style only through style=\"…\" attributes: a <style> element and a <script> are both removed " +
+		"before the answer is shown, so anything that depended on them is silently gone. Size everything " +
+		"in percentages, fr units and minmax(0, 1fr) — you do not know how wide the panel is, and a fixed " +
+		"pixel width spills out of it. Keep it to what the answer needs; a panel is a way of saying " +
+		"something, and one built around a single fact is decoration.\n"
 }
 
 // drawing tells the model that the answer surface can render a picture, and
