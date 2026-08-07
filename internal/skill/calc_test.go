@@ -112,6 +112,13 @@ func TestCalcDoesNotBlameLineBreaksThatAreFine(t *testing.T) {
 // arithmetic must finish, or the tool only answers the questions that did not
 // need it.
 func TestCalcFinishesARealCalculation(t *testing.T) {
+	if underRace {
+		// The claim here is about how fast the shipped interpreter is, and -race
+		// does not ship. Instrumented, three million iterations run past the
+		// ceiling — which says nothing about the ceiling, only about the
+		// instrumentation, so the test would be red for being right.
+		t.Skip("timing claim about the uninstrumented interpreter; see race_off_test.go")
+	}
 	out := run(t, `let s = 0; for (let i = 1; i <= 3e6; i++) s += i; s`)
 	if out.Content != "4500001500000" {
 		t.Errorf("three million additions answered %q", out.Content)

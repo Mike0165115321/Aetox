@@ -225,8 +225,17 @@ func TestOpenSandboxRefusesCredentialStores(t *testing.T) {
 // the machine, in a loop that also holds web_fetch and browser_read: a page
 // could carry an instruction in and the loop could carry a key out, with no
 // approval prompt on the desktop to interrupt it (found 2026-08-06).
+// The data root is spelled the way the gate is promised it: symlink-resolved,
+// which on Windows also expands 8.3 short names. resolveSandboxPath does that
+// to every target before handing it over (list.go), so a test that skips the
+// step is testing the gate through a door production does not use — and it
+// passed anyway on any machine whose TEMP has no short name, which is every
+// developer machine and not the CI runner, whose TEMP really is spelled
+// C:\Users\RUNNER~1\.... That is the same mismatch a792bf6 fixed on the home
+// side; this is the data-root side of it, and it kept two releases from
+// building.
 func TestAetoxOwnCredentialFilesAreRefused(t *testing.T) {
-	root := t.TempDir()
+	root := evalExistingSymlinks(t.TempDir())
 	t.Setenv("AETOX_DATA_ROOT", root)
 
 	for _, name := range []string{"credentials.json", "oauth.json", ".env", "model-preference.json", "mcp-servers.json"} {
@@ -262,7 +271,8 @@ func TestAetoxOwnCredentialFilesAreRefused(t *testing.T) {
 // reach its own MCP configuration — while holding that server's tools. The wall
 // was right; the silence next to it was not.
 func TestARefusedCredentialFileSaysWhereTheAnswerIs(t *testing.T) {
-	root := t.TempDir()
+	// Resolved for the same reason as the test above.
+	root := evalExistingSymlinks(t.TempDir())
 	t.Setenv("AETOX_DATA_ROOT", root)
 
 	err := refuseCredentialStore(filepath.Join(root, "mcp-servers.json"))
