@@ -21,6 +21,8 @@ export function AnswerUserQuestion(arg1:string):Promise<void>;
 
 export function AppVersion():Promise<string>;
 
+export function ArtifactPreview(arg1:string):Promise<main.ArtifactPreview>;
+
 export function ApprovePendingChange(arg1:number):Promise<void>;
 
 export function BrowserBack(arg1:string):Promise<void>;
@@ -262,6 +264,8 @@ export function SaveAgentProfile(arg1:string,arg2:string):Promise<void>;
 export function SaveChatFile(arg1:string):Promise<string>;
 
 export function SaveChatImage(arg1:string):Promise<string>;
+
+export function SaveChatImageData(arg1:string):Promise<string>;
 
 export function SaveIdentityFile(arg1:string,arg2:string):Promise<void>;
 

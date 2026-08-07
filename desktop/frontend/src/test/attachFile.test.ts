@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import {
   cockpit, fileKind, attachFileFromPath, attachTabContext, attachmentPreview,
-  clearPendingFile, sendUserMessage, selectSession,
+  clearPendingFile, sendUserMessage, selectSession, attachImageFromClipboard,
 } from '../lib/stores/cockpit.svelte'
-import { SaveChatFile, SendMessage, LoadSession, ReadImageDataURL, ReadFile } from './mocks/wailsApp'
+import {
+  SaveChatFile, SaveChatImageData, SendMessage, LoadSession, ReadImageDataURL, ReadFile,
+} from './mocks/wailsApp'
 
 beforeEach(() => {
   cockpit.pendingFile = null
@@ -238,5 +240,40 @@ describe('attaching a file dragged in from the workbench', () => {
     // Already inside the sandbox — copying it again would leave two of them.
     expect(SaveChatFile).not.toHaveBeenCalled()
     expect(ReadFile).not.toHaveBeenCalled()
+  })
+})
+
+// An image on the clipboard has no path, and every attach route in this app
+// took one — so Ctrl+V, the most ordinary way there is to show the assistant a
+// screenshot, did nothing at all. Including a chart copied straight out of an
+// answer with the drawing's own คัดลอก button: the copy succeeded and there was
+// nowhere in the app to put it.
+describe('pasting an image into the composer', () => {
+  const pngFile = () =>
+    new File([Uint8Array.from([137, 80, 78, 71])], 'clip.png', { type: 'image/png' })
+
+  it('writes the pasted bytes into the sandbox and stages them', async () => {
+    vi.mocked(SaveChatImageData).mockResolvedValue('.aetox-attachments/20260808-1.png' as any)
+    vi.mocked(ReadImageDataURL).mockResolvedValue('data:image/png;base64,CCC' as any)
+
+    await attachImageFromClipboard(pngFile())
+
+    // The bytes go over as a data URL — there is no path to send.
+    expect(vi.mocked(SaveChatImageData).mock.calls[0][0]).toMatch(/^data:image\/png;base64,/)
+    expect(cockpit.pendingImage).toEqual({
+      relPath: '.aetox-attachments/20260808-1.png',
+      dataUrl: 'data:image/png;base64,CCC',
+    })
+  })
+
+  // A refused paste has to say so. Staging nothing and printing nothing is the
+  // silence this whole fix exists to end.
+  it('says why when the engine refuses the paste', async () => {
+    vi.mocked(SaveChatImageData).mockRejectedValue(new Error('ยังแนบรูปชนิด tiff ไม่ได้'))
+
+    await attachImageFromClipboard(pngFile())
+
+    expect(cockpit.pendingImage).toBeNull()
+    expect(cockpit.chat.at(-1)?.text).toContain('ยังแนบรูปชนิด tiff ไม่ได้')
   })
 })

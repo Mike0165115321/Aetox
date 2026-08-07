@@ -79,7 +79,10 @@ describe('the office roster', () => {
 
     await fireEvent.click(card)
 
-    expect(cockpit.settingsIntent).toEqual({ section: 'agents', createAgent: true })
+    // 'team' is ตัวแทน. Naming the ผู้ช่วยตัวแทน page here still opened the right
+    // editor — the handler forces the kind — so the bug hid behind a correct
+    // form and only showed itself when the user closed it.
+    expect(cockpit.settingsIntent).toEqual({ section: 'team', createAgent: true })
     expect(cockpit.activeView).toBe('settings')
   })
 
@@ -92,7 +95,7 @@ describe('the office roster', () => {
     const gear = screen.getAllByLabelText('ตั้งค่า')[0]
     await fireEvent.click(gear)
 
-    expect(cockpit.settingsIntent).toEqual({ section: 'agents', agent: 'doc' })
+    expect(cockpit.settingsIntent).toEqual({ section: 'team', agent: 'doc' })
     expect(cockpit.activeView).toBe('settings')
   })
 

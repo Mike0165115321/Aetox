@@ -5,7 +5,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/svelte'
 import Artifacts from '../lib/Artifacts.svelte'
-import { ListArtifacts, OpenArtifact, DeleteArtifact, LoadSessionAnyProject } from './mocks/wailsApp'
+import {
+  ListArtifacts, OpenArtifact, DeleteArtifact, LoadSessionAnyProject, ArtifactPreview,
+} from './mocks/wailsApp'
 import { cockpit } from '../lib/stores/cockpit.svelte'
 
 const file = (over: Record<string, unknown> = {}) => ({
@@ -80,5 +82,66 @@ describe('the work gallery', () => {
     render(Artifacts, { onClose: () => {} })
 
     await waitFor(() => expect(screen.getByText(/ยังไม่มีไฟล์/)).toBeTruthy())
+  })
+})
+
+// A grid of filenames answers "what is it called", which is the one thing the
+// person coming back here has already forgotten. Two .docx called สรุปผล… and
+// นิสัย… are the same card twice until a line of either one is on screen.
+describe('what a card shows of the file inside it', () => {
+  const withPreview = (name: string, preview: Record<string, unknown>) => {
+    vi.mocked(ListArtifacts).mockResolvedValue([file({ name, path: 'C:/x/output/s/' + name })] as any)
+    vi.mocked(ArtifactPreview).mockResolvedValue(preview as any)
+  }
+
+  it('renders a markdown report as the document it is', async () => {
+    withPreview('file-scan-report.md', { kind: 'markdown', text: '# รายงาน\n\nพบ 516,374 ไฟล์' })
+    render(Artifacts, { onClose: () => {} })
+
+    await waitFor(() => expect(screen.getByText('รายงาน')).toBeTruthy())
+    expect(document.querySelector('.art-thumb-md h1')).toBeTruthy()
+  })
+
+  it('shows a workbook as a grid of its own cells', async () => {
+    withPreview('สรุปยอด.xlsx', { kind: 'sheet', sheet: 'สรุป', rows: [['เดือน', 'ยอด'], ['ม.ค.', '1200']] })
+    render(Artifacts, { onClose: () => {} })
+
+    await waitFor(() => expect(screen.getByText('เดือน')).toBeTruthy())
+    expect(screen.getByText('1200')).toBeTruthy()
+  })
+
+  // An .html artifact is shown as the page it is. Inside sandbox="" — no
+  // scripts, no forms, no same-origin — because this is a file the agent wrote
+  // and the gallery is inside the app's own document.
+  it('renders an html artifact in a sandboxed frame', async () => {
+    withPreview('northstar-brand.html', { kind: 'html', text: '<h1>Northstar</h1>' })
+    render(Artifacts, { onClose: () => {} })
+
+    const frame = await waitFor(() => {
+      const el = document.querySelector('iframe.art-thumb-frame')
+      expect(el).toBeTruthy()
+      return el as HTMLIFrameElement
+    })
+    expect(frame.getAttribute('sandbox')).toBe('')
+    expect(frame.getAttribute('srcdoc')).toContain('Northstar')
+  })
+
+  // A PDF, a zip, a file deleted underneath us. The card keeps its mark and
+  // its name — a preview is a bonus, never the reason the row exists.
+  it('falls back to the file mark when there is nothing to draw', async () => {
+    withPreview('รายงาน.pdf', { kind: 'none' })
+    render(Artifacts, { onClose: () => {} })
+
+    await waitFor(() => expect(document.querySelector('.art-thumb.plain')).toBeTruthy())
+    expect(screen.getByText('รายงาน.pdf')).toBeTruthy()
+  })
+
+  it('keeps the card when the preview call itself fails', async () => {
+    vi.mocked(ListArtifacts).mockResolvedValue([file({ name: 'gone.md' })] as any)
+    vi.mocked(ArtifactPreview).mockRejectedValue(new Error('ไฟล์นี้ไม่ได้อยู่ในโฟลเดอร์ผลงาน'))
+    render(Artifacts, { onClose: () => {} })
+
+    await waitFor(() => expect(screen.getByText('gone.md')).toBeTruthy())
+    expect(document.querySelector('.art-thumb.plain')).toBeTruthy()
   })
 })

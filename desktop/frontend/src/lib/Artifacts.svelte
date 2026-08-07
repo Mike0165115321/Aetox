@@ -7,10 +7,11 @@
   // Deleting a conversation leaves its work alone (§6.7); this page is the one
   // place a produced file is deleted, by the user, on purpose.
   import { onMount } from 'svelte'
-  import { ListArtifacts, OpenArtifact, DeleteArtifact } from '../../wailsjs/go/main/App'
+  import { ListArtifacts, OpenArtifact, DeleteArtifact, ArtifactPreview } from '../../wailsjs/go/main/App'
   import { main } from '../../wailsjs/go/models'
   import { agoLabel, selectGlobalSession, setActiveView } from './stores/cockpit.svelte'
   import { t } from './i18n.svelte'
+  import { renderMarkdown } from './markdown'
   import Icon from './Icon.svelte'
   import type { IconName } from './icons'
 
@@ -68,8 +69,61 @@
     return `${(bytes / 1024 / 1024).toFixed(1)} MB`
   }
 
-  // The mark on a card, by what the file is. Deliberately coarse: what a person
-  // is scanning for here is "the deck or the workbook", not a mime database.
+  // ---------- What is inside ----------
+  // A grid of filenames answers "what is it called", which is the one thing a
+  // person has already forgotten by the time they come looking: two .docx
+  // named สรุปผล… and นิสัย… are the same card twice until you can see a line of
+  // either. So every card shows its own first few lines — the file rendered,
+  // not described.
+  //
+  // Fetched per card as it scrolls into view, never up front. The sweep is
+  // capped at 500 rows and cracking 500 zips open to paint a grid nobody has
+  // scrolled to is how a gallery comes to feel broken.
+  let previews = $state<Record<string, main.ArtifactPreview | 'loading'>>({})
+
+  async function loadPreview(path: string) {
+    if (previews[path]) return
+    previews[path] = 'loading'
+    try {
+      previews[path] = await ArtifactPreview(path)
+    } catch {
+      // A file deleted underneath us, or one this side will not read. The card
+      // keeps its icon; a preview is a bonus, never the reason the row exists.
+      previews[path] = { kind: 'none' } as main.ArtifactPreview
+    }
+  }
+
+  // Svelte action: ask for this card's preview the first time it is on screen.
+  function whenVisible(el: HTMLElement, path: string) {
+    // No observer means no viewport to observe (jsdom, an old webview) — so
+    // ask straight away rather than leaving every card blank forever. Laziness
+    // is an optimisation here; the preview is the feature.
+    if (typeof IntersectionObserver === 'undefined') {
+      void loadPreview(path)
+      return
+    }
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (!e.isIntersecting) continue
+        io.unobserve(el)
+        void loadPreview(path)
+      }
+    }, { rootMargin: '200px' }) // a screen ahead, so scrolling meets a drawn card
+    io.observe(el)
+    return { destroy: () => io.disconnect() }
+  }
+
+  // An .html artifact is shown as the page it is, inside a sandboxed frame.
+  //
+  // Not through the markdown renderer, which is the other way this could go:
+  // that pipeline deletes a <style> outside a drawing on purpose (a stylesheet
+  // in the app's own document is how a produced file would restyle the app
+  // around it), and a brand page stripped of its stylesheet previews as a stack
+  // of unstyled headings — the opposite of showing what is inside. sandbox=""
+  // is the whole isolation: no scripts, no forms, no navigation, no same-origin.
+  const FRAME_W = 900
+  const FRAME_SCALE = 0.34
+
   function markOf(name: string): IconName {
     const ext = name.split('.').pop()?.toLowerCase() ?? ''
     if (['docx', 'pdf', 'md', 'txt'].includes(ext)) return 'fileText'
@@ -100,10 +154,42 @@
       {/if}
       <div class="art-grid">
         {#each files as f (f.path)}
-          <div class="art-card">
+          {@const p = previews[f.path]}
+          <div class="art-card" use:whenVisible={f.path}>
             <button class="art-open" onclick={() => open(f)} title={f.path}>
-              <span class="art-mark"><Icon name={markOf(f.name)} size={18} /></span>
-              <span class="art-name">{f.name}</span>
+              <!-- The look inside. Kept above the name rather than beside it:
+                   this is the thing the eye should land on, and the name is the
+                   caption under it. A file with no cheap preview (a PDF, a zip)
+                   shows its mark large in the same box, so every card is the
+                   same shape whether or not it could be read. -->
+              <span class="art-thumb" class:plain={!p || p === 'loading' || p.kind === 'none'}>
+                {#if p && p !== 'loading' && p.kind === 'image'}
+                  <img class="art-thumb-img" src={p.dataUrl} alt="" loading="lazy" />
+                {:else if p && p !== 'loading' && p.kind === 'html'}
+                  <iframe
+                    class="art-thumb-frame" title={f.name} sandbox="" srcdoc={p.text}
+                    style="width:{FRAME_W}px; height:{Math.round(360 / FRAME_SCALE)}px; transform:scale({FRAME_SCALE})"
+                  ></iframe>
+                {:else if p && p !== 'loading' && p.kind === 'markdown'}
+                  <div class="art-thumb-md markdown-body">{@html renderMarkdown(p.text ?? '')}</div>
+                {:else if p && p !== 'loading' && p.kind === 'sheet'}
+                  <table class="art-thumb-sheet">
+                    <tbody>
+                      {#each p.rows ?? [] as row, i}
+                        <tr>{#each row as cell}<td class:head={i === 0}>{cell}</td>{/each}</tr>
+                      {/each}
+                    </tbody>
+                  </table>
+                {:else if p && p !== 'loading' && p.kind === 'text'}
+                  <pre class="art-thumb-text">{p.text}</pre>
+                {:else}
+                  <span class="art-mark lg"><Icon name={markOf(f.name)} size={26} /></span>
+                {/if}
+              </span>
+              <span class="art-name-row">
+                <span class="art-mark"><Icon name={markOf(f.name)} size={14} /></span>
+                <span class="art-name">{f.name}</span>
+              </span>
               <span class="art-meta">{size(f.size)} · {agoLabel(f.modified)}</span>
             </button>
             <div class="art-foot">

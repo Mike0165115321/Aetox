@@ -239,7 +239,7 @@
     if (!intent) return
     cockpit.settingsIntent = null
     openSection(intent.section)
-    if (intent.section !== 'agents') return
+    if (intent.section !== 'team') return
     if (intent.createAgent) {
       newAgent('agent')
       return

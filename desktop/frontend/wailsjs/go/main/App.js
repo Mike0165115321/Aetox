@@ -22,6 +22,10 @@ export function AppVersion() {
   return window['go']['main']['App']['AppVersion']();
 }
 
+export function ArtifactPreview(arg1) {
+  return window['go']['main']['App']['ArtifactPreview'](arg1);
+}
+
 export function ApprovePendingChange(arg1) {
   return window['go']['main']['App']['ApprovePendingChange'](arg1);
 }
@@ -504,6 +508,10 @@ export function SaveChatFile(arg1) {
 
 export function SaveChatImage(arg1) {
   return window['go']['main']['App']['SaveChatImage'](arg1);
+}
+
+export function SaveChatImageData(arg1) {
+  return window['go']['main']['App']['SaveChatImageData'](arg1);
 }
 
 export function SaveIdentityFile(arg1, arg2) {

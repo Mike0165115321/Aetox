@@ -63,12 +63,21 @@
   // carries kind='agent' by construction — it comes off this roster — so the
   // editor saves through the agents' door without ever reading a file to
   // decide what something is.
+  //
+  // 'team' is ตัวแทน; 'agents' is the ผู้ช่วยตัวแทน page next to it in Settings.
+  // Sending 'agents' still opened the right editor — the handler forces
+  // kind='agent' — so the header read ตั้งค่าตัวแทน and everything about the
+  // form was correct. What it got wrong was the page *underneath*: closing the
+  // editor put the user on the ผู้ช่วยตัวแทน roster, a page they had not asked
+  // for and could not have reached from here, with no way back to the team
+  // they came from. A back button that lands somewhere else is worse than no
+  // back button.
   function configure(c: main.Chair) {
-    cockpit.settingsIntent = { section: 'agents', agent: c.name }
+    cockpit.settingsIntent = { section: 'team', agent: c.name }
     setActiveView('settings')
   }
   function createAgent() {
-    cockpit.settingsIntent = { section: 'agents', createAgent: true }
+    cockpit.settingsIntent = { section: 'team', createAgent: true }
     setActiveView('settings')
   }
 

@@ -14,7 +14,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/svelte'
 import Sidebar from '../lib/Sidebar.svelte'
-import { SessionMode, CurrentSessionID } from './mocks/wailsApp'
+import { SessionMode, CurrentSessionID, LoadSessionAnyProject } from './mocks/wailsApp'
 import { cockpit } from '../lib/stores/cockpit.svelte'
 import { setShell } from '../lib/shell.svelte'
 import type { Session } from '../lib/types'
@@ -101,5 +101,37 @@ describe('the chat list', () => {
     const labels = Array.from(document.querySelectorAll('.side-actions button'))
       .map((b) => b.getAttribute('aria-label'))
     expect(labels).toEqual(['เริ่มเซสชันใหม่'])
+  })
+
+  // The row's whole job. Every other way into a session switched the view to
+  // the chat; this one loaded the conversation and left the user looking at
+  // whatever page they were on — the row lit up, nothing else moved, and the
+  // only reading available from the outside was that the row does not work.
+  it('shows the chat when a row is clicked from another page', async () => {
+    vi.mocked(LoadSessionAnyProject).mockResolvedValue([] as never)
+    cockpit.activeView = 'settings'
+    cockpit.history.push(chat('a', 'เปิดอันนี้', daysAgo(0, 9)))
+    render(Sidebar, { onOpenSettings: () => {} })
+
+    await fireEvent.click(screen.getByText('เปิดอันนี้'))
+
+    expect(cockpit.activeView).toBe('chat')
+  })
+
+  // The engine writes a sentence for each of its seven refusals — the folder
+  // moved, the desk file is gone, the session is not in this project. An
+  // unhandled rejection here used to swallow every one of them, which made a
+  // session that cannot open indistinguishable from a row that is not wired up.
+  it('says why when the engine refuses to open the session', async () => {
+    vi.mocked(LoadSessionAnyProject).mockRejectedValue(
+      new Error('ไม่พบโปรเจกต์ของเซสชันนี้ (โฟลเดอร์อาจถูกย้ายหรือลบไปแล้ว)'),
+    )
+    cockpit.sessionError = ''
+    cockpit.history.push(chat('a', 'เปิดไม่ได้', daysAgo(0, 9)))
+    render(Sidebar, { onOpenSettings: () => {} })
+
+    await fireEvent.click(screen.getByText('เปิดไม่ได้'))
+
+    expect(cockpit.sessionError).toContain('โฟลเดอร์อาจถูกย้าย')
   })
 })

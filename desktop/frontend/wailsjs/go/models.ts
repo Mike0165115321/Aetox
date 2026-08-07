@@ -76,6 +76,27 @@ export namespace main {
 	        this.time = source["time"];
 	    }
 	}
+	export class ArtifactPreview {
+	    kind: string;
+	    text?: string;
+	    dataUrl?: string;
+	    rows?: string[][];
+	    sheet?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ArtifactPreview(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.text = source["text"];
+	        this.dataUrl = source["dataUrl"];
+	        this.rows = source["rows"];
+	        this.sheet = source["sheet"];
+	    }
+	}
+
 	export class Artifact {
 	    name: string;
 	    path: string;

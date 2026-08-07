@@ -305,6 +305,15 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .sess-del.confirm { color:var(--status-danger); font-weight:600; }
 .proj-group-more { display:block; padding:5px 8px 5px 33px; color:var(--text-dim); font-size:var(--fs-xs); cursor:pointer; }
 
+/* A session the engine refused to open, said where the chat would have been. */
+.session-error {
+  display:flex; align-items:flex-start; gap:8px; margin:12px 0;
+  padding:10px 12px; border-radius:var(--r-md);
+  border:1px solid var(--status-danger); background:var(--surface-panel);
+  color:var(--text-primary); font-size:var(--fs-sm);
+}
+.session-error .ic { flex:none; display:flex; padding-top:2px; color:var(--status-danger); }
+
 /* Empty state for a search that matched nothing. */
 .sess-empty { padding:10px 12px; font-size:var(--fs-sm); color:var(--text-muted); }.proj-group-more:hover { color:var(--text-primary); }
 
@@ -1365,9 +1374,60 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .art-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(210px, 1fr)); gap:14px; }
 .art-card { display:flex; flex-direction:column; border:1px solid var(--border-subtle); border-radius:var(--r-lg); background:var(--surface-panel); overflow:hidden; }
 .art-card:hover { border-color:var(--border-strong); }
-.art-open { display:flex; flex-direction:column; gap:6px; align-items:flex-start; padding:14px 14px 10px; text-align:left; cursor:pointer; }
-.art-mark { display:flex; color:var(--text-muted); }
-.art-name { font-size:var(--fs-md); font-weight:600; word-break:break-all; line-height:1.35; }
+.art-open { display:flex; flex-direction:column; gap:6px; align-items:stretch; padding:0 0 10px; text-align:left; cursor:pointer; }
+.art-mark { display:flex; color:var(--text-muted); flex:none; }
+
+/* The look inside. A fixed box whatever the file turned out to be, so the grid
+   stays a grid — and the content is drawn at its own size and clipped, not
+   squashed, because a squashed page tells you nothing a filename doesn't. */
+.art-thumb {
+  position:relative; height:132px; overflow:hidden; flex:none;
+  border-bottom:1px solid var(--border-subtle); background:var(--surface-sunken);
+}
+/* Fades the clip instead of guillotining it mid-line. */
+.art-thumb::after {
+  content:''; position:absolute; inset:auto 0 0 0; height:38px; pointer-events:none;
+  background:linear-gradient(to bottom, transparent, var(--surface-sunken));
+}
+.art-thumb.plain { display:flex; align-items:center; justify-content:center; }
+.art-thumb.plain::after { content:none; }
+.art-mark.lg { color:var(--text-dim); }
+.art-thumb-img { width:100%; height:100%; object-fit:cover; display:block; }
+/* Scaled from the top-left: a thumbnail of a page is its top-left corner, which
+   is where the title is. pointer-events:none — the card's own click is what
+   opens the file; the frame must never swallow it. */
+.art-thumb-frame {
+  position:absolute; top:0; left:0; border:0; background:#fff;
+  transform-origin:top left; pointer-events:none;
+}
+.art-thumb-md, .art-thumb-text {
+  margin:0; padding:10px 12px; font-size:9.5px; line-height:1.5;
+  color:var(--text-secondary);
+}
+.art-thumb-text { white-space:pre-wrap; word-break:break-word; font-family:var(--font-mono, ui-monospace, monospace); }
+/* The chat renderer's own spacing is built for a 700px column; at 9.5px in a
+   210px card its margins alone would fill the box. */
+.art-thumb-md :global(*) { margin:0 0 4px; font-size:inherit !important; line-height:1.45; }
+.art-thumb-md :global(h1), .art-thumb-md :global(h2), .art-thumb-md :global(h3) {
+  font-weight:700; color:var(--text-primary); border:0; padding:0;
+}
+.art-thumb-md :global(pre), .art-thumb-md :global(img), .art-thumb-md :global(table) { display:none; }
+.art-thumb-md :global(ul), .art-thumb-md :global(ol) { padding-left:14px; }
+.art-thumb-sheet { width:100%; border-collapse:collapse; font-size:9px; color:var(--text-secondary); }
+.art-thumb-sheet td {
+  border:1px solid var(--border-subtle); padding:3px 5px; max-width:70px;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.art-thumb-sheet td.head { font-weight:700; color:var(--text-primary); background:var(--surface-panel); }
+
+.art-name-row { display:flex; align-items:center; gap:6px; min-width:0; padding:0 14px; }
+.art-meta { padding:0 14px; }
+/* Two lines, then ellipsis. สรุปผลการทดสอบระบบ (Demo Round 2).docx wrapped to
+   three and pushed that one card taller than its whole row. */
+.art-name {
+  font-size:var(--fs-sm); font-weight:600; word-break:break-all; line-height:1.35;
+  display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden;
+}
 .art-meta { font-size:var(--fs-2xs); color:var(--text-dim); }
 .art-foot { display:flex; align-items:center; gap:8px; padding:7px 12px; border-top:1px solid var(--border-subtle); font-size:var(--fs-xs); }
 .art-orphan { color:var(--text-dim); }

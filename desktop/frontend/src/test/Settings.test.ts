@@ -469,7 +469,7 @@ describe('Settings pages', () => {
     ] as any)
     vi.mocked(ListChairs).mockResolvedValue([{ name: 'deck' }] as any)
     vi.mocked(ReadSubagentProfile).mockResolvedValue('---\ndescription: ทำสไลด์\n---\nสร้างสไลด์หนึ่งชุด' as any)
-    cockpit.settingsIntent = { section: 'agents', agent: 'deck' }
+    cockpit.settingsIntent = { section: 'team', agent: 'deck' }
 
     render(Settings, { onClose: () => {} })
 
@@ -484,8 +484,33 @@ describe('Settings pages', () => {
     expect(vi.mocked(SaveAgentProfile).mock.calls[0][0]).toBe('deck')
   })
 
+  // Where the back button lands, which is the half the two end-tests missed.
+  //
+  // The intent used to name section 'agents' — the ผู้ช่วยตัวแทน page — and the
+  // editor still came up correct, because the handler forces kind='agent'
+  // regardless. So every assertion above passed while the page *underneath* the
+  // editor was the wrong roster: closing it dropped the user on ผู้ช่วยตัวแทน,
+  // somewhere they had not asked to be and could not have got to from the team
+  // page. Only the heading after closing catches that.
+  it('goes back to the team roster, not the helpers', async () => {
+    vi.mocked(ListSubagentProfiles).mockResolvedValue([
+      { name: 'deck', description: 'ทำสไลด์', prompt: 'role', builtin: true, desk: 'specialized' },
+    ] as any)
+    vi.mocked(ListChairs).mockResolvedValue([{ name: 'deck' }] as any)
+    vi.mocked(ReadSubagentProfile).mockResolvedValue('---\ndescription: ทำสไลด์\n---\nสร้างสไลด์' as any)
+    cockpit.settingsIntent = { section: 'team', agent: 'deck' }
+
+    render(Settings, { onClose: () => {} })
+    await waitFor(() => expect(screen.getByText('ตั้งค่าตัวแทน')).toBeTruthy())
+
+    await fireEvent.click(screen.getByText('กลับไปหน้ารวม'))
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'ตัวแทน' })).toBeTruthy())
+    expect(screen.queryByRole('heading', { name: 'ผู้ช่วยตัวแทน' })).toBeNull()
+  })
+
   it('opens a blank agent form when the team page asks to create one', async () => {
-    cockpit.settingsIntent = { section: 'agents', createAgent: true }
+    cockpit.settingsIntent = { section: 'team', createAgent: true }
 
     render(Settings, { onClose: () => {} })
 

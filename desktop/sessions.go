@@ -669,12 +669,23 @@ func (a *App) LoadSessionAnyProject(id string) ([]SessionMessage, error) {
 		// Sessions chatted "ไม่โฟกัสโปรเจกต์" live in the unfocused bucket,
 		// which never gets a projects-table row — switch back to unfocused
 		// mode for those instead of treating them as an orphaned project.
-		if isUnfocusedKey(key) {
+		//
+		// And a key that has NO projects row is the same case wearing a name
+		// we no longer recognize, not a project that lost its folder: every
+		// real project gets its row from touchProject the moment it is opened.
+		// The keys this actually catches are the buckets history has already
+		// stranded — chats filed under the home key before the unfocused root
+		// moved (§19.1), and chats filed under "." by a launch with a stripped
+		// environment (tool_runs #533 — the launch path is fixed, the sessions
+		// it stamped are still in the DB, and one of them was the owner's own
+		// เงินบาท chat, unclickable the same day the run was logged). A key
+		// carries no rights, so refusing protects nothing; it only orphans a
+		// real transcript. Reopen it as what it is: a chat held outside every
+		// project. LoadSession reads the messages by the session's own key, so
+		// the odd bucket name still finds its rows.
+		if isUnfocusedKey(key) || rootPath == "" {
 			a.focusNone()
 			return a.LoadSession(id)
-		}
-		if rootPath == "" {
-			return nil, fmt.Errorf("ไม่พบโปรเจกต์ของเซสชันนี้ (โฟลเดอร์อาจถูกย้ายหรือลบไปแล้ว)")
 		}
 		a.reload(config.ConfigOptions{RootPath: rootPath, ApprovalMode: string(safety.ApprovalFullAccess)})
 		a.projectFocused = true
@@ -709,13 +720,31 @@ func (a *App) LoadSession(id string) ([]SessionMessage, error) {
 	// tools it may use — reopening the conversation without it is a session
 	// that knows less, not a session that can do more, so it is restored as a
 	// chat held outside every project and the transcript stays reachable.
-	var desk, chair, space string
-	if db.QueryRow(`SELECT mode, agent, space FROM sessions WHERE id = ?`, id).Scan(&desk, &chair, &space) == nil {
+	//
+	// The session's own project_key comes back here too, and it — not the key of
+	// wherever the engine happens to be rooted — is what the messages are read
+	// with. The two are normally the same, and where they are not, the caller has
+	// already decided this session may be opened.
+	//
+	// The one place they legitimately differ is the unfocused bucket, which moved
+	// from ~ to ~/aetox on 2026-07-26 (§19.1 amendment). isUnfocusedKey has always
+	// accepted both keys, so every chat held with no project open before that date
+	// got past the first gate — and then died on this query, which knew only the
+	// current key. focusNone() roots the engine at ~/aetox by design; it is not
+	// going to root it back at the home directory, so matching the message filter
+	// to the running root can never find those rows. The session says which bucket
+	// it is in; that is the answer, and it was two lines away the whole time.
+	var desk, chair, space, key string
+	if db.QueryRow(`SELECT mode, agent, space, project_key FROM sessions WHERE id = ?`, id).
+		Scan(&desk, &chair, &space, &key) == nil {
 		if err := a.setStation(desk, chair); err != nil {
 			return nil, err
 		}
 		a.space = a.resolvedSpace(space)
 		a.applyConfig(a.cfg)
+	}
+	if key == "" {
+		key = projectKey(a.cfg.SandboxRoot)
 	}
 	// m.id comes back so a reopened session can still be rated: the thumbs
 	// address a job by the bubble they sit under, and without the row id an
@@ -727,7 +756,7 @@ func (a *App) LoadSession(id string) ([]SessionMessage, error) {
 		JOIN sessions s ON s.id = m.session_id
 		WHERE m.session_id = ? AND s.project_key = ?
 		ORDER BY m.id`,
-		id, projectKey(a.cfg.SandboxRoot))
+		id, key)
 	if err != nil {
 		return nil, err
 	}

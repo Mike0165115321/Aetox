@@ -451,6 +451,9 @@ export interface CockpitState {
   reasoningText: string
   /** Image staged in the composer, not yet sent. */
   pendingImage: PendingImage | null
+  /** Why the last attempt to open a session from the history list failed, in
+   *  the engine's own words. '' when the last one worked. */
+  sessionError: string
   /** File/browser tab dragged into the composer, staged before send. */
   pendingContext: PendingContext | null
   /** Non-image file attached in the composer, staged before send. */
@@ -513,6 +516,7 @@ export function emptyCockpitState(): CockpitState {
     pendingLearned: 0,
     settingsIntent: null,
     pendingImage: null,
+    sessionError: '',
     pendingContext: null,
     pendingFile: null,
   }

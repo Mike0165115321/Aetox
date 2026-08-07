@@ -10,7 +10,7 @@ import {
   SwitchProvider, SwitchThinkLevel, SwitchApprovalMode, SetProviderWireFormat,
   SwitchModel, SetAPIKey, SetProviderBaseURL, ProjectTree, ReadFile,
   ListSessions, LoadSession, NewSession, NewSessionAt, NewChairSession, NewSessionInSpace, CurrentSpace, SessionsInSpace, SessionMode, SessionAgent, CurrentSessionID, SearchSessions, DeleteSession,
-  SaveChatImage, SaveChatFile, ReadImageDataURL, CancelTurn, BrowserGetText, RecentProjects,
+  SaveChatImage, SaveChatImageData, SaveChatFile, ReadImageDataURL, CancelTurn, BrowserGetText, RecentProjects,
   ListSessionsForDoor, SearchSessionsForDoor, LoadSessionAnyProject, ClearProjectFocus,
   AnswerUserQuestion, Interject, RetryActiveProvider, PendingUndo, UndoLastTurn,
   CompleteSignIn, SignOut, ImportSignIn,
@@ -301,9 +301,37 @@ function hydrateImages(): void {
   })
 }
 
-/** Open a session from the global history list — switches project first if it belongs to a different one. */
+/** Open a session from the global history list — switches project first if it belongs to a different one.
+ *
+ * Opening a chat has to *show* the chat. Every other way into a session already
+ * said so — openDesk and switchShell both call setActiveView('chat') — and this
+ * one, the one the history list uses, did not. Click a row from Settings or the
+ * โปรเจกต์ page and the conversation loaded correctly behind the page you were
+ * looking at: the row lit up (the list refreshes at the end of this function),
+ * the view never moved, and the only honest reading from the outside is that
+ * the row is dead. Same for importChat, which comes through here — the file
+ * imported and nothing appeared.
+ *
+ * First, not last: the awaits below are engine round-trips, and a view that
+ * switches after them shows the *old* chat for as long as they take.
+ *
+ * And the load is allowed to fail out loud. LoadSessionAnyProject has seven
+ * separate refusals, each with a written Thai sentence saying exactly what is
+ * wrong — the project folder was moved, the desk file is gone, the session is
+ * not in this project. Not one of them was ever read: an unhandled rejection
+ * here aborts the function and stops, so a row whose session cannot be opened
+ * behaves identically to a row that is not wired up. The engine had the answer
+ * the whole time and the window threw it away. */
 export async function selectGlobalSession(session: Session): Promise<void> {
-  const messages = await LoadSessionAnyProject(session.id)
+  setActiveView('chat')
+  let messages: main.SessionMessage[]
+  try {
+    messages = await LoadSessionAnyProject(session.id)
+  } catch (err) {
+    cockpit.sessionError = err instanceof Error ? err.message : String(err)
+    return
+  }
+  cockpit.sessionError = ''
   cockpit.todos = []
   cockpit.ask = null
   cockpit.chat = messages.map(restoreAttachments)
@@ -1036,6 +1064,29 @@ export async function attachImageFromPath(absPath: string): Promise<void> {
     const relPath = await SaveChatImage(absPath)
     const dataUrl = await ReadImageDataURL(relPath)
     cockpit.pendingImage = { relPath, dataUrl }
+  } catch (err) {
+    cockpit.chat.push({ role: 'agent', text: t('cockpit.attachError', { err: String(err) }), time: nowLabel() })
+  }
+}
+
+/** Stage an image pasted into the composer — a screenshot, or a chart copied
+ *  out of an answer with the drawing's own คัดลอก button.
+ *
+ * The picker and the drop path both hand SaveChatImage a real OS path, which is
+ * a route a clipboard image simply does not have: it is bytes and nothing else.
+ * So the bytes go over as a data URL and the engine writes them into the same
+ * per-session attachment folder a picked file lands in — from there on it is an
+ * ordinary attachment, readable by every skill, on the same relative path. */
+export async function attachImageFromClipboard(file: File): Promise<void> {
+  try {
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result as string)
+      reader.onerror = () => reject(new Error('อ่านรูปจากคลิปบอร์ดไม่ได้'))
+      reader.readAsDataURL(file)
+    })
+    const relPath = await SaveChatImageData(dataUrl)
+    cockpit.pendingImage = { relPath, dataUrl: await ReadImageDataURL(relPath) }
   } catch (err) {
     cockpit.chat.push({ role: 'agent', text: t('cockpit.attachError', { err: String(err) }), time: nowLabel() })
   }

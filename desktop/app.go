@@ -730,11 +730,97 @@ func (a *App) SaveChatFile(sourcePath string) (string, error) {
 	return a.saveChatAttachment(sourcePath, 2<<30) // 2GB
 }
 
-func (a *App) saveChatAttachment(sourcePath string, maxBytes int64) (string, error) {
-	root := strings.TrimSpace(a.cfg.SandboxRoot)
-	if root == "" {
-		return "", fmt.Errorf("no project open")
+// SaveChatImageData is the same as SaveChatImage for an image that has no file
+// behind it — one pasted from the clipboard.
+//
+// A screenshot, or a chart copied out of an answer with the drawing's own
+// คัดลอก button, exists only as bytes on the clipboard: there is no path to
+// hand SaveChatImage, which is why every attach route in this app used to
+// require the picker. Ctrl+V is the obvious way to put a screenshot in front of
+// the assistant, and it did nothing at all.
+//
+// Same destination, same session folder, same cap as a picked image — the only
+// difference is where the bytes came from.
+func (a *App) SaveChatImageData(dataURL string) (string, error) {
+	data, ext, err := decodeImageDataURL(dataURL)
+	if err != nil {
+		return "", err
 	}
+	if int64(len(data)) > 20<<20 {
+		return "", fmt.Errorf("รูปใหญ่เกินไป (%d MB, สูงสุด 20 MB)", len(data)>>20)
+	}
+	destPath, root, err := a.chatAttachmentDest(ext)
+	if err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(destPath, data, 0o600); err != nil {
+		return "", err
+	}
+	return relativeToRoot(root, destPath)
+}
+
+// The image types the attach dialog already offers. An unknown type is refused
+// rather than written with a guessed extension: the path this returns is handed
+// to skills that open it by extension, and a .png holding something else is a
+// file that fails later, somewhere less obvious than here.
+var pastableImageExt = map[string]string{
+	"png": ".png", "jpeg": ".jpg", "jpg": ".jpg",
+	"gif": ".gif", "webp": ".webp", "bmp": ".bmp",
+}
+
+func decodeImageDataURL(dataURL string) (data []byte, ext string, err error) {
+	raw, ok := strings.CutPrefix(strings.TrimSpace(dataURL), "data:image/")
+	if !ok {
+		return nil, "", fmt.Errorf("ไม่ใช่รูปภาพ")
+	}
+	kind, payload, ok := strings.Cut(raw, ";base64,")
+	if !ok {
+		return nil, "", fmt.Errorf("ไม่ใช่รูปภาพ")
+	}
+	ext, ok = pastableImageExt[strings.ToLower(kind)]
+	if !ok {
+		return nil, "", fmt.Errorf("ยังแนบรูปชนิด %s ไม่ได้", kind)
+	}
+	data, err = base64.StdEncoding.DecodeString(payload)
+	if err != nil || len(data) == 0 {
+		return nil, "", fmt.Errorf("ข้อมูลรูปไม่สมบูรณ์")
+	}
+	return data, ext, nil
+}
+
+// chatAttachmentDest picks where the next attachment goes: one folder per
+// session, a name that cannot collide. Shared by the copy-a-file path and the
+// paste-bytes path so an attachment lands in exactly one place either way.
+func (a *App) chatAttachmentDest(ext string) (destPath, root string, err error) {
+	root = strings.TrimSpace(a.cfg.SandboxRoot)
+	if root == "" {
+		return "", "", fmt.Errorf("no project open")
+	}
+	// One subfolder per session, so an attachment lives and dies with its chat
+	// (DeleteSession removes the folder, sweepAttachments catches orphans).
+	// Before this, every session's attachments piled up in one shared folder
+	// forever — a later chat could list and read documents attached to any
+	// earlier one.
+	if a.sessionID == "" {
+		return "", "", fmt.Errorf("no active session")
+	}
+	destDir := filepath.Join(root, attachmentsDir, a.sessionID)
+	if err := os.MkdirAll(destDir, 0o700); err != nil {
+		return "", "", err
+	}
+	seq := atomic.AddInt64(&attachmentSeq, 1)
+	return filepath.Join(destDir, fmt.Sprintf("%d-%d%s", time.Now().UnixMilli(), seq, ext)), root, nil
+}
+
+func relativeToRoot(root, destPath string) (string, error) {
+	rel, err := filepath.Rel(root, destPath)
+	if err != nil {
+		return "", err
+	}
+	return filepath.ToSlash(rel), nil
+}
+
+func (a *App) saveChatAttachment(sourcePath string, maxBytes int64) (string, error) {
 	sourcePath = strings.TrimSpace(sourcePath)
 	if sourcePath == "" {
 		return "", fmt.Errorf("no source path given")
@@ -749,22 +835,10 @@ func (a *App) saveChatAttachment(sourcePath string, maxBytes int64) (string, err
 	if info.Size() > maxBytes {
 		return "", fmt.Errorf("ไฟล์ใหญ่เกินไป (%d MB, สูงสุด %d MB)", info.Size()>>20, maxBytes>>20)
 	}
-
-	// One subfolder per session, so an attachment lives and dies with its chat
-	// (DeleteSession removes the folder, sweepAttachments catches orphans).
-	// Before this, every session's attachments piled up in one shared folder
-	// forever — a later chat could list and read documents attached to any
-	// earlier one.
-	if a.sessionID == "" {
-		return "", fmt.Errorf("no active session")
-	}
-	destDir := filepath.Join(root, attachmentsDir, a.sessionID)
-	if err := os.MkdirAll(destDir, 0o700); err != nil {
+	destPath, root, err := a.chatAttachmentDest(filepath.Ext(sourcePath))
+	if err != nil {
 		return "", err
 	}
-	seq := atomic.AddInt64(&attachmentSeq, 1)
-	destName := fmt.Sprintf("%d-%d%s", time.Now().UnixMilli(), seq, filepath.Ext(sourcePath))
-	destPath := filepath.Join(destDir, destName)
 
 	// Streamed, not ReadFile: a 1GB clip must not have to fit in memory first.
 	src, err := os.Open(sourcePath)
@@ -785,12 +859,7 @@ func (a *App) saveChatAttachment(sourcePath string, maxBytes int64) (string, err
 		os.Remove(destPath)
 		return "", err
 	}
-
-	rel, err := filepath.Rel(root, destPath)
-	if err != nil {
-		return "", err
-	}
-	return filepath.ToSlash(rel), nil
+	return relativeToRoot(root, destPath)
 }
 
 // PickAttachment prompts for any file to attach — image, clip, document. The

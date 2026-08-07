@@ -195,6 +195,55 @@ func TestListSessionsIsolatedByProject(t *testing.T) {
 	}
 }
 
+// A chat held in a bucket the app no longer recognizes must still open.
+//
+// Two real populations sit in owners' DBs: chats filed under the home key from
+// before the unfocused root moved (§19.1), and chats filed under "." by a
+// launch with a stripped environment (tool_runs #533 — the launch bug is
+// fixed, its sessions are not). Both used to die twice over: the "." key
+// failed isUnfocusedKey and was refused as a lost project, and even the
+// recognized home key then hit LoadSession's message filter, which only knew
+// the CURRENT root's key. From the sidebar both read as a row that does
+// nothing — the owner hit exactly this on 2026-08-08.
+func TestReopensSessionFromAStrandedBucket(t *testing.T) {
+	for _, tc := range []struct {
+		name, storedRoot string
+	}{
+		{"stripped-environment launch rooted at '.'", "."},
+		{"pre-§19.1 chat rooted at the home dir", func() string {
+			home, _ := os.UserHomeDir()
+			return home
+		}()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.storedRoot == "" {
+				t.Skip("no home dir")
+			}
+			a := newTestApp(t, tc.storedRoot)
+			a.appendTurn(
+				SessionMessage{Role: "user", Text: "ค้างอยู่ใน bucket เก่า", Time: "10:00"},
+				SessionMessage{Role: "agent", Text: "ครับ", Time: "10:00"},
+			)
+			id := a.sessionID
+
+			// The app as it runs today: rooted at the current unfocused root.
+			a.cfg.SandboxRoot = unfocusedRoot()
+			a.projectFocused = false
+
+			msgs, err := a.LoadSessionAnyProject(id)
+			if err != nil {
+				t.Fatalf("a stranded-bucket session refused to open: %v", err)
+			}
+			if len(msgs) != 2 {
+				t.Fatalf("opened with %d messages, want 2", len(msgs))
+			}
+			if a.projectFocused {
+				t.Error("a stranded bucket must reopen unfocused, not as a project")
+			}
+		})
+	}
+}
+
 func TestSearchSessionsFindsMatch(t *testing.T) {
 	root := t.TempDir()
 	a := newTestApp(t, root)

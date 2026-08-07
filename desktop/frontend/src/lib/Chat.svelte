@@ -16,7 +16,7 @@
   import { renderMarkdown, renderStreamingMarkdown } from './markdown'
   import { openUrlInWorkbench, openFileTab, setTabDragPayload, TAB_DRAG_MIME } from './stores/workbench.svelte'
   import {
-    cockpit, attachImageFromPath, clearPendingImage, attachTabContext, clearPendingContext,
+    cockpit, attachImageFromPath, attachImageFromClipboard, clearPendingImage, attachTabContext, clearPendingContext,
     attachFileFromPath, clearPendingFile, fileKind, attachmentPreview,
     openProject, openFolder, clearProjectFocus, cancelTurn, answerAsk, queuedMessages,
     addProjectFolder, removeProjectFolder,
@@ -633,6 +633,25 @@
     await attachTabContext(kind, ref, label)
   }
 
+  // Ctrl+V an image into the composer.
+  //
+  // Every attach route in this app went through a native picker, which is the
+  // one thing a screenshot on the clipboard cannot satisfy — so the most
+  // ordinary way there is to show the assistant something did nothing at all,
+  // silently. That includes a chart copied out of an answer with the drawing's
+  // own คัดลอก button: the copy worked, and there was nowhere to put it.
+  //
+  // Text paste is left entirely alone — no preventDefault, no interception —
+  // so pasting a prompt still behaves like a textarea.
+  async function onComposerPaste(e: ClipboardEvent) {
+    const item = Array.from(e.clipboardData?.items ?? []).find((i) => i.type.startsWith('image/'))
+    if (!item) return
+    const file = item.getAsFile()
+    if (!file) return
+    e.preventDefault()
+    await attachImageFromClipboard(file)
+  }
+
   // Runs the command in a shell-tagged code block the user clicked Run on.
   // Output lands in a <pre> appended inside the same block — inserted with
   // textContent, never innerHTML: command output is untrusted text, and this
@@ -899,6 +918,16 @@
     <!-- delegated click target is the <a> tags rendered inside .markdown-body, already interactive -->
     <div class="chat" bind:this={chatEl} onscroll={onChatScroll} onclick={onChatClick}>
     <div class="chat-inner">
+      <!-- A session the engine refused to open. It says why — the folder moved,
+           the desk file is gone — and until this existed it said it to nobody:
+           the click just did nothing, which reads as a broken row rather than a
+           chat that needs something put back. -->
+      {#if cockpit.sessionError}
+        <div class="session-error">
+          <span class="ic"><Icon name="alertTriangle" size={14} /></span>
+          <span>{cockpit.sessionError}</span>
+        </div>
+      {/if}
       {#each messages as m, i}
         <!-- A message sent into a running turn belongs below what has already
              streamed, not above it: it was said at that point, and drawn at the
@@ -1495,6 +1524,7 @@
         bind:this={inputEl}
         bind:value={draft}
         onkeydown={onKeydown}
+        onpaste={onComposerPaste}
       ></textarea>
       <div class="tools">
         <button

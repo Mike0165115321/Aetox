@@ -637,6 +637,71 @@ func TestSaveChatImageNoProjectOpen(t *testing.T) {
 	}
 }
 
+// A pasted screenshot has no file behind it, which is why the picker-only
+// attach routes could not take one — Ctrl+V did nothing at all. The bytes come
+// over as a data URL and have to land in the same per-session folder, on a
+// relative path with the right extension, or the skills that open attachments
+// by path cannot read what the user just pasted.
+func TestSaveChatImageDataWritesPastedBytes(t *testing.T) {
+	root := t.TempDir()
+	a := &App{cfg: config.Config{SandboxRoot: root}}
+	a.startNewSession()
+
+	// base64("fake png bytes")
+	rel, err := a.SaveChatImageData("data:image/png;base64,ZmFrZSBwbmcgYnl0ZXM=")
+	if err != nil {
+		t.Fatalf("SaveChatImageData: unexpected error: %v", err)
+	}
+	if filepath.Ext(rel) != ".png" {
+		t.Errorf("relPath = %q, want a .png extension", rel)
+	}
+	if strings.Contains(rel, "..") || filepath.IsAbs(rel) {
+		t.Errorf("relPath = %q, want a path inside the sandbox", rel)
+	}
+	got, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+	if err != nil {
+		t.Fatalf("pasted image not found: %v", err)
+	}
+	if string(got) != "fake png bytes" {
+		t.Errorf("written content = %q, want %q", got, "fake png bytes")
+	}
+}
+
+// A JPEG screenshot is the common case on Windows' own snipping tools, so the
+// extension has to follow the clipboard's type rather than always being .png:
+// the path is handed to skills that pick their reader by extension.
+func TestSaveChatImageDataKeepsTheClipboardsType(t *testing.T) {
+	a := &App{cfg: config.Config{SandboxRoot: t.TempDir()}}
+	a.startNewSession()
+
+	rel, err := a.SaveChatImageData("data:image/jpeg;base64,ZmFrZQ==")
+	if err != nil {
+		t.Fatalf("SaveChatImageData: %v", err)
+	}
+	if filepath.Ext(rel) != ".jpg" {
+		t.Errorf("relPath = %q, want .jpg for an image/jpeg paste", rel)
+	}
+}
+
+// Refusing loudly is the point: an unknown type written with a guessed
+// extension is a file that fails later, somewhere the user cannot connect to
+// the paste. Text on the clipboard must not come through here at all.
+func TestSaveChatImageDataRefusesWhatIsNotAPastableImage(t *testing.T) {
+	a := &App{cfg: config.Config{SandboxRoot: t.TempDir()}}
+	a.startNewSession()
+
+	for _, bad := range []string{
+		"", "hello", "data:text/plain;base64,aGVsbG8=",
+		"data:image/tiff;base64,aGVsbG8=", "data:image/svg+xml;base64,aGVsbG8=",
+		"data:image/png;base64,", "data:image/png;base64,!!!not-base64!!!",
+		"data:image/png,ZmFrZQ==", // not base64-encoded at all
+	} {
+		if _, err := a.SaveChatImageData(bad); err == nil {
+			t.Errorf("accepted %q", bad)
+		}
+	}
+}
+
 // A model/provider switch re-bootstraps the engine — the new agent must
 // inherit the old agent's REAL context (including tool messages and their
 // results), not just the text transcript. Regression for the switch dropping
