@@ -5,7 +5,8 @@
 <h1 align="center">Aetox</h1>
 
 <p align="center">
-  <strong>The AI assistant that does the work on your computer.</strong>
+  <strong>The execution layer for AI.</strong><br>
+  <sub>Models provide intelligence. Aetox provides capability.</sub>
 </p>
 
 <p align="center">
@@ -25,13 +26,34 @@
 
 ---
 
-**Aetox gives any model — including a 9B running on your own graphics card — eyes, ears,
-hands and a browser.** It reads images, watches video, hears audio, opens real web pages and
-clicks through them, and hands back real `.docx` / `.xlsx` / `.pptx` files. One 40.8 MB
-Windows executable, no runtime to install, and nothing leaves your machine.
+**Tell Aetox what needs doing, and it does it on your computer.** A model on its own can only
+produce text. Aetox is the layer underneath that turns an intention into work that actually
+happened — files changed, a form filled in, a document produced, a program run.
 
-The capability comes from the architecture, not from the model. That is the whole idea:
-**Architecture > Parameters.**
+```
+                    MODEL          ← the brain: knows what should happen
+                      ↓
+                 ┌─────────┐
+                 │  AETOX  │      ← the body: eyes, ears, hands, tools, permission
+                 │Execution│
+                 │  Layer  │
+                 └────┬────┘
+                      ↓
+          ┌───────────┼───────────┐
+          ↓           ↓           ↓
+        Files      Browser      Shell
+          ↓           ↓           ↓
+      Documents    Websites    Programs
+```
+
+That is why **any** model works, including a 9B on your own graphics card: the capability
+lives in the layer, not in the parameters. Aetox reads images, watches video, hears audio,
+opens real web pages and clicks through them, and hands back real `.docx` / `.xlsx` / `.pptx`
+files — with a model that can do none of those things by itself.
+
+One 40.8 MB Windows executable. No runtime to install. Nothing leaves your machine.
+
+> **Don't build an AI that answers more. Build an AI that does more.**
 
 <p align="center">
   <img src="docs/assets/hero-app.png" alt="Aetox desktop" width="90%">
@@ -71,9 +93,23 @@ wails build -nsis    # with the installer
 
 ## Two doors, one app
 
-Most tools pick a side: a chat assistant for everyone, or a coding tool for developers.
-Aetox is both, and they do not bleed into each other. One switch on the logo moves between
-them; the app remembers which one you were in.
+Most tools pick a side: a chat assistant for everyone, or a coding tool for developers. That
+choice only has to be made if the product *is* the assistant. Here the product is the engine,
+and a door is just a way of pointing it at a kind of work — so Aetox is both, without either
+bleeding into the other. One switch on the logo moves between them; the app remembers which
+one you were in.
+
+```
+                    AETOX ENGINE
+                          │
+           ┌──────────────┴──────────────┐
+           ↓                             ↓
+    AETOX ASSISTANT                 AETOX CODE
+    ───────────────                 ──────────
+    Everyday work                   Software
+    Files · Browser                 Files · Shell
+    Documents · Research            Git · LSP · Workbench
+```
 
 | | 🏠 **Aetox Assistant** | 🔧 **Aetox Code** |
 |:---|:---|:---|
@@ -260,7 +296,11 @@ and no analytics in the middle.
 Using a cloud provider means that provider sees what its API normally sees — nothing more,
 and nothing routed through us.
 
-## Tools and providers
+## What is actually behind it
+
+The sections above are the claim. This is the evidence — and it is deliberately down here,
+because a tool count is not a reason to use anything. A car is not sold on having 47
+bearings; it is sold on getting you there.
 
 **48 tools reach the model**, grouped by what they are for:
 
@@ -276,9 +316,15 @@ and nothing routed through us.
 | **Delegation** | `task` `task_result` `task_answer` `desk_list` `desk_open` `desk_terminal` |
 | **Skills** | `skills_list` `skill_view` |
 
-A skill document is not a tool: install as many as you like and the tool list stays the same
-size — the agent opens one only when it needs it. MCP servers add their own, and you choose
-which desks and which agents see each server.
+**That number is capped on purpose.** 48 definitions cost about 9,600 tokens on every single
+request, before you have typed anything — so a test fails the build when the tool block grows,
+and the count is currently full: the next tool has to displace one.
+
+Everything else expands where it costs nothing until used. A skill document is not a tool —
+install three hundred and the tool list is the same size, because the agent opens one only
+when it needs it. MCP servers are attached per desk and per agent, so a server installed for
+video work does not take up room in an ordinary conversation. **Growth goes there, never into
+the block every request pays for** ([COMPANY.md §1.1](COMPANY.md)).
 
 **18 providers** — OpenAI · Anthropic · DeepSeek · Gemini · Groq · Mistral · Together ·
 Perplexity · Cohere · OpenRouter · Codex · Z.ai · Qwen · Kimi · MiniMax · LM Studio ·
@@ -317,6 +363,11 @@ ensemble reasoning where several models argue toward the best answer.
 | **Direction > Execution** | Know where you are going before you start |
 | **Pattern > Ad-hoc** | Do it once, automate it for good |
 | **Simplicity > Complexity** | The simplest solution, not another layer |
+
+**What gets built, and what does not.** A feature has to make the AI *do* more — either
+something it could not do at all, or the same thing faster, cheaper or more safely, or make
+it easier for a person to hand work over. "A competitor has it" is not a reason. The rule
+lives in one place, [COMPANY.md §1.2](COMPANY.md), so it cannot drift into two.
 
 ---
 
