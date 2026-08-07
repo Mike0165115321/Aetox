@@ -513,6 +513,7 @@ product picture in [COMPANY.md](COMPANY.md)) · §82 (the learning floor) · §4
 | §85 | Chairs Are Full Agents: Direct Chat in the Office (2026-08-05) |
 | §86 | One Company, Two Doors: Aetox ผู้ช่วย and Aetox โค้ด (2026-08-05) |
 | §87 | Files Travel as Addresses, and the Desk's Menu Does Not Grow (2026-08-06) |
+| §88 | A Drawing Is Confined to Its Own Box (2026-08-06) |
 
 ---
 

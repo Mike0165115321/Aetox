@@ -392,6 +392,15 @@ func TestPromptTeachesWhenAPictureBeatsAParagraph(t *testing.T) {
 		// the scale and overflows the drawing.
 		"width=\"100%\"",
 		"font-size",
+		// What the renderer removes without saying so. A legend laid out in
+		// <foreignObject> leaves a hole the size of the legend and no error,
+		// and the model has no way to find that out on its own.
+		"<foreignObject>",
+		"sanitizer, not a browser",
+		// Markdown owns the answer the drawing sits in: a blank line inside one
+		// hands the rest of it to the parser, a fence shows it as source.
+		"no blank line inside it",
+		"fenced block",
 		// A drawing is not a decoration.
 		"one fact, one number",
 	} {

@@ -319,6 +319,13 @@ func batchWork() string {
 // including the places where three boxes and two arrows would have ended the
 // conversation. The size limit is the same reasoning as batchWork: every path
 // in the drawing is output tokens, paid on the turn that makes it.
+//
+// The paragraph about the surface is there because every one of its rules fails
+// silently. A model that lays a legend out in <foreignObject> — the obvious way
+// to put wrapped text in a picture — gets a drawing with a hole in it and no
+// error, and the next drawing is built the same way. Stating what the renderer
+// is (a sanitizer, so anything that could execute is gone) rather than listing
+// forbidden tags is what makes that generalize past the three tags named.
 func drawing() string {
 	return "Your answer is rendered as markdown, and inline <svg> in it is drawn. When what you are " +
 		"explaining is how several things relate — an order, a split, what feeds what, before against " +
@@ -330,6 +337,13 @@ func drawing() string {
 		"colour — the user's theme decides the palette, and a hardcoded #333 disappears on half of them. " +
 		"Put every <text> at a real font-size in viewBox units; text with no size renders at 16px " +
 		"regardless of scale and overflows the drawing.\n" +
+		"The surface that draws it is a sanitizer, not a browser. <foreignObject>, <use> and <animate> " +
+		"are removed from it without a word, and whatever you built inside one leaves a hole the size of " +
+		"the space it held — so every label is a <text> at its own x/y, and the picture is still. Write " +
+		"the whole drawing at the left margin with no blank line inside it and never inside a fenced " +
+		"block: a blank line hands the rest of it to the markdown parser, and a fence shows it as source " +
+		"instead of drawing it. It is capped at 420px tall on screen, so lay a drawing out across rather " +
+		"than down, and point at nothing on the network.\n" +
 		"A drawing is not a decoration. Do not draw the shape of an answer that is one fact, one number, " +
 		"or one instruction — say it.\n"
 }

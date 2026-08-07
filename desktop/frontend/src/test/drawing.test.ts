@@ -37,6 +37,95 @@ describe('a drawing in an answer', () => {
   })
 })
 
+// Markdown is entitled to read markup as prose, and a model writes a drawing
+// the way anyone writes XML: indented, sometimes with a blank line between the
+// parts. Every case here rendered as a picture with a hole in it, or as source
+// code, and never as an error.
+describe('a drawing markdown could have taken apart', () => {
+  it('survives a blank line and an indented line after it', () => {
+    const out = renderMarkdown('<svg viewBox="0 0 100 40">\n\n    <rect width="60" height="20" />\n</svg>')
+
+    expect(out).toContain('<rect')
+    // The tell of the old failure: the rest of the drawing printed as source.
+    expect(out).not.toContain('codeblock')
+  })
+
+  it('survives a tab-indented line after a blank one', () => {
+    const out = renderMarkdown('<svg viewBox="0 0 100 40">\n\n\t<circle cx="5" cy="5" r="4" />\n</svg>')
+
+    expect(out).toContain('<circle')
+    expect(out).not.toContain('codeblock')
+  })
+
+  // A label is text in a picture, not a sentence: `*` around it is a glyph the
+  // model drew, and markdown used to lift it out of the drawing as <em>.
+  it('leaves markdown punctuation in a label alone', () => {
+    const out = renderMarkdown('นี่คือผัง\n<svg viewBox="0 0 100 40"><text font-size="9">*.ts</text></svg>')
+
+    expect(out).toContain('*.ts')
+    expect(out).not.toContain('<em>')
+  })
+
+  // The opposite case, and the reason the lift only takes what starts a line:
+  // an answer *about* svg shows the source, and must keep showing it.
+  it('still shows a drawing inside a fenced block as code', () => {
+    const out = renderMarkdown('```svg\n<svg viewBox="0 0 10 10"><rect width="4" height="4" /></svg>\n```')
+
+    expect(out).toContain('codeblock')
+    expect(out).not.toContain('<rect ')
+  })
+
+  it('keeps a drawing indented under a list item inside the list', () => {
+    const out = renderMarkdown('- ตัวอย่าง\n\n  <svg viewBox="0 0 10 10"><rect width="4" height="4" /></svg>')
+
+    expect(out.indexOf('<svg')).toBeLessThan(out.indexOf('</li>'))
+  })
+})
+
+// DOMPurify guards the machine. What it does not guard is the app around the
+// answer: a <style> in an inline <svg> is a document stylesheet, and an id in
+// one is a document id. Both of these reached out of the drawing.
+describe('a drawing that could restyle the app around it', () => {
+  it('confines its stylesheet to itself', () => {
+    const out = renderMarkdown('<svg viewBox="0 0 10 10"><style>.row{display:none}</style><rect class="row" width="4" height="4" /></svg>')
+
+    expect(out).toContain('.row{display:none}')
+    // Not `.row` on its own — that selector is every row in the sidebar.
+    expect(out).not.toContain('<style>.row{')
+    expect(out).toContain('[data-drawing=')
+  })
+
+  it('drops a stylesheet that fetches from the network', () => {
+    const out = renderMarkdown('<svg viewBox="0 0 10 10"><style>@import url(https://evil.example/x.css);</style><rect width="4" height="4" /></svg>')
+
+    expect(out).not.toContain('evil.example')
+    expect(out).toContain('<rect')
+  })
+
+  // `url(#g)` resolves to the first match in the page, and `g` is what a model
+  // names a gradient. Two drawings, and the second wore the first's colours.
+  it('keeps two drawings that name the same id apart', () => {
+    const out = renderMarkdown(
+      '<svg viewBox="0 0 10 10"><defs><linearGradient id="g"><stop stop-color="#f00" /></linearGradient></defs><rect fill="url(#g)" width="4" height="4" /></svg>\n\n' +
+        '<svg viewBox="0 0 10 10"><defs><linearGradient id="g"><stop stop-color="#00f" /></linearGradient></defs><rect fill="url(#g)" width="4" height="4" /></svg>'
+    )
+
+    const ids = [...out.matchAll(/id="([^"]+)"/g)].map((m) => m[1])
+    expect(ids).toHaveLength(2)
+    expect(ids[0]).not.toBe(ids[1])
+    expect(out).toContain(`url(#${ids[0]})`)
+    expect(out).toContain(`url(#${ids[1]})`)
+  })
+
+  // Most drawings have neither, and must come out of the renderer as they went
+  // in — the confining is a repair, not a house style.
+  it('leaves a drawing with no stylesheet and no id untouched', () => {
+    const out = renderMarkdown(svg)
+
+    expect(out).not.toContain('data-drawing')
+  })
+})
+
 describe('a drawing arriving one token at a time', () => {
   // The picture builds itself: shapes are drawn as they arrive rather than
   // held back to the end. What keeps that watchable is the viewBox in the
