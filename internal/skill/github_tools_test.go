@@ -2,6 +2,7 @@ package skill
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -496,4 +497,54 @@ func TestFindPlainSkillsDisambiguatesCollidingNames(t *testing.T) {
 	if got[0].name == got[1].name {
 		t.Fatalf("both installed as %q; one would overwrite the other", got[0].name)
 	}
+}
+
+// A tool that lies about itself is worse than a tool that is missing: the model
+// believes the description, and every attempt it makes to work around the lie
+// is a wasted round it cannot diagnose.
+//
+// This one lied. It said the repository must define aetox-plugin.json, while
+// execute() treats a missing manifest as the ordinary case and installs the
+// repo's SKILL.md folders (installPlainSkills, whose own comment says exactly
+// that). An assistant asked for a published skill therefore refused a repo this
+// tool installs happily, and reported that it could not be had.
+//
+// What is pinned is the absence of the false requirement, not the presence of
+// any particular wording. A test that demanded the manifest be *explained*
+// would be the same mistake in the other direction: a description is not
+// documentation, and every word in it is paid on every request.
+func assertNoManifestRequirement(t *testing.T, where, text string) {
+	t.Helper()
+	if !strings.Contains(text, aetoxPluginManifestName) {
+		return
+	}
+	// Naming the manifest is only wrong when it is named as a condition. This
+	// is the phrasing that was there, and the shape any regression would take.
+	for _, claim := range []string{"that defines", "must define", "defines " + aetoxPluginManifestName, "requires"} {
+		if strings.Contains(text, claim) {
+			t.Errorf("%s claims the repository must define a manifest, which is not true of installPlainSkills:\n%s", where, text)
+			return
+		}
+	}
+}
+
+func TestPluginInstallDescribesWhatItActuallyAccepts(t *testing.T) {
+	def := (&pluginInstallSkill{}).ToolDefinition()
+
+	assertNoManifestRequirement(t, "the tool description", def.Function.Description)
+	assertNoManifestRequirement(t, "the console description", (&pluginInstallSkill{}).Description())
+
+	// The parameter carried the same claim, where a model looking for the
+	// argument's rules would read it.
+	var schema struct {
+		Properties struct {
+			RepoURL struct {
+				Description string `json:"description"`
+			} `json:"repo_url"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(def.Function.Parameters, &schema); err != nil {
+		t.Fatalf("the parameter schema does not decode: %v", err)
+	}
+	assertNoManifestRequirement(t, "the repo_url parameter", schema.Properties.RepoURL.Description)
 }

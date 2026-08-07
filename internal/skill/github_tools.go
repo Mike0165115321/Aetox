@@ -221,7 +221,7 @@ func (s *githubRepoSummarySkill) execute(ctx context.Context, repoURL string, st
 func (*pluginInstallSkill) Name() string { return "plugin_install" }
 
 func (*pluginInstallSkill) Description() string {
-	return "Install an Aetox plugin from a GitHub repository that defines aetox-plugin.json"
+	return "ติดตั้งสกิลจากที่เก็บบน GitHub"
 }
 
 func (s *pluginInstallSkill) ToolDefinition() model.ToolDefinition {
@@ -230,7 +230,7 @@ func (s *pluginInstallSkill) ToolDefinition() model.ToolDefinition {
 		"properties": map[string]any{
 			"repo_url": map[string]any{
 				"type":        "string",
-				"description": "GitHub repository URL that defines aetox-plugin.json",
+				"description": "GitHub repository URL.",
 			},
 		},
 		"required":             []string{"repo_url"},
@@ -240,8 +240,15 @@ func (s *pluginInstallSkill) ToolDefinition() model.ToolDefinition {
 	return model.ToolDefinition{
 		Type: "function",
 		Function: model.ToolFunction{
-			Name:        "plugin_install",
-			Description: "Install an Aetox plugin from a supported GitHub repository manifest.",
+			Name: "plugin_install",
+			// This said "from a supported GitHub repository manifest", and the
+			// parameter said the repo must define aetox-plugin.json. Neither was
+			// true — a repo with no manifest is the ordinary case and installs
+			// through installPlainSkills — so the model refused repositories
+			// this tool installs happily and reported the skill could not be
+			// had. The false requirement is gone; what is left says only what
+			// the tool does, which is all a description owes.
+			Description: "Install skills from a GitHub repository.",
 			Parameters:  payload,
 		},
 	}
