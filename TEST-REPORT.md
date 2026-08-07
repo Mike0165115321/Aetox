@@ -1,10 +1,26 @@
 # Test Report — by Module
 
-> Date: 2026-07-21
+> **What this document is for, and what it is not.**
+>
+> **Not the test count.** The count is whatever `go test ./...` says right now, and any number
+> written down here is stale the moment somebody adds a test. This file said "207 passing
+> across 16 packages" from 2026-07-21 until 2026-08-07, by which point the truth was
+> **1,438 across 34** — seven times off, and wrong in the direction that undersells the
+> project. Run the command; do not read a number here.
+>
+> ```powershell
+> go test ./...                        # the whole suite
+> cd desktop/frontend; npx vitest run  # the UI suite
+> ```
+>
+> **What it *is* for:** the seams that cannot be tested and why, and the conventions new
+> tests follow. That part does not go stale on its own and is not written down anywhere
+> else — it is why the per-module breakdown below is still worth reading even where its
+> counts have moved on.
+
+> Per-module figures below: 2026-07-21
 > Method: `go test ./<package>/... -v` per package, counting top-level `--- PASS`/`--- FAIL` lines (subtests roll up into their parent test's count). `go build ./...` and `go vet ./...` also clean across the whole repo.
 > Grouping: the 5 modules match the split discussed for [ARCHITECTURE.md §10](ARCHITECTURE.md#10-decision--agent-orchestrator-layer-proposed-approved-2026-07-21) (model management / model-control layer / orchestrator / UI-CLI / desktop app). A 6th "shared/cross-cutting" bucket is added for packages that don't cleanly belong to any one of the 5 — noted explicitly rather than forced into a module they don't fit.
-
-**Total: 207 passing tests, 0 failing, across 16 tested packages** (updated after Module 5 pass — see below).
 
 ## Convention — whole-path tests run on Aetox's own model (2026-07-26, ARCHITECTURE.md §45)
 
@@ -20,7 +36,7 @@ exec := turn.NewExecutor(turn.ExecutorOptions{Agent: agent, Dispatcher: skill.Ne
 It goes down the same channel a real provider does, costs nothing, needs no key,
 and is deterministic (its scripts read the next round off the transcript). A
 per-test fake is a second implementation of the thing under test and can pass
-while the real path is broken. Reference: [internal/subagent/spawn_demo_test.go](internal/subagent/spawn_demo_test.go).
+while the real path is broken. Reference: `internal/subagent/spawn_demo_test.go` (since removed).
 
 Hand-written stubs stay right for **provider edge cases** only — a truncated tool
 call, leaked DSML, a 401 — where the point is to produce one exact wire condition.

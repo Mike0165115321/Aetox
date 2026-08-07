@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/og.png" alt="Aetox" width="100%">
+  <img src="docs/assets/logo.png" alt="Aetox" width="110">
 </p>
 
 <h1 align="center">Aetox</h1>
@@ -27,8 +27,8 @@
 
 **Aetox gives any model — including a 9B running on your own graphics card — eyes, ears,
 hands and a browser.** It reads images, watches video, hears audio, opens real web pages and
-clicks through them, and hands back real `.docx` / `.xlsx` / `.pptx` files. One 35 MB Windows
-app, no runtime to install, and nothing leaves your machine.
+clicks through them, and hands back real `.docx` / `.xlsx` / `.pptx` files. One 40.8 MB
+Windows executable, no runtime to install, and nothing leaves your machine.
 
 The capability comes from the architecture, not from the model. That is the whole idea:
 **Architecture > Parameters.**
@@ -133,23 +133,64 @@ A bundled skill tells the assistant where its own data, skills, agents and setti
 so it stops guessing about its own system, and stops searching the web for something that is
 on your disk. It costs nothing until something opens it.
 
-## Small, fast, steady
+## Why it is this small and this fast
 
-**Disk after install** — same machine, Windows 11. Smaller is better.
+Not a claim about care taken — a list of decisions, each with the number it bought.
+
+**One static Go binary, no runtime.** Go + Wails + Svelte 5 compile to a single
+self-contained `aetox.exe`. Nothing to install alongside it, no `node_modules` to disagree
+about versions on update, no Node runtime bundled inside the app. **40.8 MB, one file.**
+
+**The window is WebView2, which Windows already has.** Electron apps ship their own copy of
+Chromium; Aetox uses the shared one. Straight about this: WebView2 *is* Chromium, so the
+252 MB it holds is not a memory win over Electron — the win is that you are not handed a
+second copy of a browser to store.
+
+**The request prefix never moves.** Tools are assembled in a fixed order and serialised once,
+so the head of every request is byte-for-byte identical and providers that cache recognise
+it. **97% of input tokens came from cache** over six consecutive messages. Shift the tool
+order by one and the whole cache breaks silently on every request — no error, just a larger
+bill — which is why the order is pinned by a test.
+
+**Skills load in three levels, so the tool list never grows.** A skill costs nothing until
+the model opens it: `skills_list` returns one line each, `skill_view` returns one body.
+Install three hundred and **the tool block stays the same size** — 48 definitions,
+~9,600 tokens, with a test that fails the build if it grows.
+
+**Search costs no model call.** History lives in local SQLite with FTS5, so `session_search`
+across every past conversation and every tool run is a query, not an inference. **Zero
+tokens per search**, Thai and English alike.
+
+**OCR instead of a vision model.** `image_ocr`, `video_ocr` and `browser_read` turn pixels
+and pages into text, so capability does not depend on the model having eyes — which is what
+makes a **9B on a consumer GPU** enough.
+
+**The interpreter is compiled in.** `calc` runs JavaScript in an embedded goja runtime with
+a **5-second clock** (set by measurement: ~7M loop iterations/second, so one second would
+have refused any real calculation) and a **256 MB heap watch**. Nothing to install, and it
+can reach no file, socket or process — which is why it needs no approval prompt.
+
+**Assembling a turn takes 0.12 ms.** The heaviest thing the app does before sending is
+building the whole tool list and turning it into JSON: **96.2 KB allocated, one
+eight-thousandth of a second.** The time you wait is the model thinking.
+
+## Measured against the alternatives
+
+**Disk** — same machine, Windows 11. Smaller is better.
 
 ```
-Aetox         █                                           35 MB
-Copilot CLI   █████                                      137 MB
-Claude Code   ████████                                   236 MB
-Zed           ██████████████                             419 MB
-OpenCode      █████████████████                          498 MB
-Codex         ████████████████████████                   698 MB
-Cursor        ██████████████████████████████             874 MB
-VS Code       ████████████████████████████████████████ 1,171 MB
+Aetox         █                                            40.8 MB
+Copilot CLI   █████                                         137 MB
+Claude Code   ████████                                      236 MB
+Zed           ██████████████                                419 MB
+OpenCode      █████████████████                             498 MB
+Codex         ████████████████████████                      698 MB
+Cursor        ██████████████████████████████                874 MB
+VS Code       ████████████████████████████████████████    1,171 MB
 ```
 
 Aetox carries a full UI — Monaco editor, terminal, file tree, agent-driven browser, LSP
-diagnostics — and is still **7× smaller than Claude Code** and **25× smaller than Cursor**.
+diagnostics — and is still **5.8× smaller than Claude Code** and **21× smaller than Cursor**.
 Every terminal-only tool in that list is larger than all of Aetox.
 
 > If the reason you still use a CLI is "desktop apps are heavy", that reason has expired.
@@ -165,22 +206,7 @@ Rust with a reputation for being light, which makes it the harder ruler.
 | Every launch after | **0.53 s** | 0.53 s | — |
 | RAM committed | **252 MB** | 471 MB | 1,750 MB |
 | Processes | **7** | 4 | 10 |
-| Disk | **35 MB** | 419 MB | 874 MB |
-
-**Per message** — assembling the whole tool list and serialising it costs **0.12 ms**, about
-one eight-thousandth of a second. The time you wait is the model thinking, not the app
-getting ready.
-
-**On your API bill** — the head of every request is byte-for-byte identical, so providers
-that cache automatically recognise it. Measured over six consecutive messages on DeepSeek:
-**97% of the input tokens came from cache** (17,664 of 18,066), and it improves as the
-conversation grows.
-
-> This is easy to lose: shift the tool order by one and the whole cache breaks on every
-> request — no error, no log line, just a quietly larger bill.
->
-> Anthropic needs the request to declare its own cache points, which Aetox does not send
-> yet, so Claude misses this discount today. 🔜 In progress.
+| Disk | **40.8 MB** | 419 MB | 874 MB |
 
 **Local models keep up** — a 9B on a consumer GPU with the full tool set attached
 (~3,000 tokens per request): LM Studio starts answering in **1.42 s**, Ollama in **1.75 s**,
@@ -190,24 +216,31 @@ both with live streaming, visible reasoning, real tool calls and correct token a
 frontend suite adds **365** more.
 
 <details>
-<summary>Why it stays this small</summary>
+<summary>How these were measured, and what does not qualify</summary>
 
-| | Aetox | A typical Electron app |
-|:---|:---|:---|
-| Stack | Go + Wails + Svelte 5 | Electron + Node.js |
-| The window | The WebView2 Windows already has, shared between apps | Its own copy of Chromium |
-| Runtime to install | None — one file | A bundled Node.js |
-| Type checking | Go + TypeScript, at compile time | Depends on the project |
-| Runtime dependencies | No `node_modules` to disagree on update | More dependencies, more breakage |
+The rules are in [BENCHMARK.md](BENCHMARK.md), and its single standing rule is that a number
+which has not passed them may not appear here or on the website. The dangerous number is the
+flattering one, because nobody audits a figure that makes them look good.
 
-Straight about RAM: WebView2 *is* Chromium, so 252 MB is not a win over Electron on memory.
-The real difference is that it is already on the machine and shared, so you are not handed a
-second copy to keep.
+**Disk (40.8 MB)** — re-measured for v0.9.2 from the shipped portable artifact: download
+[the zip](https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-windows-amd64-portable.zip),
+unpack it, and that is one self-contained `aetox.exe`. Anyone can reproduce it in a minute.
+It replaces the 33 MB figure logged on 2026-07-27, which was correct then and is not now —
+the binary grew as tools went from 20 to 48. The installer additionally sets up Tesseract,
+poppler and ffmpeg, which are separate programs and not counted here.
 
-**Measurement conditions.** Cursor was measured after about six minutes of real use with the
-extensions this machine's owner had installed — a real working state, not the clean one
-Aetox and Zed were measured in, which is why its launch time is absent. VS Code was running
-a job that could not be interrupted, so only its size is listed.
+**Launch, RAM and process count** — measured 2026-07-27 under the BENCHMARK rules (empty
+project, settled, median of 5 runs). These have not been re-measured on the v0.9.2 build; a
+check on 2026-07-28 saw launch unchanged at 0.53 s and RAM at 276 MB, but it ran 3 rounds
+instead of 5 and settled for 25 s instead of 60, so it broke the rules and is recorded only
+as a no-regression check, never as a published figure.
+
+**Comparisons** — Cursor was measured after about six minutes of real use with the
+extensions this machine's owner had installed: a real working state, not the clean one Aetox
+and Zed were measured in, which is why its launch time is absent. VS Code was running a job
+that could not be interrupted, so only its size is listed. Sizes are measured after install,
+never taken from a vendor's download page — Aetox's own installer is 12.6 MB against 40.8 MB
+installed, and mixing the two kinds of number breaks the whole table.
 
 </details>
 

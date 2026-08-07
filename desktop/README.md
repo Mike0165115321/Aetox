@@ -1,6 +1,6 @@
 # desktop/ — Wails GUI front end
 
-> Module map: [ARCHITECTURE.md §4.2](../../ARCHITECTURE.md) · Deep dives: [desktop-app](../docs/architecture/desktop-app-2026-07-22.md) · [browser-security](../docs/architecture/browser-security-2026-07-21.md) · [tesseract bundling](../docs/architecture/tesseract-ocr-bundling-2026-07-22.md) · Tests: `TEST-REPORT.md` Module 5
+> Module map: [ARCHITECTURE.md §4.2](../ARCHITECTURE.md) · Deep dives: [desktop-app](../docs/architecture/desktop-app-2026-07-22.md) · [browser-security](../docs/architecture/browser-security-2026-07-21.md) · [tesseract bundling](../docs/architecture/tesseract-ocr-bundling-2026-07-22.md) · Tests: `TEST-REPORT.md` Module 5
 
 **What it is:** the Wails v2 + Svelte 5 desktop app — chat, tabbed workbench (Review/Terminal/Files/Browser), SQLite session persistence, and an agent-driven native browser. Embeds the same engine as the CLI (`internal/app.NewApp` + `RunOnce`); everything else here is surface.
 
