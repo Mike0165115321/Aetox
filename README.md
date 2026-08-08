@@ -334,8 +334,9 @@ stream the answer and the reasoning, really call tools, and count tokens into th
 
 ## Status — v0.9.4
 
-The core is in place and the next layer is going up. [Release notes](docs/release-notes/v0.9.2.md)
-· [architecture](ARCHITECTURE.md) · [every decision and why](docs/DECISIONS.md).
+The core is in place and the next layer is going up. [Release notes](docs/release-notes/v0.9.4.md)
+· [roadmap to 1.0.0](ROADMAP.md) · [architecture](ARCHITECTURE.md)
+· [every decision and why](docs/DECISIONS.md).
 
 **Working today** — everything above, plus: multi-provider in one session, model switching
 without losing context, live streaming, three approval levels, full-text searchable history
