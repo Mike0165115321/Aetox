@@ -269,7 +269,17 @@ func refuseAgentKnowledge(target string) error {
 	if err != nil || strings.TrimSpace(root) == "" {
 		return nil
 	}
-	rel, err := filepath.Rel(resolvedHomeDir(strings.TrimSpace(root)), target)
+	// Both sides through the same resolver, or the comparison is between two
+	// spellings of one place and quietly decides they are different places.
+	//
+	// Only the root was resolved, which held on a developer's machine and failed
+	// on a Windows CI runner, where the temp path arrives in its 8.3 short form
+	// (`RUNNER~1`) while the resolved root is the long one. filepath.Rel then
+	// returns `..\..\…`, the guard reads that as "outside the agents root", and
+	// a worker's private knowledge is readable. The test caught it before the
+	// release did; the same mismatch is reachable off CI wherever the data root
+	// is behind a symlink or a junction.
+	rel, err := filepath.Rel(resolvedHomeDir(strings.TrimSpace(root)), resolvedHomeDir(target))
 	if err != nil {
 		return nil // a different volume: not under the agents root at all
 	}

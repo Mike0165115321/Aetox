@@ -344,3 +344,37 @@ func TestAnAgentsKnowledgeIsNotReachableThroughFileTools(t *testing.T) {
 		t.Errorf("an unrelated skills folder was refused: %v", err)
 	}
 }
+
+// The guard has to compare like with like.
+//
+// It resolved the agents root through evalExistingSymlinks and left the target
+// raw, so two spellings of one path read as two different places: on a Windows
+// CI runner the temp dir arrives as `RUNNER~1` while the resolved root is the
+// long form, filepath.Rel answers `..\..\…`, and the refusal never fires. This
+// stands the two forms up against each other on purpose.
+func TestAgentKnowledgeIsRefusedThroughASymlinkedDataRoot(t *testing.T) {
+	real := t.TempDir()
+	link := filepath.Join(t.TempDir(), "root-link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("symlinks unavailable here: %v", err)
+	}
+	// The data root is named one way; the tool is handed the other.
+	t.Setenv("AETOX_DATA_ROOT", link)
+
+	skills := filepath.Join(real, "agents", "doc", "skills", "tax-invoice", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(skills), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(skills, []byte("secret craft"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	for _, target := range []string{
+		skills,
+		filepath.Join(link, "agents", "doc", "skills", "tax-invoice", "SKILL.md"),
+	} {
+		if err := refuseCredentialStore(target); err == nil {
+			t.Errorf("reachable through %s — the two spellings were read as two places", target)
+		}
+	}
+}
