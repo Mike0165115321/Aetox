@@ -8,9 +8,9 @@ import (
 	"testing"
 )
 
-// shellGate sets up a focused project with a folder next door that is NOT part
+// focusedProject sets up a project with a folder next door that is NOT part
 // of the workspace — the shape every escape below is trying to break out of.
-func shellGate(t *testing.T) (root, outside string) {
+func focusedProject(t *testing.T) (root, outside string) {
 	t.Helper()
 	base := t.TempDir()
 	root, outside = filepath.Join(base, "project"), filepath.Join(base, "outside")
@@ -29,7 +29,7 @@ func shellGate(t *testing.T) (root, outside string) {
 // the line to the OS, so the wall the UI describes was real for read/grep/write
 // and imaginary for the tool that can do what all three do.
 func TestShellRefusesEveryWayOutOfTheWorkspace(t *testing.T) {
-	root, outside := shellGate(t)
+	root, outside := focusedProject(t)
 	secret := filepath.Join(outside, "secret.txt")
 
 	cases := []struct {
@@ -46,7 +46,7 @@ func TestShellRefusesEveryWayOutOfTheWorkspace(t *testing.T) {
 		{"a quoted path outside", `type "` + secret + `"`},
 	}
 	for _, tc := range cases {
-		if err := guardCommandPaths(root, tc.command); err == nil {
+		if err := guardCommandPaths(root, tc.command, nativeGate()); err == nil {
 			t.Errorf("%s: command was allowed out of the workspace: %s", tc.name, tc.command)
 		}
 	}
@@ -57,7 +57,7 @@ func TestShellRefusesEveryWayOutOfTheWorkspace(t *testing.T) {
 // limitations, so it stops the command instead — the difference between a gap
 // that is known and one that is quiet.
 func TestShellRefusesCommandsItCannotRead(t *testing.T) {
-	root, _ := shellGate(t)
+	root, _ := focusedProject(t)
 
 	cases := []struct{ name, command string }{
 		{"command substitution", "type $(echo somewhere)"},
@@ -69,7 +69,7 @@ func TestShellRefusesCommandsItCannotRead(t *testing.T) {
 		{"a dollar variable heading a path", `type $SOMEWHERE\file.txt`},
 	}
 	for _, tc := range cases {
-		err := guardCommandPaths(root, tc.command)
+		err := guardCommandPaths(root, tc.command, nativeGate())
 		if err == nil {
 			t.Errorf("%s: unreadable command was allowed: %s", tc.name, tc.command)
 			continue
@@ -101,7 +101,7 @@ func TestShellExpandsHomeVariablesBeforeChecking(t *testing.T) {
 		`cat $env:USERPROFILE\.ssh\id_rsa`,
 		`cat ~/.ssh/id_rsa`,
 	} {
-		if err := guardCommandPaths(root, command); err == nil {
+		if err := guardCommandPaths(root, command, nativeGate()); err == nil {
 			t.Errorf("a home-variable path reached a credential store: %s", command)
 		}
 	}
@@ -111,7 +111,7 @@ func TestShellExpandsHomeVariablesBeforeChecking(t *testing.T) {
 // first time it refuses `go test`. These are the commands an agent actually
 // runs, and none of them names anything outside the project.
 func TestShellDoesNotRefuseOrdinaryCommands(t *testing.T) {
-	root, _ := shellGate(t)
+	root, _ := focusedProject(t)
 
 	commands := []string{
 		"go test ./...",
@@ -138,7 +138,7 @@ func TestShellDoesNotRefuseOrdinaryCommands(t *testing.T) {
 		"echo done | more",
 	}
 	for _, command := range commands {
-		if err := guardCommandPaths(root, command); err != nil {
+		if err := guardCommandPaths(root, command, nativeGate()); err != nil {
 			t.Errorf("refused an ordinary command %q: %v", command, err)
 		}
 	}
@@ -151,20 +151,20 @@ func TestShellDoesNotRefuseOrdinaryCommands(t *testing.T) {
 // no path check can contain it. Arguments after it are, which is the half that
 // decides what the command touches.
 func TestShellDoesNotContainProgramPosition(t *testing.T) {
-	root, outside := shellGate(t)
+	root, outside := focusedProject(t)
 	tool := filepath.Join(outside, "tool.exe")
 
 	for _, program := range []string{tool, filepath.Join("..", "outside", "tool.exe")} {
-		if err := guardCommandPaths(root, program+" --version"); err != nil {
+		if err := guardCommandPaths(root, program+" --version", nativeGate()); err != nil {
 			t.Errorf("refused a program named by path (%s): %v", program, err)
 		}
 	}
-	if err := guardCommandPaths(root, tool+" "+filepath.Join(outside, "secret.txt")); err == nil {
+	if err := guardCommandPaths(root, tool+" "+filepath.Join(outside, "secret.txt"), nativeGate()); err == nil {
 		t.Error("an outside path in argument position rode in behind the program name")
 	}
 	// And the separator resets it: after `&&` the next token is a program
 	// again, but the tokens after THAT are arguments and stay checked.
-	if err := guardCommandPaths(root, "git status && "+tool+" "+filepath.Join(outside, "secret.txt")); err == nil {
+	if err := guardCommandPaths(root, "git status && "+tool+" "+filepath.Join(outside, "secret.txt"), nativeGate()); err == nil {
 		t.Error("a second command's argument escaped the check")
 	}
 }
@@ -173,15 +173,15 @@ func TestShellDoesNotContainProgramPosition(t *testing.T) {
 // too — otherwise "add the folder" would fix read and grep and leave the agent
 // unable to build or test the thing it was let in to look at.
 func TestShellFollowsTheWorkspaceFolderList(t *testing.T) {
-	root, outside := shellGate(t)
+	root, outside := focusedProject(t)
 	command := "go build " + filepath.Join(outside, "main.go")
 
-	if err := guardCommandPaths(root, command); err == nil {
+	if err := guardCommandPaths(root, command, nativeGate()); err == nil {
 		t.Fatal("the folder was reachable before it was added")
 	}
 	setSandboxPolicy(root, false, []string{outside})
 	t.Cleanup(func() { setSandboxPolicy(root, false, nil) })
-	if err := guardCommandPaths(root, command); err != nil {
+	if err := guardCommandPaths(root, command, nativeGate()); err != nil {
 		t.Errorf("an added folder is still refused by shell: %v", err)
 	}
 }
@@ -202,10 +202,10 @@ func TestShellInOpenModeRoamsButNotIntoCredentialStores(t *testing.T) {
 	setSandboxPolicy(root, true, nil)
 	t.Cleanup(func() { setSandboxPolicy(root, false, nil) })
 
-	if err := guardCommandPaths(root, "type "+filepath.Join(home, "notes.txt")); err != nil {
+	if err := guardCommandPaths(root, "type "+filepath.Join(home, "notes.txt"), nativeGate()); err != nil {
 		t.Errorf("open mode refused an ordinary path: %v", err)
 	}
-	if err := guardCommandPaths(root, "type "+filepath.Join(home, ".aws", "credentials")); err == nil {
+	if err := guardCommandPaths(root, "type "+filepath.Join(home, ".aws", "credentials"), nativeGate()); err == nil {
 		t.Error("open mode handed shell a credential store path")
 	}
 }
@@ -215,7 +215,7 @@ func TestShellInOpenModeRoamsButNotIntoCredentialStores(t *testing.T) {
 // sed, powershell -Command — so paths are also recognised by shape anywhere in
 // the line, quoted or not.
 func TestShellFindsPathsHiddenInsideQuotedCode(t *testing.T) {
-	root, outside := shellGate(t)
+	root, outside := focusedProject(t)
 	secret := filepath.ToSlash(filepath.Join(outside, "secret.txt"))
 
 	cases := []string{
@@ -225,7 +225,7 @@ func TestShellFindsPathsHiddenInsideQuotedCode(t *testing.T) {
 		`sed -n 1p "` + secret + `"`,
 	}
 	for _, command := range cases {
-		if err := guardCommandPaths(root, command); err == nil {
+		if err := guardCommandPaths(root, command, nativeGate()); err == nil {
 			t.Errorf("a path hidden inside code walked out: %s", command)
 		}
 	}
@@ -238,7 +238,7 @@ func TestShellFindsPathsHiddenInsideQuotedCode(t *testing.T) {
 		"curl https://example.com/api -o out.json",
 		`python -c "print('hello')"`,
 	} {
-		if err := guardCommandPaths(root, command); err != nil {
+		if err := guardCommandPaths(root, command, nativeGate()); err != nil {
 			t.Errorf("the path scan refused an ordinary command %q: %v", command, err)
 		}
 	}
@@ -248,7 +248,7 @@ func TestShellFindsPathsHiddenInsideQuotedCode(t *testing.T) {
 // which is why `--output=` was not on it. Routing its argv through this one
 // means git stops needing anyone to think of the next option.
 func TestGitAnswersToTheSameGate(t *testing.T) {
-	root, outside := shellGate(t)
+	root, outside := focusedProject(t)
 
 	refuse := [][]string{
 		{"--output=" + filepath.Join(outside, "leak.patch")},
@@ -283,14 +283,14 @@ func TestShellTellsWindowsSwitchesFromDriveRelativePaths(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("cmd switch syntax is a Windows question")
 	}
-	root, _ := shellGate(t)
+	root, _ := focusedProject(t)
 
 	for _, command := range []string{"dir /s /b", "for /L %i in (1,0,2) do @echo tick", "ping /?"} {
-		if err := guardCommandPaths(root, command); err != nil {
+		if err := guardCommandPaths(root, command, nativeGate()); err != nil {
 			t.Errorf("refused a cmd switch as if it were a path: %q → %v", command, err)
 		}
 	}
-	if err := guardCommandPaths(root, `type \Users\someone\.ssh\id_rsa`); err == nil {
+	if err := guardCommandPaths(root, `type \Users\someone\.ssh\id_rsa`, nativeGate()); err == nil {
 		t.Error("a drive-relative path walked out of the workspace")
 	}
 }

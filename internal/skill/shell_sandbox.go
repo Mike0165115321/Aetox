@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+
+	"github.com/Mike0165115321/Aetox/internal/proc"
 )
 
 // The shell answers to the same gate every other file tool answers to.
@@ -51,13 +53,42 @@ import (
 // every token is checked whatever the verb, and a token that cannot be read
 // stops the command.
 
+// shellGate is what this file needs to know about the shell a command line is
+// bound for. It exists because the two facts below used to be read off
+// runtime.GOOS, which was the same thing only for as long as a machine had one
+// shell. A Windows machine running the agent's commands in a WSL distro breaks
+// the identity in both directions at once: the line is bash on an OS where the
+// native shell is cmd, and the paths in it are Linux ones naming Windows files.
+// Reading GOOS there does not merely mis-parse — it silently stops containing,
+// because `/mnt/d/elsewhere` matches no pattern the Windows branch looks for.
+type shellGate struct {
+	// posix decides how the line reads: whether `\` escapes or separates
+	// directories, whether a bare `/…` opens a path or a cmd switch.
+	posix bool
+	// toHost turns a path spelled the way this shell spells it into the path
+	// Windows knows the same file by, so the containment check compares two
+	// spellings of one place rather than one spelling of two.
+	toHost func(string) (string, bool)
+}
+
+func gateFor(backend proc.Backend) shellGate {
+	if backend == nil {
+		return nativeGate()
+	}
+	return shellGate{posix: backend.POSIX(), toHost: backend.HostPath}
+}
+
+// nativeGate is the gate for a command this process runs itself rather than
+// handing to a selectable shell — git, and every test that predates backends.
+func nativeGate() shellGate { return gateFor(proc.Native()) }
+
 // guardCommandPaths refuses a command line that names anything outside the
 // workspace. The returned error is written for the model: it says which path
 // was refused and what the user can do about it, because a refusal that does
 // not carry the remedy just becomes "I can't".
-func guardCommandPaths(root, commandLine string) error {
-	targets, opaque := commandTargets(root, commandLine)
-	return guardTargets(root, targets, opaque)
+func guardCommandPaths(root, commandLine string, gate shellGate) error {
+	targets, opaque := commandTargets(root, commandLine, gate)
+	return guardTargets(root, targets, opaque, gate)
 }
 
 // guardArgs is guardCommandPaths for a caller that already holds its arguments
@@ -69,31 +100,49 @@ func guardCommandPaths(root, commandLine string) error {
 // the shape that drifts: that one blocks `-C` and `--git-dir` by name and lets
 // `git diff --output=D:\elsewhere` through, because nobody thought of it. This
 // one does not need to think of it.
+//
+// The native gate, always: git is run by this process through exec.Command, so
+// its arguments are read by nothing and its paths are Windows paths whatever
+// shell the user picked for the shell tool.
 func guardArgs(root string, args []string) error {
+	gate := nativeGate()
 	var targets []string
 	for _, arg := range args {
 		if reason := unreadable(arg); reason != "" {
-			return guardTargets(root, nil, reason)
+			return guardTargets(root, nil, reason, gate)
 		}
-		target, opaque := tokenTarget(root, arg)
+		target, opaque := tokenTarget(root, arg, gate)
 		if opaque != "" {
-			return guardTargets(root, nil, opaque)
+			return guardTargets(root, nil, opaque, gate)
 		}
 		if target != "" {
 			targets = append(targets, target)
 		}
 	}
-	return guardTargets(root, targets, "")
+	return guardTargets(root, targets, "", gate)
 }
 
-func guardTargets(root string, targets []string, opaque string) error {
+func guardTargets(root string, targets []string, opaque string, gate shellGate) error {
 	if opaque != "" {
 		return fmt.Errorf("this command builds a path while it runs (%s), so it cannot be checked "+
 			"against the folders this session may use — write the path out literally, or run the "+
 			"step that needs it as its own command", opaque)
 	}
 	for _, target := range targets {
-		if _, err := resolveSandboxPath(root, target); err != nil {
+		// Translated here, at the one point where a path stops being text in a
+		// command line and becomes a place on disk — so every producer above
+		// (tokens, embedded paths, expanded variables) is translated exactly
+		// once, and none of them has to know which shell it was written for.
+		host, ok := gate.toHost(target)
+		if !ok {
+			return fmt.Errorf("%s: this path is inside the shell's own filesystem and has no name "+
+				"this machine can check it by, so it cannot be shown to be inside the folders this "+
+				"session may use — work inside the project folder instead", target)
+		}
+		// The refusal names the path as the model wrote it, not as it was
+		// translated: being told that `\\wsl.localhost\mikedev\etc\passwd` was
+		// refused, having written `/etc/passwd`, reads as a different failure.
+		if _, err := resolveSandboxPath(root, host); err != nil {
 			return fmt.Errorf("%s: %w", target, err)
 		}
 	}
@@ -103,7 +152,7 @@ func guardTargets(root string, targets []string, opaque string) error {
 // commandTargets returns every path-shaped token in the command line, expanded
 // the way the shell would expand it, plus a description of the first construct
 // it could not read (empty when it read everything).
-func commandTargets(root, commandLine string) (targets []string, opaque string) {
+func commandTargets(root, commandLine string, gate shellGate) (targets []string, opaque string) {
 	// Against the whole line, before tokenizing: `$(` straddles a token break
 	// (the tokenizer treats `(` as a separator), so a per-token scan would
 	// never see the two characters together and command substitution would be
@@ -118,7 +167,7 @@ func commandTargets(root, commandLine string) (targets []string, opaque string) 
 	// `node -e`, `sed` scripts and `powershell -Command`. Reading inside those
 	// strings properly would mean an interpreter per language; recognising the
 	// shape of a path in them costs a scan and closes the family.
-	segments := shellSegments(commandLine)
+	segments := shellSegments(commandLine, gate)
 	// The scan reads the raw line, so it also finds the program names the loop
 	// below deliberately skips. Dropping them here keeps the two halves saying
 	// the same thing. Only the scan's results are filtered: a program path that
@@ -126,10 +175,10 @@ func commandTargets(root, commandLine string) (targets []string, opaque string) 
 	programs := make(map[string]bool, len(segments))
 	for _, segment := range segments {
 		if len(segment) > 0 {
-			programs[literalPathPrefix(expandTilde(segment[0]))] = true
+			programs[literalPathPrefix(expandTilde(segment[0], gate), gate)] = true
 		}
 	}
-	for _, found := range embeddedPaths(commandLine) {
+	for _, found := range embeddedPaths(commandLine, gate) {
 		if !programs[found] {
 			targets = append(targets, found)
 		}
@@ -148,7 +197,7 @@ func commandTargets(root, commandLine string) (targets []string, opaque string) 
 				// command that contains them somewhere would be absurd.
 				return nil, "Invoke-Expression"
 			}
-			target, reason := tokenTarget(root, token)
+			target, reason := tokenTarget(root, token, gate)
 			if reason != "" {
 				return nil, reason
 			}
@@ -163,19 +212,19 @@ func commandTargets(root, commandLine string) (targets []string, opaque string) 
 // tokenTarget reduces one already-split token to the path it names, or "" when
 // it names none. Shared by the command-line and argv paths so both apply the
 // same rules to a token — the flag prefix, the variable expansion, the glob.
-func tokenTarget(root, token string) (target string, opaque string) {
+func tokenTarget(root, token string, gate shellGate) (target string, opaque string) {
 	token = stripFlagPrefix(token)
 	if token == "" || isNullDevice(token) {
 		return "", ""
 	}
-	expanded, reason := expandToken(root, token)
+	expanded, reason := expandToken(root, token, gate)
 	if reason != "" {
 		return "", reason
 	}
 	// A glob names a directory plus a pattern; the directory is the part that
 	// can leave the workspace, and it is the part a wildcard cannot hide.
 	// `del D:\Other\*` is a path question about D:\Other.
-	return literalPathPrefix(expanded), ""
+	return literalPathPrefix(expanded, gate), ""
 }
 
 // embeddedPathPatterns find a path by its shape anywhere in the line, quoted or
@@ -184,8 +233,8 @@ func tokenTarget(root, token string) (target string, opaque string) {
 //
 //   - a drive letter keeps "https://host" out, whose ":" is preceded by a letter
 //   - the ".." form excludes a leading "." so `go test ./...` is not a climb
-//   - the bare "/" form (non-Windows only — on Windows a leading "/" is a cmd
-//     switch) excludes a preceding ":" so a URL's "//" is not an absolute path
+//   - the bare "/" form (POSIX shells only — to cmd a leading "/" is a switch)
+//     excludes a preceding ":" so a URL's "//" is not an absolute path
 var embeddedPathPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?:^|[^A-Za-z0-9_])([A-Za-z]:[\\/][^\s"'` + "`" + `<>|]*)`),
 	regexp.MustCompile(`(?:^|[^A-Za-z0-9_.])(\.\.[\\/][^\s"'` + "`" + `<>|]*)`),
@@ -194,21 +243,24 @@ var embeddedPathPatterns = []*regexp.Regexp{
 
 var unixEmbeddedPath = regexp.MustCompile(`(?:^|[^A-Za-z0-9_.:/])(/[^\s"'` + "`" + `<>|]*)`)
 
-func embeddedPaths(line string) []string {
+func embeddedPaths(line string, gate shellGate) []string {
 	patterns := embeddedPathPatterns
-	if runtime.GOOS != "windows" {
+	// Keyed on the shell, not the OS: this is the pattern that finds
+	// `/mnt/d/elsewhere` inside a quoted argument, and a WSL command line on
+	// Windows is exactly where that path shape turns up.
+	if gate.posix {
 		patterns = append(append([]*regexp.Regexp{}, patterns...), unixEmbeddedPath)
 	}
 	var out []string
 	for _, re := range patterns {
 		for _, match := range re.FindAllStringSubmatch(line, -1) {
 			candidate := strings.Trim(match[1], `"'`+"`"+`,;:)]}`)
-			if candidate == "" {
+			if candidate == "" || isNullDevice(candidate) {
 				continue
 			}
 			// Same reductions a token gets, minus the flag prefix — this text
 			// was never a flag, it was found inside one.
-			if literal := literalPathPrefix(expandTilde(candidate)); literal != "" {
+			if literal := literalPathPrefix(expandTilde(candidate, gate), gate); literal != "" {
 				out = append(out, literal)
 			}
 		}
@@ -220,6 +272,12 @@ func embeddedPaths(line string) []string {
 // is a place on disk, and NUL in particular is a reserved Windows device that
 // symlink resolution reports as living outside every directory — so left alone
 // it refuses `ping -n 2 127.0.0.1 >nul` as a sandbox escape.
+//
+// Asked by the embedded-path scan as well as by the token loop, because the
+// scan is where `/dev/null` turns up: as a bare absolute path it is only looked
+// for under a POSIX shell, so on Windows this never came up until a WSL command
+// line arrived and `cat /dev/null` started being refused as an escape into the
+// distro's filesystem.
 func isNullDevice(token string) bool {
 	switch strings.ToLower(strings.Trim(token, `"'`)) {
 	case "nul", "/dev/null", `\dev\null`:
@@ -310,12 +368,12 @@ var homeVars = map[string]string{
 // only position where it decides which folder the path is in. Anywhere else it
 // is text — `git log --pretty=format:%H%n` must not be mistaken for a path
 // built out of a variable named H.
-func expandToken(root, token string) (string, string) {
-	head, rest, ok := splitLeadingVar(token)
+func expandToken(root, token string, gate shellGate) (string, string) {
+	head, rest, ok := splitLeadingVar(token, gate)
 	if !ok {
-		return expandTilde(token), ""
+		return expandTilde(token, gate), ""
 	}
-	value, known := lookupPathVar(root, head)
+	value, known := lookupPathVar(root, head, gate)
 	if !known {
 		// Whether an unknown variable matters is decided by what follows it.
 		// With no separator after the name the token cannot name a folder,
@@ -329,14 +387,39 @@ func expandToken(root, token string) (string, string) {
 		}
 		return "", "the variable " + head + " in " + token
 	}
-	return filepath.Join(value, filepath.FromSlash(strings.TrimLeft(rest, `/\`))), ""
+	return joinExpanded(value, rest, gate), ""
+}
+
+// joinExpanded puts a token back together after its head was substituted.
+//
+// filepath.Join would be wrong under a POSIX shell for the same reason the rest
+// of this file's GOOS checks were: it produces backslashes, and the result goes
+// on to be read as a Linux path. Worse, it would flatten the "~" that HOME
+// resolves to below into a relative-looking `~\x` that nothing downstream
+// recognises as the home directory any more.
+func joinExpanded(value, rest string, gate shellGate) string {
+	rest = strings.TrimLeft(rest, `/\`)
+	if !gate.posix {
+		return filepath.Join(value, filepath.FromSlash(rest))
+	}
+	if rest == "" {
+		return value
+	}
+	return strings.TrimSuffix(value, "/") + "/" + rest
 }
 
 // splitLeadingVar recognises %NAME%, $env:NAME, ${env:NAME} and $NAME at the
 // start of a token and returns the name plus what follows it.
-func splitLeadingVar(token string) (name, rest string, ok bool) {
+func splitLeadingVar(token string, gate shellGate) (name, rest string, ok bool) {
 	switch {
 	case strings.HasPrefix(token, "%"):
+		// %NAME% is cmd and PowerShell; to a POSIX shell those are literal
+		// percent signs, and reading them as a variable would resolve a token
+		// the shell never resolves — checking a path the command never touches
+		// while missing the one it does.
+		if gate.posix {
+			return "", "", false
+		}
 		if end := strings.IndexByte(token[1:], '%'); end > 0 {
 			return token[1 : 1+end], token[end+2:], true
 		}
@@ -362,13 +445,27 @@ func splitVarName(s string) (string, string) {
 
 // lookupPathVar answers only for the names in homeVars, and answers from the
 // real environment so the check sees the same folder the shell would.
-func lookupPathVar(root, name string) (string, bool) {
+func lookupPathVar(root, name string, gate shellGate) (string, bool) {
 	upper := strings.ToUpper(name)
 	if _, listed := homeVars[upper]; !listed {
 		return "", false
 	}
 	if upper == "PWD" {
+		// The one variable whose value is the same folder in both worlds,
+		// because it is the folder the command was started in.
 		return root, true
+	}
+	if gate.posix {
+		// This process's environment is the Windows one, and under a POSIX
+		// shell somewhere else these names hold that shell's values, not these.
+		// $HOME is answered with the tilde so the shell's own translation
+		// resolves it (see the WSL backend's HostPath) — and the rest are
+		// refused rather than answered with a Windows folder that would put the
+		// containment check on the wrong side of the wall in either direction.
+		if upper == "HOME" {
+			return "~", true
+		}
+		return "", false
 	}
 	if value := os.Getenv(upper); strings.TrimSpace(value) != "" {
 		return value, true
@@ -385,8 +482,15 @@ func lookupPathVar(root, name string) (string, bool) {
 	return "", false
 }
 
-func expandTilde(token string) string {
+func expandTilde(token string, gate shellGate) string {
 	if token != "~" && !strings.HasPrefix(token, "~/") && !strings.HasPrefix(token, `~\`) {
+		return token
+	}
+	// Under a POSIX shell the tilde is the *shell's* home, which on WSL is a
+	// Linux path, not this process's Windows one. Left as written so the
+	// backend's own translation answers it — expanding it here would check
+	// C:\Users\<me> while the command reads /home/<me>.
+	if gate.posix {
 		return token
 	}
 	home, err := os.UserHomeDir()
@@ -402,20 +506,25 @@ func expandTilde(token string) string {
 // literalPathPrefix reduces a wildcard token to the literal path in front of it, which
 // is the part containment is about. A token that is nothing but a pattern
 // ("*.go") has no directory in it and needs no check.
-func literalPathPrefix(token string) string {
+func literalPathPrefix(token string, gate shellGate) string {
 	if idx := strings.IndexAny(token, "*?["); idx >= 0 {
 		if idx == 0 {
 			return ""
 		}
 		token = token[:idx]
 	}
-	// On Windows a leading backslash means "root of the current drive", which
-	// filepath.IsAbs does not consider absolute — so `type \Users\me\.ssh\id_rsa`
-	// would otherwise be joined onto the sandbox root and read as a path inside
-	// it. A leading FORWARD slash is left alone on purpose: in cmd that is a
-	// switch, not a path (`dir /s`, `for /L`), and treating it as drive-relative
-	// refuses half the commands anyone writes on Windows.
-	if runtime.GOOS == "windows" && len(token) > 0 && token[0] == '\\' && !strings.HasPrefix(token, `\\`) {
+	// In a Windows shell a leading backslash means "root of the current drive",
+	// which filepath.IsAbs does not consider absolute — so `type
+	// \Users\me\.ssh\id_rsa` would otherwise be joined onto the sandbox root and
+	// read as a path inside it. A leading FORWARD slash is left alone on
+	// purpose: in cmd that is a switch, not a path (`dir /s`, `for /L`), and
+	// treating it as drive-relative refuses half the commands anyone writes on
+	// Windows.
+	//
+	// Not applied to a POSIX shell even when this process is on Windows: there
+	// a leading backslash is an escape character, and the absolute path is the
+	// one that starts with the forward slash — which is the pattern above.
+	if !gate.posix && runtime.GOOS == "windows" && len(token) > 0 && token[0] == '\\' && !strings.HasPrefix(token, `\\`) {
 		if vol := filepath.VolumeName(mustAbs(token)); vol != "" {
 			token = vol + token
 		}
@@ -441,7 +550,7 @@ func mustAbs(p string) string {
 // Not a shell parser and not trying to be. It errs toward producing MORE tokens
 // than a shell would, because an extra token costs a containment check that
 // passes, while a missing one costs a path nobody looked at.
-func shellSegments(line string) [][]string {
+func shellSegments(line string, gate shellGate) [][]string {
 	var segments [][]string
 	var tokens []string
 	var current strings.Builder
@@ -463,9 +572,11 @@ func shellSegments(line string) [][]string {
 		}
 	}
 	var quote rune
-	// On Windows `\` is the path separator, so treating it as an escape would
-	// eat every backslash in every path — the opposite of the goal.
-	escapes := runtime.GOOS != "windows"
+	// To cmd `\` is the path separator, so treating it as an escape would eat
+	// every backslash in every path — the opposite of the goal. To bash it
+	// really is an escape, and that stays true when the bash in question is a
+	// WSL distro on a Windows machine.
+	escapes := gate.posix
 
 	runes := []rune(line)
 	for i := 0; i < len(runes); i++ {

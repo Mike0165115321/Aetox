@@ -135,6 +135,27 @@ func TestGeneralInheritsToolsButNotTheUnattendedOnes(t *testing.T) {
 	}
 }
 
+// WantsToBeAsked is what the chair-chat path asks instead of AllowsTool, and
+// the two must disagree — that disagreement is the whole point. AllowsTool
+// answers for a delegate, where forcedDenials is right because nobody is
+// watching; this answers for an agent someone is talking to.
+func TestWantsToBeAskedSplitsFromTheDelegateAnswer(t *testing.T) {
+	// A profile whose `tools:` never mentions ask_user still gets to ask: the
+	// allowlist is what it may touch, and a question touches nothing.
+	narrow := Profile{Name: "doc", Tools: []string{"doc_write", "read"}}
+	if narrow.AllowsTool("ask_user") {
+		t.Error("AllowsTool must keep saying no — that answer is for the delegate path")
+	}
+	if !narrow.WantsToBeAsked() {
+		t.Error("a chair with a narrow tools: line still has to be able to ask the person it is talking to")
+	}
+	// An author who writes deny: ask_user means it, and outranks the grant.
+	silent := Profile{Name: "quiet", Deny: []string{"ask_user"}}
+	if silent.WantsToBeAsked() {
+		t.Error("deny: ask_user must still silence the chair — the profile refusing outright outranks the grant")
+	}
+}
+
 func TestMaxToolCalls(t *testing.T) {
 	if got := (Profile{}).MaxToolCalls(); got != defaultSteps {
 		t.Errorf("MaxToolCalls = %d, want the default cap %d", got, defaultSteps)

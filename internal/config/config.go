@@ -10,6 +10,7 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/debuglog"
 	"github.com/Mike0165115321/Aetox/internal/hook"
 	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mike0165115321/Aetox/internal/proc"
 	"github.com/Mike0165115321/Aetox/internal/safety"
 )
 
@@ -112,6 +113,68 @@ type ModelPreference struct {
 	// resolve that case via ResolvedEnabledProviders rather than persisting a
 	// default here, so old preference files don't need migrating.
 	EnabledProviders []string `json:"enabled_providers,omitempty"`
+	// Shells records which shell each project's commands run in — the machine's
+	// own, or a WSL distro (proc.ParseBackend for the spelling).
+	//
+	// Keyed by project folder rather than held as one setting, because it is a
+	// fact about the project and not about the person: a repo on D:\ is built
+	// by the Windows toolchain and a repo under \\wsl.localhost is built by the
+	// distro's, and someone who works on both would otherwise be re-picking
+	// every time they switch. The "" key is the fallback for a folder that has
+	// never been chosen for, which is how a user who wants WSL everywhere says
+	// so once.
+	Shells map[string]string `json:"shells,omitempty"`
+}
+
+// ShellFor answers which shell a project's commands should run in: the folder's
+// own choice, else the default the user set for everything, else what the
+// folder itself implies (a project inside a distro is built by that distro).
+//
+// The lookup is case-insensitive on the folder, because Windows hands the same
+// directory back under different spellings depending on who asked, and a
+// setting that silently stops applying when a path arrives capitalised
+// differently is worse than no setting.
+func (p ModelPreference) ShellFor(root string) proc.Backend {
+	if setting, ok := p.shellSetting(root); ok {
+		return proc.ParseBackend(setting)
+	}
+	if setting := strings.TrimSpace(p.Shells[""]); setting != "" {
+		return proc.ParseBackend(setting)
+	}
+	return proc.DefaultBackendFor(root)
+}
+
+func (p ModelPreference) shellSetting(root string) (string, bool) {
+	root = strings.TrimSpace(root)
+	if root == "" {
+		return "", false
+	}
+	for key, setting := range p.Shells {
+		if key != "" && strings.EqualFold(filepath.Clean(key), filepath.Clean(root)) {
+			return setting, strings.TrimSpace(setting) != ""
+		}
+	}
+	return "", false
+}
+
+// SetShellFor records a choice. An empty root sets the default for every folder
+// that has not been chosen for.
+func (p *ModelPreference) SetShellFor(root string, backend proc.Backend) {
+	if p.Shells == nil {
+		p.Shells = make(map[string]string, 1)
+	}
+	root = strings.TrimSpace(root)
+	if root != "" {
+		root = filepath.Clean(root)
+		// Replace whatever spelling of this folder is already in there, so the
+		// map cannot end up holding two answers for one directory.
+		for key := range p.Shells {
+			if key != "" && strings.EqualFold(filepath.Clean(key), root) {
+				delete(p.Shells, key)
+			}
+		}
+	}
+	p.Shells[root] = proc.FormatBackend(backend)
 }
 
 // ResolvedEnabledProviders returns the providers that should actually be shown.

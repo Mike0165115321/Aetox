@@ -19,6 +19,27 @@ type shellSkill struct {
 	// shells is shared with shell_output and shell_kill — one registry of
 	// running commands, three tools onto it.
 	shells *backgroundShells
+	// backend is which shell runs the command: the machine's own, or a WSL
+	// distro. A func rather than a value for the reason OutputSubdir is one
+	// (defaults.go): the answer changes when the user picks a different shell,
+	// and re-bootstrapping the engine to change which program gets exec'd would
+	// be an absurd price. Nil means the native shell, which is what every test
+	// and every caller that has no opinion gets.
+	backend func() proc.Backend
+}
+
+// shell resolves the backend once for one use. Once, deliberately: a turn that
+// read the setting twice could guard a command line as bash and then run it in
+// cmd, and the gap between those two reads is exactly where the containment
+// check stops describing the thing that executes.
+func (s *shellSkill) shell() proc.Backend {
+	if s == nil || s.backend == nil {
+		return proc.Native()
+	}
+	if backend := s.backend(); backend != nil {
+		return backend
+	}
+	return proc.Native()
 }
 
 func (*shellSkill) Name() string { return "shell" }
@@ -44,7 +65,7 @@ func (*shellSkill) Description() string {
 // runs safety.AssessCommand on every call, and shell is the one skill with its
 // own high-risk branch (EffectExecuteShell, plus isShellHighRisk on the command
 // word). Under the default `ask` mode every call is still approved by a human.
-func (*shellSkill) ToolDefinition() model.ToolDefinition {
+func (s *shellSkill) ToolDefinition() model.ToolDefinition {
 	schema := map[string]any{
 		"type": "object",
 		"properties": map[string]any{
@@ -77,14 +98,20 @@ func (*shellSkill) ToolDefinition() model.ToolDefinition {
 			// for the shell its training data is mostly made of, which is a
 			// POSIX one — so on Windows the first command spent a round dying
 			// on `ls -la` before the second tried `dir`. The name comes from
-			// proc, beside the invocation it describes, so the description
-			// cannot end up naming a shell the tool does not run.
+			// the backend, beside the invocation it describes, so the
+			// description cannot end up naming a shell the tool does not run.
+			//
+			// Read here rather than baked in at build time, because the shell
+			// is now the user's choice: a description still saying cmd.exe
+			// after they switched the workspace to WSL would send every command
+			// of the next turn into the wrong dialect, and the model has no way
+			// to find out it was misled except by failing.
 			//
 			// The name, and nothing else: a table of equivalents here would be
 			// a case list, and the model already knows the shell it is told
 			// it is writing for.
 			Description: "Run a command in the working folder — tests, builds, linters, package managers, anything the terminal can do. " +
-				"Commands are run by " + proc.ShellName() + " on this machine, so write them in that shell's syntax. " +
+				"Commands are run by " + s.shell().Name() + " on this machine, so write them in that shell's syntax. " +
 				"Use it to verify your own work after editing. " +
 				"Paths in the command follow the same rule the file tools do: they must be inside the folders this session may use, " +
 				"and a command naming anything outside is refused before it runs. " +
@@ -129,15 +156,16 @@ func (s *shellSkill) startBackground(commandLine string) (Output, error) {
 	if err != nil {
 		return newToolOutput("shell", command, "", start, false, err), err
 	}
+	backend := s.shell()
 	// The same gate the foreground path runs, for the same reason: a background
 	// command is not a smaller command, and it is the one that keeps running
 	// after the turn that started it has ended.
-	if err := guardCommandPaths(s.root, commandLine); err != nil {
+	if err := guardCommandPaths(s.root, commandLine, gateFor(backend)); err != nil {
 		return newToolOutput("shell", command, "", start, false, err), err
 	}
 	// Not rewritten through rtk: its whole purpose is compacting the output of
 	// a command that finishes, and these do not.
-	job, err := s.shells.start(workDir, commandLine)
+	job, err := s.shells.start(backend, workDir, commandLine)
 	if err != nil {
 		return newToolOutput("shell", command, "", start, false, err), err
 	}
@@ -168,11 +196,17 @@ func (s *shellSkill) Execute(ctx context.Context, input Input) (Output, error) {
 		return newToolOutput("shell", "shell "+commandLine, "", start, false, err), err
 	}
 
+	// Resolved once and used for the guard, the rewrite decision and the
+	// invocation alike, so those three cannot disagree about which shell this
+	// command belongs to.
+	backend := s.shell()
+	gate := gateFor(backend)
+
 	// Every path this command names has to be inside the workspace, checked
 	// through the same resolveSandboxPath every file tool answers to
 	// (shell_sandbox.go). Before this, shell was the one tool that could walk
 	// out of a focused project, and it could do it without a prompt.
-	if err := guardCommandPaths(s.root, commandLine); err != nil {
+	if err := guardCommandPaths(s.root, commandLine, gate); err != nil {
 		return newToolOutput("shell", "shell "+commandLine, "", start, false, err), err
 	}
 
@@ -182,23 +216,29 @@ func (s *shellSkill) Execute(ctx context.Context, input Input) (Output, error) {
 	// the audit log below still see the original commandLine; only what
 	// actually executes changes.
 	execLine := commandLine
-	if rewritten, ok := rtk.Rewrite(ctx, commandLine); ok {
-		execLine = rewritten
+	// Only for the shell rtk was resolved against. rtk is a Windows binary this
+	// process found on the Windows PATH (internal/rtk/install.go), and the
+	// rewrite it hands back is an invocation of that binary — sent into a WSL
+	// distro it names a program that is not there, so every rewritten command
+	// would fail on a path the user never wrote and cannot see. Skipping it
+	// costs tokens, which is the whole point of rtk; running it costs the
+	// command.
+	if proc.IsNative(backend) {
+		if rewritten, ok := rtk.Rewrite(ctx, commandLine); ok {
+			execLine = rewritten
+		}
 	}
 	// The rewrite is what actually runs, so it is what actually has to be
 	// contained. rtk maps a command to an equivalent of its own; checking only
 	// the line the model wrote would trust that mapping to never introduce a
 	// path, which is a promise no rewrite table should be asked to keep.
 	if execLine != commandLine {
-		if err := guardCommandPaths(s.root, execLine); err != nil {
+		if err := guardCommandPaths(s.root, execLine, gate); err != nil {
 			return newToolOutput("shell", "shell "+commandLine, "", start, false, err), err
 		}
 	}
 
-	cmd := proc.ShellCommand(ctx, execLine)
-	cmd.Dir = workDir
-	proc.HideConsole(cmd)
-	proc.KillOnCancel(cmd)
+	cmd := backend.Command(ctx, execLine, workDir)
 	buffer := &cappedWriter{}
 	cmd.Stdout = buffer
 	cmd.Stderr = buffer

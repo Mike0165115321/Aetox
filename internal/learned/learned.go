@@ -211,6 +211,62 @@ func Apply(scope, op, before, body string) error {
 	return os.WriteFile(path, []byte(rendered), 0o644)
 }
 
+// Entries is Read's list form: the remembered lines, in file order, with their
+// bullets off. The settings page shows one row per entry and addresses them by
+// position, so it needs the same split the writer uses rather than a second
+// parse of the same text.
+func Entries(scope string) []string {
+	path, err := FileFor(scope)
+	if err != nil {
+		return nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	return splitEntries(string(data))
+}
+
+// EditEntry rewrites or removes one remembered line, addressed by its position
+// in Entries. An empty body removes it.
+//
+// By index, deliberately, where Apply matches a substring. Apply is written for
+// the agent, which has the text in its prompt and no index that survives an
+// edit above it — the right shape there. It is the wrong shape here: findEntry
+// takes the *first* line containing the needle, and a real memory file is full
+// of lines that differ only at the end ("shell failed: exit status 1", "…status
+// 2", "…status 124"). Editing the fourth from a list on screen would silently
+// rewrite the first. A row the user is looking at has an exact position, so
+// that is what gets sent.
+func EditEntry(scope string, index int, body string) error {
+	path, err := FileFor(scope)
+	if err != nil {
+		return err
+	}
+	existing, _ := os.ReadFile(path)
+	lines := splitEntries(string(existing))
+	if index < 0 || index >= len(lines) {
+		// Two tabs open on the same page, or an approval that landed while this
+		// one sat there. Refusing beats editing whatever now sits at that row.
+		return fmt.Errorf("that line is no longer there — reopen the page and try again")
+	}
+	if body = strings.TrimSpace(body); body == "" {
+		lines = append(lines[:index], lines[index+1:]...)
+	} else {
+		lines[index] = body
+	}
+	rendered := render(scope, lines)
+	if len(rendered) > MaxBytes {
+		return fmt.Errorf(
+			"this scope's memory is full (%d bytes, limit %d) — shorten the line or remove another",
+			len(rendered), MaxBytes)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(rendered), 0o644)
+}
+
 // Full reports whether a scope has room for one more entry of the given size,
 // so the tool can refuse a proposal at the moment the agent writes it rather
 // than at approval time — a queue full of proposals that cannot be applied is

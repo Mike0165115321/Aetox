@@ -1,0 +1,176 @@
+package proc
+
+import (
+	"context"
+	"os/exec"
+	"runtime"
+	"strings"
+)
+
+// A Backend is the shell an agent-supplied command line actually runs in.
+//
+// Until now there was no such thing: ShellCommand and ShellName were package
+// functions picked by build tag, so the shell was decided when the binary was
+// compiled and every command in the process ran in it. That is the right shape
+// for "Windows means cmd.exe, Linux means sh" and the wrong one the moment a
+// Windows machine has a second, equally real shell sitting next to it — a WSL
+// distro holding the project's toolchain. Choosing between them is a runtime
+// question about this workspace, not a compile-time question about this OS.
+//
+// The interface is deliberately four methods, because four things actually
+// differ between shells, and everything else about running a command does not:
+//
+//   - Name, because the model is told which syntax to write (see the shell
+//     tool's description) and being told the wrong one costs a wasted turn.
+//   - POSIX, because the sandbox guard reads the command line, and how a line
+//     tokenizes — whether `\` escapes, whether a leading `/` opens a path or a
+//     switch — is a property of the shell, not of GOOS.
+//   - Command, because the invocation and the way a working directory is
+//     expressed are the whole difference in spawning.
+//   - HostPath, because containment is decided in Windows path terms while a
+//     command bound for WSL names its files in Linux ones. Without a
+//     translation the guard compares two spellings of different worlds and
+//     refuses everything.
+//
+// Command owns HideConsole and cancellation rather than leaving them to
+// callers, for the reason shell_windows.go already gives about HideConsole: a
+// new call site that forgets one gets a flashing console window or an orphaned
+// process tree, and neither failure points back here.
+type Backend interface {
+	// Name is what the model is told it is writing for.
+	Name() string
+
+	// POSIX reports whether the command line is read by a POSIX shell.
+	POSIX() bool
+
+	// Command builds the invocation for one command line, run in the host
+	// directory dir. dir is always a path in the host OS's own spelling — the
+	// backend translates it if its shell needs something else.
+	Command(ctx context.Context, line, dir string) *exec.Cmd
+
+	// HostPath turns a path spelled the way this shell spells it into the path
+	// the host OS knows the same file by, so it can be checked against the
+	// workspace. The bool is false when the path names something outside any
+	// place the host can see, which is a refusal, not an error.
+	//
+	// A path already written in host spelling comes back unchanged: the model
+	// mixing the two is a thing that happens, and a translation that mangled
+	// `D:\x` on the way through would turn a checkable path into a nonsense
+	// one.
+	HostPath(p string) (string, bool)
+
+	// Export declares that the named variables, which the caller has already
+	// put in cmd.Env, must be readable by the program the shell starts.
+	//
+	// A method rather than something callers do for themselves because it is
+	// only not a no-op in one place, and that place is invisible: setting an
+	// environment variable on a child process is the universal way to pass it
+	// something, and it silently does nothing across the WSL boundary. A hook
+	// reads $AETOX_TOOL and finds it empty, with no error anywhere to say the
+	// variable was dropped rather than never set.
+	Export(cmd *exec.Cmd, names ...string)
+}
+
+// The stored spelling of a chosen shell: "" or "native" for the machine's own,
+// "wsl" for its default distro, "wsl:<name>" for a named one. One vocabulary,
+// kept beside the backends it names, so the settings file, the slash command
+// and the desktop picker cannot each invent their own.
+const (
+	nativeSetting = "native"
+	wslSetting    = "wsl"
+)
+
+// ParseBackend turns a stored setting into the backend it names. Anything
+// unrecognised is the native shell: a settings file hand-edited into nonsense
+// should leave the app working, not leave it unable to run a command until
+// somebody finds the typo.
+func ParseBackend(setting string) Backend {
+	setting = strings.TrimSpace(setting)
+	if distro, ok := strings.CutPrefix(setting, wslSetting+":"); ok {
+		return WSL(distro)
+	}
+	if strings.EqualFold(setting, wslSetting) {
+		return WSL("")
+	}
+	return Native()
+}
+
+// FormatBackend is ParseBackend's inverse, and the only thing that should be
+// written to a settings file.
+//
+// A WSL backend is written with its resolved distro name rather than the bare
+// "wsl" a user may have picked: "the default distro" is an instruction whose
+// meaning changes when they change their default, and a workspace that quietly
+// follows that around is one that will someday run its commands somewhere else.
+func FormatBackend(b Backend) string {
+	wsl, ok := b.(*wslBackend)
+	if !ok {
+		return nativeSetting
+	}
+	if distro := wsl.Distro(); distro != "" {
+		return wslSetting + ":" + distro
+	}
+	return wslSetting
+}
+
+// DefaultBackendFor is the shell a workspace should start out in when the user
+// has never chosen one.
+//
+// A project living at \\wsl.localhost\<distro>\… is already inside a distro:
+// its toolchain, its node_modules, its virtualenv and its line endings are all
+// Linux, and the native shell can read the files but cannot run any of it. That
+// case answers itself, and answering it is the difference between the feature
+// working out of the box and the user having to know it exists. Everywhere else
+// the answer is the machine's own shell, which is what it has always been.
+func DefaultBackendFor(root string) Backend {
+	slashed := strings.ReplaceAll(strings.TrimSpace(root), `\`, "/")
+	for _, prefix := range []string{"//wsl.localhost/", "//wsl$/"} {
+		if rest, ok := strings.CutPrefix(slashed, prefix); ok {
+			if distro, _ := splitFirstSegment(rest); distro != "" {
+				return WSL(distro)
+			}
+		}
+	}
+	return Native()
+}
+
+// IsNative reports whether b runs commands the way this process itself would.
+//
+// Asked by the one caller that legitimately cares which side of the boundary a
+// command lands on: rtk, whose rewrites name a binary found on this machine's
+// PATH and mean nothing inside somebody else's filesystem. A type assertion
+// rather than a Backend method, because "are you the plain one" is a question
+// about the set of backends, not a capability each backend should get to answer
+// for itself.
+func IsNative(b Backend) bool {
+	_, ok := b.(nativeBackend)
+	return ok
+}
+
+// Native is the shell this binary would have used before backends existed:
+// cmd.exe on Windows, sh everywhere else. It stays the default everywhere, and
+// it is the only backend on a machine with no WSL.
+func Native() Backend { return nativeBackend{} }
+
+type nativeBackend struct{}
+
+func (nativeBackend) Name() string { return ShellName() }
+
+func (nativeBackend) POSIX() bool { return runtime.GOOS != "windows" }
+
+func (nativeBackend) Command(ctx context.Context, line, dir string) *exec.Cmd {
+	cmd := ShellCommand(ctx, line)
+	cmd.Dir = dir
+	// ShellCommand already hides the console on Windows — calling it again is
+	// free, and doing it here is what lets a caller trust the interface rather
+	// than the implementation it happened to get.
+	HideConsole(cmd)
+	KillOnCancel(cmd)
+	return cmd
+}
+
+func (nativeBackend) HostPath(p string) (string, bool) { return p, true }
+
+// Export is a no-op here: a child process on this machine inherits cmd.Env as
+// it stands, which is what every caller already assumed.
+func (nativeBackend) Export(*exec.Cmd, ...string) {}

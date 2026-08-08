@@ -529,6 +529,23 @@ func (p Profile) Permits(name string) bool {
 	return !slices.Contains(p.Deny, name)
 }
 
+// WantsToBeAsked reports whether this profile is willing to put a question to a
+// human, for the one caller that has one attached: a chair chat (§85).
+//
+// AllowsTool cannot answer this. It runs through Permits, which applies
+// forcedDenials — and `ask_user` is on that list for a reason that only holds
+// while nobody is watching. Asked there, every profile says no, which is the
+// right answer for a delegate and the wrong one for an agent being spoken to.
+//
+// Only the profile's own `deny:` is read. `tools:` is deliberately not: that
+// list is what its author decided this agent may *touch*, and putting a
+// question to the person already sitting in the conversation is not a reach
+// into anything. A doc writer whose `tools:` names three writers would
+// otherwise have to list ask_user to be allowed to speak.
+func (p Profile) WantsToBeAsked() bool {
+	return !slices.Contains(p.Deny, "ask_user")
+}
+
 // parse reads one profile file. The filename is the name, always: a `name:` key
 // in the frontmatter that disagreed with the file it lives in is the exact
 // product-vs-code split §35 was written about.

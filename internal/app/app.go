@@ -15,6 +15,7 @@ import (
 
 	"github.com/Mike0165115321/Aetox/internal/cognitive"
 	"github.com/Mike0165115321/Aetox/internal/command"
+	"github.com/Mike0165115321/Aetox/internal/config"
 	"github.com/Mike0165115321/Aetox/internal/hook"
 	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/safety"
@@ -50,6 +51,8 @@ type App struct {
 	onApprovalChange func(safety.ApprovalMode)
 	turnExecutor     *turn.Executor
 	modelSwitcher    modelSwitcher
+	shells           *config.ShellChoice
+	shellRoot        string
 
 	title              string
 	version            string
@@ -103,6 +106,12 @@ type Options struct {
 	// (ARCHITECTURE.md §57). Nil is the normal case and does nothing.
 	Hooks            *hook.Runner
 	OnApprovalChange func(safety.ApprovalMode)
+	// ShellChoice and ShellRoot back /shell: which shell the agent's commands
+	// run in, and the project folder that choice is stored against. A nil
+	// ShellChoice leaves /shell able to report the shell in use but not to
+	// change it, which is the honest state for a host with nowhere to store one.
+	ShellChoice *config.ShellChoice
+	ShellRoot   string
 	// OnToolAction, if set, is notified of every tool call/result this session
 	// runs (e.g. for a UI command-history panel). Nil means silent, as before.
 	OnToolAction func(turn.ToolEvent)
@@ -172,6 +181,8 @@ func NewApp(opts Options) (*App, error) {
 		hooks:              opts.Hooks,
 		onApprovalChange:   opts.OnApprovalChange,
 		modelSwitcher:      opts.ModelSwitch,
+		shells:             opts.ShellChoice,
+		shellRoot:          strings.TrimSpace(opts.ShellRoot),
 		title:              strings.TrimSpace(opts.Title),
 		version:            strings.TrimSpace(opts.Version),
 		userInfo:           strings.TrimSpace(opts.UserInfo),
@@ -311,6 +322,11 @@ func (a *App) RunInteractive(ctx context.Context) error {
 				continue
 			case "approval":
 				a.handleApprovalCommand(line)
+				a.printSeparator()
+				a.printStatusBar()
+				continue
+			case "shell":
+				a.handleShellCommand(line)
 				a.printSeparator()
 				a.printStatusBar()
 				continue

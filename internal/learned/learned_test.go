@@ -118,6 +118,82 @@ func TestApplyAddsReplacesAndRemovesLines(t *testing.T) {
 	}
 }
 
+// The settings page edits by row position, and this is the case that forced
+// it: a real memory file collects lines that differ only at the very end. Ask
+// for the fourth by substring and findEntry hands back the first.
+func TestEditEntryHitsTheRowTheUserIsLookingAt(t *testing.T) {
+	isolate(t)
+	for _, status := range []string{"1", "2", "124", "255"} {
+		if err := Apply(MainScope, OpAdd, "",
+			`เครื่องมือ shell เคยล้มซ้ำ ๆ ด้วยเหตุเดียวกัน: "exit status `+status+`"`); err != nil {
+			t.Fatalf("add %s: %v", status, err)
+		}
+	}
+	entries := Entries(MainScope)
+	if len(entries) != 4 {
+		t.Fatalf("Entries = %d lines, want 4: %v", len(entries), entries)
+	}
+
+	// Row 3 is "exit status 124". A substring edit for "exit status" would take
+	// row 0 instead — which is the whole reason EditEntry counts.
+	if err := EditEntry(MainScope, 3, "เครื่องมือ shell timeout บ่อยในโปรเจกต์นี้"); err != nil {
+		t.Fatalf("edit row 3: %v", err)
+	}
+	after := Entries(MainScope)
+	if after[3] != "เครื่องมือ shell timeout บ่อยในโปรเจกต์นี้" {
+		t.Errorf("row 3 = %q, want the edited text", after[3])
+	}
+	if !strings.Contains(after[0], "exit status 1") {
+		t.Errorf("row 0 was rewritten instead: %q", after[0])
+	}
+	if len(after) != 4 {
+		t.Fatalf("editing changed the line count: %v", after)
+	}
+
+	// Empty text is how a row is forgotten — the button beside it has nothing
+	// else to send.
+	if err := EditEntry(MainScope, 0, "  "); err != nil {
+		t.Fatalf("delete row 0: %v", err)
+	}
+	left := Entries(MainScope)
+	if len(left) != 3 || strings.Contains(strings.Join(left, "\n"), "exit status 1\"") {
+		t.Errorf("row 0 should be gone, got %v", left)
+	}
+
+	// A row that moved under the user — a second window, or an approval that
+	// landed while this page sat open — is refused rather than applied to
+	// whatever now sits at that index.
+	if err := EditEntry(MainScope, 9, "x"); err == nil {
+		t.Error("editing past the end must fail, not write to the wrong row")
+	}
+	if err := EditEntry(MainScope, -1, "x"); err == nil {
+		t.Error("a negative index must fail")
+	}
+}
+
+// The header is the file explaining itself to whoever opens the folder. An edit
+// through the window must leave it there — it is not one of the entries.
+func TestEditEntryKeepsTheFileExplainingItself(t *testing.T) {
+	isolate(t)
+	if err := Apply(MainScope, OpAdd, "", "จำอันนี้ไว้"); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	if err := EditEntry(MainScope, 0, "จำอันนี้ไว้แทน"); err != nil {
+		t.Fatalf("edit: %v", err)
+	}
+	path, err := FileFor(MainScope)
+	if err != nil {
+		t.Fatalf("FileFor: %v", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if !strings.HasPrefix(string(raw), "# Learned by ") {
+		t.Errorf("the header did not survive an edit:\n%s", raw)
+	}
+}
+
 // Editing something that is not there is an error the agent can act on, not a
 // silent no-op it would read as success.
 func TestReplacingSomethingAbsentFails(t *testing.T) {

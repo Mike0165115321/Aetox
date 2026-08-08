@@ -4,7 +4,7 @@ import { tick } from 'svelte'
 import Chat from '../lib/Chat.svelte'
 import { cockpit, applyToolEvent } from '../lib/stores/cockpit.svelte'
 import { setLocale } from '../lib/i18n.svelte'
-import { GuideTopics, SwitchApprovalMode } from './mocks/wailsApp'
+import { GuideTopics, SwitchApprovalMode, SupportedThinkLevels } from './mocks/wailsApp'
 
 const baseProps = {
   task: { title: '', steps: [] } as any,
@@ -259,6 +259,32 @@ describe('approval mode on the composer', () => {
     expect(fullIcon).toBeTruthy()
     // A different mode has to draw a different mark, not just a different colour.
     expect(fullIcon!.innerHTML).not.toBe(askIcon!.innerHTML)
+  })
+
+  // The chip carries what is worth being wrong about — the approval mode and
+  // which provider is answering — and not the model name, which is the widest
+  // thing on the bar and the least likely to have changed since you set it.
+  it('carries the provider as a mark and the model name only in its title', () => {
+    const { container } = render(Chat, { ...baseProps, messages: [] as any })
+    const chip = container.querySelector('.model-chip')!
+    expect(chip.querySelector('.pv svg, .pv .pv-letter')).toBeTruthy()
+    expect(chip.textContent).not.toContain('v4')
+    expect(chip.getAttribute('title')).toBe('v4')
+  })
+
+  // The menu below only draws a think-level row when there are two levels to
+  // pick between, so keying the badge off model.thinkLevel alone advertised a
+  // setting the menu then offered no way to move.
+  it('badges the think level only when the menu can actually change it', async () => {
+    SupportedThinkLevels.mockResolvedValueOnce(['high'])
+    const one = render(Chat, { ...baseProps, messages: [] as any }).container
+    await tick(); await tick()
+    expect(one.querySelector('.model-chip .lvl')).toBeNull()
+
+    SupportedThinkLevels.mockResolvedValueOnce(['low', 'high'])
+    const two = render(Chat, { ...baseProps, messages: [] as any }).container
+    await tick(); await tick()
+    expect(two.querySelector('.model-chip .lvl')?.textContent).toContain('high')
   })
 
   it('shift+tab toggles ask↔unsafe-only and only ever tightens full-access', async () => {

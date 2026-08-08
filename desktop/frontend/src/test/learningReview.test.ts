@@ -6,8 +6,9 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/svelte'
 import Settings from '../lib/Settings.svelte'
 import Sidebar from '../lib/Sidebar.svelte'
 import {
-  ListPendingChanges, ListDecidedChanges, LearnedMemory, LearningEnabled,
-  ApprovePendingChange, RejectPendingChange, SetLearningEnabled, PendingLearnedCount,
+  ListPendingChanges, ListDecidedChanges, LearnedMemory, LearnedEntries, SaveLearnedEntry,
+  LearningEnabled, ApprovePendingChange, RejectPendingChange, SetLearningEnabled,
+  PendingLearnedCount,
 } from './mocks/wailsApp'
 import { cockpit, applyPendingLearned, refreshPendingLearned } from '../lib/stores/cockpit.svelte'
 
@@ -31,8 +32,84 @@ beforeEach(() => {
   cockpit.pendingLearned = 0
   vi.mocked(LearningEnabled).mockResolvedValue(true)
   vi.mocked(LearnedMemory).mockResolvedValue('')
+  vi.mocked(LearnedEntries).mockResolvedValue([] as any)
   vi.mocked(ListDecidedChanges).mockResolvedValue([] as any)
   vi.mocked(ListPendingChanges).mockResolvedValue([proposal()] as any)
+})
+
+// The memory list is the one thing on this page the *user* writes. Approving is
+// how the agent's proposals get in; this is how a line that got in and turned
+// out to be noise gets fixed, without leaving the app for a text editor.
+describe('editing what is already remembered', () => {
+  // The case the row index exists for. A real file collects lines that differ
+  // only at the end, and the fourth must be the one that moves.
+  const shell = (status: string) =>
+    `เครื่องมือ shell เคยล้มซ้ำ ๆ ด้วยเหตุเดียวกัน: "exit status ${status}"`
+
+  const openMemory = async () => {
+    vi.mocked(LearnedEntries).mockResolvedValue(
+      ['เครื่องผู้ใช้เป็น Windows', shell('1'), shell('2'), shell('124')] as any,
+    )
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'การเรียนรู้')
+    await waitFor(() => expect(container.querySelectorAll('.mem-row').length).toBe(4))
+    return container
+  }
+
+  it('gives every remembered line its own row', async () => {
+    const container = await openMemory()
+    const rows = container.querySelectorAll('.mem-row .mem-text')
+    expect(rows[0].textContent).toContain('Windows')
+    expect(rows[3].textContent).toContain('exit status 124')
+  })
+
+  it('saves the row that was edited, by its position and not by its text', async () => {
+    const container = await openMemory()
+    const rows = Array.from(container.querySelectorAll('.mem-row'))
+    await fireEvent.click(rows[3].querySelector('.icobtn')!)
+
+    const box = container.querySelector('.mem-input') as HTMLTextAreaElement
+    expect(box.value).toContain('exit status 124')
+    await fireEvent.input(box, { target: { value: 'shell timeout บ่อยในโปรเจกต์นี้' } })
+    // Scoped to the open row: the approval card above has a .ctrl-primary too,
+    // and it comes first in the document.
+    await fireEvent.click(container.querySelector('.mem-row.editing .ctrl-primary')!)
+
+    // Index 3 — the row on screen. The three lines above it all contain
+    // "exit status", so anything matching on text would take the wrong one.
+    await waitFor(() =>
+      expect(SaveLearnedEntry).toHaveBeenCalledWith('', 3, 'shell timeout บ่อยในโปรเจกต์นี้'))
+  })
+
+  it('forgets a line by saving it empty, and reloads so the rows renumber', async () => {
+    const container = await openMemory()
+    const rows = Array.from(container.querySelectorAll('.mem-row'))
+    await fireEvent.click(rows[1].querySelector('.mem-forget')!)
+
+    await waitFor(() => expect(SaveLearnedEntry).toHaveBeenCalledWith('', 1, ''))
+    // A delete moves every row below it, so the positions the next edit sends
+    // have to come from the file again rather than from the stale array.
+    expect(LearnedEntries).toHaveBeenCalledTimes(2)
+  })
+
+  it('says why a save failed instead of quietly leaving the line as it was', async () => {
+    const container = await openMemory()
+    vi.mocked(SaveLearnedEntry).mockRejectedValueOnce(new Error('memory is full'))
+    await fireEvent.click(container.querySelectorAll('.mem-row')[0].querySelector('.icobtn')!)
+    await fireEvent.input(container.querySelector('.mem-input')!, { target: { value: 'x' } })
+    // Scoped to the open row: the approval card above has a .ctrl-primary too,
+    // and it comes first in the document.
+    await fireEvent.click(container.querySelector('.mem-row.editing .ctrl-primary')!)
+
+    await waitFor(() => expect(container.textContent).toContain('memory is full'))
+  })
+
+  // The folder is the promise that this is plain markdown you can take away.
+  it('keeps the way out to the folder', async () => {
+    const container = await openMemory()
+    expect(container.querySelector('.learn-foot .ctrl')?.textContent)
+      .toContain('เปิดโฟลเดอร์ความจำ')
+  })
 })
 
 describe('the learning review page', () => {

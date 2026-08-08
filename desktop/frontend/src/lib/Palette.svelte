@@ -92,9 +92,15 @@
         },
       },
       { id: 'new', group: t('palette.groupContext'), label: t('palette.newChat'), hint: 'Ctrl+N', run: () => newSession() },
+      // Both halves, not just the name: the composer chip now carries the
+      // provider as a mark and the model name not at all, so this row is where
+      // "which brain, exactly" is read as text rather than hovered for.
       {
         id: 'model', group: t('palette.groupModel'), label: t('palette.switchModel'),
-        hint: cockpit.model.modelName || cockpit.model.provider, run: onopenmodel,
+        hint: cockpit.model.modelName
+          ? cockpit.model.provider + ' · ' + cockpit.model.modelName
+          : cockpit.model.provider,
+        run: onopenmodel,
       },
       {
         id: 'approval', group: t('palette.groupModel'), label: t('palette.approval'),

@@ -3,6 +3,7 @@ package skill
 import (
 	"context"
 
+	"github.com/Mike0165115321/Aetox/internal/proc"
 	"github.com/Mike0165115321/Aetox/internal/stt"
 )
 
@@ -65,6 +66,15 @@ type RegistryOptions struct {
 	// list IS the permission, so anything added behind the user's back is a
 	// permission they never gave.
 	ExtraRoots []string
+	// Shell is which shell the `shell` tool runs its commands in: the machine's
+	// own, or a WSL distro. A func for the same reason OutputSubdir is one —
+	// the user can change it from the picker mid-session, and rebuilding the
+	// engine to change which program gets exec'd would be an absurd price.
+	//
+	// Nil means the native shell, which is what the CLI, every test and every
+	// caller with no opinion gets, and what the tool did before it was
+	// selectable.
+	Shell func() proc.Backend
 }
 
 func NewDefaultRegistry(opts RegistryOptions) *Registry {
@@ -95,7 +105,7 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 		&githubRepoSummarySkill{},
 		&gitSkill{root: opts.SandboxRoot},
 		&fsSkill{root: opts.SandboxRoot},
-		&shellSkill{root: opts.SandboxRoot, shells: shells},
+		&shellSkill{root: opts.SandboxRoot, shells: shells, backend: opts.Shell},
 		&shellOutputSkill{shells: shells},
 		&shellKillSkill{shells: shells},
 		&writeSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},

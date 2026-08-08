@@ -10,6 +10,7 @@
     EnabledProviders, SupportedThinkLevels,
     ListModelsForProvider, RequiresAPIKey, HasAPIKey, PickAttachment,
     GetContextBreakdown, GuideTopics, RunChatCommand, ListChairs, CurrentSessionID,
+    Shells, CurrentShell, SetShell,
   } from '../../wailsjs/go/main/App'
   import type { main } from '../../wailsjs/go/models'
   import { t, i18n } from './i18n.svelte'
@@ -174,6 +175,21 @@
     providers = await EnabledProviders()
   })
 
+  // At mount, not on first open: whether the chip appears at all depends on the
+  // machine having more than one shell, and which one is in use has to be
+  // readable without clicking — the point of putting it on this row is that you
+  // see it before you approve a command, not after you go looking.
+  onMount(refreshShells)
+
+  // The choice is per project, so focusing another one can mean another shell.
+  // Without this the chip keeps showing the previous project's answer, which is
+  // the one way a label like this can be worse than no label.
+  $effect(() => {
+    void cockpit.project.focused
+    void cockpit.project.name
+    refreshShells()
+  })
+
   async function refreshProviderDerived(provider: string) {
     const res = await ListModelsForProvider(provider)
     models = Array.isArray(res) ? res : []
@@ -309,6 +325,49 @@
       }
     }
   }
+  // Which shell the agent's commands run in: this machine's, or a WSL distro.
+  //
+  // On the composer row rather than on the Settings page because it changes
+  // what a command *means* — the same line is a different program to cmd and to
+  // bash — and the moment that matters is when you are about to approve one. A
+  // setting you have to go looking for is one you find out about by having a
+  // command fail.
+  //
+  // Hidden entirely when the machine offers only its own shell, which is every
+  // machine without WSL: a picker with one item is furniture.
+  let shellMenuOpen = $state(false)
+  let shellOptions = $state<main.ShellOption[]>([])
+  let currentShell = $state<main.ShellOption | null>(null)
+
+  async function refreshShells() {
+    try {
+      const [options, current] = await Promise.all([Shells(), CurrentShell()])
+      shellOptions = options
+      currentShell = current
+    } catch {
+      shellOptions = []
+      currentShell = null
+    }
+  }
+
+  async function toggleShellMenu() {
+    shellMenuOpen = !shellMenuOpen
+    // Re-read on open rather than holding the list from mount: a distro can be
+    // installed, renamed or unregistered while the app runs, and a stale list
+    // offers a shell that is no longer there.
+    if (shellMenuOpen) await refreshShells()
+  }
+
+  async function pickShell(setting: string) {
+    shellMenuOpen = false
+    if (currentShell?.setting === setting) return
+    try {
+      await SetShell(setting)
+    } finally {
+      await refreshShells()
+    }
+  }
+
   // Why the last "add folder" was refused, '' when there is nothing to say.
   // Cleared when the menu closes, so a stale refusal never greets the next open.
   let folderError = $state('')
@@ -1490,6 +1549,29 @@
       </div>
       {/if}
       {#if cockpit.project.focused && cockpit.project.branch}<span class="focus-chip"><Icon name="gitBranch" size={11} /> {cockpit.project.branch}</span>{/if}
+      <!-- Which shell runs what the agent types. Only offered when there is
+           something to choose between: on a machine with no WSL this row is
+           unchanged from before the picker existed. -->
+      {#if shellOptions.length > 1}
+      <div class="focus-pick">
+        {#if shellMenuOpen}
+          <div class="focus-menu">
+            {#each shellOptions as option (option.setting)}
+              <button type="button" class="focus-item" class:on={option.selected}
+                onclick={() => pickShell(option.setting)}>
+                <span class="ic"><Icon name="terminal" size={14} /></span><span class="t">{option.label}</span>
+              </button>
+            {/each}
+            <div class="folder-note">{t('chat.shellNote')}</div>
+          </div>
+        {/if}
+        <button type="button" class="focus-chip focus-btn" title={t('chat.shellTitle')} onclick={toggleShellMenu}>
+          <span class="ic"><Icon name="terminal" size={13} /></span>
+          {currentShell?.label ?? ''}
+          <span class="caret"><Icon name={shellMenuOpen ? 'chevronUp' : 'chevronDown'} size={12} /></span>
+        </button>
+      </div>
+      {/if}
       <!-- Visible without opening the menu: a session that can reach outside its
            project must say so on the row that says what it is focused on, or
            the widening is something only the person who set it knows about. -->
@@ -1680,11 +1762,25 @@
                 {/if}
               </div>
             {/if}
-            <button type="button" class="model-chip" onclick={(e) => { e.stopPropagation(); modelMenuOpen = !modelMenuOpen; if (modelMenuOpen) { refreshThinkLevels(); EnabledProviders().then((p) => (providers = p)) } }}>
+            <!-- Two things on this chip, because two things are worth being
+                 wrong about: what Aetox may do without asking, and which brain
+                 is answering. The model *name* is neither — it is the longest
+                 string on the bar and the one that changes least, so it moves
+                 into the chip's title, the menu below, and the Ctrl+K row that
+                 names it. The provider mark keeps the second question answered
+                 at a glance without spending the width. -->
+            <button
+              type="button" class="model-chip"
+              title={model.modelName || model.provider}
+              onclick={(e) => { e.stopPropagation(); modelMenuOpen = !modelMenuOpen; if (modelMenuOpen) { refreshThinkLevels(); EnabledProviders().then((p) => (providers = p)) } }}
+            >
               <span class="mode-ic" class:danger={model.approval === 'full-access'}
                     title={t('settings.approvalTitle')}><Icon name={approvalIcons[model.approval] ?? 'hand'} size={14} /></span>
-              <span class="t">{model.modelName || model.provider}</span>
-              {#if model.thinkLevel}<span class="lvl">{model.thinkLevel}</span>{/if}
+              <span class="pv"><ProviderMark name={model.provider} size={14} /></span>
+              <!-- Same test as the menu row below, on purpose. Keyed off
+                   model.thinkLevel instead, a model with exactly one real level
+                   drew a badge for a setting the menu offers no way to change. -->
+              {#if thinkLevels.length > 1 && model.thinkLevel}<span class="lvl">{model.thinkLevel}</span>{/if}
               <span class="caret"><Icon name={modelMenuOpen ? 'chevronUp' : 'chevronDown'} size={12} /></span>
             </button>
           </div>

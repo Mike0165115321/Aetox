@@ -117,7 +117,7 @@ func (j *backgroundJob) status() (done, killed bool, exitErr error, since time.D
 // the turn ends, and a dev server that dies with the answer that started it is
 // not a background command. What still stops them is the job object every
 // child is already in (§24), so nothing here outlives the app.
-func (b *backgroundShells) start(workDir, commandLine string) (*backgroundJob, error) {
+func (b *backgroundShells) start(backend proc.Backend, workDir, commandLine string) (*backgroundJob, error) {
 	b.mu.Lock()
 	if len(b.jobs) >= maxBackgroundShells {
 		running := 0
@@ -139,10 +139,7 @@ func (b *backgroundShells) start(workDir, commandLine string) (*backgroundJob, e
 	b.mu.Unlock()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cmd := proc.ShellCommand(ctx, commandLine)
-	cmd.Dir = workDir
-	proc.HideConsole(cmd)
-	proc.KillOnCancel(cmd)
+	cmd := backend.Command(ctx, commandLine, workDir)
 
 	job := &backgroundJob{id: id, command: commandLine, cancel: cancel, started: time.Now()}
 	cmd.Stdout = job

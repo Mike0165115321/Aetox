@@ -15,6 +15,7 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/mcp"
 	"github.com/Mike0165115321/Aetox/internal/mode"
 	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mike0165115321/Aetox/internal/proc"
 	"github.com/Mike0165115321/Aetox/internal/prompt"
 	"github.com/Mike0165115321/Aetox/internal/safety"
 	"github.com/Mike0165115321/Aetox/internal/skill"
@@ -132,6 +133,18 @@ type Options struct {
 	// Digester(provider, cfg.ModelName) — the normal case. Present so a test
 	// can pin it without standing up a provider.
 	Digest skill.Digester
+
+	// Shell is which shell runs the agent's commands and the user's hooks: the
+	// machine's own, or a WSL distro. Read per call rather than baked in, so
+	// the picker can move it while the app runs.
+	//
+	// One func feeds both, deliberately. A PreToolUse hook exists to inspect
+	// what the agent is about to do, and a hook reading a bash command line
+	// from cmd.exe would pass what it should stop — a second setting would be a
+	// second thing to fall out of step, in the one place built to be a gate.
+	//
+	// Nil is the native shell: every existing host, and every test.
+	Shell func() proc.Backend
 
 	OnToolAction     func(turn.ToolEvent)
 	OnToolRun        func(turn.ToolRun)
@@ -273,6 +286,7 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 		// asked once here for the files the model finds on its own. Re-asked on
 		// every re-bootstrap, which is what happens when the model changes.
 		Vision: model.ResolveVision(cfg.ModelProvider, cfg.ModelName),
+		Shell:  opts.Shell,
 	})
 	for _, s := range opts.ExtraSkills {
 		if err := registry.Register(s, skill.SourceWorkbench); err != nil {
@@ -317,7 +331,7 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 			debuglog.Msg("chair %s: %v", opts.Chair.Name, err)
 		}
 		cancelChair()
-		child := subagent.FilterRegistry(registry, *opts.Chair, opts.Mode)
+		child := subagent.AttendedRegistry(registry, *opts.Chair, opts.Mode)
 		// `memory` is rebuilt bound to the chair's own scope, exactly as
 		// task.go does for a delegate and for the same reason: the parent's
 		// instance writes the main agent's file, and there must be no scope an
@@ -342,7 +356,7 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 	if hookErr != nil {
 		debuglog.Msg("hooks load failed, running without them: %v", hookErr)
 	}
-	hooks := hook.NewRunner(hookCfg, cfg.SandboxRoot)
+	hooks := hook.NewRunner(hookCfg, cfg.SandboxRoot).WithBackend(opts.Shell)
 	// Prepend the default MCP "ask" rules so MCP tools never auto-run. These are
 	// derived from configured server names WITHOUT connecting — so the safety
 	// gate is in place synchronously here, even though the tools themselves are

@@ -297,6 +297,44 @@ func FilterRegistry(parent *skill.Registry, p Profile, ceiling *mode.Mode) *skil
 	return filtered
 }
 
+// AttendedRegistry is FilterRegistry for the runs that have a human on the
+// other end — a direct chat with a chair (§85), as opposed to a job handed to
+// it by `task`.
+//
+// It exists because exactly one entry in forcedDenials is not about reach.
+// `ask_user` is denied to sub-agents because nobody is watching a delegate's
+// loop, so a question it asks is a question nobody can answer and the deadline
+// pays for it. In a chair chat that premise is simply false: the person who
+// opened the conversation is sitting in it. Left denied, the agent asked its
+// question as prose and then guessed, because words were the only way it had.
+//
+// A wrapper rather than a flag threaded through FilterRegistry, and not a
+// second copy of the rules: every caller still goes through the one function
+// that answers "what does this worker hold", and this one adds the single thing
+// that depends on who is listening rather than on what the work is. Both places
+// that read a chair's tools — the engine's dispatcher and the app's tools panel
+// — must call this one, or the panel and the model disagree about a tool the
+// model can actually call.
+func AttendedRegistry(parent *skill.Registry, p Profile, ceiling *mode.Mode) *skill.Registry {
+	filtered := FilterRegistry(parent, p, ceiling)
+	if filtered == nil || !p.WantsToBeAsked() {
+		return filtered
+	}
+	// Source stays what the host registered it as, so the tools panel files it
+	// where the user already knows to look for it.
+	if asker, ok := parent.Get("ask_user"); ok {
+		source, known := parent.SourceOf("ask_user")
+		if !known {
+			source = skill.SourceWorkbench
+		}
+		// Same reasoning as the loop above: forcedDenials guarantees the name is
+		// not already in `filtered`, so a collision cannot happen — and if one
+		// somehow did, the chair simply asks in prose as it did before.
+		_ = filtered.Register(asker, source)
+	}
+	return filtered
+}
+
 // missingAgentServers names the servers pointed at this agent whose tools are
 // not in the parent registry yet.
 //

@@ -917,6 +917,7 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 }
 .model-chip:hover { background:var(--surface-hover); color:var(--text-primary); }
 .model-chip .t { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
+.model-chip .pv { flex:none; display:inline-flex; align-items:center; }
 .model-chip .lvl { flex:none; color:var(--text-dim); }
 /* Approval mode, glyph only. Red at full-access — the one mode where nothing
    will ever stop to ask, so it should not look like the other two. */
@@ -1687,6 +1688,25 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .learn-why { margin-top:4px; font-size:var(--fs-sm); color:var(--text-dim); word-break:break-word; }
 .learn-actions { display:flex; gap:8px; flex:none; }
 .learn-row.past { opacity:.72; }
+/* One remembered line, one row. Ruled off from each other like every other
+   stacked row on this page, so a list of six reads as six things rather than a
+   paragraph — which is what the single <pre> here used to look like. The
+   actions stay put at the top of the row: a two-line entry and a one-line
+   entry must not put their buttons in different places. */
+.mem-row { display:flex; align-items:flex-start; gap:12px; padding:11px 16px; border-bottom:1px solid var(--border-subtle); }
+.mem-row:last-of-type { border-bottom:none; }
+.mem-row.editing { flex-direction:column; align-items:stretch; gap:8px; background:var(--surface-sunken); }
+.mem-text { margin:0; flex:1; min-width:0; word-break:break-word; font-size:var(--fs-sm); color:var(--text-secondary); }
+.mem-actions { display:flex; gap:6px; flex:none; }
+.mem-row.editing .mem-actions { justify-content:flex-end; }
+.mem-input {
+  width:100%; box-sizing:border-box; resize:vertical; min-height:52px;
+  background:var(--surface-app); border:1px solid var(--border-strong); border-radius:var(--r-sm);
+  color:var(--text-primary); font:inherit; font-size:var(--fs-sm); line-height:1.5; padding:8px 10px;
+}
+/* Only on hover: six rows each with a red x is a list that looks like a
+   warning. The colour arrives when the pointer says which one. */
+.mem-forget:hover:not(:disabled) { color:var(--danger, #e5534b); }
 .learn-memory { margin:0; padding:14px 16px; white-space:pre-wrap; word-break:break-word; font-size:var(--fs-sm); }
 /* The card's footer action, ruled off from the memory text above it the same
    way two .set-rows are ruled off from each other. */

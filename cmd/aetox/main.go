@@ -329,8 +329,13 @@ func main() {
 	}
 
 	console := app.NewStdIO()
+	// Which shell runs the agent's commands — this machine's, or a WSL distro
+	// (/shell changes it). Read per call rather than resolved once here, so a
+	// change takes effect on the next command instead of the next launch.
+	shells := &config.ShellChoice{}
 	skillRegistry := skill.NewDefaultRegistry(skill.RegistryOptions{
 		SandboxRoot: cfg.SandboxRoot,
+		Shell:       func() proc.Backend { return shells.For(cfg.SandboxRoot) },
 	})
 	for _, discErr := range skill.RegisterDiscovered(skillRegistry, skill.DefaultDiscoveryPaths()) {
 		debuglog.Msg("skill discovery: %v", discErr)
@@ -365,7 +370,11 @@ func main() {
 				fmt.Fprintf(os.Stderr, "warning: cannot save approval mode: %v\n", saveErr)
 			}
 		},
-		Title:    "Aetox CLI",
+		// /shell — the CLI's half of the desktop's composer chip. Same store,
+		// same per-project key, so a shell picked in one is what the other finds.
+		ShellRoot:   cfg.SandboxRoot,
+		ShellChoice: shells,
+		Title:       "Aetox CLI",
 		Version:  version.Current,
 		UserInfo: resolveDisplayUser(),
 		ModelStatus: resolveModelStatus(config.Config{
