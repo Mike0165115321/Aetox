@@ -60,7 +60,7 @@ export const th = {
   'chat.starter3Prompt': 'ช่วยรีวิวโค้ดที่แก้ล่าสุดหน่อย',
   'chat.starter4Title': 'แก้ไขปัญหาและข้อผิดพลาด',
   'chat.starter4Prompt': 'ช่วยหาสาเหตุที่บั๊กนี้เกิดขึ้น: ',
-  'chat.inputPlaceholder': 'พิมพ์คำขอของคุณ… (กด / ดูชุดคำสั่ง · + แนบไฟล์ · Ctrl+K ค้นหาทุกอย่าง)',
+  'chat.inputPlaceholder': 'พิมพ์คำขอของคุณ… (Ctrl+K ค้นหาทุกอย่าง)',
   'chat.attachImage': 'แนบรูปภาพ',
   'chat.attachFile': 'แนบไฟล์ (รูป วิดีโอ เสียง เอกสาร)',
   'chat.thinking': 'กำลังคิด',
@@ -172,6 +172,11 @@ export const th = {
   // ใช้ทั้งกับรูป ไฟล์ และหน้าเว็บที่ลากมาแนบ — ข้อความเดิมพูดถึงรูปอย่างเดียว
   'cockpit.attachError': 'แนบไม่สำเร็จ: {err}',
   'cockpit.attachEmptyPage': 'แท็บนี้ยังไม่ได้เปิดหน้าไหน เลยยังไม่มีเนื้อหาให้แนบ',
+  // ประตูเดียวกับที่ฝั่งเครื่องยนต์ปฏิเสธ (guardSessionSwitch) — สมองมีก้อนเดียว
+  // เทิร์นที่วิ่งอยู่กำลังใช้มัน สลับแชทกลางคันคือสลับความจำกลางความคิด
+  'cockpit.turnBusy': 'เอเจนกำลังทำงานอยู่ — รอให้เสร็จ หรือกดหยุดก่อน แล้วค่อยสลับแชท',
+  // การกดหยุดคือคำสั่งที่ทำสำเร็จ ไม่ใช่ข้อผิดพลาด — ห้ามขึ้น "เกิดข้อผิดพลาด"
+  'cockpit.turnStopped': 'หยุดการทำงานแล้ว',
 
 
   // เปิดไฟล์ได้ แต่ถอดรหัสไม่ได้ — คนละเรื่องกับไฟล์เสีย เลยต้องพูดให้ต่างกัน
@@ -221,6 +226,13 @@ export const th = {
   'settings.aboutNewVersion': 'มีเวอร์ชันใหม่ — v{version}',
   'settings.aboutRunCommand': 'รันคำสั่งนี้ในเทอร์มินัลเพื่ออัปเดต',
   'settings.aboutDownloadHint': 'ดาวน์โหลดเวอร์ชันใหม่จากหน้า release แล้วติดตั้งทับได้เลย',
+  // ปุ่มเดียวจบ: โหลด → ตรวจแฮชกับ checksums ของ release → สลับไฟล์ → เปิดกลับมาเอง
+  'settings.aboutAutoHint': 'กดปุ่มเดียว — แอปจะดาวน์โหลด ตรวจไฟล์ แล้วรีสตาร์ทเป็นเวอร์ชันใหม่ให้เอง',
+  'settings.aboutUpdateNow': 'อัปเดตแล้วรีสตาร์ท',
+  'settings.aboutDownloading': 'กำลังดาวน์โหลด…',
+  'settings.aboutDownloadingPct': 'กำลังดาวน์โหลด… {pct}%',
+  'settings.aboutRestarting': 'กำลังรีสตาร์ท…',
+  'settings.aboutUpdateFailed': 'อัปเดตไม่สำเร็จ: {err}',
   'settings.aboutCopy': 'คัดลอก',
   'settings.aboutCopied': 'คัดลอกแล้ว',
   'settings.aboutOpenRelease': 'เปิดหน้าดาวน์โหลด',
@@ -499,8 +511,12 @@ export const th = {
   'settings.learningReject': 'ไม่เอา',
   'settings.learningNothingPending': 'ยังไม่มีอะไรรออนุมัติ',
   'settings.learningMemory': 'สิ่งที่จำไว้แล้ว',
-  'settings.learningMemoryHint': 'ไฟล์ .md ธรรมดา แก้หรือลบเองได้ ยกโฟลเดอร์ไปใช้กับเครื่องมืออื่นก็ได้',
+  'settings.learningMemoryHint': 'ไฟล์ .md ธรรมดา แก้หรือลบได้ตรงนี้เลย ยกโฟลเดอร์ไปใช้กับเครื่องมืออื่นก็ได้',
   'settings.learningMemoryEmpty': 'ยังไม่ได้จำอะไร',
+  'settings.learningMemoryEdit': 'แก้บรรทัดนี้',
+  'settings.learningMemoryForget': 'ลืมบรรทัดนี้',
+  'settings.learningMemorySave': 'บันทึก',
+  'settings.learningMemoryCancel': 'ยกเลิก',
   'settings.learningOpenFolder': 'เปิดโฟลเดอร์ความจำ',
   'settings.learningHistory': 'ที่ตัดสินไปแล้ว',
   'settings.learningHistoryHint': 'เก็บไว้เพื่อให้ตอบได้เสมอว่าทำไมมันถึงคิดแบบนั้น',
@@ -690,6 +706,8 @@ export const th = {
   'chat.inputToAgent': 'พิมพ์ถึง {name}…',
   'chat.mainAgent': 'ผู้ช่วยหลัก',
   'chat.agentSwitchNote': 'สลับ = เปิดแชทใหม่เสมอ — แชทเดิมอยู่ในประวัติ',
+  'chat.shellTitle': 'คำสั่งที่เอเจนพิมพ์ จะรันด้วยเชลล์ไหน',
+  'chat.shellNote': 'จำไว้ต่อโปรเจกต์ มีผลกับคำสั่งถัดไป — คำสั่งที่รันอยู่ไม่ถูกย้าย',
   'office.newAgent': 'เพิ่มเอเจนเฉพาะทาง',
   'settings.agentSearch': 'ค้นหาเอเจน…',
   'settings.agentNoMatches': 'ไม่พบเอเจนที่ตรงกับคำค้น',

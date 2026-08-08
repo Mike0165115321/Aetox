@@ -685,6 +685,22 @@ export namespace main {
 	    }
 	}
 	
+	export class ShellOption {
+	    setting: string;
+	    label: string;
+	    selected: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ShellOption(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.setting = source["setting"];
+	        this.label = source["label"];
+	        this.selected = source["selected"];
+	    }
+	}
 	export class ShellProfile {
 	    name: string;
 	    path: string;
@@ -890,6 +906,20 @@ export namespace main {
 		    }
 		    return a;
 		}
+	}
+	export class TurnStatus {
+	    running: boolean;
+	    sessionId: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new TurnStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.running = source["running"];
+	        this.sessionId = source["sessionId"];
+	    }
 	}
 	export class UndoResult {
 	    files: string[];
@@ -1333,6 +1363,7 @@ export namespace update {
 	    hint: string;
 	    url: string;
 	    checkedAt: string;
+	    canAuto: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Status(source);
@@ -1348,6 +1379,7 @@ export namespace update {
 	        this.hint = source["hint"];
 	        this.url = source["url"];
 	        this.checkedAt = source["checkedAt"];
+	        this.canAuto = source["canAuto"];
 	    }
 	}
 

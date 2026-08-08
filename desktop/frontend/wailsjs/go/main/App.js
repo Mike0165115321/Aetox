@@ -22,6 +22,10 @@ export function AppVersion() {
   return window['go']['main']['App']['AppVersion']();
 }
 
+export function ApplyUpdate() {
+  return window['go']['main']['App']['ApplyUpdate']();
+}
+
 export function ApprovePendingChange(arg1) {
   return window['go']['main']['App']['ApprovePendingChange'](arg1);
 }
@@ -126,6 +130,10 @@ export function CurrentSessionID() {
   return window['go']['main']['App']['CurrentSessionID']();
 }
 
+export function CurrentShell() {
+  return window['go']['main']['App']['CurrentShell']();
+}
+
 export function CurrentSpace() {
   return window['go']['main']['App']['CurrentSpace']();
 }
@@ -216,6 +224,10 @@ export function InstallSkillFromZip() {
 
 export function Interject(arg1) {
   return window['go']['main']['App']['Interject'](arg1);
+}
+
+export function LearnedEntries(arg1) {
+  return window['go']['main']['App']['LearnedEntries'](arg1);
 }
 
 export function LearnedMemory(arg1) {
@@ -542,6 +554,10 @@ export function SaveIdentityFile(arg1, arg2) {
   return window['go']['main']['App']['SaveIdentityFile'](arg1, arg2);
 }
 
+export function SaveLearnedEntry(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SaveLearnedEntry'](arg1, arg2, arg3);
+}
+
 export function SaveMCPServer(arg1, arg2) {
   return window['go']['main']['App']['SaveMCPServer'](arg1, arg2);
 }
@@ -578,6 +594,10 @@ export function SessionMode(arg1) {
   return window['go']['main']['App']['SessionMode'](arg1);
 }
 
+export function SessionTranscript(arg1) {
+  return window['go']['main']['App']['SessionTranscript'](arg1);
+}
+
 export function SessionsInSpace(arg1) {
   return window['go']['main']['App']['SessionsInSpace'](arg1);
 }
@@ -610,6 +630,10 @@ export function SetProviderWireFormat(arg1) {
   return window['go']['main']['App']['SetProviderWireFormat'](arg1);
 }
 
+export function SetShell(arg1) {
+  return window['go']['main']['App']['SetShell'](arg1);
+}
+
 export function SetSpeechModel(arg1) {
   return window['go']['main']['App']['SetSpeechModel'](arg1);
 }
@@ -624,6 +648,10 @@ export function SetUILocale(arg1) {
 
 export function SetUserName(arg1) {
   return window['go']['main']['App']['SetUserName'](arg1);
+}
+
+export function Shells() {
+  return window['go']['main']['App']['Shells']();
 }
 
 export function SignInMethods() {
@@ -728,6 +756,10 @@ export function ToggleMCPServer(arg1, arg2) {
 
 export function ToolCounts() {
   return window['go']['main']['App']['ToolCounts']();
+}
+
+export function TurnInFlight() {
+  return window['go']['main']['App']['TurnInFlight']();
 }
 
 export function TurnRating(arg1) {

@@ -31,11 +31,11 @@
     DeleteSubagentProfile, SetSubagentModel, OpenAgentsFolder, ListChairs,
     SignInMethods, SignInStatus, StartSignIn, CancelSignIn, ImportableSignIns,
     Connections, ConnectAccount, SetConnectionTargets, VerifyConnection, DisconnectAccount,
-    AppVersion, CheckForUpdate,
+    AppVersion, CheckForUpdate, ApplyUpdate,
     LearningEnabled, SetLearningEnabled, ListPendingChanges, ListDecidedChanges,
-    ApprovePendingChange, RejectPendingChange, LearnedMemory, OpenMemoryFolder,
+    ApprovePendingChange, RejectPendingChange, LearnedEntries, SaveLearnedEntry, OpenMemoryFolder,
   } from '../../wailsjs/go/main/App'
-  import { BrowserOpenURL } from '../../wailsjs/runtime/runtime'
+  import { BrowserOpenURL, EventsOn } from '../../wailsjs/runtime/runtime'
   import promptPayQR from '../assets/images/promptpay-qr.png'
   import { config, update, main } from '../../wailsjs/go/models'
   import { cockpit, setActiveView, switchProvider, switchModel, submitAPIKey, switchApprovalMode, switchWireFormat, setProviderBaseURL, retryActiveProvider, completeSignIn, signOutProvider, importSignIn } from './stores/cockpit.svelte'
@@ -416,14 +416,44 @@
   let updateChecking = $state(false)
   let updateError = $state('')
   let hintCopied = $state(false)
+  // The one-click path: ApplyUpdate downloads, verifies and swaps, then the
+  // app closes itself and the relauncher brings the new build up. `applying`
+  // deliberately stays true after success — the window is about to vanish, and
+  // a button that re-enables in its last frame invites a second press.
+  let updateApplying = $state(false)
+  let updateApplyError = $state('')
+  let updateRestarting = $state(false)
+  let updatePct = $state(-1) // -1: no download running or size unknown
 
-  onMount(async () => {
-    try {
-      appVersion = await AppVersion()
-    } catch {
-      /* the About page shows a dash rather than an error */
-    }
+  onMount(() => {
+    void (async () => {
+      try {
+        appVersion = await AppVersion()
+      } catch {
+        /* the About page shows a dash rather than an error */
+      }
+    })()
+    // Not inside the async block: an async onMount cannot hand Svelte its
+    // cleanup, so the unsubscribe would be dropped on every close.
+    return EventsOn('update:progress', (p: { done: number; total: number }) => {
+      updatePct = p?.total > 0 ? Math.min(100, Math.round((p.done / p.total) * 100)) : -1
+    })
   })
+
+  async function applyUpdate() {
+    updateApplying = true
+    updateApplyError = ''
+    updatePct = -1
+    try {
+      await ApplyUpdate()
+      // The Go side quits the app a moment after resolving; this label is the
+      // last thing this window says.
+      updateRestarting = true
+    } catch (err) {
+      updateApplyError = String(err)
+      updateApplying = false
+    }
+  }
 
   const CHANNEL_LABELS: Record<string, TKey> = {
     scoop: 'settings.aboutChannelScoop',
@@ -882,7 +912,7 @@
   }
 
   // ---------- Skills (discovered SKILL.md + plugin install) ----------
-  type SkillRow = { name: string; description: string; dir: string }
+  type SkillRow = { name: string; description: string; dir: string; bundled?: boolean }
   let extSkills = $state<SkillRow[]>([])
   // Read-only: every tool the AI can run — Aetox's own plus anything an MCP
   // server bridged in. Separate from the skills below, which are documents, not
@@ -1723,9 +1753,17 @@
   let learningOn = $state(true)
   let pendingChanges = $state<main.PendingChange[]>([])
   let decidedChanges = $state<main.PendingChange[]>([])
-  let mainMemory = $state('')
   let learningError = $state('')
   let learningBusy = $state(0)
+  // One row per remembered line. The file is a bullet list and always was —
+  // showing it as one <pre> was the app describing the file rather than being
+  // a way into it, so the only way to fix a line was to go and open the folder.
+  let memoryLines = $state<string[]>([])
+  // Which row is open for editing, -1 for none. One at a time: these lines are
+  // short, and a page of open textareas is a form nobody knows the state of.
+  let memoryEditing = $state(-1)
+  let memoryDraft = $state('')
+  let memorySaving = $state(false)
 
   async function loadLearning() {
     try {
@@ -1733,9 +1771,53 @@
       learningOn = await LearningEnabled()
       pendingChanges = await ListPendingChanges()
       decidedChanges = await ListDecidedChanges(20)
-      mainMemory = await LearnedMemory('')
+      memoryLines = await LearnedEntries('')
     } catch (err) {
       learningError = String(err)
+    }
+  }
+
+  function startMemoryEdit(i: number) {
+    memoryEditing = i
+    memoryDraft = memoryLines[i] ?? ''
+  }
+
+  function cancelMemoryEdit() {
+    memoryEditing = -1
+    memoryDraft = ''
+  }
+
+  // Saving and forgetting are the same write with a different body — an empty
+  // one removes the line (learned.EditEntry). Keeping them one call means the
+  // two paths cannot drift on which row they address.
+  async function commitMemory(index: number, text: string) {
+    memorySaving = true
+    try {
+      learningError = ''
+      await SaveLearnedEntry('', index, text)
+      cancelMemoryEdit()
+      // Re-read rather than patching the array: the row positions the next edit
+      // sends have to be the file's, and a delete moves every line below it.
+      await loadLearning()
+    } catch (err) {
+      learningError = String(err)
+    } finally {
+      memorySaving = false
+    }
+  }
+
+  function onMemoryKeydown(e: KeyboardEvent, index: number) {
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      e.stopPropagation() // Escape also closes Settings; one press closes one layer
+      cancelMemoryEdit()
+      return
+    }
+    // Enter saves, Shift+Enter breaks the line. A remembered line is one
+    // sentence, so the common key does the common thing.
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      if (memoryDraft.trim()) void commitMemory(index, memoryDraft)
     }
   }
 
@@ -2997,8 +3079,47 @@
            left edge and gives the button the same rule every other card
            footer has. -->
       <div class="settings-card">
-        {#if mainMemory}
-          <pre class="learn-memory">{mainMemory}</pre>
+        {#if memoryLines.length > 0}
+          <!-- Keyed by index rather than by text: two remembered lines can be
+               byte-identical, and the index is also what the save addresses. -->
+          {#each memoryLines as line, i (i)}
+            <div class="mem-row" class:editing={memoryEditing === i}>
+              {#if memoryEditing === i}
+                <!-- svelte-ignore a11y_autofocus -->
+                <textarea
+                  class="mem-input" rows="2" autofocus
+                  bind:value={memoryDraft}
+                  onkeydown={(e) => onMemoryKeydown(e, i)}
+                ></textarea>
+                <div class="mem-actions">
+                  <button
+                    type="button" class="ctrl ctrl-primary"
+                    disabled={memorySaving || !memoryDraft.trim()}
+                    onclick={() => commitMemory(i, memoryDraft)}
+                  >{t('settings.learningMemorySave')}</button>
+                  <button type="button" class="ctrl" disabled={memorySaving} onclick={cancelMemoryEdit}
+                  >{t('settings.learningMemoryCancel')}</button>
+                </div>
+              {:else}
+                <p class="mem-text">{line}</p>
+                <div class="mem-actions">
+                  <button
+                    type="button" class="icobtn tiny tip-l" aria-label={t('settings.learningMemoryEdit')}
+                    data-tip={t('settings.learningMemoryEdit')} disabled={memorySaving}
+                    onclick={() => startMemoryEdit(i)}
+                  ><Icon name="pencil" size={13} /></button>
+                  <!-- No confirm: the line is one sentence the agent wrote, the
+                       file is plain markdown the user owns, and a dialog for
+                       every tidy-up is what makes a list nobody tidies. -->
+                  <button
+                    type="button" class="icobtn tiny tip-l mem-forget" aria-label={t('settings.learningMemoryForget')}
+                    data-tip={t('settings.learningMemoryForget')} disabled={memorySaving}
+                    onclick={() => commitMemory(i, '')}
+                  ><Icon name="x" size={13} /></button>
+                </div>
+              {/if}
+            </div>
+          {/each}
         {:else}
           <div class="empty">{t('settings.learningMemoryEmpty')}</div>
         {/if}
@@ -3610,22 +3731,32 @@
           <div class="set-row">
             <div class="set-txt">
               <div class="t">{t('settings.aboutNewVersion', { version: updateStatus.latest })}</div>
-              <!-- Scoop installed us, so Scoop upgrades us: Aetox never writes
-                   into someone else's package directory. Every other channel
-                   gets the release page, which is always a correct answer. -->
+              <!-- Three endings, one action each. canAuto is the VS Code shape:
+                   download, verify, swap, restart — Apply owns all four. Scoop
+                   installed us, so Scoop upgrades us: Aetox never writes into
+                   someone else's package directory. Everything left gets the
+                   release page, which is always a correct answer. -->
               <div class="d">
-                {updateStatus.hint ? t('settings.aboutRunCommand') : t('settings.aboutDownloadHint')}
+                {updateStatus.canAuto
+                  ? t('settings.aboutAutoHint')
+                  : updateStatus.hint ? t('settings.aboutRunCommand') : t('settings.aboutDownloadHint')}
               </div>
-              {#if updateStatus.hint}
+              {#if !updateStatus.canAuto && updateStatus.hint}
                 <code class="about-cmd">{updateStatus.hint}</code>
               {/if}
+              {#if updateApplyError}
+                <div class="mset-error">{t('settings.aboutUpdateFailed', { err: updateApplyError })}</div>
+              {/if}
             </div>
-            <!-- One action, not two. Offering a Scoop user the download page
-                 next to `scoop update aetox` invites them to unpack a zip on
-                 top of a Scoop-managed install, which is exactly the mess this
-                 whole design exists to avoid. What changed is still one row
-                 down, for everybody. -->
-            {#if updateStatus.hint}
+            {#if updateStatus.canAuto}
+              <button class="ctrl" disabled={updateApplying} onclick={applyUpdate}>
+                {updateRestarting
+                  ? t('settings.aboutRestarting')
+                  : updateApplying
+                    ? (updatePct >= 0 ? t('settings.aboutDownloadingPct', { pct: String(updatePct) }) : t('settings.aboutDownloading'))
+                    : t('settings.aboutUpdateNow')}
+              </button>
+            {:else if updateStatus.hint}
               <button class="ctrl" onclick={() => copyUpgradeHint(updateStatus!.hint)}>
                 {hintCopied ? t('settings.aboutCopied') : t('settings.aboutCopy')}
               </button>

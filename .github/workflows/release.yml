@@ -89,6 +89,16 @@ jobs:
           } | Set-Content checksums.txt
           Get-Content checksums.txt
 
+      # Origin, not just integrity: the app's auto-updater verifies this
+      # signature with its embedded public key (internal/update/signing.go)
+      # before trusting a single hash. relsign fails the run when the secret is
+      # absent — an unsigned release is one every updater silently refuses,
+      # which is far worse than a red build.
+      - name: Sign checksums with the release key
+        env:
+          AETOX_SIGNING_KEY: ${{ secrets.AETOX_SIGNING_KEY }}
+        run: go run ./cmd/relsign checksums.txt
+
       # Release notes come from a file in the repo, reviewed in the same PR as
       # the code they describe — not typed into the GitHub web form at publish
       # time. That form is why v0.6.0, v0.8.1, v0.8.2 and v0.8.4 all shipped
@@ -107,3 +117,4 @@ jobs:
             desktop/build/bin/aetox-amd64-installer.exe
             aetox-windows-amd64-portable.zip
             checksums.txt
+            checksums.txt.sig

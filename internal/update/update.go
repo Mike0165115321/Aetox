@@ -74,6 +74,18 @@ type Status struct {
 	Hint      string `json:"hint"` // e.g. "scoop update aetox"; "" if none
 	URL       string `json:"url"`  // the release page to open
 	CheckedAt string `json:"checkedAt"`
+	// CanAuto means Apply can take it from here: this channel knows how to
+	// download, verify and swap itself, and the release actually carries the
+	// file this install would need. The UI's one-click restart-and-update
+	// button exists exactly when this is true.
+	CanAuto bool `json:"canAuto"`
+}
+
+// Asset is one downloadable file on a release, as much of it as Apply needs.
+type Asset struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
+	Size int64  `json:"size"`
 }
 
 // Disabled reports whether the user (or CI) has switched the check off.
@@ -87,6 +99,14 @@ func Disabled() bool {
 // what keeps a once-a-day check off GitHub's 60-requests-per-hour budget for
 // unauthenticated callers.
 func Check(ctx context.Context, current string) (Status, error) {
+	st, _, err := checkWithAssets(ctx, current)
+	return st, err
+}
+
+// checkWithAssets is Check plus the release's downloadable files — which stay
+// internal because only Apply consumes them; the Settings page has no use for
+// a URL list it must not build its own download logic on.
+func checkWithAssets(ctx context.Context, current string) (Status, []Asset, error) {
 	st := Status{
 		Current: current,
 		Channel: string(Detect()),
@@ -96,7 +116,7 @@ func Check(ctx context.Context, current string) (Status, error) {
 
 	if Disabled() {
 		st.Disabled = true
-		return st, ErrDisabled
+		return st, nil, ErrDisabled
 	}
 	// A test in some unrelated package must never reach out to github.com just
 	// because it constructed an App. internal/rtk/install.go learned this the
@@ -104,7 +124,7 @@ func Check(ctx context.Context, current string) (Status, error) {
 	// apiURL, so they are unaffected.
 	if testing.Testing() && apiURL == defaultAPIURL {
 		st.Disabled = true
-		return st, ErrDisabled
+		return st, nil, ErrDisabled
 	}
 
 	prev := loadCache()
@@ -114,19 +134,24 @@ func Check(ctx context.Context, current string) (Status, error) {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
-		return st, err
+		return st, nil, err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	// GitHub rejects unauthenticated calls with no User-Agent outright.
 	req.Header.Set("User-Agent", "Aetox/"+current)
-	if prev.ETag != "" {
+	// The ETag is only worth sending when the cache could actually answer a
+	// 304 — which now includes the asset list. A cache written by a build from
+	// before assets were recorded would otherwise answer every 304 with an
+	// empty list, and the one-click button would stay dark until the NEXT
+	// release changed the ETag. One full-priced request repairs it instead.
+	if prev.ETag != "" && len(prev.Assets) > 0 {
 		req.Header.Set("If-None-Match", prev.ETag)
 	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return st, err
+		return st, nil, err
 	}
 	defer resp.Body.Close()
 
@@ -137,7 +162,7 @@ func Check(ctx context.Context, current string) (Status, error) {
 	case http.StatusNotModified:
 		// Nothing changed since last time; the cached answer is still the answer.
 		if prev.Latest == "" {
-			return st, fmt.Errorf("github returned 304 with no cached release")
+			return st, nil, fmt.Errorf("github returned 304 with no cached release")
 		}
 	case http.StatusOK:
 		var rel struct {
@@ -145,22 +170,34 @@ func Check(ctx context.Context, current string) (Status, error) {
 			HTMLURL string `json:"html_url"`
 			Draft   bool   `json:"draft"`
 			Pre     bool   `json:"prerelease"`
+			Assets  []struct {
+				Name string `json:"name"`
+				URL  string `json:"browser_download_url"`
+				Size int64  `json:"size"`
+			} `json:"assets"`
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
-			return st, fmt.Errorf("decode release: %w", err)
+			return st, nil, fmt.Errorf("decode release: %w", err)
 		}
 		if rel.Draft || rel.Pre {
 			// /releases/latest should never return these, but if the API ever
 			// does, a draft is by definition not something to notify about.
-			return st, fmt.Errorf("latest release is not published")
+			return st, nil, fmt.Errorf("latest release is not published")
 		}
 		next.ETag = resp.Header.Get("ETag")
 		next.Latest = strings.TrimPrefix(strings.TrimSpace(rel.TagName), "v")
 		if rel.HTMLURL != "" {
 			next.URL = rel.HTMLURL
 		}
+		// The files ride the cache with the answer they belong to, so a 304
+		// still knows what the release carries — Apply after a cached check
+		// must not need a second uncached round-trip.
+		next.Assets = nil
+		for _, a := range rel.Assets {
+			next.Assets = append(next.Assets, Asset{Name: a.Name, URL: a.URL, Size: a.Size})
+		}
 	default:
-		return st, fmt.Errorf("github returned %s", resp.Status)
+		return st, nil, fmt.Errorf("github returned %s", resp.Status)
 	}
 
 	next.CheckedAt = now
@@ -172,7 +209,8 @@ func Check(ctx context.Context, current string) (Status, error) {
 		st.URL = next.URL
 	}
 	st.Available = Newer(next.Latest, current)
-	return st, nil
+	st.CanAuto = st.Available && canAuto(Channel(st.Channel), next.Assets)
+	return st, next.Assets, nil
 }
 
 // Newer reports whether latest is a strictly newer release than current.
@@ -226,10 +264,11 @@ func parse(v string) ([3]int, bool) {
 // cacheEntry is what survives between checks: an ETag so the next call costs
 // nothing, and the last answer so a 304 still has something to report.
 type cacheEntry struct {
-	ETag      string `json:"etag,omitempty"`
-	Latest    string `json:"latest,omitempty"`
-	URL       string `json:"url,omitempty"`
-	CheckedAt string `json:"checked_at,omitempty"`
+	ETag      string  `json:"etag,omitempty"`
+	Latest    string  `json:"latest,omitempty"`
+	URL       string  `json:"url,omitempty"`
+	CheckedAt string  `json:"checked_at,omitempty"`
+	Assets    []Asset `json:"assets,omitempty"`
 }
 
 func cachePath() (string, error) {

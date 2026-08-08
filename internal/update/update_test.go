@@ -208,7 +208,11 @@ func TestSecondCheckReusesTheETag(t *testing.T) {
 			return
 		}
 		w.Header().Set("ETag", `W/"abc123"`)
-		_, _ = w.Write([]byte(`{"tag_name":"v0.9.0","html_url":"https://example.invalid/r"}`))
+		// Assets ride along, as every real release's do — a cached answer
+		// without them is treated as unable to answer a 304 (see the
+		// If-None-Match condition in checkWithAssets).
+		_, _ = w.Write([]byte(`{"tag_name":"v0.9.0","html_url":"https://example.invalid/r",
+			"assets":[{"name":"checksums.txt","browser_download_url":"https://example.invalid/c","size":1}]}`))
 	})
 
 	if _, err := Check(context.Background(), "0.8.4"); err != nil {
@@ -226,6 +230,52 @@ func TestSecondCheckReusesTheETag(t *testing.T) {
 	}
 	if LastCheckedAt().IsZero() {
 		t.Error("LastCheckedAt is zero after two completed checks")
+	}
+}
+
+// A cache written by a build from before assets were recorded can answer
+// "which version" but not "which files" — sending its ETag would freeze the
+// one-click button dark until the NEXT release changed the tag. The check
+// pays one full-priced request to repair the cache, then goes back to 304s.
+// Found live: the very first drill of Apply on this machine hit it.
+func TestOldCacheWithoutAssetsRepairsItself(t *testing.T) {
+	var conditional, full int
+	withAssets := false
+	serve(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("If-None-Match") != "" {
+			conditional++
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		full++
+		w.Header().Set("ETag", `W/"e1"`)
+		body := `{"tag_name":"v0.9.0","html_url":"https://example.invalid/r"}`
+		if withAssets {
+			body = `{"tag_name":"v0.9.0","html_url":"https://example.invalid/r",
+				"assets":[{"name":"checksums.txt","browser_download_url":"https://example.invalid/c","size":1},
+				          {"name":"aetox-windows-amd64-portable.zip","browser_download_url":"https://example.invalid/z","size":9}]}`
+		}
+		_, _ = w.Write([]byte(body))
+	})
+
+	// The old build's cache: version and ETag, no assets.
+	if _, err := Check(context.Background(), "0.8.4"); err != nil {
+		t.Fatalf("seed Check: %v", err)
+	}
+	// The new build checks: it must NOT trust that cache into a 304.
+	withAssets = true
+	if _, err := Check(context.Background(), "0.8.4"); err != nil {
+		t.Fatalf("repair Check: %v", err)
+	}
+	if conditional != 0 || full != 2 {
+		t.Errorf("repair path: conditional=%d full=%d, want 0 and 2 — the assetless cache must not answer", conditional, full)
+	}
+	// Repaired: the budget-saving 304 path resumes.
+	if _, err := Check(context.Background(), "0.8.4"); err != nil {
+		t.Fatalf("third Check: %v", err)
+	}
+	if conditional != 1 {
+		t.Errorf("after repair, conditional=%d, want 1", conditional)
 	}
 }
 

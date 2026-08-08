@@ -20,6 +20,8 @@ export function AddWorkspaceFolder():Promise<Array<main.WorkspaceFolder>>;
 
 export function AnswerUserQuestion(arg1:string):Promise<void>;
 
+export function ApplyUpdate():Promise<void>;
+
 export function AppVersion():Promise<string>;
 
 export function ApprovePendingChange(arg1:number):Promise<void>;
@@ -74,6 +76,8 @@ export function CreateSpace(arg1:string):Promise<main.Space>;
 
 export function CurrentSessionID():Promise<string>;
 
+export function CurrentShell():Promise<main.ShellOption>;
+
 export function CurrentSpace():Promise<string>;
 
 export function DeleteArtifact(arg1:string):Promise<void>;
@@ -119,6 +123,8 @@ export function InstallSkillFromGitHub(arg1:string):Promise<string>;
 export function InstallSkillFromZip():Promise<string>;
 
 export function Interject(arg1:string):Promise<void>;
+
+export function LearnedEntries(arg1:string):Promise<Array<string>>;
 
 export function LearnedMemory(arg1:string):Promise<string>;
 
@@ -282,6 +288,8 @@ export function SaveDrawing(arg1:string):Promise<string>;
 
 export function SaveIdentityFile(arg1:string,arg2:string):Promise<void>;
 
+export function SaveLearnedEntry(arg1:string,arg2:number,arg3:string):Promise<void>;
+
 export function SaveMCPServer(arg1:string,arg2:config.MCPServerConfig):Promise<void>;
 
 export function SavePromptPreset(arg1:string,arg2:string):Promise<void>;
@@ -300,6 +308,8 @@ export function SessionAgent(arg1:string):Promise<string>;
 
 export function SessionMode(arg1:string):Promise<string>;
 
+export function SessionTranscript(arg1:string):Promise<Array<main.SessionMessage>>;
+
 export function SessionsInSpace(arg1:string):Promise<Array<main.SessionMeta>>;
 
 export function SetAPIKey(arg1:string,arg2:string):Promise<main.ModelInfo>;
@@ -316,6 +326,8 @@ export function SetProviderEnabled(arg1:string,arg2:boolean):Promise<Array<strin
 
 export function SetProviderWireFormat(arg1:string):Promise<main.ModelInfo>;
 
+export function SetShell(arg1:string):Promise<void>;
+
 export function SetSpeechModel(arg1:string):Promise<void>;
 
 export function SetSubagentModel(arg1:string,arg2:string):Promise<void>;
@@ -323,6 +335,8 @@ export function SetSubagentModel(arg1:string,arg2:string):Promise<void>;
 export function SetUILocale(arg1:string):Promise<void>;
 
 export function SetUserName(arg1:string):Promise<void>;
+
+export function Shells():Promise<Array<main.ShellOption>>;
 
 export function SignInMethods():Promise<Array<oauth.Method>>;
 
@@ -375,6 +389,8 @@ export function TestProviderConnection(arg1:string,arg2:string):Promise<string>;
 export function ToggleMCPServer(arg1:string,arg2:boolean):Promise<void>;
 
 export function ToolCounts():Promise<main.ToolCounts>;
+
+export function TurnInFlight():Promise<main.TurnStatus>;
 
 export function TurnRating(arg1:number):Promise<string>;
 
