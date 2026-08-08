@@ -34,10 +34,19 @@ func TestAChairSessionSendsTheChairsCutOnly(t *testing.T) {
 			t.Errorf("deck's chat is missing %s — its own profile asks for it: %v", want, got)
 		}
 	}
+	// ask_user is the one forced denial this path puts back, and the split is
+	// not an exception to the invariant — it is the invariant read properly.
+	// The denial exists because no human is attached to a delegate's loop; in a
+	// chair chat one is, and it is the person who opened it. Without this the
+	// agent asked its question in prose and guessed at the answer, because
+	// saying words was the only way it had to ask.
+	if !slices.Contains(got, "ask_user") {
+		t.Errorf("deck's chat cannot ask the person it is talking to: %v", got)
+	}
 	// task: a leaf stays a leaf, even when spoken to. shell: the office
-	// ceiling, in person. ask_user/todo_write: forced denials shared with the
-	// delegate path — one invariant, not two.
-	for _, banned := range []string{"task", "task_result", "shell", "diagnostics", "ask_user", "todo_write"} {
+	// ceiling, in person. todo_write: still a forced denial — a checklist is
+	// the main agent's panel, and nothing draws a second one here.
+	for _, banned := range []string{"task", "task_result", "shell", "diagnostics", "todo_write"} {
 		if slices.Contains(got, banned) {
 			t.Errorf("deck's chat carries %s — the chair's cut must match its delegate runs", banned)
 		}

@@ -184,7 +184,8 @@ func sessionTitleFrom(text string) string {
 // caller can carry on rather than treat it as a failed turn.
 func (a *App) openTurn(userMsg SessionMessage) bool {
 	db, err := a.database()
-	if err != nil || a.sessionID == "" {
+	sessionID := a.turnSessionID()
+	if err != nil || sessionID == "" {
 		return false
 	}
 	now := time.Now().Format(time.RFC3339)
@@ -195,13 +196,13 @@ func (a *App) openTurn(userMsg SessionMessage) bool {
 		INSERT INTO sessions(id, project_key, title, created_at, updated_at, mode, agent, space)
 		VALUES(?,?,?,?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at`,
-		a.sessionID, projectKey(a.cfg.SandboxRoot), sessionTitleFrom(userMsg.Text), now, now,
+		sessionID, projectKey(a.cfg.SandboxRoot), sessionTitleFrom(userMsg.Text), now, now,
 		a.desk.DeskName(), a.chair, a.space); err != nil {
 		return false
 	}
 	if _, err := db.Exec(
 		`INSERT INTO messages(session_id, role, text, time, reasoning, think_secs, parts) VALUES(?,?,?,?,?,?,?)`,
-		a.sessionID, userMsg.Role, userMsg.Text, userMsg.Time, userMsg.Reasoning, userMsg.ThinkSecs, encodeParts(userMsg.Parts)); err != nil {
+		sessionID, userMsg.Role, userMsg.Text, userMsg.Time, userMsg.Reasoning, userMsg.ThinkSecs, encodeParts(userMsg.Parts)); err != nil {
 		return false
 	}
 	a.turnOpened = true
@@ -210,7 +211,12 @@ func (a *App) openTurn(userMsg SessionMessage) bool {
 
 func (a *App) appendTurn(userMsg, agentMsg SessionMessage) int64 {
 	db, err := a.database()
-	if err != nil || a.sessionID == "" {
+	// The turn's own session, stamped at its birth — never a.sessionID read
+	// now, which is whatever chat the user has moved to since. The switch doors
+	// refuse to move it mid-turn, so the two are normally identical; this is
+	// what keeps the answer home even if some door is ever left unguarded.
+	sessionID := a.turnSessionID()
+	if err != nil || sessionID == "" {
 		return 0
 	}
 	tx, err := db.Begin()
@@ -229,7 +235,7 @@ func (a *App) appendTurn(userMsg, agentMsg SessionMessage) int64 {
 		INSERT INTO sessions(id, project_key, title, created_at, updated_at, mode, agent, space)
 		VALUES(?,?,?,?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at`,
-		a.sessionID, projectKey(a.cfg.SandboxRoot), sessionTitleFrom(userMsg.Text), now, now, a.desk.DeskName(), a.chair, a.space)
+		sessionID, projectKey(a.cfg.SandboxRoot), sessionTitleFrom(userMsg.Text), now, now, a.desk.DeskName(), a.chair, a.space)
 	// The question, unless openTurn already wrote it when it was asked —
 	// writing it twice would double every user message in the transcript. The
 	// flag is the whole coupling between the two halves, and it is deliberately
@@ -242,7 +248,7 @@ func (a *App) appendTurn(userMsg, agentMsg SessionMessage) int64 {
 	var agentID int64
 	for _, m := range pending {
 		res, execErr := tx.Exec(`INSERT INTO messages(session_id, role, text, time, reasoning, think_secs, parts) VALUES(?,?,?,?,?,?,?)`,
-			a.sessionID, m.Role, m.Text, m.Time, m.Reasoning, m.ThinkSecs, encodeParts(m.Parts))
+			sessionID, m.Role, m.Text, m.Time, m.Reasoning, m.ThinkSecs, encodeParts(m.Parts))
 		if execErr == nil {
 			agentID, _ = res.LastInsertId() // the agent's row is the last one written
 		}
@@ -653,6 +659,13 @@ func (a *App) SearchAllSessions(query string) []SessionMeta {
 // switching the active project first if the session belongs to a different one
 // than whatever's currently open.
 func (a *App) LoadSessionAnyProject(id string) ([]SessionMessage, error) {
+	// Before the project lookup, not inside LoadSession alone: this door
+	// re-roots the whole engine (reload/focusNone) on its way to the load, and
+	// a refusal that fires after the re-root has already moved the machine the
+	// turn is running on.
+	if err := a.guardSessionSwitch(); err != nil {
+		return nil, err
+	}
 	db, err := a.database()
 	if err != nil {
 		return nil, err
@@ -698,6 +711,14 @@ func (a *App) LoadSessionAnyProject(id string) ([]SessionMessage, error) {
 // and the agent's context is rebuilt from it so the conversation continues
 // with memory intact.
 func (a *App) LoadSession(id string) ([]SessionMessage, error) {
+	// A turn in flight holds the one agent context this function is about to
+	// rewrite (ClearContext/RestoreHistory below) — and once a.sessionID moves,
+	// the running turn's answer would follow the user into the newly opened
+	// chat. Both were real: the answer landed in the wrong conversation and was
+	// persisted there. One turn, one chat; finish or stop before switching.
+	if err := a.guardSessionSwitch(); err != nil {
+		return nil, err
+	}
 	db, err := a.database()
 	if err != nil {
 		return nil, err
@@ -746,10 +767,36 @@ func (a *App) LoadSession(id string) ([]SessionMessage, error) {
 	if key == "" {
 		key = projectKey(a.cfg.SandboxRoot)
 	}
-	// m.id comes back so a reopened session can still be rated: the thumbs
-	// address a job by the bubble they sit under, and without the row id an
-	// answer stops being ratable the moment the session is closed — which is
-	// exactly when a user knows whether it was any good.
+	messages, err := a.readTranscript(id, key)
+	if err != nil {
+		return nil, err
+	}
+	if len(messages) == 0 {
+		return nil, fmt.Errorf("ไม่พบเซสชันนี้ในโปรเจกต์ปัจจุบัน")
+	}
+
+	a.sessionID = id
+	a.transcript = messages
+	if a.agent != nil {
+		a.agent.ClearContext()
+		a.agent.RestoreHistory(transcriptToModelMessages(messages))
+	}
+	return messages, nil
+}
+
+// readTranscript reads one session's messages, nothing else. The rows are read
+// with the session's own project key — see LoadSession on why that key, not
+// the engine's current one, is the filter.
+//
+// m.id comes back so a reopened session can still be rated: the thumbs
+// address a job by the bubble they sit under, and without the row id an
+// answer stops being ratable the moment the session is closed — which is
+// exactly when a user knows whether it was any good.
+func (a *App) readTranscript(id, key string) ([]SessionMessage, error) {
+	db, err := a.database()
+	if err != nil {
+		return nil, err
+	}
 	rows, err := db.Query(`
 		SELECT m.id, m.role, m.text, m.time, m.reasoning, m.think_secs, m.variants, m.variant_active, m.parts
 		FROM messages m
@@ -773,24 +820,40 @@ func (a *App) LoadSession(id string) ([]SessionMessage, error) {
 			messages = append(messages, m)
 		}
 	}
-	if len(messages) == 0 {
-		return nil, fmt.Errorf("ไม่พบเซสชันนี้ในโปรเจกต์ปัจจุบัน")
-	}
-
-	a.sessionID = id
-	a.transcript = messages
-	if a.agent != nil {
-		a.agent.ClearContext()
-		a.agent.RestoreHistory(transcriptToModelMessages(messages))
-	}
 	return messages, nil
+}
+
+// SessionTranscript reads one session's messages without touching the engine:
+// no station switch, no context rebuild, a.sessionID stays where it is.
+//
+// It exists for the window that just reloaded. The Go side outlives a webview
+// reload, so the engine is still holding the session — and, mid-turn, still
+// working in it. Putting the conversation back on that window's screen through
+// LoadSession meant rebuilding an agent context the engine never lost (lossy:
+// tool calls are not in the transcript), and, during a turn, rewriting the
+// memory the turn was thinking with. Reading is not switching; this one reads.
+func (a *App) SessionTranscript(id string) ([]SessionMessage, error) {
+	db, err := a.database()
+	if err != nil {
+		return nil, err
+	}
+	var key string
+	// A session not yet in the store (opened, never spoken to) has no rows to
+	// read; the empty list — not an error — is exactly that fact.
+	if db.QueryRow(`SELECT project_key FROM sessions WHERE id = ?`, id).Scan(&key) != nil {
+		return []SessionMessage{}, nil
+	}
+	return a.readTranscript(id, key)
 }
 
 // NewSession starts a blank session at the desk the app is already at, and
 // returns its id.
-func (a *App) NewSession() string {
+func (a *App) NewSession() (string, error) {
+	if err := a.guardSessionSwitch(); err != nil {
+		return "", err
+	}
 	a.startNewSession()
-	return a.sessionID
+	return a.sessionID, nil
 }
 
 // NewSessionAt starts a blank session at the named desk — the five buttons'
@@ -807,6 +870,9 @@ func (a *App) NewSession() string {
 // desk-aware door; the old one keeps working for everything that has not been
 // pointed at a desk yet.
 func (a *App) NewSessionAt(desk string) (string, error) {
+	if err := a.guardSessionSwitch(); err != nil {
+		return "", err
+	}
 	// Cleared first, then switched: setStation re-bootstraps, and a re-bootstrap
 	// carries the outgoing agent's context into the new one. Emptying the
 	// conversation before that means the new desk starts on nothing, which is
@@ -822,6 +888,9 @@ func (a *App) NewSessionAt(desk string) (string, error) {
 // office's agents (§85), and returns its id. The desk is implied: a chair
 // only exists in the office.
 func (a *App) NewChairSession(chair string) (string, error) {
+	if err := a.guardSessionSwitch(); err != nil {
+		return "", err
+	}
 	a.startNewSession()
 	if err := a.setStation(mode.Office, chair); err != nil {
 		return "", err
@@ -902,6 +971,14 @@ func (a *App) CurrentSessionID() string {
 // project; the messages_ad trigger cleans the FTS index). Deleting the
 // session currently open also resets the transcript and agent memory.
 func (a *App) DeleteSession(id string) error {
+	// Only the chat the turn is writing into is protected — deleting any other
+	// row touches nothing the turn holds. Without this, the delete's DELETE and
+	// the turn's closing INSERT race, and appendTurn's ON CONFLICT re-creates
+	// the session row the user just removed: a conversation that comes back
+	// from the dead with one answer and no question.
+	if id == a.turnSessionID() && a.turnBusy() {
+		return errTurnBusy
+	}
 	db, err := a.database()
 	if err != nil {
 		return err

@@ -66,7 +66,7 @@ func (a *App) maxToolRunID() int64 {
 		return 0
 	}
 	var max sql.NullInt64
-	if err := db.QueryRow(`SELECT MAX(id) FROM tool_runs WHERE session_id = ?`, a.sessionID).Scan(&max); err != nil {
+	if err := db.QueryRow(`SELECT MAX(id) FROM tool_runs WHERE session_id = ?`, a.turnSessionID()).Scan(&max); err != nil {
 		return 0
 	}
 	return max.Int64
@@ -82,8 +82,12 @@ func (a *App) recordJobs(messageID int64, request, answer string, sinceToolRun i
 	if !learningEnabled() {
 		return
 	}
+	// The turn's own session, same stamp appendTurn writes with — these rows
+	// describe the same turn, and two readers of "which session" that can
+	// disagree is the shape the stamp exists to end.
+	sessionID := a.turnSessionID()
 	db, err := a.database()
-	if err != nil || a.sessionID == "" {
+	if err != nil || sessionID == "" {
 		return
 	}
 	rows := a.toolRunsSince(sinceToolRun)
@@ -103,7 +107,7 @@ func (a *App) recordJobs(messageID int64, request, answer string, sinceToolRun i
 	}
 
 	insertJob(db, jobInsert{
-		sessionID: a.sessionID,
+		sessionID: sessionID,
 		messageID: messageID,
 		// A direct chat's turns are the chair's own work (§85): scoped to the
 		// chair so the office roster counts them and what gets learned from
@@ -131,7 +135,7 @@ func (a *App) recordJobs(messageID int64, request, answer string, sinceToolRun i
 			continue
 		}
 		insertJob(db, jobInsert{
-			sessionID: a.sessionID,
+			sessionID: sessionID,
 			agent:     delegateName(parent, kids),
 			parentRef: parent.ref,
 			request:   parent.args,
@@ -238,7 +242,7 @@ func (a *App) toolRunsSince(mark int64) []toolRunRow {
 	rows, err := db.Query(
 		`SELECT id, ref, parent_ref, agent, tool, args, output, ok, duration_ms
 		   FROM tool_runs WHERE session_id = ? AND id > ? ORDER BY id`,
-		a.sessionID, mark)
+		a.turnSessionID(), mark)
 	if err != nil {
 		debuglog.Msg("jobs: reading tool_runs failed: %v", err)
 		return nil
@@ -329,14 +333,15 @@ func (a *App) TurnRating(messageID int64) string {
 // lastAgentMessageID is the rowid of the reply currently at the bottom of the
 // session — the one "answer again" replaces.
 func (a *App) lastAgentMessageID() int64 {
+	sessionID := a.turnSessionID()
 	db, err := a.database()
-	if err != nil || a.sessionID == "" {
+	if err != nil || sessionID == "" {
 		return 0
 	}
 	var id sql.NullInt64
 	if db.QueryRow(
 		`SELECT MAX(id) FROM messages WHERE session_id = ? AND role = 'agent'`,
-		a.sessionID).Scan(&id) != nil {
+		sessionID).Scan(&id) != nil {
 		return 0
 	}
 	return id.Int64

@@ -16,7 +16,7 @@
     switchModel, submitAPIKey, setActiveView, restoreActiveView, closeFile, applyAgentStatus, applyToolEvent,
     applyAgentChunk, applyReasoningChunk, attachImageFromPath,
     applyAskUser, applyAskDone, applyTodos, applyMissedInterjections, applyTaskChips,
-    applyPendingLearned, refreshPendingLearned,
+    applyPendingLearned, refreshPendingLearned, applyAgentDone,
   } from './lib/stores/cockpit.svelte'
   import { RelativizePath, CloseAllBrowserTabs } from '../wailsjs/go/main/App'
   import { OnFileDrop, OnFileDropOff, EventsOn } from '../wailsjs/runtime/runtime'
@@ -110,6 +110,10 @@
     const offAgentStatus = EventsOn('agent:status', applyAgentStatus)
     const offAgentTool = EventsOn('agent:tool', applyToolEvent)
     const offAgentChunk = EventsOn('agent:chunk', applyAgentChunk)
+    // The ending for a turn this window has no promise for — a webview reload
+    // killed the SendMessage promise, the engine kept working, and this event
+    // is how the finished answer still reaches the screen.
+    const offAgentDone = EventsOn('agent:done', applyAgentDone)
     const offAgentReasoning = EventsOn('agent:reasoning', applyReasoningChunk)
     const offAskUser = EventsOn('ask:user', applyAskUser)
     const offAskDone = EventsOn('ask:done', applyAskDone)
@@ -169,6 +173,7 @@
       offAgentStatus()
       offAgentTool()
       offAgentChunk()
+      offAgentDone()
       offAgentReasoning()
       offAskUser()
       offAskDone()

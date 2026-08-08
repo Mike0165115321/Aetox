@@ -39,8 +39,9 @@ export const AppVersion = vi.fn(async () => '0.8.4')
 // Settings test assert against a banner it never asked for.
 export const CheckForUpdate = vi.fn(async () => ({
   current: '0.8.4', latest: '0.8.4', available: false, disabled: false,
-  channel: 'portable', hint: '', url: 'https://example.invalid/releases', checkedAt: '',
+  channel: 'portable', hint: '', url: 'https://example.invalid/releases', checkedAt: '', canAuto: false,
 }) as any)
+export const ApplyUpdate = noop()
 export const CurrentSessionID = str()
 export const DismissTaskChip = noop()
 export const DeleteIdentityFile = noop()
@@ -112,6 +113,8 @@ export const SetLearningEnabled = noop()
 export const ApprovePendingChange = noop()
 export const RejectPendingChange = noop()
 export const LearnedMemory = str()
+export const LearnedEntries = arr()
+export const SaveLearnedEntry = noop()
 export const OpenMemoryFolder = noop()
 export const PendingLearnedCount = vi.fn(async (..._args: any[]) => 0)
 export const RateTurn = noop()
@@ -144,6 +147,9 @@ export const AddSpaceContext = arr()
 export const RemoveSpaceContext = arr()
 export const SessionMode = str()
 export const SessionAgent = str()
+export const SessionTranscript = arr()
+// Idle by default: only a test about the mid-turn reload flips this on.
+export const TurnInFlight = vi.fn(async (..._args: any[]) => ({ running: false, sessionId: '' }))
 export const ListModes = arr()
 export const ListChairs = arr()
 export const ListReceivedJobs = arr()

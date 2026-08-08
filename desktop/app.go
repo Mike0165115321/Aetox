@@ -119,8 +119,32 @@ type App struct {
 	// cannot disagree about what this session can reach.
 	extraRoots []string
 
+	// shells is which shell this project's commands run in — the machine's own,
+	// or a WSL distro. See desktop/shell_backend.go.
+	shells config.ShellChoice
+
 	turnMu     sync.Mutex
 	turnCancel context.CancelFunc // cancels the chat turn in flight, nil when idle
+
+	// turnRunning/turnSession are the turn in flight's identity: whether one is
+	// running, and which session it belongs to. Stamped by beginTurn and read by
+	// everything the turn's output lands in (openTurn, appendTurn), because the
+	// alternative — reading a.sessionID at completion time — is how an answer
+	// ended up persisted into whichever chat happened to be open when the turn
+	// finished. The stamp is taken once, at birth, and cannot be moved.
+	//
+	// Both under turnMu: a switch door checks them from a binding goroutine
+	// while the turn goroutine writes them.
+	turnRunning bool
+	turnSession string
+
+	// turnStopEarly records a Stop that arrived in the window between beginTurn
+	// and runTurn installing turnCancel — openTurn's DB writes sit in that gap,
+	// and a busy database holds it open for whole seconds. Without this the
+	// press lands on a nil cancel func and silently does nothing, which is a
+	// Stop button that sometimes needs pressing twice. Consumed (and the turn
+	// killed) the moment the cancel func exists.
+	turnStopEarly bool
 
 	// snapshots is the undo net (internal/snapshot). Nil whenever it cannot
 	// work — no git, or a project that is not a repository — and every use of
@@ -262,6 +286,40 @@ func (a *App) CheckForUpdate() (update.Status, error) {
 		return st, nil
 	}
 	return st, err
+}
+
+// ApplyUpdate downloads the newer release, verifies it against the release's
+// checksums, swaps this install over to it (internal/update.Apply — the
+// VS Code shape: the button restarts you into the new build), and then closes
+// this window so the waiting relauncher can bring the new one up.
+//
+// Refused mid-turn through the same gate as every session switch: an update
+// kills the process, and the process is where the turn lives.
+func (a *App) ApplyUpdate() error {
+	if err := a.guardSessionSwitch(); err != nil {
+		return err
+	}
+	ctx := a.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	err := update.Apply(ctx, version.Current, func(done, total int64) {
+		a.emitEvent("update:progress", map[string]int64{"done": done, "total": total})
+	})
+	if err != nil {
+		return err
+	}
+	// The swap is done and the relauncher is waiting on this process. Quit on
+	// a short delay rather than here: the frontend's await deserves its
+	// resolution first, so the button can honestly say "restarting" instead of
+	// the window vanishing mid-click.
+	go func() {
+		time.Sleep(400 * time.Millisecond)
+		if a.ctx != nil {
+			wailsruntime.Quit(a.ctx)
+		}
+	}()
+	return nil
 }
 
 // CommandHistory returns this session's real tool-call history, most recent first.
@@ -1201,6 +1259,9 @@ func (a *App) startup(ctx context.Context) {
 	a.focusNone()
 	a.startNewSession()
 	a.openAtRememberedDesk()
+	// The previous build's exe, renamed aside by a self-update, and the staging
+	// download — this build is running, so by definition neither is needed.
+	go update.RemoveLeftovers()
 	// Era cleanup: home itself was the unfocused root until 2026-07-26
 	// (§19.1), and attachments copied there never expired. No session writes
 	// there anymore, so this only ever drains the old pile.
@@ -1341,9 +1402,113 @@ func replyOf(m SessionMessage) TurnReply {
 	return TurnReply{Text: m.Text, Parts: m.Parts, MessageID: m.ID}
 }
 
+// errTurnBusy is the one sentence every door shares while a turn is running.
+// One gate, one message: switching chats, switching projects, deleting the
+// open session and re-running an answer are all the same refusal, because they
+// are all the same fact — the engine has one brain, and a turn is using it.
+var errTurnBusy = fmt.Errorf("เอเจนกำลังทำงานอยู่ — รอให้เสร็จ หรือกดหยุดก่อน แล้วค่อยสลับแชท")
+
+// beginTurn marks one turn in flight and stamps it with the session it was
+// born in. Refuses when a turn is already running: two turns share one agent
+// context, one turnOpened flag and one transcript, and interleaving them
+// corrupts all three. The frontend's awaitingReply gate normally prevents this
+// — the case that actually reaches here is a window reloaded mid-turn, whose
+// fresh state no longer knows a turn exists.
+func (a *App) beginTurn() error {
+	a.turnMu.Lock()
+	defer a.turnMu.Unlock()
+	if a.turnRunning {
+		return errTurnBusy
+	}
+	a.turnRunning = true
+	a.turnSession = a.sessionID
+	a.turnStopEarly = false
+	return nil
+}
+
+// armTurnCancel installs the turn's cancel func and reports whether a Stop
+// already arrived while there was nothing to press it against — in which case
+// the caller cancels immediately instead of running a turn the user has
+// already refused.
+func (a *App) armTurnCancel(cancel context.CancelFunc) (stopNow bool) {
+	a.turnMu.Lock()
+	defer a.turnMu.Unlock()
+	a.turnCancel = cancel
+	stopNow = a.turnStopEarly
+	a.turnStopEarly = false
+	return stopNow
+}
+
+// endTurn closes the turn and tells every window it is over. The event goes
+// out even for a failed turn: a reloaded window is sitting on awaitingReply
+// with no promise to resolve it, and "done" is the only signal it will get.
+func (a *App) endTurn() {
+	a.turnMu.Lock()
+	done := a.turnSession
+	a.turnRunning = false
+	a.turnSession = ""
+	a.turnMu.Unlock()
+	a.emitEvent("agent:done", TurnStatus{Running: false, SessionID: done})
+}
+
+// turnBusy reports whether a chat turn is in flight.
+func (a *App) turnBusy() bool {
+	a.turnMu.Lock()
+	defer a.turnMu.Unlock()
+	return a.turnRunning
+}
+
+// turnSessionID is where the turn in flight's rows belong: the session stamped
+// at its birth, never whatever a.sessionID has become since. Falls back to the
+// current session when no turn is running, which is what direct callers
+// (tests, imports) have always meant.
+func (a *App) turnSessionID() string {
+	a.turnMu.Lock()
+	defer a.turnMu.Unlock()
+	if a.turnRunning && a.turnSession != "" {
+		return a.turnSession
+	}
+	return a.sessionID
+}
+
+// guardSessionSwitch is the door-check every session, desk and project switch
+// shares. The engine has one agent context; every one of those switches
+// rewrites it (ClearContext/RestoreHistory, or a full re-bootstrap), which
+// mid-turn means the running turn continues on another conversation's memory —
+// and its answer lands wherever a.sessionID points afterwards. Until the
+// engine can hold one context per session, the honest capability is: one turn,
+// one chat, finish or stop before you leave.
+func (a *App) guardSessionSwitch() error {
+	if a.turnBusy() {
+		return errTurnBusy
+	}
+	return nil
+}
+
+// TurnStatus is the engine's answer to "are you busy, and with which chat" —
+// what a window that just loaded asks before deciding what to draw. A webview
+// reload does not touch the engine, so a turn started before the reload is
+// still running after it; without this the fresh window drew an idle composer
+// over a working agent.
+type TurnStatus struct {
+	Running   bool   `json:"running"`
+	SessionID string `json:"sessionId"`
+}
+
+// TurnInFlight reports the turn currently running, if any.
+func (a *App) TurnInFlight() TurnStatus {
+	a.turnMu.Lock()
+	defer a.turnMu.Unlock()
+	return TurnStatus{Running: a.turnRunning, SessionID: a.turnSession}
+}
+
 // SendMessage runs one chat turn through the Aetox engine and returns the reply.
 // The turn is appended to the current session and persisted.
 func (a *App) SendMessage(text string) (TurnReply, error) {
+	if err := a.beginTurn(); err != nil {
+		return TurnReply{}, err
+	}
+	defer a.endTurn()
 	// Taken before the turn so the rows it writes can be told from everything
 	// already in the store — see recordJobs. Cheap (one indexed MAX) and read
 	// even when learning is off, because the alternative is a second capture
@@ -1381,6 +1546,13 @@ func (a *App) SendMessage(text string) (TurnReply, error) {
 // On failure the returned agent message still carries whatever text arrived
 // before the error, which is what the caller shows.
 func (a *App) runTurn(text string) (SessionMessage, SessionMessage, error) {
+	// Every caller must have marked the turn first (beginTurn): the stamp is
+	// what keeps its rows home, and the busy gate is what keeps its memory
+	// whole. A future entry point that forgets would run invisible to both —
+	// loud in the log beats silently correct-looking.
+	if !a.turnBusy() {
+		debuglog.Msg("runTurn: unmarked turn — a caller skipped beginTurn")
+	}
 	if a.chat == nil {
 		return SessionMessage{}, SessionMessage{}, fmt.Errorf("aetox core not ready: %s", a.modelStatus)
 	}
@@ -1391,9 +1563,12 @@ func (a *App) runTurn(text string) (SessionMessage, SessionMessage, error) {
 		text = expanded
 	}
 	ctx, cancel := context.WithCancel(a.ctx)
-	a.turnMu.Lock()
-	a.turnCancel = cancel
-	a.turnMu.Unlock()
+	if a.armTurnCancel(cancel) {
+		// Stop was pressed before this cancel func existed (the beginTurn →
+		// here gap, where openTurn writes to a possibly-busy database). The
+		// press has to mean stop, not "stop if the timing was lucky".
+		cancel()
+	}
 	defer func() {
 		cancel()
 		a.turnMu.Lock()
@@ -1496,6 +1671,11 @@ func (a *App) CancelTurn() {
 	}
 	if a.turnCancel != nil {
 		a.turnCancel()
+	} else if a.turnRunning {
+		// The turn exists but its cancel func does not yet (openTurn's DB write
+		// sits between the two). Remember the press; armTurnCancel consumes it
+		// the moment there is something to cancel.
+		a.turnStopEarly = true
 	}
 }
 
@@ -1721,15 +1901,21 @@ func (a *App) GetProjectStatus() ProjectStatus {
 // ClearProjectFocus switches to "no project" mode: tools keep working, rooted
 // at unfocusedRoot, but the chat is no longer tied to any project.
 // Starts a fresh session, same as switching projects does.
-func (a *App) ClearProjectFocus() ProjectStatus {
+func (a *App) ClearProjectFocus() (ProjectStatus, error) {
+	if err := a.guardSessionSwitch(); err != nil {
+		return ProjectStatus{}, err
+	}
 	a.focusNone()
 	a.startNewSession()
-	return a.currentProjectStatus()
+	return a.currentProjectStatus(), nil
 }
 
 // OpenProjectFolder lets the user pick a real folder via the native OS dialog, then
 // re-bootstraps the engine to run inside it (same model/provider preference).
 func (a *App) OpenProjectFolder() (ProjectStatus, error) {
+	if err := a.guardSessionSwitch(); err != nil {
+		return ProjectStatus{}, err
+	}
 	dir, err := wailsruntime.OpenDirectoryDialog(a.ctx, wailsruntime.OpenDialogOptions{
 		Title: "Open Aetox Project Folder",
 	})
@@ -1752,6 +1938,9 @@ func (a *App) OpenProjectFolder() (ProjectStatus, error) {
 // OpenProjectPath switches straight to a previously-opened project by path —
 // used by the sidebar's recent-projects list, skipping the OS folder dialog.
 func (a *App) OpenProjectPath(root string) (ProjectStatus, error) {
+	if err := a.guardSessionSwitch(); err != nil {
+		return ProjectStatus{}, err
+	}
 	root = strings.TrimSpace(root)
 	if root == "" {
 		return ProjectStatus{}, fmt.Errorf("empty project path")
@@ -2186,11 +2375,14 @@ func (a *App) reload(opts config.ConfigOptions) {
 // second thing to swap on every re-bootstrap.
 //
 // A chair session reports the chair's cut (profile ∩ office ceiling), built by
-// the same FilterRegistry the engine mounted — what the tools panel shows and
-// what the model can call must be one list, not two readings of the rules.
+// the same AttendedRegistry the engine mounted — what the tools panel shows and
+// what the model can call must be one list, not two readings of the rules. It
+// was FilterRegistry here and that is exactly the drift the sentence above
+// warns about: the engine grew `ask_user` for a chair chat and this line, four
+// files away, kept reporting the list without it.
 func (a *App) deskTools() *skill.Dispatcher {
 	if p := a.chairProfile(); p != nil {
-		return skill.NewDispatcher(subagent.FilterRegistry(a.registry, *p, a.desk))
+		return skill.NewDispatcher(subagent.AttendedRegistry(a.registry, *p, a.desk))
 	}
 	return skill.NewDispatcherFor(a.registry, a.desk.Carries)
 }
@@ -2316,6 +2508,10 @@ func (a *App) applyConfig(cfg config.Config) {
 		// session without restarting anything.
 		Space:            a.space,
 		SpaceContext:     a.spaceContextForPrompt(),
+		// Which shell the agent's commands and the user's hooks run in. Read
+		// per call so the composer's picker takes effect on the next command
+		// rather than on the next restart.
+		Shell:            a.shellBackend,
 		OnToolAction:     a.recordToolAction,
 		OnToolRun:        a.recordToolRun,
 		Proposer:         appProposer{app: a},

@@ -238,6 +238,40 @@ func (a *App) LearnedMemory(scope string) string {
 	return learned.Read(strings.TrimSpace(scope))
 }
 
+// LearnedEntries is LearnedMemory as the list it actually is, one string per
+// remembered line, so the settings page can put each on its own row.
+//
+// Never nil: Wails marshals a nil slice as JSON null, and the page maps over
+// what comes back.
+func (a *App) LearnedEntries(scope string) []string {
+	out := learned.Entries(strings.TrimSpace(scope))
+	if out == nil {
+		return []string{}
+	}
+	return out
+}
+
+// SaveLearnedEntry rewrites one remembered line in place; an empty text removes
+// it. Addressed by the row's position, which is what the user is looking at —
+// see learned.EditEntry for why not by substring.
+//
+// The file is the user's, and this is the user editing it by hand through a
+// window instead of in an editor. So there is no approval step here and no
+// proposal recorded: the approval queue exists to gate what the *agent* wants
+// to write, and asking someone to approve their own edit would be asking them
+// to approve themselves.
+func (a *App) SaveLearnedEntry(scope string, index int, text string) error {
+	if err := learned.EditEntry(strings.TrimSpace(scope), index, text); err != nil {
+		return err
+	}
+	// Same event the approval path emits: anything showing memory is looking at
+	// a file that just changed, and one signal beats each surface polling.
+	if a.ctx != nil {
+		wailsruntime.EventsEmit(a.ctx, "learning:changed", nil)
+	}
+	return nil
+}
+
 // OpenMemoryFolder reveals the memory directory in the file manager. The point
 // of keeping this as plain markdown is that the user can take it elsewhere;
 // that is only true if they can find it.

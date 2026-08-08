@@ -10,6 +10,7 @@ import {
   SwitchProvider, SwitchThinkLevel, SwitchApprovalMode, SetProviderWireFormat,
   SwitchModel, SetAPIKey, SetProviderBaseURL, ProjectTree, ReadFile,
   ListSessions, LoadSession, NewSession, NewSessionAt, NewChairSession, NewSessionInSpace, CurrentSpace, SessionsInSpace, SessionMode, SessionAgent, CurrentSessionID, SearchSessions, DeleteSession,
+  SessionTranscript, TurnInFlight,
   SaveChatImage, SaveChatImageData, SaveChatFile, ReadImageDataURL, CancelTurn, BrowserGetText, RecentProjects,
   ListSessionsForDoor, SearchSessionsForDoor, LoadSessionAnyProject, ClearProjectFocus,
   AnswerUserQuestion, Interject, RetryActiveProvider, PendingUndo, UndoLastTurn,
@@ -324,6 +325,7 @@ function hydrateImages(): void {
  * behaves identically to a row that is not wired up. The engine had the answer
  * the whole time and the window threw it away. */
 export async function selectGlobalSession(session: Session): Promise<void> {
+  if (turnStillRunning()) return
   setActiveView('chat')
   let messages: main.SessionMessage[]
   try {
@@ -415,6 +417,10 @@ export async function loadRealState(): Promise<void> {
   }
 }
 
+/** True between a mid-turn reload and that turn's agent:done — the window is
+ * watching a turn it has no promise for, so the event is its only ending. */
+let reattachedTurn = false
+
 /** Put the conversation the engine is actually in back on screen.
  *
  * The Go backend outlives a webview reload — an F5, and every Vite HMR full
@@ -425,6 +431,20 @@ export async function loadRealState(): Promise<void> {
  * took the screen. It read as being thrown back to the start of the app, while
  * the engine had in fact lost nothing.
  *
+ * Read through SessionTranscript, not LoadSession: the engine never lost this
+ * session, so there is no context to rebuild — and mid-turn, LoadSession's
+ * rebuild would rewrite the memory the running turn is thinking with (it now
+ * refuses during a turn for exactly that reason, which would turn this restore
+ * into a welcome screen over a working agent).
+ *
+ * And the turn itself is asked about, not assumed over. A reload used to reset
+ * the window to idle while the engine was mid-answer: the question came back,
+ * the live block did not, the chunks still streaming in were accumulated into
+ * state nothing rendered, and the finished reply had no promise left to land
+ * in. A turn that ends while this restore is still in flight lands in the
+ * recheck below: its agent:done fired before the flag armed, into a window
+ * that skipped it, so the restore asks once more after arming.
+ *
  * Restores only when the screen is empty, so a reload mid-answer cannot wipe
  * what has already streamed in. A session with no messages — a cold start, or
  * one the user opened and never spoke to — restores to empty, which is exactly
@@ -432,23 +452,105 @@ export async function loadRealState(): Promise<void> {
  */
 async function restoreLiveTranscript(): Promise<void> {
   if (cockpit.chat.length > 0) return
+  let turn = { running: false, sessionId: '' }
+  try {
+    turn = await TurnInFlight()
+  } catch {
+    // Engine not ready yet — the retry loop in loadRealState comes back here.
+  }
   const id = await CurrentSessionID()
   if (!id) return
   try {
-    const messages = await LoadSession(id)
-    if (messages.length === 0) return
-    cockpit.chat = messages.map(restoreAttachments)
-    hydrateImages()
-    await switchWorkbenchSession(id)
+    const messages = await SessionTranscript(id)
+    if (messages.length > 0) {
+      cockpit.chat = messages.map(restoreAttachments)
+      hydrateImages()
+      await switchWorkbenchSession(id)
+    }
   } catch {
-    // A session whose desk or chair file was deleted refuses to reopen
-    // (sessions.go). The welcome screen is the honest fallback — better than
-    // an error bubble in a conversation the user has not started yet.
+    // Transcript unreadable — the welcome screen is the honest fallback,
+    // better than an error bubble in a conversation the user has not started.
   }
+  if (turn.running && turn.sessionId === id) {
+    // The live block comes back on: chunks and tool events streaming in render
+    // again, typing goes into the running turn (Interject), and Stop works.
+    cockpit.awaitingReply = true
+    reattachedTurn = true
+    // The turn may have finished in the moment before the flag armed — its
+    // agent:done fired into a window that still skipped the event, and nothing
+    // else would ever take awaitingReply back down. One recheck closes the
+    // gap; if the real event also ran, the flag is already consumed and this
+    // is a no-op.
+    try {
+      const now = await TurnInFlight()
+      if (!now.running) await applyAgentDone({ sessionId: id })
+    } catch {
+      // Engine unreachable for the recheck — stay armed; agent:done ends it.
+    }
+  }
+}
+
+/** The turn the engine announced finished (agent:done).
+ *
+ * Only a window that reattached after a mid-turn reload consumes this: for the
+ * window that sent the message, the SendMessage promise is still the delivery
+ * and does everything below itself. The reattached window instead re-reads the
+ * transcript from the store — which now holds the finished turn, whatever kind
+ * of turn it was — because the live detail it would have assembled from events
+ * died with the previous webview.
+ */
+export async function applyAgentDone(status: { sessionId: string }): Promise<void> {
+  if (!reattachedTurn) return
+  reattachedTurn = false
+  cockpit.awaitingReply = false
+  for (const m of cockpit.chat) m.duringTurn = undefined
+  cockpit.agentStatus = ''
+  cockpit.toolSteps = []
+  cockpit.turnFiles = []
+  cockpit.streamingText = ''
+  cockpit.reasoningText = ''
+  cockpit.sessionError = ''
+  const id = await CurrentSessionID()
+  if (status?.sessionId === id) {
+    try {
+      const messages = await SessionTranscript(id)
+      cockpit.chat = messages.map(restoreAttachments)
+      hydrateImages()
+    } catch {
+      // The store still holds the turn; the next open shows it.
+    }
+  }
+  await refreshWorkspace()
+  await refreshUndo()
+  await refreshSessions()
+  await refreshGlobalHistory()
+  // The straggler net, same as sendUserMessage's tail: a message the ending
+  // turn could not fold in came back on agent:interjection-missed, and in this
+  // window there is no promise tail to send it. alreadyShown because the net
+  // has always worked that way — the text goes out as its own turn, and the
+  // transcript re-read above is what the screen shows meanwhile.
+  const next = queuedMessages.shift()
+  if (next !== undefined) await sendUserMessage(next, true)
+}
+
+/** The one gate in front of every door that leaves the running turn's chat.
+ *
+ * The engine refuses these too (desktop/app.go guardSessionSwitch) — one brain,
+ * one turn, and every switch rewrites the memory that turn is thinking with.
+ * Checking here as well is not a second answer to the same question: it is how
+ * the refusal reaches doors whose engine call the UI never awaits with an
+ * error surface (Ctrl+N, the desk buttons), as a sentence instead of a click
+ * that did nothing. Cleared when the turn ends, where every live panel resets.
+ */
+function turnStillRunning(): boolean {
+  if (!cockpit.awaitingReply) return false
+  cockpit.sessionError = t('cockpit.turnBusy')
+  return true
 }
 
 /** Let the user pick a real folder via the native dialog; re-points the engine at it. */
 export async function openFolder(): Promise<void> {
+  if (turnStillRunning()) return
   const project = await OpenProjectFolder()
   Object.assign(cockpit.project, project)
   cockpit.chat = []
@@ -461,6 +563,7 @@ export async function openFolder(): Promise<void> {
 
 /** Switch straight to a previously-opened project (sidebar's project list), no dialog. */
 export async function openProject(path: string): Promise<void> {
+  if (turnStillRunning()) return
   const project = await OpenProjectPath(path)
   Object.assign(cockpit.project, project)
   cockpit.chat = []
@@ -474,6 +577,7 @@ export async function openProject(path: string): Promise<void> {
 /** Drop project focus: the AI keeps full machine access (files/git/terminal)
  * but is no longer tied to any project — like opening Claude/Codex bare. */
 export async function clearProjectFocus(): Promise<void> {
+  if (turnStillRunning()) return
   const project = await ClearProjectFocus()
   Object.assign(cockpit.project, project)
   cockpit.chat = []
@@ -607,6 +711,30 @@ export async function undoLastTurn(): Promise<void> {
   await refreshWorkspace()
 }
 
+/** The bubble a turn that came back with no answer leaves behind.
+ *
+ * Stop is not an error. The engine reports a cancelled turn as `context
+ * canceled` (Go's one canonical string for it), and showing that as "เกิด
+ * ข้อผิดพลาด" told the user the app broke when the app did exactly what they
+ * pressed. Whatever streamed before the press is kept — it is read here before
+ * runLiveTurn's cleanup erases it — and the retry chip rides along either way,
+ * because a stopped question is still a question the user may want re-run.
+ */
+function turnEndedBubble(err: unknown, sentText: string): ChatMessage {
+  if (/context canceled/i.test(String(err))) {
+    const partial = cockpit.streamingText.trim()
+    return {
+      role: 'agent',
+      text: partial ? `${partial}\n\n${t('cockpit.turnStopped')}` : t('cockpit.turnStopped'),
+      time: nowLabel(), failed: true, failedText: sentText,
+    }
+  }
+  return {
+    role: 'agent', text: t('cockpit.sendError', { err: String(err) }), time: nowLabel(),
+    failed: true, failedText: sentText,
+  }
+}
+
 export async function sendUserMessage(text: string, alreadyShown = false): Promise<void> {
   const trimmed = text.trim()
   const image = cockpit.pendingImage
@@ -682,10 +810,7 @@ export async function sendUserMessage(text: string, alreadyShown = false): Promi
     } catch (err) {
       // The engine persists nothing for a turn that failed, so the text it was
       // given rides on the bubble: it is the only copy left to retry with.
-      cockpit.chat.push({
-        role: 'agent', text: t('cockpit.sendError', { err: String(err) }), time: nowLabel(),
-        failed: true, failedText: sentText,
-      })
+      cockpit.chat.push(turnEndedBubble(err, sentText))
     }
   })
   // Only stragglers land here now — anything typed under a running turn went
@@ -722,6 +847,9 @@ async function runLiveTurn(call: () => Promise<void>): Promise<void> {
     cockpit.turnFiles = []
     cockpit.streamingText = ''
     cockpit.reasoningText = ''
+    // The "still working" banner (turnStillRunning) explained a refusal that
+    // just stopped being true. A stale one over an idle chat would be a lie.
+    cockpit.sessionError = ''
   }
   await refreshWorkspace()
   // After the turn, not before: the chip has to reflect what this turn just did.
@@ -764,10 +892,7 @@ export async function retryFailedTurn(index: number): Promise<void> {
         time: nowLabel(), id: reply.messageId || undefined, ...turnArtifacts(),
       })
     } catch (err) {
-      cockpit.chat.push({
-        role: 'agent', text: t('cockpit.sendError', { err: String(err) }), time: nowLabel(),
-        failed: true, failedText: text,
-      })
+      cockpit.chat.push(turnEndedBubble(err, text))
     }
   })
 }
@@ -802,8 +927,11 @@ export async function regenerateReply(revertFiles: boolean): Promise<void> {
       })
     } catch (err) {
       // The answer on screen is still the real one — the engine put its memory
-      // back. Say what went wrong under it rather than replacing it.
-      last.error = t('cockpit.regenerateError', { err: String(err) })
+      // back. Say what went wrong under it rather than replacing it — and a
+      // Stop is not a "went wrong", it is the user declining the re-answer.
+      last.error = /context canceled/i.test(String(err))
+        ? t('cockpit.turnStopped')
+        : t('cockpit.regenerateError', { err: String(err) })
     }
   })
 }
@@ -853,10 +981,7 @@ export async function resendEdited(text: string, revertFiles: boolean): Promise<
         time: nowLabel(), id: reply.messageId || undefined, ...turnArtifacts(),
       })
     } catch (err) {
-      cockpit.chat.push({
-        role: 'agent', text: t('cockpit.sendError', { err: String(err) }), time: nowLabel(),
-        failed: true, failedText: sent,
-      })
+      cockpit.chat.push(turnEndedBubble(err, sent))
     }
   })
 }
@@ -925,6 +1050,11 @@ export async function refreshPendingLearned(): Promise<void> {
  *  session. The prompt was written to stand alone (suggest_task requires it),
  *  so the new session needs nothing from the one that suggested it. */
 export async function startTaskChip(chip: CockpitState['taskChips'][number]): Promise<void> {
+  // Guarded here, not just inside newSession: with the chip consumed and the
+  // new session refused, sendUserMessage would hand the chip's prompt to the
+  // turn already running — as an interjection into a conversation it was
+  // never about.
+  if (turnStillRunning()) return
   await DismissTaskChip(chip.id)
   await newSession()
   await sendUserMessage(chip.prompt)
@@ -1270,6 +1400,7 @@ export function restoreActiveView(): void {
 
 /** Switch to a stored session — the transcript loads back and the agent's memory is restored. */
 export async function selectSession(session: Session): Promise<void> {
+  if (turnStillRunning()) return
   const messages = await LoadSession(session.id)
   cockpit.todos = []
   cockpit.ask = null
@@ -1320,6 +1451,10 @@ export async function importChat(): Promise<void> {
 
 /** Permanently delete a session (any project); clears the chat if it was the open one. */
 export async function deleteSession(session: Session): Promise<void> {
+  // Only the open chat is off-limits mid-turn — it is the one the turn is
+  // writing into. The rest of the history stays deletable; a long turn must
+  // not freeze the whole list.
+  if (session.active && turnStillRunning()) return
   await DeleteSession(session.id)
   removeWorkbenchState(session.id)
   if (session.active) cockpit.chat = []
@@ -1327,9 +1462,23 @@ export async function deleteSession(session: Session): Promise<void> {
   await refreshGlobalHistory()
 }
 
+/** The engine refused to open/switch a session. Its refusals are written
+ * sentences (busy, unknown desk, deleted chair file); an unhandled rejection
+ * here used to swallow every one, leaving a click that visibly did nothing. */
+function showSessionRefusal(err: unknown): void {
+  cockpit.sessionError = err instanceof Error ? err.message : String(err)
+}
+
 /** Start a blank session (current one is saved first, engine-side). */
 export async function newSession(): Promise<void> {
-  await NewSession()
+  if (turnStillRunning()) return
+  try {
+    await NewSession()
+  } catch (err) {
+    showSessionRefusal(err)
+    return
+  }
+  cockpit.sessionError = ''
   await afterNewSession()
 }
 
@@ -1340,7 +1489,16 @@ export async function newSession(): Promise<void> {
  * already persisted, so the conversation being left is in the history list
  * before the click, not lost by it. */
 export async function newSessionAt(desk: string): Promise<void> {
-  await NewSessionAt(desk)
+  if (turnStillRunning()) return
+  try {
+    await NewSessionAt(desk)
+  } catch (err) {
+    // Refused — nothing below may run: the desk/shell repaint would dress the
+    // window as a place the engine never went.
+    showSessionRefusal(err)
+    return
+  }
+  cockpit.sessionError = ''
   cockpit.desk = desk
   cockpit.chair = ''
   // A chat opened from the nav is in no project — the engine says the same
@@ -1380,7 +1538,14 @@ export async function refreshSpaceHistory(): Promise<void> {
  * for exactly this reason — the engine's session and the window's session are
  * two facts, and only these keep them one. */
 export async function newSpaceSession(space: string): Promise<void> {
-  await NewSessionInSpace(space)
+  if (turnStillRunning()) return
+  try {
+    await NewSessionInSpace(space)
+  } catch (err) {
+    showSessionRefusal(err)
+    return
+  }
+  cockpit.sessionError = ''
   // A project chat is an assistant chat that happens to be filed somewhere:
   // the desk is the assistant's, and no agent sits in it.
   cockpit.desk = 'assistant'
@@ -1395,7 +1560,14 @@ export async function newSpaceSession(space: string): Promise<void> {
  *  name that is not an office agent, so a stale card cannot open a chat as
  *  somebody else. */
 export async function newChairSession(chair: string): Promise<void> {
-  await NewChairSession(chair)
+  if (turnStillRunning()) return
+  try {
+    await NewChairSession(chair)
+  } catch (err) {
+    showSessionRefusal(err)
+    return
+  }
+  cockpit.sessionError = ''
   cockpit.desk = 'specialized'
   cockpit.chair = chair
   cockpit.space = '' // for the same reason newSessionAt clears it
@@ -1424,6 +1596,9 @@ async function afterNewSession(): Promise<void> {
 export async function switchShell(name: ShellName): Promise<void> {
   const def = SHELLS.find((s) => s.name === name)
   if (!def || shell.name === name) return
+  // Before setShell, or the door's chrome would switch around a chat that
+  // refused to follow it.
+  if (turnStillRunning()) return
   // Decided before the session switch, which refreshes the project list on the
   // way past: reading it afterwards would make this depend on what a call three
   // lines up happens to leave behind.
@@ -1458,6 +1633,7 @@ export async function switchShell(name: ShellName): Promise<void> {
  * a different one is exactly the "open a new session" that changing desks
  * means (COMPANY.md §2). */
 export async function openDesk(desk: string): Promise<void> {
+  if (turnStillRunning()) return
   setActiveView('chat')
   // "Already here" is the desk AND the project together. A project chat runs at
   // the assistant's desk, so comparing desks alone said the user was already at

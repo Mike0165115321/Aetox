@@ -55,6 +55,11 @@ func (a *App) RetryFailedTurn(text string) (TurnReply, error) {
 	if strings.TrimSpace(text) == "" {
 		return TurnReply{}, fmt.Errorf("ไม่มีข้อความให้ลองใหม่")
 	}
+	// SendMessage would refuse on its own, but only after restoreContext had
+	// already rewritten the memory the running turn is thinking with.
+	if a.turnBusy() {
+		return TurnReply{}, errTurnBusy
+	}
 	a.restoreContext(a.transcript)
 	return a.SendMessage(text)
 }
@@ -69,6 +74,13 @@ func (a *App) RetryFailedTurn(text string) (TurnReply, error) {
 // their own output — so the UI defaults to reverting when there is anything to
 // revert.
 func (a *App) RegenerateReply(revertFiles bool) (RegenerateResult, error) {
+	// Its own turn, marked like one: RegenerateReply reaches runTurn without
+	// going through SendMessage, and an unmarked turn is invisible to every
+	// guard and to the reloaded window asking TurnInFlight.
+	if err := a.beginTurn(); err != nil {
+		return RegenerateResult{}, err
+	}
+	defer a.endTurn()
 	question, ok := a.lastQuestion()
 	if !ok {
 		return RegenerateResult{}, fmt.Errorf("ยังไม่มีคำถามในเซสชันนี้ให้ตอบใหม่")
@@ -142,6 +154,11 @@ func (a *App) ResendEdited(text string, revertFiles bool) (TurnReply, error) {
 	if _, ok := a.lastQuestion(); !ok {
 		return TurnReply{}, fmt.Errorf("ยังไม่มีข้อความในเซสชันนี้ให้แก้")
 	}
+	// Same reason as RetryFailedTurn: everything below this line mutates the
+	// transcript and the store before SendMessage's own gate would fire.
+	if a.turnBusy() {
+		return TurnReply{}, errTurnBusy
+	}
 	if revertFiles {
 		_, _ = a.UndoLastTurn()
 	}
@@ -159,6 +176,11 @@ func (a *App) ResendEdited(text string, revertFiles bool) (TurnReply, error) {
 // last. Picking an answer and then being replied to as if you had picked the
 // other is the bug this exists to avoid.
 func (a *App) SwitchVariant(index int) (RegenerateResult, error) {
+	// restoreContext below rewrites the one agent context; mid-turn that is the
+	// running turn's memory.
+	if a.turnBusy() {
+		return RegenerateResult{}, errTurnBusy
+	}
 	if len(a.transcript) == 0 {
 		return RegenerateResult{}, fmt.Errorf("ยังไม่มีคำตอบให้สลับ")
 	}
@@ -235,8 +257,11 @@ func variantsOf(m SessionMessage) []SessionVariant {
 // in memory: the id would have to survive session switches and reloads to be
 // worth anything, and only the last turn is ever re-answered.
 func (a *App) storeVariants(variants []SessionVariant, active int) {
+	// The turn's stamped session, same as appendTurn — a re-answer is a turn
+	// too, and its rows have the same one home.
+	sessionID := a.turnSessionID()
 	db, err := a.database()
-	if err != nil || a.sessionID == "" || active < 0 || active >= len(variants) {
+	if err != nil || sessionID == "" || active < 0 || active >= len(variants) {
 		return
 	}
 	live := variants[active]
@@ -244,26 +269,27 @@ func (a *App) storeVariants(variants []SessionVariant, active int) {
 		UPDATE messages
 		SET text = ?, reasoning = ?, think_secs = ?, variants = ?, variant_active = ?
 		WHERE id = (SELECT MAX(id) FROM messages WHERE session_id = ? AND role = 'agent')`,
-		live.Text, live.Reasoning, live.ThinkSecs, encodeVariants(variants), active, a.sessionID)
+		live.Text, live.Reasoning, live.ThinkSecs, encodeVariants(variants), active, sessionID)
 	// A re-answered session is a session that was just worked in, and the
 	// sidebar orders by this. Without it, answering again would leave the
 	// conversation sitting wherever it was in the history list.
 	_, _ = db.Exec(`UPDATE sessions SET updated_at = ? WHERE id = ?`,
-		time.Now().Format(time.RFC3339), a.sessionID)
+		time.Now().Format(time.RFC3339), sessionID)
 }
 
 // storeParts writes the sequence back onto the session's newest agent row,
 // addressed the same way storeVariants addresses it. A re-answered turn produced
 // different work, so the record of that work has to move with it.
 func (a *App) storeParts(parts []turn.TurnPart) {
+	sessionID := a.turnSessionID()
 	db, err := a.database()
-	if err != nil || a.sessionID == "" {
+	if err != nil || sessionID == "" {
 		return
 	}
 	_, _ = db.Exec(`
 		UPDATE messages SET parts = ?
 		WHERE id = (SELECT MAX(id) FROM messages WHERE session_id = ? AND role = 'agent')`,
-		encodeParts(parts), a.sessionID)
+		encodeParts(parts), sessionID)
 }
 
 // dropLastTurnRows deletes the newest user/agent pair of the current session.

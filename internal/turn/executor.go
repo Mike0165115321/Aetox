@@ -1076,6 +1076,11 @@ func (e *Executor) dispatchWithDeadline(ctx context.Context, name string, args m
 		return call.output, true, call.err
 	case <-ctx.Done():
 		// Parent turn canceled (user hit stop) — propagate, not a status report.
+		// The entry is dropped with the turn: the executor outlives it (one per
+		// session), and a parked entry whose work is now dying would answer the
+		// NEXT turn's identical call — the user asking for the same thing again
+		// — with this turn's "canceled" instead of running it.
+		e.forget(key)
 		return skill.Output{Name: name, Content: "tool execution canceled", RawOutput: "tool execution canceled", Success: false, Stderr: ctx.Err().Error()}, true, ctx.Err()
 	case <-time.After(deadline):
 		return stillRunning(name, call), true, nil
@@ -1110,7 +1115,22 @@ func (e *Executor) beginCall(ctx context.Context, key, name string, args map[str
 	e.pendingMu.Lock()
 	defer e.pendingMu.Unlock()
 	if call, ok := e.pending[key]; ok {
-		return call
+		// A cancelled call is an absence, not a result. Its ctx died with a turn
+		// that is over — Stop, or the turn's own end cancelling what it parked —
+		// and replaying its "canceled" to a later identical call reports a
+		// cancellation nobody asked for and runs nothing. Only finished-and-
+		// cancelled entries are dropped; a live call is still the dedup this
+		// lookup exists for.
+		stale := false
+		select {
+		case <-call.done:
+			stale = errors.Is(call.err, context.Canceled)
+		default:
+		}
+		if !stale {
+			return call
+		}
+		delete(e.pending, key)
 	}
 	call := &pendingCall{started: time.Now(), done: make(chan struct{})}
 	if e.pending == nil {
