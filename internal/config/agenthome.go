@@ -16,6 +16,7 @@ import (
 //
 //	<DataRoot>/agents/doc/AGENT.md    frontmatter + brief
 //	<DataRoot>/agents/doc/MEMORY.md   what it learned doing the job
+//	<DataRoot>/agents/doc/skills/     what it knows, one folder per skill
 //	<DataRoot>/agents/doc/mcp.json    (planned) the servers it brings
 //
 // The paths live here rather than in internal/subagent because two packages
@@ -38,6 +39,16 @@ const (
 	// Named MEMORY.md for the same reason the main agent's file is: a folder
 	// handed to any agent runtime needs no explanation.
 	AgentMemoryFile = "MEMORY.md"
+	// AgentSkillsDir holds what this worker knows that is too big and too
+	// specialised to sit in its prompt: one sub-folder per skill, each with a
+	// SKILL.md, in the Agent Skills layout the rest of the ecosystem reads.
+	//
+	// Inside the worker's home rather than the shared skills shelf
+	// (~/.aetox/skills), and that is the whole point of the folder: a skill on
+	// the shelf is everyone's by definition, so a tax-invoice spec left there
+	// is one the deck writer can also reach. Specialist knowledge that every
+	// worker can see makes every worker a generalist.
+	AgentSkillsDir = "skills"
 )
 
 // AgentsRoot returns <DataRoot>/agents — the team's home, one folder per
@@ -75,6 +86,13 @@ func AgentDefinitionPath(name string) (string, error) {
 
 func AgentMemoryPath(name string) (string, error) {
 	return agentFile(name, AgentMemoryFile)
+}
+
+// AgentSkillsPath is the folder inside a home that holds that worker's own
+// skills. Not created here: an absent folder is the normal state, and a worker
+// with nothing to look up should cost nothing to ask.
+func AgentSkillsPath(name string) (string, error) {
+	return agentFile(name, AgentSkillsDir)
 }
 
 func agentFile(name, file string) (string, error) {

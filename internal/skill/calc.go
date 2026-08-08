@@ -151,8 +151,15 @@ func runCalc(ctx context.Context, script string) (string, error) {
 	// first attempt at half the scripts ever written here dies on a
 	// ReferenceError and costs a round trip to learn a house rule that buys
 	// nothing. It writes where print writes.
+	//
+	// table and dir are the same muscle: a script that computed a schedule
+	// reaches for console.table without deciding to, and a console object that
+	// exists but lacks the member dies on a TypeError instead — same round
+	// trip, worse error (seen 2026-08-07: "Object has no member 'table'"). No
+	// column rendering: display() already prints structured data as JSON, and
+	// the answer is the data, not the ruling lines.
 	console := vm.NewObject()
-	for _, name := range []string{"log", "info", "warn", "error", "debug"} {
+	for _, name := range []string{"log", "info", "warn", "error", "debug", "table", "dir"} {
 		if err := console.Set(name, write); err != nil {
 			return "", err
 		}

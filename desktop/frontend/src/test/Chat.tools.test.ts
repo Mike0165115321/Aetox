@@ -310,7 +310,7 @@ describe('sub-agent tool events', () => {
   // while the model is still writing the call's arguments — no agent, no
   // brief, no kind yet. The executor's own call event arrives after, carrying
   // all three, and must land on the SAME row. Dropping them was a live turn
-  // reading "ผู้ช่วยตัวแทน 1 ตัว" for a job the doc agent did, while the
+  // reading "ซับเอเจน 1 ตัว" for a job the doc agent did, while the
   // persisted parts said agent/doc — two answers from one turn.
   it('fills in the delegation facts when they arrive after the row was born', () => {
     applyToolEvent({ action: 'call', name: 'task', ref: 'task_1' })
@@ -455,7 +455,7 @@ describe('sub-agent tool events', () => {
     expect(block?.querySelector('.subagent-brief')?.textContent).toContain('go hunt')
   })
 
-  // ตัวแทน and ผู้ช่วยตัวแทน are different piles (COMPANY.md §4), and the chip
+  // เอเจน and ซับเอเจน are different piles (COMPANY.md §4), and the chip
   // used to lump them: a turn where the doc agent made the file read "ซับเอเจน
   // 1 ตัว". The kind rides on the step (stamped by the engine from which home
   // the profile lives in), and each pile gets its own toggle and panel. A step

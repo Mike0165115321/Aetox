@@ -396,3 +396,130 @@ func TestWriteFileReplacesAnExistingWorkbook(t *testing.T) {
 		t.Errorf("write left extra files behind: %v", entries)
 	}
 }
+
+// The reason this feature exists. A total written as a number is a photograph
+// of an answer: the user edits one amount above it and the total silently stops
+// being true. A formula cell carries no cached value at all, so what the reader
+// sees is always what their own spreadsheet worked out.
+func TestAFormulaIsCalculatedRatherThanRemembered(t *testing.T) {
+	parts := buildPackage(t, []Sheet{{
+		Name:    "Bill",
+		Columns: []string{"Item", "Amount"},
+		Rows: [][]Cell{
+			{TextCell("a"), NumberCell(100)},
+			{TextCell("b"), NumberCell(250)},
+			{TextCell("รวม"), FormulaCell("=SUM(B2:B3)")},
+		},
+	}})
+
+	sheet := parts["xl/worksheets/sheet1.xml"]
+	if !strings.Contains(sheet, `<f>SUM(B2:B3)</f>`) {
+		t.Errorf("the total is not a formula:\n%s", sheet)
+	}
+	// A <v> beside the <f> is the cached answer, and a cached answer we invented
+	// is exactly the failure the formula was meant to remove.
+	if strings.Contains(sheet, `<f>SUM(B2:B3)</f><v>`) {
+		t.Error("a cached value was written beside the formula")
+	}
+	// Without this, a formula with no cached value can render blank until the
+	// user touches the sheet.
+	if !strings.Contains(parts["xl/workbook.xml"], `fullCalcOnLoad="1"`) {
+		t.Error("the workbook does not ask its reader to calculate on load")
+	}
+}
+
+// `=` is how every spreadsheet spells "formula", so it is what a model reaches
+// for unprompted. A lone "=" is a typo rather than an empty formula: writing it
+// as one produces a file Excel offers to repair.
+func TestALeadingEqualsMakesAFormulaAndALoneEqualsDoesNot(t *testing.T) {
+	if got := InferCell("=B2*C2"); got.Kind != KindFormula || got.Text != "B2*C2" {
+		t.Errorf("InferCell(=B2*C2) = %+v, want a formula holding B2*C2", got)
+	}
+	if got := InferCell("="); got.Kind != KindText {
+		t.Errorf("InferCell(=) = %+v, want plain text", got)
+	}
+	// Text that merely mentions arithmetic is still text.
+	if got := InferCell("1+1=2"); got.Kind != KindText {
+		t.Errorf("InferCell(1+1=2) = %+v, want plain text", got)
+	}
+}
+
+// A column's format decides how its cells read, including its formulas — a
+// total in a money column is money. Percent holds the fraction, which is the
+// one place a caller can be wrong by a factor of a hundred.
+func TestAColumnFormatStylesItsCellsIncludingFormulas(t *testing.T) {
+	parts := buildPackage(t, []Sheet{{
+		Name:    "Rates",
+		Columns: []string{"Item", "Amount", "Share", "Count"},
+		Formats: []string{"", "money", "percent", "integer"},
+		Rows: [][]Cell{
+			{TextCell("a"), NumberCell(1234.5), NumberCell(0.07), NumberCell(3)},
+			{TextCell("รวม"), FormulaCell("=SUM(B2:B2)"), BlankCell(), BlankCell()},
+		},
+	}})
+
+	sheet := parts["xl/worksheets/sheet1.xml"]
+	for _, want := range []string{
+		`<c r="B2" s="4">`, // money
+		`<c r="C2" s="6">`, // percent
+		`<c r="D2" s="5">`, // integer
+		`<c r="B3" s="4">`, // the formula wears its column's format too
+	} {
+		if !strings.Contains(sheet, want) {
+			t.Errorf("missing %s in:\n%s", want, sheet)
+		}
+	}
+	styles := parts["xl/styles.xml"]
+	for _, want := range []string{`formatCode="#,##0.00"`, `formatCode="#,##0"`, `formatCode="0.00%"`} {
+		if !strings.Contains(styles, want) {
+			t.Errorf("styles.xml is missing %s", want)
+		}
+	}
+}
+
+// A format list shorter than the header is the normal shape — only the money
+// columns get named — and must not throw the rest of the row out of alignment.
+func TestAShortFormatListLeavesTheRestPlain(t *testing.T) {
+	parts := buildPackage(t, []Sheet{{
+		Name:    "Partial",
+		Columns: []string{"Item", "Amount", "Note"},
+		Formats: []string{"", "money"},
+		Rows:    [][]Cell{{TextCell("a"), NumberCell(5), TextCell("n")}},
+	}})
+
+	sheet := parts["xl/worksheets/sheet1.xml"]
+	if !strings.Contains(sheet, `<c r="B2" s="4">`) {
+		t.Errorf("the named column lost its format:\n%s", sheet)
+	}
+	if !strings.Contains(sheet, `<c r="C2" t="inlineStr">`) {
+		t.Errorf("the unnamed column did not stay plain:\n%s", sheet)
+	}
+}
+
+// A table nobody can sort or filter is a picture of a table. The filter covers
+// the header and every row under it, and sits after </sheetData> because the
+// schema says so — Excel refuses the file if it sits with the view settings.
+func TestTheFilterCoversEveryRowAndSitsWhereTheSchemaWantsIt(t *testing.T) {
+	parts := buildPackage(t, []Sheet{{
+		Name:    "Data",
+		Columns: []string{"A", "B", "C"},
+		Rows:    [][]Cell{{TextCell("1")}, {TextCell("2")}},
+	}})
+
+	sheet := parts["xl/worksheets/sheet1.xml"]
+	if !strings.Contains(sheet, `<autoFilter ref="A1:C3"/>`) {
+		t.Errorf("filter is missing or covers the wrong range:\n%s", sheet)
+	}
+	if strings.Index(sheet, "<autoFilter") < strings.Index(sheet, "</sheetData>") {
+		t.Error("autoFilter was written before </sheetData>, which Excel refuses")
+	}
+}
+
+// A sheet with no header has no columns to filter by, so it gets no filter
+// rather than one over a range that names nothing.
+func TestASheetWithNoHeaderGetsNoFilter(t *testing.T) {
+	parts := buildPackage(t, []Sheet{{Name: "Bare", Rows: [][]Cell{{TextCell("x")}}}})
+	if strings.Contains(parts["xl/worksheets/sheet1.xml"], "<autoFilter") {
+		t.Error("a headerless sheet was given a filter")
+	}
+}

@@ -3,6 +3,8 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"strings"
+	"sync"
 
 	"github.com/Mike0165115321/Aetox/internal/safety"
 	"github.com/Mike0165115321/Aetox/internal/skill"
@@ -14,6 +16,13 @@ import (
 // respawning every server.
 type Manager struct {
 	clients []*Client
+
+	// done names the servers whose tools are already in the registry. A
+	// registry refuses a duplicate name, so without this a second dispatch to
+	// the same agent would produce one error per tool the server carries — and
+	// two dispatches landing together would race for the same names.
+	mu   sync.Mutex
+	done map[string]bool
 }
 
 // NewManager creates clients for each server config, skipping disabled
@@ -27,7 +36,7 @@ func NewManager(servers []Server) *Manager {
 		}
 		clients = append(clients, New(s))
 	}
-	return &Manager{clients: clients}
+	return &Manager{clients: clients, done: map[string]bool{}}
 }
 
 // Clients exposes the underlying clients (for status display / UI bindings).
@@ -96,12 +105,21 @@ func (m *Manager) Register(ctx context.Context, registry *skill.Registry) ([]saf
 		return nil, nil
 	}
 	type result struct {
+		name  string
 		tools []skill.Tool
 		rule  safety.PermissionRule
 		err   error
 	}
-	resultsCh := make(chan result, len(m.clients))
+	// Deferred servers are not connected here — see Server.Deferred. They come
+	// up through RegisterFor when the agent that needs one is started.
+	eager := make([]*Client, 0, len(m.clients))
 	for _, c := range m.clients {
+		if !c.Deferred() {
+			eager = append(eager, c)
+		}
+	}
+	resultsCh := make(chan result, len(eager))
+	for _, c := range eager {
 		go func(c *Client) {
 			tools, err := c.SkillTools(ctx)
 			if err != nil {
@@ -109,6 +127,7 @@ func (m *Manager) Register(ctx context.Context, registry *skill.Registry) ([]saf
 				return
 			}
 			resultsCh <- result{
+				name:  c.Name(),
 				tools: tools,
 				rule: safety.PermissionRule{
 					Tool:    sanitize(c.Name()) + "_*",
@@ -125,7 +144,7 @@ func (m *Manager) Register(ctx context.Context, registry *skill.Registry) ([]saf
 
 	var rules []safety.PermissionRule
 	var errs []error
-	for remaining := len(m.clients); remaining > 0; {
+	for remaining := len(eager); remaining > 0; {
 		select {
 		case res := <-resultsCh:
 			remaining--
@@ -133,11 +152,7 @@ func (m *Manager) Register(ctx context.Context, registry *skill.Registry) ([]saf
 				errs = append(errs, res.err)
 				continue
 			}
-			for _, t := range res.tools {
-				if regErr := registry.Register(t, skill.SourceMCP); regErr != nil {
-					errs = append(errs, regErr)
-				}
-			}
+			errs = append(errs, m.attach(registry, res.name, res.tools)...)
 			rules = append(rules, res.rule)
 		case <-ctx.Done():
 			errs = append(errs, fmt.Errorf("mcp registration: %w (%d server(s) still connecting)", ctx.Err(), remaining))
@@ -145,6 +160,72 @@ func (m *Manager) Register(ctx context.Context, registry *skill.Registry) ([]saf
 		}
 	}
 	return rules, errs
+}
+
+// attach puts one server's tools in the registry, once. Re-registering a name
+// the registry already holds is an error per tool, so a server that came up on
+// an earlier dispatch is skipped rather than re-added.
+func (m *Manager) attach(registry *skill.Registry, name string, tools []skill.Tool) []error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.done == nil {
+		m.done = map[string]bool{}
+	}
+	if m.done[name] {
+		return nil
+	}
+	var errs []error
+	for _, t := range tools {
+		if err := registry.Register(t, skill.SourceMCP); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	m.done[name] = true
+	return errs
+}
+
+// RegisterFor brings up the named servers and puts their tools in the registry,
+// for the case Register deliberately left out: a server no desk carries, which
+// waits for the agent that does (Server.Deferred).
+//
+// Called on the path that starts such an agent, so the cost of connecting is
+// paid by the job that needs it rather than by every launch. Names that are
+// unknown, already connected, or not deferred are no-ops — the caller passes
+// the agent's whole `for:` list rather than working out which of it is still
+// outstanding, because a caller that had to work that out is a second copy of
+// the rule this method exists to hold.
+//
+// Synchronous on purpose. The dispatch behind it is about to hand the agent a
+// tool list, and an agent that starts before its server has finished connecting
+// is the failure missingAgentServers exists to report — better to wait here,
+// where the wait is attributable to the job that asked for it.
+func (m *Manager) RegisterFor(ctx context.Context, registry *skill.Registry, names []string) []error {
+	if m == nil || registry == nil || len(names) == 0 {
+		return nil
+	}
+	wanted := make(map[string]bool, len(names))
+	for _, n := range names {
+		wanted[strings.ToLower(strings.TrimSpace(n))] = true
+	}
+	var errs []error
+	for _, c := range m.clients {
+		if !c.Deferred() || !wanted[strings.ToLower(c.Name())] {
+			continue
+		}
+		m.mu.Lock()
+		already := m.done[c.Name()]
+		m.mu.Unlock()
+		if already {
+			continue
+		}
+		tools, err := c.SkillTools(ctx)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("mcp server %q: %w", c.Name(), err))
+			continue
+		}
+		errs = append(errs, m.attach(registry, c.Name(), tools)...)
+	}
+	return errs
 }
 
 // Close shuts down every connected server subprocess.

@@ -1,6 +1,7 @@
 package ooxml
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -457,4 +458,171 @@ func itoa(n int) string {
 		n /= 10
 	}
 	return digits
+}
+
+// The reason lineitems exists. Every figure on a priced document is worked out
+// here, and the printed lines must add up to the printed total — a document
+// whose own numbers disagree is worse than one that is simply wrong, because
+// the reader can see it.
+func TestPricedLinesAddUpOnThePage(t *testing.T) {
+	amounts, totals := computeLines(
+		[]LineItem{
+			{Text: "ออกแบบ", Qty: 1, Price: 15000},
+			{Text: "ถ่ายภาพ", Qty: 24, Price: 750},
+			{Text: "ค่าที่ปรึกษา", Price: 4999.995}, // no qty: one of it
+		},
+		[]TotalRow{
+			{Label: "มูลค่าสินค้า", Kind: TotalSubtotal},
+			{Label: "ภาษีมูลค่าเพิ่ม 7%", Kind: TotalRate, Rate: 0.07},
+			{Label: "รวมทั้งสิ้น", Kind: TotalTotal},
+		},
+	)
+
+	want := []float64{15000, 18000, 5000} // 4999.995 rounds half away from zero
+	for i, w := range want {
+		if amounts[i] != w {
+			t.Errorf("line %d amount = %v, want %v", i+1, amounts[i], w)
+		}
+	}
+	if totals[0].Amount != 38000 {
+		t.Errorf("subtotal = %v, want 38000", totals[0].Amount)
+	}
+	if totals[1].Amount != 2660 {
+		t.Errorf("VAT = %v, want 2660", totals[1].Amount)
+	}
+	if totals[2].Amount != 40660 {
+		t.Errorf("total = %v, want 40660", totals[2].Amount)
+	}
+	// The printed figures, not the maths behind them, are what has to reconcile.
+	if totals[0].Amount+totals[1].Amount != totals[2].Amount {
+		t.Error("the printed subtotal and VAT do not add to the printed total")
+	}
+}
+
+// A deduction is a negative rate, which is how one mechanism covers both VAT
+// and withholding tax. Both are assessed on the goods, so the second must not
+// be charged against a figure that already contains the first.
+func TestADeductionIsANegativeRateAssessedOnTheSubtotal(t *testing.T) {
+	_, totals := computeLines(
+		[]LineItem{{Text: "บริการ", Qty: 1, Price: 100000}},
+		[]TotalRow{
+			{Label: "มูลค่าบริการ", Kind: TotalSubtotal},
+			{Label: "ภาษีมูลค่าเพิ่ม 7%", Kind: TotalRate, Rate: 0.07},
+			{Label: "หัก ณ ที่จ่าย 3%", Kind: TotalRate, Rate: -0.03},
+			{Label: "ยอดชำระสุทธิ", Kind: TotalTotal},
+		},
+	)
+
+	// 3% of 100,000 — not of 107,000, which would be 3,210 and is the classic
+	// way to be wrong on a Thai invoice.
+	if totals[2].Amount != -3000 {
+		t.Errorf("withholding = %v, want -3000 (3%% of the subtotal, not of subtotal+VAT)", totals[2].Amount)
+	}
+	if totals[3].Amount != 104000 {
+		t.Errorf("net payable = %v, want 104000", totals[3].Amount)
+	}
+}
+
+// Money reads as money on a document: separated, two decimals, always both.
+func TestMoneyIsFormattedTheWayADocumentReadsIt(t *testing.T) {
+	for _, c := range []struct {
+		in   float64
+		want string
+	}{
+		{1234.5, "1,234.50"},
+		{0, "0.00"},
+		{-3000, "-3,000.00"},
+		{1234567.891, "1,234,567.89"},
+		{999, "999.00"},
+	} {
+		if got := formatMoney(c.in); got != c.want {
+			t.Errorf("formatMoney(%v) = %q, want %q", c.in, got, c.want)
+		}
+	}
+	// A count is a count: "2 ชิ้น", not "2.00 ชิ้น".
+	if got := formatQuantity(24); got != "24" {
+		t.Errorf("formatQuantity(24) = %q, want 24", got)
+	}
+	if got := formatQuantity(1.5); got != "1.5" {
+		t.Errorf("formatQuantity(1.5) = %q, want 1.5", got)
+	}
+}
+
+// A column of amounts that reads down its left edge is the loudest sign a
+// document was generated rather than written. w:jc must sit after w:spacing:
+// the other order is not a preference, it is a document Word refuses.
+func TestAColumnCanBeRightAlignedInSchemaOrder(t *testing.T) {
+	parts := buildDoc(t, []Block{{
+		Kind:    BlockTable,
+		Columns: []string{"รายการ", "จำนวนเงิน"},
+		Rows:    [][]string{{"ค่าบริการ", "1,000.00"}},
+		Align:   []string{"", "right"},
+		Widths:  []int{4, 1},
+	}})
+
+	doc := parts["word/document.xml"]
+	if !strings.Contains(doc, `<w:jc w:val="right"/>`) {
+		t.Errorf("no right alignment in:\n%s", doc)
+	}
+	if strings.Contains(doc, `<w:jc w:val="right"/><w:spacing`) {
+		t.Error("w:jc was written before w:spacing, which Word refuses")
+	}
+	// 4:1 of the text width — and the columns must still sum to exactly it, or
+	// the reader throws the weights away and recomputes an even grid. Asserted
+	// as the invariant rather than two magic numbers, so a change to the page
+	// margins does not read as a broken feature.
+	wide, narrow := gridWidths(2, []int{4, 1})[0], gridWidths(2, []int{4, 1})[1]
+	if wide+narrow != textWidth {
+		t.Errorf("columns sum to %d, want the table width %d", wide+narrow, textWidth)
+	}
+	if wide < narrow*3 || wide > narrow*5 {
+		t.Errorf("4:1 weights gave %d:%d", wide, narrow)
+	}
+	if !strings.Contains(doc, fmt.Sprintf(`<w:gridCol w:w="%d"/>`, wide)) {
+		t.Errorf("the computed width is not in the document:\n%s", doc)
+	}
+	// An even split is what a table with no weights still gets.
+	if even := gridWidths(2, nil); even[0] != even[1] {
+		t.Errorf("unweighted columns came out uneven: %v", even)
+	}
+}
+
+// A plain table is the same machinery used as a layout — the seller and buyer
+// blocks side by side. A grid of boxes there announces a table nobody meant.
+func TestAPlainTableDrawsNoBordersAndNoHeaderShading(t *testing.T) {
+	parts := buildDoc(t, []Block{{
+		Kind:    BlockTable,
+		Columns: []string{"ผู้ขาย", "ผู้ซื้อ"},
+		Rows:    [][]string{{"บริษัท ก", "บริษัท ข"}},
+		Plain:   true,
+	}})
+
+	doc := parts["word/document.xml"]
+	if strings.Contains(doc, "<w:tblBorders>") {
+		t.Error("a plain table was given borders")
+	}
+	if strings.Contains(doc, `w:fill="F2F4F7"`) {
+		t.Error("a plain table shaded its header row")
+	}
+}
+
+// `**` is what a model writes for bold unprompted. An unbalanced one is a
+// literal, because a document that swallows a stray asterisk is worse than one
+// that prints it.
+func TestInlineBoldIsWrittenAsRunsAndUnbalancedMarkersStayLiteral(t *testing.T) {
+	parts := buildDoc(t, []Block{
+		{Kind: BlockParagraph, Text: "ยอด **40,660.00** บาท"},
+		{Kind: BlockParagraph, Text: "สูตร a ** b"},
+	})
+
+	doc := parts["word/document.xml"]
+	if !strings.Contains(doc, `<w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space="preserve">40,660.00</w:t>`) {
+		t.Errorf("the emphasised span is not its own bold run:\n%s", doc)
+	}
+	if strings.Contains(doc, ">ยอด **<") {
+		t.Error("the markers were kept in the visible text")
+	}
+	if !strings.Contains(doc, "a ** b") {
+		t.Error("an unbalanced marker was swallowed instead of printed")
+	}
 }

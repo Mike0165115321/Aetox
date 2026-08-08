@@ -339,3 +339,21 @@ func TestChatGPTAliasStillMeansOpenAI(t *testing.T) {
 		t.Fatalf("NormalizeProvider(codex) = %q; want codex", got)
 	}
 }
+
+// The thinking panel only shows what this endpoint's summary gives it, and
+// "auto" gave one headline in one burst at the end of a billed think — a panel
+// that says the model barely thought on a turn it thought hard. "detailed" is
+// what makes the panel stream while the thinking happens.
+func TestResponsesAsksForDetailedReasoningSummaries(t *testing.T) {
+	req := Request{
+		Messages:  []Message{{Role: RoleUser, Content: "คิดหน่อย"}},
+		Reasoning: &ReasoningConfig{Effort: "medium"},
+	}
+	payload, err := buildResponsesRequest("codex", "gpt-5.1-codex", req)
+	if err != nil {
+		t.Fatalf("buildResponsesRequest: %v", err)
+	}
+	if payload.Reasoning == nil || payload.Reasoning.Summary != "detailed" {
+		t.Fatalf("reasoning = %+v; want Summary \"detailed\"", payload.Reasoning)
+	}
+}

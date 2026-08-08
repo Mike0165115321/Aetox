@@ -332,7 +332,7 @@ func readCell(decoder *xml.Decoder, start xml.StartElement, shared []string, dat
 		}
 	}
 
-	var value, inline strings.Builder
+	var value, inline, formula strings.Builder
 	depth := 0
 	for {
 		token, err := decoder.Token()
@@ -342,11 +342,23 @@ func readCell(decoder *xml.Decoder, start xml.StartElement, shared []string, dat
 		switch t := token.(type) {
 		case xml.StartElement:
 			depth++
-			// Only <v> and the text inside <is> matter. <f> is a formula: its
-			// text is the expression, and showing "SUM(C2:C6)" where the user
-			// expects 4440.25 would be worse than showing nothing.
+			// <f> is the expression. When the cell also carries a <v> — which is
+			// how every workbook written by Excel arrives — that cached result is
+			// what the user expects to see, and showing "SUM(C2:C6)" in its place
+			// would be worse than useless.
+			//
+			// A cell with no <v> is the other case, and it is the one Aetox's own
+			// sheet_write produces: it writes no cached result on purpose, so
+			// that nothing the file claims is a number we invented. Blank is the
+			// wrong answer there — a total row rendering empty reads as the agent
+			// having forgotten it — so the expression is kept and used as the
+			// fallback below.
 			if t.Name.Local == "f" {
-				_ = decoder.Skip()
+				if inner, err := readElementText(decoder); err == nil {
+					formula.WriteString(inner)
+				} else {
+					_ = decoder.Skip()
+				}
 				depth--
 			}
 		case xml.CharData:
@@ -359,12 +371,44 @@ func readCell(decoder *xml.Decoder, start xml.StartElement, shared []string, dat
 			}
 		case xml.EndElement:
 			if t.Name.Local == "c" && depth == 0 {
-				return renderCell(cellType, style, strings.TrimSpace(value.String()), inline.String(), shared, dateStyles), column
+				rendered := renderCell(cellType, style, strings.TrimSpace(value.String()), inline.String(), shared, dateStyles)
+				if rendered == "" {
+					if expr := strings.TrimSpace(formula.String()); expr != "" {
+						rendered = "=" + expr
+					}
+				}
+				return rendered, column
 			}
 			depth--
 		}
 	}
 	return "", column
+}
+
+// readElementText collects the character data of the element the decoder has
+// just entered, leaving the decoder positioned after its end tag — the same
+// place Skip would have left it, so the caller's depth bookkeeping is unchanged.
+func readElementText(decoder *xml.Decoder) (string, error) {
+	var text strings.Builder
+	depth := 0
+	for {
+		token, err := decoder.Token()
+		if err != nil {
+			return text.String(), err
+		}
+		switch t := token.(type) {
+		case xml.StartElement:
+			depth++
+		case xml.CharData:
+			text.Write(t)
+		case xml.EndElement:
+			if depth == 0 {
+				return text.String(), nil
+			}
+			depth--
+			_ = t
+		}
+	}
 }
 
 func renderCell(cellType string, style int, value, inline string, shared []string, dateStyles map[int]bool) string {

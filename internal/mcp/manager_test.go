@@ -135,3 +135,64 @@ func TestNewManagerSkipsInvalid(t *testing.T) {
 		t.Fatalf("got %d clients, want 2 (remote + ok)", len(m.Clients()))
 	}
 }
+
+// A deferred server is not connected at startup, and comes up on the call that
+// needs it. See Server.Deferred: `for:` used to decide only who *saw* a
+// server's tools, so one placed on a single agent was still spawned on every
+// launch by everyone who had it configured.
+func TestDeferredServerWaitsForTheAgentThatNeedsIt(t *testing.T) {
+	bin := buildEchoServer(t)
+	m := NewManager([]Server{
+		{Name: "echo", Command: []string{bin}, Timeout: 10 * time.Second, Deferred: true},
+	})
+	t.Cleanup(func() { m.Close() })
+
+	reg := skill.NewRegistry()
+	rules, errs := m.Register(context.Background(), reg)
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if _, ok := reg.SourceOf("echo_echo"); ok {
+		t.Fatal("a deferred server was connected at startup")
+	}
+	if len(rules) != 0 {
+		t.Fatalf("got %d rules from a server nobody started, want 0", len(rules))
+	}
+	// The gate does not wait, though: the ask-rule for every configured server
+	// is derived from names alone, so a deferred server is covered before it
+	// has ever connected.
+	if got := m.PermissionRules(); len(got) != 1 || got[0].Tool != "echo_*" {
+		t.Fatalf("permission rules = %+v, want the deferred server still gated", got)
+	}
+
+	if errs := m.RegisterFor(context.Background(), reg, []string{"echo"}); len(errs) != 0 {
+		t.Fatalf("RegisterFor: %v", errs)
+	}
+	if src, ok := reg.SourceOf("echo_echo"); !ok || src != skill.SourceMCP {
+		t.Fatalf("echo_echo source = %q ok=%v, want mcp after the agent started", src, ok)
+	}
+}
+
+// Two dispatches to the same agent must not fight over the same tool names.
+// The registry refuses a duplicate, so without the guard the second one would
+// return one error per tool the server carries.
+func TestRegisterForIsIdempotent(t *testing.T) {
+	bin := buildEchoServer(t)
+	m := NewManager([]Server{
+		{Name: "echo", Command: []string{bin}, Timeout: 10 * time.Second, Deferred: true},
+	})
+	t.Cleanup(func() { m.Close() })
+
+	reg := skill.NewRegistry()
+	if errs := m.RegisterFor(context.Background(), reg, []string{"echo"}); len(errs) != 0 {
+		t.Fatalf("first RegisterFor: %v", errs)
+	}
+	if errs := m.RegisterFor(context.Background(), reg, []string{"echo"}); len(errs) != 0 {
+		t.Fatalf("second RegisterFor: %v", errs)
+	}
+	// A name nothing answers to is a no-op rather than an error: the caller
+	// hands over the agent's whole `for:` list, not the part still outstanding.
+	if errs := m.RegisterFor(context.Background(), reg, []string{"not-configured"}); len(errs) != 0 {
+		t.Fatalf("unknown name: %v", errs)
+	}
+}

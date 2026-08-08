@@ -6,6 +6,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/Mike0165115321/Aetox/internal/config"
 	"github.com/Mike0165115321/Aetox/internal/skill"
 )
 
@@ -404,5 +405,89 @@ func TestChairsAreInTheRoomButNotOnTheDesk(t *testing.T) {
 	// not carry stays unreachable to anything that is not a chair.
 	if specialized.Carries("shell", skill.SourceBuiltin) || specialized.CarriesForChair("shell", skill.SourceBuiltin) {
 		t.Error("chairs widened the ceiling past what the desk names")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Connections — an external account is placed on desks the same way an MCP
+// server is, and the desk that does not hold it does not see its tools.
+// ---------------------------------------------------------------------------
+
+// Nothing is taken away from anyone by connections.json arriving: an install
+// that has never opened the page keeps every tool it had.
+func TestUnplacedConnectionLeavesEveryDeskAsItWas(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+
+	// Two desks, two tools, because the desks already differ by category:
+	// github_search is `code` and only the coding desk ever had it, while
+	// plugin_install is `agent` and the assistant desk carries it too.
+	coding, _ := Load("coding")
+	assistant, _ := Load("assistant")
+	if coding == nil || assistant == nil {
+		t.Fatal("bundled desks missing")
+	}
+	if !coding.Carries("github_search", skill.SourceBuiltin) {
+		t.Fatal("coding lost github_search with nothing configured")
+	}
+	if !assistant.Carries("plugin_install", skill.SourceBuiltin) {
+		t.Fatal("assistant lost plugin_install with nothing configured")
+	}
+}
+
+func TestDeskWithoutTheConnectionCannotSeeItsTools(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+
+	if err := config.SetConnectionTargets("github", []string{"coding"}); err != nil {
+		t.Fatalf("SetConnectionTargets: %v", err)
+	}
+
+	coding, _ := Load("coding")
+	assistant, _ := Load("assistant")
+	if coding == nil || assistant == nil {
+		t.Fatal("bundled desks missing")
+	}
+	if !coding.Carries("github_search", skill.SourceBuiltin) {
+		t.Fatal("the desk the account was placed on cannot see its tools")
+	}
+	// plugin_install, not github_search: the assistant desk never had the
+	// second one (it is `code`), so it would prove nothing about placement.
+	if assistant.Carries("plugin_install", skill.SourceBuiltin) {
+		t.Fatal("a desk the account was kept off still carries plugin_install")
+	}
+	// Tools that belong to no connection are untouched by any of this.
+	if !assistant.Carries("read", skill.SourceBuiltin) {
+		t.Fatal("an ordinary tool was gated by a connection it has nothing to do with")
+	}
+}
+
+// `chairs:` widens what an agent may hold, not what the user attached. A
+// connection switched off is off for the room, the same as Deny.
+func TestConnectionCannotComeBackThroughChairs(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+
+	if err := config.SetConnectionTargets("github", []string{"coding"}); err != nil {
+		t.Fatalf("SetConnectionTargets: %v", err)
+	}
+	assistant, _ := Load("assistant")
+	if assistant == nil {
+		t.Fatal("assistant desk missing")
+	}
+	assistant.Chairs = append(assistant.Chairs, "plugin_install")
+
+	if assistant.CarriesForChair("plugin_install", skill.SourceBuiltin) {
+		t.Fatal("a chair reached an account the desk was kept off")
+	}
+}
+
+// The pre-modes full desk carried everything and still does.
+func TestFullDeskCarriesEveryConnection(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+
+	if err := config.SetConnectionTargets("github", []string{"coding"}); err != nil {
+		t.Fatalf("SetConnectionTargets: %v", err)
+	}
+	var full *Mode
+	if !full.Carries("github_search", skill.SourceBuiltin) {
+		t.Fatal("the legacy full desk lost a connection's tools")
 	}
 }

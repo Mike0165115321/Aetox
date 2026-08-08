@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
+  import { onMount, untrack } from 'svelte'
   import { theme, applyTheme, THEMES, type ThemeName } from './theme.svelte'
   import { editorFont, applyEditorFontSize } from './editorFont.svelte'
   import { chatFont, applyChatFontSize } from './chatFont.svelte'
@@ -20,7 +20,7 @@
     ProviderWireFormats, TestProviderConnection,
     EnabledProviders, SetProviderEnabled,
     ListMCPServers, SaveMCPServer, RemoveMCPServer, TestMCPServer, ToggleMCPServer,
-    MCPTargets, SetMCPServerTargets,
+    PlacementTargets, SetMCPServerTargets,
     ListExternalSkills, ListTools, InstallSkillFromGitHub, RemoveExternalSkill, RefreshSkills,
     SkillsDir, SkillScanIssues, OpenSkillsFolder, InstallSkillFromZip,
     MCPConfigPath, OpenMCPFolder,
@@ -30,6 +30,7 @@
     ListSubagentProfiles, ReadSubagentProfile, SaveSubagentProfile, SaveAgentProfile,
     DeleteSubagentProfile, SetSubagentModel, OpenAgentsFolder, ListChairs,
     SignInMethods, SignInStatus, StartSignIn, CancelSignIn, ImportableSignIns,
+    Connections, ConnectAccount, SetConnectionTargets, VerifyConnection, DisconnectAccount,
     AppVersion, CheckForUpdate,
     LearningEnabled, SetLearningEnabled, ListPendingChanges, ListDecidedChanges,
     ApprovePendingChange, RejectPendingChange, LearnedMemory, OpenMemoryFolder,
@@ -169,6 +170,161 @@
   // Providers whose official CLI is already signed in on this machine, so the
   // user can adopt that session instead of authorizing the same account twice.
   let importable = $state<string[]>([])
+
+  // ---------- Connections (accounts the agent acts on your behalf with) -------
+  // Next to sign-in because they are the same act from the user's side, and
+  // apart from it because they answer different questions: a sign-in above buys
+  // thinking, a connection here buys reach. The store underneath is shared; the
+  // page is not.
+  type ConnectionRow = {
+    id: string; label: string; kind: string; token_url?: string
+    connected: boolean; login?: string; source?: string; env_override: boolean
+    for: string[]; configured: boolean; tools: string[]
+  }
+
+  let connections = $state<ConnectionRow[]>([])
+  // Keyed by connection id, because the page draws one card per service and two
+  // of them must not share a token box, an error, or a spinner.
+  let connToken = $state<Record<string, string>>({})
+  let connError = $state<Record<string, string>>({})
+  // Scopes come from the last live answer rather than from storage: a token's
+  // grants can change on the service's side, and a remembered list would keep
+  // claiming access that was revoked this morning.
+  let connScopes = $state<Record<string, string[]>>({})
+  // The placement chosen *before* connecting. Once connected, the toggles write
+  // straight through, so this only exists for the not-yet-connected card.
+  let connDraft = $state<Record<string, string[]>>({})
+  // '' | '<id>:connect' | '<id>:verify' — one field, so no two buttons anywhere
+  // on the page can both be spinning.
+  let connBusy = $state('')
+  // Which row is open. One at a time, the same as the MCP register: two token
+  // forms on screen is two places to paste into and one of them is wrong.
+  let connOpen = $state('')
+
+  // What the collapsed row says about placement — the desks by name, because
+  // "2 desks" makes you open the row to find out which two.
+  function placementSummary(row: ConnectionRow): string {
+    if (!row.configured) return t('settings.connForEveryone')
+    const names = row.for.map((id) => mcpTargets.find((tt) => tt.id === id)?.name ?? id)
+    return names.join(', ')
+  }
+
+  // One line per service saying what connecting it buys. Kept here rather than
+  // in the Go catalog because it is a sentence a Thai-first app has to
+  // translate, and a Go string literal cannot be. A service with no line drawn
+  // yet renders nothing rather than a raw key.
+  const connBlurb: Record<string, string> = $derived({ github: t('settings.ghDesc') })
+
+  // Desks are pre-picked and agents are not. An agent is handed things on
+  // purpose, which is the same asymmetry the resolver applies to a connection
+  // nobody has placed yet (config.ConnectionsForAgent).
+  const defaultDraft = () => mcpTargets.filter((t) => t.kind === 'desk').map((t) => t.id)
+
+  async function loadConnections() {
+    if (mcpTargets.length === 0) {
+      try {
+        mcpTargets = await PlacementTargets()
+      } catch {
+        /* the toggles are simply absent rather than the page failing */
+      }
+    }
+    try {
+      connections = ((await Connections()) ?? []) as ConnectionRow[]
+    } catch {
+      connections = []
+      return
+    }
+    for (const row of connections) {
+      if (connDraft[row.id]) continue
+      // A connection already placed keeps its list when it is reconnected; one
+      // that has never been placed starts where the resolver would put it.
+      connDraft[row.id] = row.configured ? [...row.for] : defaultDraft()
+    }
+  }
+
+  // What a card's toggles are currently showing: the live placement once it is
+  // connected, the draft while it is not.
+  function targetsOf(row: ConnectionRow): string[] {
+    return row.source === 'connection' ? row.for : (connDraft[row.id] ?? [])
+  }
+
+  function servesNobody(row: ConnectionRow): boolean {
+    return row.configured && row.for.length === 0
+  }
+
+  async function toggleConnectionTarget(row: ConnectionRow, targetID: string) {
+    const current = targetsOf(row)
+    const next = current.includes(targetID)
+      ? current.filter((t) => t !== targetID)
+      : [...current, targetID]
+
+    if (row.source !== 'connection') {
+      connDraft[row.id] = next // nothing to write yet — it lands with Connect
+      return
+    }
+    if (connBusy) return
+    connBusy = row.id + ':connect'
+    connError[row.id] = ''
+    try {
+      await SetConnectionTargets(row.id, next)
+      connDraft[row.id] = next
+      await loadConnections()
+    } catch (e) {
+      connError[row.id] = String(e)
+    } finally {
+      connBusy = ''
+    }
+  }
+
+  async function connectAccount(row: ConnectionRow) {
+    const token = (connToken[row.id] ?? '').trim()
+    if (!token || connBusy) return
+    connBusy = row.id + ':connect'
+    connError[row.id] = ''
+    try {
+      const account = await ConnectAccount(row.id, token, connDraft[row.id] ?? [])
+      connScopes[row.id] = account.scopes ?? []
+      // Cleared on success only. A token that failed stays in the box, because
+      // the usual reason is a truncated paste and retyping the whole thing is a
+      // punishment for the app's own unhelpfulness.
+      connToken[row.id] = ''
+      await loadConnections()
+    } catch (e) {
+      connError[row.id] = String(e)
+    } finally {
+      connBusy = ''
+    }
+  }
+
+  async function disconnectAccount(row: ConnectionRow) {
+    if (connBusy) return
+    connBusy = row.id + ':connect'
+    connError[row.id] = ''
+    try {
+      await DisconnectAccount(row.id)
+      delete connScopes[row.id]
+      await loadConnections()
+    } catch (e) {
+      connError[row.id] = String(e)
+    } finally {
+      connBusy = ''
+    }
+  }
+
+  async function verifyConnection(row: ConnectionRow) {
+    if (connBusy) return
+    connBusy = row.id + ':verify'
+    connError[row.id] = ''
+    try {
+      const account = await VerifyConnection(row.id)
+      connScopes[row.id] = account.scopes ?? []
+      await loadConnections()
+    } catch (e) {
+      connError[row.id] = String(e)
+    } finally {
+      connBusy = ''
+    }
+  }
 
   const signInProviderNames = $derived(new Set(signInMethods.map((m) => m.provider)))
   const signInMethod = $derived(signInMethods.find((m) => m.provider === selected) ?? null)
@@ -570,7 +726,7 @@
   async function loadMCP() {
     mcpServers = await ListMCPServers()
     mcpPath = await MCPConfigPath()
-    mcpTargets = await MCPTargets()
+    mcpTargets = await PlacementTargets()
   }
 
   const mcpTargetsOf = (s: MCPRow) => s.for ?? []
@@ -1302,7 +1458,7 @@
   ])
   let agentSnapshot = ''
 
-  // Which kind the editor is holding — ตัวแทน or ผู้ช่วยตัวแทน. Set by the door
+  // Which kind the editor is holding — เอเจน or ซับเอเจน. Set by the door
   // the editor was opened through and never by reading the file: the same rule
   // the storage layer lives by (a file's home is its kind), carried up. Saving
   // goes out through the matching door, so an edit cannot change what
@@ -1617,6 +1773,15 @@
   }
 
   $effect(() => {
+    // untracked, because loadConnections reads the state it writes — the
+    // placement list and the per-card drafts. Without this the effect depends
+    // on its own output and runs a second time the moment the first load
+    // lands, which is one wasted round trip per open and a race between two
+    // in-flight loads for which one gets to set `connections`.
+    if (active === 'connections') untrack(() => void loadConnections())
+  })
+
+  $effect(() => {
     if (active === 'learning') void loadLearning()
   })
 
@@ -1658,6 +1823,11 @@
       { id: 'tools', label: t('settings.tools'), icon: 'wrench', terms: [SPEECH_TOOL] },
       { id: 'skills', label: t('settings.skills'), icon: 'puzzle', terms: [t('settings.skillInstall')] },
       { id: 'mcp', label: t('settings.mcpServers'), icon: 'plug', terms: [t('settings.mcpPresets'), t('settings.addServer')] },
+      // Below MCP and not beside the model sign-ins: both pages here extend
+      // what the agent can reach, which is the question a user arrives with.
+      // The icon is deliberately not `plug` — MCP owns that, and two plugs in
+      // one group is a list you have to read twice.
+      { id: 'connections', label: t('settings.connections'), icon: 'globe', terms: ['GitHub', t('settings.ghTokenLabel')] },
       { id: 'prompts', label: t('settings.prompts'), icon: 'sparkles', terms: [t('settings.promptNew')] },
       { id: 'usage', label: t('settings.usage'), icon: 'chartColumn',
         terms: [t('settings.usageByModel'), t('settings.usageTotalTokens'), t('settings.usageCacheHitRate')] },
@@ -1681,7 +1851,7 @@
   // while three pages deep into MCP config and landing back on General is a
   // small thing that happens every single time.
   const SECTION_KEY = 'aetox.settingsSection'
-  const SECTION_IDS = new Set(['general', 'appearance', 'identity', 'learning', 'models', 'team', 'agents', 'tools', 'skills', 'mcp', 'prompts', 'usage', 'about', 'sponsor'])
+  const SECTION_IDS = new Set(['general', 'appearance', 'identity', 'learning', 'models', 'team', 'agents', 'tools', 'skills', 'mcp', 'connections', 'prompts', 'usage', 'about', 'sponsor'])
 
   function restoredSection(): string {
     try {
@@ -1723,7 +1893,7 @@
   const noSearchResults = $derived(query.trim() !== '' && filteredSections.length === 0)
 </script>
 
-<!-- ตัวแทน and ผู้ช่วยตัวแทน get a page each, and both are drawn from here.
+<!-- เอเจน and ซับเอเจน get a page each, and both are drawn from here.
      One markup, two kinds: the alternative is two copies that agree on the day
      they are written, which is the debt this whole split exists to refuse.
      `kind` decides what is listed, what the copy says, and which door a save
@@ -1731,8 +1901,12 @@
 {#snippet profileRow(a: SubagentRow, kind: 'agent' | 'helper')}
   <div class="set-row">
     <!-- The same mark this profile wears on the roster, resolved once in Go so
-         one agent cannot show two faces on two pages. -->
-    <span class="ag-rowicon"><Icon name={(a.icon || 'bot') as IconName} size={15} /></span>
+         one agent cannot show two faces on two pages — and, for an agent, in
+         the same colour the card gives it, so the two pages are visibly about
+         the same people. -->
+    <span class="ag-rowicon" class:tinted={kind === 'agent'} style="--h:{coverHue(a.name)}">
+      <Icon name={(a.icon || 'bot') as IconName} size={15} />
+    </span>
     <div class="set-txt">
       <div class="t">
         {a.name}
@@ -3111,17 +3285,17 @@
           <div class="set-row"><div class="muted">{t('settings.noMcpServers')}</div></div>
         {:else}
           {#each mcpFiltered as s (s.name)}
-            <div class="set-row mcp-entry" class:mcp-off={s.disabled}>
+            <div class="set-row reg-entry" class:mcp-off={s.disabled}>
               <!-- The row is the register entry: the header says who this
                    server is and who it serves, and opening it reveals the
                    switches. A server connected but pointed at nobody is the
                    state worth calling out — it works and reaches no one. -->
               <button
-                class="mcp-head"
+                class="reg-head"
                 aria-expanded={mcpOpen === s.name}
                 onclick={() => (mcpOpen = mcpOpen === s.name ? '' : s.name)}
               >
-                <span class="mcp-caret" class:open={mcpOpen === s.name}>›</span>
+                <span class="reg-caret" class:open={mcpOpen === s.name}>›</span>
                 <span class="set-txt">
                   <span class="t">
                     <span class="dot" style={statusVar(s.status)}></span> {s.name}
@@ -3259,6 +3433,141 @@
           </div>
         {/each}
       </div>
+    {:else if active === 'connections'}
+      <h2>{t('settings.connections')}</h2>
+      <p class="muted set-sub">{t('settings.connectionsDesc')}</p>
+
+      <!-- A register, drawn the same way the MCP page draws its own: one line
+           per service until you open it. With four services and a token box
+           each, cards left open would be a wall — and the thing a returning
+           user wants from this page is a glance, not a form. -->
+      <div class="settings-card">
+        {#each connections as row (row.id)}
+          {@const targets = targetsOf(row)}
+          {@const open = connOpen === row.id}
+          <div class="set-row reg-entry">
+            <button
+              class="reg-head"
+              aria-expanded={open}
+              onclick={() => (connOpen = open ? '' : row.id)}
+            >
+              <span class="reg-caret" class:open>›</span>
+              <span class="set-txt">
+                <span class="t">
+                  <span class="dot" style={statusVar(row.connected ? 'connected' : '')}></span>
+                  {row.label}
+                  {#if row.source === 'connection'}
+                    <span class="mcp-badge" class:mcp-badge-warn={servesNobody(row)}>
+                      {servesNobody(row) ? t('settings.connForNobody') : placementSummary(row)}
+                    </span>
+                  {/if}
+                </span>
+                <span class="d">
+                  {#if row.source === 'connection'}
+                    {t('settings.ghConnectedAs', { login: row.login ?? '' })}
+                  {:else if row.source === 'environment'}
+                    {t('settings.ghFromEnv')}
+                  {:else}
+                    {t('settings.ghNotConnected')}
+                  {/if}
+                </span>
+              </span>
+            </button>
+            <!-- The one action worth reaching without opening the row. A
+                 connected service has nothing here: disconnecting is not a
+                 thing to do by accident on a list. -->
+            {#if row.source !== 'connection' && !open}
+              <button class="ctrl" onclick={() => (connOpen = row.id)}>
+                {t('settings.ghConnect')}
+              </button>
+            {/if}
+
+            {#if open}
+              <div class="conn-body">
+                <div class="d muted">{connBlurb[row.id] ?? ''}</div>
+
+                {#if row.source === 'environment'}
+                  <div class="d muted">{t('settings.ghFromEnvHint')}</div>
+                {:else if row.env_override}
+                  <div class="d muted">{t('settings.ghEnvAlso')}</div>
+                {/if}
+                {#if connScopes[row.id]}
+                  <div class="d mono-dim">
+                    {connScopes[row.id].length > 0
+                      ? t('settings.ghScopes', { list: connScopes[row.id].join(', ') })
+                      : t('settings.ghScopesUnstated')}
+                  </div>
+                {/if}
+
+                <!-- Placement. Same ids and same list as an MCP server's
+                     `for:`, so what a user learns on that page is true here. -->
+                <div class="eyebrow conn-eyebrow">{t('settings.connFor')}</div>
+                <div class="conn-targets">
+                  {#each mcpTargets as target (target.id)}
+                    <button
+                      class="conn-chip"
+                      class:on={targets.includes(target.id)}
+                      disabled={connBusy !== ''}
+                      aria-pressed={targets.includes(target.id)}
+                      onclick={() => toggleConnectionTarget(row, target.id)}
+                    >
+                      {target.name}
+                    </button>
+                  {/each}
+                </div>
+                <!-- Said on the row because it is the whole meaning of the
+                     switch: off is not "asks first", it is "not in the list". -->
+                <div class="d muted">{t('settings.connForHint', { n: String(row.tools.length) })}</div>
+
+                {#if row.source !== 'connection'}
+                  <div class="eyebrow conn-eyebrow">{t('settings.ghTokenLabel')}</div>
+                  <div class="mset-keyrow">
+                    <!-- type=password: this is a live credential, and a
+                         settings page is the one screen people screen-share. -->
+                    <input
+                      class="ctrl key-input" type="password" autocomplete="off"
+                      placeholder={t('settings.ghTokenPlaceholder')}
+                      value={connToken[row.id] ?? ''}
+                      oninput={(e) => (connToken[row.id] = e.currentTarget.value)}
+                      onkeydown={(e) => e.key === 'Enter' && connectAccount(row)}
+                    />
+                    <button
+                      class="ctrl ctrl-primary"
+                      disabled={connBusy !== '' || !(connToken[row.id] ?? '').trim()}
+                      onclick={() => connectAccount(row)}
+                    >
+                      {connBusy === row.id + ':connect' ? t('settings.ghConnecting') : t('settings.ghConnect')}
+                    </button>
+                  </div>
+                  <div class="d muted">{t('settings.ghTokenHint')}</div>
+                {/if}
+
+                <div class="mset-keyrow conn-actions">
+                  <div class="d muted eyebrow-grow"></div>
+                  {#if row.token_url && row.source !== 'connection'}
+                    <button class="ctrl" onclick={() => BrowserOpenURL(row.token_url ?? '')}>
+                      {t('settings.ghCreateToken')}
+                    </button>
+                  {/if}
+                  {#if row.connected}
+                    <button class="ctrl" disabled={connBusy !== ''} onclick={() => verifyConnection(row)}>
+                      {connBusy === row.id + ':verify' ? t('settings.ghVerifying') : t('settings.ghVerify')}
+                    </button>
+                  {/if}
+                  {#if row.source === 'connection'}
+                    <button class="ctrl" disabled={connBusy !== ''} onclick={() => disconnectAccount(row)}>
+                      {t('settings.ghDisconnect')}
+                    </button>
+                  {/if}
+                </div>
+
+                {#if connError[row.id]}<div class="mset-error">{connError[row.id]}</div>{/if}
+              </div>
+            {/if}
+          </div>
+        {/each}
+      </div>
+
     {:else if active === 'about'}
       <h2>{t('settings.about')}</h2>
       <div class="settings-card">

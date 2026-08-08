@@ -64,22 +64,23 @@ describe('the office roster', () => {
 
   it('counts the work a chair has done', async () => {
     vi.mocked(ListChairs).mockResolvedValue([chair({ jobs: 3, lastUsed: new Date().toISOString() })] as any)
-    render(Office, { onClose: () => {} })
+    const { container } = render(Office, { onClose: () => {} })
 
     await waitFor(() => expect(screen.getByText('3')).toBeTruthy())
-    expect(screen.getByText(/งานที่ทำแล้ว/)).toBeTruthy()
+    expect(container.querySelector('.chair-foot .stat')?.textContent).toMatch(/3\s*งาน/)
   })
 
-  // The gallery's first card is the create door. It opens the shared profile
-  // editor with kind=agent carried in the intent — from this roster, kind is
-  // known by construction, and the editor must never re-derive it from a file.
-  it('offers a create-agent card that opens the editor as an agent', async () => {
+  // The hiring door is the section's own control rather than a card in the
+  // grid. It opens the shared profile editor with kind=agent carried in the
+  // intent — from this roster, kind is known by construction, and the editor
+  // must never re-derive it from a file.
+  it('offers a create-agent door that opens the editor as an agent', async () => {
     render(Office, { onClose: () => {} })
-    const card = await screen.findByText('สร้างตัวแทนใหม่')
+    const door = await screen.findByText('เพิ่มเอเจนเฉพาะทาง')
 
-    await fireEvent.click(card)
+    await fireEvent.click(door)
 
-    // 'team' is ตัวแทน. Naming the ผู้ช่วยตัวแทน page here still opened the right
+    // 'team' is เอเจน. Naming the ซับเอเจน page here still opened the right
     // editor — the handler forces the kind — so the bug hid behind a correct
     // form and only showed itself when the user closed it.
     expect(cockpit.settingsIntent).toEqual({ section: 'team', createAgent: true })
@@ -105,8 +106,8 @@ describe('the office roster', () => {
     vi.mocked(NewChairSession).mockResolvedValue('20260805-100000.000' as any)
     render(Office, { onClose: () => {} })
 
-    await waitFor(() => expect(screen.getByText('แชทกับตัวแทนนี้')).toBeTruthy())
-    await fireEvent.click(screen.getByText('แชทกับตัวแทนนี้'))
+    await waitFor(() => expect(screen.getByLabelText('แชทกับเอเจนนี้')).toBeTruthy())
+    await fireEvent.click(screen.getByLabelText('แชทกับเอเจนนี้'))
 
     await waitFor(() => expect(vi.mocked(NewChairSession).mock.calls[0][0]).toBe('doc'))
     expect(cockpit.activeView).toBe('chat')
@@ -126,17 +127,62 @@ describe('the received-work feed', () => {
   })
 
   // The job row carries the caller's session id, and that is the only link
-  // between a delivered file and the conversation that asked for it.
+  // between a delivered file and the conversation that asked for it. The whole
+  // row is the door — a boxed button repeated down the right edge was the
+  // loudest thing on a page whose subject is the line beside it.
   it('walks back to the chat that sent the job', async () => {
     vi.mocked(ListReceivedJobs).mockResolvedValue([job()] as any)
     vi.mocked(LoadSessionAnyProject).mockResolvedValue([] as any)
     render(Office, { onClose: () => {} })
 
-    await waitFor(() => expect(screen.getByText('ไปที่แชท')).toBeTruthy())
-    await fireEvent.click(screen.getByText('ไปที่แชท'))
+    await waitFor(() => expect(screen.getByLabelText('ไปที่แชท')).toBeTruthy())
+    await fireEvent.click(screen.getByLabelText('ไปที่แชท'))
 
     await waitFor(() => expect(vi.mocked(LoadSessionAnyProject).mock.calls[0][0]).toBe('20260805-090000.000'))
     expect(cockpit.activeView).toBe('chat')
+  })
+
+  // A duration is only worth a slot when it says something. Every row printing
+  // "0.0s" was six copies of "this was instant" competing with the line that
+  // says what the job actually was.
+  it('leaves out a duration too small to mean anything', async () => {
+    vi.mocked(ListReceivedJobs).mockResolvedValue([job({ durationMs: 40 })] as any)
+    render(Office, { onClose: () => {} })
+
+    await waitFor(() => expect(screen.getByText('ทำเอกสารสรุปยอดเดือนนี้')).toBeTruthy())
+    expect(screen.queryByText('0.0s')).toBeNull()
+  })
+
+  // Grouped by calendar day, so the eye can skip a day it does not want —
+  // rather than reading "2 วัน" printed once per row all the way down.
+  it('files the feed under the day it came in', async () => {
+    vi.mocked(ListReceivedJobs).mockResolvedValue([job()] as any)
+    render(Office, { onClose: () => {} })
+
+    await waitFor(() => expect(screen.getByText('วันนี้')).toBeTruthy())
+  })
+
+  // The filter is the question this list is asked once more than one teammate
+  // has worked, and furniture before that.
+  it('filters the feed by teammate', async () => {
+    vi.mocked(ListReceivedJobs).mockResolvedValue([
+      job(), job({ id: 2, chair: 'sheet', brief: 'รวมยอดค่าใช้จ่าย' }),
+    ] as any)
+    render(Office, { onClose: () => {} })
+
+    await waitFor(() => expect(screen.getByText('ทั้งหมด')).toBeTruthy())
+    await fireEvent.click(screen.getByText('sheet'))
+
+    expect(screen.getByText('รวมยอดค่าใช้จ่าย')).toBeTruthy()
+    expect(screen.queryByText('ทำเอกสารสรุปยอดเดือนนี้')).toBeNull()
+  })
+
+  it('does not draw a filter when one teammate is the whole feed', async () => {
+    vi.mocked(ListReceivedJobs).mockResolvedValue([job()] as any)
+    render(Office, { onClose: () => {} })
+
+    await waitFor(() => expect(screen.getByText('ทำเอกสารสรุปยอดเดือนนี้')).toBeTruthy())
+    expect(screen.queryByText('ทั้งหมด')).toBeNull()
   })
 
   it('has an empty state that says what to do rather than nothing', async () => {

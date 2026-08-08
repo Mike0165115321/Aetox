@@ -294,9 +294,10 @@ func afterFlagSeparator(token string, sep byte) (string, bool) {
 }
 
 // homeVars are the variable names that name a folder, in every spelling the two
-// shells accept. Only these are expanded: an unknown variable in path position
-// is refused instead (expandToken), because guessing it is empty would turn
-// "%SOMEWHERE%\file" into a harmless-looking relative path and let it through.
+// shells accept. Only these are expanded: an unknown variable with a path
+// separator after it is refused instead (expandToken), because guessing it is
+// empty would turn "%SOMEWHERE%\file" into a harmless-looking relative path and
+// let it through.
 var homeVars = map[string]string{
 	"USERPROFILE": "", "HOME": "", "HOMEPATH": "", "HOMEDRIVE": "",
 	"APPDATA": "", "LOCALAPPDATA": "", "TEMP": "", "TMP": "", "PWD": "",
@@ -316,6 +317,16 @@ func expandToken(root, token string) (string, string) {
 	}
 	value, known := lookupPathVar(root, head)
 	if !known {
+		// Whether an unknown variable matters is decided by what follows it.
+		// With no separator after the name the token cannot name a folder,
+		// whatever the variable holds — `$PSVersionTable.PSVersion.ToString()`
+		// is an expression, and refusing it blocked every PowerShell command
+		// that starts with one (found 2026-08-07). `$V\file` and `$V=...\...`
+		// still stop the command: there a path IS being built on a value this
+		// check cannot see.
+		if !strings.ContainsAny(rest, `/\`) {
+			return "", ""
+		}
 		return "", "the variable " + head + " in " + token
 	}
 	return filepath.Join(value, filepath.FromSlash(strings.TrimLeft(rest, `/\`))), ""

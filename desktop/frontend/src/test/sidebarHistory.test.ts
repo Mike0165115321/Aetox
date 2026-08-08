@@ -93,14 +93,15 @@ describe('the chat list', () => {
 
   // The chunky dashed block that used to sit above this list is an icon on the
   // same row now, and that row serves the project column too — one copy, not
-  // one per list.
-  it('keeps new-session as an icon, not a block above the list', () => {
+  // one per list. Import sits beside it: bringing a chat in is the column's
+  // own action, same as starting one.
+  it('keeps the column actions as icons, not blocks above the list', () => {
     render(Sidebar, { onOpenSettings: () => {} })
 
     expect(screen.queryByText('เริ่มเซสชันใหม่')).toBeNull()
     const labels = Array.from(document.querySelectorAll('.side-actions button'))
       .map((b) => b.getAttribute('aria-label'))
-    expect(labels).toEqual(['เริ่มเซสชันใหม่'])
+    expect(labels).toEqual(['นำเข้าแชทที่ส่งออกไว้ (.json)', 'เริ่มเซสชันใหม่'])
   })
 
   // The row's whole job. Every other way into a session switched the view to
@@ -133,5 +134,20 @@ describe('the chat list', () => {
     await fireEvent.click(screen.getByText('เปิดไม่ได้'))
 
     expect(cockpit.sessionError).toContain('โฟลเดอร์อาจถูกย้าย')
+  })
+
+  // The title is the only thing on a row that says what the chat was about, so
+  // it gets the line — the chip, the age and the hover buttons share the one
+  // below it. They used to sit on the title's line, all of them flex:none, and
+  // in a 280px column the title was squeezed to a couple of words.
+  it('gives the title a line of its own, above the chip and the age', () => {
+    cockpit.history.push({ ...chat('a', 'ค้นไฟล์ทั้งเครื่องแล้วสรุปให้ที', daysAgo(0, 9)), agent: 'ผู้ช่วย' })
+    render(Sidebar, { onOpenSettings: () => {} })
+
+    const row = document.querySelector('.sess-row')
+    expect(row?.querySelector('.sess-line')?.textContent?.trim()).toBe('ค้นไฟล์ทั้งเครื่องแล้วสรุปให้ที')
+    expect(row?.querySelector('.sess-meta')?.textContent).toContain('ผู้ช่วย')
+    // The hover controls live on the meta line, in space nothing else wants.
+    expect(row?.querySelector('.sess-meta .sess-acts .sess-del')).toBeTruthy()
   })
 })

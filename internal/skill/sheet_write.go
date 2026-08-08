@@ -69,6 +69,14 @@ func (*sheetWriteSkill) ToolDefinition() model.ToolDefinition {
 							"items":       map[string]any{"type": "string"},
 							"description": "Header row, one label per column",
 						},
+						"formats": map[string]any{
+							"type": "array",
+							"items": map[string]any{
+								"type": "string",
+								"enum": []string{"", "money", "integer", "percent", "date", "datetime"},
+							},
+							"description": "Display per column, in order; percent holds the fraction (0.07 = 7%).",
+						},
 						"rows": map[string]any{
 							"type":        "array",
 							"description": "Data rows. Each row is an array of values in column order.",
@@ -104,6 +112,7 @@ func (*sheetWriteSkill) ToolDefinition() model.ToolDefinition {
 				"Send each value with its natural JSON type: a number as a bare number (1234.5, not \"฿1,234.50\") so it can be summed, " +
 				"and a date as an ISO string (\"2026-08-03\" or \"2026-08-03 14:30\") so it becomes a real date. " +
 				"Anything else stays text, which is what identifiers like \"0012\" need. " +
+				"A string starting with = is a live formula (\"=SUM(B2:B13)\"). " +
 				"The result reports where the file actually landed.",
 			Parameters: payload,
 		},
@@ -236,6 +245,14 @@ func parseSheets(raw any) ([]ooxml.Sheet, error) {
 		}
 		if len(sheet.Columns) > maxSheetColumns {
 			return nil, fmt.Errorf("sheet %q has %d columns, Excel allows %d", sheet.Name, len(sheet.Columns), maxSheetColumns)
+		}
+
+		// How the columns are displayed. An unknown name is left plain rather
+		// than refused: a column that came out unformatted is a cosmetic
+		// complaint, and a refused export is a lost job.
+		for _, format := range asList(object["formats"]) {
+			text, _ := format.(string)
+			sheet.Formats = append(sheet.Formats, text)
 		}
 
 		rows := asList(object["rows"])

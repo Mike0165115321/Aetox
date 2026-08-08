@@ -1,6 +1,6 @@
 // The colour a named thing wears in a gallery.
 //
-// One hash, three galleries: presets (Settings), ตัวแทน (Office) and โปรเจกต์
+// One hash, three galleries: presets (Settings), เอเจน (Office) and โปรเจกต์
 // (Projects). It lived twice as an identical private function before this file,
 // with a comment in each copy saying it had to match the other — which is the
 // shape of a rule nothing enforces. A third copy would have been the point

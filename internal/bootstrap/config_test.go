@@ -58,3 +58,36 @@ func TestMCPUnsetSecretReferenceResolvesToEmpty(t *testing.T) {
 		t.Errorf("header = %q, want empty rather than the literal reference", v)
 	}
 }
+
+// A server no desk carries waits for the agent that does.
+//
+// `for:` decided who saw a server's tools and never decided whether to connect
+// it, so one placed on a single agent was still spawned on every launch by
+// everyone who had it configured. For a 90-tool remote server that is a
+// handshake and a full tool listing bought on the chance somebody might.
+func TestAgentOnlyServersAreLeftForTheAgentThatNeedsThem(t *testing.T) {
+	servers := MCPServers([]config.MCPServerConfig{
+		// Never placed: every desk carries it, so it has to be up before the
+		// first message.
+		{Name: "unplaced", Command: []string{"x"}},
+		{Name: "desk-and-agent", Command: []string{"x"}, For: []string{"coding", "agent:github"}},
+		{Name: "agent-only", Command: []string{"x"}, For: []string{"agent:github"}},
+		// Placed nowhere: nobody sees it, so nothing is waiting on it either.
+		{Name: "nobody", Command: []string{"x"}, For: []string{}},
+	})
+
+	want := map[string]bool{
+		"unplaced":       false,
+		"desk-and-agent": false,
+		"agent-only":     true,
+		"nobody":         true,
+	}
+	if len(servers) != len(want) {
+		t.Fatalf("MCPServers returned %d, want %d", len(servers), len(want))
+	}
+	for _, s := range servers {
+		if s.Deferred != want[s.Name] {
+			t.Errorf("%s: Deferred=%v, want %v", s.Name, s.Deferred, want[s.Name])
+		}
+	}
+}

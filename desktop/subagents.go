@@ -7,7 +7,7 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/subagent"
 )
 
-// Bindings for the Settings → ผู้ช่วยตัวแทน page (ARCHITECTURE.md §44). Thin on
+// Bindings for the Settings → ซับเอเจน page (ARCHITECTURE.md §44). Thin on
 // purpose: every rule about what a profile is lives in internal/subagent, so the
 // page cannot invent a second definition of one.
 //

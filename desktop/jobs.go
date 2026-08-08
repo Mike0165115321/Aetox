@@ -141,6 +141,12 @@ func (a *App) recordJobs(messageID int64, request, answer string, sinceToolRun i
 			time:      now,
 		})
 	}
+
+	// The turn's rows are in; now read the store back for patterns. Per turn
+	// rather than per session because that is what the floor was priced for
+	// (db.go: a GROUP BY, not a model call), and because a lesson that waits
+	// for a restart arrives after the mistake has been repeated all day.
+	a.summarizeFailures()
 }
 
 // delegateName is which sub-agent ran. The tool runs carry it (the relay in

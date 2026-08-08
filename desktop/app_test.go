@@ -1027,3 +1027,28 @@ func TestFileStillThereRefusesDirectoriesAndEscapes(t *testing.T) {
 		t.Error("with no project open there is nothing to open")
 	}
 }
+
+// The frontend caches what GetModelInfo reports and seeds the next launch's
+// first paint from it — so a raw "" from the pre-startup window painted an
+// empty approval dropdown on every launch after it (found 2026-08-07, the
+// screenshot with a blank "โหมดอนุมัติ" box). The report is normalized, never raw.
+func TestGetModelInfoNeverReportsAnEmptyApproval(t *testing.T) {
+	a := &App{} // the pre-startup state: no config built yet
+	if got := a.GetModelInfo().ApprovalMode; got != "ask" {
+		t.Fatalf("ApprovalMode = %q before startup, want the normalized default %q", got, "ask")
+	}
+}
+
+// An installer's "run now" spawns the app with a stripped environment and no
+// USERPROFILE. unfocusedRoot answering "" then flows through config.Load into
+// os.Getwd() — for an installed app that is C:\Program Files, where the
+// session's first write dies on Access denied (tool_runs #533, 2026-08-08).
+func TestUnfocusedRootSurvivesAMissingHome(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+	t.Setenv("USERPROFILE", "")
+	t.Setenv("HOME", "")
+	root := unfocusedRoot()
+	if strings.TrimSpace(root) == "" {
+		t.Fatal("unfocusedRoot returned \"\" with no home — config.Load turns that into the process cwd")
+	}
+}

@@ -90,7 +90,7 @@ func TestAgentHomeFileSitsInTheOfficeByDefault(t *testing.T) {
 // disk and cannot explain missing is the debt Conflict exists to refuse.
 func TestHelperHomeIsClosedUserFilesAreReportedNotRead(t *testing.T) {
 	isolate(t)
-	writeProfile(t, Dir, "หลงบ้าน", "---\ndesk: specialized\n---\nอยากเป็นตัวแทน")
+	writeProfile(t, Dir, "หลงบ้าน", "---\ndesk: specialized\n---\nอยากเป็นเอเจน")
 	writeProfile(t, Dir, "ลูกมือใหม่", "---\ndescription: อยากช่วย\n---\nช่วยทุกอย่าง")
 
 	for _, name := range []string{"หลงบ้าน", "ลูกมือใหม่"} {
@@ -190,10 +190,10 @@ func TestANameCannotBeCreatedAsTheOtherKind(t *testing.T) {
 	// "deck" is a bundled agent; "explore" a bundled sub-agent.
 	if err := Save("deck", "---\n---\nปลอมตัวเป็นลูกมือ"); err == nil {
 		t.Fatal("Save let a sub-agent take a bundled agent's name")
-	} else if !strings.Contains(err.Error(), "ตัวแทน") {
+	} else if !strings.Contains(err.Error(), "เอเจน") {
 		t.Fatalf("the refusal does not name the owner: %v", err)
 	}
-	if err := SaveAgent("explore", "---\n---\nปลอมตัวเป็นตัวแทน"); err == nil {
+	if err := SaveAgent("explore", "---\n---\nปลอมตัวเป็นเอเจน"); err == nil {
 		t.Fatal("SaveAgent let an agent take a bundled sub-agent's name")
 	}
 
@@ -242,7 +242,7 @@ func TestTheModelIsToldWhichWorkersAreAgentsAndWhichAreHelpers(t *testing.T) {
 	isolate(t)
 	choice := agentChoice(List())
 
-	for _, want := range []string{"AGENTS (ตัวแทน)", "HELPERS (ผู้ช่วยตัวแทน)", "deck", "explore"} {
+	for _, want := range []string{"AGENTS (เอเจน)", "HELPERS (ซับเอเจน)", "deck", "explore"} {
 		if !strings.Contains(choice, want) {
 			t.Errorf("the agent parameter never mentions %q:\n%s", want, choice)
 		}

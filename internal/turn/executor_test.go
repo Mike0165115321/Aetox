@@ -905,7 +905,7 @@ func (*taskDispatcher) ExecuteTool(_ context.Context, name string, _ map[string]
 
 // A `task` call's live event and its written-down part both say which pile the
 // worker is in — the kind the injected DelegateKind resolves, never a guess
-// from the name. The UI counts ตัวแทน and ซับเอเจน apart on both paths: the
+// from the name. The UI counts เอเจน and ซับเอเจน apart on both paths: the
 // chip on a live turn reads the event, and a reopened session reads only the
 // parts, where a row that forgot its kind would fall back into the helper pile.
 func TestExecute_DelegationCarriesAgentKind(t *testing.T) {

@@ -124,33 +124,39 @@ type MCPServerInfo struct {
 	Err    string   `json:"err,omitempty"`
 }
 
-// MCPTarget is one place a server can be switched on, for the settings page to
-// render as a row of toggles. Built from the desks and the team that actually
-// exist rather than a list typed into the page, so hiring an agent puts it on
-// this list without anyone remembering to add it.
-type MCPTarget struct {
-	// ID is what goes in a server's `for` list: a desk name, or "agent:<name>".
+// PlacementTarget is one place something bolted onto the outside of the app can
+// be switched on, for the settings page to render as a row of toggles. Built
+// from the desks and the team that actually exist rather than a list typed into
+// the page, so hiring an agent puts it on this list without anyone remembering
+// to add it.
+//
+// Not MCPTarget any more: the connections page places accounts against the very
+// same list, with the very same ids. Two names for one answer is how the two
+// pages would eventually come to disagree about what a desk is called.
+type PlacementTarget struct {
+	// ID is what goes in a `for` list: a desk name, or "agent:<name>".
 	ID   string `json:"id"`
 	Name string `json:"name"` // what to show
 	Kind string `json:"kind"` // "desk" | "agent"
 }
 
-// MCPTargets lists everywhere a server can be pointed. The page shows one
-// toggle per entry; SetMCPServerTargets is where a flip lands.
-func (a *App) MCPTargets() []MCPTarget {
-	var out []MCPTarget
+// PlacementTargets lists everywhere a server or a connection can be pointed.
+// The page shows one toggle per entry; SetMCPServerTargets and
+// SetConnectionTargets are where a flip lands.
+func (a *App) PlacementTargets() []PlacementTarget {
+	var out []PlacementTarget
 	for _, m := range mode.List() {
 		name := m.Description
 		if name == "" {
 			name = m.Name
 		}
-		out = append(out, MCPTarget{ID: m.Name, Name: name, Kind: "desk"})
+		out = append(out, PlacementTarget{ID: m.Name, Name: name, Kind: "desk"})
 	}
 	for _, p := range subagent.List() {
 		if p.Desk == "" || p.Invalid != "" {
 			continue // the helpers are part of the system; a sick file is not a target
 		}
-		out = append(out, MCPTarget{ID: config.MCPAgentPrefix + p.Name, Name: p.Name, Kind: "agent"})
+		out = append(out, PlacementTarget{ID: config.MCPAgentPrefix + p.Name, Name: p.Name, Kind: "agent"})
 	}
 	return out
 }

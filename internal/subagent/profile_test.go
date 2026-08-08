@@ -4,8 +4,10 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
+	"github.com/Mike0165115321/Aetox/internal/mode"
 	"github.com/Mike0165115321/Aetox/internal/safety"
 )
 
@@ -22,28 +24,37 @@ func isolate(t *testing.T) string {
 	return dir
 }
 
-// Six profiles ship, in two kinds, and the split is the thing being asserted:
-// three delegates any desk may run, and three chairs that sit in the office
+// Seven profiles ship, in two kinds, and the split is the thing being asserted:
+// three delegates any desk may run, and four agents that sit in the office
 // (COMPANY.md §4). The counts are pinned because "one more profile, it's free"
-// is how a bundled set becomes a menu nobody reads — and because a chair that
-// lost its `desk:` would silently become a delegate every desk carries.
+// is how a bundled set becomes a menu nobody reads.
+//
+// **No bundled agent writes `desk:`, and none should.** A file in the agents
+// home is given the office by applyHomeRules, which is the whole rule an author
+// needs to know: drop the folder in, it is one of the team. Writing the field
+// can only ever get it wrong — and wrong is silent, because a profile at any
+// other desk still parses, still validates, still appears in List(), and
+// disappears from the roster, the chat page's picker and every door a user
+// could walk through. That happened once, to the github agent, on the day it
+// was written. This assertion is what notices.
 func TestBundledProfilesAreUsable(t *testing.T) {
 	isolate(t)
 	got := List()
-	want := []string{"deck", "doc", "explore", "general", "plan", "sheet"}
+	want := []string{"deck", "doc", "explore", "general", "github", "plan", "sheet"}
 	if len(got) != len(want) {
 		t.Fatalf("List() = %d profiles, want %d", len(got), len(want))
 	}
-	chairs := map[string]bool{"deck": true, "doc": true, "sheet": true}
+	chairs := map[string]bool{"deck": true, "doc": true, "github": true, "sheet": true}
 	for i, p := range got {
 		if p.Name != want[i] {
 			t.Errorf("List()[%d] = %q, want %q (alphabetical)", i, p.Name, want[i])
 		}
 		if wantDesk := chairs[p.Name]; wantDesk != (p.Desk != "") {
-			t.Errorf("%s: Desk=%q, want a chair=%v", p.Name, p.Desk, wantDesk)
+			t.Errorf("%s: Desk=%q, want an agent=%v", p.Name, p.Desk, wantDesk)
 		}
-		if chairs[p.Name] && p.Desk != "specialized" {
-			t.Errorf("%s: sits at desk %q, want specialized — the office is the only room with chairs", p.Name, p.Desk)
+		if chairs[p.Name] && p.Desk != mode.Office {
+			t.Errorf("%s: sits at desk %q, want %q — an agent anywhere else is unreachable from every door",
+				p.Name, p.Desk, mode.Office)
 		}
 		if !p.Builtin || p.Path != "" || p.Overrides {
 			t.Errorf("%s: Builtin=%v Path=%q Overrides=%v", p.Name, p.Builtin, p.Path, p.Overrides)
@@ -243,8 +254,8 @@ func TestHelperHomeCannotAddADelegate(t *testing.T) {
 	if _, ok := Load("backend"); ok {
 		t.Fatal("a helper-home user file loaded as a delegate")
 	}
-	if got := len(List()); got != 6 {
-		t.Fatalf("List() = %d, want the 6 bundled only", got)
+	if got := len(List()); got != 7 {
+		t.Fatalf("List() = %d, want the 7 bundled only", got)
 	}
 	if c, ok := findConflict(Conflicts(), "backend"); !ok || c.Reason == "" {
 		t.Fatal("the locked-out file is not reported with a reason")
@@ -299,7 +310,7 @@ func TestPlanProfileCannotWrite(t *testing.T) {
 }
 
 // KindOf is what the engine stamps onto a `task` call's events, so the UI can
-// count ตัวแทน and ซับเอเจน apart (the chip used to read "ซับเอเจน 1 ตัว" on a
+// count เอเจน and ซับเอเจน apart (the chip used to read "ซับเอเจน 1 ตัว" on a
 // turn where the doc agent made the file). The kind comes from which home the
 // file lives in — the same rule the `task` schema's grouping follows — and the
 // default an unnamed delegation gets is the same one `task` itself applies.
@@ -318,6 +329,25 @@ func TestKindOfSplitsTheTwoPiles(t *testing.T) {
 	for name, want := range cases {
 		if got := KindOf(name); got != want {
 			t.Errorf("KindOf(%q) = %q, want %q", name, got, want)
+		}
+	}
+}
+
+// The field is a footgun with no upside: the home already decides, and the only
+// thing writing it can do is take a worker off the roster. Bundled files are
+// the examples people copy, so none of them may carry it.
+func TestNoBundledAgentWritesItsOwnDesk(t *testing.T) {
+	isolate(t)
+	for _, p := range List() {
+		if p.Desk == "" {
+			continue // a helper; it has no home to be given one by
+		}
+		raw, ok := ReadRaw(p.Name)
+		if !ok {
+			t.Fatalf("%s: cannot read its own file back", p.Name)
+		}
+		if strings.Contains(raw, "\ndesk:") {
+			t.Errorf("%s writes desk: in its frontmatter — the agents home already gives it the office, and writing it can only ever get it wrong", p.Name)
 		}
 	}
 }

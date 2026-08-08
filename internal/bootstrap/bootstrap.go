@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -22,6 +23,12 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/think"
 	"github.com/Mike0165115321/Aetox/internal/turn"
 )
+
+// deferredConnectTimeout bounds bringing up a server that waited for the agent
+// that needs it (mcp.Server.Deferred). Generous, because it can be a cold `npx`
+// fetching a package; bounded, because the user is looking at a door that has
+// not opened yet.
+const deferredConnectTimeout = 30 * time.Second
 
 // Options are the parts of an engine a host supplies. Everything else comes
 // from config.Config, so two hosts on the same config get the same engine.
@@ -295,6 +302,21 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 		// leaf even when spoken to (§85). Note FilterRegistry's own caveat: an
 		// MCP server that finishes connecting after this point reaches every
 		// desk that attached it, but not a chair session already open.
+		//
+		// Which is why the deferred ones are brought up *before* the cut, not
+		// after: a server only this agent carries was skipped at startup, and a
+		// snapshot taken first would be a snapshot without it — the same
+		// connect the delegate path does, on the other door, so opening a chat
+		// and being handed a job give the worker the same tools.
+		// Engine has no context of its own — it is called from a settings save
+		// and a session open, neither of which cancels. A bound of its own,
+		// then, so a server that never answers delays opening the chat by a
+		// known amount instead of hanging the door.
+		chairCtx, cancelChair := context.WithTimeout(context.Background(), deferredConnectTimeout)
+		for _, err := range opts.Manager.RegisterFor(chairCtx, registry, config.MCPServersForAgent(opts.Chair.Name)) {
+			debuglog.Msg("chair %s: %v", opts.Chair.Name, err)
+		}
+		cancelChair()
 		child := subagent.FilterRegistry(registry, *opts.Chair, opts.Mode)
 		// `memory` is rebuilt bound to the chair's own scope, exactly as
 		// task.go does for a delegate and for the same reason: the parent's
@@ -369,7 +391,24 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 		// this desk may hand a job to. The registry stays whole: a cross-desk
 		// dispatch runs on the target desk's manifest, so the tool it needs has
 		// to still be in there to be filtered *in* (§84).
-		Desk:         opts.Mode,
+		Desk: opts.Mode,
+		// The same assembler the session's own prompt came out of, three lines
+		// up, with the delegate's brief where the desk's direction goes. One
+		// door: a worker reached by `task` and a worker reached by opening a
+		// chat now stand in the same room, described the same way.
+		BuildPrompt: func(direction string) string {
+			return prompt.BuildForDesk(surface, scope, prompt.Desk{
+				Name:      opts.Mode.DeskName(),
+				Direction: direction,
+			})
+		},
+		// The deferred half of the MCP config: a server only this agent carries
+		// was skipped at startup and comes up here, on the dispatch that needs
+		// it. Reads the live manager, so a re-bootstrap hands the new tool a
+		// closure over the manager that is actually connected.
+		EnsureServers: func(ctx context.Context, names []string) []error {
+			return opts.Manager.RegisterFor(ctx, registry, names)
+		},
 		Permissions:  permissions,
 		ApprovalMode: approvalMode,
 		Approve:      opts.Approve,

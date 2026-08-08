@@ -19,7 +19,7 @@ func TestSaveRefusesTheClosedHelperHome(t *testing.T) {
 	if err == nil {
 		t.Fatal("Save wrote into the closed helper home")
 	}
-	if !strings.Contains(err.Error(), "ตัวแทน") {
+	if !strings.Contains(err.Error(), "เอเจน") {
 		t.Errorf("the refusal does not point at the team page: %v", err)
 	}
 	if p, _ := Load("explore"); p.Prompt == "Mine." || !p.Builtin {

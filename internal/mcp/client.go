@@ -49,6 +49,19 @@ type Server struct {
 	Headers     map[string]string // remote: static headers (e.g. Authorization)
 	Timeout     time.Duration     // connect timeout; default 30s
 	Disabled    bool              // configured but switched off; Manager skips it
+	// Deferred means no desk carries this server — only named agents do — so
+	// it is left out of the startup connect and brought up when one of them is
+	// actually started.
+	//
+	// `for:` decided who *sees* a server's tools and never decided whether to
+	// connect it, so a server placed on one agent was still spawned on every
+	// launch by every user who had it configured, whether or not that agent was
+	// ever spoken to. For a 90-tool remote server that is a handshake and a full
+	// tool listing bought on the chance somebody might.
+	//
+	// Only agent-only servers qualify. A desk's server has to be there before
+	// the first message, because a desk is what the user is already sitting at.
+	Deferred bool
 }
 
 // Client wraps a single MCP server connection. Connect is lazy: the subprocess
@@ -74,6 +87,10 @@ func New(cfg Server) *Client {
 
 // Name returns the server's configured id.
 func (c *Client) Name() string { return c.cfg.Name }
+
+// Deferred reports whether this server waits for the agent that needs it. See
+// Server.Deferred.
+func (c *Client) Deferred() bool { return c.cfg.Deferred }
 
 // Command returns the server's configured argv (for status display).
 func (c *Client) Command() []string { return c.cfg.Command }

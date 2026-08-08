@@ -9,6 +9,7 @@ package main
 // engine the app actually builds.
 
 import (
+	"github.com/Mike0165115321/Aetox/internal/subagent"
 	"os"
 	"path/filepath"
 	"slices"
@@ -47,7 +48,15 @@ func TestAChairSessionSendsTheChairsCutOnly(t *testing.T) {
 		t.Fatal("no system prompt")
 	}
 	sys := messages[0].Content
-	if !strings.Contains(sys, "You build one presentation") {
+	// Compared against the profile the resolver actually loads, rather than a
+	// sentence copied out of it: the profile is prose somebody will rewrite —
+	// it was rewritten on 2026-08-08 (§91) — and a test pinned to its opening
+	// line fails on an edit that changed nothing this test is about.
+	deck, ok := subagent.Load("deck")
+	if !ok {
+		t.Fatal("the bundled deck profile did not load")
+	}
+	if !strings.Contains(sys, strings.TrimSpace(deck.Prompt)) {
 		t.Error("the chair chat does not run on the chair's own prompt")
 	}
 	if strings.Contains(sys, "This session is deliverable work") {
@@ -128,3 +137,74 @@ func TestReopeningAChairSessionRestoresTheChairOrRefuses(t *testing.T) {
 		t.Errorf("a refused reopen still seated the session at %q", a.chair)
 	}
 }
+
+// The github chair, end to end through the engine the app builds.
+//
+// Written because a direct chat with it came back sounding like the main
+// assistant: a generic "here is what I can help with" list, with nothing about
+// repositories in it. That symptom has two very different causes — a prompt
+// that never mounted, or a small model answering from its tool list instead of
+// its brief — and only one of them is a bug. This is what tells them apart.
+func TestTheGitHubChairRunsOnItsOwnBrief(t *testing.T) {
+	a := bootDeskApp(t, "assistant")
+	if _, err := a.NewChairSession("github"); err != nil {
+		t.Fatalf("NewChairSession(github): %v", err)
+	}
+
+	messages := a.agent.ContextMessages()
+	if len(messages) == 0 {
+		t.Fatal("no system prompt")
+	}
+	sys := messages[0].Content
+
+	// Its own brief, not the office desk's and not the main assistant's.
+	for _, want := range []string{
+		"You are the person this company gives its GitHub to",
+		"Answer what was asked",
+		"The line you do not cross on your own",
+	} {
+		if !strings.Contains(sys, want) {
+			t.Errorf("the github chair is not running on its own brief — missing %q", want)
+		}
+	}
+
+	// Nothing is connected in a fresh data root, so the notice must be there
+	// too: an agent that cannot work has to know it, or it answers anyway.
+	for _, want := range []string{"Ask for what is missing", "does not need it"} {
+		if !strings.Contains(sys, want) {
+			t.Errorf("the chair was not told to ask and carry on — no %q in its prompt", want)
+		}
+	}
+}
+
+// Where the brief sits.
+//
+// It used to be mounted correctly and still lost: twelve sections down, at 68%
+// of a 15.7k prompt, under "You are Aetox, a concise assistant" — so a worker
+// asked what it did described the assistant's job, accurately, from the first
+// thing it read. The fix is position, not replacement: it is still Aetox, one
+// identity, specialised for this conversation.
+func TestAChairsBriefIsReadBeforeTheMachinesRules(t *testing.T) {
+	a := bootDeskApp(t, "assistant")
+	if _, err := a.NewChairSession("github"); err != nil {
+		t.Fatalf("NewChairSession(github): %v", err)
+	}
+	sys := a.agent.ContextMessages()[0].Content
+
+	// One identity, kept — it carries "concise" and "Thai and English", which
+	// are behaviour and were never the thing in the way.
+	if !strings.HasPrefix(strings.TrimSpace(sys), "You are Aetox") {
+		t.Fatal("the assistant's own opening line is gone from a chair chat")
+	}
+	brief := strings.Index(sys, "You are the person this company gives its GitHub to")
+	if brief < 0 {
+		t.Fatal("the chair is not running on its own brief at all")
+	}
+	// Before the machine's rules, not after ten thousand characters of them.
+	for _, later := range []string{"Credential stores", "output folder"} {
+		if at := strings.Index(sys, later); at >= 0 && at < brief {
+			t.Errorf("the brief is filed after %q — it is at %d of %d chars", later, brief, len(sys))
+		}
+	}
+}
+

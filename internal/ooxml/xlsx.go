@@ -23,6 +23,11 @@ const (
 	KindDate
 	KindDateTime
 	KindBool
+	// KindFormula is a cell whose value Excel works out, not one we computed and
+	// wrote down. The difference is the whole point of a total row: a number we
+	// wrote is a photograph of an answer, and stops being true the moment the
+	// user edits a cell above it.
+	KindFormula
 )
 
 type Cell struct {
@@ -36,6 +41,13 @@ func TextCell(s string) Cell    { return Cell{Kind: KindText, Text: s} }
 func NumberCell(f float64) Cell { return Cell{Kind: KindNumber, Num: f} }
 func BoolCell(b bool) Cell      { return Cell{Kind: KindBool, Bool: b} }
 func BlankCell() Cell           { return Cell{Kind: KindBlank} }
+
+// FormulaCell holds the expression without its leading `=`, which is how the
+// file stores it. No cached result travels with it: the workbook asks Excel to
+// calculate on load, so a made-up cached value can never be what the user sees.
+func FormulaCell(expr string) Cell {
+	return Cell{Kind: KindFormula, Text: strings.TrimPrefix(strings.TrimSpace(expr), "=")}
+}
 
 // DateCell stores a date the way Excel does — a day count, not a string — so
 // sorting, filtering and date arithmetic work on it. A zero clock time is kept
@@ -103,6 +115,14 @@ func InferCell(v any) Cell {
 		return TextCell(value.String())
 	case string:
 		trimmed := strings.TrimSpace(value)
+		// A leading `=` is how every spreadsheet on earth spells "this is a
+		// formula", so it is what a model reaches for without being told, and
+		// what a user typing into the tool by hand would write. A lone "=" is
+		// not one — it is a typo, and treating it as an empty formula produces a
+		// file Excel offers to repair.
+		if len(trimmed) > 1 && strings.HasPrefix(trimmed, "=") {
+			return FormulaCell(trimmed)
+		}
 		if trimmed != "" {
 			for _, layout := range dateLayouts {
 				if t, err := time.Parse(layout, trimmed); err == nil {
@@ -123,6 +143,16 @@ type Sheet struct {
 	Name    string
 	Columns []string
 	Rows    [][]Cell
+	// Formats names how each column is *displayed*, one entry per column, and
+	// says nothing about what its cells are. A column of amounts is a column of
+	// numbers whether or not anybody asked for thousands separators — the format
+	// is what stops the user reading 1234.5 and reaching for a calculator.
+	//
+	// Per column rather than per cell because that is how a table works: the
+	// alternative asks the model to repeat the same word down four hundred rows,
+	// and one row where it forgot is a cell that silently reads differently from
+	// its neighbours.
+	Formats []string
 }
 
 const (
@@ -130,7 +160,31 @@ const (
 	styleHeader   = 1
 	styleDate     = 2
 	styleDateTime = 3
+	styleMoney    = 4
+	styleInteger  = 5
+	stylePercent  = 6
 )
+
+// styleForFormat maps the names the tool accepts onto the style table below.
+// A name nobody recognises falls back to the default rather than failing the
+// whole workbook: a column that came out unformatted is a cosmetic complaint,
+// and a refused export is a lost job.
+func styleForFormat(name string) int {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "money", "currency", "amount":
+		return styleMoney
+	case "integer", "int", "count":
+		return styleInteger
+	case "percent", "percentage":
+		return stylePercent
+	case "date":
+		return styleDate
+	case "datetime":
+		return styleDateTime
+	default:
+		return styleDefault
+	}
+}
 
 // BuildXLSX turns sheets into the parts of a .xlsx package.
 //
@@ -170,7 +224,11 @@ func BuildXLSX(sheets []Sheet) ([]Part, error) {
 		parts = append(parts, Part{Name: "xl/" + target, Data: []byte(worksheetXML(sheet))})
 	}
 	contentTypes.WriteString(`</Types>`)
-	workbook.WriteString(`</sheets></workbook>`)
+	// fullCalcOnLoad is what makes a formula cell honest: no cell carries a
+	// cached result, so the first thing every reader does is work them out.
+	// Without it a formula written with no <v> can render blank until the user
+	// touches something.
+	workbook.WriteString(`</sheets><calcPr calcId="0" fullCalcOnLoad="1"/></workbook>`)
 	fmt.Fprintf(&rels, `<Relationship Id="rId%d" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>`, len(sheets)+1)
 	rels.WriteString(`</Relationships>`)
 
@@ -201,9 +259,16 @@ const rootRels = xmlHeader +
 // exactly the kind of dangling link that triggers the repair prompt.
 const stylesXML = xmlHeader +
 	`<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
-	`<numFmts count="2">` +
+	`<numFmts count="5">` +
 	`<numFmt numFmtId="164" formatCode="yyyy\-mm\-dd"/>` +
 	`<numFmt numFmtId="165" formatCode="yyyy\-mm\-dd\ hh:mm"/>` +
+	// No currency symbol in the format: which currency it is belongs in the
+	// header, where a person reads it, rather than repeated down four hundred
+	// cells a formula reads. Thousands separators and two decimals are what the
+	// cell itself needs to stop being misread.
+	`<numFmt numFmtId="166" formatCode="#,##0.00"/>` +
+	`<numFmt numFmtId="167" formatCode="#,##0"/>` +
+	`<numFmt numFmtId="168" formatCode="0.00%"/>` +
 	`</numFmts>` +
 	`<fonts count="2">` +
 	`<font><sz val="11"/><color rgb="FF000000"/><name val="Calibri"/><family val="2"/></font>` +
@@ -212,11 +277,14 @@ const stylesXML = xmlHeader +
 	`<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>` +
 	`<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>` +
 	`<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>` +
-	`<cellXfs count="4">` +
+	`<cellXfs count="7">` +
 	`<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>` +
 	`<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>` +
 	`<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>` +
 	`<xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>` +
+	`<xf numFmtId="166" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>` +
+	`<xf numFmtId="167" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>` +
+	`<xf numFmtId="168" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>` +
 	`</cellXfs>` +
 	`<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>` +
 	`</styleSheet>`
@@ -255,16 +323,44 @@ func worksheetXML(sheet Sheet) string {
 	for _, row := range sheet.Rows {
 		fmt.Fprintf(&b, `<row r="%d">`, rowNum)
 		for i, cell := range row {
-			writeCell(&b, i, rowNum, cell, styleFor(cell))
+			writeCell(&b, i, rowNum, cell, styleFor(cell, sheet.columnFormat(i)))
 		}
 		b.WriteString(`</row>`)
 		rowNum++
 	}
-	b.WriteString(`</sheetData></worksheet>`)
+	b.WriteString(`</sheetData>`)
+
+	// The filter dropdowns, over the header and everything under it. After
+	// </sheetData> because the schema says so — Excel refuses the file if it
+	// sits with the other view settings up top.
+	//
+	// Always on rather than asked for: a table the user cannot sort or filter is
+	// a picture of a table, and remembering to switch it on is not a decision
+	// worth handing to whoever wrote the brief.
+	if ref := filterRef(sheet); ref != "" {
+		fmt.Fprintf(&b, `<autoFilter ref="%s"/>`, ref)
+	}
+	b.WriteString(`</worksheet>`)
 	return b.String()
 }
 
-func styleFor(cell Cell) int {
+// columnFormat is the format named for column i, or "" — tolerant of a Formats
+// list shorter than the header, which is the normal shape when only the money
+// columns were named.
+func (s Sheet) columnFormat(i int) string {
+	if i < 0 || i >= len(s.Formats) {
+		return ""
+	}
+	return s.Formats[i]
+}
+
+// styleFor decides how one cell is displayed. The column's own format wins,
+// including over a formula: `=SUM(...)` in a money column is money, and a
+// column that says nothing falls back to what the value *is*.
+func styleFor(cell Cell, format string) int {
+	if s := styleForFormat(format); s != styleDefault {
+		return s
+	}
 	switch cell.Kind {
 	case KindDate:
 		return styleDate
@@ -273,6 +369,21 @@ func styleFor(cell Cell) int {
 	default:
 		return styleDefault
 	}
+}
+
+// filterRef is A1 through the last column of the last row. Empty when there is
+// no header, because a filter needs one to name the columns it filters.
+func filterRef(sheet Sheet) string {
+	if len(sheet.Columns) == 0 {
+		return ""
+	}
+	cols := len(sheet.Columns)
+	for _, row := range sheet.Rows {
+		if len(row) > cols {
+			cols = len(row)
+		}
+	}
+	return "A1:" + columnLetters(cols-1) + strconv.Itoa(len(sheet.Rows)+1)
 }
 
 // writeCell emits one <c>. A blank cell with the default style is skipped
@@ -292,6 +403,12 @@ func writeCell(b *strings.Builder, col, row int, cell Cell, style int) {
 		// some of them as text, and a serial date in exponent notation is not
 		// a date at all.
 		fmt.Fprintf(b, `<c %s><v>%s</v></c>`, attrs, strconv.FormatFloat(cell.Num, 'f', -1, 64))
+	case KindFormula:
+		// No <v>. A cached value we invented would be what the user sees until
+		// something forces a recalculation, which is the same failure as writing
+		// the total down by hand — so the workbook asks for a full calculation
+		// on load (see calcPr) and the answer is always Excel's own.
+		fmt.Fprintf(b, `<c %s><f>%s</f></c>`, attrs, escapeXML(cell.Text))
 	case KindBool:
 		v := "0"
 		if cell.Bool {
@@ -365,6 +482,13 @@ func cellDisplay(cell Cell) string {
 		return "0000-00-00 00:00"
 	case KindBool:
 		return "FALSE"
+	case KindFormula:
+		// Its result is not known here — only Excel works it out — and sizing
+		// the column to the *expression* would make a `=SUMIFS(...)` column
+		// sixty characters wide to hold a number. A total-sized placeholder is
+		// the honest guess, and the alternative was zero: a total row rendering
+		// as ### in the one cell the reader looks at first.
+		return "0,000,000.00"
 	default:
 		return ""
 	}

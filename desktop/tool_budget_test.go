@@ -43,7 +43,32 @@ const (
 	//
 	// Its description was cut to capability alone first (occasions belong in
 	// internal/prompt), which is the order the fix should always take.
-	maxToolBlockTokens = 9600
+	//
+	// Raised to 9,900 on 2026-08-08 for `doc_write`'s `lineitems` block, and
+	// the argument is on the record because that is what this test asks for.
+	//
+	// What it buys is the one thing a language model cannot be trusted with on
+	// a priced document: the arithmetic. A `lineitems` block sends the lines and
+	// the tax rate and gets the amounts, the subtotal, the VAT and the total
+	// worked out in Go — so an invoice's figures are calculated rather than
+	// recalled. A total that was worked out in a model's head arrives looking
+	// exactly like a correct one and is found weeks later by an accountant.
+	//
+	// The two cheaper answers were both tried first and neither reaches. It
+	// cannot move behind a skill: a skill is prose, and this is the shape of the
+	// tool call itself. It cannot move behind `task`: it already is: `doc_write`
+	// sits in the `chairs:` list of the specialized desk, so the assistant never
+	// carries it and only the document agent does. Its description was cut to
+	// capability alone first, in the order above.
+	//
+	// Worth a separate decision, not taken here: this measures the whole
+	// registry, and the three office writers in it (doc_write, sheet_write,
+	// slides_write ≈ 1,000 tokens) are chairs-only. No assistant request has
+	// ever paid for them, so the number this test defends is larger than the
+	// block any real conversation sends. Narrowing the measurement to a desk
+	// would make it truer and would also make it easier to pass, which is why
+	// it is left alone until somebody decides that on purpose.
+	maxToolBlockTokens = 9900
 	// At 48 the count is now full: the next tool has to displace one, and that
 	// is the intended reading of this number rather than a nuisance.
 	maxToolCount = 48

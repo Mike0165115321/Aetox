@@ -9,6 +9,7 @@ import {
   RemoveMCPServer, RemoveExternalSkill, SetProviderEnabled, TerminalShells,
   SkillsDir, SkillScanIssues, OpenSkillsFolder, InstallSkillFromZip,
   MCPConfigPath, OpenMCPFolder, SaveMCPServer, AppVersion, CheckForUpdate, ListChairs, SaveAgentProfile,
+  Connections, ConnectAccount, SetConnectionTargets, VerifyConnection, DisconnectAccount,
 } from './mocks/wailsApp'
 import { applyTypeScale } from '../lib/typeScale.svelte'
 import { cockpit } from '../lib/stores/cockpit.svelte'
@@ -434,7 +435,7 @@ describe('Settings pages', () => {
     expect(screen.getByText('+ $ARGUMENTS')).toBeTruthy()
   })
 
-  // ตัวแทน get their own settings page, listing only them — the office page is
+  // เอเจน get their own settings page, listing only them — the office page is
   // where you work with them (chat, job history), this is where you configure
   // them. Both pages are drawn from one markup (profileListPane), so the two
   // lists cannot drift into two different ideas of what a profile row is.
@@ -446,7 +447,7 @@ describe('Settings pages', () => {
     vi.mocked(ListChairs).mockResolvedValue([{ name: 'deck' }] as any)
 
     const { container } = render(Settings, { onClose: () => {} })
-    await openSection(container, 'ตัวแทน')
+    await openSection(container, 'เอเจน')
 
     await waitFor(() => expect(screen.getByText('ทำสไลด์')).toBeTruthy())
     expect(screen.queryByText('ค้นไฟล์')).toBeNull()
@@ -473,7 +474,7 @@ describe('Settings pages', () => {
 
     render(Settings, { onClose: () => {} })
 
-    await waitFor(() => expect(screen.getByText('ตั้งค่าตัวแทน')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('ตั้งค่าเอเจน')).toBeTruthy())
     // Consumed once — an intent left behind would reopen this editor on the
     // next plain visit to Settings.
     expect(cockpit.settingsIntent).toBeNull()
@@ -486,10 +487,10 @@ describe('Settings pages', () => {
 
   // Where the back button lands, which is the half the two end-tests missed.
   //
-  // The intent used to name section 'agents' — the ผู้ช่วยตัวแทน page — and the
+  // The intent used to name section 'agents' — the ซับเอเจน page — and the
   // editor still came up correct, because the handler forces kind='agent'
   // regardless. So every assertion above passed while the page *underneath* the
-  // editor was the wrong roster: closing it dropped the user on ผู้ช่วยตัวแทน,
+  // editor was the wrong roster: closing it dropped the user on ซับเอเจน,
   // somewhere they had not asked to be and could not have got to from the team
   // page. Only the heading after closing catches that.
   it('goes back to the team roster, not the helpers', async () => {
@@ -501,12 +502,12 @@ describe('Settings pages', () => {
     cockpit.settingsIntent = { section: 'team', agent: 'deck' }
 
     render(Settings, { onClose: () => {} })
-    await waitFor(() => expect(screen.getByText('ตั้งค่าตัวแทน')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('ตั้งค่าเอเจน')).toBeTruthy())
 
     await fireEvent.click(screen.getByText('กลับไปหน้ารวม'))
 
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'ตัวแทน' })).toBeTruthy())
-    expect(screen.queryByRole('heading', { name: 'ผู้ช่วยตัวแทน' })).toBeNull()
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'เอเจน' })).toBeTruthy())
+    expect(screen.queryByRole('heading', { name: 'ซับเอเจน' })).toBeNull()
   })
 
   it('opens a blank agent form when the team page asks to create one', async () => {
@@ -514,7 +515,7 @@ describe('Settings pages', () => {
 
     render(Settings, { onClose: () => {} })
 
-    await waitFor(() => expect(screen.getByText('ตั้งค่าตัวแทน')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('ตั้งค่าเอเจน')).toBeTruthy())
     expect(cockpit.settingsIntent).toBeNull()
   })
 
@@ -531,7 +532,7 @@ describe('Settings pages', () => {
     vi.mocked(ListChairs).mockResolvedValue([{ name: 'deck' }] as any)
 
     const { container } = render(Settings, { onClose: () => {} })
-    await openSection(container, 'ผู้ช่วยตัวแทน')
+    await openSection(container, 'ซับเอเจน')
 
     await waitFor(() => expect(screen.getByText('ค้นไฟล์')).toBeTruthy())
     expect(screen.queryByText('deck')).toBeNull()
@@ -543,13 +544,13 @@ describe('Settings pages', () => {
   // read-only roster.
   it('shows a sick file with the reason it cannot run', async () => {
     vi.mocked(ListSubagentProfiles).mockResolvedValue([
-      { name: 'หลงบ้าน', description: 'อยากเป็นตัวแทน', prompt: 'role', builtin: true,
+      { name: 'หลงบ้าน', description: 'อยากเป็นเอเจน', prompt: 'role', builtin: true,
         invalid: 'ไฟล์นี้เสีย จึงไม่ถูกใช้งาน' },
     ] as any)
     vi.mocked(ListChairs).mockResolvedValue([] as any)
 
     const { container } = render(Settings, { onClose: () => {} })
-    await openSection(container, 'ผู้ช่วยตัวแทน')
+    await openSection(container, 'ซับเอเจน')
 
     await waitFor(() => expect(screen.getByText('หลงบ้าน')).toBeTruthy())
     expect(screen.getByText(/ไฟล์นี้เสีย/)).toBeTruthy()
@@ -560,7 +561,7 @@ describe('Settings pages', () => {
   // bundled set is listed, because "yours" cannot exist.
   it('the sub-agents page is a read-only system roster', async () => {
     const { container } = render(Settings, { onClose: () => {} })
-    await openSection(container, 'ผู้ช่วยตัวแทน')
+    await openSection(container, 'ซับเอเจน')
 
     await waitFor(() => expect(screen.getByText('ค้นไฟล์')).toBeTruthy())
     const cards = container.querySelectorAll('.settings-card')
@@ -586,7 +587,7 @@ describe('Settings pages', () => {
 
   it('the model dropdown pins a model per agent', async () => {
     const { container } = render(Settings, { onClose: () => {} })
-    await openSection(container, 'ตัวแทน')
+    await openSection(container, 'เอเจน')
     await waitFor(() => expect(container.querySelectorAll('.set-row select.ctrl').length).toBe(3))
 
     const selects = Array.from(container.querySelectorAll('.set-row select.ctrl')) as HTMLSelectElement[]
@@ -610,7 +611,7 @@ describe('Settings pages', () => {
   it('editing a built-in agent splits its real file into fields and says what saving does', async () => {
     withPickableTools()
     const { container } = render(Settings, { onClose: () => {} })
-    await openSection(container, 'ตัวแทน')
+    await openSection(container, 'เอเจน')
     await waitFor(() => expect(screen.getAllByText('ตั้งค่า').length).toBe(3))
 
     // The built-in group's first row (deck) — index 2 overall: yours come first.
@@ -650,7 +651,7 @@ describe('Settings pages', () => {
   // back exactly the way it was shown — the field split is a display choice,
   // not a new file format.
   const openToolPicker = async (container: HTMLElement, rowIndex: number) => {
-    await openSection(container, 'ตัวแทน')
+    await openSection(container, 'เอเจน')
     await waitFor(() => expect(screen.getAllByText('ตั้งค่า').length).toBe(3))
     await fireEvent.click(screen.getAllByText('ตั้งค่า')[rowIndex])
     await waitFor(() => expect(container.querySelector('.ag-toolsum')).toBeTruthy())
@@ -732,7 +733,7 @@ describe('Settings pages', () => {
   // keyword — a number in the box must never become "no ceiling" by accident.
   it('the loop cap can be removed, and says so in the file as a word', async () => {
     const { container } = render(Settings, { onClose: () => {} })
-    await openSection(container, 'ตัวแทน')
+    await openSection(container, 'เอเจน')
     await waitFor(() => expect(screen.getAllByText('ตั้งค่า').length).toBe(3))
     await fireEvent.click(screen.getAllByText('ตั้งค่า')[2])
     await waitFor(() => expect(container.querySelector('.ag-steprow')).toBeTruthy())
@@ -753,7 +754,7 @@ describe('Settings pages', () => {
   // "delete" — the row is not going away.
   it('a shadow offers to revert, not to delete', async () => {
     const { container } = render(Settings, { onClose: () => {} })
-    await openSection(container, 'ตัวแทน')
+    await openSection(container, 'เอเจน')
     await waitFor(() => expect(screen.getAllByText('ตั้งค่า').length).toBe(3))
 
     await fireEvent.click(screen.getAllByText('ตั้งค่า')[1]) // mine-deck, the shadow
@@ -763,10 +764,10 @@ describe('Settings pages', () => {
 
   it('a new agent opens with guidance in the role field, not a raw frontmatter skeleton', async () => {
     const { container } = render(Settings, { onClose: () => {} })
-    await openSection(container, 'ตัวแทน')
-    await waitFor(() => expect(screen.getByText('สร้างตัวแทนใหม่')).toBeTruthy())
+    await openSection(container, 'เอเจน')
+    await waitFor(() => expect(screen.getByText('เพิ่มเอเจนเฉพาะทาง')).toBeTruthy())
 
-    await fireEvent.click(screen.getByText('สร้างตัวแทนใหม่'))
+    await fireEvent.click(screen.getByText('เพิ่มเอเจนเฉพาะทาง'))
     // Frontmatter is fields now, so a new agent has none of it to see or
     // mistype — the role box only ever holds guidance on what to write.
     const body = container.querySelector('.ag-body') as HTMLTextAreaElement
@@ -1334,5 +1335,208 @@ describe('Settings About page', () => {
     await waitFor(() => expect(screen.getByText('การตรวจหาการอัปเดตถูกปิดไว้')).toBeTruthy())
     expect(container.textContent).toContain('AETOX_DISABLE_UPDATE_CHECK')
     expect(screen.queryByText('ตรวจหาการอัปเดตไม่สำเร็จ')).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Connections - a register of external accounts: one line per service until
+// you open it, and inside, who may use it.
+// ---------------------------------------------------------------------------
+
+const openConnections = async () => {
+  const rendered = render(Settings, { onClose: () => {} })
+  const item = Array.from(rendered.container.querySelectorAll('.settings-nav-item'))
+    .find((el) => el.textContent?.includes('การเชื่อมต่อ'))
+  if (!item) throw new Error('nav item not found')
+  await fireEvent.click(item)
+  return rendered
+}
+
+// Opens the row itself, which is where everything but the name and the state
+// lives now.
+const expandRow = async (container: HTMLElement) => {
+  const head = container.querySelector('.reg-head')
+  if (!head) throw new Error('no connection row to open')
+  await fireEvent.click(head)
+}
+
+const githubRow = (over: Record<string, unknown> = {}) => [{
+  id: 'github', label: 'GitHub', kind: 'token',
+  token_url: 'https://github.com/settings/tokens/new',
+  connected: false, env_override: false, for: [], configured: false,
+  tools: ['github_search', 'plugin_install'],
+  ...over,
+}]
+
+const connectedRow = (over: Record<string, unknown> = {}) => githubRow({
+  connected: true, login: 'mike', source: 'connection', for: ['coding'], configured: true, ...over,
+})
+
+describe('Connections page', () => {
+  // Collapsed is the state a returning user arrives in, so the line has to
+  // carry the whole answer: which service, whether it is attached, and a way in.
+  it('lists each service as one line with its state and a way to connect', async () => {
+    vi.mocked(Connections).mockResolvedValue(githubRow() as any)
+    const { container } = await openConnections()
+
+    await waitFor(() => expect(screen.getByText('ยังไม่ได้เชื่อม')).toBeTruthy())
+    expect(screen.getByText('GitHub')).toBeTruthy()
+    expect(screen.getByText('เชื่อม')).toBeTruthy()
+    // Nothing is open, so no token box is on screen waiting to be pasted into.
+    expect(container.querySelector('input[type="password"]')).toBeNull()
+    expect(container.querySelector('.conn-body')).toBeNull()
+  })
+
+  it('opens one row at a time, and the connect button opens it too', async () => {
+    vi.mocked(Connections).mockResolvedValue(githubRow() as any)
+    const { container } = await openConnections()
+    await waitFor(() => expect(screen.getByText('ยังไม่ได้เชื่อม')).toBeTruthy())
+
+    await fireEvent.click(screen.getByText('เชื่อม'))
+    await waitFor(() => expect(container.querySelector('.conn-body')).toBeTruthy())
+    expect(container.querySelector('input[type="password"]')).toBeTruthy()
+
+    // And the header closes it again.
+    await expandRow(container)
+    await waitFor(() => expect(container.querySelector('.conn-body')).toBeNull())
+  })
+
+  // A connected row says where it reaches without being opened, by name -
+  // "2 desks" would make you open it to find out which two.
+  it('names the desks on the collapsed row of a connected service', async () => {
+    vi.mocked(Connections).mockResolvedValue(connectedRow() as any)
+    const { container } = await openConnections()
+
+    await waitFor(() => expect(screen.getByText('เชื่อมแล้วในชื่อ mike')).toBeTruthy())
+    expect(container.querySelector('.mcp-badge')?.textContent?.trim()).toBe('โค้ด')
+  })
+
+  // Never placed is not "off" - it is carried everywhere, and the row must say
+  // which of the two it is.
+  it('says every desk on a connected service nobody has placed yet', async () => {
+    vi.mocked(Connections).mockResolvedValue(connectedRow({ for: [], configured: false }) as any)
+    const { container } = await openConnections()
+
+    await waitFor(() => expect(screen.getByText('เชื่อมแล้วในชื่อ mike')).toBeTruthy())
+    expect(container.querySelector('.mcp-badge')?.textContent?.trim()).toBe('ทุกโต๊ะ')
+    expect(container.querySelector('.mcp-badge-warn')).toBeNull()
+  })
+
+  // Connected and placed nowhere looks healthy and reaches no one - the one
+  // state worth interrupting for, same as the MCP register calls out.
+  it('calls out a connection that serves nobody', async () => {
+    vi.mocked(Connections).mockResolvedValue(connectedRow({ for: [] }) as any)
+    const { container } = await openConnections()
+
+    await waitFor(() => expect(screen.getByText('ไม่มีใคร')).toBeTruthy())
+    expect(container.querySelector('.mcp-badge-warn')).toBeTruthy()
+  })
+
+  it('offers every desk and agent as a placement, desks picked and agents not', async () => {
+    vi.mocked(Connections).mockResolvedValue(githubRow() as any)
+    const { container } = await openConnections()
+    await waitFor(() => expect(screen.getByText('ยังไม่ได้เชื่อม')).toBeTruthy())
+    await expandRow(container)
+
+    const chips = Array.from(container.querySelectorAll('.conn-chip'))
+    expect(chips.map((c) => c.textContent?.trim())).toEqual(['ผู้ช่วย', 'โค้ด', 'researcher'])
+    // An agent is handed things on purpose; a desk is where work already happens.
+    expect(chips.map((c) => c.getAttribute('aria-pressed'))).toEqual(['true', 'true', 'false'])
+  })
+
+  it('connects with the pasted token and the chosen desks in one call', async () => {
+    vi.mocked(Connections)
+      .mockResolvedValueOnce(githubRow() as any)
+      .mockResolvedValue(connectedRow() as any)
+    const { container } = await openConnections()
+    await waitFor(() => expect(screen.getByText('ยังไม่ได้เชื่อม')).toBeTruthy())
+    await expandRow(container)
+
+    const chips = Array.from(container.querySelectorAll('.conn-chip'))
+    await fireEvent.click(chips[0])
+
+    const field = container.querySelector('input[type="password"]') as HTMLInputElement
+    await fireEvent.input(field, { target: { value: '  ghp_example  ' } })
+    await fireEvent.click(screen.getByText('เชื่อม'))
+
+    await waitFor(() =>
+      expect(vi.mocked(ConnectAccount)).toHaveBeenCalledWith('github', 'ghp_example', ['coding']))
+    await waitFor(() => expect(screen.getByText('เชื่อมแล้วในชื่อ mike')).toBeTruthy())
+    expect(container.textContent).toContain('สิทธิ์: repo')
+    expect(container.querySelector('input[type="password"]')).toBeNull()
+  })
+
+  // Flipping a switch on a connected row writes straight through. It must not
+  // go via the connect path, which would send the token field along with it.
+  it('moves a connected account between desks without touching its token', async () => {
+    vi.mocked(Connections).mockResolvedValue(connectedRow() as any)
+    // Cleared rather than assumed clean: this is the one assertion in the file
+    // that a binding was *not* called, so a call left over from an earlier test
+    // would fail it for a reason that has nothing to do with the page.
+    vi.mocked(ConnectAccount).mockClear()
+    const { container } = await openConnections()
+    await waitFor(() => expect(screen.getByText('เชื่อมแล้วในชื่อ mike')).toBeTruthy())
+    await expandRow(container)
+
+    const chips = Array.from(container.querySelectorAll('.conn-chip'))
+    await fireEvent.click(chips[0])
+
+    await waitFor(() =>
+      expect(vi.mocked(SetConnectionTargets)).toHaveBeenCalledWith('github', ['coding', 'assistant']))
+    expect(vi.mocked(ConnectAccount)).not.toHaveBeenCalled()
+  })
+
+  it('keeps the typed token when the service rejects it', async () => {
+    vi.mocked(Connections).mockResolvedValue(githubRow() as any)
+    vi.mocked(ConnectAccount).mockRejectedValueOnce(new Error('GitHub rejected this token'))
+    const { container } = await openConnections()
+    await waitFor(() => expect(screen.getByText('ยังไม่ได้เชื่อม')).toBeTruthy())
+    await expandRow(container)
+
+    const field = container.querySelector('input[type="password"]') as HTMLInputElement
+    await fireEvent.input(field, { target: { value: 'ghp_wrong' } })
+    await fireEvent.click(screen.getByText('เชื่อม'))
+
+    await waitFor(() => expect(container.textContent).toContain('GitHub rejected this token'))
+    expect((container.querySelector('input[type="password"]') as HTMLInputElement).value).toBe('ghp_wrong')
+  })
+
+  // Disconnect lives inside the row on purpose: it is not something to do by
+  // accident while scanning a list.
+  it('disconnects from inside the opened row', async () => {
+    vi.mocked(Connections)
+      .mockResolvedValueOnce(connectedRow() as any)
+      .mockResolvedValue(githubRow() as any)
+    const { container } = await openConnections()
+    await waitFor(() => expect(screen.getByText('เชื่อมแล้วในชื่อ mike')).toBeTruthy())
+    expect(screen.queryByText('เลิกเชื่อม')).toBeNull()
+
+    await expandRow(container)
+    await fireEvent.click(screen.getByText('เลิกเชื่อม'))
+    await waitFor(() => expect(vi.mocked(DisconnectAccount)).toHaveBeenCalledWith('github'))
+    await waitFor(() => expect(screen.getByText('ยังไม่ได้เชื่อม')).toBeTruthy())
+  })
+
+  // A token exported in a shell profile is why GitHub keeps working for someone
+  // who never connected anything. The page has to say so, and must still offer
+  // the form, since connecting an account is how you take that override back.
+  it('says when the token comes from the environment, and still offers to connect', async () => {
+    vi.mocked(Connections).mockResolvedValue(
+      githubRow({ connected: true, source: 'environment', env_override: true }) as any)
+    const { container } = await openConnections()
+
+    await waitFor(() => expect(screen.getByText('กำลังใช้ token จาก environment')).toBeTruthy())
+    await expandRow(container)
+    expect(container.querySelector('input[type="password"]')).toBeTruthy()
+    expect(screen.queryByText('เลิกเชื่อม')).toBeNull()
+  })
+
+  it('discloses an environment token that the connected account is overriding', async () => {
+    vi.mocked(Connections).mockResolvedValue(connectedRow({ env_override: true }) as any)
+    const { container } = await openConnections()
+    await waitFor(() => expect(screen.getByText('เชื่อมแล้วในชื่อ mike')).toBeTruthy())
+    await expandRow(container)
+
+    expect(container.textContent).toContain('แต่ Aetox ใช้บัญชีที่เชื่อมไว้')
   })
 })

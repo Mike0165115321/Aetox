@@ -142,6 +142,11 @@ func BuildForDesk(surface Surface, scope Scope, desk Desk) string {
 // adds direction to that identity and never replaces it: "this session is
 // coding work", never "you are a coding assistant".
 //
+// That holds for a chair too. A direct chat with one of the team runs on that
+// worker's own brief as its direction — it is still Aetox, specialised, not a
+// second personality (§44.0). What the brief needed was to be *read*, which is
+// a matter of where it sits, not of replacing the identity above it.
+//
 // Order is the whole precedence policy, as it was before desks: engine text
 // first, then what the user told the agent, then what the agent concluded, then
 // what this project requires. The desk's direction sits with the engine text
@@ -151,6 +156,21 @@ func BuildWithReport(surface Surface, scope Scope, desk Desk) (string, Loaded) {
 	sandboxRoot := scope.Root
 	var b strings.Builder
 	b.WriteString(identity(surface))
+	// Second, always — one rule, no branch on what kind of direction it is.
+	//
+	// It used to be written twelve sections down, which put a chair's brief at
+	// 68% of a 15.7k prompt: the worker was asked who it was and answered from
+	// the assistant's opening line, correctly, because that was the first thing
+	// it read. Direction is the answer to "what is this session", and an answer
+	// filed after ten thousand characters of machine rules is not one.
+	//
+	// The cost is real and small: two sessions at different desks now share only
+	// this opening line as a cached prefix instead of the whole engine block.
+	// Sessions at the same desk — which is how anyone actually works — share
+	// everything they did before.
+	if direction := strings.TrimSpace(desk.Direction); direction != "" {
+		b.WriteString("\n" + direction + "\n\n")
+	}
 	b.WriteString(environment(scope))
 	// Directly after environment, which is where the session's reach is
 	// described: the project is the one nearby fact that does *not* change that
@@ -161,14 +181,18 @@ func BuildWithReport(surface Surface, scope Scope, desk Desk) (string, Loaded) {
 	b.WriteString(fileEditing())
 	b.WriteString(batchWork())
 	b.WriteString(computing())
-	b.WriteString(drawing())
-	b.WriteString(panel())
+	// Only where the surface can draw them. Both layers open with "your answer
+	// is rendered as markdown, and inline SVG/HTML in it is drawn" — true of
+	// the desktop's chat, false of a terminal, and a model told its terminal
+	// renders SVG hands the user a page of coordinates where the picture was
+	// meant to be. identity() has drawn this same line since it existed.
+	if surface == SurfaceDesktop {
+		b.WriteString(drawing())
+		b.WriteString(panel())
+	}
 	b.WriteString(longform())
 	b.WriteString(narration())
 	b.WriteString(clarify())
-	if direction := strings.TrimSpace(desk.Direction); direction != "" {
-		b.WriteString("\n" + direction + "\n")
-	}
 
 	var loaded Loaded
 	loaded.UserGlobalPaths = foldIdentityLayers(&b)
@@ -291,7 +315,15 @@ func capability() string {
 		"about to build from scratch something that sounds like a job this user does more than once. " +
 		"A lookup that finds nothing costs one cheap round. Telling the user you cannot do something " +
 		"you were simply never shown reads to them exactly like a real limit — so they stop asking, " +
-		"and it is the one wrong answer that hides its own mistake.\n"
+		"and it is the one wrong answer that hides its own mistake.\n" +
+		// The same mistake from the other side. A tool that is genuinely absent
+		// — an account nobody connected, a server that was never added — is a
+		// sentence the user can act on, and silence about it is not modesty. It
+		// is also not a reason to stop: what can be done without the missing
+		// thing is still worth doing, and usually most of the answer.
+		"When something you need really is absent, say which one and where it is switched on, and ask " +
+		"for it. Then do the part that does not need it. Refusing a whole job over one missing piece, " +
+		"and finishing a job while quietly missing a piece, are the same error told two ways.\n"
 }
 
 // fileEditing tells the model how to change a file it has already written.

@@ -207,3 +207,25 @@ describe('a drawing arriving one token at a time', () => {
     expect(out).toContain('รูปแบบไฟล์ที่ใช้คือ svg ครับ')
   })
 })
+
+describe('taking a drawing out of the app', () => {
+  it('frames every top-level drawing with copy and save controls', () => {
+    const html = renderMarkdown('<svg viewBox="0 0 10 10"><rect width="4" height="4" /></svg>')
+    const host = document.createElement('div')
+    host.innerHTML = html
+    const box = host.querySelector('.drawing-box')
+    expect(box, 'the drawing should sit inside its frame').toBeTruthy()
+    expect(box?.querySelector('svg')).toBeTruthy()
+    expect(box?.querySelector('button.drawing-copy')).toBeTruthy()
+    expect(box?.querySelector('button.drawing-save')).toBeTruthy()
+  })
+
+  it('does not put controls on an svg nested inside a drawing', () => {
+    const html = renderMarkdown(
+      '<svg viewBox="0 0 10 10"><svg x="1"><rect width="2" height="2" /></svg></svg>'
+    )
+    const host = document.createElement('div')
+    host.innerHTML = html
+    expect(host.querySelectorAll('.drawing-box').length).toBe(1)
+  })
+})

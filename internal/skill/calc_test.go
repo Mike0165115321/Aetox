@@ -57,6 +57,19 @@ func TestCalcAcceptsConsoleLog(t *testing.T) {
 	}
 }
 
+// console.table is the same muscle for tabular results — and a console that
+// exists but lacks the member dies on a TypeError, a worse error than the
+// ReferenceError console.log's absence gave ("Object has no member 'table'",
+// seen in the wild 2026-08-07). The data prints as JSON; no column art.
+func TestCalcAcceptsConsoleTable(t *testing.T) {
+	out := run(t, `console.table([{year: 1, value: 9300}]); 9300`)
+	for _, want := range []string{`"year":1`, `"value":9300`, "= 9300"} {
+		if !strings.Contains(out.Content, want) {
+			t.Errorf("calc output missing %q:\n%s", want, out.Content)
+		}
+	}
+}
+
 // `return` is what anyone writes when told to hand back an answer, and it is
 // illegal at the top level of a script. It is also the way out of a real trap:
 // a script whose last line is `({total: x})` is read as a call on the line

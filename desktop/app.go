@@ -1284,6 +1284,17 @@ func (a *App) outputSubdir() string {
 func unfocusedRoot() string {
 	home, err := os.UserHomeDir()
 	if err != nil || strings.TrimSpace(home) == "" {
+		// Never "". config.Load answers an empty root with os.Getwd(), and an
+		// installed desktop's cwd is C:\Program Files\Aetox — a root where the
+		// session's first write dies on "Access is denied". This is a real
+		// launch path, not a hypothetical: an installer's "เปิดเลย" checkbox
+		// spawns the app with a stripped environment and no USERPROFILE (seen
+		// 2026-08-08, tool_runs #533 — an assistant chat whose output folder
+		// landed in Program Files). The data root resolves through its own
+		// chain (env override → config dir → temp), all of them writable.
+		if root, rootErr := config.DataRoot(); rootErr == nil && strings.TrimSpace(root) != "" {
+			return filepath.Join(root, "workspace")
+		}
 		return ""
 	}
 	return filepath.Join(home, "aetox")
@@ -1522,10 +1533,15 @@ func (a *App) GetModelInfo() ModelInfo {
 		warning = a.modelErr.Error()
 	}
 	return ModelInfo{
-		Provider:     a.cfg.ModelProvider,
-		ModelName:    a.cfg.ModelName,
-		ThinkLevel:   a.cfg.ThinkLevel,
-		ApprovalMode: a.cfg.ApprovalMode,
+		Provider:   a.cfg.ModelProvider,
+		ModelName:  a.cfg.ModelName,
+		ThinkLevel: a.cfg.ThinkLevel,
+		// Normalized, never raw: before startup() has built a config this is
+		// "", and the frontend CACHES what this reports (seedModelFromCache) —
+		// so one early call painted an empty approval dropdown on every launch
+		// after it, until a later fetch happened to overwrite the cache. "ask"
+		// is also the honest answer for that window: nothing has widened yet.
+		ApprovalMode: string(safety.NormalizeApprovalMode(a.cfg.ApprovalMode)),
 		ContextUsed:  used,
 		ContextMax:   a.contextWindowTokens(),
 		WireFormat:   effectiveWireFormat(a.cfg.ModelProvider, a.cfg.ModelWireFormat),

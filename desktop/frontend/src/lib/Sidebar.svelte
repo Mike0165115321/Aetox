@@ -2,13 +2,14 @@
   import { onMount } from 'svelte'
   import {
     cockpit, newSession, openFolder, openProject, openDesk, setActiveView,
-    searchGlobalHistory, selectGlobalSession, deleteSession,
+    searchGlobalHistory, selectGlobalSession, deleteSession, exportChat, importChat,
   } from './stores/cockpit.svelte'
   import type { Session } from './types'
   import { UserName, SetUserName, ListModes } from '../../wailsjs/go/main/App'
   import { navFor, deskLabelKey, type NavEntry } from './desks'
   import { shell } from './shell.svelte'
   import { t, i18n, setLocale, localeNames, type Locale, type TKey } from './i18n.svelte'
+  import { dayBucket } from './dayBucket'
   import { theme, applyTheme, THEMES, type ThemeName } from './theme.svelte'
   import Icon from './Icon.svelte'
 
@@ -67,6 +68,17 @@
     }
     confirmDeleteId = ''
     deleteSession(s)
+  }
+
+  // Two-step export, same shape as delete: the first click asks the one
+  // question a format picker exists to ask — read it (MD) or move it (JSON).
+  let exportChoiceId = $state('')
+  function onExportSession(s: Session) {
+    exportChoiceId = exportChoiceId === s.id ? '' : s.id
+  }
+  function pickExport(s: Session, format: 'markdown' | 'json') {
+    exportChoiceId = ''
+    void exportChat(s, format)
   }
   const projectGroups = $derived(
     (cockpit.projects || []).map((p) => ({
@@ -146,26 +158,9 @@
   }
 
   // ---------- Day headers ----------
-  // "3 วันที่แล้ว" on fourteen rows in a column is not a list, it is a wall.
-  // The label answers "how long ago"; the header answers "which day" — and only
-  // the second one lets the eye skip. Calendar days, not 24-hour buckets: a
-  // chat from 11pm last night is yesterday's at 1am, whatever the arithmetic
-  // says.
-  const DAY_MS = 86_400_000
-  function dayBucket(iso: string | undefined): TKey {
-    const parsed = iso ? Date.parse(iso) : NaN
-    if (Number.isNaN(parsed)) return 'sidebar.older'
-    const todayStart = new Date()
-    todayStart.setHours(0, 0, 0, 0)
-    const thatDay = new Date(parsed)
-    thatDay.setHours(0, 0, 0, 0)
-    const days = Math.round((todayStart.getTime() - thatDay.getTime()) / DAY_MS)
-    if (days <= 0) return 'sidebar.today'
-    if (days === 1) return 'sidebar.yesterday'
-    if (days <= 7) return 'sidebar.last7Days'
-    if (days <= 30) return 'sidebar.last30Days'
-    return 'sidebar.older'
-  }
+  // The bucketing lives in ./dayBucket, shared with the office's job feed —
+  // two lists that disagree about which day "เมื่อวาน" is would be one copy of
+  // this arithmetic too many.
 
   // Search results rank by match, not by date, so grouping them would print
   // "วันนี้" three times down one list. A flat list is the honest shape there.
@@ -201,8 +196,20 @@
      branch is a copy that drifts. -->
 {#snippet sessionRow(s: Session)}
   <button type="button" class="sess-row" class:active={s.active} onclick={() => selectGlobalSession(s)}>
+    <!-- The title gets the line to itself. It used to share one line with the
+         chip, the age and two hover-only buttons — all of them flex:none, so
+         the only thing that could give way was the title, and in a 280px rail
+         "ค้นไฟล์ทั้งเครื่องแล้วสรุป" arrived on screen as "ค้นไฟล์ทั้งเครื่..." with an
+         inch of empty space to its right. A list whose rows cannot say what
+         they are is not a history. -->
     <span class="sess-line">
       <span class="t">{s.title}</span>
+      {#if s.active}<span class="dot green"></span>{/if}
+    </span>
+    <!-- Everything that describes the row rather than names it, on the second
+         line where there is room to spare — and that spare room is where the
+         hover actions live, so revealing them costs the title nothing. -->
+    <span class="sess-meta">
       {#if s.space}
         <!-- Only a search result can carry this: the lists drop project chats,
              because they belong to the project's own list (§90). Saying which
@@ -218,12 +225,26 @@
         <span class="sess-desk">{t(deskLabelKey(s.mode) as TKey)}</span>
       {/if}
       <span class="ago">{s.ago}</span>
-      {#if s.active}<span class="dot green"></span>{/if}
-      <span class="sess-del" class:confirm={confirmDeleteId === s.id} role="button" tabindex="0"
-        aria-label={t('sidebar.deleteSession')}
-        onclick={(e) => { e.stopPropagation(); onDeleteSession(s) }}
-        onkeydown={(e) => e.key === 'Enter' && (e.stopPropagation(), onDeleteSession(s))}>
-        {#if confirmDeleteId === s.id}{t('sidebar.confirmDelete')}{:else}<Icon name="x" size={12} />{/if}
+      <span class="sess-acts">
+        <span class="sess-exp" class:armed={exportChoiceId === s.id} role="button" tabindex="0"
+          aria-label={t('sidebar.exportSession')}
+          onclick={(e) => { e.stopPropagation(); onExportSession(s) }}
+          onkeydown={(e) => e.key === 'Enter' && (e.stopPropagation(), onExportSession(s))}>
+          {#if exportChoiceId === s.id}
+            <span class="fmt" role="button" tabindex="0"
+              onclick={(e) => { e.stopPropagation(); pickExport(s, 'markdown') }}
+              onkeydown={(e) => e.key === 'Enter' && (e.stopPropagation(), pickExport(s, 'markdown'))}>MD</span>
+            <span class="fmt" role="button" tabindex="0"
+              onclick={(e) => { e.stopPropagation(); pickExport(s, 'json') }}
+              onkeydown={(e) => e.key === 'Enter' && (e.stopPropagation(), pickExport(s, 'json'))}>JSON</span>
+          {:else}<Icon name="download" size={12} />{/if}
+        </span>
+        <span class="sess-del" class:confirm={confirmDeleteId === s.id} role="button" tabindex="0"
+          aria-label={t('sidebar.deleteSession')}
+          onclick={(e) => { e.stopPropagation(); onDeleteSession(s) }}
+          onkeydown={(e) => e.key === 'Enter' && (e.stopPropagation(), onDeleteSession(s))}>
+          {#if confirmDeleteId === s.id}{t('sidebar.confirmDelete')}{:else}<Icon name="x" size={12} />{/if}
+        </span>
       </span>
     </span>
     <!-- Second line only while searching: the matched excerpt is why
@@ -270,6 +291,10 @@
         bind:value={historyQuery} oninput={onHistorySearchInput} />
     </span>
     <button
+      type="button" class="icobtn tip-r" aria-label={t('sidebar.importSession')}
+      data-tip={t('sidebar.importSession')} onclick={() => void importChat()}
+    ><Icon name="upload" size={15} /></button>
+    <button
       type="button" class="icobtn tip-r" aria-label={t('sidebar.newSession')}
       data-tip="{t('sidebar.newSession')} · Ctrl+N" onclick={newSession}
     ><Icon name="pencil" size={15} /></button>
@@ -313,10 +338,26 @@
               {#each expandedProjects[g.project.key] ? g.sessions : g.sessions.slice(0, PROJECT_GROUP_PREVIEW) as s (s.id)}
                 <div class="proj-group-sess" class:active={s.active}>
                   <button type="button" class="proj-group-sess-open" onclick={() => selectGlobalSession(s)}>{s.title}</button>
-                  <button type="button" class="sess-del" class:confirm={confirmDeleteId === s.id}
-                    aria-label={t('sidebar.deleteSession')} onclick={() => onDeleteSession(s)}>
-                    {#if confirmDeleteId === s.id}{t('sidebar.confirmDelete')}{:else}<Icon name="x" size={12} />{/if}
-                  </button>
+                  <!-- Floated over the row's right end rather than sitting in
+                       it: this row has only one line, and two invisible buttons
+                       holding 50px open is 50px the chat's name never gets. -->
+                  <span class="sess-acts float">
+                    <button type="button" class="sess-exp" class:armed={exportChoiceId === s.id}
+                      aria-label={t('sidebar.exportSession')} onclick={() => onExportSession(s)}>
+                      {#if exportChoiceId === s.id}
+                        <span class="fmt" role="button" tabindex="0"
+                          onclick={(e) => { e.stopPropagation(); pickExport(s, 'markdown') }}
+                          onkeydown={(e) => e.key === 'Enter' && (e.stopPropagation(), pickExport(s, 'markdown'))}>MD</span>
+                        <span class="fmt" role="button" tabindex="0"
+                          onclick={(e) => { e.stopPropagation(); pickExport(s, 'json') }}
+                          onkeydown={(e) => e.key === 'Enter' && (e.stopPropagation(), pickExport(s, 'json'))}>JSON</span>
+                      {:else}<Icon name="download" size={12} />{/if}
+                    </button>
+                    <button type="button" class="sess-del" class:confirm={confirmDeleteId === s.id}
+                      aria-label={t('sidebar.deleteSession')} onclick={() => onDeleteSession(s)}>
+                      {#if confirmDeleteId === s.id}{t('sidebar.confirmDelete')}{:else}<Icon name="x" size={12} />{/if}
+                    </button>
+                  </span>
                 </div>
               {/each}
               {#if g.sessions.length > PROJECT_GROUP_PREVIEW}

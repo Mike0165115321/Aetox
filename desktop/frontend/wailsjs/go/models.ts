@@ -58,6 +58,59 @@ export namespace config {
 
 }
 
+export namespace connect {
+	
+	export class Account {
+	    login: string;
+	    name?: string;
+	    scopes?: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new Account(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.login = source["login"];
+	        this.name = source["name"];
+	        this.scopes = source["scopes"];
+	    }
+	}
+	export class Status {
+	    id: string;
+	    label: string;
+	    kind: string;
+	    token_url?: string;
+	    connected: boolean;
+	    login?: string;
+	    source?: string;
+	    env_override: boolean;
+	    for: string[];
+	    configured: boolean;
+	    tools: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new Status(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.label = source["label"];
+	        this.kind = source["kind"];
+	        this.token_url = source["token_url"];
+	        this.connected = source["connected"];
+	        this.login = source["login"];
+	        this.source = source["source"];
+	        this.env_override = source["env_override"];
+	        this.for = source["for"];
+	        this.configured = source["configured"];
+	        this.tools = source["tools"];
+	    }
+	}
+
+}
+
 export namespace main {
 	
 	export class AgentPage {
@@ -76,27 +129,6 @@ export namespace main {
 	        this.time = source["time"];
 	    }
 	}
-	export class ArtifactPreview {
-	    kind: string;
-	    text?: string;
-	    dataUrl?: string;
-	    rows?: string[][];
-	    sheet?: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new ArtifactPreview(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.kind = source["kind"];
-	        this.text = source["text"];
-	        this.dataUrl = source["dataUrl"];
-	        this.rows = source["rows"];
-	        this.sheet = source["sheet"];
-	    }
-	}
-
 	export class Artifact {
 	    name: string;
 	    path: string;
@@ -117,6 +149,26 @@ export namespace main {
 	        this.size = source["size"];
 	        this.modified = source["modified"];
 	        this.root = source["root"];
+	    }
+	}
+	export class ArtifactPreview {
+	    kind: string;
+	    text?: string;
+	    dataUrl?: string;
+	    rows?: string[][];
+	    sheet?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ArtifactPreview(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.text = source["text"];
+	        this.dataUrl = source["dataUrl"];
+	        this.rows = source["rows"];
+	        this.sheet = source["sheet"];
 	    }
 	}
 	export class Chair {
@@ -314,22 +366,6 @@ export namespace main {
 	        this.err = source["err"];
 	    }
 	}
-	export class MCPTarget {
-	    id: string;
-	    name: string;
-	    kind: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new MCPTarget(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.id = source["id"];
-	        this.name = source["name"];
-	        this.kind = source["kind"];
-	    }
-	}
 	export class ModelInfo {
 	    provider: string;
 	    modelName: string;
@@ -390,6 +426,22 @@ export namespace main {
 	        this.state = source["state"];
 	        this.createdAt = source["createdAt"];
 	        this.decidedAt = source["decidedAt"];
+	    }
+	}
+	export class PlacementTarget {
+	    id: string;
+	    name: string;
+	    kind: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new PlacementTarget(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.kind = source["kind"];
 	    }
 	}
 	export class ProjectMeta {
@@ -980,6 +1032,7 @@ export namespace mode {
 	    tools?: string[];
 	    deny?: string[];
 	    mcp?: string[];
+	    connections?: string[];
 	    chairs?: string[];
 	    dispatch?: string[];
 	    prompt: string;
@@ -999,6 +1052,7 @@ export namespace mode {
 	        this.tools = source["tools"];
 	        this.deny = source["deny"];
 	        this.mcp = source["mcp"];
+	        this.connections = source["connections"];
 	        this.chairs = source["chairs"];
 	        this.dispatch = source["dispatch"];
 	        this.prompt = source["prompt"];
@@ -1161,6 +1215,7 @@ export namespace subagent {
 	    steps?: number;
 	    desk?: string;
 	    icon?: string;
+	    needs?: string[];
 	    prompt: string;
 	    path?: string;
 	    builtin: boolean;
@@ -1181,6 +1236,7 @@ export namespace subagent {
 	        this.steps = source["steps"];
 	        this.desk = source["desk"];
 	        this.icon = source["icon"];
+	        this.needs = source["needs"];
 	        this.prompt = source["prompt"];
 	        this.path = source["path"];
 	        this.builtin = source["builtin"];

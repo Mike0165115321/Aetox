@@ -196,8 +196,8 @@ func TestOpenSandboxRefusesCredentialStores(t *testing.T) {
 	t.Cleanup(func() { setSandboxPolicy(root, false, nil) })
 
 	for _, path := range []string{
-		filepath.Join(home, ".ssh", "id_rsa"), // absolute spelling
-		"../.ssh/id_rsa",                      // climbing spelling of the same file
+		filepath.Join(home, ".ssh", "id_rsa"),                  // absolute spelling
+		"../.ssh/id_rsa",                                       // climbing spelling of the same file
 		filepath.Join(home, ".aetox", "model-preference.json"), // Aetox's own keys
 	} {
 		if _, err := resolveSandboxPath(root, path); err == nil {
@@ -297,5 +297,50 @@ func TestARefusedCredentialFileSaysWhereTheAnswerIs(t *testing.T) {
 		if !strings.Contains(err.Error(), "Settings") && !strings.Contains(err.Error(), "browser tools") && !strings.Contains(err.Error(), "path") {
 			t.Errorf("%s refuses without saying what to do instead:\n%v", name, err)
 		}
+	}
+}
+
+// A worker's skills folder is its specialist knowledge, and the reason it sits
+// in that worker's own folder is that the others must not have it. Before this
+// the separation held only because nothing pointed across — the folders are
+// inside the data root, which is readable on purpose.
+func TestAnAgentsKnowledgeIsNotReachableThroughFileTools(t *testing.T) {
+	dataRoot := t.TempDir()
+	t.Setenv("AETOX_DATA_ROOT", dataRoot)
+
+	skills := filepath.Join(dataRoot, "agents", "doc", "skills", "tax-invoice", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(skills), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(skills, []byte("secret craft"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	if err := refuseCredentialStore(skills); err == nil {
+		t.Error("another worker's skill file was reachable")
+	}
+	if err := refuseCredentialStore(filepath.Dir(skills)); err == nil {
+		t.Error("another worker's skills folder was reachable")
+	}
+
+	// The rest of a home stays open: the assistant explaining its own team, and
+	// writing a new AGENT.md when the user asks for a teammate, both depend on
+	// it and are things this product is built to do.
+	for _, open := range []string{
+		filepath.Join(dataRoot, "agents", "doc", "AGENT.md"),
+		filepath.Join(dataRoot, "agents", "doc", "MEMORY.md"),
+		filepath.Join(dataRoot, "agents", "doc"),
+		filepath.Join(dataRoot, "agents"),
+	} {
+		if err := refuseCredentialStore(open); err != nil {
+			t.Errorf("%s should stay readable: %v", filepath.Base(open), err)
+		}
+	}
+
+	// A folder called "skills" that is not inside an agent's home is somebody
+	// else's project and none of this rule's business.
+	elsewhere := filepath.Join(t.TempDir(), "skills", "thing.md")
+	if err := refuseCredentialStore(elsewhere); err != nil {
+		t.Errorf("an unrelated skills folder was refused: %v", err)
 	}
 }

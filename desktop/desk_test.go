@@ -597,12 +597,18 @@ func TestAServerReachesOnlyTheDesksThatNamedIt(t *testing.T) {
 func TestListChairsReportsTheRosterUnderTheCeiling(t *testing.T) {
 	a := bootDeskApp(t, "assistant")
 	chairs := a.ListChairs()
-	if len(chairs) != 3 {
-		t.Fatalf("ListChairs() = %d, want the three bundled chairs", len(chairs))
+	if len(chairs) != 4 {
+		t.Fatalf("ListChairs() = %d, want the four bundled chairs", len(chairs))
 	}
 	byName := map[string]Chair{}
 	for _, c := range chairs {
 		byName[c.Name] = c
+	}
+	// This roster is one of the three ways a specialist is reachable, and the
+	// same call feeds the chat page's picker. An agent absent here is absent
+	// from the product, however correct its own file looks.
+	if _, ok := byName["github"]; !ok {
+		t.Errorf("the github chair is missing from the roster: %+v", chairs)
 	}
 	deck, ok := byName["deck"]
 	if !ok {

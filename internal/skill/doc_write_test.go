@@ -188,3 +188,38 @@ func TestDocWriteIsRegisteredAsATool(t *testing.T) {
 		t.Errorf("tool name = %q", name)
 	}
 }
+
+// A missing price prints as 0.00 — a figure nobody sent, on the one kind of
+// document this block exists to keep honest. Refused where it can still be
+// corrected, and an explicit zero still allowed: a line given away is a real
+// thing to put on an invoice.
+func TestALineWithNoPriceIsRefusedButAFreeLineIsNot(t *testing.T) {
+	_, err := parseBlocks([]any{map[string]any{
+		"type":    "lineitems",
+		"columns": []any{"รายการ", "จำนวน", "ราคา", "รวม"},
+		"lines":   []any{map[string]any{"text": "ค่าบริการ", "qty": 1.0}},
+	}})
+	if err == nil {
+		t.Fatal("a line with no price was accepted and would print 0.00")
+	}
+	if !strings.Contains(err.Error(), "ค่าบริการ") {
+		t.Errorf("the refusal does not name the line: %v", err)
+	}
+
+	if _, err := parseBlocks([]any{map[string]any{
+		"type":    "lineitems",
+		"columns": []any{"รายการ", "จำนวน", "ราคา", "รวม"},
+		"lines":   []any{map[string]any{"text": "ของแถม", "price": 0.0}},
+	}}); err != nil {
+		t.Errorf("an explicitly free line was refused: %v", err)
+	}
+
+	// A price sent as text is the same silent zero by another route.
+	if _, err := parseBlocks([]any{map[string]any{
+		"type":    "lineitems",
+		"columns": []any{"รายการ", "จำนวน", "ราคา", "รวม"},
+		"lines":   []any{map[string]any{"text": "ค่าบริการ", "price": "฿15,000"}},
+	}}); err == nil {
+		t.Error("a price sent as text was accepted and would print 0.00")
+	}
+}

@@ -22,12 +22,12 @@ export function AppVersion() {
   return window['go']['main']['App']['AppVersion']();
 }
 
-export function ArtifactPreview(arg1) {
-  return window['go']['main']['App']['ArtifactPreview'](arg1);
-}
-
 export function ApprovePendingChange(arg1) {
   return window['go']['main']['App']['ApprovePendingChange'](arg1);
+}
+
+export function ArtifactPreview(arg1) {
+  return window['go']['main']['App']['ArtifactPreview'](arg1);
 }
 
 export function BrowserBack(arg1) {
@@ -110,6 +110,14 @@ export function CompleteSignIn(arg1, arg2) {
   return window['go']['main']['App']['CompleteSignIn'](arg1, arg2);
 }
 
+export function ConnectAccount(arg1, arg2, arg3) {
+  return window['go']['main']['App']['ConnectAccount'](arg1, arg2, arg3);
+}
+
+export function Connections() {
+  return window['go']['main']['App']['Connections']();
+}
+
 export function CreateSpace(arg1) {
   return window['go']['main']['App']['CreateSpace'](arg1);
 }
@@ -142,12 +150,20 @@ export function DeleteSubagentProfile(arg1) {
   return window['go']['main']['App']['DeleteSubagentProfile'](arg1);
 }
 
+export function DisconnectAccount(arg1) {
+  return window['go']['main']['App']['DisconnectAccount'](arg1);
+}
+
 export function DismissTaskChip(arg1) {
   return window['go']['main']['App']['DismissTaskChip'](arg1);
 }
 
 export function EnabledProviders() {
   return window['go']['main']['App']['EnabledProviders']();
+}
+
+export function ExportSession(arg1, arg2) {
+  return window['go']['main']['App']['ExportSession'](arg1, arg2);
 }
 
 export function FileStillThere(arg1) {
@@ -176,6 +192,10 @@ export function GuideTopics() {
 
 export function HasAPIKey(arg1) {
   return window['go']['main']['App']['HasAPIKey'](arg1);
+}
+
+export function ImportSession() {
+  return window['go']['main']['App']['ImportSession']();
 }
 
 export function ImportSignIn(arg1) {
@@ -298,10 +318,6 @@ export function MCPConfigPath() {
   return window['go']['main']['App']['MCPConfigPath']();
 }
 
-export function MCPTargets() {
-  return window['go']['main']['App']['MCPTargets']();
-}
-
 export function ModelStatus() {
   return window['go']['main']['App']['ModelStatus']();
 }
@@ -388,6 +404,10 @@ export function PickAttachmentImage() {
 
 export function PickPresetImage(arg1) {
   return window['go']['main']['App']['PickPresetImage'](arg1);
+}
+
+export function PlacementTargets() {
+  return window['go']['main']['App']['PlacementTargets']();
 }
 
 export function ProjectTree() {
@@ -514,6 +534,10 @@ export function SaveChatImageData(arg1) {
   return window['go']['main']['App']['SaveChatImageData'](arg1);
 }
 
+export function SaveDrawing(arg1) {
+  return window['go']['main']['App']['SaveDrawing'](arg1);
+}
+
 export function SaveIdentityFile(arg1, arg2) {
   return window['go']['main']['App']['SaveIdentityFile'](arg1, arg2);
 }
@@ -560,6 +584,10 @@ export function SessionsInSpace(arg1) {
 
 export function SetAPIKey(arg1, arg2) {
   return window['go']['main']['App']['SetAPIKey'](arg1, arg2);
+}
+
+export function SetConnectionTargets(arg1, arg2) {
+  return window['go']['main']['App']['SetConnectionTargets'](arg1, arg2);
 }
 
 export function SetLearningEnabled(arg1) {
@@ -716,6 +744,10 @@ export function UsageStats() {
 
 export function UserName() {
   return window['go']['main']['App']['UserName']();
+}
+
+export function VerifyConnection(arg1) {
+  return window['go']['main']['App']['VerifyConnection'](arg1);
 }
 
 export function WorkbenchTabsChanged(arg1) {

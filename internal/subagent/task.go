@@ -9,6 +9,7 @@ import (
 
 	"github.com/Mike0165115321/Aetox/internal/cognitive"
 	"github.com/Mike0165115321/Aetox/internal/command"
+	"github.com/Mike0165115321/Aetox/internal/config"
 	"github.com/Mike0165115321/Aetox/internal/debuglog"
 	"github.com/Mike0165115321/Aetox/internal/learned"
 	"github.com/Mike0165115321/Aetox/internal/mode"
@@ -75,6 +76,34 @@ type TaskOptions struct {
 	// front end with no store (the CLI) should not hand out a tool whose whole
 	// promise is that something survives the session.
 	Proposer learned.Proposer
+	// BuildPrompt assembles a delegate's system prompt the way the session's own
+	// was assembled — identity, environment, the machine's rules, the user's own
+	// layers, this project's rules — with the worker's brief as its direction.
+	//
+	// It exists because the two doors onto the same worker had drifted apart and
+	// nobody had decided they should: a direct chat mounted 15.1k of prompt, a
+	// delegated run mounted 4.4k of brief and nothing else, so the same agent did
+	// not know where a bare filename lands depending on who asked it. Owner's
+	// call, 2026-08-08: one door. Standards are unenforceable across two.
+	//
+	// A function rather than the surface and the scope, because there must be one
+	// assembler (internal/prompt) with one caller (internal/bootstrap). Handing
+	// this package the pieces would make it a second place that knows how a
+	// prompt is put together, which is the shape the drift grew in.
+	//
+	// Nil mounts the brief alone. That is for a host with no prompt of its own —
+	// and for the tests, which assert on the brief rather than on the frame
+	// around it.
+	BuildPrompt func(direction string) string
+	// EnsureServers brings up the MCP servers a worker needs, for the ones the
+	// startup connect deliberately skipped: a server no desk carries waits for
+	// the agent that does (mcp.Server.Deferred).
+	//
+	// Called here because this is where such an agent starts, so the connect is
+	// paid for by the job that wanted it instead of by every launch. Nil means
+	// the host connects everything up front, which is what every host did before
+	// deferral existed and stays correct.
+	EnsureServers func(context.Context, []string) []error
 }
 
 type taskTool struct {
@@ -178,7 +207,7 @@ func profileNames(profiles []Profile) []string {
 }
 
 // agentChoice describes the `agent` parameter, grouped into the two kinds the
-// product actually has (COMPANY.md §4: ตัวแทน and ผู้ช่วยตัวแทน).
+// product actually has (COMPANY.md §4: เอเจน and ซับเอเจน).
 //
 // One flat list of names taught the model there was one kind of worker, so it
 // told users so — "ซับเอเจน 6 ตัว", with an agent's job described as a chair's.
@@ -201,11 +230,11 @@ func agentChoice(profiles []Profile) string {
 	}
 	out := "Which one to hand it to. Two kinds, and the difference is whose work it is."
 	if len(agents) > 0 {
-		out += "\nAGENTS (ตัวแทน) — a colleague who takes a whole job off your hands and returns a finished file. " +
+		out += "\nAGENTS (เอเจน) — a colleague who takes a whole job off your hands and returns a finished file. " +
 			"Brief them like a coworker, then use what comes back: " + strings.Join(agents, " | ")
 	}
 	if len(helpers) > 0 {
-		out += "\nHELPERS (ผู้ช่วยตัวแทน) — your own hands for one step of YOUR work, in a second context so it " +
+		out += "\nHELPERS (ซับเอเจน) — your own hands for one step of YOUR work, in a second context so it " +
 			"stays out of this one: " + strings.Join(helpers, " | ")
 	}
 	return out
@@ -292,6 +321,12 @@ func (t *taskTool) ExecuteTool(ctx context.Context, args map[string]any) (skill.
 	// Its own instructions plus whatever it has learned: both are in its system
 	// prompt on every round, so both count against what a brief can be.
 	childPrompt := PromptFor(profile)
+	if t.opts.BuildPrompt != nil {
+		childPrompt = t.opts.BuildPrompt(childPrompt)
+	}
+	// Measured against the assembled prompt, not the brief alone: the frame is
+	// what the delegate actually carries on every round, so a budget checked
+	// without it was checking the wrong number.
 	if budget := t.opts.MaxChars; budget > 0 && len(brief)+len(childPrompt) > budget {
 		return t.fail(label, started, fmt.Sprintf(
 			"the brief is too long for sub-agent %s: %d characters on top of its %d-character instructions goes past the %d it can hold, and the end would be silently cut off. Split it into smaller jobs.",
@@ -300,6 +335,19 @@ func (t *taskTool) ExecuteTool(ctx context.Context, args map[string]any) (skill.
 
 	defer debuglog.Block("task: " + profile.Name + " — " + truncate(label, 60))()
 
+	// Before the registry is cut: a server placed on this agent alone was not
+	// connected at startup, so its tools are not in the parent yet and the cut
+	// would take a copy without them. Failures are not fatal here — the
+	// missingAgentServers check below is what reports them, in the words the
+	// caller can act on, and it does that for a server that failed to connect
+	// exactly as it does for one that has not finished.
+	if t.opts.EnsureServers != nil {
+		if servers := config.MCPServersForAgent(profile.Name); len(servers) > 0 {
+			for _, err := range t.opts.EnsureServers(ctx, servers) {
+				debuglog.Msg("task %s: %v", profile.Name, err)
+			}
+		}
+	}
 	// The child's tool set is its profile's, under the ceiling of the desk the
 	// job runs at, minus what every delegate is refused — `task` above all,
 	// which is what keeps depth at 1.

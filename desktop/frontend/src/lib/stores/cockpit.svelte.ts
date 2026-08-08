@@ -18,6 +18,7 @@ import {
   RateTurn, PendingLearnedCount,
   WorkspaceFolders, AddWorkspaceFolder, RemoveWorkspaceFolder,
   RetryFailedTurn, RegenerateReply, ResendEdited, SwitchVariant,
+  ExportSession, ImportSession,
 } from '../../../wailsjs/go/main/App'
 import type { main } from '../../../wailsjs/go/models'
 import { t } from '../i18n.svelte'
@@ -1023,7 +1024,7 @@ export function applyToolEvent(ev: ToolEvent): void {
       // streaming progress event, which fires while the model is still writing
       // the call's arguments — agent, brief and kind are unknowable then and
       // arrive only on the executor's own call event, after this row exists.
-      // Dropping them here is how a doc job got counted as "ผู้ช่วยตัวแทน 1
+      // Dropping them here is how a doc job got counted as "ซับเอเจน 1
       // ตัว" on a live turn while the written-down parts said agent/doc.
       if (ev.agent) open.agent = ev.agent
       if (ev.brief) open.brief = ev.brief
@@ -1302,6 +1303,19 @@ export async function rateReply(message: ChatMessage, verdict: 'good' | 'bad'): 
     // is stored.
     message.rating = message.rating === next ? undefined : message.rating
   }
+}
+
+/** Export one conversation to a file the user picks — 'markdown' to read,
+ * 'json' to re-import on any Aetox. Engine-side dialog; a cancel returns "". */
+export async function exportChat(session: Session, format: 'markdown' | 'json'): Promise<void> {
+  await ExportSession(session.id, format)
+}
+
+/** Import a conversation exported from any Aetox, then open it. */
+export async function importChat(): Promise<void> {
+  const id = await ImportSession()
+  if (!id) return // dialog closed — a decision, not a failure
+  await selectGlobalSession({ id } as Session)
 }
 
 /** Permanently delete a session (any project); clears the chat if it was the open one. */

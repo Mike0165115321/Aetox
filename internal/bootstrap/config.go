@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"os"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/Mike0165115321/Aetox/internal/config"
@@ -45,9 +46,27 @@ func MCPServers(cfgs []config.MCPServerConfig) []mcp.Server {
 			Headers:     resolveSecretRefs(c.Headers),
 			Timeout:     time.Duration(c.TimeoutMs) * time.Millisecond,
 			Disabled:    c.Disabled,
+			Deferred:    agentsOnly(c.For),
 		})
 	}
 	return out
+}
+
+// agentsOnly reports that no desk carries this server — only named agents do —
+// which is what lets the startup connect skip it (mcp.Server.Deferred).
+//
+// A nil list is "never placed", which every desk carries, so it is eager. An
+// empty list is "shown to nobody", which nothing needs at startup or ever.
+func agentsOnly(for_ []string) bool {
+	if for_ == nil {
+		return false
+	}
+	for _, entry := range for_ {
+		if !strings.HasPrefix(strings.TrimSpace(entry), config.MCPAgentPrefix) {
+			return false
+		}
+	}
+	return true
 }
 
 // secretRef matches ${env:NAME} — a reference to a secret rather than the

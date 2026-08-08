@@ -82,7 +82,47 @@ const (
 	BlockBullets   BlockKind = "bullets"
 	BlockNumbered  BlockKind = "numbered"
 	BlockTable     BlockKind = "table"
+	// BlockLineItems is a priced table whose money is worked out here rather
+	// than sent in. Every commercial document is one — quotation, invoice, tax
+	// invoice, receipt, purchase order — and every one of them fails the same
+	// way: a total that was typed rather than calculated, wrong by an amount
+	// nobody downstream can see.
+	BlockLineItems BlockKind = "lineitems"
 )
+
+// LineItem is one priced row. Amount is never sent — it is Qty × Price, worked
+// out where arithmetic cannot drift.
+type LineItem struct {
+	Text  string
+	Qty   float64
+	Price float64
+	// Note rides under the description, for the line that needs a second
+	// sentence without becoming its own row.
+	Note string
+}
+
+// TotalKind is what one summary row does to the running amount.
+type TotalKind string
+
+const (
+	// TotalSubtotal is the sum of every line.
+	TotalSubtotal TotalKind = "subtotal"
+	// TotalRate is a percentage *of the subtotal* — VAT at 0.07, withholding
+	// tax at -0.03. Negative rates are how a deduction is written, which is
+	// what makes one mechanism enough for both.
+	TotalRate TotalKind = "rate"
+	// TotalTotal is the subtotal plus every rate row above it, added from the
+	// rounded figures actually printed — so the document adds up on the page,
+	// not only in the arithmetic behind it.
+	TotalTotal TotalKind = "total"
+)
+
+// TotalRow is one line of the summary under a priced table.
+type TotalRow struct {
+	Label string
+	Kind  TotalKind
+	Rate  float64
+}
 
 // Block is one element of a document, in order.
 type Block struct {
@@ -96,6 +136,20 @@ type Block struct {
 	// Columns and Rows are a table's header and body.
 	Columns []string
 	Rows    [][]string
+	// Align is per column: "right", "center", or anything else for left. A
+	// column of amounts that reads down its left edge is the single loudest
+	// sign a document was generated rather than written.
+	Align []string
+	// Widths are relative weights per column — {4,1,1,1} gives the description
+	// four times the room of each figure. Empty divides the page equally.
+	Widths []int
+	// Plain drops the borders and the header shading: the same table machinery
+	// used as a layout, which is what a seller/buyer block or a run of
+	// label-and-value lines actually is.
+	Plain bool
+	// Lines and Totals belong to BlockLineItems.
+	Lines  []LineItem
+	Totals []TotalRow
 }
 
 // headingLevels is capped at 3 on purpose. Google Docs maps heading_1 through
@@ -157,13 +211,17 @@ func BuildDOCX(blocks []Block) ([]Part, error) {
 				body.WriteString(paragraph(styleListParagraph, numID, item))
 			}
 			lastWasTable = false
-		case BlockTable:
+		case BlockTable, BlockLineItems:
 			// Two tables that are direct siblings merge into one, which silently
 			// fuses two unrelated tables.
 			if lastWasTable {
 				body.WriteString(`<w:p/>`)
 			}
-			body.WriteString(tableXML(block))
+			if block.Kind == BlockLineItems {
+				body.WriteString(lineItemsXML(block))
+			} else {
+				body.WriteString(tableXML(block))
+			}
 			lastWasTable = true
 		default:
 			body.WriteString(paragraph("", 0, block.Text))
@@ -244,23 +302,82 @@ func paragraph(style string, numID int, text string) string {
 // symptom the pptx writer had to solve. Splitting on newlines cannot land
 // inside a cluster, and nothing else here splits at all.
 func runs(text string, bold bool) string {
-	lines := strings.Split(strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n"), "\n")
 	var b strings.Builder
-	b.WriteString(`<w:r>`)
-	if bold {
-		b.WriteString(runProps(bold))
-	}
-	for i, line := range lines {
-		if i > 0 {
-			b.WriteString(`<w:br/>`)
+	for i, segment := range boldSegments(text) {
+		emphasis := bold || segment.bold
+		lines := strings.Split(strings.ReplaceAll(strings.ReplaceAll(segment.text, "\r\n", "\n"), "\r", "\n"), "\n")
+		b.WriteString(`<w:r>`)
+		if emphasis {
+			b.WriteString(runProps(true))
 		}
-		// xml:space="preserve" unconditionally. Without it the reader strips
-		// leading and trailing spaces, and Thai uses the space as a phrase
-		// separator — so a stripped space changes what the sentence says.
-		fmt.Fprintf(&b, `<w:t xml:space="preserve">%s</w:t>`, escapeXML(line))
+		for j, line := range lines {
+			if j > 0 {
+				b.WriteString(`<w:br/>`)
+			}
+			// xml:space="preserve" unconditionally. Without it the reader strips
+			// leading and trailing spaces, and Thai uses the space as a phrase
+			// separator — so a stripped space changes what the sentence says.
+			fmt.Fprintf(&b, `<w:t xml:space="preserve">%s</w:t>`, escapeXML(line))
+		}
+		b.WriteString(`</w:r>`)
+		_ = i
 	}
-	b.WriteString(`</w:r>`)
 	return b.String()
+}
+
+type textSegment struct {
+	text string
+	bold bool
+}
+
+// boldSegments splits **emphasis** out of a line.
+//
+// `**` is what a model writes for bold without being asked, and what a person
+// editing the JSON by hand would try. Supporting it here is cheaper than a
+// markup field that has to be explained in every tool description that carries
+// this writer.
+//
+// Only balanced pairs count: an odd `**` is a literal, because a document that
+// silently swallows a stray asterisk is worse than one that prints it. The
+// split is at author-chosen boundaries, so it cannot land inside a Thai
+// grapheme cluster the way an automatic wrap could — the hazard runs() exists
+// to avoid stays avoided.
+func boldSegments(text string) []textSegment {
+	if !strings.Contains(text, "**") {
+		return []textSegment{{text: text}}
+	}
+	var out []textSegment
+	rest := text
+	for {
+		open := strings.Index(rest, "**")
+		if open < 0 {
+			break
+		}
+		close := strings.Index(rest[open+2:], "**")
+		if close < 0 {
+			break // unbalanced: everything left is literal
+		}
+		inner := rest[open+2 : open+2+close]
+		if inner == "" {
+			// "****" is not emphasis of nothing; treat the first pair as text
+			// so the characters survive.
+			out = append(out, textSegment{text: rest[:open+2]})
+			rest = rest[open+2:]
+			continue
+		}
+		if open > 0 {
+			out = append(out, textSegment{text: rest[:open]})
+		}
+		out = append(out, textSegment{text: inner, bold: true})
+		rest = rest[open+2+close+2:]
+	}
+	if rest != "" {
+		out = append(out, textSegment{text: rest})
+	}
+	if len(out) == 0 {
+		return []textSegment{{text: text}}
+	}
+	return out
 }
 
 // runProps writes a w:rPr in schema order.
@@ -288,14 +405,7 @@ func tableXML(block Block) string {
 	if columns == 0 {
 		return ""
 	}
-	// sum(gridCol) must equal tblW or the reader recomputes the grid, so the
-	// rounding remainder goes to the last column rather than being lost.
-	widths := make([]int, columns)
-	base := textWidth / columns
-	for i := range widths {
-		widths[i] = base
-	}
-	widths[columns-1] += textWidth - base*columns
+	widths := gridWidths(columns, block.Widths)
 
 	var b strings.Builder
 	b.WriteString(`<w:tbl><w:tblPr>`)
@@ -305,10 +415,16 @@ func tableXML(block Block) string {
 	// a table with a bare w:tblPr is invisible, which is not what anyone means
 	// by "a table". Explicit borders also avoid depending on a `TableGrid`
 	// style being present, which fails silently when it is not.
-	b.WriteString(`<w:tblBorders>` +
-		border("top") + border("left") + border("bottom") + border("right") +
-		border("insideH") + border("insideV") +
-		`</w:tblBorders>`)
+	//
+	// A `Plain` table is the deliberate exception: the same machinery used as a
+	// layout — the seller and buyer blocks side by side, a run of label-and-
+	// value lines — where a grid of boxes would announce a table nobody meant.
+	if !block.Plain {
+		b.WriteString(`<w:tblBorders>` +
+			border("top") + border("left") + border("bottom") + border("right") +
+			border("insideH") + border("insideV") +
+			`</w:tblBorders>`)
+	}
 	// Without fixed layout the table is autofit and the widths above are
 	// advisory. The Thai consequence is specific: a long unbroken Thai string —
 	// Thai has no inter-word spaces — can blow one column out to full width.
@@ -337,7 +453,7 @@ func tableXML(block Block) string {
 			if i < len(block.Columns) {
 				text = block.Columns[i]
 			}
-			b.WriteString(tableCell(text, widths[i], true))
+			b.WriteString(tableCell(text, widths[i], true, alignAt(block.Align, i), block.Plain))
 		}
 		b.WriteString(`</w:tr>`)
 	}
@@ -348,12 +464,115 @@ func tableXML(block Block) string {
 			if i < len(row) {
 				text = row[i]
 			}
-			b.WriteString(tableCell(text, widths[i], false))
+			b.WriteString(tableCell(text, widths[i], false, alignAt(block.Align, i), block.Plain))
 		}
 		b.WriteString(`</w:tr>`)
 	}
 	b.WriteString(`</w:tbl>`)
 	return b.String()
+}
+
+// gridWidths turns relative weights into the twentieths-of-a-point the file
+// wants. sum(gridCol) must equal tblW or the reader recomputes the grid and
+// throws the weights away, so the rounding remainder goes to the last column
+// rather than being lost.
+func gridWidths(columns int, weights []int) []int {
+	total := 0
+	for i := 0; i < columns && i < len(weights); i++ {
+		if weights[i] > 0 {
+			total += weights[i]
+		}
+	}
+	widths := make([]int, columns)
+	if total == 0 {
+		base := textWidth / columns
+		for i := range widths {
+			widths[i] = base
+		}
+		widths[columns-1] += textWidth - base*columns
+		return widths
+	}
+	used := 0
+	for i := 0; i < columns; i++ {
+		weight := 1
+		if i < len(weights) && weights[i] > 0 {
+			weight = weights[i]
+		} else if i < len(weights) {
+			// A zero or negative weight in a list that has real ones is a gap,
+			// not a request for an invisible column — it gets a share of one.
+			total++
+		}
+		widths[i] = textWidth * weight / total
+		used += widths[i]
+	}
+	widths[columns-1] += textWidth - used
+	return widths
+}
+
+func alignAt(align []string, i int) string {
+	if i < 0 || i >= len(align) {
+		return ""
+	}
+	switch strings.ToLower(strings.TrimSpace(align[i])) {
+	case "right", "end":
+		return "right"
+	case "center", "centre", "middle":
+		return "center"
+	default:
+		return ""
+	}
+}
+
+// lineItemsXML renders a priced table: the lines, then the summary rows whose
+// figures were worked out in money.go rather than sent in.
+//
+// Rendered as one table so the columns of the summary line up under the columns
+// of the lines — a totals block in a table of its own drifts by a few points
+// and looks, on the page, exactly like a mistake.
+func lineItemsXML(block Block) string {
+	amounts, totals := computeLines(block.Lines, block.Totals)
+
+	table := Block{
+		Kind:    BlockTable,
+		Columns: block.Columns,
+		Align:   block.Align,
+		Widths:  block.Widths,
+	}
+	columns := len(block.Columns)
+	if columns == 0 {
+		return ""
+	}
+	for i, line := range block.Lines {
+		text := line.Text
+		if strings.TrimSpace(line.Note) != "" {
+			text += "\n" + line.Note
+		}
+		row := make([]string, columns)
+		row[0] = text
+		if columns >= 4 {
+			qty := line.Qty
+			if qty == 0 {
+				qty = 1
+			}
+			row[columns-3] = formatQuantity(qty)
+			row[columns-2] = formatMoney(line.Price)
+		}
+		row[columns-1] = formatMoney(amounts[i])
+		table.Rows = append(table.Rows, row)
+	}
+	// The label sits in the column before the figure and is bold, which is what
+	// separates the summary from the lines without a second table or a rule.
+	for _, total := range totals {
+		row := make([]string, columns)
+		labelAt := columns - 2
+		if labelAt < 0 {
+			labelAt = 0
+		}
+		row[labelAt] = "**" + total.Label + "**"
+		row[columns-1] = "**" + formatMoney(total.Amount) + "**"
+		table.Rows = append(table.Rows, row)
+	}
+	return tableXML(table)
 }
 
 // border writes one w:tblBorders child. w:sz is eighths of a point, so 4 is a
@@ -375,16 +594,21 @@ func border(edge string) string {
 // A Thai header cell whose mark is still default weight gets a visibly short
 // row, and an empty cell collapses — the table-side version of the same
 // complex-script split that governs w:b and w:bCs.
-func tableCell(text string, width int, header bool) string {
+func tableCell(text string, width int, header bool, align string, plain bool) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, `<w:tc><w:tcPr><w:tcW w:w="%d" w:type="dxa"/>`, width)
-	if header {
+	if header && !plain {
 		b.WriteString(`<w:shd w:val="clear" w:color="auto" w:fill="F2F4F7"/>`)
 	}
 	b.WriteString(`</w:tcPr>`)
 
-	// pPr order: spacing, then the paragraph mark's rPr last.
+	// pPr order: spacing, then jc, then the paragraph mark's rPr last. w:jc
+	// after w:spacing is not a preference — a reader that finds them the other
+	// way round rejects the document.
 	b.WriteString(`<w:p><w:pPr><w:spacing w:before="40" w:after="40" w:line="240" w:lineRule="auto"/>`)
+	if align != "" {
+		fmt.Fprintf(&b, `<w:jc w:val="%s"/>`, align)
+	}
 	if header {
 		b.WriteString(runProps(true))
 	}

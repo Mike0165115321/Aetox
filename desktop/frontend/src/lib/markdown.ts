@@ -130,6 +130,7 @@ function confine(html: string): string {
   for (const svg of host.querySelectorAll('svg')) {
     if (svg.parentElement?.closest('svg')) continue
     confineDrawing(svg)
+    frameDrawing(svg)
   }
   // A <style> outside a drawing is deleted rather than scoped.
   //
@@ -145,6 +146,31 @@ function confine(html: string): string {
     if (!style.closest('svg')) style.remove()
   }
   return host.innerHTML
+}
+
+// frameDrawing puts the take-it-with-you controls on a drawing: copy and save,
+// revealed on hover, the same affordance a code block's header gives its text.
+// A drawing that cannot leave the bubble is a chart the user re-makes by hand
+// in another tool. Clicks are handled by delegation in Chat.svelte, exactly as
+// the code buttons' are — {@html} markup can't carry Svelte handlers.
+function frameDrawing(svg: Element): void {
+  const box = document.createElement('div')
+  box.className = 'drawing-box'
+  svg.replaceWith(box)
+  box.appendChild(svg)
+  const tools = document.createElement('div')
+  tools.className = 'drawing-tools'
+  for (const [cls, label] of [
+    ['drawing-copy', t('chat.copyDrawing')],
+    ['drawing-save', t('chat.saveDrawing')],
+  ]) {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = cls
+    button.textContent = label
+    tools.appendChild(button)
+  }
+  box.appendChild(tools)
 }
 
 function confineDrawing(svg: Element): void {

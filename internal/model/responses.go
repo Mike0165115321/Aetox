@@ -182,10 +182,18 @@ func buildResponsesRequest(provider, model string, req Request) (responsesReques
 		out.ToolChoice = choice
 	}
 	if effort := responsesEffort(provider, model, req.Reasoning); effort != "" {
-		// summary:auto is what makes the model's thinking visible at all on
-		// this endpoint — without it the reasoning happens and streams nothing,
-		// and Aetox's thinking panel stays empty on a model that is thinking.
-		out.Reasoning = &responsesReason{Effort: effort, Summary: "auto"}
+		// The summary field is what makes the model's thinking visible at all
+		// on this endpoint — raw chain-of-thought is never exposed, and without
+		// asking, the reasoning happens and streams nothing, leaving Aetox's
+		// thinking panel empty on a model that is thinking.
+		//
+		// "detailed" rather than "auto": auto lets the endpoint decide, and
+		// what it decided in practice was one headline in one burst at the end
+		// — a thinking panel that reads "คิดเป็นเวลา 1 วินาที" over a bold line,
+		// on a turn the model billed far more thinking for (seen 2026-08-07).
+		// detailed writes sections as it goes, so the panel streams while the
+		// thinking is actually happening. Costs a few summary tokens per turn.
+		out.Reasoning = &responsesReason{Effort: effort, Summary: "detailed"}
 		// With store:false the reasoning is not kept server-side, so it has to
 		// come back to us to be echoed into the next turn.
 		out.Include = []string{"reasoning.encrypted_content"}

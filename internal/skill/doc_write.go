@@ -49,7 +49,7 @@ func (*docWriteSkill) ToolDefinition() model.ToolDefinition {
 					"properties": map[string]any{
 						"type": map[string]any{
 							"type": "string",
-							"enum": []string{"heading", "paragraph", "bullets", "numbered", "table"},
+							"enum": []string{"heading", "paragraph", "bullets", "numbered", "table", "lineitems"},
 						},
 						"text": map[string]any{
 							"type":        "string",
@@ -77,6 +77,49 @@ func (*docWriteSkill) ToolDefinition() model.ToolDefinition {
 								"items": map[string]any{"type": "string"},
 							},
 						},
+						"align": map[string]any{
+							"type":        "array",
+							"items":       map[string]any{"type": "string", "enum": []string{"", "left", "right", "center"}},
+							"description": "Per column.",
+						},
+						"widths": map[string]any{
+							"type":        "array",
+							"items":       map[string]any{"type": "integer"},
+							"description": "Relative column weights.",
+						},
+						"plain": map[string]any{
+							"type":        "boolean",
+							"description": "No borders — layout, not data.",
+						},
+						"lines": map[string]any{
+							"type":        "array",
+							"description": "Priced rows; amounts are computed, never sent.",
+							"items": map[string]any{
+								"type": "object",
+								"properties": map[string]any{
+									"text":  map[string]any{"type": "string"},
+									"note":  map[string]any{"type": "string"},
+									"qty":   map[string]any{"type": "number", "description": "Defaults to 1."},
+									"price": map[string]any{"type": "number"},
+								},
+								"required":             []string{"text"},
+								"additionalProperties": false,
+							},
+						},
+						"totals": map[string]any{
+							"type":        "array",
+							"description": "Summary rows, in order.",
+							"items": map[string]any{
+								"type": "object",
+								"properties": map[string]any{
+									"label": map[string]any{"type": "string"},
+									"kind":  map[string]any{"type": "string", "enum": []string{"subtotal", "rate", "total"}},
+									"rate":  map[string]any{"type": "number", "description": "Fraction of subtotal; 0.07 = VAT 7%, negative deducts."},
+								},
+								"required":             []string{"label", "kind"},
+								"additionalProperties": false,
+							},
+						},
 					},
 					"required":             []string{"type"},
 					"additionalProperties": false,
@@ -102,7 +145,7 @@ func (*docWriteSkill) ToolDefinition() model.ToolDefinition {
 			// built out, and prose here would only be a second place to keep in
 			// sync with it — paid for on every request that carries this tool.
 			Description: "Create a Word document (.docx).",
-			Parameters: payload,
+			Parameters:  payload,
 		},
 	}
 }
@@ -234,6 +277,62 @@ func parseBlocks(raw any) ([]ooxml.Block, error) {
 			}
 			block.Rows = append(block.Rows, cells)
 		}
+		for _, value := range asList(object["align"]) {
+			block.Align = append(block.Align, textOf(value))
+		}
+		for _, value := range asList(object["widths"]) {
+			if n, ok := value.(float64); ok {
+				block.Widths = append(block.Widths, int(n))
+				continue
+			}
+			block.Widths = append(block.Widths, 0)
+		}
+		block.Plain, _ = object["plain"].(bool)
+		for _, value := range asList(object["lines"]) {
+			entry, ok := value.(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("block %d has a line that is not an object with text/qty/price", i+1)
+			}
+			line := ooxml.LineItem{}
+			line.Text, _ = entry["text"].(string)
+			line.Note, _ = entry["note"].(string)
+			// A missing quantity is one of the thing, which is how a flat fee is
+			// written and is worth defaulting.
+			line.Qty, _ = entry["qty"].(float64)
+			// A missing price is not free. Left to default it prints 0.00 on a
+			// priced document — a figure nobody sent, in the one place this tool
+			// exists to keep figures honest — so it is refused where it can
+			// still be corrected. An explicit 0 is allowed: a line given away is
+			// a real thing to put on an invoice.
+			raw, has := entry["price"]
+			if !has {
+				return nil, fmt.Errorf("block %d: line %q has no price — send one (0 if it is free), because a missing price prints as 0.00", i+1, line.Text)
+			}
+			price, ok := raw.(float64)
+			if !ok {
+				return nil, fmt.Errorf("block %d: line %q has a price that is not a number (%v) — send 15000, not \"฿15,000\"", i+1, line.Text, raw)
+			}
+			line.Price = price
+			block.Lines = append(block.Lines, line)
+		}
+		for _, value := range asList(object["totals"]) {
+			entry, ok := value.(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("block %d has a total that is not an object with label/kind", i+1)
+			}
+			row := ooxml.TotalRow{}
+			row.Label, _ = entry["label"].(string)
+			kind, _ := entry["kind"].(string)
+			row.Kind = ooxml.TotalKind(strings.ToLower(strings.TrimSpace(kind)))
+			row.Rate, _ = entry["rate"].(float64)
+			// A rate row with no rate is a row of zero that reads as a real
+			// charge of nothing — refused where it can still be corrected,
+			// rather than printed onto an invoice.
+			if row.Kind == ooxml.TotalRate && row.Rate == 0 {
+				return nil, fmt.Errorf("block %d has a rate row %q with no rate: give it one (0.07 for 7%% VAT) or use kind subtotal/total", i+1, row.Label)
+			}
+			block.Totals = append(block.Totals, row)
+		}
 
 		switch block.Kind {
 		case ooxml.BlockHeading, ooxml.BlockParagraph:
@@ -248,10 +347,21 @@ func parseBlocks(raw any) ([]ooxml.Block, error) {
 			if len(block.Columns) == 0 && len(block.Rows) == 0 {
 				return nil, fmt.Errorf("block %d is a table with no columns and no rows", i+1)
 			}
+		case ooxml.BlockLineItems:
+			if len(block.Lines) == 0 {
+				return nil, fmt.Errorf("block %d is a lineitems block with no lines", i+1)
+			}
+			// Four labels is the shape the renderer fills: description,
+			// quantity, unit price, amount. Two is the flat-fee shape:
+			// description and amount. Anything else would leave a column the
+			// renderer has no figure for, printed empty on a priced document.
+			if n := len(block.Columns); n != 4 && n != 2 {
+				return nil, fmt.Errorf("block %d is a lineitems block with %d column labels: give 4 (description, quantity, unit price, amount) or 2 (description, amount)", i+1, n)
+			}
 		case "":
-			return nil, fmt.Errorf("block %d has no type: one of heading, paragraph, bullets, numbered, table", i+1)
+			return nil, fmt.Errorf("block %d has no type: one of heading, paragraph, bullets, numbered, table, lineitems", i+1)
 		default:
-			return nil, fmt.Errorf("block %d has unknown type %q: one of heading, paragraph, bullets, numbered, table", i+1, kind)
+			return nil, fmt.Errorf("block %d has unknown type %q: one of heading, paragraph, bullets, numbered, table, lineitems", i+1, kind)
 		}
 		blocks = append(blocks, block)
 	}

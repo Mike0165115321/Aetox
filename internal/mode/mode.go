@@ -35,6 +35,7 @@ import (
 	"strings"
 
 	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mike0165115321/Aetox/internal/connect"
 	"github.com/Mike0165115321/Aetox/internal/mcp"
 	"github.com/Mike0165115321/Aetox/internal/skill"
 )
@@ -93,6 +94,17 @@ type Mode struct {
 	// the one place a registered tool is judged, and it needs the answer here.
 	// What moved is who supplies it.
 	MCP []string `json:"mcp,omitempty"`
+	// Connections are the external accounts this desk may use — resolved, not
+	// declared, exactly as MCP above is and for the same reason. A bundled
+	// manifest is compiled before the user has connected anything, so it could
+	// name nothing; ownership sits on the connection, where it can be written
+	// at the moment the user chooses.
+	//
+	// A tool that exists because of a connection is invisible to a desk that
+	// does not hold it. That is the same rule MCP tools follow, and it is the
+	// only honest one: a tool definition the model can see but cannot use is a
+	// door painted on a wall.
+	Connections []string `json:"connections,omitempty"`
 	// Chairs are in the room but not on the desk: tools this desk's *agents*
 	// may hold, which the desk's own assistant never carries.
 	//
@@ -291,6 +303,12 @@ func (m *Mode) Carries(name string, source skill.Source) bool {
 	case skill.SourceSkill:
 		return true
 	}
+	// A connection's tools are judged before the desk's own lists get a say:
+	// `categories:` groups tools by what they do, and no grouping can express
+	// "this one reaches an account the user placed elsewhere".
+	if !connect.Allows(name, m.Connections) {
+		return false
+	}
 	return m.AllowsTool(name)
 }
 
@@ -318,6 +336,12 @@ func (m *Mode) CarriesForChair(name string, source skill.Source) bool {
 	}
 	switch source {
 	case skill.SourceMCP, skill.SourceSkill:
+		return false
+	}
+	// Nor can a connection come back through `chairs:`. The switch says which
+	// desks may reach an account at all, and "in the room" is not "above the
+	// rules" — the same sentence Deny is held to two lines down.
+	if !connect.Allows(name, m.Connections) {
 		return false
 	}
 	name = strings.ToLower(strings.TrimSpace(name))
@@ -394,8 +418,11 @@ func parse(name, raw string) Mode {
 		// parse rather than cached, so switching a server on in settings takes
 		// effect at the next session without a restart. The file is a few
 		// hundred bytes and a desk is loaded a handful of times a turn.
-		MCP:    config.MCPServersForDesk(name),
-		Chairs: splitList(fields["chairs"]),
+		MCP: config.MCPServersForDesk(name),
+		// Read fresh here too, and for the same reason: switching a connection
+		// on in settings has to reach the next session without a restart.
+		Connections: config.ConnectionsForDesk(name, connect.IDs()),
+		Chairs:      splitList(fields["chairs"]),
 		Dispatch:    splitList(fields["dispatch"]),
 		Prompt:      body,
 	}

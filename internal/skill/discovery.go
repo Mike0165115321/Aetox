@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -155,14 +157,72 @@ func ScanIssues(paths []string) ([]DiscoveredSkill, []error) {
 	return scanSkills(paths)
 }
 
+// DiscoverFS is DiscoverScoped against an fs.FS rather than the disk — the
+// same <dir>/*/SKILL.md layout, read out of an embedded filesystem.
+//
+// It exists so a skill that ships inside the binary and one the user wrote are
+// the same kind of thing, read by the same parser, differing only in which
+// filesystem they came out of. The alternative — a second format for shipped
+// knowledge — is how "copy a shipped agent and change it" turns into a
+// translation instead of a copy.
+func DiscoverFS(fsys fs.FS, dir string) ([]Skill, []error) {
+	if fsys == nil {
+		return nil, nil
+	}
+	entries, err := fs.ReadDir(fsys, dir)
+	if err != nil {
+		return nil, nil // an agent that ships no skills is the normal case
+	}
+	var found []DiscoveredSkill
+	var errs []error
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		file := path.Join(dir, entry.Name(), "SKILL.md")
+		raw, readErr := fs.ReadFile(fsys, file)
+		if readErr != nil {
+			continue
+		}
+		name, description, body, parseErr := parseSkillMarkdown(string(raw))
+		if parseErr != nil {
+			errs = append(errs, fmt.Errorf("parse %s: %w", file, parseErr))
+			continue
+		}
+		if name == "" {
+			name = entry.Name()
+		}
+		found = append(found, DiscoveredSkill{Name: name, Description: description, Dir: path.Dir(file), body: body})
+	}
+	return wrapDiscovered(found), errs
+}
+
+// DiscoverScoped is DiscoverSkills without the shared shelf: it wraps only the
+// SKILL.md files actually found under paths, and adds none of the bundled ones.
+//
+// The difference is the whole reason it exists. DiscoverSkills answers "what
+// can this machine do", so it folds in what ships with Aetox. This answers
+// "what does *this worker* know", and a scan that quietly added the shelf would
+// hand every agent the same set — which is the one thing a per-agent skills
+// folder is for preventing. The bundled skills are already in the parent
+// registry anyway; adding them again here would only collide.
+func DiscoverScoped(paths []string) ([]Skill, []error) {
+	discovered, errs := diskSkills(paths)
+	return wrapDiscovered(discovered), errs
+}
+
 // DiscoverSkills scans paths and wraps each SKILL.md into an invokable Skill.
 func DiscoverSkills(paths []string) ([]Skill, []error) {
 	discovered, errs := scanSkills(paths)
+	return wrapDiscovered(discovered), errs
+}
+
+func wrapDiscovered(discovered []DiscoveredSkill) []Skill {
 	skills := make([]Skill, 0, len(discovered))
 	for _, d := range discovered {
 		skills = append(skills, &markdownSkill{name: d.Name, description: d.Description, body: d.body})
 	}
-	return skills, errs
+	return skills
 }
 
 // RegisterDiscovered scans paths for SKILL.md files and registers each into

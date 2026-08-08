@@ -270,14 +270,22 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   letter-spacing:.02em; user-select:none;
 }
 .sess-day-head:first-child { margin-top:2px; }
-.sess-row { display:flex; flex-direction:column; align-items:stretch; gap:3px; width:100%; min-width:0; padding:8px; border-radius:var(--r-sm); cursor:pointer; }
+.sess-row { display:flex; flex-direction:column; align-items:stretch; gap:2px; width:100%; min-width:0; padding:7px 8px; border-radius:var(--r-sm); cursor:pointer; }
 .sess-row:hover { background:var(--surface-row-hover); }
 .sess-row.active { background:var(--surface-selected); }
 .sess-line { display:flex; align-items:center; gap:8px; min-width:0; }
 .sess-line .ic { width:15px; text-align:center; opacity:.85; flex:none; }
 .sess-row .t { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500; }
+/* The description line. Everything on it is flex:none and short, so the empty
+   tail is real estate — which is where the hover actions are parked. */
+.sess-meta { display:flex; align-items:center; gap:6px; min-width:0; min-height:17px; }
 .sess-row .ago { color:var(--text-dim); font-size:var(--fs-xs); flex:none; }
 .sess-row .snip { color:var(--text-muted); font-size:var(--fs-xs); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sess-acts { margin-left:auto; flex:none; display:flex; align-items:center; gap:2px; }
+/* Over the row rather than in it, for the one-line project rows that have no
+   second line to spare. background:inherit so it carries the row's own hover
+   and selected fill instead of punching a hole in it. */
+.sess-acts.float { position:absolute; right:4px; top:50%; transform:translateY(-50%); margin:0; padding-left:12px; background:inherit; border-radius:var(--r-sm); }
 
 /* Grouped project switcher (Claude-style): folder + bold name, that project's
    recent chats indented beneath, "show more" to expand past the preview. */
@@ -291,7 +299,7 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .proj-group-head .ic { font-size:var(--fs-lg); flex:none; opacity:.9; }
 .proj-group-head .t { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; font-size:var(--fs-sm); }
 .proj-group-head .proj-branch { color:var(--text-dim); font-size:var(--fs-xs); flex:none; }
-.proj-group-sess { display:flex; align-items:center; min-width:0; border-radius:var(--r-sm); color:var(--text-secondary); }
+.proj-group-sess { position:relative; display:flex; align-items:center; min-width:0; border-radius:var(--r-sm); color:var(--text-secondary); }
 .proj-group-sess:hover { background:var(--surface-row-hover); color:var(--text-primary); }
 .proj-group-sess.active { background:var(--surface-selected); color:var(--text-selected); }
 .proj-group-sess-open {
@@ -299,10 +307,19 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   color:inherit; font-size:var(--fs-xs); text-align:left; cursor:pointer;
 }
-.sess-del { flex:none; opacity:0; color:var(--text-dim); border-radius:var(--r-xs); padding:1px 5px; margin-right:4px; font-size:var(--fs-xs); cursor:pointer; }
-.proj-group-sess:hover .sess-del, .sess-row:hover .sess-del, .sess-del.confirm { opacity:1; }
+.sess-del { flex:none; opacity:0; color:var(--text-dim); border-radius:var(--r-xs); padding:1px 5px; font-size:var(--fs-xs); cursor:pointer; transition:opacity .12s ease; }
+.proj-group-sess:hover .sess-del, .sess-row:hover .sess-del, .sess-del.confirm,
+.sess-acts:focus-within .sess-del { opacity:1; }
 .sess-del:hover { color:var(--status-danger); background:var(--surface-hover); }
 .sess-del.confirm { color:var(--status-danger); font-weight:600; }
+/* Export shares the delete control's hover-reveal life; armed it swaps the
+   icon for the two format chips, which is the whole picker. */
+.sess-exp { flex:none; opacity:0; color:var(--text-dim); border-radius:var(--r-xs); padding:1px 5px; font-size:var(--fs-xs); cursor:pointer; display:inline-flex; gap:2px; align-items:center; border:none; background:none; transition:opacity .12s ease; }
+.proj-group-sess:hover .sess-exp, .sess-row:hover .sess-exp, .sess-exp.armed,
+.sess-acts:focus-within .sess-exp { opacity:1; }
+.sess-exp:hover { background:var(--surface-hover); }
+.sess-exp .fmt { padding:0 4px; border-radius:var(--r-xs); font-weight:600; }
+.sess-exp .fmt:hover { color:var(--accent); background:var(--surface-hover); }
 .proj-group-more { display:block; padding:5px 8px 5px 33px; color:var(--text-dim); font-size:var(--fs-xs); cursor:pointer; }
 
 /* A session the engine refused to open, said where the chat would have been. */
@@ -632,6 +649,13 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .task-chip-title { max-width:32ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .task-chip-drop { padding:4px 8px 4px 5px; color:var(--text-dim); cursor:pointer; }
 .task-chip-drop:hover { color:var(--status-danger); }
+/* A drawing's take-it-with-you controls: hover-revealed like a code block's,
+   overlaid top-right so they never change the drawing's layout. */
+.markdown-body .drawing-box { position:relative; }
+.markdown-body .drawing-tools { position:absolute; top:6px; right:6px; display:flex; gap:4px; opacity:0; transition:opacity .12s; }
+.markdown-body .drawing-box:hover .drawing-tools, .markdown-body .drawing-tools:focus-within { opacity:1; }
+.markdown-body .drawing-tools button { font-size:var(--fs-xs); color:var(--text-dim); background:var(--surface-raised); border:1px solid var(--border-subtle); border-radius:var(--r-xs); padding:2px 8px; cursor:pointer; }
+.markdown-body .drawing-tools button:hover { background:var(--surface-hover); color:var(--text-primary); }
 .markdown-body .codeblock pre { margin:0; border:none; border-radius:0; background:none; padding:.5em .9em .8em; }
 .markdown-body .codeblock code.hljs { display:block; background:transparent; padding:0; overflow-x:auto; color:var(--syn-fg); }
 
@@ -1236,48 +1260,72 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .linklike { color:var(--text-muted); text-decoration:underline; cursor:pointer; font-size:inherit; }
 .linklike:hover { color:var(--text-primary); }
 
-.office-grid { margin-bottom:14px; }
-/* Slimmer cover than a preset's: an agent card carries chips and a footer a
-   preset card does not, and the covers are what was making every row — and
-   the stretched create-card beside it — tower. */
-.office-grid .pp-cover { height:72px; }
-/* A teammate's card: a thin band of their own colour, their mark straddling
-   the edge of it, then who they are. The band is 46px rather than the gallery's
-   104px cover because this is a face, not a thumbnail — a cover that size ate
-   the card and repeated the name printed 12px under it. */
-.chair-card { cursor:default; position:relative; }
-.chair-cover {
-  display:block; height:46px; flex:none;
-  background:
-    radial-gradient(120% 160% at 25% 0%, hsl(var(--h) 70% 42% / .7), transparent 65%),
-    linear-gradient(135deg, hsl(var(--h) 45% 20%), hsl(calc(var(--h) + 40) 45% 13%));
+/* A section's own heading row: the label on the left, the one thing you can do
+   to the section on the right. */
+.sec-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
+.sec-head .section-label { margin:0; }
+.feed-head { margin-top:30px; }
+.feed-filter { display:flex; gap:4px; }
+.feed-filter .pill {
+  font-size:var(--fs-xs); color:var(--text-dim); background:none;
+  border:1px solid transparent; border-radius:999px; padding:2px 10px; cursor:pointer;
 }
+.feed-filter .pill:hover { color:var(--text-secondary); }
+.feed-filter .pill.on { color:var(--text-primary); background:var(--surface-raised); border-color:var(--border-strong); }
+
+.office-grid {
+  display:grid; gap:12px; margin-bottom:12px;
+  grid-template-columns:repeat(auto-fill, minmax(min(240px, 100%), 1fr));
+}
+/* A teammate's card: a thin band of their own colour, then who they are. The
+   band is 8px rather than the gallery's 104px cover because this is a face,
+   not a thumbnail — a cover that size ate the card and repeated the name
+   printed 12px under it, and the 40px mark straddling its edge pushed the
+   whole body down a row for a decoration. */
+.chair-card {
+  display:flex; flex-direction:column; text-align:left;
+  border:1px solid var(--border-default); border-radius:var(--r-lg); overflow:hidden;
+  background:var(--surface-raised); transition:border-color .15s;
+}
+.chair-card:hover { border-color:var(--border-strong); }
+.chair-band {
+  display:block; height:8px; flex:none;
+  background:linear-gradient(90deg, hsl(var(--h) 55% 46%), hsl(calc(var(--h) + 40) 50% 38%));
+}
+.chair-body { flex:1; display:flex; flex-direction:column; gap:6px; padding:11px 12px 0; min-width:0; }
+.chair-who { display:flex; align-items:center; gap:8px; min-width:0; }
 .chair-face {
-  position:absolute; top:26px; left:14px; width:40px; height:40px;
-  display:grid; place-items:center; border-radius:var(--r-md);
-  background:var(--surface-raised); border:1px solid var(--border-default);
-  color:hsl(var(--h) 60% 82%);
+  flex:none; width:28px; height:28px; display:grid; place-items:center;
+  border-radius:var(--r-md); background:hsl(var(--h) 45% 20% / .55); color:hsl(var(--h) 60% 82%);
 }
-.chair-card .pp-body { flex:1; padding-top:26px; }
-.chair-card .chips .chip.more { color:var(--text-dim); border-style:dashed; }
+.chair-name { font-size:var(--fs-lg); font-weight:600; color:var(--text-primary); min-width:0;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.chair-desc {
+  margin:0; color:var(--text-secondary); font-size:var(--fs-xs); line-height:1.5;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+}
 .chair-card.empty { border-style:dashed; background:none; }
+.chair-card.empty .chair-body { padding-bottom:11px; }
 /* The foot is its own layer: separated from the body by a rule, stat on the
    left, the actions on the right, all on one baseline.
    The stat takes the slack rather than space-between doing it: with two
    actions, space-between spread them apart and left the gear stranded in the
    middle of the row — present, and impossible to find. */
 .chair-foot {
-  display:flex; align-items:center; gap:8px;
+  display:flex; align-items:center; gap:2px;
   border-top:1px solid var(--border-subtle);
-  margin-top:10px; padding:9px 12px 11px;
+  margin-top:11px; padding:6px 8px 6px 12px;
 }
-.chair-foot .stat { flex:1; font-size:var(--fs-2xs); color:var(--text-dim); min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-/* The gear reads as the quieter of the two: configuring is the occasional
-   errand, talking to them is the point of the card. */
+/* Wraps rather than truncates. Thai has no word breaks for an ellipsis to fall
+   on kindly, so a clipped stat line read as "2 งานที่…" — the number survived
+   and the sentence did not. */
+.chair-foot .stat { flex:1; min-width:0; font-size:var(--fs-2xs); color:var(--text-dim); line-height:1.4; }
 .chair-foot .icobtn { flex:none; }
 .chair-foot .stat .n { font-size:var(--fs-md); font-weight:600; color:var(--text-secondary); }
-/* The door into a direct chat (§85) — the one action a card offers. */
-.chair-foot .chair-chat { flex:none; display:inline-flex; align-items:center; gap:5px; font-size:var(--fs-2xs); }
+/* The door into a direct chat (§85) — the one action a card is for, so it is
+   the one thing in the foot wearing a colour. The gear beside it is the
+   occasional errand and stays grey. */
+.chair-foot .chair-chat { color:var(--interactive); }
 /* A direct chat's row is labelled with who — slightly brighter than the desk
    chip, because a name is a stronger fact than a place. */
 .sess-row .sess-desk.agent { color:var(--text-secondary); border-color:var(--border-default); }
@@ -1296,10 +1344,41 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .chair-strip .back-office { flex:none; font-size:var(--fs-2xs); color:var(--text-dim);
   background:none; border:1px solid var(--border-subtle); border-radius:999px; padding:2px 10px; cursor:pointer; }
 .chair-strip .back-office:hover { color:var(--text-secondary); border-color:var(--border-default); }
-.job-row .job-when { margin-left:6px; font-size:var(--fs-2xs); color:var(--text-dim); font-weight:400; }
-.job-row .job-meta { display:flex; gap:12px; align-items:center; margin-top:6px; font-size:var(--fs-2xs); color:var(--text-dim); }
-.job-row .job-meta .ok { color:var(--status-ok, var(--interactive)); display:flex; }
-.job-row .job-meta .bad { color:var(--status-danger); display:flex; }
+/* Which day, once, above the rows of it — rather than "2 วัน" printed six
+   times down a column nobody can skip through. */
+.feed-day { margin:16px 0 6px; font-size:var(--fs-2xs); color:var(--text-dim); }
+.feed-card + .feed-day { margin-top:18px; }
+/* The whole row is the door. The brief takes the slack and everything else is
+   its own width, so the meta column lines up down the list instead of drifting
+   with the length of each line. */
+.job-row {
+  display:flex; align-items:center; gap:10px; width:100%; text-align:left;
+  padding:9px 14px; background:none; border:0; border-top:1px solid var(--border-subtle);
+  color:var(--text-primary); cursor:pointer;
+}
+.job-row:first-child { border-top:0; }
+.job-row:hover:not(:disabled) { background:var(--surface-hover); }
+.job-row:disabled { cursor:default; }
+.job-face {
+  flex:none; width:22px; height:22px; display:grid; place-items:center;
+  border-radius:var(--r-sm); background:hsl(var(--h) 45% 20% / .55); color:hsl(var(--h) 60% 82%);
+}
+.job-brief { flex:1; min-width:0; font-size:var(--fs-sm); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.job-row .job-meta { flex:none; font-size:var(--fs-2xs); color:var(--text-dim); }
+.job-row .ok { flex:none; color:var(--status-ok, var(--interactive)); display:flex; }
+.job-row .bad { flex:none; color:var(--status-danger); display:flex; }
+/* Named on hover, so the row says what clicking it does without every row
+   carrying the sentence. The chevron is the always-visible half of it. */
+.job-row .job-go { flex:none; font-size:var(--fs-2xs); color:var(--interactive); opacity:0; }
+.job-row:hover .job-go, .job-row:focus-visible .job-go { opacity:1; }
+.job-row > :global(svg) { flex:none; color:var(--text-dim); }
+.job-row:hover > :global(svg) { color:var(--interactive); }
+
+/* The page's own asides. Not .page-note: that one carries a -16px top margin
+   to hug the thing above it, and two of them stacked mid-page became the wall
+   of prose this layout exists to break up. */
+.office-note { margin:0; color:var(--text-muted); font-size:var(--fs-xs); line-height:1.6; }
+.office-note.foot { margin-top:24px; padding-top:14px; border-top:1px solid var(--border-subtle); color:var(--text-dim); }
 .set-txt .d.clamp2 { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
 
 /* โปรเจกต์ — two levels. The list is cards a person scans for the one they
@@ -1657,13 +1736,19 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .mcp-off .set-txt { opacity:.55; }
 /* A register entry: the header opens the row, the switches live inside. The
    row wraps so the switch panel drops below the header and actions rather than
-   squeezing between them. */
-.mcp-entry { flex-wrap:wrap; }
-.mcp-head { flex:1 1 auto; display:flex; align-items:flex-start; gap:8px; min-width:0; background:none; border:0; padding:0; margin:0; text-align:left; color:inherit; font:inherit; cursor:pointer; }
-.mcp-head .set-txt { display:block; min-width:0; }
-.mcp-head:focus-visible { outline:2px solid var(--interactive); outline-offset:2px; border-radius:var(--r-sm); }
-.mcp-caret { flex:0 0 auto; color:var(--text-muted); line-height:1.4; transition:transform .15s; }
-.mcp-caret.open { transform:rotate(90deg); }
+   squeezing between them.
+
+   Named `reg-` rather than `mcp-` because the connections page is the same
+   register with different contents — a list of things bolted onto the outside
+   of the app, each collapsed to a line until you want it. Copying the rules
+   under a second prefix is how the two lists would drift apart by a pixel a
+   month until they stopped looking like one idea. */
+.reg-entry { flex-wrap:wrap; }
+.reg-head { flex:1 1 auto; display:flex; align-items:flex-start; gap:8px; min-width:0; background:none; border:0; padding:0; margin:0; text-align:left; color:inherit; font:inherit; cursor:pointer; }
+.reg-head .set-txt { display:block; min-width:0; }
+.reg-head:focus-visible { outline:2px solid var(--interactive); outline-offset:2px; border-radius:var(--r-sm); }
+.reg-caret { flex:0 0 auto; color:var(--text-muted); line-height:1.4; transition:transform .15s; }
+.reg-caret.open { transform:rotate(90deg); }
 /* Connected and pointed at nobody is the one state worth interrupting for: it
    looks healthy on the row and reaches no one. */
 .mcp-badge-warn { color:var(--status-warning, #d29922); border-color:var(--status-warning, #d29922); }
@@ -2268,10 +2353,17 @@ button.ctrl, label.ctrl { display:inline-flex; align-items:center; justify-conte
 }
 .ag-search input { flex:1; min-width:0; border:none; background:none; padding:6px 0; color:var(--text-primary); }
 .ag-search input:focus { outline:none; }
+/* The same face this profile wears on the team page, in the same colour — a
+   row of identical grey tiles made the settings list a different-looking
+   product from the roster it configures. Helpers keep the grey: they have no
+   card anywhere, so a colour would be a resemblance to nothing. */
 .ag-rowicon {
   flex:none; width:30px; height:30px; display:grid; place-items:center; margin-right:2px;
   border:1px solid var(--border-subtle); border-radius:var(--r-sm);
   background:var(--surface-sunken); color:var(--text-muted);
+}
+.ag-rowicon.tinted {
+  border-color:transparent; background:hsl(var(--h) 45% 20% / .55); color:hsl(var(--h) 60% 82%);
 }
 
 /* The brake, once it is no longer the only button. A draft in the composer puts
@@ -2285,3 +2377,21 @@ button.ctrl, label.ctrl { display:inline-flex; align-items:center; justify-conte
    above it. .chat-inner is a flex column, so one `order` says it — no second
    render path, and the array it comes from stays in the order it happened. */
 .chat-inner > .msg.during-turn { order: 1; }
+
+/* Connections — one card per external account. The placement row is chips
+   rather than the MCP page's checkbox column because a card carries three or
+   four of them inline, where that page carries a long list inside a drawer.
+   Same ids underneath, same meaning; only the density differs. */
+/* The opened half of a row. Full width so it drops below the header and the
+   quick action rather than squeezing between them. */
+.conn-body { flex:1 0 100%; margin-top:10px; padding:12px; border-radius:var(--r-md); background:var(--surface-sunken); border:1px solid var(--border-subtle); display:flex; flex-direction:column; gap:8px; }
+.conn-eyebrow { margin-top:4px; }
+.conn-actions { margin-top:2px; }
+.conn-targets { display:flex; flex-wrap:wrap; gap:8px; margin:2px 0 8px; }
+.conn-chip { font-size:var(--fs-sm); padding:5px 11px; border-radius:var(--r-full); background:transparent; border:1px solid var(--border-subtle); color:var(--text-muted); cursor:pointer; transition:border-color .15s, color .15s, background .15s; }
+.conn-chip:hover:not(:disabled) { border-color:var(--border-strong); color:var(--text-secondary); }
+/* On is stated by colour *and* by the pressed state, so the row is readable
+   without relying on the accent alone. */
+.conn-chip.on { background:var(--surface-sunken); border-color:var(--interactive); color:var(--text-primary); }
+.conn-chip:disabled { cursor:not-allowed; opacity:.6; }
+.conn-chip:focus-visible { outline:2px solid var(--interactive); outline-offset:2px; }

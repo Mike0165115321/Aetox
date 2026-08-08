@@ -469,3 +469,16 @@ func TestPromptTeachesWhenAPictureBeatsAParagraph(t *testing.T) {
 		}
 	}
 }
+
+// Both visual layers open with "your answer is rendered as markdown and the
+// markup in it is drawn" — true of the desktop chat, false of a terminal. A
+// CLI told its terminal draws SVG hands the user a page of path coordinates
+// where the picture was meant to be.
+func TestCLIPromptDoesNotTeachDrawing(t *testing.T) {
+	got := Build(SurfaceCLI, Scope{Root: t.TempDir()})
+	for _, leaked := range []string{"inline <svg>", "var(--surface-panel)"} {
+		if strings.Contains(got, leaked) {
+			t.Errorf("the CLI prompt teaches a renderer the terminal does not have: %q", leaked)
+		}
+	}
+}

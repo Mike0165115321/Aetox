@@ -32,6 +32,8 @@ export const en: Record<keyof typeof th, string> = {
   'chat.providerFallback': 'Not connected. Running Aetox’s built-in model instead.',
   'sidebar.deleteSession': 'Delete chat',
   'sidebar.confirmDelete': 'Sure?',
+  'sidebar.exportSession': 'Export chat',
+  'sidebar.importSession': 'Import an exported chat (.json)',
   'sidebar.noProjects': 'No projects opened yet',
   'sidebar.explorer': 'Explorer',
   'sidebar.refreshTip': 'Refresh file tree',
@@ -115,6 +117,10 @@ export const en: Record<keyof typeof th, string> = {
   'chat.approvalFullAccess': 'Full Access',
   'chat.modelIdPlaceholder': 'model id',
   'chat.copyCode': 'Copy',
+  'chat.copyDrawing': 'Copy',
+  'chat.saveDrawing': 'Save',
+  'chat.savedDrawing': 'Saved',
+  'chat.drawingExportFailed': 'Failed',
   'chat.copiedCode': 'Copied',
   'chat.runCode': 'Run',
   'chat.runningCode': 'Running…',
@@ -320,6 +326,39 @@ export const en: Record<keyof typeof th, string> = {
   'settings.inUse': 'In use',
   'settings.use': 'Use',
   'settings.customModelPlaceholder': 'Other model id, e.g. gpt-4o…',
+
+  // Connections — accounts the agent acts on your behalf with. Deliberately a
+  // separate page from MCP: an MCP server is a tool process Aetox runs, this is
+  // an account Aetox signs in to. Same group, different question.
+  'settings.connections': 'Connections',
+  'settings.connectionsDesc': 'External accounts the agent can work on your behalf with. GitHub first — email and the rest follow.',
+  'settings.ghDesc': 'Lets the agent reach your private repositories, and raises the request limit from 60 an hour to 5,000.',
+  'settings.ghNotConnected': 'Not connected',
+  'settings.ghConnectedAs': 'Connected as {login}',
+  'settings.ghFromEnv': 'Using a token from the environment',
+  'settings.ghFromEnvHint': 'GITHUB_TOKEN or GH_TOKEN is set outside Aetox. Connect an account to use that instead.',
+  'settings.ghEnvAlso': 'A token is also set in the environment. The connected account is the one Aetox uses.',
+  'settings.ghTokenLabel': 'Personal access token',
+  'settings.ghTokenPlaceholder': 'ghp_… or github_pat_…',
+  'settings.ghTokenHint': 'Aetox checks the token with GitHub before saving it, and stores it encrypted alongside your model logins.',
+  'settings.ghCreateToken': 'Create a token on GitHub',
+  'settings.ghConnect': 'Connect',
+  'settings.ghConnecting': 'Checking…',
+  'settings.ghDisconnect': 'Disconnect',
+  'settings.ghVerify': 'Check',
+  'settings.ghVerifying': 'Checking…',
+  'settings.ghScopes': 'Scopes: {list}',
+  // Fine-grained tokens do not report scopes at all, and blank space where a
+  // list should be reads as "no access" rather than "not stated".
+  'settings.ghScopesUnstated': 'This token does not state its scopes — fine-grained tokens carry permissions elsewhere.',
+  // Placement. Same words as the MCP page uses for the same thing, because it
+  // is the same thing: which desks and which of the team may use this.
+  'settings.connFor': 'Who can use it',
+  'settings.connForNobody': 'nobody',
+  // Never placed is not "off" — it is carried everywhere, and the row has to
+  // say which of the two it is without being opened.
+  'settings.connForEveryone': 'every desk',
+  'settings.connForHint': 'A desk switched off does not ask first — its {n} tools are not in the assistant\'s list at all.',
 
   'settings.mcpDesc': 'Connect MCP servers (stdio or HTTP) to add tools for the assistant. MCP tools always ask for confirmation before running.',
   'settings.noMcpServers': 'No MCP server yet. Add one below or pick a preset.',
@@ -554,8 +593,8 @@ Check your own work before answering; say so plainly if unsure.
   // sidebar keeps its own name (Agent team); these are the kinds.
   'settings.team': 'Agents',
   'settings.subagents': 'Sub-agents',
-  'settings.teamDesc': 'An agent takes a whole job off your hands and returns a file — talk to them on the Agent team page. This page sets which model each one runs on and which tools it may be handed.',
-  'settings.teamNew': 'New agent',
+  'settings.teamDesc': 'An agent is a specialist with a job of their own: talk it through with them, or hand them the work — the room to do it in is the Agent team page. This page sets which model each one runs on and which tools it may be handed.',
+  'settings.teamNew': 'Add a specialist',
   'settings.teamNoneOfMine': 'None of your own yet. Create one, or configure a built-in and save it.',
   'settings.teamMineHint': '.md files you wrote in the agents folder. Edit, delete or add as you like.',
   'settings.teamOpenPage': 'Open the team page',
@@ -629,12 +668,12 @@ Check your own work before answering; say so plainly if unsure.
   'desk.soon': 'Soon',
 
   // ---- Agent team ----
-  'office.intro': 'The assistant hands this team jobs that fit in a single brief and gets a file back. They never see your conversation, and they hand work to no one.',
+  'office.intro': 'Specialists you can talk to like colleagues — ask their opinion, think something through, or hand them a job and get a file back. The assistant can hand them work too. None of them sees another’s conversation, and they hand work to no one.',
   'office.roster': 'The team',
   'office.feed': 'Work received',
   'office.userChair': 'yours',
   'office.overrides': 'overrides',
-  'office.jobsDone': 'jobs done',
+  'office.jobsDone': 'jobs',
   'office.neverUsed': 'nothing yet',
   'office.noChairs': 'Nobody on the team yet',
   'office.noJobs': 'No work has come in yet — ask the assistant for a document, a deck or a workbook.',
@@ -650,7 +689,7 @@ Check your own work before answering; say so plainly if unsure.
   'chat.inputToAgent': 'Message {name}…',
   'chat.mainAgent': 'Main assistant',
   'chat.agentSwitchNote': 'Switching always opens a new chat — this one stays in history.',
-  'office.newAgent': 'New agent',
+  'office.newAgent': 'Add a specialist',
   'settings.agentSearch': 'Search agents…',
   'settings.agentNoMatches': 'No agent matches that search',
   'settings.agentIcon': 'Icon',
@@ -658,6 +697,8 @@ Check your own work before answering; say so plainly if unsure.
   'settings.agentIconAutoHint': 'Derived from what this agent produces',
   'office.openAgentsFolder': 'or open the agents folder',
   'office.toolCalls': '{n} tool calls',
+  'office.filterAll': 'Everyone',
+  'office.noJobsFor': 'Nothing has come in for {name} lately',
 
   // ---- Work ----
   'artifacts.intro': 'Every file Aetox has made, read straight off the disk. Deleting a chat leaves its files alone — this page is the only place they are deleted.',

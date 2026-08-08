@@ -8,7 +8,7 @@
 // "who am I delegating to", never "who am I talking to" (§44.0).
 //
 // Profiles come in two kinds, and **the file's home is its kind** (owner's
-// call, 2026-08-05 — ตัวแทน/ผู้ช่วยตัวแทน):
+// call, 2026-08-05 — เอเจน/ซับเอเจน):
 //
 //   - **Agents** — the team the user can see: they take jobs over the counter
 //     and hold direct chats (§85). Home: profiles/agents (bundled) and
@@ -55,7 +55,13 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/skill"
 )
 
-//go:embed profiles/agents/*/AGENT.md profiles/subagents/*.md
+// The whole tree rather than the two file patterns it used to name. An agent is
+// a package (config.AgentHome), and a package that could only ship its
+// definition would make every shipped worker's knowledge a thing the user has
+// to download — while a user's own worker keeps its skills in a folder beside
+// its AGENT.md. Two layouts for one kind of thing is the debt; this is one.
+//
+//go:embed profiles
 var bundledProfiles embed.FS
 
 // The bundled halves of the two homes. Their names never reach a user; the
@@ -135,8 +141,14 @@ type Profile struct {
 	//
 	// A name rather than an image: the file is a .md the user edits by hand,
 	// and a path to a picture would be a second thing to keep alive beside it.
-	Icon   string `json:"icon,omitempty"`
-	Prompt string `json:"prompt"`
+	Icon string `json:"icon,omitempty"`
+	// Needs are the outside things this agent cannot do its job without —
+	// "connection:<id>" for an external account, "mcp:<server>" for a tool
+	// server. See needs.go for the rule that makes this safe: a need is a
+	// declaration and never a grant, so a file naming something that does not
+	// exist produces a sentence on screen rather than a silently empty agent.
+	Needs  []string `json:"needs,omitempty"`
+	Prompt string   `json:"prompt"`
 	Path        string   `json:"path,omitempty"` // on-disk path; "" for a bundled profile
 	Builtin     bool     `json:"builtin"`
 	// Overrides marks a user file that shadows a bundled profile of the same
@@ -197,8 +209,8 @@ func applyHomeRules(p *Profile, agentHome bool) {
 		return
 	}
 	if p.Desk != "" {
-		p.Invalid = "ไฟล์นี้อยู่ในบ้านของผู้ช่วยตัวแทน แต่ประกาศ desk: " + p.Desk +
-			" — ผู้ช่วยตัวแทนไม่มีโต๊ะ ถ้าตั้งใจให้เป็นตัวแทน ย้ายไฟล์ไปโฟลเดอร์ agents"
+		p.Invalid = "ไฟล์นี้อยู่ในบ้านของซับเอเจน แต่ประกาศ desk: " + p.Desk +
+			" — ซับเอเจนไม่มีโต๊ะ ถ้าตั้งใจให้เป็นเอเจน ย้ายไฟล์ไปโฟลเดอร์ agents"
 		p.Desk = ""
 	}
 }
@@ -234,9 +246,9 @@ func resolve() ([]entry, []Conflict) {
 		p.Builtin = builtin
 		if i, taken := byName[name]; taken {
 			if homeOf[name] != agentHome {
-				home := "ผู้ช่วยตัวแทน"
+				home := "ซับเอเจน"
 				if homeOf[name] {
-					home = "ตัวแทน"
+					home = "เอเจน"
 				}
 				conflicts = append(conflicts, Conflict{
 					Name: name, Path: path,
@@ -275,7 +287,7 @@ func resolve() ([]entry, []Conflict) {
 			if !src.agentHome {
 				conflicts = append(conflicts, Conflict{
 					Name: name, Path: path,
-					Reason: "ผู้ช่วยตัวแทนฝังมากับระบบ เพิ่มหรือแก้ไขไม่ได้ — ไฟล์นี้จึงไม่ถูกอ่าน ถ้าตั้งใจสร้างคนทำงานของคุณเอง สร้างเป็นตัวแทนที่หน้าทีมเอเจน แล้วลบไฟล์นี้ทิ้งได้",
+					Reason: "ซับเอเจนฝังมากับระบบ เพิ่มหรือแก้ไขไม่ได้ — ไฟล์นี้จึงไม่ถูกอ่าน ถ้าตั้งใจสร้างคนทำงานของคุณเอง สร้างเป็นเอเจนที่หน้าทีมเอเจน แล้วลบไฟล์นี้ทิ้งได้",
 				})
 				continue
 			}
@@ -357,7 +369,7 @@ func Delegates() []Profile {
 }
 
 // The two piles a delegation can land in, named for the UI (COMPANY.md §4:
-// ตัวแทน / ผู้ช่วยตัวแทน). The kind is decided by which home the file lives
+// เอเจน / ซับเอเจน). The kind is decided by which home the file lives
 // in — never by a word in its description — same rule as the `task` schema's
 // grouping (task.go, agentChoice).
 const (
@@ -432,12 +444,18 @@ func rawFor(name string) (string, bool) {
 // A profile with nothing learned yet gets exactly its old prompt, byte for
 // byte: the common case must not pay for the feature, and prefix caching keys
 // on the leading bytes.
+// Unmet needs are folded here too, and here is the only place they could be:
+// an agent is reached from two doors — a delegated run and a direct chat — and
+// a check that lived at one of them would leave the other able to run an agent
+// that cannot work, without it knowing why. Appended last, after memory, so an
+// agent with nothing missing still gets its old prompt byte for byte and keeps
+// its prefix cache.
 func PromptFor(p Profile) string {
-	memory := learned.Read(p.Name)
-	if memory == "" {
-		return p.Prompt
+	prompt := p.Prompt
+	if memory := learned.Read(p.Name); memory != "" {
+		prompt += "\n\n---\n# What you have learned doing this job before\n" + memory + "\n"
 	}
-	return p.Prompt + "\n\n---\n# What you have learned doing this job before\n" + memory + "\n"
+	return prompt + needsNotice(UnmetNeeds(p))
 }
 
 // MaxToolCalls is what cognitive.AgentConfig gets for this sub-agent.
@@ -531,6 +549,7 @@ func parse(name, raw string) Profile {
 		Steps:       steps,
 		Desk:        strings.ToLower(strings.TrimSpace(fields["desk"])),
 		Icon:        strings.TrimSpace(fields["icon"]),
+		Needs:       splitList(fields["needs"]),
 		Prompt:      body,
 	}
 }

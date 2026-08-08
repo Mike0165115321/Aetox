@@ -13,6 +13,7 @@
   } from '../../wailsjs/go/main/App'
   import type { main } from '../../wailsjs/go/models'
   import { t, i18n } from './i18n.svelte'
+  import { copyDrawing, saveDrawing } from './drawingExport'
   import { renderMarkdown, renderStreamingMarkdown } from './markdown'
   import { openUrlInWorkbench, openFileTab, setTabDragPayload, TAB_DRAG_MIME } from './stores/workbench.svelte'
   import {
@@ -60,8 +61,8 @@
   // starts. Sub-agents are their own view rather than rows mixed into the tool
   // list: "what did it do itself" and "what did it hand to someone else" are
   // different questions, and one list answers neither. Delegations split once
-  // more into 'agents' (ตัวแทน — a colleague hired for a whole job) and 'subs'
-  // (ผู้ช่วยตัวแทน — the assistant's own hands), because "ซับเอเจน 1 ตัว" on a
+  // more into 'agents' (เอเจน — a colleague hired for a whole job) and 'subs'
+  // (ซับเอเจน — the assistant's own hands), because "ซับเอเจน 1 ตัว" on a
   // turn where the doc agent made the file misnames whose work it was.
   type Panel = 'think' | 'tools' | 'agents' | 'subs' | ''
   let openPanel = $state<Record<number, Panel>>({})
@@ -95,8 +96,8 @@
   const isOwn = (n: TimelineNode) => !n.step.parent && !isDelegation(n)
   const ownSteps = (steps: ToolStep[]) => groupSteps(steps).filter(isOwn).map((n) => n.step)
   const delegated = (steps: ToolStep[]) => groupSteps(steps).filter((n) => !isOwn(n))
-  // The two piles a delegation lands in (COMPANY.md §4): a ตัวแทน takes a whole
-  // job and returns a file; a ผู้ช่วยตัวแทน is a step of the assistant's own
+  // The two piles a delegation lands in (COMPANY.md §4): a เอเจน takes a whole
+  // job and returns a file; a ซับเอเจน is a step of the assistant's own
   // work. The kind rides on the step, stamped by the engine from which home the
   // profile file lives in — the frontend never guesses it from a name. A step
   // with no stamp (an old persisted turn) counts as a helper, which is the pile
@@ -684,6 +685,33 @@
     }
   }
 
+  // Copy or save the drawing whose button was clicked. The PNG carries the
+  // theme's real colours (drawingExport bakes them), so what lands on the
+  // clipboard is what the user is looking at. Both paths flash their verdict
+  // on the button itself, same as the code-copy button does.
+  async function exportDrawing(button: HTMLButtonElement) {
+    if (button.dataset.busy) return
+    const svg = button.closest('.drawing-box')?.querySelector('svg')
+    if (!svg) return
+    const isCopy = button.classList.contains('drawing-copy')
+    const idle = isCopy ? t('chat.copyDrawing') : t('chat.saveDrawing')
+    button.dataset.busy = '1'
+    try {
+      if (isCopy) {
+        await copyDrawing(svg)
+        button.textContent = t('chat.copiedCode')
+      } else {
+        await saveDrawing(svg)
+        button.textContent = t('chat.savedDrawing')
+      }
+    } catch {
+      button.textContent = t('chat.drawingExportFailed')
+    } finally {
+      delete button.dataset.busy
+      setTimeout(() => (button.textContent = idle), 1500)
+    }
+  }
+
   // Links in rendered markdown must not navigate the app's own webview away —
   // open them in a workbench browser tab instead.
   function onChatClick(e: MouseEvent) {
@@ -701,6 +729,11 @@
         copyBtn.textContent = t('chat.copiedCode')
         setTimeout(() => (copyBtn.textContent = t('chat.copyCode')), 1500)
       })
+      return
+    }
+    const drawBtn = el.closest('.drawing-copy, .drawing-save')
+    if (drawBtn) {
+      void exportDrawing(drawBtn as HTMLButtonElement)
       return
     }
     const a = el.closest('a')

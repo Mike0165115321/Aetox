@@ -1079,3 +1079,86 @@ func TestABriefTooBigForTheChildIsRefusedNotTruncated(t *testing.T) {
 		t.Errorf("a normal brief was refused: %q", fits.Content)
 	}
 }
+
+// One door: a delegate is described the way the session it came from is.
+//
+// The two ways onto the same worker had drifted apart — a direct chat mounted
+// the whole prompt, a delegated run mounted the brief and nothing else, so an
+// agent asked by the assistant did not know where a bare filename lands and an
+// agent asked by the user did. The host now lends the assembler it used on
+// itself; these assert that the tool actually leans on it.
+func TestADelegateIsMountedOnTheHostsAssembledPrompt(t *testing.T) {
+	isolate(t)
+	var got string
+	tools := NewTaskTools(TaskOptions{
+		Provider:     model.NewNoopProvider("m"),
+		Model:        "m",
+		Registry:     skill.NewDefaultRegistry(skill.RegistryOptions{SandboxRoot: t.TempDir()}),
+		ApprovalMode: safety.ApprovalFullAccess,
+		BuildPrompt: func(direction string) string {
+			got = direction
+			return "FRAME\n" + direction
+		},
+	})
+	registry := skill.NewRegistry()
+	for _, tool := range tools {
+		if err := registry.Register(tool, skill.SourceBuiltin); err != nil {
+			t.Fatalf("register %s: %v", tool.Name(), err)
+		}
+	}
+	out, _, err := skill.NewDispatcher(registry).ExecuteTool(context.Background(), "task",
+		map[string]any{"agent": "general", "description": "x", "prompt": "find the needle"})
+	if err != nil {
+		t.Fatalf("task: %v (%s)", err, out.Content)
+	}
+
+	// What the host was handed is the worker's own brief, whole — the assembler
+	// puts the frame around it, so anything that pre-chewed it here would be a
+	// second opinion about what a brief is.
+	p, ok := Load("general")
+	if !ok {
+		t.Fatal("the general profile is missing")
+	}
+	if want := PromptFor(p); got != want {
+		t.Errorf("the host was handed %d chars, want the profile's own %d", len(got), len(want))
+	}
+}
+
+// The budget has to be measured against what the delegate actually carries. It
+// used to be checked against the bare brief, which was the wrong number the
+// moment the frame arrived — a brief could pass the check and the assembled
+// prompt still not fit.
+func TestTheBriefBudgetCountsTheAssembledPrompt(t *testing.T) {
+	isolate(t)
+	tools := NewTaskTools(TaskOptions{
+		Provider:     model.NewNoopProvider("m"),
+		Model:        "m",
+		Registry:     skill.NewDefaultRegistry(skill.RegistryOptions{SandboxRoot: t.TempDir()}),
+		ApprovalMode: safety.ApprovalFullAccess,
+		MaxChars:     4000,
+		BuildPrompt: func(direction string) string {
+			return strings.Repeat("frame ", 1000) + direction // 6k of frame alone
+		},
+	})
+	registry := skill.NewRegistry()
+	for _, tool := range tools {
+		if err := registry.Register(tool, skill.SourceBuiltin); err != nil {
+			t.Fatalf("register %s: %v", tool.Name(), err)
+		}
+	}
+	out, _, err := skill.NewDispatcher(registry).ExecuteTool(context.Background(), "task",
+		map[string]any{"agent": "general", "description": "x", "prompt": "short"})
+	if err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+	// A refusal is a tool result, not a Go error: the model has to read it and
+	// split the work, which it cannot do if the call itself blew up.
+	if !strings.Contains(out.Content, "too long") {
+		t.Fatalf("a job that cannot fit was accepted: %s", out.Content)
+	}
+	// And the number it names is the assembled prompt, not the bare brief —
+	// the frame alone is already past the budget.
+	if !strings.Contains(out.Content, "7611-character") {
+		t.Errorf("the refusal counted something other than the assembled prompt: %s", out.Content)
+	}
+}

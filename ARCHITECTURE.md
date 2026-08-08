@@ -516,6 +516,7 @@ product picture in [COMPANY.md](COMPANY.md)) · §82 (the learning floor) · §4
 | §88 | A Drawing Is Confined to Its Own Box (2026-08-06) |
 | §89 | A Number Is Worked Out, Not Recalled (2026-08-07) |
 | §90 | A Project Is a Folder of Conversations, Not a Fence (2026-08-07) |
+| §91 | An Agent Is a Colleague With a Job, Not a Tool With a Name (2026-08-08) |
 
 ---
 

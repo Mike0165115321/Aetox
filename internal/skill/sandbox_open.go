@@ -209,6 +209,9 @@ func refuseCredentialStore(target string) error {
 	if err := refuseOwnSecrets(target); err != nil {
 		return err
 	}
+	if err := refuseAgentKnowledge(target); err != nil {
+		return err
+	}
 	home, err := os.UserHomeDir()
 	if err != nil || strings.TrimSpace(home) == "" {
 		return nil
@@ -240,6 +243,46 @@ func refuseOwnSecrets(target string) error {
 		}
 	}
 	return nil
+}
+
+// refuseAgentKnowledge shuts <DataRoot>/agents/<name>/skills to every file
+// tool, in every mode.
+//
+// A worker's skills folder is its specialist knowledge — the required fields of
+// a tax invoice, the columns of a payroll workbook — and the whole reason it
+// sits in that worker's own folder rather than on the shared shelf is that the
+// others must not have it. Without this the separation held only because
+// nothing pointed across: the folders are inside the data root, which is
+// readable on purpose, so a worker that guessed a sibling's path was in.
+//
+// The door is not closed, it is moved: a worker's own skills reach it as tools
+// in its own registry (internal/subagent/skills.go), which is exactly how
+// ~/.aetox/skills is reachable through `skills_list` and `skill_view` while
+// being refused to `read`. Knowledge travels through the skill door or not at
+// all.
+//
+// Only `skills`. AGENT.md and MEMORY.md stay readable, because the assistant
+// explaining its own team — and writing a new AGENT.md when the user asks for a
+// teammate — are things this product is built to do.
+func refuseAgentKnowledge(target string) error {
+	root, err := config.AgentsRoot()
+	if err != nil || strings.TrimSpace(root) == "" {
+		return nil
+	}
+	rel, err := filepath.Rel(resolvedHomeDir(strings.TrimSpace(root)), target)
+	if err != nil {
+		return nil // a different volume: not under the agents root at all
+	}
+	parts := strings.Split(filepath.ToSlash(rel), "/")
+	if len(parts) < 2 || parts[0] == ".." || parts[0] == "." {
+		return nil
+	}
+	if !strings.EqualFold(parts[1], config.AgentSkillsDir) {
+		return nil
+	}
+	return fmt.Errorf(
+		"%s is %s's own knowledge and is not reachable through file tools — an agent's skills are handed to that agent as tools, and to nobody else",
+		filepath.ToSlash(rel), parts[0])
 }
 
 // CredentialStoreAt names the credential store a folder sits inside, or "" if

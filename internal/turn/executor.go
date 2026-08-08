@@ -344,8 +344,8 @@ type ToolEvent struct {
 	// prose inside the tool result, which is not a place a UI can read.
 	Agent string `json:"agent,omitempty"`
 	Brief string `json:"brief,omitempty"`
-	// AgentKind says which pile that worker belongs to — "agent" (ตัวแทน, a
-	// chair with a desk) or "helper" (ผู้ช่วยตัวแทน). The UI counts the two
+	// AgentKind says which pile that worker belongs to — "agent" (เอเจน, a
+	// chair with a desk) or "helper" (ซับเอเจน). The UI counts the two
 	// apart, and it cannot decide this itself: the answer lives in which home
 	// the profile file sits, which only the resolver the host injects can see
 	// (ExecutorOptions.DelegateKind). Empty when no resolver is wired or the

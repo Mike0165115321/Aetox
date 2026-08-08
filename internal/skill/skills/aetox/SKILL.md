@@ -1,6 +1,6 @@
 ---
 name: aetox
-description: ตัว Aetox เอง — ของแต่ละอย่างเก็บที่ไหน (DataRoot, สกิล, ตัวแทน, โต๊ะ, โปรเจกต์, ประวัติแชท, ผลงาน), เพิ่มสกิล/MCP ยังไง, และโฟลเดอร์ไหนที่เครื่องมือไฟล์ปฏิเสธเสมอ
+description: ตัว Aetox เอง — ของแต่ละอย่างเก็บที่ไหน (DataRoot, สกิล, เอเจน, โต๊ะ, โปรเจกต์, ประวัติแชท, ผลงาน), เพิ่มสกิล/เอเจน/MCP ยังไงและอันไหนทำเองได้, และโฟลเดอร์ไหนที่เครื่องมือไฟล์ปฏิเสธเสมอ
 ---
 
 You are running inside Aetox. This document is what you are made of and where
@@ -36,11 +36,12 @@ Skills are the deliberate exception and do **not** live here — see below.
 | `<DataRoot>/identity` | every `*.md` here is folded into the system prompt of every session |
 | `<DataRoot>/memory` | `MEMORY.md` (cross-desk) and `modes/<desk>.md` (per desk) |
 | `<DataRoot>/modes` | user desk manifests; a file here overrides the bundled desk of the same name |
-| `<DataRoot>/agents` | one folder per ตัวแทน: `<name>/AGENT.md` + `<name>/MEMORY.md` |
-| `<DataRoot>/subagents` | ผู้ช่วยตัวแทน — read-only in practice, see below |
+| `<DataRoot>/agents` | one folder per เอเจน: `<name>/AGENT.md` + `<name>/MEMORY.md` |
+| `<DataRoot>/subagents` | ซับเอเจน — read-only in practice, see below |
 | `<DataRoot>/project` | โปรเจกต์ of the storefront door |
 | `<DataRoot>/prompts` | user prompt presets |
 | `<DataRoot>/mcp-servers.json` | MCP server list |
+| `<DataRoot>/connections.json` | which desks each external account serves — never the token |
 | `<DataRoot>/permissions.json` | approval rules |
 | `<DataRoot>/hooks.json` | hooks |
 | `<DataRoot>/credentials.json` | provider API keys |
@@ -56,12 +57,18 @@ Skills are the deliberate exception and do **not** live here — see below.
 
 ## Skills
 
-**Skills live at `~/.aetox/skills`, not under `<DataRoot>`.** One folder per
-skill, each containing a `SKILL.md` (frontmatter `name` + `description`, then a
-free-form body) plus whatever files that body sends you to. That directory is
-the only place scanned.
+**The shared shelf is `~/.aetox/skills`, not under `<DataRoot>`.** One folder
+per skill, each containing a `SKILL.md` (frontmatter `name` + `description`,
+then a free-form body) plus whatever files that body sends you to.
 
-Two sources, and the second wins:
+It is not the only place scanned. **Each เอเจน has a private skills folder of
+its own** — `<DataRoot>/agents/<name>/skills/` — in the identical layout, and it
+is scanned only for the agent whose folder it is. That is the difference that
+matters: a skill on the shared shelf is everyone's, so specialist knowledge
+(the required fields of a tax invoice, the columns of a payroll workbook) is
+kept in the worker's own folder instead. See "เอเจน" below.
+
+Two sources on the shelf, and the second wins:
 
 - **Bundled** — compiled into the binary (this document is one). Nothing to
   download, nothing on disk to delete.
@@ -105,16 +112,17 @@ normal case:
 Never tell a user a repository is unsupported because it lacks
 `aetox-plugin.json`. That is the ordinary case and it installs.
 
-## ตัวแทน, ผู้ช่วยตัวแทน, and desks
+## เอเจน, ซับเอเจน, and desks
 
 All three are one markdown file with frontmatter. **The file's home is its
 kind** — nothing inside the file decides which it is.
 
-- **ตัวแทน (agents)** — the team the user can see and chat with directly.
+- **เอเจน (agents)** — the team the user can see and chat with directly.
   Bundled ones are compiled in; the user's live in `<DataRoot>/agents/<name>/`,
-  as a folder (`AGENT.md` is the definition, `MEMORY.md` is what it learned).
-  Hiring one is dropping one more folder — no release needed.
-- **ผู้ช่วยตัวแทน (helpers)** — your own hands, never chatted with, and part of
+  as a folder (`AGENT.md` is the definition, `MEMORY.md` is what it learned,
+  `skills/` is what it knows). Hiring one is dropping one more folder — no
+  release needed.
+- **ซับเอเจน (helpers)** — your own hands, never chatted with, and part of
   the system: the bundled set is the whole set. A user file in
   `<DataRoot>/subagents` is **not loaded** — it is reported as a conflict so it
   never vanishes silently — and the save door refuses. If a user asks to add
@@ -123,8 +131,47 @@ kind** — nothing inside the file decides which it is.
   manifests are compiled in; a file in `<DataRoot>/modes` with the same name
   overrides one, and a new file is a new desk.
 
-You have no tool that writes any of these three. Creating or editing them is
-the user's job from Settings, or by hand in the folders above.
+### What one contains
+
+Every field of an `AGENT.md` is optional, and each has a default worth knowing
+before you tell a user what they must write:
+
+| Field | Absent means |
+|---|---|
+| `description` | Nothing tells the assistant what this worker is for. It is the **only** line about them in the `task` tool's list, so an empty or vague one means nobody is ever sent work |
+| `desk` | `specialized` — in the office, takes jobs, can be chatted with directly |
+| `tools` | Everything that desk carries. The field can only ever *narrow* — a worker cannot list its way to a tool the desk does not have |
+| `deny` | Nothing refused. `deny` is the safety gate; `tools` is only a token saving |
+| `steps` | 24. `unlimited` removes the ceiling; a typo falls back to 24 rather than to no ceiling |
+| `model` | Whatever the session is running |
+| `icon` | Derived from what the worker produces |
+
+The name is the **folder's** name, never a field inside the file. It may not
+contain spaces or `\ / : * ? " < > |`, and it may not collide with a
+ซับเอเจน's name — memory and job history key on the bare name, so one name
+belongs to one worker. A name that matches a bundled agent is not an error: it
+replaces it, and the office card says so.
+
+### Creating one
+
+There is no dedicated tool for it. What there is, is the ordinary `write`, and
+whether it reaches depends on the mode:
+
+- **No project focused** — the sandbox is open, so `write` with an **absolute**
+  path into `<DataRoot>/agents/<name>/AGENT.md` succeeds, and the worker appears
+  with no restart: the profile resolver reads the disk on every lookup.
+- **A project focused** — the wall is up and the same write is refused with
+  "path is outside the folders this session can use".
+
+So the accurate answer to "can you add an agent yourself" is *yes, when no
+project is focused* — not "I have no way to". But **ask first**. Hiring is the
+user's decision, the folder is theirs, and a teammate that appeared because you
+inferred one was wanted is a change to their team that nobody chose. Offer to
+write it, say where it will go, and let them answer.
+
+`<DataRoot>/modes` behaves the same way for desks. `<DataRoot>/subagents` does
+not: a file written there is **not loaded** whatever mode you are in, so writing
+one produces a conflict report rather than a helper.
 
 ## โปรเจกต์ (storefront door)
 
@@ -164,6 +211,26 @@ offer to edit the file for them — it is also refused to your file tools (below
 You do not need the file to answer questions about MCP: every tool bridged from
 a server is already in your tool list and says which server it came from.
 
+## การเชื่อมต่อ — external accounts
+
+An account the user attached so you can work on their behalf with it: GitHub
+today, more later. Two halves in two places, on purpose — the token is in
+`oauth.json` with the sign-ins, encrypted; only the placement is in
+`connections.json`, which is why that file is safe to read and copy.
+
+Placement uses the same `for:` vocabulary as MCP — a desk name, or
+`agent:<name>` — and it decides what you can see, not what you may do:
+**a connection this desk does not hold takes its tools out of your tool list
+entirely.** So if you are looking for `github_search` and it is not there, the
+answer is not that it failed; it is that this desk does not carry GitHub. Say
+that, rather than reporting the tool as broken.
+
+**You have no tool that connects, disconnects or moves an account** — same rule
+as MCP above. It is Settings → การเชื่อมต่อ, and the user does it.
+
+A connection that has never been placed is carried by every desk. Nothing was
+taken away from anyone by this file arriving.
+
 ## Folders your own file tools always refuse
 
 `read`, `write`, `list`, `grep`, `glob` and the rest go through one gate, and
@@ -187,5 +254,28 @@ Inside `<DataRoot>`, refused by name:
 `credentials.json` · `oauth.json` · `.env` · `model-preference.json` ·
 `mcp-servers.json` · `webview`
 
+And one folder, refused for a different reason: **`<DataRoot>/agents/<name>/skills`**.
+That is a worker's own specialist knowledge, and it sits in that worker's folder
+precisely so the other workers do not have it — so no file tool reaches it, in
+any mode, including that worker's own. Its skills are handed to it as tools
+instead, which is the same shape as `~/.aetox/skills` being reachable through
+`skills_list` and `skill_view` but not through `read`. Knowledge travels through
+the skill door or not at all.
+
+The rest of a worker's folder — `AGENT.md`, `MEMORY.md` — stays readable, so you
+can still explain the team and still write a new `AGENT.md` when the user asks
+for a teammate.
+
 The rest of `<DataRoot>` — logs, memory, the agents' folders, the database — is
-readable on purpose, so you can explain yourself.
+readable on purpose, so you can explain yourself. Readable, and in an open
+sandbox writable too: that is what makes creating an agent possible at all, and
+why the paragraph above asks you to check with the user rather than the gate.
+
+---
+
+**Keeping this file true.** It is the only place that answers "where does
+Aetox keep its own things", so anything added to the system — a new folder under
+`<DataRoot>`, a new kind of file a worker can carry, a new door for installing
+something, a new refusal — belongs here in the same change that ships it. A
+sentence here that was accurate last month is worse than a missing one: it gets
+believed.

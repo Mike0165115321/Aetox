@@ -191,8 +191,8 @@ export interface ToolPartInfo {
   subject?: string
   agent?: string
   brief?: string
-  /** Which pile the worker on a `task` row is in: 'agent' (ตัวแทน) or 'helper'
-   *  (ผู้ช่วยตัวแทน). Stamped by the engine — the kind is decided by which home
+  /** Which pile the worker on a `task` row is in: 'agent' (เอเจน) or 'helper'
+   *  (ซับเอเจน). Stamped by the engine — the kind is decided by which home
    *  the profile file lives in, which only the engine can see. */
   agentKind?: string
   ok: boolean
@@ -238,8 +238,8 @@ export interface ToolEvent {
    * one more row reading "task". */
   agent?: string
   brief?: string
-  /** With them, which pile that worker is in: 'agent' (ตัวแทน) or 'helper'
-   * (ผู้ช่วยตัวแทน). The chat counts the two apart; empty lands in the helper
+  /** With them, which pile that worker is in: 'agent' (เอเจน) or 'helper'
+   * (ซับเอเจน). The chat counts the two apart; empty lands in the helper
    * pile, which is where every delegation lived before the split. */
   agentKind?: string
   /** On a result event: sandbox paths of finished files this call made for the
@@ -273,7 +273,7 @@ export interface ToolStep {
   /** On a `task` row: the worker doing the job, and the brief it was given. */
   agent?: string
   brief?: string
-  /** On a `task` row: 'agent' (ตัวแทน) or 'helper' (ผู้ช่วยตัวแทน) — which of
+  /** On a `task` row: 'agent' (เอเจน) or 'helper' (ซับเอเจน) — which of
    * the two count chips this delegation belongs to. Absent (old turns, engine
    * without the stamp) counts as a helper, the pre-split reading. */
   agentKind?: string

@@ -66,6 +66,7 @@ func TestShellRefusesCommandsItCannotRead(t *testing.T) {
 		{"an encoded command", "powershell -EncodedCommand ZQBjAGgAbwA="},
 		{"invoke-expression", "powershell Invoke-Expression $payload"},
 		{"a variable nobody can resolve", `type %SOMEWHERE%\file.txt`},
+		{"a dollar variable heading a path", `type $SOMEWHERE\file.txt`},
 	}
 	for _, tc := range cases {
 		err := guardCommandPaths(root, tc.command)
@@ -122,6 +123,12 @@ func TestShellDoesNotRefuseOrdinaryCommands(t *testing.T) {
 		// The reason variables are only expanded at the head of a token: this
 		// is a format string, not a path built out of a variable named H.
 		"git log --pretty=format:%H%n",
+		// An unknown variable with no path separator after it names no folder,
+		// whatever it holds — this is an expression, and refusing it refused
+		// every PowerShell command that starts with one.
+		"$PSVersionTable.PSVersion.ToString()",
+		"powershell -Command $Host.Version",
+		"echo %ERRORLEVEL%",
 		"grep -rn pattern internal/",
 		"cat src/main.go",
 		"NODE_ENV=test npm run check",

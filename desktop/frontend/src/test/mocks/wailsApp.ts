@@ -66,6 +66,22 @@ export const CancelSignIn = noop()
 export const ImportableSignIns = arr()
 export const ImportSignIn = vi.fn(async (..._args: any[]) => modelInfo())
 export const SignOut = vi.fn(async (..._args: any[]) => modelInfo())
+// Connections: the catalog with nothing connected and no token in the
+// environment, so the page renders the connect form unless a test says
+// otherwise. `for: []` with configured:false is what an unplaced connection
+// looks like — carried by every desk, and not drawn as "off".
+export const Connections = vi.fn(async () => [
+  {
+    id: 'github', label: 'GitHub', kind: 'token',
+    token_url: 'https://github.com/settings/tokens/new',
+    connected: false, env_override: false, for: [], configured: false,
+    tools: ['github_search', 'plugin_install'],
+  },
+])
+export const ConnectAccount = vi.fn(async (..._args: any[]) => ({ login: 'mike', scopes: ['repo'] }))
+export const VerifyConnection = vi.fn(async (_id: string) => ({ login: 'mike', scopes: ['repo'] }))
+export const SetConnectionTargets = noop()
+export const DisconnectAccount = noop()
 export const InstallSkillFromGitHub = str()
 export const ListSubagentProfiles = arr()
 export const ReadSubagentProfile = str()
@@ -213,7 +229,13 @@ export const DeletePromptPreset = noop()
 export const PickPresetImage = str()
 export const RemovePresetImage = noop()
 export const ToggleMCPServer = noop()
-export const MCPTargets = arr()
+// The desks and the team, shared by the MCP page and the connections page —
+// one list, one set of ids, exactly as the binding is.
+export const PlacementTargets = vi.fn(async () => [
+  { id: 'assistant', name: 'ผู้ช่วย', kind: 'desk' },
+  { id: 'coding', name: 'โค้ด', kind: 'desk' },
+  { id: 'agent:researcher', name: 'researcher', kind: 'agent' },
+])
 export const SetMCPServerTargets = noop()
 export const ToolCounts = vi.fn(async () => ({ builtin: 0, workbench: 0, skill: 0, mcp: 0 }))
 export const UsageStats = vi.fn(async () => ({

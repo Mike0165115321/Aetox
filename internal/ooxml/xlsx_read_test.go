@@ -238,3 +238,32 @@ func TestReadXLSXRejectsWhatIsNotAWorkbook(t *testing.T) {
 		t.Error("a .pptx was accepted as a workbook")
 	}
 }
+
+// The workbooks Aetox writes carry formulas with no cached result on purpose,
+// so the preview has to answer for them. Blank is the wrong answer: a total row
+// rendering empty reads as the agent having forgotten the total, in the one
+// cell the reader looks at first.
+func TestThePreviewShowsAFormulaThatCarriesNoCachedResult(t *testing.T) {
+	preview := previewOf(t, []Sheet{{
+		Name:    "Bill",
+		Columns: []string{"Item", "Amount"},
+		Rows: [][]Cell{
+			{TextCell("a"), NumberCell(100)},
+			{TextCell("รวม"), FormulaCell("=SUM(B2:B2)")},
+		},
+	}})
+
+	rows := preview.Sheets[0].Rows
+	last := rows[len(rows)-1]
+	if last[1] != "=SUM(B2:B2)" {
+		t.Errorf("the total cell previewed as %q, want the expression", last[1])
+	}
+}
+
+// A workbook written by Excel does carry the cached result, and that is what
+// the user expects to read — the expression must not replace it.
+func TestACachedResultStillWinsOverItsFormula(t *testing.T) {
+	if got := renderCell("", 0, "4440.25", "", nil, nil); got != "4440.25" {
+		t.Errorf("renderCell dropped a cached value: %q", got)
+	}
+}

@@ -35,7 +35,7 @@ func ReadRaw(name string) (string, bool) {
 // do. Kept as a door rather than deleted so the refusal lives in the layer
 // that owns the rule, and reads the same whichever caller knocks.
 func Save(name, body string) error {
-	return errors.New("ผู้ช่วยตัวแทนฝังมากับระบบ เพิ่มหรือแก้ไขไม่ได้ — ถ้าต้องการคนทำงานแบบของคุณเอง สร้างเป็นตัวแทนที่หน้าทีมเอเจน")
+	return errors.New("ซับเอเจนฝังมากับระบบ เพิ่มหรือแก้ไขไม่ได้ — ถ้าต้องการคนทำงานแบบของคุณเอง สร้างเป็นเอเจนที่หน้าทีมเอเจน")
 }
 
 // SaveAgent writes an agent's file into the agents' home — the one write door
@@ -64,7 +64,7 @@ func SaveAgent(name, body string) error {
 			continue
 		}
 		if p.Desk == "" {
-			return errors.New("ชื่อ " + name + " เป็นของผู้ช่วยตัวแทนอยู่แล้ว — ความจำและประวัติงานผูกกับชื่อ ต้องตั้งชื่ออื่น")
+			return errors.New("ชื่อ " + name + " เป็นของซับเอเจนอยู่แล้ว — ความจำและประวัติงานผูกกับชื่อ ต้องตั้งชื่ออื่น")
 		}
 		break
 	}
@@ -146,7 +146,7 @@ func SetModel(name, modelName string) error {
 	}
 	p, ok := Load(name)
 	if !ok || p.Desk == "" {
-		return errors.New("ผู้ช่วยตัวแทนฝังมากับระบบ แก้ไขไม่ได้ — โมเดลของมันตามโมเดลที่แชทใช้อยู่เสมอ")
+		return errors.New("ซับเอเจนฝังมากับระบบ แก้ไขไม่ได้ — โมเดลของมันตามโมเดลที่แชทใช้อยู่เสมอ")
 	}
 	return SaveAgent(name, setFrontmatterField(raw, "model", strings.TrimSpace(modelName)))
 }
@@ -288,6 +288,12 @@ func FilterRegistry(parent *skill.Registry, p Profile, ceiling *mode.Mode) *skil
 			continue // a duplicate name can't happen in a fresh registry; ignore rather than panic
 		}
 	}
+	// What this worker knows, out of its own folder (skills.go). Here rather
+	// than at the call sites because this function is already the one place
+	// that answers "what does this worker hold" — a delegation and a direct
+	// chat both come through it, and a second place to add them is a day when
+	// one door has the knowledge and the other does not.
+	attachOwnSkills(filtered, p)
 	return filtered
 }
 

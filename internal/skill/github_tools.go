@@ -16,12 +16,15 @@ import (
 	"strings"
 	"time"
 
+	gh "github.com/Mike0165115321/Aetox/internal/github"
 	"github.com/Mike0165115321/Aetox/internal/model"
 )
 
 const (
-	defaultGitHubAPIBaseURL = "https://api.github.com"
-	defaultGitHubRawBaseURL = "https://raw.githubusercontent.com"
+	// Both hosts are stated once, in internal/github, and read from there —
+	// the package that owns the connection owns where it connects to.
+	defaultGitHubAPIBaseURL = gh.APIBaseURL
+	defaultGitHubRawBaseURL = gh.RawBaseURL
 	aetoxPluginManifestName = "aetox-plugin.json"
 )
 
@@ -781,7 +784,7 @@ func (c *githubRepoClient) doRequest(ctx context.Context, endpoint string, accep
 	}
 	// Optional token lifts the anonymous rate limit (60/h -> 5000/h) and
 	// opens private repos the user can access. Fine without one.
-	if token := githubToken(); token != "" {
+	if token := gh.Token(); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	resp, err := c.httpClient.Do(req)
@@ -826,14 +829,6 @@ func emptyFallback(value string, fallback string) string {
 	return value
 }
 
-func githubToken() string {
-	for _, key := range []string{"GITHUB_TOKEN", "GH_TOKEN"} {
-		if v := strings.TrimSpace(os.Getenv(key)); v != "" {
-			return v
-		}
-	}
-	return ""
-}
 
 // ---------------------------------------------------------------------------
 // github_search / github_read_file / github_list_files — read-only GitHub
