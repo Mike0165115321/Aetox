@@ -58,6 +58,48 @@ type Loaded struct {
 type Desk struct {
 	Name      string
 	Direction string
+	// Carries reports whether a tool is on this desk. nil means every tool is,
+	// which is the zero Desk: a session from before desks existed, running the
+	// whole registry.
+	//
+	// It exists because the engine layers below were desk-blind and taught
+	// moves the desk could not make. fileEditing told the assistant — which
+	// carries no `diagnostics`, that being a `code` tool — to call it after
+	// every source edit, so the one desk aimed at people who have never opened
+	// a terminal spent a round discovering a tool it was never given. A layer
+	// that names a tool has to be able to ask whether the tool is here.
+	//
+	// A closure rather than a []string so this package still does not import
+	// internal/mode: the caller already holds the manifest and its AllowsTool,
+	// and a copied list is a second answer to a question mode already answers.
+	Carries func(name string) bool
+	// Delegates reports whether this desk may hand a whole job to another desk
+	// (COMPANY.md §3's hiring door — `dispatch:` in the manifest). The coding
+	// desk declares none, and its `task` tool does not even list the office's
+	// agents (internal/subagent.available), so telling it to hand deliverable
+	// work over describes a move with no target on the other side.
+	//
+	// Read through delegates(), never directly: a zero Desk is a session from
+	// before desks existed, and that one could always reach every agent.
+	Delegates bool
+}
+
+// carries answers Desk.Carries for the zero value too: a desk that was never
+// told what it holds holds everything.
+func (d Desk) carries(name string) bool {
+	if d.Carries == nil {
+		return true
+	}
+	return d.Carries(name)
+}
+
+// delegates is carries' counterpart, and leans on the same sentinel. A nil
+// Carries means nobody described this desk, which is the pre-desks full desk —
+// and that one carried every tool *and* could hand work to any agent. Reading
+// the bool alone would make the zero value a desk that is full of tools and
+// forbidden to delegate, which was never a desk that existed.
+func (d Desk) delegates() bool {
+	return d.Carries == nil || d.Delegates
 }
 
 // ProjectContextFile returns the path of whichever project context file
@@ -178,7 +220,7 @@ func BuildWithReport(surface Surface, scope Scope, desk Desk) (string, Loaded) {
 	// as a new rule of its own.
 	b.WriteString(workingIn(scope.Space))
 	b.WriteString(capability())
-	b.WriteString(fileEditing())
+	b.WriteString(fileEditing(desk))
 	b.WriteString(batchWork())
 	b.WriteString(computing())
 	// Only where the surface can draw them. Both layers open with "your answer
@@ -190,7 +232,7 @@ func BuildWithReport(surface Surface, scope Scope, desk Desk) (string, Loaded) {
 		b.WriteString(drawing())
 		b.WriteString(panel())
 	}
-	b.WriteString(longform())
+	b.WriteString(longform(desk))
 	b.WriteString(narration())
 	b.WriteString(clarify())
 
@@ -322,8 +364,8 @@ func capability() string {
 		// is also not a reason to stop: what can be done without the missing
 		// thing is still worth doing, and usually most of the answer.
 		"When something you need really is absent, say which one and where it is switched on, and ask " +
-		"for it. Then do the part that does not need it. Refusing a whole job over one missing piece, " +
-		"and finishing a job while quietly missing a piece, are the same error told two ways.\n"
+		"for it. Then do the part that does not need it — refusing the whole job over one missing piece, " +
+		"and quietly finishing without it, are both wrong.\n"
 }
 
 // fileEditing tells the model how to change a file it has already written.
@@ -332,16 +374,25 @@ func capability() string {
 // small fix to an 800-line file was answered by streaming all 800 lines back
 // through `write` again. Those lines are output tokens, paid for and slow:
 // the user watches a minute of silence per edit, every edit.
-func fileEditing() string {
-	return "When changing a file that already exists, use the edit tool on just the part that changes. " +
-		"Do NOT re-send the whole file through write — its content is output tokens, so rewriting an " +
-		"800-line file to fix one line costs 800 lines of generation every time, and every one of those " +
-		"lines also lands in the conversation.\n" +
+//
+// What is stated and what is left out was cut back on 2026-08-09: a model
+// already knows an edit is cheaper than a rewrite, so the layer keeps the
+// instruction and drops the economics lecture behind it. What stays is what a
+// model cannot know from the tool list — that apply_patch is atomic, that
+// grep-with-context usually beats reading the file, and the diagnostics step,
+// which is now asked for only where it exists.
+func fileEditing(desk Desk) string {
+	s := "When changing a file that already exists, use the edit tool on just the part that changes. " +
+		"Do NOT re-send the whole file through write — rewriting an 800-line file to fix one line costs " +
+		"800 lines of generation, every time.\n" +
 		"Use write only to create a new file, or when genuinely replacing nearly all of an existing one.\n" +
 		"Changing more than one place? Use apply_patch to make all the edits in a single atomic call — " +
-		"either every edit applies or none do, and it costs one round instead of one per edit.\n" +
-		"After changing source files, call diagnostics on them to confirm the change compiles before " +
-		"moving on. Finding out later, from the user, means having built more work on a broken file.\n" +
+		"either every edit applies or none do, and it costs one round instead of one per edit.\n"
+	if desk.carries("diagnostics") {
+		s += "After changing source files, call diagnostics on them to confirm the change compiles before " +
+			"moving on.\n"
+	}
+	return s +
 		"To find the exact text to match, grep for it with a context of a few lines (and a glob when you " +
 		"know the file type) — that usually gives you enough to write the edit without reading the file " +
 		"at all. Otherwise read with offset and limit around the part you care about. Do not read a large " +
@@ -360,10 +411,10 @@ func batchWork() string {
 	return "When the work is the same operation over many items — renaming files, converting a folder of " +
 		"documents, applying one change to every match — do NOT loop by calling a tool once per item. " +
 		"Write one shell script (or one command with a loop or glob) that does the whole list, run it with " +
-		"shell, and check its summary output. Each tool call costs a full round of conversation; a script " +
-		"costs one round for any list length. Spot-check a result or two afterwards instead of verifying " +
-		"every item with its own call. Stay with individual tool calls when items genuinely need separate " +
-		"judgment — code edits that differ per file are per-item work, not batch work.\n"
+		"shell, and check its summary output: one round for any list length. Spot-check a result or two " +
+		"afterwards instead of verifying every item with its own call. Stay with individual tool calls " +
+		"when items genuinely need separate judgment — code edits that differ per file are per-item work, " +
+		"not batch work.\n"
 }
 
 // computing says that a number in an answer is either worked out or made up,
@@ -388,16 +439,14 @@ func batchWork() string {
 // selects for the calculations that already looked easy, which is exactly the
 // set where the silent mistakes are.
 func computing() string {
-	return "Short arithmetic is yours to do: one operation on small numbers, a round percentage, the days " +
-		"between two dates. Say the answer and move on — a tool call there spends a round trip proving " +
-		"something nobody doubted.\n" +
+	return "Short arithmetic is yours to do — one operation on small numbers, a round percentage, the days " +
+		"between two dates: say it and move on.\n" +
 		"Reach for calc when the work is long, not when it feels hard, because a wrong sum feels exactly " +
-		"like a right one — that is the whole problem with deciding this by how it feels. Long means: " +
-		"numbers of several digits each, steps that feed the one after them (compounding, instalments, a " +
-		"running balance), the same operation repeated down a list of more than a handful, or a figure " +
-		"the user is going to act on — a price, a payroll line, a deadline. The user is shown the script " +
-		"beside the result, so a mistake becomes a line somebody can point at instead of a number they " +
-		"had to trust.\n" +
+		"like a right one. Long means: numbers of several digits each, steps that feed the one after them " +
+		"(compounding, instalments, a running balance), the same operation repeated down a list of more " +
+		"than a handful, or a figure the user is going to act on — a price, a payroll line, a deadline. " +
+		"The user is shown the script beside the result, so a mistake becomes a line somebody can point " +
+		"at instead of a number they had to trust.\n" +
 		"calc runs inside this app: it keeps nothing between calls, needs nothing installed, and cannot " +
 		"reach a file or the network. When the numbers live in a file, or there are more of them than " +
 		"you would type out, or the work needs a real library, that is write plus shell — which touches " +
@@ -510,16 +559,25 @@ func drawing() string {
 // The chat surface renders markdown (see drawing), so the same file the user
 // keeps is also the thing they can read in place — which is why there is no
 // third option here to weigh.
-func longform() string {
-	return "When your answer is long-form writing — an explanation, a plan, notes, findings, a comparison, " +
+func longform(desk Desk) string {
+	s := "When your answer is long-form writing — an explanation, a plan, notes, findings, a comparison, " +
 		"anything that runs past a few paragraphs and the user will want again later — write it to a .md " +
 		"file yourself with write, and reply with a line or two saying what it is. Markdown is the default " +
 		"for writing you produce: it is plain text, it renders here, the user can open it in anything, and " +
 		"correcting it costs one edit.\n" +
 		"A document, workbook or deck is a different request — a file the user asked for so they can open " +
-		"it in another program — and you do not build those yourself: hand the job to the agent whose " +
-		"craft it is and collect the file. Length alone is not that request. Do not send writing out " +
-		"because the answer got long; send it when the user wanted that kind of file.\n" +
+		"it in another program. Length alone is not that request: do not turn writing into one because the " +
+		"answer got long.\n"
+	// The handover is the half that is not true everywhere. A desk with no
+	// `dispatch:` cannot reach the agents who hold the writers, and its `task`
+	// tool does not even list them — so at the coding desk this sentence used
+	// to describe a move with nobody on the other end of it. The lesson above
+	// is the part that holds at every desk, which is why only this is gated.
+	if desk.delegates() {
+		s += "You do not build those yourself: hand the job to the agent whose craft it is and collect " +
+			"the file.\n"
+	}
+	return s +
 		"One file per thing you were asked, named for what it holds, alongside the work it is about. A new " +
 		"file for every explanation leaves the user hunting through a pile — if you are adding to something " +
 		"you already wrote, edit that file instead.\n"

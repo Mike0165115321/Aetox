@@ -194,6 +194,27 @@ var ErrNoApprover = errors.New("bootstrap: Options.Approve is required (a nil ap
 
 // Engine builds the provider, agent, skill registry, sub-agent tools and app
 // from one config, and returns them ready to run.
+// deskFor describes a desk to internal/prompt: its direction, and the two
+// things the engine layers there have to be able to ask about it — whether a
+// tool is on it, and whether it may hand a whole job to another desk.
+//
+// It lives here because this is where the manifest already is. prompt does not
+// import internal/mode by design (a package that low reading one that reads
+// skill would run the dependency the wrong way), so the manifest's own
+// AllowsTool/AllowsDispatch are handed over as a closure and a bool rather than
+// copied into a list that could disagree with them later.
+//
+// A nil Mode is the pre-desks full desk, and every method here is nil-safe in
+// exactly that direction: it carries everything and may dispatch to anyone.
+func deskFor(m *mode.Mode, direction string) prompt.Desk {
+	return prompt.Desk{
+		Name:      m.DeskName(),
+		Direction: direction,
+		Carries:   m.AllowsTool,
+		Delegates: m.AllowsDispatch(mode.Office),
+	}
+}
+
 func Engine(cfg config.Config, opts Options) (Result, error) {
 	defer debuglog.Block("bootstrap.Engine")()
 
@@ -247,7 +268,7 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 	// desk's direction and its memory are part of the prompt prefix the
 	// provider caches, and a prompt that changed mid-conversation would spend
 	// more on cache misses than either layer saves (internal/learned).
-	desk := prompt.Desk{Name: opts.Mode.DeskName(), Direction: opts.Mode.Direction()}
+	desk := deskFor(opts.Mode, opts.Mode.Direction())
 	if opts.Chair != nil {
 		// A chair chat runs on the chair's own prompt — profile plus what it
 		// has learned, the same fold its delegate runs get (§85: one fold, two
@@ -255,7 +276,11 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 		// the office manifest briefs deliverable work in general, the chair's
 		// file briefs *this job*, and an agent reading both would be serving
 		// two masters where its delegate runs serve one.
-		desk = prompt.Desk{Name: opts.Chair.Name, Direction: subagent.PromptFor(*opts.Chair)}
+		// The chair's own brief replaces the desk's direction, but not what the
+		// desk carries: a chair sits at one, and the engine layers have to
+		// describe the tools it actually holds.
+		desk = deskFor(opts.Mode, subagent.PromptFor(*opts.Chair))
+		desk.Name = opts.Chair.Name
 	}
 	agent := cognitive.NewAgent(cognitive.AgentConfig{
 		Provider:     bootstrapResult.Provider,
@@ -411,10 +436,7 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 		// door: a worker reached by `task` and a worker reached by opening a
 		// chat now stand in the same room, described the same way.
 		BuildPrompt: func(direction string) string {
-			return prompt.BuildForDesk(surface, scope, prompt.Desk{
-				Name:      opts.Mode.DeskName(),
-				Direction: direction,
-			})
+			return prompt.BuildForDesk(surface, scope, deskFor(opts.Mode, direction))
 		},
 		// The deferred half of the MCP config: a server only this agent carries
 		// was skipped at startup and comes up here, on the dispatch that needs

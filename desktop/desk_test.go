@@ -624,3 +624,48 @@ func TestListChairsReportsTheRosterUnderTheCeiling(t *testing.T) {
 		t.Errorf("a chair that has never been handed anything reports %d jobs at %q", deck.Jobs, deck.LastUsed)
 	}
 }
+
+// The prompt has to describe the same desk the tool block does (§93). Two
+// engine layers used to be sent to desks that could not follow them: the
+// assistant was told to call `diagnostics` after every source edit — a code
+// tool it does not carry — and the coding desk was told to hand deliverable
+// work to an agent that its own `task` tool does not list, because the desk
+// declares no `dispatch:`.
+//
+// Asserted through bootstrap rather than on prompt.Desk directly, so this also
+// proves the manifest is what answered the question — a desk-aware prompt layer
+// wired to nothing would pass the unit test in internal/prompt and fail here.
+func TestEachDeskIsToldOnlyWhatItCanActuallyDo(t *testing.T) {
+	prompts := map[string]string{}
+	for _, desk := range []string{"assistant", "coding"} {
+		messages := bootDeskApp(t, desk).agent.ContextMessages()
+		if len(messages) == 0 {
+			t.Fatalf("%s desk: no system prompt", desk)
+		}
+		prompts[desk] = messages[0].Content
+	}
+
+	for _, c := range []struct {
+		desk string
+		want bool
+		text string
+		why  string
+	}{
+		{"assistant", false, "call diagnostics", "it carries no diagnostics — the tool block test above says so"},
+		{"coding", true, "call diagnostics", "it carries diagnostics, and an unverified edit is the cost"},
+		{"coding", false, "hand the job to the agent", "it declares no dispatch: there is nobody on the other side"},
+		{"assistant", true, "hand the job to the agent", "the handover is what its `task` tool is for"},
+	} {
+		if got := strings.Contains(prompts[c.desk], c.text); got != c.want {
+			t.Errorf("%s desk: prompt contains %q = %v, want %v — %s", c.desk, c.text, got, c.want, c.why)
+		}
+	}
+
+	// And the lesson underneath the handover holds at both, or gating the
+	// mechanism quietly took the rule with it.
+	for desk, text := range prompts {
+		if !strings.Contains(text, "Length alone is not that request") {
+			t.Errorf("%s desk lost the rule that length is not a request for a document", desk)
+		}
+	}
+}

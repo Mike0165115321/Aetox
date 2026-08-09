@@ -482,3 +482,56 @@ func TestCLIPromptDoesNotTeachDrawing(t *testing.T) {
 		}
 	}
 }
+
+// A layer that names a tool must be able to ask whether the desk has it. The
+// assistant desk carries no `diagnostics` — that is a `code` tool and the desk
+// declares `agent, web, media, files, shell` — yet fileEditing told every desk
+// to call it after changing a source file. The desk aimed at people who have
+// never opened a terminal was being sent, on every code edit, after a tool it
+// was never given.
+func TestADeskIsNotToldToCallAToolItDoesNotCarry(t *testing.T) {
+	without := BuildForDesk(SurfaceDesktop, Scope{Root: t.TempDir()}, Desk{
+		Name:      "assistant",
+		Direction: "This session is assistant work.",
+		Carries:   func(name string) bool { return name != "diagnostics" },
+	})
+	if strings.Contains(without, "call diagnostics") {
+		t.Errorf("a desk without diagnostics is still told to call it:\n%s", without)
+	}
+	with := BuildForDesk(SurfaceDesktop, Scope{Root: t.TempDir()}, Desk{
+		Name:      "coding",
+		Direction: "This session is coding work.",
+		Carries:   func(string) bool { return true },
+	})
+	if !strings.Contains(with, "call diagnostics") {
+		t.Errorf("a desk that carries diagnostics lost the step that verifies its edits:\n%s", with)
+	}
+}
+
+// The other half of the same mistake. The coding desk declares no `dispatch:`,
+// and internal/subagent.available filters the office's agents out of the list
+// its `task` tool advertises — so "hand the job to the agent whose craft it is"
+// described a move with nobody on the other end. What survives at every desk is
+// the lesson underneath it: length is not a request for a .docx.
+func TestADeskThatCannotDelegateIsNotToldToHandWorkOver(t *testing.T) {
+	cannot := BuildForDesk(SurfaceDesktop, Scope{Root: t.TempDir()}, Desk{
+		Name:      "coding",
+		Direction: "This session is coding work.",
+		Carries:   func(string) bool { return true },
+	})
+	if strings.Contains(cannot, "hand the job to the agent") {
+		t.Errorf("a desk with no dispatch is told to hand work to an agent it cannot reach:\n%s", cannot)
+	}
+	if !strings.Contains(cannot, "Length alone is not that request") {
+		t.Errorf("the lesson that holds at every desk was gated away with the mechanism:\n%s", cannot)
+	}
+	can := BuildForDesk(SurfaceDesktop, Scope{Root: t.TempDir()}, Desk{
+		Name:      "assistant",
+		Direction: "This session is assistant work.",
+		Carries:   func(string) bool { return true },
+		Delegates: true,
+	})
+	if !strings.Contains(can, "hand the job to the agent") {
+		t.Errorf("the desk that can delegate lost the instruction to:\n%s", can)
+	}
+}

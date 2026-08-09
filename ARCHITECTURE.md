@@ -517,6 +517,8 @@ product picture in [COMPANY.md](COMPANY.md)) · §82 (the learning floor) · §4
 | §89 | A Number Is Worked Out, Not Recalled (2026-08-07) |
 | §90 | A Project Is a Folder of Conversations, Not a Fence (2026-08-07) |
 | §91 | An Agent Is a Colleague With a Job, Not a Tool With a Name (2026-08-08) |
+| §92 | The Code Door Is a Focus, Not a Fence; and the Automation Room Borrows Somebody Else's Clock (2026-08-09) |
+| §93 | A Prompt Layer That Names a Tool Must Be Able to Ask Whether the Tool Is Here (2026-08-09) |
 
 ---
 
