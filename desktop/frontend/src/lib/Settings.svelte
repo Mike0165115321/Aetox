@@ -29,16 +29,19 @@
     SavePromptPreset, DeletePromptPreset, PickPresetImage, RemovePresetImage,
     ListSubagentProfiles, ReadSubagentProfile, SaveSubagentProfile, SaveAgentProfile,
     DeleteSubagentProfile, SetSubagentModel, OpenAgentsFolder, ListChairs,
+    AgentSkills, AgentNeeds, OpenAgentSkillsFolder,
+    ChairStarters, SaveChairStarters, ChairStartersFile,
     SignInMethods, SignInStatus, StartSignIn, CancelSignIn, ImportableSignIns,
     Connections, ConnectAccount, SetConnectionTargets, VerifyConnection, DisconnectAccount,
+    SetConnectionStartCommand, StartConnectionServer, CheckConnectionServer,
     AppVersion, CheckForUpdate, ApplyUpdate,
     LearningEnabled, SetLearningEnabled, ListPendingChanges, ListDecidedChanges,
     ApprovePendingChange, RejectPendingChange, LearnedEntries, SaveLearnedEntry, OpenMemoryFolder,
   } from '../../wailsjs/go/main/App'
   import { BrowserOpenURL, EventsOn } from '../../wailsjs/runtime/runtime'
   import promptPayQR from '../assets/images/promptpay-qr.png'
-  import { config, update, main } from '../../wailsjs/go/models'
-  import { cockpit, setActiveView, switchProvider, switchModel, submitAPIKey, switchApprovalMode, switchWireFormat, setProviderBaseURL, retryActiveProvider, completeSignIn, signOutProvider, importSignIn } from './stores/cockpit.svelte'
+  import { config, update, main, subagent } from '../../wailsjs/go/models'
+  import { cockpit, setActiveView, switchProvider, switchModel, submitAPIKey, switchApprovalMode, switchWireFormat, setProviderBaseURL, retryActiveProvider, completeSignIn, signOutProvider, importSignIn, SETTINGS_SECTION_KEY } from './stores/cockpit.svelte'
   import {
     identity, loadIdentityFiles, openIdentityFile, saveIdentityFile,
     createIdentityFile, deleteIdentityFile, identityTemplates,
@@ -180,12 +183,26 @@
     id: string; label: string; kind: string; token_url?: string
     connected: boolean; login?: string; source?: string; env_override: boolean
     for: string[]; configured: boolean; tools: string[]
+    // A service the user hosts has no address of its own. GitHub is one host
+    // for everybody and states it as a constant; n8n and Windmill live wherever
+    // the user put them, so the row carries the address, the example to show in
+    // an empty field, and the fact that it needs one at all.
+    needs_base_url: boolean; base_url?: string; base_url_hint?: string
+    // Which page the row belongs on. "automation" is n8n and Windmill; a
+    // service that stands alone declares none and stays on the register.
+    family?: string
+    // How to bring this one up, for the services the user runs themselves.
+    start_command?: string
   }
 
   let connections = $state<ConnectionRow[]>([])
   // Keyed by connection id, because the page draws one card per service and two
   // of them must not share a token box, an error, or a spinner.
   let connToken = $state<Record<string, string>>({})
+  // The address of a self-hosted service, seeded from what is stored so a
+  // reconnect after a rotated key does not ask the user to retype where their
+  // own server lives.
+  let connBaseURL = $state<Record<string, string>>({})
   let connError = $state<Record<string, string>>({})
   // Scopes come from the last live answer rather than from storage: a token's
   // grants can change on the service's side, and a remembered list would keep
@@ -235,12 +252,35 @@
       return
     }
     for (const row of connections) {
+      // Only when the box is untouched: a reload while the user is mid-typing
+      // must not overwrite what they are typing with what is stored.
+      if (row.needs_base_url && connBaseURL[row.id] === undefined) {
+        connBaseURL[row.id] = row.base_url ?? ''
+      }
+      if (row.needs_base_url && connStart[row.id] === undefined) {
+        connStart[row.id] = row.start_command ?? ''
+      }
       if (connDraft[row.id]) continue
       // A connection already placed keeps its list when it is reconnected; one
       // that has never been placed starts where the resolver would put it.
       connDraft[row.id] = row.configured ? [...row.for] : defaultDraft()
     }
   }
+
+  // The rows this page shows.
+  //
+  // `family` groups the services that are interchangeable — n8n and Windmill do
+  // one job between them and a user works on one at a time — and it is the
+  // catalog that says so, not this file. That is the whole reason the split is
+  // safe: a third engine lands on the automation page by declaring its family
+  // in Go, and a mail account lands on the register by declaring none.
+  //
+  // An unrecognised family would otherwise vanish from both pages, so anything
+  // that is not an automation engine falls back to the register rather than
+  // disappearing quietly.
+  const visibleConnections = $derived(
+    connections.filter((row) =>
+      active === 'automation' ? row.family === 'automation' : row.family !== 'automation'))
 
   // What a card's toggles are currently showing: the live placement once it is
   // connected, the draft while it is not.
@@ -276,13 +316,22 @@
     }
   }
 
+  /** A service the user hosts needs its address before the token means anything;
+   *  the rest need only the token. Read by the button so it cannot be pressed
+   *  into a request that was always going to be refused. */
+  function connectable(row: ConnectionRow): boolean {
+    if (!(connToken[row.id] ?? '').trim()) return false
+    return !row.needs_base_url || (connBaseURL[row.id] ?? '').trim() !== ''
+  }
+
   async function connectAccount(row: ConnectionRow) {
     const token = (connToken[row.id] ?? '').trim()
-    if (!token || connBusy) return
+    if (!connectable(row) || connBusy) return
     connBusy = row.id + ':connect'
     connError[row.id] = ''
     try {
-      const account = await ConnectAccount(row.id, token, connDraft[row.id] ?? [])
+      const account = await ConnectAccount(
+        row.id, token, (connBaseURL[row.id] ?? '').trim(), connDraft[row.id] ?? [])
       connScopes[row.id] = account.scopes ?? []
       // Cleared on success only. A token that failed stays in the box, because
       // the usual reason is a truncated paste and retyping the whole thing is a
@@ -294,6 +343,76 @@
     } finally {
       connBusy = ''
     }
+  }
+
+  // Bringing a self-hosted engine up, and asking whether it is up.
+  //
+  // `srvState[id]` is 'ok:…' / 'err:…' like the model connection test, so the
+  // two read the same on screen — one shape for "I asked something and here is
+  // what it said", rather than a new spelling per page.
+  let connStart = $state<Record<string, string>>({})
+  let srvBusy = $state('')
+  let srvState = $state<Record<string, string>>({})
+
+  /** Saved when the field loses focus rather than behind a Save button: it is
+   *  one line, and a command typed and then lost because nobody pressed save is
+   *  the kind of small betrayal this page should not commit. */
+  async function saveStartCommand(row: ConnectionRow) {
+    const next = (connStart[row.id] ?? '').trim()
+    if (next === (row.start_command ?? '')) return
+    try {
+      await SetConnectionStartCommand(row.id, next)
+      await loadConnections()
+    } catch (e) {
+      srvState[row.id] = 'err:' + String(e)
+    }
+  }
+
+  async function startServer(row: ConnectionRow) {
+    if (srvBusy) return
+    srvBusy = row.id + ':start'
+    srvState[row.id] = ''
+    try {
+      // Saved first: pressing start with an edited, unsaved command would run
+      // the old one and report on the new.
+      await saveStartCommand(row)
+      await StartConnectionServer(row.id)
+      srvState[row.id] = 'ok:' + t('settings.connUp')
+    } catch (e) {
+      srvState[row.id] = 'err:' + String(e)
+    } finally {
+      srvBusy = ''
+    }
+  }
+
+  async function checkServer(row: ConnectionRow) {
+    if (srvBusy) return
+    srvBusy = row.id + ':check'
+    srvState[row.id] = ''
+    try {
+      const up = await CheckConnectionServer(row.id)
+      srvState[row.id] = up ? 'ok:' + t('settings.connUp') : 'err:' + t('settings.connDown')
+    } catch (e) {
+      srvState[row.id] = 'err:' + String(e)
+    } finally {
+      srvBusy = ''
+    }
+  }
+
+  /** Disconnecting throws away a credential the user cannot get back — an n8n
+   *  key is shown once at creation and never again — so it goes through the same
+   *  gate as every other loss on this page. It was the one destructive button
+   *  here that just did it. */
+  function askDisconnect(row: ConnectionRow) {
+    askConfirm({
+      title: t('settings.connDisconnectTitle', { name: row.label }),
+      message: t('settings.connDisconnectMessage', { name: row.label }),
+      // What survives is worth saying: coming back later means pasting a key,
+      // not choosing the desks all over again.
+      detail: t('settings.connDisconnectDetail'),
+      confirmLabel: t('settings.ghDisconnect'),
+      run: () => void disconnectAccount(row),
+    })
   }
 
   async function disconnectAccount(row: ConnectionRow) {
@@ -703,12 +822,17 @@
     environment?: Record<string, string>; headers?: Record<string, string>
     cwd?: string; timeoutMs?: number
     disabled: boolean; status: string; tools: number; err?: string
+    // The allowlist, if one was written. `tools` above is the count the server
+    // offers; this is which of them are taken. Absent means all.
+    allowed?: string[]
     // Who carries this server's tools. Absent from the row means the engine
     // sent nothing, which is not the same as "nobody" — treated as [] here and
     // shown as attached nowhere.
     for?: string[]
   }
-  type MCPTargetRow = { id: string; name: string; kind: string }
+  // `detail` is the desk's own description — a paragraph, which is why it is a
+  // tooltip and `name` is what the chip prints.
+  type MCPTargetRow = { id: string; name: string; detail?: string; kind: string }
   let mcpServers = $state<MCPRow[]>([])
   // Everywhere a server can be pointed, from the engine — the desks and the
   // team that actually exist. Not a list typed in here, so hiring an agent
@@ -735,6 +859,10 @@
   // by editing the JSON — which the page did not say the location of either.
   let mcpCwd = $state('')
   let mcpTimeout = $state('')
+  // One tool name per line, and blank means take all of them. A textarea rather
+  // than a list of checkboxes because the names are not known until the server
+  // has been connected once, and this form is where a server is first written.
+  let mcpToolsText = $state('')
   // Set when a preset was handed to the form because it needs a key, so the
   // form can say why it opened instead of just appearing.
   let mcpNeedsKey = $state(false)
@@ -810,6 +938,7 @@
     mcpHeadersText = ''
     mcpCwd = ''
     mcpTimeout = ''
+    mcpToolsText = ''
     mcpNeedsKey = false
   }
 
@@ -823,6 +952,7 @@
     mcpHeadersText = mapToLines(s.headers, ': ')
     mcpCwd = s.cwd ?? ''
     mcpTimeout = s.timeoutMs ? String(s.timeoutMs) : ''
+    mcpToolsText = (s.allowed ?? []).join('\n')
     mcpNeedsKey = false
     mcpError = ''
   }
@@ -837,6 +967,10 @@
       cwd: mcpCwd.trim(),
       // A blank box means "no override", which is 0 — not a timeout of zero.
       timeoutMs: Number.parseInt(mcpTimeout, 10) > 0 ? Number.parseInt(mcpTimeout, 10) : 0,
+      // Always an array, never omitted: the engine keeps whatever it has stored
+      // when this field is absent, so omitting it on an empty box would make
+      // the list unclearable from the only screen that shows it.
+      tools: mcpToolsText.split('\n').map((line) => line.trim()).filter(Boolean),
     })
     await SaveMCPServer(mcpOriginal, server)
     resetMCPForm()
@@ -1350,6 +1484,11 @@
     name: string; description: string; model?: string
     tools?: string[]; deny?: string[]; steps?: number; prompt: string
     path?: string; builtin: boolean; overrides?: boolean; invalid?: string; icon?: string
+    // Already resolved by the backend (applyHomeRules fills the default), which
+    // is why the editor shows this rather than the raw `desk:` it keeps: the
+    // default is a constant in internal/mode and spelling it again here is how
+    // the screen ends up naming a desk the engine does not use.
+    desk?: string
   }
   // Searching the roster. Name and description both, because half the time the
   // thing a person remembers about an agent is what it does rather than what it
@@ -1412,6 +1551,182 @@
   let agentDraftPrompt = $state('')
   let agentBusy = $state('')
   let agentError = $state('')
+  // Read from the file, shown, and written back untouched. Not `Draft` because
+  // nothing here edits them — see AgentFields for why they exist at all.
+  let agentKeptDesk = $state('')
+  let agentKeptNeeds = $state<string[]>([])
+
+  // ---------- What one agent reaches and knows ----------
+  //
+  // Three panels below the tool picker, and three different kinds of fact, which
+  // is why they are three boxes rather than one list (owner, 10 ส.ค.):
+  //
+  //   เครื่องมือ  subtracts from the shared set — allow/deny over what every
+  //              agent starts with.
+  //   MCP        adds, and only to this one. A server pointed at an agent
+  //              skips the profile's allow-list entirely and reaches past the
+  //              desk's ceiling (internal/subagent/store.go).
+  //   สกิล       adds, and only to this one. Attached *after* the filter and
+  //              outside it, deliberately (internal/subagent/skills.go).
+  //
+  // Reading them as one box was the complaint, and it was right: the page was
+  // describing one mechanism where the engine has three.
+  let agentSkills = $state<main.AgentSkillInfo[]>([])
+  let agentNeeds = $state<subagent.Requirement[]>([])
+  // Its own memory (MEMORY.md in its folder) and its own opening (STARTERS.md),
+  // both read-only here. Neither is edited on this page — memory is approved on
+  // the Learning page and the opening is a file — but an agent whose page never
+  // mentions them is a page that quietly claims they do not exist.
+  let agentMemory = $state<string[]>([])
+  let agentStarters = $state<subagent.StarterSet | null>(null)
+  let agentReachFor = $state('') // whose panels are loaded, so a stale answer cannot land on the next agent
+
+  // ---------- The opening, as a form ----------
+  //
+  // Four rows, always drawn. The window fits four, so a growing list would top
+  // out at four and leave its own Add button dead; an empty row is also how a
+  // card is deleted, which a list of exactly-as-many-as-you-have cannot express
+  // without a second control.
+  const STARTER_SLOTS = 4
+  const blankStarters = () =>
+    Array.from({ length: STARTER_SLOTS }, () => ({ title: '', prompt: '', icon: '' }))
+  let startersHeadline = $state('')
+  let startersCards = $state(blankStarters())
+  let startersFile = $state('')
+  let startersBusy = $state(false)
+  let startersError = $state('')
+  // What was on screen when it was last read or saved, so the Save button
+  // answers "is there anything to write" rather than "is this form non-empty".
+  let startersSnapshot = $state('')
+  // True while the cards shown are the bundled agent's rather than the user's.
+  // Saving turns that into a file of your own — the same "copy it out to change
+  // it" shape as AGENT.md, said before the click instead of after.
+  let startersInherited = $state(false)
+
+  const startersKey = () => JSON.stringify([startersHeadline.trim(), startersCards])
+  const startersDirty = $derived(startersKey() !== startersSnapshot)
+  const startersEmpty = $derived(
+    startersHeadline.trim() === '' && startersCards.every((c) => !c.title.trim() && !c.prompt.trim()),
+  )
+  // The filename, asked of the engine rather than assembled here: which of
+  // STARTERS.md / STARTERS.<lang>.md is written follows the same rule the
+  // reader resolves by, and two places spelling it is two places to get it
+  // wrong (config.AgentStartersName).
+  const agentStartersFile = $derived(startersFile)
+
+  function fillStarters(set: subagent.StarterSet | null) {
+    startersHeadline = set?.headline ?? ''
+    const cards = blankStarters()
+    for (const [i, c] of (set?.cards ?? []).slice(0, STARTER_SLOTS).entries()) {
+      // The trailing space after a colon is put back by the reader and must not
+      // come back through the form as an edit nobody made.
+      cards[i] = { title: c.title, prompt: (c.prompt ?? '').trimEnd(), icon: c.icon ?? '' }
+    }
+    startersCards = cards
+    startersSnapshot = startersKey()
+    startersError = ''
+  }
+
+  const saveStarters = () => runStarters(async () => {
+    await SaveChairStarters(agentDraftName.trim(), i18n.locale, subagent.StarterSet.createFrom({
+      headline: startersHeadline.trim(),
+      cards: startersCards
+        .filter((c) => c.title.trim() && c.prompt.trim())
+        .map((c) => ({ title: c.title.trim(), prompt: c.prompt.trim(), icon: c.icon.trim() })),
+    }))
+    // Read back rather than assumed: the engine caps, trims and refuses, and
+    // the form must end up showing what is now in the file.
+    fillStarters(await ChairStarters(agentDraftName.trim(), i18n.locale))
+    startersInherited = false
+  })
+
+  // Clearing is "I do not want my own opening" — the file goes, and whatever
+  // was underneath it answers again: the shipped cards, or the ordinary four.
+  const clearStarters = () => runStarters(async () => {
+    await SaveChairStarters(agentDraftName.trim(), i18n.locale, subagent.StarterSet.createFrom({ headline: '', cards: [] }))
+    const back = await ChairStarters(agentDraftName.trim(), i18n.locale)
+    fillStarters(back)
+    startersInherited = (back.cards ?? []).length > 0 || !!back.headline
+  })
+
+  async function runStarters(fn: () => Promise<void>) {
+    startersBusy = true
+    startersError = ''
+    try {
+      await fn()
+    } catch (e) {
+      startersError = String(e)
+    } finally {
+      startersBusy = false
+    }
+  }
+
+  async function loadAgentReach(name: string) {
+    agentReachFor = name
+    agentSkills = []
+    agentNeeds = []
+    agentMemory = []
+    agentStarters = null
+    // The MCP register is the source for "which servers is this agent on", and
+    // it is already loaded for its own page. Asked for here too, because the
+    // editor can be the first page opened in a session.
+    const [skills, needs, memory, starters, file] = await Promise.all([
+      AgentSkills(name),
+      AgentNeeds(name),
+      LearnedEntries(name),
+      ChairStarters(name, i18n.locale),
+      ChairStartersFile(i18n.locale),
+      mcpServers.length === 0 ? loadMCP() : Promise.resolve(),
+    ])
+    if (agentReachFor !== name) return // the user moved on while the disk was being read
+    agentSkills = skills
+    agentNeeds = needs
+    agentMemory = memory
+    agentStarters = starters
+    startersFile = file
+    // Whether these cards are already this agent's own is not a question the
+    // reader can answer — a bundled agent's opening looks identical to one you
+    // wrote. Only a profile with a file of its own can be showing its own.
+    startersInherited = ((starters.cards ?? []).length > 0 || !!starters.headline) && agentEditing?.path === ''
+    fillStarters(starters)
+  }
+
+  // Which servers this agent carries, read off the register rather than stored
+  // twice: `for:` on the server is the only thing that grants (needs.go), so a
+  // second list here would be a second answer to a question that has one.
+  //
+  // The owner id comes from PlacementTargets, never from pasting "agent:" in
+  // front of a name. config.MCPAgentPrefix carries a warning about exactly that
+  // — three places say the prefix, and one of them spelling it by hand is a
+  // switch that silently stops matching. Empty for an agent with no file yet,
+  // which is what the panel's "save first" state is for.
+  const agentMCPId = $derived(
+    mcpTargets.find((x) => x.kind === 'agent' && x.name === agentDraftName.trim())?.id ?? '',
+  )
+  // Every enabled server, not only the ones already ticked: the panel answers
+  // "what does this one carry" and "what could it" in one read, and a list of
+  // just the ticked ones is a list you cannot add to.
+  const agentServerCandidates = $derived(mcpServers.filter((s) => !s.disabled))
+  const agentServerCount = $derived(
+    agentMCPId ? agentServerCandidates.filter((s) => (s.for ?? []).includes(agentMCPId)).length : 0,
+  )
+
+  // Toggling here writes the same `for:` list the MCP page writes, through the
+  // same call. It applies at once and does not wait for Save — the panel says
+  // so, because a switch inside a form with a Save button is otherwise read as
+  // part of the draft.
+  const toggleAgentServer = (s: MCPRow) => runMCP('target:' + s.name + ':' + agentMCPId, async () => {
+    if (!agentMCPId) return
+    const current = s.for ?? []
+    const next = current.includes(agentMCPId)
+      ? current.filter((x) => x !== agentMCPId)
+      : [...current, agentMCPId]
+    await SetMCPServerTargets(s.name, next)
+    await loadMCP()
+    // A need met by that click stops being unmet — recomputed rather than
+    // guessed at, since only the engine knows what counts as met.
+    if (agentReachFor) agentNeeds = await AgentNeeds(agentReachFor)
+  })
 
   // The per-row model dropdown offers the current provider's models — a pin to a
   // model from some other provider still shows (as its own option) rather than
@@ -1504,12 +1819,18 @@
     agentDraftDeny = parsed.deny
     agentDraftSteps = parsed.steps
     agentDraftIcon = parsed.icon
+    agentKeptDesk = parsed.desk
+    agentKeptNeeds = parsed.needs
     agentDraftPrompt = parsed.body
     agentEditing = a
     // A row opened from this page answers from the roster the page already
     // asked for (ListChairs) — never from the file's own fields.
     agentEditKind = kind ?? (chairNames.has(a.name) ? 'agent' : 'helper')
     agentSnapshot = agentDraftKey()
+    // The three panels that describe an agent's reach and knowledge. Fetched
+    // after the fields are in, and not awaited by the editor: a slow disk scan
+    // must not hold up the form the user came to type in.
+    if (agentEditKind === 'agent') void loadAgentReach(a.name)
   })
 
   function newAgent(kind: 'agent' | 'helper' = 'helper') {
@@ -1521,9 +1842,13 @@
     agentDraftDeny = []
     agentDraftSteps = ''
     agentDraftIcon = ''
+    agentKeptDesk = ''
+    agentKeptNeeds = []
     agentDraftPrompt = t('settings.agentStarter')
     agentError = ''
     agentEditKind = kind
+    agentSkills = []
+    agentNeeds = []
     agentSnapshot = agentDraftKey()
   }
 
@@ -1538,6 +1863,8 @@
       deny: agentDraftDeny,
       steps: agentDraftSteps,
       icon: agentDraftIcon,
+      desk: agentKeptDesk,
+      needs: agentKeptNeeds,
       body: agentDraftPrompt,
     })
     // Out through the door that matches the kind — the backend refuses a name
@@ -1593,8 +1920,16 @@
   // rather than a sentinel number because the file is hand-editable.
   const STEPS_UNLIMITED = 'unlimited'
 
+  // `desk` and `needs` are here to be *kept*, not to be edited. Neither had a
+  // field, and neither survived a save: opening github or automation and
+  // pressing Save wrote a shadow with `needs:` gone, so the agent quietly
+  // stopped declaring what it cannot work without and the notice it carries in
+  // its own prompt (subagent.PromptFor) went with it. `desk:` was the same
+  // silent loss with a worse ending — an agent on a named desk fell back to the
+  // office ceiling. An editor must not delete what it does not draw.
   type AgentFields = {
-    description: string; model: string; tools: string[]; deny: string[]; steps: string; icon: string; body: string
+    description: string; model: string; tools: string[]; deny: string[]; steps: string; icon: string
+    desk: string; needs: string[]; body: string
   }
 
   // Mirrors internal/subagent/profile.go's parse(): a leading `---`-fenced block
@@ -1605,7 +1940,10 @@
   // there's no recognizable frontmatter, so a hand-edited or malformed file is
   // never silently emptied under the user.
   function parseAgentFile(raw: string): AgentFields {
-    const asPromptOnly = { description: '', model: '', tools: [] as string[], deny: [] as string[], steps: '', icon: '', body: raw.trim() }
+    const asPromptOnly = {
+      description: '', model: '', tools: [] as string[], deny: [] as string[],
+      steps: '', icon: '', desk: '', needs: [] as string[], body: raw.trim(),
+    }
     const normalized = raw.replace(/\r\n/g, '\n').replace(/^\n+/, '')
     if (!normalized.startsWith('---\n')) return asPromptOnly
     const rest = normalized.slice(4)
@@ -1627,6 +1965,13 @@
       deny: list(fields.deny),
       steps: (fields.steps ?? '').trim(),
       icon: (fields.icon ?? '').trim(),
+      desk: (fields.desk ?? '').trim().toLowerCase(),
+      // Not lowercased and not split on anything but the comma: an entry may
+      // carry alternatives ("connection:n8n | connection:windmill"), which the
+      // engine splits on `|` itself (subagent.alternatives). Touching the
+      // inside of an entry here would be this editor deciding something the
+      // author wrote down.
+      needs: (fields.needs ?? '').split(',').map((s) => s.trim()).filter(Boolean),
       body: rest.slice(end + 4).trim(),
     }
   }
@@ -1639,6 +1984,12 @@
     if (f.model.trim()) lines.push(`model: ${f.model.trim()}`)
     if (f.tools.length) lines.push(`tools: ${f.tools.join(', ')}`)
     if (f.deny.length) lines.push(`deny: ${f.deny.join(', ')}`)
+    // Written back exactly as they were read. The editor shows both and edits
+    // neither: what an agent requires and which desk it sits at are the
+    // author's statements about the job, and a form that cannot express them
+    // must at least not swallow them.
+    if (f.desk) lines.push(`desk: ${f.desk}`)
+    if (f.needs.length) lines.push(`needs: ${f.needs.join(', ')}`)
     // The mark this agent wears on the roster. Written only when the user chose
     // one: an absent field means the roster derives it from what the agent
     // makes, which is the right answer for every profile nobody has opened.
@@ -1860,7 +2211,7 @@
     // on its own output and runs a second time the moment the first load
     // lands, which is one wasted round trip per open and a race between two
     // in-flight loads for which one gets to set `connections`.
-    if (active === 'connections') untrack(() => void loadConnections())
+    if (active === 'connections' || active === 'automation') untrack(() => void loadConnections())
   })
 
   $effect(() => {
@@ -1884,7 +2235,10 @@
           t('settings.typeScaleTitle'), t('settings.systemZoomTitle'), t('settings.editorFontTitle'),
           t('settings.chatFontTitle'), t('settings.treeFontTitle'), t('settings.codeThemeTitle'),
         ] },
-      { id: 'identity', label: t('sidebar.identity'), icon: 'userRound', terms: [] },
+      // The icon is deliberately not `userRound` — the เอเจน page below owns
+      // that, and this page is not about a person in the team.
+      { id: 'identity', label: t('settings.identity'), icon: 'fileText',
+        terms: ['identity.md', 'thinking.md', 'context.md', 'skills.md'] },
       // Next to identity, because they answer the same question from two
       // sides: what the user told the agent, and what the agent worked out.
       { id: 'learning', label: t('settings.learning'), icon: 'brain',
@@ -1910,11 +2264,24 @@
       // The icon is deliberately not `plug` — MCP owns that, and two plugs in
       // one group is a list you have to read twice.
       { id: 'connections', label: t('settings.connections'), icon: 'globe', terms: ['GitHub', t('settings.ghTokenLabel')] },
+      // Its own page, not a row inside การเชื่อมต่อ (owner, 10 ส.ค.).
+      //
+      // The register answers "which accounts does the agent act on my behalf
+      // with" — GitHub, and the mail and calendar that will follow. An
+      // automation engine is not one of those: it is a machine the user runs,
+      // it takes an address as well as a key, and everything about setting one
+      // up is a different conversation. Filing them together made the page
+      // answer two questions and the automation half unfindable, which is
+      // exactly the complaint.
+      { id: 'automation', label: t('desk.auto'), icon: 'gitBranch',
+        terms: ['n8n', 'Windmill', t('settings.connBaseURLLabel')] },
       { id: 'prompts', label: t('settings.prompts'), icon: 'sparkles', terms: [t('settings.promptNew')] },
-      { id: 'usage', label: t('settings.usage'), icon: 'chartColumn',
-        terms: [t('settings.usageByModel'), t('settings.usageTotalTokens'), t('settings.usageCacheHitRate')] },
     ]},
     { group: t('settings.groupAbout'), items: [
+      // Usage lives here rather than under Tools: it is a report about the app,
+      // not a thing to configure, which is the same kind of page as About.
+      { id: 'usage', label: t('settings.usage'), icon: 'chartColumn',
+        terms: [t('settings.usageByModel'), t('settings.usageTotalTokens'), t('settings.usageCacheHitRate')] },
       { id: 'about', label: t('settings.about'), icon: 'package',
         terms: [t('settings.aboutVersion'), t('settings.aboutCheck')] },
       { id: 'sponsor', label: t('settings.sponsor'), icon: 'heart', terms: ['PromptPay', 'GitHub'] },
@@ -1932,8 +2299,11 @@
   // but a reload during a run should not throw away where you were. Reloading
   // while three pages deep into MCP config and landing back on General is a
   // small thing that happens every single time.
-  const SECTION_KEY = 'aetox.settingsSection'
-  const SECTION_IDS = new Set(['general', 'appearance', 'identity', 'learning', 'models', 'team', 'agents', 'tools', 'skills', 'mcp', 'connections', 'prompts', 'usage', 'about', 'sponsor'])
+  // Imported rather than spelled again: a room can send the user straight to a
+  // section (openSettingsAt), and two spellings of this key would fail silently
+  // and look like the page ignoring where it was told to go.
+  const SECTION_KEY = SETTINGS_SECTION_KEY
+  const SECTION_IDS = new Set(['general', 'appearance', 'identity', 'learning', 'models', 'team', 'agents', 'tools', 'skills', 'mcp', 'connections', 'automation', 'prompts', 'usage', 'about', 'sponsor'])
 
   function restoredSection(): string {
     try {
@@ -1975,24 +2345,83 @@
   const noSearchResults = $derived(query.trim() !== '' && filteredSections.length === 0)
 </script>
 
-<!-- เอเจน and ซับเอเจน get a page each, and both are drawn from here.
-     One markup, two kinds: the alternative is two copies that agree on the day
-     they are written, which is the debt this whole split exists to refuse.
-     `kind` decides what is listed, what the copy says, and which door a save
-     goes out through — it is never read back off a file. -->
-{#snippet profileRow(a: SubagentRow, kind: 'agent' | 'helper')}
+<!-- Starting a self-hosted engine, and asking whether it is up.
+     Two questions this page could not answer before, and both belong to it: a
+     row that says "not connected" was unable to do the one thing that fixes
+     that, and telling somebody to go and find a terminal from the screen they
+     are already on is the complaint this closes.
+
+     Deliberately separate from ตรวจสอบ. That button asks whether the KEY works;
+     these ask whether the PROGRAM is running. Told apart they are two obvious
+     fixes; run together they were one confusing failure, because a dead server
+     and a dead key both come back as "could not connect".
+
+     The command is the user's own, typed once and remembered. Nothing about
+     where n8n or Windmill lives is written in this codebase — a guess would be
+     wrong for everyone it was not written for — and the precedent is an MCP
+     stdio server, which has always been a command in a config file. -->
+{#snippet serverControls(row: ConnectionRow)}
+  <!-- Its own bordered block, and the heading says which of the two questions
+       this half answers. They were a run of fields under the address and the
+       owner could not tell them apart from the credential check below — which
+       is fair, because "ตรวจสอบ" and "เช็คว่าขึ้นหรือยัง" side by side in one
+       column read as two spellings of one button. -->
+  <div class="conn-part">
+    <div class="conn-part-head">
+      <Icon name="monitor" size={13} />
+      <span>{t('settings.connServerPart')}</span>
+    </div>
+    <div class="d muted">{t('settings.connServerPartHint')}</div>
+
+    <div class="eyebrow conn-eyebrow">{t('settings.connStartLabel')}</div>
+    <div class="mset-keyrow">
+      <input
+        class="ctrl key-input" type="text" autocomplete="off" spellcheck="false"
+        placeholder={t('settings.connStartPlaceholder')}
+        value={connStart[row.id] ?? ''}
+        oninput={(e) => (connStart[row.id] = e.currentTarget.value)}
+        onblur={() => saveStartCommand(row)}
+      />
+      <button
+        class="ctrl"
+        disabled={srvBusy !== '' || !(connStart[row.id] ?? '').trim()}
+        onclick={() => startServer(row)}
+      >
+        {srvBusy === row.id + ':start' ? t('settings.connStarting') : t('settings.connStart')}
+      </button>
+      <button class="ctrl" disabled={srvBusy !== ''} onclick={() => checkServer(row)}>
+        {srvBusy === row.id + ':check' ? t('settings.connChecking') : t('settings.connCheck')}
+      </button>
+    </div>
+    <div class="d muted">{t('settings.connStartHint')}</div>
+    {#if srvState[row.id]}
+      <div class="conn-test" class:ok={srvState[row.id].startsWith('ok:')}>
+        {#if srvState[row.id].startsWith('ok:')}
+          <Icon name="check" size={13} /> {srvState[row.id].slice(3)}
+        {:else}
+          {srvState[row.id].slice(4)}
+        {/if}
+      </div>
+    {/if}
+  </div>
+{/snippet}
+
+<!-- ซับเอเจน only. The two pages used to share this markup, and the sharing was
+     right while both were lists of files; they stopped being the same kind of
+     thing the moment เอเจน became people you pick by face (agentCard above).
+     A helper is not picked at all — it is part of the system, nobody chooses
+     one, and a row is the honest shape for an inventory you read and close. -->
+{#snippet profileRow(a: SubagentRow)}
   <div class="set-row">
-    <!-- The same mark this profile wears on the roster, resolved once in Go so
-         one agent cannot show two faces on two pages — and, for an agent, in
-         the same colour the card gives it, so the two pages are visibly about
-         the same people. -->
-    <span class="ag-rowicon" class:tinted={kind === 'agent'} style="--h:{coverHue(a.name)}">
+    <!-- The same mark this profile wears everywhere else, resolved once in Go
+         so one profile cannot show two faces on two pages. Untinted: the
+         colour is an agent's own, and a helper does not have one. -->
+    <span class="ag-rowicon" style="--h:{coverHue(a.name)}">
       <Icon name={(a.icon || 'bot') as IconName} size={15} />
     </span>
     <div class="set-txt">
       <div class="t">
         {a.name}
-        {#if a.overrides}<span class="tag ag-override">{t('settings.agentOverrides')}</span>{/if}
         {#if a.model}<span class="tag">{a.model}</span>{/if}
         <span class="tag" title={toolBadgeTip(a)}>{toolBadge(a)}</span>
         {#if a.deny && a.deny.length > 0}<span class="tag ag-deny" title={denyTip(a)}>{t('settings.agentDenyCount', { n: a.deny.length })}</span>{/if}
@@ -2005,19 +2434,62 @@
       {#if a.invalid}<div class="d ag-invalid">{a.invalid}</div>{/if}
       <div class="d mono-dim">{a.path || 'built-in:' + a.name}</div>
     </div>
-    <!-- Only an agent takes edits — a helper is part of the system, so its row
-         carries no model pin and no way into the editor. -->
-    {#if kind === 'agent'}
+  </div>
+{/snippet}
+
+<!-- An agent gets a card, not a row (owner, 10 ส.ค.): picking which teammate to
+     configure is a question you answer by recognising a face, and the row
+     answered it with a name buried under five grey tags. Same markup vocabulary
+     as the roster on the team page — `.chair-card` and its parts — because they
+     are pictures of the same people and two card designs for one thing is how
+     they drift apart.
+     What differs is the foot. There it carries how much work they have done;
+     here it carries the two settings you change without opening anything: which
+     model they are pinned to, and the door to the rest. -->
+{#snippet agentCard(a: SubagentRow)}
+  <div class="chair-card">
+    <span class="chair-band" style="--h:{coverHue(a.name)}"></span>
+    <div class="chair-body">
+      <div class="chair-who">
+        <span class="chair-face" style="--h:{coverHue(a.name)}">
+          <Icon name={(a.icon || 'bot') as IconName} size={16} />
+        </span>
+        <!-- The file path moved into the name's tooltip. On a row it was a
+             fourth line of dim monospace under every entry; the question it
+             answers ("which file is this?") is asked once in a while, and
+             never while scanning for who to open. -->
+        <span class="chair-name" title={a.path || 'built-in:' + a.name}>{a.name}</span>
+        {#if a.overrides}<span class="tag ag-override">{t('settings.agentOverrides')}</span>{/if}
+      </div>
+      <p class="chair-desc">{a.description || '—'}</p>
+      <div class="chair-tags">
+        <span class="tag" title={toolBadgeTip(a)}>{toolBadge(a)}</span>
+        {#if a.deny && a.deny.length > 0}<span class="tag ag-deny" title={denyTip(a)}>{t('settings.agentDenyCount', { n: a.deny.length })}</span>{/if}
+        <span class="tag" title={t('settings.agentStepsTip', { n: a.steps || 24 })}>{t('settings.agentSteps', { n: a.steps || 24 })}</span>
+      </div>
+      <!-- A file that cannot run says why, where its owner will look — never a
+           silent reinterpretation, never a card that just vanishes (the file is
+           still on the user's disk). -->
+      {#if a.invalid}<div class="d ag-invalid">{a.invalid}</div>{/if}
+    </div>
+    <div class="chair-foot">
       <select
-        class="ctrl" value={a.model ?? ''} disabled={agentBusy !== ''}
+        class="ctrl chair-model" value={a.model ?? ''} disabled={agentBusy !== ''}
+        aria-label={t('settings.agentModelPick')}
         onchange={(e) => pinModel(a.name, e.currentTarget.value)}
       >
         <option value="">{t('settings.agentModelInherit')}</option>
         {#each agentModels as m}<option value={m}>{m}</option>{/each}
         {#if a.model && !agentModels.includes(a.model)}<option value={a.model}>{a.model}</option>{/if}
       </select>
-      <button class="ctrl" disabled={agentBusy !== ''} onclick={() => openAgent(a, kind)}>{t('settings.agentConfigure')}</button>
-    {/if}
+      <button
+        class="icobtn tiny tip-l" disabled={agentBusy !== ''}
+        aria-label={t('settings.agentConfigure')} data-tip={t('settings.agentConfigure')}
+        onclick={() => openAgent(a, 'agent')}
+      >
+        <Icon name="settings" size={13} />
+      </button>
+    </div>
   </div>
 {/snippet}
 
@@ -2053,22 +2525,25 @@
   {/if}
 
   {#if isAgent}
-    <!-- Two cards, split by who wrote it — the question this page is actually
+    <!-- Two grids, split by who wrote it — the question this page is actually
          asked. Built-ins are second because a fresh install has only those and
-         the interesting list is the one you grow. -->
+         the interesting list is the one you grow.
+         The group heading is a bare label rather than a card wrapping the grid:
+         a card around cards is a box around boxes, and the border did nothing
+         the gap between the two groups was not already saying. -->
     {#each [{ id: 'mine', rows: rows.mine.filter(matchesQuery), label: t('settings.subagentsMine'), hint: t('settings.teamMineHint') },
             { id: 'builtin', rows: rows.builtin.filter(matchesQuery), label: t('settings.subagentsBuiltin'), hint: t('settings.subagentsBuiltinHint') }] as group (group.id)}
-      <div class="settings-card">
-        <div class="card-form">
-          <div class="eyebrow">{group.label} <span class="ag-count">{group.rows.length}</span></div>
-          <div class="d muted">{group.hint}</div>
-        </div>
+      <div class="ag-group">
+        <div class="eyebrow">{group.label} <span class="ag-count">{group.rows.length}</span></div>
+        <div class="d muted ag-grouphint">{group.hint}</div>
+      </div>
+      <div class="office-grid">
+        {#each group.rows as a (a.name)}{@render agentCard(a)}{/each}
         {#if group.rows.length === 0}
-          <div class="set-row"><div class="muted">
+          <div class="chair-card empty"><div class="chair-body"><p class="chair-desc">
             {agentQuery.trim() ? t('settings.agentNoMatches') : t('settings.teamNoneOfMine')}
-          </div></div>
+          </p></div></div>
         {/if}
-        {#each group.rows as a (a.name)}{@render profileRow(a, kind)}{/each}
       </div>
     {/each}
     <p class="muted set-sub">{t('settings.agentsHint')}</p>
@@ -2081,7 +2556,7 @@
         <div class="eyebrow">{t('settings.subagentsBuiltin')} <span class="ag-count">{rows.builtin.length}</span></div>
         <div class="d muted">{t('settings.helpersFixedHint')}</div>
       </div>
-      {#each rows.builtin as a (a.name)}{@render profileRow(a, kind)}{/each}
+      {#each rows.builtin as a (a.name)}{@render profileRow(a)}{/each}
     </div>
   {/if}
 {/snippet}
@@ -2112,6 +2587,11 @@
     {/if}
     {#if agentError}<div class="mset-error">{agentError}</div>{/if}
 
+    <!-- Five groups, in the order the questions get asked: who is this, what
+         does it think with, what can it reach, what does it know, how does it
+         open. Before this the page was one long card and half the answers were
+         on other pages entirely. -->
+    <div class="ag-sec">{t('settings.agentSecIdentity')}</div>
     <div class="settings-card">
       <div class="card-form pp-edit">
         <label class="pp-field">
@@ -2149,22 +2629,27 @@
           <textarea class="ctrl ag-body" bind:value={agentDraftPrompt} spellcheck="false" use:autogrow={agentDraftPrompt}></textarea>
           <span class="d muted">{t('settings.agentBodyHint')}</span>
         </label>
-        <!-- A summary and a way in, not seventy chips. What each tool ends up
-             as is one question, so it is answered one row at a time in the
-             panel below rather than across two grids the reader has to join
-             themselves. -->
-        <div class="pp-field">
-          <span class="eyebrow">{t('settings.agentTools')}</span>
-          <div class="ag-toolsum">
-            <div class="ag-toolsum-txt">
-              <div class="t">{agentToolSummary}</div>
-              <div class="d muted">{t('settings.agentToolsRule')}</div>
-            </div>
-            <button type="button" class="ctrl" onclick={() => (toolPickerOpen = true)}>
-              {t('settings.agentToolsConfigure')} <Icon name="chevronRight" size={13} />
-            </button>
-          </div>
-        </div>
+      </div>
+    </div>
+
+    <!-- ── สมอง ── which model answers, and how long it may go on for. Two
+         settings, one question, and the model one used to be answerable only
+         from the card behind this page: a page called "configure the agent"
+         that could not configure the agent's model. -->
+    <div class="ag-sec">{t('settings.agentSecBrain')}</div>
+    <div class="settings-card">
+      <div class="card-form pp-edit">
+        <label class="pp-field">
+          <span class="eyebrow">{t('settings.agentModelPick')}</span>
+          <select class="ctrl" bind:value={agentDraftModel}>
+            <option value="">{t('settings.agentModelInherit')}</option>
+            {#each agentModels as m}<option value={m}>{m}</option>{/each}
+            {#if agentDraftModel && !agentModels.includes(agentDraftModel)}
+              <option value={agentDraftModel}>{agentDraftModel}</option>
+            {/if}
+          </select>
+          <span class="d muted">{t('settings.agentModelHint')}</span>
+        </label>
 
         <div class="pp-field">
           <span class="eyebrow">{t('settings.agentStepsField')}</span>
@@ -2185,7 +2670,304 @@
         </div>
       </div>
     </div>
+
+    <!-- ── เอื้อมถึงอะไร ── the group this whole restructure exists for. Read
+         top to bottom it is the engine's own order: the ceiling the desk sets,
+         then what is subtracted from the shared set, then what is added for
+         this one alone. Three mechanisms, three boxes. -->
+    <div class="ag-sec">{t('settings.agentSecReach')}</div>
+    {#if agentEditKind === 'agent' && agentEditing.name}
+      <!-- The ceiling, stated rather than editable. A desk is named in the file
+           and defaults to the office; what matters on screen is that the reader
+           knows a ceiling exists at all — ticking a tool the desk will never
+           hand over is otherwise a switch that does nothing and says nothing.
+           Not drawn while creating: the desk is resolved by the backend when
+           the file lands, and printing a guess at it here would be this page
+           inventing an answer it does not have. -->
+      <div class="settings-card">
+        <div class="set-row">
+          <span class="ag-rowicon"><Icon name="package" size={15} /></span>
+          <div class="set-txt">
+            <div class="t">{t('settings.agentDeskTitle')} <span class="tag">{agentEditing.desk || agentKeptDesk || '—'}</span></div>
+            <div class="d">{t('settings.agentDeskHint')}</div>
+          </div>
+        </div>
+      </div>
+    {/if}
+
+    <div class="settings-card">
+      <div class="card-form pp-edit">
+        <!-- A summary and a way in, not seventy chips. What each tool ends up
+             as is one question, so it is answered one row at a time in the
+             picker rather than across two grids the reader has to join
+             themselves. -->
+        <div class="pp-field">
+          <span class="eyebrow">{t('settings.agentTools')}</span>
+          <div class="ag-toolsum">
+            <div class="ag-toolsum-txt">
+              <div class="t">{agentToolSummary}</div>
+              <div class="d muted">{t('settings.agentToolsRule')}</div>
+            </div>
+            <button type="button" class="ctrl" onclick={() => (toolPickerOpen = true)}>
+              {t('settings.agentToolsConfigure')} <Icon name="chevronRight" size={13} />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {#if agentEditKind === 'agent'}
+      {@render agentMCPBox()}
+      {@render agentNeedsBox()}
+
+      <!-- Everything below reads a folder that does not exist until the file
+           is saved. Four empty boxes are a worse first impression of a new
+           agent than four boxes that appear once there is something to put in
+           them. -->
+      {#if agentEditing.name}
+        <div class="ag-sec">{t('settings.agentSecKnowledge')}</div>
+        {@render agentSkillsBox()}
+        {@render agentMemoryBox()}
+
+        <div class="ag-sec">{t('settings.agentSecOpening')}</div>
+        {@render agentStartersBox()}
+      {/if}
+    {/if}
   {/if}
+{/snippet}
+
+<!-- The servers pointed at this one agent. A box of its own, beside เครื่องมือ
+     rather than inside it, because it is the opposite operation: `for:` on a
+     server ADDS, skipping this profile's allow-list and reaching past the
+     desk's ceiling (internal/subagent/store.go). Reading the two as one list
+     was the complaint, and the complaint was a true statement about the code. -->
+{#snippet agentMCPBox()}
+  <div class="settings-card">
+    <div class="card-form">
+      <div class="eyebrow">
+        {t('settings.agentMCPTitle')}
+        <span class="ag-count">{agentServerCount}</span>
+      </div>
+      <div class="d muted">{t('settings.agentMCPHint')}</div>
+    </div>
+    {#if !agentMCPId}
+      <!-- A server's `for:` names an agent, so there is nothing to point at
+           until the file exists. Said plainly instead of drawing switches that
+           would silently write nothing. -->
+      <div class="set-row"><div class="muted">{t('settings.agentMCPSaveFirst')}</div></div>
+    {:else if agentServerCandidates.length === 0}
+      <div class="set-row">
+        <div class="set-txt"><div class="d">{t('settings.agentMCPNone')}</div></div>
+        <button class="ctrl" onclick={() => openSection('mcp')}>{t('settings.mcpServers')} <Icon name="arrowRight" size={13} /></button>
+      </div>
+    {:else}
+      {#each agentServerCandidates as s (s.name)}
+        <label class="set-row ag-reachrow">
+          <input
+            type="checkbox" checked={(s.for ?? []).includes(agentMCPId)}
+            disabled={mcpBusy !== ''} onchange={() => toggleAgentServer(s)}
+          />
+          <div class="set-txt">
+            <div class="t">{s.name}{#if s.tools > 0}<span class="tag">{t('settings.mcpToolCount', { n: String(s.tools) })}</span>{/if}</div>
+            <div class="d">{s.url || (s.command ?? []).join(' ')}</div>
+          </div>
+        </label>
+      {/each}
+      <div class="set-row"><div class="d muted">{t('settings.agentMCPInstant')}</div></div>
+    {/if}
+  </div>
+{/snippet}
+
+<!-- What the agent said it cannot work without, and where each of those stands.
+     The engine has computed this since needs.go was written and only ever
+     folded it into the agent's own prompt — so an agent that could not work
+     said so in the chat, while the page you fix it on showed nothing.
+
+     One row per *requirement*, not per thing. `needs: connection:n8n |
+     connection:windmill` is one requirement — an automation engine — and either
+     answers it. Drawn as two flat rows it read as "n8n is required" beside a
+     second demand for a product the user had deliberately not installed. -->
+{#snippet agentNeedsBox()}
+  {#if agentKeptNeeds.length > 0}
+    {@const unmet = agentNeeds.filter((r) => !r.met).length}
+    <div class="settings-card">
+      <div class="card-form">
+        <div class="eyebrow">
+          {t('settings.agentNeedsTitle')}
+          {#if unmet > 0}<span class="ag-count ag-count-warn">{unmet}</span>{/if}
+        </div>
+        <div class="d muted">{t('settings.agentNeedsHint')}</div>
+      </div>
+      {#each agentNeeds as req (req.entry)}
+        {@const options = req.options ?? []}
+        <div class="ag-need" class:met={req.met}>
+          <!-- The requirement's own line. With one option it is that option's
+               name; with more it says the choice out loud, because "either of
+               these" is the fact the flat list was losing. -->
+          <div class="ag-need-head">
+            <span class="ag-rowicon" class:ag-rowicon-warn={!req.met}>
+              <Icon name={req.met ? 'check' : (options[0]?.kind === 'connection' ? 'globe' : 'plug')} size={15} />
+            </span>
+            <div class="set-txt">
+              <div class="t">
+                {options.length > 1
+                  ? options.map((o) => o.label).join(' / ')
+                  : (options[0]?.label ?? req.entry)}
+              </div>
+              <div class="d">
+                {#if req.met}{t('settings.agentNeedMet')}
+                {:else if options.length > 1}{t('settings.agentNeedEitherOf')}
+                {:else}{t(`settings.agentNeedReason_${options[0]?.reason ?? 'unknown'}` as TKey)}{/if}
+              </div>
+            </div>
+            {#if !req.met && options.length === 1}
+              {@render needDoor(options[0])}
+            {/if}
+          </div>
+
+          <!-- With a choice, each way of answering it gets its own line and its
+               own state — "อันไหนเปิดอยู่ก็บอกว่าเปิด". The door beside each
+               goes where THAT one is switched on, which a single shared button
+               could never do. -->
+          {#if options.length > 1}
+            {#each options as o (o.kind + ':' + o.id)}
+              <div class="ag-need-opt">
+                <span class="ag-need-dot" class:on={!o.reason}></span>
+                <div class="set-txt">
+                  <div class="t">{o.label}</div>
+                  <div class="d">
+                    {o.reason ? t(`settings.agentNeedReason_${o.reason}` as TKey) : t('settings.agentNeedOptionOn')}
+                  </div>
+                </div>
+                {#if o.reason}{@render needDoor(o)}{/if}
+              </div>
+            {/each}
+          {/if}
+        </div>
+      {/each}
+    </div>
+  {/if}
+{/snippet}
+
+<!-- Where one unmet option is actually switched on. A server this agent is not
+     placed on is fixed in the MCP box a few rows up, so that one says so
+     instead of sending the user to a page they just came from. -->
+{#snippet needDoor(o: subagent.Need)}
+  {#if o.kind === 'mcp' && o.reason === 'unplaced'}
+    <span class="d muted ag-need-here">{t('settings.agentNeedFixHere')}</span>
+  {:else}
+    <button class="ctrl" onclick={() => openSection(o.kind === 'connection' ? 'connections' : 'mcp')}>
+      {o.kind === 'connection' ? t('settings.agentNeedConnect') : t('settings.agentNeedServer')}
+      <Icon name="arrowRight" size={13} />
+    </button>
+  {/if}
+{/snippet}
+
+<!-- Its own shelf. Reads and does not edit, because a skill is a folder: the
+     honest control is the one that opens it. -->
+{#snippet agentSkillsBox()}
+  <div class="settings-card">
+    <div class="card-form">
+      <div class="eyebrow">{t('settings.agentSkillsTitle')} <span class="ag-count">{agentSkills.length}</span></div>
+      <div class="d muted">{t('settings.agentSkillsHint')}</div>
+    </div>
+    {#each agentSkills as s (s.name)}
+      <div class="set-row">
+        <span class="ag-rowicon"><Icon name="puzzle" size={15} /></span>
+        <div class="set-txt">
+          <div class="t">{s.name}{#if s.bundled}<span class="tag">{t('settings.agentSkillBundled')}</span>{/if}</div>
+          <div class="d">{s.description || '—'}</div>
+        </div>
+      </div>
+    {/each}
+    {#if agentSkills.length === 0}
+      <div class="set-row"><div class="muted">{t('settings.agentSkillsNone')}</div></div>
+    {/if}
+    <div class="set-row">
+      <div class="set-txt"><div class="d muted">{t('settings.agentSkillsFolderHint')}</div></div>
+      <button class="ctrl" disabled={!agentEditing?.name} onclick={() => OpenAgentSkillsFolder(agentDraftName.trim())}>
+        {t('settings.agentSkillsOpenFolder')}
+      </button>
+    </div>
+  </div>
+{/snippet}
+
+<!-- Memory is approved on the Learning page and lives in this agent's folder.
+     Shown here as a count and a door: moving the approval flow would be a
+     second place to approve, which is the one thing it must not become. -->
+{#snippet agentMemoryBox()}
+  <div class="settings-card">
+    <div class="set-row">
+      <span class="ag-rowicon"><Icon name="brain" size={15} /></span>
+      <div class="set-txt">
+        <div class="t">{t('settings.agentMemoryTitle')} <span class="tag">{t('settings.itemCount', { n: agentMemory.length })}</span></div>
+        <div class="d">{agentMemory.length > 0 ? agentMemory[0] : t('settings.agentMemoryNone')}</div>
+      </div>
+      <button class="ctrl" onclick={() => openSection('learning')}>
+        {t('settings.learning')} <Icon name="arrowRight" size={13} />
+      </button>
+    </div>
+  </div>
+{/snippet}
+
+<!-- How this agent opens a conversation (STARTERS.md in its folder), edited
+     here rather than only in a text editor (owner, 10 ส.ค.).
+     A form over the file, not a replacement for it: hand-editing stays exactly
+     as valid, which is why what Save writes is a heading and a list and
+     nothing a person would not have typed themselves.
+     Four rows always, filled or not. The window draws four, so an "add card"
+     button would only ever be pressed four times and then be a dead control —
+     and an empty row is also how a card is removed. -->
+{#snippet agentStartersBox()}
+  <div class="settings-card">
+    <div class="card-form pp-edit">
+      <div class="pp-field">
+        <div class="pp-bodyhead">
+          <span class="eyebrow eyebrow-grow">{t('settings.agentStartersTitle')}</span>
+          <span class="d muted mono-dim">{agentStartersFile}</span>
+        </div>
+        <div class="d muted">{t('settings.agentStartersHint')}</div>
+      </div>
+
+      <label class="pp-field">
+        <span class="eyebrow">{t('settings.agentStartersHeadline')}</span>
+        <input class="ctrl" bind:value={startersHeadline} placeholder={t('settings.agentStartersHeadlinePlaceholder')} />
+      </label>
+
+      {#each startersCards as card, i (i)}
+        <div class="pp-field ag-starter">
+          <span class="eyebrow">{t('settings.agentStarterCard', { n: i + 1 })}</span>
+          <div class="ag-starter-row">
+            <input class="ctrl" bind:value={card.title} placeholder={t('settings.agentStarterTitlePlaceholder')} />
+            <select class="ctrl ag-starter-icon" bind:value={card.icon} aria-label={t('settings.agentIcon')}>
+              <option value="">{t('settings.agentStarterNoIcon')}</option>
+              {#each AGENT_ICONS as name (name)}<option value={name}>{name}</option>{/each}
+            </select>
+          </div>
+          <input class="ctrl" bind:value={card.prompt} placeholder={t('settings.agentStarterPromptPlaceholder')} />
+        </div>
+      {/each}
+      <!-- The trailing-colon rule is the author's, not a quirk to discover: a
+           prompt that ends in ":" is the deliberate half-sentence the user
+           finishes in the composer. -->
+      <div class="d muted">{t('settings.agentStartersColonHint')}</div>
+
+      {#if startersError}<div class="mset-error">{startersError}</div>{/if}
+
+      <div class="pp-bar">
+        <span class="d muted">
+          {startersInherited ? t('settings.agentStartersInherited') : t('settings.agentStartersOwn')}
+        </span>
+        <div class="pp-bar-gap"></div>
+        <button class="ctrl" disabled={startersBusy || startersEmpty} onclick={clearStarters}>
+          {t('settings.agentStartersClear')}
+        </button>
+        <button class="ctrl ctrl-primary" disabled={startersBusy || !startersDirty} onclick={saveStarters}>
+          {startersBusy ? t('settings.saving') : t('settings.agentStartersSave')}
+        </button>
+      </div>
+    </div>
+  </div>
 {/snippet}
 
 <div class="settings-page">
@@ -2968,7 +3750,8 @@
         </div>
       {/if}
     {:else if active === 'identity'}
-      <h2>{t('sidebar.identity')}</h2>
+      <h2>{t('settings.identity')}</h2>
+      <p class="muted set-sub">{t('settings.identityDesc')}</p>
       <div class="settings-card">
         <div class="identity-body">
           <div class="identity-files">
@@ -2982,7 +3765,7 @@
               </div>
             {/each}
             {#if identity.files.length === 0}
-              <div class="empty">{t('sidebar.noIdentityFiles')}</div>
+              <div class="empty">{t('settings.noIdentityFiles')}</div>
             {/if}
           </div>
           {#if missingTemplates.length > 0}
@@ -2996,15 +3779,15 @@
           {/if}
           <div class="identity-newfile">
             <input
-              class="identity-newfile-input" placeholder={t('sidebar.newIdentityFile')}
+              class="identity-newfile-input" placeholder={t('settings.newIdentityFile')}
               bind:value={newIdentityName}
               onkeydown={(e) => e.key === 'Enter' && addIdentityFile()}
             />
-            <button type="button" class="icobtn tiny" aria-label={t('sidebar.newIdentityFile')} onclick={addIdentityFile}><Icon name="plus" size={14} /></button>
+            <button type="button" class="icobtn tiny" aria-label={t('settings.newIdentityFile')} onclick={addIdentityFile}><Icon name="plus" size={14} /></button>
           </div>
           {#if identity.activeName}
             <textarea
-              class="identity-input" placeholder={t('sidebar.identityPlaceholder')}
+              class="identity-input" placeholder={t('settings.identityPlaceholder')}
               bind:value={identity.draft}
             ></textarea>
             <button
@@ -3518,6 +4301,11 @@
                 </div>
                 <span class="d muted">{t('settings.mcpTimeoutHint')}</span>
               </label>
+              <label class="pp-field">
+                <span class="eyebrow">{t('settings.mcpTools')}</span>
+                <textarea class="ctrl mcp-lines" rows="3" placeholder={t('settings.mcpToolsPlaceholder')} bind:value={mcpToolsText}></textarea>
+                <span class="d muted">{t('settings.mcpToolsHint')}</span>
+              </label>
             </div>
           </details>
 
@@ -3554,16 +4342,26 @@
           </div>
         {/each}
       </div>
-    {:else if active === 'connections'}
-      <h2>{t('settings.connections')}</h2>
-      <p class="muted set-sub">{t('settings.connectionsDesc')}</p>
+    {:else if active === 'connections' || active === 'automation'}
+      <!-- Two pages, one register underneath.
+           Which services a page shows is decided by the catalog's `family`, not
+           by a list of ids kept here — so a third automation engine appears on
+           the automation page without this file being edited, and a mail
+           account appears on the other one. -->
+      {#if active === 'automation'}
+        <h2>{t('desk.auto')}</h2>
+        <p class="muted set-sub">{t('settings.automationDesc')}</p>
+      {:else}
+        <h2>{t('settings.connections')}</h2>
+        <p class="muted set-sub">{t('settings.connectionsDesc')}</p>
+      {/if}
 
       <!-- A register, drawn the same way the MCP page draws its own: one line
            per service until you open it. With four services and a token box
            each, cards left open would be a wall — and the thing a returning
            user wants from this page is a glance, not a form. -->
       <div class="settings-card">
-        {#each connections as row (row.id)}
+        {#each visibleConnections as row (row.id)}
           {@const targets = targetsOf(row)}
           {@const open = connOpen === row.id}
           <div class="set-row reg-entry">
@@ -3621,53 +4419,115 @@
                 {/if}
 
                 <!-- Placement. Same ids and same list as an MCP server's
-                     `for:`, so what a user learns on that page is true here. -->
-                <div class="eyebrow conn-eyebrow">{t('settings.connFor')}</div>
-                <div class="conn-targets">
-                  {#each mcpTargets as target (target.id)}
-                    <button
-                      class="conn-chip"
-                      class:on={targets.includes(target.id)}
-                      disabled={connBusy !== ''}
-                      aria-pressed={targets.includes(target.id)}
-                      onclick={() => toggleConnectionTarget(row, target.id)}
-                    >
-                      {target.name}
-                    </button>
-                  {/each}
-                </div>
-                <!-- Said on the row because it is the whole meaning of the
-                     switch: off is not "asks first", it is "not in the list". -->
-                <div class="d muted">{t('settings.connForHint', { n: String(row.tools.length) })}</div>
+                     `for:`, so what a user learns on that page is true here.
+
+                     Unless the connection is locked to one agent (home_agent):
+                     an engine is that agent's workstation, and a picker with
+                     eight audiences for a thing with one reader is not
+                     flexibility — it is eight ways into "connected everywhere,
+                     usable nowhere" (2026-08-10). The backend enforces the
+                     lock either way; this draws the fact instead of a choice
+                     that would be silently corrected. -->
+                {#if row.home_agent}
+                  <div class="eyebrow conn-eyebrow">{t('settings.connFor')}</div>
+                  <div class="d muted">{t('settings.connHomeLocked', { agent: row.home_agent })}</div>
+                {:else}
+                  <div class="eyebrow conn-eyebrow">{t('settings.connFor')}</div>
+                  <div class="conn-targets">
+                    {#each mcpTargets as target (target.id)}
+                      <!-- The chip carries the desk's NAME; its description is a
+                           paragraph and belongs on hover. Both used to be the
+                           same string, which put "โหมดผู้ช่วย — ทำได้ทุกอย่าง…"
+                           inside a chip beside agent names one word long. -->
+                      <button
+                        class="conn-chip"
+                        class:on={targets.includes(target.id)}
+                        disabled={connBusy !== ''}
+                        title={target.detail ?? ''}
+                        aria-pressed={targets.includes(target.id)}
+                        onclick={() => toggleConnectionTarget(row, target.id)}
+                      >
+                        {target.name}
+                      </button>
+                    {/each}
+                  </div>
+                  <!-- Said on the row because it is the whole meaning of the
+                       switch: off is not "asks first", it is "not in the list". -->
+                  <div class="d muted">{t('settings.connForHint', { n: String(row.tools.length) })}</div>
+                {/if}
 
                 {#if row.source !== 'connection'}
-                  <div class="eyebrow conn-eyebrow">{t('settings.ghTokenLabel')}</div>
+                  <!-- The address comes first because it is the question the
+                       token cannot answer: a service the user runs is at an
+                       address only they know, and a key checked against the
+                       wrong host fails in a way that reads as a bad key. Not
+                       a password field — it is a setting, and hiding it would
+                       stop the user spotting their own typo. -->
+                  {#if row.needs_base_url}
+                    <div class="eyebrow conn-eyebrow">{t('settings.connBaseURLLabel')}</div>
+                    <input
+                      class="ctrl key-input" type="text" autocomplete="off" spellcheck="false"
+                      placeholder={row.base_url_hint ?? ''}
+                      value={connBaseURL[row.id] ?? ''}
+                      oninput={(e) => (connBaseURL[row.id] = e.currentTarget.value)}
+                      onkeydown={(e) => e.key === 'Enter' && connectAccount(row)}
+                    />
+                    <div class="d muted">{t('settings.connBaseURLHint')}</div>
+                    {@render serverControls(row)}
+                  {/if}
+                  <!-- The service's own words, not GitHub's.
+                       These four strings were GitHub's copy hardcoded, so the
+                       n8n row asked for a "PERSONAL ACCESS TOKEN" starting
+                       `ghp_…` and promised to check it with GitHub. Wrong on
+                       every row but one, and wrong in the way that makes a
+                       person doubt they are on the right screen. -->
+                  <!-- The other half, and it says so. Whether the KEY works is a
+                       different question from whether the SERVER is up, and the
+                       two were an unlabelled run of fields in one column. -->
+                  {#if row.needs_base_url}
+                    <div class="conn-part-head standalone">
+                      <Icon name="shield" size={13} />
+                      <span>{t('settings.connAccountPart')}</span>
+                    </div>
+                    <div class="d muted">{t('settings.connAccountPartHint')}</div>
+                  {/if}
+                  <div class="eyebrow conn-eyebrow">
+                    {row.needs_base_url ? t('automation.keyLabel') : t('settings.ghTokenLabel')}
+                  </div>
                   <div class="mset-keyrow">
                     <!-- type=password: this is a live credential, and a
                          settings page is the one screen people screen-share. -->
                     <input
                       class="ctrl key-input" type="password" autocomplete="off"
-                      placeholder={t('settings.ghTokenPlaceholder')}
+                      placeholder={row.needs_base_url ? '' : t('settings.ghTokenPlaceholder')}
                       value={connToken[row.id] ?? ''}
                       oninput={(e) => (connToken[row.id] = e.currentTarget.value)}
                       onkeydown={(e) => e.key === 'Enter' && connectAccount(row)}
                     />
                     <button
                       class="ctrl ctrl-primary"
-                      disabled={connBusy !== '' || !(connToken[row.id] ?? '').trim()}
+                      disabled={connBusy !== '' || !connectable(row)}
                       onclick={() => connectAccount(row)}
                     >
                       {connBusy === row.id + ':connect' ? t('settings.ghConnecting') : t('settings.ghConnect')}
                     </button>
                   </div>
-                  <div class="d muted">{t('settings.ghTokenHint')}</div>
+                  <div class="d muted">{t('settings.connTokenHint', { name: row.label })}</div>
+                {/if}
+
+                <!-- Once connected the address field is gone, and with it the
+                     only place the server controls were drawn — but a server
+                     you connected yesterday is exactly the one that is down
+                     today. So they are here too. -->
+                {#if row.needs_base_url && row.source === 'connection'}
+                  {@render serverControls(row)}
                 {/if}
 
                 <div class="mset-keyrow conn-actions">
                   <div class="d muted eyebrow-grow"></div>
                   {#if row.token_url && row.source !== 'connection'}
                     <button class="ctrl" onclick={() => BrowserOpenURL(row.token_url ?? '')}>
-                      {t('settings.ghCreateToken')}
+                      {t('settings.connCreateToken', { name: row.label })}
                     </button>
                   {/if}
                   {#if row.connected}
@@ -3676,7 +4536,7 @@
                     </button>
                   {/if}
                   {#if row.source === 'connection'}
-                    <button class="ctrl" disabled={connBusy !== ''} onclick={() => disconnectAccount(row)}>
+                    <button class="ctrl ctrl-danger" disabled={connBusy !== ''} onclick={() => askDisconnect(row)}>
                       {t('settings.ghDisconnect')}
                     </button>
                   {/if}

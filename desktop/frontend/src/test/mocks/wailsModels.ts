@@ -17,3 +17,20 @@ export namespace config {
 }
 
 export namespace main {}
+
+// The agent editor builds a StarterSet to hand to SaveChairStarters, so this
+// one is a runtime value rather than a type. createFrom is what the generated
+// class offers and what the caller uses; the real one also revives nested
+// classes, which nothing here needs — the object is on its way out to Go.
+export namespace subagent {
+  export class StarterSet {
+    headline = ''
+    cards: any[] = []
+    static createFrom(source: any = {}) {
+      return new StarterSet(source)
+    }
+    constructor(source: any = {}) {
+      Object.assign(this, source)
+    }
+  }
+}

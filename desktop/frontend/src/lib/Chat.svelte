@@ -9,10 +9,10 @@
   import {
     EnabledProviders, SupportedThinkLevels,
     ListModelsForProvider, RequiresAPIKey, HasAPIKey, PickAttachment,
-    GetContextBreakdown, GuideTopics, RunChatCommand, ListChairs, CurrentSessionID,
-    Shells, CurrentShell, SetShell,
+    GetContextBreakdown, GuideTopics, RunChatCommand, ListChairs, ChairStarters, CurrentSessionID,
+    Shells, CurrentShell, SetShell, EnginesFor, UseEngine, VerifyConnection,
   } from '../../wailsjs/go/main/App'
-  import type { main } from '../../wailsjs/go/models'
+  import type { main, connect, subagent } from '../../wailsjs/go/models'
   import { t, i18n } from './i18n.svelte'
   import { copyDrawing, saveDrawing } from './drawingExport'
   import { renderMarkdown, renderStreamingMarkdown } from './markdown'
@@ -25,12 +25,13 @@
     retryActiveProvider, undoLastTurn, switchApprovalMode,
     startTaskChip, dismissTaskChip,
     retryFailedTurn, regenerateReply, switchVariant, resendEdited, rateReply,
-    setActiveView, newChairSession, newSessionAt,
+    setActiveView, newChairSession, newSessionAt, openSettingsAt,
   } from './stores/cockpit.svelte'
   import ConfirmDialog from './ConfirmDialog.svelte'
   import Icon from './Icon.svelte'
   import ProviderMark from './ProviderMark.svelte'
-  import type { IconName } from './icons'
+  import { ICONS, type IconName } from './icons'
+  import { startersFor } from './starters'
 
   let {
     messages, task, model, awaitingReply, agentStatus, toolSteps, streamingText, reasoningText,
@@ -368,6 +369,104 @@
     }
   }
 
+  // Which automation engine the specialist is working on.
+  //
+  // Only drawn in that agent's chat, and only when there is genuinely a choice —
+  // a picker offering the one engine you have is furniture, the same rule the
+  // shell picker above keeps. It asks the catalog by *family* rather than
+  // holding a list of engine ids here, so the day a third engine ships this
+  // offers it without being edited.
+  //
+  // Choosing writes placement (App.UseEngine), which is the same `for:` list the
+  // settings register edits and the same gate that decides which tools the agent
+  // is handed. So the engine you did not pick is not in the model's tool list at
+  // all — stronger than telling it which to prefer, and one truth rather than
+  // two.
+  const AUTOMATION_AGENT = 'automation'
+  let engineMenuOpen = $state(false)
+  let engines = $state<connect.Status[]>([])
+  // The chip has three states and none of them is "gone":
+  //   nothing connected   → ยังไม่ได้เชื่อม, and the menu is a way to Settings
+  //   connected, unplaced → ยังไม่ได้เลือก, one click away from working
+  //   placed              → the engine's name
+  // It disappeared in the first of those twice, which is the state where it was
+  // the only thing that could have explained an agent with no tools.
+  const activeEngine = $derived(
+    engines.find((e) => e.connected && e.for?.some((f) => f === `agent:${AUTOMATION_AGENT}`)) ?? null)
+  const anyConnected = $derived(engines.some((e) => e.connected))
+
+  async function refreshEngines() {
+    if (cockpit.chair !== AUTOMATION_AGENT) {
+      engines = []
+      return
+    }
+    try {
+      engines = (await EnginesFor('automation', AUTOMATION_AGENT)) as connect.Status[]
+    } catch {
+      engines = []
+    }
+  }
+
+  async function toggleEngineMenu() {
+    engineMenuOpen = !engineMenuOpen
+    // Re-read on open: an engine can be connected in Settings while this chat
+    // is sitting here, and a list held from mount would not know.
+    if (engineMenuOpen) await refreshEngines()
+  }
+
+  async function pickEngine(id: string) {
+    engineMenuOpen = false
+    // An engine nobody connected cannot be picked — placing it would hand the
+    // agent tools that fail on their first call. The row says so and offers the
+    // register instead.
+    if (!engines.find((e) => e.id === id)?.connected) {
+      openSettingsAt('automation')
+      return
+    }
+    if (activeEngine?.id === id) return
+    engineTest = ''
+    try {
+      await UseEngine('automation', AUTOMATION_AGENT, id)
+    } finally {
+      await refreshEngines()
+    }
+  }
+
+  // Does the engine actually answer, right now.
+  //
+  // Same shape as the model connection test on the settings page — one real
+  // request, `ok:` / `err:` in one field — because it answers the same question
+  // and a second spelling of a result would be a second thing to read.
+  //
+  // Worth having here rather than only in Settings: a token that worked when it
+  // was pasted can stop working without anything on this screen changing. n8n's
+  // keys in particular carry an expiry the user chose at creation, so "it was
+  // fine yesterday" is not evidence. The menu is where you are standing when you
+  // start to doubt it.
+  let engineTest = $state('')
+  let engineTesting = $state('')
+
+  async function testEngine(id: string) {
+    if (engineTesting) return
+    engineTesting = id
+    engineTest = ''
+    try {
+      const account = await VerifyConnection(id)
+      engineTest = 'ok:' + (account?.login ?? '')
+    } catch (err) {
+      engineTest = 'err:' + String(err)
+    } finally {
+      engineTesting = ''
+    }
+  }
+
+  // Follows the chat you are in: walking into ระบบออโตเมชั่น has to draw the chip,
+  // and walking out of it has to stop.
+  $effect(() => {
+    void cockpit.chair
+    void refreshEngines()
+  })
+
   // Why the last "add folder" was refused, '' when there is nothing to say.
   // Cleared when the menu closes, so a stale refusal never greets the next open.
   let folderError = $state('')
@@ -482,12 +581,52 @@
     model.provider === 'aetox' && !awaitingReply && messages.length > 0 && remainingGuide.length > 0,
   )
 
-  const starters: { icon: IconName; title: string; prompt: string }[] = $derived([
-    { icon: 'compass', title: t('chat.starter1Title'), prompt: t('chat.starter1Prompt') },
-    { icon: 'wrench', title: t('chat.starter2Title'), prompt: t('chat.starter2Prompt') },
-    { icon: 'search', title: t('chat.starter3Title'), prompt: t('chat.starter3Prompt') },
-    { icon: 'bandage', title: t('chat.starter4Title'), prompt: t('chat.starter4Prompt') },
-  ])
+  // The empty chat says the room's own sentence, not one sentence for the whole
+  // app (starters.ts). Which room is read off the open session — chair, then
+  // project, then desk — so reopening an old chat from history gets the cards
+  // of the room it was held in rather than the room the window was last in.
+  const roomStarters = $derived(
+    startersFor({ desk: cockpit.desk, chair: cockpit.chair, space: cockpit.space }),
+  )
+
+  // ...except in a chat with an office agent, where the opening belongs to the
+  // agent and lives in its own folder (internal/subagent/starters.go). Asked
+  // rather than looked up, because this window does not have the list: a worker
+  // the user hired this morning gets its own cards without the app having heard
+  // of it, which is the whole reason the file exists.
+  //
+  // The language goes with the question — the agent keeps one file per language
+  // — so switching languages re-asks. A worker with no file of its own answers
+  // empty, and the four above stand.
+  let chairOpening = $state<subagent.StarterSet | null>(null)
+  $effect(() => {
+    const name = cockpit.chair
+    const locale = i18n.locale
+    if (!name) {
+      chairOpening = null
+      return
+    }
+    let live = true
+    ChairStarters(name, locale)
+      .then((set) => { if (live) chairOpening = set })
+      .catch(() => { if (live) chairOpening = null })
+    return () => { live = false }
+  })
+
+  const headline = $derived(chairOpening?.headline || t(roomStarters.headlineKey))
+  const starters: { icon: IconName; title: string; prompt: string }[] = $derived(
+    chairOpening && chairOpening.cards?.length
+      ? chairOpening.cards.map((c) => ({
+          // An agent may name any mark from the app's icon set, and may name
+          // none. A name this build does not have would draw an empty box, so
+          // it is treated as "none" rather than trusted — the file is written by
+          // hand, and by someone who cannot see this list.
+          icon: (c.icon && c.icon in ICONS ? c.icon : 'bot') as IconName,
+          title: c.title,
+          prompt: c.prompt,
+        }))
+      : roomStarters.starters.map((s) => ({ icon: s.icon, title: t(s.titleKey), prompt: t(s.promptKey) })),
+  )
 
   function pickStarter(prompt: string) {
     draft = prompt
@@ -995,7 +1134,7 @@
   {#if messages.length === 0}
     <div class="empty-state">
       <Logo size={56} />
-      <h2>{t('chat.whatToBuild')}</h2>
+      <h2>{headline}</h2>
       <div class="starter-grid">
         {#each starters as s}
           <button class="starter-card" onclick={() => pickStarter(s.prompt)}>
@@ -1549,6 +1688,102 @@
       </div>
       {/if}
       {#if cockpit.project.focused && cockpit.project.branch}<span class="focus-chip"><Icon name="gitBranch" size={11} /> {cockpit.project.branch}</span>{/if}
+      <!-- Which automation engine the specialist works on.
+           Drawn whenever the user has one at all, and NOT only when there are
+           two to choose between — which is where the shell picker's rule was
+           copied and should not have been. That rule holds when the chip is
+           only a control; this one is also the answer to "what will this agent
+           touch", and there is a state it is the only cure for.
+
+           A connection reaches an agent only when it is placed on it by name
+           (config.ConnectionsForAgent: "an agent is handed things on purpose,
+           so silence is not a grant"). So the ordinary case — connect an
+           engine, walk into this room — is an agent with no tools at all, and
+           with the chip hidden there was nothing on screen that said so or
+           could fix it. It reads "ยังไม่ได้เลือก" then, and one click is the
+           whole repair. -->
+      {#if engines.length > 0}
+      <div class="focus-pick">
+        {#if engineMenuOpen}
+          <div class="focus-menu">
+            {#each engines as e (e.id)}
+              <div class="focus-row">
+                <!-- Name over address: the name is what you are choosing
+                     between, the address is how you notice you attached the
+                     wrong machine. Both matter, and only one is the label.
+                     An engine nobody connected still gets a row — saying
+                     "ยังไม่ได้เชื่อม" and leading to the register is the whole
+                     job of this menu when nothing is set up. -->
+                <!-- One line, and the right edge always carries something: the
+                     address when it is attached, "ยังไม่ได้เชื่อม" when it is
+                     not. A row with a name on the left and nothing on the right
+                     reads as an item floating in a box rather than a list. -->
+                <button type="button" class="focus-item" class:on={activeEngine?.id === e.id}
+                  onclick={() => pickEngine(e.id)}>
+                  <span class="ic"><Icon name={e.connected ? 'gitBranch' : 'plug'} size={14} /></span>
+                  <span class="t">{e.label}</span>
+                  {#if e.connected}
+                    <span class="tail">{(e.base_url ?? '').replace(/^https?:\/\//, '')}</span>
+                  {:else}
+                    <span class="tail warn">{t('settings.ghNotConnected')}</span>
+                  {/if}
+                </button>
+                <!-- Same mark and same job as the model test on the settings
+                     page: one real request to the thing, now. Beside the row
+                     rather than inside it, so checking an engine never means
+                     switching to it first. -->
+                {#if e.connected}
+                  <button
+                    type="button" class="icobtn tiny"
+                    title={t('settings.testConnection')} aria-label={t('settings.testConnection')}
+                    disabled={engineTesting !== ''}
+                    onclick={() => testEngine(e.id)}
+                  >{#if engineTesting === e.id}…{:else}<Icon name="plugZap" size={13} />{/if}</button>
+                {/if}
+              </div>
+            {/each}
+            {#if engineTest}
+              <div class="conn-test" class:ok={engineTest.startsWith('ok:')}>
+                {#if engineTest.startsWith('ok:')}
+                  <Icon name="check" size={13} /> {t('chat.engineOk')}{engineTest.slice(3) ? ` · ${engineTest.slice(3)}` : ''}
+                {:else}
+                  {engineTest.slice(4)}
+                {/if}
+              </div>
+            {/if}
+            <div class="menu-sep"></div>
+            <!-- The way out to the register. Everything this menu cannot do —
+                 connecting an engine, changing its address, disconnecting it —
+                 lives there, and a menu that offers a choice without a way to
+                 add to it is a dead end for the user who has none. -->
+            <button type="button" class="focus-item"
+              onclick={() => { engineMenuOpen = false; openSettingsAt('automation') }}>
+              <span class="ic"><Icon name="settings" size={14} /></span>
+              <span class="t">{t('automation.manage')}</span>
+            </button>
+            <div class="folder-note">
+              {anyConnected ? t('chat.engineNote') : t('chat.engineNoEngineNote')}
+            </div>
+          </div>
+        {/if}
+        <!-- Marked whenever there is no engine in play, because that is not a
+             neutral state: the agent has no tools and every answer it gives
+             will be about what it cannot do. Nothing connected and connected-
+             but-unpicked are different sentences with the same remedy — open
+             this menu — so both wear the same mark and differ only in words. -->
+        <button
+          type="button" class="focus-chip focus-btn" class:unset={!activeEngine}
+          title={activeEngine
+            ? t('chat.engineTitle')
+            : (anyConnected ? t('chat.engineNoneHint') : t('chat.engineNoEngineHint'))}
+          onclick={toggleEngineMenu}
+        >
+          <span class="ic"><Icon name={activeEngine ? 'gitBranch' : 'alertTriangle'} size={13} /></span>
+          {activeEngine?.label ?? (anyConnected ? t('chat.engineNone') : t('chat.engineNoEngine'))}
+          <span class="caret"><Icon name={engineMenuOpen ? 'chevronUp' : 'chevronDown'} size={12} /></span>
+        </button>
+      </div>
+      {/if}
       <!-- Which shell runs what the agent types. Only offered when there is
            something to choose between: on a machine with no WSL this row is
            unchanged from before the picker existed. -->

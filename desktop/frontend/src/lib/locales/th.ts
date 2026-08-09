@@ -11,10 +11,6 @@ export const th = {
   'topbar.hideSidebar': 'ซ่อนแถบด้านข้าง',
   'topbar.toggleSidebarTip': 'เปิด/ปิดแถบด้านข้าง · Ctrl+Alt+S',
 
-  'sidebar.identity': 'ตัวตน AI',
-  'sidebar.identityPlaceholder': 'เนื้อหาไฟล์นี้จะติดตัว AI ไปทุกโปรเจกต์…',
-  'sidebar.noIdentityFiles': 'ยังไม่มีไฟล์ เพิ่มไฟล์แรกด้านล่าง',
-  'sidebar.newIdentityFile': 'ชื่อไฟล์ใหม่ เช่น context.md',
   'sidebar.projects': 'โปรเจกต์',
   'sidebar.addProject': 'เพิ่มโปรเจกต์',
   'sidebar.noMatches': 'ไม่พบบทสนทนาที่ตรงกับคำค้น',
@@ -51,15 +47,47 @@ export const th = {
   'sidebar.settings': 'การตั้งค่า',
   'sidebar.settingsShortcut': 'Ctrl+,',
 
-  'chat.whatToBuild': 'จะให้เราสร้างอะไรดี?',
-  'chat.starter1Title': 'สำรวจและทำความเข้าใจโค้ด',
-  'chat.starter1Prompt': 'ช่วยพาไล่ดูโครงสร้างโปรเจกต์นี้หน่อย',
-  'chat.starter2Title': 'สร้างฟีเจอร์ แอป หรือเครื่องมือใหม่',
-  'chat.starter2Prompt': 'ช่วยสร้างฟีเจอร์ใหม่: ',
-  'chat.starter3Title': 'รีวิวโค้ดและแนะนำการแก้ไข',
-  'chat.starter3Prompt': 'ช่วยรีวิวโค้ดที่แก้ล่าสุดหน่อย',
-  'chat.starter4Title': 'แก้ไขปัญหาและข้อผิดพลาด',
-  'chat.starter4Prompt': 'ช่วยหาสาเหตุที่บั๊กนี้เกิดขึ้น: ',
+  // การ์ดเริ่มต้นบนแชทเปล่า — แยกตามห้อง ดู starters.ts
+  'start.assistant.headline': 'วันนี้ให้ช่วยอะไรดี?',
+  'start.assistant.findTitle': 'หาไฟล์และจัดของในเครื่อง',
+  'start.assistant.findPrompt': 'ช่วยหาไฟล์ในเครื่องนี้ให้หน่อย: ',
+  'start.assistant.readTitle': 'อ่านและสรุปเอกสารหรือสื่อ',
+  'start.assistant.readPrompt': 'ช่วยอ่านแล้วสรุปไฟล์นี้ให้หน่อย: ',
+  'start.assistant.webTitle': 'ค้นข้อมูลจากเว็บแล้วสรุปให้',
+  'start.assistant.webPrompt': 'ช่วยหาข้อมูลจากเว็บเรื่องนี้: ',
+  'start.assistant.makeTitle': 'ให้ทีมทำเอกสาร สไลด์ หรือสเปรดชีต',
+  'start.assistant.makePrompt': 'ช่วยทำให้หน่อย: ',
+
+  'start.coding.headline': 'จะให้เราสร้างอะไรดี?',
+  'start.coding.exploreTitle': 'สำรวจและทำความเข้าใจโค้ด',
+  'start.coding.explorePrompt': 'ช่วยพาไล่ดูโครงสร้างโปรเจกต์นี้หน่อย',
+  'start.coding.buildTitle': 'สร้างฟีเจอร์ แอป หรือเครื่องมือใหม่',
+  'start.coding.buildPrompt': 'ช่วยสร้างฟีเจอร์ใหม่: ',
+  'start.coding.reviewTitle': 'รีวิวโค้ดและแนะนำการแก้ไข',
+  'start.coding.reviewPrompt': 'ช่วยรีวิวโค้ดที่แก้ล่าสุดหน่อย',
+  'start.coding.fixTitle': 'แก้ไขปัญหาและข้อผิดพลาด',
+  'start.coding.fixPrompt': 'ช่วยหาสาเหตุที่บั๊กนี้เกิดขึ้น: ',
+
+  'start.project.headline': 'ในโปรเจกต์นี้ ให้ช่วยอะไรดี?',
+  'start.project.filesTitle': 'สรุปไฟล์บริบทที่อยู่ในโปรเจกต์นี้',
+  'start.project.filesPrompt': 'ช่วยสรุปไฟล์บริบทของโปรเจกต์นี้ให้หน่อยว่ามีอะไรอยู่บ้าง',
+  'start.project.askTitle': 'ถามคำถามจากไฟล์ในโปรเจกต์',
+  'start.project.askPrompt': 'จากไฟล์ในโปรเจกต์นี้ ช่วยตอบเรื่องนี้ให้หน่อย: ',
+  'start.project.continueTitle': 'ทำงานต่อจากของที่มีอยู่',
+  'start.project.continuePrompt': 'ใช้ไฟล์ในโปรเจกต์นี้เป็นตั้งต้น แล้วช่วยทำต่อ: ',
+  'start.project.planTitle': 'วางแผนขั้นต่อไปของงานนี้',
+  'start.project.planPrompt': 'จากบริบทของโปรเจกต์นี้ ช่วยวางแผนขั้นต่อไปให้หน่อย',
+
+  'start.chair.headline': 'จะให้ช่วยอะไรดี?',
+  'start.chair.whatTitle': 'ถามว่ารับงานแบบไหนได้บ้าง',
+  'start.chair.whatPrompt': 'คุณรับงานแบบไหนได้บ้าง',
+  'start.chair.consultTitle': 'เล่าโจทย์แล้วชวนคิดด้วยกัน',
+  'start.chair.consultPrompt': 'อยากปรึกษาเรื่องนี้: ',
+  'start.chair.lookTitle': 'ให้ดูไฟล์ที่มีอยู่ก่อน',
+  'start.chair.lookPrompt': 'ช่วยดูไฟล์นี้ให้หน่อย: ',
+  'start.chair.doTitle': 'บอกงานแล้วให้ลงมือทำเลย',
+  'start.chair.doPrompt': 'ช่วยทำงานนี้ให้หน่อย: ',
+
   'chat.inputPlaceholder': 'พิมพ์คำขอของคุณ… (Ctrl+K ค้นหาทุกอย่าง)',
   'chat.attachImage': 'แนบรูปภาพ',
   'chat.attachFile': 'แนบไฟล์ (รูป วิดีโอ เสียง เอกสาร)',
@@ -177,7 +205,6 @@ export const th = {
   'cockpit.turnBusy': 'เอเจนกำลังทำงานอยู่ — รอให้เสร็จ หรือกดหยุดก่อน แล้วค่อยสลับแชท',
   // การกดหยุดคือคำสั่งที่ทำสำเร็จ ไม่ใช่ข้อผิดพลาด — ห้ามขึ้น "เกิดข้อผิดพลาด"
   'cockpit.turnStopped': 'หยุดการทำงานแล้ว',
-
 
   // เปิดไฟล์ได้ แต่ถอดรหัสไม่ได้ — คนละเรื่องกับไฟล์เสีย เลยต้องพูดให้ต่างกัน
   'mediaPane.unplayable': 'ไฟล์ปกติดี แต่แอปเล่นไม่ได้ — โค้ดเดกข้างในเป็นแบบที่เบราว์เซอร์ไม่รองรับ ลองเปิดด้วยโปรแกรมในเครื่องดูครับ',
@@ -347,6 +374,9 @@ export const th = {
   // กลุ่มเดียวกัน แต่คนละคำถาม
   'settings.connections': 'การเชื่อมต่อ',
   'settings.connectionsDesc': 'บัญชีภายนอกที่เอเจนทำงานแทนคุณได้ เริ่มที่ GitHub ก่อน อีเมลและที่เหลือตามมา',
+  // หน้าของตัวเอง ไม่ใช่แถวหนึ่งในทะเบียนบัญชี — เครื่องมืออัตโนมัติคือเครื่องที่คุณรันเอง
+  // ต้องบอกทั้งที่อยู่และคีย์ และเป็นคนละบทสนทนากับ "ล็อกอินบัญชีให้เอเจนใช้"
+  'settings.automationDesc': 'เครื่องมืออัตโนมัติที่คุณรันเอง เชื่อมแล้วสั่งให้เอไอไปสร้างและแก้ workflow ให้ได้ · เลือกใช้เจ้าไหนได้ที่ช่องพิมพ์ในห้องระบบออโตเมชั่น',
   'settings.ghDesc': 'ให้เอเจนเข้าถึง repository ส่วนตัวได้ และเพิ่มโควตาจาก 60 ครั้งต่อชั่วโมงเป็น 5,000',
   'settings.ghNotConnected': 'ยังไม่ได้เชื่อม',
   'settings.ghConnectedAs': 'เชื่อมแล้วในชื่อ {login}',
@@ -372,6 +402,34 @@ export const th = {
   // ยังไม่เคยวาง ไม่ใช่ "ปิด" แต่คือทุกโต๊ะได้ใช้ แถวต้องบอกได้ว่าเป็นอันไหนโดยไม่ต้องกางออก
   'settings.connForEveryone': 'ทุกโต๊ะ',
   'settings.connForHint': 'โต๊ะที่ปิดไว้จะไม่ใช่ "ถามก่อน" — เครื่องมือทั้ง {n} ตัวจะไม่อยู่ในรายการของผู้ช่วยเลย',
+  // เอนจินถูกล็อคเข้าโต๊ะของเอเจนตัวเดียว (10 ส.ค.) — วาดข้อเท็จจริง ไม่วาดตัวเลือก
+  'settings.connHomeLocked': 'ใช้ได้เฉพาะเอเจน {agent} — นี่คือโต๊ะทำงานของมัน สลับเอนจินที่ใช้อยู่ได้จากในห้องระบบออโตเมชั่น',
+  // บริการที่ผู้ใช้รันเอง Aetox ไม่รู้ว่ามันอยู่ที่ไหนจนกว่าจะถูกบอก
+  'settings.connBaseURLLabel': 'ที่อยู่เซิร์ฟเวอร์',
+  'settings.connBaseURLHint': 'ที่อยู่ที่คุณเปิดหน้าเว็บของมัน — ใส่แค่โฮสต์กับพอร์ต ไม่ต้องมีเส้นทางข้างหลัง',
+  // เปิดเซิร์ฟเวอร์จากหน้านี้ได้เลย — คำสั่งเป็นของผู้ใช้ Aetox ไม่รู้ว่าติดตั้งไว้ที่ไหน
+  // สองคำถามคนละเรื่อง ต้องแยกให้เห็นด้วยตา ไม่ใช่วางเรียงกันเฉย ๆ
+  'settings.connServerPart': '1 · ตัวเซิร์ฟเวอร์',
+  'settings.connServerPartHint': 'โปรแกรมรันอยู่ไหม — ยังไม่เกี่ยวกับคีย์',
+  'settings.connAccountPart': '2 · บัญชีและคีย์',
+  'settings.connAccountPartHint': 'คีย์ใช้ได้ไหม — เซิร์ฟเวอร์ต้องรันอยู่ก่อนถึงจะเช็คได้',
+
+  // ข้อความของแต่ละเจ้า ไม่ใช่ของ GitHub ที่ฝังไว้แล้วโผล่ทุกแถว
+  'settings.connTokenHint': 'Aetox จะเช็คกับ {name} ก่อนบันทึก และเก็บแบบเข้ารหัสไว้ที่เดียวกับการล็อกอินโมเดล',
+  'settings.connCreateToken': 'สร้าง token บน {name}',
+  'settings.connDisconnectTitle': 'เลิกเชื่อม {name}?',
+  'settings.connDisconnectMessage': 'Aetox จะลืมคีย์ของ {name} และเครื่องมือของมันจะหายจากรายการของเอเจนทันที',
+  'settings.connDisconnectDetail': 'ที่อยู่เซิร์ฟเวอร์ คำสั่งเปิด และการวางว่าโต๊ะไหนใช้ได้ ยังอยู่ครบ — กลับมาเชื่อมใหม่แค่วางคีย์ ไม่ต้องตั้งใหม่ทั้งหมด · แต่คีย์เดิมเอาคืนไม่ได้ n8n โชว์ให้ดูครั้งเดียวตอนสร้าง',
+
+  'settings.connStartLabel': 'คำสั่งเปิดเซิร์ฟเวอร์',
+  'settings.connStartPlaceholder': 'เช่น D:\\aetox-lab\\n8n\\start-n8n.ps1',
+  'settings.connStartHint': 'คำสั่งที่คุณใช้เปิดเซิร์ฟเวอร์นี้เอง จำไว้ครั้งเดียวแล้วกดเปิดจากหน้านี้ได้เลย — จะเปิดหน้าต่างใหม่ให้ ปิดหน้าต่างนั้นคือหยุดเซิร์ฟเวอร์',
+  'settings.connStart': 'เปิดเซิร์ฟเวอร์',
+  'settings.connStarting': 'กำลังเปิด…',
+  'settings.connCheck': 'เช็คว่าขึ้นหรือยัง',
+  'settings.connChecking': 'กำลังเช็ค…',
+  'settings.connUp': 'เซิร์ฟเวอร์ทำงานอยู่',
+  'settings.connDown': 'ยังไม่มีอะไรตอบที่อยู่นี้ — เซิร์ฟเวอร์ยังไม่ได้เปิด หรือที่อยู่ผิด',
 
   'settings.mcpDesc': 'เชื่อมต่อ MCP server (stdio หรือ HTTP) เพื่อเพิ่มเครื่องมือให้ผู้ช่วย เครื่องมือจาก MCP จะถามยืนยันก่อนรันเสมอ',
   'settings.noMcpServers': 'ยังไม่มี MCP server เพิ่มด้านล่าง หรือเลือกจากรายการแนะนำ',
@@ -400,6 +458,9 @@ export const th = {
   'settings.mcpCwdPlaceholder': 'เว้นว่าง = รันจากโฟลเดอร์ของ Aetox',
   'settings.mcpTimeout': 'เวลารอเชื่อมต่อ',
   'settings.mcpTimeoutHint': 'เว้นว่างหรือ 0 = ใช้ค่าเริ่มต้น · เพิ่มถ้า server เริ่มช้า',
+  'settings.mcpTools': 'เครื่องมือที่จะเอา',
+  'settings.mcpToolsPlaceholder': 'บรรทัดละหนึ่งชื่อ',
+  'settings.mcpToolsHint': 'เว้นว่าง = เอาทุกอย่างที่ server มี · ใส่ชื่อ = เอาเฉพาะที่ใส่ สำหรับ server ที่อีกครึ่งซ้ำกับของที่ Aetox ทำเองอยู่แล้ว · เขียนได้ทั้งสองแบบ: search_nodes หรือ n8n_search_nodes',
   'settings.mcpNeedsKey': '{name} ต้องใช้คีย์ · วางคีย์ต่อท้าย header ด้านบนแล้วกดเพิ่ม ยังไม่มีอะไรถูกบันทึก',
   'settings.mcpPresets': 'SERVER แนะนำ',
   'settings.add': 'เพิ่ม',
@@ -457,7 +518,7 @@ export const th = {
   'settings.confirmProviderTitle': 'เอา provider ออก?',
   'settings.confirmProviderMessage': 'จะหายไปจากรายการเลือก แต่ API key ที่บันทึกไว้ยังอยู่',
   'settings.confirmProviderActive': 'provider นี้กำลังถูกใช้งานอยู่ — เอาออกแล้วจะสลับกลับไปใช้ aetox ให้อัตโนมัติ',
-  'settings.confirmIdentityTitle': 'ลบไฟล์ตัวตน?',
+  'settings.confirmIdentityTitle': 'ลบไฟล์คำสั่งประจำตัว?',
   'settings.confirmIdentityMessage': 'เนื้อหาในไฟล์นี้จะหายถาวร และผู้ช่วยจะไม่เห็นสิ่งที่เขียนไว้ในนั้นอีก',
   'settings.confirmSkillTitle': 'ลบสกิล?',
   'settings.confirmSkillMessage': 'โฟลเดอร์สกิลจะถูกลบออกจากเครื่อง ติดตั้งใหม่จากต้นทางเดิมได้',
@@ -500,6 +561,15 @@ export const th = {
   'onboard.start': 'เริ่มใช้ Aetox',
 
   'settings.usage': 'สถิติการใช้งาน',
+  // Was "ตัวตน AI", which read as the identity of one agent and so collided
+  // with the เอเจน page next door. These files are the user's own standing
+  // instructions: internal/prompt folds every *.md here into every prompt, on
+  // every desk, for every agent. The name now says whose they are.
+  'settings.identity': 'คำสั่งประจำตัว',
+  'settings.identityDesc': 'สิ่งที่คุณเขียนไว้เอง ติดตัวไปทุกโต๊ะทุกโปรเจกต์ ทุกเอเจนอ่านเหมือนกันหมด — คู่กับหน้าการเรียนรู้ ซึ่งเป็นสิ่งที่ Aetox สรุปเอง',
+  'settings.identityPlaceholder': 'เนื้อหาไฟล์นี้จะติดตัว AI ไปทุกโปรเจกต์…',
+  'settings.noIdentityFiles': 'ยังไม่มีไฟล์ เพิ่มไฟล์แรกด้านล่าง',
+  'settings.newIdentityFile': 'ชื่อไฟล์ใหม่ เช่น context.md',
   'settings.learning': 'การเรียนรู้',
   'settings.learningWaiting': 'มี {count} อย่างรอคุณตัดสิน',
   'settings.learningDesc': 'สิ่งที่ Aetox สรุปได้เองจากงานที่ทำเสร็จ ไม่มีอะไรมีผลจนกว่าคุณจะอนุมัติ',
@@ -632,10 +702,16 @@ export const th = {
   'settings.agentDenyCount': 'ปิด {n} ตัว',
   'settings.agentSteps': 'จำกัด {n} รอบ',
   'settings.agentModelInherit': 'ใช้โมเดลที่เลือกอยู่',
+  // The select on a card has no visible label — the card is the context — so
+  // the only thing a screen reader has to go on is this.
+  'settings.agentModelPick': 'โมเดลของเอเจนนี้',
   'settings.agentsFolder': 'เปิดโฟลเดอร์',
   'settings.agentsHint': 'ทุกโปรไฟล์คือไฟล์ .md ไฟล์เดียว จะตั้งค่าในนี้หรือแก้ไฟล์ตรงๆ ก็ได้ ตั้งชื่อชนกับของที่มากับแอปได้ ของคุณจะถูกใช้แทน — แต่ชื่อของเอเจนกับซับเอเจนใช้ซ้ำกันไม่ได้ เพราะความจำและประวัติงานผูกกับชื่อ',
   'settings.editAgentTitle': 'ตั้งค่าเอเจน',
-  'settings.editAgentDesc': 'เปิดมาจากหน้าทีมเอเจน — บันทึกแล้วไฟล์อยู่ในบ้านของเอเจนเสมอ',
+  // Was "เปิดมาจากหน้าทีมเอเจน — …", which is true half the time: the เอเจน
+  // page in Settings opens the same editor. A sentence that tells a reader
+  // where they came from, wrongly, is worse than not saying.
+  'settings.editAgentDesc': 'บันทึกแล้วไฟล์อยู่ในบ้านของเอเจนเสมอ ไม่ว่าจะเปิดมาจากหน้าทีมเอเจนหรือหน้าเอเจนในตั้งค่า',
   'settings.agentBack': 'กลับไปหน้ารวม',
   'settings.agentName': 'ชื่อ (จะกลายเป็นชื่อไฟล์ และเป็นชื่อที่ผู้ช่วยใช้เรียก)',
   'settings.agentDescription': 'คำอธิบายสั้นๆ',
@@ -662,6 +738,72 @@ export const th = {
   'settings.agentStepsFieldHint': 'วนทำงานได้มากสุดกี่รอบต่อหนึ่งงาน เว้นว่างไว้ = ใช้ค่าเริ่มต้น 24',
   'settings.agentStepsUnlimited': 'ไม่จำกัด',
   'settings.agentStepsUnlimitedWarn': 'วนได้ไม่จำกัดรอบ เบรกที่เหลือคือด่านสิทธิ์ ปุ่มหยุด และตัวกันวนซ้ำ — ใช้กับงานที่ประเมินจำนวนรอบล่วงหน้าไม่ได้จริง ๆ',
+
+  // ---- ตั้งค่าเอเจน: ห้าหมวด ----
+  // เรียงตามลำดับคำถามที่คนถามจริง ไม่ใช่ตามลำดับคีย์ในไฟล์ .md
+  'settings.agentSecIdentity': 'ตัวตน',
+  'settings.agentSecBrain': 'สมอง',
+  'settings.agentSecReach': 'เอื้อมถึงอะไร',
+  'settings.agentSecKnowledge': 'ความรู้',
+  'settings.agentSecOpening': 'เปิดบทสนทนา',
+  'settings.agentModelHint': 'เว้นว่างไว้ = ใช้โมเดลเดียวกับที่คุณเลือกอยู่ในแชท เลือกเจาะจงเมื่อเอเจนคนนี้ต้องการโมเดลคนละตัว',
+
+  // เพดานของโต๊ะ — บอกให้รู้ว่ามีเพดานอยู่ ไม่ได้ให้แก้
+  'settings.agentDeskTitle': 'โต๊ะที่สังกัด',
+  'settings.agentDeskHint': 'เพดานของโต๊ะกำหนดว่าเครื่องมือไหนถึงมือเอเจนได้บ้าง ติ๊กเกินเพดานก็ไม่ถึง แก้ได้ที่บรรทัด desk: ในไฟล์',
+
+  // MCP เฉพาะตัวนี้ — กล่องแยก เพราะมันบวกเข้า ไม่ใช่ตัดออกเหมือนเครื่องมือ
+  'settings.agentMCPTitle': 'MCP เฉพาะตัวนี้',
+  'settings.agentMCPHint': 'เซิร์ฟเวอร์ที่คุณชี้มาที่เอเจนคนนี้ ข้ามรายการเครื่องมือที่อนุญาตไว้ และเกินเพดานของโต๊ะได้ — เอเจนคนอื่นไม่เห็น',
+  'settings.agentMCPSaveFirst': 'บันทึกเอเจนก่อน แล้วค่อยชี้เซิร์ฟเวอร์มาที่ตัวนี้ได้',
+  'settings.agentMCPNone': 'ยังไม่มีเซิร์ฟเวอร์ MCP ที่เปิดใช้อยู่',
+  'settings.agentMCPInstant': 'ติ๊กแล้วมีผลทันที ไม่ต้องกดบันทึก — เพราะเก็บอยู่ที่ทะเบียน MCP ไม่ใช่ในไฟล์เอเจน',
+
+  // needs: — สิ่งที่เอเจนประกาศว่าขาดไม่ได้
+  'settings.agentNeedsTitle': 'ต้องใช้',
+  'settings.agentNeedsHint': 'สิ่งที่เอเจนคนนี้ประกาศว่าขาดแล้วทำงานไม่ได้ การประกาศไม่ใช่การให้สิทธิ์ — ต้องไปเปิดให้จริงที่หน้าของมัน',
+  'settings.agentNeedsAllMet': 'ครบแล้ว',
+  'settings.agentNeedMet': 'พร้อมใช้แล้ว',
+  // หนึ่งข้อกำหนด หลายทางที่ตอบได้ — automation ต้องการ "ระบบออโตเมชั่น"
+  // ไม่ใช่ "n8n" การเขียนแยกบรรทัดทำให้อ่านเป็นสองอย่างที่ต้องมีทั้งคู่
+  'settings.agentNeedEitherOf': 'มีอย่างใดอย่างหนึ่งก็พอ',
+  'settings.agentNeedOptionOn': 'เปิดอยู่',
+  'settings.agentNeedConnect': 'ไปเชื่อมบัญชี',
+  'settings.agentNeedServer': 'ไปเปิดเซิร์ฟเวอร์',
+  'settings.agentNeedFixHere': 'ติ๊กในกล่อง MCP ด้านบน',
+  'settings.agentNeedReason_unknown': 'ไม่รู้จักสิ่งนี้ในเวอร์ชันนี้ — อาจพิมพ์ชื่อผิดในไฟล์',
+  'settings.agentNeedReason_missing': 'ยังไม่ได้เพิ่มเข้ามา',
+  'settings.agentNeedReason_unconnected': 'มีอยู่ แต่ยังไม่ได้ล็อกอิน',
+  'settings.agentNeedReason_disabled': 'มีอยู่ แต่ปิดไว้',
+  'settings.agentNeedReason_unplaced': 'พร้อมใช้ แต่ยังไม่ได้ชี้มาที่เอเจนคนนี้ — ติ๊กในกล่อง MCP ด้านบนได้เลย',
+
+  // สกิลเฉพาะตัวนี้ — อ่านอย่างเดียว เพราะมันคือโฟลเดอร์
+  'settings.agentSkillsTitle': 'สกิลเฉพาะตัวนี้',
+  'settings.agentSkillsHint': 'ความรู้ที่อยู่ในโฟลเดอร์ของเอเจนคนนี้เอง เอเจนคนอื่นมองไม่เห็น และไม่กินที่ในบทสนทนาจนกว่าจะถูกเรียกใช้',
+  'settings.agentSkillBundled': 'มากับแอป',
+  'settings.agentSkillsNone': 'ยังไม่มีสกิลของตัวเอง',
+  'settings.agentSkillsFolderHint': 'เพิ่มสกิล = วางโฟลเดอร์ที่มี SKILL.md ลงไปหนึ่งโฟลเดอร์ ชื่อซ้ำกับของที่มากับแอป ของคุณจะถูกใช้แทน',
+  'settings.agentSkillsOpenFolder': 'เปิดโฟลเดอร์สกิล',
+
+  'settings.agentMemoryTitle': 'ความจำของเอเจนคนนี้',
+  'settings.agentMemoryNone': 'ยังไม่มีอะไรที่คุณอนุมัติให้จำ',
+
+  'settings.agentStartersTitle': 'ประโยคเปิดของเอเจนคนนี้',
+  'settings.agentStartersHint': 'คำถามและการ์ดที่ขึ้นตอนเปิดแชทกับเอเจนคนนี้ กรอกที่นี่หรือแก้ไฟล์ตรงๆ ก็ได้ ผลเหมือนกัน',
+  'settings.agentStartersNone': 'ยังไม่มีของตัวเอง จะใช้การ์ดกลางสี่ใบแทน',
+  'settings.agentStartersHeadline': 'คำถามหัวข้อ',
+  'settings.agentStartersHeadlinePlaceholder': 'เช่น จะให้ทำเอกสารอะไรดี?',
+  'settings.agentStarterCard': 'การ์ดที่ {n}',
+  'settings.agentStarterTitlePlaceholder': 'ข้อความบนการ์ด',
+  'settings.agentStarterPromptPlaceholder': 'ประโยคที่จะไปอยู่ในช่องพิมพ์',
+  'settings.agentStarterNoIcon': 'ไม่ใส่ไอคอน',
+  'settings.agentStartersColonHint': 'ลงท้ายประโยคด้วย : ถ้าตั้งใจให้ผู้ใช้พิมพ์ต่อเอง · เว้นว่างทั้งการ์ด = ลบการ์ดนั้น',
+  'settings.agentStartersOwn': 'ไฟล์ของคุณเอง',
+  'settings.agentStartersInherited': 'ตอนนี้ใช้ของที่มากับแอป กดบันทึกแล้วจะกลายเป็นของคุณ',
+  'settings.agentStartersClear': 'ล้างให้กลับไปใช้ของเดิม',
+  // ไม่ใช่แค่ "บันทึก" เพราะหน้านี้มีปุ่มบันทึกอยู่แล้วหนึ่งปุ่ม และคนละไฟล์กัน
+  // — ปุ่มบนบันทึก AGENT.md ปุ่มนี้บันทึก STARTERS.md
+  'settings.agentStartersSave': 'บันทึกประโยคเปิด',
   'settings.agentOverrideNote': 'นี่คือโปรไฟล์ที่มากับแอป กดบันทึกจะสร้างเป็นของคุณทับไว้ ของเดิมไม่หาย ลบของคุณเมื่อไหร่ของเดิมก็กลับมา',
   'settings.agentStarter': 'บอกว่ามันรับงานแบบไหน ต้องคืนผลลัพธ์หน้าตายังไง อะไรที่ห้ามทำ\nมันไม่เห็นประวัติแชท คำสั่งที่ได้รับคือข้อมูลทั้งหมดที่มี และคืนแค่ผลลัพธ์\n(ส่วนนี้จะกลายเป็นบทบาทที่ส่งให้มันทุกครั้งที่ถูกเรียก)',
 
@@ -678,8 +820,8 @@ export const th = {
   'desk.officeBlurb': 'ทีมที่รับงานจากผู้ช่วย — ดูว่ามีใครบ้างและรับงานอะไรไปแล้ว',
   'desk.projects': 'โปรเจกต์',
   'desk.projectsBlurb': 'จัดแชทเป็นกลุ่ม พร้อมไฟล์ที่ติดไปทุกเซสชันในนั้น',
-  'desk.auto': 'ทำงานอัตโนมัติ',
-  'desk.autoBlurb': 'งานตั้งเวลาและงานประจำ',
+  'desk.auto': 'ระบบออโตเมชั่น',
+  'desk.autoBlurb': 'เชื่อมเครื่องมือออโตเมชั่นที่คุณมี แล้วให้เอไอสร้าง workflow ให้',
   'desk.artifacts': 'ผลงาน',
   'desk.artifactsBlurb': 'ทุกไฟล์ที่ Aetox ทำให้',
   'desk.soon': 'เร็ว ๆ นี้',
@@ -720,6 +862,29 @@ export const th = {
   'office.noJobsFor': '{name} ยังไม่ได้รับงานในช่วงนี้',
 
   // ---- ผลงาน ----
+  'automation.intro': 'เชื่อม Aetox เข้ากับเครื่องมือออโตเมชั่นที่คุณใช้อยู่ แล้วสั่งให้เอไอไปสร้างและแก้ workflow ให้ได้ — เขาเป็นนาฬิกา Aetox เป็นมือ',
+  'automation.n8nBlurb': 'ยอดนิยมที่สุด ต่อ API ได้เกือบทุกเจ้า ลงได้ทั้งผ่าน Docker และลงตรงในเครื่อง',
+  'automation.windmillBlurb': 'เน้นสคริปต์ เร็วและเหมาะกับงานหนัก ต้องมีฐานข้อมูล จึงลงผ่าน Docker เป็นหลัก',
+  'automation.note': 'ทั้งสองตัวเป็นของที่คุณรันเองบนเครื่องหรือเซิร์ฟเวอร์ของคุณ Aetox ไม่ได้เก็บงานของคุณไว้บนคลาวด์ที่ไหน',
+  'automation.connected': 'เชื่อมแล้ว',
+  'automation.connect': 'เชื่อมต่อ',
+  'automation.manage': 'จัดการการเชื่อมต่อ',
+  'chat.engineTitle': 'เครื่องมืออัตโนมัติที่กำลังทำงานด้วย',
+  'chat.engineNone': 'ยังไม่ได้เลือก',
+  'chat.engineNoneHint': 'ยังไม่ได้เลือกเครื่องมือ — เอเจนตัวนี้จึงยังไม่มีเครื่องมือสักตัว กดเพื่อเลือก',
+  // ยังไม่ได้เชื่อมสักเจ้า — ชิปต้องยังอยู่ ไม่ใช่หายไปพร้อมทางแก้
+  'chat.engineNoEngine': 'ยังไม่มีเครื่องมือ',
+  'chat.engineNoEngineHint': 'ยังไม่ได้เชื่อมเครื่องมืออัตโนมัติสักเจ้า — กดเพื่อไปเชื่อมที่หน้าตั้งค่า',
+  'chat.engineNoEngineNote': 'เชื่อม n8n หรือ Windmill ที่หน้าตั้งค่าก่อน แล้วกลับมาเลือกที่นี่',
+  'chat.engineNote': 'เอเจนจะเห็นเครื่องมือของเจ้าที่เลือกเท่านั้น สลับได้ทุกเมื่อ',
+  'chat.engineOk': 'ติดต่อได้',
+
+  'automation.cancel': 'ยกเลิก',
+  'automation.keyLabel': 'API key',
+  'automation.openKeyPage': 'เปิดหน้านั้นให้',
+  'automation.n8nKeyWhere': 'คีย์อยู่ที่ Settings → n8n API → Create an API key',
+  'automation.windmillKeyWhere': 'โทเคนอยู่ที่ Account settings → Tokens — เว้นช่อง scope ว่าง และอย่าติ๊ก read_only',
+
   'artifacts.intro': 'ไฟล์ทุกไฟล์ที่ Aetox ทำขึ้น อ่านสดจากดิสก์ทุกครั้ง ลบแชททิ้งไฟล์ก็ยังอยู่ — ที่นี่คือที่เดียวที่ลบไฟล์ผลงานได้',
   'artifacts.empty': 'ยังไม่มีไฟล์ ไฟล์ที่ AI สร้างให้จะมาโผล่ที่นี่เอง',
   'artifacts.fromChat': 'ไปที่แชทที่ทำไฟล์นี้',

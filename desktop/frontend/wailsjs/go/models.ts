@@ -37,6 +37,7 @@ export namespace config {
 	    timeout_ms?: number;
 	    disabled?: boolean;
 	    for: string[];
+	    tools?: string[];
 	
 	    static createFrom(source: any = {}) {
 	        return new MCPServerConfig(source);
@@ -53,6 +54,7 @@ export namespace config {
 	        this.timeout_ms = source["timeout_ms"];
 	        this.disabled = source["disabled"];
 	        this.for = source["for"];
+	        this.tools = source["tools"];
 	    }
 	}
 
@@ -88,6 +90,13 @@ export namespace connect {
 	    for: string[];
 	    configured: boolean;
 	    tools: string[];
+	    family?: string;
+	    home_agent?: string;
+	    needs_base_url: boolean;
+	    base_url?: string;
+	    base_url_hint?: string;
+	    start_command?: string;
+	    reachable?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Status(source);
@@ -106,6 +115,13 @@ export namespace connect {
 	        this.for = source["for"];
 	        this.configured = source["configured"];
 	        this.tools = source["tools"];
+	        this.family = source["family"];
+	        this.home_agent = source["home_agent"];
+	        this.needs_base_url = source["needs_base_url"];
+	        this.base_url = source["base_url"];
+	        this.base_url_hint = source["base_url_hint"];
+	        this.start_command = source["start_command"];
+	        this.reachable = source["reachable"];
 	    }
 	}
 
@@ -127,6 +143,22 @@ export namespace main {
 	        this.url = source["url"];
 	        this.title = source["title"];
 	        this.time = source["time"];
+	    }
+	}
+	export class AgentSkillInfo {
+	    name: string;
+	    description: string;
+	    bundled: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new AgentSkillInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.description = source["description"];
+	        this.bundled = source["bundled"];
 	    }
 	}
 	export class Artifact {
@@ -344,6 +376,7 @@ export namespace main {
 	    for: string[];
 	    status: string;
 	    tools: number;
+	    allowed?: string[];
 	    err?: string;
 	
 	    static createFrom(source: any = {}) {
@@ -363,6 +396,7 @@ export namespace main {
 	        this.for = source["for"];
 	        this.status = source["status"];
 	        this.tools = source["tools"];
+	        this.allowed = source["allowed"];
 	        this.err = source["err"];
 	    }
 	}
@@ -431,6 +465,7 @@ export namespace main {
 	export class PlacementTarget {
 	    id: string;
 	    name: string;
+	    detail?: string;
 	    kind: string;
 	
 	    static createFrom(source: any = {}) {
@@ -441,6 +476,7 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
 	        this.name = source["name"];
+	        this.detail = source["detail"];
 	        this.kind = source["kind"];
 	    }
 	}
@@ -619,6 +655,7 @@ export namespace main {
 	    variants?: SessionVariant[];
 	    active?: number;
 	    parts?: turn.TurnPart[];
+	    errorText?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new SessionMessage(source);
@@ -636,6 +673,7 @@ export namespace main {
 	        this.variants = this.convertValues(source["variants"], SessionVariant);
 	        this.active = source["active"];
 	        this.parts = this.convertValues(source["parts"], turn.TurnPart);
+	        this.errorText = source["errorText"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -1236,6 +1274,44 @@ export namespace skill {
 
 export namespace subagent {
 	
+	export class Need {
+	    kind: string;
+	    id: string;
+	    label: string;
+	    reason: string;
+	    one_of?: Need[];
+	
+	    static createFrom(source: any = {}) {
+	        return new Need(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.id = source["id"];
+	        this.label = source["label"];
+	        this.reason = source["reason"];
+	        this.one_of = this.convertValues(source["one_of"], Need);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class Profile {
 	    name: string;
 	    description: string;
@@ -1273,6 +1349,88 @@ export namespace subagent {
 	        this.overrides = source["overrides"];
 	        this.invalid = source["invalid"];
 	    }
+	}
+	export class Requirement {
+	    entry: string;
+	    met: boolean;
+	    options: Need[];
+	
+	    static createFrom(source: any = {}) {
+	        return new Requirement(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.entry = source["entry"];
+	        this.met = source["met"];
+	        this.options = this.convertValues(source["options"], Need);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class Starter {
+	    title: string;
+	    prompt: string;
+	    icon?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Starter(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.title = source["title"];
+	        this.prompt = source["prompt"];
+	        this.icon = source["icon"];
+	    }
+	}
+	export class StarterSet {
+	    headline?: string;
+	    cards: Starter[];
+	
+	    static createFrom(source: any = {}) {
+	        return new StarterSet(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.headline = source["headline"];
+	        this.cards = this.convertValues(source["cards"], Starter);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 
 }

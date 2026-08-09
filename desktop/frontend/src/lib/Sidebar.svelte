@@ -3,6 +3,7 @@
   import {
     cockpit, newSession, openFolder, openProject, openDesk, setActiveView,
     searchGlobalHistory, selectGlobalSession, deleteSession, exportChat, importChat,
+    newChairSession,
   } from './stores/cockpit.svelte'
   import type { Session } from './types'
   import { UserName, SetUserName, ListModes } from '../../wailsjs/go/main/App'
@@ -124,7 +125,11 @@
     const inChat = cockpit.activeView === 'chat'
     if (inChat && cockpit.space) return entry.id === 'projects'
     if (entry.kind === 'page') return cockpit.activeView === entry.id
-    if (entry.kind === 'desk') return inChat && cockpit.desk === entry.id
+    // A room whose conversation is with an agent is lit by who you are talking
+    // to, not by the desk. A chair chat runs at the office desk — reading the
+    // desk here would light ทีมเอเจน while the user is standing in ระบบออโตเมชั่น.
+    if (entry.chair) return inChat && cockpit.chair === entry.chair
+    if (entry.kind === 'desk') return inChat && cockpit.desk === entry.id && !cockpit.chair
     return false
   }
 
@@ -132,6 +137,14 @@
     if (entry.kind === 'soon') return
     if (entry.kind === 'page') {
       setActiveView(entry.id)
+      return
+    }
+    if (entry.chair) {
+      // The same door the office roster's "แชทกับเอเจนนี้" uses. One way in, so
+      // a chat opened from the nav and a chat opened from the roster are the
+      // same chat with the same rules — not two paths that drift.
+      setActiveView('chat')
+      void newChairSession(entry.chair)
       return
     }
     void openDesk(entry.id)
@@ -257,7 +270,7 @@
 
 <aside class="side">
   <!-- The rooms behind this door (COMPANY.md §2). Some open a session, some
-       are views over data, and โปรเจกต์ and ทำงานอัตโนมัติ are rooms with nothing in
+       are views over data, and โปรเจกต์ and ระบบออโตเมชั่น are rooms with nothing in
        them yet — shown rather than hidden, because the shape of the product is
        the thing being promised and a button that appears later reads as a new
        feature rather than a finished plan. Which rooms appear is the door's

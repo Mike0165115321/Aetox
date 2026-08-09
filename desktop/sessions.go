@@ -58,6 +58,16 @@ type SessionMessage struct {
 	// Nil on a user message, and on every agent message written before the
 	// sequence existed.
 	Parts []turn.TurnPart `json:"parts,omitempty"`
+	// ErrorText is why this turn stopped, raw, when it did not finish — the
+	// quota that ran out, the connection that dropped, or `context canceled` for
+	// the Stop button. Non-empty IS "this turn failed"; there is no second flag
+	// to disagree with it.
+	//
+	// It carries the failure across a reload. What the user sees is composed on
+	// the other side, where the language lives: Text (whatever streamed before
+	// the wall) with the localized ending under it, and the ลองใหม่ chip fed by
+	// the question above.
+	ErrorText string `json:"errorText,omitempty"`
 }
 
 // SessionVariant is one of the answers a question received. Stored as JSON in
@@ -257,6 +267,52 @@ func (a *App) appendTurn(userMsg, agentMsg SessionMessage) int64 {
 		return 0
 	}
 	return agentID
+}
+
+// appendFailedTurn closes a turn that never produced an answer, writing the
+// agent row openTurn's question has been waiting for.
+//
+// It is appendTurn's other ending, not a special case beside it: the same one
+// row, in the same session, keeping the same strict user/agent pairing every
+// reader downstream assumes (regenerate, answer-again, edit-and-resend, the
+// context rebuild). What differs is that the row carries error_text, and that
+// its Text is whatever streamed before the wall — often nothing, sometimes half
+// an answer the user watched arrive and would rather not lose.
+//
+// The FTS triggers index it like any other row, which is right: "the turn where
+// the quota ran out" is a thing a person searches for.
+func (a *App) appendFailedTurn(agentMsg SessionMessage, cause error) int64 {
+	db, err := a.database()
+	sessionID := a.turnSessionID()
+	if err != nil || sessionID == "" || cause == nil {
+		return 0
+	}
+	// The flag is lowered here as well as in appendTurn, because this is now the
+	// other way a turn can end. Left standing it would tell the NEXT turn's
+	// appendTurn that its question was already stored.
+	a.turnOpened = false
+	// Never empty, whatever the error stringifies to: an empty column means "this
+	// turn succeeded", and a failure recorded as a success is worse than one
+	// recorded with a vague reason.
+	reason := strings.TrimSpace(cause.Error())
+	if reason == "" {
+		reason = "unknown error"
+	}
+	res, execErr := db.Exec(
+		`INSERT INTO messages(session_id, role, text, time, reasoning, think_secs, parts, error_text)
+		 VALUES(?,?,?,?,?,?,?,?)`,
+		sessionID, "agent", agentMsg.Text, agentMsg.Time,
+		agentMsg.Reasoning, agentMsg.ThinkSecs, encodeParts(agentMsg.Parts), reason)
+	if execErr != nil {
+		return 0
+	}
+	// Same as any other turn: the conversation was just worked in, so it belongs
+	// at the top of the history list. A turn that failed is still the most recent
+	// thing that happened in it — arguably the one the user will come back to.
+	_, _ = db.Exec(`UPDATE sessions SET updated_at = ? WHERE id = ?`,
+		time.Now().Format(time.RFC3339), sessionID)
+	id, _ := res.LastInsertId()
+	return id
 }
 
 // startNewSession begins a fresh transcript (and fresh agent memory). Nothing
@@ -798,7 +854,7 @@ func (a *App) readTranscript(id, key string) ([]SessionMessage, error) {
 		return nil, err
 	}
 	rows, err := db.Query(`
-		SELECT m.id, m.role, m.text, m.time, m.reasoning, m.think_secs, m.variants, m.variant_active, m.parts
+		SELECT m.id, m.role, m.text, m.time, m.reasoning, m.think_secs, m.variants, m.variant_active, m.parts, m.error_text
 		FROM messages m
 		JOIN sessions s ON s.id = m.session_id
 		WHERE m.session_id = ? AND s.project_key = ?
@@ -813,7 +869,7 @@ func (a *App) readTranscript(id, key string) ([]SessionMessage, error) {
 	for rows.Next() {
 		var m SessionMessage
 		var variants, parts string
-		if rows.Scan(&m.ID, &m.Role, &m.Text, &m.Time, &m.Reasoning, &m.ThinkSecs, &variants, &m.Active, &parts) == nil {
+		if rows.Scan(&m.ID, &m.Role, &m.Text, &m.Time, &m.Reasoning, &m.ThinkSecs, &variants, &m.Active, &parts, &m.ErrorText) == nil {
 			m.Variants = decodeVariants(variants)
 			m.Parts = decodeParts(parts)
 			m.Rating = a.TurnRating(m.ID)
@@ -1075,9 +1131,24 @@ func (a *App) sweepAttachments(root string) {
 	}
 }
 
+// transcriptToModelMessages rebuilds the model's memory from what is on screen.
+//
+// A turn that failed is left out of it, both halves. The transcript keeps it —
+// the user asked, the app could not answer, and that is what happened — but the
+// model was never told the answer it gave, because it never gave one. Replaying
+// the question with an empty reply underneath would teach it that it had ignored
+// the user, and replaying the question alone would leave it dangling in a memory
+// the very next message is about to ask again.
+//
+// This is also what RetryFailedTurn's promise rests on: it rebuilds from here
+// before re-sending, so "remove the question the failed attempt left behind"
+// costs nothing and cannot be forgotten at the call site.
 func transcriptToModelMessages(messages []SessionMessage) []model.Message {
 	out := make([]model.Message, 0, len(messages))
-	for _, m := range messages {
+	for i, m := range messages {
+		if failedPairAt(messages, i) {
+			continue
+		}
 		role := model.RoleUser
 		if m.Role == "agent" {
 			role = model.RoleAssistant
@@ -1085,4 +1156,19 @@ func transcriptToModelMessages(messages []SessionMessage) []model.Message {
 		out = append(out, model.Message{Role: role, Content: m.Text})
 	}
 	return out
+}
+
+// failedPairAt reports whether index i is part of a turn that never completed —
+// the agent row carrying the error, or the question directly above it.
+//
+// The transcript is strictly user/agent pairs, so "the question of a failed
+// turn" is always the row before its answer. Written as a lookup rather than a
+// flag on the user row because the failure belongs to the turn, and storing it
+// twice would create two columns that can disagree.
+func failedPairAt(messages []SessionMessage, i int) bool {
+	if messages[i].Role == "agent" {
+		return messages[i].ErrorText != ""
+	}
+	next := i + 1
+	return next < len(messages) && messages[next].Role == "agent" && messages[next].ErrorText != ""
 }

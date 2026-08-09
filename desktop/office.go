@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/Mike0165115321/Aetox/internal/config"
 	"github.com/Mike0165115321/Aetox/internal/debuglog"
 	"github.com/Mike0165115321/Aetox/internal/mode"
 	"github.com/Mike0165115321/Aetox/internal/subagent"
@@ -113,6 +114,48 @@ func (a *App) ListChairs() []Chair {
 		out = append(out, c)
 	}
 	return out
+}
+
+// ChairStarters returns how one office agent opens a conversation — the
+// question at the top of an empty chat with it, and the cards under it, read
+// out of that agent's own folder (subagent/starters.go).
+//
+// Its own binding rather than a field on Chair, because the two are wanted at
+// different moments and one of them is expensive: the roster is a page of
+// job counts and tool lists, and an empty chat needs none of that. A worker
+// with no STARTERS.md comes back empty, and the window falls back to the four
+// it draws for any colleague.
+//
+// The language is a parameter and not a.cfg.UILocale on purpose. The window is
+// the one that knows which language it is currently drawing; reading the
+// engine's copy would race the moment the user switches, and would show one
+// language's cards under the other language's chrome for exactly as long as it
+// took the preference to be written.
+func (a *App) ChairStarters(name, locale string) subagent.StarterSet {
+	return subagent.Starters(name, locale)
+}
+
+// SaveChairStarters writes an agent's opening from the settings page.
+//
+// The same language parameter as the read above, and for the same reason: the
+// window knows which language it is drawing, and STARTERS.md is the author's
+// own while STARTERS.<lang>.md is a translation of it. Editing in Thai writes
+// the base file; editing in English writes the English one beside it, which is
+// what the reader resolves and therefore what the writer must produce.
+//
+// A set with no headline and no cards deletes the user's file — see
+// subagent.SaveStarters for why that is the honest inverse rather than writing
+// an empty one.
+func (a *App) SaveChairStarters(name, locale string, set subagent.StarterSet) error {
+	return subagent.SaveStarters(name, locale, set)
+}
+
+// ChairStartersFile is the filename the editor is currently writing, so the
+// panel can say which of the two it means. A name, not a path: the folder is
+// one click away behind the skills button and the whole path in a label is a
+// line nobody reads.
+func (a *App) ChairStartersFile(locale string) string {
+	return config.AgentStartersName(locale)
 }
 
 type chairActivity struct {

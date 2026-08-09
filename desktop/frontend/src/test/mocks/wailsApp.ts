@@ -81,6 +81,11 @@ export const Connections = vi.fn(async () => [
 ])
 export const ConnectAccount = vi.fn(async (..._args: any[]) => ({ login: 'mike', scopes: ['repo'] }))
 export const VerifyConnection = vi.fn(async (_id: string) => ({ login: 'mike', scopes: ['repo'] }))
+export const EnginesFor = vi.fn(async (..._a: any[]) => [] as any[])
+export const UseEngine = noop()
+export const SetConnectionStartCommand = noop()
+export const StartConnectionServer = noop()
+export const CheckConnectionServer = vi.fn(async (_id: string) => true)
 export const SetConnectionTargets = noop()
 export const DisconnectAccount = noop()
 export const InstallSkillFromGitHub = str()
@@ -89,6 +94,11 @@ export const ReadSubagentProfile = str()
 export const SaveSubagentProfile = noop()
 export const DeleteSubagentProfile = noop()
 export const SetSubagentModel = noop()
+// The agent editor's เอื้อมถึงอะไร / ความรู้ / เปิดบทสนทนา panels. Empty by
+// default: a test that cares about one of them says so itself.
+export const AgentSkills = arr()
+export const AgentNeeds = arr()
+export const OpenAgentSkillsFolder = noop()
 export const ListAllSessions = arr()
 export const ListSessionsForDoor = arr()
 export const SearchSessionsForDoor = arr()
@@ -152,6 +162,14 @@ export const SessionTranscript = arr()
 export const TurnInFlight = vi.fn(async (..._args: any[]) => ({ running: false, sessionId: '' }))
 export const ListModes = arr()
 export const ListChairs = arr()
+// "This agent keeps no opening of its own" — the state that makes the window
+// fall back to the four cards it draws for any colleague. A test about an
+// agent's own cards overrides it.
+export const ChairStarters = vi.fn(async (..._args: any[]) => ({ headline: '', cards: [] as any[] }))
+export const SaveChairStarters = noop()
+// Which of STARTERS.md / STARTERS.<lang>.md the editor is writing. The base
+// file, matching the Thai default the tests run in.
+export const ChairStartersFile = vi.fn(async (..._args: any[]) => 'STARTERS.md')
 export const ListReceivedJobs = arr()
 export const ListSessionsAt = arr()
 export const ListArtifacts = arr()
@@ -235,13 +253,11 @@ export const DeletePromptPreset = noop()
 export const PickPresetImage = str()
 export const RemovePresetImage = noop()
 export const ToggleMCPServer = noop()
-// The desks and the team, shared by the MCP page and the connections page —
-// one list, one set of ids, exactly as the binding is.
-export const PlacementTargets = vi.fn(async () => [
-  { id: 'assistant', name: 'ผู้ช่วย', kind: 'desk' },
-  { id: 'coding', name: 'โค้ด', kind: 'desk' },
-  { id: 'agent:researcher', name: 'researcher', kind: 'agent' },
-])
+// The desks and the team, shared by the MCP page, the connections page and the
+// agent editor. Empty here and filled per test: one test needs a target whose
+// name matches the agent it opens, and a fixture that lives only in this file
+// cannot be varied without leaking the variation into every test after it.
+export const PlacementTargets = arr()
 export const SetMCPServerTargets = noop()
 export const ToolCounts = vi.fn(async () => ({ builtin: 0, workbench: 0, skill: 0, mcp: 0 }))
 export const UsageStats = vi.fn(async () => ({

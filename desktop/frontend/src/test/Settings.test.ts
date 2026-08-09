@@ -9,6 +9,8 @@ import {
   RemoveMCPServer, RemoveExternalSkill, SetProviderEnabled, TerminalShells,
   SkillsDir, SkillScanIssues, OpenSkillsFolder, InstallSkillFromZip,
   MCPConfigPath, OpenMCPFolder, SaveMCPServer, AppVersion, CheckForUpdate, ListChairs, SaveAgentProfile,
+  AgentSkills, AgentNeeds, PlacementTargets, SetMCPServerTargets,
+  ChairStarters, SaveChairStarters,
   Connections, ConnectAccount, SetConnectionTargets, VerifyConnection, DisconnectAccount,
 } from './mocks/wailsApp'
 import { applyTypeScale } from '../lib/typeScale.svelte'
@@ -24,7 +26,10 @@ const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-$
 beforeEach(() => {
   cockpit.settingsIntent = null
   vi.mocked(ListMCPServers).mockResolvedValue([
-    { name: 'context7', command: ['npx', '-y', '@upstash/context7-mcp'], disabled: false, status: 'connected', tools: 2 },
+    // `allowed` is the trim: the server offers more than this and only these
+    // are taken (§97.3). Kept on a row that already exists so the counts the
+    // other MCP tests assert on do not move.
+    { name: 'context7', command: ['npx', '-y', '@upstash/context7-mcp'], disabled: false, status: 'connected', tools: 2, allowed: ['resolve-library-id', 'get-library-docs'] },
     { name: 'exa', url: 'https://mcp.exa.ai/mcp', disabled: true, status: 'disabled', tools: 0 },
   ] as any)
   vi.mocked(ListExternalSkills).mockResolvedValue([
@@ -88,6 +93,14 @@ beforeEach(() => {
     { name: 'mine-deck', description: 'ของผมทับ', prompt: 'role', path: 'C:/agents/mine-deck.md', builtin: false, overrides: true, desk: 'specialized' },
   ] as any)
   vi.mocked(ListChairs).mockResolvedValue([{ name: 'deck' }, { name: 'backend' }, { name: 'mine-deck' }] as any)
+  // Where a server or an account can be pointed. Re-set every test because one
+  // of them replaces it — an override that survived would land on the
+  // connections tests, which assert this exact list.
+  vi.mocked(PlacementTargets).mockResolvedValue([
+    { id: 'assistant', name: 'ผู้ช่วย', kind: 'desk' },
+    { id: 'coding', name: 'โค้ด', kind: 'desk' },
+    { id: 'agent:researcher', name: 'researcher', kind: 'agent' },
+  ] as any)
   vi.mocked(ReadSubagentProfile).mockResolvedValue('---\ndescription: ค้นไฟล์\ntools: grep, read\n---\nYou search files.' as any)
   vi.mocked(ListModelsForProvider).mockResolvedValue(['deepseek-v4', 'deepseek-chat'] as any)
 })
@@ -153,6 +166,36 @@ describe('Settings pages', () => {
     expect(checkboxes.length).toBe(2) // one switch per server row
     await fireEvent.change(checkboxes[1]) // exa row (second server)
     await waitFor(() => expect(vi.mocked(ToggleMCPServer)).toHaveBeenCalledWith('exa', false))
+  })
+
+  // The allowlist is the one MCP field that is destructive when it round-trips
+  // wrong: a form that shows it blank and saves that blank silently widens the
+  // server back out to everything it offers. So both directions are pinned —
+  // editing shows what is stored, and saving sends it back.
+  it('editing a server shows its tool allowlist and saves it back', async () => {
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'MCP servers')
+    await waitFor(() => expect(screen.getByText('2 เครื่องมือ')).toBeTruthy())
+
+    const edit = screen.getAllByText('แก้ไข')[0] // context7's row
+    await fireEvent.click(edit)
+
+    const box = await waitFor(() => {
+      const el = container.querySelector<HTMLTextAreaElement>('textarea[placeholder="บรรทัดละหนึ่งชื่อ"]')
+      if (!el) throw new Error('the allowlist box is not on the form')
+      return el
+    })
+    expect(box.value).toBe('resolve-library-id\nget-library-docs')
+
+    await fireEvent.input(box, { target: { value: 'resolve-library-id\n' } })
+    await fireEvent.click(screen.getByText('บันทึก'))
+
+    await waitFor(() => expect(vi.mocked(SaveMCPServer)).toHaveBeenCalled())
+    const [original, sent] = vi.mocked(SaveMCPServer).mock.calls.at(-1) as [string, any]
+    expect(original).toBe('context7')
+    // Trimmed, blanks dropped, and sent as an array rather than omitted — the
+    // engine reads an absent field as "say nothing" and keeps what it has.
+    expect(sent.tools).toEqual(['resolve-library-id'])
   })
 
   it('Skills page lists discovered skills with their paths', async () => {
@@ -588,9 +631,9 @@ describe('Settings pages', () => {
   it('the model dropdown pins a model per agent', async () => {
     const { container } = render(Settings, { onClose: () => {} })
     await openSection(container, 'เอเจน')
-    await waitFor(() => expect(container.querySelectorAll('.set-row select.ctrl').length).toBe(3))
+    await waitFor(() => expect(container.querySelectorAll('.chair-card select.ctrl').length).toBe(3))
 
-    const selects = Array.from(container.querySelectorAll('.set-row select.ctrl')) as HTMLSelectElement[]
+    const selects = Array.from(container.querySelectorAll('.chair-card select.ctrl')) as HTMLSelectElement[]
     expect(selects[0].value).toBe('deepseek-v4') // backend is pinned
     await fireEvent.change(selects[0], { target: { value: '' } })
     await waitFor(() => expect(vi.mocked(SetSubagentModel)).toHaveBeenCalledWith('backend', ''))
@@ -612,10 +655,10 @@ describe('Settings pages', () => {
     withPickableTools()
     const { container } = render(Settings, { onClose: () => {} })
     await openSection(container, 'เอเจน')
-    await waitFor(() => expect(screen.getAllByText('ตั้งค่า').length).toBe(3))
+    await waitFor(() => expect(screen.getAllByLabelText('ตั้งค่า').length).toBe(3))
 
     // The built-in group's first row (deck) — index 2 overall: yours come first.
-    await fireEvent.click(screen.getAllByText('ตั้งค่า')[2])
+    await fireEvent.click(screen.getAllByLabelText('ตั้งค่า')[2])
     await waitFor(() => expect(container.querySelector('.ag-toolsum')).toBeTruthy())
 
     // ReadSubagentProfile's mock is '---\ndescription: ค้นไฟล์\ntools: grep, read\n---\nYou search files.'
@@ -652,8 +695,8 @@ describe('Settings pages', () => {
   // not a new file format.
   const openToolPicker = async (container: HTMLElement, rowIndex: number) => {
     await openSection(container, 'เอเจน')
-    await waitFor(() => expect(screen.getAllByText('ตั้งค่า').length).toBe(3))
-    await fireEvent.click(screen.getAllByText('ตั้งค่า')[rowIndex])
+    await waitFor(() => expect(screen.getAllByLabelText('ตั้งค่า').length).toBe(3))
+    await fireEvent.click(screen.getAllByLabelText('ตั้งค่า')[rowIndex])
     await waitFor(() => expect(container.querySelector('.ag-toolsum')).toBeTruthy())
     await fireEvent.click(screen.getByText('ตั้งค่า', { selector: '.ag-toolsum button' }))
     await waitFor(() => expect(document.querySelector('.tp-card')).toBeTruthy())
@@ -703,6 +746,184 @@ describe('Settings pages', () => {
     expect(saved).not.toContain('tools: grep')
   })
 
+  // The editor draws neither `desk:` nor `needs:` — and used to delete both on
+  // save, because serializeAgentFile only wrote back the keys it had fields
+  // for. Opening github and pressing Save quietly stripped its `needs:`, so the
+  // agent stopped declaring what it cannot work without and the notice it
+  // carries in its own prompt went with it. An editor must not delete what it
+  // does not draw.
+  it('keeps frontmatter it does not draw — desk and needs survive a save', async () => {
+    vi.mocked(ReadSubagentProfile).mockResolvedValue(
+      '---\ndescription: ดูแล GitHub\ntools: read\nneeds: connection:github, mcp:github\ndesk: specialized\n---\nYou mind the repo.' as any,
+    )
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'เอเจน')
+    await waitFor(() => expect(screen.getAllByLabelText('ตั้งค่า').length).toBe(3))
+    await fireEvent.click(screen.getAllByLabelText('ตั้งค่า')[2])
+    await waitFor(() => expect(container.querySelector('.ag-toolsum')).toBeTruthy())
+
+    await fireEvent.click(screen.getByText('บันทึก'))
+    await waitFor(() => expect(vi.mocked(SaveAgentProfile)).toHaveBeenCalled())
+    const saved = vi.mocked(SaveAgentProfile).mock.calls.at(-1)![1]
+    expect(saved).toContain('needs: connection:github, mcp:github')
+    expect(saved).toContain('desk: specialized')
+  })
+
+  // Three boxes, because the engine has three mechanisms: tools subtract from
+  // the shared set, MCP and skills each add for this one agent alone. Reading
+  // them as one list is what sent the user to three pages to answer "what can
+  // this one reach".
+  it('separates what this agent alone carries — MCP and skills get their own boxes', async () => {
+    vi.mocked(PlacementTargets).mockResolvedValue([
+      { id: 'assistant', name: 'ผู้ช่วย', kind: 'desk' },
+      { id: 'agent:deck', name: 'deck', kind: 'agent' },
+    ] as any)
+    vi.mocked(AgentSkills).mockResolvedValue([
+      { name: 'invoice', description: 'ใบกำกับภาษีต้องมีอะไรบ้าง', bundled: false },
+      { name: 'payroll', description: 'โครงไฟล์เงินเดือน', bundled: true },
+    ] as any)
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'เอเจน')
+    await waitFor(() => expect(screen.getAllByLabelText('ตั้งค่า').length).toBe(3))
+    await fireEvent.click(screen.getAllByLabelText('ตั้งค่า')[2]) // deck
+
+    // The skills box reads its own folder, and says which one shipped — that is
+    // the fact that decides whether the user's file can replace it.
+    await waitFor(() => expect(screen.getByText('invoice')).toBeTruthy())
+    expect(screen.getByText('payroll')).toBeTruthy()
+    expect(screen.getAllByText('มากับแอป').length).toBeGreaterThan(0)
+
+    // The MCP box offers the enabled servers and not the disabled one: a server
+    // that never connects has no tools to carry, whoever it is pointed at.
+    expect(screen.getByText('context7')).toBeTruthy()
+    const rows = Array.from(container.querySelectorAll('.ag-reachrow'))
+    expect(rows.length).toBe(1)
+
+    // Ticking writes the same `for:` list the MCP page writes, through the same
+    // call — one register, two doors into it.
+    await fireEvent.click(rows[0].querySelector('input[type="checkbox"]')!)
+    await waitFor(() => expect(vi.mocked(SetMCPServerTargets)).toHaveBeenCalledWith('context7', ['agent:deck']))
+  })
+
+  // The engine has computed unmet needs since needs.go was written and only
+  // ever folded them into the agent's own prompt. The page you fix them on
+  // showed nothing at all.
+  it('says what an agent declared it needs and has not got', async () => {
+    vi.mocked(ReadSubagentProfile).mockResolvedValue(
+      '---\ndescription: ดูแล GitHub\nneeds: connection:github\n---\nYou mind the repo.' as any,
+    )
+    vi.mocked(AgentNeeds).mockResolvedValue([
+      {
+        entry: 'connection:github', met: false,
+        options: [{ kind: 'connection', id: 'github', label: 'GitHub', reason: 'unconnected' }],
+      },
+    ] as any)
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'เอเจน')
+    await waitFor(() => expect(screen.getAllByLabelText('ตั้งค่า').length).toBe(3))
+    await fireEvent.click(screen.getAllByLabelText('ตั้งค่า')[2])
+
+    await waitFor(() => expect(screen.getByText('GitHub')).toBeTruthy())
+    // The reason in the user's language, not the code the engine passes.
+    expect(container.textContent).toContain('ยังไม่ได้ล็อกอิน')
+    expect(container.textContent).not.toContain('unconnected')
+    // And a door that names what it opens, rather than a generic "go deal with
+    // it" that lands the user on a page with nothing highlighted.
+    expect(screen.getByText(/ไปเชื่อมบัญชี/)).toBeTruthy()
+  })
+
+  // `needs: connection:n8n | connection:windmill` is ONE requirement — an
+  // automation engine — and either answers it. Drawn as one flat line about
+  // whichever was nearest, it read as "n8n is required" and hid both the
+  // alternative and which of the two was already on.
+  it('reads an either/or requirement as one choice, and says which side is on', async () => {
+    vi.mocked(ReadSubagentProfile).mockResolvedValue(
+      '---\ndescription: ออโตเมชั่น\nneeds: connection:n8n | connection:windmill\n---\nYou wire things up.' as any,
+    )
+    vi.mocked(AgentNeeds).mockResolvedValue([
+      {
+        entry: 'connection:n8n | connection:windmill', met: false,
+        options: [
+          { kind: 'connection', id: 'n8n', label: 'n8n', reason: 'unconnected' },
+          { kind: 'connection', id: 'windmill', label: 'Windmill', reason: 'missing' },
+        ],
+      },
+    ] as any)
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'เอเจน')
+    await waitFor(() => expect(screen.getAllByLabelText('ตั้งค่า').length).toBe(3))
+    await fireEvent.click(screen.getAllByLabelText('ตั้งค่า')[2])
+
+    await waitFor(() => expect(container.textContent).toContain('มีอย่างใดอย่างหนึ่งก็พอ'))
+    // Both ways of answering it, each with its own state and its own door.
+    expect(container.querySelectorAll('.ag-need-opt').length).toBe(2)
+    expect(container.textContent).toContain('Windmill')
+    expect(screen.getAllByText(/ไปเชื่อมบัญชี/).length).toBe(2)
+    // One requirement, so one warning — not two.
+    expect(container.querySelector('.ag-count-warn')?.textContent).toBe('1')
+  })
+
+  // The other half of the same fix: an option that is already on has to look
+  // like it, or the box is only ever a list of complaints.
+  it('marks the side that is already on, and stops warning once either is', async () => {
+    vi.mocked(ReadSubagentProfile).mockResolvedValue(
+      '---\ndescription: ออโตเมชั่น\nneeds: connection:n8n | connection:windmill\n---\nYou wire things up.' as any,
+    )
+    vi.mocked(AgentNeeds).mockResolvedValue([
+      {
+        entry: 'connection:n8n | connection:windmill', met: true,
+        options: [
+          { kind: 'connection', id: 'n8n', label: 'n8n', reason: '' },
+          { kind: 'connection', id: 'windmill', label: 'Windmill', reason: 'missing' },
+        ],
+      },
+    ] as any)
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'เอเจน')
+    await waitFor(() => expect(screen.getAllByLabelText('ตั้งค่า').length).toBe(3))
+    await fireEvent.click(screen.getAllByLabelText('ตั้งค่า')[2])
+
+    await waitFor(() => expect(container.querySelector('.ag-need.met')).toBeTruthy())
+    expect(container.querySelectorAll('.ag-need-dot.on').length).toBe(1)
+    // Nothing is missing, so nothing is counted as missing.
+    expect(container.querySelector('.ag-count-warn')).toBeNull()
+  })
+
+  // The opening is a file, and this is a second door onto it — so what the form
+  // writes has to be what the chat window would have read from a hand-edit.
+  it('edits the opening cards and writes them back as the agent’s own file', async () => {
+    vi.mocked(ChairStarters).mockResolvedValue({ headline: 'ถามอะไรดี?', cards: [] } as any)
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'เอเจน')
+    await waitFor(() => expect(screen.getAllByLabelText('ตั้งค่า').length).toBe(3))
+    await fireEvent.click(screen.getAllByLabelText('ตั้งค่า')[2]) // deck
+
+    // Four slots, always — the window fits four, and an empty row is also how a
+    // card is removed.
+    await waitFor(() => expect(container.querySelectorAll('.ag-starter').length).toBe(4))
+
+    const first = container.querySelectorAll('.ag-starter')[0]
+    const [title, prompt] = Array.from(first.querySelectorAll('input.ctrl')) as HTMLInputElement[]
+    await fireEvent.input(title, { target: { value: 'วางโครงสไลด์' } })
+    await fireEvent.input(prompt, { target: { value: 'ช่วยวางโครงสไลด์เรื่องนี้:' } })
+    const save = screen.getByText('บันทึกประโยคเปิด') as HTMLButtonElement
+    await waitFor(() => expect(save.disabled).toBe(false))
+    await fireEvent.click(save)
+    // The panel swallows its own failures into this line, so a save that threw
+    // would otherwise look exactly like a save that never fired.
+    expect(container.querySelector('.mset-error')?.textContent ?? '').toBe('')
+
+    await waitFor(() => expect(vi.mocked(SaveChairStarters)).toHaveBeenCalled())
+    const [name, locale, set] = vi.mocked(SaveChairStarters).mock.calls.at(-1)!
+    expect(name).toBe('deck')
+    expect(locale).toBe('th')
+    expect(set.headline).toBe('ถามอะไรดี?')
+    // Only the filled row is sent; the three empty ones are not three blank
+    // cards the user has to go and delete.
+    expect(set.cards.length).toBe(1)
+    expect(set.cards[0]).toMatchObject({ title: 'วางโครงสไลด์', prompt: 'ช่วยวางโครงสไลด์เรื่องนี้:' })
+  })
+
   // subagent.forcedDenials never reach a sub-agent whatever the file says.
   // Offering them was a lie the user only discovered after saving.
   it('tools a sub-agent can never get are shown as unavailable, not as choices', async () => {
@@ -734,8 +955,8 @@ describe('Settings pages', () => {
   it('the loop cap can be removed, and says so in the file as a word', async () => {
     const { container } = render(Settings, { onClose: () => {} })
     await openSection(container, 'เอเจน')
-    await waitFor(() => expect(screen.getAllByText('ตั้งค่า').length).toBe(3))
-    await fireEvent.click(screen.getAllByText('ตั้งค่า')[2])
+    await waitFor(() => expect(screen.getAllByLabelText('ตั้งค่า').length).toBe(3))
+    await fireEvent.click(screen.getAllByLabelText('ตั้งค่า')[2])
     await waitFor(() => expect(container.querySelector('.ag-steprow')).toBeTruthy())
 
     const box = container.querySelector('.ag-steps') as HTMLInputElement
@@ -755,9 +976,9 @@ describe('Settings pages', () => {
   it('a shadow offers to revert, not to delete', async () => {
     const { container } = render(Settings, { onClose: () => {} })
     await openSection(container, 'เอเจน')
-    await waitFor(() => expect(screen.getAllByText('ตั้งค่า').length).toBe(3))
+    await waitFor(() => expect(screen.getAllByLabelText('ตั้งค่า').length).toBe(3))
 
-    await fireEvent.click(screen.getAllByText('ตั้งค่า')[1]) // mine-deck, the shadow
+    await fireEvent.click(screen.getAllByLabelText('ตั้งค่า')[1]) // mine-deck, the shadow
     await waitFor(() => expect(screen.getByText('คืนค่าของแอป')).toBeTruthy())
     expect(screen.queryByText('ลบ')).toBeNull()
   })
@@ -1343,14 +1564,15 @@ describe('Settings About page', () => {
 // you open it, and inside, who may use it.
 // ---------------------------------------------------------------------------
 
-const openConnections = async () => {
+// Render Settings and walk to one page. The register lives behind two nav items
+// now (accounts and automation engines), so the helper takes the label.
+const renderAt = async (label: string) => {
   const rendered = render(Settings, { onClose: () => {} })
-  const item = Array.from(rendered.container.querySelectorAll('.settings-nav-item'))
-    .find((el) => el.textContent?.includes('การเชื่อมต่อ'))
-  if (!item) throw new Error('nav item not found')
-  await fireEvent.click(item)
+  await openSection(rendered.container, label)
   return rendered
 }
+
+const openConnections = () => renderAt('การเชื่อมต่อ')
 
 // Opens the row itself, which is where everything but the name and the state
 // lives now.
@@ -1370,6 +1592,111 @@ const githubRow = (over: Record<string, unknown> = {}) => [{
 
 const connectedRow = (over: Record<string, unknown> = {}) => githubRow({
   connected: true, login: 'mike', source: 'connection', for: ['coding'], configured: true, ...over,
+})
+
+// A service the user hosts. n8n and Windmill live wherever the user put them,
+// so the row has to ask where before a token means anything.
+const selfHostedRow = (over: Record<string, unknown> = {}) => [{
+  id: 'n8n', label: 'n8n', kind: 'token',
+  connected: false, env_override: false, for: [], configured: false,
+  tools: ['n8n_workflow_list', 'n8n_workflow_create'],
+  needs_base_url: true, base_url_hint: 'http://localhost:5678',
+  ...over,
+}]
+
+// Two pages over one register, split by the catalog's `family`.
+//
+// They were one page for a day and the owner's verdict was blunt: an automation
+// engine is a machine you run, it takes an address as well as a key, and setting
+// one up is a different conversation from signing an account in. Filing them
+// together made the page answer two questions and buried the automation half.
+//
+// What these pin is that the split is decided by `family` and not by a list of
+// ids in the component — because the moment it is a list, a third engine lands
+// on the wrong page and nobody notices until a user cannot find it.
+describe('the split between accounts and automation engines', () => {
+  it('keeps automation engines off the accounts register', async () => {
+    vi.mocked(Connections).mockResolvedValue([
+      ...githubRow(), ...selfHostedRow({ family: 'automation' }),
+    ] as any)
+    await openConnections()
+
+    await waitFor(() => expect(screen.getByText('GitHub')).toBeTruthy())
+    expect(screen.queryByText('n8n')).toBeNull()
+  })
+
+  it('shows only automation engines on their own page', async () => {
+    vi.mocked(Connections).mockResolvedValue([
+      ...githubRow(), ...selfHostedRow({ family: 'automation' }),
+    ] as any)
+    await renderAt('ระบบออโตเมชั่น')
+
+    await waitFor(() => expect(screen.getByText('n8n')).toBeTruthy())
+    expect(screen.queryByText('GitHub')).toBeNull()
+  })
+
+  // A service whose family this build does not recognise must land somewhere.
+  // Vanishing from both pages is the one outcome with no way back for a user
+  // holding a working account.
+  it('keeps an unfamiliar service on the register rather than losing it', async () => {
+    vi.mocked(Connections).mockResolvedValue(
+      githubRow({ id: 'gmail', label: 'Gmail', family: 'mail' }) as any)
+    await openConnections()
+
+    await waitFor(() => expect(screen.getByText('Gmail')).toBeTruthy())
+  })
+})
+
+describe('a row speaks for its own service', () => {
+  // These four strings were GitHub's copy hardcoded, so the n8n row asked for a
+  // "PERSONAL ACCESS TOKEN" starting `ghp_…` and promised to check it with
+  // GitHub. Wrong on every row but one, and wrong in the way that makes a person
+  // doubt they are looking at the right screen.
+  it('does not put GitHub words on a self-hosted engine', async () => {
+    vi.mocked(Connections).mockResolvedValue(selfHostedRow({ family: 'automation' }) as any)
+    const { container } = await renderAt('ระบบออโตเมชั่น')
+    await waitFor(() => expect(screen.getByText('ยังไม่ได้เชื่อม')).toBeTruthy())
+    await expandRow(container)
+
+    expect(container.textContent).not.toContain('GitHub')
+    expect(container.querySelector('input[type="password"]')?.getAttribute('placeholder')).toBe('')
+    // And it names the service it will actually check the key with.
+    expect(container.textContent).toContain('n8n')
+  })
+
+  // Two questions, and the page has to look like it knows they are two: whether
+  // the PROGRAM is up, and whether the KEY works. Side by side in one column the
+  // two check buttons read as two spellings of one button.
+  it('splits the server from the account, in order', async () => {
+    vi.mocked(Connections).mockResolvedValue(selfHostedRow({ family: 'automation' }) as any)
+    const { container } = await renderAt('ระบบออโตเมชั่น')
+    await waitFor(() => expect(screen.getByText('ยังไม่ได้เชื่อม')).toBeTruthy())
+    await expandRow(container)
+
+    const heads = Array.from(container.querySelectorAll('.conn-part-head'))
+      .map((el) => el.textContent?.trim())
+    expect(heads).toEqual(['1 · ตัวเซิร์ฟเวอร์', '2 · บัญชีและคีย์'])
+  })
+})
+
+describe('disconnecting', () => {
+  // The one destructive button on this page that just did it. An n8n key is
+  // shown once at creation and never again, so a mis-click costs a trip to
+  // another program to mint a new one.
+  it('asks before throwing a credential away', async () => {
+    vi.mocked(Connections).mockResolvedValue(connectedRow() as any)
+    vi.mocked(DisconnectAccount).mockClear()
+    const { container } = await openConnections()
+    await waitFor(() => expect(screen.getByText('เชื่อมแล้วในชื่อ mike')).toBeTruthy())
+    await expandRow(container)
+
+    await fireEvent.click(screen.getByText('เลิกเชื่อม'))
+    expect(vi.mocked(DisconnectAccount)).not.toHaveBeenCalled()
+
+    // And what survives is said, because "disconnect" reads like "start over"
+    // and it is not: the address and the placement are still there.
+    await waitFor(() => expect(screen.getByText(/เลิกเชื่อม GitHub\?/)).toBeTruthy())
+  })
 })
 
 describe('Connections page', () => {
@@ -1444,6 +1771,48 @@ describe('Connections page', () => {
     expect(chips.map((c) => c.getAttribute('aria-pressed'))).toEqual(['true', 'true', 'false'])
   })
 
+  // A service Aetox hosts nowhere cannot be reached until the user says where
+  // it is, and a token checked against the wrong host fails in a way that reads
+  // as a bad token — so the address is asked for first and the button stays
+  // down until it is there.
+  it('asks a self-hosted service where it lives before it will connect', async () => {
+    vi.mocked(Connections).mockResolvedValue(selfHostedRow() as any)
+    vi.mocked(ConnectAccount).mockClear()
+    const { container } = await openConnections()
+    await waitFor(() => expect(screen.getByText('ยังไม่ได้เชื่อม')).toBeTruthy())
+    await expandRow(container)
+
+    const address = container.querySelector('input[type="text"].key-input') as HTMLInputElement
+    expect(address).toBeTruthy()
+    expect(address.placeholder).toBe('http://localhost:5678')
+
+    const token = container.querySelector('input[type="password"]') as HTMLInputElement
+    await fireEvent.input(token, { target: { value: 'n8n_api_key' } })
+    const connect = screen.getByText('เชื่อม') as HTMLButtonElement
+    expect(connect.disabled).toBe(true)
+
+    await fireEvent.input(address, { target: { value: '  http://box.local:5678  ' } })
+    expect(connect.disabled).toBe(false)
+    await fireEvent.click(connect)
+
+    // The address goes trimmed, and beside the token in one call — placement is
+    // whatever the row's chips are showing and is not what this test is about.
+    await waitFor(() => expect(vi.mocked(ConnectAccount)).toHaveBeenCalled())
+    expect(vi.mocked(ConnectAccount).mock.calls[0].slice(0, 3))
+      .toEqual(['n8n', 'n8n_api_key', 'http://box.local:5678'])
+  })
+
+  // GitHub is one host for everybody and states it as a constant. Drawing an
+  // address field on its row would ask a question with one possible answer.
+  it('does not ask a hosted service for an address', async () => {
+    vi.mocked(Connections).mockResolvedValue(githubRow() as any)
+    const { container } = await openConnections()
+    await waitFor(() => expect(screen.getByText('ยังไม่ได้เชื่อม')).toBeTruthy())
+    await expandRow(container)
+
+    expect(container.querySelector('input[type="text"].key-input')).toBeNull()
+  })
+
   it('connects with the pasted token and the chosen desks in one call', async () => {
     vi.mocked(Connections)
       .mockResolvedValueOnce(githubRow() as any)
@@ -1459,8 +1828,10 @@ describe('Connections page', () => {
     await fireEvent.input(field, { target: { value: '  ghp_example  ' } })
     await fireEvent.click(screen.getByText('เชื่อม'))
 
+    // The empty string is the base URL: GitHub is one host for everybody and
+    // states it as a constant, so the field is not even drawn on its row.
     await waitFor(() =>
-      expect(vi.mocked(ConnectAccount)).toHaveBeenCalledWith('github', 'ghp_example', ['coding']))
+      expect(vi.mocked(ConnectAccount)).toHaveBeenCalledWith('github', 'ghp_example', '', ['coding']))
     await waitFor(() => expect(screen.getByText('เชื่อมแล้วในชื่อ mike')).toBeTruthy())
     expect(container.textContent).toContain('สิทธิ์: repo')
     expect(container.querySelector('input[type="password"]')).toBeNull()
@@ -1513,6 +1884,14 @@ describe('Connections page', () => {
 
     await expandRow(container)
     await fireEvent.click(screen.getByText('เลิกเชื่อม'))
+    // Through the confirm gate now: a credential thrown away is a credential
+    // that has to be minted again somewhere else. The dialog's own button
+    // carries the same word, so the second click is the one that acts.
+    const confirm = await waitFor(() =>
+      Array.from(document.querySelectorAll('.confirm-actions button, .modal button'))
+        .find((b) => b.textContent?.trim() === 'เลิกเชื่อม') as HTMLButtonElement)
+    await fireEvent.click(confirm)
+
     await waitFor(() => expect(vi.mocked(DisconnectAccount)).toHaveBeenCalledWith('github'))
     await waitFor(() => expect(screen.getByText('ยังไม่ได้เชื่อม')).toBeTruthy())
   })

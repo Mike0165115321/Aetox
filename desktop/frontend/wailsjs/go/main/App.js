@@ -14,6 +14,14 @@ export function AddWorkspaceFolder() {
   return window['go']['main']['App']['AddWorkspaceFolder']();
 }
 
+export function AgentNeeds(arg1) {
+  return window['go']['main']['App']['AgentNeeds'](arg1);
+}
+
+export function AgentSkills(arg1) {
+  return window['go']['main']['App']['AgentSkills'](arg1);
+}
+
 export function AnswerUserQuestion(arg1) {
   return window['go']['main']['App']['AnswerUserQuestion'](arg1);
 }
@@ -94,6 +102,18 @@ export function CancelTurn() {
   return window['go']['main']['App']['CancelTurn']();
 }
 
+export function ChairStarters(arg1, arg2) {
+  return window['go']['main']['App']['ChairStarters'](arg1, arg2);
+}
+
+export function ChairStartersFile(arg1) {
+  return window['go']['main']['App']['ChairStartersFile'](arg1);
+}
+
+export function CheckConnectionServer(arg1) {
+  return window['go']['main']['App']['CheckConnectionServer'](arg1);
+}
+
 export function CheckForUpdate() {
   return window['go']['main']['App']['CheckForUpdate']();
 }
@@ -114,8 +134,8 @@ export function CompleteSignIn(arg1, arg2) {
   return window['go']['main']['App']['CompleteSignIn'](arg1, arg2);
 }
 
-export function ConnectAccount(arg1, arg2, arg3) {
-  return window['go']['main']['App']['ConnectAccount'](arg1, arg2, arg3);
+export function ConnectAccount(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['ConnectAccount'](arg1, arg2, arg3, arg4);
 }
 
 export function Connections() {
@@ -168,6 +188,10 @@ export function DismissTaskChip(arg1) {
 
 export function EnabledProviders() {
   return window['go']['main']['App']['EnabledProviders']();
+}
+
+export function EnginesFor(arg1, arg2) {
+  return window['go']['main']['App']['EnginesFor'](arg1, arg2);
 }
 
 export function ExportSession(arg1, arg2) {
@@ -348,6 +372,10 @@ export function NewSessionAt(arg1) {
 
 export function NewSessionInSpace(arg1) {
   return window['go']['main']['App']['NewSessionInSpace'](arg1);
+}
+
+export function OpenAgentSkillsFolder(arg1) {
+  return window['go']['main']['App']['OpenAgentSkillsFolder'](arg1);
 }
 
 export function OpenAgentsFolder() {
@@ -534,6 +562,10 @@ export function SaveAgentProfile(arg1, arg2) {
   return window['go']['main']['App']['SaveAgentProfile'](arg1, arg2);
 }
 
+export function SaveChairStarters(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SaveChairStarters'](arg1, arg2, arg3);
+}
+
 export function SaveChatFile(arg1) {
   return window['go']['main']['App']['SaveChatFile'](arg1);
 }
@@ -604,6 +636,10 @@ export function SessionsInSpace(arg1) {
 
 export function SetAPIKey(arg1, arg2) {
   return window['go']['main']['App']['SetAPIKey'](arg1, arg2);
+}
+
+export function SetConnectionStartCommand(arg1, arg2) {
+  return window['go']['main']['App']['SetConnectionStartCommand'](arg1, arg2);
 }
 
 export function SetConnectionTargets(arg1, arg2) {
@@ -684,6 +720,10 @@ export function SpeechModelDirs() {
 
 export function SpeechStatus() {
   return window['go']['main']['App']['SpeechStatus']();
+}
+
+export function StartConnectionServer(arg1) {
+  return window['go']['main']['App']['StartConnectionServer'](arg1);
 }
 
 export function StartSignIn(arg1) {
@@ -772,6 +812,10 @@ export function UndoLastTurn() {
 
 export function UsageStats() {
   return window['go']['main']['App']['UsageStats']();
+}
+
+export function UseEngine(arg1, arg2, arg3) {
+  return window['go']['main']['App']['UseEngine'](arg1, arg2, arg3);
 }
 
 export function UserName() {

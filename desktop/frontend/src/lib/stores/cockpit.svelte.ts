@@ -175,6 +175,35 @@ export function attachmentPreview(content: string): string {
     .join('\n')
 }
 
+/** A stored transcript, as the chat draws it.
+ *
+ * Everything per-message happens in restoreAttachments; what happens here is the
+ * one thing a single row cannot answer for itself. A turn that failed is stored
+ * as an agent row carrying `errorText`, and the text to retry with is the
+ * question above it — raw, straight off the row, because that is what was sent
+ * (the processed bubble has its attachment lines folded out).
+ *
+ * The sentence the user reads is composed here rather than stored, so a chat
+ * written in Thai reads in English the moment the user switches language — the
+ * store keeps the error, this keeps the wording, exactly as turnEndedBubble does
+ * for a failure that happens while you are watching.
+ */
+export function restoreTranscript(messages: main.SessionMessage[]): ChatMessage[] {
+  const out = messages.map(restoreAttachments)
+  for (let i = 0; i < out.length; i++) {
+    const err = messages[i].errorText
+    if (!err || out[i].role !== 'agent') continue
+    const question = messages[i - 1]
+    const ending = /context canceled/i.test(err)
+      ? t('cockpit.turnStopped')
+      : t('cockpit.sendError', { err })
+    out[i].failed = true
+    out[i].failedText = question?.role === 'user' ? question.text : undefined
+    out[i].text = out[i].text.trim() ? `${out[i].text}\n\n${ending}` : ending
+  }
+  return out
+}
+
 function restoreAttachments(m: main.SessionMessage): ChatMessage {
   const out: ChatMessage = {
     role: m.role === 'agent' ? 'agent' : 'user',
@@ -337,7 +366,7 @@ export async function selectGlobalSession(session: Session): Promise<void> {
   cockpit.sessionError = ''
   cockpit.todos = []
   cockpit.ask = null
-  cockpit.chat = messages.map(restoreAttachments)
+  cockpit.chat = restoreTranscript(messages)
   hydrateImages()
   await refreshDesk()
   await switchWorkbenchSession(session.id)
@@ -463,7 +492,7 @@ async function restoreLiveTranscript(): Promise<void> {
   try {
     const messages = await SessionTranscript(id)
     if (messages.length > 0) {
-      cockpit.chat = messages.map(restoreAttachments)
+      cockpit.chat = restoreTranscript(messages)
       hydrateImages()
       await switchWorkbenchSession(id)
     }
@@ -514,7 +543,7 @@ export async function applyAgentDone(status: { sessionId: string }): Promise<voi
   if (status?.sessionId === id) {
     try {
       const messages = await SessionTranscript(id)
-      cockpit.chat = messages.map(restoreAttachments)
+      cockpit.chat = restoreTranscript(messages)
       hydrateImages()
     } catch {
       // The store still holds the turn; the next open shows it.
@@ -716,22 +745,28 @@ export async function undoLastTurn(): Promise<void> {
  * Stop is not an error. The engine reports a cancelled turn as `context
  * canceled` (Go's one canonical string for it), and showing that as "เกิด
  * ข้อผิดพลาด" told the user the app broke when the app did exactly what they
- * pressed. Whatever streamed before the press is kept — it is read here before
- * runLiveTurn's cleanup erases it — and the retry chip rides along either way,
- * because a stopped question is still a question the user may want re-run.
+ * pressed. The retry chip rides along either way, because a stopped question is
+ * still a question the user may want re-run.
+ *
+ * Whatever streamed before the turn ended is kept in BOTH cases — read here,
+ * before runLiveTurn's cleanup erases it. Keeping it only for Stop was an
+ * accident of which case got written first: a quota that runs out or a
+ * connection that drops mid-answer ends the turn exactly as abruptly, and half
+ * an answer the user watched arrive is not the app's to throw away because of
+ * how it stopped arriving. The engine agrees from its own side — App.runTurn
+ * returns the partial reply alongside the error — but Wails discards a return
+ * value when the error is non-nil, so the live preview is the only copy that
+ * reaches here.
  */
 function turnEndedBubble(err: unknown, sentText: string): ChatMessage {
-  if (/context canceled/i.test(String(err))) {
-    const partial = cockpit.streamingText.trim()
-    return {
-      role: 'agent',
-      text: partial ? `${partial}\n\n${t('cockpit.turnStopped')}` : t('cockpit.turnStopped'),
-      time: nowLabel(), failed: true, failedText: sentText,
-    }
-  }
+  const partial = cockpit.streamingText.trim()
+  const ending = /context canceled/i.test(String(err))
+    ? t('cockpit.turnStopped')
+    : t('cockpit.sendError', { err: String(err) })
   return {
-    role: 'agent', text: t('cockpit.sendError', { err: String(err) }), time: nowLabel(),
-    failed: true, failedText: sentText,
+    role: 'agent',
+    text: partial ? `${partial}\n\n${ending}` : ending,
+    time: nowLabel(), failed: true, failedText: sentText,
   }
 }
 
@@ -834,6 +869,15 @@ async function runLiveTurn(call: () => Promise<void>): Promise<void> {
   cockpit.toolSteps = []
   cockpit.streamingText = ''
   cockpit.reasoningText = ''
+  // The checklist and the question card belong to the turn that raised them.
+  // Both are drawn inside the live block (Chat.svelte's `{#if awaitingReply}`),
+  // so a stale one is invisible while the chat is idle and then reappears the
+  // instant the next turn starts — the previous turn's todo list, every item
+  // already struck through, sitting under "กำลังคิดคำตอบ…" for work nobody asked
+  // for. They were cleared only when the session changed, which is why this
+  // survived: switching chats hid it, and staying in one did not.
+  cockpit.todos = []
+  cockpit.ask = null
   try {
     await call()
   } finally {
@@ -847,6 +891,11 @@ async function runLiveTurn(call: () => Promise<void>): Promise<void> {
     cockpit.turnFiles = []
     cockpit.streamingText = ''
     cockpit.reasoningText = ''
+    // Cleared at both ends, like toolSteps. A turn that died with a question
+    // still on screen left a card whose tool is no longer listening — pressing
+    // an option answered nothing.
+    cockpit.todos = []
+    cockpit.ask = null
     // The "still working" banner (turnStillRunning) explained a refusal that
     // just stopped being true. A stale one over an idle chat would be a lie.
     cockpit.sessionError = ''
@@ -1370,6 +1419,13 @@ export function closeFile(path: string): void {
 
 const activeViewStorageKey = 'aetox.activeView'
 
+// The views a reload may land back on. One list read by both halves: they used
+// to spell the same set out twice, and each new room had to be remembered in
+// two places — โปรเจกต์ was missed when it opened, and ระบบออโตเมชั่น the day
+// after. File tabs are deliberately absent: they do not persist, so a stored
+// path would point at nothing.
+const RESTORABLE_VIEWS = ['chat', 'settings', 'office', 'artifacts', 'projects']
+
 export function setActiveView(view: string): void {
   cockpit.activeView = view
   // Survive an F5 *within this run* only: remember chat/settings (file tabs
@@ -1377,7 +1433,7 @@ export function setActiveView(view: string): void {
   // reload). sessionStorage, not localStorage — a real app relaunch must
   // always land on chat, never reopen straight into Settings because that's
   // where a previous session happened to be force-quit.
-  if (view === 'chat' || view === 'settings' || view === 'office' || view === 'artifacts') {
+  if (RESTORABLE_VIEWS.includes(view)) {
     try {
       sessionStorage.setItem(activeViewStorageKey, view)
     } catch {
@@ -1386,11 +1442,34 @@ export function setActiveView(view: string): void {
   }
 }
 
-/** Restore the last chat/settings view after a frontend reload (same run only). */
+/** Where the Settings page remembers which of its sections is open.
+ *
+ * Exported so that a room can send the user to the right page rather than to
+ * the top of Settings with directions. Settings.svelte reads this same constant
+ * — the key is written down once, because a second spelling of it would fail
+ * silently and look like the page simply ignoring where it was told to go. */
+export const SETTINGS_SECTION_KEY = 'aetox.settingsSection'
+
+/** Open Settings already showing one section.
+ *
+ * ระบบออโตเมชั่น needs it: connecting an engine is a Settings job (one register,
+ * one form, one place a token is typed), but the room is where the user is
+ * standing when they decide to. Handing them a page they have to search is the
+ * kind of small rudeness that makes people give up. */
+export function openSettingsAt(section: string): void {
+  try {
+    sessionStorage.setItem(SETTINGS_SECTION_KEY, section)
+  } catch {
+    /* storage unavailable — Settings opens where it last was */
+  }
+  setActiveView('settings')
+}
+
+/** Restore the last room after a frontend reload (same run only). */
 export function restoreActiveView(): void {
   try {
     const saved = sessionStorage.getItem(activeViewStorageKey)
-    if (saved === 'settings' || saved === 'chat' || saved === 'office' || saved === 'artifacts') {
+    if (saved && RESTORABLE_VIEWS.includes(saved)) {
       cockpit.activeView = saved
     }
   } catch {
@@ -1404,7 +1483,7 @@ export async function selectSession(session: Session): Promise<void> {
   const messages = await LoadSession(session.id)
   cockpit.todos = []
   cockpit.ask = null
-  cockpit.chat = messages.map(restoreAttachments)
+  cockpit.chat = restoreTranscript(messages)
   hydrateImages()
   // Opening a session takes the engine back to the desk it was held at, so the
   // nav has to follow it rather than keep pointing at where the user was.

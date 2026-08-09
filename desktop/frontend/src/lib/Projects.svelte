@@ -205,7 +205,7 @@
 
           <!-- The rail is one card, not three. The reference has Instructions
                and Scheduled beside Context; neither is ours to put here yet —
-               recurring work is the ทำงานอัตโนมัติ room (COMPANY.md §7, still
+               recurring work is the ระบบออโตเมชั่น room (COMPANY.md §7, still
                ⏳), and a second door to a room that does not exist is a promise
                the app cannot keep. -->
           <aside class="proj-rail">

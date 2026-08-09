@@ -147,9 +147,13 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .desk-btn .ic { flex:none; display:flex; }
 .desk-btn .t { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 /* Built, empty, and saying so. A disabled button with no explanation reads as
-   broken; this one reads as a plan. */
+   broken; this one reads as a plan.
+   .soon-tag is deliberately not scoped to .desk-btn: the badge outlived the
+   sidebar (ระบบออโตเมชั่น draws it on the engines it cannot connect to yet), and
+   one badge in one shape is what keeps "not built" reading the same wherever
+   it appears. */
 .desk-btn.soon { color:var(--text-dim); cursor:default; }
-.desk-btn .soon-tag { flex:none; font-size:var(--fs-2xs); color:var(--text-dim); border:1px solid var(--border-subtle); border-radius:999px; padding:1px 7px; }
+.soon-tag { flex:none; font-size:var(--fs-2xs); color:var(--text-dim); border:1px solid var(--border-subtle); border-radius:999px; padding:1px 7px; white-space:nowrap; }
 
 /* Search and new-session, above the list and outside the scroller — a row that
    scrolls away is a row you go looking for.
@@ -812,6 +816,10 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   color:var(--text-secondary); font-size:var(--fs-xs); white-space:nowrap;
 }
 .focus-chip .ic { font-size:var(--fs-xs); opacity:.9; }
+/* A chip whose setting is missing rather than merely unusual. Used by the
+   automation engine picker with nothing chosen: the agent has no tools in that
+   state, so a quiet chip would be describing a broken room calmly. */
+.focus-chip.unset { color:var(--status-warn, var(--text-secondary)); border-color:currentColor; }
 /* Undo the last turn. Present only when that turn changed a file, so it is
    never a button that does nothing — and quiet rather than alarming, because
    it is an offer, not a warning. */
@@ -824,7 +832,7 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .focus-btn:hover { border-color:var(--interactive); color:var(--text-primary); }
 .focus-btn .caret { color:var(--text-dim); font-size:var(--fs-2xs); }
 .focus-menu {
-  position:absolute; bottom:calc(100% + 8px); left:0; z-index:50; min-width:240px; max-width:340px;
+  position:absolute; bottom:calc(100% + 8px); left:0; z-index:50; min-width:260px; max-width:360px;
   display:flex; flex-direction:column; gap:1px; padding:6px;
   background:var(--surface-panel); border:1px solid var(--border-subtle); border-radius:var(--r-lg);
   box-shadow:0 12px 32px rgba(0,0,0,.4);
@@ -836,6 +844,19 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .focus-item:hover { background:var(--surface-hover); color:var(--text-primary); }
 .focus-item.on { color:var(--accent); }
 .focus-item .t { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* An item with an action beside it — picking the row and testing it are two
+   different things, and one button doing both would mean you cannot check an
+   engine without switching to it first. */
+.focus-row { display:flex; align-items:center; gap:2px; }
+.focus-row .focus-item { flex:1; min-width:0; }
+.focus-row .icobtn { flex:none; }
+/* The right end of a menu row: the state or the address, pushed to the edge so
+   the row reads as a list entry rather than as a label floating in a box. The
+   name takes the space it needs and this takes the rest. */
+.focus-item .t { flex:0 1 auto; }
+.focus-item .tail { margin-left:auto; padding-left:10px; flex:0 1 auto; font-size:var(--fs-2xs); color:var(--text-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.focus-item .tail.warn { color:var(--status-warn, var(--text-dim)); }
+.focus-item.on .tail { color:inherit; opacity:.75; }
 /* Folders added to the focused project. A row rather than a button: the row is
    a statement of what the AI can reach, and the only action on it is removal. */
 .folder-head { padding:4px 9px 2px; color:var(--text-dim); font-size:var(--fs-2xs); text-transform:uppercase; letter-spacing:.04em; }
@@ -1327,6 +1348,75 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
    the one thing in the foot wearing a colour. The gear beside it is the
    occasional errand and stays grey. */
 .chair-foot .chair-chat { color:var(--interactive); }
+/* Settings draws the same card (see agentCard in Settings.svelte). Two things
+   differ, and only these two: how the profile is configured sits under the
+   description, and the foot carries the model pin instead of a work count.
+   The chips are the settings the card can state without being opened — what
+   tools, what is denied, how many rounds. They are muted on purpose: the name
+   and the description are what you scan, and these are what you check once you
+   have found it. */
+.chair-tags { display:flex; flex-wrap:wrap; gap:4px; margin-top:2px; }
+/* Takes the slack the work count takes on the team page, so both feet put
+   their one action in the same place. `min-width:0` because a model id is long
+   enough to push the gear off a 240px card without it. */
+.chair-foot .chair-model {
+  flex:1; min-width:0; height:26px; padding:0 6px;
+  font-size:var(--fs-2xs); color:var(--text-secondary);
+}
+/* The group heading over a grid of cards, where the settings page would
+   otherwise wrap the lot in a card. */
+.ag-group { margin:18px 0 10px; }
+.ag-group .ag-grouphint { margin-top:3px; }
+
+/* The agent editor's five section headings. Louder than an eyebrow inside a
+   card and quieter than an h2: the page has one title already, and these are
+   the joints in it, not five pages stacked. A rule under the text rather than
+   a box, because a box here would compete with the cards it introduces. */
+.ag-sec {
+  margin:22px 0 9px; padding-bottom:6px;
+  border-bottom:1px solid var(--border-subtle);
+  font-size:var(--fs-xs); font-weight:600; letter-spacing:.02em;
+  color:var(--text-secondary);
+}
+.ag-sec:first-of-type { margin-top:14px; }
+/* A row whose whole surface is the checkbox's label — the tick is small and
+   the name beside it is what people aim at. */
+.ag-reachrow { cursor:pointer; }
+.ag-reachrow input[type="checkbox"] { flex:none; }
+/* An unmet requirement is the one count on this page that is not neutral: it
+   means the agent cannot do the job it says it does. */
+.ag-count-warn { color:var(--danger, #e5534b); }
+.ag-rowicon-warn { color:var(--danger, #e5534b); }
+.ag-needs-ok { display:flex; align-items:center; gap:5px; color:var(--ok, #57ab5a); }
+
+/* One requirement, which may have more than one way of being answered. The
+   alternatives are indented under the line that names the choice, because they
+   are not separate demands — reading "n8n" and "Windmill" as two flat rows was
+   reading one requirement as two. */
+.ag-need { border-top:1px solid var(--border-subtle); padding:2px 0 6px; }
+.ag-need:first-of-type { border-top:none; }
+.ag-need-head { display:flex; align-items:flex-start; gap:10px; padding:10px 14px 4px; }
+.ag-need-opt {
+  display:flex; align-items:center; gap:10px;
+  margin-left:38px; padding:5px 14px 5px 0;
+}
+/* On or not, at a glance — the thing the flat list could not say. */
+.ag-need-dot {
+  flex:none; width:7px; height:7px; border-radius:50%;
+  background:var(--text-dim); opacity:.5;
+}
+.ag-need-dot.on { background:var(--ok, #57ab5a); opacity:1; }
+.ag-need.met .ag-need-head .ag-rowicon { color:var(--ok, #57ab5a); }
+/* The fix for an unplaced server is the MCP box a few rows up, so this says so
+   instead of offering a button back to the page the user just came from. */
+.ag-need-here { flex:none; text-align:right; }
+
+/* The opening editor: title and icon share a line, the sentence gets its own
+   because it is a sentence. */
+.ag-starter-row { display:flex; gap:8px; }
+.ag-starter-row .ctrl:first-child { flex:1; min-width:0; }
+.ag-starter-icon { flex:none; width:auto; max-width:40%; }
+.ag-starter { gap:6px; }
 /* A direct chat's row is labelled with who — slightly brighter than the desk
    chip, because a name is a stronger fact than a place. */
 .sess-row .sess-desk.agent { color:var(--text-secondary); border-color:var(--border-default); }
@@ -1448,6 +1538,41 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .proj-chats li button:hover { background:var(--surface-row-hover); }
 .proj-chat-title { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:var(--fs-sm); color:var(--text-primary); }
 .proj-chat-ago { flex:none; font-size:var(--fs-xs); color:var(--text-dim); }
+
+/* ระบบออโตเมชั่น. Two cards side by side because the choice is between two
+   engines and both are deferred — a list would rank them, and nothing has been
+   decided about which comes first. They reuse .soon-tag from the sidebar
+   deliberately: it is the same promise in the same words, and a second badge
+   that meant the same thing would be a second vocabulary. */
+.auto-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:14px; }
+.auto-card { display:flex; flex-direction:column; gap:7px; align-items:stretch; text-align:left; padding:15px 16px; border:1px solid var(--border-subtle); border-radius:var(--r-lg); background:var(--surface-panel); }
+.auto-card.live { border-color:var(--border-strong); }
+.auto-card-head { display:flex; align-items:center; gap:9px; }
+/* Not a badge — the opposite of one. .soon-tag says "not yet"; this says the
+   engine is answering, so it takes the accent rather than the muted outline. */
+.auto-live { flex:none; font-size:var(--fs-2xs); color:var(--status-ok, var(--text-secondary)); border:1px solid currentColor; border-radius:999px; padding:1px 7px; white-space:nowrap; }
+.auto-where { font-size:var(--fs-xs); color:var(--text-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.auto-actions { display:flex; gap:8px; margin-top:4px; }
+/* The connect form, inside the card rather than on another page. Two fields
+   and one button: the smallest thing that gets somebody started, with the
+   register's fuller options a click away once they are. */
+.auto-form { display:flex; flex-direction:column; gap:10px; margin-top:6px; }
+.auto-field { display:flex; flex-direction:column; gap:4px; }
+.auto-field .ctrl { width:100%; }
+.auto-help { margin:0; font-size:var(--fs-xs); color:var(--text-dim); line-height:1.55; }
+
+/* One connection, two halves — "is the program up" and "does the key work".
+   They were an unlabelled run of fields in one column, which put two check
+   buttons side by side reading as two spellings of one thing. A box and a
+   numbered heading is the cheapest way to say they are different questions,
+   asked in order. */
+.conn-part { display:flex; flex-direction:column; gap:6px; margin:12px 0 4px; padding:12px 14px; border:1px solid var(--border-subtle); border-radius:var(--r-lg); background:var(--surface-sunken); }
+.conn-part-head { display:flex; align-items:center; gap:7px; color:var(--text-secondary); font-size:var(--fs-sm); font-weight:600; }
+.conn-part-head.standalone { margin-top:14px; }
+.auto-mark { display:flex; flex:none; color:var(--text-muted); }
+.auto-name { flex:1; min-width:0; font-size:var(--fs-md); font-weight:600; color:var(--text-secondary); }
+.auto-blurb { font-size:var(--fs-sm); color:var(--text-muted); line-height:1.55; }
+.auto-note { margin:18px 0 0; font-size:var(--fs-sm); color:var(--text-dim); line-height:1.6; max-width:64ch; }
 
 /* The gallery. Cards rather than rows: what a person is looking for here is a
    file they recognise, and a name plus its kind is what they recognise it by. */
