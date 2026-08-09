@@ -75,8 +75,37 @@ var toolCategories = map[string]string{
 	"pdf_read":         CategoryMedia,
 	"audio_transcribe": CategoryMedia,
 
+	// The automation engine the user connected (§92.3). Filed under web because
+	// that is what it is from outside — an HTTP service somewhere on the network
+	// that Aetox reaches — and NOT under code, where the github_* tools sit: an
+	// automation is something a person builds to run their month-end, not a
+	// developer tool, and putting it on the coding desk alone would hide it from
+	// the desk the automation room belongs to.
+	//
+	// A second gate sits in front of these regardless: connect.Allows will not
+	// carry them onto a desk that does not hold the n8n connection, and the
+	// model is never shown a door it cannot open.
+	"n8n_workflow_list":     CategoryWeb,
+	"n8n_workflow_read":     CategoryWeb,
+	"n8n_workflow_create":   CategoryWeb,
+	"n8n_workflow_update":   CategoryWeb,
+	"n8n_workflow_activate": CategoryWeb,
+	"n8n_server_start":      CategoryWeb,
+
+	"windmill_workspace_list": CategoryWeb,
+	"windmill_flow_list":      CategoryWeb,
+	"windmill_flow_read":      CategoryWeb,
+	"windmill_flow_create":    CategoryWeb,
+	"windmill_flow_update":    CategoryWeb,
+	"windmill_server_start":   CategoryWeb,
+
 	"web_search":    CategoryWeb,
 	"web_fetch":     CategoryWeb,
+	// The tool the model is offered, and the four action names it gates on
+	// inside (desktop/browser_tool.go). The actions are listed too because a
+	// desk or a profile narrows with them, and an unlisted name would fall to
+	// CategoryAgent — which every desk carries, quietly widening the narrower.
+	"browser":       CategoryWeb,
 	"browser_open":  CategoryWeb,
 	"browser_read":  CategoryWeb,
 	"browser_click": CategoryWeb,

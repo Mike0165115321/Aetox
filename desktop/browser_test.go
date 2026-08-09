@@ -344,3 +344,45 @@ func TestWithTabSkipsAnUnknownTab(t *testing.T) {
 		t.Fatal("ran against a tab that does not exist")
 	}
 }
+
+// A reused tab has to be awaitable twice, and the second wait must report the
+// second navigation — not the first one's verdict, still sitting in a latch
+// that was closed and never reopened.
+//
+// This is the half of tab reuse that cannot be seen by looking: the agent
+// navigates its one tab to a new page, the wait returns instantly because the
+// latch is already closed, and the tools that follow read the OLD page while
+// reporting the new URL. Before armNavigation existed there was no second
+// wait at all, because there was no second navigation — every open made a
+// fresh tab (the "เปิดใหม่ ๆ รัว ๆ" the owner watched happen on 2026-08-10).
+func TestAReusedTabIsAwaitedAgainRatherThanAnsweringWithTheLastResult(t *testing.T) {
+	tab := &browserTab{}
+	h := &browserHost{app: &App{}, tabs: map[string]*browserTab{}}
+
+	// First navigation lands, and fails.
+	h.navCompleted(tab, &fakeView{}, false)
+	if err := tab.awaitNavigation(context.Background(), time.Second); err == nil {
+		t.Fatal("a failed first navigation was reported as loaded")
+	}
+
+	// Re-armed for the next one: the wait must now block rather than hand back
+	// the failure above.
+	tab.armNavigation()
+	done := make(chan error, 1)
+	go func() { done <- tab.awaitNavigation(context.Background(), 2*time.Second) }()
+	select {
+	case err := <-done:
+		t.Fatalf("the second wait returned before the second navigation: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	h.navCompleted(tab, &fakeView{}, true)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("the second navigation succeeded and the wait said %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Error("the second wait never woke — a reused tab hangs the turn")
+	}
+}

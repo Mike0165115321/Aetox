@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mike0165115321/Aetox/internal/connect"
+	"github.com/Mike0165115321/Aetox/internal/oauth"
 	"github.com/Mike0165115321/Aetox/internal/safety"
 	"github.com/Mike0165115321/Aetox/internal/skill"
 )
@@ -68,9 +70,34 @@ const (
 	// block any real conversation sends. Narrowing the measurement to a desk
 	// would make it truer and would also make it easier to pass, which is why
 	// it is left alone until somebody decides that on purpose.
-	maxToolBlockTokens = 9900
-	// At 48 the count is now full: the next tool has to displace one, and that
-	// is the intended reading of this number rather than a nuisance.
+	// Twice raised and then stopped, on 2026-08-10, because the number had
+	// started measuring the wrong thing. n8n put five tools into the registry
+	// and Windmill five more, and none of the ten is sent to anybody who has not
+	// connected that engine — connect.Allows withholds a connection's tools
+	// until there is an account to use them with. Raising the ceiling a third
+	// time would have recorded growth in a number no request has ever paid.
+	//
+	// So this now measures the block a FRESH INSTALL sends: the registry with
+	// the connection gate applied and nothing attached, which is what every user
+	// pays on their first message and most users pay forever. Adding an
+	// eleventh connection tool no longer moves it, and that is correct rather
+	// than lenient — what a connection costs the people who turn it on is
+	// guarded separately, per service, by the test below.
+	//
+	// This is deliberately NOT the "narrow it to a desk" change the note above
+	// reserves for the owner. A desk is a preference about which room to
+	// measure; the connection gate is a fact about what is sent.
+	//
+	// One thing that DOES move it is hiring: the automation agent added no tool
+	// and cost ~58 tokens, because `task` names the team it can delegate to
+	// inside its own description. That is the right design — a model cannot
+	// delegate to a name it has never been told — and it is not free. Five more
+	// colleagues is another ~300 tokens on every message. When that bites, make
+	// `task` name the team more briefly rather than stop hiring.
+	maxToolBlockTokens = 10100
+	// The count is full again at 48: the next tool everybody carries has to
+	// displace one, and that is the intended reading of this number rather than
+	// a nuisance. A connection's tools are not counted here — see above.
 	maxToolCount = 48
 )
 
@@ -89,6 +116,11 @@ func TestTheToolBlockStaysWithinItsBudget(t *testing.T) {
 		ApprovalMode:  string(safety.ApprovalFullAccess),
 	})
 
+	// The gate applied with every connection held by the desk, on a machine
+	// where none of them has an account: exactly what a fresh install sends.
+	// Held rather than omitted so that the only thing withholding a tool here is
+	// the missing account, which is the state being measured.
+	held := connect.IDs()
 	defs := skill.NewDispatcher(a.registry).ToolDefinitions()
 	type row struct {
 		name  string
@@ -97,6 +129,9 @@ func TestTheToolBlockStaysWithinItsBudget(t *testing.T) {
 	rows := make([]row, 0, len(defs))
 	total := 0
 	for _, d := range defs {
+		if !connect.Allows(d.Function.Name, held) {
+			continue
+		}
 		b, err := json.Marshal(d)
 		if err != nil {
 			t.Fatalf("%s: schema does not marshal: %v", d.Function.Name, err)
@@ -121,6 +156,78 @@ func TestTheToolBlockStaysWithinItsBudget(t *testing.T) {
 			}
 			t.Logf("  %5d B  %4d tok  %s", r.bytes, r.bytes/4, r.name)
 		}
+	}
+}
+
+// What a connection costs everybody who turns it on.
+//
+// The budget above measures a machine with nothing connected, which is the
+// honest default — connect.Allows withholds a connection's tools until there is
+// an account to use them with, so an unconnected user pays nothing for n8n. But
+// that also means the test above cannot see the price of switching it on, and a
+// cost that only appears on the user's machine is a cost nobody reviews.
+//
+// So this measures the same block with n8n attached and states the difference
+// out loud. It fails only if a connection's tools grow past a fifth of the whole
+// budget: one service should not be able to quietly become the largest thing in
+// every request the assistant sends.
+func TestConnectingAnEngineDoesNotDoubleTheToolBlock(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("AETOX_DATA_ROOT", root)
+
+	// Measured through the connection gate, not off the raw registry. The
+	// registry is what this build CAN do and never changes when an account is
+	// attached; what a request actually carries is the registry with
+	// connect.Allows applied, and that is the number a user pays.
+	held := connect.IDs()
+	measure := func() (int, int) {
+		a := &App{ctx: context.Background(), emit: func(string, ...any) {}, dbDir: t.TempDir(), sessionID: newSessionID()}
+		t.Cleanup(func() {
+			if a.db != nil {
+				_ = a.db.Close()
+			}
+		})
+		a.applyConfig(config.Config{
+			SandboxRoot:   t.TempDir(),
+			ModelProvider: "aetox",
+			ModelName:     "aetox-tools:test",
+			ApprovalMode:  string(safety.ApprovalFullAccess),
+		})
+		count, total := 0, 0
+		for _, d := range skill.NewDispatcher(a.registry).ToolDefinitions() {
+			if !connect.Allows(d.Function.Name, held) {
+				continue
+			}
+			b, _ := json.Marshal(d)
+			count++
+			total += len(b)
+		}
+		return count, total / 4
+	}
+
+	beforeCount, beforeTokens := measure()
+
+	// Attached the way the app attaches one: an address in the config and a key
+	// in the vault. Nothing is sent anywhere — CurrentStatus reads storage.
+	if err := config.SetConnectionBaseURL("n8n", "http://localhost:5678"); err != nil {
+		t.Fatalf("SetConnectionBaseURL: %v", err)
+	}
+	if err := oauth.Set("n8n", oauth.Credential{Type: "api", Key: "test-key", Account: "localhost:5678"}); err != nil {
+		t.Fatalf("oauth.Set: %v", err)
+	}
+
+	afterCount, afterTokens := measure()
+
+	addedCount := afterCount - beforeCount
+	addedTokens := afterTokens - beforeTokens
+	t.Logf("n8n off: %d tools / ~%d tok   ·   n8n on: %d tools / ~%d tok   ·   +%d tools / +%d tok",
+		beforeCount, beforeTokens, afterCount, afterTokens, addedCount, addedTokens)
+
+	if addedCount == 0 {
+		t.Fatal("connecting n8n added no tools — the gate is withholding them from a connected account")
+	}
+	if limit := maxToolBlockTokens / 5; addedTokens > limit {
+		t.Errorf("connecting n8n adds ~%d tokens to every request, over the %d this test allows one service — trim the descriptions", addedTokens, limit)
 	}
 }
 

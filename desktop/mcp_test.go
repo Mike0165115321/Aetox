@@ -140,7 +140,7 @@ func TestToolsAndSkillsAreSeparateLists(t *testing.T) {
 
 	// The specific regression: the desktop's own tools are Aetox's, not the
 	// user's, and must say so.
-	for _, name := range []string{"ask_user", "browser_open", "todo_write"} {
+	for _, name := range []string{"ask_user", "browser", "todo_write"} {
 		var src string
 		for _, s := range tools {
 			if s.Name == name {
@@ -257,3 +257,78 @@ var realGoCaches = func() []string {
 }()
 
 func goCacheEnv() []string { return realGoCaches }
+
+// The allowlist is on the edit form, so the form's answer wins — and a caller
+// that says nothing about it must not be read as saying "none".
+//
+// Both halves matter and they pull opposite ways. Without the first, a list can
+// be written and never cleared from the only screen that shows it. Without the
+// second, a caller that does not know the field exists — the preset add path,
+// AddMCPServer, whatever is written next — silently widens a trimmed server back
+// out to everything it offers, which is exactly what the list was written to
+// prevent, and nothing on screen says it happened.
+func TestTheFormOwnsTheAllowlistAndSilenceDoesNot(t *testing.T) {
+	a := newMCPTestApp(t)
+
+	if err := config.SaveMCPServers([]config.MCPServerConfig{{
+		Name:  "n8n-docs",
+		URL:   "https://example.invalid/mcp",
+		For:   []string{config.MCPAgentPrefix + "automation"},
+		Tools: []string{"search_nodes", "get_node_essentials"},
+	}}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	reload := func() config.MCPServerConfig {
+		t.Helper()
+		saved, err := config.LoadMCPServers()
+		if err != nil {
+			t.Fatalf("reload: %v", err)
+		}
+		if len(saved) != 1 {
+			t.Fatalf("servers = %+v, want one", saved)
+		}
+		return saved[0]
+	}
+
+	// A caller that says nothing about the field: the stored list stands.
+	if err := a.SaveMCPServer("n8n-docs", config.MCPServerConfig{
+		Name:    "n8n-docs",
+		URL:     "https://example.invalid/mcp",
+		Headers: map[string]string{"Authorization": "Bearer new"},
+	}); err != nil {
+		t.Fatalf("edit without the field: %v", err)
+	}
+	if got := reload(); len(got.Tools) != 2 {
+		t.Fatalf("Tools = %v — silence widened the server back out to everything it offers", got.Tools)
+	}
+	if got := reload(); len(got.For) != 1 {
+		t.Fatalf("For = %v, want the placement kept", got.For)
+	}
+
+	// The form, adding one. Sent, so it replaces.
+	if err := a.SaveMCPServer("n8n-docs", config.MCPServerConfig{
+		Name:  "n8n-docs",
+		URL:   "https://example.invalid/mcp",
+		Tools: []string{"search_nodes", "get_node_essentials", "validate_workflow"},
+	}); err != nil {
+		t.Fatalf("edit with the field: %v", err)
+	}
+	if got := reload(); len(got.Tools) != 3 {
+		t.Fatalf("Tools = %v, want the three the form sent", got.Tools)
+	}
+
+	// The form, emptied. An empty list is an answer, and it is how the trim is
+	// lifted — a list that cannot be cleared from the screen that shows it is a
+	// setting the user has to edit JSON to escape.
+	if err := a.SaveMCPServer("n8n-docs", config.MCPServerConfig{
+		Name:  "n8n-docs",
+		URL:   "https://example.invalid/mcp",
+		Tools: []string{},
+	}); err != nil {
+		t.Fatalf("edit clearing the field: %v", err)
+	}
+	if got := reload(); len(got.Tools) != 0 {
+		t.Fatalf("Tools = %v — an emptied box did not clear the list", got.Tools)
+	}
+}

@@ -26,10 +26,11 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"image"
-	"io"
 	"image/color"
 	"image/png"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -43,8 +44,10 @@ import (
 	"time"
 
 	"github.com/Mike0165115321/Aetox/internal/lsp"
+	"github.com/Mike0165115321/Aetox/internal/automation/n8n"
 	"github.com/Mike0165115321/Aetox/internal/skill"
 	"github.com/Mike0165115321/Aetox/internal/stt"
+	"github.com/Mike0165115321/Aetox/internal/automation/windmill"
 )
 
 // cliOnlySkills are registered but have no ToolDefinition, so the model is
@@ -69,12 +72,19 @@ type toolCase struct {
 	// drive runs alongside the call, for tools that block on something else
 	// happening (ask_user waits for a human).
 	drive func(t *testing.T, a *App)
+	// realUserProfile puts %USERPROFILE% back for the duration of this one
+	// call. See useRealUserProfile — it is about a third-party binary, not
+	// about the tool.
+	realUserProfile bool
 	// check looks for evidence the tool did its job, rather than returning an
 	// empty success.
 	check func(t *testing.T, out skill.Output, root string)
 }
 
 func TestEveryToolRunsThroughTheRealDispatcher(t *testing.T) {
+	// Captured before the isolation replaces it — the one tool that spawns a
+	// third-party binary needs the real value back for the length of its call.
+	realUserProfile := os.Getenv("USERPROFILE")
 	isolateUserDirs(t)
 	root := t.TempDir()
 	// diagnostics starts a real gopls and leaves it running on purpose (see
@@ -112,7 +122,9 @@ func TestEveryToolRunsThroughTheRealDispatcher(t *testing.T) {
 			continue
 		}
 
+		restore := useRealUserProfile(t, tc, realUserProfile)
 		out := runTool(t, dispatcher, app, name, tc)
+		restore()
 		if !out.Success {
 			t.Errorf("%s failed on a machine that can run it: %s", name, firstLine(out.Stderr+out.Content))
 			continue
@@ -388,10 +400,11 @@ func toolCases(t *testing.T, root string, dispatcher *skill.Dispatcher) map[stri
 
 		// --- needs a local binary ---
 		"pdf_read": {
-			args:      map[string]any{"path": "doc.pdf"},
-			available: haveBinary("pdftotext"),
-			why:       "no poppler",
-			check:     outputContains("AETOX PDF OK"),
+			args:            map[string]any{"path": "doc.pdf"},
+			available:       haveBinary("pdftotext"),
+			why:             "no poppler",
+			realUserProfile: true,
+			check:           outputContains("AETOX PDF OK"),
 		},
 		"image_ocr": {
 			args:      map[string]any{"path": "shot.png"},
@@ -448,6 +461,36 @@ func toolCases(t *testing.T, root string, dispatcher *skill.Dispatcher) map[stri
 			why:       "offline, or out of GitHub API quota",
 		},
 
+		// The n8n tools reach a server only the user has. There is no public
+		// instance to point a test at and standing one up would mean running
+		// Docker in CI, so what is exercised here is the half that is ours: the
+		// dispatcher routes the call, the tool validates its arguments, and the
+		// not-connected refusal is the sentence the user would actually read.
+		// assertReachable does that on the skipped path.
+		"n8n_workflow_list":     {args: map[string]any{}, available: n8nConnected, why: "no n8n connected on this machine"},
+		"n8n_workflow_read":     {args: map[string]any{"id": "1"}, available: n8nConnected, why: "no n8n connected on this machine"},
+		"n8n_workflow_create":   {args: map[string]any{"name": "aetox test"}, available: n8nConnected, why: "no n8n connected on this machine"},
+		"n8n_workflow_update":   {args: map[string]any{"id": "1", "name": "aetox test"}, available: n8nConnected, why: "no n8n connected on this machine"},
+		"n8n_workflow_activate": {args: map[string]any{"id": "1", "active": false}, available: n8nConnected, why: "no n8n connected on this machine"},
+
+		// Same reasoning for the second engine. Windmill's paths carry one extra
+		// trap worth exercising even here: `u/a/b` is the shape the server
+		// enforces, and the arguments below are valid ones, so a failure on a
+		// connected machine is the client's fault rather than the test's.
+		"windmill_workspace_list": {args: map[string]any{}, available: windmillConnected, why: "no Windmill connected on this machine"},
+		"windmill_flow_list":      {args: map[string]any{"workspace": "dev"}, available: windmillConnected, why: "no Windmill connected on this machine"},
+		"windmill_flow_read":      {args: map[string]any{"workspace": "dev", "path": "u/aetox/probe"}, available: windmillConnected, why: "no Windmill connected on this machine"},
+		"windmill_flow_create":    {args: map[string]any{"workspace": "dev", "path": "u/aetox/probe"}, available: windmillConnected, why: "no Windmill connected on this machine"},
+		"windmill_flow_update":    {args: map[string]any{"workspace": "dev", "path": "u/aetox/probe"}, available: windmillConnected, why: "no Windmill connected on this machine"},
+
+		// The power switches are never thrown from a test: starting the user's
+		// real server would spawn a process this test does not own and cannot
+		// clean up. The reachable half — dispatch routes the call, and with
+		// nothing configured the refusal names the missing address — is what
+		// assertReachable exercises.
+		"n8n_server_start":      {args: map[string]any{}, available: never, why: "not starting the user's server from a test"},
+		"windmill_server_start": {args: map[string]any{}, available: never, why: "not starting the user's server from a test"},
+
 		// plugin_install is driven at its own validation rather than through a
 		// real install: the point here is that the call reaches the tool, and a
 		// test that downloads and installs a plugin to prove it is a test that
@@ -462,10 +505,11 @@ func toolCases(t *testing.T, root string, dispatcher *skill.Dispatcher) map[stri
 		// These reach a real webview or nothing. Headless they must fail
 		// cleanly and immediately, which is what assertReachable checks: the
 		// regression worth catching is a browser tool that hangs the turn.
-		"browser_open":  {args: map[string]any{"url": "https://example.com"}, available: never, why: "needs the app window"},
-		"browser_read":  {args: map[string]any{}, available: never, why: "needs the app window"},
-		"browser_click": {args: map[string]any{"ref": 1}, available: never, why: "needs the app window"},
-		"browser_type":  {args: map[string]any{"ref": 1, "text": "hello"}, available: never, why: "needs the app window"},
+		// One tool, four actions (desktop/browser_tool.go). Driven at `open`
+		// because that is the action a session starts with and the one whose
+		// argument handling is worth reaching; the other three refuse for the
+		// same reason on the same path — there is no window here.
+		"browser": {args: map[string]any{"action": "open", "url": "https://example.com"}, available: never, why: "needs the app window"},
 
 		// The agent's reach onto the desk (workbench_desk.go). desk_open and
 		// desk_terminal both end in an event the frontend answers, so there is
@@ -544,6 +588,22 @@ func online() bool {
 	}
 	_ = conn.Close()
 	return true
+}
+
+// n8nConnected reports whether this machine has an n8n attached to run the
+// automation tools against.
+//
+// Almost always false, and deliberately not faked: an httptest server would
+// prove that our client can talk to our own stub, which is the one thing never
+// in doubt. What the real risk is — n8n rejecting a body over a read-only field
+// it will not accept — can only be found against a real instance, and this
+// returning false is the honest record that it has not been.
+func n8nConnected() bool {
+	return n8n.BaseURL() != "" && n8n.Token() != ""
+}
+
+func windmillConnected() bool {
+	return windmill.BaseURL() != "" && windmill.Token() != ""
 }
 
 // githubUsable asks GitHub whether it will answer before four tools are judged
@@ -658,21 +718,96 @@ func firstLine(s string) string {
 	return s
 }
 
+// useRealUserProfile puts the machine's own %USERPROFILE% back for one tool
+// call and returns the undo.
+//
+// The isolation this reverses is not optional in general: os.UserHomeDir reads
+// USERPROFILE on Windows, and app.go's attachment sweep walks the home folder
+// it returns — a test that ran that against a real home would be deleting the
+// user's files, which is the exact class of bug DECISIONS §14.4 records.
+//
+// But it isolates Aetox, and pdftotext is not Aetox. Measured 2026-08-09 on
+// this machine, one variable at a time, against a valid PDF:
+//
+//	USERPROFILE redirected  → exit status 0xc0000005 (access violation), no output
+//	USERPROFILE real        → "AETOX PDF OK", clean
+//
+// HOME, APPDATA, LOCALAPPDATA and XDG_CONFIG_HOME are all fine redirected; it
+// is USERPROFILE alone, and the failure is Git for Windows' pdftotext.exe
+// *crashing* rather than reporting anything — poppler's Windows build reaching
+// for something under the home it was handed. Nothing about that is Aetox's
+// behaviour to assert, and it cost a real debugging session once already
+// because the symptom reads as "pdf_read is broken".
+//
+// Scoped to the single call rather than the whole test so every other tool
+// still runs fully isolated. pdf_read writes nothing outside the sandbox root
+// — it spawns pdftotext and reads its stdout — so there is nothing here for
+// the restored home to be exposed to.
+func useRealUserProfile(t *testing.T, tc toolCase, real string) func() {
+	t.Helper()
+	if !tc.realUserProfile || real == "" {
+		return func() {}
+	}
+	isolated := os.Getenv("USERPROFILE")
+	if err := os.Setenv("USERPROFILE", real); err != nil {
+		t.Fatalf("restoring USERPROFILE: %v", err)
+	}
+	return func() { _ = os.Setenv("USERPROFILE", isolated) }
+}
+
 // --- fixtures ---------------------------------------------------------------
 
-// tinyPDFDoc is the same hand-written minimal PDF the pdf_read unit test uses:
-// one text-drawing operator, no xref table (poppler rebuilds one).
-const tinyPDFDoc = `%PDF-1.4
-1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
-2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj
-3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj
-4 0 obj<</Length 46>>stream
-BT /F1 18 Tf 20 100 Td (AETOX PDF OK) Tj ET
-endstream
-endobj
-5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj
-trailer<</Root 1 0 R>>
-`
+// minimalPDF builds a *valid* one-page PDF around text — real xref table, real
+// byte offsets, real startxref.
+//
+// It used to be a const holding the same deliberately-damaged PDF the pdf_read
+// unit test uses: no xref, on the theory that poppler rebuilds one. It does,
+// usually. On 2026-08-09 this case failed here with `exit status 0xc0000005` —
+// an access violation, which is pdftotext.exe *crashing* rather than reporting
+// anything — while the identical file, flags and binary ran fine from a shell.
+// Whatever the trigger, the reconstruct-a-broken-file path is not what this
+// test is for: the toolbox sweep asks whether pdf_read extracts the text of a
+// PDF, and reaching that answer through a third-party binary's damage-recovery
+// code makes the sweep as reliable as the least-tested branch of poppler.
+//
+// The unit test in internal/skill keeps the damaged one on purpose — its
+// subject is that poppler's stderr warnings never reach the model, which needs
+// a file that produces warnings. Two fixtures, two questions; the comment that
+// used to claim they were the same file was describing an accident.
+//
+// Built rather than written out because an xref is a table of byte offsets:
+// hand-maintaining it means any edit to any object silently corrupts the file,
+// and a raw string literal in a CRLF checkout does not even hold the bytes the
+// author counted.
+func minimalPDF(text string) string {
+	stream := "BT /F1 18 Tf 20 100 Td (" + text + ") Tj ET\n"
+	objects := []string{
+		"<</Type/Catalog/Pages 2 0 R>>",
+		"<</Type/Pages/Kids[3 0 R]/Count 1>>",
+		"<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>",
+		fmt.Sprintf("<</Length %d>>stream\n%sendstream", len(stream), stream),
+		"<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>",
+	}
+
+	var b strings.Builder
+	b.WriteString("%PDF-1.4\n")
+	offsets := make([]int, 0, len(objects))
+	for i, body := range objects {
+		offsets = append(offsets, b.Len())
+		fmt.Fprintf(&b, "%d 0 obj\n%s\nendobj\n", i+1, body)
+	}
+	startXref := b.Len()
+	fmt.Fprintf(&b, "xref\n0 %d\n", len(objects)+1)
+	// Every entry is exactly 20 bytes, free list head first. A reader seeks by
+	// multiplying, so a byte off here is a file that will not open.
+	b.WriteString("0000000000 65535 f \n")
+	for _, off := range offsets {
+		fmt.Fprintf(&b, "%010d 00000 n \n", off)
+	}
+	fmt.Fprintf(&b, "trailer<</Size %d/Root 1 0 R>>\nstartxref\n%d\n%%%%EOF\n",
+		len(objects)+1, startXref)
+	return b.String()
+}
 
 func writeToolFixtures(t *testing.T, root string) {
 	t.Helper()
@@ -689,7 +824,7 @@ func writeToolFixtures(t *testing.T, root string) {
 	write("victim.txt", "delete me\n")
 	write("main.go", "package main\n\nfunc main() {}\n")
 	write(filepath.Join("sub", "inner.txt"), "alpha inside\n")
-	write("doc.pdf", tinyPDFDoc)
+	write("doc.pdf", minimalPDF("AETOX PDF OK"))
 	// A minimal but genuine nbformat 4 notebook — notebook_edit parses it as
 	// JSON and writes it back, so a hand-waved fixture would fail for the wrong
 	// reason.

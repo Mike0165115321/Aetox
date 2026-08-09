@@ -119,7 +119,32 @@ func (a *App) workbenchOpenBrowser(ctx context.Context, url string) (title, fina
 		return "", "", errors.New(why)
 	}
 
-	id := fmt.Sprintf("web-agent-%d", atomic.AddInt64(&agentBrowserSeq, 1))
+	// The agent browses in ONE tab, and every later call steers that tab.
+	//
+	// It minted a fresh `web-agent-N` per call until 2026-08-10, which meant a
+	// session that opened five pages left five tabs — and the browsing tools
+	// that follow (read/click/type) all target the most recent one, so a
+	// sequence like open → read → click → open was a sequence across two
+	// different pages. Reuse is what makes the four tools one flow instead of
+	// four unrelated actions, and it is also simply what a person sees: they
+	// watched the agent open tab after tab and called it "เปิดใหม่ ๆ รัว ๆ".
+	//
+	// A new id is minted only when there is no live tab to steer — first call,
+	// or the user closed the one that was there.
+	id := a.agentBrowserTabID()
+	reusing := id != ""
+	if !reusing {
+		id = fmt.Sprintf("web-agent-%d", atomic.AddInt64(&agentBrowserSeq, 1))
+	}
+	if reusing {
+		// Armed before navigate, so the wait below is this navigation's.
+		tab := a.browsers.tab(id)
+		tab.armNavigation()
+		tab.view.navigate(url)
+	}
+	// Emitted either way: for a new tab the frontend creates it, and for one
+	// that exists the same handler just raises it — which is what the user
+	// needs to actually see the page the agent moved to.
 	a.emitEvent("workbench:open-browser", map[string]string{"id": id, "url": url})
 
 	// The frontend creates the tab, which creates the native webview — poll
@@ -155,6 +180,29 @@ func (a *App) workbenchOpenBrowser(ctx context.Context, url string) (title, fina
 		time.Sleep(100 * time.Millisecond)
 	}
 	return title, finalURL, nil
+}
+
+// agentBrowserTabID names the agent's live browsing tab, or "" when it has
+// none to steer.
+//
+// "The agent's tab" is the most recent one it opened AND that is still alive:
+// a tab the user closed is gone from the host's map, so this answers "" and
+// the caller mints a new one rather than navigating a corpse.
+func (a *App) agentBrowserTabID() string {
+	h := a.browsers
+	if h == nil {
+		return ""
+	}
+	h.mu.Lock()
+	id := h.lastID
+	h.mu.Unlock()
+	if id == "" || !strings.HasPrefix(id, "web-agent-") {
+		return ""
+	}
+	if tab := h.tab(id); tab == nil || tab.view == nil {
+		return ""
+	}
+	return id
 }
 
 // workbenchLastTabID returns the id of the most recently opened/shown

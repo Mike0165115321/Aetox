@@ -26,6 +26,7 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/cognitive"
 	"github.com/Mike0165115321/Aetox/internal/command"
 	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mike0165115321/Aetox/internal/connect"
 	"github.com/Mike0165115321/Aetox/internal/debuglog"
 	"github.com/Mike0165115321/Aetox/internal/learned"
 	"github.com/Mike0165115321/Aetox/internal/mcp"
@@ -1256,6 +1257,9 @@ func (a *App) startup(ctx context.Context) {
 	if moved := subagent.Migrate(); len(moved) > 0 {
 		debuglog.Msg("subagent.Migrate moved: %s", strings.Join(moved, ", "))
 	}
+	// Engine placements written before the HomeAgent lock (2026-08-10) may
+	// still point at desks; repaired before the first session builds a cut.
+	connect.EnforceHomes()
 	a.focusNone()
 	a.startNewSession()
 	a.openAtRememberedDesk()
@@ -1523,6 +1527,24 @@ func (a *App) SendMessage(text string) (TurnReply, error) {
 
 	userMsg, agentMsg, err := a.runTurn(text)
 	if err != nil {
+		// The turn ends here, and it is written down. It used to end without a
+		// row: the question openTurn had already stored sat alone forever, and
+		// the red box with its ลองใหม่ button lived in the window and died with
+		// the first reload. appendFailedTurn also lowers turnOpened — the flag
+		// that, left standing, tells the NEXT turn's appendTurn that its
+		// question is already stored.
+		agentMsg.ID = a.appendFailedTurn(agentMsg, err)
+		// Stamped on the in-memory copy as well as the stored one. Everything
+		// that reasons about a failed turn asks this field — the context rebuild
+		// skips the pair, the retry drops it — and a transcript entry that knew
+		// it had failed only in the database would be a turn the store treats as
+		// failed and the running engine treats as ordinary.
+		agentMsg.ErrorText = err.Error()
+		// In the transcript for the same reason the successful pair is: it is
+		// what the model's memory is rebuilt from (restoreContext), and a turn
+		// the engine acted on but the history does not mention is a turn the
+		// user can see and the model cannot.
+		a.transcript = append(a.transcript, userMsg, agentMsg)
 		return replyOf(agentMsg), err
 	}
 	messageID := a.appendTurn(userMsg, agentMsg)
@@ -1554,7 +1576,14 @@ func (a *App) runTurn(text string) (SessionMessage, SessionMessage, error) {
 		debuglog.Msg("runTurn: unmarked turn — a caller skipped beginTurn")
 	}
 	if a.chat == nil {
-		return SessionMessage{}, SessionMessage{}, fmt.Errorf("aetox core not ready: %s", a.modelStatus)
+		// Shaped like every other ending, not zero values. This is a real way
+		// for a turn to fail — no key, no model — and the caller now writes the
+		// failure down: a pair with no role and no text would be stored as a
+		// question that lost its words and an answer nothing recognises as one.
+		now := time.Now().Format("15:04")
+		return SessionMessage{Role: "user", Text: text, Time: now},
+			SessionMessage{Role: "agent", Time: now},
+			fmt.Errorf("aetox core not ready: %s", a.modelStatus)
 	}
 	// Prompt presets ("/name args") expand into their prompt body before the
 	// engine sees the text — bundled ones and the user's alike; unknown "/..."
@@ -1609,11 +1638,6 @@ func (a *App) runTurn(text string) (SessionMessage, SessionMessage, error) {
 		a.emitEvent("agent:interjection-missed", missed)
 	}
 	now := time.Now().Format("15:04")
-	if err != nil {
-		return SessionMessage{Role: "user", Text: text, Time: now},
-			SessionMessage{Role: "agent", Text: result.Reply, Time: now},
-			err
-	}
 	thinkSecs := 0
 	if !firstThink.IsZero() {
 		// round up so even a sub-second think shows as 1s, matching the label
@@ -1622,15 +1646,23 @@ func (a *App) runTurn(text string) (SessionMessage, SessionMessage, error) {
 			thinkSecs = 1
 		}
 	}
-	return SessionMessage{Role: "user", Text: text, Time: now},
-		SessionMessage{
-			Role: "agent", Text: result.Reply, Time: now,
-			Reasoning: strings.TrimSpace(reasoning.String()), ThinkSecs: thinkSecs,
-			// The turn as it happened, so reopening this session shows the work
-			// and not just the sentence it ended on.
-			Parts: result.Parts,
-		},
-		nil
+	// Built once, for both endings. A turn that failed did not do less work than
+	// one that succeeded — it did the same work and then hit a wall, and it is
+	// the one the user most wants to open up and read: which tools ran, what the
+	// model was thinking, how far it got. Computed above the error branch rather
+	// than inside each, because the two used to diverge silently and the failing
+	// side was the one nobody looked at.
+	agentMsg := SessionMessage{
+		Role: "agent", Text: result.Reply, Time: now,
+		Reasoning: strings.TrimSpace(reasoning.String()), ThinkSecs: thinkSecs,
+		// The turn as it happened, so reopening this session shows the work
+		// and not just the sentence it ended on.
+		Parts: result.Parts,
+	}
+	if err != nil {
+		return SessionMessage{Role: "user", Text: text, Time: now}, agentMsg, err
+	}
+	return SessionMessage{Role: "user", Text: text, Time: now}, agentMsg, nil
 }
 
 // Interject hands the turn already in flight something the user just typed,
@@ -2417,10 +2449,10 @@ func (a *App) chairProfile() *subagent.Profile {
 // that silently stops matching the day someone adds a tool here.
 func (a *App) workbenchSkills() []skill.Skill {
 	return []skill.Skill{
-		&browserOpenSkill{app: a},
-		&browserReadSkill{app: a},
-		&browserClickSkill{app: a},
-		&browserTypeSkill{app: a},
+		// One tool for the browser, four actions inside it (browser_tool.go).
+		// The four old names are still what `tools:` and `categories:` speak —
+		// they moved from being tools to being the actions' permission keys.
+		&browserSkill{app: a},
 		&deskOpenSkill{app: a},
 		&deskTerminalSkill{app: a},
 		&deskListSkill{app: a},
@@ -2428,6 +2460,13 @@ func (a *App) workbenchSkills() []skill.Skill {
 		&todoWriteSkill{app: a},
 		&sessionSearchSkill{app: a},
 		&suggestTaskSkill{app: a},
+		// The engines' power switches. Registered for every session like the
+		// rest of the workbench, and cut like a connection tool: each is owned
+		// by its vendor's catalog entry, so the placement lock (HomeAgent)
+		// delivers it to the automation agent holding that engine and to no
+		// desk — same journey as n8n_workflow_create, one file over.
+		&engineServerSkill{app: a, id: "n8n"},
+		&engineServerSkill{app: a, id: "windmill"},
 		// The main agent's own scope. A delegate does not inherit this one —
 		// `task` builds it a replacement bound to its profile (internal/subagent),
 		// so what a sub-agent learns never lands in this prompt.

@@ -255,8 +255,13 @@ func newMessageToken() string {
 type browserTab struct {
 	view tabView
 
-	navDone chan struct{} // closed after the first completed navigation
-	navOnce sync.Once
+	// One navigation's completion latch, replaced on every new navigation so a
+	// reused tab can be awaited again. Guarded because navCompleted closes it
+	// from the host thread while a tool call waits on it: without the mutex,
+	// re-arming races the close and a waiter can hold the previous latch.
+	navMu   sync.Mutex
+	navDone chan struct{} // closed after the current navigation completes
+	navOnce *sync.Once
 
 	metaMu sync.Mutex
 	title  string
@@ -284,6 +289,37 @@ func (t *browserTab) meta() (title, url string) {
 	return t.title, t.url
 }
 
+// armNavigation readies the tab for one more navigation, so the caller that
+// is about to call view.navigate can await *that* one.
+//
+// Without it a reused tab answers instantly with the previous page's verdict:
+// the latch is closed from the first load and never reopens, so "did the page
+// I just asked for arrive" becomes "did the page before it arrive". Called
+// before navigate, never after — arming late would drop a completion that beat
+// the arm and hang the wait until its timeout.
+// latch hands back the current navigation latch, creating one if this tab has
+// never had it set. The zero-value tab is a real state — tests build one, and
+// a completion can arrive before open() finishes storing its fields — so the
+// pair is resolved here rather than assumed to exist at every use.
+func (t *browserTab) latch() (*sync.Once, chan struct{}) {
+	t.navMu.Lock()
+	defer t.navMu.Unlock()
+	if t.navDone == nil {
+		t.navDone = make(chan struct{})
+	}
+	if t.navOnce == nil {
+		t.navOnce = &sync.Once{}
+	}
+	return t.navOnce, t.navDone
+}
+
+func (t *browserTab) armNavigation() {
+	t.setNavOK(false)
+	t.navMu.Lock()
+	t.navDone, t.navOnce = make(chan struct{}), &sync.Once{}
+	t.navMu.Unlock()
+}
+
 func (t *browserTab) setNavOK(ok bool) {
 	t.metaMu.Lock()
 	t.navOK = ok
@@ -302,8 +338,9 @@ func (t *browserTab) navLoaded() bool {
 // the page that was asked for, so a caller that trusted navDone reported
 // success over a File-not-found page and kept working from it.
 func (t *browserTab) awaitNavigation(ctx context.Context, timeout time.Duration) error {
+	_, done := t.latch()
 	select {
-	case <-t.navDone:
+	case <-done:
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-time.After(timeout):
@@ -344,7 +381,7 @@ func (h *browserHost) open(id, url string, x, y, w, hgt int) {
 		if h.tab(id) != nil {
 			return
 		}
-		tab := &browserTab{navDone: make(chan struct{})}
+		tab := &browserTab{navDone: make(chan struct{}), navOnce: &sync.Once{}}
 		view := h.backend.openTab(id, url, x, y, w, hgt, tabCallbacks{
 			onMessage: func(raw, source string) { h.onMessage(id, tab, raw, source) },
 			onNavDone: func(v tabView, ok bool) { h.navCompleted(tab, v, ok) },
@@ -368,7 +405,8 @@ func (h *browserHost) navCompleted(tab *browserTab, view tabView, ok bool) {
 	// Recorded before navDone is closed, so a waiter that wakes on it reads
 	// this navigation's outcome and not the previous one's.
 	tab.setNavOK(ok)
-	tab.navOnce.Do(func() { close(tab.navDone) })
+	once, done := tab.latch()
+	once.Do(func() { close(done) })
 
 	// Raise the tab now that the page has rendered. The frontend's
 	// browser:meta handler used to be the only thing doing this, which made
