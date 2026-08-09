@@ -162,3 +162,42 @@ func keysOf(m map[string]skill.Tool) []string {
 	sort.Strings(out)
 	return out
 }
+
+// The list names verbs, so the resource pair does not ride along behind it.
+// Reaching the same server's data through a tool the list did not name is a way
+// around the list, and a way around it is the same as not having one.
+func TestAnAllowlistLeavesTheResourcePairOut(t *testing.T) {
+	bin := buildEchoServer(t)
+	c := New(Server{Name: "echo", Command: []string{bin}, Tools: []string{"echo"}})
+	t.Cleanup(func() { c.Close() })
+
+	tools, err := c.SkillTools(context.Background())
+	if err != nil {
+		t.Fatalf("SkillTools: %v", err)
+	}
+	if len(tools) != 1 || tools[0].Name() != "echo_echo" {
+		names := make([]string, 0, len(tools))
+		for _, tool := range tools {
+			names = append(names, tool.Name())
+		}
+		t.Fatalf("tools = %v, want only echo_echo — the resource pair came through an allowlist", names)
+	}
+}
+
+// A list that selects nothing is a typo, or a rename upstream, and from here
+// they look the same. Both have to be loud: a server that connected and
+// contributes nothing is indistinguishable from a quiet one, and the user is
+// left with an agent that has no tools and nothing on screen saying why.
+func TestAnAllowlistThatMatchesNothingIsAnError(t *testing.T) {
+	bin := buildEchoServer(t)
+	c := New(Server{Name: "echo", Command: []string{bin}, Tools: []string{"get_node_essentials"}})
+	t.Cleanup(func() { c.Close() })
+
+	tools, err := c.SkillTools(context.Background())
+	if err == nil {
+		t.Fatalf("SkillTools returned %d tool(s) and no error for a list that names nothing on the server", len(tools))
+	}
+	if !strings.Contains(err.Error(), "check the names") {
+		t.Errorf("error does not tell the user what to do about it: %v", err)
+	}
+}

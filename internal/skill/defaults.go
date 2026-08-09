@@ -121,6 +121,20 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 		&symbolSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
 		&deleteSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
 		&pluginInstallSkill{},
+		// The automation engine the user connected. Registered unconditionally
+		// and gated later by connect.Allows, the same as the github_* tools: the
+		// registry is what this build CAN do, and what a given desk may carry is
+		// a different question with a different answer.
+		&n8nListSkill{},
+		&n8nReadSkill{},
+		&n8nCreateSkill{},
+		&n8nUpdateSkill{},
+		&n8nActivateSkill{},
+		&windmillWorkspacesSkill{},
+		&windmillListSkill{},
+		&windmillReadSkill{},
+		&windmillCreateSkill{},
+		&windmillUpdateSkill{},
 		&imageOCRSkill{root: opts.SandboxRoot},
 		&videoOCRSkill{root: opts.SandboxRoot},
 		&pdfReadSkill{root: opts.SandboxRoot},

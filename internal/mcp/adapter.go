@@ -126,15 +126,84 @@ func (c *Client) SkillTools(ctx context.Context) ([]skill.Tool, error) {
 	if err != nil {
 		return nil, err
 	}
+	offered := make([]string, 0, len(tools))
+	for _, t := range tools {
+		offered = append(offered, t.Name)
+	}
+	keep, err := c.selected(offered)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]skill.Tool, 0, len(tools))
 	for _, t := range tools {
+		if keep != nil && !keep[t.Name] {
+			continue
+		}
 		out = append(out, newToolAdapter(c, t))
+	}
+	// A list that selects nothing is a typo or a rename upstream, and the two
+	// look identical from here. Either way the honest answer is an error: a
+	// server that connected fine and contributes nothing is indistinguishable
+	// from one that is simply quiet, and the user would be left wondering why
+	// their agent has no tools with nothing on screen to explain it.
+	if keep != nil && len(keep) == 0 {
+		return nil, fmt.Errorf("none of the %d tool(s) allowed for %q exist on it (it offers %d) — check the names",
+			len(c.cfg.Tools), c.cfg.Name, len(tools))
 	}
 	// Resources are the server's nouns, and a server that is a source of data
 	// rather than a set of verbs looked empty without them. The pair is added
 	// only when there is something to list — see resourceTools.
-	out = append(out, resourceTools(ctx, c)...)
+	//
+	// Left out entirely when a list is in force: the list names verbs, and a
+	// pair of tools that reach the same server's data would be a way around it.
+	if len(c.cfg.Tools) == 0 {
+		out = append(out, resourceTools(ctx, c)...)
+	}
 	return out, nil
+}
+
+// selected resolves the server's allowlist against the tools it actually
+// offers, returning the set of names to keep. A nil map means no list was
+// written and everything passes; an empty one means a list selected nothing.
+//
+// Both spellings match, on purpose. The server calls it `get_node`, Aetox shows
+// it as `n8n-docs_get_node`, and both are names the user can read off a screen —
+// accepting only one would mean a list copied from the more natural of the two
+// places silently selected nothing.
+//
+// Which is why this resolves against the whole list rather than asking one tool
+// at a time, and it is not tidiness. A server whose own tool names already
+// begin with its server name makes the two spellings collide: on a server named
+// `n8n`, the entry `n8n_validate_workflow` is the bridged name of its core
+// `validate_workflow` *and* the raw name of its `n8n_validate_workflow`, which
+// writes. One of those is a documentation tool and the other edits the user's
+// instance, and no rule here can know which was meant.
+//
+// So it refuses. Guessing would sometimes admit a write tool to a list written
+// to exclude every one of them, and silently — the failure this whole mechanism
+// exists to prevent, arriving through the mechanism itself.
+func (c *Client) selected(offered []string) (map[string]bool, error) {
+	if len(c.cfg.Tools) == 0 {
+		return nil, nil
+	}
+	keep := make(map[string]bool, len(c.cfg.Tools))
+	for _, entry := range c.cfg.Tools {
+		want := sanitize(entry)
+		var matched []string
+		for _, name := range offered {
+			if want == sanitize(name) || want == toolName(c.cfg.Name, name) {
+				matched = append(matched, name)
+			}
+		}
+		if len(matched) > 1 {
+			return nil, fmt.Errorf("%q is ambiguous on server %q — it names both %s; write the name the server itself uses",
+				entry, c.cfg.Name, strings.Join(matched, " and "))
+		}
+		for _, name := range matched {
+			keep[name] = true
+		}
+	}
+	return keep, nil
 }
 
 // toolName builds the namespaced, provider-safe tool name server_tool. Tool

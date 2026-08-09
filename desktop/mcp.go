@@ -121,7 +121,11 @@ type MCPServerInfo struct {
 	For    []string `json:"for"`
 	Status string   `json:"status"` // idle | connected | failed | disabled
 	Tools  int      `json:"tools"`  // tools seen on the last successful connect
-	Err    string   `json:"err,omitempty"`
+	// Allowed is the tool allowlist, if one was written (§97.3) — the names
+	// taken from this server rather than the number it offers, which is why it
+	// is not folded into Tools above. Empty means all of them.
+	Allowed []string `json:"allowed,omitempty"`
+	Err     string   `json:"err,omitempty"`
 }
 
 // PlacementTarget is one place something bolted onto the outside of the app can
@@ -136,8 +140,11 @@ type MCPServerInfo struct {
 type PlacementTarget struct {
 	// ID is what goes in a `for` list: a desk name, or "agent:<name>".
 	ID   string `json:"id"`
-	Name string `json:"name"` // what to show
-	Kind string `json:"kind"` // "desk" | "agent"
+	Name string `json:"name"` // what to show — short enough for a chip
+	// Detail is the longer sentence, for a tooltip. A desk's manifest carries a
+	// paragraph describing it; that belongs on hover, never inside the chip.
+	Detail string `json:"detail,omitempty"`
+	Kind   string `json:"kind"` // "desk" | "agent"
 }
 
 // PlacementTargets lists everywhere a server or a connection can be pointed.
@@ -146,11 +153,17 @@ type PlacementTarget struct {
 func (a *App) PlacementTargets() []PlacementTarget {
 	var out []PlacementTarget
 	for _, m := range mode.List() {
-		name := m.Description
-		if name == "" {
-			name = m.Name
-		}
-		out = append(out, PlacementTarget{ID: m.Name, Name: name, Kind: "desk"})
+		// The desk's NAME, not its description. A manifest's description is a
+		// paragraph — "โหมดผู้ช่วย — ทำได้ทุกอย่างบนเครื่อง ยกเว้นเครื่องมือนักพัฒนา
+		// จำระยะยาว เอกสาร เว็บ สื่อ ไฟล์ และเชลล์" — and it was being rendered
+		// inside a chip beside agent names one word long. The row of toggles
+		// became unreadable and the collapsed summary above it worse.
+		//
+		// The description is not lost: it is what the chip's tooltip should
+		// carry, which is the place a sentence that long belongs.
+		out = append(out, PlacementTarget{
+			ID: m.Name, Name: m.Name, Detail: m.Description, Kind: "desk",
+		})
 	}
 	for _, p := range subagent.List() {
 		if p.Desk == "" || p.Invalid != "" {
@@ -218,6 +231,7 @@ func (a *App) ListMCPServers() []MCPServerInfo {
 			TimeoutMs:   s.TimeoutMs,
 			Disabled:    s.Disabled,
 			For:         s.For,
+			Allowed:     s.Tools,
 			Status:      string(mcp.StatusIdle),
 		}
 		if s.Disabled {
@@ -314,6 +328,19 @@ func (a *App) SaveMCPServer(originalName string, server config.MCPServerConfig) 
 		// the payload would reset them to whatever the form defaulted to.
 		server.Disabled = servers[target].Disabled
 		server.For = servers[target].For
+		// The allowlist IS on the form, so the form's answer wins — including
+		// an empty one, which is how a list is cleared.
+		//
+		// Absent is not empty here, and the difference is the whole guard. A
+		// caller that omits the field (the preset add path, AddMCPServer, any
+		// future one) means "I have nothing to say about this", and the stored
+		// list is kept. Only a caller that sends the field — the form, always —
+		// gets to replace it. Losing a user's allowlist would be silent
+		// and would widen a server back out to everything it offers, which is
+		// the one failure §97.3 exists to prevent.
+		if server.Tools == nil {
+			server.Tools = servers[target].Tools
+		}
 		servers[target] = server
 	}
 

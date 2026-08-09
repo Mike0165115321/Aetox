@@ -47,6 +47,7 @@ func MCPServers(cfgs []config.MCPServerConfig) []mcp.Server {
 			Timeout:     time.Duration(c.TimeoutMs) * time.Millisecond,
 			Disabled:    c.Disabled,
 			Deferred:    agentsOnly(c.For),
+			Tools:       c.Tools,
 		})
 	}
 	return out

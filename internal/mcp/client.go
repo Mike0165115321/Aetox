@@ -62,6 +62,27 @@ type Server struct {
 	// Only agent-only servers qualify. A desk's server has to be there before
 	// the first message, because a desk is what the user is already sitting at.
 	Deferred bool
+	// Tools, when non-empty, is the only tools accepted from this server —
+	// everything else it offers is dropped before it ever reaches a registry.
+	//
+	// This exists for the server that is two products in one box. n8n-mcp is
+	// the case that forced it: 7 of its tools answer a question Aetox cannot
+	// (n8n publishes no node schemas), and 16 write workflows — which Aetox
+	// already does, through its own tools, its own permission rules and its own
+	// tool_runs log. Taking the whole server would put a second way to write in
+	// front of the model, and the one it happened to pick would decide whether
+	// the user's own record of what was done to their instance had the entry.
+	//
+	// Why an allowlist and not `deny:` on the profile, which already works: a
+	// denial list is written against somebody else's catalogue, and the day
+	// that server ships a seventeenth write tool it arrives switched on and
+	// nothing says so. An allowlist is wrong loudly instead — see SkillTools,
+	// which refuses to let a list that matches nothing pass as a server with
+	// nothing to offer.
+	//
+	// Empty means take everything, so nothing changes for a server nobody has
+	// written a list for, which is all of them today.
+	Tools []string
 }
 
 // Client wraps a single MCP server connection. Connect is lazy: the subprocess
