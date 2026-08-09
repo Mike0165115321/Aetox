@@ -35,8 +35,6 @@ package subagent
 // the job needs them (level 3).
 
 import (
-	"path/filepath"
-
 	"github.com/Mike0165115321/Aetox/internal/config"
 	"github.com/Mike0165115321/Aetox/internal/debuglog"
 	"github.com/Mike0165115321/Aetox/internal/skill"
@@ -62,39 +60,63 @@ func attachOwnSkills(filtered *skill.Registry, p Profile) {
 	if filtered == nil || p.Desk == "" {
 		return
 	}
-	home, err := config.AgentSkillsPath(p.Name)
-	if err != nil {
-		return // an unusable name; Load would already have refused it
-	}
-	own, errs := skill.DiscoverScoped([]string{home})
-	// The user's folder first, then what ships with the worker. Register refuses
-	// a name that is taken, so a skill the user wrote shadows the bundled one of
-	// the same name without a second rule saying so — the same shape the profile
-	// resolver already uses for AGENT.md, where editing a shipped worker means
-	// copying it out rather than fighting the app.
-	written := make(map[string]bool, len(own))
+	own, errs := OwnSkills(p.Name)
 	for _, s := range own {
 		// A collision keeps what is already there. The worker's tools were
 		// filtered by the rules above this line; a file dropped in a folder must
 		// not be able to take a built-in tool's name and answer in its place.
-		if regErr := filtered.Register(s, skill.SourceSkill); regErr != nil {
-			debuglog.Msg("skill %q in %s not loaded: %v", s.Name(), filepath.Base(home), regErr)
-			continue
+		if regErr := filtered.Register(s.Skill, skill.SourceSkill); regErr != nil {
+			debuglog.Msg("skill %q for %s not loaded: %v", s.Skill.Name(), p.Name, regErr)
 		}
+	}
+	for _, scanErr := range errs {
+		debuglog.Msg("%s skills: %v", p.Name, scanErr)
+	}
+}
+
+// OwnSkill is one entry of a worker's own shelf, plus where it came from. The
+// settings page marks the shipped ones so that "why can I not delete this" has
+// an answer on the screen rather than in a folder.
+type OwnSkill struct {
+	Skill   skill.Skill
+	Bundled bool
+}
+
+// OwnSkills resolves one agent's shelf: the SKILL.md folders in its home, then
+// whatever shipped with it under a name the user has not taken.
+//
+// Exported because two readers need the same answer — the dispatcher, which
+// registers these, and the settings page, which shows them. Resolved here once
+// rather than at each: a page listing a set the running agent does not hold is
+// the kind of disagreement nobody notices until it matters.
+//
+// The list is what the agent *has*, not necessarily what it ends up holding: a
+// skill whose name collides with a tool already in the registry loses at
+// registration, which only the dispatcher can know. That is a folder mistake
+// the debug log names, and showing the file that is there beats hiding it.
+func OwnSkills(name string) ([]OwnSkill, []error) {
+	home, err := config.AgentSkillsPath(name)
+	if err != nil {
+		return nil, []error{err} // an unusable name; Load would already have refused it
+	}
+	own, errs := skill.DiscoverScoped([]string{home})
+	// The user's folder first, then what ships with the worker — the same shape
+	// the profile resolver uses for AGENT.md, where editing a shipped worker
+	// means copying it out rather than fighting the app.
+	out := make([]OwnSkill, 0, len(own))
+	written := make(map[string]bool, len(own))
+	for _, s := range own {
+		out = append(out, OwnSkill{Skill: s})
 		written[s.Name()] = true
 	}
-	shipped, shippedErrs := skill.DiscoverFS(bundledProfiles, bundledSkillsDir(p.Name))
+	shipped, shippedErrs := skill.DiscoverFS(bundledProfiles, bundledSkillsDir(name))
 	for _, s := range shipped {
 		if written[s.Name()] {
 			continue // the user wrote their own; that is the one that runs
 		}
-		if regErr := filtered.Register(s, skill.SourceSkill); regErr != nil {
-			debuglog.Msg("bundled skill %q for %s not loaded: %v", s.Name(), p.Name, regErr)
-		}
+		out = append(out, OwnSkill{Skill: s, Bundled: true})
 	}
-	for _, scanErr := range append(errs, shippedErrs...) {
-		debuglog.Msg("%s skills: %v", p.Name, scanErr)
-	}
+	return out, append(errs, shippedErrs...)
 }
 
 // bundledSkillsDir is where a shipped worker's skills sit inside the binary.

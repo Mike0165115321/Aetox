@@ -241,12 +241,13 @@ func TestAChairIsCappedByTheOfficeCeiling(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// Everything this chair asks for: two tools the office carries, and `shell`,
-	// which the office does not have — but the desk dispatching it *does*. That
-	// is what makes this the carve-out test rather than a repeat of the profile
-	// allowlist: the ceiling has to come from the desk the job runs at, so
-	// inheriting the caller's would hand this chair a shell.
-	const greedy = "---\ndescription: เก้าอี้ทดสอบ\ndesk: specialized\ntools: doc_write, write, shell\n---\nWrite the thing.\n"
+	// Everything this chair asks for: two tools the office carries, `shell`,
+	// which the office keeps in the room for its agents (chairs:, 2026-08-10),
+	// and `git`, which nothing at the office names — but the desk dispatching
+	// the job *does* carry. `git` is what makes this the carve-out test rather
+	// than a repeat of the profile allowlist: the ceiling has to come from the
+	// desk the job runs at, so inheriting the caller's would hand it over.
+	const greedy = "---\ndescription: เก้าอี้ทดสอบ\ndesk: specialized\ntools: doc_write, write, shell, git\n---\nWrite the thing.\n"
 	if err := os.WriteFile(filepath.Join(dir, "greedy.md"), []byte(greedy), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -271,14 +272,20 @@ func TestAChairIsCappedByTheOfficeCeiling(t *testing.T) {
 	if !slices.Contains(names, "write") {
 		t.Errorf("the chair lost a tool the office's own manifest names: %v", names)
 	}
-	// The caller has shell (COMPANY.md §2) and the chair asked for it. It is
-	// absent because the job runs on the office's manifest — the ceiling comes
-	// from the desk the work is done at, never from the desk that sent it.
-	if !a.desk.AllowsTool("shell") {
-		t.Fatal("this test needs a caller that has shell for the ceiling to be worth asserting")
+	// Shell reaches a chair that asks for it, because the office keeps it in
+	// the room (chairs:, owner's call 2026-08-10) — not because the caller has
+	// one.
+	if !slices.Contains(names, "shell") {
+		t.Errorf("the chair asked for shell and the room keeps one, yet it got none: %v", names)
 	}
-	if slices.Contains(names, "shell") {
-		t.Errorf("a chair got shell from its caller's desk — the office ceiling is not being applied: %v", names)
+	// The caller has git and the chair asked for it. It is absent because the
+	// job runs on the office's manifest — the ceiling comes from the desk the
+	// work is done at, never from the desk that sent it.
+	if !a.desk.AllowsTool("git") {
+		t.Fatal("this test needs a caller that has git for the ceiling to be worth asserting")
+	}
+	if slices.Contains(names, "git") {
+		t.Errorf("a chair got git from its caller's desk — the office ceiling is not being applied: %v", names)
 	}
 	if slices.Contains(names, "task") {
 		t.Errorf("a chair can start its own delegates: %v", names)
@@ -597,8 +604,8 @@ func TestAServerReachesOnlyTheDesksThatNamedIt(t *testing.T) {
 func TestListChairsReportsTheRosterUnderTheCeiling(t *testing.T) {
 	a := bootDeskApp(t, "assistant")
 	chairs := a.ListChairs()
-	if len(chairs) != 4 {
-		t.Fatalf("ListChairs() = %d, want the four bundled chairs", len(chairs))
+	if len(chairs) != 5 {
+		t.Fatalf("ListChairs() = %d, want the five bundled chairs", len(chairs))
 	}
 	byName := map[string]Chair{}
 	for _, c := range chairs {

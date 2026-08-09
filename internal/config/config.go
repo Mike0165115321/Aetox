@@ -523,6 +523,13 @@ type MCPServerConfig struct {
 	// the migration fills in with the default. Switching a server off for
 	// everyone would then switch itself back on at the next launch.
 	For []string `json:"for"`
+	// Tools, when non-empty, is the only tools taken from this server — see
+	// mcp.Server.Tools for why one would write such a list.
+	//
+	// `omitempty`, unlike For, and the difference is not an oversight. An empty
+	// For means "shown to nobody", which is a decision worth persisting; an
+	// empty Tools means "take everything", which is the absence of a decision.
+	Tools []string `json:"tools,omitempty"`
 }
 
 // MCPDefaultDesks is where a server with no `for:` lands: the two general

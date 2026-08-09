@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mike0165115321/Aetox/internal/connect"
 	"github.com/Mike0165115321/Aetox/internal/mcp"
 	"github.com/Mike0165115321/Aetox/internal/mode"
 	"github.com/Mike0165115321/Aetox/internal/skill"
@@ -245,12 +246,30 @@ func FilterRegistry(parent *skill.Registry, p Profile, ceiling *mode.Mode) *skil
 		// gate every other right comes through, and visible in the same place.
 		// The desk still decides what the *assistant* sitting there holds.
 		agentServers = config.MCPServersForAgent(p.Name)
+		// The connections pointed at this agent, for the same reason and from
+		// the same toggle. Until 2026-08-10 only the servers made this trip,
+		// and a connection placed on an agent was a grant nobody read: the
+		// engine chip said n8n, the needs gate said satisfied — both read
+		// `agent:` placement — while this cut asked the desk's ceiling, which
+		// had never heard of it. Four readers agreed the agent was equipped,
+		// and the one that hands out tools disagreed.
+		agentConnections := config.ConnectionsForAgent(p.Name, connect.IDs())
 		chairCarries := ceiling.CarriesForChair
 		carries = func(name string, source skill.Source) bool {
 			if chairCarries(name, source) {
 				return true
 			}
-			return source == skill.SourceMCP && mcp.ToolBelongsTo(name, agentServers)
+			if source == skill.SourceMCP && mcp.ToolBelongsTo(name, agentServers) {
+				return true
+			}
+			// Only for tools a connection owns. connect.Allows answers yes to
+			// any name no provider claims — right under a desk, which still
+			// holds its own manifest below that answer, and an open door here,
+			// where a yes is the grant itself.
+			if _, owned := connect.ProviderOfTool(name); !owned {
+				return false
+			}
+			return connect.Allows(name, agentConnections)
 		}
 	}
 	filtered := skill.NewRegistry()

@@ -3,13 +3,13 @@
 // What is worth pinning here is not that a row of buttons renders — it is the
 // rules a nav that opens sessions has to keep: clicking a desk you are not at
 // opens a session THERE, clicking the desk you are already at does not throw
-// away the conversation in front of you, ทำงานอัตโนมัติ is a room with the door built
+// away the conversation in front of you, ระบบออโตเมชั่น is a room with the door built
 // and nothing behind it, and — since the split — each door draws only its own
 // rooms, so the workshop never shows the office's.
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte'
 import Sidebar from '../lib/Sidebar.svelte'
-import { NewSessionAt, ListModes, SessionMode, CurrentSessionID } from './mocks/wailsApp'
+import { NewSessionAt, NewChairSession, ListModes, SessionMode, CurrentSessionID } from './mocks/wailsApp'
 import { cockpit } from '../lib/stores/cockpit.svelte'
 import { setShell, deskFilterFor } from '../lib/shell.svelte'
 
@@ -23,6 +23,7 @@ const deskButton = (label: string): HTMLButtonElement => {
 beforeEach(() => {
   vi.clearAllMocks()
   cockpit.desk = ''
+  cockpit.chair = ''
   cockpit.activeView = 'chat'
   cockpit.history.length = 0
   setShell('assistant') // the storefront, which is where a fresh window opens
@@ -31,23 +32,20 @@ beforeEach(() => {
 })
 
 describe('the rooms behind each door', () => {
-  it('offers the storefront rooms, with the deferred ones present and disabled', () => {
+  it('offers every storefront room, and none of them still claims to be coming', () => {
     render(Sidebar, { onOpenSettings: () => {} })
 
-    for (const label of ['ผู้ช่วย', 'โปรเจกต์', 'ทีมเอเจน', 'ทำงานอัตโนมัติ', 'ผลงาน']) {
+    // โปรเจกต์ opened on 2026-08-07 (§90), ระบบออโตเมชั่น on 2026-08-09. A room
+    // that has been built must stop saying it is coming: the badge is the
+    // promise, and a promise left up after it is kept is the same lie as one
+    // that was never kept. Every room behind this door is now open, so the
+    // whole row is checked rather than a list of exceptions — the next `soon`
+    // room to be added has to come back here and say so out loud.
+    for (const label of ['ผู้ช่วย', 'โปรเจกต์', 'ทีมเอเจน', 'ระบบออโตเมชั่น', 'ผลงาน']) {
       expect(deskButton(label)).toBeTruthy()
+      expect(deskButton(label).disabled).toBe(false)
+      expect(deskButton(label).textContent).not.toContain('เร็ว ๆ นี้')
     }
-    // Named, empty, and saying so — a room that appeared later would read as a
-    // new feature rather than as the plan it already is (§7).
-    for (const deferred of ['ทำงานอัตโนมัติ']) {
-      expect(deskButton(deferred).disabled).toBe(true)
-      expect(deskButton(deferred).textContent).toContain('เร็ว ๆ นี้')
-    }
-    // โปรเจกต์ opened on 2026-08-07 (§90). A room that has been built must stop
-    // saying it is coming: the badge is the promise, and a promise left up
-    // after it is kept is the same lie as one that was never kept.
-    expect(deskButton('โปรเจกต์').disabled).toBe(false)
-    expect(deskButton('โปรเจกต์').textContent).not.toContain('เร็ว ๆ นี้')
   })
 
   // The whole point of §86: the workshop is not the storefront with extra
@@ -58,7 +56,7 @@ describe('the rooms behind each door', () => {
     render(Sidebar, { onOpenSettings: () => {} })
 
     expect(deskButton('โค้ด')).toBeTruthy()
-    for (const hidden of ['ผู้ช่วย', 'โปรเจกต์', 'ทีมเอเจน', 'ทำงานอัตโนมัติ', 'ผลงาน']) {
+    for (const hidden of ['ผู้ช่วย', 'โปรเจกต์', 'ทีมเอเจน', 'ระบบออโตเมชั่น', 'ผลงาน']) {
       expect(() => deskButton(hidden)).toThrow()
     }
   })
@@ -111,6 +109,41 @@ describe('the rooms behind each door', () => {
     await fireEvent.click(deskButton('ทีมเอเจน'))
     expect(cockpit.activeView).toBe('office')
     expect(vi.mocked(NewSessionAt)).not.toHaveBeenCalled()
+  })
+
+  // ระบบออโตเมชั่น is a conversation, and the person on the other side is the
+  // automation specialist rather than the assistant. It opens through the same
+  // door the office roster's "แชทกับเอเจนนี้" uses — one way in, so a chat
+  // started from the nav and one started from the roster are the same chat with
+  // the same tools, memory and prompt.
+  //
+  // It was a page for a day, drawing cards for the engines you could connect.
+  // Connecting an account is register work and the register already does it, so
+  // the room was answering a question that had a home while the thing people
+  // come here for had none.
+  it('opens ระบบออโตเมชั่น as a chat with the automation agent', async () => {
+    render(Sidebar, { onOpenSettings: () => {} })
+
+    await fireEvent.click(deskButton('ระบบออโตเมชั่น'))
+
+    await waitFor(() => expect(vi.mocked(NewChairSession)).toHaveBeenCalledWith('automation'))
+    expect(cockpit.activeView).toBe('chat')
+    expect(cockpit.chair).toBe('automation')
+    // Not a desk session: the agent brings its own tools and prompt, and asking
+    // for a desk as well would be two masters for one turn.
+    expect(vi.mocked(NewSessionAt)).not.toHaveBeenCalled()
+  })
+
+  // A chair chat runs at the office desk, so lighting the nav by desk would
+  // leave ทีมเอเจน lit while the user is standing in ระบบออโตเมชั่น.
+  it('lights the room by who you are talking to, not by the desk', async () => {
+    cockpit.desk = 'specialized'
+    cockpit.chair = 'automation'
+    cockpit.activeView = 'chat'
+    render(Sidebar, { onOpenSettings: () => {} })
+
+    expect(deskButton('ระบบออโตเมชั่น').className).toContain('active')
+    expect(deskButton('ทีมเอเจน').className).not.toContain('active')
   })
 
   // The button's tooltip is the desk's own description, so editing a mode file

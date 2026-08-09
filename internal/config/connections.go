@@ -32,6 +32,29 @@ type ConnectionConfig struct {
 	// as every desk; an explicit empty list means the user switched it off
 	// everywhere, and must survive as such.
 	For []string `json:"for"`
+	// BaseURL is where this service lives, for the services that do not live
+	// anywhere in particular. GitHub is one host for everyone and states it as a
+	// constant; n8n and Windmill are things the user runs, on a machine only the
+	// user knows the address of, so the address is theirs to give.
+	//
+	// It sits here rather than in the vault because it is not a secret — it is a
+	// setting, and a setting the user should be able to read back, diff and
+	// correct after a typo without disconnecting anything.
+	BaseURL string `json:"baseUrl,omitempty"`
+	// StartCommand is how to bring this service up, for the ones the user runs
+	// themselves. Empty means Aetox has not been told, and the button that would
+	// press it is not drawn.
+	//
+	// The command is the user's, typed once and remembered — never a path this
+	// codebase knows. Aetox cannot guess where somebody installed n8n, and a
+	// built-in guess would be wrong for everyone it was not written for. The
+	// precedent is an MCP stdio server, which has always been a command in a
+	// config file that Aetox launches on request.
+	//
+	// Stored beside the address rather than in the vault for the same reason the
+	// address is: it is a setting, and a setting the user should be able to read
+	// back and correct.
+	StartCommand string `json:"startCommand,omitempty"`
 }
 
 func ConnectionsPath() (string, error) {
@@ -105,11 +128,92 @@ func SetConnectionTargets(id string, targets []string) error {
 	}
 	for i := range items {
 		if strings.EqualFold(items[i].ID, id) {
+			// Only the field being set. Placement and address are edited from
+			// different rows of the same screen, and a writer that rewrote the
+			// whole entry would clear the address every time somebody flipped a
+			// desk switch.
 			items[i].For = clean
 			return SaveConnections(items)
 		}
 	}
 	return SaveConnections(append(items, ConnectionConfig{ID: id, For: clean}))
+}
+
+// SetConnectionBaseURL records where a self-hosted service lives. An empty
+// string clears it, which is how "I typed the wrong address" is undone without
+// disconnecting the account.
+func SetConnectionBaseURL(id, baseURL string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil
+	}
+	clean := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	items, err := LoadConnections()
+	if err != nil {
+		return err
+	}
+	for i := range items {
+		if strings.EqualFold(items[i].ID, id) {
+			items[i].BaseURL = clean
+			return SaveConnections(items)
+		}
+	}
+	// No `For` — an entry created by setting an address has not been placed, and
+	// writing an empty list here would read as "switched off everywhere" when
+	// the user has not been asked yet.
+	return SaveConnections(append(items, ConnectionConfig{ID: id, BaseURL: clean}))
+}
+
+// SetConnectionStartCommand records how to bring a self-hosted service up. An
+// empty string clears it, which removes the button rather than leaving one that
+// runs nothing.
+func SetConnectionStartCommand(id, command string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil
+	}
+	clean := strings.TrimSpace(command)
+	items, err := LoadConnections()
+	if err != nil {
+		return err
+	}
+	for i := range items {
+		if strings.EqualFold(items[i].ID, id) {
+			items[i].StartCommand = clean
+			return SaveConnections(items)
+		}
+	}
+	return SaveConnections(append(items, ConnectionConfig{ID: id, StartCommand: clean}))
+}
+
+// ConnectionStartCommand reports how to bring a service up, or "".
+func ConnectionStartCommand(id string) string {
+	items, err := LoadConnections()
+	if err != nil {
+		return ""
+	}
+	for _, item := range items {
+		if strings.EqualFold(item.ID, strings.TrimSpace(id)) {
+			return item.StartCommand
+		}
+	}
+	return ""
+}
+
+// ConnectionBaseURL reports where a service was said to live, or "" when it has
+// no address stored — which for a service that needs one means "not set up",
+// and for the rest means nothing at all.
+func ConnectionBaseURL(id string) string {
+	items, err := LoadConnections()
+	if err != nil {
+		return ""
+	}
+	for _, item := range items {
+		if strings.EqualFold(item.ID, strings.TrimSpace(id)) {
+			return item.BaseURL
+		}
+	}
+	return ""
 }
 
 // ConnectionTargets reports one connection's placement, and whether it has ever

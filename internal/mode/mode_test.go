@@ -401,9 +401,20 @@ func TestChairsAreInTheRoomButNotOnTheDesk(t *testing.T) {
 		t.Error("deny lost to chairs — a tool the desk removed outright must be gone for everyone")
 	}
 
-	// And not a way around the ceiling for ordinary work: a tool the desk does
-	// not carry stays unreachable to anything that is not a chair.
-	if specialized.Carries("shell", skill.SourceBuiltin) || specialized.CarriesForChair("shell", skill.SourceBuiltin) {
+	// Shell moved into the room on 2026-08-10 (owner: the automation agent is
+	// full-rank — it starts its own engine and works a real workstation), and
+	// the split is the same one the writers live under: in the room for the
+	// agents whose profiles ask, still not on the assistant's desk.
+	if specialized.Carries("shell", skill.SourceBuiltin) {
+		t.Error("shell reached the office assistant — the room's grant leaked onto the desk")
+	}
+	if !specialized.CarriesForChair("shell", skill.SourceBuiltin) {
+		t.Error("shell is out of the agents' reach — the full-rank worker cannot start its own engine")
+	}
+
+	// And still not a way around the ceiling for ordinary work: a tool neither
+	// the desk nor its chairs name stays unreachable to everyone here.
+	if specialized.Carries("git", skill.SourceBuiltin) || specialized.CarriesForChair("git", skill.SourceBuiltin) {
 		t.Error("chairs widened the ceiling past what the desk names")
 	}
 }

@@ -308,3 +308,72 @@ func TestTheGitHubAgentCarriesItsOwnKnowledge(t *testing.T) {
 		}
 	}
 }
+
+// engine is an agent that works on either of two automation engines — the shape
+// §92.3 committed Aetox to, written as one requirement with two answers.
+func engine(needs ...string) Profile {
+	return Profile{Name: "automation", Description: "automation", Needs: needs, Prompt: "You build automations."}
+}
+
+// The bug this alternation exists to prevent, stated as a test: a user who runs
+// Windmill and has never wanted n8n was told they were missing n8n. The
+// declaration was true of the build and false of them, and a readiness warning
+// that is false is worse than none — it teaches the user to ignore the roster.
+func TestEitherEngineSatisfiesTheSameRequirement(t *testing.T) {
+	needsRoot(t)
+	if err := config.SaveMCPServers([]config.MCPServerConfig{
+		{Name: "windmill", URL: "http://localhost:8000/api/mcp/w/main/mcp", For: []string{config.MCPAgentPrefix + "automation"}},
+	}); err != nil {
+		t.Fatalf("SaveMCPServers: %v", err)
+	}
+
+	if unmet := UnmetNeeds(engine("connection:n8n | mcp:windmill")); len(unmet) != 0 {
+		t.Fatalf("unmet = %+v — Windmill answers this need, and n8n was never wanted", unmet)
+	}
+}
+
+// With neither, the agent still has to say so — the alternation must not become
+// a way for a requirement to disappear.
+func TestWithNeitherEngineTheNeedIsStillReportedOnce(t *testing.T) {
+	needsRoot(t)
+
+	unmet := UnmetNeeds(engine("connection:n8n | mcp:windmill"))
+	if len(unmet) != 1 {
+		t.Fatalf("unmet = %+v, want exactly one — two lines read as two missing things", unmet)
+	}
+	if len(unmet[0].OneOf) != 1 {
+		t.Fatalf("OneOf = %+v, want the other engine carried alongside", unmet[0].OneOf)
+	}
+	// And the notice has to say they are alternatives. Told them as a list, the
+	// agent asks the user to set up both, and the second is one they may have
+	// deliberately not chosen.
+	notice := PromptFor(engine("connection:n8n | mcp:windmill"))
+	if !strings.Contains(notice, "\n    or ") {
+		t.Errorf("the notice does not mark the alternative as one:\n%s", notice)
+	}
+}
+
+// Which of the two gets reported is not the order they were written in. An
+// account already connected and one toggle from working must beat a product the
+// user has never installed, or the fix offered is the expensive one.
+func TestTheNearestAlternativeIsTheOneReported(t *testing.T) {
+	needsRoot(t)
+	// n8n: configured, switched on, pointed at nobody — one click away.
+	if err := config.SaveMCPServers([]config.MCPServerConfig{
+		{Name: "windmill", URL: "http://localhost:8000", For: []string{}},
+	}); err != nil {
+		t.Fatalf("SaveMCPServers: %v", err)
+	}
+
+	// Written windmill-last, and windmill is the one that is nearly there.
+	unmet := UnmetNeeds(engine("mcp:absent-engine | mcp:windmill"))
+	if len(unmet) != 1 {
+		t.Fatalf("unmet = %+v, want one", unmet)
+	}
+	if unmet[0].ID != "windmill" || unmet[0].Reason != ReasonUnplaced {
+		t.Fatalf("reported %q/%q, want windmill/unplaced — the reachable fix must be the one offered", unmet[0].ID, unmet[0].Reason)
+	}
+	if !unmet[0].Fixable() {
+		t.Error("the one-click fix was not offered on a need that has one")
+	}
+}
