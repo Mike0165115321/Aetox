@@ -47,10 +47,15 @@ type RegenerateResult struct {
 
 // RetryFailedTurn re-runs a turn that never finished.
 //
-// The text comes from the caller because the store does not have it: a turn that
-// errors is persisted nowhere (App.SendMessage returns before appendTurn), so
-// the bubble on screen is the only copy left. Rebuilding the context first is
-// what removes the question the failed attempt left in the model's memory.
+// The text still comes from the caller rather than from the stored question.
+// The bubble on screen holds exactly what was sent — attachment marker lines and
+// all — and re-deriving it from the row would be a reconstruction of something
+// the caller already has verbatim.
+//
+// Rebuilding the context first is what removes the question the failed attempt
+// left in the model's memory; transcriptToModelMessages drops the failed pair,
+// so what comes back is the conversation up to the question, and SendMessage
+// asks it once.
 func (a *App) RetryFailedTurn(text string) (TurnReply, error) {
 	if strings.TrimSpace(text) == "" {
 		return TurnReply{}, fmt.Errorf("ไม่มีข้อความให้ลองใหม่")
@@ -60,8 +65,35 @@ func (a *App) RetryFailedTurn(text string) (TurnReply, error) {
 	if a.turnBusy() {
 		return TurnReply{}, errTurnBusy
 	}
+	a.dropFailedTail()
 	a.restoreContext(a.transcript)
 	return a.SendMessage(text)
+}
+
+// dropFailedTail removes the turn that failed at the end of this session — the
+// row appendFailedTurn wrote and the question above it — from the store and the
+// in-memory transcript alike.
+//
+// Retrying replaces an attempt; it does not file a second one beside it. The
+// screen has always worked this way (the red bubble is spliced out the instant
+// ลองใหม่ is pressed) and, now that the attempt is written down, the store has to
+// agree — otherwise a reload after a successful retry would show the failure the
+// user had already dealt with, above the answer that dealt with it.
+//
+// Guarded on the transcript's own tail rather than trusting the table: this
+// deletes rows, and "the last two rows of this session" is only the failed pair
+// if the failed pair is what the conversation actually ends with.
+func (a *App) dropFailedTail() {
+	n := len(a.transcript)
+	if n < 2 {
+		return
+	}
+	last := a.transcript[n-1]
+	if last.Role != "agent" || last.ErrorText == "" {
+		return
+	}
+	a.transcript = a.transcript[:n-2]
+	a.dropLastTurnRows()
 }
 
 // RegenerateReply answers the last question again, keeping the previous answer

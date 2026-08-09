@@ -33,6 +33,19 @@ import (
 // it IS the lesson. The model-driven half of the learning plan (summarize into
 // better rules) can build on these rows later; it does not have to exist for
 // the floor to start paying rent.
+//
+// That assumption held for the failures this codebase authors and for nothing
+// else, which took a user noticing to find (2026-08-09). `exit status 1` is
+// Go's spelling of an exit code — it reached the same column by the same path,
+// carrying no remedy because nobody wrote it to carry one, and the reader had
+// no way to tell it apart from a sentence that did. On a real machine five of
+// the six clusters over the threshold were exit codes, and every one of them
+// became a memory line instructing the agent to avoid a pattern nothing had
+// named. The fix is upstream, at turn.ErrorFromProgram: the run now records
+// where its failure came from, and this pass reads only the failures that are
+// the tool's own. A nonzero exit is a program reporting a result — a test suite
+// with failures, a grep with no match — and a tool that ran it correctly has
+// nothing to be taught.
 
 // summarizeMinRepeats is how many same-shaped failures make a pattern. Two is
 // a coincidence a human would not want a card for; three is the same wall hit
@@ -67,9 +80,13 @@ func (a *App) summarizeFailures() {
 		return
 	}
 
+	// error_kind = '' is "a failure this codebase authored" — the only kind that
+	// carries a remedy to quote. A program's exit status is excluded here rather
+	// than filtered out later, so a cluster of them never reaches the point of
+	// competing with a real lesson for one of the three proposal slots.
 	rows, err := db.Query(
 		`SELECT id, agent, tool, args, error FROM tool_runs
-		  WHERE ok = 0 AND error <> '' ORDER BY id`)
+		  WHERE ok = 0 AND error <> '' AND error_kind = '' ORDER BY id`)
 	if err != nil {
 		debuglog.Msg("summarize: reading failures: %v", err)
 		return
@@ -85,7 +102,7 @@ func (a *App) summarizeFailures() {
 		if head == "" {
 			continue
 		}
-		key := agent + "\x00" + tool + "\x00" + strings.ToLower(head)
+		key := agent + "\x00" + tool + "\x00" + clusterKey(head)
 		c, ok := clusters[key]
 		if !ok {
 			c = &failureCluster{scope: agent, tool: tool, head: head}
@@ -111,12 +128,23 @@ func (a *App) summarizeFailures() {
 		return repeated[i].head < repeated[j].head
 	})
 
+	// One card per tool per pass. Three slots filled by one tool's three ways of
+	// failing is a queue that reads as a complaint about that tool, and it is
+	// how a single noisy tool ends up owning a memory file: every cluster over
+	// the threshold on the machine that prompted this change was `shell`. The
+	// rest are not dropped — the pass runs after every turn, and the next one
+	// takes them.
 	proposed := 0
+	perTool := map[string]bool{}
 	for _, c := range repeated {
 		if proposed >= summarizeMaxProposals {
 			break
 		}
+		if perTool[c.tool] {
+			continue
+		}
 		if a.proposeFailureLesson(c) {
+			perTool[c.tool] = true
 			proposed++
 		}
 	}
@@ -204,6 +232,14 @@ func evidenceFor(ids []int64) string {
 // the path in parentheses, the filename in quotes — is what distinguishes one
 // occurrence from the next, so it is exactly the part that must go for the
 // occurrences to land in one cluster.
+//
+// What comes back is the whole remaining sentence, because this is the text
+// that becomes the lesson. It used to be cut to 160 runes here, which is the
+// length that makes a stable grouping key and has nothing to do with where a
+// sentence ends: the one genuinely useful lesson on a real machine was stored
+// as "…write the path out literally, or run the step that" — the remedy cut
+// off mid-clause, which is the half that was worth learning. Grouping now
+// takes its own shortened form (clusterKey) and the body keeps the sentence.
 func failureHead(raw string) string {
 	line := raw
 	if i := strings.IndexByte(line, '\n'); i >= 0 {
@@ -213,10 +249,41 @@ func failureHead(raw string) string {
 	line = dropQuoted(line, '"')
 	line = dropQuoted(line, '\'')
 	line = strings.Join(strings.Fields(line), " ")
-	if r := []rune(line); len(r) > 160 {
-		line = string(r[:160])
+	// Removing a bracketed span leaves the space that stood in front of it
+	// stranded against the punctuation that followed — "while it runs , so".
+	// Cosmetic, but this string is read by a person on a card and by a model in
+	// every request afterwards.
+	for _, mark := range []string{",", ".", ";", ":"} {
+		line = strings.ReplaceAll(line, " "+mark, mark)
 	}
+	line = truncateWords(line, 400)
 	return strings.Trim(strings.TrimSpace(line), " :,-—")
+}
+
+// clusterKey is the grouping form of a head: short enough that two occurrences
+// diverging late still land together, lowercased so casing cannot split a
+// cluster. Deliberately not what gets stored — a key may be lossy, a lesson
+// may not.
+func clusterKey(head string) string {
+	if r := []rune(head); len(r) > 160 {
+		head = string(r[:160])
+	}
+	return strings.ToLower(head)
+}
+
+// truncateWords caps a string without cutting a word in half. A hard cap still
+// exists because an error is not required to be short, and a memory line is
+// paid for on every request that loads the file.
+func truncateWords(s string, max int) string {
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	cut := string(r[:max])
+	if at := strings.LastIndexByte(cut, ' '); at > max/2 {
+		cut = cut[:at]
+	}
+	return strings.TrimRight(cut, " ,;:-—") + "…"
 }
 
 // dropBracketed removes (...) spans, nested included.

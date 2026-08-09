@@ -106,6 +106,81 @@ func TestAClusterIsProposedOnceAndADecisionStands(t *testing.T) {
 	}
 }
 
+// A program returning nonzero is not the tool failing. `go test` with failures,
+// a grep with no match, a timeout firing — the tool did its job, and there is
+// nothing about using it to learn. Before the run carried where its error came
+// from, three of these became a memory line telling the agent to avoid whatever
+// hits "exit status 1", which named no pattern and taught nothing.
+func TestProgramExitCodesAreNotLessons(t *testing.T) {
+	a := newJobApp(t)
+	mark := a.maxToolRunID()
+	for i, ref := range []string{"e1", "e2", "e3", "e4"} {
+		a.recordToolRun(turn.ToolRun{Ref: ref, Name: "shell",
+			Args:      `{"command":"go test ./pkg` + string(rune('a'+i)) + `"}`,
+			OK:        false,
+			Error:     "exit status 1",
+			ErrorKind: turn.ErrorFromProgram,
+		})
+	}
+	a.recordJobs(1, "รันเทสต์", "ตก", mark, time.Second)
+
+	if pending := a.ListPendingChanges(); len(pending) != 0 {
+		t.Fatalf("a failing program was learned as a lesson about the tool: %+v", pending)
+	}
+}
+
+// The lesson is the refusal, and a refusal is written to end with what to do
+// instead — so a body cut at the grouping key's length loses the only half
+// worth keeping. The real one lost "…write the path out literally".
+func TestTheLessonKeepsTheRemedy(t *testing.T) {
+	a := newJobApp(t)
+	mark := a.maxToolRunID()
+	const remedy = "write the path out literally, or run the step that needs it as its own command"
+	for i, ref := range []string{"r1", "r2", "r3"} {
+		a.recordToolRun(turn.ToolRun{Ref: ref, Name: "shell",
+			Args: `{"command":"type $VAR"}`,
+			OK:   false,
+			Error: "this command builds a path while it runs (the variable $V" + string(rune('a'+i)) +
+				"), so it cannot be checked against the folders this session may use — " + remedy,
+		})
+	}
+	a.recordJobs(1, "งาน", "ตอบ", mark, time.Second)
+
+	pending := a.ListPendingChanges()
+	if len(pending) != 1 {
+		t.Fatalf("want one card, got %d", len(pending))
+	}
+	if !strings.Contains(pending[0].Body, remedy) {
+		t.Errorf("the lesson dropped the remedy it exists to teach:\n%q", pending[0].Body)
+	}
+	// The stranded space a removed (...) span leaves behind.
+	if strings.Contains(pending[0].Body, " ,") {
+		t.Errorf("orphaned punctuation from the dropped detail: %q", pending[0].Body)
+	}
+}
+
+// One tool's three ways of failing must not take all three slots — that is how
+// a single noisy tool comes to own the memory file.
+func TestOneToolCannotFillTheQueue(t *testing.T) {
+	a := newJobApp(t)
+	mark := a.maxToolRunID()
+	ref := 0
+	for _, shape := range []string{"first refusal shape", "second refusal shape", "third refusal shape"} {
+		for i := 0; i < 3; i++ {
+			ref++
+			a.recordToolRun(turn.ToolRun{Ref: "n" + string(rune('a'+ref)), Name: "shell",
+				OK:    false,
+				Error: shape + ` (detail ` + string(rune('a'+i)) + `)`})
+		}
+	}
+	a.recordJobs(1, "งาน", "ตอบ", mark, time.Second)
+
+	pending := a.ListPendingChanges()
+	if len(pending) != 1 {
+		t.Fatalf("three clusters from one tool proposed %d cards, want 1", len(pending))
+	}
+}
+
 // A delegate's failures are the delegate's lesson (ARCHITECTURE §44): the card
 // targets that agent's file, not the main agent's prompt.
 func TestDelegateFailuresLandInTheDelegatesScope(t *testing.T) {

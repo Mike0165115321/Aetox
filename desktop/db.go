@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 
 	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mike0165115321/Aetox/internal/turn"
 	_ "modernc.org/sqlite"
 )
 
@@ -418,6 +419,64 @@ CREATE TABLE IF NOT EXISTS project_folders (
 			// column records where a conversation was held, and renaming a
 			// folder afterwards does not change where it was held.
 			_, err := tx.Exec(`ALTER TABLE sessions ADD COLUMN space TEXT NOT NULL DEFAULT ''`)
+			return err
+		},
+	},
+	{
+		version: 11,
+		name:    "tool_run_error_kind",
+		apply: func(tx *sql.Tx) error {
+			// Where a failure came from, which the error text cannot say
+			// (turn.ErrorFromProgram). '' means an error this codebase wrote —
+			// the conservative default, and what every reader assumed before the
+			// column existed.
+			if _, err := tx.Exec(
+				`ALTER TABLE tool_runs ADD COLUMN error_kind TEXT NOT NULL DEFAULT ''`); err != nil {
+				return err
+			}
+			// Backfill, and the only place in this file that reads an error's
+			// text to decide what it is. Rows written before the column existed
+			// have no other evidence left, and leaving them unmarked is not
+			// neutral: the summarizer would keep proposing them as lessons
+			// forever, which is the very thing this column exists to stop. New
+			// rows are classified from the error value and never from its
+			// spelling — the pattern here must not grow into a rule anywhere
+			// else.
+			//
+			// `exit status <n>` is Go's own formatting of *exec.ExitError, fixed
+			// in the standard library, which is what makes it safe to match on
+			// once against rows that can no longer be re-derived.
+			_, err := tx.Exec(
+				`UPDATE tool_runs SET error_kind = ?
+				  WHERE ok = 0 AND error GLOB 'exit status [0-9]*'`, turn.ErrorFromProgram)
+			return err
+		},
+	},
+	{
+		version: 12,
+		name:    "message_error_text",
+		apply: func(tx *sql.Tx) error {
+			// Why a turn stopped, on the answer it stopped in the middle of.
+			//
+			// Until now a turn that failed was persisted as half a turn: openTurn
+			// had already written the question, and SendMessage returned before
+			// appendTurn, so the answer — and the fact that there had been an
+			// error at all — existed only in the window's memory. Reload, and the
+			// red box and its ลองใหม่ button were gone, leaving a question sitting
+			// alone with no reply and nothing saying why.
+			//
+			// One column rather than a `failed` flag beside it: non-empty IS
+			// failed, so there is no pair of columns that can disagree about
+			// whether a turn worked. Empty is every message ever written before
+			// this, and every one that succeeds after — the default needs no
+			// backfill because "no error" is what those rows have always meant.
+			//
+			// The raw error string, not a sentence for the user. Which words a
+			// person reads is the frontend's business (cockpit.sendError, and
+			// turnStopped for a cancel), and a Thai sentence frozen into the
+			// database would be the wrong language the day somebody switches.
+			_, err := tx.Exec(
+				`ALTER TABLE messages ADD COLUMN error_text TEXT NOT NULL DEFAULT ''`)
 			return err
 		},
 	},

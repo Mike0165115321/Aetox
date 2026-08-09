@@ -61,13 +61,13 @@ func (a *App) recordToolRun(run turn.ToolRun) {
 		`INSERT INTO tool_runs(
 			session_id, ref, parent_ref, agent, tool,
 			args, args_bytes, output, output_bytes, output_sha256,
-			ok, error, duration_ms, time)
-		 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			ok, error, error_kind, duration_ms, time)
+		 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		// The turn's stamped session (falls back to a.sessionID when idle) —
 		// a tool run belongs to the turn that made it, same as its messages.
 		a.turnSessionID(), run.Ref, run.Parent, run.Agent, run.Name,
 		args, argsBytes, output, outputBytes, outputHash,
-		boolToInt(run.OK), run.Error, run.Duration.Milliseconds(),
+		boolToInt(run.OK), run.Error, run.ErrorKind, run.Duration.Milliseconds(),
 		time.Now().Format(time.RFC3339),
 	)
 	if err != nil {

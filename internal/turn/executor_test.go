@@ -393,6 +393,13 @@ func TestToolCallDeadline(t *testing.T) {
 		// Only shell knows how long its own work takes; nothing else gets to
 		// extend the guard by naming a field.
 		{"another tool cannot buy time", "grep", map[string]any{"timeout_seconds": float64(600)}, 60 * time.Second},
+		// A shell_output that waits is the second tool that knows: the turn's
+		// patience stretches to the wait it was asked for — and only then.
+		{"a waiting read stretches to its wait", "shell_output", map[string]any{"wait_for": "listening on", "wait_timeout_seconds": float64(300)}, 300 * time.Second},
+		{"a wait defaults to the default", "shell_output", map[string]any{"wait_for": "listening on"}, 60 * time.Second},
+		{"a wait_timeout without a wait_for buys nothing", "shell_output", map[string]any{"wait_timeout_seconds": float64(300)}, 60 * time.Second},
+		{"a blank wait_for is not a wait", "shell_output", map[string]any{"wait_for": "  ", "wait_timeout_seconds": float64(300)}, 60 * time.Second},
+		{"the waiting ceiling holds too", "shell_output", map[string]any{"wait_for": "x", "wait_timeout_seconds": float64(99999)}, maxToolExecutionTimeout},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

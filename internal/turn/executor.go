@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os/exec"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -63,20 +64,34 @@ func HasNoDeadline(name string) bool {
 // command which will never finish still ends the turn rather than hanging it.
 const maxToolExecutionTimeout = 10 * time.Minute
 
-// toolCallDeadline is the per-call deadline, which only `shell` can move: a 60
-// second cap is right for a tool that reads a file and wrong for one that runs
-// `go test ./...`, and the tool itself is the only thing that knows which it is
-// about to do. Anything absent, unparseable, negative or over the ceiling falls
-// back to the default rather than failing the call — a bad timeout is not worth
-// refusing to run over.
+// toolCallDeadline is the per-call deadline, which only two tools can move,
+// and both for the same reason: the call itself is the only thing that knows
+// how long its work is about to take. A 60 second cap is right for a tool that
+// reads a file, wrong for `shell` running `go test ./...`, and wrong again for
+// `shell_output` that was asked to wait_for a server's listening line — a wait
+// the turn cuts short at 60s degrades back into the polling loop it exists to
+// replace. Anything absent, unparseable, negative or over the ceiling falls
+// back to the default rather than failing the call — a bad timeout is not
+// worth refusing to run over.
 //
 // JSON numbers decode to float64, so an integer schema still arrives as one.
 func toolCallDeadline(name string, args map[string]any) time.Duration {
-	if strings.ToLower(strings.TrimSpace(name)) != "shell" {
+	var key string
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "shell":
+		key = "timeout_seconds"
+	case "shell_output":
+		// Only a read that waits gets to stretch the turn. A plain read
+		// returns at once, and a wait_timeout without a wait_for is noise.
+		if target, _ := args["wait_for"].(string); strings.TrimSpace(target) == "" {
+			return toolExecutionTimeout
+		}
+		key = "wait_timeout_seconds"
+	default:
 		return toolExecutionTimeout
 	}
 	var seconds float64
-	switch v := args["timeout_seconds"].(type) {
+	switch v := args[key].(type) {
 	case float64:
 		seconds = v
 	case int:
@@ -382,11 +397,47 @@ type ToolRun struct {
 	Name  string
 	// Args is the raw arguments JSON exactly as the model sent it, unparsed:
 	// a malformed call is itself a thing worth having recorded.
-	Args     string
-	Output   string
-	OK       bool
-	Error    string
-	Duration time.Duration
+	Args   string
+	Output string
+	OK     bool
+	Error  string
+	// ErrorKind says where Error came from, because the text cannot. Empty for
+	// an error this codebase wrote; ErrorFromProgram when a program the tool ran
+	// returned nonzero. See classifyToolError.
+	ErrorKind string
+	Duration  time.Duration
+}
+
+// ErrorFromProgram marks a failure that is not the tool's: the tool started a
+// program, the program ran to completion, and it exited nonzero.
+//
+// That is routinely the correct outcome of a tool working perfectly — a test
+// suite reporting failures, a grep finding nothing (exit 1), a timeout firing
+// (124). It is recorded as a tool error because the model must see it, and the
+// two readings were indistinguishable for as long as the only thing carried
+// forward was the string: "exit status 1" is Go's spelling of an exit code, not
+// a sentence anybody here wrote to be read.
+//
+// The learning floor is where the difference bites. Its reader assumes every
+// failure it clusters carries its own remedy — true of this codebase's
+// refusals, which are written that way on purpose, and false of an exit code,
+// which carries nothing. Without this mark the summarizer cannot tell them
+// apart, and proposes "avoid whatever hits exit status 1" as a lesson (found
+// 2026-08-09: five of the six clusters over the threshold on a real machine
+// were exit codes, the sixth was a real refusal).
+const ErrorFromProgram = "exit"
+
+// classifyToolError asks the error what it is rather than reading its text. An
+// *exec.ExitError is the one case that answers definitively — it exists only
+// when a process was started and returned a status — so it is the only case
+// classified. Everything else stays unmarked, which keeps the default the
+// conservative one: unmarked errors are still read as lessons.
+func classifyToolError(err error) string {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return ErrorFromProgram
+	}
+	return ""
 }
 
 func (e *Executor) reportToolCall(ref, name, args string) {
@@ -814,13 +865,16 @@ func (e *Executor) executeAgentToolLoop(
 		}
 		e.reportToolResult(ev)
 		e.reportToolRun(ToolRun{
-			Ref:      call.ID,
-			Name:     call.Function.Name,
-			Args:     call.Function.Arguments,
-			Output:   toolRunOutput(output),
-			OK:       success,
-			Error:    ev.Error,
-			Duration: elapsed,
+			Ref:  call.ID,
+			Name: call.Function.Name,
+			Args: call.Function.Arguments,
+			// Classified from the error value, which only exists here — by the
+			// time ev.Error is a string the answer is unrecoverable.
+			Output:    toolRunOutput(output),
+			OK:        success,
+			Error:     ev.Error,
+			ErrorKind: classifyToolError(execErr),
+			Duration:  elapsed,
 		})
 		// The work goes into the sequence where it happened — between the
 		// narration that announced it and whatever the model said next.
