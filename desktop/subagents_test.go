@@ -69,13 +69,14 @@ func TestMainAgentIsNotConfiguredByAProfile(t *testing.T) {
 func TestSubagentProfileBindings(t *testing.T) {
 	a := newSubagentTestApp(t)
 
-	// Seven bundled: three delegates and four chairs — the office's three, plus
-	// github at the coding desk. The settings page lists both kinds; a chair is a
-	// sub-agent profile managed exactly like the others, and what makes it a
-	// chair is one line of its own frontmatter, not a separate store.
+	// Eight bundled: three delegates and five chairs — the office's four (doc,
+	// sheet, deck, automation) plus github at the coding desk. The settings page
+	// lists both kinds; a chair is a sub-agent profile managed exactly like the
+	// others, and what makes it a chair is one line of its own frontmatter, not
+	// a separate store.
 	list := a.ListSubagentProfiles()
-	if len(list) != 7 {
-		t.Fatalf("ListSubagentProfiles() = %d, want 7 bundled", len(list))
+	if len(list) != 8 {
+		t.Fatalf("ListSubagentProfiles() = %d, want 8 bundled", len(list))
 	}
 
 	raw, err := a.ReadSubagentProfile("explore")

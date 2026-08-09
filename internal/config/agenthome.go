@@ -49,7 +49,34 @@ const (
 	// is one the deck writer can also reach. Specialist knowledge that every
 	// worker can see makes every worker a generalist.
 	AgentSkillsDir = "skills"
+	// AgentStartersFile is how a worker opens a conversation: the question at
+	// the top of an empty chat with it, and the few cards under that question.
+	//
+	// Part of the package rather than of the window, and that is the whole
+	// reason it exists as a file. The cards used to be a list inside the
+	// desktop app, which meant a worker the user hired could never have its
+	// own: giving one cards was editing the product. A worker that carries its
+	// own opening line is a worker whose whole self is in its folder — which is
+	// what makes hiring one a copy and not an install.
+	AgentStartersFile = "STARTERS.md"
 )
+
+// AgentStartersName is the starters file for one language.
+//
+// STARTERS.md is the worker's own language — whatever the person who wrote it
+// speaks — and STARTERS.<lang>.md is a translation of it. A worker that has
+// never been translated ships one file and is complete; the shipped five carry
+// an .en.md because the app itself ships in two languages, not because a
+// worker owes anyone a second file.
+func AgentStartersName(locale string) string {
+	locale = strings.ToLower(strings.TrimSpace(locale))
+	// Guarded because this becomes a filename: a locale arriving from the
+	// window must not be able to name a file outside the home.
+	if locale == "" || locale == "th" || strings.ContainsAny(locale, `\/:*?"<>|. `) {
+		return AgentStartersFile
+	}
+	return "STARTERS." + locale + ".md"
+}
 
 // AgentsRoot returns <DataRoot>/agents — the team's home, one folder per
 // worker. Not created here.
@@ -93,6 +120,13 @@ func AgentMemoryPath(name string) (string, error) {
 // with nothing to look up should cost nothing to ask.
 func AgentSkillsPath(name string) (string, error) {
 	return agentFile(name, AgentSkillsDir)
+}
+
+// AgentStartersPath is the starters file inside a home, for one language. Not
+// created here: most workers will never have one, and an absent file is how
+// they say "open with the ordinary four".
+func AgentStartersPath(name, locale string) (string, error) {
+	return agentFile(name, AgentStartersName(locale))
 }
 
 func agentFile(name, file string) (string, error) {

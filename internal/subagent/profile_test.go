@@ -40,11 +40,11 @@ func isolate(t *testing.T) string {
 func TestBundledProfilesAreUsable(t *testing.T) {
 	isolate(t)
 	got := List()
-	want := []string{"deck", "doc", "explore", "general", "github", "plan", "sheet"}
+	want := []string{"automation", "deck", "doc", "explore", "general", "github", "plan", "sheet"}
 	if len(got) != len(want) {
 		t.Fatalf("List() = %d profiles, want %d", len(got), len(want))
 	}
-	chairs := map[string]bool{"deck": true, "doc": true, "github": true, "sheet": true}
+	chairs := map[string]bool{"automation": true, "deck": true, "doc": true, "github": true, "sheet": true}
 	for i, p := range got {
 		if p.Name != want[i] {
 			t.Errorf("List()[%d] = %q, want %q (alphabetical)", i, p.Name, want[i])
@@ -275,8 +275,8 @@ func TestHelperHomeCannotAddADelegate(t *testing.T) {
 	if _, ok := Load("backend"); ok {
 		t.Fatal("a helper-home user file loaded as a delegate")
 	}
-	if got := len(List()); got != 7 {
-		t.Fatalf("List() = %d, want the 7 bundled only", got)
+	if got := len(List()); got != 8 {
+		t.Fatalf("List() = %d, want the 8 bundled only", got)
 	}
 	if c, ok := findConflict(Conflicts(), "backend"); !ok || c.Reason == "" {
 		t.Fatal("the locked-out file is not reported with a reason")

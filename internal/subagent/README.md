@@ -32,9 +32,12 @@ Frontmatter is parsed by `skill.ParseFrontmatter` — one `key: value` per line,
 Owner's call, 2026-08-06. Everything belonging to a worker lives under `<DataRoot>/agents/<name>/`, so "what is this agent" is a directory listing rather than a search across three trees:
 
 ```
-<DataRoot>/agents/doc/AGENT.md    frontmatter + brief    (this package)
-<DataRoot>/agents/doc/MEMORY.md   what it learned        (internal/learned)
-<DataRoot>/agents/doc/mcp.json    the servers it brings  (planned)
+<DataRoot>/agents/doc/AGENT.md       frontmatter + brief    (this package)
+<DataRoot>/agents/doc/MEMORY.md      what it learned        (internal/learned)
+<DataRoot>/agents/doc/STARTERS.md    how it opens a chat    (starters.go)
+<DataRoot>/agents/doc/STARTERS.en.md the same, translated
+<DataRoot>/agents/doc/skills/        what it knows          (skills.go)
+<DataRoot>/agents/doc/mcp.json       the servers it brings  (planned)
 ```
 
 The paths are owned by [`internal/config`](../config/agenthome.go), not here: `internal/subagent` imports `internal/learned`, so learned cannot ask this package where an agent's folder is, and a second copy of the path in the package that could not import the first is the kind of second answer this codebase treats as debt.
@@ -45,6 +48,28 @@ Two consequences worth keeping straight, both pinned by tests in [homes_test.go]
 
 - **Revert ≠ delete.** Reverting a shipped agent removes `AGENT.md` and leaves `MEMORY.md` — memory belongs to the *name*, across every rewrite of the brief. Deleting an agent the user hired takes the whole folder, because the name is gone and a stranger's notes must not seed the next agent to claim it.
 - **The pre-folder layout migrates itself** (`config.MigrateAgentHomes`), called by this package's resolver *and* by learned's path lookup, because there is no single entry point — the CLI, the desktop app and the tests all reach these files.
+
+### `STARTERS.md` — how a worker opens a conversation
+
+Owner's call, 2026-08-10. An empty chat shows a question and a few cards that fill the composer when clicked. Those used to be a list inside the desktop app, one set per room — which meant the one kind of worker a user can actually add was the one kind that could never have its own: hiring a bookkeeper gave you four generic cards forever, because giving it four real ones meant editing the product.
+
+So it is a file in the package, read by [starters.go](starters.go). Markdown that happens to parse, rather than a format with a spec — the heading is the question, each list item is a card, fields split on `|`:
+
+```markdown
+# จะให้ทำเอกสารอะไรดี?
+
+- ร่างรายงานหรือจดหมาย | ช่วยร่างเอกสารเรื่องนี้ให้หน่อย: | pencil
+- ตรวจว่าเอกสารนี้ขาดอะไรไป | ช่วยตรวจเอกสารนี้ว่าขาดอะไรบ้าง: | search
+```
+
+Title, then the sentence that lands in the composer, then optionally the mark it wears — an icon *name* from the app's own set, same as the profile's `icon:`, because the file is a `.md` somebody edits by hand. A prompt ending in `:` is the deliberate half-sentence; the space after the colon cannot survive being written in a file, so the parser puts it back.
+
+Four rules worth keeping straight, all pinned by [starters_test.go](starters_test.go):
+
+- **The home decides before the language.** A user who took a shipped worker over gets *their* file in every language — falling back to the bundled English of a definition they replaced would answer as an agent that no longer exists. Within the winning home, `STARTERS.<lang>.md` wins and `STARTERS.md` fills in.
+- **A bad line costs that line.** Prose with no `|` is a note the author left themselves, not a card missing a half. Nothing here is ever an error: no file, an unreadable file, a file of prose — all of them mean "no opening of my own", and the window falls back to the four cards it draws for any colleague.
+- **Four is a bound, not a layout.** The window owns its grid; this package caps what a file can hand back so a worker cannot return three hundred cards.
+- **This package decides nothing about the window.** It reads a file and hands back what was in it. That line is what lets a worker the app has never heard of ship its own opening.
 
 ## How one runs — and why it does not block
 
