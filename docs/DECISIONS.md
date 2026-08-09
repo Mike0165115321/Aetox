@@ -2393,6 +2393,61 @@ Both are the same defect: **a layer that names a tool cannot ask whether the too
 
 **Where the rationale goes instead:** the comment above the function. Comments are not sent; prompt text is paid for on every request, forever. That is the whole of the accounting, and it is why this package has always been written with more explanation above the strings than inside them.
 
+## 94. Decision — A Desk Owns Its Own Team, and a Team's Ceiling Is Its Desk's (2026-08-09)
+
+Owner, choosing between a per-desk home and a `desk:` field in the profile: *"เอาตาม 1 ครับ แยกแบบนั้นดีสุด"*
+
+Three sentences in `COMPANY.md` were written when every agent that existed sat at one desk, and they were written as absolutes. Giving the code door its own team — planned since §84, listed as missing in `DOOR-CODE.md` §2 and §6 — contradicts all three unless it is said plainly which part of them was the rule and which part was the circumstance.
+
+### 94.1 An agent declares its desk by where it lives, and nowhere else
+
+`<DataRoot>/agents/<desk>/<name>/` — the same folder-is-the-agent shape decided on 2026-08-06, with one level above it.
+
+This keeps the rule v0.9.3 established and did not repeal: **no profile writes `desk:`**, because the field can only ever be written wrong, and wrong is silent — a file at a desk that renders no team page still parses, still validates, still appears in `List()`, and vanishes from every door a user can walk through. `applyHomeRules` learns a second home; it does not learn a new field. `internal/subagent/profile_test.go`'s assertion that no bundled agent writes `desk:` stays true and stays where it is. That the field-free rule survives intact is the reason this shape won over writing `desk: coding` into a file.
+
+**A name still has exactly one owner, across every desk.** `jobs.agent`, `sessions.agent` and the `learned` scope are all keyed by the bare name, so two agents called `reviewer` at two desks would silently share one memory file and one work history. `resolve()` therefore reports a name held in two desk folders as a `Conflict`, exactly as it already does for a name held in both the agent and sub-agent homes. The desk folder says where an agent works. It never says who it is.
+
+The cost, stated so nobody meets it as a surprise: `config.AgentHome(name)` stops being a join and becomes a lookup, because a name no longer determines a path. Five call sites, and `MigrateAgentHomes` already exists to move what is on disk today into `agents/specialized/`.
+
+### 94.2 An agent's ceiling is its own desk's manifest — so an agent at the code desk holds a shell
+
+§84 says the `specialized` manifest is the ceiling over *every* agent, that no agent has a shell or code tools, and that this is safety by structure rather than by discipline. The mechanism stays exactly as it is — every agent still intersects with a ceiling it cannot widen from inside its own file. What changes is which ceiling: **the one belonging to the desk the agent sits at.**
+
+An agent at the coding desk therefore holds `shell`, `git` and `diagnostics`, because the coding desk does. This is the first time an agent holds a shell, and "an agent has no shell" stops being true of the system and becomes true of a desk.
+
+Why that is not the hole it sounds like: the ceiling was never what made a shell safe. §83 has said since it landed that **a desk changes what is on it, never what is allowed** — the safety gate and the approval rules are identical at every desk and for every agent, and §92 struck down a refusal that had been derived from a tool list precisely because missing tools were being read as a missing permission. A coding-desk agent running a command is gated exactly as the coding desk itself is: same assessment, same approval card, same audit row. What the ceiling actually buys is that a document writer cannot reach code tools it has no business holding — and that is preserved, because the document writer is still at `specialized`.
+
+### 94.3 Hiring inside one desk is not crossing a desk
+
+§84 says the code desk hires nobody and nobody hires it, with no exceptions offered. That rule is about the **star**: work crossing from one desk's context into another's, which is the thing that carries context, cost and blame across a boundary nobody can see.
+
+A coding-desk agent is hired by the coding desk and hands its result back to the coding desk. Nothing crosses. The absolute was written when the only agents in existence were at `specialized`, so "hires nobody" and "hires nobody at another desk" described the same world and did not have to be told apart. They do now:
+
+- **Across desks:** the code desk still hires no one and is hired by no one. The star keeps one center, and that center is `specialized`.
+- **Within a desk:** a desk may hire the agents that live at it, at depth 1, and a leaf is still a leaf — a coding-desk agent hires nobody in turn.
+
+### What this does not decide
+
+Which agents sit at the code desk (`reviewer` / `explore` / `tester` have been talked about; none is chosen here), and the team **loop** — architect, approved design, parallel build, assemble, disband — which still needs plan mode back from §44 first. This decision is the room and the rule for who may sit in it, not the people and not the choreography.
+
+## 95. Decision — Waiting Is a Condition, Not a Sleep (2026-08-10)
+
+Owner: *"ระหว่างที่รอระบบภายนอกทำงาน … ควรจะมีระบบรอเหมือน Claude Code แบบหยุดเรียกโมเดลสักแปบ รอมันโหลดเสร็จ"*
+
+The background-shell tools left one round-trip on the table. `shell_output` returns at once, always, and its own description told the model what that costs: *"nothing yet is not a failure, call again."* Every one of those calls-again is a full model round paid for learning nothing — a three-minute build could burn ten turns saying "still going." The work Aetox exists for — builds, installs, servers coming up on this machine — is exactly the work where waiting happens most.
+
+**The shape rejected first: a sleep tool.** `sleep(seconds)` forces the model to guess a duration, and both guesses are wrong — too short polls anyway, too long sits idle after the work already finished. The model knows *what* it is waiting for, never *how long*. So the model names the condition and the process does the waiting: `shell_output` gains `wait_for` (a regex against new output, or the sentinel `"exit"`) and `wait_timeout_seconds` (default 60, ceiling 600), and blocks until match, exit, or timeout — whichever is first.
+
+**A field, not a tool.** A new tool is ~300–500 tokens on every request forever (§ the 8,800-token audit that already ruled "trim descriptions, don't add doors"); two fields on an existing tool are a fraction of that, and the job registry, the drain mechanism and the kill path all already exist. The wait peeks without consuming — only the read that reports to the model marks output read.
+
+**The turn's patience follows the wait.** `toolCallDeadline` had one exception, `shell`, with the rationale *"the tool itself is the only thing that knows how long its work is about to take."* A waiting `shell_output` is the second tool that qualifies, by the same sentence: a wait the turn cuts short at 60s degrades back into the polling loop it replaces, parked behind a "STILL RUNNING" the model must poll. So the executor reads `wait_timeout_seconds` too — but only when `wait_for` is present. A plain read returns at once and buys nothing by naming a number.
+
+**Every wait has three exits and all are bounded.** The match, the command's own exit (checked once more after done, because a line printed on the way out is a match, not a miss), and the timeout — which is a report, not an error: the header says the command is still running and was not stopped. The fourth thing that cuts through is the Stop button — ctx cancellation ends the wait, and *only* the wait: the command survives, because v0.9.4's promise that the stop button stops things must not grow a new thing it fails to stop, and a dev server that dies because the user cancelled a status read is a different bug wearing the first one's fix.
+
+### What this does not decide
+
+The other half of Claude Code's shape — the finished job *waking the model up* without being asked. That means an event starts a model call no user typed, which changes what a turn is, and it is not bought here. A blocking wait covers most of the pain without touching the turn model; the wake-up waits for its own decision. The desktop's background-tasks side panel (running jobs, elapsed, a stop button per row — the owner pointed at Claude Code's) is spun off as its own task: it is a UI over a registry that already answers every question the panel asks.
+
 ## 96. Decision — Do Not Ask the Model to Match What It Cannot See, and Do Not Answer a Failure With "Look Again" (2026-08-09)
 
 Owner: *"เครื่องมือ edit เคยล้มซ้ำ ๆ ด้วยเหตุเดียวกัน … เลี่ยงรูปแบบที่ชนเงื่อนไขนี้ตั้งแต่ครั้งแรก"*
@@ -2416,3 +2471,52 @@ Owner: *"เครื่องมือ edit เคยล้มซ้ำ ๆ ด
 **`write` carried the second half of it.** The prompt sends `write` here for the "replacing nearly all of an existing file" case, and it wrote the caller's bytes verbatim — so on a CRLF checkout, replacing one function rewrote every line of the file in git's eyes. The model meant to change a function; the diff said it touched the whole file. Overwriting an existing file now keeps that file's line endings. **A file that does not exist yet is left exactly as typed** — there is no convention to honour, and choosing one there would be the tool overreaching, which is why the check is on the outgoing file rather than on the platform.
 
 **The rule this generalises to, written into [internal/skill/README.md](../internal/skill/README.md):** never require the model to match something it cannot see, and never answer a failure with "go and look again" when the tool can answer it. A tool that can diagnose and hands the diagnosis back instead is spending the user's round to avoid its own.
+
+---
+
+## 97. Decision — A Second Engine Is Another Dialect, Not Another Agent; and a Server May Be Taken in Part (2026-08-10)
+
+Owner: *"ผมกลัวที่ มันจะไม่ครบอ่ะดิ ถ้ามันจะเยอะขนาดนั้น ทำเอเจนสำหรับ n8n โดยเฉพาะ ไปเลยดีกว่าไหม แต่ willmill แม่งดีว่ะ"*
+
+Windmill arrived, and with it the question §92.3 had deferred: one automation agent that speaks two dialects, or one agent per product. The pull toward splitting was the tool count — two engines' tools in one context looked like too many.
+
+**Splitting was refused, and the number that refused it is already in the repository.** [desktop/tool_budget_test.go](../desktop/tool_budget_test.go) records that hiring an agent costs ~58 tokens **on every request from every user**, because `task` names the team inside its own description. Two vendor agents is ~116 tokens forever, paid by people who have never automated anything. The tools, meanwhile, do not add up the way they appear to: `connect.Allows` withholds an engine's tools until that engine is attached, so a user who runs one engine never carries the other's. **The cost of splitting is global and permanent; the cost of carrying both dialects is local and only paid by the user who chose both.** The identity prose would also have been copied, and two copies drift — which is the same failure §91 named when it refused to make an agent out of a file extension.
+
+**So the shape stays: one agent, dialect sections, one skill per engine.** `TestTheAutomationAgentBelongsToNoVendor` already pinned that the identity names no product; it now has a second dialect beside the first, which is exactly the change that test was written to make cheap.
+
+### 97.1 Windmill comes in as a connection like n8n, and not through its own MCP server
+
+Windmill ships an MCP server in the product — Community Edition included, `createFlow` and `updateFlow` among its tools, streamable HTTP with a header, which [internal/mcp/client.go](../internal/mcp/client.go) already speaks. It was the cheaper road and it was recommended: a working write path for no client at all.
+
+**It was not taken, and the reason is what a second mechanism would have cost everywhere else.** An engine reached through somebody else's server is an engine whose calls arrive by a different route than n8n's: a different permission rule, a different shape in `tool_runs`, a different Settings page to switch it on, and a different sentence in the agent's prompt explaining which is which. The user does not have "an automation engine connected" — they have one of two kinds of thing, and every surface downstream has to know which. That is the seam §92.3 was written to prevent, arriving one layer lower than expected.
+
+So [internal/automation/windmill](../internal/automation/windmill) is a client like [internal/automation/n8n](../internal/automation/n8n), Windmill is a `connection:` in the same catalog with the same `Family: FamilyAutomation`, and both engines are switched on in the same place. The MCP route stays available and is now a fallback with a written reason rather than a road not looked at: if Windmill's API moves somewhere the client cannot follow, the server is still there.
+
+What this cost, recorded because the budget test asks for it: ten engine tools now sit in the registry instead of five.
+
+### 97.2 A `needs:` entry may name alternatives, and the nearest one is the one reported
+
+`needs: connection:n8n | connection:windmill` — met when **any** alternative is met. It spans kinds as readily as it spans ids (`connection:x | mcp:y` is valid), which is what keeps 97.1 reversible. Without this the automation agent's declaration was false for every Windmill user: the roster told them they were missing n8n, which they had never wanted, and a readiness warning that is false teaches people to ignore the roster.
+
+`|` inside the entry rather than a second frontmatter key, because the alternation belongs to the requirement and not to the agent: an agent may want "either of these" for one thing and "definitely this" for another, and a key cannot say which of its entries go together.
+
+When none is met, **one** need is reported, not a list — two lines read as two missing things and the agent asks the user to set up both, when the second may be one they deliberately did not choose. The one reported is the one nearest to working (`closeness` in [internal/subagent/needs.go](../internal/subagent/needs.go)), so an account already connected and one toggle away beats a product that is not installed. Reporting the first-written would routinely send the user to do the expensive thing.
+
+### 97.3 A server may be taken in part — as an allowlist, never as a denial list
+
+n8n-mcp is two products in one box: 7 tools answer what n8n's own API cannot (it publishes no node schemas), and 16 write workflows, which Aetox already does through its own tools, its own permission rules and its own `tool_runs` log. Taking the whole server puts a second way to write in front of the model, and whichever it happened to pick would decide whether the user's record of what was done to their instance had the entry.
+
+`deny:` on the profile could already have cut those 16 today. **It is the wrong instrument**, and the reason is the failure mode rather than the effect: a denial list is written against somebody else's catalogue, so the day that server ships a seventeenth write tool it arrives switched on and nothing says so. `Tools` on the server config ([internal/mcp/client.go](../internal/mcp/client.go)) is the allowlist form — new tools stay out until somebody adds them on purpose.
+
+Two details that are the whole point of it being safe:
+
+- **Both spellings match.** The server calls it `get_node`; Aetox shows it as `n8n-docs_get_node`. Both are names the user can read off a screen, and accepting only one would mean a list copied from the more natural place silently selected nothing. Which forced the list to resolve against the server's whole catalogue rather than one tool at a time: a server whose own names already begin with its server name makes the two spellings **collide** — on a server named `n8n`, `n8n_validate_workflow` is the bridged name of n8n-mcp's docs tool `validate_workflow` and the raw name of its workflow-writing `n8n_validate_workflow`. An ambiguous entry is refused by name, because guessing would sometimes admit a write tool to a list written to exclude every one of them, silently, through the mechanism built to prevent exactly that.
+- **A list that matches nothing is an error, not an empty server.** A typo and an upstream rename look identical from here, and both leave an agent with no tools and nothing on screen saying why. It fails loudly instead — the same principle `needs:` was built on.
+
+Empty means take everything, so every server configured today is unchanged.
+
+**It is on the Settings form, under More options, and not only in the file.** The `for:` field's own note says why: a rule the user cannot see, edit or switch off is not a switch. That put one more thing on the save path to get right — the form must be able to *clear* a list, so an empty box has to mean empty, while a caller that omits the field entirely must leave the stored one alone. Absent and empty are different answers here, and `TestTheFormOwnsTheAllowlistAndSilenceDoesNot` pins both directions.
+
+### What this does not decide
+
+Whether to adopt n8n-mcp's 7 documentation tools at all. That is now a reversible decision rather than an architectural one, which is why it was left until after the allowlist existed. The counter-argument on the record: its node schemas are a snapshot of the n8n version it was built against, not of the user's instance, so **read-the-real-workflow stays the rule** — the tools would reduce guessing, not remove it.

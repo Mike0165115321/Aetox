@@ -23,7 +23,9 @@
 | [office.go](office.go) | The desk picker (`ListModes`), the office roster (`ListChairs` — sub-agent profiles that declare `desk: specialized`, listed with the tools they get *after* the ceiling) and the received-work feed (`ListReceivedJobs`, a query over `jobs` where `parent_ref` is set). No new state: a desk is a file, a chair is a file, the feed is the record §82 already writes. |
 | [artifacts.go](artifacts.go) | `ListArtifacts` — the ผลงาน page, swept live from `<root>/output/<session>` across the unfocused root and every project opened. The disk is the index on purpose: an index that can disagree with the folder shows files that are gone and hides files that are there. |
 | [browser.go](browser.go) | Native WebView2 tab host via raw Win32 syscalls — Windows-only. Read [browser-security](../docs/architecture/browser-security-2026-07-21.md) **before** touching `onMessage`/`metaScript`/`textScript`. `CloseAllBrowserTabs` (called once by the frontend on load) kills any native tab window orphaned by a previous frontend lifetime — a `wails dev` full reload wipes the JS-side `workbench` store without ever running `BrowserPane`'s `onDestroy`, so the Go-side window would otherwise float at its last position forever. |
-| [workbench.go](workbench.go) | `browser_open/read/click/type` as `skill.Tool` (agent-facing; ref-tagging pattern) — registered `SourceExternal`. |
+| [workbench.go](workbench.go) | The workbench tools as `skill.Tool` (agent-facing) — registered `SourceExternal`. Holds the four browser implementations behind the ref-tagging pattern. |
+| [browser_tool.go](browser_tool.go) | The one `browser` tool the model sees: actions `open`/`read`/`click`/`type`, gated per action on the old `browser_*` names so `tools:` and `categories:` still narrow. |
+| [engine_server.go](engine_server.go) | `n8n_server_start` / `windmill_server_start` — the agent checks and starts its own engine with the command saved in Settings. |
 | [terminal.go](terminal.go) | User-facing terminal pane (ConPTY) — independent of the agent's `shell` tool. |
 | [main.go](main.go) | Wails bootstrap. |
 

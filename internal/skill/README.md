@@ -28,7 +28,7 @@ File ops ([read.go](read.go) (numbers every line like `cat -n`, `offset`/`limit`
 
 **Binaries that ship with Aetox** ([bundled.go](bundled.go)) — poppler and ffmpeg arrive as plain archives with no installer, so nothing puts them on PATH. The Windows installer unpacks each into the install directory ([project.nsi](../../desktop/build/windows/installer/project.nsi)) and `bundledBinary` looks there before falling back to PATH. Tesseract is not in this list: its own installer registers itself, so PATH finds it.
 
-Desktop-only browser tools (`browser_open/read/click/type`) are **not** here — they live in [desktop/workbench.go](../../desktop/workbench.go) and register as `SourceExternal`. So the count the model actually sees in the desktop app is 41: these 32 (the other 3 built-ins — `echo`, `fs`, `help` — are CLI-only, with no `ToolDefinition`), plus 6 workbench (the four browser tools, `ask_user`, `todo_write`), plus 3 sub-agent (`task`, `task_result`, `task_answer`), plus whatever a connected MCP server brings.
+The desktop-only `browser` tool is **not** here — it lives in [desktop/browser_tool.go](../../desktop/browser_tool.go) over implementations in [desktop/workbench.go](../../desktop/workbench.go), and registers as `SourceExternal`. It is one tool with four actions (`open`/`read`/`click`/`type`); the four old tool names remain this package's `categories:` vocabulary because they are still the per-action permission keys.
 
 ## Rules of thumb
 

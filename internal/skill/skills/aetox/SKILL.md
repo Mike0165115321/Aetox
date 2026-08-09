@@ -36,7 +36,7 @@ Skills are the deliberate exception and do **not** live here — see below.
 | `<DataRoot>/identity` | every `*.md` here is folded into the system prompt of every session |
 | `<DataRoot>/memory` | `MEMORY.md` (cross-desk) and `modes/<desk>.md` (per desk) |
 | `<DataRoot>/modes` | user desk manifests; a file here overrides the bundled desk of the same name |
-| `<DataRoot>/agents` | one folder per เอเจน: `<name>/AGENT.md` + `<name>/MEMORY.md` |
+| `<DataRoot>/agents` | one folder per เอเจน: `<name>/AGENT.md` + `<name>/MEMORY.md` + `<name>/STARTERS.md` + `<name>/skills/` |
 | `<DataRoot>/subagents` | ซับเอเจน — read-only in practice, see below |
 | `<DataRoot>/project` | โปรเจกต์ of the storefront door |
 | `<DataRoot>/prompts` | user prompt presets |
@@ -120,8 +120,8 @@ kind** — nothing inside the file decides which it is.
 - **เอเจน (agents)** — the team the user can see and chat with directly.
   Bundled ones are compiled in; the user's live in `<DataRoot>/agents/<name>/`,
   as a folder (`AGENT.md` is the definition, `MEMORY.md` is what it learned,
-  `skills/` is what it knows). Hiring one is dropping one more folder — no
-  release needed.
+  `skills/` is what it knows, `STARTERS.md` is how it opens a chat). Hiring one
+  is dropping one more folder — no release needed.
 - **ซับเอเจน (helpers)** — your own hands, never chatted with, and part of
   the system: the bundled set is the whole set. A user file in
   `<DataRoot>/subagents` is **not loaded** — it is reported as a conflict so it
@@ -145,6 +145,28 @@ before you tell a user what they must write:
 | `steps` | 24. `unlimited` removes the ceiling; a typo falls back to 24 rather than to no ceiling |
 | `model` | Whatever the session is running |
 | `icon` | Derived from what the worker produces |
+| `needs` | Nothing declared. Entries are `connection:<id>` or `mcp:<server>`, and `\|` between two of them means "either one satisfies this". A need **declares and never grants**: the grant is `for:` on the connection or the server. What it buys is that an agent missing one says so — in its own prompt, and on its page in การตั้งค่า › เอเจน |
+
+Beside `AGENT.md`, a worker may keep a `STARTERS.md` — the question at the top
+of an empty chat with it, and the cards under it. Markdown that happens to
+parse: the heading is the question, each list item is one card, split on `|`
+into title, the sentence that lands in the composer, and optionally an icon
+name. A prompt ending in `:` is the deliberate half-sentence the user finishes.
+`STARTERS.en.md` beside it is the English version. All of it is optional — a
+worker without one opens with the four cards the app draws for any colleague —
+but writing one is what makes a hired worker feel like the shipped ones, so
+offer it whenever you write an `AGENT.md`.
+
+The user also has a form for it: การตั้งค่า › เอเจน → that agent → "ประโยคเปิด
+ของเอเจนคนนี้", a headline and four rows. It writes this same file, so a file
+you wrote by hand opens in it and a card they typed there is a line you can
+edit — there is one opening, not an app copy and a file copy.
+
+```markdown
+# จะให้ปิดบัญชีอะไรดี?
+
+- กระทบยอดธนาคาร | ช่วยกระทบยอดธนาคารเดือนนี้: | chartColumn
+```
 
 The name is the **folder's** name, never a field inside the file. It may not
 contain spaces or `\ / : * ? " < > |`, and it may not collide with a
@@ -201,12 +223,22 @@ project, which roots the sandbox in a folder on disk and is a fence.
 
 Servers are configured in `<DataRoot>/mcp-servers.json`, and each entry carries
 a `for:` list naming the desks it is attached to — a desk that does not name a
-server does not get it.
+server does not get it. An entry may also carry a `tools:` list, and when it
+does, those are the only tools taken from that server; without one, all of them
+are. It is for the server that is two products in one box (§97.3).
+
+A `for:` entry may also be `agent:<name>`, which points the server at one เอเจน
+instead of a desk. That is not a narrower version of the same thing: a server
+pointed at an agent **skips that agent's `tools:` allow-list and reaches past
+its desk's ceiling**. It is the one way to give a single worker something the
+rest of the office does not have.
 
 **You have no tool that adds, edits or removes an MCP server.** There is a
 binding the Settings page calls, and nothing in your tool list reaches it. When
-a user asks you to add a server, tell them: Settings → MCP servers. Do not
-offer to edit the file for them — it is also refused to your file tools (below).
+a user asks you to add a server, tell them: Settings → MCP servers — or, for
+one agent, การตั้งค่า › เอเจน → that agent → กล่อง "MCP เฉพาะตัวนี้", which
+writes the same `for:` list from the other end. Do not offer to edit the file
+for them — it is also refused to your file tools (below).
 
 You do not need the file to answer questions about MCP: every tool bridged from
 a server is already in your tool list and says which server it came from.
