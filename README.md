@@ -116,7 +116,7 @@ one you were in.
 | **Who it is for** | Anyone — including someone who has never opened a folder | Developers |
 | **Where it works** | Your whole machine (credential stores always refused) | The project folder you opened, plus folders you add |
 | **What it holds** | Files, shell, web, browser, OCR, speech, PDF, Office output, a team of agents | Files, shell, git, language-server diagnostics, symbol lookup, GitHub, browser |
-| **Rooms** | Assistant · Projects · Agent team · Output gallery · Automation *(coming)* | Code, with the Workbench: editor, terminal, browser, file tree |
+| **Rooms** | Assistant · Projects · Agent team · Output gallery · Automation *(new in 0.9.5)* | Code, with the Workbench: editor, terminal, browser, file tree |
 | **What it will not do** | Developer tooling — it says so and points you next door | Slides and documents — that is the other door's work |
 
 **One engine, one store.** Two doors are two shells over the same binary, the same data
@@ -135,7 +135,7 @@ and **none of this needs a vision model.**
 | Watch video | `video_ocr` (ffmpeg + OCR) | Text with `[m:ss]` timestamps |
 | Hear audio | `audio_transcribe` (whisper.cpp, offline) | Speech to text from audio *and* video |
 | Open a PDF | `pdf_read` (poppler) | Attach it and ask; Thai comes out intact |
-| Act on the web | `browser_open` / `read` / `click` / `type` | Reads the real page and clicks by reference |
+| Act on the web | `browser` — `open` / `read` / `click` / `type` | Reads the real page and clicks by reference, in one tab |
 
 One clip can go through `video_ocr` and `audio_transcribe` together — both emit the same
 `[m:ss]` format, so the two read as a single transcript. A model that *can* see gets the
@@ -197,7 +197,7 @@ Install three hundred and **the tool block stays the same size** — 48 definiti
 across every past conversation and every tool run is a query, not an inference. **Zero
 tokens per search**, Thai and English alike.
 
-**OCR instead of a vision model.** `image_ocr`, `video_ocr` and `browser_read` turn pixels
+**OCR instead of a vision model.** `image_ocr`, `video_ocr` and the browser's `read` turn pixels
 and pages into text, so capability does not depend on the model having eyes — which is what
 makes a **9B on a consumer GPU** enough.
 
@@ -310,7 +310,7 @@ bearings; it is sold on getting you there.
 | **Code** | `diagnostics` `symbol` `shell` `shell_output` `shell_kill` `git` |
 | **Office output** | `sheet_write` `slides_write` `doc_write` |
 | **Senses** | `image_ocr` `video_ocr` `pdf_read` `audio_transcribe` |
-| **Web** | `web_fetch` `web_search` `browser_open` `browser_read` `browser_click` `browser_type` |
+| **Web** | `web_fetch` `web_search` `browser` (open · read · click · type) |
 | **GitHub** | `github_repo_summary` `github_search` `github_read_file` `github_list_files` `plugin_install` |
 | **Thinking** | `calc` `memory` `session_search` `todo_write` `ask_user` `suggest_task` `time` |
 | **Delegation** | `task` `task_result` `task_answer` `desk_list` `desk_open` `desk_terminal` |
@@ -332,9 +332,9 @@ Ollama · and the built-in `aetox`. Sign in where sign-in exists, or bring an AP
 Local models get everything a cloud one does: they pick up the models you already downloaded,
 stream the answer and the reasoning, really call tools, and count tokens into the same stats.
 
-## Status — v0.9.4
+## Status — v0.9.5
 
-The core is in place and the next layer is going up. [Release notes](docs/release-notes/v0.9.4.md)
+The core is in place and the next layer is going up. [Release notes](docs/release-notes/v0.9.5.md)
 · [roadmap to 1.0.0](ROADMAP.md) · [architecture](ARCHITECTURE.md)
 · [every decision and why](docs/DECISIONS.md).
 
