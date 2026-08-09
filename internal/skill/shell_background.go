@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -89,6 +90,15 @@ func (j *backgroundJob) Write(p []byte) (int, error) {
 		}
 	}
 	return len(p), nil
+}
+
+// peek returns what drain would return without consuming it. wait_for has to
+// look at the same window repeatedly, and only the read that reports it to the
+// model is allowed to mark it read.
+func (j *backgroundJob) peek() string {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	return string(j.buf[j.cursor:])
 }
 
 // drain returns what has arrived since the last drain and marks it read.
@@ -210,6 +220,31 @@ func (b *backgroundShells) running() []string {
 
 // --- shell_output -----------------------------------------------------------
 
+// Waiting: shell_output can block on a condition instead of reporting at once.
+//
+// Without it the model's only move while a build runs or a server starts is to
+// call shell_output, read "nothing new", and call again — every one of those a
+// full model round paid for learning nothing. The fix is not a sleep tool:
+// sleep makes the model guess a duration, and both guesses are wrong (too
+// short polls anyway, too long sits idle after the work is done). The model
+// names the condition — a line of output, or the exit — and the process waits.
+//
+// Every wait is bounded. wait_timeout_seconds caps it, the command's own exit
+// ends it early, and the turn's ctx (the Stop button) cuts through it. The
+// turn executor reads wait_timeout_seconds too, so the turn's patience
+// stretches to match the wait it was asked for (internal/turn.toolCallDeadline).
+const (
+	defaultWaitTimeout = 60 * time.Second
+	maxWaitTimeout     = 600 * time.Second
+	waitPollInterval   = 200 * time.Millisecond
+)
+
+// waitForExit is the wait_for value that means "the exit itself", not a
+// pattern. A log that literally prints the word "exit" loses the ability to
+// wait on that word — documented in the schema, and cheap next to making the
+// model juggle a second boolean.
+const waitForExit = "exit"
+
 type shellOutputSkill struct{ shells *backgroundShells }
 
 func (*shellOutputSkill) Name() string { return "shell_output" }
@@ -228,7 +263,15 @@ func (*shellOutputSkill) ToolDefinition() model.ToolDefinition {
 			},
 			"filter": map[string]any{
 				"type":        "string",
-				"description": "Keep only lines matching this regular expression. Use it on a chatty log so the one line you are waiting for is not buried.",
+				"description": "Keep only lines matching this regular expression.",
+			},
+			"wait_for": map[string]any{
+				"type":        "string",
+				"description": "Block until new output matches this regex (\"exit\": until the command finishes). Gives up after wait_timeout_seconds; the command keeps running either way.",
+			},
+			"wait_timeout_seconds": map[string]any{
+				"type":        "integer",
+				"description": "How long wait_for may block. Default 60, ceiling 600.",
 			},
 		},
 		"required":             []string{"shell_id"},
@@ -240,8 +283,8 @@ func (*shellOutputSkill) ToolDefinition() model.ToolDefinition {
 		Function: model.ToolFunction{
 			Name: "shell_output",
 			Description: "Read whatever a background command has printed since you last read it, and whether it is still running. " +
-				"Output is consumed: each call returns only what is new, so nothing has to be re-read to find the end. " +
-				"A server that is still starting may have printed nothing yet — that is not a failure, call again.",
+				"Output is consumed: each call returns only what is new. " +
+				"Prefer wait_for over polling in a loop.",
 			Parameters: payload,
 		},
 	}
@@ -256,7 +299,7 @@ func (s *shellOutputSkill) Execute(ctx context.Context, input Input) (Output, er
 	return s.ExecuteTool(ctx, map[string]any{"shell_id": args[0]})
 }
 
-func (s *shellOutputSkill) ExecuteTool(_ context.Context, args map[string]any) (Output, error) {
+func (s *shellOutputSkill) ExecuteTool(ctx context.Context, args map[string]any) (Output, error) {
 	start := time.Now()
 	id, _ := args["shell_id"].(string)
 	id = strings.TrimSpace(id)
@@ -269,6 +312,15 @@ func (s *shellOutputSkill) ExecuteTool(_ context.Context, args map[string]any) (
 	if !ok {
 		err := fmt.Errorf("no background command %q — %s", id, describeRunning(s.shells))
 		return newToolOutput("shell_output", command, "", start, false, err), err
+	}
+
+	waitNote := ""
+	if target, _ := args["wait_for"].(string); strings.TrimSpace(target) != "" {
+		note, err := waitOnJob(ctx, job, strings.TrimSpace(target), waitTimeout(args))
+		if err != nil {
+			return newToolOutput("shell_output", command, "", start, false, err), err
+		}
+		waitNote = note
 	}
 
 	fresh, overflowed := job.drain()
@@ -290,6 +342,9 @@ func (s *shellOutputSkill) ExecuteTool(_ context.Context, args map[string]any) (
 	case done:
 		header = fmt.Sprintf("[%s] %s — finished in %s", id, job.command, elapsed.Round(time.Second))
 	}
+	if waitNote != "" {
+		header += "\n" + waitNote
+	}
 	if overflowed {
 		header += "\n(earlier output was dropped — this command prints faster than it is being read)"
 	}
@@ -302,6 +357,79 @@ func (s *shellOutputSkill) ExecuteTool(_ context.Context, args map[string]any) (
 	// Not an error even when the command failed: shell_output succeeded at its
 	// own job, which is reporting. The header carries the command's fate.
 	return newToolOutput("shell_output", command, header+"\n\n"+body, start, truncated, nil), nil
+}
+
+// waitOnJob blocks until the job's unread output matches target, the job
+// exits, or the timeout passes — whichever is first. It never consumes output;
+// the drain that follows it does. The returned note names what ended the wait,
+// because "here is the output" and "I gave up waiting for it" must not read
+// the same. Only a bad pattern or a canceled turn is an error: a timeout is a
+// truthful report, and truthful reporting is this tool's whole job.
+func waitOnJob(ctx context.Context, job *backgroundJob, target string, timeout time.Duration) (string, error) {
+	var re *regexp.Regexp
+	if target != waitForExit {
+		var err error
+		if re, err = regexp.Compile(target); err != nil {
+			return "", fmt.Errorf("wait_for %q is not a valid regular expression: %w", target, err)
+		}
+	}
+	began := time.Now()
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	tick := time.NewTicker(waitPollInterval)
+	defer tick.Stop()
+	for {
+		if re != nil && re.MatchString(job.peek()) {
+			return fmt.Sprintf("(wait_for /%s/ matched after %s)", target, time.Since(began).Round(time.Second)), nil
+		}
+		if done, _, _, _ := job.status(); done {
+			// Output can land between the peek above and the exit check, and a
+			// line printed on the way out is a match, not a missed one. The job
+			// is done, so this second look is the final word.
+			if re != nil && !re.MatchString(job.peek()) {
+				return fmt.Sprintf("(/%s/ never appeared — the command ended first)", target), nil
+			}
+			if re != nil {
+				return fmt.Sprintf("(wait_for /%s/ matched after %s)", target, time.Since(began).Round(time.Second)), nil
+			}
+			return "", nil // the header already reports the exit
+		}
+		select {
+		case <-ctx.Done():
+			// The Stop button. The command keeps running — only the wait dies.
+			return "", ctx.Err()
+		case <-deadline.C:
+			what := "the command to finish"
+			if re != nil {
+				what = "/" + target + "/"
+			}
+			return fmt.Sprintf("(waited %s for %s — not yet; the command is still running and was NOT stopped)",
+				timeout.Round(time.Second), what), nil
+		case <-tick.C:
+		}
+	}
+}
+
+// waitTimeout mirrors shell's timeout_seconds handling: absent, unparseable or
+// non-positive falls back to the default, and the ceiling holds. JSON numbers
+// decode to float64, so an integer schema still arrives as one.
+func waitTimeout(args map[string]any) time.Duration {
+	var seconds float64
+	switch v := args["wait_timeout_seconds"].(type) {
+	case float64:
+		seconds = v
+	case int:
+		seconds = float64(v)
+	default:
+		return defaultWaitTimeout
+	}
+	if seconds <= 0 {
+		return defaultWaitTimeout
+	}
+	if d := time.Duration(seconds) * time.Second; d < maxWaitTimeout {
+		return d
+	}
+	return maxWaitTimeout
 }
 
 // --- shell_kill -------------------------------------------------------------

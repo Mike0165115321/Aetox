@@ -3,15 +3,22 @@
 
 // Locally vendored fork of github.com/UserExistsError/conpty v0.1.4 (MIT,
 // LICENSE kept alongside this file) — see go.mod's `replace` directive.
-// One change from upstream: createConsoleProcessAttachedToPTY now also
-// passes CREATE_NO_WINDOW. Without it, Windows 11's "default terminal
-// application" feature still spawns a real, visible Windows Terminal window
-// for the ConPTY-attached process — a documented Win11 platform quirk that
-// hits several ConPTY wrapper libraries, not something wrong with how this
-// one attaches the pseudo-console (EXTENDED_STARTUPINFO_PRESENT + the
+// One change from upstream: the child process is started with its window
+// hidden (STARTF_USESHOWWINDOW + SW_HIDE in getStartupInfoExForPTY). Without
+// that, Windows 11's "default terminal application" feature can spawn a
+// real, visible Windows Terminal window for the ConPTY-attached process — a
+// documented Win11 platform quirk that hits several ConPTY wrapper
+// libraries, not something wrong with how this one attaches the
+// pseudo-console (EXTENDED_STARTUPINFO_PRESENT + the
 // PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE attribute are exactly what Microsoft's
-// own ConPTY sample does). CREATE_NO_WINDOW is the workaround multiple
-// projects converged on; upstream hasn't picked it up as of v0.1.4.
+// own ConPTY sample does).
+//
+// The first attempt at that fix was CREATE_NO_WINDOW, and it must never come
+// back: that flag gives the child its own invisible console, which overrides
+// the pseudoconsole attachment — every shell starts fine and prints nothing
+// into the ConPTY pipes, which the terminal pane renders as solid black.
+// TestLivePTYSpeaks (desktop/terminal_live_test.go) exists to catch exactly
+// this class of mistake against the real ConPTY.
 package conpty
 
 import (
@@ -137,6 +144,16 @@ func getStartupInfoExForPTY(hpc _HPCON) (*_StartupInfoEx, error) {
 	var siEx _StartupInfoEx
 	siEx.startupInfo.Cb = uint32(unsafe.Sizeof(windows.StartupInfo{}) + unsafe.Sizeof(&siEx.attributeList[0]))
 	siEx.startupInfo.Flags |= windows.STARTF_USESTDHANDLES
+	// Hide the window the Win11 "default terminal application" feature may
+	// otherwise summon for a ConPTY-attached child. This is the hiding that
+	// does NOT break the pseudoconsole: CREATE_NO_WINDOW (the previous fix,
+	// reverted) gives the child a fresh invisible console, which overrides the
+	// PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE attachment entirely — the shell then
+	// talks to that console and the ConPTY pipes never carry a byte, which on
+	// screen is a black pane with a cursor in it. SW_HIDE only hides a window;
+	// it does not change which console the child is attached to.
+	siEx.startupInfo.Flags |= windows.STARTF_USESHOWWINDOW
+	siEx.startupInfo.ShowWindow = windows.SW_HIDE
 	var size uintptr
 
 	// first call is to get required size. this should return false.
@@ -178,7 +195,7 @@ func createConsoleProcessAttachedToPTY(hpc _HPCON, commandLine, workDir string, 
 		}
 	}
 	var envBlock *uint16
-	flags := uint32(windows.EXTENDED_STARTUPINFO_PRESENT) | uint32(windows.CREATE_NO_WINDOW)
+	flags := uint32(windows.EXTENDED_STARTUPINFO_PRESENT)
 	if env != nil {
 		flags |= uint32(windows.CREATE_UNICODE_ENVIRONMENT)
 		envBlock = createEnvBlock(env)

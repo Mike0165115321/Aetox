@@ -46,13 +46,13 @@ func (a *App) pickShell() {
 	options := a.shellOptions()
 	current := proc.FormatBackend(a.currentShell())
 
-	a.console.Println("เลือกเชลล์ที่ใช้รันคำสั่ง (ปัจจุบัน: " + a.currentShell().Name() + "):")
+	a.console.Println("เลือกเชลล์ที่ใช้รันคำสั่ง (ปัจจุบัน: " + proc.Label(a.currentShell()) + "):")
 	for i, option := range options {
 		mark := " "
 		if strings.EqualFold(proc.FormatBackend(option), current) {
 			mark = "*"
 		}
-		a.console.Printf("  %s %d) %s\n", mark, i+1, option.Name())
+		a.console.Printf("  %s %d) %s\n", mark, i+1, proc.Label(option))
 	}
 	if len(options) == 1 {
 		// Not a menu at all — say why rather than asking for a choice between
@@ -119,5 +119,5 @@ func (a *App) setShell(backend proc.Backend) {
 	}
 	// Read back rather than echoing what was asked for: "wsl" without a name
 	// resolves to a distro, and the user should see which one they got.
-	a.console.Println("คำสั่งถัดไปจะรันด้วย: " + a.currentShell().Name())
+	a.console.Println("คำสั่งถัดไปจะรันด้วย: " + proc.Label(a.currentShell()))
 }

@@ -30,7 +30,8 @@ func (a *App) shellBackend() proc.Backend {
 type ShellOption struct {
 	// Setting is the stored spelling, and what SetShell takes back.
 	Setting string `json:"setting"`
-	// Label is what the chip and the menu show.
+	// Label is what the chip and the menu show — the machine, not the shell
+	// binary (proc.Label, and the reason the two differ).
 	Label string `json:"label"`
 	// Selected marks the one in use for the focused project.
 	Selected bool `json:"selected"`
@@ -44,14 +45,16 @@ type ShellOption struct {
 // to put in front of anyone.
 func (a *App) Shells() []ShellOption {
 	current := proc.FormatBackend(a.shellBackend())
+	native := proc.Native()
 	options := []ShellOption{{
-		Setting: proc.FormatBackend(proc.Native()),
-		Label:   proc.Native().Name(),
+		Setting: proc.FormatBackend(native),
+		Label:   proc.Label(native),
 	}}
 	for _, distro := range proc.Distros() {
+		backend := proc.WSL(distro)
 		options = append(options, ShellOption{
-			Setting: proc.FormatBackend(proc.WSL(distro)),
-			Label:   proc.WSL(distro).Name(),
+			Setting: proc.FormatBackend(backend),
+			Label:   proc.Label(backend),
 		})
 	}
 	for i := range options {
@@ -65,7 +68,7 @@ func (a *App) CurrentShell() ShellOption {
 	backend := a.shellBackend()
 	return ShellOption{
 		Setting:  proc.FormatBackend(backend),
-		Label:    backend.Name(),
+		Label:    proc.Label(backend),
 		Selected: true,
 	}
 }

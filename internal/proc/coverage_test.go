@@ -23,12 +23,21 @@ import (
 // within a few lines by HideConsole on the same command. Fails loudly with the
 // file and line when it isn't.
 //
-// The one exception is a spawn whose window IS the point — launching the OS
-// file manager. HideConsole sets HideWindow and CREATE_NO_WINDOW, which on a
-// GUI program suppresses the window it was asked to show; every "open folder"
-// button in the app did nothing until that was removed. Those sites opt out
-// with an explicit marker comment rather than by being skipped silently, so the
-// exception is as visible in the source as the rule.
+// The exception is a spawn whose window IS the point, and there are two kinds.
+//
+// One is launching a GUI program — the OS file manager. HideConsole sets
+// HideWindow and CREATE_NO_WINDOW, which on a GUI program suppresses the window
+// it was asked to show; every "open folder" button in the app did nothing until
+// that was removed.
+//
+// The other is starting a long-lived server the user asked for (an n8n or a
+// Windmill, from the settings page). There the console is the only place the
+// server can say why it refused to start, and closing it is how the user stops
+// the thing — hidden, a port clash would surface as Aetox timing out with no
+// way to find out more, and a running server with no window to close.
+//
+// Both opt out with the same explicit marker rather than by being skipped
+// silently, so the exception is as visible in the source as the rule.
 // showWindowMarker is what a spawn writes to opt out: it must appear in the
 // source, so the exception is reviewable rather than a name on a skip list
 // somewhere else.

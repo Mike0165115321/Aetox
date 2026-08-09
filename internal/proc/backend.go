@@ -113,6 +113,54 @@ func FormatBackend(b Backend) string {
 	return wslSetting
 }
 
+// Label is what a person choosing a shell reads, and it is deliberately not
+// Name.
+//
+// Name answers the model's question. "cmd.exe" in the shell tool's description
+// is the instruction that decides whether the next command is written with `&&`
+// or `;`, and naming the machine there would be a worse instruction than the
+// one it replaced: Windows does not imply cmd, it is merely where cmd is. A
+// person opening the picker is asking the opposite question — not which syntax,
+// but which machine their command lands on — and "cmd.exe" answers that one
+// only for someone who already knew.
+//
+// So the two words split, and the reason to keep them split is that they drift
+// apart on purpose: the moment a second Windows backend exists this has to
+// become "Windows (cmd)" while Name stays exactly "cmd.exe".
+//
+// A package function rather than a Backend method, for FormatBackend's reason:
+// it is one more spelling of a backend, produced for one more audience, and
+// keeping the spellings together is what stops each surface inventing its own.
+func Label(b Backend) string {
+	wsl, ok := b.(*wslBackend)
+	if !ok {
+		return nativeLabel()
+	}
+	if distro := wsl.Distro(); distro != "" {
+		return "WSL: " + distro
+	}
+	return "WSL"
+}
+
+// nativeLabel names the machine rather than the shell sitting on it.
+//
+// A runtime switch rather than the build-tagged pair ShellName uses: those
+// files are split because the invocation genuinely needs platform-only imports,
+// and a string does not. One list read top to bottom is worth more here than
+// symmetry with a split made for a different reason. An unlisted GOOS falls
+// back to the shell's own name, which is wrong for a person but never blank.
+func nativeLabel() string {
+	switch runtime.GOOS {
+	case "windows":
+		return "Windows"
+	case "darwin":
+		return "macOS"
+	case "linux":
+		return "Linux"
+	}
+	return ShellName()
+}
+
 // DefaultBackendFor is the shell a workspace should start out in when the user
 // has never chosen one.
 //

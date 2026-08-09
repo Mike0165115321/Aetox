@@ -1,6 +1,7 @@
 package proc
 
 import (
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -183,5 +184,30 @@ func TestBackendPOSIXAndName(t *testing.T) {
 	}
 	if !strings.Contains(wsl.Name(), "mikedev") {
 		t.Errorf("WSL().Name() = %q, which does not say which distro", wsl.Name())
+	}
+}
+
+// The picker's word and the model's word are two different words. The
+// regression this guards is the tempting one: making the label friendlier by
+// editing Name, which quietly stops telling the model which syntax to write —
+// and nothing fails until a command comes back with `&&` that cmd cannot parse.
+func TestLabelNamesTheMachineNotTheShell(t *testing.T) {
+	wsl := WSL("mikedev")
+	if got := Label(wsl); got != "WSL: mikedev" {
+		t.Errorf("Label(WSL) = %q, want %q", got, "WSL: mikedev")
+	}
+	if !strings.Contains(wsl.Name(), "bash") {
+		t.Errorf("WSL().Name() = %q — the model is no longer told whose syntax to write", wsl.Name())
+	}
+
+	want := map[string]string{"windows": "Windows", "darwin": "macOS", "linux": "Linux"}[runtime.GOOS]
+	if want == "" {
+		t.Skipf("no label decided for GOOS %q", runtime.GOOS)
+	}
+	if got := Label(Native()); got != want {
+		t.Errorf("Label(Native()) = %q, want %q", got, want)
+	}
+	if Label(Native()) == Native().Name() {
+		t.Errorf("Label(Native()) = %q is the model's word, not a person's", Label(Native()))
 	}
 }
