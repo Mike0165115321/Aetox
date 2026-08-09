@@ -121,11 +121,16 @@ func (s *applyPatchSkill) ExecuteTool(_ context.Context, args map[string]any) (O
 			content = string(data)
 		}
 
-		switch count := strings.Count(content, e.OldString); count {
+		// Same resolution as edit, and it matters more here: one invisible `\r`
+		// used to cost the whole batch, since a patch that cannot apply in full
+		// writes nothing at all (see lineendings.go).
+		matchString, count := resolveOldString(content, e.OldString)
+		newString := newlinesLike(content, e.NewString)
+		switch count {
 		case 1:
 			// unique match, safe to replace
 		case 0:
-			err := fmt.Errorf("edit %d (%s): old_string not found; nothing was written — re-read the file and match the text exactly", i+1, e.Path)
+			err := fmt.Errorf("edit %d (%s): old_string not found; nothing was written — %s", i+1, e.Path, whyNoMatch(content, e.OldString))
 			return newToolOutput("apply_patch", command, "", start, false, err), err
 		default:
 			err := fmt.Errorf("edit %d (%s): old_string matches %d times; nothing was written — add surrounding lines to make it unique", i+1, e.Path, count)
@@ -135,7 +140,7 @@ func (s *applyPatchSkill) ExecuteTool(_ context.Context, args map[string]any) (O
 		a, r := LineDelta(e.OldString, e.NewString)
 		added += a
 		removed += r
-		staged[targetPath] = strings.Replace(content, e.OldString, e.NewString, 1)
+		staged[targetPath] = strings.Replace(content, matchString, newString, 1)
 		requested[targetPath] = e.Path
 	}
 

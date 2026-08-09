@@ -519,6 +519,7 @@ product picture in [COMPANY.md](COMPANY.md)) · §82 (the learning floor) · §4
 | §91 | An Agent Is a Colleague With a Job, Not a Tool With a Name (2026-08-08) |
 | §92 | The Code Door Is a Focus, Not a Fence; and the Automation Room Borrows Somebody Else's Clock (2026-08-09) |
 | §93 | A Prompt Layer That Names a Tool Must Be Able to Ask Whether the Tool Is Here (2026-08-09) |
+| §96 | Do Not Ask the Model to Match What It Cannot See, and Do Not Answer a Failure With "Look Again" (2026-08-09) |
 
 ---
 

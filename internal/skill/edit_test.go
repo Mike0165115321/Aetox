@@ -159,8 +159,15 @@ func TestEditSkillRefusesWhenTheFileMovedUnderIt(t *testing.T) {
 	if err == nil {
 		t.Fatal("an edit against text that is no longer in the file must fail")
 	}
-	if !strings.Contains(err.Error(), "re-read") {
-		t.Errorf("err = %v, want it to tell the model to look again", err)
+	// It used to say "re-read the file and match the text exactly", which is
+	// the most expensive recovery available and, for the failure that actually
+	// arrives, the least likely to work — see lineendings.go. The contract now
+	// is that the error says what is wrong with this old_string.
+	if !strings.Contains(err.Error(), "already been changed") {
+		t.Errorf("err = %v, want it to name why nothing matched", err)
+	}
+	if strings.Contains(err.Error(), "re-read") {
+		t.Errorf("err = %v, want a diagnosis rather than an order to read the file again", err)
 	}
 	data, _ := os.ReadFile(path)
 	if !strings.Contains(string(data), "return 2") {

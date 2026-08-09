@@ -166,6 +166,21 @@ func (s *writeSkill) Execute(_ context.Context, input Input) (Output, error) {
 	// "no file there" — a brand new file, nothing removed.
 	previous, _ := os.ReadFile(targetPath)
 
+	// Overwriting an existing file keeps that file's line endings (§96). The
+	// prompt sends `write` here for the "replacing nearly all of it" case, and
+	// on the reference platform — where every checked-out file is CRLF — taking
+	// the caller's newlines literally rewrites every line of the file in git's
+	// eyes. The model meant to change a function and the diff says it changed
+	// the whole file, which is the harm lineendings.go exists to prevent, one
+	// tool over.
+	//
+	// A new file is left exactly as typed: there is no existing convention to
+	// honour, and inventing one would be this tool overreaching. An existing but
+	// empty file reads the same way here, correctly — nothing to preserve.
+	if len(previous) > 0 {
+		content = newlinesLike(string(previous), content)
+	}
+
 	if err := os.WriteFile(targetPath, []byte(content), 0o644); err != nil {
 		return newToolOutput("write", "write "+requestPath, "", start, false, err), err
 	}

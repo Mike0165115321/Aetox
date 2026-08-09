@@ -125,10 +125,16 @@ func (s *editSkill) Execute(_ context.Context, input Input) (Output, error) {
 	replaceAll, _ := input["replace_all"].(bool)
 
 	content := string(data)
-	count := strings.Count(content, oldString)
+	// What the file actually holds for what the caller asked for, and the
+	// replacement in the file's own line endings. See lineendings.go: on the
+	// reference platform every checked-out file is CRLF and a model cannot see
+	// a `\r`, so an exact-only match failed every multi-line edit and told the
+	// model to re-read, which showed it the same invisible character again.
+	matchString, count := resolveOldString(content, oldString)
+	newString = newlinesLike(content, newString)
 	switch {
 	case count == 0:
-		err = errors.New("old_string not found in file; re-read the file and match the text exactly")
+		err = fmt.Errorf("old_string not found in file — %s", whyNoMatch(content, oldString))
 		return newToolOutput("edit", command, "", start, false, err), err
 	case count > 1 && !replaceAll:
 		// Still the default, and still the safer one: a model that meant to
@@ -142,7 +148,7 @@ func (s *editSkill) Execute(_ context.Context, input Input) (Output, error) {
 	if replaceAll {
 		replacements = count
 	}
-	updated := strings.Replace(content, oldString, newString, replacements)
+	updated := strings.Replace(content, matchString, newString, replacements)
 	if err := os.WriteFile(targetPath, []byte(updated), 0o644); err != nil {
 		return newToolOutput("edit", command, "", start, false, err), err
 	}
