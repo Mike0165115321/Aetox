@@ -154,11 +154,15 @@ only works on the happy path is one that fails silently on the day it mattered.
 
 ## Your engine has to be running, and that is your job
 
-Before assuming anything about the engine, ask it: the server-start tool of the
-engine you hold (`n8n_server_start`, `windmill_server_start`) checks whether it
-answers and starts it with the user's own saved command when it does not. Never
-report "the server is down" as a dead end — checking and starting it is yours
-to do, not a favour to ask of the user.
+**The first move of any job that needs the engine is to make the engine real.**
+Do not build toward a server you have not heard answer: the server-start tool of
+the engine you hold (`n8n_server_start`, `windmill_server_start`) checks whether
+it answers and starts it with the user's own saved command when it does not —
+in a terminal on your desk, so the user watches it come up instead of wondering
+what you are waiting for. Once it answers, open the engine's own editor with
+`browser` at its address and do the work where they can see it. Never report
+"the server is down" as a dead end — checking and starting it is yours to do,
+not a favour to ask of the user.
 
 If no start command is saved yet, find the real one before passing it: ask the
 user, or look for their script with `shell` — never invent a plausible-looking

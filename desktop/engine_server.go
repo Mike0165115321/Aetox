@@ -53,7 +53,7 @@ func (s *engineServerSkill) label() string {
 
 func (s *engineServerSkill) ToolDefinition() model.ToolDefinition {
 	return toolDef(s.Name(),
-		"Check whether the user's "+s.label()+" server is answering, and start it if it is not — with the start command saved in Settings → การเชื่อมต่อ. Waits until the server answers (cold starts run migrations; up to 90s) or clearly fails. Call this before assuming the engine is down. Pass `command` ONLY when the tool says no start command is saved: it is stored once and shown in Settings, so find the real one (ask the user, or look for their script) rather than guessing.",
+		"Check whether the user's "+s.label()+" server is answering, and start it if it is not — with the start command saved in Settings → การเชื่อมต่อ, run in a terminal on the desk where the user watches it come up. Waits until the server answers (cold starts run migrations; up to 90s) or clearly fails. Make this your first move when a job needs the engine, before assuming anything about it — and once it answers, `browser` its address so the work happens where the user can see it. Pass `command` ONLY when the tool says no start command is saved: it is stored once and shown in Settings, so find the real one (ask the user, or look for their script) rather than guessing.",
 		map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -112,11 +112,46 @@ func (s *engineServerSkill) run(_ context.Context, command string) (skill.Output
 		}
 	}
 
-	if err := s.app.StartConnectionServer(s.id); err != nil {
-		return fail(err.Error(), err)
+	// The agent starts its engine on its own desk (owner's call, 2026-08-11:
+	// "มันก็เปิดเทอมินอลขึ้นมารันเองฝั่งโต๊ะทำงานมัน") — a terminal pane in the
+	// workbench, not the detached console the Settings button opens. Same
+	// stored command, same patience, different window, and the difference is
+	// the point: the user is sitting in this session watching the agent work,
+	// and a server coming up is part of the work. The console the Settings
+	// button spawns is right for a click made from a page with no desk; from
+	// here it would be a window appearing outside the app for a thing the
+	// agent supposedly did in front of you.
+	//
+	// One behavioural consequence, accepted on purpose: a server in a desk
+	// terminal lives with the app, where the detached console outlives it. For
+	// the agent's own working session that is the better default — no orphan
+	// engine still holding a port tomorrow — and an engine meant to run
+	// forever is what the Settings button and a real service install are for.
+	saved := strings.TrimSpace(row.StartCommand)
+	if command != "" {
+		saved = command
+	}
+	if saved == "" {
+		return fail("ยังไม่ได้บอกว่าจะเปิดเซิร์ฟเวอร์นี้ด้วยคำสั่งอะไร", nil)
+	}
+	shellName, err := s.app.openDeskTerminal(saved)
+	if err != nil {
+		// No desk to open on — a headless run, or the window not up yet. The
+		// Settings door still works from anywhere, so the engine still starts;
+		// it is only the seat in the front row that could not be given.
+		if err := s.app.StartConnectionServer(s.id); err != nil {
+			return fail(err.Error(), err)
+		}
+		out.Success = true
+		out.Content = "เปิด " + row.Label + " แล้ว ตอบที่ " + row.BaseURL + " — พร้อมทำงาน"
+		out.DurationMs = time.Since(start).Milliseconds()
+		return out, nil
+	}
+	if !waitReachable(row.BaseURL, serverStartPatience) {
+		return fail("สั่งเปิด "+row.Label+" ในเทอร์มินัลบนโต๊ะแล้ว แต่ "+row.BaseURL+" ยังไม่ตอบใน 90 วินาที — อ่านเทอร์มินัลนั้นดูว่ามันติดอะไร", nil)
 	}
 	out.Success = true
-	out.Content = "เปิด " + row.Label + " แล้ว ตอบที่ " + row.BaseURL + " — พร้อมทำงาน"
+	out.Content = "เปิด " + row.Label + " ในเทอร์มินัล " + shellName + " บนโต๊ะแล้ว ตอบที่ " + row.BaseURL + " — ผู้ใช้เห็นมันรันอยู่ พร้อมทำงาน"
 	out.DurationMs = time.Since(start).Milliseconds()
 	return out, nil
 }

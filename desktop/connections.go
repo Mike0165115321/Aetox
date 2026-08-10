@@ -130,14 +130,30 @@ func (a *App) StartConnectionServer(id string) error {
 	// A server takes time to come up — n8n runs database migrations on a cold
 	// start — so the button waits rather than reporting success at the moment a
 	// process was spawned, which tells the user nothing.
-	deadline := time.Now().Add(90 * time.Second)
-	for time.Now().Before(deadline) {
-		time.Sleep(2 * time.Second)
-		if reachable(row.BaseURL) {
-			return nil
-		}
+	if waitReachable(row.BaseURL, serverStartPatience) {
+		return nil
 	}
 	return fmt.Errorf("สั่งเปิด %s แล้วแต่ %s ยังไม่ตอบใน 90 วินาที — ดูหน้าต่างที่เปิดขึ้นมาว่ามันบอกอะไร", row.Label, row.BaseURL)
+}
+
+// serverStartPatience is how long a start is given before it is called failed.
+// One number for both doors — the Settings button and the agent's tool — so
+// "the button worked but the agent gave up" cannot happen over a slow cold
+// start.
+const serverStartPatience = 90 * time.Second
+
+// waitReachable polls until something answers at the address or patience runs
+// out. Shared by every door that starts a server, because two copies of a wait
+// loop are two definitions of "it started".
+func waitReachable(baseURL string, patience time.Duration) bool {
+	deadline := time.Now().Add(patience)
+	for time.Now().Before(deadline) {
+		time.Sleep(2 * time.Second)
+		if reachable(baseURL) {
+			return true
+		}
+	}
+	return false
 }
 
 // CheckConnectionServer reports whether the address answers at all, without

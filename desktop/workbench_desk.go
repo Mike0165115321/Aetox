@@ -182,6 +182,46 @@ func (s *deskTerminalSkill) Execute(_ context.Context, input skill.Input) (skill
 	return s.run(cmd)
 }
 
+// openDeskTerminal is the one way a terminal appears on the desk from the Go
+// side: start the shell, tell the frontend to mount a pane on it, and type the
+// command in if there is one. Extracted from the tool below on 2026-08-11,
+// when the engine starter (engine_server.go) became its second caller — an
+// engine starting in a window the user watches is this exact act, and a copy
+// of these lines over there would be two ways to open the same terminal.
+func (a *App) openDeskTerminal(command string) (shellName string, err error) {
+	if a.ctx == nil {
+		return "", fmt.Errorf("UI not ready")
+	}
+	shells := a.TerminalShells()
+	if len(shells) == 0 {
+		return "", fmt.Errorf("no shell found on this machine")
+	}
+	// The first profile, not the user's saved default: that preference lives in
+	// the frontend's localStorage and the Go side cannot see it. Worth knowing
+	// rather than guessing at — if it starts mattering, the frontend has to send
+	// it over, and this comment is where to start.
+	sh := shells[0]
+
+	id, err := a.TerminalStart(sh.Path, 80, 24)
+	if err != nil {
+		return "", err
+	}
+	// The session exists before the tab does, which is the reverse of the
+	// browser's flow (there the frontend creates the window and Go polls for
+	// it). It is simpler this way round: the id is already real, so the frontend
+	// only has to mount a pane onto it, and there is nothing to wait for.
+	a.emitEvent("workbench:open-terminal", map[string]string{"id": id, "name": sh.Name})
+
+	if command != "" {
+		// A newline is what makes it run. Given to the PTY exactly as a keypress
+		// would arrive, because that is what this is: the agent typing.
+		if err := a.TerminalWrite(id, command+"\r"); err != nil {
+			return "", err
+		}
+	}
+	return sh.Name, nil
+}
+
 func (s *deskTerminalSkill) run(command string) (skill.Output, error) {
 	start := time.Now()
 	command = strings.TrimSpace(command)
@@ -193,36 +233,11 @@ func (s *deskTerminalSkill) run(command string) (skill.Output, error) {
 		return out, err
 	}
 
-	if s.app.ctx == nil {
-		return fail(fmt.Errorf("UI not ready"))
-	}
-	shells := s.app.TerminalShells()
-	if len(shells) == 0 {
-		return fail(fmt.Errorf("no shell found on this machine"))
-	}
-	// The first profile, not the user's saved default: that preference lives in
-	// the frontend's localStorage and the Go side cannot see it. Worth knowing
-	// rather than guessing at — if it starts mattering, the frontend has to send
-	// it over, and this comment is where to start.
-	sh := shells[0]
-
-	id, err := s.app.TerminalStart(sh.Path, 80, 24)
+	name, err := s.app.openDeskTerminal(command)
 	if err != nil {
 		return fail(err)
 	}
-	// The session exists before the tab does, which is the reverse of the
-	// browser's flow (there the frontend creates the window and Go polls for
-	// it). It is simpler this way round: the id is already real, so the frontend
-	// only has to mount a pane onto it, and there is nothing to wait for.
-	s.app.emitEvent("workbench:open-terminal", map[string]string{"id": id, "name": sh.Name})
-
-	if command != "" {
-		// A newline is what makes it run. Given to the PTY exactly as a keypress
-		// would arrive, because that is what this is: the agent typing.
-		if err := s.app.TerminalWrite(id, command+"\r"); err != nil {
-			return fail(err)
-		}
-	}
+	sh := ShellProfile{Name: name}
 
 	out.Success = true
 	out.DurationMs = time.Since(start).Milliseconds()

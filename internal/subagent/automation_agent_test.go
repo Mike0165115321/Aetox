@@ -443,3 +443,31 @@ func TestTheManualTriggerTrapIsTaughtWhereItIsMet(t *testing.T) {
 		}
 	}
 }
+
+// The opening move (owner's call, 2026-08-11: "หาก n8n ไม่ได้รันไว้ มันก็เปิด
+// เทอมินอลขึ้นมารันเองฝั่งโต๊ะทำงานมัน แล้วเปิดเบราว์เซอร์เองมาทำงาน"): a job
+// that needs the engine starts by making the engine real — started on the
+// agent's own desk where the user watches, then the engine's editor opened in
+// the browser. Pinned engine-neutrally, because the sentence that carries it
+// names the habit, not a vendor.
+//
+// Without this pin the failure is the original complaint verbatim: the agent
+// answers "เซิร์ฟเวอร์ไม่ได้รันอยู่ครับ" and waits, holding the very tool whose
+// description says starting it is the first move.
+func TestTheAgentIsToldToStartItsOwnEngineFirst(t *testing.T) {
+	isolate(t)
+
+	p, ok := Load("automation")
+	if !ok {
+		t.Fatal("the automation agent did not load")
+	}
+	for _, must := range []string{
+		"The first move of any job that needs the engine is to make the engine real",
+		"in a terminal on your desk",   // where the start happens
+		"open the engine's own editor", // and where the work goes next
+	} {
+		if !strings.Contains(flat(p.Prompt), must) {
+			t.Errorf("the prompt no longer says %q — the agent goes back to reporting a stopped server as a dead end", must)
+		}
+	}
+}
