@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mike0165115321/Aetox/internal/mode"
 	"github.com/Mike0165115321/Aetox/internal/skill"
 )
 
@@ -375,5 +376,32 @@ func TestTheNearestAlternativeIsTheOneReported(t *testing.T) {
 	}
 	if !unmet[0].Fixable() {
 		t.Error("the one-click fix was not offered on a need that has one")
+	}
+}
+
+// The seam, walked for this agent the way automation's was on 2026-08-10: the
+// write the engine picker makes (the connection placed on `agent:github`), then
+// the question dispatch asks (FilterRegistry under the office ceiling). The
+// agent's own remit runs through its MCP server, but the built-in `github` tool
+// is the half that works from the connection alone — and until 2026-08-10 the
+// profile simply did not name it, so the GitHub agent could not read a
+// repository without its server running. Every screen said connected; the
+// toolbox disagreed.
+func TestTheGitHubAgentReadsRepositoriesFromItsConnectionAlone(t *testing.T) {
+	needsRoot(t)
+
+	if err := config.SetConnectionTargets("github", []string{config.MCPAgentPrefix + "github"}); err != nil {
+		t.Fatalf("SetConnectionTargets: %v", err)
+	}
+	connectGitHub(t)
+
+	p, ok := Load("github")
+	if !ok {
+		t.Fatal("the github agent is not bundled")
+	}
+	ceiling, _ := mode.Load(mode.Office)
+	reg := FilterRegistry(skill.NewDefaultRegistry(skill.RegistryOptions{SandboxRoot: t.TempDir()}), p, ceiling)
+	if _, found := reg.Get("github"); !found {
+		t.Error("the github tool did not reach the github agent — connected and placed on it, and it still cannot read a repository")
 	}
 }

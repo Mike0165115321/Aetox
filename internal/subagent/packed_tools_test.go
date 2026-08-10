@@ -71,7 +71,7 @@ func TestAToolsLineNarrowsAPackedToolToTheActionsItNames(t *testing.T) {
 			// packing says: name the tool, get the tool.
 			what:        "naming the tool asks for all of it",
 			frontmatter: "tools: read, shell\n",
-			want:        []string{"run", "output", "kill"},
+			want:        []string{"run", "output", "kill", "list"},
 		},
 		{
 			// The sentence that has to keep meaning what it said. `shell_output`
@@ -84,21 +84,21 @@ func TestAToolsLineNarrowsAPackedToolToTheActionsItNames(t *testing.T) {
 		{
 			what:        "naming the tool and an action still means the tool",
 			frontmatter: "tools: read, shell, shell_kill\n",
-			want:        []string{"run", "output", "kill"},
+			want:        []string{"run", "output", "kill", "list"},
 		},
 		{
 			// deny outranks any grant (§44.0), and it has to reach inside the
 			// pack or a refusal the author wrote is one the worker never hears.
 			what:        "denying an action takes it out of a tool that was granted whole",
 			frontmatter: "tools: read, shell\ndeny: shell_kill\n",
-			want:        []string{"run", "output"},
+			want:        []string{"run", "output", "list"},
 		},
 		{
 			// No allowlist at all is the profile saying "whatever the desk has",
 			// which cannot quietly become "nothing".
 			what:        "no tools line at all is still the whole tool",
 			frontmatter: "",
-			want:        []string{"run", "output", "kill"},
+			want:        []string{"run", "output", "kill", "list"},
 		},
 	} {
 		t.Run(c.what, func(t *testing.T) {

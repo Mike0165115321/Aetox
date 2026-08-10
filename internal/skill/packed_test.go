@@ -52,7 +52,7 @@ func TestAPackedToolIsOneRegistryEntryWithItsActionsInside(t *testing.T) {
 	registry := NewDefaultRegistry(RegistryOptions{SandboxRoot: t.TempDir()})
 
 	for tool, actions := range map[string][]string{
-		"shell":  {"shell", "shell_output", "shell_kill"},
+		"shell":  {"shell", "shell_output", "shell_kill", "shell_list"},
 		"github": {"github_search", "github_repo_summary", "github_list_files", "github_read_file"},
 	} {
 		s, ok := registry.Get(tool)
@@ -136,8 +136,8 @@ func TestANarrowedToolOffersAndRunsOnlyWhatItWasGiven(t *testing.T) {
 	packed := s.(Packed)
 
 	whole, wholeSchema := definitionOf(t, s)
-	if got := enumOf(t, wholeSchema); !slices.Equal(got, []string{"run", "output", "kill"}) {
-		t.Fatalf("an unnarrowed shell offers %v, want all three", got)
+	if got := enumOf(t, wholeSchema); !slices.Equal(got, []string{"run", "output", "kill", "list"}) {
+		t.Fatalf("an unnarrowed shell offers %v, want all four", got)
 	}
 	if !strings.Contains(whole, "`kill`") {
 		t.Error("an unnarrowed shell does not describe kill")
@@ -166,7 +166,7 @@ func TestANarrowedToolOffersAndRunsOnlyWhatItWasGiven(t *testing.T) {
 	// And narrowing is a copy. The registry is shared by every session in the
 	// process, so a profile that asks for less must not take anything away from
 	// everyone else.
-	if got := enumOf(t, mustSchema(t, s)); !slices.Equal(got, []string{"run", "output", "kill"}) {
+	if got := enumOf(t, mustSchema(t, s)); !slices.Equal(got, []string{"run", "output", "kill", "list"}) {
 		t.Errorf("narrowing one caller's shell changed the shared one: %v", got)
 	}
 }

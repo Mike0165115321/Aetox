@@ -68,6 +68,7 @@ var toolCategories = map[string]string{
 	"shell":        CategoryShell,
 	"shell_output": CategoryShell,
 	"shell_kill":   CategoryShell,
+	"shell_list":   CategoryShell,
 	"git":          CategoryShell,
 
 	// Handing work back as a file somebody else's program opens.

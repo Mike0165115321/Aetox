@@ -68,11 +68,18 @@ var packs = map[string]*pack{
 	"shell": {
 		tool:     "shell",
 		fallback: "run",
-		actions:  []string{"run", "output", "kill"},
+		actions:  []string{"run", "output", "kill", "list"},
 		names: map[string]string{
 			"run":    "shell",
 			"output": "shell_output",
 			"kill":   "shell_kill",
+			// The first action born packed, and the reason it could be: a new
+			// name here costs nothing in the tool block, where a fourth
+			// standalone tool would have been a hard sell for a call this
+			// small. It exists because a lost handle used to be a dead end —
+			// the ids were only ever named inside an error message, so the
+			// model's one way to see its own jobs was to call wrong first.
+			"list": "shell_list",
 		},
 	},
 	"github": {

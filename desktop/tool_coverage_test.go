@@ -428,6 +428,14 @@ func toolCases(t *testing.T, root string, dispatcher *skill.Dispatcher) map[stri
 			// it — the handle outlives the process on purpose.
 			check: outputContains(backgroundID),
 		},
+		"shell_list": {
+			args: map[string]any{},
+			// Runs after kill in the pack's order, which is the interesting
+			// case: a finished job is still listed while it is remembered,
+			// because the model recovering a lost handle is usually looking
+			// for one whose work has already ended.
+			check: outputContains(backgroundID),
+		},
 
 		// ask_user blocks until a human answers — so the test answers, through
 		// the same binding the UI calls. This is the one tool whose real path

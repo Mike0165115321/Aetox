@@ -108,6 +108,7 @@ func (s *shellSkill) ToolDefinition() model.ToolDefinition {
 		"run":    "`run` (command) — run it and wait. This is the default: a call with no action runs a command.",
 		"output": "`output` (shell_id) — read what a background command has printed since you last read it, and whether it is still running. Output is consumed: each call returns only what is new. Prefer wait_for over polling in a loop.",
 		"kill":   "`kill` (shell_id) — stop a background command and everything it started. Kill a dev server when you are done with it rather than leaving it holding a port.",
+		"list":   "`list` — every background command still remembered, with its handle and state. The way back when a handle is no longer in your context.",
 	}
 	var actions strings.Builder
 	for _, a := range allowed {
@@ -222,6 +223,16 @@ func (s *shellSkill) ExecuteTool(ctx context.Context, args map[string]any) (Outp
 		return (&shellOutputSkill{shells: s.shells}).ExecuteTool(ctx, args)
 	case "kill":
 		return (&shellKillSkill{shells: s.shells}).ExecuteTool(ctx, args)
+	case "list":
+		start := time.Now()
+		if s.shells == nil {
+			return newToolOutput("shell", "shell list", "ไม่มีคำสั่งเบื้องหลังในบิลด์นี้", start, false, nil), nil
+		}
+		lines := s.shells.snapshot()
+		if len(lines) == 0 {
+			return newToolOutput("shell", "shell list", "ไม่มีคำสั่งเบื้องหลังที่กำลังรันหรือค้างอยู่", start, false, nil), nil
+		}
+		return newToolOutput("shell", "shell list", strings.Join(lines, "\n"), start, false, nil), nil
 	}
 
 	command, _ := args["command"].(string)

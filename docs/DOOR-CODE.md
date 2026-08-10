@@ -46,7 +46,7 @@ repo อยู่ครบข้าง ๆ กัน **ไม่ได้มี�
 ### วันนี้มีอะไร
 **เครื่องมือที่ถือ** (`internal/mode/modes/coding.md` → `categories: files, shell, code, web, agent`)
 อ่าน/เขียน/แก้ไฟล์ละเอียด (`edit`, `apply_patch`, `notebook_edit`) · ค้นด้วย `grep`/`glob` ·
-รันคำสั่งและงานเบื้องหลัง (`shell` — `run`, `output`, `kill`) · `git` ·
+รันคำสั่งและงานเบื้องหลัง (`shell` — `run`, `output`, `kill`, `list`) · `git` ·
 **`diagnostics`** (language server บอก error) · **`symbol`** (ตัวระบุนี้คืออะไร ประกาศที่ไหน) ·
 `github` (อ่าน repo — `search`, `repo_summary`, `list_files`, `read_file`) ·
 เว็บ + เบราว์เซอร์ · `task` (sub-agent) · ความจำ

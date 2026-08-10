@@ -216,6 +216,40 @@ func (b *backgroundShells) running() []string {
 	return ids
 }
 
+// snapshot is every job still remembered, one line each, for shell's `list`
+// action. Finished jobs are included as long as they are held: a model that
+// lost a handle has usually lost it to a summary, and the job it is looking for
+// may well have ended — "ended, output unread" is the answer that lets it
+// decide whether to read or to let go.
+func (b *backgroundShells) snapshot() []string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	ids := make([]string, 0, len(b.jobs))
+	for id := range b.jobs {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	lines := make([]string, 0, len(ids))
+	for _, id := range ids {
+		job := b.jobs[id]
+		done, killed, _, since := job.status()
+		state := "running " + since.Round(time.Second).String()
+		switch {
+		case killed:
+			state = "killed after " + since.Round(time.Second).String()
+		case done:
+			state = "ended after " + since.Round(time.Second).String()
+		}
+		job.mu.Lock()
+		if job.cursor < len(job.buf) {
+			state += ", output unread"
+		}
+		job.mu.Unlock()
+		lines = append(lines, fmt.Sprintf("%s  (%s)  %s", id, state, job.command))
+	}
+	return lines
+}
+
 // --- shell_output -----------------------------------------------------------
 
 // Waiting: shell_output can block on a condition instead of reporting at once.
