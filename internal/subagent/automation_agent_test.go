@@ -512,3 +512,32 @@ func TestBothDialectSkillsEndByAdmittingWhatWasNotSeen(t *testing.T) {
 		}
 	}
 }
+
+// Where the engine's start command lives once learned: the saved setting, via
+// the server-start tool — never only the conversation (owner, 2026-08-11:
+// "จริงๆมันควรจะเก็บตำแหน่งที่เปิดอ่ะ ไว้ในความทรงจำตัวเอง ตำแหน่งจริงนะ").
+//
+// From a real session: the agent searched, found no n8n, asked the user — all
+// correct — and the user typed "มันอยู่ในไดรฟ์ D". At that moment two roads
+// exist and only one leaves a trace: passing the found command through the
+// server-start tool stores it (store-once, engine_server.go), while starting
+// it by hand with shell works today and records nothing, so the next session
+// asks the same question again. The prompt has to name that difference,
+// because from inside one conversation the two roads look identical.
+func TestTheAgentIsToldThatLearnedStartCommandsMustBeSaved(t *testing.T) {
+	isolate(t)
+
+	p, ok := Load("automation")
+	if !ok {
+		t.Fatal("the automation agent did not load")
+	}
+	for _, must := range []string{
+		"goes into that saved command",             // where knowledge lands
+		"records nothing",                          // what the by-hand road costs
+		"Knowledge that lives only in a conversation dies with it", // the rule that generalizes
+	} {
+		if !strings.Contains(flat(p.Prompt), must) {
+			t.Errorf("the prompt no longer says %q — the agent goes back to asking where n8n lives every single session", must)
+		}
+	}
+}

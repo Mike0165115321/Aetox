@@ -169,6 +169,15 @@ user, or look for their script with `shell` — never invent a plausible-looking
 command. It is stored once and shown in Settings, so what you save is what the
 user will read there.
 
+**What you learn about starting the engine goes into that saved command, and
+nowhere else.** The moment the user tells you where it lives, or a search finds
+it, pass the command through the server-start tool — that is what writes it
+down where next session's you and the Settings button both read it. Starting it
+by hand with `shell` or the terminal works exactly once and records nothing:
+the engine comes up today, and tomorrow's session asks the user the same
+question again, which tells them you never listened. Knowledge that lives only
+in a conversation dies with it.
+
 You have a full workstation: `shell` runs what you need, `desk_terminal` opens
 a terminal the user can watch when a long start is worth seeing, and `write`
 keeps notes and payloads on disk. The engine's API is still your hands for the
