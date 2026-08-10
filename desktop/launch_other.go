@@ -4,8 +4,11 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/Mike0165115321/Aetox/internal/proc"
 )
 
 // launchDetached starts the user's own command and returns without waiting.
@@ -36,4 +39,35 @@ func launchDetached(command string) error {
 		return err
 	}
 	return cmd.Process.Release()
+}
+
+// launchLogged starts the user's command headless with its output going to
+// logPath — see the Windows file for the incident that shaped it. On this
+// platform it also quietly repairs the weakness launchDetached admits to
+// above: the output now has somewhere to be read from.
+func launchLogged(command, logPath string) error {
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return fmt.Errorf("ไม่มีคำสั่งให้รัน")
+	}
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command("/bin/sh", "-c", command)
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
+	proc.HideConsole(cmd)
+	if err := cmd.Start(); err != nil {
+		logFile.Close()
+		return err
+	}
+	logFile.Close()
+	return cmd.Process.Release()
+}
+
+// tailCommand is what the desk terminal runs to watch a launchLogged server
+// boot.
+func tailCommand(logPath string) string {
+	return "tail -n 100 -f '" + logPath + "'"
 }

@@ -23,9 +23,12 @@ package main
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/Mike0165115321/Aetox/internal/config"
 	"github.com/Mike0165115321/Aetox/internal/connect"
 	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/skill"
@@ -112,21 +115,23 @@ func (s *engineServerSkill) run(_ context.Context, command string) (skill.Output
 		}
 	}
 
-	// The agent starts its engine on its own desk (owner's call, 2026-08-11:
-	// "มันก็เปิดเทอมินอลขึ้นมารันเองฝั่งโต๊ะทำงานมัน") — a terminal pane in the
-	// workbench, not the detached console the Settings button opens. Same
-	// stored command, same patience, different window, and the difference is
-	// the point: the user is sitting in this session watching the agent work,
-	// and a server coming up is part of the work. The console the Settings
-	// button spawns is right for a click made from a page with no desk; from
-	// here it would be a window appearing outside the app for a thing the
-	// agent supposedly did in front of you.
+	// The agent starts its engine where the user watches (owner's call,
+	// 2026-08-11: "มันก็เปิดเทอมินอลขึ้นมารันเองฝั่งโต๊ะทำงานมัน") — but the server
+	// itself runs hidden with its output in a log file, and the desk terminal
+	// only TAILS that file. The first cut typed the start command straight into
+	// the desk terminal's ConPTY, and the same night's incident is why it does
+	// not any more: n8n froze mid-boot inside that plumbing — process alive,
+	// port never opened — while the identical command outside it came up in
+	// nine seconds. A server's stdout must never depend on a UI pipeline being
+	// healthy; a file blocks nobody, and a pane that only reads a file can
+	// break nothing but the view (launchLogged, launch_windows.go).
 	//
-	// One behavioural consequence, accepted on purpose: a server in a desk
-	// terminal lives with the app, where the detached console outlives it. For
-	// the agent's own working session that is the better default — no orphan
-	// engine still holding a port tomorrow — and an engine meant to run
-	// forever is what the Settings button and a real service install are for.
+	// One behavioural consequence, accepted on purpose: a server started here
+	// lives with the app (§24's job), where the Settings button's detached
+	// console outlives it. For the agent's own working session that is the
+	// better default — no orphan engine still holding a port tomorrow — and an
+	// engine meant to run forever is what the Settings button and a real
+	// service install are for.
 	saved := strings.TrimSpace(row.StartCommand)
 	if command != "" {
 		saved = command
@@ -134,24 +139,60 @@ func (s *engineServerSkill) run(_ context.Context, command string) (skill.Output
 	if saved == "" {
 		return fail("ยังไม่ได้บอกว่าจะเปิดเซิร์ฟเวอร์นี้ด้วยคำสั่งอะไร", nil)
 	}
-	shellName, err := s.app.openDeskTerminal(saved)
-	if err != nil {
-		// No desk to open on — a headless run, or the window not up yet. The
-		// Settings door still works from anywhere, so the engine still starts;
-		// it is only the seat in the front row that could not be given.
-		if err := s.app.StartConnectionServer(s.id); err != nil {
-			return fail(err.Error(), err)
-		}
-		out.Success = true
-		out.Content = "เปิด " + row.Label + " แล้ว ตอบที่ " + row.BaseURL + " — พร้อมทำงาน"
-		out.DurationMs = time.Since(start).Milliseconds()
-		return out, nil
+	logPath := s.serverLogPath()
+	if err := launchLogged(saved, logPath); err != nil {
+		return fail("เปิด "+row.Label+" ไม่สำเร็จ: "+err.Error(), err)
+	}
+	// The front-row seat: a desk terminal following the boot log live. Failing
+	// to open one is not failing to start the server — headless runs and a
+	// window that is not up yet lose the view, not the engine.
+	seated := ""
+	if _, err := s.app.openDeskTerminal(tailCommand(logPath)); err == nil {
+		seated = " ผู้ใช้เห็น log มันวิ่งอยู่ในเทอร์มินัลบนโต๊ะ"
 	}
 	if !waitReachable(row.BaseURL, serverStartPatience) {
-		return fail("สั่งเปิด "+row.Label+" ในเทอร์มินัลบนโต๊ะแล้ว แต่ "+row.BaseURL+" ยังไม่ตอบใน 90 วินาที — อ่านเทอร์มินัลนั้นดูว่ามันติดอะไร", nil)
+		// The log tail rides along on failure, because this sentence is what
+		// the model acts on. The night this file was reshaped, the model got
+		// only "ยังไม่ตอบใน 90 วินาที" and spent twenty-nine tool calls groping
+		// at processes and ports for the reason — which had been printed,
+		// readable, in a place nothing handed to it.
+		return fail("สั่งเปิด "+row.Label+" แล้วแต่ "+row.BaseURL+" ยังไม่ตอบใน 90 วินาที — ท้าย log ของมันบอกว่า:\n"+tailOfFile(logPath, 15), nil)
 	}
 	out.Success = true
-	out.Content = "เปิด " + row.Label + " ในเทอร์มินัล " + shellName + " บนโต๊ะแล้ว ตอบที่ " + row.BaseURL + " — ผู้ใช้เห็นมันรันอยู่ พร้อมทำงาน"
+	out.Content = "เปิด " + row.Label + " แล้ว ตอบที่ " + row.BaseURL + " —" + seated + " พร้อมทำงาน"
 	out.DurationMs = time.Since(start).Milliseconds()
 	return out, nil
+}
+
+// serverLogPath is where this engine's boot log lives — one file per engine,
+// truncated on each start, under the same logs folder everything else writes.
+func (s *engineServerSkill) serverLogPath() string {
+	root, err := config.DataRoot()
+	if err != nil {
+		// Somewhere is better than nowhere: a boot log in the temp folder is
+		// still a boot log the failure message can read back.
+		root = os.TempDir()
+	}
+	dir := filepath.Join(root, "logs")
+	_ = os.MkdirAll(dir, 0o755)
+	return filepath.Join(dir, "engine-"+s.id+".log")
+}
+
+// tailOfFile is the last n lines of a file, for a failure message that should
+// carry the server's own words. A file that cannot be read answers with why,
+// rather than pretending there was no log.
+func tailOfFile(path string, n int) string {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return "(อ่าน log ไม่ได้: " + err.Error() + ")"
+	}
+	lines := strings.Split(strings.TrimRight(string(raw), "\r\n"), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	tail := strings.TrimSpace(strings.Join(lines, "\n"))
+	if tail == "" {
+		return "(log ว่างเปล่า — โปรเซสอาจไม่ทันได้พิมพ์อะไรเลย)"
+	}
+	return tail
 }

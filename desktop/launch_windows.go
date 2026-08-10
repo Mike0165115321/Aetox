@@ -4,9 +4,12 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"syscall"
+
+	"github.com/Mike0165115321/Aetox/internal/proc"
 )
 
 // launchDetached starts the user's own command in a window of its own and
@@ -49,3 +52,50 @@ func launchDetached(command string) error {
 // newConsole is CREATE_NEW_CONSOLE. Written out rather than imported so the
 // non-Windows file next door does not have to pretend it exists.
 const newConsole = 0x00000010
+
+// launchLogged starts the user's command hidden, with everything it prints
+// going to logPath — the engine-start shape (engine_server.go).
+//
+// A third shape beside launchDetached's visible console, and the incident that
+// forced it is worth keeping: on 2026-08-11 the engine was typed into a desk
+// terminal's ConPTY so the user could watch it boot, and the boot froze — n8n
+// alive, port never opened — because a console child's stdout is a pipe some
+// part of the terminal plumbing has to keep draining, and the same command run
+// outside that plumbing came up in nine seconds. A file blocks nobody, ever.
+// The watching the desk terminal used to provide is now a tail of this file
+// (tailCommand below): the server writes, the pane only reads, and a pane that
+// wedges costs the user their view of the boot rather than the boot.
+//
+// Hidden is safe here where launchDetached documents it must not be, because
+// the two reasons its window exists — reading why the server refused, and
+// stopping it — have new answers: the refusal is in the log the tool reads
+// back on failure, and the process dies with the app through the §24 job,
+// which a detached console deliberately escapes.
+func launchLogged(command, logPath string) error {
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return fmt.Errorf("ไม่มีคำสั่งให้รัน")
+	}
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command("powershell.exe", "-NoLogo", "-ExecutionPolicy", "Bypass", "-Command", command)
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
+	proc.HideConsole(cmd)
+	if err := cmd.Start(); err != nil {
+		logFile.Close()
+		return err
+	}
+	// The file handle is the child's now; ours can close. Released rather than
+	// waited on for launchDetached's reason: the server outlives this call.
+	logFile.Close()
+	return cmd.Process.Release()
+}
+
+// tailCommand is what the desk terminal runs to watch a launchLogged server
+// boot: the log, live, from the top of this boot.
+func tailCommand(logPath string) string {
+	return "powershell -NoLogo -Command \"Get-Content -Path '" + logPath + "' -Wait -Tail 100\""
+}
