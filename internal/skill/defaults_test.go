@@ -19,10 +19,7 @@ func TestNewDefaultRegistryRegistersAllBuiltins(t *testing.T) {
 		"help", "echo", "time", "calc", "list", "read",
 		"git", "fs", "shell", "write", "sheet_write", "slides_write", "doc_write", "edit", "grep", "glob", "apply_patch", "notebook_edit", "diagnostics", "symbol", "delete", "plugin_install", "image_ocr", "video_ocr", "pdf_read", "audio_transcribe",
 		"web_fetch", "web_search", "github",
-		"n8n_workflow_list", "n8n_workflow_read", "n8n_workflow_create",
-		"n8n_workflow_update", "n8n_workflow_activate",
-		"windmill_workspace_list", "windmill_flow_list", "windmill_flow_read",
-		"windmill_flow_create", "windmill_flow_update",
+		"n8n", "windmill",
 		"skills_list", "skill_view",
 	}
 	for _, name := range want {

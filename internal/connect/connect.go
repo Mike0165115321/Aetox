@@ -254,7 +254,12 @@ var catalog = []Provider{
 		// Prefixed with the vendor id, and that is not decoration — see
 		// Provider.Tools. Windmill will want `workflow_create` too, and
 		// ProviderOfTool answers with the first match in catalog order.
+		// `n8n` is the packed tool the model is offered (skill/packed.go); the
+		// five workflow names under it stay listed because they are still the
+		// vocabulary a profile narrows with — same both-spellings rule as the
+		// github provider above.
 		Tools: []string{
+			"n8n",
 			"n8n_workflow_list", "n8n_workflow_read",
 			"n8n_workflow_create", "n8n_workflow_update", "n8n_workflow_activate",
 			// The desktop's power switch (engine_server.go). In this list so it
@@ -295,6 +300,7 @@ var catalog = []Provider{
 		RequiresAccount: true,
 		HomeAgent:       "automation",
 		Tools: []string{
+			"windmill",
 			"windmill_workspace_list", "windmill_flow_list",
 			"windmill_flow_read", "windmill_flow_create", "windmill_flow_update",
 			"windmill_server_start",

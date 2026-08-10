@@ -5,11 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/automation/n8n"
+	"github.com/Mike0165115321/Aetox/internal/model"
 )
 
 // The n8n tools: read what is on the user's instance, and write to it.
@@ -293,4 +294,127 @@ func toolDef(name, description string, properties map[string]any, required []str
 // model repair its graph instead of guessing at it.
 func n8nFail(name string, start time.Time, err error) (Output, error) {
 	return newToolOutput(name, name, "", start, false, err), err
+}
+
+// ---------- the packed tool ----------
+
+// n8nSkill is the one name the model is offered; the five above became its
+// actions on 2026-08-10 (packed.go, DECISIONS §99). They keep their types and
+// their code because they keep their work — what they stopped being is entries
+// in the tool block of every request that carries an engine.
+type n8nSkill struct {
+	// actions this caller may use, nil for all of them. Set only by Narrow —
+	// see shellSkill for why the field cannot be set from in here.
+	actions []string
+}
+
+func (*n8nSkill) Name() string { return "n8n" }
+
+func (*n8nSkill) Description() string {
+	return "จัดการ workflow บน n8n ของผู้ใช้ — ดูรายการ อ่าน สร้าง แก้ และเปิด/ปิดการทำงาน"
+}
+
+func (s *n8nSkill) allowedActions() []string {
+	p := packs["n8n"]
+	if s == nil || len(s.actions) == 0 {
+		return append([]string(nil), p.actions...)
+	}
+	return s.actions
+}
+
+func (s *n8nSkill) Actions() []string { return packs["n8n"].permissions() }
+
+func (s *n8nSkill) Narrow(named []string) Skill {
+	narrowed := *s
+	narrowed.actions = packs["n8n"].narrow(named)
+	return &narrowed
+}
+
+func (s *n8nSkill) ToolDefinition() model.ToolDefinition {
+	allowed := s.allowedActions()
+
+	// Everything the five descriptions used to say, said once per action. The
+	// activate line carries the Manual Trigger trap verbatim because the model
+	// reads it at the exact moment it is about to make that mistake — see
+	// TestTheManualTriggerTrapIsTaughtWhereItIsMet.
+	lines := map[string]string{
+		"list":     "`list` (limit?, cursor?) — workflows on the instance: id, name, active or not, node count. Paged — pass a returned next_cursor to continue.",
+		"read":     "`read` (id) — one workflow whole, every node with its parameters and the wiring, as JSON. Also the only accurate way to learn a node type's real shape before writing one.",
+		"create":   "`create` (name, nodes?, connections?, settings?) — a new workflow. Created switched off — use `activate` to start it. connections is keyed by node NAME with a doubled array: {\"A\":{\"main\":[[{\"node\":\"B\",\"type\":\"main\",\"index\":0}]]}} — outer array = output port, inner = fan-out.",
+		"update":   "`update` (id, name, nodes, connections, settings) — FULL REPLACE of a workflow, not a patch: read it first, change what you mean to, send it all back. Three of five nodes deletes the other two. Does not change active state.",
+		"activate": "`activate` (id, active?) — switch a workflow on or off. Activation means \"run by itself from now on\", so it needs a webhook, schedule or polling trigger. A Manual Trigger is NOT one of those: a workflow built to be tested from the editor cannot be activated, does not need to be, and is finished without this call — do not make it, and if you did, the refusal is not a fault in the workflow.",
+	}
+	var actions strings.Builder
+	for _, a := range allowed {
+		actions.WriteString(lines[a] + "\n")
+	}
+
+	return toolDef("n8n",
+		"Work the workflows on the user's n8n. Actions:\n"+actions.String()+"\n"+
+			strings.TrimSpace(n8nUsageHint),
+		map[string]any{
+			"action":      map[string]any{"type": "string", "enum": allowed, "description": "What to do"},
+			"id":          map[string]any{"type": "string", "description": "action=read/update/activate: workflow id from list"},
+			"limit":       map[string]any{"type": "integer", "description": "action=list: 1-250, default 50"},
+			"cursor":      map[string]any{"type": "string", "description": "action=list: next_cursor from a previous call"},
+			"name":        map[string]any{"type": "string", "description": "action=create/update: the workflow's name"},
+			"nodes":       map[string]any{"type": "array", "description": "action=create/update: node objects; [] for a blank workflow. On update: EVERY node it should have afterwards.", "items": map[string]any{"type": "object"}},
+			"connections": map[string]any{"type": "object", "description": "action=create/update: the complete wiring, keyed by node name"},
+			"settings":    map[string]any{"type": "object", "description": "action=create/update: {} is fine"},
+			"active":      map[string]any{"type": "boolean", "description": "action=activate: default true"},
+		}, []string{"action"})
+}
+
+// Execute keeps the door codes alive: `n8n <action> <args...>`, routed to the
+// action's own implementation with the action word taken off the front.
+func (s *n8nSkill) Execute(ctx context.Context, input Input) (Output, error) {
+	start := time.Now()
+	args := stringSlice(input["args"])
+	if len(args) == 0 {
+		err := fmt.Errorf("usage: n8n <%s> ...", strings.Join(s.allowedActions(), "|"))
+		return newToolOutput("n8n", "n8n", "", start, false, err), err
+	}
+	inner, err := s.innerFor(strings.ToLower(strings.TrimSpace(args[0])))
+	if err != nil {
+		return newToolOutput("n8n", "n8n", "", start, false, err), err
+	}
+	return inner.Execute(ctx, Input{"args": args[1:]})
+}
+
+func (s *n8nSkill) ExecuteTool(ctx context.Context, args map[string]any) (Output, error) {
+	start := time.Now()
+	raw, _ := args["action"].(string)
+	inner, err := s.innerFor(strings.ToLower(strings.TrimSpace(raw)))
+	if err != nil {
+		return newToolOutput("n8n", "n8n", "", start, false, err), err
+	}
+	// The graph tools read the whole argument map; `action` is not part of any
+	// graph, and it does not need stripping — writeBody's allowlist has never
+	// passed through a key it was not taught.
+	return inner.ExecuteTool(ctx, args)
+}
+
+func (s *n8nSkill) innerFor(action string) (Tool, error) {
+	p := packs["n8n"]
+	if _, known := p.names[action]; !known {
+		return nil, fmt.Errorf("unknown n8n action %q — this session may use: %s",
+			action, strings.Join(s.allowedActions(), ", "))
+	}
+	if !slices.Contains(s.allowedActions(), action) {
+		return nil, fmt.Errorf("n8n %s is not available here — this session may use: %s",
+			action, strings.Join(s.allowedActions(), ", "))
+	}
+	switch action {
+	case "list":
+		return &n8nListSkill{}, nil
+	case "read":
+		return &n8nReadSkill{}, nil
+	case "create":
+		return &n8nCreateSkill{}, nil
+	case "update":
+		return &n8nUpdateSkill{}, nil
+	case "activate":
+		return &n8nActivateSkill{}, nil
+	}
+	return nil, fmt.Errorf("n8n action %q has no implementation", action)
 }

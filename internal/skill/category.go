@@ -92,6 +92,9 @@ var toolCategories = map[string]string{
 	// A second gate sits in front of these regardless: connect.Allows will not
 	// carry them onto a desk that does not hold the n8n connection, and the
 	// model is never shown a door it cannot open.
+	// The engine tool the model is offered, and the five action names it gates
+	// on inside (packed.go) — both spellings listed, same reason as browser's.
+	"n8n":                   CategoryWeb,
 	"n8n_workflow_list":     CategoryWeb,
 	"n8n_workflow_read":     CategoryWeb,
 	"n8n_workflow_create":   CategoryWeb,
@@ -99,6 +102,7 @@ var toolCategories = map[string]string{
 	"n8n_workflow_activate": CategoryWeb,
 	"n8n_server_start":      CategoryWeb,
 
+	"windmill":                CategoryWeb,
 	"windmill_workspace_list": CategoryWeb,
 	"windmill_flow_list":      CategoryWeb,
 	"windmill_flow_read":      CategoryWeb,

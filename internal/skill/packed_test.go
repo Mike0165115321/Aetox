@@ -52,8 +52,10 @@ func TestAPackedToolIsOneRegistryEntryWithItsActionsInside(t *testing.T) {
 	registry := NewDefaultRegistry(RegistryOptions{SandboxRoot: t.TempDir()})
 
 	for tool, actions := range map[string][]string{
-		"shell":  {"shell", "shell_output", "shell_kill", "shell_list"},
-		"github": {"github_search", "github_repo_summary", "github_list_files", "github_read_file"},
+		"shell":    {"shell", "shell_output", "shell_kill", "shell_list"},
+		"github":   {"github_search", "github_repo_summary", "github_list_files", "github_read_file"},
+		"n8n":      {"n8n_workflow_list", "n8n_workflow_read", "n8n_workflow_create", "n8n_workflow_update", "n8n_workflow_activate"},
+		"windmill": {"windmill_workspace_list", "windmill_flow_list", "windmill_flow_read", "windmill_flow_create", "windmill_flow_update"},
 	} {
 		s, ok := registry.Get(tool)
 		if !ok {
@@ -106,6 +108,8 @@ func TestTheGatesBelowTheBlockStillSeeThePerActionName(t *testing.T) {
 		{"shell", map[string]any{"action": "kill", "shell_id": "bg_1"}, "shell_kill"},
 		{"github", map[string]any{"action": "search", "query": "aetox"}, "github_search"},
 		{"github", map[string]any{"action": "read_file", "repo_url": "u", "path": "p"}, "github_read_file"},
+		{"n8n", map[string]any{"action": "activate", "id": "w1"}, "n8n_workflow_activate"},
+		{"windmill", map[string]any{"action": "workspaces"}, "windmill_workspace_list"},
 		// An action this pack does not have keeps the packed name. The call is
 		// about to be refused, and naming it after an action that exists
 		// nowhere would put that word in an approval prompt.

@@ -8,11 +8,11 @@ description: How a Windmill flow and its steps are shaped — the path rules the
 ## The workspace comes first
 
 Nothing here is reachable without one, and the workspace **id** is not the name
-shown in Windmill's own interface. `windmill_workspace_list` returns the real
-one; using the display name gets a 404 that reads like a permissions problem,
-and the next hour goes on checking the token.
+shown in Windmill's own interface. `windmill` action `workspaces` returns the
+real one; using the display name gets a 404 that reads like a permissions
+problem, and the next hour goes on checking the token.
 
-Then the habit that holds on every engine: `windmill_flow_read` an existing flow
+Then the habit that holds on every engine: `windmill` action `read` an existing flow
 before writing one that uses a step you are unsure of. There is no registry of
 step types to consult here — a step is code, or a reference to something
 runnable — so the arguments a `script` step takes are that script's own, and the

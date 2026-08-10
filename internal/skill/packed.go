@@ -95,6 +95,40 @@ var packs = map[string]*pack{
 			"read_file":    "github_read_file",
 		},
 	},
+	// The two engines, packed the same day as shell and github and for a
+	// sharper reason: these are the tools about to grow. §100's proof loop
+	// wants run and executions on n8n, and as five standalone names that work
+	// would have been three more entries in the block of everyone who connected
+	// an engine — packed, it is three more lines in one description. The server
+	// starters (`n8n_server_start`, `windmill_server_start`) are not actions
+	// here: they live in the desktop, switch a process on this machine rather
+	// than speak to one, and desktop tools cannot be routed by a wrapper that
+	// lives below them.
+	"n8n": {
+		tool:    "n8n",
+		actions: []string{"list", "read", "create", "update", "activate"},
+		names: map[string]string{
+			"list":     "n8n_workflow_list",
+			"read":     "n8n_workflow_read",
+			"create":   "n8n_workflow_create",
+			"update":   "n8n_workflow_update",
+			"activate": "n8n_workflow_activate",
+		},
+	},
+	"windmill": {
+		tool: "windmill",
+		// workspaces first because it is first in every session: everything
+		// else on this engine is scoped to a workspace id that only it can
+		// report.
+		actions: []string{"workspaces", "list", "read", "create", "update"},
+		names: map[string]string{
+			"workspaces": "windmill_workspace_list",
+			"list":       "windmill_flow_list",
+			"read":       "windmill_flow_read",
+			"create":     "windmill_flow_create",
+			"update":     "windmill_flow_update",
+		},
+	},
 }
 
 // packOf returns the vocabulary of a packed tool, or nil for every other tool.

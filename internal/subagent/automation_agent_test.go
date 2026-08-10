@@ -2,6 +2,7 @@ package subagent
 
 import (
 	"context"
+	"encoding/json"
 	"regexp"
 	"slices"
 	"strings"
@@ -86,10 +87,11 @@ func TestTheAutomationAgentIsReachableAndEquipped(t *testing.T) {
 
 	// 2. It has to carry the tools it was hired for. Without these it is a
 	//    conversation about automation rather than an agent that builds one.
-	for _, want := range []string{
-		"n8n_workflow_list", "n8n_workflow_read",
-		"n8n_workflow_create", "n8n_workflow_update", "n8n_workflow_activate",
-	} {
+	//
+	//    One name per engine since the packing (§99): `n8n` and `windmill` are
+	//    each one tool with the five engine actions inside, and a profile that
+	//    names the tool gets it whole.
+	for _, want := range []string{"n8n", "windmill"} {
 		if !slices.Contains(p.Tools, want) {
 			t.Errorf("missing %s — it cannot do the job it is named for: %v", want, p.Tools)
 		}
@@ -158,7 +160,7 @@ func TestTheAutomationPromptCarriesWhatTheAPICannotTell(t *testing.T) {
 	}
 	for _, must := range []string{
 		"no endpoint that returns node types", // no schema discovery
-		"n8n_workflow_read",                   // and what to do instead
+		"`n8n` action `read`",                 // and what to do instead
 		"keyed by node *name*",                // not id
 		"replaces the whole workflow",         // no partial edit
 		"cannot be created already running",   // create, then activate
@@ -281,9 +283,9 @@ func TestTheWindmillSkillSendsTheAgentForTheWorkspaceID(t *testing.T) {
 		t.Fatalf("windmill-steps could not be opened: %v", err)
 	}
 	for _, must := range []string{
-		"windmill_workspace_list",        // where the real id comes from
+		"`windmill` action `workspaces`", // where the real id comes from
 		"not the name shown in Windmill", // and what it is not
-		"windmill_flow_read",             // read before you write, named as the tool that does it
+		"`windmill` action `read`",       // read before you write, named as the call that does it
 	} {
 		if !strings.Contains(flat(out.Content), must) {
 			t.Errorf("windmill-steps no longer says %q — that mistake is silent until it is expensive", must)
@@ -323,10 +325,10 @@ func TestAConnectionPlacedOnTheAgentReachesItsTools(t *testing.T) {
 	parent := skill.NewDefaultRegistry(skill.RegistryOptions{SandboxRoot: t.TempDir()})
 
 	// No account attached yet: placement alone must not grant. Widening past
-	// the desk must not carry the tools around the RequiresAccount half of the
-	// same gate — five tools in the block with no key behind them all fail.
-	if _, found := FilterRegistry(parent, p, ceiling).Get("n8n_workflow_list"); found {
-		t.Fatal("n8n tools handed out with no account attached — placement alone must not be a grant")
+	// the desk must not carry the tool around the RequiresAccount half of the
+	// same gate — a tool in the block with no key behind it can only fail.
+	if _, found := FilterRegistry(parent, p, ceiling).Get("n8n"); found {
+		t.Fatal("the n8n tool handed out with no account attached — placement alone must not be a grant")
 	}
 
 	// The write Connect makes when the key is accepted.
@@ -334,19 +336,34 @@ func TestAConnectionPlacedOnTheAgentReachesItsTools(t *testing.T) {
 		t.Fatalf("oauth.Set: %v", err)
 	}
 	reg := FilterRegistry(parent, p, ceiling)
-	for _, want := range []string{
-		"n8n_workflow_list", "n8n_workflow_read",
-		"n8n_workflow_create", "n8n_workflow_update", "n8n_workflow_activate",
-	} {
-		if _, found := reg.Get(want); !found {
-			t.Errorf("%s did not reach the agent — placed on it and connected, and the cut still asked only the desk", want)
+	s, found := reg.Get("n8n")
+	if !found {
+		t.Fatal("the n8n tool did not reach the agent — placed on it and connected, and the cut still asked only the desk")
+	}
+	// And it has to arrive whole. Since the packing (§99) the five engine
+	// calls are actions inside one name, so "the tool reached the agent" and
+	// "the agent can create a workflow" are separate claims — a narrowing bug
+	// could hand over a tool that lists and refuses to write.
+	var enum struct {
+		Properties struct {
+			Action struct {
+				Enum []string `json:"enum"`
+			} `json:"action"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(s.(skill.Tool).ToolDefinition().Function.Parameters, &enum); err != nil {
+		t.Fatalf("n8n parameters are not JSON: %v", err)
+	}
+	for _, want := range []string{"list", "read", "create", "update", "activate"} {
+		if !slices.Contains(enum.Properties.Action.Enum, want) {
+			t.Errorf("the agent's n8n tool is missing the %s action: %v", want, enum.Properties.Action.Enum)
 		}
 	}
 
 	// And the tools must not leak past the account the user placed: the same
 	// registry still refuses windmill's, whose connection nobody attached.
-	if _, found := reg.Get("windmill_flow_create"); found {
-		t.Error("windmill tools handed out through n8n's placement — the widening is reading the family, not the connection")
+	if _, found := reg.Get("windmill"); found {
+		t.Error("the windmill tool handed out through n8n's placement — the widening is reading the family, not the connection")
 	}
 }
 
@@ -367,13 +384,16 @@ func TestTheManualTriggerTrapIsTaughtWhereItIsMet(t *testing.T) {
 	isolate(t)
 
 	reg := skill.NewDefaultRegistry(skill.RegistryOptions{SandboxRoot: t.TempDir()})
-	activate, found := reg.Get("n8n_workflow_activate")
+	// Since the packing (§99) activate is an action of `n8n`, and the trap
+	// sentences live in that one description — the activate line of it, which
+	// is still exactly what the model reads at the moment it decides to call.
+	engine, found := reg.Get("n8n")
 	if !found {
-		t.Fatal("n8n_workflow_activate is not in the registry")
+		t.Fatal("n8n is not in the registry")
 	}
-	tool, isTool := activate.(skill.Tool)
+	tool, isTool := engine.(skill.Tool)
 	if !isTool {
-		t.Fatal("n8n_workflow_activate is not offered to the model as a tool")
+		t.Fatal("n8n is not offered to the model as a tool")
 	}
 	desc := flat(tool.ToolDefinition().Function.Description)
 	for _, must := range []string{

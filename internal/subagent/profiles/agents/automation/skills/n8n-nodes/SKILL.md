@@ -79,7 +79,7 @@ A workflow with no trigger node cannot be switched on at all.
 
 **A Manual Trigger is a node, and it is still not an activatable trigger.** This
 is the trap, because the graph looks complete: n8n counts only webhook, schedule
-and polling nodes, so `n8n_workflow_activate` on a manual-trigger workflow comes
+and polling nodes, so `n8n` action `activate` on a manual-trigger workflow comes
 back with *"has no trigger node"* about a workflow that visibly has one.
 
 What to do with that is the part worth knowing: **nothing**. Activation means

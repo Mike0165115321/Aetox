@@ -5,11 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/automation/windmill"
+	"github.com/Mike0165115321/Aetox/internal/model"
 )
 
 // The Windmill tools. Shaped like the n8n ones next door, and different in the
@@ -242,4 +243,110 @@ func (s *windmillUpdateSkill) ExecuteTool(ctx context.Context, args map[string]a
 // repair its own flow rather than guess.
 func windmillFail(name string, start time.Time, err error) (Output, error) {
 	return newToolOutput(name, name, "", start, false, err), err
+}
+
+// ---------- the packed tool ----------
+
+// windmillSkill is this engine's one name in the block — same day, same reason
+// and same shape as n8n's above (packed.go, DECISIONS §99).
+type windmillSkill struct {
+	actions []string
+}
+
+func (*windmillSkill) Name() string { return "windmill" }
+
+func (*windmillSkill) Description() string {
+	return "จัดการ flow บน Windmill ของผู้ใช้ — ดู workspace ดูรายการ อ่าน สร้าง และแก้"
+}
+
+func (s *windmillSkill) allowedActions() []string {
+	p := packs["windmill"]
+	if s == nil || len(s.actions) == 0 {
+		return append([]string(nil), p.actions...)
+	}
+	return s.actions
+}
+
+func (s *windmillSkill) Actions() []string { return packs["windmill"].permissions() }
+
+func (s *windmillSkill) Narrow(named []string) Skill {
+	narrowed := *s
+	narrowed.actions = packs["windmill"].narrow(named)
+	return &narrowed
+}
+
+func (s *windmillSkill) ToolDefinition() model.ToolDefinition {
+	allowed := s.allowedActions()
+
+	lines := map[string]string{
+		"workspaces": "`workspaces` — the user's workspaces and their IDs. Every other action is scoped to a workspace, and it takes the id — the display name is a different string and using it fails as if the flow did not exist.",
+		"list":       "`list` (workspace) — the flows in one workspace.",
+		"read":       "`read` (workspace, path) — one flow whole, every module and its input_transforms, as JSON. Also the accurate way to learn a step's real shape before writing one.",
+		"create":     "`create` (workspace, path, summary?, value?, schema?) — a new flow. value.modules is the list of steps; each step needs a stable id, because that is how later steps refer to its results.",
+		"update":     "`update` (workspace, path, summary?, value?, schema?) — FULL REPLACE, not a patch: read it first, change what you mean to, send it all back. Deploys immediately — there is no staging step.",
+	}
+	var actions strings.Builder
+	for _, a := range allowed {
+		actions.WriteString(lines[a] + "\n")
+	}
+
+	return toolDef("windmill",
+		"Work the flows on the user's Windmill. Actions:\n"+actions.String()+"\n"+windmillPathHint,
+		map[string]any{
+			"action":    map[string]any{"type": "string", "enum": allowed, "description": "What to do"},
+			"workspace": map[string]any{"type": "string", "description": "Workspace id from `workspaces` — every action but workspaces needs it"},
+			"path":      map[string]any{"type": "string", "description": "action=read/create/update: the flow's path, e.g. u/mike/daily"},
+			"summary":   map[string]any{"type": "string", "description": "action=create/update: one line the user will see in the list"},
+			"value":     map[string]any{"type": "object", "description": "action=create/update: the flow itself: {\"modules\": [...]}. On update: EVERY module it should have afterwards."},
+			"schema":    map[string]any{"type": "object", "description": "action=create/update: JSON Schema of the flow's own inputs. Without it the run form is empty."},
+		}, []string{"action"})
+}
+
+func (s *windmillSkill) Execute(ctx context.Context, input Input) (Output, error) {
+	start := time.Now()
+	args := stringSlice(input["args"])
+	if len(args) == 0 {
+		err := fmt.Errorf("usage: windmill <%s> ...", strings.Join(s.allowedActions(), "|"))
+		return newToolOutput("windmill", "windmill", "", start, false, err), err
+	}
+	inner, err := s.innerFor(strings.ToLower(strings.TrimSpace(args[0])))
+	if err != nil {
+		return newToolOutput("windmill", "windmill", "", start, false, err), err
+	}
+	return inner.Execute(ctx, Input{"args": args[1:]})
+}
+
+func (s *windmillSkill) ExecuteTool(ctx context.Context, args map[string]any) (Output, error) {
+	start := time.Now()
+	raw, _ := args["action"].(string)
+	inner, err := s.innerFor(strings.ToLower(strings.TrimSpace(raw)))
+	if err != nil {
+		return newToolOutput("windmill", "windmill", "", start, false, err), err
+	}
+	return inner.ExecuteTool(ctx, args)
+}
+
+func (s *windmillSkill) innerFor(action string) (Tool, error) {
+	p := packs["windmill"]
+	if _, known := p.names[action]; !known {
+		return nil, fmt.Errorf("unknown windmill action %q — this session may use: %s",
+			action, strings.Join(s.allowedActions(), ", "))
+	}
+	if !slices.Contains(s.allowedActions(), action) {
+		return nil, fmt.Errorf("windmill %s is not available here — this session may use: %s",
+			action, strings.Join(s.allowedActions(), ", "))
+	}
+	switch action {
+	case "workspaces":
+		return &windmillWorkspacesSkill{}, nil
+	case "list":
+		return &windmillListSkill{}, nil
+	case "read":
+		return &windmillReadSkill{}, nil
+	case "create":
+		return &windmillCreateSkill{}, nil
+	case "update":
+		return &windmillUpdateSkill{}, nil
+	}
+	return nil, fmt.Errorf("windmill action %q has no implementation", action)
 }

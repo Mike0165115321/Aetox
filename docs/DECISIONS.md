@@ -2531,7 +2531,7 @@ Owner: *"browser จริง ๆ มันควรจะแพ็ครวม�
 
 The objection worth recording, because it is what the design answers: **four names are four rights.** A profile's `tools:` grants by name, so collapsing them would have made "may look at a page" and "may act on one" the same permission — a distinction this product cannot lose, because its rule is that rights come only from a list the user can see (§44, §94). The answer was one tool on the outside and the original names still the vocabulary of permission on the inside.
 
-`shell` (3 tools) and `github` (4) follow, and the second one is where the idea had to be made general rather than copied.
+`shell` (3 tools), `github` (4), and then the two engines — `n8n` (5) and `windmill` (5) — follow, and the second one is where the idea had to be made general rather than copied. The engines are the sharpest case of the argument: they are the tools about to grow (§100's proof loop wants run and executions on n8n), and packed, that growth costs description lines instead of tool-block entries.
 
 ### 99.1 The rule: outside is the packed name, inside is the name the act always had
 
@@ -2566,6 +2566,6 @@ Three sentences a `tools:` line can say, all of them pinned by `TestAToolsLineNa
 
 ### What this cost, and what it bought
 
-Measured by [desktop/tool_budget_test.go](../desktop/tool_budget_test.go): **45 tools / ~9,764 tok → 40 tools / ~9,691 tok.** Five fewer entries, ~73 tokens off every request. The token saving is small because a packed description carries every action's line; the entry saving is the point, and so is what happens next — the executions work §100 will bring to `n8n` now costs an action rather than three more names in everyone's tool block.
+Measured by [desktop/tool_budget_test.go](../desktop/tool_budget_test.go): **45 tools / ~9,764 tok → 40 tools / ~9,728 tok** with no engine connected, and connecting an engine now adds **+2 tools / ~802 tok** where it added +6 / ~941. The token saving is modest because a packed description carries every action's line; the entry saving is the point, and so is what happens next — the executions work §100 will bring to `n8n` now costs an action rather than three more names in everyone's tool block.
 
-The names `shell_output`, `shell_kill`, `github_search`, `github_repo_summary`, `github_list_files` and `github_read_file` are no longer registry entries and can no longer be called by the model or typed as door codes. They remain, everywhere it matters: `categories:`, a profile's `tools:` and `deny:`, `connect.Allows`, the permission rules, and the sentence in the approval prompt.
+The per-action names — `shell_output`, `shell_kill`, the four `github_*` readers, the five `n8n_workflow_*` calls and the five `windmill_*` calls — are no longer registry entries and can no longer be called by the model directly (`shell <cmd>`, `github search <q>`, `n8n list` keep working as door codes, routed through the pack). They remain, everywhere it matters: `categories:`, a profile's `tools:` and `deny:`, `connect.Allows`, the permission rules, and the sentence in the approval prompt.
