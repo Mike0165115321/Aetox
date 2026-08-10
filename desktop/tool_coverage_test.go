@@ -108,31 +108,45 @@ func TestEveryToolRunsThroughTheRealDispatcher(t *testing.T) {
 	var ran, skipped []string
 
 	for _, def := range dispatcher.ToolDefinitions() {
-		name := def.Function.Name
-		tc, ok := cases[name]
-		if !ok {
-			t.Errorf("%s is offered to the model but this test does not run it — add a case, or the tool ships unexercised", name)
-			continue
-		}
-		if tc.available != nil && !tc.available() {
-			skipped = append(skipped, name+" ("+tc.why+")")
-			// Still has to be reachable: a tool the dispatcher cannot route is
-			// broken whether or not its dependency is installed.
-			assertReachable(t, dispatcher, name, tc)
-			continue
-		}
+		// A packed tool is one entry in the block and several acts inside it,
+		// so it is driven once per action rather than once (skill.PackedCalls).
+		// Packing was meant to cost the tool block, not the coverage: `github`
+		// answering for one case while three of its four actions ship
+		// unexercised is exactly the quiet gap this test exists to close.
+		//
+		// Each action is looked up under the name it had before the packing,
+		// which is also the name every gate still judges it by — so the table
+		// below did not have to be rewritten, and a reader of the report still
+		// sees which act ran.
+		for _, call := range callsOf(def.Function.Name) {
+			name := call.Permission
+			tc, ok := cases[name]
+			if !ok {
+				t.Errorf("%s is offered to the model but this test does not run it — add a case, or the tool ships unexercised", name)
+				continue
+			}
+			tc.args = withAction(tc.args, call.Action)
 
-		restore := useRealUserProfile(t, tc, realUserProfile)
-		out := runTool(t, dispatcher, app, name, tc)
-		restore()
-		if !out.Success {
-			t.Errorf("%s failed on a machine that can run it: %s", name, firstLine(out.Stderr+out.Content))
-			continue
+			if tc.available != nil && !tc.available() {
+				skipped = append(skipped, name+" ("+tc.why+")")
+				// Still has to be reachable: a tool the dispatcher cannot route
+				// is broken whether or not its dependency is installed.
+				assertReachable(t, dispatcher, def.Function.Name, tc)
+				continue
+			}
+
+			restore := useRealUserProfile(t, tc, realUserProfile)
+			out := runTool(t, dispatcher, app, def.Function.Name, tc)
+			restore()
+			if !out.Success {
+				t.Errorf("%s failed on a machine that can run it: %s", name, firstLine(out.Stderr+out.Content))
+				continue
+			}
+			if tc.check != nil {
+				tc.check(t, out, root)
+			}
+			ran = append(ran, name)
 		}
-		if tc.check != nil {
-			tc.check(t, out, root)
-		}
-		ran = append(ran, name)
 	}
 
 	sort.Strings(ran)
@@ -141,6 +155,32 @@ func TestEveryToolRunsThroughTheRealDispatcher(t *testing.T) {
 	if len(skipped) > 0 {
 		t.Logf("reachable but not runnable here (%d): %s", len(skipped), strings.Join(skipped, ", "))
 	}
+}
+
+// callsOf expands one offered tool into the calls that have to be driven: every
+// action of a packed tool, or the tool itself for everything else.
+func callsOf(tool string) []skill.PackedCall {
+	if calls := skill.PackedCalls(tool); len(calls) > 0 {
+		return calls
+	}
+	return []skill.PackedCall{{Permission: tool}}
+}
+
+// withAction copies a case's arguments with the action word added.
+//
+// A copy because the table is built once and its maps are shared: writing the
+// action into the original would leave whichever action ran last sitting in the
+// arguments of a case that never asked for one.
+func withAction(args map[string]any, action string) map[string]any {
+	if action == "" {
+		return args
+	}
+	out := make(map[string]any, len(args)+1)
+	for key, value := range args {
+		out[key] = value
+	}
+	out["action"] = action
+	return out
 }
 
 // assertModelSurfaceIsIntact catches a tool silently dropping off the list the
@@ -249,10 +289,10 @@ func startBackgroundFixture(t *testing.T, d *skill.Dispatcher) string {
 
 func toolCases(t *testing.T, root string, dispatcher *skill.Dispatcher) map[string]toolCase {
 	t.Helper()
-	// Started once and shared by both cases below. shell_kill runs before
-	// shell_output (the tools are driven in sorted order), which is the right
-	// way round: a killed job keeps its unread output, so the read still has
-	// something to return.
+	// Started once and shared by both cases below, which are driven in the
+	// pack's own order — read, then kill. Either way round works on purpose:
+	// a read before the kill finds a job that is still running, and a read
+	// after it finds one that is not, because the handle outlives the process.
 	backgroundID := startBackgroundFixture(t, dispatcher)
 	writeCoverageSkill(t)
 	return map[string]toolCase{

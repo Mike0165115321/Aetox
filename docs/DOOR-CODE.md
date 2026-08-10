@@ -46,9 +46,10 @@ repo อยู่ครบข้าง ๆ กัน **ไม่ได้มี�
 ### วันนี้มีอะไร
 **เครื่องมือที่ถือ** (`internal/mode/modes/coding.md` → `categories: files, shell, code, web, agent`)
 อ่าน/เขียน/แก้ไฟล์ละเอียด (`edit`, `apply_patch`, `notebook_edit`) · ค้นด้วย `grep`/`glob` ·
-รันคำสั่งและงานเบื้องหลัง (`shell`, `shell_output`, `shell_kill`) · `git` ·
+รันคำสั่งและงานเบื้องหลัง (`shell` — `run`, `output`, `kill`) · `git` ·
 **`diagnostics`** (language server บอก error) · **`symbol`** (ตัวระบุนี้คืออะไร ประกาศที่ไหน) ·
-`github_*` (อ่าน repo) · เว็บ + เบราว์เซอร์ · `task` (sub-agent) · ความจำ
+`github` (อ่าน repo — `search`, `repo_summary`, `list_files`, `read_file`) ·
+เว็บ + เบราว์เซอร์ · `task` (sub-agent) · ความจำ
 
 **ไม่มีบนโต๊ะนี้:** `slides_write`/`doc_write`/`sheet_write` และ
 `image_ocr`/`video_ocr`/`pdf_read`/`audio_transcribe` — อยากได้สไลด์*เกี่ยวกับ*โค้ด = งานของประตูผู้ช่วย

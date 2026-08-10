@@ -102,12 +102,12 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 		&calcSkill{},
 		&listSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
 		&readSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir, vision: opts.Vision},
-		&githubRepoSummarySkill{},
 		&gitSkill{root: opts.SandboxRoot},
 		&fsSkill{root: opts.SandboxRoot},
+		// One name, three actions: run, output, kill (packed.go). The other two
+		// types still exist and still do the work — what they stopped being is
+		// entries in the tool block of every request that carries a shell.
 		&shellSkill{root: opts.SandboxRoot, shells: shells, backend: opts.Shell},
-		&shellOutputSkill{shells: shells},
-		&shellKillSkill{shells: shells},
 		&writeSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
 		&sheetWriteSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
 		&slidesWriteSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
@@ -141,9 +141,10 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 		&audioTranscribeSkill{root: opts.SandboxRoot, speech: opts.Speech},
 		&webFetchSkill{digest: opts.Digest},
 		&webSearchSkill{},
-		&githubSearchSkill{},
-		&githubReadFileSkill{},
-		&githubListFilesSkill{},
+		// One name, four actions: search, repo_summary, list_files, read_file
+		// (github_pack.go). `plugin_install` above is not one of them — it
+		// installs rather than reads, which is a different grant.
+		&githubSkill{},
 		// Progressive skill loading (see progressive.go): these two flat
 		// definitions are how the model reaches every SKILL.md, in place of
 		// one definition per discovered skill.

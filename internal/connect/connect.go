@@ -205,7 +205,14 @@ var catalog = []Provider{
 		// so a desk with the connection switched off should not keep one tool
 		// that still goes there. Installing a skill by hand is unaffected —
 		// that is a button in Settings, not this tool.
+		//
+		// `github` is the packed tool the model is actually offered and is what
+		// this gate has to answer about, or the connection would be switched on
+		// and hand over nothing. The four names under it stay listed because
+		// they are still the vocabulary a profile narrows with, and a desk that
+		// holds the connection should carry them by either spelling.
 		Tools: []string{
+			"github",
 			"github_search", "github_repo_summary", "github_list_files",
 			"github_read_file", "plugin_install",
 		},

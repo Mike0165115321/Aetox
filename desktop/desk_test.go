@@ -131,7 +131,7 @@ func TestEachDeskSendsOnlyItsOwnTools(t *testing.T) {
 		// except the developer tools. It has the shell — safety is the gate's
 		// job, not a missing tool's (§6.2) — and no diagnostics or symbol.
 		{"assistant", assistant, true, []string{"read", "edit", "shell", "web_search", "memory", "task"}},
-		{"assistant", assistant, false, []string{"diagnostics", "symbol", "github_search"}},
+		{"assistant", assistant, false, []string{"diagnostics", "symbol", "github", "github_search"}},
 		// The three writers left this desk on the owner's call (2026-08-06):
 		// *"เมนไม่ควรทำเองสิครับ มันคืองานของเอเจนเฉพาะทางที่เราสร้างมาแล้ว"*.
 		// The office already had a chair per format — doc, deck, sheet, each

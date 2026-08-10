@@ -1586,7 +1586,7 @@ const githubRow = (over: Record<string, unknown> = {}) => [{
   id: 'github', label: 'GitHub', kind: 'token',
   token_url: 'https://github.com/settings/tokens/new',
   connected: false, env_override: false, for: [], configured: false,
-  tools: ['github_search', 'plugin_install'],
+  tools: ['github', 'plugin_install'],
   ...over,
 }]
 

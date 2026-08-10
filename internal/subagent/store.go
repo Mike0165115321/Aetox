@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/Mike0165115321/Aetox/internal/config"
@@ -284,12 +285,25 @@ func FilterRegistry(parent *skill.Registry, p Profile, ceiling *mode.Mode) *skil
 		// A server the user pointed at this agent skips the profile's
 		// allowlist, but not its denials — see Profile.Permits for why an
 		// allowlist cannot speak for tool names that arrive from a server.
+		// A packed tool is one name in the block and several rights inside it
+		// (skill.Packed), so a profile can name either spelling: the tool, or
+		// the actions of it that this worker is meant to have. `tools: shell`
+		// is a whole shell; `tools: shell_output` is permission to look in on a
+		// background command and nothing else — and it is what an AGENT.md
+		// written before the packing said, which has to keep meaning what it
+		// said.
+		//
+		// Only the allowlist half is widened. `deny:` and forcedDenials still
+		// answer first, through AllowsTool, for the tool's own name.
+		packedActions := skill.PackedActions(name)
 		if source == skill.SourceMCP && mcp.ToolBelongsTo(name, agentServers) {
 			if !p.Permits(name) {
 				continue
 			}
 		} else if !p.AllowsTool(name) {
-			continue
+			if len(packedActions) == 0 || !p.Permits(name) || !namesAnyAction(p, packedActions) {
+				continue
+			}
 		}
 		// `memory` is scoped to whoever holds it, and the parent's instance is
 		// scoped to the main agent. Inheriting it would let a delegate write into
@@ -303,6 +317,31 @@ func FilterRegistry(parent *skill.Registry, p Profile, ceiling *mode.Mode) *skil
 		if !carries(name, source) {
 			continue
 		}
+		// Which actions of a packed tool this worker gets — the question the
+		// tool itself cannot answer, because internal/skill has never heard of
+		// a profile and must not learn.
+		//
+		// Two readings of the same `tools:` line, in the order the author meant
+		// them: an action is in if the profile named it (or named the whole
+		// tool, or named nothing at all), and out if the profile denied it. A
+		// worker left with no actions is dropped rather than handed a tool that
+		// refuses every call — the same failure as being handed a tool it does
+		// not have, only harder to see from the outside.
+		if packed, ok := s.(skill.Packed); ok && len(packedActions) > 0 {
+			var named []string
+			for _, action := range packedActions {
+				if !p.Permits(action) {
+					continue
+				}
+				if len(p.Tools) == 0 || slices.Contains(p.Tools, name) || slices.Contains(p.Tools, action) {
+					named = append(named, action)
+				}
+			}
+			if len(named) == 0 {
+				continue
+			}
+			s = packed.Narrow(named)
+		}
 		if err := filtered.Register(s, source); err != nil {
 			continue // a duplicate name can't happen in a fresh registry; ignore rather than panic
 		}
@@ -314,6 +353,24 @@ func FilterRegistry(parent *skill.Registry, p Profile, ceiling *mode.Mode) *skil
 	// one door has the knowledge and the other does not.
 	attachOwnSkills(filtered, p)
 	return filtered
+}
+
+// namesAnyAction reports whether a profile's allowlist asks for a packed tool
+// by one of its action names rather than by the tool's own.
+//
+// Only reached when the allowlist did not name the tool itself, which is the
+// case worth getting right: `tools: shell_output` was a complete sentence
+// before the packing and has to stay one after it. Denials are re-asked here
+// because Permits is the half of AllowsTool that outranks any grant, and an
+// action the profile denied is not a reason to hand over the tool that carries
+// it.
+func namesAnyAction(p Profile, actions []string) bool {
+	for _, action := range actions {
+		if slices.Contains(p.Tools, action) && p.Permits(action) {
+			return true
+		}
+	}
+	return false
 }
 
 // AttendedRegistry is FilterRegistry for the runs that have a human on the

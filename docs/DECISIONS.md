@@ -2520,3 +2520,52 @@ Empty means take everything, so every server configured today is unchanged.
 ### What this does not decide
 
 Whether to adopt n8n-mcp's 7 documentation tools at all. That is now a reversible decision rather than an architectural one, which is why it was left until after the allowlist existed. The counter-argument on the record: its node schemas are a snapshot of the n8n version it was built against, not of the user's instance, so **read-the-real-workflow stays the rule** — the tools would reduce guessing, not remove it.
+
+---
+
+## 99. Decision — Packing: One Name in the Tool Block, Several Rights Inside It (2026-08-10)
+
+Owner: *"browser จริง ๆ มันควรจะแพ็ครวมกัน... หากเพิ่มจะได้ไม่ต้องเสียเวลามาไล่เปิดทีละตัว ๆ"* — and, when the objection was put that four names are four rights: *"รวมแล้วแยกย่อยข้างใน"*.
+
+`browser` was four tools describing one object. Every capability added to that object cost another entry in the tool block of **every request that carried it** — a bill paid per turn, forever, by users who never open a browser. Packed, a new capability costs an action instead.
+
+The objection worth recording, because it is what the design answers: **four names are four rights.** A profile's `tools:` grants by name, so collapsing them would have made "may look at a page" and "may act on one" the same permission — a distinction this product cannot lose, because its rule is that rights come only from a list the user can see (§44, §94). The answer was one tool on the outside and the original names still the vocabulary of permission on the inside.
+
+`shell` (3 tools) and `github` (4) follow, and the second one is where the idea had to be made general rather than copied.
+
+### 99.1 The rule: outside is the packed name, inside is the name the act always had
+
+> Outside — what the model calls, what a hook matches, what the timeline shows — is the packed name. Inside — what the approval gate judges, and what the turn measures its patience against — is still the old per-action name, because **the act has not changed**.
+
+The second half is not tidiness; it is the difference between working and broken, and it is why [internal/skill/packed.go](../internal/skill/packed.go) exists instead of four lines in each tool:
+
+- [internal/safety/safety.go](../internal/safety/safety.go) keys on the literal string `"shell"` and answers `RiskHigh` to a call it can find no command in. Pack the three shell tools naively and **reading a background command's output becomes a high-risk act the user is asked to approve** — which is how you train someone to click through the prompt that matters.
+- [internal/turn/executor.go](../internal/turn/executor.go) stretches a turn's deadline only for a `shell_output` that was asked to `wait_for` something (§53.1, §95). Under the packed name it would read `timeout_seconds` off a call that has none and **cut the wait off at sixty seconds**, degrading it back into the polling loop §95 removed.
+
+Neither failure announces itself. `Unpack` is the one function both readers now go through, and `TestTheGatesBelowTheBlockStillSeeThePerActionName` is what stops the next refactor from "cleaning up" a leftover name that six other things depend on.
+
+### 99.2 A packed tool cannot ask who is calling it, so it is told
+
+`browser` lives in `desktop` and reads the open session's profile directly (`a.chairProfile()`). `shell` and `github` live in `internal/skill`, which **must never import `desktop`** — so the answer arrives from outside: a `Packed` tool declares its per-action names, and `subagent.FilterRegistry` hands back a narrowed copy built from the profile's own `tools:` and `deny:` lines.
+
+A copy, not a mutation: the registry is shared by every session in the process, and narrowing in place would let one agent's `tools:` line quietly take an action away from everyone else.
+
+Three sentences a `tools:` line can say, all of them pinned by `TestAToolsLineNarrowsAPackedToolToTheActionsItNames`:
+
+- **naming the tool** asks for all of it — which is what every manifest written before the packing says, and it has to keep meaning that;
+- **naming only an action** (`tools: shell_output`) asks for that action and nothing else — which is *also* what a manifest written before the packing said, in the days when it was a whole tool name;
+- **naming nothing** is not "nothing allowed". Reading silence as a denial hands an agent a tool that refuses every call, which is the same fault as handing it a tool it does not have, only harder to see from outside.
+
+`deny:` reaches inside the pack, and a worker left with no actions at all is handed nothing rather than a tool that says no to everything — the state the 2026-08-10 incident actually shipped, where every screen said equipped and the toolbox was empty.
+
+### 99.3 What is deliberately not in a pack
+
+`plugin_install` reaches GitHub through the same connection and the same gate as the four `github` actions, and is not one of them. The other four hand back something to read; this one puts code on the user's machine. **A tool that installs is not a depth of looking**, and folding it in would have made "may read a repository" and "may install from one" the same grant.
+
+`desk_terminal` is not a `shell` action for the same kind of reason: it runs a command in a terminal the *user* is watching, has its own branch in `safety.Assess` (an empty terminal is not a shell with an empty command), and is a different object rather than a fourth way to run something.
+
+### What this cost, and what it bought
+
+Measured by [desktop/tool_budget_test.go](../desktop/tool_budget_test.go): **45 tools / ~9,764 tok → 40 tools / ~9,691 tok.** Five fewer entries, ~73 tokens off every request. The token saving is small because a packed description carries every action's line; the entry saving is the point, and so is what happens next — the executions work §100 will bring to `n8n` now costs an action rather than three more names in everyone's tool block.
+
+The names `shell_output`, `shell_kill`, `github_search`, `github_repo_summary`, `github_list_files` and `github_read_file` are no longer registry entries and can no longer be called by the model or typed as door codes. They remain, everywhere it matters: `categories:`, a profile's `tools:` and `deny:`, `connect.Allows`, the permission rules, and the sentence in the approval prompt.

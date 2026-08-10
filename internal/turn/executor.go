@@ -1034,15 +1034,30 @@ func (e *Executor) executeTool(ctx context.Context, name string, args map[string
 		return skill.Output{}, false, errors.New("tool dispatcher is not available")
 	}
 
-	assessment := safety.AssessCommand(name, toolCallToArgs(name, args))
-	commandLine := name
-	for _, rawArg := range toolCallToArgs(name, args) {
+	// What the gates below are really judging.
+	//
+	// A packed tool is one name in the block and several acts inside it
+	// (skill.Unpack), and every reader from here down was written against the
+	// names those acts used to have: safety keys on the literal "shell" and
+	// answers RiskHigh to a call it can find no command in, and a permission
+	// rule the user wrote names the tool they were asked about. Judging an
+	// output read as "shell" would put an approval prompt in front of looking at
+	// a log — and train the user to click through the one that matters.
+	//
+	// Only the judging half. What the model called is still `name`, and that is
+	// what the hooks, the dispatcher and the result carry, because that is what
+	// actually happened.
+	judged := skill.Unpack(name, args)
+	judgedArgs := toolCallToArgs(judged, args)
+	assessment := safety.AssessCommand(judged, judgedArgs)
+	commandLine := judged
+	for _, rawArg := range judgedArgs {
 		if rawArg == "" {
 			continue
 		}
 		commandLine += " " + rawArg
 	}
-	ok, confirmErr := e.resolveApproval(ctx, name, toolCallToArgs(name, args), commandLine, assessment)
+	ok, confirmErr := e.resolveApproval(ctx, judged, judgedArgs, commandLine, assessment)
 	if confirmErr != nil {
 		return skill.Output{}, true, confirmErr
 	}
@@ -1117,7 +1132,13 @@ func (e *Executor) dispatchWithDeadline(ctx context.Context, name string, args m
 	// and still no answer. Now the call is left running and the model is told to
 	// look in on it, which is the same shape as shell's run_in_background /
 	// shell_output pair and as task / task_result.
-	deadline := toolCallDeadline(name, args)
+	// Unpacked for the same reason the approval gate is: the one call that gets
+	// to stretch a turn is an output read that was asked to wait, and after the
+	// packing it arrives named `shell`. Asked under that name it would take the
+	// plain shell branch, read `timeout_seconds` off a call that has none, and
+	// cut a wait_for off at sixty seconds — degrading it back into the polling
+	// loop it exists to replace.
+	deadline := toolCallDeadline(skill.Unpack(name, args), args)
 	key := callKey(name, args)
 	call := e.beginCall(ctx, key, name, args)
 

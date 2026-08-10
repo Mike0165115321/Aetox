@@ -2,7 +2,6 @@ package skill
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -12,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/proc"
 )
 
@@ -253,42 +251,15 @@ func (*shellOutputSkill) Description() string {
 	return "อ่านผลลัพธ์ใหม่จากคำสั่งที่รันอยู่เบื้องหลัง"
 }
 
-func (*shellOutputSkill) ToolDefinition() model.ToolDefinition {
-	schema := map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"shell_id": map[string]any{
-				"type":        "string",
-				"description": "The handle shell returned when it started the command in the background.",
-			},
-			"filter": map[string]any{
-				"type":        "string",
-				"description": "Keep only lines matching this regular expression.",
-			},
-			"wait_for": map[string]any{
-				"type":        "string",
-				"description": "Block until new output matches this regex (\"exit\": until the command finishes). Gives up after wait_timeout_seconds; the command keeps running either way.",
-			},
-			"wait_timeout_seconds": map[string]any{
-				"type":        "integer",
-				"description": "How long wait_for may block. Default 60, ceiling 600.",
-			},
-		},
-		"required":             []string{"shell_id"},
-		"additionalProperties": false,
-	}
-	payload, _ := json.Marshal(schema)
-	return model.ToolDefinition{
-		Type: "function",
-		Function: model.ToolFunction{
-			Name: "shell_output",
-			Description: "Read whatever a background command has printed since you last read it, and whether it is still running. " +
-				"Output is consumed: each call returns only what is new. " +
-				"Prefer wait_for over polling in a loop.",
-			Parameters: payload,
-		},
-	}
-}
+// No ToolDefinition, and none for shellKillSkill below. Both are actions on
+// `shell` now (packed.go), so their parameters and their sentences live in that
+// one schema — a second definition here would be a description nobody sends,
+// free to drift from the one the model actually reads. `shell_output` remains
+// the name every gate judges an output read by; what stopped existing is the
+// entry in the tool block, not the name.
+//
+// They are still their own types because they are still their own work, and
+// because the background-shell tests drive them directly.
 
 func (s *shellOutputSkill) Execute(ctx context.Context, input Input) (Output, error) {
 	args := stringSlice(input["args"])
@@ -440,30 +411,6 @@ func (*shellKillSkill) Name() string { return "shell_kill" }
 
 func (*shellKillSkill) Description() string {
 	return "หยุดคำสั่งที่รันอยู่เบื้องหลัง"
-}
-
-func (*shellKillSkill) ToolDefinition() model.ToolDefinition {
-	schema := map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"shell_id": map[string]any{
-				"type":        "string",
-				"description": "The handle of the background command to stop.",
-			},
-		},
-		"required":             []string{"shell_id"},
-		"additionalProperties": false,
-	}
-	payload, _ := json.Marshal(schema)
-	return model.ToolDefinition{
-		Type: "function",
-		Function: model.ToolFunction{
-			Name: "shell_kill",
-			Description: "Stop a background command and everything it started. " +
-				"Kill a dev server when you are done with it rather than leaving it holding a port.",
-			Parameters: payload,
-		},
-	}
 }
 
 func (s *shellKillSkill) Execute(ctx context.Context, input Input) (Output, error) {

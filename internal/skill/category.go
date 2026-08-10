@@ -59,6 +59,12 @@ var toolCategories = map[string]string{
 
 	// Running things. `git` belongs here rather than under code: what it is, to
 	// the person deciding, is a command that touches their repository.
+	//
+	// `shell` is the tool the model is offered; the other two are the action
+	// names it gates on inside (packed.go). Both kinds are listed for the reason
+	// the browser's are — a desk or a profile narrows with the action names, and
+	// an unlisted one would fall to CategoryAgent, which every desk carries and
+	// which would quietly widen the narrower.
 	"shell":        CategoryShell,
 	"shell_output": CategoryShell,
 	"shell_kill":   CategoryShell,
@@ -126,8 +132,12 @@ var toolCategories = map[string]string{
 	// specialized desk carries no shell and must not carry this either.
 	"desk_terminal": CategoryShell,
 
-	"diagnostics":         CategoryCode,
-	"symbol":              CategoryCode,
+	"diagnostics": CategoryCode,
+	"symbol":      CategoryCode,
+	// The tool the model is offered, and the four action names it gates on
+	// inside (github_pack.go) — listed for the same reason the shell and
+	// browser action names are.
+	"github":              CategoryCode,
 	"github_search":       CategoryCode,
 	"github_read_file":    CategoryCode,
 	"github_list_files":   CategoryCode,

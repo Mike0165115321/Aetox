@@ -10,11 +10,15 @@ import (
 func TestNewDefaultRegistryRegistersAllBuiltins(t *testing.T) {
 	registry := NewDefaultRegistry(RegistryOptions{SandboxRoot: t.TempDir()})
 
+	// `shell` and `github` are packed (packed.go): the names inside them —
+	// shell_output, shell_kill, github_search and the rest — are still the
+	// vocabulary of permission, but they are not registry entries any more and
+	// must not be looked for as any. TestAPackedToolIsOneRegistryEntry pins
+	// that from the other side.
 	want := []string{
-		"help", "echo", "time", "calc", "list", "read", "github_repo_summary",
-		"git", "fs", "shell", "shell_output", "shell_kill", "write", "sheet_write", "slides_write", "doc_write", "edit", "grep", "glob", "apply_patch", "notebook_edit", "diagnostics", "symbol", "delete", "plugin_install", "image_ocr", "video_ocr", "pdf_read", "audio_transcribe",
-		"web_fetch", "web_search",
-		"github_search", "github_read_file", "github_list_files",
+		"help", "echo", "time", "calc", "list", "read",
+		"git", "fs", "shell", "write", "sheet_write", "slides_write", "doc_write", "edit", "grep", "glob", "apply_patch", "notebook_edit", "diagnostics", "symbol", "delete", "plugin_install", "image_ocr", "video_ocr", "pdf_read", "audio_transcribe",
+		"web_fetch", "web_search", "github",
 		"n8n_workflow_list", "n8n_workflow_read", "n8n_workflow_create",
 		"n8n_workflow_update", "n8n_workflow_activate",
 		"windmill_workspace_list", "windmill_flow_list", "windmill_flow_read",

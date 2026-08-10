@@ -253,9 +253,9 @@ today, more later. Two halves in two places, on purpose — the token is in
 Placement uses the same `for:` vocabulary as MCP — a desk name, or
 `agent:<name>` — and it decides what you can see, not what you may do:
 **a connection this desk does not hold takes its tools out of your tool list
-entirely.** So if you are looking for `github_search` and it is not there, the
-answer is not that it failed; it is that this desk does not carry GitHub. Say
-that, rather than reporting the tool as broken.
+entirely.** So if you are looking for `github` and it is not there, the answer
+is not that it failed; it is that this desk does not carry GitHub. Say that,
+rather than reporting the tool as broken.
 
 **You have no tool that connects, disconnects or moves an account** — same rule
 as MCP above. It is Settings → การเชื่อมต่อ, and the user does it.

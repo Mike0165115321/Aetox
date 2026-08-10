@@ -76,7 +76,7 @@ export const Connections = vi.fn(async () => [
     id: 'github', label: 'GitHub', kind: 'token',
     token_url: 'https://github.com/settings/tokens/new',
     connected: false, env_override: false, for: [], configured: false,
-    tools: ['github_search', 'plugin_install'],
+    tools: ['github', 'plugin_install'],
   },
 ])
 export const ConnectAccount = vi.fn(async (..._args: any[]) => ({ login: 'mike', scopes: ['repo'] }))

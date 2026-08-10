@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -16,9 +17,15 @@ import (
 
 type shellSkill struct {
 	root string
-	// shells is shared with shell_output and shell_kill — one registry of
-	// running commands, three tools onto it.
+	// shells is the registry of running commands. It used to be shared with two
+	// sibling tools; now the three of them are three actions on this one
+	// (packed.go), and the sharing is between this struct's own branches.
 	shells *backgroundShells
+	// actions this caller may use, nil for all of them. Set only by Narrow,
+	// which is how a profile's `tools:` line reaches a tool that cannot see a
+	// profile — internal/skill must never import the package that knows what an
+	// agent is.
+	actions []string
 	// backend is which shell runs the command: the machine's own, or a WSL
 	// distro. A func rather than a value for the reason OutputSubdir is one
 	// (defaults.go): the answer changes when the user picks a different shell,
@@ -65,28 +72,94 @@ func (*shellSkill) Description() string {
 // runs safety.AssessCommand on every call, and shell is the one skill with its
 // own high-risk branch (EffectExecuteShell, plus isShellHighRisk on the command
 // word). Under the default `ask` mode every call is still approved by a human.
+// allowedActions reports which of the three this caller may use.
+//
+// Narrow is the only thing that ever sets the field, so an unnarrowed tool —
+// every desk session, every test, every host with no profiles at all — answers
+// the full set through the same path rather than through a special case.
+func (s *shellSkill) allowedActions() []string {
+	p := packs["shell"]
+	if s == nil || len(s.actions) == 0 {
+		return append([]string(nil), p.actions...)
+	}
+	return s.actions
+}
+
+func (s *shellSkill) Actions() []string { return packs["shell"].permissions() }
+
+// Narrow hands back a shell that offers only the named actions. A copy rather
+// than a mutation: the parent registry is shared by every session in the
+// process, and narrowing in place would let one agent's `tools:` line quietly
+// take an action away from everyone else.
+func (s *shellSkill) Narrow(named []string) Skill {
+	narrowed := *s
+	narrowed.actions = packs["shell"].narrow(named)
+	return &narrowed
+}
+
 func (s *shellSkill) ToolDefinition() model.ToolDefinition {
+	allowed := s.allowedActions()
+
+	// Written per action and assembled from the permitted set, so the block
+	// never advertises something this caller would be refused — the same rule
+	// the browser pack follows, and the reason a narrowed tool costs the model
+	// nothing to read.
+	lines := map[string]string{
+		"run":    "`run` (command) — run it and wait. This is the default: a call with no action runs a command.",
+		"output": "`output` (shell_id) — read what a background command has printed since you last read it, and whether it is still running. Output is consumed: each call returns only what is new. Prefer wait_for over polling in a loop.",
+		"kill":   "`kill` (shell_id) — stop a background command and everything it started. Kill a dev server when you are done with it rather than leaving it holding a port.",
+	}
+	var actions strings.Builder
+	for _, a := range allowed {
+		actions.WriteString(lines[a] + "\n")
+	}
+
 	schema := map[string]any{
 		"type": "object",
 		"properties": map[string]any{
+			"action": map[string]any{
+				"type":        "string",
+				"enum":        allowed,
+				"description": "What to do. Omit it to run a command.",
+			},
 			"command": map[string]any{
 				"type":        "string",
-				"description": "The command line to run, exactly as it would be typed in a terminal.",
+				"description": "action=run: the command line, exactly as it would be typed in a terminal.",
 			},
 			"description": map[string]any{
 				"type":        "string",
-				"description": "What this command is for, in a few words and in the user's language, e.g. \"run the speech tests\". This is the line the user reads in the timeline, so write it for them, not for yourself.",
+				"description": "action=run: what this command is for, in a few words and in the user's language, e.g. \"run the speech tests\". This is the line the user reads in the timeline, so write it for them, not for yourself.",
 			},
 			"timeout_seconds": map[string]any{
 				"type":        "integer",
-				"description": "How long to wait before reporting back that the command is still running (it keeps running either way). Defaults to 60 and may not exceed 600. Raise it for a full test suite or a large build; leave it alone otherwise. Ignored when run_in_background is set.",
+				"description": "action=run: how long to wait before reporting back that the command is still running (it keeps running either way). Defaults to 60 and may not exceed 600. Raise it for a full test suite or a large build; leave it alone otherwise. Ignored when run_in_background is set.",
 			},
 			"run_in_background": map[string]any{
 				"type":        "boolean",
-				"description": "Start the command and return immediately with a handle instead of waiting. This is the only way to run something that does not exit on its own — a dev server, a watch build, a log tail. Read it with shell_output and end it with shell_kill.",
+				"description": "action=run: start the command and return immediately with a handle instead of waiting. This is the only way to run something that does not exit on its own — a dev server, a watch build, a log tail. Read it with action=output and end it with action=kill.",
+			},
+			"shell_id": map[string]any{
+				"type":        "string",
+				"description": "action=output/kill: the handle run returned when it started the command in the background.",
+			},
+			"filter": map[string]any{
+				"type":        "string",
+				"description": "action=output: keep only lines matching this regular expression.",
+			},
+			"wait_for": map[string]any{
+				"type":        "string",
+				"description": "action=output: block until new output matches this regex (\"exit\": until the command finishes). Gives up after wait_timeout_seconds; the command keeps running either way.",
+			},
+			"wait_timeout_seconds": map[string]any{
+				"type":        "integer",
+				"description": "action=output: how long wait_for may block. Default 60, ceiling 600.",
 			},
 		},
-		"required":             []string{"command"},
+		// `command` cannot be required here the way it was when this tool did
+		// one thing — a flat schema cannot say "required unless the action is
+		// output". It is checked in run() instead, which is where the refusal
+		// can name the action that was missing it.
+		"required":             []string{},
 		"additionalProperties": false,
 	}
 	payload, _ := json.Marshal(schema)
@@ -110,7 +183,8 @@ func (s *shellSkill) ToolDefinition() model.ToolDefinition {
 			// The name, and nothing else: a table of equivalents here would be
 			// a case list, and the model already knows the shell it is told
 			// it is writing for.
-			Description: "Run a command in the working folder — tests, builds, linters, package managers, anything the terminal can do. " +
+			Description: "Run commands in the working folder — tests, builds, linters, package managers, anything the terminal can do. Actions:\n" +
+				actions.String() + "\n" +
 				"Commands are run by " + s.shell().Name() + " on this machine, so write them in that shell's syntax. " +
 				"Use it to verify your own work after editing. " +
 				"Paths in the command follow the same rule the file tools do: they must be inside the folders this session may use, " +
@@ -125,6 +199,31 @@ func (s *shellSkill) ToolDefinition() model.ToolDefinition {
 }
 
 func (s *shellSkill) ExecuteTool(ctx context.Context, args map[string]any) (Output, error) {
+	p := packs["shell"]
+	action := p.action(args)
+	if action == "" {
+		raw, _ := args["action"].(string)
+		err := fmt.Errorf("unknown shell action %q — this session may use: %s",
+			strings.TrimSpace(raw), strings.Join(s.allowedActions(), ", "))
+		return newToolOutput("shell", "shell", "", time.Now(), false, err), err
+	}
+	// Refused here as well as left out of the enum, because a description is
+	// guidance and a gate is a gate. A model that names an action it was never
+	// offered has guessed, and a guess that runs is worse than one that is told
+	// no.
+	if !slices.Contains(s.allowedActions(), action) {
+		err := fmt.Errorf("shell %s is not available here — this session may use: %s",
+			action, strings.Join(s.allowedActions(), ", "))
+		return newToolOutput("shell", "shell", "", time.Now(), false, err), err
+	}
+
+	switch action {
+	case "output":
+		return (&shellOutputSkill{shells: s.shells}).ExecuteTool(ctx, args)
+	case "kill":
+		return (&shellKillSkill{shells: s.shells}).ExecuteTool(ctx, args)
+	}
+
 	command, _ := args["command"].(string)
 	if strings.TrimSpace(command) == "" {
 		err := errors.New("command is required")
@@ -174,7 +273,7 @@ func (s *shellSkill) startBackground(commandLine string) (Output, error) {
 		WorkDir: workDir,
 		Success: true,
 	})
-	content := fmt.Sprintf("started in the background as %s — read it with shell_output(%q), stop it with shell_kill(%q)",
+	content := fmt.Sprintf("started in the background as %s — read it with action=output shell_id=%q, stop it with action=kill shell_id=%q",
 		job.id, job.id, job.id)
 	return newToolOutput("shell", command, content, start, false, nil), nil
 }
