@@ -193,6 +193,13 @@ func TestEveryDeclaredActionIsWiredToAnImplementation(t *testing.T) {
 	for tool := range packs {
 		s, ok := registry.Get(tool)
 		if !ok {
+			// One pack lives outside this package: `browser` is desktop-hosted
+			// (desktop/browser_tool.go) and registered by the app, so it is not
+			// in the default registry this test can build. Its routing is
+			// driven per action by desktop/tool_coverage_test.go instead.
+			if tool == "browser" {
+				continue
+			}
 			t.Errorf("%s is declared as a pack but is not registered", tool)
 			continue
 		}

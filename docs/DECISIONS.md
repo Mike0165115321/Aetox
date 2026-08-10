@@ -2546,9 +2546,11 @@ Neither failure announces itself. `Unpack` is the one function both readers now 
 
 ### 99.2 A packed tool cannot ask who is calling it, so it is told
 
-`browser` lives in `desktop` and reads the open session's profile directly (`a.chairProfile()`). `shell` and `github` live in `internal/skill`, which **must never import `desktop`** — so the answer arrives from outside: a `Packed` tool declares its per-action names, and `subagent.FilterRegistry` hands back a narrowed copy built from the profile's own `tools:` and `deny:` lines.
+`browser` lived in `desktop` and for its first day read the open session's profile directly (`a.chairProfile()`) — it could, being where a profile is visible. `shell` and `github` live in `internal/skill`, which **must never import `desktop`** — so the answer arrives from outside: a `Packed` tool declares its per-action names, and `subagent.FilterRegistry` hands back a narrowed copy built from the profile's own `tools:` and `deny:` lines.
 
 A copy, not a mutation: the registry is shared by every session in the process, and narrowing in place would let one agent's `tools:` line quietly take an action away from everyone else.
+
+Once the general mechanism existed, `browser` moved onto it the same day — its private profile-reading gate was retired before it could become a second mechanism answering the same question. All four packs now declare their vocabulary in the one table (`packed.go`) and are narrowed by the one function.
 
 Three sentences a `tools:` line can say, all of them pinned by `TestAToolsLineNarrowsAPackedToolToTheActionsItNames`:
 

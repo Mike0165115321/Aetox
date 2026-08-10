@@ -21,15 +21,24 @@ package main
 //
 //   - **Does this caller get the browser at all?** The registry filter, on the
 //     name `browser` — desk categories, and a profile's `tools:` list.
-//   - **Which actions?** allowedBrowserActions, on the old `browser_<action>`
-//     names. A profile that names none of them gets every action; one that
-//     names some gets exactly those. Nothing in the vocabulary changed, so a
-//     manifest written before this file still means what it said.
+//   - **Which actions?** The old `browser_<action>` names. A profile that
+//     names none of them gets every action; one that names some gets exactly
+//     those. Nothing in the vocabulary changed, so a manifest written before
+//     this file still means what it said.
 //
 // The description the model reads lists only the actions that caller may use,
 // because a tool that advertises what it will refuse is a wasted turn — the
 // same reasoning that keeps a connection's tools out of the block entirely
 // until an account exists.
+//
+// For its first day this file answered the second question itself, by reading
+// the open session's chair profile — it could, being the one packed tool that
+// lives where chairProfile does. Then shell and github packed too, in a package
+// that cannot see a profile, and skill/packed.go generalized the idea: the
+// vocabulary moved to the one table every pack declares itself in, and the
+// narrowing arrives from subagent.FilterRegistry like everyone else's. The
+// private gate was retired the same day it would have become the second
+// mechanism answering the same question.
 
 import (
 	"context"
@@ -41,41 +50,46 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/skill"
 )
 
-// browserActions are the four, in the order a session uses them.
-var browserActions = []string{"open", "read", "click", "type"}
-
-// legacyBrowserTool is the per-action permission name — the one this codebase
-// has used since 2026-07-22 and that manifests, categories and docs still name.
-func legacyBrowserTool(action string) string { return "browser_" + action }
-
-// allowedBrowserActions reports which actions this session's caller may use.
-//
-// Only a chair (an agent chatted with directly, or dispatched) can narrow:
-// a desk session is judged by the registry filter above this, which either
-// handed over `browser` or did not. Reading `tools:` here rather than asking
-// the filter is deliberate — the filter answers about the name `browser`, and
-// the question here is about the four names inside it.
-func (a *App) allowedBrowserActions() []string {
-	p := a.chairProfile()
-	if p == nil {
-		return browserActions
-	}
-	var named []string
-	for _, action := range browserActions {
-		if slices.Contains(p.Tools, legacyBrowserTool(action)) {
-			named = append(named, action)
-		}
-	}
-	// A profile that names no action at all is not asking for a narrower
-	// browser — it asked for `browser` and got it whole. Treating silence as
-	// "nothing allowed" would hand an agent a tool that refuses every call.
-	if len(named) == 0 {
-		return browserActions
-	}
-	return named
+type browserSkill struct {
+	app *App
+	// actions this caller may use, nil for all of them. Set only by Narrow.
+	actions []string
 }
 
-type browserSkill struct{ app *App }
+func (s *browserSkill) allowedActions() []string {
+	if s == nil || len(s.actions) == 0 {
+		out := make([]string, 0, 4)
+		for _, call := range skill.PackedCalls("browser") {
+			out = append(out, call.Action)
+		}
+		return out
+	}
+	return s.actions
+}
+
+func (s *browserSkill) Actions() []string { return skill.PackedActions("browser") }
+
+// Narrow hands back a browser offering only the named actions — a copy, for
+// the same shared-registry reason as shell's.
+func (s *browserSkill) Narrow(named []string) skill.Skill {
+	narrowed := *s
+	var actions []string
+	want := map[string]bool{}
+	for _, n := range named {
+		want[strings.ToLower(strings.TrimSpace(n))] = true
+	}
+	for _, call := range skill.PackedCalls("browser") {
+		if want[call.Permission] {
+			actions = append(actions, call.Action)
+		}
+	}
+	// Silence is the whole tool, not an empty one — the rule this file set.
+	if len(actions) == 0 {
+		return s
+	}
+	narrowed.actions = actions
+	return &narrowed
+}
 
 func (*browserSkill) Name() string { return "browser" }
 
@@ -84,7 +98,7 @@ func (*browserSkill) Description() string {
 }
 
 func (s *browserSkill) ToolDefinition() model.ToolDefinition {
-	allowed := s.app.allowedBrowserActions()
+	allowed := s.allowedActions()
 
 	// Built from the permitted set so the description never advertises an
 	// action this caller would be refused.
@@ -130,13 +144,13 @@ func (s *browserSkill) Execute(ctx context.Context, input skill.Input) (skill.Ou
 func (s *browserSkill) run(ctx context.Context, args map[string]any) (skill.Output, error) {
 	action := strings.ToLower(strings.TrimSpace(str(args["action"])))
 	if action == "" {
-		return skill.Output{Name: "browser"}, fmt.Errorf("action is required — one of %s", strings.Join(s.app.allowedBrowserActions(), ", "))
+		return skill.Output{Name: "browser"}, fmt.Errorf("action is required — one of %s", strings.Join(s.allowedActions(), ", "))
 	}
 	// Refused here as well as hidden from the description, because a
 	// description is guidance and a gate is a gate.
-	if !slices.Contains(s.app.allowedBrowserActions(), action) {
+	if !slices.Contains(s.allowedActions(), action) {
 		return skill.Output{Name: "browser"}, fmt.Errorf("browser %s is not available here — this session may use: %s",
-			action, strings.Join(s.app.allowedBrowserActions(), ", "))
+			action, strings.Join(s.allowedActions(), ", "))
 	}
 
 	switch action {

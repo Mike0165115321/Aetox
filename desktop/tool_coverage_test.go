@@ -557,7 +557,13 @@ func toolCases(t *testing.T, root string, dispatcher *skill.Dispatcher) map[stri
 		// because that is the action a session starts with and the one whose
 		// argument handling is worth reaching; the other three refuse for the
 		// same reason on the same path — there is no window here.
-		"browser": {args: map[string]any{"action": "open", "url": "https://example.com"}, available: never, why: "needs the app window"},
+		// One case per action since browser joined the packs table — the same
+		// per-act coverage every other packed tool gets. All unrunnable here
+		// for the same one reason, but each action still has to route.
+		"browser_open":  {args: map[string]any{"url": "https://example.com"}, available: never, why: "needs the app window"},
+		"browser_read":  {args: map[string]any{}, available: never, why: "needs the app window"},
+		"browser_click": {args: map[string]any{"ref": 1}, available: never, why: "needs the app window"},
+		"browser_type":  {args: map[string]any{"ref": 1, "text": "x"}, available: never, why: "needs the app window"},
 
 		// The agent's reach onto the desk (workbench_desk.go). desk_open and
 		// desk_terminal both end in an event the frontend answers, so there is

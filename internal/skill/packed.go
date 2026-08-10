@@ -65,6 +65,23 @@ type pack struct {
 }
 
 var packs = map[string]*pack{
+	// The first pack, born in desktop/browser_tool.go a day before this file
+	// existed. Declared here even though its implementation lives in the
+	// desktop, because this table is the one place that knows a packed tool's
+	// vocabulary — a browser vocabulary declared next to the browser would be
+	// the second list this file's header warns about. The desktop's browserSkill
+	// reads it back through the same PackedActions/Narrow the in-package tools
+	// use, which is what retired its private profile-reading gate on 2026-08-10.
+	"browser": {
+		tool:    "browser",
+		actions: []string{"open", "read", "click", "type"},
+		names: map[string]string{
+			"open":  "browser_open",
+			"read":  "browser_read",
+			"click": "browser_click",
+			"type":  "browser_type",
+		},
+	},
 	"shell": {
 		tool:     "shell",
 		fallback: "run",
