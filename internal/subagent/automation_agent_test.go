@@ -471,3 +471,44 @@ func TestTheAgentIsToldToStartItsOwnEngineFirst(t *testing.T) {
 		}
 	}
 }
+
+// Both dialect skills end the same way: read it back, check what the server
+// did not, and say out loud that saving is not running. Pinned in both because
+// the sentence is the release theme walking — "ปล่อยได้ก็ต่อเมื่อมันพิสูจน์ตัวเอง
+// ได้" — and because it drifted once already: n8n-nodes carried it from birth
+// and windmill-steps shipped without it, so the agent was honest about one
+// engine and silent about the other.
+//
+// When the proof loop lands (executions on n8n, jobs on Windmill), this line is
+// exactly what it replaces: "you did not see it run" stops being the honest
+// ending and becomes the reason to go run it. This test is where that change
+// will be felt first, on purpose.
+func TestBothDialectSkillsEndByAdmittingWhatWasNotSeen(t *testing.T) {
+	isolate(t)
+
+	p, ok := Load("automation")
+	if !ok {
+		t.Fatal("the automation agent did not load")
+	}
+	reg := FilterRegistry(skill.NewDefaultRegistry(skill.RegistryOptions{SandboxRoot: t.TempDir()}), p, nil)
+	for _, name := range []string{"n8n-nodes", "windmill-steps"} {
+		s, found := reg.Get(name)
+		if !found {
+			t.Errorf("%s did not reach the agent", name)
+			continue
+		}
+		out, err := s.Execute(context.Background(), nil)
+		if err != nil {
+			t.Errorf("%s could not be opened: %v", name, err)
+			continue
+		}
+		for _, must := range []string{
+			"say what you could not check",
+			"You saw it save. You did not see it run.",
+		} {
+			if !strings.Contains(flat(out.Content), must) {
+				t.Errorf("%s no longer says %q — the agent goes back to calling a saved thing a finished one", name, must)
+			}
+		}
+	}
+}

@@ -12,12 +12,12 @@ shown in Windmill's own interface. `windmill` action `workspaces` returns the
 real one; using the display name gets a 404 that reads like a permissions
 problem, and the next hour goes on checking the token.
 
-Then the habit that holds on every engine: `windmill` action `read` an existing flow
-before writing one that uses a step you are unsure of. There is no registry of
-step types to consult here — a step is code, or a reference to something
-runnable — so the arguments a `script` step takes are that script's own, and the
-only accurate copy of them is on the instance in front of you. If nothing there
-uses it, say so before you build rather than after.
+Then the habit that holds on every engine: read an existing flow (`windmill`
+action `read`) before writing one that uses a step you are unsure of. There is
+no registry of step types to consult here — a step is code, or a reference to
+something runnable — so the arguments a `script` step takes are that script's
+own, and the only accurate copy of them is on the instance in front of you. If
+nothing there uses it, say so before you build rather than after.
 
 ## A flow is a path, a summary, and modules
 
@@ -108,3 +108,13 @@ hand over without saying so.
 **Never fix a flow by deleting it and creating it again.** Update it in place.
 Deleting discards its history and orphans any schedule pointing at it, and the
 user finds out when the thing stops running on Monday.
+
+## Before you hand it over
+
+Read the flow back. Then check three things by eye, because the server checked
+none of them: every `results.<id>` in an expression names a module that exists,
+every key in an `input_transforms` is an argument its step actually takes, and
+every path you wrote is in the space the user chose rather than the one that
+was convenient.
+
+Then say what you could not check. You saw it save. You did not see it run.
