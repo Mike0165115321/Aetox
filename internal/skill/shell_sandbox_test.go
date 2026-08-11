@@ -210,6 +210,61 @@ func TestShellInOpenModeRoamsButNotIntoCredentialStores(t *testing.T) {
 	}
 }
 
+// A variable holding a path is unreadable to the scanner, so a focused project
+// refuses the command — there is a wall it might have jumped. The open machine
+// has no wall, and refusing it there breaks nearly every real PowerShell
+// script, which is what it did on 2026-08-11: counting a folder's files failed
+// because the folder was in a variable. This is the fix's whole point, and the
+// contrast with the focused case is the proof it turns on the workspace and not
+// on the shell.
+func TestVariablePathIsRefusedOnlyWhereThereIsAWall(t *testing.T) {
+	command := `$d='C:\Users\ASUS\Downloads'; Get-ChildItem -Path $d`
+
+	focused, _ := focusedProject(t)
+	if err := guardCommandPaths(focused, command, nativeGate()); err == nil {
+		t.Error("a focused project let a variable-built path through — the wall it guards is gone")
+	}
+
+	home := t.TempDir()
+	open := filepath.Join(home, "aetox")
+	if err := os.MkdirAll(open, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	setSandboxPolicy(open, true, nil)
+	t.Cleanup(func() { setSandboxPolicy(open, false, nil) })
+	if err := guardCommandPaths(open, command, nativeGate()); err != nil {
+		t.Errorf("open mode refused a variable-built path, guarding a wall that is not there: %v", err)
+	}
+}
+
+// The residual the open-mode relaxation is willing to pay, pinned so a later
+// change cannot widen it by accident: a credential path written LITERALLY is
+// still refused in open mode, because that check lives on the resolved path in
+// resolveSandboxPath, not in the token scanner. Only a path assembled entirely
+// from runtime values — which the scanner never could read — slips, and that is
+// the same defence-in-depth line OpenCode draws.
+func TestOpenModeStillRefusesLiteralCredentialPathsEvenBesideAVariable(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(filepath.Join(home, ".ssh"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(home, "aetox")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	setSandboxPolicy(root, true, nil)
+	t.Cleanup(func() { setSandboxPolicy(root, false, nil) })
+
+	// A variable elsewhere in the line must not become a skeleton key for the
+	// literal credential path beside it.
+	command := `$x=1; type ` + filepath.Join(home, ".ssh", "id_rsa")
+	if err := guardCommandPaths(root, command, nativeGate()); err == nil {
+		t.Error("a variable in the line let a literal credential path through in open mode")
+	}
+}
+
 // An interpreter one-liner is a single token to any tokenizer and a filesystem
 // path to the OS. Tokenizing alone leaves the whole family open — python, node,
 // sed, powershell -Command — so paths are also recognised by shape anywhere in

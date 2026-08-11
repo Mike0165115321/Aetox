@@ -51,7 +51,17 @@ import (
 // and `Get-Content` are not on anyone's verb list, and a token skipped because
 // it was hard to read is a permission granted by the parser's limitations. Here
 // every token is checked whatever the verb, and a token that cannot be read
-// stops the command.
+// stops the command — inside a focused project, where there is a wall to keep it
+// behind.
+//
+// In the unfocused desktop there is no wall (sandbox_open.go's Open policy: the
+// machine is the workspace), and there this rejoins OpenCode exactly. An
+// unreadable token cannot escape a boundary that is not there, so guardTargets
+// stops refusing it — the choice OpenCode can afford everywhere because its real
+// containment is an OS sandbox, and the one native Windows cannot, which is why
+// the focused project keeps the hard refusal. The credential-store lock, which
+// outlives open mode, is enforced on resolved literal paths in
+// resolveSandboxPath, not by this parser.
 
 // shellGate is what this file needs to know about the shell a command line is
 // bound for. It exists because the two facts below used to be read off
@@ -91,6 +101,22 @@ func guardCommandPaths(root, commandLine string, gate shellGate) error {
 	return guardTargets(root, targets, opaque, gate)
 }
 
+// openWorkspace reports whether root's session may reach the whole machine —
+// the unfocused desktop (sandbox_open.go's Open policy). It is the one condition
+// under which guardTargets stops hard-refusing a construct it cannot read: with
+// no wall to guard, an unreadable token is not an escape from one.
+//
+// Keyed the way resolveSandboxPath keys it — abs of the trimmed root — so the
+// two agree about which root a policy belongs to. A root that cannot be made
+// absolute answers false: the safe direction is to keep the wall.
+func openWorkspace(root string) bool {
+	safeRoot, err := filepath.Abs(strings.TrimSpace(root))
+	if err != nil {
+		return false
+	}
+	return sandboxPolicyFor(safeRoot).open
+}
+
 // guardArgs is guardCommandPaths for a caller that already holds its arguments
 // as a list — `git`, which builds an argv rather than a command line, so there
 // is nothing to tokenize and nothing to guess about where one argument ends.
@@ -123,7 +149,27 @@ func guardArgs(root string, args []string) error {
 }
 
 func guardTargets(root string, targets []string, opaque string, gate shellGate) error {
-	if opaque != "" {
+	// A construct this scanner cannot read — a variable holding a path, a
+	// $(sub-command) — stops the command, but only where there is a wall for it
+	// to have jumped. In the open workspace there is none: resolveSandboxPath
+	// lets any absolute path through, so an unreadable token is not a way around
+	// a boundary, because there is no boundary. Refusing it there guards nothing
+	// and breaks almost every real PowerShell script, which is built on
+	// variables — the same "this mode is useless" that unfocusedRoot's own note
+	// records for file tools, one enforcement path over (owner's call,
+	// 2026-08-11, after confirming this is exactly how OpenCode's scanner
+	// behaves: its path check is advisory and skips dynamic tokens, because its
+	// real containment is an OS sandbox — which native Windows has not got, so
+	// a focused project keeps this hard refusal as its only wall).
+	//
+	// The one thing open mode still protects — the credential stores — does not
+	// live here. It is enforced on the resolved literal path inside
+	// resolveSandboxPath, so `cat C:\Users\x\.ssh\id_rsa` is still refused; only
+	// a path assembled entirely at runtime slips, which an opaque token was
+	// never able to check anyway. That residual is stated, not hidden: it is the
+	// price of a mode that works, and it is the same defence-in-depth line
+	// OpenCode draws.
+	if opaque != "" && !openWorkspace(root) {
 		return fmt.Errorf("this command builds a path while it runs (%s), so it cannot be checked "+
 			"against the folders this session may use — write the path out literally, or run the "+
 			"step that needs it as its own command", opaque)
