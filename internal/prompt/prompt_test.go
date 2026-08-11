@@ -16,8 +16,8 @@ import (
 // its full path is the only name it has (TestBuildNamesTheFoldersTheUserAdded).
 func TestBuildIncludesIdentityAndEnvironment(t *testing.T) {
 	got := Build(SurfaceCLI, Scope{Root: "/tmp/proj"})
-	if !strings.Contains(got, "terminal conversation") {
-		t.Fatalf("missing CLI identity: %s", got)
+	if !strings.Contains(got, "You are Aetox") {
+		t.Fatalf("missing identity: %s", got)
 	}
 	if strings.Contains(got, "/tmp/proj") {
 		t.Fatalf("the sandbox root leaked into the prompt: %s", got)
@@ -27,10 +27,54 @@ func TestBuildIncludesIdentityAndEnvironment(t *testing.T) {
 	}
 }
 
-func TestBuildDesktopIdentity(t *testing.T) {
-	got := Build(SurfaceDesktop, Scope{Root: "/tmp/proj"})
-	if !strings.Contains(got, "desktop chat UI") {
-		t.Fatalf("missing desktop identity: %s", got)
+// Identity says who is speaking and nothing else. It named the surface until
+// 2026-08-11, which made it one of four places answering "where does my answer
+// end up" — and it named two languages, which is this build's first user rather
+// than a fact about Aetox.
+func TestIdentityIsWhoIsSpeakingAndNothingElse(t *testing.T) {
+	for _, s := range []Surface{SurfaceCLI, SurfaceDesktop} {
+		if got := identity(); !strings.Contains(got, "Speak the user's language") {
+			t.Errorf("identity lost its language rule: %s", got)
+		} else if strings.Contains(got, "Thai") || strings.Contains(got, "English") {
+			t.Errorf("identity names particular languages instead of stating the rule: %s", got)
+		} else if strings.Contains(got, "terminal") || strings.Contains(got, "chat UI") {
+			t.Errorf("identity is answering the surface question again: %s", got)
+		}
+		_ = s
+	}
+}
+
+// One layer owns "where does what I write end up", and it must answer for the
+// terminal too — that half was never stated at all, only inferable from the two
+// words "a terminal conversation", while the layers that spell out rendering
+// are desktop-only.
+func TestSurfaceLayerAnswersForBothSurfaces(t *testing.T) {
+	desktop := Build(SurfaceDesktop, Scope{Root: t.TempDir()})
+	if !strings.Contains(desktop, "rendered as markdown in a chat panel") {
+		t.Errorf("desktop prompt does not say what happens to the answer:\n%s", desktop)
+	}
+
+	cli := Build(SurfaceCLI, Scope{Root: t.TempDir()})
+	if !strings.Contains(cli, "Markdown is not rendered and SVG is not drawn") {
+		t.Errorf("terminal prompt still leaves the model to infer that nothing renders:\n%s", cli)
+	}
+	// The craft layers are desktop-only and must not follow it there.
+	for _, leak := range []string{"viewBox", "var(--surface-panel)"} {
+		if strings.Contains(cli, leak) {
+			t.Errorf("terminal prompt carries drawing guidance it cannot use (%q):\n%s", leak, cli)
+		}
+	}
+}
+
+// drawing() and panel() teach the craft; they must not re-declare the surface,
+// which is surfaceLayer's job now.
+func TestDrawingAndPanelDoNotRedeclareTheSurface(t *testing.T) {
+	for name, text := range map[string]string{"drawing": drawing(), "panel": panel()} {
+		for _, opener := range []string{"is rendered as markdown", "drawn in the app's own document"} {
+			if strings.Contains(text, opener) {
+				t.Errorf("%s() re-opens the surface question with %q:\n%s", name, opener, text)
+			}
+		}
 	}
 }
 
@@ -191,7 +235,7 @@ func TestPromptMakesMarkdownTheDefaultForLongFormWriting(t *testing.T) {
 // tools that can, which is the exact bug that motivated the mode.
 func TestBuildOpenSandboxSwapsTheEnvironmentLayer(t *testing.T) {
 	open := Build(SurfaceDesktop, Scope{Root: t.TempDir(), Open: true})
-	for _, want := range []string{"any path on this machine", "Credential stores", "output folder"} {
+	for _, want := range []string{"any absolute path", "Credential stores", "output folder"} {
 		if !strings.Contains(open, want) {
 			t.Errorf("open-sandbox prompt is missing %q:\n%s", want, open)
 		}
@@ -212,6 +256,74 @@ func TestBuildOpenSandboxSwapsTheEnvironmentLayer(t *testing.T) {
 	// the way out with it.
 	if !strings.Contains(closed, "ask the user to add that folder") {
 		t.Errorf("closed-sandbox prompt states the wall without the remedy:\n%s", closed)
+	}
+}
+
+// The one fact an open workspace owes the model, and the only one: the working
+// folder is Aetox's own. A model that reads it as the user's home sends a bare
+// `Downloads` and gets nothing, which is how 2026-08-11 started.
+//
+// Everything else it already knows. Two attempts at saying more were deleted —
+// a list of the user's folders by name, then the same paragraph moved into the
+// tool's not-found error — and this test is what stops a third.
+func TestOpenSandboxSaysTheWorkingFolderIsNotTheUsersHome(t *testing.T) {
+	root := t.TempDir()
+	got := Build(SurfaceDesktop, Scope{Root: root, Open: true})
+
+	if !strings.Contains(got, "not the user's home") {
+		t.Errorf("open-sandbox prompt lets the working folder read as the user's home:\n%s", got)
+	}
+
+	// No machine-specific path, in any scope. The one exception is a folder the
+	// user added, which has no other name (TestBuildNamesTheFoldersTheUserAdded).
+	for name, scope := range map[string]Scope{
+		"open":    {Root: root, Open: true},
+		"focused": {Root: root},
+	} {
+		text := Build(SurfaceDesktop, scope)
+		if strings.Contains(text, root) {
+			t.Errorf("%s prompt names the root, spending a machine-specific path on every request:\n%s", name, text)
+		}
+		if home, err := os.UserHomeDir(); err == nil && strings.Contains(text, strings.TrimSpace(home)) {
+			t.Errorf("%s prompt names the home folder, which the model can read off any path a tool returns:\n%s", name, text)
+		}
+	}
+
+	// A folder of the user's, named in the prompt, is a case hardcoded into
+	// every request — wrong on any machine where they moved it, and paid for
+	// forever whether or not it ever comes up.
+	for _, folder := range []string{"Downloads", "Documents", "Desktop", "Pictures"} {
+		if strings.Contains(got, folder) {
+			t.Errorf("open-sandbox prompt hardcodes the folder name %q:\n%s", folder, got)
+		}
+	}
+}
+
+// The sentence that closes shell as an escape route is true in a focused
+// project and false with the machine open — and appended to all three scopes it
+// was the instruction that ended the 2026-08-11 session: after one mistyped
+// relative path the model never called shell again, holding the one tool that
+// would have found the folder in a line.
+func TestShellEscapeIsShutOnlyWhereItIsActuallyShut(t *testing.T) {
+	const shut = "reaching for shell after another tool refused a path"
+
+	open := Build(SurfaceDesktop, Scope{Root: t.TempDir(), Open: true})
+	if strings.Contains(open, shut) {
+		t.Errorf("open-sandbox prompt tells the model not to use shell on a machine shell can reach:\n%s", open)
+	}
+
+	for name, scope := range map[string]Scope{
+		"focused":       {Root: t.TempDir()},
+		"focused+extra": {Root: t.TempDir(), Extra: []string{t.TempDir()}},
+	} {
+		if got := Build(SurfaceDesktop, scope); !strings.Contains(got, shut) {
+			t.Errorf("%s prompt lost the shell-is-walled-in sentence, which is true there:\n%s", name, got)
+		}
+	}
+
+	// The half that holds everywhere must not have moved with it.
+	if !strings.Contains(open, "Write paths out literally in shell commands") {
+		t.Errorf("open-sandbox prompt dropped the literal-paths rule, which the command scanner still enforces:\n%s", open)
 	}
 }
 

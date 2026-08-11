@@ -197,7 +197,7 @@ func BuildForDesk(surface Surface, scope Scope, desk Desk) string {
 func BuildWithReport(surface Surface, scope Scope, desk Desk) (string, Loaded) {
 	sandboxRoot := scope.Root
 	var b strings.Builder
-	b.WriteString(identity(surface))
+	b.WriteString(identity())
 	// Second, always — one rule, no branch on what kind of direction it is.
 	//
 	// It used to be written twelve sections down, which put a chair's brief at
@@ -213,6 +213,22 @@ func BuildWithReport(surface Surface, scope Scope, desk Desk) (string, Loaded) {
 	if direction := strings.TrimSpace(desk.Direction); direction != "" {
 		b.WriteString("\n" + direction + "\n\n")
 	}
+	// Third, immediately before environment, because the two are the same
+	// question on two axes: this one is where the answer lands, that one is
+	// where the session can reach. Read in order the prompt now narrows — who
+	// is speaking, what this session is, where the answer goes, what it can
+	// touch.
+	//
+	// Not first. It was, for about ten minutes on 2026-08-11, and that put it
+	// between identity and the direction above — which the comment on that
+	// block spends a paragraph explaining must be second. A layer worth 142
+	// bytes does not get to erode a placement that was moved up on purpose.
+	//
+	// Not down beside drawing()/panel() either, though the craft it enables
+	// lives there: whether markdown renders at all decides how every answer is
+	// written, not only the ones with a picture in them, and the terminal half
+	// has no drawing() to sit beside.
+	b.WriteString(surfaceLayer(surface))
 	b.WriteString(environment(scope))
 	// Directly after environment, which is where the session's reach is
 	// described: the project is the one nearby fact that does *not* change that
@@ -317,12 +333,41 @@ func foldLearnedMemory(b *strings.Builder, scope, title string) string {
 	return path
 }
 
-func identity(surface Surface) string {
-	place := "a terminal conversation"
-	if surface == SurfaceDesktop {
-		place = "a desktop chat UI"
+// identity answers one question and stops: who is speaking, and how.
+//
+// It used to answer three — name, language and which surface the answer lands
+// on — and the third was the one that hurt. "what happens to what I write" was
+// stated here, decided again by the switch in BuildWithReport, and restated a
+// third and fourth time in the opening sentence of drawing() and panel(). Four
+// places, one question; a third surface would have had to find all four. That
+// is what surface() below is for, and identity() is now a constant.
+//
+// The language line is a rule, not a list. It said "in Thai and English", which
+// is this build's first user rather than anything true about Aetox — a French
+// speaker reading it would reasonably wonder which of the two to write in
+// (owner's call, 2026-08-11: "ไม่ผูกกับภาษาสิ เพราะบางทีผู้ใช้อื่นๆอาจจะงงได้").
+// It stays at all, rather than being left to a model that mirrors its user
+// anyway, because everything around it is in English while several tool
+// descriptions are in Thai, and one sentence is cheaper than that ambiguity.
+func identity() string {
+	return "You are Aetox, a concise assistant. Speak the user's language.\n"
+}
+
+// surface owns the whole of "where does what I write end up" — the question
+// identity() used to open and drawing()/panel() used to re-open.
+//
+// The terminal half is the reason this is worth a layer of its own. It was
+// never stated: a CLI session got the words "a terminal conversation" and was
+// left to infer that markdown does not render and SVG is not drawn, because the
+// two layers that say so are desktop-only. An inference is not an instruction,
+// and this one is easy to miss on a model whose training is full of chat UIs.
+func surfaceLayer(s Surface) string {
+	if s == SurfaceDesktop {
+		return "Your answer is rendered as markdown in a chat panel: inline <svg> is drawn, and a <div> " +
+			"with a style attribute lays out as it would anywhere.\n"
 	}
-	return fmt.Sprintf("You are Aetox, a concise assistant in Thai and English that helps users through %s.\n", place)
+	return "Your answer goes to a terminal as plain text. Markdown is not rendered and SVG is not drawn — " +
+		"write for someone reading it as characters.\n"
 }
 
 // capability tells the model that the tools listed for it are not the whole
@@ -474,10 +519,10 @@ func computing() string {
 // no script) plus the one it cannot: a fixed pixel width overflows a bubble
 // whose width the model never learns, exactly as an unsized <svg> did.
 func panel() string {
-	return "The answer is drawn in the app's own document, so a <div> with a style attribute lays out the " +
-		"way it would anywhere — a row of cards, a small table of figures, a set of bars beside their " +
-		"labels. Reach for it when the answer is several things of the same kind, each carrying the same " +
-		"few facts: that is a shape a person scans, and prose makes them read it instead.\n" +
+	return "A laid-out block — a row of cards, a small table of figures, a set of bars beside their " +
+		"labels — is worth reaching for when the answer is several things of the same kind, each " +
+		"carrying the same few facts: that is a shape a person scans, and prose makes them read it " +
+		"instead.\n" +
 		"Colour it with the app's own variables — var(--surface-panel), var(--border-subtle), " +
 		"var(--text-primary), var(--text-dim), var(--interactive) — never a hex value. They resolve " +
 		"against whichever theme the user is running, so a panel written this way is the app's surface " +
@@ -511,10 +556,9 @@ func panel() string {
 // is (a sanitizer, so anything that could execute is gone) rather than listing
 // forbidden tags is what makes that generalize past the three tags named.
 func drawing() string {
-	return "Your answer is rendered as markdown, and inline <svg> in it is drawn. When what you are " +
-		"explaining is how several things relate — an order, a split, what feeds what, before against " +
-		"after — draw it instead of describing it. A reader gets a shape in one look and a paragraph in " +
-		"four sentences.\n" +
+	return "When what you are explaining is how several things relate — an order, a split, what feeds " +
+		"what, before against after — draw it instead of describing it. A reader gets a shape in one " +
+		"look and a paragraph in four sentences.\n" +
 		"Keep it small: a viewBox, a dozen shapes at most, no gradients or filters. Size everything in " +
 		"viewBox units and set width=\"100%\", because you do not know how wide the panel is. Use " +
 		"fill=\"currentColor\" and var(--text-secondary)/var(--border-default)/var(--surface-raised) for " +
@@ -632,29 +676,58 @@ func clarify() string {
 // specific path, with the user's account name in it, sent to whichever
 // provider is configured on every single request.
 //
-// It bought nothing. Every file tool rejects an absolute path (see
-// resolveSandboxPath in internal/skill), so the root could not be used to
-// call a tool even if the model wanted to, and its one real use — answering
-// "where is that file on my machine" — is covered by write's own receipt,
-// which now names the on-disk path. What replaces it is the rule that was
-// actually missing, and whose absence caused the wrong answer: repeat the
-// path a tool gave you, never assemble one.
+// It bought nothing *in a focused project*. There every file tool rejects a
+// path outside the root, so the root could not be used to call a tool even if
+// the model wanted to, and its one real use — answering "where is that file on
+// my machine" — is covered by write's own receipt, which names the on-disk
+// path. What replaced it is the rule that was actually missing, and whose
+// absence caused the wrong answer: repeat the path a tool gave you, never
+// assemble one.
 //
 // The three variants exist because the workspace itself is the user's choice
 // (skill.sandboxPolicy): unfocused chats may roam the machine, a focused
 // project may have folders added to it, and a model told "absolute paths are
 // rejected" answers "I can't search this machine" while holding tools that can.
 //
-// Added folders are named in full, which is the one place a machine-specific
-// path is worth sending to the provider. The root is not, and does not need to
-// be — relative paths reach it. An added folder has no other name.
+// Which is where the paragraph above stopped being true, and cost a whole
+// session on 2026-08-11 to find out. Unfocused, the wall came down in the tools
+// on 2026-08-04 (desktop.unfocusedRoot's note: "being unable to find a PDF the
+// user knows is on disk made the mode useless") — but this text kept withholding
+// every landmark, and a model told it may roam a machine it cannot name any
+// address on can only guess. Asked for the user's Downloads it sent a bare
+// `Downloads`, which is relative and resolved under <home>/aetox, read the
+// "cannot find the file" as a wall, told the user it could not reach their disk
+// at all, and handed the job back. Every tool it needed was in its hands.
+//
+// What it cost to fix was two wrong answers before the right one, and both are
+// worth keeping because both are the same mistake in different clothes: writing
+// down what the model already knows.
+//
+// The first named the home folder and listed "Downloads, Documents, Desktop,
+// Pictures" — a case hardcoded into a prompt, wrong on any machine where the
+// user moved them, and paid for on every request forever. The second moved that
+// paragraph into the tool's own not-found error, which sounded better (the
+// answer travelling with the refusal that needs it) and was the same error one
+// layer down: a model reading "cannot find C:\Users\x\aetox\Downloads" does not
+// need to be told that a bare path is relative, or that C:\Users\x exists. Both
+// were deleted.
+//
+// What was actually missing is one fact and one deletion. The fact: the working
+// folder is Aetox's own, which a model would otherwise reasonably read as the
+// user's home. The deletion: shellIsWalledIn, which was telling it to stop.
+// Everything else about roaming a filesystem, it can already do.
+//
+// So no scope names a path here. Relative paths reach the root; an added folder
+// has no other name and is the one exception.
 func environment(scope Scope) string {
 	var b strings.Builder
 	switch {
 	case scope.Open:
-		b.WriteString("No project is focused: file tools accept any path on this machine — absolute paths and paths " +
-			"relative to your working folder both work. Credential stores (.ssh, .aws, browser profile data " +
-			"and the like) are refused by every tool; do not try to work around that.\n" +
+		b.WriteString("No project is focused: the whole machine is the workspace. File tools and shell both take any " +
+			"absolute path on it, and a bare path is relative to your working folder — which is Aetox's own, not " +
+			"the user's home.\n" +
+			"Credential stores (.ssh, .aws, browser profile data and the like) are refused by every tool; " +
+			"do not try to work around that.\n" +
 			"Create new files with a bare filename — they land in this chat's own output folder automatically, " +
 			"so everything a chat produced sits in one place for the user to inspect.\n" +
 			"That folder is chosen for you, and only the file tools know about it. A script you write and then " +
@@ -673,23 +746,42 @@ func environment(scope Scope) string {
 			"When you change a file in one of them, say which folder it was in, because the user is looking at " +
 			"the project and will not assume you went outside it.\n" +
 			"Anything outside the project and those folders is refused. The way through is to ask the user to add " +
-			"that folder, not to look for another route in.\n")
+			"that folder, not to look for another route in.\n" + shellIsWalledIn)
 	default:
 		b.WriteString("You are working in a focused project: every file tool is confined to the project folder, and " +
 			"a bare path is relative to it. Anything outside is refused — if the work needs a file from somewhere " +
-			"else, ask the user to add that folder to the session; they can, and that is the intended way.\n")
+			"else, ask the user to add that folder to the session; they can, and that is the intended way.\n" +
+			shellIsWalledIn)
 	}
 	b.WriteString("When you tell the user where a file is, repeat the path the tool reported back to you. Do NOT assemble " +
 		"one yourself out of a folder and a filename — where a file lands is the tool's decision and it tells you, " +
-		"so a path you construct is a guess.\n")
-	// shell used to be the one tool outside this rule, so a model that hit a
-	// refusal in read would reach for shell and get through. Now it does not,
-	// and the model has to know that before it wastes a turn discovering it.
-	b.WriteString("This applies to shell too: a command naming a path outside these folders is refused before it runs, " +
-		"and reaching for shell after another tool refused a path will get the same answer. Write paths out literally " +
-		"in commands — one assembled from a variable or a sub-command cannot be checked, so it is refused as well.\n")
+		"so a path you construct is a guess.\n" +
+		// True in every scope, unlike the confinement sentence above it: the
+		// command scanner has to see a path to check it, in any workspace.
+		"Write paths out literally in shell commands — one assembled from a variable or a sub-command cannot be " +
+		"checked, so it is refused.\n")
 	return b.String()
 }
+
+// shellIsWalledIn closes the escape route a walled-in session would otherwise
+// waste a turn discovering: shell used to be the one tool outside the sandbox,
+// so a model refused by read would reach for it and get through. It is not any
+// more.
+//
+// A constant used by the two focused branches rather than a line appended to
+// all three, which is what it was until 2026-08-11. Appended, an unfocused
+// session — the one workspace where shell genuinely does reach the whole
+// machine — read "reaching for shell after another tool refused a path will get
+// the same answer" and stopped. That is precisely what happened: after one
+// mistyped relative path the model never called shell again, and shell was the
+// tool that would have found the folder in one line. A sentence carried into a
+// scope it was not written for is not a harmless extra; here it was the
+// instruction that closed the last door.
+//
+// Note also what it says: "these folders" — a phrase with no referent at all in
+// a workspace that is the whole machine.
+const shellIsWalledIn = "This applies to shell as well: a command naming a path outside these folders is refused " +
+	"before it runs, and reaching for shell after another tool refused a path gets the same answer.\n"
 
 // workingIn says which โปรเจกต์ this conversation is being held inside, and
 // where that project keeps its files.
