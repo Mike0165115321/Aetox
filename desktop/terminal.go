@@ -43,6 +43,18 @@ type TerminalSession struct {
 	mu       sync.Mutex
 	backlog  []byte
 	attached bool
+
+	// The last dimensions the PTY actually received — the birth size at first,
+	// then whatever the latest delivered Resize carried. Kept because resizing
+	// a ConPTY is not idempotent: every ResizePseudoConsole call makes it
+	// re-emit the whole visible screen, same dimensions or not (measured
+	// 2026-08-12: ten same-size resizes replayed the shell banner ten times).
+	// The pane's ResizeObserver fires on sub-pixel layout jitter that never
+	// changes the column count, and during an engine boot those replays landed
+	// between live output lines — a desk terminal full of half-shifted
+	// duplicates was the whole of that morning's "terminal is broken".
+	lastCols int
+	lastRows int
 }
 
 // maxBacklog caps what an unattached session keeps. A shell nobody has attached
@@ -117,7 +129,7 @@ func (a *App) TerminalStart(shellPath string, cols, rows int) (string, error) {
 	}
 
 	id := nextTerminalID()
-	session := &TerminalSession{id: id, pty: pty}
+	session := &TerminalSession{id: id, pty: pty, lastCols: cols, lastRows: rows}
 
 	a.terminalsMu.Lock()
 	if a.terminals == nil {
@@ -220,12 +232,31 @@ func (a *App) TerminalWrite(sessionID, data string) error {
 }
 
 // TerminalResize adjusts a running session's console dimensions.
+//
+// Dimensions the PTY has already received are dropped here, and this is the
+// only layer that may drop them. The frontend deliberately reports every fit
+// (Terminal.svelte — a size the shell never hears about is a broken terminal,
+// reverted the same hour it shipped), so the filter has to live with the one
+// party that knows what was actually delivered. Skipping is safe precisely
+// because it is conditioned on that knowledge: a size can only be skipped
+// when the PTY already heard exactly that size, so the wrap-mismatch that
+// killed the frontend attempt cannot happen. What skipping buys is on
+// lastCols — a same-size ConPTY resize replays the whole screen.
 func (a *App) TerminalResize(sessionID string, cols, rows int) error {
 	s, err := a.getSession(sessionID)
 	if err != nil {
 		return err
 	}
-	return s.pty.Resize(cols, rows)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if cols == s.lastCols && rows == s.lastRows {
+		return nil
+	}
+	if err := s.pty.Resize(cols, rows); err != nil {
+		return err
+	}
+	s.lastCols, s.lastRows = cols, rows
+	return nil
 }
 
 // TerminalClose ends a session (user closed the tab).

@@ -39,9 +39,36 @@
     })
     term.onData((data) => { TerminalWrite(sessionId, data) })
 
+    // Refitting is what the observer is for, and refitting is also what can
+    // trigger it: fit() writes new dimensions into the DOM, a burst of output
+    // makes a scrollbar appear and take a few pixels of width, and the observer
+    // fires on that too. Unguarded the three chase each other for as long as
+    // the output lasts, which is a terminal that flickers and stutters through
+    // an entire server boot and settles the moment the boot stops.
+    //
+    // Coalesced to one fit per frame, and that is ALL that is done here.
+    //
+    // The first attempt also skipped telling the PTY when the fit came out the
+    // same size, on the reasoning that a no-op resize is what restarts the
+    // chase. Skipped HERE it broke: the shell wraps its own lines at the width
+    // it was last told, so a width it never hears about leaves the pane
+    // rendering one wrap column while the shell uses another — which is a
+    // terminal that looks scrambled and, once the two disagree far enough,
+    // stops responding (2026-08-12, reverted the same hour it shipped).
+    //
+    // So this side reports every fit, and the dedupe lives in Go instead
+    // (TerminalResize, terminal.go), keyed on what the PTY actually received —
+    // the one comparison that cannot skip a size the shell has not heard. It
+    // must live somewhere: a ConPTY resize call replays the entire screen even
+    // at unchanged dimensions, which is what smeared the desk terminal through
+    // every engine boot the same day.
     resizeObserver = new ResizeObserver(() => {
-      fit.fit()
-      TerminalResize(sessionId, term.cols, term.rows)
+      if (queued) return
+      queued = requestAnimationFrame(() => {
+        queued = 0
+        fit.fit()
+        TerminalResize(sessionId, term.cols, term.rows)
+      })
     })
     resizeObserver.observe(container)
   })
@@ -49,8 +76,14 @@
   onDestroy(() => {
     for (const unsub of unsubs) unsub()
     resizeObserver?.disconnect()
+    if (queued) cancelAnimationFrame(queued)
     term?.dispose()
   })
+
+  // Shared with onMount's observer so the pending frame can be cancelled on the
+  // way out — a fit() running against a disposed terminal throws into the
+  // console and leaves the pane looking broken for the next thing that opens.
+  let queued = 0
 </script>
 
 <div class="term-pane" bind:this={container}></div>

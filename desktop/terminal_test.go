@@ -102,11 +102,46 @@ func TestTerminalResizeUnknownSession(t *testing.T) {
 	}
 }
 
+// A ConPTY replays its whole screen on every resize call, same dimensions or
+// not, so dimensions the PTY has already received must never reach it again —
+// while a genuinely new size always must (the frontend half of that contract
+// is documented in Terminal.svelte's observer).
+func TestTerminalResizeSkipsDimensionsAlreadyDelivered(t *testing.T) {
+	f := &fakePTY{}
+	a := &App{terminals: map[string]*TerminalSession{
+		"t1": {id: "t1", pty: f, lastCols: 80, lastRows: 24},
+	}}
+
+	if err := a.TerminalResize("t1", 80, 24); err != nil {
+		t.Fatalf("same-size resize: unexpected error: %v", err)
+	}
+	if f.resizes != 0 {
+		t.Errorf("resize to the size the PTY was born with reached the PTY %d times, want 0", f.resizes)
+	}
+
+	if err := a.TerminalResize("t1", 100, 30); err != nil {
+		t.Fatalf("new-size resize: unexpected error: %v", err)
+	}
+	if f.resizes != 1 {
+		t.Errorf("resize to a new size reached the PTY %d times, want 1", f.resizes)
+	}
+
+	for i := 0; i < 5; i++ {
+		if err := a.TerminalResize("t1", 100, 30); err != nil {
+			t.Fatalf("repeat resize: unexpected error: %v", err)
+		}
+	}
+	if f.resizes != 1 {
+		t.Errorf("repeated same-size resizes reached the PTY %d times, want 1", f.resizes)
+	}
+}
+
 // fakePTY hands back a scripted sequence of reads and then EOF, which is what
 // a shell exiting looks like from the read loop's side.
 type fakePTY struct {
-	chunks [][]byte
-	closes int
+	chunks  [][]byte
+	closes  int
+	resizes int
 }
 
 func (f *fakePTY) Read(p []byte) (int, error) {
@@ -119,7 +154,7 @@ func (f *fakePTY) Read(p []byte) (int, error) {
 }
 
 func (f *fakePTY) Write(p []byte) (int, error) { return len(p), nil }
-func (f *fakePTY) Resize(int, int) error       { return nil }
+func (f *fakePTY) Resize(int, int) error       { f.resizes++; return nil }
 func (f *fakePTY) Close() error                { f.closes++; return nil }
 
 // The read loop is what a busy shell drives thousands of times a second, and

@@ -324,7 +324,17 @@
       </div>
     {/if}
     {#each workbench.tabs as tab (tab.id)}
-      <div class="insp-slot" style="display:{workbench.activeId === tab.id ? 'block' : 'none'}">
+      <!-- A terminal's slot must never scroll (.term-host): xterm scrolls its
+           own scrollback, and a slot scrollbar is not just redundant — it is
+           the fuel of a resize feedback loop. The bar appearing steals ~15px
+           of width, the pane's ResizeObserver refits, the PTY resize makes
+           ConPTY replay its whole screen, the replay nudges content height,
+           the bar leaves, and around again — every lap smearing a copy of the
+           screen into the pane. An engine boot under that loop painted
+           hundreds of half-shifted duplicate lines while the log file it
+           tailed stayed byte-for-byte clean (2026-08-12, twice in one
+           morning). -->
+      <div class="insp-slot" class:term-host={tab.kind === 'terminal'} style="display:{workbench.activeId === tab.id ? 'block' : 'none'}">
         {#if tab.kind === 'terminal'}
           <Terminal sessionId={tab.id} onExit={() => removeTab(tab.id)} />
         {:else if tab.kind === 'files'}

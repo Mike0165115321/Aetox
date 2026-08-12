@@ -2609,3 +2609,55 @@ The result on this machine: **no MCP tool was ever reachable in a desktop sessio
 ### What this cost
 
 Nothing measurable — one flag removed and one lookup added, on a path that runs once per server per bootstrap. What it bought is that MCP works at all in the desktop app.
+
+## 102. Decision — A Feedback Loop Cannot Be Deduplicated Away; Cut the Path, Not the Repeats (2026-08-12)
+
+Owner, twice in one morning: *"ปัญหาหนักมากครับเทอมินอลทำงานผิดปกติ"* — and after the first fix shipped — *"เทอมินอลยังพังยุไม่หาย"*.
+
+The desk terminal, through an n8n boot, painted hundreds of half-shifted duplicate lines: `See:` arriving as `SSee:`, `SeSee:`, `SeeSee:`, and the PowerShell banner twenty times down the pane.
+
+The first thing worth doing was the thing that turned out to matter most: **read the log file the pane was tailing.** It was clean — every byte, every boot marker, one n8n and not two. Nothing upstream was corrupt. The corruption was being *drawn*, not written, and that single fact ruled out the engine, the launcher and the log plumbing before any of them were touched.
+
+### 102.1 What ConPTY actually does on resize
+
+A probe against ConPTY directly, counting how often the shell banner reappeared in the raw stream:
+
+| Phase | Banner appearances |
+|---|---|
+| Boot, no resizes | 1 |
+| Ten resizes to **the same dimensions** | 11 |
+| Ten more, oscillating 99↔100 | 21 |
+
+**`ResizePseudoConsole` re-emits the entire visible screen on every call, unchanged dimensions included** — about 300 bytes a time. A resize is not idempotent, and nothing in its signature says so.
+
+That justified a dedupe: `TerminalResize` now remembers the dimensions the PTY has actually received and drops a call that would deliver the same pair again. It is correct and it stays.
+
+**It did not fix the smear.**
+
+### 102.2 Why the first fix could not have worked
+
+`.insp-slot` — the box the terminal is drawn in — carried `overflow-y:auto`. That closes a circuit:
+
+output overflows the slot by a pixel → **a scrollbar appears and takes ~15px of width** → the pane is genuinely narrower → `fit()` computes a genuinely different column count → the PTY is told, correctly, about a size it has never heard → ConPTY repaints the whole screen → the repaint changes content height → the scrollbar leaves → the width comes back → around again, for as long as output keeps arriving.
+
+Every size in that loop is new. A dedupe keyed on *"have I sent this one before"* passes every single lap, because the answer is honestly no each time. The guard was never weak; it was aimed at a different bug that happened to share a face.
+
+> A loop that manufactures genuinely new values cannot be closed by suppressing repeats. Cut the path that feeds it. Deduplication upstream of a feedback loop suppresses the symptom in the quiet case and nothing at all in the loud one — which is exactly backwards, because the loud case is the bug.
+
+The terminal's slot no longer scrolls (`.insp-slot.term-host`). xterm owns its own scrollback, so the bar was never load-bearing — it was only fuel.
+
+### 102.3 Where the dedupe is allowed to live
+
+An earlier attempt put it in the pane, skipping the call when `fit()` produced the same size. That shipped and was reverted the same hour: a shell wraps its lines at the width it was last told, so a width it never hears about leaves the pane rendering one wrap column while the shell uses another — scrambled, then unresponsive.
+
+The two are not the same guard. **The pane knows what it measured; only the Go side knows what was delivered.** A size may be skipped when the PTY has already received exactly that size — never merely because the pane computed it twice. So the frontend reports every fit, and the filter sits with the one party holding the answer.
+
+### 102.4 The same face, three times
+
+Two other bugs wore this face the same morning, and both are recorded in the commits rather than here because neither changed a rule: a second `n8n_server_start` walking past a reachability check that a still-booting server cannot pass, and `launchLogged` opening its log `O_TRUNC` underneath a live `Get-Content -Wait` follower, whose byte offset then sat past EOF and never recovered.
+
+Three unrelated causes, one symptom, and a user reasonably reporting all three as *"the terminal is broken"*.
+
+### What this cost
+
+Three lines of CSS, a five-line guard in Go, and most of a morning — nearly all of it spent on the fix that was correct and insufficient. The cheap lesson is about ConPTY. The expensive one is that *the artifact you are reading may not be the artifact that is broken*: the log was clean from the first minute and said so plainly, and every minute after that was spent above it.
