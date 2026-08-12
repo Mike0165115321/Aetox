@@ -718,6 +718,10 @@ export const th = {
   'settings.agentDescriptionPlaceholder': 'เอเจนนี้รับงานแบบไหน (โชว์ในหน้ารวม)',
   'settings.agentBody': 'บทบาท',
   'settings.agentBodyHint': 'สั่งมันตรงนี้ รับงานแบบไหน ต้องคืนผลลัพธ์หน้าตายังไง อะไรห้ามทำ มันไม่เห็นประวัติแชท คำสั่งที่ได้คือข้อมูลทั้งหมดที่มี',
+  // The role is shown as a preview until asked for. The count is in the label
+  // because "how much is hidden" is what decides whether to open it.
+  'settings.agentBodyMore': 'ดูทั้งหมด ({n} บรรทัด)',
+  'settings.agentBodyLess': 'ย่อลง',
   // Tool permissions. The summary states what the profile does, not how many
   // boxes are ticked — "เลือก 0 ตัว" reads as the opposite of what it means.
   'settings.agentTools': 'เครื่องมือ',

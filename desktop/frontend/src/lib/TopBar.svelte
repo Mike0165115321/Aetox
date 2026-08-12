@@ -89,14 +89,19 @@
   <!-- tip-r on both: these sit flush against the window's right edge, so a
        centred (or left-anchored) tooltip gets clipped by it. -->
   <div class="winbtns">
-    <!-- Only while the sidebar is away: its header row carries this otherwise,
-         and two + buttons on one line is one of them saying nothing. -->
-    {#if sidebarCollapsed}
-      <button
-        class="icobtn tip-r" aria-label={t('sidebar.newSession')}
-        data-tip="{t('sidebar.newSession')} · Ctrl+N" onclick={newSession}
-      ><Icon name="plus" size={15} /></button>
-    {/if}
+    <!-- Always, not only while the sidebar is away (owner, 12 ส.ค.). It was
+         conditional on the reasoning that the sidebar's header carries this
+         otherwise, and that two + buttons on one line is one of them saying
+         nothing — true about the pixels, wrong about the act. Starting a new
+         chat is the one thing you do from anywhere, and a button that is
+         sometimes there is one you have to look for every time: you check the
+         corner, find nothing, remember the panel, open the panel. A control at
+         a fixed address costs a duplicate; one that moves costs a search on
+         every use. -->
+    <button
+      class="icobtn tip-r" aria-label={t('sidebar.newSession')}
+      data-tip="{t('sidebar.newSession')} · Ctrl+N" onclick={newSession}
+    ><Icon name="plus" size={15} /></button>
     <button
       class="icobtn tip-r" aria-label={inspectorCollapsed ? t('topbar.showPanel') : t('topbar.hidePanel')}
       data-tip={t('topbar.toggleInspectorTip')} onclick={onToggleInspector}

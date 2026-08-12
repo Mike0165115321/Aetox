@@ -631,9 +631,9 @@ describe('Settings pages', () => {
   it('the model dropdown pins a model per agent', async () => {
     const { container } = render(Settings, { onClose: () => {} })
     await openSection(container, 'เอเจน')
-    await waitFor(() => expect(container.querySelectorAll('.chair-card select.ctrl').length).toBe(3))
+    await waitFor(() => expect(container.querySelectorAll('.ag-row select.ctrl').length).toBe(3))
 
-    const selects = Array.from(container.querySelectorAll('.chair-card select.ctrl')) as HTMLSelectElement[]
+    const selects = Array.from(container.querySelectorAll('.ag-row select.ctrl')) as HTMLSelectElement[]
     expect(selects[0].value).toBe('deepseek-v4') // backend is pinned
     await fireEvent.change(selects[0], { target: { value: '' } })
     await waitFor(() => expect(vi.mocked(SetSubagentModel)).toHaveBeenCalledWith('backend', ''))
@@ -1396,29 +1396,25 @@ describe('MCP servers page', () => {
 
   // A preset that needs a key used to be written to disk without one, so the
   // click produced a server that could never connect.
+  //
+  // The shelf carries only key-needing entries now — it lists the servers this
+  // product's own agents ask for by name, not a directory of popular ones — so
+  // addPreset's straight-to-disk branch has no fixture left to drive it and is
+  // deliberately unpinned until a preset without headers is listed again.
   it('hands a key-needing preset to the form instead of saving it broken', async () => {
     const { container } = render(Settings, { onClose: () => {} })
     await openMcp(container)
 
-    const exaRow = Array.from(container.querySelectorAll('.set-row'))
-      .find((r) => r.textContent?.includes('Web search'))!
-    await fireEvent.click(exaRow.querySelector('button')!)
+    const row = Array.from(container.querySelectorAll('.set-row'))
+      .find((r) => r.textContent?.includes('Repos, pull requests, issues, CI'))!
+    await fireEvent.click(row.querySelector('button')!)
 
     expect(vi.mocked(SaveMCPServer)).not.toHaveBeenCalled()
-    // The header it needs is already named; only the key is missing.
+    // Named, and carrying the scheme the value needs: a field pre-filled with
+    // "Authorization:" alone is one a bare token gets pasted into.
     const headers = container.querySelector('.mcp-lines') as HTMLTextAreaElement
-    expect(headers.value).toContain('x-api-key:')
+    expect(headers.value).toContain('Authorization: Bearer ')
     expect(container.textContent).toContain('ยังไม่มีอะไรถูกบันทึก')
-  })
-
-  it('adds a preset that needs nothing straight away', async () => {
-    const { container } = render(Settings, { onClose: () => {} })
-    await openMcp(container)
-
-    const row = Array.from(container.querySelectorAll('.set-row'))
-      .find((r) => r.textContent?.includes('Knowledge-graph memory'))!
-    await fireEvent.click(row.querySelector('button')!)
-    await waitFor(() => expect(vi.mocked(SaveMCPServer)).toHaveBeenCalled())
   })
 
   // Both fields were in the stored config from the start with no way to reach

@@ -708,6 +708,10 @@ Check your own work before answering; say so plainly if unsure.
   'settings.agentDescriptionPlaceholder': 'What this sub-agent takes on (shown on the list)',
   'settings.agentBody': 'Role',
   'settings.agentBodyHint': "Its instructions: what kind of task it takes, what its result must look like, what it must never do. It has no chat history, so this is everything it knows.",
+  // The role is shown as a preview until asked for. The count is in the label
+  // because "how much is hidden" is what decides whether to open it.
+  'settings.agentBodyMore': 'Show all ({n} lines)',
+  'settings.agentBodyLess': 'Collapse',
   // Tool permissions. The summary states what the profile does, not how many
   // boxes are ticked — "0 selected" reads as the opposite of what it means.
   'settings.agentTools': 'Tools',

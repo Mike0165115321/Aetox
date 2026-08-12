@@ -1353,19 +1353,18 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
    the one thing in the foot wearing a colour. The gear beside it is the
    occasional errand and stays grey. */
 .chair-foot .chair-chat { color:var(--interactive); }
-/* Settings draws the same card (see agentCard in Settings.svelte). Two things
-   differ, and only these two: how the profile is configured sits under the
-   description, and the foot carries the model pin instead of a work count.
-   The chips are the settings the card can state without being opened — what
-   tools, what is denied, how many rounds. They are muted on purpose: the name
-   and the description are what you scan, and these are what you check once you
-   have found it. */
-.chair-tags { display:flex; flex-wrap:wrap; gap:4px; margin-top:2px; }
 /* Takes the slack the work count takes on the team page, so both feet put
    their one action in the same place. `min-width:0` because a model id is long
-   enough to push the gear off a 240px card without it. */
-.chair-foot .chair-model {
-  flex:1; min-width:0; height:26px; padding:0 6px;
+   enough to push the gear off a 240px card without it.
+   Three class names, and the third one is load-bearing: `.settings-page .ctrl`
+   and `.page-shell .ctrl` are written further down this file at the same
+   specificity as a two-class selector, so they used to win the tie on order and
+   put --fs-md text and 5px of vertical padding inside this 26px box. With
+   border-box that leaves 14px for an 18px line, and the select's own text was
+   sliced in half by the card's `overflow:hidden`. The right-hand padding is for
+   the arrow those same rules paint at `right 8px`. */
+.chair-card .chair-foot .chair-model {
+  flex:1; min-width:0; height:26px; padding:0 22px 0 6px;
   font-size:var(--fs-2xs); color:var(--text-secondary);
 }
 /* The roster, offered while an "@" is being completed in the composer.
@@ -1394,10 +1393,32 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
 
-/* The group heading over a grid of cards, where the settings page would
-   otherwise wrap the lot in a card. */
-.ag-group { margin:18px 0 10px; }
-.ag-group .ag-grouphint { margin-top:3px; }
+/* The hint that rides on the right of a group heading, saying what this group
+   IS rather than what to do about it — so the eye going down the left edge
+   reads only names, and the sentence is there for whoever wants it. */
+.group-hint { margin-left:auto; font-size:var(--fs-xs); color:var(--text-dim); text-align:right; }
+
+/* The เอเจน list (settings). A row, not a card — owner's call, 12 ส.ค., and it
+   reverses the 10 ส.ค. one two lines up in agentCard's comment. What that
+   decision was right about is that a name buried under five grey tags is not a
+   face you can pick out; what a grid of 240px cards then cost was that eight
+   teammates no longer fit on a screen, and every card had to carry its own
+   border, band and foot to say what a row says with a divider.
+   So this is not the row that was replaced. The name leads at --fs-lg and the
+   tags follow it, the description gets its own line, and the two controls sit
+   on the right where the eye is not scanning. It is profileRow's shape — the
+   same vocabulary a helper is drawn with — plus the two things only a teammate
+   has: a model of their own, and a door to the rest of their settings. */
+.ag-row:hover { background:var(--surface-raised); }
+.ag-row .ag-rowicon { width:30px; height:30px; }
+.ag-row .set-txt .t { font-size:var(--fs-lg); line-height:1.35; }
+.ag-actions { flex:none; display:flex; align-items:center; gap:4px; }
+/* Wide enough for a model id, fixed so the names above each other line up and
+   the gear never moves as you scan down. No height of its own: that is what
+   put the card's foot in a fight with `.settings-page .ctrl` and sliced the
+   text in half — the control is allowed to be the size the page says it is. */
+.ag-actions .ag-model { width:172px; }
+.ag-row.empty { color:var(--text-muted); }
 
 /* The agent editor's five section headings. Louder than an eyebrow inside a
    card and quieter than an h2: the page has one title already, and these are
@@ -2351,6 +2372,32 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   min-height:340px; resize:vertical; line-height:1.6;
   font-family:var(--font-mono, monospace); font-size:var(--fs-sm); white-space:pre;
 }
+/* The role, collapsed to a preview until asked for. A bundled agent's is a
+   hundred lines, and at full height everything else on the page — the model,
+   the tools, the skills — sat below a screen of prose nobody opened the editor
+   to re-read.
+   `min-height:0` is not tidying: `.ag-body` sets a 340px floor, and min-height
+   beats max-height in the cascade, so without it the cap does nothing at all.
+   `resize:none` while collapsed because the drag handle would fight the cap and
+   the button is the honest control. The fade is inset by the border width and
+   takes no pointer events — it sits over a live textarea. */
+.ag-bodywrap { position:relative; display:flex; }
+.ag-bodywrap .ag-body { width:100%; }
+.ag-bodywrap.collapsed .ag-body { min-height:0; max-height:16rem; overflow:hidden; resize:none; }
+.ag-bodywrap.collapsed::after {
+  content:''; position:absolute; inset:auto 1px 1px 1px; height:5rem; pointer-events:none;
+  border-radius:0 0 var(--r-sm) var(--r-sm);
+  background:linear-gradient(to bottom, transparent, var(--surface-sunken));
+}
+.ag-bodyhead { display:flex; align-items:baseline; gap:10px; }
+/* Wears the interactive colour rather than a border: a borderless control in
+   neutral ink reads as body text on this palette (see the .ctrl-danger note),
+   but one carrying the link colour reads as the link it is. */
+.ag-bodymore {
+  margin-left:auto; appearance:none; background:none; border:none; padding:0;
+  font:inherit; font-size:var(--fs-xs); color:var(--interactive); cursor:pointer;
+}
+.ag-bodymore:hover { text-decoration:underline; }
 /* One chip per tool, clicked to toggle it in or out of `tools:`/`deny:` —
    wraps as a bag rather than a column because it is a vocabulary to scan, not
    a list with an order that means anything. Unselected reads as "not in this

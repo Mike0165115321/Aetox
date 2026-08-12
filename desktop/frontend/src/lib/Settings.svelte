@@ -999,18 +999,27 @@
     await loadMCP()
   })
 
-  // Curated quick-adds; every package name verified against the npm registry
-  // (or, for URLs, the provider's published MCP endpoint) before listing.
-  // `headers` names what the server cannot work without. A preset that needs a
-  // key used to be saved straight to disk with none, so one click produced a
-  // server that could never connect and the page never said which header it
-  // wanted — it knew, and did not tell.
+  // What the shelf is for (owner, 12 ส.ค.): the servers this product's own
+  // agents declare they need — not a directory of popular ones.
+  //
+  // It used to carry five general-purpose picks (context7, sequential-thinking,
+  // memory, js-repl, exa) and none of the things a bundled agent asks for by
+  // name. That is backwards in both directions: recommending a server Aetox
+  // does not depend on is a recommendation it has no standing to make, while
+  // the github agent — which ships with `needs: mcp:github` in its own file —
+  // sent the user to this page and there was nothing here to click. Anything
+  // else is still one "add manually" away, which is the honest place for it.
+  //
+  // Every entry is verified against the provider's own published endpoint (or
+  // the npm registry, for a command) before it is listed. `headers` names what
+  // the server cannot work without, and an entry may carry the value's prefix
+  // after a colon — GitHub wants `Authorization: Bearer <token>`, and a form
+  // pre-filled with only the header name is one a token gets pasted into raw.
+  // A preset that needs a key used to be saved straight to disk with none, so
+  // one click produced a server that could never connect and the page never
+  // said which header it wanted — it knew, and did not tell.
   const mcpPresets: { name: string; desc: string; command?: string[]; url?: string; headers?: string[] }[] = [
-    { name: 'context7', desc: 'Up-to-date library docs', command: ['npx', '-y', '@upstash/context7-mcp'] },
-    { name: 'sequential-thinking', desc: 'Step-by-step reasoning scratchpad', command: ['npx', '-y', '@modelcontextprotocol/server-sequential-thinking'] },
-    { name: 'memory', desc: 'Knowledge-graph memory', command: ['npx', '-y', '@modelcontextprotocol/server-memory'] },
-    { name: 'js-repl', desc: 'Run JavaScript/Node code', command: ['npx', '-y', 'mcp-repl'] },
-    { name: 'exa', desc: 'Web search', url: 'https://mcp.exa.ai/mcp', headers: ['x-api-key'] },
+    { name: 'github', desc: 'Repos, pull requests, issues, CI', url: 'https://api.githubcopilot.com/mcp/', headers: ['Authorization: Bearer'] },
   ]
 
   const presetTaken = (name: string) => mcpServers.some((s) => s.name.toLowerCase() === name.toLowerCase())
@@ -1025,7 +1034,9 @@
       mcpName = p.name
       mcpUrl = p.url ?? ''
       mcpCommand = (p.command ?? []).join(' ')
-      mcpHeadersText = p.headers.map((h) => `${h}: `).join('\n')
+      // An entry that already carries the value's prefix ("Authorization:
+      // Bearer") keeps it and gets one space; a bare header name gets the colon.
+      mcpHeadersText = p.headers.map((h) => (h.includes(':') ? `${h} ` : `${h}: `)).join('\n')
       mcpNeedsKey = true
       return
     }
@@ -1549,6 +1560,18 @@
     'compass', 'puzzle', 'bot',
   ]
   let agentDraftPrompt = $state('')
+  // The role is the whole of what an agent is, and for a bundled one that is a
+  // hundred lines of prose — opening the editor to change a model meant
+  // scrolling past all of it to reach anything else on the page. So it is a
+  // preview until asked for.
+  //
+  // Focus opens it, always: collapsed is a reading state, and the moment a
+  // caret goes in, the person is writing and cannot write what they cannot see.
+  // The threshold is lines rather than characters because what is being
+  // measured is how far the rest of the page got pushed down.
+  let agentBodyOpen = $state(false)
+  const agentBodyLines = $derived(agentDraftPrompt.split('\n').length)
+  const agentBodyLong = $derived(agentBodyLines > 16)
   let agentBusy = $state('')
   let agentError = $state('')
   // Read from the file, shown, and written back untouched. Not `Draft` because
@@ -1822,6 +1845,9 @@
     agentKeptDesk = parsed.desk
     agentKeptNeeds = parsed.needs
     agentDraftPrompt = parsed.body
+    // Every open starts collapsed, including the second open of the same agent:
+    // the state belongs to this reading of the page, not to the file.
+    agentBodyOpen = false
     agentEditing = a
     // A row opened from this page answers from the roster the page already
     // asked for (ListChairs) — never from the file's own fields.
@@ -1845,6 +1871,7 @@
     agentKeptDesk = ''
     agentKeptNeeds = []
     agentDraftPrompt = t('settings.agentStarter')
+    agentBodyOpen = true // a new agent is opened to be written in, not read
     agentError = ''
     agentEditKind = kind
     agentSkills = []
@@ -2437,44 +2464,45 @@
   </div>
 {/snippet}
 
-<!-- An agent gets a card, not a row (owner, 10 ส.ค.): picking which teammate to
-     configure is a question you answer by recognising a face, and the row
-     answered it with a name buried under five grey tags. Same markup vocabulary
-     as the roster on the team page — `.chair-card` and its parts — because they
-     are pictures of the same people and two card designs for one thing is how
-     they drift apart.
-     What differs is the foot. There it carries how much work they have done;
-     here it carries the two settings you change without opening anything: which
-     model they are pinned to, and the door to the rest. -->
-{#snippet agentCard(a: SubagentRow)}
-  <div class="chair-card">
-    <span class="chair-band" style="--h:{coverHue(a.name)}"></span>
-    <div class="chair-body">
-      <div class="chair-who">
-        <span class="chair-face" style="--h:{coverHue(a.name)}">
-          <Icon name={(a.icon || 'bot') as IconName} size={16} />
-        </span>
-        <!-- The file path moved into the name's tooltip. On a row it was a
-             fourth line of dim monospace under every entry; the question it
-             answers ("which file is this?") is asked once in a while, and
-             never while scanning for who to open. -->
-        <span class="chair-name" title={a.path || 'built-in:' + a.name}>{a.name}</span>
+<!-- A teammate is a row again (owner, 12 ส.ค.), and this reverses the 10 ส.ค.
+     call that made it a card. Both had a point and the row is written to keep
+     the card's: what was wrong with the ORIGINAL row is that the name sat in a
+     line of five grey tags, so there was nothing to recognise anyone by; what a
+     grid of 240px cards then cost is that a team no longer fits on a screen,
+     and each card spent a border, a colour band and a foot saying what a
+     divider says for free.
+     So the name leads, at the size the card gave it, with its face beside it
+     and the tags trailing behind; the description gets its own line; and the
+     two settings you change without opening anything sit on the right, out of
+     the column the eye scans. The roster on the team page keeps the cards —
+     there you are picking a person to talk to, here you are finding a file to
+     configure, and those are different acts (§85).
+
+     The file path stays in the name's tooltip, as it has since the card: on a
+     row it was a fourth line of dim monospace under every entry, answering a
+     question nobody asks while scanning. -->
+{#snippet agentRow(a: SubagentRow)}
+  <div class="set-row ag-row">
+    <span class="ag-rowicon" style="--h:{coverHue(a.name)}">
+      <Icon name={(a.icon || 'bot') as IconName} size={16} />
+    </span>
+    <div class="set-txt">
+      <div class="t" title={a.path || 'built-in:' + a.name}>
+        {a.name}
         {#if a.overrides}<span class="tag ag-override">{t('settings.agentOverrides')}</span>{/if}
-      </div>
-      <p class="chair-desc">{a.description || '—'}</p>
-      <div class="chair-tags">
         <span class="tag" title={toolBadgeTip(a)}>{toolBadge(a)}</span>
         {#if a.deny && a.deny.length > 0}<span class="tag ag-deny" title={denyTip(a)}>{t('settings.agentDenyCount', { n: a.deny.length })}</span>{/if}
         <span class="tag" title={t('settings.agentStepsTip', { n: a.steps || 24 })}>{t('settings.agentSteps', { n: a.steps || 24 })}</span>
       </div>
+      <div class="d">{a.description || '—'}</div>
       <!-- A file that cannot run says why, where its owner will look — never a
-           silent reinterpretation, never a card that just vanishes (the file is
+           silent reinterpretation, never a row that just vanishes (the file is
            still on the user's disk). -->
       {#if a.invalid}<div class="d ag-invalid">{a.invalid}</div>{/if}
     </div>
-    <div class="chair-foot">
+    <div class="ag-actions">
       <select
-        class="ctrl chair-model" value={a.model ?? ''} disabled={agentBusy !== ''}
+        class="ctrl ag-model" value={a.model ?? ''} disabled={agentBusy !== ''}
         aria-label={t('settings.agentModelPick')}
         onchange={(e) => pinModel(a.name, e.currentTarget.value)}
       >
@@ -2533,16 +2561,20 @@
          the gap between the two groups was not already saying. -->
     {#each [{ id: 'mine', rows: rows.mine.filter(matchesQuery), label: t('settings.subagentsMine'), hint: t('settings.teamMineHint') },
             { id: 'builtin', rows: rows.builtin.filter(matchesQuery), label: t('settings.subagentsBuiltin'), hint: t('settings.subagentsBuiltinHint') }] as group (group.id)}
-      <div class="ag-group">
-        <div class="eyebrow">{group.label} <span class="ag-count">{group.rows.length}</span></div>
-        <div class="d muted ag-grouphint">{group.hint}</div>
+      <!-- Count beside the title, the sentence pushed to the right margin: the
+           left edge is the column being scanned, and a hint under the heading
+           put prose between every group and its first name. -->
+      <div class="group-head">
+        <span class="group-title">{group.label}</span>
+        <span class="group-count">{group.rows.length}</span>
+        <span class="group-hint">{group.hint}</span>
       </div>
-      <div class="office-grid">
-        {#each group.rows as a (a.name)}{@render agentCard(a)}{/each}
+      <div class="settings-card">
+        {#each group.rows as a (a.name)}{@render agentRow(a)}{/each}
         {#if group.rows.length === 0}
-          <div class="chair-card empty"><div class="chair-body"><p class="chair-desc">
+          <div class="set-row ag-row empty"><div class="set-txt"><div class="d">
             {agentQuery.trim() ? t('settings.agentNoMatches') : t('settings.teamNoneOfMine')}
-          </p></div></div>
+          </div></div></div>
         {/if}
       </div>
     {/each}
@@ -2624,11 +2656,27 @@
           </div>
           <span class="d muted">{agentDraftIcon === '' ? t('settings.agentIconAutoHint') : agentDraftIcon}</span>
         </div>
-        <label class="pp-field">
-          <span class="eyebrow">{t('settings.agentBody')}</span>
-          <textarea class="ctrl ag-body" bind:value={agentDraftPrompt} spellcheck="false" use:autogrow={agentDraftPrompt}></textarea>
+        <!-- A div rather than the `label` every other field uses: the toggle is
+             a button, and a button inside a label puts the caret in the textarea
+             on every click of it. -->
+        <div class="pp-field">
+          <div class="ag-bodyhead">
+            <span class="eyebrow">{t('settings.agentBody')}</span>
+            {#if agentBodyLong}
+              <button type="button" class="ag-bodymore" onclick={() => (agentBodyOpen = !agentBodyOpen)}>
+                {agentBodyOpen ? t('settings.agentBodyLess') : t('settings.agentBodyMore', { n: agentBodyLines })}
+              </button>
+            {/if}
+          </div>
+          <div class="ag-bodywrap" class:collapsed={agentBodyLong && !agentBodyOpen}>
+            <textarea
+              class="ctrl ag-body" bind:value={agentDraftPrompt} spellcheck="false"
+              use:autogrow={agentDraftPrompt}
+              onfocus={() => (agentBodyOpen = true)}
+            ></textarea>
+          </div>
           <span class="d muted">{t('settings.agentBodyHint')}</span>
-        </label>
+        </div>
       </div>
     </div>
 
