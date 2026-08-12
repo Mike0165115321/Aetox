@@ -160,6 +160,12 @@ type App struct {
 	mcp      *mcp.Manager    // configured MCP servers; built once, survives re-bootstraps
 	registry *skill.Registry // current skill/tool registry, for the Tools panel
 
+	// When each engine's start command was fired, so a second call cannot start
+	// a second server over the first (engine_server.go). On the App because the
+	// tool that reads it is rebuilt by every re-bootstrap and the fact is not.
+	engineStartMu   sync.Mutex
+	engineStartedAt map[string]time.Time
+
 	// toolHistoryMu guards toolHistory. Until sub-agents existed every tool event
 	// arrived on the one turn goroutine; a delegate runs in its own (§44.11), so
 	// two writers are now normal rather than impossible.
