@@ -332,9 +332,9 @@ Ollama · and the built-in `aetox`. Sign in where sign-in exists, or bring an AP
 Local models get everything a cloud one does: they pick up the models you already downloaded,
 stream the answer and the reasoning, really call tools, and count tokens into the same stats.
 
-## Status — v0.9.5
+## Status — v0.9.6
 
-The core is in place and the next layer is going up. [Release notes](docs/release-notes/v0.9.5.md)
+The core is in place and the next layer is going up. [Release notes](docs/release-notes/v0.9.6.md)
 · [roadmap to 1.0.0](ROADMAP.md) · [architecture](ARCHITECTURE.md)
 · [every decision and why](docs/DECISIONS.md).
 
