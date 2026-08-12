@@ -185,7 +185,16 @@ func (s *docWriteSkill) ExecuteTool(_ context.Context, args map[string]any) (Out
 func (s *docWriteSkill) run(start time.Time, requestPath string, rawBlocks any) (Output, error) {
 	requestPath = strings.TrimSpace(requestPath)
 	if requestPath == "" {
-		err := errors.New("path is required")
+		// Carries its remedy, because a refusal that does not is one nothing can
+		// learn from — including the learning floor, which quotes these messages
+		// verbatim as lessons (desktop/summarize.go). "path is required" produced
+		// exactly the card that deserved: a worker told to avoid a condition the
+		// sentence never named. What was actually happening was a call with no
+		// arguments at all, three times over, so the message now says what a
+		// call has to have and what the smallest real one looks like.
+		err := errors.New(`path is required, and so is blocks — a call with neither is an empty call. ` +
+			`Smallest real one: {"path":"รายงาน.docx","blocks":[{"type":"heading","text":"หัวข้อ"}]}. ` +
+			`path is just a filename; it lands in this session's output folder on its own`)
 		return newToolOutput("doc_write", "doc_write", "", start, false, err), err
 	}
 	if !strings.EqualFold(filepath.Ext(requestPath), ".docx") {

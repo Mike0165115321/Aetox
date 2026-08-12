@@ -138,7 +138,10 @@ func (s *slidesWriteSkill) ExecuteTool(_ context.Context, args map[string]any) (
 func (s *slidesWriteSkill) run(start time.Time, requestPath string, rawSlides any) (Output, error) {
 	requestPath = strings.TrimSpace(requestPath)
 	if requestPath == "" {
-		err := errors.New("path is required")
+		// Same shape as doc_write's, and for the reason written there.
+		err := errors.New(`path is required, and so is slides — a call with neither is an empty call. ` +
+			`Smallest real one: {"path":"เสนองาน.pptx","slides":[{"title":"หัวข้อ","bullets":["ประเด็นแรก"]}]}. ` +
+			`path is just a filename; it lands in this session's output folder on its own`)
 		return newToolOutput("slides_write", "slides_write", "", start, false, err), err
 	}
 	if !strings.EqualFold(filepath.Ext(requestPath), ".pptx") {

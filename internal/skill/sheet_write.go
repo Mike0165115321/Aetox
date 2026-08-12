@@ -154,7 +154,12 @@ func (s *sheetWriteSkill) ExecuteTool(_ context.Context, args map[string]any) (O
 func (s *sheetWriteSkill) run(start time.Time, requestPath string, rawSheets any) (Output, error) {
 	requestPath = strings.TrimSpace(requestPath)
 	if requestPath == "" {
-		err := errors.New("path is required")
+		// Same shape as doc_write's, and for the reason written there: a refusal
+		// that names only the field it is missing teaches nothing to a caller
+		// that sent nothing.
+		err := errors.New(`path is required, and so is sheets — a call with neither is an empty call. ` +
+			`Smallest real one: {"path":"ยอดขาย.xlsx","sheets":[{"name":"Sheet1","columns":["เดือน","ยอด"],"rows":[["ม.ค.",1000]]}]}. ` +
+			`path is just a filename; it lands in this session's output folder on its own`)
 		return newToolOutput("sheet_write", "sheet_write", "", start, false, err), err
 	}
 	// A model that types "report" or "report.xls" still gets a workbook, and
