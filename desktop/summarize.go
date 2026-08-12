@@ -46,6 +46,25 @@ import (
 // the tool's own. A nonzero exit is a program reporting a result — a test suite
 // with failures, a grep with no match — and a tool that ran it correctly has
 // nothing to be taught.
+//
+// The second time the assumption broke was the same shape again (2026-08-12).
+// A tool that refuses by returning an unsuccessful result rather than an error —
+// which is every refusal a model is meant to read and act on — reached the
+// `error` column as the bare word "ไม่สำเร็จ", so ten precise sentences arrived
+// here as one content-free cluster and became a card telling the agent to avoid
+// a pattern that word does not name. Fixed at the same kind of place, upstream:
+// turn.failureReason records what the tool actually said. Note what that does to
+// this pass — clusters now group by real cause, so what used to be one cluster
+// of ten may be several below the threshold, which is the honest count.
+//
+// Still open, and the reason this reader must not be trusted blindly: a message
+// this codebase wrote may be a **refusal** (the agent broke a rule, and the
+// remedy is to behave differently) or a **state report** (the world is not in
+// the shape the tool needed — a server not running, no repository here, no
+// account attached). Only the first is a lesson. The second is about a machine
+// that will be different tomorrow, and "avoid this pattern from the first time"
+// is the wrong thing to learn from it. Nothing in the row tells them apart yet,
+// so the user's no on the card is what stands between the two today.
 
 // summarizeMinRepeats is how many same-shaped failures make a pattern. Two is
 // a coincidence a human would not want a card for; three is the same wall hit

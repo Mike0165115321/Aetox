@@ -860,7 +860,7 @@ func (e *Executor) executeAgentToolLoop(
 			if execErr != nil {
 				ev.Error = execErr.Error()
 			} else {
-				ev.Error = "ไม่สำเร็จ"
+				ev.Error = failureReason(output)
 			}
 		}
 		e.reportToolResult(ev)
@@ -949,6 +949,54 @@ func toolRunOutput(output skill.Output) string {
 	}
 	return strings.TrimSpace(output.Content)
 }
+
+// failureReason is what a tool that failed *without* returning a Go error has
+// to say for itself.
+//
+// A tool can fail two ways. It can return an error, and then the error is the
+// reason. Or it can return `Success: false` with the reason written into its
+// output — which is what every tool does whose refusal is meant to be read and
+// acted on rather than to arrive as a crash. `subagent.task` is the clearest
+// case and says so in its own comment: "no sub-agent named X", "the brief is too
+// long", "the MCP server has not finished connecting" are all refusals a model
+// can do something about, so they come back as unsuccessful results.
+//
+// That whole family used to be recorded as the word "ไม่สำเร็จ" and nothing
+// else, and the word went to three readers at once: the timeline the user reads,
+// the `error` column of tool_runs, and the summarizer that clusters that column
+// into memory proposals. So a tool could fail ten times carrying ten copies of a
+// precise sentence and produce a card reading *repeatedly failed with
+// "ไม่สำเร็จ" — avoid this pattern*: a lesson with its cause deleted, drawn from
+// evidence that was one field away the whole time (2026-08-12; see the summarizer's
+// own note about `exit status 1`, which is this same shape one layer down).
+//
+// Stderr before Content, which is the precedence fallbackToolSummary already
+// uses. First line and capped, because this is a label beside a tool call and a
+// value that gets grouped on — not a transcript. The whole of it is kept anyway,
+// in the run's output.
+func failureReason(output skill.Output) string {
+	for _, candidate := range []string{output.Stderr, output.Content} {
+		line := strings.TrimSpace(candidate)
+		if at := strings.IndexByte(line, '\n'); at >= 0 {
+			line = strings.TrimSpace(line[:at])
+		}
+		if line == "" {
+			continue
+		}
+		if r := []rune(line); len(r) > failureReasonMax {
+			line = strings.TrimRight(string(r[:failureReasonMax]), " ,;:-—") + "…"
+		}
+		return line
+	}
+	// A tool that failed and said nothing anywhere. The placeholder stays for
+	// exactly that case, and now means what it says rather than standing in for
+	// a sentence nobody looked for.
+	return "ไม่สำเร็จ"
+}
+
+// failureReasonMax caps the label. Long enough for the refusals this codebase
+// writes, which are one or two sentences carrying their own remedy.
+const failureReasonMax = 300
 
 // The skill.Output is returned alongside the receipt because the receipt is
 // written for the model, and the UI needs facts the model has no use for —
