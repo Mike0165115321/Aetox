@@ -373,7 +373,9 @@ func Delegates() []Profile {
 // in — never by a word in its description — same rule as the `task` schema's
 // grouping (task.go, agentChoice).
 const (
-	KindAgent  = "agent"  // has a desk: a colleague who returns a finished file
+	// Whose work it is — never what the work comes back as. See agentChoice for
+	// what promising a return type in the schema cost.
+	KindAgent  = "agent"  // has a desk: a colleague who takes a whole job
 	KindHelper = "helper" // no desk: the assistant's own hands in a second context
 )
 

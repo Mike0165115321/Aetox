@@ -160,6 +160,16 @@ type App struct {
 	mcp      *mcp.Manager    // configured MCP servers; built once, survives re-bootstraps
 	registry *skill.Registry // current skill/tool registry, for the Tools panel
 
+	// A worker addressed with @name that stopped to ask something, and is still
+	// holding everything it had done when it stopped. The next message answers
+	// it (runAnswer) unless that message addresses somebody else.
+	//
+	// Session state, not engine state: it is cleared by a re-bootstrap along
+	// with the runner that holds the run, which is why finishAddressed writes
+	// both fields on every outcome rather than only on the waiting one.
+	pendingTask  string
+	pendingAgent string
+
 	// When each engine's start command was fired, so a second call cannot start
 	// a second server over the first (engine_server.go). On the App because the
 	// tool that reads it is rebuilt by every re-bootstrap and the fact is not.
@@ -1623,6 +1633,22 @@ func (a *App) runTurn(text string) (SessionMessage, SessionMessage, error) {
 	// can carry both.
 	// Before anything runs, so an undo has somewhere to go back to.
 	a.captureSnapshot()
+	// A message that names a worker goes to that worker, in the words it was
+	// written in. This is the same act the model performs with `task`, and the
+	// user gets to perform it directly (owner, 12 ส.ค.: one address for both) —
+	// the point being not convenience but that a step which cannot mistranslate
+	// is one that does not run. See subagent.Mention.
+	if agent, addressed := subagent.Mention(text); addressed {
+		return a.runAddressed(ctx, agent, text)
+	}
+	// A worker left waiting on a decision gets the next thing said, unless that
+	// message addresses somebody else — which the branch above has already
+	// taken. Answering is not a new job: the run is still open, holding
+	// everything it had already read, so this costs one message where starting
+	// again costs the whole run.
+	if a.pendingTask != "" {
+		return a.runAnswer(ctx, text)
+	}
 	sent, images := a.visionAttachments(text)
 	sent, documents := a.documentAttachments(sent)
 	result, err := a.chat.RunOnceStreamWithAttachments(ctx, sent, images, documents, func(chunk string) {
@@ -1669,6 +1695,139 @@ func (a *App) runTurn(text string) (SessionMessage, SessionMessage, error) {
 		return SessionMessage{Role: "user", Text: text, Time: now}, agentMsg, err
 	}
 	return SessionMessage{Role: "user", Text: text, Time: now}, agentMsg, nil
+}
+
+// runAddressed answers a message that named a worker, by giving that worker the
+// message.
+//
+// It goes through the session's own `task` registration rather than building a
+// delegate here: the machinery for cutting a registry to a profile, mounting its
+// prompt, connecting the servers it carries and gating what it may do is long,
+// correct, and already written once (subagent.Dispatcher). A second copy of it
+// living in the desktop is a second copy to keep in step, and the two would part
+// company the first time either was touched.
+//
+// What the user sees is the worker's answer as this turn's reply, with its tool
+// calls in the live timeline where every delegate's already appear. What they do
+// not see is a paraphrase, because there is nowhere for one to happen.
+//
+// ponytail: Parts comes back empty, so reopening the session shows the answer
+// without the steps under it — the parent executor that assembles Parts is the
+// thing being skipped. The live view is complete; the stored one is not yet.
+func (a *App) runAddressed(ctx context.Context, agent, text string) (SessionMessage, SessionMessage, error) {
+	now := time.Now().Format("15:04")
+	user := SessionMessage{Role: "user", Text: text, Time: now}
+
+	dispatcher, ok := a.taskDispatcher()
+	if !ok {
+		// Every door into a worker is the same door, so if it is shut this one is
+		// shut too — said plainly rather than falling back to the assistant,
+		// which would answer as itself under a name the user addressed.
+		return user, SessionMessage{Role: "agent", Time: now},
+			fmt.Errorf("ยังส่งงานให้ %s ไม่ได้ตอนนี้ — เครื่องยนต์ยังไม่พร้อม", agent)
+	}
+	reply, err := dispatcher.Direct(ctx, agent, text)
+	return a.finishAddressed(user, reply, err, text, now)
+}
+
+// runAnswer hands the waiting worker what the user just said.
+func (a *App) runAnswer(ctx context.Context, text string) (SessionMessage, SessionMessage, error) {
+	now := time.Now().Format("15:04")
+	user := SessionMessage{Role: "user", Text: text, Time: now}
+	dispatcher, ok := a.taskDispatcher()
+	if !ok {
+		a.pendingTask, a.pendingAgent = "", ""
+		return user, SessionMessage{Role: "agent", Time: now},
+			fmt.Errorf("คำถามที่ค้างอยู่หมดอายุแล้ว — เครื่องยนต์ถูกตั้งใหม่ระหว่างทาง")
+	}
+	reply, err := dispatcher.Answer(ctx, a.pendingTask, text)
+	return a.finishAddressed(user, reply, err, text, now)
+}
+
+// finishAddressed turns a worker's reply into the turn's two messages, and is
+// the one place the pending question is set or cleared — a second place would
+// be a second chance to leave a run waiting on a message that never comes.
+func (a *App) finishAddressed(
+	user SessionMessage, reply subagent.Reply, err error, brief, now string,
+) (SessionMessage, SessionMessage, error) {
+	a.pendingTask, a.pendingAgent = reply.Pending, reply.Agent
+	agentMsg := SessionMessage{Role: "agent", Time: now}
+	if err != nil {
+		return user, agentMsg, err
+	}
+	text := strings.TrimSpace(reply.Output.Content)
+	if !reply.Output.Success {
+		// A refusal is the worker's own sentence — it says what is missing and
+		// what would fix it, which is more use to the user than a red box.
+		if text == "" {
+			text = strings.TrimSpace(reply.Output.Stderr)
+		}
+		agentMsg.Text = text
+		return user, agentMsg, fmt.Errorf("%s: %s", reply.Agent, text)
+	}
+	agentMsg.Text = text
+	// The work as one card, so reopening the session shows who did this and
+	// what they were asked — the parent executor that would normally assemble
+	// Parts is the thing this door skips, and a turn stored as bare prose loses
+	// the fact that it was not the assistant who answered.
+	agentMsg.Parts = []turn.TurnPart{{
+		Kind: turn.PartTool,
+		Tool: &turn.ToolPart{
+			Name: "task", Subject: reply.Agent, Agent: reply.Agent, Brief: brief,
+			AgentKind: subagent.KindOf(reply.Agent), OK: true,
+			Secs: int(time.Duration(reply.Output.DurationMs) * time.Millisecond / time.Second),
+		},
+	}}
+	// The assistant was not in this exchange and still has to be able to follow
+	// it: the next thing said is as likely to be "แก้ย่อหน้าสอง" as a new
+	// subject, and an assistant that never heard the first half answers as
+	// though the conversation began there.
+	//
+	// What it gets is that the exchange happened and roughly what came back —
+	// not the payload. §84's whole argument is that the baton between rooms is a
+	// reference, not the material; importing a worker's full answer into the
+	// assistant's context here would be shipping the context that dispatching
+	// exists to avoid, and it would be paid for on every later turn.
+	if a.agent != nil {
+		a.agent.RestoreHistory([]model.Message{
+			{Role: "user", Content: brief},
+			{Role: "assistant", Content: fmt.Sprintf(
+				"(@%s answered the user directly. The gist: %s. You did not see the full answer — address @%s again if this turn needs it.)",
+				reply.Agent, gist(text), reply.Agent)},
+		})
+	}
+	// The authoritative delivery, same as a streamed turn's last chunk: nothing
+	// streamed here, so this is the only one.
+	a.emitChatChunk(text, true)
+	return user, agentMsg, nil
+}
+
+// gist is as much of a worker's answer as the assistant is given: enough to
+// follow what happened, capped so a long one cannot quietly become a permanent
+// tax on every turn after it.
+func gist(answer string) string {
+	const max = 300
+	answer = strings.Join(strings.Fields(answer), " ")
+	if len([]rune(answer)) <= max {
+		return answer
+	}
+	return string([]rune(answer)[:max]) + "…"
+}
+
+// taskDispatcher asks the session's own `task` registration whether it can be
+// spoken to directly. Read per call from the live registry, never held: a
+// re-bootstrap replaces the tool along with the engine behind it, and a kept
+// reference would be pointed at a dead one.
+func (a *App) taskDispatcher() (subagent.Dispatcher, bool) {
+	if a.registry == nil {
+		return nil, false
+	}
+	tool, ok := a.registry.Get("task")
+	if !ok {
+		return nil, false
+	}
+	dispatcher, ok := tool.(subagent.Dispatcher)
+	return dispatcher, ok
 }
 
 // Interject hands the turn already in flight something the user just typed,

@@ -848,6 +848,11 @@ export const th = {
   'chat.inputToAgent': 'พิมพ์ถึง {name}…',
   'chat.mainAgent': 'ผู้ช่วยหลัก',
   'chat.agentSwitchNote': 'สลับ = เปิดแชทใหม่เสมอ — แชทเดิมอยู่ในประวัติ',
+  // Said in the same breath as the switcher's note, because the two menus list
+  // the same names and the difference between them is the whole point: one
+  // moves you into someone's room, the other says one sentence to them from
+  // where you are.
+  'chat.mentionNote': '@ = ส่งข้อความนี้ให้เขาอ่านเอง — แชทนี้ยังอยู่กับผู้ช่วยหลัก',
   'chat.shellTitle': 'คำสั่งที่เอเจนพิมพ์ จะรันด้วยเชลล์ไหน',
   'chat.shellNote': 'จำไว้ต่อโปรเจกต์ มีผลกับคำสั่งถัดไป — คำสั่งที่รันอยู่ไม่ถูกย้าย',
   'office.newAgent': 'เพิ่มเอเจนเฉพาะทาง',

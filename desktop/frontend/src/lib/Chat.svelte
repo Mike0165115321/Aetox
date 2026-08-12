@@ -794,6 +794,42 @@
       e.preventDefault()
       palette = 'prompts'
     }
+    // "@" opens the roster, wherever in the sentence it is typed. Only at a word
+    // boundary, so an email address does not summon a menu.
+    if (e.key === '@' && (draft === '' || /\s$/.test(draft))) {
+      mentionOpen = true
+      if (officeChairs.length === 0) ListChairs().then((c) => (officeChairs = c)).catch(() => {})
+    }
+    if (e.key === 'Escape' && mentionOpen) mentionOpen = false
+  }
+
+  // Addressing a worker from the composer: `@name` sends the message to that
+  // worker as written, instead of to the assistant (subagent.Mention).
+  //
+  // A menu rather than a thing you have to know: the names are filenames, and
+  // the roster grows whenever a file is dropped in, so nobody can be expected to
+  // have them memorised. It is not the picker beside it — that one moves you
+  // into a worker's room for the rest of the session; this is one sentence,
+  // said in the room you are already standing in.
+  let mentionOpen = $state(false)
+  // What has been typed since the "@" being completed, so the list narrows as
+  // you go. Read off the draft rather than tracked separately: backspacing past
+  // the "@" has to close the menu, and a counter would have to be told.
+  const mentionQuery = $derived.by(() => {
+    const at = draft.lastIndexOf('@')
+    if (at < 0) return null
+    if (at > 0 && !/\s/.test(draft[at - 1])) return null
+    const rest = draft.slice(at + 1)
+    return /\s/.test(rest) ? null : rest.toLowerCase()
+  })
+  const mentionMatches = $derived(
+    mentionQuery === null ? [] : officeChairs.filter((c) => c.name.toLowerCase().includes(mentionQuery)),
+  )
+  function insertMention(name: string) {
+    const at = draft.lastIndexOf('@')
+    draft = draft.slice(0, at) + '@' + name + ' '
+    mentionOpen = false
+    inputEl?.focus()
   }
 
   // '' = closed. The two composer buttons and the "/" key set it.
@@ -1072,7 +1108,15 @@
             {:else}
               <span class="glyph"><Icon name={node.step.state === 'done' ? 'check' : 'x'} size={12} /></span>
             {/if}
-            <span class="ag-name">{node.step.agent || t(isAgentNode(node) ? 'chat.agent' : 'chat.subagent')}</span>
+            <!-- Written the way the user would write it. An agent has one
+                 address (owner, 12 ส.ค.): you reach doc by typing "@doc", and
+                 when the assistant reaches doc on your behalf it has to look
+                 like the same act, or the convention you were taught reads as
+                 something only you do. A helper keeps its bare name — nobody
+                 addresses one; it is the assistant's own hands. -->
+            <span class="ag-name">{node.step.agent
+              ? (isAgentNode(node) ? '@' + node.step.agent : node.step.agent)
+              : t(isAgentNode(node) ? 'chat.agent' : 'chat.subagent')}</span>
             <span class="ag-job">{node.step.label.replace(/^task\s*/, '')}</span>
             {#if node.children.length}
               <span class="secs">· {t('chat.usedTools', { n: node.children.length })}</span>
@@ -1865,6 +1909,25 @@
                before it goes. An empty preview (a blank file) leaves the head
                alone rather than drawing an empty box under it. -->
           {#if preview}<pre class="attach-body">{preview}</pre>{/if}
+        </div>
+      {/if}
+      <!-- The roster, while an "@" is being completed. Above the box because the
+           composer sits at the bottom of the window and a list under it would
+           open off-screen. -->
+      {#if mentionOpen && mentionQuery !== null && mentionMatches.length > 0}
+        <div class="mention-menu">
+          {#each mentionMatches as c (c.name)}
+            <button type="button" class="mention-item" title={c.description} onclick={() => insertMention(c.name)}>
+              <span class="ic"><Icon name="bot" size={14} /></span>
+              <span class="t">@{c.name}</span>
+              <span class="d">{c.description}</span>
+            </button>
+          {/each}
+          <!-- The switcher beside the composer lists these same five names, and
+               a user reading both has every right to ask what the difference
+               is. It answers that question the same way that menu answers its
+               own — one line, in the menu, at the moment of choosing. -->
+          <div class="folder-note">{t('chat.mentionNote')}</div>
         </div>
       {/if}
       <textarea

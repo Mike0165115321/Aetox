@@ -260,6 +260,32 @@ func TestTheModelIsToldWhichWorkersAreAgentsAndWhichAreHelpers(t *testing.T) {
 	}
 }
 
+// And it must not say what an agent hands back.
+//
+// It promised "a finished file" for a week, and that clause answered the
+// question before the request had been read: a caller told the return type has
+// to write every brief as an order to produce one, so "ask doc how a good
+// document is put together" went out as "write a manual about…" and came back
+// as a manual. doc's own rule against answering a question with a file could
+// not save it — the brief that reached doc had no question left in it.
+//
+// Owner's call, 12 ส.ค., and the general form is the reason it is pinned: a
+// specialist has its own instructions and its own tools and already knows what
+// its work looks like, so a return type stated up here is a second answer to a
+// question that has one. Any wording that puts one back belongs in the agent's
+// own file, per job — never in the schema every request is written against.
+func TestTheAgentParameterDoesNotDecideWhatComesBack(t *testing.T) {
+	isolate(t)
+	choice := strings.ToLower(agentChoice(List()))
+
+	for _, promise := range []string{"finished file", "returns a file", "as a file", "a document", "produces a file"} {
+		if strings.Contains(choice, promise) {
+			t.Errorf("the agent parameter promises %q — the shape of the answer is the agent's to pick:\n%s",
+				promise, choice)
+		}
+	}
+}
+
 // A profile's description says what the JOB is. Its kind is decided by which
 // home the file lives in, so a kind-word inside the description is a second
 // place answering "what kind is this" — and it is the one that goes stale: the

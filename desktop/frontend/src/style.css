@@ -909,7 +909,9 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .attach-remove { color:var(--text-dim); border-radius:var(--r-xs); padding:2px 5px; }
 .attach-remove:hover { background:var(--surface-hover); color:var(--text-primary); }
 .msg-image { display:block; max-width:100%; max-height:320px; border-radius:var(--r-md); margin-bottom:8px; object-fit:contain; }
-.composer .box { border:1px solid var(--border-default); border-radius:var(--r-xl); background:var(--surface-raised); padding:12px 14px; display:flex; flex-direction:column; gap:10px; }
+/* `position:relative` is for the "@" roster, which anchors to the top edge of
+   this box (.mention-menu) rather than to the composer's outer padding. */
+.composer .box { position:relative; border:1px solid var(--border-default); border-radius:var(--r-xl); background:var(--surface-raised); padding:12px 14px; display:flex; flex-direction:column; gap:10px; }
 .composer .box:focus-within { border-color:var(--border-input-focus); box-shadow:0 0 0 3px var(--overlay-focus); }
 .composer .box.drag-over { border-color:var(--interactive); box-shadow:0 0 0 3px var(--overlay-focus); }
 /* Grows with the prompt up to half the window — a pasted table or spec should
@@ -1366,6 +1368,32 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   flex:1; min-width:0; height:26px; padding:0 6px;
   font-size:var(--fs-2xs); color:var(--text-secondary);
 }
+/* The roster, offered while an "@" is being completed in the composer.
+   Absolute so it floats over the transcript instead of pushing the box down as
+   you type — a composer that jumps while a sentence is half-written is one you
+   lose your place in. Bottom-anchored for the same reason the menu opens
+   upward: the box lives at the foot of the window. */
+.mention-menu {
+  position:absolute; bottom:100%; left:0; right:0; margin-bottom:6px; z-index:20;
+  max-height:240px; overflow-y:auto;
+  background:var(--surface-raised); border:1px solid var(--border-strong);
+  border-radius:var(--r-md); padding:4px;
+}
+.mention-item {
+  display:flex; align-items:center; gap:8px; width:100%; padding:6px 8px;
+  background:none; border:none; border-radius:var(--r-sm); cursor:pointer;
+  font:inherit; color:var(--text-secondary); text-align:left;
+}
+.mention-item:hover { background:var(--surface-sunken); }
+.mention-item .t { font-weight:600; color:var(--text-primary); flex:none; }
+/* The description is why you pick one, so it gets the slack — and it truncates
+   rather than wraps, because a two-line row in a list you are scanning by name
+   pushes the next name out of reach. */
+.mention-item .d {
+  flex:1; min-width:0; font-size:var(--fs-xs); color:var(--text-dim);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+
 /* The group heading over a grid of cards, where the settings page would
    otherwise wrap the lot in a card. */
 .ag-group { margin:18px 0 10px; }

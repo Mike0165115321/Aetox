@@ -525,6 +525,7 @@ product picture in [COMPANY.md](COMPANY.md)) · §82 (the learning floor) · §4
 | §99 | Packing: One Name in the Tool Block, Several Rights Inside It (2026-08-10) |
 | §101 | A Cache That Outlives What It Describes Will Lie; Ask the Thing Itself (2026-08-12) |
 | §102 | A Feedback Loop Cannot Be Deduplicated Away; Cut the Path, Not the Repeats (2026-08-12) |
+| §103 | A Step That Cannot Mistranslate Is a Step That Does Not Run (2026-08-12) |
 
 ---
 

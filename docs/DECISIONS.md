@@ -2661,3 +2661,37 @@ Three unrelated causes, one symptom, and a user reasonably reporting all three a
 ### What this cost
 
 Three lines of CSS, a five-line guard in Go, and most of a morning — nearly all of it spent on the fix that was correct and insufficient. The cheap lesson is about ConPTY. The expensive one is that *the artifact you are reading may not be the artifact that is broken*: the log was clean from the first minute and said so plainly, and every minute after that was spent above it.
+
+## 103. Decision — A Step That Cannot Mistranslate Is a Step That Does Not Run (2026-08-12)
+
+Owner, 12 ส.ค., after watching a question come back as a manual: one address, for both of us.
+
+Until now there was exactly one route to a worker: the assistant decided to call `task` and wrote the brief itself. So the worker never saw the user's sentence — it saw a paraphrase of it. The failure that made this concrete: *"ask doc how a good document is put together"* reached `doc` as *"write a manual about how a good document is put together"*, and `doc` — correctly, given what it was handed — wrote the manual. `doc`'s own rule against answering a question with a file could not save it, because by then there was no question left in the brief.
+
+### 103.1 The address is the same act, performed by either party
+
+`@doc <request>` in the composer routes the message to `doc` **verbatim**, before the model runs at all. The `@doc` token is not even stripped: what the worker reads is what the user typed.
+
+This is deliberately *not* a second delegation path. It reuses the `task` registration the session already holds — same profile, same registry cut, same step ceiling, same prompt, same `ask_main`. `Dispatcher` is an interface for exactly that reason: the desktop borrows the existing machinery rather than growing a parallel one that would drift.
+
+And it is announced in both directions. `agentChoice` now tells the model that *"the user addresses these same workers by writing @name"*, so a `@doc` sitting in the transcript reads to the assistant as the same act it performs itself, not as stray text.
+
+> Removing a translation step beats improving it. A paraphrase that is 95% faithful still fails one request in twenty, and the failure is invisible — it comes back as a confident answer to a question nobody asked.
+
+### 103.2 What the schema was quietly deciding
+
+The `agent` parameter's description used to end *"…and returns a finished file"*. Because the caller was told the return type before writing the brief, every brief had to be phrased as an order to produce a file. The mistranslation above was not a lapse; it was the schema working as written.
+
+The clause is **removed rather than reworded**. A specialist has its own instructions and its own tools and already knows what its work looks like; stating the return type in the shared schema is a second answer to a question that already has one — and the second answer wins, because it is the one the caller reads first. `TestTheAgentParameterDoesNotDecideWhatComesBack` pins it. `doc`'s own description changed the same way: from a list of artifact types to a description of the job.
+
+### 103.3 A question asked is a run still open
+
+A worker that stops on `ask_main` holds everything it has already read. So the answer must reach *that run*, not a new one: `Reply.Pending` carries the task id, the desk remembers it, and the user's next message — unless it addresses somebody else — is delivered as an answer rather than as a fresh job. One message where starting over costs the whole run.
+
+Two smaller consequences worth having written down. The receipt line (`[task doc: N tool calls, Xs]`) is stripped from a user-addressed answer: it is an argument aimed at a model that over-delegates, and the user delegated nothing. And the assistant's history gets a two-message stub holding a 300-rune gist of the answer, not the answer itself — it needs to know the exchange happened, not to carry its payload.
+
+**Left standing and named here rather than discovered later:** the stored view of an addressed turn has no steps under it. `Parts` comes back empty because the parent executor that assembles them is the piece being skipped, and `finishAddressed` synthesises a single `task` card in its place. Live, the timeline is complete; reopened, it is the answer without the work beneath it.
+
+### What this cost
+
+A parser, an interface, and two fields on the desk. What it removes is a whole class of failure that could only ever be mitigated: every request that survived being rewritten by a party who was not asking it.

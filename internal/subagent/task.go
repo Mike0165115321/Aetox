@@ -111,6 +111,37 @@ type taskTool struct {
 	runner *runner
 }
 
+// Dispatcher is the `task` tool seen by a host that wants to run a worker
+// itself — the door a user's own `@name` goes through (see mention.go).
+//
+// An interface rather than an exported type because the host already holds the
+// tool: it is in the session's registry under "task", and the host asks whether
+// that registration can also be spoken to directly. Nothing new is constructed,
+// so a dispatch from the composer and a dispatch from the model are the same
+// machinery by construction rather than by agreement.
+type Dispatcher interface {
+	Direct(ctx context.Context, agent, brief string) (Reply, error)
+	Answer(ctx context.Context, taskID, answer string) (Reply, error)
+}
+
+// Reply is one exchange with a worker, and Pending is the whole reason it is a
+// struct: a worker that stopped to ask something is not finished, and the id of
+// the run it stopped in the middle of is the only thing that can restart it
+// where it left off.
+//
+// Without it the host has a question on screen and nothing to answer it with —
+// the user types their answer, a fresh run starts, and everything the worker had
+// already read and decided is thrown away. That was the state this door shipped
+// in for an hour, and it made `ask_main` worse than useless: a worker that asked
+// a good question cost more than one that guessed.
+type Reply struct {
+	Output skill.Output
+	// Pending is the task waiting on an answer, or "" when the work is done.
+	Pending string
+	// Agent is who this was, for a host that wants to say so on screen.
+	Agent string
+}
+
 // NewTaskTools builds the delegation pair — `task` to start one, `task_result` to
 // collect it — sharing one runner, because they are two halves of one mechanism.
 // Register both into the same registry passed in opts.Registry; FilterRegistry
@@ -218,6 +249,24 @@ func profileNames(profiles []Profile) []string {
 //
 // The Thai terms ride along because this list is the only place the model
 // meets these workers, and a model that has to invent a word for them will.
+//
+// What this deliberately does NOT say is what an agent hands back. It used to
+// promise "a finished file", and that one clause decided the answer before the
+// user's request had even been read: told that agents return files, the caller
+// had to write every brief as an order to produce one, so "ask doc how a good
+// document is put together" left here as "write a manual about…" and came back
+// as a manual nobody wanted. The agent's own rule against exactly that — "the
+// mistake to avoid is answering a question with a file", in doc's AGENT.md —
+// never got to apply, because by the time the brief arrived there was no
+// question left in it.
+//
+// Owner's call, 12 ส.ค.: take it out rather than reword it. A specialist has
+// its own instructions and its own tools and already knows what its work looks
+// like; a caller told the return type in advance is a second answer to a
+// question that has one, which is a debt in the system. What the caller needs
+// from this list is who these people are — and §84's "returns as a file" is
+// satisfied by any compressed result, a paragraph included, since its whole
+// argument was about not shipping context between rooms.
 func agentChoice(profiles []Profile) string {
 	var agents, helpers []string
 	for _, p := range profiles {
@@ -228,10 +277,17 @@ func agentChoice(profiles []Profile) string {
 			helpers = append(helpers, line)
 		}
 	}
-	out := "Which one to hand it to. Two kinds, and the difference is whose work it is."
+	// One address for everybody (owner, 12 ส.ค.). The user writes `@doc …` in
+	// the composer and it reaches doc unedited; this tool is how the same
+	// address is written by something that calls tools instead of typing. Said
+	// out loud here because the model reads the user's `@doc` in the transcript
+	// and has to recognise it as the thing it does itself — two names for one
+	// act is how a user gets told their own convention does not exist.
+	out := "Which one to hand it to. Two kinds, and the difference is whose work it is. " +
+		"The user addresses these same workers by writing @name in their message; this parameter is that address."
 	if len(agents) > 0 {
-		out += "\nAGENTS (เอเจน) — a colleague who takes a whole job off your hands and returns a finished file. " +
-			"Brief them like a coworker, then use what comes back: " + strings.Join(agents, " | ")
+		out += "\nAGENTS (เอเจน) — a colleague who takes a whole job off your hands. " +
+			"Brief them like a coworker and use what comes back: " + strings.Join(agents, " | ")
 	}
 	if len(helpers) > 0 {
 		out += "\nHELPERS (ซับเอเจน) — your own hands for one step of YOUR work, in a second context so it " +
@@ -255,8 +311,25 @@ func (t *taskTool) ToolDefinition() model.ToolDefinition {
 			},
 			"prompt": map[string]any{
 				"type": "string",
+				// What replaced "say what its answer must contain": that clause asked
+				// the caller to specify the result, which is the same debt agentChoice
+				// just had taken out of it one line up — and the doom-loop message
+				// still says it at the only moment it helps, when a brief turned out
+				// to be too vague to act on.
+				//
+				// What is here instead is the failure this actually had. A user who
+				// names the worker has already written the brief; paraphrasing it is
+				// where "ask doc how a good document is put together" became "write a
+				// manual about…", and where a mistyped word became a confident guess
+				// at a subject nobody raised. The agent cannot check either, because
+				// the paraphrase is the only thing it ever sees.
 				"description": "The complete brief. The sub-agent sees no conversation history, " +
-					"so include the paths, names and constraints it needs, and say what its answer must contain.",
+					"so include the paths, names and constraints it needs. " +
+					"When the user asked for this worker themselves, their own words ARE the brief: " +
+					"carry them through as written and add the context around them, rather than replacing " +
+					"them with your reading of what they meant. " +
+					"A word you are unsure of crosses over exactly as it was typed — the worker can ask about it, " +
+					"and a guess cannot be un-asked.",
 			},
 			"agent": map[string]any{
 				"type":        "string",
@@ -285,6 +358,94 @@ func (t *taskTool) Execute(_ context.Context, _ skill.Input) (skill.Output, erro
 }
 
 func (t *taskTool) ExecuteTool(ctx context.Context, args map[string]any) (skill.Output, error) {
+	return t.begin(ctx, args, nil)
+}
+
+// Direct runs one worker and waits for it, for a caller that is not the model:
+// the user named this worker themselves, so there is no round of tool-calling to
+// have, and nothing to gain from handing a handle back to someone who is only
+// going to redeem it.
+//
+// The brief is the user's own text, unedited. That is the whole point of the
+// door — the paraphrase step is what turned "ask doc how a good document is put
+// together" into "write a manual about…", and a step that does not run cannot
+// mistranslate. Everything else is the model's dispatch exactly: same profile,
+// same registry cut, same ceiling, same prompt, same `ask_main`, so a worker
+// cannot tell which door the job came through and there is no second behaviour
+// to keep in step.
+//
+// A worker that stops to ask comes back as its question with Pending set; hand
+// the user's next message to Answer and it carries on from where it stopped.
+func (t *taskTool) Direct(ctx context.Context, agent, brief string) (Reply, error) {
+	var task *runningTask
+	out, err := t.begin(ctx, map[string]any{
+		"agent": agent, "prompt": brief, "description": agent,
+	}, &task)
+	if err != nil || task == nil {
+		return Reply{Output: out, Agent: agent}, err // a refusal, already shaped as a failed result
+	}
+	return t.redeem(ctx, task.id, agent, task.started)
+}
+
+// Answer gives a waiting worker the decision it stopped for, and waits again.
+//
+// Through the runner, which is where `task_answer` puts it too — the worker is
+// blocked on one channel and there is exactly one way to unblock it, whether the
+// answer came from the model or from the person who asked the question.
+func (t *taskTool) Answer(ctx context.Context, taskID, answer string) (Reply, error) {
+	started := time.Now()
+	if err := t.runner.answer(taskID, answer); err != nil {
+		out, _ := t.fail(taskID, started, err.Error())
+		return Reply{Output: out}, nil
+	}
+	return t.redeem(ctx, taskID, "", started)
+}
+
+// redeem waits on a run and shapes what came back for a person to read.
+//
+// One function for both doors in, because "what does an answer look like" must
+// not have two answers: a finished run loses its receipt, and an unfinished one
+// says what it is waiting for and that the next message is the way to say it.
+func (t *taskTool) redeem(ctx context.Context, id, agent string, started time.Time) (Reply, error) {
+	collected, ask, err := t.runner.collect(ctx, id)
+	if err != nil {
+		out, _ := t.fail(agent, started, err.Error())
+		return Reply{Output: out, Agent: agent}, nil
+	}
+	if agent == "" {
+		agent = collected.profile
+	}
+	if ask != nil {
+		// Success, not failure: nothing went wrong. A red row for "your worker
+		// needs a decision" tells the user the wrong story — the same reasoning
+		// task_result.question is built on.
+		question := strings.TrimSpace(ask.question) + "\n\n— " + agent + " กำลังรออยู่ ตอบในข้อความถัดไปได้เลย"
+		return Reply{
+			Output: skill.Output{
+				Name: "task_result", Command: "@" + agent,
+				Content: question, RawOutput: question, Success: true,
+				DurationMs: time.Since(started).Milliseconds(),
+			},
+			Pending: id, Agent: agent,
+		}, nil
+	}
+	// The receipt comes off. It is an argument aimed at a model that delegates
+	// too eagerly ("that was one tool call, do work this size yourself"), and
+	// nobody chose to delegate here — the user named the worker. Read by a
+	// person, under an answer they asked for, it is a machine talking to itself.
+	out := collected.output
+	out.Content = withoutReceipt(out.Content)
+	out.RawOutput = withoutReceipt(out.RawOutput)
+	return Reply{Output: out, Agent: agent}, nil
+}
+
+// begin is the whole of a dispatch up to the moment it is running. `out`, when
+// non-nil, receives the started task — the one thing a caller that intends to
+// wait needs and the model's caller has no use for. An out-parameter rather
+// than a third return value because every refusal below is a two-value
+// `t.fail`, and rewriting eight of them to carry a nil task would be eight
+// chances to change the wrong one.
+func (t *taskTool) begin(ctx context.Context, args map[string]any, out **runningTask) (skill.Output, error) {
 	started := time.Now()
 	name := strings.TrimSpace(stringArg(args, "agent"))
 	if name == "" {
@@ -505,6 +666,9 @@ func (t *taskTool) ExecuteTool(ctx context.Context, args map[string]any) (skill.
 	if err != nil {
 		return t.fail(label, started, err.Error())
 	}
+	if out != nil {
+		*out = task
+	}
 
 	started_ := fmt.Sprintf("started sub-agent %s as %s — it is running now. Do other work, then call task_result with task_id %q to collect it.",
 		profile.Name, task.id, task.id)
@@ -544,6 +708,17 @@ func failure(id, label string, elapsed time.Duration, reason string) skill.Outpu
 // ponytail: the threshold is tool calls, not seconds — one slow grep is still one
 // call, and wall-clock says more about the disk than about the work. Revisit if a
 // one-call delegate ever turns out to be worth it.
+// withoutReceipt drops the trailing line receiptFor added, and only that line:
+// matched by the shape receiptFor writes rather than by position, so a worker
+// whose own answer happens to end in brackets keeps it.
+func withoutReceipt(content string) string {
+	at := strings.LastIndex(content, "\n")
+	if at < 0 || !strings.HasPrefix(content[at+1:], "[task ") {
+		return content
+	}
+	return strings.TrimRight(content[:at], "\n")
+}
+
 func receiptFor(name string, toolCalls int, elapsed time.Duration) string {
 	receipt := fmt.Sprintf("[task %s: %d tool calls, %.1fs]", name, toolCalls, elapsed.Seconds())
 	if toolCalls <= 1 {

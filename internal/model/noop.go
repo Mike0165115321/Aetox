@@ -712,7 +712,8 @@ func (p *NoopProvider) noopDelegationReply(model string, req Request) Response {
 	case briefMentions(req, "general"):
 		profile = "general"
 	// "office" hands the job to a chair instead of a delegate (COMPANY.md §4):
-	// a whole deliverable, briefed once, coming back as a file. It is the one
+	// a whole job, briefed once, and what it comes back as is the chair's to
+	// decide (see subagent.agentChoice). It is the one
 	// script where the sub-agent runs on a *different* desk's manifest than the
 	// caller's, which is the §84 carve-out and has no other keyless surface.
 	case briefMentions(req, "office") && offersTool(req, "task"):

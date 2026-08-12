@@ -122,6 +122,13 @@ kind** — nothing inside the file decides which it is.
   as a folder (`AGENT.md` is the definition, `MEMORY.md` is what it learned,
   `skills/` is what it knows, `STARTERS.md` is how it opens a chat). Hiring one
   is dropping one more folder — no release needed.
+  A user reaches one of them three ways: opening its own chat, letting the
+  assistant hand it work with `task`, or writing **`@<name>`** in an ordinary
+  message. The last one delivers that single message to the worker word for
+  word — no paraphrase in between — and leaves the conversation where it is. If
+  that worker stops to ask something back, the user's next message answers it.
+  The name is whatever the roster says, so an agent the user added themselves is
+  addressable the moment its folder exists.
 - **ซับเอเจน (helpers)** — your own hands, never chatted with, and part of
   the system: the bundled set is the whole set. A user file in
   `<DataRoot>/subagents` is **not loaded** — it is reported as a conflict so it

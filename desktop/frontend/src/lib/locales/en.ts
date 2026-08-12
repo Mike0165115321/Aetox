@@ -828,6 +828,11 @@ Check your own work before answering; say so plainly if unsure.
   'chat.inputToAgent': 'Message {name}…',
   'chat.mainAgent': 'Main assistant',
   'chat.agentSwitchNote': 'Switching always opens a new chat — this one stays in history.',
+  // Said in the same breath as the switcher's note, because the two menus list
+  // the same names and the difference between them is the whole point: one
+  // moves you into someone's room, the other says one sentence to them from
+  // where you are.
+  'chat.mentionNote': '@ sends this one message to them — the chat stays with the assistant.',
   'chat.shellTitle': 'Which shell runs the commands the agent writes',
   'chat.shellNote': 'Saved for this project. Takes effect on the next command — one already running is not moved.',
   'office.newAgent': 'Add a specialist',
