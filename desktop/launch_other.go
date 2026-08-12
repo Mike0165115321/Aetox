@@ -4,7 +4,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 
@@ -50,7 +49,10 @@ func launchLogged(command, logPath string) error {
 	if command == "" {
 		return fmt.Errorf("ไม่มีคำสั่งให้รัน")
 	}
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	// Appended under a live follower rather than truncated, and rotated by
+	// rename — the same openBootLog the Windows twin uses, because `tail -f`
+	// holds a byte offset exactly the way `Get-Content -Wait` does.
+	logFile, err := openBootLog(logPath)
 	if err != nil {
 		return err
 	}
