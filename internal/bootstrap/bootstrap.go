@@ -342,11 +342,13 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 		// MCP server that finishes connecting after this point reaches every
 		// desk that attached it, but not a chair session already open.
 		//
-		// Which is why the deferred ones are brought up *before* the cut, not
-		// after: a server only this agent carries was skipped at startup, and a
-		// snapshot taken first would be a snapshot without it — the same
-		// connect the delegate path does, on the other door, so opening a chat
-		// and being handed a job give the worker the same tools.
+		// Which is why every server this agent carries is brought up *before*
+		// the cut — the same connect the delegate path does on the other door,
+		// so opening a chat and being handed a job give the worker the same
+		// tools. "Every", not "the deferred ones": this call runs during a
+		// re-bootstrap, and the registry it is furnishing is seconds old with
+		// its own background Register not yet started. An eager server is only
+		// reliably *somewhere* by now, and somewhere is not here.
 		// Engine has no context of its own — it is called from a settings save
 		// and a session open, neither of which cancels. A bound of its own,
 		// then, so a server that never answers delays opening the chat by a

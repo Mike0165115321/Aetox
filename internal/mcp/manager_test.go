@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -170,6 +171,106 @@ func TestDeferredServerWaitsForTheAgentThatNeedsIt(t *testing.T) {
 	}
 	if src, ok := reg.SourceOf("echo_echo"); !ok || src != skill.SourceMCP {
 		t.Fatalf("echo_echo source = %q ok=%v, want mcp after the agent started", src, ok)
+	}
+}
+
+// Every registry that asks gets the tools — not just the first one to ask.
+//
+// This is the report: the desktop bootstraps twice on startup (focusNone, then
+// openAtRememberedDesk), each building its own registry and starting its own
+// registration against the one long-lived Manager. A manager-wide "already
+// attached" flag gave the tools to whichever goroutine got there first — the
+// throwaway registry, every launch — and returned nothing, silently and with no
+// error, to the live one. Nothing on screen said the server had connected fine
+// and been dropped on the floor; what the user saw was every specialist agent
+// refusing to start because its MCP server "had not finished connecting".
+func TestRegisterFillsEveryRegistryItIsGiven(t *testing.T) {
+	bin := buildEchoServer(t)
+	m := NewManager([]Server{{Name: "echo", Command: []string{bin}, Timeout: 10 * time.Second}})
+	t.Cleanup(func() { m.Close() })
+
+	first, live := skill.NewRegistry(), skill.NewRegistry()
+	// Concurrently, because that is how it happens: two bootstraps 19ms apart,
+	// two goroutines, one cached connection they both wait on.
+	var wg sync.WaitGroup
+	errCh := make(chan []error, 2)
+	for _, reg := range []*skill.Registry{first, live} {
+		wg.Add(1)
+		go func(reg *skill.Registry) {
+			defer wg.Done()
+			_, errs := m.Register(context.Background(), reg)
+			errCh <- errs
+		}(reg)
+	}
+	wg.Wait()
+	close(errCh)
+	for errs := range errCh {
+		if len(errs) != 0 {
+			t.Fatalf("unexpected errors: %v", errs)
+		}
+	}
+
+	for name, reg := range map[string]*skill.Registry{"superseded": first, "live": live} {
+		if src, ok := reg.SourceOf("echo_echo"); !ok || src != skill.SourceMCP {
+			t.Fatalf("%s registry: echo_echo source = %q ok=%v, want mcp", name, src, ok)
+		}
+	}
+}
+
+// A re-bootstrap after the server is up must still fill the new registry — the
+// same failure as above on the deferred path, where the agent's own dispatch is
+// what brings the server up. Sequential rather than racing: this is a model
+// switch mid-session, long after the first registration finished.
+func TestRegisterForFillsARegistryBuiltLater(t *testing.T) {
+	bin := buildEchoServer(t)
+	m := NewManager([]Server{
+		{Name: "echo", Command: []string{bin}, Timeout: 10 * time.Second, Deferred: true},
+	})
+	t.Cleanup(func() { m.Close() })
+
+	before := skill.NewRegistry()
+	if errs := m.RegisterFor(context.Background(), before, []string{"echo"}); len(errs) != 0 {
+		t.Fatalf("first dispatch: %v", errs)
+	}
+	after := skill.NewRegistry() // what a re-bootstrap hands the next dispatch
+	if errs := m.RegisterFor(context.Background(), after, []string{"echo"}); len(errs) != 0 {
+		t.Fatalf("dispatch after re-bootstrap: %v", errs)
+	}
+	if src, ok := after.SourceOf("echo_echo"); !ok || src != skill.SourceMCP {
+		t.Fatalf("echo_echo source = %q ok=%v in the new registry, want mcp", src, ok)
+	}
+}
+
+// An EAGER server placed on an agent must be furnished into the registry the
+// agent is about to be cut from — the same as a deferred one.
+//
+// This is the chair door. Opening a chat with an agent re-bootstraps the engine,
+// which builds a new registry and starts its background Register; the chair's
+// cut is taken from that registry immediately, before the background pass has
+// begun. RegisterFor is what stands in between, and it used to skip anything not
+// Deferred — so an ordinary desk-carried server that the user had also switched
+// on for the agent was never in the cut, and the agent said, correctly and
+// uselessly, that it had no such tool.
+func TestRegisterForFurnishesAnEagerServerToo(t *testing.T) {
+	bin := buildEchoServer(t)
+	m := NewManager([]Server{
+		// Not deferred: some desk carries it, so startup connects it eagerly.
+		{Name: "echo", Command: []string{bin}, Timeout: 10 * time.Second},
+	})
+	t.Cleanup(func() { m.Close() })
+
+	// Startup, against the registry of the engine that is about to be replaced.
+	if _, errs := m.Register(context.Background(), skill.NewRegistry()); len(errs) != 0 {
+		t.Fatalf("startup register: %v", errs)
+	}
+
+	// Opening the chair: a brand new registry, nothing in it yet.
+	chair := skill.NewRegistry()
+	if errs := m.RegisterFor(context.Background(), chair, []string{"echo"}); len(errs) != 0 {
+		t.Fatalf("RegisterFor: %v", errs)
+	}
+	if src, ok := chair.SourceOf("echo_echo"); !ok || src != skill.SourceMCP {
+		t.Fatalf("echo_echo source = %q ok=%v — the chair would be cut without it", src, ok)
 	}
 }
 

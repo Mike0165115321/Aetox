@@ -523,6 +523,7 @@ product picture in [COMPANY.md](COMPANY.md)) · §82 (the learning floor) · §4
 | §96 | Do Not Ask the Model to Match What It Cannot See, and Do Not Answer a Failure With "Look Again" (2026-08-09) |
 | §97 | A Second Engine Is Another Dialect, Not Another Agent; and a Server May Be Taken in Part (2026-08-10) |
 | §99 | Packing: One Name in the Tool Block, Several Rights Inside It (2026-08-10) |
+| §101 | A Cache That Outlives What It Describes Will Lie; Ask the Thing Itself (2026-08-12) |
 
 ---
 

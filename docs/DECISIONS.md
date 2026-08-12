@@ -2571,3 +2571,41 @@ Three sentences a `tools:` line can say, all of them pinned by `TestAToolsLineNa
 Measured by [desktop/tool_budget_test.go](../desktop/tool_budget_test.go): **45 tools / ~9,764 tok → 40 tools / ~9,728 tok** with no engine connected, and connecting an engine now adds **+2 tools / ~802 tok** where it added +6 / ~941. The token saving is modest because a packed description carries every action's line; the entry saving is the point, and so is what happens next — the executions work §100 will bring to `n8n` now costs an action rather than three more names in everyone's tool block.
 
 The per-action names — `shell_output`, `shell_kill`, the four `github_*` readers, the five `n8n_workflow_*` calls and the five `windmill_*` calls — are no longer registry entries and can no longer be called by the model directly (`shell <cmd>`, `github search <q>`, `n8n list` keep working as door codes, routed through the pack). They remain, everywhere it matters: `categories:`, a profile's `tools:` and `deny:`, `connect.Allows`, the permission rules, and the sentence in the approval prompt.
+
+---
+
+## 101. Decision — A Cache That Outlives What It Describes Will Lie; Ask the Thing Itself (2026-08-12)
+
+Owner, having watched all five agents refuse in a row: *"ทำไมไม่ได้สักตัวเลยครับ"*
+
+Ten dispatches, ten refusals, none of them longer than six milliseconds — `doc`, `deck`, `sheet`, `github`, `automation`, twice each. Each one came back saying the MCP server they work with *"[had] not finished connecting yet — start this job again in a moment"*, and starting again produced the same answer for the same reason, forever.
+
+The server had connected. `mcpMgr.Register` finished in 12.5 seconds and logged no error at all. The tools were enumerated and then dropped on the floor, and nothing anywhere said so.
+
+### 101.1 What was actually wrong
+
+[internal/mcp.Manager](../internal/mcp/manager.go) is built once and kept — the comment at the top of the file says so, and that is right: connections are cached there, so a re-bootstrap reuses a live session instead of respawning every server. Its `attach` carried a `done[server]` flag with that same lifetime, to stop a second dispatch re-registering names the registry already held.
+
+**A `*skill.Registry` does not have that lifetime.** Every bootstrap builds a new one. So the flag was answering a question about the registry with a memory belonging to the manager, and the moment there were two registries the memory was about the wrong one.
+
+There are always two. [App.startup](../desktop/app.go) calls `focusNone()` and then `openAtRememberedDesk()`, and each re-bootstraps the engine — two registries, nineteen milliseconds apart, two background registrations against the one manager. The first goroutine to return set the flag and filled **the registry that had already been superseded**; the live one asked, was told `done`, and got `nil`. No error, because from `attach`'s point of view nothing had gone wrong.
+
+The result on this machine: **no MCP tool was ever reachable in a desktop session** — not just for the agents, for the assistant too — and a mid-session model switch would have lost them the same way for the same reason.
+
+### 101.2 The rule
+
+> A cache whose lifetime is longer than the thing it describes will eventually describe something else. Where the thing itself can be asked, ask it.
+
+`attach` now skips a tool **this registry** already holds and registers everything else, and `RegisterFor` decides whether a server is present by looking for its tools in the registry it was handed ([`holds`](../internal/mcp/manager.go)) rather than by consulting a flag. It is the same question `subagent.missingAgentServers` asks before starting an agent, asked the same way — so the guard and the thing it guards can no longer disagree. "Which tools does this registry have" was being answered in two places and nobody had noticed it was a second place; the fix is the usual one, which is to delete the copy rather than to keep it honest.
+
+`TestRegisterFillsEveryRegistryItIsGiven` runs the two registrations concurrently the way startup does, and `TestRegisterForFillsARegistryBuiltLater` covers the deferred path after a re-bootstrap. Both fail against the old flag.
+
+### 101.3 The two things that made it expensive to find
+
+**A guard that returns "nothing to do" and "nothing happened, and that is a problem" as the same value.** `attach` returned `nil` errors for a successful skip and for a silent drop. The log showed a registration that took 12.5 seconds and reported nothing, which reads exactly like success. The fix removes the ambiguity by removing the state — but the shape is worth naming, because it is available anywhere a fast path returns early.
+
+**Advice a user cannot act on is worse than no advice.** "Start this job again in a moment" was written for a real case: a dispatch in the seconds after launch, before the connect lands. It was handed out for a permanent condition too, and it sent the owner round the same loop twice. A retry instruction is only honest when the thing being waited for can still arrive; `EnsureServers` could not rescue this one either, because [`RegisterFor`](../internal/mcp/manager.go) only handles `Deferred` servers and this one was carried by desks. **Left standing, and named here so the next person meets it as a known edge rather than a discovery:** a server that has genuinely *failed* to connect is still reported to the model as one that has not finished.
+
+### What this cost
+
+Nothing measurable — one flag removed and one lookup added, on a path that runs once per server per bootstrap. What it bought is that MCP works at all in the desktop app.
