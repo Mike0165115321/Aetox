@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/Mike0165115321/Aetox/internal/statereport"
 )
 
 // Workflow is one workflow as the list and read calls report it. Deliberately
@@ -43,8 +45,9 @@ var writableFields = []string{
 }
 
 // ErrNotConnected is what every tool gets when there is no key or no address,
-// so the sentence the user reads is written once.
-var ErrNotConnected = errors.New("ยังไม่ได้เชื่อม n8n — ไปที่ ตั้งค่า → การเชื่อมต่อ แล้วใส่ที่อยู่เซิร์ฟเวอร์กับ API key")
+// so the sentence the user reads is written once. A state report: it describes
+// this machine's configuration, not anything the caller should do differently.
+var ErrNotConnected = statereport.New("ยังไม่ได้เชื่อม n8n — ไปที่ ตั้งค่า → การเชื่อมต่อ แล้วใส่ที่อยู่เซิร์ฟเวอร์กับ API key")
 
 // List reports the workflows on the instance, newest page first.
 //
@@ -237,7 +240,7 @@ func call(ctx context.Context, method, path string, body []byte, into any) error
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("ติดต่อ n8n ไม่ได้: %w", err)
+		return statereport.Newf("ติดต่อ n8n ไม่ได้: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -249,6 +252,12 @@ func call(ctx context.Context, method, path string, body []byte, into any) error
 
 // statusError turns a refusal into something the reader can act on, keeping the
 // server's own words wherever they are more specific than ours.
+//
+// Statuses split along the statereport line: 401/403 describe a credential's
+// state and the residual (mostly 5xx) a server's — true or false regardless of
+// what the caller sends next. 404/400/409 answer the request itself — a wrong
+// id, a malformed graph, a name collision — which the model can and should do
+// something about, so those stay readable as lessons.
 func statusError(resp *http.Response) error {
 	var detail struct {
 		Message string `json:"message"`
@@ -258,9 +267,9 @@ func statusError(resp *http.Response) error {
 
 	switch resp.StatusCode {
 	case http.StatusUnauthorized:
-		return errors.New("n8n ปฏิเสธ API key — อาจหมดอายุแล้ว ไปสร้างใหม่ที่ Settings → n8n API")
+		return statereport.New("n8n ปฏิเสธ API key — อาจหมดอายุแล้ว ไปสร้างใหม่ที่ Settings → n8n API")
 	case http.StatusForbidden:
-		return errors.New("คีย์นี้สิทธิ์ไม่พอสำหรับคำสั่งนี้")
+		return statereport.New("คีย์นี้สิทธิ์ไม่พอสำหรับคำสั่งนี้")
 	case http.StatusNotFound:
 		return errors.New("ไม่พบสิ่งที่ขอบน n8n — id ผิด หรือถูกลบไปแล้ว")
 	case http.StatusBadRequest:
@@ -277,7 +286,7 @@ func statusError(resp *http.Response) error {
 		return errors.New("n8n ปฏิเสธเพราะชนกับของเดิม (409)")
 	}
 	if said != "" {
-		return fmt.Errorf("n8n ตอบกลับ %d: %s", resp.StatusCode, said)
+		return statereport.Newf("n8n ตอบกลับ %d: %s", resp.StatusCode, said)
 	}
-	return fmt.Errorf("n8n ตอบกลับสถานะ %d", resp.StatusCode)
+	return statereport.Newf("n8n ตอบกลับสถานะ %d", resp.StatusCode)
 }

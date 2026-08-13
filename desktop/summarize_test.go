@@ -129,6 +129,29 @@ func TestProgramExitCodesAreNotLessons(t *testing.T) {
 	}
 }
 
+// A state report describes a machine at a moment — the n8n that was down
+// tonight, the key that expired — and will be false tomorrow. Three of these
+// reached the approval queue as permanent-memory cards ("เลี่ยงรูปแบบที่ชน
+// เงื่อนไขนี้ตั้งแต่ครั้งแรก" about a server that simply was not running,
+// 2026-08-12) before the rows carried where the failure came from.
+func TestStateReportsAreNotLessons(t *testing.T) {
+	a := newJobApp(t)
+	mark := a.maxToolRunID()
+	for i, ref := range []string{"s1", "s2", "s3"} {
+		a.recordToolRun(turn.ToolRun{Ref: ref, Name: "browser",
+			Args:      `{"action":"open","url":"http://localhost:567` + string(rune('7'+i)) + `"}`,
+			OK:        false,
+			Error:     "page did not finish loading",
+			ErrorKind: turn.ErrorFromWorld,
+		})
+	}
+	a.recordJobs(1, "เปิดหน้าเว็บ", "ไม่ขึ้น", mark, time.Second)
+
+	if pending := a.ListPendingChanges(); len(pending) != 0 {
+		t.Fatalf("tonight's outage was proposed as a permanent lesson: %+v", pending)
+	}
+}
+
 // The lesson is the refusal, and a refusal is written to end with what to do
 // instead — so a body cut at the grouping key's length loses the only half
 // worth keeping. The real one lost "…write the path out literally".

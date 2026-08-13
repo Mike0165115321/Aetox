@@ -29,6 +29,10 @@ type taskFixture struct {
 	root     string
 	registry *skill.Registry
 	exec     *turn.Executor
+	// delegations is the register the three tools share, held so a test can be
+	// the host and press Stop — the one thing that ends a delegate early now
+	// that a turn ending does not.
+	delegations *Delegations
 
 	// Delegates emit from their own goroutines, so the collectors are guarded —
 	// the same reason desktop/app.go locks its tool history (§44.11).
@@ -64,10 +68,12 @@ func newTaskFixture(t *testing.T, mainModel string) *taskFixture {
 		f.mu.Unlock()
 	}
 
+	f.delegations = NewDelegations()
 	for _, tool := range NewTaskTools(TaskOptions{
 		Provider:     provider,
 		Model:        mainModel,
 		Registry:     f.registry,
+		Delegations:  f.delegations,
 		ApprovalMode: safety.ApprovalFullAccess,
 		OnToolAction: onToolAction,
 		OnUsage: func(u model.Usage) {
@@ -522,33 +528,87 @@ func TestTaskDefinitionListsTheProfiles(t *testing.T) {
 	}
 }
 
-// Stop must reach a running delegate: the parent's cancel is the only brake on a
-// loop with no human watching it.
-func TestTaskStopsWhenTheTurnIsCancelled(t *testing.T) {
+// The background promise, stated as a test: the turn that started a delegate
+// ends, and the delegate's work is still there to collect afterwards.
+//
+// This is the assertion that used to run the other way round. A turn ending
+// took every uncollected delegate with it, so a model that ran out of turn
+// before it thought to collect threw away the whole run — see the rule on
+// Delegations.start.
+func TestADelegateOutlivesTheTurnThatStartedIt(t *testing.T) {
 	f := newTaskFixture(t, "aetox-tools:test")
 	dispatcher := skill.NewDispatcher(f.registry)
 
-	// The delegate's context descends from the turn's, so cancelling the turn must
-	// reach a delegate that is already running.
-	turnCtx, cancel := context.WithCancel(turn.WithCallID(context.Background(), "call_1"))
+	turnCtx, endTurn := context.WithCancel(turn.WithCallID(context.Background(), "call_1"))
 	start, _, err := dispatcher.ExecuteTool(turnCtx, "task", map[string]any{
 		"description": "x", "prompt": "รายงานไฟล์ในโฟลเดอร์", "agent": "explore",
 	})
 	if err != nil || !start.Success {
 		t.Fatalf("start failed: %v %q", err, start.Content)
 	}
-	cancel()
+	endTurn() // the reply went out; this turn is over
 
-	// Collected on a live context, so what is asserted is the delegate stopping —
-	// not the collector being cancelled out from under it.
+	// A later turn, collecting by the same id.
 	out, _, err := dispatcher.ExecuteTool(turn.WithCallID(context.Background(), "call_2"), "task_result",
 		map[string]any{"task_id": taskIDOf(t, start)})
-	t.Logf("after Stop: success=%v content=%q err=%v", out.Success, out.Content, err)
+	t.Logf("collected in a later turn: success=%v content=%q err=%v", out.Success, out.Content, err)
+	if err != nil {
+		t.Fatalf("collect failed: %v", err)
+	}
+	if !out.Success {
+		t.Errorf("the turn ending killed the delegate: %q", out.Content)
+	}
+	if strings.Contains(out.Content, "stopped") {
+		t.Errorf("the delegate reported itself stopped by a turn that merely ended: %q", out.Content)
+	}
+}
+
+// Stop must reach a running delegate. It is the only brake left on a loop with
+// no human watching it, and the user pressing it has said something about the
+// work rather than about the turn.
+//
+// Asserted on a delegate parked on a question, because that is the one state a
+// test can hold it in without racing its own completion — and it is also the
+// worst case: a parked goroutine is waiting on a channel nobody will ever write
+// to, so if Stop cannot free it the app leaks one per abandoned question.
+func TestStopEndsARunningDelegate(t *testing.T) {
+	f := newTaskFixture(t, "aetox-tools:test")
+	dispatcher := skill.NewDispatcher(f.registry)
+
+	before := runtime.NumGoroutine()
+	start, _, err := dispatcher.ExecuteTool(turn.WithCallID(context.Background(), "call_1"), "task",
+		map[string]any{"description": "x", "prompt": "askmain: หาไฟล์ในโฟลเดอร์นี้", "agent": "explore"})
+	if err != nil || !start.Success {
+		t.Fatalf("start failed: %v %q", err, start.Content)
+	}
+	id := taskIDOf(t, start)
+
+	// Let it get as far as the question, then Stop without answering.
+	asked := f.collect(t, id)
+	if !strings.Contains(asked.Content, "waiting for a decision") {
+		t.Fatalf("the delegate never parked: %q", asked.Content)
+	}
+	if stopped := f.delegations.StopAll(); stopped != 1 {
+		t.Errorf("StopAll reported %d delegates stopped, want 1", stopped)
+	}
+
+	out, _, err := dispatcher.ExecuteTool(turn.WithCallID(context.Background(), "call_2"), "task_result",
+		map[string]any{"task_id": id})
+	t.Logf("after Stop: success=%v err=%v content=%q", out.Success, err, out.Content)
 	if out.Success {
-		t.Error("a cancelled delegate reported success")
+		t.Error("a delegate stopped mid-question reported success")
 	}
 	if !strings.Contains(out.Content, "stopped") {
 		t.Errorf("the model was not told the delegate was stopped: %q", out.Content)
+	}
+
+	// The parked goroutine has to be gone, not merely unreachable.
+	deadline := time.Now().Add(5 * time.Second)
+	for runtime.NumGoroutine() > before+2 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if leaked := runtime.NumGoroutine() - before; leaked > 2 {
+		t.Errorf("%d goroutines still running after Stop — a parked delegate was never freed", leaked)
 	}
 }
 
@@ -618,16 +678,15 @@ func TestSeveralDelegatesParkAtOnceAndEachGetsItsOwnAnswer(t *testing.T) {
 	}
 }
 
-// Stop, while a delegate is parked on a question nobody answered. The parked
-// goroutine is waiting on a channel, so the only thing that can free it is the
-// turn's own context — and if it cannot, the app leaks a goroutine per abandoned
-// question and the user's Stop is a lie.
-func TestStopFreesADelegateParkedOnAQuestion(t *testing.T) {
+// A question outlives the turn it was asked in. The delegate is parked inside
+// its own tool call holding everything it had already worked out, and the reply
+// going out without an answer is not a reason to throw that away — the next turn
+// can still answer it and collect the finished work.
+func TestAParkedQuestionSurvivesTheTurn(t *testing.T) {
 	f := newTaskFixture(t, "aetox-tools:test")
 	dispatcher := skill.NewDispatcher(f.registry)
 
-	before := runtime.NumGoroutine()
-	turnCtx, cancel := context.WithCancel(turn.WithCallID(context.Background(), "call_1"))
+	turnCtx, endTurn := context.WithCancel(turn.WithCallID(context.Background(), "call_1"))
 	start, _, err := dispatcher.ExecuteTool(turnCtx, "task", map[string]any{
 		"description": "x", "prompt": "askmain: หาไฟล์ในโฟลเดอร์นี้", "agent": "explore",
 	})
@@ -635,30 +694,21 @@ func TestStopFreesADelegateParkedOnAQuestion(t *testing.T) {
 		t.Fatalf("start failed: %v %q", err, start.Content)
 	}
 	id := taskIDOf(t, start)
-
-	// Let it get as far as the question, then stop the turn without answering.
-	asked := f.collect(t, id)
-	if !strings.Contains(asked.Content, "waiting for a decision") {
+	if asked := f.collect(t, id); !strings.Contains(asked.Content, "waiting for a decision") {
 		t.Fatalf("the delegate never parked: %q", asked.Content)
 	}
-	cancel()
+	endTurn()
 
-	// Collected on a live context: what is asserted is the delegate letting go,
-	// not the collector being cancelled with it.
-	out, _, err := dispatcher.ExecuteTool(turn.WithCallID(context.Background(), "call_2"), "task_result",
-		map[string]any{"task_id": id})
-	t.Logf("after Stop: success=%v err=%v content=%q", out.Success, err, out.Content)
-	if out.Success {
-		t.Error("a delegate stopped mid-question reported success")
+	// A later turn answers it, and the delegate carries on from where it stopped.
+	answered, _, err := dispatcher.ExecuteTool(turn.WithCallID(context.Background(), "call_2"), "task_answer",
+		map[string]any{"task_id": id, "answer": "yes — list the sandbox root"})
+	if err != nil || !answered.Success {
+		t.Fatalf("answering across the turn boundary failed: %v %q", err, answered.Content)
 	}
-
-	// The parked goroutine has to be gone, not merely unreachable.
-	deadline := time.Now().Add(5 * time.Second)
-	for runtime.NumGoroutine() > before+2 && time.Now().Before(deadline) {
-		time.Sleep(20 * time.Millisecond)
-	}
-	if leaked := runtime.NumGoroutine() - before; leaked > 2 {
-		t.Errorf("%d goroutines still running after Stop — a parked delegate was never freed", leaked)
+	out := f.collect(t, id)
+	t.Logf("collected after answering in a later turn: success=%v content=%q", out.Success, out.Content)
+	if !out.Success {
+		t.Errorf("the delegate did not resume: %q", out.Content)
 	}
 }
 
@@ -783,23 +833,83 @@ func TestDelegatesStartedTogetherRunConcurrently(t *testing.T) {
 	}
 }
 
+// The tray reads the register, and the register has to tell running from done
+// from stuck — the tool-event stream cannot (a `task` call completes the moment
+// the work starts), which is the whole reason Snapshot exists (§105).
+func TestSnapshotTellsRunningFromDoneFromStuck(t *testing.T) {
+	f := newTaskFixture(t, "aetox-tools:test")
+	dispatcher := skill.NewDispatcher(f.registry)
+
+	// One delegate parked on a question, never collected: the tray must call it
+	// waiting anyway — "stuck, needs you" cannot depend on somebody having
+	// already come asking.
+	stuck, _, err := dispatcher.ExecuteTool(turn.WithCallID(context.Background(), "call_1"), "task",
+		map[string]any{"description": "stuck one", "prompt": "askmain: หาไฟล์ในโฟลเดอร์นี้", "agent": "explore"})
+	if err != nil || !stuck.Success {
+		t.Fatalf("start failed: %v %q", err, stuck.Content)
+	}
+	stuckID := taskIDOf(t, stuck)
+	waitFor(t, func() bool {
+		for _, info := range f.delegations.Snapshot() {
+			if info.ID == stuckID && info.Waiting {
+				return true
+			}
+		}
+		return false
+	}, "the parked delegate never showed as waiting")
+
+	// And one run to completion.
+	done, _, err := dispatcher.ExecuteTool(turn.WithCallID(context.Background(), "call_2"), "task",
+		map[string]any{"description": "quick one", "prompt": "รายงานไฟล์ในโฟลเดอร์", "agent": "explore"})
+	if err != nil || !done.Success {
+		t.Fatalf("start failed: %v %q", err, done.Content)
+	}
+	doneID := taskIDOf(t, done)
+	f.collect(t, doneID)
+
+	byID := map[string]TaskInfo{}
+	for _, info := range f.delegations.Snapshot() {
+		byID[info.ID] = info
+	}
+	if got := byID[stuckID]; !got.Running || !got.Waiting || got.Question == "" {
+		t.Errorf("stuck delegate reads %+v — want running, waiting, with its question", got)
+	}
+	if got := byID[doneID]; got.Running || got.Waiting || !got.OK {
+		t.Errorf("finished delegate reads %+v — want done and ok", got)
+	}
+
+	// Freed for the goroutine check other tests do; here just unstick it.
+	f.delegations.StopAll()
+}
+
+func waitFor(t *testing.T, cond func() bool, msg string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatal(msg)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 // A model in a loop must not be able to melt the machine or the provider's rate
 // limit, so there is a ceiling on delegates in flight.
 func TestConcurrencyIsCapped(t *testing.T) {
 	isolate(t)
-	r := newRunner()
+	r := NewDelegations()
 	block := make(chan struct{})
 	defer close(block)
 
 	for i := range maxConcurrent {
-		if _, err := r.start(context.Background(), "explore", "held", func(context.Context, *runningTask) skill.Output {
+		if _, err := r.start("explore", "held", func(context.Context, *runningTask) skill.Output {
 			<-block
 			return skill.Output{Success: true}
 		}); err != nil {
 			t.Fatalf("start %d refused early: %v", i, err)
 		}
 	}
-	_, err := r.start(context.Background(), "explore", "one too many", func(context.Context, *runningTask) skill.Output {
+	_, err := r.start("explore", "one too many", func(context.Context, *runningTask) skill.Output {
 		return skill.Output{}
 	})
 	if err == nil {

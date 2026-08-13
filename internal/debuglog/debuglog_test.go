@@ -63,6 +63,42 @@ func TestRegisteredSecretsNeverReachTheFile(t *testing.T) {
 	}
 }
 
+// The ring is the bug-report bundle's source, and bug reports come from the
+// installs where nobody enabled file logging — so it must fill with no writer
+// open, stay capped, and hold lines that went through the same scrub as the
+// file.
+func TestRecentRemembersWithoutAFileAndStaysScrubbed(t *testing.T) {
+	recentMu.Lock()
+	recent = nil
+	recentMu.Unlock()
+	t.Cleanup(func() {
+		recentMu.Lock()
+		recent = nil
+		recentMu.Unlock()
+	})
+
+	const key = "sk-9f52c81e77aa4bd3b60f2b1c33d94a01"
+	Redact(key)
+	Msg("no writer, key %s", key)
+	for i := 0; i < recentCap+50; i++ {
+		Msg("line %d", i)
+	}
+
+	got := Recent(0)
+	if len(got) != recentCap {
+		t.Fatalf("ring holds %d lines, want the cap %d", len(got), recentCap)
+	}
+	joined := strings.Join(Recent(recentCap), "\n")
+	if strings.Contains(joined, key) {
+		t.Fatal("a registered secret reached the ring")
+	}
+	// Newest survive, oldest fall off, order oldest-first.
+	tail := Recent(2)
+	if !strings.Contains(tail[1], "line 249") || !strings.Contains(tail[0], "line 248") {
+		t.Errorf("tail = %q, want the two newest lines oldest-first", tail)
+	}
+}
+
 // Anything short enough to collide with ordinary words is refused. Replacing
 // every occurrence of a four-character string would shred the log into
 // something nobody can read, and an unreadable log is its own failure.

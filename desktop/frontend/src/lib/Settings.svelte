@@ -34,7 +34,7 @@
     SignInMethods, SignInStatus, StartSignIn, CancelSignIn, ImportableSignIns,
     Connections, ConnectAccount, SetConnectionTargets, VerifyConnection, DisconnectAccount,
     SetConnectionStartCommand, StartConnectionServer, CheckConnectionServer,
-    AppVersion, CheckForUpdate, ApplyUpdate,
+    AppVersion, CheckForUpdate, ApplyUpdate, RecentDebugLog,
     LearningEnabled, SetLearningEnabled, ListPendingChanges, ListDecidedChanges,
     ApprovePendingChange, RejectPendingChange, LearnedEntries, SaveLearnedEntry, OpenMemoryFolder,
   } from '../../wailsjs/go/main/App'
@@ -2310,7 +2310,7 @@
       { id: 'usage', label: t('settings.usage'), icon: 'chartColumn',
         terms: [t('settings.usageByModel'), t('settings.usageTotalTokens'), t('settings.usageCacheHitRate')] },
       { id: 'about', label: t('settings.about'), icon: 'package',
-        terms: [t('settings.aboutVersion'), t('settings.aboutCheck')] },
+        terms: [t('settings.aboutVersion'), t('settings.aboutCheck'), t('settings.aboutReport'), t('settings.aboutFeedback')] },
       { id: 'sponsor', label: t('settings.sponsor'), icon: 'heart', terms: ['PromptPay', 'GitHub'] },
     ]},
   ])
@@ -2319,6 +2319,60 @@
   const SITE_URL = 'https://aetox-puce.vercel.app/'
   // The one link that is right on every channel, whether or not a check ran.
   const RELEASES_URL = 'https://github.com/Mike0165115321/Aetox/releases'
+  const ISSUES_URL = 'https://github.com/Mike0165115321/Aetox/issues'
+
+  // What the user has to say about Aetox goes to the developer — as a GitHub
+  // issue the user submits, not as anything the app sends. Two rows, one
+  // destination: a problem report and plain feedback differ only in the hint
+  // they open with, because a suggestion forced through a bug template arrives
+  // apologising for not being a bug. The URL prefills the new-issue form with
+  // the two facts the user should not have to hunt for (version, OS);
+  // everything else is theirs to write, on a page where they read the whole
+  // message before pressing send, signed in as themselves. This is the whole
+  // privacy story: the last reader before anything leaves the machine is the
+  // person it belongs to.
+  //
+  // Deliberately NOT the learning loop's door. That queue is for lessons about
+  // this user and this machine; "Aetox is broken" and "I wish Aetox did X" are
+  // facts about the product, and the two kinds of report must never share a
+  // path (see summarize.go on state reports, the third kind, which goes
+  // nowhere at all).
+  async function openIssueForm(kind: 'problem' | 'feedback'): Promise<void> {
+    const ua = navigator.userAgent
+    const os = ua.includes('Windows') ? 'Windows' : ua.includes('Mac') ? 'macOS' : 'Linux'
+    const version = (appVersion ? 'v' + appVersion : t('settings.aboutReportUnknown'))
+      + (updateStatus?.channel ? ` (${updateStatus.channel})` : '')
+    const hint = kind === 'problem' ? t('settings.aboutReportBodyHint') : t('settings.aboutFeedbackBodyHint')
+    const lines = [
+      `<!-- ${hint} -->`,
+      '', '', '---',
+      `${t('settings.aboutReportVersion')}: ${version}`,
+      `${t('settings.aboutReportOS')}: ${os}`,
+    ]
+    if (kind === 'problem') {
+      // The evidence: what the app most recently complained about internally
+      // (already secret-scrubbed at the moment each line was written). Only
+      // the problem door carries it — feedback needs no logs. Trimmed from
+      // the OLD end when over budget: a prefill URL has a length limit, and
+      // the newest lines are the ones about whatever just went wrong. Folded
+      // in <details> and labelled deletable, because it is the user's form.
+      try {
+        let log = (await RecentDebugLog()) ?? []
+        let text = log.join('\n')
+        const MAX = 4000
+        while (text.length > MAX && log.length > 1) {
+          log = log.slice(1)
+          text = log.join('\n')
+        }
+        if (text) {
+          lines.push('', `<details><summary>${t('settings.aboutReportLogTitle')}</summary>`, '', '```', text, '```', '</details>')
+        }
+      } catch {
+        // No log is not a reason to block a report.
+      }
+    }
+    BrowserOpenURL(`${ISSUES_URL}/new?body=${encodeURIComponent(lines.join('\n'))}`)
+  }
 
   // Which page is open survives an F5. Same reasoning as the chat/settings view
   // itself (see setActiveView in stores/cockpit.svelte.ts): sessionStorage, not
@@ -4688,6 +4742,22 @@
             <div class="d">{RELEASES_URL}</div>
           </div>
           <button class="ctrl" onclick={() => BrowserOpenURL(RELEASES_URL)}>{t('settings.aboutOpenRelease')}</button>
+        </div>
+
+        <div class="set-row">
+          <div class="set-txt">
+            <div class="t">{t('settings.aboutReport')}</div>
+            <div class="d">{t('settings.aboutReportDesc')}</div>
+          </div>
+          <button class="ctrl" onclick={() => openIssueForm('problem')}>{t('settings.aboutReportOpen')}</button>
+        </div>
+
+        <div class="set-row">
+          <div class="set-txt">
+            <div class="t">{t('settings.aboutFeedback')}</div>
+            <div class="d">{t('settings.aboutFeedbackDesc')}</div>
+          </div>
+          <button class="ctrl" onclick={() => openIssueForm('feedback')}>{t('settings.aboutFeedbackOpen')}</button>
         </div>
       </div>
     {:else if active === 'sponsor'}

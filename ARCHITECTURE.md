@@ -526,6 +526,8 @@ product picture in [COMPANY.md](COMPANY.md)) · §82 (the learning floor) · §4
 | §101 | A Cache That Outlives What It Describes Will Lie; Ask the Thing Itself (2026-08-12) |
 | §102 | A Feedback Loop Cannot Be Deduplicated Away; Cut the Path, Not the Repeats (2026-08-12) |
 | §103 | A Step That Cannot Mistranslate Is a Step That Does Not Run (2026-08-12) |
+| §104 | Three Kinds of Bad News, Three Different Doors (2026-08-13) |
+| §105 | Work Given to Somebody Else Does Not End When the Sentence Does (2026-08-13) |
 
 ---
 

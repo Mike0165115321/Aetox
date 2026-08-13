@@ -3,6 +3,7 @@ package subagent
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -27,8 +28,8 @@ import (
 //   - N delegates started before the first collect run concurrently, so wall
 //     clock is the slowest one rather than the sum. Parallelism arrives as a
 //     property of the tool pair, not as a second mechanism (§44.9).
-//   - A delegate never outlives its turn: its context descends from the turn's,
-//     so Stop kills every outstanding one and nothing can leak past the reply.
+//   - A delegate outlives the turn that started it, and only the user ends it
+//     early. See the rule on Delegations below.
 
 // maxConcurrent caps how many delegates one turn may have in flight. Four is a
 // desktop-sized number: enough for a real fan-out, few enough that a model in a
@@ -68,6 +69,16 @@ type runningTask struct {
 	mu        sync.Mutex
 	toolCalls int
 	pending   *pendingAsk // non-nil while a question is waiting for an answer
+	// parked is non-nil for the whole time the delegate's goroutine is inside
+	// ask() — from before the question is even collectable to the moment an
+	// answer (or cancellation) frees it. It exists for Snapshot alone: pending
+	// only learns of a question when a collector comes asking, and the tray has
+	// to show "stuck, needs you" before anyone has thought to collect.
+	parked *pendingAsk
+	// collected: somebody has redeemed the finished result at least once. The
+	// tray hides a collected row — the work is in the conversation now — and
+	// only collect can know this, because collecting IS the one door out.
+	collected bool
 
 	// Written exactly once, before done is closed.
 	output skill.Output
@@ -85,11 +96,14 @@ func (r *runningTask) calls() int {
 	return r.toolCalls
 }
 
-// ask parks the delegate until the parent answers. The context is the
-// delegate's own, which descends from the turn's — so Stop unsticks a question
-// nobody was ever going to answer, and no goroutine outlives its reply.
+// ask parks the delegate until somebody answers, which may be a later turn than
+// the one that started it: a question is not lost when the reply it would have
+// arrived in has already been given. The context is the delegate's own, so Stop
+// unsticks a question nobody was ever going to answer.
 func (r *runningTask) ask(ctx context.Context, question string) (string, error) {
 	p := &pendingAsk{question: question, asked: time.Now(), answer: make(chan string, 1)}
+	r.setParked(p)
+	defer r.setParked(nil)
 	select {
 	case r.asks <- p:
 	case <-ctx.Done():
@@ -124,6 +138,18 @@ func (r *runningTask) setAsk(p *pendingAsk) {
 	r.mu.Unlock()
 }
 
+func (r *runningTask) setParked(p *pendingAsk) {
+	r.mu.Lock()
+	r.parked = p
+	r.mu.Unlock()
+}
+
+func (r *runningTask) parkedAsk() *pendingAsk {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.parked
+}
+
 // takeAsk claims the outstanding question so exactly one answer reaches it.
 func (r *runningTask) takeAsk() *pendingAsk {
 	r.mu.Lock()
@@ -131,6 +157,18 @@ func (r *runningTask) takeAsk() *pendingAsk {
 	p := r.pending
 	r.pending = nil
 	return p
+}
+
+func (r *runningTask) markCollected() {
+	r.mu.Lock()
+	r.collected = true
+	r.mu.Unlock()
+}
+
+func (r *runningTask) wasCollected() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.collected
 }
 
 func (r *runningTask) finished() bool {
@@ -142,20 +180,43 @@ func (r *runningTask) finished() bool {
 	}
 }
 
-// runner tracks this session's delegations. One instance is shared by the `task`
-// and `task_result` tools — they are two halves of one mechanism, so they share
-// state rather than looking each other up.
-type runner struct {
+// Delegations is this session's register of delegations — running, parked on a
+// question, and finished. One instance is shared by the `task`, `task_result`
+// and `task_answer` tools, because they are three halves of one mechanism and
+// sharing state beats looking each other up.
+//
+// It is exported so the host can own it, and the host has to own it for one
+// reason: Stop. A delegate's life is the session's, not the turn's (see start),
+// which means the turn's context no longer ends one — and "the user pressed
+// Stop" is a fact only the host has. Everything else about a delegation stays
+// in here.
+type Delegations struct {
 	mu      sync.Mutex
 	tasks   map[string]*runningTask
 	counter atomic.Uint64
 }
 
-func newRunner() *runner { return &runner{tasks: map[string]*runningTask{}} }
+// NewDelegations builds an empty register. A host that keeps the returned value
+// can stop what is running; one that does not gets the same behaviour minus
+// that door, which is what every test and the CLI want (see TaskOptions).
+func NewDelegations() *Delegations { return &Delegations{tasks: map[string]*runningTask{}} }
 
 // start registers a delegation and launches work in the background. work must
-// close nothing and return the output; the runner publishes it and closes done.
-func (r *runner) start(ctx context.Context, profile, label string, work func(context.Context, *runningTask) skill.Output) (*runningTask, error) {
+// close nothing and return the output; the register publishes it and closes done.
+//
+// The delegate's context is its own — context.Background, not the caller's —
+// and that is the whole of the background promise. shell_background settled the
+// same question for commands first, in the same words: "a dev server that dies
+// with the answer that started it is not a background command". Neither is an
+// agent. A turn that ends while a delegate is still reading files used to throw
+// the entire run away at the moment of the reply, so a model that had not
+// thought to collect yet lost minutes of real work and the user watching it
+// happen had no way to keep it.
+//
+// What still ends one early is StopAll, and only StopAll: the user pressing
+// Stop is a statement about the work, not about the turn the work happened to
+// start in. Nothing outlives the process — a goroutine cannot.
+func (r *Delegations) start(profile, label string, work func(context.Context, *runningTask) skill.Output) (*runningTask, error) {
 	r.mu.Lock()
 	inFlight := 0
 	for _, t := range r.tasks {
@@ -168,9 +229,7 @@ func (r *runner) start(ctx context.Context, profile, label string, work func(con
 		return nil, fmt.Errorf("%d sub-agents are already running (the limit is %d) — collect one with task_result before starting another", inFlight, maxConcurrent)
 	}
 	id := "task_" + strconv.FormatUint(r.counter.Add(1), 10)
-	// The delegate's context descends from the turn's: Stop cancels every
-	// outstanding delegate, and none can outlive the reply it was meant to serve.
-	childCtx, cancel := context.WithCancel(ctx)
+	childCtx, cancel := context.WithCancel(context.Background())
 	task := &runningTask{
 		id: id, profile: profile, label: label,
 		started: time.Now(), ctx: childCtx, cancel: cancel, done: make(chan struct{}),
@@ -196,7 +255,7 @@ func (r *runner) start(ctx context.Context, profile, label string, work func(con
 // a delegate waiting on `ask_main` is blocked on the parent, so a parent that
 // blocked on it would leave both parked until Stop. Collecting an asking
 // delegate returns the question — again, if it is asked again — never a wait.
-func (r *runner) collect(ctx context.Context, id string) (*runningTask, *pendingAsk, error) {
+func (r *Delegations) collect(ctx context.Context, id string) (*runningTask, *pendingAsk, error) {
 	r.mu.Lock()
 	task, ok := r.tasks[id]
 	r.mu.Unlock()
@@ -215,6 +274,7 @@ func (r *runner) collect(ctx context.Context, id string) (*runningTask, *pending
 	if task.finished() || task.ctx.Err() != nil {
 		select {
 		case <-task.done:
+			task.markCollected()
 			return task, nil, nil
 		case <-ctx.Done():
 			return nil, nil, ctx.Err()
@@ -225,6 +285,7 @@ func (r *runner) collect(ctx context.Context, id string) (*runningTask, *pending
 	}
 	select {
 	case <-task.done:
+		task.markCollected()
 		return task, nil, nil
 	case p := <-task.asks:
 		task.setAsk(p)
@@ -237,7 +298,7 @@ func (r *runner) collect(ctx context.Context, id string) (*runningTask, *pending
 // answer releases a parked delegate. Refusing an unasked task is deliberate: a
 // model answering a question nobody asked has lost track of which delegate it
 // was talking to, and silently accepting it would strand the real one.
-func (r *runner) answer(id, text string) error {
+func (r *Delegations) answer(id, text string) error {
 	r.mu.Lock()
 	task, ok := r.tasks[id]
 	r.mu.Unlock()
@@ -266,7 +327,7 @@ func (r *runner) answer(id, text string) error {
 
 // waiting lists the delegates parked on a question, for the message a wrong id
 // gets back.
-func (r *runner) waiting() []string {
+func (r *Delegations) waiting() []string {
 	r.mu.Lock()
 	tasks := make([]*runningTask, 0, len(r.tasks))
 	for _, t := range r.tasks {
@@ -285,7 +346,7 @@ func (r *runner) waiting() []string {
 
 // running lists what has not been collected yet, for a status line the model can
 // read when it wonders what it is still owed.
-func (r *runner) running() []*runningTask {
+func (r *Delegations) running() []*runningTask {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	out := make([]*runningTask, 0, len(r.tasks))
@@ -295,4 +356,93 @@ func (r *runner) running() []*runningTask {
 		}
 	}
 	return out
+}
+
+// TaskInfo is one delegation as the host's tray sees it: who is working, on
+// what, since when, how far along, and whether anyone needs to do anything.
+//
+// Read from the register rather than reconstructed from tool events, because
+// the register is the authority and the events cannot answer the one question
+// the tray exists for: the `task` tool call completes the instant the handle is
+// returned — the moment the work *starts* — so a UI watching events sees every
+// delegation as finished from birth.
+type TaskInfo struct {
+	ID      string    `json:"id"`
+	Profile string    `json:"profile"`
+	Label   string    `json:"label"`
+	Started time.Time `json:"started"`
+	// ToolCalls so far — live while running, final once done.
+	ToolCalls int `json:"toolCalls"`
+	// Running means the work is still going. Waiting narrows it: parked on a
+	// question, going nowhere until somebody answers.
+	Running  bool   `json:"running"`
+	Waiting  bool   `json:"waiting"`
+	Question string `json:"question,omitempty"`
+	// OK is the outcome, meaningful only once Running is false.
+	OK bool `json:"ok"`
+	// Collected: the finished result has been redeemed at least once — the
+	// work is in a conversation now, so a tray can stop offering it.
+	Collected bool `json:"collected"`
+}
+
+// Snapshot lists every delegation this session has had, newest first.
+//
+// Everything on it is safe to read concurrently: fields written after done
+// closes are guarded by the done check, and the live ones (calls, the pending
+// ask) take the task's own lock.
+func (r *Delegations) Snapshot() []TaskInfo {
+	r.mu.Lock()
+	tasks := make([]*runningTask, 0, len(r.tasks))
+	for _, t := range r.tasks {
+		tasks = append(tasks, t)
+	}
+	r.mu.Unlock()
+
+	out := make([]TaskInfo, 0, len(tasks))
+	for _, t := range tasks {
+		info := TaskInfo{
+			ID: t.id, Profile: t.profile, Label: t.label,
+			Started: t.started, ToolCalls: t.calls(),
+			Running: !t.finished(),
+		}
+		if info.Running {
+			if p := t.parkedAsk(); p != nil {
+				info.Waiting = true
+				info.Question = p.question
+			}
+		} else {
+			info.OK = t.output.Success
+			info.Collected = t.wasCollected()
+		}
+		out = append(out, info)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Started.After(out[j].Started) })
+	return out
+}
+
+// StopAll ends every delegation still running, and reports how many it found.
+//
+// This is the Stop button reaching the work, and it is the only thing that ends
+// a delegate early now that a turn ending does not (see start). The host calls
+// it; nothing in this package does, because "the user pressed Stop" is not a
+// fact a tool can observe.
+//
+// Cancelling is enough — it does not wait. Each delegate notices through its own
+// context, unparks whatever it was blocked on (a question nobody answered, a
+// tool mid-call) and winds its own loop up; a Stop that blocked until the
+// slowest one had finished would be a Stop that visibly does not stop.
+func (r *Delegations) StopAll() int {
+	r.mu.Lock()
+	stopping := make([]*runningTask, 0, len(r.tasks))
+	for _, t := range r.tasks {
+		if !t.finished() {
+			stopping = append(stopping, t)
+		}
+	}
+	r.mu.Unlock()
+
+	for _, t := range stopping {
+		t.cancel()
+	}
+	return len(stopping)
 }

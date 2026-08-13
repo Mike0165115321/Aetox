@@ -23,6 +23,7 @@ import (
 
 	"github.com/Mike0165115321/Aetox/internal/config"
 	"github.com/Mike0165115321/Aetox/internal/oauth"
+	"github.com/Mike0165115321/Aetox/internal/statereport"
 )
 
 const (
@@ -157,7 +158,7 @@ func Connect(ctx context.Context, key string) (Account, error) {
 func Verify(ctx context.Context) (Account, error) {
 	key := Token()
 	if key == "" {
-		return Account{}, errors.New("ยังไม่ได้เชื่อม n8n")
+		return Account{}, statereport.New("ยังไม่ได้เชื่อม n8n")
 	}
 	return probe(ctx, APIBase(), key)
 }
@@ -181,7 +182,7 @@ var httpClient = &http.Client{Timeout: 20 * time.Second}
 // whose operator switched the public API off.
 func probe(ctx context.Context, apiBase, key string) (Account, error) {
 	if apiBase == "" {
-		return Account{}, errors.New("ยังไม่ได้ระบุที่อยู่ของ n8n")
+		return Account{}, statereport.New("ยังไม่ได้ระบุที่อยู่ของ n8n")
 	}
 	if ctx == nil {
 		ctx = context.Background()
@@ -196,24 +197,26 @@ func probe(ctx context.Context, apiBase, key string) (Account, error) {
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return Account{}, fmt.Errorf("ติดต่อ n8n ไม่ได้ที่ %s — ตรวจว่าเซิร์ฟเวอร์เปิดอยู่และที่อยู่ถูกต้อง", BaseURL())
+		return Account{}, statereport.Newf("ติดต่อ n8n ไม่ได้ที่ %s — ตรวจว่าเซิร์ฟเวอร์เปิดอยู่และที่อยู่ถูกต้อง", BaseURL())
 	}
 	defer resp.Body.Close()
 	// Drained so the connection can be reused, capped so a wrong address
 	// pointing at something that streams cannot hold the call open.
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
 
+	// All four are the machine's state — a key's validity, an address's truth,
+	// a server's answer — not behaviour anyone should learn from (statereport).
 	switch {
 	case resp.StatusCode == http.StatusUnauthorized:
-		return Account{}, errors.New("n8n ปฏิเสธ API key นี้ — ผิด หมดอายุ หรือถูกเพิกถอน (คีย์ของ n8n มีวันหมดอายุที่ตั้งไว้ตอนสร้าง)")
+		return Account{}, statereport.New("n8n ปฏิเสธ API key นี้ — ผิด หมดอายุ หรือถูกเพิกถอน (คีย์ของ n8n มีวันหมดอายุที่ตั้งไว้ตอนสร้าง)")
 	case resp.StatusCode == http.StatusForbidden:
-		return Account{}, errors.New("คีย์นี้ใช้ได้แต่สิทธิ์ไม่พอ — สร้างคีย์ใหม่ที่มีสิทธิ์อ่านและเขียน workflow")
+		return Account{}, statereport.New("คีย์นี้ใช้ได้แต่สิทธิ์ไม่พอ — สร้างคีย์ใหม่ที่มีสิทธิ์อ่านและเขียน workflow")
 	case resp.StatusCode == http.StatusNotFound:
 		// The most common self-host misconfiguration, and the one whose default
 		// error message sends the user looking at their key instead.
-		return Account{}, fmt.Errorf("ไม่พบ API ของ n8n ที่ %s — ที่อยู่อาจผิด หรือผู้ดูแลปิด public API ไว้ (N8N_PUBLIC_API_DISABLED)", apiBase)
+		return Account{}, statereport.Newf("ไม่พบ API ของ n8n ที่ %s — ที่อยู่อาจผิด หรือผู้ดูแลปิด public API ไว้ (N8N_PUBLIC_API_DISABLED)", apiBase)
 	case resp.StatusCode < 200 || resp.StatusCode >= 300:
-		return Account{}, fmt.Errorf("n8n ตอบกลับสถานะ %d", resp.StatusCode)
+		return Account{}, statereport.Newf("n8n ตอบกลับสถานะ %d", resp.StatusCode)
 	}
 	// The host, because it is the true answer to "which n8n is this" and the
 	// only one the API can give.

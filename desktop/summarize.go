@@ -57,14 +57,17 @@ import (
 // this pass — clusters now group by real cause, so what used to be one cluster
 // of ten may be several below the threshold, which is the honest count.
 //
-// Still open, and the reason this reader must not be trusted blindly: a message
-// this codebase wrote may be a **refusal** (the agent broke a rule, and the
-// remedy is to behave differently) or a **state report** (the world is not in
-// the shape the tool needed — a server not running, no repository here, no
-// account attached). Only the first is a lesson. The second is about a machine
-// that will be different tomorrow, and "avoid this pattern from the first time"
-// is the wrong thing to learn from it. Nothing in the row tells them apart yet,
-// so the user's no on the card is what stands between the two today.
+// The third break was the split this comment used to predict (2026-08-13): a
+// message this codebase wrote may be a **refusal** (the agent broke a rule, and
+// the remedy is to behave differently) or a **state report** (the world is not
+// in the shape the tool needed — a server not running, a key expired). Only the
+// first is a lesson; the second is about a machine that will be different
+// tomorrow, and three cards teaching "avoid whatever hits an n8n that is down
+// tonight" reached the queue before the rows could tell them apart. Same fix at
+// the same place as the first two: the author of the error says what it is
+// (internal/statereport), the run records it (ErrorFromWorld), and the
+// error_kind filter below drops it unread. Unmarked stays unfiltered — a
+// failure of unknown origin is still offered, and the user still says no.
 
 // summarizeMinRepeats is how many same-shaped failures make a pattern. Two is
 // a coincidence a human would not want a card for; three is the same wall hit

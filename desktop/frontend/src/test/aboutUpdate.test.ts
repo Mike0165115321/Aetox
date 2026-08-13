@@ -6,7 +6,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte'
 import Settings from '../lib/Settings.svelte'
-import { CheckForUpdate, ApplyUpdate } from './mocks/wailsApp'
+import { CheckForUpdate, ApplyUpdate, AppVersion, RecentDebugLog } from './mocks/wailsApp'
+import { BrowserOpenURL } from './mocks/wailsRuntime'
 
 const status = (over: Record<string, unknown>) => ({
   current: '0.9.2', latest: '0.9.3', available: true, disabled: false,
@@ -49,6 +50,36 @@ describe('About: one-click update', () => {
     expect(await screen.findByText('scoop update aetox')).toBeTruthy()
     expect(screen.queryByText('อัปเดตแล้วรีสตาร์ท')).toBeNull()
     expect(vi.mocked(ApplyUpdate)).not.toHaveBeenCalled()
+  })
+
+  // A bug in Aetox goes to the developer as an issue the user submits — the
+  // button only opens the prefilled form in their own browser. What rides
+  // along: version, OS, and the app's recent internal log (the evidence the
+  // user should not have to hunt for). Nothing is sent by the app itself.
+  it('prefills the GitHub issue form with version, OS and recent log — and sends nothing', async () => {
+    vi.mocked(AppVersion).mockResolvedValue('9.9.9' as never)
+    vi.mocked(CheckForUpdate).mockResolvedValue(status({}) as never)
+    vi.mocked(RecentDebugLog).mockResolvedValue(['[01:02:03.000] terminal resize replayed the screen'] as never)
+    const { container } = render(Settings, { onClose: () => {} })
+    await openAbout(container)
+
+    await fireEvent.click(await screen.findByText('แจ้งปัญหา'))
+
+    await waitFor(() => expect(vi.mocked(BrowserOpenURL)).toHaveBeenCalledTimes(1))
+    const url = vi.mocked(BrowserOpenURL).mock.calls[0][0] as string
+    expect(url.startsWith('https://github.com/Mike0165115321/Aetox/issues/new?body=')).toBe(true)
+    const body = decodeURIComponent(url.split('body=')[1])
+    expect(body).toContain('v9.9.9')
+    expect(body).toMatch(/Windows|macOS|Linux/)
+    expect(body).toContain('terminal resize replayed the screen')
+
+    // Feedback is the second door to the same place — different opening hint,
+    // and no log: an opinion needs no evidence attached.
+    await fireEvent.click(screen.getByText('ส่งความคิดเห็น'))
+    await waitFor(() => expect(vi.mocked(BrowserOpenURL)).toHaveBeenCalledTimes(2))
+    const fb = decodeURIComponent((vi.mocked(BrowserOpenURL).mock.calls[1][0] as string).split('body=')[1])
+    expect(fb).toContain('v9.9.9')
+    expect(fb).not.toContain('terminal resize replayed the screen')
   })
 
   it('says what failed and re-arms the button, instead of a dead click', async () => {

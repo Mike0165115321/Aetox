@@ -32,6 +32,8 @@ export function ApprovePendingChange(arg1:number):Promise<void>;
 
 export function ArtifactPreview(arg1:string):Promise<main.ArtifactPreview>;
 
+export function BackgroundTasks():Promise<Array<main.BackgroundTask>>;
+
 export function BrowserBack(arg1:string):Promise<void>;
 
 export function BrowserClickRef(arg1:string,arg2:number):Promise<void>;
@@ -257,6 +259,8 @@ export function ReadSubagentProfile(arg1:string):Promise<string>;
 export function ReadWorkbook(arg1:string):Promise<ooxml.WorkbookPreview>;
 
 export function RecentAgentPages(arg1:number):Promise<Array<main.AgentPage>>;
+
+export function RecentDebugLog():Promise<Array<string>>;
 
 export function RecentProjects():Promise<Array<main.ProjectMeta>>;
 

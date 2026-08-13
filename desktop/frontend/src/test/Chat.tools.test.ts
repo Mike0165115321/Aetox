@@ -4,7 +4,7 @@ import { tick } from 'svelte'
 import Chat from '../lib/Chat.svelte'
 import { cockpit, applyToolEvent } from '../lib/stores/cockpit.svelte'
 import { setLocale } from '../lib/i18n.svelte'
-import { GuideTopics, SwitchApprovalMode, SupportedThinkLevels } from './mocks/wailsApp'
+import { GuideTopics, SwitchApprovalMode, SupportedThinkLevels, BackgroundTasks } from './mocks/wailsApp'
 
 const baseProps = {
   task: { title: '', steps: [] } as any,
@@ -28,6 +28,10 @@ beforeEach(() => {
   cockpit.chat = []
   cockpit.todos = []
   cockpit.ask = null
+  // The turn timeline and the background tray draw the same card now (§105.5),
+  // so a leftover background task would be counted as one of the turn's own.
+  cockpit.backgroundTasks = []
+  cockpit.backgroundSteps = []
   vi.mocked(GuideTopics).mockResolvedValue([] as any)
 })
 
@@ -110,6 +114,53 @@ describe('tool events from the engine', () => {
     applyToolEvent({ action: 'result', ref: 'call_2', name: 'write', subject: 'b.html', ok: true })
     expect(cockpit.toolSteps[1]).toMatchObject({ label: 'write b.html', state: 'done' })
     expect(cockpit.toolSteps[0].state).toBe('run')
+  })
+
+  // A sub-agent outlives the turn that started it, so its steps keep arriving
+  // after the live block is gone. toolSteps is cleared at both ends of a turn,
+  // so without a second home those rows land in the NEXT turn's timeline and
+  // are drawn as work the user's new question caused.
+  describe('a delegate still working after its turn ended', () => {
+    beforeEach(() => { cockpit.backgroundSteps = [] })
+
+    it('keeps its steps out of the next turn and in the background list', () => {
+      // Turn 1: the delegation opens and its first step lands in the timeline.
+      applyToolEvent({ action: 'call', ref: 'task_call', name: 'task', agent: 'explore' })
+      applyToolEvent({ action: 'call', ref: 'g1', parent: 'task_call', name: 'grep', subject: 'Resolve' })
+      expect(cockpit.toolSteps).toHaveLength(2)
+      expect(cockpit.backgroundSteps).toHaveLength(0)
+
+      // The turn ends: the answer went out, the live lists are cleared.
+      cockpit.toolSteps = []
+
+      // The delegate is still working, and says so. The result for g1 closes
+      // nothing — that row went into turn 1's snapshot and is not here to
+      // close — but the new call has somewhere to go that is not turn 2.
+      applyToolEvent({ action: 'result', ref: 'g1', parent: 'task_call', name: 'grep', ok: true })
+      applyToolEvent({ action: 'call', ref: 'r1', parent: 'task_call', name: 'read', subject: 'turn/executor.go' })
+      expect(cockpit.toolSteps).toHaveLength(0)
+      expect(cockpit.backgroundSteps).toHaveLength(1)
+      expect(cockpit.backgroundSteps[0]).toMatchObject({ label: 'read turn/executor.go', state: 'run' })
+    })
+
+    it('still puts a delegate started in this turn into this turn', () => {
+      applyToolEvent({ action: 'call', ref: 'task_call', name: 'task', agent: 'doc' })
+      applyToolEvent({ action: 'call', ref: 'r1', parent: 'task_call', name: 'read', subject: 'README.md' })
+      expect(cockpit.backgroundSteps).toHaveLength(0)
+      expect(cockpit.toolSteps).toHaveLength(2)
+    })
+
+    // The tray's rows come from the engine's register, and the first background
+    // event is what turns the poll on — without this a reloaded window would
+    // never learn that anything is running.
+    it('starts the tray poll when the first background event arrives', async () => {
+      vi.mocked(BackgroundTasks).mockResolvedValue([
+        { id: 'task_9', agent: 'explore', label: 'x', startedAt: new Date().toISOString(), toolCalls: 3, state: 'running', collected: false },
+      ] as any)
+      applyToolEvent({ action: 'call', ref: 'r9', parent: 'ghost_task', name: 'read', subject: 'a.go' })
+      await vi.waitFor(() => expect(cockpit.backgroundTasks).toHaveLength(1))
+      expect(cockpit.backgroundTasks[0]).toMatchObject({ id: 'task_9', state: 'running' })
+    })
   })
 })
 
@@ -311,16 +362,21 @@ describe('sub-agent tool events', () => {
   beforeEach(() => { cockpit.toolSteps = [] })
 
   it('keeps a delegate’s row separate from an identical call by the main agent', () => {
+    // The `task` row first, as the engine sends it: a delegate's parent is the
+    // ref of the call that spawned it (executor.go stamps both from call.ID),
+    // and it is that row's presence in this turn that says the work is this
+    // turn's — see listFor.
+    applyToolEvent({ action: 'call', name: 'task', ref: 'task_1', agent: 'explore' })
     applyToolEvent({ action: 'call', name: 'grep', subject: 'needle', ref: 'main_1' })
     applyToolEvent({ action: 'call', name: 'grep', subject: 'needle', ref: 'sub_1', parent: 'task_1' })
-    expect(cockpit.toolSteps.length).toBe(2)
-    expect(cockpit.toolSteps[0].parent).toBeUndefined()
-    expect(cockpit.toolSteps[1].parent).toBe('task_1')
+    expect(cockpit.toolSteps.length).toBe(3)
+    expect(cockpit.toolSteps[1].parent).toBeUndefined()
+    expect(cockpit.toolSteps[2].parent).toBe('task_1')
 
     // Each result lands on its own row.
     applyToolEvent({ action: 'result', name: 'grep', subject: 'needle', ref: 'sub_1', parent: 'task_1', ok: true })
-    expect(cockpit.toolSteps[1].state).toBe('done')
-    expect(cockpit.toolSteps[0].state).toBe('run')
+    expect(cockpit.toolSteps[2].state).toBe('done')
+    expect(cockpit.toolSteps[1].state).toBe('run')
   })
 
   it('carries the sub-agent name and brief onto the task row', () => {
@@ -373,13 +429,13 @@ describe('sub-agent tool events', () => {
       messages: [{ role: 'agent', text: 'done', time: '10:54' }] as any,
     })
 
-    const block = container.querySelector('.subagent')
+    const block = container.querySelector('.bgw-card')
     expect(block).toBeTruthy()
-    expect(block?.querySelector('.ag-name')?.textContent).toContain('explore')
-    expect(block?.querySelector('.ag-job')?.textContent).toContain('find every caller')
-    expect(block?.querySelector('.subagent-brief')?.textContent).toContain('callers of Resolve')
+    expect(block?.querySelector('.bgw-agent')?.textContent).toContain('explore')
+    expect(block?.querySelector('.bgw-brief')?.textContent).toContain('find every caller')
+    expect(block?.querySelector('.bgw-longbrief')?.textContent).toContain('callers of Resolve')
     // The delegate's tools live inside the block, not in the agent's own list.
-    expect(block?.querySelectorAll('.subagent-steps .tool-step').length).toBe(2)
+    expect(block?.querySelectorAll('.bgw-steps .tool-step').length).toBe(2)
     expect(container.querySelectorAll('.tool-steps > .tool-step').length).toBe(0)
   })
 
@@ -399,17 +455,17 @@ describe('sub-agent tool events', () => {
       messages: [{ role: 'agent', text: 'done', time: '10:54' }] as any,
     })
 
-    const blocks = container.querySelectorAll('.subagent')
+    const blocks = container.querySelectorAll('.bgw-card')
     expect(blocks.length).toBe(2)
-    expect(blocks[0].querySelector('.ag-name')?.textContent).toContain('explore')
-    expect(blocks[1].querySelector('.ag-name')?.textContent).toContain('general')
-    expect(blocks[0].querySelectorAll('.subagent-steps .tool-step').length).toBe(2)
-    expect(blocks[1].querySelectorAll('.subagent-steps .tool-step').length).toBe(1)
+    expect(blocks[0].querySelector('.bgw-agent')?.textContent).toContain('explore')
+    expect(blocks[1].querySelector('.bgw-agent')?.textContent).toContain('general')
+    expect(blocks[0].querySelectorAll('.bgw-steps .tool-step').length).toBe(2)
+    expect(blocks[1].querySelectorAll('.bgw-steps .tool-step').length).toBe(1)
     // No cross-contamination: the second delegate's edit is not in the first block.
     expect(blocks[0].textContent).not.toContain('edit beta.go')
     expect(blocks[1].textContent).not.toContain('grep alpha')
-    expect(blocks[0].querySelector('.subagent-brief')?.textContent).toContain('brief one')
-    expect(blocks[1].querySelector('.subagent-brief')?.textContent).toContain('brief two')
+    expect(blocks[0].querySelector('.bgw-longbrief')?.textContent).toContain('brief one')
+    expect(blocks[1].querySelector('.bgw-longbrief')?.textContent).toContain('brief two')
   })
 
   // A child whose task row is not in the list must still be visible. It happens
@@ -467,7 +523,7 @@ describe('sub-agent tool events', () => {
 
     toolsBtn.click()
     await tick()
-    expect(container.querySelector('.subagent')).toBeNull()
+    expect(container.querySelector('.bgw-card')).toBeNull()
     expect(container.textContent).toContain('read a.txt')
     expect(container.querySelectorAll('.tool-steps .tool-step').length).toBe(1)
 
@@ -475,10 +531,50 @@ describe('sub-agent tool events', () => {
     await tick()
     // The tools panel closed with it — one slot, same as thinking.
     expect(container.querySelectorAll('.tool-steps > .tool-step').length).toBe(0)
-    const block = container.querySelector('.subagent')
+    const block = container.querySelector('.bgw-card')
     expect(block).toBeTruthy()
-    expect(block?.textContent).toContain('grep needle')
-    expect(block?.querySelector('.subagent-brief')?.textContent).toContain('go hunt')
+    expect(block?.querySelector('.bgw-longbrief')?.textContent).toContain('go hunt')
+    // Finished, so its steps are folded away — see the fold's own test below.
+    expect(block?.textContent).not.toContain('grep needle')
+  })
+
+  // Four finished delegations with their steps all open turned the transcript
+  // into a wall ("มันติดกันจนดูยังไงไม่รู้"). A finished delegation's steps are
+  // a record nobody asked to re-read; a running one's are the evidence it is
+  // alive. Same rows, opposite defaults.
+  describe('the step fold on a delegation', () => {
+    const delegation = (state: string) => [
+      { label: 'task hunt', ref: 't1', agent: 'explore', brief: 'go hunt', state, startedAt: Date.now() },
+      { label: 'grep needle', parent: 't1', state, startedAt: Date.now() },
+      { label: 'read hay.txt', parent: 't1', state, startedAt: Date.now() },
+    ]
+
+    it('is open while the delegate is still working', () => {
+      const { container } = render(Chat, {
+        ...baseProps, awaitingReply: true,
+        toolSteps: delegation('run') as any,
+        messages: [{ role: 'agent', text: 'done', time: '10:54' }] as any,
+      })
+      expect(container.querySelectorAll('.bgw-steps .tool-step').length).toBe(2)
+    })
+
+    it('is folded once it has finished, and says how many are behind it', async () => {
+      const { container } = render(Chat, {
+        ...baseProps,
+        messages: [{ role: 'agent', text: 'done', time: '10:54', steps: delegation('done') }] as any,
+      })
+      const subsBtn = [...container.querySelectorAll('.meta-row .reasoning-toggle')].at(-1) as HTMLElement
+      subsBtn.click()
+      await tick()
+
+      const fold = container.querySelector('.bgw-toggle') as HTMLElement
+      expect(fold.textContent).toContain('Used 2 tools')
+      expect(container.querySelectorAll('.bgw-steps .tool-step').length).toBe(0)
+
+      fold.click()
+      await tick()
+      expect(container.querySelectorAll('.bgw-steps .tool-step').length).toBe(2)
+    })
   })
 
   // เอเจน and ซับเอเจน are different piles (COMPANY.md §4), and the chip
@@ -508,14 +604,14 @@ describe('sub-agent tool events', () => {
     // Each toggle opens only its own pile.
     toggles[1].click()
     await tick()
-    let blocks = [...container.querySelectorAll('.subagent')]
+    let blocks = [...container.querySelectorAll('.bgw-card')]
     expect(blocks.length).toBe(1)
-    expect(blocks[0].querySelector('.ag-name')?.textContent).toContain('doc')
+    expect(blocks[0].querySelector('.bgw-agent')?.textContent).toContain('doc')
 
     toggles[2].click()
     await tick()
-    blocks = [...container.querySelectorAll('.subagent')]
+    blocks = [...container.querySelectorAll('.bgw-card')]
     expect(blocks.length).toBe(1)
-    expect(blocks[0].querySelector('.ag-name')?.textContent).toContain('explore')
+    expect(blocks[0].querySelector('.bgw-agent')?.textContent).toContain('explore')
   })
 })

@@ -81,7 +81,9 @@ Three tools, registered together by `NewTaskTools` and sharing one runner ([runn
 
 One start does: pick the profile → decide which desk the job runs at (`ceilingFor`) → `FilterRegistry` for the child's tools → a fresh `cognitive.Agent` on the profile's brief and cap → a full turn through the real `turn.Executor`, in a goroutine → the collector gets the final text plus `[task <name>: N tool calls, X.Ys]`, and nothing else. Tool events are stamped with the `task` call's id (`turn.CallID`) so the UI shows them as the delegate's work.
 
-Because starting never waits, N delegates started before the first collect run at the same time — parallelism is a property of the pair, not a separate mechanism. Four in flight per turn is the cap. A delegate's context descends from the turn's, so Stop kills every outstanding one and nothing outlives the reply.
+Because starting never waits, N delegates started before the first collect run at the same time — parallelism is a property of the pair, not a separate mechanism. Four in flight is the cap.
+
+**A delegate's life is the session's, not the turn's** (§105). The turn that started it ending is not an event it hears about: an uncollected delegate keeps working and can be collected in a later turn by the same id, and a question it parked on can be answered then too. The register lives in `Delegations`, which the **host** owns (`NewDelegations`, handed in through `TaskOptions`) for one reason — the only thing that ends a delegate early is the user pressing Stop, and that is a fact no code in this package can observe. `StopAll` is that door. The same argument [shell_background.go](../skill/shell_background.go) already made about commands: work that dies with the answer that started it was never background work.
 
 **Repeated work is one delegate looping**, never one per item: a delegate already runs its own tool loop, so twelve files is one brief with twelve items. `task`'s description says so, because one-delegate-per-item pays for twelve fresh contexts.
 

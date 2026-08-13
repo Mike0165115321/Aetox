@@ -217,6 +217,24 @@ export interface MessageVariant {
 }
 
 /** One tool call in the live per-turn timeline ("Using browser_read… 12s"). */
+/** One background delegation as the engine's register reports it — mirrors
+ * desktop/background_tasks.go BackgroundTask. The tray draws these. */
+export interface BackgroundTask {
+  id: string
+  agent: string
+  label: string
+  /** RFC3339; the row's clock runs from it client-side. */
+  startedAt: string
+  toolCalls: number
+  /** 'running' | 'waiting' (parked on a question) | 'done' | 'failed' */
+  state: string
+  /** What a waiting delegate is stuck on, absent otherwise. */
+  question?: string
+  /** A finished result somebody has already redeemed — the work is in the
+   *  conversation now, so the tray drops the row. */
+  collected: boolean
+}
+
 /** One tool call/result as the engine sends it — mirrors turn.ToolEvent in Go. */
 export interface ToolEvent {
   action: 'call' | 'result' | 'note' | 'thinking'
@@ -227,6 +245,10 @@ export interface ToolEvent {
   /** Set only on events from inside a sub-agent: the ref of the `task` call that
    * spawned it. The row is shown as that task's work rather than the agent's own. */
   parent?: string
+  /** The delegation's own id ("task_1"), on every event from inside a sub-agent.
+   * `parent` is the provider's call id — a different namespace — so this is the
+   * only key that joins a live row to its task in the engine's register. */
+  task?: string
   subject?: string
   ok?: boolean
   error?: string
@@ -264,6 +286,8 @@ export interface ToolStep {
   ref?: string
   /** Set when this row is a sub-agent's work, carrying the `task` call's ref. */
   parent?: string
+  /** The delegation's id, for joining this row to the register's task. */
+  task?: string
   state: 'run' | 'done' | 'err'
   /** Why it failed, straight from the engine's result event. Only on 'err'. */
   error?: string
@@ -440,6 +464,18 @@ export interface CockpitState {
   agentStatus: string
   /** Tool calls of the turn in flight, appended live from agent:tool events. */
   toolSteps: ToolStep[]
+  /** Tool calls of a sub-agent still working after the turn that started it
+   *  ended. A delegate's life is the session's, not the turn's, so its steps
+   *  keep arriving with nowhere in the live block to belong — toolSteps is
+   *  cleared at both ends of every turn, so they would surface inside the NEXT
+   *  turn's timeline as somebody else's work. Kept here instead, for the whole
+   *  session, which is also the span the work itself now has. */
+  backgroundSteps: ToolStep[]
+  /** The tray's rows: this session's delegations as the ENGINE's register
+   *  reports them (App.BackgroundTasks). Never derived from tool events — a
+   *  `task` call completes the instant the work starts, so events cannot tell
+   *  running from done. Refreshed by refreshBackgroundTasks. */
+  backgroundTasks: BackgroundTask[]
   /** Sandbox paths of finished files this turn produced — a spreadsheet, a deck,
    *  a document. Collected live from agent:tool results so the reply can show
    *  them as cards with an open button: the file panel is where you go looking,
@@ -508,6 +544,8 @@ export function emptyCockpitState(): CockpitState {
     undoFiles: [],
     agentStatus: '',
     toolSteps: [],
+    backgroundSteps: [],
+    backgroundTasks: [],
     streamingText: '',
     reasoningText: '',
     ask: null,

@@ -2,6 +2,7 @@
   import type { ChatMessage, TaskState, ModelStatus, ToolStep, TimelineNode, ContextBreakdown } from './types'
   import { groupSteps, isDelegation } from './types'
   import TaskTimeline from './TaskTimeline.svelte'
+  import BackgroundWork from './BackgroundWork.svelte'
   import Palette from './Palette.svelte'
   import Logo from './Logo.svelte'
   import { onMount } from 'svelte'
@@ -638,10 +639,22 @@
   // hijacked; scrolling back down re-pins.
   let chatEl = $state<HTMLDivElement | null>(null)
   let pinnedToBottom = $state(true)
+  let lastChatScrollTop = 0
   function onChatScroll() {
     const el = chatEl
     if (!el) return
-    pinnedToBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+    const fromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+    // Any upward movement unpins, however small. The pin itself only ever
+    // scrolls DOWN, so up can only be the user — and it must not be judged by
+    // the 80px band below: a touchpad scrolls a few px per event, which never
+    // cleared 80px before the next stream chunk snapped the view back to the
+    // bottom. That loop read as "can't scroll up while it's replying".
+    // The fromBottom guard covers the one non-user way scrollTop can drop:
+    // the transcript shrinking (undo, session switch) clamps it — but a clamp
+    // lands AT the bottom, and a real upward scroll never does.
+    if (el.scrollTop < lastChatScrollTop - 1 && fromBottom > 2) pinnedToBottom = false
+    else if (fromBottom < 80) pinnedToBottom = true
+    lastChatScrollTop = el.scrollTop
   }
   $effect(() => {
     // every live-updating piece of the transcript re-triggers this
@@ -801,6 +814,34 @@
       if (officeChairs.length === 0) ListChairs().then((c) => (officeChairs = c)).catch(() => {})
     }
     if (e.key === 'Escape' && mentionOpen) mentionOpen = false
+  }
+
+  // A delegation's steps are folded away once it has finished, and open while
+  // it works. The two states want opposite things from the same rows: a running
+  // delegate's steps ARE the evidence it is alive (§105.5), and a finished one's
+  // are a record nobody asked to re-read — four of them stacked turned the
+  // transcript into a wall ("มันติดกันจนดูยังไงไม่รู้").
+  //
+  // Keyed on the `task` call's ref so a row keeps its state as the list grows,
+  // and holding only what the user has actually toggled: the default is
+  // computed per render, so a delegation that finishes while open does not
+  // slam shut under the pointer.
+  let openSteps = $state<Record<string, boolean>>({})
+  const stepsKey = (node: TimelineNode) => node.step.ref ?? node.step.label
+  const stepsOpen = (node: TimelineNode) =>
+    openSteps[stepsKey(node)] ?? node.step.state === 'run'
+  function toggleSteps(node: TimelineNode) {
+    openSteps[stepsKey(node)] = !stepsOpen(node)
+  }
+  // Tool calls only. Narration and thinking ride in the same list and are not
+  // tools — counting them would inflate "used N tools" with sentences, the same
+  // rule ownTools follows for the agent's own row.
+  const toolCount = (node: TimelineNode) => node.children.filter((c) => !c.kind).length
+
+  // Answering a parked delegate goes out as an ordinary chat message — the same
+  // door the user's own typing uses, so the engine has one entrance and not two.
+  function answerBgTask(id: string, answer: string) {
+    onSend(t('chat.bgAnswerPrompt', { id, answer }))
   }
 
   // Addressing a worker from the composer: `@name` sends the message to that
@@ -1101,12 +1142,20 @@
 {#snippet subagentTimeline(nodes: TimelineNode[], live: boolean)}
   <div class="tool-steps">
     {#each nodes as node}
-        <div class="subagent {node.step.state}">
-          <div class="subagent-head">
+        <!-- The same card the background tray draws (§105.5), and deliberately
+             so: a delegation that finished inside its turn and one still
+             running afterwards are the same event at two moments, and two
+             visual languages for that taught the user they were different
+             things. The card lost the argument for a bare left rail the first
+             time it was tried — a rail cannot say "alive". -->
+        <div class="bgw-card {node.step.state}">
+          <div class="bgw-head">
             {#if node.step.state === 'run'}
-              <span class="glyph spin"></span>
+              <span class="bgw-mark run"><Icon name="loaderCircle" size={15} /></span>
             {:else}
-              <span class="glyph"><Icon name={node.step.state === 'done' ? 'check' : 'x'} size={12} /></span>
+              <span class="bgw-mark {node.step.state === 'done' ? 'ok' : 'fail'}">
+                <Icon name={node.step.state === 'done' ? 'check' : 'x'} size={15} />
+              </span>
             {/if}
             <!-- Written the way the user would write it. An agent has one
                  address (owner, 12 ส.ค.): you reach doc by typing "@doc", and
@@ -1114,32 +1163,37 @@
                  like the same act, or the convention you were taught reads as
                  something only you do. A helper keeps its bare name — nobody
                  addresses one; it is the assistant's own hands. -->
-            <span class="ag-name">{node.step.agent
+            <b class="bgw-agent">{node.step.agent
               ? (isAgentNode(node) ? '@' + node.step.agent : node.step.agent)
-              : t(isAgentNode(node) ? 'chat.agent' : 'chat.subagent')}</span>
-            <span class="ag-job">{node.step.label.replace(/^task\s*/, '')}</span>
-            {#if node.children.length}
-              <span class="secs">· {t('chat.usedTools', { n: node.children.length })}</span>
+              : t(isAgentNode(node) ? 'chat.agent' : 'chat.subagent')}</b>
+            {#if node.step.state === 'run'}
+              <span class="bgw-badge run">{t('bgw.running')}</span>
             {/if}
-            {#if node.step.state === 'run' && live}
-              <span class="secs">· {liveSecs(node.step)}s</span>
-            {:else if node.step.secs}
-              <span class="secs">· {node.step.secs}s</span>
-            {/if}
+            <span class="bgw-meta">
+              {#if node.step.state === 'run' && live}{liveSecs(node.step)}s
+              {:else if node.step.secs}{node.step.secs}s{/if}
+            </span>
           </div>
+          <div class="bgw-brief">{node.step.label.replace(/^task\s*/, '')}</div>
           {#if node.step.brief}
             <!-- The brief is the whole reason a delegate did what it did, and it
                  is the one thing the user never otherwise sees: it is written by
                  the main agent, not typed by them. Clamped to a few lines; the
                  full text is the title. -->
-            <div class="subagent-brief" title={node.step.brief}>{node.step.brief}</div>
+            <div class="bgw-longbrief" title={node.step.brief}>{node.step.brief}</div>
           {/if}
           {#if node.children.length}
-            <div class="subagent-steps">
-              {#each node.children as child}
-                {@render toolRow(child, live)}
-              {/each}
-            </div>
+            <button class="reasoning-toggle bgw-toggle" onclick={() => toggleSteps(node)}>
+              <span class="chev"><Icon name={stepsOpen(node) ? 'chevronDown' : 'chevronRight'} size={12} /></span>
+              {t('chat.usedTools', { n: toolCount(node) })}
+            </button>
+            {#if stepsOpen(node)}
+              <div class="bgw-steps">
+                {#each node.children as child}
+                  {@render toolRow(child, live)}
+                {/each}
+              </div>
+            {/if}
           {/if}
           {#if node.step.error}<div class="tool-err">{node.step.error}</div>{/if}
         </div>
@@ -1583,6 +1637,15 @@
   {/if}
 
   <div class="composer">
+    <!-- Work that outlived the turn that started it (§105). Below the
+         transcript rather than inside it: the failure this fixes is work you
+         cannot see, and a card that scrolls away with the history is one more
+         way not to see it. -->
+    <BackgroundWork
+      tasks={cockpit.backgroundTasks}
+      steps={cockpit.backgroundSteps}
+      onAnswer={answerBgTask}
+    />
     <!-- Side work the agent flagged (suggest_task): each chip starts its own
          fresh session on click. Lives on the composer, not in the transcript —
          a suggestion is pending input, not part of what was said. -->

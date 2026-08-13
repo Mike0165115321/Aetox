@@ -16,6 +16,7 @@ import {
   AnswerUserQuestion, Interject, RetryActiveProvider, PendingUndo, UndoLastTurn,
   CompleteSignIn, SignOut, ImportSignIn,
   ListTaskChips, DismissTaskChip,
+  BackgroundTasks,
   RateTurn, PendingLearnedCount,
   WorkspaceFolders, AddWorkspaceFolder, RemoveWorkspaceFolder,
   RetryFailedTurn, RegenerateReply, ResendEdited, SwitchVariant,
@@ -901,6 +902,10 @@ async function runLiveTurn(call: () => Promise<void>): Promise<void> {
     cockpit.sessionError = ''
   }
   await refreshWorkspace()
+  // The turn may have started delegations it chose not to collect — they are
+  // the tray's to show from here on (§105), and this is the moment they stop
+  // being visible anywhere else.
+  await refreshBackgroundTasks()
   // After the turn, not before: the chip has to reflect what this turn just did.
   await refreshUndo()
   await refreshSessions()
@@ -1155,16 +1160,99 @@ export function applyReasoningChunk(chunk: string): void {
   cockpit.reasoningText += chunk
 }
 
+/**
+ * The tray's data: the engine's own register of delegations, asked directly.
+ *
+ * Polled, not event-assembled. A `task` tool call completes the instant the
+ * handle comes back — the moment the work STARTS — so the event stream shows
+ * every delegation as finished from birth; only the register in Go knows
+ * running from waiting from done. The poll is armed by the things that change
+ * the register (a routed background event, a turn ending) and re-arms itself
+ * only while something is still running, so an idle session polls zero times.
+ */
+let bgPollTimer: ReturnType<typeof setTimeout> | null = null
+// Finished tasks this window has already sent a collect-turn for, so a slow
+// model turn cannot be asked twice about the same result. Session-scoped like
+// the lists it guards; cleared with them in selectSession.
+const autoCollected = new Set<string>()
+export function resetBackgroundWork(): void {
+  cockpit.backgroundSteps = []
+  cockpit.backgroundTasks = []
+  autoCollected.clear()
+}
+export async function refreshBackgroundTasks(): Promise<void> {
+  try {
+    cockpit.backgroundTasks = await BackgroundTasks()
+  } catch {
+    // The engine may be mid-bootstrap; the next trigger tries again.
+  }
+  autoCollectFinished()
+  const active = cockpit.backgroundTasks.some((t) => t.state === 'running' || t.state === 'waiting')
+  if (bgPollTimer) clearTimeout(bgPollTimer)
+  bgPollTimer = active ? setTimeout(refreshBackgroundTasks, 2000) : null
+}
+
+/**
+ * A finished background task does not wait to be noticed (owner, 14 ส.ค.:
+ * "มันควรจะรู้ตัวเองสิครับ ว่าถ้ามันเสร็จ"). The moment the poll sees one done
+ * and uncollected, a "[ระบบ]" message goes into the chat telling the model to
+ * collect and report — the same door the tray's เก็บผล button and the user's
+ * own typing go through, so there is still exactly one path into the engine.
+ *
+ * Only while the chat is idle: a running turn either collects it itself or, if
+ * it forgets, the refresh at that turn's end lands here anyway. One task per
+ * refresh, because the collect-turn's own end triggers the next refresh — a
+ * backlog drains itself one report at a time instead of racing.
+ *
+ * A question (state 'waiting') is deliberately NOT auto-answered: it needs the
+ * user, and the tray is already showing it.
+ */
+function autoCollectFinished(): void {
+  if (cockpit.awaitingReply) return
+  const ready = cockpit.backgroundTasks.find(
+    (t) => (t.state === 'done' || t.state === 'failed') && !t.collected && !autoCollected.has(t.id),
+  )
+  if (!ready) return
+  autoCollected.add(ready.id)
+  void sendUserMessage(t('chat.bgFinishedPrompt', { id: ready.id, agent: ready.agent }))
+}
+
+/** Which list an event's row belongs in.
+ *
+ * A sub-agent outlives the turn that started it (internal/subagent/runner.go),
+ * so its steps keep arriving after the live block is gone — and toolSteps is
+ * cleared at both ends of a turn, so they would reappear inside the NEXT turn's
+ * timeline, drawn as work the user's new question caused. That is the same
+ * shape as the stale-checklist bug fixed in runLiveTurn, and it is worse here:
+ * these rows are real work, not a leftover.
+ *
+ * The test is the delegation they belong to. Every event from inside a
+ * sub-agent carries the `task` call's ref as `parent`; if that row is not in
+ * this turn's list, the delegation started in an earlier one and everything it
+ * does now is background. An event with no parent is always the main agent's,
+ * and the main agent only ever works inside a turn. */
+function listFor(ev: ToolEvent): ToolStep[] {
+  if (!ev.parent) return cockpit.toolSteps
+  const inThisTurn = cockpit.toolSteps.some((s) => s.ref === ev.parent)
+  return inThisTurn ? cockpit.toolSteps : cockpit.backgroundSteps
+}
+
 /** Live tool call/result feed from the Go engine (turn.ToolEvent, relayed by
  * desktop/app.go recordToolAction). "call" opens a running step; "result"
  * closes the oldest one still running. */
 export function applyToolEvent(ev: ToolEvent): void {
+  const steps = listFor(ev)
+  // Background work just made a sound — make sure the tray is listening. The
+  // poll re-arms itself while anything runs, so this only matters as the
+  // starter (first event after a reload, say); an armed timer means it is
+  // already being watched and one more Go call would be noise.
+  if (steps === cockpit.backgroundSteps && !bgPollTimer) void refreshBackgroundTasks()
   // The loop's own story, interleaved between the calls it explains (§59).
   // Both land as finished rows: there is nothing running to close later.
   if (ev.action === 'note') {
     const text = ev.text?.trim()
     if (text) {
-      cockpit.toolSteps.push({
+      steps.push({
         kind: 'note', label: text, parent: ev.parent || undefined,
         state: 'done', startedAt: Date.now(),
       })
@@ -1172,7 +1260,7 @@ export function applyToolEvent(ev: ToolEvent): void {
     return
   }
   if (ev.action === 'thinking') {
-    cockpit.toolSteps.push({
+    steps.push({
       kind: 'thinking', label: '', parent: ev.parent || undefined,
       state: 'done', startedAt: Date.now(), secs: Math.max(1, ev.secs ?? 1),
     })
@@ -1194,7 +1282,7 @@ export function applyToolEvent(ev: ToolEvent): void {
     // name is known, then as the content streams — and once more when it
     // actually runs. The row is reused: the counter climbs and the elapsed
     // clock keeps running instead of the timeline growing a row per line.
-    const open = cockpit.toolSteps.find(running)
+    const open = steps.find(running)
     if (open) {
       if (ev.added) open.added = ev.added
       // Let the row name itself once the subject shows up.
@@ -1210,8 +1298,8 @@ export function applyToolEvent(ev: ToolEvent): void {
       if (ev.agentKind) open.agentKind = ev.agentKind
       return
     }
-    cockpit.toolSteps.push({
-      label, ref: ev.ref, parent: ev.parent || undefined,
+    steps.push({
+      label, ref: ev.ref, parent: ev.parent || undefined, task: ev.task || undefined,
       // Only a `task` call carries these, and they arrive on the first event —
       // the delegation is named before its first delegate step shows up.
       agent: ev.agent || undefined, brief: ev.brief || undefined,
@@ -1221,7 +1309,7 @@ export function applyToolEvent(ev: ToolEvent): void {
     return
   }
   if (ev.action !== 'result') return
-  const step = cockpit.toolSteps.find(running) ?? cockpit.toolSteps.find((s) => s.state === 'run')
+  const step = steps.find(running) ?? steps.find((s) => s.state === 'run')
   if (!step) return
   if (ev.subject) step.label = label
   step.state = ev.ok ? 'done' : 'err'
@@ -1483,6 +1571,10 @@ export async function selectSession(session: Session): Promise<void> {
   const messages = await LoadSession(session.id)
   cockpit.todos = []
   cockpit.ask = null
+  // Background work is the session's (§105), and opening another session
+  // re-bootstraps the engine, which stops it — the register these mirror is
+  // about to be replaced, so showing yesterday's rows over it would be a lie.
+  resetBackgroundWork()
   cockpit.chat = restoreTranscript(messages)
   hydrateImages()
   // Opening a session takes the engine back to the desk it was held at, so the

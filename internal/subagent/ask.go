@@ -129,7 +129,7 @@ func askFailure(started time.Time, reason string) (skill.Output, error) {
 // The parent's half: task_answer
 // ---------------------------------------------------------------------------
 
-type taskAnswerTool struct{ runner *runner }
+type taskAnswerTool struct{ runner *Delegations }
 
 func (t *taskAnswerTool) Name() string { return "task_answer" }
 

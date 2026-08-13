@@ -639,6 +639,52 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
    A row of pills on the composer: side work the agent flagged. Click starts
    it in a fresh session; the x declines it. Deliberately quiet — these are
    suggestions the user may ignore, not tasks demanding attention. */
+/* Work that outlived the turn that started it (§105), as a card. A card and
+   not a status line: the strip this replaced was accurate and read as dead — a
+   counter that moves every few seconds cannot say "alive", so the running card
+   is built around its step list instead.
+
+   Light rather than filled. Four finished delegations in one turn is normal,
+   and as filled boxes with 8px between them they stacked into a wall of bricks
+   ("มันชิดกันเกินครับ ดูอ้วนมาก"). What separates one card from the next is
+   space; the hairline is only there to say where a card ends. */
+.bgw { display:flex; flex-direction:column; gap:14px; margin-bottom:12px; }
+.bgw-card {
+  padding:9px 13px; border:1px solid var(--border-subtle); border-radius:var(--r-lg);
+  background:transparent; font-size:var(--fs-xs);
+}
+.tool-steps > .bgw-card + .bgw-card { margin-top:14px; }
+.bgw-card.is-waiting { border-color:var(--status-modified); }
+.bgw-card.is-done { display:flex; align-items:center; gap:9px; padding:7px 13px; }
+.bgw-head { display:flex; align-items:center; gap:8px; }
+.bgw-mark { display:flex; color:var(--text-dim); }
+.bgw-mark.run { color:var(--interactive); animation:tool-spin 1.2s linear infinite; }
+.bgw-mark.wait { color:var(--status-modified); }
+.bgw-mark.ok { color:var(--status-success); }
+.bgw-mark.fail { color:var(--status-danger); }
+.bgw-agent { color:var(--text-primary); font-weight:600; }
+.bgw-badge { padding:1px 8px; border-radius:999px; font-size:var(--fs-2xs); }
+.bgw-badge.run { color:var(--interactive); border:1px solid var(--interactive); }
+.bgw-badge.wait { color:var(--status-modified); border:1px solid var(--status-modified); }
+.bgw-meta { margin-left:auto; color:var(--text-dim); white-space:nowrap; font-variant-numeric:tabular-nums; }
+.bgw-brief { margin:2px 0 0 23px; color:var(--text-muted); }
+/* The instruction the main agent wrote for this delegate — the one thing the
+   user never otherwise sees, since they did not type it. Two lines, because it
+   is written by a model to a model and runs long: at three it was the heaviest
+   thing on the card and the job line above it stopped being the headline. The
+   title attribute carries the whole of it. */
+.bgw-longbrief {
+  margin:1px 0 0 23px; color:var(--text-dim); line-height:1.45;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+}
+.bgw-steps { margin-left:20px; }
+/* The fold. Sits where a step row would, so opening it does not shift the card
+   sideways — the rows appear directly under their own summary. */
+.bgw-toggle { margin:5px 0 0 21px; }
+.bgw-question { margin:6px 0 8px 23px; color:var(--text-primary); font-size:var(--fs-sm); line-height:1.55; }
+.bgw-answer { display:flex; gap:7px; margin-left:23px; }
+.bgw-answer input { flex:1; min-width:0; }
+.bgw-done-note { color:var(--text-muted); }
 .task-chips { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; }
 .task-chip {
   display:flex; align-items:center; overflow:hidden;
@@ -719,36 +765,35 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .tag.think { background:var(--badge-think-bg); color:var(--badge-think-text); border-color:var(--badge-think-border); }
 .time { color:var(--text-dim); font-size:var(--fs-xs); margin-top:6px; }
 .msg.user .time { text-align:right; }
-.msg-copy { margin-left:6px; color:var(--text-dim); font-size:var(--fs-xs); opacity:0; transition:opacity .12s; }
-.msg:hover .msg-copy { opacity:1; }
+/* The row under a reply — copy, the two thumbs, answer again — is always on.
+   It used to fade in on hover, on the argument that an answer you are happy
+   with should not be ringed by buttons offering to replace it. The cost was
+   worse than the noise: a control you cannot see is a control you do not know
+   exists, so the rating nobody discovers is the rating nobody gives, and the
+   whole learning loop is fed by exactly that gesture (jobs.go). Owner's call,
+   14 ส.ค. — "ควรจะขึ้นตลอด ไม่ใช่รอเอาเมาส์ไปสัมผัส".
+   They stay quiet rather than hidden: --text-dim at rest, accent on hover. */
+.msg-copy { margin-left:6px; color:var(--text-dim); font-size:var(--fs-xs); transition:color .12s; }
 .msg-copy:hover { color:var(--accent); }
-/* Hidden until hover like the rest — a disabled control that stayed on screen
-   while the row was idle would advertise itself as the one thing you cannot do. */
-.msg-copy:disabled { cursor:default; }
-.msg:hover .msg-copy:disabled { opacity:.35; }
+.msg-copy:disabled { cursor:default; opacity:.35; }
 
-/* A rating that has been given stays visible after the pointer leaves. The
-   rest of this row is hover-only because it offers actions; this one reports
-   a fact about the answer, and a verdict that vanishes when you look away is
-   one the user cannot tell they already gave. */
-.msg-rate.rated { opacity:1; color:var(--accent); }
+/* A rating that has been given reads as given — it is a fact about the answer
+   rather than an offer, so it keeps the accent colour the others only borrow
+   on hover. */
+.msg-rate.rated { color:var(--accent); }
 
-/* Re-running a turn. These sit in the timestamp row with the copy button and
-   appear on hover the same way — an answer you are happy with should not be
-   ringed by buttons offering to replace it. Retry is the exception: a turn that
-   failed has nothing else to offer, so its button is always visible. */
-.msg-act { margin-left:8px; display:inline-flex; align-items:center; gap:4px; color:var(--text-dim); font:inherit; font-size:var(--fs-xs); opacity:0; transition:opacity .12s; vertical-align:middle; }
-.msg:hover .msg-act { opacity:1; }
+/* Re-running a turn, in the same row and on the same terms. Retry keeps its
+   danger colour: a turn that failed has nothing else to offer. */
+.msg-act { margin-left:8px; display:inline-flex; align-items:center; gap:4px; color:var(--text-dim); font:inherit; font-size:var(--fs-xs); transition:color .12s; vertical-align:middle; }
 .msg-act:hover:not(:disabled) { color:var(--accent); }
-.msg-act.retry { opacity:1; color:var(--status-danger); }
+.msg-act.retry { color:var(--status-danger); }
 .msg-act.retry:hover:not(:disabled) { color:var(--status-danger-strong, var(--status-danger)); }
-/* Last, so it wins over .msg-act.retry's always-on opacity: a turn is running
-   and nothing here can be pressed. */
+/* A turn is running and nothing in this row can be pressed. Dimmed rather than
+   removed, so the row does not reflow the moment work starts. */
 .msg-act:disabled { opacity:.35; cursor:default; }
 
-/* The 1/2 readout stays visible whenever there is more than one answer: it is
-   state, not an action, and hiding it would leave no sign the other answer
-   exists. Only its arrows fade in with the rest. */
+/* The 1/2 readout whenever there is more than one answer: state, not an
+   action, so it reads plainly next to the arrows that move between them. */
 .variant-pick { margin-left:8px; display:inline-flex; align-items:center; gap:2px; vertical-align:middle; }
 .variant-pick .msg-copy { margin-left:0; }
 .variant-n { color:var(--text-muted); font-size:var(--fs-xs); font-variant-numeric:tabular-nums; min-width:26px; text-align:center; }
@@ -807,7 +852,12 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   color:var(--text-secondary); font-size:var(--fs-md); box-shadow:0 4px 12px rgba(0,0,0,.28);
 }
 .scroll-bottom:hover { color:var(--text-primary); border-color:var(--border-strong); }
-.composer .box, .project-chips, .api-key-banner, .focus-row { max-width:1040px; margin-left:auto; margin-right:auto; }
+/* Every direct child of .composer that is part of the writing column. The
+   column is what makes the window's width irrelevant to reading, so anything
+   left off this list goes full-bleed and reads as a system banner rather than
+   as part of the conversation — which is how the background-work card and the
+   suggestion chips both ended up touching the window edge. */
+.composer .box, .project-chips, .api-key-banner, .focus-row, .bgw, .task-chips { max-width:1040px; margin-left:auto; margin-right:auto; }
 /* What the AI is focused on right now — project + branch, mirrored above the input. */
 .focus-row { display:flex; align-items:center; gap:6px; margin-bottom:7px; }
 .focus-chip {
@@ -2340,25 +2390,8 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 /* A delegation in the timeline: one titled block per sub-agent, its brief under
    the title, its own steps inside. The left rule is what says "everything in
    here was somebody else's work" without a mark on every row. */
-.subagent { margin:4px 0; padding:4px 0 4px 10px; border-left:2px solid var(--border-strong); }
-.subagent.run { border-left-color:var(--accent); }
-.subagent.err { border-left-color:var(--status-danger); }
-.subagent-head { display:flex; align-items:center; gap:8px; min-width:0; }
-.subagent-head .ag-name {
-  flex:0 0 auto; font-size:var(--fs-xs); font-weight:600; color:var(--text-primary);
-  letter-spacing:.01em;
-}
-.subagent-head .ag-job {
-  min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-  font-family:var(--mono); font-size:var(--fs-xs); color:var(--text-muted);
-}
-.subagent-brief {
-  margin:3px 0 2px 23px; font-size:var(--fs-xs); line-height:1.45; color:var(--text-dim);
-  display:-webkit-box; -webkit-line-clamp:3; line-clamp:3; -webkit-box-orient:vertical;
-  overflow:hidden; white-space:pre-wrap; word-break:break-word;
-}
-.subagent-steps { padding-left:15px; }
-.subagent > .tool-err { margin-left:23px; font-size:var(--fs-xs); color:var(--status-danger); }
+.bgw-card.err { border-color:var(--status-danger); }
+.bgw-card > .tool-err { margin-left:23px; font-size:var(--fs-xs); color:var(--status-danger); }
 .tag.ag-override { background:var(--badge-think-bg); color:var(--badge-think-text); border-color:var(--badge-think-border); }
 /* Why a file cannot run — the loud half of "refused loudly". */
 .ag-invalid { color:var(--status-danger); }

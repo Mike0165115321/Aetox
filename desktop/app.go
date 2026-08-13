@@ -160,6 +160,12 @@ type App struct {
 	mcp      *mcp.Manager    // configured MCP servers; built once, survives re-bootstraps
 	registry *skill.Registry // current skill/tool registry, for the Tools panel
 
+	// delegations is the engine's register of sub-agent work. Held because a
+	// delegate outlives the turn that started it (internal/subagent/runner.go),
+	// which leaves this app's Stop button as the only thing that ends one early.
+	// Replaced on every re-bootstrap along with everything else it belongs to.
+	delegations *subagent.Delegations
+
 	// A worker addressed with @name that stopped to ask something, and is still
 	// holding everything it had done when it stopped. The next message answers
 	// it (runAnswer) unless that message addresses somebody else.
@@ -285,6 +291,14 @@ func (a *App) discardAnswerPreview() { a.emitChatChunk("", true) }
 // cannot read back. "Which version am I running?" was answerable only by
 // right-clicking the exe — and an update check cannot be built on that at all.
 func (a *App) AppVersion() string { return version.Current }
+
+// RecentDebugLog is the evidence half of the About page's "ส่งปัญหาให้นักพัฒนา":
+// the app's most recent internal complaints about itself, for prefilling into
+// the GitHub issue body. Already secret-scrubbed at the moment each line was
+// written (debuglog's single funnel), and the user reads every line on
+// GitHub's own form before anything is submitted — the app itself sends
+// nothing, to anyone, ever.
+func (a *App) RecentDebugLog() []string { return debuglog.Recent(30) }
 
 // CheckForUpdate asks GitHub whether a newer release exists. Explicitly, from
 // the button in Settings → About — nothing calls it on a timer yet.
@@ -1855,9 +1869,26 @@ func (a *App) Interject(text string) error {
 // CancelTurn aborts the chat turn in flight (the tool loop is unbounded, so
 // this Stop button is the user's brake, same role as Ctrl+C in the CLI).
 // No-op when idle.
+//
+// It also ends every sub-agent still running, and that is not the same thing as
+// ending the turn: a delegate's life is the session's now, so an ordinary reply
+// leaves one working (internal/subagent/runner.go). Stop is the exception
+// because Stop is a statement about the work rather than about the turn — a
+// user who presses it and then watches an agent keep editing files has been
+// told a lie by the button. Deliberately outside the idle check below rather
+// than inside it: work started in an earlier turn is exactly the work still
+// running when there is no turn left to cancel.
 func (a *App) CancelTurn() {
 	a.turnMu.Lock()
 	defer a.turnMu.Unlock()
+	// Under the lock because applyConfig replaces the register on a re-bootstrap,
+	// same as a.agent below. StopAll only cancels contexts — it calls nothing
+	// back into this app, so it cannot reach round for this mutex.
+	if a.delegations != nil {
+		if stopped := a.delegations.StopAll(); stopped > 0 {
+			debuglog.Msg("stop: ended %d running sub-agent(s)", stopped)
+		}
+	}
 	// Stop has to mean stop, including whatever was typed under the turn being
 	// stopped. Dropped here rather than left in the buffer: the loop checks ctx
 	// before it drains, so a cancelled turn returns with the message still
@@ -2736,6 +2767,13 @@ func (a *App) applyConfig(cfg config.Config) {
 	a.modelStatus = res.Status
 	a.modelErr = bootErr
 	a.registry = registry
+	// A re-bootstrap builds a fresh register, so whatever the old engine still
+	// had running is about to become unreachable — stop it rather than leave it
+	// burning tokens for an engine nobody can collect from any more.
+	if a.delegations != nil && a.delegations != res.Delegations {
+		a.delegations.StopAll()
+	}
+	a.delegations = res.Delegations
 	if a.agent != nil {
 		a.agent.SetUsageReporter(a.recordTokenUsage)
 		// Draw the row while the model is still writing the call, not after,

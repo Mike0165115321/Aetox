@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/Mike0165115321/Aetox/internal/debuglog"
+	"github.com/Mike0165115321/Aetox/internal/statereport"
 )
 
 // tabView is one platform's live webview for one tab. Every method is called
@@ -344,10 +345,14 @@ func (t *browserTab) awaitNavigation(ctx context.Context, timeout time.Duration)
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-time.After(timeout):
-		return fmt.Errorf("page did not finish loading")
+		// Both are reports about a page at a moment — slow tonight, down
+		// tonight — not behaviour to correct (statereport, not errors.New):
+		// left unmarked, three of these became a permanent-memory card about
+		// avoiding a localhost URL whose server simply was not running yet.
+		return statereport.New("page did not finish loading")
 	}
 	if !t.navLoaded() {
-		return fmt.Errorf("page failed to load — not found, or unreachable")
+		return statereport.New("page failed to load — not found, or unreachable")
 	}
 	return nil
 }

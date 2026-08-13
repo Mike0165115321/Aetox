@@ -1116,7 +1116,7 @@ The model stays in charge of what happens in between, which is exactly the disti
 
 - **Parallelism.** N delegates started before the first collect run at once, so wall clock is the slowest rather than the sum. This is §44.9's fan-out arriving as a property of the tool pair rather than as a second mechanism — and it needed no change to `internal/subagent` or to a child's loop, exactly as the study predicted.
 - **Batch collection.** `task_result` takes several ids, so collecting three costs one round trip, not three.
-- **Turn-bounded lifetime.** A delegate's context descends from the turn's, so Stop cancels every outstanding one and none can outlive the reply it was meant to serve. No reaper, no leak.
+- ~~**Turn-bounded lifetime.** A delegate's context descends from the turn's, so Stop cancels every outstanding one and none can outlive the reply it was meant to serve. No reaper, no leak.~~ **Superseded by §105 (2026-08-13).** This was a deadline, not a lifetime rule: an uncollected delegate's whole run was destroyed at the moment of the reply. A delegate's life is the session's now, and Stop — not the turn ending — is what ends one early.
 
 **A cap, because a model in a loop is a real failure mode:** four delegates in flight per turn (`maxConcurrent`). Past that, `task` refuses with a message that says how to make room. This is the concurrency question §44.9 left open, answered with a desktop-sized number rather than a setting nobody would know how to tune.
 
@@ -2695,3 +2695,108 @@ Two smaller consequences worth having written down. The receipt line (`[task doc
 ### What this cost
 
 A parser, an interface, and two fields on the desk. What it removes is a whole class of failure that could only ever be mitigated: every request that survived being rewritten by a party who was not asking it.
+
+## 104. Decision — Three Kinds of Bad News, Three Different Doors (2026-08-13)
+
+Owner, 13 ส.ค., looking at three approval cards that were all the same outage: *"เราแยกดีมั้ย … ข้อผิดพลาดของระบบ ทำเป็นสำหรับกดเพื่อส่งให้นักพัฒนา … แยกกับ learning loop ที่เรียนรู้นิสัย ความชอบ"* — and the answer that settled it: the split is right, but there are three piles, not two.
+
+The queue that morning held three cards drawn from one event — an n8n at `localhost:5678` that was not running. Two browser cards (the same unreachable server, split by error phrasing) and one n8n card ("ปฏิเสธ API key"), each proposing to carve *tonight's outage* into permanent memory as "เลี่ยงรูปแบบที่ชนเงื่อนไขนี้ตั้งแต่ครั้งแรก". The summarizer's own comment had already named this hole and predicted the failure; this is the day it happened on screen.
+
+### 104.1 The three piles
+
+**Aetox is broken** → the developer, as a GitHub issue *the user submits*. A new row on the About page opens `…/Aetox/issues/new` in the system browser with the two facts nobody should have to hunt for (version + channel, OS) prefilled into the body. The app sends nothing itself: the user reads the whole message on GitHub's form and submits it under their own account. The last reader before anything leaves the machine is the person it belongs to — that one sentence is the entire privacy design, and it is why this button needs no token, no consent screen, and no redaction pass.
+
+**The world is not ready** — a server down, a key expired, a network out → *neither door*. Not an issue (the developer would drown in "somebody's n8n was off on Tuesday"), not a lesson (it will be false tomorrow morning). Today these are simply kept out of the learning queue; a session-scoped "known down right now, stop retrying" memory is the natural next step and is deliberately **not** built here.
+
+**The agent broke a rule and the error says what to do instead** → the learning loop, unchanged.
+
+### 104.2 The mechanism is the third instance of the same fix
+
+This is the third time the summarizer broke on the same shape — *text in the error column is not always a lesson* — after `exit status 1` (§ the summarizer's 2026-08-09 note) and the bare "ไม่สำเร็จ" (2026-08-12). All three fixed in the same place, upstream, by recording what only the author knows:
+
+- `internal/statereport` — a leaf package (n8n cannot import `turn`: turn→skill→n8n would cycle) whose whole API is `New/Newf/Mark/Is`. The line an author draws, written into its doc: mark it when what it reports would be true or false **regardless of how the caller behaves**; leave it when the remedy is a change in the caller's own next action. Unmarked stays the conservative default and still reaches the user as a card.
+- `turn.ErrorFromWorld = "state"` — `classifyToolError` asks the error, never the text; the author's explicit mark outranks the `exec.ExitError` inference.
+- The summarizer's `error_kind = ''` filter then drops these unread — the same gate that already excludes exit codes, no new query logic at all.
+
+Marked at birth: browser navigation's two timeout/unreachable sentences, and n8n's connectivity, 401/403, and residual-status errors. n8n's 404/400/409 stay unmarked on purpose — a wrong id or a rejected graph is the caller's to fix, which is exactly what a lesson is.
+
+### What this does not decide
+
+What the learning loop should learn *next* — corrections the user makes mid-task, preferences said in passing, fail→success pairs, recurring requests as starter cards — was agreed in direction the same day but is design, not code, and none of it is built here. The session-scoped "known down" memory for pile two likewise.
+
+## 105. Decision — Work Given to Somebody Else Does Not End When the Sentence Does (2026-08-13)
+
+Owner, looking at Claude Code's background-tasks tray — *"Aetox ควรจะมีฟีเจอร์นี้นะครับ"* — and then, once the mechanism behind it was clear: *"ผมก็อยากได้แบบนั้นแหละ"*.
+
+The tray is not the feature. What makes that panel worth having is that the work inside it is still running while the conversation moves on; a panel over work that dies with the reply would be an empty box every time you looked at it. So the first thing to change is not the UI.
+
+### 105.1 The rule that had to go, and the one already in the house
+
+§44.11 gave a delegate the turn's own context and called the consequence a benefit: *"Turn-bounded lifetime … no reaper, no leak."* Read again with a year of use behind it, that is not a lifetime rule — it is a deadline nobody agreed to. A model that started a delegate and answered before collecting it destroyed the whole run at the moment of the reply: minutes of real reading, thrown away for the crime of finishing a sentence. The user watching the timeline could see the work happening and had no way to keep it.
+
+The counter-argument was already written down in this repo, in `internal/skill/shell_background.go`, for the same question asked about commands:
+
+> *context.Background, deliberately: the turn's context is cancelled the moment the turn ends, and a dev server that dies with the answer that started it is not a background command.*
+
+Neither is an agent. The two mechanisms are the same shape down to the details — three tools over one register (`shell`/`shell_output`/`shell_kill` against `task`/`task_result`/`task_answer`), a handle rather than a process, a cap on how many may be unattended. They disagreed on exactly one thing, and there was never a reason for it: a shell could be backgrounded and an agent could not.
+
+**So a delegate's life is the session's.** The turn that started it ending is not an event it hears about.
+
+### 105.2 Stop is a statement about the work, not about the turn
+
+Which leaves one thing that must still end a delegate early, and it is the user. A Stop button that leaves an agent editing files has lied.
+
+That fact — "the user pressed Stop" — is not observable from inside `internal/subagent`: cancellation there cannot tell an ordinary turn ending from a brake being pulled, and both used to arrive as the same cancelled context. So the register is now the **host's** to hold: `subagent.NewDelegations()`, handed in through `TaskOptions`, returned on `bootstrap.Result`, and `StopAll()` called from `App.CancelTurn` — deliberately *outside* its idle check, because work started in an earlier turn is exactly the work still running when there is no turn to cancel. A re-bootstrap stops the old register's delegates for the same reason: an engine nobody can collect from must not keep spending tokens.
+
+A host with no Stop button (the CLI, whose Ctrl+C takes the whole process; every test) passes nothing and gets a private register, so the shape stays the same everywhere.
+
+### 105.3 What a question means now
+
+A delegate parked on `ask_main` used to be freed by the turn ending, which is the same destruction as above wearing a politer face: the delegate is holding everything it worked out, and the answer it needs is one sentence. It now waits across turns, and the next turn can answer it and collect the finished work. The goroutine-leak test that guarded the old behaviour still guards the new one — it just presses Stop instead of ending a turn.
+
+### 105.4 The frontend consequence, which is not cosmetic
+
+`toolSteps` is cleared at both ends of every turn. A surviving delegate keeps emitting, so its rows would land in the **next** turn's live block and be drawn as work the user's new question caused — the same shape as the stale-checklist bug already fixed in `runLiveTurn`, and worse, because these rows are real work rather than a leftover.
+
+Routed by asking which delegation a row belongs to: every event from inside a sub-agent carries the spawning `task` call's ref as `parent` (the executor stamps `Ref` and `WithCallID` from the same `call.ID`), so a parent whose row is not in this turn's list means the delegation started in an earlier one. Those go to `cockpit.backgroundSteps`, which is session-scoped — the same span the work now has.
+
+### What this does not decide
+
+**The tray itself.** `backgroundSteps` keeps surviving work out of the wrong place; it does not yet put it in the right one. When the panel is built it should read the register in Go rather than reconstruct one from events, because the register is authoritative and a stream can be missed on reload — and because the frontend cannot honestly tell a running delegation from a finished one anyway: a `task` row completes the instant the call returns, which is the moment the work *starts*.
+
+### 105.5 The tray, and why the first one was wrong (2026-08-14)
+
+Built the next day on exactly that argument. `Delegations.Snapshot()` is the read, `desktop/background_tasks.go` the binding.
+
+The **first** cut was a one-line status strip on the composer, and the owner killed it within a minute of running the build: *"ถ้ามันทำงาน ควรจะไม่นิ่งแบบนี้"*. It was not inaccurate — it was useless, and the difference is the whole lesson. **A counter that changes every few seconds cannot answer "is this alive"**; the eye has no way to tell a slow number from a stopped one. What can answer it is a list of filenames scrolling past. So the second cut is a card whose centre of gravity is its last three steps, with the counters demoted to the corner:
+
+- **State** comes from the register — running / waiting / done — because only it knows. **Steps** come from the live event feed, because the register does not keep them and nothing else can make the card look alive. Two sources, joined on the delegation's id.
+- That join needed a new field. `ToolEvent.Parent` is the provider's tool-call id and `task_1` is the register's — two namespaces for one delegation, so a UI holding both could not tell they described the same thing. `ToolEvent.Task` closes it.
+- **A finished card is a receipt, not a control.** Owner, same session: *"ทำไมต้องรอผมเก็บผลอ่ะครับ มันควรจะรู้ตัวเองสิ"*. Right — the poll already sees `done`, and that is the moment to act on it, so it sends a `[ระบบ]` turn telling the model to collect and report. The user presses nothing. A question (`waiting`) is deliberately **not** auto-answered: it needs the human, and that is the one thing the card asks for.
+- Everything the card sends — the answer box included — goes out as an **ordinary chat message**, the same door the user's own typing uses. One entrance to the engine, not two.
+- **No progress bar.** There is no total to divide by (nobody knows how many files a brief will touch), and a bar drawn from a guess is a lie told in a shape people trust.
+
+Two smaller things that were not free: a delegate parked on `ask_main` that nobody has collected has its question sitting in a channel no reader may peek at, so the runner tracks `parked` alongside `pending` — "stuck, needs you" has to show *before* anyone thinks to collect; and a finished row leaves the card only when `collect` redeems it, because collecting is the one door out and nothing else can know it happened.
+
+### 105.6 One card, wherever the work is
+
+The tray shipped beside the *old* delegation block in the turn timeline, and the owner saw the split immediately: a delegation that finished inside its turn drew a bare left rail, one that outlived its turn drew a card. *"บอกให้เอาแบบใหม่แทนเลย"*.
+
+Right, and the reason is not tidiness. **They are the same event at two moments** — the only difference is whether the reply happened to go out first — so two visual languages taught the user they were two different things, and the fast case (which is most of them) got the language that cannot show life.
+
+What was *not* done is delete the old block. It is the turn's record: snapshotted into the message, still there when the session is reopened months later, and the card cannot replace it because the register is gone by then. So the block keeps its data and loses its looks — one card, two lives:
+
+- **live** (running, in-turn or background) — spinner, ticking clock, steps arriving; state from the register.
+- **history** (finished, or a reopened session) — the identical card, still, rendered from the stored `message.steps`.
+
+The tool rows underneath are now literally the same markup (`.tool-step`) in both places rather than two things that looked alike, so a change to a step row cannot drift between them. The old `.subagent*` vocabulary is gone.
+
+One trap this created, caught by the tests: `.bgw-card` now matches both a turn's delegation and a tray card, so a leftover background task in a test fixture counts as one of the turn's own. The fixtures clear it. Worth remembering the next time something reaches for that selector.
+
+**And then the card had to fold.** Unifying the look meant every finished delegation drew its full step list, and a turn with four of them was a wall — *"มันติดกันจนดูยังไงไม่รู้"*. The rule that came out of it is the same one the card was built on, read in the other direction: **a running delegate's steps are the evidence it is alive, and a finished one's are a record nobody asked to re-read.** Same rows, opposite defaults — open while working, folded behind `ใช้ N เครื่องมือ` once done. The state is keyed on the `task` call's ref and holds only what the user actually toggled, so the default is recomputed per render and a delegation that finishes while you have it open does not slam shut under the pointer.
+
+Its count is tool calls only. Narration and thinking ride in the same children list and are not tools — the same trap `ownTools` was written to avoid, which would otherwise have offered "used 11 tools" for a delegate that ran six and talked five times.
+
+**Per-delegate model and tokens.** Still aggregated with no attribution, and `recordTokenUsage` still stamps the session's model name onto a delegate that was pinned to another one. A separate fix, and a pre-existing one.
+
+**Telling the model, unprompted, that background work finished.** It is reachable — the transcript carries the id and `task_result` now works across turns — but nothing volunteers it. Matching `shell_background`, which does not volunteer either.

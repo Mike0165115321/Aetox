@@ -18,6 +18,7 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/rtk"
 	"github.com/Mike0165115321/Aetox/internal/safety"
 	"github.com/Mike0165115321/Aetox/internal/skill"
+	"github.com/Mike0165115321/Aetox/internal/statereport"
 	"github.com/Mike0165115321/Aetox/internal/think"
 )
 
@@ -359,6 +360,13 @@ type ToolEvent struct {
 	// prose inside the tool result, which is not a place a UI can read.
 	Agent string `json:"agent,omitempty"`
 	Brief string `json:"brief,omitempty"`
+	// Task is the delegation's own id ("task_1"), stamped on every event from
+	// inside a sub-agent. Parent already says which `task` CALL caused it, but
+	// that is the provider's tool-call id — a different namespace from the id
+	// the register hands out, so a UI holding both could not tell that they
+	// describe the same delegation. The tray needs exactly that join: rows from
+	// the event stream, state from the register (§105).
+	Task string `json:"task,omitempty"`
 	// AgentKind says which pile that worker belongs to — "agent" (เอเจน, a
 	// chair with a desk) or "helper" (ซับเอเจน). The UI counts the two
 	// apart, and it cannot decide this itself: the answer lives in which home
@@ -427,12 +435,26 @@ type ToolRun struct {
 // were exit codes, the sixth was a real refusal).
 const ErrorFromProgram = "exit"
 
-// classifyToolError asks the error what it is rather than reading its text. An
-// *exec.ExitError is the one case that answers definitively — it exists only
-// when a process was started and returned a status — so it is the only case
-// classified. Everything else stays unmarked, which keeps the default the
-// conservative one: unmarked errors are still read as lessons.
+// ErrorFromWorld marks a failure that is a report about the machine's current
+// state, not about anyone's behaviour: the server was not running, the key had
+// expired, the network was out. Same reader, same bite as ErrorFromProgram —
+// the summarizer must not turn "n8n was down tonight" into a permanent memory
+// line teaching the agent to avoid n8n (three such cards reached the approval
+// queue on 2026-08-12). Unlike an exit status, nothing about the error's type
+// can reveal this — only its author knows — so the author says it, by writing
+// the error through internal/statereport.
+const ErrorFromWorld = "state"
+
+// classifyToolError asks the error what it is rather than reading its text.
+// Two cases answer definitively: an author's own statereport mark (checked
+// first — an explicit statement outranks inference), and *exec.ExitError,
+// which exists only when a process was started and returned a status.
+// Everything else stays unmarked, which keeps the default the conservative
+// one: unmarked errors are still read as lessons.
 func classifyToolError(err error) string {
+	if statereport.Is(err) {
+		return ErrorFromWorld
+	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
 		return ErrorFromProgram

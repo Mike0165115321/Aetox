@@ -59,10 +59,11 @@ func Disable() error {
 	return err
 }
 
+// Msg records a line even with no log file open — the file is one sink, the
+// in-memory ring behind Recent() is the other, and the ring must work on the
+// production installs where nobody enabled logging (they are where the bug
+// reports come from).
 func Msg(format string, args ...any) {
-	if writer == nil {
-		return
-	}
 	prefix := strings.Repeat("  ", indent)
 	line := prefix + fmt.Sprintf(format, args...)
 	timestamp(line)
@@ -151,5 +152,49 @@ func scrub(msg string) string {
 }
 
 func timestamp(msg string) {
-	fmt.Fprintf(writer, "[%s] %s\n", time.Now().Format("15:04:05.000"), scrub(msg))
+	line := fmt.Sprintf("[%s] %s", time.Now().Format("15:04:05.000"), scrub(msg))
+	remember(line)
+	if writer != nil {
+		fmt.Fprintln(writer, line)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// The last lines, kept in memory whether or not a log file is open.
+//
+// For the About page's "ส่งปัญหาให้นักพัฒนา": a bug report with no evidence is
+// a conversation, not a report, and the evidence was always here — this
+// package sees every internal complaint the app makes about itself. Most
+// installs run with file logging off, so the file cannot be the source; the
+// ring can, at the cost of a few kilobytes that exist anyway the moment
+// logging is on. Lines pass through scrub() first, same as the file — the
+// whole point of the single funnel is that a new sink cannot forget the rule.
+// ---------------------------------------------------------------------------
+
+const recentCap = 200
+
+var (
+	recentMu sync.Mutex
+	recent   []string // oldest first
+)
+
+func remember(line string) {
+	recentMu.Lock()
+	recent = append(recent, line)
+	if len(recent) > recentCap {
+		recent = recent[len(recent)-recentCap:]
+	}
+	recentMu.Unlock()
+}
+
+// Recent returns up to max of the newest remembered lines, oldest first.
+func Recent(max int) []string {
+	recentMu.Lock()
+	defer recentMu.Unlock()
+	if max <= 0 || max > len(recent) {
+		max = len(recent)
+	}
+	out := make([]string, max)
+	copy(out, recent[len(recent)-max:])
+	return out
 }

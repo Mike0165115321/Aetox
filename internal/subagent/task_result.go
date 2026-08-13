@@ -15,7 +15,7 @@ import (
 // `task` handed out — waiting only if the delegate is not finished yet, which by
 // then is time the model chose to spend rather than time it was forced to.
 
-type taskResultTool struct{ runner *runner }
+type taskResultTool struct{ runner *Delegations }
 
 func (t *taskResultTool) Name() string { return "task_result" }
 
@@ -25,7 +25,10 @@ func (t *taskResultTool) Description() string {
 		"concurrently, so collecting three costs the time of the slowest, not the sum. " +
 		"A sub-agent that got stuck on a decision comes back here as a QUESTION rather than an answer — " +
 		"reply with task_answer and collect again; it resumes from where it stopped. " +
-		"Every task you start must be collected: an uncollected sub-agent's work is thrown away when the turn ends."
+		"Collect everything you start: a result nobody reads is work nobody used. A sub-agent still running " +
+		"when you answer keeps going and can be collected in a later turn by the same id, so ending the turn " +
+		"is not a deadline — but it is also not a plan, because the user is left waiting on an answer that " +
+		"does not mention the work still going on. Say so if you leave one running."
 }
 
 func (t *taskResultTool) ToolDefinition() model.ToolDefinition {

@@ -203,6 +203,32 @@ export namespace main {
 	        this.sheet = source["sheet"];
 	    }
 	}
+	export class BackgroundTask {
+	    id: string;
+	    agent: string;
+	    label: string;
+	    startedAt: string;
+	    toolCalls: number;
+	    state: string;
+	    question?: string;
+	    collected: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new BackgroundTask(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.agent = source["agent"];
+	        this.label = source["label"];
+	        this.startedAt = source["startedAt"];
+	        this.toolCalls = source["toolCalls"];
+	        this.state = source["state"];
+	        this.question = source["question"];
+	        this.collected = source["collected"];
+	    }
+	}
 	export class Chair {
 	    name: string;
 	    description: string;

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Mike0165115321/Aetox/internal/skill"
+	"github.com/Mike0165115321/Aetox/internal/statereport"
 )
 
 // The classifier asks the error what it is. Reading the text would work today
@@ -43,6 +44,26 @@ func TestClassifyToolErrorSeparatesProgramFailuresFromOurOwn(t *testing.T) {
 	}
 	if got := classifyToolError(nil); got != "" {
 		t.Errorf("no error classified as %q, want unmarked", got)
+	}
+}
+
+// A state report is the third origin an error can have, and like the exit
+// status it is invisible in the text: "n8n ปฏิเสธ API key" reads exactly like a
+// refusal, but it describes a machine at a moment, not behaviour to correct.
+// Only the author knows, so the author marks it.
+func TestAuthoredStateReportsClassifyAsWorldState(t *testing.T) {
+	down := statereport.New("ติดต่อ n8n ไม่ได้ — ตรวจว่าเซิร์ฟเวอร์เปิดอยู่")
+	if got := classifyToolError(down); got != ErrorFromWorld {
+		t.Errorf("a state report classified as %q, want %q — it would become a permanent lesson about tonight's outage", got, ErrorFromWorld)
+	}
+	// Wrapped on the way up, as the skill layer does.
+	if got := classifyToolError(fmt.Errorf("n8n list: %w", down)); got != ErrorFromWorld {
+		t.Errorf("a wrapped state report classified as %q, want %q", got, ErrorFromWorld)
+	}
+	// The explicit mark outranks inference: an exit status the author knows to
+	// be a state report reads as one.
+	if got := classifyToolError(statereport.Mark(errors.New("exit status 7"))); got != ErrorFromWorld {
+		t.Errorf("a marked error classified as %q, want the author's word to win", got)
 	}
 }
 

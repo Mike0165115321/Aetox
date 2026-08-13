@@ -95,6 +95,15 @@ type TaskOptions struct {
 	// and for the tests, which assert on the brief rather than on the frame
 	// around it.
 	BuildPrompt func(direction string) string
+	// Delegations is the register the three tools share. Passed in rather than
+	// made here so the host can keep a handle on it — a delegate now outlives
+	// the turn that started it (runner.go), which leaves Stop as the one thing
+	// that ends one early, and Stop is a fact only the host has.
+	//
+	// Nil builds a private one, which is the right answer for a host with no
+	// Stop button to wire: the CLI, whose Ctrl+C takes the whole process, and
+	// every test.
+	Delegations *Delegations
 	// EnsureServers brings up the MCP servers a worker needs, for the ones the
 	// startup connect deliberately skipped: a server no desk carries waits for
 	// the agent that does (mcp.Server.Deferred).
@@ -108,7 +117,7 @@ type TaskOptions struct {
 
 type taskTool struct {
 	opts   TaskOptions
-	runner *runner
+	runner *Delegations
 }
 
 // Dispatcher is the `task` tool seen by a host that wants to run a worker
@@ -148,7 +157,10 @@ type Reply struct {
 // drops both from every child, so depth stays 1 structurally rather than by a
 // counter.
 func NewTaskTools(opts TaskOptions) []skill.Skill {
-	shared := newRunner()
+	shared := opts.Delegations
+	if shared == nil {
+		shared = NewDelegations()
+	}
 	return []skill.Skill{
 		&taskTool{opts: opts, runner: shared},
 		&taskResultTool{runner: shared},
@@ -557,7 +569,7 @@ func (t *taskTool) begin(ctx context.Context, args map[string]any, out **running
 		Rules: append(append([]safety.PermissionRule{}, t.opts.Permissions.Rules...), profile.DenyRules()...),
 	}
 
-	task, err := t.runner.start(ctx, profile.Name, label, func(runCtx context.Context, self *runningTask) skill.Output {
+	task, err := t.runner.start(profile.Name, label, func(runCtx context.Context, self *runningTask) skill.Output {
 		defer debuglog.Block("task: " + profile.Name + " — " + truncate(label, 60))()
 
 		// `ask_main` is bound to this delegation and cannot exist before it, so it
@@ -589,6 +601,10 @@ func (t *taskTool) begin(ctx context.Context, args map[string]any, out **running
 			}
 			if t.opts.OnToolAction != nil {
 				ev.Parent = parentRef
+				// And which delegation, in the register's own namespace — the
+				// tray joins these rows to their task on it (§105).
+				ev.Task = self.id
+				ev.Agent = profile.Name
 				t.opts.OnToolAction(ev)
 			}
 		}

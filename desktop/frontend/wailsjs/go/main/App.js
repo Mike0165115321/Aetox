@@ -42,6 +42,10 @@ export function ArtifactPreview(arg1) {
   return window['go']['main']['App']['ArtifactPreview'](arg1);
 }
 
+export function BackgroundTasks() {
+  return window['go']['main']['App']['BackgroundTasks']();
+}
+
 export function BrowserBack(arg1) {
   return window['go']['main']['App']['BrowserBack'](arg1);
 }
@@ -492,6 +496,10 @@ export function ReadWorkbook(arg1) {
 
 export function RecentAgentPages(arg1) {
   return window['go']['main']['App']['RecentAgentPages'](arg1);
+}
+
+export function RecentDebugLog() {
+  return window['go']['main']['App']['RecentDebugLog']();
 }
 
 export function RecentProjects() {

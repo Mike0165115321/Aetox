@@ -181,6 +181,12 @@ type Result struct {
 	// returns an error, so a host can show why it is not running.
 	Status string
 
+	// Delegations is this engine's register of sub-agent work. Exposed for one
+	// reason: a delegate outlives the turn that started it, so the host's Stop
+	// button is the only thing left that ends one early (subagent/runner.go).
+	// A host with no Stop button can ignore it.
+	Delegations *subagent.Delegations
+
 	// Fallback is non-nil when the engine came up on the built-in aetox provider
 	// instead of the one the config asked for. The engine works; this says the
 	// caller did not get what they requested, and why. Distinct from Engine's
@@ -424,10 +430,14 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 	if normalized := model.NormalizeThinkingLevel(cfg.ModelProvider, cfg.ModelName, thinkLevel); normalized != "" {
 		thinkLevel = normalized
 	}
+	// Built here rather than inside NewTaskTools so the caller gets a handle on
+	// it: delegates now outlive their turn, and Stop is the host's to press.
+	delegations := subagent.NewDelegations()
 	for _, tool := range subagent.NewTaskTools(subagent.TaskOptions{
-		Provider: bootstrapResult.Provider,
-		Model:    cfg.ModelName,
-		Registry: registry,
+		Provider:    bootstrapResult.Provider,
+		Model:       cfg.ModelName,
+		Registry:    registry,
+		Delegations: delegations,
 		// The desk decides the ceiling a delegate runs under and which chairs
 		// this desk may hand a job to. The registry stays whole: a cross-desk
 		// dispatch runs on the target desk's manifest, so the tool it needs has
@@ -503,6 +513,7 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 		Dispatcher:  dispatcher,
 		Provider:    bootstrapResult.Provider,
 		Permissions: permissions,
+		Delegations: delegations,
 		Status:      status,
 		Fallback:    bootstrapResult.Error,
 	}, nil

@@ -134,6 +134,22 @@ kind** — nothing inside the file decides which it is.
   `<DataRoot>/subagents` is **not loaded** — it is reported as a conflict so it
   never vanishes silently — and the save door refuses. If a user asks to add
   one, say the team is what extends, not the hands.
+
+  Work handed to either of them **outlives the turn that handed it over**
+  (§105): a delegate the assistant did not collect before answering keeps
+  working, is collectable in a later turn by the same task id, and a question it
+  parked on can be answered then too. Four in flight at once is the cap. The one
+  thing that ends one early is the user pressing **Stop**, which ends every
+  running delegate — that is what makes Stop a statement about the work rather
+  than about the turn. The user watches all of this on a card below the
+  conversation: each uncollected delegation, its last few tool calls, and — for
+  one parked on a question — the question with a box to answer it.
+
+  Nobody has to press anything to get a result. The moment a delegation
+  finishes, a `[ระบบ]` message arrives saying so; collect it with `task_result`
+  and report what it found. An answer typed on the card arrives as "ตอบ task_N
+  ด้วย task_answer ว่า …". Both are ordinary user messages — do exactly what
+  they say.
 - **Desks (modes)** — what is on the desk, never who is sitting at it. Bundled
   manifests are compiled in; a file in `<DataRoot>/modes` with the same name
   overrides one, and a new file is a new desk.
