@@ -169,6 +169,58 @@ func TestExtraRootStillRefusesCredentialStores(t *testing.T) {
 	}
 }
 
+// The gap the two tests above left between them. Both widen the workspace from
+// somewhere else — an added folder, an open machine — and both were guarded,
+// because both took the branch in resolveSandboxPath that runs the credential
+// check. A credential store that sits *inside the project root* took the other
+// branch, which returned the moment containment was satisfied, on the reading
+// that a folder the user picked is a folder the user vouched for.
+//
+// That reading is true of source files and false of ~/.ssh, and the two arrive
+// together: focusing a home folder is not an exotic setup here, it is what the
+// assistant door is for. Every spelling below is a plain relative path — no
+// climbing, no symlink, nothing the containment check would find interesting.
+func TestCredentialStoreInsideTheProjectRootIsStillRefused(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(filepath.Join(home, ".ssh"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".ssh", "id_rsa"), []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "notes.txt"), []byte("ordinary"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// The home folder itself is the project. No extra roots, not open — the
+	// narrowest possible workspace that still contains a credential store.
+	root := home
+	setSandboxPolicy(root, false, nil)
+	t.Cleanup(func() { setSandboxPolicy(root, false, nil) })
+
+	for _, path := range []string{
+		".ssh/id_rsa",                         // relative, the spelling a model reaches for
+		filepath.Join(home, ".ssh", "id_rsa"), // absolute spelling of the same file
+		".ssh",                                // listing the folder is the same read
+	} {
+		if _, err := resolveSandboxPath(root, path); err == nil {
+			t.Errorf("the focused project root handed out a credential store path: %s", path)
+		} else if !strings.Contains(err.Error(), "credential store") {
+			t.Errorf("wrong refusal for %s — the model should learn WHY: %v", path, err)
+		}
+	}
+
+	// The point is the denylist, not the folder. Everything else in the same
+	// root has to stay exactly as reachable as it was.
+	for _, path := range []string{"notes.txt", filepath.Join(home, "notes.txt"), "."} {
+		if _, err := resolveSandboxPath(root, path); err != nil {
+			t.Errorf("the rest of the project should stay reachable (%s): %v", path, err)
+		}
+	}
+}
+
 // The credential stores are the one thing an open sandbox still refuses: the
 // 2026-07-26 narrowing existed because a fetched page can order a read of
 // .ssh/.aws and the full-access loop would carry it out promptless. Opening

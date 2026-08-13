@@ -158,6 +158,22 @@ func resolveSandboxPath(root string, requestPath string) (string, error) {
 	// do "if that stops being true". Measured 2.51ms → 1.38ms per call.
 	resolvedTarget := evalExistingSymlinks(safeTarget)
 	if withinRoot(resolvedTarget, resolvedRoot(safeRoot)) {
+		// Being inside the project root is not a reason to skip the credential
+		// check. This branch used to return here and let refuseCredentialStore
+		// guard only the outside-the-root path below, which read as "the user
+		// chose this folder, so they chose what is in it" — true of source
+		// files, false of ~/.ssh. Focus a home folder as the project (Aetox
+		// invites exactly that: the assistant door works over the whole
+		// machine) and the workspace *contains* every credential store the
+		// denylist exists to refuse, reachable by a plain relative path.
+		//
+		// The folder being the root rather than an added one does not change
+		// what is under it, and "the agent read my SSH key because I opened my
+		// home directory" is the same trade nobody makes on purpose that
+		// sandbox_open.go:135 already refuses one branch over (2026-08-13).
+		if err := refuseCredentialStore(resolvedTarget); err != nil {
+			return "", err
+		}
 		return safeTarget, nil
 	}
 
