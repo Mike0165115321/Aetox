@@ -652,7 +652,7 @@ export const en: Record<keyof typeof th, string> = {
   'palette.groupKeys': 'Keyboard',
   'palette.newChat': 'New chat',
   'palette.switchModel': 'Switch model…',
-  'palette.approval': 'Approval mode',
+  'palette.approval': 'Approval level',
   'palette.toolsLine': '{tools} tools · {skill} skills · {mcp} MCP',
   'palette.toolsHint': 'manage in Settings',
   'palette.openSettings': 'Open settings',

@@ -467,7 +467,7 @@ func (a *App) thinkingStatusMessage(kind command.Kind) string {
 func (a *App) showSlashHelp() {
 	a.console.Println("Slash commands:")
 	a.console.Println("  /model        เปลี่ยนโมเดล/provider")
-	a.console.Println("  /approval     แสดงหรือเปลี่ยนโหมดอนุมัติ (ถามก่อน/คำสั่งเสี่ยง/รันเต็มที่)")
+	a.console.Println("  /approval     แสดงหรือเปลี่ยนระดับการอนุมัติ (ถามก่อน/คำสั่งเสี่ยง/รันเต็มที่)")
 	a.console.Println("  /help (/h)    แสดงความช่วยเหลือโดยย่อ")
 	a.console.Println("  /exit         ออกจากโปรแกรม")
 }
@@ -594,7 +594,7 @@ func (a *App) pickApprovalMode() {
 	}
 
 	currentLabel := approvalLabelThai(a.approvalMode)
-	a.console.Println("เลือกโหมดอนุมัติ (ปัจจุบัน: " + currentLabel + "):")
+	a.console.Println("เลือกระดับการอนุมัติ (ปัจจุบัน: " + currentLabel + "):")
 	for i, m := range modes {
 		a.console.Printf("  %d) %s\n", i+1, m.label)
 	}
@@ -645,9 +645,9 @@ func (a *App) applyApprovalMode(modeArg string) {
 		if a.onApprovalChange != nil {
 			a.onApprovalChange(a.approvalMode)
 		}
-		a.console.Println("เปลี่ยนโหมดอนุมัติเป็น: " + approvalLabelThai(a.approvalMode))
+		a.console.Println("เปลี่ยนระดับการอนุมัติเป็น: " + approvalLabelThai(a.approvalMode))
 	default:
-		a.console.Println("โหมดไม่ถูกต้อง ใช้: /approval ถามก่อน, /approval คำสั่งเสี่ยง, /approval รันเต็มที่")
+		a.console.Println("ระดับไม่ถูกต้อง ใช้: /approval ถามก่อน, /approval คำสั่งเสี่ยง, /approval รันเต็มที่")
 		a.showApprovalStatus()
 	}
 }
@@ -759,9 +759,9 @@ func (a *App) showHelp() {
 	a.console.Println("  - ask in natural language")
 	a.console.Println("  - พิมพ์เป็นภาษาปกติ")
 	a.console.Println("  - /model    เปลี่ยนโมเดล/โปรไฟเดอร์")
-	a.console.Println("  - /approval เปลี่ยนโหมดอนุมัติ (ถามก่อน/คำสั่งเสี่ยง/รันเต็มที่)")
+	a.console.Println("  - /approval เปลี่ยนระดับการอนุมัติ (ถามก่อน/คำสั่งเสี่ยง/รันเต็มที่)")
 	a.console.Println("  - :clear    เคลียร์บริบทการสนทนา")
-	a.console.Println("  - exit      ออกจากโหมดเทอร์มินัลแชต")
+	a.console.Println("  - exit      ออกจากเทอร์มินัลแชต")
 	a.console.Println("  - :help     แสดงเคล็ดลับการใช้คำสั่งสั้น")
 	a.console.Println("  - ตัวอย่าง: list")
 	a.console.Println("")
@@ -771,7 +771,7 @@ func (a *App) showHelp() {
 	a.console.Println("  - สถานะเครื่องมือ: executed (done) | executed (error) | executed (blocked)")
 	a.console.Println("")
 	a.console.Println("Approval policy:")
-	a.console.Println("  - โหมดอนุมัติมี 3 ระดับ: ถามก่อน, คำสั่งเสี่ยง, รันเต็มที่")
+	a.console.Println("  - การอนุมัติมี 3 ระดับ: ถามก่อน, คำสั่งเสี่ยง, รันเต็มที่")
 	a.console.Println("  - ถามก่อน: ยืนยันทุกคำสั่งเสี่ยง (ค่าเริ่มต้น)")
 	a.console.Println("  - คำสั่งเสี่ยง: ถามเฉพาะคำสั่ง destructive, เปลี่ยน git, shell, หรือนอก workspace")
 	a.console.Println("  - รันเต็มที่: ไม่อนุมัติใด ๆ ทั้งสิ้น")

@@ -154,7 +154,7 @@ func (a *App) PlacementTargets() []PlacementTarget {
 	var out []PlacementTarget
 	for _, m := range mode.List() {
 		// The desk's NAME, not its description. A manifest's description is a
-		// paragraph — "โหมดผู้ช่วย — ทำได้ทุกอย่างบนเครื่อง ยกเว้นเครื่องมือนักพัฒนา
+		// paragraph — "โต๊ะผู้ช่วย — ทำได้ทุกอย่างบนเครื่อง ยกเว้นเครื่องมือนักพัฒนา
 		// จำระยะยาว เอกสาร เว็บ สื่อ ไฟล์ และเชลล์" — and it was being rendered
 		// inside a chip beside agent names one word long. The row of toggles
 		// became unreadable and the collapsed summary above it worse.

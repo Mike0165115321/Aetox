@@ -226,7 +226,7 @@ Aetox จำข้ามเซสชันได้ และ**ไม่มี�
 ส่วนคำสั่งที่ตัวสแกนอ่านไม่ออก — `$(...)` เครื่องหมาย backtick `-EncodedCommand`
 `FromBase64String` — ถูกปฏิเสธ ไม่ใช่เดา ทุกคำสั่งที่รันถูกต่อท้ายลงบันทึกตรวจสอบสิทธิ์ 0600
 
-**ปฏิเสธกับทุกเครื่องมือไฟล์ ในทุกโหมด:** `.ssh` `.aws` `.gnupg` `.azure` `.kube` `.netrc`
+**ปฏิเสธกับทุกเครื่องมือไฟล์ ในทุกโต๊ะ:** `.ssh` `.aws` `.gnupg` `.azure` `.kube` `.netrc`
 `.git-credentials` `.config/gh` `.aetox`, ที่เก็บ Credentials และ Protect ของ Windows,
 โปรไฟล์ Chrome / Edge / Firefox / Brave และ `credentials.json`, `oauth.json`,
 `mcp-servers.json` กับโปรไฟล์เบราว์เซอร์ของ Aetox เอง

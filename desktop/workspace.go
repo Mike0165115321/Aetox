@@ -59,7 +59,7 @@ func (a *App) AddWorkspaceFolder() ([]WorkspaceFolder, error) {
 	if !a.projectFocused {
 		// Not a wall to work around — with no project focused the tools already
 		// reach the whole machine, so there is nothing this list could add.
-		return a.WorkspaceFolders(), fmt.Errorf("ไม่มีโปรเจกต์ที่โฟกัสอยู่ — โหมดนี้เข้าถึงทั้งเครื่องอยู่แล้ว")
+		return a.WorkspaceFolders(), fmt.Errorf("ไม่มีโปรเจกต์ที่โฟกัสอยู่ — โต๊ะนี้เข้าถึงทั้งเครื่องอยู่แล้ว")
 	}
 	dir, err := wailsruntime.OpenDirectoryDialog(a.ctx, wailsruntime.OpenDialogOptions{
 		Title: "เพิ่มโฟลเดอร์เข้าโปรเจกต์นี้",
@@ -89,7 +89,7 @@ func (a *App) addWorkspaceFolder(dir string) ([]WorkspaceFolder, error) {
 	// the list and then refused file by file is the app disagreeing with itself
 	// in front of the user.
 	if store := skill.CredentialStoreAt(dir); store != "" {
-		return a.WorkspaceFolders(), fmt.Errorf("โฟลเดอร์นี้อยู่ในที่เก็บกุญแจ (%s) ซึ่งปิดตายทุกโหมด", store)
+		return a.WorkspaceFolders(), fmt.Errorf("โฟลเดอร์นี้อยู่ในที่เก็บกุญแจ (%s) ซึ่งปิดตายทุกโต๊ะ", store)
 	}
 	// Saying "already reachable" beats accepting a row that changes nothing —
 	// a list with a no-op entry on it stops describing what it grants.

@@ -987,7 +987,7 @@ func (a *App) setStation(desk, chair string) error {
 	}
 	m, ok := mode.Load(desk)
 	if !ok {
-		return fmt.Errorf("ไม่รู้จักโหมด %q — ไฟล์ของโหมดนี้อาจถูกลบไปแล้ว", desk)
+		return fmt.Errorf("ไม่รู้จักโต๊ะ %q — ไฟล์ของโต๊ะนี้อาจถูกลบไปแล้ว", desk)
 	}
 	a.desk, a.chair = m, chair
 	a.applyConfig(a.cfg)

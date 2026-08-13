@@ -659,7 +659,7 @@ export const th = {
   'palette.groupKeys': 'คีย์ลัด',
   'palette.newChat': 'เริ่มแชทใหม่',
   'palette.switchModel': 'สลับโมเดล…',
-  'palette.approval': 'โหมดอนุมัติ',
+  'palette.approval': 'ระดับการอนุมัติ',
   'palette.toolsLine': 'เครื่องมือ {tools} · สกิล {skill} · MCP {mcp}',
   'palette.toolsHint': 'จัดการในหน้าตั้งค่า',
   'palette.openSettings': 'เปิดหน้าตั้งค่า',

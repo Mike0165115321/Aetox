@@ -414,7 +414,7 @@ func TestASessionIsStoredWithItsDeskAndReopensThere(t *testing.T) {
 	}
 	assistantID := write("assistant", "ช่วยจดไว้หน่อย")
 	codingID := write("coding", "แก้บั๊กให้ที")
-	legacyID := write("", "ก่อนมีโหมด")
+	legacyID := write("", "ก่อนมีโต๊ะ")
 
 	for id, want := range map[string]string{assistantID: "assistant", codingID: "coding", legacyID: ""} {
 		if got := a.SessionMode(id); got != want {

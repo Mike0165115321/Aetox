@@ -136,14 +136,14 @@ Thirteen providers supported, switchable any time.`,
 
 เวลาคุณต่อ provider คลาวด์ prompt จะวิ่งจากเครื่องคุณไปหาเขาโดยตรง ไม่ผ่านเรา
 
-**เครื่องมือที่แตะเครื่องคุณต้องขออนุมัติ** — รันคำสั่ง เขียนไฟล์ ลบไฟล์ ขึ้นให้กดยืนยันก่อนทุกครั้ง ปรับระดับได้ที่ Ctrl+K → โหมดอนุมัติ
+**เครื่องมือที่แตะเครื่องคุณต้องขออนุมัติ** — รันคำสั่ง เขียนไฟล์ ลบไฟล์ ขึ้นให้กดยืนยันก่อนทุกครั้ง ปรับระดับได้ที่ Ctrl+K → ระดับการอนุมัติ
 
 ถอดเสียง อ่านรูป อ่านวิดีโอ ทำในเครื่องทั้งหมด ไฟล์ไม่ได้ถูกอัปโหลดไปไหน`,
 		aEN: `**No server of ours sits in the middle.** Chat history and project files stay on your machine (local SQLite). We see none of it.
 
 When you connect a cloud provider, prompts go from your machine straight to them — never through us.
 
-**Anything that touches your machine asks first** — running commands, writing files, deleting files all prompt for confirmation. Adjust the level under Ctrl+K → Approval mode.
+**Anything that touches your machine asks first** — running commands, writing files, deleting files all prompt for confirmation. Adjust the level under Ctrl+K → Approval level.
 
 Transcription, image reading and video reading all run locally. Those files are not uploaded anywhere.`,
 	},

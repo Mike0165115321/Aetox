@@ -44,7 +44,7 @@ describe('Composer palette', () => {
     // Counts land a tick after the presets — wait for the row that needs them.
     await waitFor(() => expect(screen.getByText('เครื่องมือ 28 · สกิล 1 · MCP 3')).toBeTruthy())
     expect(screen.getByText('สลับโมเดล…')).toBeTruthy()
-    expect(screen.getByText('โหมดอนุมัติ')).toBeTruthy()
+    expect(screen.getByText('ระดับการอนุมัติ')).toBeTruthy()
     // The only place the app tells anyone its shortcuts exist.
     expect(screen.getByText('Ctrl+,')).toBeTruthy()
 

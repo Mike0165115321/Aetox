@@ -46,7 +46,7 @@ var slashMetaCommands = map[string]struct{}{
 
 var slashMetaCommandDescriptions = map[string]string{
 	"model":    "เลือกหรือเปลี่ยนโมเดล/provider",
-	"approval": "แสดงหรือเปลี่ยนโหมดอนุมัติ (ถามก่อน/คำสั่งเสี่ยง/รันเต็มที่)",
+	"approval": "แสดงหรือเปลี่ยนระดับการอนุมัติ (ถามก่อน/คำสั่งเสี่ยง/รันเต็มที่)",
 	"shell":    "เลือกเชลล์ที่ใช้รันคำสั่ง (เชลล์ของเครื่อง หรือ WSL)",
 	"help":     "แสดงรายชื่อ slash command",
 	"h":        "คำย่อของ /help",

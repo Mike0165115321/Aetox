@@ -1031,7 +1031,7 @@ func TestFileStillThereRefusesDirectoriesAndEscapes(t *testing.T) {
 // The frontend caches what GetModelInfo reports and seeds the next launch's
 // first paint from it — so a raw "" from the pre-startup window painted an
 // empty approval dropdown on every launch after it (found 2026-08-07, the
-// screenshot with a blank "โหมดอนุมัติ" box). The report is normalized, never raw.
+// screenshot with a blank "ระดับการอนุมัติ" box). The report is normalized, never raw.
 func TestGetModelInfoNeverReportsAnEmptyApproval(t *testing.T) {
 	a := &App{} // the pre-startup state: no config built yet
 	if got := a.GetModelInfo().ApprovalMode; got != "ask" {

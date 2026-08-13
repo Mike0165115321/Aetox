@@ -1,5 +1,5 @@
 ---
-description: โหมดงานเฉพาะทาง — สร้างสไลด์ เอกสาร สเปรดชีต และอ่านสื่อทุกชนิด ไม่มีเชลล์ ไม่มีเครื่องมือโค้ด
+description: โต๊ะงานเฉพาะทาง — สร้างสไลด์ เอกสาร สเปรดชีต และอ่านสื่อทุกชนิด ไม่มีเชลล์ ไม่มีเครื่องมือโค้ด
 categories: media, web, agent
 tools: read, write, list, glob
 chairs: doc_write, sheet_write, slides_write, shell, desk_terminal
