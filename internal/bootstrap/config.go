@@ -10,6 +10,7 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/debuglog"
 	"github.com/Mike0165115321/Aetox/internal/mcp"
 	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mike0165115321/Aetox/internal/oauth"
 )
 
 // ContextChars is the retained-history budget in characters, scaled to the
@@ -72,7 +73,19 @@ func agentsOnly(for_ []string) bool {
 
 // secretRef matches ${env:NAME} — a reference to a secret rather than the
 // secret itself.
-var secretRef = regexp.MustCompile(`\$\{env:([A-Za-z_][A-Za-z0-9_]*)\}`)
+// Two sources, one syntax. `${env:NAME}` reads the environment (or
+// <DataRoot>/.env); `${connect:id}` reads a connection the user already made
+// inside the app — the same store the การเชื่อมต่อ page writes and
+// github.Token() reads.
+//
+// The second one exists because the first still asked the user to *have* the
+// secret somewhere. A GitHub PAT they connected in Settings is already held,
+// already encrypted, and already the thing every github_* tool authenticates
+// with; asking them to paste that same string a second time into a header box
+// makes a plaintext copy of a secret the app was keeping properly, and leaves
+// two places to rotate it (owner, 2026-08-14 — a github MCP server whose header
+// read "Bearer" with nothing after it, because the paste never happened).
+var secretRef = regexp.MustCompile(`\$\{(env|connect):([A-Za-z_][A-Za-z0-9_-]*)\}`)
 
 // resolveSecretRefs expands ${env:NAME} inside an MCP server's environment and
 // headers, at the moment the server is connected.
@@ -104,8 +117,21 @@ func resolveSecretRefs(in map[string]string) map[string]string {
 	out := make(map[string]string, len(in))
 	for k, v := range in {
 		out[k] = secretRef.ReplaceAllStringFunc(v, func(match string) string {
-			name := secretRef.FindStringSubmatch(match)[1]
-			value := os.Getenv(name)
+			parts := secretRef.FindStringSubmatch(match)
+			var value string
+			switch parts[1] {
+			case "connect":
+				// Deliberately not falling back to the environment the way
+				// github.Token() does. `${connect:x}` and `${env:X}` are two
+				// different requests, and a connect reference that silently
+				// answered from a variable exported months ago in a shell
+				// profile would be the app guessing which secret was meant.
+				if cred, ok := oauth.Get(parts[2]); ok {
+					value = strings.TrimSpace(cred.Key)
+				}
+			default:
+				value = os.Getenv(parts[2])
+			}
 			// Registered so it cannot reach the debug log, the shell audit or
 			// tool_runs — the same guarantee an API key from the credentials
 			// file gets (debuglog.Redact).

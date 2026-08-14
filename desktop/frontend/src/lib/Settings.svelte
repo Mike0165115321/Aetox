@@ -34,11 +34,11 @@
     SignInMethods, SignInStatus, StartSignIn, CancelSignIn, ImportableSignIns,
     Connections, ConnectAccount, SetConnectionTargets, VerifyConnection, DisconnectAccount,
     SetConnectionStartCommand, StartConnectionServer, CheckConnectionServer,
-    AppVersion, CheckForUpdate, ApplyUpdate, RecentDebugLog,
+    AppVersion, CheckForUpdate, RecentDebugLog,
     LearningEnabled, SetLearningEnabled, ListPendingChanges, ListDecidedChanges,
     ApprovePendingChange, RejectPendingChange, LearnedEntries, SaveLearnedEntry, OpenMemoryFolder,
   } from '../../wailsjs/go/main/App'
-  import { BrowserOpenURL, EventsOn } from '../../wailsjs/runtime/runtime'
+  import { BrowserOpenURL } from '../../wailsjs/runtime/runtime'
   import promptPayQR from '../assets/images/promptpay-qr.png'
   import { config, update, main, subagent } from '../../wailsjs/go/models'
   import { cockpit, setActiveView, switchProvider, switchModel, submitAPIKey, switchApprovalMode, switchWireFormat, setProviderBaseURL, retryActiveProvider, completeSignIn, signOutProvider, importSignIn, SETTINGS_SECTION_KEY } from './stores/cockpit.svelte'
@@ -46,6 +46,7 @@
     identity, loadIdentityFiles, openIdentityFile, saveIdentityFile,
     createIdentityFile, deleteIdentityFile, identityTemplates,
   } from './identity.svelte'
+  import { updater, startUpdate } from './selfUpdate.svelte'
 
   let { onClose }: { onClose: () => void } = $props()
 
@@ -535,15 +536,12 @@
   let updateChecking = $state(false)
   let updateError = $state('')
   let hintCopied = $state(false)
-  // The one-click path: ApplyUpdate downloads, verifies and swaps, then the
-  // app closes itself and the relauncher brings the new build up. `applying`
-  // deliberately stays true after success — the window is about to vanish, and
-  // a button that re-enables in its last frame invites a second press.
-  let updateApplying = $state(false)
-  let updateApplyError = $state('')
-  let updateRestarting = $state(false)
-  let updatePct = $state(-1) // -1: no download running or size unknown
-
+  // Downloading / verifying / swapping / it failed does NOT live here. That
+  // state belongs to the act, not to this page: the same update can be started
+  // from the notice the automatic check raises, and two private copies of
+  // "42%, restarting, here is what went wrong" are two answers to one question
+  // waiting to disagree. selfUpdate.svelte owns it; this page reads it, and the
+  // progress dialog it drives (Updater.svelte) covers this window either way.
   onMount(() => {
     void (async () => {
       try {
@@ -552,27 +550,7 @@
         /* the About page shows a dash rather than an error */
       }
     })()
-    // Not inside the async block: an async onMount cannot hand Svelte its
-    // cleanup, so the unsubscribe would be dropped on every close.
-    return EventsOn('update:progress', (p: { done: number; total: number }) => {
-      updatePct = p?.total > 0 ? Math.min(100, Math.round((p.done / p.total) * 100)) : -1
-    })
   })
-
-  async function applyUpdate() {
-    updateApplying = true
-    updateApplyError = ''
-    updatePct = -1
-    try {
-      await ApplyUpdate()
-      // The Go side quits the app a moment after resolving; this label is the
-      // last thing this window says.
-      updateRestarting = true
-    } catch (err) {
-      updateApplyError = String(err)
-      updateApplying = false
-    }
-  }
 
   const CHANNEL_LABELS: Record<string, TKey> = {
     scoop: 'settings.aboutChannelScoop',
@@ -957,13 +935,47 @@
     mcpError = ''
   }
 
+  // An auth header that names its scheme and carries no credential.
+  //
+  // "Authorization: Bearer" is what a preset hands the form so a token can be
+  // pasted after the prefix, and it is also exactly what lands on disk when the
+  // user presses Save without pasting one. The server then answers 400 and the
+  // page reports "Bad Request", which is true and useless: nothing on screen
+  // connects that to the empty box (owner, 2026-08-14, on a github server doing
+  // precisely this).
+  //
+  // Caught here rather than deeper down because this is the only place that
+  // knows the value was typed rather than received. The engine cannot tell an
+  // empty credential from a server that wants none.
+  const AUTH_SCHEMES = ['bearer', 'basic', 'token', 'apikey']
+  function credentiallessHeader(headers: Record<string, string>): string {
+    for (const [key, value] of Object.entries(headers)) {
+      const v = value.trim()
+      // A ${env:X} or ${connect:x} reference is a value — it is resolved at
+      // connect time (internal/bootstrap resolveSecretRefs), and the whole
+      // point of it is that the secret never gets typed here.
+      if (/\$\{(env|connect):[^}]+\}/.test(v)) continue
+      if (v === '') return key
+      if (AUTH_SCHEMES.includes(v.toLowerCase())) return key
+    }
+    return ''
+  }
+
   const saveMCP = () => runMCP('save', async () => {
+    const headers = mcpKind === 'http' ? parseLines(mcpHeadersText, ':') : {}
+    const empty = credentiallessHeader(headers)
+    if (empty) {
+      // Thrown, not warned: runMCP shows it and nothing is written. A server
+      // saved in this state can never connect, so saving it is not a smaller
+      // failure than refusing to.
+      throw new Error(t('settings.mcpHeaderNoValue', { header: empty }))
+    }
     const server = new config.MCPServerConfig({
       name: mcpName.trim(),
       command: mcpKind === 'stdio' ? mcpCommand.trim().split(/\s+/).filter(Boolean) : [],
       url: mcpKind === 'http' ? mcpUrl.trim() : '',
       environment: mcpKind === 'stdio' ? parseLines(mcpEnvText, '=') : {},
-      headers: mcpKind === 'http' ? parseLines(mcpHeadersText, ':') : {},
+      headers,
       cwd: mcpCwd.trim(),
       // A blank box means "no override", which is 0 — not a timeout of zero.
       timeoutMs: Number.parseInt(mcpTimeout, 10) > 0 ? Number.parseInt(mcpTimeout, 10) : 0,
@@ -999,33 +1011,73 @@
     await loadMCP()
   })
 
-  // What the shelf is for (owner, 12 ส.ค.): the servers this product's own
-  // agents declare they need — not a directory of popular ones.
+  // What the shelf is for. **The rule changed on 2026-08-14 and both halves of
+  // it are recorded here, because the older one is still good reasoning and the
+  // next person deserves to see why it was set aside rather than forgotten.**
   //
-  // It used to carry five general-purpose picks (context7, sequential-thinking,
-  // memory, js-repl, exa) and none of the things a bundled agent asks for by
-  // name. That is backwards in both directions: recommending a server Aetox
-  // does not depend on is a recommendation it has no standing to make, while
-  // the github agent — which ships with `needs: mcp:github` in its own file —
-  // sent the user to this page and there was nothing here to click. Anything
-  // else is still one "add manually" away, which is the honest place for it.
+  // *Until 12 ส.ค.:* only the servers this product's own agents declare they
+  // need. It had carried five general-purpose picks (context7,
+  // sequential-thinking, memory, js-repl, exa) and none of the things a bundled
+  // agent asks for by name, which was backwards in both directions — the github
+  // agent ships `needs: mcp:github` in its own file and sent the user to a page
+  // with nothing on it, while recommending a server Aetox does not depend on is
+  // a recommendation it has no standing to make.
   //
-  // Every entry is verified against the provider's own published endpoint (or
-  // the npm registry, for a command) before it is listed. `headers` names what
-  // the server cannot work without, and an entry may carry the value's prefix
-  // after a colon — GitHub wants `Authorization: Bearer <token>`, and a form
-  // pre-filled with only the header name is one a token gets pasted into raw.
-  // A preset that needs a key used to be saved straight to disk with none, so
-  // one click produced a server that could never connect and the page never
-  // said which header it wanted — it knew, and did not tell.
+  // *From 14 ส.ค. (owner: "เพิ่มมาเลยครับ พวกที่ต้อง OAuth ตัดออกก็ได้"):* also
+  // the hosted servers that add something Aetox genuinely cannot do itself and
+  // work on one click. The standing objection is answered by the second half of
+  // that sentence rather than by dropping it — what made the old five a bad
+  // shelf was not that they were popular, it was that a list is a promise, and
+  // an entry that cannot connect breaks it. So the bar is now:
+  //
+  //   1. **It reaches something Aetox has no tool for.** No preset for a
+  //      filesystem, a fetcher or a browser — those already exist here, and a
+  //      second one is a slower path to the same place plus a tool-block bill.
+  //   2. **It works with one click.** Static-header auth at worst. Anything
+  //      that wants OAuth is left off: internal/mcp/client.go carries only
+  //      static headers ("OAuth stays deferred until a real need appears"), so
+  //      a Notion or Linear entry would be a button leading to a form asking
+  //      for a token the user has no way to obtain — the exact failure the
+  //      paragraph below was written about.
+  //   3. **The endpoint was answered by the provider, not remembered.**
+  //
+  // Every URL below was verified on 2026-08-14 by sending a real MCP
+  // `initialize` and reading the reply: the five unauthenticated ones returned
+  // a protocol handshake, and github returned 401 naming the header it wants.
+  // Notion, Linear, Sentry and Atlassian all answered `invalid_token` — real
+  // servers, all four blocked by rule 2 until the client learns OAuth. Stripe
+  // takes a static key and is a one-line addition whenever it is wanted.
+  //
+  // A first pass had four of those reading 403 and nearly went in the notes as
+  // "needs auth". It was Cloudflare's bot check refusing the probe's own user
+  // agent. **A verification that can fail for its own reasons has to be read
+  // twice**, which is the whole argument for rule 3.
+  //
+  // `headers` names what the server cannot work without, and an entry may carry
+  // the value's prefix after a colon — GitHub wants `Authorization: Bearer
+  // <token>`, and a form pre-filled with only the header name is one a token
+  // gets pasted into raw. A preset that needs a key used to be saved straight
+  // to disk with none, so one click produced a server that could never connect
+  // and the page never said which header it wanted — it knew, and did not tell.
   const mcpPresets: { name: string; desc: string; command?: string[]; url?: string; headers?: string[] }[] = [
-    { name: 'github', desc: 'Repos, pull requests, issues, CI', url: 'https://api.githubcopilot.com/mcp/', headers: ['Authorization: Bearer'] },
+    { name: 'github', desc: 'Repos, pull requests, issues, CI', url: 'https://api.githubcopilot.com/mcp/', headers: ['Authorization: Bearer ${connect:github}'] },
+    { name: 'context7', desc: 'Up-to-date docs for a library, by version', url: 'https://mcp.context7.com/mcp' },
+    { name: 'deepwiki', desc: 'Ask questions about any public GitHub repository', url: 'https://mcp.deepwiki.com/mcp' },
+    { name: 'exa', desc: 'Web search built for models to read', url: 'https://mcp.exa.ai/mcp' },
+    { name: 'huggingface', desc: 'Search models, datasets and spaces', url: 'https://huggingface.co/mcp' },
+    { name: 'cloudflare-docs', desc: "Search Cloudflare's documentation", url: 'https://docs.mcp.cloudflare.com/mcp' },
   ]
 
   const presetTaken = (name: string) => mcpServers.some((s) => s.name.toLowerCase() === name.toLowerCase())
 
+  // A header entry that already carries a ${...} reference needs nothing from
+  // the user: the value resolves at connect time from a secret the app already
+  // holds. Only a header still waiting for a paste opens the form.
+  const needsPaste = (headers?: string[]) =>
+    (headers ?? []).some((h) => !/\$\{(env|connect):[^}]+\}/.test(h))
+
   const addPreset = (p: (typeof mcpPresets)[number]) => runMCP('preset:' + p.name, async () => {
-    if (p.headers?.length) {
+    if (p.headers?.length && needsPaste(p.headers)) {
       // Hand it to the form with the header names already in, rather than
       // saving something that cannot connect. Nothing is written until the key
       // is pasted and Save is pressed.
@@ -1042,6 +1094,10 @@
     }
     await SaveMCPServer('', new config.MCPServerConfig({
       name: p.name, command: p.command ?? [], url: p.url ?? '',
+      headers: Object.fromEntries((p.headers ?? []).map((h) => {
+        const at = h.indexOf(':')
+        return [h.slice(0, at).trim(), h.slice(at + 1).trim()]
+      })),
     }))
     await loadMCP()
   })
@@ -4406,9 +4462,13 @@
           <div class="d muted">{t('settings.mcpSecretHint')}</div>
 
           <!-- Both fields the stored config always had and the form never
-               offered. Folded away because the common server needs neither. -->
-          <details class="mcp-more">
-            <summary>{t('settings.mcpAdvanced')}</summary>
+               offered. They used to sit behind a "ตัวเลือกเพิ่มเติม" fold, which
+               the owner asked to remove on 2026-08-14: a closed disclosure with
+               a generic label is one more thing on the page that says nothing
+               about itself, and a form with a hidden half is a form people do
+               not trust they have finished. The fields are cheap; the lid was
+               the expensive part. -->
+          <div class="mcp-more">
             <div class="mcp-more-body">
               <label class="pp-field">
                 <span class="eyebrow">{t('settings.mcpCwd')}</span>
@@ -4428,7 +4488,7 @@
                 <span class="d muted">{t('settings.mcpToolsHint')}</span>
               </label>
             </div>
-          </details>
+          </div>
 
           <div class="mset-keyrow">
             <button class="ctrl ctrl-primary" disabled={mcpBusy !== '' || !mcpFormValid} onclick={saveMCP}>
@@ -4725,16 +4785,16 @@
               {#if !updateStatus.canAuto && updateStatus.hint}
                 <code class="about-cmd">{updateStatus.hint}</code>
               {/if}
-              {#if updateApplyError}
-                <div class="mset-error">{t('settings.aboutUpdateFailed', { err: updateApplyError })}</div>
+              {#if updater.error}
+                <div class="mset-error">{t('settings.aboutUpdateFailed', { err: updater.error })}</div>
               {/if}
             </div>
             {#if updateStatus.canAuto}
-              <button class="ctrl" disabled={updateApplying} onclick={applyUpdate}>
-                {updateRestarting
+              <button class="ctrl" disabled={updater.applying} onclick={startUpdate}>
+                {updater.restarting
                   ? t('settings.aboutRestarting')
-                  : updateApplying
-                    ? (updatePct >= 0 ? t('settings.aboutDownloadingPct', { pct: String(updatePct) }) : t('settings.aboutDownloading'))
+                  : updater.applying
+                    ? (updater.pct >= 0 ? t('settings.aboutDownloadingPct', { pct: String(updater.pct) }) : t('settings.aboutDownloading'))
                     : t('settings.aboutUpdateNow')}
               </button>
             {:else if updateStatus.hint}

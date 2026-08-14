@@ -473,7 +473,7 @@ export const en: Record<keyof typeof th, string> = {
   'settings.mcpForDesks': 'Desks',
   'settings.mcpForAgents': 'Agents',
   'settings.mcpConfigured': 'Configured servers',
-  'settings.mcpAdvanced': 'More options',
+  'settings.mcpHeaderNoValue': 'Header "{header}" has no value yet. Paste the token after it, then save.',
   'settings.mcpCwd': 'Working directory',
   'settings.mcpCwdPlaceholder': 'Blank = run from Aetox’s own folder',
   'settings.mcpTimeout': 'Connect timeout',

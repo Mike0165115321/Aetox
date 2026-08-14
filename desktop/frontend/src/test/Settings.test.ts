@@ -1401,7 +1401,14 @@ describe('MCP servers page', () => {
   // product's own agents ask for by name, not a directory of popular ones — so
   // addPreset's straight-to-disk branch has no fixture left to drive it and is
   // deliberately unpinned until a preset without headers is listed again.
-  it('hands a key-needing preset to the form instead of saving it broken', async () => {
+  // This used to assert the opposite — that clicking github opened the form and
+  // saved nothing, because the user still had to paste a token. They no longer
+  // do: the header carries ${connect:github}, resolved at connect time from the
+  // account already connected on the การเชื่อมต่อ page, so nothing is typed and
+  // nothing is copied into mcp-servers.json. The behaviour the old test guarded
+  // is still guarded, one condition along: a header with no reference in it
+  // opens the form instead of saving something that cannot connect.
+  it('saves a preset whose key comes from a connection, without asking for a paste', async () => {
     const { container } = render(Settings, { onClose: () => {} })
     await openMcp(container)
 
@@ -1409,12 +1416,33 @@ describe('MCP servers page', () => {
       .find((r) => r.textContent?.includes('Repos, pull requests, issues, CI'))!
     await fireEvent.click(row.querySelector('button')!)
 
-    expect(vi.mocked(SaveMCPServer)).not.toHaveBeenCalled()
-    // Named, and carrying the scheme the value needs: a field pre-filled with
-    // "Authorization:" alone is one a bare token gets pasted into.
+    await waitFor(() => expect(vi.mocked(SaveMCPServer)).toHaveBeenCalled())
+    const saved = vi.mocked(SaveMCPServer).mock.calls[0][1] as any
+    expect(saved.headers.Authorization).toBe('Bearer ${connect:github}')
+    // The secret itself is never here. That is the point of the reference.
+    expect(JSON.stringify(saved)).not.toMatch(/gh[pous]_/)
+  })
+
+  // The state the reported github server was actually in: a header naming its
+  // scheme and carrying no credential. It can never authenticate, and the page
+  // used to save it and then report the server's "Bad Request" — true, and
+  // impossible to trace back to the empty box.
+  it('refuses to save a header left as a scheme with no credential', async () => {
+    // The http row from the default mock, so openMcp's own wait still has the
+    // counts it looks for. It has to be the http one: headers only exist on a
+    // remote server, and the stdio row would have none for the guard to read.
+    const { container } = render(Settings, { onClose: () => {} })
+    await openMcp(container)
+
+    const row = Array.from(container.querySelectorAll('.set-row')).find((r) => r.textContent?.includes('exa'))!
+    await fireEvent.click(Array.from(row.querySelectorAll('button')).find((b) => b.textContent?.trim() === 'แก้ไข')!)
+
     const headers = container.querySelector('.mcp-lines') as HTMLTextAreaElement
-    expect(headers.value).toContain('Authorization: Bearer ')
-    expect(container.textContent).toContain('ยังไม่มีอะไรถูกบันทึก')
+    await fireEvent.input(headers, { target: { value: 'Authorization: Bearer' } })
+    await fireEvent.click(screen.getByText('บันทึก'))
+
+    expect(vi.mocked(SaveMCPServer)).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Authorization')
   })
 
   // Both fields were in the stored config from the start with no way to reach

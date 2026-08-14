@@ -476,7 +476,7 @@ export const th = {
   'settings.mcpForDesks': 'โต๊ะ',
   'settings.mcpForAgents': 'เอเจน',
   'settings.mcpConfigured': 'เซิร์ฟเวอร์ที่ตั้งไว้',
-  'settings.mcpAdvanced': 'ตัวเลือกเพิ่มเติม',
+  'settings.mcpHeaderNoValue': 'header "{header}" ยังไม่มีค่า — วางโทเคนต่อท้ายก่อน แล้วค่อยบันทึก',
   'settings.mcpCwd': 'โฟลเดอร์ที่ใช้รัน',
   'settings.mcpCwdPlaceholder': 'เว้นว่าง = รันจากโฟลเดอร์ของ Aetox',
   'settings.mcpTimeout': 'เวลารอเชื่อมต่อ',

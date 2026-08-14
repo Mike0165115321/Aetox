@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mike0165115321/Aetox/internal/oauth"
 )
 
 // An MCP server usually needs a key, and typing one into the settings form
@@ -89,5 +90,62 @@ func TestAgentOnlyServersAreLeftForTheAgentThatNeedsThem(t *testing.T) {
 		if s.Deferred != want[s.Name] {
 			t.Errorf("%s: Deferred=%v, want %v", s.Name, s.Deferred, want[s.Name])
 		}
+	}
+}
+
+// `${connect:id}` reads a connection the user already made in the app, so the
+// same secret is not typed a second time into mcp-servers.json.
+//
+// The case that produced it: a github MCP server whose Authorization header
+// read "Bearer" and nothing else, because the paste the form was waiting for
+// never happened. The token was already in the app the whole time.
+func TestAConnectReferenceResolvesFromTheStoredConnection(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+	if err := oauth.Set("github", oauth.Credential{Key: "ghp_from_the_connection"}); err != nil {
+		t.Fatalf("seed the connection store: %v", err)
+	}
+
+	got := MCPServers([]config.MCPServerConfig{{
+		Name:    "github",
+		URL:     "https://api.githubcopilot.com/mcp/",
+		Headers: map[string]string{"Authorization": "Bearer ${connect:github}"},
+	}})
+	if len(got) != 1 {
+		t.Fatalf("expected one server, got %d", len(got))
+	}
+	if want := "Bearer ghp_from_the_connection"; got[0].Headers["Authorization"] != want {
+		t.Errorf("Authorization = %q, want %q", got[0].Headers["Authorization"], want)
+	}
+}
+
+// A connection nobody made resolves to empty, exactly as an unset variable
+// does: the server then fails to authenticate and says so, which is
+// diagnosable. Sending the literal "${connect:github}" as a bearer token
+// produces a rejection that blames the wrong thing.
+func TestAnUnmadeConnectionResolvesToEmpty(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+	got := MCPServers([]config.MCPServerConfig{{
+		Name:    "x",
+		URL:     "https://example.invalid/mcp",
+		Headers: map[string]string{"Authorization": "Bearer ${connect:nobody-connected-this}"},
+	}})
+	if v := got[0].Headers["Authorization"]; v != "Bearer " {
+		t.Errorf("Authorization = %q, want the reference gone", v)
+	}
+}
+
+// The two sources stay separate. A connect reference must not quietly answer
+// from an environment variable exported months ago in a shell profile — that
+// would be the app guessing which secret was meant.
+func TestAConnectReferenceDoesNotFallBackToTheEnvironment(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+	t.Setenv("GITHUB_TOKEN", "ghp_from_a_shell_profile")
+	got := MCPServers([]config.MCPServerConfig{{
+		Name:    "github",
+		URL:     "https://api.githubcopilot.com/mcp/",
+		Headers: map[string]string{"Authorization": "Bearer ${connect:github}"},
+	}})
+	if v := got[0].Headers["Authorization"]; v != "Bearer " {
+		t.Errorf("Authorization = %q — connect and env are two different requests", v)
 	}
 }
