@@ -480,6 +480,33 @@ CREATE TABLE IF NOT EXISTS project_folders (
 			return err
 		},
 	},
+	{
+		version: 13,
+		name:    "session_stance",
+		apply: func(tx *sql.Tx) error {
+			// The session's fourth coordinate (DECISIONS.md §106): how the turn
+			// runs, after mode (v8) = which desk, agent (v9) = whose chat, and
+			// space (v10) = which โปรเจกต์.
+			//
+			// '' is ลงมือ — the default stance, today's behaviour, and what
+			// every row written before this column meant. mode.StanceAct is the
+			// empty string for exactly this reason, so the column default and
+			// the zero value in Go say the same thing without either side
+			// translating.
+			//
+			// On the session rather than on each message, because a stance is
+			// state the user set and left set, not a property of one turn. What
+			// a *message* still cannot say is which stance produced it — §106.4
+			// asks for that too, and it is a separate column on `messages` that
+			// this build has not needed yet: ลงมือ and คู่คิด are told apart by
+			// whether the answer touched anything, and the ambiguity §106
+			// warns about arrives with วางแผน, which refuses to write files
+			// while looking exactly like a desk that could.
+			_, err := tx.Exec(
+				`ALTER TABLE sessions ADD COLUMN stance TEXT NOT NULL DEFAULT ''`)
+			return err
+		},
+	},
 }
 
 // latestSchemaVersion is what this build understands.

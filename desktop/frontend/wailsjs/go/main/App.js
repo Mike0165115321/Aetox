@@ -682,6 +682,10 @@ export function SetSpeechModel(arg1) {
   return window['go']['main']['App']['SetSpeechModel'](arg1);
 }
 
+export function SetStance(arg1) {
+  return window['go']['main']['App']['SetStance'](arg1);
+}
+
 export function SetSubagentModel(arg1, arg2) {
   return window['go']['main']['App']['SetSubagentModel'](arg1, arg2);
 }
@@ -728,6 +732,14 @@ export function SpeechModelDirs() {
 
 export function SpeechStatus() {
   return window['go']['main']['App']['SpeechStatus']();
+}
+
+export function Stance() {
+  return window['go']['main']['App']['Stance']();
+}
+
+export function Stances() {
+  return window['go']['main']['App']['Stances']();
 }
 
 export function StartConnectionServer(arg1) {

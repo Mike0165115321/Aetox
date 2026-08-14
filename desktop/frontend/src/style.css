@@ -981,6 +981,55 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .composer input.ctrl { cursor:text; width:120px; }
 .composer .send { width:36px; height:36px; border-radius:var(--r-md); background:var(--surface-raised); border:1px solid var(--border-default); display:grid; place-items:center; color:var(--text-muted); }
 
+/* โหมดทำงาน picker (§106) — how this turn runs, next to the model picker
+   because the two are read together: which brain, which way of working.
+
+   Two shapes on purpose. At ลงมือ it is a bare .icobtn, the same weight as the
+   attach and palette buttons beside it: the default changes nothing and must
+   not demand attention. At any other stance the chip opens out and holds its
+   word and its colour until the user puts it back — a stance that withholds
+   tools has to be impossible to be in without seeing. */
+/* Beside attach, at the left end (owner, 2026-08-14). The two things a person
+   sets before typing sit against the text: what is going with the message, and
+   how the turn will be run. The right end is for the readouts. */
+.stance-pick { position:relative; }
+.stance-chip {
+  display:inline-flex; align-items:center; gap:6px; padding:5px 9px; border-radius:var(--r-md);
+  font-size:var(--fs-sm); font-weight:600; cursor:pointer; white-space:nowrap;
+  color:var(--text-secondary);
+  border:1px solid var(--border-subtle); background:var(--surface-raised);
+}
+.stance-chip:hover { background:var(--surface-hover); color:var(--text-primary); }
+.stance-chip .caret { display:inline-flex; color:var(--text-dim); }
+/* Lit, not alarming. Not a warning — the user chose it — but a state the
+   composer keeps saying out loud. The ordinary mode is legible in the plain
+   chip above; this is what makes a mode that withholds tools unmissable. */
+.stance-chip.on {
+  color:var(--accent, #6ea8fe);
+  background:color-mix(in srgb, var(--accent, #6ea8fe) 14%, transparent);
+  border-color:color-mix(in srgb, var(--accent, #6ea8fe) 40%, transparent);
+}
+.stance-chip.on .caret { color:inherit; opacity:.7; }
+.stance-menu {
+  position:absolute; bottom:calc(100% + 10px); left:0; z-index:50; min-width:250px;
+  display:flex; flex-direction:column; gap:2px; padding:6px;
+  background:var(--surface-panel); border:1px solid var(--border-subtle); border-radius:var(--r-lg);
+  box-shadow:var(--shadow-menu);
+}
+.stance-item {
+  display:flex; align-items:flex-start; gap:9px; text-align:left; width:100%;
+  padding:8px 9px; border-radius:var(--r-sm); color:var(--text-secondary); cursor:pointer;
+}
+.stance-item:hover { background:var(--surface-row-hover); }
+.stance-item.on { background:var(--surface-selected); color:var(--text-selected); }
+.stance-item .ic { flex:none; display:inline-flex; margin-top:1px; }
+.stance-item .t { display:flex; flex-direction:column; gap:1px; min-width:0; flex:1; }
+.stance-item .nm { font-size:var(--fs-sm); font-weight:600; }
+/* Wraps rather than ellipsises: the hint is the whole difference between two
+   stances, and its first thirty pixels are not. */
+.stance-item .d { font-size:var(--fs-xs); color:var(--text-muted); white-space:normal; }
+.stance-item .tick { flex:none; margin-top:1px; }
+
 /* Compact model picker — one chip ("model · think level ⌄") opening an
    upward popover with the full provider/model/effort controls. */
 .model-pick { position:relative; margin-left:auto; }
@@ -2289,6 +2338,40 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 
 .term-pane { width:100%; height:100%; padding:6px 10px; }
 .term-empty { height:100%; display:grid; place-items:center; }
+
+/* -- Opening and closing ---------------------------------------------------
+   Owner, 2026-08-14: "เพิ่มความสมูธ ตอนเปิดปิดหน่อยครับ ตอนนี้มันทื่อไป"
+
+   Every popover in this app appeared and vanished on the same frame, which
+   reads as the window redrawing rather than as something opening. These are
+   short on purpose: 120ms and a 4px rise is enough for the eye to catch a
+   direction of travel, and short enough that a menu opened forty times a day
+   never feels like it is making you wait.
+
+   Only the opening is animated. A menu closes because the user has already
+   decided, and holding it on screen to fade it out delays the thing they
+   chose.
+
+   The prefers-reduced-motion rule below turns all of this off with
+   animation:none !important, so nothing here needs a guard of its own. */
+@keyframes pop-up {
+  from { opacity:0; transform:translateY(4px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+@keyframes pop-down {
+  from { opacity:0; transform:translateY(-4px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+/* Rising: anchored to the composer at the bottom of the window, so each one
+   grows upward out of the control that opened it. */
+.stance-menu, .model-menu, .ctx-menu, .focus-menu, .updrop-list, .mention-menu,
+.pal-list, .task-chip {
+  animation:pop-up .12s ease-out;
+}
+/* Falling: anchored under something near the top of the window. */
+.door-menu, .plus-menu {
+  animation:pop-down .12s ease-out;
+}
 
 @media (prefers-reduced-motion:reduce) { * { animation:none !important; transition:none !important; } }
 

@@ -203,11 +203,11 @@ func (a *App) openTurn(userMsg SessionMessage) bool {
 	// agent and the project are recorded. Same rule as before: a session is
 	// born with all three and the ON CONFLICT branch touches none of them.
 	if _, err := db.Exec(`
-		INSERT INTO sessions(id, project_key, title, created_at, updated_at, mode, agent, space)
-		VALUES(?,?,?,?,?,?,?,?)
+		INSERT INTO sessions(id, project_key, title, created_at, updated_at, mode, agent, space, stance)
+		VALUES(?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at`,
 		sessionID, projectKey(a.cfg.SandboxRoot), sessionTitleFrom(userMsg.Text), now, now,
-		a.desk.DeskName(), a.chair, a.space); err != nil {
+		a.desk.DeskName(), a.chair, a.space, a.stance.String()); err != nil {
 		return false
 	}
 	if _, err := db.Exec(
@@ -242,10 +242,10 @@ func (a *App) appendTurn(userMsg, agentMsg SessionMessage) int64 {
 	// it was opened with, and stays there (§83); an UPDATE of either column
 	// would be the mid-session switch the whole design refuses.
 	_, _ = tx.Exec(`
-		INSERT INTO sessions(id, project_key, title, created_at, updated_at, mode, agent, space)
-		VALUES(?,?,?,?,?,?,?,?)
+		INSERT INTO sessions(id, project_key, title, created_at, updated_at, mode, agent, space, stance)
+		VALUES(?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at`,
-		sessionID, projectKey(a.cfg.SandboxRoot), sessionTitleFrom(userMsg.Text), now, now, a.desk.DeskName(), a.chair, a.space)
+		sessionID, projectKey(a.cfg.SandboxRoot), sessionTitleFrom(userMsg.Text), now, now, a.desk.DeskName(), a.chair, a.space, a.stance.String())
 	// The question, unless openTurn already wrote it when it was asked —
 	// writing it twice would double every user message in the transcript. The
 	// flag is the whole coupling between the two halves, and it is deliberately
@@ -331,6 +331,20 @@ func (a *App) startNewSession() {
 	// opened there. NewSessionInSpace sets this again after calling through
 	// here, which is why clearing it first is safe as well as right.
 	a.space = ""
+	// A fresh conversation starts at ลงมือ, for the same reason the project is
+	// cleared one line up: a dial the user turned for one conversation must not
+	// follow them into the next. Coming back to a blank chat that quietly holds
+	// no tools is the worst version of this feature — nothing works and the
+	// screen has already stopped explaining why.
+	//
+	// Re-bootstrapped here rather than left to the caller, because NewSession()
+	// does not go through setStation and would otherwise reset the field while
+	// the running engine kept the old stance's dispatcher. Guarded so the common
+	// case — a new chat while already at ลงมือ — still rebuilds nothing.
+	if a.stance != mode.StanceAct {
+		a.stance = mode.StanceAct
+		a.applyConfig(a.cfg)
+	}
 	if a.agent != nil {
 		a.agent.ClearContext()
 	}
@@ -811,9 +825,18 @@ func (a *App) LoadSession(id string) ([]SessionMessage, error) {
 	// going to root it back at the home directory, so matching the message filter
 	// to the running root can never find those rows. The session says which bucket
 	// it is in; that is the answer, and it was two lines away the whole time.
-	var desk, chair, space, key string
-	if db.QueryRow(`SELECT mode, agent, space, project_key FROM sessions WHERE id = ?`, id).
-		Scan(&desk, &chair, &space, &key) == nil {
+	var desk, chair, space, key, stance string
+	if db.QueryRow(`SELECT mode, agent, space, project_key, stance FROM sessions WHERE id = ?`, id).
+		Scan(&desk, &chair, &space, &key, &stance) == nil {
+		// Before setStation, which re-bootstraps when the desk changed: set here
+		// and the engine that comes out of it already knows how this session was
+		// being run, instead of being built at ลงมือ and corrected a line later.
+		//
+		// Normalized rather than trusted. The column can hold a stance a later
+		// build wrote and this one does not implement, and NormalizeStance
+		// answers ลงมือ for it — a reopened conversation must never come back
+		// silently carrying nothing.
+		a.stance = mode.NormalizeStance(stance)
 		if err := a.setStation(desk, chair); err != nil {
 			return nil, err
 		}

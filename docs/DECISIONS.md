@@ -2800,3 +2800,228 @@ Its count is tool calls only. Narration and thinking ride in the same children l
 **Per-delegate model and tokens.** Still aggregated with no attribution, and `recordTokenUsage` still stamps the session's model name onto a delegate that was pinned to another one. A separate fix, and a pre-existing one.
 
 **Telling the model, unprompted, that background work finished.** It is reachable — the transcript carries the id and `task_result` now works across turns — but nothing volunteers it. Matching `shell_background`, which does not volunteer either.
+
+## 106. Decision — What Is on the Desk and How the Turn Runs Are Two Axes; โหมด Belongs to the One That Switches (2026-08-14)
+
+Owner: *"ผมว่าเราพัฒนาโหมดการทำงานดีไหม แบบ มุ่งสู่เป้าหมาย หรืออื่นๆงี้อ่ะ โหมดวางแผน"*
+
+**This one is recorded before the build, not after it.** Every decision above is written from the far side of a shipped change, which is why each ends in measured numbers. This is the design as agreed in conversation on 2026-08-14, written down first so the build has something it can be held to. The closing section says what it is expected to cost, and must be replaced with what it did.
+
+### 106.1 Two axes, and why they were about to become one
+
+`internal/mode` answers **what is on the desk**: which capability groups a session carries, which servers it attaches, what direction the base prompt gains (§83). It is fixed for a session's life, on purpose — the whole value of a desk is a context that never held another desk's tools (COMPANY.md §6.3).
+
+What the owner asked for is a different question with the same shape: **how does this turn run.** Should the assistant stop at a plan, or carry on to a finish? Should it ask, or decide? Should it reach for anything at all, or just think out loud?
+
+Nothing in the codebase answered that, and the temptation was to answer it with a fourth desk. That fails immediately: a desk cannot switch mid-session, and *switching* is the entire point — "this next message should be planned, not executed" is a thought you have at the keyboard, three messages into a conversation, not one you have when you open a window.
+
+> **โต๊ะ answers what is on the desk and is fixed for the session. โหมดทำงาน answers how this turn runs and switches at any moment.**
+
+The rule that keeps the second from breaking the first:
+
+> **A โหมดทำงาน may only subtract from the desk. It can never add.**
+
+That is what makes mid-session switching safe against §6.3. The reason a desk is frozen is contamination — a context must never carry another desk's tools — and removing tools cannot contaminate anything. Returning to ลงมือ restores only what this desk already had.
+
+### 106.2 The word — and the three meanings it already had
+
+The owner's call, after the collision was put to him: **the new axis takes the word โหมด, as โหมดทำงาน.**
+
+That is only clean because the word was never doing one job. Counted on 2026-08-14, `โหมด` appears in three surfaces with three meanings:
+
+- **COMPANY.md** — 14 occurrences, all meaning โต๊ะ, in a document whose §8 is a list of permitted words.
+- **[th.ts:662](../desktop/frontend/src/lib/locales/th.ts)** — `'palette.approval': 'โหมดอนุมัติ'`. On the actual screen, today, โหมด means the **permission tier**.
+- **Code** — `internal/mode`, `sessions.mode`, `memory/modes/`, all meaning โต๊ะ.
+
+So the choice does not add a meaning; it settles which one wins and retires the others from the surfaces they were never supposed to be on:
+
+| surface | before | after |
+|---|---|---|
+| screen | โหมด = ชั้นอนุมัติ | **โหมดทำงาน** = this axis · approval becomes **ระดับการอนุมัติ** |
+| docs | โหมด = โต๊ะ | **โต๊ะ** only (14 edits in COMPANY.md, 1 in README.th.md) |
+| code | `mode` = โต๊ะ | unchanged |
+
+Code identifiers do not follow the screen. That precedent is already set and already written down: `Chairs()` survived the retirement of เก้าอี้ (COMPANY.md §4), for the same reason — an identifier is a different layer from a label, and renaming across the two on every vocabulary decision is how a codebase acquires churn instead of clarity.
+
+**The objection worth recording, because the design has to answer it:** `โหมดทำงาน` and `ระดับการอนุมัติ` will sit in the same app, and if the second had kept the name `โหมดอนุมัติ` the two would have read as siblings — which teaches, in the vocabulary itself, exactly the thing COMPANY.md §6.2 forbids: that a working mode is a kind of permission. Renaming the approval control is not tidying. It is the one edit that keeps the rule legible, and it costs a single locale string.
+
+### 106.3 Four positions, three of them interesting
+
+| โหมดทำงาน | what the engine actually does |
+|---|---|
+| **ลงมือ** (default) | nothing is changed — today's behaviour |
+| **วางแผน** | every writing, editing and running tool is withheld from the dispatcher; the turn ends in one plan and an approve control |
+| **มุ่งเป้า** | ~~the goal is pinned in context; a finish condition and a ceiling (steps / tokens) are set; `ask_user` is suppressed unless genuinely blocked; the closing report says what was done, not what will be~~ — **dropped 2026-08-14, see §106.10** |
+| **คู่คิด** | no tool definitions are sent at all |
+
+Three of these are interesting and one is the way back. **ลงมือ must occupy a position on the switch** — a control you can enter but not leave is not a switch.
+
+Two of them earn their place on the one test that matters here:
+
+> **A โหมดทำงาน must change what the engine does. If it only changes how the assistant talks, it is a preset, not a mode** — and it does not pass the feature filter (COMPANY.md §1.2).
+
+**คู่คิด** is measurable: sending no tool definitions saves the floor that [tool_budget_test.go](../desktop/tool_budget_test.go) pins at ~9,700 tokens per request, and it removes the failure where a request for an opinion produces six tool calls.
+
+**มุ่งเป้า** *(designed here, declined at §106.10 — kept because the reasoning is what the decision rests on)* is the one that fails if written loosely. Without a written goal and a ceiling it is not a mode, it is the instruction "be more agentic", which is prose. All four parts are required. And what it changes is whether the assistant pauses to ask **the user** — a conversational choice, not a permission one. It does not touch `safety.ApprovalMode`, the gate, or any approval card. That dial belongs to the user and stays where it is.
+
+**วางแผน turns out to be a door that is already on the map.** COMPANY.md §8 lists ประตูส่งไม้ (ผู้ช่วย → โค้ด) as *"ยังไม่สร้าง"*, and §3 describes it as: the assistant works the plan out in conversation, then opens a coding session with the plan already on the desk. That is วางแผน seen from the other side — it produces the one artifact that door needs. Build order follows from this: **คู่คิด** first (smallest, and it proves mid-session switching), then **วางแผน** (which lands the missing door), then **มุ่งเป้า** *(which was never reached — dropped 2026-08-14, §106.10)*.
+
+### 106.4 Where it is enforced — the same one gate
+
+Not a second filter. [`mode.Carries`](../internal/mode/mode.go) is the single place a registered tool is judged against the desk, and a โหมดทำงาน intersects there: `desk.Carries(name, src) && stance.Allows(name, src)`. A second gate would be a second answer to "is this tool available", and the subtract-only rule means the intersection can never widen anything.
+
+The direction text folds in through [`prompt.BuildForDesk`](../internal/prompt/prompt.go), **after** the desk's own direction. That ordering is deliberate and the file already reasons about it: models weight later context more heavily, so position is the only mechanism there is for saying which of two instructions wins.
+
+Persistence is one column. The session already carries three coordinates — `mode` (v8), `agent` (v9), `space` (v10) — and this is the fourth, at migration **v13**. The transcript stores the โหมดทำงาน each turn ran under, because a mode that switches mid-conversation makes the history unreadable otherwise: scrolling back to a turn that refused to write a file, with nothing on screen saying why, is a bug report waiting to be filed against a working feature.
+
+### 106.5 It binds to the session, not to the agent
+
+Asked directly — *"เราจะผูกโหมด กับเอเจนดีไหม เอเจนแต่ละตัวก็มีโหมดของมัน"* — and the answer is no, because an agent is in two situations and only one of them has anyone listening.
+
+An agent **hired through a brief** ends at the counter: brief in, file out, nobody watching. คู่คิด would leave it unable to produce the file it was hired for; วางแผน would return a plan to a counter with no one at it, breaking the door's contract. What fits is the door's own terms, which need no stance to express them: the brief is the goal and the file is the finish condition, which is what ประตูจ้างงาน already *means*. So a hired agent runs at ลงมือ and takes no stance from its caller, fixed by the dispatch path rather than read from a setting.
+
+*(This paragraph originally said มุ่งเป้า was the one that fit. It was right about the shape and wrong to need a mode for it — the door had always said the same thing. §106.10.)*
+
+An agent **you walk in and talk to** (§85) is a session with a person in it, and gets every position.
+
+The codebase had already drawn this exact line, one axis earlier. [`AttendedRegistry`](../internal/subagent/store.go) exists to add `ask_user` back for a direct chat, and its comment states the principle:
+
+> *"…adds the single thing that depends on **who is listening** rather than on **what the work is**"*
+
+A โหมดทำงาน is the second such thing, so it goes where the first one went. And because a direct agent chat is an ordinary session (`mode='specialized' + agent='<name>'`, [db.go:398](../desktop/db.go)), binding to the session gives agents their modes for free — no field, no precedence rule between an agent's declared mode and the user's chosen one, no explanation of why the field is ignored when the agent is hired.
+
+The instinct behind the question is right and already has a home. *"This employee works this way"* is the body of its `AGENT.md`, which is where the direction of the work belongs. The test for which of the two a thing is:
+
+> **A โหมดทำงาน is something that switches mid-conversation. If it never switches, it is the agent's prompt, not a mode.**
+
+### 106.6 The control goes on the input row, not in the chip strip
+
+The chips above the composer — project, agent, engine — look like the obvious home and are the wrong one. [Chat.svelte](../desktop/frontend/src/lib/Chat.svelte) states that strip's rule in its own comment: *"a desk or a chair is fixed for a session's life, so the switcher is a door to a fresh one, **never a dial on this one**"*. Every chip there starts a new session. A โหมดทำงาน is the opposite — it is a dial on this one — and placing it there would seat it directly beside โต๊ะ and เอเจน, which is the confusion this whole decision exists to prevent.
+
+It belongs in `.tools`, on the input row, **immediately left of the model picker**: that row is already where the per-turn dials live (model, thinking level, context, palette), the two controls read together as one sentence — which brain, which mode — and the decision is made with hands on the keyboard.
+
+Its appearance is not cosmetic, because a stance decides whether the assistant can touch the machine at all, and **nobody may be in one by accident**.
+
+The first build drew ลงมือ as a bare glyph, on the reasoning that a default should not demand attention. **Overruled by the owner on sight, 2026-08-14, and rightly**: what that produced was a control you have to click to find out what it is doing. So the chip carries its name in every position, and `.on` changes only the colour — the ordinary mode stays legible, the ones that withhold tools are unmissable.
+
+A menu, not a click-to-cycle: cycling means arriving somewhere by pressing one time too many, and what this dial changes is whether the assistant can touch the machine. Something like that is reached by choosing.
+
+**Where it sits took three tries and the record is the useful part.** "Immediately left of the model picker" was written above and read on screen as the far right, which is not what the owner had pictured; moving it to the left end then displaced the attach button, which belongs against the text it attaches to. The layout that settled: **attach and the mode chip on the left** (the two things you set before typing), **the context meter and the model picker on the right** (the two readouts about the turn). Prose describing a layout by what it is *next to* is ambiguous in exactly the way a screenshot is not.
+
+No per-desk guard. The neighbouring chips carry `{#if cockpit.desk !== 'coding'}`; this one appears at both doors, and วางแผน is arguably worth most at the coding desk.
+
+### 106.7 What this is deliberately not
+
+- **Not a permission tier.** COMPANY.md §6.2 is untouched: the gate and the approval rules are identical in every mode. A mode narrows what is on the desk, never what is allowed. `safety.ApprovalMode` remains the user's separate dial — which is why it is being renamed out of the word.
+- **Not an identity.** A mode manifest that begins describing who the assistant *is* has become the thing §44.0 deleted. It says what the work is.
+- **Not a matrix.** Modes are global and few. Not per-desk, not per-agent, not configurable at v1 — four modes across three desks is twelve cells nobody can hold in mind, and the same argument that keeps them off agents keeps them off desks.
+
+### 106.8 คู่คิด, built (2026-08-14)
+
+The first stance ships with the framework under it, which is why it was chosen first: it is the smallest one that proves the mechanism end to end.
+
+**Measured on the assistant desk, no MCP connected:**
+
+| | tool block | system prompt | total |
+|---|---|---|---|
+| ลงมือ | 34 tools / ~8,023 tok | 11,440 B / ~2,860 tok | **~10,883 tok** |
+| คู่คิด | 0 tools / ~0 tok | 6,248 B / ~1,562 tok | **~1,562 tok** |
+
+**~9,321 tokens saved per request — 86%.** A third of the saving is not the tool block at all: it is `prompt.Desk.ToolLess` skipping seven layers that were only ever instructions for using tools (capability, fileEditing, batchWork, computing, longform, narration, clarify). A session carrying nothing was being handed four thousand characters on how to call things, which is the failure `Desk.Carries` was added to stop arriving through the door `Carries` cannot watch — half those layers name no tool it could be asked about.
+
+`drawing` and `panel` deliberately survive: they describe how the *answer* is rendered, and a diagram is something a conversation produces.
+
+**Where it is enforced, and the second place that had to learn it.** `bootstrap.withStance` wraps `Desk.Carries` in an AND — never replaces it — so a stance has no way to hand back a tool the desk withheld; `TestAStanceNeverWidensTheDesk` puts the office desk into every stance and checks it never acquires `shell`. The dispatcher intersects the two axes at the one seam (`NewDispatcherFor`), and both halves are read at request time.
+
+`App.deskTools` was the trap. It is a *second* place answering "what does this session carry" — the tools panel's copy — and it had `AttendedRegistry`'s own warning written above it about exactly this drift, one axis earlier. Left alone, คู่คิด would have emptied the model's tool block while the panel went on listing thirty-four tools. `TestTheToolsPanelAgreesWithTheModel` is what stops it happening again.
+
+**Switching mid-session needed no new machinery.** `applyConfig` already carries the outgoing agent's context into the new engine — written for model switches, and exactly as true here — so `SetStance` sets one field and re-bootstraps. Prompt and dispatcher come out of the same value, so the two cannot disagree about what the session holds, and `TestSwitchingStanceKeepsTheConversation` asserts what was said before the switch is still there after it.
+
+**Three refusals worth recording.** A stance switch goes through `guardSessionSwitch`, the same door-check a session switch uses — not because this is a session switch, but because it rebuilds the agent under a turn that would then finish on a context it did not start with. A stance name this build does not implement becomes ลงมือ rather than an error, in both `NormalizeStance` and `SetStance`: a session left in วางแผน and reopened after a downgrade must come back carrying everything, never silently carrying nothing. And `startNewSession` resets to ลงมือ *and re-bootstraps*, because `NewSession()` does not go through `setStation` and would otherwise have reset the field while the running engine kept the old stance's dispatcher.
+
+### 106.9 วางแผน, built the same day
+
+Look at everything, change nothing. Every reading tool stays — `read`, `grep`, `glob`, `web_fetch`, `pdf_read`, `diagnostics`, the four `github` readers, the automation *list/read* calls — and every tool that writes, runs or hands work to somebody who will is withheld.
+
+**An allow-list, not a deny-list**, and the direction is the whole point: a tool added next month is withheld here until somebody decides it reads. A deny-list would hand a new writing tool to the one mode whose entire promise is that it changes nothing, and it would do it silently. `TestPlanWithholdsAToolNobodyHasClassified` pins the direction.
+
+Three costs, all deliberate, all named rather than discovered later:
+
+- **Packs go whole.** `browser` (open/read/click/type) and `shell` (run/output/kill/list) are single tools with mixed actions, so both go, taking two reads with them — a plan cannot click through a page and uses `web_fetch` instead. `skill.Packed` plus the narrowing `subagent.FilterRegistry` already does for a profile could split them; a stance narrows at the same granularity a desk does, and making it the first thing to narrow finer is a change to make on purpose. `github` is the pack that survives whole, because all four of its actions read.
+- **MCP goes entirely.** `jira_search` and `jira_create_issue` are the same kind of string to this package. An allow-list cannot cover names it has never seen, and a guess would be a mode that promises to change nothing while calling something that does. The honest fix is a declaration from the server side, which is a decision of its own.
+- **`memory` is withheld** though it only proposes. A mode that changes nothing should not leave something behind to be decided.
+
+**The prompt had to learn the same thing, and this is where a real bug was.** `longform` opens with "write it to a .md file yourself with write" and `fileEditing` and `batchWork` are about tools วางแผน does not have — no desk had ever withheld those, so nothing gated them. Each is now gated on the tool it is about, through `Desk.Carries`, and gated on *the tool* rather than on a stance name so a later stance withholding the same thing is covered by the line already there.
+
+**And a trap worth recording, because the comment warning against it was written by the same hand that then fell into it.** `withStance` set `ToolLess` with `!s.AllowsTool("")` — a probe — under a comment explaining that "does this session carry anything at all" cannot be answered by a name-at-a-time filter. It worked while คู่คิด was the only narrowing stance. วางแผน answers from an allow-list, `""` is not in it, and วางแผน came out marked toolless: it lost the prompt layers it needs and read as a broken คู่คิด. `Stance.CarriesNothing()` now answers the question directly. **A probe is a derivation that happens to agree with the truth today.**
+
+**Still owed by §106:** the transcript divider (§106.4) — now genuinely needed, because วางแผน refuses to write while looking exactly like a desk that could; the keyboard shortcut; and ประตูส่งไม้ itself, which now has the plan it was waiting for but not yet the door.
+
+### 106.10 มุ่งเป้า, decided against (2026-08-14)
+
+Owner, after the design was laid out: *"ไม่ทำดีกว่าตัดสินใจละไม่คุ้มหรอก"*
+
+The axis ships with three positions, and the fourth is not deferred. It was considered in full and declined, which is a different thing from being next on a list.
+
+**The owner found the objection himself, before the design did.** Asked what the mode would do, he described it and then said: *"โดยปกติมันก็ทำแบบนั้น"* — normally it does that anyway. That sentence is §106.3's own test applied by the person who would pay for the build. A stance has to change what the engine does; "it tries harder for longer" is a paragraph of prose, and prose belongs in a prompt.
+
+There was one real mechanism buried in it, and it is worth writing down because it is the thing that would have to be true if this is ever reopened. **Today a turn ends when the model decides it is done.** มุ่งเป้า would have moved that decision: the turn ends when the goal is met or a ceiling is hit. That is a genuine engine change, and it needs four parts, none of them optional: a goal pinned so a thirty-step run cannot drift off it, a finish condition that can be checked rather than felt, a checker that is not the model that just declared victory, and a hard ceiling on steps and tokens.
+
+Four parts, and a shape unlike the two that shipped. คู่คิด and วางแผน are filters: a few lines in `Carries`, subtract-only, cheap to reason about and cheap to run. This one filters nothing and adds a control loop in the turn executor, with a verification call every round. Same axis from where the user sits, an entirely different piece of machinery underneath, and a cost that multiplies rather than adds.
+
+**And the pain it was reaching for is not actually a stance problem.** A long unattended run is unpleasant today because of approval cards, forty of them, and the fix for that is the user's own ระดับการอนุมัติ dial. It is emphatically *not* a stance quietly skipping the gate: that would break COMPANY.md §6.2, which is the line this whole axis was built to respect.
+
+Recorded rather than dropped silently, so the next person who has this idea reads what it costs before they start.
+
+### What this cost, and what it bought
+
+**Cost:** one migration (v13), one intersection at an existing gate, one prompt layer, one control, one transcript divider — and the vocabulary sweep, **done on 2026-08-14 ahead of the build** so that no window exists where two documents answer the same question differently.
+
+The sweep was estimated at 16 points in three files and came to roughly forty across eighteen, which is worth recording because the miss has a cause: `grep โหมด COMPANY.md` finds the *document's* uses and says nothing about the product's. The word was also in the CLI (`internal/app`, `internal/grammar`), in the onboarding text (`internal/model/noop.go`), in the `description:` line of all three desk manifests — which is screen text, rendered on the picker card — in four user-facing error strings, and in a frontend test asserting the old label. **Counting a vocabulary change by grepping the document that defines the vocabulary is counting the one place that cannot be wrong.**
+
+What was deliberately left alone: shipped release notes and `BENCHMARK.md` (records of what was said at the time, not current text), `docs/opencode-study/` (another product's word), and two verbatim owner quotes — the §4 one, which already carries a note saying its words are dated, and the one in `shellSwitch.test.ts`. The rule from §4 holds: a quote is evidence, and evidence is not edited to match today's vocabulary.
+
+Switching mid-session breaks the prompt cache once per switch; that is accepted, because it happens only on an explicit press.
+
+**Buy:** คู่คิด removes ~9,321 tokens per request from conversations that never needed them (measured, §106.8). วางแผน delivers ประตูส่งไม้, which has been on the map unbuilt since §86. And the word โหมด stops meaning three things.
+
+## 107. Decision — An Update Nobody Is Told About Is an Update Nobody Gets (2026-08-14)
+
+Owner, 14 ส.ค., with a screenshot of VS Code's little "Updating Antigravity…" window attached: *"อยากให้มีประมาณนี้อ่ะครับ แบบกดอัปเดตได้เลยผ่านเน็ตไม่ใช่ต้องมากดติดตั้งใหม่ตลอด"*.
+
+The awkward part of the answer: the app could already do it. `internal/update.Apply` has downloaded the release, checked its ed25519 signature, verified the hash against the signed `checksums.txt`, renamed the running exe aside and restarted into the new one since v0.9.4 — and the About page has had a one-click button for it just as long. The owner of the project asking to stop reinstalling by hand is the whole finding. The feature was complete and unreachable.
+
+`desktop/app.go` said so in a comment, without noticing it was a bug report: *"Explicitly, from the button in Settings → About — nothing calls it on a timer yet."* Nothing did. The only way to learn a release existed was to suspect one and go looking.
+
+### 107.1 The check runs itself, and stays quiet
+
+`desktop/update_notify.go`: once, 20 seconds after startup, then daily for as long as the window is open. Three rules keep a question nobody asked from becoming a nuisance:
+
+- **Silent unless there is something newer.** A failed automatic check emits nothing at all — offline, rate-limited, proxy in the way, all of it goes to `debuglog` and none of it to the window. A red banner about GitHub being unreachable, over an app the user is in the middle of using, is an answer to a question they never posed, and it makes a working app look broken. The explicit button in Settings still reports its failures; that one *was* asked for, and silence there reads as a dead click.
+- **It downloads nothing.** The notice offers, the user decides, bytes move on the click. An app that quietly pulls tens of megabytes over someone's tethered connection has made a decision that was not its to make.
+- **`AETOX_DISABLE_UPDATE_CHECK` switches it off before the first sleep**, not just at the request — an opted-out user should not have a goroutine ticking on their behalf either.
+
+The startup check is deliberately unconditional rather than skipped when the cache says "asked recently": the previous run may have found a release the user closed the app on, and the ETag makes the repeat cost a 304 with no body.
+
+### 107.2 The event carries the whole answer, not a boolean
+
+`update:available` ships the entire `update.Status`. Which action a channel deserves — one click for portable and installer, `scoop update aetox` for Scoop (that directory is not ours to write into), the release page for everything else — is a decision `internal/update` already makes and already has tests for. A frontend that re-derived it from `channel` would be a second place answering one question, free to drift the first time a channel is added.
+
+### 107.3 Two doors, one act, one state
+
+The notice and the About button start the same update, so "downloading / 42% / restarting / here is why it failed" cannot live inside either page. About used to own it privately; that was fine while it was the only door and wrong the moment it stopped being. It moved to `frontend/src/lib/selfUpdate.svelte.ts`, which both read and both drive — the same rule as everywhere else in this repo: a second place answering the same question is หนี้ในระบบ.
+
+That module is named `selfUpdate` and not `updater` for a reason worth writing down: on Windows's case-insensitive filesystem, `import … from './updater.svelte'` resolves to `Updater.svelte` — the component — and hands back a module with none of the expected exports. It fails at runtime as `undefined`, not at resolution, so the error surfaces nowhere near its cause. A `.svelte.ts` store must never differ from a `.svelte` component by case alone.
+
+### 107.4 The dialog says the two things a progress bar cannot
+
+Modal, because the exe under the window is being replaced and there is nothing behind it worth reaching. Beyond the percentage it carries two sentences:
+
+- **"แอปจะปิดแล้วเปิดกลับมาให้เองเมื่อเสร็จ"**, said *before* it happens. An app that closes itself mid-progress, unannounced, reads as a crash.
+- On failure, **"เวอร์ชันเดิมยังอยู่ครบและใช้งานได้ตามปกติ"**. This is the case the signature and the checksums exist for, and a refused download is the chain working, not the app breaking. `applyPortableTo` puts the old exe back if the second rename fails, so the promise is true, and it is why the button re-arms instead of the dialog closing.
+
+When the download has no `Content-Length` the bar moves without claiming a number. A fake 50% is not the humble option.
+
+### What this does not decide
+
+Update-on-quit (VS Code's other half — swap while the app is closing, so no one waits) is not built. Neither is a release-notes view in the notice; the link to the release page is the whole of "what changed" for now. macOS and Linux still have no auto path at all — `canAuto` is `false` off Windows, and closing that is part of the 1.0.0 three-platform gate, not this change.

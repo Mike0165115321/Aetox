@@ -74,6 +74,23 @@ type Options struct {
 	// narrower gate (§83, and §84 does not amend it).
 	Mode *mode.Mode
 
+	// Stance is how this turn runs — the second axis (DECISIONS.md §106), and
+	// the one the user changes mid-conversation. The zero value is ลงมือ, which
+	// is today's behaviour and every session that predates stances.
+	//
+	// It only ever subtracts from Mode. That is what makes switching it
+	// mid-session safe against COMPANY.md §6.3: the desk is frozen so a context
+	// never holds another desk's tools, and removing tools cannot put anything
+	// in one. A host changes it by setting this field and re-bootstrapping,
+	// exactly as it does for a model switch — the outgoing agent's context is
+	// carried over, so the conversation survives the change (desktop applyConfig).
+	//
+	// Not applied to delegates. A hired agent runs the door's own terms, never
+	// the caller's dial (§106.5): the brief is its goal and the file is its
+	// finish, and a delegate that inherited คู่คิด would be hired to make
+	// something with nothing to make it with.
+	Stance mode.Stance
+
 	// Chair mounts the engine as one of the office's agents instead of the main
 	// assistant — the direct chat §85 added. Mode must be the office desk; the
 	// chair's tools are its profile intersected with that ceiling
@@ -221,6 +238,38 @@ func deskFor(m *mode.Mode, direction string) prompt.Desk {
 	}
 }
 
+// withStance narrows a desk by the session's stance (§106): the same desk, seen
+// through how this turn is being run.
+//
+// Subtract-only, and written so it cannot be anything else — Carries is wrapped
+// in an AND, never replaced, so a stance has no way to hand back a tool the desk
+// withheld. That is the property COMPANY.md §6.3 rests on once the dial can move
+// mid-session.
+//
+// Applied to the session's own desk and to nothing else. deskFor stays bare for
+// the delegate path, which is what keeps a hired agent on the door's terms
+// rather than the caller's (§106.5).
+func withStance(d prompt.Desk, s mode.Stance) prompt.Desk {
+	if s == mode.StanceAct {
+		return d
+	}
+	carries := d.Carries
+	d.Carries = func(name string) bool {
+		if carries != nil && !carries(name) {
+			return false
+		}
+		return s.AllowsTool(name)
+	}
+	d.StanceDirection = s.Direction()
+	// Asked of the stance, never probed out of AllowsTool. This line read
+	// `!s.AllowsTool("")` for exactly as long as คู่คิด was the only narrowing
+	// stance — วางแผน answers from an allow-list, the empty string is not in
+	// it, and the probe reported วางแผน as carrying nothing: it lost the prompt
+	// layers it needs and read as a broken คู่คิด.
+	d.ToolLess = s.CarriesNothing()
+	return d
+}
+
 func Engine(cfg config.Config, opts Options) (Result, error) {
 	defer debuglog.Block("bootstrap.Engine")()
 
@@ -288,6 +337,11 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 		desk = deskFor(opts.Mode, subagent.PromptFor(*opts.Chair))
 		desk.Name = opts.Chair.Name
 	}
+	// Last, so it narrows whichever of the two desks above was built. A chair
+	// chat is an ordinary session with a person sitting in it, and gets the dial
+	// for the same reason it got ask_user — the thing that changes is who is
+	// listening, not what the work is (§106.5, subagent.AttendedRegistry).
+	desk = withStance(desk, opts.Stance)
 	agent := cognitive.NewAgent(cognitive.AgentConfig{
 		Provider:     bootstrapResult.Provider,
 		Model:        cfg.ModelName,
@@ -337,7 +391,16 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 	// home, and what varies per session is only which of it is visible. The
 	// filter reads the registry live, so an MCP server that connects mid-session
 	// still appears on the desks that attached it and on no others.
-	dispatcher := skill.NewDispatcherFor(registry, opts.Mode.Carries)
+	// The one seam where the two axes meet, and an AND so it can only ever be a
+	// narrowing (§106.4). Both halves are read at request time — Dispatcher
+	// runs its filter inside ToolDefinitions, not once at construction — so a
+	// server that connects mid-session still appears, and a stance set on this
+	// bootstrap governs every turn it serves.
+	stanceOf := opts.Stance
+	deskCarries := func(name string, source skill.Source) bool {
+		return opts.Mode.Carries(name, source) && stanceOf.Carries(name, source)
+	}
+	dispatcher := skill.NewDispatcherFor(registry, deskCarries)
 	if opts.Chair != nil {
 		// A chair chat sees exactly what its delegate runs see: profile ∩ the
 		// office ceiling, cut by the same FilterRegistry — a second reading of
@@ -375,7 +438,10 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 				debuglog.Msg("memory unavailable to chair %s: %v", opts.Chair.Name, regErr)
 			}
 		}
-		dispatcher = skill.NewDispatcher(child)
+		// The chair's cut is already a snapshot registry, so the desk filter has
+		// nothing left to say — but the stance does, and it is the one thing
+		// here the user can still change without reopening the chat.
+		dispatcher = skill.NewDispatcherFor(child, stanceOf.Carries)
 	}
 
 	permissions, permErr := config.LoadPermissions()

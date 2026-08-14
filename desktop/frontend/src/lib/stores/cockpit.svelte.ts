@@ -21,10 +21,11 @@ import {
   WorkspaceFolders, AddWorkspaceFolder, RemoveWorkspaceFolder,
   RetryFailedTurn, RegenerateReply, ResendEdited, SwitchVariant,
   ExportSession, ImportSession,
+  Stance, Stances, SetStance,
 } from '../../../wailsjs/go/main/App'
 import type { main } from '../../../wailsjs/go/models'
 import { t } from '../i18n.svelte'
-import { shell, setShell, shellForDesk, deskFilterFor, SHELLS, type ShellName } from '../shell.svelte'
+import { shell, setShell, shellForDesk, deskForShell, deskFilterFor, SHELLS, type ShellName } from '../shell.svelte'
 import { workbench, switchWorkbenchSession, adoptWorkbenchSession, removeWorkbenchState } from './workbench.svelte'
 
 // Model info comes from a real Go IPC round-trip (GetModelInfo), which is
@@ -1829,6 +1830,11 @@ export async function refreshDesk(): Promise<void> {
     // chat from history has to put its project back on screen, and the engine
     // is the one that read it off the row.
     cockpit.space = await CurrentSpace()
+    // Asked too, and for a reason the three above do not have: a stance is not
+    // fixed at birth, so reopening a chat has to put back the dial it was left
+    // on. The engine read it off the row; nothing here could know it.
+    cockpit.stance = await Stance()
+    if (cockpit.stances.length === 0) cockpit.stances = await Stances()
     await refreshSpaceHistory()
     // The door follows the desk, never the other way round: reopening a coding
     // session from the assistant's history has to land you in the workshop, or
@@ -1837,5 +1843,32 @@ export async function refreshDesk(): Promise<void> {
   } catch {
     cockpit.desk = '' // engine not up yet — the full desk is the honest default
     cockpit.chair = ''
+    cockpit.stance = '' // and ลงมือ is its counterpart: the stance that withholds nothing
+  }
+}
+
+/** Turn the dial: how the open session runs from the next turn on (§106).
+ *
+ * The only session coordinate with a setter. The engine re-bootstraps in place
+ * and carries the conversation over, so nothing here clears the transcript —
+ * that is the difference between a stance and a desk, expressed as the absence
+ * of the four lines newSessionAt needs.
+ *
+ * The engine's answer is what lands in state, never the value that was asked
+ * for: a name this build does not implement comes back as ลงมือ, and the
+ * picker has to show what is actually in force rather than what was clicked. */
+export async function setStance(next: string): Promise<void> {
+  if (turnStillRunning()) return
+  try {
+    cockpit.stance = await SetStance(next)
+    cockpit.sessionError = ''
+  } catch (err) {
+    // Refused — a turn is in flight, and the guard is the same one that stops a
+    // session switch mid-turn (desktop/app.go guardSessionSwitch), reached by a
+    // different route: this rebuilds the agent under a turn that would then
+    // finish on a context it did not start with. Same refusal, same surface,
+    // and the dial stays where it was rather than showing a stance nothing is
+    // enforcing.
+    showSessionRefusal(err)
   }
 }

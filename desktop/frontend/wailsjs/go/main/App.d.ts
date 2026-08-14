@@ -352,6 +352,8 @@ export function SetShell(arg1:string):Promise<void>;
 
 export function SetSpeechModel(arg1:string):Promise<void>;
 
+export function SetStance(arg1:string):Promise<string>;
+
 export function SetSubagentModel(arg1:string,arg2:string):Promise<void>;
 
 export function SetUILocale(arg1:string):Promise<void>;
@@ -375,6 +377,10 @@ export function Spaces():Promise<Array<main.Space>>;
 export function SpeechModelDirs():Promise<Array<main.SpeechDirInfo>>;
 
 export function SpeechStatus():Promise<string>;
+
+export function Stance():Promise<string>;
+
+export function Stances():Promise<Array<string>>;
 
 export function StartConnectionServer(arg1:string):Promise<void>;
 

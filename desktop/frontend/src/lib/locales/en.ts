@@ -853,6 +853,17 @@ Check your own work before answering; say so plainly if unsure.
   'chat.inputToAgent': 'Message {name}…',
   'chat.mainAgent': 'Main assistant',
   'chat.agentSwitchNote': 'Switching always opens a new chat — this one stays in history.',
+  // Working mode (§106) — the other axis from the desk: a desk says what tools
+  // are on it, this says how the turn runs. Keys are named for the id the
+  // engine sends ('' = act); a new stance in Go gets its key added here.
+  'stance.title': 'Working mode',
+  'stance.act': 'Do',
+  'stance.actHint': 'Work as usual, every tool the desk carries',
+  'stance.plan': 'Plan',
+  'stance.planHint': 'Look at anything, change nothing, ends in a plan',
+  'stance.consult': 'Think it through',
+  'stance.consultHint': 'Talk only, no tools at all',
+  'stance.note': 'Switch any time, the conversation stays.',
   // Said in the same breath as the switcher's note, because the two menus list
   // the same names and the difference between them is the whole point: one
   // moves you into someone's room, the other says one sentence to them from

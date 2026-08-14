@@ -82,6 +82,37 @@ type Desk struct {
 	// Read through delegates(), never directly: a zero Desk is a session from
 	// before desks existed, and that one could always reach every agent.
 	Delegates bool
+	// StanceDirection is what the session's *stance* folds in — the second axis
+	// (DECISIONS.md §106): not what is on the desk, but how this turn runs.
+	// Empty for ลงมือ, which adds nothing because it changes nothing.
+	//
+	// A second string beside Direction rather than concatenated into it,
+	// because the two have different lifetimes and the ordering between them is
+	// the policy: a desk is fixed for the session, a stance is the dial the user
+	// just turned, and the later one wins. Folding them at the call site would
+	// hide that rule in the caller.
+	//
+	// A string, like Direction, so this package still does not import
+	// internal/mode.
+	StanceDirection string
+	// ToolLess says this session carries no tool definitions at all — คู่คิด,
+	// and any later stance built the same way.
+	//
+	// It exists because Carries answers one name at a time and half the layers
+	// below do not name anything: batchWork is about shell, narration is about
+	// the pause before a tool round, clarify is about ask_user. Under a stance
+	// that carries nothing, every one of them describes a move the model cannot
+	// make — which is the exact failure Carries was added to stop, arriving
+	// through the door Carries cannot watch.
+	//
+	// Skipping them is also most of what คู่คิด is for. The tool block is the
+	// headline saving; these paragraphs are the rest of it, and they were only
+	// ever instructions for using tools.
+	//
+	// Deliberately does NOT skip drawing/panel: those describe how the *answer*
+	// is rendered, not how a tool is called, and a diagram is very much
+	// something a conversation produces.
+	ToolLess bool
 }
 
 // carries answers Desk.Carries for the zero value too: a desk that was never
@@ -213,6 +244,18 @@ func BuildWithReport(surface Surface, scope Scope, desk Desk) (string, Loaded) {
 	if direction := strings.TrimSpace(desk.Direction); direction != "" {
 		b.WriteString("\n" + direction + "\n\n")
 	}
+	// Directly after the desk's direction, and after on purpose (§106.4). The
+	// two answer the same question at two scales — what is this session, then
+	// what is this turn — and where they disagree the dial the user just turned
+	// has to be the one that wins. Position is the only mechanism there is for
+	// saying so.
+	//
+	// Not filed at the end with the machine rules, either. The paragraph above
+	// spends itself explaining why direction cannot sit ten thousand characters
+	// in; a stance is the same kind of answer and inherits the same reason.
+	if stance := strings.TrimSpace(desk.StanceDirection); stance != "" {
+		b.WriteString(stance + "\n\n")
+	}
 	// Third, immediately before environment, because the two are the same
 	// question on two axes: this one is where the answer lands, that one is
 	// where the session can reach. Read in order the prompt now narrows — who
@@ -235,10 +278,28 @@ func BuildWithReport(surface Surface, scope Scope, desk Desk) (string, Loaded) {
 	// reach, and it reads as a correction to the sentence above it rather than
 	// as a new rule of its own.
 	b.WriteString(workingIn(scope.Space))
-	b.WriteString(capability())
-	b.WriteString(fileEditing(desk))
-	b.WriteString(batchWork())
-	b.WriteString(computing())
+	// Everything from here to clarify() is instruction for using tools. A
+	// session carrying none reads it as a description of moves it cannot make,
+	// so the whole block is skipped rather than gated line by line — see
+	// Desk.ToolLess.
+	if !desk.ToolLess {
+		b.WriteString(capability())
+		// Each gated on a tool it is entirely about, which is what Desk.Carries
+		// is for. A desk has never withheld these — every desk writes files and
+		// two of the three have a shell — but a *stance* does: วางแผน keeps
+		// every reading tool and takes the writing and running ones away, and
+		// without these gates it would be handed three paragraphs on how to use
+		// them. The gate is on the tool each layer opens with, not on a stance
+		// name, so a later stance that withholds the same thing is covered by
+		// the line that is already here.
+		if desk.carries("edit") || desk.carries("write") {
+			b.WriteString(fileEditing(desk))
+		}
+		if desk.carries("shell") {
+			b.WriteString(batchWork())
+		}
+		b.WriteString(computing())
+	}
 	// Only where the surface can draw them. Both layers open with "your answer
 	// is rendered as markdown, and inline SVG/HTML in it is drawn" — true of
 	// the desktop's chat, false of a terminal, and a model told its terminal
@@ -248,9 +309,22 @@ func BuildWithReport(surface Surface, scope Scope, desk Desk) (string, Loaded) {
 		b.WriteString(drawing())
 		b.WriteString(panel())
 	}
-	b.WriteString(longform(desk))
-	b.WriteString(narration())
-	b.WriteString(clarify())
+	// longform is about writing the answer to a file with `write`, narration is
+	// about the sentence before a tool round, clarify is about ask_user. Same
+	// block, same reason as above — kept separate only because drawing/panel
+	// sit between them and those two stay.
+	if !desk.ToolLess {
+		// longform's whole instruction is "write it to a .md file yourself with
+		// write". Under a stance that withheld write it told the model to reach
+		// for the one tool it had just been refused — and the answer to a long
+		// question there is to give it inline, which is what happens anyway
+		// once nothing is telling it otherwise.
+		if desk.carries("write") {
+			b.WriteString(longform(desk))
+		}
+		b.WriteString(narration())
+		b.WriteString(clarify())
+	}
 
 	var loaded Loaded
 	loaded.UserGlobalPaths = foldIdentityLayers(&b)

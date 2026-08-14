@@ -528,6 +528,8 @@ product picture in [COMPANY.md](COMPANY.md)) · §82 (the learning floor) · §4
 | §103 | A Step That Cannot Mistranslate Is a Step That Does Not Run (2026-08-12) |
 | §104 | Three Kinds of Bad News, Three Different Doors (2026-08-13) |
 | §105 | Work Given to Somebody Else Does Not End When the Sentence Does (2026-08-13) |
+| §106 | What Is on the Desk and How the Turn Runs Are Two Axes; โหมด Belongs to the One That Switches (2026-08-14) — *design, recorded before the build* |
+| §107 | An Update Nobody Is Told About Is an Update Nobody Gets (2026-08-14) |
 
 ---
 

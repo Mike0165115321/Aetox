@@ -100,6 +100,18 @@ type App struct {
 	// in and where that project keeps its files.
 	space string
 
+	// stance is the session's fourth coordinate (DECISIONS.md §106): how the
+	// turn runs, as opposed to what is on the desk. The zero value is ลงมือ.
+	//
+	// **The one coordinate with a different lifecycle, and that is the whole
+	// point of it.** desk, chair and space are set when a session opens and
+	// never while one runs, because each of them would change what the context
+	// already holds. A stance only ever subtracts from the desk, so moving it
+	// mid-conversation cannot put another desk's tools into this one — which is
+	// what lets SetStance re-bootstrap in place (carrying the agent's context
+	// over, as a model switch does) instead of opening a new session.
+	stance mode.Stance
+
 	// turnOpened is true between openTurn and appendTurn: the user message for
 	// the turn now running is already in the store, so the closing write must
 	// not add it a second time. See openTurn for why the pair stopped being one
@@ -2608,11 +2620,18 @@ func (a *App) reload(opts config.ConfigOptions) {
 // was FilterRegistry here and that is exactly the drift the sentence above
 // warns about: the engine grew `ask_user` for a chair chat and this line, four
 // files away, kept reporting the list without it.
+// The stance is folded in here too, and it is the same sentence one axis
+// later: the panel and the model must agree about what this session carries,
+// and a stance changes that without opening a new session. Left out, คู่คิด
+// would empty the model's tool block while this list went on showing every
+// tool the desk holds — the drift above, arriving through the newer door.
 func (a *App) deskTools() *skill.Dispatcher {
 	if p := a.chairProfile(); p != nil {
-		return skill.NewDispatcher(subagent.AttendedRegistry(a.registry, *p, a.desk))
+		return skill.NewDispatcherFor(subagent.AttendedRegistry(a.registry, *p, a.desk), a.stance.Carries)
 	}
-	return skill.NewDispatcherFor(a.registry, a.desk.Carries)
+	return skill.NewDispatcherFor(a.registry, func(name string, source skill.Source) bool {
+		return a.desk.Carries(name, source) && a.stance.Carries(name, source)
+	})
 }
 
 // chairProfile resolves the open session's chair to its profile, nil when the
@@ -2722,6 +2741,11 @@ func (a *App) applyConfig(cfg config.Config) {
 		// a session says otherwise, which is what every session before §83 and
 		// every unfiltered path still gets.
 		Mode: a.desk,
+		// How this turn runs (§106). Read here rather than snapshotted at
+		// session open because SetStance re-bootstraps through this same
+		// function — the dial and the engine cannot disagree if there is only
+		// one place the engine reads it.
+		Stance: a.stance,
 		// The agent the open session talks to directly (§85), nil for the main
 		// assistant. Resolved fresh from disk on every bootstrap so an edited
 		// profile takes effect the next time its chair is sat at, like every

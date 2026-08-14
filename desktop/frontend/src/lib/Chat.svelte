@@ -26,7 +26,7 @@
     retryActiveProvider, undoLastTurn, switchApprovalMode,
     startTaskChip, dismissTaskChip,
     retryFailedTurn, regenerateReply, switchVariant, resendEdited, rateReply,
-    setActiveView, newChairSession, newSessionAt, openSettingsAt,
+    setActiveView, newChairSession, newSessionAt, openSettingsAt, setStance,
   } from './stores/cockpit.svelte'
   import ConfirmDialog from './ConfirmDialog.svelte'
   import Icon from './Icon.svelte'
@@ -472,6 +472,28 @@
   // Cleared when the menu closes, so a stale refusal never greets the next open.
   let folderError = $state('')
   let ctxMenuOpen = $state(false)
+  // The โหมดทำงาน picker (§106). Its list comes from the engine (cockpit.stances)
+  // — which stances exist is Go's answer, and a copy here is the one that goes
+  // stale — while the words come from the locale.
+  let stanceMenuOpen = $state(false)
+  // How each stance is drawn, keyed on the engine's id ('' is ลงมือ). One table
+  // rather than three lookups, and `as const` on purpose: it makes the glyph a
+  // literal the Icon union accepts and the two strings literal locale keys, so
+  // adding a stance in Go and forgetting its words here is a compile error
+  // rather than a button labelled `stance.plan`.
+  //
+  // A stance the engine sends that this table does not know falls back to
+  // ลงมือ's row: a generic button beats a nameless one, and it is how a stance
+  // added on the Go side first shows itself over here.
+  const STANCE_VIEW = {
+    '': { icon: 'wrench', label: 'stance.act', hint: 'stance.actHint' },
+    plan: { icon: 'compass', label: 'stance.plan', hint: 'stance.planHint' },
+    consult: { icon: 'brain', label: 'stance.consult', hint: 'stance.consultHint' },
+  } as const
+  const stanceView = (s: string) => STANCE_VIEW[s as keyof typeof STANCE_VIEW] ?? STANCE_VIEW['']
+  // The chip's own row. Derived rather than {@const} in the markup: the chip is
+  // no longer inside a block, and {@const} only lives in one.
+  const activeStance = $derived(stanceView(cockpit.stance))
   // Which of the provider/model/think-level pickers inside the model-menu
   // popover is expanded — native <select> can't be forced to open its option
   // list upward (browser-controlled, not stylable), so these render as a
@@ -513,6 +535,7 @@
     if (modelMenuOpen && !el.closest('.model-pick')) { modelMenuOpen = false; openDropdown = '' }
     if (focusMenuOpen && !el.closest('.focus-pick')) { focusMenuOpen = false; folderError = '' }
     if (ctxMenuOpen && !el.closest('.ctx-pick')) ctxMenuOpen = false
+    if (stanceMenuOpen && !el.closest('.stance-pick')) stanceMenuOpen = false
     if (openDropdown && !el.closest('.updrop')) openDropdown = ''
     if (palette && !el.closest('.pal-pick')) palette = ''
   }
@@ -1996,17 +2019,71 @@
       <textarea
         class="input"
         rows="1"
-        placeholder={cockpit.chair ? t('chat.inputToAgent', { name: cockpit.chair }) : t('chat.inputPlaceholder')}
+        placeholder={cockpit.chair
+          ? t('chat.inputToAgent', { name: cockpit.chair })
+          : t('chat.inputPlaceholder', { key: shortcutLabel('palette') })}
         bind:this={inputEl}
         bind:value={draft}
         onkeydown={onKeydown}
         onpaste={onComposerPaste}
       ></textarea>
       <div class="tools">
+        <!-- Attach stays leftmost (owner, 2026-08-14). It is the button that
+             belongs to the text being written, so it sits against the text;
+             everything after it is about how the turn will be run. -->
         <button
           class="icobtn" aria-label={t('chat.attachFile')} data-tip={t('chat.attachFile')}
           onclick={attachViaDialog}
         >+</button>
+        <!-- โหมดทำงาน (§106) — how this turn runs, as against what is on the
+             desk. On the input row rather than in the chip strip above, which
+             is deliberate: every chip up there is a door to a NEW session
+             ("never a dial on this one"), and this is the opposite.
+
+             It always says which mode is on — owner's call, 2026-08-14, after
+             seeing it drawn the other way. The first build made ลงมือ a bare
+             glyph on the reasoning that a default should not demand attention;
+             what that produced was a control you have to click to find out what
+             it is doing. A dial that decides whether the assistant can touch
+             your machine reads its own state out loud, in every position,
+             including the ordinary one. -->
+        <div class="stance-pick">
+          {#if stanceMenuOpen}
+            <div class="stance-menu">
+              {#each cockpit.stances as s (s)}
+                {@const v = stanceView(s)}
+                <button
+                  type="button" class="stance-item" class:on={cockpit.stance === s}
+                  onclick={() => { stanceMenuOpen = false; setStance(s) }}
+                >
+                  <span class="ic"><Icon name={v.icon} size={14} /></span>
+                  <span class="t">
+                    <span class="nm">{t(v.label)}</span>
+                    <span class="d">{t(v.hint)}</span>
+                  </span>
+                  {#if cockpit.stance === s}<span class="tick"><Icon name="check" size={13} /></span>{/if}
+                </button>
+              {/each}
+              <div class="folder-note">{t('stance.note')}</div>
+            </div>
+          {/if}
+          <!-- One shape in every position — the name is the control. `.on`
+               only changes the colour, so the ordinary mode is legible and the
+               ones that withhold tools are unmissable.
+
+               A menu rather than click-to-cycle: cycling means arriving
+               somewhere by pressing one time too many, and what this dial
+               changes is whether the assistant can touch the machine. -->
+          <button
+            type="button" class="stance-chip" class:on={!!cockpit.stance}
+            title={t('stance.title')} aria-label={t('stance.title')}
+            onclick={(e) => { e.stopPropagation(); stanceMenuOpen = !stanceMenuOpen }}
+          >
+            <Icon name={activeStance.icon} size={13} />
+            <span class="nm">{t(activeStance.label)}</span>
+            <span class="caret"><Icon name={stanceMenuOpen ? 'chevronUp' : 'chevronDown'} size={11} /></span>
+          </button>
+        </div>
         <div class="pal-pick">
           {#if palette}
             <Palette

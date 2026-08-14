@@ -875,6 +875,16 @@ export const th = {
   'chat.inputToAgent': 'พิมพ์ถึง {name}…',
   'chat.mainAgent': 'ผู้ช่วยหลัก',
   'chat.agentSwitchNote': 'สลับ = เปิดแชทใหม่เสมอ — แชทเดิมอยู่ในประวัติ',
+  // โหมดทำงาน (§106) — คนละแกนกับโต๊ะ: โต๊ะบอกว่ามีเครื่องมืออะไร โหมดทำงานบอกว่าเทิร์นนี้เดินยังไง
+  // คีย์ตั้งชื่อตาม id ที่ engine ส่งมา ('' = ลงมือ) — เพิ่มโหมดใหม่ใน Go แล้วเติมคีย์ที่นี่
+  'stance.title': 'โหมดทำงาน',
+  'stance.act': 'ลงมือ',
+  'stance.actHint': 'ทำงานตามปกติ เครื่องมือครบตามโต๊ะ',
+  'stance.plan': 'วางแผน',
+  'stance.planHint': 'ดูได้ทุกอย่าง ไม่แก้อะไรเลย จบด้วยแผน',
+  'stance.consult': 'คู่คิด',
+  'stance.consultHint': 'คุยอย่างเดียว ไม่หยิบเครื่องมือ',
+  'stance.note': 'สลับได้ตลอด บทสนทนาไม่หาย',
   // Said in the same breath as the switcher's note, because the two menus list
   // the same names and the difference between them is the whole point: one
   // moves you into someone's room, the other says one sentence to them from

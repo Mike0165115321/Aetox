@@ -455,6 +455,19 @@ export interface CockpitState {
    *  any other chat — a session filed somewhere with nothing on screen saying
    *  so reads as the project having vanished. */
   space: string
+  /** How the open session is being run (DECISIONS.md §106), '' for ลงมือ.
+   *
+   *  The one coordinate here with a different lifecycle, and that is the point
+   *  of it: desk, chair and space are fixed when a session is born, while this
+   *  is a dial the user turns mid-conversation. It only ever subtracts from the
+   *  desk, so turning it cannot bring another desk's tools into this context —
+   *  which is why it needs no new session and §6.3 still holds. */
+  stance: string
+  /** Every stance the engine implements, in picker order, ลงมือ first. Read
+   *  from Go rather than listed here: which stances exist is the engine's
+   *  answer, and a hardcoded copy is the one that goes stale. What each is
+   *  called is a locale string — see `stance.*` in the locales. */
+  stances: string[]
   /** True from the moment a message is sent until the reply (or an error) arrives. */
   awaitingReply: boolean
   /** Files the last turn changed, from PendingUndo. Empty when there is nothing
@@ -540,6 +553,8 @@ export function emptyCockpitState(): CockpitState {
     desk: '',
     chair: '',
     space: '',
+    stance: '',
+    stances: [],
     awaitingReply: false,
     undoFiles: [],
     agentStatus: '',
