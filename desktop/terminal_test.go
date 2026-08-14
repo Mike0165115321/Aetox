@@ -260,11 +260,12 @@ func TestTerminalHoldsOutputUntilAPaneAttaches(t *testing.T) {
 // prints and then sits there. It blocks after its chunks instead of reporting
 // EOF, so the session stays in the map the way a real one does.
 type livePTY struct {
-	chunks [][]byte
-	idle   chan struct{}
-	read   int
-	mu     sync.Mutex
-	done   chan struct{}
+	chunks  [][]byte
+	idle    chan struct{}
+	read    int
+	drained bool
+	mu      sync.Mutex
+	done    chan struct{}
 }
 
 func (f *livePTY) Read(p []byte) (int, error) {
@@ -272,12 +273,19 @@ func (f *livePTY) Read(p []byte) (int, error) {
 	if f.read < len(f.chunks) {
 		n := copy(p, f.chunks[f.read])
 		f.read++
-		last := f.read == len(f.chunks)
 		f.mu.Unlock()
-		if last && f.done != nil {
-			close(f.done)
-		}
 		return n, nil
+	}
+	// Signalled from *here* rather than when the last chunk is handed over,
+	// because the pump appends to the backlog after Read returns — signalling
+	// on the last chunk let waitUntilRead win that race and assert against a
+	// half-filled backlog (~1 run in 300: "TerminalAttach = "PowerShell 7\r\n"").
+	// Coming back for another read is the pump's own proof that it has finished
+	// with the previous one.
+	f.drained = true
+	if f.done != nil {
+		close(f.done)
+		f.done = nil
 	}
 	f.mu.Unlock()
 	<-f.idle
@@ -288,15 +296,16 @@ func (f *livePTY) Write(p []byte) (int, error) { return len(p), nil }
 func (f *livePTY) Resize(int, int) error       { return nil }
 func (f *livePTY) Close() error                { return nil }
 
-// waitUntilRead blocks until the pump has consumed every chunk, which is the
-// moment the assertion above is meaningful.
+// waitUntilRead blocks until the pump has consumed *and buffered* every chunk,
+// which is the moment the assertion above is meaningful.
 func (f *livePTY) waitUntilRead(t *testing.T) {
 	t.Helper()
 	f.mu.Lock()
-	f.done = make(chan struct{})
-	if f.read == len(f.chunks) {
-		close(f.done)
+	if f.drained {
+		f.mu.Unlock()
+		return
 	}
+	f.done = make(chan struct{})
 	done := f.done
 	f.mu.Unlock()
 	select {
