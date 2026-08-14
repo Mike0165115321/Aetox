@@ -1,15 +1,18 @@
 package model
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -103,7 +106,7 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			continue
 		}
 
-		if attempt >= attempts || !replayable || !retryableStatus(resp.StatusCode) {
+		if attempt >= attempts || !replayable || !retryableStatus(resp.StatusCode) || insufficientQuota(resp) {
 			return resp, nil
 		}
 
@@ -211,6 +214,92 @@ func retryableStatus(status int) bool {
 	default:
 		return false
 	}
+}
+
+// outOfCreditsMarkers are the ways a provider says "this account has no money
+// left" inside a 429 — the status it also uses for "you are going too fast".
+//
+// One list, matched case-insensitively, because two different places need the
+// same answer: the transport, to stop retrying something no backoff can fix,
+// and the error message, to say what actually happened. It started as the
+// single OpenAI token and was wrong the first time another provider was tested:
+// Z.ai answers the same 429 with code 1113 and "Insufficient balance or no
+// resource package. Please recharge." — no shared word with OpenAI's spelling,
+// so Aetox called an empty wallet a rate limit and burned its whole retry
+// budget waiting for the balance to refill on its own.
+//
+// Each entry has to be billing language that a genuine "slow down" would never
+// contain, since misreading a real rate limit as a dead end is the failure in
+// the other direction.
+var outOfCreditsMarkers = [][]byte{
+	[]byte("insufficient_quota"),      // OpenAI: error.code and error.type
+	[]byte("insufficient_user_quota"), // the same idea, per-user
+	[]byte("insufficient balance"),    // Z.ai (1113), and common wording elsewhere
+	[]byte("no resource package"),     // Z.ai's other half of that sentence
+	[]byte("please recharge"),         // Z.ai's instruction; billing, never pacing
+	[]byte("exceeded your current quota"),
+}
+
+// providerErrorMessage pulls the human sentence out of the {"error":{"message":
+// …}} shape every OpenAI-compatible host uses for failures, so an error can
+// quote the provider instead of paraphrasing it. Empty when the body is shaped
+// some other way, which is the caller's cue to fall back to the raw text.
+func providerErrorMessage(body []byte) string {
+	var parsed struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(parsed.Error.Message)
+}
+
+// outOfCreditsError is the single sentence for "this account has no money
+// left", wherever it is discovered.
+//
+// Written once because it is now reached three ways — OpenAI's 429 tagged
+// insufficient_quota, Z.ai's 429 with a balance message, DeepSeek's plain 402 —
+// and three copies of one sentence is three chances for them to drift into
+// giving the same condition different advice.
+//
+// The status is carried into the text rather than hidden: it is what a bug
+// report needs, and the provider's own words after it are what the user acts on.
+func outOfCreditsError(providerName string, status int, said string) error {
+	return fmt.Errorf(
+		"%s says this account is out of credits, so waiting will not help. Top up at the provider's billing page, or switch to another provider. (%d: %s)",
+		providerName, status, said,
+	)
+}
+
+// outOfCredits reports whether a 429 body is a balance of zero rather than a
+// rate limit. No backoff clears the first; only the user paying does.
+func outOfCredits(body []byte) bool {
+	lower := bytes.ToLower(body)
+	for _, marker := range outOfCreditsMarkers {
+		if bytes.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// insufficientQuota is outOfCredits asked of a live response.
+//
+// The status alone cannot say this, so the transport has to peek at a body that
+// belongs to the caller — whatever it reads is stitched back on before the
+// response is handed over.
+func insufficientQuota(resp *http.Response) bool {
+	if resp.StatusCode != http.StatusTooManyRequests || resp.Body == nil {
+		return false
+	}
+	peeked, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<10))
+	resp.Body = struct {
+		io.Reader
+		io.Closer
+	}{io.MultiReader(bytes.NewReader(peeked), resp.Body), resp.Body}
+	return outOfCredits(peeked)
 }
 
 // humanizeDuration renders a wait window for an error message a person reads.

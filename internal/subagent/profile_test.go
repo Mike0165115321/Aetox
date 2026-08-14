@@ -24,10 +24,11 @@ func isolate(t *testing.T) string {
 	return dir
 }
 
-// Seven profiles ship, in two kinds, and the split is the thing being asserted:
-// three delegates any desk may run, and four agents that sit in the office
+// Nine profiles ship, in two kinds, and the split is the thing being asserted:
+// three delegates any desk may run, and six agents that sit in the office
 // (COMPANY.md §4). The counts are pinned because "one more profile, it's free"
-// is how a bundled set becomes a menu nobody reads.
+// is how a bundled set becomes a menu nobody reads — so a number that moves here
+// should be a hire somebody decided on, never a file that arrived.
 //
 // **No bundled agent writes `desk:`, and none should.** A file in the agents
 // home is given the office by applyHomeRules, which is the whole rule an author
@@ -40,11 +41,13 @@ func isolate(t *testing.T) string {
 func TestBundledProfilesAreUsable(t *testing.T) {
 	isolate(t)
 	got := List()
-	want := []string{"automation", "deck", "doc", "explore", "general", "github", "plan", "sheet"}
+	want := []string{"automation", "deck", "doc", "explore", "general", "github", "plan", "research", "sheet"}
 	if len(got) != len(want) {
 		t.Fatalf("List() = %d profiles, want %d", len(got), len(want))
 	}
-	chairs := map[string]bool{"automation": true, "deck": true, "doc": true, "github": true, "sheet": true}
+	chairs := map[string]bool{
+		"automation": true, "deck": true, "doc": true, "github": true, "research": true, "sheet": true,
+	}
 	for i, p := range got {
 		if p.Name != want[i] {
 			t.Errorf("List()[%d] = %q, want %q (alphabetical)", i, p.Name, want[i])
@@ -275,8 +278,8 @@ func TestHelperHomeCannotAddADelegate(t *testing.T) {
 	if _, ok := Load("backend"); ok {
 		t.Fatal("a helper-home user file loaded as a delegate")
 	}
-	if got := len(List()); got != 8 {
-		t.Fatalf("List() = %d, want the 8 bundled only", got)
+	if got := len(List()); got != 9 {
+		t.Fatalf("List() = %d, want the 9 bundled only", got)
 	}
 	if c, ok := findConflict(Conflicts(), "backend"); !ok || c.Reason == "" {
 		t.Fatal("the locked-out file is not reported with a reason")

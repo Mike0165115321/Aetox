@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="th">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Aetox</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Aetox">
+<meta name="theme-color" content="#0b0f16">
+<link rel="apple-touch-icon" href="/icon.png">
+<style>
+  :root{
+    --bg:#0b0f16; --panel:#131926; --line:#1f2836;
+    --ink:#e6edf7; --dim:#8b98ab; --accent:#6ea8fe;
+    --ok:#4ade80; --no:#f87171;
+    --safe-t:env(safe-area-inset-top,0px); --safe-b:env(safe-area-inset-bottom,0px);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+    padding:calc(var(--safe-t) + 14px) 14px calc(var(--safe-b) + 24px);
+    -webkit-text-size-adjust:100%;
+  }
+  header{display:flex;align-items:center;gap:9px;margin-bottom:18px}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--ok);flex:none}
+  .dot.off{background:var(--no)}
+  h1{font-size:17px;font-weight:600;margin:0;flex:1}
+  .sub{color:var(--dim);font-size:12px}
+  h2{font-size:12px;font-weight:600;color:var(--dim);letter-spacing:.06em;
+     text-transform:uppercase;margin:26px 0 10px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+        padding:14px;margin-bottom:10px}
+  .card .why{color:var(--dim);font-size:13px;margin-top:6px}
+  .body{white-space:pre-wrap;word-break:break-word;font-size:14px;margin-top:8px}
+  .row{display:flex;gap:9px;margin-top:13px}
+  button{flex:1;padding:11px;border-radius:10px;border:1px solid var(--line);
+         background:#1a2130;color:var(--ink);font:inherit;font-weight:600;
+         cursor:pointer;-webkit-tap-highlight-color:transparent}
+  button:active{transform:scale(.98)}
+  button.yes{background:rgba(74,222,128,.14);border-color:rgba(74,222,128,.4);color:var(--ok)}
+  button.no{background:rgba(248,113,113,.12);border-color:rgba(248,113,113,.35);color:var(--no)}
+  button:disabled{opacity:.45}
+  .sess{display:block;width:100%;text-align:left;font-weight:400;padding:13px 14px;
+        margin-bottom:8px;background:var(--panel);border:1px solid var(--line);border-radius:14px}
+  .sess .t{font-weight:600;font-size:14px}
+  .sess .s{color:var(--dim);font-size:12.5px;margin-top:3px;
+           overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .empty{color:var(--dim);font-size:13.5px;padding:16px 2px}
+  .msg{margin-bottom:14px}
+  .msg .who{font-size:11px;color:var(--dim);letter-spacing:.05em;text-transform:uppercase}
+  .msg .tx{white-space:pre-wrap;word-break:break-word;margin-top:3px}
+  .msg.user .tx{color:var(--accent)}
+  .back{margin-bottom:16px;background:none;border:none;color:var(--accent);
+        padding:0;font-weight:600;text-align:left;flex:none}
+  .mid{min-height:60vh;display:grid;place-items:center;text-align:center}
+  .mid h1{font-size:19px;margin-bottom:6px}
+  .badge{background:var(--accent);color:#08101c;border-radius:999px;
+         padding:1px 8px;font-size:12px;font-weight:700;margin-left:6px}
+</style>
+
+<div id="app" class="mid"><div><h1>กำลังเชื่อมต่อ…</h1></div></div>
+
+<script>
+(() => {
+  const app = document.getElementById('app')
+  const esc = s => String(s ?? '').replace(/[&<>"]/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))
+
+  const mid = html => { app.className = 'mid'; app.innerHTML = '<div>' + html + '</div>' }
+  const full = html => { app.className = ''; app.innerHTML = html }
+
+  let timer = null, openSession = null
+
+  // ---- pairing -------------------------------------------------------
+  // The token arrives in the fragment, which browsers never send. Read it,
+  // spend it, and scrub it from the address bar so a screenshot of this page
+  // is not a key.
+  async function pair() {
+    const t = new URLSearchParams(location.hash.slice(1)).get('t')
+    if (!t) return false
+    const r = await fetch('/api/pair', {
+      method: 'POST',
+      headers: {'content-type': 'application/x-www-form-urlencoded'},
+      body: 't=' + encodeURIComponent(t),
+    })
+    history.replaceState(null, '', '/m')
+    return r.ok
+  }
+
+  // ---- data ----------------------------------------------------------
+  async function state() {
+    const r = await fetch('/api/state')
+    if (r.status === 401) return null
+    if (!r.ok) throw new Error('state ' + r.status)
+    return r.json()
+  }
+
+  async function decide(id, ok, btn) {
+    for (const b of btn.parentElement.children) b.disabled = true
+    await fetch('/api/decide', {
+      method: 'POST',
+      headers: {'content-type': 'application/x-www-form-urlencoded'},
+      body: 'id=' + id + '&ok=' + (ok ? '1' : '0'),
+    })
+    tick()
+  }
+
+  // ---- views ---------------------------------------------------------
+  function renderHome(s) {
+    const ap = s.approvals || [], se = s.sessions || []
+    full(`
+      <header>
+        <span class="dot"></span>
+        <h1>Aetox</h1>
+        <span class="sub">ต่ออยู่</span>
+      </header>
+
+      <h2>รออนุมัติ${ap.length ? `<span class="badge">${ap.length}</span>` : ''}</h2>
+      ${ap.length ? ap.map(c => `
+        <div class="card">
+          <div><b>${esc(c.target || c.kind)}</b> <span class="sub">${esc(c.scope)}</span></div>
+          <div class="body">${esc(c.body)}</div>
+          ${c.reason ? `<div class="why">${esc(c.reason)}</div>` : ''}
+          <div class="row">
+            <button class="yes" data-id="${c.id}" data-ok="1">อนุมัติ</button>
+            <button class="no"  data-id="${c.id}" data-ok="0">ไม่เอา</button>
+          </div>
+        </div>`).join('')
+        : '<div class="empty">ไม่มีอะไรค้างอยู่</div>'}
+
+      <h2>บทสนทนาล่าสุด</h2>
+      ${se.length ? se.map(x => `
+        <button class="sess" data-sess="${esc(x.id)}">
+          <div class="t">${esc(x.title || 'ไม่มีชื่อ')}</div>
+          <div class="s">${esc(x.snippet || x.updatedAt || '')}</div>
+        </button>`).join('')
+        : '<div class="empty">ยังไม่มีบทสนทนา</div>'}
+    `)
+
+    app.querySelectorAll('[data-id]').forEach(b =>
+      b.onclick = () => decide(b.dataset.id, b.dataset.ok === '1', b))
+    app.querySelectorAll('[data-sess]').forEach(b =>
+      b.onclick = () => showSession(b.dataset.sess))
+  }
+
+  async function showSession(id) {
+    openSession = id
+    const r = await fetch('/api/session?id=' + encodeURIComponent(id))
+    if (!r.ok) { openSession = null; return tick() }
+    const msgs = await r.json()
+    full(`
+      <button class="back">← กลับ</button>
+      ${(msgs || []).map(m => `
+        <div class="msg ${m.role === 'user' ? 'user' : ''}">
+          <div class="who">${m.role === 'user' ? 'คุณ' : 'Aetox'}</div>
+          <div class="tx">${esc(m.text)}</div>
+        </div>`).join('') || '<div class="empty">ยังไม่มีข้อความ</div>'}
+    `)
+    app.querySelector('.back').onclick = () => { openSession = null; tick() }
+  }
+
+  // ---- loop ----------------------------------------------------------
+  async function tick() {
+    if (openSession) return          // reading a conversation: do not repaint it
+    try {
+      const s = await state()
+      if (!s) return mid(`<h1>ยังไม่ได้จับคู่</h1>
+        <p class="sub">แสกน QR จากหน้าจอคอมอีกครั้ง</p>`)
+      renderHome(s)
+    } catch (e) {
+      mid(`<h1>ต่อไม่ติด</h1><p class="sub">Aetox บนคอมอาจปิดอยู่</p>`)
+    }
+  }
+
+  async function boot() {
+    if (location.hash.includes('t=')) await pair()
+    await tick()
+    clearInterval(timer)
+    timer = setInterval(tick, 4000)
+  }
+
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) tick() })
+  boot()
+})()
+</script>
+</html>

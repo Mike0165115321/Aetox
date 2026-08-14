@@ -972,6 +972,47 @@ export async function retryFailedTurn(index: number): Promise<void> {
 }
 
 /**
+ * Re-run a turn that failed, with the question reworded first.
+ *
+ * The sibling of retryFailedTurn above, for when the answer is not "try that
+ * again" but "I asked it wrong". Both end at App.RetryFailedTurn, which drops
+ * the failed row and the question above it before sending — so handing it
+ * different text simply asks the new question in place of the old one.
+ *
+ * Deliberately not routed through resendEdited: that one splices the last two
+ * messages on the assumption they are a completed exchange, and a failed turn
+ * is not one. Aiming at the failed bubble by index is what keeps the two cases
+ * from having to trust the same guess about the tail.
+ *
+ * No revert prompt, unlike the edit-after-success path: this is the retry
+ * button's road, and retrying a failed turn has never offered one.
+ */
+export async function editFailedTurn(failedIndex: number, text: string): Promise<void> {
+  const trimmed = text.trim()
+  if (!trimmed || cockpit.awaitingReply) return
+  const failed = cockpit.chat[failedIndex]
+  if (!failed?.failed) return
+  const question = cockpit.chat[failedIndex - 1]
+  if (question?.role !== 'user') return
+  // The attachment belongs to the question, not to its wording — same rule as
+  // resendEdited, for the same reason.
+  const sent = (trimmed + (question.attachSuffix ?? '')).trim()
+  const previous = cockpit.chat.splice(failedIndex - 1, 2)
+  cockpit.chat.push({ ...previous[0], text: trimmed, time: nowLabel() })
+  await runLiveTurn(async () => {
+    try {
+      const reply = await RetryFailedTurn(sent)
+      cockpit.chat.push({
+        role: 'agent', text: reply.text, parts: reply.parts as TurnPart[] | undefined,
+        time: nowLabel(), id: reply.messageId || undefined, ...turnArtifacts(),
+      })
+    } catch (err) {
+      cockpit.chat.push(turnEndedBubble(err, sent))
+    }
+  })
+}
+
+/**
  * Answer the last question again, keeping the previous answer switchable.
  *
  * revertFiles puts back whatever the previous attempt wrote. Answering again

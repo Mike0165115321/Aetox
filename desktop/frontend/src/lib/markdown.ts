@@ -7,6 +7,7 @@ import hljs from 'highlight.js/lib/common'
 // style.css maps .hljs-* onto the --syn-* properties applySyntaxTheme() writes,
 // so a fenced block is coloured by whatever theme is on.
 import { t } from './i18n.svelte'
+import { ICONS } from './icons'
 
 marked.setOptions({ breaks: true, gfm: true })
 
@@ -24,6 +25,9 @@ const runnableLangs = new Set(['bash', 'sh', 'shell', 'zsh', 'powershell', 'ps1'
 const renderer = {
   code({ text, lang }: Tokens.Code): string {
     const language = (lang ?? '').trim().split(/\s+/)[0]
+    // A plan is not source, so it does not get a code block. internal/prompt's
+    // `planCard` layer is what asks the model for this fence; see renderPlan.
+    if (language.toLowerCase() === 'plan' && !insidePlan) return renderPlan(text)
     const known = language !== '' && hljs.getLanguage(language) !== undefined
     const highlighted = known
       ? hljs.highlight(text, { language }).value
@@ -43,6 +47,82 @@ const renderer = {
   },
 }
 marked.use({ renderer })
+
+// A plan arrives as a fenced block tagged `plan` and is drawn as a card of its
+// own: the icon of the dial that produced it, a title, and the plan itself
+// (internal/prompt.planCard asks for exactly this, and only where a surface can
+// draw it — a terminal session gets the same plan with no fence around it).
+//
+// The fence is the contract because this renderer already had the seam: a code
+// block gets a header bar and a copy button by being intercepted here on its
+// language. A plan is that move with a different box, which is why the card
+// costs a branch rather than a parser.
+//
+// Rendered as a *card and not a bubble of its own*: it stays inside the
+// assistant's message, so a plan that follows a sentence still reads in order.
+// It is deliberately not collapsed behind a toggle either. In วางแผน the plan
+// is not an artifact beside the answer — it *is* the answer, and the turn was
+// spent producing it, so hiding it behind a click would hide the whole reply.
+//
+// insidePlan stops a `plan` fence written *inside* a plan from recursing: the
+// inner one renders as an ordinary code block, which is also what it looks
+// like when a model is showing the user how the fence is written.
+let insidePlan = false
+
+function renderPlan(source: string): string {
+  const { title, body } = splitPlanTitle(source)
+  insidePlan = true
+  let inner: string
+  try {
+    inner = marked.parse(body, { async: false }) as string
+  } finally {
+    insidePlan = false
+  }
+  // data-chrome marks this svg as the app's own furniture rather than something
+  // the model drew, so confine() leaves it alone — without it the card's icon
+  // is framed as a drawing, complete with its own copy and save buttons.
+  const icon =
+    `<svg class="icon" data-chrome="1" width="14" height="14" viewBox="0 0 24 24" fill="none" ` +
+    `stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ` +
+    `aria-hidden="true">${ICONS.compass}</svg>`
+  // The source rides along in an attribute so Copy hands back the markdown the
+  // model wrote — the thing a user pastes into an issue or a commit message.
+  // Reading it back off the rendered DOM instead would return the card's text
+  // with every heading and bullet flattened out of it.
+  const heading = title === '' ? '' : `<h3 class="plan-title">${marked.parseInline(title, { async: false }) as string}</h3>`
+  return (
+    `<div class="plan-card" data-plan="${escapeAttr(source)}">` +
+    `<div class="plan-head">` +
+    `<span class="plan-kind">${icon}${escapeText(t('chat.planCard'))}</span>` +
+    `<button class="plan-copy" type="button">${escapeText(t('chat.copyCode'))}</button>` +
+    `</div>` +
+    heading +
+    `<div class="plan-body">${inner}</div>` +
+    `</div>`
+  )
+}
+
+// The plan's title is the first heading inside the fence, and it is lifted out
+// rather than left in the body: it is the card's own line, drawn above the
+// plan the way the desk name is drawn above a session. Anything else — a plan
+// whose first line is already prose — keeps its text and simply has no title,
+// which reads as a card rather than as a mistake.
+function splitPlanTitle(source: string): { title: string; body: string } {
+  const lines = source.split('\n')
+  let i = 0
+  while (i < lines.length && lines[i].trim() === '') i++
+  const head = lines[i]?.match(/^\s{0,3}#{1,3}\s+(.+?)\s*#*\s*$/)
+  if (!head) return { title: '', body: source }
+  return { title: head[1], body: lines.slice(i + 1).join('\n') }
+}
+
+function escapeText(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+function escapeAttr(value: string): string {
+  return escapeText(value).replace(/"/g, '&quot;')
+}
 
 // A drawing is markup inside prose, and markdown is entitled to read markup as
 // prose. Two of its rules bite a hand-written <svg>:
@@ -129,6 +209,11 @@ function confine(html: string): string {
   host.appendChild(DOMPurify.sanitize(html, { RETURN_DOM_FRAGMENT: true }))
   for (const svg of host.querySelectorAll('svg')) {
     if (svg.parentElement?.closest('svg')) continue
+    // The app's own furniture — a card's icon — is not a drawing the user can
+    // take away, and framing it would hang copy and save buttons off a 14px
+    // glyph. Marked at the point it is built (renderPlan) rather than guessed
+    // at here by size or by which element it sits in.
+    if (svg.hasAttribute('data-chrome')) continue
     confineDrawing(svg)
     frameDrawing(svg)
   }

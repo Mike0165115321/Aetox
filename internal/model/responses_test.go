@@ -225,7 +225,7 @@ func TestResponsesSendsSubscriptionHeaders(t *testing.T) {
 // different fixes; a bare status code sends them to the wrong one.
 func TestResponsesStatusErrorsAreActionable(t *testing.T) {
 	cases := map[int]string{
-		http.StatusUnauthorized:    "sign in again",
+		http.StatusUnauthorized:    "Sign in again",
 		http.StatusForbidden:       "plan may not include it",
 		http.StatusTooManyRequests: "plan limit reached",
 	}

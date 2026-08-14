@@ -557,6 +557,7 @@ func (p *AnthropicProvider) Complete(ctx context.Context, req Request) (Response
 		return Response{}, err
 	}
 	defer httpResp.Body.Close()
+	NoteQuotas(p.Name(), httpResp)
 
 	responseBody, err := io.ReadAll(httpResp.Body)
 	if err != nil {
@@ -679,6 +680,7 @@ func (p *AnthropicProvider) StreamComplete(ctx context.Context, req Request, onC
 		return Response{}, err
 	}
 	defer httpResp.Body.Close()
+	NoteQuotas(p.Name(), httpResp)
 
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
 		responseBody, readErr := io.ReadAll(httpResp.Body)
@@ -904,17 +906,37 @@ func DiscoverAnthropicModels(ctx context.Context, providerName, baseURL, apiKey 
 // nothing. The retry window is in the headers, and by the time this runs the
 // transport has already waited and retried — so what is left to say is when it
 // is worth trying again.
+//
+// This format is not only Anthropic's: DeepSeek's default endpoint speaks it
+// too, which is how an empty DeepSeek wallet arrived here as a 402 nobody had
+// written a case for and went out as a raw JSON dump.
 func (p *AnthropicProvider) statusError(resp *http.Response, body []byte) error {
-	detail := strings.TrimSpace(string(body))
+	// The provider's own sentence where there is one, the raw payload only when
+	// the body is shaped some other way. Both this API and the hosts borrowing
+	// its format answer with {"error":{"message":…}}, and the JSON around that
+	// sentence was never something a user should have to read past.
+	detail := providerErrorMessage(body)
+	if detail == "" {
+		detail = strings.TrimSpace(string(body))
+	}
 	if len(detail) > 500 {
 		detail = detail[:500] + "…"
 	}
 	switch resp.StatusCode {
+	case http.StatusPaymentRequired:
+		// 402 is the whole statement — the status itself means "pay first".
+		return outOfCreditsError(p.Name(), resp.StatusCode, detail)
 	case http.StatusTooManyRequests, 529:
-		if wait := rateLimitWindow(resp); wait > 0 {
-			return fmt.Errorf("%s is rate limiting this key — try again in %s", p.Name(), humanizeDuration(wait))
+		// Same split the OpenAI-compatible path makes, for the same reason: a
+		// host borrowing this format can spend its balance as easily as its
+		// rate limit, and only one of the two is worth waiting out.
+		if outOfCredits(body) {
+			return outOfCreditsError(p.Name(), resp.StatusCode, detail)
 		}
-		return fmt.Errorf("%s is rate limiting this key — try again shortly (429)", p.Name())
+		if wait := rateLimitWindow(resp); wait > 0 {
+			return fmt.Errorf("%s is rate limiting this key. Try again in %s.", p.Name(), humanizeDuration(wait))
+		}
+		return fmt.Errorf("%s is rate limiting this key. Try again shortly. (429)", p.Name())
 	case http.StatusUnauthorized:
 		return fmt.Errorf("%s rejected the credentials (401: %s)", p.Name(), detail)
 	default:

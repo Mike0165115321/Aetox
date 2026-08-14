@@ -415,6 +415,9 @@ func (p *ResponsesProvider) StreamComplete(ctx context.Context, req Request, onC
 		return Response{}, err
 	}
 	defer httpResp.Body.Close()
+	// Before the status check: a 429 states the same rate-limit headers as a
+	// 200, and is precisely the moment the remaining quota is worth knowing.
+	NoteQuotas(p.Name(), httpResp)
 
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
 		return Response{}, p.statusError(httpResp)
@@ -605,9 +608,9 @@ func (p *ResponsesProvider) statusError(resp *http.Response) error {
 	}
 	switch resp.StatusCode {
 	case http.StatusUnauthorized:
-		return fmt.Errorf("%s rejected the sign-in — sign in again (401: %s)", p.provider, detail)
+		return fmt.Errorf("%s rejected the sign-in. Sign in again. (401: %s)", p.provider, detail)
 	case http.StatusForbidden:
-		return fmt.Errorf("%s refused this account — the plan may not include it, or this client is not accepted (403: %s)", p.provider, detail)
+		return fmt.Errorf("%s refused this account. The plan may not include it, or this client is not accepted. (403: %s)", p.provider, detail)
 	case http.StatusTooManyRequests:
 		// This backend says exactly when the plan resets, and "try again in 4
 		// days" is a different decision for the user than "try again shortly".
@@ -623,10 +626,10 @@ func (p *ResponsesProvider) statusError(resp *http.Response) error {
 			if plan == "" {
 				plan = "this"
 			}
-			return fmt.Errorf("%s: the %s plan's limit is used up — it resets in %s",
+			return fmt.Errorf("%s: the %s plan's limit is used up. It resets in %s.",
 				p.provider, plan, humanizeDuration(time.Duration(limit.Error.ResetsInSeconds)*time.Second))
 		}
-		return fmt.Errorf("%s plan limit reached — it resets on its own schedule (429: %s)", p.provider, detail)
+		return fmt.Errorf("%s plan limit reached. It resets on its own schedule. (429: %s)", p.provider, detail)
 	default:
 		return fmt.Errorf("%s request failed with status %d: %s", p.provider, resp.StatusCode, detail)
 	}

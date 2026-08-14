@@ -1,19 +1,22 @@
-// The About page's one-click update — the VS Code shape: press, download,
-// verify, restart into the new build. The page's job is to offer the right
-// action per channel: the auto button only when the engine says it can finish
+// The About page's door into self-update. The page's job is to offer the right
+// action per channel — the auto button only when the engine says it can finish
 // the job (canAuto), the Scoop command for Scoop, the release page for the
 // rest — and to say what went wrong without pretending the app broke.
+//
+// It is a second VIEW of the update, never a second copy of it: the store both
+// doors drive is what says whether a download is running, done, or refused
+// (selfUpdate.svelte, ARCHITECTURE.md §107).
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte'
 import Settings from '../lib/Settings.svelte'
-import { CheckForUpdate, ApplyUpdate, AppVersion, RecentDebugLog } from './mocks/wailsApp'
+import { CheckForUpdate, StageUpdate, RestartToUpdate, AppVersion, RecentDebugLog } from './mocks/wailsApp'
 import { BrowserOpenURL } from './mocks/wailsRuntime'
 import { updater } from '../lib/selfUpdate.svelte'
 
 const status = (over: Record<string, unknown>) => ({
   current: '0.9.2', latest: '0.9.3', available: true, disabled: false,
   channel: 'portable', hint: '', url: 'https://example.invalid/releases/v0.9.3',
-  checkedAt: '2026-08-09T00:00:00Z', canAuto: true, ...over,
+  checkedAt: '2026-08-09T00:00:00Z', publishedAt: '2026-08-08T00:00:00Z', canAuto: true, ...over,
 })
 
 const openAbout = async (container: HTMLElement) => {
@@ -32,22 +35,25 @@ beforeEach(() => {
   // being closed. Which is exactly right in the app and exactly why each test
   // has to start from a machine that is not mid-update.
   Object.assign(updater, {
-    status: null, dismissed: false, applying: false, pct: -1, restarting: false, error: '',
+    status: null, dismissed: false, phase: 'idle', done: 0, total: 0, staged: '', error: '',
   })
 })
 
-describe('About: one-click update', () => {
-  it('offers update-and-restart when the engine can finish the job', async () => {
+describe('About: the update door', () => {
+  // Download first, restart second — and the button changes to say so. The
+  // page must never be the thing that closes the window on its own.
+  it('downloads on the first press and offers the restart on the second', async () => {
     vi.mocked(CheckForUpdate).mockResolvedValue(status({}) as never)
     const { container } = render(Settings, { onClose: () => {} })
     await openAbout(container)
 
-    const button = await screen.findByText('อัปเดตแล้วรีสตาร์ท')
-    await fireEvent.click(button)
+    await fireEvent.click(await screen.findByText('ดาวน์โหลดอัปเดต'))
 
-    await waitFor(() => expect(vi.mocked(ApplyUpdate)).toHaveBeenCalled())
-    // The app is about to close itself; the button's last words say so.
-    expect(await screen.findByText('กำลังรีสตาร์ท…')).toBeTruthy()
+    await waitFor(() => expect(vi.mocked(StageUpdate)).toHaveBeenCalled())
+    expect(vi.mocked(RestartToUpdate)).not.toHaveBeenCalled()
+
+    await fireEvent.click(await screen.findByText('รีสตาร์ทเพื่ออัปเดต'))
+    await waitFor(() => expect(vi.mocked(RestartToUpdate)).toHaveBeenCalled())
   })
 
   it('keeps the Scoop command for Scoop — that directory is not ours to write', async () => {
@@ -57,8 +63,8 @@ describe('About: one-click update', () => {
     await openAbout(container)
 
     expect(await screen.findByText('scoop update aetox')).toBeTruthy()
-    expect(screen.queryByText('อัปเดตแล้วรีสตาร์ท')).toBeNull()
-    expect(vi.mocked(ApplyUpdate)).not.toHaveBeenCalled()
+    expect(screen.queryByText('ดาวน์โหลดอัปเดต')).toBeNull()
+    expect(vi.mocked(StageUpdate)).not.toHaveBeenCalled()
   })
 
   // A bug in Aetox goes to the developer as an issue the user submits — the
@@ -93,16 +99,17 @@ describe('About: one-click update', () => {
 
   it('says what failed and re-arms the button, instead of a dead click', async () => {
     vi.mocked(CheckForUpdate).mockResolvedValue(status({}) as never)
-    vi.mocked(ApplyUpdate).mockRejectedValue(
+    vi.mocked(StageUpdate).mockRejectedValue(
       new Error('แฮชของไฟล์ไม่ตรงกับ checksums.txt — ไฟล์อาจเสียหรือถูกแก้ ระบบไม่ติดตั้งต่อ'))
     const { container } = render(Settings, { onClose: () => {} })
     await openAbout(container)
 
-    await fireEvent.click(await screen.findByText('อัปเดตแล้วรีสตาร์ท'))
+    await fireEvent.click(await screen.findByText('ดาวน์โหลดอัปเดต'))
 
     await waitFor(() => expect(screen.getByText(/แฮชของไฟล์ไม่ตรง/)).toBeTruthy())
-    // The failure left the old build untouched, so trying again is legitimate.
-    const button = screen.getByText('อัปเดตแล้วรีสตาร์ท').closest('button')
+    // The failure left the running build untouched, so trying again is
+    // legitimate — and it is a download to retry, not a restart.
+    const button = screen.getByText('ดาวน์โหลดอัปเดต').closest('button')
     expect(button?.disabled).toBe(false)
   })
 })

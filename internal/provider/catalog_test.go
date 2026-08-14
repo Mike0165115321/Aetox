@@ -2,6 +2,7 @@ package provider
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -51,6 +52,59 @@ func TestNormalize_KnownAlias(t *testing.T) {
 				t.Fatalf("Normalize(%q): want %q got %q", tt.input, tt.want, got)
 			}
 		})
+	}
+}
+
+// Adding a provider without deciding what it can say about money is the
+// failure this guards: the zero value of BalanceKind is "", which would reach
+// the UI as a blank line meaning nothing. There is always an honest answer —
+// money, free, subscription, or web-only — so the catalog must state one.
+//
+// QuotaSource deliberately has no such check: QuotaNone is a real answer
+// ("pay-as-you-go, no window worth showing"), not an unmade decision.
+func TestEveryProviderDeclaresABalanceKind(t *testing.T) {
+	valid := map[BalanceKind]bool{
+		BalanceMoney:        true,
+		BalanceFree:         true,
+		BalanceSubscription: true,
+		BalanceWebOnly:      true,
+	}
+	for _, name := range SupportedProviders() {
+		spec, ok := Lookup(name)
+		if !ok {
+			t.Fatalf("%s: listed by SupportedProviders but Lookup missed it", name)
+		}
+		if !valid[spec.BalanceKind] {
+			t.Errorf("%s: balanceKind is %q; want one of money/free/subscription/web-only",
+				name, spec.BalanceKind)
+		}
+	}
+}
+
+// A local runtime that claimed a balance or a quota would send us knocking on
+// localhost for an endpoint that does not exist, and show a spinner for an
+// answer that is already known: nothing to spend.
+func TestLocalProvidersAreFreeAndQuotaless(t *testing.T) {
+	for _, name := range []string{"ollama", "lmstudio", "aetox"} {
+		spec, _ := Lookup(name)
+		if spec.BalanceKind != BalanceFree {
+			t.Errorf("%s: balanceKind is %q; want free", name, spec.BalanceKind)
+		}
+		if spec.QuotaSource != QuotaNone {
+			t.Errorf("%s: quotaSource is %q; want none", name, spec.QuotaSource)
+		}
+	}
+}
+
+// BalanceKindFor answers for a name the catalog has never heard of, since an
+// unknown provider still gets a row in Settings. "We cannot read this" is the
+// only claim we can make about a wallet we know nothing about.
+func TestUnknownProviderIsWebOnly(t *testing.T) {
+	if got := BalanceKindFor("some-proxy-nobody-registered"); got != BalanceWebOnly {
+		t.Fatalf("unknown provider balanceKind = %q; want web-only", got)
+	}
+	if got := QuotaSourceFor("some-proxy-nobody-registered"); got != QuotaNone {
+		t.Fatalf("unknown provider quotaSource = %q; want none", got)
 	}
 }
 
@@ -159,6 +213,45 @@ func TestDefaultModel_FallbackOnly(t *testing.T) {
 				t.Fatalf("DefaultModel(%q): want %q got %q", tt.provider, tt.want, got)
 			}
 		})
+	}
+}
+
+// A row that asks for a key and cannot say where to get one leaves the user to
+// go hunting; every provider hides that page somewhere different. So the rule
+// is stated once here rather than remembered each time a provider is added.
+func TestEveryKeyedProviderSaysWhereToGetTheKey(t *testing.T) {
+	for _, name := range SupportedProviders() {
+		spec, _ := Lookup(name)
+		// Nothing to link to: no key is asked for, or the provider is signed
+		// into and a pasted key is not a credential that exists there.
+		if !spec.RequiresAPIKey || !spec.AcceptsAPIKey {
+			if got := APIKeyURL(name); got != "" {
+				t.Errorf("%q takes no pasted key but offers a key page %q", name, got)
+			}
+			continue
+		}
+		got := APIKeyURL(name)
+		if got == "" {
+			t.Errorf("%q asks the user to paste a key with no page to get one from", name)
+			continue
+		}
+		if !strings.HasPrefix(got, "https://") {
+			t.Errorf("%q key page %q is not https", name, got)
+		}
+	}
+}
+
+// The quota sentence on a provider card is a promise: "the limit appears once
+// you chat". A provider that never states a window can never keep it, so the
+// dialect recorded here has to be what the endpoint actually sends.
+func TestGeminiStatesNoQuotaWindow(t *testing.T) {
+	// Measured, not assumed: a real key against the live OpenAI-compat endpoint
+	// returns 200 with no rate-limit header of any kind (2026-08-14). It was
+	// declared QuotaOpenAIStd on the theory that an OpenAI-compatible host
+	// probably sends that family, which made the card promise a number that was
+	// never coming.
+	if got := QuotaSourceFor("gemini"); got != QuotaNone {
+		t.Errorf("gemini quota source = %q, want QuotaNone — the endpoint sends no rate-limit headers", got)
 	}
 }
 

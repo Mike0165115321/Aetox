@@ -55,25 +55,38 @@ func TestCheckForUpdateSurvivesANilContext(t *testing.T) {
 	}
 }
 
-// An update kills the process, and the process is where the turn lives — so
+// Restarting kills the process, and the process is where the turn lives — so
 // the refusal is the same one every session switch gets. The sentence is not:
-// this one arrives under the update dialog's "อัปเดตไม่สำเร็จ", where advice
-// about switching chats would read as the update itself having broken.
-func TestApplyUpdateRefusesMidTurnInItsOwnWords(t *testing.T) {
+// this one arrives on the update card, where advice about switching chats would
+// read as the update itself having broken.
+func TestRestartToUpdateRefusesMidTurnInItsOwnWords(t *testing.T) {
 	a := &App{}
 	if err := a.beginTurn(); err != nil {
 		t.Fatalf("beginTurn() = %v", err)
 	}
 	defer a.endTurn()
 
-	err := a.ApplyUpdate()
+	err := a.RestartToUpdate()
 	if err == nil {
-		t.Fatal("ApplyUpdate() = nil while a turn is running — it would kill the turn with the process")
+		t.Fatal("RestartToUpdate() = nil while a turn is running — it would kill the turn with the process")
 	}
 	if !errors.Is(err, errTurnBusyUpdate) {
 		t.Errorf("err = %v, want the update-specific refusal", err)
 	}
 	if strings.Contains(err.Error(), "สลับแชท") {
 		t.Error("the refusal points at a door the user is not standing in")
+	}
+}
+
+// Nothing staged, nothing to restart into. Reachable by pressing the button on
+// a window that reloaded after the Go side lost its staging (or never had it),
+// and it must refuse rather than quit into the same build.
+func TestRestartToUpdateWithNothingStagedRefuses(t *testing.T) {
+	a := &App{}
+	if err := a.RestartToUpdate(); err == nil {
+		t.Error("RestartToUpdate() = nil with nothing staged — the app would close for no update")
+	}
+	if v := a.StagedUpdate(); v != "" {
+		t.Errorf("StagedUpdate() = %q on a fresh app, want empty", v)
 	}
 }

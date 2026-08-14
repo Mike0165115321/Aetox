@@ -200,6 +200,48 @@ func (p *OpenAICompatibleProvider) applyAuth(ctx context.Context, req *http.Requ
 	return nil
 }
 
+// statusError turns a rejected request into something the user can act on.
+//
+// The 429 split is the one that matters: this wire format uses the same status
+// for "slow down" and "the account has no credit left", and only one of them
+// fixes itself by waiting. Dumping the raw JSON body treated both as the user's
+// problem to decode.
+//
+// Which of the two it is comes from outOfCredits, shared with the transport, so
+// the sentence shown and the decision to stop retrying can never disagree.
+func (p *OpenAICompatibleProvider) statusError(resp *http.Response, body []byte) error {
+	// The provider's own sentence wherever it has one, and the raw payload only
+	// when the body is shaped some other way. Each host words the instruction
+	// differently ("check your plan and billing details", "no resource package,
+	// please recharge") and that difference is usually the actionable part —
+	// but the JSON around it never is, and it used to be what the user got.
+	detail := providerErrorMessage(body)
+	if detail == "" {
+		detail = strings.TrimSpace(string(body))
+	}
+	if len(detail) > 500 {
+		detail = detail[:500] + "…"
+	}
+	switch resp.StatusCode {
+	case http.StatusPaymentRequired:
+		// 402 is the whole statement — the status itself means "pay first", so
+		// there is no body to inspect and no dialect to keep up with.
+		return outOfCreditsError(p.provider, resp.StatusCode, detail)
+	case http.StatusTooManyRequests:
+		if outOfCredits(body) {
+			return outOfCreditsError(p.provider, resp.StatusCode, detail)
+		}
+		if wait, stated := providerRetryAfter(resp); stated && wait > 0 {
+			return fmt.Errorf("%s is rate limiting this key. Try again in %s.", p.provider, humanizeDuration(wait))
+		}
+		return fmt.Errorf("%s is rate limiting this key. Try again shortly. (429)", p.provider)
+	case http.StatusUnauthorized:
+		return fmt.Errorf("%s rejected the credentials (401: %s)", p.provider, detail)
+	default:
+		return fmt.Errorf("%s request failed with status %d: %s", p.provider, resp.StatusCode, detail)
+	}
+}
+
 // openAIMessage is the response-side message shape: the shared Message plus
 // the other spelling of the reasoning field. Message carries DeepSeek's
 // "reasoning_content"; Ollama's OpenAI-compatible endpoint and llama.cpp
@@ -354,6 +396,7 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 		return Response{}, err
 	}
 	defer httpResp.Body.Close()
+	NoteQuotas(p.Name(), httpResp)
 
 	responseBody, err := io.ReadAll(httpResp.Body)
 	if err != nil {
@@ -361,12 +404,7 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 	}
 
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
-		return Response{}, fmt.Errorf(
-			"%s request failed with status %d: %s",
-			p.provider,
-			httpResp.StatusCode,
-			strings.TrimSpace(string(responseBody)),
-		)
+		return Response{}, p.statusError(httpResp, responseBody)
 	}
 
 	var parsed struct {
@@ -497,18 +535,11 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 		return Response{}, err
 	}
 	defer httpResp.Body.Close()
+	NoteQuotas(p.Name(), httpResp)
 
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
-		responseBody, readErr := io.ReadAll(httpResp.Body)
-		if readErr != nil {
-			return Response{}, fmt.Errorf("%s request failed with status %d", p.provider, httpResp.StatusCode)
-		}
-		return Response{}, fmt.Errorf(
-			"%s request failed with status %d: %s",
-			p.provider,
-			httpResp.StatusCode,
-			strings.TrimSpace(string(responseBody)),
-		)
+		responseBody, _ := io.ReadAll(httpResp.Body)
+		return Response{}, p.statusError(httpResp, responseBody)
 	}
 
 	scanner := bufio.NewScanner(httpResp.Body)
@@ -617,6 +648,11 @@ type streamToolCallDelta struct {
 		Name      string `json:"name"`
 		Arguments string `json:"arguments"`
 	} `json:"function"`
+	// Carried for the same reason ToolCall.ExtraContent exists: a signature
+	// dropped here is a 400 on the next turn. Unlike arguments it arrives whole
+	// rather than in pieces, so the accumulator takes the last non-empty one
+	// instead of concatenating.
+	ExtraContent json.RawMessage `json:"extra_content,omitempty"`
 }
 
 // streamToolAccumulator stitches streamed tool-call fragments back into whole
@@ -653,6 +689,9 @@ func (a *streamToolAccumulator) add(deltas []streamToolCallDelta) {
 			call.Function.Name = d.Function.Name
 		}
 		call.Function.Arguments += d.Function.Arguments
+		if len(d.ExtraContent) > 0 {
+			call.ExtraContent = d.ExtraContent
+		}
 		a.progress.report(d.Index, call.ID, call.Function.Name, call.Function.Arguments)
 	}
 }

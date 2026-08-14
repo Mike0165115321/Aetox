@@ -69,6 +69,33 @@ type App struct {
 	terminals   map[string]*TerminalSession
 	browsers    *browserHost
 
+	// quotasMu guards quotas, which the model clients write from whatever
+	// goroutine a turn is running on.
+	quotasMu sync.RWMutex
+	// quotas is the last rate-limit window each provider stated, keyed by
+	// canonical provider name. Deliberately in memory only: a quota describes
+	// a window measured in minutes to days, so a figure restored from disk at
+	// the next launch would be a number that was true once, presented as if it
+	// were true now. An absent key means "never heard from this provider",
+	// which the UI shows as "not known yet" rather than as full.
+	quotas map[string][]model.Quota
+
+	// pricesMu guards the model catalog, which a background refresh replaces
+	// while the stats page may be reading it.
+	pricesMu sync.Mutex
+	// prices holds what models.dev states about each model: rates, so recorded
+	// tokens can be shown as money, and context windows, so the composer's
+	// meter measures against the real one. Unlike quotas this IS restored from
+	// disk, and for the opposite reason: a published list price is still
+	// roughly true a week later, where a rate-limit window is not true a minute
+	// later. nil means no catalog was ever fetched, which shows as no money
+	// column at all rather than as zero.
+	prices *model.ModelCatalog
+	// pricesLoaded separates "read the cache and found nothing" from "have not
+	// looked yet", so a missing catalog costs one disk miss per run and not one
+	// per stats page open.
+	pricesLoaded bool
+
 	sessionID  string
 	transcript []SessionMessage
 
@@ -224,6 +251,21 @@ type App struct {
 	// agent can read its own desk (desk.go). Deliberately not named `desk` —
 	// that field is the mode the session was opened at (§83), a different thing.
 	openTabs deskState
+
+	// remoteSrv is the phone's door into this process (remote.go), built on
+	// first use and never without one: the listener stays down until the user
+	// opens the pairing panel, so an install nobody asked to reach from a
+	// phone opens no port at all.
+	remoteOnce sync.Once
+	remoteSrv  *remoteServer
+
+	// staged is the downloaded, verified update waiting for the user to pick a
+	// moment to restart into (§107). Held here rather than in internal/update
+	// because it is one running app's state, not the package's — and guarded
+	// because StageUpdate runs on whichever goroutine Wails hands it while
+	// RestartToUpdate reads it from another.
+	stagedMu sync.Mutex
+	staged   update.Staged
 }
 
 // ChangedFile is one working-tree change reported by `git status`.
@@ -335,33 +377,66 @@ func (a *App) CheckForUpdate() (update.Status, error) {
 	return st, err
 }
 
-// ApplyUpdate downloads the newer release, verifies it against the release's
-// checksums, swaps this install over to it (internal/update.Apply — the
-// VS Code shape: the button restarts you into the new build), and then closes
-// this window so the waiting relauncher can bring the new one up.
+// StageUpdate downloads the newer release, verifies its signature and its
+// bytes, and puts this machine one restart away from running it — without
+// touching the window. Progress rides out as `update:progress` in bytes, which
+// is what the download actually knows; turning that into a percentage or a
+// megabyte count is the UI's business.
 //
-// Refused mid-turn for the same reason every session switch is: an update kills
-// the process, and the process is where the turn lives. Its own sentence
-// (errTurnBusyUpdate) because the shared one ends in advice about switching
-// chats, which is not the door the user is standing in.
-func (a *App) ApplyUpdate() error {
-	if a.turnBusy() {
-		return errTurnBusyUpdate
-	}
+// It does not restart, on purpose: see internal/update's Stage. Downloading is
+// cheap for the user, closing their window is not, and one act that did both
+// would spend the second without asking.
+//
+// Deliberately not refused mid-turn. Nothing here interrupts anything — the
+// agent keeps working while the bytes come down, and the gate belongs on
+// RestartToUpdate, which is where the process actually ends.
+func (a *App) StageUpdate() error {
 	ctx := a.ctx
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	err := update.Apply(ctx, version.Current, func(done, total int64) {
+	staged, err := update.Stage(ctx, version.Current, func(done, total int64) {
 		a.emitEvent("update:progress", map[string]int64{"done": done, "total": total})
 	})
 	if err != nil {
 		return err
 	}
-	// The swap is done and the relauncher is waiting on this process. Quit on
-	// a short delay rather than here: the frontend's await deserves its
-	// resolution first, so the button can honestly say "restarting" instead of
-	// the window vanishing mid-click.
+	a.stagedMu.Lock()
+	a.staged = staged
+	a.stagedMu.Unlock()
+	return nil
+}
+
+// StagedUpdate is the version waiting for a restart, or "" if none is. What a
+// window that just reloaded asks, so a staged update survives the webview
+// coming back without the Go side having lost it.
+func (a *App) StagedUpdate() string {
+	a.stagedMu.Lock()
+	defer a.stagedMu.Unlock()
+	return a.staged.Version
+}
+
+// RestartToUpdate is the half the user times: close this build, let the waiter
+// bring the new one up.
+//
+// Refused mid-turn for the same reason every session switch is — this ends the
+// process, and the process is where the turn lives. Its own sentence
+// (errTurnBusyUpdate) because the shared one ends in advice about switching
+// chats, which is not the door the user is standing in.
+func (a *App) RestartToUpdate() error {
+	if a.turnBusy() {
+		return errTurnBusyUpdate
+	}
+	a.stagedMu.Lock()
+	staged := a.staged
+	a.stagedMu.Unlock()
+	if err := staged.Restart(); err != nil {
+		return err
+	}
+	// The relauncher is waiting on this process. Quit on a short delay rather
+	// than here: the frontend's await deserves its resolution first, so the
+	// button can honestly say "restarting" instead of the window vanishing
+	// mid-click.
 	go func() {
 		time.Sleep(400 * time.Millisecond)
 		if a.ctx != nil {
@@ -1275,7 +1350,13 @@ var desktopProviders = []string{
 	// Signed into, not keyed in (internal/oauth).
 	"codex", "openrouter",
 	// API key or a local server.
-	"anthropic", "ollama", "lmstudio", "deepseek", "gemini", "openai", "qwen", "zai", "aetox",
+	"anthropic", "ollama", "lmstudio", "deepseek", "gemini", "openai", "qwen", "zai",
+	// Same runtime as the row above (OpenAI-compatible, base URL, key), kept off
+	// only because nobody had typed them here. Each endpoint verified up to the
+	// auth wall against the live API (2026-08-14): base URL, path and body shape
+	// all answered 401, so only a real key separates them from working.
+	"groq", "mistral", "kimi", "minimax", "together", "perplexity",
+	"aetox",
 }
 
 // NewApp creates a new App application struct
@@ -1287,6 +1368,11 @@ func NewApp() *App {
 // so we can call the runtime methods
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	// Providers state their remaining window in the headers of turns the app
+	// was running anyway. Nothing here fetches; this only stops the answer
+	// from being thrown away, which is what happened until now — the headers
+	// were read on 429 and nowhere else.
+	model.SetQuotaObserver(a.rememberQuotas)
 	// The desktop build never wired this up before, so every debuglog.Msg/Info/
 	// Block call already sprinkled through the shared engine (turn executor
 	// phases, provider HTTP round-trips, ...) was silently thrown away here —
@@ -1295,6 +1381,13 @@ func (a *App) startup(ctx context.Context) {
 	if dataRoot, err := config.DataRoot(); err == nil {
 		debuglog.Init(dataRoot)
 	}
+	// Model facts (prices, context windows), off the main path: everything runs
+	// on whatever is cached and this only replaces it. One document, once per
+	// launch, and a failure leaves the previous table in place — see
+	// App.RefreshModelFacts. Installed eagerly too, because the context meter
+	// asks before anyone opens the stats page.
+	a.modelCatalog()
+	go a.RefreshModelFacts()
 	// Explicit checkpoint, not just debuglog.Msg's usual error-only calls —
 	// most of those never fire on a clean run, so without this the log stays
 	// empty and gives no evidence either way for "why did first paint feel
@@ -2362,6 +2455,105 @@ func (a *App) ListModelsForProvider(providerName string) []string {
 	return []string{}
 }
 
+// ProviderAccount is what Settings shows under a provider's name: what is left
+// in the account, and how much of the current rate-limit window remains.
+//
+// The two travel together because they are one line to the user, but they are
+// not one fact: Balance was fetched just now, Quota is whatever the last real
+// turn happened to state. Anything the UI needs to tell those apart —
+// Balance.FetchedAt, Quota.ObservedAt — is carried, and none of it is
+// flattened into a display string here, so Thai and English both come from the
+// frontend locale files rather than from Go.
+type ProviderAccount struct {
+	Provider string        `json:"provider"`
+	Balance  model.Balance `json:"balance"`
+
+	// Quotas is nil in two different situations the UI must not merge:
+	// QuotaKnown false means this provider has never answered a turn, so the
+	// window is simply not known yet; QuotaKnown true with no entries means it
+	// has answered and stated no limits, i.e. it does not report one.
+	Quotas     []model.Quota `json:"quotas"`
+	QuotaKnown bool          `json:"quotaKnown"`
+
+	// ExpectsQuota is whether this provider states a window at all. Without it
+	// the UI had to guess, and guessed by provider kind — which printed "the
+	// limit is not known yet" under DeepSeek, a pay-as-you-go account that has
+	// no window and never will.
+	ExpectsQuota bool `json:"expectsQuota"`
+
+	// Error is why Balance carries no figure. Empty when there was nothing to
+	// fetch (a local runtime, a subscription) — that is not a failure, and the
+	// UI says so with Balance.Kind instead.
+	Error string `json:"error"`
+}
+
+// ProviderAccountFor answers for one provider: the Settings card the user
+// opened, or the one provider actually in use for the profile menu.
+//
+// One at a time on purpose. Fetching every enabled provider at once meant
+// spending a round trip on companies the user was not talking to, to fill rows
+// that no longer exist — the menu shows the provider in use and nothing else.
+//
+// Never returns an error. A provider being unreachable is a fact about that
+// provider, carried in the Error field, not a reason to blank the panel.
+func (a *App) ProviderAccountFor(providerName string) ProviderAccount {
+	return a.providerAccount(providerName)
+}
+
+func (a *App) providerAccount(providerName string) ProviderAccount {
+	canonical := model.NormalizeProvider(providerName)
+	account := ProviderAccount{
+		Provider:     canonical,
+		ExpectsQuota: model.StatesQuota(canonical),
+	}
+
+	balance, err := model.FetchBalance(
+		a.ctx, canonical,
+		resolveBaseURLForProvider(canonical),
+		resolveAPIKeyForProvider(canonical),
+	)
+	account.Balance = balance
+	if err != nil {
+		account.Error = err.Error()
+	}
+
+	a.quotasMu.RLock()
+	quotas, known := a.quotas[canonical]
+	a.quotasMu.RUnlock()
+	account.Quotas, account.QuotaKnown = quotas, known
+
+	// OpenRouter is the one provider that states its window in the same
+	// response as the credits, so it has an answer before any turn has run.
+	if balance.Quota != nil {
+		account.Quotas = []model.Quota{*balance.Quota}
+		account.QuotaKnown = true
+	}
+	return account
+}
+
+// rememberQuotas is the sink installed on the model package at startup.
+func (a *App) rememberQuotas(providerName string, quotas []model.Quota) {
+	a.quotasMu.Lock()
+	defer a.quotasMu.Unlock()
+	if a.quotas == nil {
+		a.quotas = make(map[string][]model.Quota, 4)
+	}
+	// The key is written even for an empty slice: "answered, reports no
+	// limits" and "never answered" are different states on screen.
+	a.quotas[model.NormalizeProvider(providerName)] = quotas
+}
+
+// ProviderAPIKeyURL is the page on the provider's own site where the user
+// creates the key the Settings card is asking them to paste. Empty when there
+// is nowhere to send them — a local runtime, or a sign-in provider whose row
+// never shows a key field at all.
+//
+// The card asked for a key and left finding it as an exercise; every provider
+// hides that page somewhere different, so the answer belongs next to the field.
+func (a *App) ProviderAPIKeyURL(providerName string) string {
+	return model.APIKeyURL(model.NormalizeProvider(providerName))
+}
+
 // ProviderBaseURL reports the API endpoint a provider will actually be called
 // on: the user's override if there is one, else the catalog default.
 func (a *App) ProviderBaseURL(providerName string) string {
@@ -2453,9 +2645,49 @@ func (a *App) HasAPIKey(providerName string) bool {
 	return resolveAPIKeyForProvider(canonical) != ""
 }
 
+// ProviderReady answers the question the sidebar dot is actually asking: can
+// this provider be used right now?
+//
+// HasAPIKey was standing in for it and is not the same question. It returns
+// true for anything that needs no key, which is every local runtime — so LM
+// Studio and Ollama showed a green dot whether or not a server was listening,
+// on a page that said "no models found" two inches to the right.
+//
+// What "ready" can honestly mean differs by kind, and the split is about what
+// can be checked for free:
+//
+//   - A keyed provider: a key is set, or a sign-in exists. Whether that key
+//     still works is only knowable by spending a request against it, and a
+//     settings page that bills the user for opening it is worse than one that
+//     says "configured".
+//   - A local runtime: the server is answering. This costs a connection to
+//     localhost, which is free, so there is no excuse for guessing — and it is
+//     precisely the case that was lying.
+//   - Aetox's own engine: always, it is built in.
+func (a *App) ProviderReady(providerName string) bool {
+	canonical := model.NormalizeProvider(providerName)
+	if model.RequiresAPIKey(canonical) {
+		return a.HasAPIKey(canonical)
+	}
+	if canonical == "aetox" {
+		return true
+	}
+	// The same judgement the rest of the app makes about a local runtime — can
+	// a model be got out of it — rather than a second definition of "up".
+	return model.ResolveDefaultModel(canonical, resolveBaseURLForProvider(canonical), "") != ""
+}
+
 // RequiresAPIKey exposes model.RequiresAPIKey to the frontend.
 func (a *App) RequiresAPIKey(providerName string) bool {
 	return model.RequiresAPIKey(model.NormalizeProvider(providerName))
+}
+
+// AcceptsAPIKey says whether the provider's card should offer a key field at
+// all. Codex is the one that must not: it is reached at chatgpt.com on a
+// subscription, so the key a user would paste there is an api.openai.com key
+// that answers 401 — a field whose only possible outcome is a failed login.
+func (a *App) AcceptsAPIKey(providerName string) bool {
+	return model.AcceptsAPIKey(model.NormalizeProvider(providerName))
 }
 
 // SetProviderBaseURL persists a custom endpoint for a provider and, if it's
@@ -2831,23 +3063,23 @@ func (a *App) applyConfig(cfg config.Config) {
 		// assistant. Resolved fresh from disk on every bootstrap so an edited
 		// profile takes effect the next time its chair is sat at, like every
 		// other manifest.
-		Chair:            a.chairProfile(),
-		Approve:          a.approveToolCall,
-		Manager:          a.mcp,
-		ExtraSkills:      workbenchTools,
-		OutputSubdir:     a.outputSubdir,
+		Chair:        a.chairProfile(),
+		Approve:      a.approveToolCall,
+		Manager:      a.mcp,
+		ExtraSkills:  workbenchTools,
+		OutputSubdir: a.outputSubdir,
 		// The session's whole reach, in two fields and no third: unfocused mode
 		// roams the machine (minus credential stores), and a focused project
 		// sees itself plus the folders the user added to it. See unfocusedRoot
 		// and desktop/workspace.go.
-		OpenSandbox:      !a.projectFocused,
-		ExtraRoots:       a.extraRoots,
+		OpenSandbox: !a.projectFocused,
+		ExtraRoots:  a.extraRoots,
 		// The project this chat is being held inside, and the names of the
 		// files it keeps — read fresh on every bootstrap, like every other
 		// manifest, so a file dropped into the folder is known to the next
 		// session without restarting anything.
-		Space:            a.space,
-		SpaceContext:     a.spaceContextForPrompt(),
+		Space:        a.space,
+		SpaceContext: a.spaceContextForPrompt(),
 		// Which shell the agent's commands and the user's hooks run in. Read
 		// per call so the composer's picker takes effect on the next command
 		// rather than on the next restart.

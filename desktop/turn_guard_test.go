@@ -125,8 +125,10 @@ func TestSwitchDoorsRefuseWhileATurnRuns(t *testing.T) {
 	_, err = a.ClearProjectFocus()
 	busy("ClearProjectFocus", err)
 	busy("DeleteSession(open)", a.DeleteSession(current))
-	// A self-update kills the process, and the process is where the turn lives.
-	busy("ApplyUpdate", a.ApplyUpdate())
+	// Restarting into a new build kills the process, and the process is where
+	// the turn lives. Downloading one does not, and StageUpdate is deliberately
+	// not on this list (§107) — bytes coming down interrupt nothing.
+	busy("RestartToUpdate", a.RestartToUpdate())
 
 	// Any OTHER session's row is not something the turn holds — deleting it
 	// stays allowed, or a long turn would freeze the whole history list.

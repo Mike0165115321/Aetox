@@ -12,6 +12,8 @@ import {ooxml} from '../models';
 import {config} from '../models';
 import {oauth} from '../models';
 
+export function AcceptsAPIKey(arg1:string):Promise<boolean>;
+
 export function AddMCPServer(arg1:string,arg2:Array<string>):Promise<void>;
 
 export function AddSpaceContext(arg1:string):Promise<Array<string>>;
@@ -25,8 +27,6 @@ export function AgentSkills(arg1:string):Promise<Array<main.AgentSkillInfo>>;
 export function AnswerUserQuestion(arg1:string):Promise<void>;
 
 export function AppVersion():Promise<string>;
-
-export function ApplyUpdate():Promise<void>;
 
 export function ApprovePendingChange(arg1:number):Promise<void>;
 
@@ -120,7 +120,13 @@ export function GetModelInfo():Promise<main.ModelInfo>;
 
 export function GetProjectStatus():Promise<main.ProjectStatus>;
 
+export function GitBranches():Promise<Array<main.GitBranch>>;
+
 export function GitChangedFiles():Promise<Array<main.ChangedFile>>;
+
+export function GitCreateBranch(arg1:string):Promise<string>;
+
+export function GitSwitchBranch(arg1:string):Promise<string>;
 
 export function GuideTopics():Promise<Array<model.GuideTopic>>;
 
@@ -192,6 +198,10 @@ export function LoadSessionAnyProject(arg1:string):Promise<Array<main.SessionMes
 
 export function MCPConfigPath():Promise<string>;
 
+export function MobileRemoteQR():Promise<string>;
+
+export function MobileRemoteStatus():Promise<main.RemoteStatus>;
+
 export function ModelStatus():Promise<string>;
 
 export function NewChairSession(arg1:string):Promise<string>;
@@ -228,6 +238,8 @@ export function OpenSpeechModelDir(arg1:string):Promise<void>;
 
 export function OpenSubagentsFolder():Promise<void>;
 
+export function PairedDevices():Promise<Array<main.RemoteDevice>>;
+
 export function PendingLearnedCount():Promise<number>;
 
 export function PendingUndo():Promise<Array<string>>;
@@ -240,11 +252,19 @@ export function PickPresetImage(arg1:string):Promise<string>;
 
 export function PlacementTargets():Promise<Array<main.PlacementTarget>>;
 
+export function PriceModels(arg1:string,arg2:Array<string>):Promise<Array<main.ModelListing>>;
+
 export function ProjectTree():Promise<Array<main.TreeNode>>;
+
+export function ProviderAPIKeyURL(arg1:string):Promise<string>;
+
+export function ProviderAccountFor(arg1:string):Promise<main.ProviderAccount>;
 
 export function ProviderBaseURL(arg1:string):Promise<string>;
 
 export function ProviderBaseURLIsCustom(arg1:string):Promise<boolean>;
+
+export function ProviderReady(arg1:string):Promise<boolean>;
 
 export function ProviderWireFormats(arg1:string):Promise<Array<string>>;
 
@@ -265,6 +285,8 @@ export function RecentAgentPages(arg1:number):Promise<Array<main.AgentPage>>;
 export function RecentDebugLog():Promise<Array<string>>;
 
 export function RecentProjects():Promise<Array<main.ProjectMeta>>;
+
+export function RefreshModelFacts():Promise<void>;
 
 export function RefreshSkills():Promise<void>;
 
@@ -288,11 +310,15 @@ export function RequiresAPIKey(arg1:string):Promise<boolean>;
 
 export function ResendEdited(arg1:string,arg2:boolean):Promise<main.TurnReply>;
 
+export function RestartToUpdate():Promise<void>;
+
 export function RetryActiveProvider():Promise<main.ModelInfo>;
 
 export function RetryFailedTurn(arg1:string):Promise<main.TurnReply>;
 
 export function RevealSpeechModel(arg1:string):Promise<void>;
+
+export function RevokeDevice(arg1:string):Promise<void>;
 
 export function RunChatCommand(arg1:string):Promise<main.RunBlockResult>;
 
@@ -384,13 +410,21 @@ export function SpeechModelDirs():Promise<Array<main.SpeechDirInfo>>;
 
 export function SpeechStatus():Promise<string>;
 
+export function StageUpdate():Promise<void>;
+
+export function StagedUpdate():Promise<string>;
+
 export function Stance():Promise<string>;
 
 export function Stances():Promise<Array<string>>;
 
 export function StartConnectionServer(arg1:string):Promise<void>;
 
+export function StartMobileRemote():Promise<main.RemoteStatus>;
+
 export function StartSignIn(arg1:string):Promise<main.SignInPrompt>;
+
+export function StopMobileRemote():Promise<main.RemoteStatus>;
 
 export function SupportedProviders():Promise<Array<string>>;
 

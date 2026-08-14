@@ -92,6 +92,25 @@ func RequiresAPIKey(name string) bool {
 	return provider.RequiresAPIKey(name)
 }
 
+// AcceptsAPIKey delegates to provider.AcceptsAPIKey.
+func AcceptsAPIKey(name string) bool {
+	return provider.AcceptsAPIKey(name)
+}
+
+// APIKeyURL delegates to provider.APIKeyURL: where the user goes to create the
+// key this provider asks for, or "" when there is nowhere to send them.
+func APIKeyURL(name string) string {
+	return provider.APIKeyURL(name)
+}
+
+// StatesQuota reports whether this provider says anything about a remaining
+// rate-limit window. False means no window exists to wait for — a pay-as-you-go
+// account like DeepSeek — so the UI must not promise a number that is never
+// coming.
+func StatesQuota(name string) bool {
+	return provider.QuotaSourceFor(name) != provider.QuotaNone
+}
+
 // DefaultModel delegates to provider.DefaultModel. It is a pure catalog
 // lookup — use it for capability tables keyed by model id. To pick a model to
 // actually run on, use ResolveDefaultModel.
@@ -121,6 +140,17 @@ func ResolveDefaultModel(p, baseURL, apiKey string) string {
 	}
 	if models, err := ModelChoicesWithEndpointAndAPIKey(canonical, baseURL, apiKey); err == nil && len(models) > 0 {
 		return models[0]
+	}
+	// Then the fetched catalog, by rule rather than by name — see
+	// ModelCatalog.DefaultFor. This sits above the static name because the
+	// static name is the thing that keeps dying: a sweep on 2026-08-15 found
+	// four of them pointing at models their vendors had already withdrawn, the
+	// same failure the Gemini entry had already been fixed for once.
+	installedCatalogMu.RLock()
+	installed := installedCatalog
+	installedCatalogMu.RUnlock()
+	if picked := installed.DefaultFor(canonical); picked != "" {
+		return picked
 	}
 	// The catalog's name is the last resort, not the first answer. It used to be
 	// returned before anything was asked, which meant a model name written here

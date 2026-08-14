@@ -1,9 +1,13 @@
 # Every push and PR. Three jobs, and the split is deliberate:
 #
-#   windows  the whole tree. Still the only platform where desktop/ builds, so
-#            the only place `go vet ./...` and the frontend can run at all.
-#   linux    cmd/ + internal/ under the race detector.
+#   windows  the whole tree, and the ONLY job whose verdict gates the run.
+#            Windows is what ships; the other two are a port being built.
+#   linux    cmd/ + internal/ under the race detector. Reported, not gating.
 #   macos    cmd/ + internal/ plain — same code, different libc and PTY.
+#            Reported, not gating.
+#
+# The gating split is explained on the `unix` job itself, where the line that
+# implements it lives.
 #
 # Why the Unix jobs exist at all: until now the !windows halves of internal/proc
 # were cross-compiled and never executed anywhere. tree_other.go sets Setpgid
@@ -78,7 +82,23 @@ jobs:
         working-directory: desktop/frontend
         run: npm test
 
+  # Reported, not gating (owner's call, 2026-08-15).
+  #
+  # Windows is a shipping product and Linux/macOS are a port in progress. While
+  # they shared one verdict the port's unfinished edges — the $HOME wall in
+  # internal/skill, process-group teardown on macOS — turned every Windows push
+  # red, which costs the signal twice over: a red run nobody can act on stops
+  # being read, and then the day Windows genuinely breaks it looks the same as
+  # the six days it did not.
+  #
+  # continue-on-error keeps the jobs running and their logs available while
+  # taking their verdict out of the overall result. Nothing here is skipped or
+  # deleted: the port's failures stay visible on the run page, and the day they
+  # go green this line comes out and Unix becomes a gate like Windows. Until
+  # then, a green ci means "Windows is good", which is the only thing it was
+  # ever able to honestly mean.
   unix:
+    continue-on-error: true
     strategy:
       fail-fast: false # one OS failing must not hide the other's result
       matrix:

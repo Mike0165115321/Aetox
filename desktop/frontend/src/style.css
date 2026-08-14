@@ -204,6 +204,10 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .chip.badge-count { background:var(--chip-count-bg); border-color:var(--chip-count-border); color:var(--chip-count-text); padding:0 7px; }
 .dot { width:7px; height:7px; border-radius:50%; display:inline-block; background:var(--text-dim); }
 .dot.green { background:var(--status-success); box-shadow:0 0 6px var(--status-success-border); }
+/* Not yet answered. Hollow rather than dim, because a dim filled dot is what
+   "off" already looks like and the two are different claims: one is a provider
+   that is not usable, the other is a question still in flight. */
+.dot.unknown { background:transparent; box-shadow:inset 0 0 0 1px var(--text-dim); }
 .topbar .spacer { flex:1; }
 /* The conversation's name, in the band that used to be empty. Truncates
    rather than wraps or pushes: the row is a fixed 56px and the corner buttons
@@ -489,6 +493,12 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   border:1px solid var(--border-subtle); color:var(--text-primary); font:inherit; font-size:var(--fs-sm);
 }
 .menu-sep { height:1px; background:var(--border-subtle); margin:2px 10px 6px; }
+/* Balances in the profile menu: a glance, not a panel. */
+.acct-menu { display:flex; flex-direction:column; gap:8px; padding:2px 12px 6px; }
+.acct-menu-row { display:flex; flex-direction:column; gap:2px; }
+/* 12px and --text-muted: this is a provider's name, which is read, not a mark
+   that only has to be noticed. At 11px in --text-dim it was 2.54:1. */
+.acct-menu-name { font-size:var(--fs-xs); color:var(--text-muted); text-transform:lowercase; }
 /* Shared by the language and theme rows. max-width so the 14-entry theme list
    can't stretch the menu wider than the sidebar it hangs off. */
 .lang-select {
@@ -890,6 +900,45 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .markdown-body .drawing-box:hover .drawing-tools, .markdown-body .drawing-tools:focus-within { opacity:1; }
 .markdown-body .drawing-tools button { font-size:var(--fs-xs); color:var(--text-dim); background:var(--surface-raised); border:1px solid var(--border-subtle); border-radius:var(--r-xs); padding:2px 8px; cursor:pointer; }
 .markdown-body .drawing-tools button:hover { background:var(--surface-hover); color:var(--text-primary); }
+/* ---------- the plan card ----------
+   A plan (the วางแผน stance, §106.11) arrives as a ```plan fence and is drawn
+   as an object rather than as more prose: the whole turn was spent producing
+   it, so it gets an edge, its own title, and the compass the stance picker
+   wears — the card says which dial produced it without a word.
+
+   Raised one step off the bubble rather than boxed in a heavy border. The plan
+   is the message's content, not an attachment to it, and a strong frame would
+   read as something pasted in from elsewhere.
+
+   Not collapsed, and that is deliberate: in this stance the card holds the
+   answer itself, so folding it away would fold away the reply. */
+.markdown-body .plan-card {
+  margin:.7em 0; padding:14px 16px 4px;
+  background:var(--surface-raised); border:1px solid var(--border-subtle); border-radius:var(--r-lg);
+}
+.markdown-body .plan-head { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+.markdown-body .plan-kind {
+  display:inline-flex; align-items:center; gap:6px; margin-right:auto;
+  font-size:var(--fs-2xs); color:var(--text-dim); letter-spacing:.02em;
+}
+/* Hover-revealed, same as a code block's copy and a drawing's tools — a control
+   that is always lit competes with the plan for the eye. */
+.markdown-body .plan-copy {
+  font-size:var(--fs-xs); color:var(--text-muted); background:none; border:none;
+  padding:2px 8px; border-radius:var(--r-sm); cursor:pointer; opacity:0; transition:opacity .12s;
+}
+.markdown-body .plan-card:hover .plan-copy, .markdown-body .plan-copy:focus-visible { opacity:1; }
+.markdown-body .plan-copy:hover { background:var(--surface-hover); color:var(--text-primary); }
+.markdown-body .plan-title {
+  margin:0 0 .6em; font-size:var(--fs-2xl); font-weight:650;
+  line-height:1.3; color:var(--text-primary);
+}
+/* The body is ordinary markdown; it only needs its outer margins taken off so
+   the card's own padding is the only spacing around it. */
+.markdown-body .plan-body > :first-child { margin-top:0; }
+.markdown-body .plan-body > :last-child { margin-bottom:0; }
+.markdown-body .plan-body > p:last-child { margin-bottom:1em; }
+
 .markdown-body .codeblock pre { margin:0; border:none; border-radius:0; background:none; padding:.5em .9em .8em; }
 .markdown-body .codeblock code.hljs { display:block; background:transparent; padding:0; overflow-x:auto; color:var(--syn-fg); }
 
@@ -1242,21 +1291,68 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .stance-item .d { font-size:var(--fs-xs); color:var(--text-muted); white-space:normal; }
 .stance-item .tick { flex:none; margin-top:1px; }
 
+/* ---------- branch picker ----------
+   The branch chip was a `<span>` for as long as project focus existed: it
+   answered "where am I" and had nothing to say to the question anyone asks
+   next. It keeps the .focus-chip shape it already had — this row's chips are
+   one family and a branch is still a status — and gains only what makes it
+   read as pressable: a caret, and the hover the other controls have. */
+.branch-pick { position:relative; display:inline-flex; }
+.branch-chip { cursor:pointer; }
+.branch-chip:hover { background:var(--surface-hover); color:var(--text-primary); border-color:var(--border-strong); }
+.branch-chip .caret { display:inline-flex; color:var(--text-dim); }
+.branch-menu {
+  position:absolute; bottom:calc(100% + 10px); left:0; z-index:50; width:280px;
+  display:flex; flex-direction:column; padding:6px;
+  background:var(--surface-panel); border:1px solid var(--border-subtle); border-radius:var(--r-lg);
+  box-shadow:var(--shadow-menu);
+}
+.branch-search { display:flex; align-items:center; gap:7px; padding:5px 8px 7px; color:var(--text-dim); }
+.branch-search input {
+  flex:1; min-width:0; border:none; background:none; color:var(--text-primary);
+  font-size:var(--fs-sm); outline:none;
+}
+/* Scrolls rather than growing: a repository with forty branches must not push
+   the menu off the top of the window, and the search above it is the way
+   through a list that long. */
+.branch-list { display:flex; flex-direction:column; gap:2px; max-height:260px; overflow-y:auto; }
+.branch-item {
+  display:flex; align-items:center; gap:9px; text-align:left; width:100%;
+  padding:7px 9px; border-radius:var(--r-sm); color:var(--text-secondary); cursor:pointer;
+}
+.branch-item:hover { background:var(--surface-row-hover); }
+.branch-item.on { background:var(--surface-selected); color:var(--text-selected); }
+.branch-item:disabled { opacity:.5; cursor:default; }
+.branch-item .ic { flex:none; display:inline-flex; color:var(--text-dim); }
+.branch-item .nm { flex:1; min-width:0; font-size:var(--fs-sm); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.branch-item .tick { flex:none; }
+/* Divided from the list because it is a different kind of act: everything above
+   goes somewhere that exists, this one makes the place first. */
+.branch-item.create { margin-top:4px; border-top:1px solid var(--border-subtle); border-radius:0 0 var(--r-sm) var(--r-sm); padding-top:9px; }
+.branch-none { padding:8px 9px; font-size:var(--fs-xs); color:var(--text-muted); }
+/* git's own refusal, printed as it arrived. It names the files that would be
+   overwritten, so it wraps and is allowed the room to be long. */
+.branch-error {
+  margin:2px 0 6px; padding:7px 9px; border-radius:var(--r-sm);
+  background:var(--surface-sunken); color:var(--status-danger);
+  font-size:var(--fs-xs); line-height:1.45; white-space:pre-wrap; max-height:160px; overflow-y:auto;
+}
+
 /* Compact model picker — one chip ("model · think level ⌄") opening an
    upward popover with the full provider/model/effort controls. */
 .model-pick { position:relative; margin-left:auto; }
 .model-chip {
   display:inline-flex; align-items:center; gap:7px; padding:6px 10px; border-radius:var(--r-md);
   color:var(--text-secondary); font-size:var(--fs-sm); cursor:pointer; max-width:340px;
+  /* The model name inside can be any length, so the chip has to be allowed to
+     shrink below it — without this the flex item keeps its content width and
+     pushes the send button off the end instead of letting .t ellipsize. */
+  min-width:0;
 }
 .model-chip:hover { background:var(--surface-hover); color:var(--text-primary); }
 .model-chip .t { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
 .model-chip .pv { flex:none; display:inline-flex; align-items:center; }
 .model-chip .lvl { flex:none; color:var(--text-dim); }
-/* Approval mode, glyph only. Red at full-access — the one mode where nothing
-   will ever stop to ask, so it should not look like the other two. */
-.model-chip .mode-ic { flex:none; font-size:var(--fs-xs); line-height:1; }
-.model-chip .mode-ic.danger { color:var(--danger, #e5534b); }
 .model-chip .caret { flex:none; color:var(--text-dim); font-size:var(--fs-2xs); }
 .model-menu {
   position:absolute; bottom:calc(100% + 10px); right:0; z-index:50; min-width:280px;
@@ -2293,6 +2389,19 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .settings-page .ctrl-danger, .page-shell .ctrl-danger { color:var(--status-danger); border-color:var(--status-danger); background:none; }
 .settings-page .ctrl-danger:hover:not(:disabled), .page-shell .ctrl-danger:hover:not(:disabled) { background:var(--status-danger); color:var(--text-on-interactive); }
 .settings-page .ctrl:disabled, .page-shell .ctrl:disabled { opacity:.5; cursor:default; }
+/* A .ctrl carrying an icon beside its label. Plain .ctrl is a block button, so
+   an inline <svg> sits on the text baseline and rides a couple of pixels low. */
+.settings-page .ctrl-icon, .page-shell .ctrl-icon { display:inline-flex; align-items:center; gap:6px; }
+/* Why a preset is recommended. Quieter than the capability line above it and
+   allowed to wrap — it is a sentence, and a truncated reason is no reason. */
+.settings-page .mcp-why { margin-top:3px; color:var(--text-dim); white-space:normal; }
+/* Which agents asked for it. The one line here that is about *this user's*
+   setup rather than about the server, so it carries the accent the rest of the
+   row does not. */
+.settings-page .mcp-wanted {
+  display:inline-flex; align-items:center; gap:5px; margin-top:5px;
+  color:var(--accent); font-weight:600;
+}
 /* selects share .ctrl's button-like look but need their own affordance, or
    they read as an unlabeled button (appearance:none strips the native arrow) */
 .settings-page select.ctrl { padding-right:26px; background-repeat:no-repeat; background-position:right 8px center;
@@ -2609,6 +2718,19 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .set-note { font-size:var(--fs-xs); padding:4px 10px; }
 .pp-bar-gap { flex:1; }
 .eyebrow-grow { flex:1; }
+/* An eyebrow that carries an action on its right. The label keeps the eyebrow's
+   own case and tracking; the action opts back out of both, because "get a key"
+   is a sentence to read and not a section heading. */
+.eyebrow-row { display:flex; align-items:baseline; justify-content:space-between; gap:12px; }
+.keylink {
+  display:inline-flex; align-items:center; gap:4px;
+  background:none; border:none; padding:0; cursor:pointer;
+  font-size:var(--fs-xs); font-weight:500;
+  text-transform:none; letter-spacing:normal;
+  color:var(--text-muted); transition:color .15s;
+}
+.keylink:hover { color:var(--interactive); }
+.keylink:focus-visible { outline:2px solid var(--interactive); outline-offset:2px; border-radius:var(--r-sm); }
 .sponsor-center { justify-content:center; }
 .sponsor-qr { width:260px; max-width:100%; border-radius:var(--r-lg); }
 /* The upgrade command on the About page. Selectable and monospaced because it
@@ -2662,31 +2784,52 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .u-num .dim { color:var(--text-dim); }
 
 /* ---------- self-update ----------
-   Two surfaces, never both at once (Updater.svelte).
+   One card, four things to say (Updater.svelte, ARCHITECTURE.md §107).
 
-   The notice is an offer: bottom-right, above the settings overlay (z 50) so a
-   release found while the user is in Settings is not swallowed by it, and
-   clear of the composer so it never sits between the user and the thing they
-   opened the app to do. Nothing has been downloaded when it appears.
+   Bottom-right, above the settings overlay (z 50) so a release found while the
+   user is in Settings is not swallowed by it, and clear of the composer so it
+   never sits between the user and the thing they opened the app to do.
 
-   The dialog is modal and outranks every other overlay including confirm
-   (z 70) — the exe under this window is being replaced and the app is about to
-   restart itself, so there is nothing behind it worth reaching. */
-.upd-notice {
-  position:fixed; right:18px; bottom:18px; z-index:55; width:min(340px, calc(100vw - 36px));
-  display:flex; flex-direction:column; gap:6px;
-  padding:14px 16px 12px; border-radius:var(--r-lg);
+   Deliberately NOT modal. Nothing it reports interrupts the app: the download
+   runs while the user keeps working and the restart is theirs to time, so a
+   scrim over the window would be claiming an urgency the feature does not
+   have. */
+.upd-card {
+  position:fixed; right:18px; bottom:18px; z-index:55; width:min(360px, calc(100vw - 36px));
+  display:flex; flex-direction:column; gap:10px;
+  padding:14px 16px 13px; border-radius:var(--r-lg);
   border:1px solid var(--border-default); background:var(--surface-panel);
   box-shadow:0 16px 40px -12px rgba(0,0,0,.55);
 }
-.upd-notice-title { font-size:var(--fs-md); font-weight:700; color:var(--text-primary); }
-.upd-notice-body { font-size:var(--fs-sm); line-height:1.5; color:var(--text-secondary); }
+.upd-head { display:flex; align-items:flex-start; gap:11px; }
+/* The app's own mark, so the card is unmistakably about Aetox and not about
+   whatever the agent is doing. */
+.upd-icon {
+  flex:none; width:38px; height:38px; border-radius:var(--r-md);
+  display:grid; place-items:center;
+  background:var(--surface-sunken); border:1px solid var(--border-subtle);
+}
+.upd-headings { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.upd-title { font-size:var(--fs-md); font-weight:700; color:var(--text-primary); line-height:1.35; }
+.upd-date { font-size:var(--fs-xs); color:var(--text-muted); }
+.upd-x {
+  flex:none; appearance:none; border:none; background:none; cursor:pointer;
+  color:var(--text-muted); padding:3px; margin:-3px -4px 0 0; border-radius:var(--r-sm);
+  display:grid; place-items:center;
+}
+.upd-x:hover { background:var(--surface-hover); color:var(--text-primary); }
+.upd-note { font-size:var(--fs-sm); line-height:1.5; color:var(--text-secondary); }
 .upd-cmd {
   padding:6px 8px; border-radius:var(--r-sm); background:var(--surface-sunken);
   border:1px solid var(--border-subtle); color:var(--text-primary);
   font-family:var(--mono); font-size:var(--fs-xs); word-break:break-all;
 }
-.upd-notice-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:4px; }
+.upd-err {
+  padding:8px 10px; border-radius:var(--r-md); background:var(--surface-sunken);
+  border:1px solid var(--border-subtle); color:var(--status-danger);
+  font-size:var(--fs-sm); line-height:1.5; word-break:break-word;
+}
+.upd-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:2px; }
 /* .ctrl is scoped to .settings-page and these two live outside it, so they
    restate the two roles they need rather than reaching into that scope. */
 .upd-btn {
@@ -2698,21 +2841,13 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .upd-btn-go { color:var(--accent); border-color:var(--accent); font-weight:600; }
 .upd-btn-go:hover { background:var(--accent); color:var(--text-on-interactive); border-color:var(--accent); }
 
-.upd-overlay { position:fixed; inset:0; z-index:80; display:grid; place-items:center; background:var(--overlay-scrim); }
-.upd-card {
-  width:min(380px, calc(100vw - 48px));
-  border:1px solid var(--border-default); border-radius:var(--r-xl); background:var(--surface-panel);
-  padding:20px 22px 18px; display:flex; flex-direction:column; gap:10px;
-  box-shadow:0 20px 48px -12px rgba(0,0,0,.6);
+.upd-progress { display:flex; flex-direction:column; gap:6px; }
+.upd-progress-row {
+  display:flex; justify-content:space-between; align-items:baseline; gap:10px;
+  font-size:var(--fs-sm); color:var(--text-secondary);
 }
-.upd-card-title { font-size:var(--fs-sm); font-weight:600; color:var(--text-muted); letter-spacing:.04em; }
-.upd-card-msg { font-size:var(--fs-lg); font-weight:600; color:var(--text-primary); }
-.upd-card-note { font-size:var(--fs-xs); color:var(--text-muted); }
-.upd-card-err {
-  padding:8px 10px; border-radius:var(--r-md); background:var(--surface-sunken);
-  border:1px solid var(--border-subtle); color:var(--status-danger);
-  font-size:var(--fs-sm); line-height:1.5; word-break:break-word;
-}
+/* Tabular figures, or the byte count jitters sideways on every frame. */
+.upd-bytes { font-variant-numeric:tabular-nums; color:var(--text-primary); }
 .upd-bar { height:8px; border-radius:999px; background:var(--surface-sunken); border:1px solid var(--border-subtle); overflow:hidden; }
 .upd-bar-fill { height:100%; width:0; background:var(--accent); border-radius:999px; transition:width .18s linear; }
 /* No Content-Length on the download means no honest percentage. A bar that
@@ -2825,7 +2960,7 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 /* Rising: anchored to the composer at the bottom of the window, so each one
    grows upward out of the control that opened it. */
 .stance-menu, .model-menu, .ctx-menu, .focus-menu, .updrop-list, .mention-menu,
-.pal-list, .task-chip {
+.branch-menu, .pal-list, .task-chip {
   animation:pop-up .12s ease-out;
 }
 /* Falling: anchored under something near the top of the window. */
@@ -3194,3 +3329,17 @@ button.ctrl, label.ctrl { display:inline-flex; align-items:center; justify-conte
 .conn-chip.on { background:var(--surface-sunken); border-color:var(--interactive); color:var(--text-primary); }
 .conn-chip:disabled { cursor:not-allowed; opacity:.6; }
 .conn-chip:focus-visible { outline:2px solid var(--interactive); outline-offset:2px; }
+
+/* Model picker: search, free filter, and the price column.
+   A provider like OpenRouter returns 411 models in alphabetical order, which
+   is a list you scroll rather than one you choose from. */
+.mlist-tools { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
+.mlist-search { flex:1; min-width:0; }
+/* Tabular figures so a column of prices lines up on the decimal point instead
+   of wandering with the digit widths. */
+.mprice {
+  flex:none; font-size:var(--fs-xs); color:var(--text-muted);
+  font-variant-numeric:tabular-nums; white-space:nowrap;
+}
+.mprice.free { color:var(--status-success); }
+.mprice.dim { color:var(--text-dim); }

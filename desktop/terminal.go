@@ -273,6 +273,12 @@ func (a *App) TerminalClose(sessionID string) error {
 // server processes never orphan when the app quits. (Chat turns are persisted
 // as they happen.)
 func (a *App) shutdown(_ context.Context) {
+	// Before the store closes: the phone's door reads it on every request, and
+	// a listener still answering after the database is gone would serve errors
+	// to a phone that has no way to know the desktop is quitting.
+	if a.remoteSrv != nil {
+		a.remoteSrv.stop()
+	}
 	if a.db != nil {
 		_ = a.db.Close()
 	}

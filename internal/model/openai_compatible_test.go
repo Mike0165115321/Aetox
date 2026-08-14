@@ -1,6 +1,7 @@
 package model
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestOpenAICompatibleProviderUsesOpenAIReasoningEffortPayload(t *testing.T) {
@@ -638,5 +640,207 @@ func TestOpenAIDropsTemperatureWhenReasoningEffortIsSent(t *testing.T) {
 	}
 	if body["temperature"] == nil {
 		t.Fatalf("groq lost its temperature: %v", body)
+	}
+}
+
+// The same 429 means two different things: "slow down" fixes itself, "the
+// account is out of credits" fixes only at the billing page. Until this, both
+// paths dumped the raw JSON body at the user and left the decoding to them.
+func TestOpenAICompatibleStatusErrorsAreActionable(t *testing.T) {
+	quotaBody := `{"error":{"message":"You exceeded your current quota, please check your plan and billing details.","type":"insufficient_quota","param":null,"code":"insufficient_quota"}}`
+	cases := []struct {
+		name       string
+		status     int
+		retryAfter string
+		body       string
+		want       string
+	}{
+		{"out of credits", http.StatusTooManyRequests, "0", quotaBody, "out of credits"},
+		// Z.ai spells the same condition with no word in common with OpenAI's
+		// version — code 1113, "Insufficient balance or no resource package."
+		// Recognising only OpenAI's token called this a rate limit and left the
+		// user waiting for a balance that refills only at the billing page.
+		{
+			"out of credits, said another way", http.StatusTooManyRequests, "0",
+			`{"error":{"code":"1113","message":"Insufficient balance or no resource package. Please recharge."}}`,
+			"out of credits",
+		},
+		// A third spelling again: some hosts do not use 429 for this at all and
+		// answer 402, whose entire meaning is "pay first" — no body to read.
+		{
+			"payment required", http.StatusPaymentRequired, "",
+			`{"error":{"message":"Insufficient Balance","code":"invalid_request_error"}}`,
+			"out of credits",
+		},
+		// Retry-After longer than the transport will wait, so the response
+		// comes straight back for the message instead of being retried.
+		{"rate limited", http.StatusTooManyRequests, "3600", `{"error":{"message":"Rate limit reached","type":"tokens","code":"rate_limit_exceeded"}}`, "rate limiting this key"},
+		{"bad key", http.StatusUnauthorized, "", `{"error":{"message":"Incorrect API key provided"}}`, "rejected the credentials"},
+	}
+	for _, tc := range cases {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			if tc.retryAfter != "" {
+				w.Header().Set("Retry-After", tc.retryAfter)
+			}
+			w.WriteHeader(tc.status)
+			_, _ = w.Write([]byte(tc.body))
+		}))
+		provider, err := NewOpenAICompatibleProvider(OpenAICompatibleConfig{
+			Provider: "openai", Model: "gpt-4o", APIKey: "k", BaseURL: server.URL,
+		})
+		if err != nil {
+			t.Fatalf("%s: new provider failed: %v", tc.name, err)
+		}
+		_, err = provider.Complete(context.Background(), Request{
+			Messages: []Message{{Role: RoleUser, Content: "hi"}},
+		})
+		server.Close()
+
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s gave %v; want it to mention %q", tc.name, err, tc.want)
+		}
+		// Quoting the provider's own sentence is the point — each one words the
+		// instruction differently and that difference is what the user acts on.
+		// What must never reach them is the JSON around it.
+		if err != nil && strings.Contains(err.Error(), `{"error"`) {
+			t.Errorf("%s leaked the raw JSON body: %v", tc.name, err)
+		}
+	}
+}
+
+// The streaming path answers the same 429 before any event arrives, and has to
+// say the same thing the non-streaming path does.
+func TestOpenAICompatibleStreamTranslatesInsufficientQuota(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Retry-After", "0")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":{"message":"You exceeded your current quota, please check your plan and billing details.","type":"insufficient_quota","code":"insufficient_quota"}}`))
+	}))
+	defer server.Close()
+
+	provider, err := NewOpenAICompatibleProvider(OpenAICompatibleConfig{
+		Provider: "openai", Model: "gpt-4o", APIKey: "k", BaseURL: server.URL,
+	})
+	if err != nil {
+		t.Fatalf("new provider failed: %v", err)
+	}
+
+	start := time.Now()
+	_, err = provider.StreamComplete(context.Background(), Request{
+		Messages: []Message{{Role: RoleUser, Content: "hi"}},
+	}, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "out of credits") {
+		t.Fatalf("err = %v; want the out-of-credits translation", err)
+	}
+	// The whole point of the transport half of the fix: an empty balance must
+	// not be backoff-retried before it is reported.
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("took %s; want no retries against an empty balance", elapsed)
+	}
+}
+
+// Gemini 3 attaches an encrypted `thought_signature` to every tool call and
+// refuses the next turn without it — "Function call is missing a
+// thought_signature in functionCall parts", a 400 that ends the turn. Aetox's
+// ToolCall had three fields and json.Unmarshal dropped the rest on the floor,
+// so every Gemini 3 tool use died on its second turn while Gemini 2.5, which
+// sends no such field, worked fine and hid the bug.
+//
+// Verified against the live endpoint on 2026-08-15: echo the field back and the
+// second turn is 200; strip it and the identical request is a 400.
+func TestOpenAICompatibleCarriesToolCallExtraContentBothWays(t *testing.T) {
+	const signature = `{"google":{"thought_signature":"EqACCp0CARFNMg9ETsCkiTf5tkZncYrl"}}`
+
+	var secondRequest []byte
+	turn := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		turn++
+		if turn == 1 {
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","tool_calls":[
+				{"id":"call_226","type":"function","extra_content":` + signature + `,
+				 "function":{"name":"echo","arguments":"{\"text\":\"ping\"}"}}]},
+				"finish_reason":"tool_calls"}]}`))
+			return
+		}
+		secondRequest = body
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"done"},"finish_reason":"stop"}]}`))
+	}))
+	defer server.Close()
+
+	p, err := NewOpenAICompatibleProvider(OpenAICompatibleConfig{
+		Provider: "gemini", Model: "gemini-3.7-flash", APIKey: "k", BaseURL: server.URL,
+	})
+	if err != nil {
+		t.Fatalf("provider: %v", err)
+	}
+	req := Request{Messages: []Message{{Role: RoleUser, Content: "echo ping"}}}
+	first, err := p.Complete(context.Background(), req)
+	if err != nil {
+		t.Fatalf("turn 1: %v", err)
+	}
+	if len(first.ToolCalls) != 1 {
+		t.Fatalf("turn 1 returned %d tool calls", len(first.ToolCalls))
+	}
+	// Captured on the way in...
+	if got := string(first.ToolCalls[0].ExtraContent); got != signature {
+		t.Fatalf("extra_content = %q; want it carried through verbatim", got)
+	}
+
+	// ...and handed straight back on the way out.
+	req.Messages = append(req.Messages,
+		Message{Role: RoleAssistant, ToolCalls: first.ToolCalls},
+		Message{Role: RoleTool, ToolCallID: first.ToolCalls[0].ID, Content: "ping"})
+	if _, err := p.Complete(context.Background(), req); err != nil {
+		t.Fatalf("turn 2: %v", err)
+	}
+	if !bytes.Contains(secondRequest, []byte(`"thought_signature"`)) {
+		t.Fatalf("the signature never reached the second request:\n%s", secondRequest)
+	}
+}
+
+// The other half: a provider that sends no extra_content must produce a request
+// byte-identical to the one it produced before this field existed. The prefix
+// of a conversation is what providers cache, and an extra key on every tool
+// call would miss that cache for everyone who is not on Gemini.
+func TestToolCallWithoutExtraContentSerializesUnchanged(t *testing.T) {
+	payload, err := json.Marshal(ToolCall{
+		ID: "call_1", Type: "function",
+		Function: FunctionCall{Name: "echo", Arguments: `{"text":"ping"}`},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(payload, []byte("extra_content")) {
+		t.Fatalf("an absent extra_content still reached the wire: %s", payload)
+	}
+}
+
+// Streaming assembles tool calls from deltas, and the signature arrives whole
+// in one of them rather than in pieces — so it is taken, not concatenated.
+func TestStreamAccumulatorKeepsExtraContent(t *testing.T) {
+	acc := newStreamToolAccumulator(nil)
+	acc.add([]streamToolCallDelta{{Index: 0, ID: "call_1", Type: "function"}})
+	acc.add([]streamToolCallDelta{{
+		Index: 0, ExtraContent: json.RawMessage(`{"google":{"thought_signature":"abc"}}`),
+	}})
+	acc.add([]streamToolCallDelta{{Index: 0, Function: struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	}{Name: "echo", Arguments: `{"text":`}}})
+	acc.add([]streamToolCallDelta{{Index: 0, Function: struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	}{Arguments: `"ping"}`}}})
+
+	calls := acc.finalize()
+	if len(calls) != 1 {
+		t.Fatalf("finalize gave %d calls", len(calls))
+	}
+	if got := string(calls[0].ExtraContent); got != `{"google":{"thought_signature":"abc"}}` {
+		t.Errorf("streamed extra_content = %q", got)
+	}
+	if got := calls[0].Function.Arguments; got != `{"text":"ping"}` {
+		t.Errorf("arguments were disturbed: %q", got)
 	}
 }

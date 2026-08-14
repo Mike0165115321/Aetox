@@ -64,6 +64,49 @@ type Capabilities struct {
 	Reasoning bool
 }
 
+// BalanceKind says what a provider can tell us about money, so the UI never
+// has to guess why a number is missing. It describes the *account*, not one
+// request — reading the actual figure is internal/model's job.
+type BalanceKind string
+
+const (
+	// BalanceMoney: the provider serves a balance endpoint our own API key
+	// can read.
+	BalanceMoney BalanceKind = "money"
+	// BalanceFree: runs on this machine, so there is nothing to spend.
+	BalanceFree BalanceKind = "free"
+	// BalanceSubscription: paid for by a plan rather than a wallet. There is
+	// no figure to show — only a quota, if QuotaSource says where.
+	BalanceSubscription BalanceKind = "subscription"
+	// BalanceWebOnly: a real prepaid account whose figure is only readable
+	// from the provider's own dashboard, not with a chat API key.
+	BalanceWebOnly BalanceKind = "web-only"
+)
+
+// QuotaSource names the dialect a provider states its remaining rate-limit
+// window in. Unlike a balance, a quota is not fetched on demand: it rides
+// along on the responses of real turns, so this only says how to read it.
+type QuotaSource string
+
+const (
+	// QuotaNone: pay-as-you-go with no window worth showing.
+	QuotaNone QuotaSource = ""
+	// QuotaCodex: the x-codex-* header family on the ChatGPT backend, which
+	// carries both a 5-hour and a weekly window. Undocumented — read it
+	// opportunistically and show nothing when it stops appearing.
+	QuotaCodex QuotaSource = "codex"
+	// QuotaAnthropic: anthropic-ratelimit-* headers.
+	QuotaAnthropic QuotaSource = "anthropic"
+	// QuotaOpenAIStd: the x-ratelimit-remaining-{requests,tokens} family most
+	// OpenAI-compatible hosts send. Set wherever the runtime could carry it —
+	// a host that stays silent simply reports no quota, which the UI shows as
+	// "this provider does not report one" rather than a wrong number.
+	QuotaOpenAIStd QuotaSource = "openai-std"
+	// QuotaOpenRouter: returned as JSON by GET /key alongside the credits,
+	// so this is the one quota that can be fetched on demand.
+	QuotaOpenRouter QuotaSource = "openrouter"
+)
+
 // Spec is the canonical metadata for one supported provider.
 type Spec struct {
 	Canonical      string
@@ -82,6 +125,25 @@ type Spec struct {
 	EnvKeys       []string
 	ModelDefaults ModelDefaults
 	Capabilities  Capabilities
+	BalanceKind   BalanceKind
+	QuotaSource   QuotaSource
+	// APIKeyURL is the page on the provider's own site where a user creates the
+	// key this row asks them to paste. Empty when there is nothing to link to —
+	// a local runtime with no account, or a sign-in provider where a pasted key
+	// is not a credential that exists (see AcceptsAPIKey).
+	//
+	// It lives here rather than in the UI because it is a fact about the
+	// provider, and the UI already reads every other such fact from this
+	// registry. A second table in TypeScript would be a second place answering
+	// the same question.
+	APIKeyURL string
+	// AcceptsAPIKey is false for a provider where a pasted key is not a
+	// credential that exists. It is not the opposite of RequiresAPIKey:
+	// Codex requires credentials and has no API key to give, because it is
+	// reached at chatgpt.com on a subscription while the key a user would
+	// paste belongs to api.openai.com — a different host, a different bill,
+	// and a guaranteed 401. Offering the field there is offering a dead end.
+	AcceptsAPIKey bool
 }
 
 // ---------------------------------------------------------------------------
@@ -99,6 +161,12 @@ type entry struct {
 	envKeys        []string
 	modelDefaults  ModelDefaults
 	capabilities   Capabilities
+	balanceKind    BalanceKind
+	quotaSource    QuotaSource
+	apiKeyURL      string
+	// signInOnly is the negative form so that the zero value — every other
+	// provider — means "a pasted key works here", which is the common case.
+	signInOnly bool
 }
 
 // The provider catalog is the single source of truth for provider
@@ -107,7 +175,9 @@ type entry struct {
 // for every model behind the provider.
 var catalog = map[string]*entry{
 	"aetox": {
-		canonical: "aetox",
+		canonical:   "aetox",
+		balanceKind: BalanceFree,
+		quotaSource: QuotaNone,
 		// "noop" stays a recognized alias so preference files saved before
 		// this rename (config.ModelPreference.ModelProvider/EnabledProviders
 		// literally containing "noop") keep normalizing correctly — the same
@@ -144,11 +214,14 @@ var catalog = map[string]*entry{
 	},
 	"openrouter": {
 		canonical:      "openrouter",
+		balanceKind:    BalanceMoney,
+		quotaSource:    QuotaOpenRouter,
 		aliases:        []string{"openrouter", "open-router", "openrouterai", "or"},
 		requiresAPIKey: true,
 		runtime:        RuntimeOpenAICompatible,
 		baseURL:        "https://openrouter.ai/api/v1",
 		envKeys:        []string{"OPENROUTER_API_KEY"},
+		apiKeyURL:      "https://openrouter.ai/keys",
 		modelDefaults: ModelDefaults{
 			FallbackModel: "deepseek/deepseek-r1",
 		},
@@ -156,11 +229,14 @@ var catalog = map[string]*entry{
 	},
 	"openai": {
 		canonical:      "openai",
+		balanceKind:    BalanceWebOnly,
+		quotaSource:    QuotaOpenAIStd,
 		aliases:        []string{"openai", "chatgpt", "gpt", "openai-compatible", "compatible"},
 		requiresAPIKey: true,
 		runtime:        RuntimeOpenAICompatible,
 		baseURL:        "https://api.openai.com/v1",
 		envKeys:        []string{"OPENAI_API_KEY", "OPENAI_TOKEN"},
+		apiKeyURL:      "https://platform.openai.com/api-keys",
 		modelDefaults:  ModelDefaults{FallbackModel: "gpt-4o-mini"},
 		capabilities:   Capabilities{ToolCalling: true, Reasoning: true},
 	},
@@ -174,6 +250,9 @@ var catalog = map[string]*entry{
 	// saved preference silently changes meaning.
 	"codex": {
 		canonical:      "codex",
+		balanceKind:    BalanceSubscription,
+		quotaSource:    QuotaCodex,
+		signInOnly:     true,
 		aliases:        []string{"codex", "chatgpt-codex", "chatgpt-subscription", "openai-codex"},
 		requiresAPIKey: true,
 		runtime:        RuntimeResponses,
@@ -190,16 +269,21 @@ var catalog = map[string]*entry{
 	// URL again rather than one the login hands back.
 	"qwen": {
 		canonical:      "qwen",
+		balanceKind:    BalanceWebOnly,
+		quotaSource:    QuotaOpenAIStd,
 		aliases:        []string{"qwen", "qwen-code", "dashscope", "tongyi"},
 		requiresAPIKey: true,
 		runtime:        RuntimeOpenAICompatible,
 		baseURL:        "https://dashscope.aliyuncs.com/compatible-mode/v1",
 		envKeys:        []string{"DASHSCOPE_API_KEY", "QWEN_API_KEY"},
+		apiKeyURL:      "https://bailian.console.alibabacloud.com/?tab=model#/api-key",
 		modelDefaults:  ModelDefaults{FallbackModel: "qwen3-coder-plus"},
 		capabilities:   Capabilities{ToolCalling: true},
 	},
 	"deepseek": {
 		canonical:      "deepseek",
+		balanceKind:    BalanceMoney,
+		quotaSource:    QuotaNone,
 		aliases:        []string{"deepseek", "deepseek-api", "deepseek-ai"},
 		requiresAPIKey: true,
 		// Default to DeepSeek's Anthropic-format endpoint (/anthropic): it
@@ -215,16 +299,20 @@ var catalog = map[string]*entry{
 		altRuntime:    RuntimeOpenAICompatible,
 		altBaseURL:    "https://api.deepseek.com",
 		envKeys:       []string{"DEEPSEEK_API_KEY"},
+		apiKeyURL:     "https://platform.deepseek.com/api_keys",
 		modelDefaults: ModelDefaults{FallbackModel: "deepseek-v4-flash"},
 		capabilities:  Capabilities{ToolCalling: true, Reasoning: true},
 	},
 	"minimax": {
 		canonical:      "minimax",
+		balanceKind:    BalanceWebOnly,
+		quotaSource:    QuotaOpenAIStd,
 		aliases:        []string{"minimax", "minimaxi", "minimax-ai"},
 		requiresAPIKey: true,
 		runtime:        RuntimeOpenAICompatible,
 		baseURL:        "https://api.minimax.io/v1",
 		envKeys:        []string{"MINIMAX_API_KEY"},
+		apiKeyURL:      "https://platform.minimax.io/user-center/basic-information/interface-key",
 		// A last resort for a cold start with no network, not a model list:
 		// this provider serves GET /v1/models, so the picker is filled from the
 		// account's own catalog (ModelChoicesWithEndpointAndAPIKey) and a name
@@ -235,7 +323,9 @@ var catalog = map[string]*entry{
 		capabilities: Capabilities{ToolCalling: true, Reasoning: true},
 	},
 	"kimi": {
-		canonical: "kimi",
+		canonical:   "kimi",
+		balanceKind: BalanceMoney,
+		quotaSource: QuotaOpenAIStd,
 		// "moonshot" is the company and the API host; "kimi" is the name on the
 		// models and on the docs site the platform now redirects to. Both are
 		// what a user will type.
@@ -244,6 +334,7 @@ var catalog = map[string]*entry{
 		runtime:        RuntimeOpenAICompatible,
 		baseURL:        "https://api.moonshot.ai/v1",
 		envKeys:        []string{"MOONSHOT_API_KEY", "KIMI_API_KEY"},
+		apiKeyURL:      "https://platform.moonshot.ai/console/api-keys",
 		modelDefaults:  ModelDefaults{FallbackModel: "kimi-k3"},
 		// Reasoning is a real dial here (reasoning_effort: low/high/max) but it
 		// has no off position — K3 always thinks. See
@@ -252,21 +343,33 @@ var catalog = map[string]*entry{
 	},
 	"zai": {
 		canonical:      "zai",
+		balanceKind:    BalanceWebOnly,
+		quotaSource:    QuotaOpenAIStd,
 		aliases:        []string{"zai", "z.ai", "zhipu", "zhipuai"},
 		requiresAPIKey: true,
 		runtime:        RuntimeOpenAICompatible,
 		baseURL:        "https://api.z.ai/api/paas/v4",
 		envKeys:        []string{"ZAI_API_KEY"},
+		apiKeyURL:      "https://z.ai/manage-apikey/apikey-list",
 		modelDefaults:  ModelDefaults{FallbackModel: "glm-4.6"},
 		capabilities:   Capabilities{ToolCalling: true},
 	},
 	"gemini": {
-		canonical:      "gemini",
+		canonical:   "gemini",
+		balanceKind: BalanceWebOnly,
+		// QuotaNone, measured rather than assumed: a real key against the live
+		// OpenAI-compat endpoint returns 200 with thirteen headers and not one
+		// of them is a rate-limit field (verified 2026-08-14). It was declared
+		// QuotaOpenAIStd on the theory that any OpenAI-compatible host might
+		// send that family, which made the card promise "the limit appears once
+		// you chat" — a promise this endpoint can never keep.
+		quotaSource:    QuotaNone,
 		aliases:        []string{"gemini", "google", "google-ai", "googleai", "google-gemini"},
 		requiresAPIKey: true,
 		runtime:        RuntimeOpenAICompatible,
 		baseURL:        "https://generativelanguage.googleapis.com/v1beta/openai",
 		envKeys:        []string{"GEMINI_API_KEY", "GOOGLE_API_KEY"},
+		apiKeyURL:      "https://aistudio.google.com/apikey",
 		modelDefaults: ModelDefaults{
 			// gemini-2.5-flash, not -flash-lite: the lite model is still listed
 			// by the models endpoint but the chat endpoint answers 404 "no
@@ -279,56 +382,73 @@ var catalog = map[string]*entry{
 	},
 	"groq": {
 		canonical:      "groq",
+		balanceKind:    BalanceWebOnly,
+		quotaSource:    QuotaOpenAIStd,
 		aliases:        []string{"groq", "groqcloud"},
 		requiresAPIKey: true,
 		runtime:        RuntimeOpenAICompatible,
 		baseURL:        "https://api.groq.com/openai/v1",
 		envKeys:        []string{"GROQ_API_KEY"},
+		apiKeyURL:      "https://console.groq.com/keys",
 		modelDefaults:  ModelDefaults{FallbackModel: "llama-3.3-70b-versatile"},
 		capabilities:   Capabilities{ToolCalling: true, Reasoning: true},
 	},
 	"mistral": {
 		canonical:      "mistral",
+		balanceKind:    BalanceWebOnly,
+		quotaSource:    QuotaOpenAIStd,
 		aliases:        []string{"mistral", "mistralai"},
 		requiresAPIKey: true,
 		runtime:        RuntimeOpenAICompatible,
 		baseURL:        "https://api.mistral.ai/v1",
 		envKeys:        []string{"MISTRAL_API_KEY"},
+		apiKeyURL:      "https://console.mistral.ai/api-keys",
 		modelDefaults:  ModelDefaults{FallbackModel: "mistral-small"},
 		capabilities:   Capabilities{ToolCalling: true},
 	},
 	"together": {
 		canonical:      "together",
+		balanceKind:    BalanceWebOnly,
+		quotaSource:    QuotaOpenAIStd,
 		aliases:        []string{"together", "togetherai", "together-ai"},
 		requiresAPIKey: true,
 		runtime:        RuntimeOpenAICompatible,
 		baseURL:        "https://api.together.xyz/v1",
 		envKeys:        []string{"TOGETHER_API_KEY"},
+		apiKeyURL:      "https://api.together.xyz/settings/api-keys",
 		modelDefaults:  ModelDefaults{FallbackModel: "google/gemma-2-9b-it"},
 		capabilities:   Capabilities{ToolCalling: true},
 	},
 	"perplexity": {
 		canonical:      "perplexity",
+		balanceKind:    BalanceWebOnly,
+		quotaSource:    QuotaOpenAIStd,
 		aliases:        []string{"perplexity", "perplexityai", "pplx"},
 		requiresAPIKey: true,
 		runtime:        RuntimeOpenAICompatible,
 		baseURL:        "https://api.perplexity.ai",
 		envKeys:        []string{"PERPLEXITY_API_KEY"},
+		apiKeyURL:      "https://www.perplexity.ai/settings/api",
 		modelDefaults:  ModelDefaults{FallbackModel: "llama-3.1-sonar-small-128k-online"},
 		capabilities:   Capabilities{ToolCalling: true},
 	},
 	"cohere": {
 		canonical:      "cohere",
+		balanceKind:    BalanceWebOnly,
+		quotaSource:    QuotaOpenAIStd,
 		aliases:        []string{"cohere", "command-r"},
 		requiresAPIKey: true,
 		runtime:        RuntimeOpenAICompatible,
 		baseURL:        "https://api.cohere.com/v1",
 		envKeys:        []string{"COHERE_API_KEY"},
+		apiKeyURL:      "https://dashboard.cohere.com/api-keys",
 		modelDefaults:  ModelDefaults{FallbackModel: "command-r-plus"},
 		capabilities:   Capabilities{ToolCalling: true},
 	},
 	"lmstudio": {
 		canonical:      "lmstudio",
+		balanceKind:    BalanceFree,
+		quotaSource:    QuotaNone,
 		aliases:        []string{"lmstudio", "localai", "local-ai"},
 		requiresAPIKey: false,
 		runtime:        RuntimeOpenAICompatible,
@@ -340,6 +460,8 @@ var catalog = map[string]*entry{
 	},
 	"ollama": {
 		canonical:      "ollama",
+		balanceKind:    BalanceFree,
+		quotaSource:    QuotaNone,
 		aliases:        []string{"ollama", "ollamaai"},
 		requiresAPIKey: false,
 		runtime:        RuntimeOllama,
@@ -355,11 +477,14 @@ var catalog = map[string]*entry{
 	},
 	"anthropic": {
 		canonical:      "anthropic",
+		balanceKind:    BalanceWebOnly,
+		quotaSource:    QuotaAnthropic,
 		aliases:        []string{"anthropic", "claude"},
 		requiresAPIKey: true,
 		runtime:        RuntimeAnthropic,
 		baseURL:        "https://api.anthropic.com/v1",
 		envKeys:        []string{"ANTHROPIC_API_KEY"},
+		apiKeyURL:      "https://console.anthropic.com/settings/keys",
 		// No RecommendedModels: GET /v1/models answers this, and any list
 		// written here goes stale within months (model.DiscoverAnthropicModels).
 		modelDefaults: ModelDefaults{FallbackModel: "claude-haiku-4-5"},
@@ -419,7 +544,55 @@ func Lookup(name string) (Spec, bool) {
 		EnvKeys:        append([]string{}, e.envKeys...),
 		ModelDefaults:  e.modelDefaults,
 		Capabilities:   e.capabilities,
+		BalanceKind:    e.balanceKind,
+		QuotaSource:    e.quotaSource,
+		AcceptsAPIKey:  !e.signInOnly,
+		APIKeyURL:      e.apiKeyURL,
 	}, true
+}
+
+// APIKeyURL returns where to go and create a key for this provider, or "" when
+// there is nowhere to send the user: an unknown provider, a local runtime, or
+// a sign-in provider that has no API key to give.
+func APIKeyURL(name string) string {
+	s, ok := Lookup(name)
+	if !ok || !s.AcceptsAPIKey {
+		return ""
+	}
+	return s.APIKeyURL
+}
+
+// AcceptsAPIKey reports whether pasting a key is a real way to authenticate
+// with this provider. Unknown providers get true: a custom endpoint somebody
+// added is far more likely to want a key than to have a sign-in flow Aetox
+// has never heard of.
+func AcceptsAPIKey(name string) bool {
+	s, ok := Lookup(name)
+	if !ok {
+		return true
+	}
+	return s.AcceptsAPIKey
+}
+
+// BalanceKindFor reports what the provider can say about money. Unknown
+// providers get BalanceWebOnly: "we have no way to read this" is the only
+// honest answer for a name the catalog has never heard of.
+func BalanceKindFor(name string) BalanceKind {
+	s, ok := Lookup(name)
+	if !ok {
+		return BalanceWebOnly
+	}
+	return s.BalanceKind
+}
+
+// QuotaSourceFor reports which rate-limit dialect to read for a provider,
+// or QuotaNone when there is none to read.
+func QuotaSourceFor(name string) QuotaSource {
+	s, ok := Lookup(name)
+	if !ok {
+		return QuotaNone
+	}
+	return s.QuotaSource
 }
 
 // SupportedProviders returns the canonical IDs of every registered

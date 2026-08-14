@@ -115,6 +115,79 @@ var planKeeps = map[string]bool{
 	"desk_list": true, "help": true, "echo": true,
 }
 
+// planShape is the four headings a plan comes back under, with what belongs
+// beneath each — and it is the one place the shape is written down.
+//
+// **Two callers produce a plan, and they are not the same caller.** This stance
+// is the main agent writing to the person who will decide; the `plan` sub-agent
+// profile (internal/subagent/profiles/subagents/plan.md) is a delegate writing
+// to the main agent that will act. They differ legitimately in the gloss under
+// each heading — that profile is a coding helper and can say "the file and line
+// you read it in", while a stance is available at every desk and cannot assume
+// the work has files at all.
+//
+// What they must not differ on is the headings, and that is what this list is
+// for. A user who asks for a plan twice and is handed two different shapes has
+// learned the shape of neither. subagent.TestThePlanProfileKeepsTheSharedPlanShape
+// is the coupling that makes drift a failing test rather than a discovery
+// somebody makes months later.
+//
+// Why a shape at all, when the direction below already said what to talk about:
+// it said what to *mention* and never what to *produce*, so the turn came back
+// as prose and the user could not tell a plan from an answer. Nothing else in
+// internal/prompt fills that in — `longform` is about where a long answer lands
+// (a .md file), never how it is built, and วางแผน does not even get that layer
+// because it has no `write`. This is the only mode whose entire output is one
+// document, so it is the only one that had to say so.
+var planShape = []struct{ Heading, Under string }{
+	{
+		"What is there now",
+		"the few facts about how things actually stand that decide the approach, each with where you " +
+			"found it. Not a summary of everything you looked at.",
+	},
+	{
+		"What to change",
+		"the steps in the order they should happen, each naming the actual thing it touches — concrete " +
+			"enough that carrying it out is following it rather than working it out again.",
+	},
+	{
+		"What could go wrong",
+		"what the obvious version breaks. If you looked and found nothing, say that — it is a finding, " +
+			"not an empty heading.",
+	},
+	{
+		"What you are unsure of",
+		"the questions whose answers would change the plan, specific enough that someone can answer them " +
+			"without redoing your reading.",
+	},
+}
+
+// PlanHeadings reports the plan's headings in order, for the callers that must
+// agree with them rather than restate them.
+//
+// A copy, for the reason Stances() hands back a copy: a caller that sorts or
+// truncates the result must not be able to edit the shape every plan is written
+// against.
+func PlanHeadings() []string {
+	out := make([]string, 0, len(planShape))
+	for _, s := range planShape {
+		out = append(out, s.Heading)
+	}
+	return out
+}
+
+// planShapeBlock renders the shape as the prompt states it. Built from
+// planShape rather than written out again below, so the headings in the prompt
+// are literally the ones PlanHeadings reports and the two cannot drift inside
+// this one file.
+func planShapeBlock() string {
+	var b strings.Builder
+	for _, s := range planShape {
+		b.WriteString("**" + s.Heading + "** — " + s.Under + "\n")
+	}
+	return b.String()
+}
+
 // stances is the whole set, in the order the picker draws them. StanceAct
 // leads because it is the way back: a control you can enter and not leave is
 // not a switch (§106.3).
@@ -255,12 +328,17 @@ func (s Stance) Direction() string {
 			"Reading, searching, fetching and inspecting are all available; writing, editing, running " +
 			"commands and handing work to an agent are not, because the user asked for the plan first.\n\n" +
 			"Go and look before you plan. A plan written without opening the files it is about is a guess " +
-			"with numbered steps, and the reading tools are here precisely so it does not have to be one. " +
-			"Then say what you would do, in order, naming the actual files, commands and changes — concrete " +
-			"enough that carrying it out is following it rather than working it out again.\n\n" +
-			"Say what you are unsure of and what would settle it. Do not ask for permission to proceed and " +
-			"do not offer to do it anyway: the user turned this dial deliberately and turning it back is one " +
-			"press. End with the plan, not with a question about whether to start."
+			"with numbered steps, and the reading tools are here precisely so it does not have to be one.\n\n" +
+			"Then give the plan under these four headings, in this order and in these words:\n" +
+			planShapeBlock() + "\n" +
+			"A small job does not need a long plan — a heading can be a single line, and saying so is the " +
+			"correct plan rather than a lazy one. It still gets the shape: the user turned this dial to be " +
+			"handed a plan, and a plan they can read the same way every time is the thing they turned it " +
+			"for. Keep anything you quote short enough to identify what you mean; this is the plan, not the " +
+			"work.\n\n" +
+			"Do not ask for permission to proceed and do not offer to do it anyway: the user turned this " +
+			"dial deliberately and turning it back is one press. End with the plan, not with a question " +
+			"about whether to start."
 	}
 	if s != StanceConsult {
 		return ""

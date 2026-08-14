@@ -13,6 +13,21 @@ func ContextWindowTokens(provider, modelName string) int {
 		modelID = strings.ToLower(strings.TrimSpace(DefaultModel(canonical)))
 	}
 
+	// The fetched catalog first, because it states the window per model where
+	// everything below states it per provider with a fallback — and the
+	// fallback is what most models actually get. The Gemini branch knows one
+	// prefix while an account's own discovery lists 37 models, so every 3.x
+	// model was measured against a guess, and that guess is the percentage on
+	// the composer the user reads all day. Where both answer they agree
+	// (deepseek-v4: 1M either way) and the catalog is the more exact of the two
+	// (glm-4.5 is 131,072, not the 128,000 the default rounds it to).
+	//
+	// Absent or silent, it changes nothing: the curated tables below are still
+	// the answer, which is what makes this safe to consult on a path this hot.
+	if tokens := catalogContextWindow(canonical, modelID); tokens > 0 {
+		return tokens
+	}
+
 	switch canonical {
 	case "deepseek":
 		return deepseekContextWindow(modelID)

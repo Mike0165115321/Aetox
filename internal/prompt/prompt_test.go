@@ -620,6 +620,50 @@ func TestADeskIsNotToldToCallAToolItDoesNotCarry(t *testing.T) {
 	}
 }
 
+// The tool loop has always executed every call in a reply, and nothing ever
+// told the model it could send more than one. That silence is what turns four
+// independent file reads into four round trips, and a round trip re-sends the
+// whole conversation — the owner's own usage database showed 1,102 DeepSeek
+// calls averaging 26.5K re-sent input tokens each.
+//
+// Unlike its neighbours this layer is not gated on a tool: it is about how calls
+// are sent, not about any one of them. A stance that has taken the writing tools
+// away still reads and greps, which is the shape that saves the most.
+func TestEveryDeskIsToldItCanSendSeveralToolCallsAtOnce(t *testing.T) {
+	for _, desk := range []Desk{
+		{Name: "coding", Direction: "This session is coding work.", Carries: func(string) bool { return true }},
+		// A stance holding only the reading tools — no shell, no write.
+		{Name: "plan", Direction: "This session is planning.", Carries: func(name string) bool {
+			return name != "shell" && name != "write" && name != "edit"
+		}},
+	} {
+		got := BuildForDesk(SurfaceDesktop, Scope{Root: t.TempDir()}, desk)
+		if !strings.Contains(got, "several tool calls in one reply") {
+			t.Errorf("desk %q is never told it can batch calls:\n%s", desk.Name, got)
+		}
+		// Told to parallelize without the dependency test, a model batches the
+		// read of a file against the write it is about to base on that read.
+		if !strings.Contains(got, "The test is dependency, not similarity") {
+			t.Errorf("desk %q got the encouragement without the rule that makes it safe:\n%s", desk.Name, got)
+		}
+	}
+}
+
+// A session with no tools at all reads tool instruction as a description of
+// moves it cannot make, which is why the whole block is skipped rather than
+// gated line by line. The new layer has to sit inside that skip like the rest.
+func TestAToolLessDeskIsNotToldHowToSendToolCalls(t *testing.T) {
+	got := BuildForDesk(SurfaceDesktop, Scope{Root: t.TempDir()}, Desk{
+		Name:      "chat",
+		Direction: "This session is conversation.",
+		ToolLess:  true,
+		Carries:   func(string) bool { return false },
+	})
+	if strings.Contains(got, "several tool calls in one reply") {
+		t.Errorf("a desk with no tools is told how to batch them:\n%s", got)
+	}
+}
+
 // The other half of the same mistake. The coding desk declares no `dispatch:`,
 // and internal/subagent.available filters the office's agents out of the list
 // its `task` tool advertises — so "hand the job to the agent whose craft it is"

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, untrack } from 'svelte'
+  import { onMount, untrack, tick } from 'svelte'
   import { theme, applyTheme, THEMES, type ThemeName } from './theme.svelte'
   import { editorFont, applyEditorFontSize } from './editorFont.svelte'
   import { chatFont, applyChatFontSize } from './chatFont.svelte'
@@ -11,12 +11,13 @@
   import { i18n, t, setLocale, localeNames, type Locale, type TKey } from './i18n.svelte'
   import ConfirmDialog from './ConfirmDialog.svelte'
   import ProviderMark from './ProviderMark.svelte'
+  import ProviderAccount from './ProviderAccount.svelte'
   import Icon from './Icon.svelte'
   import { coverHue } from './coverHue'
   import type { IconName } from './icons'
   import {
-    SupportedProviders, HasAPIKey, RequiresAPIKey, TerminalShells,
-    ListModelsForProvider, ProviderBaseURL, ProviderBaseURLIsCustom,
+    SupportedProviders, HasAPIKey, RequiresAPIKey, AcceptsAPIKey, ProviderAccountFor, TerminalShells,
+    ListModelsForProvider, ProviderBaseURL, ProviderBaseURLIsCustom, ProviderAPIKeyURL, ProviderReady, PriceModels,
     ProviderWireFormats, TestProviderConnection,
     EnabledProviders, SetProviderEnabled,
     ListMCPServers, SaveMCPServer, RemoveMCPServer, TestMCPServer, ToggleMCPServer,
@@ -46,7 +47,7 @@
     identity, loadIdentityFiles, openIdentityFile, saveIdentityFile,
     createIdentityFile, deleteIdentityFile, identityTemplates,
   } from './identity.svelte'
-  import { updater, startUpdate } from './selfUpdate.svelte'
+  import { updater, updatePct, startDownload, restartToUpdate } from './selfUpdate.svelte'
 
   let { onClose }: { onClose: () => void } = $props()
 
@@ -145,7 +146,17 @@
   }
 
   // ---------- Model settings ----------
-  type ProviderRow = { name: string; requiresKey: boolean; hasKey: boolean }
+  // acceptsKey is not the negation of requiresKey: Codex requires credentials
+  // and takes no key, because the only key a user could paste belongs to a
+  // different host and a different bill.
+  // ready is null until the engine answers. A local runtime cannot be known to
+  // be up without asking it, and the dot used to be painted green on the
+  // strength of "needs no key" — which is why LM Studio looked connected on a
+  // card that said no models were found. Unknown must look like unknown.
+  type ProviderRow = {
+    name: string; requiresKey: boolean; acceptsKey: boolean; hasKey: boolean
+    ready: boolean | null
+  }
 
   let providers = $state<ProviderRow[]>([])
   let enabledNames = $state<string[]>([])
@@ -157,7 +168,40 @@
   let loadingModels = $state(false)
   let keyDraft = $state('')
   let showKey = $state(false)
+  // Where this provider's key is actually created. Empty for the rows that have
+  // no such page (a local runtime, a sign-in provider), which is also the
+  // signal not to draw the link.
+  let keyPageURL = $state('')
   let customModel = $state('')
+  // The model list is unusable without these on any hosted aggregator: 411
+  // rows, alphabetical, so reaching "deepseek" means scrolling past every
+  // aion-labs build first.
+  let modelFilter = $state('')
+  let freeOnly = $state(false)
+  type ModelListing = {
+    model: string; input: number; output: number
+    priced: boolean; free: boolean; context: number
+  }
+  let priced = $state<Record<string, ModelListing>>({})
+
+  // Cheapest first once prices are known, because a price nobody can sort by is
+  // a number to look at rather than one to decide with. Ties and unpriced rows
+  // keep the provider's own order, which is the only order they have.
+  const visibleModels = $derived.by(() => {
+    const needle = modelFilter.trim().toLowerCase()
+    const rows = models.filter((m) => {
+      if (needle && !m.toLowerCase().includes(needle)) return false
+      if (freeOnly && !priced[m]?.free) return false
+      return true
+    })
+    return rows.sort((a, b) => {
+      const pa = priced[a], pb = priced[b]
+      if (pa?.priced && pb?.priced && pa.input !== pb.input) return pa.input - pb.input
+      if (pa?.priced !== pb?.priced) return pa?.priced ? -1 : 1
+      return 0
+    })
+  })
+  const freeCount = $derived(models.filter((m) => priced[m]?.free).length)
 
   // ---------- Sign-in (use the plan you already pay for) ----------
   type SignInMethod = { provider: string; label: string; kind: string; risk: string; note: string }
@@ -192,6 +236,10 @@
     // Which page the row belongs on. "automation" is n8n and Windmill; a
     // service that stands alone declares none and stays on the register.
     family?: string
+    // The one agent this connection is locked to, when it has one — the row
+    // draws the fact rather than a picker. Present on connect.Status all along;
+    // this hand-written mirror had simply drifted behind it.
+    home_agent?: string
     // How to bring this one up, for the services the user runs themselves.
     start_command?: string
   }
@@ -453,6 +501,28 @@
   let errorMsg = $state('')
 
   const selectedRow = $derived(providers.find((p) => p.name === selected))
+  // Fetched per provider rather than for all of them at once: opening a card is
+  // what asks, so a user who never opens Settings never spends a round trip on
+  // a balance nobody is looking at.
+  let accounts = $state<Record<string, any>>({})
+  const account = $derived(accounts[selected] ?? null)
+
+  async function loadAccount(name: string) {
+    if (!name) return
+    try {
+      accounts = { ...accounts, [name]: await ProviderAccountFor(name) }
+    } catch {
+      // A provider that cannot answer leaves its card without the line, which
+      // is the same as never having asked. Nothing else on the page depends
+      // on it, so this must not surface as a page-level failure.
+    }
+  }
+
+  async function refreshAccount() {
+    busy = 'account'
+    await loadAccount(selected)
+    busy = ''
+  }
   const isActiveProvider = $derived(cockpit.model.provider === selected)
   const enabledRows = $derived(providers.filter((p) => enabledNames.includes(p.name)))
   const addableRows = $derived(providers.filter((p) => !enabledNames.includes(p.name)))
@@ -589,8 +659,19 @@
     providers = await Promise.all(names.map(async (name) => ({
       name,
       requiresKey: await RequiresAPIKey(name),
+      acceptsKey: await AcceptsAPIKey(name),
       hasKey: await HasAPIKey(name),
+      ready: null,
     })))
+    // Readiness is asked for separately and not awaited with the rest: proving
+    // a local runtime is up means opening a connection to it, and a dead port
+    // costs a timeout. The list must draw immediately and fill in, rather than
+    // hold the whole page for the one provider that is switched off.
+    for (const row of providers) {
+      ProviderReady(row.name)
+        .then((ready) => { row.ready = ready })
+        .catch(() => { row.ready = false })
+    }
   }
 
   async function refreshEnabledProviders() {
@@ -707,12 +788,31 @@
     baseURL = await ProviderBaseURL(name)
     baseURLDraft = baseURL
     baseURLIsCustom = await ProviderBaseURLIsCustom(name)
+    keyPageURL = await ProviderAPIKeyURL(name)
+    // Not awaited: a slow provider must not hold up the rest of the card.
+    loadAccount(name)
     wireFormats = await ProviderWireFormats(name)
     loadingModels = true
     models = []
+    modelFilter = ''
+    freeOnly = false
+    priced = {}
     try {
       const res = await ListModelsForProvider(name)
       models = Array.isArray(res) ? res : []
+      // Prices for the list that is on screen, not for a list fetched again:
+      // OpenRouter alone returns 411 models and a second discovery call could
+      // answer differently. Not awaited — the names are usable before the
+      // money arrives.
+      if (models.length) {
+        PriceModels(name, models)
+          .then((rows) => {
+            const next: Record<string, ModelListing> = {}
+            for (const r of rows ?? []) next[r.model] = r
+            priced = next
+          })
+          .catch(() => { priced = {} })
+      }
       // Discovery just proved this endpoint answers. If the engine is still on
       // the fallback from a switch made while it was down, this is the moment
       // it can get off — otherwise the warning sits there next to the model
@@ -844,6 +944,23 @@
   // Set when a preset was handed to the form because it needs a key, so the
   // form can say why it opened instead of just appearing.
   let mcpNeedsKey = $state(false)
+  // Whether the add/edit form is on screen at all.
+  //
+  // Closed by default: adding a server is a rare act, and eight controls laid
+  // out permanently under the list read as part of the page rather than as a
+  // thing you do. Owner, 2026-08-14: *"ทำเป็นปุ่มกด เพิ่ม SERVER แล้วค่อยแสดง
+  // ดีกว่ามาเรี่ยราดแบบนี้"*.
+  //
+  // **Explicit state rather than derived from the fields**, because the one
+  // state that has to be distinguishable — add mode, freshly opened — is the
+  // one where every field is empty, which is exactly what closed looks like.
+  //
+  // Three things open it and they must all keep doing so: the button, `editMCP`
+  // (the row's แก้ไข), and a preset that needs a key pasted. The second and
+  // third are the ones a naive fold breaks — the click appears to do nothing,
+  // and it does it silently.
+  let mcpFormOpen = $state(false)
+  let mcpFormEl = $state<HTMLElement | null>(null)
   // Where the servers are persisted. From the engine, not written here.
   let mcpPath = $state('')
 
@@ -918,6 +1035,29 @@
     mcpTimeout = ''
     mcpToolsText = ''
     mcpNeedsKey = false
+    // Every caller of this — Cancel, a successful save, deleting the server
+    // being edited — is a moment the form is finished with. Closing here rather
+    // than at each call site is what stops one of them from being forgotten.
+    mcpFormOpen = false
+  }
+
+  // Open the form and make sure it is actually looked at. Every way in is a
+  // click *above* where the form appears — the header's button, a row's แก้ไข, a
+  // preset — so without the scroll the answer to "did that work" is somewhere
+  // off the bottom of the page.
+  //
+  // `await tick()` and not a microtask: the form does not exist yet when this
+  // runs. It is created by the `{#if}` reacting to the line above, so
+  // `mcpFormEl` is still null until Svelte has flushed — scrolling before that
+  // is scrolling to nothing, silently.
+  async function openMCPForm() {
+    mcpFormOpen = true
+    await tick()
+    // Optional *call*, not just optional element: the scroll is a courtesy and
+    // must never be the thing that fails. jsdom has no scrollIntoView, so a
+    // plain call turns every test that opens this form into an unhandled
+    // rejection — noise that goes on to hide a real one.
+    mcpFormEl?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' })
   }
 
   function editMCP(s: MCPRow) {
@@ -933,6 +1073,7 @@
     mcpToolsText = (s.allowed ?? []).join('\n')
     mcpNeedsKey = false
     mcpError = ''
+    openMCPForm()
   }
 
   // An auth header that names its scheme and carries no credential.
@@ -1042,8 +1183,12 @@
   //   3. **The endpoint was answered by the provider, not remembered.**
   //
   // Every URL below was verified on 2026-08-14 by sending a real MCP
-  // `initialize` and reading the reply: the five unauthenticated ones returned
-  // a protocol handshake, and github returned 401 naming the header it wants.
+  // `initialize` and reading the reply: the unauthenticated ones returned a
+  // protocol handshake, and github returned 401 naming the header it wants.
+  // firecrawl was added the same day and probed the same way — it answered
+  // twice, once bare and once with a deliberately invalid bearer token, and
+  // served the same tool set both times, which is what established that the key
+  // is optional rather than merely unchecked on the handshake.
   // Notion, Linear, Sentry and Atlassian all answered `invalid_token` — real
   // servers, all four blocked by rule 2 until the client learns OAuth. Stripe
   // takes a static key and is a one-line addition whenever it is wanted.
@@ -1059,16 +1204,58 @@
   // gets pasted into raw. A preset that needs a key used to be saved straight
   // to disk with none, so one click produced a server that could never connect
   // and the page never said which header it wanted — it knew, and did not tell.
-  const mcpPresets: { name: string; desc: string; command?: string[]; url?: string; headers?: string[] }[] = [
-    { name: 'github', desc: 'Repos, pull requests, issues, CI', url: 'https://api.githubcopilot.com/mcp/', headers: ['Authorization: Bearer ${connect:github}'] },
-    { name: 'context7', desc: 'Up-to-date docs for a library, by version', url: 'https://mcp.context7.com/mcp' },
-    { name: 'deepwiki', desc: 'Ask questions about any public GitHub repository', url: 'https://mcp.deepwiki.com/mcp' },
-    { name: 'exa', desc: 'Web search built for models to read', url: 'https://mcp.exa.ai/mcp' },
-    { name: 'huggingface', desc: 'Search models, datasets and spaces', url: 'https://huggingface.co/mcp' },
-    { name: 'cloudflare-docs', desc: "Search Cloudflare's documentation", url: 'https://docs.mcp.cloudflare.com/mcp' },
+  // `why` is rule 1 said out loud, per entry: what this reaches that Aetox has
+  // no tool for. It is on screen because the shelf never answered the question
+  // a user actually has in front of it — not "what is this" but "why is it
+  // being recommended to me". An entry whose `why` cannot be written without
+  // hedging is an entry that does not pass rule 1 and should not be here.
+  const mcpPresets: { name: string; desc: string; why: string; command?: string[]; url?: string; headers?: string[] }[] = [
+    { name: 'github', desc: 'Repos, pull requests, issues, CI', why: "Aetox's own github tool only reads. This is the half that acts — opening a pull request, commenting, moving an issue.", url: 'https://api.githubcopilot.com/mcp/', headers: ['Authorization: Bearer ${connect:github}'] },
+    // Second because it is the other one a bundled agent asks for by name — the
+    // research agent ships `needs: mcp:firecrawl`, and the 12 ส.ค. half of the
+    // rule above is exactly this case.
+    //
+    // **No `headers` entry, and that is the finding rather than an omission.**
+    // Probed 2026-08-14: this endpoint answers a full handshake with no
+    // credential at all (firecrawl-fastmcp 3.24.0, protocol 2025-06-18) and
+    // serves search, scrape and parse under a usage limit — so it clears rule 2
+    // more cleanly than github, which cannot connect until a token exists. A
+    // key raises the limits and unlocks the account tools, and it goes in as
+    // `Authorization: Bearer ${env:FIRECRAWL_API_KEY}` through แก้ไข. Listing
+    // the header here instead would make needsPaste open the form and demand a
+    // key for a server that works without one.
+    //
+    // Rule 1 is the judgment call, and it is a split: scrape overlaps web_fetch
+    // and is not why this is here. `firecrawl_map` (enumerate every URL under a
+    // site) and `firecrawl_agent` (multi-source research, collected later via
+    // firecrawl_agent_status) are both things Aetox has no tool for — web_fetch
+    // reads one page and web_search returns eight results.
+    { name: 'firecrawl', desc: 'Crawl a whole site, and multi-source research', why: 'Aetox reads one page at a time and gets eight search results. This walks a whole site and researches across many sources at once.', url: 'https://mcp.firecrawl.dev/v2/mcp' },
+    { name: 'context7', desc: 'Up-to-date docs for a library, by version', why: 'Docs for the version actually installed. Fetching a documentation page cannot tell you which release it describes.', url: 'https://mcp.context7.com/mcp' },
+    { name: 'deepwiki', desc: 'Ask questions about any public GitHub repository', why: 'Answers about a repository without cloning it first — reading one that size through file tools costs a whole context.', url: 'https://mcp.deepwiki.com/mcp' },
+    { name: 'exa', desc: 'Web search built for models to read', why: 'Results returned as text to read rather than as pages to open, so an answer costs one call instead of a search and five fetches.', url: 'https://mcp.exa.ai/mcp' },
+    { name: 'huggingface', desc: 'Search models, datasets and spaces', why: 'Aetox has no index of models, datasets or spaces, and a web search finds blog posts about them rather than the things.', url: 'https://huggingface.co/mcp' },
+    { name: 'cloudflare-docs', desc: "Search Cloudflare's documentation", why: "Cloudflare's own index of its own docs, which is a different thing from a web search that happens to land there.", url: 'https://docs.mcp.cloudflare.com/mcp' },
   ]
 
   const presetTaken = (name: string) => mcpServers.some((s) => s.name.toLowerCase() === name.toLowerCase())
+
+  // Which agents declare they need this server, **read off their own files**
+  // rather than written beside the preset.
+  //
+  // The shelf is where a user asks "why is this here and is it for me", and the
+  // honest answer to the second half is a fact the agent already states: its
+  // `needs:` line. Restating it here would be a second answer to that question,
+  // and it would be the one that goes stale — an agent edited to drop a server
+  // would keep being advertised for it, from a list nobody thinks to update.
+  //
+  // Alternatives are split because one entry may say `connection:n8n |
+  // mcp:windmill`, which counts as needing windmill.
+  const agentsNeeding = (id: string): string[] =>
+    subagents
+      .filter((p) => (p.needs ?? []).some((entry: string) =>
+        entry.split('|').some((alt: string) => alt.trim().toLowerCase() === 'mcp:' + id.toLowerCase())))
+      .map((p) => p.name)
 
   // A header entry that already carries a ${...} reference needs nothing from
   // the user: the value resolves at connect time from a secret the app already
@@ -1090,6 +1277,8 @@
       // Bearer") keeps it and gets one space; a bare header name gets the colon.
       mcpHeadersText = p.headers.map((h) => (h.includes(':') ? `${h} ` : `${h}: `)).join('\n')
       mcpNeedsKey = true
+      // After resetMCPForm above, which closes it.
+      openMCPForm()
       return
     }
     await SaveMCPServer('', new config.MCPServerConfig({
@@ -1102,6 +1291,54 @@
     await loadMCP()
   })
 
+  // Install the server an agent says it is missing, and place the agent on it,
+  // from the agent's own card.
+  //
+  // **The door used to lead to a page rather than to the fix.** An agent that
+  // declares `needs: mcp:firecrawl` sent the user to the MCP section, where the
+  // thing they needed sat in a shelf of seven with nothing saying which one it
+  // was — owner, 2026-08-14: *"คนเขาไม่รู้หรอกอันไหนเราทำไว้เพื่อตัวไหน"*. That
+  // is true, and it is the whole complaint: not the clicking, the matching.
+  //
+  // **Why this is a button and not a default.** Installing a bundled agent's
+  // server at startup would wire a fresh install to a third party the user never
+  // chose — for firecrawl, an outbound dependency on mcp.firecrawl.dev before
+  // anyone has opened the agent once. It also inverts needs.go's one rule:
+  // `needs:` declares and never grants, `for:` grants and is the only thing that
+  // does. Pressed here, the user is standing in front of the agent that wants
+  // it, with the reason on screen — which is the same one click, and still
+  // their decision. What is removed is the matching, not the consent.
+  //
+  // Only for a preset that connects with no key. One that wants a token pasted
+  // cannot be finished in one press, so it keeps the door to the page, where the
+  // form is waiting with the header names already filled in.
+  const presetFor = (id: string) =>
+    mcpPresets.find((p) => p.name.toLowerCase() === id.toLowerCase() && !needsPaste(p.headers))
+
+  const installNeeded = (o: subagent.Need) => runMCP('need:' + o.id, async () => {
+    const p = presetFor(o.id)
+    if (!p) return
+    await SaveMCPServer('', new config.MCPServerConfig({
+      name: p.name, command: p.command ?? [], url: p.url ?? '',
+      headers: Object.fromEntries((p.headers ?? []).map((h) => {
+        const at = h.indexOf(':')
+        return [h.slice(0, at).trim(), h.slice(at + 1).trim()]
+      })),
+    }))
+    await loadMCP()
+    // Placing it is the half that makes the need met — installing alone leaves
+    // the card saying "unplaced", which from the user's side is the same button
+    // having done nothing.
+    if (agentMCPId) {
+      const row = mcpServers.find((s) => s.name === p.name)
+      if (row) {
+        await SetMCPServerTargets(p.name, [...(row.for ?? []), agentMCPId])
+        await loadMCP()
+      }
+    }
+    if (agentReachFor) agentNeeds = await AgentNeeds(agentReachFor)
+  })
+
   // Colours come from the theme, not from three hex literals. theme.css states
   // that every rule references only semantic tokens, and two of the three that
   // were here were --c-green-500 and --c-red-500 copied by value — so the dot
@@ -1109,6 +1346,11 @@
   function statusVar(status: string): string {
     if (status === 'connected') return 'background:var(--status-success)'
     if (status === 'failed') return 'background:var(--status-danger)'
+    // idle is enabled-and-waiting (deferred servers sit here until their agent
+    // starts), which is not the same state as disabled — but both rendered
+    // --text-dim, and on a dark theme that reads as "dead", so a working
+    // server looked broken. Amber says "will connect when called".
+    if (status === 'idle') return 'background:var(--status-warn)'
     return 'background:var(--text-dim)'
   }
 
@@ -1556,6 +1798,11 @@
     // default is a constant in internal/mode and spelling it again here is how
     // the screen ends up naming a desk the engine does not use.
     desk?: string
+    // What the profile declares it needs, verbatim — `mcp:firecrawl`, or an
+    // alternation like `connection:n8n | mcp:windmill`. Carried so the MCP
+    // shelf can say which agents asked for a server without restating it
+    // (agentsNeeding); the *state* of a need is the engine's answer, not this.
+    needs?: string[]
   }
   // Searching the roster. Name and description both, because half the time the
   // thing a person remembers about an agent is what it does rather than what it
@@ -2166,8 +2413,12 @@
     agentDraftSteps = agentStepsUnlimited ? '' : STEPS_UNLIMITED
   }
 
+  // The MCP page needs them too, though it draws no agent: each preset says
+  // which agents asked for it, and that is read from the profiles' own `needs:`
+  // (agentsNeeding). Without this the line is simply missing on the one page
+  // where somebody is deciding whether a server is for them.
   $effect(() => {
-    if (active === 'agents' || active === 'team') void loadAgents()
+    if (active === 'agents' || active === 'team' || active === 'mcp') void loadAgents()
   })
 
   $effect(() => {
@@ -3024,6 +3275,13 @@
 {#snippet needDoor(o: subagent.Need)}
   {#if o.kind === 'mcp' && o.reason === 'unplaced'}
     <span class="d muted ag-need-here">{t('settings.agentNeedFixHere')}</span>
+  {:else if o.kind === 'mcp' && o.reason === 'missing' && presetFor(o.id)}
+    <!-- The server this agent was written against, installed and placed from
+         here. Anywhere else and the user has to know which of seven presets
+         belongs to which agent, which is the thing they cannot know. -->
+    <button class="ctrl ctrl-primary ctrl-icon" disabled={mcpBusy !== ''} onclick={() => installNeeded(o)}>
+      {mcpBusy === 'need:' + o.id ? t('settings.agentNeedInstalling') : t('settings.agentNeedInstall')}
+    </button>
   {:else}
     <button class="ctrl" onclick={() => openSection(o.kind === 'connection' ? 'connections' : 'mcp')}>
       {o.kind === 'connection' ? t('settings.agentNeedConnect') : t('settings.agentNeedServer')}
@@ -3382,7 +3640,15 @@
               <button class="mset-prov" class:selected={selected === p.name} onclick={() => selectProvider(p.name)}>
                 <ProviderMark name={p.name} size={15} />
                 <span class="mset-prov-name">{p.name}</span>
-                <span class="dot" class:green={p.hasKey}></span>
+                <!-- Green only once the engine has said so. Unknown and not
+                     ready look different from each other and neither looks
+                     like ready. -->
+                <span
+                  class="dot" class:green={p.ready === true} class:unknown={p.ready === null}
+                  title={p.ready === null
+                    ? t('settings.providerChecking')
+                    : p.ready ? t('settings.providerReady') : t('settings.providerNotReady')}
+                ></span>
               </button>
               {#if enabledRows.length > 1}
                 <button class="icobtn tiny" disabled={busy === 'disable:' + p.name}
@@ -3441,6 +3707,17 @@
               <!-- Without this the "Active" badge above claims a provider the
                    engine never reached (LM Studio with its server off). -->
               <div class="conn-test">{t('chat.providerFallback')} · {cockpit.model.warning}</div>
+            {/if}
+
+            {#if account}
+              <div class="mset-acct">
+                <ProviderAccount {account} />
+                {#if account.balance?.hasAmount}
+                  <button class="ctrl tiny" disabled={busy === 'account'} onclick={refreshAccount}>
+                    <Icon name="refreshCw" size={13} /> {t('settings.refreshBalance')}
+                  </button>
+                {/if}
+              </div>
             {/if}
 
             <div class="mset-field">
@@ -3550,10 +3827,18 @@
               </div>
             {/if}
 
-            {#if selectedRow.requiresKey}
+            {#if selectedRow.requiresKey && selectedRow.acceptsKey}
               <div class="mset-field">
-                <div class="eyebrow">
-                  {signInMethod ? t('settings.signInOrKey') : t('settings.apiKeyLabel')}
+                <div class="eyebrow eyebrow-row">
+                  <span>{signInMethod ? t('settings.signInOrKey') : t('settings.apiKeyLabel')}</span>
+                  <!-- The card asks for a key; every provider hides the page
+                       that issues one somewhere different. Drawn only when the
+                       catalog knows a page for this row. -->
+                  {#if keyPageURL}
+                    <button class="keylink" onclick={() => BrowserOpenURL(keyPageURL)}>
+                      {t('settings.getKey')}<Icon name="externalLink" size={12} />
+                    </button>
+                  {/if}
                 </div>
                 <div class="mset-keyrow">
                   <input
@@ -3577,9 +3862,42 @@
               {:else if models.length === 0}
                 <div class="muted">{t('settings.noModels')}</div>
               {:else}
-                {#each models as m}
+                <!-- Only where the list is long enough to be worth searching.
+                     Six rows do not need a filter above them. -->
+                {#if models.length > 8}
+                  <div class="mlist-tools">
+                    <input
+                      class="ctrl mlist-search" type="search"
+                      placeholder={t('settings.filterModels', { n: String(models.length) })}
+                      bind:value={modelFilter}
+                    />
+                    {#if freeCount > 0}
+                      <button
+                        class="conn-chip" class:on={freeOnly}
+                        aria-pressed={freeOnly} onclick={() => (freeOnly = !freeOnly)}
+                      >{t('settings.freeOnly')} {freeCount}</button>
+                    {/if}
+                  </div>
+                {/if}
+                {#if visibleModels.length === 0}
+                  <div class="muted">{t('settings.noModelsMatch')}</div>
+                {/if}
+                {#each visibleModels as m}
                   <div class="mrow">
                     <span class="mname">{m}</span>
+                    <!-- What the row costs, or a dash. Never a zero: on a list
+                         this long a zero reads as "free" and the user would
+                         act on it, and 84% coverage means the other 16% are
+                         genuinely unknown rather than cheap. -->
+                    {#if priced[m]?.free}
+                      <span class="mprice free">{t('settings.priceFree')}</span>
+                    {:else if priced[m]?.priced}
+                      <span class="mprice" title={t('settings.pricePerMillion')}>
+                        ${priced[m].input} / ${priced[m].output}
+                      </span>
+                    {:else}
+                      <span class="mprice dim">—</span>
+                    {/if}
                     <button
                       class="icobtn tiny" title={t('settings.testConnection')} aria-label={t('settings.testConnection')}
                       disabled={busy !== ''} onclick={() => testConnection(m)}
@@ -4148,6 +4466,31 @@
             {/if}
           </div>
 
+          <!-- The counts were always here; what was missing was a price to
+               multiply them by, so "why did my balance drain" could only be
+               answered in tokens. Three states, and the difference between the
+               last two matters: priced, partly priced (say how much of it the
+               figure covers, or a total built from half the models reads as
+               the bill), and no catalog at all (a dash, never a zero — zero
+               reads as "this was free"). -->
+          <div class="stat-card wide">
+            <div class="eyebrow">{t('settings.usageCost')}</div>
+            {#if !tot.pricesFetched || tot.pricedCalls === 0}
+              <div class="stat-big dim">—</div>
+              <div class="stat-sub">{t('settings.usageCostUnknown')}</div>
+            {:else}
+              <div class="stat-big"><span class="unit">$</span>{tot.cost.toFixed(2)}</div>
+              <div class="stat-sub">
+                {t('settings.usageCostEstimate')}
+                {#if tot.pricedCalls < tot.calls}
+                  · {t('settings.usageCostPartial', {
+                    priced: fmtCompact(tot.pricedCalls), total: fmtCompact(tot.calls),
+                  })}
+                {/if}
+              </div>
+            {/if}
+          </div>
+
           <div class="stat-card">
             <div class="eyebrow">{t('settings.usageCalls')}</div>
             <div class="stat-big">{fmtCompact(tot.calls)}</div>
@@ -4351,6 +4694,15 @@
         <div class="card-form">
           <div class="mset-keyrow">
             <div class="eyebrow eyebrow-grow">{t('settings.mcpConfigured')}</div>
+            <!-- Beside the list it acts on, not at the bottom of the page under
+                 the form it opens. Adding a server is one of the two things you
+                 come to this card to do, so it sits with the other one. The
+                 form still appears below; openMCPForm scrolls it into view, or
+                 the press looks like it did nothing. -->
+            <button class="ctrl ctrl-icon" disabled={mcpBusy !== ''} onclick={openMCPForm}>
+              <Icon name="plus" size={13} />
+              {t('settings.addServer')}
+            </button>
             <button class="ctrl" disabled={mcpBusy !== ''} onclick={() => OpenMCPFolder()}>
               {t('settings.skillsFolder')}
             </button>
@@ -4434,7 +4786,13 @@
         {/if}
       </div>
 
-      <div class="settings-card">
+      <!-- Nothing at all until it is asked for. The eight controls in here used
+           to be laid out permanently under the list, which made a rare act look
+           like part of the page (owner, 2026-08-14: *"ทำเป็นปุ่มกด เพิ่ม SERVER
+           แล้วค่อยแสดง ดีกว่ามาเรี่ยราดแบบนี้"*). The way in is the button up in
+           the list's own header. -->
+      {#if mcpFormOpen}
+      <div class="settings-card" bind:this={mcpFormEl}>
         <div class="card-form">
           <div class="eyebrow">{mcpOriginal ? t('settings.editServer') : t('settings.addServer')}</div>
 
@@ -4494,9 +4852,11 @@
             <button class="ctrl ctrl-primary" disabled={mcpBusy !== '' || !mcpFormValid} onclick={saveMCP}>
               {mcpBusy === 'save' ? t('settings.saving') : (mcpOriginal ? t('settings.save') : t('settings.add'))}
             </button>
-            {#if mcpOriginal || mcpNeedsKey}
-              <button class="ctrl" disabled={mcpBusy !== ''} onclick={resetMCPForm}>{t('settings.cancel')}</button>
-            {/if}
+            <!-- Always offered now, where it used to appear only for an edit or
+                 a preset. Once the form is something you opened, Cancel is the
+                 way to close it again — and a panel you can open and not shut
+                 is the thing this whole change was about. -->
+            <button class="ctrl" disabled={mcpBusy !== ''} onclick={resetMCPForm}>{t('settings.cancel')}</button>
           </div>
           {#if mcpNeedsKey}
             <!-- Says why the form filled itself in. Without it the preset's
@@ -4506,16 +4866,33 @@
           {#if mcpError}<div class="mset-error">{mcpError}</div>{/if}
         </div>
       </div>
+      {/if}
 
       <div class="settings-card">
         <div class="card-form">
           <div class="eyebrow">{t('settings.mcpPresets')}</div>
         </div>
         {#each mcpPresets as p (p.name)}
+          {@const wanted = agentsNeeding(p.name)}
           <div class="set-row">
             <div class="set-txt">
               <div class="t">{p.name} <span class="mcp-badge">{p.url ? 'http' : 'stdio'}</span></div>
               <div class="d">{p.desc} · {p.url ?? p.command?.join(' ')}</div>
+              <!-- Why it is on a shelf at all: what it reaches that Aetox has
+                   no tool for. The list was seven names and seven capability
+                   lines, which answered "what is this" and never "why am I
+                   being shown it". -->
+              <div class="d mcp-why">{p.why}</div>
+              {#if wanted.length > 0}
+                <!-- Read off the agents' own `needs:`, so it cannot disagree
+                     with them. This is the line that turns a shelf into an
+                     answer: not "here are seven servers" but "this one is the
+                     one your research agent has been asking for". -->
+                <div class="d mcp-wanted">
+                  <Icon name="bot" size={12} />
+                  {t('settings.mcpPresetFor')} {wanted.join(', ')}
+                </div>
+              {/if}
             </div>
             <button class="ctrl" disabled={mcpBusy !== '' || presetTaken(p.name)} onclick={() => addPreset(p)}>
               {mcpBusy === 'preset:' + p.name ? t('settings.adding') : t('settings.add')}
@@ -4772,11 +5149,12 @@
           <div class="set-row">
             <div class="set-txt">
               <div class="t">{t('settings.aboutNewVersion', { version: updateStatus.latest })}</div>
-              <!-- Three endings, one action each. canAuto is the VS Code shape:
-                   download, verify, swap, restart — Apply owns all four. Scoop
-                   installed us, so Scoop upgrades us: Aetox never writes into
-                   someone else's package directory. Everything left gets the
-                   release page, which is always a correct answer. -->
+              <!-- Three endings, one action each. canAuto is the VS Code shape
+                   split in two (§107): download and verify now, restart when
+                   the user says. Scoop installed us, so Scoop upgrades us:
+                   Aetox never writes into someone else's package directory.
+                   Everything left gets the release page, which is always a
+                   correct answer. -->
               <div class="d">
                 {updateStatus.canAuto
                   ? t('settings.aboutAutoHint')
@@ -4790,13 +5168,22 @@
               {/if}
             </div>
             {#if updateStatus.canAuto}
-              <button class="ctrl" disabled={updater.applying} onclick={startUpdate}>
-                {updater.restarting
-                  ? t('settings.aboutRestarting')
-                  : updater.applying
-                    ? (updater.pct >= 0 ? t('settings.aboutDownloadingPct', { pct: String(updater.pct) }) : t('settings.aboutDownloading'))
-                    : t('settings.aboutUpdateNow')}
-              </button>
+              <!-- The same two acts the card offers, because they are the same
+                   two acts. This page is a second view of one state, never a
+                   second copy of it (selfUpdate.svelte). -->
+              {#if updater.phase === 'ready'}
+                <button class="ctrl ctrl-primary" onclick={restartToUpdate}>
+                  {t('settings.aboutRestartToUpdate')}
+                </button>
+              {:else}
+                <button class="ctrl" disabled={updater.phase === 'downloading' || updater.phase === 'restarting'} onclick={startDownload}>
+                  {updater.phase === 'restarting'
+                    ? t('settings.aboutRestarting')
+                    : updater.phase === 'downloading'
+                      ? (updatePct() >= 0 ? t('settings.aboutDownloadingPct', { pct: String(updatePct()) }) : t('settings.aboutDownloading'))
+                      : t('settings.aboutUpdateNow')}
+                </button>
+              {/if}
             {:else if updateStatus.hint}
               <button class="ctrl" onclick={() => copyUpgradeHint(updateStatus!.hint)}>
                 {hintCopied ? t('settings.aboutCopied') : t('settings.aboutCopy')}

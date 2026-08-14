@@ -54,19 +54,13 @@ func TestDesktopPickerNamesOnlyRealProviders(t *testing.T) {
 // on the desktop must be named here with the reason, which makes adding one to
 // the engine a two-line decision instead of a silent omission.
 var notOnTheDesktop = map[string]string{
-	// Reachable from the CLI today, and nothing about them is unfinished:
-	// OpenAI-compatible runtime, a base URL, an API key. They were never typed
-	// into desktopProviders, which is the whole of it.
-	"groq":       "never added; no reason on record",
-	"mistral":    "never added; no reason on record",
-	"together":   "never added; no reason on record",
-	"perplexity": "never added; no reason on record",
-	"minimax":    "never added; no reason on record",
-	"kimi":       "never added; no reason on record",
 	// This one is not just an omission. The catalog points it at Cohere's own
 	// API, and the OpenAI-compatible surface it is declared to speak lives on a
 	// different path — so the row would take a key and fail on first use.
-	// Unverified against the live API, which is exactly why it stays off.
+	// A dummy-key probe (2026-08-14) got 401 back, but that only proves the
+	// gateway's auth wall sits in front of the path — it cannot vouch for the
+	// path itself the way it does for hosts whose documented compat URL the
+	// catalog already matches. Stays off until someone with a real key runs it.
 	"cohere": "catalog base URL is Cohere's native API, not its OpenAI-compatible one — would fail on first use",
 }
 

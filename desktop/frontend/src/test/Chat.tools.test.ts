@@ -288,39 +288,48 @@ describe('tool timeline collapsing', () => {
   })
 })
 
-// The approval mode reads off the composer chip and is switched from the model
-// menu. Shift+Tab is the shortcut, and it must never be able to REACH
-// full-access: that mode never prompts again, so turning it on stays a
-// deliberate pick from the menu.
+// The approval mode is switched from the model menu. Shift+Tab is the
+// shortcut, and it must never be able to REACH full-access: that mode never
+// prompts again, so turning it on stays a deliberate pick from the menu.
 describe('approval mode on the composer', () => {
-  it('shows the mode on the chip, red only at full-access', () => {
-    // The mode is drawn as an icon now, so what distinguishes the three is the
-    // path data, not the text — assert the icon is there and that only
-    // full-access carries the red class.
-    const ask = render(Chat, { ...baseProps, messages: [] as any }).container
-    const askIcon = ask.querySelector('.model-chip .mode-ic svg')
-    expect(askIcon).toBeTruthy()
-    expect(ask.querySelector('.model-chip .mode-ic.danger')).toBeNull()
-
-    const full = render(Chat, {
-      ...baseProps, messages: [] as any,
-      model: { ...baseProps.model, approval: 'full-access' },
-    }).container
-    const fullIcon = full.querySelector('.model-chip .mode-ic.danger svg')
-    expect(fullIcon).toBeTruthy()
-    // A different mode has to draw a different mark, not just a different colour.
-    expect(fullIcon!.innerHTML).not.toBe(askIcon!.innerHTML)
+  // The mode had a glyph on the chip until the model name moved back beside it
+  // and three marks at 14px stopped reading as three facts (owner's call). It
+  // is named in words in the menu, which is where it is changed — so the chip
+  // must not grow one back without that decision being revisited.
+  it('keeps the approval glyph off the chip, whatever the mode', () => {
+    for (const approval of ['ask', 'unsafe-only', 'full-access']) {
+      const { container } = render(Chat, {
+        ...baseProps, messages: [] as any,
+        model: { ...baseProps.model, approval },
+      })
+      expect(container.querySelector('.model-chip .mode-ic')).toBeNull()
+    }
   })
 
-  // The chip carries what is worth being wrong about — the approval mode and
-  // which provider is answering — and not the model name, which is the widest
-  // thing on the bar and the least likely to have changed since you set it.
-  it('carries the provider as a mark and the model name only in its title', () => {
+  // What the chip does carry: which provider is answering, and which of its
+  // models. The name was off for a while on width grounds and is back by the
+  // owner's call — reading it should not cost a menu. Width is handled by
+  // truncation, not by omission (see the vendor-prefix test below).
+  it('carries the provider as a mark and names the model', () => {
     const { container } = render(Chat, { ...baseProps, messages: [] as any })
     const chip = container.querySelector('.model-chip')!
     expect(chip.querySelector('.pv svg, .pv .pv-letter')).toBeTruthy()
-    expect(chip.textContent).not.toContain('v4')
+    expect(chip.textContent).toContain('v4')
+    // The full id stays in the title, which is what the truncated name points at.
     expect(chip.getAttribute('title')).toBe('v4')
+  })
+
+  // OpenRouter and Together spell their ids `vendor/model`. The mark beside the
+  // text already says who made it, so repeating the vendor spends width on the
+  // half of the string that is never the answer to "which model is this".
+  it('drops the vendor prefix from the name but keeps it in the title', () => {
+    const { container } = render(Chat, {
+      ...baseProps, messages: [] as any,
+      model: { ...baseProps.model, modelName: 'deepseek/deepseek-r1' },
+    })
+    const chip = container.querySelector('.model-chip')!
+    expect(chip.querySelector('.t')!.textContent).toBe('deepseek-r1')
+    expect(chip.getAttribute('title')).toBe('deepseek/deepseek-r1')
   })
 
   // The menu below only draws a think-level row when there are two levels to

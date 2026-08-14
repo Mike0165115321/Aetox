@@ -6,7 +6,8 @@
     newChairSession,
   } from './stores/cockpit.svelte'
   import type { Session } from './types'
-  import { UserName, SetUserName, ListModes } from '../../wailsjs/go/main/App'
+  import { UserName, SetUserName, ListModes, ProviderAccountFor } from '../../wailsjs/go/main/App'
+  import ProviderAccount from './ProviderAccount.svelte'
   import { navFor, deskLabelKey, type NavEntry } from './desks'
   import { shell } from './shell.svelte'
   import { t, i18n, setLocale, localeNames, type Locale, type TKey } from './i18n.svelte'
@@ -24,6 +25,22 @@
   // see config.ModelPreference.UserName for why it used to vanish.
   let profileName = $state('')
   let profileOpen = $state(false)
+
+  // The provider in use, and nothing else. Listing the others answered a
+  // question nobody asked and made the menu look like it was naming the wrong
+  // engine — a balance sitting next to a provider you are not talking to is
+  // worse than no balance at all. Every other account is a Settings question.
+  let account = $state<any>(null)
+
+  // Fetched when the menu opens rather than on a timer, and only for the one
+  // provider shown: a number nobody is looking at is not worth a round trip.
+  async function loadAccount() {
+    try {
+      account = await ProviderAccountFor(cockpit.model.provider)
+    } catch {
+      account = null
+    }
+  }
   let nameDraft = $state('')
   const avatarInitial = $derived((profileName.trim()[0] ?? 'A').toUpperCase())
 
@@ -422,7 +439,7 @@
   </div>
 
   <div class="side-footer-wrap">
-    <button type="button" class="side-footer" onclick={() => (profileOpen = !profileOpen)}>
+    <button type="button" class="side-footer" onclick={() => { profileOpen = !profileOpen; if (profileOpen) loadAccount() }}>
       <span class="avatar">{avatarInitial}</span>
       <span class="label">{profileName || t('sidebar.setYourName')}</span>
       <!-- A mark on the way into settings when the agent is waiting to be
@@ -447,6 +464,15 @@
             onblur={saveName}
           />
         </div>
+        {#if account}
+          <div class="menu-sep"></div>
+          <div class="acct-menu">
+            <div class="acct-menu-row">
+              <span class="acct-menu-name">{account.provider}</span>
+              <ProviderAccount {account} compact showBlank />
+            </div>
+          </div>
+        {/if}
         <div class="menu-sep"></div>
         <div class="plus-menu-item">
           <span class="ic"><Icon name="palette" size={14} /></span> {t('settings.themeTitle')}
@@ -464,6 +490,8 @@
             {/each}
           </select>
         </div>
+        <!-- Parked 2026-08-14, see MobileRemote.svelte: the entry point comes
+             back when the phone surface has been designed, not before. -->
         <button class="plus-menu-item" onclick={() => { profileOpen = false; onOpenSettings() }}>
           <span class="ic"><Icon name="settings" size={14} /></span> {t('sidebar.settings')} <span class="kbd">{shortcutLabel('settings')}</span>
         </button>

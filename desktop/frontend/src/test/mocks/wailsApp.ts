@@ -39,9 +39,17 @@ export const AppVersion = vi.fn(async () => '0.8.4')
 // Settings test assert against a banner it never asked for.
 export const CheckForUpdate = vi.fn(async () => ({
   current: '0.8.4', latest: '0.8.4', available: false, disabled: false,
-  channel: 'portable', hint: '', url: 'https://example.invalid/releases', checkedAt: '', canAuto: false,
+  channel: 'portable', hint: '', url: 'https://example.invalid/releases', checkedAt: '',
+  publishedAt: '', canAuto: false,
 }) as any)
-export const ApplyUpdate = noop()
+// Self-update is two acts, not one (§107): StageUpdate downloads and verifies,
+// RestartToUpdate closes this build. StagedUpdate is what a freshly reloaded
+// window asks so a staged update survives the page it was started from —
+// defaults to "nothing staged", which is true of every test that has not
+// staged one.
+export const StageUpdate = noop()
+export const RestartToUpdate = noop()
+export const StagedUpdate = str()
 export const CurrentSessionID = str()
 export const DismissTaskChip = noop()
 export const DeleteIdentityFile = noop()
@@ -54,7 +62,10 @@ const modelInfo = () => ({
 })
 export const GetModelInfo = vi.fn(async () => modelInfo())
 export const GetProjectStatus = vi.fn(async () => ({ focused: false, name: '', root: '' }))
+export const GitBranches = arr()
 export const GitChangedFiles = arr()
+export const GitCreateBranch = vi.fn(async (name: string) => name)
+export const GitSwitchBranch = vi.fn(async (name: string) => name)
 export const GuideTopics = arr()
 export const HasAPIKey = boolFn(false)
 // Sign-in: the default is "this provider offers none", so Settings renders the
@@ -199,6 +210,9 @@ export const PickAttachment = str()
 export const PickAttachmentImage = str()
 export const ProjectTree = arr()
 export const ProviderBaseURL = str()
+export const PriceModels = arr()
+export const ProviderAPIKeyURL = str()
+export const ProviderReady = boolFn(true)
 export const ProviderBaseURLIsCustom = boolFn(false)
 export const ProviderWireFormats = arr()
 export const TestProviderConnection = str()
@@ -219,6 +233,17 @@ export const RemoveWorkspaceFolder = arr()
 export const MCPConfigPath = vi.fn(async () => 'C:/Users/x/AppData/Roaming/aetox/mcp-servers.json')
 export const OpenMCPFolder = noop()
 export const RequiresAPIKey = boolFn(true)
+// Accepting a pasted key is the norm; Codex is the exception, so a test that
+// cares opts that one provider out.
+export const AcceptsAPIKey = boolFn(true)
+export const ProviderAccountFor = vi.fn(async (provider: string) => ({
+  provider,
+  balance: { kind: 'web-only', hasAmount: false, amount: 0, currency: '', parts: [], sufficient: true, fetchedAt: '' },
+  quotas: [],
+  quotaKnown: false,
+  expectsQuota: false,
+  error: '',
+}))
 export const SaveChatFile = str()
 export const SaveChatImage = str()
 export const SaveChatImageData = str()

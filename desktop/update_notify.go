@@ -2,11 +2,10 @@ package main
 
 // The half of self-update the user should never have to remember: running the
 // check. Everything downstream of "a newer Aetox exists" already worked —
-// internal/update.Apply downloads the release, verifies its signature, swaps
-// the exe and restarts into it — but nothing ever asked the question unless the
-// user walked to Settings → About and pressed a button. A one-click update
-// nobody knows to look for is an update nobody gets, which is why the app kept
-// being reinstalled by hand.
+// internal/update could download the release, verify its signature and swap
+// the exe — but nothing ever asked the question unless the user walked to
+// Settings → About and pressed a button. An update nobody knows to look for is
+// an update nobody gets, which is why the app kept being reinstalled by hand.
 //
 // So: one check shortly after the window settles, then once a day for as long
 // as the app stays open, and the answer is pushed to the frontend as an event

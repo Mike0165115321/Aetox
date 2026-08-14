@@ -74,6 +74,11 @@ type Status struct {
 	Hint      string `json:"hint"` // e.g. "scoop update aetox"; "" if none
 	URL       string `json:"url"`  // the release page to open
 	CheckedAt string `json:"checkedAt"`
+	// PublishedAt is when the release went out (RFC3339, "" if GitHub did not
+	// say). Shown beside the version, because "v0.9.7" alone says nothing about
+	// whether this is a week old or an hour old — and that is most of what
+	// somebody deciding whether to restart now actually wants to know.
+	PublishedAt string `json:"publishedAt"`
 	// CanAuto means Apply can take it from here: this channel knows how to
 	// download, verify and swap itself, and the release actually carries the
 	// file this install would need. The UI's one-click restart-and-update
@@ -166,11 +171,12 @@ func checkWithAssets(ctx context.Context, current string) (Status, []Asset, erro
 		}
 	case http.StatusOK:
 		var rel struct {
-			TagName string `json:"tag_name"`
-			HTMLURL string `json:"html_url"`
-			Draft   bool   `json:"draft"`
-			Pre     bool   `json:"prerelease"`
-			Assets  []struct {
+			TagName     string `json:"tag_name"`
+			HTMLURL     string `json:"html_url"`
+			PublishedAt string `json:"published_at"`
+			Draft       bool   `json:"draft"`
+			Pre         bool   `json:"prerelease"`
+			Assets      []struct {
 				Name string `json:"name"`
 				URL  string `json:"browser_download_url"`
 				Size int64  `json:"size"`
@@ -186,6 +192,7 @@ func checkWithAssets(ctx context.Context, current string) (Status, []Asset, erro
 		}
 		next.ETag = resp.Header.Get("ETag")
 		next.Latest = strings.TrimPrefix(strings.TrimSpace(rel.TagName), "v")
+		next.PublishedAt = rel.PublishedAt
 		if rel.HTMLURL != "" {
 			next.URL = rel.HTMLURL
 		}
@@ -205,6 +212,7 @@ func checkWithAssets(ctx context.Context, current string) (Status, []Asset, erro
 
 	st.Latest = next.Latest
 	st.CheckedAt = next.CheckedAt
+	st.PublishedAt = next.PublishedAt
 	if next.URL != "" {
 		st.URL = next.URL
 	}
@@ -264,11 +272,12 @@ func parse(v string) ([3]int, bool) {
 // cacheEntry is what survives between checks: an ETag so the next call costs
 // nothing, and the last answer so a 304 still has something to report.
 type cacheEntry struct {
-	ETag      string  `json:"etag,omitempty"`
-	Latest    string  `json:"latest,omitempty"`
-	URL       string  `json:"url,omitempty"`
-	CheckedAt string  `json:"checked_at,omitempty"`
-	Assets    []Asset `json:"assets,omitempty"`
+	ETag        string  `json:"etag,omitempty"`
+	Latest      string  `json:"latest,omitempty"`
+	URL         string  `json:"url,omitempty"`
+	CheckedAt   string  `json:"checked_at,omitempty"`
+	PublishedAt string  `json:"published_at,omitempty"`
+	Assets      []Asset `json:"assets,omitempty"`
 }
 
 func cachePath() (string, error) {

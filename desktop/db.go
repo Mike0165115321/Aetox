@@ -507,6 +507,53 @@ CREATE TABLE IF NOT EXISTS project_folders (
 			return err
 		},
 	},
+	{
+		version: 14,
+		name:    "remote_devices",
+		apply: func(tx *sql.Tx) error {
+			// Which phones may reach this machine (remote.go).
+			//
+			// `id` is the SHA-256 of the device's cookie, never the cookie:
+			// that value is a bearer token, so a table holding the originals
+			// would be a list of working keys for anyone who reads the file.
+			// Verification hashes the presented cookie and looks it up, which
+			// needs no reversal.
+			//
+			// Revoking stamps rather than deletes, for the reason
+			// pending_changes keeps its decided rows: "this phone was let in
+			// on that day and cut off on this one" is the audit trail, and a
+			// table that deletes could never grow one.
+			_, err := tx.Exec(`
+				CREATE TABLE IF NOT EXISTS remote_devices (
+				  id         TEXT PRIMARY KEY,
+				  label      TEXT NOT NULL DEFAULT '',
+				  paired_at  TEXT NOT NULL,
+				  last_seen  TEXT NOT NULL DEFAULT '',
+				  revoked_at TEXT NOT NULL DEFAULT ''
+				)`)
+			return err
+		},
+	},
+	{
+		version: 15,
+		name:    "token_usage.provider",
+		apply: func(tx *sql.Tx) error {
+			// token_usage recorded a model name and never who served it, which
+			// was fine while the numbers were only ever tokens. Money made it
+			// matter: `gpt-5.6-luna` is an OpenAI API model billed per token
+			// AND a model a Codex subscription answers with for a flat monthly
+			// fee, and pricing the second one per token invents a bill nobody
+			// was sent.
+			//
+			// Empty on old rows, which is the honest value for them: nobody
+			// wrote down who served those calls and this migration cannot
+			// invent it. UsageStats falls back to pricing them by model name
+			// and says how much of the total it could account for.
+			_, err := tx.Exec(
+				`ALTER TABLE token_usage ADD COLUMN provider TEXT NOT NULL DEFAULT ''`)
+			return err
+		},
+	},
 }
 
 // latestSchemaVersion is what this build understands.

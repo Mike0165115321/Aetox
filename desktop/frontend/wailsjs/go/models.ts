@@ -414,6 +414,20 @@ export namespace main {
 	        this.mine = source["mine"];
 	    }
 	}
+	export class GitBranch {
+	    name: string;
+	    current: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new GitBranch(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.current = source["current"];
+	    }
+	}
 	export class IdentityFile {
 	    name: string;
 	
@@ -486,6 +500,28 @@ export namespace main {
 	        this.contextMax = source["contextMax"];
 	        this.wireFormat = source["wireFormat"];
 	        this.warning = source["warning"];
+	    }
+	}
+	export class ModelListing {
+	    model: string;
+	    input: number;
+	    output: number;
+	    priced: boolean;
+	    free: boolean;
+	    context: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ModelListing(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.model = source["model"];
+	        this.input = source["input"];
+	        this.output = source["output"];
+	        this.priced = source["priced"];
+	        this.free = source["free"];
+	        this.context = source["context"];
 	    }
 	}
 	export class PendingChange {
@@ -584,6 +620,46 @@ export namespace main {
 	        this.governanceLoaded = source["governanceLoaded"];
 	    }
 	}
+	export class ProviderAccount {
+	    provider: string;
+	    balance: model.Balance;
+	    quotas: model.Quota[];
+	    quotaKnown: boolean;
+	    expectsQuota: boolean;
+	    error: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ProviderAccount(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.provider = source["provider"];
+	        this.balance = this.convertValues(source["balance"], model.Balance);
+	        this.quotas = this.convertValues(source["quotas"], model.Quota);
+	        this.quotaKnown = source["quotaKnown"];
+	        this.expectsQuota = source["expectsQuota"];
+	        this.error = source["error"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class ReceivedJob {
 	    id: number;
 	    chair: string;
@@ -670,6 +746,62 @@ export namespace main {
 	        this.variants = this.convertValues(source["variants"], SessionVariant);
 	        this.active = source["active"];
 	        this.reverted = source["reverted"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class RemoteDevice {
+	    id: string;
+	    label: string;
+	    pairedAt: string;
+	    lastSeen: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new RemoteDevice(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.label = source["label"];
+	        this.pairedAt = source["pairedAt"];
+	        this.lastSeen = source["lastSeen"];
+	    }
+	}
+	export class RemoteStatus {
+	    running: boolean;
+	    address: string;
+	    subnet: string;
+	    devices: RemoteDevice[];
+	    error: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new RemoteStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.running = source["running"];
+	        this.address = source["address"];
+	        this.subnet = source["subnet"];
+	        this.devices = this.convertValues(source["devices"], RemoteDevice);
+	        this.error = source["error"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -1057,12 +1189,15 @@ export namespace main {
 	}
 	export class UsageRow {
 	    model: string;
+	    provider: string;
 	    promptTokens: number;
 	    completionTokens: number;
 	    cachedTokens: number;
 	    uncachedTokens: number;
 	    cacheRows: number;
 	    calls: number;
+	    cost: number;
+	    priced: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new UsageRow(source);
@@ -1071,12 +1206,15 @@ export namespace main {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.model = source["model"];
+	        this.provider = source["provider"];
 	        this.promptTokens = source["promptTokens"];
 	        this.completionTokens = source["completionTokens"];
 	        this.cachedTokens = source["cachedTokens"];
 	        this.uncachedTokens = source["uncachedTokens"];
 	        this.cacheRows = source["cacheRows"];
 	        this.calls = source["calls"];
+	        this.cost = source["cost"];
+	        this.priced = source["priced"];
 	    }
 	}
 	export class UsageTotals {
@@ -1092,6 +1230,9 @@ export namespace main {
 	    currentStreak: number;
 	    topModel: string;
 	    topModelShare: number;
+	    cost: number;
+	    pricedCalls: number;
+	    pricesFetched: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new UsageTotals(source);
@@ -1111,6 +1252,9 @@ export namespace main {
 	        this.currentStreak = source["currentStreak"];
 	        this.topModel = source["topModel"];
 	        this.topModelShare = source["topModelShare"];
+	        this.cost = source["cost"];
+	        this.pricedCalls = source["pricedCalls"];
+	        this.pricesFetched = source["pricesFetched"];
 	    }
 	}
 	export class UsageStats {
@@ -1215,6 +1359,104 @@ export namespace mode {
 }
 
 export namespace model {
+	
+	export class Quota {
+	    window: string;
+	    remainingPercent: number;
+	    // Go type: time
+	    resetAt: any;
+	    // Go type: time
+	    observedAt: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new Quota(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.window = source["window"];
+	        this.remainingPercent = source["remainingPercent"];
+	        this.resetAt = this.convertValues(source["resetAt"], null);
+	        this.observedAt = this.convertValues(source["observedAt"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class BalancePart {
+	    label: string;
+	    amount: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new BalancePart(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.label = source["label"];
+	        this.amount = source["amount"];
+	    }
+	}
+	export class Balance {
+	    kind: string;
+	    hasAmount: boolean;
+	    amount: number;
+	    currency: string;
+	    parts: BalancePart[];
+	    sufficient: boolean;
+	    quota?: Quota;
+	    // Go type: time
+	    fetchedAt: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new Balance(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.hasAmount = source["hasAmount"];
+	        this.amount = source["amount"];
+	        this.currency = source["currency"];
+	        this.parts = this.convertValues(source["parts"], BalancePart);
+	        this.sufficient = source["sufficient"];
+	        this.quota = this.convertValues(source["quota"], Quota);
+	        this.fetchedAt = this.convertValues(source["fetchedAt"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	
 	export class GuideTopic {
 	    id: string;
@@ -1603,6 +1845,7 @@ export namespace update {
 	    hint: string;
 	    url: string;
 	    checkedAt: string;
+	    publishedAt: string;
 	    canAuto: boolean;
 	
 	    static createFrom(source: any = {}) {
@@ -1619,6 +1862,7 @@ export namespace update {
 	        this.hint = source["hint"];
 	        this.url = source["url"];
 	        this.checkedAt = source["checkedAt"];
+	        this.publishedAt = source["publishedAt"];
 	        this.canAuto = source["canAuto"];
 	    }
 	}

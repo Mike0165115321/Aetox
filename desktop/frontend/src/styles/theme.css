@@ -78,6 +78,12 @@
   --status-danger-bg:rgba(248,81,73,.12);
   --status-danger-strong:var(--c-red-600);
   --status-modified:var(--c-amber-500);
+  /* Declared once and not per theme, like --shadow-menu: it resolves through
+     --status-modified, which every named theme already overrides with its own
+     amber — so each theme's warn is its own yellow without fourteen more
+     declarations. Referenced by the MCP idle dot and the two rules that were
+     asking for it with a fallback nobody chose. */
+  --status-warn:var(--status-modified);
   --status-untracked:var(--c-sky-400);
 
   /* badges */

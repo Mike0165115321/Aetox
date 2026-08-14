@@ -113,6 +113,22 @@ type Desk struct {
 	// is rendered, not how a tool is called, and a diagram is very much
 	// something a conversation produces.
 	ToolLess bool
+	// Planning says this session's whole answer is a plan — the วางแผน stance,
+	// and anything later built the same way.
+	//
+	// Separate from StanceDirection, which already carries *what a plan is*,
+	// because this asks a different question: whether the surface in front of
+	// the user can draw one as an object. That is not the stance's to know. The
+	// same stance runs in a terminal, where the wrapper below is a fence the
+	// user reads as punctuation, so the decision belongs here beside drawing()
+	// and panel() — the two layers that were already gated on what the surface
+	// can render rather than on what the session is doing.
+	//
+	// A bool rather than the stance name, for the reason Carries is a function
+	// rather than a desk name: this package still does not import
+	// internal/mode, and a second stance that also answers with a plan should
+	// get the card by saying so, not by being added to a list here.
+	Planning bool
 }
 
 // carries answers Desk.Carries for the zero value too: a desk that was never
@@ -295,6 +311,12 @@ func BuildWithReport(surface Surface, scope Scope, desk Desk) (string, Loaded) {
 		if desk.carries("edit") || desk.carries("write") {
 			b.WriteString(fileEditing(desk))
 		}
+		// Ungated on purpose, unlike its neighbours: this one is about how to
+		// send calls at all, not about any particular tool, so it applies to
+		// every desk that has more than nothing. A stance that withholds the
+		// writing tools still reads and greps, which is exactly the shape of
+		// work this saves the most round trips on.
+		b.WriteString(parallelCalls())
 		if desk.carries("shell") {
 			b.WriteString(batchWork())
 		}
@@ -308,6 +330,14 @@ func BuildWithReport(surface Surface, scope Scope, desk Desk) (string, Loaded) {
 	if surface == SurfaceDesktop {
 		b.WriteString(drawing())
 		b.WriteString(panel())
+		// Gated on both, and the pair is the point: the stance decides that this
+		// turn produces a plan, the surface decides whether a plan can be drawn
+		// as an object. In a terminal the same stance produces the same plan and
+		// this layer is simply absent, so nothing tells the model to write a
+		// fence the user would read as punctuation.
+		if desk.Planning {
+			b.WriteString(planCard())
+		}
 	}
 	// longform is about writing the answer to a file with `write`, narration is
 	// about the sentence before a tool round, clarify is about ask_user. Same
@@ -518,6 +548,39 @@ func fileEditing(desk Desk) string {
 		"file end to end just to change one line in it.\n"
 }
 
+// parallelCalls tells the model that one reply may carry several tool calls.
+//
+// The loop has always run every call in a response (cognitive.Agent iterates
+// response.ToolCalls), so this costs no new machinery — the capability was
+// there and nothing ever asked for it, which is the expensive half. A model
+// that emits one call per reply turns four independent file reads into four
+// round trips, and a round trip is not cheap in the way it looks: the API is
+// stateless, so every one of them re-sends the entire conversation. Measured on
+// the owner's own database, 1,102 DeepSeek calls carried 29.2M input tokens —
+// an average of 26.5K re-sent per call, for turns whose *typing* was a sentence.
+//
+// Prompt caching already absorbs most of that cost (93-98% hit rate on the same
+// data), which is why this is about call count rather than context size: caching
+// makes each re-send cheap, and only fewer round trips makes them fewer.
+//
+// The dependency clause is not padding. Told plainly to parallelize, a model
+// will also parallelize a read of the file it is about to write — so the rule
+// has to name the test (does this call need that call's output?) rather than
+// the aspiration. Every one of opencode's seven per-model prompt files carries
+// this instruction with that same clause, which is what convinced the owner it
+// is a real technique and not a micro-optimization.
+func parallelCalls() string {
+	return "You can put several tool calls in one reply, and they run together. When the next calls do not " +
+		"need each other's output — reading three files, a grep and a glob, checking two directories — send " +
+		"them in a single reply instead of one per turn.\n" +
+		"The test is dependency, not similarity: if one call's result decides what the next call should ask " +
+		"for, they are sequential and must stay that way. Never guess an argument in order to send something " +
+		"in parallel.\n" +
+		"This matters more than it looks. Each reply re-sends the whole conversation to the model, so four " +
+		"round trips cost four copies of everything said so far, where one reply carrying four calls costs " +
+		"one.\n"
+}
+
 // batchWork tells the model to collapse list-shaped work into one script.
 // Nothing used to, and the default failure mode is expensive in a way the
 // model cannot see: renaming 200 files as 200 shell calls costs 200 rounds of
@@ -607,6 +670,40 @@ func panel() string {
 		"in percentages, fr units and minmax(0, 1fr) — you do not know how wide the panel is, and a fixed " +
 		"pixel width spills out of it. Keep it to what the answer needs; a panel is a way of saying " +
 		"something, and one built around a single fact is decoration.\n"
+}
+
+// planCard tells the model that on this surface a plan is drawn as an object of
+// its own — a titled card in the transcript — and what to wrap it in so that
+// happens.
+//
+// **Only the wrapper is here. What a plan *is* stays in the stance** (§106.11,
+// mode.planShape): the four headings are policy that holds on every surface,
+// and this layer is the one sentence that is true only where something can draw
+// a card. Splitting it the other way would put the shape in two places, which
+// is the debt §106.11 was written to avoid — and it would mean a terminal
+// session silently lost its headings along with its card.
+//
+// A fenced block rather than a marker tag, because the renderer already has
+// exactly this seam: markdown.ts intercepts a fence by its language and builds
+// chrome around it, which is how a code block gets its header and its copy
+// button. A plan is the same move with a different box, so the card costs a
+// branch rather than a parser.
+//
+// The sentence about not fencing anything inside is the one that fails silently
+// and therefore has to be stated. A ``` inside the plan closes the plan's own
+// fence, and what the user gets is a card holding the first third of a plan with
+// the rest spilled underneath it as loose prose — no error, and nothing about
+// the result points at the cause.
+func planCard() string {
+	return "Your plan is drawn here as a card of its own — titled, and set apart from the conversation " +
+		"around it — so write it inside a fenced block tagged `plan`, and make the first line inside that " +
+		"block a `# ` heading naming the job in one line. The four headings go under it, unchanged.\n" +
+		"Nothing else belongs in the block, and almost nothing belongs outside it: a sentence before the " +
+		"card if something genuinely has to be said first, and no summary after it — the card is the " +
+		"answer, and repeating it underneath is the same plan twice.\n" +
+		"Do not open a fenced block anywhere inside the plan. It closes the plan's own fence, and the " +
+		"result is a card holding the first part of your plan with the rest spilled out below it. " +
+		"Inline `backticks` are safe and are how a filename or a setting should be written.\n"
 }
 
 // drawing tells the model that the answer surface can render a picture, and

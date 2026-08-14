@@ -604,8 +604,8 @@ func TestAServerReachesOnlyTheDesksThatNamedIt(t *testing.T) {
 func TestListChairsReportsTheRosterUnderTheCeiling(t *testing.T) {
 	a := bootDeskApp(t, "assistant")
 	chairs := a.ListChairs()
-	if len(chairs) != 5 {
-		t.Fatalf("ListChairs() = %d, want the five bundled chairs", len(chairs))
+	if len(chairs) != 6 {
+		t.Fatalf("ListChairs() = %d, want the six bundled chairs", len(chairs))
 	}
 	byName := map[string]Chair{}
 	for _, c := range chairs {

@@ -12,6 +12,7 @@
     ListModelsForProvider, RequiresAPIKey, HasAPIKey, PickAttachment,
     GetContextBreakdown, GuideTopics, RunChatCommand, ListChairs, ChairStarters, CurrentSessionID,
     Shells, CurrentShell, SetShell, EnginesFor, UseEngine, VerifyConnection,
+    GitBranches, GitSwitchBranch, GitCreateBranch, GetProjectStatus,
   } from '../../wailsjs/go/main/App'
   import type { main, connect, subagent } from '../../wailsjs/go/models'
   import { t, i18n } from './i18n.svelte'
@@ -26,7 +27,7 @@
     addProjectFolder, removeProjectFolder,
     retryActiveProvider, undoLastTurn, switchApprovalMode,
     startTaskChip, dismissTaskChip,
-    retryFailedTurn, regenerateReply, switchVariant, resendEdited, rateReply,
+    retryFailedTurn, editFailedTurn, regenerateReply, switchVariant, resendEdited, rateReply,
     setActiveView, newChairSession, newSessionAt, openSettingsAt, setStance,
   } from './stores/cockpit.svelte'
   import ConfirmDialog from './ConfirmDialog.svelte'
@@ -495,6 +496,85 @@
   // The chip's own row. Derived rather than {@const} in the markup: the chip is
   // no longer inside a block, and {@const} only lives in one.
   const activeStance = $derived(stanceView(cockpit.stance))
+
+  // ---------- the branch picker ----------
+  // The branch chip drew the current branch as a `<span>` from the day project
+  // focus existed: a label, and the one thing in this row that looked like a
+  // control and was not. This is the list behind it.
+  //
+  // Loaded when the menu opens rather than kept fresh in the background. A
+  // branch list changes because somebody used git, which this app does not
+  // watch for, and polling it would spend a subprocess a second to keep a
+  // menu warm that is shut.
+  let branchMenuOpen = $state(false)
+  let branches = $state<main.GitBranch[]>([])
+  let branchQuery = $state('')
+  let branchBusy = $state('')
+  // git's own refusal, shown verbatim. It names the files standing in the way,
+  // which is the half the user needs and the half a summary would drop.
+  let branchError = $state('')
+
+  const shownBranches = $derived(
+    branches.filter((b) => b.name.toLowerCase().includes(branchQuery.trim().toLowerCase())),
+  )
+  // The search box doubles as the name field for a new branch, so this row is
+  // **always drawn** — it was drawn only once a name had been typed, which put
+  // the way to create a branch behind knowing it was there. That is the same
+  // bug the chip itself had: a control that exists and does not announce
+  // itself.
+  //
+  // Disabled rather than hidden when the name is taken or flag-shaped: a row
+  // that vanishes as you type looks like the menu glitching, while a dim one
+  // with its reason on hover answers the question you were about to ask.
+  let branchInput = $state<HTMLInputElement | null>(null)
+  const newBranchName = $derived(branchQuery.trim())
+  const branchNameTaken = $derived(branches.some((b) => b.name === newBranchName))
+  const canCreateBranch = $derived(
+    newBranchName !== '' && !newBranchName.startsWith('-') && !branchNameTaken,
+  )
+  // Empty box: the row is still the way in, and pressing it puts the cursor
+  // where the name goes rather than doing nothing.
+  function startBranchCreate() {
+    if (newBranchName === '') {
+      branchInput?.focus()
+      return
+    }
+    if (canCreateBranch) pickBranch(newBranchName, true)
+  }
+
+  async function toggleBranchMenu() {
+    branchMenuOpen = !branchMenuOpen
+    if (!branchMenuOpen) return
+    branchQuery = ''
+    branchError = ''
+    try {
+      branches = (await GitBranches()) ?? []
+    } catch {
+      branches = []
+    }
+  }
+
+  // Switching is the one thing in this row that touches the user's files, so it
+  // reports rather than assumes: the engine hands back the branch actually in
+  // force, and a refusal leaves the chip showing where the repository really is.
+  async function pickBranch(name: string, create: boolean) {
+    if (branchBusy) return
+    branchBusy = name
+    branchError = ''
+    try {
+      await (create ? GitCreateBranch(name) : GitSwitchBranch(name))
+      branchMenuOpen = false
+    } catch (err) {
+      branchError = String(err)
+      branches = (await GitBranches().catch(() => [])) ?? []
+    } finally {
+      branchBusy = ''
+      // Re-read the project either way. The chip is drawn from this, and after a
+      // refused switch it has to say where the repository is rather than where
+      // the click was aimed.
+      Object.assign(cockpit.project, await GetProjectStatus())
+    }
+  }
   // Which of the provider/model/think-level pickers inside the model-menu
   // popover is expanded — native <select> can't be forced to open its option
   // list upward (browser-controlled, not stylable), so these render as a
@@ -510,9 +590,10 @@
     if (selected) selected.scrollIntoView({ block: 'nearest' })
   }
 
-  // One glyph per approval mode, shown on the chip itself: which mode you are
-  // in has to be readable without opening anything — that is the whole reason
-  // it stopped living only in Settings — and a glyph costs no bar width.
+  // One glyph per approval mode, for the rows of the model menu that switch
+  // between them. It rode on the composer chip too until the model name moved
+  // back there and the chip had three marks competing at 14px; the mode is
+  // named in full one click away, which is where it is actually changed.
   const approvalIcons: Record<string, IconName> = {
     'ask': 'hand', 'unsafe-only': 'shield', 'full-access': 'zap',
   }
@@ -537,6 +618,7 @@
     if (focusMenuOpen && !el.closest('.focus-pick')) { focusMenuOpen = false; folderError = '' }
     if (ctxMenuOpen && !el.closest('.ctx-pick')) ctxMenuOpen = false
     if (stanceMenuOpen && !el.closest('.stance-pick')) stanceMenuOpen = false
+    if (branchMenuOpen && !el.closest('.branch-pick')) branchMenuOpen = false
     if (openDropdown && !el.closest('.updrop')) openDropdown = ''
     if (palette && !el.closest('.pal-pick')) palette = ''
   }
@@ -734,6 +816,19 @@
     copiedTimer = setTimeout(() => (copiedText = ''), 1500)
   }
 
+  // What the composer chip calls the current model.
+  //
+  // Only the vendor prefix comes off: OpenRouter and Together spell their ids
+  // `vendor/model` ("deepseek/deepseek-r1", "google/gemma-2-9b-it"), and the
+  // provider mark sitting next to the text already answers who made it. What
+  // remains is the part that distinguishes one model from another, so nothing
+  // is abbreviated beyond that — CSS truncates the tail if the window is narrow,
+  // and the full id is in the chip's title either way.
+  const shortModelName = (name: string) => {
+    const slash = name.lastIndexOf('/')
+    return slash >= 0 ? name.slice(slash + 1) : name
+  }
+
   // Re-running a turn ——————————————————————————————————————————————————————
   //
   // Only the newest exchange can be re-run. Regenerating an older one would
@@ -742,10 +837,17 @@
   const lastIndex = $derived(messages.length - 1)
   const canRerun = $derived(!awaitingReply && !cockpit.ask)
   // Editing the question re-runs the exchange, which only works when there is a
-  // recorded exchange to replace. A failed turn was persisted nowhere, so its
-  // affordance is Retry, not Edit.
+  // recorded exchange to replace.
   const canEditLast = $derived(
     canRerun && messages.at(-1)?.role === 'agent' && !messages.at(-1)?.failed,
+  )
+  // A failed turn is the other case where the question is still live, and the
+  // one where rewording it is most likely to be what the user wants: the red
+  // bubble offers "try that again", and nothing offered "I asked it wrong".
+  // It takes a different road home (editFailedTurn) because the tail it has to
+  // remove is a failure, not a completed exchange.
+  const lastTurnFailed = $derived(
+    canRerun && messages.at(-1)?.role === 'agent' && !!messages.at(-1)?.failed,
   )
 
   // A turn that wrote files is the one case where answering again is dangerous:
@@ -790,8 +892,29 @@
     editingIndex = i
     editDraft = text
   }
+
+  // Asking the same question again, without retyping it. It runs through the
+  // edit path deliberately rather than posting a fresh message: that path
+  // already replaces the answer below instead of stacking a duplicate
+  // question, and already stops to ask when the last turn wrote files that a
+  // second run would write over.
+  function resendSame(text: string) {
+    if (!canEditLast) return
+    editDraft = text
+    commitEdit()
+  }
   function commitEdit() {
     if (!editDraft.trim()) return
+    // A failed turn goes home the retry way. No revert prompt on that road:
+    // Retry has never offered one, and an edited retry is the same act with
+    // different words.
+    if (lastTurnFailed) {
+      const text = editDraft
+      const failedIndex = editingIndex + 1
+      editingIndex = -1
+      editFailedTurn(failedIndex, text)
+      return
+    }
     if (cockpit.undoFiles.length > 0) { confirmRerun = 'edit'; return }
     const text = editDraft
     editingIndex = -1
@@ -1035,6 +1158,19 @@
       void exportDrawing(drawBtn as HTMLButtonElement)
       return
     }
+    // Copies the plan as the markdown the model wrote, not as the card's
+    // flattened text — the source is carried on data-plan for exactly this
+    // (markdown.ts renderPlan), so what lands on the clipboard still has its
+    // headings and can be pasted into an issue or a commit message.
+    const planBtn = el.closest('.plan-copy')
+    if (planBtn) {
+      const source = planBtn.closest<HTMLElement>('.plan-card')?.dataset.plan ?? ''
+      navigator.clipboard.writeText(source).then(() => {
+        planBtn.textContent = t('chat.copiedCode')
+        setTimeout(() => (planBtn.textContent = t('chat.copyCode')), 1500)
+      })
+      return
+    }
     const a = el.closest('a')
     const href = a?.getAttribute('href')
     if (!href || !/^https?:\/\//i.test(href)) return
@@ -1046,8 +1182,14 @@
 <!-- "/" is the prompt list on its own button; Ctrl+K opens the same component in
      full mode (model, approval, tool counts, shortcuts) — those rows lost their
      button when "+" became the attach control, not their home. -->
+<!-- Every menu closeMenusOnOutside knows how to close has to be named in the
+     guard below, or it only closes on the days another menu happens to be open
+     too. The branch picker needed the listener; ctx and stance were already
+     relying on a neighbour being open, which is why they sometimes stayed put. -->
 <svelte:window
-  onclick={modelMenuOpen || focusMenuOpen || palette ? closeMenusOnOutside : undefined}
+  onclick={modelMenuOpen || focusMenuOpen || palette || ctxMenuOpen || stanceMenuOpen || branchMenuOpen
+    ? closeMenusOnOutside
+    : undefined}
   onkeydown={(e) => {
     if (isShortcut(e, 'palette')) {
       e.preventDefault()
@@ -1482,11 +1624,34 @@
                   onclick={askRegenerate}
                 ><Icon name="refreshCw" size={13} /></button>
               {/if}
-              {#if m.role === 'user' && i === lastIndex - 1 && canEditLast && editingIndex !== i}
+              {#if m.role === 'user' && m.text && editingIndex !== i}
+                <!-- Copying your own message is the one action that is always
+                     safe and never depends on where in the transcript it sits,
+                     so unlike edit and resend it is offered on every one. -->
+                <button
+                  type="button" class="msg-copy icobtn tiny" aria-label={t('chat.copy')}
+                  data-tip={t('chat.copy')}
+                  onclick={() => copyMessage(m.text)}
+                ><Icon name={copiedText === m.text ? 'check' : 'copy'} size={13} /></button>
+              {/if}
+              <!-- Rewording works after a success and after a failure alike:
+                   in both the question below is still the live one. -->
+              {#if m.role === 'user' && i === lastIndex - 1 && (canEditLast || lastTurnFailed) && editingIndex !== i}
                 <button
                   type="button" class="msg-copy icobtn tiny" aria-label={t('chat.editMessage')} data-tip={t('chat.editMessage')}
                   onclick={() => startEdit(i, m.text)}
                 ><Icon name="pencil" size={13} /></button>
+              {/if}
+              <!-- Same question, asked again. Not offered after a failure: the
+                   red bubble below already carries Retry, and two buttons that
+                   send the identical text is one button too many. Only on the
+                   last one either way, since an earlier question re-asked would
+                   answer into the middle of a conversation that has moved on. -->
+              {#if m.role === 'user' && i === lastIndex - 1 && canEditLast && editingIndex !== i}
+                <button
+                  type="button" class="msg-copy icobtn tiny" aria-label={t('chat.resend')} data-tip={t('chat.resend')}
+                  onclick={() => resendSame(m.text)}
+                ><Icon name="rotateCw" size={13} /></button>
               {/if}
               <span class="msg-time">{m.time}</span>
             </div>
@@ -1821,7 +1986,83 @@
         </button>
       </div>
       {/if}
-      {#if cockpit.project.focused && cockpit.project.branch}<span class="focus-chip"><Icon name="gitBranch" size={11} /> {cockpit.project.branch}</span>{/if}
+      <!-- The branch, and the way to another one. A `<span>` until now: it drew
+           the answer to "where am I" and had no answer to "take me somewhere
+           else", which is the question anybody who reads a branch name next
+           asks. -->
+      {#if cockpit.project.focused && cockpit.project.branch}
+        <div class="branch-pick">
+          {#if branchMenuOpen}
+            <div class="branch-menu">
+              <div class="branch-search">
+                <Icon name="search" size={13} />
+                <!-- svelte-ignore a11y_autofocus -->
+                <input
+                  type="text" bind:value={branchQuery} bind:this={branchInput} autofocus
+                  placeholder={t('branch.searchOrNew')} aria-label={t('branch.searchOrNew')}
+                  onkeydown={(e) => {
+                    if (e.key === 'Escape') { branchMenuOpen = false; return }
+                    // Enter takes the obvious one: the only match if the search
+                    // narrowed to one, otherwise the new branch the name
+                    // describes. Typing a name and pressing Enter is how this
+                    // control is used when the user already knows where they
+                    // are going.
+                    if (e.key !== 'Enter') return
+                    if (shownBranches.length === 1) pickBranch(shownBranches[0].name, false)
+                    else if (canCreateBranch) pickBranch(branchQuery.trim(), true)
+                  }}
+                />
+              </div>
+              {#if branchError}
+                <!-- git's words, not ours. It lists the files that would be
+                     overwritten, and that list is the whole reason the switch
+                     was refused. -->
+                <div class="branch-error">{branchError}</div>
+              {/if}
+              <div class="branch-list">
+                {#each shownBranches as b (b.name)}
+                  <button
+                    type="button" class="branch-item" class:on={b.current}
+                    disabled={!!branchBusy}
+                    onclick={() => pickBranch(b.name, false)}
+                  >
+                    <span class="ic"><Icon name="gitBranch" size={13} /></span>
+                    <span class="nm">{b.name}</span>
+                    {#if b.current}<span class="tick"><Icon name="check" size={13} /></span>{/if}
+                  </button>
+                {/each}
+                {#if shownBranches.length === 0 && newBranchName !== ''}
+                  <div class="branch-none">{t('branch.none')}</div>
+                {/if}
+              </div>
+              <!-- Always here, the way it is in every editor that has one. It
+                   used to appear only once a name had been typed, which hid the
+                   way to make a branch behind already knowing about it. -->
+              <button
+                type="button" class="branch-item create"
+                disabled={!!branchBusy || (newBranchName !== '' && !canCreateBranch)}
+                title={branchNameTaken ? t('branch.exists') : undefined}
+                onclick={startBranchCreate}
+              >
+                <span class="ic"><Icon name="plus" size={13} /></span>
+                <span class="nm">
+                  {#if newBranchName === ''}{t('branch.createNew')}
+                  {:else}{t('branch.create')} “{newBranchName}”{/if}
+                </span>
+              </button>
+            </div>
+          {/if}
+          <button
+            type="button" class="focus-chip branch-chip"
+            title={t('branch.title')} aria-label={t('branch.title')}
+            onclick={(e) => { e.stopPropagation(); toggleBranchMenu() }}
+          >
+            <Icon name="gitBranch" size={11} />
+            <span class="nm">{cockpit.project.branch}</span>
+            <span class="caret"><Icon name={branchMenuOpen ? 'chevronUp' : 'chevronDown'} size={10} /></span>
+          </button>
+        </div>
+      {/if}
       <!-- Which automation engine the specialist works on.
            Drawn whenever the user has one at all, and NOT only when there are
            two to choose between — which is where the shell picker's rule was
@@ -2212,21 +2453,26 @@
                 {/if}
               </div>
             {/if}
-            <!-- Two things on this chip, because two things are worth being
-                 wrong about: what Aetox may do without asking, and which brain
-                 is answering. The model *name* is neither — it is the longest
-                 string on the bar and the one that changes least, so it moves
-                 into the chip's title, the menu below, and the Ctrl+K row that
-                 names it. The provider mark keeps the second question answered
-                 at a glance without spending the width. -->
+            <!-- One question, answered twice over: which brain is answering,
+                 by mark and by name. The name was taken off once for width and
+                 put back on request — reading which model you are talking to
+                 should not cost a menu. Width is handled where it should be:
+                 the vendor prefix is dropped (the mark beside it already says
+                 the vendor) and what is left truncates, so a long id shortens
+                 the name and never moves the send button. The full id stays in
+                 the title for the cases where the tail matters.
+
+                 The approval mode used to sit here too and no longer does
+                 (owner's call): three marks at 14px read as decoration rather
+                 than as three separate facts, and the mode is named in words
+                 in the menu this chip opens, which is also where it changes. -->
             <button
               type="button" class="model-chip"
               title={model.modelName || model.provider}
               onclick={(e) => { e.stopPropagation(); modelMenuOpen = !modelMenuOpen; if (modelMenuOpen) { refreshThinkLevels(); EnabledProviders().then((p) => (providers = p)) } }}
             >
-              <span class="mode-ic" class:danger={model.approval === 'full-access'}
-                    title={t('settings.approvalTitle')}><Icon name={approvalIcons[model.approval] ?? 'hand'} size={14} /></span>
               <span class="pv"><ProviderMark name={model.provider} size={14} /></span>
+              {#if model.modelName}<span class="t">{shortModelName(model.modelName)}</span>{/if}
               <!-- Same test as the menu row below, on purpose. Keyed off
                    model.thinkLevel instead, a model with exactly one real level
                    drew a badge for a setting the menu offers no way to change. -->

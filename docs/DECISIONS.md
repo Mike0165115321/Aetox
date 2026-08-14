@@ -2973,6 +2973,44 @@ Four parts, and a shape unlike the two that shipped. คู่คิด and ว�
 
 Recorded rather than dropped silently, so the next person who has this idea reads what it costs before they start.
 
+### 106.11 วางแผน had no output shape, and that is why it did not look like planning (2026-08-14)
+
+Owner, after turning the dial and getting prose back: *"ทำไมตอนวางแผนมันไม่วางแผนอ่ะครับ"*
+
+The stance shipped as a filter plus a paragraph of direction, and the paragraph said what to **mention** — go and look first, name the actual files, say what you are unsure of — while never saying what to **produce**. So the turn came back as prose, and nothing distinguished it from an answer given in ลงมือ.
+
+**Nothing else in the prompt was going to fill that in, and it is worth being precise about why.** No layer in `internal/prompt` has ever specified the shape of an answer. The nearest thing, `longform`, is about where a long answer *lands* — "write it to a .md file yourself with `write`" — and it names *a plan* among its examples of exactly that. วางแผน does not even receive that layer, because §106.9 gated it on `write` and วางแผน has no `write`. Correct on the tool half, and it was never carrying a shape to lose.
+
+So this is not a gap in all three stances. **ลงมือ** withholds nothing and needs no shape of its own. **คู่คิด** loses four layers to `ToolLess`, but its own direction replaces them with three concrete demands — the answer, the confidence without having checked, what would settle it. วางแผน is the only stance whose entire output is one document, so it is the only one that had to say what the document is.
+
+**The shape already existed in this repository, one package away.** `profiles/subagents/plan.md` has pinned four headings since it was written: *What is there now / What to change / What could go wrong / What you are unsure of*. It was unreachable from the stance twice over — `internal/subagent` imports `internal/mode`, so the dependency cannot run the other way, and the stance withholds `task` anyway, so the profile that knows the shape is precisely what วางแผน is not allowed to call.
+
+**One shape, two glosses, and a test for the seam.** `mode.planShape` is now the single list and `PlanHeadings()` reports it. The wording *under* each heading still differs between the two on purpose: the sub-agent is a coding helper and can say "the file and line you read it in", while a stance runs at every desk and cannot assume the work has files at all. What must not differ is the headings — and a Go list cannot reach inside a markdown file, so `TestThePlanProfileKeepsTheSharedPlanShape` reads the embedded profile and checks it still asks for every one, the same way the release checklist pins six files with a test rather than with a habit.
+
+The escape hatch is stated as the shape's own justification rather than as an exception to it: a small job gets single-line headings, not a dropped shape, **because being able to read every plan the same way is what the dial was turned for**.
+
+### 106.12 The plan as a drawn object (2026-08-14)
+
+Owner, with a reference screenshot from another tool: *"ผมอยากได้เป็นกล่องประมาณนี้อ่ะครับ"*
+
+The headings had to come first — there is nothing to draw a card around until a plan reliably has a shape — and with §106.11 in place the card is the second half.
+
+**The contract is a fenced block tagged `plan`, because the renderer already had that seam.** `markdown.ts` intercepts a fence on its language and builds chrome around it; that is how a code block gets its header bar, its copy button and its Run button. A plan is the same move with a different box, so the card cost a branch rather than a parser. The alternative — detecting the four headings in any reply that happens to have them — was rejected twice over: it would put the shape in a second place, and it would wrap any message quoting a plan in a card.
+
+**Where the instruction lives is the decision worth recording.** The wrapper is in `internal/prompt.planCard`, gated on `surface == SurfaceDesktop` *and* on the new `Desk.Planning`, next to `drawing()` and `panel()` — the two layers that were already gated on what the surface can render. The stance is not asked, because a stance cannot know: the same วางแผน runs in a terminal, where a fence is punctuation the user reads. So the shape is policy and travels everywhere; the box is rendering and stays where something can draw it. `Desk.Planning` is a bool rather than a stance name for the reason `Carries` is a function rather than a desk name — this package still does not import `internal/mode`.
+
+**Three things the implementation had to get right, each of which fails silently:**
+
+- **A fence inside the plan closes the plan.** The card then holds the first third of the answer with the rest spilled underneath as loose prose, with no error anywhere. `planCard` states it, and points at inline backticks as what to use for a filename instead.
+- **The card's own icon is not a drawing.** `confine()` frames every top-level `<svg>` with copy and save buttons; without a guard the compass in the header got framed as a 14px drawing with its own toolbar. It is marked `data-chrome` where it is built rather than guessed at by size.
+- **Copy has to hand back the markdown.** Read off the rendered card it would return the plan with every heading and bullet flattened away, so the source rides along on `data-plan`.
+
+**Not collapsed behind a toggle**, which is where this deliberately parts company with the tool that inspired it. There a plan is an artifact beside the answer; here the whole turn was spent producing it, so the card *is* the reply, and folding it away would fold away the message. For the same reason it is a card inside the assistant's message rather than a bubble of its own — a sentence before the plan still reads before it.
+
+Verified in both a dark and a light theme against the real stylesheets. It reads because `.msg.bot .bubble` has no background of its own (§ "The reply is not a card"): the plan on `--surface-raised` is the only raised thing in the reply.
+
+**Still owed:** saving a plan to a file. Copy is one binding away from Save, and the drawing's `SaveDrawing` shows the shape of it, but a plan wants `.md` rather than a PNG and that is a decision rather than a rename.
+
 ### What this cost, and what it bought
 
 **Cost:** one migration (v13), one intersection at an existing gate, one prompt layer, one control, one transcript divider — and the vocabulary sweep, **done on 2026-08-14 ahead of the build** so that no window exists where two documents answer the same question differently.
@@ -3005,23 +3043,71 @@ The startup check is deliberately unconditional rather than skipped when the cac
 
 ### 107.2 The event carries the whole answer, not a boolean
 
-`update:available` ships the entire `update.Status`. Which action a channel deserves — one click for portable and installer, `scoop update aetox` for Scoop (that directory is not ours to write into), the release page for everything else — is a decision `internal/update` already makes and already has tests for. A frontend that re-derived it from `channel` would be a second place answering one question, free to drift the first time a channel is added.
+`update:available` ships the entire `update.Status`. Which action a channel deserves — the download button for portable and installer, `scoop update aetox` for Scoop (that directory is not ours to write into), the release page for everything else — is a decision `internal/update` already makes and already has tests for. A frontend that re-derived it from `channel` would be a second place answering one question, free to drift the first time a channel is added.
 
-### 107.3 Two doors, one act, one state
+### 107.3 Downloading and restarting are two acts, and only one of them is the user's to schedule
 
-The notice and the About button start the same update, so "downloading / 42% / restarting / here is why it failed" cannot live inside either page. About used to own it privately; that was fine while it was the only door and wrong the moment it stopped being. It moved to `frontend/src/lib/selfUpdate.svelte.ts`, which both read and both drive — the same rule as everywhere else in this repo: a second place answering the same question is หนี้ในระบบ.
+The first cut of this was one button that downloaded, verified, swapped and restarted — and it was wrong for a reason the owner spotted immediately, holding up Zed's updater as the shape he wanted: *"เนี้ยเหมือนตัวนี้อ่ะครับ"*. Zed downloads, then says **"v3.7.6 is ready"** with **Later** and **Restart to update**, and waits.
+
+The two halves cost the user completely different things. Downloading costs bandwidth and can happen while they keep working. Restarting costs them whatever they were in the middle of. An act that did both spent the second without ever asking — it took the one decision that was actually theirs and made it a consequence of the one that wasn't.
+
+So `internal/update.Apply` became `Stage` + `Staged.Restart`:
+
+- **Stage** goes as far as it safely can while the window stays open. For the portable channel that is *everything*, swap included — `swapPortable` no longer relaunches, and after it the exe on disk is the new build while the process keeps running from the renamed `.old` file, which Windows is perfectly happy to do. For the installer channel it is the download and the verification only; an installer needs the app closed.
+- **Restart** is the sentence the user times. It relaunches (portable) or hands the verified installer over (installer), and only it is gated on `turnBusy` — bytes coming down interrupt nothing, so `StageUpdate` deliberately is not on that list.
+
+The consequence worth saying out loud on the card: **ไฟล์ลงเครื่องแล้ว — กดรีสตาร์ทตอนนี้ หรือปิดแอปตามปกติแล้วเปิดใหม่ทีหลังก็ได้เหมือนกัน**. "Later" here is not a postponed install. The install already happened; only the restart is outstanding, and closing the app tonight collects it. Without that sentence, "Later" reads as "not yet", and the user keeps a dialog on their conscience for nothing.
+
+`Staged` lives on `App`, not in the package: it is one running app's state. `StagedUpdate()` exists so a webview reload — a Vite HMR cycle, or the frontend alone dying — does not lose it and offer the same 50 MB a second time for a build already on disk.
+
+### 107.4 Two doors, one act, one state
+
+The card and the About button start the same update, so "downloading / 53.2MB of 53.4MB / ready / here is why it failed" cannot live inside either page. About used to own it privately; that was fine while it was the only door and wrong the moment it stopped being. It moved to `frontend/src/lib/selfUpdate.svelte.ts`, which both read and both drive — the same rule as everywhere else in this repo: a second place answering the same question is หนี้ในระบบ.
 
 That module is named `selfUpdate` and not `updater` for a reason worth writing down: on Windows's case-insensitive filesystem, `import … from './updater.svelte'` resolves to `Updater.svelte` — the component — and hands back a module with none of the expected exports. It fails at runtime as `undefined`, not at resolution, so the error surfaces nowhere near its cause. A `.svelte.ts` store must never differ from a `.svelte` component by case alone.
 
-### 107.4 The dialog says the two things a progress bar cannot
+### 107.5 A card, not a dialog — and what it says
 
-Modal, because the exe under the window is being replaced and there is nothing behind it worth reaching. Beyond the percentage it carries two sentences:
+Nothing here interrupts the app, so nothing here takes the screen. The first cut put a scrim over the window during the download; with the act split, that scrim was claiming an urgency the feature does not have. It is a corner card through all four phases, and the × hides what it is *currently* saying rather than the card forever — a download that finished or failed behind a closed card is still news the user has to get, so any change of phase (or a newer release than the one waved off) brings it back.
 
-- **"แอปจะปิดแล้วเปิดกลับมาให้เองเมื่อเสร็จ"**, said *before* it happens. An app that closes itself mid-progress, unannounced, reads as a crash.
-- On failure, **"เวอร์ชันเดิมยังอยู่ครบและใช้งานได้ตามปกติ"**. This is the case the signature and the checksums exist for, and a refused download is the chain working, not the app breaking. `applyPortableTo` puts the old exe back if the second rename fails, so the promise is true, and it is why the button re-arms instead of the dialog closing.
+Three details it inherits from the shape rather than from taste:
 
-When the download has no `Content-Length` the bar moves without claiming a number. A fake 50% is not the humble option.
+- **Bytes, not a percentage**, when the size is known: `53.2MB / 53.4MB` says how much is left in the unit the user's connection is in. When the server sends no `Content-Length` the bar moves without claiming a number and no size is printed at all — a fake 50% is not the humble option.
+- **The release date beside the version.** "v0.9.7" alone says nothing about whether this is an hour old or a month old, which is most of what someone deciding about a restart wants to know. `Status.PublishedAt` was added for exactly this line.
+- **On failure, "เวอร์ชันที่ใช้อยู่ยังอยู่ครบและใช้งานได้ตามปกติ".** This is the case the signature and the checksums exist for, and a refused download is the chain working, not the app breaking. `swapPortable` puts the old exe back if the second rename fails, so the promise is true. A restart refused mid-turn returns to **ready**, never to a fresh download: the build is still staged, and offering to fetch it again would be a lie about where things stand.
 
 ### What this does not decide
 
-Update-on-quit (VS Code's other half — swap while the app is closing, so no one waits) is not built. Neither is a release-notes view in the notice; the link to the release page is the whole of "what changed" for now. macOS and Linux still have no auto path at all — `canAuto` is `false` off Windows, and closing that is part of the 1.0.0 three-platform gate, not this change.
+Update-on-quit (installing during shutdown so no one waits at all) is not built — with the swap already done by Stage, the remaining gap is just the relaunch, so this is now a small step rather than a design. Neither is a release-notes view on the card; the link to the release page is the whole of "what changed" for now. macOS and Linux still have no auto path at all — `canAuto` is `false` off Windows, and closing that is part of the 1.0.0 three-platform gate, not this change.
+
+## 108. Decision — A Provider Row Must Not Promise What the Endpoint Never Sends (2026-08-14)
+
+Owner, 14 ส.ค., testing every provider in turn: *"ฝากเทสทุกโพไวเดอร์ทีครับ"* — then, on the Gemini card: *"ยังไม่รู้ลิมิต คุยสักครั้งแล้วจะขึ้น แก้ได้ไหม"*.
+
+Three separate findings came out of one afternoon of live testing. They share a root: **the catalog recorded intentions, and the UI read them as facts.**
+
+### 108.1 Six providers were finished and invisible
+
+`desktopProviders` in `desktop/app.go` is an allowlist, and `desktop/providers_test.go` already carried the confession in data — six entries reading `"never added; no reason on record"`. Groq, Mistral, Kimi, MiniMax, Together and Perplexity each had a runtime, a base URL, an env key and a brand mark, and no way to reach any of them from the desktop.
+
+Each was probed against its live endpoint with a deliberately invalid key. All six answered the auth wall: base URL, path and body shape correct, only a real key missing. That is the same standard §-Codex was held to ("proven up to metering") and it is enough to show a row, because the next thing that happens is the user pasting their own key.
+
+**Cohere stays off.** It got the same 401, and the 401 proves less there: the catalog points at Cohere's native API rather than the OpenAI-compatible surface it is declared to speak, so the gateway rejecting an invalid key says nothing about whether the path underneath is the right one. A row that takes a key and fails on first use is worse than an absent row. It keeps its reason in `notOnTheDesktop` and waits for someone with a real key.
+
+### 108.2 Gemini states no rate-limit window, and the card promised one
+
+`quotaSource: QuotaOpenAIStd` was set on the theory that an OpenAI-compatible host probably sends the `x-ratelimit-*` family. Gemini does not. A real key against the live endpoint returns 200 with thirteen headers and not one of them is a rate-limit field.
+
+The UI read that theory as a fact and printed *"ยังไม่รู้ลิมิต คุยสักครั้งแล้วจะขึ้น"* — a promise conditioned on chatting, which is exactly the thing that could never make it true. Gemini is now `QuotaNone`, measured, with the measurement and its date in the entry and a test pinning it.
+
+The sentence itself was also wrong in general, not just for Gemini: every other `QuotaOpenAIStd` provider inherits the same optimism, and none of them are verified. It now says the limit appears after a turn **if the provider states one** — which is the honest shape of the claim, and costs nothing on the providers that do.
+
+### 108.3 The card asked for a key and left finding it as homework
+
+Every provider hides its key page somewhere different — `aistudio.google.com/apikey`, `console.groq.com/keys`, a tab query string deep inside Alibaba's console. The card asked for the key and said nothing about where it lives.
+
+`apiKeyURL` joins the catalog entry, next to the base URL and the env keys, because it is a fact about the provider of exactly the same kind. Putting the table in TypeScript instead would have been a second place answering the same question, free to drift. `APIKeyURL` returns empty for a provider that takes no pasted key, so a sign-in row and a local runtime draw no link rather than a dead one, and a test walks the whole catalog to make sure no row asks for a key it cannot point at.
+
+### What this does not decide
+
+Whether the other eleven `QuotaOpenAIStd` providers actually send those headers is still unmeasured — the dummy-key probe returns 401 before rate-limit accounting on most hosts, so only a real key can answer it, one provider at a time. The reworded sentence is what makes that acceptable to ship: it no longer claims anything that a silent provider would disprove.

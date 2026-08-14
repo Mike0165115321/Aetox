@@ -105,6 +105,21 @@ type ToolCall struct {
 	ID       string       `json:"id"`
 	Type     string       `json:"type"`
 	Function FunctionCall `json:"function"`
+	// ExtraContent is whatever the provider attached to this call that it
+	// expects to get back, carried opaquely and never interpreted.
+	//
+	// Gemini 3 puts a `thought_signature` here — an encrypted trace of the
+	// reasoning behind the call — and refuses the next turn outright without
+	// it: "Function call is missing a thought_signature in functionCall parts."
+	// Measured on the live endpoint (2026-08-15): echo the field back and the
+	// second turn is 200, drop it and the same request is a 400. Gemini 2.5
+	// sends no such field and is unaffected either way, which is why the bug
+	// stayed invisible until a 3.x model was tried.
+	//
+	// json.RawMessage on purpose. Its contents are Google's to define and to
+	// change; Aetox's only job is not to lose them. `omitempty` keeps every
+	// other provider's payload byte-identical to what it was.
+	ExtraContent json.RawMessage `json:"extra_content,omitempty"`
 }
 
 type Request struct {

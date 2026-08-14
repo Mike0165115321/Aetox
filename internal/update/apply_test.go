@@ -69,7 +69,11 @@ func TestVerifySHA256GatesTheDownload(t *testing.T) {
 // The rename trick itself: extract beside the target, move the old aside, move
 // the new in. After it, the exe path holds the new build and the old one still
 // exists as .old — the rollback if anything downstream goes wrong.
-func TestApplyPortableSwapsTheExe(t *testing.T) {
+//
+// And it restarts nothing. That is the whole point of the split: the swap is
+// safe to do while the user keeps working, so it must not be the thing that
+// closes their window.
+func TestSwapPortableReplacesTheExeAndRestartsNothing(t *testing.T) {
 	dir := t.TempDir()
 	exe := filepath.Join(dir, "aetox.exe")
 	if err := os.WriteFile(exe, []byte("old build"), 0o755); err != nil {
@@ -83,8 +87,8 @@ func TestApplyPortableSwapsTheExe(t *testing.T) {
 	relaunch = func(path string) error { relaunched = path; return nil }
 	defer func() { relaunch = orig }()
 
-	if err := applyPortableTo(exe, zipPath); err != nil {
-		t.Fatalf("applyPortableTo: %v", err)
+	if err := swapPortable(exe, zipPath); err != nil {
+		t.Fatalf("swapPortable: %v", err)
 	}
 
 	if got, _ := os.ReadFile(exe); string(got) != "new build" {
@@ -93,12 +97,68 @@ func TestApplyPortableSwapsTheExe(t *testing.T) {
 	if got, _ := os.ReadFile(exe + ".old"); string(got) != "old build" {
 		t.Errorf(".old holds %q, want the old build kept aside", got)
 	}
-	if relaunched != exe {
-		t.Errorf("relaunched %q, want %q — the restart is the half the user asked for", relaunched, exe)
+	if relaunched != "" {
+		t.Errorf("swapPortable relaunched %q — staging must never close the user's window", relaunched)
 	}
 }
 
-func TestApplyPortableRefusesAZipWithNoExe(t *testing.T) {
+// The second half, on its own, on the moment the user picked.
+func TestStagedRestartRelaunchesThePortableExe(t *testing.T) {
+	relaunched := ""
+	orig := relaunch
+	relaunch = func(path string) error { relaunched = path; return nil }
+	defer func() { relaunch = orig }()
+
+	s := Staged{Version: "0.9.7", channel: ChannelPortable, exe: `C:\Aetox\aetox.exe`}
+	if !s.Ready() {
+		t.Fatal("a staged update reports itself as nothing")
+	}
+	if err := s.Restart(); err != nil {
+		t.Fatalf("Restart: %v", err)
+	}
+	if relaunched != `C:\Aetox\aetox.exe` {
+		t.Errorf("relaunched %q, want the swapped exe", relaunched)
+	}
+}
+
+// The installer channel stages only the download — the installer itself needs
+// the app closed, so all of its work waits for the user's word.
+func TestStagedRestartHandsTheInstallerOver(t *testing.T) {
+	handed := ""
+	orig := handOff
+	handOff = func(path string) error { handed = path; return nil }
+	defer func() { handOff = orig }()
+
+	s := Staged{Version: "0.9.7", channel: ChannelInstaller, installer: `C:\tmp\aetox-installer.exe`}
+	if err := s.Restart(); err != nil {
+		t.Fatalf("Restart: %v", err)
+	}
+	if handed != `C:\tmp\aetox-installer.exe` {
+		t.Errorf("handed over %q, want the verified installer", handed)
+	}
+}
+
+// Nothing staged, nothing to restart into — and in particular, no relaunch of
+// an unchanged build dressed up as an update.
+func TestZeroStagedRestartsNothing(t *testing.T) {
+	called := false
+	origR, origH := relaunch, handOff
+	relaunch = func(string) error { called = true; return nil }
+	handOff = func(string) error { called = true; return nil }
+	defer func() { relaunch, handOff = origR, origH }()
+
+	if (Staged{}).Ready() {
+		t.Error("the zero Staged claims to be ready")
+	}
+	if err := (Staged{}).Restart(); err == nil {
+		t.Error("restarting nothing returned nil")
+	}
+	if called {
+		t.Error("an empty Staged reached a real ending")
+	}
+}
+
+func TestSwapPortableRefusesAZipWithNoExe(t *testing.T) {
 	dir := t.TempDir()
 	exe := filepath.Join(dir, "aetox.exe")
 	if err := os.WriteFile(exe, []byte("old build"), 0o755); err != nil {
@@ -107,7 +167,7 @@ func TestApplyPortableRefusesAZipWithNoExe(t *testing.T) {
 	zipPath := filepath.Join(dir, "empty.zip")
 	writeZip(t, zipPath, "README.md", []byte("not an exe"))
 
-	if err := applyPortableTo(exe, zipPath); err == nil {
+	if err := swapPortable(exe, zipPath); err == nil {
 		t.Fatal("a zip with no exe was applied")
 	}
 	// And the running build was never touched.

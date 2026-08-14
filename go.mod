@@ -19,6 +19,7 @@ require (
 	github.com/creack/pty v1.1.24
 	github.com/dop251/goja v0.0.0-20260806115107-493f22071ef6
 	github.com/modelcontextprotocol/go-sdk v1.6.1
+	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/wailsapp/go-webview2 v1.0.22
 	github.com/wailsapp/wails/v2 v2.13.0
 	golang.org/x/net v0.54.0

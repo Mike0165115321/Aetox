@@ -12,7 +12,9 @@ import {
   AgentSkills, AgentNeeds, PlacementTargets, SetMCPServerTargets,
   ChairStarters, SaveChairStarters,
   Connections, ConnectAccount, SetConnectionTargets, VerifyConnection, DisconnectAccount,
+  AcceptsAPIKey, ProviderAPIKeyURL, ProviderReady, PriceModels,
 } from './mocks/wailsApp'
+import { BrowserOpenURL } from './mocks/wailsRuntime'
 import { applyTypeScale } from '../lib/typeScale.svelte'
 import { cockpit } from '../lib/stores/cockpit.svelte'
 
@@ -166,6 +168,69 @@ describe('Settings pages', () => {
     expect(checkboxes.length).toBe(2) // one switch per server row
     await fireEvent.change(checkboxes[1]) // exa row (second server)
     await waitFor(() => expect(vi.mocked(ToggleMCPServer)).toHaveBeenCalledWith('exa', false))
+  })
+
+  // The shelf answered "what is this server" and never "why am I being shown
+  // it, and is it for me". Both lines are here now, and the second is derived:
+  // an agent's `needs:` is where that fact is decided, so the shelf reads it
+  // rather than restating it — otherwise an agent edited to drop a server keeps
+  // being advertised for it from a list nobody remembers to update.
+  it('says why each preset is recommended and which agent asked for it', async () => {
+    vi.mocked(ListSubagentProfiles).mockResolvedValue([
+      { name: 'research', description: 'หาข้อมูล', prompt: 'role', builtin: true, desk: 'specialized', needs: ['mcp:firecrawl'] },
+      { name: 'deck', description: 'ทำสไลด์', prompt: 'role', builtin: true, desk: 'specialized' },
+      { name: 'automation', description: 'ออโต', prompt: 'role', builtin: true, desk: 'specialized', needs: ['connection:n8n | mcp:windmill'] },
+    ] as any)
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'MCP servers')
+
+    // The reason, in the row, for the entry this test is about.
+    await waitFor(() => expect(container.textContent).toContain('walks a whole site'))
+
+    // And who asked for it — from the profile, not from the preset list.
+    const row = await waitFor(() => {
+      const el = Array.from(container.querySelectorAll('.set-row'))
+        .find((r) => r.querySelector('.t')?.textContent?.trim().startsWith('firecrawl'))
+      if (!el) throw new Error('the firecrawl preset row is not on the page')
+      return el
+    })
+    expect(row.querySelector('.mcp-wanted')?.textContent).toContain('research')
+
+    // A preset nobody declared stays quiet rather than showing an empty label.
+    const exa = Array.from(container.querySelectorAll('.set-row'))
+      .find((r) => r.querySelector('.t')?.textContent?.trim().startsWith('exa'))
+    expect(exa?.querySelector('.mcp-wanted')).toBeFalsy()
+  })
+
+  // The add form is eight controls for something done rarely, so it is closed
+  // until asked for (owner, 2026-08-14: it was "เรี่ยราด" laid out permanently
+  // under the list).
+  //
+  // The trap this pins is the second half: the same form is what แก้ไข and a
+  // key-needing preset open. A fold that only knew about its own button would
+  // leave those two clicking into nothing, silently — which is worse than the
+  // sprawl it replaced.
+  it('keeps the add-server form closed until something asks for it', async () => {
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'MCP servers')
+    await waitFor(() => expect(screen.getByText('2 เครื่องมือ')).toBeTruthy())
+
+    const nameBox = () => container.querySelector('input[placeholder="ชื่อ เช่น context7"]')
+    expect(nameBox()).toBeNull()
+
+    // The way in sits in the list's header, beside the folder button.
+    await fireEvent.click(screen.getByText('เพิ่ม SERVER'))
+    await waitFor(() => expect(nameBox()).toBeTruthy())
+
+    // And it can be shut again — a panel that opens and will not close is the
+    // thing the fold was meant to avoid, not a new version of it.
+    await fireEvent.click(screen.getByText('ยกเลิก'))
+    await waitFor(() => expect(nameBox()).toBeNull())
+
+    // แก้ไข opens the very same form, filled in.
+    await fireEvent.click(screen.getAllByText('แก้ไข')[0])
+    await waitFor(() => expect(nameBox()).toBeTruthy())
+    expect((nameBox() as HTMLInputElement).value).toBe('context7')
   })
 
   // The allowlist is the one MCP field that is destructive when it round-trips
@@ -832,6 +897,90 @@ describe('Settings pages', () => {
     expect(screen.getByText(/ไปเชื่อมบัญชี/)).toBeTruthy()
   })
 
+  // A bundled agent names the server it was written against, and the user has
+  // no way to know which of seven presets that is (owner, 2026-08-14: *"คนเขา
+  // ไม่รู้หรอกอันไหนเราทำไว้เพื่อตัวไหน"*). So the fix happens on the agent's own
+  // card: install the server AND place the agent on it, in one press.
+  //
+  // Both halves are asserted because installing alone is the failure that looks
+  // like success — the server appears, the need stays unmet as "unplaced", and
+  // the button seems to have done nothing.
+  it('installs and places the server an agent says it is missing', async () => {
+    // This describe block does not clear mocks between tests, so the call
+    // history carries earlier saves — cleared here or `.at(-1)` reads somebody
+    // else's context7.
+    vi.mocked(SaveMCPServer).mockClear()
+    vi.mocked(SetMCPServerTargets).mockClear()
+    // The agent has to be somewhere a server can point, or placement is skipped
+    // and only half the button runs. [2] is deck, as in the box test above.
+    vi.mocked(PlacementTargets).mockResolvedValue([
+      { id: 'assistant', name: 'ผู้ช่วย', kind: 'desk' },
+      { id: 'agent:deck', name: 'deck', kind: 'agent' },
+    ] as any)
+    // The register answers honestly: firecrawl is not there until it is
+    // installed, and the placement half reads it back off this list.
+    let installed = false
+    const base = [
+      { name: 'context7', command: ['npx', '-y', '@upstash/context7-mcp'], disabled: false, status: 'connected', tools: 2, allowed: ['resolve-library-id', 'get-library-docs'] },
+      { name: 'exa', url: 'https://mcp.exa.ai/mcp', disabled: true, status: 'disabled', tools: 0 },
+    ]
+    vi.mocked(SaveMCPServer).mockImplementation(async () => { installed = true })
+    vi.mocked(ListMCPServers).mockImplementation(async () => (installed
+      ? [...base, { name: 'firecrawl', url: 'https://mcp.firecrawl.dev/v2/mcp', disabled: false, status: 'connected', tools: 0, for: [] }]
+      : base) as any)
+    vi.mocked(ReadSubagentProfile).mockResolvedValue(
+      '---\ndescription: หาข้อมูลเชิงลึก\nneeds: mcp:firecrawl\n---\nYou go and find out.' as any,
+    )
+    vi.mocked(AgentNeeds).mockResolvedValue([
+      {
+        entry: 'mcp:firecrawl', met: false,
+        options: [{ kind: 'mcp', id: 'firecrawl', label: 'firecrawl', reason: 'missing' }],
+      },
+    ] as any)
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'เอเจน')
+    await waitFor(() => expect(screen.getAllByLabelText('ตั้งค่า').length).toBe(3))
+    await fireEvent.click(screen.getAllByLabelText('ตั้งค่า')[2])
+
+    await waitFor(() => expect(screen.getByText(/ติดตั้งให้เลย/)).toBeTruthy())
+    await fireEvent.click(screen.getByText(/ติดตั้งให้เลย/))
+
+    // Installed from the verified preset, so the URL is the probed one rather
+    // than anything typed here.
+    await waitFor(() => expect(vi.mocked(SaveMCPServer)).toHaveBeenCalled())
+    const [, sent] = vi.mocked(SaveMCPServer).mock.calls.at(-1) as [string, any]
+    expect(sent.name).toBe('firecrawl')
+    expect(sent.url).toBe('https://mcp.firecrawl.dev/v2/mcp')
+    // And placed on this agent — the half that turns "installed" into "met".
+    await waitFor(() => expect(vi.mocked(SetMCPServerTargets)).toHaveBeenCalled())
+    const [placed, targets] = vi.mocked(SetMCPServerTargets).mock.calls.at(-1) as [string, string[]]
+    expect(placed).toBe('firecrawl')
+    expect(targets).toContain('agent:deck')
+  })
+
+  // A need Aetox has no verified preset for keeps the door to the page. The
+  // button exists to remove the *matching* — which of seven presets is this
+  // agent's — and it has nothing to offer when there is no entry to match, so
+  // pretending otherwise would be a one-click install of nothing.
+  it('falls back to the MCP page for a server it has no preset for', async () => {
+    vi.mocked(ReadSubagentProfile).mockResolvedValue(
+      '---\ndescription: ออโตเมชั่น\nneeds: mcp:windmill\n---\nYou wire things up.' as any,
+    )
+    vi.mocked(AgentNeeds).mockResolvedValue([
+      {
+        entry: 'mcp:windmill', met: false,
+        options: [{ kind: 'mcp', id: 'windmill', label: 'windmill', reason: 'missing' }],
+      },
+    ] as any)
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'เอเจน')
+    await waitFor(() => expect(screen.getAllByLabelText('ตั้งค่า').length).toBe(3))
+    await fireEvent.click(screen.getAllByLabelText('ตั้งค่า')[2])
+
+    await waitFor(() => expect(screen.getByText(/ไปเปิดเซิร์ฟเวอร์/)).toBeTruthy())
+    expect(screen.queryByText(/ติดตั้งให้เลย/)).toBeNull()
+  })
+
   // `needs: connection:n8n | connection:windmill` is ONE requirement — an
   // automation engine — and either answers it. Drawn as one flat line about
   // whichever was nearest, it read as "n8n is required" and hid both the
@@ -1031,6 +1180,72 @@ describe('Settings pages', () => {
     await openSection(container, 'การตั้งค่าโมเดล')
 
     await waitFor(() => expect(container.querySelector('.signin-warn')).toBeTruthy())
+  })
+
+  // Codex is a ChatGPT subscription reached at chatgpt.com, and the only key a
+  // user could paste is an api.openai.com key — a different host, a different
+  // bill, and a guaranteed 401. The field was offering a login that cannot
+  // succeed, so the card shows the sign-in and nothing else.
+  it('the Codex card offers no API key field, only sign-in', async () => {
+    seedSignIn({ provider: 'codex', label: 'ChatGPT', kind: 'browser' })
+    vi.mocked(AcceptsAPIKey).mockResolvedValue(false as any)
+
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'การตั้งค่าโมเดล')
+
+    await waitFor(() => expect(screen.getByText('เข้าสู่ระบบด้วย ChatGPT')).toBeTruthy())
+    // The base URL input shares .key-input, so the key field is identified by
+    // the thing only it has: a masked value.
+    expect(container.querySelector('input[type="password"]')).toBeNull()
+    expect(container.textContent).not.toContain('หรือใช้ API key แทน')
+  })
+
+  // Every other provider keeps the field: a pasted key is how they are used.
+  it('a keyed provider still shows the API key field', async () => {
+    seedSignIn({ provider: 'anthropic', label: 'Claude', kind: 'browser' })
+    // Set explicitly: the Codex case above opts a provider out, and the shared
+    // mock keeps whatever implementation it was last given.
+    vi.mocked(AcceptsAPIKey).mockResolvedValue(true as any)
+
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'การตั้งค่าโมเดล')
+
+    await waitFor(() => expect(container.querySelector('input[type="password"]')).toBeTruthy())
+  })
+
+  // The card asks for a key and every provider hides the page that issues one
+  // somewhere different, so the answer has to sit next to the field. The URL
+  // comes from the Go catalog, which is the only place that knows it.
+  it('a keyed provider links out to the page that issues the key', async () => {
+    seedSignIn({ provider: 'gemini', label: 'Gemini', kind: 'browser' })
+    vi.mocked(AcceptsAPIKey).mockResolvedValue(true as any)
+    vi.mocked(ProviderAPIKeyURL).mockResolvedValue('https://aistudio.google.com/apikey' as any)
+
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'การตั้งค่าโมเดล')
+
+    const link = await waitFor(() => {
+      const el = container.querySelector('.keylink')
+      if (!el) throw new Error('no key link')
+      return el
+    })
+    await fireEvent.click(link)
+    expect(vi.mocked(BrowserOpenURL)).toHaveBeenCalledWith('https://aistudio.google.com/apikey')
+  })
+
+  // A local runtime has no account and a sign-in provider has no key to issue.
+  // An empty URL is the catalog saying "nowhere to send them", and a link to
+  // nowhere is worse than no link.
+  it('a provider with no key page shows no link', async () => {
+    seedSignIn({ provider: 'ollama', label: 'Ollama', kind: 'browser' })
+    vi.mocked(AcceptsAPIKey).mockResolvedValue(true as any)
+    vi.mocked(ProviderAPIKeyURL).mockResolvedValue('' as any)
+
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'การตั้งค่าโมเดล')
+
+    await waitFor(() => expect(container.querySelector('input[type="password"]')).toBeTruthy())
+    expect(container.querySelector('.keylink')).toBeNull()
   })
 
   it('an already signed-in provider offers sign-out instead of sign-in', async () => {
@@ -1496,7 +1711,7 @@ describe('Settings About page', () => {
     const { container } = await openAbout()
     await fireEvent.click(screen.getByText('ตรวจหาการอัปเดต'))
 
-    await waitFor(() => expect(screen.getByText('มีเวอร์ชันใหม่ — v0.9.0')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('มีเวอร์ชันใหม่ v0.9.0')).toBeTruthy())
     expect(screen.getByText('scoop update aetox')).toBeTruthy()
     expect(container.textContent).toContain('ติดตั้งผ่าน Scoop')
     // Exactly one — the release-notes row at the bottom. The update row itself
@@ -1512,7 +1727,7 @@ describe('Settings About page', () => {
     await openAbout()
     await fireEvent.click(screen.getByText('ตรวจหาการอัปเดต'))
 
-    await waitFor(() => expect(screen.getByText('มีเวอร์ชันใหม่ — v0.9.0')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('มีเวอร์ชันใหม่ v0.9.0')).toBeTruthy())
     expect(screen.queryByText('scoop update aetox')).toBeNull()
     expect(screen.getAllByText('เปิดหน้าดาวน์โหลด').length).toBe(2)
   })
@@ -1941,5 +2156,118 @@ describe('Connections page', () => {
     await expandRow(container)
 
     expect(container.textContent).toContain('แต่ Aetox ใช้บัญชีที่เชื่อมไว้')
+  })
+})
+
+// The sidebar dot used to be painted from HasAPIKey, which returns true for
+// anything needing no key — so LM Studio and Ollama showed green whether or not
+// a server was listening, on a card that said "no models found" beside it.
+describe('the provider dot says what is actually usable', () => {
+  const seedRow = (provider: string) => {
+    vi.mocked(SupportedProviders).mockResolvedValue([provider] as any)
+    vi.mocked(EnabledProviders).mockResolvedValue([provider] as any)
+    vi.mocked(SignInMethods).mockResolvedValue([] as any)
+  }
+  const dot = (container: HTMLElement) => container.querySelector('.mset-prov .dot')
+
+  it('stays un-green while the answer is still in flight', async () => {
+    seedRow('lmstudio')
+    // Never resolves: exactly the window in which the old dot was already green.
+    vi.mocked(ProviderReady).mockImplementation(() => new Promise(() => {}) as any)
+
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'การตั้งค่าโมเดล')
+
+    await waitFor(() => expect(dot(container)).toBeTruthy())
+    expect(dot(container)!.classList.contains('green')).toBe(false)
+    expect(dot(container)!.classList.contains('unknown')).toBe(true)
+  })
+
+  it('stays un-green when the local server is not running', async () => {
+    seedRow('lmstudio')
+    vi.mocked(ProviderReady).mockResolvedValue(false as any)
+
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'การตั้งค่าโมเดล')
+
+    await waitFor(() => expect(dot(container)?.classList.contains('unknown')).toBe(false))
+    expect(dot(container)!.classList.contains('green')).toBe(false)
+  })
+
+  it('goes green once the engine confirms it', async () => {
+    seedRow('deepseek')
+    vi.mocked(ProviderReady).mockResolvedValue(true as any)
+
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'การตั้งค่าโมเดล')
+
+    await waitFor(() => expect(dot(container)?.classList.contains('green')).toBe(true))
+  })
+})
+
+// 411 models in alphabetical order is a list you scroll, not one you choose
+// from. The price is the other half: unknown has to look unlike free, because
+// on a list this long a zero is a decision the user would act on.
+describe('the model list can be searched and priced', () => {
+  const manyModels = [
+    'aion-labs/aion-2.0', 'ai21/jamba-large-1.7', 'deepseek/deepseek-v4-flash',
+    'deepseek/deepseek-v4-pro', 'google/gemma-4-31b-it:free', 'meta/llama-4',
+    'mistral/mistral-medium', 'openai/gpt-5-nano', 'qwen/qwen3.6-flash',
+  ]
+  const seedList = () => {
+    vi.mocked(SupportedProviders).mockResolvedValue(['openrouter'] as any)
+    vi.mocked(EnabledProviders).mockResolvedValue(['openrouter'] as any)
+    vi.mocked(SignInMethods).mockResolvedValue([] as any)
+    vi.mocked(ListModelsForProvider).mockResolvedValue(manyModels as any)
+    vi.mocked(PriceModels).mockResolvedValue([
+      { model: 'deepseek/deepseek-v4-flash', input: 0.14, output: 0.28, priced: true, free: false, context: 1000000 },
+      { model: 'deepseek/deepseek-v4-pro', input: 0.435, output: 0.87, priced: true, free: false, context: 1000000 },
+      { model: 'google/gemma-4-31b-it:free', input: 0, output: 0, priced: false, free: true, context: 32768 },
+      // The rest are absent on purpose: the catalog covers 84% of OpenRouter.
+    ] as any)
+  }
+  const rowNames = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('.mrow .mname')).map((e) => e.textContent?.trim() ?? '')
+
+  it('filters the list by what is typed', async () => {
+    seedList()
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'การตั้งค่าโมเดล')
+    await waitFor(() => expect(rowNames(container).length).toBe(manyModels.length))
+
+    const search = container.querySelector('.mlist-search') as HTMLInputElement
+    expect(search).toBeTruthy()
+    await fireEvent.input(search, { target: { value: 'deepseek' } })
+
+    await waitFor(() => expect(rowNames(container)).toEqual([
+      'deepseek/deepseek-v4-flash', 'deepseek/deepseek-v4-pro', // cheapest first
+    ]))
+  })
+
+  it('shows a price where there is one and a dash where there is not', async () => {
+    seedList()
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'การตั้งค่าโมเดล')
+
+    await waitFor(() => expect(container.querySelector('.mprice')).toBeTruthy())
+    const text = container.textContent ?? ''
+    expect(text).toContain('$0.14 / $0.28')
+    // A model the catalog never priced must not read as free.
+    const dashes = container.querySelectorAll('.mprice.dim').length
+    expect(dashes).toBe(manyModels.length - 3)
+  })
+
+  it('can show only the free models, keyed off the vendor marker', async () => {
+    seedList()
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'การตั้งค่าโมเดล')
+    await waitFor(() => expect(rowNames(container).length).toBe(manyModels.length))
+
+    const toggle = Array.from(container.querySelectorAll('.conn-chip'))
+      .find((b) => b.textContent?.includes('เฉพาะฟรี'))
+    expect(toggle).toBeTruthy()
+    await fireEvent.click(toggle!)
+
+    await waitFor(() => expect(rowNames(container)).toEqual(['google/gemma-4-31b-it:free']))
   })
 })

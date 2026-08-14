@@ -2,10 +2,13 @@ package main
 
 import (
 	"database/sql"
+	"strings"
 	"time"
 
+	"github.com/Mike0165115321/Aetox/internal/config"
 	"github.com/Mike0165115321/Aetox/internal/debuglog"
 	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mike0165115321/Aetox/internal/provider"
 )
 
 // recordTokenUsage persists one model response's token usage. Wired into the
@@ -26,9 +29,10 @@ func (a *App) recordTokenUsage(u model.Usage) {
 		cached = u.CachedPromptTokens
 	}
 	_, err = db.Exec(
-		`INSERT INTO token_usage(session_id, model, prompt_tokens, completion_tokens, cached_prompt_tokens, time)
-		 VALUES(?,?,?,?,?,?)`,
-		a.sessionID, a.cfg.ModelName, u.PromptTokens, u.CompletionTokens, cached, time.Now().Format(time.RFC3339),
+		`INSERT INTO token_usage(session_id, model, provider, prompt_tokens, completion_tokens, cached_prompt_tokens, time)
+		 VALUES(?,?,?,?,?,?,?)`,
+		a.sessionID, a.cfg.ModelName, model.NormalizeProvider(a.cfg.ModelProvider),
+		u.PromptTokens, u.CompletionTokens, cached, time.Now().Format(time.RFC3339),
 	)
 	if err != nil {
 		debuglog.Msg("usage: insert failed: %v", err)
@@ -41,14 +45,24 @@ func (a *App) recordTokenUsage(u model.Usage) {
 // CacheRows counts how many of this model's calls reported cache accounting at
 // all: zero means the provider does not report it (a local runtime), and the
 // UI must show "—" rather than a 0% hit rate the provider never claimed.
+// Cost/Priced turn the counts into money. Priced is carried separately rather
+// than inferred from a zero Cost, because "this model is not in the price
+// catalog" and "this model cost nothing" are different sentences and only one
+// of them is ever true. The UI must show a dash for the first.
 type UsageRow struct {
-	Model            string `json:"model"`
-	PromptTokens     int64  `json:"promptTokens"`
-	CompletionTokens int64  `json:"completionTokens"`
-	CachedTokens     int64  `json:"cachedTokens"`
-	UncachedTokens   int64  `json:"uncachedTokens"`
-	CacheRows        int64  `json:"cacheRows"`
-	Calls            int64  `json:"calls"`
+	Model string `json:"model"`
+	// Provider is empty on every row written before it was recorded, which is
+	// not the same as unknown-forever: those get priced by model name, the same
+	// way they were before this column existed.
+	Provider         string  `json:"provider"`
+	PromptTokens     int64   `json:"promptTokens"`
+	CompletionTokens int64   `json:"completionTokens"`
+	CachedTokens     int64   `json:"cachedTokens"`
+	UncachedTokens   int64   `json:"uncachedTokens"`
+	CacheRows        int64   `json:"cacheRows"`
+	Calls            int64   `json:"calls"`
+	Cost             float64 `json:"cost"`
+	Priced           bool    `json:"priced"`
 }
 
 // DayPoint is one model's tokens on one calendar day, for the per-day chart
@@ -81,6 +95,18 @@ type UsageTotals struct {
 	CurrentStreak    int64  `json:"currentStreak"`
 	TopModel         string `json:"topModel"`
 	TopModelShare    int64  `json:"topModelShare"` // percent of total tokens
+
+	// Cost is the sum over the rows that could be priced, and PricedTokens says
+	// how much of the input the figure actually covers. Both are needed: a
+	// total built from half the models is not the bill, and presenting it as
+	// one would be the most confident wrong number on the page.
+	Cost        float64 `json:"cost"`
+	PricedCalls int64   `json:"pricedCalls"`
+	// PricesFetched is when the catalog was last read, empty when there is no
+	// catalog at all. The UI labels every figure with it: these are third-party
+	// list prices, not an invoice, and the reader has to be able to see how old
+	// they are.
+	PricesFetched string `json:"pricesFetched"`
 }
 
 // UsageStats is everything the stats page renders.
@@ -125,18 +151,182 @@ func (a *App) UsageStats() (UsageStats, error) {
 	if out.Totals, err = usageTotals(db, out.All); err != nil {
 		return out, err
 	}
+	a.priceUsage(&out)
 	return out, nil
 }
 
+// priceUsage puts money on the rows it can and leaves the rest alone.
+//
+// Deliberately the last step and deliberately unable to fail: the stats page
+// answered a real question before prices existed, and a catalog that could not
+// be fetched must cost the user their token counts too.
+func (a *App) priceUsage(out *UsageStats) {
+	catalog := a.modelCatalog()
+	if catalog == nil {
+		return
+	}
+	out.Totals.PricesFetched = catalog.Fetched.Format(time.RFC3339)
+	for _, rows := range [][]UsageRow{out.Today, out.Week, out.All} {
+		for i := range rows {
+			// A plan is not a meter. Codex answers with models OpenAI also
+			// sells per token, so pricing those calls by the API rate would
+			// bill a subscription twice over and call the result spend.
+			if provider.BalanceKindFor(rows[i].Provider) == provider.BalanceSubscription {
+				continue
+			}
+			facts, ok := lookupFacts(catalog, rows[i].Provider, rows[i].Model)
+			if !ok || !facts.Price.Priced() {
+				continue
+			}
+			rows[i].Cost = facts.Price.Cost(rows[i].UncachedTokens, rows[i].CachedTokens, rows[i].CompletionTokens)
+			rows[i].Priced = true
+		}
+	}
+	// Totals come from the all-time rows, so the headline and the table can
+	// never disagree about what was counted.
+	for _, r := range out.All {
+		if !r.Priced {
+			continue
+		}
+		out.Totals.Cost += r.Cost
+		out.Totals.PricedCalls += r.Calls
+	}
+}
+
+// ModelListing is one row of a provider's model picker: the name it is chosen
+// by, and what the catalog knows about it.
+//
+// Priced is separate from the rates for the same reason UsageRow.Priced is: a
+// model the catalog has never heard of must render as a dash. On a list of 411
+// OpenRouter models, a zero that reads as "free" is a decision the user would
+// act on.
+type ModelListing struct {
+	Model   string  `json:"model"`
+	Input   float64 `json:"input"`
+	Output  float64 `json:"output"`
+	Priced  bool    `json:"priced"`
+	Free    bool    `json:"free"`
+	Context int     `json:"context"`
+}
+
+// PriceModels annotates a model list the caller already has.
+//
+// It takes the list rather than fetching its own so the prices cannot end up
+// describing a different set of models than the one on screen — the picker's
+// list comes from the provider's own endpoint, and a second discovery call
+// would be a second answer to "which models are there".
+func (a *App) PriceModels(providerName string, models []string) []ModelListing {
+	canonical := model.NormalizeProvider(providerName)
+	catalog := a.modelCatalog()
+	// A local runtime costs nothing to run, so everything it serves is free in
+	// the only sense this column means. Nothing about that is in models.dev.
+	runsLocally := provider.BalanceKindFor(canonical) == provider.BalanceFree
+
+	out := make([]ModelListing, 0, len(models))
+	for _, name := range models {
+		row := ModelListing{Model: name, Free: runsLocally}
+		// The vendor's own marker is the only trustworthy "free" on a hosted
+		// provider. A catalog rate of zero is not one: of 22 OpenRouter models
+		// priced at zero, 15 carry this suffix and the other 7 are previews
+		// nobody has published a price for yet.
+		if strings.HasSuffix(strings.ToLower(name), ":free") {
+			row.Free = true
+		}
+		if facts, ok := catalog.For(canonical, name); ok {
+			row.Context = facts.Context
+			if facts.Price.Priced() {
+				row.Input, row.Output, row.Priced = facts.Price.Input, facts.Price.Output, true
+			}
+		}
+		out = append(out, row)
+	}
+	return out
+}
+
+// lookupFacts prices a row by provider where the row knows one, and by model
+// name where it does not.
+//
+// The fallback is only for rows written before the provider column existed.
+// Those cannot be attributed now and pricing them by name is exactly what the
+// stats page already did, so the choice is between the old approximation and no
+// figure at all for the history that prompted the feature.
+func lookupFacts(catalog *model.ModelCatalog, providerName, modelName string) (model.ModelFacts, bool) {
+	if strings.TrimSpace(providerName) != "" {
+		return catalog.For(providerName, modelName)
+	}
+	return catalog.ForModel(modelName)
+}
+
+// modelCatalog returns the fetched model facts, reading them off disk once per
+// run and installing them so context-window lookups see them too.
+//
+// Nothing here reaches the network: a chat turn asking for the stats page must
+// not wait on models.dev. RefreshModelFacts does the fetching, on its own
+// schedule.
+func (a *App) modelCatalog() *model.ModelCatalog {
+	a.pricesMu.Lock()
+	defer a.pricesMu.Unlock()
+	if a.pricesLoaded {
+		return a.prices
+	}
+	a.pricesLoaded = true
+	root, err := config.DataRoot()
+	if err != nil {
+		return nil
+	}
+	catalog, err := model.LoadModelCatalog(root)
+	if err != nil {
+		debuglog.Msg("model catalog: cache unreadable: %v", err)
+		return nil
+	}
+	a.prices = catalog
+	// The context meter reads ContextWindowTokens, which consults whatever is
+	// installed — so a cached catalog has to be installed even on the path
+	// where no refresh ever succeeds.
+	model.SetModelCatalog(catalog)
+	return a.prices
+}
+
+// RefreshModelFacts fetches the model catalog, caches it, and installs it.
+//
+// Called once at startup and available to the UI as an explicit retry. Silent
+// on failure by the same rule the update check follows: an offline laptop is
+// not a broken app, and a red banner about models.dev over a working chat is an
+// answer to a question nobody asked.
+func (a *App) RefreshModelFacts() {
+	root, err := config.DataRoot()
+	if err != nil {
+		return
+	}
+	// Installs whatever it ends up with, fresh or cached — see
+	// model.RefreshModelCatalog.
+	catalog, err := model.RefreshModelCatalog(a.ctx, root)
+	if err != nil {
+		debuglog.Msg("model catalog: refresh failed: %v", err)
+	}
+	if catalog == nil {
+		return
+	}
+	a.pricesMu.Lock()
+	a.prices, a.pricesLoaded = catalog, true
+	a.pricesMu.Unlock()
+}
+
 func usageByModel(db *sql.DB, since string) ([]UsageRow, error) {
+	// Grouped by model AND provider, because the pair is what a price applies
+	// to. The same model id is sold per token by one company and included in a
+	// subscription by another, and a row that merged the two could only be
+	// priced by guessing which. Old rows carry '' and group together as the
+	// unattributed set they are.
 	rows, err := db.Query(
 		`SELECT model,
+		        COALESCE(provider, ''),
 		        SUM(prompt_tokens),
 		        SUM(completion_tokens),
 		        COALESCE(SUM(cached_prompt_tokens), 0),
 		        COUNT(cached_prompt_tokens),
 		        COUNT(*)
-		 FROM token_usage WHERE time >= ? GROUP BY model
+		 FROM token_usage WHERE time >= ? GROUP BY model, COALESCE(provider, '')
 		 ORDER BY SUM(prompt_tokens)+SUM(completion_tokens) DESC`, since)
 	if err != nil {
 		return nil, err
@@ -145,7 +335,7 @@ func usageByModel(db *sql.DB, since string) ([]UsageRow, error) {
 	var result []UsageRow
 	for rows.Next() {
 		var r UsageRow
-		if err := rows.Scan(&r.Model, &r.PromptTokens, &r.CompletionTokens, &r.CachedTokens, &r.CacheRows, &r.Calls); err != nil {
+		if err := rows.Scan(&r.Model, &r.Provider, &r.PromptTokens, &r.CompletionTokens, &r.CachedTokens, &r.CacheRows, &r.Calls); err != nil {
 			return nil, err
 		}
 		if r.UncachedTokens = r.PromptTokens - r.CachedTokens; r.UncachedTokens < 0 {

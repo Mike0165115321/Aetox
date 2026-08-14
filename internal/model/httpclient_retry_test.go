@@ -84,6 +84,107 @@ func TestRetryTransportDoesNotRetryClientErrors(t *testing.T) {
 	}
 }
 
+// An account with no credit left answers 429 too, but no amount of waiting
+// changes a balance of zero. The transport hands it straight back — with the
+// body intact, because the caller still has to read the reason.
+func TestRetryTransportDoesNotRetryInsufficientQuota(t *testing.T) {
+	quotaBody := `{"error":{"message":"You exceeded your current quota, please check your plan and billing details.","type":"insufficient_quota","param":null,"code":"insufficient_quota"}}`
+	var calls int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		w.Header().Set("Retry-After", "0")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(quotaBody))
+	}))
+	defer server.Close()
+
+	client := newModelHTTPClient(5 * time.Second)
+	resp, err := client.Do(mustPost(t, server.URL))
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	body, readErr := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if readErr != nil {
+		t.Fatalf("reading the body back: %v", readErr)
+	}
+
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Fatalf("calls = %d; want no retries against an empty balance", got)
+	}
+	if string(body) != quotaBody {
+		t.Fatalf("body = %q; want the peeked body handed back whole", body)
+	}
+}
+
+// Not every provider says "insufficient_quota". Z.ai answers the identical
+// condition with code 1113 and a sentence sharing no word with OpenAI's, and
+// while the transport matched that one token it retried an empty wallet through
+// the whole backoff budget before reporting a rate limit that was never one.
+func TestRetryTransportDoesNotRetryABalanceOfZeroInAnyDialect(t *testing.T) {
+	for _, body := range []string{
+		`{"error":{"code":"1113","message":"Insufficient balance or no resource package. Please recharge."}}`,
+		// Case is not ours to assume either — the match is case-insensitive.
+		`{"error":{"message":"INSUFFICIENT BALANCE"}}`,
+	} {
+		var calls int32
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			atomic.AddInt32(&calls, 1)
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(body))
+		}))
+
+		client := newModelHTTPClient(5 * time.Second)
+		resp, err := client.Do(mustPost(t, server.URL))
+		if err != nil {
+			server.Close()
+			t.Fatalf("Do: %v", err)
+		}
+		got, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		server.Close()
+		if readErr != nil {
+			t.Fatalf("reading the body back: %v", readErr)
+		}
+
+		if n := atomic.LoadInt32(&calls); n != 1 {
+			t.Errorf("calls = %d for %s; want no retries against an empty balance", n, body)
+		}
+		if string(got) != body {
+			t.Errorf("body = %q; want the peeked body handed back whole", got)
+		}
+	}
+}
+
+// The other direction, which matters just as much: a real rate limit must stay
+// retryable. A marker list that swallowed "slow down" would turn a wait of a
+// few seconds into a dead turn.
+func TestRetryTransportStillRetriesARealRateLimit(t *testing.T) {
+	var calls int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if atomic.AddInt32(&calls, 1) == 1 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"error":{"message":"Rate limit reached for gpt-4o","code":"rate_limit_exceeded"}}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := newModelHTTPClient(5 * time.Second)
+	resp, err := client.Do(mustPost(t, server.URL))
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	resp.Body.Close()
+
+	if got := atomic.LoadInt32(&calls); got != 2 {
+		t.Fatalf("calls = %d; want the rate limit retried once and then succeeding", got)
+	}
+}
+
 // A limit that resets in an hour is not something to block a turn on. The
 // response comes straight back so the runtime can say when it resets.
 func TestRetryTransportGivesUpOnLongWindows(t *testing.T) {

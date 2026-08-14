@@ -552,6 +552,58 @@ func TestRateLimitWindowReadsBothHeaderDialects(t *testing.T) {
 	}
 }
 
+// This wire format is not only Anthropic's: DeepSeek's default endpoint speaks
+// it, and DeepSeek reports an empty wallet as a plain 402 rather than the 429
+// every other host uses. Nothing here had a case for that status, so it fell to
+// the catch-all and the user got the raw JSON body with a number in front of it.
+func TestAnthropicStatusErrorsAreActionable(t *testing.T) {
+	cases := []struct {
+		name   string
+		status int
+		body   string
+		want   string
+	}{
+		{
+			"payment required", http.StatusPaymentRequired,
+			`{"error":{"message":"Insufficient Balance","type":"unknown_error","param":null,"code":"invalid_request_error"}}`,
+			"out of credits",
+		},
+		// The same condition can also arrive as a 429 on this format, which is
+		// the 402's opposite: the status says "wait" and only the body says
+		// "pay". Reading one without the other gets one of the two wrong.
+		{
+			"balance spent, reported as a rate limit", http.StatusTooManyRequests,
+			`{"error":{"message":"Insufficient balance or no resource package. Please recharge."}}`,
+			"out of credits",
+		},
+		// And the genuine rate limit must survive all of that.
+		{
+			"actually rate limited", http.StatusTooManyRequests,
+			`{"error":{"message":"rate limit exceeded"}}`,
+			"rate limiting this key",
+		},
+		{
+			"bad key", http.StatusUnauthorized,
+			`{"error":{"message":"invalid x-api-key"}}`,
+			"rejected the credentials",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := &http.Response{StatusCode: tc.status, Header: http.Header{}}
+			err := (&AnthropicProvider{name: "deepseek"}).statusError(resp, []byte(tc.body))
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("got %v; want it to mention %q", err, tc.want)
+			}
+			// The provider's own sentence is worth quoting; the JSON around it
+			// never was.
+			if strings.Contains(err.Error(), `{"error"`) {
+				t.Errorf("leaked the raw JSON body: %v", err)
+			}
+		})
+	}
+}
+
 // Anthropic caches nothing without an explicit cache_control marker — the
 // reader that reports CacheReadTokens was wired long before anything wrote a
 // breakpoint, so every Claude call re-evaluated the full prompt at full price

@@ -1,24 +1,35 @@
 package update
 
-// Apply is the button's second half: Check says a newer Aetox exists, Apply
-// makes this machine run it. The design VS Code and every Squirrel app share,
-// built on the one Windows fact that makes self-update possible at all: a
-// running exe cannot be overwritten, but it CAN be renamed.
+// Stage and Restart are the button's second half: Check says a newer Aetox
+// exists, these two make this machine run it. The design VS Code and every
+// Squirrel app share, built on the one Windows fact that makes self-update
+// possible at all: a running exe cannot be overwritten, but it CAN be renamed.
+//
+// Two halves rather than one act, because the two ask the user for completely
+// different things. Downloading and verifying costs nothing but bandwidth and
+// can happen while they keep working; restarting costs them whatever they were
+// in the middle of. An update that closes the window the moment the download
+// finishes has spent the second one without asking. So Stage goes as far as it
+// safely can — after it, the exe on disk IS the new build — and stops there;
+// Restart is the sentence the user gets to time themselves. Saying "later" and
+// closing the app normally installs it just the same, because the swap already
+// happened.
 //
 // Per channel:
 //
-//   - portable — the rename trick. Download the zip, verify it, extract the
-//     new exe next to the running one, rename the running exe aside, rename
-//     the new one into its place, and relaunch after this process exits. No
-//     elevation: the folder is the user's own.
-//   - installer — hand the job to the new installer, exactly as re-running it
-//     by hand would (project.nsi already taskkills the app). It runs silent
-//     (/S), shows UAC if it needs it, and the app is relaunched after.
+//   - portable — the rename trick, and all of it belongs to Stage: download
+//     the zip, verify it, extract the new exe next to the running one, rename
+//     the running exe aside, rename the new one into its place. No elevation:
+//     the folder is the user's own. Restart only relaunches.
+//   - installer — nothing can be staged but the download, because an installer
+//     must run with the app closed (project.nsi taskkills it). Restart hands
+//     the verified file over exactly as re-running it by hand would: silent
+//     (/S), UAC if the scope needs it, app relaunched after.
 //   - scoop — never touched from here. Scoop owns that directory; the UI keeps
 //     offering `scoop update aetox` instead of a button.
 //
-// Both flows relaunch through a tiny waiter that blocks on this process's exit
-// first, so the new instance never overlaps the old one on the database.
+// Both endings relaunch through a tiny waiter that blocks on this process's
+// exit first, so the new instance never overlaps the old one on the database.
 //
 // Trust: the download is verified against checksums.txt from the same release,
 // fetched over TLS from the same GitHub API the check trusts — the same
@@ -110,21 +121,41 @@ func findAssetSuffix(assets []Asset, suffix string) (Asset, bool) {
 	return Asset{}, false
 }
 
-// Apply downloads the newer release, verifies it against the release's own
-// checksums, and swaps this install over to it. On a nil error the process
-// must exit soon after: the relaunch waiter is already waiting on it, and for
-// the portable channel the exe on disk is already the new one.
-func Apply(ctx context.Context, current string, progress Progress) error {
+// Staged is a verified update sitting one restart away from being the app.
+//
+// The zero value means nothing is staged, which is what Ready reports. Its
+// insides stay unexported on purpose: a caller that could set `installer` by
+// hand could run any file on this machine through the elevated hand-off, which
+// would make the whole signature chain above decorative.
+type Staged struct {
+	// Version is what the app becomes on restart — the one thing a caller has
+	// any business reading, because it is the one thing the user is told.
+	Version string
+
+	channel   Channel
+	exe       string // portable: the path already holding the new build
+	installer string // installer: the verified file to run on the way out
+}
+
+// Ready reports whether this holds a real staged update.
+func (s Staged) Ready() bool { return s.Version != "" }
+
+// Stage downloads the newer release, verifies its origin and its bytes, and
+// takes every step that does not require closing the window — for the portable
+// channel that includes the swap itself, so the exe on disk is the new build
+// before this returns. Nothing about the running process changes; the user is
+// still using the build they started.
+func Stage(ctx context.Context, current string, progress Progress) (Staged, error) {
 	st, assets, err := checkWithAssets(ctx, current)
 	if err != nil {
-		return err
+		return Staged{}, err
 	}
 	if !st.Available {
-		return ErrUpToDate
+		return Staged{}, ErrUpToDate
 	}
 	channel := Channel(st.Channel)
 	if !canAuto(channel, assets) {
-		return fmt.Errorf("ช่องทางติดตั้งนี้อัปเดตอัตโนมัติไม่ได้ — เปิดหน้า release แทน: %s", st.URL)
+		return Staged{}, fmt.Errorf("ช่องทางติดตั้งนี้อัปเดตอัตโนมัติไม่ได้ — เปิดหน้า release แทน: %s", st.URL)
 	}
 	asset, _ := channelAsset(channel, assets)
 	sums, _ := findAsset(assets, checksumsName)
@@ -132,49 +163,74 @@ func Apply(ctx context.Context, current string, progress Progress) error {
 
 	dir, err := stagingDir()
 	if err != nil {
-		return err
+		return Staged{}, err
 	}
 	path := filepath.Join(dir, asset.Name)
 	if err := download(ctx, asset.URL, path, progress); err != nil {
-		return fmt.Errorf("ดาวน์โหลด %s ไม่สำเร็จ: %w", asset.Name, err)
+		return Staged{}, fmt.Errorf("ดาวน์โหลด %s ไม่สำเร็จ: %w", asset.Name, err)
 	}
 	sumData, err := downloadSmall(ctx, sums.URL)
 	if err != nil {
-		return fmt.Errorf("ดาวน์โหลด %s ไม่สำเร็จ: %w", checksumsName, err)
+		return Staged{}, fmt.Errorf("ดาวน์โหลด %s ไม่สำเร็จ: %w", checksumsName, err)
 	}
 	sigData, err := downloadSmall(ctx, sig.URL)
 	if err != nil {
-		return fmt.Errorf("ดาวน์โหลด %s ไม่สำเร็จ: %w", signatureName, err)
+		return Staged{}, fmt.Errorf("ดาวน์โหลด %s ไม่สำเร็จ: %w", signatureName, err)
 	}
 	// Origin first, then integrity: the signature says checksums.txt is ours,
 	// the checksums say the download matches it. Order matters — a hash from
 	// an unverified checksums file proves nothing.
 	if err := verifySignature(sumData, sigData); err != nil {
-		return err
+		return Staged{}, err
 	}
 	if err := verifySHA256(path, asset.Name, sumData); err != nil {
-		return err
+		return Staged{}, err
 	}
 
 	switch channel {
 	case ChannelPortable:
 		exe, err := os.Executable()
 		if err != nil {
-			return err
+			return Staged{}, err
 		}
-		return applyPortableTo(exe, path)
+		if err := swapPortable(exe, path); err != nil {
+			return Staged{}, err
+		}
+		return Staged{Version: st.Latest, channel: channel, exe: exe}, nil
 	case ChannelInstaller:
-		return handOff(path)
+		// Nothing on disk has moved: the installer must run with the app
+		// closed, so its whole job waits for Restart.
+		return Staged{Version: st.Latest, channel: channel, installer: path}, nil
 	default:
-		return fmt.Errorf("ช่องทาง %s อัปเดตอัตโนมัติไม่ได้", channel)
+		return Staged{}, fmt.Errorf("ช่องทาง %s อัปเดตอัตโนมัติไม่ได้", channel)
 	}
 }
 
-// applyPortableTo swaps exePath over to the exe inside zipPath. The extraction
+// Restart is the half the user chooses the moment for. On a nil error the
+// process must exit soon after — the waiter is already blocked on it.
+func (s Staged) Restart() error {
+	switch {
+	case !s.Ready():
+		return errors.New("ยังไม่มีชุดอัปเดตที่เตรียมไว้")
+	case s.channel == ChannelPortable:
+		return relaunch(s.exe)
+	case s.channel == ChannelInstaller:
+		return handOff(s.installer)
+	default:
+		return fmt.Errorf("ช่องทาง %s อัปเดตอัตโนมัติไม่ได้", s.channel)
+	}
+}
+
+// swapPortable moves exePath over to the exe inside zipPath. The extraction
 // lands next to the target — same directory, same volume — so both renames are
 // metadata moves that either happen or don't; there is no state where the exe
 // is half of each.
-func applyPortableTo(exePath, zipPath string) error {
+//
+// It deliberately does not restart anything. After this returns the running
+// process is an old build executing from a renamed file, which Windows is
+// perfectly happy to keep doing, and the next launch — whenever the user gets
+// to it — is the new one.
+func swapPortable(exePath, zipPath string) error {
 	newPath := exePath + ".new"
 	if err := extractExe(zipPath, newPath); err != nil {
 		return err
@@ -192,7 +248,7 @@ func applyPortableTo(exePath, zipPath string) error {
 		_ = os.Rename(oldPath, exePath)
 		return fmt.Errorf("วางไฟล์ใหม่ไม่สำเร็จ: %w", err)
 	}
-	return relaunch(exePath)
+	return nil
 }
 
 // extractExe pulls the single exe out of the portable zip. By name-suffix, not

@@ -267,6 +267,10 @@ func withStance(d prompt.Desk, s mode.Stance) prompt.Desk {
 	// it, and the probe reported วางแผน as carrying nothing: it lost the prompt
 	// layers it needs and read as a broken คู่คิด.
 	d.ToolLess = s.CarriesNothing()
+	// Whether this turn's answer is a plan. What the prompt does with it depends
+	// on the surface, which is prompt.Build's to know and not this function's —
+	// see prompt.Desk.Planning.
+	d.Planning = s == mode.StancePlan
 	return d
 }
 
