@@ -3111,3 +3111,27 @@ Every provider hides its key page somewhere different — `aistudio.google.com/a
 ### What this does not decide
 
 Whether the other eleven `QuotaOpenAIStd` providers actually send those headers is still unmeasured — the dummy-key probe returns 401 before rate-limit accounting on most hosts, so only a real key can answer it, one provider at a time. The reworded sentence is what makes that acceptable to ship: it no longer claims anything that a silent provider would disprove.
+
+---
+
+## 109. Decision — 1.0.0 Is the Windows Release, and the Bar Moved Rather Than Was Met (2026-08-15)
+
+Owner, 15 ส.ค., cutting the build: *"มันคือ 1.0.0 ที่ผมภูมิใจ"*.
+
+Four files said the same thing in four places — `README.md`, `README.th.md`, `ROADMAP.md`, `HANDOFF.md` — **1.0.0 ships all three platforms or it is not 1.0.0.** Windows shipped alone. So one of the two had to give, and the honest version of giving is to say which.
+
+**The bar moved. It was not met.** That sentence is the whole entry. A criterion quietly reworded to fit what happened is worse than no criterion, because the next one is then also negotiable and nobody will say so out loud. Commit `b04e5f5` had already refused to do it by hand-wave — *"ถ้าเจ้าของตัดสินว่าวินโดวส์ออก 1.0.0 ได้ก่อน มันคือการแก้ Decision ที่ต้องบันทึก ไม่ใช่การแก้ถ้อยคำสี่ไฟล์"* — and this is that record.
+
+### 109.1 Why holding the number back bought nothing
+
+The three-platform rule was written to protect a promise: *"1.0.0 แปลว่าผมสัญญาว่าจะไม่ทำของคุณพัง"*, with a half-sentence added on 9 ส.ค.: *"และมันทำงานได้ไม่ว่าคุณอยู่บนอะไร"*.
+
+The first half is true on Windows today. The second half is blocked on two things that a version number has no effect on: a browser pane that is still a stub on Linux and macOS, and `internal/atrest`, where DPAPI is Windows-only — which means secrets sit in plaintext on the other two, and that is a security blocker, not a packaging one. Neither arrives a day sooner because the Windows build is called 0.9.10.
+
+So the promise splits along the line it was always two promises: **the number is stability, the launch is reach.** 1.0.0 goes out on Windows. The big launch — the one aimed at r/LocalLLaMA and Hacker News, whose audience is on Mac and Linux — still waits for all three, and `ROADMAP.md` now says that explicitly instead of using the version as a proxy for it.
+
+### 109.2 What is not being claimed
+
+**Three-platform support is not cancelled, downgraded, or made optional.** The criteria moved into a "รุ่นถัดไป" block in `ROADMAP.md` with the at-rest encryption item still marked as the blocker it is. `PLATFORM-SUPPORT.md` is untouched and remains the one place the port status is true.
+
+**And the version number does not certify the numbers.** `BENCHMARK.md`'s own rule is that unmeasured figures may not appear in `README.md` or `docs/index.html`; its last full run was 2026-07-27 on v0.9.2, when the app was 33 MB. It is 41.9 MB now. Shipping 1.0.0 does not tick "ตัวเลขที่เผยแพร่ทุกตัวตรงกับของจริง" — that box is still open on the day of the build, and the roadmap now says so in writing rather than leaving an unticked box next to a released version for a reader to interpret.

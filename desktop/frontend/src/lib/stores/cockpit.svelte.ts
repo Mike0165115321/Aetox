@@ -1310,6 +1310,40 @@ function listFor(ev: ToolEvent): ToolStep[] {
   return inThisTurn ? cockpit.toolSteps : cockpit.backgroundSteps
 }
 
+/** Give a delegation's own row the id its work is registered under.
+ *
+ * Only the events from *inside* a sub-agent carry that id: the `task` call that
+ * opened the delegation completes before the register has a handle to hand back,
+ * so the row is born without one and learns it from the first step its worker
+ * runs. Nothing else can supply it — `parent` is the provider's call id, a
+ * different namespace entirely.
+ *
+ * It is worth the join because the row cannot answer "is this still going" on
+ * its own: `task` returns the moment the work starts, so by the row's own
+ * account every delegation finished a second after it began. With the id, the
+ * card asks the register instead (Chat.svelte cardState/cardSecs) — the same
+ * question the tray has always asked (§105).
+ *
+ * The row may have left the live list already: a delegate outlives its turn, so
+ * its first step can arrive after the transcript took the row. Same objects
+ * either way, so stamping the one in the message updates what is on screen.
+ */
+function joinDelegationToRegister(ev: ToolEvent): void {
+  if (!ev.parent || !ev.task) return
+  const live = cockpit.toolSteps.find((s) => s.ref === ev.parent)
+  if (live) {
+    live.task ||= ev.task
+    return
+  }
+  for (let i = cockpit.chat.length - 1; i >= 0; i--) {
+    const row = cockpit.chat[i].steps?.find((s) => s.ref === ev.parent)
+    if (row) {
+      row.task ||= ev.task
+      return
+    }
+  }
+}
+
 /** Live tool call/result feed from the Go engine (turn.ToolEvent, relayed by
  * desktop/app.go recordToolAction). "call" opens a running step; "result"
  * closes the oldest one still running. */
@@ -1320,6 +1354,7 @@ export function applyToolEvent(ev: ToolEvent): void {
   // starter (first event after a reload, say); an armed timer means it is
   // already being watched and one more Go call would be noise.
   if (steps === cockpit.backgroundSteps && !bgPollTimer) void refreshBackgroundTasks()
+  joinDelegationToRegister(ev)
   // The loop's own story, interleaved between the calls it explains (§59).
   // Both land as finished rows: there is nothing running to close later.
   if (ev.action === 'note') {

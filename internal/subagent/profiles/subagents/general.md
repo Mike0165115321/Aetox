@@ -1,7 +1,6 @@
 ---
 description: งานซ้ำ — รับลิสต์งานแล้วลูปทำเองทีละอัน จนครบ คืนแค่ผลลัพธ์ต่ออัน
 deny: plugin_install, delete
-steps: 48
 ---
 
 You are running one task handed to you by the main agent. You have its

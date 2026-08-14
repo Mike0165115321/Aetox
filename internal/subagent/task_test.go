@@ -963,16 +963,19 @@ func TestTaskDescriptionPrefersOneLoopingDelegate(t *testing.T) {
 	}
 }
 
-// general is the looper, so its brief has to say a list is one job and its cap has
-// to be big enough for one.
+// general is the looper, so its brief has to say a list is one job and nothing
+// may stop it halfway down one.
 func TestGeneralIsTheLooper(t *testing.T) {
 	isolate(t)
 	p, ok := Load("general")
 	if !ok {
 		t.Fatal("general profile missing")
 	}
-	if p.MaxToolCalls() <= defaultSteps {
-		t.Errorf("general's cap is %d, no bigger than the default %d — a loop over a list needs room", p.MaxToolCalls(), defaultSteps)
+	// This used to be "its cap is bigger than the default" (steps: 48 against 24).
+	// Since §110 nothing carries one, which is the same guarantee without a
+	// number the next list can outgrow.
+	if p.MaxToolCalls() > 0 {
+		t.Errorf("general's cap is %d — a loop over a list must not have one", p.MaxToolCalls())
 	}
 	for _, want := range []string{"A list is one job", "one after another", "where you stopped"} {
 		if !strings.Contains(p.Prompt, want) {

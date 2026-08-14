@@ -380,6 +380,14 @@ type TaskInfo struct {
 	Question string `json:"question,omitempty"`
 	// OK is the outcome, meaningful only once Running is false.
 	OK bool `json:"ok"`
+	// ElapsedMs is how long the delegation actually took, set once Running is
+	// false and 0 before that (the clock is still running; read it from Started).
+	//
+	// It exists because nothing else can answer it. The `task` tool call returns
+	// the instant the work starts, so its own duration is the spawn, not the job
+	// — a UI reading that number tells the user a delegate finished in 8s while
+	// it is on its twenty-seventh tool call.
+	ElapsedMs int64 `json:"elapsedMs,omitempty"`
 	// Collected: the finished result has been redeemed at least once — the
 	// work is in a conversation now, so a tray can stop offering it.
 	Collected bool `json:"collected"`
@@ -412,6 +420,7 @@ func (r *Delegations) Snapshot() []TaskInfo {
 			}
 		} else {
 			info.OK = t.output.Success
+			info.ElapsedMs = t.output.DurationMs
 			info.Collected = t.wasCollected()
 		}
 		out = append(out, info)

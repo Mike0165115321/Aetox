@@ -244,6 +244,7 @@ export namespace main {
 	    startedAt: string;
 	    toolCalls: number;
 	    state: string;
+	    elapsedMs?: number;
 	    question?: string;
 	    collected: boolean;
 	
@@ -259,6 +260,7 @@ export namespace main {
 	        this.startedAt = source["startedAt"];
 	        this.toolCalls = source["toolCalls"];
 	        this.state = source["state"];
+	        this.elapsedMs = source["elapsedMs"];
 	        this.question = source["question"];
 	        this.collected = source["collected"];
 	    }

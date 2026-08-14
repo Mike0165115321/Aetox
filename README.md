@@ -33,8 +33,7 @@
 
 Aetox is a desktop application for Windows that runs an AI agent against your own machine.
 You describe what needs doing; it reads and writes real files, runs real commands in a real
-shell, drives a real browser you can watch, and hands back real `.docx` / `.xlsx` / `.pptx`
-files that Word, Excel and PowerPoint open.
+shell, and drives a real browser you can watch.
 
 It is one self-contained 41.5 MB executable. There is no runtime to install alongside it, no
 `node_modules`, no bundled copy of Chromium. It talks to whichever model you point it at —
@@ -85,8 +84,14 @@ trusts a single hash. An empty or wrong key refuses the update rather than falli
 ### Linux and macOS
 
 Not shipped. The engine and the desktop package both compile and their suites run under `-race`
-on Linux and macOS in CI; the browser pane is stubbed and packaging is not done. 1.0.0 ships all
-three or it is not 1.0.0. See [PLATFORM-SUPPORT.md](PLATFORM-SUPPORT.md).
+on Linux and macOS in CI; the browser pane is stubbed and packaging is not done.
+
+**1.0.0 is the Windows release.** Until 2026-08-15 this line read *"1.0.0 ships all three or it is
+not 1.0.0"* — that criterion was **changed by the owner, not met**. Holding a stable Windows build
+behind a browser pane and an at-rest keystore that do not exist yet on the other two helps nobody
+already running it. Linux and macOS ship under the same bar, in a later release. See
+[PLATFORM-SUPPORT.md](PLATFORM-SUPPORT.md) for where the port actually stands, and
+[DECISIONS §109](docs/DECISIONS.md) for why the bar moved.
 
 <details>
 <summary>Build it yourself</summary>
@@ -125,9 +130,30 @@ model required, and the model that *can* see gets the image itself instead.
 `grep` and `glob` over the whole tree, plus `diagnostics` and `symbol` backed by language servers
 the app installs on first use (gopls, typescript-language-server, svelteserver).
 
-**Delegate to a specialist.** Type `@doc`, `@sheet`, `@deck`, `@github` or `@automation` and your
-sentence reaches that agent word for word — not a paraphrase. Each is a folder on disk with its
+**Delegate to a specialist.** Type `@doc`, `@sheet`, `@deck`, `@github`, `@automation` or
+`@research` and your sentence reaches that agent word for word — not a paraphrase. Each is a folder on disk with its
 own prompt, its own memory, optionally its own model, and its own private skills.
+
+**Give it a job, not a step.** Work that takes twenty moves is planned before it is worked, and
+`todo_write` puts that plan on screen while it runs, so what you watch is the order it chose
+rather than a spinner. Up to four specialists run at once: `task` hands work out and returns
+immediately, `task_result` collects it, so three jobs cost the time of the slowest rather than
+the sum. One that reaches a decision it should not make alone comes back as a *question* instead
+of a guess. One still working when your answer arrives keeps working — you collect it by the same
+id in a later turn, so the end of a turn is not a deadline. And before any of it runs there is a
+planning stance that can read anything and change nothing, on an allow-list, so a tool added next
+month is held back by default rather than slipping in.
+
+Run on 2026-08-15, from one sentence — *"find 20 CRMs a Thai SME could actually pick and give me
+a spreadsheet comparing them"*: **6m 51s, two agents, 42 tool calls between them** — 8 by the
+assistant, 27 by `research` reading pricing pages, 7 by `sheet` — and one tool failure it worked
+around. The handoff between the two was the baton this README describes: `research` left a
+markdown report in the session's output folder and `sheet` was given the path, not the contents.
+Twenty rows came back, fourteen with a real numeric price sorted low to high, and
+**six deliberately left blank** with the reason written in beside them — quoted-only pricing, or
+a page that would not state a figure. Every row carries the date the page was read and the link
+the number came from, and says whether the page was opened in the browser or only searched. The
+blanks are the part worth trusting: a table with no gaps in it is a table that guessed.
 
 **Ask it about your own past work.** Every conversation and every tool run lives in local SQLite
 with FTS5, so `session_search` across months of history is a query, not an inference — zero
@@ -165,6 +191,14 @@ An agent's folder is its whole identity: `AGENT.md` (who it is, what desk it sit
 it may narrow itself to, which model it pins), `MEMORY.md` (what it has learned), `STARTERS.md`
 (how an empty chat with it opens, per language), and a private `skills/` folder no other agent
 can see.
+
+That folder is also where the difference between a clever assistant and a company sits. Each
+agent pins **its own model**, so the one that opens twenty pricing pages can run on something
+cheap while the one that has to weigh what it found runs on something strong, and the bill
+follows the work instead of following the hardest task in it. Each keeps **its own memory**, so
+what the research agent learned about a source does not leak into the deck agent's judgement
+about slides. A single generalist has one model, one memory and one set of tools for every job
+it will ever be handed — and no way for you to add a seventh colleague to it.
 
 You can **delegate** to one — the assistant calls `task` and up to four run concurrently — or you
 can **talk to one directly**, in a session bound to its tools, its memory and its prompt. `@name`
@@ -383,10 +417,10 @@ date-stamped, because the rule above does not have an exception for numbers we w
 
 </details>
 
-## Status — v0.9.9
+## Status — v1.0.0
 
-The core is in place. [Release notes](docs/release-notes/v0.9.9.md) ·
-[roadmap to 1.0.0](ROADMAP.md) · [architecture](ARCHITECTURE.md).
+The core is in place. [Release notes](docs/release-notes/v1.0.0.md) ·
+[roadmap](ROADMAP.md) · [architecture](ARCHITECTURE.md).
 
 Three things it does today that are worth knowing about:
 

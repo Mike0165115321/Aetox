@@ -70,9 +70,11 @@ func TestBundledProfilesAreUsable(t *testing.T) {
 		if len(p.Prompt) < 40 {
 			t.Errorf("%s: prompt is %d chars, expected a real brief", p.Name, len(p.Prompt))
 		}
-		// Every sub-agent is capped: nobody is watching its loop.
-		if p.MaxToolCalls() <= 0 {
-			t.Errorf("%s: MaxToolCalls = %d, want a cap", p.Name, p.MaxToolCalls())
+		// No shipped worker carries a ceiling of its own. The default is no
+		// ceiling (§110), and a `steps:` line left behind in one of these files
+		// would be a private exception nobody would think to look for.
+		if p.MaxToolCalls() > 0 {
+			t.Errorf("%s: MaxToolCalls = %d, want no ceiling", p.Name, p.MaxToolCalls())
 		}
 	}
 }
@@ -160,23 +162,24 @@ func TestWantsToBeAskedSplitsFromTheDelegateAnswer(t *testing.T) {
 }
 
 func TestMaxToolCalls(t *testing.T) {
-	if got := (Profile{}).MaxToolCalls(); got != defaultSteps {
-		t.Errorf("MaxToolCalls = %d, want the default cap %d", got, defaultSteps)
+	// cognitive.Agent reads <= 0 as unbounded, so the default has to arrive as a
+	// value it reads that way rather than as a very large number pretending to
+	// be infinity.
+	if got := (Profile{}).MaxToolCalls(); got > 0 {
+		t.Errorf("MaxToolCalls = %d, want the default, which is no ceiling", got)
 	}
 	if got := (Profile{Steps: 3}).MaxToolCalls(); got != 3 {
 		t.Errorf("steps override = %d, want 3", got)
 	}
-	// cognitive.Agent reads <= 0 as unbounded, so this has to arrive negative
-	// rather than as a very large number pretending to be infinity.
 	if got := (Profile{Steps: StepsUnlimited}).MaxToolCalls(); got > 0 {
 		t.Errorf("unlimited steps = %d, want a value the agent loop reads as no ceiling", got)
 	}
 }
 
-// The only way to remove a sub-agent's ceiling is to ask for it by name. A
-// blank field, a typo or a hand-written negative all have to land on the
-// default — a loop nobody is watching must fail closed.
-func TestParseStepsOnlyUnboundsOnTheKeyword(t *testing.T) {
+// A ceiling is only ever the number a profile wrote. A blank field, a typo or a
+// hand-written negative all land on the default instead of inventing one, so a
+// mistyped `steps:` cannot quietly cap a delegate at some other value.
+func TestParseStepsOnlyTakesACeilingFromANumber(t *testing.T) {
 	unbounds := []string{"unlimited", "  Unlimited  ", "UNLIMITED"}
 	for _, in := range unbounds {
 		if got := parseSteps(in); got != StepsUnlimited {
@@ -189,8 +192,8 @@ func TestParseStepsOnlyUnboundsOnTheKeyword(t *testing.T) {
 		if got := parseSteps(in); got != 0 {
 			t.Errorf("parseSteps(%q) = %d, want 0 so MaxToolCalls falls back to the default", in, got)
 		}
-		if got := (Profile{Steps: parseSteps(in)}).MaxToolCalls(); got != defaultSteps {
-			t.Errorf("parseSteps(%q) reached MaxToolCalls as %d, want the default %d", in, got, defaultSteps)
+		if got := (Profile{Steps: parseSteps(in)}).MaxToolCalls(); got > 0 {
+			t.Errorf("parseSteps(%q) reached MaxToolCalls as %d, want the default, which is no ceiling", in, got)
 		}
 	}
 

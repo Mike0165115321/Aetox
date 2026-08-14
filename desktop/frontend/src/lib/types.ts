@@ -232,6 +232,9 @@ export interface BackgroundTask {
   toolCalls: number
   /** 'running' | 'waiting' (parked on a question) | 'done' | 'failed' */
   state: string
+  /** How long the delegation really took, present only once it has finished.
+   *  While it runs the clock is still going, so the row counts from startedAt. */
+  elapsedMs?: number
   /** What a waiting delegate is stuck on, absent otherwise. */
   question?: string
   /** A finished result somebody has already redeemed — the work is in the

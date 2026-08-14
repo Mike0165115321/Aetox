@@ -79,22 +79,32 @@ const (
 	bundledHelperDir = "profiles/subagents"
 )
 
-// defaultSteps caps a tool loop nobody is watching. The main agent runs
-// unbounded on purpose (internal/cognitive/agent.go — the brakes are the
-// approval layer and the Stop button, both of which need a human), and a
-// sub-agent has neither, so it gets a number instead. One of the three things
-// that make delegation cheaper rather than pricier (§44.7).
-const defaultSteps = 24
-
-// StepsUnlimited is what `steps: unlimited` parses to. Distinct from 0, which is
-// what an absent or unreadable value gives and still means "use defaultSteps" —
-// a profile has to say it wants no ceiling before it gets one.
+// StepsUnlimited is the value a removed ceiling is carried as. Distinct from 0,
+// which is what an absent or unreadable `steps:` gives and means "whatever the
+// default is" rather than anything itself.
 //
-// The loop it feeds already understands this: cognitive.Agent treats
+// The loop it feeds already understands it: cognitive.Agent treats
 // MaxToolCalls <= 0 as unbounded, which is exactly how the main agent runs. So
-// this does not add a mode; it lets a sub-agent opt into the one that already
-// exists, for the delegation that legitimately cannot be sized up front.
+// this is not a second mode — it is the one that already existed.
 const StepsUnlimited = -1
+
+// defaultSteps is the ceiling a sub-agent gets when its profile names none:
+// there is not one.
+//
+// It was 24 until the owner removed it ("ปลดล็อคเพดานทุกซับเอเจนเลยครับ เป็น
+// ค่าเริ่มต้นได้เลย แบบไม่ต้องมีเพดาน ผมสั่ง", 15 ส.ค. — §110). What the number
+// was protecting turned out not to be the user: a delegate that reached it did
+// not stop spending, it stopped *mid-job* and handed the parent a failure to
+// split and start again — the same work, paid for twice, plus the wait.
+//
+// The brakes that actually end a runaway loop were never the counter and are
+// all still here: the doom-loop guard (cognitive.DoomLoopStopPrefix) stops a
+// delegate repeating itself with no progress, Stop reaches every delegate
+// through Delegations.StopAll, and every call still passes the same approval
+// layer and the same permission rules its parent's calls do.
+//
+// A profile that wants a ceiling writes `steps: 40` and gets exactly that.
+const defaultSteps = StepsUnlimited
 
 // stepsUnlimitedKeyword is what the frontmatter carries, rather than a bare -1:
 // the file is something the user reads and edits by hand.
@@ -463,10 +473,11 @@ func PromptFor(p Profile) string {
 // MaxToolCalls is what cognitive.AgentConfig gets for this sub-agent.
 //
 // Three cases, and the middle one is the reason this is not a bare max():
-// a negative value is a deliberate "no ceiling" and is passed through as such,
-// while 0 is an absent or unparseable field and still falls back to the
-// default. Collapsing them would turn a typo in the frontmatter into an
-// unbounded loop nobody asked for.
+// a positive value is the ceiling the profile asked for and is honoured exactly,
+// while 0 (absent or unparseable) and a negative both land on defaultSteps,
+// which is no ceiling. Keeping the two apart still matters — a profile that
+// writes a number means it, and must not inherit a default that changes
+// underneath it.
 func (p Profile) MaxToolCalls() int {
 	if p.Steps < 0 {
 		return StepsUnlimited
@@ -574,10 +585,13 @@ func parse(name, raw string) Profile {
 }
 
 // parseSteps reads the `steps:` field. A number is a ceiling; the word
-// "unlimited" removes it; anything else — blank, a typo, a negative number
-// someone hand-wrote — returns 0, which MaxToolCalls reads as "use the
-// default". Only the keyword can unbound a loop, so a mistyped ceiling fails
-// closed rather than open.
+// "unlimited" says out loud what leaving the field out now also does; anything
+// else — blank, a typo, a negative number someone hand-wrote — returns 0, which
+// MaxToolCalls reads as "use the default".
+//
+// The keyword survives the default changing because it is what a reader of the
+// file sees. "steps: unlimited" answers the question a blank line leaves open,
+// and a profile copied out to another machine keeps saying what it meant.
 func parseSteps(value string) int {
 	v := strings.ToLower(strings.TrimSpace(value))
 	if v == stepsUnlimitedKeyword {

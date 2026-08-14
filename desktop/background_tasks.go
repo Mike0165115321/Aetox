@@ -31,6 +31,11 @@ type BackgroundTask struct {
 	ToolCalls int    `json:"toolCalls"`
 	// State: "running" | "waiting" (parked on a question) | "done" | "failed".
 	State string `json:"state"`
+	// ElapsedMs is the finished delegation's real duration, 0 while it runs —
+	// the clock is still going then, and the frontend runs it from StartedAt.
+	// Without this the card falls back to the `task` call's own duration, which
+	// is how long the *spawn* took, and freezes there for the rest of the job.
+	ElapsedMs int64 `json:"elapsedMs,omitempty"`
 	// Question is the text a waiting delegate is stuck on, "" otherwise.
 	Question string `json:"question,omitempty"`
 	// Collected: a finished result somebody has already redeemed. The tray
@@ -52,6 +57,7 @@ func (a *App) BackgroundTasks() []BackgroundTask {
 			StartedAt: t.Started.Format(time.RFC3339),
 			ToolCalls: t.ToolCalls,
 			State:     taskState(t),
+			ElapsedMs: t.ElapsedMs,
 			Question:  t.Question,
 			Collected: t.Collected,
 		})

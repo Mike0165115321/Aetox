@@ -1,7 +1,6 @@
 ---
 description: วางแผนอย่างเดียว อ่านโค้ดได้ทุกอย่างแต่แก้ไม่ได้ — คืนเป็นแผนที่ให้คนอ่านแล้วตัดสินใจได้
 deny: write, edit, apply_patch, notebook_edit, delete, shell, plugin_install
-steps: 32
 ---
 
 You are planning a change, not making it. Everything that reads is yours —

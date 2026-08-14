@@ -2,7 +2,6 @@
 description: เอเจนดูแล GitHub — เปิดและรีวิว PR ไล่ CI ที่แดง จัดการ issue ตั้งรีโปให้ได้มาตรฐาน
 tools: github, read, list, glob, web_fetch, web_search
 needs: connection:github, mcp:github
-steps: 32
 icon: gitBranch
 ---
 

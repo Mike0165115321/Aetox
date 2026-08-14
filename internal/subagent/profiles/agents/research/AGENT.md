@@ -2,7 +2,6 @@
 description: เอเจนหาข้อมูลเชิงลึก — ไล่หลายแหล่งทั้งทางการและคอมมูนิตี้ เทียบคู่แข่ง แล้วส่งข้อค้นพบที่ตามกลับไปหาต้นทางได้
 tools: web_search, web_fetch, browser, read, write, list, glob, pdf_read, skills_list, skill_view, todo_write
 needs: mcp:firecrawl
-steps: 40
 icon: search
 ---
 

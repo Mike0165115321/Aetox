@@ -477,6 +477,88 @@ describe('sub-agent tool events', () => {
     expect(blocks[1].querySelector('.bgw-longbrief')?.textContent).toContain('brief two')
   })
 
+  // The `task` tool call finishes the instant the worker is spawned, so the row
+  // it leaves behind says "done, 8s" for the whole job. The card is drawn from
+  // the engine's register instead — the same source the tray reads.
+  describe('a delegation card follows the register, not its task row', () => {
+    const registered = (over: Record<string, unknown> = {}) => ({
+      id: 'task_1', agent: 'research', label: 'ตรวจ CRM ไทย 20 เจ้า',
+      startedAt: new Date(Date.now() - 92_000).toISOString(),
+      toolCalls: 27, state: 'running', collected: false, ...over,
+    })
+    // The row exactly as the engine leaves it: closed, eight seconds, a tick.
+    const spawnedRow = {
+      label: 'task ตรวจ CRM ไทย 20 เจ้า', ref: 'call_1', task: 'task_1',
+      agent: 'research', agentKind: 'agent', state: 'done', secs: 8, startedAt: Date.now() - 92_000,
+    }
+
+    it('keeps the clock running while the worker is still on its tools', () => {
+      cockpit.backgroundTasks = [registered()] as any
+      const { container } = render(Chat, {
+        ...baseProps,
+        awaitingReply: true,
+        toolSteps: [spawnedRow, { label: 'web_fetch crm.co.th', parent: 'call_1', task: 'task_1', state: 'done', startedAt: 0, secs: 2 }] as any,
+        messages: [{ role: 'agent', text: 'done', time: '10:54' }] as any,
+      })
+
+      const card = container.querySelector('.bgw-card')
+      expect(card?.className).toContain('run')
+      expect(card?.querySelector('.bgw-badge.run')).toBeTruthy()
+      // Counted off the delegation's own start, not frozen at the spawn's 8s.
+      expect(card?.querySelector('.bgw-meta')?.textContent?.trim()).toBe('1m 32s')
+      // And it stays where the user can watch it, instead of collapsing behind
+      // the "used N agents" toggle the moment it starts.
+      expect(card?.querySelector('.bgw-steps')).toBeTruthy()
+    })
+
+    // A finished delegation collapses behind its count, so both readings below
+    // are taken after opening it — which is also the only place the number is
+    // ever read a second time.
+    const openFinished = async (container: Element) => {
+      const toggle = [...container.querySelectorAll('.meta-row .reasoning-toggle')]
+        .find((b) => b.textContent?.includes('Agents'))
+      await fireEvent.click(toggle!)
+      return container.querySelector('.tool-steps .bgw-card')
+    }
+
+    it('shows the delegation’s real total once the register says it finished', async () => {
+      cockpit.backgroundTasks = [registered({ state: 'done', elapsedMs: 214_000, collected: true })] as any
+      const { container } = render(Chat, {
+        ...baseProps,
+        awaitingReply: true,
+        toolSteps: [spawnedRow] as any,
+        messages: [{ role: 'agent', text: 'done', time: '10:54' }] as any,
+      })
+      const card = await openFinished(container)
+      expect(card?.querySelector('.bgw-meta')?.textContent?.trim()).toBe('3m 34s')
+      expect(card?.querySelector('.bgw-badge.run')).toBeNull()
+    })
+
+    // A turn read back from the database has no register entry — the row is all
+    // there is, and it still has to draw.
+    it('falls back to the row when the register has never heard of the task', async () => {
+      cockpit.backgroundTasks = []
+      const { container } = render(Chat, {
+        ...baseProps,
+        awaitingReply: true,
+        toolSteps: [spawnedRow] as any,
+        messages: [{ role: 'agent', text: 'done', time: '10:54' }] as any,
+      })
+      const card = await openFinished(container)
+      expect(card?.querySelector('.bgw-meta')?.textContent?.trim()).toBe('8s')
+    })
+
+    // The id is only ever on the events from *inside* the delegate: the `task`
+    // call completes before the register has a handle to give.
+    it('takes the delegation id off the first step its worker runs', () => {
+      cockpit.toolSteps = []
+      applyToolEvent({ action: 'call', ref: 'call_1', name: 'task', agent: 'research' })
+      expect(cockpit.toolSteps[0].task).toBeUndefined()
+      applyToolEvent({ action: 'call', ref: 'r1', parent: 'call_1', task: 'task_1', name: 'web_fetch', subject: 'crm.co.th' })
+      expect(cockpit.toolSteps[0].task).toBe('task_1')
+    })
+  })
+
   // A child whose task row is not in the list must still be visible. It happens
   // on a persisted turn and on out-of-order arrival, and silently dropping a row
   // means work that vanished.
