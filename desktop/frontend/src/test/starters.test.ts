@@ -17,7 +17,7 @@ import { render, screen, waitFor } from '@testing-library/svelte'
 import Chat from '../lib/Chat.svelte'
 import { ChairStarters } from './mocks/wailsApp'
 import { cockpit } from '../lib/stores/cockpit.svelte'
-import { startersFor } from '../lib/starters'
+import { startersFor, dealStarters, STARTER_SLOTS } from '../lib/starters'
 import { th } from '../lib/locales/th'
 import { en } from '../lib/locales/en'
 
@@ -64,10 +64,13 @@ describe('which room the empty chat speaks for', () => {
   // must not start holding one again: an agent's opening belongs to its folder,
   // and every agent looks the same from here, shipped or hired this morning.
   it('is the same generic colleague floor for every agent, named or not', () => {
+    const first = startersFor({ desk: 'specialized', chair: 'automation', space: '' })
     for (const chair of ['automation', 'sheet', 'accounting-nobody-shipped']) {
       const set = startersFor({ desk: 'specialized', chair, space: '' })
       expect(set.headlineKey).toBe('start.chair.headline')
-      expect(set.starters).toHaveLength(4)
+      // The same floor, not merely the same size — a set that varied by name
+      // would be the window holding a card list per agent again.
+      expect(set.starters, `${chair} got its own floor`).toEqual(first.starters)
     }
   })
 
@@ -86,9 +89,14 @@ describe('every set the window owns', () => {
     { desk: 'specialized', chair: 'any-agent', space: '' },
   ]
 
-  // Four, because the grid is two columns and a widow card reads as a bug.
-  it('fills the 2×2 grid', () => {
-    for (const room of rooms) expect(startersFor(room).starters).toHaveLength(4)
+  // A set now holds a POOL and the grid draws four of it (dealStarters), so
+  // what a set owes is no longer an exact count — it is enough cards to fill
+  // the grid. A room holding three would deal a widow onto the second row.
+  it('holds at least a full hand', () => {
+    for (const room of rooms) {
+      const n = startersFor(room).starters.length
+      expect(n, `${room.desk}/${room.chair}/${room.space}: ${n} cards`).toBeGreaterThanOrEqual(STARTER_SLOTS)
+    }
   })
 
   // th.ts is the source of truth for keys, so a missing Thai string is a
@@ -105,18 +113,78 @@ describe('every set the window owns', () => {
   })
 })
 
-describe('the empty chat on screen', () => {
-  it('shows the desk’s own question and its own cards', async () => {
-    cockpit.desk = 'assistant'
+// A pool exists so a room can keep growing without the screen growing with it.
+// What that costs is a promise: the cards you have not seen have to actually
+// come round, or a pool of a hundred is a pool of four with ninety-six pieces
+// of dead weight behind it.
+describe('dealing four out of a pool', () => {
+  const pool = Array.from({ length: 10 }, (_, i) => `card-${i}`)
 
-    render(Chat, chatProps)
+  it('fills the grid and never puts the same card on screen twice', () => {
+    for (let n = 0; n < 30; n++) {
+      const hand = dealStarters('t-hand', pool, (c) => c)
+      expect(hand).toHaveLength(STARTER_SLOTS)
+      expect(new Set(hand).size).toBe(STARTER_SLOTS)
+    }
+  })
+
+  // The reason this is a deck and not a dice roll. Rolling four at random can
+  // hide a card for a dozen openings; the pool is only worth holding if what is
+  // in it surfaces.
+  it('deals every card in the pool before any card comes back', () => {
+    const seen = new Set<string>()
+    // Ten cards, four to a hand — three hands cover the pool with two to spare.
+    for (let n = 0; n < 3; n++) for (const c of dealStarters('t-cover', pool, (c) => c)) seen.add(c)
+    expect(seen.size).toBe(pool.length)
+  })
+
+  // The ordinary case for an agent: a folder holding exactly the four cards the
+  // grid draws. Shuffling those would reorder the author's list for no reason.
+  it('hands back a pool no bigger than a hand, in the order it was written', () => {
+    const four = pool.slice(0, STARTER_SLOTS)
+    expect(dealStarters('t-small', four, (c) => c)).toEqual(four)
+  })
+
+  // Bags are per room. A chat opened on the workshop desk must not decide what
+  // ผู้ช่วย shows you next.
+  it('keeps a separate bag per room', () => {
+    const a = new Set<string>()
+    for (let n = 0; n < 3; n++) for (const c of dealStarters('t-room-a', pool, (c) => c)) a.add(c)
+    const b = new Set<string>()
+    for (let n = 0; n < 3; n++) for (const c of dealStarters('t-room-b', pool, (c) => c)) b.add(c)
+    expect(a.size).toBe(pool.length)
+    expect(b.size).toBe(pool.length)
+  })
+})
+
+describe('the empty chat on screen', () => {
+  // Which four is a deal, so naming one of them here would be a test that fails
+  // on a shuffle. What is pinned is the seam that matters: the hand fills the
+  // grid, and every card in it came out of THIS room's pool.
+  it('shows the desk’s own question and a hand out of its own pool', async () => {
+    cockpit.desk = 'assistant'
+    const pool = startersFor({ desk: 'assistant', chair: '', space: '' })
+      .starters.map((s) => th[s.titleKey])
+
+    const { container } = render(Chat, chatProps)
 
     await waitFor(() => {
       expect(screen.getByText(th['start.assistant.headline'])).toBeTruthy()
-      expect(screen.getByText(th['start.assistant.webTitle'])).toBeTruthy()
+      const shown = [...container.querySelectorAll('.starter-card .title')].map((n) => n.textContent)
+      expect(shown).toHaveLength(STARTER_SLOTS)
+      for (const title of shown) expect(pool, `dealt a card no room owns: ${title}`).toContain(title)
       // and not the workshop's, which is what every room used to show
       expect(screen.queryByText(th['start.coding.reviewTitle'])).toBeNull()
     })
+  })
+
+  // Six cards behind four slots is the whole point of the pool, so the way to
+  // reach the other two has to exist. A room whose pool is exactly a hand does
+  // not get the button — it would deal the same four back.
+  it('offers another hand only when there is one behind the four', async () => {
+    cockpit.desk = 'assistant'
+    const { container } = render(Chat, chatProps)
+    await waitFor(() => expect(container.querySelector('.starter-more')).toBeTruthy())
   })
 
   // The seam. The window asks the agent's folder and draws what comes back —
@@ -143,15 +211,19 @@ describe('the empty chat on screen', () => {
 
   // A worker with no opening of its own is the ordinary case, not a blank
   // screen: an agent is a folder, and most folders will never hold this file.
-  it('falls back to the generic four when the agent keeps no opening', async () => {
+  it('falls back to the generic floor when the agent keeps no opening', async () => {
     cockpit.desk = 'specialized'
     cockpit.chair = 'accounting'
+    const floor = startersFor({ desk: 'specialized', chair: 'accounting', space: '' })
+      .starters.map((s) => th[s.titleKey])
 
-    render(Chat, chatProps)
+    const { container } = render(Chat, chatProps)
 
     await waitFor(() => {
       expect(screen.getByText(th['start.chair.headline'])).toBeTruthy()
-      expect(screen.getByText(th['start.chair.whatTitle'])).toBeTruthy()
+      const shown = [...container.querySelectorAll('.starter-card .title')].map((n) => n.textContent)
+      expect(shown).toHaveLength(STARTER_SLOTS)
+      for (const title of shown) expect(floor, `not from the generic floor: ${title}`).toContain(title)
     })
   })
 

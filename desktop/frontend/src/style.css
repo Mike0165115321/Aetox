@@ -593,8 +593,24 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .starter-card {
   display:flex; flex-direction:column; align-items:flex-start; gap:8px; padding:14px 16px;
   border:1px solid var(--border-subtle); border-radius:var(--r-lg); background:var(--surface-panel); text-align:left;
+  /* Dealt, not drawn: the stagger is what makes four new cards read as a hand
+     off a deck rather than the same four boxes changing their minds. --i is the
+     card's place in the hand (Chat.svelte). */
+  animation:starter-deal .26s ease-out backwards; animation-delay:calc(var(--i, 0) * 40ms);
 }
+@keyframes starter-deal { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
 .starter-card:hover { border-color:var(--border-strong); background:var(--surface-row-hover); }
+/* Ask for another four. Quiet by design — it sits under the cards and must not
+   compete with them for the click. */
+.starter-more {
+  display:inline-flex; align-items:center; gap:7px; margin-top:4px; padding:6px 12px;
+  border-radius:999px; color:var(--text-muted); font-size:var(--fs-sm);
+}
+.starter-more:hover { color:var(--text-secondary); background:var(--surface-row-hover); }
+@media (prefers-reduced-motion: reduce) {
+  .starter-card { animation-name:starter-fade; animation-duration:.12s; animation-delay:0s; }
+  @keyframes starter-fade { from { opacity:0; } to { opacity:1; } }
+}
 .starter-card .ic { font-size:var(--fs-2xl); }
 .starter-card .title { color:var(--text-secondary); font-size:var(--fs-lg); line-height:1.4; }
 /* A reply uses the whole reading column — user and agent already sit on their
@@ -2013,6 +2029,14 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .ag-starter-row .ctrl:first-child { flex:1; min-width:0; }
 .ag-starter-icon { flex:none; width:auto; max-width:40%; }
 .ag-starter { gap:6px; }
+/* The card's number and its remove button share the label line, so removing a
+   card never competes with the fields for attention. Below the floor the button
+   clears the row instead of deleting it — same gesture, and the list cannot
+   shrink to a pool too small to fill the grid. */
+.ag-starter-head { display:flex; align-items:center; gap:8px; }
+.ag-starter-drop { flex:none; display:inline-flex; padding:2px; border-radius:var(--r-sm); color:var(--text-dim); }
+.ag-starter-drop:hover { color:var(--text-primary); background:var(--surface-row-hover); }
+.ag-starter-add { display:inline-flex; align-items:center; justify-content:center; gap:7px; align-self:flex-start; }
 /* A direct chat's row is labelled with who — slightly brighter than the desk
    chip, because a name is a stronger fact than a place. */
 .sess-row .sess-desk.agent { color:var(--text-secondary); border-color:var(--border-default); }

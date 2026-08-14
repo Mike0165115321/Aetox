@@ -62,7 +62,16 @@ type StarterSet struct {
 // worker cannot hand back three hundred cards and make the window deal with it.
 // Extra lines are dropped from the end, which is the order the author wrote
 // them in and therefore the order they would have chosen to lose.
-const maxStarters = 4
+//
+// It is a POOL ceiling, not a hand. It was 4 while the window drew every card
+// a file held, which made those two numbers the same number and meant a worker
+// could only gain a fifth card by giving up one of its four. The window now
+// deals four out of whatever it is handed (starters.ts), so the file is free to
+// carry more than fits on screen — which is the point of a pool: a worker gets
+// deeper without the empty chat getting busier. 24 is six hands, far past what
+// anyone will hand-write, and still small enough that a runaway file cannot
+// turn into a payload the window has to think about.
+const maxStarters = 24
 
 // Starters reads one worker's opening in the requested language.
 //

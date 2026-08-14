@@ -175,11 +175,30 @@ Beside `AGENT.md`, a worker may keep a `STARTERS.md` — the question at the top
 of an empty chat with it, and the cards under it. Markdown that happens to
 parse: the heading is the question, each list item is one card, split on `|`
 into title, the sentence that lands in the composer, and optionally an icon
-name. A prompt ending in `:` is the deliberate half-sentence the user finishes.
-`STARTERS.en.md` beside it is the English version. All of it is optional — a
-worker without one opens with the four cards the app draws for any colleague —
-but writing one is what makes a hired worker feel like the shipped ones, so
-offer it whenever you write an `AGENT.md`.
+name. `STARTERS.en.md` beside it is the English version. All of it is optional —
+a worker without one opens with the cards the app draws for any colleague — but
+writing one is what makes a hired worker feel like the shipped ones, so offer it
+whenever you write an `AGENT.md`.
+
+**A file holds a pool; the window draws four of it.** Up to 24 cards per file,
+four dealt at a time from a shuffled bag, with a "show me another four" button
+under the grid — so a worker can get deeper without the empty chat getting
+busier. Never write fewer than four: the grid is two columns and three deals a
+widow onto the second row. The two halves of a card do different jobs and are
+written differently:
+
+- **The title sells the outcome** and is read in about a second, so it names
+  what the user ends up holding rather than the ability used to get there.
+  "ได้สไลด์นำเสนอ จากไฟล์ที่มีอยู่แล้ว", not "ทำสไลด์ได้". A card that ends in a
+  summary rather than something openable is the pattern the owner cut twice.
+- **The prompt is the real instruction the model receives.** Nobody has to read
+  it, so length is free and every sentence added is quality in the work that
+  comes back. Write it the way a prompt engineer would: the order of work, the
+  sources allowed, the rule against inventing a number, the exact artifact
+  wanted, and what to report about where each finding came from. A prompt that
+  merely restates its own title is the mistake this paragraph exists to prevent.
+  A prompt ending in `:` is the deliberate half-sentence the user finishes; one
+  that names a real subject is a finished sentence and takes no colon.
 
 The user also has a form for it: การตั้งค่า › เอเจน → that agent → "ประโยคเปิด
 ของเอเจนคนนี้", a headline and four rows. It writes this same file, so a file

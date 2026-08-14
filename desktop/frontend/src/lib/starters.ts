@@ -21,9 +21,49 @@
 // starter is a pre-filled request, so an impossible one costs the user a turn
 // and reads as the assistant's failure rather than the card's.
 //
+// **And "can do" is not the bar — "is good at" is** (owner's call, 2026-08-15).
+// A trip-planning card shipped here briefly and was cut, not because the tools
+// were missing on paper — it is web search and a written file, both present —
+// but because a real trip plan turns on distances, opening hours and a map, and
+// this product has no sense of place at all. Every tool the card touched
+// existed; the thing it promised was still something we are bad at. So the test
+// before a card goes in the pool is not "does a tool exist for each step", it
+// is "would we be pleased to be judged on this" — the empty screen is where a
+// user forms their opinion of what this app is for, and a card is a promise
+// made before any work is done.
+//
 // The card fills the composer rather than sending — the prompts ending in ": "
 // are deliberately unfinished, because the half a sentence only the user can
 // write is exactly the half worth asking for.
+//
+// **A card is two pieces of writing with two different jobs** (owner's call,
+// 2026-08-15). The title sells the outcome and is read in a second, so it stays
+// short. The prompt is not a restatement of the title — it is the actual
+// instruction the model receives, nobody has to read it, and every sentence
+// added to it is quality in the work that comes back. So ผู้ช่วย's prompts are
+// written the way a prompt engineer writes: they name the sources to use, the
+// rule against inventing a number, the order of work, the exact artifact
+// wanted, and what to say about where each finding came from. Writing them as
+// one-line echoes of the title was the mistake this note exists to prevent.
+//
+// **ผู้ช่วย's cards name a real job, and are finished sentences** (owner's call,
+// 2026-08-15). The four they replace named an ability and stopped — "อ่านและ
+// สรุปเอกสารหรือสื่อ", "ค้นข้อมูลจากเว็บแล้วสรุปให้" — which is the sentence a
+// chat tab in a browser also says, so the room that does the work on your
+// machine was opening with the one claim that proves nothing. What replaced
+// them was written under one rule: **a card ends in something you can open.**
+// That is the line the owner drew when he kept two of a proposed six and cut
+// the rest; the survivors both handed back a file, and every one he cut handed
+// back a summary. It is also what this class of product actually says on its
+// front page — Manus opens with "Create slides / Build website / Create games"
+// and shows finished jobs with proper nouns ("Trip to Japan in april"), never
+// "summarize a document".
+//
+// Naming a real subject rather than a shape ("โมเดล AI ตัวไหนคุ้มที่สุด", not
+// "ค้นข้อมูลเรื่องหนึ่ง") costs the user a delete when they wanted a different
+// subject, and buys the thing an empty screen is for: they see the whole job at
+// once instead of decoding what this app is willing to be asked. The owner
+// weighed that trade and took the picture.
 
 import type { IconName } from './icons'
 import type { TKey } from './i18n.svelte'
@@ -38,6 +78,8 @@ export interface StarterSet {
   /** The question above the cards. It belongs to the set: "จะให้เราสร้างอะไรดี"
    *  is the workshop asking, and ผู้ช่วย is not mainly asked to build. */
   headlineKey: TKey
+  /** Every card the room could open with. NOT what is drawn — `dealStarters`
+   *  hands the window four of these. A set may hold as many as it has. */
   starters: Starter[]
 }
 
@@ -47,20 +89,30 @@ const SETS: Record<string, StarterSet> = {
   assistant: {
     headlineKey: 'start.assistant.headline',
     starters: [
-      { icon: 'folderOpen', titleKey: 'start.assistant.findTitle', promptKey: 'start.assistant.findPrompt' },
-      { icon: 'fileText', titleKey: 'start.assistant.readTitle', promptKey: 'start.assistant.readPrompt' },
-      { icon: 'globe', titleKey: 'start.assistant.webTitle', promptKey: 'start.assistant.webPrompt' },
-      { icon: 'bot', titleKey: 'start.assistant.makeTitle', promptKey: 'start.assistant.makePrompt' },
+      { icon: 'search', titleKey: 'start.assistant.chartTitle', promptKey: 'start.assistant.chartPrompt' },
+      { icon: 'monitor', titleKey: 'start.assistant.healthTitle', promptKey: 'start.assistant.healthPrompt' },
+      { icon: 'layoutList', titleKey: 'start.assistant.moneyTitle', promptKey: 'start.assistant.moneyPrompt' },
+      { icon: 'terminal', titleKey: 'start.assistant.appTitle', promptKey: 'start.assistant.appPrompt' },
+      { icon: 'globe', titleKey: 'start.assistant.scrapeTitle', promptKey: 'start.assistant.scrapePrompt' },
+      { icon: 'brain', titleKey: 'start.assistant.learnTitle', promptKey: 'start.assistant.learnPrompt' },
+      { icon: 'chartColumn', titleKey: 'start.assistant.bizTitle', promptKey: 'start.assistant.bizPrompt' },
+      { icon: 'timer', titleKey: 'start.assistant.runwayTitle', promptKey: 'start.assistant.runwayPrompt' },
+      { icon: 'compass', titleKey: 'start.assistant.marketTitle', promptKey: 'start.assistant.marketPrompt' },
+      { icon: 'package', titleKey: 'start.assistant.deckTitle', promptKey: 'start.assistant.deckPrompt' },
     ],
   },
 
   coding: {
     headlineKey: 'start.coding.headline',
     starters: [
-      { icon: 'compass', titleKey: 'start.coding.exploreTitle', promptKey: 'start.coding.explorePrompt' },
-      { icon: 'wrench', titleKey: 'start.coding.buildTitle', promptKey: 'start.coding.buildPrompt' },
-      { icon: 'search', titleKey: 'start.coding.reviewTitle', promptKey: 'start.coding.reviewPrompt' },
       { icon: 'bandage', titleKey: 'start.coding.fixTitle', promptKey: 'start.coding.fixPrompt' },
+      { icon: 'wrench', titleKey: 'start.coding.buildTitle', promptKey: 'start.coding.buildPrompt' },
+      { icon: 'compass', titleKey: 'start.coding.exploreTitle', promptKey: 'start.coding.explorePrompt' },
+      { icon: 'search', titleKey: 'start.coding.reviewTitle', promptKey: 'start.coding.reviewPrompt' },
+      { icon: 'package', titleKey: 'start.coding.upgradeTitle', promptKey: 'start.coding.upgradePrompt' },
+      { icon: 'shield', titleKey: 'start.coding.testTitle', promptKey: 'start.coding.testPrompt' },
+      { icon: 'timer', titleKey: 'start.coding.perfTitle', promptKey: 'start.coding.perfPrompt' },
+      { icon: 'puzzle', titleKey: 'start.coding.refactorTitle', promptKey: 'start.coding.refactorPrompt' },
     ],
   },
 
@@ -77,6 +129,8 @@ const SETS: Record<string, StarterSet> = {
       { icon: 'search', titleKey: 'start.project.askTitle', promptKey: 'start.project.askPrompt' },
       { icon: 'wrench', titleKey: 'start.project.continueTitle', promptKey: 'start.project.continuePrompt' },
       { icon: 'layoutList', titleKey: 'start.project.planTitle', promptKey: 'start.project.planPrompt' },
+      { icon: 'alertTriangle', titleKey: 'start.project.conflictTitle', promptKey: 'start.project.conflictPrompt' },
+      { icon: 'fileText', titleKey: 'start.project.briefTitle', promptKey: 'start.project.briefPrompt' },
     ],
   },
 
@@ -93,6 +147,8 @@ const SETS: Record<string, StarterSet> = {
       { icon: 'brain', titleKey: 'start.chair.consultTitle', promptKey: 'start.chair.consultPrompt' },
       { icon: 'folderOpen', titleKey: 'start.chair.lookTitle', promptKey: 'start.chair.lookPrompt' },
       { icon: 'zap', titleKey: 'start.chair.doTitle', promptKey: 'start.chair.doPrompt' },
+      { icon: 'search', titleKey: 'start.chair.checkTitle', promptKey: 'start.chair.checkPrompt' },
+      { icon: 'package', titleKey: 'start.chair.prepTitle', promptKey: 'start.chair.prepPrompt' },
     ],
   },
 }
@@ -113,4 +169,71 @@ export function startersFor(ctx: { desk: string; chair: string; space: string })
   if (ctx.chair) return SETS.chair
   if (ctx.space) return SETS.project
   return SETS[ctx.desk] ?? SETS.assistant
+}
+
+/** How many cards the grid draws, whatever the room is holding. */
+export const STARTER_SLOTS = 4
+
+/** Deal `count` cards out of a pool, dealing every card before repeating any.
+ *
+ * The empty state shows four cards and a room may hold far more — the point of
+ * a pool is that a set can keep growing without the screen growing with it
+ * (owner's call, 2026-08-15). Four was drawn from a fixed list before, which
+ * meant a fifth card could only be added by taking one away.
+ *
+ * **A shuffled deck, not a dice roll.** Rolling four at random can hide a card
+ * for a dozen openings and show the same hand twice in a row, which is exactly
+ * backwards: the reason to hold a pool is that people find things in it. So a
+ * bag is kept per room, dealt from, and re-shuffled only once it runs out —
+ * every card is seen before any card comes back.
+ *
+ * The bag lives here rather than on disk. It is a nicety about what you saw
+ * this afternoon, not a fact about the product, and losing it on restart costs
+ * exactly one reshuffle. A room whose pool is no bigger than a hand skips all
+ * of this and hands the pool straight back.
+ */
+// The bag holds NAMES, not cards. The pool is rebuilt from scratch every time
+// the window re-derives it — new objects, same words — so a bag of cards would
+// be a bag of stale references that match nothing in the pool it is supposed to
+// be dealing from, and every "have I dealt this already" check would answer no.
+// (It did. The grid drew the same card twice.) A name survives the rebuild, and
+// dropping names the pool no longer has is also how a pool that CHANGED — the
+// language switched, the agent's file arrived — heals itself instead of dealing
+// cards that no longer exist.
+const bags = new Map<string, string[]>()
+
+export function dealStarters<T>(
+  key: string,
+  pool: readonly T[],
+  nameOf: (card: T) => string,
+  count = STARTER_SLOTS,
+): T[] {
+  if (pool.length <= count) return [...pool]
+
+  const byName = new Map(pool.map((c) => [nameOf(c), c]))
+  const hand: T[] = []
+  const dealt = new Set<string>()
+  let bag = (bags.get(key) ?? []).filter((n) => byName.has(n))
+
+  while (hand.length < count) {
+    // Re-shuffle excluding what is already in this hand, so a bag running dry
+    // mid-deal cannot put the same card on screen twice.
+    if (bag.length === 0) bag = shuffle([...byName.keys()].filter((n) => !dealt.has(n)))
+    const name = bag.pop() as string
+    if (dealt.has(name)) continue
+    dealt.add(name)
+    hand.push(byName.get(name) as T)
+  }
+
+  bags.set(key, bag)
+  return hand
+}
+
+function shuffle<T>(items: readonly T[]): T[] {
+  const out = [...items]
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[out[i], out[j]] = [out[j], out[i]]
+  }
+  return out
 }

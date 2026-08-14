@@ -1047,8 +1047,8 @@ describe('Settings pages', () => {
     await waitFor(() => expect(screen.getAllByLabelText('ตั้งค่า').length).toBe(3))
     await fireEvent.click(screen.getAllByLabelText('ตั้งค่า')[2]) // deck
 
-    // Four slots, always — the window fits four, and an empty row is also how a
-    // card is removed.
+    // Four rows to begin with — the floor, because a pool below a full hand
+    // deals a widow into the 2-column grid. It is a floor now, not a ceiling.
     await waitFor(() => expect(container.querySelectorAll('.ag-starter').length).toBe(4))
 
     const first = container.querySelectorAll('.ag-starter')[0]
@@ -1071,6 +1071,31 @@ describe('Settings pages', () => {
     // cards the user has to go and delete.
     expect(set.cards.length).toBe(1)
     expect(set.cards[0]).toMatchObject({ title: 'วางโครงสไลด์', prompt: 'ช่วยวางโครงสไลด์เรื่องนี้:' })
+  })
+
+  // The grid draws four out of a pool, so an agent can hold more than it shows.
+  // While this form was four fixed rows, the form was the thing stopping that:
+  // a user could never give a hired agent a fifth card.
+  it('grows the opening past the four the grid draws', async () => {
+    vi.mocked(ChairStarters).mockResolvedValue({ headline: 'ถามอะไรดี?', cards: [] } as any)
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'เอเจน')
+    await waitFor(() => expect(screen.getAllByLabelText('ตั้งค่า').length).toBe(3))
+    await fireEvent.click(screen.getAllByLabelText('ตั้งค่า')[2]) // deck
+
+    await waitFor(() => expect(container.querySelectorAll('.ag-starter').length).toBe(4))
+    await fireEvent.click(container.querySelector('.ag-starter-add')!)
+    await fireEvent.click(container.querySelector('.ag-starter-add')!)
+    expect(container.querySelectorAll('.ag-starter').length).toBe(6)
+
+    // Removing takes the row away — until the floor, where it clears the row
+    // instead, because a pool of three deals a widow into a two-column grid.
+    await fireEvent.click(container.querySelectorAll('.ag-starter-drop')[0])
+    expect(container.querySelectorAll('.ag-starter').length).toBe(5)
+    for (let n = 0; n < 3; n++) {
+      await fireEvent.click(container.querySelectorAll('.ag-starter-drop')[0])
+    }
+    expect(container.querySelectorAll('.ag-starter').length).toBe(4)
   })
 
   // subagent.forcedDenials never reach a sub-agent whatever the file says.

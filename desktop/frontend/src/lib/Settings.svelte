@@ -1909,13 +1909,21 @@
 
   // ---------- The opening, as a form ----------
   //
-  // Four rows, always drawn. The window fits four, so a growing list would top
-  // out at four and leave its own Add button dead; an empty row is also how a
-  // card is deleted, which a list of exactly-as-many-as-you-have cannot express
-  // without a second control.
-  const STARTER_SLOTS = 4
-  const blankStarters = () =>
-    Array.from({ length: STARTER_SLOTS }, () => ({ title: '', prompt: '', icon: '' }))
+  // A growable list, floored at four and ceilinged at the pool the engine will
+  // return (maxStarters in internal/subagent/starters.go).
+  //
+  // It was four fixed rows, for a reason that stopped being true: the window
+  // drew every card a file held, so a fifth row could never appear on screen
+  // and an Add button would have been a dead control. The window now deals four
+  // out of a pool (starters.ts), so an agent the user hired can hold more than
+  // it shows — and a form capped at four would be the one thing standing
+  // between them and that. The floor stays because a pool below a full hand
+  // deals a widow into the grid; the ceiling is the engine's, so the form
+  // cannot accept a card that would be silently dropped on read.
+  const STARTER_MIN = 4
+  const STARTER_MAX = 24
+  const blankStarter = () => ({ title: '', prompt: '', icon: '' })
+  const blankStarters = () => Array.from({ length: STARTER_MIN }, blankStarter)
   let startersHeadline = $state('')
   let startersCards = $state(blankStarters())
   let startersFile = $state('')
@@ -1942,15 +1950,33 @@
 
   function fillStarters(set: subagent.StarterSet | null) {
     startersHeadline = set?.headline ?? ''
-    const cards = blankStarters()
-    for (const [i, c] of (set?.cards ?? []).slice(0, STARTER_SLOTS).entries()) {
-      // The trailing space after a colon is put back by the reader and must not
-      // come back through the form as an edit nobody made.
-      cards[i] = { title: c.title, prompt: (c.prompt ?? '').trimEnd(), icon: c.icon ?? '' }
-    }
+    // The trailing space after a colon is put back by the reader and must not
+    // come back through the form as an edit nobody made.
+    const cards = (set?.cards ?? []).slice(0, STARTER_MAX).map((c) => ({
+      title: c.title,
+      prompt: (c.prompt ?? '').trimEnd(),
+      icon: c.icon ?? '',
+    }))
+    // Always at least the floor, so an agent with two cards still shows a form
+    // that can be filled to a usable pool rather than a form that ends early.
+    while (cards.length < STARTER_MIN) cards.push(blankStarter())
     startersCards = cards
     startersSnapshot = startersKey()
     startersError = ''
+  }
+
+  const canAddStarter = $derived(startersCards.length < STARTER_MAX)
+  function addStarterRow() {
+    if (canAddStarter) startersCards = [...startersCards, blankStarter()]
+  }
+  // Removing below the floor is not offered rather than refused: a button that
+  // is there and says no is worse than a button that is not there.
+  function removeStarterRow(i: number) {
+    if (startersCards.length > STARTER_MIN) {
+      startersCards = startersCards.filter((_, k) => k !== i)
+    } else {
+      startersCards[i] = blankStarter()
+    }
   }
 
   const saveStarters = () => runStarters(async () => {
@@ -3342,9 +3368,10 @@
      A form over the file, not a replacement for it: hand-editing stays exactly
      as valid, which is why what Save writes is a heading and a list and
      nothing a person would not have typed themselves.
-     Four rows always, filled or not. The window draws four, so an "add card"
-     button would only ever be pressed four times and then be a dead control —
-     and an empty row is also how a card is removed. -->
+     A growable list. It was four fixed rows while the window drew every card a
+     file held; now the window deals four out of a pool, so the form has to be
+     able to build a pool deeper than the grid. Floored at four so nothing can
+     be saved that deals a widow, ceilinged at what the engine will read back. -->
 {#snippet agentStartersBox()}
   <div class="settings-card">
     <div class="card-form pp-edit">
@@ -3363,7 +3390,17 @@
 
       {#each startersCards as card, i (i)}
         <div class="pp-field ag-starter">
-          <span class="eyebrow">{t('settings.agentStarterCard', { n: i + 1 })}</span>
+          <div class="ag-starter-head">
+            <span class="eyebrow eyebrow-grow">{t('settings.agentStarterCard', { n: i + 1 })}</span>
+            <button
+              class="ag-starter-drop"
+              title={t('settings.agentStarterRemove')}
+              aria-label={t('settings.agentStarterRemove')}
+              onclick={() => removeStarterRow(i)}
+            >
+              <Icon name="x" size={13} />
+            </button>
+          </div>
           <div class="ag-starter-row">
             <input class="ctrl" bind:value={card.title} placeholder={t('settings.agentStarterTitlePlaceholder')} />
             <select class="ctrl ag-starter-icon" bind:value={card.icon} aria-label={t('settings.agentIcon')}>
@@ -3374,10 +3411,20 @@
           <input class="ctrl" bind:value={card.prompt} placeholder={t('settings.agentStarterPromptPlaceholder')} />
         </div>
       {/each}
+
+      {#if canAddStarter}
+        <button class="ctrl ag-starter-add" onclick={addStarterRow}>
+          <Icon name="plus" size={13} />
+          <span>{t('settings.agentStarterAdd')}</span>
+        </button>
+      {/if}
+
       <!-- The trailing-colon rule is the author's, not a quirk to discover: a
            prompt that ends in ":" is the deliberate half-sentence the user
-           finishes in the composer. -->
+           finishes in the composer. The pool line beside it is the other thing
+           an author cannot see from here: the grid draws four of these. -->
       <div class="d muted">{t('settings.agentStartersColonHint')}</div>
+      <div class="d muted">{t('settings.agentStartersPoolHint', { shown: 4, held: startersCards.length })}</div>
 
       {#if startersError}<div class="mset-error">{startersError}</div>{/if}
 

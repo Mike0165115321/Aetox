@@ -10,6 +10,7 @@ package subagent
 // worker over.
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -73,27 +74,65 @@ func TestParseStartersSkipsWhatItCannotRead(t *testing.T) {
 // The window owns its grid, but the file is not the app's to trust: a worker
 // must not be able to hand back three hundred cards. Dropped from the end,
 // which is the order the author would have chosen to lose them in.
-func TestParseStartersCapsAtFour(t *testing.T) {
-	set := parseStarters(`- 1 | ก
-- 2 | ข
-- 3 | ค
-- 4 | ง
-- 5 | จ
-`)
+func TestParseStartersCapsThePool(t *testing.T) {
+	var b strings.Builder
+	for i := 1; i <= maxStarters+3; i++ {
+		fmt.Fprintf(&b, "- %d | ก\n", i)
+	}
+	set := parseStarters(b.String())
 	if len(set.Cards) != maxStarters {
 		t.Fatalf("cards = %d, want %d", len(set.Cards), maxStarters)
 	}
-	if set.Cards[3].Title != "4" {
-		t.Errorf("kept the wrong four: %+v", set.Cards)
+	if set.Cards[maxStarters-1].Title != fmt.Sprint(maxStarters) {
+		t.Errorf("dropped from the wrong end: last card = %+v", set.Cards[maxStarters-1])
+	}
+}
+
+// A pool is worth having only if it can hold more than the window draws — the
+// cap and the hand were the same number once, and that is exactly what stopped
+// a worker from ever having a fifth card.
+func TestPoolCeilingIsBiggerThanAHand(t *testing.T) {
+	const windowHand = 4 // STARTER_SLOTS in starters.ts
+	if maxStarters <= windowHand {
+		t.Fatalf("maxStarters = %d, which is no deeper than the %d the window draws", maxStarters, windowHand)
+	}
+}
+
+// The settings form has to stop where the reader stops.
+//
+// The form and this package answer the same question — how many cards an agent
+// may hold — from two files in two languages, and the frontend cannot import a
+// Go constant. Left to discipline, the day they disagree is the day a user
+// fills in a card, presses save, and watches it not come back: parseStarters
+// drops the overflow silently, because a file the app did not write is not
+// something to fail an app launch over. So the disagreement is caught here
+// instead, where it costs a red test rather than a card nobody can explain.
+func TestSettingsFormStopsWhereTheReaderStops(t *testing.T) {
+	const form = "../../desktop/frontend/src/lib/Settings.svelte"
+	raw, err := os.ReadFile(form)
+	if err != nil {
+		t.Fatalf("cannot read the opening editor: %v", err)
+	}
+	want := fmt.Sprintf("const STARTER_MAX = %d", maxStarters)
+	if !strings.Contains(string(raw), want) {
+		t.Fatalf("%s does not say %q — the form and the reader disagree on how many cards an agent may hold, "+
+			"and the extras will be dropped on read without telling anyone", form, want)
 	}
 }
 
 // Every shipped worker opens with something, in both languages the app ships
 // in. A worker is not required to have an opening — but one that has a Thai
 // file and no English one would fall back to Thai in front of an English user,
-// silently, and these five are ours to keep straight.
+// silently, and these six are ours to keep straight. (`research` was missing
+// from this list while it shipped both files, so nothing was checking them.)
 func TestBundledAgentsShipStartersInBothLanguages(t *testing.T) {
-	for _, name := range []string{"automation", "deck", "doc", "github", "sheet"} {
+	// What a pool owes is enough to fill the grid, not an exact number — the
+	// window deals four out of it (STARTER_SLOTS in starters.ts) and a worker
+	// holding three would deal a widow onto the second row.
+	const windowHand = 4
+
+	for _, name := range []string{"automation", "deck", "doc", "github", "research", "sheet"} {
+		thCards := 0
 		for _, locale := range []string{"th", "en"} {
 			raw, ok := bundledStarters(name)(locale)
 			if !ok {
@@ -104,8 +143,15 @@ func TestBundledAgentsShipStartersInBothLanguages(t *testing.T) {
 			if set.Headline == "" {
 				t.Errorf("%s (%s): no question above the cards", name, locale)
 			}
-			if len(set.Cards) != maxStarters {
-				t.Errorf("%s (%s): %d cards, want %d — the grid is 2×2", name, locale, len(set.Cards), maxStarters)
+			if len(set.Cards) < windowHand {
+				t.Errorf("%s (%s): %d cards, too few to fill a hand of %d", name, locale, len(set.Cards), windowHand)
+			}
+			// A translation that dropped a card would deal a different pool to
+			// an English user than to a Thai one.
+			if locale == "th" {
+				thCards = len(set.Cards)
+			} else if len(set.Cards) != thCards {
+				t.Errorf("%s: th holds %d cards, en holds %d", name, thCards, len(set.Cards))
 			}
 		}
 	}
@@ -149,8 +195,16 @@ func TestStartersHomeWinsBeforeLanguage(t *testing.T) {
 	}
 
 	// A worker the user never touched still comes from the package, translated.
-	if set := Starters("sheet", "en"); set.Headline != "What should we do with the numbers?" {
-		t.Fatalf("headline = %q", set.Headline)
+	// Pinned as "the two languages answered differently" rather than as one
+	// exact sentence: the wording of a shipped card is editorial and changes,
+	// and a test that fails on a reworded headline is a test that punishes
+	// improving the product.
+	th, en := Starters("sheet", "th"), Starters("sheet", "en")
+	if th.Headline == "" || en.Headline == "" {
+		t.Fatalf("sheet lost a headline: th=%q en=%q", th.Headline, en.Headline)
+	}
+	if th.Headline == en.Headline {
+		t.Fatalf("sheet answered %q in both languages — the English file did not win", en.Headline)
 	}
 }
 
@@ -269,20 +323,21 @@ func TestSaveStartersRefusesTheSeparator(t *testing.T) {
 	}
 }
 
-// The window draws four; a form that let a fifth be written would show the user
-// a card their agent never opens with.
-func TestSaveStartersCapsAtFour(t *testing.T) {
+// Writing and reading agree on the ceiling. A form that let one more card
+// through than the reader will return would save a card the agent never opens
+// with, and the user would have no way of knowing which one vanished.
+func TestSaveStartersCapsAtThePoolCeiling(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("AETOX_DATA_ROOT", root)
 
 	var cards []Starter
-	for _, n := range []string{"1", "2", "3", "4", "5"} {
-		cards = append(cards, Starter{Title: n, Prompt: "p" + n})
+	for i := 1; i <= maxStarters+3; i++ {
+		cards = append(cards, Starter{Title: fmt.Sprint(i), Prompt: fmt.Sprintf("p%d", i)})
 	}
 	if err := SaveStarters("bookkeeper", "th", StarterSet{Cards: cards}); err != nil {
 		t.Fatal(err)
 	}
-	if got := Starters("bookkeeper", "th"); len(got.Cards) != 4 {
-		t.Fatalf("got %d cards, want 4", len(got.Cards))
+	if got := Starters("bookkeeper", "th"); len(got.Cards) != maxStarters {
+		t.Fatalf("got %d cards, want %d", len(got.Cards), maxStarters)
 	}
 }

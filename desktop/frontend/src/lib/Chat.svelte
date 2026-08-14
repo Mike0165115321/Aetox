@@ -34,7 +34,7 @@
   import Icon from './Icon.svelte'
   import ProviderMark from './ProviderMark.svelte'
   import { ICONS, type IconName } from './icons'
-  import { startersFor } from './starters'
+  import { startersFor, dealStarters, STARTER_SLOTS } from './starters'
 
   let {
     messages, task, model, awaitingReply, agentStatus, toolSteps, streamingText, reasoningText,
@@ -721,7 +721,9 @@
   })
 
   const headline = $derived(chairOpening?.headline || t(roomStarters.headlineKey))
-  const starters: { icon: IconName; title: string; prompt: string }[] = $derived(
+
+  // Everything this room could open with. The grid draws four of them.
+  const starterPool: { icon: IconName; title: string; prompt: string }[] = $derived(
     chairOpening && chairOpening.cards?.length
       ? chairOpening.cards.map((c) => ({
           // An agent may name any mark from the app's icon set, and may name
@@ -734,6 +736,36 @@
         }))
       : roomStarters.starters.map((s) => ({ icon: s.icon, title: t(s.titleKey), prompt: t(s.promptKey) })),
   )
+
+  // Which bag the deal comes out of. A chair keeps its own, a project keeps
+  // one, and the desks keep one each — sharing a bag across rooms would let a
+  // chat you opened on the workshop desk decide what ผู้ช่วย shows you next.
+  const dealKey = $derived(
+    cockpit.chair ? `chair:${cockpit.chair}` : cockpit.space ? 'project' : `desk:${cockpit.desk}`,
+  )
+
+  // The four on screen, dealt once and then held.
+  //
+  // Held in state rather than derived, because a derived hand would re-deal on
+  // anything it happened to read — and the thing this sits next to is `draft`,
+  // so the cards would reshuffle under the user's cursor while they typed. It
+  // re-deals when the room changes, when the language changes (the pool is
+  // different words), when the agent's own file arrives, and when the user asks
+  // for another hand. Not otherwise.
+  let reroll = $state(0)
+  let starters = $state<{ icon: IconName; title: string; prompt: string }[]>([])
+  $effect(() => {
+    const pool = starterPool
+    const key = dealKey
+    void reroll
+    // Dealt by title, which is also the {#each} key below: two cards the user
+    // cannot tell apart must not be able to share a slot.
+    starters = dealStarters(key, pool, (c) => c.title)
+  })
+
+  // Only offered when there is something behind the four. A button that deals
+  // the same hand back is a button that reads as broken.
+  const canReroll = $derived(starterPool.length > STARTER_SLOTS)
 
   function pickStarter(prompt: string) {
     draft = prompt
@@ -1399,14 +1431,23 @@
     <div class="empty-state">
       <Logo size={56} />
       <h2>{headline}</h2>
+      <!-- Keyed by title so a re-deal replaces the cards rather than rewriting
+           the text inside four cards that never moved — which is what makes the
+           swap read as a new hand instead of a flicker. -->
       <div class="starter-grid">
-        {#each starters as s}
-          <button class="starter-card" onclick={() => pickStarter(s.prompt)}>
+        {#each starters as s, i (s.title)}
+          <button class="starter-card" style="--i:{i}" onclick={() => pickStarter(s.prompt)}>
             <span class="ic"><Icon name={s.icon} size={18} /></span>
             <span class="title">{s.title}</span>
           </button>
         {/each}
       </div>
+      {#if canReroll}
+        <button class="starter-more" onclick={() => reroll++}>
+          <Icon name="refreshCw" size={13} />
+          <span>{t('start.more')}</span>
+        </button>
+      {/if}
     </div>
   {:else}
     <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
