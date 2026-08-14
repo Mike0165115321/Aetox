@@ -1,0 +1,126 @@
+// The model picker in the composer, and the price it was not showing.
+//
+// The settings page has drawn "ฟรี" against a free model since the provider
+// work landed; the picker in the composer — the place the model is actually
+// chosen, and the only one most people ever open — listed the same names with
+// nothing beside them. One fact with two answers depending on which screen you
+// were standing on, and the screen that answered was the one you were not on.
+//
+// The rule under the badge is the provider's own marker, not a rate of zero
+// (ARCHITECTURE/DECISIONS: of 22 OpenRouter models priced at zero, 15 carry
+// `:free` and the other 7 are routers and previews nobody has published a price
+// for). That rule lives in Go and is tested there; what these tests pin is that
+// the answer it gives reaches this menu at all, and that an unknown price still
+// draws nothing rather than a zero.
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { render, waitFor, fireEvent } from '@testing-library/svelte'
+import Chat from '../lib/Chat.svelte'
+import { cockpit } from '../lib/stores/cockpit.svelte'
+import { ListModelsForProvider, PriceModels } from './mocks/wailsApp'
+
+const baseProps = {
+  task: { title: '', steps: [] } as never,
+  messages: [] as never,
+  awaitingReply: false,
+  agentStatus: '',
+  toolSteps: [] as never,
+  streamingText: '',
+  reasoningText: '',
+  onSend: () => {},
+  onSwitchProvider: async () => {},
+  onSwitchThinkLevel: async () => {},
+  onSwitchModel: async () => {},
+  onSubmitAPIKey: async () => {},
+  model: {
+    provider: 'openrouter', modelName: 'poolside/laguna-s-2.1',
+    thinkLevel: 'high', approval: 'ask', wireFormat: '',
+  } as never,
+}
+
+const listing = (model: string, over: Record<string, unknown> = {}) => ({
+  model, input: 0, output: 0, priced: false, free: false, context: 0, ...over,
+})
+
+// Open the composer's model chip, then the model row's dropdown inside it.
+async function openModelList() {
+  const chip = document.querySelector('.model-chip') as HTMLButtonElement
+  expect(chip).toBeTruthy()
+  await fireEvent.click(chip)
+  const trigger = Array.from(document.querySelectorAll('.updrop-trigger'))
+    .find((b) => b.textContent?.includes('laguna')) as HTMLButtonElement
+  expect(trigger).toBeTruthy()
+  await fireEvent.click(trigger)
+  return () => Array.from(document.querySelectorAll('.updrop-opt'))
+}
+
+const rowFor = (opts: Element[], name: string) =>
+  opts.find((o) => o.querySelector('.t')?.textContent === name)
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  // jsdom implements no layout, so Element.scrollIntoView is simply absent —
+  // and this list scrolls the current model into view the moment it opens.
+  Element.prototype.scrollIntoView = () => {}
+  cockpit.chat = []
+  cockpit.activeView = 'chat'
+  vi.mocked(ListModelsForProvider).mockResolvedValue([
+    'poolside/laguna-s-2.1',
+    'poolside/laguna-s-2.1:free',
+    'openrouter/pareto-code',
+  ] as never)
+  vi.mocked(PriceModels).mockResolvedValue([
+    listing('poolside/laguna-s-2.1', { input: 0.09, output: 0.18, priced: true }),
+    listing('poolside/laguna-s-2.1:free', { free: true }),
+    // Zero rate, no marker: the catalog has no price for it. Not free.
+    listing('openrouter/pareto-code'),
+  ] as never)
+})
+
+describe('the composer model picker', () => {
+  it('marks a free model as free, the same word the settings list uses', async () => {
+    render(Chat, baseProps as never)
+    const opts = await openModelList()
+
+    await waitFor(() => expect(rowFor(opts(), 'poolside/laguna-s-2.1:free')).toBeTruthy())
+    await waitFor(() => {
+      const tag = rowFor(opts(), 'poolside/laguna-s-2.1:free')!.querySelector('.utag')
+      expect(tag?.textContent).toBe('ฟรี')
+      expect(tag?.className).toContain('free')
+    })
+  })
+
+  it('prices the paid model per million rather than leaving it bare', async () => {
+    render(Chat, baseProps as never)
+    const opts = await openModelList()
+
+    await waitFor(() => {
+      const tag = rowFor(opts(), 'poolside/laguna-s-2.1')!.querySelector('.utag')
+      expect(tag?.textContent).toContain('$0.09')
+      expect(tag?.textContent).toContain('$0.18')
+      expect(tag?.className).not.toContain('free')
+    })
+  })
+
+  // The failure this guards against is the one that costs money: a row whose
+  // price nobody has published rendering as "$0 / $0", which reads as free and
+  // gets picked for exactly that reason.
+  it('says nothing at all about a model it has no price for', async () => {
+    render(Chat, baseProps as never)
+    const opts = await openModelList()
+
+    await waitFor(() => expect(rowFor(opts(), 'openrouter/pareto-code')).toBeTruthy())
+    expect(rowFor(opts(), 'openrouter/pareto-code')!.querySelector('.utag')).toBeNull()
+  })
+
+  // Prices are fetched without awaiting them, so the names have to be pickable
+  // before the money lands — and a provider that never answers must leave a
+  // usable list rather than an empty one.
+  it('still lists every model when the prices never arrive', async () => {
+    vi.mocked(PriceModels).mockRejectedValue(new Error('no catalog') as never)
+    render(Chat, baseProps as never)
+    const opts = await openModelList()
+
+    await waitFor(() => expect(opts().filter((o) => o.querySelector('.t')).length).toBeGreaterThanOrEqual(3))
+    expect(document.querySelectorAll('.updrop-opt .utag').length).toBe(0)
+  })
+})

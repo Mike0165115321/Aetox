@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ChatMessage, TaskState, ModelStatus, ToolStep, TimelineNode, ContextBreakdown } from './types'
+  import type { BackgroundTask, ChatMessage, TaskState, ModelStatus, ToolStep, TimelineNode, ContextBreakdown } from './types'
   import { groupSteps, isDelegation } from './types'
   import TaskTimeline from './TaskTimeline.svelte'
   import BackgroundWork from './BackgroundWork.svelte'
@@ -9,7 +9,7 @@
   import { shell } from './shell.svelte'
   import {
     EnabledProviders, SupportedThinkLevels,
-    ListModelsForProvider, RequiresAPIKey, HasAPIKey, PickAttachment,
+    ListModelsForProvider, PriceModels, RequiresAPIKey, HasAPIKey, PickAttachment,
     GetContextBreakdown, GuideTopics, RunChatCommand, ListChairs, ChairStarters, CurrentSessionID,
     Shells, CurrentShell, SetShell, EnginesFor, UseEngine, VerifyConnection,
     GitBranches, GitSwitchBranch, GitCreateBranch, GetProjectStatus,
@@ -58,6 +58,13 @@
   let providers = $state<string[]>([])
   let thinkLevels = $state<string[]>([])
   let models = $state<string[]>([])
+  // What each of those models costs, keyed by name. Same call the settings page
+  // makes, because "ฟรี" appearing on one screen and not the other is one fact
+  // with two answers — and this is the screen where the model is actually
+  // picked. Empty until the prices land (or if they never do): a row with no
+  // entry draws no tag rather than a wrong one.
+  type ModelListing = { model: string; input: number; output: number; priced: boolean; free: boolean; context: number }
+  let priced = $state<Record<string, ModelListing>>({})
   let needsApiKey = $state(false)
   let apiKeyDraft = $state('')
   // Thinking, the agent's own tools, and what it delegated are views of the
@@ -120,6 +127,33 @@
   // เครื่องมือ" — a control whose only promise is that there is nothing behind it.
   const ownTools = (steps: ToolStep[]) => ownSteps(steps).filter((s) => !s.kind)
 
+  // Whether a delegation is still working, and for how long, come from the
+  // engine's register — never from the `task` row's own state.
+  //
+  // The row cannot answer either question. `task` returns the instant the worker
+  // is spawned (internal/subagent/task.go begin), so the result event closes the
+  // row a second or two in, and the card drew a green tick and a frozen clock
+  // over a delegate that was on its twenty-seventh tool call. Owner, 15 ส.ค.:
+  // "เวลามันหยุดนิ่งอ่ะ ขณะที่ซับเอเจนยังรัน tool อยู่ มันควรจะเดินต่อ จะได้รู้ว่า
+  // ซับเอเจนตัวนี้ใช้เวลาไปนานแค่ไหน".
+  //
+  // This is the join the tray under the chat has always made (§105) — state and
+  // counters from the register, step lines from the event feed. The two cards
+  // are deliberately the same card, so they had to stop telling two stories.
+  const registerTask = (node: TimelineNode): BackgroundTask | undefined =>
+    node.step.task ? cockpit.backgroundTasks.find((b) => b.id === node.step.task) : undefined
+  const stillWorking = (b?: BackgroundTask) => b?.state === 'running' || b?.state === 'waiting'
+  // A delegation the register has never heard of falls back to its row: a turn
+  // read back from the database has no register entry, and the row is all there
+  // is to draw from.
+  function cardState(node: TimelineNode): ToolStep['state'] {
+    const task = registerTask(node)
+    if (!task) return node.step.state
+    if (stillWorking(task)) return 'run'
+    return task.state === 'failed' ? 'err' : 'done'
+  }
+  const isRunningNode = (n: TimelineNode) => cardState(n) === 'run'
+
   // This chat's own name, for the breadcrumb above it. Read off the project's
   // list rather than kept here: the title is the store's to know, and a second
   // copy would be the one that goes stale when a chat is renamed.
@@ -138,12 +172,16 @@
   const doneOwn = $derived(ownSteps(toolSteps).filter((s) => s.state !== 'run'))
   const doneOwnTools = $derived(ownTools(toolSteps).filter((s) => s.state !== 'run'))
   const runningOwn = $derived(ownSteps(toolSteps).filter((s) => s.state === 'run'))
-  const doneAgents = $derived(delegatedAgents(toolSteps).filter((n) => n.step.state !== 'run'))
-  const doneHelpers = $derived(delegatedHelpers(toolSteps).filter((n) => n.step.state !== 'run'))
+  const doneAgents = $derived(delegatedAgents(toolSteps).filter((n) => !isRunningNode(n)))
+  const doneHelpers = $derived(delegatedHelpers(toolSteps).filter((n) => !isRunningNode(n)))
   // What is still running renders as one list, agents first — each block names
   // its own worker, so the piles only need separating where they are counted.
+  // "Still running" is the register's answer (cardState), not the `task` row's:
+  // by the row's own account every delegation is finished from birth, which put
+  // a live worker behind the collapsed "used N agents" toggle the moment it
+  // started.
   const runningSubs = $derived(
-    [...delegatedAgents(toolSteps), ...delegatedHelpers(toolSteps)].filter((n) => n.step.state === 'run'),
+    [...delegatedAgents(toolSteps), ...delegatedHelpers(toolSteps)].filter(isRunningNode),
   )
   // The engine's phase message is a fallback, not the headline. It says
   // "กำลังคิดคำตอบ..." for the whole tool loop — which duplicates the thinking
@@ -197,6 +235,19 @@
   async function refreshProviderDerived(provider: string) {
     const res = await ListModelsForProvider(provider)
     models = Array.isArray(res) ? res : []
+    // Prices for the list that is on screen, not for one fetched again. Not
+    // awaited: the names are pickable before the money arrives, and a provider
+    // that is slow about it must not hold the menu shut.
+    priced = {}
+    if (models.length) {
+      PriceModels(provider, models)
+        .then((rows) => {
+          const next: Record<string, ModelListing> = {}
+          for (const r of rows ?? []) next[r.model] = r
+          priced = next
+        })
+        .catch(() => { priced = {} })
+    }
     // Same recovery as Settings: the list loading is proof the endpoint is up.
     if (models.length > 0 && model.warning) await retryActiveProvider()
     needsApiKey = (await RequiresAPIKey(provider)) && !(await HasAPIKey(provider))
@@ -655,16 +706,43 @@
     free: t('chat.ctx_free'),
   })
 
-  // Ticks once a second while a turn is in flight, so the running tool step's
-  // elapsed counter ("· 12s") advances live.
+  // Ticks once a second while anything is in flight, so a running counter
+  // ("· 12s") advances live.
+  //
+  // A turn in flight is not the only thing that qualifies. A delegate outlives
+  // the turn that started it, and its card stays in the transcript above the
+  // finished bubble — armed on awaitingReply alone, that card's clock stopped
+  // the moment the assistant answered, which is precisely when the user starts
+  // watching it. Disarms again as soon as nothing is moving, so an idle session
+  // has no timer.
   let now = $state(Date.now())
   $effect(() => {
-    if (!awaitingReply) return
+    const working = cockpit.backgroundTasks.some(stillWorking)
+    if (!awaitingReply && !working) return
     const id = setInterval(() => (now = Date.now()), 1000)
     return () => clearInterval(id)
   })
   function liveSecs(s: ToolStep): number {
     return Math.max(0, Math.round((now - s.startedAt) / 1000))
+  }
+  // Seconds on a delegation card: counted off the register's own start while the
+  // worker is going, its real total once it stops, and only then the `task`
+  // row's number — which is the spawn, not the job — when the register has
+  // nothing to say.
+  function cardSecs(node: TimelineNode, live: boolean): number | undefined {
+    const task = registerTask(node)
+    if (task) {
+      if (stillWorking(task)) return Math.max(0, Math.round((now - Date.parse(task.startedAt)) / 1000))
+      if (task.elapsedMs) return Math.round(task.elapsedMs / 1000)
+    }
+    if (node.step.state === 'run') return live ? liveSecs(node.step) : undefined
+    return node.step.secs
+  }
+  // Minutes once there are any: a delegate that ran for four minutes reading
+  // "247s" makes the reader do the division.
+  function clockLabel(secs: number): string {
+    const mins = Math.floor(secs / 60)
+    return mins > 0 ? `${mins}m ${String(secs % 60).padStart(2, '0')}s` : `${secs}s`
   }
 
   // Guided onboarding. The questions come from the engine, and picking one
@@ -1008,7 +1086,7 @@
   let openSteps = $state<Record<string, boolean>>({})
   const stepsKey = (node: TimelineNode) => node.step.ref ?? node.step.label
   const stepsOpen = (node: TimelineNode) =>
-    openSteps[stepsKey(node)] ?? node.step.state === 'run'
+    openSteps[stepsKey(node)] ?? isRunningNode(node)
   function toggleSteps(node: TimelineNode) {
     openSteps[stepsKey(node)] = !stepsOpen(node)
   }
@@ -1247,7 +1325,10 @@
   // mark. Kept as separate fields rather than one overloaded string — the two
   // draw from different registries, and a provider named like an icon would
   // otherwise silently pick the wrong one.
-  options: { value: string; label: string; icon?: string; mark?: string; desc?: string }[],
+  // `tag` is a short right-aligned mark on the row — a price, or the word
+  // "free". Separate from `desc` because it sits on the same line as the name
+  // rather than under it, and because a row can want one without the other.
+  options: { value: string; label: string; icon?: string; mark?: string; desc?: string; tag?: string; tagFree?: boolean }[],
   current: string,
   onPick: (value: string) => void,
 )}
@@ -1282,6 +1363,7 @@
               <span class="ic"><Icon name={opt.icon as IconName} size={13} /></span>
             {/if}
             <span class="t">{opt.label}</span>
+            {#if opt.tag}<span class="utag" class:free={opt.tagFree}>{opt.tag}</span>{/if}
             {#if opt.desc}<span class="d">{opt.desc}</span>{/if}
           </button>
         {/each}
@@ -1345,14 +1427,19 @@
              running afterwards are the same event at two moments, and two
              visual languages for that taught the user they were different
              things. The card lost the argument for a bare left rail the first
-             time it was tried — a rail cannot say "alive". -->
-        <div class="bgw-card {node.step.state}">
+             time it was tried — a rail cannot say "alive".
+             Which it is comes from the register (cardState), for the same
+             reason the tray reads it: the `task` row says "finished" from the
+             second the worker started. -->
+        {@const state = cardState(node)}
+        {@const secs = cardSecs(node, live)}
+        <div class="bgw-card {state}">
           <div class="bgw-head">
-            {#if node.step.state === 'run'}
+            {#if state === 'run'}
               <span class="bgw-mark run"><Icon name="loaderCircle" size={15} /></span>
             {:else}
-              <span class="bgw-mark {node.step.state === 'done' ? 'ok' : 'fail'}">
-                <Icon name={node.step.state === 'done' ? 'check' : 'x'} size={15} />
+              <span class="bgw-mark {state === 'done' ? 'ok' : 'fail'}">
+                <Icon name={state === 'done' ? 'check' : 'x'} size={15} />
               </span>
             {/if}
             <!-- Written the way the user would write it. An agent has one
@@ -1364,12 +1451,11 @@
             <b class="bgw-agent">{node.step.agent
               ? (isAgentNode(node) ? '@' + node.step.agent : node.step.agent)
               : t(isAgentNode(node) ? 'chat.agent' : 'chat.subagent')}</b>
-            {#if node.step.state === 'run'}
+            {#if state === 'run'}
               <span class="bgw-badge run">{t('bgw.running')}</span>
             {/if}
             <span class="bgw-meta">
-              {#if node.step.state === 'run' && live}{liveSecs(node.step)}s
-              {:else if node.step.secs}{node.step.secs}s{/if}
+              {#if secs !== undefined}{clockLabel(secs)}{/if}
             </span>
           </div>
           <div class="bgw-brief">{node.step.label.replace(/^task\s*/, '')}</div>
@@ -2474,7 +2560,17 @@
                 <div class="mm-row">
                   <span class="lbl">{t('chat.model')}</span>
                   {#if models && models.length > 0}
-                    {@render upSelect('model', models.map((m) => ({ value: m, label: m })), model.modelName, handleModelChange)}
+                    {@render upSelect('model', models.map((m) => ({
+                      value: m, label: m,
+                      // Never a zero: on a list this long a zero reads as
+                      // "free" and gets acted on, while the rows the catalog
+                      // has no price for are genuinely unknown, not cheap.
+                      // Those get nothing at all — the name alone, as before.
+                      tag: priced[m]?.free
+                        ? t('settings.priceFree')
+                        : priced[m]?.priced ? `$${priced[m].input} / $${priced[m].output}` : '',
+                      tagFree: !!priced[m]?.free,
+                    })), model.modelName, handleModelChange)}
                   {:else}
                     <!-- No discoverable list — read-only; custom model ids are set in Settings -->
                     <span class="mm-static">{model.modelName || '—'}</span>

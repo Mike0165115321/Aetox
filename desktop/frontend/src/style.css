@@ -1445,6 +1445,21 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .updrop-opt.rich .t { font-weight:600; }
 .updrop-opt.rich .d { grid-column:2; font-size:var(--fs-xs); line-height:1.45; color:var(--text-dim); }
 .updrop-opt.rich.selected .d { color:inherit; opacity:.75; }
+/* What a model costs, on the row where the model is chosen — the same fact the
+   settings list draws with .mprice, so it takes the same colours. It rides the
+   right edge of the row: the name is what you scan by, the price is what you
+   check once you have found it. Tabular figures for the same reason as there,
+   and the flex layout is opt-in via :has() so the lists without tags keep the
+   single-line ellipsis they rely on. */
+.updrop-list:has(.utag) { max-width:300px; }
+.updrop-opt:not(.rich):has(.utag) { display:flex; align-items:center; gap:8px; }
+.updrop-opt:not(.rich):has(.utag) .t { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.updrop-opt .utag {
+  flex:none; font-size:var(--fs-xs); color:var(--text-muted);
+  font-variant-numeric:tabular-nums; white-space:nowrap;
+}
+.updrop-opt .utag.free { color:var(--status-success); }
+.updrop-opt.selected .utag { color:inherit; opacity:.8; }
 
 /* Context meter — ring button beside the attach icon, opening an upward
    popover with a stacked usage bar and per-category rows (Claude Code-style). */
