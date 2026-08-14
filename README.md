@@ -337,7 +337,10 @@ Two things that number honestly. Assembling a turn was 0.12 ms and 96.2 KB when 
 tools; it is 0.32 ms and 174.9 KB now that it holds more. That is a real regression, and it is
 still three ten-thousandths of a second — the time you wait is the model thinking. And the Go
 suite is green on Windows; **CI on Linux and macOS is red**, six failures, one of them a genuine
-sandbox hole rather than a bad test. That is being fixed, not managed.
+sandbox hole rather than a bad test. Since 2026-08-15 those two jobs are reported rather than
+gating — Windows is what ships, and one shared verdict meant every Windows push went red for a
+port's unfinished edges until nobody read the colour at all. The failures are still on the run
+page and still to be fixed; what changed is that they no longer hide the platform that is done.
 
 **Against Zed**, the harder ruler — native Rust, with a reputation for being light.
 

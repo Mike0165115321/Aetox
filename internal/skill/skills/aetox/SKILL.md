@@ -47,6 +47,7 @@ Skills are the deliberate exception and do **not** live here — see below.
 | `<DataRoot>/credentials.json` | provider API keys |
 | `<DataRoot>/oauth.json` | sign-ins |
 | `<DataRoot>/model-preference.json` | model choice, last desk |
+| `<DataRoot>/model-catalog.json` | cached prices and context windows from models.dev; refetched at launch, and the app runs on this copy when offline |
 | `<DataRoot>/.env` | whatever the user put in it |
 | `<DataRoot>/shell-audit.log` | every shell command run |
 | `<DataRoot>/bin` | the downloaded rtk binary |

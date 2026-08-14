@@ -19,6 +19,8 @@
 - [openai_compatible.go](openai_compatible.go) — the workhorse: OpenAI, DeepSeek, Gemini (OpenAI endpoint), Groq, Mistral, xAI, Z.AI, and friends all reuse it with different base URLs.
 - [anthropic.go](anthropic.go) — real Messages-API client (content blocks, `x-api-key` — *not* OpenAI-shaped, hence its own file). Added 2026-07-22, see ARCHITECTURE.md §6.9.
 - [ollama.go](ollama.go) · [noop.go](noop.go) (offline/test stand-in). OpenRouter has no file of its own — it is another base URL on `openai_compatible.go`, resolved through [provider_catalog.go](provider_catalog.go).
+- [models_dev.go](models_dev.go) — what models.dev says about each model: price per million (input/output/**cache_read**, and the last is not a detail — DeepSeek reads cache at 1/50th of fresh input), context window, whether it calls tools. Cached to `<DataRoot>/model-catalog.json` and consulted by `ContextWindowTokens` and `ResolveDefaultModel` **before** their hand-written tables, because every model name ever written into Go here has eventually pointed at something a vendor withdrew.
+- [balance.go](balance.go) · [quota.go](quota.go) — what an account has left. A balance is fetched on request; a quota is never fetched, it rides along in the headers of turns that were happening anyway.
 
 ## Wire formats & discovery (§27.2, 2026-07-25)
 
