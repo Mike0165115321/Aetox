@@ -158,8 +158,8 @@ it involves code.
 
 ## The team
 
-Five agents ship — `deck`, `doc`, `sheet`, `github`, `automation` — and hiring a sixth is
-dropping a folder into `<DataRoot>/agents/`. No release, no plugin API, no restart.
+Six agents ship — `deck`, `doc`, `sheet`, `github`, `automation`, `research` — and hiring a
+seventh is dropping a folder into `<DataRoot>/agents/`. No release, no plugin API, no restart.
 
 An agent's folder is its whole identity: `AGENT.md` (who it is, what desk it sits at, which tools
 it may narrow itself to, which model it pins), `MEMORY.md` (what it has learned), `STARTERS.md`
