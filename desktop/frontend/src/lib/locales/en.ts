@@ -606,6 +606,8 @@ export const en: Record<keyof typeof th, string> = {
   'settings.learningOpenFolder': 'Open memory folder',
   'settings.learningHistory': 'Already decided',
   'settings.learningHistoryHint': 'Kept so "why does it think that?" always has an answer.',
+  'settings.learningHistoryMore': 'Show {n} more',
+  'settings.learningHistoryLess': 'Show less',
   'settings.learningScopeMain': 'Main assistant',
   'settings.usageDesc': 'Token usage recorded per model response on this machine. Nothing is sent anywhere.',
   'settings.usageToday': 'TODAY',

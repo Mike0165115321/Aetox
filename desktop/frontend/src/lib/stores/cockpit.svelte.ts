@@ -1515,6 +1515,23 @@ const activeViewStorageKey = 'aetox.activeView'
 // path would point at nothing.
 const RESTORABLE_VIEWS = ['chat', 'settings', 'office', 'artifacts', 'projects']
 
+/** The rooms that draw over the whole window, as opposed to `chat`, which is
+ *  the layout underneath them (App.svelte renders each as a .settings-overlay).
+ *
+ *  Derived from the list above rather than written out again, because that
+ *  comment's lesson applies here twice over: a room added to the set has to
+ *  become an overlay everywhere at once, and the place that forgets is not the
+ *  one that shows a blank page — it is the native browser window.
+ *
+ *  A workbench browser tab is a real OS window (desktop/browser_windows.go). It
+ *  composites *above* the app's own webview whatever the DOM does, so it has to
+ *  be told to hide whenever something is drawn over its pane; a z-index cannot
+ *  reach it. BrowserPane knew about `settings` and only `settings`, so opening
+ *  ทีมเอเจน, ผลงาน or โปรเจกต์ with a page loaded left that page floating on top
+ *  of the room (owner, 2026-08-14: "ทำไมมีหลุดมาอ่ะครับ"). */
+export const isOverlayView = (view: string): boolean =>
+  view !== 'chat' && RESTORABLE_VIEWS.includes(view)
+
 export function setActiveView(view: string): void {
   cockpit.activeView = view
   // Survive an F5 *within this run* only: remember chat/settings (file tabs

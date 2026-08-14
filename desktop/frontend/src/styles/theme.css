@@ -48,6 +48,22 @@
   --interactive-hover-border:#20505a;
   --overlay-focus:#2f6bff1f;
   --shadow-interactive:#2f6bff88;
+  /* The lift under every popover — menu, picker, dropdown.
+     It was written out as a literal in six places, and a seventh reached for a
+     token named --shadow-lg that was never declared anywhere. That one silently
+     took its own inline fallback (34px/.38 against everyone else's 32px/.4), so
+     one menu in the app sat at a shadow a hair off every other one. A near-miss
+     does not read as a variant, it reads as a mistake, and it is the shape a
+     value takes when it has no home.
+     themeContrast.test.ts has a check for exactly this — "never asks for a
+     token no theme declares" — and it skipped the case, by design: a var() with
+     a fallback is exempt on the reasoning that it cannot vanish. True about
+     rendering, false about intent. It did not vanish; it quietly became a value
+     nobody chose.
+     Not overridden per theme, like the scrim below it — a light theme wants a
+     lighter lift than this and does not have one yet, which is a real flaw and
+     a separate change. */
+  --shadow-menu:0 12px 32px rgba(0,0,0,.4);
   /* Scrim behind a modal. Declared once here and deliberately not overridden
      per theme: a scrim's job is to push the page back, which means darkening it
      — a light-theme scrim tinted to match the theme stops reading as "the page

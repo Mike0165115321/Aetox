@@ -613,6 +613,8 @@ export const th = {
   'settings.learningOpenFolder': 'เปิดโฟลเดอร์ความจำ',
   'settings.learningHistory': 'ที่ตัดสินไปแล้ว',
   'settings.learningHistoryHint': 'เก็บไว้เพื่อให้ตอบได้เสมอว่าทำไมมันถึงคิดแบบนั้น',
+  'settings.learningHistoryMore': 'ดูอีก {n} รายการ',
+  'settings.learningHistoryLess': 'ย่อกลับ',
   'settings.learningScopeMain': 'ผู้ช่วยหลัก',
   'settings.usageDesc': 'โทเคนที่ใช้ต่อการตอบของโมเดล บันทึกไว้ในเครื่องนี้เท่านั้น ไม่ส่งไปไหน',
   'settings.usageToday': 'วันนี้',

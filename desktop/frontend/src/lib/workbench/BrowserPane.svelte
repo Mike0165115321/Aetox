@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte'
   import { recordVisit, type WorkbenchTab } from '../stores/workbench.svelte'
-  import { cockpit } from '../stores/cockpit.svelte'
+  import { cockpit, isOverlayView } from '../stores/cockpit.svelte'
   import {
     BrowserOpen, BrowserNavigate, BrowserSetBounds, BrowserSetVisible, BrowserClose, BrowserSetZoom,
   } from '../../../wailsjs/go/main/App'
@@ -16,14 +16,23 @@
 
   // The native WebView2 window is a real OS window: it composites above the
   // app's own webview no matter what the DOM does, so anything the app draws
-  // over this pane is invisible until the window hides. That's the settings
-  // overlay, and the workbench dropdowns (+ / ⋮) which open downward into it.
+  // over this pane is invisible until the window hides. That is every
+  // full-window room, and the workbench dropdowns (+ / ⋮) which open downward
+  // into it.
+  //
+  // It used to name `settings` and nothing else, from the days when settings
+  // was the only room drawn over the app. Three more arrived and none of them
+  // was added here, so a loaded page floated on top of ทีมเอเจน, ผลงาน and
+  // โปรเจกต์ — the failure is invisible to whoever adds the room, because their
+  // room works and it is somebody else's window that is wrong.
+  // isOverlayView derives the set from the one list, so the next room is
+  // covered by having been added at all.
   //
   // `dragging` is the same problem one step further: while this window is up it
   // also *swallows* the drag, since the pointer is over another window, so the
   // workbench's drop target could never see a file dropped on a tab with a page
   // open. It stands down for the length of the drag (Workbench.svelte).
-  const visible = $derived(active && opened && !menuOpen && !dragging && cockpit.activeView !== 'settings')
+  const visible = $derived(active && opened && !menuOpen && !dragging && !isOverlayView(cockpit.activeView))
 
   // Device-size emulation without any emulation trickery: the tab IS a real
   // window, so shrink it to the device's aspect ratio (letterboxed in the pane,

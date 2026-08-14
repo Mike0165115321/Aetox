@@ -3,6 +3,7 @@
   import { groupSteps, isDelegation } from './types'
   import TaskTimeline from './TaskTimeline.svelte'
   import BackgroundWork from './BackgroundWork.svelte'
+  import SessionStrip from './SessionStrip.svelte'
   import Palette from './Palette.svelte'
   import Logo from './Logo.svelte'
   import { onMount } from 'svelte'
@@ -15,6 +16,7 @@
   } from '../../wailsjs/go/main/App'
   import type { main, connect, subagent } from '../../wailsjs/go/models'
   import { t, i18n } from './i18n.svelte'
+  import { isShortcut, shortcutLabel } from './shortcuts'
   import { copyDrawing, saveDrawing } from './drawingExport'
   import { renderMarkdown, renderStreamingMarkdown } from './markdown'
   import { openUrlInWorkbench, openFileTab, setTabDragPayload, TAB_DRAG_MIME } from './stores/workbench.svelte'
@@ -1048,7 +1050,7 @@
 <svelte:window
   onclick={modelMenuOpen || focusMenuOpen || palette ? closeMenusOnOutside : undefined}
   onkeydown={(e) => {
-    if (e.ctrlKey && !e.altKey && e.key.toLowerCase() === 'k') {
+    if (isShortcut(e, 'palette')) {
       e.preventDefault()
       palette = palette === 'all' ? '' : 'all'
     }
@@ -1415,10 +1417,13 @@
               <!-- A re-run that failed. The answer above is still the real one. -->
               <div class="msg-error">{m.error}</div>
             {/if}
+            <!-- Actions first, timestamp last (owner, 2026-08-14). What you can
+                 do to a reply is what the row is for; when it happened is a
+                 footnote to it. -->
             <div class="time">
-              {m.time}
               {#if m.role === 'agent' && m.text && !m.failed}
-                <button type="button" class="msg-copy" aria-label={t('chat.copy')}
+                <button type="button" class="msg-copy icobtn tiny" aria-label={t('chat.copy')}
+                  data-tip={t('chat.copy')}
                   onclick={() => copyMessage(m.text)}>
                   <Icon name={copiedText === m.text ? 'check' : 'copy'} size={13} />
                 </button>
@@ -1430,14 +1435,14 @@
                      that means what it says. Two buttons, no scale — a rating
                      nobody actually gave is worse than no rating. -->
                 <button
-                  type="button" class="msg-copy msg-rate" class:rated={m.rating === 'good'}
-                  aria-label={t('chat.rateGood')} aria-pressed={m.rating === 'good'}
+                  type="button" class="msg-copy msg-rate icobtn tiny" class:rated={m.rating === 'good'}
+                  aria-label={t('chat.rateGood')} data-tip={t('chat.rateGood')} aria-pressed={m.rating === 'good'}
                   onclick={() => rateReply(m, 'good')}>
                   <Icon name="thumbsUp" size={13} />
                 </button>
                 <button
-                  type="button" class="msg-copy msg-rate" class:rated={m.rating === 'bad'}
-                  aria-label={t('chat.rateBad')} aria-pressed={m.rating === 'bad'}
+                  type="button" class="msg-copy msg-rate icobtn tiny" class:rated={m.rating === 'bad'}
+                  aria-label={t('chat.rateBad')} data-tip={t('chat.rateBad')} aria-pressed={m.rating === 'bad'}
                   onclick={() => rateReply(m, 'bad')}>
                   <Icon name="thumbsDown" size={13} />
                 </button>
@@ -1449,7 +1454,7 @@
                      had picked the other is the trap this avoids. -->
                 <span class="variant-pick">
                   <button
-                    type="button" class="msg-copy" aria-label={t('chat.prevVariant')}
+                    type="button" class="msg-copy icobtn tiny" aria-label={t('chat.prevVariant')} data-tip={t('chat.prevVariant')}
                     disabled={!canRerun || (m.activeVariant ?? 0) <= 0}
                     onclick={() => switchVariant((m.activeVariant ?? 0) - 1)}
                   ><Icon name="arrowLeft" size={13} /></button>
@@ -1457,7 +1462,7 @@
                     n: String((m.activeVariant ?? 0) + 1), total: String(m.variants?.length ?? 1),
                   })}</span>
                   <button
-                    type="button" class="msg-copy" aria-label={t('chat.nextVariant')}
+                    type="button" class="msg-copy icobtn tiny" aria-label={t('chat.nextVariant')} data-tip={t('chat.nextVariant')}
                     disabled={!canRerun || (m.activeVariant ?? 0) >= (m.variants?.length ?? 1) - 1}
                     onclick={() => switchVariant((m.activeVariant ?? 0) + 1)}
                   ><Icon name="arrowRight" size={13} /></button>
@@ -1467,21 +1472,24 @@
                 <!-- A turn that never reached the model. The question above is
                      still the question, so only this bubble is replaced. -->
                 <button
-                  type="button" class="msg-act retry" disabled={!canRerun}
+                  type="button" class="msg-act retry icobtn tiny" disabled={!canRerun}
+                  aria-label={t('chat.retry')} data-tip={t('chat.retry')}
                   onclick={() => retryFailedTurn(i)}
-                ><Icon name="rotateCw" size={12} /> {t('chat.retry')}</button>
+                ><Icon name="rotateCw" size={13} /></button>
               {:else if m.role === 'agent' && i === lastIndex && m.text}
                 <button
-                  type="button" class="msg-act" disabled={!canRerun}
+                  type="button" class="msg-act icobtn tiny" disabled={!canRerun}
+                  aria-label={t('chat.regenerate')} data-tip={t('chat.regenerate')}
                   onclick={askRegenerate}
-                ><Icon name="refreshCw" size={12} /> {t('chat.regenerate')}</button>
+                ><Icon name="refreshCw" size={13} /></button>
               {/if}
               {#if m.role === 'user' && i === lastIndex - 1 && canEditLast && editingIndex !== i}
                 <button
-                  type="button" class="msg-copy" aria-label={t('chat.editMessage')}
+                  type="button" class="msg-copy icobtn tiny" aria-label={t('chat.editMessage')} data-tip={t('chat.editMessage')}
                   onclick={() => startEdit(i, m.text)}
                 ><Icon name="pencil" size={13} /></button>
               {/if}
+              <span class="msg-time">{m.time}</span>
             </div>
           </div>
         </div>
@@ -1576,16 +1584,13 @@
                 {@render subagentTimeline(doneHelpers, false)}
               {/if}
             {/if}
-            {#if cockpit.todos.length > 0}
-              <div class="todo-panel">
-                {#each cockpit.todos as td}
-                  <div class="todo-item {td.status}">
-                    <span class="mark"><Icon name={td.status === 'completed' ? 'check' : td.status === 'in_progress' ? 'chevronRight' : 'circle'} size={12} /></span>
-                    <span class="t">{td.content}</span>
-                  </div>
-                {/each}
-              </div>
-            {/if}
+            <!-- The checklist used to be drawn here, inside the live block, and
+                 that is why it had to be wiped at both ends of every turn: it
+                 read as "what is happening now", so last turn's plan reappeared
+                 over this turn's question. It is on the strip above the input
+                 now, under แผน, where it outlives the turn that wrote it. One
+                 place only — drawing it here as well would put the same plan on
+                 screen twice and make one of them go stale. -->
             {#if liveNote}
               <div class="tool-note headline">{liveNote.label}</div>
             {/if}
@@ -1707,6 +1712,10 @@
         <button class="ctrl" onclick={submitApiKey}>{t('chat.saveKey')}</button>
       </div>
     {/if}
+    <!-- What this room holds, above the row that says where it points. Both are
+         status; the focus row is the more permanent of the two, so it sits
+         nearer the input and the strip stacks on top of it. -->
+    <SessionStrip />
     <div class="focus-row">
       <!-- Only the workshop points at a project. The storefront is the door
            that works on the machine rather than in a folder (§19/§86), so a
@@ -2126,6 +2135,14 @@
                        definitions read as tokens already spent rather than as
                        the floor every message starts from. -->
                   <div class="ctx-note">{t('chat.contextNotSent')}</div>
+                {:else if ctx.cachedTokens > 0}
+                  <!-- Most of a request is the same bytes as the round before
+                       (system prompt, tool block), and the provider serves
+                       those from cache at a fraction of full price. Without
+                       this line the bar presents the whole prompt as paid at
+                       full rate every round — which is where "Aetox eats
+                       tokens" comes from. -->
+                  <div class="ctx-note">{t('chat.contextCached', { cached: fmtTokens(ctx.cachedTokens) })}</div>
                 {/if}
               </div>
             {/if}

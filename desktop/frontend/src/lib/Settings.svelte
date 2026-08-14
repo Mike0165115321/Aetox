@@ -2131,6 +2131,17 @@
   let learningOn = $state(true)
   let pendingChanges = $state<main.PendingChange[]>([])
   let decidedChanges = $state<main.PendingChange[]>([])
+  // The decided list is a record, not a queue: nothing is waiting on it and the
+  // reason it is kept at all is so "why does it think that?" can be answered
+  // months later. Twenty rows of it sat open above everything else on this page
+  // (owner, 2026-08-14: "ตอนนี้มันรกเกิน"), which is a lot of screen for
+  // something nobody came here to read.
+  //
+  // Four, then a count. Same shape the sidebar's project groups already use —
+  // preview, then a button — and the count is there because "ดูเพิ่มเติม" on its
+  // own does not say whether it hides two rows or two hundred.
+  const DECIDED_PREVIEW = 4
+  let decidedExpanded = $state(false)
   let learningError = $state('')
   let learningBusy = $state(0)
   // One row per remembered line. The file is a bullet list and always was —
@@ -4019,7 +4030,7 @@
         <h3 class="set-h3">{t('settings.learningHistory')}</h3>
         <p class="muted set-sub">{t('settings.learningHistoryHint')}</p>
         <div class="settings-card">
-          {#each decidedChanges as c (c.id)}
+          {#each decidedExpanded ? decidedChanges : decidedChanges.slice(0, DECIDED_PREVIEW) as c (c.id)}
             <div class="learn-row past">
               <div class="learn-main">
                 <div class="learn-head">
@@ -4031,6 +4042,14 @@
               </div>
             </div>
           {/each}
+          {#if decidedChanges.length > DECIDED_PREVIEW}
+            <button type="button" class="learn-more" onclick={() => (decidedExpanded = !decidedExpanded)}>
+              <Icon name={decidedExpanded ? 'chevronUp' : 'chevronDown'} size={12} />
+              {decidedExpanded
+                ? t('settings.learningHistoryLess')
+                : t('settings.learningHistoryMore', { n: decidedChanges.length - DECIDED_PREVIEW })}
+            </button>
+          {/if}
         </div>
       {/if}
     {:else if active === 'usage'}
@@ -4539,7 +4558,7 @@
                     {#each mcpTargets as target (target.id)}
                       <!-- The chip carries the desk's NAME; its description is a
                            paragraph and belongs on hover. Both used to be the
-                           same string, which put "โหมดผู้ช่วย — ทำได้ทุกอย่าง…"
+                           same string, which put "โต๊ะผู้ช่วย — ทำได้ทุกอย่าง…"
                            inside a chip beside agent names one word long. -->
                       <button
                         class="conn-chip"

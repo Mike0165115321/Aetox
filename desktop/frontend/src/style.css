@@ -25,12 +25,25 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 
 .app {
   height:100%; display:grid; overflow-x:hidden; overflow-y:hidden;
+  /* The frame plane, showing through the resize-handle tracks either side of
+     the content card. Without it those gutters fall through to `body`, which is
+     --surface-app — the card's own colour — and a corner rounded away from the
+     same colour it is made of is a corner nobody can see. */
+  background:var(--surface-panel);
   grid-template-columns:var(--sidebar-width, 280px) 6px minmax(360px, 1fr) 6px var(--inspector-width, 384px);
+  /* The panels glide open and shut rather than jumping (owner, 2026-08-14).
+     Both ends of every track are real lengths, so the template interpolates.
+     Turned off while a resize handle is being dragged: there the pointer IS
+     the animation, and easing toward the cursor turns a direct manipulation
+     into a control that lags behind the hand. */
+  transition:grid-template-columns .18s ease;
   grid-template-rows:56px 1fr;
   grid-template-areas:
     "logo topbar topbar topbar topbar"
     "side handle-l main handle-r inspector";
 }
+/* Set for the length of a drag, by App.svelte. */
+.app.resizing { transition:none; }
 
 .app.inspector-collapsed { grid-template-columns:var(--sidebar-width, 280px) 6px minmax(360px, 1fr) 0px 0px; }
 .app.inspector-collapsed .handle-r,
@@ -38,8 +51,14 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 
 .app.sidebar-collapsed { grid-template-columns:0px 0px minmax(360px, 1fr) 6px var(--inspector-width, 384px); }
 .app.sidebar-collapsed.inspector-collapsed { grid-template-columns:0px 0px minmax(360px, 1fr) 0px 0px; }
-.app.sidebar-collapsed .handle-l,
-.app.sidebar-collapsed .side { display:none; }
+.app.sidebar-collapsed .handle-l { display:none; }
+/* Clipped, not removed: the track animates down to 0px and .side already has
+   overflow:hidden, so it slides out of view instead of vanishing on the first
+   frame while the space it left is still closing. display:none here made the
+   sidebar disappear ahead of its own column.
+   .brand keeps display:none, for the reason written under it: its padding
+   overflows the collapsed column and would sit on top of the toggle. */
+.app.sidebar-collapsed .side { pointer-events:none; }
 /* the logo column collapses to 0 but .brand's padding still overflows it,
    overlapping the sidebar-toggle button — hide the brand with its column */
 .app.sidebar-collapsed .brand { display:none; }
@@ -47,19 +66,48 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .resize-handle { cursor:col-resize; position:relative; }
 .resize-handle.handle-l { grid-area:handle-l; }
 .resize-handle.handle-r { grid-area:handle-r; }
+/* The seam used to be this line. It is the card edge now, so the line has
+   nothing left to separate — it drew straight through the frame, a hard
+   vertical stroke a few pixels from a rounded corner, which is exactly the
+   "เหลี่ยม" the card was meant to get rid of.
+   Kept, and hidden until the pointer is near it: the drag target has to stay
+   findable, and revealing the handle on hover is how every editor with this
+   layout does it. */
 .resize-handle::after {
   content:""; position:absolute; top:0; bottom:0; left:2.5px; width:1px;
-  background:var(--border-default);
+  background:transparent; transition:background .12s ease;
 }
 .resize-handle:hover::after, .resize-handle.dragging::after { background:var(--accent); width:2px; left:2px; }
-/* handle-l sits directly under the logo/topbar column seam (.brand's
-   border-right) — its line must sit flush at the same x, not centered in the
-   6px handle track, or the two borders visibly misalign at the seam. */
+/* handle-l sits at the sidebar's right edge rather than centred in its own 6px
+   track. It used to be for alignment: .brand carried a border-right at that x,
+   and a line centred in the track would have visibly stepped away from it at
+   the seam. That border is gone (see .brand), so what keeps this here is the
+   simpler reason — on hover the line should appear where the panel ends, which
+   is the edge you are about to drag, not three pixels into the gutter. */
 .resize-handle.handle-l::after { left:-1px; }
 .resize-handle.handle-l:hover::after, .resize-handle.handle-l.dragging::after { left:-1px; }
 
+/* Scrollbars keep their width and lose their colour until you are looking at
+   the thing that scrolls (owner, 2026-08-14: "ตัวเลื่อนนี้ฝากซ่อนหน่อยครับ").
+
+   Hidden rather than removed. Taking the track to width:0 would have been one
+   line, and it also takes away the two things a scrollbar is: how much more
+   there is, and something you can drag. Reserving the width and clearing the
+   thumb keeps both, and costs nothing when nobody is pointing at it.
+
+   The width stays 10px in every state on purpose — a bar that appears *and*
+   widens reflows the content under it on every hover.
+
+   :hover on the ancestor is what reveals it, not :hover on the bar itself: you
+   have to be able to see the thumb before you can aim at it. Ancestors of a
+   hovered element are hovered too, which sounds like it would light up every
+   scrollbar at once and does not — an element with no overflow draws no thumb,
+   and body is overflow:hidden. */
 ::-webkit-scrollbar { width:10px; height:10px; }
-::-webkit-scrollbar-thumb { background:var(--scrollbar-thumb); border-radius:var(--r-sm); }
+::-webkit-scrollbar-thumb {
+  background:transparent; border-radius:var(--r-sm); transition:background .15s ease;
+}
+:hover::-webkit-scrollbar-thumb { background:var(--scrollbar-thumb); }
 ::-webkit-scrollbar-thumb:hover { background:var(--scrollbar-thumb-hover); }
 
 .muted { color:var(--text-muted); }
@@ -83,11 +131,57 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 /* ---------- brand + top bar ---------- */
 /* No rule under the top bar: it shares the sidebar's surface, so the sidebar's
    own edge is the only line the eye needs up here. */
+/* The window is a frame with a card in it (owner, 2026-08-14, pointing at
+   Codex: "หมายถึงขอบ นะ แบบไม่มีเหลี่ยมอ่ะ").
+
+   Everything that is chrome — brand, topbar, sidebar, inspector — is the frame,
+   one step up on --surface-panel. The content area is the card, sitting on
+   --surface-app, the lowest surface there is, with its left corners rounded
+   away from the frame behind it. A rounded corner only reads as a corner when
+   there is a different colour to round away *from*, so the plane difference is
+   doing more of the work here than the radius is.
+
+   **The card is the darker of the two, and that is the owner's call, not a
+   default.** The first attempt put the card above the frame, on the reading
+   that Codex lifts its content: *"ขอบมนก็อย่าทำพื้นหลังผมออกเทาเกินไปสิครับ"*.
+   The reading was wrong and the reason is worth keeping — the place a person
+   reads all day should be the quietest surface in the window, and lifting it a
+   step turns the whole reading area grey.
+
+   Before any of this they were all --surface-sunken against a --surface-app
+   content area, which in the aetox theme is #131316 against #0f0f11: four
+   values out of 255. The window read as one black field with text floating on
+   it.
+
+   Tokens, never a hand-picked colour: every theme defines app and panel with a
+   step you can see, and the light themes get the arrangement they should have
+   anyway. A literal value here would have fixed one theme and left the other
+   eleven where they were. */
+/* No border-right, and its absence is the point (owner, 2026-08-14: "ข้างบนนี้
+   ผมรู้สึกแปลก ๆ อ่ะ").
+
+   It had one, and for most of this file's life it was right: the brand column
+   and the topbar were different enough from what sat under them that the line
+   read as the top of a seam running the height of the window — sidebar against
+   content, with the resize handle's own line continuing it down.
+
+   The frame took that away. Brand, topbar and sidebar are one surface now, and
+   the handle line only shows on hover, so the border was left dividing two
+   fields of identical colour for exactly 56 pixels and then stopping dead. A
+   line that goes halfway and quits reads as a rendering fault, which is what it
+   looked like.
+
+   The frame is one uninterrupted field. What separates the rooms is the card's
+   own edge — that was the whole idea, and a line inside the frame is the
+   corner it was drawn to remove. */
 .brand {
   grid-area:logo; display:flex; align-items:center; gap:10px; padding:0 18px; min-width:0; overflow:hidden;
-  border-right:1px solid var(--border-default); background:var(--surface-sunken);
+  background:var(--surface-panel);
 }
-.topbar { grid-area:topbar; display:flex; align-items:center; gap:14px; padding:0 14px; background:var(--surface-sunken); }
+.topbar {
+  grid-area:topbar; display:flex; align-items:center; gap:14px; padding:0 14px;
+  background:var(--surface-panel);
+}
 .chip { display:inline-flex; align-items:center; gap:6px; height:28px; padding:0 10px; border:1px solid var(--border-default); border-radius:var(--r-sm); background:var(--surface-raised); color:var(--text-primary); font-size:var(--fs-lg); white-space:nowrap; cursor:pointer; }
 .chip:hover { border-color:var(--border-strong); }
 .chip .caret { color:var(--text-dim); font-size:var(--fs-xs); }
@@ -124,7 +218,7 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 /* ---------- sidebar ---------- */
 /* Dense navigation surface — steps the whole panel down from the 15.5px body
    size; children size in relative terms from here. */
-.side { grid-area:side; background:var(--surface-sunken); display:flex; flex-direction:column; overflow:hidden; font-size:var(--fs-sm); line-height:1.45; }
+.side { grid-area:side; background:var(--surface-panel); display:flex; flex-direction:column; overflow:hidden; font-size:var(--fs-sm); line-height:1.45; }
 /* Sections stack top-down at natural height (Claude-style) and the whole
    column scrolls as one; only the footer stays pinned outside the scroller. */
 .side-sections { flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column; }
@@ -380,7 +474,53 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 }
 
 /* ---------- center / chat ---------- */
-.main { grid-area:main; display:flex; flex-direction:column; overflow:hidden; background:var(--surface-app); }
+/* The card, rounded on all four corners (owner, 2026-08-14: "ควรจะขอบมนทั้งหมด
+   สิครับ มาตรฐานเดียวกัน").
+
+   It was rounded on the left only, on the reasoning that the right edge meets
+   the inspector and a corner there would read as a gap. Wrong, and wrong in a
+   way worth keeping: a card with two of its corners cut does not read as a
+   card with a reason, it reads as a card that was not finished. Consistency is
+   the cheaper thing to get right, and a shape either is one or it is not.
+
+   The margin is what makes the top and bottom corners visible at all. Left and
+   right already had the resize-handle tracks as a gutter; above and below,
+   .main ran flush into the topbar and the window edge, so a corner there had no
+   frame to round away from.
+
+   The frame stays square, and the inspector with it. That is not an oversight
+   either: the inspector hosts the workbench browser, which is a native OS
+   window (desktop/browser_windows.go). A native window has no border-radius and
+   cannot be clipped by an ancestor's, so a rounded inspector would promise a
+   corner that any loaded page immediately squares off.
+
+   overflow:hidden is load-bearing here as well as before — without it the first
+   child with a background of its own paints square over the rounded corner. */
+.main {
+  grid-area:main; display:flex; flex-direction:column; overflow:hidden;
+  background:var(--surface-app);
+  /* The card's own outline. It had none for a while, on the reasoning that a
+     colour step plus a rounded corner was enough to read as a separate object.
+     It was not (owner, 2026-08-14: "ทำไมเหมือนมันกลมกลืน เป็นหนึ่งเดียวกันไปแล้ว
+     ... แยกออกมาเหมือนเมื่อกี้อ่ะดีแล้ว") — the step between two adjacent dark
+     surfaces is a few values wide, and without an edge the card dissolves into
+     the frame behind it.
+     On the card rather than on the frame, which is the distinction that matters:
+     a border here follows the radius and defines the shape, while the straight
+     line it replaces ran past the corner and was the thing the rounding was
+     drawn to get rid of. */
+  border:1px solid var(--border-default);
+  border-radius:var(--r-lg);
+  margin:6px 0;
+}
+/* One 6px gutter on every side, in every state. Left and right normally come
+   from the resize-handle tracks, which are 6px wide — but a collapsed panel
+   takes its track to 0px with it, and the card's corner then rounds against the
+   window edge with nothing behind it. These two put the gutter back exactly
+   where the track went, rather than a margin on .main that would stack with the
+   track and make one side twice the other. */
+.app.sidebar-collapsed .main { margin-left:6px; }
+.app.inspector-collapsed .main { margin-right:6px; }
 .tabs { display:flex; align-items:center; gap:2px; padding:0 18px; border-bottom:1px solid var(--border-default); background:var(--surface-sunken); overflow-x:auto; }
 .tab {
   display:flex; align-items:center; gap:6px; padding:14px 12px 12px; color:var(--text-muted);
@@ -551,10 +691,29 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
    colours rather than pasted in as a picture with its own frame and
    background. `color` is what makes fill="currentColor" land on the body tone
    the paragraphs above it already use.
-   The height cap is the one thing it shares with an image — a model that
-   writes viewBox="0 0 100 4000" must not push the reply off the screen. */
+   **width:auto is the whole fix** (owner, 2026-08-14: "SVG มันใหญ่เกินไปไหมอ่ะ").
+   The prompt tells the model to write width="100%" because it cannot know how
+   wide the panel is, and nothing capped what that turned out to be — so a
+   drawing stretched to fill whatever space it was given. Measured on a real
+   reply: viewBox="0 0 600 185" with labels at font-size="13", rendered in an
+   1100px bubble. That is 1.83x, and a 13-unit label lands on screen at 24px.
+   Nothing was wrong with the drawing. It was being enlarged.
+
+   A pixel cap was the first attempt and it is the wrong shape: it fixes a
+   600-unit drawing and shrinks an 800-unit one. width:auto overrides the
+   attribute and lets the intrinsic size come from the viewBox, so **a drawing
+   renders at the size it was composed at**, whatever size that is, and
+   max-width:100% still shrinks it when the window is narrower than the
+   drawing.
+
+   The 720px cap stays underneath as a floor-of-last-resort: if a browser ever
+   resolves an attribute-less intrinsic width back to 100%, this catches it
+   instead of returning silently to the bug. The height cap is the older one
+   and unchanged — a model that writes viewBox="0 0 100 4000" must not push the
+   reply off the screen. */
 .markdown-body svg {
-  display:block; max-width:100%; height:auto; max-height:420px;
+  display:block; width:auto; max-width:min(100%, 720px);
+  height:auto; max-height:420px;
   margin:12px 0; color:var(--text-secondary);
 }
 /* A panel in an answer (internal/prompt's `panel` layer): laid out by the model
@@ -763,8 +922,35 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .msg .name b { font-weight:600; }
 .tag { font-size:var(--fs-xs); padding:1px 7px; border-radius:var(--r-xs); background:var(--badge-cyan-bg); color:var(--badge-cyan-text); border:1px solid var(--badge-cyan-border); }
 .tag.think { background:var(--badge-think-bg); color:var(--badge-think-text); border-color:var(--badge-think-border); }
-.time { color:var(--text-dim); font-size:var(--fs-xs); margin-top:6px; }
-.msg.user .time { text-align:right; }
+/* The row under a message: the timestamp, then everything you can do to the
+   reply. A flex row with one gap (owner, 2026-08-14, showing the shape he
+   wanted) rather than what it was — inline children each pushed along by a
+   margin-left of their own, 6px on some and 8px on others, with a
+   vertical-align patch holding the alignment together.
+
+   The buttons are .icobtn.tiny, the same control the composer uses. Three
+   things that bought:
+
+   - **A hit area.** They were bare 13px glyphs with no padding. The target was
+     the glyph, which is about half the 24px a pointer expects.
+   - **Equal weight for equal actions.** "ตอบใหม่" carried a word while copy and
+     the thumbs were icons, so one of four equals shouted. They are all just
+     things you can do to this reply.
+   - **A hover surface**, which is what tells you a thing is pressable before
+     you press it.
+
+   The cost is real and paid for below: an icon with no word is an icon you may
+   not recognise, so every one of them carries data-tip. */
+.time {
+  display:flex; align-items:center; gap:2px;
+  color:var(--text-dim); font-size:var(--fs-xs); margin-top:6px;
+}
+/* The timestamp comes last, after the actions (owner, 2026-08-14). It is a
+   fact about the message rather than one of the things you can do to it, so it
+   sits at the end of the row with a little air in front of it instead of
+   leading and pushing the buttons along. */
+.msg-time { flex:none; margin-left:8px; }
+.msg.user .time { justify-content:flex-end; }
 /* The row under a reply — copy, the two thumbs, answer again — is always on.
    It used to fade in on hover, on the argument that an answer you are happy
    with should not be ringed by buttons offering to replace it. The cost was
@@ -773,9 +959,10 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
    whole learning loop is fed by exactly that gesture (jobs.go). Owner's call,
    14 ส.ค. — "ควรจะขึ้นตลอด ไม่ใช่รอเอาเมาส์ไปสัมผัส".
    They stay quiet rather than hidden: --text-dim at rest, accent on hover. */
-.msg-copy { margin-left:6px; color:var(--text-dim); font-size:var(--fs-xs); transition:color .12s; }
-.msg-copy:hover { color:var(--accent); }
+.msg-copy { flex:none; color:var(--text-dim); transition:color .12s, background .12s; }
+.msg-copy:hover { color:var(--accent); background:var(--surface-hover); }
 .msg-copy:disabled { cursor:default; opacity:.35; }
+.msg-copy:disabled:hover { background:none; color:var(--text-dim); }
 
 /* A rating that has been given reads as given — it is a fact about the answer
    rather than an offer, so it keeps the accent colour the others only borrow
@@ -784,8 +971,8 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 
 /* Re-running a turn, in the same row and on the same terms. Retry keeps its
    danger colour: a turn that failed has nothing else to offer. */
-.msg-act { margin-left:8px; display:inline-flex; align-items:center; gap:4px; color:var(--text-dim); font:inherit; font-size:var(--fs-xs); transition:color .12s; vertical-align:middle; }
-.msg-act:hover:not(:disabled) { color:var(--accent); }
+.msg-act { flex:none; color:var(--text-dim); transition:color .12s, background .12s; }
+.msg-act:hover:not(:disabled) { color:var(--accent); background:var(--surface-hover); }
 .msg-act.retry { color:var(--status-danger); }
 .msg-act.retry:hover:not(:disabled) { color:var(--status-danger-strong, var(--status-danger)); }
 /* A turn is running and nothing in this row can be pressed. Dimmed rather than
@@ -857,7 +1044,7 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
    left off this list goes full-bleed and reads as a system banner rather than
    as part of the conversation — which is how the background-work card and the
    suggestion chips both ended up touching the window edge. */
-.composer .box, .project-chips, .api-key-banner, .focus-row, .bgw, .task-chips { max-width:1040px; margin-left:auto; margin-right:auto; }
+.composer .box, .project-chips, .api-key-banner, .focus-row, .bgw, .task-chips, .strip { max-width:1040px; margin-left:auto; margin-right:auto; }
 /* What the AI is focused on right now — project + branch, mirrored above the input. */
 .focus-row { display:flex; align-items:center; gap:6px; margin-bottom:7px; }
 .focus-chip {
@@ -885,7 +1072,7 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   position:absolute; bottom:calc(100% + 8px); left:0; z-index:50; min-width:260px; max-width:360px;
   display:flex; flex-direction:column; gap:1px; padding:6px;
   background:var(--surface-panel); border:1px solid var(--border-subtle); border-radius:var(--r-lg);
-  box-shadow:0 12px 32px rgba(0,0,0,.4);
+  box-shadow:var(--shadow-menu);
 }
 .focus-item {
   display:flex; align-items:center; gap:8px; padding:7px 9px; border-radius:var(--r-sm);
@@ -1050,7 +1237,7 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   position:absolute; bottom:calc(100% + 10px); right:0; z-index:50; min-width:280px;
   display:flex; flex-direction:column; gap:8px; padding:10px;
   background:var(--surface-panel); border:1px solid var(--border-subtle); border-radius:var(--r-lg);
-  box-shadow:0 12px 32px rgba(0,0,0,.4);
+  box-shadow:var(--shadow-menu);
 }
 .mm-row { display:flex; align-items:center; justify-content:space-between; gap:12px; min-width:0; }
 .mm-row .lbl { flex:none; font-size:var(--fs-xs); color:var(--text-muted); }
@@ -1085,14 +1272,17 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   scroll-padding-block:6px;
   display:flex; flex-direction:column; gap:2px; padding:6px;
   background:var(--surface-panel); border:1px solid var(--border-subtle); border-radius:var(--r-md);
-  box-shadow:0 12px 32px rgba(0,0,0,.4);
+  box-shadow:var(--shadow-menu);
 }
 .updrop-opt {
   text-align:left; padding:6px 8px; border-radius:var(--r-sm); color:var(--text-secondary); font-size:var(--fs-sm);
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
 .updrop-list::-webkit-scrollbar { width:8px; }
-.updrop-list::-webkit-scrollbar-thumb { background:var(--border-subtle); border-radius:var(--r-xs); }
+/* The one list that keeps its own narrower bar. Same rule as everywhere else
+   about when it shows: the global thumb above is already transparent at rest,
+   so this only needs to say what colour it takes once revealed. */
+.updrop-list:hover::-webkit-scrollbar-thumb { background:var(--border-subtle); border-radius:var(--r-xs); }
 .updrop-list::-webkit-scrollbar-track { background:transparent; }
 .updrop-opt { flex:none; }
 .updrop-opt:hover { background:var(--surface-row-hover); }
@@ -1121,17 +1311,34 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 
 /* Context meter — ring button beside the attach icon, opening an upward
    popover with a stacked usage bar and per-category rows (Claude Code-style). */
-.ctx-pick { position:relative; }
+/* Right-hand end, beside the model picker (owner, 2026-08-14): both are
+   readouts about the turn rather than controls over the message, and they
+   belong together away from the text.
+
+   .model-pick carries margin-left:auto of its own for the case where this one
+   is absent; with both present, two auto margins would split the free space
+   and open a gap between them, so the second is turned off. */
+.ctx-pick { position:relative; margin-left:auto; }
+.ctx-pick + .model-pick { margin-left:0; }
 .ctx-btn { width:auto; padding:0 7px; display:flex; align-items:center; gap:5px; }
 .ctx-btn .ring { width:15px; height:15px; flex:none; }
 .ctx-btn .ring .bg { fill:none; stroke:var(--border-strong); stroke-width:3.5; }
 .ctx-btn .ring .fg { fill:none; stroke:var(--accent); stroke-width:3.5; stroke-linecap:round; }
 .ctx-btn .ctx-pct { font-size:var(--fs-xs); font-variant-numeric:tabular-nums; }
+/* Anchored to its right edge, because the control is: the meter moved to the
+   right end of the row on 2026-08-14 and this line did not follow it, so a
+   270px panel that used to grow inward from the left of the composer started
+   growing off the window instead.
+   Worth naming as a pattern rather than a typo — moving a control moves where
+   its popover has room, and nothing in CSS says so. Every menu on this row now
+   states the side it grows from next to the side its button sits on:
+   left-hand controls (attach, mode, palette) open left, right-hand ones (the
+   meter, the model picker) open right. */
 .ctx-menu {
-  position:absolute; bottom:calc(100% + 10px); left:0; z-index:50; min-width:270px;
+  position:absolute; bottom:calc(100% + 10px); right:0; z-index:50; min-width:270px;
   display:flex; flex-direction:column; gap:8px; padding:12px;
   background:var(--surface-panel); border:1px solid var(--border-subtle); border-radius:var(--r-lg);
-  box-shadow:0 12px 32px rgba(0,0,0,.4);
+  box-shadow:var(--shadow-menu);
 }
 .ctx-head { display:flex; align-items:baseline; justify-content:space-between; gap:12px; }
 .ctx-head .t { font-size:var(--fs-sm); font-weight:600; color:var(--text-primary); }
@@ -1197,8 +1404,8 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .ask-own-send:hover:not(:disabled) { color:var(--accent); }
 .ask-own-send:disabled { opacity:.35; cursor:default; }
 
-/* todo_write: the model's live task checklist */
-.todo-panel { margin-top:8px; display:flex; flex-direction:column; gap:3px; }
+/* todo_write: the model's task checklist. The rows are shared — the strip's
+   แผน section draws them, and nothing else does. */
 .todo-item { display:flex; gap:8px; font-size:var(--fs-sm); color:var(--text-secondary); }
 .todo-item .mark { flex:none; width:14px; text-align:center; color:var(--text-dim); }
 .todo-item.in_progress .t { color:var(--text-primary, inherit); font-weight:600; }
@@ -1206,8 +1413,34 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .todo-item.completed .t { text-decoration:line-through; color:var(--text-dim); }
 .todo-item.completed .mark { color:var(--ok, #57ab5a); }
 
+/* ---------- session strip ---------- */
+/* The room's state, pinned above the input where it cannot scroll away. Chips
+   borrow .focus-chip's pill so the two status rows under the composer read as
+   one family — the difference is that these open, and say so by lighting up. */
+.strip { margin-bottom:7px; }
+.strip-line { display:flex; flex-wrap:wrap; gap:6px; }
+.strip-chip {
+  display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:var(--r-full);
+  border:1px solid var(--border-subtle); background:var(--surface-panel);
+  color:var(--text-secondary); font-size:var(--fs-xs); white-space:nowrap; cursor:pointer;
+}
+.strip-chip:hover { color:var(--text-primary); border-color:var(--border-strong); }
+.strip-chip.on { color:var(--text-primary); border-color:var(--accent); }
+.strip-chip .ic { flex:none; opacity:.9; }
+/* The number is the point of the chip, so it carries the ink the label does not. */
+.strip-count { color:var(--text-primary); font-variant-numeric:tabular-nums; }
+/* Every row struck through is finished work, not work in flight — it should not
+   keep drawing the eye once there is nothing left to do. */
+.strip-chip.idle .strip-count { color:var(--text-dim); }
+.strip-chip.idle .ic { opacity:.55; }
+.strip-body {
+  margin-top:6px; padding:8px 10px; display:flex; flex-direction:column; gap:3px;
+  border:1px solid var(--border-subtle); border-radius:var(--r-md);
+  background:var(--surface-panel); max-height:40vh; overflow-y:auto;
+}
+
 /* ---------- inspector ---------- */
-.inspector { grid-area:inspector; background:var(--surface-sunken); display:flex; flex-direction:column; overflow:hidden; }
+.inspector { grid-area:inspector; background:var(--surface-panel); display:flex; flex-direction:column; overflow:hidden; }
 /* no overflow-x here: it would clip the absolutely-positioned .plus-menu dropdown */
 .insp-tabs { display:flex; align-items:center; gap:2px; padding:0 14px; border-bottom:1px solid var(--border-default); min-width:0; }
 .insp-tabs .tab { padding:14px 10px 12px; font-size:var(--fs-sm); }
@@ -1216,7 +1449,7 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .plus-menu {
   position:absolute; top:calc(100% + 6px); left:0; z-index:20; min-width:230px;
   border:1px solid var(--border-subtle); border-radius:var(--r-md); background:var(--surface-panel);
-  box-shadow:0 8px 24px rgba(0,0,0,.35); padding:4px; display:flex; flex-direction:column; gap:1px;
+  box-shadow:var(--shadow-menu); padding:4px; display:flex; flex-direction:column; gap:1px;
 }
 .plus-menu-item { display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:var(--r-sm); font-size:var(--fs-lg); }
 .plus-menu-item:hover { background:var(--surface-row-hover); }
@@ -1295,12 +1528,38 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .pane-empty .proj-add { width:auto; margin-bottom:0; justify-content:center; }
 
 /* ---------- settings (full-page overlay) ---------- */
-.settings-overlay { position:fixed; inset:0; z-index:50; background:var(--surface-app); display:flex; }
+/* A full-window room, built the same way the main window is (owner,
+   2026-08-14: "หน้าตั้งค่าก็อยากให้ขอบมนอ่ะครับ").
+
+   The overlay is the frame and paints --surface-panel; the nav rail sits on it
+   as part of that frame, and the content pane is the card: --surface-app, one
+   step down, with its left corners rounded away. Exactly the arrangement .main
+   has, for the same reason — the place a person reads should be the quietest
+   surface, and the rounding needs a different colour behind it to round away
+   from.
+
+   Every full-window room comes through here: ตั้งค่า, ทีมเอเจน, ผลงาน,
+   โปรเจกต์ all render inside .settings-overlay, so they pick this up together
+   rather than one at a time. */
+.settings-overlay {
+  position:fixed; inset:0; z-index:50; background:var(--surface-panel); display:flex;
+}
 /* The office and the gallery: full-window pages with no nav rail of their own
    — they are one list each, not thirty settings. Everything below reuses the
    settings design system (.settings-card / .set-row / .set-txt / .ctrl) so
    there is one visual language on this surface and not two. */
-.page-shell { flex:1; display:flex; flex-direction:column; overflow:hidden; background:var(--surface-app); }
+.page-shell {
+  flex:1; display:flex; flex-direction:column; overflow:hidden;
+  background:var(--surface-app);
+  /* Same outline as .main, and the same reason: two dark surfaces a few values
+     apart do not separate on colour alone. */
+  border:1px solid var(--border-default);
+  /* Left corners only, and a gutter on three sides. The right edge is the
+     window's own, where there is no frame to round away from — the same
+     judgement .main makes about the side that meets nothing. */
+  border-radius:var(--r-lg) 0 0 var(--r-lg);
+  margin:6px 0 6px 6px;
+}
 .page-head { flex:none; padding:20px 64px 0; }
 .page-title { max-width:var(--content-max, 760px); margin:18px auto 0; }
 .page-title h2 { margin:0 0 6px; font-size:var(--fs-3xl); }
@@ -1352,8 +1611,15 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .door-menu {
   position:absolute; top:calc(100% + 10px); left:12px; z-index:60; min-width:330px;
   display:flex; flex-direction:column; gap:3px; padding:8px;
-  background:var(--surface-raised); border:1px solid var(--border-default);
-  border-radius:var(--r-lg); box-shadow:var(--shadow-lg, 0 12px 34px rgb(0 0 0 / .38));
+  /* Same box as every other popover: --surface-panel and --border-subtle. It
+     was --surface-raised with --border-default, a lighter card with a stronger
+     outline, which is why this menu read as belonging to a different app than
+     the six it sits beside. What stays different is deliberate and argued
+     below — the icon tiles, the two-line rows, the larger label — because this
+     menu names the two halves of the product and the others pick a tool. The
+     container was never part of that argument. */
+  background:var(--surface-panel); border:1px solid var(--border-subtle);
+  border-radius:var(--r-lg); box-shadow:var(--shadow-menu);
 }
 .door-item {
   display:flex; align-items:center; gap:12px; text-align:left; cursor:pointer;
@@ -1854,7 +2120,7 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   min-width:250px; max-width:340px; max-height:260px; overflow-y:auto;
   display:flex; flex-direction:column; gap:2px; padding:6px;
   background:var(--surface-panel); border:1px solid var(--border-subtle); border-radius:var(--r-md);
-  box-shadow:0 12px 32px rgba(0,0,0,.4);
+  box-shadow:var(--shadow-menu);
 }
 .rowdrop-opt {
   width:100%; text-align:left; padding:6px 8px; border-radius:var(--r-sm); border:none;
@@ -1951,6 +2217,18 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .settings-nav-item:hover .nav-leave { color:var(--text-secondary); }
 .learn-row { display:flex; gap:16px; align-items:flex-start; padding:14px 16px; border-bottom:1px solid var(--border-subtle); }
 .learn-row:last-child { border-bottom:none; }
+/* The decided list's own footer, inside the card so it reads as the end of
+   that list rather than as a control belonging to the page. Quiet on purpose:
+   it is the way into a record nobody came here to read. */
+.learn-more {
+  display:flex; align-items:center; justify-content:center; gap:6px; width:100%;
+  padding:10px 16px; background:none; border:none; cursor:pointer;
+  color:var(--text-dim); font:inherit; font-size:var(--fs-xs);
+  border-top:1px solid var(--border-subtle);
+}
+.learn-more:hover { color:var(--text-primary); background:var(--surface-row-hover); }
+/* The row above it already drew a line, so the button's own would double it. */
+.learn-row:nth-last-child(2) { border-bottom:none; }
 .learn-main { flex:1; min-width:0; }
 .learn-head { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
 .learn-scope { font-size:var(--fs-xs); color:var(--text-dim); border:1px solid var(--border-subtle); border-radius:var(--r-sm); padding:1px 6px; }
@@ -2267,6 +2545,73 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .u-share { position:absolute; left:0; bottom:0; height:2px; border-radius:var(--r-2xs); background:var(--border-strong); }
 .u-num .u-sub { display:block; color:var(--text-dim); font-size:var(--fs-xs); }
 .u-num .dim { color:var(--text-dim); }
+
+/* ---------- self-update ----------
+   Two surfaces, never both at once (Updater.svelte).
+
+   The notice is an offer: bottom-right, above the settings overlay (z 50) so a
+   release found while the user is in Settings is not swallowed by it, and
+   clear of the composer so it never sits between the user and the thing they
+   opened the app to do. Nothing has been downloaded when it appears.
+
+   The dialog is modal and outranks every other overlay including confirm
+   (z 70) — the exe under this window is being replaced and the app is about to
+   restart itself, so there is nothing behind it worth reaching. */
+.upd-notice {
+  position:fixed; right:18px; bottom:18px; z-index:55; width:min(340px, calc(100vw - 36px));
+  display:flex; flex-direction:column; gap:6px;
+  padding:14px 16px 12px; border-radius:var(--r-lg);
+  border:1px solid var(--border-default); background:var(--surface-panel);
+  box-shadow:0 16px 40px -12px rgba(0,0,0,.55);
+}
+.upd-notice-title { font-size:var(--fs-md); font-weight:700; color:var(--text-primary); }
+.upd-notice-body { font-size:var(--fs-sm); line-height:1.5; color:var(--text-secondary); }
+.upd-cmd {
+  padding:6px 8px; border-radius:var(--r-sm); background:var(--surface-sunken);
+  border:1px solid var(--border-subtle); color:var(--text-primary);
+  font-family:var(--mono); font-size:var(--fs-xs); word-break:break-all;
+}
+.upd-notice-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:4px; }
+/* .ctrl is scoped to .settings-page and these two live outside it, so they
+   restate the two roles they need rather than reaching into that scope. */
+.upd-btn {
+  appearance:none; background:var(--surface-sunken); border:1px solid var(--border-strong);
+  border-radius:var(--r-sm); color:var(--text-secondary); font:inherit; font-size:var(--fs-sm);
+  padding:5px 12px; cursor:pointer;
+}
+.upd-btn:hover { color:var(--text-primary); border-color:var(--interactive-hover-border); }
+.upd-btn-go { color:var(--accent); border-color:var(--accent); font-weight:600; }
+.upd-btn-go:hover { background:var(--accent); color:var(--text-on-interactive); border-color:var(--accent); }
+
+.upd-overlay { position:fixed; inset:0; z-index:80; display:grid; place-items:center; background:var(--overlay-scrim); }
+.upd-card {
+  width:min(380px, calc(100vw - 48px));
+  border:1px solid var(--border-default); border-radius:var(--r-xl); background:var(--surface-panel);
+  padding:20px 22px 18px; display:flex; flex-direction:column; gap:10px;
+  box-shadow:0 20px 48px -12px rgba(0,0,0,.6);
+}
+.upd-card-title { font-size:var(--fs-sm); font-weight:600; color:var(--text-muted); letter-spacing:.04em; }
+.upd-card-msg { font-size:var(--fs-lg); font-weight:600; color:var(--text-primary); }
+.upd-card-note { font-size:var(--fs-xs); color:var(--text-muted); }
+.upd-card-err {
+  padding:8px 10px; border-radius:var(--r-md); background:var(--surface-sunken);
+  border:1px solid var(--border-subtle); color:var(--status-danger);
+  font-size:var(--fs-sm); line-height:1.5; word-break:break-word;
+}
+.upd-bar { height:8px; border-radius:999px; background:var(--surface-sunken); border:1px solid var(--border-subtle); overflow:hidden; }
+.upd-bar-fill { height:100%; width:0; background:var(--accent); border-radius:999px; transition:width .18s linear; }
+/* No Content-Length on the download means no honest percentage. A bar that
+   moves without claiming a number is the truthful shape for that; a fake 50%
+   is not. */
+.upd-bar.indeterminate .upd-bar-fill { width:38%; animation:upd-slide 1.1s ease-in-out infinite; }
+@keyframes upd-slide {
+  0%   { transform:translateX(-100%); }
+  100% { transform:translateX(263%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .upd-bar.indeterminate .upd-bar-fill { animation:none; width:100%; opacity:.45; }
+  .upd-bar-fill { transition:none; }
+}
 
 /* ---------- confirm dialog ----------
    Sits above everything including the settings nav (z 60 is the app's overlay
