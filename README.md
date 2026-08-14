@@ -380,9 +380,9 @@ date-stamped, because the rule above does not have an exception for numbers we w
 
 </details>
 
-## Status — v0.9.6
+## Status — v0.9.9
 
-The core is in place. [Release notes](docs/release-notes/v0.9.6.md) ·
+The core is in place. [Release notes](docs/release-notes/v0.9.9.md) ·
 [roadmap to 1.0.0](ROADMAP.md) · [architecture](ARCHITECTURE.md).
 
 Three things it does today that are worth knowing about:
