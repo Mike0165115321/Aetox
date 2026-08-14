@@ -3,7 +3,6 @@
   import { groupSteps, isDelegation } from './types'
   import TaskTimeline from './TaskTimeline.svelte'
   import BackgroundWork from './BackgroundWork.svelte'
-  import SessionStrip from './SessionStrip.svelte'
   import Palette from './Palette.svelte'
   import Logo from './Logo.svelte'
   import { onMount } from 'svelte'
@@ -1712,10 +1711,6 @@
         <button class="ctrl" onclick={submitApiKey}>{t('chat.saveKey')}</button>
       </div>
     {/if}
-    <!-- What this room holds, above the row that says where it points. Both are
-         status; the focus row is the more permanent of the two, so it sits
-         nearer the input and the strip stacks on top of it. -->
-    <SessionStrip />
     <div class="focus-row">
       <!-- Only the workshop points at a project. The storefront is the door
            that works on the machine rather than in a folder (§19/§86), so a

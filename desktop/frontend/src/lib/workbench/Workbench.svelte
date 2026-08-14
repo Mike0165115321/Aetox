@@ -22,6 +22,7 @@
   import { TerminalShells, BrowserBack, BrowserForward, BrowserReload, BrowserOpenDevTools } from '../../../wailsjs/go/main/App'
   import { EventsOn } from '../../../wailsjs/runtime/runtime'
   import { t } from '../i18n.svelte'
+  import { isShortcut, shortcutLabel } from '../shortcuts'
   import Icon from '../Icon.svelte'
   import type { IconName } from '../icons'
 
@@ -239,10 +240,8 @@
 
   function onKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') { menuOpen = false; return }
-    if (!e.ctrlKey || e.altKey || e.metaKey) return
-    const k = e.key.toLowerCase()
-    if (!e.shiftKey && k === 't') { e.preventDefault(); openBrowserTab() }
-    else if (!e.shiftKey && k === 'p') { e.preventDefault(); openFilesTab() }
+    if (isShortcut(e, 'browserTab')) { e.preventDefault(); openBrowserTab() }
+    else if (isShortcut(e, 'filesTab')) { e.preventDefault(); openFilesTab() }
   }
 </script>
 
@@ -277,8 +276,8 @@
       {#if menuOpen}
         <div class="plus-menu">
           <button class="plus-menu-item" disabled={shells.length === 0} onclick={openDefaultTerminal}><span class="ic"><Icon name="keyboard" size={14} /></span> {t('workbench.terminalMenu')}</button>
-          <button class="plus-menu-item" onclick={() => pick(openBrowserTab)}><span class="ic"><Icon name="globe" size={14} /></span> {t('workbench.browserMenu')} <span class="kbd">Ctrl+T</span></button>
-          <button class="plus-menu-item" onclick={() => pick(openFilesTab)}><span class="ic"><Icon name="copy" size={14} /></span> {t('workbench.filesTab')} <span class="kbd">Ctrl+P</span></button>
+          <button class="plus-menu-item" onclick={() => pick(openBrowserTab)}><span class="ic"><Icon name="globe" size={14} /></span> {t('workbench.browserMenu')} <span class="kbd">{shortcutLabel('browserTab')}</span></button>
+          <button class="plus-menu-item" onclick={() => pick(openFilesTab)}><span class="ic"><Icon name="copy" size={14} /></span> {t('workbench.filesTab')} <span class="kbd">{shortcutLabel('filesTab')}</span></button>
           <button class="plus-menu-item" onclick={() => pick(openToolsTab)}><span class="ic"><Icon name="wrench" size={14} /></span> {t('workbench.toolsTab')}</button>
         </div>
       {/if}
@@ -318,8 +317,8 @@
     {#if workbench.tabs.length === 0}
       <div class="insp-start">
         <button class="plus-menu-item" disabled={shells.length === 0} onclick={openDefaultTerminal}><span class="ic"><Icon name="keyboard" size={14} /></span> {t('workbench.terminalMenu')}</button>
-        <button class="plus-menu-item" onclick={() => openBrowserTab()}><span class="ic"><Icon name="globe" size={14} /></span> {t('workbench.browserMenu')} <span class="kbd">Ctrl+T</span></button>
-        <button class="plus-menu-item" onclick={openFilesTab}><span class="ic"><Icon name="copy" size={14} /></span> {t('workbench.filesTab')} <span class="kbd">Ctrl+P</span></button>
+        <button class="plus-menu-item" onclick={() => openBrowserTab()}><span class="ic"><Icon name="globe" size={14} /></span> {t('workbench.browserMenu')} <span class="kbd">{shortcutLabel('browserTab')}</span></button>
+        <button class="plus-menu-item" onclick={openFilesTab}><span class="ic"><Icon name="copy" size={14} /></span> {t('workbench.filesTab')} <span class="kbd">{shortcutLabel('filesTab')}</span></button>
         <button class="plus-menu-item" onclick={openToolsTab}><span class="ic"><Icon name="wrench" size={14} /></span> {t('workbench.toolsTab')}</button>
       </div>
     {/if}

@@ -871,14 +871,33 @@ async function runLiveTurn(call: () => Promise<void>): Promise<void> {
   cockpit.toolSteps = []
   cockpit.streamingText = ''
   cockpit.reasoningText = ''
-  // The checklist and the question card belong to the turn that raised them.
-  // Both are drawn inside the live block (Chat.svelte's `{#if awaitingReply}`),
-  // so a stale one is invisible while the chat is idle and then reappears the
-  // instant the next turn starts — the previous turn's todo list, every item
-  // already struck through, sitting under "กำลังคิดคำตอบ…" for work nobody asked
-  // for. They were cleared only when the session changed, which is why this
-  // survived: switching chats hid it, and staying in one did not.
-  cockpit.todos = []
+  // The question card belongs to the turn that raised it: it is drawn inside
+  // the live block (Chat.svelte's `{#if awaitingReply}`), so a stale one is
+  // invisible while the chat is idle and then reappears the instant the next
+  // turn starts, offering options to a tool that stopped listening.
+  //
+  // The checklist used to be cleared here for the same reason, and while it
+  // lived in that block the reason was right — the previous turn's todos, every
+  // item already struck through, sitting under "กำลังคิดคำตอบ…" for work nobody
+  // asked for. It is drawn on the strip now (SessionStrip.svelte), under the
+  // heading แผน, where the same rows say something true: this is the session's
+  // latest plan, and nothing has replaced it yet. A plan that vanishes the
+  // moment the turn that wrote it ends is a plan nobody can work from — which
+  // is the whole reason วางแผน mode (internal/mode/stance.go) exists.
+  //
+  // todo_write replaces it wholesale (applyTodos), so a turn that plans anew
+  // overwrites this; a turn that does not, leaves the last plan standing.
+  //
+  // With one exception, and it is the half of the old rule that was worth
+  // keeping: a plan whose every row is struck through is a *record*, not work,
+  // and asking the next question is the moment that record stops being about
+  // anything. Left in, a finished checklist sat over every later turn with no
+  // way to get rid of it — the panel had no off switch, because clearing used
+  // to be somebody else's job. Unfinished plans still survive: what is kept is
+  // work in flight, what is dropped is a receipt.
+  if (cockpit.todos.length > 0 && cockpit.todos.every((td) => td.status === 'completed')) {
+    cockpit.todos = []
+  }
   cockpit.ask = null
   try {
     await call()
@@ -895,8 +914,8 @@ async function runLiveTurn(call: () => Promise<void>): Promise<void> {
     cockpit.reasoningText = ''
     // Cleared at both ends, like toolSteps. A turn that died with a question
     // still on screen left a card whose tool is no longer listening — pressing
-    // an option answered nothing.
-    cockpit.todos = []
+    // an option answered nothing. The checklist is deliberately not cleared
+    // here; see the note at the head of this function.
     cockpit.ask = null
     // The "still working" banner (turnStillRunning) explained a refusal that
     // just stopped being true. A stale one over an idle chat would be a lie.
@@ -1068,6 +1087,18 @@ export function applyTodos(todos: CockpitState['todos']): void {
   cockpit.todos = Array.isArray(todos) ? todos : []
 }
 
+/** The user putting down a plan that is not going to be finished.
+ *
+ * The engine has no say here, and that is the point: this list is only ever
+ * written by the model, and once it outlives the turn that wrote it, the only
+ * person who can know it has been abandoned is the one who abandoned it. A
+ * finished plan clears itself at the next turn (runLiveTurn); this is for the
+ * other case — the work changed direction and the checklist is now about a
+ * question nobody is asking any more. */
+export function clearPlan(): void {
+  cockpit.todos = []
+}
+
 /** suggest_task tool: the agent's pending side-work chips, replaced wholesale. */
 export function applyTaskChips(chips: CockpitState['taskChips']): void {
   cockpit.taskChips = Array.isArray(chips) ? chips : []
@@ -1105,13 +1136,13 @@ export async function refreshPendingLearned(): Promise<void> {
  *  session. The prompt was written to stand alone (suggest_task requires it),
  *  so the new session needs nothing from the one that suggested it. */
 export async function startTaskChip(chip: CockpitState['taskChips'][number]): Promise<void> {
-  // Guarded here, not just inside newSession: with the chip consumed and the
-  // new session refused, sendUserMessage would hand the chip's prompt to the
-  // turn already running — as an interjection into a conversation it was
+  // Guarded here, not just inside newSessionHere: with the chip consumed and
+  // the new session refused, sendUserMessage would hand the chip's prompt to
+  // the turn already running — as an interjection into a conversation it was
   // never about.
   if (turnStillRunning()) return
   await DismissTaskChip(chip.id)
-  await newSession()
+  await newSessionHere()
   await sendUserMessage(chip.prompt)
 }
 
@@ -1658,8 +1689,42 @@ function showSessionRefusal(err: unknown): void {
   cockpit.sessionError = err instanceof Error ? err.message : String(err)
 }
 
-/** Start a blank session (current one is saved first, engine-side). */
+/** "New chat" — the + button, Ctrl+N, and the palette's row.
+ *
+ * It lands on the main desk of the door you are standing at: ผู้ช่วย from the
+ * storefront, โต๊ะโค้ด from the workshop. It does NOT keep the room you were
+ * in, and that is the whole point of the change (owner, 14 ส.ค.).
+ *
+ * It used to call the engine's bare NewSession, which leaves desk and chair
+ * exactly as they were — so pressing it inside ระบบออโตเมชั่น handed you a
+ * blank chat still seated with the automation specialist, in a room you were
+ * trying to leave. A control at a fixed address that does a different thing in
+ * every room is not one control, it is five with one label.
+ *
+ * Scoped to the door rather than always ผู้ช่วย because the doors are the one
+ * boundary a keystroke has no business crossing: mid-task in the workshop,
+ * Ctrl+N must not put you in the storefront.
+ *
+ * A new chat is also in no project — the engine has always done that
+ * (startNewSession clears a.space); going through newSessionAt is what finally
+ * makes the window say the same thing instead of drawing a project the session
+ * had already left. */
 export async function newSession(): Promise<void> {
+  if (turnStillRunning()) return
+  // Before the session call, like openDesk: a refusal is reported inside the
+  // chat, so a user who pressed this from Settings has to be looking at it.
+  setActiveView('chat')
+  await newSessionAt(deskForShell(shell.name))
+}
+
+/** Start a blank session without moving: same desk, same chair, same door.
+ *
+ * The one caller is a task chip, and it is not a "new chat" — it is a piece of
+ * work the agent in this room noticed while doing something else. A stale doc
+ * the workshop grepped past is the workshop's job; carrying it out to ผู้ช่วย
+ * because the chip happened to be clicked would hand it to someone who was
+ * never in the conversation. */
+async function newSessionHere(): Promise<void> {
   if (turnStillRunning()) return
   try {
     await NewSession()

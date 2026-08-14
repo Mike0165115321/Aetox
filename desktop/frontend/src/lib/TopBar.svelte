@@ -1,9 +1,11 @@
 <script lang="ts">
   import { t } from './i18n.svelte'
-  import { newSession, switchShell } from './stores/cockpit.svelte'
+  import { cockpit, newSession, switchShell } from './stores/cockpit.svelte'
   import { shell, SHELLS } from './shell.svelte'
+  import { shortcutLabel } from './shortcuts'
   import Wordmark from './Wordmark.svelte'
   import Icon from './Icon.svelte'
+  import SessionStrip from './SessionStrip.svelte'
 
   let {
     inspectorCollapsed, onToggleInspector, sidebarCollapsed, onToggleSidebar,
@@ -13,6 +15,21 @@
     sidebarCollapsed: boolean
     onToggleSidebar: () => void
   } = $props()
+
+  // What this conversation is, in the band that had nothing in it.
+  //
+  // The row was one toggle, a flex spacer, and three corner buttons — chrome at
+  // both ends and a deliberate void between (owner, 2026-08-14, next to a
+  // reference where the same band carries the conversation's name).
+  //
+  // Read off the history list rather than held separately: refreshSessions
+  // already marks which row is live, and a second copy of "what is this chat
+  // called" is the one that goes stale the moment a title is rewritten.
+  //
+  // Empty until the first turn, on purpose. A session is only titled once it
+  // has been spoken to, and a placeholder there would name a conversation that
+  // has not happened.
+  const title = $derived(cockpit.sessions.find((s) => s.active)?.title ?? '')
 
   // The door switcher (§86). On the wordmark rather than in the room list,
   // because it does not change which room you are in — it changes which
@@ -80,15 +97,24 @@
 <div class="topbar">
   <button
     class="icobtn tip-l" aria-label={sidebarCollapsed ? t('topbar.showSidebar') : t('topbar.hideSidebar')}
-    data-tip={t('topbar.toggleSidebarTip')} onclick={onToggleSidebar}
+    data-tip="{t('topbar.toggleSidebarTip')} · {shortcutLabel('toggleSidebar')}" onclick={onToggleSidebar}
   >
     {@render panelIcon(!sidebarCollapsed, false)}
   </button>
+  <!-- Left of the spacer, not centred in it: a centred title moves every time
+       its own length changes, and it collides with the corner buttons on a
+       narrow window. Against the toggle it has a fixed address. -->
+  {#if title}<span class="topbar-title" title={title}>{title}</span>{/if}
   <span class="spacer"></span>
 
   <!-- tip-r on both: these sit flush against the window's right edge, so a
        centred (or left-anchored) tooltip gets clipped by it. -->
   <div class="winbtns">
+    <!-- What this conversation holds — plan first, and the room's sources and
+         repo state as those land. Leftmost of the three so the two panel
+         toggles stay adjacent: they are the same kind of act (show a rail),
+         and this one is not. -->
+    <SessionStrip />
     <!-- Always, not only while the sidebar is away (owner, 12 ส.ค.). It was
          conditional on the reasoning that the sidebar's header carries this
          otherwise, and that two + buttons on one line is one of them saying
@@ -100,11 +126,11 @@
          every use. -->
     <button
       class="icobtn tip-r" aria-label={t('sidebar.newSession')}
-      data-tip="{t('sidebar.newSession')} · Ctrl+N" onclick={newSession}
+      data-tip="{t('sidebar.newSession')} · {shortcutLabel('newSession')}" onclick={newSession}
     ><Icon name="plus" size={15} /></button>
     <button
       class="icobtn tip-r" aria-label={inspectorCollapsed ? t('topbar.showPanel') : t('topbar.hidePanel')}
-      data-tip={t('topbar.toggleInspectorTip')} onclick={onToggleInspector}
+      data-tip="{t('topbar.toggleInspectorTip')} · {shortcutLabel('toggleInspector')}" onclick={onToggleInspector}
     >
       {@render panelIcon(!inspectorCollapsed, true)}
     </button>

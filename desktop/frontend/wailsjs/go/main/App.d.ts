@@ -330,6 +330,10 @@ export function SessionAgent(arg1:string):Promise<string>;
 
 export function SessionMode(arg1:string):Promise<string>;
 
+export function SessionSourceCount(arg1:string):Promise<number>;
+
+export function SessionSources(arg1:string):Promise<Array<main.Source>>;
+
 export function SessionTranscript(arg1:string):Promise<Array<main.SessionMessage>>;
 
 export function SessionsInSpace(arg1:string):Promise<Array<main.SessionMeta>>;

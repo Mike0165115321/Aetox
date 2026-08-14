@@ -38,9 +38,18 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
      into a control that lags behind the hand. */
   transition:grid-template-columns .18s ease;
   grid-template-rows:56px 1fr;
+  /* The topbar sits over the content column only, so the card can start at the
+     top of the window instead of 62px down it (owner, 2026-08-14: "เอาพื้นหลัง
+     ที่มันขอบมนอ่ะขึ้น"). It used to span every column right of the logo, which
+     put a band of frame across the whole width above the card and made the
+     header look like something the window owned rather than something the
+     conversation did.
+     handle-l, handle-r and inspector now span both rows — a side panel runs the
+     full height, which is what it looked like anyway while the topbar was the
+     same colour as the frame behind it. */
   grid-template-areas:
-    "logo topbar topbar topbar topbar"
-    "side handle-l main handle-r inspector";
+    "logo handle-l topbar handle-r inspector"
+    "side handle-l main   handle-r inspector";
 }
 /* Set for the length of a drag, by App.svelte. */
 .app.resizing { transition:none; }
@@ -178,9 +187,15 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   grid-area:logo; display:flex; align-items:center; gap:10px; padding:0 18px; min-width:0; overflow:hidden;
   background:var(--surface-panel);
 }
+/* The card's header. Same surface as .main below it and rounded at the top, so
+   the two read as one sheet with a header rather than a strip of window chrome
+   and a page under it. */
 .topbar {
   grid-area:topbar; display:flex; align-items:center; gap:14px; padding:0 14px;
-  background:var(--surface-panel);
+  background:var(--surface-app);
+  border:1px solid var(--border-default); border-bottom:0;
+  border-radius:var(--r-lg) var(--r-lg) 0 0;
+  margin:6px 0 0;
 }
 .chip { display:inline-flex; align-items:center; gap:6px; height:28px; padding:0 10px; border:1px solid var(--border-default); border-radius:var(--r-sm); background:var(--surface-raised); color:var(--text-primary); font-size:var(--fs-lg); white-space:nowrap; cursor:pointer; }
 .chip:hover { border-color:var(--border-strong); }
@@ -190,6 +205,14 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .dot { width:7px; height:7px; border-radius:50%; display:inline-block; background:var(--text-dim); }
 .dot.green { background:var(--status-success); box-shadow:0 0 6px var(--status-success-border); }
 .topbar .spacer { flex:1; }
+/* The conversation's name, in the band that used to be empty. Truncates
+   rather than wraps or pushes: the row is a fixed 56px and the corner buttons
+   are the one thing on it that must never move. */
+.topbar-title {
+  min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  max-width:min(46vw, 520px); margin-left:2px;
+  font-size:var(--fs-sm); font-weight:600; color:var(--text-secondary);
+}
 .winbtns { display:flex; align-items:center; gap:2px; margin-left:4px; }
 .icobtn { width:30px; height:30px; display:grid; place-items:center; border-radius:var(--r-sm); color:var(--text-muted); cursor:pointer; }
 .icobtn:hover { background:var(--surface-hover); color:var(--text-primary); }
@@ -499,7 +522,9 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .main {
   grid-area:main; display:flex; flex-direction:column; overflow:hidden;
   background:var(--surface-app);
-  /* The card's own outline. It had none for a while, on the reasoning that a
+  /* Rounded at the bottom only: .topbar carries the top two corners now, and
+     the two share one outline down the sides.
+     The card's own outline. It had none for a while, on the reasoning that a
      colour step plus a rounded corner was enough to read as a separate object.
      It was not (owner, 2026-08-14: "ทำไมเหมือนมันกลมกลืน เป็นหนึ่งเดียวกันไปแล้ว
      ... แยกออกมาเหมือนเมื่อกี้อ่ะดีแล้ว") — the step between two adjacent dark
@@ -509,9 +534,9 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
      a border here follows the radius and defines the shape, while the straight
      line it replaces ran past the corner and was the thing the rounding was
      drawn to get rid of. */
-  border:1px solid var(--border-default);
-  border-radius:var(--r-lg);
-  margin:6px 0;
+  border:1px solid var(--border-default); border-top:0;
+  border-radius:0 0 var(--r-lg) var(--r-lg);
+  margin:0 0 6px;
 }
 /* One 6px gutter on every side, in every state. Left and right normally come
    from the resize-handle tracks, which are 6px wide — but a collapsed panel
@@ -519,8 +544,8 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
    window edge with nothing behind it. These two put the gutter back exactly
    where the track went, rather than a margin on .main that would stack with the
    track and make one side twice the other. */
-.app.sidebar-collapsed .main { margin-left:6px; }
-.app.inspector-collapsed .main { margin-right:6px; }
+.app.sidebar-collapsed .main, .app.sidebar-collapsed .topbar { margin-left:6px; }
+.app.inspector-collapsed .main, .app.inspector-collapsed .topbar { margin-right:6px; }
 .tabs { display:flex; align-items:center; gap:2px; padding:0 18px; border-bottom:1px solid var(--border-default); background:var(--surface-sunken); overflow-x:auto; }
 .tab {
   display:flex; align-items:center; gap:6px; padding:14px 12px 12px; color:var(--text-muted);
@@ -1044,7 +1069,7 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
    left off this list goes full-bleed and reads as a system banner rather than
    as part of the conversation — which is how the background-work card and the
    suggestion chips both ended up touching the window edge. */
-.composer .box, .project-chips, .api-key-banner, .focus-row, .bgw, .task-chips, .strip { max-width:1040px; margin-left:auto; margin-right:auto; }
+.composer .box, .project-chips, .api-key-banner, .focus-row, .bgw, .task-chips { max-width:1040px; margin-left:auto; margin-right:auto; }
 /* What the AI is focused on right now — project + branch, mirrored above the input. */
 .focus-row { display:flex; align-items:center; gap:6px; margin-bottom:7px; }
 .focus-chip {
@@ -1413,31 +1438,89 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .todo-item.completed .t { text-decoration:line-through; color:var(--text-dim); }
 .todo-item.completed .mark { color:var(--ok, #57ab5a); }
 
-/* ---------- session strip ---------- */
-/* The room's state, pinned above the input where it cannot scroll away. Chips
-   borrow .focus-chip's pill so the two status rows under the composer read as
-   one family — the difference is that these open, and say so by lighting up. */
-.strip { margin-bottom:7px; }
-.strip-line { display:flex; flex-wrap:wrap; gap:6px; }
-.strip-chip {
-  display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:var(--r-full);
-  border:1px solid var(--border-subtle); background:var(--surface-panel);
-  color:var(--text-secondary); font-size:var(--fs-xs); white-space:nowrap; cursor:pointer;
+/* ---------- session summary (window corner) ---------- */
+/* What this conversation holds, opened from the corner rather than watched
+   above the input. The button sits among .winbtns and wears .icobtn like its
+   neighbours; what it adds is a badge, so a plan that is running is not
+   completely silent behind a glyph that never changes. */
+.summary { position:relative; display:flex; }
+.icobtn.on { background:var(--surface-hover); color:var(--text-primary); }
+/* Sized to sit INSIDE a 30px button. It read "1/3" at first, which came out
+   ~20px wide — two thirds of the button, over the glyph, and poking into the
+   2px gap before the + beside it. One number fits; see the component for why
+   that number is what is left rather than what is done. */
+.summary-badge {
+  position:absolute; top:2px; right:2px;
+  min-width:13px; height:13px; padding:0 3px; box-sizing:border-box;
+  display:grid; place-items:center; border-radius:var(--r-full);
+  background:var(--accent); color:var(--text-on-accent);
+  font-size:9px; line-height:1; font-weight:700; font-variant-numeric:tabular-nums;
+  pointer-events:none;
 }
-.strip-chip:hover { color:var(--text-primary); border-color:var(--border-strong); }
-.strip-chip.on { color:var(--text-primary); border-color:var(--accent); }
-.strip-chip .ic { flex:none; opacity:.9; }
-/* The number is the point of the chip, so it carries the ink the label does not. */
-.strip-count { color:var(--text-primary); font-variant-numeric:tabular-nums; }
-/* Every row struck through is finished work, not work in flight — it should not
-   keep drawing the eye once there is nothing left to do. */
-.strip-chip.idle .strip-count { color:var(--text-dim); }
-.strip-chip.idle .ic { opacity:.55; }
-.strip-body {
-  margin-top:6px; padding:8px 10px; display:flex; flex-direction:column; gap:3px;
-  border:1px solid var(--border-subtle); border-radius:var(--r-md);
-  background:var(--surface-panel); max-height:40vh; overflow-y:auto;
+/* Detached from the button, same as .door-menu and for the same reason: a panel
+   touching the control that opened it reads as part of the header rather than
+   as a thing that opened. Anchored right — it is the last control on that edge,
+   so a left-anchored panel would hang off the window. */
+.summary-menu {
+  position:absolute; top:calc(100% + 10px); right:0; z-index:60; width:320px;
+  padding:4px 0; border:1px solid var(--border-subtle); border-radius:var(--r-lg);
+  background:var(--surface-panel); box-shadow:var(--shadow-menu);
+  max-height:70vh; overflow-y:auto;
 }
+.summary-sec { padding:10px 14px; display:flex; flex-direction:column; gap:4px; }
+.summary-sec + .summary-sec { border-top:1px solid var(--border-subtle); }
+.summary-sec h3 {
+  margin:0 0 3px; display:flex; align-items:center; gap:6px;
+  font-size:var(--fs-xs); font-weight:600; color:var(--text-muted);
+}
+/* Quiet until wanted: putting a plan down is a thing you do once in a while,
+   and a permanently lit × next to a heading reads as a warning about the
+   section rather than an action on it. */
+.summary-sec h3 .summary-clear {
+  display:grid; place-items:center; width:16px; height:16px; border-radius:var(--r-sm);
+  color:var(--text-dim); opacity:0; cursor:pointer;
+}
+.summary-sec:hover .summary-clear, .summary-clear:focus-visible { opacity:1; }
+.summary-clear:hover { color:var(--status-danger); background:var(--surface-hover); }
+/* A section with nothing in it says so in words rather than collapsing: in a
+   panel somebody opened on purpose, "there is no plan yet" is an answer, and
+   the heading above it teaches what will appear there later. */
+.summary-none { margin:0; font-size:var(--fs-sm); color:var(--text-dim); }
+/* One row, whether it opens something (.summary-row) or only reports
+   (.summary-line). Same metrics either way so the sections read as one list. */
+.summary-row, .summary-line {
+  display:flex; align-items:center; gap:8px; min-width:0; width:100%;
+  padding:3px 6px; margin:0 -6px; border-radius:var(--r-sm);
+  font-size:var(--fs-sm); color:var(--text-secondary); text-align:left;
+}
+.summary-row { cursor:pointer; }
+.summary-row:hover { background:var(--surface-hover); color:var(--text-primary); }
+.summary-row .ic, .summary-line .ic { flex:none; display:flex; color:var(--text-dim); }
+/* The label takes the room and gives way at the end. Both halves matter: the
+   folder beside it is only ever there because two labels collided, so it must
+   not be the thing that gets squeezed out. */
+.summary-row .lbl, .summary-line .lbl {
+  flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.summary-row .dir {
+  flex:0 1 auto; min-width:0; max-width:45%; overflow:hidden; direction:rtl;
+  text-overflow:ellipsis; white-space:nowrap;
+  font-size:var(--fs-xs); color:var(--text-dim);
+}
+.summary-row .st {
+  flex:none; width:14px; text-align:center; font-family:var(--mono);
+  font-size:var(--fs-xs); color:var(--status-modified);
+}
+/* GitChangedFiles reports M or U (app.go) — the same two letters the file tree
+   badges with, so the colours have to be the same two as well. */
+.summary-row .st.U { color:var(--status-untracked); }
+/* Carries its own count, so the list never claims to be complete when it is
+   not. Quiet: it is a way on, not the point of the section. */
+.summary-more {
+  align-self:flex-start; padding:3px 6px; margin:2px -6px 0; border-radius:var(--r-sm);
+  font-size:var(--fs-xs); color:var(--text-muted); cursor:pointer;
+}
+.summary-more:hover { color:var(--text-primary); background:var(--surface-hover); }
 
 /* ---------- inspector ---------- */
 .inspector { grid-area:inspector; background:var(--surface-panel); display:flex; flex-direction:column; overflow:hidden; }

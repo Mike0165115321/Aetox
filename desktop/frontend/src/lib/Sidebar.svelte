@@ -12,6 +12,7 @@
   import { t, i18n, setLocale, localeNames, type Locale, type TKey } from './i18n.svelte'
   import { dayBucket } from './dayBucket'
   import { theme, applyTheme, THEMES, type ThemeName } from './theme.svelte'
+  import { isShortcut, shortcutLabel } from './shortcuts'
   import Icon from './Icon.svelte'
 
   let { onOpenSettings }: { onOpenSettings: () => void } = $props()
@@ -197,7 +198,7 @@
 <svelte:window
   onclick={profileOpen ? closeProfileOnOutsideClick : undefined}
   onkeydown={(e) => {
-    if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'n') {
+    if (isShortcut(e, 'newSession')) {
       e.preventDefault()
       newSession()
     }
@@ -309,7 +310,7 @@
     ><Icon name="upload" size={15} /></button>
     <button
       type="button" class="icobtn tip-r" aria-label={t('sidebar.newSession')}
-      data-tip="{t('sidebar.newSession')} · Ctrl+N" onclick={newSession}
+      data-tip="{t('sidebar.newSession')} · {shortcutLabel('newSession')}" onclick={newSession}
     ><Icon name="pencil" size={15} /></button>
   </div>
 
@@ -464,7 +465,7 @@
           </select>
         </div>
         <button class="plus-menu-item" onclick={() => { profileOpen = false; onOpenSettings() }}>
-          <span class="ic"><Icon name="settings" size={14} /></span> {t('sidebar.settings')} <span class="kbd">{t('sidebar.settingsShortcut')}</span>
+          <span class="ic"><Icon name="settings" size={14} /></span> {t('sidebar.settings')} <span class="kbd">{shortcutLabel('settings')}</span>
         </button>
       </div>
     {/if}

@@ -13,7 +13,7 @@ import {
 } from '../lib/stores/cockpit.svelte'
 import {
   TurnInFlight, CurrentSessionID, SessionTranscript, LoadSessionAnyProject,
-  NewSession, DeleteSession, SendMessage, GetModelInfo,
+  NewSessionAt, DeleteSession, SendMessage, GetModelInfo,
 } from './mocks/wailsApp'
 
 const question = { id: 1, role: 'user', text: 'ไล่บั๊คให้หน่อย', time: '10:00' }
@@ -103,7 +103,7 @@ describe('the doors out of a running turn\'s chat', () => {
 
     await newSession()
 
-    expect(vi.mocked(NewSession)).not.toHaveBeenCalled()
+    expect(vi.mocked(NewSessionAt)).not.toHaveBeenCalled()
     expect(cockpit.sessionError).toContain('กำลังทำงานอยู่')
   })
 
@@ -123,7 +123,7 @@ describe('the doors out of a running turn\'s chat', () => {
   // a desk file gone) used to die as an unhandled rejection — a click that
   // visibly did nothing. Every refusal is a written sentence; show it.
   it('surfaces an engine refusal instead of swallowing it', async () => {
-    vi.mocked(NewSession).mockRejectedValue(new Error('เอเจนกำลังทำงานอยู่ — รอให้เสร็จ หรือกดหยุดก่อน แล้วค่อยสลับแชท'))
+    vi.mocked(NewSessionAt).mockRejectedValue(new Error('เอเจนกำลังทำงานอยู่ — รอให้เสร็จ หรือกดหยุดก่อน แล้วค่อยสลับแชท'))
 
     await newSession()
 

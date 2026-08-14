@@ -98,6 +98,10 @@ export interface ContextBreakdown {
    *  a forecast of the first request — showing that as "used" made a fresh chat
    *  look like a bill already run up. */
   measured: boolean
+  /** How much of the last round's input the provider served from its prompt
+   *  cache, at a fraction of full price. 0 when nothing hit or the provider
+   *  does no cache accounting — the note is only shown when there is one. */
+  cachedTokens: number
 }
 
 export interface ChatMessage {

@@ -638,6 +638,14 @@ export function SessionMode(arg1) {
   return window['go']['main']['App']['SessionMode'](arg1);
 }
 
+export function SessionSourceCount(arg1) {
+  return window['go']['main']['App']['SessionSourceCount'](arg1);
+}
+
+export function SessionSources(arg1) {
+  return window['go']['main']['App']['SessionSources'](arg1);
+}
+
 export function SessionTranscript(arg1) {
   return window['go']['main']['App']['SessionTranscript'](arg1);
 }

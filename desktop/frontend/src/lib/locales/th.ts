@@ -6,10 +6,11 @@ export const th = {
   'topbar.loaded': 'โหลดแล้ว',
   'topbar.showPanel': 'แสดงแผง',
   'topbar.hidePanel': 'ซ่อนแผง',
-  'topbar.toggleInspectorTip': 'เปิด/ปิดแผงด้านข้าง · Ctrl+Alt+B',
+  // คีย์ลัดไม่อยู่ในสตริงแปล — ต่อท้ายจาก shortcuts.ts ตอนแสดงผล ตารางเดียวคุมทั้งปุ่มที่กดและตัวอักษรที่บอก
+  'topbar.toggleInspectorTip': 'เปิด/ปิดแผงด้านข้าง',
   'topbar.showSidebar': 'แสดงแถบด้านข้าง',
   'topbar.hideSidebar': 'ซ่อนแถบด้านข้าง',
-  'topbar.toggleSidebarTip': 'เปิด/ปิดแถบด้านข้าง · Ctrl+Alt+S',
+  'topbar.toggleSidebarTip': 'เปิด/ปิดแถบด้านข้าง',
 
   'sidebar.projects': 'โปรเจกต์',
   'sidebar.addProject': 'เพิ่มโปรเจกต์',
@@ -45,7 +46,6 @@ export const th = {
   'sidebar.older': 'เก่ากว่านั้น',
   'sidebar.setYourName': 'ตั้งชื่อของคุณ',
   'sidebar.settings': 'การตั้งค่า',
-  'sidebar.settingsShortcut': 'Ctrl+,',
 
   // การ์ดเริ่มต้นบนแชทเปล่า — แยกตามห้อง ดู starters.ts
   'start.assistant.headline': 'วันนี้ให้ช่วยอะไรดี?',
@@ -88,7 +88,7 @@ export const th = {
   'start.chair.doTitle': 'บอกงานแล้วให้ลงมือทำเลย',
   'start.chair.doPrompt': 'ช่วยทำงานนี้ให้หน่อย: ',
 
-  'chat.inputPlaceholder': 'พิมพ์คำขอของคุณ… (Ctrl+K ค้นหาทุกอย่าง)',
+  'chat.inputPlaceholder': 'พิมพ์คำขอของคุณ… ({key} ค้นหาทุกอย่าง)',
   'chat.attachImage': 'แนบรูปภาพ',
   'chat.attachFile': 'แนบไฟล์ (รูป วิดีโอ เสียง เอกสาร)',
   'chat.thinking': 'กำลังคิด',
@@ -155,6 +155,22 @@ export const th = {
   'chat.runFailed': 'ล้มเหลว',
   'chat.dismissTask': 'ปัดข้อเสนอทิ้ง',
   'chat.bgAnswerPrompt': 'ตอบ {id} ด้วย task_answer ว่า {answer}',
+
+  // แถบสถานะห้องเหนือช่องพิมพ์ — ป้ายบนชิปคือตัวบอกว่าข้างในมีอะไร ตัวเลขเลยอยู่บนชิป ไม่ได้ซ่อนไว้ข้างใน
+  'summary.toggle': 'สรุปห้องนี้',
+  'strip.plan': 'แผน',
+  'strip.planEmpty': 'ยังไม่มีแผนในห้องนี้',
+  // แผนที่ทำครบแล้วหายเองตอนเทิร์นถัดไป ปุ่มนี้ไว้สำหรับแผนที่เลิกกลางคัน
+  'summary.clearPlan': 'ล้างแผนนี้ทิ้ง',
+  'summary.sources': 'แหล่งที่มา',
+  'summary.sourcesEmpty': 'ห้องนี้ยังไม่ได้เปิดไฟล์หรือเว็บอะไร',
+  // ต้องมีตัวเลขเสมอ — "ดูทั้งหมด" เฉย ๆ บอกว่าไม่ครบ แต่ไม่บอกว่าขาดเท่าไหร่ ซึ่งเป็นคนละการตัดสินใจ
+  'summary.viewAll': 'ดูอีก {count} รายการ',
+  'summary.repo': 'ที่เก็บโค้ด',
+  'summary.noBranch': 'ไม่ใช่ที่เก็บโค้ด',
+  'summary.noChanges': 'ยังไม่มีไฟล์ที่แก้',
+  'summary.noProject': 'ห้องนี้ไม่ได้โฟกัสโปรเจกต์',
+
   'bgw.running': 'กำลังทำงาน',
   'bgw.waiting': 'รอคำตอบ',
   'bgw.finished': 'เสร็จแล้ว — กำลังให้เอเจนอ่านผล…',
@@ -167,6 +183,7 @@ export const th = {
   'chat.contextWindow': 'หน้าต่างคอนเท็กซ์',
   'chat.contextForecast': 'ข้อความแรกจะใช้ประมาณ',
   'chat.contextNotSent': 'ยังไม่ได้ส่งอะไรเลย — ยังไม่เสียโทเคนสักตัว ตัวเลขนี้คือขนาดของคำขอแรก ซึ่งเกือบทั้งหมดคือรายการเครื่องมือที่ติดไปกับทุกข้อความ',
+  'chat.contextCached': 'รอบล่าสุด {cached} ในนี้มาจากแคชของผู้ให้บริการ — อินพุตที่แคชแล้วคิดราคาราวหนึ่งในสิบของอัตราเต็ม ค่าใช้จ่ายจริงจึงต่ำกว่าที่แถบนี้ชวนให้คิดมาก',
   'chat.ctx_system': 'System prompt',
   'chat.ctx_tools': 'เครื่องมือ',
   'chat.ctx_messages': 'ข้อความสนทนา',
@@ -965,5 +982,24 @@ export const th = {
   'projects.addFiles': 'เพิ่มไฟล์',
   'projects.removeFile': 'เอาไฟล์นี้ออกจากบริบท',
   'projects.createHint': 'จะได้โฟลเดอร์จริงในเครื่อง พร้อมโฟลเดอร์ context ไว้วางไฟล์',
+
+  // ---------- อัปเดตตัวเอง ----------
+  // คนละชุดกับ settings.about*: ฝั่งโน้นคือคำตอบของคนที่เดินไปกดถามเอง
+  // ชุดนี้คือคำที่แอปพูดขึ้นมาเองตอนเจอเวอร์ชันใหม่ — ต้องเป็นคำเชิญ ไม่ใช่คำเตือน
+  'update.ready': 'มี Aetox v{version} แล้ว',
+  'update.readyAuto': 'กดครั้งเดียว แอปจะดาวน์โหลด ตรวจไฟล์ แล้วเปิดกลับมาเป็นเวอร์ชันใหม่ให้เอง — ยังไม่ได้โหลดอะไรตอนนี้',
+  'update.readyCommand': 'อัปเดตด้วยคำสั่งนี้ในเทอร์มินัล',
+  'update.readyManual': 'เปิดหน้า release แล้วติดตั้งทับได้เลย',
+  'update.later': 'ไว้ก่อน',
+  'update.now': 'อัปเดตเลย',
+  'update.openRelease': 'เปิดหน้าดาวน์โหลด',
+  'update.working': 'กำลังอัปเดต Aetox…',
+  'update.workingPct': 'กำลังอัปเดต Aetox… {pct}%',
+  'update.restarting': 'กำลังเปิดใหม่…',
+  // พูดไว้ก่อนหน้าต่างจะหาย ไม่งั้นแอปที่ปิดตัวเองกลางคันอ่านเหมือนแอปพัง
+  'update.willRestart': 'แอปจะปิดแล้วเปิดกลับมาให้เองเมื่อเสร็จ',
+  'update.failed': 'อัปเดตไม่สำเร็จ',
+  'update.failedSafe': 'เวอร์ชันเดิมยังอยู่ครบและใช้งานได้ตามปกติ — กดลองใหม่ได้',
+  'update.retry': 'ลองอีกครั้ง',
 
 }

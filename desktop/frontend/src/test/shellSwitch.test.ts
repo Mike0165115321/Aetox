@@ -108,3 +108,29 @@ describe('the storefront door and project focus', () => {
     expect(vi.mocked(OpenProjectPath)).toHaveBeenCalledWith('D:/Aetox_web')
   })
 })
+
+// The band between the sidebar toggle and the corner buttons was a flex spacer
+// and nothing else — chrome at both ends, a deliberate void in the middle
+// (owner, 2026-08-14, holding up a reference where that same row carries the
+// conversation's name).
+describe('the topbar names the conversation', () => {
+  it('shows the live session title, and nothing before the first turn', async () => {
+    cockpit.sessions = []
+    const blank = render(TopBar, props)
+    expect(blank.container.querySelector('.topbar-title')).toBeNull()
+    blank.unmount()
+
+    // A session is only titled once it has been spoken to, so the title
+    // appears with the history row that carries it.
+    cockpit.sessions = [
+      { id: 'a', title: 'แก้ CORS membership tiers', ago: '1 นาที', active: true },
+      { id: 'b', title: 'อย่างอื่น', ago: '1 ชม.', active: false },
+    ]
+    const { container } = render(TopBar, props)
+    const el = container.querySelector('.topbar-title')
+    expect(el?.textContent).toBe('แก้ CORS membership tiers')
+    // Read off the history list, never held twice: the copy is the one that
+    // goes stale the moment a title is rewritten.
+    expect(container.textContent).not.toContain('อย่างอื่น')
+  })
+})

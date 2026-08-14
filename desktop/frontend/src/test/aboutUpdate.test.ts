@@ -8,6 +8,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/svelte'
 import Settings from '../lib/Settings.svelte'
 import { CheckForUpdate, ApplyUpdate, AppVersion, RecentDebugLog } from './mocks/wailsApp'
 import { BrowserOpenURL } from './mocks/wailsRuntime'
+import { updater } from '../lib/selfUpdate.svelte'
 
 const status = (over: Record<string, unknown>) => ({
   current: '0.9.2', latest: '0.9.3', available: true, disabled: false,
@@ -25,6 +26,14 @@ const openAbout = async (container: HTMLElement) => {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // "An update is being installed" is one fact about the machine, not about a
+  // component — so it lives in a module-level store both doors read
+  // (selfUpdate.svelte), and it outlives a render the way it outlives the page
+  // being closed. Which is exactly right in the app and exactly why each test
+  // has to start from a machine that is not mid-update.
+  Object.assign(updater, {
+    status: null, dismissed: false, applying: false, pct: -1, restarting: false, error: '',
+  })
 })
 
 describe('About: one-click update', () => {

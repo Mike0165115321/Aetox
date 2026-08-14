@@ -7,10 +7,10 @@ export const en: Record<keyof typeof th, string> = {
   'topbar.loaded': 'Loaded',
   'topbar.showPanel': 'Show panel',
   'topbar.hidePanel': 'Hide panel',
-  'topbar.toggleInspectorTip': 'Toggle side panel · Ctrl+Alt+B',
+  'topbar.toggleInspectorTip': 'Toggle side panel',
   'topbar.showSidebar': 'Show sidebar',
   'topbar.hideSidebar': 'Hide sidebar',
-  'topbar.toggleSidebarTip': 'Toggle sidebar · Ctrl+Alt+S',
+  'topbar.toggleSidebarTip': 'Toggle sidebar',
 
   'sidebar.projects': 'Project',
   'sidebar.addProject': 'Add project',
@@ -46,7 +46,6 @@ export const en: Record<keyof typeof th, string> = {
   'sidebar.older': 'Older',
   'sidebar.setYourName': 'Set your name',
   'sidebar.settings': 'Settings',
-  'sidebar.settingsShortcut': 'Ctrl+,',
 
   // Starter cards on an empty chat — one set per room, see starters.ts
   'start.assistant.headline': 'What can we help with today?',
@@ -89,7 +88,7 @@ export const en: Record<keyof typeof th, string> = {
   'start.chair.doTitle': 'Hand over a job and get it done',
   'start.chair.doPrompt': 'Please take care of this: ',
 
-  'chat.inputPlaceholder': 'Type your request… (Ctrl+K for everything else)',
+  'chat.inputPlaceholder': 'Type your request… ({key} for everything else)',
   'chat.attachImage': 'Attach image',
   'chat.attachFile': 'Attach a file (image, video, audio, document)',
   'chat.thinking': 'Thinking',
@@ -156,6 +155,25 @@ export const en: Record<keyof typeof th, string> = {
   'chat.runFailed': 'Failed',
   'chat.dismissTask': 'Dismiss suggestion',
   'chat.bgAnswerPrompt': 'Answer {id} with task_answer: {answer}',
+
+  // The session strip above the composer. The chip label is what tells you
+  // what is inside, so the count rides on the chip rather than hiding behind it.
+  'summary.toggle': 'This room at a glance',
+  'strip.plan': 'Plan',
+  'strip.planEmpty': 'No plan in this room yet',
+  // A finished plan clears itself on the next turn; this is for one abandoned
+  // half-way through.
+  'summary.clearPlan': 'Put this plan down',
+  'summary.sources': 'Sources',
+  'summary.sourcesEmpty': 'This room has not opened a file or a page yet',
+  // Always with the number: "View all" on its own says the list is incomplete
+  // without saying how incomplete, which is a different decision.
+  'summary.viewAll': 'View {count} more',
+  'summary.repo': 'Repo',
+  'summary.noBranch': 'Not a repository',
+  'summary.noChanges': 'No files changed yet',
+  'summary.noProject': 'This room has no project focus',
+
   'bgw.running': 'working',
   'bgw.waiting': 'needs you',
   'bgw.finished': 'finished — reading the result…',
@@ -168,6 +186,7 @@ export const en: Record<keyof typeof th, string> = {
   'chat.contextWindow': 'Context window',
   'chat.contextForecast': 'Your first message will use about',
   'chat.contextNotSent': 'Nothing has been sent yet — no tokens spent. This is the size of the first request, nearly all of it the tool list that rides along with every message.',
+  'chat.contextCached': 'Last round, {cached} of this came from the provider\'s cache — cached input is billed at roughly a tenth of the full rate, so the real cost is far below what the bar suggests.',
   'chat.ctx_system': 'System prompt',
   'chat.ctx_tools': 'Tools',
   'chat.ctx_messages': 'Messages',
@@ -944,5 +963,26 @@ Check your own work before answering; say so plainly if unsure.
   'projects.addFiles': 'Add files',
   'projects.removeFile': 'Remove this file from the context',
   'projects.createHint': 'Makes a real folder on this machine, with a context folder ready for files.',
+
+  // ---------- self-update ----------
+  // A separate set from settings.about*: those answer someone who walked over
+  // and asked. These are what the app says unprompted, so they read as an
+  // offer, not an alarm.
+  'update.ready': 'Aetox v{version} is out',
+  'update.readyAuto': 'One click — the app downloads it, checks it, and comes back as the new version. Nothing has been downloaded yet.',
+  'update.readyCommand': 'Update with this command in a terminal',
+  'update.readyManual': 'Open the release page and install it over this one',
+  'update.later': 'Later',
+  'update.now': 'Update now',
+  'update.openRelease': 'Open the download page',
+  'update.working': 'Updating Aetox…',
+  'update.workingPct': 'Updating Aetox… {pct}%',
+  'update.restarting': 'Restarting…',
+  // Said before the window can vanish: an app that closes itself mid-progress
+  // reads as a crash to anyone who was not told it would.
+  'update.willRestart': 'The app will close and reopen itself when it is done',
+  'update.failed': 'The update did not go through',
+  'update.failedSafe': 'The version you had is still installed and untouched — trying again is safe.',
+  'update.retry': 'Try again',
 
 }

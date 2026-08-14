@@ -8,6 +8,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	_ "image/gif"  // imageTokens reads attachment headers for the context meter
+	_ "image/jpeg" // (same set slides_write validates)
+	_ "image/png"
 	"io"
 	"mime"
 	"net/url"
@@ -336,11 +340,13 @@ func (a *App) CheckForUpdate() (update.Status, error) {
 // VS Code shape: the button restarts you into the new build), and then closes
 // this window so the waiting relauncher can bring the new one up.
 //
-// Refused mid-turn through the same gate as every session switch: an update
-// kills the process, and the process is where the turn lives.
+// Refused mid-turn for the same reason every session switch is: an update kills
+// the process, and the process is where the turn lives. Its own sentence
+// (errTurnBusyUpdate) because the shared one ends in advice about switching
+// chats, which is not the door the user is standing in.
 func (a *App) ApplyUpdate() error {
-	if err := a.guardSessionSwitch(); err != nil {
-		return err
+	if a.turnBusy() {
+		return errTurnBusyUpdate
 	}
 	ctx := a.ctx
 	if ctx == nil {
@@ -1308,6 +1314,10 @@ func (a *App) startup(ctx context.Context) {
 	// The previous build's exe, renamed aside by a self-update, and the staging
 	// download — this build is running, so by definition neither is needed.
 	go update.RemoveLeftovers()
+	// And the other end of the same feature: ask whether a newer build exists,
+	// so the answer reaches the user without them going looking for it
+	// (update_notify.go).
+	go a.watchForUpdates()
 	// Era cleanup: home itself was the unfocused root until 2026-07-26
 	// (§19.1), and attachments copied there never expired. No session writes
 	// there anymore, so this only ever drains the old pile.
@@ -1453,6 +1463,13 @@ func replyOf(m SessionMessage) TurnReply {
 // open session and re-running an answer are all the same refusal, because they
 // are all the same fact — the engine has one brain, and a turn is using it.
 var errTurnBusy = fmt.Errorf("เอเจนกำลังทำงานอยู่ — รอให้เสร็จ หรือกดหยุดก่อน แล้วค่อยสลับแชท")
+
+// errTurnBusyUpdate is the same refusal for the same reason, with the right
+// tail. An update kills the process, so the gate is identical — but "แล้วค่อย
+// สลับแชท" is advice about a door the user is not standing in, and it arrives
+// under the update dialog's "อัปเดตไม่สำเร็จ", where it reads as the update
+// having broken rather than as having been postponed.
+var errTurnBusyUpdate = fmt.Errorf("เอเจนกำลังทำงานอยู่ — รอให้เสร็จ หรือกดหยุดก่อน แล้วค่อยอัปเดต (การอัปเดตต้องปิดแอป)")
 
 // beginTurn marks one turn in flight and stamps it with the session it was
 // born in. Refuses when a turn is already running: two turns share one agent
@@ -2015,6 +2032,13 @@ type ContextBreakdown struct {
 	// round this session actually sent, or an estimate of what the next one
 	// will cost. False on a chat nobody has typed into yet.
 	Measured bool `json:"measured"`
+	// CachedTokens is how much of the last round's input the provider served
+	// from its prompt cache, at a fraction of the full price. Without it the
+	// meter presents 12k as 12k paid, when most of it — the system prompt and
+	// the tool block, the two parts that never change — was a cache hit. Zero
+	// when nothing hit or the provider does no cache accounting; the UI shows
+	// the note only when there is something to say.
+	CachedTokens int `json:"cachedTokens"`
 }
 
 // GetContextBreakdown reports what is in the model's context window.
@@ -2028,13 +2052,27 @@ type ContextBreakdown struct {
 func (a *App) GetContextBreakdown() ContextBreakdown {
 	est := func(chars int) int { return (chars + 3) / 4 }
 
-	systemChars, msgChars := 0, 0
+	systemChars, msgChars, attachTokens := 0, 0, 0
 	if a.agent != nil {
 		for i, m := range a.agent.ContextMessages() {
-			chars := len(m.Content)
+			// Everything a message carries, not just Content: reasoning rides
+			// back out on the wire for providers that take it (openai_compatible
+			// resends it with the history), and an attached screenshot was the
+			// single biggest thing this loop used to count as zero — a pasted
+			// image read as a free message while costing more than the text
+			// around it.
+			chars := len(m.Content) + len(m.ReasoningContent)
 			for _, tc := range m.ToolCalls {
 				chars += len(tc.Function.Arguments)
 			}
+			for _, img := range m.Images {
+				attachTokens += imageTokens(img)
+			}
+			// A document's real price is per page and nothing here can count
+			// pages cheaply, so this is a floor — roughly one page — rather
+			// than a guess dressed as a measurement. The measured total from
+			// the next round absorbs the true cost either way.
+			attachTokens += 1500 * len(m.Documents)
 			if i == 0 && m.Role == model.RoleSystem {
 				systemChars = chars
 			} else {
@@ -2056,19 +2094,32 @@ func (a *App) GetContextBreakdown() ContextBreakdown {
 
 	maxTokens := a.contextWindowTokens()
 
-	system, tools, messages := est(systemChars), est(toolChars), est(msgChars)
+	system, tools, messages := est(systemChars), est(toolChars), est(msgChars)+attachTokens
 	used := system + tools + messages
 
 	// The provider counts tokens with its own tokenizer; chars/4 is an English
 	// rule of thumb that Thai does not obey. Every completed round already
 	// reports its real prompt size, so once this session has sent anything the
 	// total stops being a guess — the per-slice split stays estimated, because
-	// nobody reports that, and is scaled to agree with the real total rather
-	// than being left to contradict it.
+	// nobody reports that.
+	//
+	// When the real count exceeds the estimate, the whole gap belongs to
+	// messages: the system prompt and the tool block are byte-for-byte the same
+	// every round, so the underestimate is in the conversation. The earlier
+	// version scaled all three slices by real/used, which made the tools bar
+	// climb round after round while not one byte of it changed — a meter
+	// steadily "proving" that Aetox's tool list eats the window. Only when the
+	// estimate overshoots reality (rare — the guess errs low for Thai and for
+	// JSON) is proportional scaling the honest split, because then there is no
+	// single slice the error can be pinned on.
 	measured := false
-	if real := a.lastPromptTokens(); real > 0 {
+	real, cached := a.lastPromptUsage()
+	if real > 0 {
 		measured = true
-		if used > 0 {
+		switch {
+		case real >= system+tools:
+			messages = real - system - tools
+		case used > 0:
 			system = system * real / used
 			tools = tools * real / used
 			messages = real - system - tools
@@ -2088,7 +2139,8 @@ func (a *App) GetContextBreakdown() ContextBreakdown {
 		// has been sent at all, and a meter reading 10.1k on a chat the user has
 		// not typed into reads as a bill they have already run up — which is
 		// what it looked like, and why this field exists.
-		Measured: measured,
+		Measured:     measured,
+		CachedTokens: cached,
 		Slices: []ContextSlice{
 			{Key: "system", Tokens: system},
 			{Key: "tools", Tokens: tools},
@@ -2098,27 +2150,56 @@ func (a *App) GetContextBreakdown() ContextBreakdown {
 	}
 }
 
-// lastPromptTokens is the real input size of this session's most recent round,
-// as the provider counted it. Zero when the session has sent nothing yet, or
-// when usage could not be read — both mean "no measurement", and the caller
-// falls back to the estimate.
-func (a *App) lastPromptTokens() int {
+// imageTokens estimates what one attached image adds to the next request.
+//
+// Not bytes/4: a vision model prices an image by its pixels, not its file
+// size, and the two disagree by an order of magnitude in both directions — a
+// 100KB screenshot costs ~1.3k tokens, which bytes/4 would call 25k. The
+// working rule is Anthropic's width×height/750, and providers downscale
+// anything past ~1.6k tokens, hence the cap. DecodeConfig reads only the
+// header, so this costs nothing per call.
+//
+// The flat fallback is for a format the header-read cannot parse (webp): the
+// size of a typical screenshot, chosen over zero because zero is the exact lie
+// this estimate exists to stop telling.
+func imageTokens(img model.Image) int {
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(img.Data))
+	if err != nil || cfg.Width <= 0 || cfg.Height <= 0 {
+		return 1500
+	}
+	tok := (cfg.Width*cfg.Height + 749) / 750
+	if tok > 1600 {
+		tok = 1600
+	}
+	return tok
+}
+
+// lastPromptUsage is the real input size of this session's most recent round,
+// as the provider counted it, and how much of that input was a prompt-cache
+// hit. Zero-zero when the session has sent nothing yet, or when usage could
+// not be read — both mean "no measurement", and the caller falls back to the
+// estimate.
+//
+// The cache half was always in the same row (COALESCE because NULL there means
+// "this provider does no cache accounting", db.go); not reading it is what let
+// the meter present a mostly-cached prompt as fully paid.
+func (a *App) lastPromptUsage() (prompt, cached int) {
 	if strings.TrimSpace(a.sessionID) == "" {
-		return 0
+		return 0, 0
 	}
 	db, err := a.database()
 	if err != nil {
-		return 0
+		return 0, 0
 	}
-	var tokens int
 	err = db.QueryRow(
-		`SELECT prompt_tokens FROM token_usage WHERE session_id = ? ORDER BY id DESC LIMIT 1`,
+		`SELECT prompt_tokens, COALESCE(cached_prompt_tokens, 0)
+		 FROM token_usage WHERE session_id = ? ORDER BY id DESC LIMIT 1`,
 		a.sessionID,
-	).Scan(&tokens)
+	).Scan(&prompt, &cached)
 	if err != nil {
-		return 0
+		return 0, 0
 	}
-	return tokens
+	return prompt, cached
 }
 
 // currentProjectStatus stamps the focus flag onto the raw status; unfocused

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/Mike0165115321/Aetox/internal/update"
@@ -50,5 +52,28 @@ func TestCheckForUpdateSurvivesANilContext(t *testing.T) {
 	}
 	if _, err := a.CheckForUpdate(); err != nil {
 		t.Fatalf("err = %v — in a test the check is skipped, not failed", err)
+	}
+}
+
+// An update kills the process, and the process is where the turn lives — so
+// the refusal is the same one every session switch gets. The sentence is not:
+// this one arrives under the update dialog's "อัปเดตไม่สำเร็จ", where advice
+// about switching chats would read as the update itself having broken.
+func TestApplyUpdateRefusesMidTurnInItsOwnWords(t *testing.T) {
+	a := &App{}
+	if err := a.beginTurn(); err != nil {
+		t.Fatalf("beginTurn() = %v", err)
+	}
+	defer a.endTurn()
+
+	err := a.ApplyUpdate()
+	if err == nil {
+		t.Fatal("ApplyUpdate() = nil while a turn is running — it would kill the turn with the process")
+	}
+	if !errors.Is(err, errTurnBusyUpdate) {
+		t.Errorf("err = %v, want the update-specific refusal", err)
+	}
+	if strings.Contains(err.Error(), "สลับแชท") {
+		t.Error("the refusal points at a door the user is not standing in")
 	}
 }

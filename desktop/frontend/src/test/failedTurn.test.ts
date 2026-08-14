@@ -6,7 +6,10 @@
 // the window, so reopening the chat showed a question sitting alone with nothing
 // saying why. And the live block's reset list had drifted from what the live
 // block draws: the previous turn's checklist came back, every item already
-// struck through, the instant the next turn started.
+// struck through, the instant the next turn started. That last one was settled
+// by moving the checklist off the live block entirely — it lives on the strip
+// above the composer now, so what is guarded here has flipped: the question
+// card must not survive a turn boundary, and the plan must.
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import {
   cockpit, sendUserMessage, applyTodos, applyAskUser, restoreTranscript,
@@ -102,29 +105,85 @@ describe('a failed turn read back from the store', () => {
 })
 
 describe('the live block at the start of a turn', () => {
-  // The checklist is drawn inside `{#if awaitingReply}`, so a stale one is
+  // The question card is drawn inside `{#if awaitingReply}`, so a stale one is
   // invisible while the chat is idle and then reappears the moment the next turn
-  // starts. It was cleared only when the session changed — switching chats hid
-  // the bug, and staying in one did not.
-  it('carries no checklist or question card over from the turn before', async () => {
-    applyTodos([
-      { content: 'ตรวจสอบสถานะ migration', status: 'completed' },
-      { content: 'Build ด้วย Ruvyxa', status: 'completed' },
-    ])
+  // starts — offering options to a tool that stopped listening.
+  it('carries no question card over from the turn before', async () => {
     applyAskUser({ question: 'เอาแบบไหน?', options: ['A', 'B'] })
 
-    let duringTurn: { todos: number; ask: unknown } | undefined
+    let duringTurn: unknown
     vi.mocked(SendMessage).mockImplementation(async () => {
-      duringTurn = { todos: cockpit.todos.length, ask: cockpit.ask }
+      duringTurn = cockpit.ask
       return { text: 'เปิดให้แล้วครับ' } as never
     })
 
     await sendUserMessage('เปิดให้ผมดูหน่อย')
 
-    expect(duringTurn?.todos).toBe(0)
-    expect(duringTurn?.ask).toBeNull()
-    expect(cockpit.todos).toHaveLength(0)
+    expect(duringTurn).toBeNull()
     expect(cockpit.ask).toBeNull()
+  })
+
+  // The checklist was wiped at both ends of a turn for the same reason as the
+  // question card, and while it lived in that same live block the reason held —
+  // the previous turn's todos, every item already struck through, sitting under
+  // "กำลังคิดคำตอบ…" for work nobody asked for. It is on the strip above the
+  // composer now, under แผน, where the rows are not a claim about this second:
+  // they are the session's latest plan. A plan that evaporates when the turn
+  // that wrote it ends is a plan nobody can work from, which is the whole point
+  // of วางแผน mode. todo_write replaces it wholesale; a turn that does not plan
+  // leaves the last plan standing.
+  it('keeps the plan standing across the turn that follows it', async () => {
+    applyTodos([
+      { content: 'ตรวจสอบสถานะ migration', status: 'completed' },
+      { content: 'Build ด้วย Ruvyxa', status: 'in_progress' },
+    ])
+
+    let duringTurn = 0
+    vi.mocked(SendMessage).mockImplementation(async () => {
+      duringTurn = cockpit.todos.length
+      return { text: 'เปิดให้แล้วครับ' } as never
+    })
+
+    await sendUserMessage('เปิดให้ผมดูหน่อย')
+
+    expect(duringTurn).toBe(2)
+    expect(cockpit.todos).toHaveLength(2)
+    expect(cockpit.todos[1].status).toBe('in_progress')
+  })
+
+  // The half of the old rule worth keeping. A plan with every row struck through
+  // is a receipt, and asking the next question is the moment it stops being
+  // about anything — left in, it sat over every later turn in a panel that had
+  // no off switch, because clearing used to be somebody else's job.
+  it('drops a plan that is finished when the next turn starts', async () => {
+    applyTodos([
+      { content: 'ตรวจสอบสถานะ migration', status: 'completed' },
+      { content: 'Build ด้วย Ruvyxa', status: 'completed' },
+    ])
+
+    let duringTurn = -1
+    vi.mocked(SendMessage).mockImplementation(async () => {
+      duringTurn = cockpit.todos.length
+      return { text: 'เรียบร้อยครับ' } as never
+    })
+
+    await sendUserMessage('ต่อเลย')
+
+    expect(duringTurn).toBe(0)
+    expect(cockpit.todos).toHaveLength(0)
+  })
+
+  // A turn that dies must not take the plan with it: what it was working from is
+  // exactly what the user needs on screen to decide what happens next.
+  it('keeps the plan when the turn dies', async () => {
+    applyTodos([{ content: 'ย้าย schema ไป v8', status: 'in_progress' }])
+    vi.mocked(SendMessage).mockImplementation(async () => {
+      throw new Error('connection refused')
+    })
+
+    await sendUserMessage('ลุยเลย')
+
+    expect(cockpit.todos).toHaveLength(1)
   })
 
   // A turn that died with a question still up left a card whose tool is no

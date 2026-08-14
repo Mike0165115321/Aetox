@@ -14,6 +14,7 @@
   import { t } from './i18n.svelte'
   import { ListPromptPresets, ToolCounts, SupportedThinkLevels, PickAttachmentImage } from '../../wailsjs/go/main/App'
   import { cockpit, newSession, switchApprovalMode, attachImageFromPath } from './stores/cockpit.svelte'
+  import { shortcutLabel } from './shortcuts'
 
   let {
     mode = 'all',
@@ -91,7 +92,7 @@
           if (path) await attachImageFromPath(path)
         },
       },
-      { id: 'new', group: t('palette.groupContext'), label: t('palette.newChat'), hint: 'Ctrl+N', run: () => newSession() },
+      { id: 'new', group: t('palette.groupContext'), label: t('palette.newChat'), hint: shortcutLabel('newSession'), run: () => newSession() },
       // Both halves, not just the name: the composer chip now carries the
       // provider as a mark and the model name not at all, so this row is where
       // "which brain, exactly" is read as text rather than hovered for.
@@ -127,9 +128,19 @@
         }),
         hint: t('palette.toolsHint'),
       },
-      { id: 'sc-settings', group: t('palette.groupKeys'), label: t('palette.openSettings'), hint: 'Ctrl+,' },
-      { id: 'sc-panels', group: t('palette.groupKeys'), label: t('palette.togglePanels'), hint: 'Ctrl+Alt+S / B' },
-      { id: 'sc-wb', group: t('palette.groupKeys'), label: t('palette.workbenchTabs'), hint: 'Ctrl+T · Ctrl+Shift+G' },
+      // Read off shortcuts.ts rather than retyped here — this list said
+      // "Ctrl+Shift+G" for a workbench tab that has been Ctrl+P for months,
+      // which is worse than saying nothing: the user tries it and concludes
+      // the shortcuts are broken.
+      { id: 'sc-settings', group: t('palette.groupKeys'), label: t('palette.openSettings'), hint: shortcutLabel('settings') },
+      {
+        id: 'sc-panels', group: t('palette.groupKeys'), label: t('palette.togglePanels'),
+        hint: shortcutLabel('toggleSidebar') + ' / ' + shortcutLabel('toggleInspector'),
+      },
+      {
+        id: 'sc-wb', group: t('palette.groupKeys'), label: t('palette.workbenchTabs'),
+        hint: shortcutLabel('browserTab') + ' · ' + shortcutLabel('filesTab'),
+      },
     )
     return out
   })

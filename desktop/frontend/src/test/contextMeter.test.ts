@@ -9,10 +9,11 @@ import { render, screen } from '@testing-library/svelte'
 import Chat from '../lib/Chat.svelte'
 import { GetContextBreakdown, EnabledProviders, ListModelsForProvider } from './mocks/wailsApp'
 
-const breakdown = (measured: boolean, used: number) => ({
+const breakdown = (measured: boolean, used: number, cachedTokens = 0) => ({
   usedTokens: used,
   maxTokens: 1000000,
   measured,
+  cachedTokens,
   slices: [
     { key: 'system', tokens: 622 },
     { key: 'tools', tokens: 9500 },
@@ -70,5 +71,29 @@ describe('the context meter before anything is sent', () => {
     expect(await screen.findByText(/12.0k \/ 1000.0k/)).toBeTruthy()
     expect(screen.queryByText(/Nothing has been sent yet|ยังไม่ได้ส่งอะไรเลย/)).toBeNull()
     expect(screen.queryByText(/first message will use|ข้อความแรกจะใช้ประมาณ/)).toBeNull()
+  })
+
+  // The provider reported that most of the prompt was a cache hit. A bar that
+  // presents all 12k as paid at full rate every round is where "Aetox eats
+  // tokens" comes from, so the meter must say what actually happened.
+  it('says how much of the last round was a cache hit', async () => {
+    GetContextBreakdown.mockResolvedValue(breakdown(true, 12040, 9800) as any)
+
+    render(Chat, props())
+    const button = await screen.findByRole('button', { name: /Context window|หน้าต่างคอนเท็กซ์/ })
+    button.click()
+
+    expect(await screen.findByText(/9.8k.*(cache|แคช)/)).toBeTruthy()
+  })
+
+  it('claims no cache hit when the provider reported none', async () => {
+    GetContextBreakdown.mockResolvedValue(breakdown(true, 12040, 0) as any)
+
+    render(Chat, props())
+    const button = await screen.findByRole('button', { name: /Context window|หน้าต่างคอนเท็กซ์/ })
+    button.click()
+
+    await screen.findByText(/12.0k \/ 1000.0k/)
+    expect(screen.queryByText(/cache|แคช/)).toBeNull()
   })
 })

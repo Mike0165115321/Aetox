@@ -159,6 +159,10 @@ export const RemoveSpaceContext = arr()
 export const SessionMode = str()
 export const SessionAgent = str()
 export const SessionTranscript = arr()
+// แหล่งที่มา (desktop/sources.go). The count is separate from the list because
+// the list is capped and the panel has to say how much it is not showing.
+export const SessionSources = arr()
+export const SessionSourceCount = vi.fn(async (..._args: any[]) => 0)
 // Idle by default: only a test about the mid-turn reload flips this on.
 export const TurnInFlight = vi.fn(async (..._args: any[]) => ({ running: false, sessionId: '' }))
 export const ListModes = arr()

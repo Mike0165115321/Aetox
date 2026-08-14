@@ -133,6 +133,63 @@ func TestGetContextBreakdownSumsAndFallsBackToAgentBudget(t *testing.T) {
 	}
 }
 
+// Once a round has been measured, the gap between the provider's count and the
+// chars/4 estimate belongs to the conversation alone. The old split scaled all
+// three slices by real/used, so the tools bar climbed round after round while
+// not one byte of the tool list changed — a meter steadily "proving" that the
+// tool block eats the window. And the cache column that was always in the same
+// row must come out with it, so a mostly-cached prompt stops presenting as
+// fully paid.
+func TestGetContextBreakdownPinsFixedSlicesAndReportsCache(t *testing.T) {
+	agent := cognitive.NewAgent(cognitive.AgentConfig{
+		SystemPrompt: "you are a test system prompt",
+	})
+	agent.RestoreHistory([]model.Message{
+		{Role: model.RoleUser, Content: "hello there"},
+		{Role: model.RoleAssistant, Content: "hi, how can I help?"},
+	})
+	a := &App{agent: agent, dbDir: t.TempDir(), sessionID: "s1"}
+	t.Cleanup(func() {
+		if a.db != nil {
+			_ = a.db.Close()
+		}
+	})
+
+	est := a.GetContextBreakdown()
+	slices := func(b ContextBreakdown) map[string]int {
+		out := map[string]int{}
+		for _, s := range b.Slices {
+			out[s.Key] = s.Tokens
+		}
+		return out
+	}
+	estSlices := slices(est)
+
+	// The provider counted far more than the estimate (Thai text, real
+	// tokenizer), and most of it hit the prompt cache.
+	a.recordTokenUsage(model.Usage{PromptTokens: 40_000, CachedPromptTokens: 36_000, CacheReported: true, CompletionTokens: 5})
+
+	got := a.GetContextBreakdown()
+	if !got.Measured {
+		t.Fatal("a session with a recorded round must report Measured")
+	}
+	if got.UsedTokens != 40_000 {
+		t.Errorf("UsedTokens = %d, want the provider's 40000", got.UsedTokens)
+	}
+	if got.CachedTokens != 36_000 {
+		t.Errorf("CachedTokens = %d, want 36000", got.CachedTokens)
+	}
+	gotSlices := slices(got)
+	for _, key := range []string{"system", "tools"} {
+		if gotSlices[key] != estSlices[key] {
+			t.Errorf("%s slice moved from %d to %d; fixed blocks must not absorb the tokenizer gap", key, estSlices[key], gotSlices[key])
+		}
+	}
+	if want := 40_000 - estSlices["system"] - estSlices["tools"]; gotSlices["messages"] != want {
+		t.Errorf("messages = %d, want the whole gap %d", gotSlices["messages"], want)
+	}
+}
+
 // browser_open must not stamp https:// onto URLs that already have a scheme —
 // the old ^https?://-only check turned file:///C:/x.html into
 // https://file:///C:/x.html, a permanently blank tab.

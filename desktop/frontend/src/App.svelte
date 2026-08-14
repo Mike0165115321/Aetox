@@ -8,6 +8,7 @@
   import Artifacts from './lib/Artifacts.svelte'
   import Projects from './lib/Projects.svelte'
   import Onboarding from './lib/Onboarding.svelte'
+  import Updater from './lib/Updater.svelte'
   import Workbench from './lib/workbench/Workbench.svelte'
   import { onMount } from 'svelte'
   import {
@@ -16,17 +17,15 @@
     switchModel, submitAPIKey, setActiveView, restoreActiveView, closeFile, applyAgentStatus, applyToolEvent,
     applyAgentChunk, applyReasoningChunk, attachImageFromPath,
     applyAskUser, applyAskDone, applyTodos, applyMissedInterjections, applyTaskChips,
-    applyPendingLearned, refreshPendingLearned, applyAgentDone,
+    applyPendingLearned, refreshPendingLearned, applyAgentDone, isOverlayView,
   } from './lib/stores/cockpit.svelte'
   import { RelativizePath, CloseAllBrowserTabs } from '../wailsjs/go/main/App'
   import { OnFileDrop, OnFileDropOff, EventsOn } from '../wailsjs/runtime/runtime'
   import { workbench, openPathsInWorkbench } from './lib/stores/workbench.svelte'
+  import { listenForUpdates } from './lib/selfUpdate.svelte'
   import { clampPanelWidth } from './lib/panelSize'
+  import { isShortcut } from './lib/shortcuts'
   import Icon from './lib/Icon.svelte'
-
-  // The views that take the whole window instead of a tab in .main. One list,
-  // so the Escape key and the overlay markup below cannot drift apart.
-  const FULL_PAGE_VIEWS = ['settings', 'office', 'artifacts', 'projects']
 
   function fileLabel(path: string): string {
     return path.split('/').pop() ?? path
@@ -127,6 +126,11 @@
     // is still undecided and nothing would emit for it.
     const offLearning = EventsOn('learning:changed', applyPendingLearned)
     void refreshPendingLearned()
+    // "A newer Aetox exists." Wired here rather than in Settings because the
+    // window is where the user is — the check runs on its own now
+    // (update_notify.go), and an answer that only lands on a page nobody has
+    // open is the same as no answer.
+    const offUpdate = listenForUpdates()
 
     for (const panel of Object.values(panels)) {
       const stored = localStorage.getItem(panel.storageKey)
@@ -181,6 +185,7 @@
       offMissed()
       offTaskChips()
       offLearning()
+      offUpdate()
     }
   })
 
@@ -273,16 +278,20 @@
   const startInspectorResize = startResize(panels.inspector, (e) => window.innerWidth - e.clientX, (v) => (draggingInspector = v))
 
   function onKeydown(e: KeyboardEvent) {
-    if (e.ctrlKey && e.altKey && e.key.toLowerCase() === 'b') {
+    if (isShortcut(e, 'toggleInspector')) {
       e.preventDefault()
       toggleInspector()
-    } else if (e.ctrlKey && e.altKey && e.key.toLowerCase() === 's') {
+    } else if (isShortcut(e, 'toggleSidebar')) {
       e.preventDefault()
       toggleSidebar()
-    } else if (e.ctrlKey && !e.altKey && e.key === ',') {
+    } else if (isShortcut(e, 'settings')) {
       e.preventDefault()
       setActiveView('settings')
-    } else if (e.key === 'Escape' && FULL_PAGE_VIEWS.includes(cockpit.activeView)) {
+    // isOverlayView, not a list spelled out here: the same set decides which
+    // rooms Escape closes and when the native browser window has to hide behind
+    // one (BrowserPane). Two copies drift the day a room is added, and the copy
+    // that forgets is the one whose failure lands somewhere else entirely.
+    } else if (e.key === 'Escape' && isOverlayView(cockpit.activeView)) {
       // Ctrl+, opened it; Escape is the other half nobody had. Anything layered
       // over Settings — the confirm dialog, the command palette — stops the key
       // before it reaches window, so this only ever fires on a bare page. The
@@ -295,7 +304,16 @@
 
 <svelte:window onkeydown={onKeydown} />
 
-<div class="app" class:inspector-collapsed={inspectorCollapsed} class:sidebar-collapsed={sidebarCollapsed}>
+<!-- `resizing` turns the column transition off for the length of a drag. The
+     panels ease open and shut on a click, but while the pointer is holding an
+     edge the pointer IS the animation, and easing toward the cursor turns a
+     direct manipulation into a control that lags behind the hand. -->
+<div
+  class="app"
+  class:inspector-collapsed={inspectorCollapsed}
+  class:sidebar-collapsed={sidebarCollapsed}
+  class:resizing={draggingSidebar || draggingInspector}
+>
   <TopBar
     inspectorCollapsed={inspectorCollapsed} onToggleInspector={toggleInspector}
     sidebarCollapsed={sidebarCollapsed} onToggleSidebar={toggleSidebar}
@@ -378,3 +396,7 @@
 {/if}
 
 <Onboarding />
+<!-- Outside every view, because the offer belongs to the app and not to a page:
+     whichever room the user is standing in, that is where the notice has to
+     find them. Renders nothing until there is something to say. -->
+<Updater />

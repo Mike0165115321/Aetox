@@ -77,6 +77,13 @@ export function setShell(name: ShellName): void {
   }
 }
 
+/** The desk behind a door — where "a new chat" lands for someone standing at
+ *  that door, whichever of its rooms they happen to be in. The inverse of
+ *  shellForDesk, and read off the same table so the pair cannot disagree. */
+export function deskForShell(name: ShellName): string {
+  return (SHELLS.find((s) => s.name === name) ?? SHELLS[0]).desk
+}
+
 /** Which door a desk belongs behind. Legacy sessions ('' — the full desk) and
  *  anything unrecognised answer 'assistant': the storefront is where a session
  *  that predates the split is at home, and where an unknown one is least

@@ -324,6 +324,7 @@ export namespace main {
 	    maxTokens: number;
 	    slices: ContextSlice[];
 	    measured: boolean;
+	    cachedTokens: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new ContextBreakdown(source);
@@ -335,6 +336,7 @@ export namespace main {
 	        this.maxTokens = source["maxTokens"];
 	        this.slices = this.convertValues(source["slices"], ContextSlice);
 	        this.measured = source["measured"];
+	        this.cachedTokens = source["cachedTokens"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -849,6 +851,26 @@ export namespace main {
 	        this.description = source["description"];
 	        this.source = source["source"];
 	        this.category = source["category"];
+	    }
+	}
+	export class Source {
+	    kind: string;
+	    label: string;
+	    path: string;
+	    dir?: string;
+	    time: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Source(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.label = source["label"];
+	        this.path = source["path"];
+	        this.dir = source["dir"];
+	        this.time = source["time"];
 	    }
 	}
 	export class Space {
