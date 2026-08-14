@@ -35,6 +35,24 @@ import (
 const (
 	previewTextBytes  = 24 << 10 // enough for far more lines than a card shows
 	previewTextRunes  = 1400
+	// The ceiling on a page the card *renders* rather than quotes, and a
+	// separate number from previewTextBytes on purpose.
+	//
+	// It was the same number, and that is a constant doing two jobs whose
+	// natural sizes are nothing like each other. previewTextBytes is "how much
+	// do we need to read to fill an excerpt" — a few screens, generously. This
+	// is "how big a document can we hand to an iframe", which is a different
+	// question with a much larger honest answer.
+	//
+	// Reported 2026-08-14: two landing pages side by side in the gallery, one
+	// drawn as the page it is and the other as a wall of <!DOCTYPE html>. The
+	// difference between them was 22 KB against 49 KB, and nothing on screen
+	// could have told you that was the reason.
+	//
+	// 512 KB renders anything a session actually produces and still bounds what
+	// one card can hold in memory. Past it the excerpt is the honest fallback,
+	// exactly as before.
+	previewHTMLBytes = 512 << 10
 	previewImageBytes = 4 << 20 // past this a thumbnail costs more than it gives
 	previewZipBytes   = 8 << 20
 	previewSheetRows  = 6
@@ -136,9 +154,18 @@ func (a *App) ArtifactPreview(path string) (ArtifactPreview, error) {
 		return ArtifactPreview{Kind: "markdown", Text: text}, nil
 	case ".html", ".htm", ".svg":
 		// Whole, not clipped: this one is rendered rather than read, and half a
-		// document renders as a broken document.
-		if info.Size() <= previewTextBytes {
-			return ArtifactPreview{Kind: "html", Text: string(head)}, nil
+		// document renders as a broken document. Which is why the file is read
+		// again in full here rather than reusing `head` — head stops at
+		// previewTextBytes, and a page that fits under previewHTMLBytes but not
+		// under that would otherwise render as its own first 24 KB.
+		if info.Size() <= previewHTMLBytes {
+			whole, err := os.ReadFile(full)
+			if err == nil {
+				return ArtifactPreview{Kind: "html", Text: string(whole)}, nil
+			}
+			// Unreadable on the second pass but readable on the first: the file
+			// is going away underneath us. The excerpt already in hand beats an
+			// error on a card.
 		}
 		return ArtifactPreview{Kind: "text", Text: text}, nil
 	}

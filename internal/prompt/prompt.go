@@ -644,8 +644,11 @@ func drawing() string {
 		"the space it held — so every label is a <text> at its own x/y, and the picture is still. Write " +
 		"the whole drawing at the left margin with no blank line inside it and never inside a fenced " +
 		"block: a blank line hands the rest of it to the markdown parser, and a fence shows it as source " +
-		"instead of drawing it. It is capped at 420px tall on screen, so lay a drawing out across rather " +
-		"than down, and point at nothing on the network.\n" +
+		"instead of drawing it. A drawing is shown at the size of its own viewBox — 600 units wide draws " +
+		"600 pixels wide — shrinking to fit only when the window is narrower than that, so choose viewBox " +
+		"units as though they were pixels and pick font sizes that would read at that size. It is capped " +
+		"at 720px wide and 420px tall, so lay a drawing out across rather than down, and point at nothing " +
+		"on the network.\n" +
 		"A drawing is not a decoration. Do not draw the shape of an answer that is one fact, one number, " +
 		"or one instruction — say it.\n"
 }

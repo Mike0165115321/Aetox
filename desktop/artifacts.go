@@ -23,11 +23,26 @@ import (
 // app_test.go, and this reader has to look exactly where the writer put things.
 const outputDir = "output"
 
-// maxArtifacts bounds one sweep. A gallery is something a person looks
-// through, and past a few hundred rows the page is the wrong tool anyway — the
-// files are in a folder the user can open (they are ordinary files, which is
-// the point).
-const maxArtifacts = 500
+// maxArtifacts is a safety bound on one reply, and nothing to do with how much
+// the page draws.
+//
+// **The distinction is the owner\'s, 2026-08-14:** *"อันไหนเกินเพดานก็เอามาแต่
+// ยังไม่แสดง แต่ขึ้นโหลดเพื่อแสดงเอา จะได้ไม่หายและไม่หนักในตอนที่เปิดตอนแรก"*.
+// A file the gallery refuses to send is a file the user cannot find; a file it
+// sends but has not drawn yet costs a row of metadata. Those are not the same
+// trade, and one number was being asked to make both.
+//
+// So this is now only what stops a pathological folder from serialising tens of
+// megabytes across the binding in one go. It is high enough that no real
+// install reaches it, and ArtifactPage.Total still reports the true count, so
+// the one install that does reach it is told rather than quietly shortened.
+// What keeps the first paint cheap is the frontend drawing a screenful at a
+// time, and previews that only load for the cards on screen.
+//
+// It used to be 500, applied three times on the way *in* — before the sort —
+// which made it decide which files you saw rather than how many (see
+// ListArtifactsIn).
+const maxArtifacts = 5000
 
 // Artifact is one file the agent produced, as the gallery shows it.
 type Artifact struct {
@@ -51,23 +66,128 @@ type Artifact struct {
 // open writes) and every project ever opened. A project that has been deleted
 // or moved simply reads as nothing there, which is the truth about it.
 func (a *App) ListArtifacts() []Artifact {
-	out := []Artifact{}
+	return a.ListArtifactsIn(RangeAll).Files
+}
+
+// The ranges the gallery opens at. Days rather than calendar weeks/months, and
+// the same numbers dayBucket.ts already buckets by (<=7, <=30), so the range a
+// person picks and the headings they then read agree about where the line is.
+const (
+	RangeWeek  = "week"
+	RangeMonth = "month"
+	RangeAll   = "all"
+)
+
+// ArtifactPage is one range of the gallery, and what it could not fit.
+//
+// Range is the range actually served, which is not always the one asked for:
+// see ListArtifactsIn. Total counts what exists in that range before the cap,
+// so the page can say "500 of 1,240" instead of quietly ending at 500.
+type ArtifactPage struct {
+	Files []Artifact `json:"files"`
+	Range string     `json:"range"`
+	Total int        `json:"total"`
+}
+
+// ListArtifactsIn returns the produced files inside one time range, newest
+// first (COMPANY.md §2).
+//
+// **A range rather than a count, owner's call 2026-08-14**, and it fixed a real
+// bug rather than only trimming the page. maxArtifacts used to be applied three
+// times on the way in — inside a session walk, inside a root walk, and across
+// roots — every one of them *before* the sort. os.ReadDir returns names in
+// order and a session folder is named for its timestamp, so the sweep ran
+// oldest-first and stopped at five hundred. Past that many files the gallery
+// showed the five hundred **oldest** artifacts, sorted newest-first, under a
+// heading promising the newest: today's work was not on the page at all.
+//
+// Now nothing stops early. Every root is walked, the whole list is sorted, the
+// range decides what is shown and the cap is a backstop applied last, to a set
+// that is already in the right order. A full walk is readdir plus a stat per
+// file on a page nobody opens in a loop, which is what the file header already
+// says this design is paying for.
+//
+// **It widens when the range it was given is empty.** Opening ผลงาน on a quiet
+// Monday and being shown nothing is indistinguishable from the feature being
+// broken, so an empty week falls through to the month and then to everything.
+// Range comes back saying which one answered, and the picker follows it: the
+// control has to keep telling the truth about what is on screen.
+func (a *App) ListArtifactsIn(want string) ArtifactPage {
+	all := []Artifact{}
 	seen := map[string]bool{}
 	for _, root := range a.artifactRoots() {
 		if root == "" || seen[strings.ToLower(root)] {
 			continue
 		}
 		seen[strings.ToLower(root)] = true
-		out = append(out, sweepArtifacts(root)...)
-		if len(out) >= maxArtifacts {
-			break
+		all = append(all, sweepArtifacts(root)...)
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].Modified > all[j].Modified })
+
+	for _, name := range widenFrom(want) {
+		in := within(all, name)
+		if len(in) == 0 && name != RangeAll {
+			continue
+		}
+		page := ArtifactPage{Range: name, Total: len(in), Files: in}
+		if len(page.Files) > maxArtifacts {
+			// Total keeps the real number. A page that shortens itself and says
+			// nothing is the failure this whole method was rewritten to remove.
+			page.Files = page.Files[:maxArtifacts]
+		}
+		return page
+	}
+	return ArtifactPage{Range: RangeAll, Files: []Artifact{}}
+}
+
+// widenFrom is the fall-through order for a range that turns out to be empty.
+// An unknown name starts at the week, which is what a fresh window asks for.
+func widenFrom(want string) []string {
+	switch want {
+	case RangeMonth:
+		return []string{RangeMonth, RangeAll}
+	case RangeAll:
+		return []string{RangeAll}
+	default:
+		return []string{RangeWeek, RangeMonth, RangeAll}
+	}
+}
+
+// within filters an already-sorted list to one range.
+//
+// Counted in calendar days from this morning, not in 24-hour blocks from now:
+// a file written at 11pm last night is yesterday's at 1am whatever the
+// arithmetic says, and dayBucket.ts draws its headings by the same rule. Two
+// places deciding "which day" differently is the drift dayBucket's own comment
+// was written to prevent, and this is the third caller of that question.
+func within(all []Artifact, name string) []Artifact {
+	days, bounded := rangeDays(name)
+	if !bounded {
+		return all
+	}
+	today := time.Now()
+	midnight := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, today.Location())
+	cutoff := midnight.AddDate(0, 0, -days)
+	out := make([]Artifact, 0, len(all))
+	for _, art := range all {
+		when, err := time.Parse(time.RFC3339, art.Modified)
+		// A timestamp that will not parse is kept rather than dropped: the file
+		// is real, and hiding it because its clock is odd is the worse failure.
+		if err != nil || !when.Before(cutoff) {
+			out = append(out, art)
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Modified > out[j].Modified })
-	if len(out) > maxArtifacts {
-		out = out[:maxArtifacts]
-	}
 	return out
+}
+
+func rangeDays(name string) (int, bool) {
+	switch name {
+	case RangeWeek:
+		return 7, true
+	case RangeMonth:
+		return 30, true
+	}
+	return 0, false
 }
 
 // artifactRoots is every workspace whose output folder is ours to read: the
@@ -104,9 +224,6 @@ func sweepArtifacts(root string) []Artifact {
 			continue
 		}
 		out = append(out, sweepSession(path, entry.Name(), root)...)
-		if len(out) >= maxArtifacts {
-			break
-		}
 	}
 	return out
 }
@@ -120,9 +237,6 @@ func sweepSession(dir, sessionID, root string) []Artifact {
 	_ = filepath.WalkDir(dir, func(path string, entry os.DirEntry, err error) error {
 		if err != nil || entry.IsDir() {
 			return nil //lint:ignore nilerr an unreadable entry is skipped, not fatal
-		}
-		if len(out) >= maxArtifacts {
-			return filepath.SkipAll
 		}
 		if art, ok := describeArtifact(path, sessionID, root); ok {
 			out = append(out, art)

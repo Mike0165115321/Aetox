@@ -1993,6 +1993,35 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 
 /* The gallery. Cards rather than rows: what a person is looking for here is a
    file they recognise, and a name plus its kind is what they recognise it by. */
+/* The gallery's own header row: which slice of time, and how much is in it. */
+.art-ranges { display:flex; align-items:center; gap:6px; margin:0 0 14px; }
+.art-range {
+  padding:5px 12px; border-radius:var(--r-full); font-size:var(--fs-sm); cursor:pointer;
+  color:var(--text-muted); background:transparent; border:1px solid var(--border-subtle);
+  transition:color .12s, background .12s, border-color .12s;
+}
+.art-range:hover { color:var(--text-primary); background:var(--surface-hover); }
+.art-range.on {
+  color:var(--accent); border-color:color-mix(in srgb, var(--accent) 40%, transparent);
+  background:color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.art-count { margin-left:auto; font-size:var(--fs-xs); color:var(--text-dim); }
+/* A day heading breaks the grid across its full width, so the cards under it
+   read as that day's work instead of as a continuous wall of tiles. */
+.art-day {
+  grid-column:1 / -1; margin:10px 0 2px; font-size:var(--fs-xs); font-weight:600;
+  color:var(--text-secondary);
+}
+.art-day:first-child { margin-top:0; }
+/* Everything in range is already loaded; this only draws more of it. */
+.art-more {
+  display:flex; align-items:center; justify-content:center; gap:6px;
+  width:100%; margin-top:16px; padding:11px; cursor:pointer;
+  border:1px solid var(--border-subtle); border-radius:var(--r-md);
+  background:transparent; color:var(--text-muted); font:inherit; font-size:var(--fs-sm);
+  transition:color .12s, background .12s;
+}
+.art-more:hover { color:var(--text-primary); background:var(--surface-hover); }
 .art-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(210px, 1fr)); gap:14px; }
 .art-card { display:flex; flex-direction:column; border:1px solid var(--border-subtle); border-radius:var(--r-lg); background:var(--surface-panel); overflow:hidden; }
 .art-card:hover { border-color:var(--border-strong); }
@@ -2058,9 +2087,12 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .art-del.confirm { color:var(--status-danger); font-size:var(--fs-2xs); font-weight:600; }
 
 .settings-page { flex:1; display:flex; overflow:hidden; }
+/* Part of the frame, so it takes the frame's surface and drops its border: the
+   card's own edge is what separates the two now, and a line six pixels from a
+   rounded corner is the shape this was drawn to remove. */
 .settings-nav {
-  flex:0 0 260px; padding:14px 12px; border-right:1px solid var(--border-default);
-  background:var(--surface-sunken); display:flex; flex-direction:column; gap:2px; overflow-y:auto;
+  flex:0 0 260px; padding:14px 12px;
+  background:var(--surface-panel); display:flex; flex-direction:column; gap:2px; overflow-y:auto;
 }
 .settings-back { display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:var(--r-md); color:var(--text-secondary); }
 .settings-back:hover { background:var(--surface-row-hover); color:var(--text-primary); }

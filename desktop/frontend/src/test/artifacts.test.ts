@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/svelte'
 import Artifacts from '../lib/Artifacts.svelte'
 import {
-  ListArtifacts, OpenArtifact, DeleteArtifact, LoadSessionAnyProject, ArtifactPreview,
+  ListArtifactsIn, OpenArtifact, DeleteArtifact, LoadSessionAnyProject, ArtifactPreview,
 } from './mocks/wailsApp'
 import { cockpit } from '../lib/stores/cockpit.svelte'
 
@@ -19,7 +19,9 @@ const file = (over: Record<string, unknown> = {}) => ({
 beforeEach(() => {
   vi.clearAllMocks()
   cockpit.activeView = 'artifacts'
-  vi.mocked(ListArtifacts).mockResolvedValue([file()] as any)
+  // One file, in the week the page opens at. The gallery asks for a range and
+  // is answered with the range it got, which is what the picker then shows.
+  vi.mocked(ListArtifactsIn).mockResolvedValue({ files: [file()], range: 'week', total: 1 } as any)
 })
 
 describe('the work gallery', () => {
@@ -53,7 +55,7 @@ describe('the work gallery', () => {
   // A file whose session was deleted is still work the user has. It loses the
   // link back and nothing else — §6.7 is about the file outliving the chat.
   it('still shows a file whose conversation is gone', async () => {
-    vi.mocked(ListArtifacts).mockResolvedValue([file({ sessionId: '' })] as any)
+    vi.mocked(ListArtifactsIn).mockResolvedValue({ files: [file({ sessionId: '' })], range: 'week', total: 1 } as any)
     render(Artifacts, { onClose: () => {} })
 
     await waitFor(() => expect(screen.getByText('สรุปยอด.xlsx')).toBeTruthy())
@@ -74,11 +76,11 @@ describe('the work gallery', () => {
     await waitFor(() => expect(vi.mocked(DeleteArtifact).mock.calls[0][0]).toContain('สรุปยอด.xlsx'))
     // The list is re-read from disk rather than patched in place: the disk is
     // the index, and a gallery that edited its own copy would be a second one.
-    expect(vi.mocked(ListArtifacts).mock.calls.length).toBeGreaterThan(1)
+    expect(vi.mocked(ListArtifactsIn).mock.calls.length).toBeGreaterThan(1)
   })
 
   it('has an empty state for an install that has made nothing yet', async () => {
-    vi.mocked(ListArtifacts).mockResolvedValue([] as any)
+    vi.mocked(ListArtifactsIn).mockResolvedValue({ files: [], range: 'week', total: 0 } as any)
     render(Artifacts, { onClose: () => {} })
 
     await waitFor(() => expect(screen.getByText(/ยังไม่มีไฟล์/)).toBeTruthy())
@@ -90,7 +92,7 @@ describe('the work gallery', () => {
 // นิสัย… are the same card twice until a line of either one is on screen.
 describe('what a card shows of the file inside it', () => {
   const withPreview = (name: string, preview: Record<string, unknown>) => {
-    vi.mocked(ListArtifacts).mockResolvedValue([file({ name, path: 'C:/x/output/s/' + name })] as any)
+    vi.mocked(ListArtifactsIn).mockResolvedValue({ files: [file({ name, path: 'C:/x/output/s/' + name })], range: 'week', total: 1 } as any)
     vi.mocked(ArtifactPreview).mockResolvedValue(preview as any)
   }
 
@@ -137,11 +139,47 @@ describe('what a card shows of the file inside it', () => {
   })
 
   it('keeps the card when the preview call itself fails', async () => {
-    vi.mocked(ListArtifacts).mockResolvedValue([file({ name: 'gone.md' })] as any)
+    vi.mocked(ListArtifactsIn).mockResolvedValue({ files: [file({ name: 'gone.md' })], range: 'week', total: 1 } as any)
     vi.mocked(ArtifactPreview).mockRejectedValue(new Error('ไฟล์นี้ไม่ได้อยู่ในโฟลเดอร์ผลงาน'))
     render(Artifacts, { onClose: () => {} })
 
     await waitFor(() => expect(screen.getByText('gone.md')).toBeTruthy())
     expect(document.querySelector('.art-thumb.plain')).toBeTruthy()
+  })
+})
+
+describe('the gallery only draws what it needs to', () => {
+  const many = (n: number) =>
+    Array.from({ length: n }, (_, i) =>
+      file({ name: `f${i}.txt`, path: `C:/x/output/s/f${i}.txt` }))
+
+  it('holds the rest behind a button instead of dropping it', async () => {
+    // Everything in range arrives in one reply — a file the page will not send
+    // is a file the user cannot find — so the count in the button is the proof
+    // that nothing was lost on the way in.
+    vi.mocked(ListArtifactsIn).mockResolvedValue({ files: many(75), range: 'week', total: 75 } as any)
+    render(Artifacts, { onClose: () => {} })
+
+    await waitFor(() => expect(screen.getByText('f0.txt')).toBeTruthy())
+    expect(screen.queryByText('f70.txt')).toBeNull()
+
+    // By its own text, not by the number: "15" also appears in a file name and
+    // in the size on every card.
+    const more = await screen.findByText(/แสดงเพิ่มอีก 15/)
+    await fireEvent.click(more)
+    await waitFor(() => expect(screen.getByText('f70.txt')).toBeTruthy())
+  })
+
+  it('shows the range the engine answered with, not the one it was asked for', async () => {
+    // An empty week widens on the Go side. The picker follows what came back:
+    // a control reading "สัปดาห์นี้" over a month of files is lying about what
+    // is on screen.
+    vi.mocked(ListArtifactsIn).mockResolvedValue({ files: [file()], range: 'month', total: 1 } as any)
+    render(Artifacts, { onClose: () => {} })
+
+    await waitFor(() => expect(screen.getByText('สรุปยอด.xlsx')).toBeTruthy())
+    const month = screen.getByText('เดือนนี้')
+    expect(month.className).toContain('on')
+    expect(screen.getByText('สัปดาห์นี้').className).not.toContain('on')
   })
 })

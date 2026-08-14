@@ -174,6 +174,12 @@ export const ChairStartersFile = vi.fn(async (..._args: any[]) => 'STARTERS.md')
 export const ListReceivedJobs = arr()
 export const ListSessionsAt = arr()
 export const ListArtifacts = arr()
+// The gallery asks for one range at a time and gets back {files, range, total}.
+// Defaults to an empty week so a test that does not care about the range still
+// renders; the tests that do care set files and let `range` echo what was asked.
+export const ListArtifactsIn = vi.fn(async (want: string = 'week') => ({
+  files: [] as any[], range: want, total: 0,
+}))
 export const OpenArtifact = noop()
 export const DeleteArtifact = noop()
 // "Nothing worth drawing" is the right default: a card falls back to its icon,

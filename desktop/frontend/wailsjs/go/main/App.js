@@ -274,6 +274,10 @@ export function ListArtifacts() {
   return window['go']['main']['App']['ListArtifacts']();
 }
 
+export function ListArtifactsIn(arg1) {
+  return window['go']['main']['App']['ListArtifactsIn'](arg1);
+}
+
 export function ListChairs() {
   return window['go']['main']['App']['ListChairs']();
 }

@@ -930,6 +930,11 @@ export const th = {
   'automation.windmillKeyWhere': 'โทเคนอยู่ที่ Account settings → Tokens — เว้นช่อง scope ว่าง และอย่าติ๊ก read_only',
 
   'artifacts.intro': 'ไฟล์ทุกไฟล์ที่ Aetox ทำขึ้น อ่านสดจากดิสก์ทุกครั้ง ลบแชททิ้งไฟล์ก็ยังอยู่ — ที่นี่คือที่เดียวที่ลบไฟล์ผลงานได้',
+  'artifacts.range.week': 'สัปดาห์นี้',
+  'artifacts.range.month': 'เดือนนี้',
+  'artifacts.range.all': 'ทั้งหมด',
+  'artifacts.count': '{n} ไฟล์',
+  'artifacts.more': 'แสดงเพิ่มอีก {n} ไฟล์',
   'artifacts.empty': 'ยังไม่มีไฟล์ ไฟล์ที่ AI สร้างให้จะมาโผล่ที่นี่เอง',
   'artifacts.fromChat': 'ไปที่แชทที่ทำไฟล์นี้',
   'artifacts.noChat': 'ไม่รู้ว่ามาจากแชทไหน',

@@ -909,6 +909,11 @@ Check your own work before answering; say so plainly if unsure.
   'automation.windmillKeyWhere': 'The token is at Account settings → Tokens — leave the scopes empty and do not tick read_only.',
 
   'artifacts.intro': 'Every file Aetox has made, read straight off the disk. Deleting a chat leaves its files alone — this page is the only place they are deleted.',
+  'artifacts.range.week': 'This week',
+  'artifacts.range.month': 'This month',
+  'artifacts.range.all': 'All',
+  'artifacts.count': '{n} files',
+  'artifacts.more': 'Show {n} more',
   'artifacts.empty': 'Nothing here yet. Files the AI makes for you show up on this page.',
   'artifacts.fromChat': 'Go to the chat that made it',
   'artifacts.noChat': 'No chat recorded',

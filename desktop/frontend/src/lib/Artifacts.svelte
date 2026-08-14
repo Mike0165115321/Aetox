@@ -7,9 +7,10 @@
   // Deleting a conversation leaves its work alone (§6.7); this page is the one
   // place a produced file is deleted, by the user, on purpose.
   import { onMount } from 'svelte'
-  import { ListArtifacts, OpenArtifact, DeleteArtifact, ArtifactPreview } from '../../wailsjs/go/main/App'
+  import { ListArtifactsIn, OpenArtifact, DeleteArtifact, ArtifactPreview } from '../../wailsjs/go/main/App'
   import { main } from '../../wailsjs/go/models'
   import { agoLabel, selectGlobalSession, setActiveView } from './stores/cockpit.svelte'
+  import { dayBucket } from './dayBucket'
   import { t } from './i18n.svelte'
   import { renderMarkdown } from './markdown'
   import Icon from './Icon.svelte'
@@ -20,16 +21,67 @@
   let files = $state<main.Artifact[]>([])
   let loaded = $state(false)
   let error = $state('')
+
+  // Which slice of time the page is showing (DECISIONS §106-era owner call,
+  // 2026-08-14: "โหลดมาแสดงล่าสุดแค่ของสัปดาห์นี้เป็นอันเริ่มต้นดีไหม เราเก็บเวลา
+  // อยู่ละ จะได้แยกไทม์ไลน์ได้ด้วย").
+  //
+  // `range` is what the user picked; `served` is what the engine answered with,
+  // and they differ when the picked range turned out to be empty and the engine
+  // widened. The picker follows `served`, because a control that says "week"
+  // over a month of files is lying about what you are looking at.
+  const RANGES = ['week', 'month', 'all'] as const
+  type Range = (typeof RANGES)[number]
+  let range = $state<Range>('week')
+  let served = $state<Range>('week')
+  let total = $state(0)
+
+  // How many cards are drawn. Everything in range arrives in one reply — a file
+  // the page will not send is a file the user cannot find — and what keeps the
+  // first paint cheap is drawing a screenful of it and letting the rest wait
+  // behind a button. Previews are lazy on top of that, so an undrawn card costs
+  // a row of metadata and nothing else.
+  const PAGE = 60
+  let shown = $state(PAGE)
   // Two-step delete, the same gesture the session list uses: the first click
   // arms the row, the second one does it. These are the user's files.
   let confirmPath = $state('')
 
   async function refresh() {
-    files = await ListArtifacts()
+    const page = await ListArtifactsIn(range)
+    files = page.files ?? []
+    served = (RANGES as readonly string[]).includes(page.range) ? (page.range as Range) : 'all'
+    total = page.total
+    // Back to one screenful whenever the set changes underneath: keeping the
+    // old count would paint six hundred cards the moment someone switches to
+    // "ทั้งหมด", which is the cost this whole arrangement exists to avoid.
+    shown = PAGE
+    previews = {}
     loaded = true
   }
 
+  function pick(next: Range) {
+    range = next
+    void refresh()
+  }
+
   onMount(refresh)
+
+  // The cards actually drawn, and the day heading each one falls under.
+  //
+  // dayBucket is shared with the sidebar's history and the office's job feed —
+  // its own comment says why it lives outside all three, and this is the third
+  // caller of the same question. A heading is emitted only when the bucket
+  // changes, so the grid reads as a timeline rather than a wall.
+  const visible = $derived(files.slice(0, shown))
+  const rows = $derived(
+    visible.map((f, i) => ({
+      file: f,
+      head: i === 0 || dayBucket(f.modified) !== dayBucket(visible[i - 1].modified)
+        ? dayBucket(f.modified)
+        : null,
+    })),
+  )
 
   async function open(file: main.Artifact) {
     error = ''
@@ -81,7 +133,29 @@
   // scrolled to is how a gallery comes to feel broken.
   let previews = $state<Record<string, main.ArtifactPreview | 'loading'>>({})
 
+  // The order previews were last looked at, oldest first, so the ones furthest
+  // behind are the ones dropped.
+  //
+  // Without this the cache only ever grew: an .html artifact previews as a live
+  // <iframe srcdoc> and an image as a base64 data URL, so scrolling a long
+  // gallery left a hundred documents and a hundred megabytes of string behind
+  // it, all of them off screen. A cap of a few screens keeps a scroll back up
+  // instant while bounding what the page can hold.
+  const PREVIEW_KEEP = 90
+  let recent: string[] = []
+
+  function touch(path: string) {
+    const at = recent.indexOf(path)
+    if (at >= 0) recent.splice(at, 1)
+    recent.push(path)
+    while (recent.length > PREVIEW_KEEP) {
+      const drop = recent.shift()
+      if (drop && drop !== path) delete previews[drop]
+    }
+  }
+
   async function loadPreview(path: string) {
+    touch(path)
     if (previews[path]) return
     previews[path] = 'loading'
     try {
@@ -102,10 +176,12 @@
       void loadPreview(path)
       return
     }
+    // Still observing after the first hit, unlike before: a preview can now be
+    // dropped by the cache while its card stays in the list, and unobserving
+    // would leave that card permanently blank on the way back up.
     const io = new IntersectionObserver((entries) => {
       for (const e of entries) {
         if (!e.isIntersecting) continue
-        io.unobserve(el)
         void loadPreview(path)
       }
     }, { rootMargin: '200px' }) // a screen ahead, so scrolling meets a drawn card
@@ -152,9 +228,28 @@
           <p>{t('artifacts.empty')}</p>
         </div>
       {/if}
+      <!-- Which slice of time is on screen. Bound to `served`, not to what was
+           clicked: an empty week widens on the engine's side, and the control
+           has to say what you are actually looking at. -->
+      {#if loaded && (files.length > 0 || served !== 'week')}
+        <div class="art-ranges">
+          {#each RANGES as r (r)}
+            <button type="button" class="art-range" class:on={served === r} onclick={() => pick(r)}>
+              {t(`artifacts.range.${r}`)}
+            </button>
+          {/each}
+          <span class="art-count">{t('artifacts.count', { n: String(total) })}</span>
+        </div>
+      {/if}
       <div class="art-grid">
-        {#each files as f (f.path)}
+        {#each rows as row (row.file.path)}
+          {@const f = row.file}
           {@const p = previews[f.path]}
+          {#if row.head}
+            <!-- A day heading spans the whole grid, so the cards under it read
+                 as that day's work rather than as a run of unrelated tiles. -->
+            <h3 class="art-day">{t(row.head)}</h3>
+          {/if}
           <div class="art-card" use:whenVisible={f.path}>
             <button class="art-open" onclick={() => open(f)} title={f.path}>
               <!-- The look inside. Kept above the name rather than beside it:
@@ -209,6 +304,15 @@
           </div>
         {/each}
       </div>
+      <!-- Everything in range is already here; this only decides how much is
+           drawn. The count is the point — "แสดงเพิ่ม" alone does not say whether
+           it is hiding four files or four hundred. -->
+      {#if files.length > shown}
+        <button type="button" class="art-more" onclick={() => (shown += PAGE)}>
+          <Icon name="chevronDown" size={13} />
+          {t('artifacts.more', { n: String(files.length - shown) })}
+        </button>
+      {/if}
     </div>
   </div>
 </div>
