@@ -36,6 +36,9 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     css: false,
+    // What jsdom does not implement and the app relies on — see the file; it is
+    // deliberately only environment gaps, never behaviour.
+    setupFiles: ['./src/test/setup.ts'],
     // globals gives @testing-library/svelte its afterEach auto-cleanup hook —
     // without it every render stacks in one document and queries go ambiguous.
     globals: true,
