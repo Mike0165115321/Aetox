@@ -118,35 +118,53 @@ func ReadQuotas(resp *http.Response, source provider.QuotaSource, now time.Time)
 }
 
 // readCodexQuotas reads the x-codex-* family the ChatGPT backend sends
-// alongside a Codex turn: a 5-hour window ("primary") and a weekly one
-// ("secondary"), each stated as the percentage already spent.
+// alongside a Codex turn. Each window states three separate things: how much
+// of it is spent, how long the window runs, and how long until it refills.
+//
+// The window's name comes from the length the backend states, never from which
+// header slot it arrived in. The first version of this hardcoded primary="5h"
+// and secondary="week" — true about the plans in force the day it was written,
+// and still printed word for word after those plans changed underneath it. A
+// row could read "this 5 hours · resets in 26 days" and nothing in the code
+// was in a position to notice, because the only field that could have said
+// otherwise, window-minutes, was being spent as a reset time. A header slot is
+// an address. It is not a fact about the account.
 //
 // None of this is documented. Every field is optional and every parse failure
 // is silent, so the day OpenAI renames a header the quota row goes blank
 // instead of the app breaking — a missing number is a state the UI already
 // draws, and a wrong one is not.
 func readCodexQuotas(h http.Header, now time.Time) []Quota {
-	windows := []struct{ header, window string }{
-		{"primary", "5h"},
-		{"secondary", "week"},
-	}
-	out := make([]Quota, 0, len(windows))
-	for _, w := range windows {
-		used, ok := parsePercent(h.Get("x-codex-" + w.header + "-used-percent"))
+	out := make([]Quota, 0, 2)
+	for _, family := range []string{"primary", "secondary"} {
+		used, ok := parsePercent(h.Get("x-codex-" + family + "-used-percent"))
 		if !ok {
 			continue
 		}
+		minutes, _ := parseFloatHeader(h.Get("x-codex-" + family + "-window-minutes"))
+		span := time.Duration(minutes * float64(time.Minute))
 		q := Quota{
-			Window:           w.window,
+			Window:           windowName(span),
 			RemainingPercent: clampPercent(100 - used),
 			ObservedAt:       now,
 		}
-		// Two spellings seen in the wild for the same fact; whichever is
-		// present wins, and neither being present just means no reset time.
-		if secs, err := strconv.ParseFloat(strings.TrimSpace(h.Get("x-codex-"+w.header+"-reset-after-seconds")), 64); err == nil && secs > 0 {
-			q.ResetAt = now.Add(time.Duration(secs * float64(time.Second)))
-		} else if mins, err := strconv.ParseFloat(strings.TrimSpace(h.Get("x-codex-"+w.header+"-window-minutes")), 64); err == nil && mins > 0 {
-			q.ResetAt = now.Add(time.Duration(mins * float64(time.Minute)))
+		if secs, ok := parseFloatHeader(h.Get("x-codex-" + family + "-reset-after-seconds")); ok && secs > 0 {
+			// A window cannot refill later than its own length. When it says
+			// otherwise the two halves are describing different things and
+			// there is no way to tell from here which half is the stale one,
+			// so the percentage is kept and the reset is dropped. Half a row
+			// is what the missing-reset case already draws.
+			if until := time.Duration(secs * float64(time.Second)); span <= 0 || until <= span {
+				q.ResetAt = now.Add(until)
+			} else {
+				// The one place worth a log line. This family is undocumented,
+				// its values are never recorded anywhere, and the last time it
+				// disagreed with itself the only evidence available was a
+				// screenshot of the row it produced. Lengths and durations
+				// only; nothing in x-codex-* identifies an account.
+				debuglog.Msg("quota: codex %s says it is %v long and refills in %v; keeping the percentage, dropping the reset",
+					family, span, until)
+			}
 		}
 		out = append(out, q)
 	}
@@ -156,11 +174,42 @@ func readCodexQuotas(h http.Header, now time.Time) []Quota {
 	return out
 }
 
+// windowName turns a stated window length into the stable key the UI
+// translates. Only a length with a name in the UI's vocabulary gets one;
+// everything else — including a provider that stated no length at all — is
+// "other", which draws as "this window" beside the number. That is vaguer
+// than "this week" and, unlike it, cannot be wrong.
+func windowName(d time.Duration) string {
+	for _, known := range []struct {
+		span time.Duration
+		name string
+	}{
+		{time.Minute, "minute"},
+		{time.Hour, "hour"},
+		{5 * time.Hour, "5h"},
+		{24 * time.Hour, "day"},
+		{7 * 24 * time.Hour, "week"},
+		{30 * 24 * time.Hour, "month"},
+	} {
+		// A tenth either way. The backends round their own minutes, and a
+		// month is a fixed number of days in no calendar but this one.
+		if d >= known.span*9/10 && d <= known.span*11/10 {
+			return known.name
+		}
+	}
+	return "other"
+}
+
 // readAnthropicQuotas prefers the unified window a Pro/Max sign-in reports,
 // because that is the one actually binding on such an account. API keys do not
 // send it and get the separate token and request windows instead.
+//
+// The unified family states a reset instant and never a length, so the row is
+// named for whose limit it is rather than for how long it runs. It used to say
+// "this week", which was a guess about a plan rather than anything the header
+// carried — the same guess that went stale on Codex.
 func readAnthropicQuotas(h http.Header, now time.Time) []Quota {
-	if q, ok := anthropicWindow(h, "unified", "week", now); ok {
+	if q, ok := anthropicWindow(h, "unified", "plan", now); ok {
 		return []Quota{q}
 	}
 	out := make([]Quota, 0, 2)
@@ -211,6 +260,15 @@ func readOpenAIStdQuotas(h http.Header, now time.Time) []Quota {
 			ObservedAt:       now,
 		}
 		q.ResetAt = parseResetInstant(h.Get("x-ratelimit-reset-"+family), now)
+		// The minute is OpenAI's, and most hosts that copied the header names
+		// copied the minute with them — but not all, and several of these
+		// providers meter by the day. This cannot confirm the minute; it can
+		// only catch the window that disproves it, because a window still
+		// refilling an hour from now was never a minute long. The rest keep
+		// the assumption they have always had, unproven, as §108 left it.
+		if !q.ResetAt.IsZero() && q.ResetAt.Sub(now) > 90*time.Second {
+			q.Window = "other"
+		}
 		out = append(out, q)
 	}
 	if len(out) == 0 {

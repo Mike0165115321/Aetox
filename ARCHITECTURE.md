@@ -530,6 +530,12 @@ product picture in [COMPANY.md](COMPANY.md)) · §82 (the learning floor) · §4
 | §105 | Work Given to Somebody Else Does Not End When the Sentence Does (2026-08-13) |
 | §106 | What Is on the Desk and How the Turn Runs Are Two Axes; โหมด Belongs to the One That Switches (2026-08-14) — *design, recorded before the build* |
 | §107 | An Update Nobody Is Told About Is an Update Nobody Gets (2026-08-14) |
+| §108 | A Provider Row Must Not Promise What the Endpoint Never Sends (2026-08-14) |
+| §109 | 1.0.0 Is the Windows Release, and the Bar Moved Rather Than Was Met (2026-08-15) |
+| §110 | A Sub-Agent's Loop Cap Is Removed, and Its Clock Is Told the Truth (2026-08-15) |
+| §111 | The Windows Shell Is PowerShell, Because the Shell Is Chosen for the Model (2026-08-15) |
+| §112 | An Answer That Is Still Arriving Has to Look Like It, and Be Updated Rather Than Rebuilt (2026-08-15) |
+| §113 | A Window Is Named by the Length It States, Not by the Slot It Arrived In (2026-08-16) |
 
 ---
 

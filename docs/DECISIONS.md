@@ -3260,3 +3260,42 @@ So the streamed answer is now **morphed**: the new markup is reconciled against 
 **The finished bubble still uses `{@html}`.** It renders once and has nothing to keep; morphing it would be machinery for no property.
 
 **It is not a general renderer.** Two nodes that swap places are replaced rather than moved, which is correct output and lost identity. Markdown re-parsing does not reorder blocks as text is appended to the end, so the case is theoretical until something makes it real.
+
+---
+
+## 113. Decision — A Window Is Named by the Length It States, Not by the Slot It Arrived In (2026-08-16)
+
+Owner, 16 ส.ค., holding a screenshot of his own quota row: *"อันนี้ของจริงหรือปลอมกันว่ะเนี้ย"*. The row read **"5 ชั่วโมงนี้ · เหลือ 6% · รีเซ็ตอีก 26 วัน"**, and under it **"สัปดาห์นี้ · เหลือ 100%"**. The first reading back called the numbers real and the pairing a bug. The owner's second message was the correct one: *"มันปลอมครับไปเช็คดี ๆ Codex ไม่มีลิมิตรายสัปดาห์นานแล้วครับ"*.
+
+Both halves of that row came from somewhere, and only one of them came from OpenAI.
+
+### 113.1 The name was a constant wearing a reading's clothes
+
+`readCodexQuotas` opened with a table: `{"primary", "5h"}, {"secondary", "week"}`. The percentage was read off the wire. The **name printed beside it was written in this repo**, from what the ChatGPT plans looked like the day the parser was written. When those plans changed the rows kept their old captions, and no test could fail, because the tests asserted the constant against itself.
+
+The doc comment three functions up had already said what should have happened — *"It comes from the provider's own dialect rather than a constant, because the windows genuinely differ"* — with the reasoning spelled out in full. It described a version of the code that was never written. A comment that argues against the function below it is worse than no comment: it is the reviewer's own objection, pre-answered.
+
+This is §108's root one layer further down. There it was *"the catalog recorded intentions, and the UI read them as facts."* Here the **parser** recorded them, which is harder to catch, because a parser is where facts are supposed to enter the program.
+
+### 113.2 The field that could have caught it was being spent on something else
+
+The backend states `x-codex-<slot>-window-minutes`: the window's own length, the one field that says what the row is measuring. It was being read as *how long until the window refills* — the `else` branch of the reset lookup, under a comment claiming *"two spellings seen in the wild for the same fact"*. They are not one fact. A window's length and its time remaining are equal exactly once, at the instant it resets.
+
+So the evidence needed to notice the drift arrived on every single turn and was spent misfiled. The name now comes from that length (`windowName`, ±10%: minute, hour, 5h, day, week, month), and anything else — including a backend that states no length at all — is `other`, drawn as *ลิมิตช่วงนี้*. Vaguer than "this week", and incapable of being wrong.
+
+### 113.3 An impossible pair is published by halves
+
+"Five hours" and "26 days" cannot both describe one window, and from inside the parser there is no way to tell which half went stale. So neither is guessed at: the percentage is kept, the reset is dropped, and the row draws the shape it already draws for a provider that sent no reset at all.
+
+That dropped pair is the one event in this family worth a `debuglog` line. The headers are undocumented, their values are recorded nowhere, and the only evidence available while this was being diagnosed was a photograph of the row they produced. Lengths and durations only — nothing in `x-codex-*` identifies an account.
+
+### 113.4 The same guess, twice more, and one of them stays
+
+- **Anthropic's unified window** was labelled `"week"`. That family states a remaining count, a limit and a reset instant, and never a length, so the label was a guess about a plan rather than a reading of anything. It is `plan` now — *ลิมิตของแผน* — which is what the headers can actually support.
+- **The OpenAI-compatible dialect** calls every window `"minute"`. The minute is OpenAI's own, inherited by the eleven hosts that copied the header names, several of which meter by the day. Nothing available here can *confirm* a minute. Exactly one thing can **disprove** it: a window still refilling more than ninety seconds out was never a minute long, and that case now says `other`. The rest keep the assumption they have always had, unproven, exactly as §108 left it. This pass narrows a claim; it does not get to invent a measurement.
+
+### What this does not decide
+
+**Whether the weekly row should exist at all.** If the backend still sends `x-codex-secondary-*`, Aetox still draws that row, now under whatever name its stated length earns. Reporting what the endpoint states is the rule, and a row deleted because we decided the provider is wrong about its own limits is the same mistake pointed the other way. If OpenAI has stopped sending the family, the row disappears on its own — `TestCodexQuotasVanishWhenHeadersDo` has pinned that since the feature shipped.
+
+**What the live headers actually say.** Still unmeasured. The values have never been recorded, and this pass adds one log line for one case rather than logging the family on every turn.
