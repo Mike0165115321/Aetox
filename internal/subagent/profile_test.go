@@ -70,11 +70,28 @@ func TestBundledProfilesAreUsable(t *testing.T) {
 		if len(p.Prompt) < 40 {
 			t.Errorf("%s: prompt is %d chars, expected a real brief", p.Name, len(p.Prompt))
 		}
-		// No shipped worker carries a ceiling of its own. The default is no
-		// ceiling (§110), and a `steps:` line left behind in one of these files
-		// would be a private exception nobody would think to look for.
-		if p.MaxToolCalls() > 0 {
-			t.Errorf("%s: MaxToolCalls = %d, want no ceiling", p.Name, p.MaxToolCalls())
+		// A worker's ceiling is whatever its own file says, and nothing else: a
+		// number means that number, and no `steps:` line means no ceiling
+		// (§110's default).
+		//
+		// This deliberately does NOT require the shipped files to be free of
+		// `steps:`. It said that for a day, and that was a rule nobody asked
+		// for: the owner's instruction was to make *unlimited the default*
+		// ("ปลดล็อคเพดานทุกซับเอเจนเลยครับ เป็นค่าเริ่มต้นได้เลย", §110), and the
+		// change that carried it out also stripped the eight numbers that were
+		// written down on purpose and then locked the door behind them here.
+		// Removing a ceiling and forbidding one are different decisions, and
+		// only the first was made — §110 says so in its own words one paragraph
+		// later: "steps: 40 still means exactly 40 for anyone who wants one."
+		//
+		// So this asserts the mechanism is honest, and leaves the number to
+		// whoever is responsible for the worker (2026-08-16).
+		switch {
+		case p.Steps > 0 && p.MaxToolCalls() != p.Steps:
+			t.Errorf("%s: writes steps: %d but runs with a cap of %d", p.Name, p.Steps, p.MaxToolCalls())
+		case p.Steps <= 0 && p.MaxToolCalls() > 0:
+			t.Errorf("%s: names no ceiling but runs under one (%d) — the default is no ceiling",
+				p.Name, p.MaxToolCalls())
 		}
 	}
 }

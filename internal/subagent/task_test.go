@@ -5,6 +5,7 @@ package subagent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -991,21 +992,44 @@ func TestALoopThatEndsItselfIsAnActionableFailure(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		provider model.Provider
+		agent    string
+		steps    int
 		want     []string
 	}{
 		{
-			// Identical calls trip the doom-loop guard before the step cap.
-			name: "doom loop", provider: &loopingProvider{},
+			// Identical calls trip the doom-loop guard, which needs no ceiling —
+			// it fires on repetition, whatever the cap is.
+			name: "doom loop", provider: &loopingProvider{}, agent: "explore",
 			want: []string{"repeating the same tool call", "too vague"},
 		},
 		{
-			// Varied calls get all the way to the step cap.
+			// Varied calls slip past that guard, so the only thing left to stop
+			// them is a ceiling — and since §110 nothing carries one unless its
+			// profile asks. So this runs a profile that asks.
+			//
+			// It used to run `explore`, back when every delegate inherited a
+			// default of 24. §110 removed the default and updated the test one
+			// function up (TestGeneralIsTheLooper) but not this one, so the loop
+			// this case exists to bound became genuinely unbounded: the subtest
+			// stopped failing and started *hanging*, taking `go test ./...` with
+			// it. Found 2026-08-16, 25 minutes into a full run.
 			name: "step cap exhausted", provider: &variedLoopProvider{},
-			want: []string{"ran out of room", "smaller batches"},
+			agent: "capped", steps: 3,
+			want:  []string{"ran out of room", "smaller batches"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			isolate(t)
+			if tc.steps > 0 {
+				// In the agents' home, not the helpers': the helpers' home is
+				// closed — a file put there is reported and not read — and a
+				// user file named after a bundled helper does not shadow it
+				// either. An agent is the one profile a person can still write,
+				// which makes it the only place a `steps:` ceiling can come
+				// from now, and therefore the honest place to test one.
+				writeProfile(t, AgentsDir, tc.agent, fmt.Sprintf(
+					"---\ndescription: capped runner\ntools: read\nsteps: %d\n---\nRun until stopped.\n", tc.steps))
+			}
 			registry := skill.NewDefaultRegistry(skill.RegistryOptions{SandboxRoot: t.TempDir()})
 			// A provider that never stops calling tools is the only way to reach either
 			// ending; that is a provider *edge case*, which §45 still allows a stub for.
@@ -1020,16 +1044,27 @@ func TestALoopThatEndsItselfIsAnActionableFailure(t *testing.T) {
 				}
 			}
 
-			ctx := turn.WithCallID(context.Background(), "call_1")
+			// A deadline, because the failure this case is guarding against does
+			// not look like a failure. A delegate with nothing to stop it does
+			// not return a bad answer — it returns nothing, forever, and a test
+			// that waits forever reads as "still running" until the whole suite
+			// times out. collect honours this ctx, so a regression fails here in
+			// seconds with a sentence saying what happened.
+			ctx, cancel := context.WithTimeout(turn.WithCallID(context.Background(), "call_1"), 30*time.Second)
+			defer cancel()
 			dispatcher := skill.NewDispatcher(registry)
 			start, _, err := dispatcher.ExecuteTool(ctx, "task", map[string]any{
-				"description": "endless", "prompt": "keep going forever", "agent": "explore",
+				"description": "endless", "prompt": "keep going forever", "agent": tc.agent,
 			})
 			if err != nil {
 				t.Fatalf("start: %v", err)
 			}
 			out, _, err := dispatcher.ExecuteTool(ctx, "task_result", map[string]any{"task_id": taskIDOf(t, start)})
 			if err != nil {
+				if errors.Is(err, context.DeadlineExceeded) {
+					t.Fatalf("the delegate never stopped: nothing bounded its loop, so %q ran until the deadline "+
+						"instead of ending with something the parent could act on", tc.name)
+				}
 				t.Fatalf("collect: %v", err)
 			}
 			t.Logf("%s: success=%v content=%q", tc.name, out.Success, out.Content)
@@ -1066,6 +1101,12 @@ func (*loopingProvider) Complete(_ context.Context, _ model.Request) (model.Resp
 
 // variedLoopProvider never repeats itself, so it slips past the doom-loop guard
 // and runs until the profile's step cap stops it.
+//
+// `read`, and a different file each round, for two reasons that are both about
+// staying reachable: read is carried by the desk an agent runs under (grep is
+// not, and a profile asking only for grep is cut to nothing before the loop
+// starts), and a missing file is a tool *error*, not a stop — which is the point,
+// since what is being tested is the ending the loop reaches on its own.
 type variedLoopProvider struct{ n int }
 
 func (*variedLoopProvider) Name() string              { return "loop-fake" }
@@ -1075,7 +1116,7 @@ func (p *variedLoopProvider) Complete(_ context.Context, _ model.Request) (model
 	return model.Response{ToolCalls: []model.ToolCall{{
 		ID:       "loop_" + strconv.Itoa(p.n),
 		Type:     "function",
-		Function: model.FunctionCall{Name: "grep", Arguments: `{"pattern":"x` + strconv.Itoa(p.n) + `","path":"."}`},
+		Function: model.FunctionCall{Name: "read", Arguments: `{"path":"f` + strconv.Itoa(p.n) + `.txt"}`},
 	}}}, nil
 }
 
