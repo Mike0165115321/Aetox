@@ -2169,7 +2169,10 @@
     agentDraftModel = parsed.model
     agentDraftTools = parsed.tools
     agentDraftDeny = parsed.deny
-    agentDraftSteps = parsed.steps
+    // No `steps:` line means no ceiling (§110), so the box opens ticked. Seeded
+    // rather than inferred from a blank field, so clearing the number to type a
+    // new one does not disable the field under the user's cursor.
+    agentDraftSteps = parsed.steps.trim() || STEPS_UNLIMITED
     agentDraftIcon = parsed.icon
     agentKeptDesk = parsed.desk
     agentKeptNeeds = parsed.needs
@@ -2195,7 +2198,7 @@
     agentDraftModel = ''
     agentDraftTools = []
     agentDraftDeny = []
-    agentDraftSteps = ''
+    agentDraftSteps = STEPS_UNLIMITED // a new worker starts uncapped, like every shipped one
     agentDraftIcon = ''
     agentKeptDesk = ''
     agentKeptNeeds = []
@@ -2350,9 +2353,9 @@
     // one: an absent field means the roster derives it from what the agent
     // makes, which is the right answer for every profile nobody has opened.
     if (f.icon.trim()) lines.push(`icon: ${f.icon.trim()}`)
-    // The keyword, not a number: internal/subagent/profile.go only unbounds a
-    // loop on this exact word, so a typo'd ceiling falls back to the default
-    // rather than removing it.
+    // The keyword, not a number. Leaving the line out would mean the same thing
+    // today (the default is no ceiling since §110), but writing it says so in
+    // the file, where the next person to read it is looking.
     if (f.steps.trim().toLowerCase() === STEPS_UNLIMITED) {
       lines.push(`steps: ${STEPS_UNLIMITED}`)
     } else {
@@ -2432,9 +2435,10 @@
   // ---------- Step limit ----------
   const agentStepsUnlimited = $derived(agentDraftSteps.trim().toLowerCase() === STEPS_UNLIMITED)
 
-  // Ticking remembers nothing, unticking restores the default rather than an
-  // empty box: the field is disabled while unlimited is on, so whatever was in
-  // it is not something the user can see or was looking at.
+  // Ticking remembers nothing, unticking leaves an empty box for a number: the
+  // field is disabled while unlimited is on, so whatever was in it is not
+  // something the user can see or was looking at. An empty box saves no
+  // `steps:` line at all, which is the same "no ceiling" by a quieter route.
   function toggleStepsUnlimited() {
     agentDraftSteps = agentStepsUnlimited ? '' : STEPS_UNLIMITED
   }
@@ -2850,7 +2854,11 @@
         {#if a.model}<span class="tag">{a.model}</span>{/if}
         <span class="tag" title={toolBadgeTip(a)}>{toolBadge(a)}</span>
         {#if a.deny && a.deny.length > 0}<span class="tag ag-deny" title={denyTip(a)}>{t('settings.agentDenyCount', { n: a.deny.length })}</span>{/if}
-        <span class="tag" title={t('settings.agentStepsTip', { n: a.steps || 24 })}>{t('settings.agentSteps', { n: a.steps || 24 })}</span>
+        <!-- 0 is an absent `steps:` and a negative is the keyword; both mean no
+             ceiling (§110). Only a positive number is a cap worth a badge. -->
+        <span class="tag" title={(a.steps ?? 0) > 0 ? t('settings.agentStepsTip', { n: a.steps ?? 0 }) : t('settings.agentStepsNoneTip')}>
+          {(a.steps ?? 0) > 0 ? t('settings.agentSteps', { n: a.steps ?? 0 }) : t('settings.agentStepsNone')}
+        </span>
       </div>
       <div class="d">{a.description || '—'}</div>
       <!-- A file that cannot run says why, where its owner will look — never a
@@ -2890,7 +2898,11 @@
         {#if a.overrides}<span class="tag ag-override">{t('settings.agentOverrides')}</span>{/if}
         <span class="tag" title={toolBadgeTip(a)}>{toolBadge(a)}</span>
         {#if a.deny && a.deny.length > 0}<span class="tag ag-deny" title={denyTip(a)}>{t('settings.agentDenyCount', { n: a.deny.length })}</span>{/if}
-        <span class="tag" title={t('settings.agentStepsTip', { n: a.steps || 24 })}>{t('settings.agentSteps', { n: a.steps || 24 })}</span>
+        <!-- 0 is an absent `steps:` and a negative is the keyword; both mean no
+             ceiling (§110). Only a positive number is a cap worth a badge. -->
+        <span class="tag" title={(a.steps ?? 0) > 0 ? t('settings.agentStepsTip', { n: a.steps ?? 0 }) : t('settings.agentStepsNoneTip')}>
+          {(a.steps ?? 0) > 0 ? t('settings.agentSteps', { n: a.steps ?? 0 }) : t('settings.agentStepsNone')}
+        </span>
       </div>
       <div class="d">{a.description || '—'}</div>
       <!-- A file that cannot run says why, where its owner will look — never a
@@ -3101,7 +3113,7 @@
           <span class="eyebrow">{t('settings.agentStepsField')}</span>
           <div class="ag-steprow">
             <input
-              class="ctrl ag-steps" bind:value={agentDraftSteps} inputmode="numeric" placeholder="24"
+              class="ctrl ag-steps" bind:value={agentDraftSteps} inputmode="numeric" placeholder="40"
               disabled={agentStepsUnlimited}
               aria-label={t('settings.agentStepsField')}
             />

@@ -1124,25 +1124,47 @@ describe('Settings pages', () => {
     expect(names).toEqual(['glob'])
   })
 
-  // The engine reads MaxToolCalls <= 0 as unbounded, and only unbounds on the
-  // keyword — a number in the box must never become "no ceiling" by accident.
-  it('the loop cap can be removed, and says so in the file as a word', async () => {
-    const { container } = render(Settings, { onClose: () => {} })
+  // A profile with no `steps:` line has no ceiling (§110), so that is what the
+  // box has to show when it opens — the field used to say "24" over a file that
+  // said nothing. Unticking is how a cap gets asked for, and only a number in
+  // the box may become one.
+  const openStepsField = async (container: HTMLElement) => {
     await openSection(container, 'เอเจน')
     await waitFor(() => expect(screen.getAllByLabelText('ตั้งค่า').length).toBe(3))
     await fireEvent.click(screen.getAllByLabelText('ตั้งค่า')[2])
     await waitFor(() => expect(container.querySelector('.ag-steprow')).toBeTruthy())
+    return container.querySelector('.ag-steps') as HTMLInputElement
+  }
 
-    const box = container.querySelector('.ag-steps') as HTMLInputElement
-    expect(box.disabled).toBe(false)
-
-    await fireEvent.click(container.querySelector('.ag-check input')!)
-    // The number box goes dead rather than keeping a value that no longer applies.
-    await waitFor(() => expect((container.querySelector('.ag-steps') as HTMLInputElement).disabled).toBe(true))
+  it('opens with no loop cap, and says so in the file as a word', async () => {
+    const { container } = render(Settings, { onClose: () => {} })
+    const box = await openStepsField(container)
+    // The mocked profile names no `steps:`, so unlimited is what it already is.
+    expect(box.disabled).toBe(true)
+    expect((container.querySelector('.ag-check input') as HTMLInputElement).checked).toBe(true)
 
     await fireEvent.click(screen.getByText('บันทึก'))
     await waitFor(() => expect(vi.mocked(SaveAgentProfile)).toHaveBeenCalled())
     expect(vi.mocked(SaveAgentProfile).mock.calls.at(-1)![1]).toContain('steps: unlimited')
+  })
+
+  it('unticking hands the box back so a cap can be typed', async () => {
+    const { container } = render(Settings, { onClose: () => {} })
+    await openStepsField(container)
+
+    await fireEvent.click(container.querySelector('.ag-check input')!)
+    const box = await waitFor(() => {
+      const el = container.querySelector('.ag-steps') as HTMLInputElement
+      expect(el.disabled).toBe(false)
+      return el
+    })
+    await fireEvent.input(box, { target: { value: '12' } })
+
+    await fireEvent.click(screen.getByText('บันทึก'))
+    await waitFor(() => expect(vi.mocked(SaveAgentProfile)).toHaveBeenCalled())
+    const written = vi.mocked(SaveAgentProfile).mock.calls.at(-1)![1]
+    expect(written).toContain('steps: 12')
+    expect(written).not.toContain('unlimited')
   })
 
   // Deleting a shadow restores the bundled profile, so the button must not say

@@ -207,14 +207,16 @@ export function renderMarkdown(text: string): string {
 function confine(html: string): string {
   const host = document.createElement('div')
   host.appendChild(DOMPurify.sanitize(html, { RETURN_DOM_FRAGMENT: true }))
+  let nth = 0
   for (const svg of host.querySelectorAll('svg')) {
     if (svg.parentElement?.closest('svg')) continue
     // The app's own furniture — a card's icon — is not a drawing the user can
     // take away, and framing it would hang copy and save buttons off a 14px
     // glyph. Marked at the point it is built (renderPlan) rather than guessed
-    // at here by size or by which element it sits in.
+    // at here by size or by which element it sits in. Counted out of `nth` too,
+    // so a plan card appearing above a drawing mid-stream cannot renumber it.
     if (svg.hasAttribute('data-chrome')) continue
-    confineDrawing(svg)
+    confineDrawing(svg, nth++)
     frameDrawing(svg)
   }
   // A <style> outside a drawing is deleted rather than scoped.
@@ -258,12 +260,23 @@ function frameDrawing(svg: Element): void {
   box.appendChild(tools)
 }
 
-function confineDrawing(svg: Element): void {
+function confineDrawing(svg: Element, nth: number): void {
   const styles = Array.from(svg.querySelectorAll('style'))
   const identified = Array.from(svg.querySelectorAll('[id]'))
   if (styles.length === 0 && identified.length === 0) return
 
-  const scope = fingerprint(svg.outerHTML)
+  // Taken from the opening tag and the drawing's position, NOT from the whole
+  // of it. The whole of it grows with every token while the drawing streams, so
+  // a fingerprint of it renamed every id and every animation on every frame —
+  // and a <style> rewritten each frame restarts the animations it names, which
+  // is a model's animated drawing stuck on its first frame forever. The opening
+  // tag is complete before the first shape is drawn (renderStreamingMarkdown
+  // waits for it), so this is settled from the first frame and stays settled.
+  //
+  // Position is what keeps two drawings apart when they open identically, which
+  // is the collision the fingerprint exists for in the first place.
+  const openTag = svg.outerHTML.slice(0, svg.outerHTML.indexOf('>') + 1)
+  const scope = fingerprint(`${nth}|${openTag}`)
   svg.setAttribute('data-drawing', scope)
 
   const renamed = new Map<string, string>()
@@ -274,17 +287,29 @@ function confineDrawing(svg: Element): void {
     renamed.set(old, next)
     el.setAttribute('id', next)
   }
-  if (renamed.size > 0) {
+  const anims = new Map<string, string>()
+  for (const style of styles) {
+    for (const name of keyframeNames(style.textContent ?? '')) {
+      if (!anims.has(name)) anims.set(name, `${scope}-${name}`)
+    }
+  }
+  if (renamed.size > 0 || anims.size > 0) {
     for (const el of [svg, ...svg.querySelectorAll('*')]) {
       for (const attr of Array.from(el.attributes)) {
         if (attr.name === 'id') continue
-        const next = rename(attr.value, renamed)
+        // An animation is as likely to be started from a style attribute as
+        // from the stylesheet — the prompt already tells the model to colour
+        // that way — and a name renamed in one place and not the other is an
+        // animation that silently does nothing.
+        const next = attr.name === 'style'
+          ? renameAnimations(rename(attr.value, renamed), anims)
+          : rename(attr.value, renamed)
         if (next !== attr.value) el.setAttribute(attr.name, next)
       }
     }
   }
   for (const style of styles) {
-    style.textContent = scopeCss(rename(style.textContent ?? '', renamed), `[data-drawing="${scope}"] `)
+    style.textContent = scopeCss(rename(style.textContent ?? '', renamed), `[data-drawing="${scope}"] `, anims)
   }
 }
 
@@ -303,11 +328,48 @@ function rename(value: string, renamed: Map<string, string>): string {
     })
 }
 
+// An animation name is document-wide in exactly the way an id is, and a model
+// names its keyframes `spin`. Two drawings in one answer both calling theirs
+// that, and the second one plays the first one's animation — the same collision
+// the id fingerprint already exists to prevent, so it gets the same fix.
+const KEYFRAMES = /@(?:-webkit-)?keyframes\s+(-?[A-Za-z_][\w-]*)/gi
+
+function keyframeNames(css: string): string[] {
+  return Array.from(css.matchAll(KEYFRAMES), (m) => m[1])
+}
+
+// Only whole identifiers move, and only in the two places a keyframes name is
+// ever written: the `@keyframes` head, and an `animation` / `animation-name`
+// value. Both are handled by matching the word itself — a name we saw declared
+// in this same drawing — rather than by parsing the shorthand, whose order is
+// free and whose other tokens (a duration, an easing, `infinite`) are not
+// identifiers a model would also have named its keyframes.
+function renameAnimations(text: string, anims: Map<string, string>): string {
+  let out = text
+  for (const [old, next] of anims) {
+    out = out.replace(
+      new RegExp(`(^|[^\\w-])${old.replace(/[.*+?^${}()|[\]\\-]/g, '\\$&')}(?![\\w-])`, 'g'),
+      (_m, lead: string) => lead + next,
+    )
+  }
+  return out
+}
+
 // Prefixes every selector in a stylesheet so it can only match inside one
 // drawing. Nesting at-rules (@media and friends) keep their block and have the
 // rules inside it prefixed; the rest — @import above all, which fetches from
 // the network on the strength of model output — are dropped whole.
-function scopeCss(css: string, prefix: string): string {
+//
+// @keyframes is the exception that is neither. Its block is not a set of
+// selectors — the heads inside are `0%`, `from`, `to` — so prefixing them would
+// build rules matching nothing and a drawing whose animation never moves, which
+// is what a model's animated SVG did here until 15 ส.ค. It is emitted whole and
+// only its name is scoped.
+//
+// @property stays dropped, deliberately: a registered custom property is
+// global by definition, with no boundary to confine it to, so a drawing cannot
+// have one without reaching into the app's document.
+function scopeCss(css: string, prefix: string, anims: Map<string, string>): string {
   let out = ''
   let at = 0
   while (at < css.length) {
@@ -319,7 +381,10 @@ function scopeCss(css: string, prefix: string): string {
 
     if (head.startsWith('@')) {
       if (/^@(media|supports|layer|scope|container)\b/i.test(head)) {
-        out += `${head}{${scopeCss(body, prefix)}}`
+        out += `${head}{${scopeCss(body, prefix, anims)}}`
+      } else if (KEYFRAMES.test(head)) {
+        KEYFRAMES.lastIndex = 0 // the regex is global; a stale index skips the next head
+        out += `${renameAnimations(head, anims)}{${body}}`
       }
     } else if (head !== '') {
       const selectors = head
@@ -328,7 +393,7 @@ function scopeCss(css: string, prefix: string): string {
         .filter((s) => s !== '')
         .map((s) => prefix + s)
         .join(',')
-      out += `${selectors}{${body}}`
+      out += `${selectors}{${renameAnimations(body, anims)}}`
     }
     at = close + 1
   }
@@ -380,12 +445,48 @@ function fingerprint(text: string): string {
 // would run on every chunk of every reply for a case that never arrives.
 export function renderStreamingMarkdown(text: string): string {
   const open = text.lastIndexOf('<svg')
-  if (open === -1 || text.slice(open).includes('</svg>')) return renderMarkdown(text)
+  if (open === -1 || text.slice(open).includes('</svg>')) return markLive(renderMarkdown(text), text, false)
 
   const openTagEnd = text.indexOf('>', open)
-  if (openTagEnd === -1) return renderMarkdown(text.slice(0, open))
+  // The drawing has not started drawing yet, so there is nothing to mark alive.
+  if (openTagEnd === -1) return markLive(renderMarkdown(text.slice(0, open)), text, false)
 
   const lastElement = text.lastIndexOf('<')
   const whole = text.indexOf('>', lastElement) === -1 ? text.slice(0, lastElement) : text
-  return renderMarkdown(whole + '</svg>')
+  return markLive(renderMarkdown(whole + '</svg>'), text, true)
+}
+
+// Marks the one block still being written, so the surface can show it is being
+// written (style.css, the running beam).
+//
+// A block that takes a while to arrive — a plan, a drawing, a long fenced file
+// — reads as finished from its first frame: the card has its edge, its heading
+// and its คัดลอก button before a third of it exists, and a user who copies then
+// gets a third of it. The delegation card had this exact problem and was given
+// a beam; this is the same signal on the same grounds (owner, 15 ส.ค.).
+//
+// Which block is unfinished is not guessed. A drawing's opening <svg> with no
+// </svg> yet is what the caller above already computed; a fence is open when
+// the count of fence lines is odd. Only the LAST match is marked, because the
+// earlier ones closed — three code blocks in an answer must not all pulse
+// because the fourth is arriving.
+//
+// The finished message renders through renderMarkdown, which does none of
+// this, so a block cannot be left glowing by a turn that ended.
+function markLive(html: string, source: string, drawingOpen: boolean): string {
+  const selector = drawingOpen ? '.drawing-box' : fenceOpen(source) ? '.plan-card,.codeblock' : ''
+  if (selector === '') return html
+  const host = document.createElement('div')
+  host.innerHTML = html
+  const blocks = host.querySelectorAll(selector)
+  const last = blocks[blocks.length - 1]
+  if (!last) return html
+  last.classList.add('live')
+  return host.innerHTML
+}
+
+// Up to three leading spaces is still a fence to markdown; four makes it an
+// indented code block, which has no opening line to count.
+function fenceOpen(source: string): boolean {
+  return (source.match(/^ {0,3}(?:```|~~~)/gm) ?? []).length % 2 === 1
 }

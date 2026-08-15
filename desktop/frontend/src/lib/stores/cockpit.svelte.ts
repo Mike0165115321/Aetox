@@ -1252,6 +1252,11 @@ export function resetBackgroundWork(): void {
   cockpit.backgroundSteps = []
   cockpit.backgroundTasks = []
   autoCollected.clear()
+  // The timer goes with them. It is armed for the session whose delegations it
+  // was watching, and leaving it running would refill the list this just
+  // emptied — with the previous session's work, under the new session's chat.
+  if (bgPollTimer) clearTimeout(bgPollTimer)
+  bgPollTimer = null
 }
 export async function refreshBackgroundTasks(): Promise<void> {
   try {
@@ -1330,6 +1335,12 @@ function listFor(ev: ToolEvent): ToolStep[] {
  */
 function joinDelegationToRegister(ev: ToolEvent): void {
   if (!ev.parent || !ev.task) return
+  // A delegation running inside this turn is a delegation the register knows
+  // about, and until this the poll was armed only by a *background* event or by
+  // the turn ending — so for the whole time a delegate worked inside its turn,
+  // the list its card reads was empty and the card fell back to the row it was
+  // written to ignore. The clock froze exactly where it had before.
+  if (!bgPollTimer) void refreshBackgroundTasks()
   const live = cockpit.toolSteps.find((s) => s.ref === ev.parent)
   if (live) {
     live.task ||= ev.task

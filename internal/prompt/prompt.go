@@ -747,8 +747,13 @@ func drawing() string {
 		"regardless of scale and overflows the drawing.\n" +
 		"The surface that draws it is a sanitizer, not a browser. <foreignObject>, <use> and <animate> " +
 		"are removed from it without a word, and whatever you built inside one leaves a hole the size of " +
-		"the space it held — so every label is a <text> at its own x/y, and the picture is still. Write " +
-		"the whole drawing at the left margin with no blank line inside it and never inside a fenced " +
+		"the space it held — so every label is a <text> at its own x/y. Movement survives by exactly one " +
+		"route: a <style> inside the <svg>, with @keyframes in it, driving transform or opacity on classes " +
+		"you set there. Its rules and its animation names are scoped to your own drawing, so they cannot " +
+		"reach the app or collide with a second drawing in the same answer; @property and @import are " +
+		"dropped, and a <style> outside an <svg> is deleted whole. Animate only what the movement itself " +
+		"is saying — a thing still running, a flow going one way — never as decoration on a still picture. " +
+		"Write the whole drawing at the left margin with no blank line inside it and never inside a fenced " +
 		"block: a blank line hands the rest of it to the markdown parser, and a fence shows it as source " +
 		"instead of drawing it. A drawing is shown at the size of its own viewBox — 600 units wide draws " +
 		"600 pixels wide — shrinking to fit only when the window is narrower than that, so choose viewBox " +

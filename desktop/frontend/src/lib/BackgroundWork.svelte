@@ -24,6 +24,7 @@
   import type { BackgroundTask, ToolStep } from './types'
   import { t } from './i18n.svelte'
   import Icon from './Icon.svelte'
+  import { fold } from './fold'
 
   let {
     tasks, steps, onAnswer,
@@ -75,8 +76,17 @@
 {#if shown.length > 0}
   <div class="bgw">
     {#each shown as task (task.id)}
+      <!-- One wrapper per delegation, and the fold lives on it rather than on
+           the three cards inside. A row entering or leaving the tray is a
+           delegation starting or being collected, which is worth easing; the
+           running→done swap within it is the same row changing its mind, and
+           folding that would read as one card leaving and another arriving. -->
+      <div class="bgw-item" transition:fold>
       {#if task.state === 'running'}
-        <div class="bgw-card">
+        <!-- The state class the turn timeline's card carries too: the running
+             beam is styled on `.run`, and these two are deliberately one card
+             (§105.5), so it cannot be a thing only one of them does. -->
+        <div class="bgw-card run">
           <div class="bgw-head">
             <span class="bgw-mark run"><Icon name="loaderCircle" size={15} /></span>
             <b class="bgw-agent">{task.agent}</b>
@@ -135,6 +145,7 @@
           <span class="bgw-meta">{t('bgw.tools', { n: task.toolCalls })}</span>
         </div>
       {/if}
+      </div>
     {/each}
   </div>
 {/if}

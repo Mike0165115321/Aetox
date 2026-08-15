@@ -860,10 +860,97 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
    space; the hairline is only there to say where a card ends. */
 .bgw { display:flex; flex-direction:column; gap:14px; margin-bottom:12px; }
 .bgw-card {
+  position:relative;
   padding:9px 13px; border:1px solid var(--border-subtle); border-radius:var(--r-lg);
   background:transparent; font-size:var(--fs-xs);
 }
 .tool-steps > .bgw-card + .bgw-card { margin-top:14px; }
+
+/* Alive from the corner of the eye. The spinner and the "กำลังทำงาน" pill both
+   say a delegate is working, but only to someone already looking at them — and
+   a delegate is the slowest thing in a turn, so the user is usually reading
+   something else by then. Two lights chasing each other round the card's own
+   outline (owner picked it out of six, 15 ส.ค.).
+
+   A 1px ring masked out of a rotating conic gradient, laid exactly over the
+   hairline that is already there. Nothing is added to the card: no fill, no
+   halo, no extra box — which is the constraint this card has lost a fight to
+   before ("มันชิดกันเกินครับ ดูอ้วนมาก"), and four of these stacked still read
+   as four outlines rather than a wall.
+
+   Only .run wears it. A finished delegation is a record, and a record that
+   glows is asking to be re-read. */
+/* The same beam on the other things that take a while to arrive. A plan, a
+   drawing and a long fenced file all get their edge, their heading and their
+   คัดลอก button before a third of the content exists — so they read as
+   finished from the first frame, and a user who copies then gets a third of it.
+   The delegation card had exactly this problem; this is the same answer
+   (markdown.ts markLive picks which block, and only ever the last one).
+
+   THE PHASE IS ANIMATED ON THE ANCESTOR, NOT ON THE RING. That is the whole
+   reason this works at all, and it is not a style choice.
+
+   A streamed answer is drawn with {@html}, so every token REPLACES the markup
+   inside .markdown-body. An animation declared on the ring restarts from zero
+   with the element that carries it, which on a plan arriving token by token is
+   sixty times a second: the light never travels, it twitches in place (owner,
+   15 ส.ค.: "ตอนวาดแผน อนิเมชั่นพังครับ เพราะมันสตรีมอ่ะ"). No timing function
+   fixes that — the element is new, so its clock is new.
+
+   So the clock lives on an element the stream does not touch: .markdown-body
+   itself, and the delegation card, both of which Svelte owns and keeps. The
+   property inherits, so a ring created this frame reads the phase already in
+   progress and is instantly where the previous one left off. :has(.live) keeps
+   the clock off every finished message in the transcript. */
+@property --beam-phase { syntax:'<angle>'; initial-value:0deg; inherits:true; }
+@keyframes beam-phase { to { --beam-phase:360deg; } }
+.bgw-card.run,
+.markdown-body:has(.live) { animation:beam-phase 3s linear infinite; }
+
+.markdown-body .plan-card.live,
+.markdown-body .codeblock.live,
+.markdown-body .drawing-box.live { position:relative; }
+.bgw-card.run::before,
+.markdown-body .plan-card.live::before,
+.markdown-body .codeblock.live::before,
+.markdown-body .drawing-box.live::before {
+  content:''; position:absolute; inset:0; border-radius:inherit; padding:1.5px;
+  pointer-events:none; z-index:1;
+  /* Two comets, each a long fade-in tail behind a bright head cut off sharply
+     at the front — the asymmetry is what says which way it is travelling. */
+  background:conic-gradient(from var(--beam-phase),
+    transparent 0 18%,
+    var(--interactive) 40%,
+    var(--interactive-bright) 45%,
+    transparent 47% 68%,
+    var(--interactive) 90%,
+    var(--interactive-bright) 95%,
+    transparent 97% 100%);
+  filter:drop-shadow(0 0 3px var(--interactive));
+  -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;
+  mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite:exclude;
+}
+/* The card's ring sits ON its hairline rather than inside it — it has nothing
+   clipping it. The three markdown blocks do (a code block hides its overflow
+   to keep its header inside its own rounded corners), so theirs sit just
+   inside instead of being cut off at the corners. */
+.bgw-card.run::before { inset:-1px; }
+/* A drawing box has no border of its own to inherit a radius from. */
+.markdown-body .drawing-box.live::before { border-radius:var(--r-md); }
+/* Motion off, signal kept: a steady lit outline still says which one is the
+   one still working, which is the whole job. */
+@media (prefers-reduced-motion: reduce) {
+  .bgw-card.run,
+  .markdown-body:has(.live) { animation:none; }
+  .bgw-card.run::before,
+  .markdown-body .plan-card.live::before,
+  .markdown-body .codeblock.live::before,
+  .markdown-body .drawing-box.live::before {
+    background:color-mix(in srgb, var(--interactive) 55%, transparent);
+  }
+}
 .bgw-card.is-waiting { border-color:var(--status-modified); }
 .bgw-card.is-done { display:flex; align-items:center; gap:9px; padding:7px 13px; }
 .bgw-head { display:flex; align-items:center; gap:8px; }

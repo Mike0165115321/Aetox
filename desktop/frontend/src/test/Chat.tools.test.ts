@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, fireEvent } from '@testing-library/svelte'
 import { tick } from 'svelte'
 import Chat from '../lib/Chat.svelte'
-import { cockpit, applyToolEvent } from '../lib/stores/cockpit.svelte'
+import { cockpit, applyToolEvent, resetBackgroundWork } from '../lib/stores/cockpit.svelte'
 import { setLocale } from '../lib/i18n.svelte'
 import { GuideTopics, SwitchApprovalMode, SupportedThinkLevels, BackgroundTasks } from './mocks/wailsApp'
 
@@ -556,6 +556,54 @@ describe('sub-agent tool events', () => {
       expect(cockpit.toolSteps[0].task).toBeUndefined()
       applyToolEvent({ action: 'call', ref: 'r1', parent: 'call_1', task: 'task_1', name: 'web_fetch', subject: 'crm.co.th' })
       expect(cockpit.toolSteps[0].task).toBe('task_1')
+    })
+
+    // One delegation, one card. Reported as "แล้วจะแสดงซ้อนกันทำไมอ่ะ" with the
+    // worker drawn once in the previous turn's message and once in the tray —
+    // the case a filter over the live list alone cannot catch, because that list
+    // was emptied when the collecting turn began.
+    it('drops a tray row for a delegation the transcript is already drawing', async () => {
+      cockpit.backgroundTasks = [registered()] as any
+      const { container } = render(Chat, {
+        ...baseProps,
+        awaitingReply: true,
+        toolSteps: [{ label: 'task_result task_1', state: 'run', startedAt: Date.now() }] as any,
+        messages: [{
+          role: 'agent', text: 'ส่งงานให้ซับเอเจนแล้ว', time: '10:54',
+          steps: [spawnedRow],
+        }] as any,
+      })
+      expect(container.querySelectorAll('.bgw .bgw-card').length).toBe(0)
+      // Still reachable where the work was started, which is the whole reason
+      // the tray row is redundant.
+      const card = await openFinished(container)
+      expect(card?.querySelector('.bgw-badge.run')).toBeTruthy()
+    })
+
+    // Unless it is stuck: the tray row is the only one with somewhere to type.
+    it('keeps the tray row when the delegate is parked on a question', async () => {
+      cockpit.backgroundTasks = [registered({ state: 'waiting', question: 'เอาไฟล์ไหน' })] as any
+      const { container } = render(Chat, {
+        ...baseProps,
+        awaitingReply: false,
+        messages: [{ role: 'agent', text: 'ส่งงานแล้ว', time: '10:54', steps: [spawnedRow] }] as any,
+      })
+      expect(container.querySelector('.bgw .bgw-answer')).toBeTruthy()
+    })
+
+    // The card can only ask the register if somebody fetched it. The poll used
+    // to start on a *background* event or at the end of the turn, so a delegate
+    // working inside its turn had nothing to read and the clock stayed frozen
+    // for exactly as long as the user was watching it.
+    it('starts polling the register as soon as a delegate works inside the turn', async () => {
+      cockpit.toolSteps = []
+      resetBackgroundWork()
+      vi.mocked(BackgroundTasks).mockResolvedValue([
+        { id: 'task_1', agent: 'explore', label: 'ตรวจไฟล์ทดสอบ', startedAt: new Date().toISOString(), toolCalls: 9, state: 'running', collected: false },
+      ] as any)
+      applyToolEvent({ action: 'call', ref: 'call_1', name: 'task', agent: 'explore' })
+      applyToolEvent({ action: 'call', ref: 'r1', parent: 'call_1', task: 'task_1', name: 'list' })
+      await vi.waitFor(() => expect(cockpit.backgroundTasks).toHaveLength(1))
     })
   })
 

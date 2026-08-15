@@ -1,6 +1,8 @@
 <script lang="ts">
   import type { BackgroundTask, ChatMessage, TaskState, ModelStatus, ToolStep, TimelineNode, ContextBreakdown } from './types'
   import { groupSteps, isDelegation } from './types'
+  import { streamedHtml } from './morph'
+  import { fold } from './fold'
   import TaskTimeline from './TaskTimeline.svelte'
   import BackgroundWork from './BackgroundWork.svelte'
   import Palette from './Palette.svelte'
@@ -153,6 +155,27 @@
     return task.state === 'failed' ? 'err' : 'done'
   }
   const isRunningNode = (n: TimelineNode) => cardState(n) === 'run'
+  // One delegation, one card. The tray was the answer to a card in the
+  // transcript that could not say "alive" — now that it can, a tray row beside
+  // it is the same worker and the same clock drawn twice.
+  //
+  // Both places have to be checked, and checking only the live list is why the
+  // duplicate was reported: a delegation started in an earlier turn has its card
+  // in that message's steps, and `toolSteps` was cleared when the next turn
+  // began. That is the commonest case there is — the parent is told to go and do
+  // other work rather than collect immediately (§44.11).
+  const drawnDelegations = $derived(
+    new Set(
+      [...toolSteps, ...messages.flatMap((m) => m.steps ?? [])]
+        .map((s) => s.task)
+        .filter(Boolean),
+    ),
+  )
+  // A delegate parked on a question is never hidden: the tray row carries the
+  // answer box, and the transcript's card has nowhere to type.
+  const trayTasks = $derived(
+    cockpit.backgroundTasks.filter((b) => b.state === 'waiting' || !drawnDelegations.has(b.id)),
+  )
 
   // This chat's own name, for the breadcrumb above it. Read off the project's
   // list rather than kept here: the title is the store's to know, and a second
@@ -1421,7 +1444,10 @@
      questions. -->
 {#snippet subagentTimeline(nodes: TimelineNode[], live: boolean)}
   <div class="tool-steps">
-    {#each nodes as node}
+    <!-- Keyed, which an unkeyed each is not: without it Svelte removes the LAST
+         node and shuffles the rest up, so a delegation finishing folded away
+         somebody else's card. -->
+    {#each nodes as node (stepsKey(node))}
         <!-- The same card the background tray draws (§105.5), and deliberately
              so: a delegation that finished inside its turn and one still
              running afterwards are the same event at two moments, and two
@@ -1433,7 +1459,12 @@
              second the worker started. -->
         {@const state = cardState(node)}
         {@const secs = cardSecs(node, live)}
-        <div class="bgw-card {state}">
+        <!-- Folds shut rather than vanishing. A delegate that finishes leaves
+             the live area for the collapsed count above, and in one frame the
+             card, its beam and its steps were simply gone — the work looked
+             lost rather than done. Out only: a delegation appearing is the
+             model starting one, and that should be immediate. -->
+        <div class="bgw-card {state}" out:fold>
           <div class="bgw-head">
             {#if state === 'run'}
               <span class="bgw-mark run"><Icon name="loaderCircle" size={15} /></span>
@@ -1472,7 +1503,10 @@
               {t('chat.usedTools', { n: toolCount(node) })}
             </button>
             {#if stepsOpen(node)}
-              <div class="bgw-steps">
+              <!-- Both ways, here: the user's own click on the toggle deserves
+                   the same fold the finish gets, or the control feels like a
+                   different mechanism from the thing it controls. -->
+              <div class="bgw-steps" transition:fold>
                 {#each node.children as child}
                   {@render toolRow(child, live)}
                 {/each}
@@ -1895,7 +1929,12 @@
               {@render toolTimeline(runningOwn, true)}
             {/if}
             {#if streamingText}
-              <div class="markdown-body">{@html renderStreamingMarkdown(streamingText)}</div>
+              <!-- Morphed rather than re-assigned. {@html} rebuilds the whole
+                   reply on every token, which restarts any animation inside it
+                   and drops a selection mid-drag; this keeps the nodes that are
+                   still the same nodes (morph.ts). The finished bubble above
+                   renders once, so it has nothing to keep and uses {@html}. -->
+              <div class="markdown-body" use:streamedHtml={renderStreamingMarkdown(streamingText)}></div>
             {/if}
             {#if cockpit.ask}
               <div class="ask-panel">
@@ -1961,7 +2000,7 @@
          cannot see, and a card that scrolls away with the history is one more
          way not to see it. -->
     <BackgroundWork
-      tasks={cockpit.backgroundTasks}
+      tasks={trayTasks}
       steps={cockpit.backgroundSteps}
       onAnswer={answerBgTask}
     />

@@ -117,6 +117,63 @@ describe('a drawing that could restyle the app around it', () => {
     expect(out).toContain(`url(#${ids[1]})`)
   })
 
+  // A drawing that moves. The scoper used to drop every at-rule it did not
+  // nest, @keyframes included, so an animated SVG came out as a still one and
+  // nothing said why.
+  it('keeps an animation running, with its steps left alone', () => {
+    const out = renderMarkdown(
+      '<svg viewBox="0 0 10 10"><style>@keyframes spin{from{opacity:0}to{opacity:1}}' +
+        '.dot{animation:spin 2s linear infinite}</style><circle class="dot" r="2" /></svg>'
+    )
+
+    expect(out).toContain('@keyframes')
+    // The steps inside are not selectors. Prefixed, they match nothing and the
+    // animation never moves — which is the whole bug.
+    expect(out).toContain('from{opacity:0}')
+    expect(out).not.toMatch(/\[data-drawing="[^"]+"\] from\{/)
+    // The rule that starts it still names the keyframes that survived.
+    const name = out.match(/@keyframes ([\w-]+)/)?.[1]
+    expect(name).toBeTruthy()
+    expect(out).toContain(`animation:${name} 2s linear infinite`)
+  })
+
+  it('keeps two drawings that name the same animation apart', () => {
+    const anim = (dur: string) =>
+      `<svg viewBox="0 0 1${dur[0]} 10"><style>@keyframes spin{to{opacity:1}}.d{animation:spin ${dur}}</style><circle class="d" r="2" /></svg>`
+    const out = renderMarkdown(`${anim('2s')}\n\n${anim('9s')}`)
+
+    const names = [...out.matchAll(/@keyframes ([\w-]+)/g)].map((m) => m[1])
+    expect(names).toHaveLength(2)
+    expect(names[0]).not.toBe(names[1])
+    expect(out).toContain(`animation:${names[0]} 2s`)
+    expect(out).toContain(`animation:${names[1]} 9s`)
+  })
+
+  // An animation is as likely to be started from a style attribute as from the
+  // stylesheet, and a name renamed in only one of the two does nothing at all.
+  it('renames the animation a style attribute starts', () => {
+    const out = renderMarkdown(
+      '<svg viewBox="0 0 10 10"><style>@keyframes spin{to{opacity:1}}</style>' +
+        '<circle r="2" style="animation:spin 2s linear infinite" /></svg>'
+    )
+
+    const name = out.match(/@keyframes ([\w-]+)/)?.[1]
+    expect(name).not.toBe('spin')
+    expect(out).toContain(`animation:${name} 2s linear infinite`)
+  })
+
+  // A registered custom property has no boundary to be confined to — it is the
+  // document's, whoever declares it — so it stays dropped.
+  it('still drops an at-rule it cannot confine', () => {
+    const out = renderMarkdown(
+      '<svg viewBox="0 0 10 10"><style>@property --a{syntax:"<angle>";initial-value:0deg;inherits:false}' +
+        '.d{fill:red}</style><circle class="d" r="2" /></svg>'
+    )
+
+    expect(out).not.toContain('@property')
+    expect(out).toContain('.d{fill:red}')
+  })
+
   // Most drawings have neither, and must come out of the renderer as they went
   // in — the confining is a repair, not a house style.
   it('leaves a drawing with no stylesheet and no id untouched', () => {
@@ -227,5 +284,34 @@ describe('taking a drawing out of the app', () => {
     const host = document.createElement('div')
     host.innerHTML = html
     expect(host.querySelectorAll('.drawing-box').length).toBe(1)
+  })
+})
+
+// A block that takes a while to arrive reads as finished from its first frame:
+// the card has its edge, its heading and its คัดลอก button before a third of
+// it exists. The running beam says otherwise, and only ever about one block.
+describe('marking the block still being written', () => {
+  it('marks a drawing while its closing tag has not arrived', () => {
+    const half = 'ดูภาพนี้\n\n<svg viewBox="0 0 100 40" width="100%"><rect width="60" height="20" />'
+    expect(renderStreamingMarkdown(half)).toContain('drawing-box live')
+    expect(renderStreamingMarkdown(half + '</svg>')).not.toContain('live')
+  })
+
+  it('marks a plan while its fence is open', () => {
+    const half = '```plan\n# แผนทดสอบ\n- เปิด desk_list\n'
+    expect(renderStreamingMarkdown(half)).toContain('live')
+    expect(renderStreamingMarkdown(half + '```')).not.toContain('live')
+  })
+
+  it('marks only the fence still open, never the ones that closed', () => {
+    const out = renderStreamingMarkdown('```go\nfmt.Println(1)\n```\n\nแล้วอันนี้\n\n```go\nfmt.Println(2)\n')
+    const marked = [...out.matchAll(/class="codeblock( live)?"/g)].map((m) => m[1] ?? '')
+    expect(marked).toEqual(['', ' live'])
+  })
+
+  // A finished message renders through renderMarkdown, so nothing it draws can
+  // be left glowing by a turn that has ended.
+  it('never marks anything on a finished answer', () => {
+    expect(renderMarkdown('```plan\n# แผน\n')).not.toContain('live')
   })
 })

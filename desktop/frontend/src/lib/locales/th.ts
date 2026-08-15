@@ -818,12 +818,14 @@ export const th = {
   'settings.agentAllToolsTip': 'ได้เครื่องมือทั้งหมดที่ผู้ช่วยมี ยกเว้นที่ปิดไว้',
   'settings.agentDenyTip': 'ถูกห้ามใช้ ต่อให้เรียกก็ไม่รัน: {list}',
   'settings.agentStepsTip': 'วนทำงานได้มากสุด {n} รอบต่อหนึ่งงาน',
+  'settings.agentStepsNoneTip': 'วนทำงานได้จนกว่างานจะเสร็จ ไม่มีเพดานรอบ',
 'settings.agentOverrides': 'ทับของแอป',
   'settings.agentRevert': 'คืนค่าของแอป',
   'settings.agentAllTools': 'เครื่องมือครบ',
   'settings.agentToolCount': 'เครื่องมือ {n} ตัว',
   'settings.agentDenyCount': 'ปิด {n} ตัว',
   'settings.agentSteps': 'จำกัด {n} รอบ',
+  'settings.agentStepsNone': 'ไม่จำกัดรอบ',
   'settings.agentModelInherit': 'ใช้โมเดลที่เลือกอยู่',
   // The select on a card has no visible label — the card is the context — so
   // the only thing a screen reader has to go on is this.
@@ -862,9 +864,9 @@ export const th = {
   'settings.agentToolAllow': 'อนุญาต',
   'settings.agentToolDeny': 'ห้าม',
   'settings.agentStepsField': 'จำกัดรอบทำงาน',
-  'settings.agentStepsFieldHint': 'วนทำงานได้มากสุดกี่รอบต่อหนึ่งงาน เว้นว่างไว้ = ใช้ค่าเริ่มต้น 24',
+  'settings.agentStepsFieldHint': 'วนทำงานได้มากสุดกี่รอบต่อหนึ่งงาน เว้นว่างไว้ = ไม่จำกัด ซึ่งเป็นค่าเริ่มต้น',
   'settings.agentStepsUnlimited': 'ไม่จำกัด',
- 'settings.agentStepsUnlimitedWarn': 'วนได้ไม่จำกัดรอบ เบรกที่เหลือคือด่านสิทธิ์ ปุ่มหยุด และตัวกันวนซ้ำ ใช้กับงานที่ประเมินจำนวนรอบล่วงหน้าไม่ได้จริง ๆ',
+ 'settings.agentStepsUnlimitedWarn': 'วนได้ไม่จำกัดรอบ ซึ่งเป็นค่าเริ่มต้น เบรกที่เหลือคือด่านสิทธิ์ ปุ่มหยุด และตัวกันวนซ้ำ ใส่ตัวเลขเมื่ออยากคุมรอบเอง',
 
   // ---- ตั้งค่าเอเจน: ห้าหมวด ----
   // เรียงตามลำดับคำถามที่คนถามจริง ไม่ใช่ตามลำดับคีย์ในไฟล์ .md
