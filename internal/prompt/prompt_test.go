@@ -253,9 +253,51 @@ func TestBuildOpenSandboxSwapsTheEnvironmentLayer(t *testing.T) {
 	}
 	// A refusal the model cannot act on turns into "I can't", which is the
 	// failure this whole feature exists to end. The wall sentence has to carry
-	// the way out with it.
-	if !strings.Contains(closed, "ask the user to add that folder") {
+	// the way out with it — see TestTheWallAlwaysCarriesItsWayOut for which way
+	// out, which depends on whether this host can put a card on the screen.
+	if !strings.Contains(closed, "the user can add it") {
 		t.Errorf("closed-sandbox prompt states the wall without the remedy:\n%s", closed)
+	}
+}
+
+// The wall is stated in three places (project only, project plus folders, and
+// each of those on a host that can ask) and every one of them has to end with
+// something the model can DO. A wall with no way out reads to the model as a
+// product limitation, and it relays it to the user as one.
+//
+// The two ways out are genuinely different work, which is why they are different
+// sentences rather than one hedged sentence: with a door, naming the path is the
+// request; without one, saying which folder was needed is all there is.
+func TestTheWallAlwaysCarriesItsWayOut(t *testing.T) {
+	root := t.TempDir()
+	extra := []string{t.TempDir()}
+
+	for _, tc := range []struct {
+		name  string
+		scope Scope
+		want  string
+		avoid string
+	}{
+		{"project only, no door", Scope{Root: root}, "the user can add it", "shown a card"},
+		{"project only, with door", Scope{Root: root, CanAsk: true}, "shown a card", "no way to ask"},
+		{"added folders, no door", Scope{Root: root, Extra: extra}, "the user can add it", "shown a card"},
+		{"added folders, with door", Scope{Root: root, Extra: extra, CanAsk: true}, "shown a card", "no way to ask"},
+	} {
+		got := Build(SurfaceDesktop, tc.scope)
+		if !strings.Contains(got, tc.want) {
+			t.Errorf("%s: prompt is missing %q:\n%s", tc.name, tc.want, got)
+		}
+		if strings.Contains(got, tc.avoid) {
+			t.Errorf("%s: prompt carries the other host's remedy (%q)", tc.name, tc.avoid)
+		}
+	}
+
+	// And a declined card is not an invitation to ask again. Without this the
+	// model re-raises the same folder every turn, which teaches the user to click
+	// through every card without reading it.
+	withDoor := Build(SurfaceDesktop, Scope{Root: root, CanAsk: true})
+	if !strings.Contains(withDoor, "do not raise the same folder again") {
+		t.Errorf("nothing stops the model re-asking for a folder the user declined:\n%s", withDoor)
 	}
 }
 

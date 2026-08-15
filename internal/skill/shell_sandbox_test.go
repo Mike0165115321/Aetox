@@ -179,8 +179,8 @@ func TestShellFollowsTheWorkspaceFolderList(t *testing.T) {
 	if err := guardCommandPaths(root, command, nativeGate()); err == nil {
 		t.Fatal("the folder was reachable before it was added")
 	}
-	setSandboxPolicy(root, false, []string{outside})
-	t.Cleanup(func() { setSandboxPolicy(root, false, nil) })
+	setSandboxPolicy(root, false, []string{outside}, nil)
+	t.Cleanup(func() { setSandboxPolicy(root, false, nil, nil) })
 	if err := guardCommandPaths(root, command, nativeGate()); err != nil {
 		t.Errorf("an added folder is still refused by shell: %v", err)
 	}
@@ -199,8 +199,8 @@ func TestShellInOpenModeRoamsButNotIntoCredentialStores(t *testing.T) {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	setSandboxPolicy(root, true, nil)
-	t.Cleanup(func() { setSandboxPolicy(root, false, nil) })
+	setSandboxPolicy(root, true, nil, nil)
+	t.Cleanup(func() { setSandboxPolicy(root, false, nil, nil) })
 
 	if err := guardCommandPaths(root, "type "+filepath.Join(home, "notes.txt"), nativeGate()); err != nil {
 		t.Errorf("open mode refused an ordinary path: %v", err)
@@ -230,8 +230,8 @@ func TestVariablePathIsRefusedOnlyWhereThereIsAWall(t *testing.T) {
 	if err := os.MkdirAll(open, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	setSandboxPolicy(open, true, nil)
-	t.Cleanup(func() { setSandboxPolicy(open, false, nil) })
+	setSandboxPolicy(open, true, nil, nil)
+	t.Cleanup(func() { setSandboxPolicy(open, false, nil, nil) })
 	if err := guardCommandPaths(open, command, nativeGate()); err != nil {
 		t.Errorf("open mode refused a variable-built path, guarding a wall that is not there: %v", err)
 	}
@@ -254,8 +254,8 @@ func TestOpenModeStillRefusesLiteralCredentialPathsEvenBesideAVariable(t *testin
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	setSandboxPolicy(root, true, nil)
-	t.Cleanup(func() { setSandboxPolicy(root, false, nil) })
+	setSandboxPolicy(root, true, nil, nil)
+	t.Cleanup(func() { setSandboxPolicy(root, false, nil, nil) })
 
 	// A variable elsewhere in the line must not become a skeleton key for the
 	// literal credential path beside it.

@@ -181,13 +181,36 @@ func resolveSandboxPath(root string, requestPath string) (string, error) {
 	// workspace — by adding this folder, or by working with no project focused
 	// at all. Either way the credential stores stay shut (sandbox_open.go).
 	policy := sandboxPolicyFor(safeRoot)
-	if !policy.open && !policy.covers(resolvedTarget) {
+	if !policy.open && !policy.covers(resolvedTarget) && !widened(safeRoot, policy, resolvedTarget) {
 		return "", fmt.Errorf("path is outside the folders this session can use — the user has to add it first")
 	}
 	if err := refuseCredentialStore(resolvedTarget); err != nil {
 		return "", err
 	}
 	return safeTarget, nil
+}
+
+// widened offers the refusal above to the host as a question — "this needs
+// D:\shared-lib, add it to the project?" — and reports whether the workspace
+// really did grow to cover the target.
+//
+// The host's yes is not what decides it. Whatever the answer, the verdict comes
+// from re-reading the policy: the workspace is what the folder list says it is,
+// and a host that answered true without putting anything on the list gets the
+// same refusal it would have got in silence. That is the difference between a
+// door and a hole — the door still leads through the list, it just stops making
+// the user walk around to reach it.
+//
+// Left after `covers` on purpose, so the ordinary case costs nothing: a session
+// with no door, or a path already inside the workspace, never reaches this.
+func widened(safeRoot string, policy sandboxPolicy, resolvedTarget string) bool {
+	if policy.ask == nil {
+		return false
+	}
+	if !policy.ask(resolvedTarget) {
+		return false
+	}
+	return sandboxPolicyFor(safeRoot).covers(resolvedTarget)
 }
 
 // rootResolutions caches evalExistingSymlinks per sandbox root. Roots are

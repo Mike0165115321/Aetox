@@ -161,7 +161,18 @@ type App struct {
 	// from the store on every focus switch and handed to the engine and the
 	// system prompt from this one field, so the panel, the prompt and the gate
 	// cannot disagree about what this session can reach.
+	//
+	// Read and written only through workspaceRoots/setWorkspaceRoots: the
+	// workspace door adds a folder from the turn goroutine mid-tool-call, while
+	// a binding call may be reading the same slice to draw the panel.
 	extraRoots []string
+	// wsMu guards extraRoots and workspaceDirty.
+	wsMu sync.Mutex
+	// workspaceDirty marks a folder added while a turn was running. The running
+	// call gets the folder immediately (skill.SetWorkspaceFolders); the engine
+	// gets it at endTurn, because rebuilding it underneath a turn in flight
+	// would throw away the work the user is waiting for.
+	workspaceDirty bool
 
 	// shells is which shell this project's commands run in — the machine's own,
 	// or a WSL distro. See desktop/shell_backend.go.
@@ -169,6 +180,12 @@ type App struct {
 
 	turnMu     sync.Mutex
 	turnCancel context.CancelFunc // cancels the chat turn in flight, nil when idle
+	// turnCtx is that same turn's context, kept so a gate deep inside a tool
+	// call can wait on the user without outliving the turn. The workspace door
+	// (workspace.go) is the one that needs it: resolveSandboxPath carries no
+	// context of its own, so without this a card left unanswered would hold the
+	// tool call open and Stop would do nothing until somebody clicked it.
+	turnCtx context.Context
 
 	// turnRunning/turnSession are the turn in flight's identity: whether one is
 	// running, and which session it belongs to. Stamped by beginTurn and read by
@@ -1526,7 +1543,7 @@ func (a *App) focusNone() {
 	a.projectFocused = false
 	// Cleared rather than carried: the added folders belong to the project that
 	// is being left, and this mode reaches the machine anyway.
-	a.extraRoots = nil
+	a.setWorkspaceRoots(nil)
 	a.reload(config.ConfigOptions{RootPath: root, ApprovalMode: string(safety.ApprovalFullAccess)})
 }
 
@@ -1586,10 +1603,11 @@ func (a *App) beginTurn() error {
 // already arrived while there was nothing to press it against — in which case
 // the caller cancels immediately instead of running a turn the user has
 // already refused.
-func (a *App) armTurnCancel(cancel context.CancelFunc) (stopNow bool) {
+func (a *App) armTurnCancel(ctx context.Context, cancel context.CancelFunc) (stopNow bool) {
 	a.turnMu.Lock()
 	defer a.turnMu.Unlock()
 	a.turnCancel = cancel
+	a.turnCtx = ctx
 	stopNow = a.turnStopEarly
 	a.turnStopEarly = false
 	return stopNow
@@ -1605,6 +1623,14 @@ func (a *App) endTurn() {
 	a.turnSession = ""
 	a.turnMu.Unlock()
 	a.emitEvent("agent:done", TurnStatus{Running: false, SessionID: done})
+	// A folder approved mid-turn reached the running tool call directly; the
+	// engine still has to be rebuilt for the system prompt to say the workspace
+	// grew. Here rather than at the moment of approval: applyConfig swaps the
+	// agent, the registry and the dispatcher, and doing that under a turn in
+	// flight would discard the work the user is waiting on.
+	if a.takeWorkspaceDirty() {
+		a.reloadWorkspace()
+	}
 }
 
 // turnBusy reports whether a chat turn is in flight.
@@ -1744,7 +1770,7 @@ func (a *App) runTurn(text string) (SessionMessage, SessionMessage, error) {
 		text = expanded
 	}
 	ctx, cancel := context.WithCancel(a.ctx)
-	if a.armTurnCancel(cancel) {
+	if a.armTurnCancel(ctx, cancel) {
 		// Stop was pressed before this cancel func existed (the beginTurn →
 		// here gap, where openTurn writes to a possibly-busy database). The
 		// press has to mean stop, not "stop if the timing was lucky".
@@ -1754,6 +1780,7 @@ func (a *App) runTurn(text string) (SessionMessage, SessionMessage, error) {
 		cancel()
 		a.turnMu.Lock()
 		a.turnCancel = nil
+		a.turnCtx = nil
 		a.turnMu.Unlock()
 	}()
 	// Accumulate reasoning at the source so it persists with the turn — the
@@ -2342,7 +2369,7 @@ func (a *App) OpenProjectFolder() (ProjectStatus, error) {
 	// Sessions are per project — turns are already persisted incrementally, so
 	// just re-point the engine and start a fresh session for the new project.
 	a.projectFocused = true
-	a.extraRoots = a.storedWorkspaceFolders(dir)
+	a.setWorkspaceRoots(a.storedWorkspaceFolders(dir))
 	a.reload(config.ConfigOptions{RootPath: dir, ApprovalMode: string(safety.ApprovalFullAccess)})
 	a.startNewSession()
 	a.touchProject(a.cfg.SandboxRoot)
@@ -2360,7 +2387,7 @@ func (a *App) OpenProjectPath(root string) (ProjectStatus, error) {
 		return ProjectStatus{}, fmt.Errorf("empty project path")
 	}
 	a.projectFocused = true
-	a.extraRoots = a.storedWorkspaceFolders(root)
+	a.setWorkspaceRoots(a.storedWorkspaceFolders(root))
 	a.reload(config.ConfigOptions{RootPath: root, ApprovalMode: string(safety.ApprovalFullAccess)})
 	a.startNewSession()
 	a.touchProject(a.cfg.SandboxRoot)
@@ -3073,7 +3100,10 @@ func (a *App) applyConfig(cfg config.Config) {
 		// sees itself plus the folders the user added to it. See unfocusedRoot
 		// and desktop/workspace.go.
 		OpenSandbox: !a.projectFocused,
-		ExtraRoots:  a.extraRoots,
+		ExtraRoots:  a.workspaceRoots(),
+		// The door in that wall: a path outside the workspace asks to add the
+		// folder it lives in rather than ending the work (workspace.go).
+		AskWorkspace: a.askWorkspaceWiden,
 		// The project this chat is being held inside, and the names of the
 		// files it keeps — read fresh on every bootstrap, like every other
 		// manifest, so a file dropped into the folder is known to the next

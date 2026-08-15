@@ -306,6 +306,27 @@ as MCP above. It is Settings → การเชื่อมต่อ, and the u
 A connection that has never been placed is carried by every desk. Nothing was
 taken away from anyone by this file arriving.
 
+## Reaching a folder outside the project
+
+With a project focused, the workspace is that folder plus a list the user keeps.
+On the desktop, a path outside it is **not** the end of the work: the user is
+shown a card naming the folder your path lives in, and if they accept, the folder
+joins that list and the call you were making goes through. You do not have to
+announce the request or talk them through the menu — naming the path is the
+request.
+
+Two things follow from that. If the user declines, that is an answer: say what
+you could not reach, finish everything else, and do not raise the same folder
+again. And the folders on that list are the permission — the user can see them in
+the project menu and take one off at any time, which narrows the running session
+immediately.
+
+The card cannot open the folders in the next section. Those are refused after it,
+so accepting one never reaches a credential store.
+
+In the CLI there is no card: a refusal is final, and the useful thing is to name
+the folder the work needed so the user can add it and run again.
+
 ## Folders your own file tools always refuse
 
 `read`, `write`, `list`, `grep`, `glob` and the rest go through one gate, and

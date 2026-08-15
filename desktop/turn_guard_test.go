@@ -11,6 +11,7 @@ package main
 // agent's context while a turn runs.
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
@@ -29,7 +30,7 @@ func TestStopPressedBeforeTheCancelFuncExistsStillStops(t *testing.T) {
 	a.CancelTurn() // turnCancel is nil here — the gap
 
 	pressed := false
-	if !a.armTurnCancel(func() { pressed = true }) {
+	if !a.armTurnCancel(context.Background(), func() { pressed = true }) {
 		t.Fatal("armTurnCancel = false after a Stop in the gap, want true — the press was dropped")
 	}
 	// armTurnCancel reports; runTurn is the one that pulls the trigger.
@@ -38,7 +39,7 @@ func TestStopPressedBeforeTheCancelFuncExistsStillStops(t *testing.T) {
 	}
 
 	// And the flag is consumed: the next turn must not inherit this press.
-	if a.armTurnCancel(func() {}) {
+	if a.armTurnCancel(context.Background(), func() {}) {
 		t.Error("a second armTurnCancel = true, want false — one press stops one turn")
 	}
 }

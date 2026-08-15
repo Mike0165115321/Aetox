@@ -66,6 +66,15 @@ type RegistryOptions struct {
 	// list IS the permission, so anything added behind the user's back is a
 	// permission they never gave.
 	ExtraRoots []string
+	// AskWorkspace is the door in the wall ExtraRoots is the list for: when a
+	// path lands outside the workspace, the host offers to add the folder it
+	// lives in rather than ending the work with a refusal the user has to go
+	// undo by hand. See WidenFunc for what the answer is and is not allowed to
+	// decide.
+	//
+	// Nil — the CLI, every test, any host with no UI to ask through — keeps the
+	// flat refusal exactly as it was.
+	AskWorkspace WidenFunc
 	// Shell is which shell the `shell` tool runs its commands in: the machine's
 	// own, or a WSL distro. A func for the same reason OutputSubdir is one —
 	// the user can change it from the picker mid-session, and rebuilding the
@@ -91,7 +100,7 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 	// an unfocused session must close the root again, and a project that just
 	// lost a folder must stop reaching it — both in the same call that re-roots
 	// the engine, not on the next restart.
-	setSandboxPolicy(opts.SandboxRoot, opts.OpenSandbox, opts.ExtraRoots)
+	setSandboxPolicy(opts.SandboxRoot, opts.OpenSandbox, opts.ExtraRoots, opts.AskWorkspace)
 	// One registry of background commands, shared by the three tools that see
 	// them: shell starts, shell_output reads, shell_kill ends.
 	shells := newBackgroundShells()

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -42,7 +43,7 @@ type WorkspaceFolder struct {
 // WorkspaceFolders lists the folders added to the focused project.
 func (a *App) WorkspaceFolders() []WorkspaceFolder {
 	out := []WorkspaceFolder{} // never nil: §34, a nil slice crashes the frontend
-	for _, path := range a.extraRoots {
+	for _, path := range a.workspaceRoots() {
 		info, err := os.Stat(path)
 		out = append(out, WorkspaceFolder{
 			Path:    path,
@@ -76,41 +77,56 @@ func (a *App) AddWorkspaceFolder() ([]WorkspaceFolder, error) {
 // addWorkspaceFolder is AddWorkspaceFolder minus the dialog, so the rules below
 // are reachable from a test without a window.
 func (a *App) addWorkspaceFolder(dir string) ([]WorkspaceFolder, error) {
+	if err := a.recordWorkspaceFolder(dir); err != nil {
+		return a.WorkspaceFolders(), err
+	}
+	a.reloadWorkspace()
+	return a.WorkspaceFolders(), nil
+}
+
+// recordWorkspaceFolder checks one folder against every rule and, if it passes,
+// writes it to the project's list and refreshes the copy this process holds.
+//
+// Split out from addWorkspaceFolder because the folder now arrives by two
+// routes — the panel, and the card the workspace door raises mid-tool-call
+// (askWorkspaceWiden) — and those two differ in exactly one thing: whether the
+// engine can be rebuilt right now. The rules must not differ at all, so they
+// live here and nowhere else.
+func (a *App) recordWorkspaceFolder(dir string) error {
 	root := strings.TrimSpace(a.cfg.SandboxRoot)
 	dir, err := filepath.Abs(strings.TrimSpace(dir))
 	if err != nil {
-		return a.WorkspaceFolders(), err
+		return err
 	}
 	info, err := os.Stat(dir)
 	if err != nil || !info.IsDir() {
-		return a.WorkspaceFolders(), fmt.Errorf("ไม่ใช่โฟลเดอร์ที่เปิดได้: %s", dir)
+		return fmt.Errorf("ไม่ใช่โฟลเดอร์ที่เปิดได้: %s", dir)
 	}
 	// Refusing here rather than at the first tool call: a folder accepted onto
 	// the list and then refused file by file is the app disagreeing with itself
 	// in front of the user.
 	if store := skill.CredentialStoreAt(dir); store != "" {
-		return a.WorkspaceFolders(), fmt.Errorf("โฟลเดอร์นี้อยู่ในที่เก็บกุญแจ (%s) ซึ่งปิดตายทุกโต๊ะ", store)
+		return fmt.Errorf("โฟลเดอร์นี้อยู่ในที่เก็บกุญแจ (%s) ซึ่งปิดตายทุกโต๊ะ", store)
 	}
 	// Saying "already reachable" beats accepting a row that changes nothing —
 	// a list with a no-op entry on it stops describing what it grants.
 	if withinFolder(dir, root) {
-		return a.WorkspaceFolders(), fmt.Errorf("โฟลเดอร์นี้อยู่ในโปรเจกต์อยู่แล้ว เข้าถึงได้โดยไม่ต้องเพิ่ม")
+		return fmt.Errorf("โฟลเดอร์นี้อยู่ในโปรเจกต์อยู่แล้ว เข้าถึงได้โดยไม่ต้องเพิ่ม")
 	}
-	for _, existing := range a.extraRoots {
+	for _, existing := range a.workspaceRoots() {
 		if withinFolder(dir, existing) {
-			return a.WorkspaceFolders(), fmt.Errorf("อยู่ในโฟลเดอร์ที่เพิ่มไว้แล้ว: %s", existing)
+			return fmt.Errorf("อยู่ในโฟลเดอร์ที่เพิ่มไว้แล้ว: %s", existing)
 		}
 	}
 
-	// Persist first, then reload: the engine is rebuilt from the stored list, so
-	// a write that failed must not produce a session that can reach a folder no
-	// restart would grant.
+	// Persist first, then read back: the engine is rebuilt from the stored list,
+	// so a write that failed must not produce a session that can reach a folder
+	// no restart would grant.
 	if err := a.storeWorkspaceFolder(root, dir); err != nil {
-		return a.WorkspaceFolders(), err
+		return err
 	}
-	a.extraRoots = a.storedWorkspaceFolders(root)
-	a.reloadWorkspace()
-	return a.WorkspaceFolders(), nil
+	a.setWorkspaceRoots(a.storedWorkspaceFolders(root))
+	return nil
 }
 
 // RemoveWorkspaceFolder drops a folder and narrows the running session in the
@@ -132,9 +148,174 @@ func (a *App) RemoveWorkspaceFolder(path string) ([]WorkspaceFolder, error) {
 	); err != nil {
 		return a.WorkspaceFolders(), err
 	}
-	a.extraRoots = a.storedWorkspaceFolders(root)
+	a.setWorkspaceRoots(a.storedWorkspaceFolders(root))
 	a.reloadWorkspace()
 	return a.WorkspaceFolders(), nil
+}
+
+// workspaceRoots / setWorkspaceRoots are the only readers and writers of the
+// folder list this process holds.
+//
+// They exist because the list stopped being touched by one goroutine. It used
+// to change only when the user clicked something, which is the Wails binding
+// goroutine; the workspace door adds a folder from inside a tool call, which is
+// the turn goroutine, while a binding call can be reading the same slice to draw
+// the panel.
+func (a *App) workspaceRoots() []string {
+	a.wsMu.Lock()
+	defer a.wsMu.Unlock()
+	return append([]string(nil), a.extraRoots...)
+}
+
+func (a *App) setWorkspaceRoots(roots []string) {
+	a.wsMu.Lock()
+	defer a.wsMu.Unlock()
+	a.extraRoots = roots
+}
+
+// widenAdd / widenRefuse are the exact option strings the workspace card sends
+// to the UI and compares the answer against. Anything else — including free
+// text — reads as "no", like every other gate in this app.
+const (
+	widenAdd     = "เพิ่มเข้าโปรเจกต์ / Add folder"
+	widenRefuse  = "ไม่ / No"
+	widenSkipped = "" // no folder worth offering; see folderToOffer
+)
+
+// askWorkspaceWiden is the desktop's skill.WidenFunc: the door in the wall.
+//
+// A path outside the project used to be the end of the work. The agent knew the
+// folder it needed and said it could not have it, and the user went to fetch the
+// same folder by hand through a menu and an OS dialog, then asked again. This
+// asks instead — once, naming the folder — and on a yes the folder joins the
+// project's own list, where it stays visible and removable like every other
+// entry. There is deliberately no "allow once": a right that is not on the list
+// is a right the panel has stopped describing.
+//
+// What it does NOT decide is whether the path is then allowed. It adds a folder;
+// resolveSandboxPath re-reads the list and rules on the path itself, and the
+// credential stores are refused after that regardless of the answer here.
+func (a *App) askWorkspaceWiden(target string) bool {
+	// With no project focused there is no wall, so nothing ever asks — but the
+	// check is cheap and the alternative is a card offering to widen a workspace
+	// that is already the whole machine.
+	if !a.projectFocused {
+		return false
+	}
+	if strings.TrimSpace(a.cfg.SandboxRoot) == "" {
+		return false
+	}
+	// No window, no question — the same test emitEvent makes before it reaches
+	// the Wails runtime. No emitter and no runtime context means nothing is
+	// listening: a headless run, and every test that builds an engine without a
+	// frontend. Asking there parks the tool call on an answer that can never
+	// arrive, so the flat refusal stands, exactly as it did before this door.
+	if a.emit == nil && a.ctx == nil {
+		return false
+	}
+	folder := folderToOffer(target)
+	if folder == widenSkipped {
+		return false
+	}
+	// Asked before the card, not after: a question whose yes cannot be honoured
+	// trains the user to distrust the question. recordWorkspaceFolder refuses
+	// these too — this is the same rule, stated early enough to stay silent.
+	if skill.CredentialStoreAt(folder) != "" {
+		return false
+	}
+
+	// The turn's context, so a card nobody answers cannot outlive the turn it
+	// belongs to. Without it Stop would appear dead until somebody clicked the
+	// card, because the tool call is parked inside resolveSandboxPath.
+	a.turnMu.Lock()
+	turnCtx := a.turnCtx
+	a.turnMu.Unlock()
+	if turnCtx == nil {
+		// No turn in flight — a tool running outside one. The app's own context
+		// still closes when the window does, which is the only cancellation left
+		// to respect.
+		turnCtx = a.ctx
+	}
+	if turnCtx == nil {
+		turnCtx = context.Background()
+	}
+
+	question := fmt.Sprintf(
+		"งานนี้ต้องใช้ `%s` ซึ่งอยู่นอกโปรเจกต์\n\nเพิ่มโฟลเดอร์นี้เข้าโปรเจกต์ไหม (อ่านและแก้ไขได้ เอาออกได้ทีหลังในเมนูโปรเจกต์)",
+		folder)
+	ch, err := a.beginUserQuestion(question, []string{widenAdd, widenRefuse})
+	if err != nil {
+		// Another question already has the floor — two cards competing for one
+		// answer channel is worse than a refusal the model can report and retry.
+		return false
+	}
+	defer a.endUserQuestion()
+
+	select {
+	case answer := <-ch:
+		if answer != widenAdd {
+			return false
+		}
+	case <-turnCtx.Done():
+		return false
+	}
+
+	if err := a.recordWorkspaceFolder(folder); err != nil {
+		// The rules refused what the user just accepted — a folder deleted
+		// between the card and the click, or a store that would not write. The
+		// path stays refused and the tool error carries the reason into the
+		// transcript, which is where the user is already looking.
+		return false
+	}
+	// Reaches the call that is parked on this answer without rebuilding the
+	// engine underneath it. The engine picks the same list up when the turn ends
+	// (endTurn → reloadWorkspace), which is what puts the new folder in the
+	// system prompt; both read the list this call just wrote.
+	skill.SetWorkspaceFolders(a.cfg.SandboxRoot, a.workspaceRoots())
+	a.markWorkspaceDirty()
+	a.emitEvent("workspace:changed", a.WorkspaceFolders())
+	return true
+}
+
+// folderToOffer turns the refused path into the folder worth putting on the
+// list: the path itself when it is a directory, otherwise the directory holding
+// it. A file's own name on the list would grant one file and refuse its
+// siblings, which is not how anyone thinks about "let it see the API repo".
+//
+// A volume root ("D:\", "/") is refused rather than offered. It is what
+// filepath.Dir answers for a loose file at the top of a drive, and one click
+// would hand over every project on that drive — a grant nobody means to make
+// from a card about one file.
+func folderToOffer(target string) string {
+	target = strings.TrimSpace(target)
+	if target == "" || !filepath.IsAbs(target) {
+		return widenSkipped
+	}
+	folder := filepath.Clean(target)
+	if info, err := os.Stat(folder); err != nil || !info.IsDir() {
+		folder = filepath.Dir(folder)
+	}
+	if folder == filepath.Dir(folder) {
+		return widenSkipped
+	}
+	return folder
+}
+
+// markWorkspaceDirty records that the folder list changed under a running turn,
+// so endTurn rebuilds the engine once the turn is out of the way.
+func (a *App) markWorkspaceDirty() {
+	a.wsMu.Lock()
+	defer a.wsMu.Unlock()
+	a.workspaceDirty = true
+}
+
+// takeWorkspaceDirty clears the flag and reports whether a reload is owed.
+func (a *App) takeWorkspaceDirty() bool {
+	a.wsMu.Lock()
+	defer a.wsMu.Unlock()
+	dirty := a.workspaceDirty
+	a.workspaceDirty = false
+	return dirty
 }
 
 // reloadWorkspace re-bootstraps the engine so the sandbox gate and the system

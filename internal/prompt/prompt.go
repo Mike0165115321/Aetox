@@ -186,6 +186,15 @@ type Scope struct {
 	// prompt in full, because the model cannot use a folder it has not been
 	// told about.
 	Extra []string
+	// CanAsk means this host can put a card in front of the user when a path
+	// lands outside the workspace, offering to add the folder it lives in
+	// (skill.WidenFunc). It changes what the model should DO about a folder it
+	// needs: with a door, naming the path is the request; without one — the CLI,
+	// anything headless — the refusal is final and the model has to say so.
+	//
+	// Told to the model only because the two situations call for different
+	// behaviour. Nothing here grants anything.
+	CanAsk bool
 	// Space is the โปรเจกต์ this session is being held inside, if any. It
 	// changes nothing about what the session may reach — see the Space type.
 	Space Space
@@ -919,13 +928,11 @@ func environment(scope Scope) string {
 			"The user added them so you could go look — a problem here often starts somewhere else. " +
 			"When you change a file in one of them, say which folder it was in, because the user is looking at " +
 			"the project and will not assume you went outside it.\n" +
-			"Anything outside the project and those folders is refused. The way through is to ask the user to add " +
-			"that folder, not to look for another route in.\n" + shellIsWalledIn)
+			outsideTheWorkspace(scope.CanAsk) + shellIsWalledIn)
 	default:
 		b.WriteString("You are working in a focused project: every file tool is confined to the project folder, and " +
-			"a bare path is relative to it. Anything outside is refused — if the work needs a file from somewhere " +
-			"else, ask the user to add that folder to the session; they can, and that is the intended way.\n" +
-			shellIsWalledIn)
+			"a bare path is relative to it.\n" +
+			outsideTheWorkspace(scope.CanAsk) + shellIsWalledIn)
 	}
 	b.WriteString("When you tell the user where a file is, repeat the path the tool reported back to you. Do NOT assemble " +
 		"one yourself out of a folder and a filename — where a file lands is the tool's decision and it tells you, " +
@@ -935,6 +942,35 @@ func environment(scope Scope) string {
 		"Write paths out literally in shell commands — one assembled from a variable or a sub-command cannot be " +
 		"checked, so it is refused.\n")
 	return b.String()
+}
+
+// outsideTheWorkspace says what a path outside the workspace means — and the
+// two answers are genuinely different work, which is why this is not one
+// sentence with a clause.
+//
+// With a door, naming the path IS the request: the user gets a card offering to
+// add that folder, and a yes puts the same call through. Telling the model to
+// "ask the user to add the folder" there would produce a paragraph asking for
+// something a tool call would have asked for better — the failure this whole
+// change exists to remove, arriving through the prompt instead of the gate.
+//
+// Without one (the CLI, anything headless) the refusal really is the end, and
+// the useful thing is to say which folder was needed so the user can add it and
+// run again.
+//
+// The "no" clause matters as much as the "yes" one. A refused card that the
+// model retries is the same question in a loop, which is how a user learns to
+// click through every card without reading it.
+func outsideTheWorkspace(canAsk bool) string {
+	if canAsk {
+		return "Anything outside the project and those folders is refused — but you do not have to work around " +
+			"that: name the path you need and the user is shown a card offering to add the folder it lives in. " +
+			"Accept and the same call goes through; the folder joins the session's list and stays there. " +
+			"If the user declines, that is their answer — say what you could not reach and carry on with the " +
+			"rest, and do not raise the same folder again.\n"
+	}
+	return "Anything outside the project and those folders is refused, and this session has no way to ask for " +
+		"more. Say which folder the work needed; the user can add it and run this again.\n"
 }
 
 // shellIsWalledIn closes the escape route a walled-in session would otherwise

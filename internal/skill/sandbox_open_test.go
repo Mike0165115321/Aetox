@@ -11,8 +11,8 @@ import (
 // absolute path — the thing the closed sandbox exists to reject — must work.
 func TestOpenSandboxAcceptsAbsolutePaths(t *testing.T) {
 	root := t.TempDir()
-	setSandboxPolicy(root, true, nil)
-	t.Cleanup(func() { setSandboxPolicy(root, false, nil) })
+	setSandboxPolicy(root, true, nil, nil)
+	t.Cleanup(func() { setSandboxPolicy(root, false, nil, nil) })
 
 	outside := t.TempDir()
 	if err := os.WriteFile(filepath.Join(outside, "stray.pdf"), []byte("%PDF"), 0o644); err != nil {
@@ -39,8 +39,8 @@ func TestOpenSandboxAcceptsClimbingRelativePaths(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(parent, "sibling.txt"), []byte("hi"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	setSandboxPolicy(root, true, nil)
-	t.Cleanup(func() { setSandboxPolicy(root, false, nil) })
+	setSandboxPolicy(root, true, nil, nil)
+	t.Cleanup(func() { setSandboxPolicy(root, false, nil, nil) })
 
 	if _, err := resolveSandboxPath(root, "../sibling.txt"); err != nil {
 		t.Fatalf("open sandbox rejected a climbing relative path: %v", err)
@@ -90,8 +90,8 @@ func TestExtraRootIsReachableAndNothingElseIs(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(other, "api.go"), []byte("package api"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	setSandboxPolicy(root, false, []string{other})
-	t.Cleanup(func() { setSandboxPolicy(root, false, nil) })
+	setSandboxPolicy(root, false, []string{other}, nil)
+	t.Cleanup(func() { setSandboxPolicy(root, false, nil, nil) })
 
 	for _, path := range []string{
 		filepath.Join(other, "api.go"), // absolute spelling
@@ -156,8 +156,8 @@ func TestExtraRootStillRefusesCredentialStores(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The whole home folder added as one entry — the realistic way this happens.
-	setSandboxPolicy(root, false, []string{home})
-	t.Cleanup(func() { setSandboxPolicy(root, false, nil) })
+	setSandboxPolicy(root, false, []string{home}, nil)
+	t.Cleanup(func() { setSandboxPolicy(root, false, nil, nil) })
 
 	if _, err := resolveSandboxPath(root, filepath.Join(home, ".ssh", "id_rsa")); err == nil {
 		t.Error("an added folder handed out a credential store path")
@@ -197,8 +197,8 @@ func TestCredentialStoreInsideTheProjectRootIsStillRefused(t *testing.T) {
 	// The home folder itself is the project. No extra roots, not open — the
 	// narrowest possible workspace that still contains a credential store.
 	root := home
-	setSandboxPolicy(root, false, nil)
-	t.Cleanup(func() { setSandboxPolicy(root, false, nil) })
+	setSandboxPolicy(root, false, nil, nil)
+	t.Cleanup(func() { setSandboxPolicy(root, false, nil, nil) })
 
 	for _, path := range []string{
 		".ssh/id_rsa",                         // relative, the spelling a model reaches for
@@ -244,8 +244,8 @@ func TestOpenSandboxRefusesCredentialStores(t *testing.T) {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	setSandboxPolicy(root, true, nil)
-	t.Cleanup(func() { setSandboxPolicy(root, false, nil) })
+	setSandboxPolicy(root, true, nil, nil)
+	t.Cleanup(func() { setSandboxPolicy(root, false, nil, nil) })
 
 	for _, path := range []string{
 		filepath.Join(home, ".ssh", "id_rsa"),                  // absolute spelling

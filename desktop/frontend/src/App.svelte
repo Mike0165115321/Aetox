@@ -18,6 +18,7 @@
     applyAgentChunk, applyReasoningChunk, attachImageFromPath,
     applyAskUser, applyAskDone, applyTodos, applyMissedInterjections, applyTaskChips,
     applyPendingLearned, refreshPendingLearned, applyAgentDone, isOverlayView,
+    refreshProjectFolders,
   } from './lib/stores/cockpit.svelte'
   import { RelativizePath, CloseAllBrowserTabs } from '../wailsjs/go/main/App'
   import { OnFileDrop, OnFileDropOff, EventsOn } from '../wailsjs/runtime/runtime'
@@ -121,6 +122,10 @@
     // could not fold it in, so it comes back here and goes out as its own turn.
     const offMissed = EventsOn('agent:interjection-missed', applyMissedInterjections)
     const offTaskChips = EventsOn('tasks:changed', applyTaskChips)
+    // A folder the user let in from the card the agent raised mid-turn. The
+    // panel is the one place that says what this session can reach, so it has
+    // to learn about a folder that arrived without anybody opening it.
+    const offWorkspace = EventsOn('workspace:changed', () => { void refreshProjectFolders() })
     // What the agent wants to remember and cannot until it is allowed to. Also
     // fetched once here, because anything left undecided in a previous session
     // is still undecided and nothing would emit for it.
@@ -184,6 +189,7 @@
       offTodos()
       offMissed()
       offTaskChips()
+      offWorkspace()
       offLearning()
       offUpdate()
     }

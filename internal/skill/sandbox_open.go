@@ -12,10 +12,17 @@ import (
 )
 
 // The workspace is the whole answer to "which folders may this session touch",
-// and it is the only answer: one value, written in one place (RegisterDefaults)
-// and read in one place (resolveSandboxPath). Every file tool goes through that
-// function, so there is no second gate to keep in sync and no tool that quietly
-// knows better.
+// and it is the only answer: one value, read in one place (resolveSandboxPath).
+// Every file tool goes through that function, so there is no second gate to keep
+// in sync and no tool that quietly knows better.
+//
+// It is written by RegisterDefaults on every registry build, plus one narrow
+// second writer — SetWorkspaceFolders, which updates the folder list of a
+// session already running and touches nothing else. Two writers is worth
+// stating plainly: the alternative was rebuilding the engine mid-turn to record
+// a folder the user just approved, which throws away the turn they are waiting
+// on. Both writers take the list from the same place (the host's stored list),
+// so they cannot disagree about it.
 //
 // It has exactly two ingredients, both chosen by the user and nothing else:
 //
@@ -48,24 +55,78 @@ type sandboxPolicy struct {
 	// extra are absolute, symlink-resolved folders that count as part of the
 	// workspace alongside the root.
 	extra []string
+	// ask is the door in the wall: the host's offer to put the folder a refused
+	// path lives in onto the list, right there, instead of ending the work. See
+	// WidenFunc.
+	ask WidenFunc
 }
+
+// WidenFunc asks the user whether to add the folder holding target to this
+// project, and reports whether they said yes.
+//
+// It exists because the wall had no door. A path outside the workspace was a
+// dead end: the agent knew the folder it needed, and the user had to go find it
+// again by hand — open the project menu, click "เพิ่มโฟลเดอร์", walk an OS
+// dialog to a path already written in the transcript — and then ask for the same
+// thing a second time. The app knew the answer and made the person fetch it.
+// Claude Code and opencode both work across projects as ordinary daily work; a
+// refusal with no way forward is not us being safer than them, it is us being
+// narrower at the thing they are useful at.
+//
+// Two rules make this a door rather than a hole, and both live at the call site
+// in resolveSandboxPath rather than here:
+//
+//   - The answer is a hint, never a permission. Whatever this returns, the
+//     verdict is re-read from the policy afterwards — the workspace is what the
+//     folder list says it is, and a host that answers true without widening
+//     anything gets the refusal it would have got anyway.
+//   - The credential stores are unaffected. They are refused after this point,
+//     on the same resolved path, so a yes here cannot reach one — the same
+//     ordering opencode uses to keep a saved "always allow" from overriding a
+//     configured deny.
+//
+// Nil is the ordinary value: the CLI, every test and every host that draws no
+// UI leave it unset and get the flat refusal, unchanged.
+type WidenFunc func(target string) bool
 
 var policies sync.Map // map[string]sandboxPolicy, keyed by rootKey(abs root)
 
 // setSandboxPolicy records what root may reach. Called on every registry build,
 // zero values included: a project that just lost its extra folders has to stop
 // reaching them in the same call, not on the next restart.
-func setSandboxPolicy(root string, open bool, extra []string) {
+func setSandboxPolicy(root string, open bool, extra []string, ask WidenFunc) {
 	safeRoot, err := filepath.Abs(strings.TrimSpace(root))
 	if err != nil {
 		return
 	}
-	policy := sandboxPolicy{open: open, extra: resolveExtraRoots(extra)}
-	if !policy.open && len(policy.extra) == 0 {
+	policy := sandboxPolicy{open: open, extra: resolveExtraRoots(extra), ask: ask}
+	if !policy.open && len(policy.extra) == 0 && policy.ask == nil {
 		policies.Delete(rootKey(safeRoot))
 		return
 	}
 	policies.Store(rootKey(safeRoot), policy)
+}
+
+// SetWorkspaceFolders replaces the folder list for a root that is already
+// running, leaving the rest of its policy alone.
+//
+// This is the one write that does not come from a registry build, and it is
+// narrow on purpose. A folder accepted through the door above is accepted in the
+// middle of a tool call, on an engine that is mid-turn; rebuilding that engine
+// to record one folder would throw away the turn the user is waiting on. The
+// folder reaches the running call through here, and the engine picks the same
+// list up at the end of the turn through the ordinary path — the host holds the
+// list either way, so the two never disagree about what it contains.
+//
+// `open` is still written only by RegisterDefaults: which mode a session runs in
+// is decided when the session is built, and nothing mid-turn may change it.
+func SetWorkspaceFolders(root string, extra []string) {
+	safeRoot, err := filepath.Abs(strings.TrimSpace(root))
+	if err != nil {
+		return
+	}
+	current := sandboxPolicyFor(safeRoot)
+	setSandboxPolicy(root, current.open, extra, current.ask)
 }
 
 func sandboxPolicyFor(safeRoot string) sandboxPolicy {

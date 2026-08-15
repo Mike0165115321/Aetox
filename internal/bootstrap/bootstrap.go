@@ -138,6 +138,12 @@ type Options struct {
 	// what it can actually reach cannot drift apart.
 	ExtraRoots []string
 
+	// AskWorkspace lets the host offer to add a folder to ExtraRoots at the
+	// moment a path is refused for being outside it, instead of the work ending
+	// there and the user going to find the same folder by hand. Nil — the CLI
+	// and every headless caller — keeps the flat refusal. See skill.WidenFunc.
+	AskWorkspace skill.WidenFunc
+
 	// Space and SpaceContext name the โปรเจกต์ this session is being held
 	// inside (COMPANY.md §84) and the folder that project keeps its context in.
 	// Unlike ExtraRoots this widens nothing: the sandbox is untouched, and the
@@ -317,6 +323,10 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 	// place by construction.
 	scope := prompt.Scope{
 		Root: cfg.SandboxRoot, Open: opts.OpenSandbox, Extra: opts.ExtraRoots,
+		// One field, two readers: the prompt says a card can appear, the registry
+		// is what makes it appear. Both from opts.AskWorkspace, so the model is
+		// never told to expect a door this session has not got.
+		CanAsk: opts.AskWorkspace != nil,
 		Space: prompt.Space{
 			Name:        opts.Space,
 			ContextPath: opts.SpaceContext.Path,
@@ -367,6 +377,7 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 		OutputSubdir: opts.OutputSubdir,
 		OpenSandbox:  scope.Open,
 		ExtraRoots:   scope.Extra,
+		AskWorkspace: opts.AskWorkspace,
 		// Empty ModelPath keeps the original behaviour — auto-discover — so a
 		// user who never opens the picker sees no change.
 		Speech: stt.Options{ModelPath: cfg.SpeechModelPath},
