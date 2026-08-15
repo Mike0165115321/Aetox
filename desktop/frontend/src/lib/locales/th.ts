@@ -488,7 +488,7 @@ export const th = {
   'settings.noModels': 'ไม่พบรายชื่อโมเดล ใส่ model id เองด้านล่างได้',
   'settings.inUse': 'ใช้อยู่',
   'settings.use': 'ใช้',
-  'settings.customModelPlaceholder': 'model id อื่นๆ เช่น gpt-4o…',
+  'settings.customModelPlaceholder': 'พิมพ์ model id เองได้ ถ้าไม่มีในรายการ…',
 
   // การเชื่อมต่อ — บัญชีที่เอเจนทำงานแทนคุณได้ แยกหน้าจาก MCP โดยตั้งใจ:
   // MCP คือโปรเซสเครื่องมือที่ Aetox รัน อันนี้คือบัญชีที่ Aetox ล็อกอินเข้าไป

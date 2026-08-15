@@ -483,7 +483,7 @@ export const en: Record<keyof typeof th, string> = {
   'settings.noModels': 'No models found. You can enter a model id below.',
   'settings.inUse': 'In use',
   'settings.use': 'Use',
-  'settings.customModelPlaceholder': 'Other model id, e.g. gpt-4o…',
+  'settings.customModelPlaceholder': 'Type a model id, if it is not in the list…',
 
   // Connections — accounts the agent acts on your behalf with. Deliberately a
   // separate page from MCP: an MCP server is a tool process Aetox runs, this is
