@@ -12,7 +12,7 @@ description: shown on the settings row
 model: deepseek-v4      # optional; omit to use whatever model the chat is on
 tools: grep, glob, read # optional; omit to inherit the whole registry
 deny: write, shell      # optional; refused even if the tool reaches it
-steps: 24               # optional; max tool-loop rounds (default 24)
+steps: 40               # optional; max tool-loop rounds (default: no ceiling)
 desk: specialized       # optional; makes this a CHAIR in that desk's office (§84)
 ---
 

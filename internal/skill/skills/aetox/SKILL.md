@@ -166,7 +166,7 @@ before you tell a user what they must write:
 | `desk` | `specialized` — in the office, takes jobs, can be chatted with directly |
 | `tools` | Everything that desk carries. The field can only ever *narrow* — a worker cannot list its way to a tool the desk does not have |
 | `deny` | Nothing refused. `deny` is the safety gate; `tools` is only a token saving |
-| `steps` | 24. `unlimited` removes the ceiling; a typo falls back to 24 rather than to no ceiling |
+| `steps` | No ceiling — a worker runs until the job is done. A positive number caps it and is honoured exactly; `unlimited` says the default out loud; a typo falls back to the default rather than to a number nobody wrote |
 | `model` | Whatever the session is running |
 | `icon` | Derived from what the worker produces |
 | `needs` | Nothing declared. Entries are `connection:<id>` or `mcp:<server>`, and `\|` between two of them means "either one satisfies this". A need **declares and never grants**: the grant is `for:` on the connection or the server. What it buys is that an agent missing one says so — in its own prompt, and on its page in การตั้งค่า › เอเจน |

@@ -3149,3 +3149,114 @@ So the promise splits along the line it was always two promises: **the number is
 **Three-platform support is not cancelled, downgraded, or made optional.** The criteria moved into a "รุ่นถัดไป" block in `ROADMAP.md` with the at-rest encryption item still marked as the blocker it is. `PLATFORM-SUPPORT.md` is untouched and remains the one place the port status is true.
 
 **And the version number does not certify the numbers.** `BENCHMARK.md`'s own rule is that unmeasured figures may not appear in `README.md` or `docs/index.html`; its last full run was 2026-07-27 on v0.9.2, when the app was 33 MB. It is 41.9 MB now. Shipping 1.0.0 does not tick "ตัวเลขที่เผยแพร่ทุกตัวตรงกับของจริง" — that box is still open on the day of the build, and the roadmap now says so in writing rather than leaving an unticked box next to a released version for a reader to interpret.
+
+## 110. Decision — A Sub-Agent's Loop Cap Is Removed, and Its Clock Is Told the Truth (2026-08-15)
+
+Owner, 15 ส.ค., looking at a `@research` card in the transcript: *"ปลดล็อคเพดานทุกซับเอเจนเลยครับ เป็นค่าเริ่มต้นได้เลย แบบไม่ต้องมีเพดาน ผมสั่ง"* — and, in the same breath, *"เวลามันหยุดนิ่งอ่ะ ขณะที่ซับเอเจนยังรัน tool อยู่ มันควรจะเดินต่อ จะได้รู้ว่าซับเอเจนตัวนี้ใช้เวลาไปนานแค่ไหน"*.
+
+Two things on one card, and they are the same card for a reason: it was showing a green tick and `8s` over a worker that was on its twenty-seventh tool call, under a ceiling that would have cut it off before it finished.
+
+### 110.1 The ceiling was protecting a number, not the user
+
+`defaultSteps` was 24, written down in §44.7 as one of the three things that make delegation cheaper rather than pricier: the main agent runs unbounded because the brakes are a human (the approval layer and Stop), and a delegate has no human attached, so it got a number instead.
+
+What the number actually bought, once real jobs ran through it, was the opposite. A delegate that reached the ceiling did not stop spending — it stopped **mid-job**, and handed the parent a failure saying to split the work and start again. The same work, paid for twice, plus the wait. And the ceiling could only ever be guessed: how many rounds a job takes is not knowable from the brief, which is exactly the thing §44.7 assumed away.
+
+**The brakes that end a runaway loop were never the counter, and all of them are still here:** the doom-loop guard stops a delegate repeating the same call with no progress; Stop reaches every delegate through `Delegations.StopAll`; and every call a delegate makes passes the same permission rules and the same approval card its parent's calls do. Removing the count removes a guess, not a guard.
+
+So `defaultSteps = StepsUnlimited`, the eight shipped profiles lost their `steps:` lines, and `steps: 40` still means exactly 40 for anyone who wants one. The keyword survives the change because it is what a reader of the file sees — a profile that says `unlimited` keeps saying what it meant on a machine whose default might be different.
+
+**Correction 2026-08-16 — the change went further than the instruction, in two places.** Owner, reading this section back: *"AI นั่นแหละมันปรับเยอะเกิน ผมแค่ให้ตั้ง ไม่มีจำกัด เป็นค่าเริ่มต้นเฉยๆ แท้ๆ ตอนแรก"*.
+
+- **A test forbade what this section says is allowed.** `TestBundledProfilesAreUsable` was inverted from "every sub-agent is capped" to `MaxToolCalls() > 0 → error` — no shipped worker may carry a ceiling, ever. That is not the default changing, it is a ceiling becoming illegal, and it contradicts the sentence directly above it. **Removed**: the test now checks the mechanism is honest (`steps: N` runs at N, no `steps:` runs uncapped) and leaves the number to whoever owns the worker. The eight numbers stay off — 110.1's reasoning applies to them as much as to the default — but the door is open, which is what this section always claimed.
+- **The step-cap test was left half-updated and started hanging instead of failing.** `TestALoopThatEndsItselfIsAnActionableFailure/step_cap_exhausted` drove `explore`, whose cap this change removed, with a provider that never repeats a call. `TestGeneralIsTheLooper` one function above was updated for §110; this one was not, so the loop it exists to bound became genuinely unbounded and `go test ./...` could not finish from the 1.0.0 commit onward — 25 minutes before the suite timeout, with no failure printed. Fixed by running a profile that asks for `steps: 3` (an agent home, the one place a person can still write one) plus a 30s deadline, so the next regression fails in seconds with a sentence rather than looking like a slow test.
+
+**And one claim in 110.1 is narrower than it reads.** "The doom-loop guard stops a delegate repeating the same call with no progress" is true, and it is the *only* remaining bound — it fires on **repetition**, so a delegate whose calls vary (a grep with a different pattern each round) has nothing stopping it but a human pressing Stop. That is the shape the hanging test simulated for 25 minutes. Left open rather than patched: re-introducing a step count is what this section rejected, so if it is ever closed it should be on *no progress* or a wall-clock/token budget, not on a counter under a new name.
+
+**The settings page had to change with it, and that is the part that was nearly missed.** "จำกัดรอบทำงาน" read *"เว้นว่างไว้ = ใช้ค่าเริ่มต้น 24"* over files that say nothing about steps, and every agent row wore a `จำกัด 24 รอบ` badge that no longer described anything. A default changed in Go and left standing in the UI is not a changed default; it is two answers to one question.
+
+### 110.2 The clock: `task` finishes when the work *starts*
+
+The delegation card in the transcript drew its state and its elapsed time from the `task` tool call's own row. `task` returns the instant the worker is spawned (`begin` hands back a handle and the parent goes off to do other work — §44.11), so that row closes a second or two in. By the row's own account **every delegation is finished from birth**, which is why the card sat there with a tick and a frozen `8s` while 27 tool rows piled up underneath it.
+
+This was already known and already solved once: the background tray reads the engine's register precisely because "the event stream shows every delegation as finished from birth". The tray and the in-chat card are deliberately the same card (§105.5) — so having them tell two different stories was the bug.
+
+The fix is the same join, made in the same place:
+
+- **`TaskInfo.ElapsedMs`** — the delegation's real duration, taken from the output the runner already stored, set only once it has stopped. While it runs there is no total to report; the clock is still going and the card counts from `Started`.
+- **The row learns its delegation's id from the first step its worker runs.** Only the events from *inside* a delegate carry it — the `task` call completes before the register has a handle to give — and `parent` is the provider's call id, a different namespace.
+- **`cardState`/`cardSecs`** ask the register; the row is the fallback for a turn read back from the database, where it is all there is.
+
+**The first cut of this did not work, and the reason is worth keeping.** Reading the register is only half a fix — somebody has to *fetch* it. The poll was armed by a background event or by the turn ending, which is correct for a tray that only ever showed work outliving its turn, and useless for a card drawn while the turn is still open: for the whole time a delegate worked inside its turn the list was empty, the card fell back to the row it was written to ignore, and the clock froze in exactly the same place. The poll now also starts the moment a delegate's first step arrives.
+
+**And that produced the duplicate, which is the second thing worth keeping.** Once the register is polled during a turn, the tray draws a row for a delegation whose card is already on screen — *"แล้วจะแสดงซ้อนกันทำไมอ่ะ กุบอกให้เพิ่มแค่เวลาไง"*. The first filter checked the live step list only, and missed the commonest case there is: the parent is told to start a delegate and go do other work (§44.11), so by the time it collects, the card lives in the *previous* turn's message and the live list has been cleared. The tray now hides any delegation the transcript is drawing, wherever it is drawing it — except one parked on a question, because the tray row is the only one with somewhere to type the answer. **One delegation, one card.** The tray was the answer to a transcript card that could not say "alive"; now that it can, a second copy is not redundancy, it is two clocks to reconcile.
+
+Three things came free with it, all of them the same bug wearing different clothes: a working delegate now stays in the live area instead of collapsing behind "เอเจน 1 ตัว" the moment it started, its steps stay open (they are the evidence it is alive), and the ticker arms while background work is running rather than only while a turn is in flight — a delegate outlives its turn, so the clock used to stop at exactly the moment the user starts watching it.
+
+### What this does not decide
+
+**It does not make delegation unbounded in cost.** `maxConcurrent` still caps delegates at four, depth is still 1, and the brief is still refused if it will not fit the child's context (§44.12). What was removed is a guess about length, not a limit on breadth.
+
+**And it does not give the card a clock for a reloaded session.** A persisted `task` part keeps the spawn's duration, and the register is per-session; once the app restarts, an old delegation's card shows what the row recorded. Fixing that means writing the delegation's real duration into the part when it is collected, and no one has needed it yet.
+
+## 111. Decision — The Windows Shell Is PowerShell, Because the Shell Is Chosen for the Model (2026-08-15)
+
+Owner, 15 ส.ค., reading a timeline of red shell cards: *"ทำไม shell ชอบมีปัญหาครับ"* — then, once the cards separated into probes that were supposed to fail and one round genuinely lost to dialect: *"เราจะบังคับเป็นคำสั่งของพาเวอร์เชลเลยดีไหม ไม่ใช่ CMD แล้ว"*, and on the plan: *"เห็นด้วยครับ ทำตามแนวทางนั้นเลย"*.
+
+**cmd.exe was never chosen; it was inherited.** "The Windows shell" had always meant cmd, so cmd is what `proc.ShellCommand` ran — but of the shells a model can be told to write for, cmd is the one its training has seen least. Naming the interpreter in the tool description (the rule shell.go already had) softened that and could not beat it: the first command of a session was still written from habit, and habit is POSIX or PowerShell. The conclusion is the same one OpenCode reached independently — its Windows order is pwsh, then powershell, then Git Bash, with cmd.exe a last resort, and it refuses `fish` and `nu` even as the user's login shell — **the shell behind an agent's shell tool is chosen for the model that writes into it, not for the machine's tradition.**
+
+So `Native()` on Windows now resolves **pwsh (7+) first, Windows PowerShell 5.1 as the fallback that every Windows ships with**, and cmd.exe is unreachable. WSL backends are untouched, and the shell picker's vocabulary (`native` / `wsl:<distro>`) did not change meaning.
+
+### 111.1 The name carries the dialect, and 5.1 gets one Note
+
+§-old doctrine in shell.go read "the name, and nothing else — a table of equivalents would be a case list." That survives with one amendment: the backend may now hand the description a single **Note**, and the only one that exists is 5.1's — *no `&&`/`||`, chain as `cmd1; if ($?) { cmd2 }`* — because it is the one habit the name "PowerShell" actively invites and the shell then refuses. A fact the name lies about is not a case list. pwsh's Note is empty: there the name really is the whole instruction.
+
+### 111.2 Three traps, each measured before the code believed it
+
+**Exit codes.** `-Command` collapses a native command's exit code to 1 on both shells (`cmd /c exit 5` → 1, measured), and the obvious fix — appending `; exit $LASTEXITCODE` — turns a failed *cmdlet* into exit 0, because no native command ran and `exit $null` is exit 0. That is a failure reported as success, the one direction a wrapper must never be wrong in. The epilogue in shell_windows.go reads `$?` first and only then prefers the native code: git's 128 arrives as 128, a failed `Get-Item` as 1, and `cmd /c exit 5; echo after` as 0, which is exactly bash's `$?` semantics. It is joined with a newline so a trailing `# comment` cannot swallow it.
+
+**Encoding.** Owner, mid-change: *"กรองเป็น UTF-8 ในตัวเลยได้ไหม"*. Spawned the way Aetox spawns shells — no console, output piped — **both** 5.1 and pwsh decode native output with the OEM codepage, so Thai text arrived as CP874 mojibake (measured byte-for-byte). A prologue sets `[Console]::OutputEncoding` and `$OutputEncoding` to UTF-8 inside a try/catch that can degrade but never fail the user's command.
+
+**The kill race.** `taskkill /T` reads the process tree once, then kills; a child born between that snapshot and its parent's death survives as an orphan. With cmd the window was academic. PowerShell spends whole seconds starting, so a Stop pressed mid-startup reliably orphaned the very command being stopped — found as a test's temp dir held open for 60 seconds by an orphaned ping. `KillOnCancel` now walks the tree itself (Toolhelp snapshot, root killed first) and walks it **twice**: an orphan's `ParentProcessID` still names its dead parent, so the second pass finds exactly the children the first one raced with — the thing taskkill cannot do.
+
+### 111.3 What moves with the shell, said out loud
+
+**User hooks now run in PowerShell.** By §-design a hook runs in the same backend as the shell tool (one setting, bootstrap.go), so a hook line written in cmd dialect breaks. That is the documented coupling doing its job, not a regression to paper over: the fix for such a hook is the same one the model made, write it in PowerShell.
+
+**The risk vocabulary grew.** safety.go's high-risk list now recognises the PowerShell spellings of the acts it already stopped — `Remove-Item`, `Move-Item`, `Rename-Item`, `Clear-Content`, `Stop-Process`, `-Recurse`, `-Force` and the short aliases — because a model told its shell is PowerShell writes `Remove-Item` where it wrote `del`, and the gate has to recognise the act in the dialect it told the model to use.
+
+**One dialect cost is accepted, not hidden:** PowerShell splits an unquoted dotted flag at the dot (`-test.run` arrives as `-test`), so such flags must be quoted — models writing for PowerShell already do, and the one place our own tests did not, they now do. And §32's measured "shell ~39ms per call, dominated by cmd.exe process creation" is stale in the direction of more: PowerShell processes cost more to start, and the number stays unmeasured until the next benchmark run rather than guessed here.
+
+## 112. Decision — An Answer That Is Still Arriving Has to Look Like It, and Be Updated Rather Than Rebuilt (2026-08-15)
+
+Owner, 15 ส.ค., watching a plan render: *"ตอนวาดแผน อนิเมชั่นพังครับ เพราะมันสตรีมอ่ะ ถ้าเป็นตอนอื่นก็น่าจะไม่ต่างกัน เช็คดี ๆ ครับ"*. The instinct was right and it was bigger than the animation.
+
+### 112.1 The signal: a block that is still being written says so
+
+A plan, a drawing, and a long fenced file all get their edge, their heading and their คัดลอก button from the first frame — before a third of the content exists. They read as finished, and a user who copies then gets a third of a plan. This is the same failure the delegation card had (§110.2), so it gets the same answer: the running beam, on the block still being produced.
+
+Which block that is, is not guessed. A drawing is unfinished while its `<svg>` has no `</svg>`; a fence is open while the count of fence lines is odd. Only the **last** match is marked — three code blocks in one answer must not all pulse because a fourth is arriving — and a finished message renders through a path that does none of this, so nothing can be left glowing by a turn that ended.
+
+### 112.2 The clock cannot live on the thing that keeps being replaced
+
+A streamed reply was drawn with `{@html}`, which assigns `innerHTML`. That **destroys every element and builds new ones, on every token.** An animation declared on the ring restarts with the element carrying it, so the light did not travel — it twitched in place, sixty times a second. No duration or easing fixes that: the element is new, so its clock is new.
+
+The beam's own fix is structural. The phase is animated on an ancestor the stream does not touch (`.markdown-body`, and the delegation card), the registered property inherits, and a ring built this frame reads a phase already in progress. `:has(.live)` keeps the clock off every finished message in the transcript.
+
+### 112.3 But the rebuild was the real bug, and it was not only about a beam
+
+The beam could be worked around. Everything else inside a streamed answer could not:
+
+- **An animation the model wrote itself** — newly possible, since `@keyframes` now survives the drawing scoper — restarted every token and never got past its first frame.
+- **A text selection** inside the reply was dropped mid-drag.
+- Anything with state of its own (an open `<details>`, a loaded `<img>`) was rebuilt from scratch.
+
+So the streamed answer is now **morphed**: the new markup is reconciled against the old node by node, same kind of node in the same place is kept and updated, the tail is trimmed or extended. Deliberately not a virtual DOM — no keys, no move detection — because the input is one document growing at its end, not a list being reordered. The guarantee it owes is narrow: *an element that is still the same element next frame is the same element in the DOM.*
+
+**Half a fix would have looked like a whole one.** A drawing's scope was a fingerprint of its entire markup, so while it streamed, every token renamed its ids and its animation — and a `<style>` rewritten each frame restarts the animations it names, morph or no morph. The scope is now taken from the opening tag plus the drawing's position: settled before the first shape is drawn, and still distinct between two drawings that open identically. Both halves are needed, and the test that pins them compares **node identity**, not markup, because that is what actually broke.
+
+### What this does not decide
+
+**The finished bubble still uses `{@html}`.** It renders once and has nothing to keep; morphing it would be machinery for no property.
+
+**It is not a general renderer.** Two nodes that swap places are replaced rather than moved, which is correct output and lost identity. Markdown re-parsing does not reorder blocks as text is appended to the end, so the case is theoretical until something makes it real.
