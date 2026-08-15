@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestNoopProviderComplete(t *testing.T) {
@@ -122,6 +123,43 @@ func TestNoopStreamDeliversReasoningSeparately(t *testing.T) {
 	}
 	if resp.ReasoningContent == "" || resp.Text == "" {
 		t.Fatalf("final response must carry both parts, got %+v", resp)
+	}
+}
+
+// What is streamed must be what was written. Chunks used to come from
+// strings.Fields, which drops the whitespace it splits on, so a streamed
+// answer reached the screen with every newline missing — headings ran into
+// their paragraphs and a markdown table arrived as one row of pipes, until the
+// finished text replaced the stream and the bubble snapped into shape.
+func TestNoopStreamRebuildsTheAnswerExactly(t *testing.T) {
+	for _, tc := range []struct{ model, prompt string }{
+		{"aetox-render:test", "imgmix"},  // markdown: heading, table, list, images
+		{"aetox-grid", "สวัสดี"},          // the onboarding reply, Thai, no spaces
+		{"aetox-think:test", "คิดหน่อย"}, // both streams at once
+	} {
+		provider := NewNoopProvider(tc.model)
+		var text, reasoning strings.Builder
+		start := time.Now()
+		resp, err := provider.StreamComplete(context.Background(), Request{
+			Messages: []Message{{Role: RoleUser, Content: tc.prompt}},
+		}, func(chunk string) error { text.WriteString(chunk); return nil },
+			func(chunk string) error { reasoning.WriteString(chunk); return nil })
+		if err != nil {
+			t.Fatalf("%s: stream failed: %v", tc.model, err)
+		}
+		if text.String() != resp.Text {
+			t.Errorf("%s: streamed text != final text\n streamed %d newlines, final has %d",
+				tc.model, strings.Count(text.String(), "\n"), strings.Count(resp.Text, "\n"))
+		}
+		if reasoning.String() != resp.ReasoningContent {
+			t.Errorf("%s: streamed reasoning != final reasoning", tc.model)
+		}
+		// Loose on purpose — sleeps overrun on a loaded machine. It is here to
+		// catch a pause that grows with the answer, which is what 40ms a word
+		// was: the span is declared, so hold it to roughly the span.
+		if took := time.Since(start); took > 4*noopStreamSpan {
+			t.Errorf("%s: streaming took %v; the span for two parts is %v", tc.model, took, 2*noopStreamSpan)
+		}
 	}
 }
 

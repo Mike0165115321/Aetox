@@ -1016,10 +1016,38 @@ func (p *NoopProvider) noopScenario(text string) (string, bool) {
 	return "", false
 }
 
-// StreamComplete simulates real-model streaming by trickling the noop
-// response out word by word, so UI code paths that expect a
-// StreamingProvider (typing indicators, incremental render) can be
-// exercised without a live API key.
+const (
+	// noopFrame is one repaint at 60fps. Sleeping for less than this cannot
+	// make a stream look smoother — the frame it would have landed in is
+	// already drawn — so when there is more text than there are frames, the
+	// chunk grows instead of the pause shrinking.
+	noopFrame = 16 * time.Millisecond
+
+	// noopStreamSpan is the longest one part of an answer may take to arrive,
+	// whatever its length. A bench that makes the person reviewing it wait is
+	// a bench that gets skipped, and the old fixed 40ms per word meant the
+	// onboarding reply — the first thing any fresh install ever sees — took
+	// nearly two seconds to say hello.
+	noopStreamSpan = 900 * time.Millisecond
+)
+
+// StreamComplete simulates real-model streaming so UI paths that expect a
+// StreamingProvider (typing indicators, incremental render, the thinking
+// panel) can be exercised without a live API key.
+//
+// It streams by runes, and the chunks put back together are the answer byte
+// for byte. That is the whole point and it used to be false: chunks came from
+// strings.Fields, which splits on whitespace and drops it, so every newline in
+// a streamed answer was destroyed on the way to the screen. A heading swallowed
+// the paragraph under it, a markdown table arrived as one long row of pipes,
+// and the bubble snapped back to the correct layout only at the end, when the
+// finished text replaced the stream. Measured on `imgmix`: 863 characters, 0
+// newlines delivered, out of 15 the answer contains.
+//
+// Splitting on spaces was also the wrong unit for half the users this app has.
+// Thai does not put spaces between words, so an English answer trickled word by
+// word while a Thai one of the same length arrived in a few enormous lurches —
+// a rhythm no real model produces, on the language the app is written in.
 func (p *NoopProvider) StreamComplete(ctx context.Context, req Request, onChunk StreamChunkHandler, onReasoningChunk StreamChunkHandler) (Response, error) {
 	resp, err := p.Complete(ctx, req)
 	if err != nil {
@@ -1027,22 +1055,37 @@ func (p *NoopProvider) StreamComplete(ctx context.Context, req Request, onChunk 
 	}
 
 	trickle := func(text string, deliver StreamChunkHandler) error {
-		for i, word := range strings.Fields(text) {
+		runes := []rune(text)
+		if len(runes) == 0 {
+			return nil
+		}
+		// Fit the text into the span rather than the span to the text: a
+		// long answer arrives in bigger pieces, not over a longer wait.
+		frames := int(noopStreamSpan / noopFrame)
+		size := (len(runes) + frames - 1) / frames
+		if size < 1 {
+			size = 1
+		}
+		for start := 0; start < len(runes); start += size {
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
 			default:
 			}
-			chunk := word
-			if i > 0 {
-				chunk = " " + word
+			end := start + size
+			if end > len(runes) {
+				end = len(runes)
 			}
 			if deliver != nil {
-				if err := deliver(chunk); err != nil {
+				if err := deliver(string(runes[start:end])); err != nil {
 					return err
 				}
 			}
-			time.Sleep(40 * time.Millisecond)
+			// No pause after the last piece. The turn is over; sleeping
+			// through it only delays the reply that is already complete.
+			if end < len(runes) {
+				time.Sleep(noopFrame)
+			}
 		}
 		return nil
 	}
