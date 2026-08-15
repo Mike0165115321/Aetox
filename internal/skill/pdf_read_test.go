@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/Mike0165115321/Aetox/internal/testpdf"
 )
 
 func TestPDFReadRequiresPath(t *testing.T) {
@@ -94,22 +96,6 @@ func TestBundledBinaryFindsFFmpegNextToTheExecutable(t *testing.T) {
 	}
 }
 
-// A hand-written minimal PDF — one text-drawing operator, no xref table
-// (poppler reconstructs one and warns on stderr, which never reaches the
-// model). Inline rather than a testdata blob so the thing being extracted is
-// readable next to the assertion that looks for it.
-const tinyPDF = `%PDF-1.4
-1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
-2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj
-3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj
-4 0 obj<</Length 46>>stream
-BT /F1 18 Tf 20 100 Td (AETOX PDF OK) Tj ET
-endstream
-endobj
-5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj
-trailer<</Root 1 0 R>>
-`
-
 // End-to-end through the real binary: the skill spawns pdftotext, passes the
 // arguments it means to, and gets usable text back out of stdout. Skips where
 // poppler isn't installed, the same shape as TestAudioTranscribeLive — this is
@@ -121,7 +107,7 @@ func TestPDFReadLive(t *testing.T) {
 	}
 
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "tiny.pdf"), []byte(tinyPDF), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "tiny.pdf"), testpdf.Minimal("AETOX PDF OK"), 0o644); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
 	s := &pdfReadSkill{root: root}
@@ -135,6 +121,63 @@ func TestPDFReadLive(t *testing.T) {
 	}
 	if !strings.Contains(out.Content, "AETOX PDF OK") {
 		t.Errorf("Content = %q, want the text the PDF actually draws", out.Content)
+	}
+}
+
+// A converter that dies is not a verdict on the document, and the two must not
+// be reported the same way: pdftotext prints warnings on stderr as it goes, so
+// when it crashes the last of them is sitting there looking exactly like a
+// reason. Reading "Couldn't read xref table" off a process that died of an
+// access violation is how a working PDF gets reported as a corrupt one.
+func TestAbnormalExitSeparatesACrashFromARefusal(t *testing.T) {
+	cases := []struct {
+		name string
+		code int
+		want bool
+	}{
+		{"clean success", 0, false},
+		{"the file was refused", 1, false},
+		{"a larger but ordinary status", 99, false},
+		{"killed by a signal (unix)", -1, true},
+		{"access violation (windows)", 0xC0000005, true},
+		{"stack overflow (windows)", 0xC00000FD, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := abnormalExit(tc.code); got != tc.want {
+				t.Errorf("abnormalExit(%#x) = %v, want %v", tc.code, got, tc.want)
+			}
+		})
+	}
+}
+
+// The retry environment has to be smaller than the one that just killed the
+// converter, and still carry the handful of variables the converter genuinely
+// needs — dropping PATH would turn a crash into "cannot start".
+func TestConverterEnvIsSmallAndKeepsWhatMatters(t *testing.T) {
+	t.Setenv("PATH", os.Getenv("PATH"))
+	t.Setenv("AETOX_NOT_THE_CONVERTERS_BUSINESS", "should not be passed on")
+
+	env := converterEnv()
+	if len(env) >= len(os.Environ()) {
+		t.Errorf("converterEnv kept %d entries against a full environment of %d — it is meant to be the short one", len(env), len(os.Environ()))
+	}
+
+	var names []string
+	for _, kv := range env {
+		names = append(names, strings.ToUpper(kv[:strings.IndexByte(kv, '=')]))
+	}
+	joined := strings.Join(names, ",")
+	if !strings.Contains(joined, "PATH") {
+		t.Errorf("PATH is missing — the converter loads its own libraries through it; got %v", names)
+	}
+	if strings.Contains(joined, "AETOX_NOT_THE_CONVERTERS_BUSINESS") {
+		t.Errorf("converterEnv passed on an unrelated variable: %v", names)
+	}
+	for _, kv := range env {
+		if !strings.Contains(kv, "=") {
+			t.Errorf("malformed entry %q — exec would reject the whole block", kv)
+		}
 	}
 }
 

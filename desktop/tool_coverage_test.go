@@ -26,7 +26,6 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
-	"fmt"
 	"image"
 	"image/color"
 	"image/png"
@@ -42,11 +41,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/lsp"
 	"github.com/Mike0165115321/Aetox/internal/automation/n8n"
+	"github.com/Mike0165115321/Aetox/internal/automation/windmill"
+	"github.com/Mike0165115321/Aetox/internal/lsp"
 	"github.com/Mike0165115321/Aetox/internal/skill"
 	"github.com/Mike0165115321/Aetox/internal/stt"
-	"github.com/Mike0165115321/Aetox/internal/automation/windmill"
+	"github.com/Mike0165115321/Aetox/internal/testpdf"
 )
 
 // cliOnlySkills are registered but have no ToolDefinition, so the model is
@@ -811,58 +811,6 @@ func useRealUserProfile(t *testing.T, tc toolCase, real string) func() {
 
 // --- fixtures ---------------------------------------------------------------
 
-// minimalPDF builds a *valid* one-page PDF around text — real xref table, real
-// byte offsets, real startxref.
-//
-// It used to be a const holding the same deliberately-damaged PDF the pdf_read
-// unit test uses: no xref, on the theory that poppler rebuilds one. It does,
-// usually. On 2026-08-09 this case failed here with `exit status 0xc0000005` —
-// an access violation, which is pdftotext.exe *crashing* rather than reporting
-// anything — while the identical file, flags and binary ran fine from a shell.
-// Whatever the trigger, the reconstruct-a-broken-file path is not what this
-// test is for: the toolbox sweep asks whether pdf_read extracts the text of a
-// PDF, and reaching that answer through a third-party binary's damage-recovery
-// code makes the sweep as reliable as the least-tested branch of poppler.
-//
-// The unit test in internal/skill keeps the damaged one on purpose — its
-// subject is that poppler's stderr warnings never reach the model, which needs
-// a file that produces warnings. Two fixtures, two questions; the comment that
-// used to claim they were the same file was describing an accident.
-//
-// Built rather than written out because an xref is a table of byte offsets:
-// hand-maintaining it means any edit to any object silently corrupts the file,
-// and a raw string literal in a CRLF checkout does not even hold the bytes the
-// author counted.
-func minimalPDF(text string) string {
-	stream := "BT /F1 18 Tf 20 100 Td (" + text + ") Tj ET\n"
-	objects := []string{
-		"<</Type/Catalog/Pages 2 0 R>>",
-		"<</Type/Pages/Kids[3 0 R]/Count 1>>",
-		"<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>",
-		fmt.Sprintf("<</Length %d>>stream\n%sendstream", len(stream), stream),
-		"<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>",
-	}
-
-	var b strings.Builder
-	b.WriteString("%PDF-1.4\n")
-	offsets := make([]int, 0, len(objects))
-	for i, body := range objects {
-		offsets = append(offsets, b.Len())
-		fmt.Fprintf(&b, "%d 0 obj\n%s\nendobj\n", i+1, body)
-	}
-	startXref := b.Len()
-	fmt.Fprintf(&b, "xref\n0 %d\n", len(objects)+1)
-	// Every entry is exactly 20 bytes, free list head first. A reader seeks by
-	// multiplying, so a byte off here is a file that will not open.
-	b.WriteString("0000000000 65535 f \n")
-	for _, off := range offsets {
-		fmt.Fprintf(&b, "%010d 00000 n \n", off)
-	}
-	fmt.Fprintf(&b, "trailer<</Size %d/Root 1 0 R>>\nstartxref\n%d\n%%%%EOF\n",
-		len(objects)+1, startXref)
-	return b.String()
-}
-
 func writeToolFixtures(t *testing.T, root string) {
 	t.Helper()
 	write := func(rel, body string) {
@@ -878,7 +826,11 @@ func writeToolFixtures(t *testing.T, root string) {
 	write("victim.txt", "delete me\n")
 	write("main.go", "package main\n\nfunc main() {}\n")
 	write(filepath.Join("sub", "inner.txt"), "alpha inside\n")
-	write("doc.pdf", minimalPDF("AETOX PDF OK"))
+	// A structurally complete PDF, xref table and all — see internal/testpdf for
+	// why the shortcut version is worse than it looks.
+	if err := os.WriteFile(filepath.Join(root, "doc.pdf"), testpdf.Minimal("AETOX PDF OK"), 0o644); err != nil {
+		t.Fatalf("fixture doc.pdf: %v", err)
+	}
 	// A minimal but genuine nbformat 4 notebook — notebook_edit parses it as
 	// JSON and writes it back, so a hand-waved fixture would fail for the wrong
 	// reason.

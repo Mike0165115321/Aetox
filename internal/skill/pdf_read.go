@@ -24,6 +24,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -98,9 +99,12 @@ func (s *pdfReadSkill) run(ctx context.Context, start time.Time, requestPath str
 		return newToolOutput("pdf_read", command, "", start, false, err), err
 	}
 
-	text, runErr := runPdfToText(ctx, targetPath)
+	text, runErr := runPdfToText(ctx, targetPath, nil)
 	if runErr != nil && errors.Is(runErr, exec.ErrNotFound) && tryAutoInstallPoppler(ctx) {
-		text, runErr = runPdfToText(ctx, targetPath) // installed just now — one retry
+		text, runErr = runPdfToText(ctx, targetPath, nil) // installed just now — one retry
+	}
+	if runErr != nil && errors.Is(runErr, errReaderCrashed) {
+		text, runErr = runPdfToText(ctx, targetPath, converterEnv()) // see converterEnv
 	}
 	if runErr != nil {
 		if errors.Is(runErr, exec.ErrNotFound) {
@@ -121,13 +125,16 @@ func (s *pdfReadSkill) run(ctx context.Context, start time.Time, requestPath str
 	return newToolOutput("pdf_read", command, truncated, start, wasTruncated, nil), nil
 }
 
-func runPdfToText(ctx context.Context, pdfPath string) (string, error) {
+// runPdfToText runs the converter once. A nil env inherits Aetox's own, which
+// is the normal path; converterEnv() is passed only on the retry below.
+func runPdfToText(ctx context.Context, pdfPath string, env []string) (string, error) {
 	// -layout keeps columns and tables readable instead of interleaving them
 	// into one stream, which is what a statement or invoice needs to survive.
 	// -enc UTF-8 is explicit rather than assumed: the default is a build-time
 	// choice, and Thai text is exactly what a wrong one destroys. "-" is
 	// poppler's stdout target.
 	cmd := exec.CommandContext(ctx, bundledBinary("poppler", "pdftotext"), "-layout", "-enc", "UTF-8", pdfPath, "-")
+	cmd.Env = env
 	proc.HideConsole(cmd)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -136,6 +143,9 @@ func runPdfToText(ctx context.Context, pdfPath string) (string, error) {
 		if errors.Is(err, exec.ErrNotFound) {
 			return "", err
 		}
+		if diedMidRun(err) {
+			return "", fmt.Errorf("%w (%v)", errReaderCrashed, err)
+		}
 		msg := strings.TrimSpace(stderr.String())
 		if msg == "" {
 			msg = err.Error()
@@ -143,6 +153,75 @@ func runPdfToText(ctx context.Context, pdfPath string) (string, error) {
 		return "", errors.New(msg)
 	}
 	return strings.TrimSpace(stdout.String()), nil
+}
+
+// errReaderCrashed is the converter dying partway through rather than judging
+// the file.
+//
+// The distinction matters because of what the caller does next. For a refusal,
+// stderr is the reason and handing it to the model is right. For a crash,
+// stderr is only whatever had been printed before the process died — often a
+// routine warning — and passing that off as the reason tells the model the
+// document is corrupt when the reader is the thing that broke. It then tells
+// the user so, confidently, which is the exact failure this file's header sets
+// out to avoid.
+//
+// This is observed, not anticipated. On 2026-08-09 the toolbox sweep failed
+// with `exit status 0xc0000005` — an access violation, so pdftotext.exe
+// crashing rather than reporting anything — on a file that the same binary and
+// the same flags handled fine from a shell. That evidence used to live in a
+// comment on the test fixture, which is where it was found rather than where it
+// is needed.
+var errReaderCrashed = errors.New("pdftotext หยุดกลางคัน — ปัญหาอยู่ที่ตัวอ่าน ไม่ใช่ที่ตัวไฟล์ PDF")
+
+func diedMidRun(err error) bool {
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) {
+		return false
+	}
+	return abnormalExit(exit.ExitCode())
+}
+
+// abnormalExit reports whether a status means the process was destroyed rather
+// than that it chose to fail. -1 is "killed by a signal" on Unix; Windows
+// reports an unhandled exception as its NTSTATUS instead, and those all sit
+// above 0xC0000000 — 0xC0000005, the access violation a stray write ends in, is
+// the one seen in practice.
+func abnormalExit(code int) bool {
+	return code == -1 || uint32(code) >= 0xC0000000
+}
+
+// converterEnv is the environment a document converter actually needs: where
+// its own libraries live, where it may write scratch files, whose settings to
+// read, and which locale to decode in. Everything else in Aetox's environment
+// is none of the converter's business.
+//
+// It is used only after a crash, because the reason it helps is not principle
+// but damage control. pdftotext builds differ in how carefully they walk the
+// environment block they are handed: the Xpdf 4.x build that ships inside Git
+// for Windows — which is what the name resolves to on a Windows machine with no
+// poppler installed — writes past the end of a fixed buffer for some
+// environments and dies with an access violation before it reads a byte of the
+// PDF. Handing it a short, plain environment gets the real text out of it, and
+// costs a healthy install nothing, since it never reaches this path.
+func converterEnv() []string {
+	// os.LookupEnv is case-insensitive on Windows, so one spelling covers both
+	// PATH and Path.
+	keep := []string{
+		"PATH",                                // the converter's own DLLs sit beside it
+		"SystemRoot", "SystemDrive", "windir", // windows will not start a process without these
+		"TEMP", "TMP", "TMPDIR", // scratch space
+		"HOME", "USERPROFILE", // whose settings to read
+		"APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME",
+		"LANG", "LC_ALL", "LC_CTYPE", // how to decode what it finds
+	}
+	env := make([]string, 0, len(keep))
+	for _, name := range keep {
+		if value, ok := os.LookupEnv(name); ok {
+			env = append(env, name+"="+value)
+		}
+	}
+	return env
 }
 
 // tryAutoInstallPoppler mirrors tryAutoInstallTesseract: Homebrew needs no
