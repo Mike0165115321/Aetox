@@ -587,8 +587,31 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .chat { flex:1; overflow-y:auto; overflow-x:hidden; }
 .chat-inner { max-width:1040px; margin:0 auto; width:100%; min-width:0; padding:22px 26px 8px; display:flex; flex-direction:column; gap:18px; font-size:var(--chat-font-size, 15.5px); }
 
-.empty-state { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; padding:32px; text-align:center; }
+.empty-state { position:relative; overflow:hidden; flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; padding:32px; text-align:center; }
 .empty-state h2 { margin:0; font-size:var(--fs-3xl); font-weight:700; }
+/* The mark, once and large, as the ground behind the opening screen. Taken out
+   of the flow so it cannot push the question off centre, and out of the mouse's
+   reach so it never eats a click meant for a card underneath it.
+   The mask is what makes the size affordable: the mark is centred on the same
+   middle the content occupies, so it is erased on the way down and is already
+   gone by the height the cards start at. Big at the top where the screen is
+   empty, absent where anything has to be read. */
+.empty-watermark {
+  position:absolute; inset:0; z-index:0; display:grid; place-items:center; pointer-events:none;
+  -webkit-mask-image:linear-gradient(#000 12%, rgba(0,0,0,.35) 40%, transparent 66%);
+  mask-image:linear-gradient(#000 12%, rgba(0,0,0,.35) 40%, transparent 66%);
+}
+.empty-watermark .logo-mark {
+  width:min(68vh, 540px); height:auto;
+  /* currentColor, so it is the theme's own ink and not a grey that only works
+     on the dark palettes. Higher than it looks: most of the mark is under the
+     fade, and this is the value at the top where none of it is. */
+  opacity:.09; animation:watermark-in .7s ease-out both;
+}
+@keyframes watermark-in { from { opacity:0; } to { opacity:.09; } }
+/* Positioned siblings, or the absolute mark would paint over every one of them:
+   in the same stacking context anything positioned comes after what is not. */
+.empty-state > :not(.empty-watermark) { position:relative; z-index:1; }
 .starter-grid { display:grid; grid-template-columns:repeat(2, minmax(180px, 220px)); gap:10px; }
 .starter-card {
   display:flex; flex-direction:column; align-items:flex-start; gap:8px; padding:14px 16px;
@@ -632,8 +655,33 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
    and no padding stealing width from tables and code. */
 .msg.bot .bubble { padding:0; }
 .typing-bubble { display:flex; flex-direction:column; gap:8px; }
-.typing-row { display:flex; align-items:center; gap:10px; }
-.typing-status { color:var(--text-muted); font-size:var(--fs-md); }
+/* Flex, so the phrase shrinks to its own text: the sweep below is painted on
+   the element's box, and a span stretched to the column's full width would run
+   the light through empty space either side of the words. */
+.typing-row { display:flex; align-items:center; }
+/* The phrase is the live thing, so the phrase is what moves. It replaced three
+   bouncing dots, which were a second ellipsis on a line whose phrase already
+   ends in one (conversationThinkingStatus in turn/executor.go), and which
+   bounced vertically right above the tool list growing downward. */
+.typing-status {
+  color:var(--text-muted); font-size:var(--fs-md);
+  background:linear-gradient(100deg, var(--text-muted) 35%, var(--text-primary) 50%, var(--text-muted) 65%);
+  background-size:300% 100%;
+  -webkit-background-clip:text; background-clip:text;
+  -webkit-text-fill-color:transparent;
+  animation:status-shimmer 2.4s linear infinite;
+}
+@keyframes status-shimmer {
+  from { background-position:150% 0; }
+  to   { background-position:-50% 0; }
+}
+/* Motion off: the blanket rule at the foot of this file stops the sweep, but
+   the letters are still painted with a transparent fill and would freeze at
+   whatever the gradient happened to be under them. Give them their own colour
+   back — the words are the point, the light was only ever the pulse. */
+@media (prefers-reduced-motion:reduce) {
+  .typing-status { background:none; -webkit-text-fill-color:currentColor; }
+}
 /* "thought for 34s" and "used 24 tools" sit on one line above the reply; both
    open their own body below, collapsed by default. */
 .meta-row { display:flex; flex-wrap:wrap; align-items:center; gap:6px 16px; margin-bottom:8px; }
@@ -692,17 +740,6 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 /* flex, because .icon is display:block — as a bare child of this block div the
    svg took its own line and sat above the text instead of beside it. */
 .tool-think { display:flex; align-items:center; gap:6px; padding:3px 0; font-size:var(--fs-xs); color:var(--text-dim); }
-.typing-dots { display:inline-flex; gap:4px; }
-.typing-dots span {
-  width:6px; height:6px; border-radius:50%; background:var(--text-dim);
-  animation:typing-bounce 1.1s infinite ease-in-out;
-}
-.typing-dots span:nth-child(2) { animation-delay:.15s; }
-.typing-dots span:nth-child(3) { animation-delay:.3s; }
-@keyframes typing-bounce {
-  0%, 60%, 100% { transform:translateY(0); opacity:.5; }
-  30% { transform:translateY(-4px); opacity:1; }
-}
 .markdown-body { line-height:1.65; }
 .markdown-body :first-child { margin-top:0; }
 .markdown-body :last-child { margin-bottom:0; }

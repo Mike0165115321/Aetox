@@ -88,7 +88,7 @@
   // Reset at the start of every turn, because this used to be set once for the
   // lifetime of the component: collapsing the panel — or opening the tools view
   // — once left every later turn in that session with nothing on screen at all
-  // but the bouncing dots, which is the difference between "working" and
+  // but the waiting phrase, which is the difference between "working" and
   // "frozen". Only reacts to awaitingReply, so toggling it mid-turn still sticks
   // for that turn.
   let livePanel = $state<Panel>('think')
@@ -1549,7 +1549,11 @@
 
   {#if messages.length === 0}
     <div class="empty-state">
-      <Logo size={56} />
+      <!-- The mark as ground rather than as the first item in the column. At
+           56px it stood in the stack competing with the question and the cards
+           for the same middle of the screen; behind them at this size it is
+           the room they are standing in. -->
+      <div class="empty-watermark"><Logo size={520} animate={false} /></div>
       <h2>{headline}</h2>
       <!-- Keyed by title so a re-deal replaces the cards rather than rewriting
            the text inside four cards that never moved — which is what makes the
@@ -1855,12 +1859,12 @@
       {#if awaitingReply}
         <div class="msg bot">
           <div class="bubble typing-bubble">
-            <div class="typing-row">
-              {#if liveStatus}
-                <span class="typing-status">{liveStatus}</span>
-              {/if}
-              <span class="typing-dots"><span></span><span></span><span></span></span>
-            </div>
+            <!-- The whole row, not just its text: with nothing else on it, an
+                 empty row would still take its share of the bubble's gap and
+                 push the toggles below it down for no reason. -->
+            {#if liveStatus}
+              <div class="typing-row"><span class="typing-status">{liveStatus}</span></div>
+            {/if}
             {#if reasoningText || doneOwnTools.length || doneAgents.length || doneHelpers.length}
               <div class="meta-row">
                 <!-- The same marks the finished bubble's toggles carry
