@@ -163,8 +163,9 @@ type Options struct {
 	//
 	// One func feeds both, deliberately. A PreToolUse hook exists to inspect
 	// what the agent is about to do, and a hook reading a bash command line
-	// from cmd.exe would pass what it should stop — a second setting would be a
-	// second thing to fall out of step, in the one place built to be a gate.
+	// from PowerShell would pass what it should stop — a second setting would
+	// be a second thing to fall out of step, in the one place built to be a
+	// gate.
 	//
 	// Nil is the native shell: every existing host, and every test.
 	Shell func() proc.Backend

@@ -77,7 +77,13 @@ func waitForOutput(t *testing.T, o *shellOutputSkill, id, want string) string {
 func TestBackgroundShellRunsPastTheTurn(t *testing.T) {
 	s, o, k := backgroundShellTools(t)
 
-	command := `for /L %i in (1,0,2) do @(echo tick & ping -n 2 127.0.0.1 >nul)`
+	// The one fixture PowerShell and sh cannot share: their loop keywords
+	// differ. Everything else in this file is written in the dialect both
+	// shells read the same way — echo, sleep and `;` — which is why the other
+	// fixtures have no GOOS switch. (The old cmd `for /L` line kept "passing"
+	// under PowerShell by accident: the parse error echoes the source line,
+	// and the source line contains "tick".)
+	command := `while ($true) { echo tick; sleep 1 }`
 	if runtime.GOOS != "windows" {
 		command = `while true; do echo tick; sleep 1; done`
 	}
@@ -121,10 +127,7 @@ func TestBackgroundShellRunsPastTheTurn(t *testing.T) {
 func TestBackgroundShellOutputIsIncremental(t *testing.T) {
 	s, o, _ := backgroundShellTools(t)
 
-	command := `echo first & ping -n 2 127.0.0.1 >nul & echo second`
-	if runtime.GOOS != "windows" {
-		command = `echo first; sleep 1; echo second`
-	}
+	command := `echo first; sleep 1; echo second`
 	id := startBackground(t, s, command)
 
 	waitForOutput(t, o, id, "first")
@@ -137,10 +140,7 @@ func TestBackgroundShellOutputIsIncremental(t *testing.T) {
 func TestBackgroundShellFilterKeepsOnlyMatchingLines(t *testing.T) {
 	s, o, _ := backgroundShellTools(t)
 
-	command := `echo keep-me & echo drop-this`
-	if runtime.GOOS != "windows" {
-		command = `echo keep-me; echo drop-this`
-	}
+	command := `echo keep-me; echo drop-this`
 	id := startBackground(t, s, command)
 
 	deadline := time.Now().Add(20 * time.Second)
@@ -180,10 +180,7 @@ func TestBackgroundShellUnknownHandle(t *testing.T) {
 func TestBackgroundShellCapsConcurrentJobs(t *testing.T) {
 	s, _, _ := backgroundShellTools(t)
 
-	command := `ping -n 60 127.0.0.1 >nul`
-	if runtime.GOOS != "windows" {
-		command = `sleep 60`
-	}
+	command := `sleep 60`
 	for i := 0; i < maxBackgroundShells; i++ {
 		startBackground(t, s, command)
 	}
@@ -225,10 +222,7 @@ func TestBackgroundShellWaitForMatch(t *testing.T) {
 	s, o, _ := backgroundShellTools(t)
 	defer cancelAll(t, s)
 
-	command := `ping -n 3 127.0.0.1 >nul & echo server-ready & ping -n 60 127.0.0.1 >nul`
-	if runtime.GOOS != "windows" {
-		command = `sleep 2; echo server-ready; sleep 60`
-	}
+	command := `sleep 2; echo server-ready; sleep 60`
 	id := startBackground(t, s, command)
 
 	out, err := o.ExecuteTool(context.Background(), map[string]any{
@@ -252,10 +246,7 @@ func TestBackgroundShellWaitForMatch(t *testing.T) {
 func TestBackgroundShellWaitForExit(t *testing.T) {
 	s, o, _ := backgroundShellTools(t)
 
-	command := `ping -n 2 127.0.0.1 >nul & echo bye`
-	if runtime.GOOS != "windows" {
-		command = `sleep 1; echo bye`
-	}
+	command := `sleep 1; echo bye`
 	id := startBackground(t, s, command)
 
 	out, err := o.ExecuteTool(context.Background(), map[string]any{
@@ -278,10 +269,7 @@ func TestBackgroundShellWaitTimesOut(t *testing.T) {
 	s, o, _ := backgroundShellTools(t)
 	defer cancelAll(t, s)
 
-	command := `ping -n 60 127.0.0.1 >nul`
-	if runtime.GOOS != "windows" {
-		command = `sleep 60`
-	}
+	command := `sleep 60`
 	id := startBackground(t, s, command)
 
 	out, err := o.ExecuteTool(context.Background(), map[string]any{
@@ -307,10 +295,7 @@ func TestBackgroundShellWaitCanceledByTurn(t *testing.T) {
 	s, o, _ := backgroundShellTools(t)
 	defer cancelAll(t, s)
 
-	command := `ping -n 60 127.0.0.1 >nul`
-	if runtime.GOOS != "windows" {
-		command = `sleep 60`
-	}
+	command := `sleep 60`
 	id := startBackground(t, s, command)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
@@ -334,10 +319,7 @@ func TestBackgroundShellWaitBadPattern(t *testing.T) {
 	s, o, _ := backgroundShellTools(t)
 	defer cancelAll(t, s)
 
-	command := `ping -n 60 127.0.0.1 >nul`
-	if runtime.GOOS != "windows" {
-		command = `sleep 60`
-	}
+	command := `sleep 60`
 	id := startBackground(t, s, command)
 
 	_, err := o.ExecuteTool(context.Background(), map[string]any{

@@ -37,7 +37,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -269,10 +268,11 @@ func assertReachable(t *testing.T, d *skill.Dispatcher, name string, tc toolCase
 // them is an invented id, which tests the error path and nothing else.
 func startBackgroundFixture(t *testing.T, d *skill.Dispatcher) string {
 	t.Helper()
-	command := `ping -n 60 127.0.0.1 >nul & echo aetox-bg-done`
-	if runtime.GOOS != "windows" {
-		command = `sleep 60; echo aetox-bg-done`
-	}
+	// One line for both platforms: echo, sleep and `;` are the dialect
+	// PowerShell and sh read the same way. The old cmd spelling chained with
+	// `&`, which PowerShell reads as "background the left side" — the shell
+	// then exited at once and the fixture reported "already finished".
+	command := `sleep 60; echo aetox-bg-done`
 	out, _, err := d.ExecuteTool(context.Background(), "shell", map[string]any{
 		"command":           command,
 		"run_in_background": true,

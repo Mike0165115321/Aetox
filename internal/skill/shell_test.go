@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -80,9 +81,9 @@ func TestCappedWriterStopsGrowing(t *testing.T) {
 
 // Quoted arguments are the normal case for a coding agent — `git commit -m
 // "msg"`, `python -c "..."`, `grep "a b"`. On Windows they used to arrive
-// mangled as \"msg\", because os/exec escapes for the C runtime convention
-// that cmd.exe does not follow (proc.ShellCommand). Nothing caught it until
-// a process-tree test tried to run a quoted path.
+// mangled as \"msg\", back when the shell was cmd.exe: os/exec escapes for
+// the C runtime convention, which cmd does not follow. PowerShell does, so
+// today this guards the convention staying matched rather than a live bug.
 func TestShellSkillPreservesQuotedArguments(t *testing.T) {
 	isolateAuditLog(t)
 	s := &shellSkill{root: t.TempDir()}
@@ -98,10 +99,12 @@ func TestShellSkillPreservesQuotedArguments(t *testing.T) {
 		if strings.Contains(out.Content, `\"`) {
 			t.Errorf("Execute(%s) = %q, want no backslash-escaped quotes", tc.command, out.Content)
 		}
-		// cmd's echo keeps the quotes, sh's drops them; either is fine, an
-		// injected backslash is not.
-		if got := strings.ReplaceAll(out.Content, `"`, ""); got != tc.want {
-			t.Errorf("Execute(%s) = %q, want %q ignoring quotes", tc.command, got, tc.want)
+		// The shells legitimately disagree on presentation — sh and
+		// PowerShell drop the quotes, PowerShell also prints one argument
+		// per line — so compare words. An injected backslash is the one
+		// thing that is wrong everywhere.
+		if got := strings.Join(strings.Fields(strings.ReplaceAll(out.Content, `"`, "")), " "); got != tc.want {
+			t.Errorf("Execute(%s) = %q, want the words %q", tc.command, got, tc.want)
 		}
 	}
 }
@@ -142,11 +145,20 @@ func TestShellSkillCancelKillsGrandchild(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	var out Output
+	// Plain shell quoting, not strconv.Quote — that escapes backslashes
+	// Go-literal style and hands the shell a path it cannot resolve. On
+	// Windows the shell is PowerShell, which needs two things sh does not:
+	// the call operator in front of a quoted program path (a bare quoted
+	// string is an expression), and quotes around -test.run — PowerShell
+	// splits an unquoted dotted flag at the dot, so the helper would be
+	// handed `-test` and die on an unknown flag.
+	line := `"` + self + `" "-test.run" TestHeartbeatHelper`
+	if runtime.GOOS == "windows" {
+		line = "& " + line
+	}
 	go func() {
 		defer close(done)
-		// Plain shell quoting, not strconv.Quote — that escapes backslashes
-		// Go-literal style and hands cmd.exe a path it cannot resolve.
-		out, _ = s.Execute(ctx, Input{"args": []string{`"` + self + `"`, "-test.run", "TestHeartbeatHelper"}})
+		out, _ = s.Execute(ctx, Input{"args": []string{line}})
 	}()
 
 	// Don't cancel until the grandchild is provably alive, or the test passes

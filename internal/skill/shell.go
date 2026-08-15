@@ -164,6 +164,17 @@ func (s *shellSkill) ToolDefinition() model.ToolDefinition {
 		"additionalProperties": false,
 	}
 	payload, _ := json.Marshal(schema)
+	// Resolved once for the whole description, per this type's own rule
+	// (shell()): a Name from one read and a Note from another could describe
+	// two different shells.
+	backend := s.shell()
+	syntax := "Commands are run by " + backend.Name() + " on this machine, so write them in that shell's syntax. "
+	// The one constraint the name cannot carry — today, 5.1's missing `&&`.
+	// A single fact is not the case list the comment below refuses: the model
+	// knows the shell it is named, except where the name lies to its habits.
+	if note := backend.Note(); note != "" {
+		syntax += note + " "
+	}
 	return model.ToolDefinition{
 		Type: "function",
 		Function: model.ToolFunction{
@@ -176,17 +187,17 @@ func (s *shellSkill) ToolDefinition() model.ToolDefinition {
 			// description cannot end up naming a shell the tool does not run.
 			//
 			// Read here rather than baked in at build time, because the shell
-			// is now the user's choice: a description still saying cmd.exe
-			// after they switched the workspace to WSL would send every command
-			// of the next turn into the wrong dialect, and the model has no way
-			// to find out it was misled except by failing.
+			// is now the user's choice: a description still naming the native
+			// shell after they switched the workspace to WSL would send every
+			// command of the next turn into the wrong dialect, and the model
+			// has no way to find out it was misled except by failing.
 			//
-			// The name, and nothing else: a table of equivalents here would be
-			// a case list, and the model already knows the shell it is told
-			// it is writing for.
+			// The name and the backend's one-line Note, and nothing else: a
+			// table of equivalents here would be a case list, and the model
+			// already knows the shell it is told it is writing for.
 			Description: "Run commands in the working folder — tests, builds, linters, package managers, anything the terminal can do. Actions:\n" +
 				actions.String() + "\n" +
-				"Commands are run by " + s.shell().Name() + " on this machine, so write them in that shell's syntax. " +
+				syntax +
 				"Use it to verify your own work after editing. " +
 				"Paths in the command follow the same rule the file tools do: they must be inside the folders this session may use, " +
 				"and a command naming anything outside is refused before it runs. " +

@@ -74,13 +74,15 @@ func (a *App) pickShell() {
 	a.setShell(options[index-1])
 }
 
-// applyShell reads the words a user would actually type. "windows" and "cmd"
-// are accepted for the native shell because that is what it is called on the
-// machine this runs on, whatever proc calls it internally.
+// applyShell reads the words a user would actually type. "windows",
+// "powershell" and even "cmd" are accepted for the native shell — "cmd" stays
+// although the native shell is PowerShell now (§111), because a word a user
+// typed for years should keep meaning "my machine's shell", not become an
+// error about a shell that no longer exists.
 func (a *App) applyShell(arg string) {
 	fields := strings.Fields(strings.ToLower(strings.TrimSpace(arg)))
 	switch fields[0] {
-	case "windows", "native", "cmd", "sh", "เครื่อง", "วินโดว์":
+	case "windows", "native", "cmd", "sh", "powershell", "pwsh", "เครื่อง", "วินโดว์":
 		a.setShell(proc.Native())
 	case "wsl", "linux":
 		distro := strings.Join(fields[1:], " ")

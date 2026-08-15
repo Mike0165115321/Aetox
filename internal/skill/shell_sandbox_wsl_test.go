@@ -112,7 +112,7 @@ func TestShellUnderWSLAllowsGuestPathsInsideTheWorkspace(t *testing.T) {
 }
 
 // The gate is worth nothing if it is turned off, and it gets turned off the
-// first time it refuses `go test`. Same standard the cmd.exe side is held to,
+// first time it refuses `go test`. Same standard the native side is held to,
 // with the commands a bash user actually writes.
 func TestShellUnderWSLDoesNotRefuseOrdinaryCommands(t *testing.T) {
 	gate := wslGate(t)
@@ -262,7 +262,7 @@ func TestShellToolDescriptionNamesTheSelectedShell(t *testing.T) {
 	if !strings.Contains(desc, "mikedev") {
 		t.Errorf("after switching to WSL the description still does not say so:\n%s", desc)
 	}
-	if strings.Contains(desc, proc.ShellName()) && proc.ShellName() == "cmd.exe" {
-		t.Errorf("the description still names cmd.exe after switching to WSL:\n%s", desc)
+	if strings.Contains(desc, proc.ShellName()) {
+		t.Errorf("the description still names the native shell (%s) after switching to WSL:\n%s", proc.ShellName(), desc)
 	}
 }

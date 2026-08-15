@@ -115,7 +115,7 @@ type Runner struct {
 	// the shell tool runs in rather than a setting of its own.
 	//
 	// A PreToolUse hook exists to inspect what the agent is about to do, and a
-	// hook that inspects a bash command line from cmd.exe is inspecting a
+	// hook that inspects a bash command line from PowerShell is inspecting a
 	// string it cannot evaluate — it would pass commands it should stop and
 	// stop commands it should pass, quietly, in the one place built to be a
 	// safety gate. A PostToolUse hook has the same problem in reverse: it

@@ -81,6 +81,10 @@ func (w *wslBackend) Name() string {
 	return "bash (WSL)"
 }
 
+// Note is empty: "bash" is instruction enough, which is much of why this
+// backend exists at all.
+func (w *wslBackend) Note() string { return "" }
+
 func (w *wslBackend) POSIX() bool { return true }
 
 // Command builds the wsl.exe invocation.

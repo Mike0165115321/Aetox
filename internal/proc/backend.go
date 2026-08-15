@@ -17,11 +17,14 @@ import (
 // distro holding the project's toolchain. Choosing between them is a runtime
 // question about this workspace, not a compile-time question about this OS.
 //
-// The interface is deliberately four methods, because four things actually
-// differ between shells, and everything else about running a command does not:
+// The interface is deliberately this small: only what actually differs
+// between shells is on it, and everything else about running a command is not:
 //
 //   - Name, because the model is told which syntax to write (see the shell
 //     tool's description) and being told the wrong one costs a wasted turn.
+//   - Note, because one shell has a constraint its name cannot carry:
+//     Windows PowerShell 5.1 is missing the `&&` every model chains with by
+//     habit, and a model that is not told loses its first round to it.
 //   - POSIX, because the sandbox guard reads the command line, and how a line
 //     tokenizes — whether `\` escapes, whether a leading `/` opens a path or a
 //     switch — is a property of the shell, not of GOOS.
@@ -39,6 +42,12 @@ import (
 type Backend interface {
 	// Name is what the model is told it is writing for.
 	Name() string
+
+	// Note is the one syntax constraint of this shell that its name cannot
+	// carry, or "" when the name is instruction enough. It rides the tool
+	// description beside Name, and it is a single fact, never a syntax table —
+	// the shell tool's description says why.
+	Note() string
 
 	// POSIX reports whether the command line is read by a POSIX shell.
 	POSIX() bool
@@ -116,17 +125,17 @@ func FormatBackend(b Backend) string {
 // Label is what a person choosing a shell reads, and it is deliberately not
 // Name.
 //
-// Name answers the model's question. "cmd.exe" in the shell tool's description
-// is the instruction that decides whether the next command is written with `&&`
-// or `;`, and naming the machine there would be a worse instruction than the
-// one it replaced: Windows does not imply cmd, it is merely where cmd is. A
-// person opening the picker is asking the opposite question — not which syntax,
-// but which machine their command lands on — and "cmd.exe" answers that one
-// only for someone who already knew.
+// Name answers the model's question. "Windows PowerShell 5.1" in the shell
+// tool's description is the instruction that decides whether the next command
+// is written with `&&` or `;`, and naming the machine there would be a worse
+// instruction than the one it replaced: Windows does not imply one shell, it
+// is merely where they live. A person opening the picker is asking the
+// opposite question — not which syntax, but which machine their command lands
+// on — and a shell's name answers that one only for someone who already knew.
 //
 // So the two words split, and the reason to keep them split is that they drift
 // apart on purpose: the moment a second Windows backend exists this has to
-// become "Windows (cmd)" while Name stays exactly "cmd.exe".
+// become "Windows (PowerShell)" while Name stays exactly what ShellName says.
 //
 // A package function rather than a Backend method, for FormatBackend's reason:
 // it is one more spelling of a backend, produced for one more audience, and
@@ -195,14 +204,16 @@ func IsNative(b Backend) bool {
 	return ok
 }
 
-// Native is the shell this binary would have used before backends existed:
-// cmd.exe on Windows, sh everywhere else. It stays the default everywhere, and
-// it is the only backend on a machine with no WSL.
+// Native is the machine's own shell: PowerShell on Windows (shell_windows.go
+// picks which of the two), sh everywhere else. It stays the default
+// everywhere, and it is the only backend on a machine with no WSL.
 func Native() Backend { return nativeBackend{} }
 
 type nativeBackend struct{}
 
 func (nativeBackend) Name() string { return ShellName() }
+
+func (nativeBackend) Note() string { return ShellNote() }
 
 func (nativeBackend) POSIX() bool { return runtime.GOOS != "windows" }
 

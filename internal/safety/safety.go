@@ -382,9 +382,16 @@ func isShellHighRisk(cmd string, rest []string) bool {
 	}
 
 	switch token {
-	case "rm", "del", "erase", "rmdir", "rd", "mv", "move", "rename", "format", "mkfs",
+	case "rm", "del", "erase", "rmdir", "rd", "mv", "move", "rename", "ren", "format", "mkfs",
 		"shred", "sdelete", "takeown", "icacls", "attrib", "cacls", "chown", "chmod", "cd",
-		"shutdown", "reboot", "halt", "poweroff", "kill", "taskkill":
+		"shutdown", "reboot", "halt", "poweroff", "kill", "taskkill",
+		// The PowerShell spellings of the same acts, needed since the native
+		// Windows shell became PowerShell: a model told its shell is
+		// PowerShell writes Remove-Item where it wrote del, and the risk
+		// gate has to recognise the act in the dialect the model was told
+		// to use. ri/ren/sl are the built-in aliases short enough to appear.
+		"remove-item", "ri", "move-item", "rename-item", "clear-content", "clc",
+		"set-location", "sl", "stop-process", "spps", "stop-computer", "restart-computer":
 		return true
 	}
 
@@ -395,7 +402,7 @@ func isShellHighRisk(cmd string, rest []string) bool {
 		}
 	}
 
-	for _, marker := range []string{"--recursive", "-rf", "/s", "/q", "-f", "--force"} {
+	for _, marker := range []string{"--recursive", "-rf", "/s", "/q", "-f", "--force", "-recurse", "-force"} {
 		for _, value := range rest {
 			if strings.EqualFold(strings.TrimSpace(value), marker) {
 				return true

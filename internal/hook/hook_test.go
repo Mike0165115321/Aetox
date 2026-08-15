@@ -12,11 +12,13 @@ import (
 
 // script writes a platform-appropriate one-liner. Every test below runs a real
 // child process, because the whole feature is "run the user's command" and a
-// mocked runner would test the mock.
-func script(t *testing.T, body, batBody string) string {
+// mocked runner would test the mock. The Windows variant is PowerShell, the
+// shell hooks actually run in since §111 — these tests were the first "user
+// hook written in cmd dialect" to break, exactly as that entry predicted.
+func script(t *testing.T, body, psBody string) string {
 	t.Helper()
 	if runtime.GOOS == "windows" {
-		return batBody
+		return psBody
 	}
 	return body
 }
@@ -31,7 +33,7 @@ func TestPreToolUseBlocksOnNonZeroExit(t *testing.T) {
 		Event:    PreToolUse,
 		Matcher:  "shell",
 		Blocking: true,
-		Command:  script(t, `echo "no shell today" && exit 1`, `echo no shell today& exit /b 1`),
+		Command:  script(t, `echo "no shell today" && exit 1`, `echo "no shell today"; exit 1`),
 	})
 
 	d := r.Run(context.Background(), PreToolUse, "shell", map[string]any{"command": "rm -rf /"}, nil)
@@ -49,7 +51,7 @@ func TestNonBlockingHookFailureDoesNotStopTheTool(t *testing.T) {
 	r := runnerFor(t, Hook{
 		Event:   PreToolUse,
 		Matcher: "*",
-		Command: script(t, `exit 3`, `exit /b 3`),
+		Command: script(t, `exit 3`, `exit 3`),
 	})
 
 	if d := r.Run(context.Background(), PreToolUse, "write", nil, nil); d.Blocked {
@@ -62,7 +64,7 @@ func TestMatcherSelectsTools(t *testing.T) {
 		Event:    PreToolUse,
 		Matcher:  "github_*",
 		Blocking: true,
-		Command:  script(t, `exit 1`, `exit /b 1`),
+		Command:  script(t, `exit 1`, `exit 1`),
 	})
 
 	if d := r.Run(context.Background(), PreToolUse, "github_search", nil, nil); !d.Blocked {
@@ -80,9 +82,9 @@ func TestHookReceivesTheCallOnStdinAndInTheEnvironment(t *testing.T) {
 	out := filepath.Join(dir, "seen.txt")
 	// Both channels at once: the env var, and stdin.
 	body := `printf '%s|' "$AETOX_TOOL" > ` + out + ` && cat >> ` + out
-	batBody := `(echo|set /p="%AETOX_TOOL%|") > "` + out + `" & more >> "` + out + `"`
+	psBody := `Set-Content -NoNewline -Path "` + out + `" -Value "$env:AETOX_TOOL|"; [Console]::In.ReadToEnd() | Add-Content -Path "` + out + `"`
 	r := NewRunner(Config{Hooks: []Hook{{
-		Event: PreToolUse, Matcher: "*", Command: script(t, body, batBody),
+		Event: PreToolUse, Matcher: "*", Command: script(t, body, psBody),
 	}}}, dir)
 
 	r.Run(context.Background(), PreToolUse, "write", map[string]any{"path": "a.go"}, nil)
@@ -113,9 +115,9 @@ func TestPostToolUseSeesTheOutcome(t *testing.T) {
 	dir := t.TempDir()
 	out := filepath.Join(dir, "ok.txt")
 	body := `printf '%s' "$AETOX_TOOL_OK" > ` + out
-	batBody := `(echo|set /p="%AETOX_TOOL_OK%") > "` + out + `"`
+	psBody := `Set-Content -NoNewline -Path "` + out + `" -Value "$env:AETOX_TOOL_OK"`
 	r := NewRunner(Config{Hooks: []Hook{{
-		Event: PostToolUse, Matcher: "*", Command: script(t, body, batBody),
+		Event: PostToolUse, Matcher: "*", Command: script(t, body, psBody),
 	}}}, dir)
 
 	r.Run(context.Background(), PostToolUse, "shell", nil, &Result{OK: false, Output: "boom"})
@@ -134,7 +136,7 @@ func TestPostToolUseSeesTheOutcome(t *testing.T) {
 func TestPostToolUseCannotBlock(t *testing.T) {
 	r := runnerFor(t, Hook{
 		Event: PostToolUse, Matcher: "*", Blocking: true,
-		Command: script(t, `exit 1`, `exit /b 1`),
+		Command: script(t, `exit 1`, `exit 1`),
 	})
 	if d := r.Run(context.Background(), PostToolUse, "write", nil, &Result{OK: true}); d.Blocked {
 		t.Error("a PostToolUse hook blocked something that had already happened")
