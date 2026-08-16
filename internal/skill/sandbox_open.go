@@ -256,9 +256,23 @@ var ownSecretFiles = []string{
 	"webview",
 }
 
-// refuseCredentialStore rejects a (symlink-resolved) target inside any
-// credential store. A missing home dir fails open on purpose: it means there
-// is no home to protect, not that everything is suspect.
+// refuseCredentialStore rejects a target inside any credential store, resolving
+// it first. Callers that already hold a resolved path call refuseResolved
+// directly rather than paying for the walk twice.
+func refuseCredentialStore(target string) error {
+	return refuseResolved(evalExistingSymlinks(target))
+}
+
+// refuseResolved is the denylist itself, and the only copy of it: one gate, two
+// rhythms of caller. resolveSandboxPath resolves a single path per tool call and
+// hands it here; a walking tool resolves its base once and derives every entry
+// from it (sandboxWalk). Both arrive already symlink-resolved, so nothing below
+// resolves again — a per-entry EvalSymlinks is the exact cost that kept this
+// check out of the walkers in the first place, and it is what let a walk started
+// above a refused file read it (2026-08-16).
+//
+// A missing home dir fails open on purpose: it means there is no home to
+// protect, not that everything is suspect.
 //
 // The home side goes through the same canonicalization as the target, because
 // the two arrive in different spellings: the target was symlink-resolved,
@@ -266,7 +280,7 @@ var ownSecretFiles = []string{
 // while os.UserHomeDir returns USERPROFILE verbatim. Compare those raw and a
 // short-named home lets every credential read through — caught by CI, whose
 // runner's TEMP really is spelled C:\Users\RUNNER~1\....
-func refuseCredentialStore(target string) error {
+func refuseResolved(target string) error {
 	if err := refuseOwnSecrets(target); err != nil {
 		return err
 	}
@@ -330,17 +344,19 @@ func refuseAgentKnowledge(target string) error {
 	if err != nil || strings.TrimSpace(root) == "" {
 		return nil
 	}
-	// Both sides through the same resolver, or the comparison is between two
-	// spellings of one place and quietly decides they are different places.
+	// Both sides in the same spelling, or the comparison is between two spellings
+	// of one place and quietly decides they are different places.
 	//
-	// Only the root was resolved, which held on a developer's machine and failed
-	// on a Windows CI runner, where the temp path arrives in its 8.3 short form
-	// (`RUNNER~1`) while the resolved root is the long one. filepath.Rel then
+	// Only the root was resolved once, which held on a developer's machine and
+	// failed on a Windows CI runner, where the temp path arrives in its 8.3 short
+	// form (`RUNNER~1`) while the resolved root is the long one. filepath.Rel then
 	// returns `..\..\…`, the guard reads that as "outside the agents root", and
 	// a worker's private knowledge is readable. The test caught it before the
 	// release did; the same mismatch is reachable off CI wherever the data root
-	// is behind a symlink or a junction.
-	rel, err := filepath.Rel(resolvedHomeDir(strings.TrimSpace(root)), resolvedHomeDir(target))
+	// is behind a symlink or a junction. The target's half of that resolution now
+	// happens once at the door (refuseCredentialStore / sandboxWalk) instead of
+	// here, so a walk does not pay for it per file.
+	rel, err := filepath.Rel(resolvedHomeDir(strings.TrimSpace(root)), target)
 	if err != nil {
 		return nil // a different volume: not under the agents root at all
 	}
@@ -354,6 +370,45 @@ func refuseAgentKnowledge(target string) error {
 	return fmt.Errorf(
 		"%s is %s's own knowledge and is not reachable through file tools — an agent's skills are handed to that agent as tools, and to nobody else",
 		filepath.ToSlash(rel), parts[0])
+}
+
+// sandboxWalk is the denylist for a tool that walks instead of naming a path.
+//
+// grep, glob and `fs find` resolve one base path through resolveSandboxPath and
+// then hand every file under it to os.Open. That check answered "may this
+// session reach the base", and nothing asked the question again per entry — so a
+// walk started at a folder the session legitimately holds read straight through
+// the refusals underneath it. With no project focused the workspace is the
+// machine, which put credentials.json and every worker's private skills folder
+// one `grep` away from a session that was refused both by name (2026-08-16).
+//
+// The reason it was not simply wired to refuseCredentialStore is cost: that door
+// resolves symlinks, ~1ms a call on Windows, and a walk visits thousands of
+// entries. So the resolution happens once here, on the base, and every entry is
+// placed under it by string arithmetic. Same list, same verdicts, no syscalls.
+//
+// A refused entry is skipped in silence. These paths are not part of the
+// workspace the question was asked about, and a walk that annotated every
+// credential store it declined to read would be publishing their locations into
+// a transcript to no purpose. Skipping a directory prunes it whole.
+type sandboxWalk struct {
+	base     string
+	resolved string
+}
+
+func newSandboxWalk(basePath string) sandboxWalk {
+	return sandboxWalk{base: basePath, resolved: evalExistingSymlinks(basePath)}
+}
+
+// refuses reports whether the walk must leave path alone. A path it cannot place
+// under the base is refused rather than allowed: not being able to say where
+// something is is not a reason to read it.
+func (w sandboxWalk) refuses(path string) bool {
+	rel, err := filepath.Rel(w.base, path)
+	if err != nil {
+		return true
+	}
+	return refuseResolved(filepath.Join(w.resolved, rel)) != nil
 }
 
 // CredentialStoreAt names the credential store a folder sits inside, or "" if

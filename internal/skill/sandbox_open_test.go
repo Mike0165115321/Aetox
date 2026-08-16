@@ -1,6 +1,7 @@
 package skill
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -313,6 +314,84 @@ func TestAetoxOwnCredentialFilesAreRefused(t *testing.T) {
 	} {
 		if err := refuseCredentialStore(keep); err != nil {
 			t.Errorf("%s was refused: %v — only the credential files should be shut", keep, err)
+		}
+	}
+}
+
+// The denylist was a door check on a house with no interior walls.
+//
+// grep, glob and `fs find` resolved one base path through resolveSandboxPath and
+// then walked everything under it with os.Open, asking nothing per entry. Every
+// refusal in this file judges a path that was *named*, so a walk started at a
+// folder the session legitimately holds read straight past all of them — and
+// with no project focused the workspace is the machine, so `grep` from a home
+// directory reached credentials.json and every worker's private skills folder,
+// both of which `read` refuses by name. The assistant would quote a file while
+// telling the user it could not open it (found 2026-08-16).
+//
+// The dot-directory skip these walkers already had is what hid it: .ssh, .aws,
+// .gnupg and .config/gh are all dot-dirs and were pruned for tidiness rather
+// than safety. Aetox's own data root is not a dot-directory, and neither is
+// agents/<name>/skills.
+func TestAWalkRefusesWhatANamedPathIsRefused(t *testing.T) {
+	root := evalExistingSymlinks(t.TempDir())
+	// Deliberately not `.aetox`: a dot-directory would be pruned by the tidiness
+	// rule and the test would pass without the guard existing.
+	dataRoot := filepath.Join(root, "appdata", "aetox")
+	t.Setenv("AETOX_DATA_ROOT", dataRoot)
+
+	write := func(path, body string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	secret := filepath.Join(dataRoot, "credentials.json")
+	knowledge := filepath.Join(dataRoot, "agents", "doc", "skills", "tax-invoice", "SKILL.md")
+	write(secret, `{"anthropic":"sk-CANARY"}`)
+	write(knowledge, "CANARY: the required fields of a tax invoice")
+	// The walk has to still work, or "found nothing" proves nothing.
+	write(filepath.Join(root, "notes.json"), "CANARY is ordinary here")
+
+	setSandboxPolicy(root, true, nil, nil)
+	t.Cleanup(func() { setSandboxPolicy(root, false, nil, nil) })
+
+	for _, named := range []string{secret, knowledge} {
+		if _, err := resolveSandboxPath(root, named); err == nil {
+			t.Fatalf("%s is reachable by name, so the rest of this test proves nothing", named)
+		}
+	}
+
+	ctx := context.Background()
+	for _, probe := range []struct {
+		tool string
+		run  func() (Output, error)
+	}{
+		{"grep", func() (Output, error) {
+			return (&grepSkill{root: root}).ExecuteTool(ctx, map[string]any{"pattern": "CANARY"})
+		}},
+		{"glob", func() (Output, error) {
+			return (&globSkill{root: root}).Execute(ctx, Input{"args": []string{"**/*.json"}})
+		}},
+		{"fs find", func() (Output, error) {
+			return (&fsSkill{root: root}).Execute(ctx, Input{"args": []string{"find", "json"}})
+		}},
+	} {
+		out, err := probe.run()
+		if err != nil {
+			t.Fatalf("%s: %v", probe.tool, err)
+		}
+		if strings.Contains(out.Content, "credentials.json") {
+			t.Errorf("%s walked into Aetox's own credential file:\n%s", probe.tool, out.Content)
+		}
+		if strings.Contains(out.Content, "tax-invoice") {
+			t.Errorf("%s walked into a worker's private skills folder:\n%s", probe.tool, out.Content)
+		}
+		if !strings.Contains(out.Content, "notes.json") {
+			t.Errorf("%s stopped finding ordinary files — the guard is a wall, not a cabinet lock:\n%s", probe.tool, out.Content)
 		}
 	}
 }

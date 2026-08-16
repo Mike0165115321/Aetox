@@ -130,6 +130,8 @@ func (s *fsSkill) execFind(start time.Time, params []string) (Output, error) {
 	maxResults := 200
 	maxBytes := 4096
 
+	guard := newSandboxWalk(basePath)
+
 	walkErr := filepath.WalkDir(basePath, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil
@@ -140,10 +142,18 @@ func (s *fsSkill) execFind(start time.Time, params []string) (Output, error) {
 			if name := d.Name(); path != basePath && (strings.HasPrefix(name, ".") || IgnoredDirs[name]) {
 				return filepath.SkipDir
 			}
+			if guard.refuses(path) {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		name := strings.ToLower(d.Name())
 		if !strings.Contains(name, needle) {
+			return nil
+		}
+		// Same reason as glob: finding a credential file by name is the first
+		// half of reading it.
+		if guard.refuses(path) {
 			return nil
 		}
 

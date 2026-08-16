@@ -199,6 +199,8 @@ func (s *grepSkill) Execute(_ context.Context, input Input) (Output, error) {
 	}
 	var perFile []fileHit
 
+	guard := newSandboxWalk(basePath)
+
 	walkErr := filepath.WalkDir(basePath, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil
@@ -209,10 +211,19 @@ func (s *grepSkill) Execute(_ context.Context, input Input) (Output, error) {
 			if path != basePath && (strings.HasPrefix(name, ".") || IgnoredDirs[name]) {
 				return filepath.SkipDir
 			}
+			if guard.refuses(path) {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 
 		if glob != "" && !matchesGlob(glob, d.Name()) {
+			return nil
+		}
+		// The base was checked once; this is every file under it. Without it a
+		// grep rooted above <DataRoot> reads the credential files by content that
+		// `read` refuses by name.
+		if guard.refuses(path) {
 			return nil
 		}
 

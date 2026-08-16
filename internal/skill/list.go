@@ -171,7 +171,7 @@ func resolveSandboxPath(root string, requestPath string) (string, error) {
 		// what is under it, and "the agent read my SSH key because I opened my
 		// home directory" is the same trade nobody makes on purpose that
 		// sandbox_open.go:135 already refuses one branch over (2026-08-13).
-		if err := refuseCredentialStore(resolvedTarget); err != nil {
+		if err := refuseResolved(resolvedTarget); err != nil {
 			return "", err
 		}
 		return safeTarget, nil
@@ -184,7 +184,7 @@ func resolveSandboxPath(root string, requestPath string) (string, error) {
 	if !policy.open && !policy.covers(resolvedTarget) && !widened(safeRoot, policy, resolvedTarget) {
 		return "", fmt.Errorf("path is outside the folders this session can use — the user has to add it first")
 	}
-	if err := refuseCredentialStore(resolvedTarget); err != nil {
+	if err := refuseResolved(resolvedTarget); err != nil {
 		return "", err
 	}
 	return safeTarget, nil

@@ -159,6 +159,7 @@ func (s *globSkill) Execute(ctx context.Context, input Input) (Output, error) {
 		mod time.Time
 	}
 	hits := make([]hit, 0)
+	guard := newSandboxWalk(basePath)
 
 	walkErr := filepath.WalkDir(basePath, func(path string, d os.DirEntry, err error) error {
 		// Without this the Stop button does nothing: a walk over a home
@@ -173,6 +174,9 @@ func (s *globSkill) Execute(ctx context.Context, input Input) (Output, error) {
 			if name := d.Name(); path != basePath && (strings.HasPrefix(name, ".") || IgnoredDirs[name]) {
 				return filepath.SkipDir
 			}
+			if guard.refuses(path) {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		rel, relErr := filepath.Rel(root, path)
@@ -181,6 +185,11 @@ func (s *globSkill) Execute(ctx context.Context, input Input) (Output, error) {
 		}
 		rel = filepath.ToSlash(rel)
 		if !matchesPathGlob(pattern, rel) {
+			return nil
+		}
+		// A name is a smaller leak than a body, and still a leak: `**/*.json`
+		// from a root above <DataRoot> otherwise lists the credential files.
+		if guard.refuses(path) {
 			return nil
 		}
 		info, infoErr := d.Info()
