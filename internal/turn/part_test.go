@@ -27,6 +27,9 @@ type scriptedRound struct {
 	text  string
 	tools []string
 	final bool
+	// demoted is a round the model wrote as its whole answer, which an
+	// interjection then kept the turn going past.
+	demoted bool
 }
 
 func (a *scriptedAgent) SupportsToolCalling() bool { return true }
@@ -52,7 +55,7 @@ func (a *scriptedAgent) RespondWithTools(
 	reply := ""
 	for _, r := range a.rounds {
 		if opts.OnRound != nil {
-			opts.OnRound(RoundEvent{Text: r.text, Final: r.final})
+			opts.OnRound(RoundEvent{Text: r.text, Final: r.final, Demoted: r.demoted})
 		}
 		if r.final {
 			reply = r.text
@@ -112,6 +115,10 @@ func shape(parts []TurnPart) string {
 	for _, p := range parts {
 		switch p.Kind {
 		case PartText:
+			if p.Demoted {
+				out = append(out, "answer("+p.Text+")")
+				continue
+			}
 			out = append(out, "text("+p.Text+")")
 		case PartThinking:
 			out = append(out, "thinking")
@@ -151,6 +158,58 @@ func TestReplyStaysTheAnswerWhileTheSequenceHoldsEverything(t *testing.T) {
 	// narration is text the model wrote, and the sequence remembers it.
 	if got := TextOf(result.Parts); !strings.Contains(got, "กำลังหาให้ครับ") || !strings.Contains(got, "คำตอบสุดท้าย") {
 		t.Errorf("TextOf = %q; want every text part", got)
+	}
+}
+
+// An answer the user typed over is still an answer.
+//
+// Owner, 16 ส.ค., on a screenshot of a reply whose `##` and `**` were showing as
+// source in grey 11px: "ตอนทักกลางคันมันเหมือนที่ เอไอ ตอบมาก่อนหน้ามันพังหมดเลย".
+// It had gone out as a "note" — the channel for a one-line "reading the config
+// first" — which the chat draws as raw text at --fs-xs in --text-muted, and then
+// files behind the "used N tools" toggle because a text part that is not the
+// last one is not the bubble's body. The reply was intact in the record and
+// wrecked everywhere it was read.
+func TestAnAnswerAnInterjectionRePlacedIsStillDrawnAsAnAnswer(t *testing.T) {
+	var events []ToolEvent
+	exec := NewExecutor(ExecutorOptions{
+		Agent: &scriptedAgent{rounds: []scriptedRound{
+			{text: "## สรุป\n\n- ข้อหนึ่ง", demoted: true},
+			{text: "กำลังเช็คเพิ่มให้ครับ", tools: []string{"grep"}},
+			{text: "เช็คแล้วครับ", final: true},
+		}},
+		Dispatcher:   twoToolDispatcher{},
+		ApprovalMode: "full-access",
+		OnToolAction: func(ev ToolEvent) { events = append(events, ev) },
+	})
+	result, err := exec.Execute(
+		context.Background(), "เช็คหน่อย",
+		command.Intent{Raw: "เช็คหน่อย", Kind: command.KindConversation},
+		nil, nil, nil,
+	)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	want := "answer(## สรุป\n\n- ข้อหนึ่ง) → text(กำลังเช็คเพิ่มให้ครับ) → tool(grep) → text(เช็คแล้วครับ)"
+	if got := shape(result.Parts); got != want {
+		t.Errorf("sequence =\n  %s\nwant\n  %s", got, want)
+	}
+	// The narration that follows must not be swallowed into the answer: they are
+	// two things the model said, either side of the user cutting in.
+	for _, ev := range events {
+		if ev.Action == "note" && strings.Contains(ev.Text, "## สรุป") {
+			t.Errorf("the answer went out as narration: %+v", ev)
+		}
+	}
+	var said []string
+	for _, ev := range events {
+		if ev.Action == "said" {
+			said = append(said, ev.Text)
+		}
+	}
+	if len(said) != 1 || said[0] != "## สรุป\n\n- ข้อหนึ่ง" {
+		t.Errorf("said events = %q; want the demoted answer, whole and once", said)
 	}
 }
 

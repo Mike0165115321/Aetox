@@ -40,6 +40,14 @@ type TurnPart struct {
 	Kind PartKind `json:"kind"`
 	// Text carries a PartText's prose. Empty for the other kinds.
 	Text string `json:"text,omitempty"`
+	// Demoted marks a PartText the model wrote as its whole answer, which an
+	// interjection then re-placed (cognitive.Agent keeps the turn alive rather
+	// than making the user wait out a reply they have already moved past). It
+	// is prose the reader was already reading, so it stays prose wherever the
+	// turn is drawn — the sequence is the only record that it was ever more
+	// than narration, and without this field a reopened session cannot tell the
+	// two apart.
+	Demoted bool `json:"demoted,omitempty"`
 	// Secs is how long a PartThinking segment streamed.
 	Secs int `json:"secs,omitempty"`
 	// Tool describes a PartTool. Nil for the other kinds.
@@ -94,11 +102,24 @@ func (p *partList) addText(text string) {
 	if p == nil || text == "" {
 		return
 	}
-	if n := len(p.parts); n > 0 && p.parts[n-1].Kind == PartText {
+	// A demoted answer is a closed block — it was complete when it was said, and
+	// whatever the model writes after the interjection is a separate thought.
+	// Merging into it would glue two answers into one paragraph run.
+	if n := len(p.parts); n > 0 && p.parts[n-1].Kind == PartText && !p.parts[n-1].Demoted {
 		p.parts[n-1].Text += "\n\n" + text
 		return
 	}
 	p.parts = append(p.parts, TurnPart{Kind: PartText, Text: text})
+}
+
+// addAnswer appends prose the model meant to end the turn with, before an
+// interjection kept the turn going. Never merged, in either direction: it is one
+// finished answer, and the reader saw it as one.
+func (p *partList) addAnswer(text string) {
+	if p == nil || text == "" {
+		return
+	}
+	p.parts = append(p.parts, TurnPart{Kind: PartText, Text: text, Demoted: true})
 }
 
 func (p *partList) addThinking(secs int) {

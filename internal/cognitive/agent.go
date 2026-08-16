@@ -359,8 +359,13 @@ func (a *Agent) RespondWithTools(
 				// sequence as a non-final part rather than being retracted. That
 				// is the difference the parts model makes: nothing has to be
 				// un-said, only re-placed.
+				//
+				// Demoted, not merely non-final: what this round wrote is a
+				// finished answer, and the round that carries no tool calls is
+				// the only place that can still say so. Downstream the two look
+				// identical, and the executor drew this one as a narration row.
 				if opts.OnRound != nil {
-					opts.OnRound(turn.RoundEvent{Text: content})
+					opts.OnRound(turn.RoundEvent{Text: content, Demoted: true})
 				}
 				for _, text := range pending {
 					debuglog.Msg("interjection kept the turn alive (%d chars)", len(text))

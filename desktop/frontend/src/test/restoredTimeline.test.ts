@@ -44,6 +44,33 @@ describe('reopening a session', () => {
     expect(steps.filter((s) => s.label === 'เจอแล้วครับ อยู่บรรทัดที่ 12')).toHaveLength(0)
   })
 
+  // An interjection demotes a finished answer to a non-last text part. Read back
+  // as a note, that reply came home at --fs-xs in --text-muted with its markdown
+  // showing as source, behind the tools toggle. The sequence records which text
+  // parts were answers, so reopening the session gets the answer back.
+  it('brings back an answer the user typed over as an answer', async () => {
+    LoadSession.mockResolvedValueOnce([
+      { role: 'user', text: 'เช็คหน่อย', time: '00:34' },
+      {
+        role: 'agent', text: 'เช็ค memory แล้วครับ', time: '00:35',
+        parts: [
+          { kind: 'text', text: '## สรุป\n\nเรียบร้อยครับ', demoted: true },
+          { kind: 'text', text: 'กำลังเช็คเพิ่มให้ครับ' },
+          { kind: 'tool', tool: { ref: 'c1', name: 'grep', subject: 'memory', ok: true } },
+          { kind: 'text', text: 'เช็ค memory แล้วครับ' },
+        ],
+      },
+    ] as any)
+
+    await selectSession({ id: 's3', title: 'x', ago: '' })
+
+    const steps = cockpit.chat[1].steps ?? []
+    expect(steps[0]).toMatchObject({ kind: 'said', label: '## สรุป\n\nเรียบร้อยครับ' })
+    // The narration beside the grep is still narration — only the answer moved.
+    expect(steps[1]).toMatchObject({ kind: 'note', label: 'กำลังเช็คเพิ่มให้ครับ' })
+    expect(steps[2]).toMatchObject({ label: 'grep memory', state: 'done' })
+  })
+
   it('leaves a pre-sequence answer exactly as it was', async () => {
     LoadSession.mockResolvedValueOnce([
       { role: 'user', text: 'ถาม', time: '00:34' },

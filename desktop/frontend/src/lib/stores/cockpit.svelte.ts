@@ -314,9 +314,15 @@ function stepsFromParts(parts?: TurnPart[]): ToolStep[] | undefined {
   const steps: ToolStep[] = []
   parts.forEach((part, i) => {
     if (part.kind === 'text') {
-      if (i !== lastTextAt && part.text) {
-        steps.push({ kind: 'note', label: part.text, state: 'done', startedAt: 0 })
-      }
+      if (i === lastTextAt || !part.text) return
+      // An answer an interjection re-placed comes back as the answer it was.
+      // As a note it came back at --fs-xs in --text-muted with its markdown
+      // showing as source, folded behind the "used N tools" toggle — a reply
+      // the user had read, filed away as a footnote to the tools.
+      steps.push({
+        kind: part.demoted ? 'said' : 'note',
+        label: part.text, state: 'done', startedAt: 0,
+      })
       return
     }
     if (part.kind === 'thinking') {
@@ -1399,6 +1405,20 @@ export function applyToolEvent(ev: ToolEvent): void {
     if (text) {
       steps.push({
         kind: 'note', label: text, parent: ev.parent || undefined,
+        state: 'done', startedAt: Date.now(),
+      })
+    }
+    return
+  }
+  // A finished answer the user typed over. The engine has already erased the
+  // live preview by the time this arrives (OnContentReset runs first), so this
+  // row is the only copy left — and it is prose, drawn as the markdown it was
+  // written as rather than as a narration line.
+  if (ev.action === 'said') {
+    const text = ev.text?.trim()
+    if (text) {
+      steps.push({
+        kind: 'said', label: text, parent: ev.parent || undefined,
         state: 'done', startedAt: Date.now(),
       })
     }

@@ -1806,6 +1806,7 @@ export namespace turn {
 	export class TurnPart {
 	    kind: string;
 	    text?: string;
+	    demoted?: boolean;
 	    secs?: number;
 	    tool?: ToolPart;
 	
@@ -1817,6 +1818,7 @@ export namespace turn {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.kind = source["kind"];
 	        this.text = source["text"];
+	        this.demoted = source["demoted"];
 	        this.secs = source["secs"];
 	        this.tool = this.convertValues(source["tool"], ToolPart);
 	    }

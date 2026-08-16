@@ -170,6 +170,13 @@ type RoundEvent struct {
 	// Final marks the round that ended the turn. Its Text is the reply the
 	// caller will surface, so the UI must not also show it as narration.
 	Final bool
+	// Demoted marks a round the model meant to end the turn with, kept alive by
+	// something the user typed while it was writing (cognitive.Agent's
+	// interjection drain). Its Text is a finished answer, not narration — the
+	// only reason it is not Final is that the conversation moved past it, and
+	// treating the two the same sent a whole markdown reply down the channel
+	// built for a one-line "reading the config first".
+	Demoted bool
 }
 
 type Dispatcher interface {
@@ -317,7 +324,7 @@ func (e *Executor) stopSpinner() {
 // and anything the UI wanted to show beyond the name had nowhere to travel.
 // New per-call facts belong here as fields, not as more text to re-parse.
 type ToolEvent struct {
-	Action string `json:"action"` // "call" | "result" | "note" | "thinking"
+	Action string `json:"action"` // "call" | "result" | "note" | "thinking" | "said"
 	Name   string `json:"name"`
 	// Ref is the provider's tool-call id, and it is what the UI keys a timeline
 	// row on. The label used to serve as identity, which forced the streaming
@@ -847,6 +854,24 @@ func (e *Executor) executeAgentToolLoop(
 		}
 		text := strings.TrimSpace(r.Text)
 		if text == "" {
+			return
+		}
+		// An answer an interjection re-placed is still an answer: it is written
+		// down as one and handed over as one. Sending it along the "note" route
+		// below is what the owner saw break — the preview was erased and the
+		// same prose came back as a narration row, which is drawn as raw text
+		// at --fs-xs in --text-muted. A reply with headings and a table lost its
+		// markdown, its size and its colour in one step, and after the turn
+		// ended it was behind the "used N tools" toggle, because a text part
+		// that is not the last one is not the bubble's body.
+		if r.Demoted {
+			parts.addAnswer(text)
+			if turnOptions.OnContentReset != nil {
+				turnOptions.OnContentReset()
+			}
+			if e.onToolAction != nil {
+				e.onToolAction(ToolEvent{Action: "said", Text: text})
+			}
 			return
 		}
 		// Both narration and the closing answer are text parts — the difference

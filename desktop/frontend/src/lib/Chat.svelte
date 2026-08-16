@@ -110,7 +110,16 @@
   // step whose `task` row is missing — belongs to the sub-agent view, so no row
   // can fall through the gap and be counted as the agent's own work.
   const isOwn = (n: TimelineNode) => !n.step.parent && !isDelegation(n)
-  const ownSteps = (steps: ToolStep[]) => groupSteps(steps).filter(isOwn).map((n) => n.step)
+  // 'said' rows are excluded here rather than skipped at each draw site: they
+  // are not steps. An answer an interjection re-placed rides in this list only
+  // because the list is what keeps the order — it is drawn as prose in the
+  // bubble, and inside the timeline it would be a paragraph pretending to be a
+  // row, in the panel the user opens to see which tools ran.
+  const ownSteps = (steps: ToolStep[]) =>
+    groupSteps(steps).filter(isOwn).map((n) => n.step).filter((s) => s.kind !== 'said')
+  // The answers this turn wrote and then wrote past, in the order they were
+  // said. A delegate's are its own to draw, so only the agent's own count.
+  const saidSteps = (steps: ToolStep[]) => steps.filter((s) => s.kind === 'said' && !s.parent)
   const delegated = (steps: ToolStep[]) => groupSteps(steps).filter((n) => !isOwn(n))
   // The two piles a delegation lands in (COMPANY.md §4): a เอเจน takes a whole
   // job and returns a file; a ซับเอเจน is a step of the assistant's own
@@ -1578,6 +1587,12 @@
     <!-- The model's own words for what it is doing, in the position of the
          work it announces (§59). Plain text, not a status row. -->
     <div class="tool-note">{s.label}</div>
+  {:else if s.kind === 'said'}
+    <!-- The agent's own 'said' rows are drawn in the bubble and never reach
+         here (ownSteps drops them). A delegate's would — sub-agents take no
+         interjections today, so this is the branch that keeps a whole answer
+         from arriving as a tool row with a tick beside it if one ever does. -->
+    <div class="markdown-body said-block">{@html renderMarkdown(s.label)}</div>
   {:else if s.kind === 'thinking'}
     <div class="tool-think"><span class="ic"><Icon name="brain" size={12} /></span> {t('chat.thoughtFor', { secs: s.secs ?? 1 })}</div>
   {:else}
@@ -1851,6 +1866,14 @@
                 {@render subagentTimeline(delegatedHelpers(m.steps), false)}
               {/if}
             {/if}
+            <!-- Answers this turn had finished before the user typed over them,
+                 above the answer that finally ended it, in the order they were
+                 said. Same markdown, same size, same colour as the body below —
+                 they were a reply the reader was reading, and the interjection
+                 changed where they belong, not what they are. -->
+            {#each saidSteps(m.steps ?? []) as s}
+              <div class="markdown-body said-block">{@html renderMarkdown(s.label)}</div>
+            {/each}
             {#if editingIndex === i}
               <!-- The question itself becomes the editor, in place: what is being
                    changed is the message, not a copy of it in a dialog. -->

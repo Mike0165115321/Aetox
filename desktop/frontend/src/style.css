@@ -740,6 +740,10 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 /* flex, because .icon is display:block — as a bare child of this block div the
    svg took its own line and sat above the text instead of beside it. */
 .tool-think { display:flex; align-items:center; gap:6px; padding:3px 0; font-size:var(--fs-xs); color:var(--text-dim); }
+/* An answer the model had finished when the user typed over it, drawn above the
+   answer that ended the turn. Full prose, not a note — the only thing it needs
+   is a seam, so two replies in one bubble do not read as one long one. */
+.said-block { padding-bottom:12px; margin-bottom:12px; border-bottom:1px solid var(--border-subtle); }
 .markdown-body { line-height:1.65; }
 .markdown-body :first-child { margin-top:0; }
 .markdown-body :last-child { margin-bottom:0; }

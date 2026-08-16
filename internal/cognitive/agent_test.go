@@ -962,6 +962,50 @@ func TestInterjectionKeepsAFinishingTurnAlive(t *testing.T) {
 	}
 }
 
+// The round that keeps the turn alive has to say WHAT it is handing over. Only
+// here is it still knowable: a round with no tool calls is a round the model
+// meant to stop on, and one step downstream a demoted answer and a line of
+// narration are the same non-final text. The executor drew the first as the
+// second, which cost the user a finished reply's markdown, its size and its
+// place in the bubble.
+func TestAnAnswerHeldOpenByAnInterjectionIsHandedOverAsAnAnswer(t *testing.T) {
+	var agent *Agent
+	provider := &toolLoopProvider{
+		responses: []model.Response{{Text: "## สรุป\n\nเรียบร้อยครับ"}, {Text: "เช็คเพิ่มแล้วครับ"}},
+		beforeReply: func(call int) {
+			if call == 1 {
+				agent.Interject("เช็คเรื่อง memory ด้วย")
+			}
+		},
+	}
+	agent = NewAgent(AgentConfig{Provider: provider, Model: "test-model", SystemPrompt: "sys"})
+
+	var rounds []turn.RoundEvent
+	if _, _, err := agent.RespondWithTools(
+		context.Background(),
+		[]model.ToolDefinition{{Type: "function", Function: model.ToolFunction{Name: "read", Parameters: []byte(`{"type":"object"}`)}}},
+		"เช็คหน่อย",
+		func(_ context.Context, _ model.ToolCall) (string, []model.Image, error) { return "", nil, nil },
+		nil,
+		turn.TurnOptions{OnRound: func(r turn.RoundEvent) { rounds = append(rounds, r) }},
+	); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(rounds) != 2 {
+		t.Fatalf("OnRound calls = %d; want one per round", len(rounds))
+	}
+	if !rounds[0].Demoted {
+		t.Errorf("the answer the user typed over went out as plain narration: %+v", rounds[0])
+	}
+	if rounds[0].Final {
+		t.Errorf("a demoted answer is not the turn's reply: %+v", rounds[0])
+	}
+	if rounds[1].Demoted || !rounds[1].Final {
+		t.Errorf("the answer that ended the turn = %+v; want the final one, undemoted", rounds[1])
+	}
+}
+
 // Several messages typed under one turn all arrive, in the order they were sent —
 // a user firing off three corrections must not have two of them dropped, or get
 // them shuffled into an order that reverses their own decisions.

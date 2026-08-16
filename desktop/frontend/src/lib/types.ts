@@ -189,6 +189,10 @@ export interface TurnPart {
   kind: 'text' | 'thinking' | 'tool'
   /** prose, on a 'text' part */
   text?: string
+  /** On a 'text' part: the model had finished this as its answer, and an
+   * interjection kept the turn going past it. Prose the user was already
+   * reading, so a reopened session draws it as prose. */
+  demoted?: boolean
   /** seconds a 'thinking' segment streamed */
   secs?: number
   tool?: ToolPartInfo
@@ -300,8 +304,13 @@ export interface ToolEvent {
 export interface ToolStep {
   /** What this row is. Absent means a tool call, as every row was before
    * "note" (the model's narration between calls) and "thinking" (a reasoning
-   * segment's duration) joined the timeline. */
-  kind?: 'note' | 'thinking'
+   * segment's duration) joined the timeline.
+   *
+   * "said" is not a row at all: it is an answer the model finished writing and
+   * an interjection re-placed. It rides in this list because that is where the
+   * order lives, and is drawn as markdown prose in the bubble — never inside
+   * the tool timeline, and never counted as a tool. */
+  kind?: 'note' | 'thinking' | 'said'
   label: string
   /** ToolEvent.ref of the call this row is showing, when the engine sent one. */
   ref?: string
