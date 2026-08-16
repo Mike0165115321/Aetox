@@ -104,6 +104,18 @@ describe('tool events from the engine', () => {
     expect(cockpit.toolSteps[1]).toMatchObject({ kind: 'thinking', secs: 12, state: 'done' })
   })
 
+  // An answer the user typed over arrives on the same channel as narration and
+  // is not the same thing: it is a finished reply, and it kept its own kind so
+  // the chat can draw it as one.
+  it('keeps an answer an interjection re-placed as prose, not as a narration row', () => {
+    applyToolEvent({ action: 'said', name: '', text: '  ## สรุป\n\n- ข้อหนึ่ง  ' })
+    applyToolEvent({ action: 'said', name: '', text: '  ' }) // nothing said is nothing to keep
+    expect(cockpit.toolSteps).toHaveLength(1)
+    expect(cockpit.toolSteps[0]).toMatchObject({
+      kind: 'said', label: '## สรุป\n\n- ข้อหนึ่ง', state: 'done',
+    })
+  })
+
   // Two writes in flight at once are two rows, even though both start unnamed
   // and share a tool name.
   it('keeps concurrent calls apart by ref', () => {
@@ -242,6 +254,52 @@ describe('tool timeline collapsing', () => {
     await fireEvent.click(toggle!)
     expect(container.querySelector('.tool-note')?.textContent).toBe('reading the loop first')
     expect(container.querySelector('.tool-think')?.textContent).toContain('8')
+  })
+
+  // Owner, 16 ส.ค.: interjecting mid-turn looked like it wrecked everything the
+  // agent had already answered. It was drawn as a note — raw source at --fs-xs
+  // in --text-muted — and then filed behind the tools toggle. It is prose, so it
+  // is drawn as prose, in the bubble, both while the turn runs and after.
+  it('draws an answer the user typed over as markdown in the live block', () => {
+    const { container } = render(Chat, {
+      ...baseProps, awaitingReply: true,
+      messages: [{ role: 'user', text: 'go', time: '10:54' }] as any,
+      toolSteps: [
+        { kind: 'said', label: '## สรุป\n\nเรียบร้อยครับ', state: 'done', startedAt: 0 },
+        step('grep', 'run'),
+      ] as any,
+    })
+    const said = container.querySelector('.said-block')
+    expect(said?.querySelector('h2')?.textContent).toBe('สรุป')
+    // Not as a narration row, and never inside the tool timeline.
+    expect(container.querySelector('.tool-note')).toBeNull()
+    expect(said?.closest('.tool-step')).toBeNull()
+  })
+
+  it('keeps that answer in the bubble after the turn ends, uncounted as a tool', async () => {
+    const { container } = render(Chat, {
+      ...baseProps,
+      messages: [{
+        role: 'agent', text: 'เช็คแล้วครับ', time: '10:54',
+        steps: [
+          { kind: 'said', label: '## สรุป\n\nเรียบร้อยครับ', state: 'done', startedAt: 0 },
+          step('grep', 'done'),
+        ],
+      }] as any,
+    })
+    expect(container.querySelector('.said-block h2')?.textContent).toBe('สรุป')
+    // The answer that ended the turn is still the body below it.
+    expect(container.textContent).toContain('เช็คแล้วครับ')
+
+    const toggle = [...container.querySelectorAll('.meta-row .reasoning-toggle')]
+      .find((b) => b.textContent?.includes('Used 1'))
+    expect(toggle).toBeTruthy() // one grep, not two "tools"
+    await fireEvent.click(toggle!)
+    // Opening the tools panel shows the grep and nothing else — an answer is
+    // not a step, and a paragraph in that list is a paragraph pretending to be
+    // one.
+    expect(container.querySelectorAll('.tool-step')).toHaveLength(1)
+    expect(container.querySelectorAll('.said-block')).toHaveLength(1)
   })
 
   // The button and the number on it have to be asked in the same terms. They
