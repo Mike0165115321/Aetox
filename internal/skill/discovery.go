@@ -165,7 +165,7 @@ func ScanIssues(paths []string) ([]DiscoveredSkill, []error) {
 // filesystem they came out of. The alternative — a second format for shipped
 // knowledge — is how "copy a shipped agent and change it" turns into a
 // translation instead of a copy.
-func DiscoverFS(fsys fs.FS, dir string) ([]Skill, []error) {
+func EmbeddedSkills(fsys fs.FS, dir string) ([]DiscoveredSkill, []error) {
 	if fsys == nil {
 		return nil, nil
 	}
@@ -192,9 +192,39 @@ func DiscoverFS(fsys fs.FS, dir string) ([]Skill, []error) {
 		if name == "" {
 			name = entry.Name()
 		}
-		found = append(found, DiscoveredSkill{Name: name, Description: description, Dir: path.Dir(file), body: body})
+		// Bundled, and with no Dir: the folder this came out of is a path inside
+		// an embed.FS, and the only thing that reads Dir is skill_view's `path`,
+		// which opens it on the disk. Handing it an FS path would resolve it
+		// against the process's working directory — a shipped skill's name
+		// turning into a read of ./profiles/agents/... on somebody's machine.
+		// "No folder" is the honest answer and is already the one Bundled means.
+		found = append(found, DiscoveredSkill{Name: name, Description: description, Bundled: true, body: body})
 	}
+	return found, errs
+}
+
+// DiscoverFS wraps EmbeddedSkills for callers that only need to register them.
+func DiscoverFS(fsys fs.FS, dir string) ([]Skill, []error) {
+	found, errs := EmbeddedSkills(fsys, dir)
 	return wrapDiscovered(found), errs
+}
+
+// ScopedSkills is DiscoverScoped's answer before the wrapping: the documents
+// found under paths, each still carrying its folder and its body.
+//
+// The wrapping is lossy on purpose — a registered skill is a name, a
+// description and a body, and nothing downstream of the registry needs more.
+// A caller that has to hand these to skills_list and skill_view does: those two
+// answer with a body they did not execute, and open a second file out of the
+// folder beside it. Same scan, one layer earlier.
+func ScopedSkills(paths []string) ([]DiscoveredSkill, []error) {
+	return diskSkills(paths)
+}
+
+// AsSkill wraps one discovered document as an invokable skill, so a caller
+// holding the detailed form can still register it.
+func (d DiscoveredSkill) AsSkill() Skill {
+	return &markdownSkill{name: d.Name, description: d.Description, body: d.body}
 }
 
 // DiscoverScoped is DiscoverSkills without the shared shelf: it wraps only the

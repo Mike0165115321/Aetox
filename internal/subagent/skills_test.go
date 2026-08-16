@@ -1,8 +1,10 @@
 package subagent
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Mike0165115321/Aetox/internal/config"
@@ -52,6 +54,66 @@ func TestASkillReachesItsOwnWorkerAndNoOther(t *testing.T) {
 	// document writer; it must not know what a tax invoice needs.
 	if _, ok := parent.Get("tax-invoice"); ok {
 		t.Error("an agent's skill leaked into the main assistant's registry")
+	}
+}
+
+// The half that was missing: reaching it.
+//
+// Everything above asserts the skill is *registered* for the right worker, and
+// all of it passed while the model could not see the skill at all. Progressive
+// loading withholds every SourceSkill tool definition — that is what keeps a
+// shelf of fifty from being charged to every request — and the two tools that
+// exist to replace those definitions, skills_list and skill_view, scanned
+// ~/.aetox/skills and nothing else. So a worker's own knowledge was loaded,
+// executable by name, and listed behind no door the model could open: asked what
+// it carried, `doc` answered with the machine's shared shelf and no tax-invoice
+// on it (found 2026-08-16).
+//
+// Registry.Get is therefore not enough to prove this feature works, and this
+// test asks the question the model asks.
+func TestAWorkerCanOpenItsOwnShelfThroughTheSkillDoors(t *testing.T) {
+	isolate(t)
+	parent := skill.NewDefaultRegistry(skill.RegistryOptions{SandboxRoot: t.TempDir()})
+	writeSkill(t, "doc", "payroll-columns", "the columns a payroll workbook must carry", "column A is the employee id")
+
+	ctx := context.Background()
+	shelfOf := func(p Profile) string {
+		t.Helper()
+		out, _, err := skill.NewDispatcher(FilterRegistry(parent, p, nil)).ExecuteTool(ctx, "skills_list", nil)
+		if err != nil {
+			t.Fatalf("skills_list for %s: %v", p.Name, err)
+		}
+		return out.Content
+	}
+
+	if listing := shelfOf(agent("doc")); !strings.Contains(listing, "payroll-columns") {
+		t.Errorf("doc's own skill is not in the list it is told to read:\n%s", listing)
+	}
+	// A shipped skill is on the same shelf and has to arrive by the same door.
+	if listing := shelfOf(agent("doc")); !strings.Contains(listing, "tax-invoice") {
+		t.Errorf("doc's bundled skill is not listed:\n%s", listing)
+	}
+	if listing := shelfOf(agent("deck")); strings.Contains(listing, "payroll-columns") {
+		t.Errorf("doc's shelf is visible to deck:\n%s", listing)
+	}
+
+	// L2: the body, by name, out of the worker's own folder.
+	body, _, err := skill.NewDispatcher(FilterRegistry(parent, agent("doc"), nil)).
+		ExecuteTool(ctx, "skill_view", map[string]any{"name": "payroll-columns"})
+	if err != nil {
+		t.Fatalf("skill_view: %v", err)
+	}
+	if !strings.Contains(body.Content, "column A is the employee id") {
+		t.Errorf("skill_view did not return the worker's own document:\n%s", body.Content)
+	}
+
+	// And the thing that must NOT change: opening the door is not the same as
+	// putting every skill back in the tool block, which is the cost progressive
+	// loading exists to avoid.
+	for _, def := range skill.NewDispatcher(FilterRegistry(parent, agent("doc"), nil)).ToolDefinitions() {
+		if def.Function.Name == "payroll-columns" {
+			t.Error("a skill is back in the tool block — progressive loading pays for the doors instead")
+		}
 	}
 }
 

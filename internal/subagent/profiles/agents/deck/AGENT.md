@@ -1,6 +1,6 @@
 ---
 description: เอเจนเตรียมงานนำเสนอ — วางโครงเรื่อง ลำดับการพูด ทำสไลด์
-tools: slides_write, read, list, glob, pdf_read, image_ocr, video_ocr, audio_transcribe, web_fetch, web_search
+tools: slides_write, read, list, glob, pdf_read, image_ocr, video_ocr, audio_transcribe, web_fetch, web_search, skills_list, skill_view
 ---
 
 You are the person this company brings a talk to. Not a converter that turns an

@@ -34,11 +34,32 @@ import (
 // registry: a skill installed mid-session (plugin_install writes to
 // ~/.aetox/skills) is listable immediately, before any re-bootstrap.
 
+// ProgressiveTools returns the pair of doors, carrying one extra shelf beside
+// the machine's own.
+//
+// The extra is how a worker's private skills become reachable at all. They are
+// registered in that worker's registry, but Dispatcher.ToolDefinitions withholds
+// every SourceSkill definition — that is what progressive loading is — so the
+// model was never told the names, and these two tools scanned ~/.aetox/skills
+// and nowhere else. The knowledge was loaded, executable, and behind no door the
+// model could see (found 2026-08-16). Passing the worker's shelf in here is what
+// the file that describes the feature always claimed was happening.
+//
+// nil extra gives the ordinary pair, unchanged.
+func ProgressiveTools(extra []DiscoveredSkill) (Skill, Skill) {
+	return &skillsListSkill{extra: extra}, &skillViewSkill{extra: extra}
+}
+
 // skillsListSkill is L0: one line per installed skill, name + description.
 type skillsListSkill struct {
 	// paths overrides the scan locations; nil means DefaultDiscoveryPaths(),
 	// resolved at call time so tests can point it at a fixture directory.
 	paths []string
+	// extra is a shelf that is not on any scan path — one worker's own skills,
+	// which include documents compiled into the binary and so have no path to
+	// scan. Resolved by the caller, because the rule for which copy of a
+	// same-named skill wins lives with the worker, not here.
+	extra []DiscoveredSkill
 }
 
 func (s *skillsListSkill) scanPaths() []string {
@@ -46,6 +67,35 @@ func (s *skillsListSkill) scanPaths() []string {
 		return s.paths
 	}
 	return DefaultDiscoveryPaths()
+}
+
+func (s *skillsListSkill) shelf() []DiscoveredSkill {
+	return mergeShelf(ListDiscovered(s.scanPaths()), s.extra)
+}
+
+// mergeShelf puts the worker's own documents in front of the machine's.
+//
+// A name held by both is the worker's. That is the direction the whole feature
+// points: the shared shelf is what everybody knows, the folder is what this one
+// knows instead, and a worker whose `invoice` was overruled by a general
+// `invoice` on the shelf would be a specialist with the generalist's answer.
+func mergeShelf(base, extra []DiscoveredSkill) []DiscoveredSkill {
+	if len(extra) == 0 {
+		return base
+	}
+	out := make([]DiscoveredSkill, 0, len(base)+len(extra))
+	own := make(map[string]bool, len(extra))
+	for _, d := range extra {
+		own[strings.ToLower(d.Name)] = true
+		out = append(out, d)
+	}
+	for _, d := range base {
+		if own[strings.ToLower(d.Name)] {
+			continue
+		}
+		out = append(out, d)
+	}
+	return out
 }
 
 func (s *skillsListSkill) Name() string { return "skills_list" }
@@ -77,7 +127,7 @@ func (s *skillsListSkill) ToolDefinition() model.ToolDefinition {
 
 func (s *skillsListSkill) ExecuteTool(_ context.Context, _ map[string]any) (Output, error) {
 	start := time.Now()
-	discovered := ListDiscovered(s.scanPaths())
+	discovered := s.shelf()
 	if len(discovered) == 0 {
 		return newToolOutput(s.Name(), s.Name(), "No skills installed.", start, false, nil), nil
 	}
@@ -151,6 +201,7 @@ func readSkillFile(dir, sub string) (string, error) {
 // skillViewSkill is L1: the full body of one skill, fetched by name.
 type skillViewSkill struct {
 	paths []string
+	extra []DiscoveredSkill // see skillsListSkill.extra
 }
 
 func (s *skillViewSkill) scanPaths() []string {
@@ -158,6 +209,11 @@ func (s *skillViewSkill) scanPaths() []string {
 		return s.paths
 	}
 	return DefaultDiscoveryPaths()
+}
+
+func (s *skillViewSkill) shelf() []DiscoveredSkill {
+	found, _ := scanSkills(s.scanPaths())
+	return mergeShelf(found, s.extra)
 }
 
 func (s *skillViewSkill) Name() string { return "skill_view" }
@@ -269,7 +325,7 @@ func (s *skillViewSkill) ExecuteTool(_ context.Context, args map[string]any) (Ou
 	sub, _ := args["path"].(string)
 	sub = strings.TrimSpace(sub)
 
-	discovered, _ := scanSkills(s.scanPaths())
+	discovered := s.shelf()
 	for _, d := range discovered {
 		if !strings.EqualFold(d.Name, name) {
 			continue

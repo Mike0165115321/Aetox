@@ -274,6 +274,7 @@ func FilterRegistry(parent *skill.Registry, p Profile, ceiling *mode.Mode) *skil
 		}
 	}
 	filtered := skill.NewRegistry()
+	var doors []string // the progressive-loading pair this worker keeps; see below
 	for name, s := range parent.Snapshot() {
 		source, ok := parent.SourceOf(name)
 		if !ok {
@@ -317,6 +318,16 @@ func FilterRegistry(parent *skill.Registry, p Profile, ceiling *mode.Mode) *skil
 		if !carries(name, source) {
 			continue
 		}
+		// Same move as `memory`, one shelf over: the parent's skills_list and
+		// skill_view answer for ~/.aetox/skills and nothing else, so a worker
+		// that inherited them could not open its own folder. Dropped here and
+		// re-registered by attachOwnSkills pointed at both shelves — after every
+		// filter above, so this only ever remembers a door the worker had
+		// already won, never grants one.
+		if p.Desk != "" && slices.Contains(openDoors, name) {
+			doors = append(doors, name)
+			continue
+		}
 		// Which actions of a packed tool this worker gets — the question the
 		// tool itself cannot answer, because internal/skill has never heard of
 		// a profile and must not learn.
@@ -351,7 +362,7 @@ func FilterRegistry(parent *skill.Registry, p Profile, ceiling *mode.Mode) *skil
 	// that answers "what does this worker hold" — a delegation and a direct
 	// chat both come through it, and a second place to add them is a day when
 	// one door has the knowledge and the other does not.
-	attachOwnSkills(filtered, p)
+	attachOwnSkills(filtered, p, doors)
 	return filtered
 }
 
