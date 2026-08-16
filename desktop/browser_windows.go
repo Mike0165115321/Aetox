@@ -112,6 +112,19 @@ func (t *win32Tab) eval(js string)      { t.chromium.Eval(js) }
 func (t *win32Tab) setZoom(f float64)   { t.chromium.PutZoomFactor(f) }
 func (t *win32Tab) openDevTools()       { t.chromium.OpenDevToolsWindow() }
 
+// capture adapts the vendored patch's result type to the portable one, so
+// browser.go's tabView never names an engine. See third_party/go-webview2's
+// AETOX-PATCH.md.
+func (t *win32Tab) capture() <-chan shotResult {
+	out := make(chan shotResult, 1)
+	src := t.chromium.CapturePreview()
+	go func() {
+		r := <-src
+		out <- shotResult{PNG: r.PNG, Err: r.Err}
+	}()
+	return out
+}
+
 func (t *win32Tab) setBounds(x, y, w, h int) {
 	procSetWindowPos.Call(t.hwnd, hwndTop, uintptr(x), uintptr(y), uintptr(w), uintptr(h), swpShowWindow|swpNoActivate)
 	t.chromium.Resize()

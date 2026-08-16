@@ -20,6 +20,7 @@
     type WorkbenchTab,
   } from '../stores/workbench.svelte'
   import { TerminalShells, BrowserBack, BrowserForward, BrowserReload, BrowserOpenDevTools } from '../../../wailsjs/go/main/App'
+  import { pagePick, startPagePick, stopPagePick, type PickMode } from './pagePick.svelte'
   import { EventsOn } from '../../../wailsjs/runtime/runtime'
   import { t } from '../i18n.svelte'
   import { isShortcut, shortcutLabel } from '../shortcuts'
@@ -126,6 +127,13 @@
   function browserCmd(fn: (id: string) => Promise<void>) {
     const tab = activeTab
     if (tab?.kind === 'browser' && tab.url) fn(tab.id)
+  }
+
+  // Same gate as browserCmd: a tab still on its start page has no native
+  // window to inject anything into.
+  function togglePick(mode: PickMode) {
+    const tab = activeTab
+    if (tab?.kind === 'browser' && tab.url) startPagePick(tab.id, mode)
   }
 
   // Lets a file/browser tab be dragged into the chat composer to attach its
@@ -239,9 +247,14 @@
   }
 
   function onKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') { menuOpen = false; return }
+    if (e.key === 'Escape') { menuOpen = false; if (pagePick.tabId) stopPagePick(); return }
     if (isShortcut(e, 'browserTab')) { e.preventDefault(); openBrowserTab() }
     else if (isShortcut(e, 'filesTab')) { e.preventDefault(); openFilesTab() }
+    // Only reaches here while the app's own webview has focus. Once the page
+    // has it, the chord is the page's to see — which is why the injected
+    // overlay listens for Escape itself rather than trusting this handler.
+    else if (isShortcut(e, 'pickElement')) { e.preventDefault(); togglePick('pick') }
+    else if (isShortcut(e, 'drawOnPage')) { e.preventDefault(); togglePick('draw') }
   }
 </script>
 
@@ -293,6 +306,21 @@
       onkeydown={(e) => e.key === 'Enter' && navigate()}
     />
     <button class="icobtn tiny" aria-label={t('workbench.go')} data-tip={t('workbench.go')} onclick={navigate}><Icon name="externalLink" size={14} /></button>
+    <!-- Pointing at the page is a way of talking to the agent, not a way of
+         inspecting the page — the rule that separates it from the two controls
+         after it, which are the user's own magnifying glass. -->
+    <span class="insp-sep" aria-hidden="true"></span>
+    <button
+      class="icobtn tiny" class:active={pagePick.tabId === activeTab?.id && pagePick.mode === 'pick'}
+      aria-label={t('workbench.pick')} data-tip={`${t('workbench.pick')} · ${shortcutLabel('pickElement')}`}
+      onclick={() => togglePick('pick')}
+    ><Icon name="pointer" size={14} /></button>
+    <button
+      class="icobtn tiny" class:active={pagePick.tabId === activeTab?.id && pagePick.mode === 'draw'}
+      aria-label={t('workbench.draw')} data-tip={`${t('workbench.draw')} · ${shortcutLabel('drawOnPage')}`}
+      onclick={() => togglePick('draw')}
+    ><Icon name="pencil" size={14} /></button>
+    <span class="insp-sep" aria-hidden="true"></span>
     <button class="icobtn tiny tip-r" aria-label={t('workbench.devtools')} data-tip={t('workbench.devtools')} onclick={() => browserCmd(BrowserOpenDevTools)}><Icon name="wrench" size={14} /></button>
     <!-- A transparent native <select> over the ⋮ glyph. Chromium renders its
          popup as an OS window, so it floats above the tab's own native window —

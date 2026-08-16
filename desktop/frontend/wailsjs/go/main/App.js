@@ -50,6 +50,10 @@ export function BrowserBack(arg1) {
   return window['go']['main']['App']['BrowserBack'](arg1);
 }
 
+export function BrowserCapturePNG(arg1) {
+  return window['go']['main']['App']['BrowserCapturePNG'](arg1);
+}
+
 export function BrowserClickRef(arg1, arg2) {
   return window['go']['main']['App']['BrowserClickRef'](arg1, arg2);
 }
@@ -92,6 +96,14 @@ export function BrowserSetVisible(arg1, arg2) {
 
 export function BrowserSetZoom(arg1, arg2) {
   return window['go']['main']['App']['BrowserSetZoom'](arg1, arg2);
+}
+
+export function BrowserStartPick(arg1, arg2) {
+  return window['go']['main']['App']['BrowserStartPick'](arg1, arg2);
+}
+
+export function BrowserStopPick(arg1) {
+  return window['go']['main']['App']['BrowserStopPick'](arg1);
 }
 
 export function BrowserTypeRef(arg1, arg2, arg3, arg4) {

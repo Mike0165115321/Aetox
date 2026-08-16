@@ -212,6 +212,7 @@ type fakeView struct {
 	bounds      [4]int
 	destroyed   bool
 	devToolsHit bool
+	shot        shotResult
 }
 
 func (v *fakeView) navigate(url string)  { v.lastJS = "navigate:" + url }
@@ -220,6 +221,11 @@ func (v *fakeView) setZoom(f float64)    { v.zoom = f }
 func (v *fakeView) openDevTools()        { v.devToolsHit = true }
 func (v *fakeView) destroy()             { v.destroyed = true }
 func (v *fakeView) setVisible(show bool) { v.visible = append(v.visible, show) }
+func (v *fakeView) capture() <-chan shotResult {
+	out := make(chan shotResult, 1)
+	out <- v.shot
+	return out
+}
 func (v *fakeView) setBounds(x, y, w, h int) {
 	v.bounds = [4]int{x, y, w, h}
 }

@@ -1919,6 +1919,9 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .insp-addr [data-tip]::after { top:auto; bottom:calc(100% + 7px); }
 /* Device-size picker: the select sits invisibly over the ⋮ glyph so the click
    opens Chromium's own OS-level popup instead of a DOM dropdown. */
+/* Hairline between two groups of toolbar buttons that mean different things —
+   pointing the agent at the page, versus the user's own magnifying glass. */
+.insp-sep { width:1px; height:16px; background:var(--border-subtle); flex:none; }
 .vp-picker { position:relative; display:inline-flex; }
 .vp-select { position:absolute; inset:0; width:100%; opacity:0; cursor:pointer; }
 .insp-url { flex:1; min-width:0; padding:5px 10px; border-radius:var(--r-sm); background:var(--surface-panel); border:1px solid var(--border-subtle); color:var(--text-primary); font:inherit; font-size:var(--fs-sm); }

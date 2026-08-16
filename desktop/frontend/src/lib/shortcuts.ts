@@ -23,6 +23,8 @@ export type ShortcutId =
   | 'toggleInspector'
   | 'browserTab'
   | 'filesTab'
+  | 'pickElement'
+  | 'drawOnPage'
 
 type Chord = {
   ctrl?: boolean
@@ -44,6 +46,11 @@ const CHORDS: Record<ShortcutId, Chord> = {
   toggleInspector: { ctrl: true, alt: true, code: 'KeyB', key: 'b', display: 'B' },
   browserTab: { ctrl: true, code: 'KeyT', key: 't', display: 'T' },
   filesTab: { ctrl: true, code: 'KeyP', key: 'p', display: 'P' },
+  // Only ever pressed with a browser tab in front, so it shares the S the
+  // sidebar uses under a different modifier pair rather than reaching for a
+  // letter that means nothing.
+  pickElement: { ctrl: true, shift: true, code: 'KeyS', key: 's', display: 'S' },
+  drawOnPage: { ctrl: true, shift: true, code: 'KeyD', key: 'd', display: 'D' },
 }
 
 /**

@@ -380,8 +380,9 @@ export interface PendingFile {
  * send — its content is inlined into the message so the model reads it
  * directly, no tool call needed. */
 export interface PendingContext {
-  kind: 'file' | 'browser'
-  /** Chip label — file name or page title/URL. */
+  /** 'pick' is what the user pointed at in the browser, not the whole page. */
+  kind: 'file' | 'browser' | 'pick'
+  /** Chip label — file name, page title/URL, or the selector pointed at. */
   label: string
   content: string
 }

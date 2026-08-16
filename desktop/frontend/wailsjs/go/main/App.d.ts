@@ -58,6 +58,10 @@ export function BrowserSetVisible(arg1:string,arg2:boolean):Promise<void>;
 
 export function BrowserSetZoom(arg1:string,arg2:number):Promise<void>;
 
+export function BrowserStartPick(arg1:string,arg2:string):Promise<void>;
+
+export function BrowserStopPick(arg1:string):Promise<void>;
+
 export function BrowserTypeRef(arg1:string,arg2:number,arg3:string,arg4:boolean):Promise<void>;
 
 export function CancelSignIn(arg1:string):Promise<void>;

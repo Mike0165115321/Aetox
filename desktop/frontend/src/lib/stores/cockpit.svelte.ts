@@ -672,7 +672,9 @@ export async function setProviderBaseURL(providerName: string, baseURL: string):
   applyModelInfo(await SetProviderBaseURL(providerName, baseURL))
 }
 
-function nowLabel(): string {
+/** The stamp every bubble carries. Exported so anything that has to put one in
+ *  the transcript stamps it the same way, rather than inventing a second clock. */
+export function nowLabel(): string {
   return new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 }
 
@@ -806,7 +808,10 @@ export async function sendUserMessage(text: string, alreadyShown = false): Promi
     attachSuffix += `\n\n[attachment: user-attached ${file.kind} — ${how}] ${file.relPath}`
   }
   if (context) {
-    const kindLabel = context.kind === 'file' ? 'file from a workbench tab' : 'web page text from a workbench browser tab'
+    const kindLabel =
+      context.kind === 'file' ? 'file from a workbench tab'
+      : context.kind === 'pick' ? 'what the user pointed at in the workbench browser — the elements themselves, not the page'
+      : 'web page text from a workbench browser tab'
     attachSuffix += `\n\n[attachment: ${kindLabel}] ${context.label}:\n\`\`\`\n${context.content}\n\`\`\``
   }
   const sentText = (trimmed + attachSuffix).trim()

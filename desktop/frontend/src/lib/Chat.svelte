@@ -2578,7 +2578,7 @@
         {@const preview = attachmentPreview(cockpit.pendingContext.content)}
         <div class="attach-card">
           <div class="attach-head">
-            <span class="ic"><Icon name={cockpit.pendingContext.kind === 'file' ? 'fileText' : 'globe'} size={13} /></span>
+            <span class="ic"><Icon name={cockpit.pendingContext.kind === 'file' ? 'fileText' : cockpit.pendingContext.kind === 'pick' ? 'pointer' : 'globe'} size={13} /></span>
             <span class="attach-name">{cockpit.pendingContext.label}</span>
             <button class="attach-remove" aria-label={t('chat.removeAttachment')} onclick={clearPendingContext}><Icon name="x" size={12} /></button>
           </div>

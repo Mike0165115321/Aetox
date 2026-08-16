@@ -43,8 +43,31 @@ looked identical whether the page loaded or Chrome rendered its own error page
 `pkg/webview2` copy of this interface already binds it; this is the same
 binding, in the `edge` package's own idiom.
 
+## A third patch: taking a picture of the page
+
+`pkg/edge/capture.go` and `pkg/edge/ICoreWebView2CapturePreviewCompletedHandler.go`
+add `Chromium.CapturePreview`. Same shape as the second patch — upstream
+declares the vtbl slot and binds nothing, and the sibling `pkg/webview2` copy
+already has both halves.
+
+Aetox needs it for annotation (`desktop/browser_shot.go`): a mark drawn on a
+page has to be a mark on *something*, and the only honest carrier of "ตรงบริเวณ
+นี้" is the rendering itself. It is the engine's own capture rather than a
+screen grab of the tab's window, so nothing floating above the window can end up
+in the picture.
+
+Two things there are deliberate and easy to undo by accident:
+
+- **The bytes are read off the HGLOBAL** (`GetHGlobalFromStream` + `GlobalLock`),
+  not through `IStream::Seek`/`Read`. This package's `IStream` binding covers
+  only the two `ISequentialStream` slots, and reading the memory the stream is
+  already backed by needs no further vtbl work.
+- **`CapturePreview` returns a channel, and the caller must read it off the
+  webview thread.** The completion handler is invoked by that thread's message
+  pump, so waiting for it there is waiting for the thing that would deliver it.
+
 ## Upgrading go-webview2
 
-Re-copy the module, then re-apply the four `AETOX PATCH` blocks plus the
-`GetIsSuccess` binding above. Keep the version in this note and the root
-`go.mod` require in sync.
+Re-copy the module, then re-apply the four `AETOX PATCH` blocks, the
+`GetIsSuccess` binding, and the two capture files above. Keep the version in
+this note and the root `go.mod` require in sync.

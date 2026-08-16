@@ -41,6 +41,12 @@ type tabView interface {
 	setZoom(factor float64)
 	openDevTools()
 	destroy()
+	// capture asks the engine for a PNG of the visible page. Called on the
+	// webview thread like everything else here, but answered on the channel
+	// rather than returned: the engine delivers its answer through the same
+	// message pump this thread is running, so a caller that blocked here would
+	// be blocking the thing it is waiting for. See browser_shot.go.
+	capture() <-chan shotResult
 }
 
 // tabCallbacks are the portable reactions a platform host wires into a tab it
@@ -101,6 +107,12 @@ type aetoxMsg struct {
 	Token    string           `json:"token,omitempty"`
 	Elements []browserElement `json:"elements,omitempty"`
 	Images   []browserImage   `json:"images,omitempty"`
+	// "pick" only: what the user pointed at, whether they left the mode without
+	// pointing at anything, and whether they drew — in which case the marks are
+	// still on the page waiting to be photographed. See browser_pick.go.
+	Picks     []browserPick `json:"picks,omitempty"`
+	Cancelled bool          `json:"cancelled,omitempty"`
+	Drawn     bool          `json:"drawn,omitempty"`
 }
 
 // browserElement is one clickable/typeable element found on the page, tagged
@@ -282,6 +294,13 @@ type browserTab struct {
 	textMu    sync.Mutex
 	textCh    chan browserSnapshot
 	textToken string // token BrowserGetText is currently waiting on; empty = none pending
+
+	pickMu sync.Mutex
+	// pickToken is the token the live point-at-the-page mode will answer with;
+	// empty = no mode running. Unlike textToken there is no channel waiting on
+	// it — a pick arrives as an event whenever the user gets round to pointing,
+	// or never. See browser_pick.go.
+	pickToken string
 }
 
 func (t *browserTab) meta() (title, url string) {
@@ -473,6 +492,17 @@ func (h *browserHost) onMessage(id string, tab *browserTab, raw string, source s
 			return
 		}
 		ch <- browserSnapshot{Text: m.Text, Elements: m.Elements, Images: m.Images}
+	case "pick":
+		// Origin before token, deliberately: a message from the wrong origin
+		// must not consume the token the real page is still going to answer
+		// with. Order the other way round, and any page in any frame could end
+		// a pick the user is halfway through.
+		if !sameOrigin(source, m.URL) || !tab.claimPick(m.Token) {
+			return
+		}
+		h.app.emitEvent("browser:pick:"+id, map[string]any{
+			"url": m.URL, "cancelled": m.Cancelled, "drawn": m.Drawn, "picks": m.Picks,
+		})
 	}
 }
 
