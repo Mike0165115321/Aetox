@@ -8,6 +8,7 @@ package subagent
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -86,11 +87,23 @@ func TestTheRunBenchDelegatesTouchNothing(t *testing.T) {
 	registry := skill.NewDefaultRegistry(skill.RegistryOptions{SandboxRoot: root})
 	provider := model.NewNoopProvider("aetox-run:test")
 	delegations := NewDelegations()
+
+	// One slice, two writers: a delegate reports on its own goroutine
+	// (Delegations.start) while the main agent reports on this one, which is the
+	// arrangement the bench exists to exercise. Unguarded it is a data race the
+	// Linux job catches and Windows does not (found in CI, 16 ส.ค.).
+	var mu sync.Mutex
 	var events []turn.ToolEvent
+	record := func(ev turn.ToolEvent) {
+		mu.Lock()
+		defer mu.Unlock()
+		events = append(events, ev)
+	}
+
 	for _, tool := range NewTaskTools(TaskOptions{
 		Provider: provider, Model: "aetox-run:test", Registry: registry,
 		Delegations: delegations, ApprovalMode: safety.ApprovalFullAccess,
-		OnToolAction: func(ev turn.ToolEvent) { events = append(events, ev) },
+		OnToolAction: record,
 	}) {
 		if err := registry.Register(tool, skill.SourceBuiltin); err != nil {
 			t.Fatalf("register %s: %v", tool.Name(), err)
@@ -102,7 +115,7 @@ func TestTheRunBenchDelegatesTouchNothing(t *testing.T) {
 		}),
 		Dispatcher:   skill.NewDispatcher(registry),
 		ApprovalMode: safety.ApprovalFullAccess,
-		OnToolAction: func(ev turn.ToolEvent) { events = append(events, ev) },
+		OnToolAction: record,
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -112,6 +125,10 @@ func TestTheRunBenchDelegatesTouchNothing(t *testing.T) {
 		t.Fatalf("the bench did not finish: %v", err)
 	}
 
+	// Execute has returned and every delegate with it, but the lock is what says
+	// so to the race detector rather than the ordering being obvious to a reader.
+	mu.Lock()
+	defer mu.Unlock()
 	for _, ev := range events {
 		switch ev.Name {
 		case "write", "edit", "apply_patch", "delete", "shell":
