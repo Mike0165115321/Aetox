@@ -195,8 +195,18 @@ export const en: Record<keyof typeof th, string> = {
   'chat.runningCode': 'Running…',
   'chat.ranCode': 'Done',
   'chat.runFailed': 'Failed',
+  'chat.runResult': 'Result',
+  'chat.runNoOutput': 'No output',
+  'chat.runClose': 'Close',
+  'chat.runFix': 'Fix it',
+  'chat.runLines': '{n} lines',
+  'chat.runSeconds': '{n}s',
+  'chat.runTruncated': 'Too long — the end was cut off',
+  // What the Fix it button sends. The code and the error go back together
+  // because either one alone is half the question.
+  'chat.runFixPrompt': 'This code block failed when I ran it. Find out why and fix it.\n\n```{lang}\n{code}\n```\n\nWhat came out:\n\n```\n{output}\n```',
   'chat.dismissTask': 'Dismiss suggestion',
-  'chat.bgAnswerPrompt': 'Answer {id} with task_answer: {answer}',
+  'chat.bgAnswerPrompt': 'Answer {id} with task action=answer: {answer}',
 
   // The session strip above the composer. The chip label is what tells you
   // what is inside, so the count rides on the chip rather than hiding behind it.

@@ -828,6 +828,8 @@ export namespace main {
 	    output: string;
 	    success: boolean;
 	    durationMs: number;
+	    lines: number;
+	    truncated: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new RunBlockResult(source);
@@ -838,6 +840,8 @@ export namespace main {
 	        this.output = source["output"];
 	        this.success = source["success"];
 	        this.durationMs = source["durationMs"];
+	        this.lines = source["lines"];
+	        this.truncated = source["truncated"];
 	    }
 	}
 	export class SessionMessage {

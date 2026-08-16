@@ -872,15 +872,137 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .markdown-body .codeblock:hover .code-copy, .markdown-body .code-copy:focus-visible,
 .markdown-body .codeblock:hover .code-run, .markdown-body .code-run:focus-visible { opacity:1; }
 .markdown-body .code-copy:hover, .markdown-body .code-run:hover { background:var(--surface-hover); color:var(--text-primary); }
-/* Output of the Run button, appended inside the block. Its own surface and a
-   top border so result reads as distinct from the command that produced it. */
-.markdown-body .code-run-out {
-  margin:0; border:none; border-top:1px solid var(--border-default); border-radius:0;
-  background:var(--surface-code); color:var(--text-muted);
-  font-family:var(--font-mono, monospace); font-size:var(--fs-xs);
-  padding:.5em .9em; max-height:16em; overflow:auto; white-space:pre-wrap;
+/* ---------- what the Run button produced ----------
+   The panel that replaced a bare <pre> on 16 ส.ค. The old one was the same
+   --surface-code as the code above it, separated by one hairline, so a result
+   read as more program; and it threw away everything the engine already knew
+   about the run — how long it took, whether it succeeded, whether what you were
+   looking at was all of it.
+
+   Three ideas, and they compose rather than stack (owner picked all three):
+
+   - The HEAD is one row doing two jobs. Open, it is the status bar: verdict,
+     the program's last line, how long, and the controls. Folded, that same row
+     IS the whole receipt. They were never two rows — which is the only reason
+     all of this fits without the block growing a second storey.
+   - The RAIL is the left border of the whole panel, so the verdict is legible
+     out of the corner of an eye in both states, and it costs no width. Colour
+     never carries it alone: ✓/✗ and a word sit in the row beside it.
+   - The FOLD is for long output only, and never for a failure. See
+     foldRunOutputOver in Chat.svelte for where that line is drawn and why.
+
+   The surface goes DOWN to --surface-app rather than up: output is what came
+   back from underneath, and a well reads as a place things arrive rather than
+   as a second card laid on top of the first. */
+.markdown-body .run-res {
+  border-top:1px solid var(--border-default);
+  border-left:3px solid var(--run-rail);
+  background:var(--surface-app);
 }
-.markdown-body .code-run-out.failed { color:var(--status-danger); }
+.markdown-body .run-res.ok { --run-rail:var(--status-success); }
+.markdown-body .run-res.failed { --run-rail:var(--status-danger); }
+
+.markdown-body .run-res-head {
+  display:flex; align-items:center; gap:8px; padding:7px 12px 7px 9px;
+  font-size:var(--fs-xs); user-select:none;
+}
+/* Only a panel that folds is pressable, so only that one says so. */
+.markdown-body .run-res-head[role="button"] { cursor:pointer; }
+.markdown-body .run-res-head[role="button"]:hover { background:var(--surface-hover); }
+/* Kept in the layout rather than removed: with the arrow gone the tick would
+   step 8px left on short output, and two panels in one answer would not line
+   up with each other. */
+.markdown-body .run-res-chev { flex:none; width:8px; color:var(--text-dim); font-size:9px; }
+.markdown-body .run-res-chev.none { visibility:hidden; }
+.markdown-body .run-res.folded .run-res-chev { transform:rotate(-90deg); }
+.markdown-body .run-res-mark { flex:none; font-family:var(--font-mono, monospace); }
+.markdown-body .run-res.ok .run-res-mark { color:var(--status-success); }
+.markdown-body .run-res.failed .run-res-mark { color:var(--status-danger); }
+.markdown-body .run-res-label { color:var(--text-muted); }
+/* The program's last line, in the program's own face, clipped rather than
+   wrapped — this row must stay one row however long that line is. */
+.markdown-body .run-res-summary {
+  min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  color:var(--text-secondary); font-family:var(--font-mono, monospace);
+}
+.markdown-body .run-res-meta {
+  margin-left:auto; flex:none; color:var(--text-dim); font-family:var(--font-mono, monospace);
+}
+.markdown-body .run-res-acts { flex:none; display:flex; gap:2px; }
+.markdown-body .run-res-acts button {
+  font-size:var(--fs-xs); color:var(--text-muted); padding:2px 8px;
+  border-radius:var(--r-sm); cursor:pointer;
+}
+.markdown-body .run-res-acts button:hover { background:var(--surface-hover); color:var(--text-primary); }
+/* ให้แก้ให้ is the one control here that is not always on: it appears only on a
+   failure, and on a failure it is the thing most likely to be wanted, so it
+   does not hide until hovered the way the copy buttons elsewhere do. */
+.markdown-body .run-res-fix { color:var(--interactive-bright) !important; }
+.markdown-body .run-res-fix:hover { color:var(--text-on-interactive) !important; background:var(--interactive) !important; }
+
+.markdown-body .run-res-body {
+  margin:0; border:none; border-radius:0; background:none;
+  padding:0 .9em .7em 9px; color:var(--text-secondary);
+  font-family:var(--font-mono, monospace); font-size:var(--fs-xs);
+  max-height:16em; overflow:auto; white-space:pre-wrap;
+}
+.markdown-body .run-res.failed .run-res-body { color:var(--status-danger); }
+.markdown-body .run-res.folded .run-res-body,
+.markdown-body .run-res.folded .run-res-more { display:none; }
+.markdown-body .run-res-more {
+  display:block; padding:5px 12px 7px 9px; border-top:1px solid var(--border-subtle);
+  color:var(--text-dim); font-size:var(--fs-2xs); font-family:var(--font-mono, monospace);
+}
+
+/* ---------- mathematics ----------
+   KaTeX ships its own stylesheet (imported by markdown.ts) and it is left
+   alone; these are the three places its defaults meet this app and lose.
+
+   Colour: KaTeX inherits it, so an equation is already the same ink as the
+   sentence around it. Nothing to do — noted so nobody adds a rule that breaks
+   it.
+
+   The font list is the first. `\text{อนุพันธ์ = ดูความชัน}` is what an answer
+   in Thai actually contains, and KaTeX_Main has no Thai in it. Chromium would
+   fall back on its own to something, and that something is Windows' default —
+   a different face from the one the rest of the app is set in. Naming the
+   app's own stack after KaTeX's keeps the Latin and the digits in KaTeX's
+   metrics, where they belong, and puts the Thai in Noto Sans Thai with the
+   rest of the answer. */
+.markdown-body .katex { font-family:KaTeX_Main, var(--sans); }
+
+/* An equation has a width of its own and will not wrap — that is what makes it
+   readable. On a narrow window a long one would push the whole reply sideways
+   and take the composer with it, so it scrolls inside its own line instead.
+   The same move a wide table gets, for the same reason (owner, 16 ส.ค.: the
+   window on a 1280px-wide laptop). */
+.markdown-body .katex-display { overflow-x:auto; overflow-y:hidden; padding:2px 0; margin:0; }
+
+/* A display equation is a fenced code block in every way that matters here, so
+   it is drawn as one: same border, same radius, same surface, same header bar
+   with a label on the left and a hover-revealed คัดลอก on the right, and the
+   same margins. Every value below is .codeblock's, deliberately — two boxes
+   that are meant to read as the same kind of object must not be assembled from
+   two sets of numbers that drift apart on the next change. */
+.markdown-body .math-block {
+  display:block; margin:.6em 0 1em;
+  border:1px solid var(--border-default); border-radius:var(--r-md); overflow:hidden;
+  background:var(--syn-bg, var(--surface-code));
+}
+.markdown-body .math-head { display:flex; align-items:center; gap:6px; padding:9px 12px 0; }
+.markdown-body .math-head .lang {
+  font-size:var(--fs-xs); color:var(--text-dim); font-family:var(--font-mono, monospace); margin-right:auto;
+}
+.markdown-body .math-copy {
+  font-size:var(--fs-xs); color:var(--text-muted); padding:2px 8px; border-radius:var(--r-sm); cursor:pointer;
+  opacity:0; transition:opacity .12s;
+}
+.markdown-body .math-block:hover .math-copy, .markdown-body .math-copy:focus-visible { opacity:1; }
+.markdown-body .math-copy:hover { background:var(--surface-hover); color:var(--text-primary); }
+/* The notation stays centred inside the box where code is left-aligned: that is
+   how an equation is set everywhere it is set, and it is the one place the two
+   blocks are not the same thing. */
+.markdown-body .math-body { display:block; padding:2px 14px 14px; }
 
 /* ---------- suggested-task chips (suggest_task tool) ----------
    A row of pills on the composer: side work the agent flagged. Click starts
@@ -958,54 +1080,6 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   background:conic-gradient(from var(--beam-phase),
     transparent 0 18%,
     var(--interactive) 40%,
-/* ---------- mathematics ----------
-   KaTeX ships its own stylesheet (imported by markdown.ts) and it is left
-   alone; these are the three places its defaults meet this app and lose.
-
-   Colour: KaTeX inherits it, so an equation is already the same ink as the
-   sentence around it. Nothing to do — noted so nobody adds a rule that breaks
-   it.
-
-   The font list is the first. `\text{อนุพันธ์ = ดูความชัน}` is what an answer
-   in Thai actually contains, and KaTeX_Main has no Thai in it. Chromium would
-   fall back on its own to something, and that something is Windows' default —
-   a different face from the one the rest of the app is set in. Naming the
-   app's own stack after KaTeX's keeps the Latin and the digits in KaTeX's
-   metrics, where they belong, and puts the Thai in Noto Sans Thai with the
-   rest of the answer. */
-.markdown-body .katex { font-family:KaTeX_Main, var(--sans); }
-
-/* An equation has a width of its own and will not wrap — that is what makes it
-   readable. On a narrow window a long one would push the whole reply sideways
-   and take the composer with it, so it scrolls inside its own line instead.
-   The same move a wide table gets, for the same reason (owner, 16 ส.ค.: the
-   window on a 1280px-wide laptop). */
-.markdown-body .katex-display { overflow-x:auto; overflow-y:hidden; padding:2px 0; margin:0; }
-
-/* A display equation is a fenced code block in every way that matters here, so
-   it is drawn as one: same border, same radius, same surface, same header bar
-   with a label on the left and a hover-revealed คัดลอก on the right, and the
-   same margins. Every value below is .codeblock's, deliberately — two boxes
-   that are meant to read as the same kind of object must not be assembled from
-   two sets of numbers that drift apart on the next change. */
-.markdown-body .math-block {
-  display:block; margin:.6em 0 1em;
-  border:1px solid var(--border-default); border-radius:var(--r-md); overflow:hidden;
-  background:var(--syn-bg, var(--surface-code));
-}
-.markdown-body .math-head { display:flex; align-items:center; gap:6px; padding:9px 12px 0; }
-.markdown-body .math-head .lang {
-  font-size:var(--fs-xs); color:var(--text-dim); font-family:var(--font-mono, monospace); margin-right:auto;
-.markdown-body .math-copy {
-  font-size:var(--fs-xs); color:var(--text-muted); padding:2px 8px; border-radius:var(--r-sm); cursor:pointer;
-  opacity:0; transition:opacity .12s;
-}
-.markdown-body .math-block:hover .math-copy, .markdown-body .math-copy:focus-visible { opacity:1; }
-.markdown-body .math-copy:hover { background:var(--surface-hover); color:var(--text-primary); }
-/* The notation stays centred inside the box where code is left-aligned: that is
-   how an equation is set everywhere it is set, and it is the one place the two
-   blocks are not the same thing. */
-.markdown-body .math-body { display:block; padding:2px 14px 14px; }
     var(--interactive-bright) 45%,
     transparent 47% 68%,
     var(--interactive) 90%,

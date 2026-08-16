@@ -195,8 +195,18 @@ export const th = {
   'chat.runningCode': 'กำลังรัน…',
   'chat.ranCode': 'เสร็จแล้ว',
   'chat.runFailed': 'ล้มเหลว',
+  'chat.runResult': 'ผลลัพธ์',
+  'chat.runNoOutput': 'ไม่มีผลลัพธ์',
+  'chat.runClose': 'ปิด',
+  'chat.runFix': 'ให้แก้ให้',
+  'chat.runLines': '{n} บรรทัด',
+  'chat.runSeconds': '{n} วินาที',
+  'chat.runTruncated': 'ยาวเกินไป ท้ายถูกตัดทิ้ง',
+  // What the ให้แก้ให้ button sends. The code and the error go back together
+  // because either one alone is half the question.
+  'chat.runFixPrompt': 'โค้ดบล็อกนี้รันแล้วล้มเหลว ช่วยหาสาเหตุแล้วแก้ให้หน่อย\n\n```{lang}\n{code}\n```\n\nสิ่งที่ออกมา:\n\n```\n{output}\n```',
   'chat.dismissTask': 'ปัดข้อเสนอทิ้ง',
-  'chat.bgAnswerPrompt': 'ตอบ {id} ด้วย task_answer ว่า {answer}',
+  'chat.bgAnswerPrompt': 'ตอบ {id} ด้วย task action=answer ว่า {answer}',
 
   // แถบสถานะห้องเหนือช่องพิมพ์ — ป้ายบนชิปคือตัวบอกว่าข้างในมีอะไร ตัวเลขเลยอยู่บนชิป ไม่ได้ซ่อนไว้ข้างใน
   'summary.toggle': 'สรุปห้องนี้',

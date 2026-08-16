@@ -15,9 +15,11 @@ import { initEditorTheme } from './lib/editorTheme.svelte'
 import { initTreeFont } from './lib/treeFont.svelte'
 import { initUiFont } from './lib/uiFont.svelte'
 import { initShell } from './lib/shell.svelte'
+import { initRunnableLanguages } from './lib/runnable.svelte'
 
 initTheme()
 initShell()
+initRunnableLanguages()
 initEditorFont()
 initChatFont()
 initSystemZoom()

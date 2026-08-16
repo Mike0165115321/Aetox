@@ -322,6 +322,10 @@ export function RevokeDevice(arg1:string):Promise<void>;
 
 export function RunChatCommand(arg1:string):Promise<main.RunBlockResult>;
 
+export function RunChatScript(arg1:string,arg2:string):Promise<main.RunBlockResult>;
+
+export function RunnableLanguages():Promise<Record<string, string>>;
+
 export function SaveAgentProfile(arg1:string,arg2:string):Promise<void>;
 
 export function SaveChairStarters(arg1:string,arg2:string,arg3:subagent.StarterSet):Promise<void>;

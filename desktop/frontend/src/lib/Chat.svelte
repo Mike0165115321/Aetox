@@ -12,7 +12,7 @@
   import {
     EnabledProviders, SupportedThinkLevels,
     ListModelsForProvider, PriceModels, RequiresAPIKey, HasAPIKey, PickAttachment,
-    GetContextBreakdown, GuideTopics, RunChatCommand, ListChairs, ChairStarters, CurrentSessionID,
+    GetContextBreakdown, GuideTopics, RunChatCommand, RunChatScript, ListChairs, ChairStarters, CurrentSessionID,
     Shells, CurrentShell, SetShell, EnginesFor, UseEngine, VerifyConnection,
     GitBranches, GitSwitchBranch, GitCreateBranch, GetProjectStatus,
   } from '../../wailsjs/go/main/App'
@@ -1208,10 +1208,12 @@
     await attachImageFromClipboard(file)
   }
 
-  // Runs the command in a shell-tagged code block the user clicked Run on.
-  // Output lands in a <pre> appended inside the same block — inserted with
-  // textContent, never innerHTML: command output is untrusted text, and this
-  // element lives inside {@html} markup that DOMPurify has already left.
+  // Runs the command in a runnable code block the user clicked Run on.
+  //
+  // Output lands in a result panel appended inside the same block, and every
+  // string that came back from the machine is written with textContent, never
+  // innerHTML: command output is untrusted text, and this element lives inside
+  // {@html} markup that DOMPurify has already been past.
   async function runCodeBlock(runBtn: HTMLButtonElement) {
     if (runBtn.dataset.running) return
     const block = runBtn.closest('.codeblock')
@@ -1219,25 +1221,159 @@
     if (!block || !command.trim()) return
     runBtn.dataset.running = '1'
     runBtn.textContent = t('chat.runningCode')
-    let out = block.querySelector<HTMLPreElement>('.code-run-out')
-    if (!out) {
-      out = document.createElement('pre')
-      out.className = 'code-run-out'
-      block.appendChild(out)
-    }
     try {
-      const res = await RunChatCommand(command)
-      out.textContent = res.output
-      out.classList.toggle('failed', !res.success)
+      // Two kinds of runnable block, one button. A shell block's text is the
+      // command; a source block's text is a file, and the engine writes it out
+      // and runs it through an interpreter (run_script.go). markdown.ts marks
+      // which is which at render time — deciding here would mean a second
+      // opinion about what a `python` fence is.
+      const script = block.getAttribute('data-script')
+      const res = script ? await RunChatScript(script, command) : await RunChatCommand(command)
+      drawRunResult(block, res)
       runBtn.textContent = res.success ? t('chat.ranCode') : t('chat.runFailed')
     } catch (err) {
-      out.textContent = String(err)
-      out.classList.add('failed')
+      // A call that never reached the shell has no duration and no line count
+      // to report, and saying "0 บรรทัด · 0 วินาที" about it would be inventing
+      // two facts to fill a shape.
+      drawRunResult(block, { output: String(err), success: false, durationMs: 0, lines: 0, truncated: false })
       runBtn.textContent = t('chat.runFailed')
     } finally {
       delete runBtn.dataset.running
       setTimeout(() => (runBtn.textContent = t('chat.runCode')), 2500)
     }
+  }
+
+  // How long the output can be before it is folded away. Ten lines is about
+  // what a person takes in without deciding to read, which is the line this is
+  // drawn on: below it the result IS the answer and hiding it behind a click
+  // puts a door in front of something the user just asked for; above it the
+  // result is a log, and a log that unrolls itself pushes the conversation off
+  // the screen.
+  const foldRunOutputOver = 10
+
+  // Draws the result panel: one header row that is the status bar when open and
+  // the whole receipt when folded, a coloured rail down the left edge that says
+  // the verdict at a glance in both states, and the output itself.
+  //
+  // Built here rather than in markdown.ts because it does not exist until a
+  // click happens — markdown.ts renders the block, this renders what the block
+  // did. See style.css `.run-res` for why it is shaped like the code block's
+  // own header.
+  function drawRunResult(block: Element, res: main.RunBlockResult): void {
+    block.querySelector('.run-res')?.remove()
+
+    const failed = !res.success
+    // A failure is never folded, however long it is: that is the moment the
+    // output is the thing to read, and folding it is hiding the answer. Short
+    // output is never folded either, and gets no chevron — a control that
+    // reveals nothing is a control that teaches the user it does nothing.
+    const foldable = !failed && res.lines > foldRunOutputOver
+
+    const panel = document.createElement('div')
+    panel.className = `run-res ${failed ? 'failed' : 'ok'}`
+
+    const head = document.createElement('div')
+    head.className = 'run-res-head'
+    if (foldable) {
+      head.setAttribute('role', 'button')
+      head.setAttribute('tabindex', '0')
+    }
+    panel.appendChild(head)
+
+    const chev = document.createElement('span')
+    chev.className = foldable ? 'run-res-chev' : 'run-res-chev none'
+    chev.textContent = '▾'
+    head.appendChild(chev)
+
+    const mark = document.createElement('span')
+    mark.className = 'run-res-mark'
+    mark.textContent = failed ? '✗' : '✓'
+    head.appendChild(mark)
+
+    // The last line the program printed, which is what a program's last line
+    // almost always is: its answer. With nothing to summarise the row says what
+    // it is instead, because a blank space where a verdict goes reads as a bug.
+    const summary = lastLine(res.output)
+    const title = document.createElement('span')
+    title.className = summary === '' ? 'run-res-label' : 'run-res-summary'
+    title.textContent = summary === ''
+      ? (failed ? t('chat.runFailed') : t('chat.runNoOutput'))
+      : summary
+    head.appendChild(title)
+
+    const meta = document.createElement('span')
+    meta.className = 'run-res-meta'
+    meta.textContent = runMeta(res)
+    head.appendChild(meta)
+
+    const acts = document.createElement('span')
+    acts.className = 'run-res-acts'
+    head.appendChild(acts)
+    // Only on a failure, and first in the row: an error a user has to select,
+    // copy and retype as a question is an error most people give up on.
+    if (failed) acts.appendChild(runButton('run-res-fix', t('chat.runFix')))
+    acts.appendChild(runButton('run-res-copy', t('chat.copyCode')))
+    acts.appendChild(runButton('run-res-close', t('chat.runClose')))
+
+    const body = document.createElement('pre')
+    body.className = 'run-res-body'
+    body.textContent = res.output
+    panel.appendChild(body)
+
+    // Said out loud rather than left to a scrollbar that stops: a panel that
+    // scrolls to a bottom which is not the bottom is the one way a result can
+    // lie about what happened.
+    if (res.truncated) {
+      const more = document.createElement('span')
+      more.className = 'run-res-more'
+      more.textContent = t('chat.runTruncated')
+      panel.appendChild(more)
+    }
+
+    if (foldable) panel.classList.add('folded')
+    block.appendChild(panel)
+  }
+
+  function runButton(cls: string, label: string): HTMLButtonElement {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = cls
+    button.textContent = label
+    return button
+  }
+
+  function lastLine(output: string): string {
+    const lines = output.split('\n')
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i].trim()
+      if (line !== '') return line
+    }
+    return ''
+  }
+
+  // Seconds to one decimal, because a run is a thing you waited through and
+  // "1247 ms" is a number you have to convert before it means anything. The
+  // line count is left off when there is nothing to count.
+  function runMeta(res: main.RunBlockResult): string {
+    const parts: string[] = []
+    if (res.lines > 0) parts.push(t('chat.runLines', { n: String(res.lines) }))
+    parts.push(t('chat.runSeconds', { n: (res.durationMs / 1000).toFixed(1) }))
+    return parts.join(' · ')
+  }
+
+  // Hands the block and what came out of it back to the model as one question.
+  // Both halves go: the error alone does not say what was run, and the code
+  // alone is what the user was already looking at.
+  function askToFixRun(button: Element): void {
+    const panel = button.closest('.run-res')
+    const block = button.closest('.codeblock')
+    const code = block?.querySelector('code')?.textContent ?? ''
+    const output = panel?.querySelector('.run-res-body')?.textContent ?? ''
+    if (code.trim() === '') return
+    const lang = block?.getAttribute('data-script')
+      ?? block?.querySelector('.lang')?.textContent?.trim()
+      ?? ''
+    void sendUserMessage(t('chat.runFixPrompt', { lang, code, output }))
   }
 
   // Copy or save the drawing whose button was clicked. The PNG carries the
@@ -1284,6 +1420,33 @@
         copyBtn.textContent = t('chat.copiedCode')
         setTimeout(() => (copyBtn.textContent = t('chat.copyCode')), 1500)
       })
+      return
+    }
+    // The result panel's own row. Checked before the fold, so a click that
+    // landed on a button never also toggles the panel under it.
+    const fixBtn = el.closest('.run-res-fix')
+    if (fixBtn) {
+      askToFixRun(fixBtn)
+      return
+    }
+    const outCopy = el.closest('.run-res-copy')
+    if (outCopy) {
+      const text = outCopy.closest('.run-res')?.querySelector('.run-res-body')?.textContent ?? ''
+      navigator.clipboard.writeText(text).then(() => {
+        outCopy.textContent = t('chat.copiedCode')
+        setTimeout(() => (outCopy.textContent = t('chat.copyCode')), 1500)
+      })
+      return
+    }
+    if (el.closest('.run-res-close')) {
+      el.closest('.run-res')?.remove()
+      return
+    }
+    // Folding is on the whole row rather than on the chevron: the row is what
+    // reads as pressable, and a 9px arrow is a target nobody hits twice.
+    const resHead = el.closest('.run-res-head')
+    if (resHead) {
+      resHead.closest('.run-res')?.classList.toggle('folded')
       return
     }
     const drawBtn = el.closest('.drawing-copy, .drawing-save')

@@ -622,6 +622,14 @@ export function RunChatCommand(arg1) {
   return window['go']['main']['App']['RunChatCommand'](arg1);
 }
 
+export function RunChatScript(arg1, arg2) {
+  return window['go']['main']['App']['RunChatScript'](arg1, arg2);
+}
+
+export function RunnableLanguages() {
+  return window['go']['main']['App']['RunnableLanguages']();
+}
+
 export function SaveAgentProfile(arg1, arg2) {
   return window['go']['main']['App']['SaveAgentProfile'](arg1, arg2);
 }

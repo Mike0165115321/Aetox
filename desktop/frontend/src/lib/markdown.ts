@@ -13,11 +13,24 @@ import { ICONS } from './icons'
 
 marked.setOptions({ breaks: true, gfm: true })
 
-// Languages whose fenced blocks get a Run button beside Copy. Only tags that
-// unambiguously mean "a command for this machine's shell" — `console` and
-// `text` are for showing output, `python` and friends are source files, and
-// running either would be a wrong guess with a real side effect.
-const runnableLangs = new Set(['bash', 'sh', 'shell', 'zsh', 'powershell', 'ps1', 'cmd', 'bat'])
+// Which fence tags get a Run button beside Copy, as tag → kind, answered by the
+// engine (App.RunnableLanguages, backed by internal/runlang) rather than held
+// here.
+//
+// It is asked rather than known because the answer is about the machine, not
+// about markdown: a `python` block is runnable on a computer with Python on it
+// and is a picture of a program on one without. A list kept here could only ever
+// say what is runnable in principle, and a Run button that comes back with a
+// Microsoft Store advert is worse than no Run button.
+//
+// Empty until setRunnableLanguages is called, and empty is the safe direction:
+// no button. A shell tag renders its text as the command; a script tag means a
+// file, which the engine writes out and hands to an interpreter (run_script.go).
+let runnable: Record<string, string> = {}
+
+export function setRunnableLanguages(langs: Record<string, string>): void {
+  runnable = langs
+}
 
 // Fenced code blocks render like a normal AI chat: a header bar with the
 // language label and a copy button, plus syntax highlighting. Shell-tagged
@@ -35,11 +48,18 @@ const renderer = {
       ? hljs.highlight(text, { language }).value
       : hljs.highlightAuto(text).value
     const label = known ? language : 'code'
-    const run = runnableLangs.has(language.toLowerCase())
+    const tag = language.toLowerCase()
+    const kindOf = runnable[tag]
+    const run = kindOf
       ? `<button class="code-run" type="button">${t('chat.runCode')}</button>`
       : ''
+    // The tag rides on the block because the click handler has to know which
+    // of the two kinds this is, and the label above is not it — an unknown
+    // language renders as "code", and reading the tag back off a label that
+    // has already been rewritten is how the two drift apart.
+    const kind = kindOf === 'script' ? ` data-script="${escapeAttr(tag)}"` : ''
     return (
-      `<div class="codeblock">` +
+      `<div class="codeblock"${kind}>` +
       `<div class="codeblock-head"><span class="lang">${label}</span>` +
       run +
       `<button class="code-copy" type="button">${t('chat.copyCode')}</button></div>` +
