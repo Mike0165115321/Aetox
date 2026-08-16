@@ -14,6 +14,7 @@ const noop = () => vi.fn(async (..._args: any[]) => undefined)
 
 export const AddMCPServer = noop()
 export const BrowserBack = noop()
+export const BrowserCapturePNG = str()
 export const BrowserClickRef = noop()
 export const BrowserClose = noop()
 export const BrowserForward = noop()
@@ -25,6 +26,8 @@ export const BrowserReload = noop()
 export const BrowserSetBounds = noop()
 export const BrowserSetVisible = noop()
 export const BrowserSetZoom = noop()
+export const BrowserStartPick = noop()
+export const BrowserStopPick = noop()
 export const BrowserTypeRef = noop()
 export const CancelTurn = noop()
 export const Interject = noop()
@@ -128,6 +131,7 @@ export const ListModelsForProvider = arr()
 export const ListSessions = arr()
 export const ListTaskChips = arr()
 export const BackgroundTasks = arr()
+export const BackgroundRuns = arr()
 export const ListPendingChanges = arr()
 export const ListDecidedChanges = arr()
 export const LearningEnabled = boolFn(true)
@@ -136,9 +140,13 @@ export const ApprovePendingChange = noop()
 export const RejectPendingChange = noop()
 export const LearnedMemory = str()
 export const LearnedEntries = arr()
+export const LearnedScopes = arr()
 export const SaveLearnedEntry = noop()
 export const OpenMemoryFolder = noop()
 export const PendingLearnedCount = vi.fn(async (..._args: any[]) => 0)
+// The memory card reads its own row by id. Zero id means "no such proposal",
+// which is what a card with nothing to show is told.
+export const PendingChangeByID = vi.fn(async (..._args: any[]) => ({ id: 0 }) as any)
 export const RateTurn = noop()
 export const TurnRating = str()
 export const ListSkills = arr()
@@ -251,7 +259,16 @@ export const SaveIdentityFile = noop()
 export const SaveMCPServer = noop()
 export const SearchAllSessions = arr()
 export const SearchSessions = arr()
+// What this machine can run. The real binding answers from internal/runlang
+// after looking at PATH; the double answers with the two kinds so a test can
+// render a Run button without depending on what is installed on the machine
+// running the suite.
+export const RunnableLanguages = vi.fn(async () => ({
+  bash: 'shell', sh: 'shell', shell: 'shell', powershell: 'shell', ps1: 'shell',
+  python: 'script', py: 'script',
+} as Record<string, string>))
 export const RunChatCommand = vi.fn(async (..._args: any[]) => ({ output: '', success: true, durationMs: 0 }))
+export const RunChatScript = vi.fn(async (..._args: any[]) => ({ output: '', success: true, durationMs: 0 }))
 // A finished turn is { text, parts } now, not a bare string — the sequence is
 // what the bubble draws. The default is that shape so any test that does not
 // care about the reply still gets something the store can read.
