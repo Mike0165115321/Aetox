@@ -2,7 +2,9 @@ package proc
 
 import (
 	"context"
+	"os"
 	"os/exec"
+	"strings"
 	"sync"
 )
 
@@ -65,6 +67,40 @@ const utf8Prologue = "try { [Console]::OutputEncoding = [System.Text.UTF8Encodin
 // exit 0.
 const exitEpilogue = "\nif (-not $?) { if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE } else { exit 1 } }"
 
+// shellEnv is the other half of utf8Prologue. The prologue only fixes the
+// direction PowerShell controls — how it decodes what a child already wrote —
+// but the child picks its own output encoding, and a console-less Python picks
+// the ANSI codepage (874 on a Thai Windows) rather than UTF-8.
+//
+// Both halves of that failed, measured from this machine's shell audit log
+// (2026-08-16). A script printing "∞" died with UnicodeEncodeError and reached
+// the agent as a bare `exit status 1`, which reads as "my code is wrong" and
+// sent it rewriting correct maths. Worse, a script printing Thai did not fail
+// at all: cp874 encodes Thai, so it exited 0 with `���ͺ������` in the output,
+// and mojibake that succeeds is a thing no agent can catch.
+//
+// PYTHONUTF8=1 (Python's UTF-8 mode) fixes both, and Python is the only common
+// runtime that needs telling — node, go and rust write UTF-8 on Windows
+// already, so this is one variable, not the beginning of a per-language table.
+//
+// Skipped whole when the machine already has an opinion: a PYTHONUTF8 or a
+// PYTHONIOENCODING the user set themselves is an explicit setting, and a
+// default that arrives later must not overwrite one.
+func shellEnv() []string {
+	env := os.Environ()
+	for _, kv := range env {
+		name, value, ok := strings.Cut(kv, "=")
+		if !ok || value == "" {
+			continue
+		}
+		switch strings.ToUpper(name) {
+		case "PYTHONUTF8", "PYTHONIOENCODING":
+			return env
+		}
+	}
+	return append(env, "PYTHONUTF8=1")
+}
+
 // ShellCommand builds the PowerShell invocation for an agent-supplied command
 // line.
 //
@@ -76,6 +112,7 @@ const exitEpilogue = "\nif (-not $?) { if ($null -ne $LASTEXITCODE -and $LASTEXI
 func ShellCommand(ctx context.Context, line string) *exec.Cmd {
 	shell, _ := powershell()
 	cmd := exec.CommandContext(ctx, shell, "-NoProfile", "-Command", utf8Prologue+line+exitEpilogue)
+	cmd.Env = shellEnv()
 	// Here rather than left to callers, so the shell path cannot flash a
 	// console window even if a new caller forgets.
 	HideConsole(cmd)
