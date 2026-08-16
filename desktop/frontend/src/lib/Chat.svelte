@@ -2323,9 +2323,9 @@
         {/if}
         <button type="button" class="focus-chip focus-btn" onclick={() => (focusMenuOpen = !focusMenuOpen)}>
           <span class="ic"><Icon name={cockpit.project.focused ? 'folder' : (shell.name === 'code' ? 'folderOpen' : 'messageSquare')} size={13} /></span>
-          {cockpit.project.focused
+          <span class="t">{cockpit.project.focused
             ? cockpit.project.name
-            : (shell.name === 'code' ? t('chat.pickProject') : t('chat.noProject'))}
+            : (shell.name === 'code' ? t('chat.pickProject') : t('chat.noProject'))}</span>
           <span class="caret"><Icon name={focusMenuOpen ? 'chevronUp' : 'chevronDown'} size={12} /></span>
         </button>
       </div>
@@ -2361,7 +2361,7 @@
         {/if}
         <button type="button" class="focus-chip focus-btn" onclick={toggleAgentMenu}>
           <span class="ic"><Icon name={cockpit.chair ? 'bot' : 'sparkles'} size={13} /></span>
-          {cockpit.chair || t('chat.mainAgent')}
+          <span class="t">{cockpit.chair || t('chat.mainAgent')}</span>
           <span class="caret"><Icon name={agentMenuOpen ? 'chevronUp' : 'chevronDown'} size={12} /></span>
         </button>
       </div>
@@ -2534,7 +2534,7 @@
           onclick={toggleEngineMenu}
         >
           <span class="ic"><Icon name={activeEngine ? 'gitBranch' : 'alertTriangle'} size={13} /></span>
-          {activeEngine?.label ?? (anyConnected ? t('chat.engineNone') : t('chat.engineNoEngine'))}
+          <span class="t">{activeEngine?.label ?? (anyConnected ? t('chat.engineNone') : t('chat.engineNoEngine'))}</span>
           <span class="caret"><Icon name={engineMenuOpen ? 'chevronUp' : 'chevronDown'} size={12} /></span>
         </button>
       </div>
@@ -2557,7 +2557,7 @@
         {/if}
         <button type="button" class="focus-chip focus-btn" title={t('chat.shellTitle')} onclick={toggleShellMenu}>
           <span class="ic"><Icon name="terminal" size={13} /></span>
-          {currentShell?.label ?? ''}
+          <span class="t">{currentShell?.label ?? ''}</span>
           <span class="caret"><Icon name={shellMenuOpen ? 'chevronUp' : 'chevronDown'} size={12} /></span>
         </button>
       </div>

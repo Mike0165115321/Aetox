@@ -1450,6 +1450,17 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .composer .box, .project-chips, .api-key-banner, .focus-row, .bgw, .task-chips { max-width:1040px; margin-left:auto; margin-right:auto; }
 /* What the AI is focused on right now — project + branch, mirrored above the input. */
 .focus-row { display:flex; align-items:center; gap:6px; margin-bottom:7px; }
+/* The chips above the input wrap instead of running off the end. They are a
+   row of separate facts — which project, which branch, which shell — and a
+   fact half off the edge is not a shorter fact, it is a missing one: the
+   terminal chip read "Windo" against the pane's edge.
+   Scoped to the composer's own row: .focus-row is also the name of a row
+   INSIDE the focus menu, whose items are laid out by their own later rule. */
+.composer > .focus-row { flex-wrap:wrap; row-gap:6px; }
+/* And a single chip longer than the whole row trims itself, since wrapping has
+   nothing left to do for it. */
+.composer > .focus-row .focus-chip { min-width:0; max-width:100%; }
+.composer > .focus-row .focus-chip .t { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .focus-chip {
   display:inline-flex; align-items:center; gap:5px; padding:3px 10px; border-radius:var(--r-full);
   border:1px solid var(--border-subtle); background:var(--surface-panel);
@@ -1551,7 +1562,16 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .msg-image { display:block; max-width:100%; max-height:320px; border-radius:var(--r-md); margin-bottom:8px; object-fit:contain; }
 /* `position:relative` is for the "@" roster, which anchors to the top edge of
    this box (.mention-menu) rather than to the composer's outer padding. */
-.composer .box { position:relative; border:1px solid var(--border-default); border-radius:var(--r-xl); background:var(--surface-raised); padding:12px 14px; display:flex; flex-direction:column; gap:10px; }
+/* The box is the width every popover on this row has to live inside, and the
+   only element that knows how narrow the pane has become — the workbench can
+   take most of the window, and a menu with a hard min-width then hangs off the
+   left edge and loses its labels to the clip. Naming it as a container is what
+   lets those menus be measured against it rather than against the screen.
+   inline-size only: the composer's height is the prompt's business. */
+/* --composer-pad-x is read back by the popovers that hang off this box: they
+   align to its inner edge, and two places holding the same 14px is how they
+   drift apart. */
+.composer .box { --composer-pad-x:14px; position:relative; container-type:inline-size; container-name:composer; border:1px solid var(--border-default); border-radius:var(--r-xl); background:var(--surface-raised); padding:12px var(--composer-pad-x); display:flex; flex-direction:column; gap:10px; }
 .composer .box:focus-within { border-color:var(--border-input-focus); box-shadow:0 0 0 3px var(--overlay-focus); }
 .composer .box.drag-over { border-color:var(--interactive); box-shadow:0 0 0 3px var(--overlay-focus); }
 /* Grows with the prompt up to half the window — a pasted table or spec should
@@ -1669,7 +1689,8 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 
 /* Compact model picker — one chip ("model · think level ⌄") opening an
    upward popover with the full provider/model/effort controls. */
-.model-pick { position:relative; margin-left:auto; }
+/* Not position:relative, deliberately — see .model-menu. */
+.model-pick { margin-left:auto; }
 .model-chip {
   display:inline-flex; align-items:center; gap:7px; padding:6px 10px; border-radius:var(--r-md);
   color:var(--text-secondary); font-size:var(--fs-sm); cursor:pointer; max-width:340px;
@@ -1684,14 +1705,35 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .model-chip .lvl { flex:none; color:var(--text-dim); }
 .model-chip .caret { flex:none; color:var(--text-dim); font-size:var(--fs-2xs); }
 .model-menu {
-  position:absolute; bottom:calc(100% + 10px); right:0; z-index:50; min-width:280px;
+  /* Anchored to the composer BOX, not to the chip that opens it — which is why
+     .model-pick is not positioned. Bounding the width was not enough on its
+     own: the length was right and the origin was wrong. The chip sits a send
+     button's width in from the box's right edge, so a menu allowed a full
+     container width from THERE overflows the left edge by exactly that button.
+     Measured from the box, the same bound cannot overflow at all, and it stays
+     true the day another control lands beside the chip.
+
+     280 is what the rows want, not what they get. */
+  position:absolute; bottom:calc(100% + 10px); right:var(--composer-pad-x); z-index:50;
+  min-width:min(280px, 100cqi); max-width:100cqi;
   display:flex; flex-direction:column; gap:8px; padding:10px;
   background:var(--surface-panel); border:1px solid var(--border-subtle); border-radius:var(--r-lg);
   box-shadow:var(--shadow-menu);
 }
 .mm-row { display:flex; align-items:center; justify-content:space-between; gap:12px; min-width:0; }
-.mm-row .lbl { flex:none; font-size:var(--fs-xs); color:var(--text-muted); }
+/* Shrinks to an ellipsis rather than pushing: flex:none made the label a hard
+   floor under the row's width, so a long one widened the menu instead of
+   trimming itself. */
+.mm-row .lbl { flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:var(--fs-xs); color:var(--text-muted); }
 .mm-row .ctrl { min-width:0; max-width:180px; }
+/* Side by side for as long as it fits, because that is the shape that reads —
+   a label and the thing it names, on one line. This is the width at which it
+   stops fitting: below it "ระดับความคิด" becomes "ระ…" beside a control that is
+   mostly caret, and stacking is the lesser loss. */
+@container composer (max-width: 220px) {
+  .mm-row { flex-direction:column; align-items:stretch; gap:4px; }
+  .mm-row .ctrl, .mm-row .updrop { max-width:none; }
+}
 .mm-static { font-size:var(--fs-sm); color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 /* Wraps rather than ellipsises: the reason a provider is unreachable is the
    whole message ("start its server and load a model"), not its first 30px. */
@@ -1713,7 +1755,11 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   /* Grows leftward, not rightward: every trigger here is right-aligned in its
      .mm-row, and the popover itself already sits against the window's right
      edge — anchoring left:0 sent the wide approval list off-screen. */
-  position:absolute; bottom:calc(100% + 4px); right:0; min-width:100%; width:max-content; max-width:240px; z-index:60;
+  /* Bounded by the menu it opens inside, not by the trigger it hangs off:
+     32px is that menu's own padding plus the composer's, so a long model id
+     cannot push the list out through the menu's left edge. */
+  position:absolute; bottom:calc(100% + 4px); right:0; min-width:100%; width:max-content;
+  max-width:min(240px, calc(100cqi - 32px)); z-index:60;
   /* 200px fitted the three model names that used to be hardcoded here. The list
      is live now — Anthropic alone answers with a dozen — so it grows with the
      window instead, and scroll-padding keeps the row revealed on open clear of
@@ -1783,7 +1829,7 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
    .model-pick carries margin-left:auto of its own for the case where this one
    is absent; with both present, two auto margins would split the free space
    and open a gap between them, so the second is turned off. */
-.ctx-pick { position:relative; margin-left:auto; }
+.ctx-pick { margin-left:auto; }
 .ctx-pick + .model-pick { margin-left:0; }
 .ctx-btn { width:auto; padding:0 7px; display:flex; align-items:center; gap:5px; }
 .ctx-btn .ring { width:15px; height:15px; flex:none; }
@@ -1800,7 +1846,9 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
    left-hand controls (attach, mode, palette) open left, right-hand ones (the
    meter, the model picker) open right. */
 .ctx-menu {
-  position:absolute; bottom:calc(100% + 10px); right:0; z-index:50; min-width:270px;
+  /* Same anchor and same reason as .model-menu. */
+  position:absolute; bottom:calc(100% + 10px); right:var(--composer-pad-x); z-index:50;
+  min-width:min(270px, 100cqi); max-width:100cqi;
   display:flex; flex-direction:column; gap:8px; padding:12px;
   background:var(--surface-panel); border:1px solid var(--border-subtle); border-radius:var(--r-lg);
   box-shadow:var(--shadow-menu);
