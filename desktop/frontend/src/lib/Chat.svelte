@@ -2130,6 +2130,13 @@
                  now, under แผน, where it outlives the turn that wrote it. One
                  place only — drawing it here as well would put the same plan on
                  screen twice and make one of them go stale. -->
+            <!-- Stays on screen for the rest of the turn. The engine erases the
+                 preview the moment an interjection re-places an answer, so
+                 without this the reply the user was mid-way through reading
+                 simply vanished from under them. -->
+            {#each saidSteps(toolSteps) as s}
+              <div class="markdown-body said-block">{@html renderMarkdown(s.label)}</div>
+            {/each}
             {#if liveNote}
               <div class="tool-note headline">{liveNote.label}</div>
             {/if}
