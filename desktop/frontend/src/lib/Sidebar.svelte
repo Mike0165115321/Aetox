@@ -168,6 +168,19 @@
     void openDesk(entry.id)
   }
 
+  // Open a project and start work in it, from the + on its row.
+  //
+  // The same door clicking the project's name uses, deliberately: opening a
+  // project already starts a fresh session on it (App.OpenProjectPath calls
+  // startNewSession), so a second path that made its own would be a second
+  // definition of what "open a project" means. What this adds is the view —
+  // pressed from the projects page or settings, the click should land in the
+  // chat it just made rather than leave the user where they were.
+  function startChatIn(path: string): void {
+    setActiveView('chat')
+    void openProject(path)
+  }
+
   // Every chat, always — this column is the chat history, not the chat history
   // of wherever you happen to be standing.
   //
@@ -363,6 +376,21 @@
                 <span class="ic"><Icon name={g.project.active ? 'folderOpen' : 'folder'} size={14} /></span>
                 <span class="t">{g.project.name}</span>
                 {#if g.project.active && cockpit.project.branch}<span class="proj-branch"><Icon name="gitBranch" size={11} /> {cockpit.project.branch}</span>{/if}
+              </button>
+              <!-- Starting work in a project was reachable only by clicking its
+                   name, which every other list in the app treats as "show me
+                   this" rather than "start something here". The action gets its
+                   own control, and the row stops depending on the user having
+                   learned that the two are the same click. -->
+              <!-- tip-r, not the default: this button sits hard against the
+                   column's right edge, and a tooltip centred under it grows
+                   straight into the edge the panel clips at (overflow on .side
+                   and .side-sections), so half the label was cut off. Pinned
+                   right, it opens leftward into the column. Same class every
+                   other right-edge tooltip in this panel uses. -->
+              <button type="button" class="proj-group-new tip-r" data-tip={t('sidebar.newChatIn')}
+                aria-label={t('sidebar.newChatIn')} onclick={() => startChatIn(g.project.path)}>
+                <Icon name="plus" size={13} />
               </button>
             </div>
             {#if !collapsedProjects[g.project.key]}

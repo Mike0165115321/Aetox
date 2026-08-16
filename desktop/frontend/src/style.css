@@ -424,6 +424,16 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .proj-group-head .ic { font-size:var(--fs-lg); flex:none; opacity:.9; }
 .proj-group-head .t { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; font-size:var(--fs-sm); }
 .proj-group-head .proj-branch { color:var(--text-dim); font-size:var(--fs-xs); flex:none; }
+/* "Start a chat in this project", on the project's own row. Quiet until the
+   row is under the pointer — a column of ten projects must not read as ten
+   invitations — but never hidden, because a control that only exists on hover
+   is a control nobody finds. */
+.proj-group-new {
+  flex:none; width:24px; height:24px; display:grid; place-items:center;
+  border-radius:var(--r-sm); color:var(--text-dim); cursor:pointer;
+}
+.proj-group-row:hover .proj-group-new { color:var(--text-secondary); }
+.proj-group-new:hover { color:var(--text-primary); background:var(--surface-hover); }
 .proj-group-sess { position:relative; display:flex; align-items:center; min-width:0; border-radius:var(--r-sm); color:var(--text-secondary); }
 .proj-group-sess:hover { background:var(--surface-row-hover); color:var(--text-primary); }
 .proj-group-sess.active { background:var(--surface-selected); color:var(--text-selected); }

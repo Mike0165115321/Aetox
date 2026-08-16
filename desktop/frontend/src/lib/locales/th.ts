@@ -14,6 +14,7 @@ export const th = {
 
   'sidebar.projects': 'โปรเจกต์',
   'sidebar.addProject': 'เพิ่มโปรเจกต์',
+  'sidebar.newChatIn': 'แชทใหม่ในโปรเจกต์นี้',
   'sidebar.noMatches': 'ไม่พบบทสนทนาที่ตรงกับคำค้น',
   'sidebar.projectChats': 'แชท',
   'sidebar.switchProject': 'โปรเจกต์ทั้งหมด',

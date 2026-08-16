@@ -14,7 +14,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/svelte'
 import Sidebar from '../lib/Sidebar.svelte'
-import { SessionMode, CurrentSessionID, LoadSessionAnyProject } from './mocks/wailsApp'
+import { SessionMode, CurrentSessionID, LoadSessionAnyProject, OpenProjectPath } from './mocks/wailsApp'
 import { cockpit } from '../lib/stores/cockpit.svelte'
 import { setShell } from '../lib/shell.svelte'
 import type { Session } from '../lib/types'
@@ -149,5 +149,50 @@ describe('the chat list', () => {
     expect(row?.querySelector('.sess-meta')?.textContent).toContain('ผู้ช่วย')
     // The hover controls live on the meta line, in space nothing else wants.
     expect(row?.querySelector('.sess-meta .sess-acts .sess-del')).toBeTruthy()
+  })
+})
+
+// Starting work in a project, from the project's own row.
+//
+// Until this there was one way in: click the project's name. That works —
+// opening a project starts a fresh session on it — but every other list in the
+// app treats a name as "show me this", so the action was hidden inside a
+// gesture that reads as navigation (owner, 16 ส.ค., pointing at the row:
+// "เนี้ยมันไม่มี").
+describe('the project rows in the workshop column', () => {
+  it('offers a new chat on each project, and opens that project when pressed', async () => {
+    setShell('code')
+    cockpit.projects = [
+      { key: 'a', name: 'frontend', path: 'D:/work/frontend', active: false },
+      { key: 'b', name: 'senior-architect-agent', path: 'D:/work/agent', active: true },
+    ] as any
+    vi.mocked(OpenProjectPath).mockResolvedValue({ focused: true, name: 'frontend' } as any)
+
+    const { container } = render(Sidebar, { onOpenSettings: () => {} })
+
+    const adds = Array.from(container.querySelectorAll('.proj-group-new'))
+    expect(adds.length).toBe(2)
+    // Named, because it is an icon: the row has two other buttons on it and a
+    // bare + is only obvious to whoever put it there.
+    expect(adds[0].getAttribute('aria-label')).toBe('แชทใหม่ในโปรเจกต์นี้')
+    // And the tooltip has to open leftward: the button is against the column's
+    // right edge, which is where the panel clips, so a centred one is cut in
+    // half (owner, 16 ส.ค., holding a screenshot of exactly that).
+    expect(adds[0].classList.contains('tip-r')).toBe(true)
+
+    await fireEvent.click(adds[0])
+    expect(vi.mocked(OpenProjectPath)).toHaveBeenCalledWith('D:/work/frontend')
+    // And it lands in the chat it just made, rather than leaving the user on
+    // whatever page the click was pressed from.
+    expect(cockpit.activeView).toBe('chat')
+  })
+
+  it('is not in the storefront column, which focuses no project at all', () => {
+    setShell('assistant')
+    cockpit.projects = [{ key: 'a', name: 'frontend', path: 'D:/work/frontend', active: false }] as any
+
+    const { container } = render(Sidebar, { onOpenSettings: () => {} })
+
+    expect(container.querySelector('.proj-group-new')).toBeNull()
   })
 })

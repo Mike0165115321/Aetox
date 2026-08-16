@@ -14,6 +14,7 @@ export const en: Record<keyof typeof th, string> = {
 
   'sidebar.projects': 'Project',
   'sidebar.addProject': 'Add project',
+  'sidebar.newChatIn': 'New chat in this project',
   'sidebar.noMatches': 'No conversations match that search',
   'sidebar.projectChats': 'Chats',
   'sidebar.switchProject': 'All projects',
