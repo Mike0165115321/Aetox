@@ -31,8 +31,10 @@
     startTaskChip, dismissTaskChip,
     retryFailedTurn, editFailedTurn, regenerateReply, switchVariant, resendEdited, rateReply,
     setActiveView, newChairSession, newSessionAt, openSettingsAt, setStance,
+    sendUserMessage,
   } from './stores/cockpit.svelte'
   import ConfirmDialog from './ConfirmDialog.svelte'
+  import MemoryCard from './MemoryCard.svelte'
   import Icon from './Icon.svelte'
   import ProviderMark from './ProviderMark.svelte'
   import { ICONS, type IconName } from './icons'
@@ -1887,6 +1889,15 @@
                   </button>
                 {/each}
               </div>
+            {/if}
+            {#if m.proposals?.length}
+              <!-- What the turn asked to remember, decided in front of the work
+                   that suggested it. It used to be a row reading "memory"
+                   inside a collapsed panel, with the yes and the no two pages
+                   away in Settings, which is the same as not asking. -->
+              {#each m.proposals as proposalId (proposalId)}
+                <MemoryCard id={proposalId} />
+              {/each}
             {/if}
             {#if m.revertedFiles?.length}
               <!-- An answer that had quietly undone six files would be the worse

@@ -44,6 +44,17 @@ type Output struct {
 	// this; `write` and `edit` deliberately do not, or every code edit in a
 	// coding turn would print a card.
 	Artifacts []string
+	// ProposalID is the queued change a call is waiting on a decision for. Only
+	// `memory` sets it, and for the same reason Artifacts exists one field up:
+	// the tool hands back the thing itself, not a sentence about it.
+	//
+	// Without it the id died inside the tool and the chat could say only that
+	// something called "memory" had run — what it wanted to remember, and the
+	// yes or no it was waiting for, lived two pages away in Settings. The id is
+	// carried rather than the text so the card always reads the queue's current
+	// answer: a proposal approved from Settings must not still be offering an
+	// Approve button in a session reopened a week later.
+	ProposalID int64
 }
 
 // LineDelta counts how a replacement changed a file, for Output's stats.

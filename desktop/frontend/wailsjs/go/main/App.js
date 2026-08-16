@@ -470,6 +470,10 @@ export function PairedDevices() {
   return window['go']['main']['App']['PairedDevices']();
 }
 
+export function PendingChangeByID(arg1) {
+  return window['go']['main']['App']['PendingChangeByID'](arg1);
+}
+
 export function PendingLearnedCount() {
   return window['go']['main']['App']['PendingLearnedCount']();
 }

@@ -239,6 +239,15 @@ export const en: Record<keyof typeof th, string> = {
   'chat.contextForecast': 'Your first message will use about',
   'chat.contextNotSent': 'Nothing has been sent yet, no tokens spent. This is the size of the first request, nearly all of it the tool list that rides along with every message.',
   'chat.contextCached': 'Last round, {cached} of this came from the provider\'s cache, cached input is billed at roughly a tenth of the full rate, so the real cost is far below what the bar suggests.',
+  // The memory card under an answer. It asks rather than announces, because
+  // nothing is remembered until the user says so.
+  'chat.memoryAsk': 'Wants to remember',
+  'chat.memoryReplaceAsk': 'Wants to change what it remembers',
+  'chat.memoryForgetAsk': 'Wants to forget',
+  'chat.memoryBecause': 'Because',
+  'chat.memoryKept': 'Remembered',
+  'chat.memoryDropped': 'Not remembered',
+  'chat.memoryNextChat': 'In effect from the next chat on, not this one.',
   'chat.ctx_system': 'System prompt',
   'chat.ctx_tools': 'Tools',
   'chat.ctx_messages': 'Messages',

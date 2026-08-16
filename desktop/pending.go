@@ -121,6 +121,21 @@ func (a *App) ListDecidedChanges(limit int) []PendingChange {
 	return a.queryChanges(`WHERE state <> ? ORDER BY id DESC LIMIT `+fmt.Sprint(limit), statePending)
 }
 
+// PendingChangeByID is one proposal, whatever state it is in — the card the
+// chat draws under the answer that proposed it asks for exactly this.
+//
+// Deliberately not restricted to pending rows: the card has to be able to say
+// "จำไว้แล้ว" as readily as it offers the two buttons, and a proposal decided
+// on the Settings page an hour ago must not still be asking here. A row that no
+// longer exists comes back as the zero value, and the card draws nothing.
+func (a *App) PendingChangeByID(id int64) PendingChange {
+	found := a.queryChanges(`WHERE id = ?`, id)
+	if len(found) == 0 {
+		return PendingChange{}
+	}
+	return found[0]
+}
+
 // PendingLearnedCount is the badge. Cheap enough to call on every render.
 func (a *App) PendingLearnedCount() int {
 	db, err := a.database()

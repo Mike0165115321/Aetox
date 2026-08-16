@@ -1780,6 +1780,7 @@ export namespace turn {
 	    added?: number;
 	    removed?: number;
 	    artifacts?: string[];
+	    proposalId?: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new ToolPart(source);
@@ -1799,6 +1800,7 @@ export namespace turn {
 	        this.added = source["added"];
 	        this.removed = source["removed"];
 	        this.artifacts = source["artifacts"];
+	        this.proposalId = source["proposalId"];
 	    }
 	}
 	export class TurnPart {

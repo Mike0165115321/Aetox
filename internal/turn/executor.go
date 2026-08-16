@@ -346,9 +346,15 @@ type ToolEvent struct {
 	// open button instead of leaving them to be hunted for in the file tree.
 	// Empty for every tool whose output is text.
 	Artifacts []string `json:"artifacts,omitempty"`
+	// ProposalID carries skill.Output.ProposalID the same way: the queued change
+	// a `memory` call is waiting on a decision for, which the chat draws under
+	// the answer as the proposal itself, with the yes and the no on it. Zero for
+	// every other tool.
+	ProposalID int64 `json:"proposalId,omitempty"`
 	// Text is the model's own words on a "note" event — narration it wrote
 	// alongside a round's tool calls, which used to go into context and nowhere
-	// else. Empty on every other action.
+	// else — and on a "said" event, where it is a whole answer an interjection
+	// re-placed. Empty on every other action.
 	Text string `json:"text,omitempty"`
 	// Secs is how long a "thinking" segment streamed (whole seconds, min 1).
 	// Set only on "thinking" events.
@@ -870,13 +876,14 @@ func (e *Executor) executeAgentToolLoop(
 		receipt, output, success, execErr := e.executeToolCallWithOutcome(ctx, call)
 		elapsed := time.Since(startedAt)
 		ev := ToolEvent{
-			Ref:       call.ID,
-			Name:      call.Function.Name,
-			Subject:   toolCallSubject(call.Function.Arguments),
-			OK:        success,
-			Added:     output.LinesAdded,
-			Removed:   output.LinesRemoved,
-			Artifacts: output.Artifacts,
+			Ref:        call.ID,
+			Name:       call.Function.Name,
+			Subject:    toolCallSubject(call.Function.Arguments),
+			OK:         success,
+			Added:      output.LinesAdded,
+			Removed:    output.LinesRemoved,
+			Artifacts:  output.Artifacts,
+			ProposalID: output.ProposalID,
 		}
 		if !success {
 			if execErr != nil {
@@ -905,18 +912,19 @@ func (e *Executor) executeAgentToolLoop(
 		// row that forgot who it hired drew a generic "sub-agent" block.
 		agent, brief, isTask := delegationOf(call.Function.Name, call.Function.Arguments)
 		parts.addTool(ToolPart{
-			Ref:       call.ID,
-			Name:      call.Function.Name,
-			Subject:   ev.Subject,
-			Agent:     agent,
-			Brief:     brief,
-			AgentKind: e.kindOf(isTask, agent),
-			OK:        success,
-			Error:     ev.Error,
-			Secs:      int(elapsed.Round(time.Second) / time.Second),
-			Added:     output.LinesAdded,
-			Removed:   output.LinesRemoved,
-			Artifacts: output.Artifacts,
+			Ref:        call.ID,
+			Name:       call.Function.Name,
+			Subject:    ev.Subject,
+			Agent:      agent,
+			Brief:      brief,
+			AgentKind:  e.kindOf(isTask, agent),
+			OK:         success,
+			Error:      ev.Error,
+			Secs:       int(elapsed.Round(time.Second) / time.Second),
+			Added:      output.LinesAdded,
+			Removed:    output.LinesRemoved,
+			Artifacts:  output.Artifacts,
+			ProposalID: output.ProposalID,
 		})
 		return receipt, output.Images, execErr
 	}, asStreamHandler(reasoning), opts)

@@ -97,6 +97,39 @@ func TestTheSameProposalTwiceIsNotQueuedTwice(t *testing.T) {
 	}
 }
 
+// The card in the chat reads its own row by id, and it has to read it in every
+// state. A card that could only see pending rows would go blank the moment the
+// user answered it, and a session reopened after a decision made in Settings
+// would sit there asking a question that has already been answered.
+func TestOneProposalCanBeReadBackInWhateverStateItIsIn(t *testing.T) {
+	a := newJobApp(t)
+	p, err := a.proposeLearned(proposal(learned.MainScope, learned.OpAdd, "", "เครื่องนี้ไม่มี Excel"))
+	if err != nil {
+		t.Fatalf("propose: %v", err)
+	}
+
+	waiting := a.PendingChangeByID(p.ID)
+	if waiting.ID != p.ID || waiting.State != statePending {
+		t.Fatalf("want the row as proposed, got %+v", waiting)
+	}
+	if waiting.Body == "" || waiting.Reason == "" {
+		t.Errorf("the card cannot be judged without the line and the reasoning: %+v", waiting)
+	}
+
+	if err := a.ApprovePendingChange(p.ID); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	if decided := a.PendingChangeByID(p.ID); decided.State != stateApproved {
+		t.Errorf("state = %q, want the card to know it was already decided", decided.State)
+	}
+
+	// Nothing to draw rather than an empty card offering a decision on a row
+	// that is not there.
+	if missing := a.PendingChangeByID(p.ID + 999); missing.ID != 0 {
+		t.Errorf("a row that does not exist came back as %+v", missing)
+	}
+}
+
 // Deciding something twice is a stale UI clicking an old button, and it must
 // not apply the change a second time.
 func TestADecisionCannotBeMadeTwice(t *testing.T) {

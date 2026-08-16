@@ -142,6 +142,11 @@ export interface ChatMessage {
    *  a restart — it did not at first, and the file became unreachable from the
    *  answer that announced it. */
   producedFiles?: string[]
+  /** Changes this turn asked to remember (CockpitState.turnProposals), rebuilt
+   * from the message's own parts on reload. The bubble draws one card each, so
+   * the decision is made in front of the work that suggested it instead of on a
+   * Settings page the user has no reason to be looking at. */
+  proposals?: number[]
   /** The turn as it happened — prose, thinking segments and tool calls in the
    * order they occurred. When present this is what the bubble draws, so
    * narration appears where it was said instead of collapsed into a panel.
@@ -208,6 +213,10 @@ export interface ToolPartInfo {
    *  copy, this one is written down with the message — which is what lets the
    *  open button still be there after a restart. */
   artifacts?: string[]
+  /** On a `memory` call: the change it queued for approval. Written down like
+   *  the artifacts above, so reopening the session brings the card back — still
+   *  asking, or saying which way the decision went. */
+  proposalId?: number
 }
 
 /** One of the answers a question received. */
@@ -276,8 +285,13 @@ export interface ToolEvent {
    * time, the .pptx and .docx writers). `write` and `edit` deliberately leave
    * it empty, or a coding turn would print a card per edited source file. */
   artifacts?: string[]
+  /** On a result event from `memory`: the change it queued for approval. The
+   * chat draws it as a card under the answer, so what the agent wants to
+   * remember is decided where it was proposed rather than in Settings. */
+  proposalId?: number
   /** On a "note" event: the narration the model wrote alongside this round's
-   * tool calls — its own words for what it is doing. */
+   * tool calls — its own words for what it is doing. On a "said" event: a whole
+   * answer the model had finished writing when the user typed over it. */
   text?: string
   /** On a "thinking" event: how long that round's reasoning streamed. */
   secs?: number
@@ -502,6 +516,11 @@ export interface CockpitState {
    *  them as cards with an open button: the file panel is where you go looking,
    *  and a deliverable should not need looking for. Reset with toolSteps. */
   turnFiles: string[]
+  /** Ids of the changes this turn asked to remember, collected live from the
+   *  same tool results. The reply draws a card for each: memory is the one tool
+   *  whose work does not happen until a person says yes, and a queue nobody is
+   *  looking at is the same as no proposal. Reset with toolSteps. */
+  turnProposals: number[]
   /** Reply text streamed so far this turn, appended live from agent:chunk events. '' when idle. */
   streamingText: string
   /** Model's reasoning/thinking tokens streamed so far this turn, from agent:reasoning events. '' when idle or the provider doesn't stream reasoning. */
@@ -556,6 +575,7 @@ export function emptyCockpitState(): CockpitState {
     chat: [],
     task: { elapsed: '', steps: [] },
     turnFiles: [],
+    turnProposals: [],
     openFiles: [],
     activeView: 'chat',
     desk: '',

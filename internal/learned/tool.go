@@ -142,12 +142,17 @@ func (t *MemoryTool) ExecuteTool(_ context.Context, args map[string]any) (skill.
 			DurationMs: time.Since(start).Milliseconds(),
 		}, err
 	}
-	ok := func(msg, command string) (skill.Output, error) {
+	// id travels with the receipt so the chat can draw the proposal where it was
+	// made, with the decision on it. A duplicate carries the id of the row
+	// already waiting: the second attempt is the same proposal, and the card
+	// under this answer should be about that one rather than about nothing.
+	ok := func(msg, command string, id int64) (skill.Output, error) {
 		return skill.Output{
 			Name:       "memory",
 			Content:    msg,
 			Command:    command,
 			Success:    true,
+			ProposalID: id,
 			DurationMs: time.Since(start).Milliseconds(),
 		}, nil
 	}

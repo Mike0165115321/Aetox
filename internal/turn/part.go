@@ -73,6 +73,11 @@ type ToolPart struct {
 	// field inside the existing parts column, so no migration: older rows simply
 	// have no artifacts, which is what they had anyway.
 	Artifacts []string `json:"artifacts,omitempty"`
+	// ProposalID is the queued change a `memory` call is waiting on, written
+	// down for the same reason Artifacts is: the card belongs to the answer that
+	// proposed it, and a session reopened tomorrow should still show it — either
+	// still asking, or saying which way it went. Zero on every other tool.
+	ProposalID int64 `json:"proposalId,omitempty"`
 }
 
 // partList accumulates a turn as it happens. Not safe for concurrent use, and

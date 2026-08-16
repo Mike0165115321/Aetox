@@ -238,6 +238,15 @@ export const th = {
  'chat.contextCached': 'รอบล่าสุด {cached} ในนี้มาจากแคชของผู้ให้บริการ อินพุตที่แคชแล้วคิดราคาราวหนึ่งในสิบของอัตราเต็ม ค่าใช้จ่ายจริงจึงต่ำกว่าที่แถบนี้ชวนให้คิดมาก',
   'chat.ctx_system': 'System prompt',
   'chat.ctx_tools': 'เครื่องมือ',
+  // การ์ดความจำใต้คำตอบ เป็นการขอ ไม่ใช่การบอกว่าทำแล้ว เพราะยังไม่มีอะไรถูกจำ
+  // จนกว่าคุณจะอนุมัติ
+  'chat.memoryAsk': 'ขอจำเรื่องนี้ไว้',
+  'chat.memoryReplaceAsk': 'ขอแก้สิ่งที่จำไว้',
+  'chat.memoryForgetAsk': 'ขอลืมเรื่องนี้',
+  'chat.memoryBecause': 'เพราะ',
+  'chat.memoryKept': 'จำไว้แล้ว',
+  'chat.memoryDropped': 'ไม่ได้จำ',
+  'chat.memoryNextChat': 'มีผลตั้งแต่แชทถัดไป ไม่ใช่แชทนี้',
   'chat.ctx_messages': 'ข้อความสนทนา',
   'chat.ctx_free': 'พื้นที่ว่าง',
 

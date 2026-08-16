@@ -36,6 +36,8 @@ export function BackgroundTasks():Promise<Array<main.BackgroundTask>>;
 
 export function BrowserBack(arg1:string):Promise<void>;
 
+export function BrowserCapturePNG(arg1:string):Promise<string>;
+
 export function BrowserClickRef(arg1:string,arg2:number):Promise<void>;
 
 export function BrowserClose(arg1:string):Promise<void>;
@@ -243,6 +245,8 @@ export function OpenSpeechModelDir(arg1:string):Promise<void>;
 export function OpenSubagentsFolder():Promise<void>;
 
 export function PairedDevices():Promise<Array<main.RemoteDevice>>;
+
+export function PendingChangeByID(arg1:number):Promise<main.PendingChange>;
 
 export function PendingLearnedCount():Promise<number>;
 

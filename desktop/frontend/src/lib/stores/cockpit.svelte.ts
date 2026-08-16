@@ -227,6 +227,7 @@ function restoreAttachments(m: main.SessionMessage): ChatMessage {
     // anywhere a message could reach.
     steps: stepsFromParts(m.parts as TurnPart[] | undefined),
     producedFiles: filesFromParts(m.parts as TurnPart[] | undefined),
+    proposals: proposalsFromParts(m.parts as TurnPart[] | undefined),
   }
   if (out.role === 'agent') return out
   // What is folded out is also kept: editing a restored question has to be able
@@ -288,6 +289,23 @@ function filesFromParts(parts?: TurnPart[]): string[] | undefined {
     }
   }
   return files.length ? files : undefined
+}
+
+/**
+ * The changes a stored turn asked to remember, out of the same parts.
+ *
+ * The card reads its row from the queue by id, so this carries no text: a
+ * proposal approved from Settings last week has to come back saying so, and a
+ * copy of the sentence frozen into the transcript would keep asking.
+ */
+function proposalsFromParts(parts?: TurnPart[]): number[] | undefined {
+  if (!parts?.length) return undefined
+  const ids: number[] = []
+  for (const part of parts) {
+    const id = part.tool?.proposalId
+    if (id && !ids.includes(id)) ids.push(id)
+  }
+  return ids.length ? ids : undefined
 }
 
 function stepsFromParts(parts?: TurnPart[]): ToolStep[] | undefined {
@@ -538,6 +556,7 @@ export async function applyAgentDone(status: { sessionId: string }): Promise<voi
   cockpit.agentStatus = ''
   cockpit.toolSteps = []
   cockpit.turnFiles = []
+  cockpit.turnProposals = []
   cockpit.streamingText = ''
   cockpit.reasoningText = ''
   cockpit.sessionError = ''
@@ -915,6 +934,7 @@ async function runLiveTurn(call: () => Promise<void>): Promise<void> {
     cockpit.agentStatus = ''
     cockpit.toolSteps = []
     cockpit.turnFiles = []
+    cockpit.turnProposals = []
     cockpit.streamingText = ''
     cockpit.reasoningText = ''
     // Cleared at both ends, like toolSteps. A turn that died with a question
@@ -942,12 +962,13 @@ async function runLiveTurn(call: () => Promise<void>): Promise<void> {
  * above — the live panels alone vanish the moment the turn completes.
  * Must be called before runLiveTurn's finally runs, i.e. inside the call.
  */
-function turnArtifacts(): Pick<ChatMessage, 'steps' | 'reasoning' | 'thinkSecs' | 'producedFiles'> {
+function turnArtifacts(): Pick<ChatMessage, 'steps' | 'reasoning' | 'thinkSecs' | 'producedFiles' | 'proposals'> {
   const steps = cockpit.toolSteps.length ? cockpit.toolSteps.map((s) => ({ ...s })) : undefined
   const reasoning = cockpit.reasoningText.trim() || undefined
   const thinkSecs = reasoning ? Math.max(1, Math.round((thinkLastAt - thinkStartedAt) / 1000)) : undefined
   const producedFiles = cockpit.turnFiles.length ? [...cockpit.turnFiles] : undefined
-  return { steps, reasoning, thinkSecs, producedFiles }
+  const proposals = cockpit.turnProposals.length ? [...cockpit.turnProposals] : undefined
+  return { steps, reasoning, thinkSecs, producedFiles, proposals }
 }
 
 /**
@@ -1481,6 +1502,12 @@ export async function attachImageFromClipboard(file: File): Promise<void> {
     cockpit.pendingImage = { relPath, dataUrl: await ReadImageDataURL(relPath) }
   } catch (err) {
     cockpit.chat.push({ role: 'agent', text: t('cockpit.attachError', { err: String(err) }), time: nowLabel() })
+  }
+  // What the turn asked to remember. Deduped like the files above: asking twice
+  // in one turn answers with the id already waiting (desktop/pending.go treats
+  // the second attempt as a duplicate), and one proposal deserves one card.
+  if (ev.proposalId && !cockpit.turnProposals.includes(ev.proposalId)) {
+    cockpit.turnProposals.push(ev.proposalId)
   }
 }
 
