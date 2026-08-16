@@ -1385,6 +1385,10 @@ func NewApp() *App {
 // so we can call the runtime methods
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	// Before anything else on this path: the window is created and centred by
+	// the time startup runs, and shown only once the webview has content, so a
+	// window bigger than the screen is corrected while nobody can see it move.
+	a.fitToScreen()
 	// Providers state their remaining window in the headers of turns the app
 	// was running anyway. Nothing here fetches; this only stops the answer
 	// from being thrown away, which is what happened until now — the headers

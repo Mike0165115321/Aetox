@@ -40,11 +40,14 @@ func main() {
 
 	// Create application with options
 	err := wails.Run(&options.App{
-		Title:     "Aetox Desktop",
-		Width:     1440,
-		Height:    900,
-		MinWidth:  1100,
-		MinHeight: 700,
+		Title: "Aetox Desktop",
+		// A screen too small for these is what App.fitToScreen (window.go)
+		// exists for — it lowers both the size and the floor to what the
+		// display actually leaves, and it runs before the window is shown.
+		Width:     windowWidth,
+		Height:    windowHeight,
+		MinWidth:  windowMinWidth,
+		MinHeight: windowMinHeight,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 			// Files from the open project reach the panes as URLs under
