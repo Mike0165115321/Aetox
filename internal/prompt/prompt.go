@@ -474,13 +474,20 @@ func identity() string {
 // left to infer that markdown does not render and SVG is not drawn, because the
 // two layers that say so are desktop-only. An inference is not an instruction,
 // and this one is easy to miss on a model whose training is full of chat UIs.
+//
+// Mathematics joined the list on 16 ส.ค., when the desktop learned to typeset
+// it. The delimiters are named because a model that cannot tell whether they
+// will be drawn has two ways to hedge and both are worse than the equation:
+// spelling the integral out in words, or reaching for unicode superscripts that
+// run out at the first fraction.
 func surfaceLayer(s Surface) string {
 	if s == SurfaceDesktop {
-		return "Your answer is rendered as markdown in a chat panel: inline <svg> is drawn, and a <div> " +
-			"with a style attribute lays out as it would anywhere.\n"
+		return "Your answer is rendered as markdown in a chat panel: inline <svg> is drawn, LaTeX between " +
+			"\\( \\) or \\[ \\] is typeset as mathematics, and a <div> with a style attribute lays out as " +
+			"it would anywhere.\n"
 	}
-	return "Your answer goes to a terminal as plain text. Markdown is not rendered and SVG is not drawn — " +
-		"write for someone reading it as characters.\n"
+	return "Your answer goes to a terminal as plain text. Markdown is not rendered, SVG is not drawn and " +
+		"LaTeX is not typeset — write for someone reading it as characters.\n"
 }
 
 // capability tells the model that the tools listed for it are not the whole

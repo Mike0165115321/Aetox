@@ -1,5 +1,7 @@
 import { marked, type Tokens } from 'marked'
 import DOMPurify from 'dompurify'
+import katex from 'katex'
+import 'katex/dist/katex.min.css'
 import hljs from 'highlight.js/lib/common'
 // No stylesheet from highlight.js: it only ships fixed palettes, and importing
 // one pinned every theme to it — on the four light themes that put dark-theme
@@ -47,6 +49,176 @@ const renderer = {
   },
 }
 marked.use({ renderer })
+
+// ---------- mathematics ----------
+//
+// A model asked for an integral writes LaTeX, because that is what mathematics
+// is written in. Until now nothing here knew that, and markdown read it as
+// prose — twice over. `\[` is a backslash-escaped bracket to markdown, so an
+// equation opened with one arrived as a bare `[` on a line of its own; `x^2` and
+// `a_1` handed their `^` and `_` to the emphasis parser; and whatever survived
+// was printed as source. The screenshot that started this (owner, 16 ส.ค.) is
+// exactly that: `\int_0^2 x^2\,dx` as text, between two orphaned brackets.
+//
+// So equations are tokenized before markdown reads anything — a marked
+// extension runs ahead of the built-in tokenizers, which is what keeps the
+// escape rule and the emphasis rule off the LaTeX inside — and rendered by
+// KaTeX, which draws them.
+//
+// Four delimiters, because models write all four and which one arrives is not
+// something the surface gets to choose: `\[...\]` and `$$...$$` for an equation
+// on its own line, `\(...\)` and `$...$` for one inside a sentence.
+//
+// The display pair are inline tokenizers as well as block ones. A block
+// tokenizer is only offered the start of a block, so `\[x\]` written mid
+// paragraph — which happens — would otherwise fall through to the escape rule
+// that this whole extension exists to get in front of.
+//
+// ARCHITECTURE.md §118.
+const MATH = {
+  blockDisplay: /^(?:\\\[([\s\S]+?)\\\]|\$\$([\s\S]+?)\$\$)(?:\n+|$)/,
+  inlineDisplay: /^(?:\\\[([\s\S]+?)\\\]|\$\$([\s\S]+?)\$\$)/,
+  // `\(...\)` is unambiguous. A single `$` is not — it is also how money is
+  // written, and "$5 และ $10" is a sentence, not an equation named "5 และ ".
+  // Three guards make the difference, and they are the ones every renderer
+  // that has met this problem settles on: an equation does not open with a
+  // space, does not close with one, and its closing `$` is not the start of
+  // another price. A `$` cannot appear inside, so a run of prices can never be
+  // joined into one match.
+  inline: /^(?:\\\(([\s\S]+?)\\\)|\$(?!\s)((?:\\.|[^$\\])+?)(?<![\s\\])\$(?!\d))/,
+} as const
+
+interface MathToken extends Tokens.Generic {
+  type: string
+  raw: string
+  tex: string
+  display: boolean
+}
+
+function mathToken(type: string, display: boolean, match: RegExpExecArray): MathToken {
+  return { type, raw: match[0], tex: (match[1] ?? match[2] ?? '').trim(), display }
+}
+
+const startDisplay = (src: string) => {
+  const at = src.search(/\\\[|\$\$/)
+  return at === -1 ? undefined : at
+}
+const startInline = (src: string) => {
+  const at = src.search(/\\\(|\$/)
+  return at === -1 ? undefined : at
+}
+
+marked.use({
+  extensions: [
+    {
+      name: 'mathBlock',
+      level: 'block',
+      start: startDisplay,
+      tokenizer(src: string) {
+        const match = MATH.blockDisplay.exec(src)
+        return match ? mathToken('mathBlock', true, match) : undefined
+      },
+      renderer: (token) => renderMath(token as MathToken),
+    },
+    // Ahead of mathInline in the list, so `$$x$$` inside a sentence is read as
+    // one display equation rather than as two empty inline ones.
+    {
+      name: 'mathInlineDisplay',
+      level: 'inline',
+      start: startDisplay,
+      tokenizer(src: string) {
+        const match = MATH.inlineDisplay.exec(src)
+        return match ? mathToken('mathInlineDisplay', true, match) : undefined
+      },
+      renderer: (token) => renderMath(token as MathToken),
+    },
+    {
+      name: 'mathInline',
+      level: 'inline',
+      start: startInline,
+      tokenizer(src: string) {
+        const match = MATH.inline.exec(src)
+        return match ? mathToken('mathInline', false, match) : undefined
+      },
+      renderer: (token) => renderMath(token as MathToken),
+    },
+  ],
+})
+
+// KaTeX refuses what it cannot read, and the answer to that is to hand back
+// what the model wrote rather than a red error where the equation should be.
+// A refusal here means one of two things and both end the same way: the text
+// between the delimiters was never mathematics (a stray `$$` in prose), or it
+// used a command KaTeX does not carry — and in either case the source is more
+// use to the reader than an error message about it.
+//
+// Streaming is the other reason. Half an equation is a syntax error for the
+// few frames before its closing brace arrives, and nothing should flash red on
+// the way to being correct.
+// KaTeX writes the equation twice: once as the spans that are drawn, and once
+// as MathML for anything reading the page aloud. The MathML ends with an
+// <annotation> holding the original LaTeX — a note for other tools, not for a
+// reader — and DOMPurify deletes that tag while keeping its text, which is the
+// worst of both: `\boxed{\text{...}}` left loose inside the <math> element, out
+// of sight but read aloud and picked up by a copy.
+//
+// So it is dropped here instead, before the sanitizer can half-remove it. The
+// MathML itself stays; it is the whole reason a screen reader can follow an
+// equation whose visible half is marked aria-hidden.
+const ANNOTATION = /<annotation\b[^>]*>[\s\S]*?<\/annotation>/g
+
+// A display equation is drawn as a block of its own — a bordered surface with a
+// header bar carrying a label and คัดลอก — which is the shape a fenced code
+// block already has here (owner, 16 ส.ค.: "แสดงเหมือนตอนเจนโค้ดได้ไหม").
+//
+// It is the same kind of thing, which is why it gets the same box. Both are
+// notation rather than prose: written in a language of their own, read as a
+// unit rather than a line at a time, and wanted somewhere else as often as they
+// are wanted here. The bare centred equation this replaces had the copy button
+// floating over the notation with nothing to hang off.
+//
+// The label says `latex` for the same reason a code block's says `python`: it
+// is the language of the thing, and it is exactly what คัดลอก will hand over.
+// Untranslated, like the language tag, because it is a name and not a word.
+//
+// What it copies is the LaTeX the model wrote, carried on data-tex the way the
+// plan card carries its markdown on data-plan. Reading it back off the rendered
+// DOM instead would return KaTeX's own layout text — every fraction flattened,
+// every limit and exponent run together on one line — which pastes into another
+// tool as something that has to be retyped. The source pastes as the equation.
+//
+// Spans throughout and not divs: an equation written mid-paragraph renders
+// inside a <p>, where a div would end the paragraph early and drop the rest of
+// the sentence out of it. Inline maths gets none of this — a box around the `x`
+// in the middle of a sentence is not a box, it is an interruption.
+function frameEquation(html: string, tex: string): string {
+  return (
+    `<span class="math-block" data-tex="${escapeAttr(tex)}">` +
+    `<span class="math-head"><span class="lang">latex</span>` +
+    `<button class="math-copy" type="button">${escapeText(t('chat.copyCode'))}</button></span>` +
+    `<span class="math-body">${html}</span>` +
+    `</span>`
+  )
+}
+
+function renderMath(token: MathToken): string {
+  try {
+    const html = katex.renderToString(token.tex, {
+      displayMode: token.display,
+      throwOnError: true,
+      // `strict` is about LaTeX pedantry, not safety — on, it refuses things
+      // like a Thai character inside `\text{}`, which is most of what the
+      // equations in this app say. `trust` is the safety one and stays off: it
+      // is what would let `\href` and `\includegraphics` out of the equation
+      // and into the document.
+      strict: false,
+      trust: false,
+    }).replace(ANNOTATION, '')
+    return token.display ? frameEquation(html, token.tex) : html
+  } catch {
+    return escapeText(token.raw)
+  }
+}
 
 // A plan arrives as a fenced block tagged `plan` and is drawn as a card of its
 // own: the icon of the dial that produced it, a title, and the plan itself
@@ -216,6 +388,11 @@ function confine(html: string): string {
     // at here by size or by which element it sits in. Counted out of `nth` too,
     // so a plan card appearing above a drawing mid-stream cannot renumber it.
     if (svg.hasAttribute('data-chrome')) continue
+    // KaTeX draws in SVG too — the bar over a square root, a stretched brace,
+    // an arrow over a vector are all svg elements inside the equation. They are
+    // parts of a letter, not pictures: framing one hangs คัดลอก and บันทึก
+    // buttons off a radical sign, and renumbers the drawings around it.
+    if (svg.closest('.katex')) continue
     confineDrawing(svg, nth++)
     frameDrawing(svg)
   }

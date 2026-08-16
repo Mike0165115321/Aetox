@@ -27,9 +27,26 @@ const testMocks = () => ({
   },
 })
 
+// KaTeX ships each of its twenty fonts three times over — woff2, woff and ttf
+// — and its stylesheet names all three, so Vite emits all sixty files and the
+// binary carries every one of them: 1.2MB where 296KB is used. The engine this
+// app runs on is WebView2, which is Chromium, which has read woff2 since 2014.
+// The other two formats exist for browsers Aetox will never run in.
+//
+// Rewriting the stylesheet rather than deleting the files: Vite emits an asset
+// because something references it, so the reference is what has to go.
+const katexWoff2Only = () => ({
+  name: 'katex-woff2-only',
+  enforce: 'pre' as const,
+  transform(code: string, id: string) {
+    if (!id.includes('katex') || !id.endsWith('.css')) return null
+    return code.replace(/,\s*url\([^)]+\.(?:woff|ttf)\)\s*format\("(?:woff|truetype)"\)/g, '')
+  },
+})
+
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [...(process.env.VITEST ? [testMocks()] : []), svelte()],
+  plugins: [...(process.env.VITEST ? [testMocks()] : []), katexWoff2Only(), svelte()],
   // Svelte 5 ships client and server builds; without the browser condition
   // vitest picks the server one and mount() throws. Test runs only.
   resolve: process.env.VITEST ? { conditions: ['browser'] } : undefined,

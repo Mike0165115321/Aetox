@@ -1304,6 +1304,19 @@
       })
       return
     }
+    // Copies the equation as the LaTeX the model wrote, carried on data-tex
+    // (markdown.ts frameEquation) for the same reason the plan card carries its
+    // markdown: what is on screen is KaTeX's layout, and reading that back
+    // gives a flattened line that has to be retyped wherever it is pasted.
+    const mathBtn = el.closest('.math-copy')
+    if (mathBtn) {
+      const tex = mathBtn.closest<HTMLElement>('.math-block')?.dataset.tex ?? ''
+      navigator.clipboard.writeText(tex).then(() => {
+        mathBtn.textContent = t('chat.copiedCode')
+        setTimeout(() => (mathBtn.textContent = t('chat.copyCode')), 1500)
+      })
+      return
+    }
     const a = el.closest('a')
     const href = a?.getAttribute('href')
     if (!href || !/^https?:\/\//i.test(href)) return

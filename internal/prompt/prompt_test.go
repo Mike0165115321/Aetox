@@ -55,8 +55,13 @@ func TestSurfaceLayerAnswersForBothSurfaces(t *testing.T) {
 	}
 
 	cli := Build(SurfaceCLI, Scope{Root: t.TempDir()})
-	if !strings.Contains(cli, "Markdown is not rendered and SVG is not drawn") {
+	if !strings.Contains(cli, "Markdown is not rendered, SVG is not drawn and LaTeX is not typeset") {
 		t.Errorf("terminal prompt still leaves the model to infer that nothing renders:\n%s", cli)
+	}
+	// Both halves answer for mathematics, because a model that has to guess
+	// hedges — into words, or into unicode that runs out at the first fraction.
+	if !strings.Contains(desktop, "is typeset as mathematics") {
+		t.Errorf("desktop prompt does not say that equations are drawn:\n%s", desktop)
 	}
 	// The craft layers are desktop-only and must not follow it there.
 	for _, leak := range []string{"viewBox", "var(--surface-panel)"} {
@@ -432,6 +437,64 @@ func TestLearnedMemorySitsBetweenTheUsersRulesAndTheProjects(t *testing.T) {
 	}
 	if loaded.MemoryPath == "" {
 		t.Error("the report should name the memory file it folded in")
+	}
+}
+
+// What one project settled is read there and nowhere else. The failure this
+// guards against is the whole reason the scope exists: a decision made in one
+// repository arriving as advice in the next, with nothing on screen to say
+// where it came from.
+func TestAProjectsMemoryIsReadOnlyInThatProject(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+	here := t.TempDir()
+	there := t.TempDir()
+	if err := learned.Apply(learned.ProjectScope(here), learned.OpAdd, "", "PROJECT-MEMORY-MARKER"); err != nil {
+		t.Fatalf("write project memory: %v", err)
+	}
+
+	text, loaded := BuildWithReport(SurfaceDesktop, Scope{Root: here}, Desk{})
+	if !strings.Contains(text, "PROJECT-MEMORY-MARKER") {
+		t.Fatalf("the project's own memory was not folded in:\n%s", text)
+	}
+	if loaded.ProjectMemoryPath == "" {
+		t.Error("the report should name the project memory it folded in")
+	}
+
+	elsewhere, elsewhereLoaded := BuildWithReport(SurfaceDesktop, Scope{Root: there}, Desk{})
+	if strings.Contains(elsewhere, "PROJECT-MEMORY-MARKER") {
+		t.Errorf("one project's memory followed the user into another:\n%s", elsewhere)
+	}
+	if elsewhereLoaded.ProjectMemoryPath != "" {
+		t.Errorf("the other project reported a memory file: %q", elsewhereLoaded.ProjectMemoryPath)
+	}
+
+	// An unfocused session is rooted at the machine, not at a project. Reading
+	// a memory keyed to that folder would make one junk drawer every roaming
+	// session shares.
+	open, openLoaded := BuildWithReport(SurfaceDesktop, Scope{Root: here, Open: true}, Desk{})
+	if strings.Contains(open, "PROJECT-MEMORY-MARKER") || openLoaded.ProjectMemoryPath != "" {
+		t.Error("an unfocused session read a project's memory")
+	}
+}
+
+// The user's own file for a repository outranks what the agent concluded about
+// the same code. Order is the only mechanism — see the test above.
+func TestAProjectsRulesOutrankItsMemory(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "AETOX.md"), "PROJECT-RULES-MARKER")
+	if err := learned.Apply(learned.ProjectScope(root), learned.OpAdd, "", "PROJECT-MEMORY-MARKER"); err != nil {
+		t.Fatalf("write project memory: %v", err)
+	}
+
+	text := Build(SurfaceDesktop, Scope{Root: root})
+	memory := strings.Index(text, "PROJECT-MEMORY-MARKER")
+	rules := strings.Index(text, "PROJECT-RULES-MARKER")
+	if memory < 0 || rules < 0 {
+		t.Fatalf("a layer is missing:\n%s", text)
+	}
+	if memory > rules {
+		t.Errorf("what the agent concluded(%d) sits after what the user wrote(%d)", memory, rules)
 	}
 }
 
