@@ -2,7 +2,6 @@ package subagent
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -151,48 +150,29 @@ type Reply struct {
 	Agent string
 }
 
-// NewTaskTools builds the delegation pair — `task` to start one, `task_result` to
-// collect it — sharing one runner, because they are two halves of one mechanism.
-// Register both into the same registry passed in opts.Registry; FilterRegistry
-// drops both from every child, so depth stays 1 structurally rather than by a
-// counter.
+// NewTaskTools builds delegation: one tool named `task`, four actions inside it
+// (packed_task.go), all sharing one runner because they are four parts of one
+// mechanism. Register it into the same registry passed in opts.Registry;
+// FilterRegistry drops it from every child, so depth stays 1 structurally rather
+// than by a counter — and packed, that is now one name to drop instead of four.
+//
+// Still a slice: the host registers what it is handed without knowing how many
+// there are, and a signature that changed every time this family did would make
+// packing a change to bootstrap.
 func NewTaskTools(opts TaskOptions) []skill.Skill {
 	shared := opts.Delegations
 	if shared == nil {
 		shared = NewDelegations()
 	}
-	return []skill.Skill{
-		&taskTool{opts: opts, runner: shared},
-		&taskResultTool{runner: shared},
-		&taskAnswerTool{runner: shared},
-	}
+	return []skill.Skill{&delegationTool{
+		start:   &taskTool{opts: opts, runner: shared},
+		collect: &taskResultTool{runner: shared},
+		answer:  &taskAnswerTool{runner: shared},
+		plan:    &taskPlanTool{runner: shared},
+	}}
 }
 
 func (t *taskTool) Name() string { return "task" }
-
-// Description is also the only thing standing between a model and delegating
-// everything, so it states the rule rather than hinting at it. The cost argument
-// is the honest one: a delegate pays for a second system prompt and its own tool
-// list, so anything you can already name is cheaper done here.
-func (t *taskTool) Description() string {
-	return "Hand a self-contained job to an agent or a helper — see the `agent` parameter for who is who. " +
-		"RETURNS IMMEDIATELY with a task id — it does NOT wait. " +
-		"Do other useful work in the meantime (read the next file, start a second one), then call " +
-		"task_result with the id to collect the answer. If you have nothing else to do, collect it straight away. " +
-		"They have NO access to this conversation, so `prompt` must carry everything they need. " +
-		"WHEN TO USE: the work would otherwise pour a lot into this conversation — hunting through many " +
-		"files for something you cannot name yet, or the same mechanical change repeated across many places. " +
-		"WHEN NOT TO: anything you can already name. Reading a file, one grep, one edit, a handful of known " +
-		"paths — do those yourself. A delegate costs a second system prompt and its own tool list on every " +
-		"round, so a small job is strictly more expensive delegated than done here. " +
-		"REPEATED WORK IS ONE JOB: hand the whole list to ONE of them and let it loop — twelve items is one " +
-		"task with twelve items in its prompt, never twelve tasks. Each one you start pays for its own " +
-		"context, so starting one per item multiplies the cost of the very thing you were saving. " +
-		"Start several only when the jobs are genuinely unrelated. " +
-		"One that gets stuck on a decision only you can make will come back through task_result as a " +
-		"question instead of an answer — reply with task_answer and it carries on from where it stopped. " +
-		"Available: " + strings.Join(profileNames(t.available()), ", ") + "."
-}
 
 // available is the roster this desk may actually start: its own delegates,
 // plus the chairs at any desk it is allowed to hand work to. A profile listed
@@ -307,68 +287,6 @@ func agentChoice(profiles []Profile) string {
 	}
 	return out
 }
-
-func (t *taskTool) ToolDefinition() model.ToolDefinition {
-	profiles := t.available()
-	names := make([]string, 0, len(profiles))
-	for _, p := range profiles {
-		names = append(names, p.Name)
-	}
-	schema := map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"description": map[string]any{
-				"type":        "string",
-				"description": "A few words naming the job, for the user's timeline (e.g. \"find every caller of Resolve\").",
-			},
-			"prompt": map[string]any{
-				"type": "string",
-				// What replaced "say what its answer must contain": that clause asked
-				// the caller to specify the result, which is the same debt agentChoice
-				// just had taken out of it one line up — and the doom-loop message
-				// still says it at the only moment it helps, when a brief turned out
-				// to be too vague to act on.
-				//
-				// What is here instead is the failure this actually had. A user who
-				// names the worker has already written the brief; paraphrasing it is
-				// where "ask doc how a good document is put together" became "write a
-				// manual about…", and where a mistyped word became a confident guess
-				// at a subject nobody raised. The agent cannot check either, because
-				// the paraphrase is the only thing it ever sees.
-				"description": "The complete brief. The sub-agent sees no conversation history, " +
-					"so include the paths, names and constraints it needs. " +
-					"When the user asked for this worker themselves, their own words ARE the brief: " +
-					"carry them through as written and add the context around them, rather than replacing " +
-					"them with your reading of what they meant. " +
-					"A word you are unsure of crosses over exactly as it was typed — the worker can ask about it, " +
-					"and a guess cannot be un-asked.",
-			},
-			"agent": map[string]any{
-				"type":        "string",
-				"enum":        names,
-				"description": agentChoice(profiles),
-			},
-		},
-		"required":             []string{"description", "prompt"},
-		"additionalProperties": false,
-	}
-	payload, _ := json.Marshal(schema)
-	return model.ToolDefinition{
-		Type: "function",
-		Function: model.ToolFunction{
-			Name:        t.Name(),
-			Description: t.Description(),
-			Parameters:  payload,
-		},
-	}
-}
-
-// Execute exists because skill.Skill requires it; `task` is model-only — there is
-// no grammar for it and no reason to type it by hand.
-func (t *taskTool) Execute(_ context.Context, _ skill.Input) (skill.Output, error) {
-	return skill.Output{}, fmt.Errorf("task is called by the model, not from the command line")
-}
-
 func (t *taskTool) ExecuteTool(ctx context.Context, args map[string]any) (skill.Output, error) {
 	return t.begin(ctx, args, nil)
 }
@@ -468,6 +386,28 @@ func (t *taskTool) begin(ctx context.Context, args map[string]any, out **running
 	if label == "" {
 		label = name
 	}
+	// Which declared job this belongs to, if any. A phase that was never declared
+	// is refused rather than created: a run whose phases can grow while it runs
+	// records what happened instead of promising what will, and the promise is
+	// the only thing this mechanism adds (run.go).
+	//
+	// A missing phase is NOT refused. It means a loose delegate, which is what
+	// every delegation was before runs existed and what the user's own `@doc`
+	// still is — Direct comes through this same door and has no run to name.
+	var runID, phase string
+	if phase = strings.TrimSpace(stringArg(args, "phase")); phase != "" {
+		run := t.runner.currentRun()
+		if run == nil {
+			return t.fail(label, started, fmt.Sprintf(
+				"there is no run to put %q in — declare one with task(action=plan) first, or leave the phase out and this runs on its own", phase))
+		}
+		if !run.hasPhase(phase) {
+			return t.fail(label, started, fmt.Sprintf(
+				"the run %q has no phase called %q. It declared: %s. Use one of those, or leave the phase out",
+				run.name, phase, strings.Join(run.phaseTitles(), ", ")))
+		}
+		runID = run.id
+	}
 
 	if brief == "" {
 		return t.fail(label, started, "the prompt is empty — a sub-agent sees no conversation history, so the brief has to carry the whole job")
@@ -560,17 +500,28 @@ func (t *taskTool) begin(ctx context.Context, args map[string]any, out **running
 		MaxChars:     t.opts.MaxChars,
 		MaxToolCalls: profile.MaxToolCalls(),
 	})
-	if t.opts.OnUsage != nil {
-		child.SetUsageReporter(t.opts.OnUsage)
-	}
 	// A delegate inherits the session's prohibitions and adds its own; it never
 	// inherits a permission the session has that its profile does not.
 	permissions := safety.PermissionConfig{
 		Rules: append(append([]safety.PermissionRule{}, t.opts.Permissions.Rules...), profile.DenyRules()...),
 	}
 
-	task, err := t.runner.start(profile.Name, label, func(runCtx context.Context, self *runningTask) skill.Output {
+	task, err := t.runner.start(delegation{
+		profile: profile.Name, label: label, model: childModel, run: runID, phase: phase,
+	}, func(runCtx context.Context, self *runningTask) skill.Output {
 		defer debuglog.Block("task: " + profile.Name + " — " + truncate(label, 60))()
+
+		// The delegate's tokens go where they always went — the parent's reporter,
+		// so the session's stats absorb them untouched — and are stamped with this
+		// delegation on the way past. Set here rather than with the rest of the
+		// child's configuration because the stamp needs `self`, which does not
+		// exist until the register has admitted the job.
+		child.SetUsageReporter(func(u model.Usage) {
+			self.spend(u.TotalTokenCount())
+			if t.opts.OnUsage != nil {
+				t.opts.OnUsage(u)
+			}
+		})
 
 		// `ask_main` is bound to this delegation and cannot exist before it, so it
 		// is the one tool registered inside the goroutine rather than with the
@@ -686,7 +637,7 @@ func (t *taskTool) begin(ctx context.Context, args map[string]any, out **running
 		*out = task
 	}
 
-	started_ := fmt.Sprintf("started sub-agent %s as %s — it is running now. Do other work, then call task_result with task_id %q to collect it.",
+	started_ := fmt.Sprintf("started sub-agent %s as %s — it is running now. Do other work, then call task(action=collect, task_id=%q) to collect it.",
 		profile.Name, task.id, task.id)
 	return skill.Output{
 		Name:       t.Name(),

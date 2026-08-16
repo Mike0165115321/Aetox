@@ -132,46 +132,6 @@ func askFailure(started time.Time, reason string) (skill.Output, error) {
 type taskAnswerTool struct{ runner *Delegations }
 
 func (t *taskAnswerTool) Name() string { return "task_answer" }
-
-func (t *taskAnswerTool) Description() string {
-	return "Answer a question a sub-agent asked, so it can carry on. " +
-		"Use it when task_result came back saying a sub-agent is waiting for a decision. " +
-		"The sub-agent resumes with everything it had already done still in hand, so answering is far " +
-		"cheaper than starting it again. Collect it with task_result afterwards."
-}
-
-func (t *taskAnswerTool) ToolDefinition() model.ToolDefinition {
-	schema := map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"task_id": map[string]any{
-				"type":        "string",
-				"description": "The id of the sub-agent that asked, e.g. \"task_1\".",
-			},
-			"answer": map[string]any{
-				"type": "string",
-				"description": "The decision, and anything it needs to act on it. The sub-agent cannot see " +
-					"this conversation, so an answer like \"the first one\" means nothing to it — name the choice.",
-			},
-		},
-		"required":             []string{"task_id", "answer"},
-		"additionalProperties": false,
-	}
-	payload, _ := json.Marshal(schema)
-	return model.ToolDefinition{
-		Type: "function",
-		Function: model.ToolFunction{
-			Name:        t.Name(),
-			Description: t.Description(),
-			Parameters:  payload,
-		},
-	}
-}
-
-func (t *taskAnswerTool) Execute(_ context.Context, _ skill.Input) (skill.Output, error) {
-	return skill.Output{}, fmt.Errorf("task_answer is called by the model, not from the command line")
-}
-
 func (t *taskAnswerTool) ExecuteTool(_ context.Context, args map[string]any) (skill.Output, error) {
 	started := time.Now()
 	id := strings.TrimSpace(stringArg(args, "task_id"))
@@ -185,7 +145,7 @@ func (t *taskAnswerTool) ExecuteTool(_ context.Context, args map[string]any) (sk
 	if err := t.runner.answer(id, answer); err != nil {
 		return t.fail(started, err.Error())
 	}
-	msg := fmt.Sprintf("answered %s — it is running again. Collect it with task_result when you are ready.", id)
+	msg := fmt.Sprintf("answered %s — it is running again. Collect it with task(action=collect) when you are ready.", id)
 	return skill.Output{
 		Name:       t.Name(),
 		Command:    "task_answer " + id,

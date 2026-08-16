@@ -1151,6 +1151,31 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 /* The fold. Sits where a step row would, so opening it does not shift the card
    sideways — the rows appear directly under their own summary. */
 .bgw-toggle { margin:5px 0 0 21px; }
+/* A declared job (internal/subagent/run.go) drawn as one card with its workers
+   under it. Everything here is the existing card's vocabulary at one more level
+   of indent — a run is not a new kind of object on screen, it is the same rows
+   with a frame around them. */
+.bgw-phase {
+  display:flex; align-items:center; gap:8px; width:100%;
+  margin:9px 0 0 21px; padding:0; border:0; background:none;
+  color:var(--text-secondary); font:inherit; font-size:var(--fs-xs); cursor:pointer;
+}
+.bgw-phase:hover { color:var(--text-primary); }
+.bgw-phase .ic { color:var(--text-dim); }
+.bgw-phase-title { font-weight:600; white-space:nowrap; }
+/* A phase nobody has worked in yet is quiet, not absent. That distinction is
+   the whole mechanism: it was promised before the work existed, so it stays on
+   screen at zero rather than appearing once somebody gets round to it. */
+.bgw-phase-title.idle { font-weight:400; color:var(--text-dim); }
+.bgw-phase-bar { flex:1; min-width:24px; height:2px; border-radius:2px; background:var(--border-subtle); overflow:hidden; }
+.bgw-phase-fill { display:block; height:2px; background:var(--interactive); }
+.bgw-phase-count { color:var(--text-dim); white-space:nowrap; font-variant-numeric:tabular-nums; }
+.bgw-worker { display:flex; align-items:center; gap:7px; margin:5px 0 0 34px; color:var(--text-secondary); }
+.bgw-worker-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.bgw-worker-agent { color:var(--text-dim); white-space:nowrap; }
+.bgw-worker-step { margin:1px 0 0 53px; color:var(--text-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.bgw-worker-ask { margin:4px 0 2px 53px; border-left:2px solid var(--status-modified); padding-left:9px; }
+.bgw-worker-ask .bgw-question, .bgw-worker-ask .bgw-answer { margin-left:0; }
 .bgw-question { margin:6px 0 8px 23px; color:var(--text-primary); font-size:var(--fs-sm); line-height:1.55; }
 .bgw-answer { display:flex; gap:7px; margin-left:23px; }
 .bgw-answer input { flex:1; min-width:0; }

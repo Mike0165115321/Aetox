@@ -99,6 +99,28 @@ var packs = map[string]*pack{
 			"list": "shell_list",
 		},
 	},
+	// Delegation, packed on 2026-08-16 when a fourth half of it — declaring a run
+	// before starting one (internal/subagent/run.go) — turned out not to fit: the
+	// block was at 10,004 of its 10,100 tokens, and this family alone was 2,277 of
+	// them, 22% spent on one mechanism that the model calls with one verb at a
+	// time. Owner's call, and it is the same call §99 made for shell: the answer
+	// to "there is no room for the next tool" is not a bigger block.
+	//
+	// `start` is the fallback for the same reason `run` is shell's — every
+	// existing call, every desk manifest and every habit says `task` with a brief
+	// and no action, and an action the model must now remember to name would be a
+	// rename wearing a schema.
+	"task": {
+		tool:     "task",
+		fallback: "start",
+		actions:  []string{"start", "collect", "answer", "plan"},
+		names: map[string]string{
+			"start":   "task",
+			"collect": "task_result",
+			"answer":  "task_answer",
+			"plan":    "task_plan",
+		},
+	},
 	"github": {
 		tool: "github",
 		// No fallback. Reading a file and searching for a repository are not

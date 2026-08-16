@@ -516,6 +516,13 @@ func delegationOf(name, args string) (agent, brief string, isTask bool) {
 	if err != nil {
 		return "", "", true
 	}
+	// Only STARTING one is a delegation. Since delegation was packed under this
+	// single name (§99), collecting, answering and declaring a run arrive here as
+	// `task` too — and a collect reported as a delegation is a card for a worker
+	// that was never hired, drawn next to the real one it just redeemed.
+	if action, _ := parsed["action"].(string); action != "" && !strings.EqualFold(strings.TrimSpace(action), "start") {
+		return "", "", false
+	}
 	agent, _ = parsed["agent"].(string)
 	brief, _ = parsed["prompt"].(string)
 	return strings.TrimSpace(agent), strings.TrimSpace(brief), true

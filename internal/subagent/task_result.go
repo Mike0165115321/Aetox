@@ -2,12 +2,10 @@ package subagent
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
-	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/skill"
 )
 
@@ -18,47 +16,6 @@ import (
 type taskResultTool struct{ runner *Delegations }
 
 func (t *taskResultTool) Name() string { return "task_result" }
-
-func (t *taskResultTool) Description() string {
-	return "Collect a sub-agent started with task, by its task id. Waits only if it has not finished. " +
-		"Pass several ids to collect several at once — sub-agents started before the first collect run " +
-		"concurrently, so collecting three costs the time of the slowest, not the sum. " +
-		"A sub-agent that got stuck on a decision comes back here as a QUESTION rather than an answer — " +
-		"reply with task_answer and collect again; it resumes from where it stopped. " +
-		"Collect everything you start: a result nobody reads is work nobody used. A sub-agent still running " +
-		"when you answer keeps going and can be collected in a later turn by the same id, so ending the turn " +
-		"is not a deadline — but it is also not a plan, because the user is left waiting on an answer that " +
-		"does not mention the work still going on. Say so if you leave one running."
-}
-
-func (t *taskResultTool) ToolDefinition() model.ToolDefinition {
-	schema := map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"task_id": map[string]any{
-				"type":        "string",
-				"description": "The id task returned, e.g. \"task_1\". For several, separate with commas.",
-			},
-		},
-		"required":             []string{"task_id"},
-		"additionalProperties": false,
-	}
-	payload, _ := json.Marshal(schema)
-	return model.ToolDefinition{
-		Type: "function",
-		Function: model.ToolFunction{
-			Name:        t.Name(),
-			Description: t.Description(),
-			Parameters:  payload,
-		},
-	}
-}
-
-// Execute exists because skill.Skill requires it; this tool is model-only.
-func (t *taskResultTool) Execute(_ context.Context, _ skill.Input) (skill.Output, error) {
-	return skill.Output{}, fmt.Errorf("task_result is called by the model, not from the command line")
-}
-
 func (t *taskResultTool) ExecuteTool(ctx context.Context, args map[string]any) (skill.Output, error) {
 	started := time.Now()
 	raw := strings.TrimSpace(stringArg(args, "task_id"))
@@ -138,7 +95,7 @@ func (t *taskResultTool) question(started time.Time, task *runningTask, ask *pen
 func askedText(id string, ask *pendingAsk) string {
 	return fmt.Sprintf(
 		"NOT FINISHED — sub-agent %s is waiting for a decision from you and has stopped until it gets one:\n\n%s\n\n"+
-			"Answer with task_answer(task_id=%q, answer=...), then call task_result again to collect the finished work. "+
+			"Answer with task(action=answer, task_id=%q, answer=...), then collect again. "+
 			"It resumes with everything it has already done still in hand, so answering costs far less than starting it over. "+
 			"If the question cannot be answered, answer saying so and what to do instead — leaving it unanswered throws the whole run away.",
 		id, strings.TrimSpace(ask.question), id)

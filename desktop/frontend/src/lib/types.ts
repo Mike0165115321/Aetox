@@ -243,6 +243,15 @@ export interface BackgroundTask {
   /** RFC3339; the row's clock runs from it client-side. */
   startedAt: string
   toolCalls: number
+  /** What this delegate ran on, and what it spent. Per-delegate answers the
+   *  session total cannot give: a delegate's tokens land in the user's total
+   *  untouched, so the total knows how much and nothing knew by whom. */
+  model?: string
+  tokens: number
+  /** The declared job this belongs to, both absent for a delegate started on
+   *  its own (internal/subagent/run.go). */
+  run?: string
+  phase?: string
   /** 'running' | 'waiting' (parked on a question) | 'done' | 'failed' */
   state: string
   /** How long the delegation really took, present only once it has finished.
@@ -255,9 +264,35 @@ export interface BackgroundTask {
   collected: boolean
 }
 
+/** One declared job — mirrors desktop/background_tasks.go BackgroundRun. The
+ *  card draws the phases in the order they were DECLARED, never in the order
+ *  work arrived: a phase nobody has worked in yet is the row worth drawing. */
+export interface BackgroundRun {
+  id: string
+  name: string
+  brief?: string
+  startedAt: string
+  running: boolean
+  tokens: number
+  phases: BackgroundPhase[]
+}
+
+/** One stage of a run. `planned` is what the plan said and 0 when it did not
+ *  say, which the card draws as a bare count — a denominator nobody promised is
+ *  one the user would hold the work to. */
+export interface BackgroundPhase {
+  title: string
+  planned: number
+  done: number
+  failed: number
+  running: number
+  waiting: number
+  tokens: number
+}
+
 /** One tool call/result as the engine sends it — mirrors turn.ToolEvent in Go. */
 export interface ToolEvent {
-  action: 'call' | 'result' | 'note' | 'thinking'
+  action: 'call' | 'result' | 'note' | 'thinking' | 'said'
   name: string
   /** The engine's tool-call id — how a row is recognized across updates. The
    * label cannot serve: it is empty of its subject on the early events. */
@@ -520,6 +555,7 @@ export interface CockpitState {
    *  `task` call completes the instant the work starts, so events cannot tell
    *  running from done. Refreshed by refreshBackgroundTasks. */
   backgroundTasks: BackgroundTask[]
+  backgroundRuns: BackgroundRun[]
   /** Sandbox paths of finished files this turn produced — a spreadsheet, a deck,
    *  a document. Collected live from agent:tool results so the reply can show
    *  them as cards with an open button: the file panel is where you go looking,
@@ -598,6 +634,7 @@ export function emptyCockpitState(): CockpitState {
     toolSteps: [],
     backgroundSteps: [],
     backgroundTasks: [],
+    backgroundRuns: [],
     streamingText: '',
     reasoningText: '',
     ask: null,

@@ -153,6 +153,7 @@ var toolCategories = map[string]string{
 	"task":           CategoryAgent,
 	"task_result":    CategoryAgent,
 	"task_answer":    CategoryAgent,
+	"task_plan":      CategoryAgent,
 	"ask_main":       CategoryAgent,
 	"ask_user":       CategoryAgent,
 	"todo_write":     CategoryAgent,

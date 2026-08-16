@@ -114,6 +114,8 @@ const stepsUnlimitedKeyword = "unlimited"
 // `task`/`task_result`/`task_answer` because depth 1 is enforced by absence
 // rather than a counter — every half has to go, or a delegate could collect work
 // it was never allowed to start, or answer a question meant for the main agent;
+// `task_plan` for the same reason one step earlier — a delegate that could
+// declare a run would replace the plan the user is watching with one of its own;
 // `help` because its listing belongs to the parent's registry; `ask_user` /
 // `todo_write` because no human is attached to a sub-agent's loop — a question
 // nobody can see would just burn the tool deadline.
@@ -121,7 +123,7 @@ const stepsUnlimitedKeyword = "unlimited"
 // A delegate that needs a decision asks the main agent instead, with `ask_main`
 // (ask.go) — which is not listed here because it is never in the parent's
 // registry to filter out; it is injected into each child's own.
-var forcedDenials = []string{"task", "task_result", "task_answer", "help", "ask_user", "todo_write"}
+var forcedDenials = []string{"task", "task_result", "task_answer", "task_plan", "help", "ask_user", "todo_write"}
 
 // Profile is one sub-agent definition. JSON tags are for the settings page,
 // which renders exactly these fields as its row badges.
@@ -157,10 +159,10 @@ type Profile struct {
 	// server. See needs.go for the rule that makes this safe: a need is a
 	// declaration and never a grant, so a file naming something that does not
 	// exist produces a sentence on screen rather than a silently empty agent.
-	Needs  []string `json:"needs,omitempty"`
-	Prompt string   `json:"prompt"`
-	Path        string   `json:"path,omitempty"` // on-disk path; "" for a bundled profile
-	Builtin     bool     `json:"builtin"`
+	Needs   []string `json:"needs,omitempty"`
+	Prompt  string   `json:"prompt"`
+	Path    string   `json:"path,omitempty"` // on-disk path; "" for a bundled profile
+	Builtin bool     `json:"builtin"`
 	// Overrides marks a user file that shadows a bundled profile of the same
 	// name. The settings page needs it because deleting one is a **revert** — the
 	// bundled profile comes back — not a removal, and a delete button that lies

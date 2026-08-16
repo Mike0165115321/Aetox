@@ -309,7 +309,7 @@ func TestNoopToolsModelDelegatesAndCollects(t *testing.T) {
 	parentTools := []ToolDefinition{
 		{Type: "function", Function: ToolFunction{Name: "read"}},
 		{Type: "function", Function: ToolFunction{Name: "task"}},
-		{Type: "function", Function: ToolFunction{Name: "task_result"}},
+
 	}
 	const brief = "ส่งงานให้ subagent general ไปดูหน่อย"
 	msgs := []Message{{Role: RoleUser, Content: brief}}
@@ -338,11 +338,15 @@ func TestNoopToolsModelDelegatesAndCollects(t *testing.T) {
 		t.Errorf("the brief named general, so the script must pick it: %s", r1.ToolCalls[0].Function.Arguments)
 	}
 	// Word for word what task.go hands back, so the id is parsed the way it will be.
-	feed(r1, `started sub-agent general as task_2 — it is running now. Do other work, then call task_result with task_id "task_2" to collect it.`)
+	feed(r1, `started sub-agent general as task_2 — it is running now. Do other work, then call task(action=collect, task_id="task_2") to collect it.`)
 
 	r2 := step()
-	if len(r2.ToolCalls) != 1 || r2.ToolCalls[0].Function.Name != "task_result" {
+	if len(r2.ToolCalls) != 1 || r2.ToolCalls[0].Function.Name != "task" {
 		t.Fatalf("round 2 must collect, got %+v", r2.ToolCalls)
+	}
+	// Packed: collecting is `task` with an action, so the action is the assertion.
+	if !strings.Contains(r2.ToolCalls[0].Function.Arguments, `"collect"`) {
+		t.Fatalf("round 2 is not a collect: %s", r2.ToolCalls[0].Function.Arguments)
 	}
 	// The id has to be read out of the handle, not assumed: "task_1" would be wrong
 	// here, and would collect somebody else's delegate in a two-task turn.

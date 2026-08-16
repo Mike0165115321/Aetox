@@ -113,7 +113,7 @@ func (f *taskFixture) callTask(t *testing.T, callID string, args map[string]any)
 // collect redeems a handle. Blocks only if the delegate has not finished.
 func (f *taskFixture) collect(t *testing.T, ids string) skill.Output {
 	t.Helper()
-	return f.call(t, "call_collect", "task_result", map[string]any{"task_id": ids})
+	return f.call(t, "call_collect", "task", map[string]any{"action": "collect", "task_id": ids})
 }
 
 func (f *taskFixture) call(t *testing.T, callID, tool string, args map[string]any) skill.Output {
@@ -160,7 +160,7 @@ func TestTaskRunsADelegateAndReturnsOnlyItsResult(t *testing.T) {
 	if strings.Contains(start.Content, "hay.txt") {
 		t.Errorf("task blocked and returned the result: %q", start.Content)
 	}
-	if !strings.Contains(start.Content, "task_result") {
+	if !strings.Contains(start.Content, "action=collect") {
 		t.Errorf("task did not tell the model how to collect: %q", start.Content)
 	}
 
@@ -231,7 +231,7 @@ func TestDelegateAsksTheMainAgentAndResumesWithItsWorkIntact(t *testing.T) {
 	if !strings.Contains(asked.Content, "list the sandbox root, or stop here?") {
 		t.Fatalf("the delegate's question did not reach the parent: %q", asked.Content)
 	}
-	if !strings.Contains(asked.Content, "task_answer") {
+	if !strings.Contains(asked.Content, "action=answer") {
 		t.Errorf("the parent was not told how to unstick it: %q", asked.Content)
 	}
 	if strings.Contains(asked.Content, "[task explore:") {
@@ -244,7 +244,7 @@ func TestDelegateAsksTheMainAgentAndResumesWithItsWorkIntact(t *testing.T) {
 	}
 
 	// 2 + 3. Answer, then collect the finished work.
-	ans := f.call(t, "call_parent_2", "task_answer", map[string]any{
+	ans := f.call(t, "call_parent_2", "task", map[string]any{"action": "answer",
 		"task_id": id, "answer": "go ahead and list it",
 	})
 	if !ans.Success {
@@ -299,7 +299,10 @@ func TestSubagentBenchModelDrivesTheWholeDelegationItself(t *testing.T) {
 	t.Logf("sub : %v", subCalls)
 	t.Logf("reply:\n%s", result.Reply)
 
-	want := []string{"task", "task_result", "task_answer", "task_result"}
+	// Four rounds of delegation, and packed (§99) all four are spelled `task` in
+	// the timeline — start, collect, answer, collect. The actions they carry are
+	// what the noop script's own ids assert; here the shape is the point.
+	want := []string{"task", "task", "task", "task"}
 	if len(mainCalls) != len(want) {
 		t.Fatalf("main agent ran %v, want %v", mainCalls, want)
 	}
@@ -343,7 +346,7 @@ func contains(list []string, want string) bool {
 func TestTaskAnswerRefusesWhatIsNotWaiting(t *testing.T) {
 	f := newTaskFixture(t, "aetox-tools:test")
 
-	missing := f.call(t, "call_parent_1", "task_answer", map[string]any{
+	missing := f.call(t, "call_parent_1", "task", map[string]any{"action": "answer",
 		"task_id": "task_99", "answer": "yes",
 	})
 	if missing.Success {
@@ -356,7 +359,7 @@ func TestTaskAnswerRefusesWhatIsNotWaiting(t *testing.T) {
 	id := taskIDOf(t, start)
 	f.collect(t, id) // runs to completion without asking anything
 
-	finished := f.call(t, "call_parent_3", "task_answer", map[string]any{
+	finished := f.call(t, "call_parent_3", "task", map[string]any{"action": "answer",
 		"task_id": id, "answer": "yes",
 	})
 	if finished.Success {
@@ -411,7 +414,7 @@ func TestTaskDelegateUsageReachesTheParent(t *testing.T) {
 		t.Fatalf("start failed: %v", err)
 	}
 	// Collect, so the delegate has certainly finished before usage is inspected.
-	out, _, err := dispatcher.ExecuteTool(ctx, "task_result", map[string]any{
+	out, _, err := dispatcher.ExecuteTool(ctx, "task", map[string]any{"action": "collect",
 		"task_id": taskIDOf(t, start),
 	})
 	if err != nil || !out.Success {
@@ -550,8 +553,8 @@ func TestADelegateOutlivesTheTurnThatStartedIt(t *testing.T) {
 	endTurn() // the reply went out; this turn is over
 
 	// A later turn, collecting by the same id.
-	out, _, err := dispatcher.ExecuteTool(turn.WithCallID(context.Background(), "call_2"), "task_result",
-		map[string]any{"task_id": taskIDOf(t, start)})
+	out, _, err := dispatcher.ExecuteTool(turn.WithCallID(context.Background(), "call_2"), "task",
+		map[string]any{"action": "collect", "task_id": taskIDOf(t, start)})
 	t.Logf("collected in a later turn: success=%v content=%q err=%v", out.Success, out.Content, err)
 	if err != nil {
 		t.Fatalf("collect failed: %v", err)
@@ -593,8 +596,8 @@ func TestStopEndsARunningDelegate(t *testing.T) {
 		t.Errorf("StopAll reported %d delegates stopped, want 1", stopped)
 	}
 
-	out, _, err := dispatcher.ExecuteTool(turn.WithCallID(context.Background(), "call_2"), "task_result",
-		map[string]any{"task_id": id})
+	out, _, err := dispatcher.ExecuteTool(turn.WithCallID(context.Background(), "call_2"), "task",
+		map[string]any{"action": "collect", "task_id": id})
 	t.Logf("after Stop: success=%v err=%v content=%q", out.Success, err, out.Content)
 	if out.Success {
 		t.Error("a delegate stopped mid-question reported success")
@@ -651,7 +654,7 @@ func TestSeveralDelegatesParkAtOnceAndEachGetsItsOwnAnswer(t *testing.T) {
 	// Answered backwards, each answer distinct — a delegate that resumed on
 	// somebody else's answer shows up in its own final text.
 	for i := len(ids) - 1; i >= 0; i-- {
-		ans := f.call(t, "call_answer_"+strconv.Itoa(i), "task_answer", map[string]any{
+		ans := f.call(t, "call_answer_"+strconv.Itoa(i), "task", map[string]any{"action": "answer",
 			"task_id": ids[i], "answer": "answer-for-" + strconv.Itoa(i),
 		})
 		if !ans.Success {
@@ -701,8 +704,8 @@ func TestAParkedQuestionSurvivesTheTurn(t *testing.T) {
 	endTurn()
 
 	// A later turn answers it, and the delegate carries on from where it stopped.
-	answered, _, err := dispatcher.ExecuteTool(turn.WithCallID(context.Background(), "call_2"), "task_answer",
-		map[string]any{"task_id": id, "answer": "yes — list the sandbox root"})
+	answered, _, err := dispatcher.ExecuteTool(turn.WithCallID(context.Background(), "call_2"), "task",
+		map[string]any{"action": "answer", "task_id": id, "answer": "yes — list the sandbox root"})
 	if err != nil || !answered.Success {
 		t.Fatalf("answering across the turn boundary failed: %v %q", err, answered.Content)
 	}
@@ -903,21 +906,21 @@ func TestConcurrencyIsCapped(t *testing.T) {
 	defer close(block)
 
 	for i := range maxConcurrent {
-		if _, err := r.start("explore", "held", func(context.Context, *runningTask) skill.Output {
+		if _, err := r.start(delegation{profile: "explore", label: "held"}, func(context.Context, *runningTask) skill.Output {
 			<-block
 			return skill.Output{Success: true}
 		}); err != nil {
 			t.Fatalf("start %d refused early: %v", i, err)
 		}
 	}
-	_, err := r.start("explore", "one too many", func(context.Context, *runningTask) skill.Output {
+	_, err := r.start(delegation{profile: "explore", label: "one too many"}, func(context.Context, *runningTask) skill.Output {
 		return skill.Output{}
 	})
 	if err == nil {
 		t.Fatal("the cap did not hold")
 	}
 	t.Logf("refusal the model reads: %v", err)
-	if !strings.Contains(err.Error(), "task_result") {
+	if !strings.Contains(err.Error(), "action=collect") {
 		t.Errorf("the refusal does not say how to make room: %v", err)
 	}
 }
@@ -1015,7 +1018,7 @@ func TestALoopThatEndsItselfIsAnActionableFailure(t *testing.T) {
 			// it. Found 2026-08-16, 25 minutes into a full run.
 			name: "step cap exhausted", provider: &variedLoopProvider{},
 			agent: "capped", steps: 3,
-			want:  []string{"ran out of room", "smaller batches"},
+			want: []string{"ran out of room", "smaller batches"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1059,7 +1062,7 @@ func TestALoopThatEndsItselfIsAnActionableFailure(t *testing.T) {
 			if err != nil {
 				t.Fatalf("start: %v", err)
 			}
-			out, _, err := dispatcher.ExecuteTool(ctx, "task_result", map[string]any{"task_id": taskIDOf(t, start)})
+			out, _, err := dispatcher.ExecuteTool(ctx, "task", map[string]any{"action": "collect", "task_id": taskIDOf(t, start)})
 			if err != nil {
 				if errors.Is(err, context.DeadlineExceeded) {
 					t.Fatalf("the delegate never stopped: nothing bounded its loop, so %q ran until the deadline "+

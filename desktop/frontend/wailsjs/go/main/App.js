@@ -42,6 +42,10 @@ export function ArtifactPreview(arg1) {
   return window['go']['main']['App']['ArtifactPreview'](arg1);
 }
 
+export function BackgroundRuns() {
+  return window['go']['main']['App']['BackgroundRuns']();
+}
+
 export function BackgroundTasks() {
   return window['go']['main']['App']['BackgroundTasks']();
 }

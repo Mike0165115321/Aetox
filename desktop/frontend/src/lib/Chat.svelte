@@ -2222,6 +2222,8 @@
          way not to see it. -->
     <BackgroundWork
       tasks={trayTasks}
+      runs={cockpit.backgroundRuns}
+      allTasks={cockpit.backgroundTasks}
       steps={cockpit.backgroundSteps}
       onAnswer={answerBgTask}
     />

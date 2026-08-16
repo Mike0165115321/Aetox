@@ -361,7 +361,7 @@ func TestPlanProfileCannotWrite(t *testing.T) {
 func TestKindOfSplitsTheTwoPiles(t *testing.T) {
 	isolate(t)
 	cases := map[string]string{
-		"doc":     KindAgent,  // a chair in the office
+		"doc":     KindAgent, // a chair in the office
 		"deck":    KindAgent,
 		"sheet":   KindAgent,
 		"explore": KindHelper, // the assistant's own hands

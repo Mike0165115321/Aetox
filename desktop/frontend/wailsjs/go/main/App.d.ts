@@ -32,6 +32,8 @@ export function ApprovePendingChange(arg1:number):Promise<void>;
 
 export function ArtifactPreview(arg1:string):Promise<main.ArtifactPreview>;
 
+export function BackgroundRuns():Promise<Array<main.BackgroundRun>>;
+
 export function BackgroundTasks():Promise<Array<main.BackgroundTask>>;
 
 export function BrowserBack(arg1:string):Promise<void>;

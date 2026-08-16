@@ -532,8 +532,8 @@ func TestTheAgentIsToldThatLearnedStartCommandsMustBeSaved(t *testing.T) {
 		t.Fatal("the automation agent did not load")
 	}
 	for _, must := range []string{
-		"goes into that saved command",             // where knowledge lands
-		"records nothing",                          // what the by-hand road costs
+		"goes into that saved command", // where knowledge lands
+		"records nothing",              // what the by-hand road costs
 		"Knowledge that lives only in a conversation dies with it", // the rule that generalizes
 	} {
 		if !strings.Contains(flat(p.Prompt), must) {

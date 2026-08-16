@@ -208,6 +208,14 @@ var catalog = map[string]*entry{
 				"aetox-think:test",
 				"aetox-tools:test",
 				"aetox-subagent:test",
+				// The newest bench, and the one that needs a bench most: a
+				// declared run is six delegates under three phases, and the
+				// thing being tested is the CARD — grouping, a wave of three
+				// starting at the same instant, and a phase drawn at 0 before
+				// anyone has worked in it. None of that is visible from a unit
+				// test, and reproducing it on a real provider costs an API key
+				// and a prompt that happens to make the model fan out.
+				"aetox-run:test",
 			},
 		},
 		capabilities: Capabilities{},

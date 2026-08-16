@@ -193,11 +193,15 @@ func TestEveryDeclaredActionIsWiredToAnImplementation(t *testing.T) {
 	for tool := range packs {
 		s, ok := registry.Get(tool)
 		if !ok {
-			// One pack lives outside this package: `browser` is desktop-hosted
-			// (desktop/browser_tool.go) and registered by the app, so it is not
-			// in the default registry this test can build. Its routing is
-			// driven per action by desktop/tool_coverage_test.go instead.
-			if tool == "browser" {
+			// Two packs live outside this package and are registered by the host,
+			// so they are not in the default registry this test can build:
+			// `browser` is desktop-hosted (desktop/browser_tool.go), and `task`
+			// is in internal/subagent, which imports turn and cognitive and
+			// therefore cannot be imported from here. Their routing is driven per
+			// action where they do live — desktop/tool_coverage_test.go, and
+			// internal/subagent's own tests, which call every action through the
+			// dispatcher for real.
+			if tool == "browser" || tool == "task" {
 				continue
 			}
 			t.Errorf("%s is declared as a pack but is not registered", tool)

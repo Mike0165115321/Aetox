@@ -229,16 +229,15 @@ export const th = {
  'bgw.finished': 'เสร็จแล้ว กำลังให้เอเจนอ่านผล…',
   'bgw.failed': 'หยุดกลางคัน',
   'bgw.tools': '{n} เครื่องมือ',
+  // The run card (a declared job: internal/subagent/run.go). "คน" rather than
+  // "ตัว": these are workers the user hired, and the company model says so.
+  'bgw.runWorkers': '{n} คน',
+  'bgw.runTokens': '{n} โทเคน',
+  'bgw.phaseWaiting': 'ยังไม่เริ่ม',
   'bgw.send': 'ส่ง',
   'bgw.answerPlaceholder': 'พิมพ์คำตอบให้ {agent}…',
-  'chat.bgFinishedPrompt': '[ระบบ] เอเจนเบื้องหลัง {agent} ({id}) ทำงานเสร็จแล้ว เก็บผลด้วย task_result แล้วรายงานผลให้ด้วย',
+  'chat.bgFinishedPrompt': '[ระบบ] เอเจนเบื้องหลัง {agent} ({id}) ทำงานเสร็จแล้ว เก็บผลด้วย task action=collect แล้วรายงานผลให้ด้วย',
   'chat.openFile': 'เปิด',
-  'chat.contextWindow': 'หน้าต่างคอนเท็กซ์',
-  'chat.contextForecast': 'ข้อความแรกจะใช้ประมาณ',
- 'chat.contextNotSent': 'ยังไม่ได้ส่งอะไรเลย ยังไม่เสียโทเคนสักตัว ตัวเลขนี้คือขนาดของคำขอแรก ซึ่งเกือบทั้งหมดคือรายการเครื่องมือที่ติดไปกับทุกข้อความ',
- 'chat.contextCached': 'รอบล่าสุด {cached} ในนี้มาจากแคชของผู้ให้บริการ อินพุตที่แคชแล้วคิดราคาราวหนึ่งในสิบของอัตราเต็ม ค่าใช้จ่ายจริงจึงต่ำกว่าที่แถบนี้ชวนให้คิดมาก',
-  'chat.ctx_system': 'System prompt',
-  'chat.ctx_tools': 'เครื่องมือ',
   // การ์ดความจำใต้คำตอบ เป็นการขอ ไม่ใช่การบอกว่าทำแล้ว เพราะยังไม่มีอะไรถูกจำ
   // จนกว่าคุณจะอนุมัติ
   'chat.memoryAsk': 'ขอจำเรื่องนี้ไว้',
@@ -248,6 +247,12 @@ export const th = {
   'chat.memoryKept': 'จำไว้แล้ว',
   'chat.memoryDropped': 'ไม่ได้จำ',
   'chat.memoryNextChat': 'มีผลตั้งแต่แชทถัดไป ไม่ใช่แชทนี้',
+  'chat.contextWindow': 'หน้าต่างคอนเท็กซ์',
+  'chat.contextForecast': 'ข้อความแรกจะใช้ประมาณ',
+ 'chat.contextNotSent': 'ยังไม่ได้ส่งอะไรเลย ยังไม่เสียโทเคนสักตัว ตัวเลขนี้คือขนาดของคำขอแรก ซึ่งเกือบทั้งหมดคือรายการเครื่องมือที่ติดไปกับทุกข้อความ',
+ 'chat.contextCached': 'รอบล่าสุด {cached} ในนี้มาจากแคชของผู้ให้บริการ อินพุตที่แคชแล้วคิดราคาราวหนึ่งในสิบของอัตราเต็ม ค่าใช้จ่ายจริงจึงต่ำกว่าที่แถบนี้ชวนให้คิดมาก',
+  'chat.ctx_system': 'System prompt',
+  'chat.ctx_tools': 'เครื่องมือ',
   'chat.ctx_messages': 'ข้อความสนทนา',
   'chat.ctx_free': 'พื้นที่ว่าง',
 

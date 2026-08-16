@@ -17,6 +17,7 @@ import {
   CompleteSignIn, SignOut, ImportSignIn,
   ListTaskChips, DismissTaskChip,
   BackgroundTasks,
+  BackgroundRuns,
   RateTurn, PendingLearnedCount,
   WorkspaceFolders, AddWorkspaceFolder, RemoveWorkspaceFolder,
   RetryFailedTurn, RegenerateReply, ResendEdited, SwitchVariant,
@@ -1283,6 +1284,7 @@ const autoCollected = new Set<string>()
 export function resetBackgroundWork(): void {
   cockpit.backgroundSteps = []
   cockpit.backgroundTasks = []
+  cockpit.backgroundRuns = []
   autoCollected.clear()
   // The timer goes with them. It is armed for the session whose delegations it
   // was watching, and leaving it running would refill the list this just
@@ -1292,7 +1294,12 @@ export function resetBackgroundWork(): void {
 }
 export async function refreshBackgroundTasks(): Promise<void> {
   try {
-    cockpit.backgroundTasks = await BackgroundTasks()
+    // Both in one pass, so a run and its rows are never a poll apart: read
+    // separately, a phase could show 3 done above three rows that are still
+    // running, and the card would be arguing with itself.
+    const [tasks, runs] = await Promise.all([BackgroundTasks(), BackgroundRuns()])
+    cockpit.backgroundTasks = tasks
+    cockpit.backgroundRuns = runs
   } catch {
     // The engine may be mid-bootstrap; the next trigger tries again.
   }
@@ -1489,6 +1496,12 @@ export function applyToolEvent(ev: ToolEvent): void {
   for (const path of ev.artifacts ?? []) {
     if (path && !cockpit.turnFiles.includes(path)) cockpit.turnFiles.push(path)
   }
+  // What the turn asked to remember. Deduped like the files above: asking twice
+  // in one turn answers with the id already waiting (desktop/pending.go treats
+  // the second attempt as a duplicate), and one proposal deserves one card.
+  if (ev.proposalId && !cockpit.turnProposals.includes(ev.proposalId)) {
+    cockpit.turnProposals.push(ev.proposalId)
+  }
 }
 
 /** Copy an image (from a native file-picker or a drop) into the sandbox, and stage it as the composer's pending attachment. */
@@ -1522,12 +1535,6 @@ export async function attachImageFromClipboard(file: File): Promise<void> {
     cockpit.pendingImage = { relPath, dataUrl: await ReadImageDataURL(relPath) }
   } catch (err) {
     cockpit.chat.push({ role: 'agent', text: t('cockpit.attachError', { err: String(err) }), time: nowLabel() })
-  }
-  // What the turn asked to remember. Deduped like the files above: asking twice
-  // in one turn answers with the id already waiting (desktop/pending.go treats
-  // the second attempt as a duplicate), and one proposal deserves one card.
-  if (ev.proposalId && !cockpit.turnProposals.includes(ev.proposalId)) {
-    cockpit.turnProposals.push(ev.proposalId)
   }
 }
 

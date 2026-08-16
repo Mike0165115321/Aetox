@@ -255,8 +255,10 @@ func (p *NoopProvider) SupportsToolCalling() bool {
 	// (todo panel, ask_user cards, tool timeline) is exercisable without a key;
 	// aetox-subagent:test does the same for delegation, and needs it on both
 	// sides — a delegate runs on whatever model the session is using.
+	// aetox-run:test joins them: it drives a declared run (several delegates
+	// across phases), and its delegates are on this same model too.
 	name := strings.ToLower(p.DefaultModel)
-	return strings.Contains(name, "tools") || strings.Contains(name, "subagent")
+	return strings.Contains(name, "tools") || strings.Contains(name, "subagent") || strings.Contains(name, "run:test")
 }
 
 func (p *NoopProvider) SupportsReasoning() bool {
@@ -315,6 +317,8 @@ func (p *NoopProvider) Complete(_ context.Context, req Request) (Response, error
 			Text: p.pick("[think-test] คำตอบสั้น ๆ หลังคิดเสร็จ: ", "[think-test] short answer after thinking: ") +
 				clipNoop(text, 80),
 		}, nil
+	case strings.Contains(modelKey, "run:test"):
+		return p.noopRunReply(model, req), nil
 	case strings.Contains(modelKey, "subagent"):
 		return p.noopSubagentReply(model, req), nil
 	case strings.Contains(modelKey, "tools"):
@@ -533,18 +537,22 @@ func (p *NoopProvider) noopSubagentReply(model string, req Request) Response {
 		return p.noopSubagentDelegateReply(model, req)
 	}
 
+	// Counted by the id this script issued, not by the tool's name: delegation is
+	// packed under one name now (skill packs, §99), so every round of it comes
+	// back as a `task` result and the name can no longer tell start from collect.
+	// The ids below are ours and say which round each result belongs to.
 	started, collected, answered := 0, 0, 0
 	for _, m := range req.Messages {
 		if m.Role != RoleTool {
 			continue
 		}
-		switch strings.ToLower(m.Name) {
-		case "task":
-			started++
-		case "task_result":
+		switch {
+		case strings.HasPrefix(m.ToolCallID, "noop_task_collect"):
 			collected++
-		case "task_answer":
+		case strings.HasPrefix(m.ToolCallID, "noop_task_answer"):
 			answered++
+		case strings.HasPrefix(m.ToolCallID, "noop_task_"):
+			started++
 		}
 	}
 	call := func(id, name, args string) Response {
@@ -568,20 +576,20 @@ func (p *NoopProvider) noopSubagentReply(model string, req Request) Response {
 			`{"description":"ทดสอบซับเอเจน","prompt":"askmain: ดูว่าในโฟลเดอร์นี้มีไฟล์อะไรบ้าง เขียนไฟล์สรุปไว้หนึ่งไฟล์ อ่านกลับมายืนยัน แล้วรายงานผล","agent":"general"}`,
 			`{"description":"sub-agent test","prompt":"askmain: list what is in this folder, write a summary file, read it back to confirm, then report","agent":"general"}`))
 	case collected == 0:
-		return call("noop_task_collect_1", "task_result", `{"task_id":"`+firstTaskID(req)+`"}`)
+		return call("noop_task_collect_1", "task", `{"action":"collect","task_id":"`+firstTaskID(req)+`"}`)
 	case answered == 0:
 		// The delegate is parked on its question; this is the round that proves
 		// the answer travels back into a run that is still alive.
-		return call("noop_task_answer_1", "task_answer", p.pick(
-			`{"task_id":"`+firstTaskID(req)+`","answer":"ลุยเลย ลิสต์ทั้งโฟลเดอร์ได้"}`,
-			`{"task_id":"`+firstTaskID(req)+`","answer":"go ahead, list the whole folder"}`))
+		return call("noop_task_answer_1", "task", p.pick(
+			`{"action":"answer","task_id":"`+firstTaskID(req)+`","answer":"ลุยเลย ลิสต์ทั้งโฟลเดอร์ได้"}`,
+			`{"action":"answer","task_id":"`+firstTaskID(req)+`","answer":"go ahead, list the whole folder"}`))
 	case collected == 1:
-		return call("noop_task_collect_2", "task_result", `{"task_id":"`+firstTaskID(req)+`"}`)
+		return call("noop_task_collect_2", "task", `{"action":"collect","task_id":"`+firstTaskID(req)+`"}`)
 	}
 
 	last := ""
 	for _, m := range req.Messages {
-		if m.Role == RoleTool && strings.EqualFold(m.Name, "task_result") {
+		if m.Role == RoleTool && strings.HasPrefix(m.ToolCallID, "noop_task_collect") {
 			last = strings.TrimSpace(m.Content)
 		}
 	}
@@ -616,6 +624,22 @@ func (p *NoopProvider) noopSubagentDelegateReply(model string, req Request) Resp
 	body := p.pick(
 		"# สรุปโฟลเดอร์\\n\\nไฟล์นี้เขียนโดยซับเอเจนระหว่างชุดทดสอบ\\n\\n- ตรวจแล้ว: OK\\n",
 		"# Folder summary\\n\\nWritten by a sub-agent during the test set.\\n\\n- checked: OK\\n")
+
+	// The run bench's delegates: read-only, two steps, then a finding. Its own
+	// branch because six of them work at once on the user's real sandbox — the
+	// sequence below writes a file, and six writers on one path would be a demo
+	// of interleaving rather than of a run.
+	if briefMentions(req, "runbench") {
+		switch {
+		case !did("list") && offersTool(req, "list"):
+			return step("noop_sub_list", "list", `{"path":"."}`)
+		case !did("grep") && offersTool(req, "grep"):
+			return step("noop_sub_grep", "grep", `{"pattern":"aetox","path":"."}`)
+		}
+		return Response{Provider: p.Name(), Model: model, Text: p.pick(
+			"[run-test] ตรวจแล้ว: ข้อกล่าวอ้างนี้ตรงกับสิ่งที่อยู่ในโฟลเดอร์จริง",
+			"[run-test] checked: this claim matches what is actually in the folder")}
+	}
 
 	switch {
 	// A chair's whole job is one deliverable, so its script is one call: the
@@ -660,6 +684,116 @@ func (p *NoopProvider) noopSubagentDelegateReply(model string, req Request) Resp
 		b.WriteString(p.pick("คำตอบจากเมนเอเจน: ", "main agent answered: ") + clipNoop(answer, 200) + "\n")
 	}
 	return Response{Provider: p.Name(), Model: model, Text: strings.TrimRight(b.String(), "\n")}
+}
+
+// noopRunReply is a declared RUN on a bench: switch to aetox-run:test, send
+// anything, and the whole of internal/subagent/run.go runs with no API key —
+// three phases declared before any work starts, three delegates fanned out into
+// the first, two into the checking round, one summary, each wave collected.
+//
+// What it exercises is the half no unit test can look at: the card grouping six
+// delegates under one job, a phase that has not happened yet drawn at 0 of what
+// it promised, and the counts moving as each wave lands. The fan-out is three
+// tool calls in ONE response on purpose — that is what a real model does when it
+// starts a wave, and it is the only way the card ever shows three rows at the
+// same elapsed time.
+//
+// Rounds are counted by the ids this script issues, never by tool names:
+// delegation is packed (§99), so every round of it comes back named `task`.
+//
+// Tokens stay at zero here, and that is deliberate rather than missing: Aetox's
+// own provider reports no usage, and inventing numbers would put spend the user
+// never paid onto the Usage page.
+func (p *NoopProvider) noopRunReply(model string, req Request) Response {
+	if !offersTool(req, "task") {
+		return p.noopSubagentDelegateReply(model, req) // this is a delegate, not the parent
+	}
+
+	// What came back, by the id that asked for it.
+	done := func(prefix string) []string {
+		var out []string
+		for _, m := range req.Messages {
+			if m.Role == RoleTool && strings.HasPrefix(m.ToolCallID, prefix) {
+				out = append(out, strings.TrimSpace(m.Content))
+			}
+		}
+		return out
+	}
+	ids := func(prefix string) []string {
+		var out []string
+		for _, m := range req.Messages {
+			if m.Role != RoleTool || !strings.HasPrefix(m.ToolCallID, prefix) {
+				continue
+			}
+			if id := taskIDIn(m.Content); id != "" {
+				out = append(out, id)
+			}
+		}
+		return out
+	}
+	calls := func(cs ...ToolCall) Response {
+		return Response{Provider: p.Name(), Model: model, ToolCalls: cs}
+	}
+	call := func(id, args string) ToolCall {
+		return ToolCall{ID: id, Type: "function", Function: FunctionCall{Name: "task", Arguments: args}}
+	}
+	// The brief every delegate gets. "runbench" is the keyword its own script
+	// reads, the same opt-in shape askmain and toolchain use.
+	brief := func(what string) string {
+		return `{"description":"` + what + `","prompt":"runbench: ` + what +
+			` — ดูว่าในโฟลเดอร์นี้มีอะไร แล้วรายงานสิ่งที่พบ","agent":"explore","phase":"`
+	}
+
+	const (
+		find    = "รอบตรวจ"
+		refute  = "รอบหักล้าง"
+		summary = "สรุปให้เจ้าของอ่าน"
+	)
+
+	switch {
+	case len(done("noop_run_plan")) == 0:
+		return calls(call("noop_run_plan", `{"action":"plan","name":"ตรวจ SKILL.md ให้ตรงกับโค้ด",`+
+			`"brief":"กางข้อกล่าวอ้างในไฟล์ออกทีละข้อ ส่งไปทาบกับโค้ดจริงพร้อมกัน แล้วให้อีกชุดพยายามหักล้างก่อนรายงาน",`+
+			`"phases":[{"title":"`+find+`","agents":3},{"title":"`+refute+`","agents":2},{"title":"`+summary+`","agents":1}]}`))
+
+	case len(done("noop_run_find_")) == 0:
+		// One response, three calls: the wave the card is for.
+		return calls(
+			call("noop_run_find_1", brief("ตรวจข้อกล่าวอ้างเรื่องที่เก็บข้อมูล")+find+`"}`),
+			call("noop_run_find_2", brief("ตรวจข้อกล่าวอ้างเรื่องสกิล")+find+`"}`),
+			call("noop_run_find_3", brief("ตรวจข้อกล่าวอ้างเรื่องแซนด์บ็อกซ์")+find+`"}`),
+		)
+
+	case len(done("noop_run_findcollect")) == 0:
+		return calls(call("noop_run_findcollect",
+			`{"action":"collect","task_id":"`+strings.Join(ids("noop_run_find_"), ",")+`"}`))
+
+	case len(done("noop_run_refute_")) == 0:
+		return calls(
+			call("noop_run_refute_1", brief("พยายามหักล้างข้อที่หนึ่งกับข้อที่สอง")+refute+`"}`),
+			call("noop_run_refute_2", brief("พยายามหักล้างข้อที่สาม")+refute+`"}`),
+		)
+
+	case len(done("noop_run_refutecollect")) == 0:
+		return calls(call("noop_run_refutecollect",
+			`{"action":"collect","task_id":"`+strings.Join(ids("noop_run_refute_"), ",")+`"}`))
+
+	case len(done("noop_run_sum_")) == 0:
+		return calls(call("noop_run_sum_1", brief("รวบรวมสิ่งที่เหลือรอดหลังถูกหักล้าง")+summary+`"}`))
+
+	case len(done("noop_run_sumcollect")) == 0:
+		return calls(call("noop_run_sumcollect",
+			`{"action":"collect","task_id":"`+strings.Join(ids("noop_run_sum_"), ",")+`"}`))
+	}
+
+	return Response{Provider: p.Name(), Model: model, Text: p.pick(
+		"✅ จบชุดทดสอบชุดงานครับ — ประกาศเฟสไว้ก่อน 3 เฟส → กระจาย 3 ตัวไปตรวจพร้อมกัน → เก็บผล → "+
+			"ส่งอีก 2 ตัวไปหักล้าง → เก็บผล → สรุป\n\n"+
+			"การ์ดข้างล่างคือสิ่งที่ต้องดู: ทุกตัวอยู่ใต้ชื่องานเดียวกัน และเฟสที่ยังไม่ถึงคิวขึ้นเป็น 0 ไว้ตั้งแต่ต้น",
+		"✅ Run test set complete — three phases declared up front, three delegates fanned out at once, "+
+			"collected, two more sent to refute, collected, then a summary.\n\n"+
+			"The card below is the thing to look at: every worker under one job, and a phase that has not "+
+			"happened yet drawn at 0 from the start.")}
 }
 
 // firstTaskID digs the handle out of whatever `task` reported. The id travels to
@@ -713,13 +847,15 @@ func (p *NoopProvider) noopDelegationReply(model string, req Request) Response {
 		if m.Role != RoleTool {
 			continue
 		}
-		switch strings.ToLower(strings.TrimSpace(m.Name)) {
-		case "task":
+		// By the id this script issued rather than the tool's name — packed,
+		// starting and collecting are both `task` results (see noopSubagentReply).
+		switch {
+		case strings.HasPrefix(m.ToolCallID, "noop_task_collect"):
+			collected = strings.TrimSpace(m.Content)
+		case strings.HasPrefix(m.ToolCallID, "noop_task_"):
 			if id := taskIDIn(m.Content); id != "" {
 				started = id
 			}
-		case "task_result":
-			collected = strings.TrimSpace(m.Content)
 		}
 	}
 
@@ -759,7 +895,7 @@ func (p *NoopProvider) noopDelegationReply(model string, req Request) Response {
 			`{"description":"list the sandbox root","prompt":"%sList what is in the sandbox root and report the paths you found. Nothing else.","agent":%q}`,
 			passthrough, profile))
 	case collected == "":
-		return call("noop_task_collect_1", "task_result", fmt.Sprintf(`{"task_id":%q}`, started))
+		return call("noop_task_collect_1", "task", fmt.Sprintf(`{"action":"collect","task_id":%q}`, started))
 	}
 	return Response{Provider: p.Name(), Model: model, Text: p.pick(
 		"[tools-test] ส่งงานให้ "+profile+" แล้วเก็บผลกลับมาได้ ผลที่ได้:\n",

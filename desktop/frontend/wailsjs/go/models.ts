@@ -237,12 +237,82 @@ export namespace main {
 	        this.sheet = source["sheet"];
 	    }
 	}
+	export class BackgroundPhase {
+	    title: string;
+	    planned: number;
+	    done: number;
+	    failed: number;
+	    running: number;
+	    waiting: number;
+	    tokens: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new BackgroundPhase(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.title = source["title"];
+	        this.planned = source["planned"];
+	        this.done = source["done"];
+	        this.failed = source["failed"];
+	        this.running = source["running"];
+	        this.waiting = source["waiting"];
+	        this.tokens = source["tokens"];
+	    }
+	}
+	export class BackgroundRun {
+	    id: string;
+	    name: string;
+	    brief?: string;
+	    startedAt: string;
+	    running: boolean;
+	    tokens: number;
+	    phases: BackgroundPhase[];
+	
+	    static createFrom(source: any = {}) {
+	        return new BackgroundRun(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.brief = source["brief"];
+	        this.startedAt = source["startedAt"];
+	        this.running = source["running"];
+	        this.tokens = source["tokens"];
+	        this.phases = this.convertValues(source["phases"], BackgroundPhase);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class BackgroundTask {
 	    id: string;
 	    agent: string;
 	    label: string;
 	    startedAt: string;
 	    toolCalls: number;
+	    model?: string;
+	    tokens: number;
+	    run?: string;
+	    phase?: string;
 	    state: string;
 	    elapsedMs?: number;
 	    question?: string;
@@ -259,6 +329,10 @@ export namespace main {
 	        this.label = source["label"];
 	        this.startedAt = source["startedAt"];
 	        this.toolCalls = source["toolCalls"];
+	        this.model = source["model"];
+	        this.tokens = source["tokens"];
+	        this.run = source["run"];
+	        this.phase = source["phase"];
 	        this.state = source["state"];
 	        this.elapsedMs = source["elapsedMs"];
 	        this.question = source["question"];
