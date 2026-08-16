@@ -2,6 +2,7 @@ package learned
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -124,6 +125,44 @@ func TestTheAnswerDistinguishesQueuedFromAlreadyQueued(t *testing.T) {
 	}
 }
 
+// The id of the queued row rides back on the output. Without it the chat can
+// say only that something called "memory" ran: what it wants to remember, and
+// the decision it is waiting for, then live on a Settings page the user has no
+// reason to be looking at.
+func TestTheReceiptCarriesTheQueuedProposal(t *testing.T) {
+	isolate(t)
+	rec := &recorder{}
+	tool := &MemoryTool{Scope: MainScope, Proposer: rec}
+
+	out, err := tool.ExecuteTool(context.Background(), map[string]any{"text": "เครื่องนี้ไม่มี Excel ติดตั้ง"})
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	if out.ProposalID != 1 {
+		t.Errorf("ProposalID = %d, want the id the door handed back", out.ProposalID)
+	}
+
+	// A second attempt at the same line is answered with the row already
+	// waiting — the card under this answer is about that proposal, not nothing.
+	rec.duplicate = true
+	dup, err := tool.ExecuteTool(context.Background(), map[string]any{"text": "เครื่องนี้ไม่มี Excel ติดตั้ง"})
+	if err != nil {
+		t.Fatalf("duplicate: %v", err)
+	}
+	if dup.ProposalID == 0 {
+		t.Error("a duplicate lost its id, so the answer that proposed it can show nothing")
+	}
+
+	// A refusal proposes nothing, so there is nothing to draw.
+	bad, err := tool.ExecuteTool(context.Background(), map[string]any{"op": OpAdd})
+	if err == nil {
+		t.Fatal("add without text should be refused")
+	}
+	if bad.ProposalID != 0 {
+		t.Errorf("a refused call reported proposal %d", bad.ProposalID)
+	}
+}
+
 // The description has to teach what belongs in memory as a principle. A list
 // of forbidden topics answers the failures someone remembered and nothing
 // else; what generalises is that a kept line is paid for on every future
@@ -176,6 +215,69 @@ func TestADeskSessionCanRememberInEitherScope(t *testing.T) {
 	}
 	if rec.got[2].Scope != MainScope {
 		t.Errorf("an unrecognised where landed in %q, want the shared file", rec.got[2].Scope)
+	}
+}
+
+// The third destination. What makes it worth its own scope is that the desk
+// cannot stand in for it: โต๊ะโค้ด is the same desk in every repository, so a
+// decision kept there would arrive as advice in the next project.
+func TestASessionInAProjectCanKeepADecisionWhereItIsTrue(t *testing.T) {
+	isolate(t)
+	root := filepath.Join(t.TempDir(), "Aetox")
+	rec := &recorder{}
+	tool := &MemoryTool{Scope: MainScope, Desk: "coding", Project: root, Proposer: rec}
+
+	for _, args := range []map[string]any{
+		{"text": "ผู้ใช้ชอบคำตอบสั้น"},
+		{"text": "เจ้าของอ่านดิฟก่อนเสมอ", "where": "this-desk"},
+		{"text": "ที่นี่ตกลงกันว่าใช้ PowerShell", "where": "this-project"},
+		// A word the model invented, and the word for a destination this session
+		// does have — both must land in the shared file rather than nowhere.
+		{"text": "อีกอัน", "where": "this-folder"},
+	} {
+		if _, err := tool.ExecuteTool(context.Background(), args); err != nil {
+			t.Fatalf("add %v: %v", args, err)
+		}
+	}
+	if len(rec.got) != 4 {
+		t.Fatalf("want four proposals, got %d", len(rec.got))
+	}
+	want := []string{MainScope, ModeScope("coding"), ProjectScope(root), MainScope}
+	for i, w := range want {
+		if rec.got[i].Scope != w {
+			t.Errorf("proposal %d went to scope %q, want %q", i, rec.got[i].Scope, w)
+		}
+	}
+
+	// The parameter offers only what this session actually has, and names the
+	// project so "this-project" means something the model can check.
+	def := tool.ToolDefinition()
+	params := string(def.Function.Parameters)
+	for _, want := range []string{"this-desk", "this-project", "Aetox"} {
+		if !strings.Contains(params, want) {
+			t.Errorf("the tool block does not offer %q:\n%s", want, params)
+		}
+	}
+}
+
+// A session with a project but no desk offers the project and not the desk, and
+// the other way round. The tool block rides in every request, so an option that
+// cannot be used is a bill with no benefit.
+func TestTheWhereParameterOffersOnlyWhatThisSessionHas(t *testing.T) {
+	isolate(t)
+	root := filepath.Join(t.TempDir(), "Aetox")
+
+	projectOnly := string((&MemoryTool{Scope: MainScope, Project: root}).ToolDefinition().Function.Parameters)
+	if !strings.Contains(projectOnly, "this-project") || strings.Contains(projectOnly, "this-desk") {
+		t.Errorf("a session with no desk was offered one:\n%s", projectOnly)
+	}
+	deskOnly := string((&MemoryTool{Scope: MainScope, Desk: "coding"}).ToolDefinition().Function.Parameters)
+	if !strings.Contains(deskOnly, "this-desk") || strings.Contains(deskOnly, "this-project") {
+		t.Errorf("a session with no project was offered one:\n%s", deskOnly)
+	}
+	bare := string((&MemoryTool{Scope: MainScope}).ToolDefinition().Function.Parameters)
+	if strings.Contains(bare, "where") {
+		t.Errorf("a session with one destination was sent a choice:\n%s", bare)
 	}
 }
 

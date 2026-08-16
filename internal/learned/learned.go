@@ -33,6 +33,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/Mike0165115321/Aetox/internal/config"
 )
@@ -64,6 +65,23 @@ const MainScope = ""
 // profile name is a filename), so the two namespaces cannot collide.
 const modePrefix = "mode:"
 
+// projectPrefix marks a scope that belongs to one folder on this machine — the
+// third axis, alongside the desk and the delegate.
+//
+// It exists because the other two cannot answer for it. A desk is the same desk
+// in every repository: what โต๊ะโค้ด learned in one project would follow the
+// user into the next, which is right for "this machine has no Excel" and wrong
+// for "we decided this package owns the retry". The user's own file for a
+// project (AETOX.md, prompt.ProjectContextFileNames) is not this either — that
+// is what the user tells the agent, written by hand and checked into the repo,
+// while this is what the work itself settled and the user approved. Different
+// author, different question.
+//
+// Owner, 16 ส.ค., correcting an answer that had folded the two together:
+// *"เราต้องแยกสิ ความจำ การเรียนรู้ ... ที่ผมอยากให้เพิ่มตอนแรก คือ
+// จำการตัดสินใจตอนทำโปรเจกต์"*.
+const projectPrefix = "project:"
+
 // ModeScope is the memory scope of the desk named name: what working at that
 // desk taught the agent, folded into that desk's prompt and no other's.
 //
@@ -85,6 +103,54 @@ func ModeScope(name string) string {
 func SplitModeScope(scope string) (string, bool) {
 	rest, ok := strings.CutPrefix(strings.TrimSpace(scope), modePrefix)
 	return rest, ok && rest != ""
+}
+
+// ProjectScope is the memory scope of the folder at root: what working in that
+// project settled, folded into sessions held there and no others.
+//
+// Takes the root path rather than a key so there is one way to name a project
+// and no caller has to know how it is spelled. The key underneath is
+// config.ProjectKey — the same one the store files that project's history
+// under, which is what lets a person open the memory folder and match a file
+// to a project without a lookup table.
+//
+// Empty root means no project is open, which is a real state (the unfocused
+// session that roams the machine) and not an error. It answers with MainScope,
+// so a caller that asks anyway lands where it would have landed before this
+// existed rather than in a junk drawer named after the home directory.
+func ProjectScope(root string) string {
+	root = strings.TrimSpace(root)
+	if root == "" {
+		return MainScope
+	}
+	return projectPrefix + safeKey(config.ProjectKey(root))
+}
+
+// SplitProjectScope is SplitModeScope's counterpart: the key a scope belongs
+// to, and whether it is a project scope at all.
+func SplitProjectScope(scope string) (string, bool) {
+	rest, ok := strings.CutPrefix(strings.TrimSpace(scope), projectPrefix)
+	return rest, ok && rest != ""
+}
+
+// safeKey makes a project key usable as a filename. config.ProjectKey opens
+// with the folder's own base name, and folder names on this platform routinely
+// carry spaces — "My App-1a2b3c4d" would be refused by validScope and the
+// project would silently have no memory at all. The hash half is what makes a
+// key unique, so flattening the readable half cannot collide two projects: it
+// can only make two different folders' files sort next to each other.
+func safeKey(key string) string {
+	cleaned := strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) || strings.ContainsRune(`\/:*?"<>|`, r) {
+			return '-'
+		}
+		return r
+	}, strings.TrimSpace(key))
+	cleaned = strings.Trim(cleaned, ".-")
+	if cleaned == "" {
+		return "project"
+	}
+	return cleaned
 }
 
 // Dir is <DataRoot>/memory — separate from <DataRoot>/identity on purpose.
@@ -124,6 +190,18 @@ func FileFor(scope string) (string, error) {
 		}
 		return filepath.Join(dir, "modes", desk+".md"), nil
 	}
+	// Under <DataRoot>/memory rather than inside the project itself (owner's
+	// call, 16 ส.ค.): writing into somebody's repository means git noise they
+	// did not ask for, a file that needs the sandbox's write right to exist at
+	// all, and nothing at all for a project folder that is not a repository.
+	// What the team should see goes in AETOX.md, which is theirs and is written
+	// on purpose.
+	if key, ok := SplitProjectScope(scope); ok {
+		if !validScope(key) {
+			return "", fmt.Errorf("invalid memory scope %q", scope)
+		}
+		return filepath.Join(dir, "projects", key+".md"), nil
+	}
 	if !validScope(scope) {
 		return "", fmt.Errorf("invalid memory scope %q", scope)
 	}
@@ -149,6 +227,53 @@ func Read(scope string) string {
 		data = data[:MaxBytes]
 	}
 	return strings.TrimSpace(stripHeader(string(data)))
+}
+
+// Scopes lists every scope under <DataRoot>/memory that currently holds
+// something, main first, then the desks and the projects in the order the
+// filesystem gives them.
+//
+// It exists because the review page could only ever show one file. That was
+// true enough while the main agent's was the only one a session could write
+// to; the moment a desk or a project could be the destination, approving a
+// line meant sending it somewhere the app had no way to show — visible only by
+// opening the folder, which is the "it exists and you cannot reach it" shape
+// this project keeps having to remove.
+//
+// A delegate's memory is deliberately not here: it lives in that worker's own
+// folder and has its own page (การตั้งค่า › เอเจน), which is where somebody
+// looking for it would look.
+func Scopes() []string {
+	dir, err := Dir()
+	if err != nil {
+		return nil
+	}
+	var out []string
+	if Read(MainScope) != "" {
+		out = append(out, MainScope)
+	}
+	for _, sub := range []struct {
+		folder string
+		scope  func(string) string
+	}{
+		{"modes", func(name string) string { return modePrefix + name }},
+		{"projects", func(name string) string { return projectPrefix + name }},
+	} {
+		entries, err := os.ReadDir(filepath.Join(dir, sub.folder))
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if e.IsDir() || !strings.EqualFold(filepath.Ext(e.Name()), ".md") {
+				continue
+			}
+			scope := sub.scope(strings.TrimSuffix(e.Name(), filepath.Ext(e.Name())))
+			if Read(scope) != "" {
+				out = append(out, scope)
+			}
+		}
+	}
+	return out
 }
 
 // Ops a proposal can carry. Substring-matched rather than line-numbered
@@ -281,9 +406,13 @@ func Full(scope string, addBytes int) bool {
 // it expecting the agent to obey rather than to have learned.
 func header(scope string) string {
 	who := "the main agent"
-	switch desk, isDesk := SplitModeScope(scope); {
+	desk, isDesk := SplitModeScope(scope)
+	project, isProject := SplitProjectScope(scope)
+	switch {
 	case isDesk:
 		who = "the agent working at the " + desk + " desk"
+	case isProject:
+		who = "the agent working in the " + project + " project"
 	case scope != MainScope:
 		who = "the " + scope + " sub-agent"
 	}

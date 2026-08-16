@@ -2874,6 +2874,13 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
    paragraph — which is what the single <pre> here used to look like. The
    actions stay put at the top of the row: a two-line entry and a one-line
    entry must not put their buttons in different places. */
+/* Whose file the rows under it belong to. Quiet and small: it is a divider
+   inside one card, not a section heading competing with the h3 above. */
+.mem-scope {
+  padding:10px 16px 4px; font-size:var(--fs-2xs); font-weight:600;
+  letter-spacing:.08em; text-transform:uppercase; color:var(--text-muted); opacity:.7;
+}
+.mem-row + .mem-scope { border-top:1px solid var(--border-subtle); margin-top:2px; }
 .mem-row { display:flex; align-items:flex-start; gap:12px; padding:11px 16px; border-bottom:1px solid var(--border-subtle); }
 .mem-row:last-of-type { border-bottom:none; }
 .mem-row.editing { flex-direction:column; align-items:stretch; gap:8px; background:var(--surface-sunken); }

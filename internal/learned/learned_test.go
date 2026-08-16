@@ -321,6 +321,137 @@ func TestModeScopeIsItsOwnFileBesideTheOthers(t *testing.T) {
 	}
 }
 
+// The third axis, and the reason it exists: a desk is the same desk in every
+// repository, so what one project settled must not arrive as advice in the
+// next one (owner, 16 ส.ค.). Two projects, two files, and neither reaches the
+// shared memory every session pays for.
+func TestAProjectsMemoryStaysInThatProject(t *testing.T) {
+	isolate(t)
+
+	here := filepath.Join(t.TempDir(), "Aetox")
+	there := filepath.Join(t.TempDir(), "Tennis")
+	if err := Apply(ProjectScope(here), OpAdd, "", "statereport marks an error as coming from the world"); err != nil {
+		t.Fatalf("write project memory: %v", err)
+	}
+	if err := Apply(ProjectScope(there), OpAdd, "", "the coach list is keyed by phone"); err != nil {
+		t.Fatalf("write the other project's memory: %v", err)
+	}
+
+	path, err := FileFor(ProjectScope(here))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(filepath.ToSlash(path), "memory/projects/Aetox-") {
+		t.Errorf("a project's memory landed at %q, want memory/projects/<key>.md", path)
+	}
+	if got := Read(ProjectScope(here)); !strings.Contains(got, "statereport") {
+		t.Errorf("the project scope read back %q", got)
+	}
+	if got := Read(ProjectScope(here)); strings.Contains(got, "keyed by phone") {
+		t.Error("one project's memory reached another's file")
+	}
+	if got := Read(MainScope); got != "" {
+		t.Errorf("a project decision reached the memory every session carries: %q", got)
+	}
+	// Reopening the same folder spelled differently is the same project — the
+	// key is path-cleaned and case-folded, and a memory that missed on a
+	// trailing slash would be a memory the user never sees again.
+	if ProjectScope(here+string(filepath.Separator)) != ProjectScope(here) {
+		t.Error("a trailing separator produced a different project")
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "project") {
+		t.Errorf("the project file does not say whose it is:\n%s", raw)
+	}
+}
+
+// Folder names on this platform have spaces in them, and validScope refuses a
+// scope with one. Unsanitized, "My App" would be a project that silently could
+// never have a memory at all.
+func TestAProjectWhoseNameIsNotFilenameSafeStillGetsAFile(t *testing.T) {
+	isolate(t)
+
+	root := filepath.Join(t.TempDir(), "My App")
+	if err := Apply(ProjectScope(root), OpAdd, "", "จำอันนี้ไว้"); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	path, err := FileFor(ProjectScope(root))
+	if err != nil {
+		t.Fatalf("FileFor: %v", err)
+	}
+	if strings.ContainsAny(filepath.Base(path), ` \/:*?"<>|`) {
+		t.Errorf("unsafe characters survived into the filename %q", path)
+	}
+	if got := Read(ProjectScope(root)); !strings.Contains(got, "จำอันนี้ไว้") {
+		t.Errorf("read back %q", got)
+	}
+	// Two folders whose names flatten to the same thing are still two projects:
+	// the hash half is what makes the key unique, and it is untouched.
+	other := filepath.Join(t.TempDir(), "My-App")
+	if ProjectScope(root) == ProjectScope(other) {
+		t.Error("two different folders collapsed into one project")
+	}
+}
+
+// No project open is a real state, not an error. It must land where it always
+// landed rather than inventing a project named after the home directory.
+func TestNoProjectMeansTheSharedMemory(t *testing.T) {
+	if got := ProjectScope("   "); got != MainScope {
+		t.Errorf("ProjectScope(empty) = %q, want the shared scope", got)
+	}
+}
+
+// The review page can only show a memory it knows exists. Before Scopes it
+// listed the main agent's file and nothing else, so a line approved into a desk
+// or a project was visible only by opening the folder.
+func TestScopesListsEveryMemoryThatHoldsSomething(t *testing.T) {
+	isolate(t)
+	root := filepath.Join(t.TempDir(), "Aetox")
+
+	if got := Scopes(); len(got) != 0 {
+		t.Fatalf("a machine that has learned nothing listed %v", got)
+	}
+	for _, w := range []struct{ scope, line string }{
+		{MainScope, "the user works in Thai"},
+		{ModeScope("coding"), "the owner reads the diff first"},
+		{ProjectScope(root), "we settled on PowerShell here"},
+	} {
+		if err := Apply(w.scope, OpAdd, "", w.line); err != nil {
+			t.Fatalf("write %q: %v", w.scope, err)
+		}
+	}
+
+	got := Scopes()
+	if len(got) != 3 || got[0] != MainScope {
+		t.Fatalf("Scopes() = %v, want the shared one first and all three present", got)
+	}
+	var hasDesk, hasProject bool
+	for _, s := range got {
+		if _, ok := SplitModeScope(s); ok {
+			hasDesk = true
+		}
+		if _, ok := SplitProjectScope(s); ok {
+			hasProject = true
+		}
+	}
+	if !hasDesk || !hasProject {
+		t.Errorf("Scopes() = %v, want a desk and a project in it", got)
+	}
+	// A delegate's memory lives in that worker's own folder and has its own
+	// page. Listing it here would put it on a page that cannot address it.
+	if err := Apply("doc", OpAdd, "", "a delegate learned something"); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range Scopes() {
+		if s == "doc" {
+			t.Error("a delegate's memory was listed with the main agent's")
+		}
+	}
+}
+
 // An unknown scope shape must not be able to walk out of the memory folder —
 // the desk name arrives from a database column.
 func TestModeScopeRefusesPathShapedDesks(t *testing.T) {

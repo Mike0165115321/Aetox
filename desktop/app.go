@@ -1531,6 +1531,26 @@ func unfocusedRoot() string {
 	return filepath.Join(home, "aetox")
 }
 
+// focusedProjectRoot is the project a session rooted at this folder is working
+// in, and "" when it is working in none.
+//
+// The distinction matters to exactly one caller today — the memory tool's
+// third scope — and it has to be made here rather than there: an unfocused
+// session is still rooted at a real folder, so a tool handed the sandbox root
+// unconditionally would offer to remember things "in the aetox project", which
+// is the home directory wearing a project's name.
+//
+// The root is an argument because the flag and the folder are set at different
+// moments: focusProject/focusNone move a.projectFocused before re-bootstrapping,
+// while a.cfg follows at the end of applyConfig. Reading both off the App gave
+// "focused" paired with the previous project's path.
+func (a *App) focusedProjectRoot(root string) string {
+	if !a.projectFocused {
+		return ""
+	}
+	return strings.TrimSpace(root)
+}
+
 // focusNone re-roots the engine at unfocusedRoot and marks the app as not
 // focused on any project.
 //
@@ -3006,7 +3026,15 @@ func (a *App) chairProfile() *subagent.Profile {
 // A function rather than a literal inside applyConfig because the tool coverage
 // test has to assemble the exact same set: a list copied into a test is a list
 // that silently stops matching the day someone adds a tool here.
-func (a *App) workbenchSkills() []skill.Skill {
+//
+// sandboxRoot is passed in rather than read off a.cfg, and the reason is a bug
+// this had on its first run: applyConfig builds these tools at the top and
+// assigns a.cfg seventy lines further down, so a tool reading the field got the
+// root of the project the user had just left. `memory` is the first tool here
+// whose behaviour depends on which folder this is, and it filed the first
+// proposal ever made in a project against the previous one — the exact failure
+// the per-project scope exists to prevent (§116). A parameter cannot go stale.
+func (a *App) workbenchSkills(sandboxRoot string) []skill.Skill {
 	return []skill.Skill{
 		// One tool for the browser, four actions inside it (browser_tool.go).
 		// The four old names are still what `tools:` and `categories:` speak —
@@ -3034,9 +3062,14 @@ func (a *App) workbenchSkills() []skill.Skill {
 		// unless the session was opened at a desk: a fact about the user belongs
 		// in the file every desk reads, while a lesson about this kind of work
 		// belongs where only this kind of work pays for it (§83).
+		//
+		// Project is the third, and empty unless a project is focused. โต๊ะโค้ด
+		// is the same desk in every repository, so the desk scope cannot hold
+		// "we decided X here" without carrying it into the next one.
 		&learned.MemoryTool{
 			Scope:    learned.MainScope,
 			Desk:     a.desk.DeskName(),
+			Project:  a.focusedProjectRoot(sandboxRoot),
 			Proposer: appProposer{app: a},
 		},
 	}
@@ -3058,7 +3091,9 @@ func (a *App) applyConfig(cfg config.Config) {
 	a.lastSnapshot = "" // a snapshot of the previous project is not an undo for this one
 	a.snapshotMu.Unlock()
 
-	workbenchTools := a.workbenchSkills()
+	// cfg, not a.cfg: this runs before the assignment below, and the tools that
+	// care which project this is must be built from the config being applied.
+	workbenchTools := a.workbenchSkills(cfg.SandboxRoot)
 	if a.mcp == nil {
 		servers, err := config.LoadMCPServers()
 		if err != nil {

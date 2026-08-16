@@ -744,6 +744,8 @@ export const th = {
   'settings.learningHistoryMore': 'ดูอีก {n} รายการ',
   'settings.learningHistoryLess': 'ย่อกลับ',
   'settings.learningScopeMain': 'ผู้ช่วยหลัก',
+  'settings.learningScopeDesk': 'โต๊ะ{name}',
+  'settings.learningScopeProject': 'โปรเจกต์ {name}',
   'settings.usageDesc': 'โทเคนที่ใช้ต่อการตอบของโมเดล บันทึกไว้ในเครื่องนี้เท่านั้น ไม่ส่งไปไหน',
   'settings.usageToday': 'วันนี้',
   'settings.usageWeek': '7 วันล่าสุด',

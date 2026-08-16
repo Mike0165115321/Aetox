@@ -1,6 +1,7 @@
 package main
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -192,5 +193,46 @@ func TestLearningOffRefusesProposals(t *testing.T) {
 	}
 	if n := a.PendingLearnedCount(); n != 0 {
 		t.Errorf("nothing should have been queued, got %d", n)
+	}
+}
+
+// The memory tool has to be told which project this is, and the answer must be
+// the project being opened rather than the one being left.
+//
+// Found by running the real app (16 ส.ค.): the very first proposal ever made in
+// a project was filed against "aetox" — the unfocused home folder the session
+// had started in — while the status bar said ALM-X-IMPACT-Tennis. applyConfig
+// builds the workbench tools at the top and assigns a.cfg at the bottom, and
+// focusProject sets projectFocused before either, so "focused" was true while
+// the root was still the previous one. Every scope Aetox has is only as good as
+// the thing that decides it, and this decided it one project late.
+func TestTheMemoryToolIsBoundToTheProjectBeingOpened(t *testing.T) {
+	a := newJobApp(t)
+	// The state applyConfig is in mid-switch: the flag already moved, a.cfg has
+	// not, and the new root is only in the config being applied.
+	a.projectFocused = true
+	a.cfg.SandboxRoot = filepath.Join(t.TempDir(), "the-project-being-left")
+	incoming := filepath.Join(t.TempDir(), "the-project-being-opened")
+
+	var tool *learned.MemoryTool
+	for _, s := range a.workbenchSkills(incoming) {
+		if m, ok := s.(*learned.MemoryTool); ok {
+			tool = m
+		}
+	}
+	if tool == nil {
+		t.Fatal("the workbench offers no memory tool")
+	}
+	if tool.Project != incoming {
+		t.Errorf("memory is bound to %q, want the project being opened %q", tool.Project, incoming)
+	}
+
+	// And an unfocused session has no project at all — the home folder it is
+	// rooted at is not one, however real a folder it is.
+	a.projectFocused = false
+	for _, s := range a.workbenchSkills(incoming) {
+		if m, ok := s.(*learned.MemoryTool); ok && m.Project != "" {
+			t.Errorf("an unfocused session was offered project %q", m.Project)
+		}
 	}
 }

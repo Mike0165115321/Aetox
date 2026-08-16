@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -56,9 +57,59 @@ type MemoryTool struct {
 	// repository's tests need Y first" is worth carrying only where that work
 	// happens. Which of the two a fact is, only the model writing it knows.
 	Desk string
+	// Project is the third destination: the ROOT PATH of the folder this
+	// session is focused on, empty when none is (the unfocused session, the
+	// pre-project hosts, every delegate). The path rather than a key so there
+	// is one spelling of "which project" in the system — ProjectScope does the
+	// rest.
+	//
+	// The desk above cannot stand in for it. โต๊ะโค้ด is the same desk in every
+	// repository, so a decision made in one would arrive as advice in the next;
+	// this is the axis where "we settled on X here, because Y" can be kept
+	// without being carried anywhere it is not true.
+	Project string
 }
 
 func (*MemoryTool) Name() string { return "memory" }
+
+// Destinations the `where` parameter can name, in the order they are offered.
+const (
+	whereEverywhere = "everywhere"
+	whereDesk       = "this-desk"
+	whereProject    = "this-project"
+)
+
+func (t *MemoryTool) whereOptions() []string {
+	out := []string{whereEverywhere}
+	if t.Desk != "" {
+		out = append(out, whereDesk)
+	}
+	if t.Project != "" {
+		out = append(out, whereProject)
+	}
+	return out
+}
+
+// whereDescription says what each destination is FOR, in one sentence each.
+// The names alone would not settle it: "this-desk" and "this-project" both
+// sound like "not everywhere", and the whole value of the split is that the
+// model picks between them correctly without being given a list of examples
+// that only covers the cases somebody happened to think of.
+func (t *MemoryTool) whereDescription() string {
+	b := strings.Builder{}
+	b.WriteString("everywhere (default) for a fact that is true whatever you are working on — this user, " +
+		"this machine, how they like things done.")
+	if t.Desk != "" {
+		b.WriteString(" this-desk for something only " + t.Desk +
+			" work needs, which then costs nothing anywhere else.")
+	}
+	if t.Project != "" {
+		b.WriteString(" this-project for something that is true only in " + filepath.Base(t.Project) +
+			" — what was decided here and why, a convention this codebase holds to. " +
+			"It follows nobody into another project.")
+	}
+	return b.String()
+}
 
 func (*MemoryTool) Description() string {
 	return "Remember something durable about this user or machine, or revise something already remembered. " +
@@ -95,13 +146,15 @@ func (t *MemoryTool) ToolDefinition() model.ToolDefinition {
 		},
 		"additionalProperties": false,
 	}
-	if t.Desk != "" {
+	// The parameter appears only for a session that has somewhere else to put a
+	// line, and lists only the destinations that session actually has. The tool
+	// block rides in every request, so an option nobody can use is a bill with
+	// no benefit — the same rule the desk half has followed since it shipped.
+	if where := t.whereOptions(); len(where) > 1 {
 		schema["properties"].(map[string]any)["where"] = map[string]any{
-			"type": "string",
-			"enum": []string{"everywhere", "this-desk"},
-			"description": "everywhere (default) for a fact that is true whatever you are working on — this user, " +
-				"this machine, how they like things done. this-desk for something only " + t.Desk +
-				" work needs, which then costs nothing anywhere else.",
+			"type":        "string",
+			"enum":        where,
+			"description": t.whereDescription(),
 		}
 	}
 	payload, _ := json.Marshal(schema)
@@ -168,12 +221,21 @@ func (t *MemoryTool) ExecuteTool(_ context.Context, args map[string]any) (skill.
 	text := strings.TrimSpace(stringArg(args, "text"))
 	old := strings.TrimSpace(stringArg(args, "old"))
 	why := strings.TrimSpace(stringArg(args, "why"))
-	// Anything other than the one word that asks for the desk means the shared
-	// file, including the word being absent: a model that guesses at this
-	// parameter should land on the scope that was the only one before it existed.
+	// Anything other than one of the words that asks for a narrower file means
+	// the shared one, including the word being absent: a model that guesses at
+	// this parameter should land on the scope that was the only one before it
+	// existed, and a narrow line kept too widely is a smaller mistake than a
+	// wide one kept where nobody will ever read it again.
 	scope := t.Scope
-	if t.Desk != "" && strings.TrimSpace(stringArg(args, "where")) == "this-desk" {
-		scope = ModeScope(t.Desk)
+	switch strings.TrimSpace(stringArg(args, "where")) {
+	case whereDesk:
+		if t.Desk != "" {
+			scope = ModeScope(t.Desk)
+		}
+	case whereProject:
+		if t.Project != "" {
+			scope = ProjectScope(t.Project)
+		}
 	}
 
 	switch op {
@@ -214,11 +276,11 @@ func (t *MemoryTool) ExecuteTool(_ context.Context, args map[string]any) (skill.
 		return fail(fmt.Errorf("could not queue this for approval: %w", err))
 	}
 	if res.Duplicate {
-		return ok("Already waiting for the user to approve — not queued twice.", "memory "+op)
+		return ok("Already waiting for the user to approve — not queued twice.", "memory "+op, res.ID)
 	}
 	return ok(
 		"Queued for the user to approve. It does not affect this session; once approved it is there from the next one on.",
-		"memory "+op)
+		"memory "+op, res.ID)
 }
 
 func stringArg(args map[string]any, key string) string {

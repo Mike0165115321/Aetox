@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 
@@ -41,24 +42,34 @@ func TestEngineRefusesANilApprover(t *testing.T) {
 	}
 }
 
-// The three sub-agent tools must all be in the registry, and they must be there
-// before the app snapshots its name list — a host that registered them later
-// would silently omit them from the app's own skill and command sets.
+// Delegation must be in the registry, and it must be there before the app
+// snapshots its name list — a host that registered it later would silently omit
+// it from the app's own skill and command sets.
+//
+// It was three names until delegation was packed (§99, skill/packed.go): one
+// tool now, with start/collect/answer/plan inside it. So the assertion is that
+// the one name is there and that it still answers to all four, which is what the
+// three-name check was really guarding.
 func TestEngineRegistersEveryTaskTool(t *testing.T) {
 	res, err := Engine(testConfig(t), Options{Approve: approveNothing})
 	if err != nil {
 		t.Fatalf("Engine: %v", err)
 	}
-	for _, name := range []string{"task", "task_result", "task_answer"} {
-		if _, ok := res.Registry.Get(name); !ok {
-			t.Errorf("%s missing from the registry", name)
+	registered, ok := res.Registry.Get("task")
+	if !ok {
+		t.Fatal("task missing from the registry")
+	}
+	packed, ok := registered.(skill.Packed)
+	if !ok {
+		t.Fatal("task is registered but is not packed, so three of its four actions are unreachable")
+	}
+	for _, want := range []string{"task", "task_result", "task_answer", "task_plan"} {
+		if !slices.Contains(packed.Actions(), want) {
+			t.Errorf("%s is not one of task's actions: %v", want, packed.Actions())
 		}
 	}
-	names := strings.Join(res.Dispatcher.Names(), " ")
-	for _, name := range []string{"task", "task_result", "task_answer"} {
-		if !strings.Contains(names, name) {
-			t.Errorf("%s missing from the dispatcher's names: %s", name, names)
-		}
+	if names := strings.Join(res.Dispatcher.Names(), " "); !strings.Contains(names, "task") {
+		t.Errorf("task missing from the dispatcher's names: %s", names)
 	}
 }
 

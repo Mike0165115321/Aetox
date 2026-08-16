@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -389,6 +391,24 @@ func DataRoot() (string, error) {
 		}
 	}
 	return filepath.Join(configDir, "aetox"), nil
+}
+
+// ProjectKey is one folder's stable identity: its readable base name plus a
+// short hash of the full path, so two folders both called "app" never share a
+// key. Case-insensitive and path-cleaned, because a project reopened as
+// `d:\work\app` is the same project as one opened as `D:/Work/App/`.
+//
+// It lives here rather than in the desktop because two subsystems now key on
+// it and they must agree to the byte: the store files a session's history
+// under it (desktop/sessions.go), and the agent's per-project memory is the
+// file named by it (internal/learned). A second implementation that drifted
+// would file the memory of a project under a name its own history does not
+// use, and nothing would report an error — the memory would simply never be
+// read again.
+func ProjectKey(root string) string {
+	root = strings.TrimSpace(root)
+	sum := sha1.Sum([]byte(strings.ToLower(filepath.Clean(root))))
+	return filepath.Base(root) + "-" + hex.EncodeToString(sum[:4])
 }
 
 func PreferencePath() (string, error) {

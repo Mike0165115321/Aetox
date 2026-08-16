@@ -739,6 +739,8 @@ export const en: Record<keyof typeof th, string> = {
   'settings.learningHistoryMore': 'Show {n} more',
   'settings.learningHistoryLess': 'Show less',
   'settings.learningScopeMain': 'Main assistant',
+  'settings.learningScopeDesk': '{name} desk',
+  'settings.learningScopeProject': 'Project {name}',
   'settings.usageDesc': 'Token usage recorded per model response on this machine. Nothing is sent anywhere.',
   'settings.usageToday': 'TODAY',
   'settings.usageWeek': 'LAST 7 DAYS',

@@ -94,7 +94,7 @@ func TestEveryToolRunsThroughTheRealDispatcher(t *testing.T) {
 
 	app := &App{}
 	registry := skill.NewDefaultRegistry(skill.RegistryOptions{SandboxRoot: root})
-	for _, s := range app.workbenchSkills() {
+	for _, s := range app.workbenchSkills(app.cfg.SandboxRoot) {
 		if err := registry.Register(s, skill.SourceBuiltin); err != nil {
 			t.Fatalf("register %s: %v", s.Name(), err)
 		}

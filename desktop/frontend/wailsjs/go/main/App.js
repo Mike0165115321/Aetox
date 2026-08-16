@@ -286,6 +286,10 @@ export function LearnedMemory(arg1) {
   return window['go']['main']['App']['LearnedMemory'](arg1);
 }
 
+export function LearnedScopes() {
+  return window['go']['main']['App']['LearnedScopes']();
+}
+
 export function LearningEnabled() {
   return window['go']['main']['App']['LearningEnabled']();
 }

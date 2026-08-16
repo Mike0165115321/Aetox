@@ -154,6 +154,8 @@ export function LearnedEntries(arg1:string):Promise<Array<string>>;
 
 export function LearnedMemory(arg1:string):Promise<string>;
 
+export function LearnedScopes():Promise<Array<string>>;
+
 export function LearningEnabled():Promise<boolean>;
 
 export function ListAllSessions():Promise<Array<main.SessionMeta>>;

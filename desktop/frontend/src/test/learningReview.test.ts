@@ -8,7 +8,7 @@ import Sidebar from '../lib/Sidebar.svelte'
 import {
   ListPendingChanges, ListDecidedChanges, LearnedMemory, LearnedEntries, SaveLearnedEntry,
   LearningEnabled, ApprovePendingChange, RejectPendingChange, SetLearningEnabled,
-  PendingLearnedCount,
+  PendingLearnedCount, LearnedScopes,
 } from './mocks/wailsApp'
 import { cockpit, applyPendingLearned, refreshPendingLearned } from '../lib/stores/cockpit.svelte'
 
@@ -33,6 +33,7 @@ beforeEach(() => {
   vi.mocked(LearningEnabled).mockResolvedValue(true)
   vi.mocked(LearnedMemory).mockResolvedValue('')
   vi.mocked(LearnedEntries).mockResolvedValue([] as any)
+  vi.mocked(LearnedScopes).mockResolvedValue([] as any)
   vi.mocked(ListDecidedChanges).mockResolvedValue([] as any)
   vi.mocked(ListPendingChanges).mockResolvedValue([proposal()] as any)
 })
@@ -47,6 +48,7 @@ describe('editing what is already remembered', () => {
     `เครื่องมือ shell เคยล้มซ้ำ ๆ ด้วยเหตุเดียวกัน: "exit status ${status}"`
 
   const openMemory = async () => {
+    vi.mocked(LearnedScopes).mockResolvedValue([''] as any)
     vi.mocked(LearnedEntries).mockResolvedValue(
       ['เครื่องผู้ใช้เป็น Windows', shell('1'), shell('2'), shell('124')] as any,
     )
@@ -89,7 +91,9 @@ describe('editing what is already remembered', () => {
     await waitFor(() => expect(SaveLearnedEntry).toHaveBeenCalledWith('', 1, ''))
     // A delete moves every row below it, so the positions the next edit sends
     // have to come from the file again rather than from the stale array.
-    expect(LearnedEntries).toHaveBeenCalledTimes(2)
+    // Awaited: the reload asks which scopes exist before it asks for any lines,
+    // so the re-read lands a tick later than it used to.
+    await waitFor(() => expect(LearnedEntries).toHaveBeenCalledTimes(2))
   })
 
   it('says why a save failed instead of quietly leaving the line as it was', async () => {
@@ -102,6 +106,48 @@ describe('editing what is already remembered', () => {
     await fireEvent.click(container.querySelector('.mem-row.editing .ctrl-primary')!)
 
     await waitFor(() => expect(container.textContent).toContain('memory is full'))
+  })
+
+  // A line can land in three different files now — the shared one, a desk's, a
+  // project's — and this page was built when there was only one. A file it
+  // cannot show is a file only the folder knows about, which is the whole thing
+  // the page exists to avoid.
+  it('shows every memory that holds something, each under whose it is', async () => {
+    vi.mocked(LearnedScopes).mockResolvedValue(['', 'mode:coding', 'project:Aetox-1a2b3c4d'] as any)
+    vi.mocked(LearnedEntries).mockImplementation(async (scope: string) => {
+      if (scope === '') return ['เครื่องผู้ใช้เป็น Windows'] as any
+      if (scope === 'mode:coding') return ['เจ้าของอ่านดิฟก่อนเสมอ'] as any
+      return ['เราตกลงกันว่า statereport เป็นคนบอกว่า error มาจากโลกภายนอก'] as any
+    })
+
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'การเรียนรู้')
+    await waitFor(() => expect(container.querySelectorAll('.mem-row').length).toBe(3))
+
+    const heads = Array.from(container.querySelectorAll('.mem-scope')).map((el) => el.textContent?.trim())
+    expect(heads).toEqual(['ผู้ช่วยหลัก', 'โต๊ะโค้ด', 'โปรเจกต์ Aetox'])
+    // The hash half of a project key is identity, not information — a person
+    // recognises the folder, not the digest.
+    expect(container.textContent).not.toContain('1a2b3c4d')
+  })
+
+  // Editing has to reach the file the row came from. Every group counts its own
+  // rows from zero, so a save that forgot the scope would rewrite line 0 of the
+  // main memory while the user was looking at line 0 of a project's.
+  it('edits the line in the file it belongs to', async () => {
+    vi.mocked(LearnedScopes).mockResolvedValue(['', 'project:Aetox-1a2b3c4d'] as any)
+    vi.mocked(LearnedEntries).mockImplementation(async (scope: string) =>
+      (scope === '' ? ['เครื่องผู้ใช้เป็น Windows'] : ['ตกลงกันว่าใช้ PowerShell']) as any)
+
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'การเรียนรู้')
+    await waitFor(() => expect(container.querySelectorAll('.mem-row').length).toBe(2))
+
+    const projectRow = container.querySelectorAll('.mem-row')[1]
+    await fireEvent.click(projectRow.querySelector('.mem-forget')!)
+
+    await waitFor(() =>
+      expect(SaveLearnedEntry).toHaveBeenCalledWith('project:Aetox-1a2b3c4d', 0, ''))
   })
 
   // The folder is the promise that this is plain markdown you can take away.

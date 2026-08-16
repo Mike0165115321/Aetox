@@ -266,6 +266,19 @@ func (a *App) LearnedEntries(scope string) []string {
 	return out
 }
 
+// LearnedScopes is which memories currently hold anything, so the review page
+// can show all of them instead of only the main agent's. Empty string in the
+// list is the main agent, spelled the way the rest of the system spells it.
+//
+// Never nil, for the same reason LearnedEntries is not.
+func (a *App) LearnedScopes() []string {
+	out := learned.Scopes()
+	if out == nil {
+		return []string{}
+	}
+	return out
+}
+
 // SaveLearnedEntry rewrites one remembered line in place; an empty text removes
 // it. Addressed by the row's position, which is what the user is looking at —
 // see learned.EditEntry for why not by substring.

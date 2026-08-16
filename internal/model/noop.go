@@ -476,6 +476,22 @@ func (p *NoopProvider) noopMemoryReply(model string, req Request) Response {
 				clipNoop(strings.TrimSpace(m.Content), 300)}
 		}
 	}
+	// A brief that also says "project" aims the proposal at the folder this
+	// session is focused on (ARCHITECTURE.md §116) instead of the shared file.
+	// The two destinations are the whole point of that scope, and a bench that
+	// could only reach one of them would leave the half that must NOT cross
+	// projects untested. Harmless where there is no project: the parameter is
+	// absent from the tool block, and the tool reads an unusable `where` as the
+	// shared file, exactly as it does for a word the model invented.
+	if briefMentions(req, "project") || briefMentions(req, "โปรเจกต์") {
+		return Response{Provider: p.Name(), Model: model, ToolCalls: []ToolCall{{
+			ID:   "noop_memory_project_1",
+			Type: "function",
+			Function: FunctionCall{Name: "memory", Arguments: p.pick(
+				`{"text":"โปรเจกต์นี้ตกลงกันว่าใช้ PowerShell เป็นเชลล์หลัก","why":"[tools-test] ชุดทดสอบความจำรายโปรเจกต์","where":"this-project"}`,
+				`{"text":"This project settled on PowerShell as its shell","why":"[tools-test] the per-project memory test set","where":"this-project"}`)},
+		}}}
+	}
 	return Response{Provider: p.Name(), Model: model, ToolCalls: []ToolCall{{
 		ID:   "noop_memory_1",
 		Type: "function",

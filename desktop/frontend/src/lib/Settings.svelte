@@ -14,6 +14,7 @@
   import ProviderAccount from './ProviderAccount.svelte'
   import Icon from './Icon.svelte'
   import { coverHue } from './coverHue'
+  import { scopeLabel } from './memoryScope'
   import type { IconName } from './icons'
   import {
     SupportedProviders, HasAPIKey, RequiresAPIKey, AcceptsAPIKey, ProviderAccountFor, TerminalShells,
@@ -37,7 +38,7 @@
     SetConnectionStartCommand, StartConnectionServer, CheckConnectionServer,
     AppVersion, CheckForUpdate, RecentDebugLog,
     LearningEnabled, SetLearningEnabled, ListPendingChanges, ListDecidedChanges,
-    ApprovePendingChange, RejectPendingChange, LearnedEntries, SaveLearnedEntry, OpenMemoryFolder,
+    ApprovePendingChange, RejectPendingChange, LearnedEntries, LearnedScopes, SaveLearnedEntry, OpenMemoryFolder,
   } from '../../wailsjs/go/main/App'
   import { BrowserOpenURL } from '../../wailsjs/runtime/runtime'
   import promptPayQR from '../assets/images/promptpay-qr.png'
@@ -2274,7 +2275,7 @@
   // AGENT_FORCED_DENIALS mirrors subagent.forcedDenials: names a sub-agent never
   // gets no matter what the file says. Listing them as available would be a lie
   // the user only discovers after saving.
-  const AGENT_FORCED_DENIALS = ['task', 'task_result', 'task_answer', 'help', 'ask_user', 'todo_write']
+  const AGENT_FORCED_DENIALS = ['task', 'task_result', 'task_answer', 'task_plan', 'help', 'ask_user', 'todo_write']
   // Mirrors subagent.stepsUnlimitedKeyword. The frontmatter carries a word
   // rather than a sentinel number because the file is hand-editable.
   const STEPS_UNLIMITED = 'unlimited'
@@ -2484,10 +2485,17 @@
   // One row per remembered line. The file is a bullet list and always was —
   // showing it as one <pre> was the app describing the file rather than being
   // a way into it, so the only way to fix a line was to go and open the folder.
-  let memoryLines = $state<string[]>([])
-  // Which row is open for editing, -1 for none. One at a time: these lines are
-  // short, and a page of open textareas is a form nobody knows the state of.
+  // One group per scope that holds anything: the main agent's file, each desk's,
+  // each project's. It was the main agent's alone until a desk and a project
+  // could be the destination — and a line approved into a file this page could
+  // not show is a line only the folder knows about.
+  let memoryGroups = $state<{ scope: string; lines: string[] }[]>([])
+  // Which row is open for editing, and in which scope. -1 for none. One at a
+  // time: these lines are short, and a page of open textareas is a form nobody
+  // knows the state of. The scope rides along because the same index exists in
+  // every group, and the save has to reach the right file.
   let memoryEditing = $state(-1)
+  let memoryEditingScope = $state('')
   let memoryDraft = $state('')
   let memorySaving = $state(false)
 
@@ -2497,30 +2505,39 @@
       learningOn = await LearningEnabled()
       pendingChanges = await ListPendingChanges()
       decidedChanges = await ListDecidedChanges(20)
-      memoryLines = await LearnedEntries('')
+      const scopes = await LearnedScopes()
+      memoryGroups = await Promise.all(
+        scopes.map(async (scope) => ({ scope, lines: await LearnedEntries(scope) })),
+      )
     } catch (err) {
       learningError = String(err)
     }
   }
 
-  function startMemoryEdit(i: number) {
+  function startMemoryEdit(scope: string, i: number) {
     memoryEditing = i
-    memoryDraft = memoryLines[i] ?? ''
+    memoryEditingScope = scope
+    memoryDraft = memoryGroups.find((g) => g.scope === scope)?.lines[i] ?? ''
+  }
+
+  function isEditing(scope: string, i: number): boolean {
+    return memoryEditing === i && memoryEditingScope === scope
   }
 
   function cancelMemoryEdit() {
     memoryEditing = -1
+    memoryEditingScope = ''
     memoryDraft = ''
   }
 
   // Saving and forgetting are the same write with a different body — an empty
   // one removes the line (learned.EditEntry). Keeping them one call means the
   // two paths cannot drift on which row they address.
-  async function commitMemory(index: number, text: string) {
+  async function commitMemory(scope: string, index: number, text: string) {
     memorySaving = true
     try {
       learningError = ''
-      await SaveLearnedEntry('', index, text)
+      await SaveLearnedEntry(scope, index, text)
       cancelMemoryEdit()
       // Re-read rather than patching the array: the row positions the next edit
       // sends have to be the file's, and a delete moves every line below it.
@@ -2532,7 +2549,7 @@
     }
   }
 
-  function onMemoryKeydown(e: KeyboardEvent, index: number) {
+  function onMemoryKeydown(e: KeyboardEvent, scope: string, index: number) {
     if (e.key === 'Escape') {
       e.preventDefault()
       e.stopPropagation() // Escape also closes Settings; one press closes one layer
@@ -2543,7 +2560,7 @@
     // sentence, so the common key does the common thing.
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      if (memoryDraft.trim()) void commitMemory(index, memoryDraft)
+      if (memoryDraft.trim()) void commitMemory(scope, index, memoryDraft)
     }
   }
 
@@ -2574,11 +2591,11 @@
   }
 
   // Whose memory a proposal is for. Empty scope is the assistant itself; a
-  // named one is a sub-agent, and saying which matters — it is the difference
-  // between "everything you ask it" and "one job it does".
-  function scopeLabel(scope: string): string {
-    return scope ? scope : t('settings.learningScopeMain')
-  }
+  // named one is a sub-agent, a desk or a project, and saying which matters —
+  // it is the difference between "everything you ask it", "one job it does",
+  // and "only in this folder". Shared with the card in the chat (memoryScope):
+  // the same proposal is judged in both places and must not be labelled two
+  // different ways.
 
   $effect(() => {
     // untracked, because loadConnections reads the state it writes — the
@@ -4408,23 +4425,28 @@
            left edge and gives the button the same rule every other card
            footer has. -->
       <div class="settings-card">
-        {#if memoryLines.length > 0}
+        {#each memoryGroups as group (group.scope)}
+          <!-- Whose file this block is. Drawn even when there is only one, so
+               "ผู้ช่วยหลัก" is stated rather than assumed: once a line can land
+               in a desk's or a project's file instead, an unlabelled list is a
+               list you cannot act on. -->
+          <div class="mem-scope">{scopeLabel(group.scope)}</div>
           <!-- Keyed by index rather than by text: two remembered lines can be
                byte-identical, and the index is also what the save addresses. -->
-          {#each memoryLines as line, i (i)}
-            <div class="mem-row" class:editing={memoryEditing === i}>
-              {#if memoryEditing === i}
+          {#each group.lines as line, i (i)}
+            <div class="mem-row" class:editing={isEditing(group.scope, i)}>
+              {#if isEditing(group.scope, i)}
                 <!-- svelte-ignore a11y_autofocus -->
                 <textarea
                   class="mem-input" rows="2" autofocus
                   bind:value={memoryDraft}
-                  onkeydown={(e) => onMemoryKeydown(e, i)}
+                  onkeydown={(e) => onMemoryKeydown(e, group.scope, i)}
                 ></textarea>
                 <div class="mem-actions">
                   <button
                     type="button" class="ctrl ctrl-primary"
                     disabled={memorySaving || !memoryDraft.trim()}
-                    onclick={() => commitMemory(i, memoryDraft)}
+                    onclick={() => commitMemory(group.scope, i, memoryDraft)}
                   >{t('settings.learningMemorySave')}</button>
                   <button type="button" class="ctrl" disabled={memorySaving} onclick={cancelMemoryEdit}
                   >{t('settings.learningMemoryCancel')}</button>
@@ -4435,7 +4457,7 @@
                   <button
                     type="button" class="icobtn tiny tip-l" aria-label={t('settings.learningMemoryEdit')}
                     data-tip={t('settings.learningMemoryEdit')} disabled={memorySaving}
-                    onclick={() => startMemoryEdit(i)}
+                    onclick={() => startMemoryEdit(group.scope, i)}
                   ><Icon name="pencil" size={13} /></button>
                   <!-- No confirm: the line is one sentence the agent wrote, the
                        file is plain markdown the user owns, and a dialog for
@@ -4443,13 +4465,14 @@
                   <button
                     type="button" class="icobtn tiny tip-l mem-forget" aria-label={t('settings.learningMemoryForget')}
                     data-tip={t('settings.learningMemoryForget')} disabled={memorySaving}
-                    onclick={() => commitMemory(i, '')}
+                    onclick={() => commitMemory(group.scope, i, '')}
                   ><Icon name="x" size={13} /></button>
                 </div>
               {/if}
             </div>
           {/each}
-        {:else}
+        {/each}
+        {#if memoryGroups.length === 0}
           <div class="empty">{t('settings.learningMemoryEmpty')}</div>
         {/if}
         <div class="set-row learn-foot">

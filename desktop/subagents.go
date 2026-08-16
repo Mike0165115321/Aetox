@@ -117,7 +117,7 @@ func (a *App) AgentSkills(name string) []AgentSkillInfo {
 	out := make([]AgentSkillInfo, 0, len(own)) // never nil: §34
 	for _, s := range own {
 		out = append(out, AgentSkillInfo{
-			Name: s.Skill.Name(), Description: s.Skill.Description(), Bundled: s.Bundled,
+			Name: s.Name, Description: s.Description, Bundled: s.Bundled,
 		})
 	}
 	return out

@@ -7,8 +7,6 @@ package main
 // context (RestoreHistory) so the AI remembers the conversation.
 
 import (
-	"crypto/sha1"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -131,10 +129,14 @@ func andClause(clause string) string {
 
 // projectKey isolates each project's history: readable base name + short hash
 // of the full path (so two folders named "app" don't collide).
+//
+// The definition moved to config.ProjectKey when the agent's per-project memory
+// started keying on the same thing. Two implementations of it would let a
+// project's history and its memory disagree about what that project is called,
+// silently — this wrapper is here so the eight call sites below keep reading
+// the way they always did.
 func projectKey(sandboxRoot string) string {
-	root := strings.TrimSpace(sandboxRoot)
-	sum := sha1.Sum([]byte(strings.ToLower(filepath.Clean(root))))
-	return filepath.Base(root) + "-" + hex.EncodeToString(sum[:4])
+	return config.ProjectKey(sandboxRoot)
 }
 
 // isUnfocusedKey reports whether a stored session belongs to the "no project
