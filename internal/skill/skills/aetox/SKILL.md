@@ -34,7 +34,7 @@ Skills are the deliberate exception and do **not** live here — see below.
 |---|---|
 | `<DataRoot>/aetox.db` | SQLite: chat history, tool runs, jobs, projects |
 | `<DataRoot>/identity` | every `*.md` here is folded into the system prompt of every session |
-| `<DataRoot>/memory` | `MEMORY.md` (cross-desk) and `modes/<desk>.md` (per desk) |
+| `<DataRoot>/memory` | `MEMORY.md` (cross-desk), `modes/<desk>.md` (per desk), `projects/<name>-<hash>.md` (per project folder) |
 | `<DataRoot>/modes` | user desk manifests; a file here overrides the bundled desk of the same name |
 | `<DataRoot>/agents` | one folder per เอเจน: `<name>/AGENT.md` + `<name>/MEMORY.md` + `<name>/STARTERS.md` + `<name>/skills/` |
 | `<DataRoot>/subagents` | ซับเอเจน — read-only in practice, see below |

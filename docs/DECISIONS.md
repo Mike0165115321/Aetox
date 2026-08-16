@@ -3377,3 +3377,362 @@ The alternative was to carry the sentence itself in the transcript, and it fails
 **Whether a proposal should reach the running session.** It should not, and does not.
 
 **The summarizer's own proposals.** Those enter the same queue from `summarize.go` rather than from a tool call in a conversation, so they have no answer to sit under and are still decided in Settings. That is the right place for them: they belong to no single turn.
+
+---
+
+## 116. Decision — Learning Crosses Projects; Deciding Does Not (2026-08-16)
+
+Owner, 16 ส.ค., cutting through an answer of mine that had folded two different things into one: *"เราต้องแยกสิ ความจำ การเรียนรู้ เรามีอยู่แล้วไม่ใช่หรอเรียนรู้ข้ามโปรเจกต์อ่ะ ที่ผมอยากให้เพิ่มตอนแรก คือ จำการตัดสินใจตอนทำโปรเจกต์ไง ไม่งั้นผมจะพุ่งเป้ามาที่ตัวทำงานฝั่งโค้ดทำไม"*.
+
+Four layers, and the third one did not exist:
+
+| | written by | crosses projects |
+|---|---|---|
+| การเรียนรู้ — `MEMORY.md`, `modes/<desk>.md` | the agent, user-approved | yes, deliberately |
+| **the decisions a project settled** | **the agent, user-approved** | **no** |
+| project rules — `AETOX.md` | the user, by hand, in the repo | no |
+| a delegate's memory | that delegate, user-approved | no |
+
+### 116.1 Crossing is the feature, and that is why the missing row is not it
+
+The question that opened this was whether a fact learned in one project bleeding into another is a bug. It is not: *"เครื่องนี้ไม่มี Excel"*, *"เชลล์ที่นี่คือ PowerShell"*, *"เจ้าของชอบคำตอบสั้น"* are true wherever the user is sitting, and a system that made them stop at a folder boundary would be a system with no memory at all. §82's design is right and does not change.
+
+What has no home is the other kind entirely — *we settled on X here, and this is why*. The desk cannot hold it: โต๊ะโค้ด is the same desk in every repository, so a decision kept there arrives as advice in the next one. And `AETOX.md` is not it either, though the first answer to this claimed it was. That file is what the user tells the agent; this is what the work settled and the user approved. **Different author, different question** — this repository proves it by hand, keeping `docs/DECISIONS.md` beside its own `AETOX.md`.
+
+### 116.2 What the tools we are measured against actually do
+
+Asked to go and look rather than reason from the design, and the answer inverted the assumption the design was resting on.
+
+- **Claude Code**, on the owner's own machine: the agent-written memory is stored **per project**, at `~/.claude/projects/<encoded-path>/memory/`. Two projects on this machine, two separate stores, and no global one at all — no `~/.claude/memory`, and not even a `~/.claude/CLAUDE.md`. Its cross-project layer is a different mechanism (a file the user writes) that this installation has never created.
+- **opencode** has no agent-written memory at all. It has rules files — `AGENTS.md` in the project, `~/.config/opencode/AGENTS.md` globally, both written by a person — and everything self-writing is a third-party plugin.
+
+So Aetox was the **mirror image** of the tool it is measured against: everything the agent writes was global, and the project side was human-only. Not a smaller version of the same design — the other half of it.
+
+### 116.3 Under the data root, not in the repository
+
+Both places were defensible and the owner chose the data root, which is also Claude Code's choice. Writing into somebody's repository means git noise nobody asked for, a file that needs the sandbox's write right to exist, and nothing at all for a project folder that is not a repository. What the team should see goes in `AETOX.md`, which is theirs and is written on purpose.
+
+The key is `config.ProjectKey` — readable base name plus a hash of the path, the same key the store already files that project's history under. It moved out of `desktop/sessions.go` for that reason: two implementations of "what is this project called" would let a project's history and its memory disagree, silently, and the memory would simply never be read again. The readable half is flattened for the filename (`safeKey`), because folder names here have spaces in them and `validScope` refuses those — unsanitized, *"My App"* would be a project that could never have a memory and never say so.
+
+### 116.4 Where it sits in the prompt is the precedence
+
+Between the desk's memory and the project's rules. A desk is the same desk everywhere, so what one project settled must not outrank it there; and what the user wrote in `AETOX.md` outranks anything the agent concluded about the same code. Order is the whole mechanism, as it has been since §82 — no sentence in the prompt claims a ranking that could drift from it.
+
+An unfocused session reads none of it. It is rooted at the machine, and a memory keyed to that folder would be one junk drawer every roaming session shared.
+
+### What this does not decide
+
+**Whether the agent should ever write to `AETOX.md` itself.** It should not, today. Proposing a line for the team's file is a different act from remembering, and it would need the repo's write right and a diff the user reads. The card can say "this belongs to the team" long before the agent can act on it.
+
+**How a project's memory gets consolidated when it fills.** Each scope has its own 8KB ceiling, which is the point — a project's decisions never tax another project — but a long-running repository will reach it, and the answer today is the same refusal the other scopes give: merge or drop a line first.
+
+**The summarizer.** It still proposes into the shared scope only. It reads `tool_runs`, which knows the session and therefore the project, so aiming its proposals is possible and unbuilt.
+
+## 117. Decision — A Window Opens Inside the Screen It Was Given, Not the One It Assumed (2026-08-16)
+
+Owner, 16 ส.ค., with a photograph of Aetox on a VivoBook: *"มันเปิดมาแล้ว หน้าต่างไม่พอดีจอ เห็นข้างบนมั้ย ไม่เห็นปุ่ม กา ขยาย หรือ ทับลงเลย เพราะอันนั้น เราใช้ของวินโด้ใช่ไหมล่ะ แต่ตัวโปรแกรมมันไม่รู้ไง"*.
+
+The last sentence is the whole diagnosis. The title bar is Windows' — the minimise, maximise and close buttons belong to the OS, not to the app — and the app had never told itself anything about the screen those buttons have to land on.
+
+### 117.1 Two constants and a centring, none of which asked
+
+`desktop/main.go` opened the window at 1440x900 with a floor of 1100x700, and Wails centres it during `Run`. Three steps, no measurement between them.
+
+A 1920x1080 laptop at Windows' default 150% scaling is **1280x720** in the units Wails sizes windows in, and its taskbar takes 48 of the height. So the window was built 180px taller than the display and then centred on it, which puts its top edge — and the OS's buttons — at **y = -114**. Nothing in the app was wrong on its own terms; it simply stated a size as a fact about the world.
+
+### 117.2 The taskbar has to be in the measurement, not just the screen
+
+Centring is done against the work area, so a window merely as tall as the *screen* is still pushed half a taskbar off the top. Fitting to `Screen.Size` alone would have moved the failure from 114px to 24px and called it fixed.
+
+`SystemParametersInfoW(SPI_GETWORKAREA)` is what the desktop answers with, in physical pixels; the screen reports its own logical and physical size, and their ratio is the display's scaling. Converting through that ratio rather than through a DPI call keeps the number in the same units as everything else in the comparison. On a second monitor with a taskbar of its own it is an estimate, and a conservative one — it can only cost a few pixels of window.
+
+### 117.3 Only ever shrinks, and the floor comes down with it
+
+Two rules, both of them about not overreaching:
+
+- **Never grows.** A monitor with room opens the window at the size the app asked for, not filled to the corners. The fix is for a screen that is too small, and it should be invisible everywhere else.
+- **The minimum moves with the window, and no further.** `SetSize` clamps against the floor before it does anything else, so a 700px minimum under a 672px work area puts the window straight back where it was. The floor still exists for the reason it always did — the cockpit's three columns stop making sense below it — so it is lowered only as far as the screen forces, and a 1280px-wide display leaves the 1100px width floor untouched.
+
+`fitToScreen` runs first thing in `App.startup`, which is after the window is created and centred and before the webview has content to show, so the correction happens where nobody can watch it move.
+
+### What this does not decide
+
+**Remembering where the user put the window.** Every launch still opens centred at a computed size; a window someone dragged to a second monitor comes back to the first. That is a separate feature and this is not a substitute for it.
+
+**Anything about non-Windows.** `systemChrome` returns nothing there and says so — a dock or panel is asked for through that desktop's own API, and there is no build to ask from yet (§109). Fitting inside the screen still works; only the taskbar reserve is missing.
+
+## 118. Decision — Mathematics Is Drawn, Because It Was Never Prose (2026-08-16)
+
+Owner, 16 ส.ค., same session: *"ตอนเขียนโจทย์คณิตศาสตร์ แม่งพัง"*, with a screenshot of an answer about integration.
+
+A model asked about an integral writes LaTeX, because that is what mathematics is written in. Nothing on this surface knew that, so markdown read the equation as prose and printed what was left of it.
+
+### 118.1 It failed twice, and the second failure hid the first
+
+`\[` is a backslash-escaped bracket to markdown, so a display equation arrived as a bare `[` on a line of its own. `x^2` and `a_1` handed their `^` and `_` to the emphasis parser. Whatever survived both was printed as source. The screenshot is exactly that: `\int_0^2 x^2\,dx` as text, between two orphaned brackets.
+
+So a renderer bolted on after markdown would have been given mangled input to typeset. Equations are tokenized **before** markdown reads anything — a marked extension runs ahead of the built-in tokenizers, which is what keeps the escape rule and the emphasis rule off the LaTeX inside — and KaTeX draws them. The same seam the fenced-code and plan cards already use.
+
+### 118.2 Four delimiters, because the surface does not get to choose
+
+`\[...\]`, `$$...$$`, `\(...\)` and `$...$` all render. Models write all four and which one arrives is not a decision this end makes.
+
+The single `$` is the one that needs guarding: it is also how money is written, and *"ราคา $5 และ $10"* is a sentence, not an equation named "5 และ ". Three conditions settle it — an equation does not open with a space, does not close with one, and its closing `$` is not the start of another price — and a `$` cannot appear inside a match, so a run of prices can never be joined into one.
+
+The display pair are inline tokenizers as well as block ones, because a block tokenizer is only ever offered the start of a block, and `\[x\]` written mid-sentence happens.
+
+### 118.3 What a refusal produces
+
+KaTeX refuses what it cannot read, and the answer to that is the source, not a red error. A refusal means one of two things and both end the same way: the text between the delimiters was never mathematics, or it used a command KaTeX does not carry — and the reader is better served by what the model wrote than by an error message about it. Streaming is the other reason: half an equation is a syntax error for the few frames before its closing brace lands, and nothing should flash red on its way to being correct.
+
+`strict` is off and `trust` stays off. They sound alike and are opposites: `strict` is LaTeX pedantry, and on it refuses a Thai character inside `\text{}`, which is most of what the equations in this app say. `trust` is the safety one — it is what would let `\href` and `\includegraphics` out of the equation and into the document.
+
+### 118.4 Three collisions with what was already there
+
+- **KaTeX draws in SVG.** A square root's overbar, a stretched brace, an arrow over a vector. `confine()` frames a drawing with คัดลอก and บันทึก buttons, so without an exemption a radical sign gets its own toolbar — and renumbers the real drawings around it.
+- **DOMPurify half-removes the `<annotation>`.** KaTeX writes the equation twice: as the spans that are drawn, and as MathML for anything reading the page aloud, ending in an annotation holding the original LaTeX. The sanitizer deletes that tag and keeps its text, which is the worst of both — raw `\boxed{\text{...}}` loose inside the `<math>` element, out of sight but read aloud and picked up by a copy. It is dropped before the sanitizer sees it; the MathML itself stays, because it is the whole reason a screen reader can follow an equation whose visible half is `aria-hidden`.
+- **KaTeX_Main has no Thai in it.** `\text{อนุพันธ์ = ดูความชัน}` is what an answer here actually contains. Chromium falls back on its own, to Windows' default face rather than the one the app is set in, so the app's stack is named after KaTeX's: Latin and digits keep KaTeX's metrics, Thai lands in Noto Sans Thai with the rest of the answer.
+
+### 118.5 The prompt is told, in the layer that owns the question
+
+`surfaceLayer` (§114 — the agent is told what is true, not what to do about it) already answers "where does what I write end up", for both surfaces. Mathematics joins the sentence, and the delimiters are named: a model that cannot tell whether they will be drawn has two ways to hedge, and both are worse than the equation — spelling the integral out in words, or reaching for unicode superscripts that run out at the first fraction. The terminal half gains the matching negative.
+
+### 118.6 An equation is a thing you take away, and it needed the air to be one
+
+Seen running, two things were wrong that reading the markup could not have shown (owner, 16 ส.ค.: *"มันชิดไปไหมอ่ะ ผมอยากให้มัน ห่างอีกนิด ... และ ทำให้มันคัดลอกได้หน่อยครับ"*).
+
+**The spacing was the prose rhythm, and that is not what a display equation is.** The margin was `.7em`, which collapses against the `.85em` under a paragraph and leaves 13px — the same gap as the line above it *inside* a paragraph. So an equation set on its own line did not read as being on its own line; it read as a wrapped line that happened to be centred.
+
+**And it could not be taken anywhere.** A code block has คัดลอก and a drawing has คัดลอก and บันทึก; the one thing on the surface a user is most likely to want in another program had neither.
+
+Both were answered at once, and by the box rather than by a number. A display equation is drawn as a fenced code block is drawn — same border, same radius, same surface, same header bar with a label on the left and a hover-revealed คัดลอก on the right, same margins (owner, 16 ส.ค.: *"แสดงเหมือนตอนเจนโค้ดได้ไหม"*). It is the same kind of thing: notation rather than prose, written in a language of its own, read as a unit rather than a line at a time, and wanted somewhere else as often as it is wanted here. The first attempt was a bare centred equation with the button floating over the notation, which is what a control with nothing to hang off looks like.
+
+Every value is `.codeblock`'s, taken deliberately rather than tuned to match: two boxes meant to read as the same kind of object must not be assembled from two sets of numbers that drift apart on the next change. The label says `latex` for the same reason a code block's says `python` — it is the language of the thing, and it is exactly what คัดลอก hands over. Untranslated, like the language tag, because it is a name and not a word.
+
+The one place they are not the same: the notation stays centred inside the box where code is left-aligned, because that is how an equation is set everywhere it is set.
+
+Three decisions inside that one:
+
+- **It copies the LaTeX, not the rendering.** The source rides on `data-tex`, the way the plan card carries its markdown on `data-plan`. Reading it back off the DOM instead returns KaTeX's layout text — every fraction flattened, every limit and exponent run onto one line — which pastes into another tool as something that has to be retyped. The source pastes as the equation.
+- **A `<span>`, not a `<div>`.** An equation written mid-paragraph renders inside a `<p>`, and a `<div>` there ends the paragraph early and drops the rest of the sentence out of it.
+- **Inline maths gets none of it.** A box around the `x` in the middle of a sentence is not a box, it is an interruption.
+
+### What this does not decide
+
+**Chemistry, music, and anything else `mhchem`-shaped.** KaTeX ships extensions for some of it and none are loaded. The failure is the visible one — source instead of notation — not a silent wrong rendering.
+
+**900KB of fonts nobody opens.** KaTeX ships each of its twenty faces three times, and its stylesheet names all three, so the build emitted sixty files. The engine is WebView2, which is Chromium, which has read woff2 since 2014. The stylesheet is rewritten at build time to name only woff2 — 292KB emitted instead of 1.2MB — because Vite emits an asset when something references it, so the reference is the thing that had to go.
+
+---
+
+## 119. Decision — The User Points, and What Travels Is the Element (2026-08-16)
+
+**Status:** Implemented 2026-08-16 · **Files:** `desktop/browser_pick.go`, `desktop/browser.go`, `desktop/frontend/src/lib/workbench/pagePick.svelte.ts`, `desktop/frontend/src/lib/workbench/Workbench.svelte`
+
+### 119.1 The sentence that could not be said
+
+The agent could already read a page and act on one (§48, `browser_read`/`browser_click`). What it could not do was hear *"ปุ่มสีฟ้ามุมขวาบนอะ"* and know which node that was. Every question about a rendered thing had to be translated into prose first, and the translation is the part that loses: a colour and a corner are not an address, and the model's only recourse was to read the whole page back and guess.
+
+So the direction of the bridge is reversed. The user points at the page, and what lands in the composer is the element — not a description of it.
+
+### 119.2 The overlay is drawn inside the page, and that is not a style choice
+
+A browser tab is a real OS window composited above the app's own webview. A highlight box drawn in Svelte would sit *behind* the thing it is trying to outline. So the whole overlay — the outline, the selector badge, the hint pill — ships inside the injected script and is painted in someone else's document.
+
+Which creates the debt this project names most often: a second palette and a second copy of every string, living where nobody looking at `style.css` or `locales/th.ts` would ever find them. The answer is that neither is allowed to live there. The frontend reads the live theme off `getComputedStyle(document.documentElement)` and the wording out of the locale, and hands both to Go as `opts`, which embeds it as a JS string literal for the page to `JSON.parse`. Go never parses it and never composes it. The overlay is drawn by a stranger, from our paint.
+
+### 119.3 A pick is not a ref
+
+`browser_read` hands out refs, and a ref answers "which node do I click". A pick answers "which node is this **in my source**", and the answer to that is almost never the tag name. It is the class list, the box, the ancestors, and above all the colours the element actually renders in: a rendered `#185fa5` greps straight to the token that produced it, where `<button>` greps to nothing.
+
+Three consequences the shape had to carry:
+
+- **Drag takes a region, not a picture.** Circling three cards yields the three cards — every element the box *fully encloses*, outermost first, capped at twelve. Without the outermost rule the answer to "these three" is ninety nodes.
+- **Shift keeps the mode open.** "สามอันนี้ต้องเรียงให้เท่ากัน" is a sentence about a set, and a mode that ends on the first click cannot express a set.
+- **The chip is a `pendingContext`, not a new mechanism.** It says `kind: 'pick'` so the attachment line can say what it is, and everything else — the card, the preview, the re-send on edit — was already built.
+
+### 119.4 Origin is checked before the token is claimed, and the order is the whole point
+
+The pick rides the same bridge every page can call, so it carries the same two proofs a `text` message does: the sending frame's real origin must match the URL claimed, and the token must be the one *this* `BrowserStartPick` minted. Without the token, any page could push an element into the user's composer unasked.
+
+The order is not incidental. Claim first and a message from the wrong origin *consumes* the token the real page is still going to answer with — so any frame on the page could end a pick the user is halfway through, silently, by being wrong. Origin first, then claim.
+
+### 119.5 The pencil, added the same day, because pointing at a node is not pointing at a place
+
+Shipped an hour later, on being used (owner, 16 ส.ค.: *"มันชี้ได้แล้วครับ แต่มันวาดไม่ได้อ่ะ เผื่อผู้จะพยายามพูดถึงบริเวรล่ะครับ"*). Every affordance above answers "**which element**". None of them answers "**this bit here**" — the gap between two cards, a margin that is wrong, an area with nothing in it. A region can be described by what it contains only while it contains something.
+
+So the answer had to become a picture, and that took the third patch to the vendored WebView2 (`CapturePreview`, see its AETOX-PATCH.md). The alternative — a screen grab of the tab's window — was rejected for one reason: it photographs whatever floats above the window, so it is a lie about the page exactly when something overlaps it.
+
+The order is the part worth writing down, because every obvious arrangement is wrong:
+
+1. The user draws. The ink is a `<canvas>` **inside the page**, for the same reason the highlight is (§119.2).
+2. On finish the script removes **its own controls and keeps the ink**, then answers. What is on screen at that moment is the page as the user marked it, and nothing else.
+3. The app photographs it from outside — a still life, since nothing is animating.
+4. Only then is the ink taken down.
+
+Tear the ink down with the controls in step 2 and step 3 photographs a page with nothing on it. That is why finishing does not go through the same path as cancelling, and why the mode stays half-alive between the answer and the picture.
+
+Step 3 has a rule of its own, learned by shipping it wrong (`hr=0x802a000c`, on the first real drawing). WebView2 is apartment-threaded, so the capture must be **asked for on the thread that owns the webview and awaited off it** — and both halves are load-bearing. The first version queued the ask onto that thread and then, inside the queued command, handed the actual COM call to a goroutine; the engine refused it, and the refusal reads like the engine saying no rather than like a bug in the call site. Hence the channel-of-a-channel in `BrowserCapturePNG`: the queued command hands back *where* the answer will arrive, and the waiting happens on the caller's goroutine, because the pump that delivers the answer is the very thing the webview thread is running.
+
+The same rule shapes the completion handler: it reads the stream and releases it **inside the callback**, on the thread that created it, rather than on whichever goroutine was waiting. And the handler is held in a package-level map for its lifetime — it is a Go object handed to WebView2 as a bare pointer, invisible to the collector, and a capture that outlives one collection would otherwise be a pointer into freed memory, crashing in the browser process minutes later and nowhere near the file that caused it.
+
+The drawing also carries **what was under the pen** — sampled with `elementFromPoint` along each stroke, not derived from a bounding box, because a box around a circle is mostly the things the circle avoided. The picture is the point; the elements ride along.
+
+A failed capture attaches the elements anyway. A drawing that could not be photographed is still a question about something.
+
+### 119.6 The bar owns its colours, and says what is true rather than what to do
+
+Seen running, the controls were there and nobody could find them (owner, 16 ส.ค.: *"ยังไม่เด่นพอ หรือมองยากไป"*). Three options were drawn; the largest won — 14px, a leading icon, a heavier shadow. But the size was never the real fault, and two things underneath it were.
+
+**The bar was wearing the app's clothes on somebody else's page.** Its background, text and border came from the theme, which is correct for anything drawn in the app and wrong for the one thing that is not: this bar floats over a document whose background nobody knows. Under a light theme it was a pale box on a white page — perfectly styled and invisible. It now carries its own dark palette outright. Only the accent still travels, because the accent is the ink, and the button that ends a drawing should be the colour of what was drawn.
+
+**And it repeated an instruction instead of reporting a state.** A hint is for before you know what to do; once there is ink on the page the thing worth saying is that there is something to send. So the label stops instructing and starts counting, and at that same moment the ปุ่มเสร็จ fills with the ink colour and takes a halo (owner's own idea, 16 ส.ค.: *"ตอนวาดแล้ว ให้ ปุ่มเสร็จแล้วมันเรืองแสงด้วย"*). Before that it is quiet and half-faded, because pressing it would send nothing. One fact, said once, in two places.
+
+The icons are built with `createElementNS`, not `innerHTML`. A page carrying a Trusted Types policy throws on an `innerHTML` assignment — and those are exactly the pages worth marking up.
+
+### 119.7 What this does not decide
+
+**Letting the agent ask by pointing.** `ask_user` plus these modes is a question answered with a click rather than a sentence, and the plumbing for both halves now exists. It is not wired.
+
+**The agent seeing pages on its own.** `BrowserCapturePNG` is the capability the vision path has been missing — a page that is a canvas, or one whose layout is wrong, is invisible to `browser_read`. It is a user-driven binding today and no tool action.
+
+**Cross-origin iframes.** The script reaches the top frame only. Pointing inside an embedded frame highlights the frame; drawing over one draws over it, and the elements sampled underneath stop at its boundary.
+
+## 120. Decision — A Run Button Is Offered Because the Machine Can, Not Because the Renderer Remembers (2026-08-16)
+
+Owner, 16 ส.ค., after finding out the button was on Python and shells and nothing else: *"คิดว่าภาษาอะไรอยากให้รันผ่านหน้าแชทได้ครับ"*, then *"หากในเครื่องไม่เจอภาษานั้น ๆ ไม่ต้องแสดงปุ่มรันนะ"*. The second sentence is the decision; the list is a consequence of it.
+
+### 120.1 The answer lived in two places and neither of them was the machine
+
+`runnableShells` and `runnableScripts` in markdown.ts decided whether the button was drawn. `scriptLangs` in run_script.go decided whether anything happened when it was clicked. Adding a language meant editing both, in two languages, and the only thing keeping them in step was somebody remembering — the same debt as any second place that answers one question.
+
+Worse, neither of them asked the machine. A `python` block is a program on a computer with Python on it and a picture of a program on one without, and both files said "runnable" either way.
+
+**And the machine's answer was being read wrong even when it was asked.** `exec.LookPath("python")` returns a path on a Windows with no Python at all: a clean install ships Microsoft Store *app execution aliases* for `python.exe` and `python3.exe` on PATH, and they are zero-byte reparse points that print an advert for the Store and exit 9009. Measured 2026-08-16: `os.Stat` reports size 0 and an irregular mode for both, where every real interpreter is a regular file with a size. So the honest message run_script.go had ready — *"python is not installed, or not on PATH"* — was nearly unreachable, and what the user got instead was an advert. The test is `IsRegular() && Size() > 0`, which names no Windows path and checks no GOOS on purpose: a zero-byte program is not a program anywhere.
+
+### 120.2 One module owns the question
+
+`internal/runlang` holds the table, asks the machine, and is asked by both ends. `App.RunnableLanguages()` answers `tag → kind` once at startup; the renderer draws a button where the answer has one and nothing where it does not; `RunChatScript` looks the same table up to find what runs the file. Adding a language is one entry and nothing else.
+
+Asked once rather than per render, because what is installed does not change while a window is open and the alternative is a bridge round trip per code block per redraw. A machine that gains Python mid-session gets its buttons on the next launch, which is the deal every other "what is on this computer" answer in the app already makes. An engine that cannot answer leaves the table empty, and empty means no buttons — the safe direction for the one control in the chat with a real side effect.
+
+### 120.3 What earns an entry
+
+Three rules, and every rejection failed one:
+
+1. **One command runs one file.** No build step, no project scaffolding, no artifact left in somebody's folder.
+2. **The block is a program.** `json`, `yaml`, `html`, `css`, `sql` and `md` are not here and never will be; running markup means nothing. `html` would mean "open a browser", which is a different act and deserves its own button rather than a quiet second meaning for this one.
+3. **Failure is honest.** A tag whose interpreter is missing simply gets no button, so the table can carry a language nobody here has installed without lying.
+
+Added: **JavaScript** (`js`, `javascript`, `node`) — node writes UTF-8 on Windows whatever the codepage says, where Python had to be told (§111.2), and its exit codes arrive intact. `.js` rather than `.mjs` so a snippet inherits the module kind of the project it is written into; `mjs` is its own entry for when the model means ESM regardless. **Go** (`go`) — the entry that proves an interpreter can need arguments of its own, because `go x.go` is not a command and `go run x.go` is. Checked live: `go run` on a single file works with no `go.mod` anywhere, and the dot-directory the block is written into is invisible to `go build ./...` and `go vet ./...`, so a file parked there for one run cannot break the user's own build.
+
+Kept out: **TypeScript**, which reads like the obvious next entry and is not one — node 22.16 on this machine cannot run a `.ts` file (measured: SyntaxError on the first annotation) and tsx, ts-node and deno are all absent. It gets an entry the day a runtime here can run it, because a tag in this table that cannot run is the exact bug the module was written to end. **Java and C#**, which fail rule 1.
+
+---
+
+## 121. Decision — An Answer the User Typed Over Is Still an Answer (2026-08-16)
+
+Owner, 16 ส.ค., with a screenshot of a reply whose `##`, `**` and `>` were showing as source in muted 11px text: *"ตอนทักกลางคันมันเหมือนที่ เอไอ ตอบมาก่อนหน้ามันพังหมดเลย ไปเช็ค"*. Nothing was broken in the record. Everything was broken in the reading of it.
+
+### 121.1 One channel, two things on it
+
+Typing under a running turn goes straight into that turn (§44 Interject). When the model has already written its answer and called no tools, `cognitive.Agent` drains the interjection and keeps the turn alive rather than making the user wait out a reply they have moved past — and hands the answer over as a **non-final** round, which was the whole extent of what it said about it.
+
+One step downstream that is indistinguishable from narration. `turn.Executor`'s `OnRound` treats every non-final round the same way: record the text, erase the live preview, emit `ToolEvent{Action: "note"}`. A note is §59's row for *"reading the config first"* — one line, drawn as `.tool-note` at `--fs-xs` in `--text-muted` with no markdown, and after the turn ends it is a text part that is not the last one, which is not the bubble's body and so lands behind the "ใช้ N เครื่องมือ" toggle.
+
+So a finished reply lost its markdown, its size, its colour and its place, in one step, at the exact moment the user was reading it. The three defects were one defect: **the only fact that could tell the two apart was known in one place and carried out of it by nothing.**
+
+### 121.2 The round that knows says so
+
+`RoundEvent.Demoted` is set where the interjection is drained, because a round with no tool calls is a round the model meant to stop on, and that is knowable there and nowhere after. The executor branches on it: `partList.addAnswer` writes a `TurnPart{Kind: PartText, Demoted: true}`, and the live hand-over is `ToolEvent{Action: "said"}` rather than a note.
+
+The flag rides on the stored part too, so a session reopened tomorrow can still tell an answer from narration — `stepsFromParts` reads it back into a `said` step. A new JSON field inside the existing `parts` column, so no migration; older rows have no flag, which is what they had anyway.
+
+`addAnswer` never merges, in either direction. `addText` folds consecutive prose together because two text parts in a row mean nothing happened between them — but something did happen here: the user cut in. Two answers glued into one paragraph run would be a third way of saying the reply was never finished.
+
+### 121.3 Prose is drawn as prose
+
+A `said` row is not a row. It is excluded from `ownSteps`, so it can never appear inside the tool timeline or be counted as a tool, and it is drawn as `.markdown-body` in the bubble itself — above the answer that ended the turn while it is running, and still above it afterwards. The only thing added is a seam (`.said-block`), so two replies in one bubble do not read as one long one.
+
+The rule this settles, for anything that later wants to re-place something the user has already read: **moving where a thing belongs must not change what it is.** The interjection changed the answer's place in the conversation. It had no business changing its typography.
+
+---
+
+## 122. Decision — A Popover Is Measured Against the Pane It Opens In, Not the Screen (2026-08-17)
+
+**Status:** Implemented 2026-08-17 · **Files:** `desktop/frontend/src/style.css`, `desktop/frontend/src/test/composerNarrow.test.ts`
+
+### 122.1 Laid out perfectly, half of it outside the window
+
+Reported as one screenshot of the model picker with its left column sheared off (owner, 17 ส.ค.: *"การแสดงผลในพื้นที่น้อย"*). `ระดับความคิด` was `ความคิด`, `การอนุมัติ` was `รอบอนุมัติ`, and the words that were missing were the ones naming what each control does.
+
+Nothing was wrong with the menu. `.model-menu` carried `min-width:280px` and grew leftward from a chip on the right, which is correct in every window it was ever designed in. The workbench then took most of the width, and the chat column left behind was narrower than 280px — so the menu grew out of the pane and the pane clipped it.
+
+`.ctx-menu` had the same 270px and the same fate. Whichever had been fixed alone, the other was the next screenshot.
+
+### 122.2 The composer is the only thing that knows
+
+A menu cannot bound itself: it is positioned against a chip a few pixels wide, and `100%` there means the chip. `100vw` is the screen, and the screen is not the pane — that is exactly the assumption that broke. The one element that knows how narrow it has become is the composer box, so it is declared a container (`container-type:inline-size`) and the menus are measured in `cqi` against it.
+
+`min-width` becomes `min(280px, 100cqi)`: 280 is what the rows *want*, not what they get. Past that it is whatever the composer has.
+
+Inline-size only, deliberately. Block-axis containment would stop the composer growing with the prompt, which is the one thing that box is supposed to do.
+
+### 122.3 The length was right and the origin was wrong
+
+That fix shipped and the labels were still cut off — by less, and in the same place (owner, 17 ส.ค.: a second screenshot, *"ไปคิดออกแบบมาดีๆ"*).
+
+A bound is measured from somewhere. The menu grows leftward from the **chip**, and the chip is not at the box's right edge — the send button is. So a menu allowed a full container width *from there* overflows the left edge by exactly the width of the send button, which is what the second screenshot showed and what the first one showed too, minus 42 pixels of it.
+
+The arithmetic answer is `calc(100cqi - 42px)`, and it is the wrong kind of answer: it encodes the send button's width in the menu's stylesheet, and it is wrong again the day anything else lands beside the chip. So the anchor moved instead. The menus hang off the composer box itself — `.model-pick` and `.ctx-pick` are deliberately not positioned, and both menus offset by `--composer-pad-x`, a variable the box publishes so its padding is not spelled twice.
+
+Now the bound cannot be wrong, because the thing being bounded and the thing bounding it are the same box. **A fix by structure survives the next control; a fix by arithmetic is a bug with a delay on it.**
+
+The same correction applies one level in: `.updrop-list` hangs off a 180px trigger and was allowed 240px, so a long model id pushed it out through the menu's left edge — a popover overflowing a popover that was overflowing the pane. It is bounded to the menu now.
+
+### 122.4 Side by side for as long as it fits
+
+The first attempt also stacked every row below 360px, and the owner's answer to seeing it was to prefer the unstacked one (*"แบบนี้อ่ะดีแล้วครับ"*). Correctly so: a label beside the thing it names is the shape that reads, and 360px was nowhere near the width at which it stops fitting — the menu was still comfortable at 250.
+
+So the threshold dropped to 220px, and the label learned to trim itself: `flex:none` had made it a hard floor under the row, so a long label widened the menu rather than shortening itself. Stacking is now what happens when there is genuinely no room, not what happens when a guess said so.
+
+### 122.5 The same fault, one row up
+
+The chips above the input — project, branch, shell — ran off the right edge in the same pane, the terminal one reading `Windo` against the boundary. A row of separate facts, and a fact half off the edge is not a shorter fact, it is a missing one.
+
+They wrap now, and a single chip longer than the whole row trims itself, since wrapping has nothing left to offer it. Scoped as `.composer > .focus-row`, because `.focus-row` is *also* the name of a row inside the focus menu — two components sharing a class name, where the second definition silently overrides the first's `gap`. Left un-scoped, wrapping the composer's chips would have quietly rearranged a menu nobody was looking at.
+
+### 122.6 A container query, not a media query
+
+Every threshold here is asked of the composer, never of the window. The trigger is the pane, and the pane's width has nothing to do with the screen's — three panes and a sidebar share it, and the workbench can take most of it while the window stays maximised. A media query would fire on a machine and not on a layout, which is the same mistake as `100vw` in a different spelling.
+
+### 122.7 Guarded where the failure lives
+
+The test reads `style.css` off disk and asserts the bounds, for the same reason `themeContrast.test.ts` does: vitest stubs CSS imports to `""`, and a rule checked against an empty stylesheet passes. It checks both menus in one `it.each`, because the bug was never about one of them.
+
+## 123. Decision — A Command Line Is Read by One Shell, and `--` Was a Second One (2026-08-17)
+
+Owner, 17 ส.ค., asking for a check rather than reporting a fault: *"เช็ค รันคำสั่ง Linux เช่น `bash`, `ls`, `grep`, `find`, `sed`, `awk` หน่อย กรณีทำงานบน WSL ทำงานได้ดีหรือยัง"* — and on the finding, *"เริ่มเลยครับ"*.
+
+Most of it worked, and the part that did not had been failing quietly since the backend shipped. `proc.WSL` invoked `wsl.exe … -- bash -lc <line>`, and the comment beside it said the line reached bash byte for byte. It did not. **`--` hands the rest to the distro's default shell**, which reads it as a command line of its own and expands every `$…` before bash is started. `-e` (`--exec`) starts the program with the argv given, which is what the call always meant.
+
+The measurement that settles it uses no shell of ours at all: `-- /bin/echo 'A=$X B=$HOME'` prints `A= B=/home/mikedev`. Single quotes do not stop it, because by the time anything of ours reads the line the `$` is already gone.
+
+### 123.1 What a missing `$` looked like from the outside
+
+Nothing looked like an error, which is why a live test existed for quoting, the working directory, the login profile and cancellation, and none of them caught this:
+
+- `awk '{print $1}'` arrived as `awk '{print }'` — every column instead of the first, no warning. An agent reading a field out of `grep | awk` got the wrong answer and had no way to know.
+- `awk '{sum+=$2}'` arrived as `{sum+=}`, a syntax error the model would read as its own.
+- `false; echo rc=$?` printed `rc=0`, and `set -o pipefail` reported a failed pipeline as `0`. §111.2 already states the rule for PowerShell's exit codes — a failure reported as success is the one direction a wrapper must never be wrong in — and this was that same fault arriving through the other backend.
+- Anything the line set itself read back empty: a `for` loop's variable, a `VAR=x` prefix.
+
+So the diagnosis is not "WSL is broken". It is that **one command line was being read by two shells**, and only the second one was ours. The fix is to stop the first read, not to escape around it: `\$` survives the outer shell, and a backend that asks every caller to double-escape is a backend that will be wrong the first time someone forgets.
+
+### 123.2 Guarded where nothing else could see it
+
+`wsl_live_test.go` now asserts that `$1`, `$?`, a self-assigned variable and a literal `$5` all survive the trip, plus the `/bin/echo` probe that proves it with no bash of ours in the way — so a failure cannot be mistaken for something bash did. Measured after the change: `--cd`, quoting with runs of spaces in it, UTF-8 Thai, pipes, `sed -i`, `find -exec` and cancellation-reaches-the-distro are all unchanged. The only thing removed was the extra shell.
+
+### 123.3 What this does not fix
+
+The shell guard's embedded-path scan reads a `/…` inside quoted text as an absolute path, which is what closes the `python3 -c "open('/etc/passwd')"` family — and it also refuses ordinary POSIX one-liners whose regex merely looks like one: `sed 's/^/n=/'`, `sed 's/ /_/g'`, `sed -E 's/(a)-(b)/\2\1/'`, `awk -F'/'`, `tr '/' '-'`, `echo '#!/usr/bin/env bash' > s.sh`. It fails closed, so it costs work rather than containment, and it is left standing here rather than loosened in the same change as a correctness fix. Undecided, on purpose.

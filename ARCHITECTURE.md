@@ -536,6 +536,15 @@ product picture in [COMPANY.md](COMPANY.md)) · §82 (the learning floor) · §4
 | §111 | The Windows Shell Is PowerShell, Because the Shell Is Chosen for the Model (2026-08-15) |
 | §112 | An Answer That Is Still Arriving Has to Look Like It, and Be Updated Rather Than Rebuilt (2026-08-15) |
 | §113 | A Window Is Named by the Length It States, Not by the Slot It Arrived In (2026-08-16) |
+| §114 | An Agent Is Told What Is True, Not What to Do About It (2026-08-16) |
+| §115 | A Proposal Is Decided Where It Was Made (2026-08-16) |
+| §116 | Learning Crosses Projects; Deciding Does Not (2026-08-16) |
+| §117 | A Window Opens Inside the Screen It Was Given, Not the One It Assumed (2026-08-16) |
+| §118 | Mathematics Is Drawn, Because It Was Never Prose (2026-08-16) |
+| §119 | The User Points, and What Travels Is the Element (2026-08-16) |
+| §120 | A Run Button Is Offered Because the Machine Can, Not Because the Renderer Remembers (2026-08-16) |
+| §121 | An Answer the User Typed Over Is Still an Answer (2026-08-16) |
+| §122 | A Popover Is Measured Against the Pane It Opens In, Not the Screen (2026-08-17) |
 
 ---
 
