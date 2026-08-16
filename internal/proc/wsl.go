@@ -91,9 +91,37 @@ func (w *wslBackend) POSIX() bool { return true }
 //
 // Unlike cmd.exe (see shell_windows.go, and the corruption it caused), wsl.exe
 // parses its command line by the ordinary CommandLineToArgvW rules that
-// os/exec's escaping is written for, and hands everything after `--` to the
-// distro as an argv array. So the command line reaches bash as one argument,
-// byte for byte, with no quoting workaround needed on either side.
+// os/exec's escaping is written for. What it then does with those arguments is
+// the part that had to be measured rather than assumed.
+//
+// -e, not --. Both spellings look like "run exactly this", and only one is:
+// `--` hands the rest to the distro's **default shell**, which reads it as a
+// command line of its own before bash ever sees it, and that shell expands
+// every `$…` in it first. `-e` (--exec) starts the program directly with the
+// argv given, which is what this call has always meant.
+//
+// Measured 2026-08-17, on a plain `/bin/echo` with no shell of ours involved:
+// `-- /bin/echo 'A=$X B=$HOME'` prints `A= B=/home/mikedev`. The expansion is
+// real, it happens on the Linux side, and single quotes do not stop it — by the
+// time bash reads the line the `$` is already gone. What that cost, before the
+// flag changed:
+//
+//   - `awk '{print $1}'` became `awk '{print }'`, which prints the whole line.
+//     No error, no clue: a column of data silently became every column.
+//   - `awk '{sum+=$2}'` became `{sum+=}` — a syntax error blamed on the model.
+//   - `false; echo rc=$?` reported `rc=0`, and `set -o pipefail` reported a
+//     failed pipeline as 0. A failure read as success is the one direction a
+//     wrapper must never be wrong in (§111.2 says the same about PowerShell's
+//     exit codes; this is that fault arriving through the other backend).
+//   - Every shell variable the line set itself — a `for` loop's, a `VAR=x`
+//     prefix — read back empty.
+//
+// So the failure was not "WSL is broken", it was that a command line was being
+// read twice by two different shells, and the fix is to stop the first read.
+// Everything the old spelling did right — the working directory, quoting with
+// spaces in it, UTF-8, pipes — is unchanged under `-e`; only the extra shell is
+// gone. wsl_live_test.go holds the line: it asserts `$1` and `$?` survive,
+// which is the assertion that would have caught this on the day it shipped.
 //
 // --cd takes the Windows directory as-is and translates it, which is exactly
 // the translation this file would otherwise have to do for the one path that
@@ -116,7 +144,7 @@ func (w *wslBackend) Command(ctx context.Context, line, dir string) *exec.Cmd {
 	if dir != "" {
 		args = append(args, "--cd", dir)
 	}
-	args = append(args, "--", "bash", "-lc", line)
+	args = append(args, "-e", "bash", "-lc", line)
 
 	cmd := exec.CommandContext(ctx, "wsl.exe", args...)
 	cmd.Dir = dir

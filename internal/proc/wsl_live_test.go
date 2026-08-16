@@ -82,6 +82,40 @@ func TestWSLPassesQuotedArgumentsThrough(t *testing.T) {
 	}
 }
 
+// The command line must reach bash with its `$` still in it.
+//
+// It did not, for as long as the invocation said `--`: that spelling hands the
+// line to the distro's default shell first, and that shell expands every `$…`
+// against its own environment before bash is started (Command's comment has the
+// measurement). The damage was silent — `awk '{print $1}'` quietly printed
+// whole lines instead of a column, and `$?` reported a failed command as 0 —
+// which is why this is a test and not a comment: nothing about the output of a
+// wrong `awk` looks wrong.
+//
+// Each case below is one shape of "the value does not exist yet when the outer
+// shell reads the line": a field variable, an exit status, a variable the line
+// assigns itself, and a `$` that was never a variable at all.
+func TestWSLDoesNotExpandTheCommandLineBeforeBashReaches(t *testing.T) {
+	distro := liveDistro(t)
+	for _, tc := range []struct{ line, want string }{
+		{`printf 'alpha 1\n' | awk '{print $1}'`, "alpha"},
+		{`printf 'a 1\nb 2\n' | awk '{sum+=$2} END {print sum}'`, "3"},
+		{`false; echo rc=$?`, "rc=1"},
+		{`X=5; echo val=$X`, "val=5"},
+		{`echo 'price is $5'`, "price is $5"},
+	} {
+		if got := runInWSL(t, distro, tc.line, ""); got != tc.want {
+			t.Errorf("%s = %q, want %q — the command line was expanded before bash read it", tc.line, got, tc.want)
+		}
+	}
+	// The same fault with no shell of ours in the way, so a failure above cannot
+	// be mistaken for something bash did: /bin/echo has no expansion of its own,
+	// so whatever it prints is exactly what was handed to the distro.
+	if got := runInWSL(t, distro, `/bin/echo 'literal $NOSUCHVAR here'`, ""); got != "literal $NOSUCHVAR here" {
+		t.Errorf("/bin/echo received %q — something expanded the argument before the program ran", got)
+	}
+}
+
 // bash -lc, not -c: without the login shell the toolchain a version manager put
 // on PATH is not there, and "run it in WSL" reaches a distro that cannot find
 // the project's node or python.
