@@ -1178,11 +1178,25 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 
    Not collapsed, and that is deliberate: in this stance the card holds the
    answer itself, so folding it away would fold away the reply. */
+/* The padding is even on all four sides, and that is the fix rather than the
+   style. It was 14px top and 4px bottom, and the 4px was made liveable by a
+   rule on the body (`p:last-child`) that added an em back — so how much air a
+   plan had underneath it depended on what the plan happened to end with. One
+   ending in a sentence got about 20px; one ending in a list got 4px and sat on
+   the card's edge, which is what the owner was looking at (16 ส.ค.: "ผมอยากได้
+   ช่องว่าง ตอนเปิดแผนกับตอนจบ"). The compensating rule is gone with it: the
+   comment under .plan-body already said the card's own padding is the only
+   spacing around the body, and now that is true. */
+/* The outer margin was .7em, which is under the .85em between two paragraphs,
+   so the card sat closer to the tool timeline above it than two sentences of
+   prose sit to each other. A card is an object in the answer, not a line of it,
+   so it stands off by more than the prose rhythm rather than less — the same
+   reason the equations and the action row got theirs (owner, 16 ส.ค.). */
 .markdown-body .plan-card {
-  margin:.7em 0; padding:14px 16px 4px;
+  margin:1.1em 0; padding:16px;
   background:var(--surface-raised); border:1px solid var(--border-subtle); border-radius:var(--r-lg);
 }
-.markdown-body .plan-head { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+.markdown-body .plan-head { display:flex; align-items:center; gap:8px; margin-bottom:12px; }
 .markdown-body .plan-kind {
   display:inline-flex; align-items:center; gap:6px; margin-right:auto;
   font-size:var(--fs-2xs); color:var(--text-dim); letter-spacing:.02em;
@@ -1203,7 +1217,6 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
    the card's own padding is the only spacing around it. */
 .markdown-body .plan-body > :first-child { margin-top:0; }
 .markdown-body .plan-body > :last-child { margin-bottom:0; }
-.markdown-body .plan-body > p:last-child { margin-bottom:1em; }
 
 .markdown-body .codeblock pre { margin:0; border:none; border-radius:0; background:none; padding:.5em .9em .8em; }
 .markdown-body .codeblock code.hljs { display:block; background:transparent; padding:0; overflow-x:auto; color:var(--syn-fg); }
@@ -1281,9 +1294,16 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 
    The cost is real and paid for below: an icon with no word is an icon you may
    not recognise, so every one of them carries data-tip. */
+/* The gap above it was 6px, and 6px is less than the .85em between two
+   paragraphs of the answer above — `.markdown-body :last-child` clears the last
+   block's own margin, so this number is the whole distance. A row of controls
+   closer to the answer than the answer's own lines are to each other reads as
+   one more line of it (owner, 16 ส.ค.: "ข้างล่างมันชิดไป"). 14px puts it
+   further away than anything inside the answer is from anything else, which is
+   what says the row belongs to the reply rather than being part of it. */
 .time {
   display:flex; align-items:center; gap:2px;
-  color:var(--text-dim); font-size:var(--fs-xs); margin-top:6px;
+  color:var(--text-dim); font-size:var(--fs-xs); margin-top:14px;
 }
 /* The timestamp comes last, after the actions (owner, 2026-08-14). It is a
    fact about the message rather than one of the things you can do to it, so it
