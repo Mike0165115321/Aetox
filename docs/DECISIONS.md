@@ -3299,3 +3299,79 @@ That dropped pair is the one event in this family worth a `debuglog` line. The h
 **Whether the weekly row should exist at all.** If the backend still sends `x-codex-secondary-*`, Aetox still draws that row, now under whatever name its stated length earns. Reporting what the endpoint states is the rule, and a row deleted because we decided the provider is wrong about its own limits is the same mistake pointed the other way. If OpenAI has stopped sending the family, the row disappears on its own — `TestCodexQuotasVanishWhenHeadersDo` has pinned that since the feature shipped.
 
 **What the live headers actually say.** Still unmeasured. The values have never been recorded, and this pass adds one log line for one case rather than logging the family on every turn.
+
+---
+
+## 114. Decision — An Agent Is Told What Is True, Not What to Do About It (2026-08-16)
+
+Owner, 16 ส.ค., setting the direction: *"เอเจนในมุมของผม คือ ตัวตนนึง ที่คิดตัดสินใจได้ ตามหน้าที่ของตน ไม่ใช่เครื่องมือสร้างของที่ทำอย่างอื่นไม่ได้"* — and, on whether the system should let an agent negotiate how it wants work handed to it: *"พวกนี้คือพฤติกรรมเชิงผลลัพธ์ไม่ใช่พรอมป์ตที่ควรจะไปเขียนบอกมัน แต่ถ้าเราไม่กำหนด มันจะตัดสินใจเองและนั่นคือเอเจนที่ดูเป็นพนักงานมากขึ้น"*.
+
+Leaving the call undetermined is not an omission. It is the feature.
+
+### 114.1 The layer the audit got wrong, and why it is recorded here
+
+The first sweep for this debt reported the six bundled `STARTERS.md` files — 96 cards, 98KB of imperative text against 38KB of `AGENT.md` — as the bulk of it, on the reasoning that a card's prompt half restates the profile as an order and, arriving as the first message, outranks it.
+
+The owner refused the finding before any of it was acted on: *"การ์ดพวกนั้นเป็นหนี้จริงหรอ มันอยู่คนละชั้นไม่ใช่หรอ"*. He was right, and the mechanism settles it: `pickStarter` sets `draft` and nothing else, so a card's text lands in the composer where the user reads it, edits it, and sends it — or does not. Starters never reach `PromptFor`. **A card saying "ถามฉันก่อนให้ครบ" is the user asking, and an agent that does as it is asked is the behaviour we want, not the debt.** The two layers are the identity we write and the request the user sends, and only the first is ours.
+
+This is written down because the finding was wrong in a way that reads convincing — a size comparison, a real quotation, a plausible override story — and the same argument will assemble itself again.
+
+### 114.2 The one place that was legislating
+
+`needsNotice` folds into every agent's prompt through `PromptFor`, which makes it the identity layer without ever looking like it. It carried three sentences of choreography: ask in one line naming where the thing is switched on, then do the part that does not need it, and never refuse work you could actually do.
+
+Its own history is the argument against it. The first version said *"say what is missing, then stop"* and turned a specialist into a door nobody could get through. The second was written as the cure and was the same medicine — a rule that happened to point the better way. Neither version tried stating the fact and leaving the move to the agent.
+
+So it now carries what an agent has no way of working out for itself: which need is unmet, why, and where the user switches it on — that last part already lived in `reasonText`, so dropping the instruction lost no information. What survives is one line that is a standard rather than a move: a result that needed the missing thing, handed over as if it did not, is the failure nobody downstream can catch. Same kind of thing as the research worker's *"never report what you did not read"*.
+
+`TestTheNoticeCarriesTheFactAndNotTheMove` asserts the fact arrives, the standard survives, and — the half that matters — that `then stop`, `ask for it`, `does not need it` and `Refusing work` are all absent. The rule regrew once already by being rewritten as its own opposite; the guard is against both directions.
+
+### 114.3 What the measurement showed, and what it did not
+
+The claim "the removal changes what an agent does" was unmeasured when the change was made, so it was measured afterwards: the same agent, same question, same model, carrying the old notice and the new one (`live_notice_test.go`, kept as a live test rather than a fixture). The run hit the account's quota after 8 of 36 calls, leaving exactly one fully paired cell — the bundled github agent asked for something it genuinely could not do, three replies per arm.
+
+**The behaviour changed.** All three new-notice replies handed the user a runnable `gh pr create` and closed on a single named blocker; none of the three old-notice replies offered any route that did not run back through the assistant. Three correlated markers moving together across a 3–0 split is a real difference, not a draw of the dice.
+
+**Which one is better is unestablished, and this section exists to stop the record implying otherwise.** A blind four-lens panel scored it 3–1 for the new text, and its own sceptic dismantled the tally: there is one observable — the new text's replies carry an executable command — and the four lenses each scored that same observable, one of them with the sign reversed, because a concrete command necessarily contains concrete invented strings. One vote, not four, and its sign turns on whether you prefer action or restraint from an assistant that cannot act. With three samples on one question, it does not turn on the data.
+
+Two things the run surfaced are worth more than the verdict. The new text's replies invent a PR title and body inside the command they hand over — milder in kind than what the old text produced in its worst sample, but pointed at the one standard §114 kept. And on the one 3–0 that went the other way, both arms carried the same two fix locations in `reasonText` and the new arm relayed only one of them: it was not missing the fact, it decided to be brief and dropped something true. That is not a defect of the change; it is what the change is, seen once, in the small.
+
+### What this does not decide
+
+**Nothing in the six `AGENT.md` files changes.** They are identity and craft, and they already grant the call: doc's *"Discuss a document without producing one when discussing is what was wanted; produce one the moment it is"* is the shape the rest of the system was fighting.
+
+**`clarify()` stays as it is.** It already teaches a principle rather than cases, under the owner's constraint of 2026-08-04, and delegates receive it through `BuildPrompt`. The shelf for standing was never empty — it was being overwritten further down.
+
+**Whether the bundled starter cards should be shorter.** They are not debt, so this is a product question about what a user meets on an empty chat, and it is open.
+
+---
+
+## 115. Decision — A Proposal Is Decided Where It Was Made (2026-08-16)
+
+Owner, 16 ส.ค., holding a screenshot of another tool's chat with a one-line **"Saved a memory ›"** sitting between two paragraphs of the answer: *"ผมชอบรูปแบบนี้ Aetox ทำได้ไหม"*. Offered the cheap placement and the faithful one, he took the cheap one: *"เห็นด้วยครับ A ก็ดี"*.
+
+What the screenshot is about is not where the row sits. It is that the thing happened where a person can see it.
+
+### 115.1 The one tool whose work does not happen when it runs
+
+`memory` queues a row in `pending_changes` and waits for a human (§82). Every other tool in the list has done its work by the time its row goes grey, so the timeline treats this one the same way and gets it exactly backwards: the call drew a row reading `memory` and nothing else — the tool's arguments are `op`/`text`/`old`/`why`, and `model.ArgSubjectKeys` names none of them, so the row had no subject to show — inside a panel collapsed behind *ใช้ N เครื่องมือ*. The sentence it wanted to remember, the reasoning it offered for it, and the yes or no it was waiting on all lived on the Settings page behind a badge.
+
+The approval door was built so nothing changes the agent without a person allowing it. A door nobody is standing at does not hold that promise; it just never opens.
+
+### 115.2 The card carries an id, not a copy
+
+`skill.Output.ProposalID` rides out to the UI the way `Artifacts` does, through `ToolEvent` for the live turn and `ToolPart` for the written-down one, and the card in the chat reads its row back through `PendingChangeByID` — in whatever state it is in, which is why that binding is not restricted to pending rows.
+
+The alternative was to carry the sentence itself in the transcript, and it fails the moment the two disagree. A transcript is frozen and the queue keeps moving: a proposal approved from Settings that evening would still be asking in a session reopened next week, and clicking it would produce *"this was already decided"*. Reading the queue by id, a decided row comes back saying which way it went. Only the id is written down, inside the existing parts column, so nothing migrates and older turns simply have none.
+
+### 115.3 It asks; the tool it was copied from announces
+
+"Saved a memory" is true where it was copied from. Here it would be a lie: at that moment nothing is saved, and whether anything ever is belongs to the user. So the card asks — *ขอจำเรื่องนี้ไว้* — carries the line and the reasoning, and offers อนุมัติ/ไม่เอา on the spot. Approving says *มีผลตั้งแต่แชทถัดไป ไม่ใช่แชทนี้*, because the opposite is what every reader assumes: memory is read at session start, so the conversation you approved it in is the one conversation it does not reach.
+
+### What this does not decide
+
+**Where the card sits.** Under the answer, in the row of things a turn hands back, beside the file cards — not inline at the point in the prose where the call happened, which is what the screenshot actually shows. Drawing the sequence inline was tried and read worse (the note at `stepsFromParts`): the same thinking segment appeared twice and the answer stopped being what your eye lands on. That rejection was about drawing *everything* inline, so the narrower version — a whitelist of parts worth drawing in the flow — is still open, and it is the same mechanism the mid-turn chart bug needs. One change, when it is done, not two.
+
+**Whether a proposal should reach the running session.** It should not, and does not.
+
+**The summarizer's own proposals.** Those enter the same queue from `summarize.go` rather than from a tool call in a conversation, so they have no answer to sit under and are still decided in Settings. That is the right place for them: they belong to no single turn.

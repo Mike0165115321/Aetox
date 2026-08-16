@@ -178,10 +178,11 @@ func TestTheGitHubChairRunsOnItsOwnBrief(t *testing.T) {
 	}
 
 	// Nothing is connected in a fresh data root, so the notice must be there
-	// too: an agent that cannot work has to know it, or it answers anyway.
-	for _, want := range []string{"Ask for what is missing", "does not need it"} {
+	// too: an agent that cannot work has to know it, or it answers anyway. What
+	// it carries is the fact — not what to do about it (internal/subagent).
+	for _, want := range []string{"What is not set up", "การเชื่อมต่อ"} {
 		if !strings.Contains(sys, want) {
-			t.Errorf("the chair was not told to ask and carry on — no %q in its prompt", want)
+			t.Errorf("the chair was not told what is missing — no %q in its prompt", want)
 		}
 	}
 }

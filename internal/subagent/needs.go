@@ -325,16 +325,30 @@ func mcpState(agent, name string) Need {
 // agent that answers "I have no key" to "what should a repository have in it"
 // has failed at its job while appearing to be careful about it.
 //
-// So the instruction is the other shape, and it is three things in order: ask
-// for what is missing, do the part that does not need it, and never pass off a
-// result as though the missing thing had been there. Only the third is a hard
-// line — it is the one failure nobody downstream can catch.
+// The second version fixed that by writing the opposite move out in full: ask
+// in one line, then do the part that still works, and never refuse work you
+// could do. It read as the cure, but it was the same medicine — a rule that
+// happened to point the better way. Neither version ever tried the third thing,
+// which is saying what is true and letting the agent decide what to do about it.
+//
+// That is what this is now (owner's call, 2026-08-16: an agent is an identity
+// that decides within its own remit, and legislating its moves is what makes it
+// read as a tool). What an agent cannot work out for itself is the *fact* — that
+// a server is not connected, and where the user switches it on — so the fact is
+// all this carries. Whether to ask first, work around it, or say the job cannot
+// be done at all is its call, made against the situation in front of it rather
+// than against a sentence written here months earlier.
+//
+// The one line that stays is not a move but a standard: a result that needed the
+// missing thing, handed over as if it did not, is the failure nobody downstream
+// can catch. That is the same kind of thing as the research worker's "never
+// report what you did not read" — a truth about the job, not a procedure for it.
 func needsNotice(unmet []Need) string {
 	if len(unmet) == 0 {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("\n\n---\n# Ask for what is missing, then do the rest\n\n")
+	b.WriteString("\n\n---\n# What is not set up\n\n")
 	b.WriteString("Not set up yet:\n\n")
 	for _, need := range unmet {
 		fmt.Fprintf(&b, "  - %s (%s) — %s\n", need.Label, need.Kind, reasonText(need))
@@ -346,11 +360,9 @@ func needsNotice(unmet []Need) string {
 			fmt.Fprintf(&b, "    or %s (%s) — %s\n", alt.Label, alt.Kind, reasonText(alt))
 		}
 	}
-	b.WriteString("\nSay so in one line and ask for it, naming where it is switched on. ")
-	b.WriteString("Then do the part of the job that does not need it — you still have your own tools ")
-	b.WriteString("and everything you know, and most questions about your subject need neither an ")
-	b.WriteString("account nor a server. Refusing work you could actually do is its own kind of wrong answer.\n")
-	b.WriteString("\nThe one thing never to do is answer as though you had it. ")
+	b.WriteString("\nYou still have your own tools and everything you know, and this is the whole of ")
+	b.WriteString("what is missing.\n")
+	b.WriteString("\nWhat cannot be done is answering as though you had it. ")
 	b.WriteString("A result that needed the missing thing, handed over as if it did not, is the single ")
 	b.WriteString("failure here that nobody downstream can catch.\n")
 	return b.String()

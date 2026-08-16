@@ -147,10 +147,19 @@ kind** — nothing inside the file decides which it is.
   one parked on a question — the question with a box to answer it.
 
   Nobody has to press anything to get a result. The moment a delegation
-  finishes, a `[ระบบ]` message arrives saying so; collect it with `task_result`
-  and report what it found. An answer typed on the card arrives as "ตอบ task_N
-  ด้วย task_answer ว่า …". Both are ordinary user messages — do exactly what
+  finishes, a `[ระบบ]` message arrives saying so; collect it with
+  `task action=collect` and report what it found. An answer typed on the card
+  arrives as "ตอบ task_N ด้วย task action=answer ว่า …". Both are ordinary user messages — do exactly what
   they say.
+
+  Work that takes more than one wave of them is declared first, with
+  **`task` action=plan**: a name, a sentence for the user, and the phases in order —
+  including the ones that have not happened yet. Every `task` after it names one
+  of those phases, and only those. Nothing is enforced by it and nothing needs to
+  be: a phase that was promised and never filled sits at zero on the user's card
+  for the whole run, so a checking round skipped because the answer already
+  looked finished is visible rather than silent. There is **no token ceiling** on
+  a run (owner, 16 ส.ค.) — the card shows what it is spending and Stop ends it.
 - **Desks (modes)** — what is on the desk, never who is sitting at it. Bundled
   manifests are compiled in; a file in `<DataRoot>/modes` with the same name
   overrides one, and a new file is a new desk.
@@ -169,7 +178,7 @@ before you tell a user what they must write:
 | `steps` | No ceiling — a worker runs until the job is done. A positive number caps it and is honoured exactly; `unlimited` says the default out loud; a typo falls back to the default rather than to a number nobody wrote |
 | `model` | Whatever the session is running |
 | `icon` | Derived from what the worker produces |
-| `needs` | Nothing declared. Entries are `connection:<id>` or `mcp:<server>`, and `\|` between two of them means "either one satisfies this". A need **declares and never grants**: the grant is `for:` on the connection or the server. What it buys is that an agent missing one says so — in its own prompt, and on its page in การตั้งค่า › เอเจน |
+| `needs` | Nothing declared. Entries are `connection:<id>` or `mcp:<server>`, and `\|` between two of them means "either one satisfies this". A need **declares and never grants**: the grant is `for:` on the connection or the server. What it buys is that an agent missing one is told so — the fact and where the user switches it on, in its own prompt (§114), and a mark on its page in การตั้งค่า › เอเจน. What it does about it is its own call |
 
 Beside `AGENT.md`, a worker may keep a `STARTERS.md` — the question at the top
 of an empty chat with it, and the cards under it. Markdown that happens to
@@ -353,10 +362,11 @@ Inside `<DataRoot>`, refused by name:
 And one folder, refused for a different reason: **`<DataRoot>/agents/<name>/skills`**.
 That is a worker's own specialist knowledge, and it sits in that worker's folder
 precisely so the other workers do not have it — so no file tool reaches it, in
-any mode, including that worker's own. Its skills are handed to it as tools
-instead, which is the same shape as `~/.aetox/skills` being reachable through
-`skills_list` and `skill_view` but not through `read`. Knowledge travels through
-the skill door or not at all.
+any mode, including that worker's own. That worker reaches them the same way
+anyone reaches the shared shelf — `skills_list` lists them beside it and
+`skill_view` opens one — and nobody else's `skills_list` shows them at all.
+Knowledge travels through the skill door or not at all, and a walk from a parent
+folder is not a second door: `grep` and `glob` refuse the same paths `read` does.
 
 The rest of a worker's folder — `AGENT.md`, `MEMORY.md` — stays readable, so you
 can still explain the team and still write a new `AGENT.md` when the user asks

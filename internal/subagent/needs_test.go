@@ -186,35 +186,42 @@ func TestAnEntryWithNoIDIsIgnored(t *testing.T) {
 
 // The runtime half, and the shape of it matters more than the fact of it.
 //
-// The first version said "say what is missing, then stop", which turned a
-// specialist into a door nobody could get through: the GitHub worker with no
-// token still holds its own file tools and four skill documents, and most
-// questions about repositories need no account at all. So the notice has to
-// carry three things — ask, then do what you can, and never pass a result off
-// as though the missing piece had been there.
-func TestTheAgentIsToldToAskAndThenGetOnWithTheRest(t *testing.T) {
+// Two earlier versions both wrote out a move: "say what is missing, then stop"
+// (which turned a specialist into a door nobody could get through) and then its
+// mirror, "ask in one line, then do the rest". The second read better and was
+// the same kind of thing — a rule choosing for an agent that can choose. What it
+// carries now is the fact and nothing else, because what an agent cannot work
+// out for itself is that a server is unconnected and where it gets switched on;
+// what to do about that is its own call (owner's call, 2026-08-16).
+//
+// So this test guards the fact arriving, the one standard that is not a move,
+// and — the part that keeps the rule from growing back — the absence of
+// choreography.
+func TestTheNoticeCarriesTheFactAndNotTheMove(t *testing.T) {
 	needsRoot(t)
 
 	prompt := PromptFor(githubAgent("connection:github"))
 	if !strings.Contains(prompt, "You handle GitHub.") {
 		t.Fatal("the agent's own prompt was lost")
 	}
-	// What is missing, and where the user turns it on — a sentence they can act on.
-	for _, want := range []string{"GitHub", "การเชื่อมต่อ", "ask for it"} {
+	// What is missing, and where the user turns it on — the half an agent has no
+	// way of knowing, and the half it needs to say anything useful about it.
+	for _, want := range []string{"GitHub", "การเชื่อมต่อ"} {
 		if !strings.Contains(prompt, want) {
-			t.Errorf("the notice does not ask for what is missing — no %q", want)
+			t.Errorf("the notice does not say what is missing — no %q", want)
 		}
 	}
-	// And it must not read as permission to give up.
-	if !strings.Contains(prompt, "does not need it") {
-		t.Error("the notice does not tell the agent to do the part that still works")
-	}
-	if strings.Contains(prompt, "then stop") {
-		t.Error("the notice still tells a working specialist to stop")
-	}
-	// The one hard line survives.
+	// A standard, not a procedure: the one outcome nobody downstream can catch.
 	if !strings.Contains(prompt, "as though you had it") {
 		t.Error("the notice no longer forbids answering as if the missing thing were there")
+	}
+	// Neither old rule may come back, in either direction. An agent that reads
+	// this decides whether to ask first, work around it, or say it cannot be
+	// done — and a sentence here that picks for it is the debt returning.
+	for _, gone := range []string{"then stop", "ask for it", "does not need it", "Refusing work"} {
+		if strings.Contains(prompt, gone) {
+			t.Errorf("the notice is telling the agent what to do again — %q is back", gone)
+		}
 	}
 }
 
@@ -298,7 +305,7 @@ func TestTheGitHubAgentCarriesItsOwnKnowledge(t *testing.T) {
 		t.Fatal("the github agent is not bundled")
 	}
 	registry := skill.NewRegistry()
-	attachOwnSkills(registry, p)
+	attachOwnSkills(registry, p, nil)
 	names := map[string]bool{}
 	for name := range registry.Snapshot() {
 		names[name] = true
