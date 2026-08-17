@@ -163,6 +163,131 @@ func TestShellUnderWSLFindsGuestPathsHiddenInsideQuotedCode(t *testing.T) {
 	}
 }
 
+// A `/` is how POSIX writes a regex, a field separator and a substitution, and
+// the scan that finds paths inside quoted code read every one of them as an
+// absolute path. These are the commands that cost, and none of them names a
+// file outside the workspace — or a file at all.
+//
+// A real distro, because the answer is evidence: /n= and /_ exist nowhere, and
+// that is the fact that separates them from /etc. Against the fake gate above
+// the filesystem cannot be reached, and the refusal is kept on purpose — which
+// is what TestShellUnderWSLKeepsTheRefusalWhenItCannotLook asserts.
+func TestShellUnderWSLDoesNotRefuseARegexThatMerelyLooksLikeAPath(t *testing.T) {
+	distros := liveDistros(t)
+	gate := gateFor(proc.WSL(distros[0]))
+	root, _ := focusedProject(t)
+
+	for _, command := range []string{
+		`sed 's/^/n=/' notes.txt`,
+		`sed 's/ /_/g' notes.txt`,
+		`sed -E 's/(a)-(b)/\2\1/' notes.txt`,
+		`sed -i 's|^|# |' notes.txt`,
+		`awk -F'/' '{print $2}' notes.txt`,
+		`grep -c '3$' notes.txt`,
+		// A `/` after a regex metacharacter is the pattern's next character.
+		`grep -E '^/usr' notes.txt`,
+		`grep -E 'a$|^/etc' notes.txt`,
+		// The ways round the residual below, which have to keep working —
+		// a refusal with no way past it is the one that gets the gate disabled.
+		`sed 's|/|-|g' notes.txt`,
+		`awk '{if ($0 ~ /needle/) print}' notes.txt`,
+		`awk '{gsub(/needle/,"x"); print}' notes.txt`,
+		`grep -v '^#' notes.txt`,
+		`cut -d/ -f2 notes.txt`,
+		// A shebang names an interpreter, which is program position — the one
+		// thing this guard has never contained.
+		`echo '#!/usr/bin/env bash' > script.sh`,
+		`printf '#!/bin/sh\necho hi\n' > script.sh`,
+	} {
+		if err := guardCommandPaths(root, command, gate); err != nil {
+			t.Errorf("refused an ordinary command %q: %v", command, err)
+		}
+	}
+}
+
+// The other half of the same rule, and the one that matters more: a guess that
+// names something real still refuses. If this ever goes quiet, the evidence
+// step has stopped being a filter and become a hole.
+func TestShellUnderWSLStillRefusesRealPathsHiddenInQuotedCode(t *testing.T) {
+	distros := liveDistros(t)
+	gate := gateFor(proc.WSL(distros[0]))
+	root, outside := focusedProject(t)
+	secret := guestSpelling(t, filepath.Join(outside, "secret.txt"))
+
+	for _, command := range []string{
+		`python3 -c "print(open('/etc/passwd').read())"`,
+		`python3 -c "print(open('` + secret + `').read())"`,
+		`node -e "console.log(require('fs').readFileSync('/etc/shadow','utf8'))"`,
+		`bash -c "cat /etc/passwd"`,
+		`sed -n 1p "` + secret + `"`,
+		`awk '{print}' /etc/shadow`,
+		`echo stolen > /tmp/stash`,
+		// The lone `/` is dropped as a delimiter only where it was found by
+		// shape. Written as an argument it is still the root of the machine.
+		`rm -rf /`,
+	} {
+		if err := guardCommandPaths(root, command, gate); err == nil {
+			t.Errorf("a real path was allowed out of the workspace: %s", command)
+		}
+	}
+}
+
+// The residual, pinned so it is a decision and not a drift.
+//
+// A token that *begins* with `/` is checked as written, and some of those are
+// patterns rather than paths: sed's addresses, awk's rules, a lone `/` handed to
+// tr or cut. They are refused, and clearing them would mean letting a token
+// through on the same "does the first segment exist" evidence a guess answers
+// to — which reopens `mkdir -p /x; cp secret /x/y` in a single line, since at
+// the moment the guard reads it, /x does not exist yet.
+//
+// So the trade is: a handful of one-liners that have workarounds, against a
+// staging area outside the workspace that one command line can create and fill.
+// The workarounds are in the test above. If this test is ever deleted, that
+// trade is being re-made — make it deliberately.
+func TestShellUnderWSLStillRefusesAPatternWrittenAsAWholeToken(t *testing.T) {
+	distros := liveDistros(t)
+	gate := gateFor(proc.WSL(distros[0]))
+	root, _ := focusedProject(t)
+
+	for _, command := range []string{
+		`awk '/needle/ {print}' notes.txt`,
+		`sed -n '/^beta/p' notes.txt`,
+		`sed '/^#/d' notes.txt`,
+		`tr '/' '-' < notes.txt`,
+		`cut -d '/' -f2 notes.txt`,
+	} {
+		if err := guardCommandPaths(root, command, gate); err == nil {
+			t.Errorf("%q is allowed now — if that was intended, the same-line "+
+				"`mkdir -p /x; cp secret /x/y` case has to be checked again", command)
+		}
+	}
+}
+
+// "I could not look" must never read as "it is not there". The fake distro has
+// no filesystem to ask, so every guess keeps the refusal it would have had.
+func TestShellUnderWSLKeepsTheRefusalWhenItCannotLook(t *testing.T) {
+	gate := wslGate(t) // a distro name no machine has
+	root, _ := focusedProject(t)
+
+	if err := guardCommandPaths(root, `sed 's/ /_/g' notes.txt`, gate); err == nil {
+		t.Error("a guess was allowed through a filesystem this process cannot reach — " +
+			"an unreachable distro now switches the scan off instead of failing closed")
+	}
+}
+
+func liveDistros(t *testing.T) []string {
+	t.Helper()
+	if runtime.GOOS != "windows" {
+		t.Skip("translating drive letters is a Windows question")
+	}
+	distros := proc.Distros()
+	if len(distros) == 0 {
+		t.Skip("no WSL distro on this machine")
+	}
+	return distros
+}
+
 // ~ is the shell's home, and the shell's home is in the distro. Expanding it to
 // this machine's Windows profile would check a folder the command will not
 // touch — which lets it through when the real target is outside, and refuses it

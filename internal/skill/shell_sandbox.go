@@ -35,6 +35,12 @@ import (
 // gap small and, where it cannot be closed, loud: a construct this cannot read
 // refuses the command rather than passing it through unchecked.
 //
+// With one distinction, added once the cost of not making it was measured: a
+// path the command *states* and a path this file *guesses* from shape are not
+// the same claim, and only the first refuses on its own authority. The guess —
+// a bare `/…` found inside quoted text, which is also how POSIX spells a regex
+// — has to produce evidence first. evidenceForAGuess is where that is argued.
+//
 // **Two things it deliberately does not contain**, both stated so they are not
 // mistaken for oversights. Program position: a command's first token names code
 // to run, and running code is the tool's purpose — `go` resolved through PATH
@@ -98,8 +104,8 @@ func nativeGate() shellGate { return gateFor(proc.Native()) }
 // was refused and what the user can do about it, because a refusal that does
 // not carry the remedy just becomes "I can't".
 func guardCommandPaths(root, commandLine string, gate shellGate) error {
-	targets, opaque := commandTargets(root, commandLine, gate)
-	return guardTargets(root, targets, opaque, gate)
+	targets, guesses, opaque := commandTargets(root, commandLine, gate)
+	return guardTargets(root, targets, guesses, opaque, gate)
 }
 
 // openWorkspace reports whether root's session may reach the whole machine —
@@ -136,20 +142,30 @@ func guardArgs(root string, args []string) error {
 	var targets []string
 	for _, arg := range args {
 		if reason := unreadable(arg); reason != "" {
-			return guardTargets(root, nil, reason, gate)
+			return guardTargets(root, nil, nil, reason, gate)
 		}
 		target, opaque := tokenTarget(root, arg, gate)
 		if opaque != "" {
-			return guardTargets(root, nil, opaque, gate)
+			return guardTargets(root, nil, nil, opaque, gate)
 		}
 		if target != "" {
 			targets = append(targets, target)
 		}
 	}
-	return guardTargets(root, targets, "", gate)
+	// No guesses: every argument here is one the caller means as an argument.
+	// The guess list exists for text found by shape inside a command line, and
+	// an argv has no such text.
+	return guardTargets(root, targets, nil, "", gate)
 }
 
-func guardTargets(root string, targets []string, opaque string, gate shellGate) error {
+// guardTargets refuses the command when any target leaves the workspace.
+//
+// targets are the paths the command says it uses: a token the shell would pass
+// as an argument, or a path written in a spelling only a filesystem could mean.
+// guesses are the ones this file inferred from shape alone — a `/…` found
+// inside quoted text — and they are held to a different standard, stated in
+// evidenceForAGuess.
+func guardTargets(root string, targets, guesses []string, opaque string, gate shellGate) error {
 	// A construct this scanner cannot read — a variable holding a path, a
 	// $(sub-command) — stops the command, but only where there is a wall for it
 	// to have jumped. In the open workspace there is none: resolveSandboxPath
@@ -193,19 +209,110 @@ func guardTargets(root string, targets []string, opaque string, gate shellGate) 
 			return fmt.Errorf("%s: %w", target, err)
 		}
 	}
+	// The same checks, and one extra step before a guess is allowed to refuse
+	// anything. Run second so a command that names a real path outside the
+	// workspace is refused for that, and never spends a filesystem lookup on a
+	// guess it was going to be refused for anyway.
+	for _, guess := range guesses {
+		host, ok := gate.toHost(guess)
+		if !ok {
+			if !evidenceForAGuess(guess, gate) {
+				continue
+			}
+			return fmt.Errorf("%s: this path is inside the shell's own filesystem and has no name "+
+				"this machine can check it by, so it cannot be shown to be inside the folders this "+
+				"session may use — work inside the project folder instead", guess)
+		}
+		if _, err := resolveSandboxPath(root, host); err != nil {
+			if !evidenceForAGuess(guess, gate) {
+				continue
+			}
+			return fmt.Errorf("%s: %w", guess, err)
+		}
+	}
 	return nil
+}
+
+// evidenceForAGuess asks whether a `/…` found by shape is a path at all.
+//
+// The scan that produces these exists to close a real family — `python3 -c
+// "open('/etc/passwd')"` is one token to any tokenizer and an absolute path to
+// the operating system — and it pays for that with the other thing a `/` is:
+// POSIX's most common delimiter. `sed 's/^/n=/'`, `sed 's/ /_/g'` and `sed -E
+// 's/(a)-(b)/\2\1/'` all contain something the pattern reads as an absolute
+// path, and all three were refused (owner, 17 ส.ค., after the WSL check: a
+// wall that stops ordinary work is still a wall).
+//
+// The line drawn here: **a token the command passes is checked as written; a
+// guess must produce evidence before it may refuse.** The evidence is the
+// cheapest fact that separates the two — whether the first segment names
+// something that is actually there. `/etc`, `/home`, `/mnt`, `/tmp` exist on
+// every distro, so every real escape keeps its refusal; `/n=`, `/_` and `/\2\1`
+// exist nowhere, so the delimiters stop costing the user a command.
+//
+// Failure is closed in both directions that matter. A filesystem this process
+// cannot reach — a distro that is not installed, a name that never resolves —
+// answers "keep the refusal", because "I could not look" must never read as "it
+// is not there". And this only ever *removes* a refusal the shape produced: a
+// path that resolves inside the workspace was never going to be refused, and a
+// literal argument never reaches this function at all.
+//
+// The residual, stated rather than hidden: text that is genuinely
+// indistinguishable from a real path stays refused. `grep -E '^/usr'` names
+// /usr, which exists, and nothing here can tell a pattern that matches a path
+// from a path.
+func evidenceForAGuess(guess string, gate shellGate) bool {
+	if !strings.HasPrefix(guess, "/") {
+		// Only the bare-slash family is guessed, and only it is answered here.
+		return true
+	}
+	segment, _ := firstGuestSegment(guess)
+	if segment == "" {
+		return true
+	}
+	// Reachability first, and asked of the root rather than of the segment: a
+	// filesystem that answers nothing would otherwise report every segment as
+	// missing, and turn "cannot look" into "let it through" for the whole scan.
+	root, ok := gate.toHost("/")
+	if !ok {
+		return true
+	}
+	if _, err := os.Stat(root); err != nil {
+		return true
+	}
+	host, ok := gate.toHost("/" + segment)
+	if !ok {
+		return true
+	}
+	if _, err := os.Stat(host); err != nil {
+		return false
+	}
+	return true
+}
+
+func firstGuestSegment(p string) (head, tail string) {
+	p = strings.TrimPrefix(p, "/")
+	if at := strings.IndexByte(p, '/'); at >= 0 {
+		return p[:at], p[at+1:]
+	}
+	return p, ""
 }
 
 // commandTargets returns every path-shaped token in the command line, expanded
 // the way the shell would expand it, plus a description of the first construct
 // it could not read (empty when it read everything).
-func commandTargets(root, commandLine string, gate shellGate) (targets []string, opaque string) {
+//
+// Two lists, because they are not the same claim. targets is what the command
+// says: a token the shell would hand to the program, or a path in a spelling
+// nothing but a filesystem uses. guesses is what a bare `/…` inside quoted text
+// might be — the family evidenceForAGuess exists for.
+func commandTargets(root, commandLine string, gate shellGate) (targets, guesses []string, opaque string) {
 	// Against the whole line, before tokenizing: `$(` straddles a token break
 	// (the tokenizer treats `(` as a separator), so a per-token scan would
 	// never see the two characters together and command substitution would be
 	// the one unreadable construct that reads as fine.
 	if reason := unreadable(commandLine); reason != "" {
-		return nil, reason
+		return nil, nil, reason
 	}
 	// Tokenizing alone leaves one family wide open: a path that never appears
 	// as a token because it lives inside a quoted argument. `python -c
@@ -225,9 +332,15 @@ func commandTargets(root, commandLine string, gate shellGate) (targets []string,
 			programs[literalPathPrefix(expandTilde(segment[0], gate), gate)] = true
 		}
 	}
-	for _, found := range embeddedPaths(commandLine, gate) {
+	spelled, guessed := embeddedPaths(commandLine, gate)
+	for _, found := range spelled {
 		if !programs[found] {
 			targets = append(targets, found)
+		}
+	}
+	for _, found := range guessed {
+		if !programs[found] {
+			guesses = append(guesses, found)
 		}
 	}
 	for _, segment := range segments {
@@ -242,18 +355,18 @@ func commandTargets(root, commandLine string, gate shellGate) (targets []string,
 			if strings.EqualFold(token, "iex") {
 				// Only ever as a whole word: three letters, and refusing every
 				// command that contains them somewhere would be absurd.
-				return nil, "Invoke-Expression"
+				return nil, nil, "Invoke-Expression"
 			}
 			target, reason := tokenTarget(root, token, gate)
 			if reason != "" {
-				return nil, reason
+				return nil, nil, reason
 			}
 			if target != "" {
 				targets = append(targets, target)
 			}
 		}
 	}
-	return targets, ""
+	return targets, guesses, ""
 }
 
 // tokenTarget reduces one already-split token to the path it names, or "" when
@@ -288,31 +401,83 @@ var embeddedPathPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?:^|[^A-Za-z0-9_])(~[\\/][^\s"'` + "`" + `<>|]*)`),
 }
 
-var unixEmbeddedPath = regexp.MustCompile(`(?:^|[^A-Za-z0-9_.:/])(/[^\s"'` + "`" + `<>|]*)`)
+// unixEmbeddedPath is the bare "/" form, and it carries one exclusion the other
+// three do not need: a `/` straight after a glob or regex metacharacter.
+//
+// An absolute path cannot start there. `^`, `$`, `*`, `+`, `?`, `(`, `)`, `[`,
+// `]`, `{` and `}` are how POSIX writes a pattern, and the `/` that follows one
+// is the pattern's next character — `grep -E '^/usr'` names no file. Nothing is
+// let out by this: to reach /etc/passwd the literal text has to be there, and
+// putting a metacharacter immediately in front of it makes it a different,
+// relative path (`*/etc/passwd`) rather than a hidden absolute one. The two
+// constructs where such a character really can precede a path, `${…}` and
+// `$(…)`, never reach this scan — unreadable() stops the command first.
+//
+// `\` is deliberately not in the set: to a POSIX shell `\/` is an escaped
+// slash, so `cat \/etc/passwd` really does open /etc/passwd.
+var unixEmbeddedPath = regexp.MustCompile(`(?:^|[^A-Za-z0-9_.:/^$*+?()\[\]{}])(/[^\s"'` + "`" + `<>|]*)`)
 
-func embeddedPaths(line string, gate shellGate) []string {
-	patterns := embeddedPathPatterns
-	// Keyed on the shell, not the OS: this is the pattern that finds
-	// `/mnt/d/elsewhere` inside a quoted argument, and a WSL command line on
-	// Windows is exactly where that path shape turns up.
-	if gate.posix {
-		patterns = append(append([]*regexp.Regexp{}, patterns...), unixEmbeddedPath)
+// embeddedPaths returns the paths written into the line, and separately the
+// ones only guessed from a bare `/`.
+//
+// The split is the whole point. A drive letter, a `..` climb and a `~` are
+// shapes nothing but a path uses, so finding one is finding a path. A `/` is
+// also how POSIX writes a regex, a field separator and a substitution, so
+// finding one is finding a maybe — and a maybe answers to evidenceForAGuess
+// before it refuses anybody's `sed`.
+func embeddedPaths(line string, gate shellGate) (spelled, guessed []string) {
+	reduce := func(candidate string) string {
+		candidate = strings.Trim(candidate, `"'`+"`"+`,;:)]}`)
+		if candidate == "" || isNullDevice(candidate) {
+			return ""
+		}
+		// Same reductions a token gets, minus the flag prefix — this text
+		// was never a flag, it was found inside one.
+		return literalPathPrefix(expandTilde(candidate, gate), gate)
 	}
-	var out []string
-	for _, re := range patterns {
+	for _, re := range embeddedPathPatterns {
 		for _, match := range re.FindAllStringSubmatch(line, -1) {
-			candidate := strings.Trim(match[1], `"'`+"`"+`,;:)]}`)
-			if candidate == "" || isNullDevice(candidate) {
-				continue
-			}
-			// Same reductions a token gets, minus the flag prefix — this text
-			// was never a flag, it was found inside one.
-			if literal := literalPathPrefix(expandTilde(candidate, gate), gate); literal != "" {
-				out = append(out, literal)
+			if literal := reduce(match[1]); literal != "" {
+				spelled = append(spelled, literal)
 			}
 		}
 	}
-	return out
+	// Keyed on the shell, not the OS: this is the pattern that finds
+	// `/mnt/d/elsewhere` inside a quoted argument, and a WSL command line on
+	// Windows is exactly where that path shape turns up.
+	if !gate.posix {
+		return spelled, nil
+	}
+	for _, match := range unixEmbeddedPath.FindAllStringSubmatchIndex(line, -1) {
+		start, end := match[2], match[3]
+		if !slashCouldOpenAPath(line, start) {
+			continue
+		}
+		literal := reduce(line[start:end])
+		// A lone `/` found by shape is a delimiter, not the root of the
+		// filesystem. Dropped here and nowhere else: a `/` the shell would pass
+		// as an argument arrives as a token, so `rm -rf /` is refused by the
+		// token loop exactly as before — and so, unavoidably, is `tr '/' '-'`,
+		// since after quote-stripping the two are the same argument.
+		if literal == "" || literal == "/" {
+			continue
+		}
+		guessed = append(guessed, literal)
+	}
+	return spelled, guessed
+}
+
+// slashCouldOpenAPath rejects the one position where a `/` provably is not the
+// start of one: straight after a `#!`.
+//
+// A shebang names an interpreter, and program position is the thing this file
+// has always declined to contain (see the top of this file: refusing the
+// spelling would forbid the spelling and permit the act). Without this,
+// `echo '#!/usr/bin/env bash' > script.sh` and every heredoc that writes a
+// script are refused for naming /usr/bin/env — a path the command does not open
+// and the file, once run, resolves for itself.
+func slashCouldOpenAPath(line string, at int) bool {
+	return at < 2 || line[at-2:at] != "#!"
 }
 
 // isNullDevice matches the two spellings of "throw this output away". Neither
