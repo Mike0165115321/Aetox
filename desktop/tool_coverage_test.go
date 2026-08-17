@@ -553,17 +553,34 @@ func toolCases(t *testing.T, root string, dispatcher *skill.Dispatcher) map[stri
 		// These reach a real webview or nothing. Headless they must fail
 		// cleanly and immediately, which is what assertReachable checks: the
 		// regression worth catching is a browser tool that hangs the turn.
-		// One tool, four actions (desktop/browser_tool.go). Driven at `open`
+		// One tool, five actions (desktop/browser_tool.go). Driven at `open`
 		// because that is the action a session starts with and the one whose
-		// argument handling is worth reaching; the other three refuse for the
+		// argument handling is worth reaching; the rest refuse for the
 		// same reason on the same path — there is no window here.
 		// One case per action since browser joined the packs table — the same
 		// per-act coverage every other packed tool gets. All unrunnable here
 		// for the same one reason, but each action still has to route.
-		"browser_open":  {args: map[string]any{"url": "https://example.com"}, available: never, why: "needs the app window"},
-		"browser_read":  {args: map[string]any{}, available: never, why: "needs the app window"},
-		"browser_click": {args: map[string]any{"ref": 1}, available: never, why: "needs the app window"},
-		"browser_type":  {args: map[string]any{"ref": 1, "text": "x"}, available: never, why: "needs the app window"},
+		//
+		// capture refuses one step earlier than the others, and that is the
+		// point: it asks agentTab which tab is the agent's before
+		// it asks the engine for anything, so a session with no page open is
+		// told so instead of waiting on a webview that will never answer.
+		"browser_open":    {args: map[string]any{"url": "https://example.com"}, available: never, why: "needs the app window"},
+		"browser_read":    {args: map[string]any{}, available: never, why: "needs the app window"},
+		"browser_click":   {args: map[string]any{"ref": 1}, available: never, why: "needs the app window"},
+		"browser_type":    {args: map[string]any{"ref": 1, "text": "x"}, available: never, why: "needs the app window"},
+		"browser_capture": {args: map[string]any{}, available: never, why: "needs the app window"},
+		// tabs is the exception among the browser actions and runs for real: it
+		// reads bookkeeping this process owns, so it needs no window at all —
+		// and a list that answers "you have not opened anything" is exactly
+		// right for a test with no browser.
+		"browser_tabs": {args: map[string]any{"act": "list"}, check: outputContains("open")},
+		// wait, back and dialog all need a live page, and all refuse in words
+		// before they touch the engine — which is the behaviour worth having
+		// reachable here even though none of them can run.
+		"browser_wait":   {args: map[string]any{"text": "hello"}, available: never, why: "needs the app window"},
+		"browser_back":   {args: map[string]any{}, available: never, why: "needs the app window"},
+		"browser_dialog": {args: map[string]any{"accept": true}, available: never, why: "needs the app window"},
 
 		// The agent's reach onto the desk (workbench_desk.go). desk_open and
 		// desk_terminal both end in an event the frontend answers, so there is

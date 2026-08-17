@@ -622,6 +622,10 @@ export function ResendEdited(arg1, arg2) {
   return window['go']['main']['App']['ResendEdited'](arg1, arg2);
 }
 
+export function ResolveAddress(arg1) {
+  return window['go']['main']['App']['ResolveAddress'](arg1);
+}
+
 export function RestartToUpdate() {
   return window['go']['main']['App']['RestartToUpdate']();
 }

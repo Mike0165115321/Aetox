@@ -235,6 +235,16 @@ export const RecentDebugLog = arr()
 export const RecentProjects = arr()
 export const RefreshSkills = noop()
 export const RelativizePath = str()
+// Go decides whether typed text is a place or a search (desktop/address.go).
+// The double keeps the address-bar half honest without reimplementing the
+// rules: anything with a scheme or a dot is a URL, anything else is a search.
+export const ResolveAddress = vi.fn(async (input: string) => {
+  const s = String(input ?? '').trim()
+  const isURL = /^[a-z][a-z0-9+.-]*:/i.test(s) || (/\./.test(s) && !/\s/.test(s))
+  return isURL
+    ? { url: /^[a-z][a-z0-9+.-]*:/i.test(s) ? s : 'https://' + s, query: '', searchUrl: '' }
+    : { url: '', query: s, searchUrl: 'https://www.google.com/search?q=' + encodeURIComponent(s) }
+})
 export const RemoveExternalSkill = noop()
 export const RemoveMCPServer = noop()
 export const RemoveWorkspaceFolder = arr()

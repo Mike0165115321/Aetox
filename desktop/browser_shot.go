@@ -37,8 +37,7 @@ func (a *App) BrowserCapturePNG(id string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	t := host.tab(id)
-	if t == nil {
+	if !host.live(id) {
 		return "", fmt.Errorf("no browser tab %q", id)
 	}
 
@@ -56,7 +55,7 @@ func (a *App) BrowserCapturePNG(id string) (string, error) {
 	// Hence the channel of a channel: do() hands back where the answer will
 	// arrive, and the arrival is awaited on this goroutine.
 	ready := make(chan (<-chan shotResult), 1)
-	host.backend.do(func() { ready <- t.view.capture() })
+	host.onTab(id, func(v tabView, _ *browserTab) { ready <- v.capture() })
 
 	var answer <-chan shotResult
 	select {

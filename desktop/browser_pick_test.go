@@ -192,7 +192,7 @@ func TestBrowserCapturePNGHandsBackADataURL(t *testing.T) {
 	b := &fakeBackend{}
 	app := &App{}
 	view := &fakeView{shot: shotResult{PNG: []byte("\x89PNG fake")}}
-	app.browsers = &browserHost{app: app, backend: b, tabs: map[string]*browserTab{"web-1": {view: view}}}
+	app.browsers = &browserHost{app: app, backend: b, tabs: map[string]*browserTab{"web-1": {}}, views: map[string]tabView{"web-1": view}}
 
 	go func() {
 		// Stands in for the host thread's pump.
@@ -218,7 +218,7 @@ func TestBrowserCapturePNGHandsBackADataURL(t *testing.T) {
 func TestBrowserCapturePNGReportsAnEmptyPicture(t *testing.T) {
 	b := &fakeBackend{}
 	app := &App{}
-	app.browsers = &browserHost{app: app, backend: b, tabs: map[string]*browserTab{"web-1": {view: &fakeView{}}}}
+	app.browsers = &browserHost{app: app, backend: b, tabs: map[string]*browserTab{"web-1": {}}, views: map[string]tabView{"web-1": &fakeView{}}}
 
 	go func() {
 		for i := 0; i < 50; i++ {
@@ -301,7 +301,7 @@ func TestBrowserCapturePNGAsksOnTheHostThread(t *testing.T) {
 	view.shot = shotResult{PNG: []byte("\x89PNG fake")}
 	b := &hostThreadBackend{view: view}
 	app := &App{}
-	app.browsers = &browserHost{app: app, backend: b, tabs: map[string]*browserTab{"web-1": {view: view}}}
+	app.browsers = &browserHost{app: app, backend: b, tabs: map[string]*browserTab{"web-1": {}}, views: map[string]tabView{"web-1": view}}
 
 	go func() {
 		for i := 0; i < 50; i++ {

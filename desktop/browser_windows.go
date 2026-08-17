@@ -105,18 +105,72 @@ type wndClassExW struct {
 type win32Tab struct {
 	hwnd     uintptr
 	chromium *edge.Chromium
+	// hostThread and reportErr are the tripwire, not the plumbing: see
+	// requireHostThread.
+	hostThread uint32
+	reportErr  func(error)
 }
 
-func (t *win32Tab) navigate(url string) { t.chromium.Navigate(url) }
-func (t *win32Tab) eval(js string)      { t.chromium.Eval(js) }
-func (t *win32Tab) setZoom(f float64)   { t.chromium.PutZoomFactor(f) }
-func (t *win32Tab) openDevTools()       { t.chromium.OpenDevToolsWindow() }
+// requireHostThread is CEF's CEF_REQUIRE_UI_THREAD, which is DCHECK(CefCurrentlyOn(TID_UI))
+// at the top of every function that has a thread it must be on. Same idea, one
+// difference that matters here.
+//
+// browserHost.onTab already makes the accident impossible at compile time —
+// there is no view to reach without going through it. What a compiler cannot
+// see is a tabView copied out of an onTab callback and used later, and nothing
+// in Go will ever see that. CEF's answer covers exactly that gap, so the two
+// together cover more than either alone: a wall for the reach, a tripwire for
+// the stash.
+//
+// It does not panic. A crash in a shipping desktop app over a browser tab is
+// not a trade worth making, and a log line is what §127.8 already proved nobody
+// reads. So it reports through onEngineError — the channel built for precisely
+// this in §128.4 — which means a wrong-thread call now names itself, in our own
+// words, in the tool result, before WebView2's more cryptic refusal arrives.
+//
+// The call is then made anyway. The engine will refuse it; the point is that by
+// then somebody has already been told why.
+func (t *win32Tab) requireHostThread(what string) {
+	if t.hostThread == 0 {
+		return // a tab built by a test, with no host thread to be off
+	}
+	cur, _, _ := procGetCurrentThreadID.Call()
+	if uint32(cur) == t.hostThread {
+		return
+	}
+	err := fmt.Errorf("browser.%s was called from thread %d, not the webview's thread %d — WebView2 will refuse it", what, cur, t.hostThread)
+	debuglog.Msg("%v", err)
+	if t.reportErr != nil {
+		t.reportErr(err)
+	}
+}
+
+func (t *win32Tab) navigate(url string) {
+	t.requireHostThread("navigate")
+	t.chromium.Navigate(url)
+}
+
+func (t *win32Tab) eval(js string) {
+	t.requireHostThread("eval")
+	t.chromium.Eval(js)
+}
+
+func (t *win32Tab) setZoom(f float64) {
+	t.requireHostThread("setZoom")
+	t.chromium.PutZoomFactor(f)
+}
+
+func (t *win32Tab) openDevTools() {
+	t.requireHostThread("openDevTools")
+	t.chromium.OpenDevToolsWindow()
+}
 
 // capture adapts the vendored patch's result type to the portable one, so
 // browser.go's tabView never names an engine. See third_party/go-webview2's
 // AETOX-PATCH.md.
 func (t *win32Tab) capture() <-chan shotResult {
 	out := make(chan shotResult, 1)
+	t.requireHostThread("capture")
 	src := t.chromium.CapturePreview()
 	go func() {
 		r := <-src
@@ -126,11 +180,13 @@ func (t *win32Tab) capture() <-chan shotResult {
 }
 
 func (t *win32Tab) setBounds(x, y, w, h int) {
+	t.requireHostThread("setBounds")
 	procSetWindowPos.Call(t.hwnd, hwndTop, uintptr(x), uintptr(y), uintptr(w), uintptr(h), swpShowWindow|swpNoActivate)
 	t.chromium.Resize()
 }
 
 func (t *win32Tab) setVisible(visible bool) {
+	t.requireHostThread("setVisible")
 	if visible {
 		procSetWindowPos.Call(t.hwnd, hwndTop, 0, 0, 0, 0, swpNoMove|swpNoSize|swpShowWindow|swpNoActivate)
 		return
@@ -315,9 +371,16 @@ func (h *win32Host) openTab(id, url string, x, y, w, hgt int, cb tabCallbacks) t
 		// default handler calls os.Exit(1) — never acceptable for a tab
 		fmt.Fprintln(os.Stderr, "browser tab error:", err)
 		debuglog.Msg("browser tab %s error: %v", id, err)
+		// And out to the portable half, which is the part that was missing.
+		// For a week this function was the entire fate of every engine
+		// complaint: two lines nobody reads while the tool above answered
+		// "page did not finish loading" and the agent guessed at the network.
+		if cb.onEngineError != nil {
+			cb.onEngineError(err)
+		}
 	})
 
-	view := &win32Tab{hwnd: hwnd, chromium: chromium}
+	view := &win32Tab{hwnd: hwnd, chromium: chromium, hostThread: h.threadID, reportErr: cb.onEngineError}
 
 	chromium.MessageCallback = func(message string, _ *edge.ICoreWebView2, args *edge.ICoreWebView2WebMessageReceivedEventArgs) {
 		source, _ := args.GetSource()
@@ -346,6 +409,15 @@ func (h *win32Host) openTab(id, url string, x, y, w, hgt int, cb tabCallbacks) t
 	debuglog.Msg("browser.open(%s): embed ok, navigating", id)
 	chromium.Resize()
 	view.setVisible(true)
+
+	// Registered here and not a line earlier: Init reaches through to the
+	// controller, which does not exist until Embed has returned true — Embed's
+	// own last act is an Init call for exactly that reason. It still lands
+	// before any page script, because it applies to documents created from now
+	// on and the first Navigate is below. A page whose first statement is
+	// confirm() would otherwise get the real blocking dialog and stop the tab
+	// dead with nobody able to answer it. See dialogScript.
+	chromium.Init(dialogScript())
 
 	if url != "" {
 		chromium.Navigate(url)

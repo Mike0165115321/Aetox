@@ -322,6 +322,8 @@ export function RequiresAPIKey(arg1:string):Promise<boolean>;
 
 export function ResendEdited(arg1:string,arg2:boolean):Promise<main.TurnReply>;
 
+export function ResolveAddress(arg1:string):Promise<main.Address>;
+
 export function RestartToUpdate():Promise<void>;
 
 export function RetryActiveProvider():Promise<main.ModelInfo>;

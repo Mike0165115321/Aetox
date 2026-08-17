@@ -94,7 +94,23 @@ const (
 	// delegate to a name it has never been told — and it is not free. Five more
 	// colleagues is another ~300 tokens on every message. When that bites, make
 	// `task` name the team more briefly rather than stop hiring.
-	maxToolBlockTokens = 10100
+	// Raised from 10100 to 10400 on 2026-08-17, and this one is a debt marker
+	// rather than a budget.
+	//
+	// The browser gained `wait`, `back` and `dialog` that day (§131) and went
+	// from 470 to ~766 tokens. Every previous raise in this file was argued for
+	// on the merits of what it bought; this one was not argued at all. Owner,
+	// 17 ส.ค., mid-implementation: *"เรื่องโทเค็น ไม่ต้องห่วง เดะค่อยคิด
+	// สถาปัตยกรรมใหม่มาจัดการมัน"* — the ceiling stops being the mechanism, so
+	// there is no honest number to argue for until the replacement exists.
+	//
+	// What that means for anyone reading this before then: the block IS over its
+	// old ceiling, deliberately, and this constant is no longer evidence that
+	// the cost is under control. Do not treat a passing test here as permission
+	// to add more. The mechanism that will be evidence has not been designed
+	// yet, and `task` at ~1,568 tokens — three times the browser, for one
+	// mechanism — is where it should start looking.
+	maxToolBlockTokens = 10400
 	// The count is full again at 48: the next tool everybody carries has to
 	// displace one, and that is the intended reading of this number rather than
 	// a nuisance. A connection's tools are not counted here — see above.

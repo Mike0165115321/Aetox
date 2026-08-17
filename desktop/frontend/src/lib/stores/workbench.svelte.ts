@@ -5,7 +5,7 @@
 
 import {
   TerminalStart, TerminalClose, ReadFile, ReadWorkbook,
-  RelativizePath, SaveChatFile, WorkbenchTabsChanged,
+  RelativizePath, SaveChatFile, WorkbenchTabsChanged, ResolveAddress,
 } from '../../../wailsjs/go/main/App'
 import type { main, ooxml } from '../../../wailsjs/go/models'
 import { t } from '../i18n.svelte'
@@ -114,13 +114,22 @@ export function openBrowserTab(): string {
   return id
 }
 
-// "google.com" -> https://, "E:\site\index.html" -> file:///, and anything
-// that already carries a scheme (file:, http:, about:) passes through —
-// blindly prepending https:// turns file:/// URLs into a dead https://file/.
-export function normalizeUrl(u: string): string {
-  if (/^[a-z]:[\\/]/i.test(u)) return 'file:///' + u.replace(/\\/g, '/') // E:\site\index.html (before scheme check: "E:" looks like one)
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(u) || /^(about|data|mailto|javascript):/i.test(u)) return u
-  return 'https://' + u // bare domain or host:port
+// Where a line typed into the address bar goes.
+//
+// This used to classify the text itself, in a copy of the rules Go already had
+// in normalizeWorkbenchURL — and both copies ended by stamping https:// onto
+// whatever was left, so typing ยูทูป produced https://ยูทูป, which the engine
+// punycoded to xn--o3cit6gb and DNS refused. The address bar had one job where
+// every browser's has two, and neither copy had ever been asked to tell an
+// address from a search.
+//
+// Go answers that now, once, in address.go. What stays here is the policy, and
+// the policy is the half that is genuinely ours: an address bar SEARCHES. The
+// agent's `open` refuses the same input and names web_search instead, because
+// it already has one. Same question, two callers, two right answers.
+export async function resolveAddressBarInput(u: string): Promise<string> {
+  const addr = await ResolveAddress(u)
+  return addr.url || addr.searchUrl
 }
 
 /** Tab-strip label for a URL: the host, or the last path segment for a file. */

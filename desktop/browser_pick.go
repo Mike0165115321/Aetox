@@ -439,17 +439,17 @@ func (a *App) BrowserStartPick(id, opts string) error {
 		return fmt.Errorf("no browser tab %q", id)
 	}
 	token := t.armPick()
-	host.backend.do(func() { t.view.eval(pickScript(token, opts)) })
+	host.onTab(id, func(v tabView, _ *browserTab) { v.eval(pickScript(token, opts)) })
 	return nil
 }
 
 // BrowserStopPick turns the mode off from the app side — the toolbar button
 // pressed again, the tab closing, a navigation landing under a live mode.
 func (a *App) BrowserStopPick(id string) {
-	a.withTab(id, func(t *browserTab) {
+	a.onTab(id, func(v tabView, t *browserTab) {
 		t.pickMu.Lock()
 		t.pickToken = ""
 		t.pickMu.Unlock()
-		t.view.eval(stopPickScript)
+		v.eval(stopPickScript)
 	})
 }

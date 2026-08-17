@@ -74,12 +74,36 @@ var packs = map[string]*pack{
 	// use, which is what retired its private profile-reading gate on 2026-08-10.
 	"browser": {
 		tool:    "browser",
-		actions: []string{"open", "read", "click", "type"},
+		actions: []string{"open", "read", "click", "type", "wait", "back", "capture", "tabs", "dialog"},
 		names: map[string]string{
 			"open":  "browser_open",
 			"read":  "browser_read",
 			"click": "browser_click",
 			"type":  "browser_type",
+			// capture is a right of its own rather than part of read, because
+			// "may read this page" and "may see it" are not the same permission:
+			// a picture carries everything the text left out, including whatever
+			// the user happens to have on screen in it.
+			"capture": "browser_capture",
+			// tabs is a right of its own for the same reason capture is: it is
+			// the only action that can make a page disappear from under the
+			// user, and a profile that grants "may look at pages" should not be
+			// granting "may close them" by implication.
+			"tabs": "browser_tabs",
+			// Three added 2026-08-17 for one reason each, and none of them is
+			// "a browser can do this too":
+			//
+			//   wait   — the only thing that can tell "not yet" from "not there".
+			//   back   — removes a prediction rather than adding a capability.
+			//   dialog — turns a page that stops the tab dead into an answerable
+			//            question.
+			//
+			// Separate rights because they are separate acts. `dialog` in
+			// particular can answer OK to a confirm() guarding a deletion, which
+			// is not something "may read pages" should ever imply.
+			"wait":   "browser_wait",
+			"back":   "browser_back",
+			"dialog": "browser_dialog",
 		},
 	},
 	"shell": {

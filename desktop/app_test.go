@@ -206,8 +206,12 @@ func TestNormalizeWorkbenchURL(t *testing.T) {
 		{"localhost:5173", "https://localhost:5173"},
 	}
 	for _, c := range cases {
-		if got := normalizeWorkbenchURL(c.in, "", nil); got != c.want {
+		got, query := normalizeWorkbenchURL(c.in, "", nil)
+		if got != c.want {
 			t.Errorf("normalizeWorkbenchURL(%q) = %q, want %q", c.in, got, c.want)
+		}
+		if query != "" {
+			t.Errorf("normalizeWorkbenchURL(%q) read an address as a search for %q", c.in, query)
 		}
 	}
 }
@@ -264,12 +268,12 @@ func TestNormalizeWorkbenchURLResolvesSandboxRelativePaths(t *testing.T) {
 	}
 
 	want := "file:///" + strings.ReplaceAll(full, `\`, "/")
-	if got := normalizeWorkbenchURL(rel, root, nil); got != want {
+	if got, _ := normalizeWorkbenchURL(rel, root, nil); got != want {
 		t.Errorf("normalizeWorkbenchURL(%q, root) = %q, want %q", rel, got, want)
 	}
 
 	// A bare domain must still reach the web, not be mistaken for a local file.
-	if got := normalizeWorkbenchURL("example.com", root, nil); got != "https://example.com" {
+	if got, _ := normalizeWorkbenchURL("example.com", root, nil); got != "https://example.com" {
 		t.Errorf("bare domain = %q, want https://example.com", got)
 	}
 }
@@ -293,16 +297,16 @@ func TestNormalizeWorkbenchURLFindsWhatWriteSteeredIntoTheOutputFolder(t *testin
 	}
 
 	want := "file:///" + strings.ReplaceAll(full, `\`, "/")
-	if got := normalizeWorkbenchURL("index.html", root, outputSubdir); got != want {
+	if got, _ := normalizeWorkbenchURL("index.html", root, outputSubdir); got != want {
 		t.Errorf("normalizeWorkbenchURL(index.html) = %q, want %q", got, want)
 	}
 	// The placed path spelled out in full must work too — that is what write
 	// reported back, and a model may repeat it verbatim.
-	if got := normalizeWorkbenchURL(subdir+"/index.html", root, outputSubdir); got != want {
+	if got, _ := normalizeWorkbenchURL(subdir+"/index.html", root, outputSubdir); got != want {
 		t.Errorf("normalizeWorkbenchURL(placed path) = %q, want %q", got, want)
 	}
 	// Still a domain, not a file, when nothing of that name exists.
-	if got := normalizeWorkbenchURL("example.com", root, outputSubdir); got != "https://example.com" {
+	if got, _ := normalizeWorkbenchURL("example.com", root, outputSubdir); got != "https://example.com" {
 		t.Errorf("bare domain = %q, want https://example.com", got)
 	}
 }

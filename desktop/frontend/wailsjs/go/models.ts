@@ -129,6 +129,22 @@ export namespace connect {
 
 export namespace main {
 	
+	export class Address {
+	    url: string;
+	    query: string;
+	    searchUrl: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Address(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.url = source["url"];
+	        this.query = source["query"];
+	        this.searchUrl = source["searchUrl"];
+	    }
+	}
 	export class AgentPage {
 	    url: string;
 	    title: string;

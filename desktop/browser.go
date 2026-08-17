@@ -20,6 +20,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -61,6 +63,18 @@ type tabCallbacks struct {
 	// page; view is passed in because this can fire before the caller has
 	// finished storing it.
 	onNavDone func(view tabView, ok bool)
+	// onEngineError carries the engine's own complaint about a call we made —
+	// a refused COM call, a controller that would not create, a bad browser
+	// path. Not a page error: the page is what onNavDone reports on.
+	//
+	// This existed as a log line and nothing else, which is how §127.8 stayed
+	// invisible for a week. The engine said "This method can only be called
+	// from the thread that created the object" every single time, into a file
+	// nobody was reading, while the agent was handed "page did not finish
+	// loading" and reasonably concluded the network was bad — then told the
+	// user so. The tool's answer has to be able to carry what the engine said,
+	// or the agent is guessing about its own tools.
+	onEngineError func(err error)
 }
 
 // hostBackend is one platform's webview host.
@@ -113,6 +127,13 @@ type aetoxMsg struct {
 	Picks     []browserPick `json:"picks,omitempty"`
 	Cancelled bool          `json:"cancelled,omitempty"`
 	Drawn     bool          `json:"drawn,omitempty"`
+	// "wait": whether what was waited for turned up before the deadline.
+	Found bool `json:"found,omitempty"`
+	// "dialog": which of alert/confirm/prompt the page called, what it said, and
+	// what we answered on its behalf. See dialogScript.
+	Dialog  string `json:"dialog,omitempty"`
+	Message string `json:"message,omitempty"`
+	Answer  string `json:"answer,omitempty"`
 }
 
 // browserElement is one clickable/typeable element found on the page, tagged
@@ -265,9 +286,16 @@ func newMessageToken() string {
 	return hex.EncodeToString(b)
 }
 
+// browserTab is the portable bookkeeping for one tab: latches, meta, zoom,
+// visibility, the pick in progress. Everything about a tab EXCEPT the webview.
+//
+// The webview used to be a field here, and that is what made §127.8 possible:
+// anything holding a *browserTab could reach the engine directly, on whatever
+// goroutine it happened to be on, and WebView2 answers that by refusing the
+// call silently. The views now live in browserHost.views and are handed out
+// only inside onTab, which runs on the thread that owns them. There is no
+// second way to get one, so the call that broke does not compile.
 type browserTab struct {
-	view tabView
-
 	// One navigation's completion latch, replaced on every new navigation so a
 	// reused tab can be awaited again. Guarded because navCompleted closes it
 	// from the host thread while a tool call waits on it: without the mutex,
@@ -301,12 +329,84 @@ type browserTab struct {
 	// it — a pick arrives as an event whenever the user gets round to pointing,
 	// or never. See browser_pick.go.
 	pickToken string
+
+	waitMu    sync.Mutex
+	waitCh    chan bool
+	waitToken string
+
+	// dlgMu guards what the page's dialogs said since anyone last looked. A
+	// dialog cannot block here — see dialogScript — so the only way the agent
+	// ever learns one happened is that the next answer it gets mentions it.
+	dlgMu   sync.Mutex
+	dialogs []string
+
+	engMu sync.Mutex
+	// engErr is the engine's last complaint about a call made SINCE this tab's
+	// current navigation was armed. Cleared by armNavigation, so it is always
+	// about the navigation being waited on and never a leftover from the last
+	// one. See tabCallbacks.onEngineError for why it exists at all.
+	engErr error
+}
+
+// noteEngineError records what the engine said. Called from whatever thread the
+// engine chose; the mutex is the whole of the synchronisation.
+func (t *browserTab) noteEngineError(err error) {
+	if err == nil {
+		return
+	}
+	t.engMu.Lock()
+	t.engErr = err
+	t.engMu.Unlock()
+}
+
+func (t *browserTab) engineError() error {
+	t.engMu.Lock()
+	defer t.engMu.Unlock()
+	return t.engErr
 }
 
 func (t *browserTab) meta() (title, url string) {
 	t.metaMu.Lock()
 	defer t.metaMu.Unlock()
 	return t.title, t.url
+}
+
+// noteDialog remembers one dialog the page raised. Bounded, because a page in a
+// loop can raise them forever and the point is to tell the agent something
+// happened, not to transcribe an attack.
+func (t *browserTab) noteDialog(line string) {
+	t.dlgMu.Lock()
+	defer t.dlgMu.Unlock()
+	if len(t.dialogs) < 8 {
+		t.dialogs = append(t.dialogs, line)
+	}
+}
+
+// takeDialogs hands back what the page said and forgets it, so one dialog is
+// reported once rather than on every action for the rest of the session.
+func (t *browserTab) takeDialogs() []string {
+	t.dlgMu.Lock()
+	defer t.dlgMu.Unlock()
+	out := t.dialogs
+	t.dialogs = nil
+	return out
+}
+
+// dialogNote is the sentence an action appends when the page said something
+// while it was working, or "" when it did not.
+func (a *App) dialogNote(id AgentTabID) string {
+	if a.browsers == nil {
+		return ""
+	}
+	t := a.browsers.tab(string(id))
+	if t == nil {
+		return ""
+	}
+	lines := t.takeDialogs()
+	if len(lines) == 0 {
+		return ""
+	}
+	return "\nหน้าเว็บขึ้นกล่องข้อความ:\n" + strings.Join(lines, "\n")
 }
 
 // armNavigation readies the tab for one more navigation, so the caller that
@@ -338,6 +438,13 @@ func (t *browserTab) armNavigation() {
 	t.navMu.Lock()
 	t.navDone, t.navOnce = make(chan struct{}), &sync.Once{}
 	t.navMu.Unlock()
+	// Cleared here so anything the engine says from now on belongs to the
+	// navigation about to be asked for, and a wait that times out can tell the
+	// difference between "the site is slow" and "we made a call the engine
+	// threw away".
+	t.engMu.Lock()
+	t.engErr = nil
+	t.engMu.Unlock()
 }
 
 func (t *browserTab) setNavOK(ok bool) {
@@ -364,6 +471,19 @@ func (t *browserTab) awaitNavigation(ctx context.Context, timeout time.Duration)
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-time.After(timeout):
+		// If the engine complained about a call we made during this navigation,
+		// that is the answer and it is OURS, not the page's.
+		//
+		// A plain errors.New, deliberately, where the line below is a
+		// statereport: the two sentences describe different worlds. "The site
+		// is slow tonight" is a report about a moment and nothing to correct.
+		// "The engine refused our call" is a defect in this program, and
+		// marking it as weather is how it survived a week of being logged
+		// every twenty seconds — §127.8, where the agent read the weather
+		// report it was handed and told the user the network was bad.
+		if engErr := t.engineError(); engErr != nil {
+			return fmt.Errorf("the browser engine refused what Aetox asked it to do: %w", engErr)
+		}
 		// Both are reports about a page at a moment — slow tonight, down
 		// tonight — not behaviour to correct (statereport, not errors.New):
 		// left unmarked, three of these became a permanent-memory card about
@@ -380,13 +500,49 @@ type browserHost struct {
 	app     *App
 	backend hostBackend
 
-	mu     sync.Mutex
-	tabs   map[string]*browserTab
-	lastID string // most recently opened/shown tab — what browser_read targets
+	mu   sync.Mutex
+	tabs map[string]*browserTab
+	// views holds the live webviews, and is the reason browserTab no longer
+	// does. Nothing outside this file reads it, and onTab is the only thing
+	// that hands one out — always from inside backend.do, which is the whole
+	// point (see browserTab's own comment, and browser_shot.go's header for
+	// what the engine does when that rule is broken).
+	views map[string]tabView
+	// Two fields because there are two questions, and one field answering both
+	// is what put the agent's keystrokes on the user's page.
+	//
+	// lastID is "the one on screen": most recently opened *or shown*, rewritten
+	// by BrowserSetVisible every time a tab is raised, including by the user
+	// clicking between their own. The frontend asks this; nothing the agent does
+	// may.
+	//
+	// agentID is "the one the agent is working" and agentOrder is every tab the
+	// agent owns, oldest first. Only a web-agent- tab reaches either, so raising
+	// a user's tab cannot move them and the agent cannot lose track of itself.
+	//
+	// Two fields for the same reason lastID and agentID are two: "which of mine
+	// am I working" and "which are mine" are different questions. The agent had
+	// exactly one tab until 2026-08-17, which fused a rule about OWNERSHIP (the
+	// agent's tabs are its own, never the user's) with a rule about COUNT (there
+	// is one of them) — and only the first was ever load-bearing. The prefix
+	// separates the agent's tabs from the user's at any number.
+	//
+	// agentID is not cleared by whoever closes a tab: one the user closed is gone
+	// from tabs, and agentTab reads that as no tab, which is also how `open`
+	// learns to mint a fresh one. agentOrder IS pruned, because a list is read
+	// and a list that names a dead tab is a list that lies.
+	lastID     string
+	agentID    string
+	agentOrder []string
 }
 
 func newBrowserHost(app *App) *browserHost {
-	return &browserHost{app: app, backend: newHostBackend(), tabs: map[string]*browserTab{}}
+	return &browserHost{
+		app:     app,
+		backend: newHostBackend(),
+		tabs:    map[string]*browserTab{},
+		views:   map[string]tabView{},
+	}
 }
 
 func (h *browserHost) start() error { return h.backend.start() }
@@ -407,20 +563,34 @@ func (h *browserHost) open(id, url string, x, y, w, hgt int) {
 		}
 		tab := &browserTab{navDone: make(chan struct{}), navOnce: &sync.Once{}}
 		view := h.backend.openTab(id, url, x, y, w, hgt, tabCallbacks{
-			onMessage: func(raw, source string) { h.onMessage(id, tab, raw, source) },
-			onNavDone: func(v tabView, ok bool) { h.navCompleted(tab, v, ok) },
+			onMessage:     func(raw, source string) { h.onMessage(id, tab, raw, source) },
+			onNavDone:     func(v tabView, ok bool) { h.navCompleted(tab, v, ok) },
+			onEngineError: tab.noteEngineError,
 		})
 		if view == nil {
 			return // the backend has already logged why
 		}
-		tab.view = view
 
 		h.mu.Lock()
 		h.tabs[id] = tab
+		h.views[id] = view
 		h.lastID = id
+		if isAgentTabID(id) {
+			h.agentID = id
+			if !slices.Contains(h.agentOrder, id) {
+				h.agentOrder = append(h.agentOrder, id)
+			}
+		}
 		h.mu.Unlock()
 	})
 }
+
+// agentTabPrefix marks the ids workbenchOpenBrowser mints. It is the only thing
+// that distinguishes a tab the agent opened from one the user did, so it is
+// tested in exactly one place — here — and everything downstream reads agentID.
+const agentTabPrefix = "web-agent-"
+
+func isAgentTabID(id string) bool { return strings.HasPrefix(id, agentTabPrefix) }
 
 // navCompleted is the portable half of "a navigation finished". It takes the
 // view rather than reading tab.view because a fast first navigation can land
@@ -492,6 +662,27 @@ func (h *browserHost) onMessage(id string, tab *browserTab, raw string, source s
 			return
 		}
 		ch <- browserSnapshot{Text: m.Text, Elements: m.Elements, Images: m.Images}
+	case "wait":
+		tab.waitMu.Lock()
+		ch, want := tab.waitCh, tab.waitToken
+		tab.waitCh, tab.waitToken = nil, ""
+		tab.waitMu.Unlock()
+		// Same two checks the text case makes, for the same reason: a page can
+		// post this envelope itself, and a forged one must not end a wait the
+		// real script is still running.
+		if ch == nil || m.Token == "" || m.Token != want || !sameOrigin(source, m.URL) {
+			return
+		}
+		ch <- m.Found
+	case "dialog":
+		// No token here, and that is deliberate: nobody asked for this message,
+		// the page raised it. The origin check is what keeps a frame from
+		// putting words in another page's mouth, and the text is quoted rather
+		// than obeyed — it is a report about the page, never an instruction.
+		if !sameOrigin(source, m.URL) {
+			return
+		}
+		tab.noteDialog(fmt.Sprintf("- %s(%q) — Aetox ตอบว่า %s", m.Dialog, m.Message, m.Answer))
 	case "pick":
 		// Origin before token, deliberately: a message from the wrong origin
 		// must not consume the token the real page is still going to answer
@@ -526,26 +717,50 @@ func (a *App) browserHostLazy() (*browserHost, error) {
 	return h, h.start()
 }
 
-// withTab runs fn against a tab on the host thread — looking the tab up
-// THERE, not here. open() only registers the tab at the very end of its own
-// queued command, so anything that checked host.tab(id) on the caller's
-// goroutine found nil for every call made in the moments after BrowserOpen and
-// dropped it silently. That is what left a freshly opened tab's window at the
-// rect the pane had before the address bar existed — covering the toolbar until
-// something else forced a resize. do() is FIFO, so by the time this runs the
-// open ahead of it has finished.
-func (h *browserHost) withTab(id string, fn func(*browserTab)) {
+// onTab runs fn against one tab's webview on the thread that owns webviews.
+//
+// It is the ONLY way to reach a tabView, and that is the design rather than a
+// convenience: an engine call made from any other goroutine is not slow and not
+// racy, it is refused outright, and the refusal arrives as a page that never
+// finishes loading twenty seconds later (§127.8). Holding the views in the host
+// instead of on browserTab is what makes this the only door — there is no field
+// left to reach past it.
+//
+// The view handed to fn is valid for the duration of fn and no longer. Nothing
+// in Go stops a caller squirrelling it away to call later; what this prevents
+// is the accident, which is the one that happened.
+//
+// The lookup happens HERE, on the host thread, not at the call site. open()
+// only registers a tab at the very end of its own queued command, so anything
+// that checked on the caller's goroutine found nil for every call made in the
+// moments after BrowserOpen and dropped it silently — which is what left a
+// freshly opened tab's window at the rect the pane had before the address bar
+// existed, covering the toolbar until something forced a resize. do() is FIFO,
+// so by the time this runs the open ahead of it has finished.
+func (h *browserHost) onTab(id string, fn func(tabView, *browserTab)) {
 	h.backend.do(func() {
-		if t := h.tab(id); t != nil {
-			fn(t)
+		h.mu.Lock()
+		v, t := h.views[id], h.tabs[id]
+		h.mu.Unlock()
+		if v != nil && t != nil {
+			fn(v, t)
 		}
 	})
 }
 
-func (a *App) withTab(id string, fn func(*browserTab)) {
+func (a *App) onTab(id string, fn func(tabView, *browserTab)) {
 	if host, err := a.browserHostLazy(); err == nil {
-		host.withTab(id, fn)
+		host.onTab(id, fn)
 	}
+}
+
+// live reports whether id names a tab that still has a webview — the question
+// browserTab.view == nil used to answer at call sites. A tab without a view was
+// never a tab; it was an openTab that failed and got stored anyway.
+func (h *browserHost) live(id string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.tabs[id] != nil && h.views[id] != nil
 }
 
 // BrowserOpen creates a native browser tab at the given physical-pixel bounds.
@@ -560,13 +775,13 @@ func (a *App) BrowserOpen(id, url string, x, y, w, h int) error {
 
 // BrowserNavigate loads a URL in an existing tab.
 func (a *App) BrowserNavigate(id, url string) {
-	a.withTab(id, func(t *browserTab) { t.view.navigate(url) })
+	a.onTab(id, func(v tabView, _ *browserTab) { v.navigate(url) })
 }
 
 // BrowserSetBounds moves/resizes a tab's view (physical pixels, relative to
 // the main window client area).
 func (a *App) BrowserSetBounds(id string, x, y, w, h int) {
-	a.withTab(id, func(t *browserTab) { t.view.setBounds(x, y, w, h) })
+	a.onTab(id, func(v tabView, _ *browserTab) { v.setBounds(x, y, w, h) })
 }
 
 // BrowserSetZoom scales the page inside a tab — this is what makes the device
@@ -578,18 +793,18 @@ func (a *App) BrowserSetZoom(id string, factor float64) {
 	if factor <= 0 {
 		factor = 1
 	}
-	a.withTab(id, func(t *browserTab) {
+	a.onTab(id, func(v tabView, t *browserTab) {
 		t.zoomMu.Lock()
 		t.zoom = factor
 		t.zoomMu.Unlock()
-		t.view.setZoom(factor)
+		v.setZoom(factor)
 	})
 }
 
 // BrowserSetVisible shows/hides a tab (hidden when its dock tab is inactive or
 // the settings overlay is open — a native view always floats above the UI).
 func (a *App) BrowserSetVisible(id string, visible bool) {
-	a.withTab(id, func(t *browserTab) {
+	a.onTab(id, func(v tabView, t *browserTab) {
 		t.visMu.Lock()
 		t.hidden = !visible
 		t.visMu.Unlock()
@@ -598,7 +813,7 @@ func (a *App) BrowserSetVisible(id string, visible bool) {
 			a.browsers.lastID = id
 			a.browsers.mu.Unlock()
 		}
-		t.view.setVisible(visible)
+		v.setVisible(visible)
 	})
 }
 
@@ -613,11 +828,11 @@ func (a *App) BrowserReload(id string)  { a.browserEval(id, "location.reload()")
 // console, network, element inspection and its screenshot tools, none of which
 // are worth reimplementing in our toolbar.
 func (a *App) BrowserOpenDevTools(id string) {
-	a.withTab(id, func(t *browserTab) { t.view.openDevTools() })
+	a.onTab(id, func(v tabView, _ *browserTab) { v.openDevTools() })
 }
 
 func (a *App) browserEval(id, js string) {
-	a.withTab(id, func(t *browserTab) { t.view.eval(js) })
+	a.onTab(id, func(v tabView, _ *browserTab) { v.eval(js) })
 }
 
 // CloseAllBrowserTabs destroys every native browser view this process still
@@ -648,11 +863,22 @@ func (a *App) CloseAllBrowserTabs() {
 
 func (a *App) BrowserClose(id string) {
 	if host, err := a.browserHostLazy(); err == nil {
-		if t := host.tab(id); t != nil {
-			host.mu.Lock()
-			delete(host.tabs, id)
-			host.mu.Unlock()
-			host.backend.do(func() { t.view.destroy() })
+		host.mu.Lock()
+		v := host.views[id]
+		delete(host.tabs, id)
+		delete(host.views, id)
+		// The current tab falls back to whatever is left rather than to nothing,
+		// so closing one of several does not strand the agent mid-task.
+		host.agentOrder = slices.DeleteFunc(host.agentOrder, func(open string) bool { return open == id })
+		if host.agentID == id {
+			host.agentID = ""
+			if len(host.agentOrder) > 0 {
+				host.agentID = host.agentOrder[len(host.agentOrder)-1]
+			}
+		}
+		host.mu.Unlock()
+		if v != nil {
+			host.backend.do(func() { v.destroy() })
 		}
 	}
 }
@@ -687,7 +913,7 @@ func (a *App) browserSnapshot(id string) (browserSnapshot, error) {
 	t.textMu.Unlock()
 
 	// This blocks below, so do() must not: see hostBackend.do.
-	host.backend.do(func() { t.view.eval(textScript(token)) })
+	host.onTab(id, func(v tabView, _ *browserTab) { v.eval(textScript(token)) })
 
 	select {
 	case snap := <-ch:
@@ -712,7 +938,7 @@ func (a *App) BrowserClickRef(id string, ref int) error {
 	if t == nil {
 		return fmt.Errorf("no browser tab %q", id)
 	}
-	host.backend.do(func() { t.view.eval(clickScript(ref)) })
+	host.onTab(id, func(v tabView, _ *browserTab) { v.eval(clickScript(ref)) })
 	return nil
 }
 
@@ -728,6 +954,6 @@ func (a *App) BrowserTypeRef(id string, ref int, text string, enter bool) error 
 	if t == nil {
 		return fmt.Errorf("no browser tab %q", id)
 	}
-	host.backend.do(func() { t.view.eval(typeScript(ref, text, enter)) })
+	host.onTab(id, func(v tabView, _ *browserTab) { v.eval(typeScript(ref, text, enter)) })
 	return nil
 }

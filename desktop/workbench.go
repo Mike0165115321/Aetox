@@ -22,7 +22,6 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/debuglog"
 	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/skill"
-
 )
 
 var agentBrowserSeq int64
@@ -33,41 +32,36 @@ var (
 	bareSchemeRe  = regexp.MustCompile(`(?i)^(about|data|mailto|javascript):`)
 )
 
-// normalizeWorkbenchURL mirrors the frontend's normalizeUrl (Workbench.svelte):
-// bare Windows paths become file:/// URLs, anything already carrying a scheme
-// passes through, and only bare domains get https://. The old ^https?://-only
-// check stamped https:// onto file:/// URLs, navigating to a blank
-// https://file///... page.
+// normalizeWorkbenchURL turns what the agent asked for into something the
+// browser can go to, or reports that it was not an address at all.
 //
-// A path relative to the sandbox root resolves to file:/// too. Every other
-// tool speaks relative paths, so without this the model has to splice the
-// sandbox root in by hand to view what it just made, and "index.html" fell
-// through to the bare-domain case and navigated to https://index.html.
+// A local file first, and only a file that actually exists: every other tool
+// speaks sandbox-relative paths, so without this the model has to splice the
+// root in by hand to look at what it just made, and "index.html" would fall
+// through and navigate to https://index.html. It resolves through
+// skill.PlacedPath rather than joining onto the root, because `write` steers a
+// new relative file into the session output folder — the model asks for
+// "index.html", the file is really at "aetox/output/<session>/index.html", and a
+// plain root join finds nothing and degrades to a DNS lookup for a hostname
+// called index.html.
 //
-// It resolves through skill.PlacedPath rather than joining onto the root
-// directly, because write steers a new relative file into the session output
-// folder: the model asks to open "index.html", the file is really at
-// "aetox/output/<session>/index.html", and a plain root join finds nothing and
-// silently degrades to a DNS lookup for a hostname called index.html.
-func normalizeWorkbenchURL(url, sandboxRoot string, outputSubdir func() string) string {
-	switch {
-	case driveLetterRe.MatchString(url):
-		return "file:///" + strings.ReplaceAll(url, `\`, "/")
-	case urlSchemeRe.MatchString(url) || bareSchemeRe.MatchString(url):
-		return url
-	}
-	// Only a path that actually exists is treated as a file, so a bare domain
-	// still becomes https:// — the check is "is there such a file", not "does
-	// this look path-shaped".
-	if root := strings.TrimSpace(sandboxRoot); root != "" {
-		placed := skill.PlacedPath(root, outputSubdir, url)
+// Everything else goes to resolveAddress, which is now the single place that
+// tells a place from a question (see address.go). What is new is the second
+// return: this used to stamp https:// onto ANYTHING left over, so `open("ยูทูป")`
+// became a DNS failure that read like a broken website. The agent has
+// web_search; being told to use it is a better answer than being quietly
+// searched for, which would teach it that `open` is a search box.
+func normalizeWorkbenchURL(input, sandboxRoot string, outputSubdir func() string) (resolved, query string) {
+	if root := strings.TrimSpace(sandboxRoot); root != "" && !urlSchemeRe.MatchString(input) && !bareSchemeRe.MatchString(input) {
+		placed := skill.PlacedPath(root, outputSubdir, input)
 		if abs, err := filepath.Abs(filepath.Join(root, filepath.FromSlash(placed))); err == nil {
 			if _, statErr := os.Stat(abs); statErr == nil {
-				return "file:///" + strings.ReplaceAll(abs, `\`, "/")
+				return "file:///" + strings.ReplaceAll(abs, `\`, "/"), ""
 			}
 		}
 	}
-	return "https://" + url
+	addr := resolveAddress(input)
+	return addr.URL, addr.Query
 }
 
 // browserRenderable is what the workbench browser can actually display. A file
@@ -104,7 +98,7 @@ func unrenderableFile(url string) string {
 
 // workbenchOpenBrowser asks the frontend to open a workbench browser tab, then
 // waits until the native tab exists and its first navigation completes.
-func (a *App) workbenchOpenBrowser(ctx context.Context, url string) (title, finalURL string, err error) {
+func (a *App) workbenchOpenBrowser(ctx context.Context, url string, newTab bool) (title, finalURL string, err error) {
 	if a.ctx == nil {
 		return "", "", fmt.Errorf("UI not ready")
 	}
@@ -112,7 +106,10 @@ func (a *App) workbenchOpenBrowser(ctx context.Context, url string) (title, fina
 	if url == "" {
 		return "", "", fmt.Errorf("url is required")
 	}
-	url = normalizeWorkbenchURL(url, a.cfg.SandboxRoot, a.outputSubdir)
+	url, query := normalizeWorkbenchURL(url, a.cfg.SandboxRoot, a.outputSubdir)
+	if query != "" {
+		return "", "", fmt.Errorf("%q is not an address, it is something to search for — use web_search, then open a result", query)
+	}
 	// Refused before a tab is opened: the tab would only show the failure too,
 	// and the user would be left looking at a download prompt or a blank page.
 	if why := unrenderableFile(url); why != "" {
@@ -131,21 +128,39 @@ func (a *App) workbenchOpenBrowser(ctx context.Context, url string) (title, fina
 	//
 	// A new id is minted only when there is no live tab to steer — first call,
 	// or the user closed the one that was there.
-	id := a.agentBrowserTabID()
-	reusing := id != ""
+	// Reuse stays the default. A session that never asks for a second tab
+	// behaves exactly as it did before tabs were plural, which is what the
+	// original one-tab rule was actually protecting: not scarcity, but the
+	// tab-after-tab strandedness the owner watched happen on 2026-08-10.
+	id, err := a.agentTab()
+	reusing := err == nil && !newTab
 	if !reusing {
-		id = fmt.Sprintf("web-agent-%d", atomic.AddInt64(&agentBrowserSeq, 1))
+		id = AgentTabID(fmt.Sprintf(agentTabPrefix+"%d", atomic.AddInt64(&agentBrowserSeq, 1)))
 	}
 	if reusing {
 		// Armed before navigate, so the wait below is this navigation's.
-		tab := a.browsers.tab(id)
-		tab.armNavigation()
-		tab.view.navigate(url)
+		a.browsers.tab(string(id)).armNavigation()
+		// And navigated ON the host thread, like every other call into a
+		// webview in this app.
+		//
+		// This line used to call t.view.navigate directly, which is the one
+		// rule browser_shot.go's header states and the only place that broke
+		// it: WebView2 is apartment-threaded, so the same COM call made from
+		// this goroutine is not slow or racy, it is refused outright. The
+		// refusal goes to the engine's own error callback, so nothing
+		// navigated, no NavigationCompleted ever fired, and awaitNavigation
+		// below spent its full 20 seconds before reporting a page that had
+		// never been asked for. Every page after the first in one session, in
+		// a tool whose whole job is to open pages.
+		//
+		// That line no longer compiles: browserTab has no view to reach past
+		// this call. See browserHost.onTab.
+		a.onTab(string(id), func(v tabView, _ *browserTab) { v.navigate(url) })
 	}
 	// Emitted either way: for a new tab the frontend creates it, and for one
 	// that exists the same handler just raises it — which is what the user
 	// needs to actually see the page the agent moved to.
-	a.emitEvent("workbench:open-browser", map[string]string{"id": id, "url": url})
+	a.emitEvent("workbench:open-browser", map[string]string{"id": string(id), "url": url})
 
 	// The frontend creates the tab, which creates the native webview — poll
 	// until it exists, then wait out its first navigation.
@@ -156,7 +171,7 @@ func (a *App) workbenchOpenBrowser(ctx context.Context, url string) (title, fina
 			return "", "", fmt.Errorf("browser tab did not open in time")
 		}
 		if h := a.browsers; h != nil {
-			tab = h.tab(id)
+			tab = h.tab(string(id))
 		}
 		if tab == nil {
 			select {
@@ -182,56 +197,103 @@ func (a *App) workbenchOpenBrowser(ctx context.Context, url string) (title, fina
 	return title, finalURL, nil
 }
 
-// agentBrowserTabID names the agent's live browsing tab, or "" when it has
-// none to steer.
+// AgentTabID names the tab the agent is working, and is a different type from
+// the plain tab ids the frontend passes around on purpose.
 //
-// "The agent's tab" is the most recent one it opened AND that is still alive:
-// a tab the user closed is gone from the host's map, so this answers "" and
-// the caller mints a new one rather than navigating a corpse.
-func (a *App) agentBrowserTabID() string {
+// Every tab in the workbench used to be a string, so every tab was substitutable
+// for every other one, and §127.1 is what that costs: the agent read, clicked
+// and typed on whichever tab the user happened to be looking at, and nothing in
+// the language had an opinion. agentTab is the only constructor, so an agent
+// path cannot be handed the user's tab without an explicit conversion — which
+// is one greppable token a reviewer can ask about, rather than an ordinary
+// argument nobody looks at twice.
+//
+// It stops short of the plumbing underneath (browserSnapshot, BrowserClickRef)
+// because that plumbing genuinely serves both callers: "use this page as
+// context" is the user pointing at their own tab, through the same function.
+// What is protected is the decision of WHICH tab, which is where the bug was.
+type AgentTabID string
+
+// agentTab names the agent's live browsing tab.
+//
+// One function where there were two. agentBrowserTabID answered "" and
+// agentBrowserTabTarget answered an error, for the same question, differing only
+// in how they said no — which is the same shape of debt as the lastID/agentID
+// confusion they were both written to fix. `open` reads the error as "there is
+// nothing to steer, mint one"; everyone else shows it to the model.
+//
+// "The agent's tab" is the most recent one it opened AND that is still alive: a
+// tab the user closed is gone from the host's map, so this refuses and `open`
+// mints a new one rather than navigating a corpse.
+//
+// It used to read the host's lastID and accept it only if it carried the
+// web-agent- prefix, which quietly meant "the agent's tab, but only while it
+// happens to be the one on screen". Raising a user's tab made it answer nothing
+// with the agent's tab sitting right there alive: `open` minted a second one and
+// stranded the first, which is the tab-after-tab behaviour reuse was introduced
+// to end. The host remembers agentID itself now.
+//
+// The refusal is worded from the agent's side. "No browser tab open in the
+// workbench" was true when the target was whatever was showing; once the target
+// is the agent's own tab, the user can have a screenful of them and the honest
+// answer is still that the agent has not opened one.
+func (a *App) agentTab() (AgentTabID, error) {
 	h := a.browsers
 	if h == nil {
-		return ""
+		return "", errNoAgentTab
 	}
 	h.mu.Lock()
-	id := h.lastID
+	id := h.agentID
 	h.mu.Unlock()
-	if id == "" || !strings.HasPrefix(id, "web-agent-") {
-		return ""
+	if id == "" || !h.live(id) {
+		return "", errNoAgentTab
 	}
-	if tab := h.tab(id); tab == nil || tab.view == nil {
-		return ""
-	}
-	return id
+	return AgentTabID(id), nil
 }
 
-// workbenchLastTabID returns the id of the most recently opened/shown
-// workbench browser tab — the target for browser_read/browser_click/browser_type.
-func (a *App) workbenchLastTabID() (string, error) {
-	h := a.browsers
-	if h == nil {
-		return "", fmt.Errorf("no browser tab open in the workbench")
+var errNoAgentTab = errors.New("the agent has no page open — use open first (tabs the user opened are theirs, not the agent's)")
+
+// browserWhere names the page a tab is on, as a parenthetical to hang off the
+// end of an action's result, or "" when the tab cannot say.
+//
+// Owner, 17 ส.ค.: *"อันที่ฉันเปิด มันก็ต้องรุ้ด้วยนะ ว่าปัจจุบันเปิดอะไรอยู่อีก"*. Steering
+// one tab of your own is only half an answer — the other half is knowing what is
+// in it. `open` and `read` both say so already; `click` and `type` said only
+// that they had happened, which left the model to either remember across turns
+// or spend a whole `read` asking where it was. A click is also the one action
+// that can move the page, so the URL after it is worth more than the URL before.
+func (a *App) browserWhere(id AgentTabID) string {
+	if a.browsers == nil {
+		return ""
 	}
-	h.mu.Lock()
-	id := h.lastID
-	h.mu.Unlock()
-	if id == "" {
-		return "", fmt.Errorf("no browser tab open in the workbench")
+	t := a.browsers.tab(string(id))
+	if t == nil {
+		return ""
 	}
-	return id, nil
+	ref := browserPageRef(t.meta())
+	if ref == "" {
+		return ""
+	}
+	// Square brackets outside the ref's own parentheses, so "Title (url)" does
+	// not end up nested inside a second pair and read as a typo.
+	return " [อยู่ที่ " + ref + "]"
 }
 
-// workbenchReadBrowser reads the page currently shown in the workbench browser.
+// workbenchReadBrowser reads the page the agent has open in the workbench
+// browser — not whichever tab is showing. See agentTab.
 func (a *App) workbenchReadBrowser() (title, url string, snap browserSnapshot, err error) {
-	id, err := a.workbenchLastTabID()
+	id, err := a.agentTab()
 	if err != nil {
 		return "", "", browserSnapshot{}, err
 	}
-	snap, err = a.browserSnapshot(id)
+	// string(id) here and at every other plumbing call below: the conversion is
+	// deliberate and greppable, and it sits one line under the only function
+	// that can produce an AgentTabID — which is the point. See AgentTabID.
+	snap, err = a.browserSnapshot(string(id))
 	if err != nil {
 		return "", "", browserSnapshot{}, err
 	}
-	if t := a.browsers.tab(id); t != nil {
+	if t := a.browsers.tab(string(id)); t != nil {
 		title, url = t.meta()
 	}
 	return title, url, snap, nil
@@ -275,17 +337,19 @@ func (*browserOpenSkill) ToolDefinition() model.ToolDefinition {
 
 func (s *browserOpenSkill) ExecuteTool(ctx context.Context, args map[string]any) (skill.Output, error) {
 	url, _ := args["url"].(string)
-	return s.open(ctx, url)
+	newTab, _ := args["newTab"].(bool)
+	return s.open(ctx, url, newTab)
 }
 
 func (s *browserOpenSkill) Execute(ctx context.Context, input skill.Input) (skill.Output, error) {
 	url, _ := input["url"].(string)
-	return s.open(ctx, url)
+	newTab, _ := input["newTab"].(bool)
+	return s.open(ctx, url, newTab)
 }
 
-func (s *browserOpenSkill) open(ctx context.Context, url string) (skill.Output, error) {
+func (s *browserOpenSkill) open(ctx context.Context, url string, newTab bool) (skill.Output, error) {
 	start := time.Now()
-	title, finalURL, err := s.app.workbenchOpenBrowser(ctx, url)
+	title, finalURL, err := s.app.workbenchOpenBrowser(ctx, url, newTab)
 	out := skill.Output{
 		Name:       "browser_open",
 		Command:    "browser_open " + url,
@@ -307,7 +371,34 @@ func (s *browserOpenSkill) open(ctx context.Context, url string) (skill.Output, 
 // — sharing only the prefix constant left the test with its own copy of the
 // format, which meant editing this line could not fail anything.
 func browserOpenedLine(title, url string) string {
-	return fmt.Sprintf("%s%s (%s)", browserOpenedPrefix, title, url)
+	return browserOpenedPrefix + browserPageRef(title, url)
+}
+
+// browserPageRef names a page, and is the one place any browser action spells
+// out which page it is talking about.
+//
+// It exists because there were four spellings and they were added one at a
+// time, each perfectly reasonable on its own: `open` said "Title (url)", `read`
+// wrote a document header, and `click`/`type`/`capture` each invented a third
+// and fourth. One fact, four renderings, in a file that already keeps
+// browserOpenedPrefix as a shared constant precisely so `open`'s sentence and
+// parseBrowserOpened cannot drift apart. The lesson was already written down
+// here; it just was not applied to the sentences added after it.
+//
+// `read` is the deliberate exception and stays a two-line markdown header. It
+// is not a sentence referring to a page, it is the top of a document the model
+// reads as a document, and folding it into this shape would make it worse to
+// read to make it easier to count.
+func browserPageRef(title, url string) string {
+	title, url = strings.TrimSpace(title), strings.TrimSpace(url)
+	switch {
+	case title != "" && url != "":
+		return fmt.Sprintf("%s (%s)", title, url)
+	case url != "":
+		return url // a page that has not told us its title yet
+	default:
+		return title // rare, and better than saying nothing
+	}
 }
 
 // ---------- reading those back ----------
@@ -343,10 +434,23 @@ const (
 // in workbench_agentpages_test.go is what keeps the pair honest.
 func parseBrowserOpened(output string) (title, pageURL string) {
 	s := strings.TrimSpace(output)
-	if !strings.HasPrefix(s, browserOpenedPrefix) || !strings.HasSuffix(s, ")") {
+	if !strings.HasPrefix(s, browserOpenedPrefix) {
 		return "", "" // a failure line ("เปิดไม่สำเร็จ: …") or something else entirely
 	}
 	s = strings.TrimPrefix(s, browserOpenedPrefix)
+
+	// A page with no title is written as the bare address, because
+	// "เปิดแล้ว:  (https://x)" is a sentence with a hole in it. Both shapes are
+	// browserPageRef's output and both have to come back apart here — this
+	// parser and that writer are one contract with two halves, which is what
+	// the shared prefix constant above has always been about.
+	if !strings.HasSuffix(s, ")") {
+		if urlSchemeRe.MatchString(s) || strings.HasPrefix(s, "file:///") {
+			return "", s
+		}
+		return "", "" // truncated, or a sentence that is not this one
+	}
+
 	// LAST " (", so a page whose own title contains one survives.
 	open := strings.LastIndex(s, " (")
 	if open < 0 {
@@ -547,9 +651,9 @@ func (s *browserClickSkill) Execute(_ context.Context, input skill.Input) (skill
 func (s *browserClickSkill) click(ref int) (skill.Output, error) {
 	start := time.Now()
 	out := skill.Output{Name: "browser_click", Command: fmt.Sprintf("browser_click %d", ref)}
-	id, err := s.app.workbenchLastTabID()
+	id, err := s.app.agentTab()
 	if err == nil {
-		err = s.app.BrowserClickRef(id, ref)
+		err = s.app.BrowserClickRef(string(id), ref)
 	}
 	out.DurationMs = time.Since(start).Milliseconds()
 	if err != nil {
@@ -558,7 +662,7 @@ func (s *browserClickSkill) click(ref int) (skill.Output, error) {
 	}
 	time.Sleep(300 * time.Millisecond) // let click-driven navigation/DOM update settle before the next browser_read
 	out.Success = true
-	out.Content = fmt.Sprintf("คลิก ref %d แล้ว ใช้ browser_read เพื่อดูผลลัพธ์", ref)
+	out.Content = fmt.Sprintf("คลิก ref %d แล้ว%s ใช้ browser_read เพื่อดูผลลัพธ์", ref, s.app.browserWhere(id))
 	out.RawOutput = out.Content
 	return out, nil
 }
@@ -602,9 +706,9 @@ func (s *browserTypeSkill) Execute(_ context.Context, input skill.Input) (skill.
 func (s *browserTypeSkill) typeText(ref int, text string, enter bool) (skill.Output, error) {
 	start := time.Now()
 	out := skill.Output{Name: "browser_type", Command: fmt.Sprintf("browser_type %d", ref)}
-	id, err := s.app.workbenchLastTabID()
+	id, err := s.app.agentTab()
 	if err == nil {
-		err = s.app.BrowserTypeRef(id, ref, text, enter)
+		err = s.app.BrowserTypeRef(string(id), ref, text, enter)
 	}
 	out.DurationMs = time.Since(start).Milliseconds()
 	if err != nil {
@@ -615,9 +719,9 @@ func (s *browserTypeSkill) typeText(ref int, text string, enter bool) (skill.Out
 		time.Sleep(300 * time.Millisecond) // let Enter-driven navigation settle before the next browser_read
 	}
 	out.Success = true
-	out.Content = fmt.Sprintf("พิมพ์ลง ref %d แล้ว", ref)
+	out.Content = fmt.Sprintf("พิมพ์ลง ref %d แล้ว%s", ref, s.app.browserWhere(id))
 	if enter {
-		out.Content = fmt.Sprintf("พิมพ์ลง ref %d และกด Enter แล้ว ใช้ browser_read เพื่อดูผลลัพธ์", ref)
+		out.Content = fmt.Sprintf("พิมพ์ลง ref %d และกด Enter แล้ว%s ใช้ browser_read เพื่อดูผลลัพธ์", ref, s.app.browserWhere(id))
 	}
 	out.RawOutput = out.Content
 	return out, nil

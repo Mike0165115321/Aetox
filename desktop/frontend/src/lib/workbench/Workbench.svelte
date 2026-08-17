@@ -15,7 +15,7 @@
   import {
     workbench, activateTab, closeTab, removeTab,
     openFilesTab, openBrowserTab, openTerminalTab, openToolsTab, openFileTab, reportDeskTabs,
-    openUrlInWorkbench, saveWorkbenchSnapshot, normalizeUrl, labelForUrl,
+    openUrlInWorkbench, saveWorkbenchSnapshot, resolveAddressBarInput, labelForUrl,
     setTabDragPayload, TAB_DRAG_MIME,
     type WorkbenchTab,
   } from '../stores/workbench.svelte'
@@ -110,10 +110,14 @@
     if (activeTab) activeTab.viewport = DEVICES.find((d) => d.name === name)
   }
 
-  function navigate() {
+  async function navigate() {
     const u = urlDraft.trim()
     if (!u) return
-    const url = normalizeUrl(u)
+    // Async because Go decides whether this is a place or a search — one line
+    // of code and one round trip, in exchange for the address bar behaving the
+    // way every other address bar does. See resolveAddressBarInput.
+    const url = await resolveAddressBarInput(u)
+    if (!url) return
     let tab = activeTab
     if (!tab || tab.kind !== 'browser') {
       const id = openBrowserTab()
@@ -239,7 +243,7 @@
       .split('\n')
       .map((l) => l.trim())
       .find((l) => l && !l.startsWith('#')) // uri-list comments
-    if (url && looksLikeUrl(url)) openUrlInWorkbench(normalizeUrl(url))
+    if (url && looksLikeUrl(url)) openUrlInWorkbench(await resolveAddressBarInput(url))
   }
 
   function closeMenuOnOutsideClick(e: MouseEvent) {

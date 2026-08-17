@@ -235,25 +235,26 @@ func (v *fakeView) setBounds(x, y, w, h int) {
 // after BrowserOpen — which silently dropped the bounds correction the frontend
 // sends once the address bar has appeared, leaving the tab's window covering
 // the toolbar. withTab must therefore resolve the tab inside the queue.
-func TestWithTabResolvesAfterAQueuedOpen(t *testing.T) {
+func TestOnTabResolvesAfterAQueuedOpen(t *testing.T) {
 	b := &fakeBackend{}
-	h := &browserHost{backend: b, tabs: map[string]*browserTab{}}
+	h := &browserHost{backend: b, tabs: map[string]*browserTab{}, views: map[string]tabView{}}
 	registered := &fakeView{}
 
 	// Stands in for open(): registers the tab only when its command runs.
 	b.do(func() {
 		h.mu.Lock()
-		h.tabs["web-1"] = &browserTab{view: registered}
+		h.tabs["web-1"] = &browserTab{}
+		h.views["web-1"] = registered
 		h.mu.Unlock()
 	})
 	// Stands in for BrowserSetBounds, issued before that command has run.
 	var got tabView
-	h.withTab("web-1", func(tab *browserTab) { got = tab.view })
+	h.onTab("web-1", func(v tabView, _ *browserTab) { got = v })
 
 	b.drain()
 
 	if got != registered {
-		t.Fatalf("command dropped: withTab never reached the registered tab")
+		t.Fatalf("command dropped: onTab never reached the registered tab")
 	}
 }
 
@@ -340,14 +341,30 @@ func TestAwaitNavigationTimesOutWhileStillLoading(t *testing.T) {
 	}
 }
 
-func TestWithTabSkipsAnUnknownTab(t *testing.T) {
+func TestOnTabSkipsAnUnknownTab(t *testing.T) {
 	b := &fakeBackend{}
-	h := &browserHost{backend: b, tabs: map[string]*browserTab{}}
+	h := &browserHost{backend: b, tabs: map[string]*browserTab{}, views: map[string]tabView{}}
 	ran := false
-	h.withTab("gone", func(*browserTab) { ran = true })
+	h.onTab("gone", func(tabView, *browserTab) { ran = true })
 	b.drain()
 	if ran {
 		t.Fatal("ran against a tab that does not exist")
+	}
+}
+
+// A tab whose openTab failed is registered without a view, and onTab must treat
+// that as no tab rather than handing fn a nil interface to call through.
+func TestOnTabSkipsATabWithNoView(t *testing.T) {
+	b := &fakeBackend{}
+	h := &browserHost{backend: b, tabs: map[string]*browserTab{"web-1": {}}, views: map[string]tabView{}}
+	ran := false
+	h.onTab("web-1", func(tabView, *browserTab) { ran = true })
+	b.drain()
+	if ran {
+		t.Fatal("ran against a tab that never got a webview")
+	}
+	if h.live("web-1") {
+		t.Error("live() calls a viewless tab alive")
 	}
 }
 
