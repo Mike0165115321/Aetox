@@ -165,7 +165,7 @@ func (d *Dispatcher) ExecuteTool(ctx context.Context, name string, args map[stri
 		return Output{}, false, nil
 	}
 	result, err := tool.ExecuteTool(ctx, args)
-	result = d.teach(skillName, skill, result)
+	result = d.teach(guidanceKey(skillName, args), skillName, skill, args, result)
 	if err != nil {
 		return result, true, err
 	}
@@ -183,8 +183,8 @@ func (d *Dispatcher) ExecuteTool(ctx context.Context, name string, args map[stri
 // reads (turn.toolRunOutput prefers it), and Content is what the timeline
 // shows. Teaching only one of them would either teach nobody or teach the user
 // instead of the model.
-func (d *Dispatcher) teach(name string, s Skill, out Output) Output {
-	guide := guidanceFor(s)
+func (d *Dispatcher) teach(key, name string, s Skill, args map[string]any, out Output) Output {
+	guide := guidanceFor(s, args)
 	if guide == "" {
 		return out
 	}
@@ -192,8 +192,8 @@ func (d *Dispatcher) teach(name string, s Skill, out Output) Output {
 	if d.taught == nil {
 		d.taught = map[string]bool{}
 	}
-	already := d.taught[name]
-	d.taught[name] = true
+	already := d.taught[key]
+	d.taught[key] = true
 	d.taughtMu.Unlock()
 	if already {
 		return out
@@ -202,7 +202,7 @@ func (d *Dispatcher) teach(name string, s Skill, out Output) Output {
 	// the file it just touched. Unlabelled, this reads as output — and output
 	// from a tool is data the model is right to be suspicious of, which is the
 	// wrong footing for the one text here that is genuinely ours.
-	header := "[" + name + " — how to use this well, sent once]\n" + strings.TrimSpace(guide) + "\n\n"
+	header := "[" + key + " — how to use this well, sent once]\n" + strings.TrimSpace(guide) + "\n\n"
 	out.Content = header + out.Content
 	out.RawOutput = header + out.RawOutput
 	return out

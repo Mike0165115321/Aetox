@@ -16,7 +16,7 @@ type guidedProbe struct {
 func (*guidedProbe) Name() string        { return "probe" }
 func (*guidedProbe) Description() string { return "a tool for testing guidance delivery" }
 
-func (p *guidedProbe) Guidance() string {
+func (p *guidedProbe) Guidance(map[string]any) string {
 	if p.silent {
 		return ""
 	}

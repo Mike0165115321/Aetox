@@ -102,74 +102,62 @@ func (s *browserSkill) ToolDefinition() model.ToolDefinition {
 
 	// Built from the permitted set so the description never advertises an
 	// action this caller would be refused.
+	// SIGNATURES ONLY. Every "when should I reach for this" sentence that used
+	// to live here now lives in Guidance below and is sent once, on the first
+	// call to that action — internal/skill/guidance.go. This entry went from
+	// 766 tokens to a fifth of that without the model being told less; it is
+	// told the same things at a different time.
 	lines := map[string]string{
-		// `newTab` says WHEN, not just what — the same rule `capture` follows
-		// below, and it was missing here for a day. A model told an extra tab
-		// exists and not told when to want one does one of two bad things: never
-		// opens a second and re-fetches the page it just left, or opens one per
-		// site and buries the user. Neither is the condition that generalizes.
-		// The one that does is whether the page you are on is still an INPUT to
-		// the work — and that is a question the model can actually answer about
-		// its own task, which "is this important" is not.
-		"open":  "`open` (url, newTab?) — go to a page and wait for it to load, replacing the current one. newTab=true keeps this page and opens an extra one: use it only when you will come back here, such as a list of results you are working through or a page you are comparing against. Renders a local file too (.html/.svg/.pdf/image) by sandbox-relative path; source files are downloads, use read.",
-		"read":  "`read` — the page's text plus its interactive elements, each tagged with a [n] ref.",
-		"click": "`click` (ref) — press the element with that ref.",
-		"type":  "`type` (ref, text, enter?) — fill an input/textarea/select/contenteditable. For a select, text must match an option read listed. enter=true submits.",
-		// Says when, not just what. A model holding a camera and no rule for it
-		// photographs every page it opens, and every picture costs more than the
-		// read it duplicated — so the line leads with the condition and names
-		// the shape of page that meets it rather than listing cases.
-		"capture": "`capture` — a picture of the page, saved and shown to you. Only when `read` cannot answer because the answer was never in the text: a chart, canvas, map, rendered document, or a layout you suspect is wrong. Read first, photograph second.",
-		// The other half of newTab's condition, and the reason it is safe to
-		// give: a tab kept is a window on somebody's screen.
-		"tabs": "`tabs` (act: list|select|close, id) — your own tabs. select switches which one the other actions work. Close what you are done with.",
-		// wait is the only action that can tell "not yet" from "not there", and
-		// the line has to say so, because the failure it prevents does not look
-		// like a failure: a page whose content has not arrived reads
-		// SUCCESSFULLY as an empty page.
-		"wait": "`wait` (text, seconds?) — wait until that text appears on the page. Most pages fetch their real content after loading, so a read straight after open or click can succeed and come back empty; wait first whenever you expect something that is not there yet.",
-		// back says what it costs to be wrong, which is the whole reason it
-		// exists — `open` is destructive and re-opening a URL is not the same as
-		// coming back.
-		"back":   "`back` — return to the previous page in this tab, with whatever you had typed or scrolled still there. Re-opening a URL is not the same thing.",
-		"dialog": "`dialog` (accept, text?) — how this page's next alert/confirm/prompt is answered. They never block, but they are answered CANCEL unless you say otherwise, so set accept=true before the click that raises one you mean to agree to.",
+		"open":    "`open` (url, newTab?) — go to a page and wait for it to load.",
+		"read":    "`read` — the page's text, plus its interactive elements each tagged [n].",
+		"click":   "`click` (ref) — press the element with that ref.",
+		"type":    "`type` (ref, text, enter?) — fill an input/textarea/select/contenteditable.",
+		"wait":    "`wait` (text, seconds?) — wait until that text appears.",
+		"back":    "`back` — return to the previous page in this tab.",
+		"capture": "`capture` — a picture of the page.",
+		"tabs":    "`tabs` (act: list|select|close, id) — your own tabs.",
+		"dialog":  "`dialog` (accept, text?) — answer this page's next alert/confirm/prompt.",
 	}
 	var b strings.Builder
-	b.WriteString("Work the page open in the workbench browser — the user watches this happen. Actions:\n")
+	b.WriteString("Work a web page in the workbench browser, where the user can watch. Actions:\n")
 	for _, action := range allowed {
 		b.WriteString(lines[action] + "\n")
 	}
-	// The facts that decide whether a sequence works, stated once here because
-	// the model reads this and not this file: a ref belongs to one page, and
-	// every action lands on one tab that belongs to this agent.
+	// Two sentences survive the migration, for two different reasons.
 	//
-	// That second sentence read "There is ONE tab" until the tools were fixed to
-	// target the agent's own tab rather than whichever was showing, and "exactly
-	// ONE tab of your own" until tabs became plural. The user half of it never
-	// changed and never will: it is the rule that lets somebody click around
-	// their own browser while the agent works.
-	b.WriteString("\nrefs come from `read` and belong to one page: they go stale when it changes or you select another tab. Read, act, read again. " +
-		"Every action works the tab you opened last or selected, so re-opening a URL to see what changed is never the answer. " +
-		"The user's own tabs are theirs: switching between them never moves yours, and you cannot reach them. " +
+	// The first is signature rather than judgment: which tab an action lands on
+	// is part of what calling it means, and it is one line.
+	//
+	// The second is a SAFETY rule, and safety does not go in Guidance however
+	// much it reads like judgment. Guidance rides in the message stream, where a
+	// conversation long enough to be summarised can lose it silently. That is a
+	// fine price for "read before you photograph" and not for this one.
+	//
+	// What did move, and where: how a ref goes stale went to the guidance of the
+	// actions that spend refs (read, click, type, tabs), and whose tabs are whose
+	// went to `tabs`. A session that only opens a page hears neither and needs
+	// neither, which is the whole point of keying per action.
+	b.WriteString("\nEvery action works the tab you opened last or selected. " +
 		"Never type a password or API key into a page; ask the user to.")
 
 	return toolDef("browser", b.String(), map[string]any{
 		"type": "object",
+		// Types, not sentences. Every one of these used to describe itself —
+		// "action=open: a URL, or a file path relative to the sandbox root" —
+		// which is the signature line a few lines above, paid for a second time.
+		// A parameter whose name and owning action are both already on screen
+		// needs nothing here but its type.
 		"properties": map[string]any{
-			// Deliberately terse. The description above already explains every one
-			// of these in full, and a schema that repeats its own prose pays twice
-			// for one sentence — which is not affordable in a block that has
-			// tens of tokens left, not hundreds.
-			"action":  map[string]any{"type": "string", "enum": allowed, "description": "What to do"},
-			"url":     map[string]any{"type": "string", "description": "action=open"},
-			"ref":     map[string]any{"type": "integer", "description": "action=click/type"},
-			"text":    map[string]any{"type": "string", "description": "action=type, wait, or dialog"},
-			"enter":   map[string]any{"type": "boolean", "description": "action=type"},
-			"newTab":  map[string]any{"type": "boolean", "description": "action=open"},
-			"act":     map[string]any{"type": "string", "enum": []string{"list", "select", "close"}, "description": "action=tabs"},
-			"id":      map[string]any{"type": "string", "description": "action=tabs, from list"},
-			"seconds": map[string]any{"type": "integer", "description": "action=wait: how long, default 10, max 60"},
-			"accept":  map[string]any{"type": "boolean", "description": "action=dialog: true answers OK, false Cancel"},
+			"action":  map[string]any{"type": "string", "enum": allowed},
+			"url":     map[string]any{"type": "string"},
+			"ref":     map[string]any{"type": "integer"},
+			"text":    map[string]any{"type": "string"},
+			"enter":   map[string]any{"type": "boolean"},
+			"newTab":  map[string]any{"type": "boolean"},
+			"act":     map[string]any{"type": "string", "enum": []string{"list", "select", "close"}},
+			"id":      map[string]any{"type": "string"},
+			"seconds": map[string]any{"type": "integer"},
+			"accept":  map[string]any{"type": "boolean"},
 		},
 		"required": []string{"action"},
 	})

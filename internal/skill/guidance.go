@@ -1,5 +1,7 @@
 package skill
 
+import "strings"
+
 // Three things ride in a tool block today, and only one of them has to.
 //
 // A tool definition carries three separable things, and they were bundled
@@ -34,23 +36,55 @@ package skill
 // still come only from the list the user can see, and nothing here is a hidden
 // door — the bytes move, the grant does not.
 type Guided interface {
-	// Guidance is what somebody needs to know once before using this tool well.
-	// Returned verbatim to the model with the first result of the session, and
-	// never sent again.
+	// Guidance is what somebody needs to know once before using this well.
+	// Returned verbatim to the model with the first result, and never again.
+	//
+	// It takes the call because a packed tool is several acts wearing one name,
+	// and their judgment is not shared: a session that opens a page and reads it
+	// has no use for what `dialog` defaults to. Keyed per action, a nine-action
+	// browser sends the two paragraphs that session earned instead of all nine.
+	// A plain tool ignores the argument.
 	//
 	// Write what generalizes, not a list of cases: the conditions under which
-	// this is the right tool, what it costs, and the failure that does not look
-	// like a failure. An empty string means there is nothing to say once that
-	// the signature does not already say every time.
-	Guidance() string
+	// this is the right act, what it costs, and the failure that does not look
+	// like a failure. Return "" when there is nothing to say once that the
+	// signature does not already say every time.
+	//
+	// A rule that prevents HARM does not belong here — see guidanceKey.
+	Guidance(args map[string]any) string
 }
 
-// guidanceFor returns what to teach about a skill, or "" when it teaches
+// guidanceFor returns what to teach about one call, or "" when it teaches
 // nothing.
-func guidanceFor(s Skill) string {
+func guidanceFor(s Skill, args map[string]any) string {
 	g, ok := s.(Guided)
 	if !ok {
 		return ""
 	}
-	return g.Guidance()
+	return g.Guidance(args)
+}
+
+// guidanceKey is what "already taught" is remembered against: the tool, plus
+// the action for a packed one.
+//
+// Per action rather than per tool because the packed tools are both the biggest
+// spenders and the ones whose acts have least in common. What that leaves
+// behind is the judgment SHARED by every act — how a ref goes stale, whose tabs
+// are whose — which stays in the block, because it is closer to how you call
+// the thing than to when you should want to.
+//
+// And one carve-out that the first migration turned up: a rule that exists to
+// prevent harm stays in the block too, however much it reads like judgment.
+// Guidance rides in the message stream, so a conversation long enough to be
+// summarised can lose it — silently. That is an acceptable price for "read
+// before you photograph" and not for "never type a password into a page".
+func guidanceKey(tool string, args map[string]any) string {
+	if len(PackedCalls(tool)) == 0 {
+		return tool
+	}
+	action, _ := args["action"].(string)
+	if action = strings.ToLower(strings.TrimSpace(action)); action == "" {
+		return tool
+	}
+	return tool + "." + action
 }

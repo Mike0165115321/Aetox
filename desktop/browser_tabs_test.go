@@ -130,24 +130,41 @@ func TestATabTheUserClosedIsNoLongerOffered(t *testing.T) {
 	}
 }
 
-// The description is what the model acts on, so it has to carry the rule the
-// code enforces — and must no longer claim the agent has exactly one tab.
-func TestBrowserToolOffersTabsWithoutPromisingOnlyOne(t *testing.T) {
+// What the model is told, and WHERE, after the block was split into signature
+// and guidance (internal/skill/guidance.go). Both halves are checked here
+// because the failure this guards against is a rule falling into the gap
+// between them and being told to nobody.
+func TestBrowserToolOffersTabsAndSaysTheRestOnce(t *testing.T) {
 	desc := (&browserSkill{}).ToolDefinition().Function.Description
+	s := &browserSkill{}
+	guide := func(action string) string { return s.Guidance(map[string]any{"action": action}) }
 
+	// In the block: the signature, and the two things that must never be lost.
+	if !strings.Contains(desc, "`tabs`") {
+		t.Error("the tabs action is not offered")
+	}
 	if strings.Contains(desc, "ONE tab of your own") {
 		t.Error("the description still tells the model it has exactly one tab")
 	}
-	if !strings.Contains(desc, "`tabs`") {
-		t.Error("the description does not offer the tabs action")
+	if !strings.Contains(desc, "password") {
+		t.Error("the safety rule left the block — guidance can be lost to a summary, so this one may not live there")
 	}
-	if !strings.Contains(desc, "select another tab") {
-		t.Error("the description does not warn that selecting invalidates refs — the one real hazard of plural tabs")
+
+	// Moved to guidance, and each with the action that spends it.
+	if !strings.Contains(guide("tabs"), "cannot reach them") {
+		t.Error("tab ownership is told to nobody")
 	}
-	// Two short fragments rather than one long sentence: the wording of this
-	// paragraph has been rewritten three times in two days as the rule got more
-	// precise, and a test that pins the prose fails on every improvement.
-	if !strings.Contains(desc, "own tabs are theirs") || !strings.Contains(desc, "cannot reach") {
-		t.Error("the ownership rule fell out of the description")
+	if !strings.Contains(guide("tabs"), "invalidates your refs") {
+		t.Error("selecting a tab no longer warns that refs die with it")
+	}
+	if !strings.Contains(guide("read"), "stale") {
+		t.Error("the ref rule is told to nobody")
+	}
+
+	// And the judgment really is out of the block, or nothing was saved.
+	for _, moved := range []string{"stale", "cannot reach", "Read first"} {
+		if strings.Contains(desc, moved) {
+			t.Errorf("%q is still in the block, so it is still paid for on every message", moved)
+		}
 	}
 }

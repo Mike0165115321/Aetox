@@ -30,11 +30,23 @@ const (
 	// tools already at or under it (`time`, `calc`, `todo_write`), not picked
 	// from the air.
 	blockCeiling = 80
-	// A packed tool signs several acts, so it gets one ceiling per act on top
-	// of a smaller base. `browser` with nine actions is allowed 155; the same
-	// tool as prose was 766.
-	packedBase   = 65
-	packedPerAct = 10
+	// A packed tool signs several acts, so it gets an allowance per act on top
+	// of a base.
+	//
+	// These two numbers were guessed at first (65 + 10) and re-derived from the
+	// first real migration, which is the only way either of them could have been
+	// right. Migrating `browser` landed it at 314 against a guessed ceiling of
+	// 155, and the gap was not prose — it was structure. A nine-action tool pays
+	// ~14 tokens for each signature line AND ~11 for that action's parameter in
+	// the JSON schema, and ten typed properties with no descriptions at all
+	// still cost 106 tokens. The base covers the opening line, the shared rules
+	// and the envelope.
+	//
+	// So: 100 + 28 per act, which leaves `browser` about a tenth of headroom at
+	// 314 of an allowed 352. Tight on purpose. The next action added to a packed
+	// tool should have to be worth 28 tokens forever.
+	packedBase   = 100
+	packedPerAct = 28
 )
 
 // overweight is every tool in THIS package that exceeded the standard on
