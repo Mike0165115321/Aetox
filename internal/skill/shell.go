@@ -122,35 +122,35 @@ func (s *shellSkill) ToolDefinition() model.ToolDefinition {
 			},
 			"command": map[string]any{
 				"type":        "string",
-				"description": "action=run: the command line, exactly as it would be typed in a terminal.",
+				"description": "action=run: the command line, as it would be typed in a terminal.",
 			},
 			"description": map[string]any{
 				"type":        "string",
-				"description": "action=run: what this command is for, in a few words and in the user's language, e.g. \"run the speech tests\". This is the line the user reads in the timeline, so write it for them, not for yourself.",
+				"description": "action=run: what this is for, in a few words, in the user's language. They read it in the timeline.",
 			},
 			"timeout_seconds": map[string]any{
 				"type":        "integer",
-				"description": "action=run: how long to wait before reporting back that the command is still running (it keeps running either way). Defaults to 60 and may not exceed 600. Raise it for a full test suite or a large build; leave it alone otherwise. Ignored when run_in_background is set.",
+				"description": "action=run: default 60, ceiling 600.",
 			},
 			"run_in_background": map[string]any{
 				"type":        "boolean",
-				"description": "action=run: start the command and return immediately with a handle instead of waiting. This is the only way to run something that does not exit on its own — a dev server, a watch build, a log tail. Read it with action=output and end it with action=kill.",
+				"description": "action=run: return a handle immediately instead of waiting.",
 			},
 			"shell_id": map[string]any{
 				"type":        "string",
-				"description": "action=output/kill: the handle run returned when it started the command in the background.",
+				"description": "action=output/kill: the handle run returned.",
 			},
 			"filter": map[string]any{
 				"type":        "string",
-				"description": "action=output: keep only lines matching this regular expression.",
+				"description": "action=output: keep only lines matching this regex.",
 			},
 			"wait_for": map[string]any{
 				"type":        "string",
-				"description": "action=output: block until new output matches this regex (\"exit\": until the command finishes). Gives up after wait_timeout_seconds; the command keeps running either way.",
+				"description": "action=output: block until new output matches this regex, or \"exit\" for the command finishing.",
 			},
 			"wait_timeout_seconds": map[string]any{
 				"type":        "integer",
-				"description": "action=output: how long wait_for may block. Default 60, ceiling 600.",
+				"description": "action=output: default 60, ceiling 600.",
 			},
 		},
 		// `command` cannot be required here the way it was when this tool did
@@ -192,16 +192,14 @@ func (s *shellSkill) ToolDefinition() model.ToolDefinition {
 			// The name and the backend's one-line Note, and nothing else: a
 			// table of equivalents here would be a case list, and the model
 			// already knows the shell it is told it is writing for.
+			// Which shell, and nothing else, survives the split into signature and
+			// guidance (guidance.go). It is not judgment: it is a fact about how to
+			// write THIS call, it changes the moment the user points the workspace at
+			// a distro, and a model told the wrong one writes the wrong dialect on
+			// every command of the turn with no way to find out except by failing.
+			// Guidance sent once could not correct a switch made after it.
 			Description: "Run commands in the working folder — tests, builds, linters, package managers, anything the terminal can do. Actions:\n" +
-				actions.String() + "\n" +
-				syntax +
-				"Use it to verify your own work after editing. " +
-				"Paths in the command follow the same rule the file tools do: they must be inside the folders this session may use, " +
-				"and a command naming anything outside is refused before it runs. " +
-				"A path the command assembles as it runs cannot be checked, so write paths out literally. " +
-				"Prefer read/grep/glob/list for looking at files: they are faster and their output is shaped for you. " +
-				"After 60 seconds (or timeout_seconds) it reports back as still running rather than being killed — call it again with the same command to look in on it. " +
-				"A command that never exits on its own — a dev server, a watch mode, a REPL — must set run_in_background, or it will run out the clock and be killed.",
+				actions.String() + "\n" + syntax,
 			Parameters: payload,
 		},
 	}

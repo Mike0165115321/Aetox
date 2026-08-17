@@ -63,7 +63,7 @@ const (
 // its tool comes under the ceiling — that is the migration, one tool at a time,
 // with the diff as the progress bar.
 var overweight = map[string]int{
-	"shell":            854,
+	"shell":            498,
 	"n8n":              624,
 	"doc_write":        525,
 	"windmill":         484,
