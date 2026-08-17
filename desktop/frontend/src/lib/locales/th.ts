@@ -316,15 +316,12 @@ export const th = {
   'imagePane.actualSize': 'ดูขนาดจริง',
   'imagePane.fitToPane': 'ย่อให้พอดีแผง',
   // แท็บเบราว์เซอร์ที่ยังไม่มี URL — ไม่ใช่กระดาษเปล่าของผู้ใช้ แต่เป็นที่ว่างบนโต๊ะของ AI
-  'browserPane.deskEyebrow': 'โต๊ะของ Aetox',
-  'browserPane.blankTab': 'แท็บนี้ยังว่าง',
-  'browserPane.blankTabSub': 'เวลา Aetox ต้องดูหน้าเว็บ มันจะเปิดขึ้นตรงนี้เอง',
+  'browserPane.blankTab': 'เบราว์เซอร์บนโต๊ะของ Aetox',
+  'browserPane.blankTabSub': 'เวลา Aetox ต้องดูหน้าเว็บ มันจะเปิดขึ้นตรงนี้ หรือคุณพิมพ์ที่อยู่ในช่องด้านบนเองก็ได้',
  'browserPane.agentBusy': 'Aetox กำลังทำงานอยู่ ถ้าต้องเปิดหน้าเว็บ หน้านั้นจะมาโผล่ตรงนี้',
   // ทั้งหน้าที่ Aetox เปิดเอง และหน้าที่ผู้ใช้เปิดเอง รวมเป็นรายการเดียว
-  'browserPane.openedTitle': 'หน้าที่เคยเปิดตรงนี้',
- 'browserPane.openedEmpty': 'ยังไม่เคยเปิดหน้าไหน พิมพ์ที่อยู่เว็บด้านบน หรือให้ Aetox เปิดให้เมื่อสั่งงานที่ต้องใช้เว็บ',
+  'browserPane.openedEmpty': 'ยังไม่เคยเปิดหน้าไหนจากแท็บนี้',
   'browserPane.showAllPages': 'ดูทั้งหมด {total} หน้า',
-  'browserPane.typeAddress': 'หรือพิมพ์ที่อยู่เว็บในช่องด้านบน แล้วเปิดเอง',
 
   'toolsPane.mcpTools': 'เครื่องมือ MCP',
   'toolsPane.externalSkills': 'สกิลภายนอก',

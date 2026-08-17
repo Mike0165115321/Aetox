@@ -112,10 +112,33 @@ describe('a new browser tab', () => {
     await vi.waitFor(() => expect(container.querySelector('.bp-head')).toBeTruthy())
 
     // A letterboxed preset can leave under 280px of width. The head fits there;
-    // a list and a foot do not.
+    // a list does not, and neither does a 420px watermark.
     expect(container.querySelector('.bp-start.compact')).toBeTruthy()
     expect(rows(container)).toHaveLength(0)
+    expect(container.querySelector('.brand-ground')).toBeNull()
+  })
+
+  it('stands on the same ground as every other empty room in the app', async () => {
+    // Not a watermark of its own: `.brand-ground` is one rule shared with the
+    // empty chat and the first-run screen, so all three cannot drift apart.
+    RecentAgentPages.mockResolvedValue([page('https://a.test', 'A')])
+    const { container } = mountBlankTab()
+    await vi.waitFor(() => expect(container.querySelector('.bp-head')).toBeTruthy())
+
+    expect(container.querySelector('.brand-ground svg')).toBeTruthy()
+  })
+
+  it('gives one instruction, not two', async () => {
+    // The caption pinned to the bottom of the pane told the user about the
+    // address bar from further away than anything else on screen, while the
+    // line under the title said the agent opens pages itself. One screen, one
+    // instruction — so the bottom one is gone and its half was folded in.
+    RecentAgentPages.mockResolvedValue([])
+    const { container } = mountBlankTab()
+    await vi.waitFor(() => expect(container.querySelector('.bp-note')).toBeTruthy())
+
     expect(container.querySelector('.bp-foot')).toBeNull()
+    expect(container.querySelectorAll('.bp-head .d')).toHaveLength(1)
   })
 
   it('lists the pages the user went to, not only the ones the agent opened', async () => {

@@ -258,7 +258,7 @@
 {#if visible}
   <div class="onboard">
     <!-- Aetox's own ground, the same one an empty chat stands on. -->
-    <div class="ob-watermark"><Logo size={520} animate={false} /></div>
+    <div class="brand-ground"><Logo size={520} animate={false} /></div>
 
     <!-- keyed on step so every screen animates in rather than swapping -->
     {#key step}

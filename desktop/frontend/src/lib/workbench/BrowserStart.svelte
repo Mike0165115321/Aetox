@@ -21,6 +21,7 @@
   import { RecentAgentPages } from '../../../wailsjs/go/main/App'
   import { t } from '../i18n.svelte'
   import Icon from '../Icon.svelte'
+  import Logo from '../Logo.svelte'
 
   let { tab }: { tab: WorkbenchTab } = $props()
 
@@ -99,26 +100,28 @@
 </script>
 
 <div class="bp-start" class:compact>
-  <div class="bp-head">
-    {#if compact}<span class="ic"><Icon name="globe" size={20} /></span>{/if}
-    <div class="eyebrow">{t('browserPane.deskEyebrow')}</div>
-    <div class="t">{t('browserPane.blankTab')}</div>
-    <!-- One line that swaps in place, so a turn starting or ending never
-         reflows the page under the pointer. -->
-    <div class="d">{cockpit.awaitingReply ? t('browserPane.agentBusy') : t('browserPane.blankTabSub')}</div>
-  </div>
+  <!-- The same ground the empty chat and the first run stand on, so an empty
+       tab reads as a room of this app rather than as a blank frame. Hidden
+       under a device preset, where the pane can be narrower than the mark. -->
+  {#if !compact}<div class="brand-ground"><Logo size={420} animate={false} /></div>{/if}
 
-  {#if !compact && loaded}
-    <!-- Rendered only once the query has resolved: a one-frame "nothing found"
-         that then fills in is worse than a one-frame gap. -->
-    <div class="bp-sec">
-      <div class="bp-sec-h">
-        <!-- clock, not bot: the list stopped being only the agent's the moment
-             the user's own navigations joined it. -->
-        <span class="ic"><Icon name="clock" size={14} /></span>
-        <span class="eyebrow">{t('browserPane.openedTitle')}</span>
-      </div>
-      <div class="panel">
+  <div class="bp-card">
+    <div class="bp-head">
+      {#if compact}<span class="ic"><Icon name="globe" size={20} /></span>{/if}
+      <div class="t">{t('browserPane.blankTab')}</div>
+      <!-- One line, and one only. It used to be two: this one, plus a caption
+           pinned to the bottom of the pane telling the user about the address
+           bar — which sat further from that bar than anything else on screen.
+           A screen does not get to give the same instruction twice.
+           Swaps in place while a turn runs, so nothing reflows under the
+           pointer. -->
+      <div class="d">{cockpit.awaitingReply ? t('browserPane.agentBusy') : t('browserPane.blankTabSub')}</div>
+    </div>
+
+    {#if !compact && loaded}
+      <!-- Rendered only once the query has resolved: a one-frame "nothing found"
+           that then fills in is worse than a one-frame gap. -->
+      <div class="bp-sec">
         {#if pages.length === 0}
           <div class="bp-note">{t('browserPane.openedEmpty')}</div>
         {:else}
@@ -141,16 +144,8 @@
           {/if}
         {/if}
       </div>
-    </div>
-  {/if}
-
-  {#if !compact}
-    <!-- Not a button: the address bar is a sibling outside this component, and
-         a caption that focuses something is a control in disguise. It is the
-         guaranteed next move, which is what makes the list above safe to be
-         empty. -->
-    <div class="bp-foot">{t('browserPane.typeAddress')}</div>
-  {/if}
+    {/if}
+  </div>
 </div>
 
 <style>
@@ -158,17 +153,23 @@
      hands to getBoundingClientRect() to place the native window, so letting
      .insp-slot scroll instead would offset that rect by scrollTop and open the
      OS window off-register. */
-  .bp-start { height: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; padding: 14px; }
-  .bp-start.compact { justify-content: center; align-items: center; text-align: center; gap: 6px; padding: 0 16px; }
+  /* Centred, both axes. The page used to stack from the top-left and leave the
+     bottom half of a tall pane dead, with one caption stranded at the very
+     bottom edge (DESIGN.md §1). `margin: auto` on the card is what makes that
+     work in both directions: centred while it is short, and scrolling normally
+     once the list is long enough to fill the pane. */
+  .bp-start { position: relative; height: 100%; overflow-y: auto; display: flex; padding: 14px; }
+  .bp-start.compact { justify-content: center; align-items: center; text-align: center; padding: 0 16px; }
+  .bp-card { position: relative; z-index: 1; margin: auto; width: 100%; max-width: 420px; }
 
+  .bp-head { text-align: center; }
   .bp-head .ic { display: block; margin: 0 auto 8px; color: var(--text-muted); opacity: 0.6; }
-  .bp-head .eyebrow { margin-bottom: 4px; }
   .bp-head .t { color: var(--text-primary); font-weight: 600; font-size: var(--fs-md); }
-  .bp-head .d { color: var(--text-muted); font-size: var(--fs-xs); margin-top: 2px; line-height: 1.45; }
+  .bp-head .d { color: var(--text-muted); font-size: var(--fs-xs); margin-top: 4px; line-height: 1.55; }
 
-  .bp-sec-h { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; min-width: 0; }
-  .bp-sec-h .ic { color: var(--text-dim); display: flex; }
-  .bp-sec-h .eyebrow { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* A hairline instead of a section heading. "หน้าที่เคยเปิดตรงนี้" over a list
+     of pages with times against them was a label for something already legible. */
+  .bp-sec { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border-subtle); }
 
   /* The global button reset already gives these font/colour/background/border/
      cursor, so a row declares only its own layout. */
@@ -187,6 +188,4 @@
   .bp-note { padding: 10px 12px; color: var(--text-muted); font-size: var(--fs-xs); line-height: 1.5; }
   .bp-more { width: 100%; padding: 8px 10px; border-top: 1px solid var(--border-default); color: var(--text-muted); font-size: var(--fs-xs); text-align: center; }
   .bp-more:hover { background: var(--surface-row-hover); color: var(--text-primary); }
-
-  .bp-foot { margin-top: auto; padding-top: 4px; color: var(--text-muted); font-size: var(--fs-xs); line-height: 1.5; }
 </style>

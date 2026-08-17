@@ -606,17 +606,18 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
    middle the content occupies, so it is erased on the way down and is already
    gone by the height the cards start at. Big at the top where the screen is
    empty, absent where anything has to be read. */
-/* The first-run screen shares it, and shares it by selector rather than by a
-   second set of values: someone re-tuning this opacity is re-tuning the one
-   ground the app draws behind an empty room, wherever that room is. The two
-   screens are three seconds apart on a new install, and the day they disagree
-   is the day the setup stops looking like the app it is setting up. */
-.empty-watermark, .ob-watermark {
+/* One class, used by every room that stands on it: the empty chat, the first
+   run, and a browser tab with no page in it. It began as .empty-watermark and
+   grew a second selector, then wanted a third — and a rule whose selector list
+   keeps growing is the same debt as a value written down twice (DESIGN.md §5).
+   Someone re-tuning this opacity is re-tuning the one ground Aetox draws
+   behind an empty room, wherever that room is. */
+.brand-ground {
   position:absolute; inset:0; z-index:0; display:grid; place-items:center; pointer-events:none;
   -webkit-mask-image:linear-gradient(#000 12%, rgba(0,0,0,.35) 40%, transparent 66%);
   mask-image:linear-gradient(#000 12%, rgba(0,0,0,.35) 40%, transparent 66%);
 }
-.empty-watermark .logo-mark, .ob-watermark .logo-mark {
+.brand-ground .logo-mark {
   width:min(68vh, 540px); height:auto;
   /* currentColor, so it is the theme's own ink and not a grey that only works
      on the dark palettes. Higher than it looks: most of the mark is under the
@@ -626,7 +627,7 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 @keyframes watermark-in { from { opacity:0; } to { opacity:.09; } }
 /* Positioned siblings, or the absolute mark would paint over every one of them:
    in the same stacking context anything positioned comes after what is not. */
-.empty-state > :not(.empty-watermark) { position:relative; z-index:1; }
+.empty-state > :not(.brand-ground) { position:relative; z-index:1; }
 .starter-grid { display:grid; grid-template-columns:repeat(2, minmax(180px, 220px)); gap:10px; }
 .starter-card {
   display:flex; flex-direction:column; align-items:flex-start; gap:8px; padding:14px 16px;
@@ -3385,9 +3386,10 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   position:fixed; inset:0; z-index:60; background:var(--surface-app);
   display:flex; align-items:center; justify-content:center; overflow:auto;
 }
-/* The ground is the brand mark itself (.ob-watermark, declared with
-   .empty-watermark above). It replaced a radial glow that was borrowed from
-   another product's welcome screen and belonged to nothing here.
+/* The ground is the brand mark itself (.brand-ground, declared once above and
+   shared with the empty chat and the empty browser tab). It replaced a radial
+   glow that was borrowed from another product's welcome screen and belonged to
+   nothing here.
 
    The entrance is the one the empty chat already has — the shared
    watermark-in fade. A slower, blurred wake was tried here and turned down:
@@ -3555,12 +3557,12 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 
 /* Motion here is feedback — a press that answers, a screen that arrives. Where
    the machine is set to do without it, the states still differ by colour and
-   by what the control says, so nothing is only announced by movement. */
-@media (prefers-reduced-motion: reduce) {
-  .onboard *, .onboard *::before, .onboard *::after {
-    animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important;
-  }
-}
+   by what the control says, so nothing is only announced by movement.
+   There is no prefers-reduced-motion block for this screen: the stylesheet
+   already carries one global rule for the whole app (search this file for
+   prefers-reduced-motion). A second one scoped to .onboard was written here and
+   removed the same day — it was a second place answering one question, which is
+   the debt DESIGN.md §5 names, and it would have been the one to drift. */
 .insp-foot { padding:12px 14px; border-top:1px solid var(--border-default); }
 .stopbtn {
   width:100%; height:44px; border-radius:var(--r-md); font-weight:600; font-size:var(--fs-lg);

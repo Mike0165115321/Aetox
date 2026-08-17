@@ -1754,7 +1754,7 @@
            56px it stood in the stack competing with the question and the cards
            for the same middle of the screen; behind them at this size it is
            the room they are standing in. -->
-      <div class="empty-watermark"><Logo size={520} animate={false} /></div>
+      <div class="brand-ground"><Logo size={520} animate={false} /></div>
       <h2>{headline}</h2>
       <!-- Keyed by title so a re-deal replaces the cards rather than rewriting
            the text inside four cards that never moved — which is what makes the

@@ -313,14 +313,11 @@ export const en: Record<keyof typeof th, string> = {
 
   'imagePane.actualSize': 'Show at actual size',
   'imagePane.fitToPane': 'Fit to panel',
-  'browserPane.deskEyebrow': 'Aetox desk',
-  'browserPane.blankTab': 'This tab is empty',
-  'browserPane.blankTabSub': 'When Aetox needs to look at a page, it opens one here itself',
+  'browserPane.blankTab': 'The browser on Aetox’s desk',
+  'browserPane.blankTabSub': 'When Aetox needs to look at a page it opens one here, or type an address in the bar above yourself',
   'browserPane.agentBusy': 'Aetox is working, if it needs a page, one will appear here',
-  'browserPane.openedTitle': 'Pages opened here',
-  'browserPane.openedEmpty': 'No page opened yet, type an address above, or let Aetox open one when a task needs the web',
+  'browserPane.openedEmpty': 'No page has been opened from this tab yet',
   'browserPane.showAllPages': 'Show all {total} pages',
-  'browserPane.typeAddress': 'Or type an address in the bar above and open one yourself',
 
   'toolsPane.mcpTools': 'MCP tools',
   'toolsPane.externalSkills': 'External skills',
