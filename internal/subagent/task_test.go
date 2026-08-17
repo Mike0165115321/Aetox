@@ -537,7 +537,7 @@ func TestTaskDefinitionListsTheProfiles(t *testing.T) {
 	}
 	// Names alone would make every first delegation a guess. Each has to carry
 	// what it is FOR.
-	if !strings.Contains(schema, forClause(mustProfile(t, "explore").Description)) {
+	if !strings.Contains(schema, ForClause(mustProfile(t, "explore").Description)) {
 		t.Errorf("explore is named but not described, so choosing it is guesswork: %s", schema)
 	}
 	// The brief being self-contained is a fact about how a call behaves, so it

@@ -53,7 +53,24 @@ type TaskOptions struct {
 	// keeping the registry complete is what lets a cross-desk dispatch hand a
 	// chair a tool its caller cannot see — the file crosses the counter, the
 	// tool never does (§84).
-	Desk         *mode.Mode
+	Desk *mode.Mode
+	// DelegateOff removes delegation from this session entirely: no `task` tool
+	// is built, so it is not in the block, not in the permission list and not
+	// filtered out of anything — it simply is not there.
+	//
+	// A switch the user can see, feeding a mechanism that already existed: a
+	// connection's tools are kept out of the block the same way until there is
+	// an account to use them with. It is worth 730 tokens on every message,
+	// which is why it is a switch rather than a preference buried somewhere.
+	DelegateOff bool
+	// AgentsOff names workers the assistant may not hand work to.
+	//
+	// They are NOT disabled. The user can still open a chat with one and still
+	// write @name at it, because that is the user's own act. What this narrows
+	// is the assistant's reach, and the copy on the switch has to say so — "ปิด
+	// doc" would tell somebody their agent is gone when it is standing right
+	// there.
+	AgentsOff    []string
 	Permissions  safety.PermissionConfig
 	ApprovalMode safety.ApprovalMode
 	Approve      turn.ApprovalPromptFunc
@@ -160,6 +177,12 @@ type Reply struct {
 // there are, and a signature that changed every time this family did would make
 // packing a change to bootstrap.
 func NewTaskTools(opts TaskOptions) []skill.Skill {
+	// Nothing, rather than a tool that refuses. A `task` that exists and says no
+	// would still cost its 730 tokens in every request to say it, which is the
+	// opposite of what the switch is for.
+	if opts.DelegateOff {
+		return nil
+	}
 	shared := opts.Delegations
 	if shared == nil {
 		shared = NewDelegations()
@@ -178,14 +201,46 @@ func (t *taskTool) Name() string { return "task" }
 // plus the chairs at any desk it is allowed to hand work to. A profile listed
 // but refused would spend a round of the loop teaching the model a rule the
 // list could have expressed.
+// reach answers the one question the roster and a dispatch both ask: may this
+// session hand work to this worker, and if not, why not.
+//
+// One function because it was nearly two, and the two would not have agreed.
+// available() hid a switched-off worker from the roster while begin() resolved
+// the name with Load() and ran it — so the desk ceiling was a real gate and the
+// user's switch was a suggestion, in the same list, looking identical. Somebody
+// would eventually have relied on the wrong one.
+//
+// It returns the ceiling because begin needs it. Getting the answer and the
+// thing the answer implies from the same call is what keeps them one question.
+func (t *taskTool) reach(p Profile) (*mode.Mode, error) {
+	if p.Invalid != "" {
+		// A sick file is the settings page's to explain, never a roster entry.
+		return nil, fmt.Errorf("the profile for %q cannot be read: %s", p.Name, p.Invalid)
+	}
+	if t.switchedOff(p.Name) {
+		return nil, fmt.Errorf("%s is switched off for the assistant. The worker is not disabled — open a chat with it, or write @%s — but handing it work from here is turned off in settings", p.Name, p.Name)
+	}
+	return t.ceilingFor(p)
+}
+
+// switchedOff reports whether the user has taken this worker out of the
+// assistant's reach. Case and stray spaces are forgiven: this list can be edited
+// by hand in a config file.
+func (t *taskTool) switchedOff(name string) bool {
+	want := strings.ToLower(strings.TrimSpace(name))
+	for _, off := range t.opts.AgentsOff {
+		if strings.ToLower(strings.TrimSpace(off)) == want {
+			return true
+		}
+	}
+	return false
+}
+
 func (t *taskTool) available() []Profile {
 	all := List()
 	out := make([]Profile, 0, len(all))
 	for _, p := range all {
-		if p.Invalid != "" {
-			continue // a sick file is the settings page's to explain, never a roster entry
-		}
-		if _, err := t.ceilingFor(p); err == nil {
+		if _, err := t.reach(p); err == nil {
 			out = append(out, p)
 		}
 	}
@@ -283,7 +338,7 @@ func profileNames(profiles []Profile) []string {
 func agentChoice(profiles []Profile) string {
 	var agents, helpers []string
 	for _, p := range profiles {
-		agents, helpers = appendKind(agents, helpers, p, forClause(p.Description))
+		agents, helpers = appendKind(agents, helpers, p, ForClause(p.Description))
 	}
 	out := "Which worker. The user writes @name for the same thing."
 	if len(agents) > 0 {
@@ -324,10 +379,14 @@ func appendKind(agents, helpers []string, p Profile, text string) ([]string, []s
 	return agents, append(helpers, line)
 }
 
-// forClause is the half of a profile's description that says what the worker is
+// ForClause is the half of a profile's description that says what the worker is
 // FOR, which is the half needed to choose one. Profiles separate it with an em
 // dash by convention; one that does not is carried whole rather than guessed at.
-func forClause(description string) string {
+//
+// Exported because the settings page shows the same half for the same reason,
+// and two functions splitting one string the same way is how they stop doing it
+// the same way.
+func ForClause(description string) string {
 	if before, _, found := strings.Cut(description, " — "); found {
 		return strings.TrimSpace(before)
 	}
@@ -462,15 +521,25 @@ func (t *taskTool) begin(ctx context.Context, args map[string]any, out **running
 	if !ok {
 		return t.fail(label, started, fmt.Sprintf("no sub-agent named %q; available: %s", name, strings.Join(profileNames(t.available()), ", ")))
 	}
-	if t.opts.Provider == nil || t.opts.Registry == nil {
-		return t.fail(label, started, "the engine is not ready to spawn a sub-agent")
+	// Every worker switched off, master switch still on. A config file can say
+	// that even if the settings page will not let you, and a `task` with an
+	// empty roster is a dead end the model would otherwise walk into and get a
+	// list of nobody back.
+	if len(t.available()) == 0 {
+		return t.fail(label, started, "every worker is switched off for the assistant. Turn one back on in settings, or switch delegation off entirely so this tool stops being offered at all")
 	}
 	// Which desk this job runs at, decided before anything is built: a dispatch
 	// this desk may not make is a refusal the model can read and act on, not a
 	// job that starts and quietly comes back with half its tools missing.
-	ceiling, err := t.ceilingFor(profile)
+	// reach, not ceilingFor: the desk's ceiling and the user's switch are the
+	// same question asked of the same worker, and asking only half of it here is
+	// what made one of them enforceable and the other decorative.
+	ceiling, err := t.reach(profile)
 	if err != nil {
 		return t.fail(label, started, err.Error())
+	}
+	if t.opts.Provider == nil || t.opts.Registry == nil {
+		return t.fail(label, started, "the engine is not ready to spawn a sub-agent")
 	}
 	// A brief the child cannot hold is not simply a smaller job. memory trims the
 	// last message from its tail (memory.Context.truncateLastIfNeeded), so an

@@ -46,6 +46,22 @@ type Config struct {
 	// interface and must speak to the user in their language (ARCHITECTURE.md
 	// §40). Empty means "not set", and the built-in falls back to Thai.
 	UILocale string
+	// DelegateOff switches off the assistant's ability to hand work to a worker.
+	// Off by default — every install before this setting existed delegates, and
+	// a stored zero has to mean what it always meant.
+	//
+	// It is worth ~730 tokens in every request, which is why it is a switch the
+	// user can see rather than a preference nobody finds: 77% of sessions on the
+	// machine this was measured on never delegated once.
+	DelegateOff bool
+	// AgentsOff names workers the ASSISTANT may not hand work to. Each one left
+	// out saves ~21 tokens per message.
+	//
+	// It does not disable a worker. The user still opens a chat with it and
+	// still writes @name at it, because that is the user's own door and no
+	// setting here reaches it. Anything shown for this in the UI has to say
+	// whose reach is narrowed, or somebody will read "off" as "gone".
+	AgentsOff []string
 }
 
 type ConfigOptions struct {
@@ -110,6 +126,17 @@ type ModelPreference struct {
 	// preference files, and defaulting it off would have made the feature
 	// invisible to everyone who already had one.
 	LearningDisabled bool `json:"learning_disabled,omitempty"`
+	// DelegateOff and AgentsOff are the two switches on the assistant's reach.
+	//
+	// Both stored as the negative, for the same reason LearningDisabled above
+	// is: they were added after people had preference files, and an absent field
+	// has to keep meaning what it always meant. On.
+	//
+	// They persist here rather than per project, because "may my assistant hand
+	// work to a specialist" is a fact about how somebody works and not about
+	// which folder is open — the same reason UILocale sits here.
+	DelegateOff bool     `json:"delegate_off,omitempty"`
+	AgentsOff   []string `json:"agents_off,omitempty"`
 	// EnabledProviders is the set of providers shown in the Settings sidebar
 	// and the chat composer's picker. Empty means "never customized" — callers
 	// resolve that case via ResolvedEnabledProviders rather than persisting a

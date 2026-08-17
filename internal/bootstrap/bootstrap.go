@@ -525,6 +525,11 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 		// dispatch runs on the target desk's manifest, so the tool it needs has
 		// to still be in there to be filtered *in* (§84).
 		Desk: opts.Mode,
+		// The user's two switches. Off builds no tool at all, which is the whole
+		// point — a `task` that existed to refuse would still cost its place in
+		// every request to say so.
+		DelegateOff: cfg.DelegateOff,
+		AgentsOff:   cfg.AgentsOff,
 		// The same assembler the session's own prompt came out of, three lines
 		// up, with the delegate's brief where the desk's direction goes. One
 		// door: a worker reached by `task` and a worker reached by opening a
