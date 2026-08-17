@@ -619,6 +619,16 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 }
 .brand-ground .logo-mark {
   width:min(68vh, 540px); height:auto;
+  /* Sized from the viewport, clamped by the room it is standing in. Those are
+     two different heights, and for a long time they were close enough to hide
+     the difference: the chat's empty state is a few pixels shorter than the
+     window, so a 68vh mark overflowed it by under a pixel and the overflow
+     clipped invisibly. The day the shipped system size went from 15.5px to
+     16px, `zoom` became 1.032, the mark grew to 505px inside a 489px room, and
+     what had always been a clip became 8px of the mark's head and feet cut
+     off square — against a fade at the bottom, which made it read as broken.
+     The mask fades; the box must never crop. */
+  max-width:100%; max-height:100%;
   /* currentColor, so it is the theme's own ink and not a grey that only works
      on the dark palettes. Higher than it looks: most of the mark is under the
      fade, and this is the value at the top where none of it is. */
