@@ -4,6 +4,31 @@
 
 **What it is:** everything the agent can *do*. Defines the `Skill`/`Tool` interfaces, the `Registry` (which skills exist, with source tracking), the `Dispatcher` (text command → skill, and model tool-call → skill), and all 35 built-in tools — 32 of which implement `Tool` and are sent to the model; `echo`, `fs` and `help` are console-only.
 
+## The standard for a tool's block entry
+
+Every tool definition carries three separable things, and until 2026-08-18 all three were sent with every message:
+
+| Layer | What it is | Needed | Weight on `browser` |
+|---|---|---|---|
+| **Existence** | that this capability is here at all | always | ~10 tok (1%) |
+| **Signature** | what to pass to call it | when calling | ~70 tok (9%) |
+| **Judgment** | when to reach for it, what it costs, the hazards | **once** | ~686 tok (**90%**) |
+
+**The rule: a block entry carries Existence and Signature. Judgment goes in `Guidance()`.**
+
+`Guidance` ([guidance.go](guidance.go)) is delivered by the dispatcher, attached to the **first result of the session** - the call the caller was going to make anyway, so the saving costs no extra round trip. That is the difference from tool-search designs (Anthropic's own `defer_loading`, the MCP progressive-loading patterns): those spend a lookup to fetch a schema, this spends nothing. It teaches on a failed first call too, because a call that went wrong is exactly when the judgment was missing.
+
+Aetox cannot use the provider's own mechanism for this. `defer_loading` is an Anthropic API feature and this app is not single-provider - the same session may be running Gemini or an OpenAI-shaped endpoint, so the layering has to live here.
+
+Two things this deliberately does **not** change:
+
+- **Which tools exist for this caller.** Every capability stays in the block, by name, always. Rights still come only from the list the user can see; the bytes move, the grant does not.
+- **What the model is told.** Nothing is dropped. It arrives later, once.
+
+Measured before writing any of it, from `tool_runs` on a real machine (68 sessions, 1,883 calls): a session uses **5 distinct tools** at the median while the block ships **38**, and **no tool is used by even half of sessions** - the most-used, `list`, reaches 45%. That last number is why this is not a "ship the popular ones" tier: shipping the top 20 still leaves 55% of sessions needing something else. Full workings: [Existence, Signature, Judgment](https://claude.ai/code/artifact/c6bb1af6-4ed5-4122-acc5-624dc152f721).
+
+**Enforced by [block_standard_test.go](block_standard_test.go)**, as a ratchet rather than a line in the sand: a new tool must fit the ceiling (80 tokens, or 65 + 10 per action for a packed one), and a tool already over it may shrink but never grow. The list of exemptions is a to-do list that empties itself - delete a line when its tool comes under.
+
 ## Key seams
 
 | Seam | What hangs off it |
@@ -28,7 +53,7 @@ File ops ([read.go](read.go) (numbers every line like `cat -n`, `offset`/`limit`
 
 **Binaries that ship with Aetox** ([bundled.go](bundled.go)) — poppler and ffmpeg arrive as plain archives with no installer, so nothing puts them on PATH. The Windows installer unpacks each into the install directory ([project.nsi](../../desktop/build/windows/installer/project.nsi)) and `bundledBinary` looks there before falling back to PATH. Tesseract is not in this list: its own installer registers itself, so PATH finds it.
 
-The desktop-only `browser` tool is **not** here — it lives in [desktop/browser_tool.go](../../desktop/browser_tool.go) over implementations in [desktop/workbench.go](../../desktop/workbench.go), and registers as `SourceExternal`. It is one tool with four actions (`open`/`read`/`click`/`type`); the four old tool names remain this package's `categories:` vocabulary because they are still the per-action permission keys.
+The desktop-only `browser` tool is **not** here — it lives in [desktop/browser_tool.go](../../desktop/browser_tool.go) over implementations in [desktop/workbench.go](../../desktop/workbench.go), and registers as `SourceExternal`. It is one tool with nine actions (`open`/`read`/`click`/`type`/`wait`/`back`/`capture`/`tabs`/`dialog`); every one of those old tool names remains this package's `categories:` vocabulary because they are still the per-action permission keys.
 
 `browser` was the first packed tool and is still the only one that answers "which actions may this caller use?" by itself, because it lives in `desktop` and can read the open session's profile directly. Everything in this package cannot — `internal/skill` must never import `desktop` — so [packed.go](packed.go) is where the same idea is made general: a `Packed` tool declares its per-action names and is handed a narrowed copy from outside, by `subagent.FilterRegistry`. `Unpack` is the other half, and the one that keeps the packing honest: every gate below the tool block — `internal/safety`, the permission rules, the approval prompt, the turn's deadline — still judges a call by the name the act always had.
 

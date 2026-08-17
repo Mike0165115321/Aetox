@@ -3798,3 +3798,486 @@ Motion answers two questions and no others: did the press register, and what is 
 Three of this round's faults were invisible to the suite and visible in one look at the running app: a row that said "signed in" twice, a card grid that hung to the left because two cards sat in the first two of four fixed columns, and a content column pinned to the left of a 1900px window. They were fixed and then *measured* — 124px of space on the left, 124px on the right — rather than pronounced better.
 
 So the suite now also pins what must **not** be there: the first screen may have exactly two buttons, the connect screen's only link is Back, and the sign-in path may never grow a password field. A negative assertion is the one that survives the next person's good intentions.
+
+## 125. Decision — Two Languages Written as a Number, Not as a List (2026-08-17)
+
+The owner asked a sizing question — how hard would a third language be? — and the answer separated into two halves that did not resemble each other.
+
+The window was ready. `i18n.svelte.ts` says so in its own header: one `locales/<code>.ts` file plus one line. Every screen that offers the language, the first-run picker included, iterates `localeNames` rather than naming Thai and English, so none of them would need touching. The engine was not ready, and neither was the rest of the small print.
+
+### 125.1 The shape that forbade a third
+
+`internal/model/noop.go` is the one part of the engine that talks to a user in their own words (§40), and it held every one of those words as two positional arguments: `pick(th, en)`, 37 times, plus four `if english()` branches that returned a whole reply per language. Nothing there was wrong for two languages. It was wrong about how many there could be — "exactly two" was written into the signature between the strings and the reader, so a third could not be written at all until all 37 sites had been edited first. That is the definition of debt the owner named: the cost of the next language was being paid by a change that had nothing to do with translating anything.
+
+It is now `phrase`, a map keyed by language code, read through one `inLocale` (whose resolution order §125.5 revised the same day it was written). Adding Japanese is adding `"ja"` keys to the phrases someone translated, and nothing to the ones nobody did. `english() bool` is gone, which is the point: a boolean can only ever answer for two.
+
+The four branches went with it. A branch is the thing that has to be *found* again for the third language; a map entry is a place that is already open. `noopLongReasoning` now renders both languages and throws one away, which is a real waste and the right trade — it is a bench model's thinking script, and uniformity is worth more here than the microseconds.
+
+### 125.2 The same debt, one line long
+
+`index.html` shipped `lang="th"` and never changed it, so the document told the browser Thai no matter what the user picked — the answer that reaches hyphenation, spellcheck, and a screen reader choosing a voice. `setLocale` now sets `documentElement.lang`. And `initLocale` read the saved preference as `saved === 'en' ? 'en' : 'th'`, which is the same "two" written a third way; it now asks whether the saved code is a language the app has.
+
+`i18n.svelte.ts` itself listed the languages three times over — a union type, a names record, a dictionary record — three chances to add a language the compiler accepts and the picker never shows. They are one `locales` object now, with `Locale` derived from its keys, so the header's promise of "one line here" is finally true.
+
+### 125.3 What a third language still costs, honestly
+
+Not zero, and worth stating before anyone starts:
+
+- **~1,160 strings** in a new `locales/<code>.ts`. Typed against `th`'s keys, so a missing one is a compile error, not a silent fallback. This is the work; the rest is minutes.
+- **The engine's canned copy** — one onboarding reply and six guide answers. Product copy, so it has to be translated by someone who means it. The bench scripts can stay Thai and fall back.
+- **Six `STARTERS.<lang>.md`**, one per shipped worker. Already generic: `config.AgentStartersName` builds the name and guards it against escaping the folder.
+- **OCR and speech are a different question entirely.** Tesseract is bundled with tha+eng data and whisper is set to Thai+English; a UI in Japanese does not mean Aetox can read a Japanese screenshot. Adding a UI language and adding a sense are not the same purchase, and saying so in the release notes is part of the work. Nothing in the app currently claims otherwise — the guide answer already says "ไทย+อังกฤษ" in both languages, and the checked claim is what makes this a note rather than a fix.
+
+`TestAThirdLanguageIsDataNotCode` pins the half that is fixed. It asks a `phrase` for a language nothing in the package has been translated into yet, which is exactly the question that could not be asked before.
+
+### 125.4 The two the sizing pass found and this change closed
+
+The identity templates were the worst of them and the least visible. `identity.svelte.ts` held four Thai string literals while every other user-facing string in the window lived in the locale files — so the one screen that ignored the language choice was the screen where a user writes down **who they are**. They are `identity.tpl*` keys now, and `identityTemplates` became a function because `t` has to be read at call time. The filenames did not move and must not: `identity.md`, `thinking.md`, `context.md`, `skills.md` are addresses `internal/prompt` folds into every prompt, and translating one would quietly open a second file instead of the first. `identityTemplates.test.ts` pins both halves — the bodies follow the locale, the names never do.
+
+The installer was one line. It carried `MUI_LANGUAGE "English"` and nothing else, so the Thai-first app introduced itself in English. English stays first, because the first table inserted is the fallback for a machine matching none of them, and Thai follows — NSIS then picks by the machine's UI language with no dialog to click through. It is wrapped in `!if /FileExists` on the `.nlf`, because the installer is built **only** by the release workflow: a missing language file would not fail a PR, it would fail a release. An English installer on one machine is a small loss; an installer that does not build is the whole release.
+
+### 125.5 Eight languages chosen, and the two rules that had to change first
+
+The owner picked the set the same day: **จีนตัวย่อ, สเปน, โปรตุเกส-บราซิล, เวียดนาม, รัสเซีย, ญี่ปุ่น, เยอรมัน, ฝรั่งเศส** — ten with Thai and English. Measured before agreeing, because two of the numbers were guesses until they were not:
+
+| | |
+|---|---|
+| แรม ต่อภาษา | **540 KB** measured (V8 heap, the real locale files) — of which ~107 KB is the text and the rest is V8's own overhead |
+| ฟอนต์ จีน | **4.31 MB** (`@fontsource-variable/noto-sans-sc`, 101 subsets) |
+| ฟอนต์ ญี่ปุ่น | **~5.0 MB** (`@fontsource-variable/noto-sans-jp`) |
+| ฟอนต์ สเปน/โปรตุเกส/เวียดนาม/รัสเซีย/เยอรมัน/ฝรั่งเศส | **0** — Inter already ships latin-ext, cyrillic and vietnamese subsets |
+| `chi_sim.traineddata` (OCR) | 42.3 MB, downloaded at install, **not** in the installer |
+
+An earlier estimate in this conversation put a CJK font at "tens of MB". That was the *static* package (`@fontsource/noto-sans-sc`, 74.5 MB); the variable one is seventeen times smaller. Corrected here because the wrong number would have killed Chinese on a false premise.
+
+Two rules had to change before a single word could be translated, and both were only wrong once there were more than two languages:
+
+**A region subtag is not a flavour.** `inLocale` cut every tag at the first dash, so `pt-BR` resolved as `pt` — which is exactly how you hand a Brazilian the European translation and never hear about it. It now tries the whole tag first, then the language half, and the lookup is case-insensitive on both sides because `pt-BR` and `pt-br` get written about equally often and a key that misses on capitalisation would fall through to a real translation, just the wrong one.
+
+**Thai was the fallback because it was the only other language.** That made it right by accident. A Spanish user meeting a key nobody had translated would have got Thai — a script they cannot sound out — while the complete English sat unused. Both sides now fall through to English, with one carve-out: an *empty* locale still means Thai, because empty is not "a language we lack", it is a fresh install that has not been asked yet.
+
+**And the completeness rule got a second tier.** `Record<keyof typeof th, string>` — missing key, compile error — is correct for the two languages the owner writes and reads. Held over eight he cannot read, it means every new button in Aetox breaks the build until eight translations arrive, which does not produce eight translations. It produces a placeholder pasted in to turn the build green, and a placeholder is a lie that type-checks. Contributed locales are typed `Partial` and fall through to English instead.
+
+What replaces the type check is `localeGuard.test.ts`, which asserts everything checkable **without reading the language**: no key the app does not have, nothing blank, and every `{placeholder}` preserved. That last one is the reason the file exists — a translation that drops `{count}` renders "You have  items" to a real user forever, and no test that only counted keys would ever see it.
+
+---
+
+## 126. Decision — A Search That Never Happened Is Not an Empty Result (2026-08-17)
+
+Owner, 17 ส.ค., with a screenshot: *"เจอบั๊คอีกแล้ววว"*. On the diagnosis and the three-part fix: *"เริ่มเลยครับ"*.
+
+On screen, the agent told the user it could not reach WSL `mikedev` or their D: drive, and offered them a `grep` to run by hand. Fifteen minutes earlier it had copied a project out of that distro, started a server in it and read the pages back. `tool_runs` holds what actually happened, and it is four calls:
+
+| tool | asked for | answered |
+|---|---|---|
+| `grep` | `/mnt/d/Project/AI-Robot-Guide-` | **ok** · `(no matches)` |
+| `glob` | `/mnt/d/Project/AI-Robot-Guide-` | **ok** · `(no files matched)` |
+| `list` | `/mnt/d/Project` | failed · `open C:\Users\ASUS\aetox\mnt\d\Project` |
+| `shell` | `wsl -d mikedev -- bash -lc 'find …'` | failed · `wsl: command not found` |
+
+The third row is the confession. `/mnt/d/Project` has no drive letter, so `filepath.IsAbs` says it is relative, so it was joined onto the sandbox root. Only `list` said so out loud; the two searches reported a clean, successful, empty result.
+
+### 126.1 The half that has nothing to do with WSL
+
+**A tool that could not look must never answer as though it looked and found nothing.** `grep` and `glob` walked a directory that was not there, opened no files, matched nothing, and returned the same sentence they use for a folder they read every byte of. The two are not one answer, because only one of them is evidence.
+
+What it cost is the reason this is the first half and not a footnote. The question in front of the agent was whether that project held an admin password. It was handed "no", and it passed "no" to the user — about a folder it had never opened. §111.2 and §123.1 already say a failure reported as success is the one direction a wrapper must never be wrong in; this is that rule arriving through a *search* instead of an exit code, and it was wrong on any machine, WSL or not, for any mistyped path.
+
+`searchBaseExists` is now the gate, and it names both spellings — what was asked for and where it resolved to — because "no such folder" says the search failed while "`/mnt/d/Project` resolved to `C:\Users\ASUS\aetox\mnt\d\Project`" says why, which is the difference between the model fixing the path and the model concluding the project is empty.
+
+One case keeps the gentle answer, and the split is deliberate: `glob` derives a walk root from the *pattern's* literal prefix, and a prefix that does not exist is not a claim about the disk. A directory the caller **named** is. Explicit path, error; guessed prefix, no match.
+
+### 126.2 One workspace, two spellings
+
+The shell had been translating since the backend shipped: `gateFor(backend)` puts every path a command names through `HostPath` before containment is decided. The file tools never learned. So one session held a shell that speaks `/mnt/d/...` and a `read`/`grep`/`glob`/`list` that speak `D:\...`, and nothing in between.
+
+Translation now happens in the one place containment is decided — `resolveSandboxPath`, through `hostSpelling` — rather than in each of ~20 tools, which is the same reasoning that put the workspace policy in a map keyed by root instead of in every struct. The shell is recorded beside that policy on every registry build, nil included, so a workspace switched back to the native shell stops translating in the same call.
+
+**Translating is not widening.** The same wall, checked against the file the caller meant instead of against a mangled path that was refused by accident. A guest path outside the project is refused; `/etc/passwd` from a focused Windows project is refused; a native session's reading of a leading `/` is byte-for-byte what it was.
+
+Only paths that could be guest-spelled are translated, and that is a cost rule as much as a correct one: `HostPath` resolves the distro's mount root by reading `\\wsl.localhost\<distro>\etc\wsl.conf`, which **starts the distro** if it is stopped. Relative and Windows paths already mean the same thing in both worlds and are what nearly every call carries, so the common case must not pay a distro boot to be told it was fine.
+
+### 126.3 A second home on the same machine
+
+The credential denylist is home-relative, and until file tools could hold a guest path there was only ever one home to be relative to. Now `/home/mike/.ssh/id_rsa` resolves to `\\wsl.localhost\<distro>\home\mike\.ssh\id_rsa` — a real file on this machine, holding exactly what the list exists to refuse, sitting nowhere near the Windows profile the check compares against.
+
+That path was always spellable; what §126.2 changed is that it became the *natural* way to write it, which is the difference between a hole nobody walks into and one on the main road. So the list is now applied to the distro's homes as well, read off the path (`/home/<user>`, `/root`) rather than asked of the distro: asking costs a boot on a check that runs on every resolved path, and answers for the default user when the file may belong to another. Being wrong here can only refuse a `.ssh` that is not a `.ssh`.
+
+### 126.4 The habit a shell's name cannot correct
+
+`Backend.Note` exists for exactly one thing (§111): the constraint a shell's *name* does not carry, which for Windows PowerShell 5.1 is the missing `&&`. WSL's note was empty, on the reasoning that "bash" is instruction enough. That is true of the syntax and false of the standpoint.
+
+A model told its commands run in `bash (WSL: mikedev)` still believes it is on the Windows side looking in, so it writes the line that would be right from there — `wsl -d mikedev -- bash -lc …` — into a shell already standing inside mikedev. `wsl` is not a Linux program. It died with `command not found`, and the agent read that as *this machine has no WSL* and told the user so.
+
+The note now says where the command starts, and says the same thing about paths, because every file tool answers with the Windows spelling of a file and the prompt rightly tells the model to repeat the path a tool gave it. Two sentences, one fact, and not a syntax table: what generalizes is **you are already there**, and everything a model would otherwise do to get there follows from it.
+
+## 127. Decision — The Agent's Tab Is the One It Opened, Not the One in Front (2026-08-17)
+
+**Status:** Implemented 2026-08-17 · **Files:** `desktop/browser.go`, `desktop/workbench.go`, `desktop/browser_tool.go`, `desktop/browser_capture.go`, `internal/skill/packed.go`
+
+Owner, 17 ส.ค., asking for the capability §119.7 had left unwired: *"ผมอยากพัฒนาอ่ะ แบบ เอเจน แคปรูปหน้าเว็บเองได้ ดูได้ หรือ เก็บไว้ที่ไหนสักที่ให้เราได้"*. The picture was the ask. What the ask uncovered was that the agent did not reliably know which page it was on.
+
+### 127.1 One field was answering two questions
+
+`browserHost.lastID` means "the tab in front": `BrowserSetVisible` rewrites it every time a tab is raised, **including when the user clicks between their own**. `browser_read`, `browser_click` and `browser_type` all resolved their target through it.
+
+So a user glancing at their own page mid-turn moved what the agent's next action landed on. Reading a page it never opened is the mild version; the real one is that `click` pressed buttons and `type` filled fields on it. The rule that rights come only from a list the user can see does not survive the agent acting on a document nobody granted it.
+
+`agentBrowserTabID` looked like the guard against this and was not. It read the same `lastID` and accepted it only when the id carried the `web-agent-` prefix, which quietly means *the agent's tab, but only while it happens to be the one on screen*. The failure was symmetrical and both halves were bad: with the user's tab in front it answered "" while the agent's tab sat there alive, so `open` minted a **second** agent tab and stranded the first — the tab-after-tab behaviour that reuse was introduced on 2026-08-10 to end.
+
+The host now keeps `agentID` next to `lastID`. Two questions, two fields, neither pretending to be the other: the frontend asks which tab is showing, and nothing the agent does may. The `web-agent-` prefix is tested in exactly one place, at the moment a tab is created, and everything downstream reads `agentID`.
+
+It is never cleared on close. A tab the user closed is gone from `tabs`, and the liveness check reads that as no tab — which is also how `open` learns to mint a fresh one, so one mechanism covers both.
+
+Owner on what this buys, and it is the better sentence: *"เราเปลี่ยนกระทันหัน แต่มันก็รู้ว่าแท็ปไหนคืองานไหน"*.
+
+### 127.2 The refusal had to change with it
+
+*"No browser tab open in the workbench"* was true while the target was whatever was showing. Once the target is the agent's own tab, the user can have a screenful of them and the sentence is a lie. It now says the agent has not opened a page, and says whose the others are.
+
+### 127.3 Reading a page the user opened is not a smaller version of this
+
+The tempting middle position is to let `read` see any tab while `click`/`type`/`capture` stay on the agent's own — a viewing right and an acting right, which sounds like the permission split this product already makes.
+
+It does not work here, because **refs come from a read and are spent on a click**. Point those two at different documents and a ref resolves against a page it was never numbered for. That is not a safer arrangement than the bug; it is a different one. So the rule is single: the agent works its own tab. A page the user wants looked at, the agent opens for itself.
+
+### 127.4 Only then, the picture
+
+`BrowserCapturePNG` has existed since the annotation modes (§119) and was reachable only by the user drawing on a page. Two things made it not-yet-a-tool, and only one of them was about pictures.
+
+The first was §127.1: a photograph of the wrong page is obvious in a way that text of the wrong page is not, so capture would have been the action that finally made the tab bug visible, in the worst possible way — by handing back a picture of whatever the user was looking at.
+
+The second is that **the tab is raised before it is shot, rather than hoped to be up**. A hidden native view is a Win32 `ShowWindow(SW_HIDE)` and composites no frames, so a capture of one is the last thing it drew or nothing at all. Raising is also the honest half: this tool's premise is that the user watches what the agent does, and that cannot be true of a photograph taken of something they were never shown. It reuses the event `open` already sends, whose handler only makes an existing tab active — so nothing re-navigates.
+
+`capture` is its own permission (`browser_capture`), not part of `browser_read`. "May read this page" and "may see it" are different rights: a picture carries everything the text left out.
+
+### 127.5 Where a picture lands, and why not where new files land
+
+Shots go to `output/<session>` under the working root **always**, deliberately not through `a.outputSubdir()`. Those agree with no project focused and disagree with one, where `outputSubdir` is `""` — meaning a new file lands in the project itself. That is right for a file the user asked for by name and wrong for this one: a screenshot is a byproduct of the agent looking at something, and `page-1.png` in the root of somebody's repository is a change nobody asked for. `output/<session>` is also the one path `ListArtifacts` is defined to sweep, so the shot appears in the gallery under either mode.
+
+The model is handed the image only when it has eyes (`model.ResolveVision`, the same question `visionAttachments` asks of a user's attachment). A blind one gets the path and `image_ocr`, which is the path it has had since §22.
+
+### 127.6 A camera with no rule for it photographs everything
+
+The action's description leads with the condition, not the capability: use it **only when `read` cannot answer, because the answer was never in the text** — a chart, a canvas, a map, a rendered document, a layout you suspect is wrong. Read first, photograph second. A model told it can take pictures and not told when will take one of every page it opens, and each one costs more than the read it duplicated.
+
+For the same reason `click` and `type` now name the page they landed on. Owner: *"อันที่ฉันเปิด มันก็ต้องรุ้ด้วยนะ ว่าปัจจุบันเปิดอะไรอยู่อีก"*. Steering one tab of your own is half an answer; knowing what is in it is the other half, and a click can move the page. Without it the model either remembers across turns or spends a whole `read` asking where it is.
+
+### 127.7 What this does not decide
+
+**Whether a raised-then-shot tab needs a longer settle than 400ms.** The wait is a guess until it is watched on a real window; it is a number to tune, not a design.
+
+**Full-page capture.** The engine gives the viewport. Scroll-and-stitch would lie about sticky headers and lazy loading, and the pages that need a picture at all are usually one screen.
+
+**Going back to an older tab.** The agent has "the last one I opened" and no way to name a tab and return to it. Nothing has wanted that yet.
+
+### 127.8 The rule the capture path stated, and the one place that broke it
+
+Found by running §127 rather than reading it: the agent opened `example.com` in one second, then wikipedia, google and httpbin each failed after exactly twenty. First page fine, every page after it dead.
+
+`browser_shot.go`'s header states the rule for this engine — a COM call made from a goroutine instead of the webview's thread *is refused outright, not delayed*. Every call into a view in `browser.go` goes through `withTab`/`do` accordingly: navigate, bounds, zoom, visibility, and all three script paths. The reuse branch of `workbenchOpenBrowser` called `tab.view.navigate` directly, and it was the only one.
+
+So on a reused tab nothing navigated. The refusal went to the engine's own error callback, no `NavigationCompleted` ever fired, and `awaitNavigation` spent its full twenty seconds before reporting a page that had never been asked for — a sentence that reads like a slow site and was a call the engine had thrown away.
+
+It has been this way since reuse shipped on 2026-08-10, and it is not what §127.1 changed: that line is untouched by it. What §127.1 did was make reuse fire reliably, which turned an intermittent failure into every-time — the ordinary way a correctness fix pays for itself before its own feature is even switched on.
+
+### 127.9 Three bugs, one root, and a proposal
+
+§127.1, §127.8 and the tab-after-tab behaviour of 2026-08-10 are not three mistakes. Each broke a rule that was correct, written down, and enforced by nothing but a comment somebody had to have already read.
+
+Owner, 17 ส.ค., after watching the third one: *"ร่างสถาปัตยกรรมที่มันควรจะเป็นดีไหม"*. Drafted as [docs/architecture/browser-subsystem-2026-08-17.md](architecture/browser-subsystem-2026-08-17.md) — **proposed, nothing built**. Its thesis is that all three rules can move from prose into types: the webview reachable only from inside the host-thread callback (so `tab.view.navigate` stops compiling), the agent's tab a distinct type from any tab (so the user's cannot be passed where the agent's is meant), and one resolver for "is this an address or a search" with the policy left to the caller — the address bar searching, `open` refusing and naming `web_search`.
+
+## 128. Decision — A Webview You Can Only Reach From the Thread That Owns It (2026-08-17)
+
+**Status:** Implemented 2026-08-17 · **Files:** `desktop/browser.go`, `desktop/browser_pick.go`, `desktop/browser_shot.go`, `desktop/workbench.go` · **Design:** [docs/architecture/browser-subsystem-2026-08-17.md](architecture/browser-subsystem-2026-08-17.md) Defect 1
+
+Owner, 17 ส.ค., after the third bug in two days: *"ร่างสถาปัตยกรรมที่มันควรจะเป็นดีไหม"*, then *"เริ่มเลย"*.
+
+### 128.1 The door was already right; there was no wall beside it
+
+`browserHost.withTab` has always queued onto the thread that owns webviews, and sixteen call sites used it. `browserTab.view` was an ordinary field on an ordinary struct, so anything holding a `*browserTab` could reach the engine without it — and one call site did (§127.8), for a week, invisibly, because the engine's answer to a wrong-thread call is a refusal delivered to a callback nobody reads and a page that never finishes loading.
+
+Adding a comment would have been the third comment about this rule.
+
+So the field is gone. Views live in `browserHost.views`, which nothing outside `browser.go` reads, and `onTab` hands one out only from inside `backend.do`:
+
+```go
+func (h *browserHost) onTab(id string, fn func(tabView, *browserTab)) {
+	h.backend.do(func() {
+		h.mu.Lock()
+		v, t := h.views[id], h.tabs[id]
+		h.mu.Unlock()
+		if v != nil && t != nil { fn(v, t) }
+	})
+}
+```
+
+The measure of whether this worked is not that the tests pass. It is that `tab.view.navigate(url)` — the exact line that cost §127.8 — does not compile.
+
+### 128.2 What it does not claim
+
+A caller can still copy the `tabView` out of the callback and use it later, and no Go type will stop that. This does not prevent a decision; it prevents an accident, and an accident is what happened. Nobody chose to call an engine from the wrong thread — they reached for the nearest field, and the nearest field was the wrong one.
+
+### 128.3 Two smaller truths that fell out
+
+`tab == nil || tab.view == nil` was the liveness check at three call sites, and it is now `host.live(id)`. That reads better because it is more honest: a tab with no view was never a tab, it was an `openTab` that failed and got stored anyway.
+
+And `BrowserClose` now takes the view out of the map before destroying it, rather than deleting the tab and destroying through a pointer the map no longer knows about. Same effect today; one fewer way for a later reader to be surprised.
+
+### 128.4 What the browser told nobody
+
+The owner found this one by asking the right question rather than reading the code, 17 ส.ค.: *"เบาเซอร์ อาจจะพังเพราะมันไม่รายงานอะไรกับเอเจน เลยก็ได้ เอเจนเลยไม่รู้"*.
+
+`SetErrorCallback` wrote every engine complaint to stderr and to `debuglog`, and `tabCallbacks` had no field to carry it any further. Two writes, no reader. So the tool above could only ever answer with the timeout it observed — `page did not finish loading` — which is a `statereport`, and a statereport means *weather*: slow tonight, down tonight, nothing to correct.
+
+The agent read that correctly. It concluded the network was unreliable and said so to the user, three times, while WebView2 had been answering `This method can only be called from the thread that created the object` on every attempt. **The agent was not wrong; it was accurate about a sentence that was wrong.** No amount of reasoning gets from "the page did not load" to "this program is calling COM from the wrong apartment".
+
+So `onEngineError` now rides on `tabCallbacks`, `browserTab` keeps the last complaint, `armNavigation` clears it so it always belongs to the navigation being waited on, and `awaitNavigation`'s timeout splits into two branches that are different **kinds** of thing:
+
+- the engine refused our call → a plain `fmt.Errorf` naming what it said. A defect in this program.
+- nothing from the engine → `statereport` as before. Weather.
+
+Filing the first as the second is precisely how it survived a week of being logged every twenty seconds.
+
+The general rule, which is the part worth carrying past the browser: **anything an outside system says about a request WE made has to be able to reach the caller.** A log serves the person who already knows to investigate, and not knowing there was anything to investigate was the whole of the problem.
+
+### 128.5 Four ways to say which page, and the one that nearly took the panel with it
+
+Auditing 128's own diff turned up debt it had just added. `open` named a page `Title (url)`, `read` wrote a markdown header, and `click`, `type` and `capture` each invented a spelling as they were written. One fact, four renderings — in the file that already keeps `browserOpenedPrefix` as a shared constant *precisely* so `open`'s sentence and `parseBrowserOpened` cannot drift. The lesson was written down here already; it simply had not been applied to the sentences added after it.
+
+`browserPageRef` is now the one place a page gets named, and `open`, `click`, `type` and `capture` all go through it. **`read` is a deliberate exception** and keeps its two-line header: it is not a sentence referring to a page, it is the top of a document the model reads as a document, and folding it in would make it worse to read in order to make it easier to count.
+
+The interesting part is what the fix nearly broke. A page with no title had been written `เปิดแล้ว:  (url)` — a sentence with a hole in it — and `browserPageRef` sensibly returns the bare address instead. But `parseBrowserOpened` required a closing parenthesis, so for one commit every titleless page the agent visited would have vanished from the "pages the agent has been" panel, silently and forever. `TestParseBrowserOpened`'s `empty title` case caught it in the same minute.
+
+That test exists because this exact contract broke once before. It paid for itself twice.
+
+### 128.6 What the neighbours do, and the one thing worth taking
+
+Asked whether there was open-source work to learn from. Two families, and only one of them shares our problem.
+
+**Agents driving a browser** — Playwright MCP, browser-use, Stagehand — drive an *external* browser over CDP. Playwright MCP's design is accessibility-tree snapshots with per-element refs and no vision, exposed as `browser_navigate`/`browser_click`/`browser_type`/`browser_snapshot`. That is what Aetox already does, arrived at independently and cited here since §48. Little to take.
+
+**Embedding a webview in your own window** — CEF, wry/Tauri, Electron — is where all of this week's bugs live, and where the first family has nothing to say, because they never embed anything. wry's answer to thread affinity is that webviews only exist on the main thread and off-thread work goes through an event-loop proxy, with platform handles reachable only inside a `with_webview` closure. That is `onTab`, independently, in Rust — which is the reassuring part: §128.1 is the standard answer to this problem, not an invention of ours.
+
+CEF has the one thing worth taking. Alongside `CefPostTask` (our `do`) and `CefCurrentlyOn` sits `CEF_REQUIRE_UI_THREAD()`, a `DCHECK(CefCurrentlyOn(TID_UI))` at the top of every function with a thread it must be on. It covers exactly the gap §128.2 admits: a compiler cannot see a `tabView` copied out of a callback and used later.
+
+So `win32Tab.requireHostThread` now guards every method. It does **not** panic — a crash in a shipping desktop app over a browser tab is not a trade worth making, and a log line is what §127.8 proved nobody reads. It reports through `onEngineError`, the channel §128.4 built for this, so a wrong-thread call names itself in our own words, in the tool result, *before* WebView2's more cryptic refusal arrives. A wall for the reach, a tripwire for the stash.
+
+### 128.7 And the measurement, since a number beats an opinion
+
+Playwright MCP publishes roughly 200–400 tokens per accessibility snapshot. `browser_read` caps at 60,000 characters, which would be about 15,000 tokens, and nobody had ever checked what it actually costs.
+
+Measured against the `tool_runs` history on the owner's machine — the log this app has always written and §81 already reads back:
+
+| tool | n | median | p90 | max |
+|---|---|---|---|---|
+| `browser_read` | 15 | ~211 tok | ~841 tok | ~952 tok |
+| `browser_open` | 33 | ~22 tok | ~32 tok | ~45 tok |
+
+The median sits inside Playwright MCP's published band and the worst case is a fifteenth of the cap. **There is no problem here**, which is worth writing down precisely because it was worth suspecting.
+
+The honest caveat: n=15, over example.com, a localhost page and MDN. A heavy application — a mail client, a dashboard — is not represented, and the tail is therefore unmeasured. The median says this is not currently costing anything; it does not say the cap is set right.
+
+## 129. Decision — The Agent's Tab Has a Type, and an Address Bar Has Two Jobs (2026-08-17)
+
+**Status:** Implemented 2026-08-17 · **Files:** `desktop/address.go`, `desktop/workbench.go`, `desktop/browser_capture.go`, `desktop/frontend/src/lib/stores/workbench.svelte.ts`, `desktop/frontend/src/lib/workbench/Workbench.svelte` · **Design:** [browser-subsystem-2026-08-17.md](architecture/browser-subsystem-2026-08-17.md) Defects 2 and 3
+
+Owner, 17 ส.ค.: *"เอาให้เสร็จเลย ผมรอดูผลลัพท์"*.
+
+### 129.1 AgentTabID, and two functions becoming one
+
+Splitting the host's `lastID` from `agentID` (§127.1) fixed the bug and left the shape that produced it: every tab was a `string`, so every tab was substitutable for every other one, and `BrowserClickRef(id string, ref int)` would take the user's tab as happily as the agent's.
+
+`AgentTabID` is now a distinct type whose only constructor is `agentTab()`. An agent path cannot be handed the user's tab without an explicit `AgentTabID(...)` conversion — one greppable token a reviewer can ask about, instead of an ordinary argument nobody looks at twice.
+
+It deliberately stops short of the plumbing underneath. `browserSnapshot` and `BrowserClickRef` keep plain ids because they genuinely serve both callers: "use this page as context" is the user pointing at their own tab, through the same function. What is protected is the decision of *which* tab, which is where the bug was, and the `string(id)` conversions all sit one line under the only call that can produce an `AgentTabID`.
+
+The same change retired a piece of debt §127 had just created. `agentBrowserTabID` answered `""` and `agentBrowserTabTarget` answered an error, for one question, differing only in how they said no — the same shape as the `lastID`/`agentID` confusion they were both written to fix. `open` now reads the error as "there is nothing to steer, mint one"; everyone else shows it to the model.
+
+### 129.2 An address bar searches; `open` refuses
+
+`normalizeUrl` in TypeScript and `normalizeWorkbenchURL` in Go answered the same question with two sets of rules, and both ended by stamping `https://` onto whatever was left. So **ยูทูป** became `https://ยูทูป`, punycoded to `xn--o3cit6gb`, refused by DNS. Owner: *"อนนี้มันไม่ฉลาดพอจะค้นหรอ"* — it was never about intelligence; the address bar had one job where every browser's has two.
+
+`resolveAddress` in `address.go` is the one classifier, and the doubt falls toward *search*: a mistaken search shows a results page somebody can act on, a mistaken navigation shows `ERR_NAME_NOT_RESOLVED` and a punycode hostname.
+
+**The policy stays with the callers, and they differ on purpose:**
+
+- **The address bar searches.** Someone who types a word into an address bar wants to search.
+- **`open` refuses and names `web_search`.** The agent already has a search tool. An `open` that quietly searched would teach it that `open` is a search box — it would keep reaching for the wrong tool and keep getting away with it.
+
+That is not a second place answering one question, and the test for the difference is direct: changing how text is classified must change both callers, while changing what the address bar does with a search must change neither the agent nor `address.go`.
+
+Google, as one named constant, on the ground that outweighs the rest for a Thai-first product: Thai queries come back materially better. Surfacing it as a setting is a frontend job and deliberately not in the same change as the plumbing.
+
+### 129.3 A byproduct is not a deliverable
+
+`writeBrowserShot` bypassed `a.outputSubdir()` and was right to — but "right, with a paragraph of reasoning at one call site" is how a second place gets born, because the next tool to produce a byproduct copies the reasoning rather than the function.
+
+So the concept has a name. `workFileDir()` answers "where does a file the agent made *while working* go", which is a different question from `outputSubdir()`'s "where does a new file go". A deliverable belongs in the project when one is focused. A screenshot taken to see something does not, and `page-1.png` in the root of somebody's repository is a change nobody asked for.
+
+### 129.4 What is left
+
+The `400ms` settle before a capture is still a guess, and stays one until a picture has been taken on a real window. Punycode in tab labels still shows as `xn--`: decoding it is fifty lines of RFC 3492 for a tab title, and was not worth smuggling into this change.
+
+## 130. Decision — One Rule Was Two, and Only One of Them Was Load-Bearing (2026-08-17)
+
+**Status:** Implemented 2026-08-17 · **Files:** `desktop/browser_tabs.go`, `desktop/browser.go`, `desktop/browser_tool.go`, `desktop/workbench.go`, `internal/skill/packed.go`
+
+The agent found this itself, being tested: *"ยังไม่พบความสามารถสร้างแท็บใหม่ ... เปิดหลายแท็บพร้อมกัน ... สลับระหว่างแท็บ"*. Owner: *"ไม่ควรผูกหน้าอะไรกับเอเจนดิ หรือควรทำเหมือน skill ที่ห่อแท็ป แบบนั้นมันจะได้ดูได้"*.
+
+### 130.1 The two rules
+
+"The agent has one tab" was two rules wearing one coat, and separating them is the whole decision:
+
+- **Ownership** — the agent works tabs it opened; the user's are the user's. This is what §127 spent a week getting right, and it is untouched. The `web-agent-` prefix separates the two at any number.
+- **Count** — there is one of them. This came from fixing the tab-after-tab strandedness of 2026-08-10, and it fixed that by *removing the ability* rather than by managing it.
+
+Only the first was ever load-bearing. `agentID` being singular was an implementation detail that had been reading as a principle.
+
+So `browserHost` now carries `agentOrder` beside `agentID`: "which are mine" and "which of mine am I working" are different questions, the same way `lastID` and `agentID` are. **Reuse stays the default** — a plain `open` still replaces the current page, and a session that never asks for a second tab behaves exactly as it did, because strandedness was the real thing the count rule was protecting against.
+
+### 130.2 The hazard, named rather than engineered around
+
+refs are `data-aetox-ref` attributes textScript stamps into the page. They were always per-tab; what changes is that the agent can now be somewhere else than where it read. `select` is a page change like any other, and the description says so in the words it already used: read, act, read again. Playwright MCP publishes the same warning about its own tab indexes, which is some comfort that there is no cleverer answer waiting.
+
+### 130.3 `tabs` is a right of its own
+
+`browser_tabs` joins `browser_capture` in the permission vocabulary rather than riding on `browser_open`. It is the only action that can make a page **disappear** from under the user, and a profile granting "may look at pages" should not be granting "may close them" by implication.
+
+The refusal for a tab the agent does not own says *whose* it is, not that it is unknown. "Unknown tab" makes a model try another id; "that one is the user's" makes it stop.
+
+### 130.4 What it cost, measured
+
+The tool block was at 9,941 of its 10,100 tokens before this. `tabs` plus `open`'s `newTab` came to +111 after trimming `browser`'s own prose to pay for part of it — the tool that grows pays for its growth, rather than borrowing from a neighbour that did not.
+
+```
+before   9,941 / 10,100   (browser ~470)
+after   10,052 / 10,100   (browser ~581)   headroom 48
+```
+
+**Forty-eight tokens is not room for anything.** The next addition anywhere in the block has to buy space first, and the obvious seller is `task` at ~1,568 tokens — three times `browser` for one mechanism. Not touched here, because trimming another tool's description is that tool's decision and nobody asked for it.
+
+### 130.5 What this deliberately does not do
+
+Let the agent read or drive the **user's** tabs. §127.3 has the mechanical reason (a ref read from one page, spent on another, resolves against a document it was never numbered for), and there is a better one: the gesture for handing the agent a page already exists — dragging a browser tab into the composer attaches its content. That is a **give**, not a reach, and it needs no new mechanism.
+
+## 131. Decision — Three Tools That Remove a Dead End, Not Three That Add a Feature (2026-08-17)
+
+**Status:** Implemented 2026-08-17 · **Files:** `desktop/browser_back.go`, `desktop/browser_wait.go`, `desktop/browser.go`, `desktop/browser_windows.go`, `desktop/browser_tool.go`, `internal/skill/packed.go`
+
+Owner set the problem: *"มันควรมี tool อะไรบ้างที่จะทำให้มันควบคุมเบาเซอร์ได้เต็ม 100% เหมือนคน"*, with the rule attached — *"เรากำลังคิดโจทย์ทำ tool ไม่ใช่พรอบสอนให้มันเป็นเครื่องทำตามสั่ง"*.
+
+### 131.1 The test is not "can it do what a person does"
+
+Half of what a person does at a browser compensates for having only eyes and a mouse. Scrolling exists because a person sees one screenful; `read` returns the page. Copying "everything a human can do" would build the workarounds along with the capabilities.
+
+The test used instead was **no dead ends**: no situation where the page does something and the agent cannot continue and cannot tell why. That reordered the list immediately, and put three things at the top that are not features at all — they are places the agent currently falls in a hole.
+
+### 131.2 back, and why it is the smallest and most important
+
+`open` was destructive. The page you were on was gone, and the only way back was to open its URL again — which is not the same page: a half-filled form is empty, a scroll is lost, a POST result cannot be re-fetched, and a results list may have moved. So before every `open` the agent had to **predict** whether it would want the current page later.
+
+The first attempt at this was a better sentence in the tool description, telling the model when to prefer `newTab`. The owner rejected the whole approach — *"ไม่ใช่ไปพรอบบอกมัน แต่ทำให้ tool ทำให้มันสามารถทำได้"* — and was right: **a prediction is the one thing a model cannot be instructed into doing well.**
+
+`back` removes the prediction rather than coaching it. Being wrong costs one action instead of a page. The evidence that this is the better kind of fix is that the description got *shorter* when it landed: the tool absorbed what the prose had been trying to teach.
+
+A tab with nothing behind it does not fail. `history.back()` is silent there, so the timeout **is** the answer, and it says "there is nowhere back to" — a fact to act on — rather than "the page did not finish loading", which would send the agent hunting a network problem that does not exist.
+
+### 131.3 wait, and the failure that does not look like one
+
+`open` waits for a navigation. For a server-rendered page that is the whole story; for anything built this decade it is the beginning of one, because the document arrives and then scripts fetch the actual content.
+
+An agent that reads immediately reads an empty shell — **successfully**. Nothing in the answer suggests waiting. The page genuinely has no results in it yet, so the model concludes there are none, and reports that to the user. This is the same shape as §128.4: a true sentence producing a false belief.
+
+`wait` is the only thing in the tool that can tell **"not yet" from "not there"**, and that is the line the description leads with.
+
+The condition is text, not a CSS selector, because a model reliably knows what it expects to *see* and unreliably knows what a page calls its own divs. And a wait that finds nothing is not an error — it is a report, and it says both possibilities out loud rather than picking one.
+
+### 131.4 dialog, and a default that is a safety position
+
+`alert()`, `confirm()` and `prompt()` stop a page until somebody answers, and nobody could: the agent has no hands for a native dialog. A page that raised one hung every later action until its timeout and reported that the page was not responding. True, and useless.
+
+The three are replaced at document creation, so a dialog can no longer block anything. The page gets an answer immediately from a standing policy, and what was said is recorded for the next answer the agent receives.
+
+**The default is dismiss.** A `confirm()` in front of a destructive action is the commonest kind there is, and answering yes by default would make the browser quietly agree to things on the user's behalf. Saying yes has to be something the agent chose, one page at a time. `browser_dialog` is therefore its own right in the permission vocabulary — "may read pages" must never imply "may agree to the deletion".
+
+What a dialog says is quoted back and never obeyed: it is text from a page, which this subsystem has treated as untrusted since [browser-security-2026-07-21](architecture/browser-security-2026-07-21.md).
+
+### 131.5 The one refused: `eval`
+
+Arbitrary JavaScript subsumes every action above, in one line, for almost no tokens. It is the lazy answer that looks like 100%.
+
+It is refused because rights in this product come from a list the user can see, and **`eval` is a single right containing every other right invisibly.** A user granting it cannot know what they granted; an audit line reading "ran JS" says nothing. `click`, `type`, `wait` and `dialog` can each be described, judged and refused individually. That is the entire reason there are several of them instead of one.
+
+### 131.6 What it cost, and the honesty problem in that number
+
+The block went from ~10,024 to ~10,237 tokens, over its 10,100 ceiling, and the ceiling was raised to 10,400.
+
+Every previous raise in `tool_budget_test.go` was argued on the merits of what it bought. **This one was not argued at all.** Owner, mid-implementation: *"เรื่องโทเค็น ไม่ต้องห่วง เดะค่อยคิดสถาปัตยกรรมใหม่มาจัดการมัน"*. That is a legitimate call — the ceiling stops being the mechanism — but until the replacement exists there is no honest number to argue for, so the constant is now a debt marker rather than a budget, and says so where it is defined.
+
+A passing budget test is no longer evidence the cost is under control. When the replacement is designed, `task` at ~1,568 tokens — three times the browser, for one mechanism — is where it should start looking.
+
+### 131.7 Still not built, in the order they were ranked
+
+`upload` (a file input cannot be filled any other way, and it is what "put this receipt into the system" needs), downloads landing somewhere named (`workFileDir` already exists for it), `scroll` (both for lazy-loaded content and so `capture` can see past the fold), `key` for Escape and Tab, `hover`, iframes, and the page's own console errors — which are the §128.4 argument one more time: the page is complaining and nothing carries it out.
+
+## 132. Decision — A Tool Block Carries What Exists, Not What to Think (2026-08-18)
+
+**Status:** Standard adopted, mechanism implemented, migration not started · **Files:** `internal/skill/guidance.go`, `internal/skill/dispatcher.go`, `internal/skill/block_standard_test.go`, `internal/skill/README.md` · **Working document:** [Existence, Signature, Judgment](https://claude.ai/code/artifact/c6bb1af6-4ed5-4122-acc5-624dc152f721)
+
+Owner, 18 ส.ค., after §131 pushed the block over its ceiling with no argument for it: *"เรามาออกแบบสถาปัตยกรรม การจัดการ tool กันดีกว่าไหม"*, then on the result: *"เอาแบบนี้เป็นมาตรฐานเลยไหม เผื่ออนาคตเพิ่ม tool อื่นๆ"*.
+
+### 132.1 Measured first, because the obvious design was wrong
+
+From `tool_runs` on a real machine — 68 sessions, 1,883 calls:
+
+- a session uses **5 distinct tools** at the median (p75 8, p90 15) while the block ships **38**
+- **no tool is used by even half of sessions.** The most-used, `list`, reaches 45%
+
+The plan going in was to tier by frequency: ship the popular ones, load the rest. The third number killed it. Shipping the top 20 of 38 still leaves **55% of sessions** needing something else, and the top 10 leaves 85%. There is no core set to find, because sessions differ by *subject*, not by intensity.
+
+### 132.2 The cut that works is lifetime
+
+A tool definition carries three separable things, and they were bundled only because nothing had asked them to be separate:
+
+| Layer | Needed | Weight on `browser` |
+|---|---|---|
+| **Existence** — that the capability is here | always | ~10 tok (1%) |
+| **Signature** — what to pass | when calling | ~70 tok (9%) |
+| **Judgment** — when to reach for it, hazards, cost | **once** | ~686 tok (**90%**) |
+
+The heaviest layer by an order of magnitude is the one needed a single time, and it was re-sent with every message for the life of the conversation. All of it is prose written in good faith — §131 added most of the browser's — and none of it was wrong. What was wrong is when it travelled.
+
+### 132.3 The honest counter-argument, recorded because it nearly wins
+
+The block sits at the head of the request and is prompt-cached, so the real price per message is well below what 10,237 tokens suggests. **On money alone this work barely pays.**
+
+It is worth doing because a cache returns the price and not the **space**. Those tokens still occupy the context window, competing with the files, pages and history the actual work needs. Every conversation that gets summarised because it filled up paid for that summary partly in the descriptions of 33 tools it never called.
+
+### 132.4 Delivery costs no round trip, which is the part that is ours
+
+Guidance rides on the **first result of the session** — a call that was going to happen anyway — rather than being fetched. Anthropic's own `defer_loading` / tool-search and the MCP progressive-loading patterns spend a lookup to pull a schema in; this spends nothing. It teaches on a failed first call too, because a call that went wrong is exactly when the judgment was missing.
+
+Aetox could not have used the provider's mechanism regardless: `defer_loading` is an Anthropic API feature and this app is not single-provider. The layering has to live in `internal/skill`.
+
+The trade, stated plainly: the **first** call of a session is made without judgment. Signature has to carry it, which is why the standard puts parameter names in the block and prose out of it, and why a wrong first call gets the guidance back as its error — a loop that closes in one round trip rather than one that never closes.
+
+### 132.5 It changes delivery, not grant
+
+The rule this had to answer is the one about hidden doors: rights come only from a list the user can see. **Nothing here touches which tools exist for a caller.** Every capability stays in the block, by name, always; a tool the user did not grant is still absent, and a connection without an account is still absent. What moved is where the JSON schema and the prose sit. Bytes, not permission.
+
+And the project had already decided this once. The skill system is built on *a skill's body is never in your context until you ask* — which is why a skill is the right home for knowledge and a prompt layer is not. This is that rule, applied to tools.
+
+### 132.6 A ratchet, because a standard that starts red gets deleted
+
+`block_standard_test.go` enforces 80 tokens for a plain tool and 65 + 10 per action for a packed one. Thirty-odd tools are over it today, so a plain ceiling would have failed on the day it was written.
+
+Instead: a tool **not** on the exemption list must fit — that is every future tool, and it is where the standard bites — and a tool on the list may shrink but never grow. The list is a to-do list that empties itself, and the diff is the progress bar.
+
+The first draft of that list was written from estimate rather than measurement, and every number in it was wrong. The ratchet caught it on its first run, which is a fair advertisement for the mechanism.
+
+### 132.7 Not done
+
+The migration itself: no tool has moved its prose into `Guidance()` yet. `task` (1,568) and `browser` (766) are the two largest and live in the desktop package, pinned separately by `desktop/tool_budget_test.go`.
+
+Two open risks are recorded in the working document and neither is answered. **Guidance sits in the message stream, not the cached head, so a conversation that gets summarised can lose it** — leaving the model with signature and no judgment, silently; re-teaching after a compaction needs a design. And the **first-call quality** question should be settled with numbers rather than opinion: `tool_runs` already has an `ok` column, so the baseline exists to be measured before the migration and compared after.

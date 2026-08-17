@@ -6,6 +6,7 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/command"
 	"github.com/Mike0165115321/Aetox/internal/model"
 	"strings"
+	"sync"
 )
 
 // ToolFilter answers "is this registered tool on this session's desk?" — the
@@ -24,6 +25,15 @@ type Dispatcher struct {
 	// every host that has no modes. Nil means "carries everything", so the
 	// no-mode path is the original code path rather than a filter that says yes.
 	allow ToolFilter
+
+	// taught remembers which tools have already handed over their Guidance in
+	// this session, because guidance is a once-per-session thing and this is
+	// the only object in the system whose lifetime is exactly one session.
+	//
+	// Guarded because a turn can run tools concurrently, and two first calls
+	// racing would either teach twice or teach neither.
+	taughtMu sync.Mutex
+	taught   map[string]bool
 }
 
 func NewDispatcher(registry *Registry) *Dispatcher {
@@ -155,10 +165,47 @@ func (d *Dispatcher) ExecuteTool(ctx context.Context, name string, args map[stri
 		return Output{}, false, nil
 	}
 	result, err := tool.ExecuteTool(ctx, args)
+	result = d.teach(skillName, skill, result)
 	if err != nil {
 		return result, true, err
 	}
 	return result, true, nil
+}
+
+// teach attaches a tool's Guidance to the first result it returns this session.
+//
+// On the result rather than in the block, because the block is paid for on
+// every message and this is needed once (see guidance.go). On the FIRST result
+// whether it succeeded or failed, because a first call that went wrong is
+// exactly when the judgment was missing.
+//
+// It writes both Content and RawOutput: RawOutput is what the model actually
+// reads (turn.toolRunOutput prefers it), and Content is what the timeline
+// shows. Teaching only one of them would either teach nobody or teach the user
+// instead of the model.
+func (d *Dispatcher) teach(name string, s Skill, out Output) Output {
+	guide := guidanceFor(s)
+	if guide == "" {
+		return out
+	}
+	d.taughtMu.Lock()
+	if d.taught == nil {
+		d.taught = map[string]bool{}
+	}
+	already := d.taught[name]
+	d.taught[name] = true
+	d.taughtMu.Unlock()
+	if already {
+		return out
+	}
+	// Marked, and marked as being about the tool rather than about the page or
+	// the file it just touched. Unlabelled, this reads as output — and output
+	// from a tool is data the model is right to be suspicious of, which is the
+	// wrong footing for the one text here that is genuinely ours.
+	header := "[" + name + " — how to use this well, sent once]\n" + strings.TrimSpace(guide) + "\n\n"
+	out.Content = header + out.Content
+	out.RawOutput = header + out.RawOutput
+	return out
 }
 
 // Snapshot is this desk's tools by name — the CLI's command descriptions are
