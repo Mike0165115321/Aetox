@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Mike0165115321/Aetox/internal/app"
+	"github.com/Mike0165115321/Aetox/internal/bootstrap"
 	"github.com/Mike0165115321/Aetox/internal/cognitive"
 	"github.com/Mike0165115321/Aetox/internal/command"
 	"github.com/Mike0165115321/Aetox/internal/config"
@@ -321,7 +322,7 @@ func main() {
 		Provider:     bootstrapResult.Provider,
 		Model:        currentConfig.ModelName,
 		SystemPrompt: prompt.Build(prompt.SurfaceCLI, prompt.Scope{Root: cfg.SandboxRoot}),
-		MaxChars:     resolveContextChars(currentConfig),
+		MaxChars:     bootstrap.ContextChars(currentConfig),
 	})
 
 	permissions, permErr := config.LoadPermissions()
@@ -411,7 +412,7 @@ func main() {
 		Permissions:  permissions,
 		ApprovalMode: effectiveApprovalMode,
 		Approve:      aetoxApp.ConfirmApproval,
-		MaxChars:     resolveContextChars(currentConfig),
+		MaxChars:     bootstrap.ContextChars(currentConfig),
 		ThinkLevel:   think.NormalizeLevel(currentConfig.ThinkLevel),
 	}) {
 		if regErr := skillRegistry.Register(tool, skill.SourceBuiltin); regErr != nil {
@@ -445,17 +446,6 @@ func main() {
 		printUsage()
 		os.Exit(2)
 	}
-}
-
-// resolveContextChars converts the model's context window into the agent's
-// retained-history char budget (~4 chars/token). Flag/config override wins;
-// 0 falls through to memory.NewContext's default.
-func resolveContextChars(cfg config.Config) int {
-	tokens := cfg.ModelContextTokens
-	if tokens <= 0 {
-		tokens = model.ContextWindowTokens(cfg.ModelProvider, cfg.ModelName)
-	}
-	return tokens * 4
 }
 
 func resolveInitialApprovalMode(flagValue string, legacyYes bool) string {
@@ -516,7 +506,7 @@ func switchProvider(ctx context.Context, cfg *config.Config) (app.ModelSwitchRes
 			Provider:     bootstrapResult.Provider,
 			Model:        cfg.ModelName,
 			SystemPrompt: prompt.Build(prompt.SurfaceCLI, prompt.Scope{Root: cfg.SandboxRoot}),
-			MaxChars:     resolveContextChars(*cfg),
+			MaxChars:     bootstrap.ContextChars(*cfg),
 		}),
 		ModelStatus:        modelStatus,
 		ModelContextTokens: cfg.ModelContextTokens,

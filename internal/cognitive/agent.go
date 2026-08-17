@@ -39,6 +39,17 @@ const (
 	compactThresholdFraction = 0.8
 	compactKeepRecent        = 6
 	compactSummaryMaxTokens  = 2048
+
+	// How many times one turn may answer a provider's "too long" by summarizing
+	// and trying again.
+	//
+	// Two, not one, because the first summary can leave the recent turns it is
+	// required to keep still over the line; and not more than two, because each
+	// attempt costs a model call and the third would be evidence that the
+	// problem is a single oversized message rather than an accumulated history.
+	// Summarizing cannot fix that one, and spinning on it turns a clear failure
+	// into a slow one.
+	maxOverflowCompactions = 2
 )
 
 // Small local models (Ollama-scale) sometimes reply with nothing at all,
@@ -265,6 +276,7 @@ func (a *Agent) RespondWithTools(
 	anyToolUsed := false
 	nudgedEmpty := false
 	dsmlNudges := 0
+	overflowCompactions := 0
 	var lastCallKey string
 	repeatedCalls := 0
 	loopMaxTokens := a.toolLoopMaxTokens()
@@ -295,6 +307,33 @@ func (a *Agent) RespondWithTools(
 			// A half-written answer must not survive the failure that
 			// interrupted it — whatever replaces it says something different.
 			discardPreview(opts)
+			// The one failure in here with a mechanical fix. Everything else is
+			// the model, the network or the account; this one is just too many
+			// bytes, and the provider has told us so with more authority than
+			// the char budget has ever had.
+			//
+			// Until this existed the turn simply died: nothing anywhere in the
+			// engine reacted to a context-length rejection, so a session that
+			// crossed the line lost the answer AND kept the history that caused
+			// it, failing identically on every retry the user typed by hand.
+			//
+			// i-- so the round that never happened does not spend one of
+			// MaxToolCalls, and does not push a first-round failure past the
+			// recovery below.
+			if model.IsContextLengthError(err) && overflowCompactions < maxOverflowCompactions {
+				overflowCompactions++
+				if a.compactNow(ctx) {
+					debuglog.Msg("prompt over the model's window, summarized and retrying (%d/%d)",
+						overflowCompactions, maxOverflowCompactions)
+					i--
+					continue
+				}
+				// Nothing left to summarize, so retrying would send the same
+				// bytes to the same refusal. Say what is actually wrong.
+				return "", anyToolUsed, fmt.Errorf(
+					"this conversation no longer fits %s's context window, and there is nothing older left to summarize: %w",
+					a.model, err)
+			}
 			if i == 0 {
 				// The user message is already in context — respond over it
 				// rather than via Respond(msg), which would add it a second time.
@@ -544,9 +583,43 @@ func (a *Agent) compactIfNeeded(ctx context.Context) {
 	if !a.context.NeedsCompaction(compactThresholdFraction) {
 		return
 	}
+	a.compact(ctx)
+}
+
+// compactNow summarizes whether or not the char budget asked for it, and says
+// whether anything actually moved.
+//
+// The budget is measured in bytes and the limit it stands in for is measured in
+// tokens, and the ratio between them is not a constant: across three real
+// sessions on one machine it ranged 3.45 to 5.46 bytes per token depending on
+// how much of the turn was Thai prose and how much was English tool output. So
+// bootstrap.ContextChars multiplying by a flat 4 is a decent centre and a poor
+// guarantee, and on the low side a budget that reads as full-and-fine is
+// already past what the model will accept.
+//
+// Which makes the provider the only party that actually knows. This is the door
+// for its answer: when it rejects a prompt for length, the history really is too
+// long whatever the budget believed, and it gets summarized on the spot.
+//
+// The summarizer's own request is the old messages minus the recent few, with no
+// tool block attached, so it is materially smaller than the request that just
+// failed and normally fits where that did not. When it does not, it fails the
+// way it always has (err -> "compaction skipped") and this returns false, which
+// the caller reads as "no point retrying".
+func (a *Agent) compactNow(ctx context.Context) bool {
+	if a == nil || a.context == nil || a.provider == nil {
+		return false
+	}
+	return a.compact(ctx)
+}
+
+// compact is the summarization itself, with no opinion about whether it should
+// happen. Shared so the budget-driven path and the provider-driven one cannot
+// summarize differently.
+func (a *Agent) compact(ctx context.Context) bool {
 	old, recentStart := a.context.SplitForCompaction(compactKeepRecent)
 	if len(old) == 0 {
-		return
+		return false
 	}
 	defer debuglog.Block(fmt.Sprintf("Agent.compact (%d msgs)", len(old)))()
 	response, err := a.provider.Complete(ctx, model.Request{
@@ -564,10 +637,11 @@ func (a *Agent) compactIfNeeded(ctx context.Context) {
 	}
 	if err != nil || summary == "" {
 		debuglog.Msg("compaction skipped (err=%v, empty=%v)", err, summary == "")
-		return
+		return false
 	}
 	a.context.ReplaceWithSummary(summary, recentStart)
 	debuglog.Info("compacted", fmt.Sprintf("%d old messages -> %d summary chars", len(old), len(summary)))
+	return true
 }
 
 // renderCompactionTranscript flattens messages into plain text for the

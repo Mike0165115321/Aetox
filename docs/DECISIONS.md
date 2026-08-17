@@ -4333,3 +4333,80 @@ The first draft of that list was written from estimate rather than measurement, 
 The migration itself: no tool has moved its prose into `Guidance()` yet. `task` (1,568) and `browser` (766) are the two largest and live in the desktop package, pinned separately by `desktop/tool_budget_test.go`.
 
 Two open risks are recorded in the working document and neither is answered. **Guidance sits in the message stream, not the cached head, so a conversation that gets summarised can lose it** — leaving the model with signature and no judgment, silently; re-teaching after a compaction needs a design. And the **first-call quality** question should be settled with numbers rather than opinion: `tool_runs` already has an `ok` column, so the baseline exists to be measured before the migration and compared after.
+
+## 133. Decision — Unknown Is an Answer, and the Meter Has to Be Able to Say It (2026-08-18)
+
+**Status:** Shipped · **Files:** `internal/model/context_window.go`, `internal/model/context_window_test.go`, `desktop/app.go`, `desktop/usage.go`, `desktop/app_test.go`, `desktop/frontend/src/lib/Chat.svelte`, `desktop/frontend/src/test/contextMeter.test.ts`, three locale files
+
+Owner, 18 ส.ค., on the composer's context meter reading `11.4k / 32.0k (36%)`: *"อันนี้มันวัดจริงมั้ยเนี้ย"*, then on the answer: *"ผมว่ามันคือหนี้ในระบบ"*.
+
+### 133.1 The numerator was honest, the denominator was invented
+
+The meter's two halves came from different places and only one of them was a measurement.
+
+`32.0k` was not the model's window. It was `memory.defaultMaxChars` (128,000) divided by four, reached because `App.contextWindowTokens` had a third fallback: when the catalog and the curated tables both answered 0, it read **the agent's own char budget** and converted it. Those are two different facts wearing one label. The budget is how much history Aetox keeps before it summarizes; the window is how much the model will accept. Nothing connects them.
+
+Codex hit that fallback because it has no entry of its own anywhere: models.dev files these models under `openai` (0 rows begin with `codex/`), and `ContextWindowTokens` had no `case "codex"`. So every Codex user was shown a flat 32,000-token window.
+
+### 133.2 The install's own history disproved the number it was drawing
+
+From `token_usage` on the owner's machine, rows where the provider column reads `codex`:
+
+| | tokens |
+|---|---|
+| largest round Codex accepted | **43,434** |
+| rounds above the displayed 32,000 window | **9** |
+| same model, `openai/gpt-5.6-luna` in the cached catalog | **1,050,000** |
+
+One round at 52,609 was served with 50,944 of it from cache — the most expensive-looking request in the history was among the cheapest actually billed.
+
+### 133.3 The UI could not show the state it was in, which is why it lasted
+
+`ctxPct` was `Math.min(100, …)` and `slicePct` was not clamped at all. So a round past the stated window drew a comfortably full ring, a header reading the self-refuting `52.6k / 32.0k (100%)`, a `messages` segment 128% wide painting over the rows beneath it, and `พื้นที่ว่าง 0`. Nine rounds looked normal. The clamp was protecting the layout from a number that should have been sending someone to look.
+
+### 133.4 The shorter fix was the wrong one
+
+The one-line version is `codex → openai` in `modelsDevProvider`. It works and it is not safe: `ModelCatalog.For` is also what **prices** a model, so filing Codex under OpenAI would inherit OpenAI's per-token rates onto a flat monthly plan — the exact bill `token_usage.provider` was added to prevent (db.go, migration 15).
+
+So the alias is scoped to the one question it answers, by recursion inside `ContextWindowTokens`, the way `openrouter` already resolves through its vendor. **One provider, two facts, and only one of them travels.**
+
+### 133.5 What changed
+
+- `case "codex"` resolves through `openai`: catalog first (1,050,000), curated table as the floor (400,000 for `gpt-5.1-codex`, which models.dev does not carry).
+- The char-budget fallback is **deleted**. Unknown returns 0 and stays 0.
+- `GetContextBreakdown` omits the `free` slice entirely when the window is unknown. "0 free" is a claim about a number nobody has, and it is the more alarming of the two available inventions.
+- The meter drops the denominator rather than the meter: it reports the size of the request, and says the percentages are shares of that request rather than of a window.
+- `ctxPct` no longer clamps; only the ring's arc does. A round past the window says so in words.
+- `PriceModels` asks `ContextWindowTokens` for the context column instead of reading the catalog row beside the price, so the picker and the composer cannot answer "how big is this model" differently. They did, in opposite directions: blank in the picker, fabricated in the composer.
+
+### 133.6 The bill was not only cosmetic
+
+`bootstrap.ContextChars` feeds on the same lookup, so the 0 came back the other way too: the engine really was summarizing Codex sessions at 102,400 bytes. The fix moves that budget to 4,200,000. **A wrong number on screen and a real budget 33× too small, both from one missing case.**
+
+### 133.7 Third time for this shape
+
+§113 was a rate-limit window's *length* read as its *time remaining*. §108 was the catalog recording intentions and the UI reading them as facts. This is the same family: two facts with one name, and a caller that would rather answer wrongly than answer "unknown". The rule worth keeping is the one already written above `ModelCatalog.For` and now enforced one layer up — **callers must render unknown as unknown, and never as zero or as anything else they happen to have in hand.**
+
+### 133.8 The budget is a guess, so the provider gets a vote
+
+`ContextChars` converts a token window into a byte budget at a flat 4 bytes per token. That was harmless while the budget was pinned at 128,000; at 4,200,000 it is load-bearing. Measured against this install's own sessions, including tool output and not just chat text:
+
+| session | bytes | peak prompt | **bytes/token** |
+|---|---|---|---|
+| 18 ส.ค. 01:30 | 20,882 | 17,445 | **3.45** |
+| 16 ส.ค. 22:00 | 56,032 | 25,559 | **3.96** |
+| 17 ส.ค. 21:53 | 53,359 | 21,177 | **5.46** |
+
+So ×4 is a fair centre and a poor guarantee. The spread is ±25% and it tracks the mix of Thai prose against English tool output, which is a property of the task, not of the model. At 3.45 the 4,200,000-byte budget is 1.22M tokens against a 1,050,000 window: **a budget reading comfortably-under is already past what the model will take.**
+
+Retuning the constant cannot fix that. A value low enough to be safe at 3.45 throws away a quarter of the window in every session that is not the worst case, and the worst case is not knowable in advance.
+
+**So the constant stops being the guarantee.** `model.IsContextLengthError` recognizes the refusal in the vendors' own words (there is no typed error to switch on: every provider folds the 400's prose into a plain `fmt.Errorf`), and `Agent.compactNow` summarizes on the spot and retries the round, twice at most. Rate limits, spent balances and output truncation are deliberately excluded — three different failures, three different fixes, and summarizing helps none of them.
+
+What this replaces is nothing at all. Before it, **no part of the engine reacted to a context-length rejection**: the turn died, the history that caused it stayed, and every retry the user typed by hand failed identically.
+
+Also collapsed: `cmd/aetox/main.go` held its own `resolveContextChars`, byte-for-byte the same arithmetic, despite `ContextChars` carrying a doc comment saying it exists *because* the logic had been written twice. The CLI now calls the shared one.
+
+### 133.9 Not done
+
+The estimate in the meter is still `chars/4` and still unmeasured: about **20% high** for the tool block (11.4k predicted against 9,460 counted on a real first round), and low for Thai. `token_usage` already holds a real count for every round ever sent, so the ratio can be learned per model instead of assumed — which would make both the meter's forecast and `ContextChars` right by measurement rather than by luck. The retry above makes that a performance question rather than a correctness one, which is why it is not urgent.
