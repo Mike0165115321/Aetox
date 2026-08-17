@@ -19,7 +19,10 @@ func newSubagentTestApp(t *testing.T) *App {
 	base := isolateUserDirs(t)
 	t.Setenv("AETOX_DATA_ROOT", filepath.Join(base, "data"))
 	a := &App{
-		cfg:   config.Config{ModelProvider: "noop", ModelName: "aetox-grid", SandboxRoot: t.TempDir()},
+		// DelegateOn is asked for, because delegation ships off (owner, 18 ส.ค.).
+		// Every test in this file is about delegation, so every one of them
+		// wants the capability that a fresh install does not have.
+		cfg:   config.Config{ModelProvider: "noop", ModelName: "aetox-grid", SandboxRoot: t.TempDir(), DelegateOn: true},
 		dbDir: t.TempDir(),
 	}
 	t.Cleanup(func() {

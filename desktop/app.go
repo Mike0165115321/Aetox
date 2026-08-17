@@ -3256,9 +3256,10 @@ func resolveConfig(opts config.ConfigOptions) config.Config {
 		if v := strings.TrimSpace(pref.SpeechModelPath); v != "" {
 			cfg.SpeechModelPath = v
 		}
-		// Read straight through, no emptiness test: false and "nobody" are real
-		// answers here, and they are the answers a fresh install gives.
-		cfg.DelegateOff = pref.DelegateOff
+		// Both positive, both read straight through: an install that has never
+		// touched the switch stored nothing, which is off, which is what a zero
+		// Config already means.
+		cfg.DelegateOn = pref.DelegateOn
 		cfg.AgentsOff = pref.AgentsOff
 		if key := pref.APIKeyForProvider(cfg.ModelProvider); key != "" {
 			cfg.ModelAPIKey = key
@@ -3341,7 +3342,7 @@ func persistModelPreference(cfg config.Config) {
 	// Same rule as SpeechModelPath one line up: an empty value is a real choice
 	// here — turning the last switch back on is expressed as "nobody is off" —
 	// so it is written through rather than treated as nothing to say.
-	pref.DelegateOff = cfg.DelegateOff
+	pref.DelegateOn = cfg.DelegateOn
 	pref.AgentsOff = cfg.AgentsOff
 	_ = config.SaveModelPreference(pref)
 }

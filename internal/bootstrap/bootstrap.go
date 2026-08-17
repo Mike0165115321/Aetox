@@ -528,7 +528,13 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 		// The user's two switches. Off builds no tool at all, which is the whole
 		// point — a `task` that existed to refuse would still cost its place in
 		// every request to say so.
-		DelegateOff: cfg.DelegateOff,
+		//
+		// The one negation in the whole feature, and it belongs here: the
+		// product ships delegation off (config.Config.DelegateOn) while the
+		// library it configures defaults to on (TaskOptions.DelegateOff). Both
+		// defaults are right for what they are, and this is the boundary where
+		// one becomes the other.
+		DelegateOff: !cfg.DelegateOn,
 		AgentsOff:   cfg.AgentsOff,
 		// The same assembler the session's own prompt came out of, three lines
 		// up, with the delegate's brief where the desk's direction goes. One

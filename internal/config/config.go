@@ -46,14 +46,24 @@ type Config struct {
 	// interface and must speak to the user in their language (ARCHITECTURE.md
 	// §40). Empty means "not set", and the built-in falls back to Thai.
 	UILocale string
-	// DelegateOff switches off the assistant's ability to hand work to a worker.
-	// Off by default — every install before this setting existed delegates, and
-	// a stored zero has to mean what it always meant.
+	// DelegateOn is whether the assistant may hand work to a specialist.
+	//
+	// Positive, so a zero Config is a Config with delegation OFF. That is not a
+	// style preference: the first version of this expressed the shipped-off
+	// default inside the one code path that reads a preference file, which meant
+	// anything else building a Config — a test, another entry point — silently
+	// got delegation on. A default that lives in a code path is a default that
+	// is true wherever somebody remembered it. This one lives in the value.
+	//
+	// internal/subagent keeps the opposite default on its own option, because a
+	// library that does nothing until you opt in is a library that gets called
+	// wrong. Shipping it off is a PRODUCT decision (owner, 18 ส.ค.), and the one
+	// translation between them sits at the boundary in internal/bootstrap.
 	//
 	// It is worth ~730 tokens in every request, which is why it is a switch the
 	// user can see rather than a preference nobody finds: 77% of sessions on the
 	// machine this was measured on never delegated once.
-	DelegateOff bool
+	DelegateOn bool
 	// AgentsOff names workers the ASSISTANT may not hand work to. Each one left
 	// out saves ~21 tokens per message.
 	//
@@ -126,17 +136,23 @@ type ModelPreference struct {
 	// preference files, and defaulting it off would have made the feature
 	// invisible to everyone who already had one.
 	LearningDisabled bool `json:"learning_disabled,omitempty"`
-	// DelegateOff and AgentsOff are the two switches on the assistant's reach.
+	// DelegateOn and AgentsOff are the two switches on the assistant's reach.
 	//
-	// Both stored as the negative, for the same reason LearningDisabled above
-	// is: they were added after people had preference files, and an absent field
-	// has to keep meaning what it always meant. On.
+	// DelegateOn is stored as the POSITIVE, which is the opposite of
+	// LearningDisabled above and for the opposite reason: delegation ships OFF,
+	// so an absent field has to mean off. A negative here would have made every
+	// preference file that predates the switch read as "on", which is the one
+	// value the product does not want to hand out by default.
+	//
+	// AgentsOff stays negative, because a worker the user has said nothing about
+	// is one the assistant may reach — the switch is a trim, and an empty trim
+	// takes nothing.
 	//
 	// They persist here rather than per project, because "may my assistant hand
 	// work to a specialist" is a fact about how somebody works and not about
 	// which folder is open — the same reason UILocale sits here.
-	DelegateOff bool     `json:"delegate_off,omitempty"`
-	AgentsOff   []string `json:"agents_off,omitempty"`
+	DelegateOn bool     `json:"delegate_on,omitempty"`
+	AgentsOff  []string `json:"agents_off,omitempty"`
 	// EnabledProviders is the set of providers shown in the Settings sidebar
 	// and the chat composer's picker. Empty means "never customized" — callers
 	// resolve that case via ResolvedEnabledProviders rather than persisting a

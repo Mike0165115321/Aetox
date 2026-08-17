@@ -51,7 +51,13 @@ func TestEngineRefusesANilApprover(t *testing.T) {
 // the one name is there and that it still answers to all four, which is what the
 // three-name check was really guarding.
 func TestEngineRegistersEveryTaskTool(t *testing.T) {
-	res, err := Engine(testConfig(t), Options{Approve: approveNothing})
+	// Delegation ships OFF (owner, 18 ส.ค.), so this has to ask for it. That is
+	// the assertion as much as the rest: a zero config gets no `task` at all,
+	// and the default lives in the value rather than in whichever code path
+	// remembered to set it.
+	cfg := testConfig(t)
+	cfg.DelegateOn = true
+	res, err := Engine(cfg, Options{Approve: approveNothing})
 	if err != nil {
 		t.Fatalf("Engine: %v", err)
 	}
@@ -70,6 +76,22 @@ func TestEngineRegistersEveryTaskTool(t *testing.T) {
 	}
 	if names := strings.Join(res.Dispatcher.Names(), " "); !strings.Contains(names, "task") {
 		t.Errorf("task missing from the dispatcher's names: %s", names)
+	}
+}
+
+// And the other half of the switch, at the level that decides it: off means the
+// tool is never built, so nothing downstream has to filter it, refuse it, or
+// explain it. It is not there.
+func TestEngineBuildsNoTaskToolWhenDelegationIsOff(t *testing.T) {
+	res, err := Engine(testConfig(t), Options{Approve: approveNothing}) // a zero config: off
+	if err != nil {
+		t.Fatalf("Engine: %v", err)
+	}
+	if _, ok := res.Registry.Get("task"); ok {
+		t.Error("delegation is off but task was registered anyway; the saving is the tool not existing")
+	}
+	if names := strings.Join(res.Dispatcher.Names(), " "); strings.Contains(names, "task") {
+		t.Errorf("task is still offered to the model: %s", names)
 	}
 }
 

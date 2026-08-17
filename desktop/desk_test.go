@@ -55,6 +55,10 @@ func bootDeskApp(t *testing.T, desk string) *App {
 		ModelProvider: "aetox",
 		ModelName:     "aetox-tools:test",
 		ApprovalMode:  string(safety.ApprovalFullAccess),
+		// Asked for, because delegation ships off (owner, 18 ส.ค.). These tests
+		// are about which tools a DESK carries, and `task` is only one of them
+		// on a session that has the capability at all.
+		DelegateOn: true,
 	})
 	return a
 }
@@ -192,6 +196,7 @@ func TestADeskAddsDirectionAndItsOwnMemory(t *testing.T) {
 			ModelProvider: "aetox",
 			ModelName:     "aetox-tools:test",
 			ApprovalMode:  string(safety.ApprovalFullAccess),
+			DelegateOn:    true,
 		})
 		messages := a.agent.ContextMessages()
 		if len(messages) == 0 {

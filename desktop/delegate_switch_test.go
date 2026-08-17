@@ -13,6 +13,7 @@ import (
 // true is worse than no number.
 func TestTheMeterCountsTheBlockItWouldActuallySend(t *testing.T) {
 	a := newSwitchApp(t)
+	a.SetDelegateOff(false) // it ships off, and this test is about what turning it off does
 
 	before := a.ToolBlockTokens()
 	if before <= 0 {
@@ -90,4 +91,40 @@ func newSwitchApp(t *testing.T) *App {
 	})
 	a.applyConfig(config.Config{SandboxRoot: t.TempDir(), ModelProvider: "aetox", ModelName: "aetox-tools:test"})
 	return a
+}
+
+// Delegation ships OFF (owner, 18 ส.ค.), so a fresh install has no `task` tool
+// and the switch in the agent menu is the way in.
+//
+// The stored field is the positive for exactly this reason — an absent
+// delegate_on has to read as off — while internal/subagent keeps its own
+// default ON, because a library that does nothing until you opt in is a library
+// that gets called wrong. The flip lives in one place, next to the other
+// preferences.
+func TestDelegationShipsOff(t *testing.T) {
+	a := newSwitchApp(t)
+
+	switches := a.DelegateSwitches()
+	if !switches.Off {
+		t.Error("a fresh install delegates; the switch was supposed to ship off")
+	}
+	if a.toolTokens("task") != 0 {
+		t.Error("task is in the block of an install that has never turned delegation on")
+	}
+	// And the workers are still listed, because a switch you cannot see is a
+	// switch you cannot turn on.
+	if len(switches.Workers) == 0 {
+		t.Error("nothing to turn on: the settings page shows no workers while delegation is off")
+	}
+
+	on := a.SetDelegateOff(false)
+	if on.Off {
+		t.Fatal("turning delegation on did not take")
+	}
+	if on.TaskTokens <= 0 {
+		t.Error("turned on, but the meter says task costs nothing")
+	}
+	if on.Tokens <= switches.Tokens {
+		t.Errorf("the block did not grow when the capability was added: %d then %d", switches.Tokens, on.Tokens)
+	}
 }

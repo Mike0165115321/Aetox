@@ -56,7 +56,7 @@ type DelegateWorker struct {
 
 // DelegateSwitches reports both switches and what they are worth.
 func (a *App) DelegateSwitches() DelegateSettings {
-	out := DelegateSettings{Off: a.cfg.DelegateOff, Tokens: a.ToolBlockTokens()}
+	out := DelegateSettings{Off: !a.cfg.DelegateOn, Tokens: a.ToolBlockTokens()}
 	off := lowered(a.cfg.AgentsOff)
 	for _, p := range subagent.List() {
 		if p.Invalid != "" {
@@ -78,11 +78,11 @@ func (a *App) DelegateSwitches() DelegateSettings {
 // SetDelegateOff flips the master switch and re-bootstraps, because whether the
 // tool exists is decided when the tools are built.
 func (a *App) SetDelegateOff(off bool) DelegateSettings {
-	if off == a.cfg.DelegateOff {
+	if off == !a.cfg.DelegateOn {
 		return a.DelegateSwitches() // never re-bootstrap to change nothing
 	}
 	cfg := a.cfg
-	cfg.DelegateOff = off
+	cfg.DelegateOn = !off
 	a.applyConfig(cfg)
 	return a.DelegateSwitches()
 }

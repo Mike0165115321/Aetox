@@ -47,6 +47,9 @@ func bootLearningApp(t *testing.T) *App {
 		ModelProvider: "aetox",
 		ModelName:     "aetox-tools:test",
 		ApprovalMode:  string(safety.ApprovalFullAccess),
+		// Asked for, because delegation ships off. These tests are about what a
+		// DELEGATE is allowed to do, which needs one to exist.
+		DelegateOn: true,
 	})
 	return a
 }
