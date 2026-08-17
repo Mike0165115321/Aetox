@@ -273,6 +273,10 @@ project, which roots the sandbox in a folder on disk and is a fence.
   With none focused, into `output/<session>` under the working root, which is
   `<home>/aetox`. So the absolute destination unfocused is
   `<home>/aetox/output/<session>`.
+- **Page screenshots** (`browser` action `capture`) — always into
+  `output/<session>` under the working root, *including* with a project focused.
+  They are a byproduct of looking at a page rather than a file anyone asked for
+  by name, and the root of somebody's repository is not where one belongs.
 - Deleting a chat does not delete its output files. They are ordinary files
   with their own life on disk.
 
@@ -354,6 +358,11 @@ Home-relative, refused everywhere:
 `AppData/Local/Microsoft/Credentials` · `AppData/Roaming/Microsoft/Protect` ·
 `AppData/Local/Google` · `AppData/Local/Microsoft/Edge` ·
 `AppData/Roaming/Mozilla` · `AppData/Local/BraveSoftware`
+
+"Home-relative" means every home on this machine, not only the Windows one. When
+the workspace runs its commands in a WSL distro, your file tools take that
+distro's own spelling of a path — `/mnt/d/project`, `/home/mike/api` — and the
+same list is refused under `/home/<user>` and `/root` in there.
 
 **`.aetox` is on that list, and that is the skills folder.** You cannot read
 `~/.aetox/skills` with `read` or `list`. Use `skills_list` and `skill_view` —
