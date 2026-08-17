@@ -401,12 +401,35 @@ func TestAProjectsChatsStayOutOfTheGeneralHistory(t *testing.T) {
 // The pair the user came for — a script and what it produced — has to land in
 // one place. A script writes where its own text says, so the prompt is the only
 // thing that can keep the two together.
+//
+// This used to require the literal "$PSScriptRoot", which pinned a prompt built
+// once for every session to one shell's spelling of the idea. It was wrong for
+// half of them: a project whose commands run in a distro has no $PSScriptRoot,
+// and this machine has one of each.
+//
+// Naming the shell is not this file's job, and doing it here would be a second
+// source for a fact that already has a better one. The shell tool's description
+// is assembled from the backend that will actually run the command — "Commands
+// are run by bash (WSL: mikedev) on this machine, so write them in that shell's
+// syntax" — so the model is told which language it is writing in by the thing
+// that knows, and how that language names a script's own directory follows.
+// What belongs here is the instruction that does not vary: where the output has
+// to end up.
 func TestTheAssistantIsToldWhereAScriptsOutputGoes(t *testing.T) {
 	got := prompt.Build(prompt.SurfaceDesktop, prompt.Scope{Root: t.TempDir(), Open: true})
 
-	for _, want := range []string{"$PSScriptRoot", "write beside itself", "hardcoded"} {
+	// The failure, the fix, and the way out.
+	for _, want := range []string{"hardcoded", "write beside itself", "take the output path as an argument"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the prompt does not say where a script's own output belongs (%q missing)", want)
+		}
+	}
+	// And no shell's own word for it. Whichever one were written here would be
+	// the wrong instruction for every session running the other (§99: the
+	// prompt teaches what generalizes, and never keeps a case list).
+	for _, idiom := range []string{"$PSScriptRoot", "PowerShell", "$0", "__file__", "dirname"} {
+		if strings.Contains(got, idiom) {
+			t.Errorf("the prompt names %q — one shell's answer, in a prompt built for all of them", idiom)
 		}
 	}
 }

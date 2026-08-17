@@ -945,8 +945,17 @@ func environment(scope Scope) string {
 			"That folder is chosen for you, and only the file tools know about it. A script you write and then " +
 			"run does not: a path typed inside it is followed exactly, so a hardcoded one drops its results in " +
 			"the working root while the script itself sits in the output folder, and the pair the user came for " +
-			"ends up in two places. Have a script write beside itself — $PSScriptRoot in PowerShell, the " +
-			"script's own directory anywhere else — or take the output path as an argument and pass it in.\n")
+			"ends up in two places. " +
+			// No named idiom here. This used to read "$PSScriptRoot in
+			// PowerShell, the script's own directory anywhere else", which spent
+			// a Windows-only token on every session — including the ones whose
+			// commands run inside a distro — while the general clause beside it
+			// was already the whole instruction. A model is told which shell it
+			// writes for, by a tool description built from that shell; how that
+			// shell names a script's own directory follows from it. Naming one
+			// is the case list this file refuses to keep (§99).
+			"Have a script write beside itself, using whatever its own language calls the directory it is " +
+			"in — or take the output path as an argument and pass it in.\n")
 	case len(scope.Extra) > 0:
 		b.WriteString("You are working in a focused project. A bare path is relative to the project folder.\n" +
 			"The user has added these folders to this session, and file tools reach them by full path:\n")
