@@ -29,12 +29,68 @@ func TestNoopOnboardingFollowsUILocale(t *testing.T) {
 		t.Errorf("the English reply still contains Thai:\n%s", english)
 	}
 
-	// Thai is the fallback for empty and for anything unrecognized, because a
-	// fresh install runs in Thai.
-	for _, locale := range []string{"", "th", "th-TH", "xx"} {
-		if got := ask(locale); got != noopOnboardingReply {
-			t.Errorf("locale %q should fall back to the Thai reply, got:\n%s", locale, got)
+	// Thai is what "nothing chosen" means — a fresh install runs in Thai — so
+	// an empty locale and Thai itself both land on the Thai reply.
+	for _, locale := range []string{"", "th", "th-TH"} {
+		if got := ask(locale); got != noopOnboarding["th"] {
+			t.Errorf("locale %q should answer in Thai, got:\n%s", locale, got)
 		}
+	}
+
+	// An unrecognized language is NOT the same as nothing chosen: someone is
+	// there, and they picked something that is not Thai. English is the better
+	// guess for them than the language they did not pick.
+	if got := ask("xx"); got != noopOnboarding["en"] {
+		t.Errorf("an unknown locale should fall back to English, got:\n%s", got)
+	}
+}
+
+// A third language must be a data change and nothing else. This is the whole
+// point of the phrase map that replaced pick(th, en): the file used to encode
+// "there are exactly two" in the shape of every canned string, so a third could
+// not be written without first editing every one of them.
+//
+// It reaches past the exported surface deliberately: no real phrase in this
+// package carries a third language yet, so there is nothing Complete could be
+// asked. The shape is what is being pinned — a branch on "en" must not come
+// back, whichever language is written next.
+func TestAThirdLanguageIsDataNotCode(t *testing.T) {
+	greeting := phrase{"th": "สวัสดี", "en": "hello", "ja": "こんにちは"}
+
+	for _, tc := range []struct{ locale, want string }{
+		{"ja", "こんにちは"},
+		{"ja-JP", "こんにちは"}, // a tag with a region resolves like its language
+		{"JA", "こんにちは"},    // and case is not a language
+		{"en", "hello"},
+		{"th", "สวัสดี"},
+		{"", "สวัสดี"},  // nothing chosen: a fresh install runs in Thai
+		{"fr", "hello"}, // never translated: English, which they can more likely read than Thai
+	} {
+		if got := inLocale(tc.locale, greeting); got != tc.want {
+			t.Errorf("inLocale(%q) = %q, want %q", tc.locale, got, tc.want)
+		}
+	}
+
+	// The whole tag wins over its language half, because pt-BR is a language of
+	// its own here and not a flavour of pt. Reading it as pt would hand a
+	// Brazilian the European translation and look like it worked.
+	regional := phrase{"th": "ไทย", "en": "English", "pt": "português europeu", "pt-BR": "português brasileiro"}
+	for _, tc := range []struct{ locale, want string }{
+		{"pt-BR", "português brasileiro"},
+		{"pt-PT", "português europeu"}, // no entry of its own: the language half
+		{"pt", "português europeu"},
+	} {
+		if got := inLocale(tc.locale, regional); got != tc.want {
+			t.Errorf("inLocale(%q) = %q, want %q", tc.locale, got, tc.want)
+		}
+	}
+
+	// And the provider reads it through the same resolver, so a locale the
+	// engine was handed cannot mean one thing here and another there.
+	p := NewNoopProvider("aetox-grid")
+	p.Locale = "ja"
+	if got := p.say(greeting); got != "こんにちは" {
+		t.Errorf("say under locale ja = %q, want the Japanese entry", got)
 	}
 }
 
@@ -155,8 +211,8 @@ func TestEveryBuiltinModelSpeaksEnglishWhenAsked(t *testing.T) {
 }
 
 // The guide is answered by the engine on the normal reply path (§42), so every
-// question the UI can show must resolve to an answer — in both languages, on
-// any built-in model.
+// question the UI can show must resolve to an answer — in every language it is
+// offered in, on any built-in model.
 func TestGuideQuestionsAllAnswer(t *testing.T) {
 	thai := func(s string) bool {
 		for _, r := range s {
@@ -166,8 +222,20 @@ func TestGuideQuestionsAllAnswer(t *testing.T) {
 		}
 		return false
 	}
+	// Han, to tell a real Chinese answer from the English one falling through.
+	// The fallback is deliberate and right for an untranslated bench script; it
+	// would be a silent hole in the guide, which is product copy a new user
+	// reads before anything else works.
+	han := func(s string) bool {
+		for _, r := range s {
+			if r >= 0x4E00 && r <= 0x9FFF {
+				return true
+			}
+		}
+		return false
+	}
 
-	for _, locale := range []string{"th", "en"} {
+	for _, locale := range []string{"th", "en", "zh"} {
 		topics := GuideTopics(locale)
 		if len(topics) < 6 {
 			t.Fatalf("locale %q: only %d guide topics", locale, len(topics))
@@ -184,7 +252,7 @@ func TestGuideQuestionsAllAnswer(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%s/%s: %v", locale, topic.ID, err)
 			}
-			if resp.Text == noopOnboardingReply || resp.Text == noopOnboardingReplyEN {
+			if resp.Text == noopOnboarding["th"] || resp.Text == noopOnboarding["en"] {
 				t.Errorf("%s/%s fell through to the onboarding reply — the question did not match",
 					locale, topic.ID)
 			}
@@ -193,6 +261,9 @@ func TestGuideQuestionsAllAnswer(t *testing.T) {
 			}
 			if locale == "en" && thai(resp.Text) {
 				t.Errorf("en/%s answered with Thai:\n%s", topic.ID, resp.Text)
+			}
+			if locale == "zh" && (!han(resp.Text) || thai(resp.Text)) {
+				t.Errorf("zh/%s did not answer in Chinese:\n%s", topic.ID, resp.Text)
 			}
 		}
 	}
@@ -207,7 +278,7 @@ func TestGuideQuestionsAllAnswer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp.Text == noopOnboardingReplyEN {
+	if resp.Text == noopOnboarding["en"] {
 		t.Error("a Thai question must still match after switching to English")
 	}
 

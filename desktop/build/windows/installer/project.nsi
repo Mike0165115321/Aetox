@@ -347,7 +347,22 @@ ManifestDPIAware true
 
 !insertmacro MUI_UNPAGE_INSTFILES # Uinstalling page
 
-!insertmacro MUI_LANGUAGE "English" # Set the Language of the installer
+# English first, because the first table inserted is what a system whose
+# language matches none of them falls back to. NSIS then picks by the machine's
+# UI language on its own — no selection dialog, and nothing to click through.
+!insertmacro MUI_LANGUAGE "English"
+
+# Thai, for the app's first audience. Guarded on the language file actually
+# being in the NSIS the runner has: the installer is built only by the release
+# workflow (.github/workflows/release.yml), so a missing .nlf would not surface
+# on any PR — it would surface as a failed release. An installer that is English
+# on one machine is a small loss; an installer that does not build is the whole
+# release.
+!if /FileExists "${NSISDIR}\Contrib\Language files\Thai.nlf"
+  !insertmacro MUI_LANGUAGE "Thai"
+!else
+  !warning "Thai.nlf not found in this NSIS install — building an English-only installer."
+!endif
 
 ## The following two statements can be used to sign the installer and the uninstaller. The path to the binaries are provided in %1
 #!uninstfinalize 'signtool --file "%1"'

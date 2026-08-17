@@ -5,6 +5,7 @@
 // any single project's state.
 
 import { ListIdentityFiles, ReadIdentityFile, SaveIdentityFile, DeleteIdentityFile } from '../../wailsjs/go/main/App'
+import { t } from './i18n.svelte'
 
 export const identity = $state<{
   files: { name: string }[]
@@ -54,25 +55,21 @@ export async function createIdentityFile(name: string, content = ''): Promise<vo
 // only, the engine treats every *.md in the identity dir identically.
 // thinking.md is deliberately "discipline, not steps": step-by-step
 // instructions can interfere with native-reasoning models, values don't.
-export const identityTemplates: { name: string; content: string }[] = [
-  {
-    name: 'identity.md',
-    content: '# ตัวตน / Identity\n\n- ชื่อที่ใช้เรียกฉัน:\n- บุคลิก/น้ำเสียง:\n- ภาษา: ไทยเป็นหลัก สลับอังกฤษได้\n',
-  },
-  {
-    name: 'thinking.md',
-    content:
-      '# วินัยการคิด / Thinking discipline\n\n- ยึดหลักฐานก่อนสรุป ถ้าไม่แน่ใจให้บอกว่าไม่แน่ใจ\n- ไม่รู้ = ถาม ไม่ใช่เดา\n- ตอบตรงประเด็น ไม่ขยายความเกินถาม\n',
-  },
-  {
-    name: 'context.md',
-    content: '# บริบทผู้ใช้ / About me\n\n- ฉันคือใคร ทำงานอะไร:\n- สิ่งที่ควรรู้เกี่ยวกับฉัน:\n',
-  },
-  {
-    name: 'skills.md',
-    content: '# ความรู้ติดตัว / Always-on notes\n\n- สิ่งที่อยากให้จำไว้เสมอ ข้ามทุกโปรเจกต์:\n',
-  },
-]
+//
+// A function and not a const, because the bodies live in the locale files now
+// and `t` has to be read at call time. They were Thai literals here, which made
+// this the one place a user who picked another language still got Thai — and it
+// is the least forgivable place for it: this is the file where they write down
+// who they are, and it opened in a language they did not choose. The filenames
+// stay untranslated on purpose; they are addresses the engine reads.
+export function identityTemplates(): { name: string; content: string }[] {
+  return [
+    { name: 'identity.md', content: t('identity.tplIdentity') },
+    { name: 'thinking.md', content: t('identity.tplThinking') },
+    { name: 'context.md', content: t('identity.tplContext') },
+    { name: 'skills.md', content: t('identity.tplSkills') },
+  ]
+}
 
 export async function deleteIdentityFile(name: string): Promise<void> {
   await DeleteIdentityFile(name)

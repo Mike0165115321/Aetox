@@ -101,7 +101,7 @@
   const identityDirty = $derived(identity.draft !== identity.saved)
   const missingTemplates = $derived(
     identity.loaded && identity.files
-      ? identityTemplates.filter((tpl) => !(identity.files || []).some((f) => f.name === tpl.name))
+      ? identityTemplates().filter((tpl) => !(identity.files || []).some((f) => f.name === tpl.name))
       : [],
   )
   function addIdentityFile() {

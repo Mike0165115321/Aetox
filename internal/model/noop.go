@@ -17,16 +17,87 @@ type NoopProvider struct {
 	Locale string
 }
 
-// noopOnboardingReply is what a genuinely unconfigured install sees on every
-// turn — a real user typing into a fresh Aetox has no API key set anywhere,
-// so every chat request lands here (see config.Load: provider defaults to
-// "aetox") until they visit Settings. It replaces what used to be a raw
+// baseLocale is the language this file is written in, and the one every other
+// falls back to. A fresh install runs in Thai, and a phrase nobody has
+// translated yet is better read in Thai than not read at all.
+const baseLocale = "th"
+
+// phrase is one canned string in every language it has been written in, keyed
+// by UI locale.
+//
+// It used to be two positional arguments — pick(th, en) — which put "there are
+// exactly two languages" into the shape of every string in this file and into
+// the signature between them. A third language would have had to edit all 37
+// call sites before a single word of it could be written. A map says the same
+// thing about the two that exist without deciding how many there can be, so
+// adding one is adding keys to the phrases that have been translated and
+// nothing at all to the ones that have not.
+type phrase map[string]string
+
+// fallbackLocale is what a language nobody has translated this phrase into
+// reads instead. English rather than baseLocale, because the person looking at
+// it chose neither: a French speaker who hits an untranslated bench string can
+// probably read English, and can almost certainly not read Thai.
+const fallbackLocale = "en"
+
+// inLocale reads one phrase in the UI's language, most specific first:
+//
+//  1. the whole tag — "pt-BR" is its own language here, not a flavour of "pt",
+//     and reading it as one would hand a Brazilian the European translation
+//  2. the language half — "th-TH" and "en-US" resolve like "th" and "en"
+//  3. English, for a language this phrase was never translated into
+//  4. baseLocale, which is also what "nothing chosen" means: a fresh install
+//     runs in Thai, and an empty locale is that install, not a missing entry
+func inLocale(locale string, ph phrase) string {
+	code := strings.TrimSpace(locale)
+	if code == "" {
+		return ph[baseLocale]
+	}
+	if s, ok := lookupLocale(ph, code); ok {
+		return s
+	}
+	if i := strings.IndexAny(code, "-_"); i > 0 {
+		if s, ok := lookupLocale(ph, code[:i]); ok {
+			return s
+		}
+	}
+	if s, ok := ph[fallbackLocale]; ok {
+		return s
+	}
+	return ph[baseLocale]
+}
+
+// lookupLocale finds one language in a phrase, ignoring case on both sides.
+//
+// The scan is the point, not an oversight: a region subtag gets written
+// "pt-BR" about as often as "pt-br", and a key that never matches because of
+// its capitalisation would be invisible — the miss falls through to a real
+// translation, just the wrong one. A phrase holds a handful of languages, so
+// the loop costs nothing worth protecting.
+func lookupLocale(ph phrase, code string) (string, bool) {
+	if s, ok := ph[code]; ok {
+		return s, true
+	}
+	for k, v := range ph {
+		if strings.EqualFold(k, code) {
+			return v, true
+		}
+	}
+	return "", false
+}
+
+// noopOnboarding is what a genuinely unconfigured install sees on every turn —
+// a real user typing into a fresh Aetox has no API key set anywhere, so every
+// chat request lands here (see config.Load: provider defaults to "aetox")
+// until they visit Settings. It replaces what used to be a raw
 // "[noop:model] text" debug echo, which no first-time user should ever see.
 //
-// One per language, picked by NoopProvider.Locale (§40). The guide chips that
-// follow this reply live in the frontend locale files (§39); this one cannot,
-// because it is a model reply, so the locale is carried to it instead.
-const noopOnboardingReply = `สวัสดีครับ Aetox ยังไม่ได้เชื่อมต่อกับโมเดลจริง
+// One entry per language, read through NoopProvider.Locale (§40). The guide
+// chips that follow this reply live in the frontend locale files (§39); this
+// one cannot, because it is a model reply, so the locale is carried to it
+// instead.
+var noopOnboarding = phrase{
+	"th": `สวัสดีครับ Aetox ยังไม่ได้เชื่อมต่อกับโมเดลจริง
 
 **ทำไมถึงเป็นแบบนี้**
 Aetox เกิดจากความคิดของนักพัฒนาเพียงคนเดียว ไม่มีทีม ไม่มีบริษัท เราจึงไม่สามารถหาโมเดลฟรีมาให้บริการได้จริงๆ
@@ -37,9 +108,9 @@ Aetox เกิดจากความคิดของนักพัฒน�
 **วิสัยทัศน์ของเรา**
 แม้ว่าทางเราจะไม่มีทุน แต่เรามีวิสัยทัศน์ ผู้พัฒนาเล็งเห็นว่า หัวใจไม่ใช่ความรู้ในโมเดล แต่คือ Architecture ที่ควบคุมวิธีคิด แต่เราไม่มีทุนในการเทรนโมเดลใหม่เอง จำใจต้องใช้วิธีนี้
 
-(Aetox isn't connected to a real model yet — open Settings and pick a provider you trust to power it.)`
+(Aetox isn't connected to a real model yet — open Settings and pick a provider you trust to power it.)`,
 
-const noopOnboardingReplyEN = `Hi — Aetox isn't connected to a real model yet.
+	"en": `Hi — Aetox isn't connected to a real model yet.
 
 **Why**
 Aetox is built by one developer. No team, no company, and no budget to hand out free model access.
@@ -48,7 +119,19 @@ Aetox is built by one developer. No team, no company, and no budget to hand out 
 Open **Settings → Model settings**, pick a provider you trust, and it powers Aetox from there. Want nothing leaving your machine? Choose **Ollama** or **LM Studio** and run the model locally — no key, and not a byte of your prompts leaves the machine.
 
 **The bet behind this**
-What makes an agent useful is not the knowledge packed into the model, it is the architecture governing how it works. There was no funding to train a model, so the bet went on architecture — and on letting you plug in whichever model you like.`
+What makes an agent useful is not the knowledge packed into the model, it is the architecture governing how it works. There was no funding to train a model, so the bet went on architecture — and on letting you plug in whichever model you like.`,
+
+	"zh": `你好 —— Aetox 还没有接上真正的模型。
+
+**为什么**
+Aetox 由一个开发者独自完成。没有团队，没有公司，也没有预算免费提供模型额度。
+
+**该怎么做**
+打开 **设置 → 模型设置**，选一家你信得过的服务商，它就是 Aetox 的引擎。不想让任何数据离开这台电脑？选 **Ollama** 或 **LM Studio** 在本地跑模型 —— 不需要密钥，你的提示词一个字节都不会离开这台机器。
+
+**这背后的赌注**
+让一个智能体真正好用的，不是模型里塞了多少知识，而是支配它如何工作的架构。既然没有钱去训练模型，赌注就押在架构上 —— 并且让你自由接入任何你喜欢的模型。`,
+}
 
 // GuideTopic is one question the built-in engine can answer about Aetox
 // itself. The UI renders the questions as options; clicking one sends it as an
@@ -59,15 +142,22 @@ type GuideTopic struct {
 	Question string `json:"question"`
 }
 
-// guideAnswers is the whole guide: question and answer, both languages, in one
+// guideAnswers is the whole guide: question and answer, every language, in one
 // place. Matching is done against these exact strings, so the questions the UI
 // shows and the questions this matches are the same values by construction.
-var guideAnswers = []struct{ id, qTH, qEN, aTH, aEN string }{
+var guideAnswers = []struct {
+	id   string
+	q, a phrase
+}{
 	{
-		id:  "skills",
-		qTH: "สกิล กับ ชุดคำสั่ง ต่างกันยังไง",
-		qEN: "How are skills and prompt presets different?",
-		aTH: `ต่างกันที่ **ใครเป็นคนเรียก** ครับ ไม่ใช่ที่เนื้อใน
+		id: "skills",
+		q: phrase{
+			"th": "สกิล กับ ชุดคำสั่ง ต่างกันยังไง",
+			"en": "How are skills and prompt presets different?",
+			"zh": "技能和指令预设有什么区别？",
+		},
+		a: phrase{
+			"th": `ต่างกันที่ **ใครเป็นคนเรียก** ครับ ไม่ใช่ที่เนื้อใน
 
 **ชุดคำสั่ง** — คุณเป็นคนเรียก พิมพ์ ` + "`/landing`" + ` ในแชท เนื้อคำสั่งจะไปแทนข้อความของคุณ **ก่อน** โมเดลเห็น คุณควบคุมได้ 100% ว่าจะใช้เมื่อไหร่
 
@@ -78,7 +168,7 @@ var guideAnswers = []struct{ id, qTH, qEN, aTH, aEN string }{
 **ผลที่ตามมาจริงๆ มีสองข้อ**
 1. ชุดคำสั่งกินโทเคนเฉพาะตอนคุณกดใช้ ส่วนสกิลเอาคำอธิบายไปแปะให้โมเดลเห็นทุกเทิร์น ไม่ว่าจะได้ใช้หรือไม่
 2. ชุดคำสั่งคุณกดเอง รู้ตัวเสมอ ส่วนสกิลโมเดลหยิบไปใช้ได้โดยคุณไม่ได้สั่ง`,
-		aEN: `The difference is **who invokes them**, not what is inside.
+			"en": `The difference is **who invokes them**, not what is inside.
 
 **Prompt presets** — you invoke them. Type ` + "`/landing`" + ` and the prompt replaces your message **before** the model ever sees it. You decide when, every time.
 
@@ -89,69 +179,121 @@ The interesting part: a ` + "`SKILL.md`" + ` skill is also just text — it call
 **Two consequences that actually matter**
 1. A preset costs tokens only when you use it. A skill puts its description in front of the model every single turn, used or not.
 2. You press a preset knowingly. A skill can be pulled in without you asking.`,
+			"zh": `区别在于**由谁调用**，而不在于里面写了什么。
+
+**指令预设** —— 由你调用。输入 ` + "`/landing`" + `，这段提示词会在模型看到之前**替换掉**你的消息。什么时候用，每一次都由你决定。
+
+**技能** —— 由模型调用。它看到技能列表，自己判断哪一个和眼前的任务相关，你不用开口。
+
+有意思的是：` + "`SKILL.md`" + ` 形式的技能里面同样只是纯文本，它自己不会调用任何工具。唯一的区别就是谁按下按钮。
+
+**真正有影响的后果有两条**
+1. 预设只在你用它的时候消耗 token；技能会把自己的说明摆在模型面前，每一轮都摆，用不用都摆。
+2. 预设是你自己按的，你始终知情；技能则可能在你没开口的情况下被取用。`,
+		},
 	},
 	{
-		id:  "prompts",
-		qTH: "ชุดคำสั่งใช้ยังไง",
-		qEN: "How do I use prompt presets?",
-		aTH: `พิมพ์ ` + "`/`" + ` ในช่องแชท (หรือกดปุ่ม ` + "`/`" + `) แล้วเลือกจากรายการ
+		id: "prompts",
+		q: phrase{
+			"th": "ชุดคำสั่งใช้ยังไง",
+			"en": "How do I use prompt presets?",
+			"zh": "指令预设怎么用？",
+		},
+		a: phrase{
+			"th": `พิมพ์ ` + "`/`" + ` ในช่องแชท (หรือกดปุ่ม ` + "`/`" + `) แล้วเลือกจากรายการ
 
 พิมพ์ต่อท้ายได้เลย เช่น ` + "`/landing เว็บขายกาแฟคั่วเอง กลุ่มคนทำงาน`" + ` — ข้อความที่พิมพ์ต่อจะไปแทนที่ ` + "`$ARGUMENTS`" + ` ในชุดคำสั่ง
 
 ตอนนี้มีให้ 8 ตัว: ` + "`/landing` `/hero` `/pricing` `/waitlist`" + ` ทำเว็บ · ` + "`/review` `/debug` `/explain`" + ` งานโค้ด · ` + "`/clip`" + ` สรุปคลิป
 
 **เพิ่มเองได้** ที่ ตั้งค่า → ชุดคำสั่ง กดสร้างใหม่ ใส่รูปหน้าปกได้ด้วย และแก้ของที่มีอยู่ได้ทุกตัว (ของเดิมไม่หาย ลบของคุณเมื่อไหร่มันกลับมาเอง)`,
-		aEN: `Type ` + "`/`" + ` in the composer (or press the ` + "`/`" + ` button) and pick from the list.
+			"en": `Type ` + "`/`" + ` in the composer (or press the ` + "`/`" + ` button) and pick from the list.
 
 Keep typing after the name: ` + "`/landing a coffee roastery site for office workers`" + ` — everything after the name replaces ` + "`$ARGUMENTS`" + ` in the prompt.
 
 Eight ship with Aetox: ` + "`/landing` `/hero` `/pricing` `/waitlist`" + ` for web work · ` + "`/review` `/debug` `/explain`" + ` for code · ` + "`/clip`" + ` to summarize a recording.
 
 **Add your own** in Settings → Prompt presets. Cover images included, and every shipped preset is editable — the original stays, and deleting yours brings it back.`,
+			"zh": `在输入框里打 ` + "`/`" + `（或按 ` + "`/`" + ` 按钮），然后从列表里挑。
+
+名字后面可以接着写：` + "`/landing 一个面向上班族的咖啡烘焙站点`" + ` —— 名字之后的内容会替换预设里的 ` + "`$ARGUMENTS`" + `。
+
+Aetox 自带八个：` + "`/landing` `/hero` `/pricing` `/waitlist`" + ` 做网页 · ` + "`/review` `/debug` `/explain`" + ` 写代码 · ` + "`/clip`" + ` 总结录音。
+
+**可以自己加**，在 设置 → 指令预设 里新建，还能配封面图。自带的每一个也都能改 —— 原版不会消失，你把自己那份删掉，它就回来了。`,
+		},
 	},
 	{
-		id:  "connect",
-		qTH: "ต่อโมเดลจริงยังไง ทำไมต้องต่อเอง",
-		qEN: "How do I connect a real model, and why do I have to?",
-		aTH: `Aetox สร้างโดยนักพัฒนาคนเดียว ไม่มีทุนไปซื้อโมเดลมาแจกฟรี — ตรงไปตรงมาแบบนั้นครับ แลกมาด้วยข้อดีคือคุณเลือกเองได้ว่าจะเชื่อใจใคร
+		id: "connect",
+		q: phrase{
+			"th": "ต่อโมเดลจริงยังไง ทำไมต้องต่อเอง",
+			"en": "How do I connect a real model, and why do I have to?",
+			"zh": "怎么接入真正的模型？为什么要我自己接？",
+		},
+		a: phrase{
+			"th": `Aetox สร้างโดยนักพัฒนาคนเดียว ไม่มีทุนไปซื้อโมเดลมาแจกฟรี — ตรงไปตรงมาแบบนั้นครับ แลกมาด้วยข้อดีคือคุณเลือกเองได้ว่าจะเชื่อใจใคร
 
 **วิธีต่อ** ไปที่ ตั้งค่า → การตั้งค่าโมเดล เลือกผู้ให้บริการ ใส่ API key แล้วกดใช้
 
 **ถ้าไม่อยากให้ข้อมูลออกจากเครื่องเลย** เลือก **Ollama** หรือ **LM Studio** รันโมเดลบนเครื่องคุณเอง ไม่ต้องมี key ไม่มี prompt ไหนออกจากเครื่องแม้แต่ byte เดียว
 
 รองรับ 13 ผู้ให้บริการ สลับได้ตลอด ไม่ผูกมัด`,
-		aEN: `Aetox is built by one developer with no funding to give away model access — that is the plain answer. What you get in exchange is choosing who to trust.
+			"en": `Aetox is built by one developer with no funding to give away model access — that is the plain answer. What you get in exchange is choosing who to trust.
 
 **To connect** go to Settings → Model settings, pick a provider, paste an API key, press use.
 
 **To keep everything on your machine**, pick **Ollama** or **LM Studio** and run the model locally. No key, and not a byte of your prompts leaves the machine.
 
 Thirteen providers supported, switchable any time.`,
+			"zh": `Aetox 由一个开发者独自完成，没有资金去买模型额度免费发放 —— 直白的答案就是这样。换来的好处是：信任谁由你自己选。
+
+**怎么接** 打开 设置 → 模型设置，选一家服务商，粘贴 API 密钥，点使用。
+
+**如果不想让任何数据离开这台电脑**，选 **Ollama** 或 **LM Studio**，在本地跑模型。不需要密钥，你的提示词一个字节都不会离开这台机器。
+
+支持十三家服务商，随时可以切换。`,
+		},
 	},
 	{
-		id:  "privacy",
-		qTH: "ข้อมูลของผมปลอดภัยแค่ไหน",
-		qEN: "How safe is my data?",
-		aTH: `**ไม่มีเซิร์ฟเวอร์ของเราคั่นกลางเลย** ประวัติแชทและไฟล์โปรเจกต์อยู่ในเครื่องคุณล้วนๆ (SQLite ในเครื่อง) เราไม่เห็นอะไรทั้งนั้น
+		id: "privacy",
+		q: phrase{
+			"th": "ข้อมูลของผมปลอดภัยแค่ไหน",
+			"en": "How safe is my data?",
+			"zh": "我的数据有多安全？",
+		},
+		a: phrase{
+			"th": `**ไม่มีเซิร์ฟเวอร์ของเราคั่นกลางเลย** ประวัติแชทและไฟล์โปรเจกต์อยู่ในเครื่องคุณล้วนๆ (SQLite ในเครื่อง) เราไม่เห็นอะไรทั้งนั้น
 
 เวลาคุณต่อ provider คลาวด์ prompt จะวิ่งจากเครื่องคุณไปหาเขาโดยตรง ไม่ผ่านเรา
 
 **เครื่องมือที่แตะเครื่องคุณต้องขออนุมัติ** — รันคำสั่ง เขียนไฟล์ ลบไฟล์ ขึ้นให้กดยืนยันก่อนทุกครั้ง ปรับระดับได้ที่ Ctrl+K → ระดับการอนุมัติ
 
 ถอดเสียง อ่านรูป อ่านวิดีโอ ทำในเครื่องทั้งหมด ไฟล์ไม่ได้ถูกอัปโหลดไปไหน`,
-		aEN: `**No server of ours sits in the middle.** Chat history and project files stay on your machine (local SQLite). We see none of it.
+			"en": `**No server of ours sits in the middle.** Chat history and project files stay on your machine (local SQLite). We see none of it.
 
 When you connect a cloud provider, prompts go from your machine straight to them — never through us.
 
 **Anything that touches your machine asks first** — running commands, writing files, deleting files all prompt for confirmation. Adjust the level under Ctrl+K → Approval level.
 
 Transcription, image reading and video reading all run locally. Those files are not uploaded anywhere.`,
+			"zh": `**中间没有我们的任何服务器。** 聊天记录和项目文件都留在你自己的电脑上（本地 SQLite），我们什么都看不到。
+
+当你接入云端服务商时，提示词是从你的电脑直接发给他们的，不经过我们。
+
+**凡是碰到你电脑的操作都会先问** —— 执行命令、写文件、删文件，每一次都要你确认。级别可以在 Ctrl+K → 审批级别 里调。
+
+语音转写、读图片、读视频全部在本地运行，这些文件不会被上传到任何地方。`,
+		},
 	},
 	{
-		id:  "tools",
-		qTH: "Aetox ทำอะไรได้บ้าง",
-		qEN: "What can Aetox actually do?",
-		aTH: `มีเครื่องมือในตัว 22 ตัว ที่เด่นคือกลุ่มที่**เติมประสาทสัมผัสให้โมเดล**:
+		id: "tools",
+		q: phrase{
+			"th": "Aetox ทำอะไรได้บ้าง",
+			"en": "What can Aetox actually do?",
+			"zh": "Aetox 到底能做什么？",
+		},
+		a: phrase{
+			"th": `มีเครื่องมือในตัว 22 ตัว ที่เด่นคือกลุ่มที่**เติมประสาทสัมผัสให้โมเดล**:
 
 - **อ่านรูป** ` + "`image_ocr`" + ` — โมเดลที่มองไม่เห็นรูปก็อ่านสลิป สกรีนช็อตได้
 - **อ่านวิดีโอ** ` + "`video_ocr`" + ` — แตกเฟรมแล้ว OCR ได้ข้อความพร้อมเวลา
@@ -161,7 +303,7 @@ Transcription, image reading and video reading all run locally. Those files are 
 บวกกับงานโค้ดครบชุด อ่าน/เขียน/แก้ไฟล์ · git · รันคำสั่ง · ค้นเว็บ · ค้น GitHub
 
 **จุดสำคัญ** เครื่องมือทั้งหมดนี้เสิร์ฟให้ทุกโมเดลเท่ากัน โมเดลเล็กราคาถูกก็ได้ของครบเหมือนกัน — ความสามารถอยู่ที่สถาปัตยกรรม ไม่ใช่ราคาโมเดล`,
-		aEN: `22 built-in tools. The standouts are the ones that **give a model senses it does not have**:
+			"en": `22 built-in tools. The standouts are the ones that **give a model senses it does not have**:
 
 - **See images** ` + "`image_ocr`" + ` — a model with no vision still reads receipts and screenshots
 - **Read video** ` + "`video_ocr`" + ` — frames sampled and OCR'd, with timestamps
@@ -171,25 +313,48 @@ Transcription, image reading and video reading all run locally. Those files are 
 Plus the full coding set: read/write/edit files · git · shell · web search · GitHub search.
 
 **The point:** every tool is served to every model equally. A cheap small model gets the same kit — the capability lives in the architecture, not the price of the model.`,
+			"zh": `内置 22 个工具。最突出的是那些**给模型补上它本来没有的感官**的：
+
+- **看图片** ` + "`image_ocr`" + ` —— 没有视觉能力的模型也能读收据和截图
+- **读视频** ` + "`video_ocr`" + ` —— 抽帧后 OCR，带时间戳
+- **听声音** ` + "`audio_transcribe`" + ` —— 本地语音转文字，中英泰皆可
+- **在网页上动手** ` + "`browser_*`" + ` —— 真的打开、阅读、点击、填表单
+
+再加上完整的写代码套件：读写改文件 · git · 命令行 · 网页搜索 · GitHub 搜索。
+
+**关键在于：** 每一个工具对每一个模型都一视同仁。便宜的小模型拿到的是同一套家伙 —— 能力来自架构，不是来自模型的价格。`,
+		},
 	},
 	{
-		id:  "who",
-		qTH: "ใครทำ Aetox และทำไป",
-		qEN: "Who makes Aetox, and why?",
-		aTH: `นักพัฒนาคนเดียวครับ ไม่มีทีม ไม่มีนักลงทุน ทุกบรรทัดเขียนโดยคนที่ใช้มันทำงานจริงทุกวัน
+		id: "who",
+		q: phrase{
+			"th": "ใครทำ Aetox และทำไป",
+			"en": "Who makes Aetox, and why?",
+			"zh": "Aetox 是谁做的，为什么要做？",
+		},
+		a: phrase{
+			"th": `นักพัฒนาคนเดียวครับ ไม่มีทีม ไม่มีนักลงทุน ทุกบรรทัดเขียนโดยคนที่ใช้มันทำงานจริงทุกวัน
 
 **ความเชื่อที่อยู่เบื้องหลัง** — หัวใจของ AI agent ไม่ใช่ความรู้ที่อัดอยู่ในโมเดล แต่คือ **สถาปัตยกรรมที่ควบคุมวิธีคิด** โมเดลเก่งแค่ไหนถ้าไม่มีเครื่องมือ ไม่มีขอบเขตความปลอดภัย ไม่มีวิธีจัดการบริบท ก็ทำงานจริงไม่ได้
 
 เราไม่มีทุนเทรนโมเดลเอง เลยเลือกเอาดีทางสถาปัตยกรรมแทน แล้วเปิดให้คุณเสียบโมเดลอะไรก็ได้เข้ามา
 
 ถ้าอยากร่วมพัฒนา หรือลองแล้วอยากบอกว่าตรงไหนห่วย — เปิด issue บน GitHub ได้เลย อ่านทุกข้อความ`,
-		aEN: `One developer. No team, no investors. Every line written by someone who uses it for real work daily.
+			"en": `One developer. No team, no investors. Every line written by someone who uses it for real work daily.
 
 **The belief behind it** — what makes an AI agent useful is not the knowledge packed into the model, it is the **architecture that governs how it works**. However capable the model, without tools, safety boundaries and context management it cannot do real work.
 
 There was no funding to train a model, so the bet went on architecture instead — and on letting you plug in whichever model you like.
 
 Want to help, or just tell us what is bad about it? Open an issue on GitHub. Every message gets read.`,
+			"zh": `一个开发者。没有团队，没有投资人。每一行都出自一个每天真的用它干活的人之手。
+
+**背后的信念** —— 让一个 AI 智能体真正好用的，不是模型里塞了多少知识，而是**支配它如何工作的架构**。模型再强，没有工具、没有安全边界、没有上下文管理，也做不成真正的工作。
+
+既然没有钱去训练模型，赌注就押在架构上 —— 并且让你自由接入任何你喜欢的模型。
+
+想一起做，或者只是想说哪里烂？去 GitHub 开一个 issue，每一条都会被读到。`,
+		},
 	},
 }
 
@@ -197,49 +362,37 @@ Want to help, or just tell us what is bad about it? Open an issue on GitHub. Eve
 // UI language. The UI renders these verbatim and sends the chosen one back as
 // an ordinary message.
 func GuideTopics(locale string) []GuideTopic {
-	english := strings.HasPrefix(strings.ToLower(strings.TrimSpace(locale)), "en")
 	out := make([]GuideTopic, 0, len(guideAnswers))
 	for _, g := range guideAnswers {
-		q := g.qTH
-		if english {
-			q = g.qEN
-		}
-		out = append(out, GuideTopic{ID: g.id, Question: q})
+		out = append(out, GuideTopic{ID: g.id, Question: inLocale(locale, g.q)})
 	}
 	return out
 }
 
-// guideAnswer matches an incoming message against the guide questions. Both
-// languages are matched regardless of the current locale, so a question asked
+// guideAnswer matches an incoming message against the guide questions. Every
+// language is matched regardless of the current locale, so a question asked
 // before a language switch still resolves.
 func (p *NoopProvider) guideAnswer(text string) (string, bool) {
 	text = strings.TrimSpace(text)
 	for _, g := range guideAnswers {
-		if text == g.qTH || text == g.qEN {
-			return p.pick(g.aTH, g.aEN), true
+		for _, question := range g.q {
+			if text == question {
+				return p.say(g.a), true
+			}
 		}
 	}
 	return "", false
 }
 
-// english reports whether the UI is in English. Everything else falls back to
-// Thai, which is what a fresh install runs in. Every canned string this
-// provider produces goes through this — the built-in models are the only part
-// of the engine that talks to a user directly (ARCHITECTURE.md §40, §41).
-func (p *NoopProvider) english() bool {
-	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(p.Locale)), "en")
-}
-
-// pick is the one-liner every bilingual canned string below uses.
-func (p *NoopProvider) pick(th, en string) string {
-	if p.english() {
-		return en
-	}
-	return th
+// say reads one canned string in the UI's language. Every canned string this
+// provider produces goes through it — the built-in models are the only part of
+// the engine that talks to a user directly (ARCHITECTURE.md §40, §41).
+func (p *NoopProvider) say(ph phrase) string {
+	return inLocale(p.Locale, ph)
 }
 
 func (p *NoopProvider) onboardingReply() string {
-	return p.pick(noopOnboardingReply, noopOnboardingReplyEN)
+	return p.say(noopOnboarding)
 }
 
 func NewNoopProvider(model string) *NoopProvider {
@@ -314,7 +467,7 @@ func (p *NoopProvider) Complete(_ context.Context, req Request) (Response, error
 			Provider:         p.Name(),
 			Model:            model,
 			ReasoningContent: p.noopLongReasoning(text),
-			Text: p.pick("[think-test] คำตอบสั้น ๆ หลังคิดเสร็จ: ", "[think-test] short answer after thinking: ") +
+			Text: p.say(phrase{"th": "[think-test] คำตอบสั้น ๆ หลังคิดเสร็จ: ", "en": "[think-test] short answer after thinking: "}) +
 				clipNoop(text, 80),
 		}, nil
 	case strings.Contains(modelKey, "run:test"):
@@ -362,18 +515,18 @@ func (p *NoopProvider) noopRenderReply(text string) string {
 }
 
 func (p *NoopProvider) noopMarkdownReply() string {
-	if p.english() {
-		return "## Full markdown test\n\n" +
+	return p.say(phrase{
+		"th": "## ทดสอบ Markdown ครบชุด\n\n" +
+			"ย่อหน้าปกติ **ตัวหนา** *ตัวเอียง* `inline code` และ[ลิงก์](https://example.com)\n\n" +
+			"```go\nfunc main() {\n\tfmt.Println(\"code block\")\n}\n```\n\n" +
+			"| คอลัมน์ | ค่า |\n|---|---|\n| หนึ่ง | 111 |\n| สอง | 222 |\n\n" +
+			"1. รายการเรียงลำดับ\n2. ข้อสอง\n\n- รายการจุด\n- ข้อสอง\n\n> คำพูดยกมา (blockquote)\n\n---\n\nจบชุดทดสอบครับ",
+		"en": "## Full markdown test\n\n" +
 			"A normal paragraph with **bold**, *italic*, `inline code` and a [link](https://example.com)\n\n" +
 			"```go\nfunc main() {\n\tfmt.Println(\"code block\")\n}\n```\n\n" +
 			"| Column | Value |\n|---|---|\n| One | 111 |\n| Two | 222 |\n\n" +
-			"1. Ordered list\n2. Second item\n\n- Bullet list\n- Second item\n\n> A quotation (blockquote)\n\n---\n\nEnd of the test set."
-	}
-	return "## ทดสอบ Markdown ครบชุด\n\n" +
-		"ย่อหน้าปกติ **ตัวหนา** *ตัวเอียง* `inline code` และ[ลิงก์](https://example.com)\n\n" +
-		"```go\nfunc main() {\n\tfmt.Println(\"code block\")\n}\n```\n\n" +
-		"| คอลัมน์ | ค่า |\n|---|---|\n| หนึ่ง | 111 |\n| สอง | 222 |\n\n" +
-		"1. รายการเรียงลำดับ\n2. ข้อสอง\n\n- รายการจุด\n- ข้อสอง\n\n> คำพูดยกมา (blockquote)\n\n---\n\nจบชุดทดสอบครับ"
+			"1. Ordered list\n2. Second item\n\n- Bullet list\n- Second item\n\n> A quotation (blockquote)\n\n---\n\nEnd of the test set.",
+	})
 }
 
 // noopToolsReply scripts one fixed tool-using turn so the tool-driven UI can
@@ -440,24 +593,28 @@ func (p *NoopProvider) noopToolsReply(model string, req Request) Response {
 	}
 	switch {
 	case todoCalls == 0:
-		return call("noop_todo_1", "todo_write", p.pick(
-			`{"todos":[{"content":"วางแผนชุดทดสอบ UI","status":"completed"},{"content":"แสดง checklist ระหว่างทำงาน","status":"in_progress"},{"content":"ถามผู้ใช้ด้วย ask_user","status":"pending"},{"content":"สรุปผลการทดสอบ","status":"pending"}]}`,
-			`{"todos":[{"content":"Plan the UI test set","status":"completed"},{"content":"Show the checklist while working","status":"in_progress"},{"content":"Ask the user via ask_user","status":"pending"},{"content":"Summarize the results","status":"pending"}]}`))
+		return call("noop_todo_1", "todo_write", p.say(phrase{
+			"th": `{"todos":[{"content":"วางแผนชุดทดสอบ UI","status":"completed"},{"content":"แสดง checklist ระหว่างทำงาน","status":"in_progress"},{"content":"ถามผู้ใช้ด้วย ask_user","status":"pending"},{"content":"สรุปผลการทดสอบ","status":"pending"}]}`,
+			"en": `{"todos":[{"content":"Plan the UI test set","status":"completed"},{"content":"Show the checklist while working","status":"in_progress"},{"content":"Ask the user via ask_user","status":"pending"},{"content":"Summarize the results","status":"pending"}]}`,
+		}))
 	case askCalls == 0:
-		return call("noop_ask_1", "ask_user", p.pick(
-			`{"question":"ทดสอบ ask_user: อยากให้ตอบกลับด้วยโทนไหนครับ?","options":["สั้น กระชับ","ละเอียด ยกตัวอย่าง","ขำๆ มีอีโมจิ","ทางการ"]}`,
-			`{"question":"ask_user test: which tone should the reply use?","options":["Short and tight","Detailed, with examples","Playful, with emoji","Formal"]}`))
+		return call("noop_ask_1", "ask_user", p.say(phrase{
+			"th": `{"question":"ทดสอบ ask_user: อยากให้ตอบกลับด้วยโทนไหนครับ?","options":["สั้น กระชับ","ละเอียด ยกตัวอย่าง","ขำๆ มีอีโมจิ","ทางการ"]}`,
+			"en": `{"question":"ask_user test: which tone should the reply use?","options":["Short and tight","Detailed, with examples","Playful, with emoji","Formal"]}`,
+		}))
 	case todoCalls == 1:
-		return call("noop_todo_2", "todo_write", p.pick(
-			`{"todos":[{"content":"วางแผนชุดทดสอบ UI","status":"completed"},{"content":"แสดง checklist ระหว่างทำงาน","status":"completed"},{"content":"ถามผู้ใช้ด้วย ask_user","status":"completed"},{"content":"สรุปผลการทดสอบ","status":"completed"}]}`,
-			`{"todos":[{"content":"Plan the UI test set","status":"completed"},{"content":"Show the checklist while working","status":"completed"},{"content":"Ask the user via ask_user","status":"completed"},{"content":"Summarize the results","status":"completed"}]}`))
+		return call("noop_todo_2", "todo_write", p.say(phrase{
+			"th": `{"todos":[{"content":"วางแผนชุดทดสอบ UI","status":"completed"},{"content":"แสดง checklist ระหว่างทำงาน","status":"completed"},{"content":"ถามผู้ใช้ด้วย ask_user","status":"completed"},{"content":"สรุปผลการทดสอบ","status":"completed"}]}`,
+			"en": `{"todos":[{"content":"Plan the UI test set","status":"completed"},{"content":"Show the checklist while working","status":"completed"},{"content":"Ask the user via ask_user","status":"completed"},{"content":"Summarize the results","status":"completed"}]}`,
+		}))
 	default:
 		return Response{
 			Provider: p.Name(),
 			Model:    model,
-			Text: p.pick(
-				"✅ จบชุดทดสอบ tools UI ครับ — todo panel, ask_user cards และ tool timeline ทำงานครบ\n\nผลจาก ask_user: ",
-				"✅ Tools UI test set complete — todo panel, ask_user cards and the tool timeline all worked.\n\nask_user returned: ") + lastAnswer,
+			Text: p.say(phrase{
+				"th": "✅ จบชุดทดสอบ tools UI ครับ — todo panel, ask_user cards และ tool timeline ทำงานครบ\n\nผลจาก ask_user: ",
+				"en": "✅ Tools UI test set complete — todo panel, ask_user cards and the tool timeline all worked.\n\nask_user returned: ",
+			}) + lastAnswer,
 		}
 	}
 }
@@ -474,9 +631,10 @@ func (p *NoopProvider) noopToolsReply(model string, req Request) Response {
 func (p *NoopProvider) noopMemoryReply(model string, req Request) Response {
 	for _, m := range req.Messages {
 		if m.Role == RoleTool && strings.EqualFold(m.Name, "memory") {
-			return Response{Provider: p.Name(), Model: model, Text: p.pick(
-				"[tools-test] เสนอสิ่งที่อยากจำไปแล้ว ระบบตอบกลับว่า: ",
-				"[tools-test] proposed something to remember. It answered: ") +
+			return Response{Provider: p.Name(), Model: model, Text: p.say(phrase{
+				"th": "[tools-test] เสนอสิ่งที่อยากจำไปแล้ว ระบบตอบกลับว่า: ",
+				"en": "[tools-test] proposed something to remember. It answered: ",
+			}) +
 				clipNoop(strings.TrimSpace(m.Content), 300)}
 		}
 	}
@@ -491,17 +649,19 @@ func (p *NoopProvider) noopMemoryReply(model string, req Request) Response {
 		return Response{Provider: p.Name(), Model: model, ToolCalls: []ToolCall{{
 			ID:   "noop_memory_project_1",
 			Type: "function",
-			Function: FunctionCall{Name: "memory", Arguments: p.pick(
-				`{"text":"โปรเจกต์นี้ตกลงกันว่าใช้ PowerShell เป็นเชลล์หลัก","why":"[tools-test] ชุดทดสอบความจำรายโปรเจกต์","where":"this-project"}`,
-				`{"text":"This project settled on PowerShell as its shell","why":"[tools-test] the per-project memory test set","where":"this-project"}`)},
+			Function: FunctionCall{Name: "memory", Arguments: p.say(phrase{
+				"th": `{"text":"โปรเจกต์นี้ตกลงกันว่าใช้ PowerShell เป็นเชลล์หลัก","why":"[tools-test] ชุดทดสอบความจำรายโปรเจกต์","where":"this-project"}`,
+				"en": `{"text":"This project settled on PowerShell as its shell","why":"[tools-test] the per-project memory test set","where":"this-project"}`,
+			})},
 		}}}
 	}
 	return Response{Provider: p.Name(), Model: model, ToolCalls: []ToolCall{{
 		ID:   "noop_memory_1",
 		Type: "function",
-		Function: FunctionCall{Name: "memory", Arguments: p.pick(
-			`{"text":"เครื่องนี้ไม่มี Excel ติดตั้ง ต้องส่งไฟล์ .xlsx กลับเป็นไฟล์เสมอ","why":"[tools-test] ชุดทดสอบการเรียนรู้"}`,
-			`{"text":"This machine has no Excel installed, so .xlsx work has to come back as a file","why":"[tools-test] the learning test set"}`)},
+		Function: FunctionCall{Name: "memory", Arguments: p.say(phrase{
+			"th": `{"text":"เครื่องนี้ไม่มี Excel ติดตั้ง ต้องส่งไฟล์ .xlsx กลับเป็นไฟล์เสมอ","why":"[tools-test] ชุดทดสอบการเรียนรู้"}`,
+			"en": `{"text":"This machine has no Excel installed, so .xlsx work has to come back as a file","why":"[tools-test] the learning test set"}`,
+		})},
 	}}}
 }
 
@@ -572,17 +732,19 @@ func (p *NoopProvider) noopSubagentReply(model string, req Request) Response {
 		// read-only delegate can only ever show a search. This one lists, writes
 		// a real file, reads it back and greps it — the shape of an actual
 		// delegated job, and an artifact on disk at the end of it.
-		return call("noop_task_1", "task", p.pick(
-			`{"description":"ทดสอบซับเอเจน","prompt":"askmain: ดูว่าในโฟลเดอร์นี้มีไฟล์อะไรบ้าง เขียนไฟล์สรุปไว้หนึ่งไฟล์ อ่านกลับมายืนยัน แล้วรายงานผล","agent":"general"}`,
-			`{"description":"sub-agent test","prompt":"askmain: list what is in this folder, write a summary file, read it back to confirm, then report","agent":"general"}`))
+		return call("noop_task_1", "task", p.say(phrase{
+			"th": `{"description":"ทดสอบซับเอเจน","prompt":"askmain: ดูว่าในโฟลเดอร์นี้มีไฟล์อะไรบ้าง เขียนไฟล์สรุปไว้หนึ่งไฟล์ อ่านกลับมายืนยัน แล้วรายงานผล","agent":"general"}`,
+			"en": `{"description":"sub-agent test","prompt":"askmain: list what is in this folder, write a summary file, read it back to confirm, then report","agent":"general"}`,
+		}))
 	case collected == 0:
 		return call("noop_task_collect_1", "task", `{"action":"collect","task_id":"`+firstTaskID(req)+`"}`)
 	case answered == 0:
 		// The delegate is parked on its question; this is the round that proves
 		// the answer travels back into a run that is still alive.
-		return call("noop_task_answer_1", "task", p.pick(
-			`{"action":"answer","task_id":"`+firstTaskID(req)+`","answer":"ลุยเลย ลิสต์ทั้งโฟลเดอร์ได้"}`,
-			`{"action":"answer","task_id":"`+firstTaskID(req)+`","answer":"go ahead, list the whole folder"}`))
+		return call("noop_task_answer_1", "task", p.say(phrase{
+			"th": `{"action":"answer","task_id":"` + firstTaskID(req) + `","answer":"ลุยเลย ลิสต์ทั้งโฟลเดอร์ได้"}`,
+			"en": `{"action":"answer","task_id":"` + firstTaskID(req) + `","answer":"go ahead, list the whole folder"}`,
+		}))
 	case collected == 1:
 		return call("noop_task_collect_2", "task", `{"action":"collect","task_id":"`+firstTaskID(req)+`"}`)
 	}
@@ -593,9 +755,10 @@ func (p *NoopProvider) noopSubagentReply(model string, req Request) Response {
 			last = strings.TrimSpace(m.Content)
 		}
 	}
-	return Response{Provider: p.Name(), Model: model, Text: p.pick(
-		"✅ จบชุดทดสอบซับเอเจนครับ — สั่งงาน → มันติดแล้วถามกลับ → ตอบไป → มันทำต่อจนจบ แล้วเก็บผลได้ครบ\n\nผลที่ได้: ",
-		"✅ Sub-agent test set complete — delegated, it got stuck and asked, the answer went back, it finished, and the work was collected.\n\nWhat the sub-agent returned: ") + clipNoop(last, 600)}
+	return Response{Provider: p.Name(), Model: model, Text: p.say(phrase{
+		"th": "✅ จบชุดทดสอบซับเอเจนครับ — สั่งงาน → มันติดแล้วถามกลับ → ตอบไป → มันทำต่อจนจบ แล้วเก็บผลได้ครบ\n\nผลที่ได้: ",
+		"en": "✅ Sub-agent test set complete — delegated, it got stuck and asked, the answer went back, it finished, and the work was collected.\n\nWhat the sub-agent returned: ",
+	}) + clipNoop(last, 600)}
 }
 
 // noopSubagentDelegateReply is the bench's delegate: a job with several steps in
@@ -621,9 +784,10 @@ func (p *NoopProvider) noopSubagentDelegateReply(model string, req Request) Resp
 			ID: id, Type: "function", Function: FunctionCall{Name: name, Arguments: args},
 		}}}
 	}
-	body := p.pick(
-		"# สรุปโฟลเดอร์\\n\\nไฟล์นี้เขียนโดยซับเอเจนระหว่างชุดทดสอบ\\n\\n- ตรวจแล้ว: OK\\n",
-		"# Folder summary\\n\\nWritten by a sub-agent during the test set.\\n\\n- checked: OK\\n")
+	body := p.say(phrase{
+		"th": "# สรุปโฟลเดอร์\\n\\nไฟล์นี้เขียนโดยซับเอเจนระหว่างชุดทดสอบ\\n\\n- ตรวจแล้ว: OK\\n",
+		"en": "# Folder summary\\n\\nWritten by a sub-agent during the test set.\\n\\n- checked: OK\\n",
+	})
 
 	// The run bench's delegates: read-only, two steps, then a finding. Its own
 	// branch because six of them work at once on the user's real sandbox — the
@@ -636,9 +800,10 @@ func (p *NoopProvider) noopSubagentDelegateReply(model string, req Request) Resp
 		case !did("grep") && offersTool(req, "grep"):
 			return step("noop_sub_grep", "grep", `{"pattern":"aetox","path":"."}`)
 		}
-		return Response{Provider: p.Name(), Model: model, Text: p.pick(
-			"[run-test] ตรวจแล้ว: ข้อกล่าวอ้างนี้ตรงกับสิ่งที่อยู่ในโฟลเดอร์จริง",
-			"[run-test] checked: this claim matches what is actually in the folder")}
+		return Response{Provider: p.Name(), Model: model, Text: p.say(phrase{
+			"th": "[run-test] ตรวจแล้ว: ข้อกล่าวอ้างนี้ตรงกับสิ่งที่อยู่ในโฟลเดอร์จริง",
+			"en": "[run-test] checked: this claim matches what is actually in the folder",
+		})}
 	}
 
 	switch {
@@ -648,13 +813,15 @@ func (p *NoopProvider) noopSubagentDelegateReply(model string, req Request) Resp
 	// chair asked for none of them — and a script that tried would only prove
 	// that calling a tool you were not handed goes nowhere.
 	case briefMentions(req, "office") && offersTool(req, "doc_write") && !did("doc_write"):
-		return step("noop_sub_doc", "doc_write", p.pick(
-			`{"path":"office-demo.docx","blocks":[{"type":"heading","text":"สรุปงานจากทีมเอเจน"},{"type":"paragraph","text":"เขียนโดยเอเจนระหว่างชุดทดสอบ"}]}`,
-			`{"path":"office-demo.docx","blocks":[{"type":"heading","text":"Office job summary"},{"type":"paragraph","text":"Written by a chair in the office during the test set."}]}`))
+		return step("noop_sub_doc", "doc_write", p.say(phrase{
+			"th": `{"path":"office-demo.docx","blocks":[{"type":"heading","text":"สรุปงานจากทีมเอเจน"},{"type":"paragraph","text":"เขียนโดยเอเจนระหว่างชุดทดสอบ"}]}`,
+			"en": `{"path":"office-demo.docx","blocks":[{"type":"heading","text":"Office job summary"},{"type":"paragraph","text":"Written by a chair in the office during the test set."}]}`,
+		}))
 	case !did("ask_main") && offersTool(req, "ask_main") && briefMentions(req, "askmain"):
-		return step("noop_sub_ask", "ask_main", p.pick(
-			`{"question":"[tools-test] ให้ลิสต์ทั้งโฟลเดอร์แล้วเขียนไฟล์สรุปเลยไหม หรือหยุดแค่นี้?"}`,
-			`{"question":"[tools-test] list the whole folder and write the summary file, or stop here?"}`))
+		return step("noop_sub_ask", "ask_main", p.say(phrase{
+			"th": `{"question":"[tools-test] ให้ลิสต์ทั้งโฟลเดอร์แล้วเขียนไฟล์สรุปเลยไหม หรือหยุดแค่นี้?"}`,
+			"en": `{"question":"[tools-test] list the whole folder and write the summary file, or stop here?"}`,
+		}))
 	case !did("list") && offersTool(req, "list"):
 		return step("noop_sub_list", "list", `{"path":"."}`)
 	case !did("write") && offersTool(req, "write"):
@@ -666,22 +833,25 @@ func (p *NoopProvider) noopSubagentDelegateReply(model string, req Request) Resp
 	}
 
 	var b strings.Builder
-	b.WriteString(p.pick("[tools-test] ทำงานเสร็จแล้ว:\n", "[tools-test] the delegate is done:\n"))
-	for _, s := range []struct{ tool, th, en string }{
-		{"doc_write", "เขียนเอกสารส่งกลับ", "wrote the document"},
-		{"list", "ดูไฟล์ในโฟลเดอร์", "listed the folder"},
-		{"write", "เขียนไฟล์ " + demoFile, "wrote " + demoFile},
-		{"read", "อ่านกลับมายืนยัน", "read it back to confirm"},
-		{"grep", "ค้นข้อความในไฟล์", "grepped it"},
+	b.WriteString(p.say(phrase{"th": "[tools-test] ทำงานเสร็จแล้ว:\n", "en": "[tools-test] the delegate is done:\n"}))
+	for _, s := range []struct {
+		tool string
+		did  phrase
+	}{
+		{"doc_write", phrase{"th": "เขียนเอกสารส่งกลับ", "en": "wrote the document"}},
+		{"list", phrase{"th": "ดูไฟล์ในโฟลเดอร์", "en": "listed the folder"}},
+		{"write", phrase{"th": "เขียนไฟล์ " + demoFile, "en": "wrote " + demoFile}},
+		{"read", phrase{"th": "อ่านกลับมายืนยัน", "en": "read it back to confirm"}},
+		{"grep", phrase{"th": "ค้นข้อความในไฟล์", "en": "grepped it"}},
 	} {
 		if out, ok := ran[s.tool]; ok {
-			fmt.Fprintf(&b, "- %s: %s\n", p.pick(s.th, s.en), clipNoop(out, 160))
+			fmt.Fprintf(&b, "- %s: %s\n", p.say(s.did), clipNoop(out, 160))
 		}
 	}
 	if answer, ok := ran["ask_main"]; ok {
 		// Echoing the answer proves the delegate resumed the same run rather
 		// than being restarted: a fresh one would not remember having asked.
-		b.WriteString(p.pick("คำตอบจากเมนเอเจน: ", "main agent answered: ") + clipNoop(answer, 200) + "\n")
+		b.WriteString(p.say(phrase{"th": "คำตอบจากเมนเอเจน: ", "en": "main agent answered: "}) + clipNoop(answer, 200) + "\n")
 	}
 	return Response{Provider: p.Name(), Model: model, Text: strings.TrimRight(b.String(), "\n")}
 }
@@ -786,14 +956,15 @@ func (p *NoopProvider) noopRunReply(model string, req Request) Response {
 			`{"action":"collect","task_id":"`+strings.Join(ids("noop_run_sum_"), ",")+`"}`))
 	}
 
-	return Response{Provider: p.Name(), Model: model, Text: p.pick(
-		"✅ จบชุดทดสอบชุดงานครับ — ประกาศเฟสไว้ก่อน 3 เฟส → กระจาย 3 ตัวไปตรวจพร้อมกัน → เก็บผล → "+
-			"ส่งอีก 2 ตัวไปหักล้าง → เก็บผล → สรุป\n\n"+
+	return Response{Provider: p.Name(), Model: model, Text: p.say(phrase{
+		"th": "✅ จบชุดทดสอบชุดงานครับ — ประกาศเฟสไว้ก่อน 3 เฟส → กระจาย 3 ตัวไปตรวจพร้อมกัน → เก็บผล → " +
+			"ส่งอีก 2 ตัวไปหักล้าง → เก็บผล → สรุป\n\n" +
 			"การ์ดข้างล่างคือสิ่งที่ต้องดู: ทุกตัวอยู่ใต้ชื่องานเดียวกัน และเฟสที่ยังไม่ถึงคิวขึ้นเป็น 0 ไว้ตั้งแต่ต้น",
-		"✅ Run test set complete — three phases declared up front, three delegates fanned out at once, "+
-			"collected, two more sent to refute, collected, then a summary.\n\n"+
-			"The card below is the thing to look at: every worker under one job, and a phase that has not "+
-			"happened yet drawn at 0 from the start.")}
+		"en": "✅ Run test set complete — three phases declared up front, three delegates fanned out at once, " +
+			"collected, two more sent to refute, collected, then a summary.\n\n" +
+			"The card below is the thing to look at: every worker under one job, and a phase that has not " +
+			"happened yet drawn at 0 from the start.",
+	})}
 }
 
 // firstTaskID digs the handle out of whatever `task` reported. The id travels to
@@ -897,9 +1068,10 @@ func (p *NoopProvider) noopDelegationReply(model string, req Request) Response {
 	case collected == "":
 		return call("noop_task_collect_1", "task", fmt.Sprintf(`{"action":"collect","task_id":%q}`, started))
 	}
-	return Response{Provider: p.Name(), Model: model, Text: p.pick(
-		"[tools-test] ส่งงานให้ "+profile+" แล้วเก็บผลกลับมาได้ ผลที่ได้:\n",
-		"[tools-test] delegated to sub-agent "+profile+" and collected it. Result:\n") + clipNoop(collected, 600)}
+	return Response{Provider: p.Name(), Model: model, Text: p.say(phrase{
+		"th": "[tools-test] ส่งงานให้ " + profile + " แล้วเก็บผลกลับมาได้ ผลที่ได้:\n",
+		"en": "[tools-test] delegated to sub-agent " + profile + " and collected it. Result:\n",
+	}) + clipNoop(collected, 600)}
 }
 
 // taskIDIn digs the handle out of what `task` returned. It reads the id rather
@@ -950,16 +1122,17 @@ func (p *NoopProvider) noopToolchainReply(model string, req Request) Response {
 		}}}
 	}
 	if len(ran) == 0 {
-		return Response{Provider: p.Name(), Model: model, Text: p.pick(
-			"[tools-test] ไม่ได้รับเครื่องมืออ่านข้อมูลเลย จึงไม่มีอะไรให้รายงาน",
-			"[tools-test] I was handed no read-only tool, so there is nothing to report")}
+		return Response{Provider: p.Name(), Model: model, Text: p.say(phrase{
+			"th": "[tools-test] ไม่ได้รับเครื่องมืออ่านข้อมูลเลย จึงไม่มีอะไรให้รายงาน",
+			"en": "[tools-test] I was handed no read-only tool, so there is nothing to report",
+		})}
 	}
 	// A digest, not the raw envelopes — which is what a delegate is for, and what
 	// makes the report checkable at both ends: a loop that quietly stopped after
 	// the first probe cannot fake these lines, and a raw tool envelope appearing
 	// in what the parent receives can only mean the transcript leaked (§44.6).
 	var b strings.Builder
-	b.WriteString(p.pick("[tools-test] เรียกครบทุกตัวแล้ว:", "[tools-test] ran the whole chain:"))
+	b.WriteString(p.say(phrase{"th": "[tools-test] เรียกครบทุกตัวแล้ว:", "en": "[tools-test] ran the whole chain:"}))
 	for _, probe := range toolchainProbes {
 		if out, done := ran[probe.name]; done {
 			fmt.Fprintf(&b, "\n- %s → %d bytes", probe.name, len(out))
@@ -1041,15 +1214,16 @@ func (p *NoopProvider) noopDelegateToolsReply(model string, req Request) Respons
 
 	if !ran {
 		// Nothing read-only was offered at all — say so instead of inventing work.
-		return Response{Provider: p.Name(), Model: model, Text: p.pick(
-			"[tools-test] ไม่ได้รับเครื่องมืออ่านข้อมูลเลย จึงไม่มีอะไรให้รายงาน",
-			"[tools-test] I was handed no read-only tool, so there is nothing to report")}
+		return Response{Provider: p.Name(), Model: model, Text: p.say(phrase{
+			"th": "[tools-test] ไม่ได้รับเครื่องมืออ่านข้อมูลเลย จึงไม่มีอะไรให้รายงาน",
+			"en": "[tools-test] I was handed no read-only tool, so there is nothing to report",
+		})}
 	}
-	reply := p.pick("[tools-test] เรียก list แล้ว ผลที่ได้: ", "[tools-test] ran list, result: ") + clipNoop(result, 400)
+	reply := p.say(phrase{"th": "[tools-test] เรียก list แล้ว ผลที่ได้: ", "en": "[tools-test] ran list, result: "}) + clipNoop(result, 400)
 	if asked {
 		// Echoing the answer proves the delegate resumed the same run rather than
 		// being restarted: a fresh agent would have no memory of having asked.
-		reply += p.pick("\nคำตอบจากเมนเอเจน: ", "\nmain agent answered: ") + clipNoop(answer, 200)
+		reply += p.say(phrase{"th": "\nคำตอบจากเมนเอเจน: ", "en": "\nmain agent answered: "}) + clipNoop(answer, 200)
 	}
 	return Response{Provider: p.Name(), Model: model, Text: reply}
 }
@@ -1061,17 +1235,19 @@ func (p *NoopProvider) noopDelegateToolsReply(model string, req Request) Respons
 func (p *NoopProvider) noopOfficeChairReply(model string, req Request) Response {
 	for _, m := range req.Messages {
 		if m.Role == RoleTool && strings.EqualFold(m.Name, "doc_write") {
-			return Response{Provider: p.Name(), Model: model, Text: p.pick(
-				"[tools-test] เขียนเอกสารเสร็จแล้ว: ", "[tools-test] the document is written: ") +
-				clipNoop(strings.TrimSpace(m.Content), 300)}
+			return Response{Provider: p.Name(), Model: model, Text: p.say(phrase{
+				"th": "[tools-test] เขียนเอกสารเสร็จแล้ว: ",
+				"en": "[tools-test] the document is written: ",
+			}) + clipNoop(strings.TrimSpace(m.Content), 300)}
 		}
 	}
 	return Response{Provider: p.Name(), Model: model, ToolCalls: []ToolCall{{
 		ID:   "noop_chair_doc",
 		Type: "function",
-		Function: FunctionCall{Name: "doc_write", Arguments: p.pick(
-			`{"path":"office-demo.docx","blocks":[{"type":"heading","text":"สรุปงานจากทีมเอเจน"},{"type":"paragraph","text":"เขียนโดยเอเจนระหว่างชุดทดสอบ"}]}`,
-			`{"path":"office-demo.docx","blocks":[{"type":"heading","text":"Office job summary"},{"type":"paragraph","text":"Written by a chair in the office during the test set."}]}`)},
+		Function: FunctionCall{Name: "doc_write", Arguments: p.say(phrase{
+			"th": `{"path":"office-demo.docx","blocks":[{"type":"heading","text":"สรุปงานจากทีมเอเจน"},{"type":"paragraph","text":"เขียนโดยเอเจนระหว่างชุดทดสอบ"}]}`,
+			"en": `{"path":"office-demo.docx","blocks":[{"type":"heading","text":"Office job summary"},{"type":"paragraph","text":"Written by a chair in the office during the test set."}]}`,
+		})},
 	}}}
 }
 
@@ -1079,29 +1255,36 @@ func (p *NoopProvider) noopOfficeChairReply(model string, req Request) Response 
 // word-by-word trickle) so the live reasoning panel, its unbounded height, the
 // pinned auto-scroll, and the collapsed "done thinking" toggle all get a real
 // workout without an API key.
+//
+// Both languages are rendered and one is thrown away, which is the shape every
+// other canned string in this file has: a phrase carries what exists, and the
+// locale picks. The alternative is a branch per language, and a branch is the
+// thing that has to be found and edited again for the third one.
 func (p *NoopProvider) noopLongReasoning(text string) string {
-	if p.english() {
-		return renderReasoning([]struct{ head, body string }{
+	return p.say(phrase{
+		"en": renderReasoning([]reasoningSection{
 			{"Reading the question", "The user asked \"" + clipNoop(text, 60) + "\" — first, separate whether this is a question of fact, of opinion, or an instruction to act, because the shape of the answer differs completely. Misread it here and everything downstream is wrong."},
 			{"Breaking it down", "Three axes: (1) what was literally said (2) what they probably want but did not say (3) the surrounding constraints — time, earlier context, the right format to answer in. The second is the most important and the easiest to miss."},
 			{"Hypotheses", "First: a short direct answer is enough. Second: it needs an example to land. Third: this is part of a larger task and one clarifying question should come first. Weighing them, the first two cover most cases."},
 			{"Looking for contradictions", "Where do the hypotheses fight? Answer short when they wanted an example and it reads curt; answer long when they wanted confirmation and it reads bloated. The way out is a one-line conclusion first, then detail that can be skipped."},
 			{"Drafting", "Structure: a decisive first line, two or three short reasons, and one follow-up question only if it is genuinely needed. Friendly but precise, no jargon that is not earning its place."},
 			{"Final pass", "Read it again: does it answer what was asked, is anything stated with more confidence than the evidence supports, is there a way to misread it? All three clear means it is ready — and this whole long stream exists to prove the panel renders smoothly, collapses, and keeps scroll in the right place."},
-		})
-	}
-	sections := []struct{ head, body string }{
-		{"ตีโจทย์", "ผู้ใช้ถามว่า \"" + clipNoop(text, 60) + "\" — ก่อนอื่นต้องแยกให้ออกว่านี่คือคำถามเชิงข้อเท็จจริง เชิงความเห็น หรือเป็นคำสั่งให้ลงมือทำ เพราะโครงคำตอบต่างกันมาก ถ้าตีความผิดตั้งแต่ต้น ที่เหลือจะเพี้ยนหมด"},
-		{"แตกประเด็น", "ลองแตกออกเป็นสามแกน: (1) สิ่งที่ผู้ใช้พูดตรง ๆ (2) สิ่งที่น่าจะอยากได้จริง ๆ แต่ไม่ได้พูด (3) ข้อจำกัดแวดล้อม เช่น เวลา บริบทก่อนหน้าในบทสนทนา และรูปแบบคำตอบที่เหมาะ ประเด็นที่สองสำคัญสุดและพลาดง่ายสุด"},
-		{"ตั้งสมมติฐาน", "สมมติฐานแรก: ตอบสั้นตรงประเด็นพอ สมมติฐานสอง: ต้องมีตัวอย่างประกอบถึงจะเข้าใจ สมมติฐานสาม: จริง ๆ แล้วคำถามนี้เป็นส่วนหนึ่งของงานที่ใหญ่กว่า ควรถามกลับก่อนหนึ่งครั้ง ชั่งน้ำหนักแล้วสมมติฐานแรกกับสองน่าจะครอบคลุมกรณีส่วนใหญ่"},
-		{"ตรวจสอบข้อขัดแย้ง", "ลองหาจุดที่สมมติฐานขัดกันเอง — ถ้าตอบสั้นแต่ผู้ใช้ต้องการตัวอย่าง คำตอบจะดูห้วน ถ้าตอบยาวแต่เขาแค่อยากได้คำยืนยัน คำตอบจะดูเยิ่นเย้อ ทางออกคือเปิดด้วยข้อสรุปหนึ่งบรรทัด แล้วค่อยตามด้วยรายละเอียดที่ข้ามได้"},
-		{"ร่างคำตอบ", "โครงคำตอบ: บรรทัดแรกสรุปฟันธง ตามด้วยเหตุผลสั้น ๆ สองสามข้อ ปิดด้วยคำถามชวนต่อหนึ่งคำถามถ้าจำเป็น ภาษาต้องเป็นกันเองแต่ไม่หลุดความแม่นยำ หลีกเลี่ยงศัพท์เทคนิคที่ไม่จำเป็น"},
-		{"ทบทวนรอบสุดท้าย", "อ่านซ้ำอีกรอบ: ตอบตรงคำถามไหม มีอะไรที่มั่นใจเกินหลักฐานไหม มีทางที่ผู้ใช้จะเข้าใจผิดไหม ถ้าผ่านทั้งสามข้อก็พร้อมตอบ — ท่อนความคิดยาว ๆ ทั้งหมดนี้มีไว้ทดสอบว่า panel แสดงผลลื่น พับเก็บได้ และ scroll ตามได้ถูกต้อง"},
-	}
-	return renderReasoning(sections)
+		}),
+		"th": renderReasoning([]reasoningSection{
+			{"ตีโจทย์", "ผู้ใช้ถามว่า \"" + clipNoop(text, 60) + "\" — ก่อนอื่นต้องแยกให้ออกว่านี่คือคำถามเชิงข้อเท็จจริง เชิงความเห็น หรือเป็นคำสั่งให้ลงมือทำ เพราะโครงคำตอบต่างกันมาก ถ้าตีความผิดตั้งแต่ต้น ที่เหลือจะเพี้ยนหมด"},
+			{"แตกประเด็น", "ลองแตกออกเป็นสามแกน: (1) สิ่งที่ผู้ใช้พูดตรง ๆ (2) สิ่งที่น่าจะอยากได้จริง ๆ แต่ไม่ได้พูด (3) ข้อจำกัดแวดล้อม เช่น เวลา บริบทก่อนหน้าในบทสนทนา และรูปแบบคำตอบที่เหมาะ ประเด็นที่สองสำคัญสุดและพลาดง่ายสุด"},
+			{"ตั้งสมมติฐาน", "สมมติฐานแรก: ตอบสั้นตรงประเด็นพอ สมมติฐานสอง: ต้องมีตัวอย่างประกอบถึงจะเข้าใจ สมมติฐานสาม: จริง ๆ แล้วคำถามนี้เป็นส่วนหนึ่งของงานที่ใหญ่กว่า ควรถามกลับก่อนหนึ่งครั้ง ชั่งน้ำหนักแล้วสมมติฐานแรกกับสองน่าจะครอบคลุมกรณีส่วนใหญ่"},
+			{"ตรวจสอบข้อขัดแย้ง", "ลองหาจุดที่สมมติฐานขัดกันเอง — ถ้าตอบสั้นแต่ผู้ใช้ต้องการตัวอย่าง คำตอบจะดูห้วน ถ้าตอบยาวแต่เขาแค่อยากได้คำยืนยัน คำตอบจะดูเยิ่นเย้อ ทางออกคือเปิดด้วยข้อสรุปหนึ่งบรรทัด แล้วค่อยตามด้วยรายละเอียดที่ข้ามได้"},
+			{"ร่างคำตอบ", "โครงคำตอบ: บรรทัดแรกสรุปฟันธง ตามด้วยเหตุผลสั้น ๆ สองสามข้อ ปิดด้วยคำถามชวนต่อหนึ่งคำถามถ้าจำเป็น ภาษาต้องเป็นกันเองแต่ไม่หลุดความแม่นยำ หลีกเลี่ยงศัพท์เทคนิคที่ไม่จำเป็น"},
+			{"ทบทวนรอบสุดท้าย", "อ่านซ้ำอีกรอบ: ตอบตรงคำถามไหม มีอะไรที่มั่นใจเกินหลักฐานไหม มีทางที่ผู้ใช้จะเข้าใจผิดไหม ถ้าผ่านทั้งสามข้อก็พร้อมตอบ — ท่อนความคิดยาว ๆ ทั้งหมดนี้มีไว้ทดสอบว่า panel แสดงผลลื่น พับเก็บได้ และ scroll ตามได้ถูกต้อง"},
+		}),
+	})
 }
 
-func renderReasoning(sections []struct{ head, body string }) string {
+// reasoningSection is one [n/6] block of the scripted thinking stream.
+type reasoningSection struct{ head, body string }
+
+func renderReasoning(sections []reasoningSection) string {
 	var b strings.Builder
 	for i, s := range sections {
 		fmt.Fprintf(&b, "[%d/%d] %s\n%s\n\n", i+1, len(sections), s.head, s.body)
@@ -1122,48 +1305,51 @@ func clipNoop(s string, max int) string {
 // Deterministic images come from picsum.photos seeds.
 func (p *NoopProvider) noopScenario(text string) (string, bool) {
 	key := strings.ToLower(strings.TrimSpace(strings.Fields(text)[0]))
-	alt := p.pick("ภาพทดสอบ", "test image")
+	alt := p.say(phrase{"th": "ภาพทดสอบ", "en": "test image"})
 	img := func(seed string, w, h int) string {
 		return fmt.Sprintf("![%s %s](https://picsum.photos/seed/%s/%d/%d)", alt, seed, seed, w, h)
 	}
 	switch key {
 	case "img1":
-		return p.pick("รูปเดี่ยวขนาดปกติครับ:", "A single image at normal size:") + "\n\n" + img("aetox1", 640, 420) +
-			"\n\n" + p.pick("ข้อความหลังรูปต้องเว้นระยะสวยงาม", "Text after the image must keep clean spacing."), true
+		return p.say(phrase{"th": "รูปเดี่ยวขนาดปกติครับ:", "en": "A single image at normal size:"}) + "\n\n" + img("aetox1", 640, 420) +
+			"\n\n" + p.say(phrase{"th": "ข้อความหลังรูปต้องเว้นระยะสวยงาม", "en": "Text after the image must keep clean spacing."}), true
 	case "img5":
-		return p.pick(
-			"แกลเลอรี 5 รูปติดกัน (ต้องเรียงแถวแล้ว wrap ไม่ใช่ตั้งซ้อนเต็มจอ):",
-			"Five images in a row (they must flow and wrap, not stack full-width):") + "\n\n" +
+		return p.say(phrase{
+			"th": "แกลเลอรี 5 รูปติดกัน (ต้องเรียงแถวแล้ว wrap ไม่ใช่ตั้งซ้อนเต็มจอ):",
+			"en": "Five images in a row (they must flow and wrap, not stack full-width):",
+		}) + "\n\n" +
 			img("a1", 400, 300) + " " + img("a2", 300, 400) + " " + img("a3", 400, 260) + " " +
 			img("a4", 350, 350) + " " + img("a5", 420, 280), true
 	case "imgbig":
-		return p.pick(
-			"รูปยักษ์ 4000px (ต้องโดนบีบให้พอดี bubble ไม่ทะลุจอ):",
-			"A 4000px monster (must be constrained to the bubble, not blow past the screen):") + "\n\n" +
+		return p.say(phrase{
+			"th": "รูปยักษ์ 4000px (ต้องโดนบีบให้พอดี bubble ไม่ทะลุจอ):",
+			"en": "A 4000px monster (must be constrained to the bubble, not blow past the screen):",
+		}) + "\n\n" +
 			img("aetoxbig", 4000, 1400), true
 	case "imgbroken":
-		return p.pick(
-			"รูปดี-รูปเสีย-รูปดี (ตัวกลางต้องยุบเป็น alt text ไม่ค้างเป็นซาก):",
-			"Good-broken-good (the middle one must collapse to alt text, not leave a carcass):") + "\n\n" +
-			img("ok1", 400, 300) + " ![" + p.pick("รูปนี้พังแน่นอน", "this one is definitely broken") +
+		return p.say(phrase{
+			"th": "รูปดี-รูปเสีย-รูปดี (ตัวกลางต้องยุบเป็น alt text ไม่ค้างเป็นซาก):",
+			"en": "Good-broken-good (the middle one must collapse to alt text, not leave a carcass):",
+		}) + "\n\n" +
+			img("ok1", 400, 300) + " ![" + p.say(phrase{"th": "รูปนี้พังแน่นอน", "en": "this one is definitely broken"}) +
 			"](https://aetox.invalid/broken.jpg) " + img("ok2", 400, 300), true
 	case "imgmix":
-		if p.english() {
-			return "## Three phones compared (a simulated research answer)\n\n" +
-				"The search turned up three worth looking at:\n\n" +
-				img("phone1", 380, 300) + " " + img("phone2", 380, 300) + " " + img("phone3", 380, 300) + "\n\n" +
+		gallery := img("phone1", 380, 300) + " " + img("phone2", 380, 300) + " " + img("phone3", 380, 300)
+		return p.say(phrase{
+			"th": "## เทียบมือถือ 3 รุ่น (จำลองคำตอบ research จริง)\n\n" +
+				"จากการค้นหา เจอ 3 รุ่นที่น่าสนใจครับ:\n\n" + gallery + "\n\n" +
+				"| รุ่น | ราคา | จุดเด่น |\n|---|---|---|\n| Alpha 12 | 19,900 | กล้อง 200MP |\n| Beta X | 24,500 | แบต 6000mAh |\n| Gamma 5 | 15,900 | คุ้มสุด |\n\n" +
+				"- **Alpha 12** เหมาะกับสายถ่ายรูป\n- **Beta X** เหมาะกับสายเกม\n\nอยากดูรีวิวรุ่นไหนบอกได้เลยครับ",
+			"en": "## Three phones compared (a simulated research answer)\n\n" +
+				"The search turned up three worth looking at:\n\n" + gallery + "\n\n" +
 				"| Model | Price | Standout |\n|---|---|---|\n| Alpha 12 | 19,900 | 200MP camera |\n| Beta X | 24,500 | 6000mAh battery |\n| Gamma 5 | 15,900 | best value |\n\n" +
-				"- **Alpha 12** for photography\n- **Beta X** for gaming\n\nSay which one you want reviewed.", true
-		}
-		return "## เทียบมือถือ 3 รุ่น (จำลองคำตอบ research จริง)\n\n" +
-			"จากการค้นหา เจอ 3 รุ่นที่น่าสนใจครับ:\n\n" +
-			img("phone1", 380, 300) + " " + img("phone2", 380, 300) + " " + img("phone3", 380, 300) + "\n\n" +
-			"| รุ่น | ราคา | จุดเด่น |\n|---|---|---|\n| Alpha 12 | 19,900 | กล้อง 200MP |\n| Beta X | 24,500 | แบต 6000mAh |\n| Gamma 5 | 15,900 | คุ้มสุด |\n\n" +
-			"- **Alpha 12** เหมาะกับสายถ่ายรูป\n- **Beta X** เหมาะกับสายเกม\n\nอยากดูรีวิวรุ่นไหนบอกได้เลยครับ", true
+				"- **Alpha 12** for photography\n- **Beta X** for gaming\n\nSay which one you want reviewed.",
+		}), true
 	case "imghelp", "imgtest":
-		return p.pick(
-			"คีย์เวิร์ดทดสอบ UI รูปภาพ: `img1` เดี่ยว · `img5` แกลเลอรี · `imgbig` รูปยักษ์ · `imgbroken` ลิงก์เสีย · `imgmix` คำตอบ research เต็มรูปแบบ",
-			"Image UI test keywords: `img1` single · `img5` gallery · `imgbig` oversized · `imgbroken` dead link · `imgmix` a full research-style answer"), true
+		return p.say(phrase{
+			"th": "คีย์เวิร์ดทดสอบ UI รูปภาพ: `img1` เดี่ยว · `img5` แกลเลอรี · `imgbig` รูปยักษ์ · `imgbroken` ลิงก์เสีย · `imgmix` คำตอบ research เต็มรูปแบบ",
+			"en": "Image UI test keywords: `img1` single · `img5` gallery · `imgbig` oversized · `imgbroken` dead link · `imgmix` a full research-style answer",
+		}), true
 	}
 	return "", false
 }

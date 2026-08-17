@@ -26,9 +26,16 @@ describe('Onboarding', () => {
   it('opens on the language choice, with nothing else to press', async () => {
     render(Onboarding)
     await screen.findByText('ยินดีต้อนรับสู่ Aetox')
-    // The whole screen is the question: two languages, no skip, no "start".
+    // The whole screen is the question: the languages, no skip, no "start".
+    //
+    // Compared against the language list rather than a written-out pair. The
+    // pair was the assertion until Chinese arrived and broke a test that was
+    // still telling the truth about the screen — what it means to pin is "the
+    // ONLY buttons here are languages", and a hard-coded list says that for
+    // exactly as long as the list does not change.
+    const { localeNames } = await import('../lib/i18n.svelte')
     const buttons = [...document.querySelectorAll('.ob-screen button')].map((b) => b.textContent?.trim())
-    expect(buttons).toEqual(['ไทย', 'English'])
+    expect(buttons).toEqual(Object.values(localeNames))
   })
 
   it('never shows for an install that already has a working key, and marks itself done', async () => {

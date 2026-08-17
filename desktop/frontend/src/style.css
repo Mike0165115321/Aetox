@@ -23,6 +23,16 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   --sans:"Inter Variable","Noto Sans Thai Variable","Segoe UI","Leelawadee UI",system-ui,sans-serif;
 }
 
+/* Chinese joins the stack only when the UI is in Chinese, off the lang the
+   document carries (i18n.svelte.ts sets it). Not global, because Han characters
+   are shared with Japanese and drawn differently in each: an SC font sitting in
+   the default stack would quietly redraw a Japanese chat message in mainland
+   glyph forms on a Thai UI, which is a worse answer than the one Windows gives
+   on its own. Scoped, it costs nothing until someone picks 中文. */
+:root:lang(zh) {
+  --sans:"Inter Variable","Noto Sans SC Variable","Noto Sans Thai Variable","Microsoft YaHei","Segoe UI",system-ui,sans-serif;
+}
+
 .app {
   height:100%; display:grid; overflow-x:hidden; overflow-y:hidden;
   /* The frame plane, showing through the resize-handle tracks either side of
@@ -502,6 +512,13 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   flex:1; min-width:0; padding:6px 9px; border-radius:var(--r-sm); background:var(--surface-panel);
   border:1px solid var(--border-subtle); color:var(--text-primary); font:inherit; font-size:var(--fs-sm);
 }
+/* The menu focuses this on open, so its focus state is not a reaction to
+   something the user did — it is how the menu arrives. The global 2px
+   --focus-ring is cyan on the default theme, which made the first thing you
+   see a lit box rather than a name. Same treatment every other text input in
+   the app already gets (.identity-input, .ob-input, the composer): drop the
+   ring, move the signal into the border. */
+.profile-head .name-input:focus { outline:0; border-color:var(--border-input-focus); }
 .menu-sep { height:1px; background:var(--border-subtle); margin:2px 10px 6px; }
 /* Balances in the profile menu: a glance, not a panel. */
 .acct-menu { display:flex; flex-direction:column; gap:8px; padding:2px 12px 6px; }

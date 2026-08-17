@@ -1,5 +1,10 @@
 import '@fontsource-variable/inter'
 import '@fontsource-variable/noto-sans-thai'
+// 4.3 MB across 101 unicode-range subsets, and that number is a disk number,
+// not a memory one: the browser decodes only the subsets holding characters
+// actually on screen. It is scoped to :lang(zh) in style.css rather than added
+// to the global stack — see the note there.
+import '@fontsource-variable/noto-sans-sc'
 import './styles/palette.css'
 import './styles/theme.css'
 import './styles/type.css'

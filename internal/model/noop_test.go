@@ -23,7 +23,7 @@ func TestNoopProviderComplete(t *testing.T) {
 	if resp.Model != "test-model" {
 		t.Fatalf("expected model test-model, got %s", resp.Model)
 	}
-	if resp.Text != noopOnboardingReply {
+	if resp.Text != noopOnboarding["th"] {
 		t.Fatalf("unconfigured install must get the onboarding reply, got: %s", resp.Text)
 	}
 }
@@ -38,7 +38,7 @@ func TestNoopProviderEmptyPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("complete failed: %v", err)
 	}
-	if resp.Text != noopOnboardingReply {
+	if resp.Text != noopOnboarding["th"] {
 		t.Fatalf("empty prompt on an unconfigured install must still get the onboarding reply, got: %s", resp.Text)
 	}
 }
@@ -95,7 +95,7 @@ func TestNoopProviderTestModels(t *testing.T) {
 
 	// the catalog's default noop model is what a genuinely unconfigured
 	// install lands on — it must guide the user to Settings, not echo debug text
-	if got := ask("aetox-grid", "สวัสดี").Text; got != noopOnboardingReply {
+	if got := ask("aetox-grid", "สวัสดี").Text; got != noopOnboarding["th"] {
 		t.Errorf("default model must return the onboarding reply, got %q", got)
 	}
 }
@@ -186,7 +186,7 @@ func TestNoopProviderImageScenarios(t *testing.T) {
 	}
 	// scenario keys trigger only as the first word — normal chat falls
 	// through to the onboarding reply, same as any other unscripted prompt
-	if got := ask("ผมชอบ img5 นะ"); got != noopOnboardingReply {
+	if got := ask("ผมชอบ img5 นะ"); got != noopOnboarding["th"] {
 		t.Errorf("mid-sentence keyword must not trigger a scenario, got:\n%s", got)
 	}
 }
