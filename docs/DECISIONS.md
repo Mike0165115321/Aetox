@@ -3758,3 +3758,43 @@ Softening it means letting a token through on the same missing-first-segment evi
 So the trade is a handful of one-liners, each with a way round it, against a staging area outside the workspace that one line can create and fill. The one-liners lose. What works today, and is now held by a test so it keeps working: `sed 's|/|-|g'` (any delimiter but `/`), `awk '{if ($0 ~ /needle/) print}'` and `awk '{gsub(/needle/,"x")}'` (the pattern stops being the token's first character), `grep '^beta'`, `cut -d/ -f2` (glued to its flag). The refusals are pinned by a test of their own, so the day someone clears them it is a decision and not a drift.
 
 **And one that no rule reaches:** `awk '$1 ~ /^var/'` is refused as "builds a path while it runs", because `$1` at the head of a token is a variable to every shell and a field only to awk. That is §-old policy about unknown variables doing exactly what it says; `awk '{print $1}'` and `awk '$1 > 5 {print}'` are unaffected, since neither puts a `/` after the variable.
+
+---
+
+## 124. Decision — A Screen Nobody Who Builds This Can See Will Rot, and It Did (2026-08-17)
+
+The first-run screen is the one page in Aetox with no returning users, and the one page nobody who works on Aetox ever sees. Its own logic guarantees that: it closes itself when the active provider already has credentials, which is the permanent state of every machine that builds it. Clearing the `aetox.onboarded` flag is not enough either — the has-a-key shortcut fires on the very next load and marks it done again. So it had drifted, unwatched, into a 560px dialog with two operating-system dropdowns in it, one of them seventeen providers deep and sorted alphabetically.
+
+The owner asked what a new install actually meets, and then rebuilt it across five rounds, rejecting each version with the reason attached. What follows is what those reasons turned into.
+
+### 124.1 The switch that makes an invisible screen visible
+
+Settings → ทั่วไป now carries **ดูหน้าจอเปิดโปรแกรมครั้งแรก**. It arms a one-shot flag that *outranks every shortcut* — that is the whole design, and the reason "just clear the flag" was never a fix. It forgets the remembered look (theme, language, door, fonts, panel widths, the model seed) and the room the window was standing in, so the replay does not open on the Settings page it was pressed from. It does not touch keys, chat history, engine configuration, an unsent draft, or the tabs on the desk: this is a replay of a *screen*, not a factory reset.
+
+Generalised in [DESIGN.md](../DESIGN.md) §3: **any state a developer machine cannot reach on its own gets a switch that reaches it, and the switch beats the shortcuts.** Empty database, expired token, refused folder, exhausted quota — all the same shape.
+
+### 124.2 Three questions wearing one label
+
+`HasAPIKey` answers true for a provider that *has a key*, for one that *needs no key at all*, and for one that is *signed in*. The onboarding list printed one label off that one boolean, so every row read "มีคีย์แล้ว" — including Ollama on a machine where it was never installed, and including Codex, which has no key and never will.
+
+The same conflation was a real bug three places deep. `RequiresAPIKey && !HasAPIKey` drew a password field for Codex under the composer and inside the wizard, and in the CLI's provider menu it did worse: the loop refuses an empty line, so picking Codex demanded, forever, a credential that does not exist. Codex is a ChatGPT subscription reached at chatgpt.com; the only key anyone could paste belongs to api.openai.com — different host, different bill, guaranteed 401. `AcceptsAPIKey` had existed in the catalog since the provider was added and only the Settings page was asking it.
+
+The rule: **a boolean that is true for more than one reason cannot be a label.** Ask how many ways it can be true; if more than one, split it before showing it. Here that is three — needs credentials, takes a pasted key, has one now.
+
+### 124.3 Ask before you list
+
+Seventeen providers alphabetically forces a first-time user to translate "I pay for ChatGPT every month" into "which row is that" before they can move at all. The screen now asks one question in the words of what the user already holds — a plan they pay for, a key from someone else, or a model on their own machine — and only then opens the wall of marks for the answer they gave. An answer with nothing behind it on that machine is not drawn: an empty category is a dead end wearing the clothes of a choice.
+
+Skipping was removed on the owner's instruction (*"ห้ามข้ามทุกขั้นตอน"*), with Back kept on every screen. That is a live trade and it is written down as one: **removing the escape obliges you to name the door that is always openable.** Today that door is "install a local runtime". The day that stops being true, this decision has to be reopened rather than quietly tolerated.
+
+### 124.4 What the ground is made of, and what motion is for
+
+A radial glow borrowed from another product's welcome screen was tried and thrown out the moment it stood in Aetox (*"เอาลำแสงตรงกลางออก"*). What replaced it is the brand mark Aetox already draws behind an empty chat — and it shares that CSS rule by selector rather than by a copied set of values, because the two screens are three seconds apart on a new install and the day they disagree is the day the setup stops looking like the app it is setting up. **Borrow the structure; never borrow the ornament.**
+
+Motion answers two questions and no others: did the press register, and what is happening right now. A slower cinematic fade-in was offered and turned down against the one the app already had. The timings are now tokens in `styles/type.css` (`--dur-press`, `--dur-arrive`, `--dur-settle`, `--dur-hold-success`, `--dur-hold-done`, `--dur-ground`), and the two places a script owns the timing read them through `lib/motion.ts` instead of restating the number. DESIGN.md names the tokens and never the milliseconds, for the reason this file gives everywhere else: a second place answering one question is a debt.
+
+### 124.5 What the tests could not have caught
+
+Three of this round's faults were invisible to the suite and visible in one look at the running app: a row that said "signed in" twice, a card grid that hung to the left because two cards sat in the first two of four fixed columns, and a content column pinned to the left of a 1900px window. They were fixed and then *measured* — 124px of space on the left, 124px on the right — rather than pronounced better.
+
+So the suite now also pins what must **not** be there: the first screen may have exactly two buttons, the connect screen's only link is Back, and the sign-in path may never grow a password field. A negative assertion is the one that survives the next person's good intentions.

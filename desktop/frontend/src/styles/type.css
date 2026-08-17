@@ -42,4 +42,25 @@
   --r-lg:12px;    /* card */
   --r-xl:16px;    /* dialog, composer */
   --r-full:999px; /* pill badge, toggle */
+
+  /* Motion. Durations live here, next to shape, because they are the same kind
+     of value: a property of the surface rather than of the text on it, and
+     equally something two screens must not answer differently.
+     They are here rather than in a document. DESIGN.md names these tokens and
+     never the milliseconds — a written "90ms" is a second place answering
+     "how long is a press", and the day it stops matching this file is the day
+     one of the two starts lying.
+     Motion in Aetox answers two questions and no others: did the press
+     register, and what is happening right now. There is no token for a slow
+     decorative entrance, because there is no such thing here. */
+  --dur-press:90ms;         /* the squash under a finger */
+  --dur-arrive:300ms;       /* a screen or panel coming in */
+  --dur-settle:340ms;       /* a tick landing on what was just chosen */
+  --dur-hold-success:850ms; /* "it worked" is read before the screen moves on */
+  --dur-ground:700ms;       /* the watermark behind an empty room */
+  --dur-hold-done:1600ms;   /* a finished setup stands still before it leaves */
+  /* Overshoot is for something arriving that the user caused. Never for
+     something that merely appeared. */
+  --ease-overshoot:cubic-bezier(.2,.9,.3,1.5);
+  --ease-arrive:cubic-bezier(.2,.7,.3,1);
 }

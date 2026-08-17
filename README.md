@@ -440,7 +440,8 @@ assistant door to the code door; a code-door team with defined roles.
 ## Documentation
 
 [Architecture](ARCHITECTURE.md) · [Every decision, and why](docs/DECISIONS.md) ·
-[What this company is](COMPANY.md) · [Benchmark rules](BENCHMARK.md) ·
+[What this company is](COMPANY.md) · [How a screen is designed](DESIGN.md) ·
+[Benchmark rules](BENCHMARK.md) ·
 [Platform support](PLATFORM-SUPPORT.md) · [Roadmap](ROADMAP.md) ·
 [Automation engines](docs/AUTOMATION-ENGINES.md)
 

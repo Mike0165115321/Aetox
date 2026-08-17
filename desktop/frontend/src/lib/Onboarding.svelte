@@ -26,6 +26,7 @@
   import { BrowserOpenURL } from '../../wailsjs/runtime/runtime'
   import { cockpit, switchProvider, submitAPIKey, switchApprovalMode, completeSignIn } from './stores/cockpit.svelte'
   import { DONE_KEY, takeFirstRunReplay } from './firstRun'
+  import { durationMs } from './motion'
 
   // 0 language · 1 connect · 2 look · 3 approval · 4 done. Connecting comes
   // before the theme because it is the only step that decides whether the app
@@ -182,7 +183,9 @@
       if (key.trim()) await submitAPIKey(name, key.trim())
       await switchProvider(name)
       settled = name
-      setTimeout(() => { settled = ''; step = 2 }, 850)
+      // Long enough to be read, then it moves itself: the user pressed once and
+      // should not have to press again to be let past what they just did.
+      setTimeout(() => { settled = ''; step = 2 }, durationMs('--dur-hold-success', 850))
     } catch (err) {
       errorMsg = String(err)
     } finally {
@@ -241,7 +244,7 @@
     } finally {
       busy = ''
       step = 4
-      setTimeout(() => { if (step === 4) finish() }, 1600)
+      setTimeout(() => { if (step === 4) finish() }, durationMs('--dur-hold-done', 1600))
     }
   }
 

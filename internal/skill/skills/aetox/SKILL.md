@@ -17,6 +17,11 @@ one. The product direction it serves (which room is what, why there is one
 assistant and not five) is `COMPANY.md` at the repository root. Read that
 instead when the question is about intent; do not answer intent from this file.
 
+There is a third: `DESIGN.md`, also at the root, holds the rules a *screen* has
+to follow — spacing, wording, product stance, and the motion tokens. Read it
+before building or changing any user-facing screen. It is the one that wins
+when the three disagree about how something looks or responds.
+
 ## The data root
 
 Everything Aetox persists about itself sits under one directory. Written here

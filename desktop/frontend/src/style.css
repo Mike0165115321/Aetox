@@ -621,7 +621,7 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   /* currentColor, so it is the theme's own ink and not a grey that only works
      on the dark palettes. Higher than it looks: most of the mark is under the
      fade, and this is the value at the top where none of it is. */
-  opacity:.09; animation:watermark-in .7s ease-out both;
+  opacity:.09; animation:watermark-in var(--dur-ground) ease-out both;
 }
 @keyframes watermark-in { from { opacity:0; } to { opacity:.09; } }
 /* Positioned siblings, or the absolute mark would paint over every one of them:
@@ -3395,7 +3395,7 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .ob-screen {
   position:relative; z-index:1; width:min(440px, calc(100vw - 48px));
   text-align:center; padding:32px 0 56px;
-  animation:ob-enter .3s cubic-bezier(.2,.7,.3,1) both;
+  animation:ob-enter var(--dur-arrive) var(--ease-arrive) both;
 }
 @keyframes ob-enter { from { opacity:0; transform:translateY(9px); } to { opacity:1; transform:none; } }
 .ob-logo { display:flex; justify-content:center; margin-bottom:20px; }
@@ -3410,7 +3410,7 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   display:flex; align-items:center; gap:11px; width:100%;
   background:var(--surface-panel); border:1px solid var(--border-default); color:var(--text-primary);
   border-radius:var(--r-lg); padding:13px 16px; font:inherit; font-size:var(--fs-md); cursor:pointer;
-  transition:transform .09s ease, border-color .14s ease, background .14s ease;
+  transition:transform var(--dur-press) ease, border-color .14s ease, background .14s ease;
 }
 .ob-big:hover:not(:disabled) { background:var(--surface-hover); border-color:var(--border-strong); }
 .ob-big:active:not(:disabled) { transform:scale(.985); }
@@ -3440,7 +3440,7 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   background:var(--surface-raised); color:var(--text-secondary);
 }
 .ob-marks .more { font-size:var(--fs-xs); color:var(--text-dim); background:none; }
-.ob-check { color:var(--accent); display:flex; animation:ob-pop .34s cubic-bezier(.2,.9,.3,1.5) both; }
+.ob-check { color:var(--accent); display:flex; animation:ob-pop var(--dur-settle) var(--ease-overshoot) both; }
 @keyframes ob-pop { from { opacity:0; transform:scale(.5); } to { opacity:1; transform:scale(1); } }
 .ob-tag {
   font-size:var(--fs-xs); padding:2px 9px; border-radius:999px; white-space:nowrap;
@@ -3455,13 +3455,13 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 
 /* Opens under the button that asked for it, so the list belongs to the choice
    rather than being a fourth thing on the page. */
-.ob-drawer { margin-top:11px; animation:ob-enter .24s ease both; }
+.ob-drawer { margin-top:11px; animation:ob-enter var(--dur-arrive) ease both; }
 .ob-grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:7px; }
 .ob-tile {
   position:relative; display:flex; flex-direction:column; align-items:center; gap:6px;
   border:1px solid var(--border-subtle); background:var(--surface-panel); color:var(--text-secondary);
   border-radius:var(--r-md); padding:11px 5px; font:inherit; font-size:var(--fs-xs); cursor:pointer;
-  transition:transform .09s ease, border-color .12s ease, background .12s ease;
+  transition:transform var(--dur-press) ease, border-color .12s ease, background .12s ease;
 }
 .ob-tile:hover:not(:disabled) { border-color:var(--border-strong); background:var(--surface-hover); }
 .ob-tile:active:not(:disabled) { transform:scale(.95); }
@@ -3481,7 +3481,7 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   position:relative; width:96px; aspect-ratio:1; display:flex; flex-direction:column; align-items:center;
   justify-content:center; gap:8px; border:1px solid var(--border-subtle); background:var(--surface-panel);
   color:var(--text-secondary); border-radius:var(--r-md); font:inherit; font-size:var(--fs-xs); cursor:pointer;
-  transition:transform .09s ease, border-color .12s ease, background .12s ease;
+  transition:transform var(--dur-press) ease, border-color .12s ease, background .12s ease;
 }
 .ob-cell:hover:not(:disabled) { border-color:var(--border-strong); background:var(--surface-hover); }
 .ob-cell:active:not(:disabled) { transform:scale(.96); }
@@ -3508,7 +3508,7 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   display:flex; align-items:center; gap:11px; width:100%; text-align:left;
   border:1px solid var(--border-subtle); background:var(--surface-panel); color:var(--text-primary);
   border-radius:var(--r-lg); padding:12px 14px; font:inherit; cursor:pointer;
-  transition:transform .09s ease, border-color .12s ease, background .12s ease;
+  transition:transform var(--dur-press) ease, border-color .12s ease, background .12s ease;
 }
 .ob-row:hover { border-color:var(--border-strong); }
 .ob-row:active { transform:scale(.985); }
@@ -3545,7 +3545,7 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .ob-done {
   width:52px; height:52px; margin:0 auto 20px; border-radius:50%; display:grid; place-items:center;
   background:var(--surface-selected); border:1px solid var(--accent); color:var(--accent);
-  animation:ob-pop .42s cubic-bezier(.2,.9,.3,1.4) both;
+  animation:ob-pop var(--dur-settle) var(--ease-overshoot) both;
 }
 
 .ob-dots { position:absolute; bottom:26px; left:50%; transform:translateX(-50%); display:flex; gap:7px; }

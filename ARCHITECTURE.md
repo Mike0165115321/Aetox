@@ -545,6 +545,8 @@ product picture in [COMPANY.md](COMPANY.md)) · §82 (the learning floor) · §4
 | §120 | A Run Button Is Offered Because the Machine Can, Not Because the Renderer Remembers (2026-08-16) |
 | §121 | An Answer the User Typed Over Is Still an Answer (2026-08-16) |
 | §122 | A Popover Is Measured Against the Pane It Opens In, Not the Screen (2026-08-17) |
+| §123 | A Command Line Is Read by One Shell, and `--` Was a Second One (2026-08-17) |
+| §124 | A Screen Nobody Who Builds This Can See Will Rot, and It Did (2026-08-17) · standing rules in [DESIGN.md](DESIGN.md) |
 
 ---
 
