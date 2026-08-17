@@ -33,6 +33,24 @@ func ContextWindowTokens(provider, modelName string) int {
 		return deepseekContextWindow(modelID)
 	case "openai":
 		return openaiContextWindow(modelID)
+	case "codex":
+		// Codex serves OpenAI's models through a subscription, so the window is
+		// OpenAI's. Asked here by recursion — through the catalog under
+		// "openai" first, then the curated table — rather than by teaching
+		// modelsDevProvider that codex is openai, which is the shorter change
+		// and the wrong one: ModelCatalog.For is also what PRICES a model, and
+		// filing Codex under openai would put OpenAI's per-token rates on a
+		// flat monthly plan. That is the exact bill token_usage.provider was
+		// added to prevent (db.go, migration 15). One provider, two facts, and
+		// only one of them is allowed to travel.
+		//
+		// Until 2026-08-18 this was the `default` case, and the 0 it returned
+		// was not read as "unknown" by the desktop: App.contextWindowTokens
+		// fell back to the agent's char budget over four, so the meter drew a
+		// 32,000-token window on a model that had already accepted 43,434 in
+		// one request. The fallback is gone; this is the half that makes the
+		// answer real rather than merely absent.
+		return ContextWindowTokens("openai", modelID)
 	case "anthropic":
 		return 200_000
 	case "gemini":

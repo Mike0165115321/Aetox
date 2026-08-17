@@ -2086,20 +2086,35 @@ func (a *App) ModelStatus() string {
 }
 
 // contextWindowTokens resolves the model's real context window: an explicit
-// user override wins, then the curated per-model catalog, then the agent's
-// own char budget as the honest floor (what the engine will actually keep).
+// user override wins, then the per-model catalog and the curated tables. Zero
+// means nobody knows, and zero is what it returns — callers must render that
+// as unknown and never as a number.
+//
+// It used to have a third step, and that step is the whole reason this comment
+// is long. When the first two answered 0 it read the agent's own char budget
+// and divided it by four. Those are two different facts wearing one label:
+// the budget is how much history AETOX keeps before it summarizes, and the
+// window is how much the MODEL will accept. They are unrelated, and the
+// fallback presented the first as the second.
+//
+// What it produced was not a rough answer, it was a fabricated one. Codex
+// resolved to 0 (its models are OpenAI's, filed under a different provider),
+// so the meter fell through to memory.defaultMaxChars — 128,000 — over four,
+// and drew a flat "32.0k window" for every Codex user. The same install's
+// token_usage had nine rounds above it and one at 43,434, so the app was
+// reporting a ceiling its own history disproved, on a model the catalog puts
+// at 1,050,000. Worse, ContextChars fed the same 0 back the other way, so the
+// engine really did start summarizing at 102,400 bytes: a UI number that was
+// wrong AND a real budget that was small, from one missing case.
+//
+// This is the third time this family of bug has shipped (§113: a rate-limit
+// window's length read as its time remaining). The shape is always two facts
+// with one name, and the fix is always to let "unknown" stay unknown.
 func (a *App) contextWindowTokens() int {
 	if a.cfg.ModelContextTokens > 0 {
 		return a.cfg.ModelContextTokens
 	}
-	if tokens := model.ContextWindowTokens(a.cfg.ModelProvider, a.cfg.ModelName); tokens > 0 {
-		return tokens
-	}
-	if a.agent != nil {
-		_, _, maxChars := a.agent.ContextUsage()
-		return (maxChars + 3) / 4
-	}
-	return 0
+	return model.ContextWindowTokens(a.cfg.ModelProvider, a.cfg.ModelName)
 }
 
 // GetModelInfo reports the real model/context state for the UI top bar.
@@ -2271,9 +2286,23 @@ func (a *App) GetContextBreakdown() ContextBreakdown {
 		used = real
 	}
 
-	free := maxTokens - used
-	if free < 0 {
-		free = 0
+	slices := []ContextSlice{
+		{Key: "system", Tokens: system},
+		{Key: "tools", Tokens: tools},
+		{Key: "messages", Tokens: messages},
+	}
+	// No free slice when the window is unknown. "0 free" and "plenty free" are
+	// both claims about a number nobody has, and the first one is the more
+	// alarming of the two to invent — an ollama user would read a full bar on
+	// an empty chat. With maxTokens 0 the UI drops the denominator entirely
+	// and reports the size of the request instead, which is the part that is
+	// actually known.
+	if maxTokens > 0 {
+		free := maxTokens - used
+		if free < 0 {
+			free = 0
+		}
+		slices = append(slices, ContextSlice{Key: "free", Tokens: free})
 	}
 	return ContextBreakdown{
 		UsedTokens: used,
@@ -2285,12 +2314,7 @@ func (a *App) GetContextBreakdown() ContextBreakdown {
 		// what it looked like, and why this field exists.
 		Measured:     measured,
 		CachedTokens: cached,
-		Slices: []ContextSlice{
-			{Key: "system", Tokens: system},
-			{Key: "tools", Tokens: tools},
-			{Key: "messages", Tokens: messages},
-			{Key: "free", Tokens: free},
-		},
+		Slices:       slices,
 	}
 }
 

@@ -232,11 +232,17 @@ func (a *App) PriceModels(providerName string, models []string) []ModelListing {
 		if strings.HasSuffix(strings.ToLower(name), ":free") {
 			row.Free = true
 		}
-		if facts, ok := catalog.For(canonical, name); ok {
-			row.Context = facts.Context
-			if facts.Price.Priced() {
-				row.Input, row.Output, row.Priced = facts.Price.Input, facts.Price.Output, true
-			}
+		// The window is asked of ContextWindowTokens rather than read off the
+		// catalog row sitting next to the price, so that the picker and the
+		// composer's meter cannot answer "how big is this model" differently.
+		// They did, and in opposite directions: a Codex model has no catalog
+		// row of its own, so this column was blank while the meter drew a
+		// 32,000-token window it had made up. Price still comes from the row,
+		// because price is exactly what must NOT be inherited from OpenAI on a
+		// subscription (priceUsage, and db.go migration 15).
+		row.Context = model.ContextWindowTokens(canonical, name)
+		if facts, ok := catalog.For(canonical, name); ok && facts.Price.Priced() {
+			row.Input, row.Output, row.Priced = facts.Price.Input, facts.Price.Output, true
 		}
 		out = append(out, row)
 	}

@@ -97,3 +97,76 @@ describe('the context meter before anything is sent', () => {
     expect(screen.queryByText(/cache|แคช/)).toBeNull()
   })
 })
+
+// maxTokens 0 is the backend saying nobody publishes this model's window
+// (App.contextWindowTokens). It used to say a number instead, borrowed from the
+// engine's char budget, and every Codex user read "32.0k" for a model the
+// catalog puts at 1,050,000. The denominator is the part that has to disappear,
+// not the meter: the size of the request is known and still worth showing.
+describe('the context meter when the window is unknown', () => {
+  const noWindow = (used: number) => ({
+    usedTokens: used,
+    maxTokens: 0,
+    measured: true,
+    cachedTokens: 0,
+    // No free slice: nothing to subtract from.
+    slices: [
+      { key: 'system', tokens: 622 },
+      { key: 'tools', tokens: 9500 },
+      { key: 'messages', tokens: used - 10122 },
+    ],
+  })
+
+  it('shows the size of the request and no fraction at all', async () => {
+    GetContextBreakdown.mockResolvedValue(noWindow(12040) as any)
+
+    render(Chat, props())
+    const button = await screen.findByRole('button', { name: /Context window|หน้าต่างคอนเท็กซ์/ })
+    button.click()
+
+    expect(await screen.findByText(/12.0k (tokens|โทเคน)/)).toBeTruthy()
+    // The shape that must never appear: a number over a number nobody knows.
+    expect(screen.queryByText(/12.0k \/ /)).toBeNull()
+    expect(screen.getByText(/window is not known|Nobody publishes|ยังไม่รู้ว่าโมเดลนี้รับได้เท่าไร/)).toBeTruthy()
+  })
+
+  it('never draws a free slice it cannot compute', async () => {
+    GetContextBreakdown.mockResolvedValue(noWindow(12040) as any)
+
+    render(Chat, props())
+    const button = await screen.findByRole('button', { name: /Context window|หน้าต่างคอนเท็กซ์/ })
+    button.click()
+
+    await screen.findByText(/12.0k (tokens|โทเคน)/)
+    expect(screen.queryByText(/Free space|พื้นที่ว่าง/)).toBeNull()
+  })
+})
+
+// A prompt bigger than the window we believe in means the window is wrong, and
+// that is exactly the state the old meter was incapable of showing: ctxPct was
+// clamped to 100 and the bar just sat full. Nine rounds of one real install's
+// history were in this state against a fabricated 32k ceiling, and the UI drew
+// them as a normal, comfortably full bar.
+describe('the context meter when the round exceeds the stated window', () => {
+  it('reports the true percentage instead of pinning at 100', async () => {
+    GetContextBreakdown.mockResolvedValue({
+      usedTokens: 43434,
+      maxTokens: 32000,
+      measured: true,
+      cachedTokens: 0,
+      slices: [
+        { key: 'system', tokens: 3400 },
+        { key: 'tools', tokens: 8100 },
+        { key: 'messages', tokens: 31934 },
+        { key: 'free', tokens: 0 },
+      ],
+    } as any)
+
+    render(Chat, props())
+    const button = await screen.findByRole('button', { name: /Context window|หน้าต่างคอนเท็กซ์/ })
+    button.click()
+
+    expect(await screen.findByText(/43.4k \/ 32.0k \(136%\)/)).toBeTruthy()
+    expect(screen.getByText(/larger than the window|ใหญ่กว่าหน้าต่าง/)).toBeTruthy()
+  })
+})

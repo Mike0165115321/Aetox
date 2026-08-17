@@ -82,10 +82,21 @@ func TestReadFileRejectsEscape(t *testing.T) {
 	}
 }
 
-// The context meter must add up: slices (minus free) sum to usedTokens, free
-// fills the remainder, and an unconfigured context max falls back to the
-// agent's char budget instead of reporting 0 (which would hide the meter).
-func TestGetContextBreakdownSumsAndFallsBackToAgentBudget(t *testing.T) {
+// The context meter must add up: slices (minus free) sum to usedTokens, and
+// free fills the remainder of a window we actually know.
+//
+// This test used to assert the opposite of its last third. It required that an
+// unknown window fall back to the agent's char budget over four, "instead of
+// reporting 0 (which would hide the meter)" — and that sentence is the whole
+// bug, written down and defended. Those are two different facts: the budget is
+// how much history Aetox keeps before summarizing, the window is how much the
+// model accepts. Codex resolved to unknown, so every Codex user was shown a
+// 32,000-token window (memory.defaultMaxChars / 4) on models the catalog puts
+// at 1,050,000, while their own token_usage held rounds at 43,434.
+//
+// Hiding the meter was never the alternative. Dropping the DENOMINATOR is: the
+// request's size is known and gets shown, the window is not and does not.
+func TestGetContextBreakdownReportsAnUnknownWindowAsUnknown(t *testing.T) {
 	agent := cognitive.NewAgent(cognitive.AgentConfig{
 		SystemPrompt: "you are a test system prompt",
 	})
@@ -95,10 +106,20 @@ func TestGetContextBreakdownSumsAndFallsBackToAgentBudget(t *testing.T) {
 	})
 	a := &App{agent: agent}
 
-	got := a.GetContextBreakdown()
-	if got.MaxTokens <= 0 {
-		t.Fatalf("MaxTokens = %d, want agent char-budget fallback > 0", got.MaxTokens)
+	// No provider configured: nobody knows the window, so nobody claims one.
+	unknown := a.GetContextBreakdown()
+	if unknown.MaxTokens != 0 {
+		t.Errorf("MaxTokens = %d on an unknown model; a number here is invented", unknown.MaxTokens)
 	}
+	if unknown.UsedTokens <= 0 {
+		t.Error("expected non-zero usage from system prompt + history")
+	}
+	for _, s := range unknown.Slices {
+		if s.Key == "free" {
+			t.Errorf("free = %d with no window to subtract from; that is a claim about a number nobody has", s.Tokens)
+		}
+	}
+
 	// With a known model the meter must show the model's real window, not the
 	// engine's internal char budget (the "32k for a 1M model" bug).
 	a.cfg.ModelProvider = "deepseek"
@@ -106,11 +127,19 @@ func TestGetContextBreakdownSumsAndFallsBackToAgentBudget(t *testing.T) {
 	if got := a.GetContextBreakdown(); got.MaxTokens != 1_000_000 {
 		t.Errorf("deepseek-v4-flash MaxTokens = %d, want 1000000", got.MaxTokens)
 	}
+	// The door the whole fix is about: same models, subscription instead of
+	// API key, and until 2026-08-18 this line read 32000.
+	a.cfg.ModelProvider = "codex"
+	a.cfg.ModelName = "gpt-5.5"
+	if got := a.GetContextBreakdown(); got.MaxTokens != 400_000 {
+		t.Errorf("codex/gpt-5.5 MaxTokens = %d, want OpenAI's 400000", got.MaxTokens)
+	}
 	a.cfg.ModelContextTokens = 42_000 // explicit user override wins over catalog
-	if got := a.GetContextBreakdown(); got.MaxTokens != 42_000 {
+	got := a.GetContextBreakdown()
+	if got.MaxTokens != 42_000 {
 		t.Errorf("override MaxTokens = %d, want 42000", got.MaxTokens)
 	}
-	a.cfg = config.Config{}
+
 	sum, free := 0, 0
 	for _, s := range got.Slices {
 		if s.Key == "free" {
@@ -127,9 +156,6 @@ func TestGetContextBreakdownSumsAndFallsBackToAgentBudget(t *testing.T) {
 	}
 	if want := got.MaxTokens - got.UsedTokens; free != want {
 		t.Errorf("free = %d, want %d", free, want)
-	}
-	if got.UsedTokens <= 0 {
-		t.Error("expected non-zero usage from system prompt + history")
 	}
 }
 

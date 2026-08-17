@@ -758,12 +758,32 @@
     if (awaitingReply) return
     refreshContext()
   })
-  const ctxPct = $derived(
-    ctx && ctx.maxTokens > 0 ? Math.min(100, Math.round((ctx.usedTokens / ctx.maxTokens) * 100)) : 0,
-  )
+  // Zero means the backend does not know this model's window and refuses to
+  // invent one (App.contextWindowTokens). Everything below has to survive that
+  // rather than divide by it: the meter still has something true to say, which
+  // is how big the request is.
+  const ctxKnown = $derived(!!ctx && ctx.maxTokens > 0)
+  // NOT clamped to 100. A prompt larger than the stated window is a real state
+  // — nine rounds of one install's history were, against a window that turned
+  // out to be fabricated — and clamping is what let it look normal. The ring
+  // clamps, because an arc cannot draw past full; the number does not, because
+  // "164%" is the one reading that sends someone to look.
+  const ctxPct = $derived(ctxKnown ? Math.round((ctx!.usedTokens / ctx!.maxTokens) * 100) : 0)
+  const ctxRingPct = $derived(Math.min(100, ctxPct))
+  // Share of the window where there is one, share of the request where there
+  // is not. Both are honest and neither is the other, so the popover says
+  // which it is showing.
   function slicePct(tokens: number): string {
-    if (!ctx || ctx.maxTokens <= 0) return '0%'
-    return ((tokens / ctx.maxTokens) * 100).toFixed(1) + '%'
+    const denom = ctxKnown ? ctx!.maxTokens : (ctx?.usedTokens ?? 0)
+    if (denom <= 0) return '0%'
+    return ((tokens / denom) * 100).toFixed(1) + '%'
+  }
+  // Widths only. slicePct is allowed past 100 in the readout; a segment past
+  // 100 escapes its track and paints over the rows under it.
+  function sliceWidth(tokens: number): string {
+    const denom = ctxKnown ? ctx!.maxTokens : (ctx?.usedTokens ?? 0)
+    if (denom <= 0) return '0%'
+    return Math.min(100, (tokens / denom) * 100).toFixed(1) + '%'
   }
   function fmtTokens(n: number): string {
     return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n)
@@ -2798,17 +2818,27 @@
             onclick={(e) => { e.stopPropagation(); palette = palette ? '' : 'prompts' }}
           >/</button>
         </div>
-        {#if ctx && ctx.maxTokens > 0}
+        {#if ctx && ctx.usedTokens > 0}
           <div class="ctx-pick">
             {#if ctxMenuOpen}
               <div class="ctx-menu">
                 <div class="ctx-head">
                   <span class="t">{ctx.measured ? t('chat.contextWindow') : t('chat.contextForecast')}</span>
-                  <span class="v">{fmtTokens(ctx.usedTokens)} / {fmtTokens(ctx.maxTokens)} ({ctxPct}%)</span>
+                  <!-- No denominator when nobody knows it. A fraction is a
+                       claim about both of its halves, and inventing the bottom
+                       one is exactly how this meter came to draw a 32.0k
+                       window on a model that had accepted 43,434 tokens. -->
+                  <span class="v">
+                    {#if ctxKnown}
+                      {fmtTokens(ctx.usedTokens)} / {fmtTokens(ctx.maxTokens)} ({ctxPct}%)
+                    {:else}
+                      {t('chat.contextTokens', { n: fmtTokens(ctx.usedTokens) })}
+                    {/if}
+                  </span>
                 </div>
                 <div class="ctx-track">
                   {#each ctx.slices.filter((s) => s.key !== 'free' && s.tokens > 0) as s (s.key)}
-                    <div class="ctx-seg {s.key}" style="width:{slicePct(s.tokens)}"></div>
+                    <div class="ctx-seg {s.key}" style="width:{sliceWidth(s.tokens)}"></div>
                   {/each}
                 </div>
                 {#each ctx.slices as s (s.key)}
@@ -2819,11 +2849,25 @@
                     <span class="pct">{slicePct(s.tokens)}</span>
                   </div>
                 {/each}
+                {#if !ctxKnown}
+                  <!-- Says outright that the percentages above are shares of
+                       this request, not of the window. Local runtimes have no
+                       published window and never will; saying so is cheaper
+                       than the alternative, which this app shipped for months.
+                       -->
+                  <div class="ctx-note">{t('chat.contextWindowUnknown')}</div>
+                {/if}
                 {#if !ctx.measured}
                   <!-- Nothing has been sent yet. Without saying so, the tool
                        definitions read as tokens already spent rather than as
                        the floor every message starts from. -->
                   <div class="ctx-note">{t('chat.contextNotSent')}</div>
+                {:else if ctxKnown && ctxPct > 100}
+                  <!-- The provider accepted more than the window we believe in,
+                       so one of the two is wrong and it is almost certainly the
+                       window. This used to be silent: ctxPct clamped at 100 and
+                       the bar simply sat full. -->
+                  <div class="ctx-note">{t('chat.contextOverWindow')}</div>
                 {:else if ctx.cachedTokens > 0}
                   <!-- Most of a request is the same bytes as the round before
                        (system prompt, tool block), and the provider serves
@@ -2845,9 +2889,13 @@
             >
               <svg viewBox="0 0 20 20" class="ring" aria-hidden="true">
                 <circle cx="10" cy="10" r="8" class="bg" />
-                <circle cx="10" cy="10" r="8" class="fg" stroke-dasharray="{(ctxPct / 100) * 50.27} 50.27" transform="rotate(-90 10 10)" />
+                <!-- ctxRingPct, not ctxPct: an arc cannot draw past full, so
+                     this one clamps. The readout beside it does not. -->
+                {#if ctxKnown}
+                  <circle cx="10" cy="10" r="8" class="fg" stroke-dasharray="{(ctxRingPct / 100) * 50.27} 50.27" transform="rotate(-90 10 10)" />
+                {/if}
               </svg>
-              <span class="ctx-pct">{ctxPct}%</span>
+              <span class="ctx-pct">{ctxKnown ? ctxPct + '%' : fmtTokens(ctx.usedTokens)}</span>
             </button>
           </div>
         {/if}
