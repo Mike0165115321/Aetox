@@ -195,10 +195,11 @@ func (s *writeSkill) Execute(_ context.Context, input Input) (Output, error) {
 	// model that composes the root with the name it typed drops the output
 	// folder in the middle and sends the user to a file that is not there —
 	// which is exactly what happened. So the one case that needs it gets the
-	// on-disk path handed over instead of computed.
+	// on-disk path handed over instead of computed (onDiskNote, which also
+	// knows what to say when this session's shell spells paths differently).
 	output := "write done: " + requestPath
 	if requestPath != original {
-		output += " (on disk: " + targetPath + ")"
+		output += onDiskNote(s.root, targetPath)
 	}
 	out := newToolOutput("write", "write "+requestPath, output, start, false, nil)
 	out.LinesAdded, out.LinesRemoved = LineDelta(string(previous), content)

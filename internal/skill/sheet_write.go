@@ -193,7 +193,7 @@ func (s *sheetWriteSkill) run(start time.Time, requestPath string, rawSheets any
 
 	output := "sheet_write done: " + requestPath + " (" + describeSheets(sheets) + ")"
 	if requestPath != original {
-		output += " (on disk: " + targetPath + ")"
+		output += onDiskNote(s.root, targetPath)
 	}
 	out := newToolOutput("sheet_write", "sheet_write "+requestPath, output, start, false, nil)
 	// The workbook is the answer, not a side effect of it — so it travels back

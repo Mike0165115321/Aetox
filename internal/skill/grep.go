@@ -173,6 +173,9 @@ func (s *grepSkill) Execute(_ context.Context, input Input) (Output, error) {
 	if err != nil {
 		return newToolOutput("grep", command, "", start, false, err), err
 	}
+	if err := searchBaseExists(searchPath, basePath); err != nil {
+		return newToolOutput("grep", command, "", start, false, err), err
+	}
 	root, err := resolveSandboxPath(s.root, ".")
 	if err != nil {
 		return newToolOutput("grep", command, "", start, false, err), err

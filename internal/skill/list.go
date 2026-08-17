@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mike0165115321/Aetox/internal/proc"
 )
 
 type listSkill struct {
@@ -106,6 +107,72 @@ func (s *listSkill) ExecuteTool(ctx context.Context, args map[string]any) (Outpu
 	return s.Execute(ctx, Input{"args": params})
 }
 
+// onDiskNote is the "(on disk: …)" clause the four writing tools append when
+// placement moved a file somewhere the caller did not name.
+//
+// One copy because it was four, all identical, and a receipt that has to be
+// right about two filesystems is not the thing to keep four copies of.
+//
+// It names both spellings when the session's shell has its own, because the
+// clause has two readers and they need different answers. The user asks "where
+// is it on my machine" and the Windows path is that answer — it is what goes in
+// Explorer, and it is why this clause exists at all. The model's next move is
+// often to *use* the file, in a shell that has never heard of drive letters,
+// where that same path opens nothing (§126.6). Saying which is which costs one
+// clause on a receipt that is already rare, and picking one reader to be wrong
+// for costs a turn every time.
+//
+// Native sessions never reach the translation, so the ordinary case is exactly
+// the string it always was.
+func onDiskNote(root, target string) string {
+	backend := sandboxShellFor(root)
+	if proc.IsNative(backend) {
+		return " (on disk: " + target + ")"
+	}
+	guest, ok := backend.GuestPath(target)
+	if !ok || guest == target {
+		return " (on disk: " + target + ")"
+	}
+	return " (on disk: " + target + ", and " + guest + " in this shell)"
+}
+
+// searchBaseExists is the check that stands between "I searched and found
+// nothing" and "I never searched".
+//
+// A walk over a directory that is not there opens no files, matches no lines
+// and completes without error, so grep and glob both reported an empty result:
+// the exact same sentence they use for a folder they read every byte of. The
+// two are not the same answer and must never share one, because only one of
+// them is evidence.
+//
+// Found 2026-08-17, and the transcript is the argument for this being an error
+// rather than a gentler empty result. Asked whether a project held an admin
+// password, grep answered "(no matches)" and glob answered "(no files
+// matched)" for a folder full of both — the path had been silently resolved
+// somewhere else — and the agent reported to the user that the project does
+// not contain one. A failure that reads as a successful search is the single
+// direction a tool must never be wrong in: everything downstream, the model and
+// the person reading it, treats the empty page as a fact about their code.
+//
+// The resolved path is named beside the requested one on purpose. "no such
+// folder" says the search failed; "/mnt/d/Project resolved to
+// C:\Users\ASUS\aetox\mnt\d\Project" says why, and is the difference between
+// the model rewriting the path and the model concluding the folder is empty.
+//
+// Only for a base the caller actually named. A path this package derived for
+// itself — glob's literal prefix, taken out of a pattern the user guessed at —
+// is not a claim about the filesystem, and failing on it would turn "that
+// pattern matches nothing here" into a broken tool.
+func searchBaseExists(requested, resolved string) error {
+	if _, err := os.Stat(resolved); err != nil {
+		if requested == "" || requested == "." || requested == resolved {
+			return fmt.Errorf("%s cannot be searched: %w", resolved, err)
+		}
+		return fmt.Errorf("%s cannot be searched (it resolved to %s): %w", requested, resolved, err)
+	}
+	return nil
+}
+
 // resolveSandboxPath turns a requested path into an absolute one and decides,
 // in this one place, whether the caller may have it. Every file tool answers
 // through here; there is deliberately no second check anywhere else.
@@ -118,6 +185,13 @@ func (s *listSkill) ExecuteTool(ctx context.Context, args map[string]any) (Outpu
 // outright, which was a spelling rule wearing a permission rule's clothes; once
 // a workspace can hold a second folder it stops being expressible at all, since
 // naming that folder in full is the only sane way to reach it.
+//
+// What a path is *spelled in* does change the answer, and that is a different
+// thing from how it was spelled. A session whose shell is a WSL distro names
+// its files the way that distro does, and those names have to be brought into
+// the host's spelling before any of the above means anything — otherwise
+// `/mnt/d/project` is not an absolute path to Go on Windows, gets joined onto
+// the root, and the tool answers about a folder nobody asked for (hostSpelling).
 func resolveSandboxPath(root string, requestPath string) (string, error) {
 	safeRoot, err := filepath.Abs(strings.TrimSpace(root))
 	if err != nil {
@@ -126,6 +200,9 @@ func resolveSandboxPath(root string, requestPath string) (string, error) {
 	requestPath = strings.TrimSpace(requestPath)
 	if requestPath == "" {
 		requestPath = "."
+	}
+	if requestPath, err = hostSpelling(safeRoot, requestPath); err != nil {
+		return "", err
 	}
 	if !filepath.IsAbs(requestPath) {
 		requestPath = filepath.Join(safeRoot, requestPath)

@@ -26,7 +26,18 @@ import (
 // What does not cross is worth stating, because it is the part that makes this
 // cheap: read, write, grep, glob, edit and apply_patch are Go reading files,
 // and \\wsl.localhost has let Windows read a distro's filesystem since 21H2.
-// They keep working unchanged whichever backend is selected.
+// They go on being Windows code whichever backend is selected.
+//
+// They do not, however, go on being *untouched* by the choice, and that
+// sentence stood here claiming they did until 2026-08-17 (§126). One more thing
+// crosses than the command line: the spelling. A session that runs its commands
+// in a distro writes its paths the way that distro writes them — into the file
+// tools as much as into the shell — and a `/mnt/d/project` handed to Go on
+// Windows is not an absolute path at all. So the file tools translate too, in
+// the one place containment is decided (skill.resolveSandboxPath, through
+// HostPath). The seam to watch is the reverse trip: what a file tool *answers*
+// with is still a Windows path, and a Windows path is not usable in the shell
+// this same session runs. GuestPath is the translation for that direction.
 
 // wslBackend is one distro, addressed by name.
 type wslBackend struct {
@@ -81,9 +92,37 @@ func (w *wslBackend) Name() string {
 	return "bash (WSL)"
 }
 
-// Note is empty: "bash" is instruction enough, which is much of why this
-// backend exists at all.
-func (w *wslBackend) Note() string { return "" }
+// Note says where the command starts, which is the one thing "bash (WSL: x)"
+// does not tell a model that reads it.
+//
+// It was empty on the reasoning that "bash" is instruction enough, and that is
+// true of the syntax and false of the standpoint. A model told its commands run
+// in bash-in-WSL still believes it is sitting on the Windows side looking in, so
+// it writes the line that would be right from there. Measured on 2026-08-17,
+// mid-session, after the user switched this workspace to a distro:
+//
+//	wsl -d mikedev -- bash -lc 'find /mnt/d/Project/… -name ".env"'
+//
+// which is a correct Windows command, sent to a shell already inside mikedev.
+// `wsl` is not a Linux program, so it died with `command not found` — and the
+// agent read that as "this machine has no WSL", told the user it could not reach
+// the distro or their D: drive at all, and handed the job back. It had been
+// reading files in that distro for fifteen minutes.
+//
+// The second sentence is the same fact pointed at paths, and it is needed for
+// the same reason: every file tool answers with the Windows spelling of a file
+// (D:\project\api.py), the prompt rightly tells the model to repeat the path a
+// tool gave it, and repeated into this shell that path opens nothing. Naming the
+// mount form once costs a line and saves the round trip that discovers it.
+//
+// One fact, two sentences, and not a syntax table: this is a standpoint, not a
+// case list. What generalizes is "you are already there", and everything a model
+// would otherwise do to get there follows from it.
+func (w *wslBackend) Note() string {
+	return "The command already starts inside the distro, so run it directly — reaching for wsl.exe from here " +
+		"is a program Linux does not have. Windows drives are mounted, so a file this machine calls D:\\project " +
+		"is /mnt/d/project to you: translate a Windows path before using it in a command."
+}
 
 func (w *wslBackend) POSIX() bool { return true }
 
@@ -247,10 +286,13 @@ func (w *wslBackend) Export(cmd *exec.Cmd, names ...string) {
 	cmd.Env = append(kept, "WSLENV="+strings.Join(shared, ":"))
 }
 
-// GuestPath is HostPath's inverse: the Linux spelling of a Windows path. It is
-// what tells the model where it is standing — a prompt that names D:\project to
-// a shell that has never heard of drive letters is a prompt that gets every
-// path in the first command wrong.
+// GuestPath is HostPath's inverse: the Linux spelling of a Windows path.
+//
+// What it is for is a tool's *receipt*. Every file tool here is Go on Windows
+// and answers in Windows paths, the prompt rightly tells the model to repeat
+// the path a tool handed it rather than assemble one, and a `D:\…` repeated
+// into this shell opens nothing. So the one receipt that names an absolute
+// path (skill.onDiskNote) carries this spelling beside it.
 func (w *wslBackend) GuestPath(p string) (string, bool) {
 	return guestFromHost(w.Distro(), w.mountRoot(), p)
 }

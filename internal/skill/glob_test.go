@@ -74,6 +74,36 @@ func TestGlobSkillSortsNewestFirstAndSkipsNoise(t *testing.T) {
 	}
 }
 
+// The pair that has to stay split. Same missing directory, two callers, two
+// different answers — because only one of them made a claim about the disk.
+func TestGlobSeparatesAMissingFolderFromAPatternThatMatchesNothing(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "a.go"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := &globSkill{root: root}
+
+	// The caller named the folder. It is not there, and answering "nothing
+	// matched" would report an empty project instead of a wrong path.
+	out, err := s.ExecuteTool(context.Background(), map[string]any{"pattern": "**/*", "path": "not-here"})
+	if err == nil {
+		t.Fatalf("a missing folder globbed clean: %q", out.Content)
+	}
+	if !strings.Contains(err.Error(), "not-here") || !strings.Contains(err.Error(), root) {
+		t.Errorf("error should name what was asked for and where it resolved to, got: %v", err)
+	}
+
+	// Nobody named anything: the leading directory came out of the pattern, and
+	// a guess that does not exist is exactly what "no files matched" means.
+	out, err = s.ExecuteTool(context.Background(), map[string]any{"pattern": "not-here/**/*.go"})
+	if err != nil {
+		t.Fatalf("a pattern whose prefix is absent should match nothing, not fail: %v", err)
+	}
+	if !strings.Contains(out.Content, "(no files matched)") {
+		t.Errorf("Content = %q, want (no files matched)", out.Content)
+	}
+}
+
 // Paging, and the property that makes it worth having: page two continues
 // where page one stopped, in the same newest-first order, with no overlap.
 func TestGlobPagesThroughResults(t *testing.T) {

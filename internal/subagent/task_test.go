@@ -518,6 +518,14 @@ func TestTaskDefaultsToExplore(t *testing.T) {
 }
 
 // The tool the model sees has to describe what it can pick, or it will guess.
+//
+// After the block was split into signature and guidance (internal/skill/
+// guidance.go), the roster is the one piece of judgment that could not move.
+// Choosing a worker happens BEFORE the first delegation, so a description of
+// each arriving with the first result arrives too late — owner's rule for the
+// trim, 18 ส.ค.: *"ทำให้มันฉลาดเลือก ไม่ใช่เดาจากชื่อ"*. What the block keeps is
+// therefore every name AND the clause saying what each is for; what it drops is
+// how to brief them.
 func TestTaskDefinitionListsTheProfiles(t *testing.T) {
 	isolate(t)
 	def := toolDefOf(t, NewTaskTools(TaskOptions{}), "task")
@@ -527,9 +535,25 @@ func TestTaskDefinitionListsTheProfiles(t *testing.T) {
 			t.Errorf("schema is missing %q: %s", want, schema)
 		}
 	}
-	if !strings.Contains(def.Function.Description, "NO access to this conversation") {
-		t.Errorf("the description does not warn that the brief must be self-contained: %q", def.Function.Description)
+	// Names alone would make every first delegation a guess. Each has to carry
+	// what it is FOR.
+	if !strings.Contains(schema, forClause(mustProfile(t, "explore").Description)) {
+		t.Errorf("explore is named but not described, so choosing it is guesswork: %s", schema)
 	}
+	// The brief being self-contained is a fact about how a call behaves, so it
+	// stays where the call is described rather than moving to guidance.
+	if !strings.Contains(schema, "cannot see this conversation") {
+		t.Errorf("nothing warns that the brief must be self-contained: %s", schema)
+	}
+}
+
+func mustProfile(t *testing.T, name string) Profile {
+	t.Helper()
+	p, ok := Load(name)
+	if !ok {
+		t.Fatalf("no profile %q", name)
+	}
+	return p
 }
 
 // The background promise, stated as a test: the turn that started a delegate
@@ -956,13 +980,36 @@ func TestCollectingAnUnknownIDNamesWhatIsRunning(t *testing.T) {
 }
 
 // Repetitive work is one delegate looping, not one delegate per item — the model
-// has to be told, because fanning out is now possible and is much more expensive.
-func TestTaskDescriptionPrefersOneLoopingDelegate(t *testing.T) {
+// has to be told, because fanning out is possible and is much more expensive.
+//
+// It is now told with the first `start` rather than on every message. Both
+// halves are checked, because the failure this guards against after the
+// migration is not "the rule was reworded" but "the rule fell into the gap
+// between the block and the guidance and is told to nobody".
+func TestTaskSteersRepeatedWorkIntoOneLoopingDelegate(t *testing.T) {
 	isolate(t)
-	d := namedTool(t, NewTaskTools(TaskOptions{}), "task").Description()
+	tool := namedTool(t, NewTaskTools(TaskOptions{}), "task")
+	guided, ok := tool.(interface {
+		Guidance(map[string]any) string
+	})
+	if !ok {
+		t.Fatal("task hands over no guidance at all")
+	}
+	guide := guided.Guidance(map[string]any{"action": "start"})
+
 	for _, want := range []string{"REPEATED WORK IS ONE JOB", "never twelve tasks", "own context"} {
-		if !strings.Contains(d, want) {
-			t.Errorf("the description does not steer repeated work into one delegate (%q): %s", want, d)
+		if !strings.Contains(guide, want) {
+			t.Errorf("start's guidance does not steer repeated work into one delegate (%q): %s", want, guide)
+		}
+	}
+	// And it really left the block, or nothing was saved by moving it.
+	if strings.Contains(tool.Description(), "REPEATED WORK") {
+		t.Error("the rule is still in the description, so it is still paid for on every message")
+	}
+	// The decision the guidance cannot reach in time stays behind.
+	for _, want := range []string{"WHEN TO USE", "WHEN NOT TO"} {
+		if !strings.Contains(tool.Description(), want) {
+			t.Errorf("%q left the block, but whether to delegate at all is decided before any call exists", want)
 		}
 	}
 }

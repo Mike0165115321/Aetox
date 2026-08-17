@@ -346,8 +346,8 @@ func TestShellSkillRunsInTheSelectedDistro(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "marker.txt"), []byte("in the workspace\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	backend := proc.WSL(distros[0])
-	s := &shellSkill{root: root, backend: func() proc.Backend { return backend }}
+	selectShell(t, root, proc.WSL(distros[0]))
+	s := &shellSkill{root: root}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
@@ -374,10 +374,15 @@ func TestShellSkillRunsInTheSelectedDistro(t *testing.T) {
 
 // The one fact the model is given about the shell it is writing for. Baked in
 // at build time it was always true; read from a setting it is only true if it
-// is read every time the definition is built.
+// is read every time the definition is built — and now that the setting is the
+// workspace's own record rather than a copy this tool holds, "every time" has
+// to mean the same thing through that lookup.
 func TestShellToolDescriptionNamesTheSelectedShell(t *testing.T) {
+	root := t.TempDir()
 	selected := proc.Backend(proc.Native())
-	s := &shellSkill{backend: func() proc.Backend { return selected }}
+	setSandboxShell(root, func() proc.Backend { return selected })
+	t.Cleanup(func() { setSandboxShell(root, nil) })
+	s := &shellSkill{root: root}
 
 	if desc := s.ToolDefinition().Function.Description; !strings.Contains(desc, proc.ShellName()) {
 		t.Errorf("the description does not name the native shell:\n%s", desc)

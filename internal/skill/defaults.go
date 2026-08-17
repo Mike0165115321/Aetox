@@ -75,10 +75,15 @@ type RegistryOptions struct {
 	// Nil — the CLI, every test, any host with no UI to ask through — keeps the
 	// flat refusal exactly as it was.
 	AskWorkspace WidenFunc
-	// Shell is which shell the `shell` tool runs its commands in: the machine's
-	// own, or a WSL distro. A func for the same reason OutputSubdir is one —
-	// the user can change it from the picker mid-session, and rebuilding the
-	// engine to change which program gets exec'd would be an absurd price.
+	// Shell is which shell this workspace speaks: the machine's own, or a WSL
+	// distro. A func for the same reason OutputSubdir is one — the user can
+	// change it from the picker mid-session, and rebuilding the engine to change
+	// which program gets exec'd would be an absurd price.
+	//
+	// It decides two things that must never disagree: which program runs a
+	// command line, and how a path in one is spelled. Both read it from the one
+	// record keyed by SandboxRoot (§126), which is why it is recorded here once
+	// rather than handed to each tool that cares.
 	//
 	// Nil means the native shell, which is what the CLI, every test and every
 	// caller with no opinion gets, and what the tool did before it was
@@ -101,6 +106,12 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 	// lost a folder must stop reaching it — both in the same call that re-roots
 	// the engine, not on the next restart.
 	setSandboxPolicy(opts.SandboxRoot, opts.OpenSandbox, opts.ExtraRoots, opts.AskWorkspace)
+	// The shell belongs to the same record for the same reason the folder list
+	// does: every file tool asks resolveSandboxPath about a path, and a path
+	// means a different file depending on which shell wrote it. Recorded on
+	// every build, nil included, so a workspace switched back to the native
+	// shell stops translating in the same call that switches it.
+	setSandboxShell(opts.SandboxRoot, opts.Shell)
 	// One registry of background commands, shared by the three tools that see
 	// them: shell starts, shell_output reads, shell_kill ends.
 	shells := newBackgroundShells()
@@ -116,7 +127,9 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 		// One name, three actions: run, output, kill (packed.go). The other two
 		// types still exist and still do the work — what they stopped being is
 		// entries in the tool block of every request that carries a shell.
-		&shellSkill{root: opts.SandboxRoot, shells: shells, backend: opts.Shell},
+		// No backend here: which shell it runs in is read from the same record
+		// the file tools read, keyed by this root (setSandboxShell above).
+		&shellSkill{root: opts.SandboxRoot, shells: shells},
 		&writeSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
 		&sheetWriteSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
 		&slidesWriteSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},

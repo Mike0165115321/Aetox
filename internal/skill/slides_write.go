@@ -173,7 +173,7 @@ func (s *slidesWriteSkill) run(start time.Time, requestPath string, rawSlides an
 
 	output := fmt.Sprintf("slides_write done: %s (%d slide(s))", requestPath, len(slides))
 	if requestPath != original {
-		output += " (on disk: " + targetPath + ")"
+		output += onDiskNote(s.root, targetPath)
 	}
 	out := newToolOutput("slides_write", "slides_write "+requestPath, output, start, false, nil)
 	out.Artifacts = []string{requestPath}

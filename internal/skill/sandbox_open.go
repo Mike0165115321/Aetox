@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mike0165115321/Aetox/internal/proc"
 )
 
 // The workspace is the whole answer to "which folders may this session touch",
@@ -59,6 +60,24 @@ type sandboxPolicy struct {
 	// path lives in onto the list, right there, instead of ending the work. See
 	// WidenFunc.
 	ask WidenFunc
+	// shell is which shell this root's commands run in, and it is here because
+	// containment is decided in one spelling while the session may speak
+	// another. A WSL session names its files /mnt/d/project and /home/mike;
+	// Windows knows those same files as D:\project and \\wsl.localhost\… . The
+	// backend is the only thing that can map between them (proc.Backend.
+	// HostPath), and resolveSandboxPath is where the mapping has to happen.
+	//
+	// Nil is the native shell, where the two spellings are one and the
+	// translation is the identity — which is every CLI session, every test, and
+	// every machine without WSL.
+	//
+	// It is read by the `shell` tool as well, which is not the category mix it
+	// looks like. This record is what a root's session is: which folders it may
+	// touch, and which shell it speaks. The tool held its own copy of the second
+	// one for a day (2026-08-17, §126.5) and that was one fact with two homes —
+	// the exact shape that let the shell and the file tools disagree about what
+	// a path meant in the first place.
+	shell func() proc.Backend
 }
 
 // WidenFunc asks the user whether to add the folder holding target to this
@@ -105,6 +124,101 @@ func setSandboxPolicy(root string, open bool, extra []string, ask WidenFunc) {
 		return
 	}
 	policies.Store(rootKey(safeRoot), policy)
+}
+
+// setSandboxShell records which shell a root speaks, leaving the rest of its
+// policy alone.
+//
+// A second write rather than another parameter on setSandboxPolicy, for the
+// reason SetWorkspaceFolders is one: the two facts have different lifetimes.
+// The workspace is settled when the engine is built; the shell is a picker the
+// user can move mid-session, and the three dozen callers that only ever cared
+// about the wall should not have to say so.
+//
+// It stores even when the rest of the policy is empty — a focused project on
+// the native shell is exactly the case setSandboxPolicy deletes, and a focused
+// project inside a distro is that same case with a translation that must not go
+// missing.
+func setSandboxShell(root string, shell func() proc.Backend) {
+	safeRoot, err := filepath.Abs(strings.TrimSpace(root))
+	if err != nil {
+		return
+	}
+	current := sandboxPolicyFor(safeRoot)
+	current.shell = shell
+	if shell == nil && !current.open && len(current.extra) == 0 && current.ask == nil {
+		policies.Delete(rootKey(safeRoot))
+		return
+	}
+	policies.Store(rootKey(safeRoot), current)
+}
+
+// backend is the shell this root speaks, resolved. Native is the answer for a
+// root nobody recorded one for, for a host that passed nil, and for a func that
+// answers nil — three ways of saying "no opinion", and a session that cannot
+// name a shell has always run commands the way this process would.
+func (p sandboxPolicy) backend() proc.Backend {
+	if p.shell == nil {
+		return proc.Native()
+	}
+	if backend := p.shell(); backend != nil {
+		return backend
+	}
+	return proc.Native()
+}
+
+// sandboxShellFor is the shell a root's commands run in — the one read, for
+// every caller that needs it.
+//
+// A lookup rather than a field on the tool that runs the commands, which is the
+// change §126.5 made: `shell` was handed its own copy of the same func at
+// construction, and one fact with two homes is the shape that let the shell and
+// the file tools disagree about what a path meant. The root arrives however the
+// host spelled it, so the key is normalized here instead of at each call site.
+func sandboxShellFor(root string) proc.Backend {
+	safeRoot, err := filepath.Abs(strings.TrimSpace(root))
+	if err != nil {
+		return proc.Native()
+	}
+	return sandboxPolicyFor(safeRoot).backend()
+}
+
+// hostSpelling turns a path written the way this root's shell writes it into
+// the path Windows knows the same file by, so containment is decided about the
+// file the caller meant.
+//
+// Every file tool is Go reading the host filesystem, and Go on Windows does not
+// think `/mnt/d/Project` is an absolute path — it has no drive letter — so
+// resolveSandboxPath joined it onto the sandbox root and looked for
+// `C:\Users\ASUS\aetox\mnt\d\Project`. Nothing there, no error worth the name,
+// and grep reported that a project full of matches contained none (2026-08-17,
+// and searchBaseExists is the other half of that day).
+//
+// Only paths that could be guest-spelled are translated, and that is a cost
+// rule as much as a correctness one: `HostPath` on the WSL backend resolves the
+// distro's mount root by reading \\wsl.localhost\<distro>\etc\wsl.conf, which
+// starts the distro if it is not running. A relative path and a Windows path
+// both already mean the same thing in both worlds, and they are what almost
+// every call carries — so the common case must not pay a distro boot to be told
+// its path was fine.
+//
+// A guest path the shell cannot place — `~` in a distro that will not say where
+// home is — comes back refused rather than passed through. Passing it through
+// would resolve the tilde against this machine's Windows profile: a different
+// folder, which containment could wrongly find acceptable.
+func hostSpelling(safeRoot, requestPath string) (string, error) {
+	if !strings.HasPrefix(requestPath, "/") && !strings.HasPrefix(requestPath, "~") {
+		return requestPath, nil
+	}
+	backend := sandboxPolicyFor(safeRoot).backend()
+	if proc.IsNative(backend) {
+		return requestPath, nil
+	}
+	host, ok := backend.HostPath(requestPath)
+	if !ok {
+		return "", fmt.Errorf("%s names no file this machine can see from %s", requestPath, backend.Name())
+	}
+	return host, nil
 }
 
 // SetWorkspaceFolders replaces the folder list for a root that is already
@@ -287,17 +401,84 @@ func refuseResolved(target string) error {
 	if err := refuseAgentKnowledge(target); err != nil {
 		return err
 	}
+	if err := refuseUnderHome(target, guestHomeDir(target)); err != nil {
+		return err
+	}
 	home, err := os.UserHomeDir()
 	if err != nil || strings.TrimSpace(home) == "" {
 		return nil
 	}
-	home = resolvedHomeDir(strings.TrimSpace(home))
+	return refuseUnderHome(target, resolvedHomeDir(strings.TrimSpace(home)))
+}
+
+// refuseUnderHome is the denylist applied to one home directory. Split out
+// because this machine can have more than one: a WSL session's files live in a
+// Linux home that Windows knows by another name (guestHomeDir), and the list
+// below is the same list for both.
+func refuseUnderHome(target, home string) error {
+	if strings.TrimSpace(home) == "" {
+		return nil
+	}
 	for _, sub := range credentialStores {
 		if withinRoot(target, filepath.Join(home, filepath.FromSlash(sub))) {
 			return fmt.Errorf("path is inside a credential store (%s) and stays off-limits in every mode", sub)
 		}
 	}
 	return nil
+}
+
+// guestHomeDir names the home directory a path inside a WSL distro belongs to,
+// or "" for anything else.
+//
+// The denylist above is home-relative, and until file tools could be handed a
+// guest path there was only ever one home to be relative to. Now
+// `/home/mike/.ssh/id_rsa` resolves to \\wsl.localhost\<distro>\home\mike\.ssh\
+// id_rsa — a real file, on this machine, holding exactly what the list exists to
+// refuse, and sitting nowhere near the Windows profile the check compares
+// against. The path was always spellable; what changed is that it is now the
+// natural way to write it, which is the difference between a hole nobody walks
+// into and one on the main road.
+//
+// Read off the path rather than asked of the distro. `wsl.exe … printf $HOME`
+// would be the exact answer and costs a distro start, on a check that runs on
+// every resolved path — and it would answer for the default user while the file
+// being read may belong to another. /home/<user> and /root are where a Linux
+// home is; that is a convention, but it is the convention every distro ships,
+// and being wrong here can only refuse a `.ssh` folder that is not a `.ssh`
+// folder.
+func guestHomeDir(target string) string {
+	slashed := strings.ReplaceAll(target, `\`, "/")
+	rest := ""
+	for _, prefix := range []string{"//wsl.localhost/", "//wsl$/"} {
+		if after, ok := cutPrefixFold(slashed, prefix); ok {
+			rest = after
+			break
+		}
+	}
+	if rest == "" {
+		return ""
+	}
+	parts := strings.Split(rest, "/")
+	if len(parts) < 2 || parts[0] == "" {
+		return ""
+	}
+	unc := `\\wsl.localhost\` + parts[0]
+	switch {
+	case strings.EqualFold(parts[1], "root"):
+		return unc + `\root`
+	case strings.EqualFold(parts[1], "home") && len(parts) >= 3 && parts[2] != "":
+		return unc + `\home\` + parts[2]
+	}
+	return ""
+}
+
+// cutPrefixFold is strings.CutPrefix that ignores case, because \\WSL.LOCALHOST
+// and \\wsl.localhost are one server to Windows and two strings to Go.
+func cutPrefixFold(s, prefix string) (string, bool) {
+	if len(s) < len(prefix) || !strings.EqualFold(s[:len(prefix)], prefix) {
+		return "", false
+	}
+	return s[len(prefix):], true
 }
 
 // refuseOwnSecrets rejects Aetox's own credential files. The data root goes

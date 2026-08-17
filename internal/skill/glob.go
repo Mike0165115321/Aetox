@@ -128,7 +128,23 @@ func (s *globSkill) Execute(ctx context.Context, input Input) (Output, error) {
 	// A literal prefix that isn't a directory means nothing can match — say so
 	// instead of walking, and never as an error: "no such directory" for a
 	// pattern the user only guessed at reads like a broken tool.
+	//
+	// That reasoning holds for a prefix this tool took out of the pattern, and
+	// only for that. The same sentence for a directory the *caller* named is the
+	// tool answering a question about the filesystem with a fact it never
+	// checked (searchBaseExists, and the day it cost). Which one this is, is
+	// exactly whether an explicit path came in.
 	if info, statErr := os.Stat(basePath); statErr != nil || !info.IsDir() {
+		if searchPath != "." {
+			err := searchBaseExists(searchPath, basePath)
+			if err == nil {
+				// It exists and is not a directory: a file cannot hold a pattern
+				// with a path in it, and saying nothing matched would hide that
+				// the caller pointed glob at the wrong kind of thing.
+				err = errors.New(searchPath + " is a file, not a folder to search")
+			}
+			return newToolOutput("glob", command, "", start, false, err), err
+		}
 		return newToolOutput("glob", command, "(no files matched)", start, false, nil), nil
 	}
 

@@ -257,6 +257,26 @@ func TestGrepSkillRejectsEscape(t *testing.T) {
 	}
 }
 
+// The one this whole change exists for: a folder that is not there must not
+// come back as a search that found nothing. "(no matches)" is a statement about
+// the caller's files, and a walk that opened none of them has not earned it.
+func TestGrepRefusesAFolderThatIsNotThereInsteadOfReportingNoMatches(t *testing.T) {
+	s := &grepSkill{root: t.TempDir()}
+
+	out, err := s.ExecuteTool(context.Background(), map[string]any{"pattern": "password", "path": "not-here"})
+	if err == nil {
+		t.Fatal("a missing folder searched clean — the agent would report the pattern is absent from code it never read")
+	}
+	if strings.Contains(out.Content, "no matches") {
+		t.Errorf("Content = %q, want no trace of the empty-result sentence", out.Content)
+	}
+	// Both spellings, because the mangled one is the whole diagnosis: without it
+	// the model cannot tell a typo from a path that resolved somewhere else.
+	if !strings.Contains(err.Error(), "not-here") || !strings.Contains(err.Error(), s.root) {
+		t.Errorf("error should name what was asked for and where it resolved to, got: %v", err)
+	}
+}
+
 func TestGrepSkillExecuteToolMissingPattern(t *testing.T) {
 	s := &grepSkill{root: t.TempDir()}
 	if _, err := s.ExecuteTool(context.Background(), map[string]any{}); err == nil {

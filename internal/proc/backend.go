@@ -68,6 +68,23 @@ type Backend interface {
 	// one.
 	HostPath(p string) (string, bool)
 
+	// GuestPath is HostPath read backwards: the name this shell knows a host
+	// file by. The bool is false when there is no such name, which is a fact
+	// about the two filesystems and not an error.
+	//
+	// It is on the interface for the direction the pair was missing. Everything
+	// crossing into the workspace is translated by HostPath, so the tools can be
+	// told where a command's files are; nothing translated what the tools
+	// *answer* with, and their answers are host paths. A model handed
+	// `D:\project\out.png` and told — correctly — to repeat the path a tool gave
+	// it will put that path into the next command, where a shell that has never
+	// heard of drive letters opens nothing (§126.6).
+	//
+	// Native is the identity both ways, which is what makes this cheap: on a
+	// machine with one filesystem the pair collapses and every caller can stop
+	// asking which world it is in.
+	GuestPath(p string) (string, bool)
+
 	// Export declares that the named variables, which the caller has already
 	// put in cmd.Env, must be readable by the program the shell starts.
 	//
@@ -229,6 +246,10 @@ func (nativeBackend) Command(ctx context.Context, line, dir string) *exec.Cmd {
 }
 
 func (nativeBackend) HostPath(p string) (string, bool) { return p, true }
+
+// GuestPath is the identity for the same reason HostPath is: this shell's files
+// and this machine's files are the same files, under the same names.
+func (nativeBackend) GuestPath(p string) (string, bool) { return p, true }
 
 // Export is a no-op here: a child process on this machine inherits cmd.Env as
 // it stands, which is what every caller already assumed.

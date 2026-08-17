@@ -78,34 +78,38 @@ func (d *delegationTool) Narrow(named []string) skill.Skill {
 // clause in it is load-bearing enough to have a test: the brief is self-
 // contained, small work is cheaper done here, and a list is ONE delegate looping.
 func (d *delegationTool) Description() string {
+	// WHEN TO USE / WHEN NOT TO stays in the block, and it is the only judgment
+	// in this tool that does. Everything else here is advice about a delegation
+	// already decided on, which the first result carries in time. Whether to
+	// delegate AT ALL is decided before any call exists, so guidance attached to
+	// the first `start` would reach only a model that already chose to start
+	// one — the same shape as the `wait` trigger.
+	//
+	// Compressed rather than moved, because the failure it prevents is expensive
+	// and does not correct itself: delegating a single grep costs a whole second
+	// context to find that out.
+	//
+	// REPEATED WORK IS ONE JOB moved to Guidance. It shapes a delegation that is
+	// already happening, and one over-fanned wave is visible in the result.
 	return "Sub-agents: hand a self-contained job to one, collect it, answer one that got stuck, " +
-		"and declare a run when the work takes more than one wave of them. See `action`. " +
-		"They have NO access to this conversation, so `prompt` must carry everything they need. " +
-		"Starting one RETURNS IMMEDIATELY with a task id — do other useful work, then collect. " +
-		"WHEN TO USE: work that would otherwise pour a lot into this conversation — hunting through many " +
-		"files for something you cannot name yet, or one mechanical change repeated across many places. " +
-		"WHEN NOT TO: anything you can already name. Reading a file, one grep, one edit — do those yourself. " +
-		"A delegate costs a second system prompt and its own tool list on every round. " +
-		"REPEATED WORK IS ONE JOB: hand the whole list to ONE of them and let it loop — twelve items is one " +
-		"task with twelve items in its prompt, never twelve tasks, because each one pays for its own context. " +
-		"Available: " + strings.Join(profileNames(d.start.available()), ", ") + "."
+		"and declare a run when the work takes more than one wave. See `action`. " +
+		"WHEN TO USE: work that would otherwise pour a lot into this conversation — a hunt through many " +
+		"files for something you cannot name yet, one mechanical change repeated across many places. " +
+		"WHEN NOT TO: anything you can already name. One read, one grep, one edit — do those yourself; " +
+		"a delegate costs a second system prompt and its own tool list on every round."
 }
 
 // actionLines are written per action and assembled from the permitted set, so a
 // narrowed tool never advertises a call this caller would be refused.
 func (d *delegationTool) actionLines() string {
+	// Signatures. Everything these used to explain about when and why now lives
+	// in Guidance and is sent once, with the first call to that action — see
+	// internal/skill/guidance.go and task_guidance.go.
 	lines := map[string]string{
-		"start": "`start` (prompt, description, agent) — hand over a job. Default: a call with no action starts one. " +
-			"Returns a task id and does NOT wait.",
-		"collect": "`collect` (task_id) — redeem an id, waiting only if it is not finished. Several ids, comma separated, " +
-			"cost the time of the slowest rather than the sum. One that got stuck comes back as a QUESTION instead " +
-			"of an answer. Collect everything you start: a result nobody reads is work nobody used.",
-		"answer": "`answer` (task_id, answer) — reply to that question. It resumes with everything it had already done " +
-			"in hand, so answering costs far less than starting it over.",
-		"plan": "`plan` (name, brief, phases) — declare a run BEFORE starting any of it: the stages this piece of work " +
-			"goes through, in order, including the ones that have not happened yet. Starts nothing. Every start after " +
-			"it names one of those phases. A phase declared and left empty sits at zero on the user's screen for the " +
-			"whole run, which is what makes a promised checking round hard to skip quietly.",
+		"start":   "`start` (prompt, description, agent) — hand over a job. The default action. Returns a task id and does NOT wait.",
+		"collect": "`collect` (task_id) — redeem an id, or several comma separated.",
+		"answer":  "`answer` (task_id, answer) — reply to one that came back as a question.",
+		"plan":    "`plan` (name, brief, phases) — declare a run before starting any of it. Starts nothing.",
 	}
 	var b strings.Builder
 	for _, a := range d.allowedActions() {
@@ -136,14 +140,10 @@ func (d *delegationTool) ToolDefinition() model.ToolDefinition {
 		}
 		properties["prompt"] = map[string]any{
 			"type": "string",
-			// The failure this clause exists for: a user who names the worker has
-			// already written the brief, and paraphrasing it is where "ask doc how a
-			// good document is put together" became "write a manual about…". The
-			// worker only ever sees the paraphrase, so it cannot check it.
-			"description": "start: the complete brief — paths, names, constraints. When the user asked for this " +
-				"worker themselves, their own words ARE the brief: carry them through as written and add context " +
-				"around them. A word you are unsure of crosses over exactly as typed; the worker can ask, and a " +
-				"guess cannot be un-asked.",
+			// The rest of what this used to say — why a paraphrase is dangerous —
+			// moved to Guidance. It is advice about writing a brief, read at the
+			// moment of writing one, and the first result carries it in time.
+			"description": "start: the complete brief — paths, names, constraints. The worker cannot see this conversation.",
 		}
 		properties["agent"] = map[string]any{
 			"type":        "string",
@@ -154,27 +154,26 @@ func (d *delegationTool) ToolDefinition() model.ToolDefinition {
 			properties["phase"] = map[string]any{
 				"type":        "string",
 				"enum":        run.phaseTitles(),
-				"description": "start: which phase of the run \"" + run.name + "\" this job belongs to. Name one every time.",
+				"description": "start: which phase of the run \"" + run.name + "\" this job belongs to.",
 			}
 		}
 	}
 	if slices.Contains(allowed, "collect") || slices.Contains(allowed, "answer") {
 		properties["task_id"] = map[string]any{
 			"type":        "string",
-			"description": "collect/answer: the id start returned, e.g. \"task_1\". For several, separate with commas.",
+			"description": "collect/answer: the id start returned, e.g. \"task_1\".",
 		}
 	}
 	if slices.Contains(allowed, "answer") {
 		properties["answer"] = map[string]any{
-			"type": "string",
-			"description": "answer: the decision, in full. The sub-agent cannot see this conversation, so " +
-				"\"the first one\" means nothing to it — name the choice.",
+			"type":        "string",
+			"description": "answer: the decision, in full.",
 		}
 	}
 	if slices.Contains(allowed, "plan") {
 		properties["name"] = map[string]any{
 			"type":        "string",
-			"description": "plan: a few words naming the run, in the user's language. The headline above the group.",
+			"description": "plan: a few words naming the run, in the user's language.",
 		}
 		properties["brief"] = map[string]any{
 			"type":        "string",
@@ -182,7 +181,7 @@ func (d *delegationTool) ToolDefinition() model.ToolDefinition {
 		}
 		properties["phases"] = map[string]any{
 			"type":        "array",
-			"description": "plan: the stages, in order. `title` is named exactly as written; `agents` is how many jobs you expect there, left out when you do not know.",
+			"description": "plan: the stages, in order.",
 			"items": map[string]any{
 				"type": "object",
 				"properties": map[string]any{

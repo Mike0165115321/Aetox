@@ -26,27 +26,24 @@ type shellSkill struct {
 	// profile — internal/skill must never import the package that knows what an
 	// agent is.
 	actions []string
-	// backend is which shell runs the command: the machine's own, or a WSL
-	// distro. A func rather than a value for the reason OutputSubdir is one
-	// (defaults.go): the answer changes when the user picks a different shell,
-	// and re-bootstrapping the engine to change which program gets exec'd would
-	// be an absurd price. Nil means the native shell, which is what every test
-	// and every caller that has no opinion gets.
-	backend func() proc.Backend
 }
 
 // shell resolves the backend once for one use. Once, deliberately: a turn that
 // read the setting twice could guard a command line as bash and then run it in
 // cmd, and the gap between those two reads is exactly where the containment
 // check stops describing the thing that executes.
+//
+// Looked up by root rather than held in a field of its own. This type carried
+// its own `backend func()` until §126.5 — set from the same option that records
+// the workspace's shell, one call apart — and the answer being in two places is
+// how the file tools came to believe a path meant something the shell did not.
+// The lookup is still per use, so the picker still takes effect on the next
+// command rather than the next restart.
 func (s *shellSkill) shell() proc.Backend {
-	if s == nil || s.backend == nil {
+	if s == nil {
 		return proc.Native()
 	}
-	if backend := s.backend(); backend != nil {
-		return backend
-	}
-	return proc.Native()
+	return sandboxShellFor(s.root)
 }
 
 func (*shellSkill) Name() string { return "shell" }
@@ -391,7 +388,19 @@ func (s *shellSkill) Execute(ctx context.Context, input Input) (Output, error) {
 			result.RawOutput = "(command failed)"
 			result.Content = result.RawOutput
 		}
-		result.Stderr = err.Error()
+		// A failure says where it failed, and that is not decoration.
+		//
+		// `wsl: command not found` is a true sentence about one program, and on
+		// 2026-08-17 an agent read it as a true sentence about the machine: it
+		// told the user there was no WSL here and no way to reach their D:
+		// drive, minutes after reading files in that distro. Nothing in the
+		// answer said which shell had spoken, so the largest possible reading of
+		// the absence was also the only one available.
+		//
+		// It costs one clause on the path that already failed, and it is the
+		// same rule searchBaseExists holds for a search: an absence must be
+		// reported at the size it actually is.
+		result.Stderr = err.Error() + " (in " + backend.Name() + ")"
 		return result, err
 	}
 	return result, nil

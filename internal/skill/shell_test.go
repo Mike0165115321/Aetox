@@ -60,6 +60,28 @@ func TestShellSkillCommandFailureReturnsError(t *testing.T) {
 	}
 }
 
+// "command not found" names a program. It does not name a machine, and on
+// 2026-08-17 an agent read it as one: `wsl` was missing from a shell that was
+// already inside the distro, so it told the user the machine had no WSL and no
+// reachable D: drive. The answer said nothing about who had spoken, so the
+// largest reading of the absence was the only one on offer.
+func TestAFailedCommandSaysWhichShellItFailedIn(t *testing.T) {
+	isolateAuditLog(t)
+	s := &shellSkill{root: t.TempDir()}
+
+	out, err := s.Execute(context.Background(), Input{"args": []string{"this-command-does-not-exist-xyz"}})
+	if err == nil {
+		t.Fatal("expected error for nonexistent command, got nil")
+	}
+	if !strings.Contains(out.Stderr, proc.ShellName()) {
+		t.Errorf("the failure does not say which shell it came from (%s):\n%s", proc.ShellName(), out.Stderr)
+	}
+	// And it is still the failure, not a replacement for it.
+	if !strings.Contains(out.Stderr, "exit status") && !strings.Contains(out.Stderr, "not found") {
+		t.Errorf("the original error was lost:\n%s", out.Stderr)
+	}
+}
+
 // The buffer must stop growing mid-command, not after it exits: limitLines
 // only runs once the process is done, which is too late for a runaway
 // producer to avoid eating RAM for the whole tool timeout.

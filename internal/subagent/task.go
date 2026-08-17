@@ -259,33 +259,79 @@ func profileNames(profiles []Profile) []string {
 // from this list is who these people are — and §84's "returns as a file" is
 // satisfied by any compressed result, a paragraph included, since its whole
 // argument was about not shipping context between rooms.
+// agentChoice is the roster as the tool block carries it: every worker, with
+// enough of what it is FOR to be chosen between.
+//
+// It was 673 tokens — 43% of the whole `task` entry, more than the entire
+// browser tool — because it carried each worker's full description plus two
+// paragraphs explaining what the two kinds are. Owner's rule for the trim,
+// 18 ส.ค.: *"ทำให้มันฉลาดเลือก ไม่ใช่เดาจากชื่อ"*. So the line is drawn at
+// CHOOSING and not at naming. A bare enum of names would be cheaper still and
+// would make every first delegation a guess, which is the saving nobody wanted.
+//
+// What makes the cut possible without losing the choice is that the profiles
+// already mark the split themselves. A description reads "เอเจนดูแลงานเอกสาร —
+// ตอบว่าเอกสารแบบไหนต้องมีอะไร …": before the dash is what this worker is FOR,
+// after it is how it works. Existence and judgment, separated by whoever wrote
+// the file. The block takes the first half; agentRoster hands the whole thing
+// over with the first `start`.
+//
+// The @name sentence stays, short. One address for everybody (owner, 12 ส.ค.):
+// the user writes `@doc …` and it reaches doc unedited, and the model reads that
+// in the transcript and has to recognise it as the thing it does itself. Two
+// names for one act is how a user gets told their own convention does not exist.
 func agentChoice(profiles []Profile) string {
 	var agents, helpers []string
 	for _, p := range profiles {
-		line := p.Name + " — " + p.Description
-		if p.Desk != "" {
-			agents = append(agents, line)
-		} else {
-			helpers = append(helpers, line)
-		}
+		agents, helpers = appendKind(agents, helpers, p, forClause(p.Description))
 	}
-	// One address for everybody (owner, 12 ส.ค.). The user writes `@doc …` in
-	// the composer and it reaches doc unedited; this tool is how the same
-	// address is written by something that calls tools instead of typing. Said
-	// out loud here because the model reads the user's `@doc` in the transcript
-	// and has to recognise it as the thing it does itself — two names for one
-	// act is how a user gets told their own convention does not exist.
-	out := "Which one to hand it to. Two kinds, and the difference is whose work it is. " +
-		"The user addresses these same workers by writing @name in their message; this parameter is that address."
+	out := "Which worker. The user writes @name for the same thing."
 	if len(agents) > 0 {
-		out += "\nAGENTS (เอเจน) — a colleague who takes a whole job off your hands. " +
-			"Brief them like a coworker and use what comes back: " + strings.Join(agents, " | ")
+		out += "\nAGENTS (เอเจน), a colleague who takes a whole job: " + strings.Join(agents, " | ")
 	}
 	if len(helpers) > 0 {
-		out += "\nHELPERS (ซับเอเจน) — your own hands for one step of YOUR work, in a second context so it " +
-			"stays out of this one: " + strings.Join(helpers, " | ")
+		out += "\nHELPERS (ซับเอเจน), your own hands for one step of YOUR work: " + strings.Join(helpers, " | ")
 	}
 	return out
+}
+
+// agentRoster is that same list with every word of it, for the guidance sent
+// with the first `start` of a session.
+func agentRoster(profiles []Profile) string {
+	var agents, helpers []string
+	for _, p := range profiles {
+		agents, helpers = appendKind(agents, helpers, p, p.Description)
+	}
+	out := "Who you can hand work to, in full."
+	if len(agents) > 0 {
+		out += "\nAGENTS (เอเจน) — a colleague who takes a whole job off your hands. Brief them like a coworker and use what comes back:\n  " +
+			strings.Join(agents, "\n  ")
+	}
+	if len(helpers) > 0 {
+		out += "\nHELPERS (ซับเอเจน) — your own hands for one step of YOUR work, in a second context so it stays out of this one:\n  " +
+			strings.Join(helpers, "\n  ")
+	}
+	return out
+}
+
+// appendKind files one worker under its kind. Which home the profile lives in
+// decides that, never a word inside its description — see homes_test.go.
+func appendKind(agents, helpers []string, p Profile, text string) ([]string, []string) {
+	line := p.Name + " — " + text
+	if p.Desk != "" {
+		return append(agents, line), helpers
+	}
+	return agents, append(helpers, line)
+}
+
+// forClause is the half of a profile's description that says what the worker is
+// FOR, which is the half needed to choose one. Profiles separate it with an em
+// dash by convention; one that does not is carried whole rather than guessed at.
+func forClause(description string) string {
+	if before, _, found := strings.Cut(description, " — "); found {
+		return strings.TrimSpace(before)
+	}
+	return strings.TrimSpace(description)
 }
 func (t *taskTool) ExecuteTool(ctx context.Context, args map[string]any) (skill.Output, error) {
 	return t.begin(ctx, args, nil)

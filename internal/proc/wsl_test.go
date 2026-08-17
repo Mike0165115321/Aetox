@@ -11,6 +11,29 @@ import (
 // sandbox guard resolves what comes out of HostPath, so a wrong answer either
 // refuses a command that was inside the workspace or admits one that was not.
 
+// The note is the only place the model is told it is already standing in the
+// distro, and it was empty for as long as the backend existed. An agent
+// mid-session wrapped its command in `wsl -d mikedev --`, got `command not
+// found` from a shell that was already there, and concluded the machine had no
+// WSL at all. An empty note is not a neutral default here; it is the default
+// that costs a turn and then lies to the user.
+func TestWSLNoteSaysTheCommandIsAlreadyInsideTheDistro(t *testing.T) {
+	note := WSL("mikedev").Note()
+	if strings.TrimSpace(note) == "" {
+		t.Fatal("the WSL backend tells the model nothing about where its command starts")
+	}
+	for _, want := range []string{"wsl", "/mnt/"} {
+		if !strings.Contains(note, want) {
+			t.Errorf("the note does not mention %q, which is the habit it exists to correct:\n%s", want, note)
+		}
+	}
+	// The native shell's note is about its own syntax and must not have picked
+	// any of this up.
+	if strings.Contains(Native().Note(), "distro") {
+		t.Errorf("the native note talks about a distro:\n%s", Native().Note())
+	}
+}
+
 func TestHostFromGuest(t *testing.T) {
 	const distro = "mikedev"
 	cases := []struct {

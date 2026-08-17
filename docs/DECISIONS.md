@@ -3911,6 +3911,58 @@ A model told its commands run in `bash (WSL: mikedev)` still believes it is on t
 
 The note now says where the command starts, and says the same thing about paths, because every file tool answers with the Windows spelling of a file and the prompt rightly tells the model to repeat the path a tool gave it. Two sentences, one fact, and not a syntax table: what generalizes is **you are already there**, and everything a model would otherwise do to get there follows from it.
 
+### 126.5 One fact, one home
+
+Owner, on the fix as it stood: *"การทำให้ WSL กับวินโด้สวิชไปมาได้แบบนี้จะทำให้เกิดหนี้ในระบบไหมอ่ะ"*.
+
+The answer was yes, in one specific place, and it was introduced by §126.2 rather than by the switching. `shell` held its own `backend func() proc.Backend`, handed to it at construction; the file tools read the workspace's record. Two homes for one fact, set from the same option one line apart in `RegisterDefaults` — which is the exact shape that let the shell and the file tools disagree about what a path meant in the first place. A fix that reproduces the bug's structure one layer up is not finished.
+
+`shell` now looks its backend up by root like everything else (`sandboxShellFor`). The lookup is still per use, so the picker still takes effect on the next command rather than the next restart. The field is gone.
+
+The category objection is worth recording because it is the reason this looked wrong before it looked right: a sandbox *policy* is about permission, and "which shell" is not a permission. But the record is not a permission list, it is what a root's session **is** — which folders it may touch, and which language it speaks — and the file's own header already gives the reason it exists at all: ~20 skills hold a root, and threading session state through every struct is worse than one map keyed by it.
+
+### 126.6 The return trip
+
+§126.2 translated everything crossing *into* the workspace. Nothing translated what the tools hand *back*, and their answers are Windows paths.
+
+That is not symmetric politeness — it is the same failure aimed the other way. The prompt tells the model to repeat the path a tool reported rather than assemble one, which is right and is the rule that stops it composing a root with a filename and sending the user to a file that is not there. In a WSL session it also means the one receipt that names an absolute path hands the model `D:\…` to type into a shell that has never heard of drive letters.
+
+`GuestPath` had existed since the backend shipped, with a comment claiming it was "what tells the model where it is standing", and **no caller outside its own tests**. It is on the `Backend` interface now, identity on native, and the receipt uses it.
+
+The receipt names **both** spellings, and that is the whole decision. This clause has two readers who need different answers: the user asks where the file is on their machine and opens the Windows path in Explorer — which is why the clause exists at all — while the model's next move is often to use the file in a shell where that path opens nothing. Saying which is which costs one clause on a receipt that only appears when placement moved a file. Picking one reader to be wrong for costs a turn, every time.
+
+Four tools appended that clause, in four identical copies. A receipt that has to be right about two filesystems is not the thing to keep four copies of; it is `onDiskNote` now, and a native session gets back the string it always had.
+
+### 126.7 An absence reported at the size it actually is
+
+§126.4 stops the model reaching for `wsl` from inside the distro. It does not stop the *reading* that turned one dead command into a claim about the machine, and that reading is the more expensive half: `wsl: command not found` is a true sentence about one program, and the agent published it as *there is no WSL here and no way to reach your D: drive*.
+
+Nothing in the answer said who had spoken, so the largest possible reading of the absence was also the only one available. A failed command now names the shell it failed in — `exit status 127 (in bash (WSL: mikedev))` — on the path that already failed, at a cost of one clause.
+
+This is §126.1's rule with the subject changed. There, a search that could not look must not answer as though it looked; here, a program that was not found must not be reported as an environment that is not there. Both are an absence being rounded up.
+
+### 126.8 The cut that was measured, and not made
+
+Owner, once the seam was visible: *"ถ้าเราตัด WSL ออกไปมันจะง่ายขึ้นกว่าเดิมเลยไหม"*.
+
+Simpler, and measured rather than argued: ~2,100 lines of Go across eleven files, plus the composer chip, its test and its strings. `Backend` itself is most of that — the interface exists only because there are two of them, and one shell is a build-tagged package function again.
+
+Two things kept it. The first is that **the tax is smaller than the deletion suggests**: of the five pieces of work this decision covers, two survive the cut. §126.1 is a lie any machine tells about any mistyped path, and consolidating four copies of one receipt was duplication regardless. `gateFor`'s POSIX split stays too, because Linux and macOS builds exist and the guard still has to know how a line tokenizes.
+
+The second is the audit log from four hours before the question. Between 12:55 and 13:03 that day the agent rsynced a project out of `/mnt/d`, started `uvicorn` on port 8014 from a venv, checked it with `ss` and `curl`, and opened the page. Without the backend the files are still readable through `\\wsl.localhost` and **nothing runs**: no python, no docker, no pytest. The capability is not speculative; it is what the owner was doing when the bug was found.
+
+The cheap middle was considered and does not fit: deriving the shell from where the project lives — which `DefaultBackendFor` already does for projects under `\\wsl.localhost\` — would delete the picker, the stored setting and the mid-session switch, and with them everything §126.5 had to untangle. It fails on the case in hand. `D:\Project\AI-Robot-Guide-` is a Windows path whose toolchain is in `mikedev`; files on one side and tools on the other is the shape of the work, and nothing in a file's location says so.
+
+What stays unpaid is recorded in §126.9.
+
+### 126.9 Not done: the switch leaves no mark in the conversation
+
+A shell can change while a conversation is running. The chip changes, the tool description changes, and **the transcript does not** — so the model's own earlier turns, written correctly for the old shell, remain the strongest evidence in front of it. That is why `wsl -d mikedev --` was written at 13:09 by an agent that had been fluent in bash since 12:54.
+
+§126.4 competes with that history on every request, which is worth more than a line that scrolls away and is summarized out. It does not correct it. The honest fix is a mark in the transcript at the moment it happens, and there is no honest place to put one: `messages` has two roles, `user` and `agent`, and the frontend renders anything that is not `user` as the assistant speaking. A notice in a bot bubble is the app putting words in the agent's mouth.
+
+Cheaper than a third role, and recorded as the alternative: forbid the mid-session switch outright. It saves no code and removes the class.
+
 ## 127. Decision — The Agent's Tab Is the One It Opened, Not the One in Front (2026-08-17)
 
 **Status:** Implemented 2026-08-17 · **Files:** `desktop/browser.go`, `desktop/workbench.go`, `desktop/browser_tool.go`, `desktop/browser_capture.go`, `internal/skill/packed.go`

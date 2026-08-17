@@ -226,7 +226,7 @@ func (s *docWriteSkill) run(start time.Time, requestPath string, rawBlocks any) 
 
 	output := fmt.Sprintf("doc_write done: %s (%d block(s))", requestPath, len(blocks))
 	if requestPath != original {
-		output += " (on disk: " + targetPath + ")"
+		output += onDiskNote(s.root, targetPath)
 	}
 	out := newToolOutput("doc_write", "doc_write "+requestPath, output, start, false, nil)
 	out.Artifacts = []string{requestPath}
