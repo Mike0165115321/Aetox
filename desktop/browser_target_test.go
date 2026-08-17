@@ -263,3 +263,21 @@ func TestAPageWithNoTitleIsNamedByItsAddress(t *testing.T) {
 		t.Errorf("a truncated line parsed as a page: %q", url)
 	}
 }
+
+// A reused tab still holds the last page's title and URL, and `open` polls meta
+// until it is non-empty — so on a reused tab the poll succeeded on its first
+// read and the tool reported the page it had just LEFT.
+//
+// Caught in a production log rather than by anything here: "เปิดแล้ว: Example
+// Domain" for a navigation to x.com, twice in one session. Every reused open
+// since tab reuse shipped had been naming the wrong page, and parseBrowserOpened
+// files those names into the visited-pages panel.
+func TestArmingForgetsWhatThePageWas(t *testing.T) {
+	tab := &browserTab{navDone: make(chan struct{}), title: "Example Domain", url: "https://example.com/"}
+
+	tab.armNavigation()
+
+	if title, url := tab.meta(); title != "" || url != "" {
+		t.Errorf("meta() = %q, %q after arming — open would report the page it just left", title, url)
+	}
+}

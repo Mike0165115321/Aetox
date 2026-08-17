@@ -187,12 +187,21 @@ func (a *App) workbenchOpenBrowser(ctx context.Context, url string, newTab bool)
 		// itself, and seeing it back is what tells it the path was the problem.
 		return "", "", fmt.Errorf("%w: %s", err, url)
 	}
-	// meta (title/url) arrives just after navigation — give it a beat.
+	// meta (title/url) arrives from the page a beat after it loads — give it
+	// one. armNavigation cleared whatever the last page left here, so this waits
+	// for THIS page rather than succeeding instantly on the previous one's.
 	for i := 0; i < 20; i++ {
 		if title, finalURL = tab.meta(); title != "" || finalURL != "" {
 			break
 		}
 		time.Sleep(100 * time.Millisecond)
+	}
+	// A page that never posts meta — one with no script bridge, a PDF, an image
+	// — is still a page we went to, and the URL we asked for is the truest thing
+	// left to call it. Without this, clearing meta would trade a wrong name for
+	// no name.
+	if finalURL == "" {
+		finalURL = url
 	}
 	return title, finalURL, nil
 }

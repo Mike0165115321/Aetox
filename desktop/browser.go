@@ -445,6 +445,19 @@ func (t *browserTab) armNavigation() {
 	t.engMu.Lock()
 	t.engErr = nil
 	t.engMu.Unlock()
+	// And the same for what we think the page IS, which is the half that was
+	// wrong in production before anyone noticed.
+	//
+	// meta arrives from the page a beat after it loads, so `open` polls until it
+	// is non-empty. On a fresh tab that works. On a REUSED one the previous
+	// page's title and URL are already sitting there, so the poll succeeds on
+	// its first read and `open` reports the page it just left — seen in the log
+	// as "เปิดแล้ว: Example Domain" for a navigation to x.com. Every reused open
+	// since tab reuse shipped has been naming the wrong page, and
+	// parseBrowserOpened has been filing those into the visited-pages panel.
+	t.metaMu.Lock()
+	t.title, t.url = "", ""
+	t.metaMu.Unlock()
 }
 
 func (t *browserTab) setNavOK(ok bool) {
