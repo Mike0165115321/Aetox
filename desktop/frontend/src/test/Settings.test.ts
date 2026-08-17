@@ -16,6 +16,7 @@ import {
 } from './mocks/wailsApp'
 import { BrowserOpenURL } from './mocks/wailsRuntime'
 import { applyTypeScale } from '../lib/typeScale.svelte'
+import { DEFAULT_SYSTEM_PX } from '../lib/systemFont.svelte'
 import { cockpit } from '../lib/stores/cockpit.svelte'
 
 // The chart plots a window ending today, so a hard-coded date would fall out
@@ -1509,10 +1510,12 @@ describe('Type scale', () => {
     const { container } = render(Settings, { onClose: () => {} })
     await openSection(container, 'รูปลักษณ์')
 
-    // 15.5px base * 1.18 = 18.29 -> 18.3. Without folding the text scale in,
-    // this box would keep claiming 15.5 while the app rendered at 18.3.
+    // The shipped size * 1.18. Written as the constant rather than the number
+    // it currently works out to: what this asserts is that the text scale is
+    // folded in at all — without it the box would keep claiming the untouched
+    // size while the app rendered a fifth larger.
     const box = container.querySelector('input[type="number"]') as HTMLInputElement
-    expect(Number(box.value)).toBeCloseTo(18.3, 1)
+    expect(Number(box.value)).toBeCloseTo(DEFAULT_SYSTEM_PX * 1.18, 1)
     applyTypeScale('default')
   })
 })

@@ -1683,7 +1683,11 @@ export function closeFile(path: string): void {
   cockpit.activeView = cockpit.openFiles.at(-1)?.path ?? 'chat'
 }
 
-const activeViewStorageKey = 'aetox.activeView'
+/** Where the open room survives an F5. Exported for the same reason
+ *  SETTINGS_SECTION_KEY below is: firstRun.ts has to clear it, and a key spelled
+ *  twice fails silently — the reset would look like it worked and the window
+ *  would come back on the page the button was pressed from. */
+export const activeViewStorageKey = 'aetox.activeView'
 
 // The views a reload may land back on. One list read by both halves: they used
 // to spell the same set out twice, and each new room had to be remembered in

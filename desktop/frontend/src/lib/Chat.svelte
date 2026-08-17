@@ -11,7 +11,7 @@
   import { shell } from './shell.svelte'
   import {
     EnabledProviders, SupportedThinkLevels,
-    ListModelsForProvider, PriceModels, RequiresAPIKey, HasAPIKey, PickAttachment,
+    ListModelsForProvider, PriceModels, RequiresAPIKey, AcceptsAPIKey, HasAPIKey, PickAttachment,
     GetContextBreakdown, GuideTopics, RunChatCommand, RunChatScript, ListChairs, ChairStarters, CurrentSessionID,
     Shells, CurrentShell, SetShell, EnginesFor, UseEngine, VerifyConnection,
     GitBranches, GitSwitchBranch, GitCreateBranch, GetProjectStatus,
@@ -284,7 +284,15 @@
     }
     // Same recovery as Settings: the list loading is proof the endpoint is up.
     if (models.length > 0 && model.warning) await retryActiveProvider()
-    needsApiKey = (await RequiresAPIKey(provider)) && !(await HasAPIKey(provider))
+    // Three questions, not two. "Requires credentials" and "takes a pasted
+    // key" are different facts, and treating them as one put a password box
+    // under the composer for Codex — a subscription reached at chatgpt.com,
+    // where the only key anyone could paste belongs to api.openai.com and
+    // answers 401. Signing in is done in Settings; a dead field here was the
+    // app inventing a step that does not exist.
+    needsApiKey = (await RequiresAPIKey(provider))
+      && (await AcceptsAPIKey(provider))
+      && !(await HasAPIKey(provider))
   }
 
   // Model list, API-key requirement, and think levels all depend on the current

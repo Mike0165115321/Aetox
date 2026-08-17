@@ -14,6 +14,7 @@
   import ProviderAccount from './ProviderAccount.svelte'
   import Icon from './Icon.svelte'
   import { coverHue } from './coverHue'
+  import { armFirstRunReplay } from './firstRun'
   import { scopeLabel } from './memoryScope'
   import type { IconName } from './icons'
   import {
@@ -130,6 +131,23 @@
   function saveDefaultShell() {
     localStorage.setItem('defaultShell', defaultShell)
   }
+
+  // ---------- General: replay the first run ----------
+  // The first screen anyone sees is the one nobody who works on Aetox can see:
+  // this machine has been onboarded, has a key, and the wizard's own shortcuts
+  // make sure of it. This puts the window back into that state so it can be
+  // looked at. Through the same gate as a delete, because a window that
+  // reloads and forgets your theme without warning is the same surprise even
+  // when nothing is destroyed.
+  const replayFirstRun = () => askConfirm({
+    title: t('settings.firstRunConfirmTitle'),
+    message: t('settings.firstRunConfirmMessage'),
+    confirmLabel: t('settings.firstRunAction'),
+    run: () => {
+      armFirstRunReplay()
+      window.location.reload()
+    },
+  })
 
   // ---------- Appearance: code theme import ----------
   let themeImportError = $state('')
@@ -2620,7 +2638,7 @@
   const sections: { group: string; items: NavItem[] }[] = $derived([
     { group: t('settings.groupPersonal'), items: [
       { id: 'general', label: t('settings.general'), icon: 'slidersHorizontal',
-        terms: [t('settings.shellTitle'), t('settings.approvalTitle')] },
+        terms: [t('settings.shellTitle'), t('settings.approvalTitle'), t('settings.firstRunTitle')] },
       { id: 'appearance', label: t('settings.appearance'), icon: 'palette',
         terms: [
           t('settings.languageTitle'), t('settings.themeTitle'), t('settings.uiFontTitle'),
@@ -3537,6 +3555,13 @@
           <select class="ctrl" value={cockpit.model.approval} onchange={(e) => switchApprovalMode(e.currentTarget.value)}>
             {#each approvalOptions as opt}<option value={opt.value}>{opt.label}</option>{/each}
           </select>
+        </div>
+        <div class="set-row">
+          <div class="set-txt">
+            <div class="t">{t('settings.firstRunTitle')}</div>
+            <div class="d">{t('settings.firstRunDesc')}</div>
+          </div>
+          <button class="ctrl" onclick={replayFirstRun}>{t('settings.firstRunAction')}</button>
         </div>
       </div>
     {:else if active === 'appearance'}

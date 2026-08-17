@@ -3,7 +3,7 @@
 // this; the rest of the chrome stays on the locked system scale.
 
 const STORAGE_KEY = 'aetox-chat-font-size'
-const DEFAULT_SIZE = 15.5
+const DEFAULT_SIZE = 14.5
 const MIN_SIZE = 12
 const MAX_SIZE = 22
 

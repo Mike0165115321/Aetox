@@ -18,6 +18,7 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/debuglog"
 	"github.com/Mike0165115321/Aetox/internal/mcp"
 	"github.com/Mike0165115321/Aetox/internal/model"
+	"github.com/Mike0165115321/Aetox/internal/oauth"
 	"github.com/Mike0165115321/Aetox/internal/proc"
 	"github.com/Mike0165115321/Aetox/internal/prompt"
 	"github.com/Mike0165115321/Aetox/internal/safety"
@@ -654,7 +655,20 @@ func promptModelSelection(cfg config.Config, askThinkLevel bool) (string, string
 			key = strings.TrimSpace(model.ResolveModelAPIKey(provider))
 		}
 
-		if model.RequiresAPIKey(provider) {
+		// Needing credentials and taking a pasted key are two different facts,
+		// and asking only the first one trapped anyone who picked Codex: it is
+		// a ChatGPT subscription reached at chatgpt.com, the only key a user
+		// could paste belongs to api.openai.com, and the loop below refuses an
+		// empty line — so the menu demanded, forever, a credential that does
+		// not exist. Sign-in is the way in; say so and carry on keyless.
+		switch {
+		case model.RequiresAPIKey(provider) && !model.AcceptsAPIKey(provider):
+			if oauth.Has(provider) {
+				fmt.Printf("Using the %s sign-in on this machine.\n", provider)
+			} else {
+				fmt.Printf("%s is a sign-in, not an API key. Run: aetox login %s\n", provider, provider)
+			}
+		case model.RequiresAPIKey(provider):
 			if key == "" {
 				if hasStoredPreference {
 					fmt.Printf("No cached API key for %s.\n", provider)

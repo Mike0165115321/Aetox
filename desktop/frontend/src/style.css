@@ -606,12 +606,17 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
    middle the content occupies, so it is erased on the way down and is already
    gone by the height the cards start at. Big at the top where the screen is
    empty, absent where anything has to be read. */
-.empty-watermark {
+/* The first-run screen shares it, and shares it by selector rather than by a
+   second set of values: someone re-tuning this opacity is re-tuning the one
+   ground the app draws behind an empty room, wherever that room is. The two
+   screens are three seconds apart on a new install, and the day they disagree
+   is the day the setup stops looking like the app it is setting up. */
+.empty-watermark, .ob-watermark {
   position:absolute; inset:0; z-index:0; display:grid; place-items:center; pointer-events:none;
   -webkit-mask-image:linear-gradient(#000 12%, rgba(0,0,0,.35) 40%, transparent 66%);
   mask-image:linear-gradient(#000 12%, rgba(0,0,0,.35) 40%, transparent 66%);
 }
-.empty-watermark .logo-mark {
+.empty-watermark .logo-mark, .ob-watermark .logo-mark {
   width:min(68vh, 540px); height:auto;
   /* currentColor, so it is the theme's own ink and not a grey that only works
      on the dark palettes. Higher than it looks: most of the mark is under the
@@ -3371,23 +3376,191 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   font-weight:700; line-height:1;
 }
 
-/* Onboarding wizard */
-.onboard-overlay { position:fixed; inset:0; z-index:60; background:var(--surface-app); display:flex; align-items:center; justify-content:center; }
-.onboard-card { width:min(560px, calc(100vw - 48px)); border:1px solid var(--border-subtle); border-radius:var(--r-xl); background:var(--surface-panel); padding:32px 36px; display:flex; flex-direction:column; gap:14px; position:relative; }
-.onboard-brand { font-weight:800; font-size:var(--fs-lg); letter-spacing:.14em; text-transform:uppercase; background:linear-gradient(90deg,var(--brand-from),var(--brand-to)); -webkit-background-clip:text; background-clip:text; color:transparent; }
-.onboard-steps { position:absolute; top:34px; right:36px; color:var(--text-dim); font-size:var(--fs-sm); }
-.onboard-card h2 { margin:4px 0 0; font-size:var(--fs-3xl); }
-.onboard-card .ctrl { appearance:none; -webkit-appearance:none; background:var(--surface-sunken); border:1px solid var(--border-strong); border-radius:var(--r-sm); color:var(--text-secondary); font:inherit; font-size:var(--fs-md); padding:7px 10px; cursor:pointer; }
-.onboard-card input.ctrl { cursor:text; }
-.onboard-field { display:flex; flex-direction:column; gap:7px; }
-.onboard-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:10px; }
-.onboard-actions .primary { background:linear-gradient(180deg,var(--interactive-bright),var(--interactive)); color:var(--text-on-interactive); border-color:transparent; font-weight:600; padding:7px 18px; }
-.onboard-choice-list { display:flex; flex-direction:column; gap:8px; }
-.onboard-choice { text-align:left; padding:11px 14px; border:1px solid var(--border-subtle); border-radius:var(--r-md); background:var(--surface-sunken); cursor:pointer; color:inherit; font:inherit; }
-.onboard-choice:hover { background:var(--surface-row-hover); }
-.onboard-choice.selected { border-color:var(--interactive); background:var(--surface-selected); }
-.onboard-choice .t { font-weight:600; }
-.onboard-choice .d { color:var(--text-muted); font-size:var(--fs-sm); margin-top:2px; }
+/* First run. Composed, not laid out: everything sits on the optical centre of
+   an otherwise empty window, one decision per screen, and every lesser path is
+   a small link under the main one. Two earlier shapes failed here — a 560px
+   dialog full of dropdowns, then a two-column page that put four groups on
+   screen at once and left half a wide window dead. */
+.onboard {
+  position:fixed; inset:0; z-index:60; background:var(--surface-app);
+  display:flex; align-items:center; justify-content:center; overflow:auto;
+}
+/* The ground is the brand mark itself (.ob-watermark, declared with
+   .empty-watermark above). It replaced a radial glow that was borrowed from
+   another product's welcome screen and belonged to nothing here.
+
+   The entrance is the one the empty chat already has — the shared
+   watermark-in fade. A slower, blurred wake was tried here and turned down:
+   the fade the app already does was the one that read right. */
+.ob-screen {
+  position:relative; z-index:1; width:min(440px, calc(100vw - 48px));
+  text-align:center; padding:32px 0 56px;
+  animation:ob-enter .3s cubic-bezier(.2,.7,.3,1) both;
+}
+@keyframes ob-enter { from { opacity:0; transform:translateY(9px); } to { opacity:1; transform:none; } }
+.ob-logo { display:flex; justify-content:center; margin-bottom:20px; }
+.ob-screen h2 { margin:0 0 8px; font-size:var(--fs-3xl); font-weight:600; letter-spacing:-.01em; }
+/* pre-line so a two-line opener breaks where the sentence does, rather than
+   wherever the width happens to run out. */
+.ob-sub { margin:0 0 26px; color:var(--text-muted); font-size:var(--fs-md); line-height:1.75; white-space:pre-line; }
+
+.ob-stack { display:flex; flex-direction:column; gap:9px; }
+.ob-stack.tight { margin-top:22px; }
+.ob-big {
+  display:flex; align-items:center; gap:11px; width:100%;
+  background:var(--surface-panel); border:1px solid var(--border-default); color:var(--text-primary);
+  border-radius:var(--r-lg); padding:13px 16px; font:inherit; font-size:var(--fs-md); cursor:pointer;
+  transition:transform .09s ease, border-color .14s ease, background .14s ease;
+}
+.ob-big:hover:not(:disabled) { background:var(--surface-hover); border-color:var(--border-strong); }
+.ob-big:active:not(:disabled) { transform:scale(.985); }
+.ob-big:disabled { cursor:default; }
+.ob-big.open { border-color:var(--border-strong); background:var(--surface-hover); }
+.ob-big.done { border-color:var(--accent); background:var(--surface-selected); }
+.ob-big.primary { background:var(--interactive); border-color:var(--interactive); color:var(--text-on-interactive); font-weight:600; justify-content:center; }
+.ob-big.primary:hover:not(:disabled) { background:var(--interactive-bright); }
+.ob-bigt { flex:1; text-align:left; }
+.ob-big.primary .ob-bigt { flex:0 0 auto; text-align:center; }
+.ob-bigic {
+  width:28px; height:28px; flex:0 0 28px; border-radius:var(--r-sm); display:grid; place-items:center;
+  background:var(--surface-raised); color:var(--text-secondary);
+}
+.ob-big.done .ob-bigic { color:var(--accent); }
+.ob-caret { color:var(--text-dim); display:flex; }
+/* A two-line answer needs its own block: the title and the line under it are
+   one column, and the marks are a second one pinned to the right edge. */
+.ob-big.tall { align-items:center; padding:14px 16px; }
+.ob-big.tall .ob-bigt { display:flex; flex-direction:column; gap:3px; }
+.ob-big.tall .ob-bigt .t { font-size:var(--fs-md); }
+.ob-big.tall .ob-bigt .d { color:var(--text-muted); font-size:var(--fs-xs); line-height:1.5; }
+/* "Like what?" answered in marks rather than in a sentence. */
+.ob-marks { display:flex; align-items:center; gap:5px; flex:0 0 auto; }
+.ob-marks .mk {
+  width:24px; height:24px; border-radius:var(--r-sm); display:grid; place-items:center;
+  background:var(--surface-raised); color:var(--text-secondary);
+}
+.ob-marks .more { font-size:var(--fs-xs); color:var(--text-dim); background:none; }
+.ob-check { color:var(--accent); display:flex; animation:ob-pop .34s cubic-bezier(.2,.9,.3,1.5) both; }
+@keyframes ob-pop { from { opacity:0; transform:scale(.5); } to { opacity:1; transform:scale(1); } }
+.ob-tag {
+  font-size:var(--fs-xs); padding:2px 9px; border-radius:999px; white-space:nowrap;
+  border:1px solid var(--border-default); color:var(--text-muted);
+}
+.ob-spin {
+  width:13px; height:13px; flex:0 0 13px; border-radius:50%;
+  border:2px solid var(--border-strong); border-top-color:var(--text-primary);
+  animation:ob-spin .7s linear infinite;
+}
+@keyframes ob-spin { to { transform:rotate(360deg); } }
+
+/* Opens under the button that asked for it, so the list belongs to the choice
+   rather than being a fourth thing on the page. */
+.ob-drawer { margin-top:11px; animation:ob-enter .24s ease both; }
+.ob-grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:7px; }
+.ob-tile {
+  position:relative; display:flex; flex-direction:column; align-items:center; gap:6px;
+  border:1px solid var(--border-subtle); background:var(--surface-panel); color:var(--text-secondary);
+  border-radius:var(--r-md); padding:11px 5px; font:inherit; font-size:var(--fs-xs); cursor:pointer;
+  transition:transform .09s ease, border-color .12s ease, background .12s ease;
+}
+.ob-tile:hover:not(:disabled) { border-color:var(--border-strong); background:var(--surface-hover); }
+.ob-tile:active:not(:disabled) { transform:scale(.95); }
+.ob-tile.on { border-color:var(--accent); background:var(--surface-selected); color:var(--text-primary); }
+.ob-tile .nm { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ob-tile .dot { position:absolute; top:6px; right:6px; width:5px; height:5px; border-radius:50%; background:var(--status-success); }
+
+/* The wall the question leads to: marks first, name second, because the shape
+   is recognised before the word is read. Square cells so twelve of them read
+   as one field rather than as twelve rows. */
+/* Flex, not a fixed four-column grid. The grid put two providers in columns
+   one and two of four and left the row visibly hanging off to the left — the
+   cells were centred as a block, but the block was full-width. A wrapping row
+   of fixed-width cells centres whatever it is given: two, four, or twelve. */
+.ob-wall { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; }
+.ob-cell {
+  position:relative; width:96px; aspect-ratio:1; display:flex; flex-direction:column; align-items:center;
+  justify-content:center; gap:8px; border:1px solid var(--border-subtle); background:var(--surface-panel);
+  color:var(--text-secondary); border-radius:var(--r-md); font:inherit; font-size:var(--fs-xs); cursor:pointer;
+  transition:transform .09s ease, border-color .12s ease, background .12s ease;
+}
+.ob-cell:hover:not(:disabled) { border-color:var(--border-strong); background:var(--surface-hover); }
+.ob-cell:active:not(:disabled) { transform:scale(.96); }
+.ob-cell.on, .ob-cell.done { border-color:var(--accent); background:var(--surface-selected); color:var(--text-primary); }
+.ob-cell:disabled { cursor:default; }
+.ob-cell .nm { max-width:100%; padding:0 6px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* Green means this one works right now — a key is stored, or a sign-in is. */
+.ob-cell .rdy { position:absolute; top:7px; right:7px; width:5px; height:5px; border-radius:50%; background:var(--status-success); }
+
+.ob-keyrow { display:flex; gap:8px; margin-top:9px; }
+.ob-input {
+  flex:1; min-width:0; background:var(--surface-sunken); border:1px solid var(--border-default);
+  border-radius:var(--r-md); color:var(--text-primary); font:inherit; font-size:var(--fs-md); padding:10px 12px;
+}
+.ob-input:focus { outline:none; border-color:var(--border-input-focus); }
+.ob-go {
+  display:flex; align-items:center; gap:7px; background:var(--interactive); border:1px solid var(--interactive);
+  color:var(--text-on-interactive); border-radius:var(--r-md); padding:10px 18px; font:inherit;
+  font-size:var(--fs-md); font-weight:600; cursor:pointer;
+}
+.ob-go:disabled { opacity:.6; cursor:default; }
+
+.ob-row {
+  display:flex; align-items:center; gap:11px; width:100%; text-align:left;
+  border:1px solid var(--border-subtle); background:var(--surface-panel); color:var(--text-primary);
+  border-radius:var(--r-lg); padding:12px 14px; font:inherit; cursor:pointer;
+  transition:transform .09s ease, border-color .12s ease, background .12s ease;
+}
+.ob-row:hover { border-color:var(--border-strong); }
+.ob-row:active { transform:scale(.985); }
+.ob-row.on { border-color:var(--accent); background:var(--surface-selected); }
+.ob-row .ic {
+  width:30px; height:30px; flex:0 0 30px; border-radius:var(--r-sm); display:grid; place-items:center;
+  background:var(--surface-raised); color:var(--text-secondary);
+}
+.ob-row.on .ic { color:var(--accent); }
+.ob-row .txt { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.ob-row .t { font-size:var(--fs-md); }
+.ob-row .d { color:var(--text-muted); font-size:var(--fs-xs); line-height:1.5; }
+
+.ob-swatches { display:flex; flex-wrap:wrap; gap:9px; justify-content:center; margin-bottom:12px; }
+.ob-swatch {
+  width:42px; height:42px; border-radius:var(--r-md); border:1px solid var(--border-default);
+  padding:0; cursor:pointer; overflow:hidden; display:flex; flex-direction:column; justify-content:flex-end;
+  transition:transform .12s ease, border-color .14s ease;
+}
+.ob-swatch:hover { transform:translateY(-2px); }
+.ob-swatch.on { border-color:var(--accent); transform:translateY(-2px); }
+.ob-swatch .accent { display:block; height:9px; }
+
+.ob-links { display:flex; gap:16px; justify-content:center; margin-top:18px; }
+.ob-link {
+  background:none; border:none; color:var(--text-dim); font:inherit; font-size:var(--fs-sm);
+  text-decoration:underline; cursor:pointer; padding:7px 6px;
+  display:inline-flex; align-items:center; gap:5px;
+}
+.ob-link:hover { color:var(--text-secondary); }
+.ob-fine { color:var(--text-dim); font-size:var(--fs-sm); line-height:1.6; margin:11px 0 0; }
+.ob-error { color:var(--status-danger); font-size:var(--fs-sm); margin:14px 0 0; }
+
+.ob-done {
+  width:52px; height:52px; margin:0 auto 20px; border-radius:50%; display:grid; place-items:center;
+  background:var(--surface-selected); border:1px solid var(--accent); color:var(--accent);
+  animation:ob-pop .42s cubic-bezier(.2,.9,.3,1.4) both;
+}
+
+.ob-dots { position:absolute; bottom:26px; left:50%; transform:translateX(-50%); display:flex; gap:7px; }
+.ob-dots i { width:6px; height:6px; border-radius:50%; background:var(--border-default); transition:width .22s ease, background .22s ease; }
+.ob-dots i.past { background:var(--border-strong); }
+.ob-dots i.on { width:18px; border-radius:3px; background:var(--accent); }
+
+/* Motion here is feedback — a press that answers, a screen that arrives. Where
+   the machine is set to do without it, the states still differ by colour and
+   by what the control says, so nothing is only announced by movement. */
+@media (prefers-reduced-motion: reduce) {
+  .onboard *, .onboard *::before, .onboard *::after {
+    animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important;
+  }
+}
 .insp-foot { padding:12px 14px; border-top:1px solid var(--border-default); }
 .stopbtn {
   width:100%; height:44px; border-radius:var(--r-md); font-weight:600; font-size:var(--fs-lg);

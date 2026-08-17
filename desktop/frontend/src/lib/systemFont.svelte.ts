@@ -14,13 +14,19 @@
 // font-size scaling did. Aetox only ships on WebView2 (Chromium), so the
 // non-standard-but-Chromium-supported `zoom` property is safe here.
 const STORAGE_KEY = 'aetox-system-zoom'
-const DEFAULT_ZOOM = 1
 const MIN_ZOOM = 0.8
 const MAX_ZOOM = 1.3
 
 /** body's actual font-size in style.css — the px zoom=1 represents. Settings
  * shows/edits this as a real px number rather than an abstract percentage. */
 export const SYSTEM_BASE_PX = 15.5
+
+/** What the px readout says on a machine that has never touched this control.
+ * Expressed in px rather than as a zoom factor because px is the number the
+ * owner tuned and the number Settings shows — the factor below is arithmetic,
+ * not a second opinion about the size. */
+export const DEFAULT_SYSTEM_PX = 16
+const DEFAULT_ZOOM = DEFAULT_SYSTEM_PX / SYSTEM_BASE_PX
 
 export const systemZoom = $state<{ value: number }>({ value: DEFAULT_ZOOM })
 
