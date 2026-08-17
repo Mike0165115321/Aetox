@@ -2445,6 +2445,31 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
    put the card's foot in a fight with `.settings-page .ctrl` and sliced the
    text in half — the control is allowed to be the size the page says it is. */
 .ag-actions .ag-model { width:172px; }
+/* Whether the main assistant may hand this agent work — a chip rather than a
+   slider, because every other on/off on this page is a chip and a second idiom
+   for one act is a second thing to learn. Off is the resting state, so it wears
+   the ordinary control colours and only "on" takes the accent: delegation ships
+   off, and a page full of lit chips on a fresh install would say the opposite.
+
+   Greyed rather than removed when delegation is off entirely. A row that
+   vanished would leave somebody hunting for an agent that never went anywhere,
+   which is precisely the misreading the wording is built to avoid. */
+.ag-actions .ag-reach { flex:none; font-size:var(--fs-2xs); padding:4px 9px; }
+.ag-actions .ag-reach.on { border-color:var(--accent); color:var(--accent); }
+.ag-actions .ag-reach:disabled { opacity:.45; cursor:not-allowed; }
+/* The master switch and what it costs, above the roster it governs. Its own
+   card so the eye reads it as the parent of the two grids below rather than as
+   the first row of the first one. */
+.reach-card { margin-bottom:14px; }
+.reach-meter {
+  font-family:var(--mono); font-size:var(--fs-2xs); color:var(--text-dim);
+  font-variant-numeric:tabular-nums; white-space:nowrap; padding-right:4px;
+}
+/* The delegation switch in the composer's agent menu, one row under the names.
+   Reads as a statement of what is allowed, not as another agent to switch to,
+   so it never takes the accent that marks "you are here". */
+.focus-item.delegate-row.on { color:var(--text-primary); }
+.focus-item.delegate-row:disabled { opacity:.5; cursor:progress; }
 .ag-row.empty { color:var(--text-muted); }
 
 /* The agent editor's five section headings. Louder than an eyebrow inside a

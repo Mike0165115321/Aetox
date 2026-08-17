@@ -100,6 +100,8 @@ export function CurrentShell():Promise<main.ShellOption>;
 
 export function CurrentSpace():Promise<string>;
 
+export function DelegateSwitches():Promise<main.DelegateSettings>;
+
 export function DeleteArtifact(arg1:string):Promise<void>;
 
 export function DeleteIdentityFile(arg1:string):Promise<void>;
@@ -384,9 +386,13 @@ export function SessionsInSpace(arg1:string):Promise<Array<main.SessionMeta>>;
 
 export function SetAPIKey(arg1:string,arg2:string):Promise<main.ModelInfo>;
 
+export function SetAgentOff(arg1:string,arg2:boolean):Promise<main.DelegateSettings>;
+
 export function SetConnectionStartCommand(arg1:string,arg2:string):Promise<void>;
 
 export function SetConnectionTargets(arg1:string,arg2:Array<string>):Promise<void>;
+
+export function SetDelegateOff(arg1:boolean):Promise<main.DelegateSettings>;
 
 export function SetLearningEnabled(arg1:boolean):Promise<void>;
 
@@ -475,6 +481,8 @@ export function TestMCPServer(arg1:string):Promise<main.MCPServerInfo>;
 export function TestProviderConnection(arg1:string,arg2:string):Promise<string>;
 
 export function ToggleMCPServer(arg1:string,arg2:boolean):Promise<void>;
+
+export function ToolBlockTokens():Promise<number>;
 
 export function ToolCounts():Promise<main.ToolCounts>;
 

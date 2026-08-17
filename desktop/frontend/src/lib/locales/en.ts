@@ -895,6 +895,15 @@ Check your own work before answering; say so plainly if unsure.
   'settings.agentModelInherit': 'Inherit selected model',
   'settings.agentModelPick': 'Model for this agent',
   'settings.agentsFolder': 'Open folder',
+  'settings.delegateAllow': 'Let the main assistant hand work over',
+  'settings.delegateOnHint': 'It can bring in a specialist instead of doing the job itself. Costs {n} tokens of context per message.',
+  'settings.delegateOffHint': 'Off. The main assistant does everything itself. Your agents are untouched — open a chat with one any time.',
+  'settings.delegateTurnOn': 'Turn on',
+  'settings.delegateTurnOff': 'Turn off',
+  'settings.delegateMeter': 'Tools {n} tokens',
+  'settings.delegateMeterTip': 'How large the tool list sent with every message is. Measured each time this page opens.',
+  'settings.agentReach': 'Can be given work',
+  'settings.agentReachTip': 'Whether the main assistant may hand this one a job. Turning it off leaves the agent alone — open a chat with it, or write @name, exactly as before.',
   'settings.agentsHint': 'Every profile is one .md file. Configure it here or edit the file directly. Naming yours after a built-in shadows it, but an agent and a sub-agent can never share a name, because memory and job history key on it.',
   'settings.editAgentTitle': 'Configure agent',
   'settings.editAgentDesc': 'Saving always lands in the agents’ home, whether you opened this from the team page or from Agents in Settings.',
@@ -1038,6 +1047,9 @@ Check your own work before answering; say so plainly if unsure.
   'chat.inputToAgent': 'Message {name}…',
   'chat.mainAgent': 'Main assistant',
   'chat.agentSwitchNote': 'Switching always opens a new chat. This one stays in history.',
+  'chat.delegateAllow': 'Let the main assistant hand work over',
+  'chat.delegateOnNote': 'It can pass a job to a specialist instead of doing it. Costs {n} tokens of context per message.',
+  'chat.delegateOffNote': 'Off. The main assistant does everything itself.',
   // Working mode (§106) — the other axis from the desk: a desk says what tools
   // are on it, this says how the turn runs. Keys are named for the id the
   // engine sends ('' = act); a new stance in Go gets its key added here.

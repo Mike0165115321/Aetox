@@ -178,6 +178,10 @@ export function CurrentSpace() {
   return window['go']['main']['App']['CurrentSpace']();
 }
 
+export function DelegateSwitches() {
+  return window['go']['main']['App']['DelegateSwitches']();
+}
+
 export function DeleteArtifact(arg1) {
   return window['go']['main']['App']['DeleteArtifact'](arg1);
 }
@@ -746,12 +750,20 @@ export function SetAPIKey(arg1, arg2) {
   return window['go']['main']['App']['SetAPIKey'](arg1, arg2);
 }
 
+export function SetAgentOff(arg1, arg2) {
+  return window['go']['main']['App']['SetAgentOff'](arg1, arg2);
+}
+
 export function SetConnectionStartCommand(arg1, arg2) {
   return window['go']['main']['App']['SetConnectionStartCommand'](arg1, arg2);
 }
 
 export function SetConnectionTargets(arg1, arg2) {
   return window['go']['main']['App']['SetConnectionTargets'](arg1, arg2);
+}
+
+export function SetDelegateOff(arg1) {
+  return window['go']['main']['App']['SetDelegateOff'](arg1);
 }
 
 export function SetLearningEnabled(arg1) {
@@ -928,6 +940,10 @@ export function TestProviderConnection(arg1, arg2) {
 
 export function ToggleMCPServer(arg1, arg2) {
   return window['go']['main']['App']['ToggleMCPServer'](arg1, arg2);
+}
+
+export function ToolBlockTokens() {
+  return window['go']['main']['App']['ToolBlockTokens']();
 }
 
 export function ToolCounts() {

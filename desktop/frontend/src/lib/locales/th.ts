@@ -906,6 +906,15 @@ export const th = {
   // the only thing a screen reader has to go on is this.
   'settings.agentModelPick': 'โมเดลของเอเจนนี้',
   'settings.agentsFolder': 'เปิดโฟลเดอร์',
+  'settings.delegateAllow': 'ให้ผู้ช่วยหลักมอบงานต่อได้',
+  'settings.delegateOnHint': 'ผู้ช่วยหลักหยิบเอเจนเฉพาะทางมาช่วยได้ ใช้บริบทเพิ่ม {n} token ทุกข้อความ',
+  'settings.delegateOffHint': 'ปิดอยู่ ผู้ช่วยหลักทำงานเองทั้งหมด เอเจนยังเปิดแชทคุยเองได้เหมือนเดิม',
+  'settings.delegateTurnOn': 'เปิด',
+  'settings.delegateTurnOff': 'ปิด',
+  'settings.delegateMeter': 'เครื่องมือ {n} token',
+  'settings.delegateMeterTip': 'ขนาดของรายการเครื่องมือที่ส่งไปกับทุกข้อความ วัดสดทุกครั้งที่เปิดหน้านี้',
+  'settings.agentReach': 'มอบงานให้',
+  'settings.agentReachTip': 'ให้ผู้ช่วยหลักมอบงานให้เอเจนตัวนี้ได้ ปิดแล้วเอเจนยังอยู่ครบ เปิดแชทคุยเองหรือพิมพ์ @ชื่อ ได้เหมือนเดิม',
  'settings.agentsHint': 'ทุกโปรไฟล์คือไฟล์ .md ไฟล์เดียว จะตั้งค่าในนี้หรือแก้ไฟล์ตรงๆ ก็ได้ ตั้งชื่อชนกับของที่มากับแอปได้ ของคุณจะถูกใช้แทน แต่ชื่อของเอเจนกับซับเอเจนใช้ซ้ำกันไม่ได้ เพราะความจำและประวัติงานผูกกับชื่อ',
   'settings.editAgentTitle': 'ตั้งค่าเอเจน',
   // Was "เปิดมาจากหน้าทีมเอเจน — …", which is true half the time: the เอเจน
@@ -1060,6 +1069,9 @@ export const th = {
   'chat.inputToAgent': 'พิมพ์ถึง {name}…',
   'chat.mainAgent': 'ผู้ช่วยหลัก',
  'chat.agentSwitchNote': 'สลับ = เปิดแชทใหม่เสมอ แชทเดิมอยู่ในประวัติ',
+  'chat.delegateAllow': 'ให้ผู้ช่วยหลักมอบงานต่อได้',
+  'chat.delegateOnNote': 'มอบงานให้เอเจนเฉพาะทางแทนที่จะทำเอง ใช้บริบทเพิ่ม {n} token ทุกข้อความ',
+  'chat.delegateOffNote': 'ปิดอยู่ ผู้ช่วยหลักทำงานเองทั้งหมด',
   // โหมดทำงาน (§106) — คนละแกนกับโต๊ะ: โต๊ะบอกว่ามีเครื่องมืออะไร โหมดทำงานบอกว่าเทิร์นนี้เดินยังไง
   // คีย์ตั้งชื่อตาม id ที่ engine ส่งมา ('' = ลงมือ) — เพิ่มโหมดใหม่ใน Go แล้วเติมคีย์ที่นี่
   'stance.title': 'โหมดทำงาน',

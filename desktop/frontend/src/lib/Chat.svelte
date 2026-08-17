@@ -13,6 +13,7 @@
     EnabledProviders, SupportedThinkLevels,
     ListModelsForProvider, PriceModels, RequiresAPIKey, AcceptsAPIKey, HasAPIKey, PickAttachment,
     GetContextBreakdown, GuideTopics, RunChatCommand, RunChatScript, ListChairs, ChairStarters, CurrentSessionID,
+    DelegateSwitches, SetDelegateOff,
     Shells, CurrentShell, SetShell, EnginesFor, UseEngine, VerifyConnection,
     GitBranches, GitSwitchBranch, GitCreateBranch, GetProjectStatus,
   } from '../../wailsjs/go/main/App'
@@ -412,6 +413,15 @@
   // an agent hired while the app was running.
   let agentMenuOpen = $state(false)
   let officeChairs = $state<main.Chair[]>([])
+  // The delegation switch, read when the menu opens rather than held at load.
+  //
+  // Fetched rather than remembered because half of what it shows is a
+  // measurement — what `task` costs the block right now — and that number moves
+  // whenever anything about the tools changes. A cached one would be right the
+  // day it was cached. Null until the first read, which is why the switch is
+  // simply absent for that instant rather than drawn in a guessed state.
+  let delegate = $state<main.DelegateSettings | null>(null)
+  let delegateBusy = $state(false)
   async function toggleAgentMenu() {
     agentMenuOpen = !agentMenuOpen
     if (agentMenuOpen) {
@@ -420,6 +430,23 @@
       } catch {
         officeChairs = []
       }
+      try {
+        delegate = await DelegateSwitches()
+      } catch {
+        delegate = null
+      }
+    }
+  }
+  // Flipping it re-bootstraps the engine, so the menu stays open and the row
+  // stays disabled until the answer comes back — a switch that looks instant
+  // and is not is a switch people press twice.
+  async function toggleDelegate() {
+    if (!delegate || delegateBusy) return
+    delegateBusy = true
+    try {
+      delegate = await SetDelegateOff(!delegate.off)
+    } finally {
+      delegateBusy = false
     }
   }
   // Which shell the agent's commands run in: this machine's, or a WSL distro.
@@ -2373,6 +2400,35 @@
                 <span class="ic"><Icon name="bot" size={14} /></span><span class="t">{c.name}</span>
               </button>
             {/each}
+            <!-- The master switch on the assistant's reach, and it sits HERE
+                 rather than in settings for one reason: delegation ships off,
+                 so a switch nobody walks past is a capability nobody has. This
+                 menu is the one place people already come to think about who
+                 does the work.
+
+                 It says what it costs, because that is what the switch is
+                 for — 730 tokens of every message, measured rather than
+                 remembered (App.DelegateSwitches). A switch whose effect is
+                 invisible is a switch nobody trusts.
+
+                 Not a row in the list above. Clicking a name means "go talk to
+                 this one" and clicking this means "let somebody else be asked",
+                 and one list where a click means two things is a list people
+                 mis-click. -->
+            {#if delegate}
+              <div class="menu-sep"></div>
+              <button type="button" class="focus-item delegate-row" class:on={!delegate.off}
+                aria-pressed={!delegate.off} disabled={delegateBusy}
+                onclick={toggleDelegate}>
+                <span class="ic"><Icon name="hand" size={14} /></span>
+                <span class="t">{t('chat.delegateAllow')}</span>
+              </button>
+              <div class="folder-note">
+                {delegate.off
+                  ? t('chat.delegateOffNote')
+                  : t('chat.delegateOnNote', { n: delegate.taskTokens.toLocaleString() })}
+              </div>
+            {/if}
             <div class="folder-note">{t('chat.agentSwitchNote')}</div>
           </div>
         {/if}

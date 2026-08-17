@@ -23,6 +23,7 @@
     ProviderWireFormats, TestProviderConnection,
     EnabledProviders, SetProviderEnabled,
     ListMCPServers, SaveMCPServer, RemoveMCPServer, TestMCPServer, ToggleMCPServer,
+    DelegateSwitches, SetDelegateOff, SetAgentOff,
     PlacementTargets, SetMCPServerTargets,
     ListExternalSkills, ListTools, InstallSkillFromGitHub, RemoveExternalSkill, RefreshSkills,
     SkillsDir, SkillScanIssues, OpenSkillsFolder, InstallSkillFromZip,
@@ -1895,6 +1896,39 @@
   const agentBodyLines = $derived(agentDraftPrompt.split('\n').length)
   const agentBodyLong = $derived(agentBodyLines > 16)
   let agentBusy = $state('')
+  // The delegation switches, and the measured cost of having them on.
+  //
+  // Re-read after every flip rather than patched locally, because flipping one
+  // re-bootstraps the engine and the block's size is the thing this page is
+  // showing. A local edit would be a number that agreed with the switch and
+  // disagreed with the request that gets sent.
+  let delegate = $state<main.DelegateSettings | null>(null)
+  let delegateBusy = $state('')
+  async function loadDelegate() {
+    try {
+      delegate = await DelegateSwitches()
+    } catch {
+      delegate = null // the switches are simply absent rather than the page failing
+    }
+  }
+  async function toggleDelegate() {
+    if (!delegate || delegateBusy) return
+    delegateBusy = 'master'
+    try {
+      delegate = await SetDelegateOff(!delegate.off)
+    } finally {
+      delegateBusy = ''
+    }
+  }
+  async function toggleAgentReach(name: string, on: boolean) {
+    if (delegateBusy) return
+    delegateBusy = name
+    try {
+      delegate = await SetAgentOff(name, on)
+    } finally {
+      delegateBusy = ''
+    }
+  }
   let agentError = $state('')
   // Read from the file, shown, and written back untouched. Not `Draft` because
   // nothing here edits them — see AgentFields for why they exist at all.
@@ -2468,6 +2502,7 @@
   // where somebody is deciding whether a server is for them.
   $effect(() => {
     if (active === 'agents' || active === 'team' || active === 'mcp') void loadAgents()
+    if (active === 'team') void loadDelegate()
   })
 
   $effect(() => {
@@ -2946,6 +2981,27 @@
       {#if a.invalid}<div class="d ag-invalid">{a.invalid}</div>{/if}
     </div>
     <div class="ag-actions">
+      <!-- Whether the MAIN assistant may hand this one work. Not whether the
+           agent exists: the user still opens a chat with it from the composer
+           and still writes @name, and no switch on this page reaches those. The
+           label says "มอบงานให้" rather than "เปิด/ปิด" for exactly that reason —
+           "off" would read as "gone" while the agent is standing right there.
+
+           Disabled, not hidden, while delegation is off entirely. A row that
+           vanished would leave somebody wondering where their agent went; a row
+           that is greyed out with the master switch above it explains itself. -->
+      {#if delegate}
+        {@const w = delegate.workers.find((x) => x.name === a.name)}
+        {#if w}
+          <button
+            class="ctrl ag-reach" class:on={w.on && !delegate.off}
+            disabled={delegate.off || delegateBusy !== ''}
+            aria-pressed={w.on && !delegate.off}
+            title={t('settings.agentReachTip')}
+            onclick={() => toggleAgentReach(a.name, w.on)}
+          >{t('settings.agentReach')}</button>
+        {/if}
+      {/if}
       <select
         class="ctrl ag-model" value={a.model ?? ''} disabled={agentBusy !== ''}
         aria-label={t('settings.agentModelPick')}
@@ -2986,6 +3042,37 @@
     </div>
   {/if}
   {#if agentError}<div class="mset-error">{agentError}</div>{/if}
+
+  <!-- The master switch, and the number it is worth, in the same eyeline.
+       Delegation ships off, so this page is where somebody turns it on — and
+       the reason to leave it off is a cost they cannot otherwise see. Measured
+       on every read (App.DelegateSwitches), never a constant: the day somebody
+       trims another tool's description this number has to move with it, or it
+       becomes a label that used to be true. -->
+  {#if isAgent && delegate}
+    <div class="settings-card reach-card">
+      <div class="set-row">
+        <div class="set-txt">
+          <div class="t">{t('settings.delegateAllow')}</div>
+          <div class="d">
+            {delegate.off
+              ? t('settings.delegateOffHint')
+              : t('settings.delegateOnHint', { n: delegate.taskTokens.toLocaleString() })}
+          </div>
+        </div>
+        <div class="ag-actions">
+          <span class="reach-meter" title={t('settings.delegateMeterTip')}>
+            {t('settings.delegateMeter', { n: delegate.tokens.toLocaleString() })}
+          </span>
+          <button
+            class="ctrl" class:on={!delegate.off} disabled={delegateBusy !== ''}
+            aria-pressed={!delegate.off}
+            onclick={() => toggleDelegate()}
+          >{delegate.off ? t('settings.delegateTurnOn') : t('settings.delegateTurnOff')}</button>
+        </div>
+      </div>
+    </div>
+  {/if}
 
   <!-- Drawn once there is enough to search. A box over three rows is furniture
        that explains nothing; over thirty it is the only way back to the one you
