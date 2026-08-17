@@ -62,7 +62,17 @@ var browserGuidance = map[string]string{
 	// The three below carry the ref rule, which used to sit in the block where
 	// every message paid for it. It lives with the actions that SPEND refs, so a
 	// session that only opens a page never hears it and never needs to.
-	"read": "The [n] refs this hands back belong to THIS page as it is now. They go stale the moment it changes or you select another tab, so the loop is read, act, read again — never read once and work from the list.",
+	// `read` carries the trigger for `wait`, and that is not tidiness — it is
+	// the one place guidance-on-first-use does not work.
+	//
+	// Everything else here is advice about an action you already reached for, so
+	// arriving with its first result is early enough. "Reach for `wait`" is the
+	// opposite: the failure it prevents is never calling `wait` at all, and
+	// guidance attached to the first `wait` arrives only for a model that
+	// already knew. The trigger has to ride on an action that gets used
+	// constantly, and reading an empty page is exactly the moment it matters.
+	"read": "The [n] refs this hands back belong to THIS page as it is now. They go stale the moment it changes or you select another tab, so the loop is read, act, read again — never read once and work from the list.\n" +
+		"If a page comes back with less on it than you expected — no results, an empty list, a shell with nothing in it — that is usually not the answer. Most pages fetch their real content after loading, and this read SUCCEEDED on a page that is not finished. Use `wait` for the text you expect, then read again, before you report that something is not there.",
 
 	"click": "A ref belongs to the page it was read from and goes stale the moment that page changes, which a click often does. Read, act, read again.\n" +
 		"A click can navigate, raise a dialog, or do nothing visible; read afterwards rather than assuming which.",
