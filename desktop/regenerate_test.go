@@ -12,14 +12,14 @@ import (
 // the test that stops it regressing again.
 func TestAppendTurnPersistsReasoning(t *testing.T) {
 	a := newTestApp(t, t.TempDir())
-	a.appendTurn(
+	a.appendTurn(a.cur(),
 		SessionMessage{Role: "user", Text: "แบตผม 17", Time: "00:34"},
 		SessionMessage{Role: "agent", Text: "ชาร์จไปเรื่อยๆ ครับ", Time: "00:34", Reasoning: "user is charging slowly", ThinkSecs: 4},
 	)
 
-	messages, err := a.LoadSession(a.sessionID)
+	messages, err := a.SessionTranscript(a.cur().id)
 	if err != nil {
-		t.Fatalf("LoadSession: %v", err)
+		t.Fatalf("SessionTranscript: %v", err)
 	}
 	if len(messages) != 2 {
 		t.Fatalf("loaded %d messages; want the pair that was written", len(messages))
@@ -37,7 +37,7 @@ func TestAppendTurnPersistsReasoning(t *testing.T) {
 // none of them know variants exist.
 func TestStoreVariantsKeepsTheLiveAnswerInText(t *testing.T) {
 	a := newTestApp(t, t.TempDir())
-	a.appendTurn(
+	a.appendTurn(a.cur(),
 		SessionMessage{Role: "user", Text: "ทำไมแบตขึ้นช้า", Time: "00:34"},
 		SessionMessage{Role: "agent", Text: "คำตอบแรก", Time: "00:34"},
 	)
@@ -46,11 +46,11 @@ func TestStoreVariantsKeepsTheLiveAnswerInText(t *testing.T) {
 		{Text: "คำตอบแรก"},
 		{Text: "คำตอบที่สอง", Reasoning: "second attempt", ThinkSecs: 2},
 	}
-	a.storeVariants(variants, 1)
+	a.storeVariants(a.cur(), variants, 1)
 
-	messages, err := a.LoadSession(a.sessionID)
+	messages, err := a.SessionTranscript(a.cur().id)
 	if err != nil {
-		t.Fatalf("LoadSession: %v", err)
+		t.Fatalf("SessionTranscript: %v", err)
 	}
 	reply := messages[1]
 	if reply.Text != "คำตอบที่สอง" {
@@ -80,16 +80,16 @@ func TestStoreVariantsKeepsTheLiveAnswerInText(t *testing.T) {
 // one is the bug the switcher would otherwise introduce.
 func TestSwitchVariantRewritesTheLiveAnswer(t *testing.T) {
 	a := newTestApp(t, t.TempDir())
-	a.appendTurn(
+	a.appendTurn(a.cur(),
 		SessionMessage{Role: "user", Text: "ทำไมแบตขึ้นช้า", Time: "00:34"},
 		SessionMessage{Role: "agent", Text: "คำตอบที่สอง", Time: "00:34"},
 	)
 	variants := []SessionVariant{{Text: "คำตอบแรก", ThinkSecs: 1}, {Text: "คำตอบที่สอง", ThinkSecs: 2}}
-	a.transcript = []SessionMessage{
+	a.cur().transcript = []SessionMessage{
 		{Role: "user", Text: "ทำไมแบตขึ้นช้า", Time: "00:34"},
 		{Role: "agent", Text: "คำตอบที่สอง", Time: "00:34", Variants: variants, Active: 1},
 	}
-	a.storeVariants(variants, 1)
+	a.storeVariants(a.cur(), variants, 1)
 
 	result, err := a.SwitchVariant(0)
 	if err != nil {
@@ -98,16 +98,16 @@ func TestSwitchVariantRewritesTheLiveAnswer(t *testing.T) {
 	if result.Text != "คำตอบแรก" || result.Active != 0 {
 		t.Fatalf("result = %q/%d; want the first answer live", result.Text, result.Active)
 	}
-	if got := a.transcript[1].Text; got != "คำตอบแรก" {
+	if got := a.cur().transcript[1].Text; got != "คำตอบแรก" {
 		t.Errorf("transcript still says %q; the next turn would be answered against the wrong reply", got)
 	}
-	if got := a.transcript[1].ThinkSecs; got != 1 {
+	if got := a.cur().transcript[1].ThinkSecs; got != 1 {
 		t.Errorf("thinkSecs = %d; want the chosen variant's own clock", got)
 	}
 
-	messages, err := a.LoadSession(a.sessionID)
+	messages, err := a.SessionTranscript(a.cur().id)
 	if err != nil {
-		t.Fatalf("LoadSession: %v", err)
+		t.Fatalf("SessionTranscript: %v", err)
 	}
 	if messages[1].Text != "คำตอบแรก" || messages[1].Active != 0 {
 		t.Errorf("stored text/active = %q/%d; want the switch to have persisted", messages[1].Text, messages[1].Active)
@@ -124,7 +124,7 @@ func TestSwitchVariantRefusesWhatItCannotSwitch(t *testing.T) {
 		t.Error("switching on an empty transcript was allowed")
 	}
 
-	a.transcript = []SessionMessage{
+	a.cur().transcript = []SessionMessage{
 		{Role: "user", Text: "q"},
 		{Role: "agent", Text: "answered once"},
 	}
@@ -132,7 +132,7 @@ func TestSwitchVariantRefusesWhatItCannotSwitch(t *testing.T) {
 		t.Error("a bubble with a single answer offered a second one")
 	}
 
-	a.transcript[1].Variants = []SessionVariant{{Text: "a"}, {Text: "b"}}
+	a.cur().transcript[1].Variants = []SessionVariant{{Text: "a"}, {Text: "b"}}
 	for _, index := range []int{-1, 2, 99} {
 		if _, err := a.SwitchVariant(index); err == nil {
 			t.Errorf("SwitchVariant(%d) was accepted; want it refused", index)
@@ -144,20 +144,20 @@ func TestSwitchVariantRefusesWhatItCannotSwitch(t *testing.T) {
 // variant — but only that exchange.
 func TestDropLastTurnRowsRemovesOnlyTheLastPair(t *testing.T) {
 	a := newTestApp(t, t.TempDir())
-	a.appendTurn(
+	a.appendTurn(a.cur(),
 		SessionMessage{Role: "user", Text: "คำถามแรก", Time: "00:30"},
 		SessionMessage{Role: "agent", Text: "ตอบแรก", Time: "00:30"},
 	)
-	a.appendTurn(
+	a.appendTurn(a.cur(),
 		SessionMessage{Role: "user", Text: "คำถามสอง", Time: "00:34"},
 		SessionMessage{Role: "agent", Text: "ตอบสอง", Time: "00:34"},
 	)
 
 	a.dropLastTurnRows()
 
-	messages, err := a.LoadSession(a.sessionID)
+	messages, err := a.SessionTranscript(a.cur().id)
 	if err != nil {
-		t.Fatalf("LoadSession: %v", err)
+		t.Fatalf("SessionTranscript: %v", err)
 	}
 	if len(messages) != 2 {
 		t.Fatalf("%d messages left; want the first exchange only", len(messages))
@@ -176,12 +176,12 @@ func TestLastQuestionNeedsACompletedExchange(t *testing.T) {
 
 	// A turn that failed leaves nothing in the transcript, so what is there
 	// must still end in a matched pair before anything is re-run against it.
-	a.transcript = []SessionMessage{{Role: "user", Text: "แบตผม 17"}}
+	a.cur().transcript = []SessionMessage{{Role: "user", Text: "แบตผม 17"}}
 	if _, ok := a.lastQuestion(); ok {
 		t.Error("a lone user message was treated as a completed exchange")
 	}
 
-	a.transcript = append(a.transcript, SessionMessage{Role: "agent", Text: "ครับ"})
+	a.cur().transcript = append(a.cur().transcript, SessionMessage{Role: "agent", Text: "ครับ"})
 	question, ok := a.lastQuestion()
 	if !ok || question != "แบตผม 17" {
 		t.Errorf("lastQuestion = %q/%v; want the user's own words back", question, ok)
@@ -242,12 +242,12 @@ func TestVariantsOfPromotesASingleAnswer(t *testing.T) {
 // messages_fts, which is why it shipped.
 func TestRegeneratingKeepsTheSearchIndexInStep(t *testing.T) {
 	a := newTestApp(t, t.TempDir())
-	a.appendTurn(
+	a.appendTurn(a.cur(),
 		SessionMessage{Role: "user", Text: "ทำไมแบตขึ้นช้า", Time: "00:34"},
 		SessionMessage{Role: "agent", Text: "เพราะหัวชาร์จจ่ายไฟน้อย", Time: "00:34"},
 	)
 
-	a.storeVariants([]SessionVariant{
+	a.storeVariants(a.cur(), []SessionVariant{
 		{Text: "เพราะหัวชาร์จจ่ายไฟน้อย"},
 		{Text: "เพราะสายชาร์จเส้นนั้นรองรับแค่ห้าวัตต์"},
 	}, 1)
@@ -264,7 +264,7 @@ func TestRegeneratingKeepsTheSearchIndexInStep(t *testing.T) {
 
 	// The reconciling delete is where a desynced index surfaces as
 	// "database disk image is malformed"; it must simply work.
-	if err := a.DeleteSession(a.sessionID); err != nil {
+	if err := a.DeleteSession(a.cur().id); err != nil {
 		t.Fatalf("DeleteSession after a regenerate: %v", err)
 	}
 	if left := a.SearchSessions("ห้าวัตต์"); len(left) > 0 {
@@ -285,7 +285,7 @@ func TestSwitchingAnswersMovesTheirWorkToo(t *testing.T) {
 		{Kind: turn.PartTool, Tool: &turn.ToolPart{Name: "grep", Subject: "battery", OK: true}},
 		{Kind: turn.PartText, Text: "คำตอบที่สอง"},
 	}
-	a.appendTurn(
+	a.appendTurn(a.cur(),
 		SessionMessage{Role: "user", Text: "ถาม", Time: "00:34"},
 		SessionMessage{Role: "agent", Text: "คำตอบที่สอง", Time: "00:34", Parts: secondWork},
 	)
@@ -293,12 +293,12 @@ func TestSwitchingAnswersMovesTheirWorkToo(t *testing.T) {
 		{Text: "คำตอบแรก", Parts: firstWork},
 		{Text: "คำตอบที่สอง", Parts: secondWork},
 	}
-	a.transcript = []SessionMessage{
+	a.cur().transcript = []SessionMessage{
 		{Role: "user", Text: "ถาม", Time: "00:34"},
 		{Role: "agent", Text: "คำตอบที่สอง", Time: "00:34", Parts: secondWork, Variants: variants, Active: 1},
 	}
-	a.storeVariants(variants, 1)
-	a.storeParts(secondWork)
+	a.storeVariants(a.cur(), variants, 1)
+	a.storeParts(a.cur(), secondWork)
 
 	result, err := a.SwitchVariant(0)
 	if err != nil {
@@ -308,9 +308,9 @@ func TestSwitchingAnswersMovesTheirWorkToo(t *testing.T) {
 		t.Fatalf("returned parts = %+v; want the first answer's own work", result.Parts)
 	}
 
-	messages, err := a.LoadSession(a.sessionID)
+	messages, err := a.SessionTranscript(a.cur().id)
 	if err != nil {
-		t.Fatalf("LoadSession: %v", err)
+		t.Fatalf("SessionTranscript: %v", err)
 	}
 	stored := messages[1].Parts
 	if len(stored) == 0 || stored[0].Tool == nil || stored[0].Tool.Name != "read" {

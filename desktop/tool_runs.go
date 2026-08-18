@@ -32,7 +32,7 @@ const (
 //
 // Failures only log, for the same reason recordTokenUsage's do: a chat turn
 // must not break because the history could not be written.
-func (a *App) recordToolRun(run turn.ToolRun) {
+func (a *App) recordToolRun(conv *conversation, run turn.ToolRun) {
 	db, err := a.database()
 	if err != nil {
 		debuglog.Msg("tool_runs: db unavailable: %v", err)
@@ -63,9 +63,10 @@ func (a *App) recordToolRun(run turn.ToolRun) {
 			args, args_bytes, output, output_bytes, output_sha256,
 			ok, error, error_kind, duration_ms, time)
 		 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		// The turn's stamped session (falls back to a.sessionID when idle) —
-		// a tool run belongs to the turn that made it, same as its messages.
-		a.turnSessionID(), run.Ref, run.Parent, run.Agent, run.Name,
+		// The conversation this engine was built for — a tool run belongs to the
+		// chat that made it, same as its messages, and the callback carries that
+		// rather than asking anybody afterwards.
+		conv.id, run.Ref, run.Parent, run.Agent, run.Name,
 		args, argsBytes, output, outputBytes, outputHash,
 		boolToInt(run.OK), run.Error, run.ErrorKind, run.Duration.Milliseconds(),
 		time.Now().Format(time.RFC3339),

@@ -66,7 +66,7 @@ func (a *App) RetryFailedTurn(text string) (TurnReply, error) {
 		return TurnReply{}, errTurnBusy
 	}
 	a.dropFailedTail()
-	a.restoreContext(a.transcript)
+	a.restoreContext(a.cur(), a.cur().transcript)
 	return a.SendMessage(text)
 }
 
@@ -84,15 +84,15 @@ func (a *App) RetryFailedTurn(text string) (TurnReply, error) {
 // deletes rows, and "the last two rows of this session" is only the failed pair
 // if the failed pair is what the conversation actually ends with.
 func (a *App) dropFailedTail() {
-	n := len(a.transcript)
+	n := len(a.cur().transcript)
 	if n < 2 {
 		return
 	}
-	last := a.transcript[n-1]
+	last := a.cur().transcript[n-1]
 	if last.Role != "agent" || last.ErrorText == "" {
 		return
 	}
-	a.transcript = a.transcript[:n-2]
+	a.cur().transcript = a.cur().transcript[:n-2]
 	a.dropLastTurnRows()
 }
 
@@ -109,7 +109,8 @@ func (a *App) RegenerateReply(revertFiles bool) (RegenerateResult, error) {
 	// Its own turn, marked like one: RegenerateReply reaches runTurn without
 	// going through SendMessage, and an unmarked turn is invisible to every
 	// guard and to the reloaded window asking TurnInFlight.
-	sessionID := a.sessionID
+	conv := a.cur()
+	sessionID := conv.id
 	if err := a.beginTurn(sessionID); err != nil {
 		return RegenerateResult{}, err
 	}
@@ -131,25 +132,25 @@ func (a *App) RegenerateReply(revertFiles bool) (RegenerateResult, error) {
 	// Asking again is the one negative signal that costs the user nothing to
 	// give: they were going to press this button anyway. Recorded before the
 	// second attempt runs, so it lands even if that attempt fails.
-	replyID := a.lastAgentMessageID()
+	replyID := a.lastAgentMessageID(conv)
 	a.markTurnRedone(replyID)
 
 	// The model must not see its own previous answer, or "ตอบใหม่" returns a
 	// polite rewrite of it rather than another attempt.
-	a.restoreContext(a.transcript[:len(a.transcript)-2])
-	mark := a.maxToolRunID()
+	a.restoreContext(conv, conv.transcript[:len(conv.transcript)-2])
+	mark := a.maxToolRunID(conv)
 	started := time.Now()
-	_, agentMsg, err := a.runTurn(question)
+	_, agentMsg, err := a.runTurn(conv, question)
 	if err != nil {
 		// The transcript was never touched, but the model's memory now holds a
 		// conversation one turn shorter than the one on screen. Put it back, or
 		// the next ordinary message is answered against a context missing the
 		// exchange the user can still see.
-		a.restoreContext(a.transcript)
+		a.restoreContext(a.cur(), a.cur().transcript)
 		return RegenerateResult{Text: agentMsg.Text, Reverted: reverted}, err
 	}
 
-	live := a.transcript[len(a.transcript)-1]
+	live := a.cur().transcript[len(a.cur().transcript)-1]
 	variants := append(variantsOf(live), SessionVariant{
 		Text: agentMsg.Text, Reasoning: agentMsg.Reasoning, ThinkSecs: agentMsg.ThinkSecs,
 		Parts: agentMsg.Parts,
@@ -159,14 +160,14 @@ func (a *App) RegenerateReply(revertFiles bool) (RegenerateResult, error) {
 	live.Text, live.Reasoning, live.ThinkSecs = agentMsg.Text, agentMsg.Reasoning, agentMsg.ThinkSecs
 	live.Parts = agentMsg.Parts
 	live.Variants, live.Active = variants, active
-	a.transcript[len(a.transcript)-1] = live
-	a.storeVariants(variants, active)
-	a.storeParts(agentMsg.Parts)
+	conv.transcript[len(conv.transcript)-1] = live
+	a.storeVariants(conv, variants, active)
+	a.storeParts(conv, agentMsg.Parts)
 	// A second attempt is a second job against the same bubble. Both rows stay:
 	// "this shape of work needed two tries" is exactly the kind of thing a later
 	// pass should be able to see, and it cannot if the retry overwrites the
 	// attempt that provoked it.
-	a.recordJobs(replyID, question, agentMsg.Text, mark, time.Since(started))
+	a.recordJobs(conv, replyID, question, agentMsg.Text, mark, time.Since(started))
 
 	return RegenerateResult{
 		Text: agentMsg.Text, Parts: agentMsg.Parts,
@@ -195,9 +196,9 @@ func (a *App) ResendEdited(text string, revertFiles bool) (TurnReply, error) {
 	if revertFiles {
 		_, _ = a.UndoLastTurn()
 	}
-	a.transcript = a.transcript[:len(a.transcript)-2]
+	a.cur().transcript = a.cur().transcript[:len(a.cur().transcript)-2]
 	a.dropLastTurnRows()
-	a.restoreContext(a.transcript)
+	a.restoreContext(a.cur(), a.cur().transcript)
 	return a.SendMessage(text)
 }
 
@@ -214,10 +215,10 @@ func (a *App) SwitchVariant(index int) (RegenerateResult, error) {
 	if a.turnBusy() {
 		return RegenerateResult{}, errTurnBusy
 	}
-	if len(a.transcript) == 0 {
+	if len(a.cur().transcript) == 0 {
 		return RegenerateResult{}, fmt.Errorf("ยังไม่มีคำตอบให้สลับ")
 	}
-	live := a.transcript[len(a.transcript)-1]
+	live := a.cur().transcript[len(a.cur().transcript)-1]
 	if live.Role != "agent" || len(live.Variants) < 2 {
 		return RegenerateResult{}, fmt.Errorf("คำตอบนี้มีแค่เวอร์ชันเดียว")
 	}
@@ -231,10 +232,10 @@ func (a *App) SwitchVariant(index int) (RegenerateResult, error) {
 	// reply above the other attempt's tool calls.
 	live.Parts = chosen.Parts
 	live.Active = index
-	a.transcript[len(a.transcript)-1] = live
-	a.storeVariants(live.Variants, index)
-	a.storeParts(chosen.Parts)
-	a.restoreContext(a.transcript)
+	a.cur().transcript[len(a.cur().transcript)-1] = live
+	a.storeVariants(a.cur(), live.Variants, index)
+	a.storeParts(a.cur(), chosen.Parts)
+	a.restoreContext(a.cur(), a.cur().transcript)
 
 	return RegenerateResult{Text: chosen.Text, Parts: chosen.Parts, Variants: live.Variants, Active: index}, nil
 }
@@ -245,11 +246,11 @@ func (a *App) SwitchVariant(index int) (RegenerateResult, error) {
 // neither — so "the last turn" is the last two entries, and anything else means
 // there is nothing to re-run.
 func (a *App) lastQuestion() (string, bool) {
-	if len(a.transcript) < 2 {
+	if len(a.cur().transcript) < 2 {
 		return "", false
 	}
-	user := a.transcript[len(a.transcript)-2]
-	agent := a.transcript[len(a.transcript)-1]
+	user := a.cur().transcript[len(a.cur().transcript)-2]
+	agent := a.cur().transcript[len(a.cur().transcript)-1]
 	if user.Role != "user" || agent.Role != "agent" {
 		return "", false
 	}
@@ -263,12 +264,12 @@ func (a *App) lastQuestion() (string, bool) {
 // lossier than a surgical rewind would be — but it is the same loss a session
 // reload has always taken, and it cannot leave the context in a state no
 // transcript describes.
-func (a *App) restoreContext(messages []SessionMessage) {
-	if a.agent == nil {
+func (a *App) restoreContext(conv *conversation, messages []SessionMessage) {
+	if a.cur().agent == nil {
 		return
 	}
-	a.agent.ClearContext()
-	a.agent.RestoreHistory(transcriptToModelMessages(messages))
+	a.cur().agent.ClearContext()
+	a.cur().agent.RestoreHistory(transcriptToModelMessages(messages))
 }
 
 // variantsOf reads a message's answer list, treating a bubble that has only
@@ -289,10 +290,10 @@ func variantsOf(m SessionMessage) []SessionVariant {
 // Addressed as "the newest agent row of this session" rather than by an id held
 // in memory: the id would have to survive session switches and reloads to be
 // worth anything, and only the last turn is ever re-answered.
-func (a *App) storeVariants(variants []SessionVariant, active int) {
+func (a *App) storeVariants(conv *conversation, variants []SessionVariant, active int) {
 	// The turn's stamped session, same as appendTurn — a re-answer is a turn
 	// too, and its rows have the same one home.
-	sessionID := a.turnSessionID()
+	sessionID := conv.id
 	db, err := a.database()
 	if err != nil || sessionID == "" || active < 0 || active >= len(variants) {
 		return
@@ -313,8 +314,8 @@ func (a *App) storeVariants(variants []SessionVariant, active int) {
 // storeParts writes the sequence back onto the session's newest agent row,
 // addressed the same way storeVariants addresses it. A re-answered turn produced
 // different work, so the record of that work has to move with it.
-func (a *App) storeParts(parts []turn.TurnPart) {
-	sessionID := a.turnSessionID()
+func (a *App) storeParts(conv *conversation, parts []turn.TurnPart) {
+	sessionID := conv.id
 	db, err := a.database()
 	if err != nil || sessionID == "" {
 		return
@@ -329,7 +330,7 @@ func (a *App) storeParts(parts []turn.TurnPart) {
 // The messages_ad trigger takes them out of the FTS index with them.
 func (a *App) dropLastTurnRows() {
 	db, err := a.database()
-	if err != nil || a.sessionID == "" {
+	if err != nil || a.cur().id == "" {
 		return
 	}
 	// The job rows for those messages go with them, and are NOT marked bad on the
@@ -339,11 +340,11 @@ func (a *App) dropLastTurnRows() {
 	_, _ = db.Exec(`
 		DELETE FROM jobs
 		WHERE message_id IN (SELECT id FROM messages WHERE session_id = ? ORDER BY id DESC LIMIT 2)`,
-		a.sessionID)
+		a.cur().id)
 	_, _ = db.Exec(`
 		DELETE FROM messages
 		WHERE id IN (SELECT id FROM messages WHERE session_id = ? ORDER BY id DESC LIMIT 2)`,
-		a.sessionID)
+		a.cur().id)
 }
 
 // encodeVariants renders the answer list for storage. A bubble answered once

@@ -11,12 +11,12 @@ import (
 // seedChat writes a two-bubble conversation and returns its id.
 func seedChat(t *testing.T, a *App) string {
 	t.Helper()
-	a.appendTurn(
+	a.appendTurn(a.cur(),
 		SessionMessage{Role: "user", Text: "อ่านสลิปนี้ให้หน่อย", Time: "2026-08-07T10:00:00+07:00"},
 		SessionMessage{Role: "agent", Text: "ยอด 1,250 บาท", Time: "2026-08-07T10:00:05+07:00",
 			Reasoning: "ดูตัวเลขใต้ QR", ThinkSecs: 4},
 	)
-	return a.sessionID
+	return a.cur().id
 }
 
 // The export is the copy, and a copy that comes back different is not a copy.

@@ -119,13 +119,13 @@ const (
 
 func TestTheToolBlockStaysWithinItsBudget(t *testing.T) {
 	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
-	a := &App{ctx: context.Background(), emit: func(string, ...any) {}, dbDir: t.TempDir(), sessionID: newSessionID()}
+	a := seed(&App{ctx: context.Background(), emit: func(string, ...any) {}, dbDir: t.TempDir()}, &conversation{id: newSessionID()})
 	t.Cleanup(func() {
 		if a.db != nil {
 			_ = a.db.Close()
 		}
 	})
-	a.applyConfig(config.Config{
+	a.applyConfig(a.cur(), config.Config{
 		SandboxRoot:   t.TempDir(),
 		ModelProvider: "aetox",
 		ModelName:     "aetox-tools:test",
@@ -137,7 +137,7 @@ func TestTheToolBlockStaysWithinItsBudget(t *testing.T) {
 	// Held rather than omitted so that the only thing withholding a tool here is
 	// the missing account, which is the state being measured.
 	held := connect.IDs()
-	defs := skill.NewDispatcher(a.registry).ToolDefinitions()
+	defs := skill.NewDispatcher(a.cur().registry).ToolDefinitions()
 	type row struct {
 		name  string
 		bytes int
@@ -197,20 +197,20 @@ func TestConnectingAnEngineDoesNotDoubleTheToolBlock(t *testing.T) {
 	// connect.Allows applied, and that is the number a user pays.
 	held := connect.IDs()
 	measure := func() (int, int) {
-		a := &App{ctx: context.Background(), emit: func(string, ...any) {}, dbDir: t.TempDir(), sessionID: newSessionID()}
+		a := seed(&App{ctx: context.Background(), emit: func(string, ...any) {}, dbDir: t.TempDir()}, &conversation{id: newSessionID()})
 		t.Cleanup(func() {
 			if a.db != nil {
 				_ = a.db.Close()
 			}
 		})
-		a.applyConfig(config.Config{
+		a.applyConfig(a.cur(), config.Config{
 			SandboxRoot:   t.TempDir(),
 			ModelProvider: "aetox",
 			ModelName:     "aetox-tools:test",
 			ApprovalMode:  string(safety.ApprovalFullAccess),
 		})
 		count, total := 0, 0
-		for _, d := range skill.NewDispatcher(a.registry).ToolDefinitions() {
+		for _, d := range skill.NewDispatcher(a.cur().registry).ToolDefinitions() {
 			if !connect.Allows(d.Function.Name, held) {
 				continue
 			}
@@ -257,13 +257,13 @@ func TestConnectingAnEngineDoesNotDoubleTheToolBlock(t *testing.T) {
 // checked against only one of them would look complete while missing a third.
 func TestEveryToolHasACategory(t *testing.T) {
 	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
-	a := &App{ctx: context.Background(), emit: func(string, ...any) {}, dbDir: t.TempDir(), sessionID: newSessionID()}
+	a := seed(&App{ctx: context.Background(), emit: func(string, ...any) {}, dbDir: t.TempDir()}, &conversation{id: newSessionID()})
 	t.Cleanup(func() {
 		if a.db != nil {
 			_ = a.db.Close()
 		}
 	})
-	a.applyConfig(config.Config{
+	a.applyConfig(a.cur(), config.Config{
 		SandboxRoot:   t.TempDir(),
 		ModelProvider: "aetox",
 		ModelName:     "aetox-tools:test",
@@ -271,8 +271,8 @@ func TestEveryToolHasACategory(t *testing.T) {
 	})
 
 	var missing []string
-	for _, name := range a.registry.Names() {
-		if src, ok := a.registry.SourceOf(name); ok && src == skill.SourceSkill {
+	for _, name := range a.cur().registry.Names() {
+		if src, ok := a.cur().registry.SourceOf(name); ok && src == skill.SourceSkill {
 			continue // a SKILL.md document is not a tool and is listed elsewhere
 		}
 		if !skill.HasCategory(name) {

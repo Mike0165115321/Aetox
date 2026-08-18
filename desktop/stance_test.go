@@ -39,11 +39,11 @@ func TestConsultSendsTheModelNoToolsAtAll(t *testing.T) {
 // conversation has to survive the re-bootstrap that does it.
 func TestSwitchingStanceKeepsTheConversation(t *testing.T) {
 	a := bootDeskApp(t, "assistant")
-	a.agent.RestoreHistory([]model.Message{
+	a.cur().agent.RestoreHistory([]model.Message{
 		{Role: "user", Content: "จำเลข 4127 ไว้นะ"},
 		{Role: "assistant", Content: "จำแล้วครับ"},
 	})
-	before := len(a.agent.ContextMessages())
+	before := len(a.cur().agent.ContextMessages())
 	if before == 0 {
 		t.Fatal("test is stale: RestoreHistory left the agent with no context")
 	}
@@ -51,7 +51,7 @@ func TestSwitchingStanceKeepsTheConversation(t *testing.T) {
 	if _, err := a.SetStance(string(mode.StanceConsult)); err != nil {
 		t.Fatalf("SetStance: %v", err)
 	}
-	after := a.agent.ContextMessages()
+	after := a.cur().agent.ContextMessages()
 	if len(after) != before {
 		t.Fatalf("the conversation must survive a stance switch: %d messages before, %d after", before, len(after))
 	}
@@ -120,7 +120,7 @@ func TestTheToolsPanelAgreesWithTheModel(t *testing.T) {
 		// Names() includes skills, which every stance keeps on purpose — so
 		// this asserts on the tool definitions the panel would draw instead.
 		for _, n := range names {
-			if source, ok := a.registry.SourceOf(n); ok && source == "skill" {
+			if source, ok := a.cur().registry.SourceOf(n); ok && source == "skill" {
 				continue
 			}
 			t.Errorf("the tools panel still lists %q while the model has been sent nothing", n)
@@ -137,8 +137,8 @@ func TestANewSessionStartsAtTheDefaultStance(t *testing.T) {
 		t.Fatalf("SetStance: %v", err)
 	}
 	a.startNewSession()
-	if a.stance != mode.StanceAct {
-		t.Fatalf("a new chat must start at ลงมือ, got %q", a.stance)
+	if a.cur().stance != mode.StanceAct {
+		t.Fatalf("a new chat must start at ลงมือ, got %q", a.cur().stance)
 	}
 	if len(toolNames(a)) == 0 {
 		t.Error("the field was reset but the engine was not rebuilt — the new chat is still carrying nothing")
@@ -172,8 +172,8 @@ func TestAnUnknownStanceLandsOnTheOneThatWithholdsNothing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("an unknown stance must not be an error: %v", err)
 	}
-	if got != "" || a.stance != mode.StanceAct {
-		t.Errorf("unknown stance became %q/%q, want ลงมือ", got, a.stance)
+	if got != "" || a.cur().stance != mode.StanceAct {
+		t.Errorf("unknown stance became %q/%q, want ลงมือ", got, a.cur().stance)
 	}
 	if len(toolNames(a)) == 0 {
 		t.Error("falling back must withhold nothing — this session came back carrying no tools")
@@ -221,7 +221,7 @@ func TestPlanIsNotTaughtToUseTheToolsItWithheld(t *testing.T) {
 		t.Fatalf("SetStance: %v", err)
 	}
 	// The system prompt is the context's first message (cognitive/agent.go).
-	msgs := a.agent.ContextMessages()
+	msgs := a.cur().agent.ContextMessages()
 	if len(msgs) == 0 {
 		t.Fatal("the rebuilt agent has no context at all")
 	}

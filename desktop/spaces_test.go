@@ -23,13 +23,13 @@ import (
 func spaceApp(t *testing.T) *App {
 	t.Helper()
 	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
-	a := &App{ctx: context.Background(), emit: func(string, ...any) {}, dbDir: t.TempDir(), sessionID: newSessionID()}
+	a := seed(&App{ctx: context.Background(), emit: func(string, ...any) {}, dbDir: t.TempDir()}, &conversation{id: newSessionID()})
 	t.Cleanup(func() {
 		if a.db != nil {
 			_ = a.db.Close()
 		}
 	})
-	a.applyConfig(config.Config{
+	a.applyConfig(a.cur(), config.Config{
 		SandboxRoot:   t.TempDir(),
 		ModelProvider: "aetox",
 		ModelName:     "aetox-tools:test",
@@ -113,8 +113,8 @@ func TestAProjectMovesNoWall(t *testing.T) {
 	if openBefore != !a.projectFocused {
 		t.Error("opening a chat inside a project changed whether the sandbox is open")
 	}
-	if a.space != "แผนธุรกิจ" {
-		t.Errorf("the session is in space %q, want แผนธุรกิจ", a.space)
+	if a.cur().space != "แผนธุรกิจ" {
+		t.Errorf("the session is in space %q, want แผนธุรกิจ", a.cur().space)
 	}
 }
 
@@ -319,16 +319,16 @@ func TestAPlainNewChatIsInNoProject(t *testing.T) {
 	if _, err := a.NewSessionInSpace("งานร้าน"); err != nil {
 		t.Fatal(err)
 	}
-	if a.space != "งานร้าน" {
-		t.Fatalf("the project chat is in space %q", a.space)
+	if a.cur().space != "งานร้าน" {
+		t.Fatalf("the project chat is in space %q", a.cur().space)
 	}
 
 	if _, err := a.NewSessionAt("assistant"); err != nil {
 		t.Fatal(err)
 	}
 
-	if a.space != "" {
-		t.Errorf("a fresh chat is still in project %q — the room followed the user out of it", a.space)
+	if a.cur().space != "" {
+		t.Errorf("a fresh chat is still in project %q — the room followed the user out of it", a.cur().space)
 	}
 	if got := a.spaceContextForPrompt(); got.Path != "" || len(got.Files) != 0 {
 		t.Errorf("a fresh chat still carries the project's context: %+v", got)
@@ -352,14 +352,14 @@ func TestAProjectsChatsStayOutOfTheGeneralHistory(t *testing.T) {
 	if _, err := a.NewSessionInSpace("ร้านกาแฟ"); err != nil {
 		t.Fatal(err)
 	}
-	a.appendTurn(
+	a.appendTurn(a.cur(),
 		SessionMessage{Role: "user", Text: "สูตรกาแฟเย็น"},
 		SessionMessage{Role: "assistant", Text: "ได้ครับ"},
 	)
 	if _, err := a.NewSessionAt("assistant"); err != nil {
 		t.Fatal(err)
 	}
-	a.appendTurn(
+	a.appendTurn(a.cur(),
 		SessionMessage{Role: "user", Text: "สรุปข่าววันนี้"},
 		SessionMessage{Role: "assistant", Text: "ครับ"},
 	)
@@ -454,7 +454,7 @@ func TestChatsAreListedUnderTheProjectTheyWereHeldIn(t *testing.T) {
 	if _, err := a.NewSessionInSpace("กลุ่มเอ"); err != nil {
 		t.Fatal(err)
 	}
-	a.appendTurn(
+	a.appendTurn(a.cur(),
 		SessionMessage{Role: "user", Text: "สวัสดี"},
 		SessionMessage{Role: "assistant", Text: "ครับ"},
 	)

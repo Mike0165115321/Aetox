@@ -153,14 +153,56 @@ func TestADecisionCannotBeMadeTwice(t *testing.T) {
 // A change that cannot be applied leaves the queue untouched: a row marked
 // approved whose change never landed is a lie in the one place built to be
 // trusted.
+//
+// The case used to be a replace of a line nothing held, which no longer fails
+// and should not — that is now refused at the tool, and an approval whose
+// target has since gone still reaches the state the user approved
+// (learned.Apply). What is left, and is the honest version of this test, is a
+// change that was appliable when it was proposed and is not when it is
+// approved: the room ran out in between.
 func TestAFailedApplyDoesNotMarkTheProposalApproved(t *testing.T) {
 	a := newJobApp(t)
-	p, _ := a.proposeLearned(proposal(learned.MainScope, learned.OpReplace, "บรรทัดที่ไม่มีอยู่", "ใหม่"))
+	line := strings.Repeat("ก", 500)
+	p, _ := a.proposeLearned(proposal(learned.MainScope, learned.OpAdd, "", line+"สุดท้าย"))
+
+	// The file fills between the proposal and the click, which is what two
+	// sessions learning at once looks like.
+	for i := 0; i < 40; i++ {
+		if err := learned.Apply(learned.MainScope, learned.OpAdd, "", line+string(rune('a'+i))); err != nil {
+			break
+		}
+	}
+
 	if err := a.ApprovePendingChange(p.ID); err == nil {
-		t.Fatal("replacing a line that does not exist should fail")
+		t.Fatal("approving a line that no longer fits should fail")
 	}
 	if n := a.PendingLearnedCount(); n != 1 {
 		t.Errorf("the proposal should still be waiting, count = %d", n)
+	}
+}
+
+// The bug this queue was reported for (18 ส.ค.). The agent proposed a line, the
+// user corrected it in the next message, and the agent revised the line it had
+// just proposed — which nothing had approved, so no file held it. The card
+// queued anyway and อนุมัติ could only ever error, leaving ไม่เอา as the only
+// exit from a fact the user had asked for.
+//
+// Both halves are pinned here because the fix is a pair: the tool refuses to
+// queue it, and a card already in the queue from before the fix — or from a
+// file the user hand-edited, which they are invited to do — still lands.
+func TestARevisionOfSomethingUnrememberedNeverStrandsTheUser(t *testing.T) {
+	a := newJobApp(t)
+	p, _ := a.proposeLearned(proposal(
+		learned.MainScope, learned.OpReplace, "นักพัฒนาระบบ", "ผู้ใช้เป็นนักพัฒนา Aetox"))
+
+	if err := a.ApprovePendingChange(p.ID); err != nil {
+		t.Fatalf("approving a stale revision should still land: %v", err)
+	}
+	if got := learned.Read(learned.MainScope); !strings.Contains(got, "นักพัฒนา Aetox") {
+		t.Errorf("the fact the user approved is not in memory: %q", got)
+	}
+	if n := a.PendingLearnedCount(); n != 0 {
+		t.Errorf("the card should be gone from the queue, count = %d", n)
 	}
 }
 
@@ -215,7 +257,7 @@ func TestTheMemoryToolIsBoundToTheProjectBeingOpened(t *testing.T) {
 	incoming := filepath.Join(t.TempDir(), "the-project-being-opened")
 
 	var tool *learned.MemoryTool
-	for _, s := range a.workbenchSkills(incoming) {
+	for _, s := range a.workbenchSkills(a.cur(), incoming) {
 		if m, ok := s.(*learned.MemoryTool); ok {
 			tool = m
 		}
@@ -230,7 +272,7 @@ func TestTheMemoryToolIsBoundToTheProjectBeingOpened(t *testing.T) {
 	// And an unfocused session has no project at all — the home folder it is
 	// rooted at is not one, however real a folder it is.
 	a.projectFocused = false
-	for _, s := range a.workbenchSkills(incoming) {
+	for _, s := range a.workbenchSkills(a.cur(), incoming) {
 		if m, ok := s.(*learned.MemoryTool); ok && m.Project != "" {
 			t.Errorf("an unfocused session was offered project %q", m.Project)
 		}

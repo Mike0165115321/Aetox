@@ -22,7 +22,7 @@ import (
 
 func recordPage(t *testing.T, a *App, url, output string, ok bool) {
 	t.Helper()
-	a.recordToolRun(turn.ToolRun{
+	a.recordToolRun(a.cur(), turn.ToolRun{
 		Name:   "browser_open",
 		Args:   fmt.Sprintf(`{"url":%q}`, url),
 		Output: output,
@@ -99,12 +99,12 @@ func TestRecentAgentPagesExcludesWhatWasNeverOpened(t *testing.T) {
 	a := newRunApp(t)
 	// A failed open: the page was never shown, so it is not somewhere the agent
 	// has been.
-	a.recordToolRun(turn.ToolRun{
+	a.recordToolRun(a.cur(), turn.ToolRun{
 		Name: "browser_open", Args: `{"url":"https://dead.test"}`,
 		Output: "เปิดไม่สำเร็จ: connection refused", OK: false,
 	})
 	// A different tool that also carries a url-shaped argument.
-	a.recordToolRun(turn.ToolRun{
+	a.recordToolRun(a.cur(), turn.ToolRun{
 		Name: "web_fetch", Args: `{"url":"https://fetched.test"}`,
 		Output: opened("Fetched", "https://fetched.test"), OK: true,
 	})

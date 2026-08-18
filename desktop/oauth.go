@@ -56,7 +56,6 @@ func (a *App) SignInStatus(providerName string) oauth.Status {
 	return oauth.StatusFor(providerName)
 }
 
-
 // StartSignIn opens a sign-in and returns what to show the user. Nothing is
 // stored until CompleteSignIn succeeds.
 func (a *App) StartSignIn(providerName string) (SignInPrompt, error) {
@@ -194,7 +193,7 @@ func (a *App) reloadAfterCredentialChange(canonical string) (ModelInfo, error) {
 		if strings.TrimSpace(next.ModelName) == "" {
 			next.ModelName = model.ResolveDefaultModel(canonical, next.ModelBaseURL, next.ModelAPIKey)
 		}
-		a.applyConfig(next)
+		a.applyConfig(a.cur(), next)
 	}
 	return a.modelSwitchResult()
 }

@@ -280,7 +280,7 @@ func (a *App) importSessionFrom(path string) (string, error) {
 	if _, err := tx.Exec(`
 		INSERT INTO sessions(id, project_key, title, created_at, updated_at, mode, agent, space)
 		VALUES(?,?,?,?,?,?,?,?)`,
-		id, projectKey(a.cfg.SandboxRoot), title, created, now, e.Mode, e.Agent, a.space); err != nil {
+		id, projectKey(a.cfg.SandboxRoot), title, created, now, e.Mode, e.Agent, a.cur().space); err != nil {
 		return "", err
 	}
 	for _, m := range messages {

@@ -56,7 +56,7 @@ func readJobs(t *testing.T, a *App) []storedJob {
 func newJobApp(t *testing.T) *App {
 	t.Helper()
 	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
-	a := &App{cfg: config.Config{}, dbDir: t.TempDir(), sessionID: "20260804-120000.000"}
+	a := seed(&App{cfg: config.Config{}, dbDir: t.TempDir()}, &conversation{id: "20260804-120000.000"})
 	t.Cleanup(func() {
 		if a.db != nil {
 			_ = a.db.Close()
@@ -69,15 +69,15 @@ func newJobApp(t *testing.T) *App {
 // ordered sequence there is nothing to match a later job against.
 func TestRecordJobsCapturesTheToolSequence(t *testing.T) {
 	a := newJobApp(t)
-	mark := a.maxToolRunID()
+	mark := a.maxToolRunID(a.cur())
 	for _, r := range []turn.ToolRun{
 		{Ref: "c1", Name: "read", OK: true},
 		{Ref: "c2", Name: "image_ocr", OK: true},
 		{Ref: "c3", Name: "sheet_write", OK: false, Error: "no such folder"},
 	} {
-		a.recordToolRun(r)
+		a.recordToolRun(a.cur(), r)
 	}
-	a.recordJobs(7, "อ่านสลิปนี้ให้หน่อย", "ยอด 1,250 บาท", mark, 3*time.Second)
+	a.recordJobs(a.cur(), 7, "อ่านสลิปนี้ให้หน่อย", "ยอด 1,250 บาท", mark, 3*time.Second)
 
 	jobs := readJobs(t, a)
 	if len(jobs) != 1 {
@@ -102,12 +102,12 @@ func TestRecordJobsCapturesTheToolSequence(t *testing.T) {
 // sub-agent needs no second capture path.
 func TestRecordJobsReconstructsDelegateWork(t *testing.T) {
 	a := newJobApp(t)
-	mark := a.maxToolRunID()
-	a.recordToolRun(turn.ToolRun{Ref: "t1", Name: "task",
+	mark := a.maxToolRunID(a.cur())
+	a.recordToolRun(a.cur(), turn.ToolRun{Ref: "t1", Name: "task",
 		Args: `{"agent":"explore","prompt":"หาไฟล์ใบเสร็จทั้งหมด"}`, Output: "เจอ 12 ไฟล์", OK: true})
-	a.recordToolRun(turn.ToolRun{Ref: "c1", Parent: "t1", Agent: "explore", Name: "glob", OK: true})
-	a.recordToolRun(turn.ToolRun{Ref: "c2", Parent: "t1", Agent: "explore", Name: "grep", OK: true})
-	a.recordJobs(9, "หาใบเสร็จ", "เจอ 12 ไฟล์", mark, time.Second)
+	a.recordToolRun(a.cur(), turn.ToolRun{Ref: "c1", Parent: "t1", Agent: "explore", Name: "glob", OK: true})
+	a.recordToolRun(a.cur(), turn.ToolRun{Ref: "c2", Parent: "t1", Agent: "explore", Name: "grep", OK: true})
+	a.recordJobs(a.cur(), 9, "หาใบเสร็จ", "เจอ 12 ไฟล์", mark, time.Second)
 
 	jobs := readJobs(t, a)
 	if len(jobs) != 2 {
@@ -143,9 +143,9 @@ func TestLearningOffRecordsNothing(t *testing.T) {
 	if err := config.SaveModelPreference(pref); err != nil {
 		t.Fatalf("save preference: %v", err)
 	}
-	mark := a.maxToolRunID()
-	a.recordToolRun(turn.ToolRun{Ref: "c1", Name: "read", OK: true})
-	a.recordJobs(3, "q", "a", mark, time.Second)
+	mark := a.maxToolRunID(a.cur())
+	a.recordToolRun(a.cur(), turn.ToolRun{Ref: "c1", Name: "read", OK: true})
+	a.recordJobs(a.cur(), 3, "q", "a", mark, time.Second)
 
 	if jobs := readJobs(t, a); len(jobs) != 0 {
 		t.Fatalf("learning is off; want no job rows, got %d", len(jobs))
@@ -154,7 +154,7 @@ func TestLearningOffRecordsNothing(t *testing.T) {
 
 func TestRateTurnStoresAndClearsTheVerdict(t *testing.T) {
 	a := newJobApp(t)
-	a.recordJobs(4, "q", "a", a.maxToolRunID(), time.Second)
+	a.recordJobs(a.cur(), 4, "q", "a", a.maxToolRunID(a.cur()), time.Second)
 
 	a.RateTurn(4, outcomeGood)
 	if got := a.TurnRating(4); got != outcomeGood {
@@ -170,14 +170,14 @@ func TestRateTurnStoresAndClearsTheVerdict(t *testing.T) {
 // Asking again is the negative signal that costs the user nothing to give.
 func TestRedoMarksTheAttemptBadButNeverOverridesAThumb(t *testing.T) {
 	a := newJobApp(t)
-	a.recordJobs(5, "q", "a", a.maxToolRunID(), time.Second)
+	a.recordJobs(a.cur(), 5, "q", "a", a.maxToolRunID(a.cur()), time.Second)
 	a.markTurnRedone(5)
 	if got := a.TurnRating(5); got != outcomeBad {
 		t.Fatalf("after redo, rating = %q, want bad", got)
 	}
 
 	b := newJobApp(t)
-	b.recordJobs(6, "q", "a", b.maxToolRunID(), time.Second)
+	b.recordJobs(b.cur(), 6, "q", "a", b.maxToolRunID(b.cur()), time.Second)
 	b.RateTurn(6, outcomeGood)
 	b.markTurnRedone(6)
 	if got := b.TurnRating(6); got != outcomeGood {
@@ -189,9 +189,9 @@ func TestRedoMarksTheAttemptBadButNeverOverridesAThumb(t *testing.T) {
 // belongs to the answer on screen.
 func TestRatingAddressesTheNewestAttempt(t *testing.T) {
 	a := newJobApp(t)
-	a.recordJobs(8, "q", "first try", a.maxToolRunID(), time.Second)
+	a.recordJobs(a.cur(), 8, "q", "first try", a.maxToolRunID(a.cur()), time.Second)
 	a.markTurnRedone(8)
-	a.recordJobs(8, "q", "second try", a.maxToolRunID(), time.Second)
+	a.recordJobs(a.cur(), 8, "q", "second try", a.maxToolRunID(a.cur()), time.Second)
 
 	a.RateTurn(8, outcomeGood)
 	jobs := readJobs(t, a)
@@ -209,12 +209,12 @@ func TestRatingAddressesTheNewestAttempt(t *testing.T) {
 // Deleting a conversation has to mean it in every table that copied it.
 func TestDeleteSessionTakesItsJobsWithIt(t *testing.T) {
 	a := newJobApp(t)
-	a.appendTurn(SessionMessage{Role: "user", Text: "q"}, SessionMessage{Role: "agent", Text: "a"})
-	a.recordJobs(2, "q", "a", a.maxToolRunID(), time.Second)
+	a.appendTurn(a.cur(), SessionMessage{Role: "user", Text: "q"}, SessionMessage{Role: "agent", Text: "a"})
+	a.recordJobs(a.cur(), 2, "q", "a", a.maxToolRunID(a.cur()), time.Second)
 	if len(readJobs(t, a)) == 0 {
 		t.Fatal("setup: expected a job row")
 	}
-	if err := a.DeleteSession(a.sessionID); err != nil {
+	if err := a.DeleteSession(a.cur().id); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	if jobs := readJobs(t, a); len(jobs) != 0 {

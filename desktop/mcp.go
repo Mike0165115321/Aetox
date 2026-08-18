@@ -29,11 +29,11 @@ type ToolCounts struct {
 
 func (a *App) ToolCounts() ToolCounts {
 	var counts ToolCounts
-	if a.registry == nil {
+	if a.cur().registry == nil {
 		return counts
 	}
-	for _, name := range a.registry.Names() {
-		switch src, _ := a.registry.SourceOf(name); src {
+	for _, name := range a.cur().registry.Names() {
+		switch src, _ := a.cur().registry.SourceOf(name); src {
 		case skill.SourceBuiltin:
 			counts.Builtin++
 		case skill.SourceWorkbench:
@@ -78,18 +78,18 @@ func (a *App) ListSkills() []SkillInfo {
 }
 
 func (a *App) registryEntries(keep func(skill.Source) bool) []SkillInfo {
-	if a.registry == nil {
+	if a.cur().registry == nil {
 		return []SkillInfo{} // never nil: §34, a nil slice crashes the frontend
 	}
-	names := a.registry.Names()
+	names := a.cur().registry.Names()
 	sort.Strings(names)
 	out := make([]SkillInfo, 0, len(names))
 	for _, n := range names {
-		s, ok := a.registry.Get(n)
+		s, ok := a.cur().registry.Get(n)
 		if !ok || s == nil {
 			continue
 		}
-		src, _ := a.registry.SourceOf(n)
+		src, _ := a.cur().registry.SourceOf(n)
 		if !keep(src) {
 			continue
 		}
@@ -274,7 +274,7 @@ func (a *App) OpenMCPFolder() error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	return openInFileManager(dir)
+	return a.revealInFileManager(dir)
 }
 
 // AddMCPServer persists a new local stdio server (name + argv). Kept as the
@@ -429,7 +429,7 @@ func (a *App) rebuildMCP() {
 		_ = a.mcp.Close()
 		a.mcp = nil
 	}
-	a.applyConfig(a.cfg)
+	a.applyConfig(a.cur(), a.cfg)
 }
 
 func trimArgs(args []string) []string {

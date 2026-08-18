@@ -60,13 +60,13 @@ type toolRunRow struct {
 // recordToolRun. Reading the store back is what makes a delegate's job rows
 // free: the child's calls are already there, stamped with the `task` call that
 // caused them.
-func (a *App) maxToolRunID() int64 {
+func (a *App) maxToolRunID(conv *conversation) int64 {
 	db, err := a.database()
 	if err != nil {
 		return 0
 	}
 	var max sql.NullInt64
-	if err := db.QueryRow(`SELECT MAX(id) FROM tool_runs WHERE session_id = ?`, a.turnSessionID()).Scan(&max); err != nil {
+	if err := db.QueryRow(`SELECT MAX(id) FROM tool_runs WHERE session_id = ?`, conv.id).Scan(&max); err != nil {
 		return 0
 	}
 	return max.Int64
@@ -78,19 +78,19 @@ func (a *App) maxToolRunID() int64 {
 // Called after appendTurn, on the turn's own goroutine. Failures only log —
 // same rule as recordToolRun: a chat turn must not break because the history
 // could not be written.
-func (a *App) recordJobs(messageID int64, request, answer string, sinceToolRun int64, elapsed time.Duration) {
+func (a *App) recordJobs(conv *conversation, messageID int64, request, answer string, sinceToolRun int64, elapsed time.Duration) {
 	if !learningEnabled() {
 		return
 	}
-	// The turn's own session, same stamp appendTurn writes with — these rows
+	// The turn's own session, the same one appendTurn wrote with — these rows
 	// describe the same turn, and two readers of "which session" that can
-	// disagree is the shape the stamp exists to end.
-	sessionID := a.turnSessionID()
+	// disagree is the shape this change exists to end.
+	sessionID := conv.id
 	db, err := a.database()
 	if err != nil || sessionID == "" {
 		return
 	}
-	rows := a.toolRunsSince(sinceToolRun)
+	rows := a.toolRunsSince(conv, sinceToolRun)
 
 	now := time.Now().Format(time.RFC3339)
 	// The main agent's own calls are the ones with no parent. A `task` call is
@@ -114,7 +114,7 @@ func (a *App) recordJobs(messageID int64, request, answer string, sinceToolRun i
 		// them lands in the chair's file — and with no parent_ref, so the
 		// received-work feed (which filters on it) correctly shows briefs
 		// only, not conversations.
-		agent:    a.chair,
+		agent:    a.cur().chair,
 		request:  request,
 		answer:   answer,
 		runs:     mine,
@@ -234,7 +234,7 @@ func toolShape(runs []toolRunRow) (string, int) {
 	return seq, failed
 }
 
-func (a *App) toolRunsSince(mark int64) []toolRunRow {
+func (a *App) toolRunsSince(conv *conversation, mark int64) []toolRunRow {
 	db, err := a.database()
 	if err != nil {
 		return nil
@@ -243,7 +243,7 @@ func (a *App) toolRunsSince(mark int64) []toolRunRow {
 	_ = eachRow(db, "jobs: tool_runs", `
 		SELECT id, ref, parent_ref, agent, tool, args, output, ok, duration_ms
 		   FROM tool_runs WHERE session_id = ? AND id > ? ORDER BY id`,
-		[]any{a.turnSessionID(), mark},
+		[]any{conv.id, mark},
 		func(rows *sql.Rows) error {
 			var r toolRunRow
 			var ok int
@@ -328,8 +328,8 @@ func (a *App) TurnRating(messageID int64) string {
 
 // lastAgentMessageID is the rowid of the reply currently at the bottom of the
 // session — the one "answer again" replaces.
-func (a *App) lastAgentMessageID() int64 {
-	sessionID := a.turnSessionID()
+func (a *App) lastAgentMessageID(conv *conversation) int64 {
+	sessionID := conv.id
 	db, err := a.database()
 	if err != nil || sessionID == "" {
 		return 0

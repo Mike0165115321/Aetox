@@ -18,7 +18,7 @@ import (
 // to was built with them.
 func listPath(t *testing.T, a *App, path string) (skill.Output, error) {
 	t.Helper()
-	s, ok := a.registry.Get("list")
+	s, ok := a.cur().registry.Get("list")
 	if !ok {
 		t.Fatal("no list skill in the registry")
 	}
@@ -35,7 +35,7 @@ func focusedApp(t *testing.T, root string) *App {
 	t.Helper()
 	a := &App{dbDir: t.TempDir(), projectFocused: true}
 	closeDBOnCleanup(t, a)
-	a.applyConfig(config.Config{
+	a.applyConfig(a.cur(), config.Config{
 		SandboxRoot:   root,
 		ModelProvider: "aetox",
 		ModelName:     "aetox-grid",
@@ -99,7 +99,7 @@ func TestAddedFolderIsNamedInTheSystemPrompt(t *testing.T) {
 	if _, err := a.addWorkspaceFolder(other); err != nil {
 		t.Fatalf("adding a folder failed: %v", err)
 	}
-	messages := a.agent.ContextMessages()
+	messages := a.cur().agent.ContextMessages()
 	if len(messages) == 0 {
 		t.Fatal("agent has no context messages, so it has no system prompt")
 	}

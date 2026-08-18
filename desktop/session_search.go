@@ -193,7 +193,7 @@ func (s *sessionSearchSkill) searchWork(db *sql.DB, match string, b *strings.Bui
 }
 
 func (s *sessionSearchSkill) currentMark(sessionID string) string {
-	if s.app != nil && sessionID != "" && sessionID == s.app.sessionID {
+	if s.app != nil && sessionID != "" && sessionID == s.app.cur().id {
 		return " (this session)"
 	}
 	return ""

@@ -15,22 +15,29 @@ import (
 // and what was left was a question sitting alone with nothing saying why.
 func TestAFailedTurnIsWrittenDownWithItsReason(t *testing.T) {
 	a := newTestApp(t, t.TempDir())
-	if err := a.beginTurn(a.sessionID); err != nil {
+	if err := a.beginTurn(a.cur().id); err != nil {
 		t.Fatalf("beginTurn: %v", err)
 	}
-	a.openTurn(SessionMessage{Role: "user", Text: "เทสๆ", Time: "22:10"})
-	id := a.appendFailedTurn(
+	a.openTurn(a.cur(), SessionMessage{Role: "user", Text: "เทสๆ", Time: "22:10"})
+	id := a.appendFailedTurn(a.cur(),
 		SessionMessage{Role: "agent", Text: "อ่านไฟล์ครบแล้ว", Time: "22:10", ThinkSecs: 3},
 		errors.New("codex: the free plan's limit is used up"),
 	)
-	a.endTurn(a.sessionID)
+	a.endTurn(a.cur().id)
 	if id == 0 {
 		t.Fatal("appendFailedTurn wrote nothing")
 	}
 
-	messages, err := a.LoadSession(a.sessionID)
+	// Read out of the store, not by re-opening the chat. LoadSession attaches to
+	// a conversation this process is still holding rather than reading rows
+	// back (desktop/conversation.go), which is the whole point of it — and this
+	// test drove openTurn/appendFailedTurn directly, so the in-memory
+	// transcript SendMessage would have kept never got written. What is being
+	// asserted here is what landed in the database, and SessionTranscript is
+	// the door that answers that.
+	messages, err := a.SessionTranscript(a.cur().id)
 	if err != nil {
-		t.Fatalf("LoadSession: %v", err)
+		t.Fatalf("SessionTranscript: %v", err)
 	}
 	if len(messages) != 2 {
 		t.Fatalf("stored %d messages, want the question and the answer it never got", len(messages))
@@ -48,7 +55,7 @@ func TestAFailedTurnIsWrittenDownWithItsReason(t *testing.T) {
 	}
 	// The flag openTurn raised has to come down here too, or the NEXT turn's
 	// appendTurn reads it as "the question is already stored" and skips writing.
-	if a.turnOpened {
+	if a.cur().turnOpened {
 		t.Error("turnOpened survived a failed turn — the next question could be dropped silently")
 	}
 }
@@ -57,13 +64,13 @@ func TestAFailedTurnIsWrittenDownWithItsReason(t *testing.T) {
 // back looking like one that did not.
 func TestASuccessfulTurnCarriesNoError(t *testing.T) {
 	a := newTestApp(t, t.TempDir())
-	a.appendTurn(
+	a.appendTurn(a.cur(),
 		SessionMessage{Role: "user", Text: "ถาม", Time: "09:00"},
 		SessionMessage{Role: "agent", Text: "ตอบ", Time: "09:00"},
 	)
-	messages, err := a.LoadSession(a.sessionID)
+	messages, err := a.SessionTranscript(a.cur().id)
 	if err != nil {
-		t.Fatalf("LoadSession: %v", err)
+		t.Fatalf("SessionTranscript: %v", err)
 	}
 	for _, m := range messages {
 		if m.ErrorText != "" {
@@ -77,16 +84,19 @@ func TestASuccessfulTurnCarriesNoError(t *testing.T) {
 // than one recorded with a vague reason.
 func TestAFailureIsNeverStoredAsBlank(t *testing.T) {
 	a := newTestApp(t, t.TempDir())
-	if err := a.beginTurn(a.sessionID); err != nil {
+	if err := a.beginTurn(a.cur().id); err != nil {
 		t.Fatalf("beginTurn: %v", err)
 	}
-	a.openTurn(SessionMessage{Role: "user", Text: "q", Time: "09:00"})
-	a.appendFailedTurn(SessionMessage{Role: "agent", Time: "09:00"}, errors.New("   "))
-	a.endTurn(a.sessionID)
+	a.openTurn(a.cur(), SessionMessage{Role: "user", Text: "q", Time: "09:00"})
+	a.appendFailedTurn(a.cur(), SessionMessage{Role: "agent", Time: "09:00"}, errors.New("   "))
+	a.endTurn(a.cur().id)
 
-	messages, err := a.LoadSession(a.sessionID)
+	messages, err := a.SessionTranscript(a.cur().id)
 	if err != nil {
-		t.Fatalf("LoadSession: %v", err)
+		t.Fatalf("SessionTranscript: %v", err)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("stored %d messages, want the question and the failure", len(messages))
 	}
 	if messages[1].ErrorText == "" {
 		t.Error("a failed turn was stored as a successful one")
@@ -129,13 +139,13 @@ func TestSendMessageRecordsItsOwnFailureOnBothSides(t *testing.T) {
 		t.Fatal("SendMessage succeeded with no model configured; this test needs the failing path")
 	}
 
-	if n := len(a.transcript); n != 2 {
+	if n := len(a.cur().transcript); n != 2 {
 		t.Fatalf("transcript holds %d messages, want the question and the answer it never got", n)
 	}
-	if got := a.transcript[1].ErrorText; got == "" {
+	if got := a.cur().transcript[1].ErrorText; got == "" {
 		t.Error("the in-memory answer does not know it failed — the retry would not drop it")
 	}
-	stored, err := a.SessionTranscript(a.sessionID)
+	stored, err := a.SessionTranscript(a.cur().id)
 	if err != nil {
 		t.Fatalf("SessionTranscript: %v", err)
 	}
@@ -146,8 +156,8 @@ func TestSendMessageRecordsItsOwnFailureOnBothSides(t *testing.T) {
 
 	// And the pair is droppable, which is what pressing ลองใหม่ relies on.
 	a.dropFailedTail()
-	if len(a.transcript) != 0 {
-		t.Errorf("the failed pair survived the retry's cleanup: %d messages left", len(a.transcript))
+	if len(a.cur().transcript) != 0 {
+		t.Errorf("the failed pair survived the retry's cleanup: %d messages left", len(a.cur().transcript))
 	}
 }
 
@@ -165,28 +175,28 @@ func lastErrorText(messages []SessionMessage) string {
 // with it.
 func TestRetryDropsTheFailedAttemptFromTheStore(t *testing.T) {
 	a := newTestApp(t, t.TempDir())
-	if err := a.beginTurn(a.sessionID); err != nil {
+	if err := a.beginTurn(a.cur().id); err != nil {
 		t.Fatalf("beginTurn: %v", err)
 	}
-	a.openTurn(SessionMessage{Role: "user", Text: "เทสๆ", Time: "22:10"})
+	a.openTurn(a.cur(), SessionMessage{Role: "user", Text: "เทสๆ", Time: "22:10"})
 	agentMsg := SessionMessage{Role: "agent", Text: "", Time: "22:10"}
-	a.appendFailedTurn(agentMsg, errors.New("limit is used up"))
-	a.transcript = append(a.transcript,
+	a.appendFailedTurn(a.cur(), agentMsg, errors.New("limit is used up"))
+	a.cur().transcript = append(a.cur().transcript,
 		SessionMessage{Role: "user", Text: "เทสๆ", Time: "22:10"},
 		SessionMessage{Role: "agent", Text: "", Time: "22:10", ErrorText: "limit is used up"},
 	)
-	a.endTurn(a.sessionID)
+	a.endTurn(a.cur().id)
 
 	a.dropFailedTail()
 
-	if len(a.transcript) != 0 {
-		t.Errorf("transcript still holds %d messages after the retry cleared it", len(a.transcript))
+	if len(a.cur().transcript) != 0 {
+		t.Errorf("transcript still holds %d messages after the retry cleared it", len(a.cur().transcript))
 	}
 	// SessionTranscript, not LoadSession: an empty conversation is the expected
 	// state here, and LoadSession reports "no such session in this project" for
 	// one — a door refusing to open an empty chat, which is not what is under
 	// test.
-	messages, err := a.SessionTranscript(a.sessionID)
+	messages, err := a.SessionTranscript(a.cur().id)
 	if err != nil {
 		t.Fatalf("SessionTranscript: %v", err)
 	}
@@ -199,23 +209,23 @@ func TestRetryDropsTheFailedAttemptFromTheStore(t *testing.T) {
 // rows" is only the failed pair when the conversation actually ends with one.
 func TestDropFailedTailLeavesACompletedTurnAlone(t *testing.T) {
 	a := newTestApp(t, t.TempDir())
-	a.appendTurn(
+	a.appendTurn(a.cur(),
 		SessionMessage{Role: "user", Text: "ถาม", Time: "09:00"},
 		SessionMessage{Role: "agent", Text: "ตอบ", Time: "09:00"},
 	)
-	a.transcript = []SessionMessage{
+	a.cur().transcript = []SessionMessage{
 		{Role: "user", Text: "ถาม"},
 		{Role: "agent", Text: "ตอบ"},
 	}
 
 	a.dropFailedTail()
 
-	if len(a.transcript) != 2 {
-		t.Fatalf("a completed turn was dropped: %d messages left", len(a.transcript))
+	if len(a.cur().transcript) != 2 {
+		t.Fatalf("a completed turn was dropped: %d messages left", len(a.cur().transcript))
 	}
-	messages, err := a.LoadSession(a.sessionID)
+	messages, err := a.SessionTranscript(a.cur().id)
 	if err != nil {
-		t.Fatalf("LoadSession: %v", err)
+		t.Fatalf("SessionTranscript: %v", err)
 	}
 	if len(messages) != 2 {
 		t.Errorf("a completed turn's rows were deleted: %d left", len(messages))
@@ -230,11 +240,11 @@ func TestDropFailedTailLeavesACompletedTurnAlone(t *testing.T) {
 // a stopped turn exactly as it draws a finished one.
 func TestAStoppedTurnIsStoredWithItsToolSequence(t *testing.T) {
 	a := newTestApp(t, t.TempDir())
-	if err := a.beginTurn(a.sessionID); err != nil {
+	if err := a.beginTurn(a.cur().id); err != nil {
 		t.Fatalf("beginTurn: %v", err)
 	}
-	a.openTurn(SessionMessage{Role: "user", Text: "เปิดโปรเจกต์ให้ที", Time: "05:16"})
-	a.appendFailedTurn(SessionMessage{
+	a.openTurn(a.cur(), SessionMessage{Role: "user", Text: "เปิดโปรเจกต์ให้ที", Time: "05:16"})
+	a.appendFailedTurn(a.cur(), SessionMessage{
 		Role: "agent", Text: "ยังไม่เจอ ขอดูอีกไฟล์", Time: "05:16",
 		Parts: []turn.TurnPart{
 			{Kind: turn.PartText, Text: "กำลังไล่ดูพอร์ตให้ครับ"},
@@ -242,11 +252,11 @@ func TestAStoppedTurnIsStoredWithItsToolSequence(t *testing.T) {
 			{Kind: turn.PartText, Text: "ยังไม่เจอ ขอดูอีกไฟล์"},
 		},
 	}, context.Canceled)
-	a.endTurn(a.sessionID)
+	a.endTurn(a.cur().id)
 
-	messages, err := a.LoadSession(a.sessionID)
+	messages, err := a.SessionTranscript(a.cur().id)
 	if err != nil {
-		t.Fatalf("LoadSession: %v", err)
+		t.Fatalf("SessionTranscript: %v", err)
 	}
 	if len(messages) != 2 {
 		t.Fatalf("stored %d messages, want the question and the stopped answer", len(messages))

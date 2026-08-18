@@ -80,7 +80,7 @@ func (a *App) UseEngine(family, agent, id string) error {
 	}
 	// The engine's tools are decided at build time, so the desks have to be
 	// rebuilt for the change to reach the next turn rather than the next launch.
-	a.applyConfig(a.cfg)
+	a.applyConfig(a.cur(), a.cfg)
 	return nil
 }
 
@@ -214,7 +214,7 @@ func (a *App) ConnectAccount(id, token, baseURL string, targets []string) (conne
 	if err != nil {
 		return connect.Account{}, err
 	}
-	a.applyConfig(a.cfg)
+	a.applyConfig(a.cur(), a.cfg)
 	return account, nil
 }
 
@@ -227,7 +227,7 @@ func (a *App) SetConnectionTargets(id string, targets []string) error {
 	if err := connect.SetTargets(id, targets); err != nil {
 		return err
 	}
-	a.applyConfig(a.cfg)
+	a.applyConfig(a.cur(), a.cfg)
 	return nil
 }
 
@@ -242,6 +242,6 @@ func (a *App) DisconnectAccount(id string) error {
 	if err := connect.Disconnect(id); err != nil {
 		return err
 	}
-	a.applyConfig(a.cfg)
+	a.applyConfig(a.cur(), a.cfg)
 	return nil
 }

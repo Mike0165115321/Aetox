@@ -57,7 +57,7 @@ func readRuns(t *testing.T, a *App) []storedRun {
 
 func newRunApp(t *testing.T) *App {
 	t.Helper()
-	a := &App{cfg: config.Config{}, dbDir: t.TempDir(), sessionID: "20260801-120000.000"}
+	a := seed(&App{cfg: config.Config{}, dbDir: t.TempDir()}, &conversation{id: "20260801-120000.000"})
 	t.Cleanup(func() {
 		if a.db != nil {
 			_ = a.db.Close()
@@ -70,7 +70,7 @@ func newRunApp(t *testing.T) *App {
 // got back, neither of which ToolEvent carries.
 func TestRecordToolRunKeepsArgumentsAndOutput(t *testing.T) {
 	a := newRunApp(t)
-	a.recordToolRun(turn.ToolRun{
+	a.recordToolRun(a.cur(), turn.ToolRun{
 		Ref:      "call_1",
 		Name:     "image_ocr",
 		Args:     `{"path":"slip.png"}`,
@@ -93,7 +93,7 @@ func TestRecordToolRunKeepsArgumentsAndOutput(t *testing.T) {
 	if got.ok != 1 || got.durationMs != 1500 {
 		t.Fatalf("outcome/timing wrong: ok=%d duration=%d", got.ok, got.durationMs)
 	}
-	if got.sessionID != a.sessionID {
+	if got.sessionID != a.cur().id {
 		t.Fatalf("row not attributed to the session: %q", got.sessionID)
 	}
 	// Nothing was truncated, so there is no hash to disambiguate.
@@ -107,8 +107,8 @@ func TestRecordToolRunKeepsArgumentsAndOutput(t *testing.T) {
 // sub-agent is bad at what" can never be asked.
 func TestRecordToolRunKeepsDelegateCallsWithAttribution(t *testing.T) {
 	a := newRunApp(t)
-	a.recordToolRun(turn.ToolRun{Ref: "call_1", Name: "task", OK: true})
-	a.recordToolRun(turn.ToolRun{
+	a.recordToolRun(a.cur(), turn.ToolRun{Ref: "call_1", Name: "task", OK: true})
+	a.recordToolRun(a.cur(), turn.ToolRun{
 		Ref: "call_2", Parent: "call_1", Agent: "explore",
 		Name: "grep", Args: `{"pattern":"TODO"}`, Output: "3 matches", OK: true,
 	})
@@ -131,7 +131,7 @@ func TestRecordToolRunKeepsDelegateCallsWithAttribution(t *testing.T) {
 func TestRecordToolRunTruncatesLargeOutputButKeepsTrueSize(t *testing.T) {
 	a := newRunApp(t)
 	huge := strings.Repeat("x", maxStoredOutput*3)
-	a.recordToolRun(turn.ToolRun{Ref: "call_1", Name: "read", Output: huge, OK: true})
+	a.recordToolRun(a.cur(), turn.ToolRun{Ref: "call_1", Name: "read", Output: huge, OK: true})
 
 	got := readRuns(t, a)[0]
 	if len(got.output) > maxStoredOutput {
@@ -151,7 +151,7 @@ func TestRecordToolRunTruncatesLargeOutputButKeepsTrueSize(t *testing.T) {
 func TestRecordToolRunTruncatesOnRuneBoundary(t *testing.T) {
 	a := newRunApp(t)
 	thai := strings.Repeat("ก", maxStoredOutput)
-	a.recordToolRun(turn.ToolRun{Ref: "call_1", Name: "read", Output: thai, OK: true})
+	a.recordToolRun(a.cur(), turn.ToolRun{Ref: "call_1", Name: "read", Output: thai, OK: true})
 
 	got := readRuns(t, a)[0]
 	if !utf8.ValidString(got.output) {
@@ -166,7 +166,7 @@ func TestRecordToolRunTruncatesOnRuneBoundary(t *testing.T) {
 // reason has to survive.
 func TestRecordToolRunKeepsFailureReason(t *testing.T) {
 	a := newRunApp(t)
-	a.recordToolRun(turn.ToolRun{
+	a.recordToolRun(a.cur(), turn.ToolRun{
 		Ref: "call_1", Name: "web_fetch", Args: `{"url":"https://example.invalid"}`,
 		OK: false, Error: "dial tcp: no such host",
 	})
@@ -182,16 +182,16 @@ func TestRecordToolRunKeepsFailureReason(t *testing.T) {
 // delete button promises.
 func TestDeleteSessionRemovesItsToolRuns(t *testing.T) {
 	a := newRunApp(t)
-	a.appendTurn(
+	a.appendTurn(a.cur(),
 		SessionMessage{Role: "user", Text: "อ่านสลิปให้หน่อย", Time: time.Now().Format(time.RFC3339)},
 		SessionMessage{Role: "agent", Text: "ได้ครับ", Time: time.Now().Format(time.RFC3339)},
 	)
-	a.recordToolRun(turn.ToolRun{Ref: "call_1", Name: "image_ocr", Output: "ยอด 500", OK: true})
+	a.recordToolRun(a.cur(), turn.ToolRun{Ref: "call_1", Name: "image_ocr", Output: "ยอด 500", OK: true})
 	if len(readRuns(t, a)) != 1 {
 		t.Fatal("setup: expected one recorded run")
 	}
 
-	if err := a.DeleteSession(a.sessionID); err != nil {
+	if err := a.DeleteSession(a.cur().id); err != nil {
 		t.Fatalf("DeleteSession: %v", err)
 	}
 	if runs := readRuns(t, a); len(runs) != 0 {

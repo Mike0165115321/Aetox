@@ -104,7 +104,7 @@ func (a *App) ListChairs() []Chair {
 		// The child's registry is the answer to "what can this chair do", so it
 		// is what gets asked — rather than a second reading of the same rules
 		// that could drift from the one the delegate actually runs on.
-		if child := subagent.FilterRegistry(a.registry, p, ceiling); child != nil {
+		if child := subagent.FilterRegistry(a.cur().registry, p, ceiling); child != nil {
 			c.Tools = child.Names()
 		}
 		c.Icon = chairIcon(p, c.Tools)

@@ -84,7 +84,7 @@ func (a *App) OpenSkillsFolder() error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	return openInFileManager(dir)
+	return a.revealInFileManager(dir)
 }
 
 // InstallSkillFromGitHub runs the plugin_install tool directly (a Settings
@@ -96,10 +96,10 @@ func (a *App) InstallSkillFromGitHub(repoURL string) (string, error) {
 	if repoURL == "" {
 		return "", fmt.Errorf("repo url is required")
 	}
-	if a.registry == nil {
+	if a.cur().registry == nil {
 		return "", fmt.Errorf("engine is not ready yet")
 	}
-	s, ok := a.registry.Get("plugin_install")
+	s, ok := a.cur().registry.Get("plugin_install")
 	if !ok {
 		return "", fmt.Errorf("plugin_install tool is not available")
 	}

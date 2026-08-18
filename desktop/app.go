@@ -27,7 +27,6 @@ import (
 
 	aetoxapp "github.com/Mike0165115321/Aetox/internal/app"
 	"github.com/Mike0165115321/Aetox/internal/bootstrap"
-	"github.com/Mike0165115321/Aetox/internal/cognitive"
 	"github.com/Mike0165115321/Aetox/internal/command"
 	"github.com/Mike0165115321/Aetox/internal/config"
 	"github.com/Mike0165115321/Aetox/internal/connect"
@@ -53,17 +52,21 @@ import (
 
 // App struct
 type App struct {
-	ctx         context.Context
-	chat        *aetoxapp.App
-	agent       *cognitive.Agent
-	cfg         config.Config
-	modelStatus string
-	// modelErr is why the last bootstrap could not reach the configured
-	// provider. Non-nil with a live chat means the engine is running the
-	// built-in aetox fallback while the UI names something else — see
-	// modelSwitchResult.
-	modelErr    error
-	toolHistory []string
+	ctx context.Context
+	cfg config.Config
+
+
+	// convs is every chat this process holds an engine for, and which one the
+	// window is looking at. The engine, the agent's context, the registry, the
+	// transcript and the four session coordinates all live in there, one set
+	// per conversation — see desktop/conversation.go for why none of them was
+	// ever a property of the app.
+	//
+	// Reached through a.cur() for "the chat on screen" and through
+	// a.convs.find(id) for a named one. The turn path uses neither: it is
+	// handed its conversation when it starts and never asks again.
+	convs     *conversations
+	convsOnce sync.Once
 
 	terminalsMu sync.Mutex
 	terminals   map[string]*TerminalSession
@@ -95,59 +98,6 @@ type App struct {
 	// looked yet", so a missing catalog costs one disk miss per run and not one
 	// per stats page open.
 	pricesLoaded bool
-
-	sessionID  string
-	transcript []SessionMessage
-
-	// desk is the mode the open session was created at (ARCHITECTURE.md §83),
-	// nil for the full desk — every session from before modes existed, and the
-	// state the app starts in. It is set when a session is opened and never
-	// while one is running: a session is born at a desk and stays there, which
-	// is the whole reason its context can be trusted never to have held another
-	// desk's tools.
-	//
-	// Changing it re-bootstraps the engine (switchDesk), because everything the
-	// desk decides — the dispatcher's filter, the system prompt's direction and
-	// memory, the ceiling over sub-agents — is built once, at bootstrap, from
-	// this one value.
-	desk *mode.Mode
-
-	// chair is the session's second coordinate (§85): which of the office's
-	// agents the user is talking to directly, "" for every session held with
-	// the main assistant. Only ever non-empty alongside desk = the office —
-	// setStation is the single writer and enforces that pairing. Same
-	// lifecycle rule as desk: set when a session opens, never while one runs.
-	chair string
-
-	// space is the session's third coordinate: which โปรเจกต์ (the storefront
-	// kind — see spaces.go on why the word is `space` here) this chat is being
-	// held inside, "" for a chat held outside every project. Same lifecycle as
-	// desk and chair: set when a session opens, never while one runs, and
-	// restored from the row when one is reopened.
-	//
-	// It moves no wall. The sandbox is exactly where it was, which is the line
-	// COMPANY.md §84 draws between this and the workshop's project — all this
-	// field changes is that the assistant is told which project it is working
-	// in and where that project keeps its files.
-	space string
-
-	// stance is the session's fourth coordinate (DECISIONS.md §106): how the
-	// turn runs, as opposed to what is on the desk. The zero value is ลงมือ.
-	//
-	// **The one coordinate with a different lifecycle, and that is the whole
-	// point of it.** desk, chair and space are set when a session opens and
-	// never while one runs, because each of them would change what the context
-	// already holds. A stance only ever subtracts from the desk, so moving it
-	// mid-conversation cannot put another desk's tools into this one — which is
-	// what lets SetStance re-bootstrap in place (carrying the agent's context
-	// over, as a model switch does) instead of opening a new session.
-	stance mode.Stance
-
-	// turnOpened is true between openTurn and appendTurn: the user message for
-	// the turn now running is already in the store, so the closing write must
-	// not add it a second time. See openTurn for why the pair stopped being one
-	// transaction.
-	turnOpened bool
 
 	// projectFocused=false runs the engine "ไม่โฟกัสโปรเจกต์": rooted at the
 	// user's home dir so every tool (files/git/terminal) still works on the
@@ -199,27 +149,12 @@ type App struct {
 	snapshots    *snapshot.Store
 	lastSnapshot string // the tree captured before the last turn, "" if none
 
+	// askMu guards every conversation's askCh. One mutex rather than one per
+	// chat: the field is written at two moments (a question opening, an answer
+	// closing it) and never held across anything slow.
 	askMu sync.Mutex
-	askCh chan string // the in-flight ask_user question's answer channel, nil when idle
 
-	mcp      *mcp.Manager    // configured MCP servers; built once, survives re-bootstraps
-	registry *skill.Registry // current skill/tool registry, for the Tools panel
-
-	// delegations is the engine's register of sub-agent work. Held because a
-	// delegate outlives the turn that started it (internal/subagent/runner.go),
-	// which leaves this app's Stop button as the only thing that ends one early.
-	// Replaced on every re-bootstrap along with everything else it belongs to.
-	delegations *subagent.Delegations
-
-	// A worker addressed with @name that stopped to ask something, and is still
-	// holding everything it had done when it stopped. The next message answers
-	// it (runAnswer) unless that message addresses somebody else.
-	//
-	// Session state, not engine state: it is cleared by a re-bootstrap along
-	// with the runner that holds the run, which is why finishAddressed writes
-	// both fields on every outcome rather than only on the waiting one.
-	pendingTask  string
-	pendingAgent string
+	mcp *mcp.Manager // configured MCP servers; built once, shared by every conversation
 
 	// When each engine's start command was fired, so a second call cannot start
 	// a second server over the first (engine_server.go). On the App because the
@@ -236,6 +171,22 @@ type App struct {
 	db     *sql.DB
 	dbErr  error
 	dbDir  string // overrides the default <UserConfigDir>/aetox directory; empty means production default. Test seam only.
+
+	// openDir stands in for openInFileManager, the one door out to the OS file
+	// manager. nil means the real thing.
+	//
+	// It exists because a unit test was opening a File Explorer window on the
+	// developer's machine, every run, for as long as the test had existed: the
+	// assertion is that a file that IS there does not report itself as gone,
+	// and the honest way to ask that question ran the whole binding, explorer
+	// launch and all. Start() does not wait, so by the time the window resolved
+	// the path, t.Cleanup had removed the temp directory — which is why it
+	// arrived at Documents rather than at the file, and why nothing in the test
+	// output ever mentioned it.
+	//
+	// A test seam rather than a skip: what the test wants to know is that the
+	// binding gets as far as opening, and that is exactly what this records.
+	openDir func(string) error
 
 	// emit stands in for wailsruntime.EventsEmit. The indirection exists
 	// because EventsEmit calls log.Fatalf — a hard os.Exit, not an error a
@@ -286,9 +237,11 @@ const maxToolHistory = 50
 // frontend used to decide success by matching the Thai word "สำเร็จ" at the end
 // of a detail line, so localizing that word (or appending anything to it) would
 // have silently marked every tool call as failed.
-func (a *App) recordToolAction(ev turn.ToolEvent) {
-	// Relay every call/result live to the chat's tool timeline.
-	a.emitEvent("agent:tool", ev)
+func (a *App) recordToolAction(conv *conversation, ev turn.ToolEvent) {
+	// Relay every call/result live to the chat's tool timeline, stamped with the
+	// conversation it happened in — the window draws two chats at once now, and
+	// an unstamped event is one it has to guess the home of.
+	a.emitEvent("agent:tool", sessionEvent[turn.ToolEvent]{SessionID: conv.id, Data: ev})
 	if ev.Action != "call" {
 		return
 	}
@@ -300,17 +253,17 @@ func (a *App) recordToolAction(ev turn.ToolEvent) {
 	}
 	a.toolHistoryMu.Lock()
 	defer a.toolHistoryMu.Unlock()
-	a.toolHistory = append(a.toolHistory, ev.Label())
-	if len(a.toolHistory) > maxToolHistory {
-		a.toolHistory = a.toolHistory[len(a.toolHistory)-maxToolHistory:]
+	conv.toolHistory = append(conv.toolHistory, ev.Label())
+	if len(conv.toolHistory) > maxToolHistory {
+		conv.toolHistory = conv.toolHistory[len(conv.toolHistory)-maxToolHistory:]
 	}
 }
 
 // emitAgentStatus relays the turn executor's phase messages ("กำลังคิดคำตอบ...",
 // "กำลังรันเครื่องมือ...", then "" when done) to the frontend as a live typing/
 // thinking indicator, so the chat doesn't look frozen during a turn.
-func (a *App) emitAgentStatus(status string) {
-	a.emitEvent("agent:status", status)
+func (a *App) emitAgentStatus(conv *conversation, status string) {
+	a.emitEvent("agent:status", sessionEvent[string]{SessionID: conv.id, Data: status})
 }
 
 // chatChunk is one write to the live answer bubble.
@@ -330,18 +283,18 @@ type chatChunk struct {
 }
 
 // emitChatChunk is the one way anything reaches the live answer bubble.
-func (a *App) emitChatChunk(text string, replace bool) {
-	a.emitEvent("agent:chunk", chatChunk{Text: text, Replace: replace})
+func (a *App) emitChatChunk(conv *conversation, text string, replace bool) {
+	a.emitEvent("agent:chunk", sessionEvent[chatChunk]{SessionID: conv.id, Data: chatChunk{Text: text, Replace: replace}})
 }
 
 // previewAnswer shows the model's answer as it is written. Wired session-wide
 // (aetoxapp.Options.OnContentPreview) rather than per turn, because a window can
 // always draw a preview — see the doc on that field for why it is not a delivery.
-func (a *App) previewAnswer(chunk string) { a.emitChatChunk(chunk, false) }
+func (a *App) previewAnswer(conv *conversation, chunk string) { a.emitChatChunk(conv, chunk, false) }
 
 // discardAnswerPreview erases it, for every round whose text turns out not to be
 // the answer.
-func (a *App) discardAnswerPreview() { a.emitChatChunk("", true) }
+func (a *App) discardAnswerPreview(conv *conversation) { a.emitChatChunk(conv, "", true) }
 
 // AppVersion is the release this build calls itself, for Settings → About.
 //
@@ -452,8 +405,8 @@ func (a *App) RestartToUpdate() error {
 func (a *App) CommandHistory() []string {
 	a.toolHistoryMu.Lock()
 	defer a.toolHistoryMu.Unlock()
-	out := make([]string, len(a.toolHistory))
-	for i, c := range a.toolHistory {
+	out := make([]string, len(a.cur().toolHistory))
+	for i, c := range a.cur().toolHistory {
 		out[len(out)-1-i] = c
 	}
 	return out
@@ -720,7 +673,7 @@ func (a *App) OpenFileExternally(relPath string) error {
 	// Same one implementation the three reveal buttons share (speech.go): on
 	// every platform the command it runs opens a file with its default program
 	// just as it opens a folder in the file manager.
-	return openInFileManager(full)
+	return a.revealInFileManager(full)
 }
 
 // ReadWorkbook renders a .xlsx inside the sandbox root as rows of display
@@ -1019,10 +972,10 @@ func (a *App) chatAttachmentDest(ext string) (destPath, root string, err error) 
 	// Before this, every session's attachments piled up in one shared folder
 	// forever — a later chat could list and read documents attached to any
 	// earlier one.
-	if a.sessionID == "" {
+	if a.cur().id == "" {
 		return "", "", fmt.Errorf("no active session")
 	}
-	destDir := filepath.Join(root, attachmentsDir, a.sessionID)
+	destDir := filepath.Join(root, attachmentsDir, a.cur().id)
 	if err := os.MkdirAll(destDir, 0o700); err != nil {
 		return "", "", err
 	}
@@ -1397,7 +1350,10 @@ var desktopProviders = []string{
 
 // NewApp creates a new App application struct
 func NewApp() *App {
-	return &App{}
+	// The chat on screen exists before anything is said in it: an app with no
+	// session yet is a conversation with no id, which is a real state and not a
+	// missing one. Built here rather than lazily so nothing races to create it.
+	return &App{convs: newConversations()}
 }
 
 // startup is called when the app starts. The context is saved
@@ -1503,10 +1459,10 @@ func (a *App) openAtRememberedDesk() {
 // time the user starts or opens a chat, and re-bootstrapping the engine to
 // change one folder name would be an absurd price.
 func (a *App) outputSubdir() string {
-	if a.projectFocused || a.sessionID == "" {
+	if a.projectFocused || a.cur().id == "" {
 		return ""
 	}
-	return "output/" + a.sessionID
+	return "output/" + a.cur().id
 }
 
 // unfocusedRoot is the working root with no project open: <home>/aetox, not
@@ -1634,7 +1590,7 @@ func (a *App) beginTurn(sessionID string) error {
 	a.turnMu.Lock()
 	defer a.turnMu.Unlock()
 	if sessionID == "" {
-		sessionID = a.sessionID
+		sessionID = a.cur().id
 	}
 	if _, running := a.turns[sessionID]; running {
 		return errTurnBusy
@@ -1703,11 +1659,21 @@ func (a *App) disarmTurnCancel(sessionID string) {
 func (a *App) endTurn(sessionID string) {
 	a.turnMu.Lock()
 	if sessionID == "" {
-		sessionID = a.sessionID
+		sessionID = a.cur().id
 	}
 	delete(a.turns, sessionID)
 	a.turnMu.Unlock()
 	a.emitEvent("agent:done", TurnStatus{Running: false, SessionID: sessionID})
+	// The work was what kept this chat's engine alive while the user was
+	// elsewhere. With the work over and the chat still off screen, there is
+	// nothing left to hold: its transcript is written, and opening it again
+	// builds it back. Skipped for the chat on screen, which is held by being
+	// looked at.
+	if sessionID != a.cur().id {
+		if conv := a.convs.find(sessionID); conv != nil {
+			a.letGoOf(conv)
+		}
+	}
 	// A folder approved mid-turn reached the running tool call directly; the
 	// engine still has to be rebuilt for the system prompt to say the workspace
 	// grew. Here rather than at the moment of approval: applyConfig swaps the
@@ -1725,31 +1691,42 @@ func (a *App) turnBusy() bool {
 	return len(a.turns) > 0
 }
 
-// turnSessionID is where the turn in flight's rows belong: the session stamped
-// at its birth, never whatever a.sessionID has become since. Falls back to the
-// current session when no turn is running, which is what direct callers
-// (tests, imports) have always meant.
-func (a *App) turnSessionID() string {
+// turnRunningIn reports whether this named conversation has a turn in flight.
+//
+// It replaces `turnSessionID()`, which answered the question nobody should have
+// been asking: "which session is the turn in?" — as if there were one. That
+// function guessed, honestly and correctly, for exactly as long as only one
+// turn could exist: one turn meant that one, none or several meant the chat on
+// screen. Ten places in the turn path leaned on the guess, so the day a second
+// turn became possible was the day every row those places wrote would be
+// filed under the wrong conversation.
+//
+// Nothing guesses now. A turn is handed its conversation when it begins
+// (SendMessage, RegenerateReply) and every write it makes carries that; what is
+// left is this, which is a different question with a real answer.
+func (a *App) turnRunningIn(id string) bool {
+	if id == "" {
+		return false
+	}
 	a.turnMu.Lock()
 	defer a.turnMu.Unlock()
-	// Exactly one turn: it is unambiguously the one asking. With none, or with
-	// several, the open session is the only honest answer here — the callers
-	// that must not guess are handed the id outright instead.
-	if len(a.turns) == 1 {
-		for id := range a.turns {
-			return id
-		}
-	}
-	return a.sessionID
+	_, running := a.turns[id]
+	return running
 }
 
-// guardSessionSwitch is the door-check every session, desk and project switch
-// shares. The engine has one agent context; every one of those switches
-// rewrites it (ClearContext/RestoreHistory, or a full re-bootstrap), which
-// mid-turn means the running turn continues on another conversation's memory —
-// and its answer lands wherever a.sessionID points afterwards. Until the
-// engine can hold one context per session, the honest capability is: one turn,
-// one chat, finish or stop before you leave.
+// guardSessionSwitch is what is left of the door-check that used to stand in
+// front of every session, desk and project switch.
+//
+// The sentence it was built on — "the engine has one agent context, so every
+// switch rewrites it" — stopped being true on 2026-08-19. Opening a chat, or
+// starting one, builds or attaches to that chat's own engine and leaves a turn
+// running in another one exactly where it was, so those doors no longer ask.
+//
+// What still asks is the one thing that really is shared: **the project**.
+// Re-rooting moves the sandbox, the workspace roots and the shell backend, and
+// those belong to the machine rather than to a conversation — a turn running
+// anywhere would find the ground moved under it mid-tool-call. That is stage 4
+// of §134.4, and it is deliberately still shut.
 func (a *App) guardSessionSwitch() error {
 	if a.turnBusy() {
 		return errTurnBusy
@@ -1771,8 +1748,8 @@ type TurnStatus struct {
 func (a *App) TurnInFlight() TurnStatus {
 	a.turnMu.Lock()
 	defer a.turnMu.Unlock()
-	if _, running := a.turns[a.sessionID]; running {
-		return TurnStatus{Running: true, SessionID: a.sessionID}
+	if _, running := a.turns[a.cur().id]; running {
+		return TurnStatus{Running: true, SessionID: a.cur().id}
 	}
 	return TurnStatus{}
 }
@@ -1780,10 +1757,13 @@ func (a *App) TurnInFlight() TurnStatus {
 // SendMessage runs one chat turn through the Aetox engine and returns the reply.
 // The turn is appended to the current session and persisted.
 func (a *App) SendMessage(text string) (TurnReply, error) {
-	// Captured once, here, and carried for the rest of the turn: a.sessionID is
-	// what the user is looking at, and by the time this turn ends they may be
-	// looking at something else.
-	sessionID := a.sessionID
+	// The conversation, captured once here and carried for the rest of the turn.
+	// Not the id and not "the chat on screen": by the time this turn ends the
+	// user may be looking at something else, and every row this writes, every
+	// event it emits and every message it appends belongs to the chat that
+	// asked — which is this object, held, not a cursor read again later.
+	conv := a.cur()
+	sessionID := conv.id
 	if err := a.beginTurn(sessionID); err != nil {
 		return TurnReply{}, err
 	}
@@ -1792,15 +1772,15 @@ func (a *App) SendMessage(text string) (TurnReply, error) {
 	// already in the store — see recordJobs. Cheap (one indexed MAX) and read
 	// even when learning is off, because the alternative is a second capture
 	// path that has to be kept in step with recordToolRun.
-	mark := a.maxToolRunID()
+	mark := a.maxToolRunID(conv)
 	started := time.Now()
 
 	// The question is written before the work starts, not after it finishes.
 	// A turn can take minutes; a window reloaded inside one used to lose the
 	// message that started it and the session with it (openTurn).
-	a.openTurn(SessionMessage{Role: "user", Text: text, Time: time.Now().Format("15:04")})
+	a.openTurn(conv, SessionMessage{Role: "user", Text: text, Time: time.Now().Format("15:04")})
 
-	userMsg, agentMsg, err := a.runTurn(text)
+	userMsg, agentMsg, err := a.runTurn(conv, text)
 	if err != nil {
 		// The turn ends here, and it is written down. It used to end without a
 		// row: the question openTurn had already stored sat alone forever, and
@@ -1808,7 +1788,7 @@ func (a *App) SendMessage(text string) (TurnReply, error) {
 		// the first reload. appendFailedTurn also lowers turnOpened — the flag
 		// that, left standing, tells the NEXT turn's appendTurn that its
 		// question is already stored.
-		agentMsg.ID = a.appendFailedTurn(agentMsg, err)
+		agentMsg.ID = a.appendFailedTurn(conv, agentMsg, err)
 		// Stamped on the in-memory copy as well as the stored one. Everything
 		// that reasons about a failed turn asks this field — the context rebuild
 		// skips the pair, the retry drops it — and a transcript entry that knew
@@ -1819,15 +1799,15 @@ func (a *App) SendMessage(text string) (TurnReply, error) {
 		// what the model's memory is rebuilt from (restoreContext), and a turn
 		// the engine acted on but the history does not mention is a turn the
 		// user can see and the model cannot.
-		a.transcript = append(a.transcript, userMsg, agentMsg)
+		conv.transcript = append(conv.transcript, userMsg, agentMsg)
 		return replyOf(agentMsg), err
 	}
-	messageID := a.appendTurn(userMsg, agentMsg)
+	messageID := a.appendTurn(conv, userMsg, agentMsg)
 	agentMsg.ID = messageID
-	a.transcript = append(a.transcript, userMsg, agentMsg)
+	conv.transcript = append(conv.transcript, userMsg, agentMsg)
 	// After the transcript, never instead of it: a failure to record the work
 	// for later learning must not cost the user their conversation.
-	a.recordJobs(messageID, userMsg.Text, agentMsg.Text, mark, time.Since(started))
+	a.recordJobs(conv, messageID, userMsg.Text, agentMsg.Text, mark, time.Since(started))
 	return replyOf(agentMsg), nil
 }
 
@@ -1842,7 +1822,7 @@ func (a *App) SendMessage(text string) (TurnReply, error) {
 //
 // On failure the returned agent message still carries whatever text arrived
 // before the error, which is what the caller shows.
-func (a *App) runTurn(text string) (SessionMessage, SessionMessage, error) {
+func (a *App) runTurn(conv *conversation, text string) (SessionMessage, SessionMessage, error) {
 	// Every caller must have marked the turn first (beginTurn): the stamp is
 	// what keeps its rows home, and the busy gate is what keeps its memory
 	// whole. A future entry point that forgets would run invisible to both —
@@ -1850,7 +1830,7 @@ func (a *App) runTurn(text string) (SessionMessage, SessionMessage, error) {
 	if !a.turnBusy() {
 		debuglog.Msg("runTurn: unmarked turn — a caller skipped beginTurn")
 	}
-	if a.chat == nil {
+	if conv.chat == nil {
 		// Shaped like every other ending, not zero values. This is a real way
 		// for a turn to fail — no key, no model — and the caller now writes the
 		// failure down: a pair with no role and no text would be stored as a
@@ -1858,7 +1838,7 @@ func (a *App) runTurn(text string) (SessionMessage, SessionMessage, error) {
 		now := time.Now().Format("15:04")
 		return SessionMessage{Role: "user", Text: text, Time: now},
 			SessionMessage{Role: "agent", Time: now},
-			fmt.Errorf("aetox core not ready: %s", a.modelStatus)
+			fmt.Errorf("aetox core not ready: %s", conv.modelStatus)
 	}
 	// Prompt presets ("/name args") expand into their prompt body before the
 	// engine sees the text — bundled ones and the user's alike; unknown "/..."
@@ -1866,8 +1846,18 @@ func (a *App) runTurn(text string) (SessionMessage, SessionMessage, error) {
 	if expanded, ok := command.ExpandPreset(text); ok {
 		text = expanded
 	}
-	ctx, cancel := context.WithCancel(a.ctx)
-	turnSession := a.turnSessionID()
+	// a.ctx is the window's lifetime, and it is nil until startup runs. That
+	// used to be unreachable from here — a process with no window had no engine
+	// either, so the check above returned first — and it stopped being
+	// unreachable the moment opening a chat began building its own engine. The
+	// same fallback the workspace door already uses: no window means no
+	// lifetime to be bound by, not a nil to hand to context.WithCancel.
+	parent := a.ctx
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithCancel(parent)
+	turnSession := conv.id
 	if a.armTurnCancel(turnSession, ctx, cancel) {
 		// Stop was pressed before this cancel func existed (the beginTurn →
 		// here gap, where openTurn writes to a possibly-busy database). The
@@ -1897,35 +1887,35 @@ func (a *App) runTurn(text string) (SessionMessage, SessionMessage, error) {
 	// the point being not convenience but that a step which cannot mistranslate
 	// is one that does not run. See subagent.Mention.
 	if agent, addressed := subagent.Mention(text); addressed {
-		return a.runAddressed(ctx, agent, text)
+		return a.runAddressed(conv, ctx, agent, text)
 	}
 	// A worker left waiting on a decision gets the next thing said, unless that
 	// message addresses somebody else — which the branch above has already
 	// taken. Answering is not a new job: the run is still open, holding
 	// everything it had already read, so this costs one message where starting
 	// again costs the whole run.
-	if a.pendingTask != "" {
-		return a.runAnswer(ctx, text)
+	if conv.pendingTask != "" {
+		return a.runAnswer(conv, ctx, text)
 	}
 	sent, images := a.visionAttachments(text)
 	sent, documents := a.documentAttachments(sent)
-	result, err := a.chat.RunOnceStreamWithAttachments(ctx, sent, images, documents, func(chunk string) {
+	result, err := conv.chat.RunOnceStreamWithAttachments(ctx, sent, images, documents, func(chunk string) {
 		// The authoritative delivery: replaces whatever the live preview holds,
 		// so the answer lands exactly once no matter what streamed before it.
-		a.emitChatChunk(chunk, true)
+		a.emitChatChunk(conv, chunk, true)
 	}, func(chunk string) {
 		if firstThink.IsZero() {
 			firstThink = time.Now()
 		}
 		lastThink = time.Now()
 		reasoning.WriteString(chunk)
-		a.emitEvent("agent:reasoning", chunk)
+		a.emitEvent("agent:reasoning", sessionEvent[string]{SessionID: conv.id, Data: chunk})
 	})
 	// A message can land in the moment between the loop's last drain and the reply
 	// arriving here. Hand it back to the UI instead of swallowing it — this is the
 	// one case the composer's old queue still exists for.
-	if missed := a.agent.DrainInterjections(); len(missed) > 0 {
-		a.emitEvent("agent:interjection-missed", missed)
+	if missed := conv.agent.DrainInterjections(); len(missed) > 0 {
+		a.emitEvent("agent:interjection-missed", sessionEvent[[]string]{SessionID: conv.id, Data: missed})
 	}
 	now := time.Now().Format("15:04")
 	thinkSecs := 0
@@ -1972,7 +1962,7 @@ func (a *App) runTurn(text string) (SessionMessage, SessionMessage, error) {
 // ponytail: Parts comes back empty, so reopening the session shows the answer
 // without the steps under it — the parent executor that assembles Parts is the
 // thing being skipped. The live view is complete; the stored one is not yet.
-func (a *App) runAddressed(ctx context.Context, agent, text string) (SessionMessage, SessionMessage, error) {
+func (a *App) runAddressed(conv *conversation, ctx context.Context, agent, text string) (SessionMessage, SessionMessage, error) {
 	now := time.Now().Format("15:04")
 	user := SessionMessage{Role: "user", Text: text, Time: now}
 
@@ -1985,30 +1975,30 @@ func (a *App) runAddressed(ctx context.Context, agent, text string) (SessionMess
 			fmt.Errorf("ยังส่งงานให้ %s ไม่ได้ตอนนี้ — เครื่องยนต์ยังไม่พร้อม", agent)
 	}
 	reply, err := dispatcher.Direct(ctx, agent, text)
-	return a.finishAddressed(user, reply, err, text, now)
+	return a.finishAddressed(conv, user, reply, err, text, now)
 }
 
 // runAnswer hands the waiting worker what the user just said.
-func (a *App) runAnswer(ctx context.Context, text string) (SessionMessage, SessionMessage, error) {
+func (a *App) runAnswer(conv *conversation, ctx context.Context, text string) (SessionMessage, SessionMessage, error) {
 	now := time.Now().Format("15:04")
 	user := SessionMessage{Role: "user", Text: text, Time: now}
 	dispatcher, ok := a.taskDispatcher()
 	if !ok {
-		a.pendingTask, a.pendingAgent = "", ""
+		conv.pendingTask, conv.pendingAgent = "", ""
 		return user, SessionMessage{Role: "agent", Time: now},
 			fmt.Errorf("คำถามที่ค้างอยู่หมดอายุแล้ว — เครื่องยนต์ถูกตั้งใหม่ระหว่างทาง")
 	}
-	reply, err := dispatcher.Answer(ctx, a.pendingTask, text)
-	return a.finishAddressed(user, reply, err, text, now)
+	reply, err := dispatcher.Answer(ctx, conv.pendingTask, text)
+	return a.finishAddressed(conv, user, reply, err, text, now)
 }
 
 // finishAddressed turns a worker's reply into the turn's two messages, and is
 // the one place the pending question is set or cleared — a second place would
 // be a second chance to leave a run waiting on a message that never comes.
 func (a *App) finishAddressed(
-	user SessionMessage, reply subagent.Reply, err error, brief, now string,
+	conv *conversation, user SessionMessage, reply subagent.Reply, err error, brief, now string,
 ) (SessionMessage, SessionMessage, error) {
-	a.pendingTask, a.pendingAgent = reply.Pending, reply.Agent
+	conv.pendingTask, conv.pendingAgent = reply.Pending, reply.Agent
 	agentMsg := SessionMessage{Role: "agent", Time: now}
 	if err != nil {
 		return user, agentMsg, err
@@ -2050,8 +2040,8 @@ func (a *App) finishAddressed(
 	// reference, not the material; importing a worker's full answer into the
 	// assistant's context here would be shipping the context that dispatching
 	// exists to avoid, and it would be paid for on every later turn.
-	if a.agent != nil {
-		a.agent.RestoreHistory([]model.Message{
+	if a.cur().agent != nil {
+		a.cur().agent.RestoreHistory([]model.Message{
 			{Role: "user", Content: brief},
 			{Role: "assistant", Content: fmt.Sprintf(
 				"(@%s answered the user directly. The gist: %s. You did not see the full answer — address @%s again if this turn needs it.)",
@@ -2060,7 +2050,7 @@ func (a *App) finishAddressed(
 	}
 	// The authoritative delivery, same as a streamed turn's last chunk: nothing
 	// streamed here, so this is the only one.
-	a.emitChatChunk(text, true)
+	a.emitChatChunk(conv, text, true)
 	return user, agentMsg, nil
 }
 
@@ -2081,10 +2071,10 @@ func gist(answer string) string {
 // re-bootstrap replaces the tool along with the engine behind it, and a kept
 // reference would be pointed at a dead one.
 func (a *App) taskDispatcher() (subagent.Dispatcher, bool) {
-	if a.registry == nil {
+	if a.cur().registry == nil {
 		return nil, false
 	}
-	tool, ok := a.registry.Get("task")
+	tool, ok := a.cur().registry.Get("task")
 	if !ok {
 		return nil, false
 	}
@@ -2101,8 +2091,8 @@ func (a *App) taskDispatcher() (subagent.Dispatcher, bool) {
 // its answer arrives as part of that turn's reply. Preset expansion happens here
 // too, or "/name" would work only when the engine was idle.
 func (a *App) Interject(text string) error {
-	if a.agent == nil {
-		return fmt.Errorf("aetox core not ready: %s", a.modelStatus)
+	if a.cur().agent == nil {
+		return fmt.Errorf("aetox core not ready: %s", a.cur().modelStatus)
 	}
 	if expanded, ok := command.ExpandPreset(text); ok {
 		text = expanded
@@ -2110,7 +2100,7 @@ func (a *App) Interject(text string) error {
 	if strings.TrimSpace(text) == "" {
 		return nil
 	}
-	a.agent.Interject(text)
+	a.cur().agent.Interject(text)
 	return nil
 }
 
@@ -2130,10 +2120,10 @@ func (a *App) CancelTurn() {
 	a.turnMu.Lock()
 	defer a.turnMu.Unlock()
 	// Under the lock because applyConfig replaces the register on a re-bootstrap,
-	// same as a.agent below. StopAll only cancels contexts — it calls nothing
+	// same as a.cur().agent below. StopAll only cancels contexts — it calls nothing
 	// back into this app, so it cannot reach round for this mutex.
-	if a.delegations != nil {
-		if stopped := a.delegations.StopAll(); stopped > 0 {
+	if a.cur().delegations != nil {
+		if stopped := a.cur().delegations.StopAll(); stopped > 0 {
 			debuglog.Msg("stop: ended %d running sub-agent(s)", stopped)
 		}
 	}
@@ -2142,13 +2132,13 @@ func (a *App) CancelTurn() {
 	// before it drains, so a cancelled turn returns with the message still
 	// pending, SendMessage would hand it back as a straggler, and the composer
 	// would send the thing the user just cancelled as a fresh turn.
-	if a.agent != nil {
-		a.agent.DrainInterjections()
+	if a.cur().agent != nil {
+		a.cur().agent.DrainInterjections()
 	}
 	// The chat on screen is the one the button belongs to. A turn in another
 	// conversation is not what the user pressed Stop on, and ending it from
 	// here would be the button reaching into a window they cannot see.
-	if live := a.turns[a.sessionID]; live != nil {
+	if live := a.turns[a.cur().id]; live != nil {
 		if live.cancel != nil {
 			live.cancel()
 		} else {
@@ -2162,7 +2152,7 @@ func (a *App) CancelTurn() {
 
 // ModelStatus reports which provider/model the engine is running, as a display string.
 func (a *App) ModelStatus() string {
-	return a.modelStatus
+	return a.cur().modelStatus
 }
 
 // contextWindowTokens resolves the model's real context window: an explicit
@@ -2200,13 +2190,13 @@ func (a *App) contextWindowTokens() int {
 // GetModelInfo reports the real model/context state for the UI top bar.
 func (a *App) GetModelInfo() ModelInfo {
 	used := 0
-	if a.agent != nil {
-		_, usedChars, _ := a.agent.ContextUsage()
+	if a.cur().agent != nil {
+		_, usedChars, _ := a.cur().agent.ContextUsage()
 		used = (usedChars + 3) / 4
 	}
 	warning := ""
-	if a.modelErr != nil {
-		warning = a.modelErr.Error()
+	if a.cur().modelErr != nil {
+		warning = a.cur().modelErr.Error()
 	}
 	return ModelInfo{
 		Provider:   a.cfg.ModelProvider,
@@ -2226,15 +2216,15 @@ func (a *App) GetModelInfo() ModelInfo {
 }
 
 // modelSwitchResult reports the engine state every Switch* method ends on.
-// `a.chat == nil` on its own used to be the whole check, which read a
+// `a.cur().chat == nil` on its own used to be the whole check, which read a
 // fallback bootstrap as success: picking an unreachable provider (LM Studio
 // with its server off) silently left the engine on the built-in aetox
 // provider while the picker showed LM Studio and no error anywhere. The
 // fallback stays — the app must not go dead — but it now travels as
 // ModelInfo.Warning so the UI can say which provider is really answering.
 func (a *App) modelSwitchResult() (ModelInfo, error) {
-	if a.chat == nil {
-		return ModelInfo{}, fmt.Errorf("switch failed: %s", a.modelStatus)
+	if a.cur().chat == nil {
+		return ModelInfo{}, fmt.Errorf("switch failed: %s", a.cur().modelStatus)
 	}
 	return a.GetModelInfo(), nil
 }
@@ -2292,8 +2282,8 @@ func (a *App) GetContextBreakdown() ContextBreakdown {
 	est := func(chars int) int { return (chars + 3) / 4 }
 
 	systemChars, msgChars, attachTokens := 0, 0, 0
-	if a.agent != nil {
-		for i, m := range a.agent.ContextMessages() {
+	if a.cur().agent != nil {
+		for i, m := range a.cur().agent.ContextMessages() {
 			// Everything a message carries, not just Content: reasoning rides
 			// back out on the wire for providers that take it (openai_compatible
 			// resends it with the history), and an attached screenshot was the
@@ -2321,7 +2311,7 @@ func (a *App) GetContextBreakdown() ContextBreakdown {
 	}
 
 	toolChars := 0
-	if a.registry != nil {
+	if a.cur().registry != nil {
 		// Through the desk's filter, not the whole registry: the tool block is
 		// what a narrower desk exists to shrink, and reporting the full pile
 		// here would tell the user the one number the choice was meant to change
@@ -2432,7 +2422,7 @@ func imageTokens(img model.Image) int {
 // "this provider does no cache accounting", db.go); not reading it is what let
 // the meter present a mostly-cached prompt as fully paid.
 func (a *App) lastPromptUsage() (prompt, cached int) {
-	if strings.TrimSpace(a.sessionID) == "" {
+	if strings.TrimSpace(a.cur().id) == "" {
 		return 0, 0
 	}
 	db, err := a.database()
@@ -2442,7 +2432,7 @@ func (a *App) lastPromptUsage() (prompt, cached int) {
 	err = db.QueryRow(
 		`SELECT prompt_tokens, COALESCE(cached_prompt_tokens, 0)
 		 FROM token_usage WHERE session_id = ? ORDER BY id DESC LIMIT 1`,
-		a.sessionID,
+		a.cur().id,
 	).Scan(&prompt, &cached)
 	if err != nil {
 		return 0, 0
@@ -2780,7 +2770,7 @@ func (a *App) SwitchModel(modelName string) (ModelInfo, error) {
 		next.ModelName = model.ResolveDefaultModel(next.ModelProvider, next.ModelBaseURL, next.ModelAPIKey)
 	}
 	next.ThinkLevel = model.NormalizeThinkingLevel(next.ModelProvider, next.ModelName, next.ThinkLevel)
-	a.applyConfig(next)
+	a.applyConfig(a.cur(), next)
 	return a.modelSwitchResult()
 }
 
@@ -2890,7 +2880,7 @@ func (a *App) SetProviderBaseURL(providerName, baseURL string) (ModelInfo, error
 		// guess about a server we have not spoken to yet — re-resolve it.
 		next.ModelName = model.ResolveDefaultModel(canonical, next.ModelBaseURL, next.ModelAPIKey)
 		next.ThinkLevel = model.NormalizeThinkingLevel(canonical, next.ModelName, next.ThinkLevel)
-		a.applyConfig(next)
+		a.applyConfig(a.cur(), next)
 	}
 	return a.modelSwitchResult()
 }
@@ -2916,7 +2906,7 @@ func (a *App) SetAPIKey(providerName, apiKey string) (ModelInfo, error) {
 	if strings.EqualFold(a.cfg.ModelProvider, canonical) {
 		next := a.cfg
 		next.ModelAPIKey = key
-		a.applyConfig(next)
+		a.applyConfig(a.cur(), next)
 	}
 	return a.modelSwitchResult()
 }
@@ -2969,7 +2959,7 @@ func (a *App) SupportedThinkLevels() []string {
 // would have been the lie. This un-sticks the engine, and the warning clears
 // because it stopped being true.
 func (a *App) RetryActiveProvider() ModelInfo {
-	if a.modelErr == nil {
+	if a.cur().modelErr == nil {
 		return a.GetModelInfo()
 	}
 	next := a.cfg
@@ -2981,7 +2971,7 @@ func (a *App) RetryActiveProvider() ModelInfo {
 		next.ModelName = model.ResolveDefaultModel(next.ModelProvider, next.ModelBaseURL, next.ModelAPIKey)
 		next.ThinkLevel = model.NormalizeThinkingLevel(next.ModelProvider, next.ModelName, next.ThinkLevel)
 	}
-	a.applyConfig(next)
+	a.applyConfig(a.cur(), next)
 	return a.GetModelInfo()
 }
 
@@ -2994,7 +2984,7 @@ func (a *App) SwitchProvider(provider string) (ModelInfo, error) {
 	next.ModelAPIKey = resolveAPIKeyForProvider(next.ModelProvider)
 	next.ModelName = model.ResolveDefaultModel(next.ModelProvider, next.ModelBaseURL, next.ModelAPIKey)
 	next.ThinkLevel = model.NormalizeThinkingLevel(next.ModelProvider, next.ModelName, "")
-	a.applyConfig(next)
+	a.applyConfig(a.cur(), next)
 	return a.modelSwitchResult()
 }
 
@@ -3022,7 +3012,7 @@ func (a *App) SetProviderWireFormat(format string) (ModelInfo, error) {
 		format = "" // matches the catalog default — store nothing
 	}
 	next.ModelWireFormat = format
-	a.applyConfig(next)
+	a.applyConfig(a.cur(), next)
 	return a.modelSwitchResult()
 }
 
@@ -3030,7 +3020,7 @@ func (a *App) SetProviderWireFormat(format string) (ModelInfo, error) {
 func (a *App) SwitchThinkLevel(level string) (ModelInfo, error) {
 	next := a.cfg
 	next.ThinkLevel = model.NormalizeThinkingLevel(next.ModelProvider, next.ModelName, level)
-	a.applyConfig(next)
+	a.applyConfig(a.cur(), next)
 	return a.modelSwitchResult()
 }
 
@@ -3045,8 +3035,8 @@ func (a *App) SwitchThinkLevel(level string) (ModelInfo, error) {
 func (a *App) SwitchApprovalMode(mode string) (ModelInfo, error) {
 	normalized := safety.NormalizeApprovalMode(mode)
 	a.cfg.ApprovalMode = string(normalized)
-	if a.chat != nil {
-		a.chat.SetApprovalMode(normalized)
+	if a.cur().chat != nil {
+		a.cur().chat.SetApprovalMode(normalized)
 	}
 	persistModelPreference(a.cfg)
 	return a.modelSwitchResult()
@@ -3068,11 +3058,11 @@ func (a *App) SwitchApprovalMode(mode string) (ModelInfo, error) {
 // from disk — that is how the user's saved model gets loaded at launch.
 func (a *App) reload(opts config.ConfigOptions) {
 	if a.cfg.ModelProvider == "" {
-		a.applyConfig(resolveConfig(opts))
+		a.applyConfig(a.cur(), resolveConfig(opts))
 	} else {
 		next := a.cfg
 		next.SandboxRoot = config.Load(opts).SandboxRoot
-		a.applyConfig(next)
+		a.applyConfig(a.cur(), next)
 	}
 	go a.sweepAttachments(a.cfg.SandboxRoot)
 }
@@ -3095,10 +3085,10 @@ func (a *App) reload(opts config.ConfigOptions) {
 // tool the desk holds — the drift above, arriving through the newer door.
 func (a *App) deskTools() *skill.Dispatcher {
 	if p := a.chairProfile(); p != nil {
-		return skill.NewDispatcherFor(subagent.AttendedRegistry(a.registry, *p, a.desk), a.stance.Carries)
+		return skill.NewDispatcherFor(subagent.AttendedRegistry(a.cur().registry, *p, a.cur().desk), a.cur().stance.Carries)
 	}
-	return skill.NewDispatcherFor(a.registry, func(name string, source skill.Source) bool {
-		return a.desk.Carries(name, source) && a.stance.Carries(name, source)
+	return skill.NewDispatcherFor(a.cur().registry, func(name string, source skill.Source) bool {
+		return a.cur().desk.Carries(name, source) && a.cur().stance.Carries(name, source)
 	})
 }
 
@@ -3113,10 +3103,10 @@ func (a *App) deskTools() *skill.Dispatcher {
 // — and falling back to the main assistant's desk view is the readable answer
 // for a tools panel that must render something.
 func (a *App) chairProfile() *subagent.Profile {
-	if a.chair == "" {
+	if a.cur().chair == "" {
 		return nil
 	}
-	p, ok := subagent.Load(a.chair)
+	p, ok := subagent.Load(a.cur().chair)
 	if !ok || p.Desk != mode.Office {
 		return nil
 	}
@@ -3138,7 +3128,7 @@ func (a *App) chairProfile() *subagent.Profile {
 // whose behaviour depends on which folder this is, and it filed the first
 // proposal ever made in a project against the previous one — the exact failure
 // the per-project scope exists to prevent (§116). A parameter cannot go stale.
-func (a *App) workbenchSkills(sandboxRoot string) []skill.Skill {
+func (a *App) workbenchSkills(conv *conversation, sandboxRoot string) []skill.Skill {
 	return []skill.Skill{
 		// One tool for the browser, four actions inside it (browser_tool.go).
 		// The four old names are still what `tools:` and `categories:` speak —
@@ -3147,7 +3137,7 @@ func (a *App) workbenchSkills(sandboxRoot string) []skill.Skill {
 		&deskOpenSkill{app: a},
 		&deskTerminalSkill{app: a},
 		&deskListSkill{app: a},
-		&askUserSkill{app: a},
+		&askUserSkill{app: a, conv: conv},
 		&todoWriteSkill{app: a},
 		&sessionSearchSkill{app: a},
 		&suggestTaskSkill{app: a},
@@ -3172,7 +3162,7 @@ func (a *App) workbenchSkills(sandboxRoot string) []skill.Skill {
 		// "we decided X here" without carrying it into the next one.
 		&learned.MemoryTool{
 			Scope:    learned.MainScope,
-			Desk:     a.desk.DeskName(),
+			Desk:     a.cur().desk.DeskName(),
 			Project:  a.focusedProjectRoot(sandboxRoot),
 			Proposer: appProposer{app: a},
 		},
@@ -3181,7 +3171,14 @@ func (a *App) workbenchSkills(sandboxRoot string) []skill.Skill {
 
 // applyConfig re-bootstraps the engine from an already-resolved config, then
 // persists the model/approval choice so the CLI and desktop app share one preference.
-func (a *App) applyConfig(cfg config.Config) {
+// applyConfig builds (or rebuilds) one conversation's engine.
+//
+// It takes the conversation rather than assuming the one on screen, because
+// every callback it wires below is stamped with it: the engine tells the window
+// which chat is speaking by construction, not by whatever the cursor happens to
+// point at when the event fires. That is the sentence §134.4 wrote down as the
+// missing half of this work, and it is one parameter.
+func (a *App) applyConfig(conv *conversation, cfg config.Config) {
 	// Rebuilt with the engine, because the work tree it watches is the sandbox
 	// root and that is exactly what a re-bootstrap can change. An error here is
 	// the ordinary "this folder is not a repository" case — no undo, no fuss,
@@ -3197,7 +3194,7 @@ func (a *App) applyConfig(cfg config.Config) {
 
 	// cfg, not a.cfg: this runs before the assignment below, and the tools that
 	// care which project this is must be built from the config being applied.
-	workbenchTools := a.workbenchSkills(cfg.SandboxRoot)
+	workbenchTools := a.workbenchSkills(conv, cfg.SandboxRoot)
 	if a.mcp == nil {
 		servers, err := config.LoadMCPServers()
 		if err != nil {
@@ -3210,8 +3207,8 @@ func (a *App) applyConfig(cfg config.Config) {
 	// summaries — so a model switch keeps the model's working memory intact
 	// (OpenCode/Claude Code keep tool history across switches too).
 	var priorContext []model.Message
-	if a.agent != nil {
-		priorContext = a.agent.ContextMessages()
+	if conv.agent != nil {
+		priorContext = conv.agent.ContextMessages()
 	}
 	// Named fields, not positional: four of these callbacks are func(string) or
 	// func(), and two of them — the status reporter and the answer preview —
@@ -3223,18 +3220,20 @@ func (a *App) applyConfig(cfg config.Config) {
 		// The desk the open session was created at. Nil — the full desk — until
 		// a session says otherwise, which is what every session before §83 and
 		// every unfiltered path still gets.
-		Mode: a.desk,
+		Mode: conv.desk,
 		// How this turn runs (§106). Read here rather than snapshotted at
 		// session open because SetStance re-bootstraps through this same
 		// function — the dial and the engine cannot disagree if there is only
 		// one place the engine reads it.
-		Stance: a.stance,
+		Stance: conv.stance,
 		// The agent the open session talks to directly (§85), nil for the main
 		// assistant. Resolved fresh from disk on every bootstrap so an edited
 		// profile takes effect the next time its chair is sat at, like every
 		// other manifest.
-		Chair:        a.chairProfile(),
-		Approve:      a.approveToolCall,
+		Chair: a.chairProfile(),
+		Approve: func(ctx context.Context, command, reason string) (bool, error) {
+			return a.approveToolCall(conv, ctx, command, reason)
+		},
 		Manager:      a.mcp,
 		ExtraSkills:  workbenchTools,
 		OutputSubdir: a.outputSubdir,
@@ -3246,24 +3245,24 @@ func (a *App) applyConfig(cfg config.Config) {
 		ExtraRoots:  a.workspaceRoots(),
 		// The door in that wall: a path outside the workspace asks to add the
 		// folder it lives in rather than ending the work (workspace.go).
-		AskWorkspace: a.askWorkspaceWiden,
+		AskWorkspace: func(target string) bool { return a.askWorkspaceWiden(conv, target) },
 		// The project this chat is being held inside, and the names of the
 		// files it keeps — read fresh on every bootstrap, like every other
 		// manifest, so a file dropped into the folder is known to the next
 		// session without restarting anything.
-		Space:        a.space,
+		Space:        conv.space,
 		SpaceContext: a.spaceContextForPrompt(),
 		// Which shell the agent's commands and the user's hooks run in. Read
 		// per call so the composer's picker takes effect on the next command
 		// rather than on the next restart.
 		Shell:            a.shellBackend,
-		OnToolAction:     a.recordToolAction,
-		OnToolRun:        a.recordToolRun,
+		OnToolAction:     func(ev turn.ToolEvent) { a.recordToolAction(conv, ev) },
+		OnToolRun:        func(run turn.ToolRun) { a.recordToolRun(conv, run) },
 		Proposer:         appProposer{app: a},
-		OnStatus:         a.emitAgentStatus,
-		OnContentPreview: a.previewAnswer,
-		OnContentReset:   a.discardAnswerPreview,
-		OnUsage:          a.recordTokenUsage,
+		OnStatus:         func(status string) { a.emitAgentStatus(conv, status) },
+		OnContentPreview: func(chunk string) { a.previewAnswer(conv, chunk) },
+		OnContentReset:   func() { a.discardAnswerPreview(conv) },
+		OnUsage:          func(u model.Usage) { a.recordTokenUsage(conv, u) },
 	})
 	if bootErr == nil {
 		// Fallback outlives a successful boot: the engine is up, but on the
@@ -3271,39 +3270,39 @@ func (a *App) applyConfig(cfg config.Config) {
 		bootErr = res.Fallback
 	}
 	agent, registry := res.Agent, res.Registry
-	a.chat = res.App
-	a.agent = agent
+	conv.chat = res.App
+	conv.agent = agent
 	a.cfg = cfg
-	a.modelStatus = res.Status
-	a.modelErr = bootErr
-	a.registry = registry
+	conv.modelStatus = res.Status
+	conv.modelErr = bootErr
+	conv.registry = registry
 	// A re-bootstrap builds a fresh register, so whatever the old engine still
 	// had running is about to become unreachable — stop it rather than leave it
 	// burning tokens for an engine nobody can collect from any more.
-	if a.delegations != nil && a.delegations != res.Delegations {
-		a.delegations.StopAll()
+	if conv.delegations != nil && conv.delegations != res.Delegations {
+		conv.delegations.StopAll()
 	}
-	a.delegations = res.Delegations
-	if a.agent != nil {
-		a.agent.SetUsageReporter(a.recordTokenUsage)
+	conv.delegations = res.Delegations
+	if conv.agent != nil {
+		conv.agent.SetUsageReporter(func(u model.Usage) { a.recordTokenUsage(conv, u) })
 		// Draw the row while the model is still writing the call, not after,
 		// and tick its line count up as the content arrives. The executor emits
 		// the same Ref when the call actually runs, so the UI reuses the row
 		// rather than drawing the call twice — including when the early updates
 		// carried no subject yet and the label filled itself in later.
-		a.agent.SetToolCallProgressReporter(func(id, name, subject string, lines int) {
-			a.recordToolAction(turn.ToolEvent{Action: "call", Ref: id, Name: name, Subject: subject, Added: lines})
+		conv.agent.SetToolCallProgressReporter(func(id, name, subject string, lines int) {
+			a.recordToolAction(conv, turn.ToolEvent{Action: "call", Ref: id, Name: name, Subject: subject, Added: lines})
 		})
 	}
 	// A re-bootstrap (model/provider switch) creates a fresh agent — replay the
 	// old agent's context (minus its system prompt; the new agent builds its
 	// own). Falls back to the persisted text transcript when there is no live
 	// agent to inherit from (e.g. first bootstrap after loading a session).
-	if a.agent != nil {
+	if conv.agent != nil {
 		if len(priorContext) > 1 {
-			a.agent.RestoreHistory(priorContext[1:])
-		} else if len(a.transcript) > 0 {
-			a.agent.RestoreHistory(transcriptToModelMessages(a.transcript))
+			conv.agent.RestoreHistory(priorContext[1:])
+		} else if len(conv.transcript) > 0 {
+			conv.agent.RestoreHistory(transcriptToModelMessages(conv.transcript))
 		}
 	}
 	persistModelPreference(cfg)
@@ -3490,4 +3489,50 @@ func readGitBranch(root string) string {
 		return head[:7] // detached HEAD: short commit hash
 	}
 	return head
+}
+
+// revealInFileManager is every "open this in the file manager" button's last
+// step, and the one place the OS door is opened. Routed through the App so a
+// test can watch it happen without a window appearing on somebody's desk — see
+// App.openDir.
+func (a *App) revealInFileManager(path string) error {
+	if a.openDir != nil {
+		return a.openDir(path)
+	}
+	return openInFileManager(path)
+}
+
+// showConversation puts a conversation on screen and lets go of the one that
+// was there, unless something is still keeping it alive.
+//
+// What keeps it alive is work: a turn in flight, which now goes on running in a
+// chat nobody is watching. What does not keep it alive is having been visited —
+// an idle conversation's engine can be rebuilt from its transcript the moment
+// it is opened again, and holding every chat the user has ever clicked would
+// grow this process's memory for the rest of the run with nothing to show for
+// it. The cost the owner agreed to (19 ส.ค.) is RAM for the chats that are
+// working, not for the chats that were.
+//
+// Letting go stops that engine's delegates, which is exactly what happened
+// before this change: opening another session re-bootstrapped in place and
+// applyConfig called StopAll on the register it was replacing. Same act, said
+// out loud.
+func (a *App) showConversation(conv *conversation) {
+	outgoing := a.cur()
+	a.convs.show(conv)
+	if outgoing == conv || outgoing.id == "" {
+		return
+	}
+	if a.turnRunningIn(outgoing.id) {
+		return
+	}
+	a.letGoOf(outgoing)
+}
+
+// letGoOf drops one conversation's engine.
+func (a *App) letGoOf(conv *conversation) {
+	if conv.delegations != nil {
+		conv.delegations.StopAll()
+	}
+	a.convs.forget(conv.id)
 }

@@ -9,7 +9,7 @@ import (
 
 // ask_user must reject calls that would render an unanswerable prompt.
 func TestAskUserValidation(t *testing.T) {
-	s := &askUserSkill{app: &App{}}
+	s := &askUserSkill{app: NewApp(), conv: newConversation()}
 
 	if _, err := s.ExecuteTool(context.Background(), map[string]any{
 		"options": []any{"a", "b"},
@@ -29,7 +29,7 @@ func TestAskUserValidation(t *testing.T) {
 // user's choice, then reports it to the model.
 func TestAskUserAnswerRoundTrip(t *testing.T) {
 	app := &App{}
-	s := &askUserSkill{app: app}
+	s := &askUserSkill{app: app, conv: app.cur()}
 
 	type result struct {
 		content string
@@ -48,7 +48,7 @@ func TestAskUserAnswerRoundTrip(t *testing.T) {
 	deadline := time.After(2 * time.Second)
 	for {
 		app.askMu.Lock()
-		pending := app.askCh != nil
+		pending := app.cur().askCh != nil
 		app.askMu.Unlock()
 		if pending {
 			break
@@ -59,7 +59,7 @@ func TestAskUserAnswerRoundTrip(t *testing.T) {
 		case <-time.After(5 * time.Millisecond):
 		}
 	}
-	app.AnswerUserQuestion("B")
+	app.AnswerUserQuestion(app.cur().id, "B")
 
 	r := <-done
 	if r.err != nil {
@@ -71,7 +71,7 @@ func TestAskUserAnswerRoundTrip(t *testing.T) {
 	// The slot must be free again for the next question.
 	app.askMu.Lock()
 	defer app.askMu.Unlock()
-	if app.askCh != nil {
+	if app.cur().askCh != nil {
 		t.Fatal("ask slot must be cleared after the answer")
 	}
 }
@@ -79,7 +79,7 @@ func TestAskUserAnswerRoundTrip(t *testing.T) {
 // Turn cancellation (Stop button) must unblock a waiting question.
 func TestAskUserCancelUnblocks(t *testing.T) {
 	app := &App{}
-	s := &askUserSkill{app: app}
+	s := &askUserSkill{app: app, conv: app.cur()}
 	ctx, cancel := context.WithCancel(context.Background())
 
 	errCh := make(chan error, 1)
@@ -107,11 +107,11 @@ func TestAskUserCancelUnblocks(t *testing.T) {
 // instead of silently queueing.
 func TestAskUserSecondQuestionFailsWhilePending(t *testing.T) {
 	app := &App{}
-	if _, err := app.beginUserQuestion("first", []string{"a", "b"}); err != nil {
+	if _, err := app.beginUserQuestion(app.cur(), "first", []string{"a", "b"}); err != nil {
 		t.Fatalf("first question must register: %v", err)
 	}
-	defer app.endUserQuestion()
-	if _, err := app.beginUserQuestion("second", []string{"a", "b"}); err == nil {
+	defer app.endUserQuestion(app.cur())
+	if _, err := app.beginUserQuestion(app.cur(), "second", []string{"a", "b"}); err == nil {
 		t.Fatal("second concurrent question must fail")
 	}
 }
@@ -119,7 +119,7 @@ func TestAskUserSecondQuestionFailsWhilePending(t *testing.T) {
 // A stale answer (after cancel/completion) must be a no-op, not a panic.
 func TestAnswerUserQuestionNoPendingIsNoop(t *testing.T) {
 	app := &App{}
-	app.AnswerUserQuestion("stale click") // must not panic
+	app.AnswerUserQuestion(app.cur().id, "stale click") // must not panic
 }
 
 // waitForPendingQuestion blocks until beginUserQuestion has registered a
@@ -129,7 +129,7 @@ func waitForPendingQuestion(t *testing.T, app *App) {
 	deadline := time.After(2 * time.Second)
 	for {
 		app.askMu.Lock()
-		pending := app.askCh != nil
+		pending := app.cur().askCh != nil
 		app.askMu.Unlock()
 		if pending {
 			return
@@ -160,11 +160,11 @@ func TestApproveToolCallAllowAndDeny(t *testing.T) {
 		}
 		done := make(chan result, 1)
 		go func() {
-			ok, err := app.approveToolCall(context.Background(), "shell rm -rf x", "may delete state")
+			ok, err := app.approveToolCall(app.cur(), context.Background(), "shell rm -rf x", "may delete state")
 			done <- result{ok, err}
 		}()
 		waitForPendingQuestion(t, app)
-		app.AnswerUserQuestion(tc.answer)
+		app.AnswerUserQuestion(app.cur().id, tc.answer)
 		r := <-done
 		if r.err != nil {
 			t.Fatalf("answer %q: unexpected error: %v", tc.answer, r.err)
@@ -185,7 +185,7 @@ func TestApproveToolCallCancelDenies(t *testing.T) {
 	}
 	done := make(chan result, 1)
 	go func() {
-		ok, err := app.approveToolCall(ctx, "shell sleep 999", "")
+		ok, err := app.approveToolCall(app.cur(), ctx, "shell sleep 999", "")
 		done <- result{ok, err}
 	}()
 	waitForPendingQuestion(t, app)

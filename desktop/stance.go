@@ -37,7 +37,7 @@ func (a *App) Stances() []string {
 // ลงมือ under a composer that is standing in คู่คิด. SessionMode has the same
 // note for the same reason.
 func (a *App) Stance() string {
-	return a.stance.String()
+	return a.cur().stance.String()
 }
 
 // SetStance changes how the open session runs, and returns the stance actually
@@ -59,20 +59,21 @@ func (a *App) Stance() string {
 // that must agree about what this session carries, rebuilt together, from one
 // field.
 func (a *App) SetStance(name string) (string, error) {
-	// The same door-check every switch that rewrites the agent goes through.
-	// Not because this is a session switch — it is not — but because it
-	// rebuilds the agent underneath a turn that would then finish on a context
-	// it was not started with, which is the hazard guardSessionSwitch exists
-	// for, arriving by a different route.
-	if err := a.guardSessionSwitch(); err != nil {
-		return a.stance.String(), err
+	// Narrowed to this chat, not the app. Changing the stance rebuilds the
+	// engine of the conversation on screen, carrying its context across — and a
+	// turn running in THAT conversation would finish on an agent it was not
+	// started with. A turn running in some other chat is no longer any of this
+	// function's business, which is the difference per-conversation engines
+	// make: the gate is around the thing being rewritten, not around the app.
+	if a.turnRunningIn(a.cur().id) {
+		return a.cur().stance.String(), errTurnBusy
 	}
 	next := mode.NormalizeStance(name)
-	if next == a.stance {
+	if next == a.cur().stance {
 		return next.String(), nil
 	}
-	a.stance = next
-	a.applyConfig(a.cfg)
+	a.cur().stance = next
+	a.applyConfig(a.cur(), a.cfg)
 	a.persistStance()
 	return next.String(), nil
 }
@@ -83,15 +84,15 @@ func (a *App) SetStance(name string) (string, error) {
 // Best-effort and silent, because the row legitimately may not exist yet: a
 // session is only written on its first turn, and switching stance before saying
 // anything is an ordinary thing to do. That case needs no repair — the INSERT
-// in openTurn/appendTurn carries a.stance with it, so the first message files
+// in openTurn/appendTurn carries a.cur().stance with it, so the first message files
 // the session with the stance it was actually held in.
 func (a *App) persistStance() {
-	if a.sessionID == "" {
+	if a.cur().id == "" {
 		return
 	}
 	db, err := a.database()
 	if err != nil {
 		return
 	}
-	_, _ = db.Exec(`UPDATE sessions SET stance = ? WHERE id = ?`, a.stance.String(), a.sessionID)
+	_, _ = db.Exec(`UPDATE sessions SET stance = ? WHERE id = ?`, a.cur().stance.String(), a.cur().id)
 }

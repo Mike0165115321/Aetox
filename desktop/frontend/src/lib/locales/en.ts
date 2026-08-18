@@ -315,6 +315,9 @@ export const en: Record<keyof typeof th, string> = {
   // engine is still sitting in the conversation the turn belongs to.
   'cockpit.peekReadOnly': 'You are reading another chat. Go back to the one that is working before typing.',
   'cockpit.peekNotice': 'Reading only. The work is still running in another chat.',
+  // Reading outlives the turn, so the line above turns into a lie the second
+  // the work finishes unless another sentence takes over.
+  'cockpit.peekDone': 'Reading only. The work in the other chat has finished.',
   'cockpit.peekReturn': 'Back to the working chat',
   'cockpit.peekOpen': 'Open this chat',
   'cockpit.peekPlaceholder': 'Reading only. Go back to the working chat to type.',
@@ -391,8 +394,13 @@ export const en: Record<keyof typeof th, string> = {
   'settings.sponsorIntro': 'Aetox is built by one person, with no company behind it',
   'settings.sponsorDesc': 'Every baht goes to servers, API credits for testing, and the time spent writing the code',
   'settings.sponsorScanHint': 'Scan with any Thai banking app · TrueMoney Wallet · Chayaphon Phromsawana',
-  'settings.sponsorOpenGitHub': 'Open on GitHub',
-  'settings.sponsorOpenSite': 'Visit the Aetox site',
+  'settings.sponsorOpenGitHub': 'Ways to sponsor',
+  'settings.sponsorOpenSite': 'View the project on GitHub',
+  'settings.sponsorCredit': 'Supporters',
+  'settings.sponsorCreditDesc': 'Everyone who supports Aetox is credited by name on its page, and the name is kept. If the chance comes up one day, working together is where this leads.',
+  'settings.sponsorContact': 'Tell us after you support',
+  'settings.sponsorContactDesc': 'Say which name to credit, or ask to stay anonymous. Same door as reporting a problem.',
+  'settings.sponsorContactOpen': 'Get in touch',
   'settings.general': 'General',
   'settings.appearance': 'Appearance',
   'settings.modelSettings': 'Model settings',
@@ -536,11 +544,10 @@ export const en: Record<keyof typeof th, string> = {
   // separate page from MCP: an MCP server is a tool process Aetox runs, this is
   // an account Aetox signs in to. Same group, different question.
   'settings.connections': 'Connections',
-  'settings.connectionsDesc': 'External accounts the agent can work on your behalf with. GitHub first, email and the rest follow.',
+  'settings.connectionsDesc': 'External accounts and tools the agent works with on your behalf · an account like GitHub takes a key, an engine you run yourself like n8n takes its address too.',
   // Its own page rather than a row on the register: an automation engine is a
   // machine you run, it takes an address as well as a key, and setting one up
   // is a different conversation from signing an account in.
-  'settings.automationDesc': 'The automation tools you run yourself. Connect one and the AI can build and edit workflows in it · pick which engine to work on from the composer in the ระบบออโตเมชั่น room.',
   'settings.ghDesc': 'Lets the agent reach your private repositories, and raises the request limit from 60 an hour to 5,000.',
   'settings.ghNotConnected': 'Not connected',
   'settings.ghConnectedAs': 'Connected as {login}',
@@ -567,7 +574,6 @@ export const en: Record<keyof typeof th, string> = {
   // Never placed is not "off" — it is carried everywhere, and the row has to
   // say which of the two it is without being opened.
   'settings.connForEveryone': 'every desk',
-  'settings.connForHint': 'A desk switched off does not ask first, its {n} tools are not in the assistant\'s list at all.',
   // Engines are locked to their agent's workstation (10 Aug) — draw the fact, not a choice.
   'settings.connHomeLocked': 'Only the {agent} agent uses this. It is that agent\'s workstation. Switch the active engine from inside the automation room.',
   // A service the user runs. Aetox has no idea where it lives until told.

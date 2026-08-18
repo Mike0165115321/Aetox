@@ -30,8 +30,8 @@ func newSubagentTestApp(t *testing.T) *App {
 			_ = a.db.Close()
 		}
 	})
-	a.applyConfig(a.cfg)
-	if a.agent == nil || a.registry == nil {
+	a.applyConfig(a.cur(), a.cfg)
+	if a.cur().agent == nil || a.cur().registry == nil {
 		t.Fatal("engine did not bootstrap")
 	}
 	return a
@@ -54,7 +54,7 @@ func TestMainAgentIsNotConfiguredByAProfile(t *testing.T) {
 		}
 	}
 
-	messages := a.agent.ContextMessages()
+	messages := a.cur().agent.ContextMessages()
 	if len(messages) == 0 {
 		t.Fatal("no system prompt")
 	}
@@ -129,15 +129,15 @@ func TestSubagentProfileBindings(t *testing.T) {
 func TestTaskToolIsRegisteredForTheMainAgent(t *testing.T) {
 	a := newSubagentTestApp(t)
 
-	if _, ok := a.registry.Get("task"); !ok {
+	if _, ok := a.cur().registry.Get("task"); !ok {
 		t.Fatal("task is not in the main agent's registry — the model can never delegate")
 	}
-	if src, _ := a.registry.SourceOf("task"); src != skill.SourceBuiltin {
+	if src, _ := a.cur().registry.SourceOf("task"); src != skill.SourceBuiltin {
 		t.Errorf("task registered as %q, want builtin — it ships with the engine", src)
 	}
 	// It reaches the model as a tool definition naming the profiles it can pick.
 	var def *model.ToolDefinition
-	for _, d := range skill.NewDispatcher(a.registry).ToolDefinitions() {
+	for _, d := range skill.NewDispatcher(a.cur().registry).ToolDefinitions() {
 		if d.Function.Name == "task" {
 			d := d
 			def = &d
@@ -155,7 +155,7 @@ func TestTaskToolIsRegisteredForTheMainAgent(t *testing.T) {
 	if !ok {
 		t.Fatal("explore profile missing")
 	}
-	if _, ok := subagent.FilterRegistry(a.registry, profile, nil).Get("task"); ok {
+	if _, ok := subagent.FilterRegistry(a.cur().registry, profile, nil).Get("task"); ok {
 		t.Error("a sub-agent was handed task — it could spawn its own children")
 	}
 }

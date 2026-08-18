@@ -24,7 +24,7 @@ export function AgentNeeds(arg1:string):Promise<Array<subagent.Requirement>>;
 
 export function AgentSkills(arg1:string):Promise<Array<main.AgentSkillInfo>>;
 
-export function AnswerUserQuestion(arg1:string):Promise<void>;
+export function AnswerUserQuestion(arg1:string,arg2:string):Promise<void>;
 
 export function AppVersion():Promise<string>;
 
@@ -235,6 +235,8 @@ export function OpenAgentSkillsFolder(arg1:string):Promise<void>;
 export function OpenAgentsFolder():Promise<void>;
 
 export function OpenArtifact(arg1:string):Promise<void>;
+
+export function OpenExport(arg1:string):Promise<void>;
 
 export function OpenFileExternally(arg1:string):Promise<void>;
 

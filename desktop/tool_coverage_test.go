@@ -99,7 +99,7 @@ func TestEveryToolRunsThroughTheRealDispatcher(t *testing.T) {
 	// isolateUserDirs so LIFO closes the handle before that directory goes.
 	closeDBOnCleanup(t, app)
 	registry := skill.NewDefaultRegistry(skill.RegistryOptions{SandboxRoot: root})
-	for _, s := range app.workbenchSkills(app.cfg.SandboxRoot) {
+	for _, s := range app.workbenchSkills(app.cur(), app.cfg.SandboxRoot) {
 		if err := registry.Register(s, skill.SourceBuiltin); err != nil {
 			t.Fatalf("register %s: %v", s.Name(), err)
 		}
@@ -612,10 +612,10 @@ func answerTheQuestion(answer string) func(*testing.T, *App) {
 		deadline := time.Now().Add(10 * time.Second)
 		for time.Now().Before(deadline) {
 			a.askMu.Lock()
-			pending := a.askCh != nil
+			pending := a.cur().askCh != nil
 			a.askMu.Unlock()
 			if pending {
-				a.AnswerUserQuestion(answer)
+				a.AnswerUserQuestion(a.cur().id, answer)
 				return
 			}
 			time.Sleep(5 * time.Millisecond)

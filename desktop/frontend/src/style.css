@@ -489,6 +489,16 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .peek-bar .ic { flex:none; display:flex; color:var(--text-muted); }
 .peek-bar .peek-what { font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .peek-bar .peek-why { flex:1 1 auto; min-width:0; color:var(--text-muted); font-size:var(--fs-xs); }
+/* What the working chat is doing, from the chat you are reading instead. Wears
+   .typing-status as well, so the sweep, its timing and its reduced-motion
+   fallback are the live block's own and not a second copy of them — only the
+   size is this bar's, and it wins on specificity. Held to a third of the row:
+   a tool label can be a whole file path, and the way back must never be pushed
+   off the end by a line that is only telling you not to worry. */
+.peek-bar .peek-live {
+  flex:none; max-width:34%; min-width:0; font-size:var(--fs-xs);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
 .peek-act {
   flex:none; padding:4px 10px; border-radius:var(--r-sm);
   border:1px solid var(--border-default); background:transparent;
@@ -3118,11 +3128,28 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .mcp-lines { resize:vertical; font-family:var(--mono); font-size:var(--fs-sm); }
 .mswitch { position:relative; display:inline-block; width:34px; height:19px; flex:0 0 auto; }
 .mswitch input { position:absolute; opacity:0; width:100%; height:100%; margin:0; cursor:pointer; }
-.mswitch span { position:absolute; inset:0; border-radius:var(--r-full); background:var(--surface-sunken); border:1px solid var(--border-strong); transition:background .15s; pointer-events:none; }
-.mswitch span::after { content:''; position:absolute; top:2px; left:2px; width:13px; height:13px; border-radius:50%; background:var(--text-muted); transition:transform .15s, background .15s; }
-.mswitch input:checked + span { background:var(--interactive); border-color:var(--interactive); }
-.mswitch input:checked + span::after { transform:translateX(15px); background:var(--text-on-interactive); }
-.mswitch input:disabled + span { opacity:.5; }
+/* One switch, two ways to drive it. The settings rows wrap a real checkbox and
+   the face follows `:checked`; a row that is ALREADY a button cannot — an
+   <input> inside a <button> is invalid HTML and swallows the click — so it
+   wears the face directly and takes its state from role="switch". Written once
+   rather than as two lookalikes: a switch that is 34px in one place and 33px in
+   another is how a design language stops being one. */
+.mswitch span, .mswitch-face {
+  border-radius:var(--r-full); background:var(--surface-sunken);
+  border:1px solid var(--border-strong); transition:background .15s; pointer-events:none;
+}
+.mswitch span { position:absolute; inset:0; }
+.mswitch-face { position:relative; flex:none; width:34px; height:19px; margin-left:auto; }
+.mswitch span::after, .mswitch-face::after {
+  content:''; position:absolute; top:2px; left:2px; width:13px; height:13px;
+  border-radius:50%; background:var(--text-muted); transition:transform .15s, background .15s;
+}
+.mswitch input:checked + span,
+[aria-checked="true"] > .mswitch-face { background:var(--interactive); border-color:var(--interactive); }
+.mswitch input:checked + span::after,
+[aria-checked="true"] > .mswitch-face::after { transform:translateX(15px); background:var(--text-on-interactive); }
+.mswitch input:disabled + span,
+:disabled > .mswitch-face { opacity:.5; }
 .mcp-kind { flex:0 0 88px; text-align:center; }
 
 /* Skills page */
@@ -4069,7 +4096,13 @@ button.ctrl, label.ctrl { display:inline-flex; align-items:center; justify-conte
 .conn-eyebrow { margin-top:4px; }
 .conn-actions { margin-top:2px; }
 .conn-targets { display:flex; flex-wrap:wrap; gap:8px; margin:2px 0 8px; }
-.conn-chip { font-size:var(--fs-sm); padding:5px 11px; border-radius:var(--r-full); background:transparent; border:1px solid var(--border-subtle); color:var(--text-muted); cursor:pointer; transition:border-color .15s, color .15s, background .15s; }
+/* The chip carries a mark now, so it is a row rather than a word: a desk and an
+   agent are two kinds of audience and nine identical pills said they were one
+   kind. The glyph is dimmer than the label on purpose — it sorts the list, it
+   does not compete with the name being read. */
+.conn-chip { display:inline-flex; align-items:center; gap:6px; font-size:var(--fs-sm); padding:5px 11px 5px 9px; border-radius:var(--r-full); background:transparent; border:1px solid var(--border-subtle); color:var(--text-muted); cursor:pointer; transition:border-color .15s, color .15s, background .15s; }
+.conn-chip .icon { flex:none; opacity:.7; }
+.conn-chip.on .icon { opacity:1; }
 .conn-chip:hover:not(:disabled) { border-color:var(--border-strong); color:var(--text-secondary); }
 /* On is stated by colour *and* by the pressed state, so the row is readable
    without relying on the accent alone. */

@@ -83,13 +83,13 @@ func newSwitchApp(t *testing.T) *App {
 	t.Helper()
 	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
 	isolateUserDirs(t)
-	a := &App{ctx: nil, emit: func(string, ...any) {}, dbDir: t.TempDir(), sessionID: newSessionID()}
+	a := seed(&App{ctx: nil, emit: func(string, ...any) {}, dbDir: t.TempDir()}, &conversation{id: newSessionID()})
 	t.Cleanup(func() {
 		if a.db != nil {
 			_ = a.db.Close()
 		}
 	})
-	a.applyConfig(config.Config{SandboxRoot: t.TempDir(), ModelProvider: "aetox", ModelName: "aetox-tools:test"})
+	a.applyConfig(a.cur(), config.Config{SandboxRoot: t.TempDir(), ModelProvider: "aetox", ModelName: "aetox-tools:test"})
 	return a
 }
 

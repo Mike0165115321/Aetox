@@ -140,7 +140,7 @@ func (s *browserCaptureSkill) capture(ctx context.Context) (skill.Output, error)
 // output/<session> is also the one path ListArtifacts is defined to sweep, so
 // anything put here shows up in the gallery under either mode.
 func (a *App) workFileDir() string {
-	session := strings.TrimSpace(a.sessionID)
+	session := strings.TrimSpace(a.cur().id)
 	if session == "" {
 		session = "unsaved" // a chat that has not been saved can still take a picture
 	}

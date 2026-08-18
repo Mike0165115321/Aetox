@@ -80,10 +80,10 @@ func (a *App) RunChatCommand(command string) (RunBlockResult, error) {
 // shell skill — so a second kind of runnable block cannot quietly acquire a
 // second set of rules.
 func (a *App) runThroughShell(command string) (RunBlockResult, error) {
-	if a.registry == nil {
+	if a.cur().registry == nil {
 		return RunBlockResult{}, fmt.Errorf("engine is not ready yet")
 	}
-	s, ok := a.registry.Get("shell")
+	s, ok := a.cur().registry.Get("shell")
 	if !ok {
 		return RunBlockResult{}, fmt.Errorf("shell tool is not available")
 	}

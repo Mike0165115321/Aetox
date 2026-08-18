@@ -19,7 +19,7 @@ import (
 // recordRun writes one tool call into the store the way a real turn does.
 func recordRun(t *testing.T, a *App, tool, args string) {
 	t.Helper()
-	a.recordToolRun(turn.ToolRun{Name: tool, Args: args, OK: true})
+	a.recordToolRun(a.cur(), turn.ToolRun{Name: tool, Args: args, OK: true})
 }
 
 // touch makes a real file, because a source that is not on disk is dropped —
@@ -44,7 +44,7 @@ func TestSessionSourcesListsWhatTheRoomRead(t *testing.T) {
 	recordRun(t, a, "read", fmt.Sprintf(`{"path":%q}`, notes))
 	recordRun(t, a, "web_fetch", `{"url":"https://example.invalid/docs/api"}`)
 
-	got := a.SessionSources(a.sessionID)
+	got := a.SessionSources(a.cur().id)
 	if len(got) != 2 {
 		t.Fatalf("want 2 sources, got %d: %+v", len(got), got)
 	}
@@ -71,7 +71,7 @@ func TestSessionSourcesIgnoresWritesAndSearches(t *testing.T) {
 	recordRun(t, a, "glob", `{"pattern":"**/*.ts"}`)
 	recordRun(t, a, "grep", `{"pattern":"func main"}`)
 
-	if got := a.SessionSources(a.sessionID); len(got) != 0 {
+	if got := a.SessionSources(a.cur().id); len(got) != 0 {
 		t.Fatalf("want nothing, got %+v", got)
 	}
 }
@@ -92,7 +92,7 @@ func TestSessionSourcesSeparatesFilesThatShareAName(t *testing.T) {
 	recordRun(t, a, "read", fmt.Sprintf(`{"path":%q}`, alone))
 
 	byPath := map[string]Source{}
-	for _, s := range a.SessionSources(a.sessionID) {
+	for _, s := range a.SessionSources(a.cur().id) {
 		byPath[s.Path] = s
 	}
 	if byPath[one].Dir == "" || byPath[two].Dir == "" {
@@ -114,7 +114,7 @@ func TestSessionSourcesKeepsTheTailOfAURL(t *testing.T) {
 	a := bootDeskApp(t, "coding")
 	recordRun(t, a, "browser_open", `{"action":"open","url":"https://alm-x-impact-tennis-production.up.railway.app/health"}`)
 
-	got := a.SessionSources(a.sessionID)
+	got := a.SessionSources(a.cur().id)
 	if len(got) != 1 {
 		t.Fatalf("want 1, got %+v", got)
 	}
@@ -129,7 +129,7 @@ func TestSessionSourcesIgnoresBrowserActionsThatReadNothing(t *testing.T) {
 	a := bootDeskApp(t, "coding")
 	recordRun(t, a, "browser", `{"action":"click","url":"https://example.invalid/x"}`)
 
-	if got := a.SessionSources(a.sessionID); len(got) != 0 {
+	if got := a.SessionSources(a.cur().id); len(got) != 0 {
 		t.Fatalf("want nothing, got %+v", got)
 	}
 }
@@ -148,7 +148,7 @@ func TestSessionSourcesDropsFilesThatAreGone(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got := a.SessionSources(a.sessionID)
+	got := a.SessionSources(a.cur().id)
 	if len(got) != 1 || got[0].Path != kept {
 		t.Fatalf("want only the file that is still there, got %+v", got)
 	}
@@ -165,7 +165,7 @@ func TestSessionSourcesCollapsesRepeatedReads(t *testing.T) {
 		recordRun(t, a, "read", fmt.Sprintf(`{"path":%q}`, path))
 	}
 
-	if got := a.SessionSources(a.sessionID); len(got) != 1 {
+	if got := a.SessionSources(a.cur().id); len(got) != 1 {
 		t.Fatalf("want 1 row, got %d", len(got))
 	}
 }
@@ -179,10 +179,10 @@ func TestSessionSourceCountSeesPastTheCap(t *testing.T) {
 		recordRun(t, a, "read", fmt.Sprintf(`{"path":%q}`, path))
 	}
 
-	if got := len(a.SessionSources(a.sessionID)); got != maxSources {
+	if got := len(a.SessionSources(a.cur().id)); got != maxSources {
 		t.Errorf("list should stop at the cap, got %d", got)
 	}
-	if got := a.SessionSourceCount(a.sessionID); got != maxSources+7 {
+	if got := a.SessionSourceCount(a.cur().id); got != maxSources+7 {
 		t.Errorf("count should see everything, got %d", got)
 	}
 }
@@ -195,7 +195,7 @@ func TestSessionSourcesSkipsUnreadableArguments(t *testing.T) {
 	recordRun(t, a, "read", `{}`)
 	recordRun(t, a, "read", `{"path":""}`)
 
-	if got := a.SessionSources(a.sessionID); len(got) != 0 {
+	if got := a.SessionSources(a.cur().id); len(got) != 0 {
 		t.Fatalf("want nothing, got %+v", got)
 	}
 }

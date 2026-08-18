@@ -82,14 +82,14 @@ func (a *App) SetSubagentModel(name, modelName string) error {
 // adding a profile is "drop a .md file here" — same contract as the prompts
 // folder, and the reason neither has to exist at install time.
 func (a *App) OpenSubagentsFolder() error {
-	return revealProfileHome(subagent.Dir)
+	return a.revealProfileHome(subagent.Dir)
 }
 
 // OpenAgentsFolder is the agents' half of the same contract — the office
 // page's hiring door. Since the homes split, which folder a file lands in is
 // which kind it is, so the two pages must each open their own.
 func (a *App) OpenAgentsFolder() error {
-	return revealProfileHome(subagent.AgentsDir)
+	return a.revealProfileHome(subagent.AgentsDir)
 }
 
 // AgentSkillInfo is one entry on an agent's own shelf, for the editor's สกิล
@@ -157,10 +157,10 @@ func (a *App) AgentNeeds(name string) []subagent.Requirement {
 // is the one moment where an empty folder is the useful answer rather than a
 // cost paid on every dispatch.
 func (a *App) OpenAgentSkillsFolder(name string) error {
-	return revealProfileHome(func() (string, error) { return config.AgentSkillsPath(name) })
+	return a.revealProfileHome(func() (string, error) { return config.AgentSkillsPath(name) })
 }
 
-func revealProfileHome(home func() (string, error)) error {
+func (a *App) revealProfileHome(home func() (string, error)) error {
 	dir, err := home()
 	if err != nil {
 		return err
@@ -170,5 +170,5 @@ func revealProfileHome(home func() (string, error)) error {
 	}
 	// One implementation, in speech.go — the three copies of this switch had
 	// all inherited the same window-hiding bug.
-	return openInFileManager(dir)
+	return a.revealInFileManager(dir)
 }

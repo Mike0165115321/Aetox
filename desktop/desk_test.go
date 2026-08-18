@@ -32,12 +32,11 @@ import (
 func bootDeskApp(t *testing.T, desk string) *App {
 	t.Helper()
 	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
-	a := &App{
-		ctx:       context.Background(),
-		emit:      func(string, ...any) {},
-		dbDir:     t.TempDir(),
-		sessionID: newSessionID(),
-	}
+	a := seed(&App{
+		ctx:   context.Background(),
+		emit:  func(string, ...any) {},
+		dbDir: t.TempDir(),
+	}, &conversation{id: newSessionID()})
 	t.Cleanup(func() {
 		if a.db != nil {
 			_ = a.db.Close()
@@ -48,9 +47,9 @@ func bootDeskApp(t *testing.T, desk string) *App {
 		if !ok {
 			t.Fatalf("mode.Load(%q) failed", desk)
 		}
-		a.desk = m
+		a.cur().desk = m
 	}
-	a.applyConfig(config.Config{
+	a.applyConfig(a.cur(), config.Config{
 		SandboxRoot:   t.TempDir(),
 		ModelProvider: "aetox",
 		ModelName:     "aetox-tools:test",
@@ -84,11 +83,11 @@ func TestALegacySessionKeepsTheFullDeskAndTheSamePrompt(t *testing.T) {
 
 	// Every registered tool that faces the model, with nothing filtered out.
 	installed := 0
-	for _, name := range a.registry.Names() {
-		if source, ok := a.registry.SourceOf(name); ok && source == "skill" {
+	for _, name := range a.cur().registry.Names() {
+		if source, ok := a.cur().registry.SourceOf(name); ok && source == "skill" {
 			continue // skills are never sent; they are reached through skills_list
 		}
-		if _, ok := a.registry.Get(name); ok {
+		if _, ok := a.cur().registry.Get(name); ok {
 			installed++
 		}
 	}
@@ -106,7 +105,7 @@ func TestALegacySessionKeepsTheFullDeskAndTheSamePrompt(t *testing.T) {
 	// package rather than a golden string, so it stays true as the prompt itself
 	// changes and only fails when a *desk* has added something to it.
 	want := prompt.Build(prompt.SurfaceDesktop, prompt.Scope{Root: a.cfg.SandboxRoot, Open: true})
-	messages := a.agent.ContextMessages()
+	messages := a.cur().agent.ContextMessages()
 	if len(messages) == 0 {
 		t.Fatal("no system prompt")
 	}
@@ -178,7 +177,7 @@ func TestADeskAddsDirectionAndItsOwnMemory(t *testing.T) {
 	// hand under the one the memory was just written to.
 	boot := func(desk string) string {
 		t.Helper()
-		a := &App{ctx: context.Background(), emit: func(string, ...any) {}, dbDir: t.TempDir(), sessionID: newSessionID()}
+		a := seed(&App{ctx: context.Background(), emit: func(string, ...any) {}, dbDir: t.TempDir()}, &conversation{id: newSessionID()})
 		t.Cleanup(func() {
 			if a.db != nil {
 				_ = a.db.Close()
@@ -189,16 +188,16 @@ func TestADeskAddsDirectionAndItsOwnMemory(t *testing.T) {
 			if !ok {
 				t.Fatalf("mode.Load(%q) failed", desk)
 			}
-			a.desk = m
+			a.cur().desk = m
 		}
-		a.applyConfig(config.Config{
+		a.applyConfig(a.cur(), config.Config{
 			SandboxRoot:   t.TempDir(),
 			ModelProvider: "aetox",
 			ModelName:     "aetox-tools:test",
 			ApprovalMode:  string(safety.ApprovalFullAccess),
 			DelegateOn:    true,
 		})
-		messages := a.agent.ContextMessages()
+		messages := a.cur().agent.ContextMessages()
 		if len(messages) == 0 {
 			t.Fatal("no system prompt")
 		}
@@ -248,11 +247,21 @@ func TestAChairIsCappedByTheOfficeCeiling(t *testing.T) {
 	}
 	// Everything this chair asks for: two tools the office carries, `shell`,
 	// which the office keeps in the room for its agents (chairs:, 2026-08-10),
-	// and `git`, which nothing at the office names — but the desk dispatching
-	// the job *does* carry. `git` is what makes this the carve-out test rather
-	// than a repeat of the profile allowlist: the ceiling has to come from the
-	// desk the job runs at, so inheriting the caller's would hand it over.
-	const greedy = "---\ndescription: เก้าอี้ทดสอบ\ndesk: specialized\ntools: doc_write, write, shell, git\n---\nWrite the thing.\n"
+	// and one thing nothing at the office names — but the desk dispatching the
+	// job *does* carry. That last one is what makes this the carve-out test
+	// rather than a repeat of the profile allowlist: the ceiling has to come
+	// from the desk the job runs at, so inheriting the caller's would hand it
+	// over.
+	//
+	// It was `git` until 2026-08-19, when the whole of files and shell moved
+	// into the office's room (owner's call: the agents were walled off from
+	// work their own briefs told them to do). The room is now so nearly
+	// co-extensive with the assistant desk that `fs` is the only registered
+	// name left on the caller's side the office does not name — worth recording
+	// here, because the day the office names that too this test has to be
+	// re-pointed at a caller holding something it still refuses (the coding
+	// desk and its code group), never quietly deleted.
+	const greedy = "---\ndescription: เก้าอี้ทดสอบ\ndesk: specialized\ntools: doc_write, write, shell, fs\n---\nWrite the thing.\n"
 	if err := os.WriteFile(filepath.Join(dir, "greedy.md"), []byte(greedy), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -265,7 +274,7 @@ func TestAChairIsCappedByTheOfficeCeiling(t *testing.T) {
 	if !ok {
 		t.Fatal("the office desk is missing")
 	}
-	child := subagent.FilterRegistry(a.registry, profile, office)
+	child := subagent.FilterRegistry(a.cur().registry, profile, office)
 	if child == nil {
 		t.Fatal("no child registry")
 	}
@@ -283,14 +292,14 @@ func TestAChairIsCappedByTheOfficeCeiling(t *testing.T) {
 	if !slices.Contains(names, "shell") {
 		t.Errorf("the chair asked for shell and the room keeps one, yet it got none: %v", names)
 	}
-	// The caller has git and the chair asked for it. It is absent because the
+	// The caller has it and the chair asked for it. It is absent because the
 	// job runs on the office's manifest — the ceiling comes from the desk the
 	// work is done at, never from the desk that sent it.
-	if !a.desk.AllowsTool("git") {
-		t.Fatal("this test needs a caller that has git for the ceiling to be worth asserting")
+	if !a.cur().desk.AllowsTool("fs") {
+		t.Fatal("this test needs a caller that has fs for the ceiling to be worth asserting")
 	}
-	if slices.Contains(names, "git") {
-		t.Errorf("a chair got git from its caller's desk — the office ceiling is not being applied: %v", names)
+	if slices.Contains(names, "fs") {
+		t.Errorf("a chair got fs from its caller's desk — the office ceiling is not being applied: %v", names)
 	}
 	if slices.Contains(names, "task") {
 		t.Errorf("a chair can start its own delegates: %v", names)
@@ -318,7 +327,7 @@ func TestTheAssistantDeskHandsAJobToTheOfficeAndGetsAFileBack(t *testing.T) {
 
 	// The file landed in the caller's own output folder, not the chair's:
 	// nothing about crossing desks moves where a session's work is kept.
-	produced := filepath.Join(a.cfg.SandboxRoot, "output", a.sessionID, "office-demo.docx")
+	produced := filepath.Join(a.cfg.SandboxRoot, "output", a.cur().id, "office-demo.docx")
 	if info, err := os.Stat(produced); err != nil || info.Size() == 0 {
 		t.Fatalf("no document at %s (err=%v)", produced, err)
 	}
@@ -345,8 +354,8 @@ func TestTheAssistantDeskHandsAJobToTheOfficeAndGetsAFileBack(t *testing.T) {
 	if len(received) != 1 || received[0].Chair != "doc" {
 		t.Fatalf("ListReceivedJobs() = %+v, want the one job the office took in", received)
 	}
-	if received[0].SessionID != a.sessionID {
-		t.Errorf("the feed files the job under session %q, want the caller's %q", received[0].SessionID, a.sessionID)
+	if received[0].SessionID != a.cur().id {
+		t.Errorf("the feed files the job under session %q, want the caller's %q", received[0].SessionID, a.cur().id)
 	}
 
 	// The roster now shows the chair as having done something, from the same rows.
@@ -412,7 +421,7 @@ func TestASessionIsStoredWithItsDeskAndReopensThere(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewSessionAt(%q): %v", desk, err)
 		}
-		a.appendTurn(
+		a.appendTurn(a.cur(),
 			SessionMessage{Role: "user", Text: text, Time: "t"},
 			SessionMessage{Role: "agent", Text: "ok", Time: "t"})
 		return id
@@ -445,14 +454,14 @@ func TestASessionIsStoredWithItsDeskAndReopensThere(t *testing.T) {
 	if _, err := a.LoadSession(codingID); err != nil {
 		t.Fatalf("LoadSession: %v", err)
 	}
-	if a.desk.DeskName() != "coding" {
-		t.Errorf("reopened at desk %q, want coding", a.desk.DeskName())
+	if a.cur().desk.DeskName() != "coding" {
+		t.Errorf("reopened at desk %q, want coding", a.cur().desk.DeskName())
 	}
 	if _, err := a.LoadSession(legacyID); err != nil {
 		t.Fatalf("LoadSession(legacy): %v", err)
 	}
-	if a.desk != nil {
-		t.Errorf("a session from before desks reopened at %q instead of the full desk", a.desk.DeskName())
+	if a.cur().desk != nil {
+		t.Errorf("a session from before desks reopened at %q instead of the full desk", a.cur().desk.DeskName())
 	}
 
 	// A name nothing answers to is refused rather than quietly widened to the
@@ -467,7 +476,7 @@ func TestListArtifactsFindsWhatASessionProduced(t *testing.T) {
 	isolateUserDirs(t)
 	a := bootDeskApp(t, "assistant")
 
-	dir := filepath.Join(a.cfg.SandboxRoot, "output", a.sessionID)
+	dir := filepath.Join(a.cfg.SandboxRoot, "output", a.cur().id)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -485,9 +494,9 @@ func TestListArtifactsFindsWhatASessionProduced(t *testing.T) {
 	if got == nil {
 		t.Fatalf("ListArtifacts() = %+v, missing the file on disk", found)
 	}
-	if got.SessionID != a.sessionID {
+	if got.SessionID != a.cur().id {
 		t.Errorf("artifact filed under session %q, want %q — the folder name is the only record of it",
-			got.SessionID, a.sessionID)
+			got.SessionID, a.cur().id)
 	}
 	if got.Size == 0 || got.Modified == "" {
 		t.Errorf("artifact has no size or time: %+v", got)
@@ -495,10 +504,10 @@ func TestListArtifactsFindsWhatASessionProduced(t *testing.T) {
 
 	// Deleting the conversation does not delete the work (COMPANY.md §6.7):
 	// the report survives the email thread that asked for it.
-	a.appendTurn(
+	a.appendTurn(a.cur(),
 		SessionMessage{Role: "user", Text: "ทำรายงานให้ที", Time: "t"},
 		SessionMessage{Role: "agent", Text: "เสร็จแล้ว", Time: "t"})
-	if err := a.DeleteSession(a.sessionID); err != nil {
+	if err := a.DeleteSession(a.cur().id); err != nil {
 		t.Fatalf("DeleteSession: %v", err)
 	}
 	if _, err := os.Stat(got.Path); err != nil {
@@ -574,7 +583,7 @@ func TestAServerReachesOnlyTheDesksThatNamedIt(t *testing.T) {
 	}
 
 	for _, name := range []string{"notion_search", "linear_issue"} {
-		if err := a.registry.Register(&stubTool{name: name}, skill.SourceMCP); err != nil {
+		if err := a.cur().registry.Register(&stubTool{name: name}, skill.SourceMCP); err != nil {
 			t.Fatalf("register %s: %v", name, err)
 		}
 	}
@@ -582,13 +591,13 @@ func TestAServerReachesOnlyTheDesksThatNamedIt(t *testing.T) {
 	sees := func(desk string) []string {
 		t.Helper()
 		if desk == "" {
-			a.desk = nil
+			a.cur().desk = nil
 		} else {
 			m, ok := mode.Load(desk)
 			if !ok {
 				t.Fatalf("mode.Load(%q) failed", desk)
 			}
-			a.desk = m
+			a.cur().desk = m
 		}
 		return toolNames(a)
 	}
@@ -650,7 +659,7 @@ func TestListChairsReportsTheRosterUnderTheCeiling(t *testing.T) {
 func TestEachDeskIsToldOnlyWhatItCanActuallyDo(t *testing.T) {
 	prompts := map[string]string{}
 	for _, desk := range []string{"assistant", "coding"} {
-		messages := bootDeskApp(t, desk).agent.ContextMessages()
+		messages := bootDeskApp(t, desk).cur().agent.ContextMessages()
 		if len(messages) == 0 {
 			t.Fatalf("%s desk: no system prompt", desk)
 		}

@@ -32,15 +32,15 @@ func TestUsagePipelineEndToEnd(t *testing.T) {
 		}
 	})
 
-	a.applyConfig(a.cfg) // wires SetUsageReporter(a.recordTokenUsage)
-	if a.agent == nil {
+	a.applyConfig(a.cur(), a.cfg) // wires SetUsageReporter(a.recordTokenUsage)
+	if a.cur().agent == nil {
 		t.Fatal("agent not built")
 	}
 	// Swap in a provider that reports usage (noop reports none), keeping the
 	// reporter wiring applyConfig installed.
-	a.agent.ReplaceModel(usageProvider{}, "usage-fake-model")
+	a.cur().agent.ReplaceModel(usageProvider{}, "usage-fake-model")
 
-	if _, err := a.agent.Respond(context.Background(), "1+1?", turn.TurnOptions{ThinkLevel: think.LevelLow}); err != nil {
+	if _, err := a.cur().agent.Respond(context.Background(), "1+1?", turn.TurnOptions{ThinkLevel: think.LevelLow}); err != nil {
 		t.Fatalf("Respond: %v", err)
 	}
 
@@ -87,13 +87,13 @@ func TestUsageStatsPutsMoneyOnRowsItCanPrice(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	a.recordTokenUsage(model.Usage{
+	a.recordTokenUsage(a.cur(), model.Usage{
 		PromptTokens: 16_829_510, CachedPromptTokens: 15_723_008,
 		CompletionTokens: 547_745, CacheReported: true,
 	})
 	// A model the catalog has never heard of, recorded in the same table.
 	a.cfg.ModelName = "some-local-model"
-	a.recordTokenUsage(model.Usage{PromptTokens: 1000, CompletionTokens: 100})
+	a.recordTokenUsage(a.cur(), model.Usage{PromptTokens: 1000, CompletionTokens: 100})
 
 	stats, err := a.UsageStats()
 	if err != nil {
@@ -150,7 +150,7 @@ func TestUsageStatsStillWorksWithNoPriceCatalog(t *testing.T) {
 			_ = a.db.Close()
 		}
 	})
-	a.recordTokenUsage(model.Usage{PromptTokens: 500, CompletionTokens: 50})
+	a.recordTokenUsage(a.cur(), model.Usage{PromptTokens: 500, CompletionTokens: 50})
 
 	stats, err := a.UsageStats()
 	if err != nil {
@@ -165,11 +165,10 @@ func TestUsageStatsStillWorksWithNoPriceCatalog(t *testing.T) {
 }
 
 func TestRecordAndAggregateTokenUsage(t *testing.T) {
-	a := &App{
-		cfg:       config.Config{ModelName: "test-model"},
-		sessionID: "s1",
-		dbDir:     t.TempDir(),
-	}
+	a := seed(&App{
+		cfg:   config.Config{ModelName: "test-model"},
+		dbDir: t.TempDir(),
+	}, &conversation{id: "s1"})
 	// Close the SQLite handle before TempDir cleanup — Windows can't delete
 	// an open file.
 	t.Cleanup(func() {
@@ -178,10 +177,10 @@ func TestRecordAndAggregateTokenUsage(t *testing.T) {
 		}
 	})
 
-	a.recordTokenUsage(model.Usage{PromptTokens: 100, CompletionTokens: 20})
-	a.recordTokenUsage(model.Usage{PromptTokens: 50, CompletionTokens: 5})
+	a.recordTokenUsage(a.cur(), model.Usage{PromptTokens: 100, CompletionTokens: 20})
+	a.recordTokenUsage(a.cur(), model.Usage{PromptTokens: 50, CompletionTokens: 5})
 	a.cfg.ModelName = "other-model"
-	a.recordTokenUsage(model.Usage{PromptTokens: 7, CompletionTokens: 3})
+	a.recordTokenUsage(a.cur(), model.Usage{PromptTokens: 7, CompletionTokens: 3})
 
 	stats, err := a.UsageStats()
 	if err != nil {
@@ -232,7 +231,7 @@ func TestSubscriptionUsageIsCountedButNotPriced(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	a.recordTokenUsage(model.Usage{PromptTokens: 15_778_607, CompletionTokens: 102_333})
+	a.recordTokenUsage(a.cur(), model.Usage{PromptTokens: 15_778_607, CompletionTokens: 102_333})
 
 	stats, err := a.UsageStats()
 	if err != nil {

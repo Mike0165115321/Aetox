@@ -15,7 +15,7 @@ import (
 // Getting this wrong drops page-1.png into the root of somebody's repository.
 func TestBrowserShotStaysOutOfTheProjectRoot(t *testing.T) {
 	root := t.TempDir()
-	a := &App{cfg: config.Config{SandboxRoot: root}, projectFocused: true, sessionID: "s1"}
+	a := seed(&App{cfg: config.Config{SandboxRoot: root}, projectFocused: true}, &conversation{id: "s1"})
 
 	rel, err := a.writeBrowserShot([]byte("\x89PNG fake"))
 	if err != nil {
@@ -47,7 +47,7 @@ func TestBrowserShotStaysOutOfTheProjectRoot(t *testing.T) {
 // Two shots in one turn are two files. They were one for as long as the name
 // was fixed, which reads as the second capture having failed silently.
 func TestTwoShotsAreTwoFiles(t *testing.T) {
-	a := &App{cfg: config.Config{SandboxRoot: t.TempDir()}, sessionID: "s1"}
+	a := seed(&App{cfg: config.Config{SandboxRoot: t.TempDir()}}, &conversation{id: "s1"})
 
 	first, err := a.writeBrowserShot([]byte("one"))
 	if err != nil {
@@ -74,7 +74,7 @@ func TestBrowserShotWorksBeforeASessionHasAnID(t *testing.T) {
 // No working folder is the one case where there is nowhere to put it, and the
 // refusal has to be a sentence rather than a file written who-knows-where.
 func TestBrowserShotRefusesWithNoWorkingFolder(t *testing.T) {
-	a := &App{sessionID: "s1"}
+	a := seed(&App{}, &conversation{id: "s1"})
 
 	if rel, err := a.writeBrowserShot([]byte("png")); err == nil {
 		t.Errorf("writeBrowserShot() with no sandbox root wrote to %q", rel)
@@ -84,7 +84,7 @@ func TestBrowserShotRefusesWithNoWorkingFolder(t *testing.T) {
 // capture asks whose tab it is before it asks the engine for a picture, so a
 // session with no page open is told so instead of waiting on a webview.
 func TestCaptureRefusesWithNoPageOpen(t *testing.T) {
-	a := &App{cfg: config.Config{SandboxRoot: t.TempDir()}, sessionID: "s1"}
+	a := seed(&App{cfg: config.Config{SandboxRoot: t.TempDir()}}, &conversation{id: "s1"})
 	a.browsers = &browserHost{app: a, tabs: map[string]*browserTab{}}
 
 	out, err := (&browserCaptureSkill{app: a}).capture(t.Context())

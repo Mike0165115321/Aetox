@@ -116,7 +116,7 @@ func TestAddMCPServerValidation(t *testing.T) {
 // tools — Aetox's own — being listed to the user as add-ons they had installed.
 func TestToolsAndSkillsAreSeparateLists(t *testing.T) {
 	a := newMCPTestApp(t)
-	a.applyConfig(a.cfg) // bootstrap so the registry is populated
+	a.applyConfig(a.cur(), a.cfg) // bootstrap so the registry is populated
 
 	tools := a.ListTools()
 	if len(tools) == 0 {

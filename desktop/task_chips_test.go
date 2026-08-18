@@ -92,7 +92,7 @@ func TestListTaskChipsEmptyIsNotNil(t *testing.T) {
 // command's own output, success flag included, whether it passed or failed.
 func TestRunChatCommandThroughRealShell(t *testing.T) {
 	registry := skill.NewDefaultRegistry(skill.RegistryOptions{SandboxRoot: t.TempDir()})
-	a := &App{registry: registry}
+	a := seed(&App{}, &conversation{registry: registry})
 
 	res, err := a.RunChatCommand("echo run-block-ok")
 	if err != nil {
@@ -117,7 +117,7 @@ func TestRunChatCommandGuards(t *testing.T) {
 	if _, err := a.RunChatCommand("echo hi"); err == nil {
 		t.Fatalf("no registry must mean a clear 'engine not ready' error")
 	}
-	a.registry = skill.NewDefaultRegistry(skill.RegistryOptions{SandboxRoot: t.TempDir()})
+	a.cur().registry = skill.NewDefaultRegistry(skill.RegistryOptions{SandboxRoot: t.TempDir()})
 	if _, err := a.RunChatCommand("   "); err == nil {
 		t.Fatalf("blank command must be rejected before reaching the shell")
 	}

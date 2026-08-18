@@ -16,7 +16,14 @@ import (
 // concrete options (the Claude Code AskUserQuestion pattern). The tool blocks
 // until the user clicks an option in the chat UI or the turn is canceled.
 // One question in flight at a time — the tool loop is sequential anyway.
-type askUserSkill struct{ app *App }
+// conv is the chat this tool belongs to. Built per conversation in
+// applyConfig, so a question raised by one chat's engine can only ever be
+// asked, drawn and answered in that chat — the owner's instruction on
+// 19 ส.ค.: *"ask_user หากมี ให้ขึ้นแจ้งเตือนที่เซสชั่นปกติเลยครับ"*.
+type askUserSkill struct {
+	app  *App
+	conv *conversation
+}
 
 func (*askUserSkill) Name() string { return "ask_user" }
 
@@ -86,11 +93,11 @@ func (s *askUserSkill) ask(ctx context.Context, question string, options []strin
 		return fail(errors.New("provide at least 2 options"))
 	}
 
-	answerCh, err := s.app.beginUserQuestion(question, options)
+	answerCh, err := s.app.beginUserQuestion(s.conv, question, options)
 	if err != nil {
 		return fail(err)
 	}
-	defer s.app.endUserQuestion()
+	defer s.app.endUserQuestion(s.conv)
 
 	select {
 	case answer := <-answerCh:
@@ -119,17 +126,17 @@ const (
 // windowsgui build has no console — reading its stdin fails instantly, which
 // is how every prompting tool call used to die with "read /dev/stdin: The
 // handle is invalid" before anyone saw a question.
-func (a *App) approveToolCall(ctx context.Context, command, reason string) (bool, error) {
+func (a *App) approveToolCall(conv *conversation, ctx context.Context, command, reason string) (bool, error) {
 	reason = strings.TrimSpace(reason)
 	question := fmt.Sprintf("ขออนุญาตรัน: `%s`", command)
 	if reason != "" {
 		question += fmt.Sprintf(" — %s", reason)
 	}
-	ch, err := a.beginUserQuestion(question, []string{approvalAllow, approvalDeny})
+	ch, err := a.beginUserQuestion(conv, question, []string{approvalAllow, approvalDeny})
 	if err != nil {
 		return false, err
 	}
-	defer a.endUserQuestion()
+	defer a.endUserQuestion(conv)
 	select {
 	case answer := <-ch:
 		return answer == approvalAllow, nil
@@ -140,37 +147,52 @@ func (a *App) approveToolCall(ctx context.Context, command, reason string) (bool
 
 // beginUserQuestion registers the single in-flight question and pushes it to
 // the chat UI. Fails loudly if one is already pending.
-func (a *App) beginUserQuestion(question string, options []string) (chan string, error) {
+func (a *App) beginUserQuestion(conv *conversation, question string, options []string) (chan string, error) {
 	a.askMu.Lock()
 	defer a.askMu.Unlock()
-	if a.askCh != nil {
+	if conv.askCh != nil {
 		return nil, errors.New("another question is already awaiting the user")
 	}
-	a.askCh = make(chan string, 1)
-	a.emitEvent("ask:user", map[string]any{
+	conv.askCh = make(chan string, 1)
+	// One question per chat, not one per app. Two conversations working at once
+	// can each be waiting on their own, and neither sees the other's — which is
+	// only true because the channel is the conversation's and the card is
+	// addressed to it.
+	a.emitEvent("ask:user", sessionEvent[map[string]any]{SessionID: conv.id, Data: map[string]any{
 		"question": question,
 		"options":  options,
-	})
-	return a.askCh, nil
+	}})
+	return conv.askCh, nil
 }
 
-func (a *App) endUserQuestion() {
+func (a *App) endUserQuestion(conv *conversation) {
 	a.askMu.Lock()
 	defer a.askMu.Unlock()
-	a.askCh = nil
-	a.emitEvent("ask:done", nil)
+	conv.askCh = nil
+	a.emitEvent("ask:done", sessionEvent[any]{SessionID: conv.id})
 }
 
 // AnswerUserQuestion delivers the user's choice to the blocked ask_user tool
 // call. No-op when nothing is pending (e.g. a stale click after cancel).
-func (a *App) AnswerUserQuestion(answer string) {
+// The session is named rather than assumed. The card is drawn in the chat that
+// raised it, so the click that answers it comes from that chat — and with two
+// conversations able to be waiting at once, "the one on screen" would deliver
+// one chat's answer into the other's blocked tool call.
+func (a *App) AnswerUserQuestion(sessionID, answer string) {
+	conv := a.convs.find(sessionID)
+	if conv == nil && sessionID == a.cur().id {
+		conv = a.cur()
+	}
+	if conv == nil {
+		return
+	}
 	a.askMu.Lock()
 	defer a.askMu.Unlock()
-	if a.askCh == nil {
+	if conv.askCh == nil {
 		return
 	}
 	select {
-	case a.askCh <- strings.TrimSpace(answer):
+	case conv.askCh <- strings.TrimSpace(answer):
 	default: // already answered
 	}
 }

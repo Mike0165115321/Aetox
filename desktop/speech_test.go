@@ -27,7 +27,7 @@ func newSpeechTestApp(t *testing.T) (*App, string) {
 	}
 
 	a := &App{}
-	a.applyConfig(config.Config{
+	a.applyConfig(a.cur(), config.Config{
 		SandboxRoot:   t.TempDir(),
 		ModelProvider: "aetox",
 		ModelName:     "aetox-grid",

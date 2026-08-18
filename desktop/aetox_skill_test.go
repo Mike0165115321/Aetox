@@ -162,18 +162,18 @@ func TestTheAetoxSkillNamesTheRealOutputLocation(t *testing.T) {
 		t.Errorf("the unfocused working root is %s and the aetox skill never says so", wantRoot)
 	}
 
-	a := &App{ctx: context.Background(), emit: func(string, ...any) {}, sessionID: newSessionID()}
+	a := seed(&App{ctx: context.Background(), emit: func(string, ...any) {}}, &conversation{id: newSessionID()})
 	sub := a.outputSubdir()
 	if sub == "" {
 		t.Fatal("outputSubdir is empty for an unfocused session with an id")
 	}
 	// The session id varies, so the folder is what is checked — the document
 	// writes it as output/<session>, which is the shape, not the value.
-	wantSub := "`" + strings.TrimSuffix(sub, a.sessionID) + "<session>`"
+	wantSub := "`" + strings.TrimSuffix(sub, a.cur().id) + "<session>`"
 	if !strings.Contains(body, wantSub) {
 		t.Errorf("new files go to %s and the aetox skill never says so", wantSub)
 	}
-	if !strings.Contains(body, "`<home>/"+mustRel(t, home, root)+"/"+strings.TrimSuffix(sub, a.sessionID)+"<session>`") {
+	if !strings.Contains(body, "`<home>/"+mustRel(t, home, root)+"/"+strings.TrimSuffix(sub, a.cur().id)+"<session>`") {
 		t.Error("the aetox skill never writes the joined absolute destination; " +
 			"the two halves are only useful together")
 	}
@@ -198,23 +198,23 @@ func TestTheAetoxSkillNamesTheFolderConstants(t *testing.T) {
 func TestTheBundledSkillIsNotInTheToolBlock(t *testing.T) {
 	isolateUserDirs(t)
 	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
-	a := &App{ctx: context.Background(), emit: func(string, ...any) {}, dbDir: t.TempDir(), sessionID: newSessionID()}
+	a := seed(&App{ctx: context.Background(), emit: func(string, ...any) {}, dbDir: t.TempDir()}, &conversation{id: newSessionID()})
 	t.Cleanup(func() {
 		if a.db != nil {
 			_ = a.db.Close()
 		}
 	})
-	a.applyConfig(config.Config{
+	a.applyConfig(a.cur(), config.Config{
 		SandboxRoot:   t.TempDir(),
 		ModelProvider: "aetox",
 		ModelName:     "aetox-tools:test",
 		ApprovalMode:  string(safety.ApprovalFullAccess),
 	})
 
-	if _, ok := a.registry.Get("aetox"); !ok {
+	if _, ok := a.cur().registry.Get("aetox"); !ok {
 		t.Fatal("the bundled skill is not registered at all — it would never reach skills_list either")
 	}
-	for _, d := range skill.NewDispatcher(a.registry).ToolDefinitions() {
+	for _, d := range skill.NewDispatcher(a.cur().registry).ToolDefinitions() {
 		if d.Function.Name == "aetox" {
 			t.Fatal("the bundled aetox skill is being sent as a tool definition; " +
 				"it must be reachable only through skills_list/skill_view")

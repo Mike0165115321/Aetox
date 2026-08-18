@@ -50,7 +50,7 @@ func TestOpeningAnOlderDatabaseAddsMissingColumns(t *testing.T) {
 	})
 
 	// Opening runs the schema then the ALTER; recording must now succeed.
-	a.recordTokenUsage(model.Usage{PromptTokens: 4011, CachedPromptTokens: 3968, CacheReported: true, CompletionTokens: 1})
+	a.recordTokenUsage(a.cur(), model.Usage{PromptTokens: 4011, CachedPromptTokens: 3968, CacheReported: true, CompletionTokens: 1})
 
 	stats, err := a.UsageStats()
 	if err != nil {
@@ -106,9 +106,9 @@ func TestUnreportedCacheStaysDistinctFromZero(t *testing.T) {
 		}
 	})
 
-	a.recordTokenUsage(model.Usage{PromptTokens: 3005, CompletionTokens: 12}) // no cache accounting
+	a.recordTokenUsage(a.cur(), model.Usage{PromptTokens: 3005, CompletionTokens: 12}) // no cache accounting
 	a.cfg.ModelName = "api-model"
-	a.recordTokenUsage(model.Usage{PromptTokens: 4011, CachedPromptTokens: 0, CacheReported: true, CompletionTokens: 1}) // measured: nothing hit
+	a.recordTokenUsage(a.cur(), model.Usage{PromptTokens: 4011, CachedPromptTokens: 0, CacheReported: true, CompletionTokens: 1}) // measured: nothing hit
 
 	stats, err := a.UsageStats()
 	if err != nil {
@@ -161,10 +161,10 @@ func TestDailySeriesIsAggregatedPerDay(t *testing.T) {
 		}
 	})
 	for i := 0; i < 5; i++ {
-		a.recordTokenUsage(model.Usage{PromptTokens: 10, CompletionTokens: 1})
+		a.recordTokenUsage(a.cur(), model.Usage{PromptTokens: 10, CompletionTokens: 1})
 	}
 	a.cfg.ModelName = "m2"
-	a.recordTokenUsage(model.Usage{PromptTokens: 7, CompletionTokens: 2})
+	a.recordTokenUsage(a.cur(), model.Usage{PromptTokens: 7, CompletionTokens: 2})
 
 	stats, err := a.UsageStats()
 	if err != nil {
@@ -200,10 +200,10 @@ func TestDailySeriesCarriesTheCacheSplit(t *testing.T) {
 			_ = a.db.Close()
 		}
 	})
-	a.recordTokenUsage(model.Usage{PromptTokens: 1000, CachedPromptTokens: 800, CacheReported: true, CompletionTokens: 90})
-	a.recordTokenUsage(model.Usage{PromptTokens: 500, CachedPromptTokens: 100, CacheReported: true, CompletionTokens: 10})
+	a.recordTokenUsage(a.cur(), model.Usage{PromptTokens: 1000, CachedPromptTokens: 800, CacheReported: true, CompletionTokens: 90})
+	a.recordTokenUsage(a.cur(), model.Usage{PromptTokens: 500, CachedPromptTokens: 100, CacheReported: true, CompletionTokens: 10})
 	a.cfg.ModelName = "local-model"
-	a.recordTokenUsage(model.Usage{PromptTokens: 400, CompletionTokens: 60})
+	a.recordTokenUsage(a.cur(), model.Usage{PromptTokens: 400, CompletionTokens: 60})
 
 	stats, err := a.UsageStats()
 	if err != nil {

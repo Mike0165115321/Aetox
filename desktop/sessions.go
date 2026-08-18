@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Mike0165115321/Aetox/internal/config"
@@ -159,8 +160,36 @@ func isUnfocusedKey(key string) bool {
 	return err == nil && home != "" && key == projectKey(home)
 }
 
+// newSessionID is a chat's permanent name: the moment it was created, to the
+// millisecond, which reads as a date in the database and sorts as one too.
+//
+// Two chats created inside the same millisecond used to get the same name.
+// That was unreachable in practice while the app held one conversation and
+// every door out of a running turn refused — you cannot click twice in a
+// millisecond — and it stopped being unreachable the moment opening a chat
+// became something code does beside a running turn. The collision is not
+// cosmetic: two conversations land on one key in the live map, and openTurn's
+// ON CONFLICT folds their rows into one session in the store. A test that
+// opened a second chat programmatically hit it on the first run.
+//
+// The clock is still the name; the counter only breaks ties, and only within
+// the one millisecond that produced them.
+var (
+	sessionIDMu   sync.Mutex
+	lastSessionID string
+	sessionIDSeq  int
+)
+
 func newSessionID() string {
-	return time.Now().Format("20060102-150405.000")
+	stamp := time.Now().Format("20060102-150405.000")
+	sessionIDMu.Lock()
+	defer sessionIDMu.Unlock()
+	if stamp != lastSessionID {
+		lastSessionID, sessionIDSeq = stamp, 0
+		return stamp
+	}
+	sessionIDSeq++
+	return fmt.Sprintf("%s-%d", stamp, sessionIDSeq)
 }
 
 func sessionTitleFrom(text string) string {
@@ -195,9 +224,9 @@ func sessionTitleFrom(text string) string {
 // answer under it is the honest record of what happened; a conversation that
 // vanishes is not. Returns false when there is nothing to write into, so the
 // caller can carry on rather than treat it as a failed turn.
-func (a *App) openTurn(userMsg SessionMessage) bool {
+func (a *App) openTurn(conv *conversation, userMsg SessionMessage) bool {
 	db, err := a.database()
-	sessionID := a.turnSessionID()
+	sessionID := conv.id
 	if err != nil || sessionID == "" {
 		return false
 	}
@@ -210,7 +239,7 @@ func (a *App) openTurn(userMsg SessionMessage) bool {
 		VALUES(?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at`,
 		sessionID, projectKey(a.cfg.SandboxRoot), sessionTitleFrom(userMsg.Text), now, now,
-		a.desk.DeskName(), a.chair, a.space, a.stance.String()); err != nil {
+		conv.desk.DeskName(), conv.chair, conv.space, conv.stance.String()); err != nil {
 		return false
 	}
 	if _, err := db.Exec(
@@ -218,17 +247,15 @@ func (a *App) openTurn(userMsg SessionMessage) bool {
 		sessionID, userMsg.Role, userMsg.Text, userMsg.Time, userMsg.Reasoning, userMsg.ThinkSecs, encodeParts(userMsg.Parts)); err != nil {
 		return false
 	}
-	a.turnOpened = true
+	conv.turnOpened = true
 	return true
 }
 
-func (a *App) appendTurn(userMsg, agentMsg SessionMessage) int64 {
+func (a *App) appendTurn(conv *conversation, userMsg, agentMsg SessionMessage) int64 {
 	db, err := a.database()
-	// The turn's own session, stamped at its birth — never a.sessionID read
-	// now, which is whatever chat the user has moved to since. The switch doors
-	// refuse to move it mid-turn, so the two are normally identical; this is
-	// what keeps the answer home even if some door is ever left unguarded.
-	sessionID := a.turnSessionID()
+	// The turn's own session, handed in when the turn began — never "the chat
+	// on screen" read now, which is wherever the user has moved to since.
+	sessionID := conv.id
 	if err != nil || sessionID == "" {
 		return 0
 	}
@@ -248,16 +275,16 @@ func (a *App) appendTurn(userMsg, agentMsg SessionMessage) int64 {
 		INSERT INTO sessions(id, project_key, title, created_at, updated_at, mode, agent, space, stance)
 		VALUES(?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at`,
-		sessionID, projectKey(a.cfg.SandboxRoot), sessionTitleFrom(userMsg.Text), now, now, a.desk.DeskName(), a.chair, a.space, a.stance.String())
+		sessionID, projectKey(a.cfg.SandboxRoot), sessionTitleFrom(userMsg.Text), now, now, a.cur().desk.DeskName(), a.cur().chair, a.cur().space, a.cur().stance.String())
 	// The question, unless openTurn already wrote it when it was asked —
 	// writing it twice would double every user message in the transcript. The
 	// flag is the whole coupling between the two halves, and it is deliberately
 	// on the App rather than passed in: only one turn is ever in flight.
 	pending := []SessionMessage{userMsg, agentMsg}
-	if a.turnOpened {
+	if a.cur().turnOpened {
 		pending = []SessionMessage{agentMsg}
 	}
-	a.turnOpened = false
+	a.cur().turnOpened = false
 	var agentID int64
 	for _, m := range pending {
 		res, execErr := tx.Exec(`INSERT INTO messages(session_id, role, text, time, reasoning, think_secs, parts) VALUES(?,?,?,?,?,?,?)`,
@@ -284,16 +311,16 @@ func (a *App) appendTurn(userMsg, agentMsg SessionMessage) int64 {
 //
 // The FTS triggers index it like any other row, which is right: "the turn where
 // the quota ran out" is a thing a person searches for.
-func (a *App) appendFailedTurn(agentMsg SessionMessage, cause error) int64 {
+func (a *App) appendFailedTurn(conv *conversation, agentMsg SessionMessage, cause error) int64 {
 	db, err := a.database()
-	sessionID := a.turnSessionID()
+	sessionID := conv.id
 	if err != nil || sessionID == "" || cause == nil {
 		return 0
 	}
 	// The flag is lowered here as well as in appendTurn, because this is now the
 	// other way a turn can end. Left standing it would tell the NEXT turn's
 	// appendTurn that its question was already stored.
-	a.turnOpened = false
+	conv.turnOpened = false
 	// Never empty, whatever the error stringifies to: an empty column means "this
 	// turn succeeded", and a failure recorded as a success is worse than one
 	// recorded with a vague reason.
@@ -318,39 +345,26 @@ func (a *App) appendFailedTurn(agentMsg SessionMessage, cause error) int64 {
 	return id
 }
 
-// startNewSession begins a fresh transcript (and fresh agent memory). Nothing
-// is written until the first message, so blank sessions never appear.
+// startNewSession opens a fresh chat and puts it on screen.
+//
+// It used to empty the chat that was open: new id, transcript to nil, project
+// and stance back to their defaults, ClearContext on the agent. That was the
+// only way to say "new" when the app held one conversation — and it is also why
+// a turn in flight had to be refused, because emptying the chat it was running
+// in is exactly what it sounds like. A new chat is a new conversation now, and
+// whatever was open keeps whatever it was doing.
+//
+// The desk (and its chair) come across, because those are where the WINDOW is
+// rather than what the last chat held: pressing "new chat" at a desk opens a
+// chat at that desk. Everything else starts at its default — no project, ลงมือ,
+// and a memory that has never held anything.
 func (a *App) startNewSession() {
-	a.sessionID = newSessionID()
-	a.transcript = nil
-	// No half-written turn carries into the next conversation: the flag means
-	// "the question for the turn in flight is already stored", and a session
-	// that has not started has no turn in flight.
-	a.turnOpened = false
-	// A new chat is in no project until something says otherwise. Left standing,
-	// the last project a session was opened in would follow the user out of the
-	// room: click ผู้ช่วย for a fresh chat and it would be filed under that
-	// project, told about its files, and recorded on its row — a chat nobody
-	// opened there. NewSessionInSpace sets this again after calling through
-	// here, which is why clearing it first is safe as well as right.
-	a.space = ""
-	// A fresh conversation starts at ลงมือ, for the same reason the project is
-	// cleared one line up: a dial the user turned for one conversation must not
-	// follow them into the next. Coming back to a blank chat that quietly holds
-	// no tools is the worst version of this feature — nothing works and the
-	// screen has already stopped explaining why.
-	//
-	// Re-bootstrapped here rather than left to the caller, because NewSession()
-	// does not go through setStation and would otherwise reset the field while
-	// the running engine kept the old stance's dispatcher. Guarded so the common
-	// case — a new chat while already at ลงมือ — still rebuilds nothing.
-	if a.stance != mode.StanceAct {
-		a.stance = mode.StanceAct
-		a.applyConfig(a.cfg)
-	}
-	if a.agent != nil {
-		a.agent.ClearContext()
-	}
+	prev := a.cur()
+	conv := newConversation()
+	conv.id = newSessionID()
+	conv.desk, conv.chair = prev.desk, prev.chair
+	a.applyConfig(conv, a.cfg)
+	a.showConversation(conv)
 }
 
 // ListSessions returns this project's chat history, newest first.
@@ -363,7 +377,7 @@ func (a *App) ListSessions() []SessionMeta {
 //
 // An empty desk means every desk rather than the legacy one, because that is
 // the question the combined list asks. Sessions from before modes existed hold
-// '' in the column and so appear only here, which is right: they were held at
+// ” in the column and so appear only here, which is right: they were held at
 // no desk, and filing them under one would be inventing a fact about them.
 func (a *App) ListSessionsAt(desk string) []SessionMeta {
 	out := []SessionMeta{}
@@ -414,8 +428,8 @@ func (a *App) SessionMode(id string) string {
 // any other id — a stored session with no row is genuinely unknown, and
 // answering with wherever the window happens to be would be inventing one.
 func (a *App) liveDesk(id string) string {
-	if id != "" && id == a.sessionID {
-		return a.desk.DeskName()
+	if id != "" && id == a.cur().id {
+		return a.cur().desk.DeskName()
 	}
 	return ""
 }
@@ -438,8 +452,8 @@ func (a *App) SessionAgent(id string) string {
 // liveChair is liveDesk's other half: who the live session is being held with,
 // before its first turn puts a row in the table.
 func (a *App) liveChair(id string) string {
-	if id != "" && id == a.sessionID {
-		return a.chair
+	if id != "" && id == a.cur().id {
+		return a.cur().chair
 	}
 	return ""
 }
@@ -748,14 +762,26 @@ func (a *App) LoadSessionAnyProject(id string) ([]SessionMessage, error) {
 // and the agent's context is rebuilt from it so the conversation continues
 // with memory intact.
 func (a *App) LoadSession(id string) ([]SessionMessage, error) {
-	// A turn in flight holds the one agent context this function is about to
-	// rewrite (ClearContext/RestoreHistory below) — and once a.sessionID moves,
-	// the running turn's answer would follow the user into the newly opened
-	// chat. Both were real: the answer landed in the wrong conversation and was
-	// persisted there. One turn, one chat; finish or stop before switching.
-	if err := a.guardSessionSwitch(); err != nil {
-		return nil, err
-	}
+	// No gate. There was one, and it refused every attempt to open another chat
+	// while a turn was running, for a reason that was true when it was written:
+	// this function rewrote THE agent context, so a turn in flight would have
+	// finished on a conversation it never started in and its answer would have
+	// followed the user into whatever chat they had opened.
+	//
+	// It rewrites nothing now. A conversation this process is still holding an
+	// engine for is opened by attaching to it; one it is not is built fresh,
+	// beside the running turn rather than on top of it (desktop/conversation.go).
+	//
+	// What "attaching" means is narrow, and the narrowness is the point: the
+	// ENGINE is reused, the rows are not. What the model actually saw — the tool
+	// calls, their results, the summaries a compaction left behind — lives in
+	// that agent's context and none of it survives a trip through the text
+	// transcript, so rebuilding it would throw away the difference between
+	// opening a chat and coming back to one. The transcript is a different
+	// question with a different home: it is rows, the store holds them, and
+	// reading it from anywhere else would make `conv.transcript` a second
+	// answer to what was said.
+	live := a.convs.find(id)
 	db, err := a.database()
 	if err != nil {
 		return nil, err
@@ -792,6 +818,14 @@ func (a *App) LoadSession(id string) ([]SessionMessage, error) {
 	// going to root it back at the home directory, so matching the message filter
 	// to the running root can never find those rows. The session says which bucket
 	// it is in; that is the answer, and it was two lines away the whole time.
+	// Built beside whatever is on screen, never by rewriting it: the chat the
+	// user is leaving may have a turn in it, and that turn's engine is that
+	// object.
+	conv := live
+	if conv == nil {
+		conv = newConversation()
+		conv.id = id
+	}
 	var desk, chair, space, key, stance string
 	if db.QueryRow(`SELECT mode, agent, space, project_key, stance FROM sessions WHERE id = ?`, id).
 		Scan(&desk, &chair, &space, &key, &stance) == nil {
@@ -803,12 +837,31 @@ func (a *App) LoadSession(id string) ([]SessionMessage, error) {
 		// build wrote and this one does not implement, and NormalizeStance
 		// answers ลงมือ for it — a reopened conversation must never come back
 		// silently carrying nothing.
-		a.stance = mode.NormalizeStance(stance)
-		if err := a.setStation(desk, chair); err != nil {
+		m, seat, err := resolveStation(desk, chair)
+		if err != nil {
 			return nil, err
 		}
-		a.space = a.resolvedSpace(space)
-		a.applyConfig(a.cfg)
+		rememberDesk(m.DeskName())
+		// Only a conversation being built takes its coordinates from the row. A
+		// live one already IS at that desk — it has been running there — and
+		// writing them again would be re-deciding a question that was settled
+		// when it opened.
+		if live == nil {
+			// Normalized rather than trusted. The column can hold a stance a
+			// later build wrote and this one does not implement, and
+			// NormalizeStance answers ลงมือ for it — a reopened conversation
+			// must never come back silently carrying nothing.
+			conv.stance = mode.NormalizeStance(stance)
+			conv.desk, conv.chair = m, seat
+			conv.space = a.resolvedSpace(space)
+		}
+	}
+	if live == nil {
+		// One bootstrap, for this conversation, with its own coordinates already
+		// on it. The old path set the fields on the chat that was open and then
+		// re-bootstrapped it twice — once inside setStation and once after —
+		// which is what "opening a session" used to cost.
+		a.applyConfig(conv, a.cfg)
 	}
 	if key == "" {
 		key = projectKey(a.cfg.SandboxRoot)
@@ -821,12 +874,18 @@ func (a *App) LoadSession(id string) ([]SessionMessage, error) {
 		return nil, fmt.Errorf("ไม่พบเซสชันนี้ในโปรเจกต์ปัจจุบัน")
 	}
 
-	a.sessionID = id
-	a.transcript = messages
-	if a.agent != nil {
-		a.agent.ClearContext()
-		a.agent.RestoreHistory(transcriptToModelMessages(messages))
+	conv.transcript = messages
+	if live == nil && conv.agent != nil {
+		// A freshly built engine has an empty context; the history it is given
+		// is this session's and nothing else's. ClearContext used to be needed
+		// here because the agent being restored into was the previous chat's.
+		//
+		// Never for a live one. Its memory is ahead of the transcript, not
+		// behind it, and replaying rows over the top would be the one act this
+		// whole change exists to stop.
+		conv.agent.RestoreHistory(transcriptToModelMessages(messages))
 	}
+	a.showConversation(conv)
 	return messages, nil
 }
 
@@ -875,7 +934,7 @@ func (a *App) readTranscript(id, key string) ([]SessionMessage, error) {
 }
 
 // SessionTranscript reads one session's messages without touching the engine:
-// no station switch, no context rebuild, a.sessionID stays where it is.
+// no station switch, no context rebuild, a.cur().id stays where it is.
 //
 // It exists for the window that just reloaded. The Go side outlives a webview
 // reload, so the engine is still holding the session — and, mid-turn, still
@@ -900,11 +959,8 @@ func (a *App) SessionTranscript(id string) ([]SessionMessage, error) {
 // NewSession starts a blank session at the desk the app is already at, and
 // returns its id.
 func (a *App) NewSession() (string, error) {
-	if err := a.guardSessionSwitch(); err != nil {
-		return "", err
-	}
 	a.startNewSession()
-	return a.sessionID, nil
+	return a.cur().id, nil
 }
 
 // NewSessionAt starts a blank session at the named desk — the five buttons'
@@ -921,9 +977,6 @@ func (a *App) NewSession() (string, error) {
 // desk-aware door; the old one keeps working for everything that has not been
 // pointed at a desk yet.
 func (a *App) NewSessionAt(desk string) (string, error) {
-	if err := a.guardSessionSwitch(); err != nil {
-		return "", err
-	}
 	// Cleared first, then switched: setStation re-bootstraps, and a re-bootstrap
 	// carries the outgoing agent's context into the new one. Emptying the
 	// conversation before that means the new desk starts on nothing, which is
@@ -932,21 +985,18 @@ func (a *App) NewSessionAt(desk string) (string, error) {
 	if err := a.setStation(desk, ""); err != nil {
 		return "", err
 	}
-	return a.sessionID, nil
+	return a.cur().id, nil
 }
 
 // NewChairSession starts a blank session talking directly to one of the
 // office's agents (§85), and returns its id. The desk is implied: a chair
 // only exists in the office.
 func (a *App) NewChairSession(chair string) (string, error) {
-	if err := a.guardSessionSwitch(); err != nil {
-		return "", err
-	}
 	a.startNewSession()
 	if err := a.setStation(mode.Office, chair); err != nil {
 		return "", err
 	}
-	return a.sessionID, nil
+	return a.cur().id, nil
 }
 
 // setStation points the engine at a desk and, optionally, one of the office's
@@ -965,7 +1015,7 @@ func (a *App) NewChairSession(chair string) (string, error) {
 // impersonate someone (a deleted chair answered by the main assistant).
 func (a *App) setStation(desk, chair string) error {
 	desk, chair = strings.TrimSpace(desk), strings.TrimSpace(chair)
-	if desk == a.desk.DeskName() && chair == a.chair {
+	if desk == a.cur().desk.DeskName() && chair == a.cur().chair {
 		return nil
 	}
 	if chair != "" {
@@ -984,15 +1034,43 @@ func (a *App) setStation(desk, chair string) error {
 	if !ok {
 		return fmt.Errorf("ไม่รู้จักโต๊ะ %q — ไฟล์ของโต๊ะนี้อาจถูกลบไปแล้ว", desk)
 	}
-	a.desk, a.chair = m, chair
-	a.applyConfig(a.cfg)
+	a.cur().desk, a.cur().chair = m, chair
+	a.applyConfig(a.cur(), a.cfg)
 	rememberDesk(m.DeskName())
 	return nil
 }
 
+// resolveStation is setStation's judgement without its effects: it answers
+// whether this desk and chair are a pair that may exist, and what desk that is.
+//
+// Split out because a conversation being BUILT needs the same answer before it
+// has an engine to rebuild — LoadSession opening a stored session at its own
+// desk, where mutating the chat on screen first (which is what setStation does)
+// would move the window to a desk that then turns out to be invalid.
+func resolveStation(desk, chair string) (*mode.Mode, string, error) {
+	desk, chair = strings.TrimSpace(desk), strings.TrimSpace(chair)
+	if chair != "" {
+		if desk != mode.Office {
+			return nil, "", fmt.Errorf("เอเจนนั่งได้เฉพาะในออฟฟิศ — โต๊ะ %q มีเอเจนไม่ได้", desk)
+		}
+		p, ok := subagent.Load(chair)
+		if !ok {
+			return nil, "", fmt.Errorf("ไม่รู้จักเอเจน %q — ไฟล์โปรไฟล์ของเอเจนนี้อาจถูกลบไปแล้ว", chair)
+		}
+		if p.Desk != mode.Office {
+			return nil, "", fmt.Errorf("%q ไม่ได้เป็นเอเจนของออฟฟิศ — คุยตรงได้เฉพาะโปรไฟล์ที่ประกาศ desk: specialized", chair)
+		}
+	}
+	m, ok := mode.Load(desk)
+	if !ok {
+		return nil, "", fmt.Errorf("ไม่รู้จักโต๊ะ %q — ไฟล์ของโต๊ะนี้อาจถูกลบไปแล้ว", desk)
+	}
+	return m, chair, nil
+}
+
 // rememberDesk records where the window is, so the next launch opens there
 // (COMPANY.md §2). Written here because setStation is the only writer of
-// a.desk — anywhere else would be a second answer to "where am I".
+// a.cur().desk — anywhere else would be a second answer to "where am I".
 //
 // The legacy full desk ("") is skipped: it is also the value that means
 // "nothing remembered", and opening a pre-desk conversation to read it back is
@@ -1015,7 +1093,7 @@ func rememberDesk(desk string) {
 // CurrentSessionID reports which session the engine is writing to, so the
 // sidebar can highlight the active row.
 func (a *App) CurrentSessionID() string {
-	return a.sessionID
+	return a.cur().id
 }
 
 // DeleteSession permanently removes one session and its messages (any
@@ -1027,7 +1105,7 @@ func (a *App) DeleteSession(id string) error {
 	// the turn's closing INSERT race, and appendTurn's ON CONFLICT re-creates
 	// the session row the user just removed: a conversation that comes back
 	// from the dead with one answer and no question.
-	if id == a.turnSessionID() && a.turnBusy() {
+	if a.turnRunningIn(id) {
 		return errTurnBusy
 	}
 	db, err := a.database()
@@ -1080,7 +1158,7 @@ func (a *App) DeleteSession(id string) error {
 			}
 		}
 	}
-	if a.sessionID == id {
+	if a.cur().id == id {
 		a.startNewSession()
 	}
 	return nil

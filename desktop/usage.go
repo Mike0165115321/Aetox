@@ -15,7 +15,7 @@ import (
 // agent via SetUsageReporter (applyConfig), so every API round — including
 // each tool-loop iteration — lands here. Failures only log: usage stats must
 // never break a chat turn.
-func (a *App) recordTokenUsage(u model.Usage) {
+func (a *App) recordTokenUsage(conv *conversation, u model.Usage) {
 	db, err := a.database()
 	if err != nil {
 		debuglog.Msg("usage: db unavailable: %v", err)
@@ -31,7 +31,7 @@ func (a *App) recordTokenUsage(u model.Usage) {
 	_, err = db.Exec(
 		`INSERT INTO token_usage(session_id, model, provider, prompt_tokens, completion_tokens, cached_prompt_tokens, time)
 		 VALUES(?,?,?,?,?,?,?)`,
-		a.sessionID, a.cfg.ModelName, model.NormalizeProvider(a.cfg.ModelProvider),
+		conv.id, a.cfg.ModelName, model.NormalizeProvider(a.cfg.ModelProvider),
 		u.PromptTokens, u.CompletionTokens, cached, time.Now().Format(time.RFC3339),
 	)
 	if err != nil {

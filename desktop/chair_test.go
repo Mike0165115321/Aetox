@@ -43,16 +43,18 @@ func TestAChairSessionSendsTheChairsCutOnly(t *testing.T) {
 	if !slices.Contains(got, "ask_user") {
 		t.Errorf("deck's chat cannot ask the person it is talking to: %v", got)
 	}
-	// task: a leaf stays a leaf, even when spoken to. shell: the office
-	// ceiling, in person. todo_write: still a forced denial — a checklist is
-	// the main agent's panel, and nothing draws a second one here.
-	for _, banned := range []string{"task", "task_result", "shell", "diagnostics", "todo_write"} {
+	// task: a leaf stays a leaf, even when spoken to. diagnostics: the office
+	// ceiling, in person — the code group is what this desk still refuses, now
+	// that files and shell have moved into the room (2026-08-19). todo_write:
+	// still a forced denial — a checklist is the main agent's panel, and
+	// nothing draws a second one here.
+	for _, banned := range []string{"task", "task_result", "diagnostics", "symbol", "todo_write"} {
 		if slices.Contains(got, banned) {
 			t.Errorf("deck's chat carries %s — the chair's cut must match its delegate runs", banned)
 		}
 	}
 
-	messages := a.agent.ContextMessages()
+	messages := a.cur().agent.ContextMessages()
 	if len(messages) == 0 {
 		t.Fatal("no system prompt")
 	}
@@ -85,8 +87,8 @@ func TestNewChairSessionRefusesStrangers(t *testing.T) {
 	if _, err := a.NewChairSession("explore"); err == nil {
 		t.Error("a non-office profile opened a direct chat")
 	}
-	if a.chair != "" {
-		t.Errorf("a refused door still seated the session at %q", a.chair)
+	if a.cur().chair != "" {
+		t.Errorf("a refused door still seated the session at %q", a.cur().chair)
 	}
 }
 
@@ -116,24 +118,28 @@ func TestReopeningAChairSessionRestoresTheChairOrRefuses(t *testing.T) {
 		t.Fatalf("NewChairSession(painter): %v", err)
 	}
 	now := time.Now().Format(time.RFC3339)
-	a.appendTurn(
+	a.appendTurn(a.cur(),
 		SessionMessage{Role: "user", Text: "สวัสดี", Time: now},
 		SessionMessage{Role: "agent", Text: "สวัสดีครับ", Time: now},
 	)
 
-	// Walk away to the plain desk, then come back.
-	if err := a.setStation("", ""); err != nil {
+	// Walk away, then come back. Walking away is opening another chat at the
+	// plain desk — which is what the product does — rather than moving this
+	// chat's desk out from under it: a session is born at a desk and stays
+	// there (desktop/conversation.go), and the chair session has to still be
+	// sitting at its own when it is reopened.
+	if _, err := a.NewSessionAt(""); err != nil {
 		t.Fatalf("leaving the chair: %v", err)
 	}
 	if _, err := a.LoadSession(id); err != nil {
 		t.Fatalf("reopening the chair session: %v", err)
 	}
-	if a.chair != "painter" {
-		t.Fatalf("reopened session sits at %q, want painter", a.chair)
+	if a.cur().chair != "painter" {
+		t.Fatalf("reopened session sits at %q, want painter", a.cur().chair)
 	}
 
 	// Delete the profile and try again: refusal, with the chair named.
-	if err := a.setStation("", ""); err != nil {
+	if _, err := a.NewSessionAt(""); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Remove(profile); err != nil {
@@ -142,8 +148,8 @@ func TestReopeningAChairSessionRestoresTheChairOrRefuses(t *testing.T) {
 	if _, err := a.LoadSession(id); err == nil {
 		t.Fatal("a chair session reopened without its profile file")
 	}
-	if a.chair != "" {
-		t.Errorf("a refused reopen still seated the session at %q", a.chair)
+	if a.cur().chair != "" {
+		t.Errorf("a refused reopen still seated the session at %q", a.cur().chair)
 	}
 }
 
@@ -160,7 +166,7 @@ func TestTheGitHubChairRunsOnItsOwnBrief(t *testing.T) {
 		t.Fatalf("NewChairSession(github): %v", err)
 	}
 
-	messages := a.agent.ContextMessages()
+	messages := a.cur().agent.ContextMessages()
 	if len(messages) == 0 {
 		t.Fatal("no system prompt")
 	}
@@ -199,7 +205,7 @@ func TestAChairsBriefIsReadBeforeTheMachinesRules(t *testing.T) {
 	if _, err := a.NewChairSession("github"); err != nil {
 		t.Fatalf("NewChairSession(github): %v", err)
 	}
-	sys := a.agent.ContextMessages()[0].Content
+	sys := a.cur().agent.ContextMessages()[0].Content
 
 	// One identity, kept — it carries "concise" and "Thai and English", which
 	// are behaviour and were never the thing in the way.
@@ -217,4 +223,3 @@ func TestAChairsBriefIsReadBeforeTheMachinesRules(t *testing.T) {
 		}
 	}
 }
-

@@ -31,7 +31,7 @@ func TestSaveChatAttachmentLandsInSessionFolder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SaveChatFile: %v", err)
 	}
-	wantPrefix := attachmentsDir + "/" + a.sessionID + "/"
+	wantPrefix := attachmentsDir + "/" + a.cur().id + "/"
 	if !strings.HasPrefix(rel, wantPrefix) {
 		t.Errorf("attachment path = %q, want it under %q — outside its session folder it outlives the chat", rel, wantPrefix)
 	}
@@ -42,7 +42,7 @@ func TestSaveChatAttachmentLandsInSessionFolder(t *testing.T) {
 
 func TestSaveChatAttachmentRequiresASession(t *testing.T) {
 	a := newTestApp(t, t.TempDir())
-	a.sessionID = ""
+	a.cur().id = ""
 	if _, err := a.SaveChatFile(writeSourceFile(t, "doc.pdf")); err == nil {
 		t.Fatal("no session must fail loudly — a flat file would be swept as legacy")
 	}
@@ -51,14 +51,14 @@ func TestSaveChatAttachmentRequiresASession(t *testing.T) {
 func TestDeleteSessionRemovesItsAttachments(t *testing.T) {
 	root := t.TempDir()
 	a := newTestApp(t, root)
-	a.appendTurn(
+	a.appendTurn(a.cur(),
 		SessionMessage{Role: "user", Text: "with attachment", Time: "10:00"},
 		SessionMessage{Role: "agent", Text: "ok", Time: "10:00"},
 	)
 	if _, err := a.SaveChatFile(writeSourceFile(t, "doc.pdf")); err != nil {
 		t.Fatalf("SaveChatFile: %v", err)
 	}
-	id := a.sessionID
+	id := a.cur().id
 	dir := filepath.Join(root, attachmentsDir, id)
 	if _, err := os.Stat(dir); err != nil {
 		t.Fatalf("attachment folder missing before delete: %v", err)
@@ -75,13 +75,13 @@ func TestDeleteSessionRemovesItsAttachments(t *testing.T) {
 func TestSweepAttachments(t *testing.T) {
 	root := t.TempDir()
 	a := newTestApp(t, root)
-	a.appendTurn(
+	a.appendTurn(a.cur(),
 		SessionMessage{Role: "user", Text: "owner", Time: "10:00"},
 		SessionMessage{Role: "agent", Text: "ok", Time: "10:00"},
 	)
 	dir := filepath.Join(root, attachmentsDir)
 
-	owned := filepath.Join(dir, a.sessionID) // has a sessions row → kept
+	owned := filepath.Join(dir, a.cur().id) // has a sessions row → kept
 	fresh := filepath.Join(dir, "20991231-000000.000")
 	orphan := filepath.Join(dir, "20250101-000000.000")
 	for _, d := range []string{owned, fresh, orphan} {

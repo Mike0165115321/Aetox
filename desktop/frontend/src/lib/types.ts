@@ -562,6 +562,16 @@ export interface CockpitState {
   stances: string[]
   /** True from the moment a message is sent until the reply (or an error) arrives. */
   awaitingReply: boolean
+  /** Which conversation the turn in flight belongs to. '' when nothing is running.
+   *
+   *  The window used to answer this by looking at `active` — the engine's open
+   *  session — which is the same id right up until the moment it matters. The
+   *  question it is really asked is "is the chat I am about to open the one
+   *  that is working?", and answering it from the engine's cursor meant the
+   *  working chat could be handed back as a stored transcript with the live
+   *  work missing. Stamped from the engine's own session id when the turn
+   *  starts (the same value Go stamps the turn with), so the two cannot drift. */
+  turnSession: string
   /** Files the last turn changed, from PendingUndo. Empty when there is nothing
    *  to undo — no snapshot yet, not a git repo, or the turn touched no file. */
   undoFiles: string[]
@@ -671,6 +681,7 @@ export function emptyCockpitState(): CockpitState {
     stance: '',
     stances: [],
     awaitingReply: false,
+    turnSession: '',
     undoFiles: [],
     agentStatus: '',
     toolSteps: [],

@@ -83,7 +83,7 @@ func (a *App) SetDelegateOff(off bool) DelegateSettings {
 	}
 	cfg := a.cfg
 	cfg.DelegateOn = !off
-	a.applyConfig(cfg)
+	a.applyConfig(a.cur(), cfg)
 	return a.DelegateSwitches()
 }
 
@@ -108,7 +108,7 @@ func (a *App) SetAgentOff(name string, off bool) DelegateSettings {
 	}
 	cfg := a.cfg
 	cfg.AgentsOff = current
-	a.applyConfig(cfg)
+	a.applyConfig(a.cur(), cfg)
 	return a.DelegateSwitches()
 }
 
@@ -140,11 +140,11 @@ func (a *App) toolTokens(want string) int {
 }
 
 func (a *App) eachToolDefinition(fn func(name string, bytes int)) {
-	if a.registry == nil {
+	if a.cur().registry == nil {
 		return
 	}
 	held := connect.IDs()
-	for _, def := range skill.NewDispatcher(a.registry).ToolDefinitions() {
+	for _, def := range skill.NewDispatcher(a.cur().registry).ToolDefinitions() {
 		if !connect.Allows(def.Function.Name, held) {
 			continue
 		}

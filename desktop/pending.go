@@ -121,7 +121,7 @@ func (a *App) proposeLearned(p learned.Proposal) (learned.Result, error) {
 		`INSERT INTO pending_changes(kind, scope, target, op, before, body, reason, evidence, source, state, created_at)
 		 VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
 		p.Kind, p.Scope, target, p.Op, p.Before, p.Body, p.Reason,
-		"session:"+a.sessionID, "agent", statePending, time.Now().Format(time.RFC3339))
+		"session:"+a.cur().id, "agent", statePending, time.Now().Format(time.RFC3339))
 	if err != nil {
 		return learned.Result{}, err
 	}
@@ -426,7 +426,7 @@ func (a *App) OpenMemoryFolder() error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	return openInFileManager(dir)
+	return a.revealInFileManager(dir)
 }
 
 // learningEnabled is the single switch. Off means the agent stops recording

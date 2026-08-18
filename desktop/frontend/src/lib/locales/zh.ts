@@ -175,6 +175,7 @@ export const zh: Partial<Record<keyof typeof th, string>> = {
   'cockpit.turnStopped': '已停止',
   'cockpit.peekReadOnly': '你正在阅读另一个对话。先回到正在工作的那个再输入。',
   'cockpit.peekNotice': '仅阅读。工作仍在另一个对话里进行。',
+  'cockpit.peekDone': '仅阅读。另一个对话里的工作已完成。',
   'cockpit.peekReturn': '回到正在工作的对话',
   'cockpit.peekOpen': '打开这个对话',
   'cockpit.peekPlaceholder': '仅阅读。回到正在工作的对话才能输入。',
@@ -404,8 +405,13 @@ export const zh: Partial<Record<keyof typeof th, string>> = {
   'settings.sponsorIntro': 'Aetox 由一个人独自构建，背后没有公司',
   'settings.sponsorDesc': '每一分钱都用在服务器、测试用的 API 额度，以及写代码的时间上',
   'settings.sponsorScanHint': '用任意泰国银行 App 扫码 · TrueMoney Wallet · Chayaphon Phromsawana',
-  'settings.sponsorOpenGitHub': '在 GitHub 上打开',
-  'settings.sponsorOpenSite': '访问 Aetox 网站',
+  'settings.sponsorOpenGitHub': '赞助方式',
+  'settings.sponsorOpenSite': '在 GitHub 上查看项目',
+  'settings.sponsorCredit': '赞助者名单',
+  'settings.sponsorCreditDesc': '每一位赞助者都会署名在 Aetox 的页面上，这个名字我们会一直记着。若将来有机会，也许能真正一起共事。',
+  'settings.sponsorContact': '赞助后请告诉我们',
+  'settings.sponsorContactDesc': '告诉我们想署的名字，或者选择匿名。入口与反馈问题相同。',
+  'settings.sponsorContactOpen': '联系我们',
 
   // ---- 设置：通用与外观 ----
   'settings.general': '通用',

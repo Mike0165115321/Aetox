@@ -120,18 +120,22 @@ func closeDBOnCleanup(t *testing.T, a *App) {
 
 func newTestApp(t *testing.T, sandboxRoot string) *App {
 	t.Helper()
-	a := &App{
+	a := seed(&App{
 		dbDir: t.TempDir(),
 		cfg:   config.Config{SandboxRoot: sandboxRoot},
-	}
+	}, &conversation{id: newSessionID()})
 	closeDBOnCleanup(t, a)
-	a.startNewSession()
+	// Seeded rather than opened through startNewSession, which builds the new
+	// conversation's engine now — a chat without one cannot answer, so opening
+	// one has to. What this helper wants is the opposite: an app with a session
+	// to write rows against and no model behind it, which is the state most of
+	// these tests are asserting about.
 	return a
 }
 
 func TestAppendAndListSessions(t *testing.T) {
 	a := newTestApp(t, t.TempDir())
-	a.appendTurn(
+	a.appendTurn(a.cur(),
 		SessionMessage{Role: "user", Text: "hello world", Time: "10:00"},
 		SessionMessage{Role: "agent", Text: "hi there", Time: "10:00"},
 	)
@@ -140,8 +144,8 @@ func TestAppendAndListSessions(t *testing.T) {
 	if len(sessions) != 1 {
 		t.Fatalf("ListSessions() = %d entries, want 1", len(sessions))
 	}
-	if sessions[0].ID != a.sessionID {
-		t.Errorf("ListSessions()[0].ID = %q, want current session %q", sessions[0].ID, a.sessionID)
+	if sessions[0].ID != a.cur().id {
+		t.Errorf("ListSessions()[0].ID = %q, want current session %q", sessions[0].ID, a.cur().id)
 	}
 	if sessions[0].Title != "hello world" {
 		t.Errorf("ListSessions()[0].Title = %q, want %q", sessions[0].Title, "hello world")
@@ -150,11 +154,11 @@ func TestAppendAndListSessions(t *testing.T) {
 
 func TestDeleteSessionRemovesRowAndResetsCurrent(t *testing.T) {
 	a := newTestApp(t, t.TempDir())
-	a.appendTurn(
+	a.appendTurn(a.cur(),
 		SessionMessage{Role: "user", Text: "delete me", Time: "10:00"},
 		SessionMessage{Role: "agent", Text: "ok", Time: "10:00"},
 	)
-	deleted := a.sessionID
+	deleted := a.cur().id
 
 	if err := a.DeleteSession(deleted); err != nil {
 		t.Fatalf("DeleteSession: %v", err)
@@ -165,7 +169,7 @@ func TestDeleteSessionRemovesRowAndResetsCurrent(t *testing.T) {
 	if msgs, _ := a.LoadSessionAnyProject(deleted); len(msgs) != 0 {
 		t.Fatalf("messages still present after delete")
 	}
-	if a.sessionID == deleted {
+	if a.cur().id == deleted {
 		t.Fatalf("current session id not reset after deleting the open session")
 	}
 }
@@ -178,12 +182,12 @@ func TestListSessionsIsolatedByProject(t *testing.T) {
 	a := &App{dbDir: dbDir, cfg: config.Config{SandboxRoot: rootA}}
 	closeDBOnCleanup(t, a)
 	a.startNewSession()
-	a.appendTurn(SessionMessage{Role: "user", Text: "project A message"}, SessionMessage{Role: "agent", Text: "ok"})
+	a.appendTurn(a.cur(), SessionMessage{Role: "user", Text: "project A message"}, SessionMessage{Role: "agent", Text: "ok"})
 
 	b := &App{dbDir: dbDir, cfg: config.Config{SandboxRoot: rootB}}
 	closeDBOnCleanup(t, b)
 	b.startNewSession()
-	b.appendTurn(SessionMessage{Role: "user", Text: "project B message"}, SessionMessage{Role: "agent", Text: "ok"})
+	b.appendTurn(b.cur(), SessionMessage{Role: "user", Text: "project B message"}, SessionMessage{Role: "agent", Text: "ok"})
 
 	sessionsA := a.ListSessions()
 	if len(sessionsA) != 1 || sessionsA[0].Title != "project A message" {
@@ -220,11 +224,11 @@ func TestReopensSessionFromAStrandedBucket(t *testing.T) {
 				t.Skip("no home dir")
 			}
 			a := newTestApp(t, tc.storedRoot)
-			a.appendTurn(
+			a.appendTurn(a.cur(),
 				SessionMessage{Role: "user", Text: "ค้างอยู่ใน bucket เก่า", Time: "10:00"},
 				SessionMessage{Role: "agent", Text: "ครับ", Time: "10:00"},
 			)
-			id := a.sessionID
+			id := a.cur().id
 
 			// The app as it runs today: rooted at the current unfocused root.
 			a.cfg.SandboxRoot = unfocusedRoot()
@@ -247,7 +251,7 @@ func TestReopensSessionFromAStrandedBucket(t *testing.T) {
 func TestSearchSessionsFindsMatch(t *testing.T) {
 	root := t.TempDir()
 	a := newTestApp(t, root)
-	a.appendTurn(
+	a.appendTurn(a.cur(),
 		SessionMessage{Role: "user", Text: "unicorn migration plan", Time: "10:00"},
 		SessionMessage{Role: "agent", Text: "sure, let's plan it", Time: "10:00"},
 	)
@@ -267,7 +271,7 @@ func TestSearchSessionsQuotesUserInput(t *testing.T) {
 	// A raw double-quote or FTS operator in the query must not break MATCH
 	// (the implementation quotes the query before sending it to FTS5).
 	a := newTestApp(t, t.TempDir())
-	a.appendTurn(SessionMessage{Role: "user", Text: "hello"}, SessionMessage{Role: "agent", Text: "hi"})
+	a.appendTurn(a.cur(), SessionMessage{Role: "user", Text: "hello"}, SessionMessage{Role: "agent", Text: "hi"})
 	// Must simply not error/crash — a malformed MATCH expression would make
 	// db.Query return an error, which SearchSessions swallows into `out`.
 	_ = a.SearchSessions(`weird "quote` + " AND OR")
@@ -276,8 +280,8 @@ func TestSearchSessionsQuotesUserInput(t *testing.T) {
 func TestLoadSessionRoundTrip(t *testing.T) {
 	a := newTestApp(t, t.TempDir())
 	want := SessionMessage{Role: "user", Text: "remember this", Time: "10:00"}
-	a.appendTurn(want, SessionMessage{Role: "agent", Text: "ok", Time: "10:00"})
-	id := a.sessionID
+	a.appendTurn(a.cur(), want, SessionMessage{Role: "agent", Text: "ok", Time: "10:00"})
+	id := a.cur().id
 
 	// Simulate switching away, then loading the session back.
 	a.startNewSession()
@@ -288,8 +292,8 @@ func TestLoadSessionRoundTrip(t *testing.T) {
 	if len(messages) != 2 || messages[0].Text != "remember this" {
 		t.Errorf("LoadSession() = %+v, want the persisted turn back", messages)
 	}
-	if a.sessionID != id {
-		t.Errorf("sessionID after LoadSession = %q, want %q", a.sessionID, id)
+	if a.cur().id != id {
+		t.Errorf("sessionID after LoadSession = %q, want %q", a.cur().id, id)
 	}
 }
 
@@ -376,14 +380,16 @@ func TestADoorsHistoryIsNotEatenByTheOtherDoorsPage(t *testing.T) {
 func TestTheQuestionIsStoredBeforeTheAnswerArrives(t *testing.T) {
 	a := newTestApp(t, t.TempDir())
 
-	if !a.openTurn(SessionMessage{Role: "user", Text: "ช่วยดูไฟล์นี้ให้หน่อย", Time: "06:04"}) {
+	if !a.openTurn(a.cur(), SessionMessage{Role: "user", Text: "ช่วยดูไฟล์นี้ให้หน่อย", Time: "06:04"}) {
 		t.Fatal("openTurn did not store the question")
 	}
 
-	// Nothing else has happened — this is the moment the window reloads.
-	messages, err := a.LoadSession(a.sessionID)
+	// Nothing else has happened — this is the moment the window reloads. Which
+	// reads the store, not the live conversation: a reloaded webview has no
+	// live anything, and SessionTranscript is the door it has always used.
+	messages, err := a.SessionTranscript(a.cur().id)
 	if err != nil {
-		t.Fatalf("LoadSession: %v", err)
+		t.Fatalf("SessionTranscript: %v", err)
 	}
 	if len(messages) != 1 || messages[0].Text != "ช่วยดูไฟล์นี้ให้หน่อย" {
 		t.Fatalf("an interrupted turn left %d messages, want the question standing alone", len(messages))
@@ -392,7 +398,7 @@ func TestTheQuestionIsStoredBeforeTheAnswerArrives(t *testing.T) {
 	// conversation look deleted rather than merely unanswered.
 	found := false
 	for _, s := range a.ListSessions() {
-		if s.ID == a.sessionID {
+		if s.ID == a.cur().id {
 			found = true
 		}
 	}
@@ -401,11 +407,11 @@ func TestTheQuestionIsStoredBeforeTheAnswerArrives(t *testing.T) {
 	}
 
 	// When the answer does arrive, the question must not be written twice.
-	a.appendTurn(
+	a.appendTurn(a.cur(),
 		SessionMessage{Role: "user", Text: "ช่วยดูไฟล์นี้ให้หน่อย", Time: "06:04"},
 		SessionMessage{Role: "agent", Text: "ได้ครับ", Time: "06:05"},
 	)
-	messages, err = a.LoadSession(a.sessionID)
+	messages, err = a.LoadSession(a.cur().id)
 	if err != nil {
 		t.Fatalf("LoadSession: %v", err)
 	}

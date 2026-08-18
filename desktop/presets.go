@@ -35,7 +35,7 @@ func (a *App) SetUILocale(locale string) error {
 	}
 	cfg := a.cfg
 	cfg.UILocale = locale
-	a.applyConfig(cfg)
+	a.applyConfig(a.cur(), cfg)
 	return nil
 }
 
@@ -93,5 +93,5 @@ func (a *App) OpenPromptsFolder() error {
 	}
 	// One implementation, in speech.go — the three copies of this switch had
 	// all inherited the same window-hiding bug.
-	return openInFileManager(dir)
+	return a.revealInFileManager(dir)
 }

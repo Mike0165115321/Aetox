@@ -28,21 +28,31 @@ func chunkRecorder(t *testing.T, modelName string) (*App, *[]chatChunk) {
 	t.Helper()
 	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
 	var seen []chatChunk
-	a := &App{ctx: context.Background(), dbDir: t.TempDir(), sessionID: newSessionID()}
+	a := seed(&App{ctx: context.Background(), dbDir: t.TempDir()}, &conversation{id: newSessionID()})
 	a.emit = func(event string, data ...any) {
 		if event != "agent:chunk" || len(data) == 0 {
 			return
 		}
-		if c, ok := data[0].(chatChunk); ok {
-			seen = append(seen, c)
+		// Every agent:* event carries the conversation it came from now
+		// (desktop/conversation.go). The recorder asserts that too: a chunk
+		// with no home is the bug this file's sibling tests are about, one
+		// layer down.
+		ev, ok := data[0].(sessionEvent[chatChunk])
+		if !ok {
+			t.Errorf("agent:chunk payload is %T, want a stamped sessionEvent", data[0])
+			return
 		}
+		if ev.SessionID == "" {
+			t.Error("agent:chunk arrived with no session on it")
+		}
+		seen = append(seen, ev.Data)
 	}
 	t.Cleanup(func() {
 		if a.db != nil {
 			_ = a.db.Close()
 		}
 	})
-	a.applyConfig(config.Config{
+	a.applyConfig(a.cur(), config.Config{
 		SandboxRoot:   t.TempDir(),
 		ModelProvider: "aetox",
 		ModelName:     modelName,

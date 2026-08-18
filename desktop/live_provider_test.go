@@ -50,7 +50,7 @@ func liveApp(t *testing.T) *App {
 	t.Helper()
 	t.Setenv("AETOX_DATA_ROOT", t.TempDir()) // never touch the real preference file
 	a := &App{}
-	a.applyConfig(config.Config{
+	a.applyConfig(a.cur(), config.Config{
 		SandboxRoot:   t.TempDir(),
 		ModelProvider: "aetox",
 		ModelName:     "aetox-tools:test",

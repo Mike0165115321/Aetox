@@ -12,7 +12,7 @@ import (
 // failShell records one failed run whose error carries a variable part — the
 // parenthesized detail differs on every occurrence, as the real refusals do.
 func failShell(a *App, ref, detail string) {
-	a.recordToolRun(turn.ToolRun{Ref: ref, Name: "shell",
+	a.recordToolRun(a.cur(), turn.ToolRun{Ref: ref, Name: "shell",
 		Args:  `{"command":"type $` + detail + `"}`,
 		OK:    false,
 		Error: "this command builds a path while it runs (the variable $" + detail + "), so it cannot be checked",
@@ -25,11 +25,11 @@ func failShell(a *App, ref, detail string) {
 // page.
 func TestRepeatedFailuresBecomeOneIssue(t *testing.T) {
 	a := newJobApp(t)
-	mark := a.maxToolRunID()
+	mark := a.maxToolRunID(a.cur())
 	for i, detail := range []string{"AlphaVar in cmd one", "BetaVar in cmd two", "GammaVar in cmd three"} {
 		failShell(a, "c"+string(rune('1'+i)), detail)
 	}
-	a.recordJobs(1, "เช็คเวอร์ชัน", "ไม่สำเร็จ", mark, time.Second)
+	a.recordJobs(a.cur(), 1, "เช็คเวอร์ชัน", "ไม่สำเร็จ", mark, time.Second)
 
 	issues := a.ListSystemIssues()
 	if len(issues) != 1 {
@@ -67,11 +67,11 @@ func TestRepeatedFailuresBecomeOneIssue(t *testing.T) {
 // arrived this way, and one of them was a usable lesson.
 func TestFailuresNeverReachTheLearningQueue(t *testing.T) {
 	a := newJobApp(t)
-	mark := a.maxToolRunID()
+	mark := a.maxToolRunID(a.cur())
 	for i, detail := range []string{"AlphaVar in one", "BetaVar in two", "GammaVar in three"} {
 		failShell(a, "c"+string(rune('1'+i)), detail)
 	}
-	a.recordJobs(1, "งาน", "ตอบ", mark, time.Second)
+	a.recordJobs(a.cur(), 1, "งาน", "ตอบ", mark, time.Second)
 
 	if len(a.ListSystemIssues()) != 1 {
 		t.Fatal("the cluster did not land on the problems page at all")
@@ -91,11 +91,11 @@ func TestFailuresNeverReachTheLearningQueue(t *testing.T) {
 // two queues: approving applies a change, reporting applies nothing at all.
 func TestReportingAnIssueAppliesNothing(t *testing.T) {
 	a := newJobApp(t)
-	mark := a.maxToolRunID()
+	mark := a.maxToolRunID(a.cur())
 	for i, detail := range []string{"A in x", "B in y", "C in z"} {
 		failShell(a, "c"+string(rune('1'+i)), detail)
 	}
-	a.recordJobs(1, "งาน", "ตอบ", mark, time.Second)
+	a.recordJobs(a.cur(), 1, "งาน", "ตอบ", mark, time.Second)
 	issue := a.ListSystemIssues()[0]
 
 	if err := a.ApprovePendingChange(issue.ID); err == nil {
@@ -123,11 +123,11 @@ func TestReportingAnIssueAppliesNothing(t *testing.T) {
 // Two occurrences are a coincidence, not a pattern — nothing raised.
 func TestRareFailuresStayOffTheDoor(t *testing.T) {
 	a := newJobApp(t)
-	mark := a.maxToolRunID()
+	mark := a.maxToolRunID(a.cur())
 	failShell(a, "c1", "OneVar in x")
 	failShell(a, "c2", "TwoVar in y")
-	a.recordToolRun(turn.ToolRun{Ref: "c3", Name: "read", OK: false, Error: "no such file"})
-	a.recordJobs(1, "งาน", "ตอบ", mark, time.Second)
+	a.recordToolRun(a.cur(), turn.ToolRun{Ref: "c3", Name: "read", OK: false, Error: "no such file"})
+	a.recordJobs(a.cur(), 1, "งาน", "ตอบ", mark, time.Second)
 
 	if issues := a.ListSystemIssues(); len(issues) != 0 {
 		t.Fatalf("two repeats raised a problem: %+v", issues)
@@ -139,15 +139,15 @@ func TestRareFailuresStayOffTheDoor(t *testing.T) {
 // the user waved off stays waved off instead of coming back every turn.
 func TestAClusterIsRaisedOnceAndADecisionStands(t *testing.T) {
 	a := newJobApp(t)
-	mark := a.maxToolRunID()
+	mark := a.maxToolRunID(a.cur())
 	for i, detail := range []string{"A in x", "B in y", "C in z"} {
 		failShell(a, "c"+string(rune('1'+i)), detail)
 	}
-	a.recordJobs(1, "งาน", "ตอบ", mark, time.Second)
+	a.recordJobs(a.cur(), 1, "งาน", "ตอบ", mark, time.Second)
 
-	mark = a.maxToolRunID()
+	mark = a.maxToolRunID(a.cur())
 	failShell(a, "c9", "D in w")
-	a.recordJobs(2, "งานถัดไป", "ตอบ", mark, time.Second)
+	a.recordJobs(a.cur(), 2, "งานถัดไป", "ตอบ", mark, time.Second)
 
 	issues := a.ListSystemIssues()
 	if len(issues) != 1 {
@@ -157,9 +157,9 @@ func TestAClusterIsRaisedOnceAndADecisionStands(t *testing.T) {
 	if err := a.RejectPendingChange(issues[0].ID); err != nil {
 		t.Fatalf("dismiss: %v", err)
 	}
-	mark = a.maxToolRunID()
+	mark = a.maxToolRunID(a.cur())
 	failShell(a, "c10", "E in v")
-	a.recordJobs(3, "อีกงาน", "ตอบ", mark, time.Second)
+	a.recordJobs(a.cur(), 3, "อีกงาน", "ตอบ", mark, time.Second)
 
 	if issues := a.ListSystemIssues(); len(issues) != 0 {
 		t.Fatalf("a dismissed problem was raised again: %+v", issues)
@@ -173,16 +173,16 @@ func TestAClusterIsRaisedOnceAndADecisionStands(t *testing.T) {
 // avoid whatever hits "exit status 1", which named no pattern and taught nothing.
 func TestProgramExitCodesAreNotRaised(t *testing.T) {
 	a := newJobApp(t)
-	mark := a.maxToolRunID()
+	mark := a.maxToolRunID(a.cur())
 	for i, ref := range []string{"e1", "e2", "e3", "e4"} {
-		a.recordToolRun(turn.ToolRun{Ref: ref, Name: "shell",
+		a.recordToolRun(a.cur(), turn.ToolRun{Ref: ref, Name: "shell",
 			Args:      `{"command":"go test ./pkg` + string(rune('a'+i)) + `"}`,
 			OK:        false,
 			Error:     "exit status 1",
 			ErrorKind: turn.ErrorFromProgram,
 		})
 	}
-	a.recordJobs(1, "รันเทสต์", "ตก", mark, time.Second)
+	a.recordJobs(a.cur(), 1, "รันเทสต์", "ตก", mark, time.Second)
 
 	if issues := a.ListSystemIssues(); len(issues) != 0 {
 		t.Fatalf("a failing program was raised as a problem with the tool: %+v", issues)
@@ -196,16 +196,16 @@ func TestProgramExitCodesAreNotRaised(t *testing.T) {
 // 2026-08-12) before the rows carried where the failure came from.
 func TestStateReportsAreNotRaised(t *testing.T) {
 	a := newJobApp(t)
-	mark := a.maxToolRunID()
+	mark := a.maxToolRunID(a.cur())
 	for i, ref := range []string{"s1", "s2", "s3"} {
-		a.recordToolRun(turn.ToolRun{Ref: ref, Name: "browser",
+		a.recordToolRun(a.cur(), turn.ToolRun{Ref: ref, Name: "browser",
 			Args:      `{"action":"open","url":"http://localhost:567` + string(rune('7'+i)) + `"}`,
 			OK:        false,
 			Error:     "page did not finish loading",
 			ErrorKind: turn.ErrorFromWorld,
 		})
 	}
-	a.recordJobs(1, "เปิดหน้าเว็บ", "ไม่ขึ้น", mark, time.Second)
+	a.recordJobs(a.cur(), 1, "เปิดหน้าเว็บ", "ไม่ขึ้น", mark, time.Second)
 
 	if issues := a.ListSystemIssues(); len(issues) != 0 {
 		t.Fatalf("tonight's outage was raised as a problem to report: %+v", issues)
@@ -218,17 +218,17 @@ func TestStateReportsAreNotRaised(t *testing.T) {
 // literally", which is exactly the part a developer opening the issue needs.
 func TestTheReportKeepsTheWholeSentence(t *testing.T) {
 	a := newJobApp(t)
-	mark := a.maxToolRunID()
+	mark := a.maxToolRunID(a.cur())
 	const remedy = "write the path out literally, or run the step that needs it as its own command"
 	for i, ref := range []string{"r1", "r2", "r3"} {
-		a.recordToolRun(turn.ToolRun{Ref: ref, Name: "shell",
+		a.recordToolRun(a.cur(), turn.ToolRun{Ref: ref, Name: "shell",
 			Args: `{"command":"type $VAR"}`,
 			OK:   false,
 			Error: "this command builds a path while it runs (the variable $V" + string(rune('a'+i)) +
 				"), so it cannot be checked against the folders this session may use — " + remedy,
 		})
 	}
-	a.recordJobs(1, "งาน", "ตอบ", mark, time.Second)
+	a.recordJobs(a.cur(), 1, "งาน", "ตอบ", mark, time.Second)
 
 	issues := a.ListSystemIssues()
 	if len(issues) != 1 {
@@ -247,17 +247,17 @@ func TestTheReportKeepsTheWholeSentence(t *testing.T) {
 // a single noisy tool comes to own the memory file.
 func TestOneToolCannotFillTheQueue(t *testing.T) {
 	a := newJobApp(t)
-	mark := a.maxToolRunID()
+	mark := a.maxToolRunID(a.cur())
 	ref := 0
 	for _, shape := range []string{"first refusal shape", "second refusal shape", "third refusal shape"} {
 		for i := 0; i < 3; i++ {
 			ref++
-			a.recordToolRun(turn.ToolRun{Ref: "n" + string(rune('a'+ref)), Name: "shell",
+			a.recordToolRun(a.cur(), turn.ToolRun{Ref: "n" + string(rune('a'+ref)), Name: "shell",
 				OK:    false,
 				Error: shape + ` (detail ` + string(rune('a'+i)) + `)`})
 		}
 	}
-	a.recordJobs(1, "งาน", "ตอบ", mark, time.Second)
+	a.recordJobs(a.cur(), 1, "งาน", "ตอบ", mark, time.Second)
 
 	issues := a.ListSystemIssues()
 	if len(issues) != 1 {
@@ -269,13 +269,13 @@ func TestOneToolCannotFillTheQueue(t *testing.T) {
 // is filed under that agent, not under the main one.
 func TestDelegateFailuresLandInTheDelegatesScope(t *testing.T) {
 	a := newJobApp(t)
-	mark := a.maxToolRunID()
-	a.recordToolRun(turn.ToolRun{Ref: "t1", Name: "task", Args: `{"agent":"explore"}`, Output: "x", OK: true})
+	mark := a.maxToolRunID(a.cur())
+	a.recordToolRun(a.cur(), turn.ToolRun{Ref: "t1", Name: "task", Args: `{"agent":"explore"}`, Output: "x", OK: true})
 	for i, ref := range []string{"k1", "k2", "k3"} {
-		a.recordToolRun(turn.ToolRun{Ref: ref, Parent: "t1", Agent: "explore", Name: "grep",
+		a.recordToolRun(a.cur(), turn.ToolRun{Ref: ref, Parent: "t1", Agent: "explore", Name: "grep",
 			OK: false, Error: `pattern error near "token ` + string(rune('a'+i)) + `"`})
 	}
-	a.recordJobs(1, "หาให้หน่อย", "ไม่เจอ", mark, time.Second)
+	a.recordJobs(a.cur(), 1, "หาให้หน่อย", "ไม่เจอ", mark, time.Second)
 
 	issues := a.ListSystemIssues()
 	if len(issues) != 1 {

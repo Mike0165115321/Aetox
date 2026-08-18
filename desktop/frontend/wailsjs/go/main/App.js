@@ -26,8 +26,8 @@ export function AgentSkills(arg1) {
   return window['go']['main']['App']['AgentSkills'](arg1);
 }
 
-export function AnswerUserQuestion(arg1) {
-  return window['go']['main']['App']['AnswerUserQuestion'](arg1);
+export function AnswerUserQuestion(arg1, arg2) {
+  return window['go']['main']['App']['AnswerUserQuestion'](arg1, arg2);
 }
 
 export function AppVersion() {
@@ -448,6 +448,10 @@ export function OpenAgentsFolder() {
 
 export function OpenArtifact(arg1) {
   return window['go']['main']['App']['OpenArtifact'](arg1);
+}
+
+export function OpenExport(arg1) {
+  return window['go']['main']['App']['OpenExport'](arg1);
 }
 
 export function OpenFileExternally(arg1) {

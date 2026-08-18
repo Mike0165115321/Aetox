@@ -24,13 +24,13 @@ import (
 // source of truth for a question the program can answer.
 func TestPrintReadmeToolTable(t *testing.T) {
 	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
-	a := &App{ctx: context.Background(), emit: func(string, ...any) {}, dbDir: t.TempDir(), sessionID: newSessionID()}
+	a := seed(&App{ctx: context.Background(), emit: func(string, ...any) {}, dbDir: t.TempDir()}, &conversation{id: newSessionID()})
 	t.Cleanup(func() {
 		if a.db != nil {
 			_ = a.db.Close()
 		}
 	})
-	a.applyConfig(config.Config{
+	a.applyConfig(a.cur(), config.Config{
 		SandboxRoot:   t.TempDir(),
 		ModelProvider: "aetox",
 		ModelName:     "aetox-tools:test",
@@ -54,7 +54,7 @@ func TestPrintReadmeToolTable(t *testing.T) {
 
 	byCategory := map[string][]string{}
 	count := 0
-	for _, d := range skill.NewDispatcher(a.registry).ToolDefinitions() {
+	for _, d := range skill.NewDispatcher(a.cur().registry).ToolDefinitions() {
 		name := d.Function.Name
 		if !connect.Allows(name, held) {
 			continue

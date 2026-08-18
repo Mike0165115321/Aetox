@@ -109,11 +109,38 @@ export function agoLabel(iso: string): string {
   return t('cockpit.daysAgo', { days: Math.round(hrs / 24) })
 }
 
+
+/** Which chat the window is SHOWING, given what the engine says it is on.
+ *
+ * These are two different facts and the list was drawing the wrong one. Press a
+ * row while a turn is running and the window opens that conversation for
+ * reading — but `active` came from CurrentSessionID(), the engine's cursor,
+ * which the reading does not move. So the row you just clicked stayed unmarked,
+ * the row you left kept the dot and the selected background, and the only
+ * honest reading from the outside is that the click did nothing (owner, 19 ส.ค.:
+ * *"กดเปลี่ยนเซสชั่นตอนมันทำงาน ดูยากมาก เหมือนมีบั๊ค"*).
+ *
+ * Which one is WORKING is a separate mark and stays where it was: the ring
+ * (sessionWorking). One row can wear both, and after a switch mid-turn they are
+ * deliberately on different rows — that is the state being reported, not a
+ * glitch, and it only reads that way when neither mark is drawn at all.
+ */
+function onScreenSession(engineSession: string): string {
+  return cockpit.peek?.session.id || engineSession
+}
+
+/** Re-mark the lists without a round-trip, for the doors that change what is on
+ *  screen without changing what the engine is on. */
+function markOnScreen(id: string): void {
+  for (const s of cockpit.sessions) s.active = s.id === id
+  for (const s of cockpit.history) s.active = s.id === id
+}
+
 /** Pull this project's chat history (sessions are stored per project in Go). */
 export async function refreshSessions(): Promise<void> {
   const [metas, current] = await Promise.all([ListSessions(), CurrentSessionID()])
   cockpit.sessions = metas.map((m) => ({
-    id: m.id, title: m.title, ago: agoLabel(m.updatedAt), updatedAt: m.updatedAt, active: m.id === current, mode: m.mode, agent: m.agent,
+    id: m.id, title: m.title, ago: agoLabel(m.updatedAt), updatedAt: m.updatedAt, active: m.id === onScreenSession(current), mode: m.mode, agent: m.agent,
   }))
   // Keeps the workbench layout keyed to whichever session is actually live —
   // restores it on app start, migrates it when the engine re-keys the chat.
@@ -125,7 +152,7 @@ export async function searchSessions(query: string): Promise<void> {
   if (!query.trim()) return refreshSessions()
   const [hits, current] = await Promise.all([SearchSessions(query), CurrentSessionID()])
   cockpit.sessions = hits.map((m) => ({
-    id: m.id, title: m.title, ago: agoLabel(m.updatedAt), updatedAt: m.updatedAt, active: m.id === current, snippet: m.snippet, mode: m.mode, agent: m.agent, space: m.space,
+    id: m.id, title: m.title, ago: agoLabel(m.updatedAt), updatedAt: m.updatedAt, active: m.id === onScreenSession(current), snippet: m.snippet, mode: m.mode, agent: m.agent, space: m.space,
   }))
 }
 
@@ -138,7 +165,7 @@ export async function refreshGlobalHistory(): Promise<void> {
     ListSessionsForDoor(deskFilterFor(shell.name)), CurrentSessionID(),
   ])
   cockpit.history = metas.map((m) => ({
-    id: m.id, title: m.title, ago: agoLabel(m.updatedAt), updatedAt: m.updatedAt, active: m.id === current, projectName: m.projectName, mode: m.mode, agent: m.agent,
+    id: m.id, title: m.title, ago: agoLabel(m.updatedAt), updatedAt: m.updatedAt, active: m.id === onScreenSession(current), projectName: m.projectName, mode: m.mode, agent: m.agent,
   }))
 }
 
@@ -149,7 +176,7 @@ export async function searchGlobalHistory(query: string): Promise<void> {
     SearchSessionsForDoor(query, deskFilterFor(shell.name)), CurrentSessionID(),
   ])
   cockpit.history = hits.map((m) => ({
-    id: m.id, title: m.title, ago: agoLabel(m.updatedAt), updatedAt: m.updatedAt, active: m.id === current,
+    id: m.id, title: m.title, ago: agoLabel(m.updatedAt), updatedAt: m.updatedAt, active: m.id === onScreenSession(current),
     snippet: m.snippet, projectName: m.projectName, mode: m.mode, agent: m.agent, space: m.space,
   }))
 }
@@ -545,6 +572,9 @@ async function restoreLiveTranscript(): Promise<void> {
     // The live block comes back on: chunks and tool events streaming in render
     // again, typing goes into the running turn (Interject), and Stop works.
     cockpit.awaitingReply = true
+    // Straight off the engine's own answer, which is where a reloaded window
+    // learns everything else about the turn it walked in on.
+    cockpit.turnSession = turn.sessionId
     reattachedTurn = true
     // The turn may have finished in the moment before the flag armed — its
     // agent:done fired into a window that still skipped the event, and nothing
@@ -573,6 +603,7 @@ export async function applyAgentDone(status: { sessionId: string }): Promise<voi
   if (!reattachedTurn) return
   reattachedTurn = false
   cockpit.awaitingReply = false
+  cockpit.turnSession = ''
   for (const m of cockpit.chat) m.duringTurn = undefined
   cockpit.agentStatus = ''
   cockpit.toolSteps = []
@@ -633,7 +664,7 @@ function turnStillRunning(): boolean {
  * than inlined into the markup so that the day sessions run side by side, the
  * answer changes in one place instead of in every list that draws a row. */
 export function sessionWorking(s: Session): boolean {
-  return !!s.active && cockpit.awaitingReply
+  return !!cockpit.turnSession && s.id === cockpit.turnSession
 }
 
 /** The chat the running turn belongs to — the one its answer has to land in.
@@ -661,6 +692,22 @@ function liveChat(): ChatMessage[] {
  * does not belong to (Chat.svelte). What the turn produces goes on landing in
  * the chat it was asked in, whether or not anybody is watching it arrive. */
 export async function peekAtSession(session: Session): Promise<void> {
+  // The chat that is working is not "another chat", and clicking it is the way
+  // back rather than a request to read it. Reading it is what shipped, and it
+  // is the bug the owner hit over and over (19 ส.ค.: "พอสลับเซสชั่นปุ๊บ งาน
+  // เอเจนหายไปเลย"): the store holds the question and not the work in flight,
+  // so the working conversation came back as a question with nothing under it,
+  // the timeline gone, the composer locked, and a bar along the top saying the
+  // work was happening in another chat while naming this one. Nothing was
+  // lost — the live array was held one field away the whole time — but a way
+  // back that only one specific button knows about is a way back the user does
+  // not have. leavePeek IS that button; this hands it to every row that points
+  // at the working chat.
+  if (session.id && session.id === cockpit.turnSession) {
+    setActiveView('chat')
+    leavePeek()
+    return
+  }
   if (cockpit.peek?.session.id === session.id) return
   setActiveView('chat')
   let messages: main.SessionMessage[]
@@ -677,6 +724,7 @@ export async function peekAtSession(session: Session): Promise<void> {
     const live = liveChat()
     cockpit.chat = restoreTranscript(messages)
     cockpit.peek = { session, live }
+    markOnScreen(session.id)
     hydrateImages()
   } catch (err) {
     // The rest of this store is written so a refusal is a sentence rather than
@@ -727,6 +775,7 @@ export function leavePeek(): void {
   if (!cockpit.peek) return
   cockpit.chat = cockpit.peek.live
   cockpit.peek = null
+  markOnScreen(cockpit.turnSession)
   cockpit.sessionError = ''
   hydrateImages()
 }
@@ -865,7 +914,9 @@ export function clearQueuedMessages(): void {
  * ending. Its bubble is already on screen (it was shown the moment it was typed),
  * so it goes out as its own turn with `alreadyShown` set.
  */
-export function applyMissedInterjections(texts: string[]): void {
+export function applyMissedInterjections(ev: SessionEvent<string[]> | string[]): void {
+  const texts = forLiveTurn(ev)
+  if (texts === null) return
   for (const text of texts) {
     if (text.trim()) queuedMessages.push(text)
   }
@@ -1058,6 +1109,24 @@ export async function sendUserMessage(text: string, alreadyShown = false): Promi
  */
 async function runLiveTurn(call: () => Promise<void>): Promise<void> {
   cockpit.awaitingReply = true
+  // Whose turn this is. Written from the list first and corrected by the engine
+  // a round-trip later, because the two answers have different failure modes
+  // and only one of them can be had synchronously: the list is instant and can
+  // be a refresh behind, the engine is authoritative (Go stamps the turn with
+  // the same a.sessionID in App.SendMessage) and is one await away. Set in that
+  // order so there is no frame in which a turn is running and nothing on this
+  // side knows which chat it belongs to — which is the frame every door out of
+  // the chat would get it wrong in.
+  cockpit.turnSession = cockpit.sessions.find((s) => s.active)?.id ?? cockpit.turnSession
+  try {
+    const id = await CurrentSessionID()
+    // Only a real id overrides the list. '' is the engine saying "no session
+    // open", which is not an answer to "which chat is this turn in".
+    if (id) cockpit.turnSession = id
+  } catch {
+    // Engine unreachable. Not a reason to refuse the turn — the call below
+    // reports that properly — and the list's answer is still standing.
+  }
   cockpit.agentStatus = ''
   cockpit.toolSteps = []
   cockpit.streamingText = ''
@@ -1094,6 +1163,7 @@ async function runLiveTurn(call: () => Promise<void>): Promise<void> {
     await call()
   } finally {
     cockpit.awaitingReply = false
+    cockpit.turnSession = ''
     // The live block is gone, so anything that was drawn below it takes its
     // ordinary place in the transcript. The array order never changed — it was
     // chronological all along — only where those bubbles were painted.
@@ -1300,20 +1370,38 @@ export function cancelTurn(): void {
   CancelTurn()
 }
 
-/** ask_user tool: the model is blocked waiting for the user to pick an option. */
-export function applyAskUser(payload: { question: string; options: string[] }): void {
+/** ask_user tool: the model is blocked waiting for the user to pick an option.
+ *
+ * The card belongs to the chat that raised it — the owner's instruction on
+ * 19 ส.ค., and what the engine now enforces: the answer channel is that
+ * conversation's, so two chats can be waiting on different questions at once
+ * and neither can be answered by the other's click. `askSession` is the chat
+ * this card is addressed to, and it is what answerAsk sends back. */
+export function applyAskUser(
+  ev: SessionEvent<{ question: string; options: string[] }> | { question: string; options: string[] },
+): void {
+  const payload = forLiveTurn(ev)
+  if (payload === null) return
+  askSession = eventSession(ev)
   cockpit.ask = payload
 }
 
-export function applyAskDone(): void {
+export function applyAskDone(ev?: SessionEvent<unknown> | unknown): void {
+  if (ev !== undefined && forLiveTurn(ev) === null) return
+  askSession = ''
   cockpit.ask = null
 }
+
+/** Which chat the card on screen is addressed to. '' when nothing is asking. */
+let askSession = ''
 
 /** Deliver the user's choice (an option click or free text) to the blocked tool. */
 export function answerAsk(answer: string): void {
   if (!answer.trim()) return
+  const session = askSession || cockpit.turnSession
   cockpit.ask = null
-  AnswerUserQuestion(answer)
+  askSession = ''
+  AnswerUserQuestion(session, answer)
 }
 
 /** todo_write tool: the model replaced its task checklist. */
@@ -1420,7 +1508,49 @@ export async function dismissTaskChip(id: string): Promise<void> {
 }
 
 /** Live turn-progress text from the Go engine (see desktop/app.go emitAgentStatus). */
-export function applyAgentStatus(status: string): void {
+
+/** One `agent:*` event, with the conversation it came from.
+ *
+ * Every one of them carries this now (desktop/conversation.go). It used to
+ * carry nothing, which was honest while only one chat could be working: there
+ * was nothing to confuse it with. The engine holds an agent context per
+ * conversation as of 2026-08-19, so an unstamped event would be one this side
+ * has to guess the home of — and this side's guess would be "whatever is on
+ * screen", which is the failure the whole change exists to end, moved out of Go
+ * and into TypeScript.
+ */
+export type SessionEvent<T> = { sessionId: string; data: T }
+
+/** The conversation an `agent:*`/`ask:*` event names, '' for an unstamped one. */
+function eventSession(ev: unknown): string {
+  if (ev && typeof ev === 'object' && 'sessionId' in (ev as object)) {
+    return String((ev as { sessionId: unknown }).sessionId ?? '')
+  }
+  return ''
+}
+
+/** Whether an event belongs to the live state this window is currently holding.
+ *
+ * One live block today, so this drops nothing in practice: the only turn that
+ * can be running is the one it names. It is the seam the per-session live state
+ * lands on — when there are several, this stops being a filter and becomes the
+ * lookup that finds the right one — and it is a guard in the meantime, because
+ * an event drawn into another chat's timeline is worse than one not drawn.
+ */
+function forLiveTurn<T>(ev: SessionEvent<T> | T): T | null {
+  if (!ev || typeof ev !== 'object' || !('sessionId' in (ev as object))) {
+    // An older engine against a newer window (a dev reload across a rebuild).
+    // Treating it as the live turn's is what this window did for its whole life.
+    return ev as T
+  }
+  const stamped = ev as SessionEvent<T>
+  if (cockpit.turnSession && stamped.sessionId && stamped.sessionId !== cockpit.turnSession) return null
+  return stamped.data
+}
+
+export function applyAgentStatus(ev: SessionEvent<string> | string): void {
+  const status = forLiveTurn(ev)
+  if (status === null) return
   cockpit.agentStatus = status
 }
 
@@ -1437,7 +1567,11 @@ export function applyAgentStatus(status: string): void {
  * string is still accepted so a frontend reload against an older engine build
  * degrades to the previous append-only behaviour instead of rendering [object].
  */
-export function applyAgentChunk(payload: string | { text: string; replace: boolean }): void {
+export function applyAgentChunk(
+  ev: SessionEvent<string | { text: string; replace: boolean }> | string | { text: string; replace: boolean },
+): void {
+  const payload = forLiveTurn(ev)
+  if (payload === null) return
   if (typeof payload === 'string') {
     cockpit.streamingText += payload
     return
@@ -1454,7 +1588,9 @@ let thinkLastAt = 0
  * SendMessage's onReasoningChunk) — only fires for providers that stream
  * reasoning tokens (DeepSeek, Anthropic extended thinking, ...); '' means
  * either idle or this provider/turn had none to show. */
-export function applyReasoningChunk(chunk: string): void {
+export function applyReasoningChunk(ev: SessionEvent<string> | string): void {
+  const chunk = forLiveTurn(ev)
+  if (chunk === null) return
   const now = Date.now()
   if (!cockpit.reasoningText) thinkStartedAt = now
   thinkLastAt = now
@@ -1592,7 +1728,9 @@ function joinDelegationToRegister(ev: ToolEvent): void {
 /** Live tool call/result feed from the Go engine (turn.ToolEvent, relayed by
  * desktop/app.go recordToolAction). "call" opens a running step; "result"
  * closes the oldest one still running. */
-export function applyToolEvent(ev: ToolEvent): void {
+export function applyToolEvent(stamped: SessionEvent<ToolEvent> | ToolEvent): void {
+  const ev = forLiveTurn(stamped)
+  if (ev === null) return
   const steps = listFor(ev)
   // Background work just made a sound — make sure the tray is listening. The
   // poll re-arms itself while anything runs, so this only matters as the
@@ -2025,7 +2163,11 @@ export async function deleteSession(session: Session): Promise<void> {
   // Only the open chat is off-limits mid-turn — it is the one the turn is
   // writing into. The rest of the history stays deletable; a long turn must
   // not freeze the whole list.
-  if (session.active && turnStillRunning()) return
+  // The chat the turn is writing into, asked directly. It used to ask
+  // `session.active`, which meant "the engine's session" and now means "the one
+  // on screen" — and those come apart the moment you read another chat while
+  // one works, which is exactly when this guard has to be right.
+  if (sessionWorking(session)) return
   await DeleteSession(session.id)
   removeWorkbenchState(session.id)
   if (session.active) cockpit.chat = []
@@ -2132,7 +2274,7 @@ export async function refreshSpaceHistory(): Promise<void> {
   const [metas, current] = await Promise.all([SessionsInSpace(cockpit.space), CurrentSessionID()])
   cockpit.spaceHistory = (metas ?? []).map((m) => ({
     id: m.id, title: m.title, ago: agoLabel(m.updatedAt), updatedAt: m.updatedAt,
-    active: m.id === current, mode: m.mode, agent: m.agent,
+    active: m.id === onScreenSession(current), mode: m.mode, agent: m.agent,
   }))
 }
 

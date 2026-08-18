@@ -21,8 +21,20 @@ describe('ask_user store flow', () => {
   it('answerAsk delivers the choice to the backend and clears the panel', () => {
     applyAskUser({ question: 'q', options: ['A', 'B'] })
     answerAsk('B')
-    expect(AnswerUserQuestion).toHaveBeenCalledWith('B')
+    // The chat is named as well as the answer: the engine holds one answer
+    // channel per conversation now, so an unaddressed answer has nowhere to go.
+    expect(AnswerUserQuestion).toHaveBeenCalledWith('', 'B')
     expect(cockpit.ask).toBeNull()
+  })
+
+  // A card raised by a chat is answered in that chat, whichever one the event
+  // named — not "whatever the window thinks is current".
+  it('answers the chat the question came from', () => {
+    cockpit.turnSession = 's1'
+    applyAskUser({ sessionId: 's1', data: { question: 'q', options: ['A', 'B'] } })
+    answerAsk('A')
+    expect(AnswerUserQuestion).toHaveBeenCalledWith('s1', 'A')
+    cockpit.turnSession = ''
   })
 
   it('answerAsk ignores blank input (panel stays up for a real answer)', () => {

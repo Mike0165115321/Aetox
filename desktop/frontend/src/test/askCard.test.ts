@@ -62,7 +62,7 @@ describe('the question card', () => {
     await fireEvent.input(input, { target: { value: 'ขอเป็นสไลด์แทน' } })
     await fireEvent.submit(container.querySelector('.ask-own') as HTMLFormElement)
 
-    expect(AnswerUserQuestion).toHaveBeenCalledWith('ขอเป็นสไลด์แทน')
+    expect(AnswerUserQuestion).toHaveBeenCalledWith('', 'ขอเป็นสไลด์แทน')
     // Answering closes the question, exactly as clicking an option does.
     expect(cockpit.ask).toBeNull()
   })
@@ -97,7 +97,7 @@ describe('the question card', () => {
 
     const first = container.querySelector('.ask-opt') as HTMLButtonElement
     await fireEvent.click(first)
-    expect(AnswerUserQuestion).toHaveBeenCalledWith('การ์ดต้อนรับ')
+    expect(AnswerUserQuestion).toHaveBeenCalledWith('', 'การ์ดต้อนรับ')
   })
 
   // Its first version restated its own padding, radius, surface and border, and

@@ -77,7 +77,7 @@ func TestWidenIsSilentWithNoProjectFocused(t *testing.T) {
 	a.emit = func(string, ...any) {} // a window exists; focus is what decides here
 	a.projectFocused = false
 
-	if a.askWorkspaceWiden(filepath.Join(other, "api.go")) {
+	if a.askWorkspaceWiden(a.cur(), filepath.Join(other, "api.go")) {
 		t.Error("the door opened with no project focused")
 	}
 }
@@ -98,7 +98,7 @@ func TestWidenIsSilentWithNoWindow(t *testing.T) {
 	}
 	a := focusedApp(t, root) // no emitter, no ctx: nothing is listening
 
-	if a.askWorkspaceWiden(filepath.Join(other, "api.go")) {
+	if a.askWorkspaceWiden(a.cur(), filepath.Join(other, "api.go")) {
 		t.Error("the door opened with no window to ask through")
 	}
 	// And the tool it guards still refuses, exactly as it did before the door.
@@ -129,7 +129,7 @@ func TestWidenNeverAsksAboutACredentialStore(t *testing.T) {
 
 	// Nothing answers questions in a test, so a card here would hang rather than
 	// quietly pass — which is exactly the failure this asserts against.
-	if a.askWorkspaceWiden(filepath.Join(ssh, "id_rsa")) {
+	if a.askWorkspaceWiden(a.cur(), filepath.Join(ssh, "id_rsa")) {
 		t.Error("the door offered to add a credential store")
 	}
 	if store := skill.CredentialStoreAt(ssh); store == "" {

@@ -18,7 +18,7 @@ func TestWorkbenchToolDefinitionsAreWellFormed(t *testing.T) {
 		&browserReadSkill{app: app},
 		&browserClickSkill{app: app},
 		&browserTypeSkill{app: app},
-		&askUserSkill{app: app},
+		&askUserSkill{app: app, conv: app.cur()},
 		&todoWriteSkill{app: app},
 	}
 

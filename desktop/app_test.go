@@ -118,7 +118,7 @@ func TestGetContextBreakdownReportsAnUnknownWindowAsUnknown(t *testing.T) {
 		{Role: model.RoleUser, Content: "hello there"},
 		{Role: model.RoleAssistant, Content: "hi, how can I help?"},
 	})
-	a := &App{agent: agent}
+	a := seed(&App{}, &conversation{agent: agent})
 
 	// No provider configured: nobody knows the window, so nobody claims one.
 	unknown := a.GetContextBreakdown()
@@ -188,7 +188,7 @@ func TestGetContextBreakdownPinsFixedSlicesAndReportsCache(t *testing.T) {
 		{Role: model.RoleUser, Content: "hello there"},
 		{Role: model.RoleAssistant, Content: "hi, how can I help?"},
 	})
-	a := &App{agent: agent, dbDir: t.TempDir(), sessionID: "s1"}
+	a := seed(&App{dbDir: t.TempDir()}, &conversation{agent: agent, id: "s1"})
 	t.Cleanup(func() {
 		if a.db != nil {
 			_ = a.db.Close()
@@ -207,7 +207,7 @@ func TestGetContextBreakdownPinsFixedSlicesAndReportsCache(t *testing.T) {
 
 	// The provider counted far more than the estimate (Thai text, real
 	// tokenizer), and most of it hit the prompt cache.
-	a.recordTokenUsage(model.Usage{PromptTokens: 40_000, CachedPromptTokens: 36_000, CacheReported: true, CompletionTokens: 5})
+	a.recordTokenUsage(a.cur(), model.Usage{PromptTokens: 40_000, CachedPromptTokens: 36_000, CacheReported: true, CompletionTokens: 5})
 
 	got := a.GetContextBreakdown()
 	if !got.Measured {
@@ -360,7 +360,7 @@ func TestUnfocusedRootAndOutputSubdirComposeToTheSessionFolder(t *testing.T) {
 	if err != nil {
 		t.Skip("no home directory on this machine")
 	}
-	a := &App{sessionID: "20260726-063257.366"}
+	a := seed(&App{}, &conversation{id: "20260726-063257.366"})
 	got := filepath.Join(unfocusedRoot(), filepath.FromSlash(a.outputSubdir()))
 	if want := filepath.Join(home, "aetox", "output", "20260726-063257.366"); got != want {
 		t.Errorf("unfocused output path = %q, want %q", got, want)
@@ -385,7 +385,7 @@ func TestUnfocusedEngineRoamsFocusedEngineStaysWalled(t *testing.T) {
 
 	listOutside := func(a *App) (skill.Output, error) {
 		t.Helper()
-		s, ok := a.registry.Get("list")
+		s, ok := a.cur().registry.Get("list")
 		if !ok {
 			t.Fatal("no list skill in the registry")
 		}
@@ -399,7 +399,7 @@ func TestUnfocusedEngineRoamsFocusedEngineStaysWalled(t *testing.T) {
 	}
 
 	a := &App{} // zero value: projectFocused=false, the unfocused startup state
-	a.applyConfig(config.Config{
+	a.applyConfig(a.cur(), config.Config{
 		SandboxRoot:   t.TempDir(),
 		ModelProvider: "aetox",
 		ModelName:     "aetox-grid",
@@ -411,7 +411,7 @@ func TestUnfocusedEngineRoamsFocusedEngineStaysWalled(t *testing.T) {
 	}
 
 	a.projectFocused = true
-	a.applyConfig(a.cfg)
+	a.applyConfig(a.cur(), a.cfg)
 	if _, err := listOutside(a); err == nil {
 		t.Fatal("focused engine listed a folder outside the project")
 	}
@@ -463,10 +463,10 @@ func TestReadFileRejectsDirectory(t *testing.T) {
 func TestCommandHistoryOrderAndCap(t *testing.T) {
 	a := &App{}
 	for i := 0; i < maxToolHistory+5; i++ {
-		a.recordToolAction(turn.ToolEvent{Action: "call", Name: "action-" + string(rune('a'+i%26))})
+		a.recordToolAction(a.cur(), turn.ToolEvent{Action: "call", Name: "action-" + string(rune('a'+i%26))})
 	}
 	// "result" events must be ignored.
-	a.recordToolAction(turn.ToolEvent{Action: "result", Name: "should-not-appear"})
+	a.recordToolAction(a.cur(), turn.ToolEvent{Action: "result", Name: "should-not-appear"})
 
 	hist := a.CommandHistory()
 	if len(hist) != maxToolHistory {
@@ -478,8 +478,8 @@ func TestCommandHistoryOrderAndCap(t *testing.T) {
 		}
 	}
 	// Most recent action recorded must come first.
-	if hist[0] != a.toolHistory[len(a.toolHistory)-1] {
-		t.Errorf("CommandHistory()[0] = %q, want most recent action %q", hist[0], a.toolHistory[len(a.toolHistory)-1])
+	if hist[0] != a.cur().toolHistory[len(a.cur().toolHistory)-1] {
+		t.Errorf("CommandHistory()[0] = %q, want most recent action %q", hist[0], a.cur().toolHistory[len(a.cur().toolHistory)-1])
 	}
 }
 
@@ -811,12 +811,12 @@ func TestApplyConfigInheritsPriorAgentContext(t *testing.T) {
 	root := t.TempDir()
 	a := &App{}
 	cfg := config.Config{SandboxRoot: root, ModelProvider: "aetox", ModelName: "aetox-grid"}
-	a.applyConfig(cfg)
-	if a.agent == nil {
+	a.applyConfig(a.cur(), cfg)
+	if a.cur().agent == nil {
 		t.Fatal("setup: agent must bootstrap")
 	}
 
-	a.agent.RestoreHistory([]model.Message{
+	a.cur().agent.RestoreHistory([]model.Message{
 		{Role: model.RoleUser, Content: "read the config file"},
 		{Role: model.RoleAssistant, Content: "reading", ToolCalls: []model.ToolCall{{
 			ID: "call_1", Type: "function",
@@ -828,10 +828,10 @@ func TestApplyConfigInheritsPriorAgentContext(t *testing.T) {
 
 	// Switch models — a fresh agent is built and must inherit everything.
 	cfg.ModelName = "aetox-think:test"
-	a.applyConfig(cfg)
+	a.applyConfig(a.cur(), cfg)
 
 	sawToolResult := false
-	for _, m := range a.agent.ContextMessages() {
+	for _, m := range a.cur().agent.ContextMessages() {
 		if m.Role == model.RoleTool && m.ToolCallID == "call_1" {
 			sawToolResult = true
 		}
@@ -864,7 +864,7 @@ func TestFreshInstallDefaultsToTheGuideModel(t *testing.T) {
 func TestReloadKeepsTheRunningModelWhenTheGlobalPreferenceChanges(t *testing.T) {
 	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
 	a := &App{}
-	a.applyConfig(config.Config{
+	a.applyConfig(a.cur(), config.Config{
 		SandboxRoot:   t.TempDir(),
 		ModelProvider: "aetox",
 		ModelName:     "aetox-grid",
@@ -922,7 +922,7 @@ func TestInterjectHandsTheTextToTheRunningAgent(t *testing.T) {
 		Provider: model.NewNoopProvider("aetox-tools:test"),
 		Model:    "aetox-tools:test",
 	})
-	a := &App{agent: agent}
+	a := seed(&App{}, &conversation{agent: agent})
 
 	if err := a.Interject("ใส่สีน้ำเงินด้วยนะ"); err != nil {
 		t.Fatalf("Interject: %v", err)
@@ -939,7 +939,7 @@ func TestInterjectHandsTheTextToTheRunningAgent(t *testing.T) {
 
 	// No engine yet is a readable error, not a panic — the composer is usable
 	// before a provider is configured.
-	if err := (&App{modelStatus: "no key"}).Interject("hello"); err == nil {
+	if err := (seed(&App{}, &conversation{modelStatus: "no key"})).Interject("hello"); err == nil {
 		t.Error("Interject with no agent should say the core is not ready")
 	}
 }
@@ -954,7 +954,7 @@ func TestCancelTurnDropsWhatWasTypedUnderIt(t *testing.T) {
 		Provider: model.NewNoopProvider("aetox-tools:test"),
 		Model:    "aetox-tools:test",
 	})
-	a := &App{agent: agent}
+	a := seed(&App{}, &conversation{agent: agent})
 	agent.Interject("เดี๋ยว เปลี่ยนใจ")
 
 	a.CancelTurn() // no turn in flight: must still clear, and must not panic
@@ -972,7 +972,7 @@ func TestCancelTurnDropsWhatWasTypedUnderIt(t *testing.T) {
 func TestSwitchToUnreachableProviderReportsTheFallback(t *testing.T) {
 	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
 	a := &App{}
-	a.applyConfig(config.Config{
+	a.applyConfig(a.cur(), config.Config{
 		SandboxRoot:   t.TempDir(),
 		ModelProvider: "lmstudio",
 		ModelBaseURL:  "http://127.0.0.1:1/v1", // nothing ever listens on port 1
@@ -996,7 +996,7 @@ func TestSwitchToUnreachableProviderReportsTheFallback(t *testing.T) {
 func TestSwitchToWorkingProviderReportsNoWarning(t *testing.T) {
 	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
 	a := &App{}
-	a.applyConfig(config.Config{
+	a.applyConfig(a.cur(), config.Config{
 		SandboxRoot:   t.TempDir(),
 		ModelProvider: "aetox",
 		ModelName:     "aetox-tools:test",
@@ -1019,7 +1019,7 @@ func TestSwitchToWorkingProviderReportsNoWarning(t *testing.T) {
 func TestCustomBaseURLIsWhatEveryProviderPathDials(t *testing.T) {
 	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
 	a := &App{}
-	a.applyConfig(config.Config{
+	a.applyConfig(a.cur(), config.Config{
 		SandboxRoot:   t.TempDir(),
 		ModelProvider: "aetox",
 		ModelName:     "aetox-tools:test",
@@ -1153,7 +1153,16 @@ func TestAnAbsolutePathTheAgentCanWriteIsOneTheWindowCanSee(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	a := &App{cfg: config.Config{SandboxRoot: root}}
+	// The OS door is stubbed, and the stub is the point: this test used to open
+	// a real File Explorer window on whoever ran it, every run, and land it at
+	// Documents because Start() outlived the temp directory. What it means to
+	// ask is "did the binding get as far as opening?", which is what `opened`
+	// records.
+	var opened string
+	a := &App{cfg: config.Config{SandboxRoot: root}, openDir: func(p string) error {
+		opened = p
+		return nil
+	}}
 	// Focused: the folder was never added, so the honest answer is that the
 	// window cannot say — never that the file is gone.
 	skill.NewDefaultRegistry(skill.RegistryOptions{SandboxRoot: root})
@@ -1169,6 +1178,9 @@ func TestAnAbsolutePathTheAgentCanWriteIsOneTheWindowCanSee(t *testing.T) {
 	}
 	if err := a.OpenFileExternally(doc); errors.Is(err, errFileGone) {
 		t.Error("opening it reports the file as gone, and it is right there")
+	}
+	if opened == "" {
+		t.Error("the file manager was never asked to open anything")
 	}
 }
 

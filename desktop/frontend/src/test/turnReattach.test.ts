@@ -52,6 +52,10 @@ describe('a window reloaded while the agent is working', () => {
     // awaitingReply back on is the whole re-attach: the streaming block
     // renders again, typing goes into the running turn, and Stop works.
     expect(cockpit.awaitingReply).toBe(true)
+    // And which chat it belongs to, taken from the engine's answer rather than
+    // guessed from the list — the fresh window has no other way to know, and
+    // without it every row in the sidebar leads away from the work.
+    expect(cockpit.turnSession).toBe('s1')
   })
 
   it('receives the finished answer through agent:done', async () => {
@@ -61,6 +65,7 @@ describe('a window reloaded while the agent is working', () => {
     await applyAgentDone({ sessionId: 's1' })
 
     expect(cockpit.awaitingReply).toBe(false)
+    expect(cockpit.turnSession).toBe('')
     expect(cockpit.chat.map((m) => m.text)).toEqual(['ไล่บั๊คให้หน่อย', 'เจอแล้วครับ'])
   })
 
@@ -182,12 +187,17 @@ describe('the doors out of a running turn\'s chat', () => {
   // history list for the length of a long turn would be a different bug.
   it('still deletes a chat the turn is not in', async () => {
     cockpit.awaitingReply = true
+    // The turn's own chat, named. `active` used to answer this and no longer
+    // can: it means "the chat on screen" now, and reading another chat while
+    // one works is precisely when the two come apart.
+    cockpit.turnSession = 's1'
 
     await deleteSession({ id: 'old', title: '', ago: '', active: false })
     expect(vi.mocked(DeleteSession)).toHaveBeenCalledWith('old')
 
     await deleteSession({ id: 's1', title: '', ago: '', active: true })
     expect(vi.mocked(DeleteSession)).not.toHaveBeenCalledWith('s1')
+    cockpit.turnSession = ''
   })
 
   // The engine's own refusal (the boot moment before awaitingReply is re-armed,

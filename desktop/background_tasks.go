@@ -58,10 +58,10 @@ type BackgroundTask struct {
 // BackgroundTasks lists this session's delegations, newest first. Bound to the
 // frontend; polled while the tray has anything to show.
 func (a *App) BackgroundTasks() []BackgroundTask {
-	if a.delegations == nil {
+	if a.cur().delegations == nil {
 		return []BackgroundTask{} // never nil: §34
 	}
-	infos := a.delegations.Snapshot()
+	infos := a.cur().delegations.Snapshot()
 	out := make([]BackgroundTask, 0, len(infos))
 	for _, t := range infos {
 		out = append(out, BackgroundTask{
@@ -113,10 +113,10 @@ type BackgroundPhase struct {
 // BackgroundRuns lists the declared jobs, newest first. Bound to the frontend
 // and polled alongside BackgroundTasks.
 func (a *App) BackgroundRuns() []BackgroundRun {
-	if a.delegations == nil {
+	if a.cur().delegations == nil {
 		return []BackgroundRun{} // never nil: §34
 	}
-	infos := a.delegations.Runs()
+	infos := a.cur().delegations.Runs()
 	out := make([]BackgroundRun, 0, len(infos))
 	for _, r := range infos {
 		run := BackgroundRun{

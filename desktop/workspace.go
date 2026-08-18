@@ -196,7 +196,7 @@ const (
 // What it does NOT decide is whether the path is then allowed. It adds a folder;
 // resolveSandboxPath re-reads the list and rules on the path itself, and the
 // credential stores are refused after that regardless of the answer here.
-func (a *App) askWorkspaceWiden(target string) bool {
+func (a *App) askWorkspaceWiden(conv *conversation, target string) bool {
 	// With no project focused there is no wall, so nothing ever asks — but the
 	// check is cheap and the alternative is a card offering to widen a workspace
 	// that is already the whole machine.
@@ -230,7 +230,7 @@ func (a *App) askWorkspaceWiden(target string) bool {
 	// card, because the tool call is parked inside resolveSandboxPath.
 	a.turnMu.Lock()
 	var turnCtx context.Context
-	if live := a.turns[a.sessionID]; live != nil {
+	if live := a.turns[a.cur().id]; live != nil {
 		turnCtx = live.ctx
 	}
 	a.turnMu.Unlock()
@@ -247,13 +247,13 @@ func (a *App) askWorkspaceWiden(target string) bool {
 	question := fmt.Sprintf(
 		"งานนี้ต้องใช้ `%s` ซึ่งอยู่นอกโปรเจกต์\n\nเพิ่มโฟลเดอร์นี้เข้าโปรเจกต์ไหม (อ่านและแก้ไขได้ เอาออกได้ทีหลังในเมนูโปรเจกต์)",
 		folder)
-	ch, err := a.beginUserQuestion(question, []string{widenAdd, widenRefuse})
+	ch, err := a.beginUserQuestion(conv, question, []string{widenAdd, widenRefuse})
 	if err != nil {
 		// Another question already has the floor — two cards competing for one
 		// answer channel is worse than a refusal the model can report and retry.
 		return false
 	}
-	defer a.endUserQuestion()
+	defer a.endUserQuestion(conv)
 
 	select {
 	case answer := <-ch:

@@ -226,6 +226,17 @@
   const liveStatus = $derived(
     streamingText || reasoningText || liveRunning.length ? '' : agentStatus,
   )
+  // The same live state, in one line, for the bar that shows while another
+  // conversation is being read. The live block above is deliberately not drawn
+  // there — it belongs to a chat that is not on screen — and the cost was a
+  // turn that looked dead from anywhere except its own chat. This is its pulse:
+  // the concrete thing first, the engine's phase behind it, and "กำลังคิด" when
+  // there is genuinely nothing else to say yet. Inverted against liveStatus on
+  // purpose; there, the phrase fills a gap the detail below already covers,
+  // here there is nothing below and the phrase is all the reader gets.
+  const peekLive = $derived(
+    liveRunning[0]?.label || runningSubs[0]?.step.label || agentStatus || t('chat.thinking'),
+  )
   // One icon table for the two places a file chip shows up: the composer's
   // pending chip and the sent bubble's.
   const fileIcon = (kind?: string): IconName => (kind === 'audio' ? 'headphones' : kind === 'video' ? 'clapperboard' : 'fileText')
@@ -543,7 +554,7 @@
     // agent tools that fail on their first call. The row says so and offers the
     // register instead.
     if (!engines.find((e) => e.id === id)?.connected) {
-      openSettingsAt('automation')
+      openSettingsAt('connections')
       return
     }
     if (activeEngine?.id === id) return
@@ -1846,7 +1857,17 @@
         <div class="peek-bar">
           <span class="ic"><Icon name="eye" size={14} /></span>
           <span class="peek-what">{cockpit.peek.session.title || t('cockpit.peekNotice')}</span>
-          <span class="peek-why">{t('cockpit.peekNotice')}</span>
+          <!-- The sentence has to follow the work. "งานยังทำอยู่ในอีกแชทหนึ่ง"
+               was printed whether or not that was still true: the peek outlives
+               the turn, so a bar that started honest went on insisting the agent
+               was busy for as long as the user kept reading. -->
+          <span class="peek-why">{awaitingReply ? t('cockpit.peekNotice') : t('cockpit.peekDone')}</span>
+          <!-- And the work itself, still moving, in the one line there is room
+               for. Told in the same shimmer the live block uses, because it is
+               the same fact seen from the next room. -->
+          {#if awaitingReply}
+            <span class="peek-live typing-status">{peekLive}</span>
+          {/if}
           {#if !awaitingReply}
             <button type="button" class="peek-act" onclick={() => void openPeeked()}>{t('cockpit.peekOpen')}</button>
           {/if}
@@ -2459,11 +2480,28 @@
                  mis-click. -->
             {#if delegate}
               <div class="menu-sep"></div>
+              <!-- role="switch", not a pressed button. It is an on/off state read
+                   at a glance, and the owner asked for it to look like one
+                   (19 ส.ค.: "ทำเป็นสวิชปิดเปิดดีกว่าดูง่ายกว่า") — a row that
+                   only changed colour made you read the note underneath to find
+                   out which way it was set. -->
               <button type="button" class="focus-item delegate-row" class:on={!delegate.off}
-                aria-pressed={!delegate.off} disabled={delegateBusy}
+                role="switch" aria-checked={!delegate.off} disabled={delegateBusy}
                 onclick={toggleDelegate}>
-                <span class="ic"><Icon name="hand" size={14} /></span>
+                <!-- gitBranch, not hand. The hand is four finger paths and a
+                     palm inside a 24 viewBox; at 14px the fingers land about a
+                     pixel apart and the whole thing renders as a smudge next to
+                     `sparkles` and `bot`, which are three or four strokes each
+                     (owner, 19 ส.ค.: "สัญลักษณ์ตรงนี้มองยาก"). Two circles and
+                     one curve survive the scale, and they say the right thing:
+                     the work goes down another path. Not a person glyph — the
+                     rows above are people you switch to, and this row must not
+                     read as one more of them. -->
+                <span class="ic"><Icon name="gitBranch" size={14} /></span>
                 <span class="t">{t('chat.delegateAllow')}</span>
+                <!-- The same switch the settings rows wear (style.css .mswitch),
+                     worn directly because this row is already the control. -->
+                <span class="mswitch-face"></span>
               </button>
               <div class="folder-note">
                 {delegate.off
@@ -2627,7 +2665,7 @@
                  lives there, and a menu that offers a choice without a way to
                  add to it is a dead end for the user who has none. -->
             <button type="button" class="focus-item"
-              onclick={() => { engineMenuOpen = false; openSettingsAt('automation') }}>
+              onclick={() => { engineMenuOpen = false; openSettingsAt('connections') }}>
               <span class="ic"><Icon name="settings" size={14} /></span>
               <span class="t">{t('automation.manage')}</span>
             </button>

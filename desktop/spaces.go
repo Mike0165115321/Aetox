@@ -235,7 +235,7 @@ func (a *App) OpenSpaceFolder(name string) error {
 	if _, err := os.Stat(path); err != nil {
 		return fmt.Errorf("ยังไม่มีโฟลเดอร์ของโปรเจกต์นี้")
 	}
-	return openInFileManager(path)
+	return a.revealInFileManager(path)
 }
 
 // AddSpaceContext copies files the user picks into the project's context
@@ -338,12 +338,12 @@ func (a *App) NewSessionInSpace(name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	a.space = filepath.Base(path)
+	a.cur().space = filepath.Base(path)
 	// Re-bootstrap so the system prompt is built with the project in it.
 	// NewSessionAt already did one, and it ran before this line — without a
 	// second the assistant would be told about the project one message late,
 	// which is the message where it matters most.
-	a.applyConfig(a.cfg)
+	a.applyConfig(a.cur(), a.cfg)
 	return id, nil
 }
 
@@ -391,7 +391,7 @@ func (a *App) SessionsInSpace(name string) []SessionMeta {
 
 // CurrentSpace is which project this session is being held in, "" for a chat
 // held outside every project.
-func (a *App) CurrentSpace() string { return a.space }
+func (a *App) CurrentSpace() string { return a.cur().space }
 
 // spaceContextForPrompt is what the system prompt names: where the project
 // keeps its files and which files those are — never their contents.
@@ -401,13 +401,13 @@ func (a *App) CurrentSpace() string { return a.space }
 // it already has. See prompt.workingIn for why the other design — pasting them
 // in — makes the assistant worse at everything else.
 func (a *App) spaceContextForPrompt() bootstrap.SpaceContext {
-	if a.space == "" {
+	if a.cur().space == "" {
 		return bootstrap.SpaceContext{}
 	}
-	path, err := spacePath(a.space)
+	path, err := spacePath(a.cur().space)
 	if err != nil {
 		return bootstrap.SpaceContext{}
 	}
-	space := a.describeSpace(path, a.space, 0)
+	space := a.describeSpace(path, a.cur().space, 0)
 	return bootstrap.SpaceContext{Path: space.ContextPath, Files: space.ContextFiles}
 }

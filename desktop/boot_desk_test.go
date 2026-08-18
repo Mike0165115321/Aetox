@@ -28,18 +28,17 @@ import (
 func bootFreshApp(t *testing.T) *App {
 	t.Helper()
 	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
-	a := &App{
-		ctx:       context.Background(),
-		emit:      func(string, ...any) {},
-		dbDir:     t.TempDir(),
-		sessionID: newSessionID(),
-	}
+	a := seed(&App{
+		ctx:   context.Background(),
+		emit:  func(string, ...any) {},
+		dbDir: t.TempDir(),
+	}, &conversation{id: newSessionID()})
 	t.Cleanup(func() {
 		if a.db != nil {
 			_ = a.db.Close()
 		}
 	})
-	a.applyConfig(config.Config{
+	a.applyConfig(a.cur(), config.Config{
 		SandboxRoot:   t.TempDir(),
 		ModelProvider: "aetox",
 		ModelName:     "aetox-tools:test",
@@ -53,7 +52,7 @@ func TestAFirstRunOpensAtTheEntrance(t *testing.T) {
 
 	a.openAtRememberedDesk()
 
-	if got := a.desk.DeskName(); got != mode.Default {
+	if got := a.cur().desk.DeskName(); got != mode.Default {
 		t.Fatalf("first run opened at %q, want the entrance %q", got, mode.Default)
 	}
 }
@@ -74,19 +73,19 @@ func TestTheWindowReopensAtTheDeskYouLeftItAt(t *testing.T) {
 	}
 
 	// Same data root, new window.
-	next := &App{ctx: context.Background(), emit: func(string, ...any) {}, dbDir: t.TempDir(), sessionID: newSessionID()}
+	next := seed(&App{ctx: context.Background(), emit: func(string, ...any) {}, dbDir: t.TempDir()}, &conversation{id: newSessionID()})
 	t.Cleanup(func() {
 		if next.db != nil {
 			_ = next.db.Close()
 		}
 	})
-	next.applyConfig(config.Config{
+	next.applyConfig(next.cur(), config.Config{
 		SandboxRoot: t.TempDir(), ModelProvider: "aetox", ModelName: "aetox-tools:test",
 		ApprovalMode: string(safety.ApprovalFullAccess),
 	})
 	next.openAtRememberedDesk()
 
-	if got := next.desk.DeskName(); got != "coding" {
+	if got := next.cur().desk.DeskName(); got != "coding" {
 		t.Fatalf("reopened at %q, want coding — the entrance is a seed, not a policy", got)
 	}
 }
@@ -128,7 +127,7 @@ func TestADeletedDeskFileFallsBackToTheEntrance(t *testing.T) {
 
 	a.openAtRememberedDesk()
 
-	if got := a.desk.DeskName(); got != mode.Default {
+	if got := a.cur().desk.DeskName(); got != mode.Default {
 		t.Fatalf("fell back to %q, want the entrance %q", got, mode.Default)
 	}
 }
@@ -141,7 +140,7 @@ func TestTheLiveSessionReportsItsDeskBeforeItsFirstTurn(t *testing.T) {
 	a := bootFreshApp(t)
 	a.openAtRememberedDesk()
 
-	if got := a.SessionMode(a.sessionID); got != mode.Default {
+	if got := a.SessionMode(a.cur().id); got != mode.Default {
 		t.Fatalf("live session reported desk %q, want %q", got, mode.Default)
 	}
 	// A stored session with no row is genuinely unknown — answering with

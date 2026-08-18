@@ -299,7 +299,7 @@ func (a *App) OpenArtifact(path string) error {
 	if info.IsDir() {
 		return fmt.Errorf("นี่เป็นโฟลเดอร์ ไม่ใช่ไฟล์ผลงาน")
 	}
-	return openInFileManager(full)
+	return a.revealInFileManager(full)
 }
 
 // DeleteArtifact removes one produced file. The ผลงาน page is the only place a

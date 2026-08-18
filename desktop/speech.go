@@ -85,7 +85,7 @@ func (a *App) SetSpeechModel(path string) error {
 	}
 	next := a.cfg
 	next.SpeechModelPath = path
-	a.applyConfig(next)
+	a.applyConfig(a.cur(), next)
 	return nil
 }
 
@@ -108,7 +108,7 @@ func (a *App) RevealSpeechModel(path string) error {
 	if !known {
 		return fmt.Errorf("ไม่รู้จักไฟล์โมเดลนี้: %s", path)
 	}
-	return openInFileManager(filepath.Dir(path))
+	return a.revealInFileManager(filepath.Dir(path))
 }
 
 // SpeechDirInfo is one scanned folder: the real path to open, and a label to
@@ -166,7 +166,7 @@ func (a *App) OpenSpeechModelDir(dir string) error {
 	for _, known := range a.SpeechModelDirs() {
 		if strings.EqualFold(known.Path, dir) {
 			_ = os.MkdirAll(dir, 0o755)
-			return openInFileManager(dir)
+			return a.revealInFileManager(dir)
 		}
 	}
 	return fmt.Errorf("ไม่ใช่โฟลเดอร์ที่ Aetox ค้นหาโมเดล: %s", dir)

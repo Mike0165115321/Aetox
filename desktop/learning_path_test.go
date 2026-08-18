@@ -31,18 +31,17 @@ func bootLearningApp(t *testing.T) *App {
 	// cancellable context from it. `emit` is the test seam every event goes
 	// through — the Wails runtime rejects any context but its own, so a turn
 	// that pushes an event would take the process down without it.
-	a := &App{
-		ctx:       context.Background(),
-		emit:      func(string, ...any) {},
-		dbDir:     t.TempDir(),
-		sessionID: newSessionID(),
-	}
+	a := seed(&App{
+		ctx:   context.Background(),
+		emit:  func(string, ...any) {},
+		dbDir: t.TempDir(),
+	}, &conversation{id: newSessionID()})
 	t.Cleanup(func() {
 		if a.db != nil {
 			_ = a.db.Close()
 		}
 	})
-	a.applyConfig(config.Config{
+	a.applyConfig(a.cur(), config.Config{
 		SandboxRoot:   t.TempDir(),
 		ModelProvider: "aetox",
 		ModelName:     "aetox-tools:test",

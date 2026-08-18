@@ -19,14 +19,14 @@ func TestATurnsSequenceSurvivesAReload(t *testing.T) {
 		}},
 		{Kind: turn.PartText, Text: "เจอแล้วครับ อยู่บรรทัดที่ 12"},
 	}
-	a.appendTurn(
+	a.appendTurn(a.cur(),
 		SessionMessage{Role: "user", Text: "อ่านไฟล์ให้หน่อย", Time: "00:34"},
 		SessionMessage{Role: "agent", Text: "เจอแล้วครับ อยู่บรรทัดที่ 12", Time: "00:34", Parts: parts},
 	)
 
-	messages, err := a.LoadSession(a.sessionID)
+	messages, err := a.SessionTranscript(a.cur().id)
 	if err != nil {
-		t.Fatalf("LoadSession: %v", err)
+		t.Fatalf("SessionTranscript: %v", err)
 	}
 	reply := messages[1]
 	if len(reply.Parts) != 4 {
@@ -61,14 +61,14 @@ func TestATurnsSequenceSurvivesAReload(t *testing.T) {
 // existed. Those must open as they always have, not fail to open.
 func TestAMessageWithNoSequenceStillLoads(t *testing.T) {
 	a := newTestApp(t, t.TempDir())
-	a.appendTurn(
+	a.appendTurn(a.cur(),
 		SessionMessage{Role: "user", Text: "ถาม", Time: "00:34"},
 		SessionMessage{Role: "agent", Text: "ตอบ", Time: "00:34"},
 	)
 
-	messages, err := a.LoadSession(a.sessionID)
+	messages, err := a.SessionTranscript(a.cur().id)
 	if err != nil {
-		t.Fatalf("LoadSession: %v", err)
+		t.Fatalf("SessionTranscript: %v", err)
 	}
 	if messages[1].Parts != nil {
 		t.Errorf("parts = %+v; want nil so the bubble falls back to plain text", messages[1].Parts)
@@ -99,7 +99,7 @@ func TestPartsEncodingRoundTrips(t *testing.T) {
 // answer's tool calls.
 func TestRegeneratingReplacesTheStoredSequence(t *testing.T) {
 	a := newTestApp(t, t.TempDir())
-	a.appendTurn(
+	a.appendTurn(a.cur(),
 		SessionMessage{Role: "user", Text: "ถาม", Time: "00:34"},
 		SessionMessage{Role: "agent", Text: "ตอบแรก", Time: "00:34", Parts: []turn.TurnPart{
 			{Kind: turn.PartTool, Tool: &turn.ToolPart{Name: "read", OK: true}},
@@ -107,14 +107,14 @@ func TestRegeneratingReplacesTheStoredSequence(t *testing.T) {
 		}},
 	)
 
-	a.storeParts([]turn.TurnPart{
+	a.storeParts(a.cur(), []turn.TurnPart{
 		{Kind: turn.PartTool, Tool: &turn.ToolPart{Name: "grep", OK: true}},
 		{Kind: turn.PartText, Text: "ตอบใหม่"},
 	})
 
-	messages, err := a.LoadSession(a.sessionID)
+	messages, err := a.SessionTranscript(a.cur().id)
 	if err != nil {
-		t.Fatalf("LoadSession: %v", err)
+		t.Fatalf("SessionTranscript: %v", err)
 	}
 	parts := messages[1].Parts
 	if len(parts) != 2 || parts[0].Tool == nil || parts[0].Tool.Name != "grep" {

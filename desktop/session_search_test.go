@@ -17,11 +17,11 @@ import (
 // and when it happened.
 func TestSessionSearchFindsChatAndWork(t *testing.T) {
 	a := newTestApp(t, t.TempDir())
-	a.appendTurn(
+	a.appendTurn(a.cur(),
 		SessionMessage{Role: "user", Text: "ช่วยจัดไฟล์สลิปโอนเงินหน่อย", Time: "10:00"},
 		SessionMessage{Role: "agent", Text: "จัดสลิปเสร็จแล้ว อยู่ในโฟลเดอร์ receipts", Time: "10:01"},
 	)
-	a.recordToolRun(turn.ToolRun{
+	a.recordToolRun(a.cur(), turn.ToolRun{
 		Name:     "image_ocr",
 		Args:     `{"path":"สลิปโอนเงิน-0731.png"}`,
 		Output:   "ยอดโอน 1,500 บาท",
@@ -125,11 +125,11 @@ func TestMigrationBackfillsToolRunsFTS(t *testing.T) {
 // row would make that promise false.
 func TestDeleteSessionRemovesToolRunsFromIndex(t *testing.T) {
 	a := newTestApp(t, t.TempDir())
-	a.appendTurn(
+	a.appendTurn(a.cur(),
 		SessionMessage{Role: "user", Text: "seed", Time: "10:00"},
 		SessionMessage{Role: "agent", Text: "ok", Time: "10:00"},
 	)
-	a.recordToolRun(turn.ToolRun{Name: "grep", Args: "needle-xyzzy", OK: true})
+	a.recordToolRun(a.cur(), turn.ToolRun{Name: "grep", Args: "needle-xyzzy", OK: true})
 
 	db, err := a.database()
 	if err != nil {
@@ -140,7 +140,7 @@ func TestDeleteSessionRemovesToolRunsFromIndex(t *testing.T) {
 		t.Fatalf("precondition: run not indexed (%d, %v)", before, err)
 	}
 
-	if err := a.DeleteSession(a.sessionID); err != nil {
+	if err := a.DeleteSession(a.cur().id); err != nil {
 		t.Fatalf("DeleteSession: %v", err)
 	}
 	var after int
