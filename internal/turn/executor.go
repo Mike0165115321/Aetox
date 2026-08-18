@@ -387,6 +387,22 @@ type ToolEvent struct {
 	// (ExecutorOptions.DelegateKind). Empty when no resolver is wired or the
 	// profile cannot run — counted as a helper, the pre-split reading.
 	AgentKind string `json:"agentKind,omitempty"`
+	// Delegation says whether this row hired anybody.
+	//
+	// It has to travel as its own fact because the label cannot carry it:
+	// delegation is packed under one tool name (§99), so `task collect` — the
+	// agent sitting and waiting on a delegate it started earlier — reads
+	// exactly like the delegation it is waiting for. delegationOf has always
+	// known the difference; it just had nowhere to put the answer, and the UI
+	// re-derived it from the label and drew the waiting next to the working as
+	// two sub-agents.
+	//
+	// A pointer, because there are three answers and not two. nil is "nobody
+	// has said", which is the honest state of a row born from the streaming
+	// announcement — that fires while the model is still writing the
+	// arguments, and the action is in the arguments. Only a caller holding
+	// them ever fills this in.
+	Delegation *bool `json:"delegation,omitempty"`
 }
 
 // Label is what a timeline row reads, e.g. "write internal/skill/edit.go".
@@ -481,6 +497,7 @@ func (e *Executor) reportToolCall(ref, name, args string) {
 		e.onToolAction(ToolEvent{
 			Action: "call", Ref: ref, Name: name, Subject: toolCallSubject(args),
 			Agent: agent, Brief: brief, AgentKind: e.kindOf(isTask, agent),
+			Delegation: &isTask,
 		})
 	}
 }
@@ -950,6 +967,7 @@ func (e *Executor) executeAgentToolLoop(
 			Agent:      agent,
 			Brief:      brief,
 			AgentKind:  e.kindOf(isTask, agent),
+			Delegation: &isTask,
 			OK:         success,
 			Error:      ev.Error,
 			Secs:       int(elapsed.Round(time.Second) / time.Second),
@@ -969,7 +987,37 @@ func (e *Executor) executeAgentToolLoop(
 		// user's message to the context a second time and discarded this error
 		// in favour of whatever the retry produced. One DNS failure cost three
 		// provider calls and left the question in the model's memory twice.
-		return Result{}, true, err
+		//
+		// The sequence comes back with it, and that is the whole difference
+		// between a stopped turn and a deleted one. `Result{}` here threw away
+		// every part the loop had recorded — each tool call, each line of
+		// narration between them — so a Stop pressed after twenty minutes of
+		// work reached the caller as an error and nothing else. desktop's
+		// appendFailedTurn then stored an empty row, and reopening the chat
+		// showed a question with no answer under it: the record of the work was
+		// gone from the one place it was supposed to survive.
+		//
+		// Assembled exactly as the success path assembles it, ten lines down.
+		// What is NOT here is the round that was in flight when the wall came:
+		// its prose never completed a round, so it never became a part. The
+		// window still holds that half-sentence (its live preview is the only
+		// copy), which is why the frontend keeps its own and this keeps the
+		// rest.
+		//
+		// Reply is the last thing the model *said*, not `reply`. The loop
+		// returns a cancelled tool's own output in that variable, which on a
+		// Stop is the string "context canceled" — and a bubble reading
+		// "context canceled" over "หยุดการทำงานแล้ว" is the app blaming itself
+		// for obeying. The last text part is always the model's own sentence.
+		// It goes in Reply *and* stays in Parts on purpose: the frontend draws
+		// the final text part as the bubble and skips it in the timeline
+		// (stepsFromParts), so leaving Reply empty would drop that sentence
+		// from both.
+		partial := ""
+		if last, ok := parts.lastText(); ok {
+			partial = last
+		}
+		return Result{Reply: partial, Parts: parts.all(), Status: TurnStatusError}, true, err
 	}
 	debuglog.Info("agent tool loop", fmt.Sprintf("usedTools=%v", usedTools))
 	// A reply the loop produced itself rather than taking from a round — the

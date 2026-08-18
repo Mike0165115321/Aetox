@@ -855,8 +855,9 @@ func TestPermissionRulesMatchEditAndGrepArgs(t *testing.T) {
 // streaming a little reasoning first — the shape §59's timeline interleaving
 // consumes.
 // delegatingAgent hands one job to the doc chair and finishes — the smallest
-// turn that opens a delegation.
-type delegatingAgent struct{}
+// turn that opens a delegation. `args` overrides what it sends, for the tests
+// that need one of the OTHER things `task` can be asked to do.
+type delegatingAgent struct{ args string }
 
 func (*delegatingAgent) Respond(_ context.Context, _ string, _ TurnOptions) (string, error) {
 	return "", nil
@@ -878,13 +879,14 @@ func (a *delegatingAgent) RespondWithTools(
 	_ func(string) error,
 	_ TurnOptions,
 ) (string, bool, error) {
+	args := a.args
+	if args == "" {
+		args = `{"description":"ทำรายงานสรุป","prompt":"เขียนรายงานสรุปการประชุมทีมเป็น .docx","agent":"doc"}`
+	}
 	_, _, _ = exec(ctx, model.ToolCall{
-		ID:   "task_call_1",
-		Type: "function",
-		Function: model.FunctionCall{
-			Name:      "task",
-			Arguments: `{"description":"ทำรายงานสรุป","prompt":"เขียนรายงานสรุปการประชุมทีมเป็น .docx","agent":"doc"}`,
-		},
+		ID:       "task_call_1",
+		Type:     "function",
+		Function: model.FunctionCall{Name: "task", Arguments: args},
 	})
 	return "ส่งงานให้ doc แล้วครับ", true, nil
 }
@@ -968,6 +970,85 @@ func TestExecute_DelegationCarriesAgentKind(t *testing.T) {
 	if part.Brief == "" {
 		t.Error("stored part lost the brief")
 	}
+}
+
+// Whether a `task` row hired anybody travels as its own fact, on the live event
+// and on the written-down part.
+//
+// delegationOf has always known: of the actions packed under this one name only
+// `start` hires, and a `collect` is the agent waiting on a delegate it already
+// has. But the answer went nowhere, so the UI re-derived it from the label —
+// where both read "task" — and drew the waiting beside the working as a second
+// sub-agent, on a job where one was hired.
+func TestExecute_DelegationSaysWhetherItHiredAnyone(t *testing.T) {
+	run := func(t *testing.T, args string) (ToolEvent, ToolPart) {
+		t.Helper()
+		var events []ToolEvent
+		executor := NewExecutor(ExecutorOptions{
+			Agent:        &delegatingAgent{args: args},
+			Dispatcher:   &taskDispatcher{},
+			ApprovalMode: safety.ApprovalFullAccess,
+			OnToolAction: func(ev ToolEvent) { events = append(events, ev) },
+		})
+		input := "เอาผลงานที่สั่งไว้"
+		result, err := executor.Execute(context.Background(), input, command.Parse(input, command.ParseTokens, nil), nil, func(string) {}, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var call *ToolEvent
+		for i := range events {
+			if events[i].Action == "call" {
+				call = &events[i]
+			}
+		}
+		if call == nil {
+			t.Fatal("no call event reached the timeline")
+		}
+		for _, p := range result.Parts {
+			if p.Kind == PartTool && p.Tool != nil {
+				return *call, *p.Tool
+			}
+		}
+		t.Fatal("no tool part was written down")
+		return ToolEvent{}, ToolPart{}
+	}
+
+	// The word every reader of these two fields needs, spelled once: nil is
+	// "nobody said", which is a third answer and not a quiet no.
+	said := func(t *testing.T, where string, v *bool, want bool) {
+		t.Helper()
+		if v == nil {
+			t.Fatalf("%s said nothing about being a delegation, so the UI is back to guessing from the label", where)
+		}
+		if *v != want {
+			t.Errorf("%s delegation = %v, want %v", where, *v, want)
+		}
+	}
+
+	t.Run("start hires", func(t *testing.T) {
+		ev, part := run(t, `{"action":"start","agent":"explore","description":"สำรวจ","prompt":"ดูโครงสร้างโปรเจกต์"}`)
+		said(t, "call event", ev.Delegation, true)
+		said(t, "stored part", part.Delegation, true)
+	})
+
+	// No action at all is a start: the argument was added after delegation was
+	// packed under one name, and the calls written before it still open one.
+	t.Run("no action is still a start", func(t *testing.T) {
+		ev, part := run(t, "")
+		said(t, "call event", ev.Delegation, true)
+		said(t, "stored part", part.Delegation, true)
+	})
+
+	t.Run("collect hires nobody", func(t *testing.T) {
+		ev, part := run(t, `{"action":"collect","task_id":"task_1"}`)
+		said(t, "call event", ev.Delegation, false)
+		said(t, "stored part", part.Delegation, false)
+		// The rest of the row is empty too, which is exactly why the flag has to
+		// be explicit: there is nothing else on a collect to read a no off.
+		if ev.Agent != "" || ev.Brief != "" {
+			t.Errorf("collect carried delegation facts: Agent=%q Brief=%q", ev.Agent, ev.Brief)
+		}
+	})
 }
 
 type narratingAgent struct{}

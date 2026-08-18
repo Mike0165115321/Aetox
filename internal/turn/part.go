@@ -68,11 +68,16 @@ type ToolPart struct {
 	Agent     string `json:"agent,omitempty"`
 	Brief     string `json:"brief,omitempty"`
 	AgentKind string `json:"agentKind,omitempty"`
-	OK      bool   `json:"ok"`
-	Error   string `json:"error,omitempty"`
-	Secs    int    `json:"secs,omitempty"`
-	Added   int    `json:"added,omitempty"`
-	Removed int    `json:"removed,omitempty"`
+	// Delegation is ToolEvent.Delegation written down: whether this `task` row
+	// hired anybody, or was one of the four actions that do not. A reopened
+	// session reads only the parts, so leaving it off the transcript would fix
+	// the live turn and let the same wrong card come back on reload.
+	Delegation *bool  `json:"delegation,omitempty"`
+	OK         bool   `json:"ok"`
+	Error      string `json:"error,omitempty"`
+	Secs       int    `json:"secs,omitempty"`
+	Added      int    `json:"added,omitempty"`
+	Removed    int    `json:"removed,omitempty"`
 	// Artifacts are the finished files this call made for the user, carried
 	// here rather than only on the live ToolEvent because this is the part that
 	// is *written down*. The chat draws an open button per artifact, and until
