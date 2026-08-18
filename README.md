@@ -35,7 +35,7 @@ Aetox is a desktop application for Windows that runs an AI agent against your ow
 You describe what needs doing; it reads and writes real files, runs real commands in a real
 shell, and drives a real browser you can watch.
 
-It is one self-contained 41.5 MB executable. There is no runtime to install alongside it, no
+It is one self-contained 47.5 MB executable. There is no runtime to install alongside it, no
 `node_modules`, no bundled copy of Chromium. It talks to whichever model you point it at —
 a hosted API, a subscription you already pay for, or a 9B running in LM Studio or Ollama on
 your own GPU — and the capability comes from the app rather than from the model's parameters.
@@ -59,7 +59,7 @@ ships five test models that exercise the real machinery (real tool calls, a real
 sub-agent, a long reasoning stream), so you can see what the app does before signing up for
 anything.
 
-**Installer** — [aetox-amd64-installer.exe](https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-amd64-installer.exe) (15.8 MB)
+**Installer** — [aetox-amd64-installer.exe](https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-amd64-installer.exe) (20.9 MB)
 
 It also fetches and SHA256-verifies the outside programs Aetox uses: WebView2, Tesseract (with
 Thai), poppler, ffmpeg, and a starter whisper model for offline speech. Any one of them failing
@@ -349,15 +349,16 @@ has not passed them may not appear here or on the website.
 > The dangerous number is the flattering one, because nobody audits a figure that makes them look
 > good.
 
-**Aetox, measured 2026-08-13 on this build.**
+**Aetox.** The two size rows and the two test counts were re-measured 2026-08-18 on v1.2.4;
+assembling a turn is from 2026-08-13, and the ⁽ᵈ⁾ rows from 2026-07-27 on v0.9.2.
 
 | | |
 |:---|---:|
-| What you download | 15.8 MB installer |
-| What ends up on disk | **41.5 MB**, one file |
+| What you download | 20.9 MB installer |
+| What ends up on disk | **47.5 MB**, one file |
 | Assembling a turn | 0.32 ms · 174.9 KB allocated |
-| Go tests | 1,470 across 37 packages, 0 failures |
-| Frontend tests | 463 across 42 files, 0 failures |
+| Go tests | 1,797 across 38 packages, 0 failures |
+| Frontend tests | 755 across 69 files, 0 failures |
 | First launch (cold) | 1.77 s ⁽ᵈ⁾ |
 | Every launch after | 0.53 s ⁽ᵈ⁾ |
 | RAM committed | 252 MB ⁽ᵈ⁾ |
@@ -383,7 +384,7 @@ page and still to be fixed; what changed is that they no longer hide the platfor
 | First launch (cold) | 1.77 s | 2.12 s |
 | Every launch after | 0.53 s | 0.53 s |
 | RAM committed | 252 MB | 471 MB |
-| Disk | **41.5 MB** | 419 MB |
+| Disk | **47.5 MB** | 419 MB |
 
 Both columns except Aetox's disk figure were measured 2026-07-27 on the same machine under the same
 rules, and neither has been re-measured — Zed is no longer installed here. A tie on warm launch with
@@ -398,9 +399,9 @@ handed a second browser to store.
 <summary>How these were measured, and what does not qualify</summary>
 
 **Disk** — download [the portable zip](https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-windows-amd64-portable.zip),
-unpack it, and read the size of the one `aetox.exe` inside: 43,514,880 bytes. Anyone can reproduce
-it in a minute. It replaces the 40.8 MB figure measured on v0.9.2 on 2026-08-07, which was correct
-then and is not now. Competitor sizes are measured after install from the install folder, never
+unpack it, and read the size of the one `aetox.exe` inside: 49,768,960 bytes. Anyone can reproduce
+it in a minute. It replaces the 41.5 MB figure measured on 2026-08-13, which was correct then and
+is not now. Competitor sizes are measured after install from the install folder, never
 taken from a download page, and never from a folder holding user profiles or caches.
 
 **Launch, RAM and process count** — `bench.ps1 -Start`, empty project, median of 5 runs after
