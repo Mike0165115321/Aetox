@@ -138,7 +138,28 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 		&grepSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
 		&globSkill{root: opts.SandboxRoot},
 		&applyPatchSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
-		&notebookEditSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
+		// `notebook_edit` is deliberately absent (owner's call, 2026-08-19).
+		// It is 317 tokens in the block of every desk that carries the files
+		// group, paid on every request before the user types, and `tool_runs`
+		// records zero calls to it against 2,687 runs since the log began.
+		//
+		// Its half of notebook.go stays compiled in, and this is a switch
+		// rather than a deletion for a reason: `read` renders an .ipynb as
+		// numbered cells through loadNotebook/renderNotebook in that same file,
+		// so removing the file would take reading notebooks with it — the
+		// problem it was written to solve. Notebooks stay readable and become
+		// read-only, which is honest: nothing else can edit one (`edit` and
+		// `apply_patch` match text the file stores JSON-escaped, and `write`
+		// would have to re-emit every base64 output to keep them).
+		//
+		// Switching it on again is this line plus the files that name a tool
+		// rather than describe one, and they are listed here so the switch is
+		// read in one place: `defaults_test.go` (the check that this stayed
+		// off), the office desk's `chairs:` in internal/mode/modes/
+		// specialized.md, and the `tools:` line of each agent under
+		// profiles/agents that should hold it. Its category, its size pin, its
+		// coverage case and every `deny:` naming it are already written and
+		// need nothing.
 		&diagnosticsSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
 		&symbolSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
 		&deleteSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},

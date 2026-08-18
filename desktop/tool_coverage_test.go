@@ -358,6 +358,10 @@ func toolCases(t *testing.T, root string, dispatcher *skill.Dispatcher) map[stri
 			}},
 			check: fileContains("patch-me.txt", "TWO"),
 		},
+		// Kept although the tool is no longer registered (internal/skill/
+		// defaults.go, 2026-08-19). The loop below drives what the dispatcher
+		// offers, so an unoffered tool costs nothing here — and the day the
+		// notebook pane switches it back on, its coverage is already written.
 		"notebook_edit": {
 			args:  map[string]any{"path": "nb.ipynb", "cell": 0, "source": "y = 99\n"},
 			check: fileContains("nb.ipynb", "y = 99"),

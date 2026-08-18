@@ -17,7 +17,7 @@ func TestNewDefaultRegistryRegistersAllBuiltins(t *testing.T) {
 	// that from the other side.
 	want := []string{
 		"help", "echo", "time", "calc", "list", "read",
-		"git", "fs", "shell", "write", "sheet_write", "slides_write", "doc_write", "edit", "grep", "glob", "apply_patch", "notebook_edit", "diagnostics", "symbol", "delete", "plugin_install", "image_ocr", "video_ocr", "pdf_read", "audio_transcribe",
+		"git", "fs", "shell", "write", "sheet_write", "slides_write", "doc_write", "edit", "grep", "glob", "apply_patch", "diagnostics", "symbol", "delete", "plugin_install", "image_ocr", "video_ocr", "pdf_read", "audio_transcribe",
 		"web_fetch", "web_search", "github",
 		"n8n", "windmill",
 		"skills_list", "skill_view",
@@ -32,6 +32,14 @@ func TestNewDefaultRegistryRegistersAllBuiltins(t *testing.T) {
 	}
 	if got := len(registry.Names()); got != len(want) {
 		t.Errorf("registry has %d skills, want %d", got, len(want))
+	}
+
+	// Compiled in and deliberately not registered (defaults.go, 2026-08-19):
+	// zero calls in the log against its 317 tokens on every request. Asserted
+	// rather than merely absent from `want`, so switching it back on is a
+	// decision somebody makes here rather than something that drifts in.
+	if _, ok := registry.Get("notebook_edit"); ok {
+		t.Error("notebook_edit is registered again — that is a decision, not a merge: say so in defaults.go and delete this check")
 	}
 }
 

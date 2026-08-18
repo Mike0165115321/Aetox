@@ -289,7 +289,7 @@ Aetox จำข้ามเซสชันได้ และ**ไม่มี�
 
 | กลุ่ม | เครื่องมือ |
 |:---|:---|
-| **ไฟล์** | `read` `write` `edit` `apply_patch` `notebook_edit` `delete` `list` `glob` `grep` |
+| **ไฟล์** | `read` `write` `edit` `apply_patch` `delete` `list` `glob` `grep` |
 | **รันคำสั่ง** | `shell` *(run · output · kill · list)* `git` `desk_terminal` |
 | **ส่งไฟล์กลับ** | `doc_write` `sheet_write` `slides_write` |
 | **อ่านสื่อ** | `image_ocr` `video_ocr` `pdf_read` `audio_transcribe` |

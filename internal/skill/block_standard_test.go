@@ -71,6 +71,10 @@ var overweight = map[string]int{
 	"github":           390,
 	"sheet_write":      368,
 	"slides_write":     330,
+	// Not registered since 2026-08-19 (defaults.go), so nothing reaches it
+	// today. The pin stays because the file does: it is the size this tool
+	// comes back at, and coming back over the standard should have to be
+	// noticed rather than inherited.
 	"notebook_edit":    317,
 	"apply_patch":      243,
 	"edit":             234,

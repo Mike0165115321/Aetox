@@ -1,6 +1,6 @@
 ---
 description: เอเจนดูแล GitHub — เปิดและรีวิว PR ไล่ CI ที่แดง จัดการ issue ตั้งรีโปให้ได้มาตรฐาน
-tools: github, pdf_read, image_ocr, video_ocr, audio_transcribe, read, write, edit, apply_patch, delete, notebook_edit, grep, list, glob, shell, git, desk_terminal, desk_open, desk_list, browser, web_fetch, web_search, memory, skills_list, skill_view
+tools: github, pdf_read, image_ocr, video_ocr, audio_transcribe, read, write, edit, apply_patch, delete, grep, list, glob, shell, git, desk_terminal, desk_open, desk_list, browser, web_fetch, web_search, memory, skills_list, skill_view
 needs: connection:github, mcp:github
 icon: gitBranch
 ---

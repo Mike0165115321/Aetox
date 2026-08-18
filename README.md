@@ -292,7 +292,7 @@ for rather than spent.
 
 | Group | Tools |
 |:---|:---|
-| **Files** | `read` `write` `edit` `apply_patch` `notebook_edit` `delete` `list` `glob` `grep` |
+| **Files** | `read` `write` `edit` `apply_patch` `delete` `list` `glob` `grep` |
 | **Running commands** | `shell` *(run · output · kill · list)* `git` `desk_terminal` |
 | **Handing back files** | `doc_write` `sheet_write` `slides_write` |
 | **Reading media** | `image_ocr` `video_ocr` `pdf_read` `audio_transcribe` |

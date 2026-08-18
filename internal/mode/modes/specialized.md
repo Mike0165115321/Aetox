@@ -2,7 +2,7 @@
 description: โต๊ะงานเฉพาะทาง — สร้างสไลด์ เอกสาร สเปรดชีต และอ่านสื่อทุกชนิด ไม่มีเชลล์ ไม่มีเครื่องมือโค้ด
 categories: media, web, agent
 tools: read, write, list, glob
-chairs: doc_write, sheet_write, slides_write, edit, grep, apply_patch, delete, notebook_edit, shell, git, desk_terminal
+chairs: doc_write, sheet_write, slides_write, edit, grep, apply_patch, delete, shell, git, desk_terminal
 ---
 
 This session is deliverable work: the answer is a file somebody opens in

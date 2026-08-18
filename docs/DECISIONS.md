@@ -4931,3 +4931,68 @@ Two smaller lies in the same strip, both of them "the copy cannot keep up with t
 ### What this does not decide
 
 **Stages 2 and 3 of §134.4 are still not done, and this is not them.** One engine, one agent context: opening a second conversation *for real* mid-turn still refuses, so the composer in a chat being read is still disabled and typing in two chats at once is still not a capability. What changed is that the conversation that IS working can always be got back to, and that walking away from it no longer looks like losing it. The read-only peek is still the stopgap §134.4 called it, and still goes when per-session live state lands.
+
+---
+
+## 145. Decision — A Specialist Walled Off From The Work Its Own Brief Describes (2026-08-19)
+
+The owner opened a chat with the `github` agent, asked it to do something, and was told the agent could not write a file. He sent the screenshot with three sentences: *"ไปเอากำแพงออกที เอเจนอื่นๆอีก โดนจำกัดไหมไปดู"*, then *"tool พื้นฐานที่ทำให้มันทำงานกับเครื่องนี้ได้ควรจะมีครบนะผมว่า เขียรไฟล์ แก้ไฟลือ่ะ"*, and finally the order this section records: *"ปลดเพดานให้เอเจนเฉพาะทางก่อน 📁 files ⚡ shell ให้พวกมันเข้าถึงได้เต็มที่ครับ"*.
+
+The wall was two layers deep and only the first was visible from the chat.
+
+### 145.1 What each layer was
+
+**The profile's `tools:` allowlist.** Four of the six bundled agents were narrow: `github` held `github, read, list, glob, web_fetch, web_search, skills_list, skill_view`, and `doc`/`sheet`/`deck` held their own writer plus reading and the senses. None could write a plain file. The clearest evidence that this was a wall rather than a design was inside the `github` agent's own brief, which instructs it to work the repository out from the checkout's `origin` — with no `git` and no `shell` to read one with. A prompt telling a worker to do what its tool list forbids is the fault `automation_agent_test.go` already pins for one agent; it was live in another.
+
+**The office desk's ceiling.** Every agent sits at `specialized` (`mode.Office`), whose manifest named `read, write, list, glob` and kept `doc_write, sheet_write, slides_write, shell, desk_terminal` in `chairs:`. So `edit`, `grep`, `apply_patch`, `delete` and `git` could not reach an agent however its profile was written — widening the profiles alone would have changed nothing, which is why both halves moved together.
+
+### 145.2 What moved, and what deliberately did not
+
+`chairs:` now carries the whole of the files group and the whole of the shell group: `doc_write, sheet_write, slides_write, edit, grep, apply_patch, delete, shell, git, desk_terminal` — with `read, write, list, glob` still on the desk itself. Every bundled agent's `tools:` names the same general kit beside its specialist tools.
+
+**`chairs:` rather than `tools:` is the whole of the care taken here.** The distinction §84 introduced does the work: these tools are in the room for the desk's agents and still not on the assistant's desk, so the assistant sitting at the office gained nothing and its tool block did not grow by a byte. Widening `tools:` would have been the easy version and would have charged every specialized session for tools it was deliberately not given.
+
+`delete` is included, at the owner's word *"ให้พวกมันเข้าถึงได้เต็มที่"* and on the strength of the gate in front of it: `internal/safety` rates it `RiskHigh`, so it prompts every time. Rights come from the user's visible list, not from a tool being withheld quietly.
+
+Still refused at the office: the **code** group — `diagnostics` and `symbol` — which is now the only wall left there.
+
+### 145.3 The quiet one was memory
+
+Five of the six agents never named `memory`, and `task.go` gates the per-delegate memory tool on `profile.AllowsTool("memory")`. They had been running with no `MEMORY.md` of their own at all — the folder standard says an agent's memory travels with its package, and for five of six there was nothing to travel. Every agent names it now.
+
+### 145.4 Four tests moved, none was weakened
+
+`git`, `shell` and `apply_patch` were each being used somewhere as "the tool the office refuses", and each was true until this change. They are re-pointed at `symbol`, `diagnostics` and `fs`, which the office still refuses — the assertions are the same assertions.
+
+One is worth reading twice: `desktop/desk_test.go`'s proof that a chair runs on the *target* desk's manifest rather than its caller's now hangs on `fs`, because the office's room has become so nearly co-extensive with the assistant desk that `fs` is the only registered name left that only the caller holds. Its comment says so, and says that the day the office names `fs` too, the test moves to a caller holding something the office refuses rather than being deleted.
+
+### What this does not decide
+
+**The honest refusal is still open.** An agent asked for work no held tool can do should say that, rather than failing downstream — the "ไฟล์หาย" report whose truth was "ผมไม่มีเครื่องมือที่จะสร้างมัน" (18 ส.ค.). Widening the toolsets removes many occasions for it and none of the mechanism. The walls kept on purpose — the code group, `plugin_install`, the `task` family under `forcedDenials` — can still produce exactly that wrong sentence.
+
+---
+
+## 146. Decision — A Tool Nobody Called, Priced On Every Request (2026-08-19)
+
+Laying the whole tool inventory out for the owner produced a question about one line of it: *"notebook_edit แก้ Jupyter notebook รายเซลล์ ลบออกดีไหมอ่ะ เพราะเรายังไม่เคยใช้จริงเลย จะประหยัดโทเค็นไหมครับ"*.
+
+The answer came from `tool_runs` rather than from an opinion. **Zero calls out of 2,687 recorded since the log began on 4 ส.ค.**, against 317 tokens in the block of every desk carrying the files group — paid on every request before the user has typed anything. `symbol` (180) and `fs` (0 tokens; it has no `ToolDefinition` and never reaches a model) had never fired either, and were left alone: the first is a real capability the prompt has never pointed at, and the second costs nothing.
+
+### 146.1 Deleting the file was never one of the options
+
+`read` renders an `.ipynb` as numbered cells through `loadNotebook`/`renderNotebook` — **in the same file as the tool**. Removing `notebook.go` would have taken reading notebooks with it and handed the model raw JSON with every base64 output embedded, which is the exact problem §54 wrote the file to solve.
+
+So the choice was three-way, not two, and the owner took the middle one (*"เห้นด้วยกับ 2 ครับ"*): the type stays compiled in and is **not registered** in `defaults.go`. Notebooks stay readable and become read-only — which is the honest description, because nothing else can edit one. `edit` and `apply_patch` match exact text and the file stores its source JSON-escaped inside an array, so a match either misses or corrupts; `write` would have to re-emit every recorded output to keep them.
+
+### 146.2 A switch, and the reason it is written down in one place
+
+Putting the line back in `defaults.go` is the whole of switching it on, and its comment names the other files that name the tool rather than describe it — the check in `defaults_test.go`, the office's `chairs:`, and the agents' `tools:` lines. Its category, its 317-token pin in `block_standard_test.go`, its coverage case in `desktop/tool_coverage_test.go` and every `deny:` naming it are already written and need nothing: a `deny` on a tool that does not exist fails closed, which is the direction that costs nothing to be wrong in.
+
+The pin is kept deliberately. It is the size this tool comes back at, and coming back over the standard should have to be noticed rather than inherited.
+
+`defaults_test.go` asserts the absence rather than merely omitting the name, so switching it on is a decision somebody makes in the open rather than something that drifts back in on a merge.
+
+### What this does not decide
+
+**Nothing about the notebook pane.** The owner is thinking about a Colab-like room on the code page, and pushed back on the objection that a Python dependency disqualifies it — correctly: `image_ocr` already needs tesseract and the media tools need ffmpeg, and the rule those live under is that the product says so plainly instead of pretending. A notebook room without Python is the same shape of failure as §142's, one screen larger, and that is the thing to fix before the room, not the dependency. When the room lands, this tool is one line away and its category moves to `code` with it.
+

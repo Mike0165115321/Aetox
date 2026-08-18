@@ -81,8 +81,14 @@ Aetox ไม่ใช่กล่องรวมเอไอหลายตั�
 ```
 assistant    categories: agent, web, media, files, shell      ← ไม่มี deliverables
 specialized  categories: media, web, agent
-             chairs: doc_write, sheet_write, slides_write     ← อยู่ตรงนี้
+             tools:  read, write, list, glob
+             chairs: doc_write, sheet_write, slides_write,    ← อยู่ตรงนี้
+                     edit, grep, apply_patch, delete,
+                     shell, git, desk_terminal
 ```
+
+`chairs:` ยาวขึ้นเมื่อ 19 ส.ค. (§145) เพราะเจ้าของสั่งปลดเพดานให้เอเจน — ทั้งหมวดไฟล์และ
+เชลล์อยู่ในห้องให้ตัวแทนใช้แล้ว แต่ยังไม่ขึ้นโต๊ะ ซึ่งคือกติกาข้อนี้ทำงานพอดี ไม่ใช่ข้อยกเว้นของมัน
 
 ผู้ช่วยสั่งทีมเอเจนทำ จึงไม่ต้องจ่ายค่าเครื่องมือพวกนี้ในทุกคำถาม
 

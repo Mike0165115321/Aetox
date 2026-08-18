@@ -1,6 +1,6 @@
 ---
 description: เอเจนหาข้อมูลเชิงลึก — ไล่หลายแหล่งทั้งทางการและคอมมูนิตี้ เทียบคู่แข่ง แล้วส่งข้อค้นพบที่ตามกลับไปหาต้นทางได้
-tools: pdf_read, image_ocr, video_ocr, audio_transcribe, read, write, edit, apply_patch, delete, notebook_edit, grep, list, glob, shell, git, desk_terminal, desk_open, desk_list, browser, web_fetch, web_search, memory, skills_list, skill_view, todo_write
+tools: pdf_read, image_ocr, video_ocr, audio_transcribe, read, write, edit, apply_patch, delete, grep, list, glob, shell, git, desk_terminal, desk_open, desk_list, browser, web_fetch, web_search, memory, skills_list, skill_view, todo_write
 needs: mcp:firecrawl
 icon: search
 ---
