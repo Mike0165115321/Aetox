@@ -263,7 +263,6 @@ export const th = {
   'taskTimeline.changeSummary': 'สรุปการเปลี่ยนแปลง',
 
   'workbench.filesTab': 'ไฟล์',
-  'workbench.toolsTab': 'เครื่องมือ',
   'workbench.newTab': 'แท็บใหม่',
   'workbench.addTab': 'เพิ่มแท็บใหม่',
   'workbench.terminalMenu': 'เทอร์มินัล',
@@ -366,11 +365,6 @@ export const th = {
   'browserPane.openedEmpty': 'ยังไม่เคยเปิดหน้าไหนจากแท็บนี้',
   'browserPane.showAllPages': 'ดูทั้งหมด {total} หน้า',
 
-  'toolsPane.mcpTools': 'เครื่องมือ MCP',
-  'toolsPane.externalSkills': 'สกิลภายนอก',
-  'toolsPane.addedTools': 'เครื่องมือที่เพิ่มเข้ามา ({count})',
-  'toolsPane.refresh': 'รีเฟรช',
-  'toolsPane.noTools': 'ยังไม่มี MCP server หรือสกิลภายนอก เพิ่ม MCP server ได้ที่ Settings → MCP servers',
 
   'fileEditor.saving': 'กำลังบันทึก…',
   'fileEditor.save': 'บันทึก (Ctrl+S)',

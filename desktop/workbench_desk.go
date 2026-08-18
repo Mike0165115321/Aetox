@@ -37,7 +37,7 @@ import (
 // (WorkbenchTabsChanged); nothing on the Go side tries to track it by watching
 // the events it sends, which would drift the moment the user closed a tab.
 type DeskTab struct {
-	Kind string `json:"kind"` // terminal | browser | files | file | tools
+	Kind string `json:"kind"` // terminal | browser | files | file | decks
 	Name string `json:"name"`
 	Path string `json:"path,omitempty"` // file tabs
 	URL  string `json:"url,omitempty"`  // browser tabs

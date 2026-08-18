@@ -4,7 +4,6 @@
   import FileEditor from '../FileEditor.svelte'
   import FilesPane from './FilesPane.svelte'
   import BrowserPane from './BrowserPane.svelte'
-  import ToolsPane from './ToolsPane.svelte'
   import ExternalFilePane from './ExternalFilePane.svelte'
   import SheetPane from './SheetPane.svelte'
   import ImagePane from './ImagePane.svelte'
@@ -16,7 +15,7 @@
   import { cockpit } from '../stores/cockpit.svelte'
   import {
     workbench, activateTab, closeTab, removeTab,
-    openFilesTab, openBrowserTab, openTerminalTab, openToolsTab, openDecksTab, openFileTab, reportDeskTabs,
+    openFilesTab, openBrowserTab, openTerminalTab, openDecksTab, openFileTab, reportDeskTabs,
     openUrlInWorkbench, saveWorkbenchSnapshot, resolveAddressBarInput, labelForUrl,
     setTabDragPayload, TAB_DRAG_MIME,
     type WorkbenchTab,
@@ -29,7 +28,7 @@
   import Icon from '../Icon.svelte'
   import type { IconName } from '../icons'
 
-  const tabIcon: Record<string, IconName> = { terminal: 'keyboard', browser: 'globe', files: 'copy', file: 'fileText', tools: 'wrench', decks: 'layoutList' }
+  const tabIcon: Record<string, IconName> = { terminal: 'keyboard', browser: 'globe', files: 'copy', file: 'fileText', decks: 'layoutList' }
 
   // Chrome DevTools' default device presets. CSS viewport sizes — BrowserPane
   // turns one into a real window of that aspect + a matching page zoom.
@@ -297,7 +296,6 @@
           <button class="plus-menu-item" disabled={shells.length === 0} onclick={openDefaultTerminal}><span class="ic"><Icon name="keyboard" size={14} /></span> {t('workbench.terminalMenu')}</button>
           <button class="plus-menu-item" onclick={() => pick(openBrowserTab)}><span class="ic"><Icon name="globe" size={14} /></span> {t('workbench.browserMenu')} <span class="kbd">{shortcutLabel('browserTab')}</span></button>
           <button class="plus-menu-item" onclick={() => pick(openFilesTab)}><span class="ic"><Icon name="copy" size={14} /></span> {t('workbench.filesTab')} <span class="kbd">{shortcutLabel('filesTab')}</span></button>
-          <button class="plus-menu-item" onclick={() => pick(openToolsTab)}><span class="ic"><Icon name="wrench" size={14} /></span> {t('workbench.toolsTab')}</button>
           <button class="plus-menu-item" onclick={() => pick(openDecksTab)}><span class="ic"><Icon name="layoutList" size={14} /></span> {t('workbench.decksTab')}</button>
         </div>
       {/if}
@@ -354,7 +352,6 @@
         <button class="plus-menu-item" disabled={shells.length === 0} onclick={openDefaultTerminal}><span class="ic"><Icon name="keyboard" size={14} /></span> {t('workbench.terminalMenu')}</button>
         <button class="plus-menu-item" onclick={() => openBrowserTab()}><span class="ic"><Icon name="globe" size={14} /></span> {t('workbench.browserMenu')} <span class="kbd">{shortcutLabel('browserTab')}</span></button>
         <button class="plus-menu-item" onclick={openFilesTab}><span class="ic"><Icon name="copy" size={14} /></span> {t('workbench.filesTab')} <span class="kbd">{shortcutLabel('filesTab')}</span></button>
-        <button class="plus-menu-item" onclick={openToolsTab}><span class="ic"><Icon name="wrench" size={14} /></span> {t('workbench.toolsTab')}</button>
         <button class="plus-menu-item" onclick={openDecksTab}><span class="ic"><Icon name="layoutList" size={14} /></span> {t('workbench.decksTab')}</button>
       </div>
     {/if}
@@ -374,8 +371,6 @@
           <Terminal sessionId={tab.id} onExit={() => removeTab(tab.id)} />
         {:else if tab.kind === 'files'}
           <FilesPane />
-        {:else if tab.kind === 'tools'}
-          <ToolsPane />
         {:else if tab.kind === 'decks'}
           <DeckRoom />
         {:else if tab.kind === 'file'}

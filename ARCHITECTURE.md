@@ -552,6 +552,7 @@ product picture in [COMPANY.md](COMPANY.md)) · §82 (the learning floor) · §4
 | §144 | The Way Back Cannot Be One Button Nobody Found (2026-08-19) · amends §134.2 |
 | §145 | A Specialist Walled Off From The Work Its Own Brief Describes (2026-08-19) · widens `chairs:` in [specialized.md](internal/mode/modes/specialized.md), not `tools:` (§84) |
 | §146 | A Tool Nobody Called, Priced On Every Request (2026-08-19) · `notebook_edit` compiled in, not registered — [defaults.go](internal/skill/defaults.go) |
+| §147 | A List of What Is Installed Is Not a Room (2026-08-19) · workbench Tools pane removed; Settings keeps the lists |
 
 ---
 

@@ -4996,3 +4996,20 @@ The pin is kept deliberately. It is the size this tool comes back at, and coming
 
 **Nothing about the notebook pane.** The owner is thinking about a Colab-like room on the code page, and pushed back on the objection that a Python dependency disqualifies it — correctly: `image_ocr` already needs tesseract and the media tools need ffmpeg, and the rule those live under is that the product says so plainly instead of pretending. A notebook room without Python is the same shape of failure as §142's, one screen larger, and that is the thing to fix before the room, not the dependency. When the room lands, this tool is one line away and its category moves to `code` with it.
 
+---
+
+## 147. Decision — A List of What Is Installed Is Not a Room (2026-08-19)
+
+The owner opened the workbench's `+` menu, looked at the four entries under it, and pointed at the last one: *"เห็นไหมครับกล่องเครื่องมือ ผมว่าเอาออกดีกว่า มันไม่ควรไปปนกันโต๊ะทำงาน"*.
+
+He is right twice, and the second reason is the one that decides it.
+
+**It was the wrong kind of thing to be in that menu.** Terminal, browser, files, slides are *places work happens* — you open one to do something in it. `ToolsPane` listed the MCP tools and external skills the user had plugged in, which is not somewhere to work; it is a fact about how this machine is configured. Reading it changes nothing and produces nothing, so it never earned a tab beside the four that do.
+
+**And it was a second place answering a question Settings already answers.** Settings → เครื่องมือ lists the tools, → สกิลภายนอก the skills, → MCP servers the servers they come from — with install, remove and refresh, which the pane could not do. Nothing is lost by deleting it, and the thing that was actually at risk was the two lists disagreeing on a day one of them was updated and the other was not, which is the debt this file's standing rule is about: a second place answering the same question is หนี้ในระบบ.
+
+Gone with it: the pane, both `+` menu entries, `openToolsTab`, the `'tools'` tab kind and the five `toolsPane.*` strings in both owned locales. A layout saved with the tab open skips it on restore, exactly as layouts naming the removed Review panel already did — the rest of that session's tabs still come back.
+
+### What this does not decide
+
+**Nothing about the tools themselves.** No tool was unregistered here and no MCP server was touched — this is one screen fewer, not one capability fewer. Contrast §146, where the tool really did stop being offered.

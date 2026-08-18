@@ -264,7 +264,6 @@ export const en: Record<keyof typeof th, string> = {
   'taskTimeline.changeSummary': 'Change Summary',
 
   'workbench.filesTab': 'Files',
-  'workbench.toolsTab': 'Tools',
   'workbench.newTab': 'New tab',
   'workbench.addTab': 'Add new tab',
   'workbench.terminalMenu': 'Terminal',
@@ -361,11 +360,6 @@ export const en: Record<keyof typeof th, string> = {
   'browserPane.openedEmpty': 'No page has been opened from this tab yet',
   'browserPane.showAllPages': 'Show all {total} pages',
 
-  'toolsPane.mcpTools': 'MCP tools',
-  'toolsPane.externalSkills': 'External skills',
-  'toolsPane.addedTools': 'Added tools ({count})',
-  'toolsPane.refresh': 'Refresh',
-  'toolsPane.noTools': 'No MCP server or external skill yet. Add an MCP server in Settings → MCP servers.',
 
   'fileEditor.saving': 'Saving…',
   'fileEditor.save': 'Save (Ctrl+S)',

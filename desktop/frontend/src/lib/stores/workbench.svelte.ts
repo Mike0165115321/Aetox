@@ -10,7 +10,7 @@ import {
 import type { main, ooxml } from '../../../wailsjs/go/models'
 import { t } from '../i18n.svelte'
 
-export type WorkbenchTabKind = 'terminal' | 'browser' | 'files' | 'file' | 'tools' | 'decks'
+export type WorkbenchTabKind = 'terminal' | 'browser' | 'files' | 'file' | 'decks'
 
 export type WorkbenchTab = {
   id: string
@@ -116,14 +116,6 @@ export function openFilesTab(): void {
     workbench.tabs.push({ id: 'files', kind: 'files', name: t('workbench.filesTab') })
   }
   workbench.activeId = 'files'
-}
-
-/** Singleton tab: skills + MCP tools the AI can currently use. */
-export function openToolsTab(): void {
-  if (!workbench.tabs.some((t) => t.kind === 'tools')) {
-    workbench.tabs.push({ id: 'tools', kind: 'tools', name: t('workbench.toolsTab') })
-  }
-  workbench.activeId = 'tools'
 }
 
 /** Singleton tab: the slide decks this workspace has produced.
@@ -446,11 +438,11 @@ async function restoreWorkbench(sessionId: string): Promise<void> {
     return
   }
   for (const s of saved.tabs ?? []) {
-    // A layout saved before the Review panel was removed still names it. It is
-    // simply skipped rather than special-cased into an error: the rest of that
-    // session's tabs must still come back.
+    // A layout saved before the Review panel — or the Tools panel, removed
+    // 2026-08-19 — still names it. Such a tab is simply skipped rather than
+    // special-cased into an error: the rest of that session's tabs must still
+    // come back.
     if (s.kind === 'files') openFilesTab()
-    else if (s.kind === 'tools') openToolsTab()
     else if (s.kind === 'file' && s.path) await openFileTab(s.path, s.name)
     else if (s.kind === 'browser') {
       const id = openBrowserTab()
