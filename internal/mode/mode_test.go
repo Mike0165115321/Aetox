@@ -413,8 +413,12 @@ func TestChairsAreInTheRoomButNotOnTheDesk(t *testing.T) {
 	}
 
 	// And still not a way around the ceiling for ordinary work: a tool neither
-	// the desk nor its chairs name stays unreachable to everyone here.
-	if specialized.Carries("git", skill.SourceBuiltin) || specialized.CarriesForChair("git", skill.SourceBuiltin) {
+	// the desk nor its chairs name stays unreachable to everyone here. `git`
+	// was this example until 2026-08-19, when the whole of files and shell moved
+	// into the room (owner: the agents were walled off from work their own
+	// briefs told them to do). `symbol` is the unnamed one now — the code group
+	// is what this desk still refuses.
+	if specialized.Carries("symbol", skill.SourceBuiltin) || specialized.CarriesForChair("symbol", skill.SourceBuiltin) {
 		t.Error("chairs widened the ceiling past what the desk names")
 	}
 }

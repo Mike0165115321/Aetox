@@ -402,7 +402,7 @@ func TestAChairKeepsTheWritersTheDeskPutDown(t *testing.T) {
 		t.Fatal("specialized desk missing")
 	}
 	parent := skill.NewRegistry()
-	for _, s := range []skill.Skill{stubTool("doc_write"), stubTool("read"), stubTool("shell")} {
+	for _, s := range []skill.Skill{stubTool("doc_write"), stubTool("read"), stubTool("shell"), stubTool("symbol")} {
 		if err := parent.Register(s, skill.SourceBuiltin); err != nil {
 			t.Fatalf("register: %v", err)
 		}
@@ -416,7 +416,12 @@ func TestAChairKeepsTheWritersTheDeskPutDown(t *testing.T) {
 	if !slices.Contains(got, "doc_write") {
 		t.Fatalf("the doc agent was handed %v — without doc_write it takes the job and writes nothing", got)
 	}
-	if slices.Contains(got, "shell") {
+	// Shell is in the room on purpose (mode.CarriesForChair), so a chair whose
+	// profile asks for one gets it — the doc agent has asked since 2026-08-19.
+	// What the ceiling still refuses is a tool the desk names nowhere, and the
+	// profile asking for it changes nothing: that is the half worth testing.
+	past := Profile{Name: "doc", Desk: mode.Office, Tools: []string{"doc_write", "symbol"}}
+	if got := FilterRegistry(parent, past, desk).Names(); slices.Contains(got, "symbol") {
 		t.Errorf("the chair reached past the desk: %v", got)
 	}
 

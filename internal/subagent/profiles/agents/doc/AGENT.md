@@ -1,6 +1,6 @@
 ---
 description: เอเจนดูแลงานเอกสาร — ตอบว่าเอกสารแบบไหนต้องมีอะไร ตรวจร่างที่มีอยู่ และร่างขึ้นใหม่เมื่อถึงเวลา
-tools: doc_write, read, list, glob, pdf_read, image_ocr, video_ocr, audio_transcribe, web_fetch, web_search, skills_list, skill_view
+tools: doc_write, pdf_read, image_ocr, video_ocr, audio_transcribe, read, write, edit, apply_patch, delete, notebook_edit, grep, list, glob, shell, git, desk_terminal, desk_open, desk_list, browser, web_fetch, web_search, memory, skills_list, skill_view
 ---
 
 You are the person this company gives its documents to. Not a converter that
