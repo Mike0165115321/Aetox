@@ -426,7 +426,7 @@ describe('Settings pages', () => {
 
     // The headline cards summarise the same split: 900 cached of 1,600 input.
     const cards = [...container.querySelectorAll('.stat-card')]
-    const cacheCard = cards.find((c) => c.textContent?.includes('แคช prompt'))!
+    const cacheCard = cards.find((c) => c.textContent?.includes('Cache hit rate'))!
     expect(cacheCard.querySelector('.stat-big')?.textContent?.replace(/\s/g, '')).toBe('56%')
     expect(container.querySelector('.stat-model')?.textContent).toBe('deepseek-chat')
   })
@@ -496,6 +496,83 @@ describe('Settings pages', () => {
     const today = [...container.querySelectorAll('.seg-btn')].find((b) => b.textContent?.includes('วันนี้'))!
     await fireEvent.click(today)
     await waitFor(() => expect(container.querySelectorAll('.usage-row').length).toBe(1))
+  })
+
+  // One model, two providers — which is not a rare shape, it is what every
+  // history looks like after db.go migration 15: calls made before the provider
+  // column existed carry a blank one, calls made after carry a name, and the
+  // same model then has two rows. Keyed on the model name those two rows are
+  // one row claimed twice, and Svelte does not render a wrong table for that —
+  // it throws each_key_duplicate, the section never renders, and the page reads
+  // as a sidebar entry that does nothing when clicked.
+  it('draws one row per provider of the same model', async () => {
+    const twice = (provider: string, calls: number) => ({
+      model: 'gpt-5.6-luna', provider, promptTokens: 1000 * calls, completionTokens: 100 * calls,
+      cachedTokens: 0, uncachedTokens: 1000 * calls, cacheRows: 0, calls,
+    })
+    const rows = [twice('codex', 581), twice('', 520)]
+    vi.mocked(UsageStats).mockResolvedValue({
+      today: rows, week: rows, all: rows,
+      daily: [{ day: today, model: 'gpt-5.6-luna', promptTokens: 1000, completionTokens: 100, cachedTokens: 0, cacheRows: 0 }],
+      heatmap: [{ day: today, model: '', promptTokens: 1000, completionTokens: 100, cachedTokens: 0, cacheRows: 0 }],
+      totals: {
+        promptTokens: 1_101_000, completionTokens: 110_100, cachedTokens: 0, uncachedTokens: 1_101_000,
+        cacheRows: 0, calls: 1101, sessions: 3, messages: 21, activeDays: 2, currentStreak: 2,
+        topModel: 'gpt-5.6-luna', topModelShare: 100,
+      },
+    } as any)
+
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'สถิติการใช้งาน')
+
+    // Both rows drawn, and the section drawn at all — which is the half that
+    // used to fail.
+    const drawn = await waitFor(() => {
+      const found = container.querySelectorAll('.usage-row')
+      expect(found.length).toBe(2)
+      return found
+    })
+    // And told apart, because two rows reading the same name with different
+    // numbers is a table that cannot be read.
+    expect(drawn[0].querySelector('.u-by')?.textContent).toBe('codex')
+    expect(drawn[1].querySelector('.u-by')).toBeNull()
+    // One model is one hue and one legend entry, however many bills it is on.
+    expect(container.querySelectorAll('.chart-legend .dot.s1').length).toBe(1)
+  })
+
+  // UsageStats walks the whole history to build the chart, the heatmap and the
+  // streak — half a second on the owner's own database, longer while the engine
+  // is writing to it. For all of that time the page printed "ยังไม่มีข้อมูล
+  // การใช้งาน": a claim about the data, made before the data had answered.
+  it('holds the page open while the numbers are still coming, instead of saying there are none', async () => {
+    vi.mocked(UsageStats).mockReturnValue(new Promise(() => {}) as any) // never settles
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'สถิติการใช้งาน')
+
+    // The placeholder is the page's own grid, so nothing moves when the numbers
+    // land in it: seven cards, a chart, a heatmap, and rows in the table.
+    await waitFor(() => expect(container.querySelectorAll('.usage-sk .sk').length).toBeGreaterThan(0))
+    expect(container.querySelectorAll('.stat-cards.usage-sk .stat-card').length).toBe(7)
+    expect(container.querySelectorAll('.set-row.usage-sk').length).toBe(4)
+    expect(container.textContent).not.toContain('ยังไม่มีข้อมูลการใช้งาน')
+  })
+
+  // And the other half of the same rule: the sentence is true when it is
+  // printed, because by then the engine has answered.
+  it('says there is no usage only once the engine has said so', async () => {
+    vi.mocked(UsageStats).mockResolvedValue({
+      today: [], week: [], all: [], daily: [], heatmap: [],
+      totals: {
+        promptTokens: 0, completionTokens: 0, cachedTokens: 0, uncachedTokens: 0,
+        cacheRows: 0, calls: 0, sessions: 0, messages: 0, activeDays: 0,
+        currentStreak: 0, topModel: '', topModelShare: 0,
+      },
+    } as any)
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'สถิติการใช้งาน')
+
+    await waitFor(() => expect(container.textContent).toContain('ยังไม่มีข้อมูลการใช้งาน'))
+    expect(container.querySelectorAll('.usage-sk .sk').length).toBe(0)
   })
 
   it('Prompt presets page is a card gallery, badging the bundled ones', async () => {

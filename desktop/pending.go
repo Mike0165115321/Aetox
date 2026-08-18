@@ -49,6 +49,30 @@ const (
 	statePending  = "pending"
 	stateApproved = "approved"
 	stateRejected = "rejected"
+	// stateReported is an issue the user carried out the door. Deliberately not
+	// "approved": approving applies a change, and reporting applies nothing —
+	// the button opens a prefilled form in the user's own browser and this app
+	// writes nothing anywhere. The row leaves the waiting list and stays as the
+	// record that this cluster was already sent.
+	stateReported = "reported"
+)
+
+// The two questions this table holds, which are not the same question
+// (docs/architecture/system-problems-vs-learning-2026-08-18.md).
+//
+// kindMemory asks "จำไว้ไหม", and yes writes a line into a .md file that shapes
+// every later turn. kindIssue asks "แจ้งนักพัฒนาไหม", and nothing it does
+// touches memory at all — a repeated failure is a fact about Aetox or about
+// this machine, never a lesson about the user.
+//
+// They share a table because they need the same three properties, all of which
+// were built here first: rows are never deleted, the body text is the dedup
+// key, and a thing turned down once never comes back. What they must never
+// share is the queue the user reads, which is why every query below says which
+// kind it means.
+const (
+	kindMemory = "memory"
+	kindIssue  = "issue"
 )
 
 // appProposer adapts the App to learned.Proposer. The indirection exists so
@@ -108,8 +132,13 @@ func (a *App) proposeLearned(p learned.Proposal) (learned.Result, error) {
 
 // ListPendingChanges returns what is waiting for a decision, oldest first —
 // the order they were learned in is the order they make sense read in.
+//
+// Lessons only. Before the split this returned everything pending, and what
+// arrived was mostly the summarizer's failure clusters: seventeen of the
+// twenty-two cards this queue had ever held were complaints about a tool, and
+// one of the seventeen was a usable lesson.
 func (a *App) ListPendingChanges() []PendingChange {
-	return a.queryChanges(`WHERE state = ? ORDER BY id`, statePending)
+	return a.queryChanges(`WHERE state = ? AND kind = ? ORDER BY id`, statePending, kindMemory)
 }
 
 // ListDecidedChanges is the record of what was let through and what was turned
@@ -118,7 +147,36 @@ func (a *App) ListDecidedChanges(limit int) []PendingChange {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
-	return a.queryChanges(`WHERE state <> ? ORDER BY id DESC LIMIT `+fmt.Sprint(limit), statePending)
+	return a.queryChanges(
+		`WHERE state <> ? AND kind = ? ORDER BY id DESC LIMIT `+fmt.Sprint(limit),
+		statePending, kindMemory)
+}
+
+// ListSystemIssues is the other queue: things that failed the same way more
+// than once, waiting for the user to decide whether the developer should hear
+// about them.
+//
+// Newest first, the opposite of the lessons above, because these are read for
+// a different reason. A lesson is read in the order it was learned; a problem
+// is read to find out what is breaking now.
+func (a *App) ListSystemIssues() []PendingChange {
+	return a.queryChanges(`WHERE state = ? AND kind = ? ORDER BY id DESC`, statePending, kindIssue)
+}
+
+// ListDecidedIssues is what was already reported or waved off, newest first.
+//
+// Without it the page lied by omission. Nothing is ever deleted here — a
+// decided row keeps its state and its timestamp, which is the whole audit
+// trail — but a list that only draws what is pending makes a row the user just
+// decided look destroyed, and "where did it go?" was the first thing asked of
+// the shipped page.
+func (a *App) ListDecidedIssues(limit int) []PendingChange {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	return a.queryChanges(
+		`WHERE state <> ? AND kind = ? ORDER BY id DESC LIMIT `+fmt.Sprint(limit),
+		statePending, kindIssue)
 }
 
 // PendingChangeByID is one proposal, whatever state it is in — the card the
@@ -137,13 +195,32 @@ func (a *App) PendingChangeByID(id int64) PendingChange {
 }
 
 // PendingLearnedCount is the badge. Cheap enough to call on every render.
+//
+// The kind filter is what makes the badge true. Counting every pending row put
+// a number on the gear that was three-quarters failure clusters — a mark that
+// says "there is something here only you can decide" and is wrong three times
+// in four is a mark the user stops believing, and the five real proposals
+// underneath it go unread with the rest.
 func (a *App) PendingLearnedCount() int {
+	return a.countPending(kindMemory)
+}
+
+// PendingIssueCount is the same mark for the problems room. It lights the row
+// in the settings nav and nothing else: a repeated failure is worth finding
+// when the user goes looking, and is not worth interrupting them for.
+func (a *App) PendingIssueCount() int {
+	return a.countPending(kindIssue)
+}
+
+func (a *App) countPending(kind string) int {
 	db, err := a.database()
 	if err != nil {
 		return 0
 	}
 	var n int
-	if db.QueryRow(`SELECT COUNT(*) FROM pending_changes WHERE state = ?`, statePending).Scan(&n) != nil {
+	if db.QueryRow(
+		`SELECT COUNT(*) FROM pending_changes WHERE state = ? AND kind = ?`,
+		statePending, kind).Scan(&n) != nil {
 		return 0
 	}
 	return n
@@ -170,8 +247,11 @@ func (a *App) ApprovePendingChange(id int64) error {
 		return fmt.Errorf("this was already decided")
 	}
 
+	// An issue has no "apply" and must never grow one: the default branch is
+	// what guarantees a failure cluster can never be written into a memory file,
+	// whatever a future caller passes in.
 	switch c.Kind {
-	case "memory":
+	case kindMemory:
 		if err := learned.Apply(c.Scope, c.Op, c.Before, c.Body); err != nil {
 			return err
 		}
@@ -193,6 +273,10 @@ func (a *App) ApprovePendingChange(id int64) error {
 // RejectPendingChange turns one down. The row stays: what the agent proposed
 // and was refused is the more interesting half of the record, and it is what a
 // later pass would need to avoid proposing the same thing forever.
+//
+// Both queues end here. "ไม่เอา" on a lesson and "ไม่เป็นไร" on a problem are
+// the same act — the user read it and said no — and one function keeps them
+// one act in the record.
 func (a *App) RejectPendingChange(id int64) error {
 	db, err := a.database()
 	if err != nil {
@@ -201,6 +285,36 @@ func (a *App) RejectPendingChange(id int64) error {
 	res, err := db.Exec(
 		`UPDATE pending_changes SET state = ?, decided_at = ? WHERE id = ? AND state = ?`,
 		stateRejected, time.Now().Format(time.RFC3339), id, statePending)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("this was already decided")
+	}
+	a.emitLearningChanged()
+	return nil
+}
+
+// MarkIssueReported records that the user took one problem to the developer.
+//
+// Called after the browser has been handed the prefilled form, never before:
+// the app's part is finished the moment the form opens, and what happens on
+// GitHub is the user's — they may read the whole thing and close the tab. So
+// this records "carried out the door", which is true either way, and not "a
+// bug was filed", which this side cannot know.
+//
+// Only issues, and only pending ones. A lesson has no door to be carried out
+// of, and the state guard is what stops a double click filing the same row
+// twice.
+func (a *App) MarkIssueReported(id int64) error {
+	db, err := a.database()
+	if err != nil {
+		return err
+	}
+	res, err := db.Exec(
+		`UPDATE pending_changes SET state = ?, decided_at = ?
+		  WHERE id = ? AND state = ? AND kind = ?`,
+		stateReported, time.Now().Format(time.RFC3339), id, statePending, kindIssue)
 	if err != nil {
 		return err
 	}
@@ -235,6 +349,11 @@ func (a *App) queryChanges(where string, args ...any) []PendingChange {
 	return out
 }
 
+// emitLearningChanged is the one signal for both queues: any row inserted or
+// decided, of either kind, moves something a surface is drawing. The payload
+// stays the lessons count because that is the number the gear wears; the
+// problems room reads its own count when the signal arrives, rather than
+// growing this into an object two listeners would have to agree about.
 func (a *App) emitLearningChanged() {
 	payload := a.PendingLearnedCount()
 	if a.emit != nil {

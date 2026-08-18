@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/Mike0165115321/Aetox/internal/debuglog"
-	"github.com/Mike0165115321/Aetox/internal/learned"
 )
 
 // The reader over the learning floor.
@@ -20,12 +19,22 @@ import (
 //
 // This pass asks the one question repeat data can answer without a model call:
 // which failures keep happening for the same reason? A cluster of them becomes
-// a memory proposal in pending_changes — the same door the agent's own
-// proposals go through, so the approval UI, the audit trail and the "nothing
-// writes itself" guarantee all apply unchanged. The summarizer differs from
-// the agent in exactly one column: source says 'summarizer', because "the
-// system noticed this pattern" and "the model decided this" must never be the
-// same kind of row.
+// a row in pending_changes — the same table the agent's own proposals go
+// through, so the audit trail and the "nothing writes itself" guarantee apply
+// unchanged. The summarizer differs from the agent in two columns: source says
+// 'summarizer', because "the system noticed this pattern" and "the model
+// decided this" must never be the same kind of row; and kind says 'issue',
+// because what it noticed is a problem, never a lesson.
+//
+// That second column is the 2026-08-18 correction, and it is the one this file
+// spent a year getting wrong. Everything below fixes *which* failures are worth
+// showing; none of it could fix that a channel fed only by `ok = 0` cannot
+// produce anything but a complaint, while the queue it wrote into promises
+// "อนุมัติแล้วจะเข้าไปอยู่ในความจำ". Seventeen of the twenty-two cards that
+// queue had ever held came from here, and one of the seventeen was a usable
+// lesson. The failures now go to their own room with their own verb — แจ้ง
+// นักพัฒนา, not จำไว้ — and the approval queue is left to the proposals that
+// are actually about the user (docs/architecture/system-problems-vs-learning-2026-08-18.md).
 //
 // Deterministic on purpose. A GROUP BY costs nothing and cannot hallucinate;
 // what it cannot do is phrase a lesson better than the error text — but every
@@ -74,8 +83,8 @@ import (
 // three separate times.
 const summarizeMinRepeats = 3
 
-// summarizeMaxProposals bounds one pass. The approval queue is a place the
-// user reads, and ten cards at once reads as noise to dismiss, not lessons to
+// summarizeMaxProposals bounds one pass. The problems page is a place the
+// user reads, and ten rows at once reads as noise to dismiss, not problems to
 // consider — the strongest clusters go first and the rest wait for the next
 // turn, which costs nothing because the pass runs after every one.
 const summarizeMaxProposals = 3
@@ -90,9 +99,9 @@ type failureCluster struct {
 	lastArgs string
 }
 
-// summarizeFailures drafts memory proposals from failures that keep happening
-// for the same reason. Called after recordJobs on the turn's own goroutine;
-// failures only log, same rule as every other writer on this path.
+// summarizeFailures raises problems from failures that keep happening for the
+// same reason. Called after recordJobs on the turn's own goroutine; failures
+// only log, same rule as every other writer on this path.
 func (a *App) summarizeFailures() {
 	if !learningEnabled() {
 		return
@@ -150,12 +159,11 @@ func (a *App) summarizeFailures() {
 		return repeated[i].head < repeated[j].head
 	})
 
-	// One card per tool per pass. Three slots filled by one tool's three ways of
-	// failing is a queue that reads as a complaint about that tool, and it is
-	// how a single noisy tool ends up owning a memory file: every cluster over
-	// the threshold on the machine that prompted this change was `shell`. The
-	// rest are not dropped — the pass runs after every turn, and the next one
-	// takes them.
+	// One row per tool per pass. Three slots filled by one tool's three ways of
+	// failing is a page that reads as a pile-on about that tool: every cluster
+	// over the threshold on the machine that prompted this rule was `shell`.
+	// The rest are not dropped — the pass runs after every turn, and the next
+	// one takes them.
 	proposed := 0
 	perTool := map[string]bool{}
 	for _, c := range repeated {
@@ -165,7 +173,7 @@ func (a *App) summarizeFailures() {
 		if perTool[c.tool] {
 			continue
 		}
-		if a.proposeFailureLesson(c) {
+		if a.proposeSystemIssue(c) {
 			perTool[c.tool] = true
 			proposed++
 		}
@@ -175,42 +183,35 @@ func (a *App) summarizeFailures() {
 	}
 }
 
-// proposeFailureLesson queues one cluster as a pending memory line. Reports
-// whether a new row was actually written — a duplicate is not a proposal.
-func (a *App) proposeFailureLesson(c *failureCluster) bool {
+// proposeSystemIssue queues one cluster as a problem waiting to be reported.
+// Reports whether a new row was actually written — a duplicate is not news.
+func (a *App) proposeSystemIssue(c *failureCluster) bool {
 	db, err := a.database()
 	if err != nil {
 		return false
 	}
-	target, err := learned.FileFor(c.scope)
-	if err != nil {
-		// A scope that no longer resolves (a deleted delegate) has nowhere for
-		// the lesson to land; its history stays queryable, just not proposable.
-		return false
-	}
 
-	// The body is the line the model would carry, and it is deliberately
-	// stable: no counts, no timestamps. Stability is what makes the dedup
-	// below hold across passes — a body that grew with the cluster would be
-	// proposed again on every turn forever, which is the exact loop the kept
-	// rejected rows exist to prevent.
-	body := fmt.Sprintf("เครื่องมือ %s เคยล้มซ้ำ ๆ ด้วยเหตุเดียวกัน: \"%s\" — เลี่ยงรูปแบบที่ชนเงื่อนไขนี้ตั้งแต่ครั้งแรก", c.tool, c.head)
+	// Stable on purpose: no counts, no timestamps. Stability is what makes the
+	// dedup below hold across passes — a body that grew with the cluster would
+	// be raised again on every turn forever, which is the exact loop the kept
+	// decided rows exist to prevent. The count lives in `reason`, where it can
+	// change without the row losing its identity.
+	//
+	// And it states the failure, nothing more. This sentence used to end with
+	// "— เลี่ยงรูปแบบที่ชนเงื่อนไขนี้ตั้งแต่ครั้งแรก", an instruction to the
+	// agent, which is what a lesson sounds like. Nobody is being taught
+	// anything here.
+	body := issueBody(c.tool, c.head)
 
-	// Any earlier decision about this exact lesson stands. Pending: it is
-	// already on the card. Approved: it is already in the file. Rejected: the
-	// user said no, and a system that asks again every turn is not proposing,
-	// it is nagging.
+	// Any earlier decision about this exact problem stands. Pending: it is
+	// already on the page. Reported: it already went to the developer.
+	// Dismissed: the user said it did not matter, and a system that asks again
+	// every turn is not reporting, it is nagging.
 	var existing int64
 	err = db.QueryRow(
-		`SELECT id FROM pending_changes WHERE kind = 'memory' AND scope = ? AND body = ? LIMIT 1`,
-		c.scope, body).Scan(&existing)
+		`SELECT id FROM pending_changes WHERE kind = ? AND scope = ? AND body = ? LIMIT 1`,
+		kindIssue, c.scope, body).Scan(&existing)
 	if err == nil {
-		return false
-	}
-
-	if learned.Full(c.scope, len(body)) {
-		// Nothing can apply this until the user makes room; a card that cannot
-		// be approved is a bug report about the queue, not a lesson.
 		return false
 	}
 
@@ -219,16 +220,27 @@ func (a *App) proposeFailureLesson(c *failureCluster) bool {
 		reason += " — ตัวอย่างล่าสุดที่ล้ม: " + example
 	}
 
+	// No target and no room check. Both belonged to a memory line: a file for
+	// it to land in, and whether that file still had space. An issue lands
+	// nowhere, so a full memory file can no longer swallow a problem report,
+	// and a scope whose folder is gone can still report one.
 	_, err = db.Exec(
 		`INSERT INTO pending_changes(kind, scope, target, op, before, body, reason, evidence, source, state, created_at)
-		 VALUES('memory', ?, ?, 'add', '', ?, ?, ?, 'summarizer', ?, ?)`,
-		c.scope, target, body, reason, evidenceFor(c.ids), statePending,
+		 VALUES(?, ?, '', 'add', '', ?, ?, ?, 'summarizer', ?, ?)`,
+		kindIssue, c.scope, body, reason, evidenceFor(c.ids), statePending,
 		time.Now().Format(time.RFC3339))
 	if err != nil {
-		debuglog.Msg("summarize: proposing failed: %v", err)
+		debuglog.Msg("summarize: raising issue failed: %v", err)
 		return false
 	}
 	return true
+}
+
+// issueBody is the sentence a cluster is known by, in one place because it is
+// also an identity: the dedup key above and the migration that rewrote the old
+// rows both have to spell it exactly the same way.
+func issueBody(tool, head string) string {
+	return fmt.Sprintf("เครื่องมือ %s ล้มซ้ำด้วยเหตุเดียวกัน: \"%s\"", tool, head)
 }
 
 // evidenceFor names the rows a proposal was drawn from, capped — a cluster of

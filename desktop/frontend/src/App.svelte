@@ -17,7 +17,7 @@
     switchModel, submitAPIKey, setActiveView, restoreActiveView, closeFile, applyAgentStatus, applyToolEvent,
     applyAgentChunk, applyReasoningChunk, attachImageFromPath,
     applyAskUser, applyAskDone, applyTodos, applyMissedInterjections, applyTaskChips,
-    applyPendingLearned, refreshPendingLearned, applyAgentDone, isOverlayView,
+    applyPendingLearned, refreshPendingLearned, refreshPendingIssues, applyAgentDone, isOverlayView,
     refreshProjectFolders,
   } from './lib/stores/cockpit.svelte'
   import { RelativizePath, CloseAllBrowserTabs } from '../wailsjs/go/main/App'
@@ -126,11 +126,18 @@
     // panel is the one place that says what this session can reach, so it has
     // to learn about a folder that arrived without anybody opening it.
     const offWorkspace = EventsOn('workspace:changed', () => { void refreshProjectFolders() })
-    // What the agent wants to remember and cannot until it is allowed to. Also
-    // fetched once here, because anything left undecided in a previous session
-    // is still undecided and nothing would emit for it.
-    const offLearning = EventsOn('learning:changed', applyPendingLearned)
+    // What the agent wants to remember and cannot until it is allowed to, and
+    // what keeps failing and might be worth telling the developer about.
+    // One event, two queues (docs/architecture/system-problems-vs-learning-2026-08-18.md):
+    // the payload is the lessons count, and the problems room asks for its own
+    // when the signal arrives. Both fetched once here too, because anything
+    // left undecided in a previous session is still undecided.
+    const offLearning = EventsOn('learning:changed', (count: number) => {
+      applyPendingLearned(count)
+      void refreshPendingIssues()
+    })
     void refreshPendingLearned()
+    void refreshPendingIssues()
     // "A newer Aetox exists." Wired here rather than in Settings because the
     // window is where the user is — the check runs on its own now
     // (update_notify.go), and an answer that only lands on a page nobody has

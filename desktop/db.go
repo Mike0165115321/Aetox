@@ -554,6 +554,47 @@ CREATE TABLE IF NOT EXISTS project_folders (
 			return err
 		},
 	},
+	{
+		version: 16,
+		name:    "summarizer_rows_are_issues",
+		apply: func(tx *sql.Tx) error {
+			// The summarizer's clusters stop being memory proposals and become
+			// system problems, which is a different question with a different
+			// verb (docs/architecture/system-problems-vs-learning-2026-08-18.md).
+			//
+			// Old rows have to come along, and not for tidiness. The dedup key
+			// in proposeSystemIssue is (kind, scope, body) — leave these behind
+			// and every cluster the user already decided on comes back on the
+			// new page the first time it runs, asking again about outages from
+			// a week ago. Sixteen decisions, re-opened, on day one.
+			//
+			// So the body is rewritten too, to exactly what issueBody now
+			// produces. Both literals are frozen copies rather than references
+			// to that function on purpose: a migration describes rows as they
+			// were on the day it ran, and one that followed a later edit of the
+			// code would rewrite yesterday's history into today's wording.
+			//
+			// What is dropped is the lesson half of the old sentence — "เลี่ยง
+			// รูปแบบที่ชนเงื่อนไขนี้ตั้งแต่ครั้งแรก", an instruction to the
+			// agent. Nothing on a problem card teaches anyone anything, and a
+			// card that still said it would be the same lie in a new room.
+			//
+			// target goes empty for the same reason it is empty on new rows:
+			// it named the memory file the lesson would have landed in, and an
+			// issue lands nowhere.
+			_, err := tx.Exec(`
+				UPDATE pending_changes
+				   SET kind   = 'issue',
+				       target = '',
+				       body   = replace(
+				                  replace(body,
+				                    ' เคยล้มซ้ำ ๆ ด้วยเหตุเดียวกัน: ',
+				                    ' ล้มซ้ำด้วยเหตุเดียวกัน: '),
+				                  ' — เลี่ยงรูปแบบที่ชนเงื่อนไขนี้ตั้งแต่ครั้งแรก', '')
+				 WHERE source = 'summarizer'`)
+			return err
+		},
+	},
 }
 
 // latestSchemaVersion is what this build understands.

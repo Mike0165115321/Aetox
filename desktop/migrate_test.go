@@ -164,6 +164,97 @@ func TestDatabaseFromNewerBuildIsRefused(t *testing.T) {
 	}
 }
 
+// v16: the summarizer's rows become system problems, and the decisions the
+// user already made about them have to come along.
+//
+// The dedup key is (kind, scope, body), so a row left behind is not merely
+// untidy — it stops matching, and every cluster the user already waved off is
+// raised again the first time the pass runs on the new page. Sixteen decisions
+// re-opened on day one, about outages from a week earlier.
+//
+// The body is rewritten in the same step because the sentence changed: it used
+// to end with an instruction to the agent, which is what a lesson sounds like,
+// and nothing on a problem card teaches anyone anything. This asserts the
+// rewrite lands on exactly what issueBody produces today — the migration and
+// the live code have to spell the identity the same way or the dedup misses by
+// a space.
+func TestSummarizerRowsBecomeIssuesAndKeepTheirDecisions(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "aetox.db")
+	old, err := sql.Open("sqlite", "file:"+filepath.ToSlash(path))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if _, err := old.Exec(baselineSchema); err != nil {
+		t.Fatalf("legacy schema: %v", err)
+	}
+	// The queue arrived after the baseline, so a legacy database only has it if
+	// its own step already ran — which is the state every install with rows in
+	// it is actually in.
+	if _, err := old.Exec(learningSchema); err != nil {
+		t.Fatalf("legacy learning schema: %v", err)
+	}
+	const head = "ไม่พบโปรแกรม Tesseract ในเครื่อง"
+	legacyBody := `เครื่องมือ image_ocr เคยล้มซ้ำ ๆ ด้วยเหตุเดียวกัน: "` + head +
+		`" — เลี่ยงรูปแบบที่ชนเงื่อนไขนี้ตั้งแต่ครั้งแรก`
+	now := time.Now().Format(time.RFC3339)
+	if _, err := old.Exec(
+		`INSERT INTO pending_changes(kind, scope, target, op, before, body, reason, evidence, source, state, created_at)
+		 VALUES('memory','','C:\memory\MEMORY.md','add','',?,'เกิด 3 ครั้ง','tool_runs:1,2,3','summarizer','rejected',?)`,
+		legacyBody, now); err != nil {
+		t.Fatalf("legacy summarizer row: %v", err)
+	}
+	if _, err := old.Exec(
+		`INSERT INTO pending_changes(kind, scope, target, op, before, body, reason, evidence, source, state, created_at)
+		 VALUES('memory','','C:\memory\MEMORY.md','add','','ผู้ใช้เป็นผู้พัฒนาระบบ','ผู้ใช้บอกเอง','','agent','approved',?)`,
+		now); err != nil {
+		t.Fatalf("legacy agent row: %v", err)
+	}
+	if err := old.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	a := &App{cfg: config.Config{}, dbDir: dir}
+	t.Cleanup(func() {
+		if a.db != nil {
+			_ = a.db.Close()
+		}
+	})
+	db, err := a.database()
+	if err != nil {
+		t.Fatalf("database: %v", err)
+	}
+
+	var kind, body, target, state string
+	if err := db.QueryRow(
+		`SELECT kind, body, target, state FROM pending_changes WHERE source = 'summarizer'`).
+		Scan(&kind, &body, &target, &state); err != nil {
+		t.Fatalf("read migrated row: %v", err)
+	}
+	if kind != kindIssue {
+		t.Errorf("kind = %q, want %q — it would still be offered as something to remember", kind, kindIssue)
+	}
+	if want := issueBody("image_ocr", head); body != want {
+		t.Errorf("body =\n%q\nwant\n%q\n— dedup matches on this exact string", body, want)
+	}
+	if target != "" {
+		t.Errorf("target = %q, want empty: an issue lands in no memory file", target)
+	}
+	if state != "rejected" {
+		t.Errorf("state = %q — the user already decided this one", state)
+	}
+
+	// The agent's own proposal is not the summarizer's and must not be moved.
+	var agentKind, agentBody string
+	if err := db.QueryRow(
+		`SELECT kind, body FROM pending_changes WHERE source = 'agent'`).Scan(&agentKind, &agentBody); err != nil {
+		t.Fatalf("read agent row: %v", err)
+	}
+	if agentKind != kindMemory || agentBody != "ผู้ใช้เป็นผู้พัฒนาระบบ" {
+		t.Errorf("an agent proposal was rewritten: kind %q body %q", agentKind, agentBody)
+	}
+}
+
 // Migrations are append-only and their versions must climb by one from 1: a
 // duplicate or a gap makes "which steps has this database run" unanswerable.
 func TestMigrationVersionsAreSequential(t *testing.T) {

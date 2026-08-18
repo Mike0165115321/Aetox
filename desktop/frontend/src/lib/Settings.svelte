@@ -41,11 +41,12 @@
     AppVersion, CheckForUpdate, RecentDebugLog,
     LearningEnabled, SetLearningEnabled, ListPendingChanges, ListDecidedChanges,
     ApprovePendingChange, RejectPendingChange, LearnedEntries, LearnedScopes, SaveLearnedEntry, OpenMemoryFolder,
+    ListSystemIssues, MarkIssueReported, ListDecidedIssues,
   } from '../../wailsjs/go/main/App'
   import { BrowserOpenURL } from '../../wailsjs/runtime/runtime'
   import promptPayQR from '../assets/images/promptpay-qr.png'
   import { config, update, main, subagent } from '../../wailsjs/go/models'
-  import { cockpit, setActiveView, switchProvider, switchModel, submitAPIKey, switchApprovalMode, switchWireFormat, setProviderBaseURL, retryActiveProvider, completeSignIn, signOutProvider, importSignIn, SETTINGS_SECTION_KEY } from './stores/cockpit.svelte'
+  import { cockpit, consultAboutIssue, setActiveView, switchProvider, switchModel, submitAPIKey, switchApprovalMode, switchWireFormat, setProviderBaseURL, retryActiveProvider, completeSignIn, signOutProvider, importSignIn, SETTINGS_SECTION_KEY } from './stores/cockpit.svelte'
   import {
     identity, loadIdentityFiles, openIdentityFile, saveIdentityFile,
     createIdentityFile, deleteIdentityFile, identityTemplates,
@@ -1514,8 +1515,11 @@
   // cacheRows counts the calls whose provider reported cache accounting at all.
   // Zero means "no cache to report" (a local runtime), which must render as an
   // em dash — a 0% hit rate would be a claim the provider never made.
+  // provider is half of what a row IS, not a decoration on it: usageByModel
+  // groups by model AND provider, because the same model id is sold per token
+  // by one company and included in a subscription by another.
   type UsageRow = {
-    model: string; promptTokens: number; completionTokens: number
+    model: string; provider: string; promptTokens: number; completionTokens: number
     cachedTokens: number; uncachedTokens: number; cacheRows: number; calls: number
   }
   type DayPoint = {
@@ -1535,6 +1539,14 @@
   let usage = $state<Usage | null>(null)
   let usageError = $state('')
   let usagePeriod = $state<'today' | 'week' | 'all'>('week')
+
+  // null is a third answer, not an empty one: nobody has asked yet, the effect
+  // below has not run, or the engine is still walking the history. It covers
+  // the frame before the load starts as well as the load itself, which a
+  // busy-flag set inside loadUsage would not. A reload with data already on
+  // screen keeps the data — a skeleton flashed over numbers the user is
+  // reading would be motion that says nothing.
+  const usagePending = $derived(!usage && !usageError)
 
   async function loadUsage() {
     usageError = ''
@@ -1564,13 +1576,33 @@
   // models take the five slots and keep them, so switching the period filter
   // never repaints the models that survive it. The tail shares one mute slot —
   // a sixth hue could not stay distinguishable under colour-vision deficiency.
+  // Hue belongs to the model and not to the row: the chart aggregates on the
+  // model alone (usageByDay groups on it), and two rows of one model are one
+  // model on two bills. Deduped by name, so the five slots hold five models
+  // rather than four and a repeat.
+  const allModels = $derived([...new Set((usage?.all ?? []).map((r) => r.model))])
+  const topModels = $derived(allModels.slice(0, 5))
   const seriesOf = $derived.by(() => {
     const map = new Map<string, number>()
-    const top = (usage?.all ?? []).slice(0, 5).map((r) => r.model).sort()
-    top.forEach((model, i) => map.set(model, i + 1))
+    const sorted = [...topModels].sort()
+    sorted.forEach((model, i) => map.set(model, i + 1))
     return map
   })
   const slotOf = (model: string) => seriesOf.get(model) ?? 0
+
+  // A row is a (provider, model) pair, and only the pair identifies it. The
+  // name stopped being an identity the day the provider column arrived (db.go
+  // migration 15): every model used on both sides of that line now has two
+  // rows, one under the provider that served it and one under the blank the
+  // older rows carry. Keyed on the name those two are one row claimed twice,
+  // and Svelte refuses a keyed list it cannot tell apart — it throws, the
+  // section never renders, and what the user sees is a sidebar entry that does
+  // nothing rather than a table that looks wrong.
+  // The pair itself is the key, rather than the two halves glued with a
+  // separator: a separator has to be a character neither half can contain, and
+  // the honest candidates are control characters that do not belong typed into
+  // a source file. Fourteen rows do not need the cheaper spelling.
+  const rowKey = (r: UsageRow) => JSON.stringify([r.provider, r.model])
 
   // Round a maximum up to a clean axis top, so the ticks read 0 / 250K / 500K
   // instead of 0 / 231,904 / 463,808.
@@ -2552,6 +2584,87 @@
   let memoryDraft = $state('')
   let memorySaving = $state(false)
 
+  // The other queue, and deliberately not one variable of the block above:
+  // nothing here is a proposal, nothing here can be approved, and nothing here
+  // ends up in a file. Sharing state would be the same conflation this split
+  // exists to undo (docs/architecture/system-problems-vs-learning-2026-08-18.md).
+  let systemIssues = $state<main.PendingChange[]>([])
+  let decidedIssues = $state<main.PendingChange[]>([])
+  let issuesExpanded = $state(false)
+  let issuesError = $state('')
+  let issuesBusy = $state(0)
+
+  async function loadIssues() {
+    try {
+      issuesError = ''
+      systemIssues = await ListSystemIssues()
+      decidedIssues = await ListDecidedIssues(20)
+    } catch (err) {
+      issuesError = String(err)
+    }
+  }
+
+  // Take one problem to the assistant instead of to the developer.
+  //
+  // Whose fault a repeated failure is — this machine, Aetox, or the agent's own
+  // way of calling the tool — is exactly what the user is being asked to judge
+  // with nothing to go on, and it is a question the assistant can go and answer.
+  // So the message names all three possibilities rather than asserting one.
+  //
+  // It goes in as the user's own visible message (owner's requirement, and the
+  // honest shape): the problem is the first thing in the new chat, in words they
+  // can read and edit the follow-up to. Nothing is decided by asking — the row
+  // stays waiting, because the answer may send it either way.
+  //
+  // The evidence row ids are deliberately left out. They are for the GitHub
+  // form, where somebody can query the database; in a chat they are noise, and
+  // the agent can find the runs from the sentence itself (session_search reads
+  // tool_runs).
+  function consultPrompt(c: main.PendingChange): string {
+    return t('settings.issuesConsultPrompt', { body: c.body, reason: c.reason })
+  }
+
+  async function consultIssue(c: main.PendingChange) {
+    onClose()
+    await consultAboutIssue(consultPrompt(c))
+  }
+
+  // Reporting is the About page's door with this cluster written into the body:
+  // same URL builder, same prefill, same "the user reads the whole thing on
+  // GitHub and presses send themselves". A second door would be a second
+  // privacy story to keep true, and this one is already written down.
+  //
+  // Marked reported after the form opens, never before — and marked even though
+  // the user may read it and close the tab. What this side can honestly record
+  // is that the problem was carried out the door, which is exactly what stops
+  // it sitting here asking again.
+  async function reportIssue(c: main.PendingChange) {
+    issuesBusy = c.id
+    try {
+      issuesError = ''
+      await openIssueForm('problem', c)
+      await MarkIssueReported(c.id)
+      await loadIssues()
+    } catch (err) {
+      issuesError = String(err)
+    } finally {
+      issuesBusy = 0
+    }
+  }
+
+  async function dismissIssue(id: number) {
+    issuesBusy = id
+    try {
+      issuesError = ''
+      await RejectPendingChange(id)
+      await loadIssues()
+    } catch (err) {
+      issuesError = String(err)
+    } finally {
+      issuesBusy = 0
+    }
+  }
+
   async function loadLearning() {
     try {
       learningError = ''
@@ -2663,6 +2776,10 @@
     if (active === 'learning') void loadLearning()
   })
 
+  $effect(() => {
+    if (active === 'issues') void loadIssues()
+  })
+
   // ---------- Nav ----------
   // `terms` is what the page is actually about, not just what it is called.
   // Search used to match the nav label alone, so "font" and "ธีม" — two of the
@@ -2688,6 +2805,12 @@
       // sides: what the user told the agent, and what the agent worked out.
       { id: 'learning', label: t('settings.learning'), icon: 'brain',
         terms: [t('settings.learningPending'), t('settings.learningMemory')] },
+      // Next to learning because that is where these used to arrive, and the
+      // adjacency is the point: what Aetox worked out about you, and what keeps
+      // going wrong, are two different things that spent a year in one queue
+      // (docs/architecture/system-problems-vs-learning-2026-08-18.md).
+      { id: 'issues', label: t('settings.issues'), icon: 'alertTriangle',
+        terms: [t('settings.issuesReport'), t('settings.aboutReport')] },
     ]},
     { group: t('settings.groupModels'), items: [
       { id: 'models', label: t('settings.modelSettings'), icon: 'brain',
@@ -2755,18 +2878,28 @@
   // facts about the product, and the two kinds of report must never share a
   // path (see summarize.go on state reports, the third kind, which goes
   // nowhere at all).
-  async function openIssueForm(kind: 'problem' | 'feedback'): Promise<void> {
+  // `cluster` is one row from the problems room: the same form, opened with the
+  // failure already written into it. It goes above the blank lines, not below
+  // the ---, because it is the subject of the report and the user is about to
+  // write around it. Everything else on this path is unchanged, which is the
+  // point — one door, one prefill, one story about what leaves the machine.
+  async function openIssueForm(kind: 'problem' | 'feedback', cluster?: main.PendingChange): Promise<void> {
     const ua = navigator.userAgent
     const os = ua.includes('Windows') ? 'Windows' : ua.includes('Mac') ? 'macOS' : 'Linux'
     const version = (appVersion ? 'v' + appVersion : t('settings.aboutReportUnknown'))
       + (updateStatus?.channel ? ` (${updateStatus.channel})` : '')
     const hint = kind === 'problem' ? t('settings.aboutReportBodyHint') : t('settings.aboutFeedbackBodyHint')
-    const lines = [
-      `<!-- ${hint} -->`,
+    const lines = [`<!-- ${hint} -->`]
+    if (cluster) {
+      lines.push('', cluster.body)
+      if (cluster.reason) lines.push('', cluster.reason)
+      if (cluster.evidence) lines.push('', cluster.evidence)
+    }
+    lines.push(
       '', '', '---',
       `${t('settings.aboutReportVersion')}: ${version}`,
       `${t('settings.aboutReportOS')}: ${os}`,
-    ]
+    )
     if (kind === 'problem') {
       // The evidence: what the app most recently complained about internally
       // (already secret-scrubbed at the moment each line was written). Only
@@ -3590,6 +3723,14 @@
           {#if it.id === 'learning' && cockpit.pendingLearned > 0}
             <span class="nav-count" title={t('settings.learningWaiting', { count: String(cockpit.pendingLearned) })}>
               {cockpit.pendingLearned}
+            </span>
+          {/if}
+          <!-- The same mark, and only here: the gear in the sidebar stays the
+               learning queue's alone. A problem is worth finding when you come
+               looking and is not worth being pulled out of a chat for. -->
+          {#if it.id === 'issues' && cockpit.pendingIssues > 0}
+            <span class="nav-count" title={t('settings.issuesWaiting', { count: String(cockpit.pendingIssues) })}>
+              {cockpit.pendingIssues}
             </span>
           {/if}
         </button>
@@ -4620,13 +4761,111 @@
           {/if}
         </div>
       {/if}
+
+    <!-- The problems room. Structure borrowed whole from the queue above
+         (.settings-card / .learn-row): the layout was right and is already
+         styled, and inventing a second look for a list of rows with two
+         buttons would be ornament, not design. What differs is what it says
+         and what the buttons do — which is the entire change. -->
+    {:else if active === 'issues'}
+      <h2>{t('settings.issues')}</h2>
+      <p class="muted set-sub">{t('settings.issuesDesc')}</p>
+
+      {#if issuesError}<div class="mset-error">{issuesError}</div>{/if}
+
+      <div class="settings-card">
+        {#each systemIssues as c (c.id)}
+          <div class="learn-row">
+            <div class="learn-main">
+              <div class="learn-head">
+                <span class="learn-scope">{scopeLabel(c.scope)}</span>
+              </div>
+              <div class="learn-body">{c.body}</div>
+              {#if c.reason}<div class="learn-why">{c.reason}</div>{/if}
+            </div>
+            <!-- Asking comes first, and is the primary, because it is the only
+                 one of the three that answers the question the other two need
+                 answered. Reporting a problem that turns out to be this
+                 machine's wastes the developer's time and the user's; waving
+                 off one that turns out to be a real bug loses it. -->
+            <div class="learn-actions">
+              <button type="button" class="ctrl ctrl-primary" disabled={issuesBusy === c.id}
+                onclick={() => consultIssue(c)}>{t('settings.issuesConsult')}</button>
+              <button type="button" class="ctrl" disabled={issuesBusy === c.id}
+                onclick={() => reportIssue(c)}>{t('settings.issuesReport')}</button>
+              <button type="button" class="ctrl" disabled={issuesBusy === c.id}
+                onclick={() => dismissIssue(c.id)}>{t('settings.issuesDismiss')}</button>
+            </div>
+          </div>
+        {/each}
+        {#if systemIssues.length === 0}
+          <div class="empty">{t('settings.issuesEmpty')}</div>
+        {/if}
+      </div>
+
+      <!-- Where a decided row went. The rows were never deleted — only invisible,
+           which read as destroyed. Same shape as the learning room's record:
+           four, then a count. -->
+      {#if decidedIssues.length > 0}
+        <h3 class="set-h3">{t('settings.issuesHistory')}</h3>
+        <p class="muted set-sub">{t('settings.issuesHistoryHint')}</p>
+        <div class="settings-card">
+          {#each (issuesExpanded ? decidedIssues : decidedIssues.slice(0, DECIDED_PREVIEW)) as c (c.id)}
+            <div class="learn-row past">
+              <div class="learn-main">
+                <div class="learn-head">
+                  <span class="learn-scope">{scopeLabel(c.scope)}</span>
+                  <span class="learn-op" class:rejected={c.state !== 'reported'}>
+                    {c.state === 'reported' ? t('settings.issuesStateReported') : t('settings.issuesStateDismissed')}
+                  </span>
+                </div>
+                <div class="learn-body">{c.body}</div>
+              </div>
+            </div>
+          {/each}
+          {#if decidedIssues.length > DECIDED_PREVIEW}
+            <button type="button" class="learn-more" onclick={() => (issuesExpanded = !issuesExpanded)}>
+              <Icon name={issuesExpanded ? 'chevronUp' : 'chevronDown'} size={12} />
+              {issuesExpanded
+                ? t('settings.learningHistoryLess')
+                : t('settings.learningHistoryMore', { n: decidedIssues.length - DECIDED_PREVIEW })}
+            </button>
+          {/if}
+        </div>
+      {/if}
     {:else if active === 'usage'}
       <h2>{t('settings.usage')}</h2>
       <p class="muted set-sub">{t('settings.usageDesc')}</p>
 
       {#if usageError}<div class="mset-error">{usageError}</div>{/if}
 
-      {#if usage && usage.totals.calls > 0}
+      <!-- Three states, and the middle one used to be missing. UsageStats walks
+           the whole history to build the chart, the heatmap and the streak, and
+           that is half a second on this machine's own database and longer while
+           the engine is writing to it. All of that time the page said "ยังไม่มี
+           ข้อมูลการใช้งาน" — a sentence about the data, printed before anybody
+           had asked the data anything.
+           The placeholder is the page's own grid rather than a spinner, so the
+           numbers land in the boxes that were already holding their place and
+           nothing jumps. Shapes and pulse are the model pane's (.sk, sk-pulse);
+           only the geometry is this layout's. -->
+      {#if usagePending}
+        <div class="stat-cards usage-sk" aria-busy="true" aria-label={t('settings.loading')}>
+          {#each ['wide', 'wide', 'wide', '', '', '', ''] as w, i (i)}
+            <div class="stat-card {w}">
+              <span class="sk sk-eyebrow"></span>
+              <span class="sk sk-figure"></span>
+              <span class="sk sk-line short"></span>
+            </div>
+          {/each}
+        </div>
+        <div class="settings-card wide-card usage-sk" aria-hidden="true">
+          <div class="card-form"><span class="sk sk-eyebrow"></span><span class="sk sk-chart"></span></div>
+        </div>
+        <div class="settings-card wide-card usage-sk" aria-hidden="true">
+          <div class="card-form"><span class="sk sk-eyebrow"></span><span class="sk sk-heat"></span></div>
+        </div>
+      {:else if usage && usage.totals.calls > 0}
         {@const tot = usage.totals}
         <div class="stat-cards">
           <div class="stat-card wide">
@@ -4718,10 +4957,10 @@
                 <!-- two keys, because the bar carries two encodings: hue names
                      the model, fill names where the tokens came from -->
                 <div class="chart-legend">
-                  {#each usage.all.slice(0, 5) as r (r.model)}
-                    <span><i class="dot s{slotOf(r.model)}"></i>{r.model}</span>
+                  {#each topModels as model (model)}
+                    <span><i class="dot s{slotOf(model)}"></i>{model}</span>
                   {/each}
-                  {#if usage.all.length > 5}
+                  {#if allModels.length > 5}
                     <span><i class="dot s0"></i>{t('settings.usageOther')}</span>
                   {/if}
                 </div>
@@ -4847,7 +5086,13 @@
             </div>
           </div>
         </div>
-        {#if usageRows.length === 0}
+        {#if usagePending}
+          {#each [0, 1, 2, 3] as i (i)}
+            <div class="set-row usage-sk" aria-hidden="true"><span class="sk sk-line"></span></div>
+          {/each}
+        {:else if usageRows.length === 0}
+          <!-- Reached only once the engine has actually answered, which is what
+               makes this sentence true when it is printed. -->
           <div class="set-row"><div class="muted">{t('settings.usageEmpty')}</div></div>
         {:else}
           <div class="set-row usage-head">
@@ -4858,10 +5103,14 @@
             <div class="u-num sm">{t('settings.usageCalls')}</div>
             <div class="u-num sm">{t('settings.usageAvgCall')}</div>
           </div>
-          {#each usageRows as r (r.model)}
+          {#each usageRows as r (rowKey(r))}
             <div class="set-row usage-row">
               <div class="u-model">
                 <i class="dot s{slotOf(r.model)}"></i>{r.model}
+                <!-- Who served it, wherever anybody wrote it down. Two rows of
+                     one model are two bills, and drawing them as the same name
+                     twice with different numbers is a table nobody can read. -->
+                {#if r.provider}<span class="u-by">{r.provider}</span>{/if}
                 <span class="u-share" style="width:{pct(usageTotal(r), periodTotal)}%"></span>
               </div>
               <div class="u-num">{fmtTokens(r.promptTokens)}</div>
