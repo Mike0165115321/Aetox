@@ -1233,6 +1233,12 @@ Owner, on the timeline: *"UI ตอนซับเอเจนทำงานอ
 
 **What "harder" bought, beyond those:** three delegates parked at once and answered in reverse order, each asserting it resumed on *its own* answer and saw no one else's; Stop while parked, with a goroutine count taken before and after; two concurrent delegations in the UI asserting no cross-contamination between blocks; and live, two delegates on the real internet at once collected in one `task_result` — 18s wall clock for a 4-tool and a 2-tool delegate, which is the concurrency claim §44.11 makes, measured rather than asserted.
 
+**Then, 2026-08-18: one delegate hired, two cards drawn** (owner, on a screenshot of `explore` working with a nameless **ซับเอเจน** running beside it: *"ส่วนแสดงว่าซับเอเจนกำลังทำงานอ่ะ ซ้ำไหม"*). The second card was the agent's own `task collect` — the call it makes to sit and wait for the delegate it started 27 seconds earlier. `tool_runs` had one `action=start` in that window and no second one; the two cards' clocks (1m01s and 34s) differed by exactly the gap between the start and the collect.
+
+The engine was never confused. `delegationOf` has excluded every non-`start` action since delegation was packed under one name (§99), and its comment names this exact card. But the answer had nowhere to travel, so [types.ts](../desktop/frontend/src/lib/types.ts) `isDelegation` re-derived it from the row's label — where a collect and a start both read `task` — and the second place answering the question is the one that won. §116's rule, in the small.
+
+`ToolEvent.Delegation` and `ToolPart.Delegation` now carry it, as `*bool`: **nil is a third answer, not a quiet no.** A row is born from the streaming announcement, which fires while the model is still writing the arguments — and the action is *in* the arguments, so at that moment nobody can say. nil keeps the old label guess, which is right about every delegation and wrong only about the actions that are not one; once the executor speaks, its answer is final. Written down as well as emitted, or a reopened session would draw the card the live turn had just stopped drawing. Tests: three actions on the Go side asserting both the event and the stored part, and a render test that fails with 2 cards when the flag is ignored.
+
 ### 44.7 Out of scope for the walking skeleton
 
 ~~Parallel fan-out~~ (arrived with §44.11 — N delegates in flight, collected in one call), background tasks returning as a later synthetic message, persisting sub-agent transcripts, per-call model override beyond what the profile names, anything from ADR 0002 (ensemble/routing/consensus), cross-process orchestration.
@@ -2733,6 +2739,10 @@ This is the third time the summarizer broke on the same shape — *text in the e
 - The summarizer's `error_kind = ''` filter then drops these unread — the same gate that already excludes exit codes, no new query logic at all.
 
 Marked at birth: browser navigation's two timeout/unreachable sentences, and n8n's connectivity, 401/403, and residual-status errors. n8n's 404/400/409 stay unmarked on purpose — a wrong id or a rejected graph is the caller's to fix, which is exactly what a lesson is.
+
+Missed at birth, marked 2026-08-18: every *"this machine does not have X"* message in the tool layer — `image_ocr`'s Tesseract, `pdf_read`'s poppler, `video_ocr`'s ffmpeg, `internal/stt`'s whisper binary and model file, `git`'s own absence from PATH. The rule above was right and the door was open; nobody walked the OCR family through it, so three missing-Tesseract runs on a machine whose installer step had been skipped drafted card #22 — "เลี่ยงรูปแบบที่ชนเงื่อนไขนี้ตั้งแต่ครั้งแรก", a permanent rule against OCR written from a missing install. Worth naming as the cost of putting the knowledge at the author: a rule holds only where an author applied it, and nothing fails loudly at a site that forgot. `internal/skill/missing_program_test.go` and `internal/stt/missing_program_test.go` now assert the mark at the source, which is the only place that knows.
+
+Still unmarkable by construction: a tool that reports failure through its `Output` instead of returning an error. `classifyToolError` reads the error *value*, and `executor.go` falls back to `failureReason(output)` when there is none — so `n8n_server_start`'s "ยังไม่ตอบใน 90 วินาที" (3 runs, 11–12 ส.ค.) and `task`'s "the MCP server(s) … have not finished connecting yet" (2 runs, 16 ส.ค.) reach `tool_runs` with `error_kind = ''` no matter what their authors know. Both are weather. Closing it means giving `Output` a kind of its own; not decided here.
 
 ### What this does not decide
 
@@ -4411,6 +4421,58 @@ Also collapsed: `cmd/aetox/main.go` held its own `resolveContextChars`, byte-for
 
 The estimate in the meter is still `chars/4` and still unmeasured: about **20% high** for the tool block (11.4k predicted against 9,460 counted on a real first round), and low for Thai. `token_usage` already holds a real count for every round ever sent, so the ratio can be learned per model instead of assumed — which would make both the meter's forecast and `ContextChars` right by measurement rather than by luck. The retry above makes that a performance question rather than a correctness one, which is why it is not urgent.
 
+---
+
+## 134. Decision — Stop Means Stop, Reading Is Not Switching, and a Round Is Not a Queue (2026-08-18)
+
+Three complaints from one session, all three about the same thing wearing different clothes: the window throwing away work the engine still had.
+
+### 134.1 Stop was deleting the turn it stopped
+
+Pressing Stop mid-work left one line — *"หยุดการทำงานแล้ว"* — over an empty chat. Every tool row, every line of narration between them, the thinking clock: gone from the screen the instant the turn ended.
+
+It was lost twice over, in two different layers, and the first reading of this bug found only the second one. **The window threw the work away, and the engine had already thrown it away first.**
+
+The engine half is the one that outlives a restart. `executeAgentToolLoop` ended every error path with `return Result{}, true, err` — so the sequence it had spent the whole turn assembling, each tool call and each line of narration between them, went out with the error. `appendFailedTurn` faithfully stored what it was handed, which was nothing: the row existed, it said *stopped*, and it held no record of the work. Reopening the conversation showed a question with nothing under it. The test that was supposed to cover this (`TestAFailedTurnIsWrittenDownWithItsReason`) passed throughout, because it exercises the conversation path, which returns its partial reply on error — the tool path, the one every real turn takes, was never asked.
+
+The window half is the three things that had to line up, and did:
+
+- `App.runTurn` returns the partial reply beside the error, and **Wails discards a bound method's return value whenever the error is non-nil**. So the window never receives what Go built.
+- `turnEndedBubble` therefore fell back to `cockpit.streamingText` — which `discardAnswerPreview` empties at the end of **every round that ends in a tool call**. That is precisely the moment anybody presses Stop, so the fallback was empty by construction, not by accident.
+- The bubble never took `turnArtifacts()` — the snapshot the successful path has always taken — and `runLiveTurn`'s `finally` cleared `toolSteps` one line later.
+
+The fix is the same sentence at both layers: **a turn that was stopped did not do less work than one that finished; it did the same work and then someone ended it.** The executor returns `parts.all()` with the error, so the row is written with its sequence and a reopened chat draws the timeline of a stopped turn exactly as it draws a finished one. The bubble takes `turnArtifacts()` on both endings, so the screen keeps it without waiting for a reload.
+
+Two details the second layer decided. `Result.Reply` on the error path is **the last text part, never the loop's `reply`** — that variable holds a cancelled tool's own output, which on a Stop is the string `context canceled`, and a bubble reading *"context canceled"* above *"หยุดการทำงานแล้ว"* is the app blaming itself for obeying. And the round that was *in flight* when the wall came is still not in the parts, because its prose never completed a round: the window's live preview is the only copy of that half-sentence, which is exactly why the frontend keeps its own and the engine keeps the rest.
+
+The old test covered the case that almost never happens (Stop pressed mid-sentence, preview full) and not the one that always does (Stop pressed between rounds, preview empty). Three new ones pin the layers: the bubble keeps the timeline, the executor returns its parts with the error, and the row round-trips them through SQLite.
+
+### 134.2 "One turn, one chat" was one word too wide
+
+The gate (§ `guardSessionSwitch`) refused every door out of a running turn's chat with one sentence. The reasoning was sound for what it was protecting: the engine holds one agent context, and *opening* a session rewrites it — `LoadSession` restores the desk, the chair, the project and the history the running turn is thinking with.
+
+But "open" was doing two jobs. **Reading a conversation touches none of that.** `SessionTranscript` reads rows and returns; it was written for the window that reloads mid-turn and needs its own transcript back, and it has never had a guard because it has never needed one.
+
+So the door splits: reading is allowed, writing is not. While another chat is on screen, `cockpit.peek.live` holds the working chat's messages and every write the turn makes goes through `liveChat()` — the failure this replaces (an answer landing in whichever conversation the user had opened) cannot happen, because the turn no longer writes to "whatever is on screen". The live block is not drawn over a chat it does not belong to; the composer is disabled and says why; **Stop stays reachable**, because the turn it ends is running whether or not it is being watched.
+
+The doors that genuinely re-root the engine — new session, new desk, another project — still refuse, and `cockpit.turnBusy` lost its now-false tail (*"แล้วค่อยสลับแชท"*).
+
+### 134.3 A round carrying six reads was six rounds long
+
+The model can ask for several tools in one round; every provider supports it and the DSML nudge already tells it to. The loop then ran them **strictly one after another**, so six 200 ms reads cost 1.2 s of wall clock for work with no order in it.
+
+Consecutive parallel-safe calls now run together, capped at four, with results entering the context **in call order however they finished** — a provider handed its `tool_calls` back out of order is one that will eventually reject the request.
+
+The load-bearing decision is the direction of the list. The obvious spelling — *run whatever `safety.AssessCommand` calls harmless* — is unusable: **that function's catch-all answers `RiskLow` with no effects for every name it does not recognize**, which is every MCP tool and every skill added after it was written. A deny-list would have parallelized a payment API the day somebody connected one. So an allow-list of this repo's own read tools, and everything else — shell, write, edit, git, task, all of MCP — keeps the sequential path. A write and the read after it are the one pair whose order *is* the answer, so a group also stops at any call that is not in the list rather than gathering the safe ones from across the round.
+
+The media tools (`image_ocr`, `video_ocr`, `audio_transcribe`) are read-only and deliberately absent: they run ffmpeg and whisper, and four at once is a machine that stops answering, not a faster turn.
+
+### 134.4 Not done, and named as not done
+
+**One agent context per session.** All three of the above are the same shape — one engine, one turn, one live state, and a window that has to pretend otherwise — and the honest fix for the third complaint the owner actually made (*"สั่งงานหลายเซสชั่นก็ต้องได้"*) is per-session engines: a context each, live state keyed by session, every `agent:*` event stamped with the session it belongs to, and a decision about the things that really are shared (the workspace root, the shell backend, `ask_user`'s single channel, the delegate register). What shipped here is the read-only half, which removes the wall from the case that hurts daily. The other half is a piece of work, not a patch, and it is not pretended otherwise.
+
+---
+
 ## 135. Decision — The Window Was Answering a Question Only the Engine Knows (2026-08-18)
 
 Two things landed on the same day and they are one thing seen twice: a document writer that could not put a picture in a document, and a window that told the user a document had been deleted while it sat on their disk.
@@ -4470,3 +4532,50 @@ The number is the point: it is how the next instruction names the thing to chang
 **What that testing found, which no synthetic fixture would have.** One of those documents reported five pictures and one block. It was not a parser bug: the file genuinely is a single paragraph carrying five inline drawings, which is what pasting screenshots in a row without pressing Enter produces. Reported as "an image", an agent asked to caption the figures writes one caption and believes it has finished. A block now says how many drawings it holds and names the ones that name themselves.
 
 And the preview card now calls the same reader. Two walks over one format is two answers to "what does this file say", and the one that drifts is always the one nobody is looking at — 70 lines of the desktop's own extractor deleted rather than left to rot beside its replacement.
+
+---
+
+## 136. Decision — Two Queues, Because a Problem Is Not a Lesson (2026-08-18)
+
+Owner, looking at "รอคุณตัดสิน" offering to remember that Tesseract is not installed: *"ไปดูตรงนี้มันจะจำข้อผิดพลาดทำไม"* — and, once the mechanism was traced and one leak patched: *"ไม่ได้บอกให้แก้ปัญหา แต่ มันชอบเอาปัญหาไปใส่ในช่อง เรียนรู้ … ควรจะมีแยก สำหรับเรียนรู้และ และปัญหาของระบบสิ"*.
+
+The queue on that machine had held 22 cards in its life. Seventeen were written by the summarizer and every one of them said "เครื่องมือ X เคยล้มซ้ำ ๆ"; five of its six approvals were `exit status` clusters later judged garbage, and exactly one card in seventeen was a usable lesson. The other five came from the agent's own `memory` tool — Windows/shell, no Excel, the user is a developer, branch convention — and the owner approved three.
+
+**77% of the learning queue was written by a source that cannot produce a lesson.** `summarizeFailures` reads `tool_runs WHERE ok = 0` and nothing else, so every filter added over the year — exit codes (§104), "ไม่สำเร็จ", state reports, missing programs — could only make it emit *fewer* problems. None could make it emit something about the user.
+
+The rule was already written down, in the file that would have had to break it: `openIssueForm`'s comment says the product's problems and the user's lessons *"must never share a path"*. That governed the door a **human** opens. The door the **machine** opens, running unattended after every turn, poured into the queue that comment refuses to touch.
+
+### 136.1 What moved
+
+`pending_changes.kind` was `'memory'` on every row ever written; the summarizer's rows are now `'issue'`. That keeps the three properties this table already had and a problem list needs anyway — rows are never deleted, the body text is the dedup key, a thing turned down once never returns — while `ListPendingChanges`, `ListDecidedChanges` and `PendingLearnedCount` all gained the kind filter that makes the gear's badge true again.
+
+Two cards, two verbs, and they are not the same question. **อนุมัติ** applies a change; **แจ้งปัญหานี้** applies nothing at all — it opens GitHub's own form, prefilled with the cluster, its count and the `tool_runs` rows behind it, in the user's browser, and `stateReported` records only that the problem was carried out the door. `ApprovePendingChange`'s `default:` branch was left exactly as it was: it is what guarantees a failure cluster can never be written into a memory file.
+
+The body lost its tail. It used to end "— เลี่ยงรูปแบบที่ชนเงื่อนไขนี้ตั้งแต่ครั้งแรก", an instruction to the agent, which is what a lesson sounds like; nothing on a problem card teaches anyone anything. Migration 16 rewrites the old rows to the new wording *and* moves their kind, because the dedup key is (kind, scope, body) — left behind, sixteen decisions the owner already made would have re-opened on the new page on day one.
+
+### 136.2 What this does not fix
+
+The learning queue now goes quiet, fed only by the agent's own `memory` tool. That is the intended outcome and not a loss: it is the half with three approvals in five. The sources agreed in direction on 13 ส.ค. — corrections made mid-task, preferences said in passing, fail→success pairs, recurring requests as starter cards — remain design, not code.
+
+And a tool that reports failure through its `Output` instead of returning an error still reaches `tool_runs` with `error_kind = ''` whatever its author knows, because `classifyToolError` reads the error *value*. `n8n_server_start`'s 90-second timeout and `task`'s "MCP not connected yet" are both weather and both unmarkable. They land on the problems page now, which is less wrong than landing in memory, and still not right.
+
+Full design: [system-problems-vs-learning-2026-08-18.md](architecture/system-problems-vs-learning-2026-08-18.md).
+
+---
+
+## 137. Decision — Every Read Gets a Bound, and the Bound Lives in the Query (2026-08-18)
+
+Asked while the per-session engine work was in flight: what happens when the database passes 1 GB. The answer is that file size is not the thing that slows SQLite down — rows read is — and the schema's indexes already cover every hot path. So the risk is not the size, it is the one read in this app that has no ceiling.
+
+**The ceiling that exists**: the sidebar list is `LIMIT 200`, the Inspector's command history is 50, shell output is capped as it is written.
+
+**The ceiling that does not**: `LoadSession` reads every row of a conversation and decodes every `parts` blob. Its cost is linear in the length of that one chat and has nothing to do with the size of the database. A 500-turn conversation is slow to open on a 24 MB database and equally slow on a 1 GB one.
+
+Four rules, in the order they will be built:
+
+1. **Measure with a fixture, not in production.** A seeded large database in the test suite — a 500-turn conversation, six figures of tool_runs — with a ceiling on how long opening the list and opening a chat may take. A feature that reads history without a bound then fails a test instead of reaching a user. Built first, because it is the instrument the rest are decided with.
+2. **A conversation opens from its tail and pages upward.** Fifty turns, then fifty more on scroll, by keyset (`id < ?`) and never `OFFSET` — offset walks the rows it discards, so its cost grows with how far back you look, while a keyset seek into `idx_messages_session` costs the same at any depth. The index this needs already exists.
+3. **tool_runs is a log, not a record.** It grows fastest because it stores what tools actually returned — file contents, page text — and nobody reads it back beyond a few days. It is currently kept forever, and nobody chose that: it is what came free when it was written. A retention policy (full output for N days, then trimmed to head and tail, row kept) is the owner's call, and it buys privacy at the same time as space.
+4. **Split the heavy column only if the numbers ask.** `parts` is the fat in a message row, and rule 2 stops it being decoded for turns nobody is looking at. Moving it to a side table is a real door, deliberately left shut until a measurement knocks on it.
+
+Ordered behind the per-session engine work (§134.4), and said so explicitly: the owner is waiting on that, and re-ordering the queue on my own initiative is the mistake that produced §134.2's half-feature.
