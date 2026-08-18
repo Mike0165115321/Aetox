@@ -116,7 +116,10 @@ func (s *videoOCRSkill) run(ctx context.Context, start time.Time, requestPath st
 		return newToolOutput("video_ocr", command, "", start, false, err), err
 	}
 
-	if _, err := exec.LookPath("tesseract"); err != nil {
+	// resolveTesseract, not exec.LookPath: our Windows installer leaves
+	// Tesseract off PATH (see image_ocr.go), and failing here would waste the
+	// frame extraction that follows on a machine that can in fact OCR.
+	if !tesseractAvailable() {
 		if !tryAutoInstallTesseract(ctx) {
 			err := missingTesseractError()
 			return newToolOutput("video_ocr", command, "", start, false, err), err
@@ -140,22 +143,36 @@ func (s *videoOCRSkill) run(ctx context.Context, start time.Time, requestPath st
 
 	var lines []string
 	lastText := ""
+	// Confidence is weighted by word count and reported once for the clip, not
+	// per frame: a hundred frames each carrying their own percentage would bury
+	// the transcript the tool exists to produce, and the question being answered
+	// ("is this text really what is on screen") is about the video, not about
+	// frame 37. Weighting by words rather than averaging the averages keeps a
+	// frame holding two words from counting as much as one holding forty.
+	var confSum float64
+	var confWords int
 	for i, frame := range frames {
-		text, ocrErr := runTesseract(ctx, frame)
+		res, ocrErr := runTesseract(ctx, frame)
 		if ocrErr != nil {
 			return newToolOutput("video_ocr", command, "", start, false, ocrErr), ocrErr
 		}
-		if text == "" || text == lastText {
+		if res.Words > 0 && res.Confidence >= 0 {
+			confSum += res.Confidence * float64(res.Words)
+			confWords += res.Words
+		}
+		if res.Text == "" || res.Text == lastText {
 			continue
 		}
-		lastText = text
+		lastText = res.Text
 		sec := i * intervalSec
-		lines = append(lines, fmt.Sprintf("[%d:%02d] %s", sec/60, sec%60, text))
+		lines = append(lines, fmt.Sprintf("[%d:%02d] %s", sec/60, sec%60, res.Text))
 	}
 
 	result := strings.Join(lines, "\n")
 	if result == "" {
 		result = "(ไม่พบข้อความในวิดีโอ)"
+	} else if confWords > 0 {
+		result = appendConfidenceNote(result, confSum/float64(confWords), confWords)
 	}
 	if len(frames) == videoOCRMaxFrames {
 		result += fmt.Sprintf("\n(อ่านถึงเฟรมที่ %d เท่านั้น ≈ วินาทีที่ %d — วิดีโอส่วนท้ายอาจถูกตัด)", videoOCRMaxFrames, videoOCRMaxFrames*intervalSec)

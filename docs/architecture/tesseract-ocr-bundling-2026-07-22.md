@@ -6,7 +6,7 @@
 
 ## 1. Why this exists
 
-`internal/skill/image_ocr.go` shells out to a `tesseract` binary on `PATH` — it does not embed an OCR engine (see that file's header comment for why: the only real Go options are CGo-bound to a system Tesseract install anyway, or an abandoned pure-Go WASM port `github.com/danlock/gogosseract`, broken by a wazero 1.8.0 API change with no fix planned). So Tesseract has to actually be present on the machine for `image_ocr` to work.
+`internal/skill/image_ocr.go` shells out to a `tesseract` binary, resolved through `PATH` and then through the fixed Program Files address (see the 2026-08-18 note under the Windows section — `PATH` alone was not enough) — it does not embed an OCR engine (see that file's header comment for why: the only real Go options are CGo-bound to a system Tesseract install anyway, or an abandoned pure-Go WASM port `github.com/danlock/gogosseract`, broken by a wazero 1.8.0 API change with no fix planned). So Tesseract has to actually be present on the machine for `image_ocr` to work.
 
 Requiring the user to separately hunt down and install Tesseract before the "attach an image" chat feature works at all is a bad first-run experience. This doc covers how installation is automated per platform.
 
@@ -36,9 +36,15 @@ Steps, in `!macro wails.tesseractocr`:
 
 `TESSERACT_URL` is the `browser_download_url` from `https://api.github.com/repos/UB-Mannheim/tesseract/releases/latest` at the time this was written. The SHA256 values were computed by downloading both files and running `sha256sum` — there was no published digest to cross-check against (GitHub's release API `digest` field was `null` for this asset). **To bump the pinned Tesseract version:** download the new installer, `sha256sum` it, update both `!define`s. Don't skip the hash update — a stale hash means the install-time check always fails closed (skips install) rather than silently accepting an unverified binary, so this fails safe, but it does mean OCR silently stops auto-installing until fixed.
 
-### Untested caveat
+### Untested caveat — and what the test, when it finally ran, found (2026-08-18)
 
-This was written and reviewed without a working NSIS compiler available in the dev environment (`makensis` isn't installed) — it was checked by hand against the existing, working `wails.webview2runtime` macro's syntax and nsExec/LogicLib conventions, but **has not been build-and-run tested end to end**. Before relying on it: `wails build --nsis`, install on a clean machine (or VM) without Tesseract, confirm `tesseract --version` works afterward.
+This was written and reviewed without a working NSIS compiler available in the dev environment (`makensis` isn't installed) — it was checked by hand against the existing, working `wails.webview2runtime` macro's syntax and nsExec/LogicLib conventions, but **had not been build-and-run tested end to end**. The check it asked for was: install on a clean machine, `confirm tesseract --version works afterward`.
+
+That check ran for the first time on the owner's own machine after a v1.2.4 install, and **the install step was fine while the assumption underneath it was not**. `tesseract.exe` and `tha.traineddata` were both exactly where this document says they would be, in `C:\Program Files\Tesseract-OCR`. Neither `HKLM` nor `HKCU` had it on `PATH`, because the UB-Mannheim setup run with `/S` does not add itself there — the PATH entry is a checkbox on a page a silent install never draws. So `exec.LookPath("tesseract")` failed, and `image_ocr` told the user to go install a Tesseract that was already sitting on their disk.
+
+The fix is in `image_ocr.go`, not here: `resolveTesseract` tries `PATH` first and then the same `$PROGRAMFILES64\Tesseract-OCR` this installer checks, so both ends now agree on where the thing lives. Editing the machine's `PATH` from the installer was the other option and remains the worse one — `bundled.go` says why.
+
+**The transferable part**: "the installer put it on the disk" and "the program can find it" are two claims, and this document only ever verified the first. Every install step in `project.nsi` deserves the second question asked separately.
 
 ## 3. macOS / Linux — lightweight runtime fallback, not real packaging
 

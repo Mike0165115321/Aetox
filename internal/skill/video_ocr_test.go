@@ -39,10 +39,14 @@ func TestMissingFFmpegErrorNeverEmpty(t *testing.T) {
 // the second, then asserts both come back OCR'd, in order, with the first
 // timestamped at 0:00 — and only once each despite being sampled repeatedly.
 func TestVideoOCRSkillLiveExtractsTimedText(t *testing.T) {
-	for _, bin := range []string{"ffmpeg", "tesseract"} {
-		if _, err := exec.LookPath(bin); err != nil {
-			t.Skipf("%s not installed on this machine", bin)
-		}
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not installed on this machine")
+	}
+	// tesseractAvailable, not exec.LookPath: on Windows our installer leaves
+	// it off PATH, and skipping here would hide the very machines this test
+	// most wants to run on.
+	if !tesseractAvailable() {
+		t.Skip("tesseract not installed on this machine")
 	}
 	font := testFontFile()
 	if font == "" {

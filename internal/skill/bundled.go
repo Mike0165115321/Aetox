@@ -4,9 +4,12 @@ package skill
 // machine already has. The Windows installer unpacks those into the install
 // directory, because they arrive as plain archives with no installer of their
 // own and so nothing puts them on PATH — poppler for pdf_read, ffmpeg for
-// video_ocr and audio_transcribe. Tesseract is the exception and needs none of
-// this: its own installer registers itself, so PATH finds it like any other
-// program.
+// video_ocr and audio_transcribe.
+//
+// Tesseract does not go through here — it arrives with a real installer, so it
+// lands in Program Files rather than in our tree. That is not the same as
+// being findable: the silent install leaves PATH alone, so image_ocr.go's
+// resolveTesseract has to know that address itself.
 //
 // Editing the machine's PATH is the alternative, and a much worse thing to get
 // wrong on someone else's computer.
