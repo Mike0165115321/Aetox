@@ -629,7 +629,7 @@ func TestListChairsReportsTheRosterUnderTheCeiling(t *testing.T) {
 	if !slices.Contains(deck.Tools, "slides_write") {
 		t.Errorf("the deck chair is listed without its writer: %v", deck.Tools)
 	}
-	if slices.Contains(deck.Tools, "shell") || slices.Contains(deck.Tools, "task") {
+	if slices.Contains(deck.Tools, "symbol") || slices.Contains(deck.Tools, "task") {
 		t.Errorf("the roster shows a chair holding something the office has no ceiling for: %v", deck.Tools)
 	}
 	if deck.Jobs != 0 || deck.LastUsed != "" {

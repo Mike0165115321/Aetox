@@ -29,7 +29,7 @@ func TestAChairSessionSendsTheChairsCutOnly(t *testing.T) {
 	}
 
 	got := toolNames(a)
-	for _, want := range []string{"slides_write", "read", "pdf_read", "web_search"} {
+	for _, want := range []string{"slides_write", "read", "pdf_read", "web_search", "shell"} {
 		if !slices.Contains(got, want) {
 			t.Errorf("deck's chat is missing %s — its own profile asks for it: %v", want, got)
 		}
