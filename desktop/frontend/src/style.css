@@ -476,6 +476,27 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 }
 .session-error .ic { flex:none; display:flex; padding-top:2px; color:var(--status-danger); }
 
+/* Another chat, open for reading while a turn runs in the one behind it. The
+   same shape as the refusal above and none of its colour: this is a state the
+   user asked for, so it is drawn in the border every quiet panel uses, not in
+   danger red. */
+.peek-bar {
+  display:flex; align-items:center; gap:10px; margin:12px 0;
+  padding:8px 12px; border-radius:var(--r-md);
+  border:1px solid var(--border-default); background:var(--surface-panel);
+  color:var(--text-primary); font-size:var(--fs-sm);
+}
+.peek-bar .ic { flex:none; display:flex; color:var(--text-muted); }
+.peek-bar .peek-what { font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.peek-bar .peek-why { flex:1 1 auto; min-width:0; color:var(--text-muted); font-size:var(--fs-xs); }
+.peek-act {
+  flex:none; padding:4px 10px; border-radius:var(--r-sm);
+  border:1px solid var(--border-default); background:transparent;
+  color:var(--text-primary); font-size:var(--fs-xs); cursor:pointer;
+}
+.peek-act:hover { background:var(--surface-hover); }
+.peek-act.primary { border-color:var(--border-strong); }
+
 /* Empty state for a search that matched nothing. */
 .sess-empty { padding:10px 12px; font-size:var(--fs-sm); color:var(--text-muted); }.proj-group-more:hover { color:var(--text-primary); }
 
@@ -1111,12 +1132,14 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 @property --beam-phase { syntax:'<angle>'; initial-value:0deg; inherits:true; }
 @keyframes beam-phase { to { --beam-phase:360deg; } }
 .bgw-card.run,
+.sess-row.working,
 .markdown-body:has(.live) { animation:beam-phase 3s linear infinite; }
 
 .markdown-body .plan-card.live,
 .markdown-body .codeblock.live,
 .markdown-body .drawing-box.live { position:relative; }
 .bgw-card.run::before,
+.sess-row.working::before,
 .markdown-body .plan-card.live::before,
 .markdown-body .codeblock.live::before,
 .markdown-body .drawing-box.live::before {
@@ -1143,14 +1166,26 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
    to keep its header inside its own rounded corners), so theirs sit just
    inside instead of being cut off at the corners. */
 .bgw-card.run::before { inset:-1px; }
+/* A chat with a turn running in it, wearing the same ring a working delegation
+   wears (owner, 18 ส.ค.: "ให้เซสชั่นนั้นมีเอฟเฟคกำลังทำงาน เหมือนตอนซับเอเจนทำงาน").
+   It is the same fact both times — this one is still going — so it is the same
+   light, not a second vocabulary for the user to learn.
+
+   The row needs position:relative of its own: unlike the delegation card it was
+   never positioned, and an absolutely-placed ring would anchor to the scroller
+   and travel up the sidebar as the list scrolls. */
+.sess-row { position:relative; }
+.sess-row.working::before { inset:0; }
 /* A drawing box has no border of its own to inherit a radius from. */
 .markdown-body .drawing-box.live::before { border-radius:var(--r-md); }
 /* Motion off, signal kept: a steady lit outline still says which one is the
    one still working, which is the whole job. */
 @media (prefers-reduced-motion: reduce) {
   .bgw-card.run,
+  .sess-row.working,
   .markdown-body:has(.live) { animation:none; }
   .bgw-card.run::before,
+  .sess-row.working::before,
   .markdown-body .plan-card.live::before,
   .markdown-body .codeblock.live::before,
   .markdown-body .drawing-box.live::before {
@@ -3283,6 +3318,23 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 @media (prefers-reduced-motion:reduce) { .mset-skeleton .sk { animation:none } }
 .mset-empty { padding:24px 0; font-size:var(--fs-md); }
 
+/* The usage page waits on a walk over the whole history, so it gets the same
+   skeleton — one pulse, one timing, borrowed rather than invented. What is not
+   borrowed is the geometry: this page is a grid of cards, a chart and a
+   heatmap, so the placeholder is that grid. The boxes are the real boxes
+   (.stat-card, .settings-card), which is what lets the numbers land without
+   anything moving. */
+.usage-sk .sk { display:block; border-radius:var(--r-sm); background:var(--surface-sunken); animation:sk-pulse 1.4s ease-in-out infinite; }
+.usage-sk .sk-eyebrow { width:45%; height:10px; }
+.usage-sk .sk-figure { width:68%; height:30px; margin-top:2px; }
+.usage-sk .sk-line { width:100%; height:12px; }
+.usage-sk .sk-line.short { width:58%; }
+.usage-sk .sk-chart { width:100%; height:154px; margin-top:12px; }
+.usage-sk .sk-heat { width:100%; height:82px; margin-top:12px; }
+/* The table's placeholder rows keep the row rhythm the real ones have. */
+.set-row.usage-sk { padding-top:13px; padding-bottom:13px; }
+@media (prefers-reduced-motion:reduce) { .usage-sk .sk { animation:none } }
+
 .usage-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .seg-ctrl { display:inline-flex; flex:none; border:1px solid var(--border-default); border-radius:var(--r-sm); overflow:hidden; }
 /* Scoped to .seg-ctrl: the sidebar's tab switch uses the same .seg-btn class
@@ -3305,6 +3357,9 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .u-share { position:absolute; left:0; bottom:0; height:2px; border-radius:var(--r-2xs); background:var(--border-strong); }
 .u-num .u-sub { display:block; color:var(--text-dim); font-size:var(--fs-xs); }
 .u-num .dim { color:var(--text-dim); }
+/* who served the model, beside its name — quiet, because it only has to
+   separate two rows that would otherwise read as the same one */
+.u-model .u-by { margin-left:6px; color:var(--text-dim); font-size:var(--fs-xs); }
 
 /* ---------- self-update ----------
    One card, four things to say (Updater.svelte, ARCHITECTURE.md §107).

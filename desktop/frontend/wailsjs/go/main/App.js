@@ -322,6 +322,10 @@ export function ListDecidedChanges(arg1) {
   return window['go']['main']['App']['ListDecidedChanges'](arg1);
 }
 
+export function ListDecidedIssues(arg1) {
+  return window['go']['main']['App']['ListDecidedIssues'](arg1);
+}
+
 export function ListExternalSkills() {
   return window['go']['main']['App']['ListExternalSkills']();
 }
@@ -378,6 +382,10 @@ export function ListSubagentProfiles() {
   return window['go']['main']['App']['ListSubagentProfiles']();
 }
 
+export function ListSystemIssues() {
+  return window['go']['main']['App']['ListSystemIssues']();
+}
+
 export function ListTaskChips() {
   return window['go']['main']['App']['ListTaskChips']();
 }
@@ -396,6 +404,10 @@ export function LoadSessionAnyProject(arg1) {
 
 export function MCPConfigPath() {
   return window['go']['main']['App']['MCPConfigPath']();
+}
+
+export function MarkIssueReported(arg1) {
+  return window['go']['main']['App']['MarkIssueReported'](arg1);
 }
 
 export function MobileRemoteQR() {
@@ -484,6 +496,10 @@ export function PairedDevices() {
 
 export function PendingChangeByID(arg1) {
   return window['go']['main']['App']['PendingChangeByID'](arg1);
+}
+
+export function PendingIssueCount() {
+  return window['go']['main']['App']['PendingIssueCount']();
 }
 
 export function PendingLearnedCount() {

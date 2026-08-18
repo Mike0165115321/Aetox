@@ -3,6 +3,7 @@ import { render, fireEvent } from '@testing-library/svelte'
 import { tick } from 'svelte'
 import Chat from '../lib/Chat.svelte'
 import { cockpit, applyToolEvent, resetBackgroundWork } from '../lib/stores/cockpit.svelte'
+import { isDelegation } from '../lib/types'
 import { setLocale } from '../lib/i18n.svelte'
 import { GuideTopics, SwitchApprovalMode, SupportedThinkLevels, BackgroundTasks } from './mocks/wailsApp'
 
@@ -533,6 +534,58 @@ describe('sub-agent tool events', () => {
     expect(blocks[1].textContent).not.toContain('grep alpha')
     expect(blocks[0].querySelector('.bgw-longbrief')?.textContent).toContain('brief one')
     expect(blocks[1].querySelector('.bgw-longbrief')?.textContent).toContain('brief two')
+  })
+
+  // One delegate hired, two cards on screen. The second was the agent's own
+  // `task collect` — the call it makes to sit and wait for the delegate to
+  // finish — and every action of delegation is packed under the one name, so
+  // its label reads "task" exactly like the row that hired somebody. Judged by
+  // the label it became a nameless second sub-agent standing next to the one it
+  // was waiting on, and the count said two workers.
+  it('does not draw a task collect as a second sub-agent', () => {
+    const { container } = render(Chat, {
+      ...baseProps,
+      awaitingReply: true,
+      toolSteps: [
+        {
+          label: 'task สำรวจฟีเจอร์และเส้นทางเว็บ', ref: 't1', agent: 'explore',
+          brief: 'สำรวจโปรเจกต์แบบอ่านอย่างเดียว', delegation: true,
+          state: 'run', startedAt: Date.now(),
+        },
+        { label: 'read frontend/index.html', parent: 't1', state: 'run', startedAt: Date.now() },
+        // No agent, no brief, nothing running underneath it: the engine's `false`
+        // is the only thing on a collect that says what it is.
+        { label: 'task', ref: 't2', delegation: false, state: 'run', startedAt: Date.now() },
+      ] as any,
+      messages: [{ role: 'agent', text: 'done', time: '10:54' }] as any,
+    })
+
+    const blocks = container.querySelectorAll('.bgw-card')
+    expect(blocks.length).toBe(1)
+    expect(blocks[0].querySelector('.bgw-agent')?.textContent).toContain('explore')
+    // It is the agent's own work, and shows as the one row it is.
+    const own = container.querySelectorAll('.tool-steps > .tool-step')
+    expect(own.length).toBe(1)
+    expect(own[0].textContent).toContain('task')
+  })
+
+  // The flag is three-valued and the middle value is load-bearing: a row born
+  // from the streaming announcement has no arguments to read an action off yet,
+  // and neither has a turn stored before the engine said. Those keep the old
+  // guess, which is right about every delegation and wrong only about the
+  // actions that are not one — the correct way round for a fallback.
+  it('falls back to the label only while nobody has said', () => {
+    const node = (step: Record<string, unknown>, children: unknown[] = []) =>
+      ({ step, children } as any)
+    expect(isDelegation(node({ label: 'task', delegation: false }))).toBe(false)
+    expect(isDelegation(node({ label: 'task', delegation: true }))).toBe(true)
+    expect(isDelegation(node({ label: 'task' }))).toBe(true)
+    expect(isDelegation(node({ label: 'task ทำสรุป', agent: 'doc' }))).toBe(true)
+    expect(isDelegation(node({ label: 'read a.go' }))).toBe(false)
+    // A delegate's own steps are the proof of a delegation nobody named.
+    expect(isDelegation(node({ label: 'task' }, [{ label: 'grep x' }]))).toBe(true)
+    // Narration is prose and may well open with the word.
+    expect(isDelegation(node({ kind: 'note', label: 'task ต่อไปผมจะ…' }))).toBe(false)
   })
 
   // The `task` tool call finishes the instant the worker is spawned, so the row

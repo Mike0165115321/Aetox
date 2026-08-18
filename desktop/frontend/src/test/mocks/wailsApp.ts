@@ -145,6 +145,10 @@ export const LearnedScopes = arr()
 export const SaveLearnedEntry = noop()
 export const OpenMemoryFolder = noop()
 export const PendingLearnedCount = vi.fn(async (..._args: any[]) => 0)
+export const ListSystemIssues = arr()
+export const ListDecidedIssues = arr()
+export const MarkIssueReported = noop()
+export const PendingIssueCount = vi.fn(async (..._args: any[]) => 0)
 // The memory card reads its own row by id. Zero id means "no such proposal",
 // which is what a card with nothing to show is told.
 export const PendingChangeByID = vi.fn(async (..._args: any[]) => ({ id: 0 }) as any)

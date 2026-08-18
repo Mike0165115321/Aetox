@@ -22,15 +22,15 @@ import (
 // The press is remembered and consumed the moment the cancel func exists.
 func TestStopPressedBeforeTheCancelFuncExistsStillStops(t *testing.T) {
 	a := newTestApp(t, t.TempDir())
-	if err := a.beginTurn(); err != nil {
+	if err := a.beginTurn(a.sessionID); err != nil {
 		t.Fatalf("beginTurn() = %v", err)
 	}
-	defer a.endTurn()
+	defer a.endTurn(a.sessionID)
 
 	a.CancelTurn() // turnCancel is nil here — the gap
 
 	pressed := false
-	if !a.armTurnCancel(context.Background(), func() { pressed = true }) {
+	if !a.armTurnCancel(a.sessionID, context.Background(), func() { pressed = true }) {
 		t.Fatal("armTurnCancel = false after a Stop in the gap, want true — the press was dropped")
 	}
 	// armTurnCancel reports; runTurn is the one that pulls the trigger.
@@ -39,7 +39,7 @@ func TestStopPressedBeforeTheCancelFuncExistsStillStops(t *testing.T) {
 	}
 
 	// And the flag is consumed: the next turn must not inherit this press.
-	if a.armTurnCancel(context.Background(), func() {}) {
+	if a.armTurnCancel(a.sessionID, context.Background(), func() {}) {
 		t.Error("a second armTurnCancel = true, want false — one press stops one turn")
 	}
 }
@@ -47,14 +47,14 @@ func TestStopPressedBeforeTheCancelFuncExistsStillStops(t *testing.T) {
 func TestBeginTurnRefusesASecondTurn(t *testing.T) {
 	a := newTestApp(t, t.TempDir())
 
-	if err := a.beginTurn(); err != nil {
+	if err := a.beginTurn(a.sessionID); err != nil {
 		t.Fatalf("beginTurn() on an idle engine = %v, want nil", err)
 	}
-	if err := a.beginTurn(); err == nil {
+	if err := a.beginTurn(a.sessionID); err == nil {
 		t.Fatal("a second beginTurn() while one runs = nil, want the busy refusal — two turns share one agent context")
 	}
-	a.endTurn()
-	if err := a.beginTurn(); err != nil {
+	a.endTurn(a.sessionID)
+	if err := a.beginTurn(a.sessionID); err != nil {
 		t.Fatalf("beginTurn() after endTurn() = %v, want nil — the gate must reopen", err)
 	}
 }
@@ -67,7 +67,7 @@ func TestAppendTurnWritesToTheSessionTheTurnWasBornIn(t *testing.T) {
 	a := newTestApp(t, t.TempDir())
 	home := a.sessionID
 
-	if err := a.beginTurn(); err != nil {
+	if err := a.beginTurn(a.sessionID); err != nil {
 		t.Fatalf("beginTurn() = %v", err)
 	}
 	// An unguarded door moving the engine to another chat mid-turn.
@@ -78,7 +78,7 @@ func TestAppendTurnWritesToTheSessionTheTurnWasBornIn(t *testing.T) {
 		SessionMessage{Role: "user", Text: "คำถามของแชทเดิม"},
 		SessionMessage{Role: "agent", Text: "คำตอบต้องกลับบ้านถูกหลัง"},
 	)
-	a.endTurn()
+	a.endTurn(a.sessionID)
 	if id == 0 {
 		t.Fatal("appendTurn wrote nothing")
 	}
@@ -101,7 +101,7 @@ func TestAppendTurnWritesToTheSessionTheTurnWasBornIn(t *testing.T) {
 func TestSwitchDoorsRefuseWhileATurnRuns(t *testing.T) {
 	a := newTestApp(t, t.TempDir())
 	current := a.sessionID
-	if err := a.beginTurn(); err != nil {
+	if err := a.beginTurn(a.sessionID); err != nil {
 		t.Fatalf("beginTurn() = %v", err)
 	}
 
@@ -141,7 +141,7 @@ func TestSwitchDoorsRefuseWhileATurnRuns(t *testing.T) {
 		t.Errorf("a.sessionID moved to %q during the refusals, want it pinned at %q", a.sessionID, current)
 	}
 
-	a.endTurn()
+	a.endTurn(a.sessionID)
 	if _, err := a.NewSession(); err != nil {
 		t.Errorf("NewSession after the turn = %v, want nil", err)
 	}
@@ -166,10 +166,10 @@ func TestEndTurnAnnouncesTheSessionThatFinished(t *testing.T) {
 		}
 	}
 
-	if err := a.beginTurn(); err != nil {
+	if err := a.beginTurn(a.sessionID); err != nil {
 		t.Fatalf("beginTurn() = %v", err)
 	}
-	a.endTurn()
+	a.endTurn(a.sessionID)
 
 	if event != "agent:done" {
 		t.Fatalf("event = %q, want agent:done", event)
@@ -185,13 +185,13 @@ func TestTurnInFlightReportsTheRunningTurn(t *testing.T) {
 	if s := a.TurnInFlight(); s.Running {
 		t.Errorf("TurnInFlight on an idle engine = %+v, want Running=false", s)
 	}
-	if err := a.beginTurn(); err != nil {
+	if err := a.beginTurn(a.sessionID); err != nil {
 		t.Fatalf("beginTurn() = %v", err)
 	}
 	if s := a.TurnInFlight(); !s.Running || s.SessionID != a.sessionID {
 		t.Errorf("TurnInFlight mid-turn = %+v, want Running=true SessionID=%q", s, a.sessionID)
 	}
-	a.endTurn()
+	a.endTurn(a.sessionID)
 	if s := a.TurnInFlight(); s.Running {
 		t.Errorf("TurnInFlight after endTurn = %+v, want Running=false", s)
 	}
@@ -212,10 +212,10 @@ func TestSessionTranscriptReadsWithoutSwitching(t *testing.T) {
 	a.startNewSession()
 	second := a.sessionID
 
-	if err := a.beginTurn(); err != nil {
+	if err := a.beginTurn(a.sessionID); err != nil {
 		t.Fatalf("beginTurn() = %v", err)
 	}
-	defer a.endTurn()
+	defer a.endTurn(a.sessionID)
 
 	messages, err := a.SessionTranscript(first)
 	if err != nil {

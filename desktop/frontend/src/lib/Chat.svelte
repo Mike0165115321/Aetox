@@ -32,7 +32,7 @@
     startTaskChip, dismissTaskChip,
     retryFailedTurn, editFailedTurn, regenerateReply, switchVariant, resendEdited, rateReply,
     setActiveView, newChairSession, newSessionAt, openSettingsAt, setStance,
-    sendUserMessage,
+    sendUserMessage, leavePeek, openPeeked,
   } from './stores/cockpit.svelte'
   import ConfirmDialog from './ConfirmDialog.svelte'
   import MemoryCard from './MemoryCard.svelte'
@@ -1836,6 +1836,23 @@
           <span>{cockpit.sessionError}</span>
         </div>
       {/if}
+      <!-- Another conversation, open for reading while the turn runs in the one
+           the user came from. Not an error and drawn as one would be wrong: the
+           app did what was asked. It says which half of "open" this is, and
+           carries the way back — plus, once the turn has finished, the way in,
+           since the door that was shut is now open and the user is standing at
+           it. -->
+      {#if cockpit.peek}
+        <div class="peek-bar">
+          <span class="ic"><Icon name="eye" size={14} /></span>
+          <span class="peek-what">{cockpit.peek.session.title || t('cockpit.peekNotice')}</span>
+          <span class="peek-why">{t('cockpit.peekNotice')}</span>
+          {#if !awaitingReply}
+            <button type="button" class="peek-act" onclick={() => void openPeeked()}>{t('cockpit.peekOpen')}</button>
+          {/if}
+          <button type="button" class="peek-act primary" onclick={leavePeek}>{t('cockpit.peekReturn')}</button>
+        </div>
+      {/if}
       {#each messages as m, i}
         <!-- A message sent into a running turn belongs below what has already
              streamed, not above it: it was said at that point, and drawn at the
@@ -2121,7 +2138,12 @@
         </div>
       {/each}
 
-      {#if awaitingReply}
+      <!-- Not while another chat is open for reading: the live block belongs to
+           the conversation the turn is in, and drawn here it would put one
+           chat's tools and half-written answer under another chat's history.
+           Nothing is lost by not drawing it — the state goes on accumulating,
+           and going back brings it into view mid-flight. -->
+      {#if awaitingReply && !cockpit.peek}
         <div class="msg bot">
           <div class="bubble typing-bubble">
             <!-- The whole row, not just its text: with nothing else on it, an
@@ -2737,7 +2759,10 @@
       <textarea
         class="input"
         rows="1"
-        placeholder={cockpit.chair
+        disabled={!!cockpit.peek}
+        placeholder={cockpit.peek
+          ? t('cockpit.peekPlaceholder')
+          : cockpit.chair
           ? t('chat.inputToAgent', { name: cockpit.chair })
           : t('chat.inputPlaceholder', { key: shortcutLabel('palette') })}
         bind:this={inputEl}
@@ -3000,7 +3025,13 @@
                draft on screen the primary button sends again; the brake stays
                beside it, because the tool loop is unbounded and it is the
                user's only Ctrl+C. -->
-          {#if draft.trim()}
+          <!-- Stop stays reachable from a chat the user is only reading: the
+               turn it would end is running whether or not it is on screen, and
+               a brake you have to navigate back to is a brake that arrives
+               late. Send does not — there is no draft to send from a disabled
+               composer, and an interjection typed here would land in a
+               conversation the user is not looking at. -->
+          {#if draft.trim() && !cockpit.peek}
             <button class="send stop secondary" aria-label={t('chat.stopTurn')} onclick={cancelTurn}><Icon name="square" size={12} /></button>
             <button class="send" aria-label={t('chat.sendIntoTurn')} title={t('chat.sendIntoTurn')} onclick={submit}>
               <Icon name="sendHorizontal" size={15} />

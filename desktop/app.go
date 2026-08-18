@@ -178,34 +178,19 @@ type App struct {
 	// or a WSL distro. See desktop/shell_backend.go.
 	shells config.ShellChoice
 
-	turnMu     sync.Mutex
-	turnCancel context.CancelFunc // cancels the chat turn in flight, nil when idle
-	// turnCtx is that same turn's context, kept so a gate deep inside a tool
-	// call can wait on the user without outliving the turn. The workspace door
-	// (workspace.go) is the one that needs it: resolveSandboxPath carries no
-	// context of its own, so without this a card left unanswered would hold the
-	// tool call open and Stop would do nothing until somebody clicked it.
-	turnCtx context.Context
-
-	// turnRunning/turnSession are the turn in flight's identity: whether one is
-	// running, and which session it belongs to. Stamped by beginTurn and read by
-	// everything the turn's output lands in (openTurn, appendTurn), because the
-	// alternative — reading a.sessionID at completion time — is how an answer
-	// ended up persisted into whichever chat happened to be open when the turn
-	// finished. The stamp is taken once, at birth, and cannot be moved.
+	turnMu sync.Mutex
+	// turns is the turn each conversation has in flight, keyed by the session
+	// it belongs to. A missing key means that chat is idle.
 	//
-	// Both under turnMu: a switch door checks them from a binding goroutine
-	// while the turn goroutine writes them.
-	turnRunning bool
-	turnSession string
-
-	// turnStopEarly records a Stop that arrived in the window between beginTurn
-	// and runTurn installing turnCancel — openTurn's DB writes sit in that gap,
-	// and a busy database holds it open for whole seconds. Without this the
-	// press lands on a nil cancel func and silently does nothing, which is a
-	// Stop button that sometimes needs pressing twice. Consumed (and the turn
-	// killed) the moment the cancel func exists.
-	turnStopEarly bool
+	// A map rather than one set of fields, because the turn was never a
+	// property of the app: it is a property of a conversation, and calling it
+	// the app's is what forced every door out of a working chat to refuse
+	// (DECISIONS 134.2). One key, one turn — a session still cannot answer
+	// itself twice at once, which is the invariant that actually matters.
+	//
+	// Under turnMu throughout: a switch door reads it from a binding goroutine
+	// while a turn goroutine writes it.
+	turns map[string]*liveTurn
 
 	// snapshots is the undo net (internal/snapshot). Nil whenever it cannot
 	// work — no git, or a project that is not a repository — and every use of
@@ -1644,42 +1629,84 @@ var errTurnBusyUpdate = fmt.Errorf("เอเจนกำลังทำงา�
 // corrupts all three. The frontend's awaitingReply gate normally prevents this
 // — the case that actually reaches here is a window reloaded mid-turn, whose
 // fresh state no longer knows a turn exists.
-func (a *App) beginTurn() error {
+func (a *App) beginTurn(sessionID string) error {
 	a.turnMu.Lock()
 	defer a.turnMu.Unlock()
-	if a.turnRunning {
+	if sessionID == "" {
+		sessionID = a.sessionID
+	}
+	if _, running := a.turns[sessionID]; running {
 		return errTurnBusy
 	}
-	a.turnRunning = true
-	a.turnSession = a.sessionID
-	a.turnStopEarly = false
+	if a.turns == nil {
+		a.turns = map[string]*liveTurn{}
+	}
+	a.turns[sessionID] = &liveTurn{}
 	return nil
+}
+
+// liveTurn is one conversation's turn while it runs: what cancels it, the
+// context its tools wait on, and a Stop that arrived before either existed.
+type liveTurn struct {
+	// cancel and ctx are nil in the window between beginTurn and runTurn
+	// installing them: openTurn's DB writes sit in that gap, and a busy
+	// database holds it open for whole seconds.
+	cancel context.CancelFunc
+	// ctx is kept so a gate deep inside a tool call can wait on the user
+	// without outliving the turn. The workspace door (workspace.go) needs it:
+	// resolveSandboxPath carries no context of its own, so without this a card
+	// left unanswered would hold the tool call open and Stop would do nothing
+	// until somebody clicked it.
+	ctx context.Context
+	// stopEarly records a Stop pressed inside that window. Without it the press
+	// lands on a nil cancel func and silently does nothing, which is a Stop
+	// button that sometimes needs pressing twice.
+	stopEarly bool
 }
 
 // armTurnCancel installs the turn's cancel func and reports whether a Stop
 // already arrived while there was nothing to press it against — in which case
 // the caller cancels immediately instead of running a turn the user has
 // already refused.
-func (a *App) armTurnCancel(ctx context.Context, cancel context.CancelFunc) (stopNow bool) {
+func (a *App) armTurnCancel(sessionID string, ctx context.Context, cancel context.CancelFunc) (stopNow bool) {
 	a.turnMu.Lock()
 	defer a.turnMu.Unlock()
-	a.turnCancel = cancel
-	a.turnCtx = ctx
-	stopNow = a.turnStopEarly
-	a.turnStopEarly = false
+	live := a.turns[sessionID]
+	if live == nil {
+		// The turn ended, or was never marked, before its cancel func arrived.
+		// Cancelling now is the honest answer: there is nothing left to hold
+		// open, and running on would be work nobody is waiting for.
+		return true
+	}
+	live.cancel = cancel
+	live.ctx = ctx
+	stopNow = live.stopEarly
+	live.stopEarly = false
 	return stopNow
+}
+
+// disarmTurnCancel drops a finished turn's cancel func while the turn is still
+// marked running: the deferred half of runTurn's own cleanup.
+func (a *App) disarmTurnCancel(sessionID string) {
+	a.turnMu.Lock()
+	defer a.turnMu.Unlock()
+	if live := a.turns[sessionID]; live != nil {
+		live.cancel = nil
+		live.ctx = nil
+	}
 }
 
 // endTurn closes the turn and tells every window it is over. The event goes
 // out even for a failed turn: a reloaded window is sitting on awaitingReply
 // with no promise to resolve it, and "done" is the only signal it will get.
-func (a *App) endTurn() {
+func (a *App) endTurn(sessionID string) {
 	a.turnMu.Lock()
-	done := a.turnSession
-	a.turnRunning = false
-	a.turnSession = ""
+	if sessionID == "" {
+		sessionID = a.sessionID
+	}
+	delete(a.turns, sessionID)
 	a.turnMu.Unlock()
-	a.emitEvent("agent:done", TurnStatus{Running: false, SessionID: done})
+	a.emitEvent("agent:done", TurnStatus{Running: false, SessionID: sessionID})
 	// A folder approved mid-turn reached the running tool call directly; the
 	// engine still has to be rebuilt for the system prompt to say the workspace
 	// grew. Here rather than at the moment of approval: applyConfig swaps the
@@ -1694,7 +1721,17 @@ func (a *App) endTurn() {
 func (a *App) turnBusy() bool {
 	a.turnMu.Lock()
 	defer a.turnMu.Unlock()
-	return a.turnRunning
+	return len(a.turns) > 0
+}
+
+// turnBusyIn reports whether one named conversation is working. The question
+// every door should be asking now that there is an answer per chat, rather
+// than "is anything running anywhere".
+func (a *App) turnBusyIn(sessionID string) bool {
+	a.turnMu.Lock()
+	defer a.turnMu.Unlock()
+	_, running := a.turns[sessionID]
+	return running
 }
 
 // turnSessionID is where the turn in flight's rows belong: the session stamped
@@ -1704,8 +1741,13 @@ func (a *App) turnBusy() bool {
 func (a *App) turnSessionID() string {
 	a.turnMu.Lock()
 	defer a.turnMu.Unlock()
-	if a.turnRunning && a.turnSession != "" {
-		return a.turnSession
+	// Exactly one turn: it is unambiguously the one asking. With none, or with
+	// several, the open session is the only honest answer here — the callers
+	// that must not guess are handed the id outright instead.
+	if len(a.turns) == 1 {
+		for id := range a.turns {
+			return id
+		}
 	}
 	return a.sessionID
 }
@@ -1738,16 +1780,23 @@ type TurnStatus struct {
 func (a *App) TurnInFlight() TurnStatus {
 	a.turnMu.Lock()
 	defer a.turnMu.Unlock()
-	return TurnStatus{Running: a.turnRunning, SessionID: a.turnSession}
+	if _, running := a.turns[a.sessionID]; running {
+		return TurnStatus{Running: true, SessionID: a.sessionID}
+	}
+	return TurnStatus{}
 }
 
 // SendMessage runs one chat turn through the Aetox engine and returns the reply.
 // The turn is appended to the current session and persisted.
 func (a *App) SendMessage(text string) (TurnReply, error) {
-	if err := a.beginTurn(); err != nil {
+	// Captured once, here, and carried for the rest of the turn: a.sessionID is
+	// what the user is looking at, and by the time this turn ends they may be
+	// looking at something else.
+	sessionID := a.sessionID
+	if err := a.beginTurn(sessionID); err != nil {
 		return TurnReply{}, err
 	}
-	defer a.endTurn()
+	defer a.endTurn(sessionID)
 	// Taken before the turn so the rows it writes can be told from everything
 	// already in the store — see recordJobs. Cheap (one indexed MAX) and read
 	// even when learning is off, because the alternative is a second capture
@@ -1827,7 +1876,8 @@ func (a *App) runTurn(text string) (SessionMessage, SessionMessage, error) {
 		text = expanded
 	}
 	ctx, cancel := context.WithCancel(a.ctx)
-	if a.armTurnCancel(ctx, cancel) {
+	turnSession := a.turnSessionID()
+	if a.armTurnCancel(turnSession, ctx, cancel) {
 		// Stop was pressed before this cancel func existed (the beginTurn →
 		// here gap, where openTurn writes to a possibly-busy database). The
 		// press has to mean stop, not "stop if the timing was lucky".
@@ -1835,10 +1885,7 @@ func (a *App) runTurn(text string) (SessionMessage, SessionMessage, error) {
 	}
 	defer func() {
 		cancel()
-		a.turnMu.Lock()
-		a.turnCancel = nil
-		a.turnCtx = nil
-		a.turnMu.Unlock()
+		a.disarmTurnCancel(turnSession)
 	}()
 	// Accumulate reasoning at the source so it persists with the turn — the
 	// live panel alone would vanish once the turn completes. First/last chunk
@@ -1990,11 +2037,15 @@ func (a *App) finishAddressed(
 	// what they were asked — the parent executor that would normally assemble
 	// Parts is the thing this door skips, and a turn stored as bare prose loses
 	// the fact that it was not the assistant who answered.
+	// Said out loud rather than left to be inferred: this door hands a whole
+	// exchange to a worker, so the row IS a delegation, and a reopened session
+	// has nothing else to read it off (turn.ToolPart.Delegation).
+	delegated := true
 	agentMsg.Parts = []turn.TurnPart{{
 		Kind: turn.PartTool,
 		Tool: &turn.ToolPart{
 			Name: "task", Subject: reply.Agent, Agent: reply.Agent, Brief: brief,
-			AgentKind: subagent.KindOf(reply.Agent), OK: true,
+			AgentKind: subagent.KindOf(reply.Agent), Delegation: &delegated, OK: true,
 			Secs: int(time.Duration(reply.Output.DurationMs) * time.Millisecond / time.Second),
 		},
 	}}
@@ -2103,13 +2154,18 @@ func (a *App) CancelTurn() {
 	if a.agent != nil {
 		a.agent.DrainInterjections()
 	}
-	if a.turnCancel != nil {
-		a.turnCancel()
-	} else if a.turnRunning {
-		// The turn exists but its cancel func does not yet (openTurn's DB write
-		// sits between the two). Remember the press; armTurnCancel consumes it
-		// the moment there is something to cancel.
-		a.turnStopEarly = true
+	// The chat on screen is the one the button belongs to. A turn in another
+	// conversation is not what the user pressed Stop on, and ending it from
+	// here would be the button reaching into a window they cannot see.
+	if live := a.turns[a.sessionID]; live != nil {
+		if live.cancel != nil {
+			live.cancel()
+		} else {
+			// The turn exists but its cancel func does not yet (openTurn's DB
+			// write sits between the two). Remember the press; armTurnCancel
+			// consumes it the moment there is something to cancel.
+			live.stopEarly = true
+		}
 	}
 }
 

@@ -61,10 +61,10 @@ func TestCheckForUpdateSurvivesANilContext(t *testing.T) {
 // read as the update itself having broken.
 func TestRestartToUpdateRefusesMidTurnInItsOwnWords(t *testing.T) {
 	a := &App{}
-	if err := a.beginTurn(); err != nil {
+	if err := a.beginTurn(a.sessionID); err != nil {
 		t.Fatalf("beginTurn() = %v", err)
 	}
-	defer a.endTurn()
+	defer a.endTurn(a.sessionID)
 
 	err := a.RestartToUpdate()
 	if err == nil {

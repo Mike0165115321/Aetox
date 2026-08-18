@@ -208,6 +208,9 @@ export interface ToolPartInfo {
    *  (ซับเอเจน). Stamped by the engine — the kind is decided by which home
    *  the profile file lives in, which only the engine can see. */
   agentKind?: string
+  /** Whether this `task` row hired anybody. Written down with the turn, so a
+   *  reopened session draws the same blocks the live one did. */
+  delegation?: boolean
   ok: boolean
   error?: string
   secs?: number
@@ -319,6 +322,13 @@ export interface ToolEvent {
    * (ซับเอเจน). The chat counts the two apart; empty lands in the helper
    * pile, which is where every delegation lived before the split. */
   agentKind?: string
+  /** Whether this row hired anybody. Only the engine can say: delegation is
+   * packed under one tool name, so `task collect` — the agent waiting on a
+   * delegate it started earlier — has the same label as the delegation it is
+   * waiting for. Absent means nobody has said yet, which is what a row born
+   * from the streaming announcement knows: the action is in the arguments,
+   * and they are still being written. */
+  delegation?: boolean
   /** On a result event: sandbox paths of finished files this call made for the
    * user — set only by tools whose whole output is a file (sheet_write and, in
    * time, the .pptx and .docx writers). `write` and `edit` deliberately leave
@@ -366,6 +376,10 @@ export interface ToolStep {
    * the two count chips this delegation belongs to. Absent (old turns, engine
    * without the stamp) counts as a helper, the pre-split reading. */
   agentKind?: string
+  /** ToolEvent.delegation, kept on the row: whether this `task` call hired
+   * anybody. Absent while the arguments are still streaming, and on turns
+   * stored before the engine said so. */
+  delegation?: boolean
   startedAt: number
   /** seconds it took, filled in when the result arrives */
   secs?: number
@@ -404,13 +418,25 @@ export function groupSteps(steps: ToolStep[]): TimelineNode[] {
   return nodes
 }
 
-/** True when a row is a delegation: the engine named a sub-agent on it, or
- * something ran underneath it. Both are checked because a delegate that used no
- * tools has no children, and a `task` call whose `agent` was left to default has
- * no name. */
+/** True when a row hired a sub-agent.
+ *
+ * The engine's answer wins wherever it gave one, because only the engine reads
+ * the arguments and the arguments are where the answer is: delegation is packed
+ * under one tool name, and of its actions only `start` hires anyone. A `task
+ * collect` — the agent waiting on a delegate it started earlier — carries the
+ * same label as the delegation it is waiting for, so a row judged by its label
+ * was drawn as a second worker beside the one it was waiting on, and counted as
+ * one.
+ *
+ * The guess below is what a row falls back to while nobody has said yet: one
+ * still streaming its arguments, or a turn stored before the engine said. It is
+ * right about every delegation and wrong about the actions that are not one,
+ * which is the correct way round for a fallback that only ever holds for a
+ * moment. */
 export function isDelegation(node: TimelineNode): boolean {
   // Narration is free text — it may well start with the word "task".
   if (node.step.kind) return false
+  if (node.step.delegation !== undefined) return node.step.delegation
   return Boolean(node.step.agent) || node.children.length > 0 || node.step.label.startsWith('task ') || node.step.label === 'task'
 }
 
@@ -575,6 +601,15 @@ export interface CockpitState {
   /** Why the last attempt to open a session from the history list failed, in
    *  the engine's own words. '' when the last one worked. */
   sessionError: string
+  /** Another chat opened for reading while a turn runs in this one. null when
+   *  not peeking, which is every idle moment.
+   *
+   *  The engine has one agent context and a turn is using it, so opening a
+   *  second conversation for real would rewrite the memory that turn is
+   *  thinking with. Reading one does not: `live` holds the working chat's
+   *  messages while `cockpit.chat` shows the one being read, and the turn goes
+   *  on writing into `live` where its answer belongs. */
+  peek: { session: Session; live: ChatMessage[] } | null
   /** File/browser tab dragged into the composer, staged before send. */
   pendingContext: PendingContext | null
   /** Non-image file attached in the composer, staged before send. */
@@ -590,6 +625,13 @@ export interface CockpitState {
    * told about is one that never gets emptied, which would quietly turn
    * "nothing takes effect without you" into "nothing takes effect". */
   pendingLearned: number
+  /** How many things have failed the same way more than once and are waiting
+   * for the user to decide whether the developer should hear about them. Its
+   * own number because it is its own question: this one lights the problems
+   * row in settings and nothing else, while pendingLearned marks the gear. A
+   * repeated failure is worth finding when you go looking, and is not worth
+   * being interrupted for. */
+  pendingIssues: number
   /** A one-shot request from another page for what Settings should open on:
    * the team page's configure/create doors land in the shared profile editor
    * this way. Carries the *kind* because it came from the roster — Settings
@@ -641,9 +683,11 @@ export function emptyCockpitState(): CockpitState {
     todos: [],
     taskChips: [],
     pendingLearned: 0,
+    pendingIssues: 0,
     settingsIntent: null,
     pendingImage: null,
     sessionError: '',
+    peek: null,
     pendingContext: null,
     pendingFile: null,
   }

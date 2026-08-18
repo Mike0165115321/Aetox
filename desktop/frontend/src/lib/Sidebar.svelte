@@ -3,6 +3,7 @@
   import {
     cockpit, newSession, openFolder, openProject, openDesk, setActiveView,
     searchGlobalHistory, selectGlobalSession, deleteSession, exportChat, importChat,
+    sessionWorking,
     newChairSession,
   } from './stores/cockpit.svelte'
   import type { Session } from './types'
@@ -239,7 +240,12 @@
      the same rows in a different order, and a copy of this markup in each
      branch is a copy that drifts. -->
 {#snippet sessionRow(s: Session)}
-  <button type="button" class="sess-row" class:active={s.active} onclick={() => selectGlobalSession(s)}>
+  <button
+    type="button" class="sess-row"
+    class:active={s.active}
+    class:working={sessionWorking(s)}
+    onclick={() => selectGlobalSession(s)}
+  >
     <!-- The title gets the line to itself. It used to share one line with the
          chip, the age and two hover-only buttons — all of them flex:none, so
          the only thing that could give way was the title, and in a 280px rail

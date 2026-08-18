@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/Mike0165115321/Aetox/internal/turn"
 )
 
 // A turn that failed used to be persisted as half a turn: openTurn had written
@@ -12,7 +15,7 @@ import (
 // and what was left was a question sitting alone with nothing saying why.
 func TestAFailedTurnIsWrittenDownWithItsReason(t *testing.T) {
 	a := newTestApp(t, t.TempDir())
-	if err := a.beginTurn(); err != nil {
+	if err := a.beginTurn(a.sessionID); err != nil {
 		t.Fatalf("beginTurn: %v", err)
 	}
 	a.openTurn(SessionMessage{Role: "user", Text: "เทสๆ", Time: "22:10"})
@@ -20,7 +23,7 @@ func TestAFailedTurnIsWrittenDownWithItsReason(t *testing.T) {
 		SessionMessage{Role: "agent", Text: "อ่านไฟล์ครบแล้ว", Time: "22:10", ThinkSecs: 3},
 		errors.New("codex: the free plan's limit is used up"),
 	)
-	a.endTurn()
+	a.endTurn(a.sessionID)
 	if id == 0 {
 		t.Fatal("appendFailedTurn wrote nothing")
 	}
@@ -74,12 +77,12 @@ func TestASuccessfulTurnCarriesNoError(t *testing.T) {
 // than one recorded with a vague reason.
 func TestAFailureIsNeverStoredAsBlank(t *testing.T) {
 	a := newTestApp(t, t.TempDir())
-	if err := a.beginTurn(); err != nil {
+	if err := a.beginTurn(a.sessionID); err != nil {
 		t.Fatalf("beginTurn: %v", err)
 	}
 	a.openTurn(SessionMessage{Role: "user", Text: "q", Time: "09:00"})
 	a.appendFailedTurn(SessionMessage{Role: "agent", Time: "09:00"}, errors.New("   "))
-	a.endTurn()
+	a.endTurn(a.sessionID)
 
 	messages, err := a.LoadSession(a.sessionID)
 	if err != nil {
@@ -162,7 +165,7 @@ func lastErrorText(messages []SessionMessage) string {
 // with it.
 func TestRetryDropsTheFailedAttemptFromTheStore(t *testing.T) {
 	a := newTestApp(t, t.TempDir())
-	if err := a.beginTurn(); err != nil {
+	if err := a.beginTurn(a.sessionID); err != nil {
 		t.Fatalf("beginTurn: %v", err)
 	}
 	a.openTurn(SessionMessage{Role: "user", Text: "เทสๆ", Time: "22:10"})
@@ -172,7 +175,7 @@ func TestRetryDropsTheFailedAttemptFromTheStore(t *testing.T) {
 		SessionMessage{Role: "user", Text: "เทสๆ", Time: "22:10"},
 		SessionMessage{Role: "agent", Text: "", Time: "22:10", ErrorText: "limit is used up"},
 	)
-	a.endTurn()
+	a.endTurn(a.sessionID)
 
 	a.dropFailedTail()
 
@@ -216,5 +219,46 @@ func TestDropFailedTailLeavesACompletedTurnAlone(t *testing.T) {
 	}
 	if len(messages) != 2 {
 		t.Errorf("a completed turn's rows were deleted: %d left", len(messages))
+	}
+}
+
+// The sequence goes down with the rest of it. This is the half that made a
+// Stop feel like a delete: the engine kept the turn's parts, appendFailedTurn
+// has always written the column, and internal/turn was handing it an empty
+// result — so the row existed, said "stopped", and held no record of the work.
+// With the parts stored, reopening the conversation draws the tool timeline of
+// a stopped turn exactly as it draws a finished one.
+func TestAStoppedTurnIsStoredWithItsToolSequence(t *testing.T) {
+	a := newTestApp(t, t.TempDir())
+	if err := a.beginTurn(a.sessionID); err != nil {
+		t.Fatalf("beginTurn: %v", err)
+	}
+	a.openTurn(SessionMessage{Role: "user", Text: "เปิดโปรเจกต์ให้ที", Time: "05:16"})
+	a.appendFailedTurn(SessionMessage{
+		Role: "agent", Text: "ยังไม่เจอ ขอดูอีกไฟล์", Time: "05:16",
+		Parts: []turn.TurnPart{
+			{Kind: turn.PartText, Text: "กำลังไล่ดูพอร์ตให้ครับ"},
+			{Kind: turn.PartTool, Tool: &turn.ToolPart{Ref: "call_1", Name: "shell", Subject: "ss -ltnp", OK: true}},
+			{Kind: turn.PartText, Text: "ยังไม่เจอ ขอดูอีกไฟล์"},
+		},
+	}, context.Canceled)
+	a.endTurn(a.sessionID)
+
+	messages, err := a.LoadSession(a.sessionID)
+	if err != nil {
+		t.Fatalf("LoadSession: %v", err)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("stored %d messages, want the question and the stopped answer", len(messages))
+	}
+	parts := messages[1].Parts
+	if len(parts) != 3 {
+		t.Fatalf("stored %d parts, want the three the turn produced", len(parts))
+	}
+	if parts[1].Tool == nil || parts[1].Tool.Name != "shell" {
+		t.Errorf("the tool call did not survive the round trip: %+v", parts[1])
+	}
+	if !strings.Contains(messages[1].ErrorText, "context canceled") {
+		t.Errorf("errorText = %q; want the reason the turn ended", messages[1].ErrorText)
 	}
 }

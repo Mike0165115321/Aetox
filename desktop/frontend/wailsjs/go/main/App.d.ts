@@ -172,6 +172,8 @@ export function ListChairs():Promise<Array<main.Chair>>;
 
 export function ListDecidedChanges(arg1:number):Promise<Array<main.PendingChange>>;
 
+export function ListDecidedIssues(arg1:number):Promise<Array<main.PendingChange>>;
+
 export function ListExternalSkills():Promise<Array<skill.DiscoveredSkill>>;
 
 export function ListIdentityFiles():Promise<Array<main.IdentityFile>>;
@@ -200,6 +202,8 @@ export function ListSpeechModels():Promise<Array<main.SpeechModelInfo>>;
 
 export function ListSubagentProfiles():Promise<Array<subagent.Profile>>;
 
+export function ListSystemIssues():Promise<Array<main.PendingChange>>;
+
 export function ListTaskChips():Promise<Array<main.TaskChip>>;
 
 export function ListTools():Promise<Array<main.SkillInfo>>;
@@ -209,6 +213,8 @@ export function LoadSession(arg1:string):Promise<Array<main.SessionMessage>>;
 export function LoadSessionAnyProject(arg1:string):Promise<Array<main.SessionMessage>>;
 
 export function MCPConfigPath():Promise<string>;
+
+export function MarkIssueReported(arg1:number):Promise<void>;
 
 export function MobileRemoteQR():Promise<string>;
 
@@ -253,6 +259,8 @@ export function OpenSubagentsFolder():Promise<void>;
 export function PairedDevices():Promise<Array<main.RemoteDevice>>;
 
 export function PendingChangeByID(arg1:number):Promise<main.PendingChange>;
+
+export function PendingIssueCount():Promise<number>;
 
 export function PendingLearnedCount():Promise<number>;
 

@@ -228,7 +228,10 @@ func (a *App) askWorkspaceWiden(target string) bool {
 	// belongs to. Without it Stop would appear dead until somebody clicked the
 	// card, because the tool call is parked inside resolveSandboxPath.
 	a.turnMu.Lock()
-	turnCtx := a.turnCtx
+	var turnCtx context.Context
+	if live := a.turns[a.sessionID]; live != nil {
+		turnCtx = live.ctx
+	}
 	a.turnMu.Unlock()
 	if turnCtx == nil {
 		// No turn in flight — a tool running outside one. The app's own context

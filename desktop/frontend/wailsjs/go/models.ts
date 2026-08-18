@@ -1919,6 +1919,7 @@ export namespace turn {
 	    agent?: string;
 	    brief?: string;
 	    agentKind?: string;
+	    delegation?: boolean;
 	    ok: boolean;
 	    error?: string;
 	    secs?: number;
@@ -1939,6 +1940,7 @@ export namespace turn {
 	        this.agent = source["agent"];
 	        this.brief = source["brief"];
 	        this.agentKind = source["agentKind"];
+	        this.delegation = source["delegation"];
 	        this.ok = source["ok"];
 	        this.error = source["error"];
 	        this.secs = source["secs"];

@@ -109,10 +109,11 @@ func (a *App) RegenerateReply(revertFiles bool) (RegenerateResult, error) {
 	// Its own turn, marked like one: RegenerateReply reaches runTurn without
 	// going through SendMessage, and an unmarked turn is invisible to every
 	// guard and to the reloaded window asking TurnInFlight.
-	if err := a.beginTurn(); err != nil {
+	sessionID := a.sessionID
+	if err := a.beginTurn(sessionID); err != nil {
 		return RegenerateResult{}, err
 	}
-	defer a.endTurn()
+	defer a.endTurn(sessionID)
 	question, ok := a.lastQuestion()
 	if !ok {
 		return RegenerateResult{}, fmt.Errorf("ยังไม่มีคำถามในเซสชันนี้ให้ตอบใหม่")
