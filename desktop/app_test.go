@@ -33,6 +33,20 @@ func isolateUserDirs(t *testing.T) string {
 	t.Setenv("USERPROFILE", base)     // windows: os.UserHomeDir
 	t.Setenv("XDG_CONFIG_HOME", base) // linux: os.UserConfigDir
 	t.Setenv("HOME", base)            // linux + macos: os.UserHomeDir, and macOS' config dir
+	// And the one that actually decides where this app keeps things.
+	//
+	// config.DataRoot reads AETOX_DATA_ROOT *before* it asks the OS for a config
+	// dir, and TestMain sets it once for the whole package. So every line above
+	// was ignored by everything that goes through DataRoot, and each caller here
+	// was sharing one directory while reading like it had its own — two MCP
+	// tests asserting on an exact server count saw each other's servers and
+	// failed under -shuffle, whichever of them ran second.
+	//
+	// Set here rather than at the call sites for the reason TestMain gives for
+	// itself: the trap is invisible where it bites, so the fix belongs in the
+	// function whose name is the promise being broken. t.Setenv restores to
+	// TestMain's root, never to the developer's real one.
+	t.Setenv("AETOX_DATA_ROOT", base)
 	return base
 }
 

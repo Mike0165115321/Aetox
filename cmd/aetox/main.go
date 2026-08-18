@@ -249,8 +249,6 @@ func main() {
 		cfg.ApprovalMode = string(safety.NormalizeApprovalMode(storedPreference.ApprovalMode))
 	}
 
-	currentConfig := cfg
-
 	if intent.Mode == command.ModeInteractive && isInteractive() && !explicitModelConfig && !hasStoredPreference {
 		selectedProvider, selectedModel, selectedAPIKey, selectedBaseURL, selectedThinkLevel, ok := promptModelSelection(cfg, !thinkLevelExplicit)
 		if ok {
@@ -268,8 +266,7 @@ func main() {
 			if !thinkLevelExplicit {
 				cfg.ThinkLevel = selectedThinkLevel
 			}
-			currentConfig = cfg
-			if saveErr := persistModelPreference(currentConfig); saveErr != nil {
+			if saveErr := persistModelPreference(cfg); saveErr != nil {
 				fmt.Fprintf(os.Stderr, "warning: cannot save model preference: %v\n", saveErr)
 			}
 		}
@@ -291,7 +288,7 @@ func main() {
 	}
 	cfg.ThinkLevel = model.NormalizeThinkingLevel(cfg.ModelProvider, cfg.ModelName, thinkLevel)
 
-	currentConfig = cfg
+	currentConfig := cfg
 	// Same move the desktop makes at startup: agent files from before the homes
 	// split (2026-08-05) find their own folder before any roster is read.
 	if moved := subagent.Migrate(); len(moved) > 0 {
@@ -624,71 +621,75 @@ func promptModelSelection(cfg config.Config, askThinkLevel bool) (string, string
 		providerOptions = append(providerOptions, label)
 	}
 
-	for {
-		idx, ok := pickFromMenu(reader, "No model provider configured. Select one.", providerOptions, 0, "Use ↑/↓ then Enter.")
-		if !ok {
-			defaultProvider := providers[0]
-			defaultModel := model.ResolveDefaultModel(defaultProvider, cfg.ModelBaseURL, model.ResolveModelAPIKey(defaultProvider))
-			return defaultProvider, defaultModel, "", cfg.ModelBaseURL, defaultThinkLevel(defaultProvider, defaultModel, cfg.ThinkLevel), false
-		}
-		provider := providers[idx]
-		providerBaseURL := model.DefaultBaseURL(provider)
-		if strings.TrimSpace(cfg.ModelBaseURL) != "" {
-			providerBaseURL = strings.TrimSpace(cfg.ModelBaseURL)
-		}
-
-		key := strings.TrimSpace(storedPreference.APIKeyForProvider(provider))
-		if key == "" && strings.EqualFold(cfg.ModelProvider, provider) {
-			key = strings.TrimSpace(cfg.ModelAPIKey)
-		}
-		if key == "" {
-			key = strings.TrimSpace(model.ResolveModelAPIKey(provider))
-		}
-
-		// Needing credentials and taking a pasted key are two different facts,
-		// and asking only the first one trapped anyone who picked Codex: it is
-		// a ChatGPT subscription reached at chatgpt.com, the only key a user
-		// could paste belongs to api.openai.com, and the loop below refuses an
-		// empty line — so the menu demanded, forever, a credential that does
-		// not exist. Sign-in is the way in; say so and carry on keyless.
-		switch {
-		case model.RequiresAPIKey(provider) && !model.AcceptsAPIKey(provider):
-			if oauth.Has(provider) {
-				fmt.Printf("Using the %s sign-in on this machine.\n", provider)
-			} else {
-				fmt.Printf("%s is a sign-in, not an API key. Run: aetox login %s\n", provider, provider)
-			}
-		case model.RequiresAPIKey(provider):
-			if key == "" {
-				if hasStoredPreference {
-					fmt.Printf("No cached API key for %s.\n", provider)
-				}
-				for {
-					fmt.Printf("API key for %s: ", provider)
-					key = strings.TrimSpace(readLine(reader))
-					if key != "" {
-						break
-					}
-					fmt.Println("Missing API key. Try again.")
-				}
-			} else {
-				fmt.Printf("Use existing API key for %s.\n", provider)
-			}
-		}
-
-		selectedModel := pickModelForProvider(reader, provider, cfg.ModelName, providerBaseURL, key)
-		selectedModel, selectedThinkLevel, parsedModelThink := parseModelWithThink(selectedModel)
-		if !parsedModelThink {
-			selectedThinkLevel = defaultThinkLevel(provider, selectedModel, cfg.ThinkLevel)
-			if askThinkLevel {
-				selectedThinkLevel = promptThinkLevelSelection(reader, provider, selectedModel, cfg.ThinkLevel)
-			}
-		}
-
-		fmt.Printf("Selected: %s\n\n", formatModelModeLabel(provider, selectedModel, selectedThinkLevel))
-
-		return provider, selectedModel, key, providerBaseURL, selectedThinkLevel, true
+	// Straight through, not a loop. This was a `for` whose every path returned,
+	// so it read as "pick a provider, and come back here if that did not work"
+	// while never coming back at all. The way back does not exist to restore:
+	// pickModelForProvider returns a bare string with no room to say the user
+	// backed out, so offering the choice again would be a feature, not a fix.
+	// Removed rather than left promising something (staticcheck SA4004, §141).
+	idx, ok := pickFromMenu(reader, "No model provider configured. Select one.", providerOptions, 0, "Use ↑/↓ then Enter.")
+	if !ok {
+		defaultProvider := providers[0]
+		defaultModel := model.ResolveDefaultModel(defaultProvider, cfg.ModelBaseURL, model.ResolveModelAPIKey(defaultProvider))
+		return defaultProvider, defaultModel, "", cfg.ModelBaseURL, defaultThinkLevel(defaultProvider, defaultModel, cfg.ThinkLevel), false
 	}
+	provider := providers[idx]
+	providerBaseURL := model.DefaultBaseURL(provider)
+	if strings.TrimSpace(cfg.ModelBaseURL) != "" {
+		providerBaseURL = strings.TrimSpace(cfg.ModelBaseURL)
+	}
+
+	key := strings.TrimSpace(storedPreference.APIKeyForProvider(provider))
+	if key == "" && strings.EqualFold(cfg.ModelProvider, provider) {
+		key = strings.TrimSpace(cfg.ModelAPIKey)
+	}
+	if key == "" {
+		key = strings.TrimSpace(model.ResolveModelAPIKey(provider))
+	}
+
+	// Needing credentials and taking a pasted key are two different facts,
+	// and asking only the first one trapped anyone who picked Codex: it is
+	// a ChatGPT subscription reached at chatgpt.com, the only key a user
+	// could paste belongs to api.openai.com, and the loop below refuses an
+	// empty line — so the menu demanded, forever, a credential that does
+	// not exist. Sign-in is the way in; say so and carry on keyless.
+	switch {
+	case model.RequiresAPIKey(provider) && !model.AcceptsAPIKey(provider):
+		if oauth.Has(provider) {
+			fmt.Printf("Using the %s sign-in on this machine.\n", provider)
+		} else {
+			fmt.Printf("%s is a sign-in, not an API key. Run: aetox login %s\n", provider, provider)
+		}
+	case model.RequiresAPIKey(provider):
+		if key == "" {
+			if hasStoredPreference {
+				fmt.Printf("No cached API key for %s.\n", provider)
+			}
+			for {
+				fmt.Printf("API key for %s: ", provider)
+				key = strings.TrimSpace(readLine(reader))
+				if key != "" {
+					break
+				}
+				fmt.Println("Missing API key. Try again.")
+			}
+		} else {
+			fmt.Printf("Use existing API key for %s.\n", provider)
+		}
+	}
+
+	selectedModel := pickModelForProvider(reader, provider, cfg.ModelName, providerBaseURL, key)
+	selectedModel, selectedThinkLevel, parsedModelThink := parseModelWithThink(selectedModel)
+	if !parsedModelThink {
+		selectedThinkLevel = defaultThinkLevel(provider, selectedModel, cfg.ThinkLevel)
+		if askThinkLevel {
+			selectedThinkLevel = promptThinkLevelSelection(reader, provider, selectedModel, cfg.ThinkLevel)
+		}
+	}
+
+	fmt.Printf("Selected: %s\n\n", formatModelModeLabel(provider, selectedModel, selectedThinkLevel))
+
+	return provider, selectedModel, key, providerBaseURL, selectedThinkLevel, true
 }
 
 func defaultThinkLevel(provider, modelName, existing string) string {

@@ -198,6 +198,8 @@ func openBrowser(url string) {
 	if strings.TrimSpace(url) == "" {
 		return
 	}
+	// proc-detached: the user's browser is meant to outlive the CLI — the
+	// sign-in finishes in it, long after this function has returned.
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "windows":

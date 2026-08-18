@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -359,21 +360,20 @@ func (a *App) storedWorkspaceFolders(root string) []string {
 	if err != nil {
 		return nil
 	}
-	rows, err := db.Query(
-		`SELECT path FROM project_folders WHERE project_key = ? ORDER BY added_at`,
-		projectKey(root),
-	)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
 	var out []string
-	for rows.Next() {
-		var path string
-		if rows.Scan(&path) == nil && strings.TrimSpace(path) != "" {
-			out = append(out, path)
-		}
-	}
+	_ = eachRow(db, "workspace folders",
+		`SELECT path FROM project_folders WHERE project_key = ? ORDER BY added_at`,
+		[]any{projectKey(root)},
+		func(rows *sql.Rows) error {
+			var path string
+			if err := rows.Scan(&path); err != nil {
+				return err
+			}
+			if strings.TrimSpace(path) != "" {
+				out = append(out, path)
+			}
+			return nil
+		})
 	// Left in the order they were added, which is the order the user watched
 	// the list grow in — and stable across restarts, so the system prompt built
 	// from it does not churn between sessions.

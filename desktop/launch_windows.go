@@ -38,6 +38,7 @@ func launchDetached(command string) error {
 	// -NoExit keeps the window open after the command ends, which is what makes
 	// a failure readable: without it a server that refuses to start closes its
 	// own window before anybody can see the reason.
+	// proc-detached: a server the user started from Settings; its console is how they stop it
 	cmd := exec.Command("powershell.exe", "-NoLogo", "-NoExit", "-ExecutionPolicy", "Bypass", "-Command", command)
 	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: newConsole}
 	if err := cmd.Start(); err != nil {
@@ -82,6 +83,7 @@ func launchLogged(command, logPath string) error {
 	if err != nil {
 		return err
 	}
+	// proc-detached: a server the user started from Settings; its console is how they stop it
 	cmd := exec.Command("powershell.exe", "-NoLogo", "-ExecutionPolicy", "Bypass", "-Command", command)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile

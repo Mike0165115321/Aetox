@@ -7,6 +7,7 @@ package main
 // context (RestoreHistory) so the AI remembers the conversation.
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -380,17 +381,11 @@ func (a *App) ListSessionsAt(desk string) []SessionMeta {
 		WHERE project_key = ? AND ` + heldOutsideAProject + ` AND mode = ? ORDER BY updated_at DESC LIMIT 200`
 		args = append(args, desk)
 	}
-	rows, err := db.Query(query, args...)
-	if err != nil {
-		return out
-	}
-	defer rows.Close()
-	for rows.Next() {
+	out, _ = queryAll(db, "sessions", query, args, func(rows *sql.Rows) (SessionMeta, error) {
 		var m SessionMeta
-		if rows.Scan(&m.ID, &m.Title, &m.UpdatedAt, &m.Mode, &m.Agent) == nil {
-			out = append(out, m)
-		}
-	}
+		err := rows.Scan(&m.ID, &m.Title, &m.UpdatedAt, &m.Mode, &m.Agent)
+		return m, err
+	})
 	return out
 }
 
@@ -463,7 +458,7 @@ func (a *App) SearchSessions(query string) []SessionMeta {
 	// snippet() must stay inside a MATERIALIZED CTE: flattened into the outer
 	// GROUP BY join, modernc.org/sqlite rejects it with "unable to use function
 	// snippet in the requested context".
-	rows, err := db.Query(`
+	out, _ = queryAll(db, "session search", `
 		WITH f AS MATERIALIZED (
 		  SELECT rowid AS mid, snippet(messages_fts, 0, '', '', '…', 10) AS snip
 		  FROM messages_fts WHERE messages_fts MATCH ?
@@ -475,17 +470,12 @@ func (a *App) SearchSessions(query string) []SessionMeta {
 		WHERE s.project_key = ?
 		GROUP BY s.id
 		ORDER BY s.updated_at DESC LIMIT 50`,
-		match, projectKey(a.cfg.SandboxRoot))
-	if err != nil {
-		return out
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var m SessionMeta
-		if rows.Scan(&m.ID, &m.Title, &m.UpdatedAt, &m.Mode, &m.Agent, &m.Snippet) == nil {
-			out = append(out, m)
-		}
-	}
+		[]any{match, projectKey(a.cfg.SandboxRoot)},
+		func(rows *sql.Rows) (SessionMeta, error) {
+			var m SessionMeta
+			err := rows.Scan(&m.ID, &m.Title, &m.UpdatedAt, &m.Mode, &m.Agent, &m.Snippet)
+			return m, err
+		})
 	return out
 }
 
@@ -524,23 +514,18 @@ func (a *App) RecentProjects() []ProjectMeta {
 	if err != nil {
 		return out
 	}
-	rows, err := db.Query(`
+	out, _ = queryAll(db, "projects", `
 		SELECT p.project_key, p.name, p.root_path, p.opened_at,
 		       COALESCE((SELECT s.title FROM sessions s
 		                 WHERE s.project_key = p.project_key
 		                 ORDER BY s.updated_at DESC LIMIT 1), '')
 		FROM projects p
-		ORDER BY p.opened_at DESC LIMIT 50`)
-	if err != nil {
-		return out
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var m ProjectMeta
-		if rows.Scan(&m.Key, &m.Name, &m.RootPath, &m.OpenedAt, &m.Snippet) == nil {
-			out = append(out, m)
-		}
-	}
+		ORDER BY p.opened_at DESC LIMIT 50`, nil,
+		func(rows *sql.Rows) (ProjectMeta, error) {
+			var m ProjectMeta
+			err := rows.Scan(&m.Key, &m.Name, &m.RootPath, &m.OpenedAt, &m.Snippet)
+			return m, err
+		})
 	return out
 }
 
@@ -610,21 +595,16 @@ func (a *App) ListSessionsForDoor(filter DeskFilter) []SessionMeta {
 	}
 	clause, args := filter.where("s.mode")
 	clause = "WHERE s." + heldOutsideAProject + andClause(clause)
-	rows, err := db.Query(`
+	out, _ = queryAll(db, "sessions for door", `
 		SELECT s.id, s.title, s.updated_at, s.mode, s.agent, s.project_key, COALESCE(p.name, s.project_key)
 		FROM sessions s LEFT JOIN projects p ON p.project_key = s.project_key
 		`+clause+`
-		ORDER BY s.updated_at DESC LIMIT 200`, args...)
-	if err != nil {
-		return out
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var m SessionMeta
-		if rows.Scan(&m.ID, &m.Title, &m.UpdatedAt, &m.Mode, &m.Agent, &m.ProjectKey, &m.ProjectName) == nil {
-			out = append(out, m)
-		}
-	}
+		ORDER BY s.updated_at DESC LIMIT 200`, args,
+		func(rows *sql.Rows) (SessionMeta, error) {
+			var m SessionMeta
+			err := rows.Scan(&m.ID, &m.Title, &m.UpdatedAt, &m.Mode, &m.Agent, &m.ProjectKey, &m.ProjectName)
+			return m, err
+		})
 	return out
 }
 
@@ -644,7 +624,7 @@ func (a *App) SearchSessionsForDoor(query string, filter DeskFilter) []SessionMe
 		clause = "WHERE " + clause
 	}
 	args := append([]any{match}, deskArgs...)
-	rows, err := db.Query(`
+	out, _ = queryAll(db, "session search for door", `
 		WITH f AS MATERIALIZED (
 		  SELECT rowid AS mid, snippet(messages_fts, 0, '', '', '…', 10) AS snip
 		  FROM messages_fts WHERE messages_fts MATCH ?
@@ -656,17 +636,12 @@ func (a *App) SearchSessionsForDoor(query string, filter DeskFilter) []SessionMe
 		LEFT JOIN projects p ON p.project_key = s.project_key
 		`+clause+`
 		GROUP BY s.id
-		ORDER BY s.updated_at DESC LIMIT 50`, args...)
-	if err != nil {
-		return out
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var m SessionMeta
-		if rows.Scan(&m.ID, &m.Title, &m.UpdatedAt, &m.Mode, &m.Agent, &m.Space, &m.ProjectKey, &m.ProjectName, &m.Snippet) == nil {
-			out = append(out, m)
-		}
-	}
+		ORDER BY s.updated_at DESC LIMIT 50`, args,
+		func(rows *sql.Rows) (SessionMeta, error) {
+			var m SessionMeta
+			err := rows.Scan(&m.ID, &m.Title, &m.UpdatedAt, &m.Mode, &m.Agent, &m.Space, &m.ProjectKey, &m.ProjectName, &m.Snippet)
+			return m, err
+		})
 	return out
 }
 
@@ -676,20 +651,15 @@ func (a *App) ListAllSessions() []SessionMeta {
 	if err != nil {
 		return out
 	}
-	rows, err := db.Query(`
+	out, _ = queryAll(db, "all sessions", `
 		SELECT s.id, s.title, s.updated_at, s.mode, s.agent, s.project_key, COALESCE(p.name, s.project_key)
 		FROM sessions s LEFT JOIN projects p ON p.project_key = s.project_key
-		ORDER BY s.updated_at DESC LIMIT 200`)
-	if err != nil {
-		return out
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var m SessionMeta
-		if rows.Scan(&m.ID, &m.Title, &m.UpdatedAt, &m.Mode, &m.Agent, &m.ProjectKey, &m.ProjectName) == nil {
-			out = append(out, m)
-		}
-	}
+		ORDER BY s.updated_at DESC LIMIT 200`, nil,
+		func(rows *sql.Rows) (SessionMeta, error) {
+			var m SessionMeta
+			err := rows.Scan(&m.ID, &m.Title, &m.UpdatedAt, &m.Mode, &m.Agent, &m.ProjectKey, &m.ProjectName)
+			return m, err
+		})
 	return out
 }
 
@@ -702,7 +672,7 @@ func (a *App) SearchAllSessions(query string) []SessionMeta {
 		return out
 	}
 	match := `"` + strings.ReplaceAll(q, `"`, `""`) + `"`
-	rows, err := db.Query(`
+	out, _ = queryAll(db, "search all sessions", `
 		WITH f AS MATERIALIZED (
 		  SELECT rowid AS mid, snippet(messages_fts, 0, '', '', '…', 10) AS snip
 		  FROM messages_fts WHERE messages_fts MATCH ?
@@ -713,17 +683,12 @@ func (a *App) SearchAllSessions(query string) []SessionMeta {
 		JOIN sessions s ON s.id = m.session_id
 		LEFT JOIN projects p ON p.project_key = s.project_key
 		GROUP BY s.id
-		ORDER BY s.updated_at DESC LIMIT 50`, match)
-	if err != nil {
-		return out
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var m SessionMeta
-		if rows.Scan(&m.ID, &m.Title, &m.UpdatedAt, &m.Mode, &m.Agent, &m.ProjectKey, &m.ProjectName, &m.Snippet) == nil {
-			out = append(out, m)
-		}
-	}
+		ORDER BY s.updated_at DESC LIMIT 50`, []any{match},
+		func(rows *sql.Rows) (SessionMeta, error) {
+			var m SessionMeta
+			err := rows.Scan(&m.ID, &m.Title, &m.UpdatedAt, &m.Mode, &m.Agent, &m.ProjectKey, &m.ProjectName, &m.Snippet)
+			return m, err
+		})
 	return out
 }
 
@@ -878,28 +843,33 @@ func (a *App) readTranscript(id, key string) ([]SessionMessage, error) {
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.Query(`
+	// a.TurnRating below issues its own QueryRow while this cursor is still
+	// open, which the unbounded default pool serves from a second connection.
+	// eachRow holds no lock across the callback, so the re-entrancy is safe.
+	messages := []SessionMessage{}
+	err = eachRow(db, "transcript", `
 		SELECT m.id, m.role, m.text, m.time, m.reasoning, m.think_secs, m.variants, m.variant_active, m.parts, m.error_text
 		FROM messages m
 		JOIN sessions s ON s.id = m.session_id
 		WHERE m.session_id = ? AND s.project_key = ?
 		ORDER BY m.id`,
-		id, key)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	messages := []SessionMessage{}
-	for rows.Next() {
-		var m SessionMessage
-		var variants, parts string
-		if rows.Scan(&m.ID, &m.Role, &m.Text, &m.Time, &m.Reasoning, &m.ThinkSecs, &variants, &m.Active, &parts, &m.ErrorText) == nil {
+		[]any{id, key},
+		func(rows *sql.Rows) error {
+			var m SessionMessage
+			var variants, parts string
+			if err := rows.Scan(&m.ID, &m.Role, &m.Text, &m.Time, &m.Reasoning, &m.ThinkSecs, &variants, &m.Active, &parts, &m.ErrorText); err != nil {
+				return err
+			}
 			m.Variants = decodeVariants(variants)
 			m.Parts = decodeParts(parts)
 			m.Rating = a.TurnRating(m.ID)
 			messages = append(messages, m)
-		}
+			return nil
+		})
+	if err != nil {
+		// A transcript that broke halfway is not a shorter conversation. This
+		// caller has somewhere to put the error, so it gets it.
+		return nil, err
 	}
 	return messages, nil
 }

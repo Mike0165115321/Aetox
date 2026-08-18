@@ -331,21 +331,15 @@ func (a *App) queryChanges(where string, args ...any) []PendingChange {
 	if err != nil {
 		return out
 	}
-	rows, err := db.Query(
-		`SELECT id, kind, scope, target, op, before, body, reason, evidence, source, state, created_at, decided_at
-		   FROM pending_changes `+where, args...)
-	if err != nil {
-		debuglog.Msg("pending_changes: query failed: %v", err)
-		return out
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var c PendingChange
-		if rows.Scan(&c.ID, &c.Kind, &c.Scope, &c.Target, &c.Op, &c.Before, &c.Body,
-			&c.Reason, &c.Evidence, &c.Source, &c.State, &c.CreatedAt, &c.DecidedAt) == nil {
-			out = append(out, c)
-		}
-	}
+	out, _ = queryAll(db, "pending_changes", `
+		SELECT id, kind, scope, target, op, before, body, reason, evidence, source, state, created_at, decided_at
+		   FROM pending_changes `+where, args,
+		func(rows *sql.Rows) (PendingChange, error) {
+			var c PendingChange
+			err := rows.Scan(&c.ID, &c.Kind, &c.Scope, &c.Target, &c.Op, &c.Before, &c.Body,
+				&c.Reason, &c.Evidence, &c.Source, &c.State, &c.CreatedAt, &c.DecidedAt)
+			return c, err
+		})
 	return out
 }
 

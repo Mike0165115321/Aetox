@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"sort"
 	"strings"
@@ -115,34 +116,35 @@ func (a *App) summarizeFailures() {
 	// carries a remedy to quote. A program's exit status is excluded here rather
 	// than filtered out later, so a cluster of them never reaches the point of
 	// competing with a real lesson for one of the three proposal slots.
-	rows, err := db.Query(
-		`SELECT id, agent, tool, args, error FROM tool_runs
-		  WHERE ok = 0 AND error <> '' AND error_kind = '' ORDER BY id`)
-	if err != nil {
-		debuglog.Msg("summarize: reading failures: %v", err)
-		return
-	}
+	// The read cursor must be released before the write phase below, which
+	// inserts into pending_changes on this same handle. That used to be a bare
+	// rows.Close() here rather than a defer, which was right about the ordering
+	// and one early return away from leaking; eachRow's own defer fires at
+	// exactly this point instead.
 	clusters := map[string]*failureCluster{}
-	for rows.Next() {
-		var id int64
-		var agent, tool, args, errText string
-		if rows.Scan(&id, &agent, &tool, &args, &errText) != nil {
-			continue
-		}
-		head := failureHead(errText)
-		if head == "" {
-			continue
-		}
-		key := agent + "\x00" + tool + "\x00" + clusterKey(head)
-		c, ok := clusters[key]
-		if !ok {
-			c = &failureCluster{scope: agent, tool: tool, head: head}
-			clusters[key] = c
-		}
-		c.ids = append(c.ids, id)
-		c.lastArgs = args
-	}
-	rows.Close()
+	_ = eachRow(db, "summarize: reading failures", `
+		SELECT id, agent, tool, args, error FROM tool_runs
+		  WHERE ok = 0 AND error <> '' AND error_kind = '' ORDER BY id`, nil,
+		func(rows *sql.Rows) error {
+			var id int64
+			var agent, tool, args, errText string
+			if err := rows.Scan(&id, &agent, &tool, &args, &errText); err != nil {
+				return err
+			}
+			head := failureHead(errText)
+			if head == "" {
+				return nil
+			}
+			key := agent + "\x00" + tool + "\x00" + clusterKey(head)
+			c, ok := clusters[key]
+			if !ok {
+				c = &failureCluster{scope: agent, tool: tool, head: head}
+				clusters[key] = c
+			}
+			c.ids = append(c.ids, id)
+			c.lastArgs = args
+			return nil
+		})
 
 	repeated := make([]*failureCluster, 0, len(clusters))
 	for _, c := range clusters {

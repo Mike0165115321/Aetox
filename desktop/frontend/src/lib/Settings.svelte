@@ -1518,23 +1518,14 @@
   // provider is half of what a row IS, not a decoration on it: usageByModel
   // groups by model AND provider, because the same model id is sold per token
   // by one company and included in a subscription by another.
-  type UsageRow = {
-    model: string; provider: string; promptTokens: number; completionTokens: number
-    cachedTokens: number; uncachedTokens: number; cacheRows: number; calls: number
-  }
-  type DayPoint = {
-    day: string; model: string; promptTokens: number; completionTokens: number
-    cachedTokens: number; cacheRows: number
-  }
-  type UsageTotals = {
-    promptTokens: number; completionTokens: number; cachedTokens: number; uncachedTokens: number
-    cacheRows: number; calls: number; sessions: number; messages: number
-    activeDays: number; currentStreak: number; topModel: string; topModelShare: number
-  }
-  type Usage = {
-    today: UsageRow[]; week: UsageRow[]; all: UsageRow[]
-    totals: UsageTotals; daily: DayPoint[]; heatmap: DayPoint[]
-  }
+  // These used to be hand-written copies of the Go structs, and a copy of a
+  // shape is a second place answering the same question: `cost`, `pricedCalls`
+  // and `pricesFetched` were added to usage.go and never here, so the markup
+  // below read three fields the local type said did not exist. The `as Usage`
+  // cast on the call is what let it compile anyway. The generated bindings are
+  // the one description of what the Go side returns; use them.
+  type UsageRow = main.UsageRow
+  type Usage = main.UsageStats
 
   let usage = $state<Usage | null>(null)
   let usageError = $state('')
@@ -1551,7 +1542,7 @@
   async function loadUsage() {
     usageError = ''
     try {
-      usage = await UsageStats() as Usage
+      usage = await UsageStats()
     } catch (err) {
       usageError = String(err)
     }

@@ -164,8 +164,13 @@ func (c *Client) connFor(ctx context.Context, spec server) (*conn, error) {
 // ---- one server process ----
 
 type conn struct {
-	cmd    *exec.Cmd
-	stdin  io.WriteCloser
+	cmd   *exec.Cmd
+	stdin io.WriteCloser
+	// cancel tears the server's whole process tree down. It is the conn's own,
+	// not the caller's: the ctx that reaches startConn belongs to one diagnose
+	// call, and binding the server to it would kill gopls the moment the first
+	// file finished checking. See close().
+	cancel context.CancelFunc
 	stdout *bufio.Reader
 
 	mu      sync.Mutex
@@ -181,23 +186,38 @@ type conn struct {
 }
 
 func startConn(ctx context.Context, root string, spec server) (*conn, error) {
-	cmd := exec.Command(spec.command, spec.args...)
+	// The server outlives the call that started it, so it gets a context of its
+	// own. It has to be a cancellable one: proc.KillOnCancel installs cmd.Cancel,
+	// which os/exec only ever calls from the goroutine it starts for a context
+	// that can actually be done — with context.Background() the command starts
+	// happily and the kill silently never happens.
+	procCtx, cancel := context.WithCancel(context.Background())
+	cmd := exec.CommandContext(procCtx, spec.command, spec.args...)
 	cmd.Dir = root
 	proc.HideConsole(cmd)
+	// typescript-language-server forks tsserver, rust-analyzer spawns cargo,
+	// svelteserver is node all the way down. Process.Kill() reaches the wrapper
+	// and leaves the part doing the work — the same reason lsp/install.go gives
+	// for npm, with "the rest of the session" in place of "five minutes".
+	proc.KillOnCancel(cmd)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 	if err := cmd.Start(); err != nil {
+		cancel()
 		return nil, err
 	}
 	cn := &conn{
 		cmd:     cmd,
 		stdin:   stdin,
+		cancel:  cancel,
 		stdout:  bufio.NewReader(stdout),
 		diags:   map[string][]Diagnostic{},
 		updated: make(chan string, 64),
@@ -238,11 +258,20 @@ func (c *conn) close() {
 	}
 	c.dead = true
 	c.mu.Unlock()
+	// Closing stdin is how a language server is asked to stop, and the one it
+	// should get first. Cancelling before Wait is what makes the kill a tree
+	// kill: once Wait returns, os/exec's watcher goroutine has gone and
+	// cmd.Cancel can never fire.
 	_ = c.stdin.Close()
-	if c.cmd.Process != nil {
-		_ = c.cmd.Process.Kill()
+	if c.cancel != nil {
+		c.cancel()
 	}
 	_ = c.cmd.Wait()
+	// Belt and braces for the server that forked before it died: an orphan
+	// still names its dead parent, which is what the second pass walks.
+	if c.cmd.Process != nil {
+		proc.KillTree(c.cmd.Process.Pid)
+	}
 }
 
 // SymbolInfo is what a language server knows about one identifier: the type

@@ -282,7 +282,12 @@ func writeExecutable(destPath string, src io.Reader) error {
 	if err != nil {
 		return err
 	}
-	defer out.Close()
-	_, err = io.Copy(out, src)
-	return err
+	if _, err := io.Copy(out, src); err != nil {
+		_ = out.Close()
+		return err
+	}
+	// The close is the return value, not a deferred afterthought: a failed
+	// flush here leaves a truncated executable that this function has already
+	// reported as installed, and the next thing to touch it is exec.
+	return out.Close()
 }

@@ -59,6 +59,7 @@ func (p *unixPTY) Close() error {
 	}
 	pid := p.cmd.Process.Pid
 
+	// proc-detached: this IS the sweeper; it cannot be torn down by the thing it implements
 	sweep := exec.Command("pkill", "-KILL", "-s", strconv.Itoa(pid))
 	proc.HideConsole(sweep) // no-op here; keeps the "every exec site" rule exception-free
 	_ = sweep.Run()
@@ -73,6 +74,7 @@ func (p *unixPTY) Close() error {
 // startPTY opens a pty running shellPath, sized and rooted where the caller
 // asked. See terminal_windows.go for the ConPTY half.
 func startPTY(shellPath string, cols, rows int, dir string) (ptySession, error) {
+	// proc-detached: the PTY owns this shell and kills its whole session (see killSession above)
 	cmd := exec.Command(shellPath)
 	proc.HideConsole(cmd) // no-op here; keeps the "every exec site" rule exception-free
 	cmd.Dir = dir

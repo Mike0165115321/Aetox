@@ -469,6 +469,7 @@ func (a *App) GitChangedFiles() []ChangedFile {
 	if !a.projectFocused {
 		return out
 	}
+	// proc-detached: one git read, bounded by its own completion a few lines down
 	cmd := exec.Command("git", "-C", a.cfg.SandboxRoot, "status", "--porcelain")
 	proc.HideConsole(cmd)
 	raw, err := cmd.Output()
@@ -1722,16 +1723,6 @@ func (a *App) turnBusy() bool {
 	a.turnMu.Lock()
 	defer a.turnMu.Unlock()
 	return len(a.turns) > 0
-}
-
-// turnBusyIn reports whether one named conversation is working. The question
-// every door should be asking now that there is an answer per chat, rather
-// than "is anything running anywhere".
-func (a *App) turnBusyIn(sessionID string) bool {
-	a.turnMu.Lock()
-	defer a.turnMu.Unlock()
-	_, running := a.turns[sessionID]
-	return running
 }
 
 // turnSessionID is where the turn in flight's rows belong: the session stamped

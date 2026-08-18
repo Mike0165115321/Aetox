@@ -93,6 +93,11 @@ func TestEveryToolRunsThroughTheRealDispatcher(t *testing.T) {
 	writeToolFixtures(t, root)
 
 	app := &App{}
+	// Several tools below open the store (session_search, memory, suggest_task),
+	// and on Windows an open file cannot be removed — so without this the data
+	// root's own cleanup fails and takes the test with it. Registered after
+	// isolateUserDirs so LIFO closes the handle before that directory goes.
+	closeDBOnCleanup(t, app)
 	registry := skill.NewDefaultRegistry(skill.RegistryOptions{SandboxRoot: root})
 	for _, s := range app.workbenchSkills(app.cfg.SandboxRoot) {
 		if err := registry.Register(s, skill.SourceBuiltin); err != nil {

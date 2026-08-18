@@ -501,6 +501,7 @@ func Distros() []string {
 	if runtime.GOOS != "windows" {
 		return nil
 	}
+	// proc-detached: one enumeration, bounded by its own completion a few lines down
 	cmd := exec.Command("wsl.exe", "-l", "-q")
 	// Without this the list comes back UTF-16LE and every name reads as a
 	// letter followed by a NUL.

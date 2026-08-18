@@ -379,7 +379,7 @@ func TestShellSkillRunsInTheSelectedDistro(t *testing.T) {
 // to mean the same thing through that lookup.
 func TestShellToolDescriptionNamesTheSelectedShell(t *testing.T) {
 	root := t.TempDir()
-	selected := proc.Backend(proc.Native())
+	selected := proc.Native()
 	setSandboxShell(root, func() proc.Backend { return selected })
 	t.Cleanup(func() { setSandboxShell(root, nil) })
 	s := &shellSkill{root: root}

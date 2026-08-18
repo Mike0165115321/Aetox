@@ -187,6 +187,7 @@ func openInFileManager(dir string) error {
 	// proc-show-window: launching a GUI program — see the comment above and
 	// TestEveryExecSiteHidesTheConsole. HideConsole here would hide the very
 	// window this function exists to open.
+	// proc-detached: the file manager belongs to the user, not to this call.
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "windows":

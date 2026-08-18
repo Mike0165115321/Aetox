@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html"
 	"net"
 	"net/http"
 	"time"
@@ -82,7 +83,11 @@ func startLoopback(port int, path string) (*loopback, error) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		if res.err != nil {
 			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(w, loopbackPage, "Sign-in failed", res.err.Error())
+			// Escaped because this text can be error_description straight off
+			// the query string, and the page it lands in is same-origin with a
+			// listener that is at that moment receiving an authorization code.
+			// Small window, small blast radius, one function call.
+			fmt.Fprintf(w, loopbackPage, "Sign-in failed", html.EscapeString(res.err.Error()))
 		} else {
 			fmt.Fprintf(w, loopbackPage, "Signed in", "You can close this tab and go back to Aetox.")
 		}

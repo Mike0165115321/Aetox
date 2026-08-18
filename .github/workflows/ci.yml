@@ -76,6 +76,28 @@ jobs:
 
       - run: go vet ./...
 
+      # Placed after the frontend build for the same reason go vet is: golangci-lint
+      # type-checks every package, and desktop/main.go does go:embed all:frontend/dist,
+      # which will not compile without a dist to embed.
+      #
+      # Gating, and green on the day it landed — see docs/DECISIONS.md §141 for which
+      # linters are on, and for the count and reason behind each one that is not.
+      - name: Lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.12.2
+
+      # Reported, not gating. Most of gosec's findings here are the program doing
+      # its job: this is a tool that reads files named by a variable and runs
+      # commands built at runtime, which is G304 and G204 by description. Worth
+      # reading on every push, not worth holding a branch on.
+      - name: Security scan (reported, not gating)
+        continue-on-error: true
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.12.2
+          args: --default=none --enable=gosec
+
       - run: go test ./...
 
       - name: Frontend tests
@@ -132,6 +154,16 @@ jobs:
           echo '<!doctype html><title>ci stub</title>' > desktop/frontend/dist/index.html
 
       - run: go vet ./...
+
+      # Reported by construction: this job carries continue-on-error, so a finding
+      # here is visible without gating. It is not a duplicate of the Windows lint —
+      # a lint run only compiles one GOOS, so the Windows gate never type-checks a
+      # single !windows file. This is the same blind spot the header says these
+      # jobs exist to cover, in the analyser rather than the compiler.
+      - name: Lint (the !windows half of the tree)
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.12.2
 
       # -race subsumes a plain run, so Linux does not need both. The timeout is
       # verify.sh's: the engine parks goroutines on purpose (a sub-agent waiting

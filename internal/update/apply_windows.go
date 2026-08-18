@@ -51,6 +51,7 @@ func psq(s string) string {
 }
 
 func runHiddenPS(script string) error {
+	// proc-detached: the relaunch has to survive this process exiting; that is its whole job
 	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive",
 		"-WindowStyle", "Hidden", "-EncodedCommand", encodePS(script))
 	proc.HideConsole(cmd)

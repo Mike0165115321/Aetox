@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -191,18 +192,17 @@ func (a *App) spaceChatCounts() map[string]int {
 	if err != nil {
 		return counts
 	}
-	rows, err := db.Query(`SELECT space, COUNT(*) FROM sessions WHERE space <> '' GROUP BY space`)
-	if err != nil {
-		return counts
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var name string
-		var n int
-		if rows.Scan(&name, &n) == nil {
+	_ = eachRow(db, "spaces: chat counts",
+		`SELECT space, COUNT(*) FROM sessions WHERE space <> '' GROUP BY space`, nil,
+		func(rows *sql.Rows) error {
+			var name string
+			var n int
+			if err := rows.Scan(&name, &n); err != nil {
+				return err
+			}
 			counts[name] = n
-		}
-	}
+			return nil
+		})
 	return counts
 }
 
@@ -377,20 +377,15 @@ func (a *App) SessionsInSpace(name string) []SessionMeta {
 	if dbErr != nil {
 		return out
 	}
-	rows, err := db.Query(`
+	out, _ = queryAll(db, "spaces: sessions", `
 		SELECT id, title, updated_at, mode, agent FROM sessions
 		WHERE project_key = ? AND space = ? ORDER BY updated_at DESC LIMIT 200`,
-		projectKey(a.cfg.SandboxRoot), folder)
-	if err != nil {
-		return out
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var m SessionMeta
-		if rows.Scan(&m.ID, &m.Title, &m.UpdatedAt, &m.Mode, &m.Agent) == nil {
-			out = append(out, m)
-		}
-	}
+		[]any{projectKey(a.cfg.SandboxRoot), folder},
+		func(rows *sql.Rows) (SessionMeta, error) {
+			var m SessionMeta
+			err := rows.Scan(&m.ID, &m.Title, &m.UpdatedAt, &m.Mode, &m.Agent)
+			return m, err
+		})
 	return out
 }
 

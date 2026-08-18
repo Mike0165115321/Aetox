@@ -30,7 +30,6 @@ const bridgePost = "window.chrome.webview.postMessage"
 
 var (
 	user32               = syscall.NewLazyDLL("user32.dll")
-	procFindWindowW      = user32.NewProc("FindWindowW")
 	procRegisterClassExW = user32.NewProc("RegisterClassExW")
 	procCreateWindowExW  = user32.NewProc("CreateWindowExW")
 	procDestroyWindow    = user32.NewProc("DestroyWindow")

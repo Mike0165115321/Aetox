@@ -127,31 +127,27 @@ func (s *sessionSearchSkill) ExecuteTool(_ context.Context, args map[string]any)
 // many it wrote. Query failures write nothing — a missing table (ancient
 // database) must degrade to "no chat matches", not break the tool.
 func (s *sessionSearchSkill) searchChat(db *sql.DB, match string, b *strings.Builder) int {
-	rows, err := db.Query(`
+	n := 0
+	_ = eachRow(db, "session_search: chat", `
 		SELECT m.role, m.text, m.time, s.id, COALESCE(s.title, '')
 		FROM messages_fts f
 		JOIN messages m ON m.id = f.rowid
 		JOIN sessions s ON s.id = m.session_id
 		WHERE messages_fts MATCH ?
-		ORDER BY m.id DESC LIMIT ?`, match, maxChatHits)
-	if err != nil {
-		return 0
-	}
-	defer rows.Close()
-
-	n := 0
-	for rows.Next() {
-		var role, text, when, sessionID, title string
-		if rows.Scan(&role, &text, &when, &sessionID, &title) != nil {
-			continue
-		}
-		if n == 0 {
-			b.WriteString("## Chat history\n")
-		}
-		n++
-		fmt.Fprintf(b, "[%s] %s%s — %s: %s\n",
-			datePart(when), sessionLabel(title), s.currentMark(sessionID), role, clampHit(text))
-	}
+		ORDER BY m.id DESC LIMIT ?`, []any{match, maxChatHits},
+		func(rows *sql.Rows) error {
+			var role, text, when, sessionID, title string
+			if err := rows.Scan(&role, &text, &when, &sessionID, &title); err != nil {
+				return err
+			}
+			if n == 0 {
+				b.WriteString("## Chat history\n")
+			}
+			n++
+			fmt.Fprintf(b, "[%s] %s%s — %s: %s\n",
+				datePart(when), sessionLabel(title), s.currentMark(sessionID), role, clampHit(text))
+			return nil
+		})
 	if n > 0 {
 		b.WriteString("\n")
 	}
@@ -160,40 +156,36 @@ func (s *sessionSearchSkill) searchChat(db *sql.DB, match string, b *strings.Bui
 
 // searchWork appends matching tool runs — what was actually done, not said.
 func (s *sessionSearchSkill) searchWork(db *sql.DB, match string, b *strings.Builder) int {
-	rows, err := db.Query(`
+	n := 0
+	_ = eachRow(db, "session_search: work", `
 		SELECT r.tool, r.args, r.output, r.ok, r.time, r.session_id, COALESCE(s.title, '')
 		FROM tool_runs_fts f
 		JOIN tool_runs r ON r.id = f.rowid
 		LEFT JOIN sessions s ON s.id = r.session_id
 		WHERE tool_runs_fts MATCH ?
-		ORDER BY r.id DESC LIMIT ?`, match, maxWorkHits)
-	if err != nil {
-		return 0
-	}
-	defer rows.Close()
-
-	n := 0
-	for rows.Next() {
-		var tool, toolArgs, output, when, sessionID, title string
-		var ok int
-		if rows.Scan(&tool, &toolArgs, &output, &ok, &when, &sessionID, &title) != nil {
-			continue
-		}
-		if n == 0 {
-			b.WriteString("## Tool work\n")
-		}
-		n++
-		status := "ok"
-		if ok == 0 {
-			status = "failed"
-		}
-		fmt.Fprintf(b, "[%s] %s%s — %s (%s) args: %s",
-			datePart(when), sessionLabel(title), s.currentMark(sessionID), tool, status, clampHit(toolArgs))
-		if output != "" {
-			fmt.Fprintf(b, " → %s", clampHit(output))
-		}
-		b.WriteString("\n")
-	}
+		ORDER BY r.id DESC LIMIT ?`, []any{match, maxWorkHits},
+		func(rows *sql.Rows) error {
+			var tool, toolArgs, output, when, sessionID, title string
+			var ok int
+			if err := rows.Scan(&tool, &toolArgs, &output, &ok, &when, &sessionID, &title); err != nil {
+				return err
+			}
+			if n == 0 {
+				b.WriteString("## Tool work\n")
+			}
+			n++
+			status := "ok"
+			if ok == 0 {
+				status = "failed"
+			}
+			fmt.Fprintf(b, "[%s] %s%s — %s (%s) args: %s",
+				datePart(when), sessionLabel(title), s.currentMark(sessionID), tool, status, clampHit(toolArgs))
+			if output != "" {
+				fmt.Fprintf(b, " → %s", clampHit(output))
+			}
+			b.WriteString("\n")
+			return nil
+		})
 	if n > 0 {
 		b.WriteString("\n")
 	}

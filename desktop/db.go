@@ -693,6 +693,9 @@ func applyAddedColumns(db sqlExecQuerier) error {
 }
 
 func hasColumn(db sqlExecQuerier, table, column string) (bool, error) {
+	// query-direct: db here is a sqlExecQuerier, which is what lets this run
+	// against a *sql.Tx mid-migration as well as the *sql.DB eachRow takes.
+	// One row, one column, and a failure to read it is already fatal below.
 	rows, err := db.Query("SELECT 1 FROM pragma_table_info(?) WHERE name = ?", table, column)
 	if err != nil {
 		return false, err

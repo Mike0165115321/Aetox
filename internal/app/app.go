@@ -65,7 +65,6 @@ type App struct {
 	statusReporter     func(string)
 	contentPreview     func(string)
 	contentReset       func()
-	lastPrintedTool    string
 	toolActionListener func(turn.ToolEvent)
 	toolRunListener    func(turn.ToolRun)
 	approve            turn.ApprovalPromptFunc

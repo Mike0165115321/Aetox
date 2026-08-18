@@ -20,7 +20,6 @@ import (
 // EMU is the unit throughout: 914400 per inch, which is why these numbers look
 // arbitrary. Font sizes are hundredths of a point.
 const (
-	emuPerInch = 914400
 
 	// 16:9 at 13.333 × 7.5 inches — the modern PowerPoint default. A deck built
 	// at the old 4:3 size opens letterboxed in every current template.
@@ -227,7 +226,6 @@ func slideXML(slide Slide, imageRel string) string {
 	if hasImage {
 		x, y, w, h := imageFrame(slide.Image, len(slide.Bullets) > 0, bodyW)
 		b.WriteString(picture(shapeID, imageRel, slide.Image.AltText, x, y, w, h))
-		shapeID++
 	}
 
 	b.WriteString(`</p:spTree></p:cSld><p:clrMapOvr><a:overrideClrMapping bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/></p:clrMapOvr></p:sld>`)

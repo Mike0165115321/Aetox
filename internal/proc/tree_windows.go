@@ -29,6 +29,26 @@ func KillOnCancel(cmd *exec.Cmd) {
 	}
 }
 
+// KillTree kills a tree now, for a caller that is not going through a context.
+//
+// The third verb beside KillTreeOnExit (die when the app does) and KillOnCancel
+// (die when the context does). It exists because a graceful protocol shutdown
+// reaches only the direct child: the MCP SDK closes stdin, waits, sends SIGTERM
+// and finally kills, all of it aimed at the process it started, and by the time
+// its Wait returns cmd.Cancel can never fire again. So the polite close runs
+// first and this sweeps what the ladder could not reach — npx's node, uvx's
+// python, a language server's tsserver.
+//
+// Safe to call on a root that is already dead, which is the normal case here:
+// an orphan still names its dead parent in the next snapshot, and the two-pass
+// walk below is built on exactly that.
+func KillTree(pid int) {
+	if pid <= 0 {
+		return
+	}
+	killTree(uint32(pid))
+}
+
 // killTree kills the process and every descendant, twice.
 //
 // This used to be one `taskkill /T /F`, and taskkill has a hole this exists to

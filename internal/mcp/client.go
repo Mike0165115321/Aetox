@@ -91,11 +91,17 @@ type Server struct {
 type Client struct {
 	cfg Server
 
-	mu        sync.Mutex
-	session   *mcpsdk.ClientSession
-	status    Status
-	lastErr   error
-	toolCount int // tools seen on the last successful Tools(); 0 until then
+	mu      sync.Mutex
+	session *mcpsdk.ClientSession
+	status  Status
+	lastErr error
+	// procCancel and procPID belong to a local (stdio) server's subprocess and
+	// are zero for an HTTP one. They are the client's own rather than the
+	// caller's: ensure() holds whichever per-call context asked for a tool, and
+	// binding the server to that would kill it when the first call returned.
+	procCancel context.CancelFunc
+	procPID    int
+	toolCount  int // tools seen on the last successful Tools(); 0 until then
 }
 
 // New builds a Client for cfg without connecting.
@@ -144,6 +150,10 @@ func (c *Client) ensure(ctx context.Context) (*mcpsdk.ClientSession, error) {
 	if c.status == StatusFailed {
 		return nil, c.lastErr
 	}
+	// Both stay nil for an HTTP server, which has no process to tear down.
+	var procCancel context.CancelFunc
+	var localCmd *exec.Cmd
+
 	var transport mcpsdk.Transport
 	switch {
 	case c.cfg.URL != "":
@@ -156,11 +166,30 @@ func (c *Client) ensure(ctx context.Context) (*mcpsdk.ClientSession, error) {
 		c.lastErr = errors.New("mcp: server " + c.cfg.Name + " has no command or url")
 		return nil, c.lastErr
 	default:
-		cmd := exec.Command(c.cfg.Command[0], c.cfg.Command[1:]...)
+		// The server lives as long as this Client does, so it gets a context of
+		// its own — and a cancellable one, because that is the only kind
+		// os/exec watches. proc.KillOnCancel installs cmd.Cancel, and with a
+		// context that can never be done the command starts fine and the kill
+		// silently never happens.
+		//
+		// It also has to be exec.CommandContext and not exec.Command: Start
+		// refuses a command that carries a Cancel it was not built with, and the
+		// Start here is inside the SDK's Connect, where the refusal would
+		// surface as every local server failing to connect.
+		procCtx, cancelProc := context.WithCancel(context.Background())
+		cmd := exec.CommandContext(procCtx, c.cfg.Command[0], c.cfg.Command[1:]...)
 		cmd.Dir = c.cfg.Cwd
 		// The production desktop exe is a GUI app: without this, a console child
 		// (npx→cmd.exe on Windows) pops a visible Windows Terminal window on spawn.
 		proc.HideConsole(cmd)
+		// CommandTransport.Close closes stdin, then SIGTERMs, then kills — all of
+		// it aimed at the direct child. A server that forks (npx→node,
+		// uvx→python) left its grandchildren running, and every mid-life
+		// teardown hits this: Settings' Test button, adding or removing a server,
+		// a project switch. Close() below does the polite shutdown first and
+		// sweeps the tree after.
+		proc.KillOnCancel(cmd)
+		procCancel, localCmd = cancelProc, cmd
 		if len(c.cfg.Environment) > 0 {
 			env := os.Environ()
 			for k, v := range c.cfg.Environment {
@@ -168,11 +197,6 @@ func (c *Client) ensure(ctx context.Context) (*mcpsdk.ClientSession, error) {
 			}
 			cmd.Env = env
 		}
-		// ponytail: relies on CommandTransport.Close (stdin-close then SIGTERM to the
-		// direct child) for cleanup. A server that forks (npx→node, uvx→python) can
-		// still orphan grandchildren. Upgrade path: set cmd.SysProcAttr for a process
-		// group (Setpgid on unix, CREATE_NEW_PROCESS_GROUP on windows) and kill the
-		// group on Close — do it in the local-server hardening pass, not the skeleton.
 		transport = &mcpsdk.CommandTransport{Command: cmd}
 	}
 	client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "aetox", Version: "0"}, nil)
@@ -184,10 +208,22 @@ func (c *Client) ensure(ctx context.Context) (*mcpsdk.ClientSession, error) {
 
 	session, err := client.Connect(connectCtx, transport, nil)
 	if err != nil {
+		// A server that half-started still forked whatever it forked, and
+		// nothing else holds a handle on it from here.
+		if procCancel != nil {
+			procCancel()
+		}
 		c.status = StatusFailed
 		c.lastErr = err
 		return nil, err
 	}
+	// Connect is where the SDK calls Start, so this is the first moment there is
+	// a pid to remember. Close needs it after Wait has already reaped the
+	// process, by which point cmd.Process is no longer a safe thing to read.
+	if localCmd != nil && localCmd.Process != nil {
+		c.procPID = localCmd.Process.Pid
+	}
+	c.procCancel = procCancel
 	c.session = session
 	c.status = StatusConnected
 	return session, nil
@@ -286,19 +322,45 @@ func (c *Client) GetPrompt(ctx context.Context, name string, args map[string]str
 
 // Close terminates the subprocess if connected and resets to idle so a later
 // call can reconnect. Safe to call when never connected.
+//
+// The order is the whole point. session.Close runs the shutdown the protocol
+// prescribes — close stdin, wait, SIGTERM, wait, kill — and every step of it
+// reaches only the process the SDK started. Then the sweep, because a server
+// that forked (npx→node, uvx→python) has left descendants that no signal in
+// that ladder was ever addressed to.
+//
+// KillTree rather than procCancel for the sweep: the SDK's Close calls Wait,
+// and once Wait returns, os/exec has retired the goroutine that would have
+// invoked cmd.Cancel — cancelling here would compile, run, and do nothing.
+// procCancel is still called, for the release of the context itself.
 func (c *Client) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.session == nil {
 		c.status = StatusIdle
+		c.releaseProcess()
 		return nil
 	}
 	err := c.session.Close()
+	c.releaseProcess()
 	c.session = nil
 	c.status = StatusIdle
 	c.lastErr = nil
 	c.toolCount = 0
 	return err
+}
+
+// releaseProcess sweeps a local server's tree and drops what named it. Caller
+// holds c.mu.
+func (c *Client) releaseProcess() {
+	if c.procPID != 0 {
+		proc.KillTree(c.procPID)
+		c.procPID = 0
+	}
+	if c.procCancel != nil {
+		c.procCancel()
+		c.procCancel = nil
+	}
 }
 
 // headerHTTPClient returns an http.Client that stamps the given static

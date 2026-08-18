@@ -25,3 +25,21 @@ func KillOnCancel(cmd *exec.Cmd) {
 		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 	}
 }
+
+// KillTree kills a tree now, for a caller that is not going through a context —
+// see tree_windows.go for why a graceful protocol shutdown leaves one to kill.
+//
+// It signals the process group, so it only reaches descendants of a command
+// that led one, which is what KillOnCancel's Setpgid arranges at spawn. A
+// command started without it has no group of its own and this reaches only the
+// process itself; pair the two.
+//
+// The pid > 1 guard is not defensive tidiness. kill(-1) signals every process
+// the user can signal, so a zero pid from a command that never started would
+// take the user's session down with it.
+func KillTree(pid int) {
+	if pid <= 1 {
+		return
+	}
+	_ = syscall.Kill(-pid, syscall.SIGKILL)
+}

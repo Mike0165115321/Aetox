@@ -320,7 +320,7 @@ func (s *grepSkill) Execute(_ context.Context, input Input) (Output, error) {
 		return newToolOutput("grep", command, "", start, false, walkErr), walkErr
 	}
 
-	capped := false
+	var capped bool
 	switch mode {
 	case grepModeContent:
 		capped = emitted >= limit

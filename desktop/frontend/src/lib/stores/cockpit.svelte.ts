@@ -198,11 +198,17 @@ export function restoreTranscript(messages: main.SessionMessage[] | null | undef
   // unhandled rejection and the click it came from simply did nothing. An
   // empty chat is a real state (a session opened and not yet spoken to); it is
   // not an error, and it is certainly not "the button is broken".
-  const out = (messages ?? []).map(restoreAttachments)
+  //
+  // Bound once and read everywhere below, rather than coalescing at the .map
+  // and then indexing the original: the loop is guarded today only because an
+  // empty `out` never enters it, which is a coincidence of this exact code and
+  // not something the next edit is told about.
+  const rows = messages ?? []
+  const out = rows.map(restoreAttachments)
   for (let i = 0; i < out.length; i++) {
-    const err = messages[i].errorText
+    const err = rows[i].errorText
     if (!err || out[i].role !== 'agent') continue
-    const question = messages[i - 1]
+    const question = rows[i - 1]
     const ending = /context canceled/i.test(err)
       ? t('cockpit.turnStopped')
       : t('cockpit.sendError', { err })

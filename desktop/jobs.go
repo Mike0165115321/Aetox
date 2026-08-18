@@ -239,25 +239,21 @@ func (a *App) toolRunsSince(mark int64) []toolRunRow {
 	if err != nil {
 		return nil
 	}
-	rows, err := db.Query(
-		`SELECT id, ref, parent_ref, agent, tool, args, output, ok, duration_ms
-		   FROM tool_runs WHERE session_id = ? AND id > ? ORDER BY id`,
-		a.turnSessionID(), mark)
-	if err != nil {
-		debuglog.Msg("jobs: reading tool_runs failed: %v", err)
-		return nil
-	}
-	defer rows.Close()
 	var out []toolRunRow
-	for rows.Next() {
-		var r toolRunRow
-		var ok int
-		if rows.Scan(&r.id, &r.ref, &r.parentRef, &r.agent, &r.tool, &r.args, &r.output, &ok, &r.duration) != nil {
-			continue
-		}
-		r.ok = ok != 0
-		out = append(out, r)
-	}
+	_ = eachRow(db, "jobs: tool_runs", `
+		SELECT id, ref, parent_ref, agent, tool, args, output, ok, duration_ms
+		   FROM tool_runs WHERE session_id = ? AND id > ? ORDER BY id`,
+		[]any{a.turnSessionID(), mark},
+		func(rows *sql.Rows) error {
+			var r toolRunRow
+			var ok int
+			if err := rows.Scan(&r.id, &r.ref, &r.parentRef, &r.agent, &r.tool, &r.args, &r.output, &ok, &r.duration); err != nil {
+				return err
+			}
+			r.ok = ok != 0
+			out = append(out, r)
+			return nil
+		})
 	return out
 }
 

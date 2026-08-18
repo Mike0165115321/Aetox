@@ -549,6 +549,7 @@ product picture in [COMPANY.md](COMPANY.md)) · §82 (the learning floor) · §4
 | §124 | A Screen Nobody Who Builds This Can See Will Rot, and It Did (2026-08-17) · standing rules in [DESIGN.md](DESIGN.md) |
 | §125 | Two Languages Written as a Number, Not as a List (2026-08-17) |
 | §126 | A Search That Never Happened Is Not an Empty Result (2026-08-17) |
+| §141 | A Rule Suppressed Twenty Times Was Never Chosen (2026-08-18) · lint config in [.golangci.yml](.golangci.yml) |
 
 ---
 

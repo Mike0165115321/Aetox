@@ -15,14 +15,13 @@ package main
 // reading of it, and it cannot disagree with what happened.
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
-
-	"github.com/Mike0165115321/Aetox/internal/debuglog"
 )
 
 // Source is one thing the room looked at, as the panel lists it.
@@ -85,33 +84,29 @@ func (a *App) SessionSources(sessionID string) []Source {
 	if err != nil {
 		return out
 	}
-	rows, err := db.Query(
-		`SELECT tool, args, time FROM tool_runs WHERE session_id = ? ORDER BY id`, sessionID)
-	if err != nil {
-		debuglog.Msg("sources: query failed: %v", err)
-		return out
-	}
-	defer rows.Close()
-
 	// Keyed by Path so a file read eleven times is one row, and keeping the
 	// later hit means the row's time answers "when did this room last touch
 	// it" rather than "when did it first".
 	seen := map[string]Source{}
 	order := []string{}
-	for rows.Next() {
-		var tool, args, at string
-		if rows.Scan(&tool, &args, &at) != nil {
-			continue
-		}
-		src, ok := sourceFromRun(tool, args, at)
-		if !ok {
-			continue
-		}
-		if _, dup := seen[src.Path]; !dup {
-			order = append(order, src.Path)
-		}
-		seen[src.Path] = src
-	}
+	_ = eachRow(db, "sources", `
+		SELECT tool, args, time FROM tool_runs WHERE session_id = ? ORDER BY id`,
+		[]any{sessionID},
+		func(rows *sql.Rows) error {
+			var tool, args, at string
+			if err := rows.Scan(&tool, &args, &at); err != nil {
+				return err
+			}
+			src, ok := sourceFromRun(tool, args, at)
+			if !ok {
+				return nil
+			}
+			if _, dup := seen[src.Path]; !dup {
+				order = append(order, src.Path)
+			}
+			seen[src.Path] = src
+			return nil
+		})
 
 	// Newest first: what you are looking for is nearly always what you were
 	// just doing.
@@ -146,31 +141,29 @@ func (a *App) allSources(sessionID string) []Source {
 	if err != nil {
 		return nil
 	}
-	rows, err := db.Query(
-		`SELECT tool, args, time FROM tool_runs WHERE session_id = ? ORDER BY id`, sessionID)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
 	seen := map[string]bool{}
 	out := []Source{}
-	for rows.Next() {
-		var tool, args, at string
-		if rows.Scan(&tool, &args, &at) != nil {
-			continue
-		}
-		src, ok := sourceFromRun(tool, args, at)
-		if !ok || seen[src.Path] {
-			continue
-		}
-		if src.Kind == "file" {
-			if _, err := os.Stat(src.Path); err != nil {
-				continue
+	_ = eachRow(db, "sources: all", `
+		SELECT tool, args, time FROM tool_runs WHERE session_id = ? ORDER BY id`,
+		[]any{sessionID},
+		func(rows *sql.Rows) error {
+			var tool, args, at string
+			if err := rows.Scan(&tool, &args, &at); err != nil {
+				return err
 			}
-		}
-		seen[src.Path] = true
-		out = append(out, src)
-	}
+			src, ok := sourceFromRun(tool, args, at)
+			if !ok || seen[src.Path] {
+				return nil
+			}
+			if src.Kind == "file" {
+				if _, statErr := os.Stat(src.Path); statErr != nil {
+					return nil
+				}
+			}
+			seen[src.Path] = true
+			out = append(out, src)
+			return nil
+		})
 	return out
 }
 

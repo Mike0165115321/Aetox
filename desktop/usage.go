@@ -324,6 +324,9 @@ func usageByModel(db *sql.DB, since string) ([]UsageRow, error) {
 	// subscription by another, and a row that merged the two could only be
 	// priced by guessing which. Old rows carry '' and group together as the
 	// unattributed set they are.
+	// query-direct: this file aborts on a scan error rather than skipping the row,
+	// which is stricter than eachRow. A cost total built from most of the rows is
+	// worse than no total, because it looks like an answer.
 	rows, err := db.Query(
 		`SELECT model,
 		        COALESCE(provider, ''),
@@ -359,6 +362,9 @@ func usageByDay(db *sql.DB, since time.Time, perModel bool) ([]DayPoint, error) 
 	if perModel {
 		groupBy, selectModel = localDay+`, model`, `model`
 	}
+	// query-direct: this file aborts on a scan error rather than skipping the row,
+	// which is stricter than eachRow. A cost total built from most of the rows is
+	// worse than no total, because it looks like an answer.
 	rows, err := db.Query(
 		`SELECT `+localDay+` AS d, `+selectModel+`, SUM(prompt_tokens), SUM(completion_tokens),
 		        COALESCE(SUM(cached_prompt_tokens), 0), COUNT(cached_prompt_tokens)
@@ -424,6 +430,9 @@ func usageTotals(db *sql.DB, all []UsageRow) (UsageTotals, error) {
 // newest first. One row per active day — bounded by how long the app has been
 // used, not by how much it was used.
 func activeDays(db *sql.DB) ([]string, error) {
+	// query-direct: this file aborts on a scan error rather than skipping the row,
+	// which is stricter than eachRow. A cost total built from most of the rows is
+	// worse than no total, because it looks like an answer.
 	rows, err := db.Query(`SELECT DISTINCT ` + localDay + ` AS d FROM token_usage ORDER BY d DESC`)
 	if err != nil {
 		return nil, err

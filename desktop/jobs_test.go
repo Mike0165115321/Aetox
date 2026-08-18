@@ -44,6 +44,9 @@ func readJobs(t *testing.T, a *App) []storedJob {
 		}
 		out = append(out, j)
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("jobs: read %d row(s) and then failed, so the assertions below would be checking a short list: %v", len(out), err)
+	}
 	return out
 }
 

@@ -33,8 +33,16 @@ if (typeof Element !== 'undefined' && !Element.prototype.animate) {
       timeline: null,
       id: '',
       pending: false,
-      ready: Promise.resolve(),
-      finished: Promise.resolve(),
+      // Both resolve to the animation itself, which is what the real API does
+      // and what the type says. Getters rather than fields because the value is
+      // the object being defined, and a field would have to name it before the
+      // const exists.
+      get ready(): Promise<Animation> {
+        return Promise.resolve(animation as Animation)
+      },
+      get finished(): Promise<Animation> {
+        return Promise.resolve(animation as Animation)
+      },
       oncancel: null,
       onremove: null,
       get onfinish() {
@@ -49,6 +57,12 @@ if (typeof Element !== 'undefined' && !Element.prototype.animate) {
       pause() {},
       reverse() {},
       persist() {},
+      // A readonly state, not a method — the animation has not been replaced by
+      // a later one. Part of the Animation interface in the lib.dom the current
+      // TypeScript ships, and absent here the casts below stop being casts and
+      // become errors. Completed rather than widened through `unknown`, which
+      // would turn every future addition into silence instead of a message.
+      replaceState: 'active' as AnimationReplaceState,
       commitStyles() {},
       updatePlaybackRate() {},
       finish() {

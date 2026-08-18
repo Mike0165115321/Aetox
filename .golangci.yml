@@ -1,0 +1,77 @@
+# golangci-lint, adopted 2026-08-18. The reasoning, including every linter that
+# is deliberately NOT here yet and why, is docs/DECISIONS.md §141 — this file is
+# the configuration, that section is the decision.
+#
+# The rule that shaped it: a gate that is red on its first day is not a gate.
+# The `unix` job in ci.yml already learned that ("a red run nobody can act on
+# stops being read"), so what gates here is the set that is at zero, and the
+# rest is either reported or written down as not-yet with its count.
+version: "2"
+
+run:
+  # Half the tree is _test.go and some of the sharpest findings were in it.
+  tests: true
+
+linters:
+  # Nothing by default: every linter below is here because someone can say what
+  # class of bug it catches on this codebase, not because it shipped enabled.
+  default: none
+  enable:
+    # --- correctness ---
+    - govet          # the vet suite CI already ran, now with the rest
+    - rowserrcheck   # the 23-site defect this whole pass started from (§141.3)
+    - sqlclosecheck  # a *sql.Rows leaked past its function
+    - bodyclose      # an undrained HTTP body holds its connection out of the pool
+    - ineffassign    # a value computed and then overwritten unread
+    - wastedassign   # same, one step further along
+    - makezero       # append to a make([]T, n) — the classic n zeroes then the data
+    - durationcheck  # time.Duration multiplied by a Duration, which is nanoseconds squared
+    - copyloopvar    # the pre-1.22 loop-variable capture, still writable by hand
+    - reassign       # writing to another package's exported var
+    # --- dead weight ---
+    - unused
+    - unconvert
+    - misspell
+
+  settings:
+    misspell:
+      ignore-rules:
+        # Every hit was `\other\` inside a raw-string Windows path — the
+        # backslash ends the previous token and leaves "ther" looking like a
+        # word. Three of the four findings, none of them a typo.
+        - ther
+    govet:
+      enable-all: true
+      disable:
+        # Struct layout is a memory optimisation, and this fires on structs
+        # whose field order is grouped for reading. Not a bug class.
+        - fieldalignment
+        # Shadowing `err` inside an if is the idiom this codebase writes.
+        - shadow
+
+  exclusions:
+    generated: lax
+    paths:
+      # Vendored with local patches (see the replace directives in go.mod); the
+      # patches are marked AETOX PATCH and reviewed as diffs, not linted.
+      - third_party
+      - node_modules
+      - desktop/frontend
+    rules:
+      # An httptest response body in a test holds nothing open that outlives the
+      # test binary, and the helpers that return (res, body, ok) would each need
+      # a cleanup closure to say so. All 24 hits were here; production has none.
+      - path: _test\.go
+        linters:
+          - bodyclose
+      # "conection:github" there is the fixture: the test asserts that a need
+      # spelled wrong comes back unmet. Correcting the spelling deletes the case.
+      - path: internal/subagent/needs_test\.go
+        linters:
+          - misspell
+
+issues:
+  # Defaults truncate at 50 per linter and 3 per issue text, which turns "how
+  # much is left" into a number that cannot be trusted.
+  max-issues-per-linter: 0
+  max-same-issues: 0

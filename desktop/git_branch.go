@@ -53,6 +53,7 @@ func (a *App) GitBranches() []GitBranch {
 	if root == "" {
 		return out
 	}
+	// proc-detached: one git read, bounded by its own completion a few lines down
 	cmd := exec.Command("git", "-C", root, "for-each-ref", "--format=%(refname:short)", "refs/heads")
 	proc.HideConsole(cmd)
 	raw, err := cmd.Output()
@@ -141,6 +142,7 @@ func (a *App) runGitSwitch(name string, create bool) (string, error) {
 		args = append(args, "-c")
 	}
 	args = append(args, name)
+	// proc-detached: one git read, bounded by its own completion a few lines down
 	cmd := exec.Command("git", args...)
 	proc.HideConsole(cmd)
 	raw, err := cmd.CombinedOutput()

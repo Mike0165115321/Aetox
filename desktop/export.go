@@ -82,22 +82,23 @@ func (a *App) exportableSession(id string) (chatExport, error) {
 	if err != nil {
 		return e, fmt.Errorf("ไม่พบเซสชันนี้")
 	}
-	rows, err := db.Query(
-		`SELECT role, text, time, reasoning, think_secs, variants, variant_active, parts
-		   FROM messages WHERE session_id = ? ORDER BY id`, id)
-	if err != nil {
+	if err := eachRow(db, "export", `
+		SELECT role, text, time, reasoning, think_secs, variants, variant_active, parts
+		   FROM messages WHERE session_id = ? ORDER BY id`, []any{id},
+		func(rows *sql.Rows) error {
+			var m chatExportMessage
+			var variants, parts string
+			if err := rows.Scan(&m.Role, &m.Text, &m.Time, &m.Reasoning, &m.ThinkSecs, &variants, &m.Active, &parts); err != nil {
+				return err
+			}
+			m.Variants = rawIfValid(variants)
+			m.Parts = rawIfValid(parts)
+			e.Messages = append(e.Messages, m)
+			return nil
+		}); err != nil {
+		// Without this the failure fell through to the "no messages" line
+		// below, which told the user the wrong thing about their own session.
 		return e, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var m chatExportMessage
-		var variants, parts string
-		if rows.Scan(&m.Role, &m.Text, &m.Time, &m.Reasoning, &m.ThinkSecs, &variants, &m.Active, &parts) != nil {
-			continue
-		}
-		m.Variants = rawIfValid(variants)
-		m.Parts = rawIfValid(parts)
-		e.Messages = append(e.Messages, m)
 	}
 	if len(e.Messages) == 0 {
 		return e, fmt.Errorf("เซสชันนี้ไม่มีข้อความให้ส่งออก")

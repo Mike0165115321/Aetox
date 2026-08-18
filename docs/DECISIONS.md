@@ -620,6 +620,13 @@ Standing up CI immediately paid for itself — three defects the review never sa
 
 **Not done:** `proc.KillOnCancel` on the MCP/ffmpeg/tesseract `exec` sites (§24's Job Object still covers those at exit); per-command Job Objects instead of `taskkill` (needs a suspended-start to close the assignment race — real, but not worth it before someone hits it); the keychain migration itself.
 
+**Addendum 2026-08-18 — the MCP line above is closed (§141).** `noctx` flagged the spawn, and the `ponytail:` note sitting on it had already described the leak: a server that forks leaves grandchildren the SDK's shutdown ladder never signals. `internal/mcp` and `internal/lsp` now build their commands with a client-owned cancellable context and `proc.KillOnCancel`, and `Close` sweeps with the new `proc.KillTree` after the protocol's own polite shutdown has run — cancelling after `Wait` returns is dead code, because os/exec has retired the goroutine that would call `cmd.Cancel`.
+
+What "Job Object still covers those at exit" understated: it covers them **only** at exit, and only on Windows. Every mid-life teardown leaked — Settings' Test button, adding or removing a server, the `CloseShared` on a project switch — and off Windows there is no job object to be the backstop. The ffmpeg and tesseract sites named above stay as they were, deliberately: they are bounded by their own completion and already carry a context.
+
+`TestEverySpawnCanBeStopped` is what keeps it closed. `TestEveryExecSiteHidesTheConsole` had been guarding every `exec` site for a console window since the day one flashed, and nothing was guarding the same sites for teardown — which is why the two that needed it were the two nobody was told about.
+
+
 ---
 
 ## 29. Decision — Windows First, Recorded Not Pursued; and the Sibling-Bug Sweep (2026-07-25)
@@ -4579,3 +4586,99 @@ Four rules, in the order they will be built:
 4. **Split the heavy column only if the numbers ask.** `parts` is the fat in a message row, and rule 2 stops it being decoded for turns nobody is looking at. Moving it to a side table is a real door, deliberately left shut until a measurement knocks on it.
 
 Ordered behind the per-session engine work (§134.4), and said so explicitly: the owner is waiting on that, and re-ordering the queue on my own initiative is the mistake that produced §134.2's half-feature.
+
+---
+
+## 141. Decision — A Rule Suppressed Twenty Times Was Never Chosen (2026-08-18)
+
+**Trigger:** *"ติดตั้ง golangci-lint แล้วรันกับโปรเจกต์ Aetox … สรุปปัญหาหลักๆ ที่ควรแก้ก่อน"* then, on the plan: *"วางแผนแก้เลยครับอย่าสร้างหนี้ในเทคนิคนะครับ"* (2026-08-18).
+
+**Status:** Approved & done 2026-08-18.
+
+The tree had never been through anything but `go vet`. The first full run — golangci-lint v2.12.2, 23 linters including `gosec` — returned **1,326 findings**. That number is the subject of this entry, because almost none of it was true, and the shape of the untruth is what decided the configuration.
+
+### 141.1 What 1,326 actually was
+
+| | count |
+|---|---|
+| total | 1,326 |
+| in shipping code | 710 |
+| in `_test.go` | 616 |
+
+`gosec` alone was 642, and 158 of its 180 file-permission findings were test fixtures writing `0644` into a `t.TempDir()`. Of what remained, the large categories are the program working as designed: `G304` (open a file named by a variable) and `G204` (run a command built at runtime) are not incidental to Aetox, they are the product. A tool that reads your files and runs your commands cannot be linted for reading files and running commands.
+
+Every finding that looked security-shaped was opened and read. **All of them were false**, and the reasons are worth recording because each was a rule mistaking a house pattern for a defect:
+
+- **`G202` SQL injection ×4** — the concatenated fragment is `?,?,?` built from a count, or a clause from `DeskFilter.where()` which emits placeholders and returns its args separately. The FTS `match` string is escaped *and* bound. The code was already right.
+- **`G101` hardcoded credentials ×19** — provider names in `internal/provider/catalog.go`, the `Credit` line in `internal/version`, and the Codex **public** client ID, which is public by construction.
+- **`G110` decompression bomb ×2** — both deliberate and commented. `zip_install.go` says so outright (*"Unbounded on purpose. The archive is a local file the user picked"*), and `update/apply.go` verifies an ed25519 signature and a SHA-256 at lines 183–186, before it extracts at 277.
+- **`G602` slice out of range ×1** — guarded by `if idx+1 >= len(rawArgs)` on the line above.
+- **`G115` integer overflow ×7** — includes `byte(c), byte(c>>8)`, which *is* how you split a UTF-16 code unit, and `uint32(code)` in `abnormalExit`, whose comment already explains that reinterpreting a negative exit code as an NTSTATUS is the point.
+- **SHA-1 in `config.ProjectKey`** — not cryptography. It names a directory, and its own comment says two implementations must agree to the byte. Changing the algorithm renames every existing user's history and memory folder. The finding is correct about the primitive and wrong about the question.
+
+### 141.2 The rule that decides configuration
+
+Nine of the fifteen `ST1005` findings fire on user-facing Thai error strings beginning with `Windmill`. `GitHub`, `ChatGPT`, `PDF`, `API` all pass the same check — not by design, but because staticcheck skips a word carrying a second capital. One house pattern, "product name, then the Thai sentence", and the rule fires on the single member of it that happens to be spelled with one capital letter. Two of the remaining six are test fixtures reproducing a real WebView2 and a real `net/http` error verbatim, where changing the string is changing the input.
+
+Lowercasing nine would corrupt the UI. Annotating fifteen would put fifteen suppressions into a tree that has **zero** `//nolint` and exactly one `//lint:ignore` (`desktop/artifacts.go:239`, which carries a prose reason, as anything here must).
+
+So: **`ST1005` is off, once, in `.golangci.yml`, with the asymmetry written beside it.** That is the same rule as everywhere else in this repo — a second place answering the same question is หนี้ในระบบ — applied to lint configuration. A rule you would have to suppress twenty times is not a rule you have adopted; it is a rule you have declined and not yet said so. Say it once, in the place that configures rules, rather than twenty times in the places that do not.
+
+### 141.3 What the linter was actually worth
+
+Three real things, and none of them is a style violation.
+
+**`rows.Err()` unchecked at 23 query sites in `desktop/`.** A query that fails mid-iteration returns a short list and no error. In an app whose subject is session history, that is history quietly coming back incomplete. The same line usually carried a second swallow — `if rows.Scan(...) == nil`, dropping unscannable rows just as silently. This is not a new discovery: §6.7 of [ARCHITECTURE.md](../ARCHITECTURE.md) already records `SearchSessions` returning zero results forever because the error went into the floor, *"which is why the bug was invisible outside the failing test."* Twenty-three copies of a defect are one defect, so the fix is one `eachRow` helper owning `Query` / `defer Close` / `Next` / `Err`, and a convention test in the mould of `TestBindingsNeverReturnNilSlices` so the twenty-fourth cannot be written. It also retires the bare `rows.Close()` at `summarize.go:145` for free: the intent there was to release the cursor before the write phase, which is exactly where the helper's `defer` now fires.
+
+**Two `exec.Command` sites that orphan grandchildren.** `noctx` flagged `internal/mcp/client.go:159` and `internal/lsp/lsp.go:184`, and the more interesting corroboration was already in the file — a `ponytail:` note at the MCP site saying *"A server that forks (npx→node, uvx→python) can still orphan grandchildren"*, and §23's own **Not done** list naming `proc.KillOnCancel` on the MCP sites. The linter did not find something unknown; it found the thing the author had written down, and put a number on how long it had been true. See §141.4.
+
+**A reflected XSS on the OAuth loopback page.** `error_description` from the redirect query string went into HTML through `fmt.Fprintf`. Localhost-only and short-lived, so the exposure is small, but `html.EscapeString` costs one call and a test, and "small" is not a reason.
+
+The rest of the real work was six unused symbols, two dead assignments, a `for` loop at `cmd/aetox/main.go:690` whose every path returns — its shape promising a back-out to the provider menu that `pickModelForProvider` has no way to signal — and two `Close()` calls on write paths, in `internal/audit` and `internal/rtk`, where a failed flush was reported as success. The audit log is the worst possible place for a silent write failure.
+
+### 141.4 Why the process leak survived a Job Object
+
+§24's Job Object kills every descendant when Aetox exits, which is why this never showed up as a bug report. The gap it leaves is stated on `proc.KillOnCancel` itself: *"§24's Job Object only reaps them when the app itself exits, which is far too late for a user who pressed Stop."*
+
+Every mid-life teardown leaked. `TestMCPServer` in Settings closes one client and opens another — press it five times against an `npx` server and five `node.exe` remain. `rebuildMCP` closes every client on any add or remove. `lsp.CloseShared()` runs on model and project switch, which is precisely when `tsserver` loses the `typescript-language-server` that spawned it. Off Windows there is no job object at all (`job_other.go` returns `false`), so the same paths leak at ordinary exit too, and the CLI calls neither `Close`.
+
+Two traps made this more than a one-line change. `KillOnCancel` sets `cmd.Cancel`, and `Cmd.Start` refuses a `Cancel` on a command not built by `CommandContext`; worse, `exec.CommandContext(context.Background(), …)` compiles, starts, and silently kills nothing, because the watcher goroutine does not start on a context that can never be done. And the context in scope at both spawn sites is the wrong lifetime — per-call, not per-server — so binding it would kill the server when the first tool call returned. Both now hold their own `context.WithCancel`, cancelled by the thing that owns the process.
+
+MCP needed one more piece. The SDK owns the `cmd`, and its `Close` does the spec's polite ladder — close stdin, wait, `SIGTERM`, wait, `Kill` — all of it aimed at the direct child, and once its `Wait()` returns, `cmd.Cancel` can never fire again. Cancelling after the polite close is dead code; cancelling before it skips the shutdown the protocol prescribes. So `internal/proc` gains a third verb beside `KillTreeOnExit` (die when the app does) and `KillOnCancel` (die when the context does): **`KillTree(pid)` — die now**, called after the graceful close to sweep what the ladder could not reach. On Windows it exports the existing two-pass walk, whose second pass exists for exactly this case, an orphan still naming its dead parent. On Unix it is the negative-PID signal that `Setpgid` at spawn makes possible.
+
+The root cause is not two forgotten calls. `TestEveryExecSiteHidesTheConsole` has scanned every `exec.Command` in the tree for `HideConsole` since the day a console window flashed; **nothing was watching for `KillOnCancel`**, so the two sites that needed it were the two nobody was told about. A sibling guard now exists, with the same opt-out marker for the sites that detach on purpose.
+
+### 141.5 What gates, and what merely reports
+
+A gate that is red on its first day is not a gate. The reasoning is already written on the `unix` job in `ci.yml`: *"a red run nobody can act on stops being read, and then the day Windows genuinely breaks it looks the same as the six days it did not."* Enabling all 23 linters would have started this one at roughly 600.
+
+- **Gating** (each at zero once §141.3 landed): `govet`, `rowserrcheck`, `sqlclosecheck`, `bodyclose`, `ineffassign`, `wastedassign`, `unused`, `unconvert`, `misspell`, `copyloopvar`, `durationcheck`, `makezero`, `reassign`.
+- **Reported, not gating:** `gosec` — the same device the `unix` jobs use, for the same reason. Security stays visible on every push without six hundred false positives holding the branch.
+- **Not enabled yet, and this is the one place that says why:** `errcheck` (119, mostly `defer Close` on readers, which is the conventional idiom and would need an exclusion list argued line by line), `noctx` (104, of which 85 are `database/sql` calls that will be revisited whole when per-session engines land), `staticcheck`'s `ST` family (`ST1000` alone is 106 missing package comments), `nilerr` (24, all deliberate, several already carrying a comment explaining the fallback), `unparam`, `prealloc`, `gocritic`, `errorlint`.
+
+Placement: `verify.sh` gains a `lint` stage that skips **loudly** when the binary is absent, following the `race` stage that learned that lesson the expensive way. `ci.yml` runs it in `windows` as a gate and in `unix` where the job's `continue-on-error` makes it a report — which is not redundancy but coverage, since a lint run on one GOOS never compiles the other's `_other.go` files, the same blind spot the Unix jobs were created to cover.
+
+`release.yml` is deliberately untouched. A lint failure should not block a tag whose tests all pass.
+
+### 141.6 Two failures the linters did not find, and the run did
+
+Wiring the gate meant running `verify.sh` end to end, which had two stages red before any of this started. Both were confirmed against unmodified HEAD in a clean worktree before being touched, because "my change did not cause this" is a claim, not an assumption.
+
+**`isolateUserDirs` isolated nothing that mattered.** Two MCP tests in `desktop/` failed under `-shuffle=on`, each seeing the other's servers, because both wrote to one `mcp-servers.json`. The helper they both call sets `APPDATA`, `LOCALAPPDATA`, `USERPROFILE`, `XDG_CONFIG_HOME` and `HOME` — and `config.DataRoot` reads `AETOX_DATA_ROOT` *before* it asks the OS for any of them. `TestMain` sets that variable once for the whole package, correctly and for a good reason it states in full: tests were rewriting the developer's real `model-preference.json`, so the app opened on a test model nobody had chosen. So every caller of `isolateUserDirs` shared one directory while reading like it had its own, and the five lines above the missing one made that look deliberate.
+
+The fix is the sixth line, in the helper rather than at the twenty-seven call sites, for the reason `TestMain` gives about itself: the trap is invisible where it bites. It also surfaced a real leak it had been hiding — `TestEveryToolRunsThroughTheRealDispatcher` never closed the store it opened, which had not mattered while the file sat in a directory nobody asserted about, and fails immediately once it sits in a `t.TempDir()`.
+
+**A hand-written copy of a Go struct, three fields out of date.** `svelte-check` had nine errors. Five were `Settings.svelte` reading `cost`, `pricedCalls` and `pricesFetched` off a locally declared `type UsageTotals` that did not have them — a copy of the Go struct, written by hand, and never updated when the cost columns were added to `usage.go`. What let it compile at all was the `as Usage` on the call: an assertion that the generated bindings match a shape maintained separately, made at exactly the point where the two had stopped matching.
+
+That is this section's own subject arriving from the other side. `wailsjs/go/models.ts` is generated from the Go types and had all three fields the whole time; the local declaration was a second place answering the same question, and the cast was the mechanism by which it went unnoticed. Both are gone, and `UsageStats()` is now assigned without an assertion, which means the next field added to the Go struct is either used or unused — never silently absent.
+
+The remaining four were an `Element.prototype.animate` mock in the test setup that lib.dom had outgrown (`replaceState`, and `ready`/`finished` resolving to `Promise<void>` where the interface says `Promise<Animation>`). Completed rather than widened through `unknown`: a mock that stands in for a browser API should fail when it stops resembling one, and `as unknown as Animation` would have bought silence on every future addition for the price of the two lines it saved.
+
+### What this does not decide
+
+- **Whether the eight deferred linters are ever enabled.** Each is a separate judgment against a real count, not a backlog item.
+- **The 85 context-less `database/sql` calls.** Real, and the wrong size for this pass; they belong to the per-session engines work, done once rather than twice.
+- **`db.Begin()` at three sites hand-rolling their own commit and rollback.** The same shape of root that `eachRow` is, and the same argument applies — but not in a change already touching twenty-three call sites.
+- **Anything about the frontend.** `svelte-check --threshold error` remains the whole story there; no ESLint was added and none is proposed.
+
+**What generalises.** A linter reports; it does not know the program. Every finding here that looked like a vulnerability was a rule recognising a shape and not a purpose, and the only way to tell them apart was to open the file — 1,326 findings produced perhaps a dozen true ones, and the dozen were worth the reading. The corollary is the title: when a rule fires many times on something deliberate, the response belongs in the configuration, once, with the reason attached, because twenty annotations are twenty places answering a question the config was built to answer.

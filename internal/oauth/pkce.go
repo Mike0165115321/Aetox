@@ -28,7 +28,6 @@ type Pending struct {
 	UserCode        string `json:"user_code,omitempty"`
 	VerificationURI string `json:"verification_uri,omitempty"`
 
-	deviceCode string
 	interval   int
 	expiresIn  int
 	provider   string

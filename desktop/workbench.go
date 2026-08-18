@@ -8,6 +8,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -524,38 +525,34 @@ func (a *App) RecentAgentPages(limit int) []AgentPage {
 		debuglog.Msg("agent pages: db unavailable: %v", err)
 		return out
 	}
-	rows, err := db.Query(
-		`SELECT args, output, time FROM tool_runs
-		 WHERE tool = 'browser_open' AND ok = 1
-		 ORDER BY id DESC LIMIT ?`, agentPageScanRows)
-	if err != nil {
-		debuglog.Msg("agent pages: query failed: %v", err)
-		return out
-	}
-	defer rows.Close()
-
 	seen := map[string]bool{}
-	for rows.Next() {
-		var args, output, ts string
-		if err := rows.Scan(&args, &output, &ts); err != nil {
-			debuglog.Msg("agent pages: scan failed: %v", err)
-			return out
-		}
-		title, pageURL := parseBrowserOpened(output)
-		if pageURL == "" {
-			pageURL = urlFromArgs(args)
-		}
-		// Newest wins: the same page opened three times is one row, carrying
-		// the most recent time.
-		if pageURL == "" || seen[pageURL] || !stillOpenable(pageURL) {
-			continue
-		}
-		seen[pageURL] = true
-		out = append(out, AgentPage{URL: pageURL, Title: title, Time: ts})
-		if len(out) == limit {
-			break
-		}
-	}
+	_ = eachRow(db, "agent pages", `
+		SELECT args, output, time FROM tool_runs
+		 WHERE tool = 'browser_open' AND ok = 1
+		 ORDER BY id DESC LIMIT ?`, []any{agentPageScanRows},
+		func(rows *sql.Rows) error {
+			var args, output, ts string
+			if err := rows.Scan(&args, &output, &ts); err != nil {
+				return err
+			}
+			title, pageURL := parseBrowserOpened(output)
+			if pageURL == "" {
+				pageURL = urlFromArgs(args)
+			}
+			// Newest wins: the same page opened three times is one row, carrying
+			// the most recent time.
+			if pageURL == "" || seen[pageURL] || !stillOpenable(pageURL) {
+				return nil
+			}
+			seen[pageURL] = true
+			out = append(out, AgentPage{URL: pageURL, Title: title, Time: ts})
+			if len(out) == limit {
+				// A full page is not a failure, and rows.Err() is nil after a
+				// caller-initiated stop.
+				return errStopRows
+			}
+			return nil
+		})
 	return out
 }
 

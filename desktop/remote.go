@@ -214,20 +214,14 @@ func (a *App) PairedDevices() []RemoteDevice {
 	if err != nil {
 		return out
 	}
-	rows, err := db.Query(
-		`SELECT id, label, paired_at, last_seen FROM remote_devices
-		  WHERE revoked_at = '' ORDER BY paired_at DESC`)
-	if err != nil {
-		return out
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var d RemoteDevice
-		if err := rows.Scan(&d.ID, &d.Label, &d.PairedAt, &d.LastSeen); err != nil {
-			continue
-		}
-		out = append(out, d)
-	}
+	out, _ = queryAll(db, "remote devices", `
+		SELECT id, label, paired_at, last_seen FROM remote_devices
+		  WHERE revoked_at = '' ORDER BY paired_at DESC`, nil,
+		func(rows *sql.Rows) (RemoteDevice, error) {
+			var d RemoteDevice
+			err := rows.Scan(&d.ID, &d.Label, &d.PairedAt, &d.LastSeen)
+			return d, err
+		})
 	return out
 }
 

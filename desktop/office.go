@@ -10,12 +10,12 @@ package main
 // that comes to in code: three readers over things that already exist.
 
 import (
+	"database/sql"
 	"encoding/json"
 	"regexp"
 	"strings"
 
 	"github.com/Mike0165115321/Aetox/internal/config"
-	"github.com/Mike0165115321/Aetox/internal/debuglog"
 	"github.com/Mike0165115321/Aetox/internal/mode"
 	"github.com/Mike0165115321/Aetox/internal/subagent"
 )
@@ -173,21 +173,18 @@ func (a *App) chairActivity() map[string]chairActivity {
 	if err != nil {
 		return out
 	}
-	rows, err := db.Query(`
+	_ = eachRow(db, "chairs: activity", `
 		SELECT agent, COUNT(*), MAX(time) FROM jobs
-		WHERE agent <> '' GROUP BY agent`)
-	if err != nil {
-		debuglog.Msg("chairs: activity query failed: %v", err)
-		return out
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var name, last string
-		var count int
-		if rows.Scan(&name, &count, &last) == nil {
+		WHERE agent <> '' GROUP BY agent`, nil,
+		func(rows *sql.Rows) error {
+			var name, last string
+			var count int
+			if err := rows.Scan(&name, &count, &last); err != nil {
+				return err
+			}
 			out[name] = chairActivity{count: count, last: last}
-		}
-	}
+			return nil
+		})
 	return out
 }
 
@@ -283,23 +280,17 @@ func (a *App) ListReceivedJobs(limit int) []ReceivedJob {
 	}
 	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(names)), ",")
 	names = append(names, limit)
-	rows, err := db.Query(`
+	out, _ = queryAll(db, "office: received-jobs", `
 		SELECT id, agent, session_id, request, answer, tool_seq, tool_count, duration_ms, outcome, time
 		FROM jobs
 		WHERE parent_ref <> '' AND agent IN (`+placeholders+`)
-		ORDER BY id DESC LIMIT ?`, names...)
-	if err != nil {
-		debuglog.Msg("office: received-jobs query failed: %v", err)
-		return out
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var j ReceivedJob
-		if rows.Scan(&j.ID, &j.Chair, &j.SessionID, &j.Request, &j.Answer,
-			&j.ToolSeq, &j.ToolCount, &j.Duration, &j.Outcome, &j.Time) == nil {
+		ORDER BY id DESC LIMIT ?`, names,
+		func(rows *sql.Rows) (ReceivedJob, error) {
+			var j ReceivedJob
+			err := rows.Scan(&j.ID, &j.Chair, &j.SessionID, &j.Request, &j.Answer,
+				&j.ToolSeq, &j.ToolCount, &j.Duration, &j.Outcome, &j.Time)
 			j.Brief = briefOf(j.Request)
-			out = append(out, j)
-		}
-	}
+			return j, err
+		})
 	return out
 }

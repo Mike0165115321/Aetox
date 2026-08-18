@@ -98,13 +98,6 @@ func shippedModelDir() string {
 	return filepath.Join(filepath.Dir(exe), "models")
 }
 
-func envOr(key, fallback string) string {
-	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
-		return v
-	}
-	return fallback
-}
-
 func isDir(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.IsDir()

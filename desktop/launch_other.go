@@ -33,6 +33,7 @@ func launchDetached(command string) error {
 	//
 	// Through a shell for the same reason as on Windows: the field holds a
 	// command line a person could type, not a program and an argv.
+	// proc-detached: a server the user started from Settings; its console is how they stop it
 	cmd := exec.Command("/bin/sh", "-c", command)
 	if err := cmd.Start(); err != nil {
 		return err
@@ -56,6 +57,8 @@ func launchLogged(command, logPath string) error {
 	if err != nil {
 		return err
 	}
+	// proc-detached: Process.Release below is the point — the server the user
+	// started outlives this call, and its log is how they watch it.
 	cmd := exec.Command("/bin/sh", "-c", command)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile

@@ -63,6 +63,28 @@ echo
 
 echo "Go"
 stage "vet" go vet ./...
+
+# golangci-lint gates a named set of linters that are all at zero; gosec runs
+# beside it as a report, not a gate. Which linters, and why the rest are not on
+# yet, is docs/DECISIONS.md §141 — .golangci.yml is the configuration.
+#
+# Skipped loudly for the same reason the race stage is: a check believed to be
+# running and not running is worse than one that was never added.
+if command -v golangci-lint >/dev/null 2>&1; then
+  stage "lint" golangci-lint run ./...
+  # Reported, not gating — the same device ci.yml uses on the unix jobs. Most
+  # of gosec's 642 findings on this tree are the program doing its job (reading
+  # files named by a variable, running commands built at runtime), so it is
+  # worth reading and not worth blocking on.
+  golangci-lint run ./... --default=none --enable=gosec --issues-exit-code=0 >"$LOG_DIR/gosec.log" 2>&1 || true
+  printf '  %s
+' "· gosec (reported, not gating): $(tail -1 "$LOG_DIR/gosec.log")"
+else
+  skip "lint" "NOT CHECKED — golangci-lint is not on PATH. Install it: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest"
+  printf '  %s
+' "‼ the linters did NOT run: golangci-lint is not on this machine"
+fi
+
 stage "build" go build ./...
 # -count=1 defeats the test cache: a cached pass proves nothing about a tree
 # that just changed underneath it.

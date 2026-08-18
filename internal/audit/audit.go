@@ -54,10 +54,18 @@ func WriteShell(entry ShellEntry) error {
 	if err != nil {
 		return fmt.Errorf("audit: cannot open audit log: %w", err)
 	}
-	defer f.Close()
 
 	if _, err := f.Write(line); err != nil {
+		_ = f.Close()
 		return fmt.Errorf("audit: cannot write audit entry: %w", err)
+	}
+	// Closed here rather than deferred, and its error is the return value: a
+	// write reports success as soon as the bytes are handed over, and the flush
+	// that actually puts them on disk can still fail — full disk, a network
+	// path. Of everything in this repo, an audit line that silently did not
+	// land is the worst one to be wrong about.
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("audit: cannot flush audit entry: %w", err)
 	}
 	return nil
 }

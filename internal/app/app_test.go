@@ -1,43 +1,6 @@
 package app
 
-import (
-	"strings"
-	"testing"
-)
-
-type testConsole struct {
-	lines []string
-}
-
-func (c *testConsole) Print(msg any) {}
-
-func (c *testConsole) Printf(format string, args ...any) {}
-
-func (c *testConsole) Println(msg ...any) {
-	c.lines = append(c.lines, strings.TrimSpace(strings.TrimSuffix(strings.TrimSuffix(strings.TrimSpace(strings.Join(stringify(msg), " ")), "\n"), "\r")))
-}
-
-func (c *testConsole) Errorf(format string, args ...any) {}
-
-func (c *testConsole) ReadLine() (string, error) { return "", nil }
-
-func stringify(values []any) []string {
-	out := make([]string, 0, len(values))
-	for _, value := range values {
-		out = append(out, strings.TrimSpace(toString(value)))
-	}
-	return out
-}
-
-func toString(value any) string {
-	if value == nil {
-		return ""
-	}
-	if text, ok := value.(string); ok {
-		return text
-	}
-	return ""
-}
+import "testing"
 
 func TestRenderHeaderStatusLineIncludesModelModeLabel(t *testing.T) {
 	app := &App{
