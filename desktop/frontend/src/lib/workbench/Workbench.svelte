@@ -10,11 +10,13 @@
   import ImagePane from './ImagePane.svelte'
   import MediaPane from './MediaPane.svelte'
   import PdfPane from './PdfPane.svelte'
+  import SlidesPane from './SlidesPane.svelte'
+  import DeckRoom from './DeckRoom.svelte'
   import { fileURL } from '../fileUrl'
   import { cockpit } from '../stores/cockpit.svelte'
   import {
     workbench, activateTab, closeTab, removeTab,
-    openFilesTab, openBrowserTab, openTerminalTab, openToolsTab, openFileTab, reportDeskTabs,
+    openFilesTab, openBrowserTab, openTerminalTab, openToolsTab, openDecksTab, openFileTab, reportDeskTabs,
     openUrlInWorkbench, saveWorkbenchSnapshot, resolveAddressBarInput, labelForUrl,
     setTabDragPayload, TAB_DRAG_MIME,
     type WorkbenchTab,
@@ -27,7 +29,7 @@
   import Icon from '../Icon.svelte'
   import type { IconName } from '../icons'
 
-  const tabIcon: Record<string, IconName> = { terminal: 'keyboard', browser: 'globe', files: 'copy', file: 'fileText', tools: 'wrench' }
+  const tabIcon: Record<string, IconName> = { terminal: 'keyboard', browser: 'globe', files: 'copy', file: 'fileText', tools: 'wrench', decks: 'layoutList' }
 
   // Chrome DevTools' default device presets. CSS viewport sizes — BrowserPane
   // turns one into a real window of that aspect + a matching page zoom.
@@ -296,6 +298,7 @@
           <button class="plus-menu-item" onclick={() => pick(openBrowserTab)}><span class="ic"><Icon name="globe" size={14} /></span> {t('workbench.browserMenu')} <span class="kbd">{shortcutLabel('browserTab')}</span></button>
           <button class="plus-menu-item" onclick={() => pick(openFilesTab)}><span class="ic"><Icon name="copy" size={14} /></span> {t('workbench.filesTab')} <span class="kbd">{shortcutLabel('filesTab')}</span></button>
           <button class="plus-menu-item" onclick={() => pick(openToolsTab)}><span class="ic"><Icon name="wrench" size={14} /></span> {t('workbench.toolsTab')}</button>
+          <button class="plus-menu-item" onclick={() => pick(openDecksTab)}><span class="ic"><Icon name="layoutList" size={14} /></span> {t('workbench.decksTab')}</button>
         </div>
       {/if}
     </div>
@@ -352,6 +355,7 @@
         <button class="plus-menu-item" onclick={() => openBrowserTab()}><span class="ic"><Icon name="globe" size={14} /></span> {t('workbench.browserMenu')} <span class="kbd">{shortcutLabel('browserTab')}</span></button>
         <button class="plus-menu-item" onclick={openFilesTab}><span class="ic"><Icon name="copy" size={14} /></span> {t('workbench.filesTab')} <span class="kbd">{shortcutLabel('filesTab')}</span></button>
         <button class="plus-menu-item" onclick={openToolsTab}><span class="ic"><Icon name="wrench" size={14} /></span> {t('workbench.toolsTab')}</button>
+        <button class="plus-menu-item" onclick={openDecksTab}><span class="ic"><Icon name="layoutList" size={14} /></span> {t('workbench.decksTab')}</button>
       </div>
     {/if}
     {#each workbench.tabs as tab (tab.id)}
@@ -372,6 +376,8 @@
           <FilesPane />
         {:else if tab.kind === 'tools'}
           <ToolsPane />
+        {:else if tab.kind === 'decks'}
+          <DeckRoom />
         {:else if tab.kind === 'file'}
           <!-- Keyed on rev so a re-read actually lands on screen: FileEditor
                copies `content` into its own state once and this pane never
@@ -390,6 +396,8 @@
               <SheetPane path={tab.path ?? ''} preview={tab.sheet} />
             {:else if tab.unreadable}
               <ExternalFilePane path={tab.path ?? ''} reason={tab.unreadable} name={tab.name} />
+            {:else if tab.deck && tab.content !== undefined}
+              <SlidesPane path={tab.path ?? ''} name={tab.name} content={tab.content} />
             {:else if tab.content !== undefined}
               <FileEditor path={tab.path ?? ''} content={tab.content} />
             {/if}

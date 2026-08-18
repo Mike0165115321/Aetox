@@ -213,6 +213,13 @@ type fakeView struct {
 	destroyed   bool
 	devToolsHit bool
 	shot        shotResult
+	// calls records every engine call, so a test can assert the settings a deck
+	// depends on (backgrounds on, no header) without a webview.
+	calls [][2]string
+	reply engineReply
+	// behind is what the deck export asks for and nothing else does: laid out
+	// and painting, with the app's own webview drawn over it.
+	behind bool
 }
 
 func (v *fakeView) navigate(url string)  { v.lastJS = "navigate:" + url }
@@ -224,6 +231,15 @@ func (v *fakeView) setVisible(show bool) { v.visible = append(v.visible, show) }
 func (v *fakeView) capture() <-chan shotResult {
 	out := make(chan shotResult, 1)
 	out <- v.shot
+	return out
+}
+
+func (v *fakeView) sendBehind() { v.behind = true }
+
+func (v *fakeView) callEngine(method, paramsJSON string) <-chan engineReply {
+	v.calls = append(v.calls, [2]string{method, paramsJSON})
+	out := make(chan engineReply, 1)
+	out <- v.reply
 	return out
 }
 func (v *fakeView) setBounds(x, y, w, h int) {

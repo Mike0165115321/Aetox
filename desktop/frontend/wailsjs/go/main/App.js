@@ -178,6 +178,10 @@ export function CurrentSpace() {
   return window['go']['main']['App']['CurrentSpace']();
 }
 
+export function DeckFormats() {
+  return window['go']['main']['App']['DeckFormats']();
+}
+
 export function DelegateSwitches() {
   return window['go']['main']['App']['DelegateSwitches']();
 }
@@ -216,6 +220,10 @@ export function EnabledProviders() {
 
 export function EnginesFor(arg1, arg2) {
   return window['go']['main']['App']['EnginesFor'](arg1, arg2);
+}
+
+export function ExportDeck(arg1, arg2) {
+  return window['go']['main']['App']['ExportDeck'](arg1, arg2);
 }
 
 export function ExportSession(arg1, arg2) {
@@ -324,6 +332,10 @@ export function ListDecidedChanges(arg1) {
 
 export function ListDecidedIssues(arg1) {
   return window['go']['main']['App']['ListDecidedIssues'](arg1);
+}
+
+export function ListDecks() {
+  return window['go']['main']['App']['ListDecks']();
 }
 
 export function ListExternalSkills() {

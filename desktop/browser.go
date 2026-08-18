@@ -49,6 +49,37 @@ type tabView interface {
 	// message pump this thread is running, so a caller that blocked here would
 	// be blocking the thing it is waiting for. See browser_shot.go.
 	capture() <-chan shotResult
+	// callEngine runs one of the engine's own protocol methods and hands back
+	// its answer as JSON. Same threading and same channel-not-return reason as
+	// capture.
+	//
+	// It exists because exporting a deck needs three things no portable
+	// vocabulary covers — print this page to PDF, photograph this rectangle,
+	// measure where the slides are — and inventing a portable spelling for each
+	// would be inventing an abstraction over one implementation. On Windows
+	// these are Chrome DevTools Protocol methods (browser_windows.go). A future
+	// WebKit host answers the same three questions its own way or not at all,
+	// and the caller finds out through an error rather than through a lie.
+	//
+	// Unlike capture, printing does NOT need the page on screen: it is a
+	// separate pipeline from compositing. That is the whole reason a deck can be
+	// exported from a webview nobody ever sees (deck_render.go).
+	callEngine(method, paramsJSON string) <-chan engineReply
+	// sendBehind drops this tab to the bottom of the Z order, leaving it laid
+	// out and painting with the app's own webview drawn over it. The one caller
+	// is the deck export, which needs a page that composites (so a capture has
+	// frames) and that nobody sees (so nothing flashes). See browser_windows.go
+	// for why the obvious alternatives — hidden, or parked off-screen — both
+	// come back blank.
+	sendBehind()
+}
+
+// engineReply is one finished (or failed) engine call, in the portable
+// vocabulary tabView is written in — browser.go must not name any one engine's
+// types. JSON is the protocol's own answer object, undecoded.
+type engineReply struct {
+	JSON string
+	Err  error
 }
 
 // tabCallbacks are the portable reactions a platform host wires into a tab it

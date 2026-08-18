@@ -100,6 +100,8 @@ export function CurrentShell():Promise<main.ShellOption>;
 
 export function CurrentSpace():Promise<string>;
 
+export function DeckFormats():Promise<Array<main.DeckFormat>>;
+
 export function DelegateSwitches():Promise<main.DelegateSettings>;
 
 export function DeleteArtifact(arg1:string):Promise<void>;
@@ -119,6 +121,8 @@ export function DismissTaskChip(arg1:string):Promise<void>;
 export function EnabledProviders():Promise<Array<string>>;
 
 export function EnginesFor(arg1:string,arg2:string):Promise<Array<connect.Status>>;
+
+export function ExportDeck(arg1:string,arg2:string):Promise<string>;
 
 export function ExportSession(arg1:string,arg2:string):Promise<string>;
 
@@ -173,6 +177,8 @@ export function ListChairs():Promise<Array<main.Chair>>;
 export function ListDecidedChanges(arg1:number):Promise<Array<main.PendingChange>>;
 
 export function ListDecidedIssues(arg1:number):Promise<Array<main.PendingChange>>;
+
+export function ListDecks():Promise<Array<main.Deck>>;
 
 export function ListExternalSkills():Promise<Array<skill.DiscoveredSkill>>;
 

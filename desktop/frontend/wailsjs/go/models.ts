@@ -472,6 +472,42 @@ export namespace main {
 	        this.cacheRows = source["cacheRows"];
 	    }
 	}
+	export class Deck {
+	    path: string;
+	    name: string;
+	    slides: number;
+	    sessionId?: string;
+	    modified: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Deck(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.name = source["name"];
+	        this.slides = source["slides"];
+	        this.sessionId = source["sessionId"];
+	        this.modified = source["modified"];
+	    }
+	}
+	export class DeckFormat {
+	    id: string;
+	    ext: string;
+	    ready: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new DeckFormat(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.ext = source["ext"];
+	        this.ready = source["ready"];
+	    }
+	}
 	export class DelegateWorker {
 	    name: string;
 	    for: string;

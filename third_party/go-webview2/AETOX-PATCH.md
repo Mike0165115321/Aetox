@@ -66,6 +66,46 @@ Two things there are deliberate and easy to undo by accident:
   webview thread.** The completion handler is invoked by that thread's message
   pump, so waiting for it there is waiting for the thing that would deliver it.
 
+## A fourth patch: the DevTools door
+
+`pkg/edge/devtools.go` and `pkg/edge/ICoreWebView2CallDevToolsProtocolMethodCompletedHandler.go`
+add `Chromium.CallDevToolsProtocolMethod`. Same shape as the second and third
+patches, for the third time: upstream declares the vtbl slot
+(`corewebview2.go`) and binds nothing, while the sibling `pkg/webview2` copy
+already has both halves.
+
+Aetox needs it for `Page.printToPDF`, so a deck written as HTML can be exported
+as a PDF (`docs/architecture/html-deck-2026-08-19.md`). The alternative was
+binding `ICoreWebView2_7` (or `_16`) plus `ICoreWebView2Environment6` plus
+`ICoreWebView2PrintSettings` plus a fourth handler — four interfaces for one
+call, where this is one method and one handler and answers every later CDP
+question for free.
+
+**One thing in the sibling copy is deliberately not copied.** It declares the
+callback as:
+
+```go
+func ...Invoke(this *..., errorCode uintptr, result string) uintptr
+```
+
+COM passes an `LPCWSTR`. A Go string header is two words with a different
+layout, so reading it that way takes the pointer as a length and whatever
+follows on the stack as a data pointer. It has never crashed there only because
+nothing in this tree calls it. The `edge` package's own ExecuteScript handler
+has it right (`*uint16`), and that is the shape followed here.
+
+**What this door does NOT open.** `Page.captureScreenshot` goes through the
+compositor that a hidden webview never runs, so PNG export is still blocked —
+see `desktop/browser_capture.go` and WebView2Feedback #1077 and #2983. Printing
+is a different pipeline; Microsoft's own word for PrintToPdf is "silently".
+That asymmetry is why `.pdf` ships and `.png` does not (`desktop/decks.go`).
+
+**Still unverified at the time of writing.** Microsoft documents neither that
+`Page.printToPDF` works over WebView2's CDP nor that it does not. This binding
+is the cheap way to find out; if the engine refuses it, the fallback is
+`ICoreWebView2_16::PrintToPdfStream` and the four interfaces above, for the same
+result.
+
 ## Upgrading go-webview2
 
 Re-copy the module, then re-apply the four `AETOX PATCH` blocks, the

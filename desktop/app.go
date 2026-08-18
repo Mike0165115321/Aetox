@@ -55,6 +55,15 @@ type App struct {
 	ctx context.Context
 	cfg config.Config
 
+	// exported is every file the deck export wrote this session. An export lands
+	// in the user's Downloads folder, outside the project, which every other
+	// file binding here refuses on purpose — so OpenExport is gated on this set
+	// rather than on a widened path check. See desktop/decks.go.
+	exportMu sync.Mutex
+	exported map[string]bool
+	// exportsRoot overrides the Downloads folder exports land in. Empty means
+	// the real one. Test seam only.
+	exportsRoot string
 
 	// convs is every chat this process holds an engine for, and which one the
 	// window is looking at. The engine, the agent's context, the registry, the

@@ -202,6 +202,19 @@ export const ChairStartersFile = vi.fn(async (..._args: any[]) => 'STARTERS.md')
 export const ListReceivedJobs = arr()
 export const ListSessionsAt = arr()
 export const ListArtifacts = arr()
+export const OpenExport = noop()
+export const ListDecks = arr()
+export const ExportDeck = str()
+// Deliberately NOT a mirror of desktop/decks.go's list, and it must not become
+// one. What the pane has to get right is drawing both states, so this fixes one
+// ready row and two unready ones for good. Chasing the real list would make
+// these tests go red the day a format ships, which is the day they are least
+// interesting.
+export const DeckFormats = vi.fn(async () => [
+  { id: 'pptx', ext: '.pptx', ready: true },
+  { id: 'pdf', ext: '.pdf', ready: false },
+  { id: 'png', ext: '.png', ready: false },
+] as any[])
 // The gallery asks for one range at a time and gets back {files, range, total}.
 // Defaults to an empty week so a test that does not care about the range still
 // renders; the tests that do care set files and let `range` echo what was asked.

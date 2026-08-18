@@ -69,7 +69,13 @@ const (
 	// MoveWindow (no Z-order change) can leave the tab rendered behind the
 	// app's own webview — invisible, even though it's really navigated and
 	// painting.
-	hwndTop       = 0
+	hwndTop = 0
+	// The other end of the same fact: a tab sent to the BOTTOM of the Z order
+	// is still visible to Windows and still painting, and simply has the app's
+	// own webview drawn over it. That is what an export needs — composited, so
+	// a capture has frames to capture, and unseen, so nothing flashes. See
+	// sendBehind.
+	hwndBottom    = 1
 	swpNoMove     = 0x0002
 	swpNoSize     = 0x0001
 	swpNoActivate = 0x0010
@@ -176,6 +182,48 @@ func (t *win32Tab) capture() <-chan shotResult {
 		out <- shotResult{PNG: r.PNG, Err: r.Err}
 	}()
 	return out
+}
+
+// callEngine runs a Chrome DevTools Protocol method on this tab.
+//
+// The DevTools door rather than ICoreWebView2_7::PrintToPdf and friends: that
+// route is four COM interfaces for one call (the webview's, the environment's,
+// the settings', and a handler), where this is one method and one handler —
+// both already patched into the vendored fork, and reusable for every later CDP
+// question. See third_party/go-webview2/AETOX-PATCH.md.
+//
+// Nothing is decoded here. What "data" means differs per method, and the layer
+// that asked is the layer that knows.
+func (t *win32Tab) callEngine(method, paramsJSON string) <-chan engineReply {
+	out := make(chan engineReply, 1)
+	t.requireHostThread("callEngine")
+	src := t.chromium.CallDevToolsProtocolMethod(method, paramsJSON)
+	go func() {
+		r := <-src
+		out <- engineReply{JSON: r.JSON, Err: r.Err}
+	}()
+	return out
+}
+
+// sendBehind drops the tab to the bottom of the Z order without moving,
+// resizing, or hiding it.
+//
+// The export webview was parked at -32000 first, on the reasoning that a window
+// outside every monitor still composites. That reasoning is right about a
+// top-level window and wrong about this one: these are WS_CHILD windows of the
+// wails main window, and a child pushed outside the parent's client area is
+// *clipped*, which is not "off-screen" — it is "not drawn". Every capture came
+// back blank because there were no frames to capture.
+//
+// Behind is the state that was wanted all along, and this file already knew it:
+// the hwndTop comment above records that two WebView2 controllers in one
+// top-level window composite independently, so a tab that is merely shown can
+// stay behind the app's own webview — "invisible, even though it's really
+// navigated and painting". That sentence was written as a warning. Here it is
+// the feature.
+func (t *win32Tab) sendBehind() {
+	t.requireHostThread("sendBehind")
+	procSetWindowPos.Call(t.hwnd, hwndBottom, 0, 0, 0, 0, swpNoMove|swpNoSize|swpNoActivate)
 }
 
 func (t *win32Tab) setBounds(x, y, w, h int) {

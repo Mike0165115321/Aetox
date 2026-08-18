@@ -296,6 +296,33 @@ export const en: Record<keyof typeof th, string> = {
   'workbench.officeNoPreview': 'The file is fine. The app just doesn’t render slides or documents itself. PowerPoint and Word do it better.',
   'workbench.openExternally': 'Open with my computer’s app',
   'workbench.sheetTruncated': 'Previewing the first {shown} of {total} rows. Open it in your own app to see them all',
+
+  // The deck pane: an .html carrying section.slide opens as slides, not source.
+  'workbench.decksTab': 'Slides',
+  'workbench.deckSlides': 'Slides',
+  'workbench.deckSource': 'Source',
+  'workbench.deckPrev': 'Previous slide',
+  'workbench.deckNext': 'Next slide',
+  'workbench.deckPresent': 'Present',
+  // The format menu asks Go which formats this binary writes (DeckFormats).
+  // Rows that are not ready are shown but not clickable, so what is coming is visible.
+  'workbench.deckExport': 'Export',
+  'workbench.deckPptxEditable': 'editable',
+  'workbench.deckPptxPicture': 'pictures, exact',
+  'workbench.deckDismiss': 'Dismiss',
+  'workbench.deckExporting': 'Exporting',
+  'workbench.deckFormatNotReady': 'not ready yet',
+  'workbench.deckExported': 'Export finished. Saved to {path}',
+  'workbench.deckSavedToDownloads': 'in your Downloads folder',
+  'workbench.deckOpenExport': 'Open it',
+
+  // The slides room.
+  'deckRoom.title': 'Decks in this project',
+  'deckRoom.refresh': 'Reload the list',
+  'deckRoom.loading': 'Looking...',
+  'deckRoom.none': 'No decks in this project yet. Ask the agent for a presentation and it will show up here.',
+  'deckRoom.pick': 'Pick a deck from the list',
+  'deckRoom.slideCount': '{n} slides',
   'workbench.dropHere': 'Drop it here',
   'workbench.dropHint': 'A file, or a page dragged from a browser. It opens on the desk right away',
   'workbench.dropFailed': 'This file couldn’t be brought in.',

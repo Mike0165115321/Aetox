@@ -295,6 +295,33 @@ export const th = {
  'workbench.officeNoPreview': 'ไฟล์ปกติดี แอปแค่ตั้งใจไม่วาดสไลด์/เอกสารเอง เพราะ PowerPoint กับ Word ทำได้ดีกว่า',
   'workbench.openExternally': 'เปิดด้วยโปรแกรมในเครื่อง',
  'workbench.sheetTruncated': 'ดูตัวอย่าง {shown} แถวแรก จากทั้งหมด {total} แถว เปิดด้วยโปรแกรมในเครื่องเพื่อดูครบ',
+
+  // แพเนลเด็ค: ไฟล์ .html ที่มี section.slide เปิดเป็นสไลด์แทนที่จะเป็นซอร์ส
+  'workbench.decksTab': 'สไลด์',
+  'workbench.deckSlides': 'สไลด์',
+  'workbench.deckSource': 'ซอร์ส',
+  'workbench.deckPrev': 'สไลด์ก่อนหน้า',
+  'workbench.deckNext': 'สไลด์ถัดไป',
+  'workbench.deckPresent': 'นำเสนอ',
+  // เมนูฟอร์แมตถามฝั่ง Go ว่าอันไหนเขียนได้ (DeckFormats) แถวที่ยังไม่พร้อม
+  // แสดงไว้แต่กดไม่ได้ เพื่อให้เห็นว่ากำลังจะมีอะไรมา
+  'workbench.deckExport': 'ส่งออก',
+  'workbench.deckPptxEditable': 'แก้ไขได้',
+  'workbench.deckPptxPicture': 'ภาพ เหมือนเป๊ะ',
+  'workbench.deckDismiss': 'ปิด',
+  'workbench.deckExporting': 'กำลังส่งออก',
+  'workbench.deckFormatNotReady': 'ยังไม่พร้อม',
+  'workbench.deckExported': 'ส่งออกเสร็จแล้ว บันทึกไว้ที่ {path}',
+  'workbench.deckSavedToDownloads': 'อยู่ในโฟลเดอร์ดาวน์โหลด',
+  'workbench.deckOpenExport': 'เปิดไฟล์',
+
+  // ห้องสไลด์
+  'deckRoom.title': 'เด็คในโปรเจกต์นี้',
+  'deckRoom.refresh': 'อ่านรายการใหม่',
+  'deckRoom.loading': 'กำลังหา...',
+  'deckRoom.none': 'ยังไม่มีเด็คในโปรเจกต์นี้ ลองบอกเอเจนให้ทำงานนำเสนอสักชุด แล้วมันจะมาโผล่ตรงนี้',
+  'deckRoom.pick': 'เลือกเด็คจากรายการทางซ้าย',
+  'deckRoom.slideCount': '{n} สไลด์',
   'workbench.dropHere': 'วางตรงนี้ได้เลย',
  'workbench.dropHint': 'ไฟล์ หรือหน้าเว็บที่ลากมาจากเบราว์เซอร์ วางแล้วขึ้นบนโต๊ะทันที',
   'workbench.dropFailed': 'เอาไฟล์นี้เข้ามาไม่ได้',

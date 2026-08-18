@@ -42,6 +42,20 @@ type Slide struct {
 	Bullets []string
 	Notes   string
 	Image   *Picture
+	// FullBleed makes Image cover the whole slide, edge to edge, and suppresses
+	// every text box on it.
+	//
+	// It exists for one caller: a deck authored in HTML and exported as a
+	// picture per slide (desktop/deck_image.go). That deck's design is already
+	// IN the picture — its colours, its layout, its type — so a title drawn over
+	// the top would be the same words twice, and a margin around it would be a
+	// white frame around artwork that was composed to the slide's own edges.
+	//
+	// This is not the writer learning to lay out a slide. It is the writer being
+	// told there is nothing to lay out, which is the opposite. Notes still come
+	// through: they never render, so a picture deck keeps the presenter's script
+	// rather than trading it for fidelity.
+	FullBleed bool
 }
 
 // BuildPPTX turns slides into the parts of a .pptx package.
@@ -205,6 +219,13 @@ func slideXML(slide Slide, imageRel string) string {
 
 	shapeID := 2
 	hasImage := imageRel != ""
+
+	// A full-bleed picture is the whole slide and nothing else is on it.
+	if hasImage && slide.FullBleed {
+		b.WriteString(picture(shapeID, imageRel, slide.Image.AltText, 0, 0, slideWidth, slideHeight))
+		b.WriteString(`</p:spTree></p:cSld><p:clrMapOvr><a:overrideClrMapping bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/></p:clrMapOvr></p:sld>`)
+		return b.String()
+	}
 
 	// Bullets give up the right half of the slide to a picture; a picture with
 	// no bullets gets the whole content area.

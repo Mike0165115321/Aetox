@@ -10,7 +10,7 @@ import {
 import type { main, ooxml } from '../../../wailsjs/go/models'
 import { t } from '../i18n.svelte'
 
-export type WorkbenchTabKind = 'terminal' | 'browser' | 'files' | 'file' | 'tools'
+export type WorkbenchTabKind = 'terminal' | 'browser' | 'files' | 'file' | 'tools' | 'decks'
 
 export type WorkbenchTab = {
   id: string
@@ -29,6 +29,10 @@ export type WorkbenchTab = {
   // it answers "what did I just get?" without the user leaving the window, and
   // the open-in-Excel button is still there for anything past a glance.
   sheet?: ooxml.WorkbookPreview
+  // This .html is a slide deck rather than a page, so it opens in SlidesPane.
+  // Decided from the bytes rather than from the name (isDeck) — see there for
+  // why the marker is `section.slide` and not a second declaration beside it.
+  deck?: boolean
   // Which pane draws this file — set by fileView() from the name alone, for
   // everything the webview can show off a URL. No bytes cross the binding for
   // these: the pane points at the file host and the webview streams it, which
@@ -64,6 +68,21 @@ const viewByExt: Record<string, FileView> = {
 export function fileView(path: string): FileView | undefined {
   const ext = path.split('.').pop()?.toLowerCase() ?? ''
   return viewByExt[ext]
+}
+
+/** Whether an .html file is a slide deck.
+ *
+ * One marker, doing two jobs: `section.slide` is what the pane pages through
+ * and what the exporters cut on, so it is also what identifies the file. A
+ * `<meta name="aetox-deck">` beside it was drafted and dropped — it would be a
+ * second place answering one question, and the day the two disagree nobody can
+ * say which is right (docs/architecture/html-deck-2026-08-19.md).
+ *
+ * An .html without the marker is a web page and still opens as source, which is
+ * the behaviour every existing page keeps. */
+export function isDeck(path: string, content: string): boolean {
+  if (!/\.html?$/i.test(path)) return false
+  return /<section[^>]*\bclass\s*=\s*("[^"]*\bslide\b|'[^']*\bslide\b)/i.test(content)
 }
 
 export const workbench = $state<{ tabs: WorkbenchTab[]; activeId: string }>({
@@ -105,6 +124,19 @@ export function openToolsTab(): void {
     workbench.tabs.push({ id: 'tools', kind: 'tools', name: t('workbench.toolsTab') })
   }
   workbench.activeId = 'tools'
+}
+
+/** Singleton tab: the slide decks this workspace has produced.
+ *
+ * A room rather than a tab per deck, because the question it answers is "what
+ * presentations are there" — asked before anyone knows which file to open, so a
+ * file tab cannot be the answer. Opening a deck from the file tree still lands
+ * in the same viewer; the room only adds the list in front of it. */
+export function openDecksTab(): void {
+  if (!workbench.tabs.some((t) => t.kind === 'decks')) {
+    workbench.tabs.push({ id: 'decks', kind: 'decks', name: t('workbench.decksTab') })
+  }
+  workbench.activeId = 'decks'
 }
 
 export function openBrowserTab(): string {
@@ -209,7 +241,7 @@ export async function openFileTab(path: string, displayName?: string): Promise<v
  * right filename, with nothing on screen saying so. On the panel whose whole
  * job is answering "what did I just get?", that is the worst failure available.
  *
- * All four fields are assigned every time, undefined included: a file that used
+ * Every field below is assigned every time, undefined included: a file that used
  * to fail and now reads must lose its `unreadable`, or the pane keeps showing
  * the old excuse. */
 async function loadFileTab(tab: WorkbenchTab, path: string): Promise<void> {
@@ -253,6 +285,10 @@ async function loadFileTab(tab: WorkbenchTab, path: string): Promise<void> {
   tab.sheet = next.sheet
   tab.content = next.content
   tab.unreadable = next.unreadable
+  // Assigned every time like the four above, false included: a deck the user
+  // edited back into a plain page must lose the slide pane, or the pane keeps
+  // paging through sections that are no longer there.
+  tab.deck = next.content !== undefined && isDeck(path, next.content)
   // FileEditor snapshots `content` into local state once and the pane never
   // unmounts, so fresh bytes alone would not reach the screen. Workbench.svelte
   // keys the pane on this.
