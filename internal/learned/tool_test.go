@@ -104,6 +104,47 @@ func TestAFullScopeRefusesTheProposalNotTheApproval(t *testing.T) {
 	}
 }
 
+// The same door as the room check above, and the reported bug that opened it
+// (18 ส.ค.): the agent proposed "ผู้ใช้เป็นนักพัฒนาระบบ", the user corrected it
+// in the next message, and the agent revised the line it had just proposed.
+// Nothing had approved that line, so the revision named a line no file held —
+// and queued anyway, as a card whose อนุมัติ button could only ever error. The
+// user's one way out was ไม่เอา on a fact they had asked for.
+func TestARevisionOfSomethingUnrememberedIsRefused(t *testing.T) {
+	isolate(t)
+	rec := &recorder{}
+	tool := &MemoryTool{Scope: MainScope, Proposer: rec}
+
+	msg, err := run(t, tool, map[string]any{
+		"op": OpReplace, "old": "นักพัฒนาระบบ", "text": "ผู้ใช้เป็นนักพัฒนา Aetox", "why": "ผู้ใช้แก้ให้"})
+	if err == nil {
+		t.Fatal("a replace of a line nothing remembers should be refused")
+	}
+	// Told which of the two things is true, because it changes the next move:
+	// the line is not there, so adding it is the op, not revising it.
+	if !strings.Contains(msg, "add") {
+		t.Errorf("the refusal should point at the op that would work, got %q", msg)
+	}
+	if _, err := run(t, tool, map[string]any{"op": OpRemove, "old": "นักพัฒนาระบบ"}); err == nil {
+		t.Error("removing a line nothing remembers should be refused")
+	}
+	if len(rec.got) != 0 {
+		t.Fatalf("an unappliable proposal reached the queue: %+v", rec.got)
+	}
+
+	// And once the line is actually in memory, the same revision goes through.
+	if err := Apply(MainScope, OpAdd, "", "ผู้ใช้เป็นนักพัฒนาระบบ (system developer)"); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if _, err := run(t, tool, map[string]any{
+		"op": OpReplace, "old": "นักพัฒนาระบบ", "text": "ผู้ใช้เป็นนักพัฒนา Aetox", "why": "ผู้ใช้แก้ให้"}); err != nil {
+		t.Fatalf("replace of a remembered line: %v", err)
+	}
+	if len(rec.got) != 1 {
+		t.Fatalf("the appliable revision did not queue: %+v", rec.got)
+	}
+}
+
 // The model is told the truth about what happened: queued, already queued, or
 // unavailable. Reporting success for all three is how a model ends up
 // proposing the same line every turn forever.
@@ -173,6 +214,16 @@ func TestTheDescriptionTeachesTheCostNotACaseList(t *testing.T) {
 	for _, phrase := range []string{"still be true", "costs context on every request"} {
 		if !strings.Contains(desc, phrase) {
 			t.Errorf("description should state the principle %q:\n%s", phrase, desc)
+		}
+	}
+	// The other half of the principle, and the half that was missing until a
+	// user pointed at a chat where they had said who they were and what they
+	// had built, and nothing was proposed. The bar is whether a line stays true
+	// and matters, never where it came from — and the user's own sentence about
+	// themselves is not a claim awaiting corroboration, it is the source.
+	for _, phrase := range []string{"tell you about themselves", "already the evidence"} {
+		if !strings.Contains(desc, phrase) {
+			t.Errorf("description should not make the user's own words wait for evidence, missing %q:\n%s", phrase, desc)
 		}
 	}
 	// A word-trigger in a tool description is routing that beats any prompt

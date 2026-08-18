@@ -122,6 +122,22 @@ func (*MemoryTool) Description() string {
 // topics would prevent that. What separates a fact worth keeping from noise is
 // whether it will still be true, and still change what the agent does, on a
 // day nobody remembers this conversation.
+//
+// It was written entirely against that failure, and against the opposite one
+// it was silent — so the opposite one is what shipped. Owner, 18 ส.ค.: the
+// agent remembers only when told to remember, and a user saying who they are
+// and what they are building goes straight past this tool. Two clauses did it,
+// both aimed at the agent's own guesses and neither saying so. "Something you
+// worked out" is a source test that the user's own sentence fails. "Anything
+// you have not actually seen borne out" is an evidence test, and the agent
+// waits for corroboration of a fact whose only possible source has just
+// spoken.
+//
+// What generalises, and what the text below now says: the bar is whether a
+// line will still be true and still matter, never where it came from. When the
+// user states something about themselves, that IS the evidence — there is no
+// later observation that would confirm it further. The cost sentence is what
+// holds the other side; it always was.
 func (t *MemoryTool) ToolDefinition() model.ToolDefinition {
 	schema := map[string]any{
 		"type": "object",
@@ -162,12 +178,15 @@ func (t *MemoryTool) ToolDefinition() model.ToolDefinition {
 		Type: "function",
 		Function: model.ToolFunction{
 			Name: "memory",
-			Description: "Keep something you worked out across sessions, so the next one starts knowing it. " +
-				"Worth keeping: a fact about this user, their machine, or how their work is set up that will " +
-				"still be true next month and would change what you do — a convention they hold to, where " +
+			Description: "Keep what you learn about this user across sessions, so the next one starts knowing it. " +
+				"Worth keeping: what they tell you about themselves — who they are, what they are building, how " +
+				"they want to be worked with — and anything about their machine or their setup that will " +
+				"still be true next month and would change what you do: a convention they hold to, where " +
 				"something lives, a step that turned out to be necessary here. " +
+				"A fact the user states about themselves is already the evidence for it, so propose it when it " +
+				"is said rather than waiting to be told to. " +
 				"Not worth keeping: anything about the task in front of you, anything you could look up or " +
-				"search for when you need it, and anything you have not actually seen borne out. " +
+				"search for when you need it, and a conclusion of your own you have not seen borne out. " +
 				"A remembered line costs context on every request this agent ever makes again, so a wrong or " +
 				"idle one is paid for forever. Nothing here takes effect until the user approves it, and it " +
 				"reaches you at the start of the next session, not this one.",
@@ -262,6 +281,28 @@ func (t *MemoryTool) ExecuteTool(_ context.Context, args map[string]any) (skill.
 		return fail(fmt.Errorf(
 			"this agent's memory is full (limit %d bytes) — replace or remove a line that has stopped being useful before adding another",
 			MaxBytes))
+	}
+
+	// Same door, same reason, and the case that made it necessary is the
+	// ordinary one rather than a rare one: the agent proposes a line, the user
+	// corrects it two messages later, and the agent revises the line it just
+	// proposed. But a proposal is not memory — nothing is, until somebody
+	// approves it — so `old` names a line that is not in any file, and the
+	// revision queued as a card that could never be approved. Its only exit was
+	// ไม่เอา, which records the user refusing a line they had just asked for.
+	//
+	// What the model needs told is which of the two things is true, because the
+	// answer changes what it should do next: the line is not there, so revising
+	// it is not the move — adding it is.
+	if op == OpReplace || op == OpRemove {
+		if !Has(scope, old) {
+			if op == OpRemove {
+				return fail(fmt.Errorf("nothing remembered contains %q, so there is nothing to forget", old))
+			}
+			return fail(fmt.Errorf(
+				"nothing remembered contains %q — a proposal you made earlier is not memory until the user approves it. Use add if this should be remembered on its own",
+				old))
+		}
 	}
 
 	res, err := t.Proposer.Propose(Proposal{

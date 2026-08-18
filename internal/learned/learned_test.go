@@ -194,15 +194,67 @@ func TestEditEntryKeepsTheFileExplainingItself(t *testing.T) {
 	}
 }
 
-// Editing something that is not there is an error the agent can act on, not a
-// silent no-op it would read as success.
-func TestReplacingSomethingAbsentFails(t *testing.T) {
+// This used to assert the opposite, on the grounds that "an error the agent can
+// act on beats a silent no-op". The error was right and the caller was wrong:
+// Apply runs at approval time, where the agent is not present and the only
+// person who could act on it holds one button that means "do not learn this".
+// The refusal moved to the tool (TestARevisionOfSomethingUnrememberedIsRefused);
+// what is left here is the race the design invites, because the memory files
+// are plain markdown the user is told to edit.
+func TestApprovingAStaleRevisionStillReachesTheStateApproved(t *testing.T) {
 	isolate(t)
-	if err := Apply(MainScope, OpReplace, "ไม่มีบรรทัดนี้", "x"); err == nil {
-		t.Fatal("replacing a line that does not exist should fail")
+	if err := Apply(MainScope, OpAdd, "", "ผู้ใช้ใช้ Windows"); err != nil {
+		t.Fatalf("add: %v", err)
 	}
-	if err := Apply(MainScope, OpRemove, "ไม่มีบรรทัดนี้", ""); err == nil {
-		t.Fatal("removing a line that does not exist should fail")
+
+	// The line it names is gone, but what the user approved is that memory
+	// should say this — and now it does.
+	if err := Apply(MainScope, OpReplace, "ไม่มีบรรทัดนี้", "ผู้ใช้เป็นนักพัฒนา Aetox"); err != nil {
+		t.Fatalf("a replace whose target is gone should still land: %v", err)
+	}
+	if got := Entries(MainScope); len(got) != 2 || got[1] != "ผู้ใช้เป็นนักพัฒนา Aetox" {
+		t.Fatalf("the approved line is not in memory: %q", got)
+	}
+
+	// Twice is once. Approving the same card from two open windows must not
+	// leave the fact in the file twice.
+	if err := Apply(MainScope, OpReplace, "ไม่มีบรรทัดนี้", "ผู้ใช้เป็นนักพัฒนา Aetox"); err != nil {
+		t.Fatalf("second apply: %v", err)
+	}
+	if got := Entries(MainScope); len(got) != 2 {
+		t.Errorf("a re-applied replace duplicated the line: %q", got)
+	}
+
+	// Forgetting what is already forgotten is the state the user asked for.
+	if err := Apply(MainScope, OpRemove, "ไม่มีบรรทัดนี้", ""); err != nil {
+		t.Errorf("removing a line that is already gone should be a no-op: %v", err)
+	}
+	if got := Entries(MainScope); len(got) != 2 {
+		t.Errorf("a no-op remove changed the file: %q", got)
+	}
+}
+
+func TestHasAnswersTheSameQuestionApplyAsks(t *testing.T) {
+	isolate(t)
+	if err := Apply(MainScope, OpAdd, "", "สแกนเนอร์เขียนลง E:\\Scans"); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	for _, c := range []struct {
+		needle string
+		want   bool
+	}{
+		{"สแกนเนอร์", true},
+		{"E:\\Scans", true},
+		{"ไม่มีบรรทัดนี้", false},
+		{"", false},
+		{"   ", false},
+	} {
+		if got := Has(MainScope, c.needle); got != c.want {
+			t.Errorf("Has(%q) = %v, want %v", c.needle, got, c.want)
+		}
+	}
+	if Has(MainScope+"-unwritten", "อะไรก็ได้") {
+		t.Error("a scope with no file cannot contain anything")
 	}
 }
 

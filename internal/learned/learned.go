@@ -288,6 +288,19 @@ const (
 
 // Apply writes an approved change to disk. Called from the approval path, never
 // from a tool.
+//
+// `before` locates a line; it is not a precondition. That distinction is the
+// 2026-08-18 fix and it matters because of who calls this: a proposal that
+// names a line nothing matches is refused at the door now (MemoryTool), so
+// what still reaches here having gone stale is the race — the user hand-edited
+// the file, or approved something else, between the proposal and this click.
+// The memory files are plain markdown the user is invited to edit, so that
+// race is a feature working, not a fault.
+//
+// It used to fail, on the stated grounds that "an error the agent can act on
+// beats a silent no-op". The agent is not the caller and never was. The person
+// clicking อนุมัติ is, and for them the error had exactly one exit — ไม่เอา,
+// the button that records them refusing a line they had just said yes to.
 func Apply(scope, op, before, body string) error {
 	path, err := FileFor(scope)
 	if err != nil {
@@ -306,18 +319,24 @@ func Apply(scope, op, before, body string) error {
 		}
 		lines = append(lines, body)
 	case OpReplace:
-		idx := findEntry(lines, before)
-		if idx < 0 {
-			return fmt.Errorf("no remembered line contains %q", before)
-		}
 		if body == "" {
 			return fmt.Errorf("replacement is empty — use remove to forget a line")
 		}
-		lines[idx] = body
+		// What the user approved is that memory should say `body`. When the line
+		// it would have replaced is already gone, adding it reaches exactly that
+		// state; when the file already says it, the state is reached and there is
+		// nothing to do.
+		if idx := findEntry(lines, before); idx >= 0 {
+			lines[idx] = body
+		} else if findEntry(lines, body) < 0 {
+			lines = append(lines, body)
+		}
 	case OpRemove:
 		idx := findEntry(lines, before)
 		if idx < 0 {
-			return fmt.Errorf("no remembered line contains %q", before)
+			// Already forgotten, by hand or by an approval that landed first.
+			// The state the user asked for is the state on disk.
+			return nil
 		}
 		lines = append(lines[:idx], lines[idx+1:]...)
 	default:
@@ -350,6 +369,21 @@ func Entries(scope string) []string {
 		return nil
 	}
 	return splitEntries(string(data))
+}
+
+// Has reports whether this scope currently holds a line matching needle, by the
+// same substring match Apply makes.
+//
+// It exists so a revision can be refused where the model can still do something
+// about it. Everything else in this file is about what is on disk; this is the
+// one question the door needs answered, and it must be answered the same way
+// the writer would answer it or the check is theatre.
+func Has(scope, needle string) bool {
+	needle = strings.TrimSpace(needle)
+	if needle == "" {
+		return false
+	}
+	return findEntry(Entries(scope), needle) >= 0
 }
 
 // EditEntry rewrites or removes one remembered line, addressed by its position

@@ -206,14 +206,21 @@ describe('the learning review page', () => {
 
   // An approval that could not be applied leaves the proposal in the list, and
   // a button that appears to do nothing reads as a broken feature.
+  //
+  // The mocked error is the one Apply can still produce — the scope filled up
+  // between the proposal and the click. It used to be "no remembered line
+  // contains", which §139 removed: a stale revision now lands instead of
+  // erroring, so a test still waving that message would be rehearsing a
+  // failure the engine can no longer send.
   it('says so when an approval could not be applied', async () => {
-    vi.mocked(ApprovePendingChange).mockRejectedValueOnce(new Error('no remembered line contains "x"'))
+    vi.mocked(ApprovePendingChange).mockRejectedValueOnce(
+      new Error("this scope's memory is full (8215 bytes, limit 8192) — merge or drop an existing line first"))
     const { container } = render(Settings, { onClose: () => {} })
     await openSection(container, 'การเรียนรู้')
     await waitFor(() => expect(screen.getByText('อนุมัติ')).toBeTruthy())
 
     await fireEvent.click(screen.getByText('อนุมัติ'))
-    await waitFor(() => expect(screen.getByText(/no remembered line/)).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(/memory is full/)).toBeTruthy())
   })
 
   it('carries the kill switch, and turning it off reaches the engine', async () => {
