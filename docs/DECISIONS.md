@@ -62,7 +62,7 @@ Missing files are skipped silently; per-file size cap (~16KB) to keep the prompt
 
 **Reload timing (settled 2026-07-22, owner: "ตอนรีสตาร์ท หรือตอนเริ่ม ... หลายๆที่ทำก็แบบนั้น"):** **Option A, bootstrap-only.** The file is read where the agent is created — app start, project switch, model/provider switch. Editing `AETOX.md` mid-session has no effect until one of those happens. Matches convention elsewhere; zero new mechanism (no context-reset seam, no per-turn stat cost). An upgrade path to per-turn mtime-checking (previously sketched as "Option B") is still possible later without an API change, if it's ever needed — not built now (YAGNI).
 
-**Explicitly deferred, not part of this layer:** per-turn dynamic context (git status / open files injected every turn, OpenCode-style), and sub-agent profile files (`.aetox/agents/*.md`) — the latter waits until the orchestrator (§10) has a real caller; per `docs/opencode-study/agents.md`, a profile is just model override + prompt override + permission ruleset (+ `steps`), so it can be layered on top of this package later without redesign.
+**Explicitly deferred, not part of this layer:** per-turn dynamic context (git status / open files injected every turn, OpenCode-style), and sub-agent profile files (`.aetox/agents/*.md`) — the latter waits until the orchestrator (§10) has a real caller; per the source-reading note on agents, a profile is just model override + prompt override + permission ruleset (+ `steps`), so it can be layered on top of this package later without redesign.
 
 **Related cleanup (done 2026-07-22):** the tool loop is now unbounded engine-wide (OpenCode-style; brakes = approval layer + ctx cancel — CLI Ctrl+C, desktop Stop button → `App.CancelTurn`). The CLI's leftover `defaultAgentMaxToolCalls = 16` was removed — it was only applied at startup and silently lost on `/model` switch anyway. Details: `docs/architecture/model-control-layer-2026-07-22.md` §3.
 
@@ -361,7 +361,7 @@ Until this, the only way to read a second project was to unfocus — trading one
 **Design ([internal/skill/shell_sandbox.go](../internal/skill/shell_sandbox.go)):** every path a command names goes through `resolveSandboxPath` — the same function, not a second copy of its rules — before the command runs. Tokens are split quote-aware and per command segment; `~`, `%VAR%`, `$VAR` and `$env:VAR` are expanded first; `--out=` and cmd's `/f:` prefixes are stripped; a glob is reduced to its literal directory. A path found outside refuses the command with the message that names the remedy. `git` was routed through the same gate (`guardArgs`) in the same change, retiring its reliance on a private denylist that blocked `-C` by name and let `--output=` through.
 
 - **Two things it deliberately does not contain, stated so they are not mistaken for oversights.** *Program position:* a command's first token names code to run, and `go` through PATH reaches a binary outside the workspace exactly as surely as its absolute path does — checking the spelling would forbid the spelling and permit the act. *What a program does once started:* a script inside the workspace can open any file the user can. Both need an OS boundary, not a better parser.
-- **A construct it cannot read stops the command** rather than passing through: `$(…)`, backticks, `${…}`, `-EncodedCommand`, `Invoke-Expression`, and a variable in path position that is not one of the folder-naming names. This is where it parts from OpenCode, whose shell tokenizer is the better-engineered version of the idea (real tree-sitter grammars for bash and PowerShell, provider paths, cygpath) but which does not gate on what it finds: read against the source ([docs/opencode-study/permissions.md](opencode-study/permissions.md), commit `76ced54`), `tool/bash.ts` matches the **raw command string** against the permission rules and the path scan is an advisory warning only. Its containment is the prompt — default `ask` when no rule matches — and the filesystem is not walled at all. *(Corrected 2026-08-15: this bullet previously said OpenCode "checks paths only for a known verb list", which overstates it. The verb list produces a warning, not a refusal.)*
+- **A construct it cannot read stops the command** rather than passing through: `$(…)`, backticks, `${…}`, `-EncodedCommand`, `Invoke-Expression`, and a variable in path position that is not one of the folder-naming names. This is where it parts from OpenCode, whose shell tokenizer is the better-engineered version of the idea (real tree-sitter grammars for bash and PowerShell, provider paths, cygpath) but which does not gate on what it finds: read against the source (the source-reading note on permissions (kept off this repo), commit `76ced54`), `tool/bash.ts` matches the **raw command string** against the permission rules and the path scan is an advisory warning only. Its containment is the prompt — default `ask` when no rule matches — and the filesystem is not walled at all. *(Corrected 2026-08-15: this bullet previously said OpenCode "checks paths only for a known verb list", which overstates it. The verb list produces a warning, not a refusal.)*
 - **Paths are also matched by shape anywhere in the line**, not just as tokens: `python -c "open('C:/Users/me/.ssh/id_rsa')"` is one token to any tokenizer and a path to the OS. Reading inside those strings properly would need an interpreter per language; recognising the shape costs a scan and closes the family (node -e, sed, `powershell -Command`).
 - **Containment, not isolation, and the difference is the point.** It reads the command as written and cannot follow a path that only exists at runtime. Claude Code draws the same line and ships both halves — permission rules on the command string, plus an OS sandbox (Seatbelt, bubblewrap) that holds "regardless of what the model chose to run". The OS half does not exist on native Windows, so this is the half that can be built today; what it cannot check, it refuses.
 - **The prompt says so** ([internal/prompt](../internal/prompt)): shell obeys the same rule, and reaching for shell after another tool refused a path gets the same answer. Without that the model spends a turn discovering it.
@@ -625,7 +625,6 @@ Standing up CI immediately paid for itself — three defects the review never sa
 What "Job Object still covers those at exit" understated: it covers them **only** at exit, and only on Windows. Every mid-life teardown leaked — Settings' Test button, adding or removing a server, the `CloseShared` on a project switch — and off Windows there is no job object to be the backstop. The ffmpeg and tesseract sites named above stay as they were, deliberately: they are bounded by their own completion and already carry a context.
 
 `TestEverySpawnCanBeStopped` is what keeps it closed. `TestEveryExecSiteHidesTheConsole` had been guarding every `exec` site for a console window since the day one flashed, and nothing was guarding the same sites for teardown — which is why the two that needed it were the two nobody was told about.
-
 
 ---
 
@@ -1025,7 +1024,7 @@ This section spent a day being about two things and is now about one. The record
 **Why he is right, in the terms this document should have used from the start:**
 
 1. **There is already a layer that answers "who is the AI".** The identity directory (§11 — `identity.md`, `thinking.md`, `context.md`) rides into every project and every session. An agent profile carrying its own role prompt is a **second mechanism for the same question**, and the two would eventually contradict each other with no rule for which wins. That is the same class of debt the owner caught twice in one day inside this very feature (a `mode:` key that could disagree with its folder; two layers sharing one list).
-2. **`build` and `plan` were never two personalities** — [docs/opencode-study/agents.md](../docs/opencode-study/agents.md) says so in its own conclusion: a "mode" is a bundle of (permission ruleset + prompt), not a branch in the engine. But *calling* it an agent and putting it in a dropdown turns it into "who are you talking to", which is precisely the fragmentation the owner felt. Claude Code ships the same capability as **plan mode** (shift+tab) on one assistant; Codex ships no agent switch at all. Only OpenCode models it as a selectable agent — and following that one detail of the reference implementation cost more in product coherence than it bought.
+2. **`build` and `plan` were never two personalities** — the source-reading note on agents (kept off this repo) says so in its own conclusion: a "mode" is a bundle of (permission ruleset + prompt), not a branch in the engine. But *calling* it an agent and putting it in a dropdown turns it into "who are you talking to", which is precisely the fragmentation the owner felt. Claude Code ships the same capability as **plan mode** (shift+tab) on one assistant; Codex ships no agent switch at all. Only OpenCode models it as a selectable agent — and following that one detail of the reference implementation cost more in product coherence than it bought.
 3. **The requirement was never primary switching.** Phase 6 asked for sub-agents. The agent layer was scope this document added on its own.
 
 **Settled: the main agent is the assistant.** One identity, configured by the identity files, never selected from a list. `internal/prompt` has no role-override layer and will not get one. Profiles exist for exactly one purpose — describing who the assistant *delegates to*.
@@ -1039,7 +1038,7 @@ This section spent a day being about two things and is now about one. The record
 | Needed | State (all `Direct`) |
 |---|---|
 | Multi-agent lifecycle | [internal/orchestrator](../internal/orchestrator/orchestrator.go) — `Spawn/Get/Stop/List`, **zero callers** since §10 |
-| What a profile even is | [docs/opencode-study/agents.md](../docs/opencode-study/agents.md) §1 — profile = prompt + model override + permission ruleset |
+| What a profile even is | the source-reading note on agents (kept off this repo) §1 — profile = prompt + model override + permission ruleset |
 | Restricting what a delegate may touch | [safety.go:80](../internal/safety/safety.go#L80) `PermissionConfig.Resolve` — glob over tool + args, already allow/deny/ask |
 | Showing tools live | [app.go:91](../desktop/app.go#L91) `recordToolAction` → `agent:tool` event, already a struct not a string (§27) |
 | Per-sub-agent loop cap | `cognitive.AgentConfig.MaxToolCalls` exists; the main agent deliberately runs unbounded ([agent.go:191](../internal/cognitive/agent.go#L191)) |
@@ -1273,7 +1272,7 @@ Owner: *"เมนยังสร้างเอเจนมารันขน�
 | **LangGraph** (`02-Team-Orchestration/LangGraph.md`) | Supervisor→worker; `Topic` does fan-out → fan-in (map-reduce) inside one superstep; nodes that don't depend on each other run together | The shape to copy: one `task` call that takes N briefs, spawns N children, waits, returns N results in order |
 | **CrewAI** | Role-based crew + explicit process (sequential vs hierarchical) | Roles are our profiles already; the "process" is the parent's choice, not new machinery |
 | **deer-flow** (ByteDance) | SuperAgent harness + sub-agents | Confirms the harness lives with the parent, not in each child |
-| **OpenCode** ([study §2](../docs/opencode-study/agents.md)) | `task` is foreground+blocking; background mode exists but sits behind an experimental flag | Foreground first is the reference behavior too, not a shortcut |
+| **OpenCode** (study §2) | `task` is foreground+blocking; background mode exists but sits behind an experimental flag | Foreground first is the reference behavior too, not a shortcut |
 
 **What every one of them has in common, and it is the load-bearing observation:** the orchestrator and the workers are distinct things, and parallelism is the *orchestrator's* concern — never something a worker knows about. So parallel fan-out is an addition to the `task` tool's own signature (`prompts: []string` → N children → N results) plus a concurrency cap, and it changes **nothing** in `internal/subagent` or in a child's loop.
 
@@ -1531,7 +1530,7 @@ Three tools over one runner, the arrangement §44 already uses for `task`. The m
 
 The only thing between an agent and a bad edit was the approval prompt, and approval is a judgement made *before* seeing the result. When the result is wrong, the user's own git history was the entire safety net — which works exactly as well as they commit.
 
-The design is opencode's, read from its source ([docs/opencode-study/snapshot.md](../docs/opencode-study/snapshot.md)) rather than invented, and it earns its place by **adding nothing**: no storage format, no database, no daemon, no new dependency. A **shadow git repository** per project lives in Aetox's data root with its work tree pointed at the real project; a snapshot is a **git tree object** from `write-tree`; `alternates` links the shadow store to the project's own objects so a committed file is never stored twice.
+The design is opencode's, read from its source (the source-reading note on snapshots (kept off this repo)) rather than invented, and it earns its place by **adding nothing**: no storage format, no database, no daemon, no new dependency. A **shadow git repository** per project lives in Aetox's data root with its work tree pointed at the real project; a snapshot is a **git tree object** from `write-tree`; `alternates` links the shadow store to the project's own objects so a committed file is never stored twice.
 
 What that buys, and what each is pinned by a test for:
 
@@ -1561,7 +1560,7 @@ The tail of §52's sweep, done rather than recorded. Each of these was small on 
 
 **The staleness question, answered by what was already there.** Claude Code enforces read-before-edit with a ledger. Aetox does not need one: `edit` requires the text to appear exactly once, so a file that moved under the model either no longer matches (refused) or now matches twice (refused). The failure mode a ledger prevents — an edit landing somewhere the model never looked — cannot happen here, and a test now says so rather than leaving it a happy accident.
 
-**Plan mode is a sub-agent profile, not a mode.** [docs/opencode-study/agents.md](../docs/opencode-study/agents.md) recorded the finding that opencode's `plan` agent is structurally identical to `build` — same loop, same everything — differing only in its permission set. Aetox already had the whole mechanism (§44): [profiles/plan.md](../internal/subagent/profiles/subagents/plan.md) inherits every reading tool, because a plan built without `diagnostics`, `git` or the web is a worse plan, and denies every writing one. `Deny` rather than a `tools:` allowlist on purpose — the allowlist is a token filter, `Deny` is the gate that reaches `PermissionConfig`, so a discovered skill by the same name cannot walk through. The brief fixes the answer's shape (what is there now / what to change / what could go wrong / what you are unsure of) because a planner that free-forms produces prose nobody can act on.
+**Plan mode is a sub-agent profile, not a mode.** the source-reading note on agents (kept off this repo) recorded the finding that opencode's `plan` agent is structurally identical to `build` — same loop, same everything — differing only in its permission set. Aetox already had the whole mechanism (§44): [profiles/plan.md](../internal/subagent/profiles/subagents/plan.md) inherits every reading tool, because a plan built without `diagnostics`, `git` or the web is a worse plan, and denies every writing one. `Deny` rather than a `tools:` allowlist on purpose — the allowlist is a token filter, `Deny` is the gate that reaches `PermissionConfig`, so a discovered skill by the same name cannot walk through. The brief fixes the answer's shape (what is there now / what to change / what could go wrong / what you are unsure of) because a planner that free-forms produces prose nobody can act on.
 
 ---
 
@@ -1580,7 +1579,7 @@ Two tools per server, not one per resource: a server can expose thousands, they 
 **Not built, with reasons.**
 
 - **MCP prompts stay at the client layer.** `Client.Prompts`/`GetPrompt` exist and compile; they are not bridged as model tools. A prompt template is a workflow a *human* picks, which is what the composer's `/` palette is for (§36) — handing one to the model as a tool offers it a canned instruction it has no way to judge. The plumbing is there for whenever the palette wiring happens.
-- **Plugin hooks are not being built.** [docs/opencode-study/plugin-hooks.md](../docs/opencode-study/plugin-hooks.md) put them next after MCP, and that ordering has aged out: `plugin_install` is still the half-finished loader of §6.5, so a `tool.execute.before/after` system today would be an extension point with nothing on the other end of it. The same study's own finding applies — *"always grep for the call site, not just the type, before citing a feature as real"* — and building the type first is how you end up citing your own scaffolding. MCP already covers third-party capability, which is what the hooks were wanted for.
+- **Plugin hooks are not being built.** the source-reading note on plugin hooks (kept off this repo) put them next after MCP, and that ordering has aged out: `plugin_install` is still the half-finished loader of §6.5, so a `tool.execute.before/after` system today would be an extension point with nothing on the other end of it. The same study's own finding applies — *"always grep for the call site, not just the type, before citing a feature as real"* — and building the type first is how you end up citing your own scaffolding. MCP already covers third-party capability, which is what the hooks were wanted for.
 - **The undo button, again.** Same blocker as §53: it needs `wails generate` to regenerate the bindings **and** an edit to [Chat.svelte](../desktop/frontend/src/lib/Chat.svelte), which carries the owner's uncommitted work. `UndoLastTurn` and `PendingUndo` are bound and tested on the Go side.
 
 ---
@@ -1625,7 +1624,7 @@ Six decisions worth keeping:
 
 **And the button.** `internal/snapshot` had worked since §53.3 with no way for a user to reach it, which §53 and §55 both recorded as outstanding. The chip sits in the composer's focus row beside the project and branch, appears **only when the last turn actually changed a file** — so it is never a button that does nothing — and lists those files on hover. Pressing it posts the result into the transcript rather than a toast: undoing is a real event in the session, and a message you can scroll back to is the only record of it that survives.
 
-**One thing this closes that was never on the list.** Formatter-on-save was a Low row in [docs/architecture-reference-opencode.md](../docs/architecture-reference-opencode.md)'s gap table, and it is now closed without a single line of formatter code in the product: `PostToolUse` with `matcher: "write"` runs whatever the user already uses.
+**One thing this closes that was never on the list.** Formatter-on-save was a Low row in the architecture reference note (kept off this repo)'s gap table, and it is now closed without a single line of formatter code in the product: `PostToolUse` with `matcher: "write"` runs whatever the user already uses.
 
 ---
 
@@ -3048,7 +3047,7 @@ Verified in both a dark and a light theme against the real stylesheets. It reads
 
 The sweep was estimated at 16 points in three files and came to roughly forty across eighteen, which is worth recording because the miss has a cause: `grep โหมด COMPANY.md` finds the *document's* uses and says nothing about the product's. The word was also in the CLI (`internal/app`, `internal/grammar`), in the onboarding text (`internal/model/noop.go`), in the `description:` line of all three desk manifests — which is screen text, rendered on the picker card — in four user-facing error strings, and in a frontend test asserting the old label. **Counting a vocabulary change by grepping the document that defines the vocabulary is counting the one place that cannot be wrong.**
 
-What was deliberately left alone: shipped release notes and `BENCHMARK.md` (records of what was said at the time, not current text), `docs/opencode-study/` (another product's word), and two verbatim owner quotes — the §4 one, which already carries a note saying its words are dated, and the one in `shellSwitch.test.ts`. The rule from §4 holds: a quote is evidence, and evidence is not edited to match today's vocabulary.
+What was deliberately left alone: shipped release notes and `BENCHMARK.md` (records of what was said at the time, not current text), the source-reading notes (another product's word), and two verbatim owner quotes — the §4 one, which already carries a note saying its words are dated, and the one in `shellSwitch.test.ts`. The rule from §4 holds: a quote is evidence, and evidence is not edited to match today's vocabulary.
 
 Switching mid-session breaks the prompt cache once per switch; that is accepted, because it happens only on an explicit press.
 
@@ -4589,6 +4588,99 @@ Ordered behind the per-session engine work (§134.4), and said so explicitly: th
 
 ---
 
+## 138. Decision — "Installed" and "Findable" Are Two Claims (2026-08-18)
+
+Owner, looking at the installer's own log after a clean v1.2.4 install: *"ทำไมบางตัวมี ติดตั้งไปพร้อมกัน ในตอนนี้ไม่ได้อ่ะครับ เช่นตัวอ่านภาพและอื่นๆอีก"*.
+
+The log was telling the truth. poppler, ffmpeg and the starter speech model all reported `Skipping: already installed`, and all three were there and working — they unpack into `$INSTDIR` and `bundledBinary` looks next to Aetox's own exe, so the place the installer writes to and the place the code reads from are the same place by construction.
+
+Tesseract was also installed, and also could not be used. `tesseract.exe` and `tha.traineddata` sat in `C:\Program Files\Tesseract-OCR` exactly as designed, and neither `HKLM` nor `HKCU` had that folder on `PATH` — the UB-Mannheim setup adds it from a checkbox, on a page that `/S` never draws. `image_ocr.go` ran the bare name `tesseract`, got `exec.ErrNotFound`, and told the owner to go and install what he already had.
+
+**The claim that was never checked.** `bundled.go` carried it in prose: *"Tesseract is the exception and needs none of this: its own installer registers itself, so PATH finds it like any other program."* `internal/skill/README.md` repeated it. The bundling doc's own "Untested caveat" section had even written down the check that would have caught it — *confirm `tesseract --version` works afterward* — and that check had never been run. Two claims were being treated as one: **the installer put it on the disk**, which was true and verified, and **the program can find it**, which was neither.
+
+**The fix, and why it is not `bundledBinary`.** `resolveTesseract` tries `PATH` first, then the same `$PROGRAMFILES64\Tesseract-OCR` that `project.nsi` checks before deciding whether to install at all — the two ends now name one address. The order is the reverse of `bundledBinary`'s, deliberately: poppler and ffmpeg are copies we unpacked and pinned, so ours should win over anything else on the machine, while Tesseract is an ordinary system-wide install and someone who put a particular one on `PATH` chose it. Falling back to the bare name when nothing is found stays load-bearing — it is what keeps a genuinely missing Tesseract arriving as `exec.ErrNotFound` and turning into install instructions, instead of a file-not-found about a path the user never typed. Editing the machine's `PATH` from the installer remains the other option and the worse one.
+
+`video_ocr` had the same blindness in its own pre-flight `exec.LookPath` and now asks `tesseractAvailable()`, so a machine that can OCR no longer gets turned away before a single frame is extracted.
+
+**What generalises.** Every install step in `project.nsi` earns two questions, not one. §133's family again, from the other side: there the caller answered "no" where it should have said "unknown"; here the code asked `PATH` a question `PATH` was never going to be able to answer, and read the silence as absence. The other three components escaped this only because they are unpacked into the directory the code already looks in — the property worth keeping is not "bundle everything", it is that **whoever writes the file and whoever reads it must name the same address, in one place**.
+
+Left standing on purpose: `audio_transcribe` has the matching hole in a different shape. The installer ships the 31MB model and no `whisper-cli` to run it with, and `findBinary` resolves through `PATH` alone. Named here rather than fixed, because whether the installer should carry that binary is the owner's call, not a detail of this one.
+
+---
+
+## 139. Decision — A Proposal Is Not Memory, and the User's Own Words Are Not a Guess (2026-08-18)
+
+Owner, with a screenshot of the review page carrying a red line across it: *"บั๊คมาแล้ว แล้วดู ทำไมข้อมูลแบบนี้มันไม่จำ มันจำแค่ตอนเราบอกตรงๆอ่ะ"*. Two faults in one picture, and they turn out to be the same fault seen from both ends: what the agent learns is decided in one place and applied in another, and neither end was checking what the other could see.
+
+### The card that could never be approved
+
+`Error: no remembered line contains "ผู้ใช้เป็นนักพัฒนาระบบ (system developer)"`, above a `REPLACE` card, above an empty สิ่งที่จำไว้แล้ว.
+
+The sequence that produces it is the ordinary one, not a rare one. The agent proposes a line. The user corrects it two messages later. The agent revises the line it just proposed — and **a proposal is not memory**: nothing is, until somebody approves it, which is the guarantee this whole subsystem exists to make. So `old` named a line no file held, `MemoryTool` queued it without looking, and `learned.Apply` discovered it at the click. The card's only working button was ไม่เอา, which records the user refusing a fact they had just asked for.
+
+`tool.go` already had the right instinct, written above the room check and applied to `add` alone: *"Refused here rather than at approval: a proposal that cannot be applied would sit in the user's review list looking like progress."* The same sentence covers `replace` and `remove` and was never extended to them. It is now, and the refusal names the op that would work — the line is not there, so adding it is the move, not revising it.
+
+### The check whose stated reason named a caller that does not exist
+
+The other half was pinned by a test: *"Editing something that is not there is an error the agent can act on, not a silent no-op it would read as success."* The error was right; the caller was imaginary. `Apply`'s own doc comment says it — *called from the approval path, never from a tool* — so the agent is not present, and the only person who could act on it holds one button meaning "do not learn this".
+
+So `before` is now a **locator, not a precondition**. With the door closed above, what still reaches `Apply` stale is the race the design invites: the memory files are plain markdown the user is told to edit. A `replace` whose target is gone adds its body, because what the user approved is that memory should say it; a body already present changes nothing, so two windows clicking one card cannot double a line; a `remove` of something already forgotten is the state that was asked for. The full-scope failure still refuses and still leaves the row waiting, which is what `TestAFailedApplyDoesNotMarkTheProposalApproved` was really guarding.
+
+### Why nothing was remembered until it was ordered
+
+The second half of the owner's sentence is the more expensive one. He had told the agent who he was and what he had built, in the plainest terms available, and no proposal was made at all.
+
+Nothing was broken. The summarizer stopped producing lessons at §136 and now writes only problems, so the **only** path from a fact to memory is the model choosing to call `memory` mid-turn — which makes that tool's description the whole policy. And the description was written entirely against one failure, a memory filling with restatements of the current task, and was silent on its opposite.
+
+Two clauses did it, both aimed at the agent's own guesses and neither saying so:
+
+- *"Keep something you **worked out** across sessions"* — a source test the user's own sentence fails.
+- *"Not worth keeping … anything you have **not actually seen borne out**"* — an evidence test that has the agent waiting for corroboration of a fact whose only possible source has just spoken.
+
+Between them the description argued *against* the one case a user would consider obvious. It also gated the worth-keeping clause on *"would change what you do"*, which a biographical fact fails on a plain reading and passes on a real one: who you are talking to changes register, assumptions about expertise, and whose project this is.
+
+The rewrite states what generalises rather than the case that exposed it — **the bar is whether a line stays true and stays worth carrying, never where it came from** — and says outright that a fact the user states about themselves is already the evidence for it, so it is proposed when it is said rather than when it is ordered. *"would change what you do"* survives, attached to the setup half where it belongs and where it does its work. The cost sentence is what holds the other side; it always was, and it is what §132's ratchet weighs. The block absorbed the change without a raise.
+
+**What generalises.** A description that only ever answered "what should this tool refuse" will get the refusing right and the reaching never — the failures you write against are the only ones you see. And a check placed where the wrong party is standing is not a check: `Apply` refused correctly and told nobody who could do anything about it, for as long as it took a user to send a screenshot.
+
+---
+
+## 140. Decision — Name a File Only Where the User Named It (2026-08-18)
+
+Found while fixing §139, in the test that had been guarding against it the whole time. `TestOpenSandboxSaysTheWorkingFolderIsNotTheUsersHome` was red on the owner's machine and green in CI, and it was right both times.
+
+`layer()` headed every folded file with its **absolute path**, so a session with anything to fold sent this on every request:
+
+```
+# What you have learned and the user approved (C:\Users\<name>\AppData\Roaming\aetox\memory\MEMORY.md)
+```
+
+That is the same charge exactly — the one `environment()` was rewritten to stop paying for the sandbox root — arriving by a different door. It went unseen longer because it only exists once the user has a memory or an identity file at all, which no fresh machine does.
+
+### Why the test could not see it
+
+Thirty-six of the forty-two tests in `internal/prompt` never set `AETOX_DATA_ROOT`, so they read the developer's real Aetox and folded in whatever it had learned. On a fresh checkout that folder is empty, so they passed; in CI it is empty, so they passed; on this machine they passed too, until the day §139's approval put a line in the file and the assertion finally had a string to find. A `TestMain` now gives the whole package one empty data root, because "remember to isolate" is not a mechanism.
+
+That is the more general finding. A test that reads real user state is not merely fragile — it is **an assertion evaluated against a different input on every machine**, and the machine where it happens to be true is the one that decides whether anyone hears about it.
+
+### The line, and the half-fix that was rejected on the way
+
+First attempt printed `filepath.Base(path)` and called it done. It is not: the project memory file is `projects/<name>-<hash>.md`, and the hash is over the absolute project root — so the same repository cloned to a different folder produces a different header. Removing a path and putting a machine-varying token back in its place is half a leak, which is a leak.
+
+The line that settles it is **who chose the name**:
+
+| layer | named by | header |
+|---|---|---|
+| `Personal instructions` | the user | `(context.md)` — several files, and they may refer to one by name |
+| `Project rules` | the user | `(AETOX.md)` — which of the three conventions this repo uses |
+| the three memory scopes | Aetox | nothing — each title already names its own scope |
+
+A name the user chose reads the same on every machine and is worth its tokens. A name Aetox generated says nothing the title did not, and one of them is not even stable across clones. Every path is still returned in `Loaded`, which is where the settings badge reads them; nothing on the model's side needs one, because memory is written through the `memory` tool and an approval, and the prompt's own standing rule is to repeat a path a tool reported rather than assemble one.
+
+**What generalises.** Two questions, not one, before anything machine-specific goes into a prompt that ships on every request: does the model need this, and would it read the same on somebody else's machine. `layer()` had never been asked either — the path was there because it was what the caller happened to be holding.
+
+---
+
 ## 141. Decision — A Rule Suppressed Twenty Times Was Never Chosen (2026-08-18)
 
 **Trigger:** *"ติดตั้ง golangci-lint แล้วรันกับโปรเจกต์ Aetox … สรุปปัญหาหลักๆ ที่ควรแก้ก่อน"* then, on the plan: *"วางแผนแก้เลยครับอย่าสร้างหนี้ในเทคนิคนะครับ"* (2026-08-18).
@@ -4682,3 +4774,160 @@ The remaining four were an `Element.prototype.animate` mock in the test setup th
 - **Anything about the frontend.** `svelte-check --threshold error` remains the whole story there; no ESLint was added and none is proposed.
 
 **What generalises.** A linter reports; it does not know the program. Every finding here that looked like a vulnerability was a rule recognising a shape and not a purpose, and the only way to tell them apart was to open the file — 1,326 findings produced perhaps a dozen true ones, and the dozen were worth the reading. The corollary is the title: when a rule fires many times on something deliberate, the response belongs in the configuration, once, with the reason attached, because twenty annotations are twenty places answering a question the config was built to answer.
+
+---
+
+## 142. Decision — A Tool That Cannot Read Must Say So, Not Return Something (2026-08-18)
+
+**Trigger:** owner, after §141's lint pass, asking whether `image_ocr` reads Thai, Chinese and English — then, on the proposal: *"เห็นด้วย"* (2026-08-18).
+
+**Status:** Approved & done 2026-08-18. Chinese support declined in the same breath: *"เค อังกฤษ ไทยก็พอ"*.
+
+### 142.1 The question was about languages; the defect was about honesty
+
+`image_ocr` runs Tesseract with a hardcoded `-l tha+eng`, and the machine carries `eng`, `osd` and `tha` because [project.nsi](../desktop/build/windows/installer/project.nsi) fetches exactly one language file. So the literal answer is Thai and English, and the owner's answer to whether that should change was that it should not.
+
+The defect is what happens on the third case. Tesseract asked for `tha+eng` does not refuse a page of Chinese — it returns plausible Thai letters and **exit code 0**. A slip reading 转账成功 金额 1,250.00 元 came back as:
+
+```
+SEM AKIN ธร พ 1.250.00 7 ว
+ข่า โข 8417 2026468188
+ว 8 ทั โว «ซี 8829301
+```
+
+The digits are correct, because Arabic numerals are Arabic numerals in both images, and that is what makes this worse than a plain failure: `1.250.00` and `8829301` are right, so the nonsense around them reads as text that was genuinely on the page. The tool then reported success and handed it to the model with nothing said about it. This is §141's audit-log finding in a different room — a write that failed reported as a write that worked — with the difference that the reader here is a model that will answer a user from it.
+
+### 142.2 Confidence, because the alternatives were measured and lost
+
+**Tesseract's own script detector (OSD) was tried first and rejected on evidence.** `osd.traineddata` already ships with every install, so it would have cost nothing to run. It fails: on the half-Chinese image it exits 1 with *"Too few characters. Skipping this page"*, and on the Chinese page it reports `Script: Japanese` at confidence 0.50. A detector that gives up on sparse pages gives up on screenshots, which is most of what this tool is pointed at.
+
+**Per-word confidence separates the cases cleanly.** Measured through the shipped code path:
+
+| image | confidence | words |
+|---|---|---|
+| Thai, rendered sharp | 94.2 | 33 |
+| the same Thai, downscaled then blown back up | 93.2 | 33 |
+| half Thai, half Chinese | 79.1 | 12 |
+| Chinese read through `tha+eng` | **47.7** | 17 |
+
+The second row is the one that decides the design. Confidence measures how well a glyph matched the model, not how sharp the pixels were, so degrading the image cost 1.0 points where the wrong script cost 46. That is the separation needed: **unreadable is not the same as photographed badly**, and a check that could not tell those apart would have to be off by default.
+
+An eyeball average over the same TSV put the Chinese page at 64, not 47.7, because it counted rows whose text is only whitespace and those score high. `meanWordConfidence` drops them, which is both more correct and, by luck, wider.
+
+### 142.3 It warns; it never refuses
+
+Four synthetic images are not a corpus. A real slip photographed at an angle, with glare, over JPEG, will score below anything measured here, and a threshold that refused would refuse those first. So `ocrLowConfidence = 70` produces a sentence appended under the text and nothing else:
+
+> อ่านมาได้ไม่ค่อยมั่นใจ (48%) ข้อความข้างบนอาจไม่ตรงกับภาพ เครื่องมือนี้อ่านได้เฉพาะภาษาไทยกับอังกฤษ ถ้าภาพเป็นภาษาอื่นผลที่ได้จะไม่มีความหมาย
+
+Naming the two languages is the actionable half. A reader told only that confidence is low retries the same unreadable page; one told which two languages exist stops. The sentence goes **after** the text, in the order a person looking at the image would meet them.
+
+Raising it to 80 would also catch the half-and-half case at 79.1. That trade needs real photographs to settle, not more synthetic ones, and is written into the constant's comment rather than left as folklore.
+
+**No rule mentions Chinese.** There is no `if script == chinese` anywhere in this change, which is the point: the tool reports how sure it is, and a model that can read `SEM AKIN ธร พ` alongside "48%" decides for itself. That is the same principle the system prompt is held to — teach what generalises, never hardcode the case that prompted it.
+
+### 142.4 Cost, and the one new failure mode
+
+`runTesseract` now writes `txt` and `tsv` to a temp basename instead of reading stdout, which is **one OCR pass, not two**: 182ms → 184ms over five runs. Reconstructing the text out of the TSV would have saved the file and lost Tesseract's own line breaking, which for Thai is already the weaker half of the output.
+
+The temp directory is new plumbing and therefore a new way to leak, so `TestRunTesseractLeavesNoTempDirBehind` points `TMP`/`TEMP`/`TMPDIR` at a scratch root and asserts nothing named `aetox-ocr-*` survives. A malformed or missing TSV costs the confidence and not the text: the text is what was asked for, the number is the footnote.
+
+`video_ocr` shares `runTesseract` and so inherits all of it, but reports **once for the clip**, weighted by word count. Per-frame percentages would bury the transcript, and weighting by words stops a frame holding two words from counting as much as one holding forty.
+
+### 142.5 What made the tests worth writing
+
+The rule lives in `appendConfidenceNote`, split out from both callers so it can be tested on a machine with no Tesseract — which is every CI runner. Asserting it through a real OCR run would have made the check skip exactly where it is most likely to regress, since the threshold is a number someone will eventually want to move.
+
+Proven to fail, both directions: setting `ocrLowConfidence` to 0 turns `TestAppendConfidenceNoteWarnsBelowThreshold` red, and setting it to 100 turns `TestAppendConfidenceNoteSilentOnGoodReading` red on the two rows that represent real Thai.
+
+### What this does not decide
+
+- **Whether Chinese is ever added.** Declined for now. If it comes back the numbers are on the table: `tessdata_fast` is 2.4MB for `chi_sim` and 2.3MB for `chi_tra`, downloaded at install time exactly as `tha` already is, so the ~12MB installer figure does not move. Appending to `-l` is not the way to do it — Tesseract's multi-language mode trades accuracy, and Thai is already the noisier half. §32's `Provisioner`/`Requirement`/`Option` is the shape that fits.
+- **The spaces Thai comes back with** (`โอ น เง ิ น`). Inherent to `tha.traineddata`, not a flag: `--psm` 3, 4, 6 and 11 all produce it identically. The content and every digit are correct.
+- **The threshold's real-world value.** 70 is defensible against four images and nothing more.
+
+---
+
+## 143. Decision — The Filter Was Right and Nobody Had Signed the Forms (2026-08-19)
+
+**Trigger:** owner, on a screenshot of four problem cards — *"ผมว่ามันฟ้องเยอะเกินไป ควรเป็นปัญหาที่เป้นปัญหาจริงๆสิ ... มันดีตอนพัฒนา แต่เราจะเสียหน้าตาตอนที่ปล่อยของ"* — plus *"ผมกดแจ้งปัญหานี้แล้วเงียบมาก"* and a request for the sponsor page's copy (2026-08-19).
+
+**Status:** Approved & done 2026-08-19.
+
+### 143.1 Four cards, four failures that were never anyone's behaviour
+
+§141's split gave the problems room a filter with three answers: `exit` (a program the tool ran returned nonzero), `ErrorFromWorld` (a report about the machine), and unmarked (a refusal this codebase authored, which carries a remedy). Only the third becomes a card. The filter was correct and every one of the four cards on the owner's screen walked straight through it, because **nothing had marked them**.
+
+They missed in two different ways, and the difference is the whole entry.
+
+**A `*fs.PathError` was never ours to mark.** Two cards were `read` failing with `GetFileAttributesEx ... The system cannot find the file specified`. That error is written by the operating system; no author here had the chance to call `statereport.New` on it, and the filter's rule was "the author says what it is". So it is recognised by type instead, in `classifyToolError`, once, covering every file tool at the same moment. It cannot swallow a refusal: the sandbox denylist and every rule this codebase enforces are built with `errors.New`/`fmt.Errorf`, and `TestSandboxRefusalIsNotAWorldReport` is there to go red the day that stops being true.
+
+**A soft failure has no error to mark at all.** The other two cards — n8n not answering within 90 seconds, an MCP server still connecting — came from tools that report failure as `Success:false` with a **nil error**, so the model reads a result instead of a crash. That choice is right and it leaves the classifier with nothing to classify. Hence `skill.Output.FromWorld`: the same statement `statereport` makes on an error value, said for the failures that deliberately do not have one. Two sites set it, both of which already said so in their own text — one ends with "start this job again in a moment".
+
+Rows already written stay written. Nothing here deletes a card the user has not decided on; it stops new ones being made.
+
+### 143.2 A confirmed cause is not the only cause
+
+The report button did nothing at all. Measured first: the prefilled URL was **35,659 characters** against Windows' 32,767 command-line ceiling, because the budget capped 4,000 characters of *raw* log while Thai costs three bytes per character in UTF-8 and three characters per byte again once percent-encoded. Nine times. That is a real defect, it is fixed, and a test proves it — removing the budget produces a 148,754-character URL.
+
+**It was not what was stopping the button.** `BrowserOpenURL` validates before it opens, and `ValidateAndSanitizeURL` refuses any URL containing `;|`$\<>*{}[]()~!` or whitespace. `encodeURIComponent` is specified not to encode `!~*'()`. One ordinary parenthesis was enough — and every problem card's reason has one, because `reason` reads "เกิด 3 ครั้ง (ตัวอย่างล่าสุดที่ล้ม: ...)". The length check never ran; the URL was rejected two lines earlier, on every attempt, no matter how short.
+
+Both defects were invisible for the same reason: Wails logs the refusal to `f.logger.Error` and returns. Nothing propagates. The owner saw `ERR | Invalid URL shell metacharacters not allowed` only because they went looking in a log.
+
+What generalises is not the encoding rule. It is that a cause can be **measured, reproduced, and fixed** and still not be the one that mattered — the first diagnosis here was quantitative, correct, and not the answer. The tell was available and unread: the button had never worked *at any length*, which no length-based explanation covers.
+
+### 143.3 The tests could only be written where the answer was
+
+Both fixes are covered by tests that fail without them, and the character check spells Wails' list out as characters rather than a regex so a failure names which one leaked (`expected [ '*', '(', ')', '~', '!' ] to deeply equal []`). The list is copied rather than imported: it lives inside a vendored package this side cannot reach, and a copy that drifts is caught the moment a real URL carries the drifted character.
+
+What could **not** be tested from here is whether the agent acts on any of it. An attempt to drive the checks through the agent produced a table of four green rows in which three rows had not run: two OCR calls read a stale attachment rather than the images provided, one read a missing file once rather than three times, and one declined to call the tool at all. That last refusal was correct behaviour — it was asked to retry a credential-store path, and it should not — which means **a failure cluster cannot be produced by asking the agent to repeat itself**, and the test procedure, not the agent, was wrong.
+
+The one measurement that survived is the useful one: a real Krungthai slip, photographed and attached by the owner, reads at **92.1** confidence over 141 words. §142 set its threshold at 70 against four synthetic images and said in writing that a real photographed slip would sit lower than anything measured. It does not. The threshold has more room than it was given credit for.
+
+### 143.4 The sponsor page says what it can keep
+
+Copy added in all three locales for what a supporter receives: a name on the project's page, kept rather than counted once, and an opening for working together later. It is paired with a row asking the supporter to make contact, because PromptPay tells the developer that a transfer happened and never who to thank — the credit is unpayable unless the person says. Declining to be named is offered in the same sentence.
+
+The contact channel is the GitHub door the problem and feedback rows already use. No personal email was placed into a shipping build; that is the owner's to publish, not this change's to assume.
+
+`SITE_URL` now points at the repository. The button that read "ดูเว็บไซต์ Aetox" while opening GitHub would have been a small lie, so both buttons were relabelled: "ดูโปรเจกต์บน GitHub" for the repository and "วิธีสนับสนุน" for SPONSOR.md.
+
+### What this does not decide
+
+- **An agent asked for work outside its toolset still reports the downstream failure.** `sheet` and `doc` say "file not found" where the truth is "I have no tool that writes this". The owner kept it open deliberately: *"อย่ามองข้ามนะ เก้บมาคิดกัน"*. §143.1 stops those failures becoming cards; it does not make the agent honest about its own remit. Candidates raised and none chosen: the sub-agent's prompt, `FilterRegistry` refusing the brief up front, or the model's judgement.
+- **Whether the model acts on a low-confidence OCR note.** §142's central bet, still unverified against a real model, and not verifiable by any prompt that mentions it.
+
+---
+
+## 144. Decision — The Way Back Cannot Be One Button Nobody Found (2026-08-19)
+
+§134.2 opened a door §134's own gate had shut too wide: reading another conversation while a turn runs is allowed, because reading rewrites nothing. What it did not do is leave a way back that a user would find. The owner hit the result over and over and finally said so plainly (19 ส.ค.): *"ตอนสั่งงานเอเจนกำลังทำงาน พอสลับเซสชั่นปุ๊บ งานเอเจนหายไปเลย เหมือนมันผูกกับหน้าที่ผู้ใช้เปิด ความจริงไม่ควร"* — and then, when the first answer was a diagnosis instead of a fix: *"หลายรอบแล้ว ผมรอหลายรอบมาก"*.
+
+He is right about the symptom and, about the engine, wrong — which is precisely why it kept happening. `App.SendMessage` captures the session id before the turn starts and carries it to the end (§134.1); `a.turns` is keyed by session; `turnSessionID()` writes the rows where the question was asked. The work was never bound to the window and never lost. It was **unreachable**, which from a chair is the same thing, and telling a user that their work is safe in a place they cannot get to is not an answer.
+
+### 144.1 The chat that is working is not "another chat"
+
+Every row in the history list went through `peekAtSession`, including the row of the conversation the turn was running in. Peek reads the **store** — so clicking the working chat mid-turn returned the question with nothing under it: no timeline, no streaming answer, composer locked, and a bar along the top explaining that the work was happening in another chat while pointing at this very one. The live array was one field away in `cockpit.peek.live` the whole time.
+
+The only door that actually returned was `leavePeek`, reachable from exactly one button on that bar. A way back that a single button knows about is a way back the user does not have — every other route out looked like the work had been thrown away, and the route people take is the list they already use.
+
+So the guard lives in `peekAtSession` itself rather than in each door: **the chat that is working is never opened for reading, it is returned to.** Whatever else learns to open a conversation later inherits that.
+
+### 144.2 A stamp, instead of two facts standing in for one
+
+Answering "is this the working chat?" required knowing which chat is working, and the window had been inferring it: `active` (the engine's open session) **and** `awaitingReply` (a turn is running somewhere). Two facts about the app standing in for one fact about a conversation — correct right up to the moment it was asked the question that matters.
+
+`cockpit.turnSession` is now stamped when the turn starts, from `CurrentSessionID()` — the same value Go stamps the turn with in the same breath, so the two cannot drift. Written from the list first and corrected by the engine a round-trip later, so there is no frame in which a turn is running and this side does not know whose it is. Cleared in `runLiveTurn`'s `finally` and in `applyAgentDone`, because a stamp nobody clears is a chat that stays unopenable. A window reloaded mid-turn takes it from `TurnInFlight`, which is where it already learns everything else about the turn it walked in on.
+
+`sessionWorking` reads the stamp instead of re-deriving the guess, so the sidebar's working ring and the door's decision are the same answer to the same question (one place answering one question, applied to a fact rather than to a document).
+
+### 144.3 The bar had to keep up with the work
+
+Two smaller lies in the same strip, both of them "the copy cannot keep up with the state" (DESIGN.md):
+
+- It said *"งานยังทำอยู่ในอีกแชทหนึ่ง"* whether or not that was still true. The peek outlives the turn, so a bar that started honest went on insisting the agent was busy for as long as the user kept reading. It now swaps to `cockpit.peekDone` the moment the turn ends, which is also the moment the "open this chat" button appears — one strip, one story.
+- It said nothing about what the work was **doing**. The live block is deliberately not drawn over a conversation it does not belong to, and the cost was a turn that looked dead from anywhere except its own chat. The bar now carries one line — the running tool, else a running delegate, else the engine's phase, else *กำลังคิด* — wearing `.typing-status`, so the sweep, its timing and its reduced-motion fallback are the live block's own rather than a second copy of them.
+
+### What this does not decide
+
+**Stages 2 and 3 of §134.4 are still not done, and this is not them.** One engine, one agent context: opening a second conversation *for real* mid-turn still refuses, so the composer in a chat being read is still disabled and typing in two chats at once is still not a capability. What changed is that the conversation that IS working can always be got back to, and that walking away from it no longer looks like losing it. The read-only peek is still the stopgap §134.4 called it, and still goes when per-session live state lands.

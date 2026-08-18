@@ -549,6 +549,7 @@ product picture in [COMPANY.md](COMPANY.md)) · §82 (the learning floor) · §4
 | §125 | Two Languages Written as a Number, Not as a List (2026-08-17) |
 | §126 | A Search That Never Happened Is Not an Empty Result (2026-08-17) |
 | §141 | A Rule Suppressed Twenty Times Was Never Chosen (2026-08-18) · lint config in [.golangci.yml](.golangci.yml) |
+| §144 | The Way Back Cannot Be One Button Nobody Found (2026-08-19) · amends §134.2 |
 
 ---
 
