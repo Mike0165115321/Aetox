@@ -5013,3 +5013,41 @@ Gone with it: the pane, both `+` menu entries, `openToolsTab`, the `'tools'` tab
 ### What this does not decide
 
 **Nothing about the tools themselves.** No tool was unregistered here and no MCP server was touched — this is one screen fewer, not one capability fewer. Contrast §146, where the tool really did stop being offered.
+
+---
+
+## 148. Decision — Free to Use, Free to Read, Not Free to Take (2026-08-19)
+
+The owner, unprompted, in the middle of cutting v1.3.0: *"เออผมกลัวคนมาก็อปโปรเจคมากเลยครับ แบบโหลดโค้ดในกิตฮับแล้วไปรีแบรนหรือแอบไปขายต่อ"* — then, on the options: *"ผมไม่ให้แก้ครับ ผมพัฒนาให้เขาใช้ก็พอ ไม่ให้แก้ไฟล์ หากแก้แล้วจะไม่ได้รับการสนับสนุนจากผม และไม่อนุมัติให้เคลม อนุญาตให้ใช้ก็พอ"*, and *"Aetox คือของผม ทรัพย์สินทางปัญญาของผม"*.
+
+The uncomfortable half of the answer is that Apache-2.0 permitted precisely the thing he was afraid of, on purpose. Fork, rebrand, close the source, sell it — all of it legal, all of it what §60 chose in July when the fear was that nobody would adopt it rather than that somebody would take it. The fear changed; the licence had not.
+
+### 148.1 The three facts that decided the shape
+
+**He can do it.** `git shortlog -sne --all` returns **553 commits under one name**, his. There is no second copyright holder to ask, no CLA to have failed to collect, no contributor whose patch would have to be reverted. Sole authorship is what makes relicensing a decision rather than a negotiation, and it was checked before anything was written rather than assumed.
+
+**He cannot do it retroactively.** Every commit already pushed is Apache-2.0 permanently, and anyone holding a clone from before today keeps that grant forever. This is stated plainly in the licence itself (§14) rather than left to be discovered: pretending otherwise would be the app lying, one layer up from the version number.
+
+**Nothing in the tree blocks it.** All 31 Go modules actually linked into the binary and all 11 packages bundled into the frontend are MIT, BSD-2/3, Apache-2.0, SIL OFL, or (dompurify) MPL-2.0-or-Apache-2.0 — every one of them permits inclusion in proprietary software given notices. **There is no GPL or AGPL anywhere in what ships.** The copyleft programs Aetox touches (poppler, ffmpeg, git) are separate executables it calls, which is not linking. This was verified against the module cache and `node_modules`, not recalled.
+
+### 148.2 What the licence actually says, and the two carve-outs that keep the product a product
+
+Free to install and run, any number of machines, commercial work included. Free to read, audit, publish findings about, and quote with attribution. Not free to modify, redistribute, sublicense, rebrand, sell, or claim.
+
+Two carve-outs do the real work:
+
+**Your own extensions are yours (§4).** Skills, agents, prompts, configuration, memory files, MCP servers — writing them, distributing them and selling them is expressly permitted, and the Licensor claims no ownership. Without this clause a "no derivative works" licence would have banned the extension mechanism the whole product is built around. A licence that forbids the thing the software is for is not protection, it is a bug in the licence.
+
+**Third-party components are untouched (§6).** Nothing in this licence narrows anyone's rights in the MIT and BSD code Aetox carries; those rights come from their authors, not from here, and [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) now exists so the notices actually travel — an obligation that was being met only by `go.mod` before, which is to say not met.
+
+The repo stays public. That was the owner's call between two options, and it is the one that keeps the landing page honest: it leads with evidence of real work, and the evidence is the source.
+
+### 148.3 A second place that was about to name the wrong licence
+
+`Settings.svelte` drew the About attribution line from a hardcoded string — the same sentence as `version.Credit`, written twice. Changing the licence in one and not the other would have left the running app telling users "Apache-2.0" while `LICENSE` said otherwise, which is the update-check failure of §60's own reasoning transposed one field over. About now reads `App.AppCredit`, so there is one string, in Go, next to the constant the `--version` flag prints.
+
+### What this does not decide
+
+**Nothing is enforced by code, and nothing here is legal advice.** The teeth are the trademark, the ed25519 release key that a fork cannot forge, and the credit line §5(d) now makes it a breach to delete. A licence is a statement of terms, not a lock; anyone determined to ignore it still can, and the remedy is a lawyer rather than a commit. If Aetox is ever sold commercially, this document should be read by one.
+
+**Closing the repository is still available and still not taken.** Making it private would stop new copies at the source, at the price of the evidence the landing page is built on. Today the answer is: read all of it, take none of it.

@@ -35,7 +35,7 @@ This document is an evidence-first architecture map, distinct from [README.md](R
 | [third_party/go-webview2/AETOX-PATCH.md](third_party/go-webview2/AETOX-PATCH.md) | Why go-webview2 is vendored+patched: stop a single browser tab's WebView2 error from `os.Exit`-crashing the whole app (§26). |
 | [TEST-REPORT.md](TEST-REPORT.md) | The seams that **cannot** be tested and why, plus the conventions new tests follow. Read it for those, never for a count — the count is what `go test ./...` says, and the one written there went seven times stale before anyone noticed. CI that runs it all: [.github/workflows/ci.yml](.github/workflows/ci.yml) (§28). |
 | [BENCHMARK.md](BENCHMARK.md) · [bench.ps1](bench.ps1) | Measured comparison against 13 installed rivals (disk/startup/RAM/soak) — the fairness rules, the raw results, and which numbers are **not** clean enough to publish. Every figure quoted in README.md or docs/index.html must trace back to a passing row here. |
-| [LICENSE](LICENSE) · [NOTICE](NOTICE) | Apache-2.0 since §60 (MIT up to v0.7.1, §28). `NOTICE` reserves the "Aetox" name and logo and must travel with every redistribution — the anti-rebrand teeth. |
+| [LICENSE](LICENSE) · [NOTICE](NOTICE) · [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) | **Proprietary, source-available since v1.3.0 (§148)** — free to use and read, not to modify, redistribute or rebrand. MIT up to v0.7.1 (§28), Apache-2.0 v0.8.0–v1.2.4 (§60); those releases keep those terms permanently. `NOTICE` reserves the "Aetox" name and logo. Third-party components are all permissive (MIT/BSD/Apache/OFL) — no GPL or AGPL in the tree. |
 | [docs/competitor-research.md](docs/competitor-research.md) | Feature-level comparison against the tools whose engines overlap with this one. The file-by-file source readings that sat beside it are working notes and stay off this repo (see `.gitignore`). |
 | ~~docs/architecture-review-aetox-cli.md~~ | **Deleted 2026-08-07.** A CLI-only current-state review from 2026-06-09 that predated `desktop/`, session persistence, the browser tab and `internal/orchestrator` — it had carried a SUPERSEDED banner since 2026-07-22 and nothing pointed at it for anything but history, which git already keeps. |
 | Tier-1 module READMEs | `internal/{app,turn,skill,model,grammar,prompt,rtk,subagent}/README.md`, `cmd/aetox/README.md`, `desktop/README.md` — hub-and-spoke rule per §12: meaningful change to a module updates its README in the same commit. [internal/subagent/README.md](internal/subagent/README.md) is also the **sub-agent profile file-format reference** (§44). |
@@ -553,6 +553,7 @@ product picture in [COMPANY.md](COMPANY.md)) · §82 (the learning floor) · §4
 | §145 | A Specialist Walled Off From The Work Its Own Brief Describes (2026-08-19) · widens `chairs:` in [specialized.md](internal/mode/modes/specialized.md), not `tools:` (§84) |
 | §146 | A Tool Nobody Called, Priced On Every Request (2026-08-19) · `notebook_edit` compiled in, not registered — [defaults.go](internal/skill/defaults.go) |
 | §147 | A List of What Is Installed Is Not a Room (2026-08-19) · workbench Tools pane removed; Settings keeps the lists |
+| §148 | Free to Use, Free to Read, Not Free to Take (2026-08-19) · Apache-2.0 → proprietary source-available at v1.3.0; supersedes §60 |
 
 ---
 

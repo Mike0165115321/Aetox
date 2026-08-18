@@ -38,7 +38,7 @@
     SignInMethods, SignInStatus, StartSignIn, CancelSignIn, ImportableSignIns,
     Connections, ConnectAccount, SetConnectionTargets, VerifyConnection, DisconnectAccount,
     SetConnectionStartCommand, StartConnectionServer, CheckConnectionServer,
-    AppVersion, CheckForUpdate, RecentDebugLog,
+    AppVersion, AppCredit, CheckForUpdate, RecentDebugLog,
     LearningEnabled, SetLearningEnabled, ListPendingChanges, ListDecidedChanges,
     ApprovePendingChange, RejectPendingChange, LearnedEntries, LearnedScopes, SaveLearnedEntry, OpenMemoryFolder,
     ListSystemIssues, MarkIssueReported, ListDecidedIssues,
@@ -626,6 +626,7 @@
   // always has, and folding it into that Promise.all would let a stumble here
   // take the whole Settings page down with it for nothing.
   let appVersion = $state('')
+  let appCredit = $state('')
   let updateStatus = $state<update.Status | null>(null)
   let updateChecking = $state(false)
   let updateError = $state('')
@@ -640,6 +641,7 @@
     void (async () => {
       try {
         appVersion = await AppVersion()
+        appCredit = await AppCredit()
       } catch {
         /* the About page shows a dash rather than an error */
       }
@@ -5747,11 +5749,14 @@
         <!-- Attribution, not decoration: this is the one place in the running app
              that names who wrote it and where it came from. Untranslated on
              purpose — a name, a licence id and a URL read the same in every
-             language, and a translated copyright line is a mistranslated one. -->
+             language, and a translated copyright line is a mistranslated one.
+             It comes from version.Credit through AppCredit rather than being
+             written out here: a literal was a second place naming the licence,
+             and on 2026-08-19 it named the old one (§148). -->
         <div class="set-row">
           <div class="set-txt">
             <div class="t">Aetox</div>
-            <div class="d">© 2026 Chayaphon Phromsawana (Mike) · Apache-2.0 · github.com/Mike0165115321/Aetox</div>
+            <div class="d">{appCredit}</div>
           </div>
         </div>
       </div>

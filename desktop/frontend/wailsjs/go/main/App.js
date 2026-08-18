@@ -30,6 +30,10 @@ export function AnswerUserQuestion(arg1, arg2) {
   return window['go']['main']['App']['AnswerUserQuestion'](arg1, arg2);
 }
 
+export function AppCredit() {
+  return window['go']['main']['App']['AppCredit']();
+}
+
 export function AppVersion() {
   return window['go']['main']['App']['AppVersion']();
 }

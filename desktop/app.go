@@ -314,6 +314,12 @@ func (a *App) discardAnswerPreview(conv *conversation) { a.emitChatChunk(conv, "
 // right-clicking the exe — and an update check cannot be built on that at all.
 func (a *App) AppVersion() string { return version.Current }
 
+// AppCredit is the attribution line About draws. It comes from Go rather than
+// from a literal in Settings.svelte because that literal was a second place
+// naming the licence, and the day the licence changed it said the old one
+// (which is exactly what happened on 2026-08-19, §148).
+func (a *App) AppCredit() string { return version.Credit }
+
 // RecentDebugLog is the evidence half of the About page's "ส่งปัญหาให้นักพัฒนา":
 // the app's most recent internal complaints about itself, for prefilling into
 // the GitHub issue body. Already secret-scrubbed at the moment each line was

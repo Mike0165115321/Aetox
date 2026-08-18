@@ -26,6 +26,8 @@ export function AgentSkills(arg1:string):Promise<Array<main.AgentSkillInfo>>;
 
 export function AnswerUserQuestion(arg1:string,arg2:string):Promise<void>;
 
+export function AppCredit():Promise<string>;
+
 export function AppVersion():Promise<string>;
 
 export function ApprovePendingChange(arg1:number):Promise<void>;

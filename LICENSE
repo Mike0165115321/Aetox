@@ -1,202 +1,192 @@
+Aetox End User Licence Agreement
+Version 1.0 · Effective 2026-08-19 · Applies to Aetox v1.3.0 and later
 
-                                 Apache License
-                           Version 2.0, January 2004
-                        http://www.apache.org/licenses/
+Copyright (c) 2026 Chayaphon Phromsawana (Mike). All rights reserved.
 
-   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+Aetox is not open-source software. Its source code is published so that anyone
+can read it, audit it, and learn from it. It is not published for anyone to
+modify, build, repackage, rebrand, or redistribute.
 
-   1. Definitions.
+===============================================================================
+สรุปเป็นภาษาไทย
+(สรุปเพื่อความเข้าใจเท่านั้น ไม่ใช่ตัวสัญญา ตัวสัญญาคือภาษาอังกฤษด้านล่าง)
 
-      "License" shall mean the terms and conditions for use, reproduction,
-      and distribution as defined by Sections 1 through 9 of this document.
+  ใช้ได้        ติดตั้งและใช้ฟรี กี่เครื่องก็ได้ ใช้ทำงานหาเงินได้
+  อ่านได้       ซอร์สโค้ดเปิดให้อ่าน ตรวจสอบความปลอดภัย และเรียนรู้
+  ต่อยอดได้     เขียนสกิล เอเจนต์ พร้อมต์ ไฟล์ตั้งค่า และต่อเซิร์ฟเวอร์ MCP
+                ของคุณเองได้เต็มที่ ของพวกนั้นเป็นของคุณ ไม่ใช่ของผู้เขียน
+  ห้าม          แก้ไขตัวโปรแกรม ทำเวอร์ชันของตัวเอง แจกจ่ายต่อ ขายต่อ
+                เปลี่ยนชื่อหรือรีแบรนด์ และอ้างว่าเป็นผู้เขียน
+  ถ้าแก้        สัญญานี้สิ้นสุดทันที และไม่มีการสนับสนุนใด ๆ จากผู้เขียน
+  ไม่รับประกัน  โปรแกรมนี้รันคำสั่งและแก้ไฟล์บนเครื่องคุณ ความเสี่ยงเป็นของคุณ
+===============================================================================
 
-      "Licensor" shall mean the copyright owner or entity authorized by
-      the copyright owner that is granting the License.
+1. DEFINITIONS
 
-      "Legal Entity" shall mean the union of the acting entity and all
-      other entities that control, are controlled by, or are under common
-      control with that entity. For the purposes of this definition,
-      "control" means (i) the power, direct or indirect, to cause the
-      direction or management of such entity, whether by contract or
-      otherwise, or (ii) ownership of fifty percent (50%) or more of the
-      outstanding shares, or (iii) beneficial ownership of such entity.
+   "Software" means the Aetox application, in source or binary form, including
+   its documentation and any update the Licensor makes available.
 
-      "You" (or "Your") shall mean an individual or Legal Entity
-      exercising permissions granted by this License.
+   "Licensor" means Chayaphon Phromsawana (Mike), the sole author and sole
+   copyright holder of the Software.
 
-      "Source" form shall mean the preferred form for making modifications,
-      including but not limited to software source code, documentation
-      source, and configuration files.
+   "You" means the individual or legal entity exercising the permissions
+   granted by this Licence.
 
-      "Object" form shall mean any form resulting from mechanical
-      transformation or translation of a Source form, including but
-      not limited to compiled object code, generated documentation,
-      and conversions to other media types.
+   "Your Content" means anything You author for use with the Software:
+   skills, agents, prompts, configuration files, memory files, MCP server
+   definitions, scripts You ask the Software to run, and the files the
+   Software produces on Your instruction.
 
-      "Work" shall mean the work of authorship, whether in Source or
-      Object form, made available under the License, as indicated by a
-      copyright notice that is included in or attached to the work
-      (an example is provided in the Appendix below).
+2. LICENCE GRANTED
 
-      "Derivative Works" shall mean any work, whether in Source or Object
-      form, that is based on (or derived from) the Work and for which the
-      editorial revisions, annotations, elaborations, or other modifications
-      represent, as a whole, an original work of authorship. For the purposes
-      of this License, Derivative Works shall not include works that remain
-      separable from, or merely link (or bind by name) to the interfaces of,
-      the Work and Derivative Works thereof.
+   Subject to Your compliance with this Licence, the Licensor grants You a
+   free of charge, worldwide, non-exclusive, non-transferable, revocable
+   licence to install and run the Software on any number of devices You own
+   or control, for any purpose, including commercial work and work performed
+   for clients.
 
-      "Contribution" shall mean any work of authorship, including
-      the original version of the Work and any modifications or additions
-      to that Work or Derivative Works thereof, that is intentionally
-      submitted to Licensor for inclusion in the Work by the copyright owner
-      or by an individual or Legal Entity authorized to submit on behalf of
-      the copyright owner. For the purposes of this definition, "submitted"
-      means any form of electronic, verbal, or written communication sent
-      to the Licensor or its representatives, including but not limited to
-      communication on electronic mailing lists, source code control systems,
-      and issue tracking systems that are managed by, or on behalf of, the
-      Licensor for the purpose of discussing and improving the Work, but
-      excluding communication that is conspicuously marked or otherwise
-      designated in writing by the copyright owner as "Not a Contribution."
+   This is a licence to use the Software. No ownership of the Software passes
+   to You, and no right is granted that is not stated here.
 
-      "Contributor" shall mean Licensor and any individual or Legal Entity
-      on behalf of whom a Contribution has been received by Licensor and
-      subsequently incorporated within the Work.
+3. SOURCE CODE: WHAT YOU MAY DO WITH IT
 
-   2. Grant of Copyright License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      copyright license to reproduce, prepare Derivative Works of,
-      publicly display, publicly perform, sublicense, and distribute the
-      Work and such Derivative Works in Source or Object form.
+   The Licensor publishes the source code so that the Software can be
+   inspected rather than trusted blindly. Accordingly You may:
 
-   3. Grant of Patent License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      (except as stated in this section) patent license to make, have made,
-      use, offer to sell, sell, import, and otherwise transfer the Work,
-      where such license applies only to those patent claims licensable
-      by such Contributor that are necessarily infringed by their
-      Contribution(s) alone or by combination of their Contribution(s)
-      with the Work to which such Contribution(s) was submitted. If You
-      institute patent litigation against any entity (including a
-      cross-claim or counterclaim in a lawsuit) alleging that the Work
-      or a Contribution incorporated within the Work constitutes direct
-      or contributory patent infringement, then any patent licenses
-      granted to You under this License for that Work shall terminate
-      as of the date such litigation is filed.
+   a) read, study, and search the source code;
+   b) audit it for security, privacy, or correctness, and publish what you
+      find, including short excerpts quoted for review or discussion with
+      attribution to the Software;
+   c) quote short excerpts for teaching, journalism, or research, with
+      attribution;
+   d) build and run the Software from source on Your own devices, unmodified,
+      for Your own use under Section 2.
 
-   4. Redistribution. You may reproduce and distribute copies of the
-      Work or Derivative Works thereof in any medium, with or without
-      modifications, and in Source or Object form, provided that You
-      meet the following conditions:
+   You may not do anything else with the source code. In particular, reading
+   it grants You no right to reuse it in another program.
 
-      (a) You must give any other recipients of the Work or
-          Derivative Works a copy of this License; and
+4. YOUR OWN EXTENSIONS ARE YOURS
 
-      (b) You must cause any modified files to carry prominent notices
-          stating that You changed the files; and
+   Nothing in this Licence restricts Your Content. Writing skills, agents,
+   prompts, configuration, and MCP servers for the Software, and distributing
+   or selling them, is expressly permitted; that is what the Software is for.
+   Your Content is Yours. The Licensor claims no ownership in it and no
+   licence to it.
 
-      (c) You must retain, in the Source form of any Derivative Works
-          that You distribute, all copyright, patent, trademark, and
-          attribution notices from the Source form of the Work,
-          excluding those notices that do not pertain to any part of
-          the Derivative Works; and
+   This permission covers material that runs alongside or on top of the
+   Software through the extension points the Software provides. It does not
+   permit distributing any part of the Software itself.
 
-      (d) If the Work includes a "NOTICE" text file as part of its
-          distribution, then any Derivative Works that You distribute must
-          include a readable copy of the attribution notices contained
-          within such NOTICE file, excluding those notices that do not
-          pertain to any part of the Derivative Works, in at least one
-          of the following places: within a NOTICE text file distributed
-          as part of the Derivative Works; within the Source form or
-          documentation, if provided along with the Derivative Works; or,
-          within a display generated by the Derivative Works, if and
-          wherever such third-party notices normally appear. The contents
-          of the NOTICE file are for informational purposes only and
-          do not modify the License. You may add Your own attribution
-          notices within Derivative Works that You distribute, alongside
-          or as an addendum to the NOTICE text from the Work, provided
-          that such additional attribution notices cannot be construed
-          as modifying the License.
+5. RESTRICTIONS
 
-      You may add Your own copyright statement to Your modifications and
-      may provide additional or different license terms and conditions
-      for use, reproduction, or distribution of Your modifications, or
-      for any such Derivative Works as a whole, provided Your use,
-      reproduction, and distribution of the Work otherwise complies with
-      the conditions stated in this License.
+   Except as expressly permitted in Sections 3 and 4, You may not:
 
-   5. Submission of Contributions. Unless You explicitly state otherwise,
-      any Contribution intentionally submitted for inclusion in the Work
-      by You to the Licensor shall be under the terms and conditions of
-      this License, without any additional terms or conditions.
-      Notwithstanding the above, nothing herein shall supersede or modify
-      the terms of any separate license agreement you may have executed
-      with Licensor regarding such Contributions.
+   a) modify, adapt, translate, port, or create derivative works of the
+      Software;
+   b) distribute, publish, sublicense, sell, rent, lease, lend, or host the
+      Software, or make it available to any third party, whether or not for
+      a fee, and whether in source or binary form;
+   c) rebrand the Software, or distribute it under any name, mark, or
+      identity other than those the Licensor uses for it;
+   d) remove, alter, or obscure any copyright, licence, attribution, or
+      notice in or displayed by the Software, including the credit line the
+      Software prints and shows in its own About screen;
+   e) represent that You authored the Software, or claim it or any part of it
+      as Your own work or Your own intellectual property;
+   f) use the Software to build a substantially similar competing product by
+      copying its source;
+   g) circumvent or disable any release-signature verification the Software
+      performs, or sign a build as though it came from the Licensor.
 
-   6. Trademarks. This License does not grant permission to use the trade
-      names, trademarks, service marks, or product names of the Licensor,
-      except as required for reasonable and customary use in describing the
-      origin of the Work and reproducing the content of the NOTICE file.
+   Nothing in this Section limits any right You hold under applicable law that
+   cannot be waived by contract.
 
-   7. Disclaimer of Warranty. Unless required by applicable law or
-      agreed to in writing, Licensor provides the Work (and each
-      Contributor provides its Contributions) on an "AS IS" BASIS,
-      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-      implied, including, without limitation, any warranties or conditions
-      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
-      PARTICULAR PURPOSE. You are solely responsible for determining the
-      appropriateness of using or redistributing the Work and assume any
-      risks associated with Your exercise of permissions under this License.
+6. THIRD-PARTY COMPONENTS
 
-   8. Limitation of Liability. In no event and under no legal theory,
-      whether in tort (including negligence), contract, or otherwise,
-      unless required by applicable law (such as deliberate and grossly
-      negligent acts) or agreed to in writing, shall any Contributor be
-      liable to You for damages, including any direct, indirect, special,
-      incidental, or consequential damages of any character arising as a
-      result of this License or out of the use or inability to use the
-      Work (including but not limited to damages for loss of goodwill,
-      work stoppage, computer failure or malfunction, or any and all
-      other commercial damages or losses), even if such Contributor
-      has been advised of the possibility of such damages.
+   The Software includes third-party components listed in
+   THIRD-PARTY-NOTICES.md. Those components are licensed by their own authors
+   under their own terms, which are reproduced or referenced in that file.
+   This Licence does not change, restrict, or supersede Your rights in any
+   third-party component, and those components remain available to You under
+   their own licences independently of the Software.
 
-   9. Accepting Warranty or Additional Liability. While redistributing
-      the Work or Derivative Works thereof, You may choose to offer,
-      and charge a fee for, acceptance of support, warranty, indemnity,
-      or other liability obligations and/or rights consistent with this
-      License. However, in accepting such obligations, You may act only
-      on Your own behalf and on Your sole responsibility, not on behalf
-      of any other Contributor, and only if You agree to indemnify,
-      defend, and hold each Contributor harmless for any liability
-      incurred by, or claims asserted against, such Contributor by reason
-      of your accepting any such warranty or additional liability.
+7. TRADEMARKS
 
-   END OF TERMS AND CONDITIONS
+   "Aetox", the Aetox wordmark, and the Aetox logo are trademarks of the
+   Licensor. This Licence grants no right to use them. You may use the name
+   "Aetox" only to refer accurately to the Software, for example to say that
+   Your Content works with it.
 
-   APPENDIX: How to apply the Apache License to your work.
+8. FEEDBACK AND CONTRIBUTIONS
 
-      To apply the Apache License to your work, attach the following
-      boilerplate notice, with the fields enclosed by brackets "[]"
-      replaced with your own identifying information. (Don't include
-      the brackets!)  The text should be enclosed in the appropriate
-      comment syntax for the file format. We also recommend that a
-      file or class name and description of purpose be included on the
-      same "printed page" as the copyright notice for easier
-      identification within third-party archives.
+   The Licensor welcomes bug reports and ideas, and is under no obligation to
+   act on them. If You send the Licensor a suggestion, a bug report, a design,
+   or a patch, You grant the Licensor an irrevocable, worldwide, royalty-free
+   right to use it in the Software without restriction, attribution, or
+   payment. Do not send anything You are not free to give on those terms.
 
-   Copyright [yyyy] [name of copyright owner]
+9. SUPPORT
 
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
+   The Licensor provides support at his sole discretion and owes You none.
 
-       http://www.apache.org/licenses/LICENSE-2.0
+   Support is not available for a modified copy of the Software. Modifying the
+   Software also terminates this Licence under Section 13, so a modified copy
+   is not merely unsupported; it is unlicensed.
 
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
+10. AI PROVIDERS, YOUR MACHINE, AND YOUR DATA
+
+   The Software runs commands, reads and writes files, and controls a browser
+   on Your device on Your instruction, and it sends data to AI providers You
+   choose and configure. You are responsible for the accounts, API keys, and
+   costs involved, for complying with those providers' own terms, and for
+   deciding what the Software is permitted to do on Your device.
+
+11. NO WARRANTY
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT. THE LICENSOR
+   DOES NOT WARRANT THAT THE SOFTWARE WILL BE UNINTERRUPTED, ERROR-FREE, OR
+   THAT IT WILL NOT DAMAGE, DELETE, OR DISCLOSE YOUR DATA.
+
+12. LIMITATION OF LIABILITY
+
+   TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL THE
+   LICENSOR BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN
+   CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH
+   THE SOFTWARE OR ITS USE, INCLUDING ANY LOSS OF DATA, LOSS OF PROFITS, OR
+   BUSINESS INTERRUPTION, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+   Nothing here excludes liability that cannot lawfully be excluded.
+
+13. TERM AND TERMINATION
+
+   This Licence takes effect when You first install, run, or copy the
+   Software, and continues until terminated.
+
+   It terminates automatically and immediately if You breach any term of it.
+   On termination You must stop using the Software and delete every copy You
+   hold. Sections 6, 7, 8, 11, 12, and 15 survive termination.
+
+14. EARLIER VERSIONS KEEP THEIR OWN TERMS
+
+   This Licence applies to Aetox v1.3.0 and later.
+
+   Versions up to and including v0.7.1 were released under the MIT Licence,
+   and versions v0.8.0 through v1.2.4 were released under the Apache Licence
+   2.0. Those releases remain under those licences permanently. Changing the
+   licence going forward does not and cannot revoke a licence already granted.
+
+15. GOVERNING LAW
+
+   This Licence is governed by the laws of the Kingdom of Thailand, without
+   regard to its conflict-of-law rules. If any provision is held
+   unenforceable, the remainder stays in force.
+
+16. CHANGES TO THIS LICENCE
+
+   The Licensor may issue a different licence for a future version. A version
+   You already hold keeps the licence it was released under.
+
+Contact: phrmsawanachyphl@gmail.com
+Project: https://github.com/Mike0165115321/Aetox

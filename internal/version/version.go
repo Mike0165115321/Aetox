@@ -24,5 +24,10 @@ const Current = "1.3.0"
 
 // Credit is printed by both --version paths and shown in Settings → About. A
 // rebranded fork has to delete this line by hand rather than just swap a logo,
-// which is the whole point of it being here.
-const Credit = "© 2026 Chayaphon Phromsawana (Mike) · Apache-2.0 · github.com/Mike0165115321/Aetox"
+// which is the whole point of it being here — and since v1.3.0 deleting it is
+// also a breach of the licence rather than merely rude (LICENSE §5(d)).
+//
+// Settings → About reads this through App.AppCredit rather than restating it,
+// because the one string in the running app that names the licence must not be
+// able to name a different licence than the LICENSE file does.
+const Credit = "© 2026 Chayaphon Phromsawana (Mike) · All rights reserved · github.com/Mike0165115321/Aetox"

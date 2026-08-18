@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://github.com/Mike0165115321/Aetox/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/Mike0165115321/Aetox?color=2f81f7"></a>
-  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-proprietary%20%C2%B7%20source%20available-blue"></a>
   <img alt="Tests" src="https://img.shields.io/badge/tests-1%2C797%20Go%20%2B%20755%20UI-brightgreen">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%2010%2B-lightgrey">
 </p>
@@ -459,14 +459,21 @@ Aetox is written by one person. It exists because a model that can only produce 
 tool, and the missing half — hands, permission, and a place to put the result — is an application
 problem rather than a model problem.
 
-Code is under [Apache-2.0](LICENSE): use, modify, redistribute and sell it freely, including in
-closed-source work. Two things asked in return — keep the [NOTICE](NOTICE) file and the copyright
-notice, and say which files you changed.
+**Aetox is free to use and is not open source.** From v1.3.0 it is under a
+[proprietary licence](LICENSE): install it on as many machines as you like, use it for commercial
+work, read the whole source and audit it — but do not modify it, redistribute it, rebrand it, or
+sell it. The source is published to be *read*, not to be built on.
 
-The name **"Aetox"** and the logo are trademarks and are **not** covered by the licence
-(Apache-2.0 clause 6). Fork freely; anything you redistribute carries your own name, so nobody is
-confused about which one is the original. Version 0.7.1 and earlier were MIT, and those versions
-stay MIT forever.
+**Your own extensions are yours.** Skills, agents, prompts, configuration and MCP servers you
+write are your property, and selling them is expressly permitted ([LICENSE](LICENSE) §4). That is
+what the extension points are for.
+
+The name **"Aetox"** and the logo are trademarks and are not licensed to anyone else. Third-party
+components keep their own terms and are listed in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) — none of them is GPL or AGPL.
+
+Earlier releases keep the licence they shipped under, permanently: v0.7.1 and earlier are MIT,
+v0.8.0 through v1.2.4 are Apache-2.0.
 
 > Aetox was not born to compete with anyone. It exists to stand where the market has a gap — not
 > to be one more agent framework, and not to lock anyone into anything.
@@ -477,5 +484,5 @@ stay MIT forever.
 ---
 
 <p align="center">
-  © 2026 Chayaphon Phromsawana · <a href="LICENSE">Apache-2.0</a> · "Aetox" is a trademark, not covered by the licence
+  © 2026 Chayaphon Phromsawana · All rights reserved · <a href="LICENSE">Licence</a> · <a href="THIRD-PARTY-NOTICES.md">Third-party notices</a>
 </p>

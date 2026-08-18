@@ -2,9 +2,22 @@ Aetox
 Copyright 2026 Chayaphon Phromsawana (Mike)
 https://github.com/Mike0165115321/Aetox
 
-Licensed under the Apache License, Version 2.0. See the LICENSE file.
+Aetox is proprietary software. It is free to install and use, and its source
+code is published so that it can be read and audited, but it may not be
+modified, redistributed, rebranded, or sold. See the LICENSE file for the full
+terms.
 
-"Aetox" and the Aetox logo are trademarks of Chayaphon Phromsawana. The
-Apache License grants no rights to use them (see section 6). Redistribute
-the software freely; a fork that is rebranded, repackaged, or distributed
-under a different name must use its own name and logo, not these.
+"Aetox" and the Aetox logo are trademarks of Chayaphon Phromsawana and are not
+licensed for use by anyone else.
+
+Your own skills, agents, prompts, configuration, and MCP servers are yours.
+Writing them, distributing them, and selling them is expressly permitted
+(LICENSE section 4).
+
+Third-party components included in this software are listed with their
+licences in THIRD-PARTY-NOTICES.md. Those components remain under their own
+terms; nothing in the Aetox licence restricts your rights in them.
+
+Releases up to and including v0.7.1 were licensed under MIT, and v0.8.0
+through v1.2.4 under the Apache License 2.0. Those releases keep those terms
+permanently.
