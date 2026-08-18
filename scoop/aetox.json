@@ -4,7 +4,7 @@
     "homepage": "https://github.com/Mike0165115321/Aetox",
     "license": "Apache-2.0",
     "url": "https://github.com/Mike0165115321/Aetox/releases/download/v1.2.4/aetox-windows-amd64-portable.zip",
-    "hash": "22ed06dff4e7d6085a850ef3e21a57dbad6b5768c8108448b0ae3235e429d0e7",
+    "hash": "112df04f469f7b54030305afb0db9ae6dc10c438c06f04e0032a68a0af19646d",
     "shortcuts": [
         ["aetox.exe", "Aetox"]
     ],
