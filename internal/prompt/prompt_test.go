@@ -9,6 +9,31 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/learned"
 )
 
+// Every test in this package gets an empty data root, and it is set here rather
+// than test by test because that is exactly what went wrong.
+//
+// Build reads the identity folder and three memory scopes out of it. Six tests
+// isolated it and thirty-six did not, so those thirty-six ran against whatever
+// the developer's own Aetox had learned — passing on a fresh checkout, passing
+// in CI where the folder is empty, and passing on this machine too until the
+// day the file had a line in it. What surfaced then was not a flaky test: it was
+// TestOpenSandboxSaysTheWorkingFolderIsNotTheUsersHome finally being given
+// something to fail on, a year after the leak it describes was introduced.
+//
+// os.Setenv rather than t.Setenv because there is no *testing.T here; a test
+// that wants a data root with something in it still calls t.Setenv and gets its
+// own, restored when it ends.
+func TestMain(m *testing.M) {
+	dir, err := os.MkdirTemp("", "aetox-prompt-test")
+	if err != nil {
+		panic(err)
+	}
+	os.Setenv("AETOX_DATA_ROOT", dir)
+	code := m.Run()
+	os.RemoveAll(dir)
+	os.Exit(code)
+}
+
 // The sandbox root must NOT reach the prompt: it is a machine-specific path
 // carrying the user's account name, it would be sent to whichever provider is
 // configured on every request, and relative paths reach it anyway — so it was
@@ -343,6 +368,81 @@ func TestOpenSandboxSaysTheWorkingFolderIsNotTheUsersHome(t *testing.T) {
 		if strings.Contains(got, folder) {
 			t.Errorf("open-sandbox prompt hardcodes the folder name %q:\n%s", folder, got)
 		}
+	}
+}
+
+// The test above cannot catch the folded layers, because on an isolated data
+// root there is nothing to fold — which is how a leak survived in exactly those
+// layers. This one gives it something: every optional layer filled at once.
+//
+// Two claims, and only one of them travels. A file the user named reads the same
+// on any machine and they may refer to it that way, so the prompt says it. Where
+// that file sits is true on this machine only. Aetox's own memory files are
+// neither: their titles already say which scope each is, and projects/<name>-
+// <hash>.md hashes the absolute root — a name that changes when the same
+// repository is cloned to a different folder.
+func TestAFoldedFileIsNamedOnlyWhenTheUserNamedIt(t *testing.T) {
+	dataRoot := t.TempDir()
+	t.Setenv("AETOX_DATA_ROOT", dataRoot)
+
+	identityDir := filepath.Join(dataRoot, "identity")
+	if err := os.MkdirAll(identityDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(identityDir, "context.md"), "IDENTITY-MARKER")
+
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "AETOX.md"), "PROJECT-RULES-MARKER")
+	for scope, marker := range map[string]string{
+		learned.MainScope:           "MAIN-MEMORY-MARKER",
+		learned.ModeScope("coding"): "DESK-MEMORY-MARKER",
+		learned.ProjectScope(root):  "PROJECT-MEMORY-MARKER",
+	} {
+		if err := learned.Apply(scope, learned.OpAdd, "", marker); err != nil {
+			t.Fatalf("seed %s: %v", scope, err)
+		}
+	}
+
+	text, loaded := BuildWithReport(SurfaceDesktop, Scope{Root: root}, Desk{Name: "coding"})
+
+	// Every layer is actually in there, or the rest of this test proves nothing.
+	for _, marker := range []string{
+		"IDENTITY-MARKER", "PROJECT-RULES-MARKER",
+		"MAIN-MEMORY-MARKER", "DESK-MEMORY-MARKER", "PROJECT-MEMORY-MARKER",
+	} {
+		if !strings.Contains(text, marker) {
+			t.Fatalf("%s never reached the prompt, so this test is not testing anything:\n%s", marker, text)
+		}
+	}
+
+	// Every path is still reported to the caller — the settings badge reads them
+	// — and not one of them is in the text that goes out on every request.
+	userNamed := map[string]bool{loaded.ProjectPath: true}
+	for _, p := range loaded.UserGlobalPaths {
+		userNamed[p] = true
+	}
+	paths := append([]string{
+		loaded.MemoryPath, loaded.DeskMemoryPath, loaded.ProjectMemoryPath, loaded.ProjectPath,
+	}, loaded.UserGlobalPaths...)
+	for _, path := range paths {
+		if path == "" {
+			t.Error("a layer that was folded in reported no path")
+			continue
+		}
+		if dir := filepath.Dir(path); strings.Contains(text, dir) {
+			t.Errorf("the prompt names the folder %q sits in, which is only true on this machine:\n%s", path, text)
+		}
+		name := filepath.Base(path)
+		switch {
+		case userNamed[path] && !strings.Contains(text, name):
+			t.Errorf("the prompt does not say which file %q is, and the user named it:\n%s", path, text)
+		case !userNamed[path] && strings.Contains(text, name):
+			t.Errorf("the prompt names %q, which Aetox named and whose title already says what it is:\n%s", path, text)
+		}
+	}
+
+	if home, err := os.UserHomeDir(); err == nil && strings.Contains(text, strings.TrimSpace(home)) {
+		t.Errorf("a folded layer put the home folder in the prompt:\n%s", text)
 	}
 }
 

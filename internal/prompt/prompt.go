@@ -392,7 +392,7 @@ func BuildWithReport(surface Surface, scope Scope, desk Desk) (string, Loaded) {
 	}
 	if path := ProjectContextFile(sandboxRoot); path != "" {
 		if content := readCapped(path); content != "" {
-			b.WriteString(layer("Project rules", path, content))
+			b.WriteString(layer("Project rules", filepath.Base(path), content))
 			loaded.ProjectPath = path
 		}
 	}
@@ -422,7 +422,9 @@ func foldIdentityLayers(b *strings.Builder) []string {
 		if content == "" {
 			continue
 		}
-		b.WriteString(layer("Personal instructions — "+e.Name(), path, content))
+		// The name goes in layer's own slot rather than into the title, so all
+		// four user-named layers spell it one way.
+		b.WriteString(layer("Personal instructions", e.Name(), content))
 		loaded = append(loaded, path)
 	}
 	return loaded
@@ -455,11 +457,14 @@ func foldLearnedMemory(b *strings.Builder, scope, title string) string {
 	if content == "" {
 		return ""
 	}
+	// Resolved for the caller's report, not for the prompt: these three titles
+	// each name their own scope already, and the file behind them was named by
+	// Aetox rather than by the user (see layer).
 	path, err := learned.FileFor(scope)
 	if err != nil {
 		return ""
 	}
-	b.WriteString(layer(title, path, content))
+	b.WriteString(layer(title, "", content))
 	return path
 }
 
@@ -1075,8 +1080,34 @@ func workingIn(space Space) string {
 	return b.String()
 }
 
-func layer(title, path, content string) string {
-	return fmt.Sprintf("\n---\n# %s (%s)\n%s\n", title, path, content)
+// layer heads one folded file with what it is, and names the file only when the
+// USER is the one who named it.
+//
+// It used to head every layer with the absolute path, which put the account name
+// into every request that had a memory or an identity file to fold — the same
+// charge environment() was rewritten to stop paying for the sandbox root,
+// arriving by a different door and going unnoticed for longer because it only
+// appears once the user has something to fold at all.
+//
+// The line between the two halves is who chose the name. An identity file and a
+// project's rules were named by the user, who may well refer to them that way,
+// and those names read the same on any machine. The agent's own memory files
+// were named by Aetox, their titles already say which one each is, and one of
+// them — projects/<name>-<hash>.md — hashes the absolute project root, so
+// printing its name would put a machine-varying token back in the prompt to say
+// something the title had already said. Half a leak is still a leak.
+//
+// Nothing is lost by that on the model's side. The memory files are not edited
+// from there: they go through the `memory` tool and an approval, and the rule
+// already in this prompt is to repeat a path a tool reported rather than
+// assemble one. The person who wants the folder has the button on the settings
+// page. Every path is still returned in Loaded, which is where a caller that
+// genuinely needs one gets it.
+func layer(title, name, content string) string {
+	if name != "" {
+		title += " (" + name + ")"
+	}
+	return fmt.Sprintf("\n---\n# %s\n%s\n", title, content)
 }
 
 // readCapped reads path, trims it, and truncates to maxLayerBytes. Missing or
