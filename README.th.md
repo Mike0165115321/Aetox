@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/Mike0165115321/Aetox/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/Mike0165115321/Aetox?color=2f81f7"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
-  <img alt="Tests" src="https://img.shields.io/badge/tests-1%2C470%20Go%20%2B%20463%20UI-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-1%2C797%20Go%20%2B%20755%20UI-brightgreen">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%2010%2B-lightgrey">
 </p>
 
@@ -353,8 +353,8 @@ flow ที่มันสร้างจึงถูกบันทึกไว
 | สิ่งที่คุณดาวน์โหลด | ตัวติดตั้ง 15.8 MB |
 | สิ่งที่ลงไปอยู่ในเครื่อง | **41.5 MB** ไฟล์เดียว |
 | ประกอบหนึ่งเทิร์น | 0.32 ms · จอง 174.9 KB |
-| เทสต์ฝั่ง Go | 1,470 ตัว ใน 37 แพ็กเกจ ไม่มีตัวไหนล้ม |
-| เทสต์ฝั่งหน้าจอ | 463 ตัว ใน 42 ไฟล์ ไม่มีตัวไหนล้ม |
+| เทสต์ฝั่ง Go | 1,797 ตัว ใน 38 แพ็กเกจ ไม่มีตัวไหนล้ม |
+| เทสต์ฝั่งหน้าจอ | 755 ตัว ใน 69 ไฟล์ ไม่มีตัวไหนล้ม |
 | เปิดครั้งแรก (cold) | 1.77 วิ ⁽ᵈ⁾ |
 | เปิดครั้งต่อ ๆ ไป | 0.53 วิ ⁽ᵈ⁾ |
 | RAM ที่จอง | 252 MB ⁽ᵈ⁾ |

@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/Mike0165115321/Aetox/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/Mike0165115321/Aetox?color=2f81f7"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
-  <img alt="Tests" src="https://img.shields.io/badge/tests-1%2C470%20Go%20%2B%20463%20UI-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-1%2C797%20Go%20%2B%20755%20UI-brightgreen">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%2010%2B-lightgrey">
 </p>
 
