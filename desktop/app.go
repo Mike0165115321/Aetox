@@ -580,23 +580,26 @@ func (a *App) ProjectTree() []TreeNode {
 	return out
 }
 
-// safeSandboxPath resolves relPath against root and rejects anything that
-// would escape it (e.g. "../../etc/passwd"), so the file viewer can't be
-// used to read outside the open project.
+// safeSandboxPath resolves a path the window was handed and decides whether the
+// window may have it — by asking the engine's gate, which is the only place that
+// question has ever had a correct answer.
+//
+// It used to answer for itself, with a Join and a prefix check, and the two
+// implementations disagreed about the case that matters most here: a path that
+// is already absolute. `filepath.Join` appends one — `<root>\D:\Mike\report.docx`
+// — which is a path that cannot exist and that passes the prefix check, because
+// it genuinely is under the root. Every caller below then Stat'd a file nobody
+// named. The pane that asks "is this still there" read the miss as *gone* and
+// took away the button to open it, about a document sitting on the user's disk.
+//
+// The second disagreement was reach. The engine runs with OpenSandbox in an
+// unfocused session (the machine is the workspace) and with the folders a
+// focused project has added; this knew about neither, so the window refused
+// files the agent had just legitimately written. One gate, one verdict — and
+// the credential stores stay refused for both, which the old copy never checked
+// at all.
 func safeSandboxPath(root, relPath string) (string, error) {
-	safeRoot, err := filepath.Abs(root)
-	if err != nil {
-		return "", err
-	}
-	candidate := filepath.Join(safeRoot, relPath)
-	safeTarget, err := filepath.Abs(filepath.Clean(candidate))
-	if err != nil {
-		return "", err
-	}
-	if safeTarget != safeRoot && !strings.HasPrefix(safeTarget+string(filepath.Separator), safeRoot+string(filepath.Separator)) {
-		return "", fmt.Errorf("path is outside project root")
-	}
-	return safeTarget, nil
+	return skill.WorkspacePath(root, relPath)
 }
 
 // RelativizePath converts an absolute OS path (e.g. from a native file drop)
@@ -657,19 +660,49 @@ var errFileGone = errors.New("file-gone")
 // So: history says what happened, the pane says what is true now. This is how
 // the pane finds out.
 //
-// A path outside the sandbox, or no project open, answers false — the same as
-// missing, because in both cases there is nothing here to open.
-func (a *App) FileStillThere(relPath string) bool {
+// It answers three things, not two, and the third is the point.
+//
+// This used to return a bool, and folded "I am not allowed to look there" and
+// "no project is open" into the same false the missing file gets — documented,
+// at the time, as *the same as missing, because in both cases there is nothing
+// here to open*. That is a claim about the disk made out of a fact about
+// permissions, and it is the shape §133 already ruled on: a caller that would
+// rather answer wrongly than answer "unknown". The user saw a card insisting a
+// file had been deleted, with the button that would have disproved it removed
+// on the strength of the same wrong answer.
+//
+// So: FileHere when it was looked for and found, FileGone when it was looked
+// for and was not there, and FileUnknown when it was never looked for at all.
+// Only the middle one may take the offer away.
+const (
+	FileHere    = "there"
+	FileGone    = "gone"
+	FileUnknown = "unknown"
+)
+
+func (a *App) FileStillThere(relPath string) string {
 	root := strings.TrimSpace(a.cfg.SandboxRoot)
 	if root == "" {
-		return false
+		return FileUnknown
 	}
 	full, err := safeSandboxPath(root, relPath)
 	if err != nil {
-		return false
+		return FileUnknown
 	}
 	info, err := os.Stat(full)
-	return err == nil && !info.IsDir()
+	if err != nil {
+		if os.IsNotExist(err) {
+			return FileGone
+		}
+		// A locked or unreadable file is not an absent one. Word holds an open
+		// .docx in a way that answers some questions and not others, and the
+		// user watching this is the one who has it open.
+		return FileUnknown
+	}
+	if info.IsDir() {
+		return FileUnknown
+	}
+	return FileHere
 }
 
 func (a *App) OpenFileExternally(relPath string) error {

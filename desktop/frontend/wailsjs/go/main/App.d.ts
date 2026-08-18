@@ -122,7 +122,7 @@ export function EnginesFor(arg1:string,arg2:string):Promise<Array<connect.Status
 
 export function ExportSession(arg1:string,arg2:string):Promise<string>;
 
-export function FileStillThere(arg1:string):Promise<boolean>;
+export function FileStillThere(arg1:string):Promise<string>;
 
 export function GetContextBreakdown():Promise<main.ContextBreakdown>;
 

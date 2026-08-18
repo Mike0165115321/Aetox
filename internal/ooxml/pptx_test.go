@@ -212,7 +212,7 @@ func TestADeckWithoutNotesCarriesNoNotesMaster(t *testing.T) {
 func TestImageIsEmbeddedWithItsContentTypeAndRelationship(t *testing.T) {
 	parts := buildDeck(t, []Slide{{
 		Title: "chart",
-		Image: &SlideImage{Ext: "png", Data: pngFixture(t, 800, 600), WidthPx: 800, HeightPx: 600},
+		Image: &Picture{Ext: "png", Data: pngFixture(t, 800, 600), WidthPx: 800, HeightPx: 600},
 	}})
 
 	if _, ok := parts["ppt/media/image1.png"]; !ok {
@@ -233,7 +233,7 @@ func TestImageIsEmbeddedWithItsContentTypeAndRelationship(t *testing.T) {
 // PowerPoint tolerates and Google Slides does not.
 func TestJpegDeclaresTheRightContentType(t *testing.T) {
 	parts := buildDeck(t, []Slide{{
-		Image: &SlideImage{Ext: "jpg", Data: []byte{0xFF, 0xD8, 0xFF}, WidthPx: 100, HeightPx: 100},
+		Image: &Picture{Ext: "jpg", Data: []byte{0xFF, 0xD8, 0xFF}, WidthPx: 100, HeightPx: 100},
 	}})
 	if !strings.Contains(parts["[Content_Types].xml"], `<Default Extension="jpg" ContentType="image/jpeg"/>`) {
 		t.Errorf("jpg is not declared as image/jpeg:\n%s", parts["[Content_Types].xml"])
@@ -245,7 +245,7 @@ func TestJpegDeclaresTheRightContentType(t *testing.T) {
 func TestImageKeepsItsAspectRatioAndStaysOnTheSlide(t *testing.T) {
 	cases := []struct{ w, h int }{{4000, 500}, {500, 4000}, {1000, 1000}}
 	for _, c := range cases {
-		img := &SlideImage{Ext: "png", WidthPx: c.w, HeightPx: c.h, Data: []byte{1}}
+		img := &Picture{Ext: "png", WidthPx: c.w, HeightPx: c.h, Data: []byte{1}}
 		x, y, w, h := imageFrame(img, false, contentW)
 
 		want := float64(c.w) / float64(c.h)
@@ -263,7 +263,7 @@ func TestImageKeepsItsAspectRatioAndStaysOnTheSlide(t *testing.T) {
 // the text.
 func TestPictureBesideBulletsClearsTheText(t *testing.T) {
 	bodyW := (contentW - 457200) / 2
-	img := &SlideImage{Ext: "png", WidthPx: 1000, HeightPx: 1000, Data: []byte{1}}
+	img := &Picture{Ext: "png", WidthPx: 1000, HeightPx: 1000, Data: []byte{1}}
 	x, _, _, _ := imageFrame(img, true, bodyW)
 	if x < marginX+bodyW {
 		t.Errorf("picture starts at %d, inside the text column that ends at %d", x, marginX+bodyW)

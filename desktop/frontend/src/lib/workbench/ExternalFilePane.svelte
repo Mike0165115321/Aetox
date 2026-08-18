@@ -21,6 +21,13 @@
   // itself is history and stays — it records what the turn made — but the
   // offer to open must not outlive the file, or the only way to find out is a
   // click that answers with an OS error.
+  //
+  // Only a file that was looked for and was not there counts. The engine also
+  // answers 'unknown' — it could not resolve the path, or was not allowed to
+  // look there — and that must not be drawn as deletion. It was: a user
+  // watching a document sitting on their own disk was told it had been deleted,
+  // with the button that would have disproved it removed on the strength of the
+  // same wrong answer. Unknown keeps the offer, and the click tells the truth.
   let gone = $state(false)
 
   $effect(() => {
@@ -29,8 +36,8 @@
     failure = ''
     if (!p) return
     // Guarded against the tab switching while the check is in flight.
-    void FileStillThere(p).then((there) => {
-      if (path === p) gone = !there
+    void FileStillThere(p).then((state) => {
+      if (path === p) gone = state === 'gone'
     })
   })
 

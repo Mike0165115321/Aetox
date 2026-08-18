@@ -35,19 +35,6 @@ const (
 	contentW    = slideWidth - 2*marginX
 )
 
-// SlideImage is a picture to place on a slide, already read off disk. Width and
-// height are the image's own pixels, used only to keep its aspect ratio — the
-// slide size is decided here, not by the file.
-type SlideImage struct {
-	// Ext is the file extension without the dot ("png", "jpeg"), which becomes
-	// both the part name and the content-type Default entry.
-	Ext      string
-	Data     []byte
-	WidthPx  int
-	HeightPx int
-	AltText  string
-}
-
 // Slide is one slide's worth of content. Every field is optional: a slide with
 // only a title is a section divider, and one with only an image is a full-bleed
 // picture.
@@ -55,7 +42,7 @@ type Slide struct {
 	Title   string
 	Bullets []string
 	Notes   string
-	Image   *SlideImage
+	Image   *Picture
 }
 
 // BuildPPTX turns slides into the parts of a .pptx package.
@@ -205,16 +192,6 @@ func imageExtensions(slides []Slide) []string {
 	return out
 }
 
-// contentTypeExt maps a file extension to the image/* subtype. Only "jpg"
-// differs from its own name, and a Default entry naming image/jpg rather than
-// image/jpeg is the kind of thing PowerPoint accepts and Google Slides does not.
-func contentTypeExt(ext string) string {
-	if ext == "jpg" {
-		return "jpeg"
-	}
-	return ext
-}
-
 // slideXML lays out one slide.
 //
 // Text goes into plain text boxes, positioned here. See the file header for why
@@ -260,7 +237,7 @@ func slideXML(slide Slide, imageRel string) string {
 // imageFrame places the picture and keeps its aspect ratio. An image stretched
 // to fill a box is worse than a smaller one, and a chart squashed 20% is
 // misleading rather than merely ugly.
-func imageFrame(img *SlideImage, besideText bool, bodyW int) (x, y, w, h int) {
+func imageFrame(img *Picture, besideText bool, bodyW int) (x, y, w, h int) {
 	boxX, boxY, boxW, boxH := marginX, bodyTop, contentW, bodyHeight
 	if besideText {
 		boxX = marginX + bodyW + 457200

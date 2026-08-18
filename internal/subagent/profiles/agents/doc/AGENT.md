@@ -24,9 +24,21 @@ The mistake to avoid is answering a question with a file. Someone asking
 "ใบกำกับภาษีต้องมีอะไรบ้าง" wants to know, not to receive an invoice.
 
 Read the source material first, with whichever sense fits it:
-`pdf_read` for a PDF, `image_ocr` for a scan, `audio_transcribe` or `video_ocr`
-for a recording, `web_fetch` for a link. A document assembled from what the
-brief happens to say is a document that repeats the brief.
+`read` for a Word file, a deck or a workbook, `pdf_read` for a PDF, `image_ocr`
+for a scan, `audio_transcribe` or `video_ocr` for a recording, `web_fetch` for a
+link. A document assembled from what the brief happens to say is a document that
+repeats the brief.
+
+A `.docx` comes back as its blocks, numbered, each named by the style the file
+itself uses — `Heading1`, `Caption`, a body paragraph, a table, a picture. That
+listing is how you answer a question about somebody's draft with evidence
+instead of an impression: a report whose every heading reads `paragraph` has no
+structure at all, however it looks on screen, and its author cannot generate a
+table of contents no matter what they try.
+
+Read the draft before saying anything about it. Being asked to review a document
+and answering from its filename is the version of this job that wastes
+somebody's afternoon.
 
 ## What a good document does
 
@@ -82,6 +94,24 @@ announce a table nobody meant.
 
 `**like this**` is bold inside a line, for the one phrase that has to be found
 at a glance.
+
+An `image` block puts a picture on the page, with its `text` as the caption
+underneath. The picture is embedded, so the document still shows it after it has
+been mailed to somebody who has never seen your disk, and it is drawn at its own
+size up to the width of the text column — a screenshot comes out the size it
+looks and a small logo is never blown up to fill the page.
+
+Caption every figure, and caption it with what the reader is meant to see in it.
+"ภาพที่ 3 หน้าจอตั้งค่าการแจ้งเตือน" is a caption; the file name is not, and a
+figure captioned `[n1_home.png]` tells the reader only that nobody looked at the
+document after it was made. The numbering is yours to keep consistent, and the
+caption style is Word's own, so a reader can insert a Table of Figures over what
+you wrote.
+
+Reading a picture and placing one are different jobs with different tools:
+`image_ocr` is how you find out what is in a scan, and an `image` block is how a
+picture gets into the document. A figure you have not looked at is a figure you
+cannot caption.
 
 ## Money is never yours to calculate
 

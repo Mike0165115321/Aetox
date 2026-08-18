@@ -14,16 +14,13 @@ package main
 // showing.
 
 import (
-	"archive/zip"
 	"bytes"
 	"encoding/base64"
-	"encoding/xml"
 	"fmt"
 	"io"
 	"mime"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/Mike0165115321/Aetox/internal/ooxml"
@@ -235,49 +232,46 @@ func sheetPreview(book *ooxml.WorkbookPreview) ArtifactPreview {
 	return out
 }
 
-// ooxmlText pulls the words out of a .docx or .pptx.
+// ooxmlText pulls the words out of a .docx or .pptx, for a card that shows a
+// few lines of it.
 //
-// There is no reader for these in internal/ooxml — it builds them — and a full
-// one is not what a thumbnail needs. Both formats are a zip of XML where the
-// text lives in one leaf element (w:t for Word, a:t for PowerPoint), so the
-// words come out by walking the token stream and keeping the character data
-// inside those elements. Structure is deliberately not reconstructed: the card
-// shows a few lines, and a paragraph break is as much shape as that needs.
+// It used to walk the zip and the XML itself, which was the right call when
+// nothing else in the codebase could read one of these — and stopped being the
+// right call the moment `read` could (internal/ooxml/docx_read.go). Two walks
+// over the same format is two answers to "what does this file say", and the one
+// that drifts is always the one nobody is looking at.
+//
+// The card wants prose, so the structure the reader returns is flattened back
+// down to lines here. That is a rendering decision belonging to the card, and it
+// is the only part of this that is still the preview's own business.
 func ooxmlText(path, ext string) (string, error) {
-	zr, err := zip.OpenReader(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
 	}
-	defer zr.Close()
-
-	want, leaf, breakOn := "word/document.xml", "t", "p"
 	if ext == ".pptx" {
-		want, leaf, breakOn = "ppt/slides/slide", "t", "p"
-	}
-
-	names := []string{}
-	for _, f := range zr.File {
-		if strings.HasPrefix(f.Name, want) && strings.HasSuffix(f.Name, ".xml") {
-			names = append(names, f.Name)
-		}
-	}
-	// slide2 before slide10: the zip's own order is not the deck's order.
-	sort.Slice(names, func(i, j int) bool { return slideLess(names[i], names[j]) })
-
-	var out strings.Builder
-	for _, name := range names {
-		f := fileByName(&zr.Reader, name)
-		if f == nil {
-			continue
-		}
-		rc, err := f.Open()
+		slides, err := ooxml.ReadPPTXText(data)
 		if err != nil {
-			continue
+			return "", err
 		}
-		err = appendXMLText(&out, rc, leaf, breakOn)
-		rc.Close()
-		if err != nil && err != io.EOF {
-			continue
+		return strings.TrimSpace(strings.Join(slides, "\n\n")), nil
+	}
+
+	doc, err := ooxml.ReadDOCX(data)
+	if err != nil {
+		return "", err
+	}
+	var out strings.Builder
+	for _, block := range doc.Blocks {
+		switch block.Kind {
+		case ooxml.ReadTable:
+			for _, row := range block.Cells {
+				out.WriteString(strings.Join(row, "\t") + "\n")
+			}
+		default:
+			if block.Text != "" {
+				out.WriteString(block.Text + "\n")
+			}
 		}
 		if out.Len() > previewTextBytes {
 			break
@@ -286,76 +280,6 @@ func ooxmlText(path, ext string) (string, error) {
 	return strings.TrimSpace(out.String()), nil
 }
 
-func fileByName(zr *zip.Reader, name string) *zip.File {
-	for _, f := range zr.File {
-		if f.Name == name {
-			return f
-		}
-	}
-	return nil
-}
-
-// slideLess orders slide2.xml before slide10.xml, which a plain string sort
-// gets backwards — a deck preview that opens on slide 10 is not a preview.
-func slideLess(a, b string) bool {
-	na, oka := trailingNumber(a)
-	nb, okb := trailingNumber(b)
-	if oka && okb && na != nb {
-		return na < nb
-	}
-	return a < b
-}
-
-func trailingNumber(name string) (int, bool) {
-	base := strings.TrimSuffix(filepath.Base(name), ".xml")
-	i := len(base)
-	for i > 0 && base[i-1] >= '0' && base[i-1] <= '9' {
-		i--
-	}
-	if i == len(base) {
-		return 0, false
-	}
-	n := 0
-	for _, c := range base[i:] {
-		n = n*10 + int(c-'0')
-	}
-	return n, true
-}
-
-func appendXMLText(out *strings.Builder, r io.Reader, leaf, breakOn string) error {
-	dec := xml.NewDecoder(r)
-	// Word and PowerPoint files declare entities we do not need and will not
-	// fetch; leaving this nil keeps the decoder from reaching for anything.
-	dec.Entity = xml.HTMLEntity
-	depth := 0
-	for {
-		tok, err := dec.Token()
-		if err != nil {
-			return err
-		}
-		switch el := tok.(type) {
-		case xml.StartElement:
-			if el.Name.Local == leaf {
-				depth++
-			}
-		case xml.EndElement:
-			if el.Name.Local == leaf && depth > 0 {
-				depth--
-			}
-			if el.Name.Local == breakOn && out.Len() > 0 &&
-				!strings.HasSuffix(out.String(), "\n") {
-				out.WriteByte('\n')
-			}
-		case xml.CharData:
-			if depth > 0 {
-				out.Write(el)
-			}
-		}
-		if out.Len() > previewTextBytes {
-			return nil
-		}
-	}
-}
 
 func readHead(path string, n int) ([]byte, error) {
 	f, err := os.Open(path)

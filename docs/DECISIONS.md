@@ -4410,3 +4410,63 @@ Also collapsed: `cmd/aetox/main.go` held its own `resolveContextChars`, byte-for
 ### 133.9 Not done
 
 The estimate in the meter is still `chars/4` and still unmeasured: about **20% high** for the tool block (11.4k predicted against 9,460 counted on a real first round), and low for Thai. `token_usage` already holds a real count for every round ever sent, so the ratio can be learned per model instead of assumed — which would make both the meter's forecast and `ContextChars` right by measurement rather than by luck. The retry above makes that a performance question rather than a correctness one, which is why it is not urgent.
+
+## 135. Decision — The Window Was Answering a Question Only the Engine Knows (2026-08-18)
+
+Two things landed on the same day and they are one thing seen twice: a document writer that could not put a picture in a document, and a window that told the user a document had been deleted while it sat on their disk.
+
+### 135.1 A picture is not the deck's idea
+
+`slides_write` could embed a picture from the day it shipped. `doc_write` never could — `internal/ooxml/docx.go` did not contain the word *image* — so a twenty-screenshot appendix came back as twenty captions with square brackets where the figures should be, and ten minutes of the user inserting them by hand. The agent's own answer to being asked was correct and read as an excuse: *"เครื่องมือชุดที่ผมมีในเครื่องนี้สร้างรูปแทรกในไฟล์ไม่ได้เลย"*.
+
+The picture, the byte cap, the "is this really a png" check and the aspect-ratio rule were all decided once, in the deck writer, and every one of them is a rule about **pictures** rather than about slides. So `SlideImage` became `ooxml.Picture` and the loader became `skill.loadPicture`, before either grew a second copy.
+
+Three things in the docx side are load-bearing and none is visible in the result. `wp:inline` has a child *sequence*, so a reordered child is "unreadable content" rather than a differently-placed picture. `wp:docPr/@id` must be unique and non-zero — Word tolerates a repeat, Google Docs drops every picture after the first duplicate, which is how a twenty-figure appendix arrives holding one figure and no error anywhere. And `xmlns:r` goes on the document root, because `r:embed` is an attribute and an attribute cannot declare its own namespace.
+
+A caption is not a small italic paragraph under a picture; it is Word's own `Caption` style, so Insert > Table of Figures finds it and so every caption in a document changes together. 10pt rather than Word's 9pt, because Thai stacks a tone mark above a vowel above the consonant and 9pt loses the top of that stack on paper.
+
+**What the block standard did to this change, and why that is the point.** §132 landed the day before and pinned `doc_write` at 525 tokens with "it may shrink, not grow". Adding the picture put it at 576 and the ratchet refused. The fix was the one §132 prescribes: judgment out of the schema and into `Guidance()`, which is sent once. The tool ended at **509 tokens with a capability it did not have before**. A budget that forces a feature to pay for itself out of the block's own prose is doing exactly what it was built to do, on the first change that tested it.
+
+### 135.2 "I was not allowed to look" is not "it is not there"
+
+The same session, an hour later. The agent wrote a document to `D:\Mike\...\ภาคผนวก_ภาพหน้าจอ.docx` — legitimately: no project was focused, so `OpenSandbox` was on and the machine was the workspace. The window then drew a card saying **ไฟล์นี้ไม่อยู่แล้ว ถูกลบหรือย้ายไปหลังจากที่สร้างเสร็จ** and removed the button that would have opened it.
+
+The desktop had its own copy of the containment rule, and the copy was worse in the way a second copy always is — it answered a question the original had already solved:
+
+```
+filepath.Join(`C:\Users\ASUS\aetox`, `D:\Mike\...\ภาคผนวก.docx`)
+  ->  `C:\Users\ASUS\aetox\D:\Mike\...\ภาคผนวก.docx`   err = nil
+```
+
+An absolute path appended to the root. A path that cannot exist, that **passes the prefix check** because it genuinely is under the root, and that `os.Stat` then fails to find. Ten call sites in `desktop/` shared it. The engine's own `resolveSandboxPath` has never had this bug and its comment names the failure exactly — *"gets joined onto the root, and the tool answers about a folder nobody asked for"* — which is the clearest possible statement that the second copy should never have existed.
+
+So `safeSandboxPath` now delegates to `skill.WorkspacePath`, the same gate every file tool answers through, with one difference and it is the whole reason there is a second entry point: **the window asks quietly.** A tool refused mid-turn may offer to add the folder and carry on; a pane working out whether to draw a button must not put a permission dialog on screen for a question nobody asked out loud. Two consequences come free: the window's reach is now the engine's reach, so it can no longer disown a file the agent just wrote, and the credential stores are refused on this path too — which the desktop's copy never checked at all.
+
+**The worse half was the lie, and it was written down.** `FileStillThere` returned a bool, and its own comment defended folding permission into absence: *"A path outside the sandbox, or no project open, answers false — the same as missing, because in both cases there is nothing here to open."* That is a claim about the disk assembled out of a fact about permissions, and it is §133's family exactly: a caller that would rather answer wrongly than answer "unknown". Here it was worse than a wrong label, because the answer **removed the control that would have disproved it**.
+
+It now answers three things. `there` when it looked and found; `gone` only when it looked and the file was not there; `unknown` when it never got to look — no project, outside the workspace, or a file the OS will not talk about, which includes the ordinary case of Word holding the document open. Only `gone` may take the offer away. `unknown` keeps the button, and the click answers with the truth.
+
+The regression test is the user's own case, and it fails against the old code on the line that matters.
+### 135.3 The window could read a Word file and the document agent could not
+
+`read` refused a `.docx` with *"read target is a binary file — there is no text to read"*. True about the bytes, useless about the file: a Word document is nothing but text, and the agent being refused was the one whose profile promises to review drafts somebody sends it. Meanwhile the preview card in the same application had been pulling the words out of `.docx` and `.pptx` for weeks — the extractor was never wrong, it was one layer away from the only caller that needed it badly.
+
+**No new tool.** A `docx_read` would cost every request in the block forever for a capacity most sessions never use, and would leave `read` still refusing — so the model's first attempt fails and the recovery depends on it noticing a sibling it was not thinking about. `read` is already the answer to "what is in this file". An Office file is a file. The block grew by the six words its description needed to stop lying.
+
+**Structure, not prose, and that is what makes the next piece possible.** A document comes back numbered, each block named by the style the file itself carries:
+
+```
+รายงาน.docx — 18 block(s), 6 picture(s)
+[3] Heading2      ภาคผนวก ก ภาพหน้าจอ
+[4] image phone.png
+[5] Caption       ภาพที่ ก-2 หน้าจอมือถือ
+[13] table 3x2
+```
+
+The number is the point: it is how the next instruction names the thing to change. The style id is reported as the file spells it — `a3`, `a5`, whatever Thai Word generated — rather than normalised into something friendlier, because an agent about to change something has to name it the way the file does. It also answers a question nobody could ask before: a draft whose every heading reads `paragraph` has no structure at all however it looks on screen, and its author cannot generate a table of contents no matter what they try.
+
+**A token walk, not a struct unmarshal**, because the only documents worth reading are ones Aetox did not write. WordprocessingML nests the same element names at several depths and every writer emits a different subset; a walk that tracks depth steps over what it does not recognise. Tested against four real documents on the owner's machine — 118 blocks, 24,000 characters, `w:proofErr`, `mc:AlternateContent`, auto-generated style ids — none of which this package would ever produce.
+
+**What that testing found, which no synthetic fixture would have.** One of those documents reported five pictures and one block. It was not a parser bug: the file genuinely is a single paragraph carrying five inline drawings, which is what pasting screenshots in a row without pressing Enter produces. Reported as "an image", an agent asked to caption the figures writes one caption and believes it has finished. A block now says how many drawings it holds and names the ones that name themselves.
+
+And the preview card now calls the same reader. Two walks over one format is two answers to "what does this file say", and the one that drifts is always the one nobody is looking at — 70 lines of the desktop's own extractor deleted rather than left to rot beside its replacement.

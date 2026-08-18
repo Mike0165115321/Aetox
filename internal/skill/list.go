@@ -193,6 +193,30 @@ func searchBaseExists(requested, resolved string) error {
 // `/mnt/d/project` is not an absolute path to Go on Windows, gets joined onto
 // the root, and the tool answers about a folder nobody asked for (hostSpelling).
 func resolveSandboxPath(root string, requestPath string) (string, error) {
+	return resolveWithin(root, requestPath, true)
+}
+
+// WorkspacePath is resolveSandboxPath for the window rather than the agent: the
+// same one gate, asked quietly.
+//
+// It exists because the desktop had grown its own copy of this rule, and the
+// copy was worse in the way a second copy always is — it answered a question
+// the original had already solved. `filepath.Join(root, "D:\\Mike\\report.docx")`
+// is `<root>\D:\Mike\report.docx`: a path that cannot exist, that passes a
+// prefix check because it really is under the root, and that Stat then fails to
+// find. The window read that as *the file is gone* and hid the button to open
+// it, about a file sitting on the user's disk the whole time.
+//
+// Quiet is the whole difference from the agent's door. A tool refused a path
+// mid-turn can offer to add the folder and carry on; a pane working out whether
+// to draw a button must not put a permission dialog on screen for a question
+// nobody asked out loud. Refused stays refused here, and the caller reports it
+// as what it is — not knowing — rather than as absence.
+func WorkspacePath(root string, requestPath string) (string, error) {
+	return resolveWithin(root, requestPath, false)
+}
+
+func resolveWithin(root string, requestPath string, mayWiden bool) (string, error) {
 	safeRoot, err := filepath.Abs(strings.TrimSpace(root))
 	if err != nil {
 		return "", err
@@ -258,7 +282,7 @@ func resolveSandboxPath(root string, requestPath string) (string, error) {
 	// workspace — by adding this folder, or by working with no project focused
 	// at all. Either way the credential stores stay shut (sandbox_open.go).
 	policy := sandboxPolicyFor(safeRoot)
-	if !policy.open && !policy.covers(resolvedTarget) && !widened(safeRoot, policy, resolvedTarget) {
+	if !policy.open && !policy.covers(resolvedTarget) && !(mayWiden && widened(safeRoot, policy, resolvedTarget)) {
 		return "", fmt.Errorf("path is outside the folders this session can use — the user has to add it first")
 	}
 	if err := refuseResolved(resolvedTarget); err != nil {

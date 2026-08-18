@@ -409,7 +409,10 @@ func TestNewlinesBecomeLineBreaks(t *testing.T) {
 // ignored, and the document opens clean with the feature simply absent.
 func TestEveryPartIsReachableFromARelationship(t *testing.T) {
 	cases := map[string][]Part{}
-	docx, err := BuildDOCX([]Block{{Kind: BlockBullets, Items: []string{"x"}}})
+	docx, err := BuildDOCX([]Block{
+		{Kind: BlockBullets, Items: []string{"x"}},
+		{Kind: BlockImage, Image: &Picture{Ext: "png", Data: []byte{1}, WidthPx: 4, HeightPx: 3}},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -419,7 +422,7 @@ func TestEveryPartIsReachableFromARelationship(t *testing.T) {
 		t.Fatal(err)
 	}
 	cases["xlsx"] = xlsx
-	pptx, err := BuildPPTX([]Slide{{Title: "t", Notes: "n", Image: &SlideImage{Ext: "png", Data: []byte{1}, WidthPx: 1, HeightPx: 1}}})
+	pptx, err := BuildPPTX([]Slide{{Title: "t", Notes: "n", Image: &Picture{Ext: "png", Data: []byte{1}, WidthPx: 1, HeightPx: 1}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -624,5 +627,136 @@ func TestInlineBoldIsWrittenAsRunsAndUnbalancedMarkersStayLiteral(t *testing.T) 
 	}
 	if !strings.Contains(doc, "a ** b") {
 		t.Error("an unbalanced marker was swallowed instead of printed")
+	}
+}
+
+
+// A picture is the first thing this writer puts in the package that is not XML,
+// and there are three ways to get that wrong that all present as the same
+// dialog: no content type for the extension, no relationship pointing at the
+// part, or a relationship id the body never names. Word says "unreadable
+// content" for all three and names none of them, so all three are asserted here.
+func TestAPictureIsEmbeddedWithItsTypeItsRelationshipAndItsCaption(t *testing.T) {
+	parts := buildDoc(t, []Block{
+		{Kind: BlockHeading, Text: "ภาคผนวก ก"},
+		{Kind: BlockImage, Text: "ภาพที่ ก-1 หน้าหลัก", Image: &Picture{
+			Ext: "png", Data: pngFixture(t, 800, 600), WidthPx: 800, HeightPx: 600, AltText: "หน้าหลัก.png",
+		}},
+	})
+
+	if _, ok := parts["word/media/image1.png"]; !ok {
+		t.Fatal("the picture is not in the package at all")
+	}
+	if !strings.Contains(parts["[Content_Types].xml"], `<Default Extension="png" ContentType="image/png"/>`) {
+		t.Error("png has no content type, so Word refuses the whole document")
+	}
+	rels := parts["word/_rels/document.xml.rels"]
+	if !strings.Contains(rels, `Id="rId3"`) || !strings.Contains(rels, `Target="media/image1.png"`) {
+		t.Errorf("nothing relates the document to the picture: %s", rels)
+	}
+
+	body := parts["word/document.xml"]
+	if !strings.Contains(body, `r:embed="rId3"`) {
+		t.Error("the drawing does not name the relationship, so the picture is a blank frame")
+	}
+	// r:embed is an attribute and an attribute cannot declare its own namespace.
+	if !strings.Contains(body, `xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"`) {
+		t.Error("xmlns:r is not on the root, so document.xml is not well-formed XML")
+	}
+	if !strings.Contains(body, `<w:pStyle w:val="Caption"/>`) {
+		t.Error("the caption is not the Caption style, so Table of Figures cannot find it")
+	}
+	if !strings.Contains(body, "ภาพที่ ก-1 หน้าหลัก") {
+		t.Error("the caption text is missing")
+	}
+	if !strings.Contains(parts["word/styles.xml"], `<w:name w:val="caption"/>`) {
+		t.Error("the Caption style is referenced but never defined, which Google Docs ignores")
+	}
+}
+
+// The failure this prevents is invisible in Word and total in Google Docs:
+// Word tolerates a repeated wp:docPr id, Google Docs drops every picture after
+// the first duplicate — so a twenty-figure appendix arrives with one figure and
+// no error anywhere.
+func TestEveryPictureGetsItsOwnIdPartAndRelationship(t *testing.T) {
+	parts := buildDoc(t, []Block{
+		{Kind: BlockImage, Image: &Picture{Ext: "png", Data: pngFixture(t, 40, 30), WidthPx: 40, HeightPx: 30}},
+		{Kind: BlockImage, Image: &Picture{Ext: "jpg", Data: []byte{0xFF, 0xD8, 0xFF}, WidthPx: 40, HeightPx: 30}},
+	})
+
+	for _, name := range []string{"word/media/image1.png", "word/media/image2.jpg"} {
+		if _, ok := parts[name]; !ok {
+			t.Errorf("%s is missing", name)
+		}
+	}
+	body := parts["word/document.xml"]
+	for _, want := range []string{`<wp:docPr id="1"`, `<wp:docPr id="2"`, `r:embed="rId3"`, `r:embed="rId4"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("document.xml does not contain %s", want)
+		}
+	}
+	// jpg names image/jpeg or Google Slides and Google Docs reject the file.
+	if !strings.Contains(parts["[Content_Types].xml"], `<Default Extension="jpg" ContentType="image/jpeg"/>`) {
+		t.Error("jpg is declared as image/jpg, which Google's readers refuse")
+	}
+}
+
+// A drawing wider than the text column is not wrapped or clipped — Word draws it
+// over the margin and off the paper. And a small picture is never enlarged to
+// fill the width, because blowing a 200 px logo up to A4 is a defect that looks
+// like a decision.
+func TestAPictureFitsTheTextColumnAndIsNeverEnlarged(t *testing.T) {
+	wide := imageFitOf(t, 3000, 1500)
+	if wide.w != maxImageWidth {
+		t.Errorf("a 3000px picture is %d EMU wide, want the text column %d", wide.w, maxImageWidth)
+	}
+	// Shape kept: half as tall as it is wide, as it was sent.
+	if wide.h != maxImageWidth/2 {
+		t.Errorf("the aspect ratio moved: %d x %d", wide.w, wide.h)
+	}
+
+	small := imageFitOf(t, 200, 100)
+	if small.w != 200*emuPerPixel {
+		t.Errorf("a 200px picture was resized to %d EMU, want its own %d", small.w, 200*emuPerPixel)
+	}
+
+	// The bound that was missed the first time, and the one an appendix hits
+	// every page: a phone screenshot. Fitted to the text column alone it is 13.6
+	// inches tall on a 9.7 inch page, and Word does not wrap or paginate an
+	// inline drawing — it clips the bottom off, silently, in a document that
+	// opens perfectly.
+	phone := imageFitOf(t, 1170, 2532)
+	if phone.h > maxImageHeight {
+		t.Errorf("a phone screenshot is %d EMU tall against a page of %d — Word clips the bottom off", phone.h, maxImageHeight)
+	}
+	if phone.w > maxImageWidth {
+		t.Errorf("fitting the height pushed the width to %d, over %d", phone.w, maxImageWidth)
+	}
+	// Fitting twice must not squash it: the shape is the picture.
+	if got, want := float64(phone.w)/float64(phone.h), 1170.0/2532.0; got < want*0.995 || got > want*1.005 {
+		t.Errorf("aspect ratio is %.4f after both bounds, want %.4f", got, want)
+	}
+}
+
+type fitted struct{ w, h int64 }
+
+func imageFitOf(t *testing.T, w, h int) fitted {
+	t.Helper()
+	cx, cy := imageFit(&Picture{WidthPx: w, HeightPx: h}, maxImageHeight)
+	return fitted{cx, cy}
+}
+
+// Both refusals happen where the caller can still act on them. A picture drawn
+// at nothing by nothing is a document that opens clean and is missing the one
+// thing it was written for.
+func TestAnImageBlockWithNothingToDrawIsRefused(t *testing.T) {
+	for name, block := range map[string]Block{
+		"no picture":    {Kind: BlockImage, Text: "ภาพที่ 1"},
+		"no bytes":      {Kind: BlockImage, Image: &Picture{Ext: "png", WidthPx: 10, HeightPx: 10}},
+		"no dimensions": {Kind: BlockImage, Image: &Picture{Ext: "png", Data: []byte{1}}},
+	} {
+		if _, err := BuildDOCX([]Block{block}); err == nil {
+			t.Errorf("%s: accepted, and the document would open without the figure", name)
+		}
 	}
 }

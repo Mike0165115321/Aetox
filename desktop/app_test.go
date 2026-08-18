@@ -1076,15 +1076,15 @@ func TestAMissingFileIsReportedAsGoneNotAsAnOSError(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "made.txt"), []byte("hi"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if !a.FileStillThere("made.txt") {
-		t.Fatal("a file that exists must report as still there")
+	if got := a.FileStillThere("made.txt"); got != FileHere {
+		t.Fatalf("a file that exists reported %q, want %q", got, FileHere)
 	}
 
 	if err := os.Remove(filepath.Join(root, "made.txt")); err != nil {
 		t.Fatal(err)
 	}
-	if a.FileStillThere("made.txt") {
-		t.Error("a deleted file must not report as still there")
+	if got := a.FileStillThere("made.txt"); got != FileGone {
+		t.Errorf("a deleted file reported %q, want %q", got, FileGone)
 	}
 	// The gap between asking and clicking: the answer has to be the one the UI
 	// can translate, not "GetFileAttributesEx …: The system cannot find the
@@ -1095,23 +1095,66 @@ func TestAMissingFileIsReportedAsGoneNotAsAnOSError(t *testing.T) {
 	}
 }
 
-// A directory and a path outside the sandbox are both "nothing here to open",
-// and neither may be offered as a file.
-func TestFileStillThereRefusesDirectoriesAndEscapes(t *testing.T) {
+// A directory and a path outside the sandbox are both "nothing here to open" —
+// but neither of them is the file having been deleted, and saying so is the
+// whole of §133. Only a real miss may take the offer to open away.
+func TestNotAllowedToLookIsNotTheSameAsGone(t *testing.T) {
 	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
 	root := t.TempDir()
 	a := &App{cfg: config.Config{SandboxRoot: root}}
 	if err := os.Mkdir(filepath.Join(root, "sub"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if a.FileStillThere("sub") {
-		t.Error("a directory is not a file to open")
+	for name, path := range map[string]string{
+		"a directory":           "sub",
+		"a path outside":        "../outside.txt",
+		"an absolute path away": filepath.Join(t.TempDir(), "elsewhere.docx"),
+	} {
+		if got := a.FileStillThere(path); got != FileUnknown {
+			t.Errorf("%s reported %q, want %q — the pane draws %q as \"deleted\"",
+				name, got, FileUnknown, FileGone)
+		}
 	}
-	if a.FileStillThere("../outside.txt") {
-		t.Error("a path outside the sandbox must answer false")
+	if got := (&App{}).FileStillThere("anything.txt"); got != FileUnknown {
+		t.Errorf("with no project open the answer is %q, want %q", got, FileUnknown)
 	}
-	if (&App{}).FileStillThere("anything.txt") {
-		t.Error("with no project open there is nothing to open")
+}
+
+// The bug this whole change exists for, end to end.
+//
+// An unfocused session has the machine for a workspace, so the agent can write
+// a document anywhere the user asked for — and did: D:\Mike\...\ภาคผนวก.docx,
+// 2026-08-18. The window then said the file had been deleted and hid the button
+// to open it, because its own copy of the containment rule joined that absolute
+// path onto the root and Stat'd `<root>\D:\Mike\...`, which of course was not
+// there.
+func TestAnAbsolutePathTheAgentCanWriteIsOneTheWindowCanSee(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+	root := t.TempDir()
+	// Somewhere that is emphatically not under the root, the way D: is not
+	// under C:\Users\ASUS\aetox.
+	elsewhere := t.TempDir()
+	doc := filepath.Join(elsewhere, "ภาคผนวก.docx")
+	if err := os.WriteFile(doc, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	a := &App{cfg: config.Config{SandboxRoot: root}}
+	// Focused: the folder was never added, so the honest answer is that the
+	// window cannot say — never that the file is gone.
+	skill.NewDefaultRegistry(skill.RegistryOptions{SandboxRoot: root})
+	if got := a.FileStillThere(doc); got != FileUnknown {
+		t.Errorf("focused: %q, want %q", got, FileUnknown)
+	}
+
+	// Unfocused: the machine is the workspace, which is exactly the session
+	// that produced the file. The window must see what the engine could write.
+	skill.NewDefaultRegistry(skill.RegistryOptions{SandboxRoot: root, OpenSandbox: true})
+	if got := a.FileStillThere(doc); got != FileHere {
+		t.Errorf("unfocused: %q, want %q — the engine wrote this file", got, FileHere)
+	}
+	if err := a.OpenFileExternally(doc); errors.Is(err, errFileGone) {
+		t.Error("opening it reports the file as gone, and it is right there")
 	}
 }
 

@@ -15,7 +15,7 @@ import { FileStillThere, OpenFileExternally } from './mocks/wailsApp'
 beforeEach(() => {
   vi.clearAllMocks()
   setLocale('en')
-  vi.mocked(FileStillThere).mockResolvedValue(true as any)
+  vi.mocked(FileStillThere).mockResolvedValue('there' as any)
 })
 
 const props = { path: 'output/s1/report.xlsx', reason: 'spreadsheets open in Excel' }
@@ -29,7 +29,7 @@ describe('the file pane', () => {
   })
 
   it('says the file is gone, and offers nothing, when it is', async () => {
-    vi.mocked(FileStillThere).mockResolvedValue(false as any)
+    vi.mocked(FileStillThere).mockResolvedValue('gone' as any)
     render(ExternalFilePane, props)
 
     await waitFor(() => expect(screen.getByText(/is gone/i)).toBeTruthy())
@@ -60,6 +60,18 @@ describe('the file pane', () => {
     await fireEvent.click(screen.getByRole('button'))
 
     await waitFor(() => expect(screen.getByText(/permission denied/)).toBeTruthy())
+    expect(screen.queryByText(/is gone/i)).toBeNull()
+  })
+
+  // The answer that used to be folded into "gone": the engine could not resolve
+  // the path or was not allowed to look. Reported 2026-08-18 against a .docx the
+  // agent had just written to D:\ from an unfocused session — the pane called it
+  // deleted and took away the only control that could have shown otherwise.
+  it('keeps the offer when the engine cannot say', async () => {
+    vi.mocked(FileStillThere).mockResolvedValue('unknown' as any)
+    render(ExternalFilePane, props)
+
+    await waitFor(() => expect(screen.getByRole('button')).toBeTruthy())
     expect(screen.queryByText(/is gone/i)).toBeNull()
   })
 

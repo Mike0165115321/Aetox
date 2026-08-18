@@ -11,16 +11,10 @@ package skill
 // every Thai deck exposes and the one thing a Latin-first generator gets wrong.
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"image"
-	_ "image/gif"
-	_ "image/jpeg"
-	_ "image/png"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -33,11 +27,6 @@ type slidesWriteSkill struct {
 	root         string
 	outputSubdir func() string
 }
-
-// A picture is embedded whole, so it is also the whole file size. 20 MB is far
-// past any screenshot or chart and well short of the point where a deck stops
-// being mailable.
-const maxSlideImageBytes = 20 << 20
 
 func (*slidesWriteSkill) Name() string { return "slides_write" }
 
@@ -216,7 +205,7 @@ func (s *slidesWriteSkill) parseSlides(raw any) ([]ooxml.Slide, error) {
 		}
 
 		if raw, ok := object["image"].(string); ok && strings.TrimSpace(raw) != "" {
-			picture, err := s.loadImage(strings.TrimSpace(raw))
+			picture, err := loadPicture(s.root, s.outputSubdir, strings.TrimSpace(raw))
 			if err != nil {
 				return nil, fmt.Errorf("slide %d image: %w", i+1, err)
 			}
@@ -229,55 +218,4 @@ func (s *slidesWriteSkill) parseSlides(raw any) ([]ooxml.Slide, error) {
 		slides = append(slides, slide)
 	}
 	return slides, nil
-}
-
-// loadImage reads a picture off disk and measures it.
-//
-// The dimensions come from the file rather than from the model because the
-// model does not know them and would have to guess, and a guessed aspect ratio
-// is a stretched screenshot — the kind of wrong that looks deliberate. Failing
-// loudly here is on purpose too: a deck that silently dropped the chart it was
-// asked for is worse than one that was never written.
-func (s *slidesWriteSkill) loadImage(requestPath string) (*ooxml.SlideImage, error) {
-	// Same fallback every file-consuming skill uses, so a picture an earlier
-	// tool wrote into the session output folder is found by the name the model
-	// remembers (see RegistryOptions.OutputSubdir).
-	resolved := PlacedPath(s.root, s.outputSubdir, requestPath)
-	full, err := resolveSandboxPath(s.root, resolved)
-	if err != nil {
-		return nil, err
-	}
-	info, err := os.Stat(full)
-	if err != nil {
-		return nil, fmt.Errorf("%s not found", requestPath)
-	}
-	if info.IsDir() {
-		return nil, fmt.Errorf("%s is a directory", requestPath)
-	}
-	if info.Size() > maxSlideImageBytes {
-		return nil, fmt.Errorf("%s is %d bytes, over the %d limit for an embedded picture", requestPath, info.Size(), maxSlideImageBytes)
-	}
-	data, err := os.ReadFile(full)
-	if err != nil {
-		return nil, err
-	}
-
-	// Decoding the header also validates the format: a .png that is really a
-	// PDF would otherwise produce a deck PowerPoint declares damaged, naming no
-	// cause the user could act on.
-	config, format, err := image.DecodeConfig(bytes.NewReader(data))
-	if err != nil {
-		return nil, fmt.Errorf("%s is not a readable png, jpeg or gif", requestPath)
-	}
-	ext := format
-	if ext == "jpeg" {
-		ext = "jpg"
-	}
-	return &ooxml.SlideImage{
-		Ext:      ext,
-		Data:     data,
-		WidthPx:  config.Width,
-		HeightPx: config.Height,
-		AltText:  filepath.Base(requestPath),
-	}, nil
 }

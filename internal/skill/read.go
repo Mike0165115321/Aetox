@@ -56,7 +56,7 @@ var imageMediaTypes = map[string]string{
 func (*readSkill) Name() string { return "read" }
 
 func (*readSkill) Description() string {
-	return "Read a text file under sandbox root"
+	return "Read a file under sandbox root — text, notebook, Word, PowerPoint or Excel"
 }
 
 func (*readSkill) ToolDefinition() model.ToolDefinition {
@@ -141,6 +141,18 @@ func (s *readSkill) Execute(_ context.Context, input Input) (Output, error) {
 		}
 		rendered, truncated := limitLines(renderNotebook(nb, requestPath), defaultToolOutputLineLimit)
 		return newToolOutput("read", command, rendered, start, truncated, nil), nil
+	}
+
+	// An Office file is a zip, so the binary sniff below is right about the
+	// bytes and wrong about the file: a .docx is nothing but text, and refusing
+	// it left the agent whose job is documents unable to open one.
+	if ext := officeExtOf(targetPath); ext != "" {
+		rendered, officeErr := s.readOffice(targetPath, requestPath, ext, info.Size())
+		if officeErr != nil {
+			return newToolOutput("read", command, "", start, false, officeErr), officeErr
+		}
+		limited, truncated := limitLines(rendered, defaultToolOutputLineLimit)
+		return newToolOutput("read", command, limited, start, truncated, nil), nil
 	}
 
 	file, err := os.Open(targetPath)

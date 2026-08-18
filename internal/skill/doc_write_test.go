@@ -1,11 +1,17 @@
 package skill
 
 import (
+	"bytes"
 	"context"
+	"image"
+	"image/color"
+	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Mike0165115321/Aetox/internal/ooxml"
 )
 
 func TestDocWriteProducesADocumentWordCanRead(t *testing.T) {
@@ -194,7 +200,7 @@ func TestDocWriteIsRegisteredAsATool(t *testing.T) {
 // corrected, and an explicit zero still allowed: a line given away is a real
 // thing to put on an invoice.
 func TestALineWithNoPriceIsRefusedButAFreeLineIsNot(t *testing.T) {
-	_, err := parseBlocks([]any{map[string]any{
+	_, err := (&docWriteSkill{}).parseBlocks([]any{map[string]any{
 		"type":    "lineitems",
 		"columns": []any{"รายการ", "จำนวน", "ราคา", "รวม"},
 		"lines":   []any{map[string]any{"text": "ค่าบริการ", "qty": 1.0}},
@@ -206,7 +212,7 @@ func TestALineWithNoPriceIsRefusedButAFreeLineIsNot(t *testing.T) {
 		t.Errorf("the refusal does not name the line: %v", err)
 	}
 
-	if _, err := parseBlocks([]any{map[string]any{
+	if _, err := (&docWriteSkill{}).parseBlocks([]any{map[string]any{
 		"type":    "lineitems",
 		"columns": []any{"รายการ", "จำนวน", "ราคา", "รวม"},
 		"lines":   []any{map[string]any{"text": "ของแถม", "price": 0.0}},
@@ -215,11 +221,106 @@ func TestALineWithNoPriceIsRefusedButAFreeLineIsNot(t *testing.T) {
 	}
 
 	// A price sent as text is the same silent zero by another route.
-	if _, err := parseBlocks([]any{map[string]any{
+	if _, err := (&docWriteSkill{}).parseBlocks([]any{map[string]any{
 		"type":    "lineitems",
 		"columns": []any{"รายการ", "จำนวน", "ราคา", "รวม"},
 		"lines":   []any{map[string]any{"text": "ค่าบริการ", "price": "฿15,000"}},
 	}}); err == nil {
 		t.Error("a price sent as text was accepted and would print 0.00")
 	}
+}
+
+
+// The job this was missing on 2026-08-18: an appendix of screenshots, where the
+// caption and the picture arrive together and the file travels on its own.
+func TestDocWriteEmbedsAPictureAndItsCaption(t *testing.T) {
+	root := t.TempDir()
+	shot := filepath.Join(root, "หน้าหลัก.png")
+	if err := os.WriteFile(shot, pngBytes(t, 1200, 800), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := &docWriteSkill{root: root}
+
+	out, err := s.ExecuteTool(context.Background(), callArgs(t, `{
+		"path": "ภาคผนวก.docx",
+		"blocks": [
+			{"type": "heading", "text": "ภาคผนวก ก ภาพหน้าจอ"},
+			{"type": "image", "image": "หน้าหลัก.png", "text": "ภาพที่ ก-1 หน้าหลักของเว็บ"}
+		]
+	}`))
+	if err != nil {
+		t.Fatalf("ExecuteTool: %v", err)
+	}
+	if !out.Success {
+		t.Fatalf("Success = false: %s", out.Stderr)
+	}
+
+	doc := filepath.Join(root, "ภาคผนวก.docx")
+	body := readPart(t, doc, "word/document.xml")
+	if !strings.Contains(body, "<w:drawing>") {
+		t.Error("the document has no drawing, so the picture never arrived")
+	}
+	if !strings.Contains(body, "ภาพที่ ก-1 หน้าหลักของเว็บ") {
+		t.Error("the caption is missing")
+	}
+	// Embedded, not linked: the .docx has to survive being mailed on its own.
+	if media := readPart(t, doc, "word/media/image1.png"); len(media) == 0 {
+		t.Error("the picture bytes are not in the package")
+	}
+}
+
+// A picture the model named and the disk does not have is the one case where
+// carrying on is worse than failing: the document opens, looks finished, and is
+// missing the figure it exists for.
+func TestDocWriteRefusesAPictureItCannotFind(t *testing.T) {
+	root := t.TempDir()
+	s := &docWriteSkill{root: root}
+
+	out, err := s.ExecuteTool(context.Background(), callArgs(t, `{
+		"path": "ภาคผนวก.docx",
+		"blocks": [{"type": "image", "image": "ไม่มีจริง.png", "text": "ภาพที่ 1"}]
+	}`))
+	if err == nil && out.Success {
+		t.Fatal("a missing picture was accepted and the document was written without it")
+	}
+	if !strings.Contains(out.Stderr+errText(err), "ไม่มีจริง.png") {
+		t.Errorf("the refusal does not name the file that is missing: %v %s", err, out.Stderr)
+	}
+}
+
+// `type` and `image` say the same thing, and a call carrying the path and not
+// the discriminator is unambiguous. Refusing it costs a whole turn to be told
+// something the call already made clear.
+func TestAnImagePathIsEnoughToMakeItAnImageBlock(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "ก.png"), pngBytes(t, 20, 10), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	blocks, err := (&docWriteSkill{root: root}).parseBlocks([]any{
+		map[string]any{"image": "ก.png", "text": "ภาพที่ 1"},
+	})
+	if err != nil {
+		t.Fatalf("a block with a picture and no type was refused: %v", err)
+	}
+	if len(blocks) != 1 || blocks[0].Kind != ooxml.BlockImage || blocks[0].Image == nil {
+		t.Fatalf("blocks = %+v, want one image block", blocks)
+	}
+}
+
+func errText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
+func pngBytes(t *testing.T, w, h int) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	img.Set(0, 0, color.RGBA{R: 255, A: 255})
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
 }

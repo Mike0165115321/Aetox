@@ -38,22 +38,26 @@ func (*docWriteSkill) ToolDefinition() model.ToolDefinition {
 		"properties": map[string]any{
 			"path": map[string]any{
 				"type":        "string",
-				"description": "Destination path for the document. The .docx extension is added if missing.",
+				"description": "Where to save it; .docx is added if missing.",
 			},
 			"blocks": map[string]any{
 				"type":        "array",
 				"minItems":    1,
-				"description": "The document, top to bottom. One entry per heading, paragraph, list or table.",
+				"description": "The document, top to bottom.",
 				"items": map[string]any{
 					"type": "object",
 					"properties": map[string]any{
 						"type": map[string]any{
 							"type": "string",
-							"enum": []string{"heading", "paragraph", "bullets", "numbered", "table", "lineitems"},
+							"enum": []string{"heading", "paragraph", "bullets", "numbered", "table", "lineitems", "image"},
 						},
 						"text": map[string]any{
 							"type":        "string",
-							"description": "The wording, for a heading or a paragraph.",
+							"description": "Wording of a heading or paragraph; caption of an image.",
+						},
+						"image": map[string]any{
+							"type":        "string",
+							"description": "Path to a picture on disk; it is embedded.",
 						},
 						"level": map[string]any{
 							"type":        "integer",
@@ -62,16 +66,16 @@ func (*docWriteSkill) ToolDefinition() model.ToolDefinition {
 						"items": map[string]any{
 							"type":        "array",
 							"items":       map[string]any{"type": "string"},
-							"description": "The lines of a bullets or numbered list.",
+							"description": "Lines of a list.",
 						},
 						"columns": map[string]any{
 							"type":        "array",
 							"items":       map[string]any{"type": "string"},
-							"description": "A table's header row.",
+							"description": "Header row.",
 						},
 						"rows": map[string]any{
 							"type":        "array",
-							"description": "A table's data rows, each an array of cell text in column order.",
+							"description": "Data rows, cell text in column order.",
 							"items": map[string]any{
 								"type":  "array",
 								"items": map[string]any{"type": "string"},
@@ -89,11 +93,11 @@ func (*docWriteSkill) ToolDefinition() model.ToolDefinition {
 						},
 						"plain": map[string]any{
 							"type":        "boolean",
-							"description": "No borders — layout, not data.",
+							"description": "No borders.",
 						},
 						"lines": map[string]any{
 							"type":        "array",
-							"description": "Priced rows; amounts are computed, never sent.",
+							"description": "Priced rows; amounts are computed.",
 							"items": map[string]any{
 								"type": "object",
 								"properties": map[string]any{
@@ -114,7 +118,7 @@ func (*docWriteSkill) ToolDefinition() model.ToolDefinition {
 								"properties": map[string]any{
 									"label": map[string]any{"type": "string"},
 									"kind":  map[string]any{"type": "string", "enum": []string{"subtotal", "rate", "total"}},
-									"rate":  map[string]any{"type": "number", "description": "Fraction of subtotal; 0.07 = VAT 7%, negative deducts."},
+									"rate":  map[string]any{"type": "number", "description": "Fraction of subtotal; negative deducts."},
 								},
 								"required":             []string{"label", "kind"},
 								"additionalProperties": false,
@@ -144,7 +148,7 @@ func (*docWriteSkill) ToolDefinition() model.ToolDefinition {
 			// says it; the document agent is where the craft will live as it gets
 			// built out, and prose here would only be a second place to keep in
 			// sync with it — paid for on every request that carries this tool.
-			Description: "Create a Word document (.docx).",
+			Description: "Create a Word document (.docx), pictures included.",
 			Parameters:  payload,
 		},
 	}
@@ -201,7 +205,7 @@ func (s *docWriteSkill) run(start time.Time, requestPath string, rawBlocks any) 
 		requestPath = strings.TrimSuffix(requestPath, filepath.Ext(requestPath)) + ".docx"
 	}
 
-	blocks, err := parseBlocks(rawBlocks)
+	blocks, err := s.parseBlocks(rawBlocks)
 	if err != nil {
 		return newToolOutput("doc_write", "doc_write "+requestPath, "", start, false, err), err
 	}
@@ -239,7 +243,7 @@ func (s *docWriteSkill) run(start time.Time, requestPath string, rawBlocks any) 
 // forgiving about shapes with exactly one sensible reading. A failed tool call
 // costs a whole turn and the model usually cannot tell from the error what it
 // got wrong.
-func parseBlocks(raw any) ([]ooxml.Block, error) {
+func (s *docWriteSkill) parseBlocks(raw any) ([]ooxml.Block, error) {
 	list, ok := raw.([]any)
 	if !ok {
 		if raw == nil {
@@ -297,6 +301,20 @@ func parseBlocks(raw any) ([]ooxml.Block, error) {
 			block.Widths = append(block.Widths, 0)
 		}
 		block.Plain, _ = object["plain"].(bool)
+		if raw, ok := object["image"].(string); ok && strings.TrimSpace(raw) != "" {
+			picture, err := loadPicture(s.root, s.outputSubdir, strings.TrimSpace(raw))
+			if err != nil {
+				return nil, fmt.Errorf("block %d image: %w", i+1, err)
+			}
+			block.Image = picture
+			// A path in `image` says what the block is as plainly as `type`
+			// does, and a model that sent one and forgot the other meant the
+			// picture. Refusing that would cost a turn to be told something the
+			// call already made unambiguous.
+			if block.Kind == "" {
+				block.Kind = ooxml.BlockImage
+			}
+		}
 		for _, value := range asList(object["lines"]) {
 			entry, ok := value.(map[string]any)
 			if !ok {
@@ -356,6 +374,10 @@ func parseBlocks(raw any) ([]ooxml.Block, error) {
 			if len(block.Columns) == 0 && len(block.Rows) == 0 {
 				return nil, fmt.Errorf("block %d is a table with no columns and no rows", i+1)
 			}
+		case ooxml.BlockImage:
+			if block.Image == nil {
+				return nil, fmt.Errorf(`block %d is an image with no picture: give it a path, {"type":"image","image":"หน้าจอ.png","text":"ภาพที่ 1"}`, i+1)
+			}
 		case ooxml.BlockLineItems:
 			if len(block.Lines) == 0 {
 				return nil, fmt.Errorf("block %d is a lineitems block with no lines", i+1)
@@ -368,9 +390,9 @@ func parseBlocks(raw any) ([]ooxml.Block, error) {
 				return nil, fmt.Errorf("block %d is a lineitems block with %d column labels: give 4 (description, quantity, unit price, amount) or 2 (description, amount)", i+1, n)
 			}
 		case "":
-			return nil, fmt.Errorf("block %d has no type: one of heading, paragraph, bullets, numbered, table, lineitems", i+1)
+			return nil, fmt.Errorf("block %d has no type: one of heading, paragraph, bullets, numbered, table, lineitems, image", i+1)
 		default:
-			return nil, fmt.Errorf("block %d has unknown type %q: one of heading, paragraph, bullets, numbered, table, lineitems", i+1, kind)
+			return nil, fmt.Errorf("block %d has unknown type %q: one of heading, paragraph, bullets, numbered, table, lineitems, image", i+1, kind)
 		}
 		blocks = append(blocks, block)
 	}

@@ -36,6 +36,39 @@ const (
 	// bullet collide with the first word.
 	listIndent  = 720
 	listHanging = 360
+
+	// EMU per twip, exactly. Drawings are the one part of a Word file measured
+	// in the DrawingML unit rather than the WordprocessingML one — a fourth unit
+	// in a format that already has three — so every picture crosses this
+	// conversion on its way onto the page.
+	emuPerTwip = 635
+	// What is left to draw down the page, as textWidth is what is left across it.
+	textHeight = pageHeight - 2*pageMargin
+
+	// The box a picture is fitted into: the printable area, to the twip.
+	//
+	// Both bounds matter and they fail differently. Too wide and Word draws the
+	// picture straight over the right margin and off the paper. Too TALL and it
+	// clips the bottom — no warning, no second page, just a screenshot with its
+	// lower half missing, which is the failure that ships because the document
+	// opens fine and only the person holding the paper can see it.
+	//
+	// The height bound is the one that actually bites, because the picture an
+	// appendix is mostly made of is a phone screenshot: 1170x2532 fitted to the
+	// text column is 13.6 inches tall on a 9.7 inch page. Portrait is the normal
+	// case, not the edge one.
+	maxImageWidth  = textWidth * emuPerTwip
+	maxImageHeight = textHeight * emuPerTwip
+
+	// Vertical room for one line of caption, so a full-height figure does not
+	// push its own caption onto the next page and leave the reader a picture
+	// with no number. One line at 10pt with this file's line spacing, plus the
+	// space after it: about a third of an inch.
+	//
+	// One line, not two. A caption long enough to wrap still spills, and that is
+	// the right trade — reserving for the worst caption would shrink every
+	// picture in the document to protect a case most of them are not.
+	captionRoom = 480 * emuPerTwip
 )
 
 // docxFont is the one font family this package uses, and it is used for *all
@@ -67,6 +100,7 @@ const docxFont = "Leelawadee UI"
 const (
 	styleNormal        = "Normal"
 	styleListParagraph = "ListParagraph"
+	styleCaption       = "Caption"
 	styleHeadingPrefix = "Heading"
 )
 
@@ -88,6 +122,11 @@ const (
 	// way: a total that was typed rather than calculated, wrong by an amount
 	// nobody downstream can see.
 	BlockLineItems BlockKind = "lineitems"
+	// BlockImage is a picture between two paragraphs, with the caption that
+	// names it. Both halves are one block on purpose: a figure whose caption is
+	// a separate paragraph is a figure that survives one edit and then floats
+	// away from its own number.
+	BlockImage BlockKind = "image"
 )
 
 // LineItem is one priced row. Amount is never sent — it is Qty × Price, worked
@@ -150,6 +189,9 @@ type Block struct {
 	// Lines and Totals belong to BlockLineItems.
 	Lines  []LineItem
 	Totals []TotalRow
+	// Image belongs to BlockImage; Text is then the caption under it, which is
+	// why a picture needs no second field for one.
+	Image *Picture
 }
 
 // headingLevels is capped at 3 on purpose. Google Docs maps heading_1 through
@@ -170,6 +212,17 @@ func BuildDOCX(blocks []Block) ([]Part, error) {
 	// therefore gets its own abstractNum and its own num.
 	var abstracts, nums strings.Builder
 	nextList := 0
+
+	// Pictures are the first thing in this writer that puts a part in the
+	// package rather than only XML in the body, so the manifest and the
+	// relationship file stop being constants: a part with no content-type
+	// Default and no relationship pointing at it is the "unreadable content"
+	// prompt, and both have to be built from what the body actually used.
+	var media []Part
+	var imageRels strings.Builder
+	var imageExts []string
+	seenExt := map[string]bool{}
+	imageSeq := 0
 
 	var body strings.Builder
 	lastWasTable := false
@@ -211,6 +264,41 @@ func BuildDOCX(blocks []Block) ([]Part, error) {
 				body.WriteString(paragraph(styleListParagraph, numID, item))
 			}
 			lastWasTable = false
+		case BlockImage:
+			if block.Image == nil || len(block.Image.Data) == 0 {
+				return nil, fmt.Errorf("ooxml: image block has no picture")
+			}
+			if block.Image.WidthPx <= 0 || block.Image.HeightPx <= 0 {
+				return nil, fmt.Errorf("ooxml: image block has no dimensions, so it would be drawn at nothing by nothing")
+			}
+			imageSeq++
+			ext := block.Image.Ext
+			if ext == "" {
+				ext = "png"
+			}
+			if !seenExt[ext] {
+				seenExt[ext] = true
+				imageExts = append(imageExts, ext)
+			}
+			// rId1 and rId2 are styles and numbering, so pictures start at 3.
+			relID := fmt.Sprintf("rId%d", imageSeq+2)
+			name := fmt.Sprintf("image%d.%s", imageSeq, ext)
+			fmt.Fprintf(&imageRels,
+				`<Relationship Id="%s" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/%s"/>`,
+				relID, name)
+			media = append(media, Part{Name: "word/media/" + name, Data: block.Image.Data})
+			// A captioned figure gives up a line of its own height so the
+			// caption stays on the page with it. An uncaptioned one has the
+			// whole printable area.
+			room := int64(maxImageHeight)
+			if strings.TrimSpace(block.Text) != "" {
+				room -= captionRoom
+			}
+			body.WriteString(imageXML(block.Image, relID, name, imageSeq, room))
+			if strings.TrimSpace(block.Text) != "" {
+				body.WriteString(paragraph(styleCaption, 0, block.Text))
+			}
+			lastWasTable = false
 		case BlockTable, BlockLineItems:
 			// Two tables that are direct siblings merge into one, which silently
 			// fuses two unrelated tables.
@@ -236,7 +324,17 @@ func BuildDOCX(blocks []Block) ([]Part, error) {
 
 	var document strings.Builder
 	document.WriteString(xmlHeader)
-	document.WriteString(`<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>`)
+	// xmlns:r and xmlns:wp are declared here rather than on the drawing itself
+	// because r:embed is an *attribute*, and an attribute cannot carry a
+	// namespace declaration of its own. A document with a picture and no xmlns:r
+	// on the root is not well-formed XML at all, which Word reports as
+	// unreadable content with no mention of a namespace. Declaring them on every
+	// document, picture or not, is a few unused bytes against a whole class of
+	// failure.
+	document.WriteString(`<w:document ` +
+		`xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" ` +
+		`xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ` +
+		`xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"><w:body>`)
 	document.WriteString(body.String())
 	// sectPr is the last child of w:body — not conventionally last, structurally
 	// last. pgSz strictly before pgMar, and pgMar's header/footer/gutter look
@@ -256,14 +354,87 @@ func BuildDOCX(blocks []Block) ([]Part, error) {
 		abstracts.String() + nums.String() +
 		`</w:numbering>`
 
-	return []Part{
-		{Name: "[Content_Types].xml", Data: []byte(docxContentTypes)},
+	return append([]Part{
+		{Name: "[Content_Types].xml", Data: []byte(docxContentTypes(imageExts))},
 		{Name: "_rels/.rels", Data: []byte(docxRootRels)},
 		{Name: "word/document.xml", Data: []byte(document.String())},
-		{Name: "word/_rels/document.xml.rels", Data: []byte(docxDocumentRels)},
+		{Name: "word/_rels/document.xml.rels", Data: []byte(docxDocumentRels(imageRels.String()))},
 		{Name: "word/styles.xml", Data: []byte(docxStyles)},
 		{Name: "word/numbering.xml", Data: []byte(numbering)},
-	}, nil
+	}, media...), nil
+}
+
+// imageFit is how big a picture is drawn, in EMU.
+//
+// Its own pixels at 96 DPI, which is what makes a screenshot come out the size
+// it looks on screen, fitted inside the printable area. Never enlarged: a 200 px
+// logo stretched to the full width is blurry in a way that reads as a mistake,
+// and the caller who wanted it bigger did not say so.
+//
+// Both bounds are applied, and the second one is why this is not two lines. A
+// picture reduced to the text column can still be taller than the page — that
+// is every phone screenshot — so the width fit has to be re-checked against the
+// height fit rather than either being trusted on its own.
+//
+// int64 throughout, because the intermediate product is one dimension in EMU
+// times a bound in EMU, and that passes 2^31 an order of magnitude before any
+// real picture does.
+func imageFit(img *Picture, room int64) (int64, int64) {
+	w := int64(img.WidthPx) * emuPerPixel
+	h := int64(img.HeightPx) * emuPerPixel
+	if w <= 0 || h <= 0 {
+		return 0, 0
+	}
+	if w > maxImageWidth {
+		h = h * maxImageWidth / w
+		w = maxImageWidth
+	}
+	if room > 0 && h > room {
+		w = w * room / h
+		h = room
+	}
+	return w, h
+}
+
+const (
+	nsDrawing = "http://schemas.openxmlformats.org/drawingml/2006/main"
+	nsPicture = "http://schemas.openxmlformats.org/drawingml/2006/picture"
+)
+
+// imageXML writes one picture as an inline drawing in its own centred paragraph.
+//
+// Two things here are load-bearing and neither is visible in the result.
+//
+// The children of wp:inline are a sequence — extent, effectExtent, docPr,
+// cNvGraphicFramePr, graphic — with the same consequence every other sequence in
+// this file has: a reordered child is "unreadable content", not a
+// differently-placed picture.
+//
+// wp:docPr/@id must be unique across the document and must not be 0. Word
+// tolerates a repeat; Google Docs drops every picture after the first duplicate,
+// which is the failure that looks like the tool silently ignored most of the
+// pictures it was given.
+func imageXML(img *Picture, relID, name string, seq int, room int64) string {
+	w, h := imageFit(img, room)
+	alt := img.AltText
+	if alt == "" {
+		alt = name
+	}
+	var b strings.Builder
+	b.WriteString(`<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:after="80"/></w:pPr><w:r><w:drawing>`)
+	fmt.Fprintf(&b, `<wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="%d" cy="%d"/>`, w, h)
+	b.WriteString(`<wp:effectExtent l="0" t="0" r="0" b="0"/>`)
+	fmt.Fprintf(&b, `<wp:docPr id="%d" name="Picture %d" descr="%s"/>`, seq, seq, escapeXML(alt))
+	b.WriteString(`<wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="` + nsDrawing + `" noChangeAspect="1"/></wp:cNvGraphicFramePr>`)
+	b.WriteString(`<a:graphic xmlns:a="` + nsDrawing + `"><a:graphicData uri="` + nsPicture + `">`)
+	b.WriteString(`<pic:pic xmlns:pic="` + nsPicture + `"><pic:nvPicPr>`)
+	fmt.Fprintf(&b, `<pic:cNvPr id="%d" name="%s" descr="%s"/>`, seq, escapeXML(name), escapeXML(alt))
+	b.WriteString(`<pic:cNvPicPr/></pic:nvPicPr>`)
+	fmt.Fprintf(&b, `<pic:blipFill><a:blip r:embed="%s"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>`, relID)
+	fmt.Fprintf(&b, `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="%d" cy="%d"/></a:xfrm>`, w, h)
+	b.WriteString(`<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>`)
+	b.WriteString(`</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`)
+	return b.String()
 }
 
 // paragraph writes one w:p. style may be empty (the default style); numID 0
@@ -618,10 +789,27 @@ func tableCell(text string, width int, header bool, align string, plain bool) st
 	return b.String()
 }
 
-const docxContentTypes = xmlHeader +
+// docxContentTypes is a function rather than a constant because a picture puts
+// a part in the package whose type is not xml, and a part with no content type
+// is a file Word refuses to open at all.
+func docxContentTypes(imageExts []string) string {
+	var b strings.Builder
+	b.WriteString(docxContentTypesHead)
+	// One Default per image extension actually used. A Default for an extension
+	// with no part is legal; a part with no Default is not.
+	for _, ext := range imageExts {
+		fmt.Fprintf(&b, `<Default Extension="%s" ContentType="image/%s"/>`, ext, contentTypeExt(ext))
+	}
+	b.WriteString(docxContentTypesTail)
+	return b.String()
+}
+
+const docxContentTypesHead = xmlHeader +
 	`<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
 	`<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>` +
-	`<Default Extension="xml" ContentType="application/xml"/>` +
+	`<Default Extension="xml" ContentType="application/xml"/>`
+
+const docxContentTypesTail = "" +
 	// "document" twice is correct. wordprocessingml.template.main+xml opens
 	// without complaint and makes Word treat the file as a template.
 	`<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>` +
@@ -641,11 +829,16 @@ const docxRootRels = xmlHeader +
 // names rather than word/-prefixed. A part with no relationship pointing at it
 // is *silently* ignored — the document opens clean with every heading as body
 // text and no bullets, and nothing anywhere says why.
-const docxDocumentRels = xmlHeader +
-	`<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
-	`<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>` +
-	`<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>` +
-	`</Relationships>`
+// images is the pre-rendered run of picture relationships, appended after the
+// two fixed ones — which is why rId1 and rId2 are never handed to a picture.
+func docxDocumentRels(images string) string {
+	return xmlHeader +
+		`<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+		`<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>` +
+		`<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>` +
+		images +
+		`</Relationships>`
+}
 
 // docxStyles carries the Thai fix, and carries it once.
 //
@@ -694,6 +887,19 @@ var docxStyles = xmlHeader +
 	`<w:style w:type="paragraph" w:styleId="` + styleListParagraph + `">` +
 	`<w:name w:val="List Paragraph"/><w:basedOn w:val="` + styleNormal + `"/><w:uiPriority w:val="34"/><w:qFormat/>` +
 	`<w:pPr><w:spacing w:after="0"/><w:ind w:left="720"/><w:contextualSpacing/></w:pPr>` +
+	`</w:style>` +
+	// A figure's caption is a real style, not a small italic paragraph that
+	// happens to sit under a picture. The w:name binds it to Word's own built-in
+	// "caption", which is what makes Insert > Table of Figures find it, and what
+	// makes every caption in a document change together when somebody decides
+	// they should look different. 10pt rather than Word's own 9pt: Thai stacks a
+	// tone mark above a vowel above the consonant, and 9pt loses the top of that
+	// stack on paper.
+	`<w:style w:type="paragraph" w:styleId="` + styleCaption + `">` +
+	`<w:name w:val="caption"/><w:basedOn w:val="` + styleNormal + `"/><w:next w:val="` + styleNormal + `"/>` +
+	`<w:uiPriority w:val="35"/><w:qFormat/>` +
+	`<w:pPr><w:jc w:val="center"/><w:spacing w:before="0" w:after="240"/></w:pPr>` +
+	`<w:rPr><w:i/><w:iCs/><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr>` +
 	`</w:style>` +
 	`</w:styles>`
 
