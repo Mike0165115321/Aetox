@@ -1,0 +1,12 @@
+# This file's presence is the whole point — GitHub Pages checks that it exists
+# and never reads what is in it, so this note lives here rather than in a
+# second file that would go stale.
+#
+# Without it, Pages runs Jekyll over this folder and turns every .md in it into
+# a public web page with a theme. That published 52 of them: the release notes
+# and the decision log, but also competitor-research, hermes-agent-teardown and
+# the whole opencode-study folder — working notes, on the product's own domain,
+# indexable, with no way back to the landing page from any of them.
+#
+# The site is one page. The documents stay in the repository, where anyone who
+# wants them can read them on GitHub, and stop being pages nobody designed.

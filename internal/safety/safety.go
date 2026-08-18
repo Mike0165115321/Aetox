@@ -36,8 +36,8 @@ func NormalizeApprovalMode(raw string) ApprovalMode {
 
 // PermissionAction is a user-configured override for a specific tool/pattern,
 // taking precedence over the coarse ApprovalMode when it matches. Mirrors
-// opencode's per-tool pattern permission model (see
-// docs/architecture-reference-opencode.md §4.5).
+// opencode's per-tool pattern permission model, read from its source; the
+// note that reading produced is a working note and is not in this repo.
 type PermissionAction string
 
 const (

@@ -53,7 +53,7 @@ import (
 // shell tokenizer is otherwise the better-engineered version of this idea (real
 // tree-sitter grammars for bash and PowerShell, provider paths, cygpath) — but
 // which does not gate on what it finds at all. Read against the source
-// (docs/opencode-study/permissions.md, commit 76ced54): `tool/bash.ts` puts the
+// (source read at commit 76ced54): `tool/bash.ts` puts the
 // raw command string through the permission rules and nothing else, and the
 // path scan is an advisory warning about tokens outside the workspace. Its
 // containment is the prompt, defaulting to `ask` when no rule matches; the

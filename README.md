@@ -17,7 +17,7 @@
 
 <p align="center">
   <a href="README.th.md">ภาษาไทย</a> ·
-  <a href="https://aetox-puce.vercel.app/">Website</a> ·
+  <a href="https://mike0165115321.github.io/Aetox/">Website</a> ·
   <a href="https://github.com/Mike0165115321/Aetox/releases/latest/download/aetox-amd64-installer.exe">Download</a> ·
   <a href="ARCHITECTURE.md">Architecture</a> ·
   <a href="docs/DECISIONS.md">Every decision, and why</a>

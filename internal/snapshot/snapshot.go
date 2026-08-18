@@ -5,8 +5,8 @@
 // seeing the result. When the result is wrong, the user's own git history is
 // the whole safety net, which works exactly as well as they commit.
 //
-// The design is opencode's, read from its source rather than guessed at
-// (docs/opencode-study/snapshot.md), and it earns its place by adding nothing:
+// The design is opencode's, read from its source rather than guessed at, and
+// it earns its place by adding nothing:
 //
 //   - A **shadow git repository** per project, living in Aetox's data root with
 //     its work tree pointed at the real project. Snapshots therefore never
