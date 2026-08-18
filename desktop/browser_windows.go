@@ -59,7 +59,14 @@ const (
 	wsChild    = 0x40000000
 	wsVisible  = 0x10000000
 	wsClipSibl = 0x04000000
+	wsPopup    = 0x80000000
 	swHide     = 0
+
+	// A window that is visible to the compositor and to nobody else: no taskbar
+	// button, never activated, never stealing focus. Paired with a position
+	// outside every monitor, this is the deck export's window (deck_render.go).
+	wsExToolWindow = 0x00000080
+	wsExNoActivate = 0x08000000
 
 	coinitApartmentThreaded = 0x2
 
@@ -205,22 +212,19 @@ func (t *win32Tab) callEngine(method, paramsJSON string) <-chan engineReply {
 	return out
 }
 
-// sendBehind drops the tab to the bottom of the Z order without moving,
-// resizing, or hiding it.
+// sendBehind is what the deck export used to ask for and no longer can.
 //
-// The export webview was parked at -32000 first, on the reasoning that a window
-// outside every monitor still composites. That reasoning is right about a
-// top-level window and wrong about this one: these are WS_CHILD windows of the
-// wails main window, and a child pushed outside the parent's client area is
-// *clipped*, which is not "off-screen" — it is "not drawn". Every capture came
-// back blank because there were no frames to capture.
+// It set the tab to the bottom of the Z order on the reasoning that a tab left
+// under the app's own webview is "invisible, even though it's really navigated
+// and painting" — a sentence this file records from experience. The reasoning
+// was right about siblings and wrong about this: the app's webview is the
+// PARENT's content, and a child window paints over its parent's client area
+// whatever the Z order says. The export tab sat on top of the whole application
+// for the length of every export.
 //
-// Behind is the state that was wanted all along, and this file already knew it:
-// the hwndTop comment above records that two WebView2 controllers in one
-// top-level window composite independently, so a tab that is merely shown can
-// stay behind the app's own webview — "invisible, even though it's really
-// navigated and painting". That sentence was written as a warning. Here it is
-// the feature.
+// The export now gets its own top-level window instead (see openTab), so this
+// has no caller. It stays because tabView declares it and because a future
+// engine may have a Z order that does mean something here.
 func (t *win32Tab) sendBehind() {
 	t.requireHostThread("sendBehind")
 	procSetWindowPos.Call(t.hwnd, hwndBottom, 0, 0, 0, 0, swpNoMove|swpNoSize|swpNoActivate)
@@ -395,14 +399,35 @@ func (h *win32Host) drain() {
 
 // openTab creates the child window + WebView2 for a tab. Already on the
 // browser thread — browserHost.open calls this from inside do.
+// offscreenTabID names the one tab that gets a window of its own rather than a
+// child of the app's. Kept here rather than passed in because the reason is a
+// Win32 fact, not a caller's preference — see below.
+const offscreenTabID = exportTabID
+
 func (h *win32Host) openTab(id, url string, x, y, w, hgt int, cb tabCallbacks) tabView {
+	// A child window ALWAYS paints over its parent's client area. Z-order only
+	// orders siblings, and the app's own webview is not a sibling — it is the
+	// parent's content. So there is no arrangement of a WS_CHILD window that is
+	// composited and unseen, which is what the deck export needs: frames to
+	// capture, and nothing on screen while it works. `sendBehind` was written
+	// on the opposite assumption and could never have worked.
+	//
+	// Its own top-level window can be both. WS_POPUP at -32000 is visible to
+	// the compositor — DWM keeps a redirection surface for it, so it paints —
+	// and outside every monitor, so nobody sees it. WS_EX_TOOLWINDOW keeps it
+	// off the taskbar and WS_EX_NOACTIVATE keeps it from stealing focus.
+	style, exStyle, parent := uintptr(wsChild|wsVisible|wsClipSibl), uintptr(0), h.parent
+	if id == offscreenTabID {
+		style, exStyle, parent = wsPopup|wsVisible, wsExToolWindow|wsExNoActivate, 0
+		x, y = -32000, -32000
+	}
 	hwnd, _, lastErr := procCreateWindowExW.Call(
-		0,
+		exStyle,
 		uintptr(unsafe.Pointer(h.class)),
 		0,
-		wsChild|wsVisible|wsClipSibl,
+		style,
 		uintptr(x), uintptr(y), uintptr(w), uintptr(hgt),
-		h.parent, 0, 0, 0,
+		parent, 0, 0, 0,
 	)
 	if hwnd == 0 {
 		debuglog.Msg("browser.open(%s): CreateWindowExW FAILED: %v", id, lastErr)

@@ -310,6 +310,8 @@ export const th = {
   'workbench.deckPptxPicture': 'ภาพ เหมือนเป๊ะ',
   'workbench.deckDismiss': 'ปิด',
   'workbench.deckExporting': 'กำลังส่งออก',
+  'workbench.deckBuilding': 'กำลังสร้างไฟล์',
+  'workbench.deckBuildingSub': 'ทำอยู่เบื้องหลัง ไม่ต้องรอหน้านี้ก็ได้',
   'workbench.deckFormatNotReady': 'ยังไม่พร้อม',
   'workbench.deckExported': 'ส่งออกเสร็จแล้ว บันทึกไว้ที่ {path}',
   'workbench.deckSavedToDownloads': 'อยู่ในโฟลเดอร์ดาวน์โหลด',

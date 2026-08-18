@@ -29,7 +29,19 @@ import (
 // nothing else — the marker is the one thing every deck agrees on.
 const flattenScript = `(()=>{` +
 	`const slides=[...document.querySelectorAll('section.slide')];` +
-	`if(!slides.length)return '[]';` +
+	`if(!slides.length)return JSON.stringify({docHeight:0,rects:[]});` +
+
+	// The scrollbar has to go before anything is measured, and it is not
+	// cosmetic. A deck eight slides tall has a vertical scrollbar, which takes
+	// ~15px off the viewport width; the slide then measures 1265 wide instead
+	// of 1280, that number becomes the paper size, and printing at the narrower
+	// width re-wraps every line so slides grow past one page and spill. Eight
+	// slides came out as twelve pages, and the whole difference was one
+	// scrollbar. Measured from a real export: MediaBox 948.96pt = 13.18in,
+	// against the 13.333in the deck was designed at.
+	`const bar=document.createElement('style');` +
+	`bar.textContent='html{scrollbar-width:none!important}::-webkit-scrollbar{display:none!important}';` +
+	`document.head.appendChild(bar);` +
 
 	// A scrolling ancestor is the trap that looks like success: slides laid out
 	// down an inner container measure to different positions, so nothing seems
@@ -63,6 +75,20 @@ const flattenScript = `(()=>{` +
 	`const last=slides[slides.length-1];` +
 	`last.style.setProperty('break-after','auto','important');` +
 	`last.style.setProperty('page-break-after','auto','important');` +
+
+	// Every slide pinned to the first one's box, so the paper and the artwork
+	// are the same rectangle and one slide is exactly one page. The contract
+	// fixes a slide AS a box (1280x720), so pinning is what that means rather
+	// than a liberty taken with it — and without it `min-height:100vh` re-reads
+	// against the page in print and a slide can quietly become 1.05 pages.
+	`const box=slides[0].getBoundingClientRect();` +
+	`for(const el of slides){` +
+	`el.style.setProperty('box-sizing','border-box','important');` +
+	`el.style.setProperty('width',box.width+'px','important');` +
+	`el.style.setProperty('height',box.height+'px','important');` +
+	`el.style.setProperty('min-height','0','important');` +
+	`el.style.setProperty('max-height',box.height+'px','important');` +
+	`el.style.setProperty('overflow','hidden','important');}` +
 
 	`window.scrollTo(0,0);` +
 	`return JSON.stringify({` +

@@ -8,15 +8,19 @@ package main
 // problem: it is loading the file into a webview nobody watches and asking the
 // engine for the answer in the shape somebody else's program can open.
 //
-// **Off-screen, not hidden, and the difference is the whole feature.** A window
-// at `ShowWindow(SW_HIDE)` produces no frames — desktop/browser_capture.go's
-// comment says so, and WebView2Feedback #1077 and #2983 are the same wall from
-// two directions. That state is why a screenshot of an unseen page came back
-// blank, and it is what kept `.png` off the export menu. A window that is
-// `WS_VISIBLE` and merely parked outside every monitor is a **different state**:
-// Windows composites it exactly as if someone were looking at it. Printing never
-// needed that (it is a separate pipeline); photographing does, and this is what
-// gives it one without anything appearing on screen.
+// **Off-screen, not hidden, and its own window — three tries to get there.** A
+// window at `ShowWindow(SW_HIDE)` produces no frames (browser_capture.go's
+// comment; WebView2Feedback #1077 and #2983), so a screenshot of one comes back
+// blank. A WS_VISIBLE window merely parked outside every monitor is a different
+// state: Windows composites it as if someone were looking. But the second try
+// made that window a WS_CHILD of the app's, and a child is CLIPPED to its
+// parent's client area — outside it, it draws nothing, which is the first
+// problem again. Moving it inside worked and put the deck on screen over the
+// whole application for the length of every export, because a child window
+// paints over its parent's content whatever the Z order says.
+//
+// So: its own top-level WS_POPUP, off-screen. Composited, and nobody sees it.
+// browser_windows.go builds it, keyed on this file's exportTabID.
 //
 // That claim is the load-bearing one and it is not from documentation. It is
 // why deck_image.go refuses a capture that comes back a single flat colour
@@ -64,20 +68,14 @@ func (a *App) withExportTab(ctx context.Context, fileURL string, work func(call 
 	// export would quietly work on the previous deck.
 	a.BrowserClose(exportTabID)
 
-	// Laid out at its real size in the normal place, then pushed to the bottom
-	// of the Z order — NOT hidden, and NOT parked off-screen.
-	//
-	// Both of those were tried and both come back blank. SW_HIDE produces no
-	// frames (browser_capture.go). Off-screen looks like it should work and does
-	// not, because these are WS_CHILD windows of the main window: a child pushed
-	// outside its parent's client area is clipped, and clipped is not drawn.
-	// Behind is the third state, and this app had already discovered it by
-	// accident — see the hwndTop comment in browser_windows.go, where a tab that
-	// stayed under the app's own webview was "invisible, even though it's really
-	// navigated and painting". That sentence was written as a warning; here it
-	// is the whole mechanism.
+	// The export webview gets a top-level window of its own, parked outside
+	// every monitor — browser_windows.go arranges that on this id, because the
+	// reason is a Win32 fact rather than a caller's preference: a WS_CHILD
+	// window paints over its parent's client area no matter what the Z order
+	// says, so no child window can be both composited and unseen. Being
+	// composited is not optional; a window that produces no frames photographs
+	// as a blank rectangle (browser_capture.go, WebView2Feedback #1077, #2983).
 	host.open(exportTabID, fileURL, 0, 0, deckSlideWidthPx, deckSlideHeightPx)
-	host.onTab(exportTabID, func(v tabView, _ *browserTab) { v.sendBehind() })
 	defer a.BrowserClose(exportTabID)
 
 	if err := a.waitForDeckLoad(ctx, host, exportTabID); err != nil {

@@ -314,6 +314,16 @@
   {:else}
     <div class="deck-stage" bind:this={stage}>
       <iframe bind:this={frame} {src} title={name} onload={scan}></iframe>
+      {#if busy}
+        <!-- ระหว่างส่งออก เว็บวิวที่เรนเดอร์อยู่จอดนอกจอในหน้าต่างของตัวเอง
+             (deck_render.go) ไม่มีอะไรให้ดู แถบนี้จึงเป็นสิ่งเดียวที่บอกว่ากำลัง
+             ทำอยู่ ถ้าไม่มี การกดปุ่มแล้วเงียบไปสองสามวินาทีอ่านเหมือนแอปค้าง -->
+        <div class="deck-working" role="status" aria-live="polite">
+          <span class="spin lg"><Icon name="loaderCircle" size={22} /></span>
+          <span class="dw-title">{t('workbench.deckBuilding')}</span>
+          <span class="dw-sub">{t('workbench.deckBuildingSub')}</span>
+        </div>
+      {/if}
     </div>
   {/if}
 </div>
@@ -404,7 +414,16 @@
   .mi-note { margin-left: auto; font-size: var(--fs-xs, 11px); color: var(--text-muted); }
 
   .deck-body { flex: 1; min-height: 0; }
-  .deck-stage { flex: 1; min-height: 0; background: var(--surface-sunken); }
+  .deck-stage { flex: 1; min-height: 0; background: var(--surface-sunken); position: relative; }
+  .deck-working {
+    position: absolute; inset: 0; z-index: 5;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+    background: color-mix(in srgb, var(--surface-sunken) 88%, transparent);
+    backdrop-filter: blur(2px);
+  }
+  .dw-title { font-size: var(--fs-md, 15px); color: var(--text-primary); }
+  .dw-sub { font-size: var(--fs-sm); color: var(--text-muted); }
+  .spin.lg { color: var(--interactive, #6ea8fe); margin-bottom: 4px; }
   .deck-stage iframe { width: 100%; height: 100%; border: 0; display: block; }
   /* เต็มจอแล้วพื้นหลังต้องเป็นของเด็ค ไม่ใช่สีธีมของแอปที่โผล่มาเป็นกรอบ */
   .deck-stage:fullscreen { background: #000; }
