@@ -14,6 +14,7 @@ import (
 
 	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/proc"
+	"github.com/Mike0165115321/Aetox/internal/statereport"
 )
 
 type gitSkill struct {
@@ -93,7 +94,8 @@ func (s *gitSkill) Execute(ctx context.Context, input Input) (Output, error) {
 		ctx = context.Background()
 	}
 	if _, err := exec.LookPath("git"); err != nil {
-		err = errors.New("git command not found in PATH")
+		// Git being absent from PATH is this machine, not this call (statereport).
+		err = statereport.New("git command not found in PATH")
 		return newToolOutput("git", "git", "", start, false, err), err
 	}
 

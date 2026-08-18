@@ -19,6 +19,7 @@ import (
 
 	"github.com/Mike0165115321/Aetox/internal/config"
 	"github.com/Mike0165115321/Aetox/internal/proc"
+	"github.com/Mike0165115321/Aetox/internal/statereport"
 )
 
 // preferredWhisperModel is what the missing-model error tells the user to
@@ -238,12 +239,16 @@ func isRegularFile(path string) bool {
 	return err == nil && info.Mode().IsRegular()
 }
 
+// Both of these are state reports (internal/statereport), not lessons: a binary
+// that is not installed and a model file that was never downloaded are facts
+// about this machine, true or false no matter how the tool was called, so the
+// learning summarizer must not read them as behaviour to correct.
 func missingBinaryError(desc Descriptor) error {
-	return fmt.Errorf("ไม่พบโปรแกรม %s ในเครื่อง — %s", desc.Label, desc.Install)
+	return statereport.Newf("ไม่พบโปรแกรม %s ในเครื่อง — %s", desc.Label, desc.Install)
 }
 
 func missingModelError(dir string) error {
-	return fmt.Errorf("ยังไม่มีไฟล์โมเดลถอดเสียงในเครื่อง — Aetox ไม่โหลดให้เองเพราะไฟล์ใหญ่ ~141 MB ต้องให้คุณตัดสินใจก่อน\n"+
+	return statereport.Newf("ยังไม่มีไฟล์โมเดลถอดเสียงในเครื่อง — Aetox ไม่โหลดให้เองเพราะไฟล์ใหญ่ ~141 MB ต้องให้คุณตัดสินใจก่อน\n"+
 		"1) โหลดไฟล์: https://huggingface.co/ggerganov/whisper.cpp/resolve/main/%s\n"+
 		"2) วางไว้ที่: %s\n"+
 		"ถ้าพื้นที่หรือเน็ตจำกัด ใช้ ggml-tiny-q5_1.bin (~31 MB) แทนได้ในโฟลเดอร์เดียวกัน แลกกับความแม่นที่ลดลง",

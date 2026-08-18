@@ -25,6 +25,7 @@ import (
 
 	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/proc"
+	"github.com/Mike0165115321/Aetox/internal/statereport"
 )
 
 const (
@@ -192,13 +193,15 @@ func extractFrames(ctx context.Context, videoPath, outDir string, intervalSec in
 	return frames, nil
 }
 
+// A state report, not a lesson: what it says about this machine is true or
+// false regardless of how the tool was called (see missingTesseractError).
 func missingFFmpegError() error {
 	switch runtime.GOOS {
 	case "darwin":
-		return errors.New("ไม่พบโปรแกรม ffmpeg ในเครื่อง — ติดตั้งด้วย: brew install ffmpeg")
+		return statereport.New("ไม่พบโปรแกรม ffmpeg ในเครื่อง — ติดตั้งด้วย: brew install ffmpeg")
 	case "linux":
-		return errors.New("ไม่พบโปรแกรม ffmpeg ในเครื่อง — ติดตั้งผ่าน package manager ของดิสโทรคุณ (แพ็กเกจ ffmpeg)")
+		return statereport.New("ไม่พบโปรแกรม ffmpeg ในเครื่อง — ติดตั้งผ่าน package manager ของดิสโทรคุณ (แพ็กเกจ ffmpeg)")
 	default: // windows and anything else
-		return errors.New("ไม่พบโปรแกรม ffmpeg ในเครื่อง — ติดตั้งด้วย: winget install ffmpeg (หรือ scoop install ffmpeg) แล้วลองใหม่")
+		return statereport.New("ไม่พบโปรแกรม ffmpeg ในเครื่อง — ติดตั้งด้วย: winget install ffmpeg (หรือ scoop install ffmpeg) แล้วลองใหม่")
 	}
 }

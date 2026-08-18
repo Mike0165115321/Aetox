@@ -34,7 +34,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -42,6 +41,7 @@ import (
 
 	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/proc"
+	"github.com/Mike0165115321/Aetox/internal/statereport"
 )
 
 type imageOCRSkill struct {
@@ -162,17 +162,30 @@ func tryAutoInstallTesseract(ctx context.Context) bool {
 	return cmd.Run() == nil
 }
 
+// missingTesseractError reports the machine's state, not anyone's behaviour:
+// whether Tesseract is installed here is true or false no matter how the tool
+// was called, and nothing the agent does differently next time makes it
+// appear. So it carries the statereport mark (turn.ErrorFromWorld), same as an
+// n8n that is not running.
+//
+// Written plain, it was read as a lesson. Three of these in a row on one
+// machine whose NSIS install step had been skipped became an approval card
+// proposing "เลี่ยงรูปแบบที่ชนเงื่อนไขนี้ตั้งแต่ครั้งแรก" — permanent memory
+// teaching the agent to avoid OCR, drafted from a missing install (2026-08-18).
+// The same reading applies to every "this machine does not have X" message in
+// the tool layer: pdf_read's poppler, video_ocr's ffmpeg, stt's whisper binary
+// and model file, git's own absence from PATH.
 func missingTesseractError() error {
 	switch runtime.GOOS {
 	case "darwin":
-		return errors.New("ไม่พบ Tesseract และติดตั้งอัตโนมัติไม่สำเร็จ (ต้องมี Homebrew) — รันเอง: brew install tesseract tesseract-lang")
+		return statereport.New("ไม่พบ Tesseract และติดตั้งอัตโนมัติไม่สำเร็จ (ต้องมี Homebrew) — รันเอง: brew install tesseract tesseract-lang")
 	case "linux":
 		if hint := linuxInstallHint("tesseract-ocr tesseract-ocr-tha", "tesseract tesseract-langpack-tha", "tesseract-data-tha tesseract"); hint != "" {
-			return fmt.Errorf("ไม่พบโปรแกรม Tesseract ในเครื่อง — ติดตั้งด้วย: %s", hint)
+			return statereport.Newf("ไม่พบโปรแกรม Tesseract ในเครื่อง — ติดตั้งด้วย: %s", hint)
 		}
-		return errors.New("ไม่พบโปรแกรม Tesseract ในเครื่อง — ติดตั้งผ่าน package manager ของดิสโทรคุณ (แพ็กเกจ tesseract-ocr หรือ tesseract พร้อมชุดภาษาไทย)")
+		return statereport.New("ไม่พบโปรแกรม Tesseract ในเครื่อง — ติดตั้งผ่าน package manager ของดิสโทรคุณ (แพ็กเกจ tesseract-ocr หรือ tesseract พร้อมชุดภาษาไทย)")
 	default: // windows and anything else
-		return errors.New("ไม่พบโปรแกรม Tesseract ในเครื่อง — ติดตั้งจาก https://github.com/UB-Mannheim/tesseract/wiki แล้วลองใหม่")
+		return statereport.New("ไม่พบโปรแกรม Tesseract ในเครื่อง — ติดตั้งจาก https://github.com/UB-Mannheim/tesseract/wiki แล้วลองใหม่")
 	}
 }
 

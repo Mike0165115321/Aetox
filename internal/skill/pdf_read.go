@@ -32,6 +32,7 @@ import (
 
 	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/proc"
+	"github.com/Mike0165115321/Aetox/internal/statereport"
 )
 
 type pdfReadSkill struct {
@@ -238,16 +239,18 @@ func tryAutoInstallPoppler(ctx context.Context) bool {
 	return cmd.Run() == nil
 }
 
+// A state report, not a lesson: what it says about this machine is true or
+// false regardless of how the tool was called (see missingTesseractError).
 func missingPopplerError() error {
 	switch runtime.GOOS {
 	case "darwin":
-		return errors.New("ไม่พบ pdftotext และติดตั้งอัตโนมัติไม่สำเร็จ (ต้องมี Homebrew) — รันเอง: brew install poppler")
+		return statereport.New("ไม่พบ pdftotext และติดตั้งอัตโนมัติไม่สำเร็จ (ต้องมี Homebrew) — รันเอง: brew install poppler")
 	case "linux":
 		if hint := linuxInstallHint("poppler-utils", "poppler-utils", "poppler"); hint != "" {
-			return fmt.Errorf("ไม่พบโปรแกรม pdftotext ในเครื่อง — ติดตั้งด้วย: %s", hint)
+			return statereport.Newf("ไม่พบโปรแกรม pdftotext ในเครื่อง — ติดตั้งด้วย: %s", hint)
 		}
-		return errors.New("ไม่พบโปรแกรม pdftotext ในเครื่อง — ติดตั้งผ่าน package manager ของดิสโทรคุณ (แพ็กเกจ poppler-utils หรือ poppler)")
+		return statereport.New("ไม่พบโปรแกรม pdftotext ในเครื่อง — ติดตั้งผ่าน package manager ของดิสโทรคุณ (แพ็กเกจ poppler-utils หรือ poppler)")
 	default: // windows and anything else
-		return errors.New("ไม่พบโปรแกรม pdftotext ในเครื่อง — ติดตั้งด้วย: scoop install poppler (หรือดาวน์โหลด poppler for Windows) แล้วลองใหม่")
+		return statereport.New("ไม่พบโปรแกรม pdftotext ในเครื่อง — ติดตั้งด้วย: scoop install poppler (หรือดาวน์โหลด poppler for Windows) แล้วลองใหม่")
 	}
 }
