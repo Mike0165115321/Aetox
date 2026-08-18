@@ -3,6 +3,7 @@ package turn
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -100,5 +101,53 @@ func TestAToolThatRefusesIsRecordedWithItsReasonNotThePlaceholder(t *testing.T) 
 	// that failed and said nothing at all.
 	if got := failureReason(skill.Output{}); got != "ไม่สำเร็จ" {
 		t.Errorf("reason = %q, want the placeholder when there is genuinely nothing to report", got)
+	}
+}
+
+// The defect: a sub-agent asked to produce a file it had no tool to write, then
+// asked to read it back. Three GetFileAttributesEx failures reached the problems
+// page as if the agent had broken a rule with a remedy to quote (2026-08-18).
+// A missing file carries no remedy, and it is not the agent's behaviour.
+func TestFilesystemErrorIsAWorldReport(t *testing.T) {
+	missing := &fs.PathError{Op: "GetFileAttributesEx", Path: `C:\Users\ASUS\aetox\sheet_result.txt`, Err: fs.ErrNotExist}
+	if got := classifyToolError(missing); got != ErrorFromWorld {
+		t.Errorf("a missing file classified as %q, want %q", got, ErrorFromWorld)
+	}
+	if got := classifyToolError(fmt.Errorf("read: %w", missing)); got != ErrorFromWorld {
+		t.Errorf("a wrapped missing file classified as %q, want %q", got, ErrorFromWorld)
+	}
+}
+
+// The other half of the same rule, and the one that keeps it honest: the sandbox
+// denylist and every other refusal this codebase enforces are built with
+// errors.New/fmt.Errorf, so they stay unmarked and remain offerable as lessons.
+// If this ever goes red, the filesystem case above has started swallowing them.
+func TestSandboxRefusalIsNotAWorldReport(t *testing.T) {
+	refusal := errors.New("path is inside a credential store (.ssh) and stays off-limits in every mode")
+	if got := classifyToolError(refusal); got != "" {
+		t.Errorf("a refusal classified as %q, want unmarked so it can still be learned from", got)
+	}
+}
+
+// A soft failure carries no error at all — the tool returns Success:false and a
+// nil error so the model reads a result rather than a crash. That is exactly the
+// shape the classifier could not see, and every "not ready yet" wait took it.
+func TestSoftFailureCanDeclareItselfAWorldReport(t *testing.T) {
+	waiting := skill.Output{Success: false, FromWorld: true, Content: "the MCP server github ... have not finished connecting yet"}
+	if got := classifyToolOutcome(waiting, nil); got != ErrorFromWorld {
+		t.Errorf("a declared world report classified as %q, want %q", got, ErrorFromWorld)
+	}
+
+	// Unmarked soft failures stay unmarked: the default has to remain the
+	// conservative one, or marking becomes a way to hide real refusals.
+	plain := skill.Output{Success: false, Content: "sub-agent \"ghost\" does not exist"}
+	if got := classifyToolOutcome(plain, nil); got != "" {
+		t.Errorf("an unmarked soft failure classified as %q, want unmarked", got)
+	}
+
+	// The flag is meaningless on success and must not be read there.
+	won := skill.Output{Success: true, FromWorld: true}
+	if got := classifyToolOutcome(won, nil); got != "" {
+		t.Errorf("a successful call classified as %q, want unmarked", got)
 	}
 }

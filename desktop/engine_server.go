@@ -189,6 +189,11 @@ func (s *engineServerSkill) run(_ context.Context, command string) (skill.Output
 		// same fifteen lines mean two opposite things: "Initializing n8n
 		// process" is a server working, and reporting that as a dead end is the
 		// one thing the agent's own instructions forbid it to do.
+		// FromWorld: the server was asked to start and has not answered yet.
+		// That is tonight's machine, not a rule anyone broke, and three cards
+		// teaching "avoid whatever hits an n8n that is down" is what the
+		// learning floor did with it before.
+		out.FromWorld = true
 		return fail(unreachableMessage(row.Label, row.BaseURL, logPath), nil)
 	}
 	out.Success = true

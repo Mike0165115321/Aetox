@@ -593,10 +593,17 @@ func (t *taskTool) begin(ctx context.Context, args map[string]any, out **running
 	// Refuse instead, naming the server and saying it is a retry. The model can
 	// read that and either wait or tell the user, and the same job succeeds a
 	// moment later.
+	//
+	// Marked FromWorld, because it says so itself: a connection still being made
+	// is the machine's current state, and the sentence even ends by asking for a
+	// retry. Unmarked, the same wait queued a problem card naming the server, and
+	// a card about a connection that landed a second later teaches nobody.
 	if missing := missingAgentServers(t.opts.Registry, profile); len(missing) > 0 {
-		return t.fail(label, started, fmt.Sprintf(
+		out, err := t.fail(label, started, fmt.Sprintf(
 			"the MCP server(s) %s that %s works with have not finished connecting yet — start this job again in a moment",
 			strings.Join(missing, ", "), profile.Name))
+		out.FromWorld = true
+		return out, err
 	}
 
 	childModel := t.opts.Model

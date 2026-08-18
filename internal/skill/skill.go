@@ -22,6 +22,23 @@ type Output struct {
 	Success    bool
 	Truncated  bool
 	DurationMs int64
+	// FromWorld marks an unsuccessful result as a report about the machine's
+	// current state rather than about anyone's behaviour: a server that has not
+	// answered yet, an MCP connection still being made. It is the same statement
+	// internal/statereport carries on an error value, said for the failures that
+	// deliberately do not use one.
+	//
+	// A tool reports a soft failure by returning Success:false with a nil error,
+	// so the model can read the reason and try something else rather than seeing
+	// a crash. That choice is right and it costs the classifier its only input,
+	// because the kind is inferred from the error value and there is none. Every
+	// such failure therefore arrived unmarked, and the learning floor read it as
+	// a lesson with a remedy to quote: "n8n did not answer within 90 seconds"
+	// became a permanent problem card about a server that would be up tomorrow.
+	//
+	// Only meaningful when Success is false. Ignored otherwise, so a tool that
+	// sets it and then succeeds is not lying about anything.
+	FromWorld bool
 	// LinesAdded/LinesRemoved describe what a write did to a file, for the
 	// timeline's "+9 -0". Both zero on tools that touch no file.
 	LinesAdded   int

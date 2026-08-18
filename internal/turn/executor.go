@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os/exec"
 	"strings"
 	"sync"
@@ -488,6 +489,40 @@ func classifyToolError(err error) string {
 	if errors.As(err, &exitErr) {
 		return ErrorFromProgram
 	}
+	// A *fs.PathError is the filesystem answering, never a sentence anyone here
+	// wrote: the file was not there, the permission was refused, the path was
+	// not a directory. That is ErrorFromWorld by the definition above — a report
+	// about the machine's current state — and it arrives from every file tool at
+	// once, which is why it is recognised here rather than marked at each os.Stat.
+	//
+	// It cannot swallow a refusal. The sandbox denylist and every other rule this
+	// codebase enforces are built with errors.New/fmt.Errorf and stay unmarked,
+	// so "you asked for a path inside a credential store" is still offered as a
+	// lesson while "that file is not there" no longer is.
+	//
+	// Found 2026-08-18 on the problems page: a sub-agent asked to produce a file
+	// it had no tool to write, then read it back, and three GetFileAttributesEx
+	// failures were queued as if the agent had broken a rule with a remedy to
+	// quote. The remedy a missing file carries is nothing.
+	var pathErr *fs.PathError
+	if errors.As(err, &pathErr) {
+		return ErrorFromWorld
+	}
+	return ""
+}
+
+// classifyToolOutcome is classifyToolError plus the case it cannot see: a tool
+// that reported failure through Success:false and a nil error.
+//
+// The error value is asked first and its answer is final, so a tool that both
+// returns a marked error and sets the flag cannot end up with the two disagreeing.
+func classifyToolOutcome(out skill.Output, err error) string {
+	if kind := classifyToolError(err); kind != "" {
+		return kind
+	}
+	if err == nil && !out.Success && out.FromWorld {
+		return ErrorFromWorld
+	}
 	return ""
 }
 
@@ -951,7 +986,7 @@ func (e *Executor) executeAgentToolLoop(
 			Output:    toolRunOutput(output),
 			OK:        success,
 			Error:     ev.Error,
-			ErrorKind: classifyToolError(execErr),
+			ErrorKind: classifyToolOutcome(output, execErr),
 			Duration:  elapsed,
 		})
 		// The work goes into the sequence where it happened — between the
