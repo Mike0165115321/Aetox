@@ -97,6 +97,62 @@ describe('problems and lessons are two rooms', () => {
     await waitFor(() => expect(vi.mocked(MarkIssueReported)).toHaveBeenCalledWith(22))
   })
 
+  // The button that did nothing. A Thai debug log capped at 4,000 characters is
+  // ~36,000 characters once percent-encoded (three bytes per character, three
+  // characters per byte), Windows caps a command line at 32,767, and Wails hands
+  // the URL to rundll32 and logs its own failure somewhere no user sees. Pressing
+  // แจ้งปัญหานี้ opened nothing at all, with no error (2026-08-18).
+  it('keeps the prefilled URL short enough for the OS to open, however long the log', async () => {
+    vi.mocked(AppVersion).mockResolvedValue('1.2.0' as never)
+    // Thai, because Thai is what this log is full of and what makes it explode.
+    vi.mocked(RecentDebugLog).mockResolvedValue(
+      Array.from({ length: 400 }, (_, i) => `เปิดเซิร์ฟเวอร์ไม่สำเร็จ ลองใหม่อีกครั้ง #${i}`) as never,
+    )
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'ปัญหาของระบบ')
+
+    await fireEvent.click(await screen.findByText('แจ้งปัญหานี้'))
+
+    await waitFor(() => expect(vi.mocked(BrowserOpenURL)).toHaveBeenCalledTimes(1))
+    const url = vi.mocked(BrowserOpenURL).mock.calls[0][0] as string
+    expect(url.length).toBeLessThanOrEqual(8000)
+
+    // Short is not enough on its own: the report still has to carry the problem.
+    // A URL trimmed to nothing would pass a length check and be useless.
+    const body = decodeURIComponent(url.split('body=')[1])
+    expect(body).toContain('ไม่พบโปรแกรม Tesseract')
+    expect(body).toContain('v1.2.0')
+  })
+
+  // The other half of why the button did nothing, and the half that fires first:
+  // Wails validates the URL before opening it and refuses one containing any of
+  // ;|`$\<>*{}[]()~! or whitespace, logging the refusal somewhere no user sees.
+  // encodeURIComponent is specified NOT to encode !~*'() — so a single ordinary
+  // parenthesis, and every problem reason has one, was enough to stop it dead.
+  it('encodes the characters Wails refuses to open a URL with', async () => {
+    vi.mocked(AppVersion).mockResolvedValue('1.2.0' as never)
+    vi.mocked(RecentDebugLog).mockResolvedValue([] as never)
+    vi.mocked(ListSystemIssues).mockResolvedValue([
+      issue({ reason: 'เกิด 3 ครั้ง (ตัวอย่าง) ~ * ! [x] {y}' }),
+    ] as any)
+    const { container } = render(Settings, { onClose: () => {} })
+    await openSection(container, 'ปัญหาของระบบ')
+
+    await fireEvent.click(await screen.findByText('แจ้งปัญหานี้'))
+
+    await waitFor(() => expect(vi.mocked(BrowserOpenURL)).toHaveBeenCalledTimes(1))
+    const url = vi.mocked(BrowserOpenURL).mock.calls[0][0] as string
+    // Wails' own list, spelled as characters rather than a regex so a failure
+    // names which one leaked. Copied rather than imported: it lives inside a
+    // vendored package this side cannot reach.
+    const FORBIDDEN = [';', '|', '`', '$', '\\', '<', '>', '*', '{', '}', '[', ']', '(', ')', '~', '!', ' ', '\t', '\n', '\r']
+    expect(FORBIDDEN.filter((c) => url.includes(c))).toEqual([])
+
+    // Still a real report on the other side of the encoding.
+    const body = decodeURIComponent(url.split('body=')[1])
+    expect(body).toContain('(ตัวอย่าง)')
+  })
+
   // "ไม่เป็นไร" is the same act as "ไม่เอา" on a lesson: read, and turned down.
   // One record, one function, and it never comes back.
   it('dismisses a problem without sending anything', async () => {

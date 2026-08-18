@@ -1972,39 +1972,32 @@ const selfHostedRow = (over: Record<string, unknown> = {}) => [{
 
 // Two pages over one register, split by the catalog's `family`.
 //
-// They were one page for a day and the owner's verdict was blunt: an automation
-// engine is a machine you run, it takes an address as well as a key, and setting
-// one up is a different conversation from signing an account in. Filing them
-// together made the page answer two questions and buried the automation half.
+// They were two pages for nine days, and the owner's verdict on 19 ส.ค. undid
+// the split that made them: *"มันคืออันเดียวกันแท้ๆ เชื่อมต่อแอปภายนอก เอาคีย์
+// ไปใส่"*. The 10 ส.ค. reasoning was not wrong — an automation engine is a
+// machine you run, it takes an address as well as a key — it was just smaller
+// than the thing the two kinds share, and two pages for one question means
+// looking in the wrong one first, every time.
 //
-// What these pin is that the split is decided by `family` and not by a list of
-// ids in the component — because the moment it is a list, a third engine lands
-// on the wrong page and nobody notices until a user cannot find it.
-describe('the split between accounts and automation engines', () => {
-  it('keeps automation engines off the accounts register', async () => {
+// What these pin now is that NOTHING is filtered out. The old page decided what
+// to show from the catalog's `family`, and the way that fails is silent: a
+// service lands on a page the user is not on and there is no error anywhere,
+// only an account they cannot find.
+describe('one page for everything the agent connects to', () => {
+  it('shows accounts and self-run engines together', async () => {
     vi.mocked(Connections).mockResolvedValue([
       ...githubRow(), ...selfHostedRow({ family: 'automation' }),
     ] as any)
     await openConnections()
 
     await waitFor(() => expect(screen.getByText('GitHub')).toBeTruthy())
-    expect(screen.queryByText('n8n')).toBeNull()
+    expect(screen.getByText('n8n')).toBeTruthy()
   })
 
-  it('shows only automation engines on their own page', async () => {
-    vi.mocked(Connections).mockResolvedValue([
-      ...githubRow(), ...selfHostedRow({ family: 'automation' }),
-    ] as any)
-    await renderAt('ระบบออโตเมชั่น')
-
-    await waitFor(() => expect(screen.getByText('n8n')).toBeTruthy())
-    expect(screen.queryByText('GitHub')).toBeNull()
-  })
-
-  // A service whose family this build does not recognise must land somewhere.
-  // Vanishing from both pages is the one outcome with no way back for a user
-  // holding a working account.
-  it('keeps an unfamiliar service on the register rather than losing it', async () => {
+  // The family is still a real fact — it is what the composer's engine picker
+  // asks (connect.InFamily) — it is just no longer allowed to decide what a
+  // page draws. A service with any family at all, known or not, is on it.
+  it('shows a service whatever family it declares', async () => {
     vi.mocked(Connections).mockResolvedValue(
       githubRow({ id: 'gmail', label: 'Gmail', family: 'mail' }) as any)
     await openConnections()
@@ -2020,11 +2013,16 @@ describe('a row speaks for its own service', () => {
   // doubt they are looking at the right screen.
   it('does not put GitHub words on a self-hosted engine', async () => {
     vi.mocked(Connections).mockResolvedValue(selfHostedRow({ family: 'automation' }) as any)
-    const { container } = await renderAt('ระบบออโตเมชั่น')
+    const { container } = await openConnections()
     await waitFor(() => expect(screen.getByText('ยังไม่ได้เชื่อม')).toBeTruthy())
     await expandRow(container)
 
-    expect(container.textContent).not.toContain('GitHub')
+    // Scoped to the register, not the whole screen. The page's own description
+    // names GitHub as the example of an account that takes only a key — which
+    // is the point of the sentence, and became a false failure here the moment
+    // the two pages merged. What must not carry GitHub's words is the ROW.
+    const register = container.querySelector('.settings-card')
+    expect(register?.textContent).not.toContain('GitHub')
     expect(container.querySelector('input[type="password"]')?.getAttribute('placeholder')).toBe('')
     // And it names the service it will actually check the key with.
     expect(container.textContent).toContain('n8n')
@@ -2035,7 +2033,7 @@ describe('a row speaks for its own service', () => {
   // two check buttons read as two spellings of one button.
   it('splits the server from the account, in order', async () => {
     vi.mocked(Connections).mockResolvedValue(selfHostedRow({ family: 'automation' }) as any)
-    const { container } = await renderAt('ระบบออโตเมชั่น')
+    const { container } = await openConnections()
     await waitFor(() => expect(screen.getByText('ยังไม่ได้เชื่อม')).toBeTruthy())
     await expandRow(container)
 

@@ -337,20 +337,23 @@
     }
   }
 
-  // The rows this page shows.
+  // Every service, on one page.
   //
-  // `family` groups the services that are interchangeable — n8n and Windmill do
-  // one job between them and a user works on one at a time — and it is the
-  // catalog that says so, not this file. That is the whole reason the split is
-  // safe: a third engine lands on the automation page by declaring its family
-  // in Go, and a mail account lands on the register by declaring none.
+  // There were two for nine days. The reasoning was real — an automation engine
+  // is a machine you run, it takes an address as well as a key, and setting one
+  // up is a different conversation from signing an account in — and the owner's
+  // verdict on 19 ส.ค. was that the difference is smaller than the thing they
+  // share: *"มันคืออันเดียวกันแท้ๆ เชื่อมต่อแอปภายนอก เอาคีย์ไปใส่"*. Two pages
+  // for one question meant looking in the wrong one first, every time.
   //
-  // An unrecognised family would otherwise vanish from both pages, so anything
-  // that is not an automation engine falls back to the register rather than
-  // disappearing quietly.
-  const visibleConnections = $derived(
-    connections.filter((row) =>
-      active === 'automation' ? row.family === 'automation' : row.family !== 'automation'))
+  // The rows already carry the difference: a self-hosted engine draws its
+  // address section and its own service's words, an account draws neither. So
+  // the page does not need to sort them; it needed to stop hiding half of them.
+  //
+  // `family` stays where it was, in the Go catalog, because it answers a
+  // different question and always did: which engines substitute for each other
+  // in the composer's picker (connect.InFamily). It was never the page's fact.
+  const visibleConnections = $derived(connections)
 
   // What a card's toggles are currently showing: the live placement once it is
   // connected, the draft while it is not.
@@ -2760,7 +2763,7 @@
     // on its own output and runs a second time the moment the first load
     // lands, which is one wasted round trip per open and a race between two
     // in-flight loads for which one gets to set `connections`.
-    if (active === 'connections' || active === 'automation') untrack(() => void loadConnections())
+    if (active === 'connections') untrack(() => void loadConnections())
   })
 
   $effect(() => {
@@ -2822,18 +2825,13 @@
       // what the agent can reach, which is the question a user arrives with.
       // The icon is deliberately not `plug` — MCP owns that, and two plugs in
       // one group is a list you have to read twice.
-      { id: 'connections', label: t('settings.connections'), icon: 'globe', terms: ['GitHub', t('settings.ghTokenLabel')] },
-      // Its own page, not a row inside การเชื่อมต่อ (owner, 10 ส.ค.).
-      //
-      // The register answers "which accounts does the agent act on my behalf
-      // with" — GitHub, and the mail and calendar that will follow. An
-      // automation engine is not one of those: it is a machine the user runs,
-      // it takes an address as well as a key, and everything about setting one
-      // up is a different conversation. Filing them together made the page
-      // answer two questions and the automation half unfindable, which is
-      // exactly the complaint.
-      { id: 'automation', label: t('desk.auto'), icon: 'gitBranch',
-        terms: ['n8n', 'Windmill', t('settings.connBaseURLLabel')] },
+      // One page for everything the agent connects to, accounts and self-run
+      // engines alike (owner, 19 ส.ค. — reversing the 10 ส.ค. split). The
+      // automation engines' search terms moved here with them: somebody typing
+      // "n8n" is looking for the page it is now on, and a term left pointing at
+      // a page that no longer exists is a search box that lies.
+      { id: 'connections', label: t('settings.connections'), icon: 'globe',
+        terms: ['GitHub', t('settings.ghTokenLabel'), 'n8n', 'Windmill', t('settings.connBaseURLLabel')] },
       { id: 'prompts', label: t('settings.prompts'), icon: 'sparkles', terms: [t('settings.promptNew')] },
     ]},
     { group: t('settings.groupAbout'), items: [
@@ -2848,7 +2846,10 @@
   ])
 
   const SPONSOR_URL = 'https://github.com/Mike0165115321/Aetox/blob/main/SPONSOR.md'
-  const SITE_URL = 'https://aetox-puce.vercel.app/'
+  // The repository, not the marketing site: the site is one page now, and the
+  // place a supporter actually wants to land — the code, the releases, the
+  // issues, the name on the commits — is here.
+  const SITE_URL = 'https://github.com/Mike0165115321/Aetox'
   // The one link that is right on every channel, whether or not a check ran.
   const RELEASES_URL = 'https://github.com/Mike0165115321/Aetox/releases'
   const ISSUES_URL = 'https://github.com/Mike0165115321/Aetox/issues'
@@ -2900,12 +2901,8 @@
       // in <details> and labelled deletable, because it is the user's form.
       try {
         let log = (await RecentDebugLog()) ?? []
-        let text = log.join('\n')
-        const MAX = 4000
-        while (text.length > MAX && log.length > 1) {
-          log = log.slice(1)
-          text = log.join('\n')
-        }
+        while (log.length > 0 && !issueURLFits(lines, log)) log = log.slice(1)
+        const text = log.join('\n')
         if (text) {
           lines.push('', `<details><summary>${t('settings.aboutReportLogTitle')}</summary>`, '', '```', text, '```', '</details>')
         }
@@ -2913,7 +2910,51 @@
         // No log is not a reason to block a report.
       }
     }
-    BrowserOpenURL(`${ISSUES_URL}/new?body=${encodeURIComponent(lines.join('\n'))}`)
+    // Trimmed from the end if the report itself is over budget even with no log
+    // at all. A cluster body plus a stack trace can do it, and the alternative
+    // is the button doing nothing, which is what it did before.
+    let body = lines.join('\n')
+    while (body.length > 0 && issueURL(body).length > ISSUE_URL_BUDGET) {
+      body = body.slice(0, -256)
+    }
+    BrowserOpenURL(issueURL(body))
+  }
+
+  // encodeURIComponent leaves !~*'() alone — they are "unreserved marks" it is
+  // specified not to touch. Wails refuses to open a URL containing any of
+  // !~*() as a shell-metacharacter risk (ValidateAndSanitizeURL), and it
+  // refuses by logging to a place no user sees and returning, so the button
+  // did nothing and said nothing. One ordinary parenthesis was enough, and the
+  // problem bodies are full of them: "เกิด 3 ครั้ง (ตัวอย่างล่าสุด...)".
+  //
+  // ' is encoded too. Wails does not object to it, but a body that is
+  // percent-encoded except for one character is a rule with an exception to
+  // remember, and there is nothing to gain by keeping it readable in a URL.
+  const encodeIssueBody = (s: string) =>
+    encodeURIComponent(s).replace(/[!~*'()]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase())
+
+  const issueURL = (body: string) => `${ISSUES_URL}/new?body=${encodeIssueBody(body)}`
+
+  // ISSUE_URL_BUDGET is the whole URL, encoded, and it exists because the old
+  // budget counted the wrong thing and the button silently did nothing.
+  //
+  // The cap used to be 4000 characters of raw log text. Thai is three bytes per
+  // character in UTF-8 and each byte becomes three characters again once
+  // percent-encoded, so a 4000-character Thai log is ~36,000 characters of URL.
+  // Windows caps a command line at 32,767, and `BrowserOpenURL` hands the URL to
+  // `rundll32` — over that it fails, and Wails logs the failure to a place no
+  // user sees rather than returning it, so pressing แจ้งปัญหานี้ produced no
+  // window, no error, nothing (measured 2026-08-18: 4,251 raw characters became
+  // a 35,659-character URL).
+  //
+  // 8000 rather than anything near the OS ceiling: GitHub itself stops honouring
+  // very long prefill URLs well before Windows stops accepting them, and a
+  // report that opens with the body quietly cut is worse than a shorter log.
+  const ISSUE_URL_BUDGET = 8000
+
+  function issueURLFits(head: string[], log: string[]): boolean {
+    const body = [...head, '', '<details><summary>x</summary>', '', '```', log.join('\n'), '```', '</details>'].join('\n')
+    return issueURL(body).length <= ISSUE_URL_BUDGET
   }
 
   // Which page is open survives an F5. Same reasoning as the chat/settings view
@@ -2926,7 +2967,7 @@
   // section (openSettingsAt), and two spellings of this key would fail silently
   // and look like the page ignoring where it was told to go.
   const SECTION_KEY = SETTINGS_SECTION_KEY
-  const SECTION_IDS = new Set(['general', 'appearance', 'identity', 'learning', 'models', 'team', 'agents', 'tools', 'skills', 'mcp', 'connections', 'automation', 'prompts', 'usage', 'about', 'sponsor'])
+  const SECTION_IDS = new Set(['general', 'appearance', 'identity', 'learning', 'models', 'team', 'agents', 'tools', 'skills', 'mcp', 'connections', 'prompts', 'usage', 'about', 'sponsor'])
 
   function restoredSection(): string {
     try {
@@ -5334,19 +5375,13 @@
           </div>
         {/each}
       </div>
-    {:else if active === 'connections' || active === 'automation'}
-      <!-- Two pages, one register underneath.
-           Which services a page shows is decided by the catalog's `family`, not
-           by a list of ids kept here — so a third automation engine appears on
-           the automation page without this file being edited, and a mail
-           account appears on the other one. -->
-      {#if active === 'automation'}
-        <h2>{t('desk.auto')}</h2>
-        <p class="muted set-sub">{t('settings.automationDesc')}</p>
-      {:else}
-        <h2>{t('settings.connections')}</h2>
-        <p class="muted set-sub">{t('settings.connectionsDesc')}</p>
-      {/if}
+    {:else if active === 'connections'}
+      <!-- One register, one page. The sentence under the title has to cover
+           both kinds without flattening them: an account needs a key, a machine
+           you run needs an address as well, and a user arriving with either one
+           should see themselves in it. -->
+      <h2>{t('settings.connections')}</h2>
+      <p class="muted set-sub">{t('settings.connectionsDesc')}</p>
 
       <!-- A register, drawn the same way the MCP page draws its own: one line
            per service until you open it. With four services and a token box
@@ -5434,18 +5469,26 @@
                       <button
                         class="conn-chip"
                         class:on={targets.includes(target.id)}
+                        class:agent={target.kind === 'agent'}
                         disabled={connBusy !== ''}
                         title={target.detail ?? ''}
                         aria-pressed={targets.includes(target.id)}
                         onclick={() => toggleConnectionTarget(row, target.id)}
                       >
+                        <!-- A desk and an agent are two different kinds of
+                             audience and the row drew them as one list of
+                             identical pills, so "assistant, coding, github,
+                             research" read as nine of the same thing (owner,
+                             19 ส.ค.: "รายชื่อเอเจน เอาให้ชัดสิ ไอค่อนไปไหน").
+                             The mark is the difference: a desk wears its own
+                             icon, the one it wears in the nav, and an agent
+                             wears `bot` — the same glyph every agent already
+                             wears in the composer's switcher. -->
+                        <Icon name={target.kind === 'agent' ? 'bot' : 'layoutList'} size={12} />
                         {target.name}
                       </button>
                     {/each}
                   </div>
-                  <!-- Said on the row because it is the whole meaning of the
-                       switch: off is not "asks first", it is "not in the list". -->
-                  <div class="d muted">{t('settings.connForHint', { n: String(row.tools.length) })}</div>
                 {/if}
 
                 {#if row.source !== 'connection'}
@@ -5679,6 +5722,27 @@
         </div>
         <div class="set-row sponsor-center">
           <img src={promptPayQR} alt="PromptPay QR" class="sponsor-qr" />
+        </div>
+        <!-- What a supporter gets, said before the contact row that acts on it.
+             The credit is a promise the project can actually keep: a name on a
+             page it controls, kept rather than counted once. -->
+        <div class="set-row">
+          <div class="set-txt">
+            <div class="t">{t('settings.sponsorCredit')}</div>
+            <div class="d">{t('settings.sponsorCreditDesc')}</div>
+          </div>
+        </div>
+        <!-- The same GitHub door the problem and feedback rows use. A donation
+             is anonymous by construction — PromptPay tells the developer a
+             transfer happened, never who to thank — so the supporter has to be
+             the one who says. Asking to stay anonymous is offered in the same
+             breath, because a name on a page is not everyone's idea of thanks. -->
+        <div class="set-row">
+          <div class="set-txt">
+            <div class="t">{t('settings.sponsorContact')}</div>
+            <div class="d">{t('settings.sponsorContactDesc')}</div>
+          </div>
+          <button class="ctrl" onclick={() => BrowserOpenURL(ISSUES_URL + '/new')}>{t('settings.sponsorContactOpen')}</button>
         </div>
         <!-- Attribution, not decoration: this is the one place in the running app
              that names who wrote it and where it came from. Untranslated on
