@@ -452,66 +452,115 @@ func (a *Agent) RespondWithTools(
 			continue
 		}
 
-		for _, toolCall := range response.ToolCalls {
+		calls := response.ToolCalls
+		for i := 0; i < len(calls); {
+			// How many of the calls starting here may run at the same time.
+			// Always at least one, so the sequential path below is the same
+			// path it has always been.
+			group := parallelGroup(calls[i:])
+
 			// Doom-loop guard (mirrors OpenCode session/prompt.ts): identical
-			// (name, args) calls back to back — nudge at 3, stop at 5.
-			callKey := toolCall.Function.Name + "\x00" + toolCall.Function.Arguments
-			if callKey == lastCallKey {
-				repeatedCalls++
-			} else {
-				lastCallKey, repeatedCalls = callKey, 1
+			// (name, args) calls back to back — nudge at 3, stop at 5. Read in
+			// call order whether or not the calls then run together: the guard
+			// is about what the model asked for, and the model asked for these
+			// in this order.
+			repeats := make([]int, group)
+			for k := 0; k < group; k++ {
+				toolCall := calls[i+k]
+				callKey := toolCall.Function.Name + "\x00" + toolCall.Function.Arguments
+				if callKey == lastCallKey {
+					repeatedCalls++
+				} else {
+					lastCallKey, repeatedCalls = callKey, 1
+				}
+				if repeatedCalls >= doomLoopStop {
+					debuglog.Msg("doom loop: %s repeated %d times, stopping", toolCall.Function.Name, repeatedCalls)
+					stopMsg := fmt.Sprintf("%s เรียกเครื่องมือ %s ด้วยค่าเดิมซ้ำ %d ครั้งติดกันโดยไม่คืบหน้า — ลองสั่งใหม่หรือปรับคำสั่งดูครับ", DoomLoopStopPrefix, toolCall.Function.Name, repeatedCalls)
+					a.context.AddMessage(model.Message{
+						Role:       model.RoleTool,
+						Name:       toolCall.Function.Name,
+						ToolCallID: toolCall.ID,
+						Content:    "aborted: identical tool call repeated " + fmt.Sprint(repeatedCalls) + " times",
+					})
+					return stopMsg, true, nil
+				}
+				repeats[k] = repeatedCalls
 			}
-			if repeatedCalls >= doomLoopStop {
-				debuglog.Msg("doom loop: %s repeated %d times, stopping", toolCall.Function.Name, repeatedCalls)
-				stopMsg := fmt.Sprintf("%s เรียกเครื่องมือ %s ด้วยค่าเดิมซ้ำ %d ครั้งติดกันโดยไม่คืบหน้า — ลองสั่งใหม่หรือปรับคำสั่งดูครับ", DoomLoopStopPrefix, toolCall.Function.Name, repeatedCalls)
+
+			outputs := make([]string, group)
+			images := make([][]model.Image, group)
+			toolErrs := make([]error, group)
+			if group == 1 {
+				debuglog.Msg("tool call: %s(%s)", calls[i].Function.Name, truncateStr(calls[i].Function.Arguments, 80))
+				outputs[0], images[0], toolErrs[0] = a.executeToolCall(ctx, calls[i], execTool)
+			} else {
+				debuglog.Msg("running %d read-only tool calls together", group)
+				var wg sync.WaitGroup
+				for k := 0; k < group; k++ {
+					wg.Add(1)
+					go func(k int) {
+						defer wg.Done()
+						toolCall := calls[i+k]
+						debuglog.Msg("tool call: %s(%s)", toolCall.Function.Name, truncateStr(toolCall.Function.Arguments, 80))
+						outputs[k], images[k], toolErrs[k] = a.executeToolCall(ctx, toolCall, execTool)
+					}(k)
+				}
+				wg.Wait()
+			}
+
+			// Results enter the context in call order however they finished, so
+			// the history a provider receives is the one it dictated: a
+			// tool_calls message followed by its results in the order it wrote
+			// them. Which one came back first is this machine's business.
+			cancelled := ""
+			for k := 0; k < group; k++ {
+				toolCall := calls[i+k]
+				callOutput := strings.TrimSpace(outputs[k])
+				if callOutput == "" {
+					if toolErrs[k] != nil {
+						callOutput = toolErrs[k].Error()
+					} else {
+						callOutput = "(no output)"
+					}
+				}
+				if repeats[k] == doomLoopWarn {
+					callOutput += "\n[loop warning] You have now made this exact tool call " + fmt.Sprint(repeats[k]) + " times in a row with the same result. Try a different approach instead of repeating it."
+				}
+				debuglog.Msg("tool result: %s (err=%v)", truncateStr(callOutput, 120), toolErrs[k])
 				a.context.AddMessage(model.Message{
 					Role:       model.RoleTool,
 					Name:       toolCall.Function.Name,
 					ToolCallID: toolCall.ID,
-					Content:    "aborted: identical tool call repeated " + fmt.Sprint(repeatedCalls) + " times",
+					Content:    callOutput,
 				})
-				return stopMsg, true, nil
-			}
-
-			debuglog.Msg("tool call: %s(%s)", toolCall.Function.Name, truncateStr(toolCall.Function.Arguments, 80))
-			callOutput, callImages, toolErr := a.executeToolCall(ctx, toolCall, execTool)
-			callOutput = strings.TrimSpace(callOutput)
-			if callOutput == "" {
-				if toolErr != nil {
-					callOutput = toolErr.Error()
-				} else {
-					callOutput = "(no output)"
+				// A picture cannot travel in the tool result itself: Anthropic
+				// allows an image block inside tool_result, the OpenAI-compatible
+				// APIs do not, and Ollama has no tool_result shape at all. One
+				// follow-up user message carrying the image works on all three, so
+				// that is what this is — a single path rather than three, at the
+				// cost of one extra message in history.
+				//
+				// It says which call it belongs to, because a user message the user
+				// did not send is otherwise indistinguishable from one they did.
+				if len(images[k]) > 0 {
+					a.context.AddMessage(model.Message{
+						Role:    model.RoleUser,
+						Content: "[the image returned by " + toolCall.Function.Name + " follows]",
+						Images:  images[k],
+					})
+				}
+				if toolErrs[k] != nil && cancelled == "" {
+					cancelled = callOutput
 				}
 			}
-			if repeatedCalls == doomLoopWarn {
-				callOutput += "\n[loop warning] You have now made this exact tool call " + fmt.Sprint(repeatedCalls) + " times in a row with the same result. Try a different approach instead of repeating it."
+			// Checked once the whole group is written down rather than at the
+			// first failure: a Stop lands on every call in flight at the same
+			// instant, and leaving the others' results out would hand the
+			// provider a tool_calls message with holes in its replies.
+			if cancelled != "" && ctx.Err() != nil {
+				return cancelled, true, ctx.Err()
 			}
-			debuglog.Msg("tool result: %s (err=%v)", truncateStr(callOutput, 120), toolErr)
-			a.context.AddMessage(model.Message{
-				Role:       model.RoleTool,
-				Name:       toolCall.Function.Name,
-				ToolCallID: toolCall.ID,
-				Content:    callOutput,
-			})
-			// A picture cannot travel in the tool result itself: Anthropic
-			// allows an image block inside tool_result, the OpenAI-compatible
-			// APIs do not, and Ollama has no tool_result shape at all. One
-			// follow-up user message carrying the image works on all three, so
-			// that is what this is — a single path rather than three, at the
-			// cost of one extra message in history.
-			//
-			// It says which call it belongs to, because a user message the user
-			// did not send is otherwise indistinguishable from one they did.
-			if len(callImages) > 0 {
-				a.context.AddMessage(model.Message{
-					Role:    model.RoleUser,
-					Content: "[the image returned by " + toolCall.Function.Name + " follows]",
-					Images:  callImages,
-				})
-			}
-			if toolErr != nil && ctx.Err() != nil {
-				return callOutput, true, ctx.Err()
-			}
+			i += group
 		}
 	}
 
@@ -664,6 +713,61 @@ func renderCompactionTranscript(messages []model.Message) string {
 		}
 	}
 	return b.String()
+}
+
+// parallelToolCalls names the tools that may run beside each other when the
+// model asks for several in one round.
+//
+// A model that wants to read six files says so in one round — every provider
+// supports it and the prompt already invites it — and this loop then ran them
+// strictly one after another, so six 200ms reads cost 1.2s of wall clock for
+// work that has no order in it. Running them together is the whole gain, and it
+// is only available to calls that cannot see each other's effects.
+//
+// An allow-list, not a deny-list, and that direction is the load-bearing part.
+// The obvious spelling — "run anything safety.AssessCommand calls harmless
+// together" — cannot be used: that function's catch-all answers RiskLow with no
+// effects for every name it does not recognize, which is every MCP tool and
+// every skill added after it was written. A deny-list would silently
+// parallelize a payment API the day someone connects one. A name has to be
+// written here, by somebody who knows the tool only reads, before it runs
+// beside anything.
+//
+// So this list is exactly the read tools of this repo. Everything else — shell,
+// write, edit, delete, git, task, every MCP tool — keeps the sequential path it
+// has always had, because a write and the read after it are the one pair whose
+// order is the answer. The media tools (image_ocr, video_ocr,
+// audio_transcribe) are read-only too and are deliberately absent: they run
+// ffmpeg and whisper, and four of those at once is a machine that stops
+// answering, not a faster turn.
+var parallelToolCalls = map[string]bool{
+	"read": true, "list": true, "glob": true, "grep": true, "tree": true,
+	"pdf_read": true, "web_fetch": true, "web_search": true, "calc": true,
+}
+
+// maxParallelToolCalls caps one group. Four covers what models actually ask for
+// (the batches seen in practice are two to five reads) while keeping the ceiling
+// on open files, sockets and live timeline rows somewhere a person can picture.
+const maxParallelToolCalls = 4
+
+// parallelGroup counts how many calls from the front of the slice may run
+// together: a run of parallel-safe calls, capped, or 1 for anything else.
+//
+// Consecutive, never gathered from across the round. A round of
+// read, write, read has an order that matters, and pulling the two reads out to
+// run beside each other would move the second one in front of the write.
+func parallelGroup(calls []model.ToolCall) int {
+	safe := func(c model.ToolCall) bool {
+		return parallelToolCalls[strings.ToLower(strings.TrimSpace(c.Function.Name))]
+	}
+	if len(calls) < 2 || !safe(calls[0]) {
+		return 1
+	}
+	n := 1
+	for n < len(calls) && n < maxParallelToolCalls && safe(calls[n]) {
+		n++
+	}
+	return n
 }
 
 func (a *Agent) executeToolCall(ctx context.Context, toolCall model.ToolCall, execTool func(context.Context, model.ToolCall) (string, []model.Image, error)) (string, []model.Image, error) {
