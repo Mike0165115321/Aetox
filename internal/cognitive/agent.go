@@ -813,10 +813,16 @@ var parallelToolCalls = map[string]bool{
 	"pdf_read": true, "web_fetch": true, "web_search": true, "calc": true,
 }
 
-// maxParallelToolCalls caps one group. Four covers what models actually ask for
-// (the batches seen in practice are two to five reads) while keeping the ceiling
-// on open files, sockets and live timeline rows somewhere a person can picture.
-const maxParallelToolCalls = 4
+// maxParallelToolCalls caps one group, keeping the ceiling on open files,
+// sockets and live timeline rows somewhere a person can picture.
+//
+// Raised from four to five on 2026-08-20 (owner's call). The number has never
+// actually bound: across 1,769 debug logs the loop grouped calls 24 times, 19 of
+// them two calls and 5 of them three, and nothing has ever asked for four. So
+// this buys headroom rather than throughput, and it is recorded that way — the
+// thing worth measuring is how rarely a model batches at all, not where the
+// ceiling sits.
+const maxParallelToolCalls = 5
 
 // parallelGroup counts how many calls from the front of the slice may run
 // together: a run of parallel-safe calls, capped, or 1 for anything else.

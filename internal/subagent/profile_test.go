@@ -41,7 +41,7 @@ func isolate(t *testing.T) string {
 func TestBundledProfilesAreUsable(t *testing.T) {
 	isolate(t)
 	got := List()
-	want := []string{"automation", "doc", "explore", "general", "github", "plan", "research", "sheet"}
+	want := []string{"automation", "doc", "explore", "general", "github", "research", "sheet"}
 	if len(got) != len(want) {
 		t.Fatalf("List() = %d profiles, want %d", len(got), len(want))
 	}
@@ -298,8 +298,8 @@ func TestHelperHomeCannotAddADelegate(t *testing.T) {
 	if _, ok := Load("backend"); ok {
 		t.Fatal("a helper-home user file loaded as a delegate")
 	}
-	if got := len(List()); got != 8 {
-		t.Fatalf("List() = %d, want the 8 bundled only", got)
+	if got := len(List()); got != 7 {
+		t.Fatalf("List() = %d, want the 7 bundled only", got)
 	}
 	if c, ok := findConflict(Conflicts(), "backend"); !ok || c.Reason == "" {
 		t.Fatal("the locked-out file is not reported with a reason")
@@ -327,28 +327,33 @@ func TestBrokenFilesStillLoad(t *testing.T) {
 	}
 }
 
-// plan is the read-only planner (ARCHITECTURE.md §54). It inherits the whole
-// registry on purpose — a plan built without diagnostics, git or the web is a
-// worse plan — and every tool that writes is denied, which is enforced at
-// execution rather than by trimming the list the model sees.
-func TestPlanProfileCannotWrite(t *testing.T) {
+// `deny:` is enforced at execution rather than by trimming the list the model
+// sees: the profile still carries the tool and is refused when it reaches for
+// it. `general` is the bundled profile that uses the mechanism — it loops
+// through a list of work and must not install a plugin or delete anything while
+// doing it.
+//
+// The `plan` helper guarded this until 2026-08-20, when the owner removed that
+// profile: it was never reached for in practice. The mechanism outlived its
+// first subject, which is why this test moved rather than went.
+func TestADenyListIsEnforcedAtExecution(t *testing.T) {
 	isolate(t)
-	p, ok := Load("plan")
+	p, ok := Load("general")
 	if !ok {
-		t.Fatal("plan profile missing")
+		t.Fatal("general profile missing")
 	}
 	cfg := safety.PermissionConfig{Rules: p.DenyRules()}
-	for _, tool := range []string{"write", "edit", "apply_patch", "notebook_edit", "delete", "shell"} {
+	for _, tool := range []string{"plugin_install", "delete"} {
 		action, matched := cfg.Resolve(tool, nil)
 		if !matched || action != safety.PermissionDeny {
-			t.Errorf("Resolve(%q) = (%q, %v), want deny — a planner that can write is not a planner", tool, action, matched)
+			t.Errorf("Resolve(%q) = (%q, %v), want deny — the profile named it and it was let through", tool, action, matched)
 		}
 	}
-	// Reading is the whole job, so nothing that reads may be caught by the
+	// Doing the work is the whole job, so nothing it needs may be caught by the
 	// same net.
-	for _, tool := range []string{"read", "grep", "glob", "diagnostics", "git", "web_fetch"} {
+	for _, tool := range []string{"read", "grep", "glob", "write", "edit", "shell"} {
 		if action, matched := cfg.Resolve(tool, nil); matched && action == safety.PermissionDeny {
-			t.Errorf("Resolve(%q) = deny — the planner cannot investigate", tool)
+			t.Errorf("Resolve(%q) = deny — the delegate cannot do the work it was given", tool)
 		}
 	}
 }
@@ -361,13 +366,13 @@ func TestPlanProfileCannotWrite(t *testing.T) {
 func TestKindOfSplitsTheTwoPiles(t *testing.T) {
 	isolate(t)
 	cases := map[string]string{
-		"doc":     KindAgent, // a chair in the office
-		"sheet":   KindAgent,
-		"explore": KindHelper, // the assistant's own hands
-		"general": KindHelper,
-		"plan":    KindHelper,
-		"":        KindHelper, // unnamed → the default profile, which is explore
-		"nobody":  "",         // not runnable → no kind claimed
+		"doc":      KindAgent, // a chair in the office
+		"sheet":    KindAgent,
+		"explore":  KindHelper, // the assistant's own hands
+		"general":  KindHelper,
+		"research": KindAgent,
+		"":         KindHelper, // unnamed → the default profile, which is explore
+		"nobody":   "",         // not runnable → no kind claimed
 	}
 	for name, want := range cases {
 		if got := KindOf(name); got != want {

@@ -25,11 +25,12 @@ func TestParallelGroup(t *testing.T) {
 		{"three reads", []model.ToolCall{
 			toolCall("1", "read", "{}"), toolCall("2", "grep", "{}"), toolCall("3", "glob", "{}"),
 		}, 3},
-		// The cap is a real ceiling, not a suggestion: six reads run four then two.
-		{"capped at four", []model.ToolCall{
+		// The cap is a real ceiling, not a suggestion: seven reads run five then two.
+		{"capped at five", []model.ToolCall{
 			toolCall("1", "read", "{}"), toolCall("2", "read", "{}"), toolCall("3", "read", "{}"),
 			toolCall("4", "read", "{}"), toolCall("5", "read", "{}"), toolCall("6", "read", "{}"),
-		}, 4},
+			toolCall("7", "read", "{}"),
+		}, 5},
 		// The write ends the group. Reading again after a write is a different
 		// question from reading before it, and the answer depends on the order.
 		{"stops at a write", []model.ToolCall{
