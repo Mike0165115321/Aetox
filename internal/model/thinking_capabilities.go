@@ -127,8 +127,8 @@ func ResolveThinkingCapabilities(provider, modelName string) ThinkingCapabilitie
 	// runtime cannot put an effort anywhere gets no menu here.
 	//
 	// Without this the table answered on its own and offered four levels to
-	// seven providers that send nothing: aetox, cohere, mistral, perplexity,
-	// qwen, together and zai each drew a full off/low/medium/high picker in
+	// the providers that send nothing — aetox, mistral, qwen and zai — each
+	// drew a full off/low/medium/high picker in
 	// which every entry, "off" included, was inert. A control that does nothing
 	// is worse than an absent one — it teaches the user that the controls lie.
 	known, canReason := providerReasoningCapability(canonicalProvider)
@@ -163,6 +163,8 @@ func ResolveThinkingCapabilities(provider, modelName string) ThinkingCapabilitie
 		return cloneThinkingCapabilities(resolveAnthropicThinkingCapabilities(modelID))
 	case "codex":
 		return cloneThinkingCapabilities(responsesThinkingCapabilities)
+	case "xai":
+		return cloneThinkingCapabilities(resolveXAIThinkingCapabilities(modelID))
 	default:
 		// Unreachable while every reasoning-capable provider in the catalog has
 		// a case above; ollama and lmstudio no longer need one of their own,
@@ -321,6 +323,46 @@ func resolveOpenAIThinkingCapabilities(modelID string) ThinkingCapabilities {
 	default:
 		return cloneThinkingCapabilities(conservativeFallback)
 	}
+}
+
+// Grok's dial is a plain reasoning_effort ladder whose four rungs happen to be
+// spelled exactly as Aetox spells them, so Wire is the identity map and nothing
+// is being translated here.
+//
+// There is no off position. The grok-4.x line reasons unconditionally and xAI
+// documents no value that stops it, so `off` folds onto `low` rather than being
+// offered as a switch that does nothing. Default is xAI's own (high), not a
+// cheaper one of our choosing: a different default would make Aetox's idea of
+// "unset" disagree with the service's, and the user cannot see which they got.
+//
+// The one id that opts out says so in its own name. grok-4.20-0309-non-reasoning
+// is a separate model from the -reasoning sibling, and sending it an effort is
+// sending a field its own name denies, so it gets no dial at all.
+//
+// Unverified against the live API: no xAI key on this machine. This is
+// docs.x.ai/developers/grok-4-6 taken at its word, read 2026-08-20.
+func resolveXAIThinkingCapabilities(modelID string) ThinkingCapabilities {
+	if strings.Contains(modelID, "non-reasoning") {
+		return cloneThinkingCapabilities(conservativeFallback)
+	}
+	if modelID == "" || strings.HasPrefix(modelID, "grok-4") {
+		return ThinkingCapabilities{
+			Supported: true,
+			Native:    true,
+			Levels:    []string{"low", "medium", "high", "xhigh"},
+			Default:   "high",
+			Runtime:   ThinkingRuntimeReasoningEffort,
+			Source:    "xai-grok-4-6-docs",
+			Wire:      identityWire("low", "medium", "high", "xhigh"),
+			Aliases: map[string]string{
+				"off": "low", "none": "low", "disabled": "low", "minimal": "low",
+				"default": "high", "ultra": "xhigh", "max": "xhigh",
+			},
+		}
+	}
+	// grok-build-0.1 and anything else xAI ships next: no documented effort
+	// field, so send none and let the model use its own.
+	return cloneThinkingCapabilities(conservativeFallback)
 }
 
 // Kimi K3's dial, and the first one in this table with no off position.

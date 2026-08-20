@@ -59,6 +59,10 @@ func ContextWindowTokens(provider, modelName string) int {
 		return zaiContextWindow(modelID)
 	case "groq":
 		return 128_000
+	case "xai":
+		return xaiContextWindow(modelID)
+	case "thaillm":
+		return thaiLLMContextWindow(modelID)
 	case "kimi":
 		return kimiContextWindow(modelID)
 	case "openrouter":
@@ -69,6 +73,65 @@ func ContextWindowTokens(provider, modelName string) int {
 		return 0
 	default:
 		return 0 // ollama and unknown providers: no promise we can keep
+	}
+}
+
+// ThaiLLM is the one row where both sources are silent: models.dev has never
+// heard of it (192 providers, no thaillm / typhoon / scb10x), and the service
+// serves no window of its own.
+//
+// 16,384 is not read off a model card. It is what the service itself said when
+// it refused a real turn on 2026-08-20:
+//
+//	400: 'max_tokens' is too large: 8192. This model's maximum context length
+//	is 16384 tokens and your request has 9791 input tokens
+//
+// That matters more than it looks, because this table first shipped with
+// 32,768 for the same model, taken from max_position_embeddings in the weights
+// on Hugging Face. The weights were not wrong; they were the wrong source. What
+// a checkpoint can address and what a deployment is configured to serve are two
+// different numbers, and only the second one answers a request. Any figure
+// added here later should come from the endpoint refusing something, not from a
+// config file.
+//
+// One model proved it and the other three are assumed to share it: all four are
+// 8B checkpoints of the same foundation model on one platform's deployment. If
+// that assumption is wrong it is wrong downward, and this figure only ever
+// makes Aetox ask for less.
+//
+// The two Qwen models get nothing. They are Alibaba's, on a deployment config
+// nobody has published, and neither this service nor their cards say what
+// window they are given — a guess there would be a number Aetox made up, which
+// is exactly what the zero is for.
+func thaiLLMContextWindow(modelID string) int {
+	switch {
+	case strings.HasPrefix(modelID, "qwen"):
+		return 0
+	case strings.Contains(modelID, "thaillm"):
+		return 16_384
+	default:
+		return 0
+	}
+}
+
+// Grok's windows are not one number: the newer and smarter the model, the
+// SMALLER the window, which is the opposite of the usual direction and the
+// reason this is a function rather than a constant. grok-4.6 and 4.5 hold
+// 500k, while the older 4.3 and the 4.20 line hold a full 1M, and the
+// build-tuned model holds 256k (docs.x.ai/developers/models, read 2026-08-20).
+//
+// The default is 4.6's 500k rather than the largest, because over-promising is
+// the failure that matters here: the composer meter reads this number, and a
+// meter that says 40% full when the request is about to be rejected is worse
+// than one that says 80% on a model that could have taken more.
+func xaiContextWindow(modelID string) int {
+	switch {
+	case strings.HasPrefix(modelID, "grok-build"):
+		return 256_000
+	case strings.HasPrefix(modelID, "grok-4.3"), strings.HasPrefix(modelID, "grok-4.20"):
+		return 1_000_000
+	default:
+		return 500_000 // grok-4.6, grok-4.5, and anything newer on that line
 	}
 }
 

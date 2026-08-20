@@ -364,7 +364,21 @@ func (p *OpenAICompatibleProvider) Complete(ctx context.Context, req Request) (R
 		payload.ReasoningSplit = boolPtr(true)
 	} else if p.usesGroqReasoning() {
 		payload.ReasoningEffort = p.wireEffort(model, req.Reasoning)
-		payload.IncludeReasoning = boolPtr(false)
+		// Asked of the MODEL, not of Groq. include_reasoning is a field only
+		// Groq's reasoning models accept, and llama-3.3-70b-versatile — the
+		// catalog's own fallback for this provider — answers it with
+		// "400: `include_reasoning` is not supported with this model", which
+		// ends the turn before a single token is generated.
+		//
+		// The table two files over already knew: resolveGroqThinkingCapabilities
+		// only claims gpt-oss and qwen3, and everything else falls to the
+		// conservative "no thinking" row. This branch was reached by provider
+		// name alone and never asked it. reasoning_effort was already safe by
+		// accident (wireEffort returns "" for an unsupporting model and
+		// omitempty drops it); the bool pointer is what always got sent.
+		if ResolveThinkingCapabilities(p.provider, model).Supported {
+			payload.IncludeReasoning = boolPtr(false)
+		}
 	} else if p.usesOpenAIReasoningEffort() || p.usesGeminiReasoningEffort() || p.usesPlainReasoningEffort() {
 		payload.ReasoningEffort = p.wireEffort(model, req.Reasoning)
 		if payload.ReasoningEffort != "" && p.usesOpenAIReasoningEffort() {
@@ -502,7 +516,21 @@ func (p *OpenAICompatibleProvider) StreamComplete(ctx context.Context, req Reque
 		payload.ReasoningSplit = boolPtr(true)
 	} else if p.usesGroqReasoning() {
 		payload.ReasoningEffort = p.wireEffort(model, req.Reasoning)
-		payload.IncludeReasoning = boolPtr(false)
+		// Asked of the MODEL, not of Groq. include_reasoning is a field only
+		// Groq's reasoning models accept, and llama-3.3-70b-versatile — the
+		// catalog's own fallback for this provider — answers it with
+		// "400: `include_reasoning` is not supported with this model", which
+		// ends the turn before a single token is generated.
+		//
+		// The table two files over already knew: resolveGroqThinkingCapabilities
+		// only claims gpt-oss and qwen3, and everything else falls to the
+		// conservative "no thinking" row. This branch was reached by provider
+		// name alone and never asked it. reasoning_effort was already safe by
+		// accident (wireEffort returns "" for an unsupporting model and
+		// omitempty drops it); the bool pointer is what always got sent.
+		if ResolveThinkingCapabilities(p.provider, model).Supported {
+			payload.IncludeReasoning = boolPtr(false)
+		}
 	} else if p.usesOpenAIReasoningEffort() || p.usesGeminiReasoningEffort() || p.usesPlainReasoningEffort() {
 		payload.ReasoningEffort = p.wireEffort(model, req.Reasoning)
 		if payload.ReasoningEffort != "" && p.usesOpenAIReasoningEffort() {

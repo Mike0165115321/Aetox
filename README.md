@@ -316,10 +316,11 @@ for video work is absent from an ordinary conversation — not hidden from the m
 writers reach only the specialized desk, so the assistant delegates for a `.pptx` rather than
 carrying three tools it rarely needs.
 
-**11 providers in the app** — OpenAI · Anthropic · Gemini · DeepSeek · Qwen · Z.ai · OpenRouter ·
-Codex · LM Studio · Ollama · and the built-in `aetox`. OpenRouter and Codex sign in; the rest take
-an API key or a local server address. The engine catalogue holds 18, and the remainder are not
-drawn in the window.
+**17 providers, and the window shows every one** — OpenAI · Anthropic · Gemini · DeepSeek ·
+Qwen · Z.ai · OpenRouter · Codex · Groq · Mistral · Kimi · MiniMax · xAI · ThaiLLM ·
+LM Studio · Ollama · and the built-in `aetox`. OpenRouter and Codex sign in; the rest take an
+API key or a local server address. The catalogue and the picker used to disagree; they no longer
+do, because a provider the engine knows and the window hides is one nobody can reach.
 
 Local models are treated as first-class: Aetox asks LM Studio and Ollama which model is *loaded*
 rather than which exist, streams the answer and the reasoning, really calls tools, and counts

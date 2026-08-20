@@ -164,11 +164,30 @@ func DefaultBaseURL(name string) string {
 	return provider.DefaultBaseURL(name)
 }
 
-// ModelChoices returns the static recommended-model list for a provider.
-// This is a fallback hint only; live model lists should be fetched via
-// ModelChoicesWithEndpointAndAPIKey when possible.
+// ModelChoices returns what a provider's picker can offer when the live list
+// could not be fetched. A hint, never an authority: prefer
+// ModelChoicesWithEndpointAndAPIKey, which asks the provider itself.
+//
+// The catalog's own FallbackModel is the last entry in the chain, and it is the
+// half that used to be missing. Almost every row deliberately carries no
+// RecommendedModels — GET /v1/models answers that, and a list written into the
+// catalog goes stale within months — so when discovery fails there was nothing
+// left to show and the picker went empty. Empty is the wrong answer for a
+// provider Aetox can name a model for: a user who has just pasted a key sees a
+// blank list and a box asking them to type a model id, which reads as "this
+// provider is broken" when the truth may be as ordinary as a new xAI team with
+// no credits yet, whose /v1/models answers 403 until it is funded.
+//
+// One name, not a list. FallbackModel is a single value the catalog already
+// maintains per row, so this cannot rot the way a curated shelf does.
 func ModelChoices(name string) []string {
-	return provider.RecommendedModels(name)
+	if recommended := provider.RecommendedModels(name); len(recommended) > 0 {
+		return recommended
+	}
+	if fallback := strings.TrimSpace(provider.DefaultModel(name)); fallback != "" {
+		return []string{fallback}
+	}
+	return nil
 }
 
 // ResolveModelAPIKey delegates to provider.ResolveAPIKey.

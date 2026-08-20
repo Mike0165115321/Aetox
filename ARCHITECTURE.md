@@ -129,7 +129,7 @@ flowchart LR
     CLI --> Engine
     Bindings --> Engine
 
-    Providers[["13 Provider APIs (verified in code)\nOpenRouter, OpenAI, Anthropic, DeepSeek, Z.AI,\nGemini, Groq, Mistral, Together,\nPerplexity, Cohere, LM Studio,\nOllama (local)"]]
+    Providers[["16 Provider APIs (verified in code)\nOpenRouter, OpenAI, Codex, Anthropic, DeepSeek,\nZ.AI, Gemini, Qwen, Groq, Mistral, Kimi, MiniMax,\nxAI, ThaiLLM,\nLM Studio, Ollama (local)"]]
     GH[["GitHub API\ngithub (4 actions) · plugin_install · rtk self-install"]]
     MCPExt[["Configured MCP servers"]]
     Web[["Live web pages\n(inside native browser tabs)"]]
@@ -554,6 +554,7 @@ product picture in [COMPANY.md](COMPANY.md)) · §82 (the learning floor) · §4
 | §146 | A Tool Nobody Called, Priced On Every Request (2026-08-19) · `notebook_edit` compiled in, not registered — [defaults.go](internal/skill/defaults.go) |
 | §147 | A List of What Is Installed Is Not a Room (2026-08-19) · workbench Tools pane removed; Settings keeps the lists |
 | §148 | Free to Use, Free to Read, Not Free to Take (2026-08-19) · Apache-2.0 → proprietary source-available at v1.3.0; supersedes §60 |
+| §156 | Two Rows In, Three Rows Out, and Six Pointing At Nothing (2026-08-20) · xAI + ThaiLLM added, Perplexity/Together/Cohere removed, six stale model ids repointed; `TestLiveEveryConfiguredProvider` is the check |
 
 ---
 

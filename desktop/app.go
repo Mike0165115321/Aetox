@@ -1359,7 +1359,16 @@ var desktopProviders = []string{
 	// only because nobody had typed them here. Each endpoint verified up to the
 	// auth wall against the live API (2026-08-14): base URL, path and body shape
 	// all answered 401, so only a real key separates them from working.
-	"groq", "mistral", "kimi", "minimax", "together", "perplexity",
+	"groq", "mistral", "kimi", "minimax",
+	// Added 2026-08-20, and probed the same way from this machine rather than
+	// taken from docs. api.x.ai/v1/models answered 401 "No credentials
+	// presented" and api.thaillm.or.th/v1/models answered 200 with its real
+	// model list, both from a Thai IP, so neither is geo-walled and only a key
+	// separates them from working. ThaiLLM fronts Kong, whose own auth is an
+	// `apikey:` header; it was put on this list only after a bearer probe came
+	// back "Unauthorized" rather than "No API key found", which is what proves
+	// the standard header is read and no new client is needed.
+	"xai", "thaillm",
 	"aetox",
 }
 

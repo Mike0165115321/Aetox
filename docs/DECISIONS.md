@@ -5051,3 +5051,121 @@ The repo stays public. That was the owner's call between two options, and it is 
 **Nothing is enforced by code, and nothing here is legal advice.** The teeth are the trademark, the ed25519 release key that a fork cannot forge, and the credit line §5(d) now makes it a breach to delete. A licence is a statement of terms, not a lock; anyone determined to ignore it still can, and the remedy is a lawyer rather than a commit. If Aetox is ever sold commercially, this document should be read by one.
 
 **Closing the repository is still available and still not taken.** Making it private would stop new copies at the source, at the price of the evidence the landing page is built on. Today the answer is: read all of it, take none of it.
+---
+
+## 156. Decision — Two Rows In, Three Rows Out, and Six Pointing At Nothing (2026-08-20)
+
+The catalog gained `xai` and `thaillm`, lost `perplexity`, `together` and
+`cohere`, and had six of its remaining rows repointed at models that still
+exist. The additions were the errand. The rest is what the errand found.
+
+### 154.1 The two that went in
+
+The brief was one sentence: *"เอาแบบมั่นใจนะไม่ใช่เน้นจำนวน"*. So the market
+sweep returned dozens and the shortlist is two.
+
+**xAI** is the only frontier lab Aetox had no path to. Ten of the eleven agentic
+coding tools it competes with already ship it. One catalog row, OpenAI-compatible,
+`reasoning_effort` with a rung (`xhigh`) that a re-router does not always forward.
+Its honest counter-argument is in the row itself: OpenRouter already reaches Grok,
+so this buys margin and caching back rather than access.
+
+**ThaiLLM** is Thailand's sovereign-AI endpoint: one key, four Thai labs (AIEAT,
+SCB 10X, NECTEC, KBTG) on NT hardware under the Ministry of Digital Economy's
+fund. It was chosen over Typhoon, the obvious candidate, because Typhoon's live
+`/v1/models` serves exactly one chat model, its tool-calling documentation
+demonstrates a model id it no longer serves, and its own FAQ disclaims support.
+ThaiLLM carries Typhoon-S inside it and three others besides.
+
+Its weakness is real and accepted: every Thai model there is 8B and labelled
+Research Preview upstream. This is the row that lets Aetox speak Thai with a Thai
+model. It is not the row that survives a long tool loop.
+
+### 154.2 What a live key found
+
+Everything above was desk research, and desk research had already been wrong
+twice by the time a real key was pointed at the catalog.
+
+**Six rows named models nobody served.** `groq` pointed at
+`llama-3.3-70b-versatile`; Groq serves no Llama chat model at all now, so the id
+resolved to an Arabic 7B that answers a tool call with a 400. `kimi` pointed at
+`kimi-k3`, which never reached the endpoint. `cohere`, `mistral`, `together` and
+`perplexity` were the same story. Every one of them compiled. Every one of them
+passed the suite. A name in a Go string cannot go stale, which is exactly why
+nothing noticed.
+
+**models.dev is not enough.** It caught four of the six and was itself still
+listing `kimi-k3` while the endpoint served only `k2.6` and `k2.7-code`. A
+second catalog agrees with a first one right up until the day it does not.
+
+**Weights are not a deployment.** ThaiLLM's context window went in as 32,768,
+read off `max_position_embeddings` in the checkpoint on Hugging Face. The service
+serves 16,384 and said so by refusing a real turn. What a checkpoint can address
+and what a deployment is configured to serve are two numbers, and only the second
+one answers a request.
+
+**`include_reasoning` was sent to every Groq model.** `usesGroqReasoning()`
+branched on the provider name and then set a field only Groq's reasoning models
+accept. `resolveGroqThinkingCapabilities` had known the right answer the whole
+time; nothing asked it.
+
+**`max_tokens` never looked at the window.** The provider floors in
+`toolLoopMaxTokens` are checked by the API against what is LEFT in the context,
+not against the context, so a 16,384-token model with 9,791 tokens of input
+rejects the whole request for asking 8,192 back. The floor is now clamped by the
+room actually left, recomputed each round because a tool loop grows its own
+input. Every provider had this cliff; ThaiLLM is simply the first row whose
+window is small enough to reach it in ordinary use.
+
+### 154.3 The three that came out
+
+`perplexity` claimed `ToolCalling: true`. Perplexity's own API reference
+documents no `tools` parameter at all, and none of its four sonar models claims
+one. It is a search API wearing an OpenAI-shaped coat, and Aetox calls a tool on
+the first turn.
+
+`together` and `cohere` went with it. Neither brought a model the remaining rows
+cannot reach, and both had gone stale unnoticed — which is the cost a row charges
+whether or not anyone uses it.
+
+Seventeen rows remain, and for the first time the window shows all of them.
+
+### 154.4 The check that finds this
+
+`TestLiveEveryConfiguredProvider` (`internal/model/live_all_providers_test.go`)
+runs one real tool-calling round trip per configured provider:
+
+    AETOX_LIVE=1 go test ./internal/model/ -run TestLiveEveryConfiguredProvider -v
+
+Keys come from `config.LoadCredentials`, which registers each with
+`debuglog.Redact`, so a key that passes through it cannot reach a log line. It
+looks in both data roots, because `wails-dev.bat` and a bare `desktop.exe` write
+to different ones — a distinction that cost an hour of "the key is not saved"
+when the key was saved, elsewhere.
+
+It has already cried wolf once. A naive `strings.EqualFold` reported the `gemini`
+row as pointing at nothing while `models/gemini-2.5-flash` sat in the list one
+prefix away. A live test that accuses a correct row is worse than none, because
+the next real accusation gets read as another prefix bug.
+
+### What this does not decide
+
+**Meta.** The Llama API was torn down on 6 July 2026; the Meta Model API that
+replaced it three days later is technically the strongest candidate scouted —
+1M context, tool calling, standard quota headers, and reachable from Thailand
+(measured: a 401, not a geo-block). It stays out because Meta labels it public
+preview and has just demonstrated a willingness to delete this exact product
+category. Durability is the only property a catalog row sells.
+
+**Whether a hosted provider may be called free.** `BalanceFree` is documented as
+"runs on this machine", and `usage.go` reads it as `runsLocally`. ThaiLLM is free
+and hosted, which is a fifth case the enum has no name for, so its price column
+stays blank rather than claiming a free tier that ends when the launch period
+does.
+
+**The `kimi-k3` prefix in three tables.** `context_window.go`,
+`thinking_capabilities.go` and `vision_capabilities.go` still branch on a model
+that does not exist. All three fall through to the conservative K2 answer, which
+is correct for what is served, so they are dead rather than wrong. Fixing them
+properly needs Moonshot documentation for k2.6 and k2.7 that nobody has read.
+

@@ -53,16 +53,7 @@ func TestDesktopPickerNamesOnlyRealProviders(t *testing.T) {
 // So the absences are written down. A provider that is in the catalog and not
 // on the desktop must be named here with the reason, which makes adding one to
 // the engine a two-line decision instead of a silent omission.
-var notOnTheDesktop = map[string]string{
-	// This one is not just an omission. The catalog points it at Cohere's own
-	// API, and the OpenAI-compatible surface it is declared to speak lives on a
-	// different path — so the row would take a key and fail on first use.
-	// A dummy-key probe (2026-08-14) got 401 back, but that only proves the
-	// gateway's auth wall sits in front of the path — it cannot vouch for the
-	// path itself the way it does for hosts whose documented compat URL the
-	// catalog already matches. Stays off until someone with a real key runs it.
-	"cohere": "catalog base URL is Cohere's native API, not its OpenAI-compatible one — would fail on first use",
-}
+var notOnTheDesktop = map[string]string{}
 
 func TestDesktopPickerHidesOnlyWhatItMeansTo(t *testing.T) {
 	listed := make(map[string]bool, len(desktopProviders))

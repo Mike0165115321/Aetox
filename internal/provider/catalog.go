@@ -343,7 +343,20 @@ var catalog = map[string]*entry{
 		baseURL:        "https://api.moonshot.ai/v1",
 		envKeys:        []string{"MOONSHOT_API_KEY", "KIMI_API_KEY"},
 		apiKeyURL:      "https://platform.moonshot.ai/console/api-keys",
-		modelDefaults:  ModelDefaults{FallbackModel: "kimi-k3"},
+		// K3 never reached the endpoint this row points at. On 2026-08-20 a
+		// real call to /v1/models returned exactly two ids, kimi-k2.6 and
+		// kimi-k2.7-code, and models.dev still listed kimi-k3 as current — so
+		// the third-party catalog agreed with the stale name and only the
+		// provider itself knew. k2.6 is the general model of the two; the
+		// -code sibling is not chosen here because nothing has established
+		// whether it is a chat model or a completion one.
+		//
+		// Three tables still branch on a "kimi-k3" prefix (context_window.go,
+		// thinking_capabilities.go, vision_capabilities.go). All three fall
+		// through to the conservative K2 answer, which is correct for what is
+		// served, so they are dead rather than wrong. Updating them needs
+		// Moonshot docs for k2.6/k2.7 that nobody has read yet.
+		modelDefaults:  ModelDefaults{FallbackModel: "kimi-k2.6"},
 		// Reasoning is a real dial here (reasoning_effort: low/high/max) but it
 		// has no off position — K3 always thinks. See
 		// resolveKimiThinkingCapabilities for what that costs the picker.
@@ -398,7 +411,14 @@ var catalog = map[string]*entry{
 		baseURL:        "https://api.groq.com/openai/v1",
 		envKeys:        []string{"GROQ_API_KEY"},
 		apiKeyURL:      "https://console.groq.com/keys",
-		modelDefaults:  ModelDefaults{FallbackModel: "llama-3.3-70b-versatile"},
+		// Was llama-3.3-70b-versatile until 2026-08-20, when a live call found
+		// Groq no longer serves it, or any Llama chat model: of the 13 ids on
+		// the endpoint that day, the rest were Whisper, TTS, prompt-guard
+		// classifiers and one Arabic 7B that answers tool calls with a 400.
+		// gpt-oss-120b is the one Groq serves that does what Aetox needs on
+		// the first turn: tools, and a reasoning dial thinking_capabilities.go
+		// already recognises by its openai/gpt-oss- prefix.
+		modelDefaults:  ModelDefaults{FallbackModel: "openai/gpt-oss-120b"},
 		capabilities:   Capabilities{ToolCalling: true, Reasoning: true},
 	},
 	"mistral": {
@@ -411,46 +431,10 @@ var catalog = map[string]*entry{
 		baseURL:        "https://api.mistral.ai/v1",
 		envKeys:        []string{"MISTRAL_API_KEY"},
 		apiKeyURL:      "https://console.mistral.ai/api-keys",
-		modelDefaults:  ModelDefaults{FallbackModel: "mistral-small"},
-		capabilities:   Capabilities{ToolCalling: true},
-	},
-	"together": {
-		canonical:      "together",
-		balanceKind:    BalanceWebOnly,
-		quotaSource:    QuotaOpenAIStd,
-		aliases:        []string{"together", "togetherai", "together-ai"},
-		requiresAPIKey: true,
-		runtime:        RuntimeOpenAICompatible,
-		baseURL:        "https://api.together.xyz/v1",
-		envKeys:        []string{"TOGETHER_API_KEY"},
-		apiKeyURL:      "https://api.together.xyz/settings/api-keys",
-		modelDefaults:  ModelDefaults{FallbackModel: "google/gemma-2-9b-it"},
-		capabilities:   Capabilities{ToolCalling: true},
-	},
-	"perplexity": {
-		canonical:      "perplexity",
-		balanceKind:    BalanceWebOnly,
-		quotaSource:    QuotaOpenAIStd,
-		aliases:        []string{"perplexity", "perplexityai", "pplx"},
-		requiresAPIKey: true,
-		runtime:        RuntimeOpenAICompatible,
-		baseURL:        "https://api.perplexity.ai",
-		envKeys:        []string{"PERPLEXITY_API_KEY"},
-		apiKeyURL:      "https://www.perplexity.ai/settings/api",
-		modelDefaults:  ModelDefaults{FallbackModel: "llama-3.1-sonar-small-128k-online"},
-		capabilities:   Capabilities{ToolCalling: true},
-	},
-	"cohere": {
-		canonical:      "cohere",
-		balanceKind:    BalanceWebOnly,
-		quotaSource:    QuotaOpenAIStd,
-		aliases:        []string{"cohere", "command-r"},
-		requiresAPIKey: true,
-		runtime:        RuntimeOpenAICompatible,
-		baseURL:        "https://api.cohere.com/v1",
-		envKeys:        []string{"COHERE_API_KEY"},
-		apiKeyURL:      "https://dashboard.cohere.com/api-keys",
-		modelDefaults:  ModelDefaults{FallbackModel: "command-r-plus"},
+		// "mistral-small" with no suffix is not an id Mistral serves; the
+		// self-updating alias is. Same intent, and it cannot rot the way a
+		// pinned date can.
+		modelDefaults:  ModelDefaults{FallbackModel: "mistral-small-latest"},
 		capabilities:   Capabilities{ToolCalling: true},
 	},
 	"lmstudio": {
@@ -497,6 +481,69 @@ var catalog = map[string]*entry{
 		// written here goes stale within months (model.DiscoverAnthropicModels).
 		modelDefaults: ModelDefaults{FallbackModel: "claude-haiku-4-5"},
 		capabilities:  Capabilities{ToolCalling: true, Reasoning: true},
+	},
+	// Grok already reaches Aetox through the openrouter row, so this one does
+	// not buy access. It buys the routing margin back, first-party prompt
+	// caching, and an xhigh effort level a re-router does not always forward.
+	"xai": {
+		canonical:      "xai",
+		balanceKind:    BalanceWebOnly,
+		quotaSource:    QuotaOpenAIStd,
+		aliases:        []string{"xai", "x-ai", "grok"},
+		requiresAPIKey: true,
+		runtime:        RuntimeOpenAICompatible,
+		baseURL:        "https://api.x.ai/v1",
+		envKeys:        []string{"XAI_API_KEY"},
+		apiKeyURL:      "https://console.x.ai/team/default/api-keys",
+		// No RecommendedModels: GET /v1/models answers this
+		// (model.DiscoverOpenAICompatibleModels), and xAI is the provider that
+		// proves why a list here rots — grok-4 retired on 2026-08-15 and the
+		// 15 May retirement before it silently redirected older ids onto
+		// grok-4.3 and billed them at grok-4.3 rates. A name written here
+		// cannot learn that; the endpoint already knows it.
+		modelDefaults: ModelDefaults{FallbackModel: "grok-4.6"},
+		capabilities:  Capabilities{ToolCalling: true, Reasoning: true},
+	},
+	// Thailand's sovereign-AI endpoint. One key reaches all four Thai labs
+	// (AIEAT, SCB 10X, NECTEC, KBTG) plus two Qwen models, served on NT
+	// hardware under the Ministry of Digital Economy's fund.
+	//
+	// It fronts Kong, whose own key auth is an `apikey:` header, so this row
+	// is one struct literal only because the gateway also accepts the standard
+	// bearer. Measured against the live endpoint on 2026-08-20: `Authorization:
+	// Bearer` and `apikey:` both answered "Unauthorized" (key seen, key wrong)
+	// while `x-api-key:` answered "No API key found in request".
+	//
+	// Every Thai model here is 8B and labelled "Research Preview" upstream, so
+	// this is the row that lets Aetox speak Thai with a Thai model, not the row
+	// that survives a long tool loop. qwen3.6-35b-a3b is the only model on the
+	// endpoint sized for that, and it is Alibaba's, not Thai.
+	"thaillm": {
+		canonical: "thaillm",
+		// Free for the launch period, and no endpoint a chat key can read: the
+		// figure lives behind the playground sign-in, like every other
+		// web-only wallet. Read web-only here as "not from this key", which
+		// stays true whether or not the free period ends.
+		balanceKind:    BalanceWebOnly,
+		quotaSource:    QuotaOpenAIStd,
+		aliases:        []string{"thaillm", "thai-llm"},
+		requiresAPIKey: true,
+		runtime:        RuntimeOpenAICompatible,
+		baseURL:        "https://api.thaillm.or.th/v1",
+		envKeys:        []string{"THAILLM_API_KEY"},
+		apiKeyURL:      "https://playground.thaillm.or.th/login/",
+		// No RecommendedModels: GET /v1/models answers this
+		// (model.DiscoverOpenAICompatibleModels), and this endpoint answers it
+		// without a key at all, so the live list is always the better one.
+		//
+		// Pathumma is the fallback because it is the only model here whose card
+		// documents tool-calling training (dedicated tool-call datasets, the
+		// Hermes parser). The other three state no tool contract at all, and
+		// Aetox calls a tool on the first turn. The id is version-pinned
+		// because that is the only spelling the service serves: there is no
+		// unversioned alias, and a shortened one 404s.
+		modelDefaults: ModelDefaults{FallbackModel: "Pathumma-ThaiLLM-qwen3-8b-think-3.0.0"},
+		capabilities:  Capabilities{ToolCalling: true},
 	},
 }
 

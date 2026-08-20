@@ -67,6 +67,49 @@ func TestOpenAICompatibleProviderUsesOpenAIReasoningEffortPayload(t *testing.T) 
 	}
 }
 
+// The other half of the test above, and the one that was missing: the Groq
+// branch is chosen by provider name, but include_reasoning is a field only
+// Groq's REASONING models accept. Sent to llama-3.3-70b-versatile — Groq's own
+// row in the catalog names it as the fallback — the whole turn dies with
+// "400: `include_reasoning` is not supported with this model" before a token
+// is generated. Found by running a real key against a real endpoint, which is
+// the only way it could have been found: every fake in this file answers 200.
+func TestGroqSendsIncludeReasoningOnlyToModelsThatTakeIt(t *testing.T) {
+	for _, c := range []struct {
+		model string
+		want  bool
+	}{
+		{"llama-3.3-70b-versatile", false}, // the catalog's own groq fallback
+		{"llama-3.1-8b-instant", false},
+		{"openai/gpt-oss-120b", true},
+		{"qwen/qwen3-32b", true},
+	} {
+		var got map[string]any
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewDecoder(r.Body).Decode(&got)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"ok"}}]}`))
+		}))
+		p, err := NewOpenAICompatibleProvider(OpenAICompatibleConfig{
+			Provider: "groq", Model: c.model, APIKey: "k", BaseURL: server.URL,
+		})
+		if err != nil {
+			t.Fatalf("%s: %v", c.model, err)
+		}
+		_, err = p.Complete(t.Context(), Request{
+			Model:    c.model,
+			Messages: []Message{{Role: RoleUser, Content: "hi"}},
+		})
+		server.Close()
+		if err != nil {
+			t.Fatalf("%s: %v", c.model, err)
+		}
+		if _, sent := got["include_reasoning"]; sent != c.want {
+			t.Errorf("%s: include_reasoning sent=%v, want %v", c.model, sent, c.want)
+		}
+	}
+}
+
 func TestOpenAICompatibleProviderUsesGroqReasoningPayload(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)

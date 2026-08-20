@@ -28,6 +28,12 @@ const (
 	// nothing until the model actually produces a large file.
 	deepseekV4OutputTokenMax = 65536
 
+	// minToolLoopMaxTokens is the floor clampToWindow will not go below. Room
+	// this tight means the turn is about to be compacted anyway; asking for a
+	// handful of tokens still lets the model say why it stopped, where asking
+	// for zero is a 400 of its own.
+	minToolLoopMaxTokens = 512
+
 	// Doom-loop guard thresholds, same as OpenCode's (warn at 3 identical
 	// consecutive calls, hard-stop at 5).
 	doomLoopWarn = 3
@@ -107,9 +113,69 @@ const compactionPrompt = "You are compacting a long conversation so it can conti
 // toolLoopMaxTokens returns the max_tokens sent on every tool-loop request —
 // always explicit (Anthropic requires the field; the rest get a value their
 // API accepts instead of a provider default that may be as low as 4096).
-// ponytail: per-provider floors, not per-model — swap for a models.dev-style
-// catalog when one provider's newer models need more than its floor.
+//
+// The provider floor is a ceiling, not the answer. max_tokens is checked by
+// the API against what is LEFT in the window, not against the window, so a
+// floor alone is a 400 waiting for a small model: ThaiLLM's THaLLE-8B serves
+// 16,384 tokens, and at 9,791 tokens of input it rejected the whole request
+// for asking 8,192 back when only 6,593 remained (measured 2026-08-20). Every
+// provider has this cliff; ThaiLLM is simply the first row whose window is
+// small enough to reach it in ordinary use.
+//
+// So the floor is clamped by whatever the window can still hold. Recompute it
+// each round rather than once per turn: a tool loop grows its own input, and
+// the value that fitted on the first call is the one that 400s on the ninth.
 func (a *Agent) toolLoopMaxTokens() int {
+	return a.clampToWindow(a.providerOutputCeiling())
+}
+
+// clampToWindow cuts an output ceiling down to the room actually left in the
+// model's context window, and is a no-op for the case that used to be the only
+// one: a big window with a short conversation in it.
+//
+// Input size is measured, not guessed, whenever the provider has already told
+// us — lastUsage.PromptTokens is the real count from this same conversation one
+// round ago, and it is the only number here that a tokenizer cannot embarrass.
+// Before the first reply there is nothing to measure, and the char estimate
+// that stands in is deliberately pessimistic: Thai runs closer to one token
+// per two characters than the one-per-four an English-shaped guess assumes,
+// and this row exists to serve Thai. Guessing high costs a shorter reply;
+// guessing low costs the whole request.
+func (a *Agent) clampToWindow(ceiling int) int {
+	name := ""
+	if a.provider != nil {
+		name = model.NormalizeProvider(a.provider.Name())
+	}
+	window := model.ContextWindowTokens(name, a.model)
+	if window <= 0 {
+		return ceiling // no promise about this model's window; nothing to clamp against
+	}
+
+	input := a.lastUsage.PromptTokens
+	if input <= 0 {
+		_, usedChars, _ := a.context.UsageStats()
+		input = usedChars / 2
+	}
+	// Headroom for the turn being added on top of what was measured, and for
+	// the tokenizer disagreeing with the estimate. A reply that is shorter than
+	// it could have been is invisible; a 400 ends the turn.
+	room := window - input - window/16
+
+	switch {
+	case room >= ceiling:
+		return ceiling
+	case room > minToolLoopMaxTokens:
+		return room
+	default:
+		// Already at or past the window. Ask for the smallest useful reply and
+		// let the compaction check at the top of the loop reclaim the room.
+		return minToolLoopMaxTokens
+	}
+}
+
+// providerOutputCeiling is the per-provider floor this used to return on its
+// own: the largest max_tokens each API accepts, before the window is consulted.
+func (a *Agent) providerOutputCeiling() int {
 	name := ""
 	if a.provider != nil {
 		name = model.NormalizeProvider(a.provider.Name())
@@ -279,7 +345,6 @@ func (a *Agent) RespondWithTools(
 	overflowCompactions := 0
 	var lastCallKey string
 	repeatedCalls := 0
-	loopMaxTokens := a.toolLoopMaxTokens()
 	for i := 0; maxToolCalls <= 0 || i < maxToolCalls; i++ {
 		debuglog.Msg("tool loop iteration %d (max=%d)", i+1, maxToolCalls)
 		if ctx.Err() != nil {
@@ -301,6 +366,9 @@ func (a *Agent) RespondWithTools(
 			debuglog.Msg("interjection folded in before round %d (%d chars)", i+1, len(text))
 			a.context.Add(model.RoleUser, interjectionNote+text)
 		}
+		// Recomputed here, not before the loop: each round adds its own tool
+		// results to the input, so the room left for output shrinks as it runs.
+		loopMaxTokens := a.toolLoopMaxTokens()
 		response, err := a.completeToolLoop(ctx, a.buildRequest(a.context.Messages(), loopMaxTokens, 0.2, modelTools, "auto", opts), onReasoningChunk, opts)
 		if err != nil {
 			debuglog.Msg("Complete() error: %v", err)

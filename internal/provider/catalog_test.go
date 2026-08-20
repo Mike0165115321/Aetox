@@ -27,12 +27,6 @@ func TestNormalize_KnownAlias(t *testing.T) {
 		{"groqcloud", "groq"},
 		{"mistral", "mistral"},
 		{"mistralai", "mistral"},
-		{"together", "together"},
-		{"togetherai", "together"},
-		{"perplexity", "perplexity"},
-		{"pplx", "perplexity"},
-		{"cohere", "cohere"},
-		{"command-r", "cohere"},
 		{"lmstudio", "lmstudio"},
 		{"localai", "lmstudio"},
 		{"local-ai", "lmstudio"},
@@ -193,11 +187,24 @@ func TestDefaultModel_FallbackOnly(t *testing.T) {
 		{"openai", "gpt-4o-mini"},
 		{"deepseek", "deepseek-v4-flash"},
 		{"gemini", "gemini-2.5-flash"},
-		{"groq", "llama-3.3-70b-versatile"},
-		{"mistral", "mistral-small"},
-		{"together", "google/gemma-2-9b-it"},
-		{"perplexity", "llama-3.1-sonar-small-128k-online"},
-		{"cohere", "command-r-plus"},
+		// Six rows were found pointing at models nobody served on 2026-08-20:
+		// these two, kimi below, and perplexity, together and cohere, which the
+		// owner removed rather than repoint. Every one had gone dead where it
+		// shows least: the row compiled, the suite was green, and the model had
+		// stopped existing. Groq was the loudest — it serves no Llama chat
+		// model at all now, so its id resolved to an Arabic 7B that answers a
+		// tool call with a 400.
+		//
+		// Which is the point worth keeping: this table cannot tell whether a
+		// name is still served, only whether it still matches the catalog. The
+		// check that can is TestLiveEveryConfiguredProvider in internal/model,
+		// and it needs a key.
+		{"groq", "openai/gpt-oss-120b"},
+		{"mistral", "mistral-small-latest"},
+		// kimi-k3 was the sixth dead name, and the one that proves a
+		// third-party catalog is not enough: models.dev still listed it while
+		// the endpoint served only k2.6 and k2.7-code.
+		{"kimi", "kimi-k2.6"},
 		{"anthropic", "claude-haiku-4-5"},
 		{"unknown", ""},
 		// Local runtimes deliberately carry no fallback: they serve whatever
@@ -266,9 +273,6 @@ func TestDefaultBaseURL(t *testing.T) {
 		{"gemini", "https://generativelanguage.googleapis.com/v1beta/openai"},
 		{"groq", "https://api.groq.com/openai/v1"},
 		{"mistral", "https://api.mistral.ai/v1"},
-		{"together", "https://api.together.xyz/v1"},
-		{"perplexity", "https://api.perplexity.ai"},
-		{"cohere", "https://api.cohere.com/v1"},
 		{"lmstudio", "http://localhost:1234/v1"},
 		{"ollama", "http://localhost:11434"},
 		{"noop", ""},
@@ -285,7 +289,8 @@ func TestDefaultBaseURL(t *testing.T) {
 }
 
 func TestRequiresAPIKey(t *testing.T) {
-	needsKey := []string{"openrouter", "openai", "deepseek", "gemini", "groq", "mistral", "together", "perplexity", "cohere", "anthropic"}
+	needsKey := []string{"openrouter", "openai", "deepseek", "gemini", "groq",
+		"mistral", "kimi", "minimax", "qwen", "zai", "xai", "thaillm", "anthropic"}
 	for _, p := range needsKey {
 		if !RequiresAPIKey(p) {
 			t.Fatalf("expected %q to require API key", p)
