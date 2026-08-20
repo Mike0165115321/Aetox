@@ -34,7 +34,17 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 }
 
 .app {
-  height:100%; display:grid; overflow-x:hidden; overflow-y:hidden;
+  /* clip, not hidden. Both clip what sticks out; only `hidden` makes the box a
+     SCROLL CONTAINER, and a scroll container with no scrollbar is an offset
+     nobody can see and nobody can undo. That is how the whole grid ended up
+     shoved sideways when a deck loaded on 2026-08-20: something inside called
+     scrollIntoView, the browser walked up scrolling every scrollable ancestor,
+     and this one moved and stayed moved. `clip` is not scrollable, so it cannot
+     hold an offset — the shell is a frame, and a frame does not scroll.
+     The panel widths are clamped so the grid fits the window (panelSize.ts, and
+     the resize handler in App.svelte); this is the wall behind that arithmetic
+     rather than a substitute for it. */
+  height:100%; display:grid; overflow:clip;
   /* The frame plane, showing through the resize-handle tracks either side of
      the content card. Without it those gutters fall through to `body`, which is
      --surface-app — the card's own colour — and a corner rounded away from the

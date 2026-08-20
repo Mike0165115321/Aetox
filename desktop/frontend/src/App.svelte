@@ -24,7 +24,7 @@
   import { OnFileDrop, OnFileDropOff, EventsOn } from '../wailsjs/runtime/runtime'
   import { workbench, openPathsInWorkbench } from './lib/stores/workbench.svelte'
   import { listenForUpdates } from './lib/selfUpdate.svelte'
-  import { clampPanelWidth } from './lib/panelSize'
+  import { clampPanelWidth, fitPanelsToWindow } from './lib/panelSize'
   import { isShortcut } from './lib/shortcuts'
   import Icon from './lib/Icon.svelte'
 
@@ -69,12 +69,34 @@
     return Number.isFinite(parsed) ? parsed : panel.defaultPx
   }
 
+  let appEl = $state<HTMLDivElement | null>(null)
+
+  /** How wide the grid actually is, in the units the grid is laid out in.
+   *
+   *  NOT window.innerWidth, and the difference is a real 44px on this machine.
+   *  The UI zoom control writes `zoom` to <body> (systemFont.svelte.ts), so the
+   *  shell's box measures innerWidth ÷ zoom CSS pixels while innerWidth itself
+   *  does not change at all. Every width this file hands the grid is a CSS
+   *  pixel, so reserving space against innerWidth reserves space that is not
+   *  there: at zoom 1.03 the panels were allowed to be 44px too wide and the
+   *  grid hung that far off the right edge of the window, taking the workbench
+   *  toolbar's last button with it (owner, 20 ส.ค., three rounds of looking in
+   *  the wrong place).
+   *
+   *  Reported by the element rather than computed from the zoom factor, because
+   *  the element is the thing being fitted and it can answer for itself —
+   *  scrollbars, borders and any future frame around it included.
+   */
+  function gridWidth(): number {
+    return appEl?.clientWidth || window.innerWidth
+  }
+
   function clampSize(px: number, panel: typeof panels.sidebar, otherPanel: typeof panels.sidebar): number {
     // A collapsed panel is a 0px column and its handle is display:none, so the
     // space it would have taken belongs to whoever is being dragged.
     const otherVisible = !otherPanel.isCollapsed()
     return clampPanelWidth(px, {
-      viewport: window.innerWidth,
+      viewport: gridWidth(),
       min: panel.min,
       otherWidth: otherVisible ? currentPx(otherPanel) : 0,
       otherVisible,
@@ -95,6 +117,41 @@
     if (panel.isCollapsed()) return
     const size = clampSize(currentPx(panel), panel, otherOf(panel))
     document.documentElement.style.setProperty(panel.cssVar, `${size}px`)
+  }
+
+  // The window is the third thing that changes this arithmetic, and the only
+  // one nothing was watching: the cap ran on a drag and on load, never on a
+  // resize. So a workbench dragged wide on a maximised window stayed that wide
+  // when the window came back down, and the grid was wider than the frame from
+  // then on with nothing on screen to say so — the room a deck's scrollIntoView
+  // then found to shove the whole shell sideways (SlidesPane.center,
+  // .app in style.css).
+  //
+  // Both panels through one function rather than refit() twice: refitting in a
+  // fixed order pins whichever is asked second against the width the first is
+  // still holding. See fitPanelsToWindow.
+  // Watched on the SHELL, not on the window. The window fires `resize` when the
+  // window changes; it says nothing when the UI zoom control changes how many
+  // CSS pixels that window is worth (systemFont.svelte.ts), and that is exactly
+  // the moment the widths stop fitting. The element that has to fit is the one
+  // that can be asked.
+  //
+  // The window listener stays as well: it costs nothing and it is the one that
+  // fires first when a window is dragged between monitors of different scaling.
+  $effect(() => {
+    if (!appEl || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => refitToWindow())
+    ro.observe(appEl)
+    return () => ro.disconnect()
+  })
+
+  function refitToWindow(): void {
+    const list = Object.values(panels)
+    const state = list.map((p) => ({ width: currentPx(p), min: p.min, visible: !p.isCollapsed() }))
+    fitPanelsToWindow(gridWidth(), state).forEach((px, i) => {
+      if (!state[i].visible || px === state[i].width) return
+      document.documentElement.style.setProperty(list[i].cssVar, `${px}px`)
+    })
   }
 
   onMount(() => {
@@ -315,7 +372,7 @@
   }
 </script>
 
-<svelte:window onkeydown={onKeydown} />
+<svelte:window onkeydown={onKeydown} onresize={refitToWindow} />
 
 <!-- `resizing` turns the column transition off for the length of a drag. The
      panels ease open and shut on a click, but while the pointer is holding an
@@ -323,6 +380,7 @@
      direct manipulation into a control that lags behind the hand. -->
 <div
   class="app"
+  bind:this={appEl}
   class:inspector-collapsed={inspectorCollapsed}
   class:sidebar-collapsed={sidebarCollapsed}
   class:resizing={draggingSidebar || draggingInspector}
