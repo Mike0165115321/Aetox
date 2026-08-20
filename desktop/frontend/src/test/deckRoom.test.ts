@@ -125,4 +125,23 @@ describe('the slides room', () => {
     render(DeckRoom)
     await waitFor(() => expect(screen.getByText(/no project open/)).toBeTruthy())
   })
+
+  // ปุ่มบนแถบเด็คที่มีแต่ไอคอน — ลูกศรเดินสไลด์ ปุ่มชี้ และปุ่มวาด — ไม่มีคำอยู่
+  // บนตัวมันเลย ชื่อจึงต้องอยู่ที่ aria-label กับ title ปุ่มไอคอนที่ไม่มีชื่อคือ
+  // ปุ่มที่ต้องกดถึงจะรู้ว่ามันทำอะไร
+  it('names every icon-only button on the deck toolbar', async () => {
+    const { container } = render(DeckRoom)
+    await waitFor(() => expect(screen.getByText('Export')).toBeTruthy())
+
+    const head = container.querySelector('.deck-head')
+    expect(head).toBeTruthy()
+    const iconOnly = Array.from(head!.querySelectorAll('button')).filter(
+      (b) => (b.textContent ?? '').trim() === '',
+    )
+    expect(iconOnly.length).toBeGreaterThanOrEqual(4)
+    for (const b of iconOnly) {
+      expect(b.getAttribute('aria-label')?.trim() || '').not.toBe('')
+      expect(b.getAttribute('title')?.trim() || '').not.toBe('')
+    }
+  })
 })

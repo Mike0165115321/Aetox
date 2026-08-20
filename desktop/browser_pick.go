@@ -62,6 +62,22 @@ type browserPick struct {
 // second. Every page-facing event is eaten in the capture phase, so a link
 // under the cursor is a target, not a navigation.
 func pickScript(token, opts string) string {
+	return pickScriptTo(token, opts, bridgePost)
+}
+
+// pickScriptTo is pickScript with the way back left open.
+//
+// A browser tab is a native OS window and answers through the engine's own
+// bridge (bridgePost). A deck is an <iframe> inside the app's own webview and
+// has no bridge at all — it is same-origin with the app, so it answers by
+// calling a function on the parent frame. Same overlay, same envelope, one
+// argument different.
+//
+// Parameterised rather than copied. The overlay is 300 lines of pointer
+// handling, hit-testing and selector building, and the day the two copies drift
+// is the day pointing at a slide and pointing at a page stop meaning the same
+// thing.
+func pickScriptTo(token, opts, post string) string {
 	return fmt.Sprintf(`(function(){
   var TOK=%q, O={};
   try{O=JSON.parse(%q)}catch(e){}
@@ -392,7 +408,7 @@ func pickScript(token, opts string) string {
     post(false,true);
   }
   window.__aetoxPick={stop:stop};
-})()`, token, opts, bridgePost)
+})()`, token, opts, post)
 }
 
 // stopPickScript ends a mode the user turned off from the toolbar. Written to

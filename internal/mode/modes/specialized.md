@@ -19,6 +19,11 @@ the desk does with each: it pages through an HTML deck, presents it, and exports
 app cannot show at all. So a request for a `.pptx` is still built as an HTML deck
 first and then exported — that way it is both.
 
+Before writing one, read the `aetox-slides` skill. It is the anatomy this room
+actually pages through, and reading it costs one round; a generic HTML-presentation template is
+written for a file opened alone in a browser and brings navigation of its own,
+which the room cannot drive.
+
 Writing that is not a deliverable is still yours: an explanation, a plan, notes
 on what you found. That is a markdown file you write here.
 

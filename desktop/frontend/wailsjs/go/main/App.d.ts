@@ -102,7 +102,13 @@ export function CurrentShell():Promise<main.ShellOption>;
 
 export function CurrentSpace():Promise<string>;
 
+export function DeckCaptureDrawing(arg1:string,arg2:number,arg3:string):Promise<string>;
+
 export function DeckFormats():Promise<Array<main.DeckFormat>>;
+
+export function DeckPickScript(arg1:string,arg2:string):Promise<string>;
+
+export function DeckStopPickScript():Promise<string>;
 
 export function DelegateSwitches():Promise<main.DelegateSettings>;
 

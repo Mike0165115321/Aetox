@@ -210,6 +210,9 @@ export const ExportDeck = str()
 // ready row and two unready ones for good. Chasing the real list would make
 // these tests go red the day a format ships, which is the day they are least
 // interesting.
+export const DeckCaptureDrawing = str()
+export const DeckPickScript = str()
+export const DeckStopPickScript = str()
 export const DeckFormats = vi.fn(async () => [
   { id: 'pptx', ext: '.pptx', ready: true },
   { id: 'pdf', ext: '.pdf', ready: false },

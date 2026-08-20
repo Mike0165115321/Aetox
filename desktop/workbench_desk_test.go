@@ -365,15 +365,16 @@ func TestDeskCloseOnlyTakesBackWhatTheAgentPutThere(t *testing.T) {
 // because nothing had told it what the room does with the file.
 func TestDeskOpenTeachesWhatMakesAnHTMLFileADeck(t *testing.T) {
 	guidance := (&deskSkill{}).Guidance(map[string]any{"action": "open"})
-	for _, want := range []string{`<section class="slide">`, "16:9"} {
+	// Three things, and the third is why the other two can stay this short: the
+	// marker, the half today's bug turned on (the room pages the deck, so a deck
+	// that pages itself is one the room cannot drive), and where the rest is.
+	// The full recipe — sizing, assets, the skeleton — is the bundled
+	// `aetox-slides` skill, which is read BEFORE a deck is written; this arrives
+	// with the first desk_open, which is after.
+	for _, want := range []string{`<section class="slide">`, "navigation", "aetox-slides"} {
 		if !strings.Contains(guidance, want) {
 			t.Errorf("guidance does not mention %s:\n%s", want, guidance)
 		}
-	}
-	// The half that today's bug turned on: the room pages the deck, so a deck
-	// that pages itself is one the room cannot drive.
-	if !strings.Contains(guidance, "navigation") {
-		t.Errorf("guidance does not say to leave navigation to the room:\n%s", guidance)
 	}
 	// Nothing to say once about an action whose signature already says it all.
 	if got := (&deskSkill{}).Guidance(map[string]any{"action": "nonsense"}); got != "" {

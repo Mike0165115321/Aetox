@@ -79,3 +79,27 @@ export function sendStepKey(doc: Document, forward: boolean): void {
     }),
   )
 }
+
+/** ขนาดของสไลด์หนึ่งใบตามสัญญา — 16:9 และเท่ากับหน้า PowerPoint จอกว้างที่ 96dpi */
+export const DECK_BASE = { width: 1280, height: 720 }
+
+/** กรอบที่เด็คควรถูกวาดลงไป และอัตราส่วนที่ย่อกรอบนั้นลงมาให้พอดีเวที
+ *
+ * อยู่ที่นี่ไม่ใช่ในแพเนลด้วยเหตุผลเดียวกับข้างบน: เป็นเลขคณิต ตอบได้โดยไม่ต้องมี
+ * ไอเฟรม และเป็นจุดที่พลาดแล้วเห็นเป็นอาการหน้าจอ ไม่ใช่เป็นข้อความผิดพลาด
+ *
+ * กรอบมาก่อนการวัด เด็คที่วัดตัวเองจากวิวพอร์ต (`min-height:100vh`) จึงถูกถามใน
+ * กรอบ 1280 × 720 แล้วตอบกลับมาเท่ากรอบ — ซึ่งคือคำตอบที่ถูก ส่วนเด็คที่ประกาศ
+ * ขนาดของตัวเอง (1920 × 1080, 4:3) ตอบขนาดของมัน แล้วกรอบก็ตามไปเป็นขนาดนั้น
+ *
+ * ไม่มีเพดานที่ 1 เพราะย่อขยายทั้งกรอบไม่ทำให้เด็คจัดหน้าใหม่ สัดส่วนตัวอักษรต่อ
+ * สไลด์คงเดิมทุกอัตราส่วน และการนำเสนอเต็มจอต้องขยายขึ้นได้ ไม่งั้นสไลด์ 1280 จะ
+ * กองอยู่กลางจอ 1920 */
+export function deckFit(
+  stage: { width: number; height: number },
+  slide: { width: number; height: number },
+): { width: number; height: number; scale: number } {
+  const width = slide.width > 1 ? Math.round(slide.width) : DECK_BASE.width
+  const height = slide.height > 1 ? Math.round(slide.height) : DECK_BASE.height
+  return { width, height, scale: Math.min(stage.width / width, stage.height / height) }
+}

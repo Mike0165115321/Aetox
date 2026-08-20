@@ -76,8 +76,9 @@ kept in the worker's own folder instead. See "เอเจน" below.
 
 Two sources on the shelf, and the second wins:
 
-- **Bundled** — compiled into the binary (this document is one). Nothing to
-  download, nothing on disk to delete.
+- **Bundled** — compiled into the binary. Two of them ship: this document, and
+  `aetox-slides`, which is the anatomy of a deck the slides room can actually
+  page through. Nothing to download, nothing on disk to delete.
 - **User** — a folder in `~/.aetox/skills`. A folder whose skill name matches a
   bundled one replaces it entirely. Editing a shipped skill means copying it
   out under the same name, never fighting the app.

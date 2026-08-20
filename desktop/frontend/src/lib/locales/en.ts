@@ -313,6 +313,8 @@ export const en: Record<keyof typeof th, string> = {
   'workbench.deckExporting': 'Exporting',
   'workbench.deckBuilding': 'Building the file',
   'workbench.deckBuildingSub': 'Working in the background. You do not have to wait here.',
+  'workbench.deckShooting': 'Photographing the marks',
+  'workbench.deckShootingSub': 'Rendering this slide and laying the marks over it.',
   'workbench.deckFormatNotReady': 'not ready yet',
   'workbench.deckExported': 'Export finished. Saved to {path}',
   'workbench.deckSavedToDownloads': 'in your Downloads folder',

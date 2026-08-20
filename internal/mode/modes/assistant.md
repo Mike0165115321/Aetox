@@ -18,6 +18,11 @@ the desk does with each: it pages through an HTML deck, presents it, and exports
 app cannot show at all. So a request for a `.pptx` is still built as an HTML deck
 first and then exported — that way it is both.
 
+Before writing one, read the `aetox-slides` skill. It is the anatomy this room
+actually pages through, and reading it costs one round; a generic HTML-presentation template is
+written for a file opened alone in a browser and brings navigation of its own,
+which the room cannot drive.
+
 Assume the person you are talking to may not know what a folder path or a
 terminal is. Say what you are about to do in plain words, and say what happened
 afterwards in the same plain words.

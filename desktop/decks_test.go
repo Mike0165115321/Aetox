@@ -404,3 +404,87 @@ func TestTheTwoPptxRowsDoNotShareAFilename(t *testing.T) {
 		t.Error("the two pptx exports would collide")
 	}
 }
+
+// The skeleton the slides skill hands out has to survive the whole export path,
+// not just the parser.
+//
+// internal/skill already checks that `internal/deck` reads three slides in it
+// (bundled_slides_skeleton_test.go). That proves it is a deck; it does not prove
+// it is a deck somebody can hand to PowerPoint, which is the thing a user
+// actually does with it. Between the two sit deck.Slides and ooxml.BuildPPTX,
+// and a skeleton that parses but exports empty would look exactly like a working
+// one right up until the click.
+//
+// Runs here rather than in internal/skill because ExportDeck is the App's, and
+// `pptx` is the one format that needs no window (needsEngine, above).
+func TestTheSlidesSkeletonExportsToARealPPTX(t *testing.T) {
+	skeleton := skeletonFromTheSlidesSkill(t)
+
+	a, root := deckApp(t)
+	rel := "output/s1/skeleton.html"
+	writeUnder(t, root, rel, skeleton)
+
+	landed, err := a.ExportDeck(rel, "pptx")
+	if err != nil {
+		t.Fatalf("the documented skeleton does not export: %v", err)
+	}
+	info, err := os.Stat(landed)
+	if err != nil {
+		t.Fatalf("stat %s: %v", landed, err)
+	}
+	// A .pptx is a ZIP of XML parts. Anything this small is an empty shell.
+	if info.Size() < 4096 {
+		t.Errorf("%s is %d bytes — too small to hold three slides", landed, info.Size())
+	}
+
+	zr, err := zip.OpenReader(landed)
+	if err != nil {
+		t.Fatalf("the export is not a readable .pptx: %v", err)
+	}
+	defer zr.Close()
+	slides := 0
+	for _, f := range zr.File {
+		if strings.HasPrefix(f.Name, "ppt/slides/slide") && strings.HasSuffix(f.Name, ".xml") {
+			slides++
+		}
+	}
+	// However many the skeleton shows — the point is that every one of them
+	// arrives, not that the document keeps a particular number of them.
+	if want := strings.Count(skeleton, `class="slide"`); slides != want {
+		t.Errorf("the .pptx holds %d slides, the skeleton has %d", slides, want)
+	}
+}
+
+// skeletonFromTheSlidesSkill reads the largest ```html block out of the bundled
+// aetox-slides document — the block a model copies before it changes a word.
+//
+// Read off disk rather than through internal/skill, which exposes a bundled
+// skill's body only to its own package. The path is the same folder //go:embed
+// compiles in, so the two cannot disagree about which document this is.
+func skeletonFromTheSlidesSkill(t *testing.T) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "internal", "skill", "skills", "aetox-slides", "SKILL.md"))
+	if err != nil {
+		t.Fatalf("the slides skill is not where it is compiled in from: %v", err)
+	}
+	best, rest := "", string(raw)
+	for {
+		start := strings.Index(rest, "```html")
+		if start < 0 {
+			break
+		}
+		rest = rest[start+len("```html"):]
+		end := strings.Index(rest, "```")
+		if end < 0 {
+			break
+		}
+		if block := rest[:end]; len(block) > len(best) {
+			best = block
+		}
+		rest = rest[end:]
+	}
+	if best == "" {
+		t.Fatal("the slides skill carries no html block — the skeleton is the part that gets copied")
+	}
+	return best
+}

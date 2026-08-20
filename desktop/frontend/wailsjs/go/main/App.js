@@ -182,8 +182,20 @@ export function CurrentSpace() {
   return window['go']['main']['App']['CurrentSpace']();
 }
 
+export function DeckCaptureDrawing(arg1, arg2, arg3) {
+  return window['go']['main']['App']['DeckCaptureDrawing'](arg1, arg2, arg3);
+}
+
 export function DeckFormats() {
   return window['go']['main']['App']['DeckFormats']();
+}
+
+export function DeckPickScript(arg1, arg2) {
+  return window['go']['main']['App']['DeckPickScript'](arg1, arg2);
+}
+
+export function DeckStopPickScript() {
+  return window['go']['main']['App']['DeckStopPickScript']();
 }
 
 export function DelegateSwitches() {

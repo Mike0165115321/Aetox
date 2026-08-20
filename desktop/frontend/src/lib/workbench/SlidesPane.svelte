@@ -11,11 +11,12 @@
   // same-origin กับหน้าต่างนี้ (fileUrl.ts) จึงไม่ต้องฉีดสคริปต์ลงไฟล์ของผู้ใช้
   // เพื่อสั่งให้มันเลื่อน — ไฟล์เด็คยังเป็น HTML ที่เปิดในเบราว์เซอร์ไหนก็ได้
   // และไม่มีร่องรอยของแอปนี้ติดอยู่ในนั้น
-  import { onMount } from 'svelte'
+  import { onDestroy, onMount } from 'svelte'
   import { DeckFormats, ExportDeck, OpenExport, OpenFileExternally } from '../../../wailsjs/go/main/App'
   import type { main } from '../../../wailsjs/go/models'
   import FileEditor from '../FileEditor.svelte'
-  import { documentScrolls, sendStepKey, slideElements, visibleIndex } from './deckNav'
+  import { DECK_BASE, deckFit, documentScrolls, sendStepKey, slideElements, visibleIndex } from './deckNav'
+  import { deckPick, startDeckPick, stopDeckPick, type PickMode } from './pagePick.svelte'
   import { fileURL } from '../fileUrl'
   import { t } from '../i18n.svelte'
   import Icon from '../Icon.svelte'
@@ -53,6 +54,10 @@
   // แล้ว การอ่านซ้ำตรงนี้กันกรณีที่ไอเฟรมเองนำทางใหม่โดยที่แท็บไม่ถูกอ่านซ้ำ
   function scan() {
     failure = ''
+    // A reload is a new document, and the overlay lived in the old one. Without
+    // this the toolbar button stays lit over a deck that is not listening — the
+    // same reason the browser side unwires on `browser:meta`.
+    stopDeckPick(null)
     const doc = frameDoc()
     if (!doc) return
     slides = slideElements(doc)
@@ -67,6 +72,10 @@
       doc.addEventListener('keydown', onKey)
     }
     doc.addEventListener('scroll', syncFromScroll, { passive: true, capture: true })
+    // แถบเลื่อนกินความกว้างไปจากกรอบ ~15px เด็คที่วัดจากวิวพอร์ตจะจัดหน้าที่ 1265
+    // แล้วสิ่งที่ย่อลงมาก็ไม่ใช่ 16:9 อีกต่อไป ห้องนี้เดินสไลด์ให้อยู่แล้ว แถบเลื่อน
+    // จึงไม่มีงานทำ — ซ่อนที่เอกสารที่โหลดอยู่ ไม่ใช่ที่ไฟล์
+    doc.documentElement.style.setProperty('scrollbar-width', 'none')
     fit()
     // อีกครั้งหลังเฟรมถัดไป เพราะฟอนต์กับรูปอาจยังจัดหน้าไม่นิ่งตอน load ยิง
     // ซึ่งเป็นเหตุผลที่อาการ "บางทีก็เพี้ยน" เพี้ยนไม่เท่ากันทุกครั้ง
@@ -75,37 +84,73 @@
 
   // ย่อเด็คให้พอดีแพเนล
   //
-  // สัญญาโครงตรึงสไลด์ไว้ที่ 1280 × 720 แล้วบอกว่า "แพเนลย่อให้พอดีจอจากมัน"
-  // ตอนแรกผมเขียนแค่ครึ่งแรก ไอเฟรมเลยแสดงเด็คขนาดจริงในแพเนลที่แคบกว่า ผลคือ
-  // ขอบขวาโดนตัด และสไลด์ถัดไปโผล่ขึ้นมาจากข้างล่าง
+  // สัญญาบอกว่าสไลด์หนึ่งใบคือหน้าขนาด 1280 × 720 แล้วบอกต่อว่า "แพเนลย่อให้พอดี
+  // จอจากมัน" ซึ่งแปลว่ากรอบที่เด็ควาดลงไปต้องเป็น 1280 × 720 เสมอ ไม่ว่าแพเนลจะ
+  // กว้างแคบแค่ไหน
   //
-  // ใช้ `zoom` ไม่ใช่ `transform: scale()` เพราะ zoom จัดหน้าใหม่จริง — ระยะเลื่อน
-  // กับ getBoundingClientRect จึงเป็นค่าหลังย่อ ซึ่งคือค่าที่ goto กับ
-  // syncFromScroll ต้องใช้ ส่วน transform หลอกแค่ตอนวาด ตัวเลขที่อ่านได้จะยัง
-  // เป็นของขนาดเดิม แล้วการเลื่อนจะเพี้ยนขึ้นเรื่อย ๆ ทีละสไลด์
+  // รอบก่อนทำกลับด้าน: ไอเฟรมกินพื้นที่แพเนลทั้งหมด แล้วค่อย `zoom` เอกสารข้างใน
+  // ให้เล็กลง วิธีนั้นใช้ได้กับเด็คที่ประกาศขนาดของตัวเองเท่านั้น เด็คที่วัดจาก
+  // วิวพอร์ต (`min-height:100vh`, `clamp(...,10vw,...)` — ทรงที่โมเดลเขียนออกมา
+  // แทบทุกครั้ง) จะขยายตัวเองเท่ากับแพเนลพอดี อัตราส่วนที่คำนวณได้จึงเป็น 1 เป๊ะ
+  // ทุกครั้ง ไม่มีอะไรถูกย่อเลย แล้วเด็คก็ไปจัดหน้าใหม่ตามรูปทรงของแพเนลแทน —
+  // ตัวอักษรบวมตามความกว้าง ความสูงถูกบีบ ส่วนที่ล้นโดน `overflow:hidden` ตัดทิ้ง
+  // คืออาการ "โดนบีบจนเลื่อนเอง" ที่เจ้าของรายงานเมื่อ 2026-08-20
   //
-  // เขียนลง documentElement ของไฟล์ที่โหลดอยู่ ไม่ใช่ลงไฟล์ — เด็คบนดิสก์ไม่ถูก
-  // แตะ และยังเปิดในเบราว์เซอร์อื่นได้เหมือนเดิม
+  // ตอนนี้กรอบมาก่อน: ไอเฟรมถูกตรึงไว้ที่ขนาดสไลด์ แล้วย่อทั้งกรอบด้วย
+  // `transform` เด็คที่วัดจากวิวพอร์ตจึงได้วิวพอร์ต 16:9 ที่มันต้องการ ส่วนเด็คที่
+  // ประกาศขนาดเองก็ได้ขนาดของมันเหมือนเดิม และการวัดข้างในไอเฟรมเป็นพิกัดก่อนย่อ
+  // ทั้งหมด goto กับ syncFromScroll จึงไม่ต้องรู้จักอัตราส่วนเลย
+  //
+  // ไม่มีอะไรถูกเขียนลงไฟล์ — ขนาดกับ transform อยู่บนแท็ก <iframe> ของแอป เด็ค
+  // บนดิสก์ยังเปิดในเบราว์เซอร์ไหนก็ได้เหมือนเดิม
   function fit() {
     const doc = frameDoc()
     const box = stage?.getBoundingClientRect()
-    if (!doc || !box || slides.length === 0 || box.width === 0) return
+    if (!doc || !box || !frame || slides.length === 0 || box.width === 0) return
 
-    const el = doc.documentElement as HTMLElement
-    el.style.zoom = '1' // วัดขนาดจริงก่อน ไม่ใช่ขนาดที่ย่อไว้รอบก่อน
+    // กลับไปที่กรอบมาตรฐานก่อนวัดเสมอ ไม่ใช่วัดจากกรอบที่รอบก่อนตั้งค้างไว้
+    frame.style.width = `${DECK_BASE.width}px`
+    frame.style.height = `${DECK_BASE.height}px`
+
     // วัดใบที่เห็นอยู่ ไม่ใช่ใบแรกเสมอ เด็คทรงซ้อนที่ซ่อนด้วย `display:none`
-    // ให้กล่องขนาดศูนย์กับใบที่ไม่ได้โชว์ ซึ่งทำให้ทั้งฟังก์ชันนี้ยอมแพ้ตั้งแต่
-    // ใบแรกเมื่อคนดูเดินไปใบที่สอง
-    const slide = (slides[current] ?? slides[0]).getBoundingClientRect()
-    if (slide.width === 0 || slide.height === 0) return
+    // ให้กล่องขนาดศูนย์กับใบที่ไม่ได้โชว์ ส่วนกฎว่าอ่านค่านั้นเป็นกรอบยังไง อยู่ที่
+    // deckFit
+    const { width, height, scale } = deckFit(box, (slides[current] ?? slides[0]).getBoundingClientRect())
+    if (width !== DECK_BASE.width || height !== DECK_BASE.height) {
+      frame.style.width = `${width}px`
+      frame.style.height = `${height}px`
+    }
 
-    // พอดีทั้งใบ ไม่ใช่พอดีแค่ด้านกว้าง สไลด์หนึ่งใบต้องอยู่ในสายตาทั้งใบ
-    // ไม่งั้นคนดูต้องเลื่อนเพื่ออ่านบรรทัดสุดท้ายของสไลด์ที่ควรเห็นทีเดียวจบ
-    // ไม่ขยายเกิน 1 เพราะเด็คถูกออกแบบมาที่ขนาดของมัน การขยายทำให้ฟอนต์บวม
-    const scale = Math.min(box.width / slide.width, box.height / slide.height, 1)
-    el.style.zoom = String(scale)
-    // ย่อแล้วตำแหน่งเลื่อนเดิมชี้ไปคนละที่ จึงต้องพากลับมาที่สไลด์เดิม
-    slides[current]?.scrollIntoView({ block: 'center' })
+    // พอดีทั้งใบ ไม่ใช่พอดีแค่ด้านกว้าง สไลด์หนึ่งใบต้องอยู่ในสายตาทั้งใบ ไม่งั้น
+    // คนดูต้องเลื่อนเพื่ออ่านบรรทัดสุดท้ายของสไลด์ที่ควรเห็นทีเดียวจบ
+    frame.style.transform = `translate(-50%, -50%) scale(${scale})`
+    // กรอบเปลี่ยนขนาดแล้วตำแหน่งเลื่อนเดิมชี้ไปคนละที่ จึงต้องพากลับมาที่ใบเดิม
+    center(slides[current])
+  }
+
+  // พาสไลด์มาอยู่กลางจอ โดยเลื่อน "เอกสารในไอเฟรม" เท่านั้น
+  //
+  // เคยเป็น el.scrollIntoView() ซึ่งเป็นต้นเหตุที่เจ้าของรายงานเมื่อ 2026-08-20
+  // ว่า "กดสไลด์ขึ้นมาแล้ว พอโหลดสไลด์แล้วมันดัน" แถบซ้ายกับขวาของแอปถูกดันออก
+  // นอกจอ
+  //
+  // scrollIntoView ไม่ได้เลื่อนแค่กล่องที่ใกล้ที่สุด สเปกบอกให้มันเดินขึ้นไป
+  // เลื่อน "ทุกกล่องที่เลื่อนได้" เหนือ element นั้นจนถึงวิวพอร์ต และเอกสารใน
+  // ไอเฟรมนี้เป็น same-origin กับหน้าต่างแอป (fileUrl.ts) มันจึงไม่หยุดที่ขอบ
+  // ไอเฟรม แต่ไปเลื่อน `.app` ต่อ ซึ่งกว้างกว่าหน้าต่างได้จริงเมื่อผู้ใช้ย่อ
+  // หน้าต่างหลังลากแพเนลไว้กว้าง แล้วผลคือทั้งกริดถูกเลื่อนไปข้างหนึ่ง โดยไม่มี
+  // สกรอลบาร์ให้เลื่อนกลับเพราะ `.app` ซ่อน overflow ไว้
+  //
+  // การเซ็ต scrollTop ของเอกสารในไอเฟรมเองไม่มีทางไปแตะบรรพบุรุษข้างนอกได้เลย
+  // ซึ่งเป็นคุณสมบัติที่ต้องการ ไม่ใช่แค่ผลข้างเคียง
+  function center(el: HTMLElement | undefined, smooth = false) {
+    const doc = frameDoc()
+    const view = doc?.scrollingElement ?? doc?.documentElement
+    if (!el || !view) return
+    const box = el.getBoundingClientRect()
+    const top = view.scrollTop + box.top - Math.max(0, (view.clientHeight - box.height) / 2)
+    if (smooth && typeof view.scrollTo === 'function') view.scrollTo({ top, behavior: 'smooth' })
+    else view.scrollTop = top
   }
 
   // contentDocument โยนได้ถ้าเอกสารในไอเฟรมกลายเป็นคนละ origin ซึ่งเกิดได้ถ้า
@@ -163,7 +208,7 @@
       return
     }
     current = target
-    slides[current]?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    center(slides[current], true)
   }
 
   // ผู้ใช้เลื่อนเองได้ ตัวนับจึงต้องตามการเลื่อนจริง ไม่ใช่ตามปุ่มที่กดล่าสุด
@@ -215,6 +260,17 @@
       failure = String(err)
     }
   }
+
+  // The slide number travels with the pick because a deck is one file: the model
+  // is about to be told to change something, and "the h1" is a different element
+  // on every one of eight pages.
+  function arm(mode: PickMode) {
+    const doc = frameDoc()
+    if (doc) void startDeckPick(doc, path, current + 1, mode)
+  }
+  // Leaving the panel with the mode still armed would leave the crosshair on a
+  // document nobody can reach any more, and the callback hanging off the window.
+  onDestroy(() => stopDeckPick(frameDoc()))
 
   // ส่งออก
   //
@@ -316,6 +372,27 @@
           disabled={current >= slides.length - 1} aria-label={t('workbench.deckNext')} title={t('workbench.deckNext')}
         ><Icon name="arrowRight" size={13} /></button>
       </div>
+      <!-- ชี้ให้เอเจนดู, on the slide.
+           Beside นำเสนอ rather than in the settings of anything, because it is the
+           same act as the browser toolbar's: you are looking at the thing, and the
+           button is where you are looking. What it produces is not the same,
+           though — a page pick names a URL, a slide pick names the file on disk,
+           so the answer to "ทำไมหัวข้อมันใหญ่จัง" can be an edit rather than a
+           description. -->
+      <button
+        type="button" class="ctrl icon-only" class:on={deckPick.path === path && deckPick.mode === 'pick'}
+        aria-label={t('workbench.pick')} title={t('workbench.pick')}
+        onclick={() => arm('pick')}
+      ><Icon name="pointer" size={13} /></button>
+      <!-- Drawing ends differently here. A browser tab is photographed by the
+           engine; a deck cannot be, so the picture is rendered and the ink laid
+           over it (deck_draw.go), which takes a moment — hence the busy overlay
+           below answering to `deckPick.capturing` as well as to an export. -->
+      <button
+        type="button" class="ctrl icon-only" class:on={deckPick.path === path && deckPick.mode === 'draw'}
+        aria-label={t('workbench.draw')} title={t('workbench.draw')}
+        onclick={() => arm('draw')}
+      ><Icon name="pencil" size={13} /></button>
       <button type="button" class="ctrl" onclick={present}>
         <Icon name="monitor" size={13} /> {t('workbench.deckPresent')}
       </button>
@@ -328,7 +405,7 @@
           aria-haspopup="menu" aria-expanded={menuOpen}
           onclick={() => (menuOpen = !menuOpen)}
         >
-          {#if busy}<span class="spin"><Icon name="loaderCircle" size={13} /></span>
+          {#if busy || deckPick.capturing}<span class="spin"><Icon name="loaderCircle" size={13} /></span>
           {:else}<Icon name="download" size={13} />{/if}
           {busy ? t('workbench.deckExporting') : t('workbench.deckExport')}
           {#if !busy}<Icon name="chevronDown" size={12} />{/if}
@@ -394,8 +471,8 @@
              ทำอยู่ ถ้าไม่มี การกดปุ่มแล้วเงียบไปสองสามวินาทีอ่านเหมือนแอปค้าง -->
         <div class="deck-working" role="status" aria-live="polite">
           <span class="spin lg"><Icon name="loaderCircle" size={22} /></span>
-          <span class="dw-title">{t('workbench.deckBuilding')}</span>
-          <span class="dw-sub">{t('workbench.deckBuildingSub')}</span>
+          <span class="dw-title">{busy ? t('workbench.deckBuilding') : t('workbench.deckShooting')}</span>
+          <span class="dw-sub">{busy ? t('workbench.deckBuildingSub') : t('workbench.deckShootingSub')}</span>
         </div>
       {/if}
     </div>
@@ -411,6 +488,10 @@
   .deck-name {
     font-size: var(--fs-sm); color: var(--text-muted);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    /* A flex item's floor is its min-content width, and nowrap text has no width
+       smaller than all of it — so without this a long deck name refuses to give
+       ground and pushes the controls along instead of ellipsing. */
+    flex: 0 1 auto; min-width: 0;
   }
   .deck-views { display: flex; margin-left: auto; flex: none; }
   .deck-nav { display: flex; align-items: center; gap: 4px; flex: none; }
@@ -429,6 +510,8 @@
   .deck-head .ctrl:hover, .deck-views .seg:hover { color: var(--text-primary); }
   .deck-head .ctrl:disabled { opacity: 0.45; cursor: default; }
   .deck-head .icon-only { padding: 4px 7px; }
+  /* ปุ่มที่ติดอยู่ใช้หน้าตาเดียวกับปุ่มสไลด์/ซอร์สที่ถูกเลือก ไม่ใช่สีใหม่ */
+  .deck-head .ctrl.on { color: var(--text-primary); background: var(--surface-raised); }
 
   /* ปุ่มสองอันติดกันเป็นชิ้นเดียว ขอบตรงกลางจึงมีเส้นเดียวไม่ใช่สองเส้นซ้อน */
   .deck-views .seg:first-child { border-radius: var(--r-sm) 0 0 var(--r-sm); }
@@ -488,7 +571,7 @@
   .mi-note { margin-left: auto; font-size: var(--fs-xs, 11px); color: var(--text-muted); }
 
   .deck-body { flex: 1; min-height: 0; }
-  .deck-stage { flex: 1; min-height: 0; background: var(--surface-sunken); position: relative; }
+  .deck-stage { flex: 1; min-height: 0; background: var(--surface-sunken); position: relative; overflow: hidden; }
   .deck-working {
     position: absolute; inset: 0; z-index: 5;
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
@@ -498,7 +581,13 @@
   .dw-title { font-size: var(--fs-md, 15px); color: var(--text-primary); }
   .dw-sub { font-size: var(--fs-sm); color: var(--text-muted); }
   .spin.lg { color: var(--interactive, #6ea8fe); margin-bottom: 4px; }
-  .deck-stage iframe { width: 100%; height: 100%; border: 0; display: block; }
+  /* กรอบมีขนาดของสไลด์ ไม่ใช่ขนาดของแพเนล แล้ว fit() ย่อทั้งกรอบลงมาวางกลางเวที
+     ดูเหตุผลเต็มที่ fit() — ตัวเลขที่นี่เป็นแค่ค่าตั้งต้นก่อนวัดรอบแรก */
+  .deck-stage iframe {
+    position: absolute; left: 50%; top: 50%;
+    width: 1280px; height: 720px; border: 0; display: block;
+    transform: translate(-50%, -50%); transform-origin: center center;
+  }
   /* เต็มจอแล้วพื้นหลังต้องเป็นของเด็ค ไม่ใช่สีธีมของแอปที่โผล่มาเป็นกรอบ */
   .deck-stage:fullscreen { background: #000; }
 </style>
