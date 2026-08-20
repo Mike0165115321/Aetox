@@ -15,7 +15,7 @@ func shouldUseDeterministicToolSummary(name string) bool {
 	// calc belongs here for a reason the others do not have: its output is the
 	// number itself. Handing it to a model to be phrased puts the answer back
 	// through the one step the tool exists to take it out of.
-	case "write", "sheet_write", "slides_write", "doc_write", "read", "delete", "github_repo_summary", "plugin_install", "calc":
+	case "write", "sheet_write", "doc_write", "read", "delete", "github_repo_summary", "plugin_install", "calc":
 		return true
 	default:
 		return false

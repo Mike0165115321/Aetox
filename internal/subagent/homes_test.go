@@ -187,8 +187,8 @@ func TestMigrateRefusesToClobberAndReportsTheConflict(t *testing.T) {
 func TestANameCannotBeCreatedAsTheOtherKind(t *testing.T) {
 	isolate(t)
 
-	// "deck" is a bundled agent; "explore" a bundled sub-agent.
-	if err := Save("deck", "---\n---\nปลอมตัวเป็นลูกมือ"); err == nil {
+	// "doc" is a bundled agent; "explore" a bundled sub-agent.
+	if err := Save("doc", "---\n---\nปลอมตัวเป็นลูกมือ"); err == nil {
 		t.Fatal("Save let a sub-agent take a bundled agent's name")
 	} else if !strings.Contains(err.Error(), "เอเจน") {
 		t.Fatalf("the refusal does not name the owner: %v", err)
@@ -198,14 +198,14 @@ func TestANameCannotBeCreatedAsTheOtherKind(t *testing.T) {
 	}
 
 	// Each door still edits its own kind, including shadows of bundled files.
-	if err := SaveAgent("deck", "---\ndescription: ของฉันเอง\n---\nสไลด์แบบฉัน"); err != nil {
+	if err := SaveAgent("doc", "---\ndescription: ของฉันเอง\n---\nเอกสารแบบฉัน"); err != nil {
 		t.Fatalf("SaveAgent refused the agent's own name: %v", err)
 	}
-	p, ok := Load("deck")
+	p, ok := Load("doc")
 	if !ok || !p.Overrides || p.Desk != "specialized" {
-		t.Fatalf("deck after shadow = %+v, ok=%v — want an override, still at the office", p, ok)
+		t.Fatalf("doc after shadow = %+v, ok=%v — want an override, still at the office", p, ok)
 	}
-	if _, err := os.Stat(agentDefinition(t, "deck")); err != nil {
+	if _, err := os.Stat(agentDefinition(t, "doc")); err != nil {
 		t.Fatal("the agent's shadow landed outside the agents' home")
 	}
 }
@@ -214,20 +214,20 @@ func TestANameCannotBeCreatedAsTheOtherKind(t *testing.T) {
 // to the agents' home rather than growing a second copy in the sub-agents'.
 func TestSetModelFollowsTheOwnersHome(t *testing.T) {
 	isolate(t)
-	if err := SetModel("deck", "gpt-6-mini"); err != nil {
-		t.Fatalf("SetModel(deck): %v", err)
+	if err := SetModel("doc", "gpt-6-mini"); err != nil {
+		t.Fatalf("SetModel(doc): %v", err)
 	}
 
-	if _, err := os.Stat(agentDefinition(t, "deck")); err != nil {
+	if _, err := os.Stat(agentDefinition(t, "doc")); err != nil {
 		t.Fatal("the model pin was not written into the agents' home")
 	}
 	helpersDir, _ := Dir()
-	if _, err := os.Stat(filepath.Join(helpersDir, "deck.md")); err == nil {
-		t.Fatal("a second deck.md grew in the sub-agents' home")
+	if _, err := os.Stat(filepath.Join(helpersDir, "doc.md")); err == nil {
+		t.Fatal("a second doc.md grew in the sub-agents' home")
 	}
-	p, ok := Load("deck")
+	p, ok := Load("doc")
 	if !ok || p.Model != "gpt-6-mini" || p.Desk != "specialized" {
-		t.Fatalf("deck after pin = %+v, ok=%v", p, ok)
+		t.Fatalf("doc after pin = %+v, ok=%v", p, ok)
 	}
 }
 
@@ -242,7 +242,7 @@ func TestTheModelIsToldWhichWorkersAreAgentsAndWhichAreHelpers(t *testing.T) {
 	isolate(t)
 	choice := agentChoice(List())
 
-	for _, want := range []string{"AGENTS (เอเจน)", "HELPERS (ซับเอเจน)", "deck", "explore"} {
+	for _, want := range []string{"AGENTS (เอเจน)", "HELPERS (ซับเอเจน)", "doc", "explore"} {
 		if !strings.Contains(choice, want) {
 			t.Errorf("the agent parameter never mentions %q:\n%s", want, choice)
 		}
@@ -252,8 +252,8 @@ func TestTheModelIsToldWhichWorkersAreAgentsAndWhichAreHelpers(t *testing.T) {
 	if !split {
 		t.Fatal("the two kinds are not separated at all")
 	}
-	if !strings.Contains(agentsHalf, "deck") || strings.Contains(helpersHalf, "deck") {
-		t.Errorf("deck is an agent but is not filed as one:\n%s", choice)
+	if !strings.Contains(agentsHalf, "doc") || strings.Contains(helpersHalf, "doc") {
+		t.Errorf("doc is an agent but is not filed as one:\n%s", choice)
 	}
 	if !strings.Contains(helpersHalf, "explore") || strings.Contains(agentsHalf, "explore") {
 		t.Errorf("explore is a helper but is not filed as one:\n%s", choice)

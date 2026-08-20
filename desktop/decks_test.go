@@ -31,7 +31,7 @@ func deckHTML(title string, slides ...string) string {
 func deckApp(t *testing.T) (*App, string) {
 	t.Helper()
 	root := t.TempDir()
-	return &App{cfg: config.Config{SandboxRoot: root}, exportsRoot: t.TempDir()}, root
+	return seed(&App{cfg: config.Config{SandboxRoot: root}, exportsRoot: t.TempDir()}, newConversation()), root
 }
 
 func writeUnder(t *testing.T, root, rel, body string) string {
@@ -88,7 +88,7 @@ func TestDeckLooseInOutputHasNoSession(t *testing.T) {
 }
 
 func TestListDecksWithNoProjectIsEmptyNotNil(t *testing.T) {
-	a := &App{cfg: config.Config{SandboxRoot: ""}}
+	a := seed(&App{cfg: config.Config{SandboxRoot: ""}}, newConversation())
 	// The binding crosses to JS, where a nil slice arrives as null and the room
 	// would render `null.length`. Empty is the same answer without the crash.
 	if got := a.ListDecks(); got == nil || len(got) != 0 {

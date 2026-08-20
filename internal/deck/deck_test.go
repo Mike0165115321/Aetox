@@ -372,3 +372,52 @@ func writePNG(t *testing.T, path string, w, h int) {
 		t.Fatal(err)
 	}
 }
+
+// A deck written with <div class="slide"> is read as a deck, and one written
+// with <section> is unaffected by that (§154).
+//
+// The fallback exists because every presentation template people install writes
+// divs — a file that is a deck in any browser used to open here as source code,
+// which reads as the feature being broken rather than as the file being wrong.
+// Reading it costs nothing; the tag a document is actually cut on is decided per
+// document, so no existing deck changes its answer.
+func TestADivDeckIsReadWhenThereAreNoSections(t *testing.T) {
+	divs := []byte(`<html><body>
+<div class="slide"><h1>หนึ่ง</h1><ul><li>ก</li></ul></div>
+<div class="slide"><h2>สอง</h2></div>
+</body></html>`)
+	if n := Count(divs); n != 2 {
+		t.Errorf("Count on a div deck = %d, want 2", n)
+	}
+	slides, err := Slides(divs, "", "")
+	if err != nil {
+		t.Fatalf("Slides on a div deck: %v", err)
+	}
+	if len(slides) != 2 || slides[0].Title != "หนึ่ง" || slides[1].Title != "สอง" {
+		t.Errorf("a div deck reduced to %+v", slides)
+	}
+}
+
+// The old rule, intact: inside a document that has sections, a div of the same
+// class is somebody's styling choice and must not become a slide boundary.
+// Without the per-document decision this deck would count three slides and cut
+// the first one in half.
+func TestADivInsideASectionDeckIsStillNotASlide(t *testing.T) {
+	mixed := []byte(`<html><body>
+<section class="slide"><h1>หนึ่ง</h1><div class="slide-inner slide"><p>ยังอยู่ในสไลด์เดียวกัน</p></div></section>
+<section class="slide"><h2>สอง</h2></section>
+</body></html>`)
+	if n := Count(mixed); n != 2 {
+		t.Errorf("Count = %d, want 2 — a styling div became a slide boundary", n)
+	}
+	slides, err := Slides(mixed, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(slides) != 2 {
+		t.Fatalf("got %d slides, want 2: %+v", len(slides), slides)
+	}
+	if slides[0].Title != "หนึ่ง" {
+		t.Errorf("the first slide lost its title to the nested div: %+v", slides[0])
+	}
+}

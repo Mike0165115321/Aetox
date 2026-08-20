@@ -61,7 +61,7 @@ func TestBundledCategoriesExist(t *testing.T) {
 }
 
 // The desks differ where COMPANY.md §2 says they differ. Spot checks, one per
-// boundary that matters: coding carries no deck writer, assistant carries
+// boundary that matters: coding carries no deliverables, assistant carries
 // everything except the developer tools, specialized reads files but cannot
 // edit them.
 func TestDesksCarryWhatTheyClaim(t *testing.T) {
@@ -83,23 +83,22 @@ func TestDesksCarryWhatTheyClaim(t *testing.T) {
 	}{
 		{assistant, "memory", true},     // agent category
 		{assistant, "web_search", true}, // web
-		// The three writers are the office's, not this desk's — a deliverable is
+		// The Office writers are the office's, not this desk's — a deliverable is
 		// delegated to the chair whose job it is (§84's star), and leaving the
 		// tools here meant the assistant did the work itself whenever the job
 		// looked small enough, which is a decision by mood rather than by rule.
-		{assistant, "slides_write", false},
 		{assistant, "doc_write", false},
 		{assistant, "sheet_write", false},
-		{assistant, "read", true}, // files
+		{assistant, "read", true},         // files
 		{assistant, "edit", true},         // files — sorting out this machine is this desk's work
 		{assistant, "shell", true},        // shell: COMPANY.md §2 — safety is the gate, not a missing tool
 		{assistant, "diagnostics", false}, // no code category: developer tools are the coding desk's
 
-		{coding, "read", true},          // files
-		{coding, "shell", true},         // shell
-		{coding, "diagnostics", true},   // code
-		{coding, "slides_write", false}, // no deliverables
-		{coding, "image_ocr", false},    // no media
+		{coding, "read", true},        // files
+		{coding, "shell", true},       // shell
+		{coding, "diagnostics", true}, // code
+		{coding, "doc_write", false},  // no deliverables
+		{coding, "image_ocr", false},  // no media
 
 		// The writers left this desk too (owner's call, 2026-08-06). The office
 		// still makes documents — its agents do, under `chairs:` — but the
@@ -107,7 +106,6 @@ func TestDesksCarryWhatTheyClaim(t *testing.T) {
 		// TestChairsAreInTheRoomButNotOnTheDesk for the other half.
 		{specialized, "doc_write", false},
 		{specialized, "sheet_write", false},
-		{specialized, "slides_write", false},
 		{specialized, "pdf_read", true}, // media
 		{specialized, "read", true},     // explicit
 		{specialized, "write", true},    // explicit
@@ -240,7 +238,7 @@ func TestDenyWinsOverEverything(t *testing.T) {
 // so `deny: shell` alone is a valid manifest meaning "everything minus one".
 func TestEmptyListsMeanFullDesk(t *testing.T) {
 	m := parse("x", "---\ndeny: shell\n---\nbody")
-	if !m.AllowsTool("read") || !m.AllowsTool("slides_write") {
+	if !m.AllowsTool("read") || !m.AllowsTool("doc_write") {
 		t.Error("empty categories+tools should mean everything")
 	}
 	if m.AllowsTool("shell") {
@@ -386,7 +384,7 @@ func TestChairsAreInTheRoomButNotOnTheDesk(t *testing.T) {
 		t.Fatal("specialized desk missing")
 	}
 
-	for _, tool := range []string{"doc_write", "sheet_write", "slides_write"} {
+	for _, tool := range []string{"doc_write", "sheet_write"} {
 		if specialized.Carries(tool, skill.SourceBuiltin) {
 			t.Errorf("%s is still on the desk — the assistant must hand the job to an agent", tool)
 		}

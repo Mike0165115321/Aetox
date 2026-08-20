@@ -63,14 +63,13 @@ const (
 // its tool comes under the ceiling — that is the migration, one tool at a time,
 // with the diff as the progress bar.
 var overweight = map[string]int{
-	"shell":            498,
-	"n8n":              624,
-	"doc_write":        525,
-	"windmill":         484,
-	"grep":             392,
-	"github":           390,
-	"sheet_write":      368,
-	"slides_write":     330,
+	"shell":       498,
+	"n8n":         624,
+	"doc_write":   525,
+	"windmill":    484,
+	"grep":        392,
+	"github":      390,
+	"sheet_write": 368,
 	// Not registered since 2026-08-19 (defaults.go), so nothing reaches it
 	// today. The pin stays because the file does: it is the size this tool
 	// comes back at, and coming back over the standard should have to be

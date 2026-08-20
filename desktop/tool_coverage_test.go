@@ -325,16 +325,15 @@ func toolCases(t *testing.T, root string, dispatcher *skill.Dispatcher) map[stri
 			},
 			check: workbookHasNumericCell("book.xlsx", "185.5"),
 		},
-		"slides_write": {
-			args: map[string]any{
-				"path": "deck.pptx",
-				"slides": []any{map[string]any{
-					"title":   "สรุปยอดขาย",
-					"bullets": []any{"โตขึ้น ๑๒%"},
-					"notes":   "พูดถึงลูกค้าเก่า",
-				}},
-			},
-			check: packageHasPart("deck.pptx", "ppt/slides/slide1.xml", "สรุปยอดขาย"),
+		// pptx is the one format that needs no window: it reduces the deck's HTML
+		// back to slides and rebuilds them in OOXML, which is the same
+		// ooxml.BuildPPTX the retired slides_write called. The other five are
+		// screenshots taken by WebView2, and this test has no window — so this
+		// case covers the reducer and the writer, and the export bar's own tests
+		// cover the renderer.
+		"deck_export": {
+			args:  map[string]any{"path": "เด็ค.html", "format": "pptx"},
+			check: packageHasPart("เด็ค.pptx", "ppt/slides/slide1.xml", "สรุปยอดขาย"),
 		},
 		"doc_write": {
 			args: map[string]any{
@@ -852,6 +851,19 @@ func writeToolFixtures(t *testing.T, root string) {
 	write("victim.txt", "delete me\n")
 	write("main.go", "package main\n\nfunc main() {}\n")
 	write(filepath.Join("sub", "inner.txt"), "alpha inside\n")
+	// A deck. The whole of what makes an .html one is a <section class="slide">
+	// (docs/architecture/html-deck-2026-08-19.md), and the anatomy inside it is
+	// what deck_export reduces back to a slide: first heading is the title, <li>
+	// are bullets, <aside class="notes"> is what only the presenter sees.
+	write("เด็ค.html", `<!doctype html>
+<html lang="th"><body>
+<section class="slide">
+  <h1>สรุปยอดขาย</h1>
+  <ul><li>โตขึ้น ๑๒%</li></ul>
+  <aside class="notes">พูดถึงลูกค้าเก่า</aside>
+</section>
+</body></html>
+`)
 	// A structurally complete PDF, xref table and all — see internal/testpdf for
 	// why the shortcut version is worse than it looks.
 	if err := os.WriteFile(filepath.Join(root, "doc.pdf"), testpdf.Minimal("AETOX PDF OK"), 0o644); err != nil {

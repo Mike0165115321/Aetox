@@ -264,14 +264,6 @@ func AssessCommand(skillName string, args []string) Assessment {
 				Reason:    "sheet_write can create or overwrite a workbook file",
 			}
 		}
-		if skillName == "slides_write" {
-			return Assessment{
-				SkillName: "slides_write",
-				Risk:      RiskHigh,
-				Effects:   []Effect{EffectWriteWorkspace},
-				Reason:    "slides_write can create or overwrite a presentation file",
-			}
-		}
 		if skillName == "doc_write" {
 			return Assessment{
 				SkillName: "doc_write",

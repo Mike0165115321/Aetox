@@ -131,7 +131,7 @@ func TestBundledAgentsShipStartersInBothLanguages(t *testing.T) {
 	// holding three would deal a widow onto the second row.
 	const windowHand = 4
 
-	for _, name := range []string{"automation", "deck", "doc", "github", "research", "sheet"} {
+	for _, name := range []string{"automation", "doc", "github", "research", "sheet"} {
 		thCards := 0
 		for _, locale := range []string{"th", "en"} {
 			raw, ok := bundledStarters(name)(locale)

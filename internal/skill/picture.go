@@ -4,11 +4,11 @@ package skill
 //
 // It lives on its own because it stopped being the deck's problem the moment a
 // document could hold a picture too. Every rule below was decided once, in
-// slides_write, and every one of them is a rule about pictures rather than
-// about slides: where a relative path resolves, how big is too big, and what
-// happens when the file is not the picture its name claims. A second copy of
-// them is a second set of answers, and the one that drifts is always the newer
-// one.
+// slides_write (retired at §149), and every one of them is a rule about
+// pictures rather than about slides: where a relative path resolves, how big is
+// too big, and what happens when the file is not the picture its name claims. A
+// second copy of them is a second set of answers, and the one that drifts is
+// always the newer one.
 
 import (
 	"bytes"

@@ -72,9 +72,9 @@ var toolCategories = map[string]string{
 	"git":          CategoryShell,
 
 	// Handing work back as a file somebody else's program opens.
-	"doc_write":    CategoryDeliverables,
-	"sheet_write":  CategoryDeliverables,
-	"slides_write": CategoryDeliverables,
+	"doc_write":   CategoryDeliverables,
+	"sheet_write": CategoryDeliverables,
+	"deck_export": CategoryDeliverables,
 
 	// Senses a model does not have on its own — the group Aetox exists for.
 	"image_ocr":        CategoryMedia,
@@ -110,8 +110,8 @@ var toolCategories = map[string]string{
 	"windmill_flow_update":    CategoryWeb,
 	"windmill_server_start":   CategoryWeb,
 
-	"web_search":    CategoryWeb,
-	"web_fetch":     CategoryWeb,
+	"web_search": CategoryWeb,
+	"web_fetch":  CategoryWeb,
 	// The tool the model is offered, and the four action names it gates on
 	// inside (desktop/browser_tool.go). The actions are listed too because a
 	// desk or a profile narrows with them, and an unlisted name would fall to

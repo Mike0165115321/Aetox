@@ -5051,8 +5051,112 @@ The repo stays public. That was the owner's call between two options, and it is 
 **Nothing is enforced by code, and nothing here is legal advice.** The teeth are the trademark, the ed25519 release key that a fork cannot forge, and the credit line §5(d) now makes it a breach to delete. A licence is a statement of terms, not a lock; anyone determined to ignore it still can, and the remedy is a lawyer rather than a commit. If Aetox is ever sold commercially, this document should be read by one.
 
 **Closing the repository is still available and still not taken.** Making it private would stop new copies at the source, at the price of the evidence the landing page is built on. Today the answer is: read all of it, take none of it.
+
+## 149. Decision — The Model Kept Making PowerPoint, Because Nothing Had Told It Otherwise (2026-08-20)
+
+**Trigger:** the owner watched a `@deck` run and saw the tool line `slides_write aetox_investor_pitch.pptx`, one day after decks became HTML, and asked why: *"ทำไมยังสร้างเป็นพาเวอร์พอยอยู่ครับ ไปตรวจที"*.
+
+Nothing was broken, and that is the finding. [html-deck-2026-08-19.md](architecture/html-deck-2026-08-19.md) shipped item 1 of four — the `<section class="slide">` contract, the slides room, the exporter — and its own closing section wrote down what it had not touched: *"`slides_write` ยังอยู่"* and *"ตัวเขียนยังไม่รู้เรื่องสัญญานี้"*. The agent had `slides_write` in its `tools:` line, an `AGENT.md` instructing *"Build the whole deck in a single `slides_write` call"*, and ten STARTERS across two languages promising a `.pptx`. It did exactly what it was told, with the only tool it had.
+
+The marker `<section class="slide">` appeared in exactly two `.md` files, both of them documentation of the design. It was in no prompt, no profile and no tool description — so the format existed for the exporter and did not exist for the writer.
+
+**Decision: no tool writes a `.pptx` any more.** `slides_write` is unregistered and its file deleted. A deck is HTML the model writes with `write`, and every other format is one row of `deck_export`. Not "the agent is instructed to prefer HTML" — instructing a model away from a capability it still holds is a rule that fails at the first small job, and §f8380d4's own doc had already predicted this one would.
+
+### 149.1 The exporter tool cannot live where the other writers do
+
+`deck_export` is registered from `desktop/`, beside `desk_open`, and not from `internal/skill/` beside `doc_write` and `sheet_write`. Five of its six formats are screenshots taken by the WebView2 that only exists in the desktop binary, so a tool in `internal/skill` could not do this work if it wanted to. The one format that needs no window — `pptx`, the editable one — is also the one that inherits `slides_write`'s whole job: it reduces the HTML back to slides and hands them to the same `ooxml.BuildPPTX`. **Nothing was lost in the removal**; the four things `slides_write` could write are now the first row of the export menu, and `pptx-img` and `pdf` are two things it never could.
+
+The consequence to accept: the per-tool block ceiling in [block_standard_test.go](../internal/skill/block_standard_test.go) only measures this package, so `deck_export` is outside the ratchet, like `browser` (766) and `task` (1,568) before it. That gap is older than this change and not closed by it.
+
+### 149.2 Where an export lands depends on who asked for it
+
+`ExportDeck` wrote into the machine's Downloads folder, and the comment on `freeDownloadPath` had already written down why in a form that answered the question this change was about to raise: Downloads is right for *"what a PERSON asked for by pressing a button"* and wrong for *"what the AGENT produces"*.
+
+So a tool that simply called it would have scattered files through the user's Downloads mid-turn — reading that note backwards. The export body is now `exportDeck(relPath, format, dest)`, with the destination passed in: the export bar keeps `freeDownloadPath`, and the tool passes `exportOutputPath`, landing in `output/<session>/` with everything else the conversation made. Overwriting is the default there and the collision-avoiding number is the default in Downloads, which is the same distinction one layer down.
+
+### 149.3 What it cost and what it returned
+
+`slides_write` was 330 tokens on every request of every desk carrying the deliverables group. `deck_export` is 139, after a first draft at 186 was cut back to the one thing the list of format ids cannot say on its own — that two of them are `.pptx` and are not interchangeable. **Net return: ~191 tokens**, against a block that stood at 10,004 of an allowed 10,100 (§99).
+
+The tool is exercised for real by [tool_coverage_test.go](../desktop/tool_coverage_test.go) rather than skipped as needing a window, because the `pptx` path does not need one. That required the test's `App` to carry a `SandboxRoot`, which the real app always has and this test never did.
+
+### What this does not decide
+
+**A deck is identified in two places, by two different methods.** The frontend's `isDeck` is a regex over the raw bytes; `internal/deck` parses the document. An `.html` that merely *mentions* `<section class="slide">` inside a comment, a `<script>` or a `<pre>` — a page documenting this format, for instance — is a deck to one and not to the other. Found while answering the owner's question about how a landing page and a deck are told apart, and deliberately left out of this change: it is a different bug, and a commit that does two things explains neither.
+
+**Two of the four items remain.** The sequence in [html-deck-2026-08-19.md](architecture/html-deck-2026-08-19.md) is not finished, and PDF-via-CDP is still unproven on a real machine — that was open before this change and is open after it.
+
+**The tool counts in `internal/skill/README.md` were wrong before this change and are now measured.** They read 35/32/36 against the hub's 33/32/29; both cannot be right, and neither was. They now read 32 built-in, 31 registered, 28 model-facing, which is what the registry actually contains. No decision was taken about which document should own that number — only that a number nobody can trust is worse than one place answering slowly.
+
 ---
 
+## 152. Decision — A Room With Nothing Left In It (2026-08-20)
+
+**Trigger:** the owner, after a session with the deck chair came back weak: *"ตัดเอเจนทำสไลด์ออกไปเลยให้เมนเป็นคนทำ เพราะมันไม่มีความจำเป็นต้องเฉพาะทางอะไรอยู่แล้ว"*.
+
+**Decision: the `deck` agent is removed.** Five bundled agents ship instead of six.
+
+The reason is narrower than "it wasn't needed", and it is one day old. A chair exists because it holds something no desk does — `doc` holds `doc_write`, `sheet` holds `sheet_write`, and `deck` held `slides_write`. §149 retired `slides_write`: a deck is now HTML written with `write`, which every desk already has. The room was left standing with nothing in it, and a colleague whose whole claim is a tool that no longer exists is a name in a picker.
+
+### 152.1 What the log actually showed
+
+Two sessions with the chair, both `stance=""` (ลงมือ), both `agent="deck"`, and the deck that came out was 23,875 bytes of CSS with **no `<img>` in it at all**. Three separate things went wrong and only one of them was the agent's:
+
+- **Images.** It searched, found Unsplash, and `web_fetch` was answered **401** twice. It then asked the user which style of picture they wanted before giving up, which is the right order to do things in.
+- **Tools vanishing mid-session.** `write` and `skill_view` are in this chair's cut — they worked at 01:31, were refused as *"not exposed to agent"* at 01:32:53 and 01:33:37, and worked again at 02:23. That is not a rule, and it is not this decision's to fix; it is filed as its own bug.
+- **The run log cannot tell a chair from the main agent.** `tool_runs.agent` is stamped only on the delegate path, so every chair chat records as the main agent. Two conclusions drawn from that column during this same conversation were wrong because of it, including *"deck has run 8 tool calls in its whole life"* — that was 8 delegate runs, and every conversation with it was filed under `(main)`.
+
+None of those argue for removing the agent. They are the reason the removal was proposed and not the reason it is right.
+
+### 152.2 The tool had to move with the work
+
+`deck_export` sat in `chairs:` on the specialized desk, which is the §84 rule: a deliverable is delegated, so its tool lives with the chair and not on the desk. With no deck chair, that placement left the exporter reachable only by `doc` and `sheet` — two agents that do not make decks — and unreachable by the assistant, which now does.
+
+So it moved onto the two desks whose work it is: `assistant` and `specialized`. Not `coding`, which carries no deliverables and says so in its own manifest. §84's star still holds for `doc_write` and `sheet_write`; decks are now the exception to it, and the exception exists because there is no longer a chair on the other side of the hand-off.
+
+The desk manifests took the craft with it. Both now say what a deck is made of — the marker, the anatomy, the 1280×720 box, and that a picture has to be on this machine — because that was the one thing the removed `AGENT.md` knew that nothing else does.
+
+### What this does not decide
+
+**The rest of that profile is in git history and nowhere else.** What it knew about *talks* rather than about files — let the title carry the claim, bullets are landing points rather than sentences, a deck with empty speaker notes has pushed everything onto the screen — is craft, and it did not move into the desk manifests because it is longer than a desk manifest should be. The plan agreed with the owner is that it becomes a skill, which is also where it belongs by cost: a `SKILL.md` is free until something asks for it, where an agent's brief is not.
+
+**And that skill has to overrule the one already installed.** The machine carries a `slides` skill (claudekit) that the assistant read and used well — but its HTML template writes `<div class="slide">` four times, and Aetox cuts slides on `<section class="slide">`. A deck built by following that template is not a deck: it will not list in the slides room, it will not export, and it will open as source. The removed profile was what taught the marker. Until the replacement skill exists, that gap is open.
+
+## 153. Decision — The Deck Never Needed the Tool (2026-08-20)
+
+**Trigger:** the owner, on `deck_export`, one day after it was built: *"ทำไมอ่ะจำเป็นมั้ยอ่ะ มันแค่สร้าง html แล้วแปะสไลด์ แล้วเปิดด้วยหน้าสไลด์ด้านข้างก็จบแล้วไม่ใช่หรอ"* — and then, on the answer: *"ถอดเลย ทำสกิลให้มันเปิดโต๊ะด้านข้างให้ได้ก็พอ"*.
+
+**Decision: `deck_export` is removed. Exporting stays a button. A `deck` skill replaces the removed agent's knowledge.**
+
+He was right, and the sentence is his: write the `.html`, open it on the side desk, and the deck is delivered. Nothing in that path touches an export tool. What the tool bought was one case — somebody types "ส่งกลับเป็น .pptx ด้วย" and gets a file without clicking — and the export bar is already on the screen the person is looking at, because the agent just opened the deck there.
+
+### 153.1 The argument I made for it stopped being true when the agent was removed
+
+§149 added `deck_export` on `chairs:`, so it cost nothing on any desk: only the deck chair carried it. On that footing the trade was easy and it was argued for on that footing.
+
+§152 removed the deck chair three hours later and I moved the tool onto the assistant and specialized desks so the work could still reach it — **without re-weighing anything**. That turned 139 tokens on one rarely-opened chair into 139 tokens on every request of the busiest desk in the product. The price changed by a factor nobody measured, and the owner is the one who noticed: *"ดีที่ผมทักไม่งั้นเกิดหนี้ในระบบอีกแน่"*.
+
+The evidence agreed with him. `deck_export` had **never been called** — it was a day old. `slides_write` before it was called a handful of times in the whole of `tool_runs`.
+
+`ExportDeck` collapses back to one caller and the `dest` parameter §149 introduced goes with it, along with `exportOutputPath`. The exporter itself — six formats, the CDP path, the screenshot renderer — is untouched and still behind the button.
+
+### 153.2 What the removed agent knew, and where it now lives
+
+§152 removed the deck agent and said in writing that its craft had to survive as a skill. `internal/skill/skills/deck/SKILL.md` is that: the contract, the anatomy, the 1280×720 box, pictures-on-this-machine, and the discipline about talks that the profile actually held — titles carrying claims, bullets as landing points, notes as where the sentences go.
+
+It also carries the one fact this machine actively contradicts. The `slides` skill installed here (claudekit) is good and the assistant used it well — and its HTML template writes `<div class="slide">` four times. Aetox cuts on `<section class="slide">`. A deck built by following that template is not a deck: no row in the slides room, no export, opens as source. `TestTheDeckSkillStillCarriesTheMarker` is what keeps that sentence in the file, because without it every other test still passes while decks quietly stop being decks.
+
+The desk manifests keep a pointer and no copy. A paragraph in a manifest is paid on every request of that desk whether or not a deck is ever mentioned; a skill is free until something asks for it. That is the same arithmetic that put the `aetox` document in a skill rather than in the prompt.
+
+**And the skill says to open it.** That was the owner's whole instruction for it. A deck written and not put on the desk is a deck the user has been told about rather than shown.
+
+### What this does not decide
+
+**Whether the assistant will actually read it.** The mechanism is `skills_list` → `skill_view`, and the run log shows the assistant doing exactly that with the `slides` skill unprompted, twice, on the two deck sessions of 2026-08-20. That is the evidence this design rests on and it is one day old.
+
+**The two bugs found while looking.** Tools vanishing mid-session — `write` and `skill_view` refused as *"not exposed to agent"* between two windows where they worked, same session, same stance — is unexplained and filed. And `tool_runs.agent` is blank for every chair chat, which is why several conclusions drawn from that column during this conversation were wrong. Neither is touched here.
+
+---
 ## 156. Decision — Two Rows In, Three Rows Out, and Six Pointing At Nothing (2026-08-20)
 
 The catalog gained `xai` and `thaillm`, lost `perplexity`, `together` and
@@ -5169,3 +5273,4 @@ that does not exist. All three fall through to the conservative K2 answer, which
 is correct for what is served, so they are dead rather than wrong. Fixing them
 properly needs Moonshot documentation for k2.6 and k2.7 that nobody has read.
 
+---

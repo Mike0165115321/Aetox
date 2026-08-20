@@ -15,6 +15,7 @@
   import { DeckFormats, ExportDeck, OpenExport, OpenFileExternally } from '../../../wailsjs/go/main/App'
   import type { main } from '../../../wailsjs/go/models'
   import FileEditor from '../FileEditor.svelte'
+  import { documentScrolls, sendStepKey, slideElements, visibleIndex } from './deckNav'
   import { fileURL } from '../fileUrl'
   import { t } from '../i18n.svelte'
   import Icon from '../Icon.svelte'
@@ -30,6 +31,23 @@
   let source = $state(false)
   let failure = $state('')
 
+  // เด็คมีสองทรง และทั้งสองทรงเป็นของจริง
+  //
+  // ทรงแรก สไลด์เรียงกันลงมาเป็นสาย แพเนลเลื่อนไปหาทีละใบ — ทรงเดียวที่แพเนลนี้
+  // รองรับตอนเขียนครั้งแรก
+  //
+  // ทรงที่สอง สไลด์ซ้อนกันอยู่ที่เดียว โชว์ทีละใบ แล้วเด็คสลับเอง เป็นทรงที่
+  // reveal.js ใช้ และเป็นทรงที่โมเดลเขียนออกมาเองแทบทุกครั้งเมื่อถูกสั่งว่าให้ทำ
+  // เด็ค HTML เด็คแบบนี้ไม่มีอะไรให้เลื่อน scrollIntoView จึงไม่ขยับอะไรเลย ปุ่ม
+  // ลูกศรของแพเนลตายสนิททุกครั้ง — อาการที่เจ้าของรายงานเมื่อ 2026-08-20
+  //
+  // แพเนลไม่เดา API ของเด็ค มันกดปุ่มที่เด็คฟังอยู่แล้วทีละก้าว แล้วอ่านกลับว่าใบ
+  // ไหนโผล่ขึ้นมา เท่ากับคนกดคีย์บอร์ดหนึ่งครั้ง ไม่มีอะไรถูกฉีดลงไฟล์ของผู้ใช้
+  // ซึ่งเป็นกติกาเดียวกับที่หัวไฟล์นี้ประกาศไว้
+  let stacked = $state(false)
+  // กันเหตุการณ์ที่แพเนลสังเคราะห์เองวนกลับเข้ามาเรียกตัวเองไม่รู้จบ
+  let sending = false
+
   // อ่านรายการสไลด์ใหม่ทุกครั้งที่ไอเฟรมโหลดเสร็จ ไม่ใช่ครั้งเดียวตอน mount
   // เพราะเอเจนต์เขียนทับไฟล์เดิมบ่อยมาก และ Workbench คีย์แพเนลไว้ที่ rev อยู่
   // แล้ว การอ่านซ้ำตรงนี้กันกรณีที่ไอเฟรมเองนำทางใหม่โดยที่แท็บไม่ถูกอ่านซ้ำ
@@ -37,9 +55,17 @@
     failure = ''
     const doc = frameDoc()
     if (!doc) return
-    slides = Array.from(doc.querySelectorAll<HTMLElement>('section.slide'))
-    current = 0
-    doc.addEventListener('keydown', onKey)
+    slides = slideElements(doc)
+    stacked = slides.length > 1 && !documentScrolls(doc)
+    current = stacked ? readVisible() : 0
+    // เด็คทรงซ้อนฟังปุ่มของมันเองอยู่แล้ว ถ้าแพเนลฟังซ้ำในเอกสารเดียวกัน การกด
+    // ลูกศรหนึ่งครั้งจะเดินสองใบ หน้าที่ของแพเนลตรงนี้จึงเหลือแค่ตามให้ทัน
+    if (stacked) {
+      doc.addEventListener('keydown', syncAfterDeckInput, true)
+      doc.addEventListener('click', syncAfterDeckInput, true)
+    } else {
+      doc.addEventListener('keydown', onKey)
+    }
     doc.addEventListener('scroll', syncFromScroll, { passive: true, capture: true })
     fit()
     // อีกครั้งหลังเฟรมถัดไป เพราะฟอนต์กับรูปอาจยังจัดหน้าไม่นิ่งตอน load ยิง
@@ -67,7 +93,10 @@
 
     const el = doc.documentElement as HTMLElement
     el.style.zoom = '1' // วัดขนาดจริงก่อน ไม่ใช่ขนาดที่ย่อไว้รอบก่อน
-    const slide = slides[0].getBoundingClientRect()
+    // วัดใบที่เห็นอยู่ ไม่ใช่ใบแรกเสมอ เด็คทรงซ้อนที่ซ่อนด้วย `display:none`
+    // ให้กล่องขนาดศูนย์กับใบที่ไม่ได้โชว์ ซึ่งทำให้ทั้งฟังก์ชันนี้ยอมแพ้ตั้งแต่
+    // ใบแรกเมื่อคนดูเดินไปใบที่สอง
+    const slide = (slides[current] ?? slides[0]).getBoundingClientRect()
     if (slide.width === 0 || slide.height === 0) return
 
     // พอดีทั้งใบ ไม่ใช่พอดีแค่ด้านกว้าง สไลด์หนึ่งใบต้องอยู่ในสายตาทั้งใบ
@@ -89,9 +118,51 @@
     }
   }
 
+  function readVisible(): number {
+    const view = frameDoc()?.defaultView
+    return view ? visibleIndex(slides, view, current) : current
+  }
+
+  // เดินเด็คทรงซ้อนทีละก้าวด้วยปุ่มที่มันฟังอยู่แล้ว
+  //
+  // ก้าวละหนึ่งครั้งเพราะเด็คส่วนใหญ่รับได้แค่ "ถัดไป/ก่อนหน้า" — ไม่มีทางบอกมันว่า
+  // "ไปใบที่เจ็ด" โดยไม่รู้จัก API ของมัน guard กันไม่ให้กดวนไม่รู้จบถ้าเด็คไม่ขยับ
+  function step(target: number) {
+    const doc = frameDoc()
+    if (!doc) return
+    let guard = slides.length + 1
+    sending = true
+    try {
+      while (current !== target && guard-- > 0) {
+        sendStepKey(doc, target > current)
+        const after = readVisible()
+        // เด็คที่ไม่ฟังปุ่มลูกศรจะไม่ขยับ หยุดตรงนี้ ดีกว่ากดต่อจนครบรอบ
+        if (after === current) break
+        current = after
+      }
+    } finally {
+      sending = false
+    }
+  }
+
+  // เด็คทรงซ้อนมีปุ่มของตัวเองบนหน้าจอ ผู้ใช้กดปุ่มนั้นได้ ตัวนับของแพเนลจึงต้อง
+  // ตามไปด้วย ไม่ใช่ค้างอยู่ที่ 1/12 ขณะที่เด็คเดินไปถึงใบที่สิบ อ่านในเฟรมถัดไป
+  // เพราะตัวจัดการของเด็คเองยังไม่ได้ทำงานตอนที่ capture listener นี้ยิง
+  function syncAfterDeckInput() {
+    if (!stacked) return
+    requestAnimationFrame(() => {
+      current = readVisible()
+    })
+  }
+
   function goto(i: number) {
     if (slides.length === 0) return
-    current = Math.max(0, Math.min(slides.length - 1, i))
+    const target = Math.max(0, Math.min(slides.length - 1, i))
+    if (stacked) {
+      step(target)
+      return
+    }
+    current = target
     slides[current]?.scrollIntoView({ block: 'center', behavior: 'smooth' })
   }
 
@@ -99,7 +170,9 @@
   // เลือกสไลด์ที่ขอบบนอยู่ใกล้ขอบบนจอที่สุด แทนที่จะหารด้วยความสูง เพราะระยะ
   // ห่างระหว่างสไลด์เป็นของ CSS ในไฟล์ ซึ่งแพเนลไม่ควรรู้
   function syncFromScroll() {
-    if (slides.length === 0) return
+    // เด็คทรงซ้อนไม่มีการเลื่อน และทุกใบวางทับกันอยู่ที่เดียว การหาใบที่ใกล้กลาง
+    // จอที่สุดจึงตอบ "ใบแรก" เสมอ แล้วลากตัวนับกลับไปที่ 1 ทุกครั้งที่มีอะไรเลื่อน
+    if (stacked || slides.length === 0) return
     let best = 0
     let nearest = Infinity
     const viewMiddle = (frameDoc()?.documentElement.clientHeight ?? 0) / 2
@@ -115,6 +188,7 @@
   }
 
   function onKey(e: KeyboardEvent) {
+    if (sending) return // ปุ่มที่แพเนลเพิ่งกดเข้าไปในเด็คเอง
     if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
       e.preventDefault()
       goto(current + 1)

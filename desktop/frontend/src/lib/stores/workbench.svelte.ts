@@ -72,17 +72,24 @@ export function fileView(path: string): FileView | undefined {
 
 /** Whether an .html file is a slide deck.
  *
- * One marker, doing two jobs: `section.slide` is what the pane pages through
- * and what the exporters cut on, so it is also what identifies the file. A
+ * One marker, doing two jobs: `.slide` is what the pane pages through and what
+ * the exporters cut on, so it is also what identifies the file. A
  * `<meta name="aetox-deck">` beside it was drafted and dropped — it would be a
  * second place answering one question, and the day the two disagree nobody can
  * say which is right (docs/architecture/html-deck-2026-08-19.md).
+ *
+ * `<section>` is the contract; `<div>` is read too, because that is what the
+ * presentation templates people install are written with, and a file that is a
+ * deck in every browser should not open here as source code. Which of the two a
+ * given document is actually cut on is `internal/deck`'s answer, not this one —
+ * this is a routing hint, and it only has to know that the file is a deck at
+ * all.
  *
  * An .html without the marker is a web page and still opens as source, which is
  * the behaviour every existing page keeps. */
 export function isDeck(path: string, content: string): boolean {
   if (!/\.html?$/i.test(path)) return false
-  return /<section[^>]*\bclass\s*=\s*("[^"]*\bslide\b|'[^']*\bslide\b)/i.test(content)
+  return /<(?:section|div)[^>]*\bclass\s*=\s*("[^"]*\bslide\b|'[^']*\bslide\b)/i.test(content)
 }
 
 export const workbench = $state<{ tabs: WorkbenchTab[]; activeId: string }>({

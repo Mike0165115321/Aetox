@@ -24,14 +24,14 @@ import (
 // office ceiling — and run on the chair's own prompt, not the office desk's.
 func TestAChairSessionSendsTheChairsCutOnly(t *testing.T) {
 	a := bootDeskApp(t, "")
-	if _, err := a.NewChairSession("deck"); err != nil {
-		t.Fatalf("NewChairSession(deck): %v", err)
+	if _, err := a.NewChairSession("doc"); err != nil {
+		t.Fatalf("NewChairSession(doc): %v", err)
 	}
 
 	got := toolNames(a)
-	for _, want := range []string{"slides_write", "read", "pdf_read", "web_search", "shell"} {
+	for _, want := range []string{"doc_write", "read", "pdf_read", "web_search", "shell"} {
 		if !slices.Contains(got, want) {
-			t.Errorf("deck's chat is missing %s — its own profile asks for it: %v", want, got)
+			t.Errorf("doc's chat is missing %s — its own profile asks for it: %v", want, got)
 		}
 	}
 	// ask_user is the one forced denial this path puts back, and the split is
@@ -41,7 +41,7 @@ func TestAChairSessionSendsTheChairsCutOnly(t *testing.T) {
 	// agent asked its question in prose and guessed at the answer, because
 	// saying words was the only way it had to ask.
 	if !slices.Contains(got, "ask_user") {
-		t.Errorf("deck's chat cannot ask the person it is talking to: %v", got)
+		t.Errorf("doc's chat cannot ask the person it is talking to: %v", got)
 	}
 	// task: a leaf stays a leaf, even when spoken to. diagnostics: the office
 	// ceiling, in person — the code group is what this desk still refuses, now
@@ -50,7 +50,7 @@ func TestAChairSessionSendsTheChairsCutOnly(t *testing.T) {
 	// nothing draws a second one here.
 	for _, banned := range []string{"task", "task_result", "diagnostics", "symbol", "todo_write"} {
 		if slices.Contains(got, banned) {
-			t.Errorf("deck's chat carries %s — the chair's cut must match its delegate runs", banned)
+			t.Errorf("doc's chat carries %s — the chair's cut must match its delegate runs", banned)
 		}
 	}
 
@@ -63,11 +63,11 @@ func TestAChairSessionSendsTheChairsCutOnly(t *testing.T) {
 	// sentence copied out of it: the profile is prose somebody will rewrite —
 	// it was rewritten on 2026-08-08 (§91) — and a test pinned to its opening
 	// line fails on an edit that changed nothing this test is about.
-	deck, ok := subagent.Load("deck")
+	doc, ok := subagent.Load("doc")
 	if !ok {
-		t.Fatal("the bundled deck profile did not load")
+		t.Fatal("the bundled doc profile did not load")
 	}
-	if !strings.Contains(sys, strings.TrimSpace(deck.Prompt)) {
+	if !strings.Contains(sys, strings.TrimSpace(doc.Prompt)) {
 		t.Error("the chair chat does not run on the chair's own prompt")
 	}
 	if strings.Contains(sys, "This session is deliverable work") {

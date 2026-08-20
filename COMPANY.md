@@ -82,7 +82,7 @@ Aetox ไม่ใช่กล่องรวมเอไอหลายตั�
 assistant    categories: agent, web, media, files, shell      ← ไม่มี deliverables
 specialized  categories: media, web, agent
              tools:  read, write, list, glob
-             chairs: doc_write, sheet_write, slides_write,    ← อยู่ตรงนี้
+             chairs: doc_write, sheet_write,                 ← อยู่ตรงนี้
                      edit, grep, apply_patch, delete,
                      shell, git, desk_terminal
 ```

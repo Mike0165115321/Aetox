@@ -95,7 +95,7 @@ func TestALegacySessionKeepsTheFullDeskAndTheSamePrompt(t *testing.T) {
 	if len(got) == 0 || len(got) > installed {
 		t.Fatalf("the legacy desk sends %d tools out of %d registered", len(got), installed)
 	}
-	for _, want := range []string{"shell", "slides_write", "read", "task", "web_search"} {
+	for _, want := range []string{"shell", "doc_write", "read", "task", "web_search"} {
 		if !slices.Contains(got, want) {
 			t.Errorf("%s is missing from a legacy session — the full desk carries everything: %v", want, got)
 		}
@@ -129,20 +129,20 @@ func TestEachDeskSendsOnlyItsOwnTools(t *testing.T) {
 		names []string
 	}{
 		{"coding", coding, true, []string{"shell", "read", "edit", "diagnostics", "task"}},
-		{"coding", coding, false, []string{"slides_write", "doc_write", "sheet_write", "image_ocr"}},
+		{"coding", coding, false, []string{"doc_write", "sheet_write", "image_ocr"}},
 		// COMPANY.md §2: the assistant desk does everything on this machine
 		// except the developer tools. It has the shell — safety is the gate's
 		// job, not a missing tool's (§6.2) — and no diagnostics or symbol.
 		{"assistant", assistant, true, []string{"read", "edit", "shell", "web_search", "memory", "task"}},
 		{"assistant", assistant, false, []string{"diagnostics", "symbol", "github", "github_search"}},
-		// The three writers left this desk on the owner's call (2026-08-06):
+		// The writers left this desk on the owner's call (2026-08-06):
 		// *"เมนไม่ควรทำเองสิครับ มันคืองานของเอเจนเฉพาะทางที่เราสร้างมาแล้ว"*.
-		// The office already had a chair per format — doc, deck, sheet, each
-		// carrying exactly one writer at desk: specialized — and leaving the
-		// writers here too meant the assistant did the job itself whenever it
-		// looked small, which is a choice made by mood rather than by rule.
-		// `task` above is what stays: the way to have one made.
-		{"assistant", assistant, false, []string{"doc_write", "sheet_write", "slides_write"}},
+		// The office had a chair per format, each carrying exactly one writer at
+		// desk: specialized — and leaving the writers here too meant the
+		// assistant did the job itself whenever it looked small, which is a
+		// choice made by mood rather than by rule. `task` above is what stays:
+		// the way to have one made.
+		{"assistant", assistant, false, []string{"doc_write", "sheet_write", "deck_export"}},
 	} {
 		for _, name := range c.names {
 			if got := slices.Contains(c.tools, name); got != c.want {
@@ -382,7 +382,7 @@ func TestTheCodingDeskCannotHandWorkToTheOffice(t *testing.T) {
 	if schema == "" {
 		t.Fatal("the coding desk has no task tool at all")
 	}
-	if strings.Contains(schema, `"deck"`) || strings.Contains(schema, "deck —") {
+	if strings.Contains(schema, `"doc"`) || strings.Contains(schema, "doc —") {
 		t.Errorf("a chair is offered to a desk that cannot dispatch to it:\n%s", schema)
 	}
 	if !strings.Contains(schema, `"explore"`) {
@@ -390,9 +390,9 @@ func TestTheCodingDeskCannotHandWorkToTheOffice(t *testing.T) {
 	}
 
 	out, ran, err := a.deskTools().ExecuteTool(context.Background(), "task", map[string]any{
-		"description": "make a deck",
-		"prompt":      "build a deck about anything",
-		"agent":       "deck",
+		"description": "write a document",
+		"prompt":      "write a document about anything",
+		"agent":       "doc",
 	})
 	if err != nil {
 		t.Fatalf("task returned a hard error rather than a refusal the model can read: %v", err)
@@ -618,8 +618,8 @@ func TestAServerReachesOnlyTheDesksThatNamedIt(t *testing.T) {
 func TestListChairsReportsTheRosterUnderTheCeiling(t *testing.T) {
 	a := bootDeskApp(t, "assistant")
 	chairs := a.ListChairs()
-	if len(chairs) != 6 {
-		t.Fatalf("ListChairs() = %d, want the six bundled chairs", len(chairs))
+	if len(chairs) != 5 {
+		t.Fatalf("ListChairs() = %d, want the five bundled chairs", len(chairs))
 	}
 	byName := map[string]Chair{}
 	for _, c := range chairs {
@@ -631,18 +631,18 @@ func TestListChairsReportsTheRosterUnderTheCeiling(t *testing.T) {
 	if _, ok := byName["github"]; !ok {
 		t.Errorf("the github chair is missing from the roster: %+v", chairs)
 	}
-	deck, ok := byName["deck"]
+	doc, ok := byName["doc"]
 	if !ok {
-		t.Fatalf("the deck chair is missing from the roster: %+v", chairs)
+		t.Fatalf("the doc chair is missing from the roster: %+v", chairs)
 	}
-	if !slices.Contains(deck.Tools, "slides_write") {
-		t.Errorf("the deck chair is listed without its writer: %v", deck.Tools)
+	if !slices.Contains(doc.Tools, "doc_write") {
+		t.Errorf("the doc chair is listed without its writer: %v", doc.Tools)
 	}
-	if slices.Contains(deck.Tools, "symbol") || slices.Contains(deck.Tools, "task") {
-		t.Errorf("the roster shows a chair holding something the office has no ceiling for: %v", deck.Tools)
+	if slices.Contains(doc.Tools, "symbol") || slices.Contains(doc.Tools, "task") {
+		t.Errorf("the roster shows a chair holding something the office has no ceiling for: %v", doc.Tools)
 	}
-	if deck.Jobs != 0 || deck.LastUsed != "" {
-		t.Errorf("a chair that has never been handed anything reports %d jobs at %q", deck.Jobs, deck.LastUsed)
+	if doc.Jobs != 0 || doc.LastUsed != "" {
+		t.Errorf("a chair that has never been handed anything reports %d jobs at %q", doc.Jobs, doc.LastUsed)
 	}
 }
 

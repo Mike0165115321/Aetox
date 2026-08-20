@@ -1467,10 +1467,12 @@ func toolCallToArgs(name string, args map[string]any) []string {
 		if raw, ok := args["path"].(string); ok {
 			return []string{strings.TrimSpace(raw)}
 		}
-	case "sheet_write", "slides_write", "doc_write":
-		// Path only. The other argument is the entire document as JSON, and
-		// these strings are what the approval prompt shows: the question is
-		// "overwrite quarterly.xlsx?", not several thousand characters of rows.
+	case "sheet_write", "doc_write":
+		// Path only, and these strings are what the approval prompt shows: the
+		// question is "overwrite quarterly.xlsx?", not several thousand
+		// characters of rows. For the two writers the rest is the whole document
+		// as JSON; for deck_export it is only a format name, and the file the
+		// user is being asked about is still the path.
 		if raw, ok := args["path"].(string); ok {
 			return []string{strings.TrimSpace(raw)}
 		}

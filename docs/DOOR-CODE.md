@@ -51,7 +51,7 @@ repo อยู่ครบข้าง ๆ กัน **ไม่ได้มี�
 `github` (อ่าน repo — `search`, `repo_summary`, `list_files`, `read_file`) ·
 เว็บ + เบราว์เซอร์ · `task` (sub-agent) · ความจำ
 
-**ไม่มีบนโต๊ะนี้:** `slides_write`/`doc_write`/`sheet_write` และ
+**ไม่มีบนโต๊ะนี้:** `doc_write`/`sheet_write` และ
 `image_ocr`/`video_ocr`/`pdf_read`/`audio_transcribe` — อยากได้สไลด์*เกี่ยวกับ*โค้ด = งานของประตูผู้ช่วย
 
 **ขอบเขต:** ผูกโปรเจกต์ — โฟลเดอร์โปรเจกต์ + โฟลเดอร์ที่ผู้ใช้เพิ่มเอง (สิทธิ์เท่ากัน)

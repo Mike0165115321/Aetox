@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, test, expect } from 'vitest'
 import { isDeck } from '../lib/stores/workbench.svelte'
 
 // เครื่องหมายเดียวที่บอกว่าไฟล์ .html เป็นเด็ค
@@ -41,4 +41,19 @@ describe('isDeck', () => {
   it('ไฟล์ว่างไม่ใช่เด็ค', () => {
     expect(isDeck('empty.html', '')).toBe(false)
   })
+})
+
+// A file written with <div class="slide"> opens in the slides pane too (§154).
+// Presentation templates in the wild are written with divs; a file that is a
+// deck in any browser opening here as source code reads as this feature being
+// broken. Which tag a document is actually cut on is internal/deck's decision —
+// this side only has to route it to the right pane.
+test('a div-based deck still routes to the slides pane', () => {
+  const divDeck = '<html><body><div class="slide"><h1>หนึ่ง</h1></div></body></html>'
+  expect(isDeck('talk.html', divDeck)).toBe(true)
+})
+
+test('a page whose class merely contains the word is still not a deck', () => {
+  const page = '<html><body><div class="slideshow-wrapper">…</div></body></html>'
+  expect(isDeck('page.html', page)).toBe(false)
 })

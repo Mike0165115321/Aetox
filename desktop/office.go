@@ -70,8 +70,6 @@ func chairIcon(p subagent.Profile, tools []string) string {
 	}
 	for _, tool := range tools {
 		switch tool {
-		case "slides_write":
-			return "layoutList"
 		case "doc_write":
 			return "fileText"
 		case "sheet_write":

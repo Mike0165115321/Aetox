@@ -1,11 +1,13 @@
 package skill
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"image"
 	"image/color"
 	"image/png"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +15,36 @@ import (
 
 	"github.com/Mike0165115321/Aetox/internal/ooxml"
 )
+
+// readPart pulls one part out of an OOXML package, which is a ZIP. It moved
+// here from slides_write_test.go when that tool was retired (the deck is HTML
+// now, and its .pptx comes from the exporter); this is the only file left that
+// reads inside a produced document.
+func readPart(t *testing.T, path, part string) string {
+	t.Helper()
+	zr, err := zip.OpenReader(path)
+	if err != nil {
+		t.Fatalf("result is not a readable package: %v", err)
+	}
+	defer zr.Close()
+	for _, f := range zr.File {
+		if f.Name != part {
+			continue
+		}
+		rc, err := f.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer rc.Close()
+		body, err := io.ReadAll(rc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(body)
+	}
+	t.Fatalf("package has no part %s", part)
+	return ""
+}
 
 func TestDocWriteProducesADocumentWordCanRead(t *testing.T) {
 	root := t.TempDir()
@@ -229,7 +261,6 @@ func TestALineWithNoPriceIsRefusedButAFreeLineIsNot(t *testing.T) {
 		t.Error("a price sent as text was accepted and would print 0.00")
 	}
 }
-
 
 // The job this was missing on 2026-08-18: an appendix of screenshots, where the
 // caption and the picture arrive together and the file travels on its own.

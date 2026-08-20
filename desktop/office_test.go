@@ -17,14 +17,14 @@ func TestEveryAgentHasAFaceAndTheProfileCanChooseIt(t *testing.T) {
 		tools   []string
 		want    string
 	}{
-		{"slides writer", subagent.Profile{Name: "deck"}, []string{"glob", "slides_write", "read"}, "layoutList"},
+		{"sheet chair", subagent.Profile{Name: "sheet"}, []string{"glob", "sheet_write", "read"}, "chartColumn"},
 		{"doc writer", subagent.Profile{Name: "doc"}, []string{"doc_write"}, "fileText"},
 		{"sheet writer", subagent.Profile{Name: "sheet"}, []string{"sheet_write"}, "chartColumn"},
 		// Nothing it writes says what it is — the honest answer is the generic
 		// mark, and this is exactly the profile whose author will want to pick.
 		{"no writer at all", subagent.Profile{Name: "researcher"}, []string{"web_search", "read"}, "bot"},
 		// And the file's own choice outranks everything derived.
-		{"profile chose one", subagent.Profile{Name: "deck", Icon: "palette"}, []string{"slides_write"}, "palette"},
+		{"profile chose one", subagent.Profile{Name: "doc", Icon: "palette"}, []string{"doc_write"}, "palette"},
 	} {
 		if got := chairIcon(tc.profile, tc.tools); got != tc.want {
 			t.Errorf("%s: chairIcon = %q, want %q", tc.name, got, tc.want)

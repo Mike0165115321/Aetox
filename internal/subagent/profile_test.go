@@ -41,12 +41,12 @@ func isolate(t *testing.T) string {
 func TestBundledProfilesAreUsable(t *testing.T) {
 	isolate(t)
 	got := List()
-	want := []string{"automation", "deck", "doc", "explore", "general", "github", "plan", "research", "sheet"}
+	want := []string{"automation", "doc", "explore", "general", "github", "plan", "research", "sheet"}
 	if len(got) != len(want) {
 		t.Fatalf("List() = %d profiles, want %d", len(got), len(want))
 	}
 	chairs := map[string]bool{
-		"automation": true, "deck": true, "doc": true, "github": true, "research": true, "sheet": true,
+		"automation": true, "doc": true, "github": true, "research": true, "sheet": true,
 	}
 	for i, p := range got {
 		if p.Name != want[i] {
@@ -298,8 +298,8 @@ func TestHelperHomeCannotAddADelegate(t *testing.T) {
 	if _, ok := Load("backend"); ok {
 		t.Fatal("a helper-home user file loaded as a delegate")
 	}
-	if got := len(List()); got != 9 {
-		t.Fatalf("List() = %d, want the 9 bundled only", got)
+	if got := len(List()); got != 8 {
+		t.Fatalf("List() = %d, want the 8 bundled only", got)
 	}
 	if c, ok := findConflict(Conflicts(), "backend"); !ok || c.Reason == "" {
 		t.Fatal("the locked-out file is not reported with a reason")
@@ -362,7 +362,6 @@ func TestKindOfSplitsTheTwoPiles(t *testing.T) {
 	isolate(t)
 	cases := map[string]string{
 		"doc":     KindAgent, // a chair in the office
-		"deck":    KindAgent,
 		"sheet":   KindAgent,
 		"explore": KindHelper, // the assistant's own hands
 		"general": KindHelper,

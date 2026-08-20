@@ -109,7 +109,7 @@ wails build -nsis    # พร้อมตัวติดตั้ง
 **ยื่นโฟลเดอร์ให้ แล้วรับไฟล์กลับมา** ชี้ไปที่โฟลเดอร์รูป PDF หรือไฟล์เสียง
 แล้วบอกไปตรง ๆ ว่าอยากได้อะไร OCR (ไทยและอังกฤษ) ข้อความจาก PDF ที่เลย์เอาต์ไม่แตก
 และการถอดเสียงแบบออฟไลน์ ป้อนเข้าบทสนทนาเดียวกันหมด แล้ว `sheet_write`, `doc_write`
-และ `slides_write` ส่งไฟล์ Office จริงกลับมา — สร้างจาก zip และ xml ในไลบรารีมาตรฐานของ Go
+ส่งไฟล์ Office จริงกลับมา — สร้างจาก zip และ xml ในไลบรารีมาตรฐานของ Go
 โดยไม่พึ่งไลบรารีนอกเลยสักตัว สูตรคำนวณทำงานได้ วันที่เรียงได้ สระไทยอยู่ตำแหน่งที่ควรอยู่
 
 **นั่งดูมันทำงานในเบราว์เซอร์จริง** ไม่ใช่การขูดข้อมูลแบบไม่มีหน้าจอ แต่เป็นหน้าต่าง WebView2
@@ -130,7 +130,7 @@ wails build -nsis    # พร้อมตัวติดตั้ง
 `grep` และ `glob` ทั้งต้นไม้ พร้อม `diagnostics` กับ `symbol` ที่หนุนด้วย language server
 ที่แอปติดตั้งให้เองตอนใช้ครั้งแรก (gopls, typescript-language-server, svelteserver)
 
-**ส่งงานให้ช่างเฉพาะทาง** พิมพ์ `@doc` `@sheet` `@deck` `@github` `@automation` หรือ `@research`
+**ส่งงานให้ช่างเฉพาะทาง** พิมพ์ `@doc` `@sheet` `@github` `@automation` หรือ `@research`
 แล้วประโยคของคุณถึงมือเขาทั้งคำ ไม่ผ่านการเรียบเรียง แต่ละคนคือโฟลเดอร์บนดิสก์
 ที่มีคำสั่งของตัวเอง ความจำของตัวเอง เลือกโมเดลของตัวเองได้ และมีสกิลส่วนตัวที่คนอื่นไม่เห็น
 
@@ -181,8 +181,8 @@ wails build -nsis    # พร้อมตัวติดตั้ง
 
 ## ทีมงาน
 
-มีเอเจนมาให้หกคน — `deck` `doc` `sheet` `github` `automation` `research` —
-และการจ้างคนที่เจ็ดคือการวางโฟลเดอร์ลงใน `<DataRoot>/agents/` ไม่ต้องออกรุ่นใหม่
+มีเอเจนมาให้ห้าคน — `doc` `sheet` `github` `automation` `research` —
+และการจ้างคนที่หกคือการวางโฟลเดอร์ลงใน `<DataRoot>/agents/` ไม่ต้องออกรุ่นใหม่
 ไม่ต้องมี plugin API ไม่ต้องรีสตาร์ต
 
 โฟลเดอร์ของเอเจนคือตัวตนทั้งหมดของเขา: `AGENT.md` (เขาเป็นใคร นั่งโต๊ะไหน
@@ -291,7 +291,7 @@ Aetox จำข้ามเซสชันได้ และ**ไม่มี�
 |:---|:---|
 | **ไฟล์** | `read` `write` `edit` `apply_patch` `delete` `list` `glob` `grep` |
 | **รันคำสั่ง** | `shell` *(run · output · kill · list)* `git` `desk_terminal` |
-| **ส่งไฟล์กลับ** | `doc_write` `sheet_write` `slides_write` |
+| **ส่งไฟล์กลับ** | `doc_write` `sheet_write` |
 | **อ่านสื่อ** | `image_ocr` `video_ocr` `pdf_read` `audio_transcribe` |
 | **เว็บและออโตเมชั่น** | `browser` *(open · read · click · type)* `web_fetch` `web_search` |
 | **งานโค้ด** | `diagnostics` `symbol` `github` *(repo_summary · search · read_file · list_files)* |

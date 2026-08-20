@@ -6,8 +6,9 @@ package main
 // A deck is an .html file carrying `<section class="slide">`
 // (docs/architecture/html-deck-2026-08-19.md). The authoring format is HTML
 // because that is what a model writes best and what a browser already renders,
-// which leaves exporting as a separate step — and a separate step is the whole
-// reason this file exists rather than a wider `slides_write`.
+// which leaves exporting as a separate step — and that separation is the whole
+// reason this file exists. `slides_write`, which wrote a .pptx directly, was
+// retired for it (§149).
 //
 // Everything here speaks **project-relative paths**, the same vocabulary the
 // file host and the workbench panes use. That is not a style choice: the file
@@ -219,7 +220,7 @@ func writableDeckFormat(id string) (string, bool) {
 }
 
 // ExportDeck writes a deck out in another format and answers with where it
-// landed, project-relative.
+// landed.
 //
 // The .pptx it produces is deliberately plainer than the HTML it came from:
 // title, bullets, one picture, speaker notes, which is exactly what
@@ -228,6 +229,15 @@ func writableDeckFormat(id string) (string, bool) {
 // copy somebody can open in PowerPoint and edit. Making the .pptx match the
 // HTML pixel for pixel would mean writing a PowerPoint, which is the thing this
 // project has now twice decided not to do.
+//
+// **One caller, and that is the decision (§153).** For a day this had two: the
+// export bar and a `deck_export` tool the model could call. The tool was removed
+// because the deck itself never needed it — the deck is the HTML, the slides
+// pane reads it, and exporting is the separate act of handing a copy to somebody
+// else's program. That act has a button, on the screen where the person is
+// already looking at the deck; a tool doing the same thing cost 139 tokens in
+// every request of the busiest desk to save one click, and was never once
+// called.
 func (a *App) ExportDeck(relPath, format string) (string, error) {
 	root := strings.TrimSpace(a.cfg.SandboxRoot)
 	if root == "" {
@@ -256,15 +266,8 @@ func (a *App) ExportDeck(relPath, format string) (string, error) {
 		return "", err
 	}
 
-	// Into the machine's Downloads folder, under the deck's own name.
-	//
-	// It landed beside the deck first, on the argument that this app already had
-	// one answer to "where do produced files go" — the session's output folder,
-	// where ผลงาน sweeps them. That is the right answer for what the AGENT
-	// produces; it is the wrong one for what a PERSON asked for by pressing a
-	// button. An export is not another artifact of the conversation, it is a file
-	// somebody is about to attach to an email, and Downloads is where every other
-	// program on this machine puts that. Owner's call.
+	// Into the machine's Downloads folder, under the deck's own name — see
+	// freeDownloadPath for why there rather than beside the deck.
 	//
 	// The deck itself stays where it is. Nothing is moved.
 	base := strings.TrimSuffix(filepath.Base(full), filepath.Ext(full))

@@ -132,7 +132,6 @@ func RegisterDefaults(registry *Registry, opts RegistryOptions) {
 		&shellSkill{root: opts.SandboxRoot, shells: shells},
 		&writeSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
 		&sheetWriteSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
-		&slidesWriteSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
 		&docWriteSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
 		&editSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},
 		&grepSkill{root: opts.SandboxRoot, outputSubdir: opts.OutputSubdir},

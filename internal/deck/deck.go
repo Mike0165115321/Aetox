@@ -77,8 +77,9 @@ func Count(source []byte) int {
 		return 0
 	}
 	n := 0
+	tag := slideTag(doc)
 	walk(doc, func(node *html.Node) bool {
-		if isSlide(node) {
+		if isSlide(node, tag) {
 			n++
 			// A slide inside a slide is not a thing; stop descending so a
 			// nested marker cannot inflate the count.
@@ -107,15 +108,16 @@ func Slides(source []byte, baseDir, limit string) ([]ooxml.Slide, error) {
 	}
 
 	var out []ooxml.Slide
+	tag := slideTag(doc)
 	walk(doc, func(node *html.Node) bool {
-		if !isSlide(node) {
+		if !isSlide(node, tag) {
 			return true
 		}
 		out = append(out, readSlide(node, baseDir, limit))
 		return false
 	})
 	if len(out) == 0 {
-		return nil, fmt.Errorf("deck: no slides here. A slide is <section class=%q>, and this file has none", slideClass)
+		return nil, fmt.Errorf("deck: no slides here. A slide is <section class=%q> (a <div> of that class is read the same way in a file that has no sections), and this file has neither", slideClass)
 	}
 	return out, nil
 }
@@ -233,13 +235,43 @@ func measurePicture(data []byte, alt string) (*ooxml.Picture, error) {
 	}, nil
 }
 
-// isSlide reports whether a node is one slide: a <section> carrying the marker.
+// isSlide reports whether a node is one slide: an element of the document's own
+// slide tag, carrying the marker.
 //
 // The element is checked as well as the class. `class="slide"` on a <div> inside
 // a slide is a styling choice somebody is entitled to make, and treating it as a
 // slide boundary would cut the deck in the middle of a slide.
-func isSlide(node *html.Node) bool {
-	return node.Type == html.ElementNode && node.DataAtom == atom.Section && hasClass(node, slideClass)
+func isSlide(node *html.Node, tag atom.Atom) bool {
+	return node.Type == html.ElementNode && node.DataAtom == tag && hasClass(node, slideClass)
+}
+
+// slideTag decides which element this document draws its slide boundaries with.
+//
+// `<section class="slide">` is the contract and wins whenever the document has
+// one. The fallback to `<div>` exists because that is what presentation
+// templates in the wild are written with — the `slides` skill people install
+// among them — and a file that renders as a deck in any browser and then opens
+// here as source code teaches the reader nothing except that this feature is
+// broken. Reading it is free; refusing it buys nothing.
+//
+// A fallback rather than a second accepted spelling, and that distinction is
+// what leaves the rule above intact: in a document that HAS sections, a
+// `<div class="slide">` is still somebody's styling choice and still not a
+// boundary. Only a document with no sections at all is read the other way, so
+// no existing deck changes its answer.
+func slideTag(doc *html.Node) atom.Atom {
+	sections := false
+	walk(doc, func(node *html.Node) bool {
+		if isSlide(node, atom.Section) {
+			sections = true
+			return false
+		}
+		return true
+	})
+	if sections {
+		return atom.Section
+	}
+	return atom.Div
 }
 
 // hasClass matches on whole class names.

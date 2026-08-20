@@ -109,7 +109,7 @@ wails build -nsis    # with the installer
 **Hand over a folder and get a file back.** Point it at a directory of images, PDFs or
 recordings and ask for the thing you actually want. OCR (Thai and English), PDF text with the
 layout intact, and offline speech-to-text all feed the same conversation; `sheet_write`,
-`doc_write` and `slides_write` hand back a real Office file, built from Go's standard-library
+`doc_write` hand back a real Office file, built from Go's standard-library
 zip and XML with no third-party dependency — live formulas, dates that sort, Thai vowels in the
 right place.
 
@@ -130,7 +130,7 @@ model required, and the model that *can* see gets the image itself instead.
 `grep` and `glob` over the whole tree, plus `diagnostics` and `symbol` backed by language servers
 the app installs on first use (gopls, typescript-language-server, svelteserver).
 
-**Delegate to a specialist.** Type `@doc`, `@sheet`, `@deck`, `@github`, `@automation` or
+**Delegate to a specialist.** Type `@doc`, `@sheet`, `@github`, `@automation` or
 `@research` and your sentence reaches that agent word for word — not a paraphrase. Each is a folder on disk with its
 own prompt, its own memory, optionally its own model, and its own private skills.
 
@@ -184,8 +184,8 @@ it involves code.
 
 ## The team
 
-Six agents ship — `deck`, `doc`, `sheet`, `github`, `automation`, `research` — and hiring a
-seventh is dropping a folder into `<DataRoot>/agents/`. No release, no plugin API, no restart.
+Five agents ship — `doc`, `sheet`, `github`, `automation`, `research` — and hiring a
+sixth is dropping a folder into `<DataRoot>/agents/`. No release, no plugin API, no restart.
 
 An agent's folder is its whole identity: `AGENT.md` (who it is, what desk it sits at, which tools
 it may narrow itself to, which model it pins), `MEMORY.md` (what it has learned), `STARTERS.md`
@@ -196,9 +196,9 @@ That folder is also where the difference between a clever assistant and a compan
 agent pins **its own model**, so the one that opens twenty pricing pages can run on something
 cheap while the one that has to weigh what it found runs on something strong, and the bill
 follows the work instead of following the hardest task in it. Each keeps **its own memory**, so
-what the research agent learned about a source does not leak into the deck agent's judgement
-about slides. A single generalist has one model, one memory and one set of tools for every job
-it will ever be handed — and no way for you to add a seventh colleague to it.
+what the research agent learned about a source does not leak into the document agent's judgement
+about a contract. A single generalist has one model, one memory and one set of tools for every job
+it will ever be handed — and no way for you to add a sixth colleague to it.
 
 You can **delegate** to one — the assistant calls `task` and up to four run concurrently — or you
 can **talk to one directly**, in a session bound to its tools, its memory and its prompt. `@name`
@@ -294,7 +294,7 @@ for rather than spent.
 |:---|:---|
 | **Files** | `read` `write` `edit` `apply_patch` `delete` `list` `glob` `grep` |
 | **Running commands** | `shell` *(run · output · kill · list)* `git` `desk_terminal` |
-| **Handing back files** | `doc_write` `sheet_write` `slides_write` |
+| **Handing back files** | `doc_write` `sheet_write` |
 | **Reading media** | `image_ocr` `video_ocr` `pdf_read` `audio_transcribe` |
 | **Web and automation** | `browser` *(open · read · click · type)* `web_fetch` `web_search` |
 | **Code work** | `diagnostics` `symbol` `github` *(repo_summary · search · read_file · list_files)* |

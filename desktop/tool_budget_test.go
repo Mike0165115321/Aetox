@@ -64,8 +64,8 @@ const (
 	// capability alone first, in the order above.
 	//
 	// Worth a separate decision, not taken here: this measures the whole
-	// registry, and the three office writers in it (doc_write, sheet_write,
-	// slides_write ≈ 1,000 tokens) are chairs-only. No assistant request has
+	// registry, and the deliverables group in it (doc_write, sheet_write,
+	// deck_export ≈ 1,030 tokens) is chairs-only. No assistant request has
 	// ever paid for them, so the number this test defends is larger than the
 	// block any real conversation sends. Narrowing the measurement to a desk
 	// would make it truer and would also make it easier to pass, which is why
