@@ -47,8 +47,30 @@ jobs:
         run: |
           $v = go list -m -f '{{.Version}}' github.com/wailsapp/wails/v2
           go install "github.com/wailsapp/wails/v2/cmd/wails@$v"
-          choco install nsis -y --no-progress
-          Add-Content $env:GITHUB_PATH "C:\Program Files (x86)\NSIS"
+
+          # choco can exit 0 having installed NOTHING. On 2026-08-20 the
+          # community feed answered 503, choco printed "Chocolatey installed
+          # 0/0 packages" and returned success; `wails build -nsis` then only
+          # WARNED that makensis was missing and returned success too. The
+          # first thing that actually failed was packaging, three steps later,
+          # about an installer nobody had been told was never built.
+          #
+          # So: retry the half that is transient, then prove the tool is on
+          # disk. Checking the file rather than the PATH is deliberate --
+          # GITHUB_PATH only reaches the NEXT step, so `Get-Command makensis`
+          # cannot see it from in here and would fail for the wrong reason.
+          $nsis = "C:\Program Files (x86)\NSIS"
+          foreach ($attempt in 1..3) {
+            if (Test-Path "$nsis\makensis.exe") { break }
+            Write-Host "installing NSIS (attempt $attempt of 3)"
+            choco install nsis -y --no-progress
+            if (Test-Path "$nsis\makensis.exe") { break }
+            if ($attempt -lt 3) { Start-Sleep -Seconds 20 }
+          }
+          if (-not (Test-Path "$nsis\makensis.exe")) {
+            throw "NSIS did not install: $nsis\makensis.exe is missing after 3 attempts. A release without an installer is not a release."
+          }
+          Add-Content $env:GITHUB_PATH $nsis
 
       # A no-op since the step above started proving wails.json already carries
       # the tag's version. Kept as the belt to that braces: if the check is ever
@@ -63,6 +85,22 @@ jobs:
       - name: Build desktop app + NSIS installer
         working-directory: desktop
         run: wails build -nsis -platform windows/amd64
+
+      # The step above returns success when it built only half of what was
+      # asked for, so its exit code is not the question -- both files are.
+      # Asked here, one step from the cause, rather than at packaging, which
+      # reports a missing path and says nothing about why it is missing.
+      - name: Both artifacts exist
+        run: |
+          $want = @(
+            "desktop/build/bin/aetox.exe",
+            "desktop/build/bin/aetox-amd64-installer.exe"
+          )
+          $missing = @($want | Where-Object { -not (Test-Path $_) })
+          if ($missing.Count -gt 0) {
+            throw "the build did not produce: $($missing -join ', ')"
+          }
+          $want | ForEach-Object { "{0}  {1:N1} MB" -f $_, ((Get-Item $_).Length / 1MB) }
 
       # The tag check above proves the NUMBER is right; this proves the BUILD is.
       # Until now the release path ran exactly one package's tests

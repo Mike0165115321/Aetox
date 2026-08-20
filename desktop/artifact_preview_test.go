@@ -14,7 +14,13 @@ import (
 // output/ — the shape every card on the ผลงาน page has.
 func previewApp(t *testing.T, name string, body []byte) (*App, string) {
 	t.Helper()
-	root := t.TempDir()
+	// A subdirectory rather than t.TempDir() itself, because the escape test
+	// below writes to this root's PARENT on purpose. Handing it the directory
+	// Go promised to clean means that write lands somewhere Go owns; when the
+	// root was t.TempDir() directly, the parent was outside that promise, and
+	// on a build where the conversation carried no sandbox root at all it
+	// resolved to "." and left a secrets.txt in the repo.
+	root := filepath.Join(t.TempDir(), "workspace")
 	dir := filepath.Join(root, outputDir, "20260808-010203.000")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
@@ -216,11 +222,23 @@ func TestArtifactPreviewRefusesFilesOutsideTheGallery(t *testing.T) {
 
 	// Climbing out of output/ with .. is the same request wearing a relative
 	// path — the gallery's own root is not the gallery.
-	escape := filepath.Join(a.cur().cfg.SandboxRoot, outputDir, "..", "..", "secrets.txt")
-	if err := os.WriteFile(filepath.Join(filepath.Dir(a.cur().cfg.SandboxRoot), "secrets.txt"), []byte("x"), 0o644); err == nil {
-		if _, err := a.ArtifactPreview(escape); err == nil {
-			t.Error("climbed out of the output folder with ..")
-		}
+	//
+	// The root is read off the CONVERSATION, which is where a chat's sandbox
+	// has lived since §155. An empty one here would not fail this test, it
+	// would hollow it out: every path below collapses to a relative one, the
+	// climb is refused for the wrong reason, and the decoy is written to the
+	// process's working directory instead. Assert it rather than discover it
+	// later as a stray file in the repository.
+	sandbox := a.cur().cfg.SandboxRoot
+	if sandbox == "" {
+		t.Fatal("the conversation has no sandbox root, so the escape below is not being tested")
+	}
+	escape := filepath.Join(sandbox, outputDir, "..", "..", "secrets.txt")
+	if err := os.WriteFile(filepath.Join(filepath.Dir(sandbox), "secrets.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("could not plant the file the climb is meant to reach: %v", err)
+	}
+	if _, err := a.ArtifactPreview(escape); err == nil {
+		t.Error("climbed out of the output folder with ..")
 	}
 
 	if _, err := a.ArtifactPreview(""); err == nil {
