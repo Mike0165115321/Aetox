@@ -76,10 +76,24 @@ unpack, run `aetox.exe`. This is the only channel that can update itself in plac
 
 ### If SmartScreen or your antivirus complains
 
-The installer is not code-signed yet, so the first run shows "Windows protected your PC" with an
-unknown publisher — **More info → Run anyway**. Releases *are* signed: an ed25519 public key is
-compiled into the binary and the updater verifies the signature over `checksums.txt` before it
-trusts a single hash. An empty or wrong key refuses the update rather than falling back.
+Two different warnings, two different causes.
+
+**"Windows protected your PC", unknown publisher.** The installer is not code-signed yet, so
+Windows has no publisher name to show for it — **More info → Run anyway**.
+
+**"Virus detected", or the name `Program:Win32/Wacapew.C!ml`.** A cloud machine-learning verdict,
+not a signature: nobody analysed this file and judged it dangerous. It fires because the installer
+is unsigned, brand new, and at install time fetches Tesseract, poppler, ffmpeg and a speech model,
+which is the shape of a downloader. Those four are pinned to immutable release tags and every
+download is verified against a SHA256 hardcoded in
+[the installer script](desktop/build/windows/installer/project.nsi) before it is used; a mismatch
+skips that component rather than proceeding. This build has been reported to Microsoft as a false
+positive, but a new release carries a new hash, so it can come back until code signing exists. The
+portable zip is the way past it in the meantime.
+
+Releases *are* signed: an ed25519 public key is compiled into the binary and the updater verifies
+the signature over `checksums.txt` before it trusts a single hash. An empty or wrong key refuses
+the update rather than falling back.
 
 ### Linux and macOS
 
