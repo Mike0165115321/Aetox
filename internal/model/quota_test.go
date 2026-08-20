@@ -121,15 +121,69 @@ func TestCodexQuotasVanishWhenHeadersDo(t *testing.T) {
 
 // A used-percent with no reset header is still worth showing — half an answer
 // beats none, so the quota survives with a zero ResetAt.
+// A window that says what it is keeps its row without a reset: the name is
+// enough to read the percentage by, and the UI already draws a row with no
+// reset clause. The fixture carries window-minutes for exactly that reason —
+// without it this is the different case below, where there is nothing to read
+// the number by at all.
 func TestCodexQuotaSurvivesMissingResetHeader(t *testing.T) {
 	got := ReadQuotas(responseWith(map[string]string{
-		"x-codex-primary-used-percent": "10",
+		"x-codex-primary-used-percent":   "10",
+		"x-codex-primary-window-minutes": "300",
 	}), provider.QuotaCodex, quotaNow)
 	if len(got) != 1 {
 		t.Fatalf("got %d windows; want 1", len(got))
 	}
+	if got[0].Window != "5h" {
+		t.Errorf("Window = %q; want the name its stated length gives it", got[0].Window)
+	}
 	if got[0].HasReset() {
 		t.Error("HasReset() = true; want false so the UI omits the reset clause")
+	}
+}
+
+// The headers a free ChatGPT plan actually sent on 2026-08-20, with its monthly
+// allowance spent. Both families answer, and only one of them says anything a
+// person could act on.
+//
+// The second is a bare percentage: no window-minutes to be named by, no
+// reset-after-seconds to count toward. It reached the settings card as a full
+// green bar labelled "this window", sitting next to a monthly bar reading 0% —
+// which told the owner they had capacity while every request was being refused.
+// OpenAI's own usage panel for that account showed one row, "Monthly 0%,
+// Sep 11", and no second bar at all.
+func TestCodexDropsABareRemainingPercentWithNothingToReadItBy(t *testing.T) {
+	got := ReadQuotas(responseWith(map[string]string{
+		"x-codex-primary-used-percent":        "100",
+		"x-codex-primary-window-minutes":      "43200", // 30 days
+		"x-codex-primary-reset-after-seconds": "1875600",
+		"x-codex-secondary-used-percent":      "0",
+	}), provider.QuotaCodex, quotaNow)
+
+	if len(got) != 1 {
+		t.Fatalf("got %d windows; want only the one that can be read: %+v", len(got), got)
+	}
+	if got[0].Window != "month" || got[0].RemainingPercent != 0 {
+		t.Errorf("kept %+v; want the exhausted monthly window", got[0])
+	}
+	if !got[0].HasReset() {
+		t.Error("the monthly window lost its reset, which is the half the user plans around")
+	}
+}
+
+// Narrow on purpose: a nameless window that DOES state a reset still says
+// something — "not much left, back in two hours" is actionable without knowing
+// what to call the window. Only the pair of absences is fatal.
+func TestCodexKeepsANamelessWindowThatStatesAReset(t *testing.T) {
+	got := ReadQuotas(responseWith(map[string]string{
+		"x-codex-primary-used-percent":        "40",
+		"x-codex-primary-reset-after-seconds": "3600",
+	}), provider.QuotaCodex, quotaNow)
+	if len(got) != 1 {
+		t.Fatalf("got %d windows; want 1", len(got))
+	}
+	if got[0].Window != "other" || !got[0].HasReset() {
+		t.Errorf("got %+v; want the vague name kept alongside its reset", got[0])
 	}
 }
 

@@ -187,6 +187,13 @@ func (a *App) SignOut(providerName string) (ModelInfo, error) {
 // provider in use — signing into OpenRouter while running on Ollama should not
 // restart anything.
 func (a *App) reloadAfterCredentialChange(canonical string) (ModelInfo, error) {
+	// Before anything else, and for every credential change rather than only
+	// for sign-out: what this provider last reported was about the credential
+	// being replaced. Signing in over an existing session never passes through
+	// Logout, so hanging this on SignOut alone would leave the commonest way of
+	// switching accounts showing the previous account's numbers. See
+	// App.forgetQuotas.
+	a.forgetQuotas(canonical)
 	if strings.EqualFold(model.NormalizeProvider(a.cur().cfg.ModelProvider), canonical) {
 		next := a.cfg
 		next.ModelAPIKey = resolveAPIKeyForProvider(canonical)

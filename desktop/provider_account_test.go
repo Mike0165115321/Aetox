@@ -57,3 +57,43 @@ func TestLocalProviderAccountIsNotAnError(t *testing.T) {
 		t.Error("a local runtime reported an amount")
 	}
 }
+
+// Switching accounts must not leave the previous one's windows on the card.
+//
+// A quota describes the credential the turn ran on, and nothing refreshes it
+// until another turn runs. Without this, signing into a second ChatGPT plan
+// drew the first plan's bars under the new account's name — and when the first
+// plan was the exhausted one, the switch looked like it had failed. Asserting
+// on QuotaKnown rather than on an empty slice is the whole point: the card has
+// three states and this must land on "not known yet", never on "answered, no
+// limits".
+func TestCredentialChangeForgetsTheOldAccountsQuota(t *testing.T) {
+	app := &App{}
+	app.rememberQuotas("codex", []model.Quota{{
+		Window: "month", RemainingPercent: 0, ObservedAt: time.Now(),
+	}})
+	if got := app.providerAccount("codex"); !got.QuotaKnown {
+		t.Fatal("the fixture did not take; nothing is being measured")
+	}
+
+	app.forgetQuotas("codex")
+
+	got := app.providerAccount("codex")
+	if got.QuotaKnown {
+		t.Errorf("QuotaKnown = true after the credential changed; the card still claims %+v", got.Quotas)
+	}
+	if len(got.Quotas) != 0 {
+		t.Errorf("Quotas = %+v after the credential changed; want none", got.Quotas)
+	}
+}
+
+// The alias handling has to match rememberQuotas', or a window filed under the
+// canonical name would survive a sign-out issued under the client's own name.
+func TestForgettingQuotasNormalizesTheProviderName(t *testing.T) {
+	app := &App{}
+	app.rememberQuotas("anthropic", []model.Quota{{Window: "week", RemainingPercent: 40}})
+	app.forgetQuotas("claude")
+	if got := app.providerAccount("anthropic"); got.QuotaKnown {
+		t.Errorf("the alias did not reach the stored window: %+v", got.Quotas)
+	}
+}

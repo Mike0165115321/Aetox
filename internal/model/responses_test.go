@@ -344,7 +344,18 @@ func TestChatGPTAliasStillMeansOpenAI(t *testing.T) {
 // "auto" gave one headline in one burst at the end of a billed think — a panel
 // that says the model barely thought on a turn it thought hard. "detailed" is
 // what makes the panel stream while the thinking happens.
-func TestResponsesAsksForDetailedReasoningSummaries(t *testing.T) {
+// The whole reasoning block, not just the half that was being watched.
+//
+// This used to assert Summary == "detailed" alone, and that is how a value
+// changed on one observation stayed for two weeks with a thinking panel that
+// showed nothing: the test agreed with the code, both were wrong together, and
+// nothing here said what the block is FOR. It pins all three fields now, so a
+// change to any of them is a decision somebody has to write down.
+//
+// "auto" is the endpoint's documented default and where this sits until
+// TestLiveCodexReasoningReachesTheThinkingPanel can run against a plan with
+// quota. The comment on buildResponsesRequest carries that history.
+func TestResponsesAsksForReasoningSummariesItCanActuallyRender(t *testing.T) {
 	req := Request{
 		Messages:  []Message{{Role: RoleUser, Content: "คิดหน่อย"}},
 		Reasoning: &ReasoningConfig{Effort: "medium"},
@@ -353,7 +364,38 @@ func TestResponsesAsksForDetailedReasoningSummaries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildResponsesRequest: %v", err)
 	}
-	if payload.Reasoning == nil || payload.Reasoning.Summary != "detailed" {
-		t.Fatalf("reasoning = %+v; want Summary \"detailed\"", payload.Reasoning)
+	if payload.Reasoning == nil {
+		t.Fatal("no reasoning block at all - a thinking turn that never asks to see the thinking")
+	}
+	if payload.Reasoning.Summary != "auto" {
+		t.Errorf("Summary = %q, want \"auto\", the endpoint's own default", payload.Reasoning.Summary)
+	}
+	if payload.Reasoning.Effort != "medium" {
+		t.Errorf("Effort = %q, want the level the caller asked for", payload.Reasoning.Effort)
+	}
+	// store:false means the reasoning is not kept server-side, so asking for the
+	// encrypted content is the only way it could ever come back for the next
+	// turn. Nothing echoes it yet (convertMessagesToResponses emits no reasoning
+	// item), but dropping the request would close the door on ever doing so.
+	if len(payload.Include) != 1 || payload.Include[0] != "reasoning.encrypted_content" {
+		t.Errorf("Include = %v, want [reasoning.encrypted_content]", payload.Include)
+	}
+}
+
+// A turn with no reasoning asked for must send no reasoning block and no
+// include: the endpoint would charge for a summary nobody will read, and a
+// model told to think when the user turned thinking off is the control lying.
+func TestResponsesSendsNoReasoningBlockWhenThinkingIsOff(t *testing.T) {
+	payload, err := buildResponsesRequest("codex", "gpt-5.1-codex", Request{
+		Messages: []Message{{Role: RoleUser, Content: "hi"}},
+	})
+	if err != nil {
+		t.Fatalf("buildResponsesRequest: %v", err)
+	}
+	if payload.Reasoning != nil {
+		t.Errorf("reasoning = %+v on a turn that asked for none", payload.Reasoning)
+	}
+	if len(payload.Include) != 0 {
+		t.Errorf("Include = %v on a turn with no reasoning to include", payload.Include)
 	}
 }

@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/Mike0165115321/Aetox/internal/debuglog"
 )
 
 // The Responses runtime — the wire format a ChatGPT subscription speaks.
@@ -187,13 +189,30 @@ func buildResponsesRequest(provider, model string, req Request) (responsesReques
 		// asking, the reasoning happens and streams nothing, leaving Aetox's
 		// thinking panel empty on a model that is thinking.
 		//
-		// "detailed" rather than "auto": auto lets the endpoint decide, and
-		// what it decided in practice was one headline in one burst at the end
-		// — a thinking panel that reads "คิดเป็นเวลา 1 วินาที" over a bold line,
-		// on a turn the model billed far more thinking for (seen 2026-08-07).
-		// detailed writes sections as it goes, so the panel streams while the
-		// thinking is actually happening. Costs a few summary tokens per turn.
-		out.Reasoning = &responsesReason{Effort: effort, Summary: "detailed"}
+		// "auto", which is the endpoint's own default, and back to it after two
+		// weeks on "detailed".
+		//
+		// The trade this was meant to win: on 2026-08-07 auto produced one
+		// headline in one burst at the end — a panel reading "คิดเป็นเวลา 1
+		// วินาที" over a bold line, on a turn the model billed far more thinking
+		// for. "detailed" was supposed to write sections as it goes so the panel
+		// streams while the thinking happens, and it was changed on that single
+		// observation, against the public API's documented behaviour rather than
+		// against this backend.
+		//
+		// What followed: 1,266 turns ran with thinking on across gpt-5.6-luna,
+		// terra and 5.4-mini between 2026-08-08 and 2026-08-20, and the owner
+		// reports the panel never showed anything at all in that whole stretch.
+		// One headline was little; nothing is worse, and a value the endpoint
+		// documents as its default is the safer place to sit while the question
+		// is open.
+		//
+		// **Provisional.** What settles it is TestLiveCodexReasoningReachesThe
+		// ThinkingPanel, which asks the backend directly and records which event
+		// names arrive. It could not run on 2026-08-20: the request was accepted
+		// and answered 429 plan_type=free, resets_in ~25 days. Run it when the
+		// plan resets — or on a paid one — before either value is called correct.
+		out.Reasoning = &responsesReason{Effort: effort, Summary: "auto"}
 		// With store:false the reasoning is not kept server-side, so it has to
 		// come back to us to be echoed into the next turn.
 		out.Include = []string{"reasoning.encrypted_content"}
@@ -426,6 +445,20 @@ func (p *ResponsesProvider) StreamComplete(ctx context.Context, req Request, onC
 	var text, reasoning strings.Builder
 	builders := map[string]*responsesToolBuilder{}
 	var order []string
+	// Event types this switch does not handle, logged once each per stream.
+	//
+	// The switch below has no default, so an event shape the backend changed or
+	// never sent in the first place is indistinguishable here from one that
+	// simply did not occur — and the symptom of that is a UI panel that is
+	// empty for a reason nothing on the machine records. The thinking panel
+	// went quiet on Codex at some point between 2026-08-08 and 2026-08-20 and
+	// there was no way to tell whether the summary events stopped arriving,
+	// arrived under other names, or were never requested; every answer to that
+	// was a guess, because this loop threw the evidence away.
+	//
+	// Names only, never payloads: the point is to learn which shapes arrive,
+	// and the content of a reasoning summary is the user's conversation.
+	unknownEvents := map[string]bool{}
 	progress := newToolProgressTracker(req.OnToolCallProgress)
 	respModel := model
 	var usage Usage
@@ -537,6 +570,12 @@ func (p *ResponsesProvider) StreamComplete(ctx context.Context, req Request, onC
 		case "error":
 			streamErr = fmt.Errorf("%s: %s", p.provider, responsesErrorText(event))
 			return true, nil
+
+		default:
+			if t := strings.TrimSpace(event.Type); t != "" && !unknownEvents[t] {
+				unknownEvents[t] = true
+				debuglog.Msg("responses: unhandled event %q from %s", t, p.provider)
+			}
 		}
 		return false, nil
 	})

@@ -166,6 +166,31 @@ func readCodexQuotas(h http.Header, now time.Time) []Quota {
 					family, span, until)
 			}
 		}
+		// A percentage with neither a name nor a reset is not a window, and
+		// drawing it is worse than drawing nothing.
+		//
+		// Measured against the live backend on 2026-08-20, on a free plan with
+		// the monthly allowance spent. Two families came back:
+		//
+		//	month  0% remaining, resets 2026-09-11
+		//	other  100% remaining, no reset stated
+		//
+		// The first is exactly what OpenAI's own usage panel showed that
+		// account, to the day. The second had no window-minutes to be named by
+		// and no reset-after-seconds to count down, so it reached the card as a
+		// full green bar labelled "this window" sitting beside an exhausted one
+		// — reading, to the person who owns that account, as capacity they did
+		// not have. OpenAI's client does not show it at all.
+		//
+		// Deliberately narrow: a window that states a length keeps its row even
+		// with no reset (half an answer is still an answer, and the comment on
+		// ResetAt says so), and one that states a reset keeps its row even
+		// under the vague name. Only the pair together — nothing to call it,
+		// nothing to count toward — leaves a number that cannot be read, and
+		// those are the ones that stop here.
+		if q.Window == windowUnnamed && !q.HasReset() {
+			continue
+		}
 		out = append(out, q)
 	}
 	if len(out) == 0 {
@@ -197,8 +222,13 @@ func windowName(d time.Duration) string {
 			return known.name
 		}
 	}
-	return "other"
+	return windowUnnamed
 }
+
+// windowUnnamed is what a length with no name in the UI's vocabulary gets. The
+// UI draws it as "this window", which is vaguer than "this week" and, unlike
+// it, cannot be wrong.
+const windowUnnamed = "other"
 
 // readAnthropicQuotas prefers the unified window a Pro/Max sign-in reports,
 // because that is the one actually binding on such an account. API keys do not

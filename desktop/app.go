@@ -2734,6 +2734,28 @@ func (a *App) rememberQuotas(providerName string, quotas []model.Quota) {
 	a.quotas[model.NormalizeProvider(providerName)] = quotas
 }
 
+// forgetQuotas drops what one provider last reported, because it was reported
+// about a credential that is no longer the one in use.
+//
+// A quota is never fetched (model.Quota) — it arrives in the headers of turns
+// that already happened, and it describes the account those turns ran on.
+// Signing out of one ChatGPT plan and into another leaves the first plan's
+// windows sitting in this map until a turn runs on the second one, and until
+// then the card reports the old account's numbers under the new account's name.
+//
+// That is not a cosmetic staleness. On 2026-08-20 the owner's card read
+// "เหลือ 0% · รีเซ็ตอีก 22 วัน" from an exhausted plan, and switching accounts
+// appeared not to work — the new sign-in drew the old plan's exhausted bar,
+// which is exactly what a failed switch would look like. Deleting the key
+// rather than storing an empty slice is the point: it restores "never
+// answered", so the card says the quota is not known yet instead of asserting
+// something untrue about an account it has never seen.
+func (a *App) forgetQuotas(providerName string) {
+	a.quotasMu.Lock()
+	defer a.quotasMu.Unlock()
+	delete(a.quotas, model.NormalizeProvider(providerName))
+}
+
 // ProviderAPIKeyURL is the page on the provider's own site where the user
 // creates the key the Settings card is asking them to paste. Empty when there
 // is nowhere to send them — a local runtime, or a sign-in provider whose row
