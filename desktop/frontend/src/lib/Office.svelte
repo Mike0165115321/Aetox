@@ -17,6 +17,7 @@
   import { dayBucket } from './dayBucket'
   import Icon from './Icon.svelte'
   import { coverHue } from './coverHue'
+  import { workerFace } from './workerFace'
   import type { IconName } from './icons'
 
   let { onClose }: { onClose: () => void } = $props()
@@ -60,9 +61,12 @@
   // The face a job wears is its author's, resolved off the roster so one agent
   // cannot show two marks on one page. A job from a profile that has since been
   // deleted still gets a face rather than a hole.
-  const faces = $derived(new Map(chairs.map((c) => [c.name, (c.icon || 'bot') as IconName])))
+  // Every row on this page is a chair, so the derived mark is เอเจน's
+  // (workerFace). A job whose profile has since been deleted keeps a face
+  // rather than leaving a hole, and it is the same one.
+  const faces = $derived(new Map(chairs.map((c) => [c.name, workerFace(c.icon, true)])))
   function faceOf(name: string): IconName {
-    return faces.get(name) ?? 'bot'
+    return faces.get(name) ?? workerFace(undefined, true)
   }
 
   // Who is in the feed, in the order the roster lists them — so the filter row
@@ -156,7 +160,7 @@
             <div class="chair-body">
               <div class="chair-who">
                 <span class="chair-face" style="--h:{coverHue(c.name)}">
-                  <Icon name={(c.icon || 'bot') as IconName} size={16} />
+                  <Icon name={workerFace(c.icon, true)} size={16} />
                 </span>
                 <span class="chair-name">{c.name}</span>
                 {#if c.overrides}<span class="badge">{t('office.overrides')}</span>{/if}

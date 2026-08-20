@@ -108,8 +108,17 @@ const (
 	// old ceiling, deliberately, and this constant is no longer evidence that
 	// the cost is under control. Do not treat a passing test here as permission
 	// to add more. The mechanism that will be evidence has not been designed
-	// yet, and `task` at ~1,568 tokens — three times the browser, for one
-	// mechanism — is where it should start looking.
+	// yet, and `task` — the largest single mechanism in the block — is where it
+	// should start looking.
+	//
+	// That ~1,568 figure was true when this was written and is not any more:
+	// packing (§99) and the roster trim took it to 710 with both kinds
+	// reachable, and the 2026-08-20 split made even that conditional — 599 on a
+	// fresh install, which is เอเจน off and ซับเอเจน on. Re-measured the same
+	// day: the fresh-install block is ~7,727 tokens over 35 tools, ~7,838 with
+	// เอเจน turned on, ~7,127 with both kinds off. The number this test defends
+	// stopped being the binding constraint some time ago, and saying so is
+	// better than leaving a stale figure to be quoted.
 	maxToolBlockTokens = 10400
 	// The count is full again at 48: the next tool everybody carries has to
 	// displace one, and that is the intended reading of this number rather than

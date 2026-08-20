@@ -82,12 +82,46 @@ type DelegateWorker struct {
 	On bool `json:"on"`
 }
 
+// shippedReachableAgent is the one เอเจน a machine arrives with in reach.
+//
+// research rather than none, and rather than all five: an assistant that can
+// hand nothing to anybody is a company with one employee, while five in the
+// block cost ~21 tokens each in every message for colleagues most people never
+// call. Going out to find something out is the errand that comes up on any desk,
+// whatever the work is (owner, 20 ส.ค.).
+//
+// A name rather than a flag in the profile, and it is the honest spelling: this
+// is one choice about how the app arrives, not a property of the agent. The day
+// a second one earns its place here, this becomes a list.
+const shippedReachableAgent = "research"
+
+// shippedDelegation is the delegation a machine gets before anybody answers the
+// question — read at startup, never written to disk (App.resolveConfig).
+//
+// It reads the roster rather than naming four agents, so an เอเจน installed
+// later arrives OUT of reach like every other one, instead of quietly switching
+// itself on. ซับเอเจน are left out entirely: they are the assistant's own hands
+// and ship on, which is the asymmetry config.Config already spells into the two
+// switch fields.
+func shippedDelegation() (agents bool, workersOff []string) {
+	for _, p := range subagent.List() {
+		if p.Invalid != "" || p.Desk == "" {
+			continue
+		}
+		if strings.EqualFold(p.Name, shippedReachableAgent) {
+			continue
+		}
+		workersOff = append(workersOff, strings.ToLower(p.Name))
+	}
+	return true, workersOff
+}
+
 // DelegateSwitches reports both switches and what each is worth.
 func (a *App) DelegateSwitches() DelegateSettings {
 	cfg := a.cur().cfg
 	out := DelegateSettings{
 		Agents:  DelegateReach{Off: !cfg.DelegateAgents},
-		Helpers: DelegateReach{Off: !cfg.DelegateHelpers},
+		Helpers: DelegateReach{Off: cfg.DelegateHelpersOff},
 		Tokens:  a.ToolBlockTokens(),
 	}
 	off := lowered(cfg.WorkersOff)
@@ -111,9 +145,9 @@ func (a *App) DelegateSwitches() DelegateSettings {
 	// it. Both directions from one subtraction: on a kind that is on it reads as
 	// what turning it off gives back, on a kind that is off as what turning it
 	// on will cost.
-	here := a.delegationCost(!cfg.DelegateAgents, !cfg.DelegateHelpers)
-	out.Agents.Tokens = abs(here - a.delegationCost(cfg.DelegateAgents, !cfg.DelegateHelpers))
-	out.Helpers.Tokens = abs(here - a.delegationCost(!cfg.DelegateAgents, cfg.DelegateHelpers))
+	here := a.delegationCost(!cfg.DelegateAgents, cfg.DelegateHelpersOff)
+	out.Agents.Tokens = abs(here - a.delegationCost(cfg.DelegateAgents, cfg.DelegateHelpersOff))
+	out.Helpers.Tokens = abs(here - a.delegationCost(!cfg.DelegateAgents, !cfg.DelegateHelpersOff))
 	return out
 }
 
@@ -167,13 +201,17 @@ func (a *App) SetDelegateOff(kind string, off bool) DelegateSettings {
 		}
 		cfg.DelegateAgents = !off
 	case "helpers":
-		if off == !a.cur().cfg.DelegateHelpers {
+		if off == a.cur().cfg.DelegateHelpersOff {
 			return a.DelegateSwitches()
 		}
-		cfg.DelegateHelpers = !off
+		cfg.DelegateHelpersOff = off
 	default:
 		return a.DelegateSwitches()
 	}
+	// Somebody has now answered, so the shipped default stops applying — including
+	// when the answer is the same as the default. Without this the next start would
+	// resolve as "nobody answered" and hand back a state the user had just left.
+	cfg.DelegateSet = true
 	a.applyConfig(a.cur(), cfg)
 	return a.DelegateSwitches()
 }
@@ -199,6 +237,7 @@ func (a *App) SetAgentOff(name string, off bool) DelegateSettings {
 	}
 	cfg := a.cfg
 	cfg.WorkersOff = current
+	cfg.DelegateSet = true
 	a.applyConfig(a.cur(), cfg)
 	return a.DelegateSwitches()
 }

@@ -1644,6 +1644,30 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .focus-row { display:flex; align-items:center; gap:2px; }
 .focus-row .focus-item { flex:1; min-width:0; }
 .focus-row .icobtn { flex:none; }
+/* An เอเจน in the picker. Two questions on one line: the name picks who answers
+   this chat, the pill decides whether the main assistant may hand them a job —
+   so two controls, and .focus-row's split is not enough on its own here.
+
+   The ROW is the hover surface, not the button inside it. A highlight that
+   stopped where the button stopped left a lit strip with a dark gap at the end
+   of every row, which is what the owner sent back on 20 ส.ค.
+
+   justify-content is stated rather than inherited: a <button> that becomes a
+   flex container is centred by the UA sheet, and the moment the button was
+   given room to grow, every name drifted into the middle of its own row.
+
+   The icon takes a fixed column so the names start at one x. Different glyphs
+   are different widths, and five names each starting somewhere slightly else
+   reads as a list that was never laid out. */
+.agent-row { display:flex; align-items:center; border-radius:var(--r-sm); }
+.agent-row:hover { background:var(--surface-hover); }
+.agent-row > .focus-item { flex:1 1 auto; min-width:0; justify-content:flex-start; }
+.agent-row > .focus-item:hover { background:none; }
+.agent-row:hover > .focus-item { color:var(--text-primary); }
+.agent-row.on > .focus-item { color:var(--accent); }
+.agent-row > .focus-item .ic { width:16px; }
+.agent-row > .mswitch { margin:0 9px 0 6px; }
+
 /* The right end of a menu row: the state or the address, pushed to the edge so
    the row reads as a list entry rather than as a label floating in a box. The
    name takes the space it needs and this takes the rest. */
@@ -2509,17 +2533,10 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
    Greyed rather than removed when delegation is off entirely. A row that
    vanished would leave somebody hunting for an agent that never went anywhere,
    which is precisely the misreading the wording is built to avoid. */
-.ag-actions .ag-reach { flex:none; font-size:var(--fs-2xs); padding:4px 9px; }
-.ag-actions .ag-reach.on { border-color:var(--accent); color:var(--accent); }
-.ag-actions .ag-reach:disabled { opacity:.45; cursor:not-allowed; }
 /* The master switch and what it costs, above the roster it governs. Its own
    card so the eye reads it as the parent of the two grids below rather than as
    the first row of the first one. */
 .reach-card { margin-bottom:14px; }
-.reach-meter {
-  font-family:var(--mono); font-size:var(--fs-2xs); color:var(--text-dim);
-  font-variant-numeric:tabular-nums; white-space:nowrap; padding-right:4px;
-}
 /* The delegation switch in the composer's agent menu, one row under the names.
    Reads as a statement of what is allowed, not as another agent to switch to,
    so it never takes the accent that marks "you are here". */

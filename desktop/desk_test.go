@@ -57,8 +57,7 @@ func bootDeskApp(t *testing.T, desk string) *App {
 		// Asked for, because delegation ships off (owner, 18 ส.ค.). These tests
 		// are about which tools a DESK carries, and `task` is only one of them
 		// on a session that has the capability at all.
-		DelegateAgents:  true,
-		DelegateHelpers: true,
+		DelegateAgents: true,
 	})
 	return a
 }
@@ -192,12 +191,11 @@ func TestADeskAddsDirectionAndItsOwnMemory(t *testing.T) {
 			a.cur().desk = m
 		}
 		a.applyConfig(a.cur(), config.Config{
-			SandboxRoot:   t.TempDir(),
-			ModelProvider: "aetox",
-			ModelName:     "aetox-tools:test",
-			ApprovalMode:  string(safety.ApprovalFullAccess),
-			DelegateAgents:  true,
-			DelegateHelpers: true,
+			SandboxRoot:    t.TempDir(),
+			ModelProvider:  "aetox",
+			ModelName:      "aetox-tools:test",
+			ApprovalMode:   string(safety.ApprovalFullAccess),
+			DelegateAgents: true,
 		})
 		messages := a.cur().agent.ContextMessages()
 		if len(messages) == 0 {

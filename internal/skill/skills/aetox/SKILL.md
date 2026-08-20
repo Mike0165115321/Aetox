@@ -132,11 +132,12 @@ kind** — nothing inside the file decides which it is.
   A user reaches one of them three ways: opening its own chat, letting the
   assistant hand it work with `task`, or writing **`@<name>`** in an ordinary
   message. Only the middle one is a switch, and there are **two of them**, one per
-  kind (20 ส.ค.): เอเจน and ซับเอเจน are switched separately, both ship **off**,
-  and each settings page carries its own. With both off there is no `task` tool
-  at all; with one off the tool is built carrying the other roster only. Measured
-  cost per message: 710 for the pair, 629 for เอเจน alone, 471 for ซับเอเจน
-  alone. The other two doors are the user's and no setting closes them. The last one delivers that single message to the worker word for
+  kind (20 ส.ค.), each on its own settings page. They ship opposite ways: **เอเจน
+  off** (handing a whole job to a colleague is a decision, and it costs) and
+  **ซับเอเจน on** (those are the assistant's own hands). With both off there is no
+  `task` tool at all; with one off the tool is built carrying the other roster
+  only. Measured per message: 710 for the pair, 629 for เอเจน alone, 599 for
+  ซับเอเจน alone. The other two doors are the user's and no setting closes them. The last one delivers that single message to the worker word for
   word — no paraphrase in between — and leaves the conversation where it is. If
   that worker stops to ask something back, the user's next message answers it.
   The name is whatever the roster says, so an agent the user added themselves is

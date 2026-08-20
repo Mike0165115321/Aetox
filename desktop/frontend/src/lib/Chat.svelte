@@ -8,12 +8,13 @@
   import Palette from './Palette.svelte'
   import Logo from './Logo.svelte'
   import { onMount } from 'svelte'
+  import { workerFace } from './workerFace'
   import { shell } from './shell.svelte'
   import {
     EnabledProviders, SupportedThinkLevels,
     ListModelsForProvider, PriceModels, RequiresAPIKey, AcceptsAPIKey, HasAPIKey, PickAttachment,
     GetContextBreakdown, GuideTopics, RunChatCommand, RunChatScript, ListChairs, ChairStarters, CurrentSessionID,
-    DelegateSwitches, SetDelegateOff,
+    DelegateSwitches, SetDelegateOff, SetAgentOff,
     Shells, CurrentShell, SetShell, EnginesFor, UseEngine, VerifyConnection,
     GitBranches, GitSwitchBranch, GitCreateBranch, GetProjectStatus,
   } from '../../wailsjs/go/main/App'
@@ -462,13 +463,21 @@
   // Flipping it re-bootstraps the engine, so the menu stays open and the row
   // stays disabled until the answer comes back — a switch that looks instant
   // and is not is a switch people press twice.
-  // The two switches as rows, built here rather than inline so their keys keep
-  // their literal types and `t` still refuses a key the locales do not have.
+  // The one switch this menu carries, built here rather than inline so its keys
+  // keep their literal types and `t` still refuses a key the locales do not
+  // have.
+  //
+  // เอเจน only. Both switches stood here for an hour on 2026-08-20 and the
+  // owner took the second one straight back out: a ซับเอเจน is on from the
+  // start and is the assistant's own hands, so a switch for it in the menu you
+  // open to CHOOSE WHO ANSWERS is a control in the wrong room — it belongs on
+  // its settings page, where the rest of what a ซับเอเจน is already is. What
+  // earns a place here is the decision this menu is about: whether somebody
+  // else gets handed the job.
   const delegateRows = $derived(
     delegate
       ? ([
           { kind: 'agents', reach: delegate.agents, icon: 'userRound', label: 'chat.delegateAgents', on: 'chat.delegateAgentsOn', off: 'chat.delegateAgentsOff' },
-          { kind: 'helpers', reach: delegate.helpers, icon: 'bot', label: 'chat.delegateHelpers', on: 'chat.delegateHelpersOn', off: 'chat.delegateHelpersOff' },
         ] as const)
       : [],
   )
@@ -479,6 +488,42 @@
       delegate = await SetDelegateOff(kind, delegate[kind].off === false)
     } finally {
       delegateBusy = false
+    }
+  }
+  // One agent's own switch, on the row that names it.
+  //
+  // The reach has been per-worker since 10 ส.ค. (SetAgentOff, worn by the
+  // settings page): what it lacked was a place in the menu people actually open
+  // when they are deciding who does the work. A switch two pages away from the
+  // decision is a switch nobody finds, which is the same argument that put the
+  // master row below into this menu rather than into settings.
+  //
+  // Two hit targets on one row, deliberately. The name still means "go and talk
+  // to this one" and the pill means "may the assistant hand work here" — two
+  // different questions, and .focus-row is the split this menu already draws
+  // for the engine rows. It is also why the pill is a <label> BESIDE the button
+  // and not inside it: one control cannot answer two questions, and interactive
+  // markup cannot nest anyway.
+  //
+  // Disabled rather than hidden while the master switch is off. A row that lost
+  // its switch would read as an agent that lost its switch, when what is off is
+  // delegation itself — the same choice the settings page made for the same
+  // reason.
+  function agentReach(name: string): { on: boolean; off: boolean } | null {
+    if (!delegate) return null
+    const w = delegate.agents.workers.find((x) => x.name === name)
+    return w ? { on: w.on, off: delegate.agents.off } : null
+  }
+  // Its own busy flag, not delegateBusy: flipping one agent must not grey out
+  // the master row, and the menu stays open through the re-bootstrap either way.
+  let reachBusy = $state('')
+  async function toggleAgentReach(name: string, on: boolean) {
+    if (reachBusy || delegateBusy) return
+    reachBusy = name
+    try {
+      delegate = await SetAgentOff(name, on)
+    } finally {
+      reachBusy = ''
     }
   }
   // Which shell the agent's commands run in: this machine's, or a WSL distro.
@@ -2487,11 +2532,36 @@
             </button>
             {#if officeChairs.length > 0}<div class="menu-sep"></div>{/if}
             {#each officeChairs as c (c.name)}
-              <button type="button" class="focus-item" class:on={cockpit.chair === c.name}
-                title={c.description}
-                onclick={() => { agentMenuOpen = false; if (cockpit.chair !== c.name) newChairSession(c.name) }}>
-                <span class="ic"><Icon name="bot" size={14} /></span><span class="t">{c.name}</span>
-              </button>
+              {@const reach = agentReach(c.name)}
+              <!-- `on` sits on the ROW, not on the button inside it: the row is what
+                   lights up, so it is also what has to know it is the current one, and
+                   the same fact written in two places is the one that drifts. -->
+              <div class="agent-row" class:on={cockpit.chair === c.name}>
+                <button type="button" class="focus-item"
+                  title={c.description}
+                  onclick={() => { agentMenuOpen = false; if (cockpit.chair !== c.name) newChairSession(c.name) }}>
+                  <!-- The chair's own mark, not a constant: github wears
+                       `gitBranch` and research wears `search` in their own files,
+                       and both showed as `bot` here, which is the ซับเอเจน glyph
+                       on a list of เอเจน. -->
+                  <span class="ic"><Icon name={workerFace(c.icon, true)} size={14} /></span><span class="t">{c.name}</span>
+                </button>
+                <!-- The same pill the settings rows wear, and the same two
+                     strings, because it is the same fact: whether the assistant
+                     may hand THIS one a job. A second wording here would be a
+                     second answer to one question. -->
+                {#if reach}
+                  <label class="mswitch" title={t('settings.agentReachTip')}>
+                    <input
+                      type="checkbox" checked={reach.on && !reach.off}
+                      disabled={reach.off || reachBusy !== '' || delegateBusy}
+                      aria-label={t('settings.agentReach')}
+                      onchange={() => toggleAgentReach(c.name, reach.on)}
+                    />
+                    <span></span>
+                  </label>
+                {/if}
+              </div>
             {/each}
             <!-- The master switch on the assistant's reach, and it sits HERE
                  rather than in settings for one reason: delegation ships off,
@@ -2510,11 +2580,13 @@
                  mis-click. -->
             {#if delegate}
               <div class="menu-sep"></div>
-              <!-- Two rows, because they are two acts (COMPANY.md §4). One
-                   switch stood here until 2026-08-20 and it governed both, so
-                   somebody who wanted a colleague kept out of their work lost
-                   the assistant's own hands in the same click, with nothing on
-                   screen saying so.
+              <!-- One row, and it is the เอเจน one. The switch that stood here
+                   until 2026-08-20 governed both kinds, so somebody who wanted a
+                   colleague kept out of their work lost the assistant's own
+                   hands in the same click, with nothing on screen saying so.
+                   Splitting them fixed that; keeping both rows here would have
+                   put a control for something that is on by default into the
+                   menu people open to pick who answers (see delegateRows).
 
                    role="switch", not a pressed button. It is an on/off state
                    read at a glance, and the owner asked for it to look like one
@@ -2522,15 +2594,14 @@
                    only changed colour made you read the note underneath to find
                    out which way it was set.
 
-                   userRound and bot, because the two kinds already own those
-                   two glyphs and nothing here gets to invent a third pair: the
-                   settings sidebar files เอเจน under userRound and ซับเอเจน
-                   under bot (Settings.svelte, where the identity page carries a
-                   comment about not taking userRound because "the เอเจน page
-                   below owns that"), and the timeline toggles below count the
-                   two piles with the same two. A switch drawn with a glyph of
-                   its own would be a third vocabulary for a distinction the app
-                   has already made twice.
+                   userRound, because เอเจน already own that glyph and nothing
+                   here gets to invent another: the settings sidebar files เอเจน
+                   under userRound and ซับเอเจน under bot (Settings.svelte, where
+                   the identity page carries a comment about not taking userRound
+                   because "the เอเจน page below owns that"), and the timeline
+                   toggles below count the two piles with the same two. A switch
+                   drawn with a glyph of its own would be a third vocabulary for
+                   a distinction the app has already made twice.
 
                    The single switch that stood here wore `gitBranch`, argued for
                    as "the work goes down another path" and chosen partly to

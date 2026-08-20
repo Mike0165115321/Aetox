@@ -57,7 +57,6 @@ func TestEngineRegistersEveryTaskTool(t *testing.T) {
 	// remembered to set it.
 	cfg := testConfig(t)
 	cfg.DelegateAgents = true
-	cfg.DelegateHelpers = true
 	res, err := Engine(cfg, Options{Approve: approveNothing})
 	if err != nil {
 		t.Fatalf("Engine: %v", err)
@@ -83,13 +82,28 @@ func TestEngineRegistersEveryTaskTool(t *testing.T) {
 // And the other half of the switch, at the level that decides it: off means the
 // tool is never built, so nothing downstream has to filter it, refuse it, or
 // explain it. It is not there.
-func TestEngineBuildsNoTaskToolWhenDelegationIsOff(t *testing.T) {
-	res, err := Engine(testConfig(t), Options{Approve: approveNothing}) // a zero config: off
+func TestEngineBuildsNoTaskToolWhenBothKindsAreOff(t *testing.T) {
+	// A zero config is เอเจน off and ซับเอเจน ON (the two ship opposite ways —
+	// config.Config.DelegateAgents), so the tool is there, carrying hands.
+	shipped, err := Engine(testConfig(t), Options{Approve: approveNothing})
+	if err != nil {
+		t.Fatalf("Engine: %v", err)
+	}
+	if _, ok := shipped.Registry.Get("task"); !ok {
+		t.Error("a fresh config has no task tool at all, so the assistant has no hands")
+	}
+
+	// Both off is the only state with nothing to hand out, and then the tool is
+	// not built: not built and refusing, which would still cost its place in
+	// every request to say no.
+	cfg := testConfig(t)
+	cfg.DelegateHelpersOff = true
+	res, err := Engine(cfg, Options{Approve: approveNothing})
 	if err != nil {
 		t.Fatalf("Engine: %v", err)
 	}
 	if _, ok := res.Registry.Get("task"); ok {
-		t.Error("delegation is off but task was registered anyway; the saving is the tool not existing")
+		t.Error("both kinds are off but task was registered anyway; the saving is the tool not existing")
 	}
 	if names := strings.Join(res.Dispatcher.Names(), " "); strings.Contains(names, "task") {
 		t.Errorf("task is still offered to the model: %s", names)

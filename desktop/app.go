@@ -3419,7 +3419,8 @@ func (a *App) applyConfig(conv *conversation, cfg config.Config) {
 func resolveConfig(opts config.ConfigOptions) config.Config {
 	cfg := config.Load(opts)
 
-	if pref, ok, _ := config.LoadModelPreference(); ok {
+	pref, hasPref, _ := config.LoadModelPreference()
+	if hasPref {
 		if v := strings.TrimSpace(pref.ModelProvider); v != "" {
 			cfg.ModelProvider = v
 		}
@@ -3450,8 +3451,9 @@ func resolveConfig(opts config.ConfigOptions) config.Config {
 		// only `delegate_on`, and config.LoadModelPreference has already folded
 		// that into both by the time it arrives here.
 		cfg.DelegateAgents = pref.DelegateAgents
-		cfg.DelegateHelpers = pref.DelegateHelpers
+		cfg.DelegateHelpersOff = pref.DelegateHelpersOff
 		cfg.WorkersOff = pref.WorkersOff
+		cfg.DelegateSet = pref.DelegateSet
 		if key := pref.APIKeyForProvider(cfg.ModelProvider); key != "" {
 			cfg.ModelAPIKey = key
 		}
@@ -3474,6 +3476,17 @@ func resolveConfig(opts config.ConfigOptions) config.Config {
 		cfg.ModelName = model.ResolveDefaultModel(cfg.ModelProvider, cfg.ModelBaseURL, cfg.ModelAPIKey)
 	}
 	cfg.ThinkLevel = model.NormalizeThinkingLevel(cfg.ModelProvider, cfg.ModelName, cfg.ThinkLevel)
+	// Outside the block above, because the install that needs this most is the
+	// one with no preference file at all — inside, it would only ever reach a
+	// machine that had already saved something.
+	//
+	// Nothing is written here. The default stays a fact resolved at startup until
+	// somebody flips a switch, which is what makes it a DEFAULT rather than a
+	// state the app quietly chose on their behalf; the same reason
+	// ResolvedEnabledProviders does not persist its answer either.
+	if !cfg.DelegateSet {
+		cfg.DelegateAgents, cfg.WorkersOff = shippedDelegation()
+	}
 	return cfg
 }
 
@@ -3533,9 +3546,23 @@ func persistModelPreference(cfg config.Config) {
 	// Same rule as SpeechModelPath one line up: an empty value is a real choice
 	// here — turning the last switch back on is expressed as "nobody is off" —
 	// so it is written through rather than treated as nothing to say.
-	pref.DelegateAgents = cfg.DelegateAgents
-	pref.DelegateHelpers = cfg.DelegateHelpers
-	pref.WorkersOff = cfg.WorkersOff
+	// Written only once somebody has answered — and the guard is the point.
+	//
+	// cfg carries the RESOLVED delegation, which on a machine that has never
+	// touched a switch is the shipped default. Writing that through would put the
+	// default into the file as if it were a choice, and the next load would read
+	// a non-empty agents_off as somebody's answer (sanitizePreference) and freeze
+	// it there. A user who never answers keeps a file that never says, so the day
+	// the shipped default changes, it changes for them.
+	//
+	// Only ever set, never cleared: no later save of an unrelated setting may take
+	// an answer back.
+	if cfg.DelegateSet || pref.DelegateSet {
+		pref.DelegateAgents = cfg.DelegateAgents
+		pref.DelegateHelpersOff = cfg.DelegateHelpersOff
+		pref.WorkersOff = cfg.WorkersOff
+		pref.DelegateSet = true
+	}
 	_ = config.SaveModelPreference(pref)
 }
 

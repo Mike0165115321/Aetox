@@ -561,17 +561,17 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 		// dispatch runs on the target desk's manifest, so the tool it needs has
 		// to still be in there to be filtered *in* (§84).
 		Desk: opts.Mode,
-		// The user's switches, one per kind (COMPANY.md §4). Both off builds no
-		// tool at all, which is the whole point — a `task` that existed to
+		// The user's two switches, one per kind (COMPANY.md §4). Both off builds
+		// no tool at all, which is the whole point — a `task` that existed to
 		// refuse would still cost its place in every request to say so.
 		//
-		// The negations in the whole feature live here and nowhere else: the
-		// product ships delegation off (config.Config) while the library it
-		// configures defaults to the full reach (subagent.TaskOptions). Both
-		// defaults are right for what they are, and this is the boundary where
-		// one becomes the other.
+		// Both spellings flip here, and only here: the product ships เอเจน off
+		// and ซับเอเจน on (config.Config), while the library defaults to the
+		// full reach (subagent.TaskOptions). Every default is right for what it
+		// is, and this is the boundary where one becomes the other — which is
+		// why one line negates and the other does not.
 		NoAgents:   !cfg.DelegateAgents,
-		NoHelpers:  !cfg.DelegateHelpers,
+		NoHelpers:  cfg.DelegateHelpersOff,
 		WorkersOff: cfg.WorkersOff,
 		// The same assembler the session's own prompt came out of, three lines
 		// up, with the delegate's brief where the desk's direction goes. One

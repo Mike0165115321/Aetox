@@ -1,10 +1,12 @@
 package main
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/Mike0165115321/Aetox/internal/config"
+	"github.com/Mike0165115321/Aetox/internal/subagent"
 )
 
 // The meter has to MEASURE. A constant would be right the day it was written
@@ -168,39 +170,118 @@ func newSwitchApp(t *testing.T) *App {
 	return a
 }
 
-// Delegation ships OFF (owner, 18 ส.ค.), so a fresh install has no `task` tool
-// and the switch in the agent menu is the way in.
+// The two switches ship opposite ways, and a zero Config is the only place that
+// can be proved.
 //
-// The stored field is the positive for exactly this reason — an absent
-// delegate_on has to read as off — while internal/subagent keeps its own
-// default ON, because a library that does nothing until you opt in is a library
-// that gets called wrong. The flip lives in one place, next to the other
-// preferences.
-func TestDelegationShipsOff(t *testing.T) {
+// A zero Config, not the desktop app's startup state: since 20 ส.ค. a machine
+// where nobody has answered resolves to เอเจน ON with research the only one in
+// reach (App.resolveConfig, shippedDelegation), which is a different fact and
+// has its own test below. What is asserted here is what a Config built anywhere
+// else means — a test, another entry point, the CLI.
+//
+// เอเจน OFF (owner, 18 ส.ค.): handing a whole job to a colleague is a decision,
+// and it costs. ซับเอเจน ON (owner, 20 ส.ค.: "ซับเอเจน ควรจะไประบุที่หน้าตั้งค่า
+// และเปิดเป็นค่าเริ่มต้น"): those are the assistant's own hands, and an
+// assistant that cannot take a step of its own work into a second context is
+// missing part of how it works rather than a permission somebody withheld.
+//
+// Which is why the two are stored spelled differently — `delegate_agents_on`
+// and `delegate_helpers_off` — so that in both cases an absent field means what
+// the product ships. internal/subagent keeps its own defaults (both reachable),
+// because a library that does nothing until you opt in is a library that gets
+// called wrong; the flip lives in one place, at the bootstrap boundary.
+func TestDelegationShipsOffForAgentsAndOnForHelpers(t *testing.T) {
 	a := newSwitchApp(t)
 
 	switches := a.DelegateSwitches()
-	if !switches.Agents.Off || !switches.Helpers.Off {
-		t.Error("a fresh install delegates; both switches were supposed to ship off")
+	if !switches.Agents.Off {
+		t.Error("a fresh install hands whole jobs to เอเจน; that switch was supposed to ship off")
 	}
-	if a.toolTokens("task") != 0 {
-		t.Error("task is in the block of an install that has never turned delegation on")
+	if switches.Helpers.Off {
+		t.Error("a fresh install has no hands; ซับเอเจน were supposed to ship on")
+	}
+	// So the tool IS there on an install nobody has touched, carrying one roster.
+	shipped := a.toolTokens("task")
+	if shipped <= 0 {
+		t.Fatal("ซับเอเจน are on and there is no task tool at all")
 	}
 	// And the workers are still listed, because a switch you cannot see is a
 	// switch you cannot turn on.
 	if len(allWorkers(switches)) == 0 {
-		t.Error("nothing to turn on: the settings page shows no workers while delegation is off")
+		t.Error("nothing to turn on: the settings page shows no workers")
 	}
 
-	a.SetDelegateOff("agents", false)
-	on := a.SetDelegateOff("helpers", false)
-	if on.Agents.Off || on.Helpers.Off {
-		t.Fatal("turning delegation on did not take")
+	on := a.SetDelegateOff("agents", false)
+	if on.Agents.Off {
+		t.Fatal("turning เอเจน on did not take")
 	}
-	if a.toolTokens("task") <= 0 {
-		t.Error("turned on, but the meter says task costs nothing")
+	if both := a.toolTokens("task"); both <= shipped {
+		t.Errorf("the tool did not grow when the second roster arrived: %d then %d", shipped, both)
 	}
 	if on.Tokens <= switches.Tokens {
 		t.Errorf("the block did not grow when the capability was added: %d then %d", switches.Tokens, on.Tokens)
+	}
+}
+
+// What a machine arrives with before anybody answers the question.
+//
+// The switch fields still ship the way the test above proves; this is the layer
+// over them, and it exists because "may my assistant hand work to a colleague"
+// answered NO for everybody meant a company whose employees were never asked to
+// do anything. research is the one errand that comes up on any desk.
+func TestNobodyAnsweredMeansResearchAndNobodyElse(t *testing.T) {
+	agents, off := shippedDelegation()
+	if !agents {
+		t.Fatal("the assistant cannot hand work to anybody on a fresh machine")
+	}
+	lower := lowered(off)
+	if slices.Contains(lower, shippedReachableAgent) {
+		t.Errorf("%s is meant to be the one in reach and it is switched off: %v", shippedReachableAgent, off)
+	}
+	var agentNames, helperNames []string
+	for _, p := range subagent.List() {
+		if p.Invalid != "" {
+			continue
+		}
+		if p.Desk != "" {
+			agentNames = append(agentNames, strings.ToLower(p.Name))
+		} else {
+			helperNames = append(helperNames, strings.ToLower(p.Name))
+		}
+	}
+	for _, name := range agentNames {
+		if name == shippedReachableAgent {
+			continue
+		}
+		if !slices.Contains(lower, name) {
+			t.Errorf("%s is in reach on a machine nobody has touched; only %s was meant to be", name, shippedReachableAgent)
+		}
+	}
+	// ซับเอเจน are the assistant's own hands and ship on. A default that reached
+	// into their list would take away hands nobody asked to have taken.
+	for _, name := range helperNames {
+		if slices.Contains(lower, name) {
+			t.Errorf("ซับเอเจน %s was switched off by a default that is only about เอเจน", name)
+		}
+	}
+}
+
+// The shipped default has to stop applying the moment somebody answers, even
+// when their answer is the same as the default — otherwise the next start reads
+// "nobody answered" and hands back a state the user had just left.
+func TestAnsweringOnceStopsTheShippedDefault(t *testing.T) {
+	a := newSwitchApp(t)
+	if a.cur().cfg.DelegateSet {
+		t.Fatal("a config nobody has touched already claims to be an answer")
+	}
+	a.SetAgentOff(shippedReachableAgent, true)
+	if !a.cur().cfg.DelegateSet {
+		t.Error("switching one agent off is an answer and was not recorded as one")
+	}
+
+	b := newSwitchApp(t)
+	b.SetDelegateOff("agents", false)
+	if !b.cur().cfg.DelegateSet {
+		t.Error("flipping the master switch is an answer and was not recorded as one")
 	}
 }

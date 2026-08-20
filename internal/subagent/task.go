@@ -55,8 +55,8 @@ type TaskOptions struct {
 	// tool never does (§84).
 	Desk *mode.Mode
 	// NoAgents and NoHelpers are this session's reach, one switch per kind
-	// (COMPANY.md §4). They are the whole of it: both off is the full reach,
-	// both on builds no tool at all, and either one alone builds a tool that
+	// (COMPANY.md §4). They are the whole of it: both false is the full reach,
+	// both true builds no tool at all, and either one alone builds a tool that
 	// carries one roster and describes one act.
 	//
 	// Two switches because they are two acts. An เอเจน is a colleague who takes
@@ -69,17 +69,22 @@ type TaskOptions struct {
 	// settings page silently greyed out every ซับเอเจน on the other page. Owner's
 	// call that day: แยกชัดเจน, หลังบ้านถึงหน้าบ้าน.
 	//
-	// Negative, so the zero value is the full reach. That is deliberate and is
-	// the opposite of what config.Config does with the same question: a library
-	// that does nothing until you opt in is a library that gets called wrong,
-	// while a product that delegates before anybody asked is a product spending
-	// tokens nobody chose. The one translation between them lives in
-	// internal/bootstrap, at the boundary, where it can be read.
+	// The two do NOT ship the same way, and that asymmetry lives in
+	// config.Config rather than here: handing a whole job to a colleague is off
+	// until asked for, while the assistant's own hands are on from the start
+	// (owner, 20 ส.ค.). Nothing in this package encodes that — a library that
+	// decided a product's defaults would be deciding them for every other caller
+	// too.
+	//
+	// Negative, so the zero value is the full reach: a library that does nothing
+	// until you opt in is a library that gets called wrong. The one translation
+	// between the product's defaults and these lives in internal/bootstrap, at
+	// the boundary, where it can be read.
 	NoAgents bool
-	// NoHelpers is NoAgents' twin, and also what a chair chat sets: a chair is
-	// itself a colleague, so handing a whole job to another one is two peers
-	// arguing about whose job it was, one level below the person who asked —
-	// but hands are exactly what it runs short of, so it keeps those. See
+	// NoHelpers is NoAgents' twin. A chair chat sets NoAgents rather than this
+	// one: a chair is itself a colleague, so handing a whole job to another one
+	// is two peers arguing about whose job it was, one level below the person
+	// who asked — while hands are exactly what it runs short of. See
 	// delegationTool.forChair.
 	NoHelpers bool
 	// WorkersOff names individual workers the assistant may not hand work to,
@@ -206,9 +211,9 @@ func NewTaskTools(opts TaskOptions) []skill.Skill {
 	//
 	// Both, because either one alone still leaves an act to perform. Off is not
 	// all-or-nothing any more: with one kind switched off the tool is built with
-	// that roster missing, which is cheaper than today's whole tool — 629 tokens
-	// for เอเจน alone, 471 for ซับเอเจน alone, against 710 for the pair
-	// (measured 2026-08-20).
+	// that roster missing, which is cheaper than the whole tool — 629 tokens for
+	// เอเจน alone, 599 for ซับเอเจน alone, against 710 for the pair (measured
+	// 2026-08-20).
 	if opts.NoAgents && opts.NoHelpers {
 		return nil
 	}

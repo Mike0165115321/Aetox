@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, untrack, tick } from 'svelte'
+  import { workerFace } from './workerFace'
   import { theme, applyTheme, THEMES, type ThemeName } from './theme.svelte'
   import { editorFont, applyEditorFontSize } from './editorFont.svelte'
   import { chatFont, applyChatFontSize } from './chatFont.svelte'
@@ -3110,9 +3111,13 @@
   <div class="set-row">
     <!-- The same mark this profile wears everywhere else, resolved once in Go
          so one profile cannot show two faces on two pages. Untinted: the
-         colour is an agent's own, and a helper does not have one. -->
+         colour is an agent's own, and a helper does not have one.
+
+         The fallback is the KIND's mark, never a constant: `|| 'bot'` put the
+         ซับเอเจน glyph on three of the five bundled เอเจน, on the เอเจน page,
+         under a sidebar item wearing `userRound` (see workerFace). -->
     <span class="ag-rowicon" style="--h:{coverHue(a.name)}">
-      <Icon name={(a.icon || 'bot') as IconName} size={15} />
+      <Icon name={workerFace(a.icon, chairNames.has(a.name))} size={15} />
     </span>
     <div class="set-txt">
       <div class="t">
@@ -3156,7 +3161,7 @@
 {#snippet agentRow(a: SubagentRow)}
   <div class="set-row ag-row">
     <span class="ag-rowicon" style="--h:{coverHue(a.name)}">
-      <Icon name={(a.icon || 'bot') as IconName} size={16} />
+      <Icon name={workerFace(a.icon, chairNames.has(a.name))} size={16} />
     </span>
     <div class="set-txt">
       <div class="t" title={a.path || 'built-in:' + a.name}>
@@ -3179,23 +3184,34 @@
     <div class="ag-actions">
       <!-- Whether the MAIN assistant may hand this one work. Not whether the
            agent exists: the user still opens a chat with it from the composer
-           and still writes @name, and no switch on this page reaches those. The
-           label says "มอบงานให้" rather than "เปิด/ปิด" for exactly that reason —
-           "off" would read as "gone" while the agent is standing right there.
+           and still writes @name, and no switch on this page reaches those. That
+           is what the tooltip says, and why the control carries no "เปิด/ปิด"
+           wording of its own — "off" would read as "gone" while the agent is
+           standing right there.
 
-           Disabled, not hidden, while delegation is off entirely. A row that
-           vanished would leave somebody wondering where their agent went; a row
-           that is greyed out with the master switch above it explains itself. -->
+           The app's switch (style.css .mswitch), in the same shape the MCP shelf
+           uses one row below: a row whose left half is a name and a description,
+           and whose right half is the switch followed by the row's action
+           buttons. It was a `.ctrl` chip that lit up when on, which is a state
+           drawn as a button — the thing the owner sent back twice on 2026-08-20.
+           A chip that is on and a chip that is merely hoverable look the same
+           until you learn the colour; a switch does not have to be learned.
+
+           Disabled, not hidden, while this kind is switched off entirely. A row
+           that vanished would leave somebody wondering where their agent went; a
+           row that is greyed out under the switch above it explains itself. -->
       {#if delegate}
         {@const w = reachOf(a.name)}
         {#if w}
-          <button
-            class="ctrl ag-reach" class:on={w.on && !w.off}
-            disabled={w.off || delegateBusy !== ''}
-            aria-pressed={w.on && !w.off}
-            title={t('settings.agentReachTip')}
-            onclick={() => toggleAgentReach(a.name, w.on)}
-          >{t('settings.agentReach')}</button>
+          <label class="mswitch" title={t('settings.agentReachTip')}>
+            <input
+              type="checkbox" checked={w.on && !w.off}
+              disabled={w.off || delegateBusy !== ''}
+              aria-label={t('settings.agentReach')}
+              onchange={() => toggleAgentReach(a.name, w.on)}
+            />
+            <span></span>
+          </label>
         {/if}
       {/if}
       <select
@@ -3239,19 +3255,28 @@
   {/if}
   {#if agentError}<div class="mset-error">{agentError}</div>{/if}
 
-  <!-- This page's own switch, and the number it is worth, in the same eyeline.
-       Delegation ships off, so this page is where somebody turns it on — and
-       the reason to leave it off is a cost they cannot otherwise see. Measured
-       on every read (App.DelegateSwitches), never a constant: the day somebody
-       trims another tool's description this number has to move with it, or it
-       becomes a label that used to be true.
+  <!-- This page's own switch. Delegation ships off, so this page is where
+       somebody turns it on.
 
        Drawn on BOTH pages since 2026-08-20. It used to be `{#if isAgent}`, one
        switch on the เอเจน page governing both kinds — so somebody who opened
        the ซับเอเจน page while it was off found every row greyed out and nothing
-       on the page explaining who had done it. The number differs per page too:
-       what each switch is worth is the difference it makes with the other one
-       left alone, not the size of the whole tool. -->
+       on the page explaining who had done it.
+
+       **The token figures came off this row the same day, on the owner's call:
+       "เลขตรงนี้เหมือนจะบั๊ค ๆ … เปิดไม่เปิดก็พอละ".** They were not wrong and
+       that is what made them worse. Each switch showed its MARGINAL cost — what
+       flipping it changes with the other switch left alone — so the number on
+       this row moved when you touched the OTHER one, and swung sevenfold doing
+       it: with เอเจน off, turning ซับเอเจน off removes the whole `task` tool
+       (~599) where it would otherwise remove ~81. A figure that is honest,
+       unpredictable from where the user is standing, and sitting next to a
+       second figure with a different meaning (the whole block) reads as broken.
+       A switch nobody can predict is worse than a switch with no number on it.
+
+       If a cost belongs anywhere it is one number in one place, on a page about
+       what the assistant is carrying — not a per-switch figure the reader has
+       to hold two switches in their head to interpret. -->
   {#if delegate}
     {@const side = isAgent
       ? { kind: 'agents' as const, reach: delegate.agents, label: 'settings.delegateAgents' as const, on: 'settings.delegateAgentsOn' as const, off: 'settings.delegateAgentsOff' as const }
@@ -3265,14 +3290,26 @@
           </div>
         </div>
         <div class="ag-actions">
-          <span class="reach-meter" title={t('settings.delegateMeterTip')}>
-            {t('settings.delegateMeter', { n: delegate.tokens.toLocaleString() })}
-          </span>
-          <button
-            class="ctrl" class:on={!side.reach.off} disabled={delegateBusy !== ''}
-            aria-pressed={!side.reach.off}
-            onclick={() => toggleDelegate(side.kind)}
-          >{side.reach.off ? t('settings.delegateTurnOn') : t('settings.delegateTurnOff')}</button>
+          <!-- The app's switch (style.css .mswitch), the same one the learning
+               page and the MCP shelf wear. It was a `.ctrl` button reading
+               "เปิด"/"ปิด" for an afternoon, which is the one control shape this
+               settings page does not use for an on/off state: a button labelled
+               "ปิด" is read twice, once as "it is off" and once as "press to
+               turn it off", and which one it means depends on knowing the
+               convention. A switch is the state and the control at once, and
+               the owner asked for the standard one (20 ส.ค.).
+
+               A real checkbox inside a label, not a role="switch" button: this
+               row is not itself a button, so the checkbox drives the face and
+               brings the keyboard and the screen reader with it for free. -->
+          <label class="mswitch">
+            <input
+              type="checkbox" checked={!side.reach.off} disabled={delegateBusy !== ''}
+              aria-label={t(side.label)}
+              onchange={() => toggleDelegate(side.kind)}
+            />
+            <span></span>
+          </label>
         </div>
       </div>
     </div>

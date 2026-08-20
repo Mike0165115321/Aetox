@@ -46,34 +46,36 @@ type Config struct {
 	// interface and must speak to the user in their language (ARCHITECTURE.md
 	// §40). Empty means "not set", and the built-in falls back to Thai.
 	UILocale string
-	// DelegateAgents and DelegateHelpers are the assistant's reach, one per kind
-	// (COMPANY.md §4): may it hand a whole job to an เอเจน, and may it spin a
-	// step of its own work off to a ซับเอเจน.
+	// The assistant's reach, one field per kind (COMPANY.md §4) — and they are
+	// spelled opposite ways on purpose, because they ship opposite ways.
 	//
-	// Two fields rather than one, since 2026-08-20. They were one — DelegateOn —
-	// and that single switch lived on the เอเจน settings page while quietly
-	// taking every ซับเอเจน away too, which is the shape the owner called out:
-	// แยกชัดเจน, หลังบ้านถึงหน้าบ้าน. A user who wants a colleague kept out of
-	// their work still wants the assistant's own hands.
+	// DelegateAgents is POSITIVE: handing a whole job to an เอเจน is off until
+	// the user asks for it, so a zero Config has it off. DelegateHelpersOff is
+	// NEGATIVE: a ซับเอเจน is the assistant's own hands in a second context, it
+	// is on from the start, so a zero Config — and a preference file that has
+	// never heard of the field — has it on (owner, 20 ส.ค.: "ซับเอเจน ควรจะไป
+	// ระบุที่หน้าตั้งค่า และเปิดเป็นค่าเริ่มต้น").
 	//
-	// Positive, so a zero Config is a Config with both OFF. That is not a style
-	// preference: the first version of this expressed the shipped-off default
-	// inside the one code path that reads a preference file, which meant
-	// anything else building a Config — a test, another entry point — silently
-	// got delegation on. A default that lives in a code path is a default that
-	// is true wherever somebody remembered it. This one lives in the value.
+	// The alternative was two positive fields and a default applied wherever
+	// somebody remembered to. That is what the first version of DelegateOn did,
+	// and it meant a Config built anywhere else — a test, another entry point —
+	// silently got the wrong answer. A default that lives in a code path is a
+	// default that is true wherever somebody wrote it; both of these live in the
+	// value, which is why the two are spelled differently rather than tidily.
 	//
-	// internal/subagent keeps the opposite default on its own options, because a
+	// They were one field, DelegateOn, until 2026-08-20: one switch for both
+	// kinds, which lived on the เอเจน settings page while quietly taking every
+	// ซับเอเจน away too.
+	//
+	// internal/subagent keeps its own defaults (both reachable), because a
 	// library that does nothing until you opt in is a library that gets called
-	// wrong. Shipping them off is a PRODUCT decision (owner, 18 ส.ค.), and the
-	// one translation between them sits at the boundary in internal/bootstrap.
+	// wrong. The one translation sits at the boundary in internal/bootstrap.
 	//
-	// Measured 2026-08-20: the pair costs 710 tokens in every request, เอเจน
-	// alone 629, ซับเอเจน alone 471. That is why they are switches the user can
-	// see rather than preferences nobody finds — 77% of sessions on the machine
-	// this was measured on never delegated once.
-	DelegateAgents  bool
-	DelegateHelpers bool
+	// Measured 2026-08-20: `task` costs 710 tokens in every request with both
+	// on, 629 with เอเจน alone, 599 with ซับเอเจน alone, and is not built at all
+	// with neither — which is what the two switches are weighing.
+	DelegateAgents     bool
+	DelegateHelpersOff bool
 	// WorkersOff names individual workers the ASSISTANT may not hand work to,
 	// either kind. Each one left out saves ~21 tokens per message.
 	//
@@ -88,6 +90,15 @@ type Config struct {
 	// setting here reaches it. Anything shown for this in the UI has to say
 	// whose reach is narrowed, or somebody will read "off" as "gone".
 	WorkersOff []string
+	// DelegateSet says somebody has answered the delegation question on this
+	// machine. False means nobody has, and the shipped default applies instead of
+	// the zero values above (App.resolveConfig, shippedDelegation).
+	//
+	// A flag rather than a sentinel value, because every state these three fields
+	// can hold is also a real answer: delegation off is an answer, and an empty
+	// WorkersOff is the answer "everybody is in reach". EnabledProviders solves the
+	// same problem with an empty list because empty is not a real answer there.
+	DelegateSet bool
 }
 
 type ConfigOptions struct {
@@ -152,19 +163,21 @@ type ModelPreference struct {
 	// preference files, and defaulting it off would have made the feature
 	// invisible to everyone who already had one.
 	LearningDisabled bool `json:"learning_disabled,omitempty"`
-	// The assistant's reach: one switch per kind, plus the per-worker trim.
+	// The assistant's reach: one switch per kind, plus the per-worker trim. Each
+	// is spelled so that ABSENT means what the product ships — the same rule
+	// LearningDisabled above follows, applied twice with opposite answers.
 	//
-	// Both switches are stored as the POSITIVE, which is the opposite of
-	// LearningDisabled above and for the opposite reason: delegation ships OFF,
-	// so an absent field has to mean off. A negative here would have made every
-	// preference file that predates the switch read as "on", which is the one
-	// value the product does not want to hand out by default.
+	// `delegate_agents_on` is positive: เอเจน delegation ships off, so a file
+	// that says nothing means off. `delegate_helpers_off` is negative: ซับเอเจน
+	// ship on, so a file that says nothing — every file written before today —
+	// means on. Spelling either one the other way would hand somebody a setting
+	// they never chose the first time they upgraded.
 	//
 	// DelegateOn is the field they replaced (one switch for both kinds, until
-	// 2026-08-20). It is still READ — LoadModelPreference folds it into both —
-	// and never written again, so a file written by the old build keeps working
-	// and the first save after an upgrade replaces it with the pair. Deleting it
-	// would silently switch delegation off for everybody who had turned it on.
+	// 2026-08-20). It is still READ — LoadModelPreference folds it in — and
+	// never written again, so a file written by the old build keeps working and
+	// the first save after an upgrade replaces it. Deleting it would silently
+	// switch delegation off for everybody who had turned it on.
 	//
 	// WorkersOff stays negative and stays one list: a worker the user has said
 	// nothing about is one the assistant may reach, and the trim is keyed by a
@@ -173,10 +186,14 @@ type ModelPreference struct {
 	// They persist here rather than per project, because "may my assistant hand
 	// work to a specialist" is a fact about how somebody works and not about
 	// which folder is open — the same reason UILocale sits here.
-	DelegateAgents  bool     `json:"delegate_agents_on,omitempty"`
-	DelegateHelpers bool     `json:"delegate_helpers_on,omitempty"`
-	DelegateOn      bool     `json:"delegate_on,omitempty"` // read-only, pre-2026-08-20 files
-	WorkersOff      []string `json:"agents_off,omitempty"`
+	DelegateAgents     bool     `json:"delegate_agents_on,omitempty"`
+	DelegateHelpersOff bool     `json:"delegate_helpers_off,omitempty"`
+	DelegateOn         bool     `json:"delegate_on,omitempty"` // read-only, pre-2026-08-20 files
+	WorkersOff         []string `json:"agents_off,omitempty"`
+	// DelegateSet records that the three fields above are an answer rather than a
+	// blank. Written the first time somebody flips one of these switches; a file
+	// from before it existed is read for the same fact in sanitizePreference.
+	DelegateSet bool `json:"delegate_set,omitempty"`
 	// EnabledProviders is the set of providers shown in the Settings sidebar
 	// and the chat composer's picker. Empty means "never customized" — callers
 	// resolve that case via ResolvedEnabledProviders rather than persisting a
@@ -832,20 +849,29 @@ func LoadModelPreference() (ModelPreference, bool, error) {
 }
 
 func sanitizePreference(pref ModelPreference) ModelPreference {
-	// One switch became two on 2026-08-20 (เอเจน and ซับเอเจน are two acts, not
-	// one — COMPANY.md §4). A file written before that says only `delegate_on`,
-	// and it meant both: somebody who had turned delegation on had both kinds,
-	// so folding it into both is what keeps their setting rather than reading it
-	// as half of one.
+	// `delegate_on` was one switch for both kinds until 2026-08-20, and it meant
+	// both. Folding it into the เอเจน half is the whole migration: the ซับเอเจน
+	// half is on for everybody now, so somebody who had delegation on keeps
+	// exactly what they had, and somebody who never turned it on gains the hands
+	// they were silently missing.
 	//
-	// Cleared on the way past so the next save writes the pair and drops the old
-	// key. Folding on every load rather than migrating the file in place is the
-	// same choice the credentials split made: a user who never opens settings
-	// again keeps working, and the file is rewritten the first time they do.
+	// Cleared on the way past so the next save writes the new key and drops the
+	// old one. Folding on every load rather than migrating the file in place is
+	// the same choice the credentials split made: a user who never opens
+	// settings again keeps working, and the file is rewritten the first time
+	// they do.
 	if pref.DelegateOn {
 		pref.DelegateAgents = true
-		pref.DelegateHelpers = true
 		pref.DelegateOn = false
+	}
+	// A file written before delegate_set existed still says whether anybody ever
+	// answered: any of the three delegation fields carrying a non-zero value is
+	// somebody's choice, and a machine at every default never made one. Read on
+	// the way past rather than migrated, same as the fold above — so an install
+	// that had turned delegation on keeps exactly what it had, and one that never
+	// touched it gets the shipped default instead of the zero values.
+	if pref.DelegateAgents || pref.DelegateHelpersOff || len(pref.WorkersOff) > 0 {
+		pref.DelegateSet = true
 	}
 	pref.ModelName = strings.TrimSpace(pref.ModelName)
 	if looksLikeAPIKey(pref.ModelName) {
