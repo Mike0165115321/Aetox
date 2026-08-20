@@ -14,10 +14,10 @@
     !define INFO_PRODUCTNAME "Aetox"
 !endif
 !ifndef INFO_PRODUCTVERSION
-    !define INFO_PRODUCTVERSION "0.8.4"
+    !define INFO_PRODUCTVERSION "1.4.0"
 !endif
 !ifndef INFO_COPYRIGHT
-    !define INFO_COPYRIGHT "© 2026 Chayaphon Phromsawana — Apache-2.0"
+    !define INFO_COPYRIGHT "© 2026 Chayaphon Phromsawana · All rights reserved"
 !endif
 !ifndef PRODUCT_EXECUTABLE
     !define PRODUCT_EXECUTABLE "${INFO_PROJECTNAME}.exe"
