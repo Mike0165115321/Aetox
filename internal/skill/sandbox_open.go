@@ -319,7 +319,6 @@ func rootKey(p string) string {
 var credentialStores = []string{
 	".ssh", ".aws", ".gnupg", ".azure", ".kube",
 	".netrc", ".git-credentials", ".config/gh",
-	".aetox", // the skills folder; Aetox's *secrets* are handled by ownSecretFiles
 	"AppData/Roaming/Microsoft/Credentials",
 	"AppData/Local/Microsoft/Credentials",
 	"AppData/Roaming/Microsoft/Protect",
@@ -327,6 +326,47 @@ var credentialStores = []string{
 	"AppData/Local/Microsoft/Edge",
 	"AppData/Roaming/Mozilla",
 	"AppData/Local/BraveSoftware",
+}
+
+// skillShelf is the user's shared skill folder, refused to every file tool
+// exactly as the stores above are — and for an entirely different reason, which
+// is why it is no longer in that list.
+//
+// It sat there from 2026-07-26 until 2026-08-20 carrying the note "the skills
+// folder; Aetox's *secrets* are handled by ownSecretFiles" — an entry that knew
+// it was not a credential store, in a list whose own doc comment promises that
+// "each entry is a place whose only interesting content is a credential". The
+// refusal it produced said so out loud: `~/.aetox/skills` came back as "path is
+// inside a credential store (.aetox)".
+//
+// That sentence is false, and a false reason is worse here than no reason. The
+// assistant that hit it had just been told by `skill_view` that the skill it
+// wanted has no files on disk; it reached for `shell` to find them, and was
+// answered with a security word that fits nothing it had done. Nothing in the
+// exchange could correct it, so it read as a broken tool and was relayed to the
+// user as one (2026-08-20).
+//
+// The refusal itself is right and stays. A skill reaches a worker as tools in
+// its own registry (subagent/skills.go), which is how this folder is readable
+// through `skills_list` and `skill_view` while being closed to `read` —
+// knowledge travels through the skill door or not at all, the same rule
+// refuseAgentKnowledge enforces one folder over. All that changes is that the
+// sentence now names that rule and that door, instead of naming a threat.
+const skillShelf = ".aetox"
+
+// refuseSkillShelf is skillShelf's own gate, kept beside refuseUnderHome rather
+// than inside it because the two say different things for different reasons.
+func refuseSkillShelf(target, home string) error {
+	if strings.TrimSpace(home) == "" {
+		return nil
+	}
+	if withinRoot(target, filepath.Join(home, skillShelf)) {
+		return fmt.Errorf(
+			"%s is the skill shelf, and skills are not read as files in any mode — "+
+				"open them with skills_list and skill_view, which is the door rather than a workaround",
+			skillShelf)
+	}
+	return nil
 }
 
 // ownSecretFiles are the files inside Aetox's own data root that hold
@@ -418,6 +458,9 @@ func refuseResolved(target string) error {
 func refuseUnderHome(target, home string) error {
 	if strings.TrimSpace(home) == "" {
 		return nil
+	}
+	if err := refuseSkillShelf(target, home); err != nil {
+		return err
 	}
 	for _, sub := range credentialStores {
 		if withinRoot(target, filepath.Join(home, filepath.FromSlash(sub))) {
@@ -617,6 +660,15 @@ func CredentialStoreAt(path string) string {
 		if withinRoot(resolved, filepath.Join(home, filepath.FromSlash(sub))) {
 			return sub
 		}
+	}
+	// The skill shelf too, though it is not a credential store, because this
+	// answers a different question from refuseUnderHome's: not "why was this
+	// file refused" but "may the user add this folder at all". A folder the
+	// file tools refuse entirely must not be accepted onto the list whatever
+	// the reason, or the app spends the rest of the session disagreeing with
+	// the choice it just let the user make.
+	if withinRoot(resolved, filepath.Join(home, skillShelf)) {
+		return skillShelf
 	}
 	return ""
 }

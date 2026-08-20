@@ -249,15 +249,32 @@ func TestOpenSandboxRefusesCredentialStores(t *testing.T) {
 	t.Cleanup(func() { setSandboxPolicy(root, false, nil, nil) })
 
 	for _, path := range []string{
-		filepath.Join(home, ".ssh", "id_rsa"),                  // absolute spelling
-		"../.ssh/id_rsa",                                       // climbing spelling of the same file
-		filepath.Join(home, ".aetox", "model-preference.json"), // Aetox's own keys
+		filepath.Join(home, ".ssh", "id_rsa"), // absolute spelling
+		"../.ssh/id_rsa",                      // climbing spelling of the same file
 	} {
 		if _, err := resolveSandboxPath(root, path); err == nil {
 			t.Errorf("open sandbox handed out a credential store path: %s", path)
 		} else if !strings.Contains(err.Error(), "credential store") {
 			t.Errorf("wrong refusal for %s — the model should learn WHY: %v", path, err)
 		}
+	}
+
+	// The skill shelf is refused just as hard and for a different reason, so it
+	// gets a different sentence.
+	//
+	// This case used to be `~/.aetox/model-preference.json`, labelled "Aetox's
+	// own keys" — which is the misconception the shelf entry was carrying all
+	// along. That file lives in the data root, not under the home folder, and
+	// is covered by the ownSecretFiles test below. What actually sits at
+	// `~/.aetox` is the user's skills, and calling that a credential store sent
+	// an assistant hunting for a threat that was never there.
+	shelfFile := filepath.Join(home, skillShelf, "skills", "mine", "SKILL.md")
+	if _, err := resolveSandboxPath(root, shelfFile); err == nil {
+		t.Error("open sandbox handed out the skill shelf")
+	} else if strings.Contains(err.Error(), "credential store") {
+		t.Errorf("the shelf is still refused as a credential store: %v", err)
+	} else if !strings.Contains(err.Error(), "skill_view") {
+		t.Errorf("the refusal does not name the door that works: %v", err)
 	}
 
 	// The rest of the fake home stays reachable — the denylist is a cabinet

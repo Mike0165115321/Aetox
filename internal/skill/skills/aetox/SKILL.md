@@ -381,7 +381,7 @@ before you try — a refusal you walked into looks to the user like a broken too
 Home-relative, refused everywhere:
 
 `.ssh` · `.aws` · `.gnupg` · `.azure` · `.kube` · `.netrc` · `.git-credentials`
-· `.config/gh` · `.aetox` · `AppData/Roaming/Microsoft/Credentials` ·
+· `.config/gh` · `AppData/Roaming/Microsoft/Credentials` ·
 `AppData/Local/Microsoft/Credentials` · `AppData/Roaming/Microsoft/Protect` ·
 `AppData/Local/Google` · `AppData/Local/Microsoft/Edge` ·
 `AppData/Roaming/Mozilla` · `AppData/Local/BraveSoftware`
@@ -391,9 +391,11 @@ the workspace runs its commands in a WSL distro, your file tools take that
 distro's own spelling of a path — `/mnt/d/project`, `/home/mike/api` — and the
 same list is refused under `/home/<user>` and `/root` in there.
 
-**`.aetox` is on that list, and that is the skills folder.** You cannot read
-`~/.aetox/skills` with `read` or `list`. Use `skills_list` and `skill_view` —
-that is the door, and it is not a workaround.
+**`~/.aetox` is refused too, and it is not a credential store — it is the skills
+folder.** You cannot read it with `read`, `list` or `shell`, in any mode. Use
+`skills_list` and `skill_view`: that is the door, and it is not a workaround.
+The refusal says so in those words, so if you ever see the skills folder
+described as a credential store you are on an old build.
 
 Inside `<DataRoot>`, refused by name:
 

@@ -106,6 +106,48 @@ func TestSkillViewReturnsBody(t *testing.T) {
 	}
 }
 
+// A skill that ends on a caveat is indistinguishable from one that was cut off,
+// and on 2026-08-20 the assistant guessed wrong about `aetox-slides`: it read
+// the whole 15,778 characters, called skill_view again for "the rest", then
+// went hunting the file with glob and shell. The marker is the sentence that
+// makes the guess unnecessary.
+func TestSkillViewSaysWhereTheDocumentEnds(t *testing.T) {
+	root := t.TempDir()
+	writeSkillFixture(t, root, "deploy", "---\nname: deploy_notes\ndescription: How we deploy\n---\nstep one\n")
+
+	view := &skillViewSkill{paths: []string{root}}
+	out, err := view.ExecuteTool(context.Background(), map[string]any{"name": "deploy_notes"})
+	if err != nil {
+		t.Fatalf("skill_view: %v", err)
+	}
+	if !containsAll(out.Content, "end of deploy_notes", "whole document") {
+		t.Fatalf("no end marker: %q", out.Content)
+	}
+	// An installed skill DOES have a folder, so the bundled-only sentence would
+	// be a lie here — and it is the sentence that stops the search.
+	if strings.Contains(out.Content, "no folder on disk") {
+		t.Errorf("installed skill claims to have no folder: %q", out.Content)
+	}
+}
+
+// The other half: a bundled skill has no Dir, so "go read the file" is a search
+// that cannot succeed. Saying so is what keeps the model from spending a glob
+// and a shell finding that out.
+func TestSkillViewSaysABundledSkillHasNoFileOnDisk(t *testing.T) {
+	bundled := bundledSkills()
+	if len(bundled) == 0 {
+		t.Skip("nothing bundled")
+	}
+	view := &skillViewSkill{}
+	out, err := view.ExecuteTool(context.Background(), map[string]any{"name": bundled[0].Name})
+	if err != nil {
+		t.Fatalf("skill_view: %v", err)
+	}
+	if !containsAll(out.Content, "end of "+bundled[0].Name, "no folder on disk", "glob or shell") {
+		t.Fatalf("bundled skill does not say it has no file: %q", out.Content[max(0, len(out.Content)-400):])
+	}
+}
+
 // The wrong-name error carries the real list so the model recovers in zero
 // extra rounds instead of one.
 func TestSkillViewUnknownNameNamesTheAlternatives(t *testing.T) {

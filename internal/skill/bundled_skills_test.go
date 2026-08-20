@@ -117,6 +117,14 @@ func TestTheAetoxSkillNamesEveryRefusedPath(t *testing.T) {
 			t.Errorf("ownSecretFiles has %q and the aetox skill never names it", name)
 		}
 	}
+	// The shelf left credentialStores on 2026-08-20 and is refused by its own
+	// gate now. It has to stay in the document for the same reason every entry
+	// above does, and it is the one an assistant is most likely to walk into:
+	// it is the only refused path that holds something the assistant genuinely
+	// wants and can genuinely have, through the other door.
+	if !strings.Contains(body, skillShelf) {
+		t.Errorf("the skill shelf %q is refused to file tools and the aetox skill never names it", skillShelf)
+	}
 }
 
 // The skills directory is the one Aetox-owned location that is deliberately not

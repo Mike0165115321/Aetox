@@ -145,6 +145,33 @@ func (s *skillsListSkill) ExecuteTool(_ context.Context, _ map[string]any) (Outp
 	return newToolOutput(s.Name(), s.Name(), b.String(), start, false, nil), nil
 }
 
+// endMarker closes a skill body so a reader can tell a finished document from a
+// clipped one.
+//
+// A skill that ends on a caveat reads exactly like a skill that was cut off, and
+// nothing in the result said which it was. On 2026-08-20 the assistant read
+// `aetox-slides` — 15,778 characters, whole, ending on "## What the deck is
+// not" — decided it had been truncated, called skill_view a second time (same
+// bytes, same conclusion), then spent a glob and a shell hunting the file on
+// disk. Three rounds spent, and the deck still written from a generic template.
+//
+// The second line is the other half of that waste, and it is a fact only this
+// package holds: a bundled skill has no Dir (bundled_skills.go), so "go and read
+// the file yourself" is not a slow fallback, it is a search that cannot succeed.
+// Saying so where the search would start is cheaper than the error it would
+// otherwise arrive at.
+//
+// Counted in characters rather than tokens because characters are what this
+// package can count honestly — the number is there to be compared against what
+// arrived, not to be budgeted with.
+func endMarker(d DiscoveredSkill) string {
+	m := fmt.Sprintf("\n\n[end of %s — this is the whole document, %d characters]", d.Name, len(d.body))
+	if d.Dir == "" {
+		m += "\n[it ships inside Aetox and has no folder on disk, so there is nothing further to find with glob or shell]"
+	}
+	return m
+}
+
 // readSkillFile returns one supporting file from inside a skill's folder.
 //
 // The containment check is the point. `path` is a string the model wrote, and
@@ -342,6 +369,7 @@ func (s *skillViewSkill) ExecuteTool(_ context.Context, args map[string]any) (Ou
 			body += "\n\nFiles in this skill — read one with skill_view {\"name\": \"" + d.Name +
 				"\", \"path\": \"…\"}:\n- " + strings.Join(files, "\n- ") + "\n"
 		}
+		body += endMarker(d)
 		return newToolOutput(s.Name(), s.Name()+" "+d.Name, body, start, false, nil), nil
 	}
 

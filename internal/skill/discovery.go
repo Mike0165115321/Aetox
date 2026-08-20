@@ -299,6 +299,19 @@ func parseSkillMarkdown(raw string) (name, description, body string, err error) 
 // anything else on a line is ignored. Exported because agent profiles
 // (internal/subagent, ARCHITECTURE.md §44) are the same file shape with more keys,
 // and a second parser for the same format is a second set of edge cases.
+//
+// One piece of real YAML is read, and it was not a choice: a **block scalar**.
+// `description: >-` followed by indented lines is how every generator wraps a
+// description long enough to need wrapping, and it is what a published skill
+// arrives written in. Read one key at a time this parser saw `>-` as the value
+// and the wrapped text as lines with no colon, so the description became the
+// literal string ">-". The skill installed, listed, and told the model nothing
+// about itself — `senior-architect-agent` sat like that on the owner's machine
+// (2026-08-20) until its blank line in `skills_list` was noticed by eye.
+//
+// Silent, and wider than skills: `internal/subagent` reads agent profiles with
+// this same function, so an AGENT.md written the same way loses the sentence
+// that decides whether the assistant hands it any work.
 func ParseFrontmatter(raw string) (map[string]string, string, error) {
 	fields := map[string]string{}
 	raw = strings.ReplaceAll(raw, "\r\n", "\n")
@@ -312,8 +325,9 @@ func ParseFrontmatter(raw string) (map[string]string, string, error) {
 		return nil, "", errors.New("frontmatter is not terminated with a closing ---")
 	}
 
-	for _, line := range strings.Split(rest[:end], "\n") {
-		line = strings.TrimSpace(line)
+	lines := strings.Split(rest[:end], "\n")
+	for i := 0; i < len(lines); i++ {
+		line := strings.TrimSpace(lines[i])
 		if line == "" {
 			continue
 		}
@@ -321,7 +335,69 @@ func ParseFrontmatter(raw string) (map[string]string, string, error) {
 		if !ok {
 			continue
 		}
-		fields[strings.ToLower(strings.TrimSpace(key))] = strings.Trim(strings.TrimSpace(value), `"'`)
+		name := strings.ToLower(strings.TrimSpace(key))
+		value = strings.TrimSpace(value)
+		if literal, isBlock := blockScalar(value); isBlock {
+			var consumed int
+			fields[name], consumed = readBlock(lines[i+1:], literal)
+			i += consumed
+			continue
+		}
+		fields[name] = strings.Trim(value, `"'`)
 	}
 	return fields, strings.TrimSpace(rest[end+len("\n---"):]), nil
+}
+
+// blockScalar reports whether a value is a YAML block indicator, and whether it
+// is the literal kind. `|` keeps the line breaks, `>` folds them into spaces;
+// the trailing `-`/`+` is about trailing newlines, which TrimSpace settles
+// either way, so it is accepted and ignored.
+func blockScalar(value string) (literal, ok bool) {
+	switch value {
+	case ">", ">-", ">+":
+		return false, true
+	case "|", "|-", "|+":
+		return true, true
+	}
+	return false, false
+}
+
+// readBlock takes the indented lines belonging to a block scalar and returns
+// the value plus how many lines it used.
+//
+// Indentation ends the block, which is the whole of the YAML rule this needs:
+// the next key sits at column zero. A blank line inside stays a break in both
+// kinds — a folded scalar turns single newlines into spaces and keeps the blank
+// ones, which is what makes a two-paragraph description survive folding.
+func readBlock(lines []string, literal bool) (string, int) {
+	var out []string
+	used := 0
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			out = append(out, "")
+			used++
+			continue
+		}
+		if line[0] != ' ' && line[0] != '\t' {
+			break // back at column zero: this is the next key
+		}
+		out = append(out, strings.TrimSpace(line))
+		used++
+	}
+	if literal {
+		return strings.TrimSpace(strings.Join(out, "\n")), used
+	}
+	// Folded: single newlines become spaces, blank lines stay breaks.
+	var b strings.Builder
+	for i, line := range out {
+		switch {
+		case line == "":
+			b.WriteString("\n")
+		case i > 0 && out[i-1] != "" && b.Len() > 0:
+			b.WriteString(" " + line)
+		default:
+			b.WriteString(line)
+		}
+	}
+	return strings.TrimSpace(b.String()), used
 }
