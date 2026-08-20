@@ -556,6 +556,7 @@ product picture in [COMPANY.md](COMPANY.md)) · §82 (the learning floor) · §4
 | §148 | Free to Use, Free to Read, Not Free to Take (2026-08-19) · Apache-2.0 → proprietary source-available at v1.3.0; supersedes §60 |
 | §149 | The Model Kept Making PowerPoint, Because Nothing Had Told It Otherwise (2026-08-20) · `slides_write` retired; a deck is HTML and export is a separate step (the `deck_export` tool it named was itself removed at §153) |
 | §150 | The Core Had a Cursor Where It Should Have Had a Map (2026-08-20) · `App.sessionID` gone; one `conversation` per chat ([conversation.go](desktop/conversation.go)), every `agent:*` event stamped with its session |
+| §151 | A Colleague May Use Hands, Not Other Colleagues (2026-08-20) · a chair chat carries `task` narrowed to helpers ([store.go](internal/subagent/store.go)); the second denial lifted by AttendedRegistry, after `ask_user` |
 | §152 | A Room With Nothing Left In It (2026-08-20) · the `deck` agent is removed — five ship, not six |
 | §153 | The Deck Never Needed the Tool (2026-08-20) · `deck_export` removed, export stays a button; the removed agent's craft becomes [skills/deck](internal/skill/skills/deck/SKILL.md) |
 | §155 | The Dials Were the App's, and the App Had Stopped Being One Conversation (2026-08-20) · provider/model/wire/think/approval move onto the conversation; `App.cfg` becomes the template a new chat is born from |

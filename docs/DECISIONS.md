@@ -5141,6 +5141,40 @@ Still genuinely shared, and still refusing mid-turn: **the project.** Re-rooting
 
 Three chats working is three model calls in flight. There is no ceiling — §138's decision stands: count the spend and show it, Stop is the bound. A conversation stays in memory while its turn runs or while it is on screen, and is let go otherwise; its engine can be rebuilt from the transcript, and holding every chat the user has ever clicked would grow for the rest of the run with nothing to show for it.
 
+## 151. Decision — A Colleague May Use Hands, Not Other Colleagues (2026-08-20)
+
+**Trigger:** the owner, on why a chair chat should be able to delegate at all — *"เวลาแบบจะหาข้อมูลใช่มั้ย มันไม่หาเองมันจับบริบทแล้วส่งงานให้ซับเอเจน เห้ยไปหาข้อมูลเรื่องนี้มาให้ครบนะ แล้วมันรอวาดสไลด์อ่ะ"* — and then, on the scope: *"ถ้ามันเรียก research ได้จะวุ่นมาก เพราะอยู่คนละระดับกัน เอาแค่ซับเอเจนพอครับ"*.
+
+The argument is about context, not about reach. A deck agent that reads twenty sources itself spends the context the deck was going to be built in, and arrives at the design work with nothing left. A helper is that work done in a second context, which is what [task.go](../internal/subagent/task.go)'s own roster line has said since it was written: *"HELPERS (ซับเอเจน), your own hands for one step of YOUR work, in a second context so it stays out of this one."*
+
+**Decision: a chair chat carries `task`, narrowed to helpers.** Not agents — the owner's second sentence is the whole of it, and the reason it is right is that a chair *is* a colleague. One colleague handing another a whole job is two peers deciding whose job it was, one level below the person who asked. That decision belongs to the person, and the useful thing an agent can do with it is say so.
+
+### 151.1 The denial it lifts, and the one it does not
+
+`task` is on `forcedDenials` because depth 1 is enforced by absence rather than by a counter — every half goes, or a delegate could collect work it was never allowed to start.
+
+A chair chat has no parent. It is the root of its own tree exactly as the main agent is of its own, so the depth it would start from is the same depth, and the premise of the denial is simply absent. That is not a new kind of argument here: [AttendedRegistry](../internal/subagent/store.go) was written for `ask_user`, denied because nobody watches a delegate's loop and restored in a chair chat because *"the person who opened the conversation is sitting in it."* `task` is the second entry of the same kind, and it is restored in the same function — a chair reached BY `task` still gets neither, because that path calls `FilterRegistry` directly.
+
+`task_plan` is not restored, for the reason `todo_write` is also absent from a chair chat: a run declared there would draw a second panel over the one the person is already watching. Start, collect and answer are the whole mechanism without it.
+
+### 151.2 Where the rule lives, and the ordering that decided it
+
+The first build put the narrowed tool together in [bootstrap.go](../internal/bootstrap/bootstrap.go), because the chair's cut was taken before the task tools existed and there was nothing there to narrow. It worked and it was wrong: `deskTools` in [app.go](../desktop/app.go) builds its own `AttendedRegistry` for the tools panel, so the model would have carried a tool the panel never listed. That file's own comment already describes this happening once — *"the engine grew `ask_user` for a chair chat and this line, four files away, kept reporting the list without it."*
+
+So the chair's cut moved down, after the task tools are registered, and the rule went where the first one is: `AttendedRegistry` asks the parent's `task` for `forChair()` — a copy with `HelpersOnly` set and `task_plan` dropped. One function answers "what does a chair chat hold", both callers go through it, and the panel cannot disagree with the model.
+
+`HelpersOnly` is a field on `TaskOptions` rather than every agent's name pushed into `AgentsOff`. That list is a user setting whose copy says the worker is *not* disabled and is still reachable by hand; a structural rule wearing its clothes would tell somebody they had switched off six agents they never touched.
+
+### 151.3 Why the gate is not `Permits`
+
+`Permits` applies `forcedDenials`, so `Permits("task")` is false for every profile that exists — the first version of the gate used it and silently handed the tool to nobody. The gate is `WantsHands()`, the sibling of `WantsToBeAsked()`, reading the profile's own `deny:` and ignoring `tools:` for the reason written on that one: no author would think to list a tool in `tools:` to earn back something the mechanism removes from everybody.
+
+### What this does not decide
+
+**Whether the helpers are thin enough to be worth handing work to.** `explore`, `general` and `plan` carry no `skills_list`/`skill_view`, which surfaced while answering a different question this same day: a helper sent to find out how the machine's `design` skill makes images was refused the tool that would have told it. That is correct under today's rules — a helper has no home, so it gets no skills door — but a chair that delegates research to something that cannot read the machine's own skills is handing out a job it could have done better itself. Not changed here, because it is a question about helpers rather than about chairs.
+
+**Whether anything actually uses it.** `@deck` has run 8 tool calls in the whole of `tool_runs`, against the main agent's 2,465. The mechanism this decision extends is well used — `explore` 142 runs, `research` 50 — but by the main agent, and none of that is evidence a chair will reach for it. The next thing worth knowing is whether one does.
+
 ## 152. Decision — A Room With Nothing Left In It (2026-08-20)
 
 **Trigger:** the owner, after a session with the deck chair came back weak: *"ตัดเอเจนทำสไลด์ออกไปเลยให้เมนเป็นคนทำ เพราะมันไม่มีความจำเป็นต้องเฉพาะทางอะไรอยู่แล้ว"*.

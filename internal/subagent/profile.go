@@ -561,6 +561,20 @@ func (p Profile) WantsToBeAsked() bool {
 	return !slices.Contains(p.Deny, "ask_user")
 }
 
+// WantsHands reports whether this profile is willing to run a helper of its own,
+// for the one caller that may offer it: a chair chat (§151).
+//
+// The sibling of WantsToBeAsked, reading its own `deny:` for the same reason and
+// ignoring `tools:` for the same one. `task` is on forcedDenials, so Permits
+// says no for every profile — correct while the profile is a delegate, wrong
+// while it is a colleague being spoken to and holding the only context in the
+// room. And no author would think to list `task` in `tools:` to earn something
+// the mechanism removes from everybody, so reading that list would make the
+// grant unreachable in practice.
+func (p Profile) WantsHands() bool {
+	return !slices.Contains(p.Deny, "task")
+}
+
 // parse reads one profile file. The filename is the name, always: a `name:` key
 // in the frontmatter that disagreed with the file it lives in is the exact
 // product-vs-code split §35 was written about.

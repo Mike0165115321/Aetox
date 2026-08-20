@@ -43,12 +43,17 @@ func TestAChairSessionSendsTheChairsCutOnly(t *testing.T) {
 	if !slices.Contains(got, "ask_user") {
 		t.Errorf("doc's chat cannot ask the person it is talking to: %v", got)
 	}
-	// task: a leaf stays a leaf, even when spoken to. diagnostics: the office
-	// ceiling, in person — the code group is what this desk still refuses, now
-	// that files and shell have moved into the room (2026-08-19). todo_write:
-	// still a forced denial — a checklist is the main agent's panel, and
-	// nothing draws a second one here.
-	for _, banned := range []string{"task", "task_result", "diagnostics", "symbol", "todo_write"} {
+	// diagnostics/symbol: the office ceiling, in person — the code group is what
+	// this desk still refuses, now that files and shell have moved into the room
+	// (2026-08-19). todo_write: still a forced denial — a checklist is the main
+	// agent's panel, and nothing draws a second one here.
+	//
+	// `task` left this list at §151 and is deliberately not asserted either way
+	// from here: whether a chair carries it depends on the delegation switch,
+	// which this fixture does not set, so an assertion here would be measuring
+	// the fixture. TestAChairChatGetsHandsButNotColleagues owns the rule — that
+	// a chair chat is handed helpers and never colleagues — with the switch on.
+	for _, banned := range []string{"diagnostics", "symbol", "todo_write"} {
 		if slices.Contains(got, banned) {
 			t.Errorf("doc's chat carries %s — the chair's cut must match its delegate runs", banned)
 		}

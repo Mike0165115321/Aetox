@@ -74,6 +74,32 @@ func (d *delegationTool) Narrow(named []string) skill.Skill {
 	return &narrowed
 }
 
+// forChair is this tool as a chair chat gets it (§151): the same mechanism,
+// with a roster of helpers alone and no `task_plan`.
+//
+// Helpers alone because a chair is itself a colleague, and one colleague handing
+// a whole job to another is two peers deciding whose job it was, one level below
+// the person who asked. A helper is the other thing entirely — the caller's own
+// work in a second context — and is exactly what a chair runs short of: reading
+// twenty sources to build a deck spends the context the deck was to be built in.
+//
+// Expressed as NoAgents, the same switch the user's own settings page turns,
+// because it is the same question — may this session hand a whole job to a
+// colleague — and a chair answering it through a mechanism of its own would be
+// a second answer to drift from the first.
+//
+// No `task_plan` for the reason `todo_write` is also absent from a chair chat: a
+// run declared here would draw a second panel over the one the person is already
+// watching. Starting, collecting and answering are the whole of the mechanism
+// without it.
+func (d *delegationTool) forChair() skill.Skill {
+	start := *d.start
+	start.opts.NoAgents = true
+	withRoster := *d
+	withRoster.start = &start
+	return withRoster.Narrow([]string{"task", "task_result", "task_answer"})
+}
+
 // Description is the one place the rules of delegating are written, and every
 // clause in it is load-bearing enough to have a test: the brief is self-
 // contained, small work is cheaper done here, and a list is ONE delegate looping.

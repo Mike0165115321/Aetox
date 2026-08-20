@@ -388,12 +388,21 @@ func namesAnyAction(p Profile, actions []string) bool {
 // other end — a direct chat with a chair (§85), as opposed to a job handed to
 // it by `task`.
 //
-// It exists because exactly one entry in forcedDenials is not about reach.
+// It exists because two entries in forcedDenials are not about reach — they are
+// about who is listening, and in a chair chat the answer is different.
+//
 // `ask_user` is denied to sub-agents because nobody is watching a delegate's
 // loop, so a question it asks is a question nobody can answer and the deadline
 // pays for it. In a chair chat that premise is simply false: the person who
 // opened the conversation is sitting in it. Left denied, the agent asked its
 // question as prose and then guessed, because words were the only way it had.
+//
+// `task` is denied because depth 1 is enforced by absence rather than a counter
+// — and a chair chat has no parent, so it is the root of its own tree exactly as
+// the main agent is, and the depth it would start from is the same one. What it
+// gets is not the main agent's `task` but `forChair()`: helpers only, so the
+// tree stays one colleague deep, and no `task_plan` (§151). A chair reached by
+// `task` still gets neither, because that path calls FilterRegistry directly.
 //
 // A wrapper rather than a flag threaded through FilterRegistry, and not a
 // second copy of the rules: every caller still goes through the one function
@@ -404,12 +413,12 @@ func namesAnyAction(p Profile, actions []string) bool {
 // model can actually call.
 func AttendedRegistry(parent *skill.Registry, p Profile, ceiling *mode.Mode) *skill.Registry {
 	filtered := FilterRegistry(parent, p, ceiling)
-	if filtered == nil || !p.WantsToBeAsked() {
-		return filtered
+	if filtered == nil {
+		return nil
 	}
 	// Source stays what the host registered it as, so the tools panel files it
 	// where the user already knows to look for it.
-	if asker, ok := parent.Get("ask_user"); ok {
+	if asker, ok := parent.Get("ask_user"); ok && p.WantsToBeAsked() {
 		source, known := parent.SourceOf("ask_user")
 		if !known {
 			source = skill.SourceWorkbench
@@ -418,6 +427,19 @@ func AttendedRegistry(parent *skill.Registry, p Profile, ceiling *mode.Mode) *sk
 		// not already in `filtered`, so a collision cannot happen — and if one
 		// somehow did, the chair simply asks in prose as it did before.
 		_ = filtered.Register(asker, source)
+	}
+	// `deny: task` in the profile still wins, the same way it does for ask_user
+	// — this restores a tool the mechanism took away, it does not overrule the
+	// file. Absent from the parent registry when the user has delegation switched
+	// off, in which case there is nothing to hand over and nothing to say.
+	if delegation, ok := parent.Get("task"); ok && p.WantsHands() {
+		if packed, isDelegation := delegation.(*delegationTool); isDelegation {
+			source, known := parent.SourceOf("task")
+			if !known {
+				source = skill.SourceBuiltin
+			}
+			_ = filtered.Register(packed.forChair(), source)
+		}
 	}
 	return filtered
 }
