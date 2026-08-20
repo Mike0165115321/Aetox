@@ -123,7 +123,7 @@ func (a *App) TerminalStart(shellPath string, cols, rows int) (string, error) {
 	if rows <= 0 {
 		rows = 24
 	}
-	pty, err := startPTY(shellPath, cols, rows, a.cfg.SandboxRoot)
+	pty, err := startPTY(shellPath, cols, rows, a.cur().cfg.SandboxRoot)
 	if err != nil {
 		return "", fmt.Errorf("start terminal: %w", err)
 	}

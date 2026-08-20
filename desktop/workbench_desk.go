@@ -9,17 +9,32 @@ package main
 // panes to six and left the agent holding one of them, which made the gap worse
 // rather than better.
 //
-// Three verbs close it, and they are deliberately thin. `desk_open` does not
-// know what a pane is — it hands the path to the same opener the file tree and
-// the drop handler call, and `fileView()` decides. That is what keeps the desk
-// able to learn a new file type without anything here, or in the model's head,
+// Three verbs closed it, and they are deliberately thin. `open` does not know
+// what a pane is — it hands the path to the same opener the file tree and the
+// drop handler call, and `fileView()` decides. That is what keeps the desk able
+// to learn a new file type without anything here, or in the model's head,
 // changing. See docs/architecture/desk-file-panes-2026-08-06.md §6.
+//
+// They are one tool as of 2026-08-20 — `desk`, with `open`, `list` and `close`
+// inside it (§99's packing, owner's call). `close` is new with the pack and is
+// the verb that was missing: a desk that can be filled and never emptied buries
+// the file the user was reading under the five the agent opened after it.
+//
+// `desk_terminal`, below, is NOT in that pack, and the line is worth stating
+// because it is the one that keeps the pack free. This pack is the SURFACE —
+// put something on it, see what is on it, take something off. A terminal is a
+// thing that lives on the surface with a back-and-forth of its own, which is
+// what the browser is too, and the browser has always been its own pack. Kept
+// out, every action in `desk` is CategoryAgent and every one of them only ever
+// looks, so no desk and no stance has to cut inside it — and neither of them
+// can (packed.go).
 
 import (
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -52,50 +67,41 @@ type deskState struct {
 }
 
 // WorkbenchTabsChanged is called by the frontend whenever the tab strip changes.
-func (a *App) WorkbenchTabsChanged(tabs []DeskTab) {
-	a.openTabs.mu.Lock()
-	a.openTabs.tabs = tabs
-	a.openTabs.mu.Unlock()
+//
+// The session is named because the window keeps one workbench per chat and this
+// is its mirror: an unnamed report lands on whichever conversation this side
+// thinks is current, which is the chat on screen — right until a chat working in
+// the background asks what is on its desk and is told about somebody else's.
+//
+// An empty id means a window that has not been told which chat it is on yet,
+// which is the moment before the first load answers; the chat on screen is the
+// only conversation there is then.
+func (a *App) WorkbenchTabsChanged(sessionID string, tabs []DeskTab) {
+	conv := a.convs.find(sessionID)
+	if conv == nil {
+		conv = a.cur()
+	}
+	conv.openTabs.mu.Lock()
+	conv.openTabs.tabs = tabs
+	conv.openTabs.mu.Unlock()
 }
 
-func (a *App) deskTabs() []DeskTab {
-	a.openTabs.mu.Lock()
-	defer a.openTabs.mu.Unlock()
-	return append([]DeskTab(nil), a.openTabs.tabs...)
+func deskTabsOf(conv *conversation) []DeskTab {
+	conv.openTabs.mu.Lock()
+	defer conv.openTabs.mu.Unlock()
+	return append([]DeskTab(nil), conv.openTabs.tabs...)
 }
 
 // ---------------------------------------------------------------------------
 // desk_open
 // ---------------------------------------------------------------------------
 
-type deskOpenSkill struct{ app *App }
-
-func (*deskOpenSkill) Name() string { return "desk_open" }
-
-func (*deskOpenSkill) Description() string {
-	return "วางไฟล์ลงบนโต๊ะทำงานให้ผู้ใช้เห็น"
-}
-
-func (*deskOpenSkill) ToolDefinition() model.ToolDefinition {
-	return toolDef("desk_open",
-		"Put a file on the user's desk, where they can see it. Pass the same path write/doc_write/sheet_write reported, relative to the sandbox root. The desk picks how to show it — a picture as a picture, a video as a player, a PDF as a reader, a spreadsheet as a grid, anything else in the editor — so there is nothing to choose here. Use it whenever you have made or found a file the user should look at, instead of only telling them the filename.",
-		map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"path": map[string]any{"type": "string", "description": "File path relative to the sandbox root"},
-			},
-			"required": []string{"path"},
-		})
-}
-
-func (s *deskOpenSkill) ExecuteTool(_ context.Context, args map[string]any) (skill.Output, error) {
-	path, _ := args["path"].(string)
-	return s.open(path)
-}
-
-func (s *deskOpenSkill) Execute(_ context.Context, input skill.Input) (skill.Output, error) {
-	path, _ := input["path"].(string)
-	return s.open(path)
+// conv is the chat this tool was built for: a desk_open from a conversation
+// working in the background opens against ITS project, not against whatever the
+// window is showing. Same reason askUserSkill carries one.
+type deskOpenSkill struct {
+	app  *App
+	conv *conversation
 }
 
 func (s *deskOpenSkill) open(path string) (skill.Output, error) {
@@ -119,11 +125,26 @@ func (s *deskOpenSkill) open(path string) (skill.Output, error) {
 	// path that does not exist shows the user a card reading "file is gone",
 	// which reads as the agent having lost the file it just made. The error
 	// belongs in the turn, where the model can still do something about it.
-	root := strings.TrimSpace(s.app.cfg.SandboxRoot)
+	// This chat's root, not the app's. The skill is built per conversation
+	// (workbenchSkills), so a tool call from a chat working in the background
+	// resolves against the project THAT chat is in — App.cfg is only the
+	// template a new chat is born from now (DECISIONS §155).
+	root := strings.TrimSpace(s.conv.cfg.SandboxRoot)
 	if root == "" {
 		return fail(fmt.Errorf("no project open"))
 	}
-	full, err := safeSandboxPath(root, path)
+	// Resolved the way `browser open` resolves it (normalizeWorkbenchURL), and
+	// for the same reason: `write` steers a new relative file into
+	// output/<session> and its receipt echoes the path the model ASKED for. A
+	// model that then hands that path here — which is exactly what this tool's
+	// description tells it to do — was told the file does not exist, one line
+	// after making it. Reported by the owner on 2026-08-20 against a deck it
+	// had just written.
+	//
+	// PlacedPath is the one definition of that rule and the literal path still
+	// wins, so a real file is never shadowed by a same-named artifact.
+	placed := skill.PlacedPath(root, func() string { return s.app.outputSubdirOf(s.conv) }, path)
+	full, err := safeSandboxPath(root, placed)
 	if err != nil {
 		return fail(err)
 	}
@@ -131,6 +152,9 @@ func (s *deskOpenSkill) open(path string) (skill.Output, error) {
 	if err != nil || info.IsDir() {
 		return fail(fmt.Errorf("%s does not exist", path))
 	}
+	// From here on the placed path is the path: it is what the tab, ReadFile
+	// and the file host all have to resolve, and none of them knows the rule.
+	path = placed
 
 	name := filepath.Base(filepath.FromSlash(path))
 	s.app.emitEvent("workbench:open-file", map[string]string{"path": path, "name": name})
@@ -256,31 +280,17 @@ func (s *deskTerminalSkill) run(command string) (skill.Output, error) {
 // desk_list
 // ---------------------------------------------------------------------------
 
-type deskListSkill struct{ app *App }
-
-func (*deskListSkill) Name() string { return "desk_list" }
-
-func (*deskListSkill) Description() string {
-	return "ดูว่าตอนนี้บนโต๊ะมีอะไรเปิดอยู่บ้าง"
-}
-
-func (*deskListSkill) ToolDefinition() model.ToolDefinition {
-	return toolDef("desk_list",
-		"List what is currently open on the user's desk. Use it before opening something, to avoid putting up a file that is already there, and to tell whether the user is looking at something else right now.",
-		map[string]any{"type": "object", "properties": map[string]any{}})
-}
-
-func (s *deskListSkill) ExecuteTool(_ context.Context, _ map[string]any) (skill.Output, error) {
-	return s.list()
-}
-
-func (s *deskListSkill) Execute(_ context.Context, _ skill.Input) (skill.Output, error) {
-	return s.list()
+// conv is the chat whose desk this reports. Same reason askUserSkill and
+// deskOpenSkill carry one: a tool built for a conversation answers about that
+// conversation.
+type deskListSkill struct {
+	app  *App
+	conv *conversation
 }
 
 func (s *deskListSkill) list() (skill.Output, error) {
 	start := time.Now()
-	lines := describeDesk(s.app.deskTabs())
+	lines := describeDesk(deskTabsOf(s.conv))
 	content := "โต๊ะว่าง ยังไม่มีอะไรเปิดอยู่"
 	if len(lines) > 0 {
 		content = "บนโต๊ะตอนนี้:\n" + strings.Join(lines, "\n")
@@ -323,4 +333,217 @@ func describeDesk(tabs []DeskTab) []string {
 		}
 	}
 	return lines
+}
+
+// ---------------------------------------------------------------------------
+// desk_close
+// ---------------------------------------------------------------------------
+
+type deskCloseSkill struct {
+	app  *App
+	conv *conversation
+}
+
+// close takes a file off the desk.
+//
+// The desk had no way to put anything down until now, which shows up the first
+// time an agent opens five files in one turn and buries the one the user was
+// reading. `browser` has closed its own tabs since it grew a `tabs` action, and
+// a terminal is a session rather than a view — so this is deliberately about
+// FILE tabs and says so, rather than becoming a third way to stop a shell.
+//
+// Only a tab the agent opened. §81's rule is that what the user is doing on
+// their own machine is not the agent's to read; taking away a file they opened
+// themselves is the same rule with a heavier hand, and the `Mine` flag that
+// answers it is already on the wire for desk_list.
+func (s *deskCloseSkill) close(path string) (skill.Output, error) {
+	start := time.Now()
+	out := skill.Output{Name: "desk_close", Command: "desk_close " + path}
+	fail := func(err error) (skill.Output, error) {
+		out.Content = "ปิดของบนโต๊ะไม่สำเร็จ: " + err.Error()
+		out.Stderr = err.Error()
+		out.DurationMs = time.Since(start).Milliseconds()
+		return out, err
+	}
+
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return fail(fmt.Errorf("path is required"))
+	}
+	if s.app.ctx == nil {
+		return fail(fmt.Errorf("UI not ready"))
+	}
+	// Resolved the same way desk_open resolves it, so the path that opened a
+	// file also closes it. A model that had to remember which spelling it used
+	// would be remembering an implementation detail of the output folder.
+	root := strings.TrimSpace(s.conv.cfg.SandboxRoot)
+	if root != "" {
+		path = skill.PlacedPath(root, func() string { return s.app.outputSubdirOf(s.conv) }, path)
+	}
+
+	var found *DeskTab
+	for _, tab := range deskTabsOf(s.conv) {
+		if tab.Kind == "file" && tab.Path == path {
+			found = &tab
+			break
+		}
+	}
+	if found == nil {
+		return fail(fmt.Errorf("%s is not on the desk", path))
+	}
+	if !found.Mine {
+		return fail(fmt.Errorf("%s was opened by the user, so it is not yours to close", path))
+	}
+
+	s.app.emitEvent("workbench:close-file", map[string]string{"path": path})
+
+	out.Success = true
+	out.DurationMs = time.Since(start).Milliseconds()
+	out.Content = fmt.Sprintf("เก็บ %s ออกจากโต๊ะแล้ว", path)
+	out.RawOutput = out.Content
+	return out, nil
+}
+
+// ---------------------------------------------------------------------------
+// desk — one name, three rights
+// ---------------------------------------------------------------------------
+
+// deskSkill is the surface itself: put something on it, see what is on it, take
+// something off. Packed on 2026-08-20 by §99's mechanism, on the owner's call.
+//
+// What is NOT in here is the design. `desk_terminal` stays its own tool and the
+// browser has always been its own pack, because those are things that LIVE on
+// the desk and carry their own back-and-forth — a terminal you keep typing into,
+// a page you read and click. Leaving them out is what makes this pack free: all
+// three actions are CategoryAgent, so no desk gains or loses one of them by
+// accident, and all three only ever look, so วางแผน carries the whole tool. A
+// pack whose members disagree on either can only be cut by name — neither the
+// desk gate nor the stance can reach inside one (packed.go).
+type deskSkill struct {
+	app  *App
+	conv *conversation
+	// actions this caller may use, nil for all of them. Set only by Narrow.
+	actions []string
+}
+
+func (s *deskSkill) allowedActions() []string {
+	if s == nil || len(s.actions) == 0 {
+		out := make([]string, 0, len(skill.PackedCalls("desk")))
+		for _, call := range skill.PackedCalls("desk") {
+			out = append(out, call.Action)
+		}
+		return out
+	}
+	return s.actions
+}
+
+func (s *deskSkill) Actions() []string { return skill.PackedActions("desk") }
+
+// Narrow hands back a desk offering only the named actions — a copy, for the
+// same shared-registry reason as the browser's and shell's.
+func (s *deskSkill) Narrow(named []string) skill.Skill {
+	narrowed := *s
+	want := map[string]bool{}
+	for _, n := range named {
+		want[strings.ToLower(strings.TrimSpace(n))] = true
+	}
+	var actions []string
+	for _, call := range skill.PackedCalls("desk") {
+		if want[call.Permission] {
+			actions = append(actions, call.Action)
+		}
+	}
+	// Silence is the whole tool, not an empty one — §99.2's rule.
+	if len(actions) == 0 {
+		return s
+	}
+	narrowed.actions = actions
+	return &narrowed
+}
+
+func (*deskSkill) Name() string { return "desk" }
+
+func (*deskSkill) Description() string {
+	return "โต๊ะทำงานของผู้ใช้ — วางไฟล์ให้ดู ดูว่ามีอะไรอยู่ และเก็บออก"
+}
+
+func (s *deskSkill) ToolDefinition() model.ToolDefinition {
+	allowed := s.allowedActions()
+
+	// SIGNATURES ONLY. Everything that used to explain when to reach for these
+	// now lives in Guidance below and is sent once — the standard set in
+	// internal/skill/block_standard_test.go.
+	lines := map[string]string{
+		"open":  "`open` (path) — put a file in front of the user.",
+		"list":  "`list` — what is on the desk right now.",
+		"close": "`close` (path) — take a file you opened back off.",
+	}
+	var b strings.Builder
+	b.WriteString("The user's desk: the panel beside the chat where they see what you produce. Actions:\n")
+	for _, action := range allowed {
+		b.WriteString(lines[action] + "\n")
+	}
+
+	return toolDef("desk", b.String(), map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"action": map[string]any{"type": "string", "enum": allowed},
+			"path":   map[string]any{"type": "string"},
+		},
+		"required": []string{"action"},
+	})
+}
+
+// Guidance is what somebody needs to know once, keyed per action.
+//
+// `open` carries the deck anatomy, and that is the hole this closes. §149 found
+// that the slide marker lived "in no prompt, no profile and no tool description"
+// and fixed it for the agents that write documents; the assistant was still told
+// only that slides are HTML (internal/mode/modes/assistant.md) and never what
+// makes an HTML file a deck. On 2026-08-20 it duly wrote one carrying its own
+// navigation buttons and its own stacking, and the room — which pages the file
+// itself — could not drive it. The file was fine; nobody had told the writer
+// what the room does with it.
+func (s *deskSkill) Guidance(args map[string]any) string {
+	switch strings.ToLower(strings.TrimSpace(str(args["action"]))) {
+	case "open":
+		return "Pass the path write/doc_write/sheet_write reported. The desk picks the pane — a picture as a picture, a PDF as a reader, a spreadsheet as a grid, anything else in the editor — so there is nothing to choose here.\n" +
+			"Slides: a deck is one .html file whose slides are <section class=\"slide\">, and that marker is the whole contract — it is what the slides room pages through and what the exporters cut on. Style it however you like; the look is yours. Do NOT build navigation into it: the room already pages, presents full-screen and exports .pptx/.pdf, and a deck that moves itself is one the room cannot drive. Lay the slides out for 16:9 and let the room scale them."
+	case "list":
+		return "A page the user opened themselves reports only that it exists — never its address. That is not a gap to work around."
+	case "close":
+		return "Only a file you opened. Use it to clear something you put up that is finished with, not to tidy the user's desk for them."
+	}
+	return ""
+}
+
+func (s *deskSkill) ExecuteTool(_ context.Context, args map[string]any) (skill.Output, error) {
+	return s.run(args)
+}
+
+func (s *deskSkill) Execute(_ context.Context, input skill.Input) (skill.Output, error) {
+	return s.run(map[string]any(input))
+}
+
+func (s *deskSkill) run(args map[string]any) (skill.Output, error) {
+	action := strings.ToLower(strings.TrimSpace(str(args["action"])))
+	if action == "" {
+		action = "open" // the pack's fallback, and the call every habit makes
+	}
+	// Refused here as well as hidden from the description, because a
+	// description is guidance and a gate is a gate.
+	if !slices.Contains(s.allowedActions(), action) {
+		return skill.Output{Name: "desk"}, fmt.Errorf("desk %s is not available here — this session may use: %s",
+			action, strings.Join(s.allowedActions(), ", "))
+	}
+
+	switch action {
+	case "open":
+		return (&deskOpenSkill{app: s.app, conv: s.conv}).open(str(args["path"]))
+	case "list":
+		return (&deskListSkill{app: s.app, conv: s.conv}).list()
+	case "close":
+		return (&deskCloseSkill{app: s.app, conv: s.conv}).close(str(args["path"]))
+	}
+	return skill.Output{Name: "desk"}, fmt.Errorf("unknown desk action %q", action)
 }

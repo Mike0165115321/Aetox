@@ -145,6 +145,33 @@ var packs = map[string]*pack{
 			"plan":    "task_plan",
 		},
 	},
+	// The desk itself: the surface the user is looking at. Packed 2026-08-20 on
+	// the owner's call — "desk นี่ไงที่ผมอยากแพ็ค" — and it is the clearest
+	// one-object case left, because a desk is one object by definition.
+	//
+	// What is NOT in it is the point. `desk_terminal` stays its own tool, and
+	// the browser has been its own pack since the beginning: those are things
+	// that LIVE on the surface and carry their own back-and-forth. This pack is
+	// the surface — put something on it, see what is on it, take something off.
+	//
+	// Leaving the terminal out is what makes this pack free on both axes a pack
+	// is judged by. Every action here is CategoryAgent, so a desk that carries
+	// one carries all three (`desk_terminal` is CategoryShell, and the
+	// specialized desk refuses shell on purpose); and every action here only
+	// ever looks, so วางแผน can carry the whole tool without gaining a way to
+	// change the machine. A pack whose members disagree on either axis has to
+	// be cut by name, and neither the desk gate nor the stance can cut inside a
+	// pack — only a profile can (subagent.FilterRegistry).
+	"desk": {
+		tool:     "desk",
+		fallback: "open",
+		actions:  []string{"open", "list", "close"},
+		names: map[string]string{
+			"open":  "desk_open",
+			"list":  "desk_list",
+			"close": "desk_close",
+		},
+	},
 	"github": {
 		tool: "github",
 		// No fallback. Reading a file and searching for a repository are not

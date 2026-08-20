@@ -20,7 +20,7 @@ func TestBindingsNeverReturnNilSlices(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("USERPROFILE", t.TempDir())
 
-	app := &App{cfg: config.Config{SandboxRoot: t.TempDir()}}
+	app := seed(&App{cfg: config.Config{SandboxRoot: t.TempDir()}}, newConversation())
 	// Some of these open the database and App caches the handle. On Windows an
 	// open file cannot be removed, so t.TempDir's own cleanup fails the test
 	// unless the handle is closed first (Cleanup is LIFO, and the temp dirs

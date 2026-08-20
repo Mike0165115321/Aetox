@@ -195,7 +195,7 @@ func rangeDays(name string) (int, bool) {
 // because a focused project writes into the project itself), then the projects
 // the user has opened, most recent first.
 func (a *App) artifactRoots() []string {
-	roots := []string{unfocusedRoot(), a.cfg.SandboxRoot}
+	roots := []string{unfocusedRoot(), a.cur().cfg.SandboxRoot}
 	for _, p := range a.RecentProjects() {
 		roots = append(roots, p.RootPath)
 	}

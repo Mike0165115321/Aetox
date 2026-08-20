@@ -33,7 +33,7 @@ func listPath(t *testing.T, a *App, path string) (skill.Output, error) {
 
 func focusedApp(t *testing.T, root string) *App {
 	t.Helper()
-	a := &App{dbDir: t.TempDir(), projectFocused: true}
+	a := seed(&App{dbDir: t.TempDir(), projectFocused: true}, newConversation())
 	closeDBOnCleanup(t, a)
 	a.applyConfig(a.cur(), config.Config{
 		SandboxRoot:   root,
@@ -151,7 +151,7 @@ func TestAddWorkspaceFolderRefusesWhatItCannotHonour(t *testing.T) {
 // than it is.
 func TestAddWorkspaceFolderIsRefusedWithNoProjectFocused(t *testing.T) {
 	isolateUserDirs(t)
-	a := &App{dbDir: t.TempDir()} // zero value: unfocused, the startup state
+	a := seed(&App{dbDir: t.TempDir()}, newConversation()) // zero value: unfocused, the startup state
 	closeDBOnCleanup(t, a)
 	if _, err := a.AddWorkspaceFolder(); err == nil {
 		t.Fatal("adding a folder was allowed with no project focused")
@@ -161,7 +161,7 @@ func TestAddWorkspaceFolderIsRefusedWithNoProjectFocused(t *testing.T) {
 // "This project's bug comes from that library" is a fact about one project. A
 // folder added to one must not follow the user into the next.
 func TestWorkspaceFoldersAreStoredPerProject(t *testing.T) {
-	a := &App{dbDir: t.TempDir()}
+	a := seed(&App{dbDir: t.TempDir()}, newConversation())
 	closeDBOnCleanup(t, a)
 	projectA := filepath.Join(t.TempDir(), "a")
 	projectB := filepath.Join(t.TempDir(), "b")

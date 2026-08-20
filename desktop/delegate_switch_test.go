@@ -13,7 +13,9 @@ import (
 // true is worse than no number.
 func TestTheMeterCountsTheBlockItWouldActuallySend(t *testing.T) {
 	a := newSwitchApp(t)
-	a.SetDelegateOff(false) // it ships off, and this test is about what turning it off does
+	// Both kinds on: they ship off, and this test is about what turning them off does.
+	a.SetDelegateOff("agents", false)
+	a.SetDelegateOff("helpers", false)
 
 	before := a.ToolBlockTokens()
 	if before <= 0 {
@@ -24,17 +26,84 @@ func TestTheMeterCountsTheBlockItWouldActuallySend(t *testing.T) {
 		t.Fatal("task is not in the block, so the master switch has nothing to weigh")
 	}
 
-	after := a.SetDelegateOff(true)
+	a.SetDelegateOff("agents", true)
+	after := a.SetDelegateOff("helpers", true)
 	if after.Tokens >= before {
 		t.Errorf("switching delegation off did not shrink the block: %d then %d", before, after.Tokens)
 	}
 	if got := before - after.Tokens; got < task/2 {
 		t.Errorf("the block shrank by %d, but task alone was %d — the meter is not counting the same thing the switch changes", got, task)
 	}
-	// Nothing left to weigh once it is off, and claiming otherwise would be the
-	// meter promising a saving already taken.
-	if after.TaskTokens != 0 {
-		t.Errorf("TaskTokens = %d while delegation is off", after.TaskTokens)
+	// With both off the tool is gone, so each switch is now worth what turning
+	// IT back on would cost. Not zero, and not the whole tool either: a switch
+	// promised the other one's saving is a switch that lies once it is pressed.
+	for _, side := range []struct {
+		name  string
+		reach DelegateReach
+	}{{"agents", after.Agents}, {"helpers", after.Helpers}} {
+		if !side.reach.Off {
+			t.Errorf("%s reads as on after being switched off", side.name)
+		}
+		if side.reach.Tokens <= 0 {
+			t.Errorf("%s is off and the meter says turning it on costs nothing", side.name)
+		}
+		if side.reach.Tokens >= task {
+			t.Errorf("%s alone is billed %d and the whole tool was %d, so one switch is being promised the other's saving too", side.name, side.reach.Tokens, task)
+		}
+	}
+}
+
+// The two switches are two, all the way to the settings page: turning เอเจน off
+// must leave every ซับเอเจน exactly where it was.
+//
+// This is the bug the split was for. One switch governed both, sat on the เอเจน
+// page alone, and took `explore` away from somebody who had only ever said
+// anything about colleagues (owner, 20 ส.ค.: แยกชัดเจน).
+func TestOneKindSwitchesWithoutTheOther(t *testing.T) {
+	a := newSwitchApp(t)
+	a.SetDelegateOff("agents", false)
+	both := a.SetDelegateOff("helpers", false)
+	if both.Agents.Off || both.Helpers.Off {
+		t.Fatal("turning both on did not take")
+	}
+	whole := a.toolTokens("task")
+
+	off := a.SetDelegateOff("agents", true)
+	if !off.Agents.Off {
+		t.Error("the เอเจน switch did not take")
+	}
+	if off.Helpers.Off {
+		t.Error("switching เอเจน off took ซับเอเจน with it, which is the fusion this split removed")
+	}
+	if len(off.Helpers.Workers) != len(both.Helpers.Workers) {
+		t.Errorf("the ซับเอเจน list changed size when the other switch moved: %d then %d", len(both.Helpers.Workers), len(off.Helpers.Workers))
+	}
+	// And the tool is still there, carrying one roster instead of two.
+	if left := a.toolTokens("task"); left <= 0 {
+		t.Error("one kind is still on and the delegation tool is gone entirely")
+	} else if left >= whole {
+		t.Errorf("the tool did not shrink when a whole roster left it: %d then %d", whole, left)
+	}
+}
+
+// Neither block may hold the other's workers. The kind is decided by which home
+// the profile file lives in, and nothing else gets a vote.
+func TestEachBlockHoldsOnlyItsOwnKind(t *testing.T) {
+	a := newSwitchApp(t)
+	switches := a.DelegateSwitches()
+
+	if len(switches.Agents.Workers) == 0 || len(switches.Helpers.Workers) == 0 {
+		t.Fatalf("a block is empty, so this proves nothing: %d เอเจน, %d ซับเอเจน", len(switches.Agents.Workers), len(switches.Helpers.Workers))
+	}
+	for _, w := range switches.Agents.Workers {
+		if !w.Agent {
+			t.Errorf("%s is a ซับเอเจน sitting in the เอเจน block", w.Name)
+		}
+	}
+	for _, w := range switches.Helpers.Workers {
+		if w.Agent {
+			t.Errorf("%s is an เอเจน sitting in the ซับเอเจน block", w.Name)
+		}
 	}
 }
 
@@ -43,24 +112,24 @@ func TestTheMeterCountsTheBlockItWouldActuallySend(t *testing.T) {
 func TestSwitchedOffWorkersStayOnTheList(t *testing.T) {
 	a := newSwitchApp(t)
 
-	full := a.DelegateSwitches()
-	if len(full.Workers) == 0 {
+	full := allWorkers(a.DelegateSwitches())
+	if len(full) == 0 {
 		t.Fatal("no workers at all, so this test proves nothing")
 	}
-	name := full.Workers[0].Name
+	name := full[0].Name
 
-	after := a.SetAgentOff(name, true)
-	if len(after.Workers) != len(full.Workers) {
-		t.Errorf("switching %s off removed it from the settings list: %d rows then %d", name, len(full.Workers), len(after.Workers))
+	after := allWorkers(a.SetAgentOff(name, true))
+	if len(after) != len(full) {
+		t.Errorf("switching %s off removed it from the settings list: %d rows then %d", name, len(full), len(after))
 	}
-	for _, w := range after.Workers {
+	for _, w := range after {
 		if w.Name == name && w.On {
 			t.Errorf("%s reads as on after being switched off", name)
 		}
 	}
 	// And back on again, because a one-way switch is a trap.
-	back := a.SetAgentOff(name, false)
-	for _, w := range back.Workers {
+	back := allWorkers(a.SetAgentOff(name, false))
+	for _, w := range back {
 		if w.Name == name && !w.On {
 			t.Errorf("%s could not be switched back on", name)
 		}
@@ -72,11 +141,17 @@ func TestSwitchedOffWorkersStayOnTheList(t *testing.T) {
 func TestEachWorkerRowSaysWhatItIsFor(t *testing.T) {
 	a := newSwitchApp(t)
 
-	for _, w := range a.DelegateSwitches().Workers {
+	for _, w := range allWorkers(a.DelegateSwitches()) {
 		if strings.TrimSpace(w.For) == "" {
 			t.Errorf("%s is listed with nothing saying what it is for", w.Name)
 		}
 	}
+}
+
+// allWorkers is both blocks end to end, for the assertions that are about a
+// worker rather than about a kind.
+func allWorkers(s DelegateSettings) []DelegateWorker {
+	return append(append([]DelegateWorker{}, s.Agents.Workers...), s.Helpers.Workers...)
 }
 
 func newSwitchApp(t *testing.T) *App {
@@ -105,23 +180,24 @@ func TestDelegationShipsOff(t *testing.T) {
 	a := newSwitchApp(t)
 
 	switches := a.DelegateSwitches()
-	if !switches.Off {
-		t.Error("a fresh install delegates; the switch was supposed to ship off")
+	if !switches.Agents.Off || !switches.Helpers.Off {
+		t.Error("a fresh install delegates; both switches were supposed to ship off")
 	}
 	if a.toolTokens("task") != 0 {
 		t.Error("task is in the block of an install that has never turned delegation on")
 	}
 	// And the workers are still listed, because a switch you cannot see is a
 	// switch you cannot turn on.
-	if len(switches.Workers) == 0 {
+	if len(allWorkers(switches)) == 0 {
 		t.Error("nothing to turn on: the settings page shows no workers while delegation is off")
 	}
 
-	on := a.SetDelegateOff(false)
-	if on.Off {
+	a.SetDelegateOff("agents", false)
+	on := a.SetDelegateOff("helpers", false)
+	if on.Agents.Off || on.Helpers.Off {
 		t.Fatal("turning delegation on did not take")
 	}
-	if on.TaskTokens <= 0 {
+	if a.toolTokens("task") <= 0 {
 		t.Error("turned on, but the meter says task costs nothing")
 	}
 	if on.Tokens <= switches.Tokens {

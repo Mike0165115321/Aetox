@@ -18,7 +18,7 @@ import (
 func newMCPTestApp(t *testing.T) *App {
 	t.Helper()
 	isolateUserDirs(t)
-	return &App{cfg: config.Config{ModelProvider: "noop", SandboxRoot: t.TempDir()}}
+	return seed(&App{cfg: config.Config{ModelProvider: "noop", SandboxRoot: t.TempDir()}}, newConversation())
 }
 
 func TestAddListRemoveMCPServer(t *testing.T) {

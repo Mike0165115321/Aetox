@@ -92,6 +92,7 @@ export namespace connect {
 	    tools: string[];
 	    family?: string;
 	    home_agent?: string;
+	    default_agents?: string[];
 	    needs_base_url: boolean;
 	    base_url?: string;
 	    base_url_hint?: string;
@@ -117,6 +118,7 @@ export namespace connect {
 	        this.tools = source["tools"];
 	        this.family = source["family"];
 	        this.home_agent = source["home_agent"];
+	        this.default_agents = source["default_agents"];
 	        this.needs_base_url = source["needs_base_url"];
 	        this.base_url = source["base_url"];
 	        this.base_url_hint = source["base_url_hint"];
@@ -526,11 +528,44 @@ export namespace main {
 	        this.on = source["on"];
 	    }
 	}
-	export class DelegateSettings {
+	export class DelegateReach {
 	    off: boolean;
-	    workers: DelegateWorker[];
 	    tokens: number;
-	    taskTokens: number;
+	    workers: DelegateWorker[];
+	
+	    static createFrom(source: any = {}) {
+	        return new DelegateReach(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.off = source["off"];
+	        this.tokens = source["tokens"];
+	        this.workers = this.convertValues(source["workers"], DelegateWorker);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class DelegateSettings {
+	    agents: DelegateReach;
+	    helpers: DelegateReach;
+	    tokens: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new DelegateSettings(source);
@@ -538,10 +573,9 @@ export namespace main {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.off = source["off"];
-	        this.workers = this.convertValues(source["workers"], DelegateWorker);
+	        this.agents = this.convertValues(source["agents"], DelegateReach);
+	        this.helpers = this.convertValues(source["helpers"], DelegateReach);
 	        this.tokens = source["tokens"];
-	        this.taskTokens = source["taskTokens"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -1349,6 +1383,7 @@ export namespace main {
 	export class TurnStatus {
 	    running: boolean;
 	    sessionId: string;
+	    working: string[];
 	
 	    static createFrom(source: any = {}) {
 	        return new TurnStatus(source);
@@ -1358,6 +1393,7 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.running = source["running"];
 	        this.sessionId = source["sessionId"];
+	        this.working = source["working"];
 	    }
 	}
 	export class UndoResult {

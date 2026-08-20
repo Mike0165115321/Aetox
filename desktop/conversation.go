@@ -29,6 +29,8 @@ package main
 import (
 	"sync"
 
+	"github.com/Mike0165115321/Aetox/internal/config"
+
 	aetoxapp "github.com/Mike0165115321/Aetox/internal/app"
 	"github.com/Mike0165115321/Aetox/internal/cognitive"
 	"github.com/Mike0165115321/Aetox/internal/mode"
@@ -44,6 +46,25 @@ import (
 // them describe a chat — and keeping half of them on `App` would leave exactly
 // the ambiguity this change exists to remove.
 type conversation struct {
+	// cfg is what this chat's engine runs on: its model, its provider and wire
+	// format, its thinking level, its approval mode, its delegate switches —
+	// and, riding along because bootstrap.Engine takes one config, the
+	// machine-level facts every chat shares (the sandbox root, the workspace).
+	//
+	// The dials moved here on 2026-08-20. They were `App.cfg` alone, which was
+	// true while the app was one conversation and became a lie the moment it
+	// was several: switching the model in one chat changed the name every chat
+	// reported while rebuilding only the engine on screen, so a chat working in
+	// the background went on answering with the old provider under the new
+	// name. ApprovalMode was the same field and the worse case — the safety
+	// gate of a turn already running, moved by a picker in another chat.
+	//
+	// `App.cfg` is still there and still means something, but something else:
+	// what a NEW chat is born with. Changing a dial writes both — this one, so
+	// the chat on screen changes, and that one, so the next chat inherits the
+	// choice — and rebuilds this engine and no other.
+	cfg config.Config
+
 	// id is the session id these rows are stored under. Empty until the first
 	// turn names it, which is the state a freshly launched app sits in.
 	id string
@@ -93,6 +114,40 @@ type conversation struct {
 	// the turn now running is already in the store, so the closing write must
 	// not add it a second time.
 	turnOpened bool
+
+	// lastSnapshot is the tree as it stood before THIS chat's last turn — what
+	// its undo goes back to. "" when there is nothing to go back to.
+	//
+	// It was one field on App, which was true while one turn could exist. With
+	// two chats working, the second turn's capture overwrote the first's, so
+	// undo in one conversation restored the other one's work — the only item
+	// on §155's leftover list that damaged data rather than confusing a screen.
+	//
+	// The snapshot STORE stays shared: it is the project's git object database,
+	// one per working tree, and every chat in that tree is looking at the same
+	// files. What is per chat is the point in it that this conversation may go
+	// back to. Guarded by App.snapshotMu with the store.
+	lastSnapshot string
+
+	// openTabs is what the window reports is open on THIS chat's workbench, so
+	// the agent can read its own desk (desk_list).
+	//
+	// The window has kept the layout per session all along
+	// (switchWorkbenchSession); what was one per app was the mirror on this
+	// side, because there was only ever one chat to mirror. With two working at
+	// once a tool call from the chat nobody is looking at read the tab strip of
+	// the chat on screen — someone else's desk, described as its own.
+	openTabs deskState
+
+	// taskChips is the side work THIS chat flagged with suggest_task and the
+	// user has not started or dismissed.
+	//
+	// One list per app read as "things Aetox noticed", which is not what a chip
+	// is: it is something this conversation saw while doing this conversation's
+	// job, and its prompt is written to stand alone from THIS chat. Shown in
+	// another one it is a suggestion with no visible origin — and with two chats
+	// working, two agents were filling one tray.
+	taskChips taskChips
 
 	// toolHistory is this chat's command log, for the Inspector's panel. Per
 	// conversation rather than per app because the panel has always claimed to

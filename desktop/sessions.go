@@ -235,11 +235,25 @@ func (a *App) openTurn(conv *conversation, userMsg SessionMessage) bool {
 	// agent and the project are recorded. Same rule as before: a session is
 	// born with all three and the ON CONFLICT branch touches none of them.
 	if _, err := db.Exec(`
-		INSERT INTO sessions(id, project_key, title, created_at, updated_at, mode, agent, space, stance)
-		VALUES(?,?,?,?,?,?,?,?,?)
-		ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at`,
-		sessionID, projectKey(a.cfg.SandboxRoot), sessionTitleFrom(userMsg.Text), now, now,
-		conv.desk.DeskName(), conv.chair, conv.space, conv.stance.String()); err != nil {
+		INSERT INTO sessions(id, project_key, title, created_at, updated_at, mode, agent, space, stance,
+		                     provider, model, wire_format, think_level, approval_mode)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		ON CONFLICT(id) DO UPDATE SET
+			updated_at = excluded.updated_at,
+			-- The dials, unlike the four coordinates above, are meant to be
+			-- turned mid-conversation, so the row follows them: what is
+			-- recorded is what actually answered, updated by the act of
+			-- answering. mode/agent/space/stance are deliberately absent — a
+			-- session is born at a desk and stays there (§83).
+			provider = excluded.provider,
+			model = excluded.model,
+			wire_format = excluded.wire_format,
+			think_level = excluded.think_level,
+			approval_mode = excluded.approval_mode`,
+		sessionID, projectKey(conv.cfg.SandboxRoot), sessionTitleFrom(userMsg.Text), now, now,
+		conv.desk.DeskName(), conv.chair, conv.space, conv.stance.String(),
+		conv.cfg.ModelProvider, conv.cfg.ModelName, conv.cfg.ModelWireFormat,
+		conv.cfg.ThinkLevel, conv.cfg.ApprovalMode); err != nil {
 		return false
 	}
 	if _, err := db.Exec(
@@ -272,10 +286,25 @@ func (a *App) appendTurn(conv *conversation, userMsg, agentMsg SessionMessage) i
 	// it was opened with, and stays there (§83); an UPDATE of either column
 	// would be the mid-session switch the whole design refuses.
 	_, _ = tx.Exec(`
-		INSERT INTO sessions(id, project_key, title, created_at, updated_at, mode, agent, space, stance)
-		VALUES(?,?,?,?,?,?,?,?,?)
-		ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at`,
-		sessionID, projectKey(a.cfg.SandboxRoot), sessionTitleFrom(userMsg.Text), now, now, a.cur().desk.DeskName(), a.cur().chair, a.cur().space, a.cur().stance.String())
+		INSERT INTO sessions(id, project_key, title, created_at, updated_at, mode, agent, space, stance,
+		                     provider, model, wire_format, think_level, approval_mode)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		ON CONFLICT(id) DO UPDATE SET
+			updated_at = excluded.updated_at,
+			-- The dials, unlike the four coordinates above, are meant to be
+			-- turned mid-conversation, so the row follows them: what is
+			-- recorded is what actually answered, updated by the act of
+			-- answering. mode/agent/space/stance are deliberately absent — a
+			-- session is born at a desk and stays there (§83).
+			provider = excluded.provider,
+			model = excluded.model,
+			wire_format = excluded.wire_format,
+			think_level = excluded.think_level,
+			approval_mode = excluded.approval_mode`,
+		sessionID, projectKey(conv.cfg.SandboxRoot), sessionTitleFrom(userMsg.Text), now, now,
+		conv.desk.DeskName(), conv.chair, conv.space, conv.stance.String(),
+		conv.cfg.ModelProvider, conv.cfg.ModelName, conv.cfg.ModelWireFormat,
+		conv.cfg.ThinkLevel, conv.cfg.ApprovalMode)
 	// The question, unless openTurn already wrote it when it was asked —
 	// writing it twice would double every user message in the transcript. The
 	// flag is the whole coupling between the two halves, and it is deliberately
@@ -388,7 +417,7 @@ func (a *App) ListSessionsAt(desk string) []SessionMeta {
 	query := `
 		SELECT id, title, updated_at, mode, agent FROM sessions
 		WHERE project_key = ? AND ` + heldOutsideAProject + ` ORDER BY updated_at DESC LIMIT 200`
-	args := []any{projectKey(a.cfg.SandboxRoot)}
+	args := []any{projectKey(a.cur().cfg.SandboxRoot)}
 	if desk = strings.TrimSpace(desk); desk != "" {
 		query = `
 		SELECT id, title, updated_at, mode, agent FROM sessions
@@ -484,7 +513,7 @@ func (a *App) SearchSessions(query string) []SessionMeta {
 		WHERE s.project_key = ?
 		GROUP BY s.id
 		ORDER BY s.updated_at DESC LIMIT 50`,
-		[]any{match, projectKey(a.cfg.SandboxRoot)},
+		[]any{match, projectKey(a.cur().cfg.SandboxRoot)},
 		func(rows *sql.Rows) (SessionMeta, error) {
 			var m SessionMeta
 			err := rows.Scan(&m.ID, &m.Title, &m.UpdatedAt, &m.Mode, &m.Agent, &m.Snippet)
@@ -710,13 +739,6 @@ func (a *App) SearchAllSessions(query string) []SessionMeta {
 // switching the active project first if the session belongs to a different one
 // than whatever's currently open.
 func (a *App) LoadSessionAnyProject(id string) ([]SessionMessage, error) {
-	// Before the project lookup, not inside LoadSession alone: this door
-	// re-roots the whole engine (reload/focusNone) on its way to the load, and
-	// a refusal that fires after the re-root has already moved the machine the
-	// turn is running on.
-	if err := a.guardSessionSwitch(); err != nil {
-		return nil, err
-	}
 	db, err := a.database()
 	if err != nil {
 		return nil, err
@@ -729,7 +751,27 @@ func (a *App) LoadSessionAnyProject(id string) ([]SessionMessage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("ไม่พบเซสชันนี้")
 	}
-	if key != projectKey(a.cfg.SandboxRoot) {
+	if key != projectKey(a.cur().cfg.SandboxRoot) {
+		// Only this branch needs the gate, and only this branch ever did. It
+		// re-roots the whole engine (reload/focusNone) — the sandbox, the
+		// workspace folders, the shell backend — and those belong to the
+		// machine rather than to a conversation, so a turn running ANYWHERE
+		// would find the ground moved under it mid-tool-call.
+		//
+		// It used to sit at the top of the function, which made every row in
+		// the history list unclickable while anything was working: the sidebar
+		// sends every click through this door, and the overwhelming majority of
+		// them are chats in the project already open, where nothing is re-rooted
+		// and nothing was ever at risk. That is the refusal the owner hit again
+		// after the switch was supposed to be open (20 ส.ค.: "ตอนมันทำงานผมกด
+		// ไปเซสชั่นอื่นไม่ได้เลย") — the door below had opened and this one was
+		// still shut in front of it.
+		//
+		// Before the re-root, not after: a refusal that fires afterwards has
+		// already moved the machine the turn is running on.
+		if err := a.guardSessionSwitch(); err != nil {
+			return nil, err
+		}
 		// Sessions chatted "ไม่โฟกัสโปรเจกต์" live in the unfocused bucket,
 		// which never gets a projects-table row — switch back to unfocused
 		// mode for those instead of treating them as an orphaned project.
@@ -753,7 +795,7 @@ func (a *App) LoadSessionAnyProject(id string) ([]SessionMessage, error) {
 		}
 		a.reload(config.ConfigOptions{RootPath: rootPath, ApprovalMode: string(safety.ApprovalFullAccess)})
 		a.projectFocused = true
-		a.touchProject(a.cfg.SandboxRoot)
+		a.touchProject(a.cur().cfg.SandboxRoot)
 	}
 	return a.LoadSession(id)
 }
@@ -825,10 +867,18 @@ func (a *App) LoadSession(id string) ([]SessionMessage, error) {
 	if conv == nil {
 		conv = newConversation()
 		conv.id = id
+		// Born from the template, then corrected by whatever the row recorded.
+		// Both steps matter: a session from before the columns existed keeps the
+		// app's default, and one that recorded its own dials gets them back.
+		conv.cfg = a.cfg
 	}
 	var desk, chair, space, key, stance string
-	if db.QueryRow(`SELECT mode, agent, space, project_key, stance FROM sessions WHERE id = ?`, id).
-		Scan(&desk, &chair, &space, &key, &stance) == nil {
+	var provider, modelName, wireFormat, thinkLevel, approval string
+	if db.QueryRow(`SELECT mode, agent, space, project_key, stance,
+	                       provider, model, wire_format, think_level, approval_mode
+	                FROM sessions WHERE id = ?`, id).
+		Scan(&desk, &chair, &space, &key, &stance,
+			&provider, &modelName, &wireFormat, &thinkLevel, &approval) == nil {
 		// Before setStation, which re-bootstraps when the desk changed: set here
 		// and the engine that comes out of it already knows how this session was
 		// being run, instead of being built at ลงมือ and corrected a line later.
@@ -854,17 +904,53 @@ func (a *App) LoadSession(id string) ([]SessionMessage, error) {
 			conv.stance = mode.NormalizeStance(stance)
 			conv.desk, conv.chair = m, seat
 			conv.space = a.resolvedSpace(space)
+			// The dials this chat was left on, restored the same way and for
+			// the same reason as the four coordinates above: a conversation's
+			// engine is a derivative that gets thrown away and rebuilt, so
+			// anything that must survive that lives on the row, not in the
+			// object. Holding them only in memory is what made the model
+			// follow the user between chats after §155 — the field was in the
+			// right place with the wrong lifetime (§157).
+			//
+			// Empty is "never recorded", which is every session from before the
+			// column existed: those keep the app's default, which is what they
+			// have always opened on.
+			if provider != "" && provider != conv.cfg.ModelProvider {
+				// The provider carries its own key and its own address. Set the
+				// name alone and the engine is pointed at one provider holding
+				// another's credentials, which comes out as "missing model API
+				// key" and a silent fall back to the built-in engine — which is
+				// what the owner got the first time this shipped (20 ส.ค.).
+				// Same three lines SwitchProvider uses, for the same reason.
+				conv.cfg.ModelProvider = provider
+				conv.cfg.ModelBaseURL = resolveBaseURLForProvider(provider)
+				conv.cfg.ModelAPIKey = resolveAPIKeyForProvider(provider)
+			}
+			if modelName != "" {
+				conv.cfg.ModelName = modelName
+			}
+			if wireFormat != "" {
+				conv.cfg.ModelWireFormat = wireFormat
+			}
+			if thinkLevel != "" {
+				conv.cfg.ThinkLevel = thinkLevel
+			}
+			if approval != "" {
+				conv.cfg.ApprovalMode = approval
+			}
 		}
 	}
 	if live == nil {
-		// One bootstrap, for this conversation, with its own coordinates already
-		// on it. The old path set the fields on the chat that was open and then
-		// re-bootstrapped it twice — once inside setStation and once after —
-		// which is what "opening a session" used to cost.
-		a.applyConfig(conv, a.cfg)
+		// One bootstrap, for this conversation, from ITS config — the template
+		// with the row's own dials laid over it. Built from a.cfg instead and
+		// the restore above would be overwritten one line later by the model
+		// somebody chose in another chat, which is the bug this whole section
+		// exists to end.
+		a.applyConfig(conv, conv.cfg)
+		a.explainARecordedModelThatWillNotStart(conv, provider, modelName)
 	}
 	if key == "" {
-		key = projectKey(a.cfg.SandboxRoot)
+		key = projectKey(a.cur().cfg.SandboxRoot)
 	}
 	messages, err := a.readTranscript(id, key)
 	if err != nil {
@@ -1152,7 +1238,7 @@ func (a *App) DeleteSession(id string) error {
 	// Roots we can't see from here (another project's) are left for
 	// sweepAttachments the next time that project opens.
 	if id != "" && id == filepath.Base(id) && !strings.Contains(id, "..") {
-		for _, root := range []string{a.cfg.SandboxRoot, unfocusedRoot()} {
+		for _, root := range []string{a.cur().cfg.SandboxRoot, unfocusedRoot()} {
 			if strings.TrimSpace(root) != "" {
 				_ = os.RemoveAll(filepath.Join(root, attachmentsDir, id))
 			}
@@ -1244,4 +1330,37 @@ func failedPairAt(messages []SessionMessage, i int) bool {
 	}
 	next := i + 1
 	return next < len(messages) && messages[next].Role == "agent" && messages[next].ErrorText != ""
+}
+
+// explainARecordedModelThatWillNotStart names the chat's own model when it is
+// the reason the engine came up on the fallback.
+//
+// A conversation can record a model that stops existing under it. The owner's
+// deepseek slot points at OpenRouter, so a chat that answered with a
+// deepseek-native model before that move asks for a name the endpoint has never
+// heard of; the same happens to a local runtime that is not running, a key that
+// was revoked, a provider whose catalog moved on.
+//
+// What the window would say without this is the generic "เชื่อมต่อไม่ได้ ตอนนี้
+// ใช้โมเดลในตัวของ Aetox แทน" — true, and useless, because it does not say that
+// the model being asked for is one THIS CHAT remembers rather than one the user
+// just picked. That is the sentence they need to act on, and the owner's call
+// on 20 ส.ค. was explicitly for the loud version: silence is what made the last
+// bug so hard to find.
+//
+// Nothing is auto-corrected. The chat keeps the model it recorded, the banner
+// says what is answering instead, and choosing a different one is one click in
+// the composer — a choice the user makes, not one made for them and written
+// down (which is the mistake this same file made earlier the same day).
+func (a *App) explainARecordedModelThatWillNotStart(conv *conversation, provider, modelName string) {
+	if conv == nil || conv.modelErr == nil || modelName == "" {
+		return
+	}
+	named := modelName
+	if provider != "" {
+		named = provider + " / " + modelName
+	}
+	conv.modelErr = fmt.Errorf(
+		"แชทนี้เคยตอบด้วย %s ซึ่งตอนนี้เปิดไม่ได้ (%v) — เลือกโมเดลใหม่ให้แชทนี้ได้ที่ช่องพิมพ์",
+		named, conv.modelErr)
 }

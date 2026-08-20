@@ -15,7 +15,7 @@
   import { cockpit } from '../stores/cockpit.svelte'
   import {
     workbench, activateTab, closeTab, removeTab,
-    openFilesTab, openBrowserTab, openTerminalTab, openDecksTab, openFileTab, reportDeskTabs,
+    openFilesTab, openBrowserTab, openTerminalTab, openDecksTab, openFileTab, closeAgentFileTab, reportDeskTabs,
     openUrlInWorkbench, saveWorkbenchSnapshot, resolveAddressBarInput, labelForUrl,
     setTabDragPayload, TAB_DRAG_MIME,
     type WorkbenchTab,
@@ -65,9 +65,9 @@
 
   onMount(() => {
     TerminalShells().then((s) => (shells = s))
-    // The three ways the agent reaches this desk. Each mirrors a door the user
-    // already has — a page, a file, a shell — so nothing here can put something
-    // on the desk that a click could not have.
+    // The ways the agent reaches this desk. Each mirrors a door the user
+    // already has — a page, a file, a shell, and the × on a tab — so nothing
+    // here can do something to the desk that a click could not have.
     const offs = [
       // browser_open
       EventsOn('workbench:open-browser', ({ id, url }: { id: string; url: string }) => {
@@ -79,7 +79,12 @@
       // desk_open — straight into the same opener the tree and the drop use, so
       // the routing table stays the only thing that decides which pane draws it.
       EventsOn('workbench:open-file', ({ path, name }: { path: string; name: string }) => {
-        void openFileTab(path, name)
+        void openFileTab(path, name, true)
+      }),
+      // desk close — only ever a tab the agent opened itself; the store checks
+      // that again against the live array rather than trusting the mirror.
+      EventsOn('workbench:close-file', ({ path }: { path: string }) => {
+        closeAgentFileTab(path)
       }),
       // desk_terminal — the session already exists on the Go side (unlike the
       // browser, where the frontend creates the window), so this only mounts a

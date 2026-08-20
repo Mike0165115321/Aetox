@@ -5090,6 +5090,57 @@ The tool is exercised for real by [tool_coverage_test.go](../desktop/tool_covera
 
 ---
 
+## 150. Decision — The Core Had a Cursor Where It Should Have Had a Map (2026-08-20)
+
+The owner asked for the same thing four times across three days, in plainer and plainer words, and the last one was the whole diagnosis: *"เหมือนมันผูกกับหน้าที่ผู้ใช้เปิด ความจริงไม่ควรดิ"*. He was right about the layer nobody had named. It was not the peek, and it was not the sidebar. **`App` held a `sessionID` cursor, and ten places in the turn path asked `turnSessionID()` to guess whose work they were doing.**
+
+The guess was honest and correct for exactly as long as only one turn could exist: one turn meant that one, none or several meant the chat on screen. Every refusal the owner kept hitting — *"เอเจนกำลังทำงานอยู่ รอให้เสร็จ"* — was that single cursor defending itself. Opening a second chat meant overwriting the first one's mind mid-thought, so the doors were shut instead (§134.2), and §134.4 wrote down that the real fix was not done.
+
+### 150.1 The shape, and where it came from
+
+The owner said to look at Claude Code and at Codex. They agree on the thing worth borrowing, and it is not a data structure: **the core has no "current session".** Claude Code reaches that with a process per conversation, which one Wails window cannot use. Codex and opencode reach it inside one process — a map of conversations addressed by id, with the UI naming which one it is talking to. That is what Aetox now is.
+
+`desktop/conversation.go` holds one `conversation` per chat: its engine (agent, app, registry, delegations), the four coordinates it was built at, its transcript, its command log, and its own `ask_user` channel. `conversations` holds them by id plus a cursor for the window. Fourteen fields left `App`; none of them ever described the app.
+
+Deliberately **not** "the current one plus a parking lot for the others" — that shape was considered and rejected. It makes `App` the answer to "which chat is this?" one field deeper, and the first code to read the wrong half fails in exactly the way this change exists to end.
+
+### 150.2 Callbacks are stamped at construction, which is the whole trick
+
+`applyConfig` takes the conversation it is building for, and every one of the eight callbacks is a closure over it: `OnToolAction`, `OnToolRun`, `OnStatus`, `OnContentPreview`, `OnContentReset`, `OnUsage`, the usage reporter and the tool-call progress reporter. The engine says which chat is speaking **by construction** rather than by whatever the cursor points at when the event fires. That is the sentence §134.4 wrote down as the missing half, and it is one parameter.
+
+Every `agent:*` event now carries `sessionEvent[T]{SessionID, Data}`. `turnSessionID()` is deleted; what is left is `turnRunningIn(id)`, which is a different question with a real answer.
+
+### 150.3 What the tests found, which is the part worth keeping
+
+Three defects surfaced only because the new tests could reach them, and all three had been sitting there:
+
+- **`newSessionID()` collides.** It is the clock to the millisecond. Two chats created inside one millisecond got the same name — unreachable while a human had to click twice to make it happen, reachable the instant code could open a chat. Two conversations on one key in the map, and `openTurn`'s `ON CONFLICT` folding their rows into one session in the store. A counter now breaks ties inside the millisecond that produced them.
+- **`a.cur()` had a data race.** A bare `if a.convs == nil` lazy init: two goroutines each build their own manager and then disagree about which conversation is open. The approval test asks a question on one goroutine and waits for it on another, and it failed exactly this way on the first run. `sync.Once`.
+- **`context.WithCancel(a.ctx)` with a nil ctx.** Unreachable while a process with no window had no engine either; reachable the moment opening a chat began building one.
+
+### 150.4 The window had the same bug one layer up
+
+Fixing Go left the refusal on screen, because the window held one live state: one `awaitingReply`, one `toolSteps`, one `streamingText`. The read-only peek (§134.2) existed to protect it and was shipped knowing it was a stopgap.
+
+Peek is deleted — all 113 references. In its place `cockpit.parked` holds the **whole** live state of every chat working off screen, and `arriveAt(id)` is the one door every switch goes through: park what is leaving before anything is overwritten, then restore what is arriving or start it clean. `writeLive(id, …)` puts each event where its session says, and drops an event for a chat the window is holding nothing for rather than drawing it into whatever is on screen.
+
+Two more defects came out of that:
+
+- **Pressing the row of the chat you are already in wiped it.** `arriveAt` parked and then cleared. Same id is now a no-op.
+- **A turn ending while its chat was parked left the ring on forever.** `runLiveTurn`'s cleanup cleared "the fields on cockpit", which by then belonged to a different chat. It ends where it ran.
+
+`TurnInFlight` reports every working chat, not only the one on screen: a reloaded window used to mark one and forget the rest.
+
+### 150.5 What is still shared, said out loud
+
+`ask_user` moved into the conversation on the owner's instruction (*"ask_user หากมี ให้ขึ้นแจ้งเตือนที่เซสชั่นปกติเลยครับ"*) — the card is drawn in the chat that raised it and answered there, and `AnswerUserQuestion` names the session.
+
+Still genuinely shared, and still refusing mid-turn: **the project.** Re-rooting moves the sandbox, the workspace roots and the shell backend, which belong to the machine rather than to a conversation. Undo snapshots are one net. Both are stage 4 of §134.4 and neither is pretended otherwise.
+
+### 150.6 The cost, agreed before it was built
+
+Three chats working is three model calls in flight. There is no ceiling — §138's decision stands: count the spend and show it, Stop is the bound. A conversation stays in memory while its turn runs or while it is on screen, and is let go otherwise; its engine can be rebuilt from the transcript, and holding every chat the user has ever clicked would grow for the rest of the run with nothing to show for it.
+
 ## 152. Decision — A Room With Nothing Left In It (2026-08-20)
 
 **Trigger:** the owner, after a session with the deck chair came back weak: *"ตัดเอเจนทำสไลด์ออกไปเลยให้เมนเป็นคนทำ เพราะมันไม่มีความจำเป็นต้องเฉพาะทางอะไรอยู่แล้ว"*.
@@ -5157,6 +5208,41 @@ The desk manifests keep a pointer and no copy. A paragraph in a manifest is paid
 **The two bugs found while looking.** Tools vanishing mid-session — `write` and `skill_view` refused as *"not exposed to agent"* between two windows where they worked, same session, same stance — is unexplained and filed. And `tool_runs.agent` is blank for every chair chat, which is why several conclusions drawn from that column during this conversation were wrong. Neither is touched here.
 
 ---
+
+## 155. Decision — The Dials Were the App's, and the App Had Stopped Being One Conversation (2026-08-20)
+
+§150 gave every chat its own engine and stopped short of the settings that engine is built from. The owner found the gap the same day, in one sentence: *"ทำไมเปลี่ยนโมเดล ปรับอะไรอีกเซสชั่นนึง อีกเซสชั่นนึงต้องปรับตามด้วย"*.
+
+### 151.1 It was worse than "shared"
+
+`SwitchModel` wrote `App.cfg` and then rebuilt **only the engine on screen**. So a chat working in the background went on answering through the old provider client while every screen in the app — its own row included — reported the new model name. Not one setting shared between two chats: one setting, one chat obeying it, and a name that described neither.
+
+`ApprovalMode` was the same field and the worse case. Changing the approval dropdown moved the safety gate of a turn already running in another conversation, which nobody had asked for and nothing on screen said.
+
+### 151.2 Two configs, two meanings
+
+`conversation.cfg` is what this chat's engine runs on. `App.cfg` is what a **new** chat is born with. A dial writes both — the conversation, so the chat on screen changes; the app, so the next chat inherits the choice — and rebuilds that one engine and no other. `persistModelPreference` goes on doing what it always did, which is exactly the second of those two jobs.
+
+Every read moved with it: `a.cfg.X` became `a.cur().cfg.X` for the window's questions and `conv.cfg.X` inside the turn path, where the conversation is already held. That is 115 sites in the package and one in a tool — `desk_open` now resolves against the project **its own chat** is in, the same reason `ask_user` carries its conversation.
+
+The window asks `GetModelInfo` on every switch now. It did not need to when there was one answer.
+
+### 151.3 What is per chat, and what is the machine's
+
+Per conversation: the engine and its memory, the registry, the delegate register, desk / chair / space / stance, the transcript, the command log, `ask_user`'s channel, and now **provider, model, wire format, thinking level, approval mode, and the delegate switches**.
+
+The machine's, and still shared on purpose: the sandbox root and the workspace folders, the shell backend, the database, the MCP manager, the provider quota and price caches.
+
+Still shared and **not** yet where it belongs, written down rather than pretended away:
+
+- **Undo.** One `lastSnapshot` for the app. Two chats working means the second turn's snapshot overwrites the first's, so undo in one restores the other's work.
+- **The workbench desk** (`openTabs`) and the browser/terminal hosts. One set for the app; a tool call from one chat can act on another's tab.
+- **Task chips.** One list; a chip raised in one chat shows in all of them.
+
+None of these is a new debt — each predates §150 and was invisible while the app was one conversation. They are named here so the next person does not have to find them the way the owner found this one.
+
+---
+
 ## 156. Decision — Two Rows In, Three Rows Out, and Six Pointing At Nothing (2026-08-20)
 
 The catalog gained `xai` and `thaillm`, lost `perplexity`, `together` and
@@ -5274,3 +5360,37 @@ is correct for what is served, so they are dead rather than wrong. Fixing them
 properly needs Moonshot documentation for k2.6 and k2.7 that nobody has read.
 
 ---
+
+## 157. Decision — Right Place, Wrong Lifetime; and the Last Three Things Held for Everybody (2026-08-20)
+
+§155 moved the dials onto the conversation and I told the owner it was done. He did not believe it — *"เช็คดีๆ เหมือนจะไม่ใช่นะ"* — and he was right. A probe settled it in one line:
+
+```
+PROBE: chat one reopened on "model-of-chat-two"
+```
+
+### 152.1 The lifetime was the bug
+
+`conversation.cfg` lived exactly as long as the engine. A chat that went idle and off screen had its engine let go (§150.6, deliberately), and reopening it rebuilt from `App.cfg` — the last model anyone chose anywhere. The field was in the right place with the wrong lifetime, which reads as "fixed" in every code review and fails on the first real switch.
+
+**The rule, which desk / chair / space / stance already knew:** anything that identifies a conversation lives on the session ROW. The engine is a derivative that gets thrown away and rebuilt; nothing that must outlive it can be stored in it. Migration v17 adds `provider, model, wire_format, think_level, approval_mode` beside `stance`.
+
+Three things came out of getting that wrong the first time, and each is worth more than the fix:
+
+- **Restoring a provider must restore its credentials.** Setting the name off the row and leaving the key and base URL as the template had them points one provider at another's credentials, which surfaces as `missing model API key` and a silent fall back to the built-in engine. The same three lines `SwitchProvider` has always run.
+- **Every picker started from `App.cfg`.** `next := a.cfg` in seven of them — the template, not what the chat on screen is running. The earlier rename only caught `a.cfg.` with a dot.
+- **A chat records its dials when it ANSWERS, never when it is looked at.** The first cut stamped the row on open, so browsing twenty old chats while the app happened to be on one provider pinned all twenty to it, silently, by an accident of timing. That is not a default becoming specific; it is a choice made on the user's behalf and written down as if they made it. Recording what actually answered is a fact about work done.
+
+A model a chat recorded can also stop existing under it — a provider slot repointed at another endpoint, a runtime that is not running, a revoked key. Nothing is auto-corrected (owner's call): the banner names the chat's own model and its reason, and choosing another is one click. Silence is what made this bug so hard to find.
+
+### 152.2 The three leftovers, done
+
+§155 listed three things still held for the whole app and said so rather than pretending. The owner's answer was to fix all three.
+
+- **Undo.** `lastSnapshot` moves onto the conversation. The store stays shared — it is the project's git object database, one per working tree — but the point a chat may go back to is that chat's. This was the only one of the three that damaged data: the second turn's capture overwrote the first's, so undo in one conversation restored the other's work.
+- **The workbench mirror.** `WorkbenchTabsChanged` names its session. The window has kept a workbench per chat all along; only the mirror on this side was singular, so `desk_list` from a background chat described the on-screen chat's desk as its own.
+- **Task chips.** Per conversation, and the event is stamped like every other. A chip is something one conversation noticed while doing its own job, and its prompt is written to stand alone from that chat; drawn under another it is a suggestion with no visible origin.
+
+### 152.3 What this session cost, and the lesson worth keeping
+
+Four times in one day I reported something fixed after reading the code, and four times the owner found it was not. Every one of those was caught in minutes by a throwaway probe that ran the actual path. **Reading the code tells you what it says; running it tells you what it does, and only the second one is a report.**

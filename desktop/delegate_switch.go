@@ -21,23 +21,48 @@ import (
 	"strings"
 
 	"github.com/Mike0165115321/Aetox/internal/connect"
+	"github.com/Mike0165115321/Aetox/internal/model"
 	"github.com/Mike0165115321/Aetox/internal/skill"
 	"github.com/Mike0165115321/Aetox/internal/subagent"
 )
 
-// DelegateSettings is what the switches look like from the UI's side.
+// DelegateSettings is what the switches look like from the UI's side: one block
+// per kind, because they are two acts and the user meets them on two pages.
+//
+// One block until 2026-08-20, and the fusion showed on screen — the single
+// switch was drawn on the เอเจน page only ({#if isAgent} in Settings.svelte)
+// while it greyed out every row on the ซับเอเจน page, so somebody looking at
+// their helpers saw a whole page of dead buttons with nothing explaining why.
 type DelegateSettings struct {
-	// Off is the master switch. True means the assistant does not delegate at
-	// all and `task` is not built.
-	Off bool `json:"off"`
-	// Workers is every worker that exists, whether or not the assistant may
-	// reach it — a switch you cannot see is a switch you cannot turn back on.
-	Workers []DelegateWorker `json:"workers"`
-	// Tokens is what the tool block costs right now, measured.
+	// Agents is the reach to เอเจน: a colleague who takes a whole job.
+	Agents DelegateReach `json:"agents"`
+	// Helpers is the reach to ซับเอเจน: the assistant's own hands in a second
+	// context, for a step of its own work.
+	Helpers DelegateReach `json:"helpers"`
+	// Tokens is what the whole tool block costs right now, measured. One number
+	// for both pages: it is the size of the thing the two switches are trimming,
+	// and two copies of it would invite two answers.
 	Tokens int `json:"tokens"`
-	// TaskTokens is what the master switch is worth: what `task` costs today, or
-	// 0 when it is already off and there is nothing to weigh.
-	TaskTokens int `json:"taskTokens"`
+}
+
+// DelegateReach is one kind's switch, what it is worth, and who is in it.
+type DelegateReach struct {
+	// Off is this kind's master switch. True means the assistant hands nothing
+	// to this kind — and if both are off, `task` is not built at all.
+	Off bool `json:"off"`
+	// Tokens is what THIS switch is worth right now: the difference between
+	// carrying this kind and not, with the other switch left where it is.
+	//
+	// Marginal rather than absolute, because that is the number somebody is
+	// actually deciding with, and the two are not the same: the pair costs 710,
+	// เอเจน alone 629 and ซับเอเจน alone 471, so turning เอเจน off gives back
+	// 239 while turning ซับเอเจน off gives back 81. An absolute "task costs 710"
+	// on both cards would have promised each switch the whole saving.
+	Tokens int `json:"tokens"`
+	// Workers is every worker of this kind that exists, whether or not the
+	// assistant may reach it — a switch you cannot see is a switch you cannot
+	// turn back on.
+	Workers []DelegateWorker `json:"workers"`
 }
 
 // DelegateWorker is one worker as the settings page shows it.
@@ -47,42 +72,108 @@ type DelegateWorker struct {
 	// description that makes it choosable. Same split the tool block uses.
 	For string `json:"for"`
 	// Agent separates เอเจน from ซับเอเจน, decided by which home the profile
-	// lives in and never by a word inside its description.
+	// lives in and never by a word inside its description. Kept on the row even
+	// though the block it sits in already says so: the UI looks a worker up by
+	// name from a shared row snippet, and a row that cannot say its own kind
+	// would have to be told by whoever drew it.
 	Agent bool `json:"agent"`
 	// On is whether the assistant may hand work to it. The worker is reachable
 	// by the user either way: this is a reach, not an existence.
 	On bool `json:"on"`
 }
 
-// DelegateSwitches reports both switches and what they are worth.
+// DelegateSwitches reports both switches and what each is worth.
 func (a *App) DelegateSwitches() DelegateSettings {
-	out := DelegateSettings{Off: !a.cfg.DelegateOn, Tokens: a.ToolBlockTokens()}
-	off := lowered(a.cfg.AgentsOff)
+	cfg := a.cur().cfg
+	out := DelegateSettings{
+		Agents:  DelegateReach{Off: !cfg.DelegateAgents},
+		Helpers: DelegateReach{Off: !cfg.DelegateHelpers},
+		Tokens:  a.ToolBlockTokens(),
+	}
+	off := lowered(cfg.WorkersOff)
 	for _, p := range subagent.List() {
 		if p.Invalid != "" {
 			continue // a profile that will not load is the settings page's own error to show, not a row here
 		}
-		out.Workers = append(out.Workers, DelegateWorker{
+		row := DelegateWorker{
 			Name:  p.Name,
 			For:   subagent.ForClause(p.Description),
 			Agent: p.Desk != "",
 			On:    !slices.Contains(off, strings.ToLower(p.Name)),
-		})
+		}
+		if row.Agent {
+			out.Agents.Workers = append(out.Agents.Workers, row)
+		} else {
+			out.Helpers.Workers = append(out.Helpers.Workers, row)
+		}
 	}
-	if !out.Off {
-		out.TaskTokens = a.toolTokens("task")
-	}
+	// What each switch is worth, with the other one exactly where the user left
+	// it. Both directions from one subtraction: on a kind that is on it reads as
+	// what turning it off gives back, on a kind that is off as what turning it
+	// on will cost.
+	here := a.delegationCost(!cfg.DelegateAgents, !cfg.DelegateHelpers)
+	out.Agents.Tokens = abs(here - a.delegationCost(cfg.DelegateAgents, !cfg.DelegateHelpers))
+	out.Helpers.Tokens = abs(here - a.delegationCost(!cfg.DelegateAgents, cfg.DelegateHelpers))
 	return out
 }
 
-// SetDelegateOff flips the master switch and re-bootstraps, because whether the
-// tool exists is decided when the tools are built.
-func (a *App) SetDelegateOff(off bool) DelegateSettings {
-	if off == !a.cfg.DelegateOn {
-		return a.DelegateSwitches() // never re-bootstrap to change nothing
+// delegationCost is what the delegation tool would cost with these two switches,
+// measured rather than remembered — same 4-bytes-per-token rate and the same
+// reason as ToolBlockTokens: a constant would be right the day it was written.
+//
+// Built fresh rather than read off the registry, because the question is about a
+// state this session is NOT in. Only the roster-shaping options are filled in:
+// nothing here runs, and the definition is all that gets measured.
+func (a *App) delegationCost(noAgents, noHelpers bool) int {
+	tools := subagent.NewTaskTools(subagent.TaskOptions{
+		Desk:       a.cur().desk,
+		WorkersOff: a.cur().cfg.WorkersOff,
+		NoAgents:   noAgents,
+		NoHelpers:  noHelpers,
+	})
+	if len(tools) == 0 {
+		return 0
 	}
+	def, ok := tools[0].(interface{ ToolDefinition() model.ToolDefinition })
+	if !ok {
+		return 0
+	}
+	payload, err := json.Marshal(def.ToolDefinition())
+	if err != nil {
+		return 0
+	}
+	return len(payload) / 4
+}
+
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
+}
+
+// SetDelegateOff flips one kind's switch and re-bootstraps, because what the
+// tool carries is decided when the tools are built.
+//
+// kind is "agents" or "helpers" — the same two words the two settings pages are
+// named for. Anything else is refused rather than guessed at: a typo that fell
+// through to a default would silently flip the switch the caller did not mean.
+func (a *App) SetDelegateOff(kind string, off bool) DelegateSettings {
 	cfg := a.cfg
-	cfg.DelegateOn = !off
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "agents":
+		if off == !a.cur().cfg.DelegateAgents {
+			return a.DelegateSwitches() // never re-bootstrap to change nothing
+		}
+		cfg.DelegateAgents = !off
+	case "helpers":
+		if off == !a.cur().cfg.DelegateHelpers {
+			return a.DelegateSwitches()
+		}
+		cfg.DelegateHelpers = !off
+	default:
+		return a.DelegateSwitches()
+	}
 	a.applyConfig(a.cur(), cfg)
 	return a.DelegateSwitches()
 }
@@ -97,7 +188,7 @@ func (a *App) SetAgentOff(name string, off bool) DelegateSettings {
 	if name == "" {
 		return a.DelegateSwitches()
 	}
-	current := lowered(a.cfg.AgentsOff)
+	current := lowered(a.cur().cfg.WorkersOff)
 	if slices.Contains(current, name) == off {
 		return a.DelegateSwitches()
 	}
@@ -107,7 +198,7 @@ func (a *App) SetAgentOff(name string, off bool) DelegateSettings {
 		current = slices.DeleteFunc(current, func(n string) bool { return n == name })
 	}
 	cfg := a.cfg
-	cfg.AgentsOff = current
+	cfg.WorkersOff = current
 	a.applyConfig(a.cur(), cfg)
 	return a.DelegateSwitches()
 }

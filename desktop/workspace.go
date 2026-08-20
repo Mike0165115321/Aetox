@@ -94,7 +94,7 @@ func (a *App) addWorkspaceFolder(dir string) ([]WorkspaceFolder, error) {
 // engine can be rebuilt right now. The rules must not differ at all, so they
 // live here and nowhere else.
 func (a *App) recordWorkspaceFolder(dir string) error {
-	root := strings.TrimSpace(a.cfg.SandboxRoot)
+	root := strings.TrimSpace(a.cur().cfg.SandboxRoot)
 	dir, err := filepath.Abs(strings.TrimSpace(dir))
 	if err != nil {
 		return err
@@ -134,7 +134,7 @@ func (a *App) recordWorkspaceFolder(dir string) error {
 // same call — a folder removed in the panel while the agent is mid-conversation
 // has to be out of reach before the next tool call, not after a restart.
 func (a *App) RemoveWorkspaceFolder(path string) ([]WorkspaceFolder, error) {
-	root := strings.TrimSpace(a.cfg.SandboxRoot)
+	root := strings.TrimSpace(a.cur().cfg.SandboxRoot)
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return a.WorkspaceFolders(), fmt.Errorf("empty folder path")
@@ -203,7 +203,7 @@ func (a *App) askWorkspaceWiden(conv *conversation, target string) bool {
 	if !a.projectFocused {
 		return false
 	}
-	if strings.TrimSpace(a.cfg.SandboxRoot) == "" {
+	if strings.TrimSpace(a.cur().cfg.SandboxRoot) == "" {
 		return false
 	}
 	// No window, no question — the same test emitEvent makes before it reaches
@@ -275,7 +275,7 @@ func (a *App) askWorkspaceWiden(conv *conversation, target string) bool {
 	// engine underneath it. The engine picks the same list up when the turn ends
 	// (endTurn → reloadWorkspace), which is what puts the new folder in the
 	// system prompt; both read the list this call just wrote.
-	skill.SetWorkspaceFolders(a.cfg.SandboxRoot, a.workspaceRoots())
+	skill.SetWorkspaceFolders(a.cur().cfg.SandboxRoot, a.workspaceRoots())
 	a.markWorkspaceDirty()
 	a.emitEvent("workspace:changed", a.WorkspaceFolders())
 	return true
@@ -328,8 +328,8 @@ func (a *App) takeWorkspaceDirty() bool {
 // adds the folder because of the question they are already asking.
 func (a *App) reloadWorkspace() {
 	a.reload(config.ConfigOptions{
-		RootPath:     a.cfg.SandboxRoot,
-		ApprovalMode: a.cfg.ApprovalMode,
+		RootPath:     a.cur().cfg.SandboxRoot,
+		ApprovalMode: a.cur().cfg.ApprovalMode,
 	})
 }
 

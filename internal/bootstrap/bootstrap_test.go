@@ -56,7 +56,8 @@ func TestEngineRegistersEveryTaskTool(t *testing.T) {
 	// and the default lives in the value rather than in whichever code path
 	// remembered to set it.
 	cfg := testConfig(t)
-	cfg.DelegateOn = true
+	cfg.DelegateAgents = true
+	cfg.DelegateHelpers = true
 	res, err := Engine(cfg, Options{Approve: approveNothing})
 	if err != nil {
 		t.Fatalf("Engine: %v", err)

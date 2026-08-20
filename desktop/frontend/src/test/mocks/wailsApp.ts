@@ -188,7 +188,7 @@ export const SessionTranscript = arr()
 export const SessionSources = arr()
 export const SessionSourceCount = vi.fn(async (..._args: any[]) => 0)
 // Idle by default: only a test about the mid-turn reload flips this on.
-export const TurnInFlight = vi.fn(async (..._args: any[]) => ({ running: false, sessionId: '' }))
+export const TurnInFlight = vi.fn(async (..._args: any[]) => ({ running: false, sessionId: '', working: [] as string[] }))
 export const ListModes = arr()
 export const ListChairs = arr()
 // "This agent keeps no opening of its own" — the state that makes the window

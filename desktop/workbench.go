@@ -107,7 +107,7 @@ func (a *App) workbenchOpenBrowser(ctx context.Context, url string, newTab bool)
 	if url == "" {
 		return "", "", fmt.Errorf("url is required")
 	}
-	url, query := normalizeWorkbenchURL(url, a.cfg.SandboxRoot, a.outputSubdir)
+	url, query := normalizeWorkbenchURL(url, a.cur().cfg.SandboxRoot, a.outputSubdir)
 	if query != "" {
 		return "", "", fmt.Errorf("%q is not an address, it is something to search for — use web_search, then open a result", query)
 	}

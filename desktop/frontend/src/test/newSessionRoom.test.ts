@@ -74,7 +74,13 @@ describe('new chat', () => {
     expect(cockpit.desk).toBe('coding')
   })
 
-  it('refuses while a turn is running, and moves nothing', async () => {
+  // It used to refuse. That was the single live state defending itself: opening
+  // a chat emptied the one on screen, so doing it mid-turn wiped the work. The
+  // work travels now (cockpit.parked), so a new chat while one runs is an
+  // ordinary thing to do — and the room still moves, because that is what the
+  // button is for.
+  it('opens a new chat while a turn is running, and the work is kept', async () => {
+    cockpit.openSession = 'working'
     cockpit.awaitingReply = true
     cockpit.activeView = 'settings'
     cockpit.desk = 'specialized'
@@ -82,8 +88,11 @@ describe('new chat', () => {
 
     await newSession()
 
-    expect(vi.mocked(NewSessionAt)).not.toHaveBeenCalled()
-    expect(cockpit.activeView).toBe('settings')
-    expect(cockpit.chair).toBe('automation')
+    expect(vi.mocked(NewSessionAt)).toHaveBeenCalled()
+    expect(cockpit.activeView).toBe('chat')
+    // The chat that was working kept its whole live state, not just its rows.
+    expect(cockpit.parked['working']?.awaitingReply).toBe(true)
+    // And the new one starts idle rather than inheriting the other's turn.
+    expect(cockpit.awaitingReply).toBe(false)
   })
 })

@@ -296,9 +296,9 @@ for rather than spent.
 | **Running commands** | `shell` *(run · output · kill · list)* `git` `desk_terminal` |
 | **Handing back files** | `doc_write` `sheet_write` |
 | **Reading media** | `image_ocr` `video_ocr` `pdf_read` `audio_transcribe` |
-| **Web and automation** | `browser` *(open · read · click · type)* `web_fetch` `web_search` |
+| **Web and automation** | `browser` *(open · read · click · type · wait · back · capture · tabs · dialog)* `web_fetch` `web_search` |
 | **Code work** | `diagnostics` `symbol` `github` *(repo_summary · search · read_file · list_files)* |
-| **How the assistant works** | `task` `task_result` `task_answer` `ask_user` `todo_write` `suggest_task` `memory` `session_search` `calc` `time` `desk_list` `desk_open` `skills_list` `skill_view` `plugin_install` |
+| **How the assistant works** | `task` `task_result` `task_answer` `ask_user` `todo_write` `suggest_task` `memory` `session_search` `calc` `time` `desk` *(open · list · close)* `skills_list` `skill_view` `plugin_install` |
 
 That table is generated from the registry the model is actually handed
 (`go test ./desktop -run TestPrintReadmeToolTable -v`), because a hand-kept list of what a program

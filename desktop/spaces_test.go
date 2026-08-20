@@ -100,15 +100,15 @@ func TestAProjectMovesNoWall(t *testing.T) {
 	if _, err := a.CreateSpace("แผนธุรกิจ"); err != nil {
 		t.Fatal(err)
 	}
-	before := a.cfg.SandboxRoot
+	before := a.cur().cfg.SandboxRoot
 	openBefore := !a.projectFocused
 
 	if _, err := a.NewSessionInSpace("แผนธุรกิจ"); err != nil {
 		t.Fatalf("NewSessionInSpace: %v", err)
 	}
 
-	if a.cfg.SandboxRoot != before {
-		t.Errorf("the sandbox moved to %q — a project is a folder of conversations, not a fence", a.cfg.SandboxRoot)
+	if a.cur().cfg.SandboxRoot != before {
+		t.Errorf("the sandbox moved to %q — a project is a folder of conversations, not a fence", a.cur().cfg.SandboxRoot)
 	}
 	if openBefore != !a.projectFocused {
 		t.Error("opening a chat inside a project changed whether the sandbox is open")

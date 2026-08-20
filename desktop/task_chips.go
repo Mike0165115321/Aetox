@@ -76,14 +76,16 @@ func (t *taskChips) list() []TaskChip {
 // ListTaskChips returns the pending suggestions, for the UI to render on
 // mount — chips suggested while a different view was open must not be lost.
 func (a *App) ListTaskChips() []TaskChip {
-	return a.taskChips.list()
+	return a.cur().taskChips.list()
 }
 
 // DismissTaskChip removes one suggestion. Also called by the start flow:
 // starting a chip consumes it.
 func (a *App) DismissTaskChip(id string) {
-	if a.taskChips.remove(id) {
-		a.emitTaskChips()
+	// The chat on screen owns the chip the user is clicking: it is drawn in that
+	// conversation's tray and nowhere else.
+	if a.cur().taskChips.remove(id) {
+		a.emitTaskChips(a.cur())
 	}
 }
 
@@ -91,13 +93,17 @@ func (a *App) DismissTaskChip(id string) {
 // helper assumes either the test seam or a live Wails ctx, and this event
 // also fires from the tool-coverage harness where neither exists — a chip
 // added with nobody listening is still added, just rendered on next mount.
-func (a *App) emitTaskChips() {
+func (a *App) emitTaskChips(conv *conversation) {
+	// Stamped like every other agent event: the window draws the tray of the
+	// chat it is showing, and a chip raised in a background conversation must
+	// not appear under a conversation that never saw the work.
+	payload := sessionEvent[[]TaskChip]{SessionID: conv.id, Data: conv.taskChips.list()}
 	if a.emit != nil {
-		a.emit("tasks:changed", a.taskChips.list())
+		a.emit("tasks:changed", payload)
 		return
 	}
 	if a.ctx != nil {
-		wailsruntime.EventsEmit(a.ctx, "tasks:changed", a.taskChips.list())
+		wailsruntime.EventsEmit(a.ctx, "tasks:changed", payload)
 	}
 }
 
@@ -105,7 +111,12 @@ func (a *App) emitTaskChips() {
 // calls when it notices work worth doing that is NOT what the user asked
 // for. The bar in the description is deliberate — vague code-smell hunches
 // as chips would teach the user to ignore the feature.
-type suggestTaskSkill struct{ app *App }
+// conv is the chat that noticed the work. Same reason every other workbench
+// tool carries one.
+type suggestTaskSkill struct {
+	app  *App
+	conv *conversation
+}
 
 func (*suggestTaskSkill) Name() string { return "suggest_task" }
 
@@ -188,8 +199,8 @@ func (s *suggestTaskSkill) ExecuteTool(_ context.Context, args map[string]any) (
 		return fail(fmt.Errorf("prompt is too thin to stand alone — name the files, the finding, and what to do"))
 	}
 
-	chip := s.app.taskChips.add(title, tldr, prompt)
-	s.app.emitTaskChips()
+	chip := s.conv.taskChips.add(title, tldr, prompt)
+	s.app.emitTaskChips(s.conv)
 
 	return skill.Output{
 		Name:       "suggest_task",

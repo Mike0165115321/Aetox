@@ -74,7 +74,7 @@ func TestSafeSandboxPathRejectsEscape(t *testing.T) {
 
 func TestReadWriteFileRoundTrip(t *testing.T) {
 	root := t.TempDir()
-	a := &App{cfg: config.Config{SandboxRoot: root}}
+	a := seed(&App{cfg: config.Config{SandboxRoot: root}}, newConversation())
 
 	if err := a.WriteFile("note.txt", "hello desktop"); err != nil {
 		t.Fatalf("WriteFile: unexpected error: %v", err)
@@ -90,7 +90,7 @@ func TestReadWriteFileRoundTrip(t *testing.T) {
 
 func TestReadFileRejectsEscape(t *testing.T) {
 	root := t.TempDir()
-	a := &App{cfg: config.Config{SandboxRoot: root}}
+	a := seed(&App{cfg: config.Config{SandboxRoot: root}}, newConversation())
 	if _, err := a.ReadFile(filepath.Join("..", "escape.txt")); err == nil {
 		t.Error("expected error escaping sandbox root, got nil")
 	}
@@ -136,19 +136,19 @@ func TestGetContextBreakdownReportsAnUnknownWindowAsUnknown(t *testing.T) {
 
 	// With a known model the meter must show the model's real window, not the
 	// engine's internal char budget (the "32k for a 1M model" bug).
-	a.cfg.ModelProvider = "deepseek"
-	a.cfg.ModelName = "deepseek-v4-flash"
+	a.cur().cfg.ModelProvider = "deepseek"
+	a.cur().cfg.ModelName = "deepseek-v4-flash"
 	if got := a.GetContextBreakdown(); got.MaxTokens != 1_000_000 {
 		t.Errorf("deepseek-v4-flash MaxTokens = %d, want 1000000", got.MaxTokens)
 	}
 	// The door the whole fix is about: same models, subscription instead of
 	// API key, and until 2026-08-18 this line read 32000.
-	a.cfg.ModelProvider = "codex"
-	a.cfg.ModelName = "gpt-5.5"
+	a.cur().cfg.ModelProvider = "codex"
+	a.cur().cfg.ModelName = "gpt-5.5"
 	if got := a.GetContextBreakdown(); got.MaxTokens != 400_000 {
 		t.Errorf("codex/gpt-5.5 MaxTokens = %d, want OpenAI's 400000", got.MaxTokens)
 	}
-	a.cfg.ModelContextTokens = 42_000 // explicit user override wins over catalog
+	a.cur().cfg.ModelContextTokens = 42_000 // explicit user override wins over catalog
 	got := a.GetContextBreakdown()
 	if got.MaxTokens != 42_000 {
 		t.Errorf("override MaxTokens = %d, want 42000", got.MaxTokens)
@@ -426,7 +426,7 @@ func TestReadFileNoProjectOpen(t *testing.T) {
 
 func TestRelativizePathInsideProject(t *testing.T) {
 	root := t.TempDir()
-	a := &App{cfg: config.Config{SandboxRoot: root}}
+	a := seed(&App{cfg: config.Config{SandboxRoot: root}}, newConversation())
 	abs := filepath.Join(root, "sub", "file.txt")
 	got, err := a.RelativizePath(abs)
 	if err != nil {
@@ -442,7 +442,7 @@ func TestRelativizePathRejectsOutside(t *testing.T) {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
-	a := &App{cfg: config.Config{SandboxRoot: root}}
+	a := seed(&App{cfg: config.Config{SandboxRoot: root}}, newConversation())
 	outside := filepath.Join(filepath.Dir(root), "elsewhere.txt")
 	if _, err := a.RelativizePath(outside); err == nil {
 		t.Error("expected error for path outside project root, got nil")
@@ -454,7 +454,7 @@ func TestReadFileRejectsDirectory(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(root, "sub"), 0o755); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
-	a := &App{cfg: config.Config{SandboxRoot: root}}
+	a := seed(&App{cfg: config.Config{SandboxRoot: root}}, newConversation())
 	if _, err := a.ReadFile("sub"); err == nil {
 		t.Error("expected error reading a directory, got nil")
 	}
@@ -487,7 +487,7 @@ func TestGitChangedFilesOutsideRepo(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not found in PATH")
 	}
-	a := &App{cfg: config.Config{SandboxRoot: t.TempDir()}}
+	a := seed(&App{cfg: config.Config{SandboxRoot: t.TempDir()}}, newConversation())
 	got := a.GitChangedFiles()
 	if len(got) != 0 {
 		t.Errorf("GitChangedFiles() outside a repo = %v, want empty", got)
@@ -513,7 +513,7 @@ func TestGitChangedFilesDetectsUntracked(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	a := &App{cfg: config.Config{SandboxRoot: root}, projectFocused: true}
+	a := seed(&App{cfg: config.Config{SandboxRoot: root}, projectFocused: true}, newConversation())
 	got := a.GitChangedFiles()
 	if len(got) != 1 || got[0].Path != "new.txt" || got[0].Status != "U" {
 		t.Errorf("GitChangedFiles() = %+v, want one untracked entry for new.txt", got)
@@ -521,7 +521,7 @@ func TestGitChangedFilesDetectsUntracked(t *testing.T) {
 }
 
 func TestGitChangedFilesEmptyWhenUnfocused(t *testing.T) {
-	a := &App{cfg: config.Config{SandboxRoot: t.TempDir()}} // projectFocused: false
+	a := seed(&App{cfg: config.Config{SandboxRoot: t.TempDir()}}, newConversation()) // projectFocused: false
 	if got := a.GitChangedFiles(); len(got) != 0 {
 		t.Errorf("GitChangedFiles() unfocused = %v, want empty", got)
 	}
@@ -539,7 +539,7 @@ func TestProjectTreeListsFilesAndSkipsIgnored(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	a := &App{cfg: config.Config{SandboxRoot: root}, projectFocused: true}
+	a := seed(&App{cfg: config.Config{SandboxRoot: root}, projectFocused: true}, newConversation())
 	tree := a.ProjectTree()
 
 	foundMain, foundIgnored := false, false
@@ -642,7 +642,7 @@ func TestEffectiveWireFormatFallsBackToProviderDefault(t *testing.T) {
 
 func TestEnabledProvidersDefaultsToActiveProviderFromCfg(t *testing.T) {
 	t.Setenv("AETOX_DATA_ROOT", t.TempDir()) // no saved preference — untouched install
-	a := &App{cfg: config.Config{ModelProvider: "deepseek"}}
+	a := seed(&App{cfg: config.Config{ModelProvider: "deepseek"}}, newConversation())
 	got := a.EnabledProviders()
 	if len(got) != 1 || got[0] != "deepseek" {
 		t.Fatalf("EnabledProviders() = %v, want [deepseek] (default to the active provider)", got)
@@ -651,7 +651,7 @@ func TestEnabledProvidersDefaultsToActiveProviderFromCfg(t *testing.T) {
 
 func TestSetProviderEnabledAddsAndRemoves(t *testing.T) {
 	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
-	a := &App{cfg: config.Config{ModelProvider: "deepseek"}}
+	a := seed(&App{cfg: config.Config{ModelProvider: "deepseek"}}, newConversation())
 
 	got, err := a.SetProviderEnabled("openai", true)
 	if err != nil {
@@ -680,7 +680,7 @@ func TestSetProviderEnabledAddsAndRemoves(t *testing.T) {
 
 func TestSetProviderEnabledUnknownProviderErrors(t *testing.T) {
 	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
-	a := &App{cfg: config.Config{ModelProvider: "deepseek"}}
+	a := seed(&App{cfg: config.Config{ModelProvider: "deepseek"}}, newConversation())
 	if _, err := a.SetProviderEnabled("not-a-real-provider-xyz", true); err == nil {
 		t.Fatal("expected an error for an unrecognized provider name")
 	}
@@ -692,7 +692,7 @@ func TestSaveChatImageCopiesIntoSandbox(t *testing.T) {
 	if err := os.WriteFile(src, []byte("fake png bytes"), 0o644); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
-	a := &App{cfg: config.Config{SandboxRoot: root}}
+	a := seed(&App{cfg: config.Config{SandboxRoot: root}}, newConversation())
 	a.startNewSession()
 
 	rel, err := a.SaveChatImage(src)
@@ -725,7 +725,7 @@ func TestSaveChatImageRejectsOversized(t *testing.T) {
 	}
 	f.Close()
 
-	a := &App{cfg: config.Config{SandboxRoot: root}}
+	a := seed(&App{cfg: config.Config{SandboxRoot: root}}, newConversation())
 	if _, err := a.SaveChatImage(src); err == nil {
 		t.Error("expected an error for an oversized image, got nil")
 	}
@@ -745,7 +745,7 @@ func TestSaveChatImageNoProjectOpen(t *testing.T) {
 // by path cannot read what the user just pasted.
 func TestSaveChatImageDataWritesPastedBytes(t *testing.T) {
 	root := t.TempDir()
-	a := &App{cfg: config.Config{SandboxRoot: root}}
+	a := seed(&App{cfg: config.Config{SandboxRoot: root}}, newConversation())
 	a.startNewSession()
 
 	// base64("fake png bytes")
@@ -772,7 +772,7 @@ func TestSaveChatImageDataWritesPastedBytes(t *testing.T) {
 // extension has to follow the clipboard's type rather than always being .png:
 // the path is handed to skills that pick their reader by extension.
 func TestSaveChatImageDataKeepsTheClipboardsType(t *testing.T) {
-	a := &App{cfg: config.Config{SandboxRoot: t.TempDir()}}
+	a := seed(&App{cfg: config.Config{SandboxRoot: t.TempDir()}}, newConversation())
 	a.startNewSession()
 
 	rel, err := a.SaveChatImageData("data:image/jpeg;base64,ZmFrZQ==")
@@ -788,7 +788,7 @@ func TestSaveChatImageDataKeepsTheClipboardsType(t *testing.T) {
 // extension is a file that fails later, somewhere the user cannot connect to
 // the paste. Text on the clipboard must not come through here at all.
 func TestSaveChatImageDataRefusesWhatIsNotAPastableImage(t *testing.T) {
-	a := &App{cfg: config.Config{SandboxRoot: t.TempDir()}}
+	a := seed(&App{cfg: config.Config{SandboxRoot: t.TempDir()}}, newConversation())
 	a.startNewSession()
 
 	for _, bad := range []string{
@@ -883,14 +883,14 @@ func TestReloadKeepsTheRunningModelWhenTheGlobalPreferenceChanges(t *testing.T) 
 	root := t.TempDir()
 	a.reload(config.ConfigOptions{RootPath: root, ApprovalMode: string(safety.ApprovalFullAccess)})
 
-	if a.cfg.ModelName != "aetox-grid" {
-		t.Errorf("model after project switch = %q, want aetox-grid (the running model must survive)", a.cfg.ModelName)
+	if a.cur().cfg.ModelName != "aetox-grid" {
+		t.Errorf("model after project switch = %q, want aetox-grid (the running model must survive)", a.cur().cfg.ModelName)
 	}
-	if a.cfg.ApprovalMode != string(safety.ApprovalFullAccess) {
-		t.Errorf("approval mode after project switch = %q, want %q", a.cfg.ApprovalMode, safety.ApprovalFullAccess)
+	if a.cur().cfg.ApprovalMode != string(safety.ApprovalFullAccess) {
+		t.Errorf("approval mode after project switch = %q, want %q", a.cur().cfg.ApprovalMode, safety.ApprovalFullAccess)
 	}
-	if a.cfg.SandboxRoot != root {
-		t.Errorf("sandbox root after project switch = %q, want %q (the root is the one thing reload changes)", a.cfg.SandboxRoot, root)
+	if a.cur().cfg.SandboxRoot != root {
+		t.Errorf("sandbox root after project switch = %q, want %q (the root is the one thing reload changes)", a.cur().cfg.SandboxRoot, root)
 	}
 }
 
@@ -908,8 +908,8 @@ func TestReloadLoadsTheSavedModelOnFirstBootstrap(t *testing.T) {
 	a := &App{} // nothing bootstrapped yet — this is App.startup
 	a.reload(config.ConfigOptions{RootPath: t.TempDir()})
 
-	if a.cfg.ModelName != "aetox-think:test" {
-		t.Errorf("model on first bootstrap = %q, want the saved aetox-think:test", a.cfg.ModelName)
+	if a.cur().cfg.ModelName != "aetox-think:test" {
+		t.Errorf("model on first bootstrap = %q, want the saved aetox-think:test", a.cur().cfg.ModelName)
 	}
 }
 
@@ -1085,7 +1085,7 @@ func TestSetProviderBaseURLRejectsWhatCannotBeDialed(t *testing.T) {
 func TestAMissingFileIsReportedAsGoneNotAsAnOSError(t *testing.T) {
 	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
 	root := t.TempDir()
-	a := &App{cfg: config.Config{SandboxRoot: root}}
+	a := seed(&App{cfg: config.Config{SandboxRoot: root}}, newConversation())
 
 	if err := os.WriteFile(filepath.Join(root, "made.txt"), []byte("hi"), 0o644); err != nil {
 		t.Fatal(err)
@@ -1115,7 +1115,7 @@ func TestAMissingFileIsReportedAsGoneNotAsAnOSError(t *testing.T) {
 func TestNotAllowedToLookIsNotTheSameAsGone(t *testing.T) {
 	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
 	root := t.TempDir()
-	a := &App{cfg: config.Config{SandboxRoot: root}}
+	a := seed(&App{cfg: config.Config{SandboxRoot: root}}, newConversation())
 	if err := os.Mkdir(filepath.Join(root, "sub"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -1159,10 +1159,10 @@ func TestAnAbsolutePathTheAgentCanWriteIsOneTheWindowCanSee(t *testing.T) {
 	// ask is "did the binding get as far as opening?", which is what `opened`
 	// records.
 	var opened string
-	a := &App{cfg: config.Config{SandboxRoot: root}, openDir: func(p string) error {
+	a := seed(&App{cfg: config.Config{SandboxRoot: root}, openDir: func(p string) error {
 		opened = p
 		return nil
-	}}
+	}}, newConversation())
 	// Focused: the folder was never added, so the honest answer is that the
 	// window cannot say — never that the file is gone.
 	skill.NewDefaultRegistry(skill.RegistryOptions{SandboxRoot: root})

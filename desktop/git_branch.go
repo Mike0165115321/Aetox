@@ -49,7 +49,7 @@ func (a *App) GitBranches() []GitBranch {
 	if !a.projectFocused {
 		return out
 	}
-	root := strings.TrimSpace(a.cfg.SandboxRoot)
+	root := strings.TrimSpace(a.cur().cfg.SandboxRoot)
 	if root == "" {
 		return out
 	}
@@ -114,7 +114,7 @@ func (a *App) runGitSwitch(name string, create bool) (string, error) {
 	if !a.projectFocused {
 		return "", errors.New("ยังไม่ได้โฟกัสโปรเจกต์ จึงยังไม่มีรีโปให้สลับสาขา")
 	}
-	root := strings.TrimSpace(a.cfg.SandboxRoot)
+	root := strings.TrimSpace(a.cur().cfg.SandboxRoot)
 	if root == "" {
 		return "", errors.New("ยังไม่ได้โฟกัสโปรเจกต์ จึงยังไม่มีรีโปให้สลับสาขา")
 	}

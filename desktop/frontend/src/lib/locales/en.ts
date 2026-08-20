@@ -143,6 +143,7 @@ export const en: Record<keyof typeof th, string> = {
   'chat.usedAgents': 'Agents: {n}',
   'chat.agent': 'agent',
   'chat.usedSubagents': 'Sub-agents: {n}',
+  'chat.usedDelegations': 'Handed out: {n}',
   'chat.subagent': 'sub-agent',
   'chat.scrollToBottom': 'Scroll to bottom',
   'guide.intro': 'Where would you like to start?',
@@ -341,14 +342,8 @@ export const en: Record<keyof typeof th, string> = {
   'cockpit.turnStopped': 'Stopped',
   // Reading another chat mid-turn is allowed; typing in it is not, because the
   // engine is still sitting in the conversation the turn belongs to.
-  'cockpit.peekReadOnly': 'You are reading another chat. Go back to the one that is working before typing.',
-  'cockpit.peekNotice': 'Reading only. The work is still running in another chat.',
   // Reading outlives the turn, so the line above turns into a lie the second
   // the work finishes unless another sentence takes over.
-  'cockpit.peekDone': 'Reading only. The work in the other chat has finished.',
-  'cockpit.peekReturn': 'Back to the working chat',
-  'cockpit.peekOpen': 'Open this chat',
-  'cockpit.peekPlaceholder': 'Reading only. Go back to the working chat to type.',
 
   'mediaPane.unplayable': 'The file is fine. The app just can’t decode it. The codec inside isn’t one the browser supports. Try opening it with a program on your machine.',
 
@@ -946,9 +941,12 @@ Check your own work before answering; say so plainly if unsure.
   'settings.agentModelInherit': 'Inherit selected model',
   'settings.agentModelPick': 'Model for this agent',
   'settings.agentsFolder': 'Open folder',
-  'settings.delegateAllow': 'Let the main assistant hand work over',
-  'settings.delegateOnHint': 'It can bring in a specialist instead of doing the job itself. Costs {n} tokens of context per message.',
-  'settings.delegateOffHint': 'Off. The main assistant does everything itself. Your agents are untouched — open a chat with one any time.',
+  'settings.delegateAgents': 'Let the main assistant hand work to an agent',
+  'settings.delegateAgentsOn': 'On. It can pass a whole job to a colleague. Costs {n} tokens of context per message.',
+  'settings.delegateAgentsOff': 'Off. Your agents are untouched, open a chat with one any time. Turning this on costs {n} tokens per message.',
+  'settings.delegateHelpers': 'Let the main assistant use sub-agents',
+  'settings.delegateHelpersOn': 'On. It can take a step of its own work into a second context. Costs {n} tokens of context per message.',
+  'settings.delegateHelpersOff': 'Off. The main assistant takes every step in this room itself. Turning this on costs {n} tokens per message.',
   'settings.delegateTurnOn': 'Turn on',
   'settings.delegateTurnOff': 'Turn off',
   'settings.delegateMeter': 'Tools {n} tokens',
@@ -1098,9 +1096,12 @@ Check your own work before answering; say so plainly if unsure.
   'chat.inputToAgent': 'Message {name}…',
   'chat.mainAgent': 'Main assistant',
   'chat.agentSwitchNote': 'Switching always opens a new chat. This one stays in history.',
-  'chat.delegateAllow': 'Let the main assistant hand work over',
-  'chat.delegateOnNote': 'It can pass a job to a specialist instead of doing it. Costs {n} tokens of context per message.',
-  'chat.delegateOffNote': 'Off. The main assistant does everything itself.',
+  'chat.delegateAgents': 'Hand work to an agent',
+  'chat.delegateAgentsOn': 'It can pass a whole job to a colleague. Costs {n} tokens of context per message.',
+  'chat.delegateAgentsOff': 'Off. Open a chat with an agent or write @name any time. Turning this on costs {n} tokens.',
+  'chat.delegateHelpers': 'Use sub-agents',
+  'chat.delegateHelpersOn': 'It can take a step of its own work into a second context. Costs {n} tokens of context per message.',
+  'chat.delegateHelpersOff': 'Off. The main assistant takes every step in this room itself. Turning this on costs {n} tokens.',
   // Working mode (§106) — the other axis from the desk: a desk says what tools
   // are on it, this says how the turn runs. Keys are named for the id the
   // engine sends ('' = act); a new stance in Go gets its key added here.

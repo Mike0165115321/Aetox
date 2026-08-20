@@ -740,7 +740,10 @@ describe('sub-agent tool events', () => {
         role: 'agent', text: 'done', time: '10:54',
         steps: [
           { label: 'read a.txt', state: 'done', startedAt: 0 },
-          { label: 'task find every caller', ref: 'task_1', agent: 'explore', state: 'done', startedAt: 0 },
+          // agentKind as the engine stamps it (turn.ToolEvent.AgentKind, from
+          // subagent.KindOf): explore lives in the subagents home, so it is a
+          // helper. The frontend never derives this from the name.
+          { label: 'task find every caller', ref: 'task_1', agent: 'explore', agentKind: 'helper', state: 'done', startedAt: 0 },
           { label: 'grep needle', parent: 'task_1', state: 'done', startedAt: 0 },
           { label: 'task_result task_1', state: 'done', startedAt: 0 },
         ],
@@ -756,6 +759,32 @@ describe('sub-agent tool events', () => {
     expect(toggles[0]).toContain('Used 2 tools')
     expect(toggles[1]).toContain('Sub-agents: 1')
     expect(toggles[0]).not.toContain('Sub-agents')
+  })
+
+  // The bug the owner reported on 2026-08-20: a `task` call that resolved
+  // nobody — the tool was not even built — was drawn as "ซับเอเจน 1 ตัว ·
+  // ล้มเหลว 1", so the screen named a kind of worker that had never been asked
+  // for anything. The engine leaves agentKind empty exactly then, and unstamped
+  // used to fall into the helper pile because that is where every delegation
+  // sat before the two kinds were split.
+  it('counts a delegation that resolved nobody as neither kind', () => {
+    const { container } = render(Chat, {
+      ...baseProps,
+      messages: [{
+        role: 'agent', text: 'done', time: '10:54',
+        steps: [
+          { label: 'task make the deck', ref: 'task_1', agent: 'deck', state: 'err', startedAt: 0 },
+        ],
+      }] as any,
+    })
+    const toggles = [...container.querySelectorAll('.meta-row .reasoning-toggle')]
+      .map((b) => b.textContent ?? '')
+    expect(toggles.length).toBe(1)
+    expect(toggles[0]).toContain('Handed out: 1')
+    expect(toggles[0]).not.toContain('Sub-agents')
+    expect(toggles[0]).not.toContain('Agents')
+    // And it is still counted as failed, which is the part that was right.
+    expect(toggles[0]).toContain('failed')
   })
 
   // Opening one panel closes the other, and each shows only its own kind.

@@ -11,7 +11,7 @@ import (
 
 func scriptApp(t *testing.T) *App {
 	t.Helper()
-	return &App{cfg: config.Config{SandboxRoot: t.TempDir()}}
+	return seed(&App{cfg: config.Config{SandboxRoot: t.TempDir()}}, newConversation())
 }
 
 // The tag decides whether the button was offered at all, so one that is not a
@@ -100,7 +100,7 @@ func TestWriteScriptStaysInsideTheWorkspaceAndIsNamedRelatively(t *testing.T) {
 	if !strings.HasPrefix(rel, runScriptDir+"/") {
 		t.Errorf("path = %q, want it under %q", rel, runScriptDir)
 	}
-	if _, err := os.Stat(filepath.Join(app.cfg.SandboxRoot, filepath.FromSlash(rel))); err != nil {
+	if _, err := os.Stat(filepath.Join(app.cur().cfg.SandboxRoot, filepath.FromSlash(rel))); err != nil {
 		t.Errorf("the file is not where the command will look for it: %v", err)
 	}
 }
@@ -137,7 +137,7 @@ func TestWriteScriptIsStablePerSourceAndDistinctBetweenThem(t *testing.T) {
 	if got := filepath.Ext(first); got != ".py" {
 		t.Errorf("extension = %q, want .py — the interpreter reads it", got)
 	}
-	body, err := os.ReadFile(filepath.Join(app.cfg.SandboxRoot, filepath.FromSlash(first)))
+	body, err := os.ReadFile(filepath.Join(app.cur().cfg.SandboxRoot, filepath.FromSlash(first)))
 	if err != nil {
 		t.Fatalf("read back: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestWriteScriptCleanupRemovesTheFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("writeScript: %v", err)
 	}
-	full := filepath.Join(app.cfg.SandboxRoot, filepath.FromSlash(rel))
+	full := filepath.Join(app.cur().cfg.SandboxRoot, filepath.FromSlash(rel))
 	remove()
 	if _, err := os.Stat(full); !os.IsNotExist(err) {
 		t.Errorf("the script survived its run: %v", err)

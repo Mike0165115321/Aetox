@@ -595,6 +595,39 @@ CREATE TABLE IF NOT EXISTS project_folders (
 			return err
 		},
 	},
+	{
+		version: 17,
+		name:    "session_keeps_its_own_model",
+		apply: func(tx *sql.Tx) error {
+			// A chat's dials, on the chat (DECISIONS §155).
+			//
+			// §155 gave each conversation its own config and stopped one step
+			// short: the config lived only as long as the engine did. A chat
+			// that went idle and off screen had its engine let go, and
+			// reopening it rebuilt from App.cfg — the last model anyone chose
+			// anywhere. So the model still followed the user between chats,
+			// which is exactly the complaint §155 was written to answer, and it
+			// took a probe to see it (owner, 20 ส.ค.: "เช็คดีๆ เหมือนจะไม่ใช่นะ" —
+			// he was right and I had said otherwise).
+			//
+			// Same shape as `stance` (v13): a column on the session, written
+			// when the session row is created, read back when it is reopened.
+			// The alternative — remembering it in memory — is the thing that
+			// just failed, and a chat's model has to survive a restart for the
+			// same reason its desk does.
+			//
+			// Empty means "never recorded", which is every session from before
+			// this migration, and those reopen on the app's default exactly as
+			// they do today. A default is not a lie; a wrong specific value is.
+			for _, col := range []string{"provider", "model", "wire_format", "think_level", "approval_mode"} {
+				if _, err := tx.Exec(
+					`ALTER TABLE sessions ADD COLUMN ` + col + ` TEXT NOT NULL DEFAULT ''`); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
 }
 
 // latestSchemaVersion is what this build understands.

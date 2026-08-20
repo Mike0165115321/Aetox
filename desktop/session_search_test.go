@@ -103,7 +103,7 @@ func TestMigrationBackfillsToolRunsFTS(t *testing.T) {
 	}
 
 	// Opening through the app migrates to v3, which must index the old row.
-	a := &App{dbDir: dir}
+	a := seed(&App{dbDir: dir}, newConversation())
 	closeDBOnCleanup(t, a)
 	migrated, err := a.database()
 	if err != nil {

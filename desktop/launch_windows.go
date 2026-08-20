@@ -103,4 +103,3 @@ func launchLogged(command, logPath string) error {
 func tailCommand(logPath string) string {
 	return "powershell -NoLogo -Command \"Get-Content -Path '" + logPath + "' -Wait -Tail 100\""
 }
-

@@ -23,7 +23,7 @@ import (
 // change the shell between two calls of the same session, and the tool
 // description the model reads has to change with it.
 func (a *App) shellBackend() proc.Backend {
-	return a.shells.For(a.cfg.SandboxRoot)
+	return a.shells.For(a.cur().cfg.SandboxRoot)
 }
 
 // ShellOption is one entry in the picker.
@@ -83,5 +83,5 @@ func (a *App) CurrentShell() ShellOption {
 // call picks it up, which is a wait of seconds and the difference between a
 // gate and a suggestion.
 func (a *App) SetShell(setting string) error {
-	return a.shells.Set(strings.TrimSpace(a.cfg.SandboxRoot), setting)
+	return a.shells.Set(strings.TrimSpace(a.cur().cfg.SandboxRoot), setting)
 }

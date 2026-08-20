@@ -57,7 +57,8 @@ func bootDeskApp(t *testing.T, desk string) *App {
 		// Asked for, because delegation ships off (owner, 18 ส.ค.). These tests
 		// are about which tools a DESK carries, and `task` is only one of them
 		// on a session that has the capability at all.
-		DelegateOn: true,
+		DelegateAgents:  true,
+		DelegateHelpers: true,
 	})
 	return a
 }
@@ -104,7 +105,7 @@ func TestALegacySessionKeepsTheFullDeskAndTheSamePrompt(t *testing.T) {
 	// And the prompt is what prompt.Build alone produces. Compared against the
 	// package rather than a golden string, so it stays true as the prompt itself
 	// changes and only fails when a *desk* has added something to it.
-	want := prompt.Build(prompt.SurfaceDesktop, prompt.Scope{Root: a.cfg.SandboxRoot, Open: true})
+	want := prompt.Build(prompt.SurfaceDesktop, prompt.Scope{Root: a.cur().cfg.SandboxRoot, Open: true})
 	messages := a.cur().agent.ContextMessages()
 	if len(messages) == 0 {
 		t.Fatal("no system prompt")
@@ -195,7 +196,8 @@ func TestADeskAddsDirectionAndItsOwnMemory(t *testing.T) {
 			ModelProvider: "aetox",
 			ModelName:     "aetox-tools:test",
 			ApprovalMode:  string(safety.ApprovalFullAccess),
-			DelegateOn:    true,
+			DelegateAgents:  true,
+			DelegateHelpers: true,
 		})
 		messages := a.cur().agent.ContextMessages()
 		if len(messages) == 0 {
@@ -327,7 +329,7 @@ func TestTheAssistantDeskHandsAJobToTheOfficeAndGetsAFileBack(t *testing.T) {
 
 	// The file landed in the caller's own output folder, not the chair's:
 	// nothing about crossing desks moves where a session's work is kept.
-	produced := filepath.Join(a.cfg.SandboxRoot, "output", a.cur().id, "office-demo.docx")
+	produced := filepath.Join(a.cur().cfg.SandboxRoot, "output", a.cur().id, "office-demo.docx")
 	if info, err := os.Stat(produced); err != nil || info.Size() == 0 {
 		t.Fatalf("no document at %s (err=%v)", produced, err)
 	}
@@ -476,7 +478,7 @@ func TestListArtifactsFindsWhatASessionProduced(t *testing.T) {
 	isolateUserDirs(t)
 	a := bootDeskApp(t, "assistant")
 
-	dir := filepath.Join(a.cfg.SandboxRoot, "output", a.cur().id)
+	dir := filepath.Join(a.cur().cfg.SandboxRoot, "output", a.cur().id)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -516,7 +518,7 @@ func TestListArtifactsFindsWhatASessionProduced(t *testing.T) {
 
 	// And the ผลงาน page is where a file actually dies — nowhere else, and
 	// nothing outside an output folder can be named.
-	if err := a.DeleteArtifact(filepath.Join(a.cfg.SandboxRoot, "..", "elsewhere.txt")); err == nil {
+	if err := a.DeleteArtifact(filepath.Join(a.cur().cfg.SandboxRoot, "..", "elsewhere.txt")); err == nil {
 		t.Error("DeleteArtifact accepted a path outside the output folders")
 	}
 	if err := a.DeleteArtifact(got.Path); err != nil {
@@ -688,5 +690,55 @@ func TestEachDeskIsToldOnlyWhatItCanActuallyDo(t *testing.T) {
 		if !strings.Contains(text, "Length alone is not that request") {
 			t.Errorf("%s desk lost the rule that length is not a request for a document", desk)
 		}
+	}
+}
+
+// The bug this test exists for (2026-08-20): the user asked the assistant desk
+// for a deck, the model called `task`, and the timeline showed
+// `tool "task" is not exposed to agent` in red before it recovered and built
+// the deck itself.
+//
+// Nothing was wrong with the tools. Delegation ships OFF, so `task` is never
+// built (subagent.NewTaskTools) — but the desk's own manifest said in prose
+// "hand the job over with `task`", and a markdown file compiled into the binary
+// cannot ask whether a switch on the settings page is on. Two places answered
+// "can this session delegate" and only one of them could see the answer.
+//
+// So the route moved into the prompt layer that is already gated
+// (prompt.longform), and this test drives the real switch: same desk, same
+// boot, delegation off, and the prompt must not name a tool the model does not
+// have.
+func TestDelegationOffTakesTheHandoverOutOfThePrompt(t *testing.T) {
+	a := bootDeskApp(t, "assistant")
+
+	systemPrompt := func() string {
+		t.Helper()
+		messages := a.cur().agent.ContextMessages()
+		if len(messages) == 0 {
+			t.Fatal("no system prompt")
+		}
+		return messages[0].Content
+	}
+
+	// bootDeskApp asks for delegation, so this is the capable half first.
+	if on := systemPrompt(); !strings.Contains(on, "hand the job to the agent") {
+		t.Errorf("delegation is on and the assistant desk was not told to hand deliverable work over:\n%s", on)
+	}
+
+	a.SetDelegateOff("helpers", true)
+	if switches := a.SetDelegateOff("agents", true); !switches.Agents.Off {
+		t.Fatal("the เอเจน switch did not take")
+	}
+	off := systemPrompt()
+	if strings.Contains(off, "`task`") {
+		t.Errorf("delegation is off and the prompt still names `task`, the tool that is now not built:\n%s", off)
+	}
+	if strings.Contains(off, "hand the job to the agent") {
+		t.Error("delegation is off and the assistant is still told to hand the job to an agent it cannot reach")
+	}
+	// And it is told what to do instead, or the fix would only have swapped a
+	// failed tool call for a flat refusal.
+	if !strings.Contains(off, "say plainly what you can hand back instead") {
+		t.Errorf("delegation is off and nothing tells the assistant what to do with a deliverable request:\n%s", off)
 	}
 }

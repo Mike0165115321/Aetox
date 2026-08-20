@@ -26,11 +26,11 @@ func newDocumentApp(t *testing.T, provider, modelName string, size int) *App {
 	if err := os.WriteFile(filepath.Join(dir, "statement.pdf"), body, 0o644); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
-	return &App{cfg: config.Config{
+	return seed(&App{cfg: config.Config{
 		SandboxRoot:   root,
 		ModelProvider: provider,
 		ModelName:     modelName,
-	}}
+	}}, newConversation())
 }
 
 func TestDocumentAttachmentsSendsThePDFToAModelThatReads(t *testing.T) {
@@ -141,7 +141,7 @@ func TestDocumentAttachmentsSurvivesAMissingFile(t *testing.T) {
 // Aetox uploads — `read` opens it, and always could.
 func TestDocumentAttachmentsOnlyTakesPDFs(t *testing.T) {
 	app := newDocumentApp(t, "codex", "gpt-5.5", 64)
-	root := app.cfg.SandboxRoot
+	root := app.cur().cfg.SandboxRoot
 	if err := os.WriteFile(filepath.Join(root, ".aetox-attachments", "notes.txt"), []byte("hi"), 0o644); err != nil {
 		t.Fatalf("setup: %v", err)
 	}

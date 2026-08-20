@@ -210,16 +210,21 @@ export async function openTerminalTab(shell: { name: string; path: string }): Pr
  * name the user knows them by — a file dragged in from outside the project is
  * copied in under a generated name (see openPathsInWorkbench), and the tab
  * still has to read as the file they dropped. */
-export async function openFileTab(path: string, displayName?: string): Promise<void> {
+export async function openFileTab(path: string, displayName?: string, mine = false): Promise<void> {
   const id = `file-${path}`
   let tab = workbench.tabs.find((t) => t.id === id)
+  // `mine` is set once, when the tab is created, and never changed after: it
+  // answers "who put this here", which is a fact about the first time. A file
+  // the user opened does not become the agent's because the agent re-opened it
+  // — and that matters, because `desk close` refuses anything that is not the
+  // agent's own (§81's rule, one hand heavier).
   if (!tab) {
     // Pushed before any await, so the id is taken the moment it is claimed.
     // Reading first and pushing after left a window — hundreds of ms for a
     // workbook or a 20MB image — in which a second call saw no tab and pushed
     // a duplicate. The tab strip is `{#each ... (tab.id)}`, and Svelte throws
     // each_key_duplicate on a repeated key, taking the panel down.
-    workbench.tabs.push({ id, kind: 'file', name: displayName || path.split('/').pop() || path, path, rev: 0 })
+    workbench.tabs.push({ id, kind: 'file', name: displayName || path.split('/').pop() || path, path, rev: 0, mine })
     // Read it back rather than keeping the literal: `workbench` is $state, so
     // what lives in the array is a proxy and the object passed to push is not.
     // Writing to the literal updates the data and tells Svelte nothing — the
@@ -229,6 +234,19 @@ export async function openFileTab(path: string, displayName?: string): Promise<v
   }
   workbench.activeId = id
   await loadFileTab(tab, path)
+}
+
+/** `desk close` — take a file tab the AGENT opened back off the desk.
+ *
+ * The Go side has already refused a path it cannot see and a tab that is not
+ * the agent's, off the mirror the frontend pushes it (WorkbenchTabsChanged).
+ * This checks the same two things again rather than trusting that, because the
+ * mirror is one report behind by construction: a tab the user closed in the
+ * moment between the report and the event is a tab this must not act on, and
+ * the array here is the only copy that is never stale. */
+export function closeAgentFileTab(path: string): void {
+  const tab = workbench.tabs.find((t) => t.kind === 'file' && t.path === path && t.mine)
+  if (tab) void closeTab(tab)
 }
 
 /** (Re)read a file tab's contents off disk.
@@ -409,7 +427,13 @@ export function reportDeskTabs(): void {
   // binding serializes them to the same JSON, and a value-import of the
   // generated models module would make this file need Wails at runtime — which
   // it does not, and which breaks every test that renders the workbench.
+  // The session is named: the workbench is kept per chat on this side already,
+  // and the mirror the agent reads is per chat on the other (desk_list). An
+  // unnamed report lands on whichever conversation Go thinks is current, which
+  // is the one on screen — and a chat working in the background would then be
+  // told about somebody else's desk as if it were its own.
   void WorkbenchTabsChanged(
+    boundSessionId ?? '',
     workbench.tabs.map((t) => ({
       kind: t.kind,
       name: t.name,

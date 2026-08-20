@@ -35,7 +35,7 @@ func bootGalleryApp(t *testing.T) *App {
 // is what the gallery sorts and ranges by.
 func writeArtifact(t *testing.T, a *App, session, name string, age time.Duration) string {
 	t.Helper()
-	dir := filepath.Join(a.cfg.SandboxRoot, "output", session)
+	dir := filepath.Join(a.cur().cfg.SandboxRoot, "output", session)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +167,7 @@ func TestListArtifactsStillMeansEverything(t *testing.T) {
 // 22 KB drawn as a page, 49 KB drawn as a wall of markup.
 func TestALargeHTMLPageStillPreviewsAsAPage(t *testing.T) {
 	a := bootGalleryApp(t)
-	dir := filepath.Join(a.cfg.SandboxRoot, "output", "s1")
+	dir := filepath.Join(a.cur().cfg.SandboxRoot, "output", "s1")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +198,7 @@ func TestALargeHTMLPageStillPreviewsAsAPage(t *testing.T) {
 // And past the render ceiling it goes back to being quoted, not dropped.
 func TestAnEnormousHTMLPageFallsBackToAnExcerpt(t *testing.T) {
 	a := bootGalleryApp(t)
-	dir := filepath.Join(a.cfg.SandboxRoot, "output", "s1")
+	dir := filepath.Join(a.cur().cfg.SandboxRoot, "output", "s1")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}

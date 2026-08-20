@@ -93,13 +93,18 @@ func TestEveryToolRunsThroughTheRealDispatcher(t *testing.T) {
 	writeToolFixtures(t, root)
 
 	app := &App{}
+	// The real app never has one without the other, and deck_export is the first
+	// workbench tool that reads the root off the App rather than being handed it:
+	// its work is a file on disk, not a pane on screen, so it resolves paths the
+	// way the file tools do.
+	app.cur().cfg.SandboxRoot = root
 	// Several tools below open the store (session_search, memory, suggest_task),
 	// and on Windows an open file cannot be removed — so without this the data
 	// root's own cleanup fails and takes the test with it. Registered after
 	// isolateUserDirs so LIFO closes the handle before that directory goes.
 	closeDBOnCleanup(t, app)
 	registry := skill.NewDefaultRegistry(skill.RegistryOptions{SandboxRoot: root})
-	for _, s := range app.workbenchSkills(app.cur(), app.cfg.SandboxRoot) {
+	for _, s := range app.workbenchSkills(app.cur(), app.cur().cfg.SandboxRoot) {
 		if err := registry.Register(s, skill.SourceBuiltin); err != nil {
 			t.Fatalf("register %s: %v", s.Name(), err)
 		}
@@ -601,6 +606,7 @@ func toolCases(t *testing.T, root string, dispatcher *skill.Dispatcher) map[stri
 		// "the desk is empty" is exactly right for a test with no desk.
 		"desk_open":     {args: map[string]any{"path": "note.md"}, available: never, why: "needs the app window"},
 		"desk_terminal": {args: map[string]any{"command": "echo hi"}, available: never, why: "needs the app window"},
+		"desk_close":    {args: map[string]any{"path": "note.md"}, available: never, why: "needs the app window"},
 		"desk_list":     {args: map[string]any{}, check: outputContains("โต๊ะ")},
 	}
 }

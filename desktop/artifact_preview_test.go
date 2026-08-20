@@ -23,7 +23,7 @@ func previewApp(t *testing.T, name string, body []byte) (*App, string) {
 	if err := os.WriteFile(path, body, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return &App{cfg: config.Config{SandboxRoot: root}}, path
+	return seed(&App{cfg: config.Config{SandboxRoot: root}}, newConversation()), path
 }
 
 func TestArtifactPreviewReadsWhatIsInside(t *testing.T) {
@@ -216,8 +216,8 @@ func TestArtifactPreviewRefusesFilesOutsideTheGallery(t *testing.T) {
 
 	// Climbing out of output/ with .. is the same request wearing a relative
 	// path — the gallery's own root is not the gallery.
-	escape := filepath.Join(a.cfg.SandboxRoot, outputDir, "..", "..", "secrets.txt")
-	if err := os.WriteFile(filepath.Join(filepath.Dir(a.cfg.SandboxRoot), "secrets.txt"), []byte("x"), 0o644); err == nil {
+	escape := filepath.Join(a.cur().cfg.SandboxRoot, outputDir, "..", "..", "secrets.txt")
+	if err := os.WriteFile(filepath.Join(filepath.Dir(a.cur().cfg.SandboxRoot), "secrets.txt"), []byte("x"), 0o644); err == nil {
 		if _, err := a.ArtifactPreview(escape); err == nil {
 			t.Error("climbed out of the output folder with ..")
 		}

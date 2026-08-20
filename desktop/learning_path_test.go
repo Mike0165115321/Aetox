@@ -48,7 +48,8 @@ func bootLearningApp(t *testing.T) *App {
 		ApprovalMode:  string(safety.ApprovalFullAccess),
 		// Asked for, because delegation ships off. These tests are about what a
 		// DELEGATE is allowed to do, which needs one to exist.
-		DelegateOn: true,
+		DelegateAgents:  true,
+		DelegateHelpers: true,
 	})
 	return a
 }

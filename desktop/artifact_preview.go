@@ -30,8 +30,8 @@ import (
 // bounds, not safety bounds — a card shows a few lines, so reading a 40MB log
 // to print six of its lines is pure waste.
 const (
-	previewTextBytes  = 24 << 10 // enough for far more lines than a card shows
-	previewTextRunes  = 1400
+	previewTextBytes = 24 << 10 // enough for far more lines than a card shows
+	previewTextRunes = 1400
 	// The ceiling on a page the card *renders* rather than quotes, and a
 	// separate number from previewTextBytes on purpose.
 	//
@@ -49,7 +49,7 @@ const (
 	// 512 KB renders anything a session actually produces and still bounds what
 	// one card can hold in memory. Past it the excerpt is the honest fallback,
 	// exactly as before.
-	previewHTMLBytes = 512 << 10
+	previewHTMLBytes  = 512 << 10
 	previewImageBytes = 4 << 20 // past this a thumbnail costs more than it gives
 	previewZipBytes   = 8 << 20
 	previewSheetRows  = 6
@@ -279,7 +279,6 @@ func ooxmlText(path, ext string) (string, error) {
 	}
 	return strings.TrimSpace(out.String()), nil
 }
-
 
 func readHead(path string, n int) ([]byte, error) {
 	f, err := os.Open(path)

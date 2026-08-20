@@ -54,23 +54,46 @@ type TaskOptions struct {
 	// chair a tool its caller cannot see — the file crosses the counter, the
 	// tool never does (§84).
 	Desk *mode.Mode
-	// DelegateOff removes delegation from this session entirely: no `task` tool
-	// is built, so it is not in the block, not in the permission list and not
-	// filtered out of anything — it simply is not there.
+	// NoAgents and NoHelpers are this session's reach, one switch per kind
+	// (COMPANY.md §4). They are the whole of it: both off is the full reach,
+	// both on builds no tool at all, and either one alone builds a tool that
+	// carries one roster and describes one act.
 	//
-	// A switch the user can see, feeding a mechanism that already existed: a
-	// connection's tools are kept out of the block the same way until there is
-	// an account to use them with. It is worth 730 tokens on every message,
-	// which is why it is a switch rather than a preference buried somewhere.
-	DelegateOff bool
-	// AgentsOff names workers the assistant may not hand work to.
+	// Two switches because they are two acts. An เอเจน is a colleague who takes
+	// a whole job off your hands and can be talked to directly by the user; a
+	// ซับเอเจน is your own hands in a second context, so a step of YOUR work
+	// stays out of THIS context. They were one switch until 2026-08-20, and the
+	// fusion leaked everywhere it touched — the tool introduced itself to the
+	// model as "Sub-agents" while offering colleagues, a failed call with nobody
+	// resolved was counted as a ซับเอเจน on screen, and one switch on the เอเจน
+	// settings page silently greyed out every ซับเอเจน on the other page. Owner's
+	// call that day: แยกชัดเจน, หลังบ้านถึงหน้าบ้าน.
+	//
+	// Negative, so the zero value is the full reach. That is deliberate and is
+	// the opposite of what config.Config does with the same question: a library
+	// that does nothing until you opt in is a library that gets called wrong,
+	// while a product that delegates before anybody asked is a product spending
+	// tokens nobody chose. The one translation between them lives in
+	// internal/bootstrap, at the boundary, where it can be read.
+	NoAgents bool
+	// NoHelpers is NoAgents' twin, and also what a chair chat sets: a chair is
+	// itself a colleague, so handing a whole job to another one is two peers
+	// arguing about whose job it was, one level below the person who asked —
+	// but hands are exactly what it runs short of, so it keeps those. See
+	// delegationTool.forChair.
+	NoHelpers bool
+	// WorkersOff names individual workers the assistant may not hand work to,
+	// either kind. Named by worker rather than split per kind because a name is
+	// unique across both homes (subagent.Conflicts refuses a collision), so the
+	// kind is always derivable and a second list would be a second place to get
+	// it wrong.
 	//
 	// They are NOT disabled. The user can still open a chat with one and still
 	// write @name at it, because that is the user's own act. What this narrows
 	// is the assistant's reach, and the copy on the switch has to say so — "ปิด
 	// doc" would tell somebody their agent is gone when it is standing right
 	// there.
-	AgentsOff    []string
+	WorkersOff   []string
 	Permissions  safety.PermissionConfig
 	ApprovalMode safety.ApprovalMode
 	Approve      turn.ApprovalPromptFunc
@@ -178,9 +201,15 @@ type Reply struct {
 // packing a change to bootstrap.
 func NewTaskTools(opts TaskOptions) []skill.Skill {
 	// Nothing, rather than a tool that refuses. A `task` that exists and says no
-	// would still cost its 730 tokens in every request to say it, which is the
-	// opposite of what the switch is for.
-	if opts.DelegateOff {
+	// would still cost its 710 tokens in every request to say it, which is the
+	// opposite of what the switches are for.
+	//
+	// Both, because either one alone still leaves an act to perform. Off is not
+	// all-or-nothing any more: with one kind switched off the tool is built with
+	// that roster missing, which is cheaper than today's whole tool — 629 tokens
+	// for เอเจน alone, 471 for ซับเอเจน alone, against 710 for the pair
+	// (measured 2026-08-20).
+	if opts.NoAgents && opts.NoHelpers {
 		return nil
 	}
 	shared := opts.Delegations
@@ -220,6 +249,20 @@ func (t *taskTool) reach(p Profile) (*mode.Mode, error) {
 	if t.switchedOff(p.Name) {
 		return nil, fmt.Errorf("%s is switched off for the assistant. The worker is not disabled — open a chat with it, or write @%s — but handing it work from here is turned off in settings", p.Name, p.Name)
 	}
+	// One check, and the roster, the enum, the guidance and this dispatch all
+	// read it: available() is the only way a profile reaches any of them.
+	//
+	// The two refusals are written apart because they are refusing two different
+	// things, and the model's next move differs. Turned away from a colleague it
+	// should say so to the person — the work really does belong with that
+	// worker, and the person is the one who can send it there. Turned away from
+	// a helper there is nobody to name: the step is its own to take, here.
+	if p.Desk != "" && t.opts.NoAgents {
+		return nil, fmt.Errorf("%s is an AGENT (เอเจน) — a colleague with a desk of its own — and this session does not hand whole jobs to one. Tell the person you are talking to that it belongs with %s. What you can hand out is a step of your own work, to a helper (ซับเอเจน)", p.Name, p.Name)
+	}
+	if p.Desk == "" && t.opts.NoHelpers {
+		return nil, fmt.Errorf("%s is a HELPER (ซับเอเจน) — your own hands in a second context — and this session does not use them. Do the step here, in this conversation", p.Name)
+	}
 	return t.ceilingFor(p)
 }
 
@@ -228,7 +271,7 @@ func (t *taskTool) reach(p Profile) (*mode.Mode, error) {
 // by hand in a config file.
 func (t *taskTool) switchedOff(name string) bool {
 	want := strings.ToLower(strings.TrimSpace(name))
-	for _, off := range t.opts.AgentsOff {
+	for _, off := range t.opts.WorkersOff {
 		if strings.ToLower(strings.TrimSpace(off)) == want {
 			return true
 		}
@@ -526,7 +569,7 @@ func (t *taskTool) begin(ctx context.Context, args map[string]any, out **running
 	// empty roster is a dead end the model would otherwise walk into and get a
 	// list of nobody back.
 	if len(t.available()) == 0 {
-		return t.fail(label, started, "every worker is switched off for the assistant. Turn one back on in settings, or switch delegation off entirely so this tool stops being offered at all")
+		return t.fail(label, started, "every worker this session can reach is switched off. Turn one back on in settings, or switch both kinds off so this tool stops being offered at all")
 	}
 	// Which desk this job runs at, decided before anything is built: a dispatch
 	// this desk may not make is a refusal the model can read and act on, not a

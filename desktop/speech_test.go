@@ -68,8 +68,8 @@ func TestSetSpeechModelPinsPersistsAndClears(t *testing.T) {
 	if err := a.SetSpeechModel(modelPath); err != nil {
 		t.Fatalf("SetSpeechModel: %v", err)
 	}
-	if a.cfg.SpeechModelPath != modelPath {
-		t.Errorf("cfg.SpeechModelPath = %q, want %q", a.cfg.SpeechModelPath, modelPath)
+	if a.cur().cfg.SpeechModelPath != modelPath {
+		t.Errorf("cfg.SpeechModelPath = %q, want %q", a.cur().cfg.SpeechModelPath, modelPath)
 	}
 
 	pref, ok, err := config.LoadModelPreference()
@@ -98,8 +98,8 @@ func TestSetSpeechModelPinsPersistsAndClears(t *testing.T) {
 	if err := a.SetSpeechModel(""); err != nil {
 		t.Fatalf("SetSpeechModel(\"\"): %v", err)
 	}
-	if a.cfg.SpeechModelPath != "" {
-		t.Errorf("cfg.SpeechModelPath = %q, want empty after clearing", a.cfg.SpeechModelPath)
+	if a.cur().cfg.SpeechModelPath != "" {
+		t.Errorf("cfg.SpeechModelPath = %q, want empty after clearing", a.cur().cfg.SpeechModelPath)
 	}
 	pref, _, _ = config.LoadModelPreference()
 	if pref.SpeechModelPath != "" {
@@ -115,7 +115,7 @@ func TestSetSpeechModelRejectsAMissingFile(t *testing.T) {
 	if err := a.SetSpeechModel(filepath.Join(t.TempDir(), "gone.bin")); err == nil {
 		t.Fatal("expected an error for a model file that does not exist")
 	}
-	if a.cfg.SpeechModelPath != "" {
-		t.Errorf("a rejected choice must not be stored, got %q", a.cfg.SpeechModelPath)
+	if a.cur().cfg.SpeechModelPath != "" {
+		t.Errorf("a rejected choice must not be stored, got %q", a.cur().cfg.SpeechModelPath)
 	}
 }

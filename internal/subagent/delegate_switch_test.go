@@ -13,7 +13,7 @@ func TestDelegationOffBuildsNoToolAtAll(t *testing.T) {
 	if tools := NewTaskTools(TaskOptions{}); len(tools) == 0 {
 		t.Fatal("delegation is missing with the switch untouched — the default has to be on")
 	}
-	if tools := NewTaskTools(TaskOptions{DelegateOff: true}); len(tools) != 0 {
+	if tools := NewTaskTools(TaskOptions{NoAgents: true, NoHelpers: true}); len(tools) != 0 {
 		t.Errorf("switching delegation off still built %d tool(s); the saving is the tool not existing", len(tools))
 	}
 }
@@ -25,14 +25,14 @@ func TestAnAgentSwitchedOffLeavesTheRosterButNotTheWorld(t *testing.T) {
 	isolate(t)
 
 	full := namedTool(t, NewTaskTools(TaskOptions{}), "task")
-	narrowed := namedTool(t, NewTaskTools(TaskOptions{AgentsOff: []string{"explore"}}), "task")
+	narrowed := namedTool(t, NewTaskTools(TaskOptions{WorkersOff: []string{"explore"}}), "task")
 
 	fullSchema := string(toolDefOf(t, NewTaskTools(TaskOptions{}), "task").Function.Parameters)
 	if !strings.Contains(fullSchema, "explore") {
 		t.Fatal("explore is not in the roster to begin with, so this test proves nothing")
 	}
 
-	schema := string(toolDefOf(t, NewTaskTools(TaskOptions{AgentsOff: []string{"explore"}}), "task").Function.Parameters)
+	schema := string(toolDefOf(t, NewTaskTools(TaskOptions{WorkersOff: []string{"explore"}}), "task").Function.Parameters)
 	if strings.Contains(schema, "explore") {
 		t.Errorf("explore is switched off but still offered to the assistant: %s", schema)
 	}
@@ -54,7 +54,7 @@ func TestAnAgentSwitchedOffLeavesTheRosterButNotTheWorld(t *testing.T) {
 func TestTheAgentSwitchIsNotCaseSensitive(t *testing.T) {
 	isolate(t)
 
-	schema := string(toolDefOf(t, NewTaskTools(TaskOptions{AgentsOff: []string{"  ExPloRe "}}), "task").Function.Parameters)
+	schema := string(toolDefOf(t, NewTaskTools(TaskOptions{WorkersOff: []string{"  ExPloRe "}}), "task").Function.Parameters)
 	if strings.Contains(schema, "explore") {
 		t.Errorf("a name switched off with different case was ignored: %s", schema)
 	}
@@ -69,7 +69,7 @@ func TestTheAgentSwitchIsNotCaseSensitive(t *testing.T) {
 // enforceable. Somebody would eventually have relied on the wrong one.
 func TestASwitchedOffWorkerIsRefusedAndNotMerelyUnlisted(t *testing.T) {
 	isolate(t)
-	tool := taskToolOf(t, TaskOptions{AgentsOff: []string{"explore"}})
+	tool := taskToolOf(t, TaskOptions{WorkersOff: []string{"explore"}})
 
 	out, _ := tool.begin(t.Context(), map[string]any{
 		"agent":  "explore",
@@ -97,7 +97,7 @@ func TestEveryWorkerOffIsRefusedWithSomethingToDo(t *testing.T) {
 	for _, p := range List() {
 		all = append(all, p.Name)
 	}
-	tool := taskToolOf(t, TaskOptions{AgentsOff: all})
+	tool := taskToolOf(t, TaskOptions{WorkersOff: all})
 
 	out, _ := tool.begin(t.Context(), map[string]any{
 		"agent":  "explore",

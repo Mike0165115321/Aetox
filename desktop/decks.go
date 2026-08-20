@@ -60,7 +60,7 @@ type Deck struct {
 // a deck from another project cannot be rendered here, so offering it would be
 // a row that opens onto nothing.
 func (a *App) ListDecks() []Deck {
-	root := strings.TrimSpace(a.cfg.SandboxRoot)
+	root := strings.TrimSpace(a.cur().cfg.SandboxRoot)
 	if root == "" {
 		// No project open reads as no decks, which is the truth about it. The
 		// unfocused workspace has its own SandboxRoot when it is the one open,
@@ -239,7 +239,7 @@ func writableDeckFormat(id string) (string, bool) {
 // every request of the busiest desk to save one click, and was never once
 // called.
 func (a *App) ExportDeck(relPath, format string) (string, error) {
-	root := strings.TrimSpace(a.cfg.SandboxRoot)
+	root := strings.TrimSpace(a.cur().cfg.SandboxRoot)
 	if root == "" {
 		return "", fmt.Errorf("no project open")
 	}

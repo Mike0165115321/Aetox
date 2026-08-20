@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"image"
 	_ "image/gif"  // imageTokens reads attachment headers for the context meter
-	_ "image/jpeg" // (same set slides_write validates)
+	_ "image/jpeg" // (same set loadPicture validates)
 	_ "image/png"
 	"io"
 	"mime"
@@ -154,9 +154,8 @@ type App struct {
 	// snapshots is the undo net (internal/snapshot). Nil whenever it cannot
 	// work — no git, or a project that is not a repository — and every use of
 	// it is written to carry on without it rather than refuse to run.
-	snapshotMu   sync.Mutex
-	snapshots    *snapshot.Store
-	lastSnapshot string // the tree captured before the last turn, "" if none
+	snapshotMu sync.Mutex
+	snapshots  *snapshot.Store
 
 	// askMu guards every conversation's askCh. One mutex rather than one per
 	// chat: the field is written at two moments (a question opening, an answer
@@ -204,15 +203,6 @@ type App struct {
 	// all; see emitEvent in terminal.go. nil means the real thing. Test seam
 	// only.
 	emit func(event string, data ...any)
-
-	// taskChips holds the side work the agent has flagged with suggest_task
-	// and the user has not yet started or dismissed (task_chips.go).
-	taskChips taskChips
-
-	// openTabs is what the frontend reports is open on the workbench, so the
-	// agent can read its own desk (desk.go). Deliberately not named `desk` —
-	// that field is the mode the session was opened at (§83), a different thing.
-	openTabs deskState
 
 	// remoteSrv is the phone's door into this process (remote.go), built on
 	// first use and never without one: the listener stays down until the user
@@ -438,7 +428,7 @@ func (a *App) GitChangedFiles() []ChangedFile {
 		return out
 	}
 	// proc-detached: one git read, bounded by its own completion a few lines down
-	cmd := exec.Command("git", "-C", a.cfg.SandboxRoot, "status", "--porcelain")
+	cmd := exec.Command("git", "-C", a.cur().cfg.SandboxRoot, "status", "--porcelain")
 	proc.HideConsole(cmd)
 	raw, err := cmd.Output()
 	if err != nil {
@@ -488,7 +478,7 @@ func (a *App) ProjectTree() []TreeNode {
 	if !a.projectFocused {
 		return []TreeNode{}
 	}
-	root := strings.TrimSpace(a.cfg.SandboxRoot)
+	root := strings.TrimSpace(a.cur().cfg.SandboxRoot)
 	if root == "" {
 		return []TreeNode{}
 	}
@@ -560,7 +550,7 @@ func safeSandboxPath(root, relPath string) (string, error) {
 // into a path relative to the open project's sandbox root, so it can be
 // passed to ReadFile/WriteFile. Errors if the path is outside the project.
 func (a *App) RelativizePath(absPath string) (string, error) {
-	root := strings.TrimSpace(a.cfg.SandboxRoot)
+	root := strings.TrimSpace(a.cur().cfg.SandboxRoot)
 	if root == "" {
 		return "", fmt.Errorf("no project open")
 	}
@@ -635,7 +625,7 @@ const (
 )
 
 func (a *App) FileStillThere(relPath string) string {
-	root := strings.TrimSpace(a.cfg.SandboxRoot)
+	root := strings.TrimSpace(a.cur().cfg.SandboxRoot)
 	if root == "" {
 		return FileUnknown
 	}
@@ -660,7 +650,7 @@ func (a *App) FileStillThere(relPath string) string {
 }
 
 func (a *App) OpenFileExternally(relPath string) error {
-	root := strings.TrimSpace(a.cfg.SandboxRoot)
+	root := strings.TrimSpace(a.cur().cfg.SandboxRoot)
 	if root == "" {
 		return fmt.Errorf("no project open")
 	}
@@ -705,7 +695,7 @@ func (a *App) OpenFileExternally(relPath string) error {
 // marshalled to JSON and crosses an IPC boundary, and a workbook past that size
 // is one to open in Excel anyway.
 func (a *App) ReadWorkbook(relPath string) (*ooxml.WorkbookPreview, error) {
-	root := strings.TrimSpace(a.cfg.SandboxRoot)
+	root := strings.TrimSpace(a.cur().cfg.SandboxRoot)
 	if root == "" {
 		return nil, fmt.Errorf("no project open")
 	}
@@ -731,7 +721,7 @@ func (a *App) ReadWorkbook(relPath string) (*ooxml.WorkbookPreview, error) {
 // ReadFile returns the text content of a file inside the sandbox root, for
 // the sidebar's file viewer.
 func (a *App) ReadFile(relPath string) (string, error) {
-	root := strings.TrimSpace(a.cfg.SandboxRoot)
+	root := strings.TrimSpace(a.cur().cfg.SandboxRoot)
 	if root == "" {
 		return "", fmt.Errorf("no project open")
 	}
@@ -764,7 +754,7 @@ func (a *App) ReadFile(relPath string) (string, error) {
 // WriteFile saves text content to a file inside the sandbox root, for the
 // dock's file editor. Same path-escape guard as ReadFile.
 func (a *App) WriteFile(relPath, content string) error {
-	root := strings.TrimSpace(a.cfg.SandboxRoot)
+	root := strings.TrimSpace(a.cur().cfg.SandboxRoot)
 	if root == "" {
 		return fmt.Errorf("no project open")
 	}
@@ -978,7 +968,7 @@ func decodeImageDataURL(dataURL string) (data []byte, ext string, err error) {
 // session, a name that cannot collide. Shared by the copy-a-file path and the
 // paste-bytes path so an attachment lands in exactly one place either way.
 func (a *App) chatAttachmentDest(ext string) (destPath, root string, err error) {
-	root = strings.TrimSpace(a.cfg.SandboxRoot)
+	root = strings.TrimSpace(a.cur().cfg.SandboxRoot)
 	if root == "" {
 		return "", "", fmt.Errorf("no project open")
 	}
@@ -1065,7 +1055,7 @@ func (a *App) PickAttachment() (string, error) {
 // ReadImageDataURL reads a sandboxed image back as a data: URL, for inline
 // preview in the chat UI (the frontend only has an OS path, not the bytes).
 func (a *App) ReadImageDataURL(relPath string) (string, error) {
-	root := strings.TrimSpace(a.cfg.SandboxRoot)
+	root := strings.TrimSpace(a.cur().cfg.SandboxRoot)
 	if root == "" {
 		return "", fmt.Errorf("no project open")
 	}
@@ -1118,10 +1108,10 @@ func (a *App) visionAttachments(text string) (string, []model.Image) {
 	if len(matches) == 0 {
 		return text, nil
 	}
-	if !model.ResolveVision(a.cfg.ModelProvider, a.cfg.ModelName) {
+	if !model.ResolveVision(a.cur().cfg.ModelProvider, a.cur().cfg.ModelName) {
 		return text, nil
 	}
-	root := strings.TrimSpace(a.cfg.SandboxRoot)
+	root := strings.TrimSpace(a.cur().cfg.SandboxRoot)
 	if root == "" {
 		return text, nil
 	}
@@ -1185,10 +1175,10 @@ func (a *App) documentAttachments(text string) (string, []model.Document) {
 	if len(matches) == 0 {
 		return text, nil
 	}
-	if !model.ResolveDocuments(a.cfg.ModelProvider, a.cfg.ModelName) {
+	if !model.ResolveDocuments(a.cur().cfg.ModelProvider, a.cur().cfg.ModelName) {
 		return text, nil
 	}
-	root := strings.TrimSpace(a.cfg.SandboxRoot)
+	root := strings.TrimSpace(a.cur().cfg.SandboxRoot)
 	if root == "" {
 		return text, nil
 	}
@@ -1245,7 +1235,7 @@ type UndoResult struct {
 // purpose — a machine without git, or a folder that is not a repository, must
 // still be able to hold a conversation, and an error banner about a safety net
 // the user never asked for is worse than not having one.
-func (a *App) captureSnapshot() {
+func (a *App) captureSnapshot(conv *conversation) {
 	a.snapshotMu.Lock()
 	store := a.snapshots
 	a.snapshotMu.Unlock()
@@ -1258,7 +1248,7 @@ func (a *App) captureSnapshot() {
 		return
 	}
 	a.snapshotMu.Lock()
-	a.lastSnapshot = id
+	conv.lastSnapshot = id
 	a.snapshotMu.Unlock()
 }
 
@@ -1268,8 +1258,11 @@ func (a *App) captureSnapshot() {
 // it just did", asked immediately, and an undo stack invites the far more
 // dangerous "undo the last six" long after the reasons are forgotten.
 func (a *App) UndoLastTurn() (UndoResult, error) {
+	// The chat on screen: undo is a button in a conversation, and the point it
+	// goes back to is that conversation's (desktop/conversation.go).
+	conv := a.cur()
 	a.snapshotMu.Lock()
-	store, id := a.snapshots, a.lastSnapshot
+	store, id := a.snapshots, conv.lastSnapshot
 	a.snapshotMu.Unlock()
 
 	if store == nil {
@@ -1288,7 +1281,7 @@ func (a *App) UndoLastTurn() (UndoResult, error) {
 	// The restore IS the new state, so undoing twice must not undo further —
 	// re-capturing here is what makes the second press a no-op instead of a
 	// second, silent step backwards.
-	a.captureSnapshot()
+	a.captureSnapshot(conv)
 	return UndoResult{Files: files}, nil
 }
 
@@ -1296,7 +1289,7 @@ func (a *App) UndoLastTurn() (UndoResult, error) {
 // it only when there is something to offer.
 func (a *App) PendingUndo() []string {
 	a.snapshotMu.Lock()
-	store, id := a.snapshots, a.lastSnapshot
+	store, id := a.snapshots, a.cur().lastSnapshot
 	a.snapshotMu.Unlock()
 	if store == nil || id == "" {
 		return []string{}
@@ -1482,11 +1475,18 @@ func (a *App) openAtRememberedDesk() {
 // Read as a func at call time, not baked in at bootstrap: it changes every
 // time the user starts or opens a chat, and re-bootstrapping the engine to
 // change one folder name would be an absurd price.
-func (a *App) outputSubdir() string {
-	if a.projectFocused || a.cur().id == "" {
+func (a *App) outputSubdir() string { return a.outputSubdirOf(a.cur()) }
+
+// outputSubdirOf is the same answer for a named chat rather than the one on
+// screen. A tool built for a conversation (workbenchSkills) has to resolve
+// against ITS folder: a chat working in the background asking where its own
+// file landed must not be told about the folder of whatever the window happens
+// to be showing — the same reason deskOpenSkill and askUserSkill carry a conv.
+func (a *App) outputSubdirOf(conv *conversation) string {
+	if a.projectFocused || conv == nil || conv.id == "" {
 		return ""
 	}
-	return "output/" + a.cur().id
+	return "output/" + conv.id
 }
 
 // unfocusedRoot is the working root with no project open: <home>/aetox, not
@@ -1763,19 +1763,41 @@ func (a *App) guardSessionSwitch() error {
 // reload does not touch the engine, so a turn started before the reload is
 // still running after it; without this the fresh window drew an idle composer
 // over a working agent.
+//
+// Working is every chat with a turn in flight, not just the one on screen. It
+// was the one on screen for as long as that was the only chat that could have
+// a turn — and the day several could, a reloaded window went back to marking
+// one of them and quietly forgot the rest: rings that never came back on, work
+// the user could not find their way to. SessionID stays because the window
+// still asks "and is it MINE" first, and answering that from a list would make
+// every caller do the same search.
 type TurnStatus struct {
 	Running   bool   `json:"running"`
 	SessionID string `json:"sessionId"`
+	// Working is every session with a turn in flight right now, the one in
+	// SessionID included. Empty when nothing is running anywhere.
+	Working []string `json:"working"`
 }
 
-// TurnInFlight reports the turn currently running, if any.
+// TurnInFlight reports what is running: whether the chat on screen is, and
+// which chats are.
 func (a *App) TurnInFlight() TurnStatus {
+	open := a.cur().id
 	a.turnMu.Lock()
 	defer a.turnMu.Unlock()
-	if _, running := a.turns[a.cur().id]; running {
-		return TurnStatus{Running: true, SessionID: a.cur().id}
+	working := make([]string, 0, len(a.turns))
+	for id := range a.turns {
+		working = append(working, id)
 	}
-	return TurnStatus{}
+	// Sorted so the same set is the same answer every time: the window diffs
+	// this against what it is drawing, and a map's iteration order would make
+	// two identical states look like a change on every poll.
+	sort.Strings(working)
+	_, running := a.turns[open]
+	if !running {
+		open = ""
+	}
+	return TurnStatus{Running: running, SessionID: open, Working: working}
 }
 
 // SendMessage runs one chat turn through the Aetox engine and returns the reply.
@@ -1904,7 +1926,7 @@ func (a *App) runTurn(conv *conversation, text string) (SessionMessage, SessionM
 	// keeps what the user's composer actually sent. Chained, because one message
 	// can carry both.
 	// Before anything runs, so an undo has somewhere to go back to.
-	a.captureSnapshot()
+	a.captureSnapshot(conv)
 	// A message that names a worker goes to that worker, in the words it was
 	// written in. This is the same act the model performs with `task`, and the
 	// user gets to perform it directly (owner, 12 ส.ค.: one address for both) —
@@ -2205,10 +2227,10 @@ func (a *App) ModelStatus() string {
 // window's length read as its time remaining). The shape is always two facts
 // with one name, and the fix is always to let "unknown" stay unknown.
 func (a *App) contextWindowTokens() int {
-	if a.cfg.ModelContextTokens > 0 {
-		return a.cfg.ModelContextTokens
+	if a.cur().cfg.ModelContextTokens > 0 {
+		return a.cur().cfg.ModelContextTokens
 	}
-	return model.ContextWindowTokens(a.cfg.ModelProvider, a.cfg.ModelName)
+	return model.ContextWindowTokens(a.cur().cfg.ModelProvider, a.cur().cfg.ModelName)
 }
 
 // GetModelInfo reports the real model/context state for the UI top bar.
@@ -2223,18 +2245,18 @@ func (a *App) GetModelInfo() ModelInfo {
 		warning = a.cur().modelErr.Error()
 	}
 	return ModelInfo{
-		Provider:   a.cfg.ModelProvider,
-		ModelName:  a.cfg.ModelName,
-		ThinkLevel: a.cfg.ThinkLevel,
+		Provider:   a.cur().cfg.ModelProvider,
+		ModelName:  a.cur().cfg.ModelName,
+		ThinkLevel: a.cur().cfg.ThinkLevel,
 		// Normalized, never raw: before startup() has built a config this is
 		// "", and the frontend CACHES what this reports (seedModelFromCache) —
 		// so one early call painted an empty approval dropdown on every launch
 		// after it, until a later fetch happened to overwrite the cache. "ask"
 		// is also the honest answer for that window: nothing has widened yet.
-		ApprovalMode: string(safety.NormalizeApprovalMode(a.cfg.ApprovalMode)),
+		ApprovalMode: string(safety.NormalizeApprovalMode(a.cur().cfg.ApprovalMode)),
 		ContextUsed:  used,
 		ContextMax:   a.contextWindowTokens(),
-		WireFormat:   effectiveWireFormat(a.cfg.ModelProvider, a.cfg.ModelWireFormat),
+		WireFormat:   effectiveWireFormat(a.cur().cfg.ModelProvider, a.cur().cfg.ModelWireFormat),
 		Warning:      warning,
 	}
 }
@@ -2467,7 +2489,7 @@ func (a *App) lastPromptUsage() (prompt, cached int) {
 // currentProjectStatus stamps the focus flag onto the raw status; unfocused
 // mode hides the home dir's name/branch so the UI never presents it as a project.
 func (a *App) currentProjectStatus() ProjectStatus {
-	ps := projectStatus(a.cfg.SandboxRoot)
+	ps := projectStatus(a.cur().cfg.SandboxRoot)
 	ps.Focused = a.projectFocused
 	if !a.projectFocused {
 		ps.Name = ""
@@ -2506,7 +2528,7 @@ func (a *App) OpenProjectFolder() (ProjectStatus, error) {
 		return ProjectStatus{}, err
 	}
 	if strings.TrimSpace(dir) == "" {
-		return projectStatus(a.cfg.SandboxRoot), nil
+		return projectStatus(a.cur().cfg.SandboxRoot), nil
 	}
 	// Sessions are per project — turns are already persisted incrementally, so
 	// just re-point the engine and start a fresh session for the new project.
@@ -2514,7 +2536,7 @@ func (a *App) OpenProjectFolder() (ProjectStatus, error) {
 	a.setWorkspaceRoots(a.storedWorkspaceFolders(dir))
 	a.reload(config.ConfigOptions{RootPath: dir, ApprovalMode: string(safety.ApprovalFullAccess)})
 	a.startNewSession()
-	a.touchProject(a.cfg.SandboxRoot)
+	a.touchProject(a.cur().cfg.SandboxRoot)
 	return a.currentProjectStatus(), nil
 }
 
@@ -2532,7 +2554,7 @@ func (a *App) OpenProjectPath(root string) (ProjectStatus, error) {
 	a.setWorkspaceRoots(a.storedWorkspaceFolders(root))
 	a.reload(config.ConfigOptions{RootPath: root, ApprovalMode: string(safety.ApprovalFullAccess)})
 	a.startNewSession()
-	a.touchProject(a.cfg.SandboxRoot)
+	a.touchProject(a.cur().cfg.SandboxRoot)
 	return a.currentProjectStatus(), nil
 }
 
@@ -2559,7 +2581,7 @@ func (a *App) SupportedProviders() []string {
 // for the default-to-active-provider rule an untouched install falls back to.
 func (a *App) EnabledProviders() []string {
 	pref, _, _ := config.LoadModelPreference()
-	return config.ResolvedEnabledProviders(pref.EnabledProviders, a.cfg.ModelProvider)
+	return config.ResolvedEnabledProviders(pref.EnabledProviders, a.cur().cfg.ModelProvider)
 }
 
 // SetProviderEnabled adds or removes providerName from the enabled set and
@@ -2580,7 +2602,7 @@ func (a *App) SetProviderEnabled(providerName string, enabled bool) ([]string, e
 	}
 	// Materialize the resolved (possibly default) set before mutating, so
 	// toggling one provider never silently drops the implicit active one.
-	current := config.ResolvedEnabledProviders(pref.EnabledProviders, a.cfg.ModelProvider)
+	current := config.ResolvedEnabledProviders(pref.EnabledProviders, a.cur().cfg.ModelProvider)
 
 	next := make([]string, 0, len(current)+1)
 	found := false
@@ -2749,9 +2771,9 @@ func (a *App) TestProviderConnection(providerName, modelName string) (string, er
 	apiKey := resolveAPIKeyForProvider(canonical)
 	wireFormat := ""
 	fallback := ""
-	if canonical == model.NormalizeProvider(a.cfg.ModelProvider) {
-		fallback = strings.TrimSpace(a.cfg.ModelName)
-		wireFormat = a.cfg.ModelWireFormat
+	if canonical == model.NormalizeProvider(a.cur().cfg.ModelProvider) {
+		fallback = strings.TrimSpace(a.cur().cfg.ModelName)
+		wireFormat = a.cur().cfg.ModelWireFormat
 	}
 	if fallback == "" {
 		fallback = model.ResolveDefaultModel(canonical, baseURL, apiKey)
@@ -2787,8 +2809,12 @@ func (a *App) TestProviderConnection(providerName, modelName string) (string, er
 
 // SwitchModel re-bootstraps the engine on a specific model name for the
 // current provider.
+// The dials belong to the chat on screen (DECISIONS §155), so a switch starts
+// from what THAT chat is running rather than from the app's template — which
+// after §155 is only "what a new chat is born with" and may name a model
+// somebody chose in another conversation.
 func (a *App) SwitchModel(modelName string) (ModelInfo, error) {
-	next := a.cfg
+	next := a.cur().cfg
 	next.ModelName = strings.TrimSpace(modelName)
 	if next.ModelName == "" {
 		next.ModelName = model.ResolveDefaultModel(next.ModelProvider, next.ModelBaseURL, next.ModelAPIKey)
@@ -2888,7 +2914,7 @@ func (a *App) SetProviderBaseURL(providerName, baseURL string) (ModelInfo, error
 		pref = config.ModelPreference{}
 	}
 	pref.SetBaseURLForProvider(canonical, trimmed)
-	if strings.EqualFold(a.cfg.ModelProvider, canonical) {
+	if strings.EqualFold(a.cur().cfg.ModelProvider, canonical) {
 		// The legacy single slot is what resolveConfig reads first; leaving a
 		// stale value there would fight the change on the next launch.
 		pref.ModelBaseURL = trimmed
@@ -2897,8 +2923,8 @@ func (a *App) SetProviderBaseURL(providerName, baseURL string) (ModelInfo, error
 		return ModelInfo{}, err
 	}
 
-	if strings.EqualFold(a.cfg.ModelProvider, canonical) {
-		next := a.cfg
+	if strings.EqualFold(a.cur().cfg.ModelProvider, canonical) {
+		next := a.cur().cfg
 		next.ModelBaseURL = resolveBaseURLForProvider(canonical)
 		// The model name came from the old endpoint's discovery, so it is a
 		// guess about a server we have not spoken to yet — re-resolve it.
@@ -2927,8 +2953,8 @@ func (a *App) SetAPIKey(providerName, apiKey string) (ModelInfo, error) {
 		return ModelInfo{}, err
 	}
 
-	if strings.EqualFold(a.cfg.ModelProvider, canonical) {
-		next := a.cfg
+	if strings.EqualFold(a.cur().cfg.ModelProvider, canonical) {
+		next := a.cur().cfg
 		next.ModelAPIKey = key
 		a.applyConfig(a.cur(), next)
 	}
@@ -2964,7 +2990,7 @@ func resolveAPIKeyForProvider(canonicalProvider string) string {
 func (a *App) SupportedThinkLevels() []string {
 	// Never nil: a nil slice serializes to JSON null, which the frontend
 	// (thinkLevels.length) crashes on mid-render.
-	caps := model.ResolveThinkingCapabilities(a.cfg.ModelProvider, a.cfg.ModelName)
+	caps := model.ResolveThinkingCapabilities(a.cur().cfg.ModelProvider, a.cur().cfg.ModelName)
 	if !caps.Native || caps.Levels == nil {
 		return []string{}
 	}
@@ -2986,7 +3012,7 @@ func (a *App) RetryActiveProvider() ModelInfo {
 	if a.cur().modelErr == nil {
 		return a.GetModelInfo()
 	}
-	next := a.cfg
+	next := a.cur().cfg
 	next.ModelBaseURL = resolveBaseURLForProvider(next.ModelProvider)
 	next.ModelAPIKey = resolveAPIKeyForProvider(next.ModelProvider)
 	// A failed bootstrap on a local runtime leaves the name empty (the server
@@ -3001,7 +3027,7 @@ func (a *App) RetryActiveProvider() ModelInfo {
 
 // SwitchProvider re-bootstraps the engine on a different provider, using its default model.
 func (a *App) SwitchProvider(provider string) (ModelInfo, error) {
-	next := a.cfg
+	next := a.cur().cfg
 	next.ModelProvider = model.NormalizeProvider(provider)
 	next.ModelBaseURL = resolveBaseURLForProvider(next.ModelProvider)
 	next.ModelWireFormat = "" // reset to the new provider's default format
@@ -3030,7 +3056,7 @@ func (a *App) ProviderWireFormats(providerName string) []string {
 // selected model. A no-op format (provider has no alt, or format is already
 // current) still re-bootstraps — cheap, and keeps behavior predictable.
 func (a *App) SetProviderWireFormat(format string) (ModelInfo, error) {
-	next := a.cfg
+	next := a.cur().cfg
 	format = strings.TrimSpace(format)
 	if info, ok := model.LookupProviderInfo(model.NormalizeProvider(next.ModelProvider)); ok && format == info.Runtime {
 		format = "" // matches the catalog default — store nothing
@@ -3042,7 +3068,7 @@ func (a *App) SetProviderWireFormat(format string) (ModelInfo, error) {
 
 // SwitchThinkLevel changes the reasoning depth for the current provider/model.
 func (a *App) SwitchThinkLevel(level string) (ModelInfo, error) {
-	next := a.cfg
+	next := a.cur().cfg
 	next.ThinkLevel = model.NormalizeThinkingLevel(next.ModelProvider, next.ModelName, level)
 	a.applyConfig(a.cur(), next)
 	return a.modelSwitchResult()
@@ -3058,6 +3084,13 @@ func (a *App) SwitchThinkLevel(level string) (ModelInfo, error) {
 // change needs a new engine, so it no longer gets one.
 func (a *App) SwitchApprovalMode(mode string) (ModelInfo, error) {
 	normalized := safety.NormalizeApprovalMode(mode)
+	// This chat's gate, and the one the next chat is born with. Two writes
+	// because they are two facts: the dropdown was pressed in THIS conversation
+	// and must not move the gate of a turn running in another one, and the
+	// choice is still what the user wants next time. Every other dial gets both
+	// through applyConfig; this one deliberately does not rebuild an engine
+	// (see the note above), so it says both itself.
+	a.cur().cfg.ApprovalMode = string(normalized)
 	a.cfg.ApprovalMode = string(normalized)
 	if a.cur().chat != nil {
 		a.cur().chat.SetApprovalMode(normalized)
@@ -3081,14 +3114,14 @@ func (a *App) SwitchApprovalMode(mode string) (ModelInfo, error) {
 // The first bootstrap has no running model to keep, so startup still resolves
 // from disk — that is how the user's saved model gets loaded at launch.
 func (a *App) reload(opts config.ConfigOptions) {
-	if a.cfg.ModelProvider == "" {
+	if a.cur().cfg.ModelProvider == "" {
 		a.applyConfig(a.cur(), resolveConfig(opts))
 	} else {
 		next := a.cfg
 		next.SandboxRoot = config.Load(opts).SandboxRoot
 		a.applyConfig(a.cur(), next)
 	}
-	go a.sweepAttachments(a.cfg.SandboxRoot)
+	go a.sweepAttachments(a.cur().cfg.SandboxRoot)
 }
 
 // deskTools is the installed registry seen through the open session's desk —
@@ -3158,13 +3191,16 @@ func (a *App) workbenchSkills(conv *conversation, sandboxRoot string) []skill.Sk
 		// The four old names are still what `tools:` and `categories:` speak —
 		// they moved from being tools to being the actions' permission keys.
 		&browserSkill{app: a},
-		&deskOpenSkill{app: a},
+		// One tool for the desk, three actions inside it (workbench_desk.go).
+		// The terminal is deliberately NOT one of them: the desk pack is the
+		// surface, and a terminal is a thing that lives on it with a back and
+		// forth of its own — the same reason the browser is its own pack.
+		&deskSkill{app: a, conv: conv},
 		&deskTerminalSkill{app: a},
-		&deskListSkill{app: a},
 		&askUserSkill{app: a, conv: conv},
 		&todoWriteSkill{app: a},
 		&sessionSearchSkill{app: a},
-		&suggestTaskSkill{app: a},
+		&suggestTaskSkill{app: a, conv: conv},
 		// The engines' power switches. Registered for every session like the
 		// rest of the workbench, and cut like a connection tool: each is owned
 		// by its vendor's catalog entry, so the placement lock (HomeAgent)
@@ -3213,7 +3249,7 @@ func (a *App) applyConfig(conv *conversation, cfg config.Config) {
 	} else {
 		a.snapshots = nil
 	}
-	a.lastSnapshot = "" // a snapshot of the previous project is not an undo for this one
+	conv.lastSnapshot = "" // a snapshot of the previous project is not an undo for this one
 	a.snapshotMu.Unlock()
 
 	// cfg, not a.cfg: this runs before the assignment below, and the tools that
@@ -3296,6 +3332,9 @@ func (a *App) applyConfig(conv *conversation, cfg config.Config) {
 	agent, registry := res.Agent, res.Registry
 	conv.chat = res.App
 	conv.agent = agent
+	// What this chat runs on, kept beside the engine it built. a.cfg keeps
+	// meaning what a NEW chat is born with — see conversation.cfg.
+	conv.cfg = cfg
 	a.cfg = cfg
 	conv.modelStatus = res.Status
 	conv.modelErr = bootErr
@@ -3383,11 +3422,14 @@ func resolveConfig(opts config.ConfigOptions) config.Config {
 		if v := strings.TrimSpace(pref.SpeechModelPath); v != "" {
 			cfg.SpeechModelPath = v
 		}
-		// Both positive, both read straight through: an install that has never
-		// touched the switch stored nothing, which is off, which is what a zero
-		// Config already means.
-		cfg.DelegateOn = pref.DelegateOn
-		cfg.AgentsOff = pref.AgentsOff
+		// All positive, all read straight through: an install that has never
+		// touched a switch stored nothing, which is off, which is what a zero
+		// Config already means. A file written before the switch was split says
+		// only `delegate_on`, and config.LoadModelPreference has already folded
+		// that into both by the time it arrives here.
+		cfg.DelegateAgents = pref.DelegateAgents
+		cfg.DelegateHelpers = pref.DelegateHelpers
+		cfg.WorkersOff = pref.WorkersOff
 		if key := pref.APIKeyForProvider(cfg.ModelProvider); key != "" {
 			cfg.ModelAPIKey = key
 		}
@@ -3469,8 +3511,9 @@ func persistModelPreference(cfg config.Config) {
 	// Same rule as SpeechModelPath one line up: an empty value is a real choice
 	// here — turning the last switch back on is expressed as "nobody is off" —
 	// so it is written through rather than treated as nothing to say.
-	pref.DelegateOn = cfg.DelegateOn
-	pref.AgentsOff = cfg.AgentsOff
+	pref.DelegateAgents = cfg.DelegateAgents
+	pref.DelegateHelpers = cfg.DelegateHelpers
+	pref.WorkersOff = cfg.WorkersOff
 	_ = config.SaveModelPreference(pref)
 }
 

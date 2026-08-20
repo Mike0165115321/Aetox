@@ -253,7 +253,7 @@ func TestTheMemoryToolIsBoundToTheProjectBeingOpened(t *testing.T) {
 	// The state applyConfig is in mid-switch: the flag already moved, a.cfg has
 	// not, and the new root is only in the config being applied.
 	a.projectFocused = true
-	a.cfg.SandboxRoot = filepath.Join(t.TempDir(), "the-project-being-left")
+	a.cur().cfg.SandboxRoot = filepath.Join(t.TempDir(), "the-project-being-left")
 	incoming := filepath.Join(t.TempDir(), "the-project-being-opened")
 
 	var tool *learned.MemoryTool

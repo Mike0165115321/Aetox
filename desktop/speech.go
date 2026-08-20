@@ -50,7 +50,7 @@ func (a *App) ListSpeechModels() []SpeechModelInfo {
 	if !ok {
 		return out
 	}
-	active := strings.TrimSpace(a.cfg.SpeechModelPath)
+	active := strings.TrimSpace(a.cur().cfg.SpeechModelPath)
 	for _, m := range stt.InstalledModels(desc, stt.Options{}) {
 		out = append(out, SpeechModelInfo{
 			Path:    m.Path,
@@ -205,7 +205,7 @@ func openInFileManager(dir string) error {
 // is stt's own error verbatim — that text is the only thing telling the user
 // which of the two missing pieces (the program, or a model file) to go get.
 func (a *App) SpeechStatus() string {
-	if _, err := stt.New(stt.Options{ModelPath: strings.TrimSpace(a.cfg.SpeechModelPath)}); err != nil {
+	if _, err := stt.New(stt.Options{ModelPath: strings.TrimSpace(a.cur().cfg.SpeechModelPath)}); err != nil {
 		return err.Error()
 	}
 	return ""

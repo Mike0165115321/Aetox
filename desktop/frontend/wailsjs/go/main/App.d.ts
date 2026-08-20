@@ -410,7 +410,7 @@ export function SetConnectionStartCommand(arg1:string,arg2:string):Promise<void>
 
 export function SetConnectionTargets(arg1:string,arg2:Array<string>):Promise<void>;
 
-export function SetDelegateOff(arg1:boolean):Promise<main.DelegateSettings>;
+export function SetDelegateOff(arg1:string,arg2:boolean):Promise<main.DelegateSettings>;
 
 export function SetLearningEnabled(arg1:boolean):Promise<void>;
 
@@ -518,7 +518,7 @@ export function UserName():Promise<string>;
 
 export function VerifyConnection(arg1:string):Promise<connect.Account>;
 
-export function WorkbenchTabsChanged(arg1:Array<main.DeskTab>):Promise<void>;
+export function WorkbenchTabsChanged(arg1:string,arg2:Array<main.DeskTab>):Promise<void>;
 
 export function WorkspaceFolders():Promise<Array<main.WorkspaceFolder>>;
 

@@ -18,7 +18,7 @@ func TestSuggestTaskLifecycle(t *testing.T) {
 			events++
 		}
 	}}
-	tool := &suggestTaskSkill{app: a}
+	tool := &suggestTaskSkill{app: a, conv: a.cur()}
 
 	out, err := tool.ExecuteTool(context.Background(), map[string]any{
 		"title":  "Fix stale badge",
@@ -61,7 +61,7 @@ func TestSuggestTaskLifecycle(t *testing.T) {
 // about — reject it now, where the retry costs the model one round.
 func TestSuggestTaskRejectsThinPrompt(t *testing.T) {
 	a := &App{emit: func(string, ...any) {}}
-	tool := &suggestTaskSkill{app: a}
+	tool := &suggestTaskSkill{app: a, conv: a.cur()}
 
 	if _, err := tool.ExecuteTool(context.Background(), map[string]any{
 		"title":  "Fix it",

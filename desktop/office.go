@@ -124,7 +124,7 @@ func (a *App) ListChairs() []Chair {
 // with no STARTERS.md comes back empty, and the window falls back to the four
 // it draws for any colleague.
 //
-// The language is a parameter and not a.cfg.UILocale on purpose. The window is
+// The language is a parameter and not a.cur().cfg.UILocale on purpose. The window is
 // the one that knows which language it is currently drawing; reading the
 // engine's copy would race the moment the user switches, and would show one
 // language's cards under the other language's chrome for exactly as long as it

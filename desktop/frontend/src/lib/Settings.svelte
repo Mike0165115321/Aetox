@@ -1953,14 +1953,26 @@
       delegate = null // the switches are simply absent rather than the page failing
     }
   }
-  async function toggleDelegate() {
+  async function toggleDelegate(kind: 'agents' | 'helpers') {
     if (!delegate || delegateBusy) return
-    delegateBusy = 'master'
+    delegateBusy = kind
     try {
-      delegate = await SetDelegateOff(!delegate.off)
+      delegate = await SetDelegateOff(kind, delegate[kind].off === false)
     } finally {
       delegateBusy = ''
     }
+  }
+  // One worker looked up across both blocks, and its own kind decides which
+  // switch grays it out. The row snippet is shared by the two pages and is
+  // handed a worker rather than a page, so asking the row is the only way that
+  // cannot disagree with where it was drawn.
+  function reachOf(name: string): { on: boolean; off: boolean } | null {
+    if (!delegate) return null
+    for (const block of [delegate.agents, delegate.helpers]) {
+      const w = block.workers.find((x) => x.name === name)
+      if (w) return { on: w.on, off: block.off }
+    }
+    return null
   }
   async function toggleAgentReach(name: string, on: boolean) {
     if (delegateBusy) return
@@ -2544,7 +2556,10 @@
   // where somebody is deciding whether a server is for them.
   $effect(() => {
     if (active === 'agents' || active === 'team' || active === 'mcp') void loadAgents()
-    if (active === 'team') void loadDelegate()
+    // Both pages, since each now carries its own switch: 'team' is เอเจน and
+    // 'agents' is ซับเอเจน (see the render below). Loading on one page only is
+    // how the ซับเอเจน page ended up with rows it could not explain.
+    if (active === 'team' || active === 'agents') void loadDelegate()
   })
 
   $effect(() => {
@@ -3172,12 +3187,12 @@
            vanished would leave somebody wondering where their agent went; a row
            that is greyed out with the master switch above it explains itself. -->
       {#if delegate}
-        {@const w = delegate.workers.find((x) => x.name === a.name)}
+        {@const w = reachOf(a.name)}
         {#if w}
           <button
-            class="ctrl ag-reach" class:on={w.on && !delegate.off}
-            disabled={delegate.off || delegateBusy !== ''}
-            aria-pressed={w.on && !delegate.off}
+            class="ctrl ag-reach" class:on={w.on && !w.off}
+            disabled={w.off || delegateBusy !== ''}
+            aria-pressed={w.on && !w.off}
             title={t('settings.agentReachTip')}
             onclick={() => toggleAgentReach(a.name, w.on)}
           >{t('settings.agentReach')}</button>
@@ -3224,21 +3239,29 @@
   {/if}
   {#if agentError}<div class="mset-error">{agentError}</div>{/if}
 
-  <!-- The master switch, and the number it is worth, in the same eyeline.
+  <!-- This page's own switch, and the number it is worth, in the same eyeline.
        Delegation ships off, so this page is where somebody turns it on — and
        the reason to leave it off is a cost they cannot otherwise see. Measured
        on every read (App.DelegateSwitches), never a constant: the day somebody
        trims another tool's description this number has to move with it, or it
-       becomes a label that used to be true. -->
-  {#if isAgent && delegate}
+       becomes a label that used to be true.
+
+       Drawn on BOTH pages since 2026-08-20. It used to be `{#if isAgent}`, one
+       switch on the เอเจน page governing both kinds — so somebody who opened
+       the ซับเอเจน page while it was off found every row greyed out and nothing
+       on the page explaining who had done it. The number differs per page too:
+       what each switch is worth is the difference it makes with the other one
+       left alone, not the size of the whole tool. -->
+  {#if delegate}
+    {@const side = isAgent
+      ? { kind: 'agents' as const, reach: delegate.agents, label: 'settings.delegateAgents' as const, on: 'settings.delegateAgentsOn' as const, off: 'settings.delegateAgentsOff' as const }
+      : { kind: 'helpers' as const, reach: delegate.helpers, label: 'settings.delegateHelpers' as const, on: 'settings.delegateHelpersOn' as const, off: 'settings.delegateHelpersOff' as const }}
     <div class="settings-card reach-card">
       <div class="set-row">
         <div class="set-txt">
-          <div class="t">{t('settings.delegateAllow')}</div>
+          <div class="t">{t(side.label)}</div>
           <div class="d">
-            {delegate.off
-              ? t('settings.delegateOffHint')
-              : t('settings.delegateOnHint', { n: delegate.taskTokens.toLocaleString() })}
+            {t(side.reach.off ? side.off : side.on, { n: side.reach.tokens.toLocaleString() })}
           </div>
         </div>
         <div class="ag-actions">
@@ -3246,10 +3269,10 @@
             {t('settings.delegateMeter', { n: delegate.tokens.toLocaleString() })}
           </span>
           <button
-            class="ctrl" class:on={!delegate.off} disabled={delegateBusy !== ''}
-            aria-pressed={!delegate.off}
-            onclick={() => toggleDelegate()}
-          >{delegate.off ? t('settings.delegateTurnOn') : t('settings.delegateTurnOff')}</button>
+            class="ctrl" class:on={!side.reach.off} disabled={delegateBusy !== ''}
+            aria-pressed={!side.reach.off}
+            onclick={() => toggleDelegate(side.kind)}
+          >{side.reach.off ? t('settings.delegateTurnOn') : t('settings.delegateTurnOff')}</button>
         </div>
       </div>
     </div>

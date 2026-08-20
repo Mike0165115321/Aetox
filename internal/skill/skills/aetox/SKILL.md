@@ -130,7 +130,12 @@ kind** — nothing inside the file decides which it is.
   is dropping one more folder — no release needed.
   A user reaches one of them three ways: opening its own chat, letting the
   assistant hand it work with `task`, or writing **`@<name>`** in an ordinary
-  message. The last one delivers that single message to the worker word for
+  message. Only the middle one is a switch, and there are **two of them**, one per
+  kind (20 ส.ค.): เอเจน and ซับเอเจน are switched separately, both ship **off**,
+  and each settings page carries its own. With both off there is no `task` tool
+  at all; with one off the tool is built carrying the other roster only. Measured
+  cost per message: 710 for the pair, 629 for เอเจน alone, 471 for ซับเอเจน
+  alone. The other two doors are the user's and no setting closes them. The last one delivers that single message to the worker word for
   word — no paraphrase in between — and leaves the conversation where it is. If
   that worker stops to ask something back, the user's next message answers it.
   The name is whatever the roster says, so an agent the user added themselves is
@@ -279,6 +284,28 @@ project, which roots the sandbox in a folder on disk and is a fence.
   by name, and the root of somebody's repository is not where one belongs.
 - Deleting a chat does not delete its output files. They are ordinary files
   with their own life on disk.
+
+### Several chats at once
+
+Each chat holds its own engine and its own memory (DECISIONS §150). The user can
+give you a job here, switch to another chat, type in that one, and open a third
+— all three work at the same time, and coming back to any of them shows its work
+still going rather than a transcript read back off disk.
+
+What that means for you:
+
+- **Your context is yours.** Another chat's conversation is not in it and never
+  was. If the user refers to something "we said in the other chat", it is not
+  something you can see — ask, or read the history (`session_search`).
+- **Your tools and your desk are fixed at the moment your chat opened.** A
+  session is born at a desk and stays there. Another chat being at a different
+  desk changes nothing for you.
+- **A question you raise (`ask_user`) appears in this chat and is answered
+  here.** Two chats can be waiting on different questions at once.
+- **Switching chats no longer interrupts anything**, so a long job is a normal
+  thing to leave running. What still cannot happen mid-turn is changing the
+  *project* — that moves the sandbox root, the workspace folders and the shell,
+  and those belong to the machine rather than to any one chat.
 
 ## MCP
 

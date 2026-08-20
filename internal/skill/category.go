@@ -131,8 +131,13 @@ var toolCategories = map[string]string{
 	// (no shell there, by design) — the one desk whose whole job is producing a
 	// document to hand back. A tool for showing the user what you made, missing
 	// from the desk that makes things.
-	"desk_open": CategoryAgent,
-	"desk_list": CategoryAgent,
+	// The tool the model is offered, and the three action names it gates on
+	// inside (desktop/workbench_desk.go) — both spellings listed, same reason
+	// as the browser's and shell's.
+	"desk":       CategoryAgent,
+	"desk_open":  CategoryAgent,
+	"desk_list":  CategoryAgent,
+	"desk_close": CategoryAgent,
 	// This one really is shell: it starts a shell and types into it. The
 	// specialized desk carries no shell and must not carry this either.
 	"desk_terminal": CategoryShell,

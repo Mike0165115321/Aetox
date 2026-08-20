@@ -17,7 +17,7 @@ func serve(t *testing.T, root, target string) (*http.Response, string, bool) {
 	passed := false
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { passed = true })
 	a := &App{}
-	a.cfg.SandboxRoot = root
+	a.cur().cfg.SandboxRoot = root
 
 	req := httptest.NewRequest(http.MethodGet, target, nil)
 	rec := httptest.NewRecorder()
@@ -89,7 +89,7 @@ func TestFileHostServesRange(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := &App{}
-	a.cfg.SandboxRoot = root
+	a.cur().cfg.SandboxRoot = root
 	req := httptest.NewRequest(http.MethodGet, "/aetox-file/clip.mp4", nil)
 	req.Header.Set("Range", "bytes=4-6")
 	rec := httptest.NewRecorder()

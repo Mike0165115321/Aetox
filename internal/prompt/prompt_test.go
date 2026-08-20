@@ -222,7 +222,8 @@ func TestBuildTellsTheModelToAskWhenTheBriefIsEmpty(t *testing.T) {
 
 // "สร้างสไลด์ … อยากได้เป็นไฟล์ HTML" was answered with a .pptx anyway: the
 // model mapped "slides" to slides_write and never weighed the format the user
-// had named. The prompt teaches the principle — a tool's usual mapping is a
+// had named (that tool is gone since §149, but the principle it taught is why
+// this test is). The prompt teaches it — a tool's usual mapping is a
 // default, and defaults lose to what the user said — rather than a case rule
 // (owner, 2026-08-04: "สอนให้มันฉลาดและเลือกถามได้ ไม่ใช่กำหนดตรงๆ").
 func TestPromptTeachesThatDefaultsLoseToTheUsersWords(t *testing.T) {
@@ -894,5 +895,53 @@ func TestADeskThatCannotDelegateIsNotToldToHandWorkOver(t *testing.T) {
 	})
 	if !strings.Contains(can, "hand the job to the agent") {
 		t.Errorf("the desk that can delegate lost the instruction to:\n%s", can)
+	}
+}
+
+// The other end of the same gate. A desk that can neither delegate nor carry
+// the writers used to be told nothing at all about deliverable requests, which
+// is how "hand the job over with `task`" — sitting in the desk manifest, where
+// no gate could reach it — stayed the only instruction the model had when the
+// user switched delegation off. It called `task`, and the tool was not there.
+//
+// So the branch has to say what to do instead, and it has to stay off the desks
+// that do hold a writer.
+func TestADeskWithNeitherWritersNorAgentsIsToldWhatToDoInstead(t *testing.T) {
+	neither := BuildForDesk(SurfaceDesktop, Scope{Root: t.TempDir()}, Desk{
+		Name:          "assistant",
+		Direction:     "This session is assistant work.",
+		Carries:       func(name string) bool { return name != "doc_write" },
+		DelegationOff: true,
+	})
+	if !strings.Contains(neither, "say plainly what you can hand back instead") {
+		t.Errorf("nothing tells a desk with no writers and no agents what to do with a deliverable request:\n%s", neither)
+	}
+	if strings.Contains(neither, "`task`") {
+		t.Errorf("a session with no delegation is still told about `task`:\n%s", neither)
+	}
+
+	// A desk holding the writer answers the request itself and does not need the
+	// paragraph — the pre-desks full desk is the case that matters here.
+	holds := BuildForDesk(SurfaceDesktop, Scope{Root: t.TempDir()}, Desk{
+		Name:          "full",
+		Direction:     "This session is anything.",
+		Carries:       func(string) bool { return true },
+		DelegationOff: true,
+	})
+	if strings.Contains(holds, "say plainly what you can hand back instead") {
+		t.Errorf("a desk carrying the writers is told it cannot produce a file:\n%s", holds)
+	}
+
+	// And a desk that never had a route keeps its own answer. The coding desk
+	// cannot dispatch with delegation fully on, and its manifest already says a
+	// presentation about the code is specialized-session work — naming the
+	// switch there would give a true refusal a false reason.
+	noRoute := BuildForDesk(SurfaceDesktop, Scope{Root: t.TempDir()}, Desk{
+		Name:      "coding",
+		Direction: "This session is coding work.",
+		Carries:   func(name string) bool { return name != "doc_write" },
+	})
+	if strings.Contains(noRoute, "switched off in settings") {
+		t.Errorf("a desk that never had a dispatch route blames the user's switch:\n%s", noRoute)
 	}
 }

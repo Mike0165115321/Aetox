@@ -42,7 +42,7 @@ func TestOpeningAnOlderDatabaseAddsMissingColumns(t *testing.T) {
 		t.Fatalf("close: %v", err)
 	}
 
-	a := &App{cfg: config.Config{ModelName: "new-model"}, dbDir: dir}
+	a := seed(&App{cfg: config.Config{ModelName: "new-model"}, dbDir: dir}, newConversation())
 	t.Cleanup(func() {
 		if a.db != nil {
 			_ = a.db.Close()
@@ -78,7 +78,7 @@ func TestOpeningAnOlderDatabaseAddsMissingColumns(t *testing.T) {
 
 // Running the migration twice must be a no-op, since it runs on every open.
 func TestAddedColumnsIsIdempotent(t *testing.T) {
-	a := &App{cfg: config.Config{ModelName: "m"}, dbDir: t.TempDir()}
+	a := seed(&App{cfg: config.Config{ModelName: "m"}, dbDir: t.TempDir()}, newConversation())
 	t.Cleanup(func() {
 		if a.db != nil {
 			_ = a.db.Close()
@@ -99,7 +99,7 @@ func TestAddedColumnsIsIdempotent(t *testing.T) {
 // be indistinguishable from "measured, nothing hit", and the page would show a
 // local model a 0% hit rate it never claimed. NULL keeps the two apart.
 func TestUnreportedCacheStaysDistinctFromZero(t *testing.T) {
-	a := &App{cfg: config.Config{ModelName: "ollama-model"}, dbDir: t.TempDir()}
+	a := seed(&App{cfg: config.Config{ModelName: "ollama-model"}, dbDir: t.TempDir()}, newConversation())
 	t.Cleanup(func() {
 		if a.db != nil {
 			_ = a.db.Close()
@@ -107,7 +107,7 @@ func TestUnreportedCacheStaysDistinctFromZero(t *testing.T) {
 	})
 
 	a.recordTokenUsage(a.cur(), model.Usage{PromptTokens: 3005, CompletionTokens: 12}) // no cache accounting
-	a.cfg.ModelName = "api-model"
+	a.cur().cfg.ModelName = "api-model"
 	a.recordTokenUsage(a.cur(), model.Usage{PromptTokens: 4011, CachedPromptTokens: 0, CacheReported: true, CompletionTokens: 1}) // measured: nothing hit
 
 	stats, err := a.UsageStats()
@@ -154,7 +154,7 @@ func TestStreakFrom(t *testing.T) {
 // The per-day series must come back already grouped, one row per day per model
 // — that is what keeps memory flat as history grows.
 func TestDailySeriesIsAggregatedPerDay(t *testing.T) {
-	a := &App{cfg: config.Config{ModelName: "m1"}, dbDir: t.TempDir()}
+	a := seed(&App{cfg: config.Config{ModelName: "m1"}, dbDir: t.TempDir()}, newConversation())
 	t.Cleanup(func() {
 		if a.db != nil {
 			_ = a.db.Close()
@@ -163,7 +163,7 @@ func TestDailySeriesIsAggregatedPerDay(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		a.recordTokenUsage(a.cur(), model.Usage{PromptTokens: 10, CompletionTokens: 1})
 	}
-	a.cfg.ModelName = "m2"
+	a.cur().cfg.ModelName = "m2"
 	a.recordTokenUsage(a.cur(), model.Usage{PromptTokens: 7, CompletionTokens: 2})
 
 	stats, err := a.UsageStats()
@@ -194,7 +194,7 @@ func TestDailySeriesIsAggregatedPerDay(t *testing.T) {
 // reported nothing must arrive with CacheRows 0 so the chart draws it as one
 // unsplit input band instead of inventing a 100% miss.
 func TestDailySeriesCarriesTheCacheSplit(t *testing.T) {
-	a := &App{cfg: config.Config{ModelName: "api-model"}, dbDir: t.TempDir()}
+	a := seed(&App{cfg: config.Config{ModelName: "api-model"}, dbDir: t.TempDir()}, newConversation())
 	t.Cleanup(func() {
 		if a.db != nil {
 			_ = a.db.Close()
@@ -202,7 +202,7 @@ func TestDailySeriesCarriesTheCacheSplit(t *testing.T) {
 	})
 	a.recordTokenUsage(a.cur(), model.Usage{PromptTokens: 1000, CachedPromptTokens: 800, CacheReported: true, CompletionTokens: 90})
 	a.recordTokenUsage(a.cur(), model.Usage{PromptTokens: 500, CachedPromptTokens: 100, CacheReported: true, CompletionTokens: 10})
-	a.cfg.ModelName = "local-model"
+	a.cur().cfg.ModelName = "local-model"
 	a.recordTokenUsage(a.cur(), model.Usage{PromptTokens: 400, CompletionTokens: 60})
 
 	stats, err := a.UsageStats()

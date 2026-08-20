@@ -46,32 +46,48 @@ type Config struct {
 	// interface and must speak to the user in their language (ARCHITECTURE.md
 	// §40). Empty means "not set", and the built-in falls back to Thai.
 	UILocale string
-	// DelegateOn is whether the assistant may hand work to a specialist.
+	// DelegateAgents and DelegateHelpers are the assistant's reach, one per kind
+	// (COMPANY.md §4): may it hand a whole job to an เอเจน, and may it spin a
+	// step of its own work off to a ซับเอเจน.
 	//
-	// Positive, so a zero Config is a Config with delegation OFF. That is not a
-	// style preference: the first version of this expressed the shipped-off
-	// default inside the one code path that reads a preference file, which meant
+	// Two fields rather than one, since 2026-08-20. They were one — DelegateOn —
+	// and that single switch lived on the เอเจน settings page while quietly
+	// taking every ซับเอเจน away too, which is the shape the owner called out:
+	// แยกชัดเจน, หลังบ้านถึงหน้าบ้าน. A user who wants a colleague kept out of
+	// their work still wants the assistant's own hands.
+	//
+	// Positive, so a zero Config is a Config with both OFF. That is not a style
+	// preference: the first version of this expressed the shipped-off default
+	// inside the one code path that reads a preference file, which meant
 	// anything else building a Config — a test, another entry point — silently
 	// got delegation on. A default that lives in a code path is a default that
 	// is true wherever somebody remembered it. This one lives in the value.
 	//
-	// internal/subagent keeps the opposite default on its own option, because a
+	// internal/subagent keeps the opposite default on its own options, because a
 	// library that does nothing until you opt in is a library that gets called
-	// wrong. Shipping it off is a PRODUCT decision (owner, 18 ส.ค.), and the one
-	// translation between them sits at the boundary in internal/bootstrap.
+	// wrong. Shipping them off is a PRODUCT decision (owner, 18 ส.ค.), and the
+	// one translation between them sits at the boundary in internal/bootstrap.
 	//
-	// It is worth ~730 tokens in every request, which is why it is a switch the
-	// user can see rather than a preference nobody finds: 77% of sessions on the
-	// machine this was measured on never delegated once.
-	DelegateOn bool
-	// AgentsOff names workers the ASSISTANT may not hand work to. Each one left
-	// out saves ~21 tokens per message.
+	// Measured 2026-08-20: the pair costs 710 tokens in every request, เอเจน
+	// alone 629, ซับเอเจน alone 471. That is why they are switches the user can
+	// see rather than preferences nobody finds — 77% of sessions on the machine
+	// this was measured on never delegated once.
+	DelegateAgents  bool
+	DelegateHelpers bool
+	// WorkersOff names individual workers the ASSISTANT may not hand work to,
+	// either kind. Each one left out saves ~21 tokens per message.
+	//
+	// One list rather than two, deliberately, where the switches above are two:
+	// this is keyed by NAME, and a name is unique across both homes
+	// (subagent.Conflicts refuses a collision), so the kind is always derivable
+	// and a second list would be a second place to get it wrong. The switches
+	// above are not keyed by anything — they are the two acts themselves.
 	//
 	// It does not disable a worker. The user still opens a chat with it and
 	// still writes @name at it, because that is the user's own door and no
 	// setting here reaches it. Anything shown for this in the UI has to say
 	// whose reach is narrowed, or somebody will read "off" as "gone".
-	AgentsOff []string
+	WorkersOff []string
 }
 
 type ConfigOptions struct {
@@ -136,23 +152,31 @@ type ModelPreference struct {
 	// preference files, and defaulting it off would have made the feature
 	// invisible to everyone who already had one.
 	LearningDisabled bool `json:"learning_disabled,omitempty"`
-	// DelegateOn and AgentsOff are the two switches on the assistant's reach.
+	// The assistant's reach: one switch per kind, plus the per-worker trim.
 	//
-	// DelegateOn is stored as the POSITIVE, which is the opposite of
+	// Both switches are stored as the POSITIVE, which is the opposite of
 	// LearningDisabled above and for the opposite reason: delegation ships OFF,
 	// so an absent field has to mean off. A negative here would have made every
 	// preference file that predates the switch read as "on", which is the one
 	// value the product does not want to hand out by default.
 	//
-	// AgentsOff stays negative, because a worker the user has said nothing about
-	// is one the assistant may reach — the switch is a trim, and an empty trim
-	// takes nothing.
+	// DelegateOn is the field they replaced (one switch for both kinds, until
+	// 2026-08-20). It is still READ — LoadModelPreference folds it into both —
+	// and never written again, so a file written by the old build keeps working
+	// and the first save after an upgrade replaces it with the pair. Deleting it
+	// would silently switch delegation off for everybody who had turned it on.
+	//
+	// WorkersOff stays negative and stays one list: a worker the user has said
+	// nothing about is one the assistant may reach, and the trim is keyed by a
+	// name that is unique across both homes.
 	//
 	// They persist here rather than per project, because "may my assistant hand
 	// work to a specialist" is a fact about how somebody works and not about
 	// which folder is open — the same reason UILocale sits here.
-	DelegateOn bool     `json:"delegate_on,omitempty"`
-	AgentsOff  []string `json:"agents_off,omitempty"`
+	DelegateAgents  bool     `json:"delegate_agents_on,omitempty"`
+	DelegateHelpers bool     `json:"delegate_helpers_on,omitempty"`
+	DelegateOn      bool     `json:"delegate_on,omitempty"` // read-only, pre-2026-08-20 files
+	WorkersOff      []string `json:"agents_off,omitempty"`
 	// EnabledProviders is the set of providers shown in the Settings sidebar
 	// and the chat composer's picker. Empty means "never customized" — callers
 	// resolve that case via ResolvedEnabledProviders rather than persisting a
@@ -808,6 +832,21 @@ func LoadModelPreference() (ModelPreference, bool, error) {
 }
 
 func sanitizePreference(pref ModelPreference) ModelPreference {
+	// One switch became two on 2026-08-20 (เอเจน and ซับเอเจน are two acts, not
+	// one — COMPANY.md §4). A file written before that says only `delegate_on`,
+	// and it meant both: somebody who had turned delegation on had both kinds,
+	// so folding it into both is what keeps their setting rather than reading it
+	// as half of one.
+	//
+	// Cleared on the way past so the next save writes the pair and drops the old
+	// key. Folding on every load rather than migrating the file in place is the
+	// same choice the credentials split made: a user who never opens settings
+	// again keeps working, and the file is rewritten the first time they do.
+	if pref.DelegateOn {
+		pref.DelegateAgents = true
+		pref.DelegateHelpers = true
+		pref.DelegateOn = false
+	}
 	pref.ModelName = strings.TrimSpace(pref.ModelName)
 	if looksLikeAPIKey(pref.ModelName) {
 		pref.ModelName = ""

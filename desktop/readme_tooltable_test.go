@@ -44,12 +44,23 @@ func TestPrintReadmeToolTable(t *testing.T) {
 	// The action names a packed tool gates on inside itself. They are not
 	// registry entries, so the registry cannot report them, but leaving them out
 	// would describe `shell` as one undifferentiated verb.
-	packed := map[string][]string{
-		"shell":    {"run", "output", "kill", "list"},
-		"github":   {"repo_summary", "search", "read_file", "list_files"},
-		"browser":  {"open", "read", "click", "type"},
-		"n8n":      {"list", "read", "create", "update", "activate"},
-		"windmill": {"workspaces", "list", "read", "create", "update"},
+	//
+	// Read out of skill.PackedCalls rather than listed here, and the reason is
+	// this file's own header: a hand-kept list of what the program contains is a
+	// second source of truth for a question the program can answer. It was one
+	// — the copy here still said `browser` had four actions months after it had
+	// nine, so the README under-reported the browser by five capabilities and
+	// nothing could notice.
+	actionsOf := func(tool string) []string {
+		calls := skill.PackedCalls(tool)
+		if len(calls) == 0 {
+			return nil
+		}
+		out := make([]string, 0, len(calls))
+		for _, call := range calls {
+			out = append(out, call.Action)
+		}
+		return out
 	}
 
 	byCategory := map[string][]string{}
@@ -61,7 +72,7 @@ func TestPrintReadmeToolTable(t *testing.T) {
 		}
 		count++
 		cell := "`" + name + "`"
-		if actions, ok := packed[name]; ok {
+		if actions := actionsOf(name); len(actions) > 0 {
 			cell = "`" + name + "` *(" + strings.Join(actions, " · ") + ")*"
 		}
 		c := skill.CategoryOf(name)

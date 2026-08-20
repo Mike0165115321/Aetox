@@ -55,7 +55,7 @@ func TestEachRowReportsAFailureMidIteration(t *testing.T) {
 			"silent short list eachRow exists to stop (ARCHITECTURE.md §6.7)", len(got))
 	}
 	if len(got) == 4 {
-		t.Fatalf("expected the query to fail partway, got all 4 rows — the fixture no "+
+		t.Fatalf("expected the query to fail partway, got all 4 rows — the fixture no " +
 			"longer provokes a mid-iteration error, so this test is no longer testing anything")
 	}
 }

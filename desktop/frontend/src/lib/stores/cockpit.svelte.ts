@@ -3,7 +3,7 @@
 // incremental updates here — append a chat message, advance a timeline step) and
 // the UI reacts. Do not reassign `cockpit` itself; mutate its properties.
 
-import { emptyCockpitState, type CockpitState, type TreeNode, type Session, type ToolStep, type ToolEvent, type ChatMessage, type MessageVariant, type TurnPart, type PendingFile } from '../types'
+import { emptyCockpitState, type CockpitState, type ParkedTurn, type TreeNode, type Session, type ToolStep, type ToolEvent, type ChatMessage, type MessageVariant, type TurnPart, type PendingFile } from '../types'
 import type { CockpitSource } from '../services/cockpit'
 import {
   SendMessage, GetProjectStatus, GetModelInfo, OpenProjectFolder, OpenProjectPath,
@@ -126,7 +126,7 @@ export function agoLabel(iso: string): string {
  * glitch, and it only reads that way when neither mark is drawn at all.
  */
 function onScreenSession(engineSession: string): string {
-  return cockpit.peek?.session.id || engineSession
+  return cockpit.openSession || engineSession
 }
 
 /** Re-mark the lists without a round-trip, for the doors that change what is on
@@ -421,8 +421,6 @@ function hydrateImages(): void {
  * behaves identically to a row that is not wired up. The engine had the answer
  * the whole time and the window threw it away. */
 export async function selectGlobalSession(session: Session): Promise<void> {
-  if (cockpit.awaitingReply) return peekAtSession(session)
-  dropPeek()
   setActiveView('chat')
   let messages: main.SessionMessage[]
   try {
@@ -431,11 +429,10 @@ export async function selectGlobalSession(session: Session): Promise<void> {
     cockpit.sessionError = err instanceof Error ? err.message : String(err)
     return
   }
-  cockpit.sessionError = ''
-  cockpit.todos = []
-  cockpit.ask = null
-  cockpit.chat = restoreTranscript(messages)
-  hydrateImages()
+  if (!arriveAt(session.id)) {
+    cockpit.chat = restoreTranscript(messages)
+    hydrateImages()
+  }
   await refreshDesk()
   await switchWorkbenchSession(session.id)
   const project = await GetProjectStatus()
@@ -549,7 +546,7 @@ let reattachedTurn = false
  */
 async function restoreLiveTranscript(): Promise<void> {
   if (cockpit.chat.length > 0) return
-  let turn = { running: false, sessionId: '' }
+  let turn: { running: boolean; sessionId: string; working?: string[] } = { running: false, sessionId: '', working: [] }
   try {
     turn = await TurnInFlight()
   } catch {
@@ -557,6 +554,10 @@ async function restoreLiveTranscript(): Promise<void> {
   }
   const id = await CurrentSessionID()
   if (!id) return
+  // Which chat this window is on, said once and held. Everything that means
+  // "the chat on screen" reads it from here rather than asking the engine,
+  // which has no current session of its own to give.
+  cockpit.openSession = id
   try {
     const messages = await SessionTranscript(id)
     if (messages.length > 0) {
@@ -567,6 +568,21 @@ async function restoreLiveTranscript(): Promise<void> {
   } catch {
     // Transcript unreadable — the welcome screen is the honest fallback,
     // better than an error bubble in a conversation the user has not started.
+  }
+  // Every chat that is working, not only the one this window landed on. A
+  // reloaded window used to mark one of them and forget the rest — rings that
+  // never came back on over work that was still going, and no way to see from
+  // the list that it was. Parked with the flag up and nothing else: the live
+  // detail of somebody else's turn died with the previous webview, and inventing
+  // it would be worse than an empty timeline that fills as events arrive.
+  for (const other of turn.working ?? []) {
+    if (other && other !== id) {
+      cockpit.parked[other] = {
+        chat: [], awaitingReply: true, agentStatus: '', toolSteps: [],
+        turnFiles: [], turnProposals: [], streamingText: '', reasoningText: '',
+        ask: null, todos: [],
+      }
+    }
   }
   if (turn.running && turn.sessionId === id) {
     // The live block comes back on: chunks and tool events streaming in render
@@ -664,138 +680,109 @@ function turnStillRunning(): boolean {
  * than inlined into the markup so that the day sessions run side by side, the
  * answer changes in one place instead of in every list that draws a row. */
 export function sessionWorking(s: Session): boolean {
-  return !!cockpit.turnSession && s.id === cockpit.turnSession
+  // Two answers because there are two places a working chat can be: on screen,
+  // where `turnSession` names it, and parked, where its own live state carries
+  // the flag. The list has to ring both — the whole point of being able to walk
+  // away from a turn is seeing, from anywhere, that it is still going.
+  if (cockpit.turnSession && s.id === cockpit.turnSession) return true
+  return !!cockpit.parked[s.id]?.awaitingReply
 }
 
-/** The chat the running turn belongs to — the one its answer has to land in.
+/** Park the chat leaving the screen, if it still has work in it.
  *
- * While another conversation is open for reading, `cockpit.chat` is that other
- * conversation and the working one is held in `cockpit.peek.live`. Every write
- * a turn makes goes through here, so a reply can never be appended to whichever
- * chat happened to be on screen when it arrived. */
-function liveChat(): ChatMessage[] {
-  return cockpit.peek?.live ?? cockpit.chat
-}
-
-/** Open another conversation for reading while a turn runs in this one.
+ * This is what replaced the read-only peek. The peek held one field — the
+ * messages — and only for looking; everything else the turn was producing
+ * (its timeline, its half-written answer, its thinking clock) stayed in the
+ * window's single live state, which is why the composer had to be locked and
+ * why the work looked like it had vanished. Parking moves the whole live state,
+ * so the chat that leaves keeps working with its own everything and the chat
+ * that arrives gets a clean one.
  *
- * The refusal this replaces was honest and too wide. One engine, one context: a
- * running turn cannot have the memory under it rewritten, and that is what
- * *opening* a session does — LoadSession restores the desk, the project and the
- * agent's history. Reading one does none of it. SessionTranscript touches
- * nothing but the database (it was written for the window that reloads mid-turn
- * and needs its own transcript back), and "let me look at the other chat while
- * this finishes" was never the half of the request that was dangerous.
- *
- * So the door opens for reading and stays shut for writing: the composer is
- * disabled while peeking and the live block is not drawn over a conversation it
- * does not belong to (Chat.svelte). What the turn produces goes on landing in
- * the chat it was asked in, whether or not anybody is watching it arrive. */
-export async function peekAtSession(session: Session): Promise<void> {
-  // The chat that is working is not "another chat", and clicking it is the way
-  // back rather than a request to read it. Reading it is what shipped, and it
-  // is the bug the owner hit over and over (19 ส.ค.: "พอสลับเซสชั่นปุ๊บ งาน
-  // เอเจนหายไปเลย"): the store holds the question and not the work in flight,
-  // so the working conversation came back as a question with nothing under it,
-  // the timeline gone, the composer locked, and a bar along the top saying the
-  // work was happening in another chat while naming this one. Nothing was
-  // lost — the live array was held one field away the whole time — but a way
-  // back that only one specific button knows about is a way back the user does
-  // not have. leavePeek IS that button; this hands it to every row that points
-  // at the working chat.
-  if (session.id && session.id === cockpit.turnSession) {
-    setActiveView('chat')
-    leavePeek()
-    return
-  }
-  if (cockpit.peek?.session.id === session.id) return
-  setActiveView('chat')
-  let messages: main.SessionMessage[]
-  try {
-    messages = await SessionTranscript(session.id)
-  } catch (err) {
-    cockpit.sessionError = err instanceof Error ? err.message : String(err)
-    return
-  }
-  cockpit.sessionError = ''
-  try {
-    // Read before the assignment below, so peeking from inside a peek keeps the
-    // working chat rather than stashing the one being read.
-    const live = liveChat()
-    cockpit.chat = restoreTranscript(messages)
-    cockpit.peek = { session, live }
-    markOnScreen(session.id)
-    hydrateImages()
-  } catch (err) {
-    // The rest of this store is written so a refusal is a sentence rather than
-    // a dead click (selectGlobalSession's own note says so). An exception in
-    // here was the one way left to get the dead click anyway: it escapes as a
-    // rejected promise, the row stays where it was, and nothing on screen
-    // changes or explains. Whatever broke, say it.
-    cockpit.sessionError = err instanceof Error ? err.message : String(err)
+ * Nothing is parked for an idle chat: there is no work to keep, its rows are in
+ * the store, and holding the state of every chat the user has ever clicked
+ * would grow for the rest of the run with nothing to show for it. Same rule the
+ * engine side uses for conversations (desktop/conversation.go).
+ */
+function parkLive(id: string): void {
+  if (!id || !cockpit.awaitingReply) return
+  cockpit.parked[id] = {
+    chat: cockpit.chat,
+    awaitingReply: cockpit.awaitingReply,
+    agentStatus: cockpit.agentStatus,
+    toolSteps: cockpit.toolSteps,
+    turnFiles: cockpit.turnFiles,
+    turnProposals: cockpit.turnProposals,
+    streamingText: cockpit.streamingText,
+    reasoningText: cockpit.reasoningText,
+    ask: cockpit.ask,
+    todos: cockpit.todos,
   }
 }
 
-/** The gate in front of every door that acts on the conversation on screen,
- *  when that conversation is one the user is only reading.
+/** Put a parked chat back on screen, mid-flight, exactly as it was left.
  *
- * Send is the obvious one. The rest are not: retry, edit-and-resend, regenerate
- * and undo all bail on `awaitingReply` already, which covered them for exactly
- * as long as a peek could only exist during a turn. It outlives the turn — the
- * user goes on reading after it ends — and in that window those doors would act
- * on the engine's session (the working chat) using a bubble picked from the one
- * being read. Same sentence for all of them, one place. */
-function peekIsReadOnly(): boolean {
-  if (!cockpit.peek) return false
-  cockpit.sessionError = t('cockpit.peekReadOnly')
+ * Returns false when there is nothing parked under that id, which is the
+ * ordinary case: the caller then opens the conversation the usual way. */
+function restoreLive(id: string): boolean {
+  const held = cockpit.parked[id]
+  if (!held) return false
+  delete cockpit.parked[id]
+  cockpit.chat = held.chat
+  cockpit.awaitingReply = held.awaitingReply
+  cockpit.agentStatus = held.agentStatus
+  cockpit.toolSteps = held.toolSteps
+  cockpit.turnFiles = held.turnFiles
+  cockpit.turnProposals = held.turnProposals
+  cockpit.streamingText = held.streamingText
+  cockpit.reasoningText = held.reasoningText
+  cockpit.ask = held.ask
+  cockpit.todos = held.todos
+  hydrateImages()
   return true
 }
 
-/** Forget a chat that was open for reading, without putting it back on screen.
- *
- * leavePeek RESTORES the working chat; this only ends the reading. Every door
- * that switches for real is about to write cockpit.chat itself, so restoring
- * the held array first would be a chat drawn for one frame and thrown away.
- *
- * It exists because the peek outlives the turn, and I shipped it without this:
- * open another chat while the agent worked, let the turn finish, then switch
- * anywhere at all — the peek was still set, so peekIsReadOnly() refused every
- * message in every conversation and liveChat() handed out a detached array.
- * The app looked broken and stayed broken, which is worse than the refusal it
- * replaced (owner, 18 ส.ค.: "เปลี่ยนเซสชั่นไปดูอันอื่น แชทแม่งพัง กลับมาแล้วพัง").
- *
- * Called from every door rather than from one clever place, because "the peek
- * ended" is a fact each door knows and no shared choke point does. */
-function dropPeek(): void {
-  cockpit.peek = null
+/** Everything the chat arriving on screen starts from when it is NOT working. */
+function clearLive(): void {
+  cockpit.awaitingReply = false
+  cockpit.agentStatus = ''
+  cockpit.toolSteps = []
+  cockpit.turnFiles = []
+  cockpit.turnProposals = []
+  cockpit.streamingText = ''
+  cockpit.reasoningText = ''
+  cockpit.ask = null
+  cockpit.todos = []
 }
 
-/** Put the working chat back on screen. */
-export function leavePeek(): void {
-  if (!cockpit.peek) return
-  cockpit.chat = cockpit.peek.live
-  cockpit.peek = null
-  markOnScreen(cockpit.turnSession)
-  cockpit.sessionError = ''
-  hydrateImages()
-}
-
-/** Stop reading and open the conversation being read for real — the door that
- *  was shut while the turn was running, offered where the user is standing when
- *  it opens. */
-export async function openPeeked(): Promise<void> {
-  const peeked = cockpit.peek
-  if (!peeked || cockpit.awaitingReply) return
-  // Cleared first: selectSession replaces cockpit.chat itself, and a peek left
-  // standing would make the next liveChat() hand out the old array.
-  cockpit.peek = null
-  await selectSession(peeked.session)
+/** Apply a change to the live state of the chat an event names.
+ *
+ * Three answers, and each of them matters. The chat on screen: the fields on
+ * `cockpit`, which is what every component already reads. A chat working off
+ * screen: its parked record, so its timeline goes on filling while the user
+ * works somewhere else and is all there when they come back. Anything else —
+ * an event from a turn this window is holding nothing for — is DROPPED, because
+ * the alternative is drawing one conversation's work into another's, which is
+ * the failure this whole change exists to end.
+ *
+ * An unstamped event (an older engine against a newer window, across a dev
+ * reload) is treated as the chat on screen, which is what this window did for
+ * its whole life before events carried a session at all. */
+function writeLive(id: string, change: (live: ParkedTurn) => void): void {
+  // No id, or a window that has not been told which chat it is on yet (the
+  // moment before the first load answers): the chat on screen is the only
+  // conversation there is, and dropping its events would leave a working agent
+  // drawing nothing at all.
+  if (!id || !cockpit.openSession || id === cockpit.openSession) {
+    change(cockpit as unknown as ParkedTurn)
+    return
+  }
+  const held = cockpit.parked[id]
+  if (held) change(held)
 }
 
 /** Let the user pick a real folder via the native dialog; re-points the engine at it. */
 export async function openFolder(): Promise<void> {
   if (turnStillRunning()) return
-  dropPeek()
   const project = await OpenProjectFolder()
   Object.assign(cockpit.project, project)
   cockpit.chat = []
@@ -809,7 +796,6 @@ export async function openFolder(): Promise<void> {
 /** Switch straight to a previously-opened project (sidebar's project list), no dialog. */
 export async function openProject(path: string): Promise<void> {
   if (turnStillRunning()) return
-  dropPeek()
   const project = await OpenProjectPath(path)
   Object.assign(cockpit.project, project)
   cockpit.chat = []
@@ -824,7 +810,6 @@ export async function openProject(path: string): Promise<void> {
  * but is no longer tied to any project — like opening Claude/Codex bare. */
 export async function clearProjectFocus(): Promise<void> {
   if (turnStillRunning()) return
-  dropPeek()
   const project = await ClearProjectFocus()
   Object.assign(cockpit.project, project)
   cockpit.chat = []
@@ -948,7 +933,6 @@ export async function refreshUndo(): Promise<void> {
  * record of it that survives.
  */
 export async function undoLastTurn(): Promise<void> {
-  if (peekIsReadOnly()) return
   try {
     const result = await UndoLastTurn()
     const files = result?.files ?? []
@@ -1016,7 +1000,6 @@ export async function sendUserMessage(text: string, alreadyShown = false): Promi
   // Reading another conversation is not being in it. The engine's session is
   // still the one the turn belongs to, so a message typed here would be
   // answered into a chat the user is not looking at.
-  if (peekIsReadOnly()) return
   // The model only ever sees text, so an attached image is handed to it as a
   // sandboxed path reference it can pass to image_ocr — the bubble itself
   // shows just the caption + thumbnail, not that reference line. A dragged-in
@@ -1075,21 +1058,25 @@ export async function sendUserMessage(text: string, alreadyShown = false): Promi
   // one. Its answer arrives inside that turn's reply, so nothing below runs — the
   // live state (toolSteps, streaming text) belongs to the turn still in flight and
   // resetting it here would blank the UI mid-work.
-  if (cockpit.awaitingReply) {
+  // Fold it into the turn only when the turn is THIS chat's. Typing in another
+  // conversation while one works is an ordinary thing to do now, and an
+  // interjection sent from it would land in a chat the user is not even looking
+  // at — the same class of bug as an answer following the user out of the room.
+  if (cockpit.awaitingReply && cockpit.turnSession === cockpit.openSession) {
     await Interject(sentText)
     return
   }
   await runLiveTurn(async () => {
     try {
       const reply = await SendMessage(sentText)
-      liveChat().push({
+      cockpit.chat.push({
         role: 'agent', text: reply.text, parts: reply.parts as TurnPart[] | undefined,
         time: nowLabel(), id: reply.messageId || undefined, ...turnArtifacts(),
       })
     } catch (err) {
       // The engine persists nothing for a turn that failed, so the text it was
       // given rides on the bubble: it is the only copy left to retry with.
-      liveChat().push(turnEndedBubble(err, sentText))
+      cockpit.chat.push(turnEndedBubble(err, sentText))
     }
   })
   // Only stragglers land here now — anything typed under a running turn went
@@ -1109,23 +1096,22 @@ export async function sendUserMessage(text: string, alreadyShown = false): Promi
  */
 async function runLiveTurn(call: () => Promise<void>): Promise<void> {
   cockpit.awaitingReply = true
-  // Whose turn this is. Written from the list first and corrected by the engine
-  // a round-trip later, because the two answers have different failure modes
-  // and only one of them can be had synchronously: the list is instant and can
-  // be a refresh behind, the engine is authoritative (Go stamps the turn with
-  // the same a.sessionID in App.SendMessage) and is one await away. Set in that
-  // order so there is no frame in which a turn is running and nothing on this
-  // side knows which chat it belongs to — which is the frame every door out of
-  // the chat would get it wrong in.
-  cockpit.turnSession = cockpit.sessions.find((s) => s.active)?.id ?? cockpit.turnSession
-  try {
-    const id = await CurrentSessionID()
-    // Only a real id overrides the list. '' is the engine saying "no session
-    // open", which is not an answer to "which chat is this turn in".
-    if (id) cockpit.turnSession = id
-  } catch {
-    // Engine unreachable. Not a reason to refuse the turn — the call below
-    // reports that properly — and the list's answer is still standing.
+  // Whose turn this is: the chat on screen, because that is the only chat a
+  // turn can be started from. Read from the window's own answer rather than
+  // asked of the engine — it is synchronous, so there is no frame in which a
+  // turn is running and nothing here knows which chat it belongs to, and it
+  // cannot be stale the way the engine's cursor can once several conversations
+  // are live. Falls back to the engine only before the window has been told,
+  // which is the first turn of a cold start.
+  cockpit.turnSession = cockpit.openSession || cockpit.sessions.find((s) => s.active)?.id || ''
+  if (!cockpit.turnSession) {
+    try {
+      cockpit.turnSession = await CurrentSessionID()
+      cockpit.openSession = cockpit.turnSession
+    } catch {
+      // Engine unreachable. Not a reason to refuse the turn — the call below
+      // reports that properly.
+    }
   }
   cockpit.agentStatus = ''
   cockpit.toolSteps = []
@@ -1162,23 +1148,32 @@ async function runLiveTurn(call: () => Promise<void>): Promise<void> {
   try {
     await call()
   } finally {
-    cockpit.awaitingReply = false
-    cockpit.turnSession = ''
-    // The live block is gone, so anything that was drawn below it takes its
-    // ordinary place in the transcript. The array order never changed — it was
-    // chronological all along — only where those bubbles were painted.
-    for (const m of liveChat()) m.duringTurn = undefined
-    cockpit.agentStatus = ''
-    cockpit.toolSteps = []
-    cockpit.turnFiles = []
-    cockpit.turnProposals = []
-    cockpit.streamingText = ''
-    cockpit.reasoningText = ''
-    // Cleared at both ends, like toolSteps. A turn that died with a question
-    // still on screen left a card whose tool is no longer listening — pressing
-    // an option answered nothing. The checklist is deliberately not cleared
-    // here; see the note at the head of this function.
-    cockpit.ask = null
+    // Ended where it ran, not where the user happens to be. A turn can finish
+    // while its chat is parked — the whole point of being able to walk away —
+    // and clearing "the fields on cockpit" would then wipe whichever chat is on
+    // screen while leaving the working one flagged as working forever: a ring
+    // in the sidebar that never goes out and a chat that can never be typed in
+    // again. writeLive puts the ending in the same place the work went.
+    const ran = cockpit.turnSession
+    if (ran === cockpit.openSession || !cockpit.parked[ran]) cockpit.turnSession = ''
+    writeLive(ran, (l) => {
+      l.awaitingReply = false
+      // The live block is gone, so anything that was drawn below it takes its
+      // ordinary place in the transcript. The array order never changed — it
+      // was chronological all along — only where those bubbles were painted.
+      for (const m of l.chat) m.duringTurn = undefined
+      l.agentStatus = ''
+      l.toolSteps = []
+      l.turnFiles = []
+      l.turnProposals = []
+      l.streamingText = ''
+      l.reasoningText = ''
+      // Cleared at both ends, like toolSteps. A turn that died with a question
+      // still on screen left a card whose tool is no longer listening —
+      // pressing an option answered nothing. The checklist is deliberately not
+      // cleared here; see the note at the head of this function.
+      l.ask = null
+    })
     // The "still working" banner (turnStillRunning) explained a refusal that
     // just stopped being true. A stale one over an idle chat would be a lie.
     cockpit.sessionError = ''
@@ -1219,7 +1214,7 @@ function turnArtifacts(): Pick<ChatMessage, 'steps' | 'reasoning' | 'thinkSecs' 
 export async function retryFailedTurn(index: number): Promise<void> {
   const failed = cockpit.chat[index]
   const text = failed?.failedText
-  if (!text || cockpit.awaitingReply || peekIsReadOnly()) return
+  if (!text || cockpit.awaitingReply) return
   cockpit.chat.splice(index, 1)
   await runLiveTurn(async () => {
     try {
@@ -1252,7 +1247,7 @@ export async function retryFailedTurn(index: number): Promise<void> {
  */
 export async function editFailedTurn(failedIndex: number, text: string): Promise<void> {
   const trimmed = text.trim()
-  if (!trimmed || cockpit.awaitingReply || peekIsReadOnly()) return
+  if (!trimmed || cockpit.awaitingReply) return
   const failed = cockpit.chat[failedIndex]
   if (!failed?.failed) return
   const question = cockpit.chat[failedIndex - 1]
@@ -1285,7 +1280,7 @@ export async function editFailedTurn(failedIndex: number, text: string): Promise
  */
 export async function regenerateReply(revertFiles: boolean): Promise<void> {
   const last = cockpit.chat.at(-1)
-  if (!last || last.role !== 'agent' || last.failed || cockpit.awaitingReply || peekIsReadOnly()) return
+  if (!last || last.role !== 'agent' || last.failed || cockpit.awaitingReply) return
   // Whatever is on screen becomes variant 0 — with its tool timeline, which the
   // engine's own list cannot carry (the store keeps no timeline).
   const previous: MessageVariant[] = last.variants ?? [
@@ -1318,7 +1313,7 @@ export async function regenerateReply(revertFiles: boolean): Promise<void> {
  *  from it: the engine rewrites its memory to match (App.SwitchVariant). */
 export async function switchVariant(index: number): Promise<void> {
   const last = cockpit.chat.at(-1)
-  if (!last || !last.variants || cockpit.awaitingReply || peekIsReadOnly()) return
+  if (!last || !last.variants || cockpit.awaitingReply) return
   const local = last.variants[index]
   try {
     const result = await SwitchVariant(index)
@@ -1343,7 +1338,7 @@ export async function switchVariant(index: number): Promise<void> {
  */
 export async function resendEdited(text: string, revertFiles: boolean): Promise<void> {
   const trimmed = text.trim()
-  if (!trimmed || cockpit.awaitingReply || cockpit.chat.length < 2 || peekIsReadOnly()) return
+  if (!trimmed || cockpit.awaitingReply || cockpit.chat.length < 2) return
   const question = cockpit.chat[cockpit.chat.length - 2]
   if (question.role !== 'user') return
   // The attachment goes with the question, not with its wording: fixing a typo
@@ -1421,8 +1416,23 @@ export function clearPlan(): void {
   cockpit.todos = []
 }
 
-/** suggest_task tool: the agent's pending side-work chips, replaced wholesale. */
-export function applyTaskChips(chips: CockpitState['taskChips']): void {
+/** suggest_task tool: the agent's pending side-work chips, replaced wholesale.
+ *
+ * Stamped with the chat that raised them, like every other agent event: a chip
+ * is something THIS conversation noticed while doing THIS conversation's job,
+ * and its prompt is written to stand alone from it. Drawn under another chat it
+ * is a suggestion with no visible origin. */
+export function applyTaskChips(
+  ev: SessionEvent<CockpitState['taskChips']> | CockpitState['taskChips'],
+): void {
+  const chips = forLiveTurn(ev)
+  if (chips === null) return
+  const id = eventSession(ev)
+  if (id && id !== cockpit.openSession) {
+    // Raised in a chat the window is not showing. Nothing to draw now; the
+    // tray is re-read from Go when that chat comes back on screen.
+    return
+  }
   cockpit.taskChips = Array.isArray(chips) ? chips : []
 }
 
@@ -1482,8 +1492,6 @@ export async function refreshPendingIssues(): Promise<void> {
  *
  * Same four steps as startTaskChip below, for the same reasons written there. */
 export async function consultAboutIssue(prompt: string): Promise<void> {
-  if (turnStillRunning()) return
-  dropPeek()
   await newSessionHere()
   await sendUserMessage(prompt)
 }
@@ -1496,8 +1504,6 @@ export async function startTaskChip(chip: CockpitState['taskChips'][number]): Pr
   // the new session refused, sendUserMessage would hand the chip's prompt to
   // the turn already running — as an interjection into a conversation it was
   // never about.
-  if (turnStillRunning()) return
-  dropPeek()
   await DismissTaskChip(chip.id)
   await newSessionHere()
   await sendUserMessage(chip.prompt)
@@ -1551,7 +1557,7 @@ function forLiveTurn<T>(ev: SessionEvent<T> | T): T | null {
 export function applyAgentStatus(ev: SessionEvent<string> | string): void {
   const status = forLiveTurn(ev)
   if (status === null) return
-  cockpit.agentStatus = status
+  writeLive(eventSession(ev), (l) => { l.agentStatus = status })
 }
 
 /**
@@ -1572,12 +1578,14 @@ export function applyAgentChunk(
 ): void {
   const payload = forLiveTurn(ev)
   if (payload === null) return
-  if (typeof payload === 'string') {
-    cockpit.streamingText += payload
-    return
-  }
-  if (payload.replace) cockpit.streamingText = payload.text
-  else cockpit.streamingText += payload.text
+  writeLive(eventSession(ev), (l) => {
+    if (typeof payload === 'string') {
+      l.streamingText += payload
+      return
+    }
+    if (payload.replace) l.streamingText = payload.text
+    else l.streamingText += payload.text
+  })
 }
 
 // First/last reasoning-chunk timestamps this turn, for the "thought for Xs" label.
@@ -1594,7 +1602,7 @@ export function applyReasoningChunk(ev: SessionEvent<string> | string): void {
   const now = Date.now()
   if (!cockpit.reasoningText) thinkStartedAt = now
   thinkLastAt = now
-  cockpit.reasoningText += chunk
+  writeLive(eventSession(ev), (l) => { l.reasoningText += chunk })
 }
 
 /**
@@ -2102,19 +2110,51 @@ export function restoreActiveView(): void {
   }
 }
 
+/** Leave the chat on screen and arrive at another one, live state and all.
+ *
+ * Called by every door that changes which conversation the window is showing.
+ * The order is the whole of it: park what is leaving BEFORE anything is
+ * overwritten, then either restore what is arriving (it was working when it
+ * left) or start it clean.
+ *
+ * Returns true when the arriving chat came back from the parked set, in which
+ * case its messages are already on screen and the caller must not replace them
+ * with a transcript read out of the store — the live ones are ahead of it. */
+function arriveAt(id: string): boolean {
+  // Already here. Clicking the chat you are in is not an arrival, and treating
+  // it as one would park its live state and then wipe it — a running turn
+  // erased by pressing its own row, which is the failure mode of every "switch"
+  // that does not first ask whether it is switching.
+  if (id && id === cockpit.openSession) {
+    cockpit.sessionError = ''
+    return true
+  }
+  parkLive(cockpit.openSession)
+  cockpit.openSession = id
+  cockpit.sessionError = ''
+  markOnScreen(id)
+  // The tray belongs to the chat too (suggest_task chips are raised by a
+  // conversation about its own work), so it is re-read for the one arriving
+  // rather than left showing the last chat's.
+  void refreshTaskChips()
+  if (restoreLive(id)) return true
+  clearLive()
+  return false
+}
+
 /** Switch to a stored session — the transcript loads back and the agent's memory is restored. */
 export async function selectSession(session: Session): Promise<void> {
-  if (cockpit.awaitingReply) return peekAtSession(session)
-  dropPeek()
   const messages = await LoadSession(session.id)
-  cockpit.todos = []
-  cockpit.ask = null
-  // Background work is the session's (§105), and opening another session
-  // re-bootstraps the engine, which stops it — the register these mirror is
-  // about to be replaced, so showing yesterday's rows over it would be a lie.
+  // Background work is the session's (§105). Reset before the arrival so the
+  // rows the tray is showing belong to the chat about to be on screen.
   resetBackgroundWork()
-  cockpit.chat = restoreTranscript(messages)
-  hydrateImages()
+  // A chat that was working when it left comes back mid-flight — timeline,
+  // half-written answer and all — and its messages are the live ones, which
+  // are ahead of anything the store can hand back.
+  if (!arriveAt(session.id)) {
+    cockpit.chat = restoreTranscript(messages)
+    hydrateImages()
+  }
   // Opening a session takes the engine back to the desk it was held at, so the
   // nav has to follow it rather than keep pointing at where the user was.
   await refreshDesk()
@@ -2203,8 +2243,6 @@ function showSessionRefusal(err: unknown): void {
  * makes the window say the same thing instead of drawing a project the session
  * had already left. */
 export async function newSession(): Promise<void> {
-  if (turnStillRunning()) return
-  dropPeek()
   // Before the session call, like openDesk: a refusal is reported inside the
   // chat, so a user who pressed this from Settings has to be looking at it.
   setActiveView('chat')
@@ -2219,8 +2257,6 @@ export async function newSession(): Promise<void> {
  * because the chip happened to be clicked would hand it to someone who was
  * never in the conversation. */
 async function newSessionHere(): Promise<void> {
-  if (turnStillRunning()) return
-  dropPeek()
   try {
     await NewSession()
   } catch (err) {
@@ -2238,8 +2274,6 @@ async function newSessionHere(): Promise<void> {
  * already persisted, so the conversation being left is in the history list
  * before the click, not lost by it. */
 export async function newSessionAt(desk: string): Promise<void> {
-  if (turnStillRunning()) return
-  dropPeek()
   try {
     await NewSessionAt(desk)
   } catch (err) {
@@ -2288,8 +2322,6 @@ export async function refreshSpaceHistory(): Promise<void> {
  * for exactly this reason — the engine's session and the window's session are
  * two facts, and only these keep them one. */
 export async function newSpaceSession(space: string): Promise<void> {
-  if (turnStillRunning()) return
-  dropPeek()
   try {
     await NewSessionInSpace(space)
   } catch (err) {
@@ -2311,8 +2343,6 @@ export async function newSpaceSession(space: string): Promise<void> {
  *  name that is not an office agent, so a stale card cannot open a chat as
  *  somebody else. */
 export async function newChairSession(chair: string): Promise<void> {
-  if (turnStillRunning()) return
-  dropPeek()
   try {
     await NewChairSession(chair)
   } catch (err) {
@@ -2328,12 +2358,16 @@ export async function newChairSession(chair: string): Promise<void> {
 }
 
 async function afterNewSession(): Promise<void> {
+  const id = await CurrentSessionID()
+  // A new chat is an arrival like any other: whatever was on screen is parked
+  // if it still has work in it, and this one starts clean. Without this, opening
+  // a chat while another worked wiped the working one's live state — the exact
+  // bug the parking exists to prevent, coming in through a different door.
+  arriveAt(id)
   cockpit.chat = []
-  cockpit.todos = []
-  cockpit.ask = null
   // Explicit switch (not adopt): a brand-new session starts with an empty
   // workbench; the old session's layout stays saved for when it's reopened.
-  await switchWorkbenchSession(await CurrentSessionID())
+  await switchWorkbenchSession(id)
   await refreshSessions()
   await refreshGlobalHistory()
 }
@@ -2350,8 +2384,6 @@ export async function switchShell(name: ShellName): Promise<void> {
   if (!def || shell.name === name) return
   // Before setShell, or the door's chrome would switch around a chat that
   // refused to follow it.
-  if (turnStillRunning()) return
-  dropPeek()
   // Decided before the session switch, which refreshes the project list on the
   // way past: reading it afterwards would make this depend on what a call three
   // lines up happens to leave behind.
@@ -2386,8 +2418,6 @@ export async function switchShell(name: ShellName): Promise<void> {
  * a different one is exactly the "open a new session" that changing desks
  * means (COMPANY.md §2). */
 export async function openDesk(desk: string): Promise<void> {
-  if (turnStillRunning()) return
-  dropPeek()
   setActiveView('chat')
   // "Already here" is the desk AND the project together. A project chat runs at
   // the assistant's desk, so comparing desks alone said the user was already at
@@ -2405,6 +2435,12 @@ export async function openDesk(desk: string): Promise<void> {
  * the second answer that can disagree. */
 export async function refreshDesk(): Promise<void> {
   try {
+    // The model row belongs to the chat, not to the app (DECISIONS §155): each
+    // conversation runs on its own provider, model, thinking level and approval
+    // mode. Asked on every switch because the chip would otherwise keep naming
+    // the model of the chat you just left — the exact lie this split removed
+    // from the engine, put back by a window that never re-read it.
+    applyModelInfo(await GetModelInfo())
     const id = await CurrentSessionID()
     cockpit.desk = id ? await SessionMode(id) : ''
     cockpit.chair = id ? await SessionAgent(id) : ''
@@ -2441,7 +2477,6 @@ export async function refreshDesk(): Promise<void> {
  * picker has to show what is actually in force rather than what was clicked. */
 export async function setStance(next: string): Promise<void> {
   if (turnStillRunning()) return
-  dropPeek()
   try {
     cockpit.stance = await SetStance(next)
     cockpit.sessionError = ''

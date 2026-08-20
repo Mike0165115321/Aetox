@@ -83,7 +83,7 @@ func (a *App) fileHost(next http.Handler) http.Handler {
 			return
 		}
 
-		root := strings.TrimSpace(a.cfg.SandboxRoot)
+		root := strings.TrimSpace(a.cur().cfg.SandboxRoot)
 		if root == "" {
 			http.Error(w, "no project open", http.StatusNotFound)
 			return

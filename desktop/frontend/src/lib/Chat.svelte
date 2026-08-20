@@ -32,7 +32,7 @@
     startTaskChip, dismissTaskChip,
     retryFailedTurn, editFailedTurn, regenerateReply, switchVariant, resendEdited, rateReply,
     setActiveView, newChairSession, newSessionAt, openSettingsAt, setStance,
-    sendUserMessage, leavePeek, openPeeked,
+    sendUserMessage,
   } from './stores/cockpit.svelte'
   import ConfirmDialog from './ConfirmDialog.svelte'
   import MemoryCard from './MemoryCard.svelte'
@@ -81,7 +81,9 @@
   // more into 'agents' (เอเจน — a colleague hired for a whole job) and 'subs'
   // (ซับเอเจน — the assistant's own hands), because "ซับเอเจน 1 ตัว" on a
   // turn where the doc agent made the file misnames whose work it was.
-  type Panel = 'think' | 'tools' | 'agents' | 'subs' | ''
+  // 'gone' is the third: a delegation whose worker never resolved, so it is
+  // neither kind and is counted with neither (delegatedUnknown).
+  type Panel = 'think' | 'tools' | 'agents' | 'subs' | 'gone' | ''
   let openPanel = $state<Record<number, Panel>>({})
   function togglePanel(i: number, p: Panel) {
     openPanel[i] = openPanel[i] === p ? '' : p
@@ -125,12 +127,27 @@
   // The two piles a delegation lands in (COMPANY.md §4): a เอเจน takes a whole
   // job and returns a file; a ซับเอเจน is a step of the assistant's own
   // work. The kind rides on the step, stamped by the engine from which home the
-  // profile file lives in — the frontend never guesses it from a name. A step
-  // with no stamp (an old persisted turn) counts as a helper, which is the pile
-  // every delegation was in before the split.
+  // profile file lives in — the frontend never guesses it from a name.
+  //
+  // A step with NO stamp is neither. subagent.KindOf answers empty when no such
+  // profile can run, which is what a `task` call that resolved nobody leaves
+  // behind — the exact shape of the failure the owner reported on 2026-08-20,
+  // where a call to a tool that was not built showed up as "ซับเอเจน 1 ตัว ·
+  // ล้มเหลว 1" and named a worker nobody had started. Unstamped counted as a
+  // helper because that was the pile every delegation sat in before the split,
+  // and a default chosen for old rows was answering for new ones.
+  //
+  // So it is its own third case now: counted with neither kind, drawn with the
+  // generic label (chat.delegation) that says only that work was handed out.
   const isAgentNode = (n: TimelineNode) => n.step.agentKind === 'agent'
+  const isHelperNode = (n: TimelineNode) => n.step.agentKind === 'helper'
   const delegatedAgents = (steps: ToolStep[]) => delegated(steps).filter(isAgentNode)
-  const delegatedHelpers = (steps: ToolStep[]) => delegated(steps).filter((n) => !isAgentNode(n))
+  const delegatedHelpers = (steps: ToolStep[]) => delegated(steps).filter(isHelperNode)
+  // Everything handed out, whichever pile it landed in and including the ones
+  // that landed in neither: what the running list and the block bodies iterate,
+  // so an unstamped delegation is still drawn even though it is counted nowhere.
+  const delegatedUnknown = (steps: ToolStep[]) =>
+    delegated(steps).filter((n) => !isAgentNode(n) && !isHelperNode(n))
   // The agent's own steps that are actually tools. Narration and thinking rows
   // ride in the same list and are not — counting them would inflate "used N
   // tools" with sentences.
@@ -209,6 +226,7 @@
   const runningOwn = $derived(ownSteps(toolSteps).filter((s) => s.state === 'run'))
   const doneAgents = $derived(delegatedAgents(toolSteps).filter((n) => !isRunningNode(n)))
   const doneHelpers = $derived(delegatedHelpers(toolSteps).filter((n) => !isRunningNode(n)))
+  const doneUnknown = $derived(delegatedUnknown(toolSteps).filter((n) => !isRunningNode(n)))
   // What is still running renders as one list, agents first — each block names
   // its own worker, so the piles only need separating where they are counted.
   // "Still running" is the register's answer (cardState), not the `task` row's:
@@ -216,7 +234,11 @@
   // a live worker behind the collapsed "used N agents" toggle the moment it
   // started.
   const runningSubs = $derived(
-    [...delegatedAgents(toolSteps), ...delegatedHelpers(toolSteps)].filter(isRunningNode),
+    [
+      ...delegatedAgents(toolSteps),
+      ...delegatedHelpers(toolSteps),
+      ...delegatedUnknown(toolSteps),
+    ].filter(isRunningNode),
   )
   // The engine's phase message is a fallback, not the headline. It says
   // "กำลังคิดคำตอบ..." for the whole tool loop — which duplicates the thinking
@@ -225,17 +247,6 @@
   // arriving) IS the status; the phrase only fills the gap before any of it.
   const liveStatus = $derived(
     streamingText || reasoningText || liveRunning.length ? '' : agentStatus,
-  )
-  // The same live state, in one line, for the bar that shows while another
-  // conversation is being read. The live block above is deliberately not drawn
-  // there — it belongs to a chat that is not on screen — and the cost was a
-  // turn that looked dead from anywhere except its own chat. This is its pulse:
-  // the concrete thing first, the engine's phase behind it, and "กำลังคิด" when
-  // there is genuinely nothing else to say yet. Inverted against liveStatus on
-  // purpose; there, the phrase fills a gap the detail below already covers,
-  // here there is nothing below and the phrase is all the reader gets.
-  const peekLive = $derived(
-    liveRunning[0]?.label || runningSubs[0]?.step.label || agentStatus || t('chat.thinking'),
   )
   // One icon table for the two places a file chip shows up: the composer's
   // pending chip and the sent bubble's.
@@ -253,7 +264,7 @@
   }
 
   // One label builder for both piles — same shape, different word and count.
-  function delegationLabel(nodes: TimelineNode[], key: 'chat.usedAgents' | 'chat.usedSubagents'): string {
+  function delegationLabel(nodes: TimelineNode[], key: 'chat.usedAgents' | 'chat.usedSubagents' | 'chat.usedDelegations'): string {
     const failed = nodes.filter((n) => n.step.state === 'err').length
     const base = t(key, { n: nodes.length })
     return failed ? `${base} · ${t('chat.failedCount', { n: failed })}` : base
@@ -451,11 +462,21 @@
   // Flipping it re-bootstraps the engine, so the menu stays open and the row
   // stays disabled until the answer comes back — a switch that looks instant
   // and is not is a switch people press twice.
-  async function toggleDelegate() {
+  // The two switches as rows, built here rather than inline so their keys keep
+  // their literal types and `t` still refuses a key the locales do not have.
+  const delegateRows = $derived(
+    delegate
+      ? ([
+          { kind: 'agents', reach: delegate.agents, icon: 'userRound', label: 'chat.delegateAgents', on: 'chat.delegateAgentsOn', off: 'chat.delegateAgentsOff' },
+          { kind: 'helpers', reach: delegate.helpers, icon: 'bot', label: 'chat.delegateHelpers', on: 'chat.delegateHelpersOn', off: 'chat.delegateHelpersOff' },
+        ] as const)
+      : [],
+  )
+  async function toggleDelegate(kind: 'agents' | 'helpers') {
     if (!delegate || delegateBusy) return
     delegateBusy = true
     try {
-      delegate = await SetDelegateOff(!delegate.off)
+      delegate = await SetDelegateOff(kind, delegate[kind].off === false)
     } finally {
       delegateBusy = false
     }
@@ -1847,33 +1868,6 @@
           <span>{cockpit.sessionError}</span>
         </div>
       {/if}
-      <!-- Another conversation, open for reading while the turn runs in the one
-           the user came from. Not an error and drawn as one would be wrong: the
-           app did what was asked. It says which half of "open" this is, and
-           carries the way back — plus, once the turn has finished, the way in,
-           since the door that was shut is now open and the user is standing at
-           it. -->
-      {#if cockpit.peek}
-        <div class="peek-bar">
-          <span class="ic"><Icon name="eye" size={14} /></span>
-          <span class="peek-what">{cockpit.peek.session.title || t('cockpit.peekNotice')}</span>
-          <!-- The sentence has to follow the work. "งานยังทำอยู่ในอีกแชทหนึ่ง"
-               was printed whether or not that was still true: the peek outlives
-               the turn, so a bar that started honest went on insisting the agent
-               was busy for as long as the user kept reading. -->
-          <span class="peek-why">{awaitingReply ? t('cockpit.peekNotice') : t('cockpit.peekDone')}</span>
-          <!-- And the work itself, still moving, in the one line there is room
-               for. Told in the same shimmer the live block uses, because it is
-               the same fact seen from the next room. -->
-          {#if awaitingReply}
-            <span class="peek-live typing-status">{peekLive}</span>
-          {/if}
-          {#if !awaitingReply}
-            <button type="button" class="peek-act" onclick={() => void openPeeked()}>{t('cockpit.peekOpen')}</button>
-          {/if}
-          <button type="button" class="peek-act primary" onclick={leavePeek}>{t('cockpit.peekReturn')}</button>
-        </div>
-      {/if}
       {#each messages as m, i}
         <!-- A message sent into a running turn belongs below what has already
              streamed, not above it: it was said at that point, and drawn at the
@@ -1945,6 +1939,19 @@
                     {delegationLabel(delegatedHelpers(m.steps ?? []), 'chat.usedSubagents')}
                   </button>
                 {/if}
+                <!-- The unstamped pile, here too: a turn read back from the
+                     database is the same turn, and a persisted delegation that
+                     resolved nobody must not borrow a kind on the way out of
+                     the database either. Turns saved before the kind was
+                     stamped at all land here as well, which is honest: nothing
+                     recorded which they were. -->
+                {#if delegatedUnknown(m.steps ?? []).length}
+                  <button class="reasoning-toggle" onclick={() => togglePanel(i, 'gone')}>
+                    <span class="chev"><Icon name={openPanel[i] === 'gone' ? 'chevronDown' : 'chevronRight'} size={12} /></span>
+                    <span class="ic"><Icon name="circle" size={12} /></span>
+                    {delegationLabel(delegatedUnknown(m.steps ?? []), 'chat.usedDelegations')}
+                  </button>
+                {/if}
               </div>
               {#if m.reasoning && openPanel[i] === 'think'}
                 <div class="reasoning-body">{m.reasoning}</div>
@@ -1957,6 +1964,9 @@
               {/if}
               {#if m.steps?.length && openPanel[i] === 'subs'}
                 {@render subagentTimeline(delegatedHelpers(m.steps), false)}
+              {/if}
+              {#if m.steps?.length && openPanel[i] === 'gone'}
+                {@render subagentTimeline(delegatedUnknown(m.steps), false)}
               {/if}
             {/if}
             <!-- Answers this turn had finished before the user typed over them,
@@ -2164,7 +2174,7 @@
            chat's tools and half-written answer under another chat's history.
            Nothing is lost by not drawing it — the state goes on accumulating,
            and going back brings it into view mid-flight. -->
-      {#if awaitingReply && !cockpit.peek}
+      {#if awaitingReply}
         <div class="msg bot">
           <div class="bubble typing-bubble">
             <!-- The whole row, not just its text: with nothing else on it, an
@@ -2207,6 +2217,23 @@
                     {delegationLabel(doneHelpers, 'chat.usedSubagents')}
                   </button>
                 {/if}
+                <!-- Handed to nobody: a `task` call whose worker did not
+                     resolve, so the engine had no kind to stamp. Its own row
+                     rather than a share of either count, which is what made a
+                     failed call read as "ซับเอเจน 1 ตัว" on 2026-08-20.
+
+                     `circle` deliberately: not userRound and not bot, because
+                     wearing either kind's glyph is exactly the claim this row
+                     exists to stop making. An empty ring is what the app already
+                     draws for a node with nobody in it (TaskTimeline, the
+                     session strip's plan rows). -->
+                {#if doneUnknown.length}
+                  <button class="reasoning-toggle" onclick={() => (livePanel = livePanel === 'gone' ? '' : 'gone')}>
+                    <span class="chev"><Icon name={livePanel === 'gone' ? 'chevronDown' : 'chevronRight'} size={12} /></span>
+                    <span class="ic"><Icon name="circle" size={12} /></span>
+                    {delegationLabel(doneUnknown, 'chat.usedDelegations')}
+                  </button>
+                {/if}
               </div>
               {#if reasoningText && livePanel === 'think'}
                 <div class="reasoning-body">{reasoningText}</div>
@@ -2219,6 +2246,9 @@
               {/if}
               {#if doneHelpers.length && livePanel === 'subs'}
                 {@render subagentTimeline(doneHelpers, false)}
+              {/if}
+              {#if doneUnknown.length && livePanel === 'gone'}
+                {@render subagentTimeline(doneUnknown, false)}
               {/if}
             {/if}
             <!-- The checklist used to be drawn here, inside the live block, and
@@ -2480,34 +2510,52 @@
                  mis-click. -->
             {#if delegate}
               <div class="menu-sep"></div>
-              <!-- role="switch", not a pressed button. It is an on/off state read
-                   at a glance, and the owner asked for it to look like one
+              <!-- Two rows, because they are two acts (COMPANY.md §4). One
+                   switch stood here until 2026-08-20 and it governed both, so
+                   somebody who wanted a colleague kept out of their work lost
+                   the assistant's own hands in the same click, with nothing on
+                   screen saying so.
+
+                   role="switch", not a pressed button. It is an on/off state
+                   read at a glance, and the owner asked for it to look like one
                    (19 ส.ค.: "ทำเป็นสวิชปิดเปิดดีกว่าดูง่ายกว่า") — a row that
                    only changed colour made you read the note underneath to find
-                   out which way it was set. -->
-              <button type="button" class="focus-item delegate-row" class:on={!delegate.off}
-                role="switch" aria-checked={!delegate.off} disabled={delegateBusy}
-                onclick={toggleDelegate}>
-                <!-- gitBranch, not hand. The hand is four finger paths and a
-                     palm inside a 24 viewBox; at 14px the fingers land about a
-                     pixel apart and the whole thing renders as a smudge next to
-                     `sparkles` and `bot`, which are three or four strokes each
-                     (owner, 19 ส.ค.: "สัญลักษณ์ตรงนี้มองยาก"). Two circles and
-                     one curve survive the scale, and they say the right thing:
-                     the work goes down another path. Not a person glyph — the
-                     rows above are people you switch to, and this row must not
-                     read as one more of them. -->
-                <span class="ic"><Icon name="gitBranch" size={14} /></span>
-                <span class="t">{t('chat.delegateAllow')}</span>
-                <!-- The same switch the settings rows wear (style.css .mswitch),
-                     worn directly because this row is already the control. -->
-                <span class="mswitch-face"></span>
-              </button>
-              <div class="folder-note">
-                {delegate.off
-                  ? t('chat.delegateOffNote')
-                  : t('chat.delegateOnNote', { n: delegate.taskTokens.toLocaleString() })}
-              </div>
+                   out which way it was set.
+
+                   userRound and bot, because the two kinds already own those
+                   two glyphs and nothing here gets to invent a third pair: the
+                   settings sidebar files เอเจน under userRound and ซับเอเจน
+                   under bot (Settings.svelte, where the identity page carries a
+                   comment about not taking userRound because "the เอเจน page
+                   below owns that"), and the timeline toggles below count the
+                   two piles with the same two. A switch drawn with a glyph of
+                   its own would be a third vocabulary for a distinction the app
+                   has already made twice.
+
+                   The single switch that stood here wore `gitBranch`, argued for
+                   as "the work goes down another path" and chosen partly to
+                   avoid a person glyph reading as one more chair in the list
+                   above. Both reasons expired: gitBranch is the ENGINE glyph
+                   everywhere else on this strip (the engine chip, the session
+                   strip, a connected runtime), so on a delegation row it was
+                   saying the wrong word in the app's own vocabulary; and the
+                   chair-row worry is answered by the switch face rather than by
+                   the icon, since these rows carry a 34px pill on the right
+                   (style.css .mswitch-face) and a chair row carries nothing. -->
+              {#each delegateRows as row (row.kind)}
+                <button type="button" class="focus-item delegate-row" class:on={!row.reach.off}
+                  role="switch" aria-checked={!row.reach.off} disabled={delegateBusy}
+                  onclick={() => toggleDelegate(row.kind)}>
+                  <span class="ic"><Icon name={row.icon} size={14} /></span>
+                  <span class="t">{t(row.label)}</span>
+                  <!-- The same switch the settings rows wear (style.css .mswitch),
+                       worn directly because this row is already the control. -->
+                  <span class="mswitch-face"></span>
+                </button>
+                <div class="folder-note">
+                  {t(row.reach.off ? row.off : row.on, { n: row.reach.tokens.toLocaleString() })}
+                </div>
+              {/each}
             {/if}
             <div class="folder-note">{t('chat.agentSwitchNote')}</div>
           </div>
@@ -2797,10 +2845,7 @@
       <textarea
         class="input"
         rows="1"
-        disabled={!!cockpit.peek}
-        placeholder={cockpit.peek
-          ? t('cockpit.peekPlaceholder')
-          : cockpit.chair
+        placeholder={cockpit.chair
           ? t('chat.inputToAgent', { name: cockpit.chair })
           : t('chat.inputPlaceholder', { key: shortcutLabel('palette') })}
         bind:this={inputEl}
@@ -3069,7 +3114,7 @@
                late. Send does not — there is no draft to send from a disabled
                composer, and an interjection typed here would land in a
                conversation the user is not looking at. -->
-          {#if draft.trim() && !cockpit.peek}
+          {#if draft.trim()}
             <button class="send stop secondary" aria-label={t('chat.stopTurn')} onclick={cancelTurn}><Icon name="square" size={12} /></button>
             <button class="send" aria-label={t('chat.sendIntoTurn')} title={t('chat.sendIntoTurn')} onclick={submit}>
               <Icon name="sendHorizontal" size={15} />

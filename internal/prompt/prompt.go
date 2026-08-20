@@ -78,15 +78,32 @@ type Desk struct {
 	// internal/mode: the caller already holds the manifest and its AllowsTool,
 	// and a copied list is a second answer to a question mode already answers.
 	Carries func(name string) bool
-	// Delegates reports whether this desk may hand a whole job to another desk
-	// (COMPANY.md §3's hiring door — `dispatch:` in the manifest). The coding
-	// desk declares none, and its `task` tool does not even list the office's
-	// agents (internal/subagent.available), so telling it to hand deliverable
-	// work over describes a move with no target on the other side.
+	// Delegates reports whether this session can hand a whole job to the agent
+	// whose craft it is — the desk's side of COMPANY.md §3's hiring door
+	// (`dispatch:` in the manifest) AND the user's own master switch. The coding
+	// desk declares no dispatch, and its `task` tool does not even list the
+	// office's agents (internal/subagent.available), so telling it to hand
+	// deliverable work over describes a move with no target on the other side;
+	// with delegation switched off there is no `task` tool anywhere in the
+	// session, which is the same lie arriving through a different door.
+	//
+	// One bool for both because the model has one question — is there anybody
+	// to hand this to — and two flags answering it separately is how the second
+	// one got forgotten.
 	//
 	// Read through delegates(), never directly: a zero Desk is a session from
 	// before desks existed, and that one could always reach every agent.
 	Delegates bool
+	// DelegationOff says the reason Delegates is false is the user's master
+	// switch — this session has the route and the switch is closed — rather
+	// than a desk that never had one.
+	//
+	// The distinction is a sentence in the prompt. A desk with no `dispatch:`
+	// has nobody on the other side and its manifest already says where that
+	// work belongs; a desk whose user turned delegation off has to answer the
+	// request itself, and the switch is the one fact worth handing to the
+	// person who is waiting for a file.
+	DelegationOff bool
 	// StanceDirection is what the session's *stance* folds in — the second axis
 	// (DECISIONS.md §106): not what is on the desk, but how this turn runs.
 	// Empty for ลงมือ, which adds nothing because it changes nothing.
@@ -834,9 +851,38 @@ func longform(desk Desk) string {
 	// tool does not even list them — so at the coding desk this sentence used
 	// to describe a move with nobody on the other end of it. The lesson above
 	// is the part that holds at every desk, which is why only this is gated.
-	if desk.delegates() {
-		s += "You do not build those yourself: hand the job to the agent whose craft it is and collect " +
-			"the file.\n"
+	//
+	// The whole route lives here rather than half here and half in a desk
+	// manifest. assistant.md and specialized.md each spelled out the handover
+	// and named `task` in prose, which no manifest can gate: delegation is a
+	// switch on the user's settings page, and with it off — the shipped default
+	// — both desks were still reading "hand the job over with `task`" about a
+	// tool that is not built at all. The model spent a round calling it and the
+	// user watched a red row appear (2026-08-20). A markdown file compiled into
+	// the binary cannot ask whether the tool exists; this layer can.
+	switch {
+	case desk.delegates():
+		s += "You do not build those yourself: hand the job to the agent whose craft it is with `task`, " +
+			"keep talking to the user, and collect the file. The brief has to carry everything — that agent " +
+			"sees none of this conversation, so name the sources, the audience and whatever the user has " +
+			"already settled about shape. What comes back is the file rather than its contents; hand it on " +
+			"as an artifact so it is one click away, never something to hunt for in a folder. A job that " +
+			"looks small is not a reason to talk yourself out of handing it over: say what you are having " +
+			"made, not that you cannot make it.\n"
+	case desk.DelegationOff && !desk.carries("doc_write"):
+		// Neither hands nor a hand to pass it to. Saying nothing here is what
+		// produced the failing round: the desk was silent about the missing
+		// half and the layer above had already called the handover the normal
+		// way to answer this request.
+		//
+		// Gated on the switch and not merely on "cannot delegate", because the
+		// coding desk cannot either and its own manifest already answers for it
+		// — a presentation about the code is specialized-session work. Naming
+		// the switch there would be a wrong reason for a true refusal.
+		s += "In this session there is nobody to hand one to and you are not carrying the writers, so do " +
+			"not promise a file you cannot produce: say plainly what you can hand back instead. If a file " +
+			"for another program really is what they need, the thing to tell them is that handing work to a " +
+			"specialist is switched off in settings — never that you cannot help.\n"
 	}
 	return s +
 		"One file per thing you were asked, named for what it holds, alongside the work it is about. A new " +

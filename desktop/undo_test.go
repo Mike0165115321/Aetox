@@ -42,7 +42,7 @@ func TestUndoLastTurnPutsFilesBack(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	app.captureSnapshot() // what SendMessage does before a turn runs
+	app.captureSnapshot(app.cur()) // what SendMessage does before a turn runs
 	if err := os.WriteFile(filepath.Join(root, "code.go"), []byte("the agent broke it\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestUndoTwiceDoesNotStepFurtherBack(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("first\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	app.captureSnapshot()
+	app.captureSnapshot(app.cur())
 	if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("second\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

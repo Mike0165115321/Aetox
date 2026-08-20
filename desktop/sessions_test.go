@@ -179,12 +179,12 @@ func TestListSessionsIsolatedByProject(t *testing.T) {
 	rootA := t.TempDir()
 	rootB := t.TempDir()
 
-	a := &App{dbDir: dbDir, cfg: config.Config{SandboxRoot: rootA}}
+	a := seed(&App{dbDir: dbDir, cfg: config.Config{SandboxRoot: rootA}}, newConversation())
 	closeDBOnCleanup(t, a)
 	a.startNewSession()
 	a.appendTurn(a.cur(), SessionMessage{Role: "user", Text: "project A message"}, SessionMessage{Role: "agent", Text: "ok"})
 
-	b := &App{dbDir: dbDir, cfg: config.Config{SandboxRoot: rootB}}
+	b := seed(&App{dbDir: dbDir, cfg: config.Config{SandboxRoot: rootB}}, newConversation())
 	closeDBOnCleanup(t, b)
 	b.startNewSession()
 	b.appendTurn(b.cur(), SessionMessage{Role: "user", Text: "project B message"}, SessionMessage{Role: "agent", Text: "ok"})
@@ -231,7 +231,7 @@ func TestReopensSessionFromAStrandedBucket(t *testing.T) {
 			id := a.cur().id
 
 			// The app as it runs today: rooted at the current unfocused root.
-			a.cfg.SandboxRoot = unfocusedRoot()
+			a.cur().cfg.SandboxRoot = unfocusedRoot()
 			a.projectFocused = false
 
 			msgs, err := a.LoadSessionAnyProject(id)
@@ -321,7 +321,7 @@ func TestADoorsHistoryIsNotEatenByTheOtherDoorsPage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("database: %v", err)
 	}
-	key := projectKey(a.cfg.SandboxRoot)
+	key := projectKey(a.cur().cfg.SandboxRoot)
 	insert := func(id, mode, updated string) {
 		t.Helper()
 		if _, err := db.Exec(

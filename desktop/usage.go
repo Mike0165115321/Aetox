@@ -31,7 +31,7 @@ func (a *App) recordTokenUsage(conv *conversation, u model.Usage) {
 	_, err = db.Exec(
 		`INSERT INTO token_usage(session_id, model, provider, prompt_tokens, completion_tokens, cached_prompt_tokens, time)
 		 VALUES(?,?,?,?,?,?,?)`,
-		conv.id, a.cfg.ModelName, model.NormalizeProvider(a.cfg.ModelProvider),
+		conv.id, conv.cfg.ModelName, model.NormalizeProvider(conv.cfg.ModelProvider),
 		u.PromptTokens, u.CompletionTokens, cached, time.Now().Format(time.RFC3339),
 	)
 	if err != nil {

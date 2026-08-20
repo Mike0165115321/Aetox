@@ -30,11 +30,11 @@ func newVisionApp(t *testing.T, provider, modelName string) (*App, string) {
 	if err := os.WriteFile(filepath.Join(dir, "shot.png"), png, 0o644); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
-	return &App{cfg: config.Config{
+	return seed(&App{cfg: config.Config{
 		SandboxRoot:   root,
 		ModelProvider: provider,
 		ModelName:     modelName,
-	}}, root
+	}}, newConversation()), root
 }
 
 func TestVisionAttachmentsSendsThePictureToASightedModel(t *testing.T) {

@@ -293,9 +293,9 @@ Aetox จำข้ามเซสชันได้ และ**ไม่มี�
 | **รันคำสั่ง** | `shell` *(run · output · kill · list)* `git` `desk_terminal` |
 | **ส่งไฟล์กลับ** | `doc_write` `sheet_write` |
 | **อ่านสื่อ** | `image_ocr` `video_ocr` `pdf_read` `audio_transcribe` |
-| **เว็บและออโตเมชั่น** | `browser` *(open · read · click · type)* `web_fetch` `web_search` |
+| **เว็บและออโตเมชั่น** | `browser` *(open · read · click · type · wait · back · capture · tabs · dialog)* `web_fetch` `web_search` |
 | **งานโค้ด** | `diagnostics` `symbol` `github` *(repo_summary · search · read_file · list_files)* |
-| **วิธีที่ผู้ช่วยทำงาน** | `task` `task_result` `task_answer` `ask_user` `todo_write` `suggest_task` `memory` `session_search` `calc` `time` `desk_list` `desk_open` `skills_list` `skill_view` `plugin_install` |
+| **วิธีที่ผู้ช่วยทำงาน** | `task` `task_result` `task_answer` `ask_user` `todo_write` `suggest_task` `memory` `session_search` `calc` `time` `desk` *(open · list · close)* `skills_list` `skill_view` `plugin_install` |
 
 ตารางนั้น generate จากทะเบียนที่โมเดลได้รับจริง
 (`go test ./desktop -run TestPrintReadmeToolTable -v`) เพราะรายการที่เขียนด้วยมือว่าโปรแกรมมีอะไร

@@ -20,7 +20,7 @@ func (a *App) ListPromptPresets() []command.Preset {
 // itself, in the UI's language. Clicking one sends it as an ordinary message —
 // there is no separate guide path any more (ARCHITECTURE.md §42).
 func (a *App) GuideTopics() []model.GuideTopic {
-	return jsonSlice(model.GuideTopics(a.cfg.UILocale))
+	return jsonSlice(model.GuideTopics(a.cur().cfg.UILocale))
 }
 
 // SetUILocale records the language the UI is showing so Aetox's own built-in
@@ -30,7 +30,7 @@ func (a *App) GuideTopics() []model.GuideTopic {
 // machinery here at all.
 func (a *App) SetUILocale(locale string) error {
 	locale = strings.ToLower(strings.TrimSpace(locale))
-	if locale == "" || locale == a.cfg.UILocale {
+	if locale == "" || locale == a.cur().cfg.UILocale {
 		return nil // nothing to do; never re-bootstrap for no reason
 	}
 	cfg := a.cfg

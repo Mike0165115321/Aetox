@@ -64,7 +64,7 @@ func TestTwoShotsAreTwoFiles(t *testing.T) {
 
 // A chat that has not been saved yet still has to be able to photograph a page.
 func TestBrowserShotWorksBeforeASessionHasAnID(t *testing.T) {
-	a := &App{cfg: config.Config{SandboxRoot: t.TempDir()}}
+	a := seed(&App{cfg: config.Config{SandboxRoot: t.TempDir()}}, newConversation())
 
 	if _, err := a.writeBrowserShot([]byte("png")); err != nil {
 		t.Errorf("writeBrowserShot() with no session id = %v", err)

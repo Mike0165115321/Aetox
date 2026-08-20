@@ -113,7 +113,7 @@ func (s *browserCaptureSkill) capture(ctx context.Context) (skill.Output, error)
 	if where == "" {
 		where = "the open page"
 	}
-	if model.ResolveVision(a.cfg.ModelProvider, a.cfg.ModelName) {
+	if model.ResolveVision(a.cur().cfg.ModelProvider, a.cur().cfg.ModelName) {
 		out.Images = []model.Image{{MediaType: "image/png", Data: png}}
 		out.Content = fmt.Sprintf("ภาพของ %s อยู่ด้านล่าง และเก็บไว้ที่ %s", where, rel)
 	} else {
@@ -150,7 +150,7 @@ func (a *App) workFileDir() string {
 // writeBrowserShot puts the picture in the work-file folder and answers with the
 // sandbox-relative path.
 func (a *App) writeBrowserShot(png []byte) (string, error) {
-	root := strings.TrimSpace(a.cfg.SandboxRoot)
+	root := strings.TrimSpace(a.cur().cfg.SandboxRoot)
 	if root == "" {
 		return "", fmt.Errorf("no working folder is set")
 	}

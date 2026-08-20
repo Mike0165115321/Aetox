@@ -22,7 +22,7 @@ func newSubagentTestApp(t *testing.T) *App {
 		// DelegateOn is asked for, because delegation ships off (owner, 18 ส.ค.).
 		// Every test in this file is about delegation, so every one of them
 		// wants the capability that a fresh install does not have.
-		cfg:   config.Config{ModelProvider: "noop", ModelName: "aetox-grid", SandboxRoot: t.TempDir(), DelegateOn: true},
+		cfg:   config.Config{ModelProvider: "noop", ModelName: "aetox-grid", SandboxRoot: t.TempDir(), DelegateAgents: true, DelegateHelpers: true},
 		dbDir: t.TempDir(),
 	}
 	t.Cleanup(func() {

@@ -510,6 +510,24 @@ export interface ProjectFolder {
   missing: boolean
 }
 
+/** One chat's live turn state, held while the window is showing another chat.
+ *
+ * The same fields CockpitState carries for the chat on screen — that is the
+ * point: parking is a move, not a translation, so a field that exists in one
+ * and not the other is a field that gets lost on the way. */
+export interface ParkedTurn {
+  chat: ChatMessage[]
+  awaitingReply: boolean
+  agentStatus: string
+  toolSteps: ToolStep[]
+  turnFiles: string[]
+  turnProposals: number[]
+  streamingText: string
+  reasoningText: string
+  ask: { question: string; options: string[] } | null
+  todos: { content: string; status: 'pending' | 'in_progress' | 'completed' }[]
+}
+
 export interface CockpitState {
   project: ProjectInfo
   /** Folders added to the focused project, in the order they were added. */
@@ -611,15 +629,24 @@ export interface CockpitState {
   /** Why the last attempt to open a session from the history list failed, in
    *  the engine's own words. '' when the last one worked. */
   sessionError: string
-  /** Another chat opened for reading while a turn runs in this one. null when
-   *  not peeking, which is every idle moment.
+  /** The live state of a chat that is working while the window looks at another.
    *
-   *  The engine has one agent context and a turn is using it, so opening a
-   *  second conversation for real would rewrite the memory that turn is
-   *  thinking with. Reading one does not: `live` holds the working chat's
-   *  messages while `cockpit.chat` shows the one being read, and the turn goes
-   *  on writing into `live` where its answer belongs. */
-  peek: { session: Session; live: ChatMessage[] } | null
+   *  Replaces `peek`, which held exactly one field of this (the messages) and
+   *  only for reading. The window can hold several working chats now: the one
+   *  on screen keeps its live state in the fields above, and every other one
+   *  that has a turn in flight keeps its own here, keyed by session. Switching
+   *  parks the outgoing chat's state and restores the incoming one's, so a
+   *  timeline drawn in one conversation can never appear under another and a
+   *  reply can never be appended to whichever chat happened to be open when it
+   *  arrived.
+   *
+   *  Empty whenever nothing is working off screen, which is almost always. */
+  parked: Record<string, ParkedTurn>
+  /** Which chat the window is showing. The window's own fact, not the engine's
+   *  — the engine is addressed by id and has no "current" of its own
+   *  (desktop/conversation.go). Everything that means "the chat on screen"
+   *  reads this. */
+  openSession: string
   /** File/browser tab dragged into the composer, staged before send. */
   pendingContext: PendingContext | null
   /** Non-image file attached in the composer, staged before send. */
@@ -698,7 +725,8 @@ export function emptyCockpitState(): CockpitState {
     settingsIntent: null,
     pendingImage: null,
     sessionError: '',
-    peek: null,
+    parked: {},
+    openSession: '',
     pendingContext: null,
     pendingFile: null,
   }

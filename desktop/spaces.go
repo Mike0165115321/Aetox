@@ -380,7 +380,7 @@ func (a *App) SessionsInSpace(name string) []SessionMeta {
 	out, _ = queryAll(db, "spaces: sessions", `
 		SELECT id, title, updated_at, mode, agent FROM sessions
 		WHERE project_key = ? AND space = ? ORDER BY updated_at DESC LIMIT 200`,
-		[]any{projectKey(a.cfg.SandboxRoot), folder},
+		[]any{projectKey(a.cur().cfg.SandboxRoot), folder},
 		func(rows *sql.Rows) (SessionMeta, error) {
 			var m SessionMeta
 			err := rows.Scan(&m.ID, &m.Title, &m.UpdatedAt, &m.Mode, &m.Agent)

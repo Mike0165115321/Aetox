@@ -45,7 +45,7 @@ func repoWithBranches(t *testing.T) string {
 // here touches either, and paying for both on every case would make a git
 // wrapper's tests the slow ones in the package.
 func branchApp(root string) *App {
-	return &App{cfg: config.Config{SandboxRoot: root}, projectFocused: true}
+	return seed(&App{cfg: config.Config{SandboxRoot: root}, projectFocused: true}, newConversation())
 }
 
 func TestBranchesListsTheLocalOnesWithTheCurrentFirst(t *testing.T) {
@@ -73,7 +73,7 @@ func TestBranchesListsTheLocalOnesWithTheCurrentFirst(t *testing.T) {
 func TestBranchesAreEmptyWhereThereIsNothingToChooseFrom(t *testing.T) {
 	root := repoWithBranches(t)
 
-	unfocused := &App{cfg: config.Config{SandboxRoot: root}}
+	unfocused := seed(&App{cfg: config.Config{SandboxRoot: root}}, newConversation())
 	if got := unfocused.GitBranches(); len(got) != 0 {
 		t.Errorf("unfocused mode has no project, so no branches: %+v", got)
 	}
@@ -93,7 +93,7 @@ func TestSwitchMovesTheRepositoryAndReportsWhereItLanded(t *testing.T) {
 	if now != "dev" {
 		t.Errorf("expected to land on dev, reported %q", now)
 	}
-	if got := readGitBranch(a.cfg.SandboxRoot); got != "dev" {
+	if got := readGitBranch(a.cur().cfg.SandboxRoot); got != "dev" {
 		t.Errorf("the repository itself is on %q, so the report was a guess", got)
 	}
 }
@@ -191,7 +191,7 @@ func TestANameThatWouldReachGitAsAFlagIsRefused(t *testing.T) {
 // inside a repository it is not the project, and switching its branch from here
 // would be acting on something the user never pointed at.
 func TestSwitchingRefusesWithoutAFocusedProject(t *testing.T) {
-	a := &App{cfg: config.Config{SandboxRoot: repoWithBranches(t)}}
+	a := seed(&App{cfg: config.Config{SandboxRoot: repoWithBranches(t)}}, newConversation())
 
 	if _, err := a.GitSwitchBranch("dev"); err == nil {
 		t.Error("unfocused mode has no project to switch")

@@ -15,11 +15,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import {
   cockpit, loadRealState, applyAgentDone, selectGlobalSession, newSession,
-  deleteSession, sendUserMessage, leavePeek, regenerateReply,
+  deleteSession, sendUserMessage,
 } from '../lib/stores/cockpit.svelte'
 import {
   TurnInFlight, CurrentSessionID, SessionTranscript, LoadSessionAnyProject,
-  NewSessionAt, DeleteSession, SendMessage, GetModelInfo, RegenerateReply,
+  NewSessionAt, DeleteSession, SendMessage, GetModelInfo, Interject,
 } from './mocks/wailsApp'
 
 const question = { id: 1, role: 'user', text: 'ไล่บั๊คให้หน่อย', time: '10:00' }
@@ -31,7 +31,9 @@ beforeEach(() => {
   cockpit.awaitingReply = false
   cockpit.sessionError = ''
   cockpit.streamingText = ''
-  cockpit.peek = null
+  cockpit.parked = {}
+  cockpit.openSession = ''
+  cockpit.turnSession = ''
 })
 
 // loadRealState with the engine reporting a turn still running in the current
@@ -100,96 +102,91 @@ describe('a window reloaded while the agent is working', () => {
   })
 })
 
-describe('the doors out of a running turn\'s chat', () => {
-  // Opening another chat for real is what the engine cannot survive mid-turn:
-  // LoadSessionAnyProject re-roots the project and rebuilds the agent's memory.
-  // Reading one costs nothing, so the click now opens it for reading — and the
-  // half that is still refused is writing, not looking.
-  it('opens another chat for reading instead of refusing', async () => {
+describe('working in one chat while another one runs', () => {
+  // The read-only peek is gone. It was the honest half-answer for a day: you
+  // could LOOK at another chat while a turn ran, and the composer was locked
+  // with a bar explaining why. What the owner asked for three times was the
+  // other half - type in it - and that needs the working chat's whole live
+  // state to travel with it rather than one field of it.
+  it('really opens the other chat and parks the working one', async () => {
+    cockpit.openSession = 's1'
+    cockpit.turnSession = 's1'
     cockpit.chat = [{ role: 'user', text: 'งานที่กำลังทำ', time: '10:00' }]
+    cockpit.streamingText = 'กำลังเขียน…'
     cockpit.awaitingReply = true
-    vi.mocked(SessionTranscript).mockResolvedValue([question, answer] as never)
+    vi.mocked(LoadSessionAnyProject).mockResolvedValue([question, answer] as never)
 
     await selectGlobalSession({ id: 'other', title: 'แชทเก่า', ago: '' })
 
-    expect(vi.mocked(LoadSessionAnyProject)).not.toHaveBeenCalled()
-    expect(vi.mocked(SessionTranscript)).toHaveBeenCalledWith('other')
-    expect(cockpit.sessionError).toBe('')
+    // Opened for real, not read.
+    expect(vi.mocked(LoadSessionAnyProject)).toHaveBeenCalledWith('other')
+    expect(cockpit.openSession).toBe('other')
     expect(cockpit.chat.map((m) => m.text)).toEqual(['ไล่บั๊คให้หน่อย', 'เจอแล้วครับ'])
-    expect(cockpit.peek?.session.id).toBe('other')
-    // The working chat is held, not dropped: it is where the answer must land.
-    expect(cockpit.peek?.live.map((m) => m.text)).toEqual(['งานที่กำลังทำ'])
+    // The arriving chat gets a clean live state - none of the other one's work.
+    expect(cockpit.awaitingReply).toBe(false)
+    expect(cockpit.streamingText).toBe('')
+    // And the working chat kept everything, not just its messages.
+    expect(cockpit.parked['s1'].awaitingReply).toBe(true)
+    expect(cockpit.parked['s1'].chat.map((m) => m.text)).toEqual(['งานที่กำลังทำ'])
+    expect(cockpit.parked['s1'].streamingText).toBe('กำลังเขียน…')
   })
 
-  it('will not send from a chat that is only being read', async () => {
+  it('sends from the chat you switched to, without touching the running turn', async () => {
+    cockpit.openSession = 's1'
+    cockpit.turnSession = 's1'
     cockpit.awaitingReply = true
-    vi.mocked(SessionTranscript).mockResolvedValue([] as never)
+    vi.mocked(LoadSessionAnyProject).mockResolvedValue([] as never)
     await selectGlobalSession({ id: 'other', title: '', ago: '' })
 
-    await sendUserMessage('พิมพ์ผิดแชท')
+    vi.mocked(SendMessage).mockResolvedValue({ text: 'ได้ครับ' } as never)
+    await sendUserMessage('พิมพ์ในแชทที่สอง')
 
-    expect(vi.mocked(SendMessage)).not.toHaveBeenCalled()
-    expect(cockpit.sessionError).toContain('เปิดอ่าน')
-    expect(cockpit.chat).toEqual([])
+    // A real turn in the chat on screen - not an interjection into the other
+    // one, which is where this used to go.
+    expect(vi.mocked(SendMessage)).toHaveBeenCalledWith('พิมพ์ในแชทที่สอง')
+    expect(vi.mocked(Interject)).not.toHaveBeenCalled()
+    expect(cockpit.sessionError).toBe('')
+    // The first chat is still working, untouched.
+    expect(cockpit.parked['s1'].awaitingReply).toBe(true)
   })
 
-  // The peek outlives the turn: the user goes on reading after it ends. Every
-  // door that acts on "the conversation on screen" has to stay shut for as long
-  // as the conversation on screen is not the one the engine is in.
-  it('keeps acting-on-this-chat shut after the turn has ended', async () => {
-    cockpit.chat = [
-      { role: 'user', text: 'คำถาม', time: '10:00' },
-      { role: 'agent', text: 'คำตอบ', time: '10:01', variants: [{ text: 'คำตอบ' }] },
-    ]
-    vi.mocked(SessionTranscript).mockResolvedValue([question, answer] as never)
-    cockpit.awaitingReply = true
-    await selectGlobalSession({ id: 'other', title: '', ago: '' })
-    // The turn ends while the user is still reading.
-    cockpit.awaitingReply = false
+  it('brings the work back mid-flight when you return to it', async () => {
+    cockpit.openSession = 'other'
+    cockpit.parked['s1'] = {
+      chat: [{ role: 'user', text: 'งานที่กำลังทำ', time: '10:00' }],
+      awaitingReply: true, agentStatus: 'กำลังรันเครื่องมือ', toolSteps: [],
+      turnFiles: [], turnProposals: [], streamingText: 'ครึ่งประโยค',
+      reasoningText: '', ask: null, todos: [],
+    }
+    vi.mocked(LoadSessionAnyProject).mockResolvedValue([question] as never)
 
-    await regenerateReply(false)
+    await selectGlobalSession({ id: 's1', title: '', ago: '' })
 
-    expect(vi.mocked(RegenerateReply)).not.toHaveBeenCalled()
-    expect(cockpit.sessionError).toContain('เปิดอ่าน')
+    // The live messages, not the stored ones: the turn is ahead of the store.
+    expect(cockpit.chat.map((m) => m.text)).toEqual(['งานที่กำลังทำ'])
+    expect(cockpit.awaitingReply).toBe(true)
+    expect(cockpit.streamingText).toBe('ครึ่งประโยค')
+    expect(cockpit.agentStatus).toBe('กำลังรันเครื่องมือ')
+    expect(cockpit.parked['s1']).toBeUndefined()
   })
 
-  // The whole point of the read-only door: the turn goes on being the turn it
-  // was, and its answer belongs to the conversation it was asked in — not to
-  // whichever chat the user happened to open while waiting.
-  it('lands the answer in the working chat, not the one being read', async () => {
-    vi.mocked(SendMessage).mockImplementation(async () => {
-      vi.mocked(SessionTranscript).mockResolvedValue([question] as never)
-      await selectGlobalSession({ id: 'other', title: 'แชทเก่า', ago: '' })
-      return { text: 'เสร็จแล้วครับ' } as never
-    })
-
-    await sendUserMessage('ทำงานยาวให้ที')
-
-    // On screen: the chat being read, untouched by the turn.
-    expect(cockpit.chat.map((m) => m.text)).toEqual(['ไล่บั๊คให้หน่อย'])
-    expect(cockpit.peek?.live.map((m) => m.text)).toEqual(['ทำงานยาวให้ที', 'เสร็จแล้วครับ'])
-
-    leavePeek()
-    expect(cockpit.peek).toBe(null)
-    expect(cockpit.chat.map((m) => m.text)).toEqual(['ทำงานยาวให้ที', 'เสร็จแล้วครับ'])
-  })
-
-  it('refuses a new session the same way', async () => {
+  it('lets a new chat be opened while one works', async () => {
+    vi.mocked(CurrentSessionID).mockResolvedValue('fresh' as never)
+    cockpit.openSession = 's1'
+    cockpit.turnSession = 's1'
     cockpit.awaitingReply = true
 
     await newSession()
 
-    expect(vi.mocked(NewSessionAt)).not.toHaveBeenCalled()
-    expect(cockpit.sessionError).toContain('กำลังทำงานอยู่')
+    expect(vi.mocked(NewSessionAt)).toHaveBeenCalled()
+    expect(cockpit.sessionError).toBe('')
+    expect(cockpit.parked['s1'].awaitingReply).toBe(true)
   })
 
   // Only the chat the turn is writing into is protected. Freezing the whole
   // history list for the length of a long turn would be a different bug.
   it('still deletes a chat the turn is not in', async () => {
     cockpit.awaitingReply = true
-    // The turn's own chat, named. `active` used to answer this and no longer
-    // can: it means "the chat on screen" now, and reading another chat while
-    // one works is precisely when the two come apart.
     cockpit.turnSession = 's1'
 
     await deleteSession({ id: 'old', title: '', ago: '', active: false })
@@ -197,14 +194,13 @@ describe('the doors out of a running turn\'s chat', () => {
 
     await deleteSession({ id: 's1', title: '', ago: '', active: true })
     expect(vi.mocked(DeleteSession)).not.toHaveBeenCalledWith('s1')
-    cockpit.turnSession = ''
   })
 
-  // The engine's own refusal (the boot moment before awaitingReply is re-armed,
-  // a desk file gone) used to die as an unhandled rejection — a click that
-  // visibly did nothing. Every refusal is a written sentence; show it.
+  // The engine's own refusal (a desk file gone, a project door mid-turn) used
+  // to die as an unhandled rejection - a click that visibly did nothing. Every
+  // refusal is a written sentence; show it.
   it('surfaces an engine refusal instead of swallowing it', async () => {
-    vi.mocked(NewSessionAt).mockRejectedValue(new Error('เอเจนกำลังทำงานอยู่ — รอให้เสร็จ หรือกดหยุดก่อน แล้วค่อยสลับแชท'))
+    vi.mocked(NewSessionAt).mockRejectedValue(new Error('เอเจนกำลังทำงานอยู่ — รอให้เสร็จ หรือกดหยุดก่อน'))
 
     await newSession()
 
@@ -217,64 +213,27 @@ describe('the doors out of a running turn\'s chat', () => {
 
     await sendUserMessage('ต่อเลย')
 
-    // The refusal it explained stopped being true the moment the turn closed.
     expect(cockpit.sessionError).toBe('')
   })
 })
 
 // The dead click, reproduced. A chat with no rows comes back from Go as a nil
-// slice — `null` by the time it is here, never `[]` — and the map that followed
+// slice - `null` by the time it is here, never `[]` - and the map that followed
 // threw inside an async function: an unhandled rejection, a row that stayed
-// where it was, and nothing on screen saying why. Clicking a fresh chat while
-// the agent worked simply did nothing.
+// where it was, and nothing on screen saying why.
 describe('opening an empty chat while a turn runs', () => {
   it('opens it instead of dying quietly', async () => {
+    cockpit.openSession = 's1'
+    cockpit.turnSession = 's1'
     cockpit.chat = [{ role: 'user', text: 'งานที่กำลังทำ', time: '10:00' }]
     cockpit.awaitingReply = true
-    vi.mocked(SessionTranscript).mockResolvedValue(null as never)
+    vi.mocked(LoadSessionAnyProject).mockResolvedValue(null as never)
 
     await selectGlobalSession({ id: 'fresh', title: 'แชทใหม่', ago: '' })
 
-    expect(cockpit.peek?.session.id).toBe('fresh')
+    expect(cockpit.openSession).toBe('fresh')
     expect(cockpit.chat).toEqual([])
     expect(cockpit.sessionError).toBe('')
-    expect(cockpit.peek?.live.map((m) => m.text)).toEqual(['งานที่กำลังทำ'])
-  })
-})
-
-// The regression the read-only door shipped with: the peek outlived the turn,
-// nothing cleared it, and from then on every chat refused to send. Not the
-// door doing nothing — the whole app, in every conversation, until restart.
-describe('a reading that outlived its turn', () => {
-  it('ends the moment a real switch happens, in every chat', async () => {
-    cockpit.chat = [{ role: 'user', text: 'งานที่กำลังทำ', time: '10:00' }]
-    cockpit.awaitingReply = true
-    vi.mocked(SessionTranscript).mockResolvedValue([question] as never)
-    await selectGlobalSession({ id: 'other', title: '', ago: '' })
-    expect(cockpit.peek).not.toBe(null)
-
-    // The turn finishes while the user is still reading, then they switch.
-    cockpit.awaitingReply = false
-    vi.mocked(LoadSessionAnyProject).mockResolvedValue([question, answer] as never)
-    await selectGlobalSession({ id: 'third', title: '', ago: '' })
-
-    expect(cockpit.peek).toBe(null)
-
-    // And the composer works again — which is the whole complaint.
-    vi.mocked(SendMessage).mockResolvedValue({ text: 'ได้ครับ' } as never)
-    await sendUserMessage('พิมพ์ได้ไหม')
-    expect(vi.mocked(SendMessage)).toHaveBeenCalled()
-    expect(cockpit.sessionError).toBe('')
-  })
-
-  it('ends when a new chat is opened too', async () => {
-    cockpit.awaitingReply = true
-    vi.mocked(SessionTranscript).mockResolvedValue([question] as never)
-    await selectGlobalSession({ id: 'other', title: '', ago: '' })
-
-    cockpit.awaitingReply = false
-    await newSession()
-
-    expect(cockpit.peek).toBe(null)
+    expect(cockpit.parked['s1'].chat.map((m) => m.text)).toEqual(['งานที่กำลังทำ'])
   })
 })

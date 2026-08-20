@@ -187,7 +187,7 @@ func (a *App) SignOut(providerName string) (ModelInfo, error) {
 // provider in use — signing into OpenRouter while running on Ollama should not
 // restart anything.
 func (a *App) reloadAfterCredentialChange(canonical string) (ModelInfo, error) {
-	if strings.EqualFold(model.NormalizeProvider(a.cfg.ModelProvider), canonical) {
+	if strings.EqualFold(model.NormalizeProvider(a.cur().cfg.ModelProvider), canonical) {
 		next := a.cfg
 		next.ModelAPIKey = resolveAPIKeyForProvider(canonical)
 		if strings.TrimSpace(next.ModelName) == "" {

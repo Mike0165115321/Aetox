@@ -236,13 +236,61 @@ var ErrNoApprover = errors.New("bootstrap: Options.Approve is required (a nil ap
 //
 // A nil Mode is the pre-desks full desk, and every method here is nil-safe in
 // exactly that direction: it carries everything and may dispatch to anyone.
-func deskFor(m *mode.Mode, direction string) prompt.Desk {
+//
+// reach is passed in rather than read off the manifest, because the manifest is
+// only half the answer — see canDelegate.
+func deskFor(m *mode.Mode, direction string, r reach) prompt.Desk {
 	return prompt.Desk{
-		Name:      m.DeskName(),
-		Direction: direction,
-		Carries:   m.AllowsTool,
-		Delegates: m.AllowsDispatch(mode.Office),
+		Name:          m.DeskName(),
+		Direction:     direction,
+		Carries:       m.AllowsTool,
+		Delegates:     r.delegates,
+		DelegationOff: r.switchedOff,
 	}
+}
+
+// reach is who this session can hand a whole job to, and — where the answer is
+// nobody — whether that is the user's doing.
+//
+// Two fields because the two absences call for different sentences. A desk that
+// declares no `dispatch:` has nobody on the other side and never will in this
+// session; its manifest already says where that work belongs. A desk that has
+// the route and a user who has switched delegation off is a session that has to
+// answer the request itself, and the switch is the thing worth naming.
+type reach struct {
+	delegates   bool
+	switchedOff bool
+}
+
+// canDelegate answers the one question the prompt's handover layer rests on: is
+// there an เอเจน this session can hand a whole job to?
+//
+// Three things have to be true at once, and each was somewhere else before this
+// function existed:
+//
+//   - The user's เอเจน switch is on. Off is the shipped default and leaves that
+//     roster out of the tool entirely (subagent.TaskOptions.NoAgents), so every
+//     other consideration is moot. This is the half the desk manifests could not
+//     see, and leaving it out is what had the assistant calling a tool that was
+//     never registered.
+//   - The office is reachable — either this desk declares `dispatch: specialized`
+//     or this *is* the specialized desk, whose own chairs hold the writers.
+//   - This is not itself a chair. A chair is a colleague, and one colleague
+//     handing a whole job to another is two peers deciding whose job it was, one
+//     level below the person who asked — delegationTool.forChair enforces it by
+//     setting the same NoAgents, and the prompt has to say the same thing the
+//     tool does.
+//
+// A delegate's own prompt never passes through here: FilterRegistry drops
+// `task` from every child, so that path passes the zero reach outright.
+func canDelegate(cfg config.Config, m *mode.Mode, chair *subagent.Profile) reach {
+	if chair != nil {
+		return reach{}
+	}
+	if !m.AllowsDispatch(mode.Office) && m.DeskName() != mode.Office {
+		return reach{}
+	}
+	return reach{delegates: cfg.DelegateAgents, switchedOff: !cfg.DelegateAgents}
 }
 
 // withStance narrows a desk by the session's stance (§106): the same desk, seen
@@ -338,7 +386,8 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 	// desk's direction and its memory are part of the prompt prefix the
 	// provider caches, and a prompt that changed mid-conversation would spend
 	// more on cache misses than either layer saves (internal/learned).
-	desk := deskFor(opts.Mode, opts.Mode.Direction())
+	handover := canDelegate(cfg, opts.Mode, opts.Chair)
+	desk := deskFor(opts.Mode, opts.Mode.Direction(), handover)
 	if opts.Chair != nil {
 		// A chair chat runs on the chair's own prompt — profile plus what it
 		// has learned, the same fold its delegate runs get (§85: one fold, two
@@ -349,7 +398,7 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 		// The chair's own brief replaces the desk's direction, but not what the
 		// desk carries: a chair sits at one, and the engine layers have to
 		// describe the tools it actually holds.
-		desk = deskFor(opts.Mode, subagent.PromptFor(*opts.Chair))
+		desk = deskFor(opts.Mode, subagent.PromptFor(*opts.Chair), handover)
 		desk.Name = opts.Chair.Name
 	}
 	// Last, so it narrows whichever of the two desks above was built. A chair
@@ -417,13 +466,15 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 		return opts.Mode.Carries(name, source) && stanceOf.Carries(name, source)
 	}
 	dispatcher := skill.NewDispatcherFor(registry, deskCarries)
+	// The chair's cut is taken further down, after the task tools are in the
+	// registry, so that AttendedRegistry can see `task` and hand the chair its
+	// helper half (§151). Before that move it ran here and `task` was simply
+	// absent, which read as a decision and was really an ordering.
 	if opts.Chair != nil {
-		// A chair chat sees exactly what its delegate runs see: profile ∩ the
-		// office ceiling, cut by the same FilterRegistry — a second reading of
-		// the same rules could drift from the one the delegate actually runs
-		// on. The cut is a snapshot, which is also what keeps `task` out: the
-		// task tools are registered below, after this line, and a leaf stays a
-		// leaf even when spoken to (§85). Note FilterRegistry's own caveat: an
+		// A chair chat sees what its delegate runs see: profile ∩ the office
+		// ceiling, cut by the same FilterRegistry — a second reading of the same
+		// rules could drift from the one the delegate actually runs on. Note
+		// FilterRegistry's own caveat: an
 		// MCP server that finishes connecting after this point reaches every
 		// desk that attached it, but not a chair session already open.
 		//
@@ -443,21 +494,6 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 			debuglog.Msg("chair %s: %v", opts.Chair.Name, err)
 		}
 		cancelChair()
-		child := subagent.AttendedRegistry(registry, *opts.Chair, opts.Mode)
-		// `memory` is rebuilt bound to the chair's own scope, exactly as
-		// task.go does for a delegate and for the same reason: the parent's
-		// instance writes the main agent's file, and there must be no scope an
-		// agent can name but its own.
-		if opts.Proposer != nil && opts.Chair.AllowsTool("memory") {
-			scoped := &learned.MemoryTool{Scope: opts.Chair.Name, Proposer: opts.Proposer}
-			if regErr := child.Register(scoped, skill.SourceBuiltin); regErr != nil {
-				debuglog.Msg("memory unavailable to chair %s: %v", opts.Chair.Name, regErr)
-			}
-		}
-		// The chair's cut is already a snapshot registry, so the desk filter has
-		// nothing left to say — but the stance does, and it is the one thing
-		// here the user can still change without reopening the chat.
-		dispatcher = skill.NewDispatcherFor(child, stanceOf.Carries)
 	}
 
 	permissions, permErr := config.LoadPermissions()
@@ -515,7 +551,7 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 	// Built here rather than inside NewTaskTools so the caller gets a handle on
 	// it: delegates now outlive their turn, and Stop is the host's to press.
 	delegations := subagent.NewDelegations()
-	for _, tool := range subagent.NewTaskTools(subagent.TaskOptions{
+	taskOpts := subagent.TaskOptions{
 		Provider:    bootstrapResult.Provider,
 		Model:       cfg.ModelName,
 		Registry:    registry,
@@ -525,23 +561,28 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 		// dispatch runs on the target desk's manifest, so the tool it needs has
 		// to still be in there to be filtered *in* (§84).
 		Desk: opts.Mode,
-		// The user's two switches. Off builds no tool at all, which is the whole
-		// point — a `task` that existed to refuse would still cost its place in
-		// every request to say so.
+		// The user's switches, one per kind (COMPANY.md §4). Both off builds no
+		// tool at all, which is the whole point — a `task` that existed to
+		// refuse would still cost its place in every request to say so.
 		//
-		// The one negation in the whole feature, and it belongs here: the
-		// product ships delegation off (config.Config.DelegateOn) while the
-		// library it configures defaults to on (TaskOptions.DelegateOff). Both
+		// The negations in the whole feature live here and nowhere else: the
+		// product ships delegation off (config.Config) while the library it
+		// configures defaults to the full reach (subagent.TaskOptions). Both
 		// defaults are right for what they are, and this is the boundary where
 		// one becomes the other.
-		DelegateOff: !cfg.DelegateOn,
-		AgentsOff:   cfg.AgentsOff,
+		NoAgents:   !cfg.DelegateAgents,
+		NoHelpers:  !cfg.DelegateHelpers,
+		WorkersOff: cfg.WorkersOff,
 		// The same assembler the session's own prompt came out of, three lines
 		// up, with the delegate's brief where the desk's direction goes. One
 		// door: a worker reached by `task` and a worker reached by opening a
 		// chat now stand in the same room, described the same way.
 		BuildPrompt: func(direction string) string {
-			return prompt.BuildForDesk(surface, scope, deskFor(opts.Mode, direction))
+			// false, always: FilterRegistry drops `task` from every child, so a
+			// delegate has nobody to hand work to no matter what the desk or the
+			// switch says. Reading the session's answer here would tell the one
+			// agent that certainly cannot delegate that it can.
+			return prompt.BuildForDesk(surface, scope, deskFor(opts.Mode, direction, reach{}))
 		},
 		// The deferred half of the MCP config: a server only this agent carries
 		// was skipped at startup and comes up here, on the dispatch that needs
@@ -559,10 +600,30 @@ func Engine(cfg config.Config, opts Options) (Result, error) {
 		MaxChars:     maxChars,
 		ThinkLevel:   think.NormalizeLevel(thinkLevel),
 		Proposer:     opts.Proposer,
-	}) {
+	}
+	for _, tool := range subagent.NewTaskTools(taskOpts) {
 		if err := registry.Register(tool, skill.SourceBuiltin); err != nil {
 			debuglog.Msg("%s registration skipped: %v", tool.Name(), err)
 		}
+	}
+	// The chair's cut, taken here rather than beside its MCP connect above so
+	// that `task` is already in the registry to be narrowed (§151).
+	if opts.Chair != nil {
+		child := subagent.AttendedRegistry(registry, *opts.Chair, opts.Mode)
+		// `memory` is rebuilt bound to the chair's own scope, exactly as
+		// task.go does for a delegate and for the same reason: the parent's
+		// instance writes the main agent's file, and there must be no scope an
+		// agent can name but its own.
+		if opts.Proposer != nil && opts.Chair.AllowsTool("memory") {
+			scoped := &learned.MemoryTool{Scope: opts.Chair.Name, Proposer: opts.Proposer}
+			if regErr := child.Register(scoped, skill.SourceBuiltin); regErr != nil {
+				debuglog.Msg("memory unavailable to chair %s: %v", opts.Chair.Name, regErr)
+			}
+		}
+		// The chair's cut is already a snapshot registry, so the desk filter has
+		// nothing left to say — but the stance does, and it is the one thing
+		// here the user can still change without reopening the chat.
+		dispatcher = skill.NewDispatcherFor(child, stanceOf.Carries)
 	}
 
 	console := opts.Console

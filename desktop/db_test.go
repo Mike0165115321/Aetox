@@ -3,7 +3,7 @@ package main
 import "testing"
 
 func TestDatabaseUsesOverrideDir(t *testing.T) {
-	a := &App{dbDir: t.TempDir()}
+	a := seed(&App{dbDir: t.TempDir()}, newConversation())
 	closeDBOnCleanup(t, a)
 	db, err := a.database()
 	if err != nil {
@@ -19,7 +19,7 @@ func TestDatabaseUsesOverrideDir(t *testing.T) {
 }
 
 func TestDatabaseSingleton(t *testing.T) {
-	a := &App{dbDir: t.TempDir()}
+	a := seed(&App{dbDir: t.TempDir()}, newConversation())
 	closeDBOnCleanup(t, a)
 	db1, err := a.database()
 	if err != nil {

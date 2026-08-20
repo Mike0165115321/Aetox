@@ -23,7 +23,7 @@ func schemaVersion(t *testing.T, db *sql.DB) int {
 // tables present — otherwise the very first migration added later would run
 // against a database that already has its result.
 func TestFreshDatabaseLandsAtLatestSchemaVersion(t *testing.T) {
-	a := &App{cfg: config.Config{}, dbDir: t.TempDir()}
+	a := seed(&App{cfg: config.Config{}, dbDir: t.TempDir()}, newConversation())
 	t.Cleanup(func() {
 		if a.db != nil {
 			_ = a.db.Close()
@@ -72,7 +72,7 @@ func TestExistingUnversionedDatabaseMigratesWithoutLosingHistory(t *testing.T) {
 		t.Fatalf("close: %v", err)
 	}
 
-	a := &App{cfg: config.Config{}, dbDir: dir}
+	a := seed(&App{cfg: config.Config{}, dbDir: dir}, newConversation())
 	t.Cleanup(func() {
 		if a.db != nil {
 			_ = a.db.Close()
@@ -139,7 +139,7 @@ func TestDatabaseFromNewerBuildIsRefused(t *testing.T) {
 		t.Fatalf("close: %v", err)
 	}
 
-	a := &App{cfg: config.Config{}, dbDir: dir}
+	a := seed(&App{cfg: config.Config{}, dbDir: dir}, newConversation())
 	t.Cleanup(func() {
 		if a.db != nil {
 			_ = a.db.Close()
@@ -214,7 +214,7 @@ func TestSummarizerRowsBecomeIssuesAndKeepTheirDecisions(t *testing.T) {
 		t.Fatalf("close: %v", err)
 	}
 
-	a := &App{cfg: config.Config{}, dbDir: dir}
+	a := seed(&App{cfg: config.Config{}, dbDir: dir}, newConversation())
 	t.Cleanup(func() {
 		if a.db != nil {
 			_ = a.db.Close()

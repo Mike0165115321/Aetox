@@ -25,7 +25,7 @@ func (usageProvider) Complete(_ context.Context, _ model.Request) (model.Respons
 // shows.
 func TestUsagePipelineEndToEnd(t *testing.T) {
 	isolateUserDirs(t)
-	a := &App{cfg: config.Config{ModelProvider: "noop", ModelName: "usage-fake-model", SandboxRoot: t.TempDir()}, dbDir: t.TempDir()}
+	a := seed(&App{cfg: config.Config{ModelProvider: "noop", ModelName: "usage-fake-model", SandboxRoot: t.TempDir()}, dbDir: t.TempDir()}, newConversation())
 	t.Cleanup(func() {
 		if a.db != nil {
 			_ = a.db.Close()
@@ -68,7 +68,7 @@ func TestUsageStatsPutsMoneyOnRowsItCanPrice(t *testing.T) {
 	// leaks its catalog in would make the no-catalog test below pass or fail on
 	// execution order.
 	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
-	a := &App{cfg: config.Config{ModelProvider: "deepseek", ModelName: "deepseek-v4-flash"}, dbDir: t.TempDir()}
+	a := seed(&App{cfg: config.Config{ModelProvider: "deepseek", ModelName: "deepseek-v4-flash"}, dbDir: t.TempDir()}, newConversation())
 	t.Cleanup(func() {
 		if a.db != nil {
 			_ = a.db.Close()
@@ -92,7 +92,7 @@ func TestUsageStatsPutsMoneyOnRowsItCanPrice(t *testing.T) {
 		CompletionTokens: 547_745, CacheReported: true,
 	})
 	// A model the catalog has never heard of, recorded in the same table.
-	a.cfg.ModelName = "some-local-model"
+	a.cur().cfg.ModelName = "some-local-model"
 	a.recordTokenUsage(a.cur(), model.Usage{PromptTokens: 1000, CompletionTokens: 100})
 
 	stats, err := a.UsageStats()
@@ -144,7 +144,7 @@ func TestUsageStatsPutsMoneyOnRowsItCanPrice(t *testing.T) {
 func TestUsageStatsStillWorksWithNoPriceCatalog(t *testing.T) {
 	isolateUserDirs(t)
 	t.Setenv("AETOX_DATA_ROOT", t.TempDir()) // guaranteed empty: no catalog here
-	a := &App{cfg: config.Config{ModelProvider: "deepseek", ModelName: "deepseek-v4-flash"}, dbDir: t.TempDir()}
+	a := seed(&App{cfg: config.Config{ModelProvider: "deepseek", ModelName: "deepseek-v4-flash"}, dbDir: t.TempDir()}, newConversation())
 	t.Cleanup(func() {
 		if a.db != nil {
 			_ = a.db.Close()
@@ -179,7 +179,7 @@ func TestRecordAndAggregateTokenUsage(t *testing.T) {
 
 	a.recordTokenUsage(a.cur(), model.Usage{PromptTokens: 100, CompletionTokens: 20})
 	a.recordTokenUsage(a.cur(), model.Usage{PromptTokens: 50, CompletionTokens: 5})
-	a.cfg.ModelName = "other-model"
+	a.cur().cfg.ModelName = "other-model"
 	a.recordTokenUsage(a.cur(), model.Usage{PromptTokens: 7, CompletionTokens: 3})
 
 	stats, err := a.UsageStats()
@@ -210,7 +210,7 @@ func TestRecordAndAggregateTokenUsage(t *testing.T) {
 func TestSubscriptionUsageIsCountedButNotPriced(t *testing.T) {
 	isolateUserDirs(t)
 	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
-	a := &App{cfg: config.Config{ModelProvider: "codex", ModelName: "gpt-5.6-luna"}, dbDir: t.TempDir()}
+	a := seed(&App{cfg: config.Config{ModelProvider: "codex", ModelName: "gpt-5.6-luna"}, dbDir: t.TempDir()}, newConversation())
 	t.Cleanup(func() {
 		if a.db != nil {
 			_ = a.db.Close()

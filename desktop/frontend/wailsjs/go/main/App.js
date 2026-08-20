@@ -798,8 +798,8 @@ export function SetConnectionTargets(arg1, arg2) {
   return window['go']['main']['App']['SetConnectionTargets'](arg1, arg2);
 }
 
-export function SetDelegateOff(arg1) {
-  return window['go']['main']['App']['SetDelegateOff'](arg1);
+export function SetDelegateOff(arg1, arg2) {
+  return window['go']['main']['App']['SetDelegateOff'](arg1, arg2);
 }
 
 export function SetLearningEnabled(arg1) {
@@ -1014,8 +1014,8 @@ export function VerifyConnection(arg1) {
   return window['go']['main']['App']['VerifyConnection'](arg1);
 }
 
-export function WorkbenchTabsChanged(arg1) {
-  return window['go']['main']['App']['WorkbenchTabsChanged'](arg1);
+export function WorkbenchTabsChanged(arg1, arg2) {
+  return window['go']['main']['App']['WorkbenchTabsChanged'](arg1, arg2);
 }
 
 export function WorkspaceFolders() {

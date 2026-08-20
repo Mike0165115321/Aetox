@@ -103,7 +103,7 @@ func (a *App) RunChatScript(lang, source string) (RunBlockResult, error) {
 // can never write over each other while an interpreter is reading one of them.
 func (a *App) writeScript(source, ext string) (rel string, remove func(), err error) {
 	noop := func() {}
-	root := strings.TrimSpace(a.cfg.SandboxRoot)
+	root := strings.TrimSpace(a.cur().cfg.SandboxRoot)
 	if root == "" {
 		return "", noop, fmt.Errorf("no workspace to run the script in")
 	}

@@ -112,7 +112,12 @@ var planKeeps = map[string]bool{
 	// behind to be decided.
 	"ask_user": true, "todo_write": true, "calc": true, "time": true,
 	"skills_list": true, "skill_view": true, "session_search": true,
-	"desk_list": true, "help": true, "echo": true,
+	// The desk, whole. It is the one pack วางแผน can carry entire, and for a
+	// reason worth stating rather than discovering: every action in it only
+	// looks — put a file in front of the user, see what is there, take one
+	// away. Nothing on disk changes. `desk_terminal` is deliberately not part
+	// of it (packed.go), which is exactly why this line can be one word.
+	"desk": true, "desk_list": true, "help": true, "echo": true,
 }
 
 // planShape is the four headings a plan comes back under, with what belongs

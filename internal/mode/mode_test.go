@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/Mike0165115321/Aetox/internal/config"
@@ -502,5 +503,42 @@ func TestFullDeskCarriesEveryConnection(t *testing.T) {
 	var full *Mode
 	if !full.Carries("github_search", skill.SourceBuiltin) {
 		t.Fatal("the legacy full desk lost a connection's tools")
+	}
+}
+
+// A manifest is compiled into the binary; a switch on the settings page is not.
+// So a manifest may describe the desk — what work this is, what is on it, what
+// belongs elsewhere — and may never name a tool whose existence the user
+// decides at runtime.
+//
+// `task` is the one such tool today. assistant.md and specialized.md both spelt
+// out the handover in prose, and with delegation off — the shipped default —
+// the model read "hand the job over with `task`", called it, and got
+// `tool "task" is not exposed to agent` (2026-08-20). The route lives in
+// internal/prompt now, where it can be gated on whether the tool was built.
+//
+// The name is what this can check. The same mistake without the name is not
+// catchable here and has to be caught in review: coding.md said "delegate
+// searches and side-quests" the same day, which is the same instruction with
+// the tool left unnamed. What replaced it is the half that holds either way —
+// the main thread is for the change itself — and the judgment about WHEN to
+// delegate lives in the tool's own description, which only exists when the tool
+// does.
+func TestNoManifestNamesATooltheUserCanSwitchOff(t *testing.T) {
+	entries, err := bundledModes.ReadDir("modes")
+	if err != nil {
+		t.Fatalf("read bundled modes: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("no bundled manifests to check")
+	}
+	for _, e := range entries {
+		body, err := bundledModes.ReadFile("modes/" + e.Name())
+		if err != nil {
+			t.Fatalf("read %s: %v", e.Name(), err)
+		}
+		if strings.Contains(string(body), "`task`") {
+			t.Errorf("%s names `task`, which does not exist when the user has delegation switched off — say it in internal/prompt, where the gate is", e.Name())
+		}
 	}
 }
