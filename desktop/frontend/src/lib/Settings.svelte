@@ -261,6 +261,9 @@
     // draws the fact rather than a picker. Present on connect.Status all along;
     // this hand-written mirror had simply drifted behind it.
     home_agent?: string
+    /** Agents this connection already reaches before anybody places it
+     *  (connect.Provider.DefaultAgents). Ticked, because the engine grants it. */
+    default_agents?: string[]
     // How to bring this one up, for the services the user runs themselves.
     start_command?: string
   }
@@ -302,10 +305,21 @@
   // yet renders nothing rather than a raw key.
   const connBlurb: Record<string, string> = $derived({ github: t('settings.ghDesc') })
 
-  // Desks are pre-picked and agents are not. An agent is handed things on
-  // purpose, which is the same asymmetry the resolver applies to a connection
-  // nobody has placed yet (config.ConnectionsForAgent).
-  const defaultDraft = () => mcpTargets.filter((t) => t.kind === 'desk').map((t) => t.id)
+  // Desks are pre-picked and agents are not — an agent is handed things on
+  // purpose, which is the asymmetry the resolver applies to a connection nobody
+  // has placed yet (config.ConnectionsForAgent).
+  //
+  // With one exception the catalog writes down: a service can name the agents
+  // it starts at (connect.Provider.DefaultAgents — GitHub names the github
+  // agent). Ticked here because the engine ALREADY grants it, and a chip drawn
+  // unticked over a grant that is in force is the page saying something untrue.
+  // Everything stays clickable; this decides where an untouched row begins.
+  const defaultDraft = (row?: ConnectionRow) => [
+    ...mcpTargets.filter((t) => t.kind === 'desk').map((t) => t.id),
+    ...(row?.default_agents ?? [])
+      .map((name) => mcpTargets.find((t) => t.kind === 'agent' && t.name === name)?.id)
+      .filter((id): id is string => !!id),
+  ]
 
   async function loadConnections() {
     if (mcpTargets.length === 0) {
@@ -333,7 +347,7 @@
       if (connDraft[row.id]) continue
       // A connection already placed keeps its list when it is reconnected; one
       // that has never been placed starts where the resolver would put it.
-      connDraft[row.id] = row.configured ? [...row.for] : defaultDraft()
+      connDraft[row.id] = row.configured ? [...row.for] : defaultDraft(row)
     }
   }
 

@@ -272,7 +272,7 @@ func connectionState(agent, id string) Need {
 		need.Reason = ReasonUnconnected
 		return need
 	}
-	for _, held := range config.ConnectionsForAgent(agent, connect.IDs()) {
+	for _, held := range config.ConnectionsForAgent(agent, connect.IDs(), connect.AgentDefaults()) {
 		if strings.EqualFold(held, id) {
 			return need // satisfied: connected and pointed at this agent
 		}

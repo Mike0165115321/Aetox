@@ -254,7 +254,7 @@ func FilterRegistry(parent *skill.Registry, p Profile, ceiling *mode.Mode) *skil
 		// `agent:` placement — while this cut asked the desk's ceiling, which
 		// had never heard of it. Four readers agreed the agent was equipped,
 		// and the one that hands out tools disagreed.
-		agentConnections := config.ConnectionsForAgent(p.Name, connect.IDs())
+		agentConnections := config.ConnectionsForAgent(p.Name, connect.IDs(), connect.AgentDefaults())
 		chairCarries := ceiling.CarriesForChair
 		carries = func(name string, source skill.Source) bool {
 			if chairCarries(name, source) {

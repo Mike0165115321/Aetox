@@ -247,7 +247,7 @@ func TestDeclaringANeedGrantsNothing(t *testing.T) {
 		t.Fatalf("SetConnectionTargets: %v", err)
 	}
 
-	held := config.ConnectionsForAgent("github", []string{"github"})
+	held := config.ConnectionsForAgent("github", []string{"github"}, nil)
 	if len(held) != 0 {
 		t.Fatalf("the agent holds %v having only declared a need for it", held)
 	}

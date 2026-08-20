@@ -99,6 +99,11 @@ type Status struct {
 	// HomeAgent, when set, says placement is locked to that agent (see
 	// Provider.HomeAgent): the page draws the fact instead of a picker.
 	HomeAgent string `json:"home_agent,omitempty"`
+	// DefaultAgents are the agents an unplaced connection already reaches (see
+	// Provider.DefaultAgents). The page ticks them, because the engine acts on
+	// them: a chip drawn unticked over a grant that is really in force is the
+	// page telling the user something that is not true.
+	DefaultAgents []string `json:"default_agents,omitempty"`
 	// NeedsBaseURL says this service has no address of its own — the user runs
 	// it, and only the user knows where. The page has to know before it draws
 	// the form, which is why it is a field rather than something inferred from
@@ -182,6 +187,25 @@ type Provider struct {
 	// the full vocabulary.
 	HomeAgent string
 
+	// DefaultAgents are the office's agents that carry this connection when
+	// nobody has placed it yet. HomeAgent's softer relative: a lock draws a
+	// fact instead of a picker and admits no other audience, this only decides
+	// where an untouched connection starts and every chip stays clickable.
+	//
+	// It exists because "unplaced" was one answer for every service — every
+	// desk, no agent — and that is wrong for a connection whose whole reason to
+	// exist is one specialist. GitHub's tools are the github agent's trade
+	// (owner, 19 ส.ค.: "ค่าเริ่มต้นเป็นเอเจน กิตฮับเลยสิครับ"), and having to
+	// hand them to it by hand on every install is a default that disagrees with
+	// the product.
+	//
+	// It ADDS, never subtracts. The desks keep an unplaced connection exactly as
+	// before, because taking one away from the main assistant on an install
+	// nobody has touched would be a capability removed by an upgrade — the one
+	// thing the placement rules were written to prevent. Narrowing it to the
+	// agent alone is one click on this page, and it is the user's click.
+	DefaultAgents []string
+
 	connect func(context.Context, string) (Account, error)
 	// verify re-checks whatever credential is in play and says whose it is.
 	// Separate from status because status must never touch the network — a
@@ -216,6 +240,8 @@ var catalog = []Provider{
 			"github_search", "github_repo_summary", "github_list_files",
 			"github_read_file", "plugin_install",
 		},
+		// The agent whose whole trade this is. See Provider.DefaultAgents.
+		DefaultAgents: []string{"github"},
 		connect: func(ctx context.Context, token string) (Account, error) {
 			account, err := gh.Connect(ctx, token)
 			return Account{Login: account.Login, Name: account.Name, Scopes: account.Scopes}, err
@@ -331,6 +357,22 @@ func IDs() []string {
 	return out
 }
 
+// AgentDefaults is which agents carry each connection before anybody places it.
+//
+// Handed to the resolver rather than read by it: the readers live in config,
+// which cannot import this package (this one imports config), and that boundary
+// is the reason the placement rules have stayed one file. Empty for every
+// service that has no opinion, which is most of them.
+func AgentDefaults() map[string][]string {
+	out := map[string][]string{}
+	for _, p := range catalog {
+		if len(p.DefaultAgents) > 0 {
+			out[p.ID] = append([]string(nil), p.DefaultAgents...)
+		}
+	}
+	return out
+}
+
 // Find returns one provider by id.
 func Find(id string) (Provider, bool) {
 	id = strings.TrimSpace(id)
@@ -384,8 +426,9 @@ func statusOf(p Provider) Status {
 		ID: p.ID, Label: p.Label, Kind: p.Kind, TokenURL: tokenURL,
 		Connected: connected, Login: login, Source: source, EnvOverride: envOverride,
 		For: targets, Configured: configured, Tools: p.Tools, Family: string(p.Family),
-		HomeAgent:    p.HomeAgent,
-		NeedsBaseURL: p.NeedsBaseURL, BaseURL: baseURL, BaseURLHint: p.BaseURLHint,
+		HomeAgent:     p.HomeAgent,
+		DefaultAgents: p.DefaultAgents,
+		NeedsBaseURL:  p.NeedsBaseURL, BaseURL: baseURL, BaseURLHint: p.BaseURLHint,
 		StartCommand: startCommand,
 	}
 }

@@ -35,7 +35,7 @@ func TestUnplacedConnectionIsCarriedByEveryDesk(t *testing.T) {
 func TestUnplacedConnectionReachesNoAgent(t *testing.T) {
 	connectionsRoot(t)
 
-	if got := ConnectionsForAgent("researcher", known); len(got) != 0 {
+	if got := ConnectionsForAgent("researcher", known, nil); len(got) != 0 {
 		t.Fatalf("agent carries %v with nothing placed, want none", got)
 	}
 }
@@ -98,10 +98,10 @@ func TestAgentPlacementUsesTheSameVocabularyAsMCP(t *testing.T) {
 	if err := SetConnectionTargets("github", []string{"coding", MCPAgentPrefix + "researcher"}); err != nil {
 		t.Fatalf("SetConnectionTargets: %v", err)
 	}
-	if got := ConnectionsForAgent("researcher", known); !contains(got, "github") {
+	if got := ConnectionsForAgent("researcher", known, nil); !contains(got, "github") {
 		t.Fatalf("agent carries %v, want github", got)
 	}
-	if got := ConnectionsForAgent("someone-else", known); contains(got, "github") {
+	if got := ConnectionsForAgent("someone-else", known, nil); contains(got, "github") {
 		t.Fatalf("an unnamed agent carries %v, want none", got)
 	}
 }
@@ -165,4 +165,36 @@ func containsSub(haystack, needle string) bool {
 		}
 		return false
 	})()
+}
+
+// The catalog can say where a connection starts, and the github agent is the
+// case it was written for: its tools are that agent's whole trade, so handing
+// them over by hand on every install was a default that disagreed with the
+// product (owner, 19 ส.ค.).
+//
+// What it must NOT do is take anything away. An unplaced connection is still
+// carried by every desk — an upgrade that quietly removed GitHub from the main
+// assistant would be exactly the failure the unplaced rule exists to prevent.
+func TestAnUnplacedConnectionCanStartAtItsOwnAgent(t *testing.T) {
+	t.Setenv("AETOX_DATA_ROOT", t.TempDir())
+	known := []string{"github", "gmail"}
+	defaults := map[string][]string{"github": {"github"}}
+
+	if got := ConnectionsForAgent("github", known, defaults); !contains(got, "github") {
+		t.Errorf("the github agent holds %v, want the connection the catalog starts it at", got)
+	}
+	// Named for one agent, not handed to the rest of the team.
+	if got := ConnectionsForAgent("researcher", known, defaults); contains(got, "github") {
+		t.Errorf("researcher holds %v, want nothing it was not given", got)
+	}
+	// And no service without an opinion changed behaviour.
+	if got := ConnectionsForAgent("github", known, defaults); contains(got, "gmail") {
+		t.Errorf("the github agent holds %v, want no gmail — nothing named it", got)
+	}
+	// The desks keep what they had. This is the half that must never regress.
+	for _, desk := range []string{"assistant", "coding", "specialized"} {
+		if got := ConnectionsForDesk(desk, known); !contains(got, "github") {
+			t.Errorf("desk %q holds %v, want the unplaced connection it always had", desk, got)
+		}
+	}
 }

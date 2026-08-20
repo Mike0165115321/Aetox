@@ -83,7 +83,7 @@ func TestUseEnginePointsTheAgentAtOneAndAwayFromTheRest(t *testing.T) {
 	if err := a.UseEngine("automation", "automation", "n8n"); err != nil {
 		t.Fatalf("UseEngine: %v", err)
 	}
-	held := config.ConnectionsForAgent("automation", connect.IDs())
+	held := config.ConnectionsForAgent("automation", connect.IDs(), nil)
 	if !slices.Contains(held, "n8n") {
 		t.Fatalf("the agent holds %v after picking n8n", held)
 	}
@@ -93,7 +93,7 @@ func TestUseEnginePointsTheAgentAtOneAndAwayFromTheRest(t *testing.T) {
 	if err := a.UseEngine("automation", "automation", ""); err != nil {
 		t.Fatalf("UseEngine(none): %v", err)
 	}
-	if held := config.ConnectionsForAgent("automation", connect.IDs()); len(held) != 0 {
+	if held := config.ConnectionsForAgent("automation", connect.IDs(), nil); len(held) != 0 {
 		t.Fatalf("the agent still holds %v after being pointed at nothing", held)
 	}
 }
@@ -112,7 +112,7 @@ func TestPickingAnEngineDecidesWhichToolsTheAgentGets(t *testing.T) {
 	if err := a.UseEngine("automation", "automation", "n8n"); err != nil {
 		t.Fatalf("UseEngine: %v", err)
 	}
-	held := config.ConnectionsForAgent("automation", connect.IDs())
+	held := config.ConnectionsForAgent("automation", connect.IDs(), nil)
 	if !connect.Allows("n8n_workflow_create", held) {
 		t.Error("the agent cannot call n8n's tools after being pointed at n8n")
 	}
@@ -120,7 +120,7 @@ func TestPickingAnEngineDecidesWhichToolsTheAgentGets(t *testing.T) {
 	if err := a.UseEngine("automation", "automation", ""); err != nil {
 		t.Fatalf("UseEngine(none): %v", err)
 	}
-	held = config.ConnectionsForAgent("automation", connect.IDs())
+	held = config.ConnectionsForAgent("automation", connect.IDs(), nil)
 	if connect.Allows("n8n_workflow_create", held) {
 		t.Error("the agent kept n8n's tools after being pointed away — the gate is not reading placement")
 	}
@@ -157,7 +157,7 @@ func TestAConnectedEngineIsOfferedEvenBeforeItIsPlaced(t *testing.T) {
 	}
 	// Offered, and genuinely not yet in play: this is what the chip reads as
 	// "ยังไม่ได้เลือก", and what one click repairs.
-	held := config.ConnectionsForAgent("automation", connect.IDs())
+	held := config.ConnectionsForAgent("automation", connect.IDs(), nil)
 	if len(held) != 0 {
 		t.Fatalf("the agent already holds %v — this test no longer covers the unplaced state", held)
 	}

@@ -243,25 +243,29 @@ func ConnectionTargets(id string) ([]string, bool) {
 // same reading MCPServersForDesk gives a nil *mode.Mode.
 func ConnectionsForDesk(desk string, known []string) []string {
 	desk = strings.TrimSpace(desk)
-	return connectionsFor(desk, known, desk == "")
+	return connectionsFor(desk, known, nil, desk == "")
 }
 
 // ConnectionsForAgent returns the connections the user pointed at one of the
 // team. Unlike a desk, a nameless agent carries nothing: "no desk" is the real
 // legacy state, while "no agent" is a caller that failed to say who is asking.
-func ConnectionsForAgent(name string, known []string) []string {
+// defaults says which agents carry a connection nobody has placed yet — the
+// catalog's answer, handed in because this package cannot read the catalog
+// (connect imports config, not the other way round). nil means the old rule for
+// everything: an unplaced connection reaches no agent at all.
+func ConnectionsForAgent(name string, known []string, defaults map[string][]string) []string {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil
 	}
-	return connectionsFor(MCPAgentPrefix+name, known, false)
+	return connectionsFor(MCPAgentPrefix+name, known, defaults, false)
 }
 
 // connectionsFor is the one matcher behind both, mirroring mcpServersFor. It is
 // given the set of connections that exist so that a stale entry in the file —
 // a provider removed from a later build — cannot resurrect itself as a name
 // nothing recognises.
-func connectionsFor(owner string, known []string, all bool) []string {
+func connectionsFor(owner string, known []string, defaults map[string][]string, all bool) []string {
 	placed := map[string][]string{}
 	if items, err := LoadConnections(); err == nil {
 		for _, item := range items {
@@ -280,6 +284,14 @@ func connectionsFor(owner string, known []string, all bool) []string {
 			// agent is handed things on purpose, so silence is not a grant —
 			// which is the same asymmetry ConnectionsForAgent states above.
 			if all || !strings.HasPrefix(owner, MCPAgentPrefix) {
+				out = append(out, id)
+				continue
+			}
+			// Unless the catalog named this agent as where the connection
+			// starts. Still silence-is-not-a-grant: the grant is written down,
+			// in the catalog, and the page draws it as a ticked chip the user
+			// can untick. See connect.Provider.DefaultAgents.
+			if containsFold(defaults[strings.ToLower(id)], strings.TrimPrefix(owner, MCPAgentPrefix)) {
 				out = append(out, id)
 			}
 			continue
