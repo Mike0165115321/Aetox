@@ -51,6 +51,20 @@
 
   onMount(refresh)
 
+  // Read again the moment a turn ends. The panel's whole job is to say where
+  // the repository stands, and the thing that most often moves it is the agent
+  // that just finished working — a list that still says "clean" while the chat
+  // above it reports three edited files is worse than no list, because it is
+  // confidently wrong. `awaitingReply` going false is the cheapest true signal
+  // that something may have changed; the refresh button stays for everything
+  // else that touches the tree (a commit in a terminal, an editor, the user).
+  let wasWorking = false
+  $effect(() => {
+    const working = cockpit.awaitingReply
+    if (wasWorking && !working) void refresh()
+    wasWorking = working
+  })
+
   async function toggle(path: string) {
     if (open[path]) {
       open[path] = false

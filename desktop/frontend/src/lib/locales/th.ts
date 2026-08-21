@@ -144,7 +144,7 @@ export const th = {
   'workbench.gitTab': 'Git',
   // The working tree panel (§161.4) — โค้ด desk only, and it says so itself
   // rather than leaving a person to wonder where it went on the other desks.
-  'git.workingTree': 'ไฟล์ที่แก้อยู่',
+  'git.workingTree': 'ยังไม่ commit',
   'git.codeDeskOnly': 'แผงนี้แสดงเฉพาะหน้าโค้ดเท่านั้น',
   'git.clean': 'ยังไม่มีอะไรเปลี่ยน ไฟล์ตรงกับสาขาอยู่',
   'git.loading': 'กำลังอ่านไฟล์ที่แก้...',

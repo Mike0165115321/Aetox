@@ -145,7 +145,7 @@ export const en: Record<keyof typeof th, string> = {
   'workbench.gitTab': 'Git',
   // The working tree panel (§161.4) — โค้ด desk only, and it says so itself
   // rather than leaving a person to wonder where it went on the other desks.
-  'git.workingTree': 'working tree',
+  'git.workingTree': 'not committed yet',
   'git.codeDeskOnly': 'Shown on the Code desk only.',
   'git.clean': 'Nothing changed. The working tree matches the branch.',
   'git.loading': 'Reading the working tree...',

@@ -778,7 +778,17 @@ function writeLive(id: string, change: (live: ParkedTurn) => void): void {
     return
   }
   const held = cockpit.parked[id]
-  if (held) change(held)
+  if (held) {
+    change(held)
+    return
+  }
+  // Nobody is holding this session, and it is the turn this window started.
+  // The chat on screen is the only place it can belong: forLiveTurn has already
+  // established that a stamp naming a chat the window tracks nothing for is not
+  // somebody else's turn, it is this one, running under an id the window
+  // guessed wrong. Without this the status line and the streamed text would
+  // still fall into the gap after forLiveTurn stopped dropping them.
+  if (id === cockpit.turnSession) change(cockpit as unknown as ParkedTurn)
 }
 
 /** Let the user pick a real folder via the native dialog; re-points the engine at it. */
@@ -1571,7 +1581,33 @@ function forLiveTurn<T>(ev: SessionEvent<T> | T): T | null {
     return ev as T
   }
   const stamped = ev as SessionEvent<T>
-  if (cockpit.turnSession && stamped.sessionId && stamped.sessionId !== cockpit.turnSession) return null
+  if (!cockpit.turnSession || !stamped.sessionId || stamped.sessionId === cockpit.turnSession) {
+    return stamped.data
+  }
+
+  // The stamp disagrees with the chat this window thinks the turn belongs to.
+  // Two very different situations wear that shape, and the old rule dropped
+  // both.
+  //
+  // The first is ordinary and dropping is right: the event is from ANOTHER
+  // chat, one this window is tracking — parked while it works, or the one on
+  // screen while a different one runs. Several conversations at once is the
+  // point (§150), and their events must not leak into each other.
+  //
+  // The second is the window being wrong. A stamp naming a chat this window
+  // holds nothing for cannot be somebody else's turn — there is no somebody
+  // else. It is *this* turn, running in a session the window guessed the id of
+  // and guessed badly, and dropping it deletes the whole turn's visible life:
+  // no status, no tool rows, no streamed text, and a Stop that never lifts,
+  // while the engine works perfectly and the finished answer still arrives
+  // (that one comes back as SendMessage's return value, not as an event).
+  //
+  // So the engine's stamp wins the second case, because in the second case the
+  // engine is the only one who knows. Guarded by awaitingReply: outside a turn
+  // the window has no claim to correct.
+  const knownElsewhere = !!cockpit.parked[stamped.sessionId] || stamped.sessionId === cockpit.openSession
+  if (knownElsewhere || !cockpit.awaitingReply) return null
+  cockpit.turnSession = stamped.sessionId
   return stamped.data
 }
 

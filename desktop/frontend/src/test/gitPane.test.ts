@@ -65,6 +65,21 @@ describe('GitPane', () => {
     expect(vi.mocked(GitFileDiff)).toHaveBeenCalledTimes(1)
   })
 
+  // The list most often goes stale because the agent above it just finished
+  // editing. A panel still saying "clean" beside a chat reporting three edited
+  // files is worse than no panel: it is confidently wrong.
+  it('reads the tree again when a turn finishes', async () => {
+    cockpit.awaitingReply = false
+    const { container } = render(GitPane)
+    await waitFor(() => expect(container.querySelectorAll('.gp-row').length).toBe(2))
+    expect(vi.mocked(GitWorkingTree)).toHaveBeenCalledTimes(1)
+
+    cockpit.awaitingReply = true
+    await waitFor(() => expect(vi.mocked(GitWorkingTree)).toHaveBeenCalledTimes(1))
+    cockpit.awaitingReply = false
+    await waitFor(() => expect(vi.mocked(GitWorkingTree)).toHaveBeenCalledTimes(2))
+  })
+
   it('says the tree is clean rather than drawing an empty list', async () => {
     vi.mocked(GitWorkingTree).mockResolvedValue([] as any)
     const { container } = render(GitPane)
