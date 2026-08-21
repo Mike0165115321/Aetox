@@ -15,8 +15,13 @@ import (
 	"github.com/Mike0165115321/Aetox/internal/proc"
 )
 
-// runAuthCommand handles `aetox login`, `aetox logout` and `aetox auth`.
-// It reports whether it consumed the invocation, plus the exit code.
+// runAuthCommand handles `aetox login`, `aetox logout`, `aetox auth` and
+// `aetox account`. It reports whether it consumed the invocation, plus the
+// exit code.
+//
+// The first three are about a model provider — which account pays for a
+// request. `account` is about Aetox itself and is handled in account.go; the
+// two are kept apart so that "signed in" never has to mean both at once.
 func runAuthCommand(args []string) (handled bool, code int) {
 	if len(args) == 0 {
 		return false, 0
@@ -29,6 +34,8 @@ func runAuthCommand(args []string) (handled bool, code int) {
 		return true, runLogout(rest)
 	case "auth":
 		return true, runAuthStatus()
+	case "account":
+		return true, runAccountCommand(rest)
 	default:
 		return false, 0
 	}

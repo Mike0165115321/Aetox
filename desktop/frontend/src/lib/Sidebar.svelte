@@ -7,7 +7,10 @@
     newChairSession,
   } from './stores/cockpit.svelte'
   import type { Session } from './types'
-  import { UserName, SetUserName, ListModes, ProviderAccountFor } from '../../wailsjs/go/main/App'
+  import {
+    UserName, SetUserName, ListModes, ProviderAccountFor,
+    AccountStatus, AccountRefresh,
+  } from '../../wailsjs/go/main/App'
   import ProviderAccount from './ProviderAccount.svelte'
   import { navFor, deskLabelKey, type NavEntry } from './desks'
   import { shell } from './shell.svelte'
@@ -41,6 +44,40 @@
     } catch {
       account = null
     }
+
+  // The Aetox account, which is not the provider account above and not the name
+  // beside it either: that name is what the agent calls you and you typed it.
+  let aetox = $state<{ configured: boolean; signed_in: boolean; display: string; user?: { email?: string } } | null>(null)
+
+  // Reachable, as of the last time the menu was opened. Being unreachable is
+  // not being signed out — the engine only drops a session when the server
+  // says the grant itself is dead — so this changes a dot and nothing else.
+  let aetoxOnline = $state(false)
+
+  async function loadAetoxAccount() {
+    // Disk first, and for two of the three outcomes that is the whole answer:
+    // a build with no id server, or a session that does not exist, has nothing
+    // to ask anybody about and must not open a socket to find that out.
+    try {
+      aetox = await AccountStatus()
+    } catch {
+      aetox = null
+      return
+    }
+    if (!aetox?.configured || !aetox.signed_in) {
+      aetoxOnline = false
+      return
+    }
+    try {
+      // Asks the server, which is what makes the dot mean anything.
+      aetox = await AccountRefresh()
+      aetoxOnline = true
+    } catch {
+      // Offline, or the server is down. What is on disk still stands: the
+      // identity stays, only the dot goes out.
+      aetoxOnline = false
+    }
+  }
   }
   let nameDraft = $state('')
   const avatarInitial = $derived((profileName.trim()[0] ?? 'A').toUpperCase())
@@ -473,9 +510,12 @@
   </div>
 
   <div class="side-footer-wrap">
-    <button type="button" class="side-footer" onclick={() => { profileOpen = !profileOpen; if (profileOpen) loadAccount() }}>
+    <button type="button" class="side-footer" onclick={() => { profileOpen = !profileOpen; if (profileOpen) { loadAccount(); loadAetoxAccount() } }}>
       <span class="avatar">{avatarInitial}</span>
-      <span class="label">{profileName || t('sidebar.setYourName')}</span>
+      <!-- The name you chose wins; the account name stands in when you never
+           chose one, so a signed-in sidebar stops asking for something it
+           already knows. -->
+      <span class="label">{profileName || aetox?.display || t('sidebar.setYourName')}</span>
       <!-- A mark on the way into settings when the agent is waiting to be
            allowed to remember something. Not a count and not a chip in the
            conversation: it is not work the user has to do now, but a queue
@@ -497,6 +537,25 @@
             onkeydown={(e) => e.key === 'Enter' && saveName()}
             onblur={saveName}
           />
+        <div class="menu-sep"></div>
+        {#if aetox?.signed_in}
+          <div class="acct-menu">
+            <div class="acct-menu-row">
+              <span class="acct-menu-name">
+                <span class="acct-dot" class:on={aetoxOnline}
+                  title={aetoxOnline ? t('sidebar.accountOnline') : t('sidebar.accountOffline')}></span>
+                {aetox.display}
+              </span>
+              {#if aetox.user?.email && aetox.user.email !== aetox.display}
+                <span class="acct-menu-sub">{aetox.user.email}</span>
+              {/if}
+            </div>
+          </div>
+        {:else if aetox?.configured}
+          <button class="plus-menu-item" onclick={() => { profileOpen = false; onOpenSettings() }}>
+            <span class="ic"><Icon name="circleUser" size={14} /></span> {t('sidebar.accountSignIn')}
+          </button>
+        {/if}
         </div>
         {#if account}
           <div class="menu-sep"></div>

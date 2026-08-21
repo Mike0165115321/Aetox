@@ -566,6 +566,20 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .acct-menu-row { display:flex; flex-direction:column; gap:2px; }
 /* 12px and --text-muted: this is a provider's name, which is read, not a mark
    that only has to be noticed. At 11px in --text-dim it was 2.54:1. */
+/* The Aetox account's email under its name. Dimmer than the name because it is
+   there to identify the account, not to be read every time the menu opens. */
+.acct-menu-sub { font-size:var(--fs-xs); color:var(--text-dim); }
+/* Reachable, as of the last time this menu was opened. Unlit is offline, which
+   is not signed out: the session stands, so the dot goes quiet rather than the
+   row turning into a warning. Never the only carrier of the fact — the title
+   says it in words, for colour vision and for anyone who does not know what a
+   dot on an avatar means. */
+.acct-dot {
+  display:inline-block; width:6px; height:6px; border-radius:50%;
+  background:var(--border-strong); margin-right:6px; vertical-align:middle;
+  transition:background .2s ease;
+}
+.acct-dot.on { background:var(--accent); }
 .acct-menu-name { font-size:var(--fs-xs); color:var(--text-muted); text-transform:lowercase; }
 /* Shared by the language and theme rows. max-width so the 14-entry theme list
    can't stretch the menu wider than the sidebar it hangs off. */

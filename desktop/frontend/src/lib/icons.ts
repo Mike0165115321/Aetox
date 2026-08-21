@@ -24,6 +24,9 @@ export const ICONS = {
   chevronRight: `<path d="m9 18 6-6-6-6" />`,
   chevronUp: `<path d="m18 15-6-6-6 6" />`,
   circle: `<circle cx="12" cy="12" r="10" />`,
+  // The Aetox account page. Deliberately not `userRound`, which the team page
+  // owns: that one is a colleague, this one is you.
+  circleUser: `<circle cx="12" cy="12" r="10" /><circle cx="12" cy="10" r="3" /><path d="M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662" />`,
   clapperboard: `<path d="m12.296 3.464 3.02 3.956" /><path d="M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1.1-.3 2.2.3 2.5 1.3z" /><path d="M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><path d="m6.18 5.276 3.1 3.899" />`,
   clock: `<circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" />`,
   compass: `<circle cx="12" cy="12" r="10" /><path d="m16.24 7.76-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z" />`,

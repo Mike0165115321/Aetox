@@ -15,6 +15,12 @@ import {oauth} from '../models';
 
 export function AcceptsAPIKey(arg1:string):Promise<boolean>;
 
+export function AccountRefresh():Promise<main.AccountState>;
+
+export function AccountSignOut():Promise<void>;
+
+export function AccountStatus():Promise<main.AccountState>;
+
 export function AddMCPServer(arg1:string,arg2:Array<string>):Promise<void>;
 
 export function AddSpaceContext(arg1:string):Promise<Array<string>>;
@@ -71,6 +77,8 @@ export function BrowserStopPick(arg1:string):Promise<void>;
 
 export function BrowserTypeRef(arg1:string,arg2:number,arg3:string,arg4:boolean):Promise<void>;
 
+export function CancelAccountSignIn():Promise<void>;
+
 export function CancelSignIn(arg1:string):Promise<void>;
 
 export function CancelTurn():Promise<void>;
@@ -92,6 +100,8 @@ export function ClearProjectFocus():Promise<main.ProjectStatus>;
 export function CloseAllBrowserTabs():Promise<void>;
 
 export function CommandHistory():Promise<Array<string>>;
+
+export function CompleteAccountSignIn():Promise<main.AccountState>;
 
 export function CompleteSignIn(arg1:string,arg2:string):Promise<main.ModelInfo>;
 
@@ -478,6 +488,8 @@ export function StagedUpdate():Promise<string>;
 export function Stance():Promise<string>;
 
 export function Stances():Promise<Array<string>>;
+
+export function StartAccountSignIn(arg1:string):Promise<string>;
 
 export function StartConnectionServer(arg1:string):Promise<void>;
 

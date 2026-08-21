@@ -389,6 +389,7 @@ func refuseSkillShelf(target, home string) error {
 var ownSecretFiles = []string{
 	"credentials.json",      // provider API keys
 	"oauth.json",            // OAuth refresh tokens
+	"account.json",          // the Aetox account session — a bearer token, and the string is the whole credential
 	".env",                  // whatever the user put in it
 	"model-preference.json", // held the keys before they were split out
 	// The MCP config. It reads like plumbing — a name and a command — but its
@@ -708,6 +709,9 @@ func ownSecretHint(name string) string {
 		return "The user manages providers and API keys in Settings."
 	case "oauth.json":
 		return "The user signs in and out from Settings."
+	case "account.json":
+		return "This is the user's Aetox account session. Whether they are signed in is shown in " +
+			"Settings → บัญชี Aetox, which is also where they sign in and out."
 	case ".env":
 		return "The user edits this file themselves; you can tell them the path."
 	case "webview":

@@ -50,6 +50,7 @@ Skills are the deliberate exception and do **not** live here — see below.
 | `<DataRoot>/permissions.json` | approval rules |
 | `<DataRoot>/hooks.json` | hooks |
 | `<DataRoot>/credentials.json` | provider API keys |
+| `<DataRoot>/account.json` | the user’s Aetox account, if they signed in — a different thing from the sign-ins above |
 | `<DataRoot>/oauth.json` | sign-ins |
 | `<DataRoot>/model-preference.json` | model choice, last desk |
 | `<DataRoot>/model-catalog.json` | cached prices and context windows from models.dev; refetched at launch, and the app runs on this copy when offline |
@@ -361,6 +362,28 @@ as MCP above. It is Settings → การเชื่อมต่อ, and the u
 
 A connection that has never been placed is carried by every desk. Nothing was
 taken away from anyone by this file arriving.
+## บัญชี Aetox — the user's own account
+
+Separate from everything above, and easy to confuse with it. `oauth.json` holds
+sign-ins to **model providers** — who pays for a request. `account.json` holds
+the user's **Aetox account**, opened through GitHub or Google against Aetox's
+own id server.
+
+**In this build the whole thing is closed.** No account server is deployed yet,
+so there is no บัญชี Aetox page in Settings and no sign-in anywhere. If asked
+about signing in, say that it is not open yet rather than sending somebody to
+look for a page that is not there.
+
+Two things to say correctly if asked, once it is open:
+
+- **It is optional and it unlocks nothing today.** Every part of Aetox works
+  signed out. The account exists for a store that is not built yet. Do not tell
+  a user that signing in will enable a feature.
+- **You have no tool that signs in, signs out, or reads who is signed in.** It
+  is Settings → บัญชี Aetox, or `aetox account login` on the CLI, and the user
+  does it. If asked whether they are signed in, say where to look; do not read
+  `account.json` to find out — it holds a bearer token.
+
 
 ## Reaching a folder outside the project
 

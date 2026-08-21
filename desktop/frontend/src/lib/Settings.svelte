@@ -42,6 +42,8 @@
     AppVersion, AppCredit, CheckForUpdate, RecentDebugLog,
     LearningEnabled, SetLearningEnabled, ListPendingChanges, ListDecidedChanges,
     ApprovePendingChange, RejectPendingChange, LearnedEntries, LearnedScopes, SaveLearnedEntry, OpenMemoryFolder,
+    AccountStatus, StartAccountSignIn, CompleteAccountSignIn, CancelAccountSignIn,
+    AccountSignOut, AccountRefresh,
     ListSystemIssues, MarkIssueReported, ListDecidedIssues,
   } from '../../wailsjs/go/main/App'
   // Deliberately alongside the issue button rather than instead of it: an issue
@@ -778,6 +780,68 @@
     signInError = ''
     if (prompt) await CancelSignIn(prompt.provider)
   }
+  // The Aetox account, which is a different sign-in from the ones above: those
+  // decide who pays for a request, this one is who you are to Aetox itself.
+  let aetoxAccount = $state<main.AccountState | null>(null)
+  let aetoxBusy = $state(false)
+  let aetoxError = $state('')
+
+  async function loadAetoxAccount() {
+    aetoxAccount = await AccountStatus()
+  }
+
+  // Same two-call shape as a provider sign-in, and for the same reason: the
+  // first call hands back a URL to open, the second blocks until the browser
+  // comes back. Nothing is stored unless the second one succeeds.
+  async function aetoxSignIn(provider: string) {
+    aetoxError = ''
+    aetoxBusy = true
+    try {
+      const url = await StartAccountSignIn(provider)
+      if (url) BrowserOpenURL(url)
+      aetoxAccount = await CompleteAccountSignIn()
+    } catch (e) {
+      aetoxError = String(e)
+      await loadAetoxAccount()
+    } finally {
+      aetoxBusy = false
+    }
+  }
+
+  async function aetoxAbort() {
+    await CancelAccountSignIn()
+    aetoxBusy = false
+    aetoxError = ''
+  }
+
+  async function aetoxSignOut() {
+    aetoxError = ''
+    aetoxBusy = true
+    try {
+      await AccountSignOut()
+    } catch (e) {
+      // The local half of a sign-out always happened, so this is a warning
+      // about the server, not a failure to sign out. The card says so.
+      aetoxError = t('settings.accountSignOutPartial')
+    } finally {
+      await loadAetoxAccount()
+      aetoxBusy = false
+    }
+  }
+
+  async function aetoxCheck() {
+    aetoxError = ''
+    aetoxBusy = true
+    try {
+      aetoxAccount = await AccountRefresh()
+    } catch (e) {
+      aetoxError = String(e)
+      await loadAetoxAccount()
+    } finally {
+      aetoxBusy = false
+    }
+  }
+
 
   const doImport = (name: string) => run('import:' + name, async () => {
     await importSignIn(name)
@@ -2805,6 +2869,20 @@
   $effect(() => {
     if (active === 'learning') void loadLearning()
   })
+  $effect(() => {
+    // Reads from disk only, so opening the page costs nothing and works with
+    // no network. Asking the server is the separate "check again" button.
+    if (active === 'account') void loadAetoxAccount()
+  })
+
+  // Asked once, before any page is drawn, because the answer decides whether
+  // the account page is in the nav at all. False in every shipped build today:
+  // nothing is deployed for it to talk to, and a settings page that offers a
+  // sign-in reaching nothing is the placeholder the 1.0.0 bar forbids.
+  $effect(() => {
+    void loadAetoxAccount()
+  })
+
 
   $effect(() => {
     if (active === 'issues') void loadIssues()
@@ -2870,6 +2948,18 @@
         terms: ['GitHub', t('settings.ghTokenLabel'), 'n8n', 'Windmill', t('settings.connBaseURLLabel')] },
       { id: 'prompts', label: t('settings.prompts'), icon: 'sparkles', terms: [t('settings.promptNew')] },
     ]},
+      // First in this group and nowhere near the model sign-ins: those decide
+      // which account pays for a request, this one is who you are to Aetox.
+      // It is in About rather than up top because it configures nothing the
+      // app does today.
+      // Left out entirely when this build has no id server, which is every
+      // shipped build today. Not greyed out and not marked "soon": there is
+      // nothing behind it yet, and a row that opens onto nothing is worse than
+      // a row that is not there.
+      ...(aetoxAccount?.configured
+        ? [{ id: 'account', label: t('settings.account'), icon: 'circleUser',
+             terms: ['GitHub', 'Google', t('settings.accountSignOut')] } satisfies NavItem]
+        : []),
     { group: t('settings.groupAbout'), items: [
       // Usage lives here rather than under Tools: it is a report about the app,
       // not a thing to configure, which is the same kind of page as About.
@@ -3003,7 +3093,7 @@
   // section (openSettingsAt), and two spellings of this key would fail silently
   // and look like the page ignoring where it was told to go.
   const SECTION_KEY = SETTINGS_SECTION_KEY
-  const SECTION_IDS = new Set(['general', 'appearance', 'identity', 'learning', 'models', 'team', 'agents', 'tools', 'skills', 'mcp', 'connections', 'prompts', 'usage', 'about', 'sponsor'])
+  const SECTION_IDS = new Set(['general', 'appearance', 'identity', 'learning', 'models', 'team', 'agents', 'tools', 'skills', 'mcp', 'connections', 'prompts', 'account', 'usage', 'about', 'sponsor'])
 
   function restoredSection(): string {
     try {
@@ -5677,6 +5767,63 @@
           </div>
         {/each}
       </div>
+    {:else if active === 'account'}
+      <h2>{t('settings.account')}</h2>
+      <p class="muted set-sub">{t('settings.accountDesc')}</p>
+
+      {#if aetoxError}<div class="mset-error">{aetoxError}</div>{/if}
+
+      <div class="settings-card">
+        {#if aetoxAccount?.signed_in}
+          <div class="set-row">
+            <div class="set-txt">
+              <div class="t">{aetoxAccount.display}</div>
+              {#if aetoxAccount.user?.email && aetoxAccount.user.email !== aetoxAccount.display}
+                <div class="d">{aetoxAccount.user.email}</div>
+              {/if}
+            </div>
+            <button class="ctrl" disabled={aetoxBusy} onclick={aetoxCheck}>{t('settings.accountRefresh')}</button>
+            <button class="ctrl" disabled={aetoxBusy} onclick={aetoxSignOut}>{t('settings.accountSignOut')}</button>
+          </div>
+        {:else if aetoxBusy}
+          <div class="set-row">
+            <div class="set-txt">
+              <div class="t">{t('settings.accountWaiting')}</div>
+              <div class="d">{t('settings.accountWaitingDesc')}</div>
+            </div>
+            <button class="ctrl" onclick={aetoxAbort}>{t('settings.accountCancel')}</button>
+          </div>
+        {:else}
+          <div class="set-row">
+            <div class="set-txt">
+              <div class="t">{t('settings.accountSignedOut')}</div>
+              <div class="d">{t('settings.accountSignedOutDesc')}</div>
+            </div>
+            {#each aetoxAccount?.providers ?? [] as door}
+              <button class="ctrl" onclick={() => aetoxSignIn(door)}>
+                {t('settings.accountWith', { provider: door === 'github' ? 'GitHub' : 'Google' })}
+              </button>
+            {/each}
+          </div>
+          <!-- Said on the page rather than discovered after signing in. The
+               store this account is for does not exist yet, and a button that
+               implies a locked feature would be the lie. -->
+          <div class="set-row">
+            <div class="set-txt">
+              <div class="d">{t('settings.accountUnlocks')}</div>
+            </div>
+          </div>
+        {/if}
+
+        <div class="set-row">
+          <div class="set-txt">
+            <div class="t">{t('settings.accountServer')}</div>
+            <div class="d">{t('settings.accountServerDesc')}</div>
+            <div class="d">{aetoxAccount?.server ?? ''}</div>
+          </div>
+        </div>
+      </div>
+
 
     {:else if active === 'about'}
       <h2>{t('settings.about')}</h2>

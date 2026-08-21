@@ -13,6 +13,30 @@ const boolFn = (v: boolean) => vi.fn(async (..._args: any[]) => v)
 const strFn = (v: string) => vi.fn(async (..._args: any[]) => v)
 const noop = () => vi.fn(async (..._args: any[]) => undefined)
 
+// Closed and signed out by default, because that is what a shipped build is
+// today: no id server is deployed, so the account page is not in the nav at
+// all. The tests that exercise the page turn `configured` on themselves.
+export const AccountStatus = vi.fn(async (..._args: any[]) => ({
+  configured: false, signed_in: false, user: {}, display: '',
+  providers: ['github', 'google'], server: '',
+}))
+export const StartAccountSignIn = strFn('http://localhost:8080/authorize?client_id=aetox-desktop')
+export const CompleteAccountSignIn = vi.fn(async (..._args: any[]) => ({
+  configured: true, signed_in: true, user: { id: 'u1', name: 'Mike', email: 'mike@example.com' },
+  display: 'Mike', providers: ['github', 'google'], server: 'http://localhost:8080',
+}))
+export const CancelAccountSignIn = noop()
+export const AccountSignOut = noop()
+export const AccountRefresh = vi.fn(async (..._args: any[]) => ({
+  configured: false, signed_in: false, user: {}, display: '',
+  providers: ['github', 'google'], server: '',
+}))
+// Empty by default: the manifest is win64-only and every test but the
+// capability ones runs as if there were nothing to offer, which is also what
+// a Linux CI machine really sees.
+export const CapabilityStatuses = arr()
+export const CapabilitiesInstalling = boolFn(false)
+export const InstallCapabilities = boolFn(true)
 export const AddMCPServer = noop()
 export const BrowserBack = noop()
 export const BrowserCapturePNG = str()

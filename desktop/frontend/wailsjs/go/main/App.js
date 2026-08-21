@@ -6,6 +6,18 @@ export function AcceptsAPIKey(arg1) {
   return window['go']['main']['App']['AcceptsAPIKey'](arg1);
 }
 
+export function AccountRefresh() {
+  return window['go']['main']['App']['AccountRefresh']();
+}
+
+export function AccountSignOut() {
+  return window['go']['main']['App']['AccountSignOut']();
+}
+
+export function AccountStatus() {
+  return window['go']['main']['App']['AccountStatus']();
+}
+
 export function AddMCPServer(arg1, arg2) {
   return window['go']['main']['App']['AddMCPServer'](arg1, arg2);
 }
@@ -118,6 +130,10 @@ export function BrowserTypeRef(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['BrowserTypeRef'](arg1, arg2, arg3, arg4);
 }
 
+export function CancelAccountSignIn() {
+  return window['go']['main']['App']['CancelAccountSignIn']();
+}
+
 export function CancelSignIn(arg1) {
   return window['go']['main']['App']['CancelSignIn'](arg1);
 }
@@ -160,6 +176,10 @@ export function CloseAllBrowserTabs() {
 
 export function CommandHistory() {
   return window['go']['main']['App']['CommandHistory']();
+}
+
+export function CompleteAccountSignIn() {
+  return window['go']['main']['App']['CompleteAccountSignIn']();
 }
 
 export function CompleteSignIn(arg1, arg2) {
@@ -932,6 +952,10 @@ export function Stance() {
 
 export function Stances() {
   return window['go']['main']['App']['Stances']();
+}
+
+export function StartAccountSignIn(arg1) {
+  return window['go']['main']['App']['StartAccountSignIn'](arg1);
 }
 
 export function StartConnectionServer(arg1) {

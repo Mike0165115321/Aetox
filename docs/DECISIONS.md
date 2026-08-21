@@ -5599,3 +5599,43 @@ The fold-out above answers *"what did that call change"*. The owner, the same ni
 - **Counts come from git, content is fetched on expand.** `git diff --numstat HEAD` supplies `+N -M`, so the panel can never disagree with `git diff --stat` about the same file. Rows arrive collapsed and fetch nothing: a working tree of forty files is ordinary, and forty `git show` calls for a list nobody has opened is work done on the chance it is wanted.
 
 **Not decided, and deliberately left alone: the repo section in สรุปห้อง.** SessionStrip already lists changed files from `GitChangedFiles`. That is now a smaller, older reading of the same fact, and by the single-source rule one of the two should go — but which one is the owner's call about his own room, not a cleanup to slip into a feature. Flagged, not removed.
+
+## 162. Decision — The Account Is Ours, and the Doors Are Only Doors (2026-08-22)
+
+The id server ([aetox-cloud](https://github.com/Mike0165115321), private) was already standing on 2026-08-21: `/authorize`, `/callback/{github,google}`, `/token`, `/me`, `/signout`, tokens as opaque strings stored only as hashes, refresh rotated on every use with reuse detection. Nothing in the desktop half had ever called it. This section is that half.
+
+**Decision: the Aetox account gets its own package, its own file, and no power over anything the app already does.**
+
+### 162.1 Two questions, two stores
+
+`internal/oauth` answers *"what do I send as credentials for this model provider"*, and `internal/model` reads it to build a request. An Aetox account answers *"who is this person"*. It buys nothing on any inference API.
+
+Putting it in `oauth.json` would have been three lines and one lasting cost: the provider picker would have had to learn to hide a row that is not a provider, and `Token()` would have had a caller it must never serve. So [internal/account](../internal/account) is its own package writing `account.json`, held to the same three rules as its neighbour — 0600, wrapped through `internal/atrest`, write-then-rename — because it holds the same class of secret.
+
+What it does borrow is transport. `oauth.Loopback` and `oauth.NewPKCE` are exported for it rather than copied ([loopback.go](../internal/oauth/loopback.go)): the id server speaks the RFC 8252 shape those already implement, and a second copy of a listener is the kind of duplicate that drifts.
+
+### 162.2 The redirect has a shape, and it is checked in a test
+
+A native client cannot register a port in advance, so the server matches its redirect by shape instead: `http`, a loopback hostname, path exactly `/callback`, and **no query and no fragment**. Get any part of that wrong and the failure arrives from GitHub as `redirect_uri_mismatch`, which does not say which side is wrong.
+
+`TestStartBuildsWhatTheServerWillAccept` pins all four. It is a test of the other repo's rules written down in this one, and that is deliberate: the two halves ship separately, and the contract has to be asserted somewhere a build can fail.
+
+### 162.3 Being offline is not being signed out
+
+The rule the client holds: **only the server saying the grant is dead clears the session.** `invalid_grant`, `invalid_token`, `access_denied`, a 401 or a 403 — those wipe `account.json`. A timeout, a DNS failure, a 500, an unreachable host: the laptop stays signed in. A plane with no wifi must not log anybody out, and two tests hold each half of that line.
+
+The refresh path also takes a package mutex, and it is load bearing rather than tidy. The server rotates the refresh token on every use and treats a second presentation of a spent one as a leaked copy, revoking **the whole family**. Two turns refreshing in the same instant would send the same token twice and sign the user out of every device they own. Single-flight within the process is the fix; two Aetox processes are still not serialized against each other, which is written down here rather than discovered later.
+
+### 162.4 It unlocks nothing, and the page says so
+
+Signing in gates no tool, no model, no desk, no room. The store it exists for is not built. A button that implies otherwise would be the lie, so the settings page carries the sentence *"ตอนนี้การเข้าสู่ระบบยังไม่ปลดล็อกอะไร ร้านค้าที่มันมีไว้เพื่อยังสร้างไม่เสร็จ"* next to the two doors, and a test asserts that sentence is on screen. If the store ever ships, that assertion is what should fail and force the copy to be rewritten.
+
+The page lives at the top of the About group rather than up with the model sign-ins, because those decide who pays for a request and this one does not configure anything the app does today. `aetox account login|logout|whoami` is the same thing on the CLI, kept as a separate verb from `aetox login` for the same reason: "signed in" must not come to mean two things in one sentence.
+
+### 162.5 It ships closed, and closed means absent
+
+Nothing is hosted yet, so **`DefaultBaseURL` is the empty string** and `account.Configured()` is false in every shipped build. The owner's call, asked and answered on the day it was built: *"ยังไม่มีเซิร์ฟเวอร์รองรับเลยครับ ปิด ๆ ไว้ก่อนก็ได้ แต่ทำฐานไว้"*.
+
+Closed is **absent**, not disabled and not badged "soon". The settings page is left out of the nav (so the settings search cannot find it either), the sidebar menu has no sign-in row, `Start` returns `ErrNotOpen` without opening a listener or a browser, and `aetox account` says the system is not open in this build. A greyed-out control is a promise with a date attached; there is no date.
+
+Two things keep the switch honest. `AETOX_ID_URL` opens it for a checkout running against a local server, which is how all of this was tested end to end. And `TestNoServerIsConfiguredInThisBuild` fails the moment `DefaultBaseURL` is filled in — so opening the feature means editing a test whose comment points back here, rather than editing a constant in passing.
