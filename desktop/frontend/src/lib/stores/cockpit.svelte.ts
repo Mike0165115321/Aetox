@@ -1104,7 +1104,27 @@ async function runLiveTurn(call: () => Promise<void>): Promise<void> {
   // cannot be stale the way the engine's cursor can once several conversations
   // are live. Falls back to the engine only before the window has been told,
   // which is the first turn of a cold start.
-  cockpit.turnSession = cockpit.openSession || cockpit.sessions.find((s) => s.active)?.id || ''
+  //
+  // `cockpit.sessions.find((s) => s.active)` used to sit in the middle of that
+  // chain, and it had to come out. It answers a different question: the list's
+  // `active` flag is the session the ENGINE last held, and `openSession` is the
+  // chat the user is looking at. They agree right up until the case where it
+  // matters — a brand-new chat, whose session does not exist until SendMessage
+  // creates it, while the restored list still marks yesterday's as active. The
+  // fallback then named a chat the user was not in.
+  //
+  // And naming the wrong one is not a routing mistake, it is a deletion:
+  // `forLiveTurn` drops every event whose stamp does not match, so the status
+  // line, the tool rows and the streamed text all vanish for a turn the engine
+  // is running perfectly. The finished answer still arrives — it comes back as
+  // SendMessage's return value rather than as an event — which is exactly why
+  // this reads as "the chat page is frozen" instead of as anything broken, and
+  // why it only ever bit the first message of a new chat (2026-08-22).
+  //
+  // Empty is the honest answer when the window has not been told yet, and it is
+  // a safe one: `forLiveTurn` only filters when turnSession is set, so an empty
+  // one lets the turn's own events through instead of discarding them.
+  cockpit.turnSession = cockpit.openSession || ''
   if (!cockpit.turnSession) {
     try {
       cockpit.turnSession = await CurrentSessionID()
