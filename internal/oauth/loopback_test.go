@@ -12,11 +12,11 @@ import (
 // code. The escaping is one call and easy to drop in a later edit, so the
 // assertion is here rather than in anyone's memory.
 func TestLoopbackEscapesTheProvidersErrorText(t *testing.T) {
-	lb, err := startLoopback(0, "/cb")
+	lb, err := StartLoopback(0, "/cb")
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	defer lb.close()
+	defer lb.Close()
 
 	const payload = `<script>alert(1)</script>`
 	resp, err := http.Get(lb.RedirectURI + "?error=bad&error_description=" + payload)
@@ -41,11 +41,11 @@ func TestLoopbackEscapesTheProvidersErrorText(t *testing.T) {
 // The other half: a real message still reads as one. Escaping that swallowed
 // the text would hide the only thing telling the user why sign-in failed.
 func TestLoopbackStillShowsWhatWentWrong(t *testing.T) {
-	lb, err := startLoopback(0, "/cb")
+	lb, err := StartLoopback(0, "/cb")
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	defer lb.close()
+	defer lb.Close()
 
 	resp, err := http.Get(lb.RedirectURI + "?error=access_denied&error_description=you+said+no")
 	if err != nil {

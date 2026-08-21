@@ -42,7 +42,7 @@ const (
 
 // StartCodex opens the browser flow and the listener that catches its redirect.
 func StartCodex() (*Pending, error) {
-	verifier, challenge, err := newPKCE()
+	verifier, challenge, err := NewPKCE()
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +50,7 @@ func StartCodex() (*Pending, error) {
 	if err != nil {
 		return nil, err
 	}
-	lb, err := startLoopbackAs(codexRedirectHost, codexRedirectPort, codexRedirectPath)
+	lb, err := StartLoopbackAs(codexRedirectHost, codexRedirectPort, codexRedirectPath)
 	if err != nil {
 		return nil, fmt.Errorf("ChatGPT sign-in needs port %d, which is in use — close the other Codex sign-in and try again: %w", codexRedirectPort, err)
 	}
@@ -85,7 +85,7 @@ func FinishCodex(ctx context.Context, pending *Pending) error {
 	}
 	defer pending.Cancel()
 
-	code, state, err := pending.lb.wait(ctx)
+	code, state, err := pending.lb.Wait(ctx)
 	if err != nil {
 		return err
 	}

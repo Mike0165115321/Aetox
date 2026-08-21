@@ -28,12 +28,12 @@ type Pending struct {
 	UserCode        string `json:"user_code,omitempty"`
 	VerificationURI string `json:"verification_uri,omitempty"`
 
-	interval   int
-	expiresIn  int
-	provider   string
+	interval  int
+	expiresIn int
+	provider  string
 	// lb is the local listener waiting for a redirect, for the flows that get
 	// to choose their own redirect URI. Nil for device-code and paste flows.
-	lb *loopback
+	lb *Loopback
 }
 
 // Provider is the canonical id this sign-in will store under.
@@ -43,13 +43,13 @@ func (p *Pending) Provider() string { return p.provider }
 // safe to call after Finish.
 func (p *Pending) Cancel() {
 	if p != nil && p.lb != nil {
-		p.lb.close()
+		p.lb.Close()
 		p.lb = nil
 	}
 }
 
 // newPKCE returns a fresh verifier and its S256 challenge.
-func newPKCE() (verifier, challenge string, err error) {
+func NewPKCE() (verifier, challenge string, err error) {
 	verifier, err = randomString(32)
 	if err != nil {
 		return "", "", err

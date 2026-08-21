@@ -10,13 +10,15 @@ import (
 	"time"
 )
 
-// loopback is a one-shot local web server that catches an OAuth redirect.
+// Loopback is a one-shot local web server that catches an OAuth redirect.
 //
 // Providers that let us choose the redirect URI get this instead of asking the
 // user to copy a code out of a browser: the browser lands back on 127.0.0.1,
 // the code arrives in a query parameter, and the page tells the user they can
-// close the tab.
-type loopback struct {
+// close the tab. It is exported because internal/account signs in to Aetox's
+// own id server through the same RFC 8252 shape, and a second copy of this
+// listener is the kind of duplicate that drifts.
+type Loopback struct {
 	// RedirectURI is what to send as redirect_uri / callback_url.
 	RedirectURI string
 
@@ -31,7 +33,7 @@ type loopbackResult struct {
 	err   error
 }
 
-// startLoopback listens on 127.0.0.1. Pass port 0 for any free port; pass a
+// StartLoopbackAs listens on 127.0.0.1. Pass port 0 for any free port; pass a
 // specific one when the provider has the redirect URI registered against it
 // (ChatGPT insists on 1455).
 //
@@ -39,8 +41,8 @@ type loopbackResult struct {
 // address we bind. OAuth redirect matching is a string comparison, so a client
 // registered against "localhost" rejects "127.0.0.1" even though both resolve
 // here. Empty means advertise what we bound.
-func startLoopbackAs(host string, port int, path string) (*loopback, error) {
-	lb, err := startLoopback(port, path)
+func StartLoopbackAs(host string, port int, path string) (*Loopback, error) {
+	lb, err := StartLoopback(port, path)
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +52,7 @@ func startLoopbackAs(host string, port int, path string) (*loopback, error) {
 	return lb, nil
 }
 
-func startLoopback(port int, path string) (*loopback, error) {
+func StartLoopback(port int, path string) (*Loopback, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
 	if err != nil {
 		if port != 0 {
@@ -60,7 +62,7 @@ func startLoopback(port int, path string) (*loopback, error) {
 	}
 
 	bound := listener.Addr().(*net.TCPAddr).Port
-	lb := &loopback{
+	lb := &Loopback{
 		RedirectURI: fmt.Sprintf("http://127.0.0.1:%d%s", bound, path),
 		port:        bound,
 		results:     make(chan loopbackResult, 1),
@@ -104,7 +106,7 @@ func startLoopback(port int, path string) (*loopback, error) {
 }
 
 // wait blocks for the redirect. Cancel ctx to give up; close always runs.
-func (l *loopback) wait(ctx context.Context) (code, state string, err error) {
+func (l *Loopback) Wait(ctx context.Context) (code, state string, err error) {
 	select {
 	case <-ctx.Done():
 		return "", "", ctx.Err()
@@ -113,7 +115,7 @@ func (l *loopback) wait(ctx context.Context) (code, state string, err error) {
 	}
 }
 
-func (l *loopback) close() {
+func (l *Loopback) Close() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	_ = l.srv.Shutdown(shutdownCtx)

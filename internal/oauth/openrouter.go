@@ -25,11 +25,11 @@ const (
 // to send the user to. Call FinishOpenRouter (or Pending.Cancel) after —
 // otherwise the listener stays up for the life of the process.
 func StartOpenRouter() (*Pending, error) {
-	verifier, challenge, err := newPKCE()
+	verifier, challenge, err := NewPKCE()
 	if err != nil {
 		return nil, err
 	}
-	lb, err := startLoopback(0, "/callback")
+	lb, err := StartLoopback(0, "/callback")
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +55,7 @@ func FinishOpenRouter(ctx context.Context, pending *Pending) error {
 	}
 	defer pending.Cancel()
 
-	code, _, err := pending.lb.wait(ctx)
+	code, _, err := pending.lb.Wait(ctx)
 	if err != nil {
 		return err
 	}
