@@ -379,6 +379,7 @@ function stepsFromParts(parts?: TurnPart[]): ToolStep[] | undefined {
       secs: tool.secs || undefined,
       added: tool.added || undefined,
       removed: tool.removed || undefined,
+      diff: tool.diff || undefined,
       agent: tool.agent || undefined,
       brief: tool.brief || undefined,
       agentKind: tool.agentKind || undefined,
@@ -1836,6 +1837,9 @@ export function applyToolEvent(stamped: SessionEvent<ToolEvent> | ToolEvent): vo
   // Only a write/edit carries these; everything else reports 0 and shows nothing.
   step.added = ev.added || undefined
   step.removed = ev.removed || undefined
+  // The change itself, for the โค้ด desk's fold-out. It arrives once, on the
+  // result — the streaming call events know the path before they know the text.
+  step.diff = ev.diff || undefined
   // A finished file the user asked for. Deduped because a turn may well write
   // the same workbook twice — a first pass and a correction — and the answer
   // should offer it once.

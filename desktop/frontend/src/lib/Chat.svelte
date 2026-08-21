@@ -37,6 +37,7 @@
   } from './stores/cockpit.svelte'
   import ConfirmDialog from './ConfirmDialog.svelte'
   import MemoryCard from './MemoryCard.svelte'
+  import CodeDiff from './CodeDiff.svelte'
   import Icon from './Icon.svelte'
   import ProviderMark from './ProviderMark.svelte'
   import { ICONS, type IconName } from './icons'
@@ -891,6 +892,29 @@
   function liveSecs(s: ToolStep): number {
     return Math.max(0, Math.round((now - s.startedAt) / 1000))
   }
+
+  // What the agent changed, under the row that changed it (โค้ด desk only).
+  //
+  // The desk gate is the decision, not a shortcut. A diff was here once, in the
+  // Review panel removed on 2026-08-03, and the reason it went is still true
+  // everywhere else: this is a product whose promise is finished work, and a
+  // person watching the assistant write a letter is not owed the letter's
+  // hunks. The โค้ด desk is the one room where the user came to read exactly
+  // this, so it is the one room that draws it.
+  const showDiffs = $derived(cockpit.desk === 'coding')
+
+  // Folded shut, and remembered per row rather than per turn: a person who
+  // opened the third edit is reading the third edit, and the next tool result
+  // must not shut it.
+  //
+  // Keyed on the engine's call id where there is one. The label is the fallback
+  // and it is a weaker key — two identical edits in one session would share a
+  // fold — so the diff's own length joins it, which separates every pair that
+  // is not literally the same change twice.
+  let openDiffs = $state<Record<string, boolean>>({})
+  function diffKey(s: ToolStep): string {
+    return s.ref || `${s.label}:${s.diff?.length ?? 0}`
+  }
   // Seconds on a delegation card: counted off the register's own start while the
   // worker is going, its real total once it stops, and only then the `task`
   // row's number — which is the spawn, not the job — when the register has
@@ -1728,29 +1752,59 @@
   {:else if s.kind === 'thinking'}
     <div class="tool-think"><span class="ic"><Icon name="brain" size={12} /></span> {t('chat.thoughtFor', { secs: s.secs ?? 1 })}</div>
   {:else}
-  <div class="tool-step {s.state}">
-    {#if s.state === 'run'}
-      <span class="glyph spin"></span>
-    {:else}
-      <span class="glyph"><Icon name={s.state === 'done' ? 'check' : 'x'} size={12} /></span>
+  {@const key = diffKey(s)}
+  {@const foldable = showDiffs && !!s.diff}
+  <!-- Coerced, not left as undefined: Svelte drops an attribute whose value
+       is undefined, and a disclosure button with no aria-expanded at all reads
+       to a screen reader as something that does not open. -->
+  {@const shown = !!(foldable && openDiffs[key])}
+  <!-- A row with a diff behind it is a real button; every other row is the div
+       it has always been. Not one element wearing a role: a control that
+       sometimes responds teaches the user to stop trying it, and the
+       difference has to be there for a keyboard and a screen reader too. -->
+  {#if foldable}
+    <button
+      type="button"
+      class="tool-step {s.state} foldable"
+      aria-expanded={shown}
+      title={t('chat.diffToggle')}
+      onclick={() => (openDiffs[key] = !shown)}
+    >
+      {@render stepFace(s, live)}
+      <span class="fold-caret"><Icon name={shown ? 'chevronUp' : 'chevronDown'} size={12} /></span>
+    </button>
+    {#if shown}
+      <div class="tool-diff"><CodeDiff diff={s.diff ?? ''} /></div>
     {/if}
-    <span class="lbl">{s.label}</span>
-    {#if s.state === 'run' && live}
-      <span class="secs">· {liveSecs(s)}s</span>
-    {:else if s.secs}
-      <span class="secs">· {s.secs}s</span>
-    {/if}
-    {#if s.added || s.removed}
-      <!-- While it runs, only the climbing "+N" is real — the removed
-           count isn't known until the file is actually written. -->
-      <span class="tool-stat">
-        <span class="add">+{s.added ?? 0}</span>
-        {#if s.state !== 'run'}<span class="del">-{s.removed ?? 0}</span>{/if}
-      </span>
-    {/if}
-    {#if s.error}<span class="tool-err">{s.error}</span>{/if}
-  </div>
+  {:else}
+    <div class="tool-step {s.state}">{@render stepFace(s, live)}</div>
   {/if}
+  {/if}
+{/snippet}
+
+<!-- The row's contents, shared by the two elements above so that being
+     expandable cannot quietly change what a row says. -->
+{#snippet stepFace(s: ToolStep, live: boolean)}
+  {#if s.state === 'run'}
+    <span class="glyph spin"></span>
+  {:else}
+    <span class="glyph"><Icon name={s.state === 'done' ? 'check' : 'x'} size={12} /></span>
+  {/if}
+  <span class="lbl">{s.label}</span>
+  {#if s.state === 'run' && live}
+    <span class="secs">· {liveSecs(s)}s</span>
+  {:else if s.secs}
+    <span class="secs">· {s.secs}s</span>
+  {/if}
+  {#if s.added || s.removed}
+    <!-- While it runs, only the climbing "+N" is real — the removed
+         count isn't known until the file is actually written. -->
+    <span class="tool-stat">
+      <span class="add">+{s.added ?? 0}</span>
+      {#if s.state !== 'run'}<span class="del">-{s.removed ?? 0}</span>{/if}
+    </span>
+  {/if}
+  {#if s.error}<span class="tool-err">{s.error}</span>{/if}
 {/snippet}
 
 {#snippet toolTimeline(steps: ToolStep[], live: boolean)}

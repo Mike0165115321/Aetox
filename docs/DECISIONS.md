@@ -5430,3 +5430,158 @@ A model a chat recorded can also stop existing under it — a provider slot repo
 ### 152.3 What this session cost, and the lesson worth keeping
 
 Four times in one day I reported something fixed after reading the code, and four times the owner found it was not. Every one of those was caught in minutes by a throwaway probe that ran the actual path. **Reading the code tells you what it says; running it tells you what it does, and only the second one is a report.**
+
+---
+
+## 158. Decision — The Team Gets Its Own Door, and It Is the First One You Do Not Talk To (2026-08-20)
+
+**Trigger:** the owner, opening a feature he had been circling for a while: *"ผมว่า Aetox ควรจะเพิ่มอีกฟีเจอร์คือระบบ ทำงานแบบบริษัท ... ที่เอาเอเจนมานั่งแต่ละงานๆ ที่เราจัดไว้ให้ แล้วมันก็ ทำงานตามที่เราสั่ง ... ออกแบบให้เป็นลูปได้ ... ไม่ต้องรื้อแค่สร้างเพิ่ม"*. Then, on where it lives: *"ห้องออโตเมชั่น คือส่วนของ ผู้ช่วย ผมว่าจะสร้างแยกเลย ตอนนี้มี Aetox ผู้ช่วย Aetox โค้ด ทำ Aetox บริษัท หรือคำว่าอะไรดี"*. And on the name: *"Aetox ทีม ผมเห้นด้วยเอาอันนี้"*.
+
+**Decision: a third door, `Aetox ทีม` (โรงงาน). ห้องทีมเอเจน stops being a room behind the storefront and becomes the door itself, with three rooms behind it: ผัง, ห้องทำงาน, งาน.**
+
+### 158.1 The feature was already scheduled — by this repo, in writing, twice
+
+Nothing here is a new direction. [`internal/subagent/run.go`](../internal/subagent/run.go) has said since 16 ส.ค.: *"A file format for runs is the obvious next step and deliberately not this step — the shape of a run that has actually been used a few times is worth more than a format designed before one has."* And [COMPANY.md §3](../COMPANY.md) ended, before this decision rewrote it, on *"สายพานที่ใช้ซ้ำบ่อย (เช่นสิ้นเดือน) คือสิ่งที่หน้าทำงานอัตโนมัติจะเก็บเป็นสูตรแล้วรันเองในอนาคต"* — the feature named, and deferred, in the document's own words.
+
+So the owner's *"ระบบเดิมรองรับมาหลายส่วนล่ะ"* is literally true, and it is worth writing down how much, because it is what makes this an addition rather than a rebuild. Already built: `Run` + `RunPhase` + `PhaseInfo` (declared stages with live counts), the hiring door `task`/`task_result`, fan-out capped at four ([runner.go:47](../internal/subagent/runner.go)), `StopAll`, per-delegate token counts, the `jobs` table recording who asked and who did it, `output/<session>`, and the roster page. Missing: the line file, the thing that walks it, loops, and a board to watch it on.
+
+### 158.2 Why the door is not called บริษัท
+
+The owner's first word for it was บริษัท, and it cannot be that, because COMPANY.md's own first line is *"AETOX — บริษัทที่มีหน้าเดียว"* and its §1 says *"ผู้ช่วยคนนั้นมีทั้งบริษัทอยู่ข้างหลัง"*. บริษัท is the whole product. A door named บริษัท makes a part carry the name of the whole and turns that §1 sentence false the moment it ships — the company would have moved out from behind the assistant.
+
+ทีม is what is actually behind the door, it is one syllable, and the contrast with the door beside it reads without explanation: ผู้ช่วย is one person, ทีม is several. It also costs no new vocabulary, because ห้องทีมเอเจน is not renamed — it is **promoted**. The word that was on a button is now on a door.
+
+**โรงงาน survives as the prose nickname**, the way หน้าร้าน and โรงช่าง already do in COMPANY.md §2. Three places, one company.
+
+**ออฟฟิศ and สำนักงาน are both refused.** ออฟฟิศ is on §8's retired list; สำนักงาน is the same word in different clothes, and reviving a killed meaning under a new spelling is exactly the drift §8 exists to catch.
+
+### 158.3 The first door with no face, and why that does not break §86
+
+§86 says หนึ่งหน้า ต่อหนึ่งประตู. This door has no receptionist: you do not talk to "the team", you arrange it and press เริ่ม. The conversations behind it are with **named** colleagues (§85), which is a room in a workshop, not a second personality at a counter.
+
+That reading makes §86 stronger rather than weaker — the rule exists to stop the assistant fracturing into personalities, and a door that introduces none is the rule holding. What it does change is the type: `ShellDef.desk` assumed every door names a desk that "new chat" lands at, so it gains `home` — where a click on the door lands — and `desk` becomes optional. Two doors you talk to, one door you run.
+
+**The new-chat button stays where it is, and does not go dead.** Hiding it behind this door was written into this section first and then withdrawn on reading [TopBar.svelte](../desktop/frontend/src/lib/TopBar.svelte), which already argues the opposite and argues it well: *"a control at a fixed address costs a duplicate; one that moves costs a search on every use"*. Asking for a new chat is asking for the company's face, so from ทีม it opens one at the storefront and walks you there. Walking *into* ทีม, by contrast, starts nothing at all — the conversation you were holding is still running and its door is one click away.
+
+### 158.4 The defect the door creates, found before it shipped
+
+[`deskFilterFor`](../desktop/frontend/src/lib/shell.svelte.ts) scopes each door's history with a rule that was right for two doors: *the storefront asks for everything except the workshop's desk*. Exclusion, not naming — which is what keeps pre-desk sessions (`mode = ''`) filed instead of dropped, a regression this repo has already had once.
+
+Chats held with an agent are stamped `mode = 'specialized'` ([cockpit.svelte.ts](../desktop/frontend/src/lib/stores/cockpit.svelte.ts)). Give the team door those and leave the storefront's rule alone, and every agent chat appears in **both** doors' history. The storefront's list has to exclude both desks now.
+
+**And one agent does not follow its desk.** ระบบออโตเมชั่น is a chat with the `automation` agent, and the owner has kept that room behind the storefront. A conversation you can start in one door and only find again in another is a bug, so the pinned agent stays with the room that opens it.
+
+That is one new field on `DeskFilter`, and its polarity rides on `Exclude` rather than needing a second flag: **the pinned agents belong to the door that excludes desks, and are dropped by the door that includes them.**
+
+| door | filter | reads as |
+|---|---|---|
+| โค้ด | `{Desks: [coding]}` | `mode IN ('coding')` |
+| ทีม | `{Desks: [specialized], Agents: [automation]}` | `mode IN ('specialized') AND agent NOT IN ('automation')` |
+| ผู้ช่วย | `{Desks: [coding, specialized], Exclude, Agents: [automation]}` | `mode NOT IN (...) OR agent IN ('automation')` |
+
+### 158.5 What moves, and what deliberately does not
+
+**ผลงาน and ทำงานอัตโนมัติ stay with the storefront** — but COMPANY.md §2's stated reason for them being there ("ผลงานกับทำงานอัตโนมัติผูกกับทีมเอเจน") now points the other way and is rewritten rather than left standing while false. The real reason ผลงาน stays is that the disk is the truth and every door writes to it; the real reason ทำงานอัตโนมัติ stays is that describing an automation is a conversation with a specialist, which is storefront behaviour, and the owner said so.
+
+**The star (§3) does not move at all.** The assistant still hires agents through the same ประตูจ้างงาน, in the same turn, with no trip through another door — because §6 ข้อ 8 already says a door is a UI shell and not a fence. No new arrow, no second ประตูส่งไม้, and ใบไม้ยังจบที่ใบไม้.
+
+### 158.6 The three words, and the one that is not เวิร์กโฟลว์
+
+| คำ | หมายถึง |
+|---|---|
+| **ห้องทำงาน** | ลำดับงานที่ส่งต่อกันด้วยไฟล์ ผ่านศูนย์เดียว — ประกอบสดในเทิร์นก็ได้ เขียนเก็บเป็นไฟล์ก็ได้ |
+| **ขั้น** | หนึ่งช่วงของห้องทำงาน: เอเจนหนึ่งคน + brief หนึ่งใบ (คือ `RunPhase` ที่มีอยู่แล้ว) |
+| **รอบ** | ห้องทำงานหนึ่งใบที่กำลังเดินหรือเดินจบแล้ว |
+
+**The word was สายพาน for most of a day, and the owner replaced it: *"ห้องทำงาน ... ใช้แทนคำว่าสายพานทั้งคำ"*.** Two objections were put to him before he did and he overrode both, so they are recorded here rather than argued again.
+
+First, **ห้อง is a locked term** — §8 says it means "what a button in the sidebar opens", and every other room is a bare noun (ผู้ช่วย, โปรเจกต์, ผัง, งาน, ผลงาน, โค้ด). This is the only room whose label contains the name of its own category. The mitigation is that Thai reads ห้องทำงาน as one lexical unit (a study, a workroom) rather than as ห้อง + ทำงาน, so prose that says "ห้องทำงาน" never has to say "ห้องห้องทำงาน". Anything that starts needing the second form is the sign this collision has become real.
+
+Second, **it names a place where the thing named is a sequence.** สายพาน carried its cast inside the word — a conveyor has stations, and a station has somebody at it — and ห้องทำงาน does not. What it carries instead is the owner's own opening sentence, which was about a place: *"เอาเอเจนมานั่งแต่ละงานๆ ที่เราจัดไว้ให้"*. That is a defensible trade and it is his to make.
+
+**The code identifiers do not follow the label** — the room id stays `lines`, the locale keys stay `desk.lines` / `desk.linesBlurb`, and the planned package stays `internal/line`. That is the same separation COMPANY.md §2 already keeps between `assistant`/`coding`/`specialized` and the words on their buttons: the screen's vocabulary moves when the owner moves it, and the engine's does not have to move with it. The owner deferred the rest — *"รายละเอียดอื่นๆยิบย่อยค่อยมาคิดอีก"* — so nothing below the label was renamed on a guess.
+
+§8's ห้องทำงาน entry is widened, not duplicated: the same shape, once assembled live and once written down. **เวิร์กโฟลว์ is refused on screen** — it belongs to n8n and Windmill (§92), and a window offering both words makes the user guess which thing they are building. The line that separates them, and which the ระบบออโตเมชั่น room has to say out loud: **n8n คือนาฬิกาและสายไฟข้างนอก · ห้องทำงานคือลำดับงานของพนักงานข้างใน**.
+
+### 158.7 Who walks the line — Go, not the model
+
+`task_plan` declares stages and hopes; run.go says so itself: *"The guarantee is visibility, not enforcement."* That is the right trade for a plan a model invents mid-turn, and the wrong one for a recipe a human wrote down. A saved line **is** the control flow — if it can be skipped it is a suggestion.
+
+So `internal/line` reads the file and calls `task` per step. The model is not in the middle of the mechanical part. This keeps depth at one: the walker stands where the assistant stands, and no agent gains the ability to call another.
+
+Handoff between steps is **paths only** (`{{1.files}}`), enforced by the format, which is §3's *"ไม้ต่อคือไฟล์ ไม่ใช่บทสนทนา"* made structural instead of advisory.
+
+### 158.8 Loops need a round count, which is not the ceiling 16 ส.ค. refused
+
+Three loops, and only two of them are ours: `each:` (one step, once per file), `back:` (return to an earlier step until a gate passes), and repeat-the-whole-line, which is the clock and stays outside in n8n (§92).
+
+`back:` **must carry a max.** run.go refuses a token ceiling on a run, and that refusal stands — it was decided about *effort inside one job*, with the owner's hand on Stop. An unattended loop has no hand on the switch, and bounding repetition is not the same act as bounding effort: the spend is still counted and still shown, in full. If three review rounds have not passed, the fourth is not where the answer is.
+
+### What this does not decide
+
+**Unattended runs.** [COMPANY.md §7](../COMPANY.md) still says the approval policy for work with nobody watching is undecided, and it is. A line that hits the safety gate at 02:00 waits forever. So **v1 starts by hand only** — you press เริ่ม and watch it walk. Clock triggers wait behind that policy, and cost no rework when it lands, because an outside trigger walks in through the hiring door that already exists.
+
+**Whether ผัง / ห้องทำงาน / งาน are three rooms or one room with three tabs.** They ship as three rooms because the door made that affordable. If a month of use says the floor and the feed are one thing, merging them is a nav edit.
+
+**The line file's format past the sketch.** Written when the first real line has been walked a few times, per run.go's own instruction — this decision fixes the vocabulary and the walker's owner, not the schema.
+
+### 158.9 Amendment, same day — the door is deferred, and the roster never should have moved
+
+The owner, an hour after this shipped: *"เดี๋ยวทีมเอเจน ยกออกจาก หน้าผู้ช่วยทำไมครับ เอากลับไปไว้ที่เดิมก่อน ... เปลี่ยนจากทีมเอเจนเป็น เอเจนเฉพาะทางก็ได้ เพราะมันยังเอาไว้คุยกับเอเจนโดยตรงได้"*.
+
+**He is right, and the error is worth naming precisely: he asked for a home for a new thing, and I moved an old thing to build it.** ห้องทำงาน needed somewhere to live. The roster did not need to go anywhere, and the sentence that settles it is his — the page exists so you can walk in and talk to a specialist, and that is something you do *beside* the assistant, not in a building you travel to. §158.5 congratulated itself on how little moved while moving the one room that had a reason to stay.
+
+So:
+
+- **The roster goes back behind the storefront, renamed เอเจนเฉพาะทาง** (`Specialist agents`), which is what the page is a list of. The feed is folded back under it — the split into ผัง and งาน went with the door and had no independent reason to exist. The view id stays `office`.
+- **ห้องทำงาน stays behind the ทีม door, alone.** That is what the door was opened for and it is the only thing that should ever have moved into it.
+
+**The door was deferred for one round and that was also mine to be corrected on.** Reading "put the roster back" as "the door has nothing left in it", I folded ห้องทำงาน in beside ทำงานอัตโนมัติ and took the third door out — on the reasoning that a door holding one unbuilt room is a door you walk through into nothing. The owner: *"ห้องทำงานผมให้แยกไปไม่ใช่หรอ ทำไมเอากลับมาปนกับผู้ช่วยล่ะครับ"*. He had already decided the door; the state of what is behind it is not a reason to withdraw a decision, it is a reason to build the room.
+
+So the room is a `page` rather than a `soon`, and that is the one thing the concern was actually worth. A `soon` button is a name among rooms that open; behind this door it would have been the only thing there, so the door really would have led nowhere. The page opens, and it says in plain words that the work is not built yet and what it will hold — copy that cannot lie, instead of an empty list implying the list works. The header, the shell and the empty state are the ones the real room will use, so building it is filling this in rather than replacing it.
+
+**Nothing behind ทีม opens a session, so the sidebar draws it no conversation column at all** — no search box, no import, no history list. `deskFilterFor` has no answer for a door that holds no chats, and the honest response to that is to draw nothing rather than to invent a filter or to show another door's list. The rooms row stays; that is the door. The new-chat button also stays, because [TopBar.svelte](../desktop/frontend/src/lib/TopBar.svelte) already argues that a control at a fixed address costs a duplicate while one that moves costs a search on every use — from ทีม it opens a chat at the storefront and walks you there.
+
+**What that unwinds, and why none of it is a loss.** §158.4's `DeskFilter.Agents` existed only because agent chats had moved behind another door; with the roster back at the storefront the original two-door rule is correct again, so the field, the `shellForDesk(desk, agent)` signature and `TestEachChatBelongsToExactlyOneDoor` all go. The defect that section describes was real — it was created by the move, and removing the move removes it.
+
+**Two lessons, and the second one cost more than the first.** A request to add a room is not a licence to re-file the rooms already there. And a decision the owner has made is not re-openable by me because the thing it decided turned out to be inconvenient to build — the concern was worth raising and was raised; what it earns is a better room, not a withdrawn door.
+
+## 161. Decision — The Counts Were a Claim (2026-08-21)
+
+The owner, after using the โค้ด desk: *"เราลืมให้มันแสดงตอน Aetox แก้โค้ด แสดงเหมือน Claude code อ่ะ ขึ้นว่าแบบมันแก้โค้ดอะไรไปตรงไหนบ้าง แบบเชื่อมกับ Git"*.
+
+He is right, and the gap was exactly one step wide. `edit` has always known both strings, `write` has always read the outgoing file before clobbering it, and both used that to compute `LinesAdded`/`LinesRemoved` — and then threw the content away. The row said `แก้ไข main.go · 2s +5 -2` and stopped. **That is a claim, not a report.** The one thing a person at a coding desk came to check is which lines, and the only way to find out was to leave the chat and open the file.
+
+**Decision: the tools that write files carry the change itself out with the result, and the โค้ด desk folds it under the row that made it.**
+
+### 161.1 Built by the tool, not asked of git
+
+The format is git's — unified hunks, three lines of context, one character of prefix per line — because that is the format every programmer already reads. It is **not** produced by shelling out to git, and the reasons are not stylistic:
+
+- **The change belongs to the call, not to the working tree.** By the time a row is expanded, the next call in the same turn may have touched the same lines twice. `git diff` would answer a question nobody asked: the tree's current state, with the whole turn mixed together.
+- **Half these files are untracked**, and a good number of projects are not repositories at all. A diff that only works after `git init` is a diff that disappears exactly where the user is least sure what happened.
+- **A row expanded tomorrow must still show what that call did.** The hunks are written down with the turn (`ToolPart.Diff`), so they survive the restart. Fetching on demand would show tomorrow's file.
+
+[internal/skill/hunk.go](../internal/skill/hunk.go) builds them: common head and tail are walked off first, so an exact-string replacement in a ten-thousand-line file leaves a handful of lines for the LCS pass, and a region too large for the table is reported as one block replaced rather than costing a hundred megabytes to pair up line by line.
+
+One line is not git's. **`~N` means N further diff lines exist and were dropped.** A transcript is stored, and an unbounded diff per call would put a regenerated lockfile into the session database — so it is capped at 400 lines, and the cap says so. A diff that will not admit it is a cut reads as the whole change, which is the one thing it must never do.
+
+### 161.2 The โค้ด desk only, and that reopens a door closed on 2026-08-03
+
+The Review panel was removed on 2026-08-03 with a diff view inside it. The reasoning in [types.ts](../desktop/frontend/src/lib/types.ts) still stands and is worth quoting rather than quietly stepping over: *"a code-review surface in a product whose promise is finished work for people who do not read diffs."*
+
+**That reasoning is still true — everywhere except one room, which did not exist in its current shape when it was written.** Someone watching the assistant finish a letter is not owed the letter's hunks. Someone at the โค้ด desk came to read exactly this. So the gate is `cockpit.desk === 'coding'`, and every other desk keeps the row it has always had.
+
+Two things separate this from the panel that was deleted, and both were its actual faults:
+
+- **It was never empty.** The removed panel had two of four sections that nothing ever wrote to and that had shown an empty box since the day they shipped. A row is expandable only when a diff came back with it, so a control that opens onto nothing cannot occur.
+- **It duplicated nothing.** The panel's two working sections restated what the file tree's M/U badges already said. Per-call hunks are a fact no other surface in the app holds.
+
+The visual language is literally the removed panel's — `.diff`, `.dl`, `.hunk` and the `--diff-*` tokens outlived it in `style.css` with nothing drawing them. They were re-aimed at a chat timeline rather than re-invented, so this adds no second way to draw a diff.
+
+### 161.3 What it does not do
+
+**No per-turn changed-files card.** [internal/snapshot](../internal/snapshot/snapshot.go) already captures a tree per turn and can name every file one touched — the material for "this turn changed 6 files" is sitting there, used today only for undo. It was offered and the owner picked the row fold-out instead. It stays unbuilt rather than half-built.
+
+**`git diff` is still the agent's own tool.** The read-only `git` skill keeps `diff` and `show`, and the prompt still tells an agent to check its own work with them. That is the agent reading; this is the user reading. Same format, two different readers, and neither is a copy of the other.
+

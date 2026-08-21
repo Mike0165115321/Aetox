@@ -259,6 +259,8 @@ export const zh: Partial<Record<keyof typeof th, string>> = {
   'chat.resend': '再问一次',
   'chat.editMessage': '编辑消息',
   'chat.saveEdit': '保存并重新发送',
+  'chat.diffToggle': '查看改了什么',
+  'chat.diffMore': '还有 {n} 行未显示',
   'chat.cancelEdit': '取消',
   'chat.prevVariant': '上一个回答',
   'chat.nextVariant': '下一个回答',

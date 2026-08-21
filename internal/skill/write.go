@@ -203,6 +203,11 @@ func (s *writeSkill) Execute(_ context.Context, input Input) (Output, error) {
 	}
 	out := newToolOutput("write", "write "+requestPath, output, start, false, nil)
 	out.LinesAdded, out.LinesRemoved = LineDelta(string(previous), content)
+	// A whole-file write of a file that already existed is usually a small
+	// change wearing a large tool — the prompt sends `write` here for
+	// "replacing nearly all of it", and "nearly" is doing the work. The hunks
+	// are what separate the two cases for a reader.
+	out.Diff = UnifiedDiff(string(previous), content)
 	return out, nil
 }
 

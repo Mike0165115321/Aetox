@@ -43,6 +43,15 @@ type Output struct {
 	// timeline's "+9 -0". Both zero on tools that touch no file.
 	LinesAdded   int
 	LinesRemoved int
+	// Diff is those same lines, said in full: git-style unified hunks for what
+	// this call changed, empty on every tool that writes nothing. See hunk.go
+	// for the format and for why it is built here rather than asked of git.
+	//
+	// It is the counts' other half. "+42 -17" is a claim, and the โค้ด desk is
+	// the room where a claim about code is not what the user came for — they
+	// came to see which lines. The counts stay because a folded row needs a
+	// size; this is what unfolding one shows.
+	Diff string
 	// Images is how a tool returns a picture rather than a description of one.
 	// Only `read` sets it, only when the host has said the model can see
 	// (RegistryOptions.Vision) — a tool result is text everywhere else, and a

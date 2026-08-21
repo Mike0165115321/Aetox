@@ -563,6 +563,7 @@ product picture in [COMPANY.md](COMPANY.md)) · §82 (the learning floor) · §4
 | §155 | The Dials Were the App's, and the App Had Stopped Being One Conversation (2026-08-20) · provider/model/wire/think/approval move onto the conversation; `App.cfg` becomes the template a new chat is born from |
 | §156 | Two Rows In, Three Rows Out, and Six Pointing At Nothing (2026-08-20) · xAI + ThaiLLM added, Perplexity/Together/Cohere removed, six stale model ids repointed; `TestLiveEveryConfiguredProvider` is the check |
 | §157 | Right Place, Wrong Lifetime; and the Last Three Things Held for Everybody (2026-08-20) · migration v17 puts a chat's dials on the session row; undo, the workbench mirror and task chips go per conversation |
+| §161 | The Counts Were a Claim (2026-08-21) · `edit`/`write`/`apply_patch`/`notebook_edit` carry git-style hunks out with the result; the โค้ด desk folds them under the row that made them, and no other desk draws them |
 
 ---
 

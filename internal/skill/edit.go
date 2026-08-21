@@ -162,6 +162,10 @@ func (s *editSkill) Execute(_ context.Context, input Input) (Output, error) {
 	out.LinesAdded, out.LinesRemoved = LineDelta(oldString, newString)
 	out.LinesAdded *= replacements
 	out.LinesRemoved *= replacements
+	// The file before against the file after — not the two strings. A
+	// replace_all that changed eight call sites is eight hunks in the file and
+	// one pair of strings, and it is the eight the reader is owed.
+	out.Diff = UnifiedDiff(content, updated)
 	return out, nil
 }
 

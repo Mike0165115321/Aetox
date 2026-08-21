@@ -78,6 +78,12 @@ type ToolPart struct {
 	Secs       int    `json:"secs,omitempty"`
 	Added      int    `json:"added,omitempty"`
 	Removed    int    `json:"removed,omitempty"`
+	// Diff is ToolEvent.Diff written down, for the same reason Artifacts is one
+	// field below: this is the part that survives a restart. A change you can
+	// only inspect until the app closes is a change you have to take on trust
+	// the next morning. Capped where it is built, so a turn of large writes
+	// cannot grow the transcript without bound.
+	Diff string `json:"diff,omitempty"`
 	// Artifacts are the finished files this call made for the user, carried
 	// here rather than only on the live ToolEvent because this is the part that
 	// is *written down*. The chat draws an open button per artifact, and until

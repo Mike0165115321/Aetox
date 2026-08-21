@@ -393,6 +393,10 @@ func (s *notebookEditSkill) ExecuteTool(_ context.Context, args map[string]any) 
 		out := newToolOutput("notebook_edit", command,
 			fmt.Sprintf("notebook_edit done: %s cell %d", path, index), start, false, nil)
 		out.LinesAdded, out.LinesRemoved = LineDelta(before, source)
+		// A notebook's unit is the cell, so the hunks are numbered within it —
+		// which is the only numbering that means anything here, and what the
+		// row's own "cell N" is already telling the reader.
+		out.Diff = UnifiedDiff(before, source)
 		if err := nb.save(target); err != nil {
 			return newToolOutput("notebook_edit", command, "", start, false, err), err
 		}

@@ -2032,6 +2032,7 @@ export namespace turn {
 	    static createFrom(source: any = {}) {
 	        return new TurnPart(source);
 	    }
+	    diff?: string;
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
@@ -2053,6 +2054,7 @@ export namespace turn {
 		            for (const key of Object.keys(a)) {
 		                a[key] = new classs(a[key]);
 		            }
+	        this.diff = source["diff"];
 		            return a;
 		        }
 		        return new classs(a);

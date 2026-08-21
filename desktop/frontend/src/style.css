@@ -814,6 +814,16 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
   min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   font-size:var(--fs-xs); color:var(--status-danger);
 }
+/* A row with a diff behind it is a <button>, so it needs the button undone
+   before it can look like the rows either side of it. width:100% and
+   text-align:left are what keep it in the column the divs occupy. */
+.tool-step.foldable {
+  width:100%; text-align:left; font:inherit; color:inherit;
+  background:none; border:0; cursor:pointer; border-radius:var(--r-sm);
+}
+.tool-step.foldable:hover .lbl { color:var(--text-primary); }
+.tool-step.foldable:hover .fold-caret { color:var(--text-muted); }
+.tool-step .fold-caret { flex:0 0 auto; display:inline-flex; color:var(--text-dim); }
 /* The model's narration between tool calls, and a round's thinking duration
    (§59). Sentences, not status rows: regular face, no glyph column. */
 .tool-note {
@@ -2239,12 +2249,41 @@ button { font:inherit; color:inherit; background:none; border:none; cursor:point
 .file-line { display:flex; align-items:center; gap:9px; padding:7px 12px; border-top:1px solid var(--border-subtle); cursor:pointer; }
 .file-line:hover { background:var(--surface-row-hover); }
 .file-line .st { margin-left:auto; font-weight:700; color:var(--status-modified); }
-.diff { font-family:var(--mono); font-size:var(--fs-sm); line-height:1.65; }
-.diff .fname { padding:9px 12px; color:var(--text-code); border-bottom:1px solid var(--border-subtle); }
-.diff .hunk { color:var(--diff-hunk-text); padding:4px 12px; background:var(--diff-hunk-bg); }
-.diff pre { margin:0; overflow-x:auto; }
-.dl { display:grid; grid-template-columns:34px 1fr; }
-.dl .ln { text-align:right; padding:0 8px; color:var(--text-dim); user-select:none; }
+/* What an edit actually changed, folded under the row that made it (CodeDiff.svelte).
+   These rules and the --diff-* tokens were the Review panel's, which was removed
+   on 2026-08-03 and left its visual language here with nothing drawing it. They
+   are the same rules re-aimed at the one place that needs them: a chat timeline
+   rather than a 12px-padded inspector panel, so the paddings tighten and the
+   text drops to the timeline's own size. */
+.tool-diff {
+  margin:1px 0 7px 7px; padding-left:11px;
+  border-left:1px solid var(--border-strong);
+}
+.diff {
+  font-family:var(--mono); font-size:var(--fs-xs); line-height:1.6;
+  border:1px solid var(--border-subtle); border-radius:var(--r-sm);
+  background:var(--surface-code); overflow:hidden;
+}
+/* Long lines scroll on their own. The alternative is a chat column that grows
+   sideways because one minified line landed in a hunk. */
+.diff .fname, .diff .hunk, .diff .dl, .diff .dmore { overflow-x:auto; }
+.diff .fname {
+  padding:5px 9px; color:var(--text-code); white-space:pre;
+  border-bottom:1px solid var(--border-subtle);
+}
+.diff .hunk {
+  color:var(--diff-hunk-text); background:var(--diff-hunk-bg);
+  padding:2px 9px; white-space:pre; user-select:none;
+}
+/* The cut, said out loud (skill.UnifiedDiff's ~N line). Centred and dimmed: it
+   is a note about the diff, not a line of it. */
+.diff .dmore {
+  padding:4px 9px; text-align:center; color:var(--text-dim);
+  font-family:var(--sans); font-size:var(--fs-2xs);
+  border-top:1px solid var(--border-subtle);
+}
+.dl { display:grid; grid-template-columns:38px 1fr; }
+.dl .ln { text-align:right; padding:0 8px; color:var(--text-dim); user-select:none; font-variant-numeric:tabular-nums; }
 .dl .tx { padding:0 8px; white-space:pre; color:var(--text-secondary); }
 .dl.add { background:var(--diff-add-bg); box-shadow:inset 2px 0 0 var(--diff-add-rail); }
 .dl.add .tx { color:var(--diff-add-text); } .dl.add .ln { color:var(--diff-add-rail); }

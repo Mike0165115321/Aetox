@@ -216,6 +216,13 @@ export interface ToolPartInfo {
   secs?: number
   added?: number
   removed?: number
+  /** Git-style unified hunks for what this call changed — the same format
+   * `git diff` prints, built by the tool itself (internal/skill/hunk.go) rather
+   * than asked of git, so a row expanded tomorrow still shows what THIS call
+   * did instead of the working tree's current state. Empty on every tool that
+   * writes no file. One line is not git's: `~N` means N further diff lines
+   * exist and were dropped to keep the transcript bounded. */
+  diff?: string
   /** Finished files this call made for the user. Unlike the live ToolEvent's
    *  copy, this one is written down with the message — which is what lets the
    *  open button still be there after a restart. */
@@ -312,6 +319,13 @@ export interface ToolEvent {
   error?: string
   added?: number
   removed?: number
+  /** Git-style unified hunks for what this call changed — the same format
+   * `git diff` prints, built by the tool itself (internal/skill/hunk.go) rather
+   * than asked of git, so a row expanded tomorrow still shows what THIS call
+   * did instead of the working tree's current state. Empty on every tool that
+   * writes no file. One line is not git's: `~N` means N further diff lines
+   * exist and were dropped to keep the transcript bounded. */
+  diff?: string
   /** Set only on the `task` call that opens a delegation: which sub-agent it is
    * handing the work to, and the whole brief it handed over. They are what make
    * a delegation render as a named block with its own steps inside, instead of
@@ -369,6 +383,13 @@ export interface ToolStep {
   /** Lines a write or edit changed, for the "+9 -0" readout. */
   added?: number
   removed?: number
+  /** Git-style unified hunks for what this call changed — the same format
+   * `git diff` prints, built by the tool itself (internal/skill/hunk.go) rather
+   * than asked of git, so a row expanded tomorrow still shows what THIS call
+   * did instead of the working tree's current state. Empty on every tool that
+   * writes no file. One line is not git's: `~N` means N further diff lines
+   * exist and were dropped to keep the transcript bounded. */
+  diff?: string
   /** On a `task` row: the worker doing the job, and the brief it was given. */
   agent?: string
   brief?: string

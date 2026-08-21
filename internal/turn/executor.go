@@ -349,6 +349,16 @@ type ToolEvent struct {
 	// Added/Removed are the line counts of a write or edit, zero elsewhere.
 	Added   int `json:"added,omitempty"`
 	Removed int `json:"removed,omitempty"`
+	// Diff is what those counts are counting: git-style unified hunks for the
+	// change this call made (internal/skill/hunk.go), empty on every tool that
+	// writes no file. The โค้ด desk draws it under the row, folded shut.
+	//
+	// It rides the result event rather than being fetched later on demand,
+	// because "later" is a different file: the next call in the same turn may
+	// touch these lines again, and a row expanded tomorrow must still show what
+	// THIS call did. Asking git at expand time would answer a question nobody
+	// asked — the working tree's state, with the whole turn mixed together.
+	Diff string `json:"diff,omitempty"`
 	// Artifacts carries skill.Output.Artifacts through to the UI: finished
 	// files this call made for the user, which the chat shows as cards with an
 	// open button instead of leaving them to be hunted for in the file tree.
@@ -966,6 +976,7 @@ func (e *Executor) executeAgentToolLoop(
 			OK:         success,
 			Added:      output.LinesAdded,
 			Removed:    output.LinesRemoved,
+			Diff:       output.Diff,
 			Artifacts:  output.Artifacts,
 			ProposalID: output.ProposalID,
 		}
@@ -1008,6 +1019,7 @@ func (e *Executor) executeAgentToolLoop(
 			Secs:       int(elapsed.Round(time.Second) / time.Second),
 			Added:      output.LinesAdded,
 			Removed:    output.LinesRemoved,
+			Diff:       output.Diff,
 			Artifacts:  output.Artifacts,
 			ProposalID: output.ProposalID,
 		})

@@ -176,6 +176,15 @@ kind** — nothing inside the file decides which it is.
   manifests are compiled in; a file in `<DataRoot>/modes` with the same name
   overrides one, and a new file is a new desk.
 
+  **On the โค้ด desk the user can see your edits, line by line** (DECISIONS
+  §161). Every `edit`, `write`, `apply_patch` and `notebook_edit` sends its own
+  hunks up with the result, in git's format, and the row for that call unfolds
+  into them. So: do not paste a diff of your own work into the answer, and do
+  not describe a change line by line in prose — it is already on screen, at the
+  step that made it, and the second copy is the one that goes stale. Say what
+  the change *does* and where to look. On every other desk that fold-out does
+  not exist, so a change worth seeing there has to be said in words.
+
 ### What one contains
 
 Every field of an `AGENT.md` is optional, and each has a default worth knowing

@@ -102,7 +102,9 @@ func (s *applyPatchSkill) ExecuteTool(_ context.Context, args map[string]any) (O
 	// Stage every file in memory first. Later edits see earlier ones, so two
 	// changes to the same file in one patch behave the way they read.
 	staged := map[string]string{}    // resolved path -> new content
+	original := map[string]string{}  // resolved path -> what was there before this call
 	requested := map[string]string{} // resolved path -> the path the model used
+	order := []string{}              // resolved paths, first-touched first
 	var added, removed int
 
 	for i, e := range edits {
@@ -119,6 +121,13 @@ func (s *applyPatchSkill) ExecuteTool(_ context.Context, args map[string]any) (O
 				return newToolOutput("apply_patch", command, "", start, false, err), err
 			}
 			content = string(data)
+			// Kept for the diff: a second edit to the same file must be
+			// measured against what was on disk when the call started, not
+			// against the first edit's result. `order` exists for the same
+			// reason a diff is worth showing at all — a map would hand the
+			// reader the files in a different sequence every run.
+			original[targetPath] = content
+			order = append(order, targetPath)
 		}
 
 		// Same resolution as edit, and it matters more here: one invisible `\r`
@@ -160,6 +169,14 @@ func (s *applyPatchSkill) ExecuteTool(_ context.Context, args map[string]any) (O
 		fmt.Sprintf("applied %d edits to %d files: %s", len(edits), len(written), strings.Join(written, ", ")),
 		start, false, nil)
 	out.LinesAdded, out.LinesRemoved = added, removed
+	// One diff for the whole call, each file named — this is the only writer
+	// that can change several at once, so it is the only one whose hunks need
+	// to say which file they are in.
+	diffs := make([]string, 0, len(order))
+	for _, targetPath := range order {
+		diffs = append(diffs, FileDiff(requested[targetPath], original[targetPath], staged[targetPath]))
+	}
+	out.Diff = JoinDiffs(diffs)
 	return out, nil
 }
 
